@@ -182,7 +182,7 @@ func TestCodexBellNeedsYou(t *testing.T) {
 	w.cueFleets(map[string][]string{
 		"bell":    {"hook working", "sleep 1", "bell", "sleep 3", "hook working"},
 		"attach":  {"hook working", "sleep 3", "bell", "sleep 3600"},
-		"nocodex": {"hook working", "sleep 1", "bell", "sleep 3600"},
+		"nocodex": {"hook working", "sleep 1", "bell"},
 	})
 	w.start()
 	ws := dialWS(t, w.in.instance)
@@ -293,7 +293,7 @@ func TestExitSailsOffOrAnchors(t *testing.T) {
 	w.cueFleets(map[string][]string{
 		"zero":   {"hook working", "sleep 2", "exit 0"},
 		"three":  {"hook working", "exit 3"},
-		"signal": {"hook working", "sleep 3600"},
+		"signal": {"hook working"},
 		"waited": {"hook needs_you", "sleep 1", "exit 3"},
 	})
 	w.start()

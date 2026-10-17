@@ -468,8 +468,9 @@ func TestShipNamesGetNumerals(t *testing.T) {
 	}
 	w := newWorld(t)
 	// macOS runs out of ptys at about 125 live panes. The harness exits at once;
-	// remain-on-exit keeps the ship and frees the pty.
-	w.writeCue("exit 0")
+	// remain-on-exit keeps the ship and frees the pty. Exit 3, not 0: an exit-0
+	// ship sails off and its session is killed after 3 s.
+	w.writeCue("exit 3")
 	w.start()
 	names := map[string]bool{}
 	for i := 0; i < 220; i++ {
