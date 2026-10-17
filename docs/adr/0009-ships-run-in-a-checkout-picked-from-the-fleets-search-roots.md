@@ -14,7 +14,7 @@ The engineer picks the ship's directory in launch orders from a list Admiral bui
 - **The list holds git checkouts and search roots, nothing else.** Admiral looks up to two levels below each search root and stops at a git checkout, never searching inside one. Checkouts come first in the list. The fleet's search roots sit at the bottom, so they show when the filter matches no checkout. A plain folder that is not a search root cannot be chosen.
 - **The directory field is a searchable dropdown above the skill choice.** Typing filters the list by name.
 - **Pre-selection**, first match wins:
-  1. the order's directory hint from its order source, when it names a listed checkout;
+  1. the order's `repo` hint from its order source, when it matches a listed checkout's git remote;
   2. a URL in the order's text whose repository matches a checkout's git remote;
   3. the directory last used on this dock.
 
@@ -33,5 +33,5 @@ The engineer picks the ship's directory in launch orders from a list Admiral bui
 
 - To use a folder outside the search roots, the engineer adds a search root to the fleet.
 - Two ships in one checkout can step on each other. The warning is the only guard.
-- The order source plugin contract carries an optional directory hint. The MVP's freeform list leaves it empty.
+- The order source plugin contract gains an optional `repo` on each order in `orders.list`: a repository URL, matched against checkout remotes like a URL in the order's text. The MVP's freeform list leaves it empty.
 - A harness's first run in a directory may stop on its folder-trust prompt. The engineer answers it on the bridge, and ADR 0007's no-first-hook rule shows the ship as needs-you meanwhile.
