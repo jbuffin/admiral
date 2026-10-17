@@ -31,6 +31,6 @@ The UI is mostly live state the server pushes: ships changing state, needing you
 
 ## Consequences
 
-- None of this depends on the back-end stack. If the server is Bun, it and the UI share TypeScript.
+- None of this depends on the back-end stack. The Go server (ADR 0005) embeds the built UI.
 - Swapping in the official logos changes only the logo symbol set.
 - The prototype guides design only. Where its structure is awkward for a real app, the app is built differently.
