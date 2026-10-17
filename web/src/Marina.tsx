@@ -52,7 +52,7 @@ function DockView({ fleet, dock, top, index }: { fleet: Fleet; dock: Dock; top: 
       </span>
       <span class="pier">
         <svg width="34" height="24" viewBox="0 0 40 28" aria-hidden="true" style="flex:0 0 auto">
-          <LogoFlag harness={dock.harness} x={2} y={3} width={36} height={22} stroke={2.6} />
+          <LogoFlag harness={dock.harness} kind="pier" />
         </svg>
         <span class="pier-text">
           <span class="pier-name">{h.label}</span>

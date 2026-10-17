@@ -17,17 +17,17 @@ const SAIL = '#FFF6E3';
 // fleet color, the bot's color and the harness's logo are props.
 export function Ship({ fleetColor, bot, harness, variant = 'sea', state = 'underway' }: ShipProps) {
   if (variant === 'moored') return <MooredShip fleetColor={fleetColor} bot={bot} harness={harness} />;
-  const attention = state === 'needs-you';
+  const needsYou = state === 'needs-you';
   return (
-    <span class={attention ? 'attn' : 'bob'} style="display:block">
+    <span class={needsYou ? 'needs-you' : 'bob'} style="display:block">
       <svg width="100" height="96" viewBox="0 0 100 96" fill="none" aria-hidden="true">
         <path d="M4 90q8-5 16 0t16 0 16 0 16 0 16 0 16 0" stroke="#DDF7F3" stroke-width="3" stroke-linecap="round" />
         <path d="M14 62L2 52" stroke={OUTLINE} stroke-width="3" stroke-linecap="round" />
         <path d="M50 64V3" stroke={OUTLINE} stroke-width="4" stroke-linecap="round" />
         <path d="M36 14h28q4 9 0 18H36q4-9 0-18Z" fill={SAIL} stroke={OUTLINE} stroke-width="2.5" stroke-linejoin="round" />
         <path d="M31 36h38q6 11 0 22H31q5-11 0-22Z" fill={SAIL} stroke={OUTLINE} stroke-width="2.5" stroke-linejoin="round" />
-        <g class={attention ? 'flag frantic' : 'flag wave'}>
-          <LogoFlag harness={harness} x={51} y={2} width={29} height={15} stroke={2} />
+        <g class={needsYou ? 'flag frantic' : 'flag wave'}>
+          <LogoFlag harness={harness} kind="sea" />
         </g>
         <path d="M72 64V52h24v12Z" fill="#8E5331" stroke={OUTLINE} stroke-width="2.5" stroke-linejoin="round" />
         <Captain bot={bot} stroke={2.4} />

@@ -1,3 +1,8 @@
+/* The anchored-mark red, darkened to 4.8:1 on the pier. */
+:root {
+  --color-dock-mark-on-pier: #7a2210;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -438,7 +443,7 @@ button:focus-visible {
 }
 
 .pier-status.marked {
-  color: #7a2210; /* the anchored-mark red, darkened to 4.8:1 on the pier */
+  color: var(--color-dock-mark-on-pier);
   font-weight: 700;
 }
 
@@ -456,7 +461,7 @@ button:focus-visible {
   animation: bob 3.2s ease-in-out infinite;
 }
 
-.attn {
+.needs-you {
   animation: shake 1.3s ease-in-out infinite;
 }
 
@@ -502,7 +507,7 @@ button:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bob, .attn, .wave, .frantic, .drift, .rowboat {
+  .bob, .needs-you, .wave, .frantic, .drift, .rowboat {
     animation: none !important;
   }
 }

@@ -5,8 +5,14 @@ import { config } from './config';
 
 const aboutOpen = signal(false);
 
+function outsideBody(dialog: HTMLDialogElement | null, e: MouseEvent) {
+  const r = dialog?.getBoundingClientRect();
+  return !!r && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom);
+}
+
 function About() {
   const ref = useRef<HTMLDialogElement>(null);
+  const pressedOutside = useRef(false);
   useEffect(() => {
     const d = ref.current;
     if (d && aboutOpen.value && !d.open) d.showModal();
@@ -17,9 +23,10 @@ function About() {
       class="about"
       aria-label="About Admiral"
       onClose={() => (aboutOpen.value = false)}
-      // The dialog has no padding of its own, so a click that lands on it
-      // itself is a click on the backdrop.
-      onClick={(e) => e.target === ref.current && ref.current?.close()}
+      // Closes only when the press and the click both land outside the dialog's
+      // body, so a tap on its border or a drag that ends outside stays open.
+      onPointerDown={(e) => (pressedOutside.current = outsideBody(ref.current, e))}
+      onClick={(e) => pressedOutside.current && outsideBody(ref.current, e) && ref.current?.close()}
     >
       <div class="about-body">
         <h2>About Admiral</h2>
