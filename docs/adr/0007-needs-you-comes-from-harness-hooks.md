@@ -1,4 +1,4 @@
-# 6. Needs-you comes from harness hooks
+# 7. Needs-you comes from harness hooks
 
 Status: accepted
 

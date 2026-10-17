@@ -22,4 +22,4 @@ Things the design leaves undecided. Each is tracked as a GitHub issue. Resolve e
 - **Headless sessions** ([#3](https://github.com/jbuffin/admiral/issues/3)). Each ship runs in a tmux session on Admiral's own socket (ADR 0002).
 - **Configured skill list** ([#9](https://github.com/jbuffin/admiral/issues/9)). It lives in Admiral's configuration (`docs/spec.md` §4).
 - **Fleet colors for more than two fleets** ([#10](https://github.com/jbuffin/admiral/issues/10)). A fleet may set its color in Admiral's configuration; otherwise it takes the next color in `designs/tokens.json` (`docs/spec.md` §1).
-- **Needs you** ([#6](https://github.com/jbuffin/admiral/issues/6)). Harness hooks added at launch write the state to a tmux pane option; Codex questions use the bell; no first hook within about 10 s means needs-you (ADR 0006).
+- **Needs you** ([#6](https://github.com/jbuffin/admiral/issues/6)). Harness hooks added at launch write the state to a tmux pane option; Codex questions use the bell; no first hook within about 10 s means needs-you (ADR 0007).
