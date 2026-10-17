@@ -33,7 +33,7 @@ The paths under `~/.admiral/` are proposals.
 - **Crew.** Teammates and subagents need a source: Commodore's own reporting, the harness's transcript, or tmux panes it opens. Unknown today; see `docs/open-questions.md`.
 - **Needs you.** Needs a signal per session; see `docs/open-questions.md`.
 - **Task sources.** A plugin interface returning orders `{id, title, url, source, labels, priority}` and a way to refresh. GitHub first, through `gh`.
-- **UI.** Any component framework. The prototype's markup, CSS and motion are the reference; port its look, not its code. Keep a single page; the bridge and launch orders are overlays.
+- **UI.** Preact, TypeScript and Vite (ADR 0004). The prototype's markup, CSS and motion are the reference; port its look, not its code. Keep a single page; the bridge and launch orders are overlays.
 
 ## Data the UI needs
 
