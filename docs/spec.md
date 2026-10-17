@@ -41,13 +41,12 @@ The configuration is `~/.admiral/config.json`, written by `admiral setup` and ed
 
 ### 2. Orders sidebar
 
-- Each task source contributes panels. A panel header shows a chevron (collapse), its title, overlapping source avatars, a count, and for combinable panels a combine/split icon button.
-- Combining merges panels into one list (cards keep their source avatar); splitting restores one panel per source.
+- Each order source contributes panels. A panel header shows a chevron (collapse), its title and a count. Panels can't be combined or split in the MVP.
 - The filter field filters every panel by title or ID as you type.
 - The sidebar collapses to a rail of panel buttons with counts.
 - A launched order leaves its panel.
 
-**Done when:** combine/split, collapse of a panel, collapse of the sidebar and filtering all work, and survive a page reload (remember per browser).
+**Done when:** collapse of a panel, collapse of the sidebar and filtering all work; both collapses survive a page reload (remember per browser), the filter text does not.
 
 ### 3. Launching: drag or tap
 
