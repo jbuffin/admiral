@@ -33,9 +33,11 @@ Each item ends with **Done when**: the check an implementation must pass.
 
 ### 1. Fleets and docks come from Admiral's configuration
 
-Admiral's own configuration lists the fleets. Each fleet sets, for each harness it allows (`claude`, `codex`, `copilot`), the executable, extra arguments and environment the harness starts with (for example its own `CLAUDE_CONFIG_DIR`), so work and personal setups never mix. Admiral shows one marina per fleet with one dock per harness. A fleet may set its color; otherwise the first two are blue `#3366E0` and orange `#F28C28`, and further fleets take the next colors in `designs/tokens.json`. How the engineer sets fleets up is open (`docs/open-questions.md`).
+Admiral's own configuration lists the fleets. Each fleet sets, for each harness it allows (`claude`, `codex`, `copilot`), the executable, extra arguments and environment the harness starts with (for example its own `CLAUDE_CONFIG_DIR`), so work and personal setups never mix. Admiral shows one marina per fleet with one dock per harness. A fleet may set its color; otherwise the first two are blue `#3366E0` and orange `#F28C28`, and further fleets take the next colors in `designs/tokens.json`. Fleets also list their search roots (ADR 0009).
 
-**Done when:** adding a fleet or a harness to the configuration and reloading Admiral shows the new marina or dock without code changes; a harness the fleet does not list never appears; a session launched from a dock starts with exactly that fleet's settings for that harness.
+The configuration is `~/.admiral/config.json`, written by `admiral setup` and editable by hand; Admiral watches it (ADR 0010). With no fleets, the land shows an empty "Set up a fleet" marina that opens a terminal running `admiral setup`; the header's fleet count opens it again later. An invalid file keeps the last good configuration and shows a banner with the error. A running ship keeps the settings it launched with.
+
+**Done when:** adding a fleet or a harness to the configuration shows the new marina or dock without a reload or code changes; a first run with no configuration can be set up entirely from the browser; a harness the fleet does not list never appears; a session launched from a dock starts with exactly that fleet's settings for that harness.
 
 ### 2. Orders sidebar
 
@@ -60,13 +62,13 @@ Admiral's own configuration lists the fleets. Each fleet sets, for each harness 
 The dialog shows the fleet's color in its header, the harness flag, the order's ID and title, and the choices:
 
 - **Commodore** (default, labeled "Task force"): launches the session on Commodore, which plans, assembles teammates and sees it through to a merged PR.
-- **Configured skills** (Wayfinder, Triage in the mockup): a list the engineer can edit ("Edit skill list"), kept in Admiral's configuration.
-- **Custom skill**: a text field with type-ahead over the skills installed for that harness and fleet. Arrow keys move, Enter picks, Escape closes; tapping a row picks it. If nothing matches, the session launches with the name exactly as typed.
+- **Favorite skills** (Wayfinder, Triage in the mockup): up to five skills the engineer starred in the type-ahead, shown on every dock where they are installed. Favorites are global by skill name and kept in Admiral's configuration. Starring a sixth is refused ("Unstar one first"). The mockup's "Edit skill list" goes away. Commodore is always shown and never counts; if it is not found on a dock it carries a "not found" note and still launches.
+- **Custom skill**: a text field with type-ahead over the skills installed for that harness and fleet, each row with a star. Arrow keys move, Enter picks, Escape closes; tapping a row picks it. If nothing matches, the session launches with the name exactly as typed.
 - **Hoist sails** launches; **Stay in port** cancels.
 
 Hoist sails starts the dock's harness in the background with the fleet's settings, in the order's repository checkout, on the chosen skill with the order's URL as the launch prompt.
 
-Installed skills come from the places each harness loads skills from, listed in `docs/architecture.md` (for Claude Code: the fleet's `CLAUDE_CONFIG_DIR/skills`, the project's `.claude/skills`, and enabled plugins).
+Installed skills come from the places each harness loads skills from, listed in `docs/architecture.md` (for Claude Code: the fleet's `CLAUDE_CONFIG_DIR/skills`, the project's `.claude/skills`, and enabled plugins), read with the fleet's environment and the chosen directory each time launch orders opens. A skill is `<dir>/<name>/SKILL.md`.
 
 **Done when:** each choice launches the session with that skill; the type-ahead lists real installed skills for the chosen fleet and harness; keyboard and touch both work.
 
