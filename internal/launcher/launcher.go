@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/jbuffin/admiral/internal/config"
 )
@@ -20,6 +21,10 @@ import (
 // maxCommand keeps one tmux invocation under the size tmux's client protocol
 // carries in a single message (16 KiB).
 const maxCommand = 12000
+
+// maxMessage is what one tmux client message holds; the harness's command line
+// goes in a single one (respawn-pane), so a longer one cannot be launched.
+const maxMessage = 15000
 
 // Request is a launch order from the UI.
 type Request struct {
@@ -123,6 +128,9 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		return nil, refuse(http.StatusBadRequest, "unknown harness %q", req.Harness)
 	}
 	env := l.shipEnv(dock)
+	if n := commandSize(argv); n > maxMessage {
+		return nil, refuse(http.StatusBadRequest, "the order is too long to launch: its command line is %d bytes and tmux carries at most %d", n, maxMessage)
+	}
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -142,6 +150,14 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	return out, nil
 }
 
+func commandSize(argv []string) int {
+	n := 0
+	for _, a := range argv {
+		n += len(a) + 1
+	}
+	return n
+}
+
 // skillName is the skill's name without its / or $ prefix; "" for Just launch.
 func skillName(s Skill) (string, error) {
 	switch s.Kind {
@@ -150,11 +166,14 @@ func skillName(s Skill) (string, error) {
 	case "none":
 		return "", nil
 	case "skill":
-		name := strings.TrimPrefix(strings.TrimPrefix(s.Name, "/"), "$")
+		name := s.Name
+		if strings.HasPrefix(name, "/") || strings.HasPrefix(name, "$") {
+			name = name[1:] // one prefix, not both
+		}
 		if name == "" {
 			return "", refuse(http.StatusBadRequest, "skill name is empty")
 		}
-		if strings.ContainsAny(name, " \t\r\n") || strings.TrimSpace(name) != name {
+		if strings.IndexFunc(name, unicode.IsSpace) >= 0 {
 			return "", refuse(http.StatusBadRequest, "skill name %q contains whitespace", s.Name)
 		}
 		return name, nil

@@ -186,7 +186,7 @@ func (h *Host) Run(ctx context.Context) {
 }
 
 func (h *Host) connect(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, h.tmux, "-S", h.sock, "-C", "new-session", "-A", "-s", Internal,
+	cmd := exec.CommandContext(ctx, h.tmux, "-S", h.sock, "-u", "-C", "new-session", "-A", "-s", Internal,
 		"tail", "-f", "/dev/null")
 	cmd.Env = h.env
 	stdin, err := cmd.StdinPipe()
@@ -219,14 +219,6 @@ func (h *Host) connect(ctx context.Context) error {
 		_ = cmd.Wait()
 	}()
 
-	// The command that started the client has a reply of its own, first.
-	select {
-	case <-p.replies:
-	case err := <-parsed:
-		return fmt.Errorf("tmux exited: %v", err)
-	case <-time.After(10 * time.Second):
-		return fmt.Errorf("tmux did not start")
-	}
 	hook, err := h.bellHook()
 	if err != nil {
 		return err

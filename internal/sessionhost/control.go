@@ -7,7 +7,10 @@ import (
 	"strings"
 )
 
-// A control-mode client prints one block per command it was given, in order:
+// A control-mode client prints one block per command it was given, in order.
+// The flags field of %begin is 1 for a block that answers a command this client
+// sent and 0 for any other (the command that started it, a hook's output), so
+// only flag-1 blocks are replies:
 //
 //	%begin <time> <number> <flags>
 //	...output lines...
@@ -34,18 +37,23 @@ func (p *parser) run(r io.Reader) error {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	var block []string
-	in := false
+	in, mine := false, false
 	for sc.Scan() {
 		line := sc.Text()
 		switch {
 		case !in && strings.HasPrefix(line, "%begin "):
-			in, block = true, nil
+			f := strings.Fields(line)
+			in, block, mine = true, nil, len(f) == 4 && f[3] == "1"
 		case in && strings.HasPrefix(line, "%end "):
 			in = false
-			p.replies <- reply{lines: block}
+			if mine {
+				p.replies <- reply{lines: block}
+			}
 		case in && strings.HasPrefix(line, "%error "):
 			in = false
-			p.replies <- reply{lines: block, err: errors.New(strings.Join(block, "\n"))}
+			if mine {
+				p.replies <- reply{lines: block, err: errors.New(strings.Join(block, "\n"))}
+			}
 		case in:
 			block = append(block, line)
 		case strings.HasPrefix(line, "%"):

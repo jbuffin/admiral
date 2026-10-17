@@ -49,9 +49,11 @@ func claudeSettings() any {
 // Copilot: a plugin folder with a manifest and hooks.json.
 // hooks.json: https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-hooks-reference
 // (version 1, camelCase events, `bash` command, regex `matcher` on the tool
-// name or notification type). The plugin manifest's format is not in that
-// page: plugin.json with name, description and version is the common shape and
-// is unconfirmed against an official source.
+// name or notification type). The plugin layout is the legacy one of
+// https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference:
+// plugin.json at the plugin root (only `name` is required) and hooks.json
+// beside it. That page does not say what --plugin-dir expects, so loading a
+// plugin from a directory is unconfirmed against a real Copilot.
 func copilotHooks() any {
 	entry := func(matcher, state string) map[string]any {
 		e := map[string]any{"type": "command", "bash": hookCommand(state)}
