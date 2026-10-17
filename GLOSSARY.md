@@ -11,18 +11,18 @@ The agent CLI a session runs in: Claude Code, Codex CLI or GitHub Copilot CLI.
 _Avoid_: agent, CLI, tool
 
 **Skill**:
-What a session starts on, named in the harness's launch prompt with the order's URL (`/commodore <url>` in Claude Code).
+What a session starts on, named in the harness's launch prompt with the order's text (`/commodore <text>` in Claude Code).
 
 **Commodore**:
 The default skill: it plans the work, assembles a task force of teammates and sees it through to a merged PR. Admiral starts it like any other skill.
 _Avoid_: Commodore Launcher (a separate CLI Admiral does not use)
 
 **Order**:
-One item from a task source, shown as a card in the Orders sidebar, not yet launched. Launching an order puts a ship to sea.
+One item from a task source, shown as a card in the Orders sidebar, not yet launched: freeform text, a URL or anything else, handed to the chosen skill as it is. Launching an order puts a ship to sea.
 _Avoid_: job, ticket, card (in code)
 
 **Task source**:
-A plugin that supplies orders (GitHub issues and PRs first; Jira, Linear and others later). Each source contributes one or more panels.
+A plugin that supplies orders: a freeform list the engineer writes first, then GitHub issues and PRs, Jira, Linear and others. Each source contributes one or more panels.
 _Avoid_: provider, integration, feed
 
 **Panel**:

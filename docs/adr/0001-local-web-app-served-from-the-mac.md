@@ -17,4 +17,6 @@ Admiral is a web app served by a small local process on the Mac. The engineer op
 
 ## Consequences
 
-The server bridges terminals to the browser, which is remote code execution by design. It listens on localhost by default; listening on the LAN is an explicit opt-in, and non-local browsers must pair or present a token. The UI must be responsive and touch-first.
+The server bridges terminals to the browser, which is remote code execution by design. It listens on the LAN by default, and every non-local browser must present a token: the server prints its URL with the token at startup, and opening it once sets a cookie. There is no pairing flow. The UI must be responsive and touch-first.
+
+Revised by [LAN access with a startup token](https://github.com/jbuffin/admiral/issues/23): this ADR first made LAN access an opt-in, with pairing or a token.
