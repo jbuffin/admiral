@@ -61,6 +61,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 .ln-tool{color:#6FE3C8}
 .ln-ask{color:#14304A;background:#FFC23D;border-radius:6px;padding:6px 10px;margin:4px 0}
 .ln-you{color:#FFC23D}
+.ln-err{color:#FF9A7A}
 .key{transition:background-color .12s ease}
 .key:hover{background-color:#2A5579 !important}
 .term-in::placeholder{color:#5F7F99}
@@ -253,7 +254,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <span class="ping" style="position: absolute; left: 4px; top: -8px; width: 30px; height: 30px; border-radius: 50%; background-color: #FF7A59; border: 2.5px solid #14304A; display: flex; align-items: center; justify-content: center; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 18px; color: #14304A">!</span>
 </sc-if>
 <sc-if value="{{ship.done}}" hint-placeholder-val="{{ false }}">
-<span style="position: absolute; left: 4px; top: -4px; width: 28px; height: 28px; border-radius: 50%; background-color: #9BE08A; border: 2.5px solid #14304A; display: flex; align-items: center; justify-content: center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>
+<span style="position: absolute; left: 4px; top: -4px; width: 28px; height: 28px; border-radius: 50%; background-color: #C2412A; border: 2.5px solid #14304A; display: flex; align-items: center; justify-content: center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FFFDF6" stroke-width="4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></span>
 </sc-if>
 </span>
 <span style="{{ship.plaqueStyle}}">
@@ -374,13 +375,21 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <sc-for list="{{bridge.lines}}" as="line" hint-placeholder-count="6">
 <div class="{{line.cls}}">{{line.t}}</div>
 </sc-for>
+<sc-if value="{{bridge.live}}" hint-placeholder-val="{{ true }}">
 <form onSubmit="{{send}}" style="display: flex; align-items: center; gap: 8px; margin-top: 4px">
 <label for="adm-cmd" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Input to {{bridge.focusName}}</label>
 <span aria-hidden="true" style="color: #FFC23D; font-weight: 600">❯</span>
 <input id="adm-cmd" class="term-in" value="{{draft}}" onChange="{{onDraft}}" autocomplete="off" spellcheck="false" placeholder="type here and press Enter" style="flex: 1 1 auto; min-width: 0; height: 32px; padding: 0; border: 0; background: none; color: #FFC23D; font-family: 'JetBrains Mono', monospace; font-size: 13.5px; outline: none; caret-color: #FFC23D">
 </form>
+</sc-if>
 </div>
 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; background-color: #14304A; border-top: 3px solid #0B1F33">
+<sc-if value="{{bridge.anchored}}" hint-placeholder-val="{{ false }}">
+<button type="button" class="press" onClick="{{dismiss}}" style="height: 40px; padding: 0 14px; border-radius: 10px; border: 2.5px solid #0B1F33; background-color: #FFF6E3; color: #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 14px; box-shadow: 0 3px 0 #0B1F33">Dismiss</button>
+<span style="flex: 1 1 auto"></span>
+<span style="font-size: 12px; color: #9DB8CF">The harness exited. This is its last screen.</span>
+</sc-if>
+<sc-if value="{{bridge.live}}" hint-placeholder-val="{{ true }}">
 <sc-if value="{{bridge.asking}}" hint-placeholder-val="{{ false }}">
 <button type="button" class="press" onClick="{{answerYes}}" style="height: 40px; padding: 0 14px; border-radius: 10px; border: 2.5px solid #0B1F33; background-color: #9BE08A; color: #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 14px; box-shadow: 0 3px 0 #0B1F33">Approve · y</button>
 <button type="button" class="press" onClick="{{answerNo}}" style="height: 40px; padding: 0 14px; border-radius: 10px; border: 2.5px solid #0B1F33; background-color: #FF9A7A; color: #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 14px; box-shadow: 0 3px 0 #0B1F33">Deny · n</button>
@@ -391,6 +400,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </sc-for>
 <span style="flex: 1 1 auto"></span>
 <span style="font-size: 12px; color: #9DB8CF">Keys go straight to the session</span>
+</sc-if>
 </div>
 </section>
 </div>
@@ -573,7 +583,7 @@ class Component extends DCLogic {
       { id: 's3', name: 'Brass Kettle', task: { id: 'admiral#1', title: 'Scaffold the Admiral server' }, yard: 'home:claude', skill: 'Commodore', status: 'attention', bot: B[2],
         ask: 'Teammate schema wants to run a migration on the dev database. Approve? (y/n)',
         subs: [{ id: 's3-a', name: 'schema', job: 'Model fleets, docks and ships', bot: B[3] }, { id: 's3-b', name: 'api', job: 'Session attach endpoint', bot: B[0] }] },
-      { id: 's4', name: 'Little Bramble', task: { id: 'MOB-1166', title: 'Crash report breadcrumbs' }, yard: 'work:codex', skill: 'Wayfinder', status: 'done', bot: B[3], subs: [] },
+      { id: 's4', name: 'Little Bramble', task: { id: 'MOB-1166', title: 'Crash report breadcrumbs' }, yard: 'work:codex', skill: 'Wayfinder', status: 'done', exit: 1, bot: B[3], subs: [] },
       { id: 's5', name: "Gull's Errand", task: { id: 'LIN-19', title: 'Draft the changelog' }, yard: 'home:codex', skill: 'release-notes', status: 'working', bot: B[4], subs: [] }
     ];
   }
@@ -746,7 +756,7 @@ class Component extends DCLogic {
       L.push({ k: 'tool', t: '▸ exploring the codebase' });
     }
     if (sh.status === 'attention') L.push({ k: 'ask', t: sh.ask || 'Waiting on you.' });
-    else if (sh.status === 'done') { L.push({ k: 'tool', t: '✓ pull request opened · checks green' }); L.push({ k: 'agent', t: 'Mission complete. Standing by in port.' }); }
+    else if (sh.status === 'done') { L.push({ k: 'err', t: 'Error: stream disconnected before completion' }); L.push({ k: 'sys', t: 'Pane is dead (status ' + sh.exit + ')' }); }
     else L.push({ k: 'agent', t: 'Underway.' });
     return L;
   }
@@ -857,7 +867,7 @@ class Component extends DCLogic {
       const pl = s.place[sh.id];
       const attn = sh.status === 'attention';
       const done = sh.status === 'done';
-      const statusText = attn ? 'needs your attention' : done ? 'mission complete' : 'underway';
+      const statusText = attn ? 'needs your attention' : done ? 'anchored, exited ' + sh.exit : 'underway';
       return {
         id: sh.id, name: sh.name, task: sh.task, skill: sh.skill, bot: sh.bot,
         harness: h.name, fleetName: f.name, fleetColor: f.color, flag: h.flag, flagInk: h.ink, mono: h.mono,
@@ -868,7 +878,7 @@ class Component extends DCLogic {
         delay: '-' + (i * 0.8).toFixed(1) + 's',
         flagCls: attn ? 'flag frantic' : 'flag wave',
         attn, done,
-        label: done ? '✓ ' + sh.task.id + ' · docked' : sh.task.id + ' · ' + sh.skill,
+        label: done ? sh.task.id + ' · exited ' + sh.exit : sh.task.id + ' · ' + sh.skill,
         plaqueStyle: 'display: block; margin-top: -2px; padding: 3px 8px; max-width: 140px; border-radius: 9px; background-color: ' + (attn ? '#FFD9CC' : '#FFF6E3') + '; border: 2.5px solid ' + (attn ? '#C2412A' : '#14304A') + '; box-shadow: 0 2px 0 #14304A',
         aria: 'Board ' + sh.name + ', ' + h.name + ' in ' + f.name + ', ' + statusText,
         open: () => { if (!self.recentDrag()) self.put({ open: sh.id, focus: 'lead', draft: '' }); },
@@ -905,8 +915,9 @@ class Component extends DCLogic {
           ship: sh, agents, lines, focusName: focusAgent.label,
           crewCount: list.length,
           asking: sh.attn && focusAgent.id === 'lead',
-          statusText: sh.attn ? 'Needs you' : sh.done ? 'Docked' : 'Underway',
-          statusStyle: 'font-family: Bricolage Grotesque, sans-serif; font-weight: 700; font-size: 13px; padding: 4px 12px; border-radius: 999px; border: 2px solid #14304A; color: #14304A; background-color: ' + (sh.attn ? '#FF7A59' : sh.done ? '#9BE08A' : '#6FE3C8')
+          live: !sh.done, anchored: sh.done,
+          statusText: sh.attn ? 'Needs you' : sh.done ? 'Anchored · exit ' + rawSh.exit : 'Underway',
+          statusStyle: 'font-family: Bricolage Grotesque, sans-serif; font-weight: 700; font-size: 13px; padding: 4px 12px; border-radius: 999px; border: 2px solid #14304A; color: #14304A; background-color: ' + (sh.attn ? '#FF7A59' : sh.done ? '#FF9A7A' : '#6FE3C8')
         };
       }
     }
@@ -968,6 +979,7 @@ class Component extends DCLogic {
       answerYes: () => self.sendRaw('y', { k: 'tool', t: '✓ approved. Carrying on.' }),
       answerNo: () => self.sendRaw('n', { k: 'agent', t: 'Understood. Trying another approach.' }),
       closeBridge: () => self.put({ open: null, draft: '' }),
+      dismiss: () => self.put((st) => ({ open: null, draft: '', ships: st.ships.filter((x) => x.id !== st.open) })),
       draft: s.draft || '',
       onDraft: (e) => self.put({ draft: e.target.value }),
       send: (e) => self.send(e),

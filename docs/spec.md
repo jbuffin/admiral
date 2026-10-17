@@ -79,7 +79,7 @@ When launched, the ship moored at that dock pulls away, sails toward the marina 
 ### 6. Open water
 
 - Ships sail to a free spot in their fleet's area: Work toward the top, Home toward the bottom (generally, not a hard lane; no dividing line or label).
-- Ships bob gently and their flags ripple. Docked (finished) ships sit still with a green check.
+- Ships bob gently and their flags ripple. When a ship's harness exits cleanly, the ship shows a green check, sails off and disappears. If it exits with an error, the ship is anchored: it sits still with a red mark and the exit code on its plaque until the engineer dismisses it from the bridge, which opens read-only on its last screen (ADR 0008).
 - Any ship (with its crew) can be dragged to a new spot and stays there; a tap without movement boards it.
 - Each ship has a plaque: generated ship name, then task ID and skill.
 
