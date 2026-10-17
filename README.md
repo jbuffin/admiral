@@ -12,5 +12,4 @@ This repo is in the design phase. No code yet.
 - [Admiral MVP spec](https://github.com/jbuffin/admiral/issues/45): what the MVP does, as user stories, implementation decisions and testing decisions.
 - `docs/architecture.md`: an early proposal for the build, superseded by the spec and the ADRs.
 - `docs/adr/`: decisions.
-- `docs/open-questions.md`: what still needs deciding, each tracked as a GitHub issue.
 - `GLOSSARY.md`: the words Admiral uses.
