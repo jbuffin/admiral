@@ -62,7 +62,7 @@ The configuration is `~/.admiral/config.json`, written by `admiral setup` and ed
 The dialog shows the fleet's color in its header, the harness flag, the order's ID and title, and the choices:
 
 - **Commodore** (default, labeled "Task force"): launches the session on Commodore, which plans, assembles teammates and sees it through to a merged PR.
-- **Favorite skills** (Wayfinder, Triage in the mockup): up to five skills the engineer starred in the type-ahead, shown on every dock where they are installed. Favorites are global by skill name and kept in Admiral's configuration. Starring a sixth is refused ("Unstar one first"). The mockup's "Edit skill list" goes away. Commodore is always shown and never counts; if it is not found on a dock it carries a "not found" note and still launches.
+- **Favorite skills** (Wayfinder, Triage in the mockup): up to five skills the engineer starred in the type-ahead, shown on every dock where they are installed. Favorites are global by skill name and kept in Admiral's configuration. Starring a sixth is refused ("Unstar one first"). The mockup's "Edit skill list" goes away. Commodore is always shown and never counts; if the skill index does not find it on a dock, it shows disabled with the tooltip "Commodore not found" (shown on tap on iPad), cannot launch, and the default moves to the first favorite, or to Just launch.
 - **Custom skill**: a text field with type-ahead over the skills installed for that harness and fleet, each row with a star. Arrow keys move, Enter picks, Escape closes; tapping a row picks it. If nothing matches, the session launches with the name exactly as typed.
 - **Hoist sails** launches; **Stay in port** cancels.
 
