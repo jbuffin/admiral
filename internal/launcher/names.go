@@ -29,7 +29,8 @@ var names = []string{
 	"Gaff Gull", "Halyard Hog", "Inlet Iguana", "Jib Jaguar", "Knarr Kid", "Lee Lemur", "Mooring Mole",
 	"Nautilus Nibbler", "Oilskin Ocelot", "Painter Panda", "Quarterdeck Quail", "Reef Rabbit", "Shackle Sloth",
 	"Topsail Tapir", "Underway Urial", "Vang Vulture", "Windlass Wolf", "Yawl Yapok", "Zenith Zorilla",
-	"Pilot Pup", "Galley Goat", "Lanyard Lamb", "Binnacle Bat",
+	"Pilot Pup", "Galley Goat", "Lanyard Lamb", "Binnacle Bat", "Cabin Cricket", "Dinghy Dove", "Skerry Skink",
+	"Gunwale Gnu", "Sloop Swift", "Pontoon Pony", "Tern Tackle",
 }
 
 var roman = []struct {
