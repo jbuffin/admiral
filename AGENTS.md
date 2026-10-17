@@ -26,3 +26,5 @@ Before writing code, read in this order:
 4. `docs/architecture.md`, `docs/adr/` and `docs/open-questions.md`. Do not build a part that depends on an open question until it is resolved and recorded.
 
 Admiral launches sessions itself (ADR 0003): it never calls `commodore` and never reads or writes `~/.commodore-launcher/`. Touch must work on iPad Safari. Use the harnesses' official logos on flags; never redraw them.
+
+Test only what is likely to break: state logic, protocol handling, and the drag and bridge flows. Don't test markup, styling or one-line glue code, and don't write a test for every small scenario. Prefer a few end-to-end checks over many unit tests. This applies to the server as well as the UI.
