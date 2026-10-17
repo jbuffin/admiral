@@ -1,23 +1,26 @@
 # Open questions
 
-Things the design assumes that Commodore Launcher does not support today, or that nobody has decided yet. Resolve each before building the part that depends on it, and record the answer (an ADR, or a `GLOSSARY.md` entry).
+Things the design leaves undecided. Each is tracked as a GitHub issue. Resolve each before building the part that depends on it, and record the answer (an ADR, or a `GLOSSARY.md` entry).
 
-1. **Launching with a skill other than Commodore.** `commodore open` always starts the harness on its Commodore invocation (`/commodore <url>` for Claude Code). Launch orders offer Wayfinder, Triage and any custom skill. Options: a launcher flag such as `--skill NAME`, or Admiral starting the harness itself for non-Commodore skills (which would bypass the launcher's profile and session handling, so it is not recommended).
+1. **Where a ship's session runs** ([#12](https://github.com/jbuffin/admiral/issues/12)). How does Admiral find an order's repository on disk (configured search roots, an explicit list), what happens when it isn't there (clone after asking, refuse), and does each ship get its own git worktree so ships on the same repository don't collide?
 
-2. **Headless sessions.** See ADR 0002. Until the launcher has a tmux host, Admiral can only attach to sessions it started itself.
+2. **Setting up fleets** ([#13](https://github.com/jbuffin/admiral/issues/13)). Editing a config file, a settings screen, or a first-run setup that detects installed harnesses and writes the file? Does a running ship keep the settings it launched with when its fleet changes?
 
-3. **Orders that are not GitHub issues or PRs.** `commodore open` takes only a GitHub issue or PR URL. Jira and Linear orders need either a GitHub issue to point at, or launcher support for other task kinds.
+3. **Orders that are not GitHub issues or PRs** ([#4](https://github.com/jbuffin/admiral/issues/4)). A GitHub order names its repository; a Jira or Linear ticket doesn't. Which repository does such an order run in, and what URL or text goes in the launch prompt?
 
-4. **Crew boats.** How does Admiral learn a session's teammates and subagents? Candidates: Commodore reporting its task force somewhere machine-readable; reading the harness transcript (Claude Code writes `<config>/projects/<dir>/<id>.jsonl`); tmux panes Commodore opens. Each crew boat also needs its own terminal stream for the bridge.
+4. **Crew boats** ([#5](https://github.com/jbuffin/admiral/issues/5)). How does Admiral learn a session's teammates and subagents? Candidates: Commodore reporting its task force somewhere machine-readable; reading the harness transcript (Claude Code writes `<config>/projects/<dir>/<id>.jsonl`); tmux panes Commodore opens. Each crew boat also needs its own terminal stream for the bridge.
 
-5. **Needs you.** How does Admiral know a session is waiting on the engineer? Candidates: harness hooks (Claude Code `Notification` / `Stop` hooks) writing a marker; transcript state; terminal idle plus a prompt pattern (fragile; the launcher's ADR 0022 moved away from screen reading for this reason).
+5. **Needs you** ([#6](https://github.com/jbuffin/admiral/issues/6)). How does Admiral know a session is waiting on the engineer? Candidates: harness hooks (Claude Code `Notification` / `Stop` hooks) writing a marker; transcript state; terminal idle plus a prompt pattern (fragile: screen reading breaks whenever a harness changes its UI).
 
-6. **Finished ships.** When is a ship "docked" (mission complete): the harness exited, the PR merged, or Commodore said so? Should docked ships fade away after a while or stay until dismissed?
+6. **Finished ships** ([#7](https://github.com/jbuffin/admiral/issues/7)). When is a ship "docked" (mission complete): the harness exited, the PR merged, or Commodore said so? Should docked ships fade away after a while or stay until dismissed? Can a docked ship be relaunched, resuming its conversation where the harness supports it (Claude Code and Copilot CLI do; Codex CLI doesn't)?
 
-7. **Ship names.** The prototype generates names (Saltpaw, Morning Tern). Keep them stable per task, and decide whether the engineer can rename.
+7. **Ship names** ([#8](https://github.com/jbuffin/admiral/issues/8)). The prototype generates names (Saltpaw, Morning Tern). Keep them stable per task, and decide whether the engineer can rename.
 
-8. **Configured skill list.** Where does the list behind "Edit skill list" live: Admiral's own settings, or the launcher's config?
+8. **Harness logos** ([#11](https://github.com/jbuffin/admiral/issues/11)). Which official files to use for Claude Code, GitHub Copilot CLI and Codex CLI, and their usage rules.
 
-9. **Fleet colors for more than two profiles.** `designs/tokens.json` has a sequence; confirm the engineer can override per profile.
+## Resolved
 
-10. **Harness logos.** Which official files to use for Claude Code, GitHub Copilot CLI and Codex CLI, and their usage rules.
+- **Launching with a skill other than Commodore** ([#2](https://github.com/jbuffin/admiral/issues/2)). Admiral starts the harness itself with the chosen skill in the launch prompt (ADR 0003, `docs/architecture.md`).
+- **Headless sessions** ([#3](https://github.com/jbuffin/admiral/issues/3)). Each ship runs in a tmux session on Admiral's own socket (ADR 0002).
+- **Configured skill list** ([#9](https://github.com/jbuffin/admiral/issues/9)). It lives in Admiral's configuration (`docs/spec.md` §4).
+- **Fleet colors for more than two fleets** ([#10](https://github.com/jbuffin/admiral/issues/10)). A fleet may set its color in Admiral's configuration; otherwise it takes the next color in `designs/tokens.json` (`docs/spec.md` §1).

@@ -1,13 +1,24 @@
 # Admiral
 
-Admiral is a visual dashboard on top of Commodore Launcher. It shows the engineer's work queues, lets them hand a task to a harness under a profile by dragging it onto a dock, and shows every running session as a ship they can board to read and type into its terminal.
+Admiral is a visual dashboard that launches coding-agent sessions. It shows the engineer's work queues, lets them hand an order to a harness in one of their fleets by dragging it onto a dock, runs that session in the background, and shows every running session as a ship they can board to read and type into its terminal.
 
-Admiral reuses Commodore Launcher's vocabulary for everything the launcher already names (see its `GLOSSARY.md`). The naval words below are Admiral's names for those concepts on screen. Use the launcher word in code that talks to the launcher, and the Admiral word in UI copy and UI code.
+Use these words in UI copy and in code alike.
 
 ## Language
 
+**Harness**:
+The agent CLI a session runs in: Claude Code, Codex CLI or GitHub Copilot CLI.
+_Avoid_: agent, CLI, tool
+
+**Skill**:
+What a session starts on, named in the harness's launch prompt with the order's URL (`/commodore <url>` in Claude Code).
+
+**Commodore**:
+The default skill: it plans the work, assembles a task force of teammates and sees it through to a merged PR. Admiral starts it like any other skill.
+_Avoid_: Commodore Launcher (a separate CLI Admiral does not use)
+
 **Order**:
-One item from a task source, shown as a card in the Orders sidebar, not yet launched. Launching an order turns it into a launcher **Task**.
+One item from a task source, shown as a card in the Orders sidebar, not yet launched. Launching an order puts a ship to sea.
 _Avoid_: job, ticket, card (in code)
 
 **Task source**:
@@ -19,18 +30,18 @@ A collapsible group of orders in the sidebar. A panel shows one task source, or 
 _Avoid_: column, list
 
 **Fleet**:
-A Commodore Launcher **Profile** as Admiral shows it (Work Fleet, Home Fleet). Fleets come only from the launcher's configuration; Admiral never creates one on its own.
-_Avoid_: workspace, account, group
+A named setup such as Work Fleet or Home Fleet. It decides which harnesses its docks run and, for each, the executable, configuration directory and environment, so work and personal setups never mix. Fleets come only from Admiral's configuration.
+_Avoid_: profile, workspace, account, group
 
 **Fleet color**:
 The color that identifies a fleet everywhere: its marina sign, the stripe on each of its ships and crew boats, and the launch orders header.
 
 **Marina**:
-The harbor on the land side of the screen that belongs to one fleet. It holds one dock per harness the profile allows.
+The harbor on the land side of the screen that belongs to one fleet. It holds one dock per harness the fleet allows.
 _Avoid_: shipyard, yard (older design names)
 
 **Dock**:
-One harness within one fleet (Work Fleet's Claude dock). Dropping an order on a dock opens launch orders for that profile and harness. A ship waits moored at each dock.
+One harness within one fleet (Work Fleet's Claude dock). Dropping an order on a dock opens launch orders for that fleet and harness. A ship waits moored at each dock.
 _Avoid_: slot, target
 
 **Launch orders**:
@@ -38,7 +49,7 @@ The dialog that opens when an order is dropped on a dock. The engineer chooses w
 _Avoid_: launch menu, modal
 
 **Ship**:
-One **Session** as Admiral shows it. Wooden hull, a stripe in its fleet color, the harness logo on its flag, a square bot as captain.
+One running harness session, launched from a dock and run in its own tmux session (ADR 0002). Wooden hull, a stripe in its fleet color, the harness logo on its flag, a square bot as captain.
 _Avoid_: boat (for the lead), agent, card
 
 **Crew boat**:
