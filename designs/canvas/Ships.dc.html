@@ -29,7 +29,7 @@ body{margin:0}
 <span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 15px; color: #14304A">Motion</span>
 <span>Underway: slow bob, flag ripples.</span>
 <span>Needs you: shakes, flag waves fast, a chime plays.</span>
-<span>Docked: still water, check badge.</span>
+<span>Anchored: still water, red mark, exit code on the plaque.</span>
 </div>
 </div>
 
@@ -82,7 +82,7 @@ body{margin:0}
 <span style="position: absolute; left: 20px; top: 4px; width: 32px; height: 32px; border-radius: 50%; background-color: #FF7A59; border: 2.5px solid #14304A; display: flex; align-items: center; justify-content: center; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 19px">!</span>
 </sc-if>
 <sc-if value="{{it.done}}" hint-placeholder-val="{{ false }}">
-<span style="position: absolute; left: 20px; top: 6px; width: 30px; height: 30px; border-radius: 50%; background-color: #9BE08A; border: 2.5px solid #14304A; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>
+<span style="position: absolute; left: 20px; top: 6px; width: 30px; height: 30px; border-radius: 50%; background-color: #C2412A; border: 2.5px solid #14304A; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFFDF6" stroke-width="4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></span>
 </sc-if>
 </div>
 <span style="padding: 4px 12px; border-radius: 10px; background-color: #FFF6E3; border: 2.5px solid #14304A; box-shadow: 0 2px 0 #14304A; text-align: center">
@@ -113,7 +113,7 @@ class Component extends DCLogic {
         { title: 'State', items: [
           ship({ title: 'Underway', caption: 'Working on its task', flag: '#FF7A59', ink: '#14304A', mono: 'Cl' }),
           ship({ title: 'Needs you', caption: 'Shakes and chimes', flag: '#7A5AF0', ink: '#FFFFFF', mono: 'Co', bot: '#FFC23D', attn: true }),
-          ship({ title: 'Docked', caption: 'Mission complete', flag: '#1F3B57', ink: '#FFFFFF', mono: 'Cx', bot: '#9BE08A', fleet: '#F28C28', done: true }),
+          ship({ title: 'Anchored', caption: 'Harness exited with an error', flag: '#1F3B57', ink: '#FFFFFF', mono: 'Cx', bot: '#9BE08A', fleet: '#F28C28', done: true }),
           { isShip: false, isSub: true, attn: false, done: false, title: 'Crew boat', caption: 'Teammate or subagent' }
         ] }
       ]

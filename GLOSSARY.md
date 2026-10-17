@@ -63,6 +63,10 @@ The ocean in the middle of the screen where ships sail once launched. Work Fleet
 A ship whose session cannot move until the engineer does: a question, an approval, or a finished turn waiting for the next prompt. It shakes, waves its flag fast and plays a chime.
 _Avoid_: alert, blocked, error
 
+**Anchored**:
+A ship whose harness has exited. A clean exit sails off and disappears; a ship whose harness exited with an error stays anchored, still in open water with a red mark, until the engineer dismisses it.
+_Avoid_: docked, finished, done
+
 **Bridge**:
 The attached-terminal view that opens when the engineer taps a ship: the session's live terminal output, a prompt to type into, key buttons, and the flotilla.
 _Avoid_: modal, detail view
