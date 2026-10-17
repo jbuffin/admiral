@@ -13,7 +13,7 @@ A starting point for the build, not a decision record. The decisions it rests on
      ├── fleet config ───── ~/.admiral/config.json   (fleets, docks, harness settings, skill list)
      ├── state ──────────── ~/.admiral/state.db      (ships, names, positions, conversation IDs)
      ├── task sources ───── plugins: GitHub (gh), later Jira, Linear …
-     ├── repo finder ────── order → local checkout
+     ├── repo finder ────── fleet search roots → checkouts
      ├── skill index ────── skill directories per harness and fleet
      ├── session host ───── one tmux session per ship on Admiral's own socket (ADR 0002)
      └── terminal bridge ── tmux pane ⇄ WebSocket ⇄ xterm.js in the browser
@@ -25,7 +25,7 @@ The paths under `~/.admiral/` are proposals.
 
 - **Server.** One small local process the engineer starts (and can run at login). It serves the UI and a WebSocket. It binds to the LAN interface only when the engineer opts in, and requires a token or a pairing step before a non-local browser can connect, because a terminal bridge is remote code execution by design (ADR 0001).
 - **Fleets and docks.** Admiral's own config: each fleet has a name, an optional color, and its harnesses, each with an executable, extra arguments and environment (for example `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`). Watch the file and push changes to the UI. How the engineer edits it is open; see `docs/open-questions.md`.
-- **Repositories.** An order needs a local checkout to run in. For GitHub orders the repository is in the URL; Admiral finds its checkout on disk. Where it looks, whether it clones, and whether each ship gets its own worktree are open questions.
+- **Repositories.** A ship runs in a directory the engineer picks in launch orders from the git checkouts under the fleet's search roots, pre-selected from the order when its URL matches a checkout's remote. No typed paths, no cloning, no worktrees of Admiral's own (ADR 0009).
 - **Launching.** Start the dock's harness in a new tmux session: the fleet's executable, arguments and environment, the checkout as working directory, and the chosen skill with the order's URL as the launch prompt. Each harness names a skill differently (`/name <url>` for Claude Code, `--interactive='/name <url>'` for Copilot CLI, `$name <url>` for Codex CLI); Commodore Launcher's `docs/harnesses.md` records how each was verified. Commodore is the default skill.
 - **Sessions and resume.** Record each ship's task, fleet, harness, skill, tmux session and, where the harness has one, its conversation ID. Claude Code and Copilot CLI can resume a conversation by ID; Codex CLI cannot.
 - **Terminal bridge.** Attach to the ship's tmux pane, stream bytes to the browser over the WebSocket, render with xterm.js, and send keystrokes back. Resize the pane when the bridge resizes.
