@@ -77,20 +77,21 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
+		query := r.URL.Query()
+		tokenOK := a.valid(query.Get("token"))
+		// A GET carrying the token always trades it for the cookie, so the
+		// token never stays in the address bar or history.
+		if tokenOK && !isWS && r.Method == http.MethodGet {
+			a.redirectWithCookie(w, r, query)
+			return
+		}
 		if c, err := r.Cookie(a.cookie); err == nil && a.valid(c.Value) {
 			next.ServeHTTP(w, r)
 			return
 		}
-		query := r.URL.Query()
-		if t := query.Get("token"); t != "" && a.valid(t) {
-			if isWS {
-				next.ServeHTTP(w, r)
-				return
-			}
-			if r.Method == http.MethodGet {
-				a.redirectWithCookie(w, r, query)
-				return
-			}
+		if tokenOK && isWS {
+			next.ServeHTTP(w, r)
+			return
 		}
 		unauthorized(w, r)
 	})

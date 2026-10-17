@@ -50,6 +50,9 @@ func TestNonLocalPeer(t *testing.T) {
 		t.Errorf("cookie: %+v", c)
 	}
 
+	if r := do("GET", "/?token=secret-token", lan, cookie); r.Code != 302 || r.Header().Get("Location") != "/" {
+		t.Errorf("cookie plus token: %d %q, want 302 to /", r.Code, r.Header().Get("Location"))
+	}
 	if r := do("GET", "/", lan, cookie); r.Code != 200 {
 		t.Errorf("cookie alone: %d", r.Code)
 	}
