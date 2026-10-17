@@ -18,15 +18,15 @@ The default skill: it plans the work, assembles a task force of teammates and se
 _Avoid_: Commodore Launcher (a separate CLI Admiral does not use)
 
 **Order**:
-One item from a task source, shown as a card in the Orders sidebar, not yet launched: freeform text, a URL or anything else, handed to the chosen skill as it is. Launching an order puts a ship to sea.
+One item from an order source, shown as a card in the Orders sidebar, not yet launched: freeform text, a URL or anything else, handed to the chosen skill as it is. Launching an order puts a ship to sea.
 _Avoid_: job, ticket, card (in code)
 
-**Task source**:
+**Order source**:
 A plugin that supplies orders: a freeform list the engineer writes first, then GitHub issues and PRs, Jira, Linear and others. Each source contributes one or more panels.
-_Avoid_: provider, integration, feed
+_Avoid_: task source, provider, integration, feed
 
 **Panel**:
-A collapsible group of orders in the sidebar. A panel shows one task source, or several combined; the engineer can combine and split panels.
+A collapsible group of orders in the sidebar. A panel shows one order source, or several combined; the engineer can combine and split panels.
 _Avoid_: column, list
 
 **Fleet**:
