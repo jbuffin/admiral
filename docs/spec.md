@@ -62,10 +62,10 @@ The dialog shows the fleet's color in its header, the harness flag, the order's 
 
 - **Commodore** (default, labeled "Task force"): launches the session on Commodore, which plans, assembles teammates and sees it through to a merged PR.
 - **Favorite skills** (Wayfinder, Triage in the mockup): up to five skills the engineer starred in the type-ahead, shown on every dock where they are installed. Favorites are global by skill name and kept in Admiral's configuration. Starring a sixth is refused ("Unstar one first"). The mockup's "Edit skill list" goes away. Commodore is always shown and never counts; if the skill index does not find it on a dock, it shows disabled with the tooltip "Commodore not found" (shown on tap on iPad), cannot launch, and the default moves to the first favorite, or to Just launch.
-- **Custom skill**: a text field with type-ahead over the skills installed for that harness and fleet, each row with a star. Arrow keys move, Enter picks, Escape closes; tapping a row picks it. If nothing matches, the session launches with the name exactly as typed.
+- **Custom skill**: a text field with type-ahead over the skills installed for that harness and fleet, each row with a star. Arrow keys move, Enter picks, Escape closes; tapping a row picks it. If nothing matches, the session launches with the name as typed, less one leading `/` or `$`; a name with a space is refused ("Skill names have no spaces").
 - **Hoist sails** launches; **Stay in port** cancels.
 
-Hoist sails starts the dock's harness in the background with the fleet's settings, in the order's repository checkout, on the chosen skill with the order's URL as the launch prompt.
+Hoist sails starts the dock's harness in the background with the fleet's settings, in the chosen checkout, with the chosen skill and the order's text as the launch prompt; Just launch sends the text exactly as written (ADR 0013).
 
 Installed skills come from the places each harness loads skills from, listed in `docs/architecture.md` (for Claude Code: the fleet's `CLAUDE_CONFIG_DIR/skills`, the project's `.claude/skills`, and enabled plugins), read with the fleet's environment and the chosen directory each time launch orders opens. A skill is `<dir>/<name>/SKILL.md`.
 
