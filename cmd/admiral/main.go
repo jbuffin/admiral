@@ -62,15 +62,22 @@ func serve(args []string) error {
 	srv := &http.Server{Handler: auth.New(token, port).Middleware(s.Handler())}
 
 	fmt.Printf("Admiral is running at http://127.0.0.1:%s/\n", port)
-	if ip, ok := server.LANIPv4(); ok {
+	bindHost, _, _ := net.SplitHostPort(*listen)
+	ip, hasIP := server.LANIPv4()
+	switch {
+	case bindHost != "" && bindHost != "0.0.0.0" && bindHost != "::":
+		fmt.Printf("On other devices: not reachable, Admiral listens only on %s (http://127.0.0.1:%s/)\n", bindHost, port)
+	case hasIP:
 		fmt.Printf("On other devices: http://%s:%s/?token=%s\n", ip, port, token)
-	} else {
+	default:
 		fmt.Printf("On other devices: no network address found; this Mac is reachable only at http://127.0.0.1:%s/\n", port)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	drained := make(chan struct{})
 	go func() {
+		defer close(drained)
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
@@ -78,8 +85,10 @@ func serve(args []string) error {
 			_ = srv.Close()
 		}
 	}()
-	if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
-		return err
+	err = srv.Serve(ln)
+	if errors.Is(err, http.ErrServerClosed) {
+		<-drained
+		return nil
 	}
-	return nil
+	return err
 }

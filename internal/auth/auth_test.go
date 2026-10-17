@@ -29,6 +29,7 @@ func TestNonLocalPeer(t *testing.T) {
 		return rec
 	}
 	const lan = "192.168.1.50:51000"
+	upgrade := map[string]string{"Upgrade": "websocket", "Connection": "Upgrade"}
 	cookie := map[string]string{"Cookie": "admiral_token_7420=secret-token"}
 
 	if r := do("GET", "/", lan, nil); r.Code != 401 || !strings.Contains(r.Body.String(), "Open the URL Admiral printed") {
@@ -56,14 +57,23 @@ func TestNonLocalPeer(t *testing.T) {
 	if r := do("GET", "/", lan, cookie); r.Code != 200 {
 		t.Errorf("cookie alone: %d", r.Code)
 	}
-	if r := do("GET", "/ws?token=secret-token", lan, nil); r.Code != 200 {
+	if r := do("GET", "/ws?token=secret-token", lan, upgrade); r.Code != 200 {
 		t.Errorf("ws with ?token=: %d (must connect, not redirect)", r.Code)
 	}
-	if r := do("GET", "/ws", lan, nil); r.Code != 401 {
+	if r := do("GET", "/ws", lan, upgrade); r.Code != 401 {
 		t.Errorf("ws without token: %d", r.Code)
 	}
-	if r := do("GET", "/ws", lan, map[string]string{"Host": "vpn.example:7420", "Cookie": cookie["Cookie"]}); r.Code != 200 {
+	if r := do("GET", "/ws", lan, map[string]string{"Upgrade": "WebSocket", "Host": "vpn.example:7420", "Cookie": cookie["Cookie"]}); r.Code != 200 {
 		t.Errorf("non-local, unknown Host, valid token: %d", r.Code)
+	}
+	// A request line like "GET //evil.example/?token=… " must not redirect off-site.
+	req := httptest.NewRequest("GET", "/x?token=secret-token", nil)
+	req.URL.Path = "//evil.example/"
+	req.RemoteAddr = lan
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if loc := rec.Header().Get("Location"); rec.Code != 302 || loc != "/evil.example/" {
+		t.Errorf("open redirect: %d %q, want 302 to /evil.example/", rec.Code, loc)
 	}
 	if r := do("POST", "/api/x", lan, map[string]string{"Origin": "http://evil.example", "Cookie": cookie["Cookie"]}); r.Code != 403 {
 		t.Errorf("foreign Origin: %d", r.Code)

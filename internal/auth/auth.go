@@ -24,7 +24,7 @@ func LoadOrCreateToken(home string) (string, error) {
 	path := filepath.Join(home, "token")
 	if b, err := os.ReadFile(path); err == nil {
 		if t := strings.TrimSpace(string(b)); t != "" {
-			return t, nil
+			return t, os.Chmod(path, 0o600)
 		}
 	} else if !os.IsNotExist(err) {
 		return "", err
@@ -37,7 +37,7 @@ func LoadOrCreateToken(home string) (string, error) {
 	if err := os.WriteFile(path, []byte(token+"\n"), 0o600); err != nil {
 		return "", err
 	}
-	return token, nil
+	return token, os.Chmod(path, 0o600) // WriteFile keeps the mode of a file that already existed
 }
 
 // Auth guards one listener.
@@ -60,7 +60,7 @@ func (a *Auth) valid(candidate string) bool {
 // (WebSocket and non-GET), then the token (non-local peers).
 func (a *Auth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		isWS := r.URL.Path == "/ws"
+		isWS := strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
 		local := isLoopbackPeer(r)
 
 		if local && !hostAllowed(r.Host) {
@@ -103,8 +103,8 @@ func (a *Auth) redirectWithCookie(w http.ResponseWriter, r *http.Request, query 
 		HttpOnly: true, SameSite: http.SameSiteStrictMode,
 	})
 	query.Del("token")
-	target := *r.URL
-	target.RawQuery = query.Encode()
+	// One leading slash only: "//host/..." would redirect off-site.
+	target := url.URL{Path: "/" + strings.TrimLeft(r.URL.Path, "/"), RawQuery: query.Encode()}
 	http.Redirect(w, r, target.String(), http.StatusFound)
 }
 

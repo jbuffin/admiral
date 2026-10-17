@@ -32,6 +32,7 @@ var (
 // instance is one running admiral process.
 type instance struct {
 	Home      string // ADMIRAL_HOME
+	listen    string // the --listen value
 	Port      string
 	LocalURL  string // first printed line's URL
 	LANLine   string // second printed line, verbatim
@@ -105,7 +106,7 @@ func startAdmiral(t *testing.T, home, listen string) *instance {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start %s: %v", bin, err)
 	}
-	in := &instance{Home: home, cmd: cmd, done: make(chan struct{}), stderrBuf: stderr}
+	in := &instance{Home: home, listen: listen, cmd: cmd, done: make(chan struct{}), stderrBuf: stderr}
 	go func() { _ = cmd.Wait(); close(in.done) }()
 	t.Cleanup(in.Stop)
 
@@ -169,12 +170,13 @@ func (in *instance) Stop() {
 	}
 }
 
-// Restart stops the instance and starts a new one on the same home and port,
-// so the token and the cookie name carry over.
+// Restart stops the instance and starts a new one on the same home, host and
+// port, so the token and the cookie name carry over.
 func (in *instance) Restart(t *testing.T) *instance {
 	t.Helper()
 	in.Stop()
-	return startAdmiral(t, in.Home, "0.0.0.0:"+in.Port)
+	host, _, _ := net.SplitHostPort(in.listen)
+	return startAdmiral(t, in.Home, net.JoinHostPort(host, in.Port))
 }
 
 // startLAN starts an instance on 0.0.0.0:<free port> and returns it with a

@@ -26,9 +26,6 @@ func TestS1_StartsPrintsURLsAndServesUI(t *testing.T) {
 	if !strings.Contains(in.LANLine, ":"+in.Port+"/") {
 		t.Fatalf("second line must show the same real port %s, got %q", in.Port, in.LANLine)
 	}
-	if in.LANIP != "" && !tokenFormat.MatchString(in.Token) {
-		t.Fatalf("token %q is not URL-safe with at least 128 bits", in.Token)
-	}
 
 	fi, err := os.Stat(home)
 	if err != nil || fi.Mode().Perm() != 0o700 {
@@ -39,11 +36,12 @@ func TestS1_StartsPrintsURLsAndServesUI(t *testing.T) {
 	if err != nil || fi.Mode().Perm() != 0o600 {
 		t.Fatalf("$ADMIRAL_HOME/token must exist with mode 0600, got %v (%v)", fi, err)
 	}
-	if in.LANIP != "" {
-		b, _ := os.ReadFile(tokenFile)
-		if strings.TrimSpace(string(b)) != in.Token {
-			t.Fatalf("token file %q differs from printed token %q", b, in.Token)
-		}
+	b, _ := os.ReadFile(tokenFile)
+	if !tokenFormat.MatchString(strings.TrimSpace(string(b))) {
+		t.Fatalf("token %q is not URL-safe with at least 128 bits", b)
+	}
+	if in.LANIP != "" && strings.TrimSpace(string(b)) != in.Token {
+		t.Fatalf("token file %q differs from printed token %q", b, in.Token)
 	}
 
 	resp, html := get(t, in.LocalURL+"/", nil)
@@ -151,8 +149,28 @@ func TestS3_LocalNeedsNoToken(t *testing.T) {
 	}
 }
 
-// S4: the token survives a restart, and the old cookie keeps working.
-func TestS4_TokenSurvivesRestart(t *testing.T) {
+// S4: the token survives a restart. The file half needs no LAN address.
+func TestS4_TokenFileSurvivesRestart(t *testing.T) {
+	in := startAdmiral(t, newHome(t), "127.0.0.1:"+freePort(t))
+	read := func() string {
+		b, err := os.ReadFile(filepath.Join(in.Home, "token"))
+		if err != nil {
+			t.Fatalf("token file: %v", err)
+		}
+		return strings.TrimSpace(string(b))
+	}
+	before := read()
+	again := in.Restart(t)
+	if after := read(); after != before || again.Port != in.Port {
+		t.Fatalf("after restart token/port = %q/%s, want %q/%s", after, again.Port, before, in.Port)
+	}
+	if resp, _ := get(t, again.LocalURL+"/", nil); resp.StatusCode != 200 {
+		t.Fatalf("GET / after restart = %d", resp.StatusCode)
+	}
+}
+
+// S4: over the LAN address, the old cookie keeps working after a restart.
+func TestS4_CookieSurvivesRestart(t *testing.T) {
 	in := startLAN(t)
 	cookie := map[string]string{"Cookie": in.cookieName() + "=" + in.Token}
 	if resp, _ := get(t, in.lanURL()+"/", cookie); resp.StatusCode != 200 {

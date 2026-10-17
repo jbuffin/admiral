@@ -21,5 +21,8 @@ func Resolve() (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("create %s: %w", dir, err)
 	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return "", fmt.Errorf("restrict %s: %w", dir, err)
+	}
 	return dir, nil
 }
