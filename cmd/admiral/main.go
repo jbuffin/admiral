@@ -90,14 +90,14 @@ func serve(args []string) error {
 	sock := filepath.Join(dir, "tmux.sock")
 	hub := server.NewHub()
 	host := sessionhost.New(tmuxPath, sock)
-	fleet := &ships.Service{Host: host, State: st, Hub: hub, Launcher: &launcher.Launcher{
+	shipService := &ships.Service{Host: host, State: st, Hub: hub, Launcher: &launcher.Launcher{
 		Tmux: tmuxPath, Socket: sock, Home: dir, Config: cfg.Current}}
 
 	s := &server.Server{Version: version, UI: web.UI(), Messages: map[string]server.MessageHandler{}, Config: cfg,
-		Hub: hub, Modules: []server.Module{fleet}}
+		Hub: hub, Modules: []server.Module{shipService}}
 	bg, stopBackground := context.WithCancel(context.Background())
 	var background sync.WaitGroup
-	runs := []func(context.Context){fleet.Run, s.WatchConfig}
+	runs := []func(context.Context){shipService.Run, s.WatchConfig}
 	if tmuxPath != "" {
 		runs = append(runs, host.Run)
 	}

@@ -59,7 +59,7 @@ func Slug(name string) string {
 
 // pickName chooses a name at random from those not in use; when all are, it
 // takes a random one and adds the lowest Roman numeral (from II) that is free.
-// taken answers for a display name; sessions holds every tmux session name.
+// taken says whether a display name is in use.
 func pickName(taken func(name string) bool) string {
 	free := func(n string) bool { return !taken(n) }
 	var open []string

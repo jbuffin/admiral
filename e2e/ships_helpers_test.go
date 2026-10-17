@@ -92,12 +92,12 @@ func (w *world) baseEnv() []string {
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
 		switch k {
-		case "ADMIRAL_HOME", "HOME", "TMUX", "TMUX_PANE", "TMUX_TMPDIR":
+		case "ADMIRAL_HOME", "HOME", "TMUX", "TMUX_PANE", "TMUX_TMPDIR", "XDG_CONFIG_HOME":
 			continue
 		}
 		env = append(env, kv)
 	}
-	env = append(env, "ADMIRAL_HOME="+w.home, "HOME="+w.userHom, "TMUX_TMPDIR="+w.tmuxTmp,
+	env = append(env, "ADMIRAL_HOME="+w.home, "HOME="+w.userHom, "XDG_CONFIG_HOME="+filepath.Join(w.userHom, "xdg"), "TMUX_TMPDIR="+w.tmuxTmp,
 		"ADMIRAL_BASE=base", "ADMIRAL_OVER=base")
 	return append(env, w.extra...)
 }

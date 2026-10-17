@@ -44,6 +44,8 @@ type Store struct {
 	mu    sync.Mutex
 	data  file
 	timer *time.Timer
+
+	flushMu sync.Mutex // one write at a time, so an older snapshot never lands last
 }
 
 // Open reads dir/state.json. A file that is corrupt or has another version is
@@ -124,6 +126,8 @@ func (s *Store) changed() {
 
 // Flush writes the file now, atomically.
 func (s *Store) Flush() error {
+	s.flushMu.Lock()
+	defer s.flushMu.Unlock()
 	s.mu.Lock()
 	raw, err := json.MarshalIndent(s.data, "", "  ")
 	s.mu.Unlock()
@@ -135,6 +139,9 @@ func (s *Store) Flush() error {
 		return err
 	}
 	_, werr := tmp.Write(append(raw, '\n'))
+	if werr == nil {
+		werr = tmp.Sync() // on disk before the rename makes it the file
+	}
 	cerr := tmp.Close()
 	if werr != nil || cerr != nil {
 		_ = os.Remove(tmp.Name())

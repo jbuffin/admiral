@@ -682,6 +682,10 @@ func TestStateFile(t *testing.T) {
 	if err := json.Unmarshal([]byte(state), &parsed); err != nil || parsed["version"] != float64(1) {
 		t.Errorf("state.json must be JSON with \"version\": 1, got %s", state)
 	}
+	dirs, _ := parsed["last_dirs"].(map[string]any)
+	if dirs["work/claude"] != a.Dir || dirs["work/codex"] != b.Dir {
+		t.Errorf("state.json last_dirs = %v, want work/claude → %s and work/codex → %s", dirs, a.Dir, b.Dir)
+	}
 
 	// Positions survive a restart; a gone session's position does not come back.
 	w.in.Stop()
@@ -771,9 +775,135 @@ func TestIsolationAndTmuxEnvironment(t *testing.T) {
 		t.Errorf("after the hook command ran, pane option @admiral-state = %q, want needs_you", got)
 	}
 
+	// (tmux gives every pane its own TMUX and TMUX_PANE whatever the client's
+	// environment holds, so this proves the ship's values are right, not that
+	// Admiral strips the bogus ones.)
+
 	// Nothing reached the default server of TMUX_TMPDIR.
 	out, err := exec.Command("tmux", "-S", one.defaultSocket(), "list-sessions").CombinedOutput()
 	if err == nil {
 		t.Errorf("a default tmux server is running with sessions:\n%s", out)
+	}
+}
+
+// A value Admiral writes into a tmux option must not be able to break the
+// control-mode framing, so control characters are refused before any session.
+func TestControlCharactersAreRefused(t *testing.T) {
+	w := newWorld(t)
+	w.start()
+	w.launch(w.order("work", "claude", "cc-ok", commodore, "x"))
+	for name, mod := range map[string]func(map[string]any){
+		"order id with a forged %end": func(r map[string]any) { r["order_id"] = "x\n%end 1 2 1\n%begin 1 2 1" },
+		"source":                      func(r map[string]any) { r["source"] = "a\x1fb" },
+		"directory":                   func(r map[string]any) { r["dir"] = w.checkout("cc\nnl") },
+		"skill name":                  func(r map[string]any) { r["skill"] = customSkill("a\x07b") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			before := w.sessions()
+			req := w.order("work", "claude", "cc-bad", commodore, "x")
+			mod(req)
+			code, body := w.post(req)
+			requireRefusal(t, code, body)
+			if after := w.sessions(); !reflect.DeepEqual(before, after) {
+				t.Errorf("a refused launch changed the sessions: before %v, after %v", before, after)
+			}
+		})
+	}
+}
+
+// A session made by hand on Admiral's socket whose option holds a forged
+// control-mode end of reply must not make ships vanish or lose their positions.
+func TestMalformedSessionDoesNotHideShips(t *testing.T) {
+	w := newWorld(t)
+	w.start()
+	a := w.launch(w.order("work", "claude", "mf-a", commodore, "x"))
+	b := w.launch(w.order("work", "codex", "mf-b", commodore, "x"))
+	for _, s := range []shipJSON{a, b} {
+		if code, body := send(t, http.MethodPut, w.in.LocalURL+"/api/ships/"+s.Session+"/position", map[string]float64{"x": 0.3, "y": 0.6}); code/100 != 2 {
+			t.Fatalf("PUT position = %d: %s", code, body)
+		}
+	}
+	w.mustTmux("new-session", "-d", "-s", "hand", "sleep", "3600")
+	w.mustTmux("set-option", "-t", "hand:", "@admiral-name", "Hand")
+	w.mustTmux("set-option", "-t", "hand:", "@admiral-order", "x\n%end 1 2 1\n%begin 1 2 1\nrow")
+	// And the same on a ship that is already known: it keeps its last read.
+	w.mustTmux("set-option", "-t", a.Session+":", "@admiral-order", "y\n%end 1 2 1\nz")
+	time.Sleep(2500 * time.Millisecond)
+
+	list := byName(w.in.ships(t))
+	for _, s := range []shipJSON{a, b} {
+		got := list[s.Name]
+		if got.Session == "" || got.Position == nil || got.Position.X != 0.3 {
+			t.Errorf("ship %s after the malformed rows = %+v, want it listed at (0.3, 0.6)", s.Name, got)
+		}
+	}
+	waitStateFile(t, filepath.Join(w.home, "state.json"), func(s string) bool {
+		return strings.Contains(s, a.Session) && strings.Contains(s, b.Session)
+	})
+	// A command still gets its own reply: a launch works and lists.
+	w.launch(w.order("work", "claude", "mf-c", commodore, "x"))
+}
+
+// A directory with # in it: tmux format-expands -c, so the launcher escapes it.
+func TestDirectoryWithFormatCharacters(t *testing.T) {
+	w := newWorld(t)
+	w.start()
+	ship := w.launch(w.order("work", "claude", "fmt#{pane_id}x", commodore, "x"))
+	r := w.record(ship.Session)
+	if want, _ := filepath.EvalSymlinks(ship.Dir); r.cwd != want {
+		t.Errorf("working directory = %q, want %q", r.cwd, want)
+	}
+}
+
+// Arguments that end in ; reach the harness intact (tmux reads a trailing ; as
+// a command separator unless it is escaped).
+func TestTrailingSemicolons(t *testing.T) {
+	w := newWorld(t)
+	w.start()
+	for i, text := range []string{`end;`, `end\;`, `end\\;`, `;`} {
+		ship := w.launch(w.order("work", "claude", "semi"+string(rune('a'+i)), noSkill, text))
+		if got := promptOf(t, w, w.record(ship.Session)); got != text {
+			t.Errorf("prompt = %q, want %q", got, text)
+		}
+	}
+}
+
+// An environment value over tmux's message size is refused before a session exists.
+func TestHugeEnvValueIsRefused(t *testing.T) {
+	w := newWorld(t)
+	cfg := map[string]any{}
+	_ = json.Unmarshal([]byte(w.config()), &cfg)
+	dock := w.dock("claude")
+	dock["env"].(map[string]string)["HUGE"] = strings.Repeat("x", 20000)
+	cfg["fleets"].(map[string]any)["huge"] = map[string]any{"name": "Huge", "search_roots": []string{w.work}, "claude": dock}
+	raw, _ := json.Marshal(cfg)
+	writeConfig(t, w.home, string(raw))
+	w.start()
+	w.launch(w.order("work", "claude", "env-ok", commodore, "x"))
+	before := w.sessions()
+	code, body := w.post(w.order("huge", "claude", "env-big", commodore, "x"))
+	requireRefusal(t, code, body)
+	if after := w.sessions(); !reflect.DeepEqual(before, after) {
+		t.Errorf("a refused launch changed the sessions: before %v, after %v", before, after)
+	}
+}
+
+// When tmux dies and comes back, the positions of ships that are gone are
+// dropped, so a new ship that draws a freed name does not inherit one.
+func TestPositionsDroppedAfterTmuxRestarts(t *testing.T) {
+	w := newWorld(t)
+	w.start()
+	a := w.launch(w.order("work", "claude", "rs", commodore, "x"))
+	if code, body := send(t, http.MethodPut, w.in.LocalURL+"/api/ships/"+a.Session+"/position", map[string]float64{"x": 0.4, "y": 0.4}); code/100 != 2 {
+		t.Fatalf("PUT position = %d: %s", code, body)
+	}
+	w.mustTmux("kill-server")
+	w.in.waitShipsList(t, 5*time.Second, "no ships once tmux is gone", func(l []shipJSON) bool { return len(l) == 0 })
+	time.Sleep(3 * time.Second) // Admiral reconnects, which starts a new server
+	w.mustTmux("new-session", "-d", "-s", a.Session, "sleep", "3600")
+	w.mustTmux("set-option", "-t", a.Session+":", "@admiral-name", a.Name)
+	list := w.in.waitShipsList(t, 3*time.Second, "the recreated session", func(l []shipJSON) bool { return len(l) == 1 })
+	if list[0].Position != nil {
+		t.Errorf("a ship that took a freed name has position %+v, want null", list[0].Position)
 	}
 }

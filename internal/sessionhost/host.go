@@ -81,7 +81,8 @@ const (
 	OptionChanged // Option holds the name without the prefix, Value the new value
 	PaneDied      // Status is the exit status, or Signal names the signal
 	Bell
-	Reset // the connection to tmux was lost: no sessions are known until it is back
+	Resumed // the first read after a Reset
+	Reset   // the connection to tmux was lost: no sessions are known until it is back
 )
 
 // Event is one change seen between two reads.
@@ -105,9 +106,12 @@ type Host struct {
 	order    []string
 	subs     map[chan Event]struct{}
 
-	cmdMu sync.Mutex // one command at a time on the control connection
-	stdin io.Writer
-	rep   chan reply
+	cmdMu   sync.Mutex // one command at a time on the control connection
+	stdin   io.Writer
+	rep     chan reply
+	orphans int // replies still to come for commands that gave up waiting
+
+	lost bool // set by a failed connection, until the next successful read
 
 	pollMu sync.Mutex // a read and publishing it, together, so reads land in order
 	wake   chan struct{}
@@ -174,7 +178,7 @@ func (h *Host) Refresh() {
 func (h *Host) Run(ctx context.Context) {
 	for ctx.Err() == nil {
 		err := h.connect(ctx)
-		h.set(nil, false)
+		h.set(nil, nil, false)
 		if err != nil && ctx.Err() == nil {
 			fmt.Fprintln(os.Stderr, "admiral: tmux:", err)
 		}
@@ -186,7 +190,7 @@ func (h *Host) Run(ctx context.Context) {
 }
 
 func (h *Host) connect(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, h.tmux, "-S", h.sock, "-u", "-C", "new-session", "-A", "-s", Internal,
+	cmd := exec.CommandContext(ctx, h.tmux, "-f", "/dev/null", "-S", h.sock, "-u", "-C", "new-session", "-A", "-s", Internal,
 		"tail", "-f", "/dev/null")
 	cmd.Env = h.env
 	stdin, err := cmd.StdinPipe()
@@ -209,7 +213,7 @@ func (h *Host) connect(ctx context.Context) error {
 	go func() { parsed <- p.run(stdout); close(p.replies) }()
 
 	h.cmdMu.Lock()
-	h.stdin, h.rep = stdin, p.replies
+	h.stdin, h.rep, h.orphans = stdin, p.replies, 0
 	h.cmdMu.Unlock()
 	defer func() {
 		_ = stdin.Close()
@@ -256,7 +260,7 @@ func (h *Host) bellHook() (string, error) {
 	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
 		return "", err
 	}
-	run := "run-shell -b " + tmuxQuote(shQuote(script)+" #{hook_session_name}")
+	run := "run-shell -b " + tmuxQuote(shQuote(script)+" #{q:hook_session_name}")
 	return "set-hook -g alert-bell " + tmuxQuote(run), nil
 }
 
@@ -275,12 +279,16 @@ func (h *Host) poll(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	h.set(parseRows(rows), true)
+	next, malformed := parseRows(rows)
+	h.set(next, malformed, true)
 	h.once.Do(func() { close(h.ready) })
 	return nil
 }
 
-// command sends one command line and waits for its reply.
+// command sends one command line and waits for its reply. A command that
+// gives up (cancelled, or tmux too slow) still has a reply coming; it is
+// counted in orphans and discarded by the commands after it, so no command
+// ever reads another's reply.
 func (h *Host) command(ctx context.Context, line string) ([]string, error) {
 	h.cmdMu.Lock()
 	defer h.cmdMu.Unlock()
@@ -290,31 +298,43 @@ func (h *Host) command(ctx context.Context, line string) ([]string, error) {
 	if _, err := io.WriteString(h.stdin, line+"\n"); err != nil {
 		return nil, err
 	}
+	pending := h.orphans + 1 // replies to read, ours the last
 	for {
 		select {
 		case r, ok := <-h.rep:
 			if !ok {
 				return nil, fmt.Errorf("control connection closed")
 			}
-			return r.lines, r.err
+			if pending--; pending == 0 {
+				h.orphans = 0
+				return r.lines, r.err
+			}
 		case <-ctx.Done():
+			h.orphans = pending
 			return nil, ctx.Err()
 		case <-time.After(10 * time.Second):
+			h.orphans = pending
 			return nil, fmt.Errorf("tmux did not answer %q", line)
 		}
 	}
 }
 
 // parseRows folds the rows of list-panes (one per pane) into one session each:
-// the first pane stands for the session.
-func parseRows(rows []string) map[string]Session {
-	out := map[string]Session{}
+// the first pane stands for the session. A row with the wrong number of fields
+// (a value held a newline or the field separator) is not trusted; the name it
+// starts with is returned so the caller can keep that session's previous read.
+func parseRows(rows []string) (sessions map[string]Session, malformed []string) {
+	sessions = map[string]Session{}
 	for _, row := range rows {
 		f := strings.Split(row, sep)
-		if len(f) != 6+len(optionNames) || f[0] == Internal {
+		if f[0] == Internal {
 			continue
 		}
-		if _, dup := out[f[0]]; dup {
+		if len(f) != 6+len(optionNames) {
+			malformed = append(malformed, f[0])
+			continue
+		}
+		if _, dup := sessions[f[0]]; dup {
 			continue
 		}
 		s := Session{Name: f[0], PaneDead: f[1] == "1", Signal: f[3], BellStamp: f[4], State: f[5],
@@ -323,18 +343,31 @@ func parseRows(rows []string) map[string]Session {
 		for i, n := range optionNames {
 			s.Options[n] = f[6+i]
 		}
-		out[f[0]] = s
+		sessions[f[0]] = s
 	}
-	return out
+	return sessions, malformed
 }
 
 // set replaces the last read and publishes the difference as events. A failed
 // connection (ok false) clears the sessions and sends one Reset instead of a
 // removal per session, which would look like the ships were closed.
-func (h *Host) set(next map[string]Session, ok bool) {
+func (h *Host) set(next map[string]Session, malformed []string, ok bool) {
 	h.mu.Lock()
 	prev := h.sessions
+	for _, name := range malformed { // keep what we knew, rather than lose the ship
+		if old, had := prev[name]; had {
+			if _, read := next[name]; !read {
+				next[name] = old
+			}
+		}
+	}
 	var events []Event
+	if !ok {
+		h.lost = true
+	} else if h.lost {
+		h.lost = false
+		events = append(events, Event{Kind: Resumed})
+	}
 	for name, s := range next {
 		old, had := prev[name]
 		if !had {

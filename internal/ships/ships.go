@@ -1,4 +1,4 @@
-// Package ships is the fleet's ships as the UI sees them (ADR 0012). Admiral
+// Package ships is the ships of every fleet as the UI sees them (ADR 0012). Admiral
 // keeps no ship table: every ship is read from tmux's session options each
 // time, plus the position stored in state.json. This package serves them over
 // HTTP and the WebSocket and launches new ones.
@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/server"
@@ -105,11 +106,11 @@ func (s *Service) Run(ctx context.Context) {
 	for {
 		select {
 		case ev := <-events:
-			gone := ev.Kind == sessionhost.SessionRemoved
+			gone := ev.Kind == sessionhost.SessionRemoved || ev.Kind == sessionhost.Resumed
 			for more := true; more; { // one push for a burst
 				select {
 				case ev = <-events:
-					gone = gone || ev.Kind == sessionhost.SessionRemoved
+					gone = gone || ev.Kind == sessionhost.SessionRemoved || ev.Kind == sessionhost.Resumed
 				default:
 					more = false
 				}
@@ -165,7 +166,10 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.State.SetLastDir(req.Fleet, req.Harness, req.Dir)
-	_ = s.Host.Sync(r.Context())
+	// Not the request's context: a client that hangs up must not abandon the read.
+	syncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	_ = s.Host.Sync(syncCtx)
+	cancel()
 	s.broadcast()
 	writeJSON(w, http.StatusCreated, map[string]any{"ship": s.ship(got.Session, got.Options)})
 }

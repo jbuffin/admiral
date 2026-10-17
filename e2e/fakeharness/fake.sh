@@ -17,7 +17,7 @@
 #   env       its environment, one NAME=value per line
 #   cwd       its working directory (physical path)
 #   name      the session option @admiral-name, as read at start
-#   options   the output of `tmux show-options` at start (all session options)
+#   options   the output of `tmux show-options`, run as its first action (all session options)
 #   recorded  empty marker file
 #
 # Cue file: read once after recording, one cue per line, run in order:
@@ -31,6 +31,9 @@
 # With no cue file, or once the cues run out, it creates `cues-done` and stays
 # running (sleep) until the tmux server is killed.
 
+# The first thing it does: read the session options, so a test can prove
+# Admiral set them before the harness could run anything.
+first=$(tmux show-options 2>&1)
 me=$(basename "$0")
 sess=$(tmux display-message -p '#{session_name}')
 d="$FAKE_RECORD_DIR/$sess"
@@ -40,7 +43,7 @@ printf '%s\0' "$@" >"$d/argv"
 env >"$d/env"
 pwd -P >"$d/cwd"
 tmux show-options -v @admiral-name >"$d/name"
-tmux show-options >"$d/options"
+printf '%s\n' "$first" >"$d/options"
 : >"$d/recorded"
 
 if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
