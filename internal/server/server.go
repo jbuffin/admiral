@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/jbuffin/admiral/internal/config"
 )
 
 func init() {
@@ -30,12 +31,14 @@ type Server struct {
 	Version  string
 	UI       fs.FS
 	Messages map[string]MessageHandler
+	Config   *config.Manager
 }
 
 // Handler returns the routes, without access control.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", s.serveWS)
+	mux.HandleFunc("GET /api/config", s.serveConfig)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -61,6 +64,24 @@ func (s *Server) serveWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.Config != nil {
+		ctx2, stop := context.WithCancel(ctx)
+		defer stop()
+		changes, unsubscribe := s.Config.Subscribe()
+		defer unsubscribe()
+		s.sendConfig(ctx2, conn)
+		go func() {
+			for {
+				select {
+				case <-changes:
+					s.sendConfig(ctx2, conn)
+				case <-ctx2.Done():
+					return
+				}
+			}
+		}()
+	}
+
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
@@ -76,6 +97,23 @@ func (s *Server) serveWS(w http.ResponseWriter, r *http.Request) {
 			h(ctx, conn, data)
 		}
 	}
+}
+
+func (s *Server) sendConfig(ctx context.Context, conn *websocket.Conn) {
+	data, _ := json.Marshal(s.Config.View())
+	wctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_ = conn.Write(wctx, websocket.MessageText, data)
+}
+
+func (s *Server) serveConfig(w http.ResponseWriter, r *http.Request) {
+	if s.Config == nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(s.Config.View())
 }
 
 func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
