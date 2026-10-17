@@ -60,7 +60,7 @@ _Avoid_: child, worker, sub-ship
 The ocean in the middle of the screen where ships sail once launched. Work Fleet ships drift toward the top and Home Fleet ships toward the bottom; the engineer can drag ships anywhere.
 
 **Needs you**:
-A ship whose session is waiting on the engineer (a question, an approval). It shakes, waves its flag fast and plays a chime.
+A ship whose session cannot move until the engineer does: a question, an approval, or a finished turn waiting for the next prompt. It shakes, waves its flag fast and plays a chime.
 _Avoid_: alert, blocked, error
 
 **Bridge**:
