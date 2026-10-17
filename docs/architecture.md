@@ -42,7 +42,7 @@ The paths under `~/.admiral/` are proposals.
 | Fleet | `id`, `name`, `color`, `docks[]` |
 | Dock | `fleet`, `harness`, `logo`, `shipsAtSea` |
 | Order | `id`, `title`, `url`, `source`, `hot`, `panel` |
-| Ship | `id`, `order`, `fleet`, `harness`, `skill`, `name`, `status` (`underway`, `needs_you`, `docked`), `position?`, `crew[]` |
+| Ship | `id`, `order`, `fleet`, `harness`, `skill`, `name`, `status` (`underway`, `needs_you`, `anchored`), `position?`, `crew[]` |
 | Crew boat | `id`, `name`, `role` (teammate, subagent), `job` |
 | Terminal stream | per ship and per crew boat: bytes out, keystrokes in, size |
 

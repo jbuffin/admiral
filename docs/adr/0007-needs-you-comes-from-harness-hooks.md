@@ -16,7 +16,7 @@ Admiral learns a ship's state only from the harness's own hooks, added to each l
 - **Codex questions ring the bell.** Codex has no hook for its in-terminal questions, so Admiral launches it with `tui.notification_method="bel"`, and a bell in a Codex pane (tmux `alert-bell`) sets needs-you. This exception applies to Codex only.
 - **No first hook within about 10 seconds of launch means needs-you.** Folder trust, workspace trust and Codex's hook review come before any hook can fire. Every launch passes the order's text as the prompt, so a healthy session fires a hook almost at once.
 
-A crash fires no hook. The pane dying is the exit signal, and what that means for the ship is decided in [When a ship counts as docked](https://github.com/jbuffin/admiral/issues/7).
+A crash fires no hook. The pane dying is the exit signal, and what that means for the ship is decided in ADR 0008 ([When a ship counts as docked](https://github.com/jbuffin/admiral/issues/7)).
 
 ## Considered options
 

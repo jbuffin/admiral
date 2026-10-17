@@ -29,7 +29,7 @@ body{margin:0}
 <span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 15px; color: #14304A">Motion</span>
 <span>Underway: slow bob, flag ripples.</span>
 <span>Needs you: shakes, flag waves fast, a chime plays.</span>
-<span>Docked: still water, check badge.</span>
+<span>Anchored: still water, check badge.</span>
 </div>
 </div>
 
@@ -113,7 +113,7 @@ class Component extends DCLogic {
         { title: 'State', items: [
           ship({ title: 'Underway', caption: 'Working on its task', flag: '#FF7A59', ink: '#14304A', mono: 'Cl' }),
           ship({ title: 'Needs you', caption: 'Shakes and chimes', flag: '#7A5AF0', ink: '#FFFFFF', mono: 'Co', bot: '#FFC23D', attn: true }),
-          ship({ title: 'Docked', caption: 'Mission complete', flag: '#1F3B57', ink: '#FFFFFF', mono: 'Cx', bot: '#9BE08A', fleet: '#F28C28', done: true }),
+          ship({ title: 'Anchored', caption: 'Harness exited', flag: '#1F3B57', ink: '#FFFFFF', mono: 'Cx', bot: '#9BE08A', fleet: '#F28C28', done: true }),
           { isShip: false, isSub: true, attn: false, done: false, title: 'Crew boat', caption: 'Teammate or subagent' }
         ] }
       ]

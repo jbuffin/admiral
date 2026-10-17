@@ -868,7 +868,7 @@ class Component extends DCLogic {
         delay: '-' + (i * 0.8).toFixed(1) + 's',
         flagCls: attn ? 'flag frantic' : 'flag wave',
         attn, done,
-        label: done ? '✓ ' + sh.task.id + ' · docked' : sh.task.id + ' · ' + sh.skill,
+        label: done ? '✓ ' + sh.task.id + ' · anchored' : sh.task.id + ' · ' + sh.skill,
         plaqueStyle: 'display: block; margin-top: -2px; padding: 3px 8px; max-width: 140px; border-radius: 9px; background-color: ' + (attn ? '#FFD9CC' : '#FFF6E3') + '; border: 2.5px solid ' + (attn ? '#C2412A' : '#14304A') + '; box-shadow: 0 2px 0 #14304A',
         aria: 'Board ' + sh.name + ', ' + h.name + ' in ' + f.name + ', ' + statusText,
         open: () => { if (!self.recentDrag()) self.put({ open: sh.id, focus: 'lead', draft: '' }); },
@@ -905,7 +905,7 @@ class Component extends DCLogic {
           ship: sh, agents, lines, focusName: focusAgent.label,
           crewCount: list.length,
           asking: sh.attn && focusAgent.id === 'lead',
-          statusText: sh.attn ? 'Needs you' : sh.done ? 'Docked' : 'Underway',
+          statusText: sh.attn ? 'Needs you' : sh.done ? 'Anchored' : 'Underway',
           statusStyle: 'font-family: Bricolage Grotesque, sans-serif; font-weight: 700; font-size: 13px; padding: 4px 12px; border-radius: 999px; border: 2px solid #14304A; color: #14304A; background-color: ' + (sh.attn ? '#FF7A59' : sh.done ? '#9BE08A' : '#6FE3C8')
         };
       }

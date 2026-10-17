@@ -17,6 +17,6 @@ Each ship runs in its own tmux session on a tmux socket that belongs to Admiral.
 
 ## Consequences
 
-Admiral depends on tmux on the Mac. Using its own socket keeps Admiral's sessions apart from the engineer's own tmux and avoids the quirks of running inside an existing tmux session. Admiral, not tmux, decides what counts as needs-you or docked; see `docs/open-questions.md`.
+Admiral depends on tmux on the Mac. Using its own socket keeps Admiral's sessions apart from the engineer's own tmux and avoids the quirks of running inside an existing tmux session. Admiral, not tmux, decides what counts as needs-you (ADR 0007) or anchored (ADR 0008).
 
 Revised by ADR 0003: this ADR first proposed a tmux host inside Commodore Launcher, with an Admiral-owned PTY or tmux session as the fallback.
