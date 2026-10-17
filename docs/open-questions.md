@@ -10,8 +10,6 @@ Things the design leaves undecided. Each is tracked as a GitHub issue. Resolve e
 
 4. **Crew boats** ([#5](https://github.com/jbuffin/admiral/issues/5)). How does Admiral learn a session's teammates and subagents? Candidates: Commodore reporting its task force somewhere machine-readable; reading the harness transcript (Claude Code writes `<config>/projects/<dir>/<id>.jsonl`); tmux panes Commodore opens. Each crew boat also needs its own terminal stream for the bridge.
 
-5. **Needs you** ([#6](https://github.com/jbuffin/admiral/issues/6)). How does Admiral know a session is waiting on the engineer? Candidates: harness hooks (Claude Code `Notification` / `Stop` hooks) writing a marker; transcript state; terminal idle plus a prompt pattern (fragile: screen reading breaks whenever a harness changes its UI).
-
 6. **Finished ships** ([#7](https://github.com/jbuffin/admiral/issues/7)). When is a ship "docked" (mission complete): the harness exited, the PR merged, or Commodore said so? Should docked ships fade away after a while or stay until dismissed? Can a docked ship be relaunched, resuming its conversation where the harness supports it (Claude Code and Copilot CLI do; Codex CLI doesn't)?
 
 7. **Ship names** ([#8](https://github.com/jbuffin/admiral/issues/8)). The prototype generates names (Saltpaw, Morning Tern). Keep them stable per task, and decide whether the engineer can rename.
@@ -24,3 +22,4 @@ Things the design leaves undecided. Each is tracked as a GitHub issue. Resolve e
 - **Headless sessions** ([#3](https://github.com/jbuffin/admiral/issues/3)). Each ship runs in a tmux session on Admiral's own socket (ADR 0002).
 - **Configured skill list** ([#9](https://github.com/jbuffin/admiral/issues/9)). It lives in Admiral's configuration (`docs/spec.md` §4).
 - **Fleet colors for more than two fleets** ([#10](https://github.com/jbuffin/admiral/issues/10)). A fleet may set its color in Admiral's configuration; otherwise it takes the next color in `designs/tokens.json` (`docs/spec.md` §1).
+- **Needs you** ([#6](https://github.com/jbuffin/admiral/issues/6)). Harness hooks added at launch write the state to a tmux pane option; Codex questions use the bell; no first hook within about 10 s means needs-you (ADR 0006).
