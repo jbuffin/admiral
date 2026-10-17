@@ -2,8 +2,6 @@
 
 Things the design leaves undecided. Each is tracked as a GitHub issue. Resolve each before building the part that depends on it, and record the answer (an ADR, or a `GLOSSARY.md` entry).
 
-1. **Where a ship's session runs** ([#12](https://github.com/jbuffin/admiral/issues/12)). How does Admiral find an order's repository on disk (configured search roots, an explicit list), what happens when it isn't there (clone after asking, refuse), and does each ship get its own git worktree so ships on the same repository don't collide?
-
 2. **Setting up fleets** ([#13](https://github.com/jbuffin/admiral/issues/13)). Editing a config file, a settings screen, or a first-run setup that detects installed harnesses and writes the file? Does a running ship keep the settings it launched with when its fleet changes?
 
 3. **Orders that are not GitHub issues or PRs** ([#4](https://github.com/jbuffin/admiral/issues/4)). A GitHub order names its repository; a Jira or Linear ticket doesn't. Which repository does such an order run in, and what URL or text goes in the launch prompt?
@@ -22,3 +20,4 @@ Things the design leaves undecided. Each is tracked as a GitHub issue. Resolve e
 - **Fleet colors for more than two fleets** ([#10](https://github.com/jbuffin/admiral/issues/10)). A fleet may set its color in Admiral's configuration; otherwise it takes the next color in `designs/tokens.json` (`docs/spec.md` §1).
 - **Needs you** ([#6](https://github.com/jbuffin/admiral/issues/6)). Harness hooks added at launch write the state to a tmux pane option; Codex questions use the bell; no first hook within about 10 s means needs-you (ADR 0007).
 - **Finished ships** ([#7](https://github.com/jbuffin/admiral/issues/7)). A ship is anchored once its harness exits: a clean exit sails off and disappears, a non-zero exit stays until dismissed; resuming is out of the MVP (ADR 0008).
+- **Where a ship's session runs** ([#12](https://github.com/jbuffin/admiral/issues/12)). The engineer picks a git checkout, or a search root, from a list built from the fleet's search roots; pre-selected by the order source's hint, a URL matching a git remote, or the dock's last directory; no typed paths, no Admiral worktrees, no cloning (ADR 0009).
