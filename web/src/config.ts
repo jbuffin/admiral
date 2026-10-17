@@ -24,8 +24,9 @@ export interface Config {
   error: { file: string; message: string } | null;
 }
 
-// Empty until the server's first `config` message arrives.
-export const config = signal<Config>({ fleets: [], error: null });
+// null until the server's first `config` message arrives, so the page claims
+// nothing about fleets before then.
+export const config = signal<Config | null>(null);
 
 // Follows the server's `config` messages. The socket is reopened when it drops.
 export function connect(): void {

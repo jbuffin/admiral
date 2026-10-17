@@ -117,6 +117,8 @@ test.describe('S3: no fleets', () => {
     await admiral.start();
     await page.goto(admiral.url);
 
+    // Only a received config says "0 fleets"; before it, the page claims nothing.
+    await expect(page.getByRole('banner').getByText('0 fleets')).toBeVisible();
     await expect(page.getByText('Set up a fleet')).toHaveCount(1);
     await expect(page.getByText('Set up a fleet')).toBeVisible();
     await expect(docksIn(page.locator('body'))).toHaveCount(0);
@@ -231,6 +233,7 @@ test.describe('S5: dock and fleet marks from config', () => {
     await expect(codex).toBeVisible();
     await expect(codex.getByText('All in port')).toHaveCount(0);
     expect(await dockText(codex)).toContain(missing);
+    await expect(codex.getByText('Not found')).toBeVisible();
 
     // No search roots: visible on each of the fleet's docks.
     const bare = marina(page, 'Bare');
@@ -242,6 +245,7 @@ test.describe('S5: dock and fleet marks from config', () => {
     for (const [name, other, otherKey] of [['One', 'Two', 'two'], ['Two', 'One', 'one']]) {
       const d = dockNamed(marina(page, name), 'Claude');
       await expect(d.getByText('All in port')).toHaveCount(0);
+      await expect(d.getByText('Shared config dir')).toBeVisible();
       expect(await dockText(d)).toContain(`Shares its configuration directory with fleet ${other} (${otherKey})`);
     }
   });

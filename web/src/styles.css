@@ -100,11 +100,15 @@ button:focus-visible {
 
 .about {
   max-width: 420px;
-  padding: 22px 24px;
+  padding: 0;
   border: var(--shape-outline-heavy) solid var(--color-ink);
   border-radius: var(--shape-radius-dialog);
   background-color: var(--color-parchment);
   color: var(--color-ink);
+}
+
+.about-body {
+  padding: 22px 24px;
 }
 
 .about::backdrop {
@@ -434,7 +438,7 @@ button:focus-visible {
 }
 
 .pier-status.marked {
-  color: var(--color-anchored-mark);
+  color: #7a2210; /* the anchored-mark red, darkened to 4.8:1 on the pier */
   font-weight: 700;
 }
 

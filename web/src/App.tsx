@@ -7,7 +7,7 @@ import { Lighthouse, Shore, Trees, WaterScenery } from './Scenery';
 
 export function App() {
   useEffect(connect, []);
-  const fleets = config.value.fleets;
+  const fleets = config.value?.fleets;
   return (
     <div class="app">
       <LogoSprite />
@@ -24,7 +24,7 @@ export function App() {
             <Shore />
             <Lighthouse />
             <Trees />
-            {fleets.length === 0 ? <SetUpMarina /> : fleets.map((f) => <Marina key={f.key} fleet={f} />)}
+            {fleets && (fleets.length === 0 ? <SetUpMarina /> : fleets.map((f) => <Marina key={f.key} fleet={f} />))}
           </div>
         </main>
       </div>

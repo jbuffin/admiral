@@ -6,8 +6,8 @@ export interface ShipProps {
   bot: string;
   harness: HarnessName;
   variant?: 'moored' | 'sea';
-  // Later units fill this; an attention ship shakes and its flag flutters faster.
-  state?: 'underway' | 'attention' | 'anchored';
+  // Later units fill this; a ship that needs you shakes and its flag flutters faster.
+  state?: 'underway' | 'needs-you' | 'anchored';
 }
 
 const OUTLINE = '#14304A';
@@ -17,7 +17,7 @@ const SAIL = '#FFF6E3';
 // fleet color, the bot's color and the harness's logo are props.
 export function Ship({ fleetColor, bot, harness, variant = 'sea', state = 'underway' }: ShipProps) {
   if (variant === 'moored') return <MooredShip fleetColor={fleetColor} bot={bot} harness={harness} />;
-  const attention = state === 'attention';
+  const attention = state === 'needs-you';
   return (
     <span class={attention ? 'attn' : 'bob'} style="display:block">
       <svg width="100" height="96" viewBox="0 0 100 96" fill="none" aria-hidden="true">

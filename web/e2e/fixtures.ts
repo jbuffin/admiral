@@ -56,8 +56,11 @@ class Instance implements Admiral {
 
   start() {
     return new Promise<void>((done, fail) => {
+      // A harness identity variable from the engineer's shell must not reach the server.
+      const env: NodeJS.ProcessEnv = { ...process.env, ADMIRAL_HOME: this.home };
+      for (const v of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'COPILOT_HOME']) delete env[v];
       const proc = spawn(bin, ['--listen', '127.0.0.1:0'], {
-        env: { ...process.env, ADMIRAL_HOME: this.home },
+        env,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       this.proc = proc;
@@ -80,10 +83,13 @@ class Instance implements Admiral {
 
   async stop() {
     const proc = this.proc;
-    if (proc && proc.exitCode === null) {
+    if (proc && proc.exitCode === null && proc.signalCode === null) {
       proc.removeAllListeners('exit');
+      const gone = new Promise((r) => proc.once('exit', r));
       proc.kill('SIGTERM');
-      await new Promise((r) => proc.once('exit', r));
+      const hard = setTimeout(() => proc.kill('SIGKILL'), 3000);
+      await gone;
+      clearTimeout(hard);
     }
     rmSync(this.home, { recursive: true, force: true });
   }

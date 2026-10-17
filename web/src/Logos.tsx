@@ -1,4 +1,5 @@
 import { harnesses, logoId } from './harnesses';
+import { parseLogoSvg } from './logoSvg';
 import type { HarnessName } from './config';
 
 // Official logo files, when the engineer has put them in web/logos/official/
@@ -9,17 +10,15 @@ const official = import.meta.glob('/logos/official/*.svg', { query: '?raw', impo
   string
 >;
 
-function officialSymbol(h: HarnessName): { viewBox: string; inner: string } | undefined {
-  const svg = official[`/logos/official/${h}.svg`];
-  const m = svg?.match(/<svg\b[^>]*\bviewBox="([^"]+)"[^>]*>([\s\S]*)<\/svg>/);
-  return m ? { viewBox: m[1], inner: m[2] } : undefined;
+function officialSymbol(h: HarnessName) {
+  return parseLogoSvg(official[`/logos/official/${h}.svg`]);
 }
 
 // The flag draws a logo by id, so swapping logos changes only these symbols.
 // The placeholders are the lettered set: a field in the harness flag color.
 function Symbol({ harness }: { harness: HarnessName }) {
   const o = officialSymbol(harness);
-  if (o) return <symbol id={logoId(harness)} viewBox={o.viewBox} dangerouslySetInnerHTML={{ __html: o.inner }} />;
+  if (o) return <symbol id={logoId(harness)} viewBox={o.viewBox} preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: o.inner }} />;
   const letters = { claude: 'Cl', copilot: 'Co', codex: 'Cx' }[harness];
   return (
     <symbol id={logoId(harness)} viewBox="0 0 40 28" preserveAspectRatio="xMidYMid slice">
@@ -46,9 +45,6 @@ export function LogoSprite() {
         {(Object.keys(harnesses) as HarnessName[]).map((h) => (
           <Symbol key={h} harness={h} />
         ))}
-        <clipPath id="pennant" clipPathUnits="objectBoundingBox">
-          <path d="M0 0H1L.77 .5L1 1H0Z" />
-        </clipPath>
       </defs>
     </svg>
   );
@@ -72,9 +68,14 @@ export function LogoFlag({
 }) {
   const notch = x + width * 0.77;
   const d = `M${x} ${y}H${x + width}L${notch} ${y + height / 2}L${x + width} ${y + height}H${x}Z`;
+  // Clipped in user space; same id means same shape, so repeats are harmless.
+  const clip = `pennant-${x}-${y}-${width}-${height}`;
   return (
     <>
-      <g clip-path="url(#pennant)">
+      <clipPath id={clip}>
+        <path d={d} />
+      </clipPath>
+      <g clip-path={`url(#${clip})`}>
         <use href={`#${logoId(harness)}`} x={x} y={y} width={width} height={height} />
       </g>
       <path d={d} fill="none" stroke="#14304A" stroke-width={stroke} stroke-linejoin="round" />

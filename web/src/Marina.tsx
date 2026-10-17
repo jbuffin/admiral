@@ -7,7 +7,7 @@ import { Ship } from './Ship';
 // Marina heights (tokens): 3 docks 300, otherwise the 2-dock height.
 const heightFor = (docks: number) => (docks >= 3 ? 300 : 240);
 
-// A dock's dock-slot tops, from the prototype's fractions of the basin.
+// The top of each dock in a marina, from the prototype's fractions of the basin.
 function dockTops(count: number, height: number): number[] {
   const fractions = count >= 3 ? [0.2, 0.5, 0.8] : count === 2 ? [0.28, 0.72] : [0.5];
   return fractions.map((f) => Math.round(46 + (height - 64) * f - 23) - 8);
