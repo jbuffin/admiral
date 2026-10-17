@@ -192,7 +192,7 @@ func requireRefusal(t *testing.T, code int, body string) string {
 
 func showOption(t *testing.T, w *world, session string, args ...string) string {
 	t.Helper()
-	return w.mustTmux(append([]string{"show-options"}, append(args, "-t", session)...)...)
+	return w.mustTmux(append([]string{"show-options", "-t", session}, args...)...)
 }
 
 // S3: session options, remain-on-exit, history-limit, options-before-hooks and
@@ -456,6 +456,9 @@ func TestShipNamesGetNumerals(t *testing.T) {
 		t.Skip("launches 220 ships")
 	}
 	w := newWorld(t)
+	// macOS runs out of ptys at about 125 live panes. The harness exits at once;
+	// remain-on-exit keeps the ship and frees the pty.
+	w.writeCue("exit 0")
 	w.start()
 	names := map[string]bool{}
 	for i := 0; i < 220; i++ {

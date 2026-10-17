@@ -13,7 +13,7 @@ The designs are done and the MVP build has started.
 - `docs/architecture.md`: an early proposal for the build, superseded by the spec and the ADRs.
 - `docs/adr/`: decisions.
 - `GLOSSARY.md`: the words Admiral uses.
-- `cmd/admiral/`, `internal/`: the Go server and CLI. `internal/auth` is access control, `internal/server` is HTTP and WebSocket, `internal/home` finds `$ADMIRAL_HOME`, `internal/config` loads, validates, watches and writes `$ADMIRAL_HOME/config.json`.
+- `cmd/admiral/`, `internal/`: the Go server and CLI. `internal/auth` is access control, `internal/server` is HTTP and WebSocket, `internal/home` finds `$ADMIRAL_HOME`, `internal/config` loads, validates, watches and writes `$ADMIRAL_HOME/config.json`. `internal/sessionhost` is the one tmux control-mode connection on `$ADMIRAL_HOME/tmux.sock` (it re-reads the sessions about every half second, and a global `alert-bell` hook stamps bells), `internal/launcher` creates ships (names, hook bundle in `$ADMIRAL_HOME/harness/`, command lines), `internal/state` is `$ADMIRAL_HOME/state.json` (ship positions, each dock's last directory), `internal/ships` serves `GET`/`POST /api/ships`, `PUT /api/ships/<session>/position` and the WebSocket `ships` message.
 - `web/`: the Preact UI. `web/embed.go` embeds the built `web/dist` into the binary.
 - `e2e/`: server tests that run the real binary.
 

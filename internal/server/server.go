@@ -4,7 +4,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"io/fs"
@@ -25,7 +24,15 @@ func init() {
 
 // MessageHandler handles one WebSocket message type. Later units register
 // theirs in Server.Messages.
-type MessageHandler func(ctx context.Context, conn *websocket.Conn, raw json.RawMessage)
+type MessageHandler func(ctx context.Context, c *Client, raw json.RawMessage)
+
+// Module is a part of the server that serves its own routes and sends its own
+// state to each client that connects.
+type Module interface {
+	Routes(mux *http.ServeMux)
+	// Connected runs for a new client after it has registered with the hub.
+	Connected(c *Client)
+}
 
 // Server holds what the handlers share.
 type Server struct {
@@ -33,6 +40,8 @@ type Server struct {
 	UI       fs.FS
 	Messages map[string]MessageHandler
 	Config   *config.Manager
+	Hub      *Hub
+	Modules  []Module
 }
 
 // Handler returns the routes, without access control.
@@ -40,6 +49,9 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", s.serveWS)
 	mux.HandleFunc("GET /api/config", s.serveConfig)
+	for _, m := range s.Modules {
+		m.Routes(mux)
+	}
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -65,23 +77,11 @@ func (s *Server) serveWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.Config != nil {
-		ctx2, stop := context.WithCancel(ctx)
-		defer stop()
-		changes, unsubscribe := s.Config.Subscribe()
-		defer unsubscribe()
-		var sent []byte
-		s.sendConfig(ctx2, conn, &sent)
-		go func() {
-			for {
-				select {
-				case <-changes:
-					s.sendConfig(ctx2, conn, &sent)
-				case <-ctx2.Done():
-					return
-				}
-			}
-		}()
+	c := s.Hub.add(ctx, conn)
+	defer s.Hub.remove(c)
+	s.sendConfig(c)
+	for _, m := range s.Modules {
+		m.Connected(c)
 	}
 
 	for {
@@ -96,21 +96,33 @@ func (s *Server) serveWS(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if h := s.Messages[msg.Type]; h != nil {
-			h(ctx, conn, data)
+			h(ctx, c, data)
 		}
 	}
 }
 
 // sendConfig pushes the config unless the client already has exactly this.
-func (s *Server) sendConfig(ctx context.Context, conn *websocket.Conn, sent *[]byte) {
-	data, _ := json.Marshal(s.Config.View())
-	if bytes.Equal(data, *sent) {
+func (s *Server) sendConfig(c *Client) {
+	if s.Config != nil {
+		_ = c.SendOnce("config", func() any { return s.Config.View() })
+	}
+}
+
+// WatchConfig pushes every config change to all clients until ctx ends.
+func (s *Server) WatchConfig(ctx context.Context) {
+	if s.Config == nil {
 		return
 	}
-	*sent = data
-	wctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	_ = conn.Write(wctx, websocket.MessageText, data)
+	changes, unsubscribe := s.Config.Subscribe()
+	defer unsubscribe()
+	for {
+		select {
+		case <-changes:
+			s.Hub.BroadcastOnce("config", func() any { return s.Config.View() })
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 func (s *Server) serveConfig(w http.ResponseWriter, r *http.Request) {
