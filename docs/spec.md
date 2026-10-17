@@ -1,12 +1,12 @@
 # Admiral: product spec
 
-Admiral is a playful, game-like dashboard for Commodore Launcher. It runs locally on the engineer's Mac and is opened in a browser on the same Mac or on a tablet over the home network or VPN. Read `GLOSSARY.md` first; this spec uses its words.
+Admiral is a playful, game-like dashboard for launching and watching coding-agent sessions. It starts each session itself, in the background, under one of the engineer's fleets (ADR 0003), with Commodore as the default skill. It runs locally on the engineer's Mac and is opened in a browser on the same Mac or on a tablet over the home network or VPN. Read `GLOSSARY.md` first; this spec uses its words.
 
 The look and behavior are defined by the clickable prototype in `designs/prototype/index.html`. When this spec and the prototype disagree on a visual detail, the prototype wins; when they disagree on behavior, this spec wins. Screenshots of each scene are in `designs/screenshots/`.
 
 ## Goals
 
-- See every running session at a glance, grouped by profile, and know immediately which one needs attention.
+- See every running session at a glance, grouped by fleet, and know immediately which one needs attention.
 - Start work by dragging an order onto a dock, with mouse or touch.
 - Read and type into any session's terminal, including each teammate or subagent, without hunting for the terminal window it runs in.
 - Feel like playing a game: colorful, animated, cartoony, but never childish or slow.
@@ -15,13 +15,13 @@ The look and behavior are defined by the clickable prototype in `designs/prototy
 
 - Hosting on the internet, accounts, or multi-user access. Admiral is private and local.
 - A native macOS app (signing, notarization). A web app served from the Mac covers the use cases.
-- Replacing the launcher. Admiral calls Commodore Launcher; it does not reimplement profiles, repository lookup or session resume.
+- Working with Commodore Launcher. Admiral does not call `commodore` or read its configuration or state; a session opened with the launcher and one opened in Admiral are unrelated.
 
 ## Screen layout
 
 One screen, three zones, left to right (see `designs/screenshots/harbor-1440x900.png`):
 
-1. **Header** (navy): the Admiral mark and name, a count of ships at sea, a "N needs you" button (only when at least one ship needs you; it opens the first one), a sound toggle, and the number of Commodore profiles loaded.
+1. **Header** (navy): the Admiral mark and name, a count of ships at sea, a "N needs you" button (only when at least one ship needs you; it opens the first one), a sound toggle, and the number of fleets loaded.
 2. **Orders sidebar** (cream, collapsible to a narrow rail): a filter field, then panels of orders, then "Add source plugin".
 3. **Open water** (turquoise ocean) with ships, and on its right edge **land**: a beach, grass, trees, a lighthouse and one **marina** per fleet, stacked from the top.
 
@@ -31,11 +31,11 @@ At narrower widths the zones wrap; at iPad landscape (1194×834) all three fit (
 
 Each item ends with **Done when**: the check an implementation must pass.
 
-### 1. Fleets and docks come from Commodore profiles
+### 1. Fleets and docks come from Admiral's configuration
 
-Admiral reads the launcher's configuration (`~/.commodore-launcher/config.json`, or `COMMODORE_LAUNCHER_HOME`) and shows one marina per profile with one dock per harness in that profile (`claude`, `codex`, `copilot`). Each fleet gets a fleet color; the first two are blue `#3366E0` (Work) and orange `#F28C28` (Home). Further fleets take the next colors in `designs/tokens.json`.
+Admiral's own configuration lists the fleets. Each fleet sets, for each harness it allows (`claude`, `codex`, `copilot`), the executable, extra arguments and environment the harness starts with (for example its own `CLAUDE_CONFIG_DIR`), so work and personal setups never mix. Admiral shows one marina per fleet with one dock per harness. A fleet may set its color; otherwise the first two are blue `#3366E0` and orange `#F28C28`, and further fleets take the next colors in `designs/tokens.json`. How the engineer sets fleets up is open (`docs/open-questions.md`).
 
-**Done when:** adding a profile or a harness to `config.json` and reloading Admiral shows the new marina or dock without code changes; a profile's harness that is not in the config never appears.
+**Done when:** adding a fleet or a harness to the configuration and reloading Admiral shows the new marina or dock without code changes; a harness the fleet does not list never appears; a session launched from a dock starts with exactly that fleet's settings for that harness.
 
 ### 2. Orders sidebar
 
@@ -60,15 +60,15 @@ Admiral reads the launcher's configuration (`~/.commodore-launcher/config.json`,
 The dialog shows the fleet's color in its header, the harness flag, the order's ID and title, and the choices:
 
 - **Commodore** (default, labeled "Task force"): launches the session on Commodore, which plans, assembles teammates and sees it through to a merged PR.
-- **Configured skills** (Wayfinder, Triage in the mockup): a list the engineer can edit ("Edit skill list").
-- **Custom skill**: a text field with type-ahead over the skills installed for that harness and profile. Arrow keys move, Enter picks, Escape closes; tapping a row picks it. If nothing matches, the session launches with the name exactly as typed.
+- **Configured skills** (Wayfinder, Triage in the mockup): a list the engineer can edit ("Edit skill list"), kept in Admiral's configuration.
+- **Custom skill**: a text field with type-ahead over the skills installed for that harness and fleet. Arrow keys move, Enter picks, Escape closes; tapping a row picks it. If nothing matches, the session launches with the name exactly as typed.
 - **Hoist sails** launches; **Stay in port** cancels.
 
-Installed skills come from the places the launcher's `docs/harnesses.md` lists for each harness (for Claude Code: the profile's `CLAUDE_CONFIG_DIR/skills`, the project's `.claude/skills`, and enabled plugins).
+Hoist sails starts the dock's harness in the background with the fleet's settings, in the order's repository checkout, on the chosen skill with the order's URL as the launch prompt.
 
-**Done when:** each choice launches the session with that skill; the type-ahead lists real installed skills for the chosen profile and harness; keyboard and touch both work.
+Installed skills come from the places each harness loads skills from, listed in `docs/architecture.md` (for Claude Code: the fleet's `CLAUDE_CONFIG_DIR/skills`, the project's `.claude/skills`, and enabled plugins).
 
-See `docs/open-questions.md`: the launcher currently always starts Commodore, so non-Commodore launches need launcher support.
+**Done when:** each choice launches the session with that skill; the type-ahead lists real installed skills for the chosen fleet and harness; keyboard and touch both work.
 
 ### 5. Leaving the marina
 
@@ -111,6 +111,7 @@ Flags carry each harness's official logo. The prototype uses lettered placeholde
 
 ## Known prototype issues to fix in the build
 
+- The header tagline reads "Fleet command for Commodore Launcher"; Admiral no longer works with the launcher, so drop or reword it.
 - Crew boats can overlap their ship's plaque; lay crew out around the ship without covering the plaque.
 - Ship slots are fixed percentages; real placement should avoid collisions and respect the fleet's general area.
 - Sample orders, ships and terminal lines are fake; nothing in them is real data.
