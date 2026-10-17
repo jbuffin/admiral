@@ -45,11 +45,11 @@ One harness within one fleet (Work Fleet's Claude dock). Dropping an order on a 
 _Avoid_: slot, target
 
 **Launch orders**:
-The dialog that opens when an order is dropped on a dock. The engineer chooses what the session starts with: Commodore (the default, a task force), another configured skill, or a custom skill typed in with type-ahead over installed skills.
+The dialog that opens when an order is dropped on a dock. The engineer chooses what the session starts with: Commodore (the default, a task force), another configured skill, a custom skill typed in with type-ahead over installed skills, or no skill at all, which sends the order's text to the harness as it is.
 _Avoid_: launch menu, modal
 
 **Ship**:
-One running harness session, launched from a dock and run in its own tmux session (ADR 0002). Wooden hull, a stripe in its fleet color, the harness logo on its flag, a square bot as captain.
+One running harness session, launched from a dock and run in its own tmux session (ADR 0002). Wooden hull, a stripe in its fleet color, the harness logo on its flag, a square bot as captain. Each ship has a generated name, unique among the ships that exist, that it keeps for life; the name carries no meaning.
 _Avoid_: boat (for the lead), agent, card
 
 **Crew boat**:
