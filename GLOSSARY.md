@@ -22,7 +22,7 @@ One item from an order source, shown as a card in the Orders sidebar, not yet la
 _Avoid_: job, ticket, card (in code)
 
 **Order source**:
-A plugin that supplies orders: a freeform list the engineer writes first, then GitHub issues and PRs, Jira, Linear and others. Each source contributes one or more panels.
+One configured instance of a plugin that supplies orders: a freeform list the engineer writes first, then GitHub issues and PRs, Jira, Linear and others. The same plugin can be added as more than one source, such as two GitHub accounts. Sources belong to Admiral, not to a fleet. Each source contributes one or more panels.
 _Avoid_: task source, provider, integration, feed
 
 **Panel**:
