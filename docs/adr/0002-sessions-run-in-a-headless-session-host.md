@@ -8,7 +8,7 @@ A dashboard can only show and type into a terminal it can attach to. Sessions mu
 
 ## Decision
 
-Each ship runs in its own tmux session on a tmux socket that belongs to Admiral. The tmux session's name is derived from the ship's task, so Admiral finds its sessions again after a restart. The terminal bridge attaches to the session's pane, streams its output to the browser and sends keystrokes back. A ship is alive while its tmux session and harness process are.
+Each ship runs in its own tmux session on a tmux socket that belongs to Admiral. The tmux session is named after the ship (`saltpaw` for Saltpaw), and the ship's display name is kept in the session option `@admiral-name`, so Admiral finds its sessions and their names again after a restart ([Ship names: stable per ship](https://github.com/jbuffin/admiral/issues/8)). The terminal bridge attaches to the session's pane, streams its output to the browser and sends keystrokes back. A ship is alive while its tmux session and harness process are.
 
 ## Considered options
 
