@@ -23,7 +23,7 @@ Before writing code, read in this order:
 1. `GLOSSARY.md`: the words Admiral uses.
 2. `designs/prototype/index.html` (open it in a browser) and `designs/README.md`: the reference for look, layout and motion.
 3. [Admiral MVP spec](https://github.com/jbuffin/admiral/issues/45): what to build, as user stories and implementation decisions. Behavior wins over the prototype; the prototype wins on visual detail.
-4. `docs/adr/` and `docs/open-questions.md`. Do not build a part that depends on an open question until it is resolved and recorded.
+4. `docs/adr/`. Open questions are GitHub issues. Do not build a part that depends on one until it is resolved and recorded.
 
 Admiral launches sessions itself (ADR 0003): it never calls `commodore` and never reads or writes `~/.commodore-launcher/`. Touch must work on iPad Safari. Use the harnesses' official logos on flags; never redraw them.
 
