@@ -242,7 +242,7 @@ test.describe('S5: dock and fleet marks from config', () => {
     for (const [name, other, otherKey] of [['One', 'Two', 'two'], ['Two', 'One', 'one']]) {
       const d = dockNamed(marina(page, name), 'Claude');
       await expect(d.getByText('All in port')).toHaveCount(0);
-      expect(await dockText(d)).toContain(`Shares its sign-in directory ${shared} with fleet ${other} (${otherKey})`);
+      expect(await dockText(d)).toContain(`Shares its configuration directory with fleet ${other} (${otherKey})`);
     }
   });
 });

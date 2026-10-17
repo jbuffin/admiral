@@ -27,7 +27,7 @@ function marks(fleet: Fleet, dock: Dock): { short: string; full: string[] } | un
     full.push('No search roots');
   }
   for (const w of dock.warnings) {
-    short ||= 'Shared sign-in';
+    short ||= 'Shared config dir';
     full.push(w);
   }
   return short ? { short, full } : undefined;
