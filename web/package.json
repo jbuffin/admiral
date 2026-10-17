@@ -4,10 +4,24 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "dev": "vite",
+    "build": "node scripts/gen-tokens.mjs && vite build",
+    "typecheck": "node scripts/gen-tokens.mjs && tsc --noEmit"
   },
   "devDependencies": {
     "@playwright/test": "1.55.0",
+    "@preact/preset-vite": "^2.10.6",
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.7",
     "vitest": "3.2.4"
+  },
+  "dependencies": {
+    "@fontsource-variable/bricolage-grotesque": "^5.3.0",
+    "@fontsource/archivo": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@preact/signals": "^2.11.3",
+    "preact": "^11.0.1"
   }
 }
