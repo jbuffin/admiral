@@ -30,7 +30,7 @@ A collapsible group of orders in the sidebar. A panel shows one order source, or
 _Avoid_: column, list
 
 **Fleet**:
-A named setup such as Work Fleet or Home Fleet. It decides which harnesses its docks run and, for each, the executable, configuration directory and environment, so work and personal setups never mix. Fleets come only from Admiral's configuration.
+A named setup such as Work Fleet or Home Fleet. It decides which harnesses its docks run and, for each, the executable, configuration directory and environment, so work and personal setups never mix. Fleets come only from Admiral's configuration, which the engineer sets up with Admiral's setup.
 _Avoid_: profile, workspace, account, group
 
 **Fleet color**:
@@ -45,8 +45,12 @@ One harness within one fleet (Work Fleet's Claude dock). Dropping an order on a 
 _Avoid_: slot, target
 
 **Launch orders**:
-The dialog that opens when an order is dropped on a dock. The engineer chooses what the session starts with: Commodore (the default, a task force), another configured skill, a custom skill typed in with type-ahead over installed skills, or no skill at all, which sends the order's text to the harness as it is.
+The dialog that opens when an order is dropped on a dock. The engineer chooses what the session starts with: Commodore (the default, a task force), a favorite skill, a custom skill typed in with type-ahead over installed skills, or no skill at all, which sends the order's text to the harness as it is.
 _Avoid_: launch menu, modal
+
+**Favorite skill**:
+A skill the engineer starred, up to five, shown in launch orders after Commodore on every dock where it is installed.
+_Avoid_: configured skill, skill list
 
 **Ship**:
 One running harness session, launched from a dock and run in its own tmux session (ADR 0002). Wooden hull, a stripe in its fleet color, the harness logo on its flag, a square bot as captain. Each ship has a generated name, unique among the ships that exist, that it keeps for life; the name carries no meaning.
