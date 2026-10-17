@@ -111,7 +111,6 @@ Flags carry each harness's official logo. The prototype uses lettered placeholde
 
 ## Known prototype issues to fix in the build
 
-- The header tagline reads "Fleet command for Commodore Launcher"; Admiral no longer works with the launcher, so drop or reword it.
 - Crew boats can overlap their ship's plaque; lay crew out around the ship without covering the plaque.
 - Ship slots are fixed percentages; real placement should avoid collisions and respect the fleet's general area.
 - Sample orders, ships and terminal lines are fake; nothing in them is real data.
