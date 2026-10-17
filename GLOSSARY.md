@@ -26,7 +26,7 @@ One configured instance of a plugin that supplies orders: a freeform list the en
 _Avoid_: task source, provider, integration, feed
 
 **Panel**:
-A collapsible group of orders in the sidebar. A panel shows one order source, or several combined; the engineer can combine and split panels.
+A collapsible group of orders in the sidebar. Each panel belongs to one order source.
 _Avoid_: column, list
 
 **Fleet**:
