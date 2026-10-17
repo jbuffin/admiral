@@ -38,3 +38,7 @@ Tests sit at two seams. `e2e/` (Go) starts `bin/admiral` and drives it over HTTP
 The server tests that connect through the Mac's own LAN address skip, with a message, when that address doesn't answer. They always run in CI.
 
 For UI work, run `bin/admiral --listen 127.0.0.1:7420` and then `npm --prefix web run dev`. Vite forwards `/api` and `/ws` to the server (set `ADMIRAL_SERVER` for another address).
+
+### Logos
+
+The flags draw a logo `<symbol>` by id (`logo-claude`, `logo-copilot`, `logo-codex`). Without official files the build uses lettered placeholders (Cl, Co, Cx). For a personal build, put the official logo files in `web/logos/official/` as `claude.svg`, `copilot.svg` and `codex.svg` (the folder is gitignored) and rebuild; they replace the placeholders under the same ids. Each file carries its own field and a `viewBox`, because the vendors' usage rules set the field. Never redraw a vendor logo or commit these files.
