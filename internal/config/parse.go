@@ -6,9 +6,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -34,6 +36,25 @@ type Fleet struct {
 	Ink         string // text color on Color
 	SearchRoots []string
 	Harnesses   []Harness // dock order: claude, copilot, codex, as present
+}
+
+func (c *Config) clone() *Config {
+	out := *c
+	out.FavoriteSkills = slices.Clone(c.FavoriteSkills)
+	out.Sources = slices.Clone(c.Sources)
+	out.Fleets = make([]Fleet, len(c.Fleets))
+	for i, f := range c.Fleets {
+		f.SearchRoots = slices.Clone(f.SearchRoots)
+		f.Harnesses = slices.Clone(f.Harnesses)
+		for j, h := range f.Harnesses {
+			h.Args = slices.Clone(h.Args)
+			h.Env = maps.Clone(h.Env)
+			h.Warnings = slices.Clone(h.Warnings)
+			f.Harnesses[j] = h
+		}
+		out.Fleets[i] = f
+	}
+	return &out
 }
 
 // CanLaunch is false for a fleet with no search roots: its docks show, but
@@ -170,7 +191,7 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 			if f.Name, err = str(p, m.raw); err != nil {
 				return Fleet{}, err
 			}
-			if f.Name == "" {
+			if strings.TrimSpace(f.Name) == "" {
 				return Fleet{}, fmt.Errorf("%s: must not be empty", p)
 			}
 		case "color":
@@ -243,7 +264,7 @@ func searchRoots(path string, raw json.RawMessage) ([]string, error) {
 		return nil, err
 	}
 	for i, r := range roots {
-		if r != "~" && !strings.HasPrefix(r, "~/") && !filepath.IsAbs(r) {
+		if !strings.HasPrefix(r, "~/") && !filepath.IsAbs(r) {
 			return nil, fmt.Errorf("%s[%d]: must be an absolute path or start with ~/, got %q", path, i, r)
 		}
 		roots[i] = filepath.Clean(expandHome(r))

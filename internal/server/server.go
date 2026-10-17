@@ -4,6 +4,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io/fs"
@@ -69,12 +70,13 @@ func (s *Server) serveWS(w http.ResponseWriter, r *http.Request) {
 		defer stop()
 		changes, unsubscribe := s.Config.Subscribe()
 		defer unsubscribe()
-		s.sendConfig(ctx2, conn)
+		var sent []byte
+		s.sendConfig(ctx2, conn, &sent)
 		go func() {
 			for {
 				select {
 				case <-changes:
-					s.sendConfig(ctx2, conn)
+					s.sendConfig(ctx2, conn, &sent)
 				case <-ctx2.Done():
 					return
 				}
@@ -99,8 +101,13 @@ func (s *Server) serveWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) sendConfig(ctx context.Context, conn *websocket.Conn) {
+// sendConfig pushes the config unless the client already has exactly this.
+func (s *Server) sendConfig(ctx context.Context, conn *websocket.Conn, sent *[]byte) {
 	data, _ := json.Marshal(s.Config.View())
+	if bytes.Equal(data, *sent) {
+		return
+	}
+	*sent = data
 	wctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	_ = conn.Write(wctx, websocket.MessageText, data)

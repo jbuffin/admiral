@@ -168,34 +168,52 @@ func fleetKeys(keys ...string) func(cfgBody) bool {
 	return func(b cfgBody) bool { return reflect.DeepEqual(b.keys(), keys) }
 }
 
-// S1: two fleets come back in file order with resolved colors, on the API and
-// on the WebSocket, with docks in the prototype's order.
-func TestConfigS1_FleetsInFileOrderWithResolvedColors(t *testing.T) {
+// S1: fleets come back in file order with resolved colors and inks, on the API
+// and on the WebSocket, with docks in the prototype's order. The color
+// sequence skips nothing, counts only fleets without a color, and cycles.
+func TestConfigS1_FleetsInFileOrderWithResolvedColorsAndInk(t *testing.T) {
 	home := newHome(t)
 	writeConfig(t, home, `{
 	  "version": 1,
 	  "favorite_skills": ["commodore", "review"],
 	  "fleets": {
-	    "zeta":  {"name": "Zeta Fleet", "color": "#112233", "search_roots": ["/tmp"], "codex": {}, "claude": {}, "copilot": {}},
-	    "alpha": {"name": "Alpha Fleet", "search_roots": ["/tmp"], "claude": {}},
-	    "mid":   {"name": "Mid Fleet", "search_roots": ["/tmp"], "codex": {}}
+	    "zeta": {"name": "Zeta Fleet", "color": "#112233", "search_roots": ["/tmp"], "codex": {}, "claude": {}, "copilot": {}},
+	    "f1": {"name": "F1"}, "f2": {"name": "F2"}, "f3": {"name": "F3"},
+	    "f4": {"name": "F4"}, "f5": {"name": "F5"}, "f6": {"name": "F6"},
+	    "yellow": {"name": "Yellow", "color": "#FFFF00"},
+	    "black":  {"name": "Black", "color": "#000000"},
+	    "orange": {"name": "Orange", "color": "#F28C28"},
+	    "violet": {"name": "Violet", "color": "#7A5AF0"}
 	  }
 	}`)
 	in := startAdmiral(t, home, "127.0.0.1:0")
 
 	check := func(where string, b cfgBody) {
 		t.Helper()
-		if got, want := b.keys(), []string{"zeta", "alpha", "mid"}; !reflect.DeepEqual(got, want) {
-			t.Fatalf("%s: fleets = %v, want file order %v", where, got, want)
+		wantKeys := []string{"zeta", "f1", "f2", "f3", "f4", "f5", "f6", "yellow", "black", "orange", "violet"}
+		if got := b.keys(); !reflect.DeepEqual(got, wantKeys) {
+			t.Fatalf("%s: fleets = %v, want file order %v", where, got, wantKeys)
 		}
-		if got := b.fleet("zeta"); got.Name != "Zeta Fleet" || got.Color != "#112233" {
-			t.Errorf("%s: zeta = %+v, want explicit color kept", where, got)
+		if got := b.fleet("zeta"); got.Name != "Zeta Fleet" {
+			t.Errorf("%s: zeta = %+v", where, got)
 		}
-		if got := b.fleet("alpha").Color; got != "#3366E0" {
-			t.Errorf("%s: first fleet without a color = %q, want blue #3366E0", where, got)
+		want := []struct{ key, color, ink string }{
+			{"zeta", "#112233", "#FFFFFF"}, // explicit colors don't use up the sequence
+			{"f1", "#3366E0", "#FFFFFF"},
+			{"f2", "#F28C28", "#14304A"},
+			{"f3", "#7A5AF0", "#FFFFFF"},
+			{"f4", "#1F9E8C", "#FFFFFF"},
+			{"f5", "#E2447A", "#FFFFFF"},
+			{"f6", "#3366E0", "#FFFFFF"}, // cycles after the fifth
+			{"yellow", "#FFFF00", "#14304A"},
+			{"black", "#000000", "#FFFFFF"},
+			{"orange", "#F28C28", "#14304A"},
+			{"violet", "#7A5AF0", "#FFFFFF"},
 		}
-		if got := b.fleet("mid").Color; got != "#F28C28" {
-			t.Errorf("%s: next fleet without a color = %q, want orange #F28C28 (explicit colors don't use up the sequence)", where, got)
+		for _, w := range want {
+			if got := b.fleet(w.key); got.Color != w.color || got.Ink != w.ink {
+				t.Errorf("%s: fleet %s: color %q ink %q, want %q ink %q", where, w.key, got.Color, got.Ink, w.color, w.ink)
+			}
 		}
 		var order []string
 		for _, d := range b.fleet("zeta").Docks {
@@ -218,45 +236,9 @@ func TestConfigS1_FleetsInFileOrderWithResolvedColors(t *testing.T) {
 	check("websocket", ws)
 }
 
-// S1 (colors): the sequence cycles after five; ink follows the palette, else
-// WCAG contrast.
-func TestConfigS1_ColorSequenceCyclesAndInk(t *testing.T) {
-	home := newHome(t)
-	var fleets []string
-	for i := 1; i <= 6; i++ {
-		fleets = append(fleets, fmt.Sprintf(`"f%d":{"name":"F%d"}`, i, i))
-	}
-	fleets = append(fleets,
-		`"yellow":{"name":"Yellow","color":"#FFFF00"}`,
-		`"black":{"name":"Black","color":"#000000"}`,
-		`"orange":{"name":"Orange","color":"#F28C28"}`,
-		`"violet":{"name":"Violet","color":"#7A5AF0"}`)
-	writeConfig(t, home, withVersion(strings.Join(fleets, ",")))
-	in := startAdmiral(t, home, "127.0.0.1:0")
-
-	b, _ := fetchConfig(t, in)
-	want := []struct{ key, color, ink string }{
-		{"f1", "#3366E0", "#FFFFFF"},
-		{"f2", "#F28C28", "#14304A"},
-		{"f3", "#7A5AF0", "#FFFFFF"},
-		{"f4", "#1F9E8C", "#FFFFFF"},
-		{"f5", "#E2447A", "#FFFFFF"},
-		{"f6", "#3366E0", "#FFFFFF"}, // cycles after the fifth
-		{"yellow", "#FFFF00", "#14304A"},
-		{"black", "#000000", "#FFFFFF"},
-		{"orange", "#F28C28", "#14304A"},
-		{"violet", "#7A5AF0", "#FFFFFF"},
-	}
-	for _, w := range want {
-		got := b.fleet(w.key)
-		if got.Color != w.color || got.Ink != w.ink {
-			t.Errorf("fleet %s: color %q ink %q, want %q ink %q", w.key, got.Color, got.Ink, w.color, w.ink)
-		}
-	}
-}
-
 // S2: a hand edit, an editor-style replace and a delete + recreate each reach
-// a connected client within ~2 s, with no restart.
+// a connected client within ~2 s, with no restart; deleting the file keeps the
+// last good fleets and sets the error.
 func TestConfigS2_LiveReload(t *testing.T) {
 	home := newHome(t)
 	writeConfig(t, home, withVersion(`"one":{"name":"One"}`))
@@ -270,21 +252,29 @@ func TestConfigS2_LiveReload(t *testing.T) {
 	replaceConfig(t, home, withVersion(`"one":{"name":"One"},"two":{"name":"Two"},"three":{"name":"Three"}`))
 	waitWS(t, c, 2*time.Second, "fleets one, two, three after a rename-over save", fleetKeys("one", "two", "three"))
 
+	// Deleting keeps the last good fleets and sets the error; recreating clears it.
 	if err := os.Remove(configPath(home)); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(300 * time.Millisecond)
+	b, _ := waitWS(t, c, 2*time.Second, "an error after the file was deleted", hasErr)
+	if !strings.Contains(b.Error.File, "config.json") || !strings.Contains(strings.ToLower(b.Error.Message), "not found") {
+		t.Errorf("error = %+v, want the file named and `not found` in the message", b.Error)
+	}
+	if !reflect.DeepEqual(b.keys(), []string{"one", "two", "three"}) {
+		t.Errorf("fleets after delete = %v, want the last good [one two three]", b.keys())
+	}
 	writeConfig(t, home, withVersion(`"four":{"name":"Four"}`))
-	waitWS(t, c, 2*time.Second, "fleet four after delete + recreate", func(b cfgBody) bool {
+	waitWS(t, c, 2*time.Second, "fleet four and no error after recreate", func(b cfgBody) bool {
 		return reflect.DeepEqual(b.keys(), []string{"four"}) && b.Error == nil
 	})
-	if b, _ := fetchConfig(t, in); !reflect.DeepEqual(b.keys(), []string{"four"}) {
-		t.Fatalf("GET /api/config fleets = %v, want [four]", b.keys())
+	if b, _ := fetchConfig(t, in); !reflect.DeepEqual(b.keys(), []string{"four"}) || b.Error != nil {
+		t.Fatalf("GET /api/config fleets = %v error %+v, want [four] and null", b.keys(), b.Error)
 	}
 }
 
 // S2 (symlink): a config.json that is a symlink follows edits to its target,
-// including a rename-over in the target's directory.
+// including a rename-over in the target's directory and the target being
+// deleted and recreated.
 func TestConfigS2_SymlinkedConfigFollowsTarget(t *testing.T) {
 	home := newHome(t)
 	if err := os.MkdirAll(home, 0o700); err != nil {
@@ -310,6 +300,20 @@ func TestConfigS2_SymlinkedConfigFollowsTarget(t *testing.T) {
 	}
 	waitAPI(t, in, "fleets one, two after the symlink target was replaced", func(b cfgBody) bool {
 		return reflect.DeepEqual(b.keys(), []string{"one", "two"})
+	})
+
+	if err := os.Remove(target); err != nil {
+		t.Fatal(err)
+	}
+	b := waitAPI(t, in, "an error after the symlink target was deleted", hasErr)
+	if !reflect.DeepEqual(b.keys(), []string{"one", "two"}) {
+		t.Errorf("fleets after the target was deleted = %v, want the last good [one two]", b.keys())
+	}
+	if err := os.WriteFile(target, []byte(withVersion(`"three":{"name":"Three"}`)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitAPI(t, in, "fleet three after the symlink target was recreated", func(b cfgBody) bool {
+		return reflect.DeepEqual(b.keys(), []string{"three"}) && b.Error == nil
 	})
 }
 
@@ -372,7 +376,7 @@ func TestConfigS4_StartupWithInvalidOrMissingFile(t *testing.T) {
 	})
 }
 
-// S5, S11 and the validation rules: each bad file is refused with an error
+// S5 and the validation rules: each bad file is refused with an error
 // that names the file and the offending path, while the last good config stays.
 func TestConfigS5_InvalidFilesAreRefusedWithThePathNamed(t *testing.T) {
 	home := newHome(t)
@@ -394,6 +398,8 @@ func TestConfigS5_InvalidFilesAreRefusedWithThePathNamed(t *testing.T) {
 		{"unknown harness", `{"version":1,"fleets":{"work":{"name":"A","gemini":{}}}}`, "fleets.work.gemini"},
 		{"name missing", `{"version":1,"fleets":{"work":{}}}`, "fleets.work.name"},
 		{"name empty", `{"version":1,"fleets":{"work":{"name":""}}}`, "fleets.work.name"},
+		{"name only spaces", `{"version":1,"fleets":{"work":{"name":"  "}}}`, "fleets.work.name"},
+		{"bare ~ search root", `{"version":1,"fleets":{"work":{"name":"A","search_roots":["~"]}}}`, "fleets.work.search_roots"},
 		{"bad color", `{"version":1,"fleets":{"work":{"name":"A","color":"red"}}}`, "fleets.work.color"},
 		{"relative search root", `{"version":1,"fleets":{"work":{"name":"A","search_roots":["src/x"]}}}`, "fleets.work.search_roots"},
 		{"unknown key in harness", `{"version":1,"fleets":{"work":{"name":"A","claude":{"evn":{}}}}}`, "fleets.work.claude.evn"},
@@ -431,9 +437,6 @@ func TestConfigValidOddShapesLoad(t *testing.T) {
 	f := b.fleet("bare")
 	if f.Key != "bare" || f.Docks == nil || len(f.Docks) != 0 {
 		t.Errorf("a fleet with no harness entries has docks [], got %s", raw)
-	}
-	if f.CanLaunch {
-		t.Errorf("a fleet with no search_roots can't launch")
 	}
 
 	writeConfig(t, home, `{"version":1}`)
@@ -602,17 +605,24 @@ func TestConfigS8_NoSearchRootsShowsDocksButCannotLaunch(t *testing.T) {
 	}
 }
 
-// S10: env and args may hold secrets and never leave the server.
+// S10: env and args may hold secrets and never leave the server, and the
+// shared-identity warning (a second fleet on the same identity directory)
+// doesn't carry the directory either.
 func TestConfigS10_EnvAndArgsNeverSent(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	home := newHome(t)
 	writeConfig(t, home, withVersion(`"work":{"name":"Work","search_roots":["/tmp"],
-	  "claude":{"args":["--api-key","arg-secret-123"],"env":{"CLAUDE_CONFIG_DIR":"~/x","API_TOKEN":"env-secret-456"}}}`))
+	  "claude":{"args":["--api-key","arg-secret-123"],"env":{"CLAUDE_CONFIG_DIR":"~/identity-secret-789","API_TOKEN":"env-secret-456"}}},
+	  "home":{"name":"Home","claude":{"env":{"CLAUDE_CONFIG_DIR":"~/identity-secret-789"}}}`))
 	in := startAdmiral(t, home, "127.0.0.1:0")
 
-	_, api := fetchConfig(t, in)
+	api, apiRaw := fetchConfig(t, in)
+	if d, _ := api.fleet("work").dock("claude"); len(d.Warnings) == 0 {
+		t.Fatalf("the shared identity must warn, or this test never reaches the warning path: %s", apiRaw)
+	}
 	_, ws := waitWS(t, dialWS(t, in), 3*time.Second, "any config", anyConfig)
-	for where, body := range map[string]string{"GET /api/config": api, "websocket": ws} {
-		for _, secret := range []string{"arg-secret-123", "env-secret-456", "--api-key", "API_TOKEN"} {
+	for where, body := range map[string]string{"GET /api/config": apiRaw, "websocket": ws} {
+		for _, secret := range []string{"arg-secret-123", "env-secret-456", "identity-secret-789", "--api-key", "API_TOKEN"} {
 			if strings.Contains(body, secret) {
 				t.Errorf("%s leaks %q: %s", where, secret, body)
 			}
@@ -621,29 +631,4 @@ func TestConfigS10_EnvAndArgsNeverSent(t *testing.T) {
 			t.Errorf("%s must not carry env or args keys: %s", where, body)
 		}
 	}
-}
-
-// S11: deleting the file while running keeps the fleets and sets the error;
-// recreating it clears the error.
-func TestConfigS11_DeletedFileKeepsLastGoodAndRecovers(t *testing.T) {
-	home := newHome(t)
-	writeConfig(t, home, withVersion(`"work":{"name":"Work"}`))
-	in := startAdmiral(t, home, "127.0.0.1:0")
-	waitAPI(t, in, "fleet work", fleetKeys("work"))
-
-	if err := os.Remove(configPath(home)); err != nil {
-		t.Fatal(err)
-	}
-	b := waitAPI(t, in, "an error after the file was deleted", hasErr)
-	if !strings.Contains(b.Error.File, "config.json") || !strings.Contains(strings.ToLower(b.Error.Message), "not found") {
-		t.Errorf("error = %+v, want the file named and `not found` in the message", b.Error)
-	}
-	if !reflect.DeepEqual(b.keys(), []string{"work"}) {
-		t.Errorf("fleets after delete = %v, want the last good [work]", b.keys())
-	}
-
-	writeConfig(t, home, withVersion(`"work":{"name":"Work"},"back":{"name":"Back"}`))
-	waitAPI(t, in, "the error cleared and both fleets", func(b cfgBody) bool {
-		return b.Error == nil && reflect.DeepEqual(b.keys(), []string{"work", "back"})
-	})
 }

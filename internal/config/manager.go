@@ -1,8 +1,6 @@
 package config
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -34,7 +32,6 @@ type Manager struct {
 	watched map[string]bool
 	target  string // base name of the resolved file, when config.json is a symlink
 	subs    map[chan struct{}]struct{}
-	last    []byte // the last published view, to skip no-op reloads
 }
 
 // Open loads dir/config.json and starts watching it. An invalid or missing file
@@ -63,15 +60,16 @@ func (m *Manager) Close() {
 	<-m.done
 }
 
-// Current is the last good config; fleets are empty until a file loads.
+// Current is a copy of the last good config; fleets are empty until a file
+// loads. Callers may change it freely.
 func (m *Manager) Current() *Config {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.cur
+	return m.cur.clone()
 }
 
-// Subscribe returns a channel that receives after every change to what View
-// reports. Notifications coalesce; call View for the state.
+// Subscribe returns a channel that receives after every reload, whether or not
+// anything changed. Notifications coalesce; call View or Current for the state.
 func (m *Manager) Subscribe() (<-chan struct{}, func()) {
 	ch := make(chan struct{}, 1)
 	m.mu.Lock()
@@ -135,14 +133,9 @@ func (m *Manager) reload() {
 			m.cur, m.errMsg = cfg, ""
 		}
 	}
-	view, _ := json.Marshal(m.viewLocked())
-	changed := !bytes.Equal(view, m.last)
-	m.last = view
 	var subs []chan struct{}
-	if changed {
-		for ch := range m.subs {
-			subs = append(subs, ch)
-		}
+	for ch := range m.subs {
+		subs = append(subs, ch)
 	}
 	m.mu.Unlock()
 
@@ -159,7 +152,7 @@ func (m *Manager) reload() {
 func (m *Manager) syncWatches() {
 	want := map[string]bool{filepath.Dir(m.path): true}
 	target := ""
-	if resolved, err := filepath.EvalSymlinks(m.path); err == nil && resolved != m.path {
+	if resolved := resolveLink(m.path); resolved != m.path {
 		want[filepath.Dir(resolved)] = true
 		target = filepath.Base(resolved)
 	}
@@ -177,4 +170,24 @@ func (m *Manager) syncWatches() {
 			m.watched[dir] = true
 		}
 	}
+}
+
+// resolveLink follows path's symlinks. When the target is gone, so EvalSymlinks
+// fails, it follows the links by hand, so the directory the target will come
+// back in stays watched.
+func resolveLink(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	for range 10 {
+		dest, err := os.Readlink(path)
+		if err != nil {
+			break
+		}
+		if !filepath.IsAbs(dest) {
+			dest = filepath.Join(filepath.Dir(path), dest)
+		}
+		path = dest
+	}
+	return path
 }

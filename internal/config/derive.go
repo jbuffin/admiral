@@ -110,7 +110,7 @@ func resolveExecutable(exe string, env map[string]string) (string, bool) {
 		path = os.Getenv("PATH")
 	}
 	for _, dir := range filepath.SplitList(path) {
-		if dir == "" {
+		if !filepath.IsAbs(dir) { // a relative entry would resolve against whatever the cwd is
 			continue
 		}
 		if p := filepath.Join(dir, exe); isExecutable(p) {
@@ -161,10 +161,9 @@ func markSharedIdentities(fleets []Fleet) {
 					if ha.Name != hb.Name {
 						continue
 					}
-					dir := IdentityDir(ha.Name, ha.Env)
-					if dir == IdentityDir(hb.Name, hb.Env) {
+					if IdentityDir(ha.Name, ha.Env) == IdentityDir(hb.Name, hb.Env) {
 						ha.Warnings = append(ha.Warnings,
-							fmt.Sprintf("Shares its sign-in directory %s with fleet %s (%s)", dir, fleets[j].Name, fleets[j].Key))
+							fmt.Sprintf("Shares its configuration directory with fleet %s (%s)", fleets[j].Name, fleets[j].Key))
 					}
 				}
 			}
