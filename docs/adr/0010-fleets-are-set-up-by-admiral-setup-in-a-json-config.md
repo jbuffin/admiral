@@ -32,4 +32,4 @@ Follow Commodore Launcher's configuration model, adapted to fleets ([How the eng
 - Fleets can be set up from an iPad, behind the LAN token, because the setup terminal is a shell-equivalent the token already allows.
 - The engineer who knows Commodore Launcher recognises the commands, flags and error codes; its profiles are not imported (ADR 0003).
 - A configured skill list is gone: favorites replace it, and launch orders always offers Commodore first. A Commodore the skill index cannot find is shown disabled ("Commodore not found") and cannot launch.
-- Where Admiral's data dir is (state, the freeform list's file) is still open.
+- Admiral's data dir is `~/.admiral/` too (ADR 0012).

@@ -11,7 +11,7 @@ A starting point for the build, not a decision record. The decisions it rests on
  Mac                                        ▼
    admiral server (one local process)
      ├── fleet config ───── ~/.admiral/config.json   (fleets, search roots, favorite skills, sources; ADR 0010)
-     ├── state ──────────── ~/.admiral/state.db      (ships, names, positions, conversation IDs)
+     ├── state ──────────── ~/.admiral/state.json    (ship positions, last directory per dock; ADR 0012)
      ├── task sources ───── plugins: GitHub (gh), later Jira, Linear …
      ├── repo finder ────── fleet search roots → checkouts
      ├── skill index ────── skill directories per harness and fleet
@@ -19,7 +19,7 @@ A starting point for the build, not a decision record. The decisions it rests on
      └── terminal bridge ── tmux pane ⇄ WebSocket ⇄ xterm.js in the browser
 ```
 
-`~/.admiral/config.json` is decided (ADR 0010); the state path is a proposal.
+`~/.admiral/` holds the config (ADR 0010), `state.json`, each order source's `data/<source-key>/` and the tmux socket `tmux.sock` (ADR 0012).
 
 ## Pieces
 
@@ -27,7 +27,7 @@ A starting point for the build, not a decision record. The decisions it rests on
 - **Fleets and docks.** Admiral's own config: each fleet has a name, an optional color, and its harnesses, each with an executable, extra arguments and environment (for example `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`), and its search roots. `admiral setup` and `admiral fleet` write it, as Commodore Launcher's setup and `profile` commands do. Watch the file and push changes to the UI (ADR 0010).
 - **Repositories.** A ship runs in a directory the engineer picks in launch orders from the git checkouts under the fleet's search roots, pre-selected from the order when its URL matches a checkout's remote. No typed paths, no cloning, no worktrees of Admiral's own (ADR 0009).
 - **Launching.** Start the dock's harness in a new tmux session as an argument list: the fleet's executable and arguments, Admiral's hook flags, then the prompt (`claude -- '/skill text'`, `codex -- '$skill text'`, `copilot --interactive='/skill text'`), with the fleet's environment and the checkout as working directory. Hooks are `tmux set -p @admiral-state <state>`, from a bundle in `~/.admiral/harness/`; Admiral skips no trust dialog (ADR 0013). Commodore is the default skill.
-- **Sessions and resume.** Record each ship's task, fleet, harness, skill, tmux session and, where the harness has one, its conversation ID. Claude Code and Copilot CLI can resume a conversation by ID; Codex CLI cannot.
+- **Sessions.** Each ship's tmux session is its only record: name, fleet, harness, directory, skill, order source and order `id` as `@admiral-*` session options. A restart rebuilds the ships from tmux (ADR 0012). `admiral ships` and `admiral attach <ship>` open a ship from any terminal. Resume is out of the MVP.
 - **Terminal bridge.** Attach to the ship's tmux pane, stream bytes to the browser over the WebSocket, render with xterm.js, and send keystrokes back. One tmux control client per watched ship, shared by every browser; the latest active browser sets the pane size, a joining browser gets the screen and 2,000 lines of scrollback, and a bridge reconnects after a server restart without queueing input (ADR 0011).
 - **Skill index.** List the skills installed for a harness and fleet, plus the chosen directory's project skills, for the type-ahead in launch orders. Read the folders with the fleet's environment each time launch orders opens; no cache. Claude Code: `<CLAUDE_CONFIG_DIR>/skills`, the project's `.claude/skills`, and enabled plugins. Codex CLI: `~/.agents/skills`, `$CODEX_HOME/skills`, the project's `.agents/skills`. Copilot CLI: `~/.copilot/skills` (or `$COPILOT_HOME/skills`), `~/.agents/skills`, the project's `.github/skills`, `.agents/skills` and `.claude/skills`.
 - **Crew.** Teammates and subagents need a source: Commodore's own reporting, the harness's transcript, or tmux panes it opens. Unknown today; see `docs/open-questions.md`.
