@@ -1,6 +1,6 @@
 # Admiral designs
 
-The design reference for building Admiral. Start with the prototype, then read `docs/spec.md`.
+The design reference for building Admiral. Start with the prototype, then read the [Admiral MVP spec](https://github.com/jbuffin/admiral/issues/45).
 
 | Path | What |
 | --- | --- |

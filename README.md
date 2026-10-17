@@ -9,8 +9,8 @@ This repo is in the design phase. No code yet.
 ## Layout
 
 - `designs/`: the clickable prototype, screenshots, design tokens, SVG assets and source design files. Start with `designs/README.md`.
-- `docs/spec.md`: what Admiral does, with a "done when" check for each behavior.
-- `docs/architecture.md`: the proposed shape of the build.
+- [Admiral MVP spec](https://github.com/jbuffin/admiral/issues/45): what the MVP does, as user stories, implementation decisions and testing decisions.
+- `docs/architecture.md`: an early proposal for the build, superseded by the spec and the ADRs.
 - `docs/adr/`: decisions.
 - `docs/open-questions.md`: what still needs deciding, each tracked as a GitHub issue.
 - `GLOSSARY.md`: the words Admiral uses.
