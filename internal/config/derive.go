@@ -201,3 +201,16 @@ func (f Fleet) Harness(name string) (Harness, bool) {
 	}
 	return Harness{}, false
 }
+
+// IdentityVar is the environment variable a harness reads its identity
+// directory from, and the directory it uses without it.
+func IdentityVar(harness string) (variable, defaultDir string, ok bool) {
+	v, ok := identityVars[harness]
+	return v.env, v.dir, ok
+}
+
+// PaletteColor is the n-th color of the default sequence, wrapping around.
+func PaletteColor(n int) string { return palette[n%len(palette)].color }
+
+// Harnesses are the harness names a fleet may hold, in dock order.
+func Harnesses() []string { return append([]string(nil), dockOrder...) }

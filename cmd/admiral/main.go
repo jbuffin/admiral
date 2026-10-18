@@ -19,6 +19,7 @@ import (
 
 	"github.com/jbuffin/admiral/internal/auth"
 	"github.com/jbuffin/admiral/internal/bridge"
+	"github.com/jbuffin/admiral/internal/cli"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/launcher"
@@ -36,6 +37,10 @@ var version = "dev"
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "admiral:", err)
+		var usage *cli.UsageError
+		if errors.As(err, &usage) {
+			os.Exit(2)
+		}
 		os.Exit(1)
 	}
 }
@@ -43,10 +48,19 @@ func main() {
 // run dispatches on the first argument; subcommands slot in before the
 // default, which starts the server.
 func run(args []string) error {
-	if len(args) > 0 && args[0] != "" && args[0][0] != '-' {
-		return fmt.Errorf("unknown command %q", args[0])
+	if len(args) == 0 || args[0] == "" || args[0][0] == '-' {
+		return serve(args)
 	}
-	return serve(args)
+	std := cli.Std()
+	switch args[0] {
+	case "setup":
+		return cli.Setup(args[1:], std)
+	case "fleet":
+		return cli.Fleet(args[1:], std)
+	case "config":
+		return cli.Config(args[1:], std)
+	}
+	return &cli.UsageError{Msg: fmt.Sprintf("unknown command %q", args[0])}
 }
 
 // seedSources gives a first run its "Orders" source. It looks only at startup,
