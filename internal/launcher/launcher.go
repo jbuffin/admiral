@@ -130,6 +130,15 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		}
 		skill = name
 	}
+	// opts was built before the directory was cleaned and Commodore resolved.
+	for i := range opts {
+		switch opts[i][0] {
+		case "dir":
+			opts[i][1] = req.Dir
+		case "skill":
+			opts[i][1] = skill
+		}
+	}
 	exe, found := dock.Resolve()
 	if !found {
 		return nil, refuse(http.StatusBadRequest, "%s executable %s not found for fleet %s", req.Harness, dock.Executable, fleet.Name)
