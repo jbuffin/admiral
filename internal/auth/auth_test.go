@@ -159,3 +159,31 @@ func TestSetTokenClosesNonLocalWebSockets(t *testing.T) {
 		t.Fatal("SetToken should swap the accepted token")
 	}
 }
+
+// A running server follows the token file, so `admiral token rotate` needs no restart.
+func TestWatchFollowsARotatedTokenFile(t *testing.T) {
+	dir := t.TempDir()
+	old, err := LoadOrCreateToken(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(old, "7420")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go a.Watch(ctx, dir)
+
+	fresh, err := RotateToken(dir)
+	if err != nil || fresh == old {
+		t.Fatalf("rotate: %q %v", fresh, err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for !a.valid(fresh) {
+		if time.Now().After(deadline) {
+			t.Fatal("within 3s the watcher did not pick up the new token")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if a.valid(old) {
+		t.Fatal("the old token is still accepted")
+	}
+}

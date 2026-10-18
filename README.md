@@ -73,6 +73,34 @@ When the server goes away an open bridge keeps its last screen, dims, says "Reco
 
 The terminal is xterm.js (MIT) with the fit and WebGL addons, loaded when the first bridge opens.
 
+### The command line
+
+`admiral` with no command starts the server. On a terminal with no fleets it first asks whether to run setup (not under launchd, where stdin is not a terminal). The other commands work on `$ADMIRAL_HOME`. Exit codes: 0 ok, 1 error, 2 usage (unknown command, bad flags, `setup --yes` without `--answers`).
+
+| command | what it does |
+| --- | --- |
+| `admiral setup [--answers <file> --yes] [--dry-run]` | Finds your harnesses, wrappers (`claude-work`...), the names of `~/.claude*`, `~/.codex*` and `~/.copilot*` (never what is inside them) and folders under `~` that hold git checkouts, asks for each fleet, shows the change as a diff and asks before writing. It only adds or updates: fleets it isn't told about and top-level keys it doesn't know stay as they are. It refuses a fleet that shares an identity directory with another fleet for the same harness. |
+| `admiral fleet list \| add \| edit \| check` | `add <key> --name N` and `edit <key>` take `--color`, `--harness`, `--executable <harness>=<path>`, `--arg <harness>=<arg>`, `--env <harness>=<NAME>=<value>`, `--unset-env <harness>=<NAME>`, `--search-root` and `--remove-search-root`; every flag may repeat, and the key comes first. On `edit`, the `--arg` values for a harness replace its arguments. `~` is stored as typed. `check` resolves each executable without running it and exits 1 when one is missing. |
+| `admiral config show \| validate \| edit` | `edit` opens a copy in `$EDITOR` (`vi` without one) and saves it only if it loads, so it also fixes a file that is invalid now. |
+| `admiral token rotate [--port N]` | Writes a new token and prints the new "On other devices" URL. A running server notices and signs out every device that isn't on this Mac, dashboard and bridge alike. `--port` (default 7420) only shapes the printed URL. |
+| `admiral ships [--port N] [--names]` | Lists ships (`NAME SESSION FLEET HARNESS STATUS REPO`, tab-separated) as the running server sees them. With the server down it reads tmux and says so on the first line. `--names` prints display names only. |
+| `admiral attach <ship>` | Attaches this terminal to the ship's tmux session (`Ctrl-b d` detaches), by display name or session name. Read-only for an anchored ship. `_admiral` and `_setup` are refused. |
+| `admiral completion zsh \| bash` | Completes ship names for `attach`. |
+
+The answers file for `setup --answers` is JSON holding the same `fleets` object as `config.json`, in the order the fleets should have:
+
+```json
+{"fleets": {"work": {"name": "Work", "search_roots": ["~/code"],
+                     "claude": {"env": {"CLAUDE_CONFIG_DIR": "~/.claude-work"}},
+                     "codex": {}}}}
+```
+
+An `executable` left out is looked up on `PATH` (and `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`) and written as the absolute path found, without following symlinks. The identity variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`) is always written, with the harness's default directory when the file leaves it out; two fleets that leave it out share that default and are refused.
+
+### The setup terminal
+
+Tapping the "Set up a fleet" marina or the header's fleet count opens `admiral setup` in a terminal over open water. It runs in the tmux session `_setup` on Admiral's socket (never in `ships`, never a ship) and uses the bridge's terminal, so several browsers can share it and a dropped connection rejoins. `POST /api/setup` starts it or leaves the running one alone; `GET /api/setup` says whether it runs. The bridge accepts `/ws/bridge/_setup` while the session exists. The terminal closes when the session ends, whether setup wrote the file or not, and the page then re-reads `/api/config`; a change to `config.json` alone never closes it.
+
 ### Logos
 
 The flags draw a logo `<symbol>` by id (`logo-claude`, `logo-copilot`, `logo-codex`). Without official files the build uses lettered placeholders (Cl, Co, Cx). For a personal build, put the official logo files in `web/logos/official/` as `claude.svg`, `copilot.svg` and `codex.svg` (the folder is gitignored) and rebuild; they replace the placeholders under the same ids. Each file holds the mark only, on a transparent background, with a `viewBox`. Admiral draws each harness's field from the vendors' usage rules (Claude ivory, Copilot dark, Codex white) and centres the mark with clear space. A harness Admiral doesn't know draws the `logo-unknown` placeholder, a "?" on a plain field. Never redraw a vendor logo or commit these files.
