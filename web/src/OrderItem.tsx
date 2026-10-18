@@ -30,7 +30,6 @@ export function OrderItem({ source, panelId, order, fail }: { source: Source; pa
 
   return (
     <li class="order">
-      <Grip />
       <div class="order-main">
         <div class="order-meta">
           <SourceIcon source={source} size={16} />
@@ -58,6 +57,7 @@ export function OrderItem({ source, panelId, order, fail }: { source: Source; pa
           )}
         </Menu>
       )}
+      <Grip />
     </li>
   );
 }
