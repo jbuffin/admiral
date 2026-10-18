@@ -150,12 +150,18 @@ function BridgeView({ session }: { session: string }) {
     };
     place();
     document.documentElement.classList.add('bridge-open'); // the page behind doesn't scroll
+    // The orders panel collapsing and a header banner coming or going move `main` without a window resize.
+    const observer = new ResizeObserver(place);
+    observer.observe(main);
+    const header = document.querySelector('.app-header');
+    if (header) observer.observe(header);
     window.addEventListener('resize', place);
     window.addEventListener('scroll', place);
     vv?.addEventListener('resize', place);
     vv?.addEventListener('scroll', place);
     return () => {
       document.documentElement.classList.remove('bridge-open');
+      observer.disconnect();
       window.removeEventListener('resize', place);
       window.removeEventListener('scroll', place);
       vv?.removeEventListener('resize', place);

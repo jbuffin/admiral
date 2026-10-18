@@ -222,6 +222,34 @@ test.describe('S5: boarding a ship and typing on the bridge', () => {
     }
   });
 
+  test('the bridge follows open water when the orders panel collapses and expands', async ({ page, admiral, sea }, info) => {
+    const touch = isTouch(info);
+    const s = sea({ work: { name: 'Work', color: BLUE } });
+    s.world.skill('work', 'claude', 'review');
+    await admiral.start();
+    await s.world.guardData();
+    await launchFromOrder(s, 'work', 'alpha');
+    for (const [width, height] of [[834, 1194], [1194, 834]]) {
+      await page.setViewportSize({ width, height });
+      await page.goto(admiral.url);
+      await board(page, underwayIn('Work'), touch);
+      const matchesMain = () =>
+        page.evaluate(() => {
+          const b = document.querySelector('.bridge')!.getBoundingClientRect();
+          const m = document.querySelector('main')!.getBoundingClientRect();
+          return Math.abs(b.left - Math.max(0, m.left)) < 1 && Math.abs(b.top - Math.max(0, m.top)) < 1;
+        });
+      await expect.poll(matchesMain, { message: `${width}x${height}: at first` }).toBe(true);
+      const side = page.getByRole('complementary', { name: 'Orders', exact: true });
+      await press(side.getByRole('button', { name: 'Collapse orders' }), touch);
+      await expect(page.getByRole('complementary', { name: 'Orders, collapsed', exact: true })).toBeVisible();
+      await expect.poll(matchesMain, { message: `${width}x${height}: after collapsing` }).toBe(true);
+      await press(page.getByRole('button', { name: 'Expand orders' }), touch);
+      await expect(side).toBeVisible();
+      await expect.poll(matchesMain, { message: `${width}x${height}: after expanding` }).toBe(true);
+    }
+  });
+
   test('a ship that needs you opens its bridge from the header pill', async ({ page, admiral, sea }, info) => {
     test.skip(info.project.name !== 'ipad-landscape');
     const s = sea({ work: { name: 'Work', color: BLUE } });

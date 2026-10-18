@@ -1817,6 +1817,14 @@ body.dragging * {
   overflow: auto;
 }
 
+.flotilla {
+  flex: 1 1 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
 /* Narrow: the flotilla sits above the terminal, which takes the rest of the height. */
 @media (max-width: 760px) {
   .bridge {
@@ -1826,14 +1834,6 @@ body.dragging * {
   .flotilla {
     flex: 0 0 auto;
   }
-}
-
-.flotilla {
-  flex: 1 1 200px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
 }
 
 .flotilla-title {
