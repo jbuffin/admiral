@@ -400,11 +400,11 @@ func decodeValue(raw json.RawMessage) any {
 func maskSecrets(v any, sc map[string]any) any {
 	switch t := v.(type) {
 	case string:
-		if t != "" && !declaredPlain(sc, "string") {
+		if t != "" && !declaredPlain(sc, false) {
 			return unchangedMarker
 		}
 	case json.Number:
-		if !declaredPlain(sc, "number") && !declaredPlain(sc, "integer") {
+		if !declaredPlain(sc, true) {
 			return unchangedMarker
 		}
 	case []any:
@@ -428,26 +428,82 @@ func maskSecrets(v any, sc map[string]any) any {
 	return v
 }
 
+// schemaKeywords are the only keywords a schema node may use and still be
+// followed. A node with any other keyword (prefixItems, dependentSchemas,
+// $ref, oneOf…) and everything under it is masked.
+var schemaKeywords = map[string]bool{
+	"type": true, "properties": true, "items": true, "required": true, "title": true, "description": true,
+	"format": true, "enum": true, "const": true, "default": true, "examples": true, "minimum": true,
+	"maximum": true, "exclusiveMinimum": true, "exclusiveMaximum": true, "multipleOf": true,
+	"minLength": true, "maxLength": true, "pattern": true, "minItems": true, "maxItems": true,
+	"uniqueItems": true, "minProperties": true, "maxProperties": true, "$schema": true, "$id": true,
+	"$comment": true, "$defs": true, "definitions": true, "additionalProperties": true,
+	"readOnly": true, "deprecated": true,
+}
+
 // followable says the schema node uses only keywords maskSecrets understands.
 func followable(sc map[string]any) bool {
 	if sc == nil {
 		return false
 	}
-	for _, k := range []string{"$ref", "oneOf", "anyOf", "allOf", "not", "if", "then", "else", "patternProperties"} {
-		if _, ok := sc[k]; ok {
+	for k := range sc {
+		if !schemaKeywords[k] {
 			return false
 		}
 	}
-	if ap, ok := sc["additionalProperties"]; ok && ap != false {
-		return false
+	if it, ok := sc["items"]; ok {
+		if _, isObj := it.(map[string]any); !isObj {
+			return false
+		}
 	}
 	return true
 }
 
-// declaredPlain says the schema node declares a value of the given type that
-// is not a password.
-func declaredPlain(sc map[string]any, typ string) bool {
-	return followable(sc) && sc["type"] == typ && sc["format"] != "password"
+// publicScalars reports whether the list holds only strings, numbers, booleans and nulls.
+func publicScalars(list []any) bool {
+	for _, e := range list {
+		switch e.(type) {
+		case string, json.Number, bool, nil:
+		default:
+			return false
+		}
+	}
+	return len(list) > 0
+}
+
+// declaredPlain says the schema node makes a string (or, with number set, a
+// number) public: it declares that type, or a type list of scalars, or an
+// enum or const of scalars with no type; and it is not marked a secret
+// ("format": "password" in any case, or "writeOnly": true).
+func declaredPlain(sc map[string]any, number bool) bool {
+	if !followable(sc) {
+		return false
+	}
+	if f, _ := sc["format"].(string); strings.EqualFold(f, "password") || sc["writeOnly"] == true {
+		return false
+	}
+	switch t := sc["type"].(type) {
+	case string:
+		if number {
+			return t == "number" || t == "integer"
+		}
+		return t == "string"
+	case []any:
+		for _, e := range t {
+			if x, _ := e.(string); x != "string" && x != "number" && x != "integer" && x != "null" {
+				return false
+			}
+		}
+		return len(t) > 0
+	case nil:
+		if list, ok := sc["enum"].([]any); ok {
+			return publicScalars(list)
+		}
+		if c, ok := sc["const"]; ok {
+			return publicScalars([]any{c})
+		}
+	}
+	return false
 }
 
 // restoreSecrets puts the stored value back wherever the engineer left the

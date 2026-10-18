@@ -227,7 +227,7 @@ function Field(props: { id: string; prop: Prop; required: boolean; stored?: bool
               props.onValue(t === '' && props.stored ? UNCHANGED : t === '' && secret ? undefined : t);
             }}
           />
-          {props.stored && secret && <small>Leave empty to keep the stored value.</small>}
+          {props.stored && secret && <small>{cleared ? 'Saved without a value.' : 'Leave empty to keep the stored value.'}</small>}
           {hint}
         </label>
         {props.stored && secret && !required && !cleared && (

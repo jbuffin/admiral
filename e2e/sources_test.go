@@ -566,6 +566,19 @@ func TestSourceSettingsFailClosed(t *testing.T) {
 		{"undeclared", map[string]any{"token": "s3cretD"}, false, "s3cretD"},
 		{"badprops", map[string]any{"settingsSchema": map[string]any{"properties": "x"}, "token": "s3cretE"}, false, "s3cretE"},
 		{"numeric", map[string]any{"pin": 987654}, true, "987654"},
+		{"public", map[string]any{"settingsSchema": map[string]any{"type": "object", "additionalProperties": true,
+			"properties": map[string]any{
+				"url":  map[string]any{"type": "string"},
+				"mode": map[string]any{"enum": []string{"fast", "slow"}},
+			}}, "url": "https://example.com/pubvisible", "mode": "slow", "other": "s3cretI"}, false, "s3cretI"},
+		{"prefix", map[string]any{"settingsSchema": map[string]any{"type": "object", "properties": map[string]any{
+			"accounts": map[string]any{"type": "array", "prefixItems": []any{map[string]any{"type": "string", "format": "password"}}},
+		}}, "accounts": []string{"s3cretF"}}, false, "s3cretF"},
+		{"dependent", map[string]any{"settingsSchema": map[string]any{"type": "object", "dependentSchemas": map[string]any{"a": map[string]any{}},
+			"properties": map[string]any{"token": map[string]any{"type": "string"}}}, "token": "s3cretG"}, false, "s3cretG"},
+		{"writeonly", map[string]any{"settingsSchema": map[string]any{"type": "object", "properties": map[string]any{
+			"token": map[string]any{"type": "string", "writeOnly": true},
+		}}, "token": "s3cretH"}, false, "s3cretH"},
 	}
 	var defs []srcDef
 	plugs := map[string]*tplug{}
@@ -589,6 +602,11 @@ func TestSourceSettingsFailClosed(t *testing.T) {
 		if code != http.StatusOK || strings.Contains(body, c.secret) {
 			t.Errorf("GET settings of %s = %d %s, want 200 without %s", c.key, code, body, c.secret)
 		}
+	}
+	// What the schema makes public is still shown, however the node is closed.
+	_, pubBody := w.srcReq(http.MethodGet, "/public/settings", nil)
+	if !strings.Contains(pubBody, "pubvisible") || !strings.Contains(pubBody, `"mode":"slow"`) {
+		t.Errorf("GET settings = %s, want the declared url and the enum-only mode in clear", pubBody)
 	}
 	// What the schema declares plain is still shown.
 	_, body := w.srcReq(http.MethodGet, "/undeclared/settings", nil)
