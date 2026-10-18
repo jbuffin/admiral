@@ -65,11 +65,12 @@ async function world(admiral: Admiral, opts: ConstructorParameters<typeof World>
 test.describe('S4: launch with Commodore', () => {
   test('the last-used directory is selected, typing filters, skills follow the directory, Hoist sails runs /commodore with the whole text there', async ({ page, admiral }, info) => {
     const touch = !!info.project.use.hasTouch;
-    const w = await world(admiral, { favorites: ['betaskill'] });
+    const w = await world(admiral, { favorites: ['betaskill', 'shared'] });
     const alpha = w.checkout('alpha');
     const beta = w.checkout('beta');
     w.projectSkill(beta, 'betaskill'); // installed only for a ship in beta
     w.skill('work', 'claude', 'commodore');
+    w.skill('work', 'claude', 'shared'); // a favorite installed in every directory
     await admiral.start();
     await w.guardData();
 
@@ -91,6 +92,8 @@ test.describe('S4: launch with Commodore', () => {
     await expect(radio(d, /^Commodore/)).toBeChecked();
     await expect(d.getByText('Task force', { exact: true })).toBeVisible();
     await expect(radio(d, 'betaskill')).toHaveCount(0); // the favorite is not installed for alpha
+    await press(radio(d, 'shared'), touch); // the pick must survive the change of directory below
+    await expect(radio(d, 'shared')).toBeChecked();
     await press(directory(d), touch);
     await directory(d).fill('');
     const names = await page.getByRole('option').allInnerTexts();
@@ -107,7 +110,8 @@ test.describe('S4: launch with Commodore', () => {
 
     // The skills were read again for beta: its project skill's favorite is offered now.
     await expect(radio(d, 'betaskill')).toBeVisible();
-    await expect(radio(d, /^Commodore/)).toBeChecked();
+    await expect(radio(d, 'shared')).toBeChecked();
+    await press(radio(d, /^Commodore/), touch);
 
     await press(hoist(d), touch);
     await expect(d).toHaveCount(0);

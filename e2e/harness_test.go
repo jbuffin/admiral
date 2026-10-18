@@ -146,11 +146,11 @@ func startAdmiral(t *testing.T, home, listen string) *instance {
 	}
 	in := &instance{Home: home, listen: listen, cmd: cmd, done: make(chan struct{}), stderrBuf: stderr}
 	go func() { _ = cmd.Wait(); close(in.done) }()
+	// Admiral starts a tmux server that outlives it; end this home's. Cleanups
+	// run last-registered-first, so this one is registered first to run after
+	// Admiral has stopped (a live Admiral would start a new tmux).
+	t.Cleanup(func() { killTmux(filepath.Join(home, "tmux.sock")) })
 	t.Cleanup(in.Stop)
-	// Admiral starts a tmux server that outlives it; end this home's.
-	t.Cleanup(func() {
-		_ = exec.Command("tmux", "-S", filepath.Join(home, "tmux.sock"), "kill-server").Run()
-	})
 
 	lines := make(chan string, 8)
 	go func() {
@@ -327,6 +327,17 @@ func wsDial(t *testing.T, base, query string, hdr http.Header, host string) (*we
 		t.Cleanup(func() { c.CloseNow() })
 	}
 	return c, resp, err
+}
+
+// killTmux ends the tmux server on sock and waits until the socket stops answering.
+func killTmux(sock string) {
+	_ = exec.Command("tmux", "-S", sock, "kill-server").Run()
+	for i := 0; i < 20; i++ {
+		if exec.Command("tmux", "-S", sock, "list-sessions").Run() != nil {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 // readJSON reads one text message from c and unmarshals it.

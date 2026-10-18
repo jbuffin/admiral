@@ -147,9 +147,9 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
 
   // The skills depend on the directory, so they are read again when it changes.
   useEffect(() => {
-    // The old directory's skills are not the new one's: nothing to pick until they arrive.
+    // The old directory's skills are not the new one's: nothing to offer until they arrive.
+    // The choice stays, and keep() applies it to the new skills.
     setSkills(null);
-    setChoice((prev) => (prev === 'none' || prev === 'custom' ? prev : null));
     if (!dir) return;
     setReading(true);
     const n = ++asked.current;
@@ -172,12 +172,16 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
   // a favorite no longer offered falls back to the default.
   useEffect(() => {
     if (skills) setChoice((prev) => keep(prev, skills, favNames));
+    setStarring(false);
   }, [favNames.join('\n')]);
 
   // An opened list is brought into view inside the scrolling body.
   useEffect(() => {
     if (listOpen) document.getElementById('launch-skills')?.scrollIntoView({ block: 'nearest' });
   }, [listOpen]);
+  useEffect(() => {
+    if (dirOpen) document.getElementById('launch-dirs')?.scrollIntoView({ block: 'nearest' });
+  }, [dirOpen]);
 
   // A press outside a list closes it.
   useEffect(() => {
@@ -217,9 +221,12 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
     // All favorites, not only those installed on this dock: the PUT replaces the list.
     const next = favNames.includes(s.name) ? favNames.filter((n) => n !== s.name) : [...favNames, s.name];
     setStarring(true);
-    const r = await api('PUT', '/api/favorites', { skills: next });
-    setStarring(false);
+    const r = await api<{ favorite_skills: string[] }>('PUT', '/api/favorites', { skills: next });
     setNote(r.ok ? '' : r.error);
+    // Stay busy until the config push carries the new list, so a second star builds on it;
+    // if the push already arrived (or nothing changed) there is nothing to wait for.
+    const pushed = (config.value?.favorite_skills ?? []).join('\n');
+    if (!r.ok || r.data.favorite_skills.join('\n') === pushed) setStarring(false);
   };
 
   const hoist = async (ev?: Event) => {
