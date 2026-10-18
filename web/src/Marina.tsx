@@ -4,6 +4,7 @@ import { armed, departed, dockKey, dragging, openLaunch, selected } from './laun
 import { LogoFlag } from './Logos';
 import { Breakwater, Rowboat } from './Scenery';
 import { Ship } from './Ship';
+import { openSetup } from './setup';
 import { atSea, ships } from './ships';
 
 // Marina heights (tokens): 3 docks 300, otherwise the 2-dock height.
@@ -134,14 +135,16 @@ export function Marina({ fleet }: { fleet: Fleet }) {
   );
 }
 
-// With no fleets: one empty marina. Tapping it does nothing yet (u12).
+// With no fleets: one empty marina. Tapping it opens the setup terminal (story 19). The
+// button covers the marina; it is not the marina, which holds a basin and a sign.
 export function SetUpMarina() {
   return (
-    <section class="marina" aria-label="Set up a fleet" style={`height:${heightFor(0)}px`}>
+    <div class="marina" style={`height:${heightFor(0)}px`}>
       <Basin height={heightFor(0)} rowboatTop={heightFor(0) - 52} />
       <Sign color="#FFF6E3" ink="#14304A">
         <span class="sign-name">Set up a fleet</span>
       </Sign>
-    </section>
+      <button type="button" class="marina-hit" aria-label="Set up a fleet" onClick={() => void openSetup()} />
+    </div>
   );
 }

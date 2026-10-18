@@ -186,9 +186,9 @@ type in struct {
 
 func (s *Service) serve(rw http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
-	// Only a current ship is watchable: tmux resolves a bare name to any
+	// Only a current ship (or the setup terminal) is watchable: tmux resolves a bare name to any
 	// session it prefixes, so the check is on the exact name.
-	if _, ok := s.Ships.Get(session); !ok {
+	if _, ok := s.get(session); !ok {
 		rw.Header().Set("Content-Type", "application/json")
 		rw.WriteHeader(http.StatusNotFound)
 		_, _ = rw.Write([]byte(`{"error":"ship not found"}` + "\n"))

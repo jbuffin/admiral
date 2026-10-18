@@ -4,6 +4,7 @@ import { AdmiralMark } from './AdmiralMark';
 import { toggleSound, muted } from './chime';
 import { config } from './config';
 import { offline, signedOut } from './connection';
+import { openSetup } from './setup';
 import { atSea, board, needsYou, ships, shipsLoaded } from './ships';
 
 const aboutOpen = signal(false);
@@ -114,10 +115,12 @@ export function Header() {
         <div class="header-pills">
           <SeaPills />
           {n !== undefined && (
-            <span class="pill">
-              <span class="dot" />
-              {n === 1 ? '1 fleet' : `${n} fleets`}
-            </span>
+            <button type="button" class="pill-hit fleet-count" onClick={() => void openSetup()}>
+              <span class="pill">
+                <span class="dot" />
+                {n === 1 ? '1 fleet' : `${n} fleets`}
+              </span>
+            </button>
           )}
           <button type="button" class="press about-button" aria-label="About Admiral" onClick={() => (aboutOpen.value = true)}>
             <span class="about-face">

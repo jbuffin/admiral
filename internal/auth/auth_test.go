@@ -1,10 +1,15 @@
 package auth
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/coder/websocket"
 )
 
 // The e2e tests reach non-local peers only through the machine's LAN address,
@@ -97,5 +102,60 @@ func TestLoopbackPeer(t *testing.T) {
 	}
 	if c := do("evil.example:7420"); c != 403 {
 		t.Errorf("Host evil.example from loopback: %d, want 403", c)
+	}
+}
+
+// Rotating the token ends every non-local WebSocket that got in with the old
+// one, and leaves a loopback one alone (story 8). The peer address is forged
+// because the e2e version needs the LAN address to answer.
+func TestSetTokenClosesNonLocalWebSockets(t *testing.T) {
+	a := New("old-token", "7420")
+	echo := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer c.CloseNow()
+		for {
+			if _, _, err := c.Read(r.Context()); err != nil {
+				return
+			}
+		}
+	})
+	guarded := a.Middleware(echo)
+	lan := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.RemoteAddr = "192.168.1.50:51000"
+		guarded.ServeHTTP(w, r)
+	}))
+	defer lan.Close()
+	local := httptest.NewServer(guarded)
+	defer local.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	dial := func(srv *httptest.Server, query string) *websocket.Conn {
+		t.Helper()
+		c, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/ws"+query, nil)
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		return c
+	}
+	far, near := dial(lan, "?token=old-token"), dial(local, "")
+
+	a.SetToken("new-token")
+
+	readCtx, stop := context.WithTimeout(ctx, 3*time.Second)
+	defer stop()
+	if _, _, err := far.Read(readCtx); err == nil || readCtx.Err() != nil {
+		t.Fatalf("the non-local socket of the old token should be closed, got %v", err)
+	}
+	nearCtx, stopNear := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer stopNear()
+	if _, _, err := near.Read(nearCtx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a loopback socket has no token to lose, but it ended: %v", err)
+	}
+	if !a.valid("new-token") || a.valid("old-token") {
+		t.Fatal("SetToken should swap the accepted token")
 	}
 }

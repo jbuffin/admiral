@@ -146,6 +146,9 @@ func serve(args []string) error {
 	sourceService := &sources.Service{Home: dir, Config: cfg, Sup: supervisor, Hub: hub, Ships: shipService.List}
 	supervisor.OnChange = sourceService.Notify
 	bridgeService := bridge.New(tmuxPath, sock, shipService)
+	if exe, err := os.Executable(); err == nil && tmuxPath != "" {
+		bridgeService.Host, bridgeService.Setup = host, &bridge.SetupCommand{Exe: exe, Home: dir}
+	}
 	shipService.Orders = sourceService
 	shipService.OnChange = func() { sourceService.Notify(); bridgeService.ShipsChanged() }
 

@@ -193,11 +193,11 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 			return
 		}
 		if c, err := r.Cookie(a.cookie); err == nil && a.valid(c.Value) {
-			next.ServeHTTP(w, r)
+			a.serve(w, r, next, isWS)
 			return
 		}
 		if tokenOK && isWS {
-			next.ServeHTTP(w, r)
+			a.serve(w, r, next, isWS)
 			return
 		}
 		unauthorized(w, r)
