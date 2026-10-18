@@ -80,6 +80,15 @@ func newWorld(t *testing.T) *world {
 	return w
 }
 
+// at returns the world with its helpers bound to t. A subtest must use it:
+// a helper that fails the parent's t from the subtest's goroutine ends it with
+// "subtest may have called FailNow on a parent test" and hides the message.
+func (w *world) at(t *testing.T) *world {
+	c := *w
+	c.t = t
+	return &c
+}
+
 // defaultSocket is where the "default" tmux server of this world would live.
 func (w *world) defaultSocket() string {
 	return filepath.Join(w.tmuxTmp, fmt.Sprintf("tmux-%d", os.Getuid()), "default")

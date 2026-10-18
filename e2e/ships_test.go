@@ -67,6 +67,7 @@ func TestLaunchCommandLine(t *testing.T) {
 	}
 	for _, harness := range []string{"claude", "codex", "copilot"} {
 		t.Run(harness, func(t *testing.T) {
+			w := w.at(t) // helpers must fail this subtest, not its parent
 			ship := w.launch(w.order("work", harness, "cl-"+harness, commodore, "do the thing"))
 			r := w.record(ship.Session)
 			if r.harness != harness {
@@ -125,6 +126,9 @@ func TestLaunchCommandLine(t *testing.T) {
 // S2: prompt forms.
 func TestPromptForms(t *testing.T) {
 	w := newWorld(t)
+	// Many launches: the harness exits at once (remain-on-exit keeps the ship)
+	// so the ships do not each hold a pty; CI runners have few.
+	w.writeCue("exit 0")
 	w.start()
 	type tc struct {
 		name, text string
@@ -154,6 +158,7 @@ func TestPromptForms(t *testing.T) {
 			n++
 			c, harness, repo := c, harness, "p"+string(rune('a'+n%26))+string(rune('a'+n/26))
 			t.Run(c.name+"/"+harness, func(t *testing.T) {
+				w := w.at(t) // helpers must fail this subtest, not its parent
 				ship := w.launch(w.order("work", harness, repo, c.skill, c.text))
 				if got := promptOf(t, w, w.record(ship.Session)); got != c.want[harness] {
 					t.Errorf("prompt = %q, want %q", got, c.want[harness])
@@ -162,6 +167,7 @@ func TestPromptForms(t *testing.T) {
 		}
 	}
 	t.Run("name with whitespace is refused", func(t *testing.T) {
+		w := w.at(t) // helpers must fail this subtest, not its parent
 		before := w.sessions()
 		code, body := w.post(w.order("work", "claude", "ws", customSkill("my skill"), "x"))
 		requireRefusal(t, code, body)
@@ -236,6 +242,7 @@ func TestSessionOptionsAndHookBundle(t *testing.T) {
 	}
 
 	t.Run("just launch with no source sets all ten, empty where unused", func(t *testing.T) {
+		w := w.at(t) // helpers must fail this subtest, not its parent
 		req := w.order("work", "codex", "optrepo2", noSkill, "plain")
 		delete(req, "source")
 		delete(req, "order_id")
@@ -257,6 +264,7 @@ func TestSessionOptionsAndHookBundle(t *testing.T) {
 	})
 
 	t.Run("hook bundle", func(t *testing.T) {
+		w := w.at(t) // helpers must fail this subtest, not its parent
 		claude := readJSONFile(t, filepath.Join(w.home, "harness", "claude-settings.json"))
 		checkClaudeBundle(t, claude)
 		var copilot []any
@@ -421,6 +429,9 @@ func checkCopilotBundle(t *testing.T, docs []any) {
 // S4: names are distinct and the session name is their slug.
 func TestShipNames(t *testing.T) {
 	w := newWorld(t)
+	// Many launches: the harness exits at once (remain-on-exit keeps the ship)
+	// so the ships do not each hold a pty; CI runners have few.
+	w.writeCue("exit 0")
 	w.start()
 	slug := regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 	seen := map[string]bool{}
@@ -521,6 +532,7 @@ func TestLaunchRefusals(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			w := w.at(t) // helpers must fail this subtest, not its parent
 			req := w.order("work", "claude", "refuse", commodore, "x")
 			c.mod(req)
 			before := w.sessions()
@@ -799,6 +811,7 @@ func TestControlCharactersAreRefused(t *testing.T) {
 		"skill name":                  func(r map[string]any) { r["skill"] = customSkill("a\x07b") },
 	} {
 		t.Run(name, func(t *testing.T) {
+			w := w.at(t) // helpers must fail this subtest, not its parent
 			before := w.sessions()
 			req := w.order("work", "claude", "cc-bad", commodore, "x")
 			mod(req)
@@ -859,6 +872,9 @@ func TestDirectoryWithFormatCharacters(t *testing.T) {
 // a command separator unless it is escaped), on every harness's command line.
 func TestTrailingSemicolons(t *testing.T) {
 	w := newWorld(t)
+	// Many launches: the harness exits at once (remain-on-exit keeps the ship)
+	// so the ships do not each hold a pty; CI runners have few.
+	w.writeCue("exit 0")
 	w.start()
 	n := 0
 	for _, harness := range []string{"claude", "codex", "copilot"} {
