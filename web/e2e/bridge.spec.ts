@@ -28,6 +28,8 @@ import { expect, header, isTouch, needsYouIn, ships, spyOnPage, test, underwayIn
 //     (role alert inside the banner) says "Reconnecting…" too
 //   a 401 on reconnect stops the retries and shows the text "Open the URL Admiral printed"
 //   window.__admiral.screen() returns the terminal's text (see bridge.ts)
+//   board(session) keeps pushing the session onto window.__admiral.boarded when that object exists (u10's tests
+//     still read it), and now also opens the bridge
 
 const BLUE = '#2E7DD7';
 const NAME_OF = /^Board (.+?), /;
@@ -200,6 +202,43 @@ test.describe('S6: the server goes away', () => {
     await prompt(page, name).fill('back');
     await prompt(page, name).press('Enter');
     await expect.poll(() => stdinOf(s, ship.session)).toBe('back\r');
+  });
+
+  test('a ship that anchored while the server was away reopens read-only; one that sailed off closes the bridge', async ({ page, admiral, sea }, info) => {
+    test.setTimeout(90_000);
+    const touch = isTouch(info);
+    const s = sea({
+      zero: { name: 'Zero', color: BLUE, cue: ['wait go', 'exit 0'] },
+      three: { name: 'Three', color: '#E0762B', cue: ['lines 2', 'wait go', 'exit 3'] },
+    });
+    await admiral.start();
+    const zero = await s.launch('zero', 'alpha', 'recorded');
+    const three = await s.launch('three', 'beta', 'recorded');
+    await spyOnPage(page);
+    await page.goto(admiral.url);
+
+    await board(page, underwayIn('Three'), touch);
+    const t = terminal(page);
+    await admiral.stopServer();
+    await expect(t.getByText('Reconnecting…')).toBeVisible({ timeout: 10_000 });
+    release(s, three.session);
+    await admiral.resumeServer();
+    await expect(t.getByText('Anchored · exit 3', { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(t.getByRole('button', { name: 'Dismiss' })).toBeVisible();
+    await expect(t.getByRole('textbox')).toHaveCount(0);
+    await expect(t.getByText('Reconnecting…')).toHaveCount(0);
+    await expect.poll(() => screenText(page)).toContain('line 0002');
+    await press(closeButton(page), touch);
+    await expect(terminal(page)).toHaveCount(0);
+
+    await board(page, underwayIn('Zero'), touch);
+    await admiral.stopServer();
+    await expect(t.getByText('Reconnecting…')).toBeVisible({ timeout: 10_000 });
+    release(s, zero.session);
+    await admiral.resumeServer();
+    // Admiral ends a ship that sailed off when it starts; the ship is gone, so the bridge closes.
+    await expect(terminal(page)).toHaveCount(0, { timeout: 20_000 });
+    await expect.poll(async () => (await s.ships()).map((x) => x.session)).toEqual([three.session]);
   });
 
   test('a rotated token stops the retries and says to open the URL Admiral printed', async ({ page, admiral, sea }, info) => {
