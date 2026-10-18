@@ -25,9 +25,17 @@ interface SourceJSON {
  */
 export async function launchFromOrder(sea: Sea, fleet: string, repo: string, until: 'cues-done' | 'recorded' = 'cues-done'): Promise<LaunchedShip> {
   await sea.world.seedOrder(orderText);
-  const sources = await (await fetch(`${sea.a.url}api/sources`)).json();
-  const list = (Array.isArray(sources) ? sources : sources.sources) as SourceJSON[];
-  const order = list.find((s) => s.key === 'orders')?.panels.flatMap((p) => p.orders).find((o) => o.title === orderTitle);
+  // The freeform source refreshes a moment after the add: ask until it lists the order.
+  let sources: unknown;
+  let order: { id: string } | undefined;
+  const sourcesBy = Date.now() + 10_000;
+  for (;;) {
+    sources = await (await fetch(`${sea.a.url}api/sources`)).json();
+    const list = (Array.isArray(sources) ? sources : (sources as { sources: SourceJSON[] }).sources) as SourceJSON[];
+    order = list.find((s) => s.key === 'orders')?.panels.flatMap((p) => p.orders).find((o) => o.title === orderTitle);
+    if (order || Date.now() > sourcesBy) break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
   if (!order) throw new Error(`the seeded order is not in the freeform source: ${JSON.stringify(sources)}`);
   const res = await fetch(`${sea.a.url}api/ships`, {
     method: 'POST',
