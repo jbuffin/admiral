@@ -111,6 +111,8 @@ func TestRepoURLMatching(t *testing.T) {
 	five := d.repo("five", "https://oauth2:tok-secret-55@github.com/acme/five.git")
 	yy := d.repo("yy", "https://github.com/acme/y")
 	qq := d.repo("qq", "https://user:pa?ss-tok-77@github.com/acme/qq.git")
+	d.repo("tt", "https://user:tok/a/b@github.com/acme/tt.git")
+	d.repo("uu", "https://user:pa?a/b/c-tok-88@github.com/acme/uu.git")
 	six := d.repo("six", "https://user:tok/secret-66@github.com/acme/six.git")
 	d.start()
 
@@ -136,7 +138,7 @@ func TestRepoURLMatching(t *testing.T) {
 			if code != http.StatusOK {
 				t.Fatalf("status %d: %s", code, body)
 			}
-			if strings.Contains(body, "tok-secret-55") || strings.Contains(body, "secret-66") || strings.Contains(body, "tok-77") {
+			if strings.Contains(body, "tok-secret-55") || strings.Contains(body, "secret-66") || strings.Contains(body, "tok-77") || strings.Contains(body, "tok-88") || strings.Contains(body, "b@github") {
 				t.Errorf("the response carries a credential from a remote URL: %s", body)
 			}
 			var r dirsResp

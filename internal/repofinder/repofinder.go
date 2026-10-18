@@ -168,6 +168,11 @@ func configPath(dir string) string {
 	return filepath.Join(gitdir, "config")
 }
 
+var (
+	hostRe = regexp.MustCompile(`^[A-Za-z0-9.-]+$`)
+	nameRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+)
+
 var scpLike = regexp.MustCompile(`^(?:[^@/\s]+@)?([^:/\s]+):([^/].*)$`)
 
 // Identity normalizes a remote URL to lowercase host/owner/repo: ssh
@@ -211,7 +216,9 @@ func Identity(raw string) (string, bool) {
 		return "", false
 	}
 	repo := strings.TrimSuffix(segs[1], ".git")
-	if repo == "" {
+	// Anything that is not a plain host, owner and repo is not an identity, so
+	// no fragment of a credential that was parsed wrongly can come back.
+	if !hostRe.MatchString(host) || !nameRe.MatchString(segs[0]) || !nameRe.MatchString(repo) {
 		return "", false
 	}
 	return strings.ToLower(host + "/" + segs[0] + "/" + repo), true
