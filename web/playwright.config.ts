@@ -25,8 +25,12 @@ const baseURL = `http://127.0.0.1:${port}`;
 export default defineConfig({
   testDir: './e2e',
   retries: 0,
+  workers: process.env.CI ? undefined : 2,
   reporter: [['list']],
-  use: { baseURL, trace: 'retain-on-failure' },
+  use: {
+    baseURL,
+    trace: process.env.CI ? 'retain-on-failure' : { mode: 'retain-on-failure', screenshots: false },
+  },
   webServer: {
     command: `node scripts/serve-e2e.mjs ${bin} 127.0.0.1:${port}`,
     gracefulShutdown: { signal: 'SIGTERM', timeout: 10_000 },
