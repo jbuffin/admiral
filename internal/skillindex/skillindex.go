@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/jbuffin/admiral/internal/config"
 )
@@ -23,6 +24,50 @@ import (
 // $COPILOT_HOME/skills, ~/.agents/skills and the project's .github/skills,
 // .agents/skills and .claude/skills.
 func Installed(harness string, environ []string, dir string) []string {
+	user, project := locations(harness, environ, dir)
+	set := map[string]bool{}
+	for _, n := range append(user, project...) {
+		set[n] = true
+	}
+	out := make([]string, 0, len(set))
+	for n := range set {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// FindCommodore picks the Commodore skill (ADR 0010). The user's own
+// locations come before the project's, so a cloned repository cannot shadow
+// it: a plain "commodore", then <plugin>:commodore by plugin name, in the
+// user's locations, then the same in the project's.
+func FindCommodore(harness string, environ []string, dir string) (string, bool) {
+	user, project := locations(harness, environ, dir)
+	for _, names := range [][]string{user, project} {
+		if n, ok := pickCommodore(names); ok {
+			return n, true
+		}
+	}
+	return "", false
+}
+
+func pickCommodore(names []string) (string, bool) {
+	best := ""
+	for _, n := range names {
+		plugin, skill, namespaced := strings.Cut(n, ":")
+		switch {
+		case n == "commodore":
+			return n, true
+		case namespaced && skill == "commodore" && (best == "" || plugin < strings.TrimSuffix(best, ":commodore")):
+			best = n
+		}
+	}
+	return best, best != ""
+}
+
+// locations are the invocation names found in the user's own locations
+// (identity directory, home, enabled plugins) and in the project's.
+func locations(harness string, environ []string, dir string) (user, project []string) {
 	env := map[string]string{}
 	for _, kv := range environ {
 		if k, v, ok := strings.Cut(kv, "="); ok {
@@ -34,49 +79,26 @@ func Installed(harness string, environ []string, dir string) []string {
 		home, _ = os.UserHomeDir()
 	}
 	identity := config.IdentityDir(harness, env)
-	set := map[string]bool{}
-	add := func(names []string) {
-		for _, n := range names {
-			set[n] = true
-		}
-	}
 	switch harness {
 	case "claude":
-		add(scanDir(filepath.Join(identity, "skills"), true))
-		add(scanDir(filepath.Join(dir, ".claude", "skills"), true))
-		add(claudePlugins(env, identity, dir))
+		user = append(scanDir(filepath.Join(identity, "skills"), true), claudePlugins(env, identity, dir)...)
+		project = scanDir(filepath.Join(dir, ".claude", "skills"), true)
 	case "codex":
-		add(scanDir(filepath.Join(home, ".agents", "skills"), false))
-		add(scanDir(filepath.Join(identity, "skills"), false))
-		add(scanDir(filepath.Join(dir, ".agents", "skills"), false))
+		user = append(scanDir(filepath.Join(home, ".agents", "skills"), false), scanDir(filepath.Join(identity, "skills"), false)...)
+		project = scanDir(filepath.Join(dir, ".agents", "skills"), false)
 	case "copilot":
-		add(scanDir(filepath.Join(identity, "skills"), false))
-		add(scanDir(filepath.Join(home, ".agents", "skills"), false))
+		user = append(scanDir(filepath.Join(identity, "skills"), false), scanDir(filepath.Join(home, ".agents", "skills"), false)...)
 		for _, d := range []string{".github", ".agents", ".claude"} {
-			add(scanDir(filepath.Join(dir, d, "skills"), false))
+			project = append(project, scanDir(filepath.Join(dir, d, "skills"), false)...)
 		}
 	}
-	out := make([]string, 0, len(set))
-	for n := range set {
-		out = append(out, n)
-	}
-	sort.Strings(out)
-	return out
+	return user, project
 }
 
-// Commodore picks the Commodore skill from names: a plain "commodore", else
-// <plugin>:commodore, the plugin names in order (ADR 0010).
-func Commodore(names []string) (string, bool) {
-	best := ""
-	for _, n := range names {
-		switch {
-		case n == "commodore":
-			return n, true
-		case strings.HasSuffix(n, ":commodore") && (best == "" || n < best):
-			best = n
-		}
-	}
-	return best, best != ""
+// validName is a name safe to type after / or $ and to keep in a tmux option:
+// no control characters, whitespace or colon (plugin names are kebab-case).
+func validName(n string) bool {
+	return n != "" && strings.IndexFunc(n, func(r rune) bool { return r < 0x20 || r == 0x7f || unicode.IsSpace(r) || r == ':' }) < 0
 }
 
 // scanDir lists the <name>/SKILL.md folders directly in dir. With plugins, a
@@ -95,7 +117,9 @@ func scanDir(dir string, plugins bool) []string {
 		}
 		switch {
 		case isFile(filepath.Join(p, "SKILL.md")):
-			out = append(out, e.Name())
+			if validName(e.Name()) {
+				out = append(out, e.Name())
+			}
 		case plugins && isFile(filepath.Join(p, ".claude-plugin", "plugin.json")):
 			out = append(out, pluginSkills(p, "")...)
 		}
@@ -146,11 +170,15 @@ func namespaced(root string, m manifest, fallbackName string) []string {
 	if name == "" {
 		name = fallbackName
 	}
-	if name == "" {
+	if !validName(name) {
 		return nil
 	}
 	var out []string
-	found := func(skill string) { out = append(out, name+":"+skill) }
+	found := func(skill string) {
+		if validName(skill) {
+			out = append(out, name+":"+skill)
+		}
+	}
 	for _, s := range findSkills(filepath.Join(root, "skills")) {
 		found(s)
 	}

@@ -181,10 +181,13 @@ func Identity(raw string) (string, bool) {
 		if scheme == "" || strings.ContainsAny(scheme, "/ ") {
 			return "", false
 		}
-		auth, p, _ := strings.Cut(rest, "/")
-		if i := strings.LastIndex(auth, "@"); i >= 0 {
-			auth = auth[i+1:]
+		// Userinfo can hold an unencoded "/", so the last "@" before the query
+		// ends it, not the first "/".
+		head, _, _ := strings.Cut(rest, "?")
+		if i := strings.LastIndex(head, "@"); i >= 0 {
+			rest = rest[i+1:]
 		}
+		auth, p, _ := strings.Cut(rest, "/")
 		if i := strings.LastIndex(auth, ":"); i >= 0 && !strings.HasSuffix(auth, "]") {
 			auth = auth[:i]
 		}

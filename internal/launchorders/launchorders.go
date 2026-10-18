@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -231,7 +232,7 @@ func (s *Service) serveSkills(w http.ResponseWriter, r *http.Request) {
 		list[i] = skill{n, slices.Contains(cfg.FavoriteSkills, n)}
 	}
 	commodore := map[string]any{"found": false, "name": ""}
-	if n, ok := skillindex.Commodore(names); ok {
+	if n, ok := skillindex.FindCommodore(dock.Name, dock.Environ(), dir); ok {
 		commodore = map[string]any{"found": true, "name": n}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"skills": list, "commodore": commodore})
@@ -247,10 +248,11 @@ func (s *Service) serveFavorites(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
 		return
 	}
-	var skills []string
-	for _, n := range req.Skills {
-		if n = strings.TrimSpace(n); n != "" && !slices.Contains(skills, n) {
-			skills = append(skills, n)
+	skills := req.Skills
+	for i, n := range skills {
+		if n == "" || n != strings.TrimSpace(n) || slices.Contains(skills[:i], n) {
+			writeError(w, http.StatusBadRequest, "favorite skill names must be non-empty, trimmed and listed once, got "+strconv.Quote(n))
+			return
 		}
 	}
 	if len(skills) > config.MaxFavoriteSkills {

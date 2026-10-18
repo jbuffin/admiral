@@ -109,6 +109,7 @@ func TestRepoURLMatching(t *testing.T) {
 	d.repo("three", "https://gitlab.com/acme/three.git")
 	d.repo("four") // no remote
 	five := d.repo("five", "https://oauth2:tok-secret-55@github.com/acme/five.git")
+	six := d.repo("six", "https://user:tok/secret-66@github.com/acme/six.git")
 	d.start()
 
 	cases := []struct{ hint, want string }{
@@ -119,6 +120,7 @@ func TestRepoURLMatching(t *testing.T) {
 		{"git@github.com:acme/two.git", two},
 		{"https://github.com/acme/two/", two},
 		{"https://github.com/acme/five", five},
+		{"https://github.com/acme/six", six},
 		{"https://github.com/acme/three", ""}, // same owner/repo, another host
 		{"https://github.com/acme/four", ""},  // a folder name is not a remote
 	}
@@ -128,7 +130,7 @@ func TestRepoURLMatching(t *testing.T) {
 			if code != http.StatusOK {
 				t.Fatalf("status %d: %s", code, body)
 			}
-			if strings.Contains(body, "tok-secret-55") {
+			if strings.Contains(body, "tok-secret-55") || strings.Contains(body, "secret-66") {
 				t.Errorf("the response carries a credential from a remote URL: %s", body)
 			}
 			var r dirsResp
@@ -171,6 +173,8 @@ func TestPreselectionOrder(t *testing.T) {
 	check("hint that matches nothing falls to the text", "work", "claude", "https://github.com/acme/none", "https://github.com/acme/y", y, "text")
 	check("nothing matches and nothing was used", "work", "claude", "", "just words", "", "")
 
+	d.launch(d.launchReq("work", "claude", y+"/", noSkill, "go")) // a non-clean path: the cleaned one is remembered
+	check("last used is the cleaned path", "work", "claude", "", "", y, "last_used")
 	d.launch(d.launchReq("work", "claude", z, noSkill, "go"))
 	check("last used on this dock", "work", "claude", "", "", z, "last_used")
 	check("a match beats the last used", "work", "claude", "https://github.com/acme/x", "", x, "repo")
@@ -397,6 +401,19 @@ func TestCommodoreLookup(t *testing.T) {
 			d.claude.plugin("jasonbuffin@mk", "jasonbuffin", filepath.Join(d.claude.dir, "plugins", "cache", "mk", "jasonbuffin", "1"), nil, "commodore")
 			d.claude.enable("jasonbuffin@mk", true)
 		}, true, "commodore", "/commodore do it"},
+		{"a user plugin beats the project's plain one", "claude", func(t *testing.T, d *dataWorld) {
+			writeSkill(t, filepath.Join(d.work, "proj", ".claude", "skills"), "commodore")
+			d.claude.plugin("jasonbuffin@mk", "jasonbuffin", filepath.Join(d.claude.dir, "plugins", "cache", "mk", "jasonbuffin", "1"), nil, "commodore")
+			d.claude.enable("jasonbuffin@mk", true)
+		}, true, "jasonbuffin:commodore", "/jasonbuffin:commodore do it"},
+		{"the project's plain one when the user has none", "claude", func(t *testing.T, d *dataWorld) {
+			writeSkill(t, filepath.Join(d.work, "proj", ".claude", "skills"), "commodore")
+		}, true, "commodore", "/commodore do it"},
+		{"a plugin name with a newline is never used", "claude", func(t *testing.T, d *dataWorld) {
+			bad := filepath.Join(d.work, "proj", ".claude", "skills", "x")
+			writeJSON(t, filepath.Join(bad, ".claude-plugin", "plugin.json"), map[string]any{"name": "evil\nname"})
+			writeSkill(t, filepath.Join(bad, "skills"), "commodore")
+		}, false, "", ""},
 		{"plugins by plugin name", "claude", func(t *testing.T, d *dataWorld) {
 			for _, n := range []string{"zzz", "aaa"} {
 				d.claude.plugin(n+"@mk", n, filepath.Join(d.claude.dir, "plugins", "cache", "mk", n, "1"), nil, "commodore")
@@ -475,6 +492,8 @@ func TestFavorites(t *testing.T) {
 	if api, _ := fetchConfig(t, d.in.instance); !reflect.DeepEqual(api.FavoriteSkills, five) {
 		t.Errorf("a refused PUT changed favorite_skills to %v", api.FavoriteSkills)
 	}
+	code, body = send(t, http.MethodPut, url, map[string]any{"skills": []string{"f1", "f1"}})
+	requireRefusal(t, code, body) // not silently deduplicated
 	if code, body = send(t, http.MethodPut, url, map[string]any{"skills": five[:4]}); code != http.StatusOK {
 		t.Errorf("unstarring = %d: %s", code, body)
 	}
