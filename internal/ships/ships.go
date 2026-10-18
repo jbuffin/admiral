@@ -7,6 +7,7 @@ package ships
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -32,6 +33,7 @@ type Ship struct {
 	Repo       string          `json:"repo"`
 	Skill      *string         `json:"skill"`
 	Source     string          `json:"source"`
+	Title      string          `json:"title"`
 	OrderID    string          `json:"order_id"`
 	Launched   string          `json:"launched"`
 	Status     string          `json:"status"`
@@ -64,7 +66,7 @@ func (s *Service) ship(sess sessionhost.Session) Ship {
 	o, session := sess.Options, sess.Name
 	sh := Ship{Session: session, Name: o["name"], Fleet: o["fleet"], FleetName: o["fleet-name"],
 		FleetColor: o["fleet-color"], Harness: o["harness"], Dir: o["dir"], Repo: filepath.Base(o["dir"]),
-		Source: o["source"], OrderID: o["order"], Launched: o["launched"], Status: status(sess, time.Now())}
+		Source: o["source"], Title: o["title"], OrderID: o["order"], Launched: o["launched"], Status: status(sess, time.Now())}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
 	if o["dir"] == "" {
 		sh.Repo = ""
@@ -335,32 +337,60 @@ func (s *Service) servePosition(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"position": p})
 }
 
-// serveInputSeen is called when a browser sends input to a ship: it clears
-// needs you, in Admiral's view, until the next waiting hook.
-func (s *Service) serveInputSeen(w http.ResponseWriter, r *http.Request) {
-	session := r.PathValue("session")
-	// Not the request's context: a client that hangs up must not abandon the write.
+// Get is one ship as the UI sees it.
+func (s *Service) Get(session string) (Ship, bool) {
+	sess, ok := s.find(session)
+	if !ok {
+		return Ship{}, false
+	}
+	return s.ship(sess), true
+}
+
+// ErrExited is InputSeen's answer for a ship that has exited.
+var ErrExited = errors.New("ship has exited")
+
+// InputSeen records that a browser sent input to a ship: it clears needs you,
+// in Admiral's view, until the next waiting hook. It returns the ship as it is
+// now, and ErrExited for an anchored or sailing-off ship.
+func (s *Service) InputSeen(session string) (Ship, error) {
+	// Not a request's context: a client that hangs up must not abandon the write.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	sess, ok := s.find(session)
 	if !ok {
-		writeError(w, http.StatusNotFound, "ship "+session+" not found")
-		return
+		return Ship{}, ErrNotFound
 	}
 	switch status(sess, time.Now()) {
 	case StatusAnchored, StatusSailingOff:
-		writeError(w, http.StatusConflict, "ship "+session+" has exited")
-		return
+		return s.ship(sess), ErrExited
 	case StatusNeedsYou:
 		if err := s.Host.SetPaneState(ctx, session, "working"); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
+			return Ship{}, err
 		}
 		_ = s.Host.Sync(ctx)
 		s.broadcast()
 	}
 	sess, _ = s.find(session)
-	writeJSON(w, http.StatusOK, map[string]any{"ship": s.ship(sess)})
+	return s.ship(sess), nil
+}
+
+// ErrNotFound is InputSeen's answer for a session that is not a ship.
+var ErrNotFound = errors.New("ship not found")
+
+// serveInputSeen is called when a browser sends input to a ship.
+func (s *Service) serveInputSeen(w http.ResponseWriter, r *http.Request) {
+	session := r.PathValue("session")
+	sh, err := s.InputSeen(session)
+	switch {
+	case errors.Is(err, ErrNotFound):
+		writeError(w, http.StatusNotFound, "ship "+session+" not found")
+	case errors.Is(err, ErrExited):
+		writeError(w, http.StatusConflict, "ship "+session+" has exited")
+	case err != nil:
+		writeError(w, http.StatusInternalServerError, err.Error())
+	default:
+		writeJSON(w, http.StatusOK, map[string]any{"ship": sh})
+	}
 }
 
 // serveDismiss ends an anchored ship. A live ship cannot be ended from the UI.

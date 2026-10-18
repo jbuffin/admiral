@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/auth"
+	"github.com/jbuffin/admiral/internal/bridge"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/launcher"
@@ -116,15 +117,17 @@ func serve(args []string) error {
 	supervisor := &sources.Supervisor{Home: dir, Config: cfg}
 	sourceService := &sources.Service{Home: dir, Config: cfg, Sup: supervisor, Hub: hub, Ships: shipService.List}
 	supervisor.OnChange = sourceService.Notify
-	shipService.Orders, shipService.OnChange = sourceService, sourceService.Notify
+	bridgeService := bridge.New(tmuxPath, sock, shipService)
+	shipService.Orders = sourceService
+	shipService.OnChange = func() { sourceService.Notify(); bridgeService.ShipsChanged() }
 
 	s := &server.Server{Version: version, UI: web.UI(), Messages: map[string]server.MessageHandler{}, Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService,
-			&launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}}}
+			&launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}, bridgeService}}
 	bg, stopBackground := context.WithCancel(context.Background())
 	var background sync.WaitGroup
 	supervisor.Start(bg)
-	runs := []func(context.Context){shipService.Run, s.WatchConfig, sourceService.Run}
+	runs := []func(context.Context){shipService.Run, s.WatchConfig, sourceService.Run, bridgeService.Run}
 	if tmuxPath != "" {
 		runs = append(runs, host.Run)
 	}

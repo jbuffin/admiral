@@ -95,8 +95,11 @@ func (b *bridgeClient) send(v any) {
 	}
 }
 
-func (b *bridgeClient) input(data string) { b.t.Helper(); b.send(map[string]any{"type": "input", "data": data}) }
-func (b *bridgeClient) active()           { b.t.Helper(); b.send(map[string]any{"type": "active"}) }
+func (b *bridgeClient) input(data string) {
+	b.t.Helper()
+	b.send(map[string]any{"type": "input", "data": data})
+}
+func (b *bridgeClient) active() { b.t.Helper(); b.send(map[string]any{"type": "active"}) }
 func (b *bridgeClient) visible(v bool) {
 	b.t.Helper()
 	b.send(map[string]any{"type": "visible", "visible": v})
@@ -215,7 +218,7 @@ func (b *bridgeClient) waitSize(d time.Duration, mark, cols, rows int) {
 }
 
 func quote(s string) string { b, _ := json.Marshal(s); return string(b) }
-func itoa(n int) string      { b, _ := json.Marshal(n); return string(b) }
+func itoa(n int) string     { b, _ := json.Marshal(n); return string(b) }
 
 // bridgeDial opens /ws/bridge/<session> on base (http://host:port). On refusal
 // it returns the handshake response with a nil client.
