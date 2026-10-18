@@ -12,10 +12,14 @@ export function SetupTerminal() {
 
 function SetupView() {
   const [draft, setDraft] = useState('');
-  const { host, link, linkState } = useBridgeTerminal({ session: SETUP_SESSION, open: true, gone: closeSetup, probe: probeSetup });
+  const { host, link, linkState, activity } = useBridgeTerminal({ session: SETUP_SESSION, open: true, gone: closeSetup, probe: probeSetup });
   const reconnecting = linkState === 'reconnecting';
   const canType = linkState === 'open';
-  const input = (data: string) => link.current?.send({ type: 'input', data });
+  // Anything typed or pressed makes this browser the one that sizes the pane.
+  const input = (data: string) => {
+    activity.current();
+    link.current?.send({ type: 'input', data });
+  };
   const submit = (e: Event) => {
     e.preventDefault();
     const text = draft;
