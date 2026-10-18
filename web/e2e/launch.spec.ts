@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Locator, Page } from '@playwright/test';
 import { type Admiral, expect, test } from './fixtures';
 import { World, dialog, dock, sidebar } from './world';
@@ -112,7 +114,8 @@ test.describe('S4: launch with Commodore', () => {
 test.describe('S5: the dialog in one flow', () => {
   test('no Commodore, Just launch as written, the type-ahead, stars, refusals, Escape and a typed name', async ({ page, admiral }, info) => {
     const touch = !!info.project.use.hasTouch;
-    const w = await world(admiral);
+    // 'elsewhere' is a favorite of another dock: this dock never lists it, and starring here must keep it.
+    const w = await world(admiral, { favorites: ['elsewhere'] });
     const alpha = w.checkout('alpha');
     for (const name of ['sk1', 'sk2', 'sk3', 'sk4', 'sk5', 'sk6', 'bar-tool', 'baz-tool']) w.skill('work', 'claude', name);
     await admiral.start();
@@ -155,19 +158,25 @@ test.describe('S5: the dialog in one flow', () => {
     await custom.fill('zzz');
     await expect(d.getByText('No installed skill matches. It will launch with the name exactly as typed.')).toBeVisible();
 
-    // At most six rows, whatever matches; stars, five allowed and a sixth refused.
+    // At most six rows, whatever matches; stars: five favorites in all ('elsewhere' is one), so a fifth star here is refused.
     await custom.fill('sk');
     await expect(list).toContainText('Installed skills');
     await expect(list.getByRole('option')).toHaveCount(6);
-    for (const n of ['sk1', 'sk2', 'sk3', 'sk4', 'sk5']) {
+    for (const n of ['sk1', 'sk2', 'sk3', 'sk4']) {
       await press(list.getByRole('button', { name: `Star ${n}` }), touch);
       await expect(list.getByRole('button', { name: `Unstar ${n}` })).toBeVisible();
     }
-    await press(list.getByRole('button', { name: 'Star sk6' }), touch);
+    await press(list.getByRole('button', { name: 'Star sk5' }), touch);
     await expect(d.getByText('Unstar one first')).toBeVisible();
-    await expect(list.getByRole('button', { name: 'Star sk6' })).toBeVisible();
-    for (const n of ['sk1', 'sk2', 'sk3', 'sk4', 'sk5']) await expect(radio(d, n)).toBeVisible();
-    await expect(radio(d, 'sk6')).toHaveCount(0);
+    await expect(list.getByRole('button', { name: 'Star sk5' })).toBeVisible();
+    for (const n of ['sk1', 'sk2', 'sk3', 'sk4']) await expect(radio(d, n)).toBeVisible();
+    await expect(radio(d, 'sk5')).toHaveCount(0);
+
+    const saved = () => JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8')).favorite_skills;
+    expect(saved()).toEqual(['elsewhere', 'sk1', 'sk2', 'sk3', 'sk4']); // the favorite of another dock survived the stars
+    await press(list.getByRole('button', { name: 'Unstar sk4' }), touch);
+    await expect.poll(saved).toEqual(['elsewhere', 'sk1', 'sk2', 'sk3']);
+    await press(list.getByRole('button', { name: 'Star sk4' }), touch);
 
     // Escape closes the open list first, then the dialog.
     await page.keyboard.press('Escape');

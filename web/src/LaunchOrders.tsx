@@ -170,12 +170,14 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
   };
 
   const toggleStar = async (s: Skill) => {
-    const names = (skills?.skills ?? []).filter((k) => k.favorite).map((k) => k.name);
+    // All favorites, not only those installed on this dock: the PUT replaces the list.
+    const names = config.value?.favorite_skills ?? [];
     const next = s.favorite ? names.filter((n) => n !== s.name) : [...names, s.name];
     const r = await api<{ favorite_skills: string[] }>('PUT', '/api/favorites', { skills: next });
     if (!r.ok) return setNote(r.error);
     setNote('');
     const now = r.data.favorite_skills;
+    if (config.value) config.value = { ...config.value, favorite_skills: now };
     setSkills((cur) => {
       if (!cur) return cur;
       const updated = { ...cur, skills: cur.skills.map((k) => ({ ...k, favorite: now.includes(k.name) })) };
