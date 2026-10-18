@@ -9,6 +9,7 @@ plugin). Settings, all optional except flagdir:
   capabilities     list answered by initialize (default ["refresh"])
   protocolVersion  number answered by initialize (default 1)
   title            title of the default panel "main"
+  settingsSchema   schema answered by initialize (default: flagdir as a string)
 
 Files the plugin writes in flagdir:
 
@@ -156,7 +157,7 @@ def handle(msg):
         threading.Thread(target=control_loop, daemon=True).start()
         result = {"protocolVersion": settings.get("protocolVersion", 1),
                   "capabilities": settings.get("capabilities", ["refresh"]),
-                  "settingsSchema": {"type": "object", "properties": {"flagdir": {"type": "string"}}}}
+                  "settingsSchema": settings.get("settingsSchema", {"type": "object", "properties": {"flagdir": {"type": "string"}}})}
     elif flagdir and flag("hang-" + str(method)):
         hang()
     elif method == "panels.list":

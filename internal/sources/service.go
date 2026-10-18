@@ -150,6 +150,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sources/{key}/restart", s.serveRestart)
 	mux.HandleFunc("POST /api/sources/{key}/refresh", s.serveRefresh)
 	mux.HandleFunc("GET /api/sources/{key}/schema", s.serveSchema)
+	mux.HandleFunc("GET /api/sources/{key}/settings", s.serveSettings)
 	mux.HandleFunc("POST /api/sources/{key}/orders", s.serveAddOrder)
 	mux.HandleFunc("PUT /api/sources/{key}/orders/{id}", s.serveEditOrder)
 	mux.HandleFunc("DELETE /api/sources/{key}/orders/{id}", s.serveRemoveOrder)
@@ -342,6 +343,7 @@ func (s *Service) serveSave(w http.ResponseWriter, r *http.Request) {
 		list[i].Name = strings.TrimSpace(*req.Name)
 	}
 	if settings != nil {
+		settings = s.keepPasswords(key, list[i].Settings, settings)
 		list[i].Settings = settings
 	}
 	gen := s.Sup.Generation(key)
@@ -354,6 +356,92 @@ func (s *Service) serveSave(w http.ResponseWriter, r *http.Request) {
 	s.Sup.ReconcileForce(key, gen)
 	v, _ := s.view(key)
 	writeJSON(w, http.StatusOK, v)
+}
+
+// unchangedMarker stands in for a stored password in what the settings view
+// returns. Saving it back keeps the stored value, so a secret never leaves
+// the server and a save that did not touch it does not wipe it.
+const unchangedMarker = "__admiral_unchanged__"
+
+// passwordProps names the properties the schema marks "format": "password".
+func passwordProps(schema json.RawMessage) []string {
+	var sc struct {
+		Properties map[string]struct {
+			Format string `json:"format"`
+		} `json:"properties"`
+	}
+	_ = json.Unmarshal(schema, &sc)
+	var names []string
+	for name, p := range sc.Properties {
+		if p.Format == "password" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+func (s *Service) schemaOf(key string) json.RawMessage {
+	rn := s.Sup.runner(key)
+	if rn == nil {
+		return nil
+	}
+	rn.mu.Lock()
+	defer rn.mu.Unlock()
+	return rn.schema
+}
+
+func objectOf(raw json.RawMessage) map[string]json.RawMessage {
+	m := map[string]json.RawMessage{}
+	_ = json.Unmarshal(raw, &m)
+	if m == nil {
+		m = map[string]json.RawMessage{}
+	}
+	return m
+}
+
+// keepPasswords replaces each password the engineer left as the marker with
+// the stored one (or drops it when none is stored).
+func (s *Service) keepPasswords(key string, stored, incoming json.RawMessage) json.RawMessage {
+	marker, _ := json.Marshal(unchangedMarker)
+	in, old := objectOf(incoming), objectOf(stored)
+	for _, name := range passwordProps(s.schemaOf(key)) {
+		if v, ok := in[name]; ok && string(v) == string(marker) {
+			if prev, ok := old[name]; ok {
+				in[name] = prev
+			} else {
+				delete(in, name)
+			}
+		}
+	}
+	out, _ := json.Marshal(in)
+	return out
+}
+
+// serveSettings is the name and settings the form starts from, with each
+// stored password hidden behind the marker.
+func (s *Service) serveSettings(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("key")
+	def, ok := s.Config.Current().Source(key)
+	if !ok {
+		writeError(w, http.StatusNotFound, "source "+key+" not found")
+		return
+	}
+	settings := objectOf(def.Settings)
+	for _, name := range passwordProps(s.schemaOf(key)) {
+		v, _ := json.Marshal("")
+		if prev, ok := settings[name]; ok && string(prev) != `""` && string(prev) != "null" {
+			v, _ = json.Marshal(unchangedMarker)
+		}
+		settings[name] = v
+	}
+	name := def.Name
+	if name == "" {
+		if v, ok := s.view(key); ok {
+			name = v.Name
+		}
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"name": name, "settings": settings})
 }
 
 func (s *Service) serveDelete(w http.ResponseWriter, r *http.Request) {

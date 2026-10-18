@@ -1,8 +1,10 @@
 import { useEffect } from 'preact/hooks';
-import { config, connect } from './config';
+import { config } from './config';
+import { connect } from './connection';
 import { Header } from './Header';
 import { LogoSprite } from './Logos';
 import { Marina, SetUpMarina } from './Marina';
+import { Sidebar } from './Sidebar';
 import { Lighthouse, Shore, Trees, WaterScenery } from './Scenery';
 
 export function App() {
@@ -13,7 +15,7 @@ export function App() {
       <LogoSprite />
       <Header />
       <div class="harbor">
-        <aside class="orders" aria-label="Orders" />
+        <Sidebar />
         <main class="main" aria-label="Open water">
           <WaterScenery />
           <div class="hint">

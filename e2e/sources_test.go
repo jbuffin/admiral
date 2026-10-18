@@ -428,3 +428,66 @@ func TestPluginsAPI(t *testing.T) {
 		}
 	}
 }
+
+// The settings view hands the form its starting values, and a stored password
+// never leaves the server: the form gets a marker, and saving the marker back
+// keeps the stored value.
+func TestSourceSettingsHidePasswords(t *testing.T) {
+	w := newWorld(t)
+	p := w.newTP("pw")
+	schema := map[string]any{"type": "object", "properties": map[string]any{
+		"flagdir": map[string]any{"type": "string"},
+		"token":   map[string]any{"type": "string", "format": "password"},
+		"empty":   map[string]any{"type": "string", "format": "password"},
+	}}
+	w.startSources(tpSource("pw", p, map[string]any{"settingsSchema": schema, "token": "s3cret"}))
+	w.waitSource("pw", 10*time.Second, "state ok", isOK)
+
+	view := func() (string, map[string]any) {
+		code, body := w.srcReq(http.MethodGet, "/pw/settings", nil)
+		if code != http.StatusOK {
+			t.Fatalf("GET settings = %d %s, want 200", code, body)
+		}
+		var v struct {
+			Name     string         `json:"name"`
+			Settings map[string]any `json:"settings"`
+		}
+		if err := json.Unmarshal([]byte(body), &v); err != nil {
+			t.Fatalf("settings view is not JSON: %v\n%s", err, body)
+		}
+		return v.Name, v.Settings
+	}
+	stored := func() string {
+		raw, err := os.ReadFile(filepath.Join(w.home, "config.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+
+	name, settings := view()
+	if name != "Test pw" || settings["flagdir"] != p.dir || settings["token"] != "__admiral_unchanged__" || settings["empty"] != "" {
+		t.Errorf("settings view = %q %v, want the name, the flagdir, the marker for the stored token and \"\" for the unset one", name, settings)
+	}
+	if code, _ := w.srcReq(http.MethodGet, "/nosuch/settings", nil); code != http.StatusNotFound {
+		t.Errorf("GET settings of an unknown source = %d, want 404", code)
+	}
+
+	// Saving the marker back keeps the stored secret.
+	keep := map[string]any{"flagdir": p.dir, "token": "__admiral_unchanged__", "settingsSchema": schema}
+	if code, body := w.srcReq(http.MethodPut, "/pw", map[string]any{"settings": keep}); code != http.StatusOK {
+		t.Fatalf("PUT with the marker = %d %s, want 200", code, body)
+	}
+	if !strings.Contains(stored(), "s3cret") || strings.Contains(stored(), "__admiral_unchanged__") {
+		t.Errorf("after a save with the marker config.json = %s, want the stored token kept and no marker", stored())
+	}
+
+	// A new value replaces it.
+	keep["token"] = "n3w"
+	if code, body := w.srcReq(http.MethodPut, "/pw", map[string]any{"settings": keep}); code != http.StatusOK {
+		t.Fatalf("PUT with a new token = %d %s, want 200", code, body)
+	}
+	if !strings.Contains(stored(), "n3w") || strings.Contains(stored(), "s3cret") {
+		t.Errorf("after a save with a new token config.json = %s, want n3w and no s3cret", stored())
+	}
+}

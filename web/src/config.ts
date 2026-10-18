@@ -1,4 +1,5 @@
-import { signal } from '@preact/signals';
+import { computed, signal } from '@preact/signals';
+import { onMessage } from './connection';
 
 export type HarnessName = 'claude' | 'copilot' | 'codex';
 
@@ -25,16 +26,8 @@ export interface Config {
 }
 
 // null until the server's first `config` message arrives, so the page claims
-// nothing about fleets before then.
+// nothing about fleets before then; configLoaded tells the two states apart.
 export const config = signal<Config | null>(null);
+export const configLoaded = computed(() => config.value !== null);
 
-// Follows the server's `config` messages. The socket is reopened when it drops.
-export function connect(): void {
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${proto}://${location.host}/ws`);
-  ws.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
-    if (msg.type === 'config') config.value = { fleets: msg.fleets, error: msg.error };
-  };
-  ws.onclose = () => setTimeout(connect, 1000);
-}
+onMessage('config', (msg) => (config.value = { fleets: msg.fleets, error: msg.error }));
