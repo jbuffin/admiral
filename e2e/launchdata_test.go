@@ -109,6 +109,8 @@ func TestRepoURLMatching(t *testing.T) {
 	d.repo("three", "https://gitlab.com/acme/three.git")
 	d.repo("four") // no remote
 	five := d.repo("five", "https://oauth2:tok-secret-55@github.com/acme/five.git")
+	yy := d.repo("yy", "https://github.com/acme/y")
+	qq := d.repo("qq", "https://user:pa?ss-tok-77@github.com/acme/qq.git")
 	six := d.repo("six", "https://user:tok/secret-66@github.com/acme/six.git")
 	d.start()
 
@@ -121,6 +123,10 @@ func TestRepoURLMatching(t *testing.T) {
 		{"https://github.com/acme/two/", two},
 		{"https://github.com/acme/five", five},
 		{"https://github.com/acme/six", six},
+		{"https://github.com/acme/qq", qq},
+		{"https://github.com/acme/y/blob/main/img@2x.png", yy}, // an "@" in the path is not userinfo
+		{"https://github.com/acme/y/pull/5#a@b", yy},
+		{"https://github.com/acme/y/tree/x@evil.com/o/r", yy},
 		{"https://github.com/acme/three", ""}, // same owner/repo, another host
 		{"https://github.com/acme/four", ""},  // a folder name is not a remote
 	}
@@ -130,7 +136,7 @@ func TestRepoURLMatching(t *testing.T) {
 			if code != http.StatusOK {
 				t.Fatalf("status %d: %s", code, body)
 			}
-			if strings.Contains(body, "tok-secret-55") || strings.Contains(body, "secret-66") {
+			if strings.Contains(body, "tok-secret-55") || strings.Contains(body, "secret-66") || strings.Contains(body, "tok-77") {
 				t.Errorf("the response carries a credential from a remote URL: %s", body)
 			}
 			var r dirsResp
@@ -414,6 +420,13 @@ func TestCommodoreLookup(t *testing.T) {
 			writeJSON(t, filepath.Join(bad, ".claude-plugin", "plugin.json"), map[string]any{"name": "evil\nname"})
 			writeSkill(t, filepath.Join(bad, "skills"), "commodore")
 		}, false, "", ""},
+		{"a project that disables the user's Commodore plugin gets no Commodore", "claude", func(t *testing.T, d *dataWorld) {
+			writeSkill(t, filepath.Join(d.work, "proj", ".claude", "skills"), "commodore")
+			d.claude.plugin("jasonbuffin@mk", "jasonbuffin", filepath.Join(d.claude.dir, "plugins", "cache", "mk", "jasonbuffin", "1"), nil, "commodore")
+			d.claude.enable("jasonbuffin@mk", true)
+			writeJSON(t, filepath.Join(d.work, "proj", ".claude", "settings.json"),
+				map[string]any{"enabledPlugins": map[string]bool{"jasonbuffin@mk": false}})
+		}, false, "", ""},
 		{"plugins by plugin name", "claude", func(t *testing.T, d *dataWorld) {
 			for _, n := range []string{"zzz", "aaa"} {
 				d.claude.plugin(n+"@mk", n, filepath.Join(d.claude.dir, "plugins", "cache", "mk", n, "1"), nil, "commodore")
@@ -427,6 +440,11 @@ func TestCommodoreLookup(t *testing.T) {
 			proj := d.repo("proj")
 			c.setup(t, d)
 			d.start()
+			for _, n := range d.skills(t, "work", c.harness, proj).names() {
+				if strings.ContainsAny(n, "\n\r") || strings.Contains(n, "evil") {
+					t.Errorf("skill %q is listed, but its plugin name is not safe", n)
+				}
+			}
 			got := d.skills(t, "work", c.harness, proj).Commodore
 			if got.Found != c.found || got.Name != c.skill {
 				t.Errorf("commodore = %+v, want found %v name %q", got, c.found, c.skill)

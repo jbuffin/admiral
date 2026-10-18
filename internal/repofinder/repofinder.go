@@ -181,13 +181,20 @@ func Identity(raw string) (string, bool) {
 		if scheme == "" || strings.ContainsAny(scheme, "/ ") {
 			return "", false
 		}
-		// Userinfo can hold an unencoded "/", so the last "@" before the query
-		// ends it, not the first "/".
-		head, _, _ := strings.Cut(rest, "?")
-		if i := strings.LastIndex(head, "@"); i >= 0 {
-			rest = rest[i+1:]
-		}
+		// The authority ends at the first "/", and the host is after its last
+		// "@". Userinfo may hold an unencoded "/" (user:tok/secret@host), which
+		// puts the "@" in the first path segment: then the host follows it.
 		auth, p, _ := strings.Cut(rest, "/")
+		if !strings.Contains(auth, "@") {
+			if seg, after, _ := strings.Cut(p, "/"); strings.Contains(seg, "@") {
+				auth, p = seg, after
+			}
+		}
+		if i := strings.LastIndex(auth, "@"); i >= 0 {
+			auth = auth[i+1:]
+		}
+		auth, _, _ = strings.Cut(auth, "?")
+		auth, _, _ = strings.Cut(auth, "#")
 		if i := strings.LastIndex(auth, ":"); i >= 0 && !strings.HasSuffix(auth, "]") {
 			auth = auth[:i]
 		}

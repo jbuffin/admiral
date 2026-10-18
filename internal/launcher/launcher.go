@@ -122,9 +122,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	req.Dir = dir
 	if req.Skill.Kind == "commodore" {
 		name, ok := skillindex.FindCommodore(req.Harness, dock.Environ(), req.Dir)
-		if ok && (hasControl(name) || strings.IndexFunc(name, unicode.IsSpace) >= 0) {
-			ok = false // the index drops such names; this keeps the launch safe if it ever did not
-		}
+		ok = ok && skillindex.SafeInvocation(name)
 		if !ok {
 			return nil, refuse(http.StatusBadRequest, "Commodore not found for %s in fleet %s", req.Harness, fleet.Name)
 		}

@@ -43,12 +43,18 @@ func Installed(harness string, environ []string, dir string) []string {
 // user's locations, then the same in the project's.
 func FindCommodore(harness string, environ []string, dir string) (string, bool) {
 	user, project := locations(harness, environ, dir)
-	for _, names := range [][]string{user, project} {
-		if n, ok := pickCommodore(names); ok {
-			return n, true
+	if n, ok := pickCommodore(user); ok {
+		return n, true
+	}
+	if harness == "claude" {
+		// A project that turns off the user's Commodore plugin does not get to
+		// put its own in its place.
+		env := envMap(environ)
+		if _, ok := pickCommodore(claudePlugins(env, config.IdentityDir(harness, env), dir, false)); ok {
+			return "", false
 		}
 	}
-	return "", false
+	return pickCommodore(project)
 }
 
 func pickCommodore(names []string) (string, bool) {
@@ -68,12 +74,7 @@ func pickCommodore(names []string) (string, bool) {
 // locations are the invocation names found in the user's own locations
 // (identity directory, home, enabled plugins) and in the project's.
 func locations(harness string, environ []string, dir string) (user, project []string) {
-	env := map[string]string{}
-	for _, kv := range environ {
-		if k, v, ok := strings.Cut(kv, "="); ok {
-			env[k] = v
-		}
-	}
+	env := envMap(environ)
 	home := env["HOME"]
 	if home == "" {
 		home, _ = os.UserHomeDir()
@@ -81,7 +82,7 @@ func locations(harness string, environ []string, dir string) (user, project []st
 	identity := config.IdentityDir(harness, env)
 	switch harness {
 	case "claude":
-		user = append(scanDir(filepath.Join(identity, "skills"), true), claudePlugins(env, identity, dir)...)
+		user = append(scanDir(filepath.Join(identity, "skills"), true), claudePlugins(env, identity, dir, true)...)
 		project = scanDir(filepath.Join(dir, ".claude", "skills"), true)
 	case "codex":
 		user = append(scanDir(filepath.Join(home, ".agents", "skills"), false), scanDir(filepath.Join(identity, "skills"), false)...)
@@ -93,6 +94,26 @@ func locations(harness string, environ []string, dir string) (user, project []st
 		}
 	}
 	return user, project
+}
+
+func envMap(environ []string) map[string]string {
+	env := map[string]string{}
+	for _, kv := range environ {
+		if k, v, ok := strings.Cut(kv, "="); ok {
+			env[k] = v
+		}
+	}
+	return env
+}
+
+// SafeInvocation reports whether name, a skill or <plugin>:<skill>, is safe to
+// type after / or $ and to keep in a tmux option.
+func SafeInvocation(name string) bool {
+	plugin, skill, namespaced := strings.Cut(name, ":")
+	if !namespaced {
+		return validName(name)
+	}
+	return validName(plugin) && validName(skill)
 }
 
 // validName is a name safe to type after / or $ and to keep in a tmux option:
@@ -239,7 +260,7 @@ func findSkills(dir string) []string {
 // installPath (possibly outside the cache); a plugin is on when
 // enabledPlugins says so, else when its manifest's defaultEnabled is not false.
 // Plugins synced from claude.ai are left out: they are not on disk.
-func claudePlugins(env map[string]string, identity, dir string) []string {
+func claudePlugins(env map[string]string, identity, dir string, projectSettings bool) []string {
 	root := filepath.Join(identity, "plugins")
 	if v := env["CLAUDE_CODE_PLUGIN_CACHE_DIR"]; v != "" {
 		root = v
@@ -251,7 +272,7 @@ func claudePlugins(env map[string]string, identity, dir string) []string {
 	if err != nil || json.Unmarshal(data, &installed) != nil {
 		return nil
 	}
-	enabled := enabledPlugins(identity, dir)
+	enabled := enabledPlugins(identity, dir, projectSettings)
 	keys := make([]string, 0, len(installed.Plugins))
 	for k := range installed.Plugins {
 		keys = append(keys, k)
@@ -306,13 +327,13 @@ func installs(raw json.RawMessage) []install {
 // enabledPlugins merges the enabledPlugins key of the user's settings.json and
 // the project's settings.json and settings.local.json, later files winning.
 // Nothing else in those files is decoded: they can hold env and apiKeyHelper.
-func enabledPlugins(identity, dir string) map[string]bool {
+func enabledPlugins(identity, dir string, projectSettings bool) map[string]bool {
 	out := map[string]bool{}
-	for _, f := range []string{
-		filepath.Join(identity, "settings.json"),
-		filepath.Join(dir, ".claude", "settings.json"),
-		filepath.Join(dir, ".claude", "settings.local.json"),
-	} {
+	files := []string{filepath.Join(identity, "settings.json")}
+	if projectSettings {
+		files = append(files, filepath.Join(dir, ".claude", "settings.json"), filepath.Join(dir, ".claude", "settings.local.json"))
+	}
+	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {
 			continue
