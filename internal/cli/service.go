@@ -29,7 +29,7 @@ const fallbackPath = "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/b
 // launchctl from PATH, so tests can put a fake first.
 func Service(args []string, std IO) error {
 	if len(args) != 1 {
-		return usagef("usage: admiral service install | uninstall | status")
+		return usagef("%s", Usage("service"))
 	}
 	switch args[0] {
 	case "install":
@@ -39,7 +39,7 @@ func Service(args []string, std IO) error {
 	case "status":
 		return serviceStatus(std)
 	}
-	return usagef("usage: admiral service install | uninstall | status")
+	return usagef("%s", Usage("service"))
 }
 
 func servicePlistPath() (string, error) {

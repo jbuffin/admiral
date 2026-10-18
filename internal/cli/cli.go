@@ -37,6 +37,7 @@ var usages = map[string]string{
 	"ships":      "usage: admiral ships [--port <n>] [--names]",
 	"attach":     "usage: admiral attach <ship>   (a display name or a session name; Ctrl-b d detaches)",
 	"completion": "usage: admiral completion zsh|bash",
+	"service":    "usage: admiral service install | uninstall | status",
 }
 
 // Usage is the usage text of a command ("fleet add" has its command's).
@@ -45,7 +46,7 @@ func Usage(command string) string {
 	if u, ok := usages[first]; ok {
 		return u
 	}
-	return "usage: admiral [--listen host:port] | setup | fleet | config | token | ships | attach | completion"
+	return "usage: admiral [--listen host:port] | setup | fleet | config | token | ships | attach | completion | service | --version"
 }
 
 func usagef(format string, a ...any) error { return &UsageError{fmt.Sprintf(format, a...)} }
