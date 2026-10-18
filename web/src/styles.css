@@ -2076,3 +2076,8 @@ body.dragging * {
   font-size: 12px;
   color: #9db8cf;
 }
+
+/* xterm.js paints its viewport black behind the theme's colour. */
+.term-box .xterm-viewport {
+  background-color: var(--color-terminal-bg) !important;
+}
