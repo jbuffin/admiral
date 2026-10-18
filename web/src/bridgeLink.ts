@@ -42,7 +42,6 @@ export class BridgeLink {
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
     ws.onopen = () => {
-      this.delay = RETRY_FIRST_MS;
       const { cols, rows } = this.h.dims();
       ws.send(JSON.stringify({ type: 'join', cols, rows }));
     };
@@ -50,6 +49,7 @@ export class BridgeLink {
       if (typeof e.data !== 'string') return this.h.output(new Uint8Array(e.data));
       const msg = JSON.parse(e.data);
       if (msg.type === 'join') {
+        this.delay = RETRY_FIRST_MS; // a server that accepts and then closes keeps backing off
         this.set('open');
         this.h.join(msg);
       } else if (msg.type === 'size') this.h.size(msg.cols, msg.rows);

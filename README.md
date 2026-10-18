@@ -59,13 +59,15 @@ Server to browser:
 
 | message | meaning |
 | --- | --- |
-| `{"type":"join","screen","scrollback","cursor":{"x","y","visible"},"modes":{"alternate","application_cursor","bracketed_paste","mouse"},"size":{"cols","rows"},"ship":{"status","exit_code","exit_signal"}}` | Sent after `join`, and again after `visible: true`. `screen` and `scrollback` (at most 2,000 lines) come from `capture-pane -p -e`, with SGR colours, lines joined by `\n`. A pane in the alternate screen has an empty `scrollback`. Output frames follow with nothing missing or repeated. |
+| `{"type":"join","screen","scrollback","cursor":{"x","y","visible"},"modes":{"alternate","application_cursor","bracketed_paste","mouse"},"size":{"cols","rows"},"ship":{"status","exit_code","exit_signal"}}` | Sent after `join`, and again after `visible: true`. `screen` and `scrollback` (at most 2,000 lines) come from `capture-pane -p -e`, with SGR colours, lines joined by `\n`. A pane in the alternate screen, or with no history yet, has an empty `scrollback`. Output frames follow with nothing missing or repeated. |
 | binary frame | The pane's output bytes, decoded from `%output`. Write them to xterm.js as bytes: tmux can split a UTF-8 character across two frames. |
 | `{"type":"size","cols","rows"}` | The pane's size changed. The browsers that didn't set it resize xterm.js to this grid and scale it, never reflowing. |
 | `{"type":"ship","status","exit_code","exit_signal"}` | The ship's status changed. (Not `status`: that is the ship's own field.) |
 | `{"type":"refused","reason":"anchored"}` | Input to a ship that has exited. The reason is the ship's status. |
 
-An order's first line rides the ship as `title` (the eleventh session option, `@admiral-title`, set at launch with control characters dropped; empty for a launch with no source).
+The page itself takes the ship's status from the main `/ws` socket; the `ship` and `refused` messages are for other clients of the bridge.
+
+An order's first line rides the ship as `title` (the eleventh session option, `@admiral-title`, set at launch with control characters, bidi controls and line separators dropped; empty for a launch with no source).
 
 When the server goes away an open bridge keeps its last screen, dims, says "Reconnecting…", disables input and queues nothing. The page's own socket and the bridge retry after 1 s, doubling to 10 s, and the bridge rejoins as a new browser. Browsers don't expose why a WebSocket handshake failed, so each failed reconnect asks `GET /api/ships`: a 401 stops every retry and shows "Open the URL Admiral printed"; a ship missing from the list closes the bridge.
 

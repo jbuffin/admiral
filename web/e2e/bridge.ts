@@ -60,6 +60,13 @@ export function stdinOf(sea: Sea, session: string) {
   return existsSync(p) ? readFileSync(p, 'latin1') : '';
 }
 
+/** The ship's pane size as tmux reports it, "COLSxROWS". */
+export function paneSize(sea: Sea, session: string) {
+  const sock = join(sea.world.root, 'tmux.sock');
+  const r = spawnSync('tmux', ['-S', sock, 'display-message', '-p', '-t', `=${session}:`, '#{window_width}x#{window_height}'], { encoding: 'utf8' });
+  return r.stdout.trim();
+}
+
 /** Lets a fake that is blocked in a `wait <name>` cue go on. */
 export function release(sea: Sea, session: string, name = 'go') {
   writeFileSync(join(sea.world.root, 'rec', session, name), '');

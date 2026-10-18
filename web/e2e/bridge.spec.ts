@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
-import { launchFromOrder, orderTitle, paneWrite, reachable, release, screenText, stdinOf } from './bridge';
+import { launchFromOrder, orderTitle, paneSize, paneWrite, reachable, release, screenText, stdinOf } from './bridge';
 import { expect, header, isTouch, needsYouIn, ships, spyOnPage, test, underwayIn } from './sea';
 
 // The bridge (u11 S5-S7). The names below are the contract the bridge UI is
@@ -33,6 +33,18 @@ import { expect, header, isTouch, needsYouIn, ships, spyOnPage, test, underwayIn
 
 const BLUE = '#2E7DD7';
 const NAME_OF = /^Board (.+?), /;
+
+/** The value once it has stopped changing for half a second. */
+async function settled(read: () => string) {
+  let last = read();
+  for (let still = 0; still < 3; ) {
+    await new Promise((r) => setTimeout(r, 200));
+    const now = read();
+    still = now === last && now !== '' ? still + 1 : 0;
+    last = now;
+  }
+  return last;
+}
 
 const press = (l: Locator, touch: boolean) => (touch ? l.tap() : l.click());
 
@@ -135,6 +147,44 @@ test.describe('S5: boarding a ship and typing on the bridge', () => {
     await expect(terminal(page)).toHaveCount(0);
     await expect(ships(page, underwayIn('Work'))).toBeVisible();
     expect((await s.ship(ship.session))?.status).toBe('underway');
+  });
+
+  test('typing at the prompt makes that browser the one that sizes the pane', async ({ page, browser, admiral, sea }, info) => {
+    const touch = isTouch(info);
+    const s = sea({ work: { name: 'Work', color: BLUE } });
+    s.world.skill('work', 'claude', 'review');
+    await admiral.start();
+    await s.world.guardData();
+    const ship = await launchFromOrder(s, 'work', 'alpha');
+    await spyOnPage(page);
+    await page.goto(admiral.url);
+    const name = await board(page, underwayIn('Work'), touch);
+
+    // A second browser, smaller, boards the same ship and sizes the pane when it joins.
+    const full = page.viewportSize()!;
+    const first = await settled(() => paneSize(s, ship.session));
+    // (its own context: a second tab in one context would leave this page hidden, and a hidden browser can't size the pane)
+    const { hasTouch, isMobile } = info.project.use;
+    const ctx = await browser.newContext({ viewport: { width: full.width - 360, height: full.height - 300 }, hasTouch, isMobile });
+    const other = await ctx.newPage();
+    await spyOnPage(other);
+    await other.goto(admiral.url);
+    await board(other, underwayIn('Work'), touch);
+    const small = await settled(() => paneSize(s, ship.session));
+    expect(small).not.toBe(first);
+
+    // The first browser's prompt: Enter (no pointer on the terminal) takes the size back.
+    await prompt(page, name).fill('x');
+    await prompt(page, name).press('Enter');
+    await expect.poll(() => paneSize(s, ship.session)).not.toBe(small);
+    const large = paneSize(s, ship.session);
+
+    // And the second one's prompt takes it again.
+    await prompt(other, name).fill('y');
+    await prompt(other, name).press('Enter');
+    await expect.poll(() => paneSize(s, ship.session)).toBe(small);
+    expect(large).not.toBe(small);
+    await ctx.close();
   });
 
   test('a ship that needs you opens its bridge from the header pill', async ({ page, admiral, sea }, info) => {

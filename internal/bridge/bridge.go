@@ -115,7 +115,6 @@ type watch struct {
 
 	mu       sync.Mutex
 	browsers map[*browser]struct{}
-	active   *browser
 	size     [2]int
 	lastShip shipMsg
 	linger   *time.Timer
@@ -206,7 +205,10 @@ func (w *watch) start() {
 }
 
 func (w *watch) fail(err error) {
+	w.mu.Lock()
 	w.err = err
+	w.gone = true // so a browser leaving never arms the linger on a client that isn't there
+	w.mu.Unlock()
 	w.s.mu.Lock()
 	if w.s.watches[w.session] == w {
 		delete(w.s.watches, w.session)
@@ -250,9 +252,6 @@ func (w *watch) attached() *sessionhost.Client {
 func (w *watch) leave(b *browser) {
 	w.mu.Lock()
 	delete(w.browsers, b)
-	if w.active == b {
-		w.active = nil
-	}
 	if len(w.browsers) == 0 && !w.gone && w.linger == nil {
 		w.linger = time.AfterFunc(w.s.Idle, w.idle)
 	}
@@ -274,7 +273,9 @@ func (w *watch) idle() {
 	}
 	w.mu.Unlock()
 	w.s.mu.Unlock()
-	w.client.Close() // the pane keeps its last size
+	if c := w.attached(); c != nil {
+		c.Close() // the pane keeps its last size
+	}
 }
 
 // notify handles one control-mode notification, on the client's reader goroutine.
@@ -430,9 +431,6 @@ func (w *watch) makeActive(b *browser) {
 	if hidden || cols == 0 || !ok || !live(sh) {
 		return
 	}
-	w.mu.Lock()
-	w.active = b
-	w.mu.Unlock()
 	w.refreshSize([]string{fmt.Sprintf("refresh-client -C %dx%d", cols, rows)})
 }
 
@@ -459,7 +457,7 @@ type joinMsg struct {
 	Ship shipMsg `json:"ship"`
 }
 
-const modeFormat = "#{cursor_x}|#{cursor_y}|#{cursor_flag}|#{keypad_cursor_flag}|#{alternate_on}|#{bracket_paste_flag}|#{mouse_any_flag}|#{window_width}|#{window_height}"
+const modeFormat = "#{cursor_x}|#{cursor_y}|#{cursor_flag}|#{keypad_cursor_flag}|#{alternate_on}|#{bracket_paste_flag}|#{mouse_any_flag}|#{window_width}|#{window_height}|#{history_size}"
 
 // join sends b the screen and scrollback with colours, the cursor and the
 // modes, and from the same point in tmux's stream on, the live output. When
@@ -476,9 +474,6 @@ func (w *watch) join(b *browser, resize bool) {
 	}
 	var cmds []string
 	if resize && cols > 0 && live(sh) {
-		w.mu.Lock()
-		w.active = b
-		w.mu.Unlock()
 		cmds = append(cmds, fmt.Sprintf("refresh-client -C %dx%d", cols, rows))
 	}
 	cmds = append(cmds,
@@ -489,7 +484,7 @@ func (w *watch) join(b *browser, resize bool) {
 	w.client.Do(cmds, func(out [][]string, errs []error) {
 		var j joinMsg
 		f := strings.Split(strings.Join(out[skip], ""), "|")
-		if errs[skip] != nil || errs[skip+1] != nil || len(f) != 9 {
+		if errs[skip] != nil || errs[skip+1] != nil || len(f) != 10 {
 			b.kill()
 			return
 		}
@@ -498,11 +493,13 @@ func (w *watch) join(b *browser, resize bool) {
 		j.Cursor.X, j.Cursor.Y, j.Cursor.Visible = n(0), n(1), f[2] == "1"
 		j.Modes.ApplicationCursor, j.Modes.Alternate, j.Modes.BracketedPaste, j.Modes.Mouse = f[3] == "1", f[4] == "1", f[5] == "1", f[6] == "1"
 		j.Size.Cols, j.Size.Rows = n(7), n(8)
+		history := n(9)
 		j.Screen = strings.Join(out[skip+1], "\n")
 		// A pane in the alternate screen has no scrollback of its own: what tmux
 		// returns for it would be the normal screen's history under a screen the
-		// browser draws in its alternate buffer.
-		if !j.Modes.Alternate && errs[skip+2] == nil {
+		// browser draws in its alternate buffer. With no history tmux clamps the
+		// range to the screen's first line, which would be sent twice.
+		if !j.Modes.Alternate && history > 0 && errs[skip+2] == nil {
 			j.Scrollback = strings.Join(out[skip+2], "\n")
 		}
 		j.Ship = shipState(sh)

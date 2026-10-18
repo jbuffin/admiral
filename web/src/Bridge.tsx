@@ -4,6 +4,7 @@ import { BridgeLink, type LinkState } from './bridgeLink';
 import { signedOut } from './connection';
 import { harnesses } from './harnesses';
 import { LogoFlag } from './Logos';
+import { api } from './sources';
 import { botFor, boardedSession, leaving, ships, shipsLoaded, type WireShip } from './ships';
 
 const live = (s: WireShip) => s.status === 'underway' || s.status === 'needs_you';
@@ -50,8 +51,10 @@ function BridgeView({ session }: { session: string }) {
   const term = useRef<Term | undefined>(undefined);
   const link = useRef<BridgeLink | undefined>(undefined);
   const active = useRef(true);
+  const activity = useRef<() => void>(() => {});
   const [linkState, setLinkState] = useState<LinkState>('connecting');
   const [draft, setDraft] = useState('');
+  const [dismissError, setDismissError] = useState('');
 
   const status = ship?.status;
   const open = !!ship && live(ship);
@@ -72,6 +75,7 @@ function BridgeView({ session }: { session: string }) {
       if (!active.current) claim();
       else link.current?.send({ type: 'active' });
     };
+    activity.current = onActivity;
     const onVisibility = () => link.current?.send({ type: 'visible', visible: document.visibilityState === 'visible' });
     void import('./terminal').then(async ({ createTerminal }) => {
       if (disposed || !host.current) return;
@@ -130,7 +134,11 @@ function BridgeView({ session }: { session: string }) {
   const h = harnesses[ship.harness];
   const pill = PILL[ship.status];
   const reconnecting = linkState === 'reconnecting';
-  const input = (data: string) => link.current?.send({ type: 'input', data });
+  // Anything typed or pressed makes this browser the one that sizes the pane.
+  const input = (data: string) => {
+    activity.current();
+    link.current?.send({ type: 'input', data });
+  };
   const submit = (e: Event) => {
     e.preventDefault();
     const text = draft;
@@ -222,9 +230,14 @@ function BridgeView({ session }: { session: string }) {
         <div class="term-keys">
           {status === 'anchored' ? (
             <>
-              <button type="button" class="press term-dismiss" onClick={() => dismiss(session)}>
+              <button type="button" class="press term-dismiss" onClick={() => dismiss(session, setDismissError)}>
                 Dismiss
               </button>
+              {dismissError && (
+                <span class="term-note" role="alert">
+                  {dismissError}
+                </span>
+              )}
               <span class="term-grow" />
               <span class="term-note">The harness exited. This is its last screen.</span>
             </>
@@ -258,9 +271,10 @@ function BridgeView({ session }: { session: string }) {
   );
 }
 
-// Dismissing an anchored ship ends its session; the ship is gone and the bridge closes.
-function dismiss(session: string): void {
-  void fetch(`/api/ships/${encodeURIComponent(session)}/dismiss`, { method: 'POST' })
-    .then(close)
-    .catch(() => {});
+// Dismissing an anchored ship ends its session; the ship is gone and the bridge closes. A refusal
+// leaves the bridge open with the server's message.
+async function dismiss(session: string, fail: (message: string) => void): Promise<void> {
+  const r = await api('POST', `/api/ships/${encodeURIComponent(session)}/dismiss`);
+  if (r.ok) close();
+  else fail(r.error);
 }

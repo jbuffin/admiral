@@ -197,7 +197,7 @@ func orderTitle(req Request) string {
 	}
 	first, _, _ := strings.Cut(strings.TrimLeft(req.Text, " \t\r\n"), "\n")
 	first = strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
+		if isControl(r) {
 			return -1
 		}
 		return r
@@ -211,6 +211,12 @@ func orderTitle(req Request) string {
 // hasControl reports a character below 0x20 or 0x7f.
 func hasControl(s string) bool {
 	return strings.IndexFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0
+}
+
+// isControl is a character a title must not carry: C0 and C1 controls, the bidi
+// controls and the line and paragraph separators.
+func isControl(r rune) bool {
+	return r < 0x20 || (r >= 0x7f && r <= 0x9f) || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069) || r == 0x2028 || r == 0x2029
 }
 
 func commandSize(argv []string) int {

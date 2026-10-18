@@ -104,6 +104,25 @@ func TestBridgeS1_JoinGetsScreenAndScrollbackThenStreams(t *testing.T) {
 	}
 }
 
+// S1: a pane with no history joins with an empty scrollback, so its first line
+// is not sent twice (tmux clamps the history range to the screen's first line).
+func TestBridgeS1_JoinWithoutHistoryRepeatsNothing(t *testing.T) {
+	w := liveFleet(t, "lines 2")
+	w.start()
+	s := w.launchIn("f", "claude", "b1short")
+	w.waitFile(s.Session, "cues-done")
+	w.in.waitStatusList(t, 3*time.Second, s.Session, "underway")
+
+	_, j := w.joinBridge(t, s.Session, 100, 30)
+	if j.Scrollback != "" {
+		t.Errorf("a pane with no history joined with scrollback %.80q, want none", j.Scrollback)
+	}
+	all := stripSGR(j.Scrollback + "\n" + j.Screen)
+	if n := strings.Count(all, "line 0001"); n != 1 {
+		t.Errorf("'line 0001' appears %d times in the join payload, want exactly once: %.200q", n, all)
+	}
+}
+
 // S2: two browsers share one control client; the latest active one sizes the
 // pane; input from either reaches the pane and clears needs-you; a hidden
 // browser stops receiving and catches up on return.

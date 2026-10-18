@@ -19,7 +19,7 @@ const lines = (s: string) => s.split('\n').join('\r\n');
 // it, which has no history), then the cursor and the modes.
 export function joinSequence(j: JoinMsg): string {
   let out = '';
-  if (j.scrollback && !j.modes.alternate) out += `${ESC}[0m${lines(j.scrollback)}\r\n${'\r\n'.repeat(j.size.rows)}`;
+  if (j.scrollback && !j.modes.alternate) out += `${ESC}[0m${lines(j.scrollback)}${'\r\n'.repeat(j.size.rows)}`;
   if (j.modes.alternate) out += `${ESC}[?1049h`;
   out += `${ESC}[0m${ESC}[H${ESC}[2J${lines(j.screen)}${ESC}[0m`;
   out += `${ESC}[${j.cursor.y + 1};${j.cursor.x + 1}H`;
