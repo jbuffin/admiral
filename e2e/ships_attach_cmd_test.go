@@ -160,8 +160,13 @@ func TestU12_S4_ShipsAndAttach(t *testing.T) {
 			t.Errorf("read from tmux, the table should still hold both ships:\n%s", r.stdout)
 		}
 
+		// No locale (launchd, cron, env -i): tmux must still be read as UTF-8.
+		bare := cliOpts{env: []string{"LANG=", "LC_ALL=", "LC_CTYPE="}}
+		if rows := shipTable(t, w.admiralWith(bare, "ships", "--port", w.in.Port).stdout); rows[live.Session].name != live.Name {
+			t.Errorf("without a UTF-8 locale the ships were not read from tmux: %v", rows)
+		}
 		dir, rec := w.installFakeTmux()
-		w.expectExit(w.admiralWith(cliOpts{path: []string{dir}, env: []string{"FAKE_TMUX_RECORD=" + rec}}, "attach", live.Name), 0, "attach with the server down")
+		w.expectExit(w.admiralWith(cliOpts{path: []string{dir}, env: []string{"FAKE_TMUX_RECORD=" + rec, "LANG=", "LC_ALL=", "LC_CTYPE="}}, "attach", live.Name), 0, "attach with the server down and no locale")
 		if calls := attachCalls(w, rec); len(calls) != 1 || !hasPair(calls[0], "-t", "="+live.Session) {
 			t.Errorf("attach without a server recorded %q", calls)
 		}

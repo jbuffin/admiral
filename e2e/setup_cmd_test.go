@@ -313,6 +313,14 @@ func TestU12_ExitCodes(t *testing.T) {
 	w.expectExit(w.admiral("nosuchcommand"), 2, "an unknown command")
 	w.expectExit(w.admiral("setup", "--yes"), 2, "--yes without --answers")
 	w.expectExit(w.admiral("fleet", "check", "nosuchfleet"), 1, "fleet check for a fleet that isn't there")
+	// --help is usage, never a ship name or a value.
+	for _, args := range [][]string{{"attach", "--help"}, {"fleet", "add", "--help"}, {"setup", "-h"}} {
+		r := w.admiral(args...)
+		w.expectExit(r, 0, strings.Join(args, " "))
+		if !strings.HasPrefix(r.stdout, "usage: admiral "+args[0]) {
+			t.Errorf("%v should print its usage, got %q", args, r.stdout)
+		}
+	}
 }
 
 // Story 12: `admiral` on a terminal with no fleets offers setup. A terminal is

@@ -156,7 +156,7 @@ func Attach(args []string, std IO) error {
 	if found == nil {
 		return fmt.Errorf("no ship called %q (admiral ships lists them)", name)
 	}
-	argv := []string{tmux, "-S", sock, "attach", "-f", "ignore-size"}
+	argv := []string{tmux, "-u", "-S", sock, "attach", "-f", "ignore-size"}
 	if found.Status != ships.StatusUnderway && found.Status != ships.StatusNeedsYou {
 		argv = append(argv, "-r")
 	}

@@ -468,12 +468,13 @@ func (h *Host) set(next map[string]Session, unreadable []string, ok bool) {
 	}
 }
 
-// ReadOnce lists the sessions of the tmux server on sock with one command and
+// ReadOnce (tmux -u, like the control client: without a UTF-8 locale tmux would print the
+// separator as "_" and every row would be unreadable) lists the sessions of the tmux server on sock with one command and
 // no control connection, so it starts nothing. With no server running there
 // are no sessions. Like Sessions, it leaves out the internal session.
 func ReadOnce(tmux, sock string) ([]Session, error) {
 	run := func(args ...string) ([]string, error) {
-		out, err := exec.Command(tmux, append([]string{"-f", "/dev/null", "-S", sock}, args...)...).Output()
+		out, err := exec.Command(tmux, append([]string{"-f", "/dev/null", "-S", sock, "-u"}, args...)...).Output()
 		if err != nil {
 			return nil, err
 		}

@@ -36,6 +36,11 @@ var version = "dev"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
+		var help *cli.HelpError
+		if errors.As(err, &help) {
+			fmt.Println(help)
+			return
+		}
 		fmt.Fprintln(os.Stderr, "admiral:", err)
 		var usage *cli.UsageError
 		if errors.As(err, &usage) {
@@ -52,6 +57,12 @@ func run(args []string) error {
 		return serve(args)
 	}
 	std := cli.Std()
+	for _, a := range args[1:] {
+		if cli.IsHelp(a) {
+			fmt.Println(cli.Usage(args[0]))
+			return nil
+		}
+	}
 	switch args[0] {
 	case "setup":
 		return cli.Setup(args[1:], std)

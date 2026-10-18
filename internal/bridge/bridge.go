@@ -246,7 +246,7 @@ func (w *watch) shutdown() {
 		c.Close()
 	}
 	for _, b := range bs {
-		b.kill()
+		b.end()
 	}
 }
 

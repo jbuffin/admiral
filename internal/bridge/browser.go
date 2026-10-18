@@ -140,6 +140,15 @@ func (b *browser) kill() {
 	_ = b.conn.CloseNow()
 }
 
+// end closes the connection with a close frame, for a session that has ended: the page then
+// sees a normal close, not a failed connection it would log as an error.
+func (b *browser) end() {
+	b.mu.Lock()
+	b.closed = true
+	b.mu.Unlock()
+	go func() { _ = b.conn.Close(websocket.StatusGoingAway, "the session has ended") }()
+}
+
 // write drains the queue until the browser is closed.
 func (b *browser) write(ctx context.Context) {
 	for {

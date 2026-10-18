@@ -136,6 +136,8 @@ test.describe('S3: no fleets', () => {
     await expect(page.getByText('fleets.zulu.claud').first()).toBeVisible();
     await expect(page.getByText('config.json').first()).toBeVisible();
     await expect(page.getByText('Set up a fleet')).toBeVisible();
+    // No count to claim: the marina is the way in.
+    await expect(page.getByRole('banner').getByRole('button', { name: /fleets?$/ })).toHaveCount(0);
   });
 });
 

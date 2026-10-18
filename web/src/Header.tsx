@@ -101,7 +101,8 @@ function SeaPills() {
 }
 
 export function Header() {
-  const n = config.value?.fleets.length;
+  // An invalid config has no count: the "Set up a fleet" marina is the way in.
+  const n = config.value?.error ? undefined : config.value?.fleets.length;
   return (
     <header class="app-header">
       <div class="header-row">

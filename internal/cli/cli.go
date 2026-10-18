@@ -21,6 +21,33 @@ type UsageError struct{ Msg string }
 
 func (e *UsageError) Error() string { return e.Msg }
 
+// HelpError is a request for a command's usage: main prints it and exits 0.
+type HelpError struct{ Command string }
+
+func (e *HelpError) Error() string { return Usage(e.Command) }
+
+// IsHelp says whether an argument asks for usage. It is never a ship name or a value.
+func IsHelp(arg string) bool { return arg == "-h" || arg == "--help" || arg == "-help" }
+
+var usages = map[string]string{
+	"setup":      "usage: admiral setup [--answers <file> --yes] [--dry-run]",
+	"fleet":      "usage: admiral fleet list | add <key> --name <name> [flags] | edit <key> [flags] | check [<key>]\nflags: --color --harness --executable <h>=<path> --arg <h>=<arg> --env <h>=<NAME>=<value> --unset-env <h>=<NAME> --search-root --remove-search-root",
+	"config":     "usage: admiral config show | validate | edit",
+	"token":      "usage: admiral token rotate [--port <n>]",
+	"ships":      "usage: admiral ships [--port <n>] [--names]",
+	"attach":     "usage: admiral attach <ship>   (a display name or a session name; Ctrl-b d detaches)",
+	"completion": "usage: admiral completion zsh|bash",
+}
+
+// Usage is the usage text of a command ("fleet add" has its command's).
+func Usage(command string) string {
+	first, _, _ := strings.Cut(command, " ")
+	if u, ok := usages[first]; ok {
+		return u
+	}
+	return "usage: admiral [--listen host:port] | setup | fleet | config | token | ships | attach | completion"
+}
+
 func usagef(format string, a ...any) error { return &UsageError{fmt.Sprintf(format, a...)} }
 
 // IO is where a command reads and writes; tests and the setup terminal use the
@@ -45,7 +72,7 @@ func newFlags(name string) *flag.FlagSet {
 func parseFlags(fs *flag.FlagSet, args []string) error {
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			return usagef("usage: admiral %s", fs.Name())
+			return &HelpError{fs.Name()}
 		}
 		return &UsageError{err.Error()}
 	}

@@ -74,6 +74,10 @@ test.describe('S5: the setup terminal', () => {
     symlinkSync(execFileSync('which', ['tmux'], { encoding: 'utf8' }).trim(), join(tools, 'tmux'));
     await admiral.start({ env: { HOME: user, PATH: `${fakeharness}:${tools}:/usr/bin:/bin:/usr/sbin:/sbin` } });
     await spyOnPage(page);
+    // The session ending, however it ends, is a normal close and logs nothing.
+    const problems: string[] = [];
+    page.on('console', (m) => m.type() === 'error' && problems.push(m.text()));
+    page.on('pageerror', (e) => problems.push(e.message));
     await page.goto(admiral.url);
 
     // ---- no fleets: tap the marina, answer, and the marina sails in ----
@@ -152,5 +156,6 @@ test.describe('S5: the setup terminal', () => {
     expect(readFileSync(join(admiral.home, 'config.json'), 'utf8')).toBe(before);
     await expect(page.getByRole('region', { name: /marina$/ })).toHaveCount(1);
     await expect(countButton(page, '1 fleet')).toBeVisible();
+    expect(problems).toEqual([]);
   });
 });
