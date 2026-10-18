@@ -34,7 +34,7 @@ function marks(fleet: Fleet, dock: Dock): { short: string; full: string[] } | un
   return short ? { short, full } : undefined;
 }
 
-function DockView({ fleet, dock, top, index }: { fleet: Fleet; dock: Dock; top: number; index: number }) {
+function DockView({ fleet, dock, top, index, height }: { fleet: Fleet; dock: Dock; top: number; index: number; height: number }) {
   const h = harnesses[dock.harness];
   const mark = marks(fleet, dock);
   const label = `${h.label} dock, ${fleet.name}`;
@@ -56,7 +56,7 @@ function DockView({ fleet, dock, top, index }: { fleet: Fleet; dock: Dock; top: 
       title={mark ? mark.full.join('\n') : undefined}
     >
       {leaving > 0 && (
-        <span class="moored leaving" key={`leaving-${leaving}`}>
+        <span class={`moored leaving ${top + 23 < height / 2 - 15 ? 'down' : top + 23 > height / 2 + 15 ? 'up' : 'mid'}`} key={`leaving-${leaving}`}>
           <Ship variant="moored" fleetColor={fleet.color} bot={h.bot} harness={dock.harness} />
         </span>
       )}
@@ -120,7 +120,7 @@ export function Marina({ fleet }: { fleet: Fleet }) {
       <Basin height={height} rowboatTop={fleet.docks.length >= 3 ? 58 : height - 52}>
         {fleet.docks.length === 0 && <p class="no-docks">No harnesses</p>}
         {fleet.docks.map((d, i) => (
-          <DockView key={d.harness} fleet={fleet} dock={d} top={tops[i]} index={i} />
+          <DockView key={d.harness} fleet={fleet} dock={d} top={tops[i]} index={i} height={height} />
         ))}
       </Basin>
       <Sign color={fleet.color} ink={fleet.ink}>
