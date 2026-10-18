@@ -57,8 +57,11 @@ export interface Admiral {
   installTestPlugin(folder?: string): void;
   /** A fresh flag directory for one test-plugin source. */
   flags(label: string): Flags;
-  /** Starts the server on a free port, with whatever config.json holds. `lan` listens on 0.0.0.0 and fills `lanUrl` and `token`. */
-  start(opts?: { lan?: boolean }): Promise<void>;
+  /**
+   * Starts the server on a free port, with whatever config.json holds. `lan` listens on 0.0.0.0 and fills `lanUrl` and `token`.
+   * `env` is added to (and wins over) the server's environment, for a temp HOME and a PATH of fake harnesses.
+   */
+  start(opts?: { lan?: boolean; env?: Record<string, string> }): Promise<void>;
   /** With `start({ lan: true })`: the Mac's non-loopback address (http://<ip>:<port>/) and the token the server printed. */
   lanUrl: string;
   token: string;
@@ -135,9 +138,11 @@ class Instance implements Admiral {
   token = '';
   private lan = false;
   private listen = '127.0.0.1:0';
+  private extraEnv: Record<string, string> = {};
 
-  start(opts: { lan?: boolean } = {}) {
+  start(opts: { lan?: boolean; env?: Record<string, string> } = {}) {
     this.lan = !!opts.lan;
+    this.extraEnv = opts.env ?? {};
     this.listen = this.lan ? '0.0.0.0:0' : '127.0.0.1:0';
     return this.resumeServer();
   }
@@ -145,7 +150,7 @@ class Instance implements Admiral {
   resumeServer() {
     return new Promise<void>((done, fail) => {
       // A harness identity variable from the engineer's shell must not reach the server.
-      const env: NodeJS.ProcessEnv = { ...process.env, ADMIRAL_HOME: this.home };
+      const env: NodeJS.ProcessEnv = { ...process.env, ...this.extraEnv, ADMIRAL_HOME: this.home };
       for (const v of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'COPILOT_HOME']) delete env[v];
       const proc = spawn(bin, ['--listen', this.listen], {
         env,
