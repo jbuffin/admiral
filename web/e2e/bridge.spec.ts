@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { launchFromOrder, orderTitle, paneWrite, reachable, release, screenText, stdinOf } from './bridge';
-import { expect, header, isTouch, needsYouIn, ships, spyOnPage, test, underwayIn, water } from './sea';
+import { expect, header, isTouch, needsYouIn, ships, spyOnPage, test, underwayIn } from './sea';
 
 // The bridge (u11 S5-S7). The names below are the contract the bridge UI is
 // built to; the prototype supplies the copy and labels
@@ -311,7 +311,7 @@ test.describe('S7: an anchored ship and a ship that exits with the bridge open',
     await board(page, underwayIn('Zero'), touch);
     release(s, zero.session);
     await expect(terminal(page)).toHaveCount(0, { timeout: 10_000 });
-    await expect(water(page).getByRole('button', { name: /Zero/ })).toHaveCount(0, { timeout: 10_000 });
+    await expect(ships(page, /Claude in Zero,/)).toHaveCount(0, { timeout: 10_000 });
 
     const name = await board(page, underwayIn('Three'), touch);
     const t = terminal(page);
