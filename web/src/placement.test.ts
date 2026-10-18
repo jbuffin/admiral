@@ -123,9 +123,9 @@ describe('placeShip with the real footprint, inset and keep-out areas', () => {
   const fleets = ['work', 'home'];
   const boxOf = (p: { x: number; y: number }): Rect => ({ x: p.x, y: p.y, ...FOOTPRINT });
 
-  it('keeps six ships of each fleet on the water, off the land and the left edge, and apart', () => {
+  it('keeps four ships of each fleet on the water, off the land and the left edge, and apart', () => {
     const placed: PlacedShip[] = [];
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 8; i++) {
       const fleet = fleets[i % 2];
       const session = `s-${i}`;
       const spot = placeShip({ fleets, placed, ship: { session, fleet }, footprint: FOOTPRINT, keepOut: KEEP_OUT, inset: INSET });

@@ -44,14 +44,15 @@ const BAND = 0.23;
 const FINE = 0.01;
 
 // A ship's box and the land, measured against the narrowest evaluated layout
-// (834x1194: the sea ends at about 0.65 of the width) and the shortest open
-// water (760 px, the sea's minimum height). The slot is up to 140 px wide and
+// (834x1194 with the orders collapsed to the 76 px rail: main is 758 px wide and
+// the sea ends at about 0.617 of it) and the shortest open water (760 px, the
+// sea's minimum height). The slot is up to 140 px wide and
 // about 137 px tall, so each layout's real box fits inside the nominal one.
-export const FOOTPRINT = { w: 142 / 834, h: 142 / 760 };
-export const INSET = 12 / 834; // ships keep off the orders panel's edge
+export const FOOTPRINT = { w: 142 / 758, h: 142 / 760 };
+export const INSET = 12 / 758; // ships keep off the orders panel's edge
 export const KEEP_OUT: Rect[] = [
   { x: 0.01, y: 0.015, w: 0.46, h: 0.065 }, // the hint chip (prototype:208)
-  { x: 0.65, y: 0, w: 0.35, h: 1 }, // the marinas' land
+  { x: 0.61, y: 0, w: 0.39, h: 1 }, // the marinas' land
 ];
 
 const overlap = (a: Rect, b: Rect) =>

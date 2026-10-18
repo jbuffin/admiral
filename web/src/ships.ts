@@ -81,9 +81,12 @@ effect(() => {
 });
 
 // u9 tells the launching browser a ship has sailed, possibly before the `ships` push.
-const announced = new Set<string>();
+// A session known already is not announced (a reconnect baseline would sail it in again); an
+// entry the pushes never claim is dropped after a while.
+const ANNOUNCED_MS = 10_000;
+const announced = new Map<string, number>();
 window.addEventListener('admiral:launched', (e) => {
-  announced.add(e.detail.session);
+  if (!ships.peek().some((s) => s.session === e.detail.session)) announced.set(e.detail.session, Date.now());
 });
 
 function arrive(session: string): void {
@@ -100,6 +103,7 @@ onMessage('ships', (msg: { ships: WireShip[] }) => {
   const first = baseline;
   const now = msg.ships;
   let asking = false;
+  for (const [session, at] of announced) if (Date.now() - at > ANNOUNCED_MS) announced.delete(session);
   for (const s of now) {
     const was = before.get(s.session);
     if (!first) {
@@ -174,6 +178,7 @@ export function drop(session: string, p: Spot): void {
   accepted.delete(session);
   void putPosition(session, spot).then((ok) => {
     if (!ok) return forget(session, spot); // the server's spot wins
+    if (dropped.peek().get(session) !== spot) return; // a newer drop is in charge now
     accepted.add(session);
     setTimeout(() => forget(session, spot), SETTLE_MS);
   });

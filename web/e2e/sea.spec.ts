@@ -101,8 +101,8 @@ test.describe('S2: a launched ship appears in open water', () => {
 });
 
 test.describe('S2: placement on screen', () => {
-  test('four ships of one fleet sit inside the sea and clear of each other and of every dock', async ({ page, admiral, sea }, info) => {
-    test.skip(info.project.name !== 'ipad-portrait'); // the narrowest layout, where the sea is shortest of width
+  for (const collapsed of [false, true]) test(`four ships of one fleet sit inside the sea and clear of each other and of every dock, orders ${collapsed ? 'collapsed' : 'expanded'}`, async ({ page, admiral, sea }, info) => {
+    test.skip(info.project.name !== 'ipad-portrait'); // the narrowest layouts: the sea is shortest of width, most of all beside the 76 px rail
     const s = sea({ work: { name: 'Work', color: BLUE }, home: { name: 'Home', color: ORANGE } });
     await admiral.start();
     for (const repo of ['alpha', 'bravo', 'charlie', 'delta']) await s.launch('work', repo);
@@ -110,6 +110,7 @@ test.describe('S2: placement on screen', () => {
     await expect(ships(page, underwayIn('Work'))).toHaveCount(4);
     await expect.poll(async () => (await s.ships()).every((x) => x.position)).toBe(true);
     await expect(header(page).getByText('4 at sea', { exact: true })).toBeVisible();
+    if (collapsed) await page.getByRole('button', { name: 'Collapse orders' }).tap();
     await page.waitForTimeout(2800); // past the sail-in, so the boxes are where they rest
 
     const boxes = await page.evaluate(() => {
