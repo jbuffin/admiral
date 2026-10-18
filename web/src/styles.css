@@ -496,6 +496,8 @@ button:focus-visible {
 }
 
 .order-id {
+  position: relative;
+  z-index: 1; /* above the title, so the whole padded box takes the tap */
   /* padding and the matching negative margin give a 44 px target without moving the text */
   display: inline-block;
   padding: 15px 6px;
@@ -533,6 +535,10 @@ button:focus-visible {
 /* The ⋯ button floats over the card's top-right corner; the grip sits below it. */
 .order {
   position: relative;
+}
+
+.order.with-menu {
+  min-height: 80px; /* room for the grip below the ⋯ button */
 }
 
 .order.with-menu .order-main {

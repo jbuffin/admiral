@@ -30,6 +30,7 @@ export interface Source {
   plugin: string;
   icon_url: string;
   capabilities: string[];
+  has_schema: boolean;
   state: SourceState;
   read_only: boolean;
   error: string | null;

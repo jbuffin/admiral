@@ -545,3 +545,54 @@ func TestSourceSettingsMaskUnknownAndNestedSecrets(t *testing.T) {
 		t.Errorf("config.json = %s, want the nested token kept and no marker", raw)
 	}
 }
+
+// The settings view fails closed: a value comes back in clear only when the
+// schema declares it as a plain string or number, however the schema is wrong,
+// missing or shaped.
+func TestSourceSettingsFailClosed(t *testing.T) {
+	w := newWorld(t)
+	cases := []struct {
+		key    string
+		extra  map[string]any
+		crash  bool
+		secret string
+	}{
+		{"noschema", map[string]any{"noSettingsSchema": true, "token": "s3cretA"}, false, "s3cretA"},
+		{"notobject", map[string]any{"settingsSchema": "not an object", "token": "s3cretB"}, false, "s3cretB"},
+		{"items", map[string]any{"settingsSchema": map[string]any{"type": "object", "properties": map[string]any{
+			"flagdir":  map[string]any{"type": "string"},
+			"accounts": map[string]any{"type": "array", "items": map[string]any{"type": "string", "format": "password"}},
+		}}, "accounts": []string{"s3cretC"}}, false, "s3cretC"},
+		{"undeclared", map[string]any{"token": "s3cretD"}, false, "s3cretD"},
+		{"badprops", map[string]any{"settingsSchema": map[string]any{"properties": "x"}, "token": "s3cretE"}, false, "s3cretE"},
+		{"numeric", map[string]any{"pin": 987654}, true, "987654"},
+	}
+	var defs []srcDef
+	plugs := map[string]*tplug{}
+	for _, c := range cases {
+		p := w.newTP(c.key)
+		if c.crash {
+			p.put("crash-on-initialize", "")
+		}
+		plugs[c.key] = p
+		defs = append(defs, tpSource(c.key, p, c.extra))
+	}
+	w.startSources(defs...)
+	for _, c := range cases {
+		want := "state ok"
+		pred := isOK
+		if c.crash {
+			want, pred = "state error", func(s sourceJSON) bool { return s.State == "error" }
+		}
+		w.waitSource(c.key, 10*time.Second, want, pred)
+		code, body := w.srcReq(http.MethodGet, "/"+c.key+"/settings", nil)
+		if code != http.StatusOK || strings.Contains(body, c.secret) {
+			t.Errorf("GET settings of %s = %d %s, want 200 without %s", c.key, code, body, c.secret)
+		}
+	}
+	// What the schema declares plain is still shown.
+	_, body := w.srcReq(http.MethodGet, "/undeclared/settings", nil)
+	if !strings.Contains(body, plugs["undeclared"].dir) {
+		t.Errorf("GET settings = %s, want the declared flagdir in clear", body)
+	}
+}

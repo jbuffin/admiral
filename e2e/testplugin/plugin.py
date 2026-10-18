@@ -10,6 +10,7 @@ plugin). Settings, all optional except flagdir:
   protocolVersion  number answered by initialize (default 1)
   title            title of the default panel "main"
   settingsSchema   schema answered by initialize (default: flagdir as a string)
+  noSettingsSchema true: answer initialize without any settingsSchema
 
 Files the plugin writes in flagdir:
 
@@ -158,6 +159,8 @@ def handle(msg):
         result = {"protocolVersion": settings.get("protocolVersion", 1),
                   "capabilities": settings.get("capabilities", ["refresh"]),
                   "settingsSchema": settings.get("settingsSchema", {"type": "object", "properties": {"flagdir": {"type": "string"}}})}
+        if settings.get("noSettingsSchema"):
+            del result["settingsSchema"]
     elif flagdir and flag("hang-" + str(method)):
         hang()
     elif method == "panels.list":

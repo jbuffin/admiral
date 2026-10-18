@@ -43,7 +43,7 @@ export function OrderItem({ source, panelId, order, fail }: { source: Source; pa
         <span class="order-title">{title}</span>
       </div>
       {(hasEdit || hasRemove) && (
-        <Menu id={id} label={`Actions for ${title}`} disabled={source.read_only}>
+        <Menu id={id} label={`Actions for ${title}`} disabled={!can(source, 'edit') && !can(source, 'remove')}>
           {hasEdit && (
             <MenuItem disabled={!can(source, 'edit')} onSelect={() => (editing.value = id)}>
               Edit

@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { OrderItem } from './OrderItem';
 import { SignInCard } from './SignInCard';
 import { SourceIcon } from './SourceIcon';
@@ -9,6 +9,7 @@ export const countLabel = (n: number) => `${n} ${n === 1 ? 'order' : 'orders'}`;
 // A source's error with its Restart button; shared by panels and source rows.
 export function SourceProblem({ sourceKey, message, extra }: { sourceKey: string; message: string | null; extra?: string }) {
   const [refusal, setRefusal] = useState<string | null>(null);
+  useEffect(() => setRefusal(null), [message]); // a refused Restart's message is about the old error
   const shown = refusal ?? extra ?? message;
   return (
     <div class="problem">

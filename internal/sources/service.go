@@ -37,19 +37,20 @@ type Service struct {
 
 // sourceState is a runner's state, copied.
 type sourceState struct {
-	def      config.Source
-	state    string
-	readOnly bool
-	errMsg   string
-	auth     *Auth
-	caps     []string
-	panels   []Panel
+	def       config.Source
+	state     string
+	readOnly  bool
+	errMsg    string
+	auth      *Auth
+	caps      []string
+	panels    []Panel
+	hasSchema bool
 }
 
 func (r *runner) snapshot() sourceState {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	st := sourceState{def: r.def, state: r.state, readOnly: r.readOnly, errMsg: r.errMsg, caps: slices.Clone(r.caps)}
+	st := sourceState{def: r.def, state: r.state, readOnly: r.readOnly, errMsg: r.errMsg, caps: slices.Clone(r.caps), hasSchema: r.schema != nil}
 	if r.auth != nil {
 		a := *r.auth
 		st.auth = &a
@@ -69,6 +70,7 @@ type SourceView struct {
 	Plugin       string   `json:"plugin"`
 	IconURL      string   `json:"icon_url"`
 	Capabilities []string `json:"capabilities"`
+	HasSchema    bool     `json:"has_schema"`
 	State        string   `json:"state"`
 	ReadOnly     bool     `json:"read_only"`
 	Error        *string  `json:"error"`
@@ -81,7 +83,7 @@ func (s *Service) View() []SourceView {
 	hidden := ships.HiddenOrders(s.Ships())
 	out := []SourceView{}
 	for _, st := range s.Sup.snapshot() {
-		v := SourceView{Key: st.def.Key, Name: st.def.Name, Plugin: st.def.Plugin, Capabilities: st.caps,
+		v := SourceView{Key: st.def.Key, Name: st.def.Name, Plugin: st.def.Plugin, Capabilities: st.caps, HasSchema: st.hasSchema,
 			State: st.state, ReadOnly: st.readOnly, Auth: st.auth, Panels: []Panel{}}
 		if m, dir, err := LoadManifest(s.Home, st.def.Plugin); err == nil {
 			if v.Name == "" {
@@ -379,15 +381,6 @@ func (s *Service) schemaOf(key string) json.RawMessage {
 	return rn.schema
 }
 
-func objectOf(raw json.RawMessage) map[string]json.RawMessage {
-	m := map[string]json.RawMessage{}
-	_ = json.Unmarshal(raw, &m)
-	if m == nil {
-		m = map[string]json.RawMessage{}
-	}
-	return m
-}
-
 // decodeValue reads JSON keeping numbers exactly as written.
 func decodeValue(raw json.RawMessage) any {
 	dec := json.NewDecoder(bytes.NewReader(raw))
@@ -397,34 +390,64 @@ func decodeValue(raw json.RawMessage) any {
 	return v
 }
 
-// maskSecrets replaces the stored secrets in v with the marker, at any depth.
-// sc is v's part of the settings schema; its "format": "password" properties
-// are the secrets. With every set, the schema is not known, so each non-empty
-// string counts as one.
-func maskSecrets(v any, sc map[string]any, every bool) any {
+// maskSecrets replaces the stored strings and numbers in v with the marker,
+// except those the schema sc declares as plain values: reached only through
+// "properties" and a single "items" schema, of type string, number or integer,
+// and not "format": "password". Anything the walk cannot follow with certainty
+// (no schema, "$ref", combinators, "additionalProperties", keys the schema
+// does not list) is masked, so a schema Admiral cannot read never lets a
+// secret out. Empty strings, booleans and nulls hold no secret and stay.
+func maskSecrets(v any, sc map[string]any) any {
 	switch t := v.(type) {
 	case string:
-		if every && t != "" {
+		if t != "" && !declaredPlain(sc, "string") {
+			return unchangedMarker
+		}
+	case json.Number:
+		if !declaredPlain(sc, "number") && !declaredPlain(sc, "integer") {
 			return unchangedMarker
 		}
 	case []any:
-		if every {
-			for i := range t {
-				t[i] = maskSecrets(t[i], nil, true)
-			}
+		var items map[string]any
+		if followable(sc) {
+			items, _ = sc["items"].(map[string]any)
+		}
+		for i := range t {
+			t[i] = maskSecrets(t[i], items)
 		}
 	case map[string]any:
-		props, _ := sc["properties"].(map[string]any)
+		var props map[string]any
+		if followable(sc) {
+			props, _ = sc["properties"].(map[string]any)
+		}
 		for k, val := range t {
-			p, _ := props[k].(map[string]any)
-			if str, ok := val.(string); ok && p["format"] == "password" && str != "" {
-				t[k] = unchangedMarker
-				continue
-			}
-			t[k] = maskSecrets(val, p, every)
+			child, _ := props[k].(map[string]any)
+			t[k] = maskSecrets(val, child)
 		}
 	}
 	return v
+}
+
+// followable says the schema node uses only keywords maskSecrets understands.
+func followable(sc map[string]any) bool {
+	if sc == nil {
+		return false
+	}
+	for _, k := range []string{"$ref", "oneOf", "anyOf", "allOf", "not", "if", "then", "else", "patternProperties"} {
+		if _, ok := sc[k]; ok {
+			return false
+		}
+	}
+	if ap, ok := sc["additionalProperties"]; ok && ap != false {
+		return false
+	}
+	return true
+}
+
+// declaredPlain says the schema node declares a value of the given type that
+// is not a password.
+func declaredPlain(sc map[string]any, typ string) bool {
+	return followable(sc) && sc["type"] == typ && sc["format"] != "password"
 }
 
 // restoreSecrets puts the stored value back wherever the engineer left the
@@ -497,7 +520,7 @@ func (s *Service) serveSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	var schema map[string]any
 	_ = json.Unmarshal(s.schemaOf(key), &schema)
-	settings := maskSecrets(decodeValue(def.Settings), schema, schema == nil)
+	settings := maskSecrets(decodeValue(def.Settings), schema)
 	if settings == nil {
 		settings = map[string]any{}
 	}

@@ -21,6 +21,8 @@ interface Schema {
   required?: string[];
 }
 
+const MarkerHint = () => <small>{UNCHANGED} keeps a stored value.</small>;
+
 const simple = (p: Prop) => (p.enum ? true : ['string', 'number', 'integer', 'boolean'].includes(p.type ?? ''));
 
 export function SettingsDialog() {
@@ -39,6 +41,9 @@ function SettingsForm({ sourceKey, onClose }: { sourceKey: string; onClose: () =
   const [whole, setWhole] = useState('{}'); // one JSON field when there is no schema
   const [error, setError] = useState<string | null>(null);
 
+  // The form is read again when the source's schema appears while it is open.
+  const hasSchema = !!sources.value?.find((s) => s.key === sourceKey)?.has_schema;
+
   useEffect(() => {
     let live = true;
     (async () => {
@@ -49,8 +54,14 @@ function SettingsForm({ sourceKey, onClose }: { sourceKey: string; onClose: () =
         await new Promise((r) => setTimeout(r, 250));
       }
       if (!live) return;
-      const cur = await api<{ name: string; settings: Record<string, unknown> }>('GET', sourcePath(sourceKey, '/settings'));
-      const sch = await api<Schema>('GET', sourcePath(sourceKey, '/schema'));
+      // The schema first, so the settings are never masked more than the form expects.
+      // Without one there is nothing to ask for: the JSON field is the form.
+      const known = !!sources.value?.find((s) => s.key === sourceKey)?.has_schema;
+      const sch = known ? await api<Schema>('GET', sourcePath(sourceKey, '/schema')) : { ok: false as const, error: '' };
+      const cur = await api<{
+        name: string;
+        settings: Record<string, unknown>;
+      }>('GET', sourcePath(sourceKey, '/settings'));
       if (!live) return;
       if (!cur.ok) setError(cur.error);
       const settings = cur.ok ? cur.data.settings : {};
@@ -69,7 +80,7 @@ function SettingsForm({ sourceKey, onClose }: { sourceKey: string; onClose: () =
     return () => {
       live = false;
     };
-  }, [sourceKey]);
+  }, [sourceKey, hasSchema]);
 
   const save = async (e: Event) => {
     e.preventDefault();
@@ -107,12 +118,23 @@ function SettingsForm({ sourceKey, onClose }: { sourceKey: string; onClose: () =
             </label>
             {schema ? (
               Object.entries(schema.properties ?? {}).map(([k, p]) => (
-                <Field key={k} id={k} prop={p} required={!!schema.required?.includes(k)} stored={stored[k]} value={values[k]} text={json[k]} onValue={(v) => set(k, v)} onText={(t) => setJson((c) => ({ ...c, [k]: t }))} />
+                <Field
+                  key={k}
+                  id={k}
+                  prop={p}
+                  required={!!schema.required?.includes(k)}
+                  stored={stored[k]}
+                  value={values[k]}
+                  text={json[k]}
+                  onValue={(v) => set(k, v)}
+                  onText={(t) => setJson((c) => ({ ...c, [k]: t }))}
+                />
               ))
             ) : (
               <label>
                 <span>Settings JSON</span>
                 <textarea rows={8} value={whole} onInput={(e) => setWhole((e.target as HTMLTextAreaElement).value)} />
+                {whole.includes(UNCHANGED) && <MarkerHint />}
               </label>
             )}
           </>
@@ -189,22 +211,31 @@ function Field(props: { id: string; prop: Prop; required: boolean; stored?: bool
     // A kept secret is never drawn: the field starts empty, and stays "unchanged" until typed into.
     const secret = prop.format === 'password';
     const kept = secret && value === UNCHANGED;
+    const cleared = props.stored && secret && value === undefined;
     return (
-      <label>
-        <span>{label}</span>
-        <input
-          type={(secret ? 'password' : 'text') as 'password'}
-          autocomplete="off"
-          required={required && !props.stored}
-          placeholder={props.stored ? 'Unchanged' : undefined}
-          value={typeof value === 'string' && !kept ? value : ''}
-          onInput={(e) => {
-            const t = (e.target as HTMLInputElement).value;
-            props.onValue(t === '' && props.stored ? UNCHANGED : t === '' && secret ? undefined : t);
-          }}
-        />
-        {hint}
-      </label>
+      <>
+        <label>
+          <span>{label}</span>
+          <input
+            type={(secret ? 'password' : 'text') as 'password'}
+            autocomplete="off"
+            required={required && !props.stored}
+            placeholder={cleared ? 'Cleared' : props.stored ? 'Unchanged' : undefined}
+            value={typeof value === 'string' && !kept ? value : ''}
+            onInput={(e) => {
+              const t = (e.target as HTMLInputElement).value;
+              props.onValue(t === '' && props.stored ? UNCHANGED : t === '' && secret ? undefined : t);
+            }}
+          />
+          {props.stored && secret && <small>Leave empty to keep the stored value.</small>}
+          {hint}
+        </label>
+        {props.stored && secret && !required && !cleared && (
+          <button type="button" class="small-button press" aria-label={`Clear ${label}`} onClick={() => props.onValue(undefined)}>
+            Clear
+          </button>
+        )}
+      </>
     );
   }
   // Anything else is edited as JSON.
@@ -212,6 +243,7 @@ function Field(props: { id: string; prop: Prop; required: boolean; stored?: bool
     <label>
       <span>{label}</span>
       <textarea rows={3} value={props.text ?? ''} onInput={(e) => props.onText((e.target as HTMLTextAreaElement).value)} />
+      {props.text?.includes(UNCHANGED) && <MarkerHint />}
       {hint}
     </label>
   );
