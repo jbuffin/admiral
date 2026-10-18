@@ -1,11 +1,14 @@
 package e2e
 
 import (
+	"bytes"
 	"debug/macho"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -45,13 +48,22 @@ func TestPackagingS1_ReleaseTarball(t *testing.T) {
 	if h := entries[r.topDir+"/admiral"]; h != nil && h.Mode&0o111 != 0o111 {
 		t.Errorf("tarball binary mode is %o, want executable", h.Mode)
 	}
-	for name := range entries {
+	for name, h := range entries {
+		if h.Uid != 0 || h.Gid != 0 || h.Uname != "" || h.Gname != "" {
+			t.Errorf("entry %q carries the builder's owner (%d:%d %q:%q)", name, h.Uid, h.Gid, h.Uname, h.Gname)
+		}
 		if !strings.HasPrefix(name, r.topDir) {
 			t.Errorf("entry %q is outside %s/", name, r.topDir)
 		}
 		if strings.Contains(name, "logos/official") || strings.Contains(name, "node_modules") {
 			t.Errorf("entry %q must not be in a shared release", name)
 		}
+	}
+
+	// install.sh sits next to the tarball, ready to upload with it.
+	script, _ := os.ReadFile(filepath.Join(repoRoot, "packaging", "install.sh"))
+	if got, err := os.ReadFile(filepath.Join(r.dir, "install.sh")); err != nil || string(got) != string(script) {
+		t.Errorf("DIST/install.sh is not a copy of packaging/install.sh (%v)", err)
 	}
 
 	// The reference copy matches the repo's plugin (u7's source of the embedded copy).
@@ -115,6 +127,11 @@ func TestPackagingS1_SharedBuildHasPlaceholdersAndNotices(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// -trimpath: no build path, and so no user name, in a shared binary.
+	home, _ := os.UserHomeDir()
+	if bytes.Contains(bin, []byte("/Users/")) || (home != "" && bytes.Contains(bin, []byte(home))) {
+		t.Errorf("the release binary contains a local path (/Users/ or %s)", home)
+	}
 	for _, letters := range []string{"Cl", "Co", "Cx"} {
 		if !regexp.MustCompile("[\"'`]" + letters + "[\"'`]").Match(bin) {
 			t.Errorf("the embedded UI has no %q placeholder letters", letters)
@@ -134,14 +151,29 @@ func TestPackagingS1_SharedBuildHasPlaceholdersAndNotices(t *testing.T) {
 	for _, m := range regexp.MustCompile(`(?m)^\s*(?:require\s+)?([a-z0-9.-]+\.[a-z]+/\S+)\s+v`).FindAllStringSubmatch(string(gomod), -1) {
 		wants = append(wants, m[1])
 	}
-	pkg, _ := os.ReadFile(filepath.Join(repoRoot, "web", "package.json"))
-	deps := regexp.MustCompile(`(?s)"dependencies":\s*\{(.*?)\}`).FindStringSubmatch(string(pkg))
-	if deps == nil {
-		t.Fatal("web/package.json has no dependencies block")
+	// Every production package in the lockfile, transitive ones included.
+	lockData, err := os.ReadFile(filepath.Join(repoRoot, "web", "package-lock.json"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, m := range regexp.MustCompile(`"([^"]+)":`).FindAllStringSubmatch(deps[1], -1) {
-		wants = append(wants, m[1])
+	var lock struct {
+		Packages map[string]struct {
+			Dev         bool `json:"dev"`
+			DevOptional bool `json:"devOptional"`
+		} `json:"packages"`
 	}
+	if err := json.Unmarshal(lockData, &lock); err != nil {
+		t.Fatal(err)
+	}
+	for k, p := range lock.Packages {
+		if name, ok := strings.CutPrefix(k, "node_modules/"); ok && !p.Dev && !p.DevOptional {
+			wants = append(wants, name)
+		}
+	}
+	if !slices.Contains(wants, "@preact/signals-core") {
+		t.Fatalf("the lockfile should list @preact/signals-core as a production package; derived %v", wants)
+	}
+	wants = append(wants, "go1.")
 	fonts, _ := filepath.Glob(filepath.Join(repoRoot, "web", "public", "licenses", "OFL-*.txt"))
 	if len(fonts) == 0 {
 		t.Fatal("no OFL licence files under web/public/licenses/")
@@ -156,6 +188,16 @@ func TestPackagingS1_SharedBuildHasPlaceholdersAndNotices(t *testing.T) {
 	for _, w := range wants {
 		if !strings.Contains(string(notices), w) {
 			t.Errorf("THIRD_PARTY_NOTICES does not mention %q", w)
+		}
+	}
+	// Every entry (a "-- " header) has licence text under it.
+	for _, sec := range strings.Split("\n"+string(notices), "\n-- ")[1:] {
+		header, body, _ := strings.Cut(sec, "\n")
+		if i := strings.Index(body, "\n== "); i >= 0 {
+			body = body[:i]
+		}
+		if len(strings.TrimSpace(body)) < 40 {
+			t.Errorf("THIRD_PARTY_NOTICES entry %q has no licence text", header)
 		}
 	}
 }
@@ -183,5 +225,28 @@ func TestPackagingS1_OfficialLogosRefuseTheRelease(t *testing.T) {
 	}
 	if m, _ := filepath.Glob(filepath.Join(dist, "*")); len(m) > 0 {
 		t.Errorf("make release wrote %v despite refusing", m)
+	}
+}
+
+// One version rule: a v-prefixed version (a v0.1.0 tag) is released as 0.1.0, in
+// the tarball name and in --version, so install.sh's URL and the formula agree.
+func TestPackagingS1_ALeadingVIsDropped(t *testing.T) {
+	if len(officialLogoFiles()) > 0 {
+		t.Skip("web/logos/official/ holds personal logos")
+	}
+	tmp := t.TempDir()
+	dist, bin := filepath.Join(tmp, "dist"), filepath.Join(tmp, "admiral")
+	cmd := exec.Command("make", "release", "VERSION=v9.8.7-test", "DIST="+dist, "BIN="+bin)
+	cmd.Dir = repoRoot
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("make release VERSION=v9.8.7-test: %v\n%s", err, tail(string(out), 1200))
+	}
+	if _, err := os.Stat(filepath.Join(dist, "admiral-9.8.7-test-darwin-arm64.tar.gz")); err != nil {
+		got, _ := filepath.Glob(filepath.Join(dist, "*"))
+		t.Errorf("no admiral-9.8.7-test-darwin-arm64.tar.gz; DIST holds %v", got)
+	}
+	out, _, code := run(t, runOpts{env: hermeticEnv(t)}, bin, "--version")
+	if m := versionLine.FindStringSubmatch(out); code != 0 || m == nil || m[1] != "9.8.7-test" {
+		t.Errorf("--version printed %q (exit %d), want version 9.8.7-test without the v", out, code)
 	}
 }

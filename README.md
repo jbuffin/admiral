@@ -65,10 +65,12 @@ A build from your own checkout can carry the official harness logos: put them in
 
 ### Cutting a release
 
+Tag `v<x.y.z>`; the version is `<x.y.z>`. `make release` drops the leading `v` once, so the tarball name, `admiral --version`, `install.sh`'s URL and the formula's `url` all use `<x.y.z>`.
+
 1. Tag the commit, `git tag v0.1.0`, with no files in `web/logos/official/` and a clean tree.
-2. Run `npm --prefix web ci` and `make release`. It rebuilds the UI from clean, builds `bin/admiral` for darwin/arm64 stamped with the tag (`VERSION=x.y.z` overrides `git describe`) and the commit, checks `codesign -v`, and writes `dist/admiral-<version>-darwin-arm64.tar.gz` and `.tar.gz.sha256`. The tarball holds `admiral`, `THIRD_PARTY_NOTICES` and a reference copy of `plugins/freeform/`. Never `strip` the binary: that breaks its signature.
-3. Create the GitHub release `v<version>` and upload the tarball, the `.sha256` file and `packaging/install.sh`.
-4. In the tap repo `jbuffin/homebrew-admiral`, copy `packaging/homebrew/admiral.rb` to `Formula/admiral.rb`, replace `VERSION` and `SHA256_OF_THE_TARBALL` with the release's, then run `brew style` and `brew audit --strict --online jbuffin/admiral/admiral`.
+2. Run `npm --prefix web ci` and `make release`. It rebuilds the UI from clean, builds `bin/admiral` for darwin/arm64 with `-trimpath`, stamped with the version (`VERSION=x.y.z` on the command line overrides `git describe`) and the commit, checks `codesign -v`, and writes `dist/admiral-<x.y.z>-darwin-arm64.tar.gz`, its `.sha256` and a copy of `install.sh`. The tarball holds `admiral`, `THIRD_PARTY_NOTICES` and a reference copy of `plugins/freeform/`. Never `strip` the binary: that breaks its signature.
+3. Create the GitHub release for the tag `v<x.y.z>` and upload everything in `dist/`: the tarball, the `.sha256` file and `install.sh`.
+4. In the tap repo `jbuffin/homebrew-admiral`, copy `packaging/homebrew/admiral.rb` to `Formula/admiral.rb`, replace `VERSION` and `SHA256_OF_THE_TARBALL` with the release's, then run `brew style` and `brew audit --strict --online jbuffin/admiral/admiral`. The formula has no `version` line because Homebrew reads it from the `url`; if the audit disagrees, the audit decides.
 
 There is no `LICENSE` file yet.
 
@@ -141,6 +143,8 @@ The terminal is xterm.js (MIT) with the fit and WebGL addons, loaded when the fi
 | `admiral ships [--port N] [--names]` | Lists ships (`NAME SESSION FLEET HARNESS STATUS REPO`, tab-separated) as the running server on `--port` sees them, if it serves this `ADMIRAL_HOME`. Otherwise it reads tmux and says so on the first line. `--names` prints display names only. |
 | `admiral attach <ship>` | Attaches this terminal to the ship's tmux session (`Ctrl-b d` detaches), by display name or session name. Read-only for an anchored ship. `_admiral` and `_setup` are refused. |
 | `admiral completion zsh \| bash` | Completes ship names for `attach`. |
+| `admiral service install \| uninstall \| status` | `install` writes the LaunchAgent `~/Library/LaunchAgents/dev.jasonbuffin.admiral.plist`, loads it and prints the "On other devices" URL; `uninstall` unloads it and removes the plist; `status` says `Service: not installed`, `installed, not loaded` or `installed, loaded` (from the exit code of `launchctl print`) and prints the URL. |
+| `admiral --version` | Prints `admiral <version> (<commit>)`. |
 
 The answers file for `setup --answers` is JSON holding the same `fleets` object as `config.json`, in the order the fleets should have:
 

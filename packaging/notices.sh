@@ -1,34 +1,54 @@
 #!/bin/sh
-# Prints THIRD_PARTY_NOTICES: the licence text of every Go module the binary
-# links, every npm runtime dependency and the bundled fonts. Run from the repo
-# root after `npm --prefix web ci`; `make release` calls it.
+# Prints THIRD_PARTY_NOTICES: the licence text of the Go toolchain, every Go
+# module the binary links, every production npm package in the UI (the whole
+# tree, from the lockfile) and the bundled fonts. Run from the repo root after
+# `npm --prefix web ci`; `make release` calls it. It fails when an entry has no
+# licence text.
 set -eu
 
-echo "Admiral bundles the following third-party software."
-echo
+# licence_text <dir> prints the first licence file in dir, or fails.
+licence_text() {
+	for f in "$1"/LICENSE "$1"/LICENSE.md "$1"/LICENSE.txt "$1"/LICENSE-MIT "$1"/LICENCE "$1"/COPYING; do
+		if [ -s "$f" ]; then cat "$f"; return 0; fi
+	done
+	echo "notices.sh: no licence text in '$1'" >&2
+	return 1
+}
 
+echo "Admiral bundles the following third-party software."
+
+echo
+echo "== Go standard library and runtime =="
+echo
+echo "-- go $(go env GOVERSION)"
+licence_text "$(go env GOROOT)"
+
+echo
 echo "== Go modules =="
-go list -m -f '{{if not .Main}}{{.Path}} {{.Version}} {{.Dir}}{{end}}' all | while read -r path version dir; do
+mods=$(go list -m -f '{{if not .Main}}{{.Path}} {{.Version}} {{.Dir}}{{end}}' all)
+while read -r path version dir; do
 	echo
 	echo "-- $path $version"
-	for f in LICENSE LICENSE.md LICENSE.txt COPYING; do
-		if [ -f "$dir/$f" ]; then cat "$dir/$f"; break; fi
-	done
-done
+	licence_text "$dir"
+done <<EOM
+$mods
+EOM
 
 echo
 echo "== npm runtime dependencies =="
-sed -n '/"dependencies"/,/}/p' web/package.json | sed -n 's/^ *"\([^"]*\)":.*/\1/p' | grep -v '^dependencies$' | while read -r name; do
-	dir=web/node_modules/$name
-	version=$(sed -n 's/^ *"version": "\(.*\)",*/\1/p' "$dir/package.json" | head -1)
+pkgs=$(node -e '
+const lock = require("./web/package-lock.json");
+for (const [k, p] of Object.entries(lock.packages)) {
+  if (k.startsWith("node_modules/") && !p.dev && !p.devOptional) console.log(k.slice("node_modules/".length) + " " + p.version);
+}')
+[ -n "$pkgs" ] || { echo "notices.sh: no production packages in web/package-lock.json" >&2; exit 1; }
+while read -r name version; do
 	echo
 	echo "-- $name $version"
-	found=
-	for f in LICENSE LICENSE.md LICENSE.txt OFL.txt; do
-		if [ -f "$dir/$f" ]; then cat "$dir/$f"; found=1; break; fi
-	done
-	[ -n "$found" ] || echo "(licence: $(sed -n 's/^ *"license": "\(.*\)",*/\1/p' "$dir/package.json" | head -1); text in web/public/licenses/)"
-done
+	licence_text "web/node_modules/$name"
+done <<EOM
+$pkgs
+EOM
 
 echo
 echo "== Fonts (SIL Open Font License 1.1) =="

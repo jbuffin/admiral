@@ -6,7 +6,6 @@ class Admiral < Formula
   homepage "https://github.com/jbuffin/admiral"
   url "https://github.com/jbuffin/admiral/releases/download/vVERSION/admiral-VERSION-darwin-arm64.tar.gz"
   sha256 "SHA256_OF_THE_TARBALL"
-  version "VERSION"
 
   depends_on :macos
   depends_on arch: :arm64

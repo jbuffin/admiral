@@ -87,7 +87,13 @@ func serviceInstall(std IO) error {
 	}
 	// A job that isn't loaded makes bootout fail; that's the normal first install.
 	_, _ = launchctl("bootout", serviceDomain()+"/"+ServiceLabel)
-	if msg, err := launchctl("bootstrap", serviceDomain(), plist); err != nil {
+	msg, err := launchctl("bootstrap", serviceDomain(), plist)
+	if err != nil {
+		// A job that was running may not have finished unloading yet.
+		time.Sleep(time.Second)
+		msg, err = launchctl("bootstrap", serviceDomain(), plist)
+	}
+	if err != nil {
 		return fmt.Errorf("launchctl bootstrap: %v: %s", err, msg)
 	}
 	fmt.Fprintf(std.Out, "Admiral will start at login and restart if it stops. Logs: %s\n", filepath.Join(logDir, "admiral.log"))
@@ -126,6 +132,10 @@ func serviceStatus(std IO) error {
 	if err != nil {
 		return err
 	}
+	if _, err := os.Stat(filepath.Join(dir, "token")); err != nil {
+		fmt.Fprintln(std.Out, "No token yet; Admiral creates it the first time it starts.")
+		return nil
+	}
 	return printTokenURL(std, dir)
 }
 
@@ -153,8 +163,8 @@ func stableProgramPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	real, err := filepath.EvalSymlinks(exe)
-	if err != nil || !strings.Contains(real, "/Cellar/") {
+	resolved, err := filepath.EvalSymlinks(exe)
+	if err != nil || !strings.Contains(resolved, "/Cellar/") {
 		return exe, nil
 	}
 	for _, args := range [][]string{{"--prefix"}, {"--prefix", "admiral"}} {
@@ -163,9 +173,14 @@ func stableProgramPath() (string, error) {
 			continue
 		}
 		cand := filepath.Join(strings.TrimSpace(string(out)), "bin", "admiral")
-		if r, err := filepath.EvalSymlinks(cand); err == nil && r == real {
+		if r, err := filepath.EvalSymlinks(cand); err == nil && r == resolved {
 			return cand, nil
 		}
+	}
+	// brew isn't on PATH: the usual prefix, if it points at this install.
+	const fixed = "/opt/homebrew/opt/admiral/bin/admiral"
+	if r, err := filepath.EvalSymlinks(fixed); err == nil && r == resolved {
+		return fixed, nil
 	}
 	return exe, nil
 }
