@@ -2,9 +2,7 @@ package cli
 
 import (
 	"fmt"
-	"net"
 	"path/filepath"
-	"time"
 
 	"github.com/jbuffin/admiral/internal/auth"
 	"github.com/jbuffin/admiral/internal/server"
@@ -39,11 +37,16 @@ func Token(args []string, std IO) error {
 	} else {
 		fmt.Fprintf(std.Out, "On other devices: no network address found; this Mac is reachable only at http://127.0.0.1:%s/\n", *port)
 	}
-	if c, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", *port), time.Second); err == nil {
-		c.Close()
+	if serves(*port, dir) {
 		fmt.Fprintln(std.Out, "Every device is signed out; open the URL above on each one.")
 	} else {
-		fmt.Fprintf(std.Out, "Admiral is not running on port %s; the new token applies when it starts.\n", *port)
+		fmt.Fprintf(std.Out, "No running server for this home on port %s; the new token applies when it starts.\n", *port)
 	}
 	return nil
+}
+
+// serves says whether the server on the port is this home's.
+func serves(port, dir string) bool {
+	_, running, _ := readShips(port, dir)
+	return running
 }

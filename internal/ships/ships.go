@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
@@ -272,7 +273,8 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 func (s *Service) serveList(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"ships": s.List()})
+	// home says whose ships these are, for the commands that find a server by port.
+	writeJSON(w, http.StatusOK, map[string]any{"ships": s.List(), "home": home.ID(s.Launcher.Home)})
 }
 
 func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {

@@ -115,6 +115,10 @@ func WriteFile(dir string, data []byte) error {
 	return replaceFile(filepath.Join(dir, FileName), data)
 }
 
+// ReadConfig is dir/config.json, or the empty config when there is no file yet.
+// A dangling symlink is an error: writing would replace the link.
+func ReadConfig(dir string) ([]byte, error) { return readConfig(filepath.Join(dir, FileName)) }
+
 func readConfig(path string) ([]byte, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {

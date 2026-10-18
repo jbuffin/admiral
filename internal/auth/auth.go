@@ -148,11 +148,16 @@ func (a *Auth) Watch(ctx context.Context, home string) {
 }
 
 // track runs next for a non-local WebSocket, which SetToken can end.
-func (a *Auth) track(w http.ResponseWriter, r *http.Request, next http.Handler) {
+func (a *Auth) track(w http.ResponseWriter, r *http.Request, next http.Handler, presented string) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	a.mu.Lock()
-	s := &socket{token: a.token, cancel: cancel}
+	if presented != a.token { // rotated since it was checked
+		a.mu.Unlock()
+		unauthorized(w, r)
+		return
+	}
+	s := &socket{token: presented, cancel: cancel}
 	a.socks[s] = struct{}{}
 	a.mu.Unlock()
 	defer func() {
@@ -189,32 +194,34 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 		// A GET carrying the token always trades it for the cookie, so the
 		// token never stays in the address bar or history.
 		if tokenOK && !isWS && r.Method == http.MethodGet {
-			a.redirectWithCookie(w, r, query)
+			a.redirectWithCookie(w, r, query, query.Get("token"))
 			return
 		}
 		if c, err := r.Cookie(a.cookie); err == nil && a.valid(c.Value) {
-			a.serve(w, r, next, isWS)
+			a.serve(w, r, next, isWS, c.Value)
 			return
 		}
 		if tokenOK && isWS {
-			a.serve(w, r, next, isWS)
+			a.serve(w, r, next, isWS, query.Get("token"))
 			return
 		}
 		unauthorized(w, r)
 	})
 }
 
-func (a *Auth) serve(w http.ResponseWriter, r *http.Request, next http.Handler, isWS bool) {
+func (a *Auth) serve(w http.ResponseWriter, r *http.Request, next http.Handler, isWS bool, presented string) {
 	if isWS {
-		a.track(w, r, next)
+		a.track(w, r, next, presented)
 		return
 	}
 	next.ServeHTTP(w, r)
 }
 
-func (a *Auth) redirectWithCookie(w http.ResponseWriter, r *http.Request, query url.Values) {
+// redirectWithCookie sets the cookie to the token that was presented and checked, not to whatever
+// is current by now: a rotation between the two must not hand the new token to the old one's holder.
+func (a *Auth) redirectWithCookie(w http.ResponseWriter, r *http.Request, query url.Values, presented string) {
 	http.SetCookie(w, &http.Cookie{
-		Name: a.cookie, Value: a.current(), Path: "/", MaxAge: cookieMaxAge,
+		Name: a.cookie, Value: presented, Path: "/", MaxAge: cookieMaxAge,
 		HttpOnly: true, SameSite: http.SameSiteStrictMode,
 	})
 	query.Del("token")

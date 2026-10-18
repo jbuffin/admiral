@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
 )
@@ -27,8 +28,10 @@ func readShips(port, dir string) (list []ships.Ship, running bool, err error) {
 		defer resp.Body.Close()
 		var body struct {
 			Ships []ships.Ship `json:"ships"`
+			Home  string       `json:"home"`
 		}
-		if resp.StatusCode == http.StatusOK && json.NewDecoder(resp.Body).Decode(&body) == nil {
+		// Only this home's server counts: another Admiral may hold the port.
+		if resp.StatusCode == http.StatusOK && json.NewDecoder(resp.Body).Decode(&body) == nil && body.Home == home.ID(dir) {
 			return body.Ships, true, nil
 		}
 	}
@@ -85,7 +88,7 @@ func Ships(args []string, std IO) error {
 		return err
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Session < list[j].Session })
-	notice := "Admiral is not running; these ships are read from tmux directly."
+	notice := "Admiral is not running for this home; these ships are read from tmux directly."
 	if *names {
 		if !running {
 			fmt.Fprintln(std.Err, notice)

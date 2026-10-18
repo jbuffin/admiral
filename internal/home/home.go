@@ -2,6 +2,8 @@
 package home
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,4 +27,11 @@ func Resolve() (string, error) {
 		return "", fmt.Errorf("restrict %s: %w", dir, err)
 	}
 	return dir, nil
+}
+
+// ID names a data directory without giving its path away. A server reports it
+// so that a command can tell whether the server on a port serves its directory.
+func ID(dir string) string {
+	sum := sha256.Sum256([]byte(filepath.Clean(dir)))
+	return hex.EncodeToString(sum[:8])
 }

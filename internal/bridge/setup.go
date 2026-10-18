@@ -19,10 +19,10 @@ type SetupCommand struct {
 	Home string
 }
 
-// setupShip stands in for a ship when the bridge watches the `_setup` session:
+// setupSession stands in for a ship when the bridge watches the `_setup` session:
 // underway while the session exists, gone when it ends. It never reaches the
 // ships list.
-func (s *Service) setupShip() (ships.Ship, bool) {
+func (s *Service) setupSession() (ships.Ship, bool) {
 	if s.Host == nil {
 		return ships.Ship{}, false
 	}
@@ -37,7 +37,7 @@ func (s *Service) setupShip() (ships.Ship, bool) {
 // get is the ship for a session, or the setup terminal's stand-in.
 func (s *Service) get(session string) (ships.Ship, bool) {
 	if session == sessionhost.SetupName {
-		return s.setupShip()
+		return s.setupSession()
 	}
 	return s.Ships.Get(session)
 }
@@ -45,7 +45,7 @@ func (s *Service) get(session string) (ships.Ship, bool) {
 // inputSeen is Ships.InputSeen; the setup terminal has no needs-you state.
 func (s *Service) inputSeen(session string) (ships.Ship, error) {
 	if session == sessionhost.SetupName {
-		if sh, ok := s.setupShip(); ok {
+		if sh, ok := s.setupSession(); ok {
 			return sh, nil
 		}
 		return ships.Ship{}, ships.ErrNotFound
@@ -67,7 +67,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // serveSetupStatus says whether the setup terminal's session exists. A page
 // that lost its connection asks this to learn that setup finished meanwhile.
 func (s *Service) serveSetupStatus(w http.ResponseWriter, r *http.Request) {
-	_, running := s.setupShip()
+	_, running := s.setupSession()
 	writeJSON(w, http.StatusOK, map[string]bool{"running": running})
 }
 

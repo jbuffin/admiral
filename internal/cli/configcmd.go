@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -44,13 +42,7 @@ func Config(args []string, std IO) error {
 }
 
 // readFile is config.json, or the empty config when there is no file yet.
-func readFile(dir string) ([]byte, error) {
-	data, err := os.ReadFile(filepath.Join(dir, config.FileName))
-	if errors.Is(err, fs.ErrNotExist) {
-		return []byte(`{"version":1,"fleets":{}}`), nil
-	}
-	return data, err
-}
+func readFile(dir string) ([]byte, error) { return config.ReadConfig(dir) }
 
 // configEdit opens a copy of config.json in $EDITOR (vi without one) and saves
 // the result only when it loads, so it also works on a file that is invalid

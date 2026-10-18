@@ -62,13 +62,13 @@ func setup(args []string, std IO) error {
 	if err != nil {
 		return err
 	}
-	det := Detect(userHome, os.Getenv("PATH"), dir)
-	det.Report(std.Out)
-
 	current, err := config.Fleets(dir)
 	if err != nil {
 		return err
 	}
+	det := Detect(userHome, os.Getenv("PATH"), dir, identityDirsOf(dir))
+	det.Report(std.Out)
+
 	s := &session{io: std, det: det, dir: dir, fleets: current}
 	if *answers != "" {
 		if err := s.fromFile(*answers); err != nil {
@@ -78,36 +78,70 @@ func setup(args []string, std IO) error {
 		return err
 	}
 	if len(s.touched) == 0 {
-		fmt.Fprintln(std.Out, "No fleets to set up.")
+		fmt.Fprintln(std.Out, "No changes.")
 		return nil
 	}
 
-	p, err := newPlan(dir, s.fleets, s.touched)
-	if err != nil {
-		return err
-	}
-	if !printDiff(std.Out, p.before, p.after) {
-		return nil
-	}
-	if *dry {
-		fmt.Fprintln(std.Out, "Dry run: nothing was changed.")
-		return nil
-	}
-	if !*yes {
-		ok, err := confirm(s.reader(), std.Out, "Write config.json?")
+	for {
+		p, err := newPlan(dir, s.fleets, s.touched)
 		if err != nil {
 			return err
 		}
-		if !ok {
-			fmt.Fprintln(std.Out, "Nothing changed.")
+		if !printDiff(std.Out, p.before, p.after) {
 			return nil
 		}
+		if *dry {
+			fmt.Fprintln(std.Out, "Dry run: nothing was changed.")
+			return nil
+		}
+		if !*yes {
+			ok, err := confirm(s.reader(), std.Out, "Write config.json?")
+			if err != nil {
+				return err
+			}
+			if !ok {
+				fmt.Fprintln(std.Out, "Nothing changed.")
+				return nil
+			}
+		}
+		err = p.write(dir)
+		if errors.Is(err, errChanged) {
+			// Someone edited the file while setup waited: plan again on what it holds now,
+			// with the sharing check and (without --yes) the question.
+			fmt.Fprintln(std.Out, "config.json changed while setup was running; planning again.")
+			if err := s.replan(); err != nil {
+				return err
+			}
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(std.Out, "Saved %s\n", filepath.Join(dir, config.FileName))
+		return nil
 	}
-	if err := p.write(dir); err != nil {
-		return err
+}
+
+// identityDirsOf are the identity directories in use: those of the fleets in the
+// file and the ones each harness would use from Admiral's own environment. Setup
+// never lists what is inside them.
+func identityDirsOf(dir string) []string {
+	var dirs []string
+	for _, h := range config.Harnesses() {
+		dirs = append(dirs, config.IdentityDir(h, nil))
 	}
-	fmt.Fprintf(std.Out, "Saved %s\n", filepath.Join(dir, config.FileName))
-	return nil
+	data, err := config.ReadConfig(dir)
+	if err != nil {
+		return dirs
+	}
+	if cfg, err := config.Parse(data); err == nil {
+		for _, f := range cfg.Fleets {
+			for _, h := range f.Harnesses {
+				dirs = append(dirs, config.IdentityDir(h.Name, h.Env))
+			}
+		}
+	}
+	return dirs
 }
 
 // session is one run of setup: the fleets as they will be written.
@@ -117,7 +151,28 @@ type session struct {
 	dir     string
 	fleets  *config.Object
 	touched []string
+	log     []answered // what was answered, to plan again on a changed file
 	in      *bufio.Reader
+}
+
+type answered struct {
+	key string
+	a   *config.Object
+}
+
+// replan starts again from the file as it is now and applies the same answers.
+func (s *session) replan() error {
+	fleets, err := config.Fleets(s.dir)
+	if err != nil {
+		return err
+	}
+	s.fleets, s.touched = fleets, nil
+	for _, l := range s.log {
+		if err := s.apply(l.key, l.a); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *session) reader() *bufio.Reader {
@@ -167,8 +222,16 @@ func (s *session) fromFile(path string) error {
 	return nil
 }
 
-// merge applies one fleet's answers to the fleets.
+// merge applies one fleet's answers to the fleets and remembers them.
 func (s *session) merge(key string, a *config.Object) error {
+	if err := s.apply(key, a); err != nil {
+		return err
+	}
+	s.log = append(s.log, answered{key, a})
+	return nil
+}
+
+func (s *session) apply(key string, a *config.Object) error {
 	fleet := config.NewObject()
 	if raw, ok := s.fleets.Get(key); ok {
 		var err error
@@ -350,10 +413,16 @@ func (s *session) ask() error {
 	in, w := s.reader(), s.io.Out
 	fmt.Fprintln(w, "\nAdmiral setup. Press Enter to take the answer in [brackets].")
 	taken := s.identityDirsInUse()
+	if keys := s.fleets.Keys(); len(keys) > 0 {
+		fmt.Fprintf(w, "Fleets in config.json: %s. Give a key to change one or add another; Enter alone finishes.\n", strings.Join(keys, ", "))
+	}
 	for {
 		key, err := s.askKey(in)
 		if err != nil {
 			return err
+		}
+		if key == "" {
+			return nil
 		}
 		a, err := s.askFleet(in, key, taken)
 		if err != nil {
@@ -378,7 +447,7 @@ func (s *session) askKey(in *bufio.Reader) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if fleetKeyRe.MatchString(key) {
+		if key == "" || fleetKeyRe.MatchString(key) {
 			return key, nil
 		}
 	}
@@ -488,8 +557,14 @@ func (s *session) askFleet(in *bufio.Reader, key string, taken map[string]string
 	for _, h := range chosen {
 		dock := config.NewObject()
 		defExe := s.det.Harness[h]
+		if wrapper, ok := s.det.WrapperFor(h, key); ok {
+			defExe = wrapper // claude-<key>: the wrapper made for this fleet
+		}
 		if have.exe[h] != "" {
 			defExe = have.exe[h]
+		}
+		if others := s.det.WrappersOf(h); len(others) > 0 {
+			fmt.Fprintf(w, "Wrappers for %s: %s\n", h, strings.Join(others, ", "))
 		}
 		exe, err := prompt(in, w, "Executable for "+h, defExe)
 		if err != nil {

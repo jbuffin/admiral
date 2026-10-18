@@ -22,8 +22,10 @@ var skipped = map[string]bool{
 	"Music": true, "Pictures": true, "Public": true, "node_modules": true,
 }
 
-// Detection is what setup finds on this Mac. It never reads inside an identity
-// directory: it lists the names in ~ and nothing deeper (story 14).
+// Detection is what setup finds on this Mac. It lists only the names in ~ for
+// identity directories (story 14). The walk and the wrapper scan skip every
+// dot-directory and every identity directory in use, wherever it is, so they
+// never list what is inside one.
 type Detection struct {
 	Home string
 	Dirs []string // where executables are looked for: PATH, then the probes
@@ -37,15 +39,24 @@ type Detection struct {
 var harnessNames = []string{"claude", "codex", "copilot"}
 
 // Detect looks at pathEnv (and the probe directories) and at the names in
-// userHome. admiralHome is never walked.
-func Detect(userHome, pathEnv, admiralHome string) Detection {
+// userHome. admiralHome and the identity directories in skip are never walked
+// or scanned, nor are PATH entries inside one.
+func Detect(userHome, pathEnv, admiralHome string, skip []string) Detection {
+	inside := func(p string) bool {
+		for _, id := range skip {
+			if p == id || strings.HasPrefix(p, id+string(filepath.Separator)) {
+				return true
+			}
+		}
+		return false
+	}
 	d := Detection{Home: userHome, Harness: map[string]string{}}
 	seen := map[string]bool{}
 	add := func(dir string) {
 		if strings.HasPrefix(dir, "~/") {
 			dir = filepath.Join(userHome, dir[2:])
 		}
-		if filepath.IsAbs(dir) && !seen[dir] { // a relative entry means whatever the cwd is
+		if filepath.IsAbs(dir) && !seen[dir] && !inside(dir) { // a relative entry means whatever the cwd is
 			seen[dir] = true
 			d.Dirs = append(d.Dirs, dir)
 		}
@@ -88,7 +99,7 @@ func Detect(userHome, pathEnv, admiralHome string) Detection {
 			}
 		}
 	}
-	d.Suggested = suggestRoots(userHome, admiralHome)
+	d.Suggested = suggestRoots(userHome, admiralHome, inside)
 	return d
 }
 
@@ -119,8 +130,9 @@ func executable(p string) bool {
 
 // suggestRoots lists the folders under home, at most maxRootDepth deep, that
 // hold a git checkout. It skips every dot-directory (so ~/.claude*, ~/.codex*
-// and ~/.copilot* are never entered), the folders in skipped, and admiralHome.
-func suggestRoots(userHome, admiralHome string) []string {
+// and ~/.copilot* are never entered), the folders in skipped, admiralHome and
+// whatever skip says.
+func suggestRoots(userHome, admiralHome string, skip func(string) bool) []string {
 	var out []string
 	var walk func(dir string, depth int)
 	walk = func(dir string, depth int) {
@@ -135,7 +147,7 @@ func suggestRoots(userHome, admiralHome string) []string {
 				continue
 			}
 			child := filepath.Join(dir, name)
-			if child == admiralHome {
+			if child == admiralHome || skip(child) {
 				continue
 			}
 			if _, err := os.Lstat(filepath.Join(child, ".git")); err == nil {
@@ -172,4 +184,25 @@ func (d Detection) Report(w io.Writer) {
 	for _, p := range d.Suggested {
 		fmt.Fprintf(w, "Suggested search root: %s\n", p)
 	}
+}
+
+// WrappersOf are the detected wrappers whose name starts with the harness's.
+func (d Detection) WrappersOf(harness string) []string {
+	var out []string
+	for _, w := range d.Wrappers {
+		if strings.HasPrefix(filepath.Base(w), harness) {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// WrapperFor is the wrapper made for a fleet: <harness>-<key>.
+func (d Detection) WrapperFor(harness, key string) (string, bool) {
+	for _, w := range d.WrappersOf(harness) {
+		if filepath.Base(w) == harness+"-"+key {
+			return w, true
+		}
+	}
+	return "", false
 }

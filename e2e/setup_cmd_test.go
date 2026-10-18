@@ -30,6 +30,8 @@ func setupWorld(t *testing.T) *world {
 	// Checkouts first, then the permissions: a directory with mode 000 can't be filled.
 	w.git(mk(".claude-x/proj"), "init", "-q")
 	mk(".codex-y")
+	// A dot-directory that can be read: only the walk's own skip keeps its checkout out of the suggestions.
+	w.git(mk(".copilot-z/proj"), "init", "-q")
 	w.git(mk("code/alpha"), "init", "-q") // the positive control: ~/code must be suggested
 	w.git(mk("Library/Thing/proj"), "init", "-q")
 	w.git(mk("deep/a/b/c/d/proj"), "init", "-q")
@@ -126,6 +128,31 @@ func TestU12_S1_SetupUnattended(t *testing.T) {
 				if strings.Contains(l, bad) {
 					t.Errorf("suggested %q, but the walk skips dot-directories, ~/Library and anything deeper than 3: %s", bad, l)
 				}
+			}
+		}
+	})
+
+	t.Run("the walk never suggests ADMIRAL_HOME, an identity directory in use or a dot-directory", func(t *testing.T) {
+		w := setupWorld(t)
+		ah := filepath.Join(w.userHom, "ah") // Admiral's home inside the home folder, with a checkout below it
+		for _, d := range []string{filepath.Join(ah, "repos", "x"), filepath.Join(w.userHom, "claude-plain", "proj")} {
+			if err := os.MkdirAll(d, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			w.git(d, "init", "-q") // claude-plain: a readable identity directory without a dot
+		}
+		w.writeRaw(filepath.Join(ah, "config.json"), `{"version":1,"fleets":{"old":{"name":"Old","search_roots":["~/code"],"claude":{"env":{"CLAUDE_CONFIG_DIR":"~/claude-plain"}}}}}`+"\n", 0o600)
+		file := w.answers(t, `"zulu":{"name":"Zulu","search_roots":["~/code"],"claude":{"env":{"CLAUDE_CONFIG_DIR":"~/.claude-z"}}}`)
+
+		r := w.admiralWith(cliOpts{env: []string{"ADMIRAL_HOME=" + ah}}, "setup", "--answers", file, "--dry-run")
+		w.expectExit(r, 0, "setup with ADMIRAL_HOME under HOME")
+		suggested := strings.Join(linesWith(r.stdout, "Suggested search root: "), "\n")
+		if !strings.Contains(suggested, filepath.Join(w.userHom, "code")) {
+			t.Errorf("~/code should still be suggested (the positive control):\n%s", r.stdout)
+		}
+		for _, bad := range []string{"/ah", "claude-plain", ".copilot-z", ".claude-x"} {
+			if strings.Contains(suggested, bad) {
+				t.Errorf("suggested a folder under %s, which the walk must skip:\n%s", bad, suggested)
 			}
 		}
 	})

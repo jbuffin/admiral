@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -34,7 +36,20 @@ func newPlan(dir string, fleets *config.Object, touched []string) (*plan, error)
 	return &plan{before: before, after: after, fleets: fleets, cfg: cfg}, nil
 }
 
-func (p *plan) write(dir string) error { return config.SetFleets(dir, p.fleets.JSON()) }
+// errChanged says config.json is not what the plan was made from.
+var errChanged = errors.New("config.json changed since the change was planned; run it again")
+
+// write saves the plan if config.json still holds what it was made from.
+func (p *plan) write(dir string) error {
+	before, _, err := config.PreviewFleets(dir, p.fleets.JSON())
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(before, p.before) {
+		return errChanged
+	}
+	return config.SetFleets(dir, p.fleets.JSON())
+}
 
 // refuseShared fails when a touched fleet runs a harness against the identity
 // directory another fleet uses for it. config.IdentityDir falls back to
