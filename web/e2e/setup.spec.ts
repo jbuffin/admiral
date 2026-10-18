@@ -61,6 +61,7 @@ const sessions = (home: string) => {
 
 test.describe('S5: the setup terminal', () => {
   test('no fleets: set up one in the browser; open it again and leave without writing', async ({ page, admiral }, info) => {
+    test.setTimeout(90_000); // about twenty terminal round trips, two page loads and two closes
     const touch = isTouch(info);
     const user = join(admiral.home, 'u');
     const code = join(user, 'code');

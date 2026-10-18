@@ -217,8 +217,8 @@ func TestU12_S1_SetupUnattended(t *testing.T) {
 		env := func(dir string) string { return `{"env":{"CLAUDE_CONFIG_DIR":` + quote(dir) + `}}` }
 
 		for name, file := range map[string]string{
-			"the same variable":          share(env("~/.claude-p"), env("~/.claude-p")),
-			"~ and the absolute spelling": share(env("~/.claude-p"), env(filepath.Join(w.userHom, ".claude-p"))),
+			"the same variable":                      share(env("~/.claude-p"), env("~/.claude-p")),
+			"~ and the absolute spelling":            share(env("~/.claude-p"), env(filepath.Join(w.userHom, ".claude-p"))),
 			"neither sets it (both use the default)": share(`{}`, `{}`),
 		} {
 			r := w.admiral("setup", "--answers", file, "--yes")

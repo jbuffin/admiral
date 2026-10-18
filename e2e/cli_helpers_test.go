@@ -24,6 +24,10 @@ import (
 // `setup --yes` without `--answers`). Errors go to stderr; everything else to
 // stdout.
 //
+// Stdin: every call here runs with stdin at /dev/null. Only bare `admiral` (the
+// setup offer) and interactive `setup` look at whether stdin is a terminal;
+// `attach` leaves that to tmux and `config edit` to $EDITOR.
+//
 // Finding the running server: `ships` and `token rotate` take `--port <n>`
 // (default 7420, the server's own default). They talk to 127.0.0.1:<n>.
 //
