@@ -176,13 +176,21 @@ export class World {
 
   /** Puts an order into the freeform source (u7's API) and returns when the server has taken it. */
   async seedOrder(text: string) {
-    const sources = await this.json('GET', 'api/sources');
-    const list = (Array.isArray(sources.body) ? sources.body : sources.body.sources) as { key: string; panels: { id: string }[] }[] | undefined;
-    const orders = list?.find((s) => s.key === 'orders');
-    if (sources.status !== 200 || !orders?.panels?.[0]) {
+    // The freeform plugin starts a moment after the server does: ask until it lists its panel.
+    let sources = await this.json('GET', 'api/sources');
+    const panelOf = () => {
+      const list = (Array.isArray(sources.body) ? sources.body : sources.body.sources) as { key: string; panels: { id: string }[] }[] | undefined;
+      return list?.find((s) => s.key === 'orders')?.panels?.[0];
+    };
+    for (let i = 0; i < 100 && !panelOf(); i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      sources = await this.json('GET', 'api/sources');
+    }
+    const orders = { panels: [panelOf()] };
+    if (sources.status !== 200 || !orders.panels[0]) {
       throw new Error(`no freeform "orders" source with a panel to seed: ${sources.status} ${JSON.stringify(sources.body)}`);
     }
-    const added = await this.json('POST', 'api/sources/orders/orders', { panel: orders.panels[0].id, text });
+    const added = await this.json('POST', 'api/sources/orders/orders', { panel: orders.panels[0]!.id, text });
     if (added.status >= 300) throw new Error(`seeding an order failed: ${added.status} ${JSON.stringify(added.body)}`);
   }
 

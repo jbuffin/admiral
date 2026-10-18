@@ -2,11 +2,10 @@ import { signal } from '@preact/signals';
 import { useState } from 'preact/hooks';
 import { Menu, MenuItem } from './Menu';
 import { SourceIcon } from './SourceIcon';
-import { type Order, type Source, api, can, declares, sourcePath } from './sources';
+import { isSelected, pressCard } from './launch';
+import { type Order, type Source, api, can, declares, isWebUrl, sourcePath } from './sources';
 
 const editing = signal<string | null>(null);
-
-const isWebUrl = (u?: string) => !!u && /^https?:\/\//i.test(u);
 
 const Grip = () => (
   <svg class="grip" width="12" height="20" viewBox="0 0 12 20" fill="#9AAFC0" aria-hidden="true">
@@ -29,7 +28,10 @@ export function OrderItem({ source, panelId, order, fail }: { source: Source; pa
   if (editing.value === id) return <EditOrder path={path} order={order} fail={fail} onDone={() => (editing.value = null)} />;
 
   return (
-    <li class={hasEdit || hasRemove ? 'order with-menu' : 'order'}>
+    <li
+      class={`${hasEdit || hasRemove ? 'order with-menu' : 'order'}${isSelected({ source: source.key, order }) ? ' selected' : ''}`}
+      onPointerDown={(e) => pressCard(e, { source: source.key, order })}
+    >
       <div class="order-main">
         <div class="order-meta">
           <SourceIcon source={source} size={16} />

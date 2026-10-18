@@ -2,6 +2,7 @@ import { useEffect } from 'preact/hooks';
 import { config } from './config';
 import { connect } from './connection';
 import { Header } from './Header';
+import { Ghost, LaunchOrders } from './LaunchOrders';
 import { LogoSprite } from './Logos';
 import { Marina, SetUpMarina } from './Marina';
 import { Sidebar } from './Sidebar';
@@ -30,6 +31,8 @@ export function App() {
           </div>
         </main>
       </div>
+      <Ghost />
+      <LaunchOrders />
     </div>
   );
 }

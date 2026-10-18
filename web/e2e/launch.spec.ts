@@ -83,7 +83,7 @@ test.describe('S4: launch with Commodore', () => {
     // Directory: pre-selected, checkouts before the search root, and typing filters.
     await expect(directory(d)).toHaveValue('alpha');
     await expect(radio(d, /^Commodore/)).toBeChecked();
-    await expect(d.getByText('Task force')).toBeVisible();
+    await expect(d.getByText('Task force', { exact: true })).toBeVisible();
     await expect(radio(d, 'betaskill')).toHaveCount(0); // the favorite is not installed for alpha
     await directory(d).click();
     await directory(d).fill('');

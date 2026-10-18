@@ -1,0 +1,422 @@
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { type Dock, type Fleet, config } from './config';
+import { harnesses } from './harnesses';
+import { announceLaunch, dragging, launching } from './launch';
+import { LogoFlag } from './Logos';
+import { Modal } from './Modal';
+import { api, isWebUrl } from './sources';
+
+interface DirEntry {
+  path: string;
+  name: string;
+  kind: string;
+  ships_here: number;
+}
+interface Skill {
+  name: string;
+  favorite: boolean;
+}
+interface SkillsData {
+  skills: Skill[];
+  commodore: { found: boolean; name: string };
+}
+
+// 'commodore', 'none', 'custom' or `skill:<favorite's name>`.
+type Choice = string;
+
+const COMMODORE_DESC = 'Launch a task force: plans the mission, assembles teammates and sees it through to a merged PR.';
+const MAX_ROWS = 6;
+
+const titleOf = (text: string) => text.split('\n')[0];
+// A typed name loses one leading slash or dollar sign.
+const bare = (typed: string) => typed.trim().replace(/^[/$]/, '');
+
+function defaultChoice(d: SkillsData): Choice {
+  if (d.commodore.found) return 'commodore';
+  const fav = d.skills.find((s) => s.favorite);
+  return fav ? `skill:${fav.name}` : 'none';
+}
+
+// Keeps the choice unless the skill it names is gone from this directory.
+function keep(prev: Choice | null, d: SkillsData): Choice {
+  if (prev === 'none' || prev === 'custom') return prev;
+  if (prev === 'commodore' && d.commodore.found) return prev;
+  if (prev?.startsWith('skill:') && d.skills.some((s) => s.favorite && s.name === prev.slice(6))) return prev;
+  return defaultChoice(d);
+}
+
+export function Ghost() {
+  const d = dragging.value;
+  if (!d) return null;
+  return (
+    <div class="ghost" style={`left:${d.x - 125}px;top:${d.y - 40}px`} aria-hidden="true">
+      <div class="ghost-card">
+        {isWebUrl(d.order.url) && <span class="ghost-id">{d.order.id}</span>}
+        <span class="ghost-title">{titleOf(d.order.title)}</span>
+        <span class="ghost-hint">{d.dock ? 'Let go to give launch orders' : 'Drop on a dock'}</span>
+      </div>
+    </div>
+  );
+}
+
+export function LaunchOrders() {
+  const l = launching.value;
+  if (!l) return null;
+  const fleet = config.value?.fleets.find((f) => f.key === l.fleet);
+  const dock = fleet?.docks.find((d) => d.harness === l.harness);
+  if (!fleet || !dock) return null;
+  return <Dialog key={`${l.source}/${l.order.id}/${l.fleet}/${l.harness}`} fleet={fleet} dock={dock} />;
+}
+
+function Star({ on, name, onToggle }: { on: boolean; name: string; onToggle: () => void }) {
+  return (
+    <button type="button" class="star" aria-label={`${on ? 'Unstar' : 'Star'} ${name}`} onClick={onToggle}>
+      <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill={on ? '#FFC23D' : 'none'} stroke="#14304A" stroke-width="2" stroke-linejoin="round">
+        <path d="M12 3l2.7 5.6 6.1.8-4.5 4.2 1.1 6-5.4-3-5.4 3 1.1-6L3.2 9.4l6.1-.8z" />
+      </svg>
+    </button>
+  );
+}
+
+function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
+  const { source, order, harness } = launching.value!;
+  const h = harnesses[harness];
+  const close = () => (launching.value = null);
+
+  const [entries, setEntries] = useState<DirEntry[] | null>(null);
+  const [dirsError, setDirsError] = useState('');
+  const [dir, setDir] = useState('');
+  const [typed, setTyped] = useState<string | null>(null); // the filter, while the engineer is typing in the field
+  const [dirOpen, setDirOpen] = useState(false);
+  const [dirHi, setDirHi] = useState(0);
+
+  const [skills, setSkills] = useState<SkillsData | null>(null);
+  const [choice, setChoice] = useState<Choice | null>(null);
+  const [custom, setCustom] = useState('');
+  const [listOpen, setListOpen] = useState(false);
+  const [hi, setHi] = useState(0);
+  const [note, setNote] = useState('');
+  const [spaceError, setSpaceError] = useState(false);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const dirBox = useRef<HTMLDivElement>(null);
+  const skillBox = useRef<HTMLDivElement>(null);
+  const asked = useRef(0);
+
+  useEffect(() => {
+    let live = true;
+    api<{ entries: DirEntry[]; selected: string | null }>('POST', '/api/launch-orders/dirs', {
+      fleet: fleet.key,
+      harness,
+      source,
+      order_id: order.id,
+    }).then((r) => {
+      if (!live) return;
+      if (!r.ok) return setDirsError(r.error);
+      setEntries(r.data.entries);
+      setDir(r.data.selected ?? r.data.entries[0]?.path ?? '');
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // The skills depend on the directory, so they are read again when it changes.
+  useEffect(() => {
+    if (!dir) return;
+    const n = ++asked.current;
+    const q = new URLSearchParams({ fleet: fleet.key, harness, dir });
+    api<SkillsData>('GET', `/api/launch-orders/skills?${q}`).then((r) => {
+      if (n !== asked.current) return;
+      if (!r.ok) return setError(r.error);
+      setError('');
+      setSkills(r.data);
+      setChoice((prev) => keep(prev, r.data));
+    });
+  }, [dir]);
+
+  // A press outside a list closes it.
+  useEffect(() => {
+    const away = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (!skillBox.current?.contains(t)) setListOpen(false);
+      if (!dirBox.current?.contains(t)) {
+        setDirOpen(false);
+        setTyped(null);
+      }
+    };
+    document.addEventListener('pointerdown', away);
+    return () => document.removeEventListener('pointerdown', away);
+  }, []);
+
+  const entry = entries?.find((e) => e.path === dir);
+  const shownDirs = (entries ?? []).filter((e) => typed === null || e.name.toLowerCase().includes(typed.trim().toLowerCase()));
+  const query = bare(custom).toLowerCase();
+  const matches = (skills?.skills ?? []).filter((s) => !query || s.name.toLowerCase().includes(query));
+  const rows = matches.slice(0, MAX_ROWS);
+  const favorites = (skills?.skills ?? []).filter((s) => s.favorite);
+
+  const pickDir = (e: DirEntry) => {
+    setDir(e.path);
+    setTyped(null);
+    setDirOpen(false);
+  };
+  const pickSkill = (name: string) => {
+    setCustom(name);
+    setChoice('custom');
+    setListOpen(false);
+    setSpaceError(false);
+  };
+
+  const toggleStar = async (s: Skill) => {
+    const names = (skills?.skills ?? []).filter((k) => k.favorite).map((k) => k.name);
+    const next = s.favorite ? names.filter((n) => n !== s.name) : [...names, s.name];
+    const r = await api<{ favorite_skills: string[] }>('PUT', '/api/favorites', { skills: next });
+    if (!r.ok) return setNote(r.error);
+    setNote('');
+    const now = r.data.favorite_skills;
+    setSkills((cur) => {
+      if (!cur) return cur;
+      const updated = { ...cur, skills: cur.skills.map((k) => ({ ...k, favorite: now.includes(k.name) })) };
+      setChoice((prev) => keep(prev, updated));
+      return updated;
+    });
+  };
+
+  const hoist = async (ev?: Event) => {
+    ev?.preventDefault();
+    if (busy || !skills || !dir) return;
+    let skill: { kind: string; name?: string };
+    if (choice === 'commodore') skill = { kind: 'commodore' };
+    else if (choice === 'none') skill = { kind: 'none' };
+    else if (choice === 'custom') {
+      const name = bare(custom);
+      if (/\s/.test(name)) return setSpaceError(true);
+      if (!name) return setError('Type a skill name, or pick another.');
+      skill = { kind: 'skill', name };
+    } else skill = { kind: 'skill', name: choice!.slice(6) };
+    setBusy(true);
+    setError('');
+    const r = await api<{ ship: { session: string } }>('POST', '/api/ships', {
+      fleet: fleet.key,
+      harness,
+      dir,
+      skill,
+      source,
+      order_id: order.id,
+    });
+    setBusy(false);
+    if (!r.ok) return setError(r.error);
+    close();
+    announceLaunch({ fleet: fleet.key, harness, source, order_id: order.id, session: r.data.ship.session });
+  };
+
+  // Escape closes an open list first; otherwise it is Stay in port.
+  const cancel = (e: Event) => {
+    if (listOpen || dirOpen) {
+      e.preventDefault();
+      setListOpen(false);
+      setDirOpen(false);
+      setTyped(null);
+    }
+  };
+
+  const walk = (e: KeyboardEvent, count: number, at: number, set: (n: number) => void, open: boolean, show: () => void, pick: () => void) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!open) show();
+      else set(Math.min(count - 1, at + 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      set(Math.max(0, at - 1));
+    } else if (e.key === 'Enter' && open && count > 0) {
+      e.preventDefault(); // picks the row; it does not hoist sails
+      pick();
+    }
+  };
+
+  const radio = (id: Choice, disabled = false) => ({
+    type: 'radio' as const,
+    name: 'skill',
+    checked: choice === id,
+    disabled,
+    onChange: () => setChoice(id),
+  });
+
+  return (
+    <Modal label="Launch orders" variant="launch" onClose={close} onCancel={cancel}>
+      <form class="launch-form" onSubmit={hoist}>
+        <header class="launch-head" style={`background-color:${fleet.color};color:${fleet.ink}`}>
+          <svg width="56" height="40" viewBox="0 0 40 28" aria-hidden="true">
+            <LogoFlag harness={harness} kind="pier" />
+          </svg>
+          <div class="launch-title">
+            <h2>Launch orders</h2>
+            <span>
+              {fleet.name} · {h.label} dock
+            </span>
+          </div>
+        </header>
+        <div class="launch-body">
+          <div class="launch-order">
+            {isWebUrl(order.url) && <span class="launch-order-id">{order.id}</span>}
+            <span class="launch-order-title">{titleOf(order.title)}</span>
+          </div>
+
+          {dirsError ? (
+            <p class="launch-note">{dirsError}</p>
+          ) : (
+            <>
+              <div class="field" ref={dirBox}>
+                <label for="launch-dir">Directory</label>
+                <input
+                  id="launch-dir"
+                  role="combobox"
+                  aria-expanded={dirOpen}
+                  aria-controls="launch-dirs"
+                  aria-autocomplete="list"
+                  class="launch-input"
+                  autocomplete="off"
+                  spellcheck={false}
+                  value={typed ?? entry?.name ?? ''}
+                  disabled={!entries}
+                  onClick={() => setDirOpen(true)}
+                  onInput={(e) => {
+                    setTyped((e.target as HTMLInputElement).value);
+                    setDirHi(0);
+                    setDirOpen(true);
+                  }}
+                  onKeyDown={(e) => walk(e, shownDirs.length, dirHi, setDirHi, dirOpen, () => setDirOpen(true), () => pickDir(shownDirs[dirHi]))}
+                />
+                {dirOpen && (
+                  <div id="launch-dirs" role="listbox" aria-label="Directories" class="launch-list">
+                    {shownDirs.length === 0 && <div class="list-empty">No checkout or search root matches.</div>}
+                    {shownDirs.map((e, i) => (
+                      <div
+                        key={e.path}
+                        role="option"
+                        aria-selected={i === dirHi}
+                        class={i === dirHi ? 'row hi' : 'row'}
+                        onPointerDown={(ev) => ev.preventDefault()}
+                        onClick={() => pickDir(e)}
+                      >
+                        <span class="row-name">{e.name}</span>
+                        <span class="row-kind">{e.kind === 'root' ? 'search root' : 'checkout'}</span>
+                        {e.ships_here > 0 && <span class="row-busy">ship underway</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {entry && entry.ships_here > 0 && <p class="launch-warn">Another ship already runs here</p>}
+              </div>
+
+              <span class="label">Sail with</span>
+              {/* Not a label: a tap on the text of a disabled row must reach the row, to show why it is off. */}
+              <div
+                class={choice === 'commodore' ? 'choice on' : 'choice'}
+                title={skills && !skills.commodore.found ? 'Commodore not found' : undefined}
+                onClick={() => skills?.commodore.found && setChoice('commodore')}
+              >
+                <input {...radio('commodore', !skills?.commodore.found)} aria-labelledby="commodore-title" aria-describedby="commodore-desc" />
+                <span class="choice-text">
+                  <span class="choice-title" id="commodore-title">
+                    Commodore
+                  </span>
+                  <span class="choice-desc" id="commodore-desc">
+                    {skills && !skills.commodore.found ? 'Commodore not found' : COMMODORE_DESC}
+                  </span>
+                </span>
+                {skills?.commodore.found && <span class="badge">Task force</span>}
+              </div>
+
+              {favorites.slice(0, 5).map((s) => (
+                <label key={s.name} class={choice === `skill:${s.name}` ? 'choice on' : 'choice'}>
+                  <input {...radio(`skill:${s.name}`)} />
+                  <span class="choice-text">
+                    <span class="choice-title mono">{s.name}</span>
+                    <span class="choice-desc">Favorite skill</span>
+                  </span>
+                  <span class="choice-star" aria-hidden="true">
+                    ★
+                  </span>
+                </label>
+              ))}
+
+              <div class={choice === 'custom' ? 'choice custom on' : 'choice custom'} ref={skillBox}>
+                <label class="custom-label">
+                  <input {...radio('custom')} />
+                  <span class="choice-title">Custom skill</span>
+                </label>
+                <input
+                  type="text"
+                  class="launch-input mono"
+                  aria-label="Custom skill"
+                  aria-controls="launch-skills"
+                  placeholder="Start typing a skill name"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  spellcheck={false}
+                  value={custom}
+                  onFocus={() => {
+                    setChoice('custom');
+                    setListOpen(true);
+                  }}
+                  onInput={(e) => {
+                    setCustom((e.target as HTMLInputElement).value);
+                    setChoice('custom');
+                    setSpaceError(false);
+                    setHi(0);
+                    setListOpen(true);
+                  }}
+                  onKeyDown={(e) => walk(e, rows.length, hi, setHi, listOpen, () => setListOpen(true), () => pickSkill(rows[hi].name))}
+                />
+                {spaceError && <p class="launch-warn">Skill names have no spaces</p>}
+                {listOpen && (
+                  <div id="launch-skills" role="listbox" aria-label="Installed skills" class="launch-list">
+                    <div class="list-head">
+                      <span>Installed skills</span>
+                      <span>{matches.length}</span>
+                    </div>
+                    {rows.map((s, i) => (
+                      <div key={s.name} class={i === hi ? 'row hi' : 'row'}>
+                        <div role="option" aria-selected={i === hi} class="row-pick" onPointerDown={(ev) => ev.preventDefault()} onClick={() => pickSkill(s.name)}>
+                          <span class="row-name">{s.name}</span>
+                        </div>
+                        <Star on={s.favorite} name={s.name} onToggle={() => toggleStar(s)} />
+                      </div>
+                    ))}
+                    {rows.length === 0 && <div class="list-empty">No installed skill matches. It will launch with the name exactly as typed.</div>}
+                  </div>
+                )}
+                {note && <p class="launch-warn">{note}</p>}
+              </div>
+
+              <label class={choice === 'none' ? 'choice on' : 'choice'}>
+                <input {...radio('none')} />
+                <span class="choice-text">
+                  <span class="choice-title">Just launch</span>
+                  <span class="choice-desc">Start the harness and give it the order as written.</span>
+                </span>
+              </label>
+              {error && <p role="alert">{error}</p>}
+            </>
+          )}
+        </div>
+        <footer class="launch-foot">
+          <button type="button" class="launch-button press" onClick={close}>
+            Stay in port
+          </button>
+          {!dirsError && (
+            <button type="submit" class="launch-button primary press" disabled={!skills || !dir || busy}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 3v14M12 4l7 10h-7M3 18c2 2 4 2 6 0 2 2 4 2 6 0 2 2 4 2 6 0" />
+              </svg>
+              Hoist sails
+            </button>
+          )}
+        </footer>
+      </form>
+    </Modal>
+  );
+}
