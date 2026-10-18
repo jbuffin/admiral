@@ -856,14 +856,18 @@ func TestDirectoryWithFormatCharacters(t *testing.T) {
 }
 
 // Arguments that end in ; reach the harness intact (tmux reads a trailing ; as
-// a command separator unless it is escaped).
+// a command separator unless it is escaped), on every harness's command line.
 func TestTrailingSemicolons(t *testing.T) {
 	w := newWorld(t)
 	w.start()
-	for i, text := range []string{`end;`, `end\;`, `end\\;`, `;`} {
-		ship := w.launch(w.order("work", "claude", "semi"+string(rune('a'+i)), noSkill, text))
-		if got := promptOf(t, w, w.record(ship.Session)); got != text {
-			t.Errorf("prompt = %q, want %q", got, text)
+	n := 0
+	for _, harness := range []string{"claude", "codex", "copilot"} {
+		for _, text := range []string{`end;`, `end\;`, `end\\;`, `;`} {
+			n++
+			ship := w.launch(w.order("work", harness, "semi"+string(rune('a'+n)), noSkill, text))
+			if got := promptOf(t, w, w.record(ship.Session)); got != text {
+				t.Errorf("%s prompt = %q, want %q", harness, got, text)
+			}
 		}
 	}
 }
@@ -905,5 +909,33 @@ func TestPositionsDroppedAfterTmuxRestarts(t *testing.T) {
 	list := w.in.waitShipsList(t, 3*time.Second, "the recreated session", func(l []shipJSON) bool { return len(l) == 1 })
 	if list[0].Position != nil {
 		t.Errorf("a ship that took a freed name has position %+v, want null", list[0].Position)
+	}
+}
+
+// A ship whose option holds a newline cannot be read, but it is alive: its
+// stored position survives an Admiral restart, and it is back when repaired.
+func TestUnreadableShipKeepsItsPositionAcrossRestart(t *testing.T) {
+	w := newWorld(t)
+	w.start()
+	a := w.launch(w.order("work", "claude", "ur", commodore, "x"))
+	if code, body := send(t, http.MethodPut, w.in.LocalURL+"/api/ships/"+a.Session+"/position", map[string]float64{"x": 0.3, "y": 0.6}); code/100 != 2 {
+		t.Fatalf("PUT position = %d: %s", code, body)
+	}
+	statePath := filepath.Join(w.home, "state.json")
+	waitStateFile(t, statePath, func(s string) bool { return strings.Contains(s, a.Session) })
+
+	w.in.Stop()
+	w.mustTmux("set-option", "-t", a.Session+":", "@admiral-order", "y\nz")
+	w.restart()
+	time.Sleep(2500 * time.Millisecond) // a prune would be written within a second
+	data, _ := os.ReadFile(statePath)
+	if !strings.Contains(string(data), a.Session) {
+		t.Errorf("state.json lost the position of a ship that is alive but unreadable: %s", data)
+	}
+
+	w.mustTmux("set-option", "-t", a.Session+":", "@admiral-order", "o-ur")
+	list := w.in.waitShipsList(t, 3*time.Second, "the repaired ship", func(l []shipJSON) bool { return len(l) == 1 })
+	if p := list[0].Position; p == nil || p.X != 0.3 || p.Y != 0.6 {
+		t.Errorf("repaired ship = %+v, want it back at (0.3, 0.6)", list[0])
 	}
 }

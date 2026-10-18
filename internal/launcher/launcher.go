@@ -92,12 +92,15 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	if err != nil {
 		return nil, err
 	}
-	// These end up in tmux options, read back over the control connection one
-	// line each, and as a directory; a control character would break the framing.
-	for _, v := range [][2]string{{"directory", req.Dir}, {"source", req.Source}, {"order id", req.OrderID},
-		{"skill name", skill}, {"fleet key", fleet.Key}, {"fleet name", fleet.Name}, {"fleet color", fleet.Color}} {
-		if hasControl(v[1]) {
-			return nil, refuse(http.StatusBadRequest, "%s contains a control character", v[0])
+	// The options are tmux's record of the ship, read back over the control
+	// connection one line each; a control character would break the framing.
+	// The name and the time are ours.
+	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
+		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
+		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}}
+	for _, o := range opts {
+		if hasControl(o[1]) {
+			return nil, refuse(http.StatusBadRequest, "%s contains a control character", o[0])
 		}
 	}
 	st, serr := os.Stat(req.Dir)
@@ -147,9 +150,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		return nil, err
 	}
 	session := Slug(name)
-	opts := [][2]string{{"name", name}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
-		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
-		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}}
+	opts[0][1] = name
 
 	if err := l.create(session, req.Dir, opts, env, argv); err != nil {
 		return nil, err

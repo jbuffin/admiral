@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -106,5 +108,32 @@ func TestCancelledCommandDoesNotShiftReplies(t *testing.T) {
 		if err != nil || len(got) != 1 || got[0] != "second" {
 			t.Fatalf("round %d: the next command got %q (%v), want its own reply [second]", i, got, err)
 		}
+	}
+}
+
+// Forged and split rows: a session whose rows disagree, or which has a short
+// row, is unreadable; a row that starts with no known session is dropped.
+func TestParseRowsDistrustsForgedRows(t *testing.T) {
+	row := func(name, order string) string {
+		f := make([]string, 6+len(optionNames))
+		f[0] = name
+		for i, n := range optionNames {
+			f[6+i] = "v"
+			if n == "order" {
+				f[6+i] = order
+			}
+		}
+		return strings.Join(f, sep)
+	}
+	known := map[string]bool{"aaa": true, "zeta": true, "split": true}
+	got, unreadable := parseRows([]string{
+		row("aaa", "1"), row("zeta", "real"), row("zeta", "forged"), // aaa's value planted a second zeta row
+		"split" + sep + "short", "stray fragment", row("ghost", "1"),
+	}, known)
+	if _, ok := got["aaa"]; !ok || len(got) != 1 {
+		t.Errorf("readable sessions = %v, want only aaa", got)
+	}
+	if want := []string{"split", "zeta"}; !slices.Equal(unreadable, want) {
+		t.Errorf("unreadable = %v, want %v", unreadable, want)
 	}
 }

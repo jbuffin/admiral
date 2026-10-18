@@ -106,11 +106,11 @@ func (s *Service) Run(ctx context.Context) {
 	for {
 		select {
 		case ev := <-events:
-			gone := ev.Kind == sessionhost.SessionRemoved || ev.Kind == sessionhost.Resumed
+			gone := prunes(ev)
 			for more := true; more; { // one push for a burst
 				select {
 				case ev = <-events:
-					gone = gone || ev.Kind == sessionhost.SessionRemoved || ev.Kind == sessionhost.Resumed
+					gone = gone || prunes(ev)
 				default:
 					more = false
 				}
@@ -125,10 +125,18 @@ func (s *Service) Run(ctx context.Context) {
 	}
 }
 
+// prunes says whether an event can leave a stored position without a ship.
+func prunes(ev sessionhost.Event) bool {
+	return ev.Kind == sessionhost.SessionRemoved || ev.Kind == sessionhost.Resumed
+}
+
 func (s *Service) keep() {
 	live := map[string]bool{}
 	for _, sess := range s.Host.Sessions() {
 		live[sess.Name] = true
+	}
+	for _, name := range s.Host.Unreadable() { // alive, only unreadable
+		live[name] = true
 	}
 	s.State.Keep(live)
 }

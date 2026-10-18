@@ -24,6 +24,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -104,6 +105,7 @@ type Host struct {
 	mu       sync.Mutex
 	sessions map[string]Session
 	order    []string
+	unread   map[string]bool // sessions seen but unreadable (their row was malformed)
 	subs     map[chan Event]struct{}
 
 	cmdMu   sync.Mutex // one command at a time on the control connection
@@ -142,6 +144,20 @@ func (h *Host) Sessions() []Session {
 	for _, n := range h.order {
 		out = append(out, h.sessions[n])
 	}
+	return out
+}
+
+// Unreadable lists the sessions tmux reports but whose options could not be
+// read (a value with a newline, say). They are alive: callers that decide
+// what is gone, such as the position pruning, must count them.
+func (h *Host) Unreadable() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := make([]string, 0, len(h.unread))
+	for n := range h.unread {
+		out = append(out, n)
+	}
+	sort.Strings(out)
 	return out
 }
 
@@ -275,12 +291,20 @@ func tmuxQuote(s string) string {
 func (h *Host) poll(ctx context.Context) error {
 	h.pollMu.Lock()
 	defer h.pollMu.Unlock()
+	names, err := h.command(ctx, "list-sessions -F '#{session_name}'")
+	if err != nil {
+		return err
+	}
 	rows, err := h.command(ctx, "list-panes -a -F '"+format+"'")
 	if err != nil {
 		return err
 	}
-	next, malformed := parseRows(rows)
-	h.set(next, malformed, true)
+	known := map[string]bool{}
+	for _, n := range names {
+		known[n] = true
+	}
+	next, unreadable := parseRows(rows, known)
+	h.set(next, unreadable, true)
 	h.once.Do(func() { close(h.ready) })
 	return nil
 }
@@ -320,41 +344,56 @@ func (h *Host) command(ctx context.Context, line string) ([]string, error) {
 }
 
 // parseRows folds the rows of list-panes (one per pane) into one session each:
-// the first pane stands for the session. A row with the wrong number of fields
-// (a value held a newline or the field separator) is not trusted; the name it
-// starts with is returned so the caller can keep that session's previous read.
-func parseRows(rows []string) (sessions map[string]Session, malformed []string) {
+// the first pane stands for the session. known holds the session names
+// list-sessions reported. A value holding a newline or the field separator can
+// split a row or forge one, so a session is unreadable, and left out, when a
+// row of it has the wrong number of fields, when its rows disagree on the
+// options, or (for a row that starts with some other name) never: a row whose
+// first field is no known session is dropped as a fragment.
+func parseRows(rows []string, known map[string]bool) (sessions map[string]Session, unreadable []string) {
 	sessions = map[string]Session{}
+	bad := map[string]bool{}
 	for _, row := range rows {
 		f := strings.Split(row, sep)
-		if f[0] == Internal {
+		name := f[0]
+		if name == Internal || !known[name] {
 			continue
 		}
 		if len(f) != 6+len(optionNames) {
-			malformed = append(malformed, f[0])
+			bad[name] = true
 			continue
 		}
-		if _, dup := sessions[f[0]]; dup {
-			continue
-		}
-		s := Session{Name: f[0], PaneDead: f[1] == "1", Signal: f[3], BellStamp: f[4], State: f[5],
+		s := Session{Name: name, PaneDead: f[1] == "1", Signal: f[3], BellStamp: f[4], State: f[5],
 			Options: map[string]string{}}
 		s.ExitStatus, _ = strconv.Atoi(f[2])
 		for i, n := range optionNames {
 			s.Options[n] = f[6+i]
 		}
-		sessions[f[0]] = s
+		if first, dup := sessions[name]; dup {
+			if !maps.Equal(first.Options, s.Options) {
+				bad[name] = true
+			}
+			continue
+		}
+		sessions[name] = s
 	}
-	return sessions, malformed
+	for name := range bad {
+		delete(sessions, name)
+		unreadable = append(unreadable, name)
+	}
+	sort.Strings(unreadable)
+	return sessions, unreadable
 }
 
 // set replaces the last read and publishes the difference as events. A failed
 // connection (ok false) clears the sessions and sends one Reset instead of a
 // removal per session, which would look like the ships were closed.
-func (h *Host) set(next map[string]Session, malformed []string, ok bool) {
+func (h *Host) set(next map[string]Session, unreadable []string, ok bool) {
 	h.mu.Lock()
 	prev := h.sessions
-	for _, name := range malformed { // keep what we knew, rather than lose the ship
+	h.unread = map[string]bool{}
+	for _, name := range unreadable { // keep what we knew, rather than lose the ship
+		h.unread[name] = true
 		if old, had := prev[name]; had {
 			if _, read := next[name]; !read {
 				next[name] = old
