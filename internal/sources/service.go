@@ -1,6 +1,7 @@
 package sources
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -343,8 +344,13 @@ func (s *Service) serveSave(w http.ResponseWriter, r *http.Request) {
 		list[i].Name = strings.TrimSpace(*req.Name)
 	}
 	if settings != nil {
-		settings = s.keepPasswords(key, list[i].Settings, settings)
-		list[i].Settings = settings
+		kept, err := keepSecrets(list[i].Settings, settings)
+		if err != nil {
+			s.mu.Unlock()
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		list[i].Settings = kept
 	}
 	gen := s.Sup.Generation(key)
 	err := s.write(list)
@@ -358,27 +364,10 @@ func (s *Service) serveSave(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, v)
 }
 
-// unchangedMarker stands in for a stored password in what the settings view
+// unchangedMarker stands in for a stored secret in what the settings view
 // returns. Saving it back keeps the stored value, so a secret never leaves
 // the server and a save that did not touch it does not wipe it.
 const unchangedMarker = "__admiral_unchanged__"
-
-// passwordProps names the properties the schema marks "format": "password".
-func passwordProps(schema json.RawMessage) []string {
-	var sc struct {
-		Properties map[string]struct {
-			Format string `json:"format"`
-		} `json:"properties"`
-	}
-	_ = json.Unmarshal(schema, &sc)
-	var names []string
-	for name, p := range sc.Properties {
-		if p.Format == "password" {
-			names = append(names, name)
-		}
-	}
-	return names
-}
 
 func (s *Service) schemaOf(key string) json.RawMessage {
 	rn := s.Sup.runner(key)
@@ -399,26 +388,106 @@ func objectOf(raw json.RawMessage) map[string]json.RawMessage {
 	return m
 }
 
-// keepPasswords replaces each password the engineer left as the marker with
-// the stored one (or drops it when none is stored).
-func (s *Service) keepPasswords(key string, stored, incoming json.RawMessage) json.RawMessage {
-	marker, _ := json.Marshal(unchangedMarker)
-	in, old := objectOf(incoming), objectOf(stored)
-	for _, name := range passwordProps(s.schemaOf(key)) {
-		if v, ok := in[name]; ok && string(v) == string(marker) {
-			if prev, ok := old[name]; ok {
-				in[name] = prev
-			} else {
-				delete(in, name)
+// decodeValue reads JSON keeping numbers exactly as written.
+func decodeValue(raw json.RawMessage) any {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var v any
+	_ = dec.Decode(&v)
+	return v
+}
+
+// maskSecrets replaces the stored secrets in v with the marker, at any depth.
+// sc is v's part of the settings schema; its "format": "password" properties
+// are the secrets. With every set, the schema is not known, so each non-empty
+// string counts as one.
+func maskSecrets(v any, sc map[string]any, every bool) any {
+	switch t := v.(type) {
+	case string:
+		if every && t != "" {
+			return unchangedMarker
+		}
+	case []any:
+		if every {
+			for i := range t {
+				t[i] = maskSecrets(t[i], nil, true)
 			}
 		}
+	case map[string]any:
+		props, _ := sc["properties"].(map[string]any)
+		for k, val := range t {
+			p, _ := props[k].(map[string]any)
+			if str, ok := val.(string); ok && p["format"] == "password" && str != "" {
+				t[k] = unchangedMarker
+				continue
+			}
+			t[k] = maskSecrets(val, p, every)
+		}
 	}
-	out, _ := json.Marshal(in)
-	return out
+	return v
+}
+
+// restoreSecrets puts the stored value back wherever the engineer left the
+// marker, at the same path. A marker with nothing stored is dropped from an
+// object; a string that only starts with the marker is refused.
+func restoreSecrets(in, old any) (any, error) {
+	switch t := in.(type) {
+	case string:
+		if strings.HasPrefix(t, unchangedMarker) && t != unchangedMarker {
+			return nil, errors.New("a setting starts with the reserved text " + unchangedMarker + " but is not exactly that text")
+		}
+	case []any:
+		oldList, _ := old.([]any)
+		for i, e := range t {
+			if e == unchangedMarker {
+				if i >= len(oldList) {
+					return nil, errors.New("a list holds " + unchangedMarker + " where nothing is stored")
+				}
+				t[i] = oldList[i]
+				continue
+			}
+			var prev any
+			if i < len(oldList) {
+				prev = oldList[i]
+			}
+			r, err := restoreSecrets(e, prev)
+			if err != nil {
+				return nil, err
+			}
+			t[i] = r
+		}
+	case map[string]any:
+		oldMap, _ := old.(map[string]any)
+		for k, val := range t {
+			if val == unchangedMarker {
+				if prev, ok := oldMap[k]; ok {
+					t[k] = prev
+				} else {
+					delete(t, k)
+				}
+				continue
+			}
+			r, err := restoreSecrets(val, oldMap[k])
+			if err != nil {
+				return nil, err
+			}
+			t[k] = r
+		}
+	}
+	return in, nil
+}
+
+// keepSecrets is restoreSecrets over raw JSON settings.
+func keepSecrets(stored, incoming json.RawMessage) (json.RawMessage, error) {
+	v, err := restoreSecrets(decodeValue(incoming), decodeValue(stored))
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(v)
 }
 
 // serveSettings is the name and settings the form starts from, with each
-// stored password hidden behind the marker.
+// stored secret hidden behind the marker.
 func (s *Service) serveSettings(w http.ResponseWriter, r *http.Request) {
 	key := r.PathValue("key")
 	def, ok := s.Config.Current().Source(key)
@@ -426,13 +495,11 @@ func (s *Service) serveSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "source "+key+" not found")
 		return
 	}
-	settings := objectOf(def.Settings)
-	for _, name := range passwordProps(s.schemaOf(key)) {
-		v, _ := json.Marshal("")
-		if prev, ok := settings[name]; ok && string(prev) != `""` && string(prev) != "null" {
-			v, _ = json.Marshal(unchangedMarker)
-		}
-		settings[name] = v
+	var schema map[string]any
+	_ = json.Unmarshal(s.schemaOf(key), &schema)
+	settings := maskSecrets(decodeValue(def.Settings), schema, schema == nil)
+	if settings == nil {
+		settings = map[string]any{}
 	}
 	name := def.Name
 	if name == "" {

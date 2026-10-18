@@ -6,7 +6,7 @@ import { PanelSection, SourceProblem, countLabel } from './PanelSection';
 import { SettingsDialog, openSettings } from './SettingsDialog';
 import { SignInCard } from './SignInCard';
 import { SourceIcon } from './SourceIcon';
-import { type Source, api, filter, panelViews, setSidebarCollapsed, sidebarCollapsed, sourcePath, sources, sourcesLoaded } from './sources';
+import { type Source, api, can, declares, filter, panelViews, setSidebarCollapsed, sidebarCollapsed, sourcePath, sources, sourcesLoaded } from './sources';
 
 const Chevrons = ({ right }: { right: boolean }) => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -41,7 +41,7 @@ function Rail() {
             requestAnimationFrame(() => document.getElementById(`panel-${v.key}`)?.scrollIntoView({ block: 'nearest' }));
           }}
         >
-          {v.title.charAt(0).toUpperCase()}
+          {v.source.icon_url ? <img class="source-icon" src={v.source.icon_url} alt="" width={30} height={30} /> : v.title.charAt(0).toUpperCase()}
           <span class="rail-count" aria-hidden="true">
             {v.orders.length}
           </span>
@@ -95,6 +95,7 @@ function Expanded() {
 const confirming = signal<string | null>(null);
 
 function SourceRow({ source }: { source: Source }) {
+  const [refusal, setRefusal] = useState<string | null>(null);
   const noPanels = source.panels.length === 0;
   return (
     <div class="source" role="group" aria-label={source.name}>
@@ -104,12 +105,21 @@ function SourceRow({ source }: { source: Source }) {
         {source.state === 'starting' && <span class="source-state">Starting…</span>}
         <Menu id={`source:${source.key}`} label="Source actions">
           <MenuItem onSelect={() => openSettings(source.key)}>Settings</MenuItem>
-          {source.capabilities.includes('refresh') && (
-            <MenuItem onSelect={() => api('POST', sourcePath(source.key, '/refresh'))}>Refresh</MenuItem>
+          {declares(source, 'refresh') && (
+            <MenuItem
+              disabled={!can(source, 'refresh')}
+              onSelect={async () => {
+                const r = await api('POST', sourcePath(source.key, '/refresh'));
+                setRefusal(r.ok ? null : r.error);
+              }}
+            >
+              Refresh
+            </MenuItem>
           )}
           <MenuItem onSelect={() => (confirming.value = source.key)}>Remove</MenuItem>
         </Menu>
       </div>
+      {refusal && <p role="alert">{refusal}</p>}
       {confirming.value === source.key && <ConfirmRemove source={source} />}
       {noPanels && source.state === 'auth_required' && source.auth && <SignInCard auth={source.auth} />}
       {noPanels && source.state === 'error' && <SourceProblem sourceKey={source.key} message={source.error} />}

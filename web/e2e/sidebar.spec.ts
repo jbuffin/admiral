@@ -382,6 +382,9 @@ test.describe('S7: sign-in and crashed sources', () => {
     await expect(tracked.getByRole('textbox', { name: 'Add order' })).toBeDisabled();
     await expect(tracked.getByRole('button', { name: 'Refresh' })).toBeDisabled();
     await expect(tracked.getByRole('button', { name: 'Actions for Rotate the keys' })).toBeDisabled();
+    await source(page, 'Tracker').getByRole('button', { name: 'Source actions' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Refresh' })).toBeDisabled();
+    await page.keyboard.press('Escape');
     await cards(tracked, 'Rotate the keys'); // the last orders stay
 
     f.remove('crash-on-initialize');

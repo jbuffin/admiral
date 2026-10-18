@@ -1,19 +1,27 @@
-import { signal } from '@preact/signals';
 import { useState } from 'preact/hooks';
 import { OrderItem } from './OrderItem';
 import { SignInCard } from './SignInCard';
 import { SourceIcon } from './SourceIcon';
-import { type PanelView, api, filter, panelCollapsed, setPanelCollapsed, sourcePath } from './sources';
+import { type PanelView, api, can, declares, filter, panelCollapsed, setPanelCollapsed, sourcePath } from './sources';
 
 export const countLabel = (n: number) => `${n} ${n === 1 ? 'order' : 'orders'}`;
 
 // A source's error with its Restart button; shared by panels and source rows.
 export function SourceProblem({ sourceKey, message, extra }: { sourceKey: string; message: string | null; extra?: string }) {
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const shown = refusal ?? extra ?? message;
   return (
     <div class="problem">
-      {(message || extra) && <p role="alert">{extra ?? message}</p>}
+      {shown && <p role="alert">{shown}</p>}
       {message && (
-        <button type="button" class="small-button press" onClick={() => api('POST', sourcePath(sourceKey, '/restart'))}>
+        <button
+          type="button"
+          class="small-button press"
+          onClick={async () => {
+            const r = await api('POST', sourcePath(sourceKey, '/restart'));
+            setRefusal(r.ok ? null : r.error);
+          }}
+        >
           Restart
         </button>
       )}
@@ -43,24 +51,24 @@ export function PanelSection({ view }: { view: PanelView }) {
   const { source, panel, orders } = view;
   const open = !panelCollapsed(view.key);
   const [refusal, setRefusal] = useState<string | null>(null);
-  const has = (c: string) => source.capabilities.includes(c);
   const total = orders.length;
   return (
     <section class="panel" id={`panel-${view.key}`} aria-label={view.title}>
       <div class="panel-head">
         <button type="button" class="panel-toggle" aria-expanded={open} onClick={() => setPanelCollapsed(view.key, open)}>
           <Chevron open={open} />
+          <SourceIcon source={source} size={20} />
           <span class="panel-title">{view.title}</span>
         </button>
         <span class="count" role="img" aria-label={countLabel(total)}>
           {total}
         </span>
-        {has('refresh') && (
+        {declares(source, 'refresh') && (
           <button
             type="button"
             class="icon-button press"
             aria-label="Refresh"
-            disabled={source.read_only}
+            disabled={!can(source, 'refresh')}
             onClick={async () => {
               const r = await api('POST', sourcePath(source.key, '/refresh'), { panel: panel.id });
               setRefusal(r.ok ? null : r.error);
@@ -78,7 +86,7 @@ export function PanelSection({ view }: { view: PanelView }) {
           {(source.state === 'error' || refusal) && (
             <SourceProblem sourceKey={source.key} message={source.state === 'error' ? source.error : null} extra={refusal ?? undefined} />
           )}
-          {has('add') && <AddOrder view={view} onError={setRefusal} />}
+          {declares(source, 'add') && <AddOrder view={view} onError={setRefusal} />}
           <ul class="orders-list">
             {orders.map((o) => (
               <OrderItem key={o.id} source={source} panelId={panel.id} order={o} fail={setRefusal} />
@@ -93,16 +101,15 @@ export function PanelSection({ view }: { view: PanelView }) {
   );
 }
 
-const adding = signal(false);
-
 function AddOrder({ view, onError }: { view: PanelView; onError: (m: string | null) => void }) {
   const [text, setText] = useState('');
+  const [adding, setAdding] = useState(false);
   const { source, panel } = view;
   const submit = async () => {
-    if (adding.value) return;
-    adding.value = true;
+    if (adding) return;
+    setAdding(true);
     const r = await api('POST', sourcePath(source.key, '/orders'), { panel: panel.id, text });
-    adding.value = false;
+    setAdding(false);
     if (r.ok) {
       setText('');
       onError(null);
@@ -115,7 +122,7 @@ function AddOrder({ view, onError }: { view: PanelView; onError: (m: string | nu
         rows={2}
         placeholder="Add order"
         value={text}
-        disabled={source.read_only}
+        disabled={!can(source, 'add')}
         onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
@@ -124,7 +131,7 @@ function AddOrder({ view, onError }: { view: PanelView; onError: (m: string | nu
           }
         }}
       />
-      <button type="button" class="small-button press" disabled={source.read_only} onClick={submit}>
+      <button type="button" class="small-button press" disabled={!can(source, 'add')} onClick={submit}>
         Add
       </button>
     </div>

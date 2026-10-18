@@ -44,9 +44,9 @@ export function Menu({ id, label, disabled, children }: { id: string; label: str
   );
 }
 
-export function MenuItem({ onSelect, children }: { onSelect: () => void; children: ComponentChildren }) {
+export function MenuItem({ onSelect, disabled, children }: { onSelect: () => void; disabled?: boolean; children: ComponentChildren }) {
   return (
-    <button type="button" role="menuitem" class="menu-item" onClick={() => (closeMenu(), onSelect())}>
+    <button type="button" role="menuitem" class="menu-item" disabled={disabled} onClick={() => (closeMenu(), onSelect())}>
       {children}
     </button>
   );

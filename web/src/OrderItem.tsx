@@ -2,7 +2,7 @@ import { signal } from '@preact/signals';
 import { useState } from 'preact/hooks';
 import { Menu, MenuItem } from './Menu';
 import { SourceIcon } from './SourceIcon';
-import { type Order, type Source, api, sourcePath } from './sources';
+import { type Order, type Source, api, can, declares, sourcePath } from './sources';
 
 const editing = signal<string | null>(null);
 
@@ -22,14 +22,14 @@ const Grip = () => (
 export function OrderItem({ source, panelId, order, fail }: { source: Source; panelId: string; order: Order; fail: (m: string) => void }) {
   const id = `${source.key}/${panelId}/${order.id}`;
   const title = order.title.split('\n')[0];
-  const canEdit = source.capabilities.includes('edit');
-  const canRemove = source.capabilities.includes('remove');
+  const hasEdit = declares(source, 'edit');
+  const hasRemove = declares(source, 'remove');
   const path = sourcePath(source.key, `/orders/${encodeURIComponent(order.id)}`);
 
   if (editing.value === id) return <EditOrder path={path} order={order} fail={fail} onDone={() => (editing.value = null)} />;
 
   return (
-    <li class="order">
+    <li class={hasEdit || hasRemove ? 'order with-menu' : 'order'}>
       <div class="order-main">
         <div class="order-meta">
           <SourceIcon source={source} size={16} />
@@ -42,11 +42,16 @@ export function OrderItem({ source, panelId, order, fail }: { source: Source; pa
         </div>
         <span class="order-title">{title}</span>
       </div>
-      {(canEdit || canRemove) && (
+      {(hasEdit || hasRemove) && (
         <Menu id={id} label={`Actions for ${title}`} disabled={source.read_only}>
-          {canEdit && <MenuItem onSelect={() => (editing.value = id)}>Edit</MenuItem>}
-          {canRemove && (
+          {hasEdit && (
+            <MenuItem disabled={!can(source, 'edit')} onSelect={() => (editing.value = id)}>
+              Edit
+            </MenuItem>
+          )}
+          {hasRemove && (
             <MenuItem
+              disabled={!can(source, 'remove')}
               onSelect={async () => {
                 const r = await api('DELETE', path);
                 if (!r.ok) fail(r.error);

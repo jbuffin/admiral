@@ -3,6 +3,9 @@ import { useEffect, useState } from 'preact/hooks';
 import { Modal } from './Modal';
 import { api, sources, sourcePath } from './sources';
 
+// What the server sends in place of a stored secret, and takes back to keep it.
+const UNCHANGED = '__admiral_unchanged__';
+
 const settingsFor = signal<string | null>(null);
 export const openSettings = (key: string) => (settingsFor.value = key);
 
@@ -31,6 +34,7 @@ function SettingsForm({ sourceKey, onClose }: { sourceKey: string; onClose: () =
   const [name, setName] = useState('');
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [json, setJson] = useState<Record<string, string>>({}); // text of properties the form cannot draw
+  const [stored, setStored] = useState<Record<string, boolean>>({}); // properties that hold a secret the server kept
   const [schema, setSchema] = useState<Schema | null>(null);
   const [whole, setWhole] = useState('{}'); // one JSON field when there is no schema
   const [error, setError] = useState<string | null>(null);
@@ -38,20 +42,21 @@ function SettingsForm({ sourceKey, onClose }: { sourceKey: string; onClose: () =
   useEffect(() => {
     let live = true;
     (async () => {
-      const cur = await api<{ name: string; settings: Record<string, unknown> }>('GET', sourcePath(sourceKey, '/settings'));
-      // A source that is still starting has no schema yet: ask again while it does.
-      let sch = await api<Schema>('GET', sourcePath(sourceKey, '/schema'));
-      for (let i = 0; i < 20 && live && !sch.ok; i++) {
+      // A source that is still starting has no schema yet: wait for it to settle.
+      for (let i = 0; i < 20 && live; i++) {
         const state = sources.value?.find((s) => s.key === sourceKey)?.state;
-        if (state !== 'starting') break;
+        if (state && state !== 'starting') break;
         await new Promise((r) => setTimeout(r, 250));
-        sch = await api<Schema>('GET', sourcePath(sourceKey, '/schema'));
       }
+      if (!live) return;
+      const cur = await api<{ name: string; settings: Record<string, unknown> }>('GET', sourcePath(sourceKey, '/settings'));
+      const sch = await api<Schema>('GET', sourcePath(sourceKey, '/schema'));
       if (!live) return;
       if (!cur.ok) setError(cur.error);
       const settings = cur.ok ? cur.data.settings : {};
       setName(cur.ok ? cur.data.name : '');
       setValues(settings);
+      setStored(Object.fromEntries(Object.entries(settings).map(([k, v]) => [k, v === UNCHANGED])));
       setWhole(JSON.stringify(settings, null, 2));
       if (sch.ok && sch.data.properties) {
         setSchema(sch.data);
@@ -102,7 +107,7 @@ function SettingsForm({ sourceKey, onClose }: { sourceKey: string; onClose: () =
             </label>
             {schema ? (
               Object.entries(schema.properties ?? {}).map(([k, p]) => (
-                <Field key={k} id={k} prop={p} required={!!schema.required?.includes(k)} value={values[k]} text={json[k]} onValue={(v) => set(k, v)} onText={(t) => setJson((c) => ({ ...c, [k]: t }))} />
+                <Field key={k} id={k} prop={p} required={!!schema.required?.includes(k)} stored={stored[k]} value={values[k]} text={json[k]} onValue={(v) => set(k, v)} onText={(t) => setJson((c) => ({ ...c, [k]: t }))} />
               ))
             ) : (
               <label>
@@ -126,7 +131,7 @@ function SettingsForm({ sourceKey, onClose }: { sourceKey: string; onClose: () =
   );
 }
 
-function Field(props: { id: string; prop: Prop; required: boolean; value: unknown; text?: string; onValue: (v: unknown) => void; onText: (t: string) => void }) {
+function Field(props: { id: string; prop: Prop; required: boolean; stored?: boolean; value: unknown; text?: string; onValue: (v: unknown) => void; onText: (t: string) => void }) {
   const { id, prop, required, value } = props;
   const label = prop.title ?? id;
   const hint = prop.description && <small>{prop.description}</small>;
@@ -142,7 +147,7 @@ function Field(props: { id: string; prop: Prop; required: boolean; value: unknow
             props.onValue(t === '' ? undefined : JSON.parse(t));
           }}
         >
-          {!required && <option value="" />}
+          <option value="" />
           {prop.enum.map((o) => (
             <option key={JSON.stringify(o)} value={JSON.stringify(o)}>
               {String(o)}
@@ -181,10 +186,23 @@ function Field(props: { id: string; prop: Prop; required: boolean; value: unknow
     );
   }
   if (prop.type === 'string') {
+    // A kept secret is never drawn: the field starts empty, and stays "unchanged" until typed into.
+    const secret = prop.format === 'password';
+    const kept = secret && value === UNCHANGED;
     return (
       <label>
         <span>{label}</span>
-        <input type={(prop.format === 'password' ? 'password' : 'text') as 'password'} autocomplete="off" required={required} value={typeof value === 'string' ? value : ''} onInput={(e) => props.onValue((e.target as HTMLInputElement).value)} />
+        <input
+          type={(secret ? 'password' : 'text') as 'password'}
+          autocomplete="off"
+          required={required && !props.stored}
+          placeholder={props.stored ? 'Unchanged' : undefined}
+          value={typeof value === 'string' && !kept ? value : ''}
+          onInput={(e) => {
+            const t = (e.target as HTMLInputElement).value;
+            props.onValue(t === '' && props.stored ? UNCHANGED : t === '' && secret ? undefined : t);
+          }}
+        />
         {hint}
       </label>
     );

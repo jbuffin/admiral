@@ -496,6 +496,10 @@ button:focus-visible {
 }
 
 .order-id {
+  /* padding and the matching negative margin give a 44 px target without moving the text */
+  display: inline-block;
+  padding: 15px 6px;
+  margin: -15px -6px;
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--color-text-muted);
@@ -519,6 +523,30 @@ button:focus-visible {
   font-size: 14.5px;
   line-height: 1.3;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+/* The ⋯ button floats over the card's top-right corner; the grip sits below it. */
+.order {
+  position: relative;
+}
+
+.order.with-menu .order-main {
+  padding-right: 34px;
+}
+
+.order.with-menu > .menu {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.order.with-menu > .grip {
+  align-self: flex-end;
 }
 
 .empty {
@@ -614,7 +642,12 @@ button:focus-visible {
   cursor: pointer;
 }
 
-.menu-item:hover {
+.menu-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.menu-item:not(:disabled):hover {
   background-color: var(--color-selected);
 }
 

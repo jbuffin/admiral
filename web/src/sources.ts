@@ -56,6 +56,11 @@ onMessage('sources', (msg) => (sources.value = msg.sources));
 // The filter text is not stored: a reload starts with every order visible.
 export const filter = signal('');
 
+// Whether the source declares the capability, and whether the control may be
+// used now: a read-only source keeps its last orders but refuses commands.
+export const declares = (s: Source, capability: string) => s.capabilities.includes(capability);
+export const can = (s: Source, capability: string) => declares(s, capability) && !s.read_only;
+
 export const matches = (o: Order, q: string) => !q || `${o.id} ${o.title}`.toLowerCase().includes(q);
 
 // A panel as the sidebar shows it: its title, its orders after the filter, and
