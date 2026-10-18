@@ -82,7 +82,9 @@ test.describe('S4: launch with Commodore', () => {
     await expect.poll(async () => (await w.dirs('work', 'claude')).body.entries.find((e: { path: string }) => e.path === alpha).ships_here).toBe(0);
 
     const text = 'Fix the flaky test\nIt fails on CI only.\nStart with the retry helper.';
+    const second = 'Tidy the logs\nDrop the noisy lines.';
     await w.seedOrder(text);
+    await w.seedOrder(second);
     await page.goto(admiral.url);
     const d = await openLaunch(page, touch, 'Fix the flaky test', 'Work', 'Claude');
     await expect(d.getByText('Work · Claude dock')).toBeVisible();
@@ -111,15 +113,24 @@ test.describe('S4: launch with Commodore', () => {
     // The skills were read again for beta: its project skill's favorite is offered now.
     await expect(radio(d, 'betaskill')).toBeVisible();
     await expect(radio(d, 'shared')).toBeChecked();
-    await press(radio(d, /^Commodore/), touch);
 
+    // Hoist sails launches the kept pick in the new directory.
     await press(hoist(d), touch);
     await expect(d).toHaveCount(0);
     await expect.poll(() => w.records().length).toBe(2);
     const sailed = w.records()[1];
     expect(sailed.cwd).toBe(beta);
-    expect(World.prompt(sailed)).toBe(`/commodore ${text}`);
+    expect(World.prompt(sailed)).toBe(`/shared ${text}`);
     await expect(sidebar(page).getByText('Fix the flaky test')).toHaveCount(0);
+    w.endShips();
+
+    // A second order, opened afresh: Commodore is the default and runs with the whole text.
+    const d2 = await openLaunch(page, touch, 'Tidy the logs', 'Work', 'Claude');
+    await expect(radio(d2, /^Commodore/)).toBeChecked();
+    await press(hoist(d2), touch);
+    await expect(d2).toHaveCount(0);
+    await expect.poll(() => w.records().length).toBe(3);
+    expect(World.prompt(w.records()[2])).toBe(`/commodore ${second}`);
     w.endShips();
   });
 });
