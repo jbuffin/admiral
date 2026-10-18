@@ -80,9 +80,11 @@ func (s *Service) Run(ctx context.Context) {
 		w.shutdown()
 	}
 	for _, w := range all {
-		select {
-		case <-w.client.Done():
-		case <-time.After(2 * time.Second):
+		if c := w.attached(); c != nil {
+			select {
+			case <-c.Done():
+			case <-time.After(2 * time.Second):
+			}
 		}
 	}
 }
@@ -167,7 +169,15 @@ func (w *watch) start() {
 		w.fail(err)
 		return
 	}
+	w.mu.Lock()
 	w.client = c
+	gone := w.gone
+	w.mu.Unlock()
+	if gone { // the service shut down while this was attaching
+		c.Close()
+		w.fail(errGone)
+		return
+	}
 	got := make(chan error, 1)
 	c.Do([]string{"display-message -p -t " + quoteArg(w.target) + " '#{pane_id}'"}, func(out [][]string, errs []error) {
 		if errs[0] != nil || len(out[0]) != 1 || !strings.HasPrefix(out[0][0], "%") {
@@ -221,12 +231,19 @@ func (w *watch) shutdown() {
 	}
 	w.mu.Unlock()
 	w.s.mu.Unlock()
-	if w.client != nil {
-		w.client.Close()
+	if c := w.attached(); c != nil {
+		c.Close()
 	}
 	for _, b := range bs {
 		b.kill()
 	}
+}
+
+// attached is the control client, nil until it has attached.
+func (w *watch) attached() *sessionhost.Client {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.client
 }
 
 // leave removes b; the last one out starts the linger.
