@@ -90,7 +90,7 @@ func serviceInstall(std IO) error {
 	// A job that was running may still be shutting down (Admiral drains for
 	// up to 2 s), and bootstrap fails until it is gone.
 	var msg string
-	for try := 0; try < 3; try++ {
+	for try := 0; try < 4; try++ {
 		if try > 0 {
 			time.Sleep(time.Second)
 		}

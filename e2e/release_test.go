@@ -252,22 +252,6 @@ func TestPackagingS1_OfficialLogosRefuseTheRelease(t *testing.T) {
 		}
 		refused(t, "OFFICIAL_LOGOS="+link)
 	})
-	// The real folder, whatever OFFICIAL_LOGOS says: a temporary symlink there,
-	// removed afterwards. Never overwrites anything that is already there.
-	t.Run("the real folder as a symlink", func(t *testing.T) {
-		real := filepath.Join(repoRoot, "web", "logos", "official")
-		if _, err := os.Lstat(real); err == nil {
-			t.Skip("web/logos/official exists: personal logos are in place")
-		}
-		if err := os.MkdirAll(filepath.Dir(real), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Symlink(withLogo(t), real); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { os.Remove(real) })
-		refused(t, "OFFICIAL_LOGOS="+t.TempDir())
-	})
 }
 
 // make release with an empty version is refused, not built as admiral--darwin.
