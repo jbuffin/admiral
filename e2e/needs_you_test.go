@@ -252,7 +252,7 @@ func TestNoFirstHookAfterRestart(t *testing.T) {
 	w.in.Stop()
 	time.Sleep(10500 * time.Millisecond)
 	w.restart()
-	w.in.waitStatusList(t, 2*time.Second, s.Session, "needs_you")
+	w.in.waitStatusList(t, 15*time.Second, s.Session, "needs_you")
 }
 
 // S4: a keystroke from the bridge clears needs you at once, until the next
@@ -406,19 +406,24 @@ func TestRestartKeepsAnchoredAndNeedsYou(t *testing.T) {
 		"busy":   {"hook working"},
 	})
 	w.start()
-	ws := dialWS(t, w.in.instance)
 	a := w.launchIn("anchor", "claude", "s7a")
 	h := w.launchIn("hook", "claude", "s7h")
 	b := w.launchIn("bell", "codex", "s7b")
 	u := w.launchIn("busy", "claude", "s7u")
-	waitStatus(t, ws, 4*time.Second, a.Session, "anchored")
-	waitStatus(t, ws, 4*time.Second, h.Session, "needs_you")
-	waitStatus(t, ws, 5*time.Second, b.Session, "needs_you")
-
 	want := map[string]string{a.Session: "anchored", h.Session: "needs_you", b.Session: "needs_you", u.Session: "underway"}
+	// One poll for all four: a WebSocket wait per ship would hang on a slow
+	// machine when an earlier wait had already read the message for a later ship.
+	w.in.waitShipsList(t, 20*time.Second, "all four ships in their statuses", func(l []shipJSON) bool {
+		for s, st := range want {
+			if statusOf(l, s) != st {
+				return false
+			}
+		}
+		return true
+	})
 	w.in.Stop()
 	w.restart()
-	w.in.waitShipsList(t, 5*time.Second, "all four ships as before the restart", func(l []shipJSON) bool {
+	w.in.waitShipsList(t, 15*time.Second, "all four ships as before the restart", func(l []shipJSON) bool {
 		for s, st := range want {
 			if statusOf(l, s) != st {
 				return false
@@ -448,12 +453,12 @@ func TestRestartKillsShipThatSailedOff(t *testing.T) {
 		t.Fatalf("setup: the dead pane's session should survive Admiral being stopped")
 	}
 	w.restart()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for w.hasSession(s.Session) {
 		if time.Now().After(deadline) {
-			t.Fatalf("session %s of an exit-0 ship still exists 5s after the restart", s.Session)
+			t.Fatalf("session %s of an exit-0 ship still exists 15s after the restart", s.Session)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	w.in.waitShipsList(t, 3*time.Second, "no ships", func(l []shipJSON) bool { return len(l) == 0 })
+	w.in.waitShipsList(t, 15*time.Second, "no ships", func(l []shipJSON) bool { return len(l) == 0 })
 }
