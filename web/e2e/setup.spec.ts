@@ -25,12 +25,12 @@ import { isTouch, spyOnPage } from './sea';
 // of claude defaults to ~/.claude, a suggested search root is listed and none
 // is picked for you:
 //
-//   Fleet key                       work
-//   Fleet name                      Work
+//   Fleet key                       crew  (not "work": a wrapper claude-<key> on the machine's PATH becomes the executable default)
+//   Fleet name                      Crew
 //   Color                           (Enter: the next palette color)
 //   Harnesses                       claude          (comma-separated; default: all detected)
 //   Executable for claude           (Enter: the detected absolute path)
-//   Identity directory for claude   ~/.claude-work
+//   Identity directory for claude   ~/.claude-crew
 //   Extra variables                 (Enter: none; NAME=value lines, blank to finish)
 //   Search roots                    <HOME>/code     (comma-separated paths)
 //   Add another fleet               (Enter: no)
@@ -79,9 +79,9 @@ test.describe('S5: the setup terminal', () => {
     await press(terminal(page).locator('.xterm'), touch);
 
     await shows(page, 'Fleet key');
-    await answer(page, 'work');
+    await answer(page, 'crew');
     await shows(page, 'Fleet name');
-    await answer(page, 'Work');
+    await answer(page, 'Crew');
     await shows(page, 'Color');
     await answer(page, '');
     await shows(page, 'Harnesses');
@@ -89,7 +89,7 @@ test.describe('S5: the setup terminal', () => {
     await shows(page, 'Executable for claude');
     await answer(page, '');
     await shows(page, 'Identity directory for claude');
-    await answer(page, '~/.claude-work');
+    await answer(page, '~/.claude-crew');
     await shows(page, 'Extra variables');
     await answer(page, '');
     await shows(page, 'Search roots');
@@ -100,17 +100,17 @@ test.describe('S5: the setup terminal', () => {
     await answer(page, 'y');
 
     await expect(terminal(page)).toBeHidden({ timeout: 15_000 });
-    await expect(page.getByRole('region', { name: 'Work marina' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Crew marina' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Set up a fleet' })).toHaveCount(0);
     await expect(countButton(page, '1 fleet')).toBeVisible();
 
     const written = JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8'));
-    expect(Object.keys(written.fleets)).toEqual(['work']);
-    expect(written.fleets.work.name).toBe('Work');
-    expect(Object.keys(written.fleets.work).filter((k) => ['claude', 'codex', 'copilot'].includes(k))).toEqual(['claude']);
-    expect(written.fleets.work.claude.executable).toBe(join(fakeharness, 'claude'));
-    expect(String(written.fleets.work.claude.env.CLAUDE_CONFIG_DIR).replace(/^~/, user)).toBe(join(user, '.claude-work'));
-    expect(written.fleets.work.search_roots.map((r: string) => r.replace(/^~/, user))).toEqual([code]);
+    expect(Object.keys(written.fleets)).toEqual(['crew']);
+    expect(written.fleets.crew.name).toBe('Crew');
+    expect(Object.keys(written.fleets.crew).filter((k) => ['claude', 'codex', 'copilot'].includes(k))).toEqual(['claude']);
+    expect(written.fleets.crew.claude.executable).toBe(join(fakeharness, 'claude'));
+    expect(String(written.fleets.crew.claude.env.CLAUDE_CONFIG_DIR).replace(/^~/, user)).toBe(join(user, '.claude-crew'));
+    expect(written.fleets.crew.search_roots.map((r: string) => r.replace(/^~/, user))).toEqual([code]);
     // The setup session is not a ship, and it ended with setup.
     expect(sessions(admiral.home)).not.toContain('_setup');
     const ships = await (await fetch(`${admiral.url}api/ships`)).json();
