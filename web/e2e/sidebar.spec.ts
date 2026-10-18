@@ -15,7 +15,7 @@ import { type Flags, expect, test } from './fixtures';
 //   one group per source named by the source's name: button "Source actions" (menuitems Settings, Remove, Refresh),
 //     and, when the source has no panels, its Restart button and alert
 //   button "Add source plugin" opening a list with a button per plugin
-//   dialog "Settings": textbox "Name", the schema's fields or textbox "Settings JSON", buttons "Save", "Close"
+//   dialog "Settings": textbox "Name", the schema's fields or textbox "Settings JSON", button "Save", which closes the view
 //   source removal: menuitem "Remove", then button "Confirm remove"
 //   Sign in card: the message, a link, the code, button "Copy code"
 
@@ -46,7 +46,7 @@ test.describe('S1: fresh install', () => {
     await admiral.start();
     await page.goto(admiral.url);
 
-    await expect(sidebar(page).getByRole('heading', { name: 'Orders' })).toBeVisible();
+    await expect(sidebar(page).getByRole('heading', { level: 2, name: 'Orders' })).toBeVisible();
     await expect(sidebar(page).getByText('Drag a card onto a dock to launch')).toBeVisible();
     const orders = panel(page, 'Orders');
     await expect(orders).toBeVisible();
@@ -177,13 +177,13 @@ test.describe('S4: collapse is remembered, the filter is not', () => {
     await sidebar(page).getByRole('button', { name: 'Collapse orders' }).click();
     await expect(rail(page)).toBeVisible();
     await expect(rail(page).getByRole('button', { name: 'Expand orders' })).toBeVisible();
-    await expect(rail(page).getByRole('button', { name: 'Tracker · Done, 1 orders' })).toBeVisible();
+    await expect(rail(page).getByRole('button', { name: /^Tracker · Done, 1 orders?$/ })).toBeVisible();
     await page.reload();
     await expect(rail(page)).toBeVisible();
     await expect(sidebar(page)).toHaveCount(0);
 
     // A rail button opens the sidebar again; the panel collapse is still remembered.
-    await rail(page).getByRole('button', { name: 'Tracker · Done, 1 orders' }).click();
+    await rail(page).getByRole('button', { name: /^Tracker · Done, 1 orders?$/ }).click();
     await expect(sidebar(page)).toBeVisible();
     await expect(toggle(page, 'Tracker · Todo', false)).toBeVisible();
     await expect(filter(page)).toHaveValue('');
@@ -257,7 +257,7 @@ test.describe('S6: add and configure source plugins', () => {
       await dialog.getByRole('textbox', { name: 'Name' }).fill(name);
       await dialog.getByRole('textbox', { name: 'Settings JSON' }).fill(JSON.stringify({ flagdir: f.dir }));
       await dialog.getByRole('button', { name: 'Save' }).click();
-      await dialog.getByRole('button', { name: 'Close' }).click();
+      await expect(dialog).toBeHidden();
     };
 
     await sidebar(page).getByRole('button', { name: 'Add source plugin' }).click();
@@ -287,7 +287,7 @@ test.describe('S6: add and configure source plugins', () => {
     await dialog.getByRole('button', { name: 'Save' }).click();
     await expect.poll(() => a.starts()).toBeGreaterThan(beforeA);
     expect(b.starts()).toBe(beforeB);
-    await dialog.getByRole('button', { name: 'Close' }).click();
+    await expect(dialog).toBeHidden();
     await cards(panel(page, 'Alpha · Test'), 'Alpha order');
 
     // Remove one: its row and panels go, the other stays.
@@ -318,7 +318,10 @@ test.describe('S7: sign-in and crashed sources', () => {
       const w = window as unknown as { copies: { cmd: string; selected: string }[] };
       w.copies = [];
       document.execCommand = (cmd: string) => {
-        w.copies.push({ cmd, selected: String(getSelection()) });
+        // The selection lives in the page or, in the usual fallback, in a hidden field.
+        const field = document.activeElement as HTMLInputElement | null;
+        const inField = field && typeof field.selectionStart === 'number' ? field.value.slice(field.selectionStart, field.selectionEnd ?? 0) : '';
+        w.copies.push({ cmd, selected: String(getSelection()) || inField });
         return true;
       };
     });
