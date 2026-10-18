@@ -94,7 +94,7 @@ export function placeShip({ fleets, placed, ship, footprint, keepOut, inset = 0 
   const free = (x: number, y: number) => covered(x, y, others) === 0 && covered(x, y, keepOut) === 0;
 
   for (const [rowStep, colStep] of [
-    [h, w * 1.25],
+    [h, w],
     [FINE, FINE],
   ]) {
     for (const y of rows(rowStep)) for (const x of cols(colStep)) if (free(x, y)) return { x, y };

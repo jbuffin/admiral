@@ -83,21 +83,21 @@ export function LogoSprite() {
 // A pennant carrying the harness logo, clipped to the flag shape and outlined.
 // Behind an official logo it draws the harness's field over the whole pennant
 // and sets the mark whole, centered in the solid part with a little clear space.
-export function LogoFlag({ harness, kind }: { harness: HarnessName; kind: FlagKind }) {
+export function LogoFlag({ harness, kind }: { harness: string; kind: FlagKind }) {
   const f = flags[kind];
-  const known = harness in harnesses;
+  const known = Object.hasOwn(harnesses, harness) ? (harness as HarnessName) : undefined;
   const pad = f.height * 0.15;
   const mark = { x: f.x + pad, y: f.y + pad, width: f.width * 0.77 - 2 * pad, height: f.height - 2 * pad };
   return (
     <>
       <g clip-path={`url(#pennant-${kind})`}>
-        {known && isOfficial(harness) ? (
+        {known && isOfficial(known) ? (
           <>
-            <rect x={f.x} y={f.y} width={f.width} height={f.height} fill={harnesses[harness].field} />
-            <use href={`#${logoId(harness)}`} {...mark} />
+            <rect x={f.x} y={f.y} width={f.width} height={f.height} fill={harnesses[known].field} />
+            <use href={`#${logoId(known)}`} {...mark} />
           </>
         ) : (
-          <use href={`#${known ? logoId(harness) : UNKNOWN}`} x={f.x} y={f.y} width={f.width} height={f.height} />
+          <use href={`#${known ? logoId(known) : UNKNOWN}`} x={f.x} y={f.y} width={f.width} height={f.height} />
         )}
       </g>
       <path d={pennant(f)} fill="none" stroke="#14304A" stroke-width={f.stroke} stroke-linejoin="round" />
