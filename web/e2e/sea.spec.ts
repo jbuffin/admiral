@@ -118,7 +118,7 @@ test.describe('S3: a ship that needs you', () => {
 
     s.setState(one.session, 'needs_you');
     await expect(ships(page, needsYouIn('Work'))).toBeVisible({ timeout: 3000 });
-    await expect(ship.getByText('!', { exact: true })).toBeVisible();
+    await expect(ships(page, needsYouIn('Work')).getByText('!', { exact: true })).toBeVisible();
     const pill = header(page).getByRole('button', { name: '1 needs you' });
     await expect(pill).toBeVisible();
     await expect.poll(() => notes(page)).toBe(3); // one chime: the prototype's three notes
