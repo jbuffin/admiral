@@ -1,0 +1,7 @@
+{
+  "name": "freeform",
+  "description": "A list of orders you type yourself.",
+  "command": "python3",
+  "args": ["plugin.py"],
+  "icon": "icon.svg"
+}

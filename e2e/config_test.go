@@ -428,11 +428,11 @@ func TestConfigS5_InvalidFilesAreRefusedWithThePathNamed(t *testing.T) {
 // no harness entries, a missing search_roots.
 func TestConfigValidOddShapesLoad(t *testing.T) {
 	home := newHome(t)
-	writeConfig(t, home, `{"version":1,"future":{"x":1},"sources":[{"anything":true}],"fleets":{"bare":{"name":"Bare"}}}`)
+	writeConfig(t, home, `{"version":1,"future":{"x":1},"sources":{"s":{"plugin":"notinstalled"}},"fleets":{"bare":{"name":"Bare"}}}`)
 	in := startAdmiral(t, home, "127.0.0.1:0")
 	b, raw := fetchConfig(t, in)
 	if b.Error != nil {
-		t.Fatalf("unknown top-level keys and unvalidated sources must load: %+v", b.Error)
+		t.Fatalf("unknown top-level keys and a source whose plugin is not installed must load: %+v", b.Error)
 	}
 	f := b.fleet("bare")
 	if f.Key != "bare" || f.Docks == nil || len(f.Docks) != 0 {

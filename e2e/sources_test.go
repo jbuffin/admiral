@@ -1,6 +1,8 @@
 package e2e
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -141,6 +143,75 @@ func TestFreshInstallLeavesWhatItShould(t *testing.T) {
 		w.waitSource("orders", 10*time.Second, "state ok", isOK)
 		if got := w.readFile(manifest); got == "" || strings.Contains(got, "edited by the engineer") {
 			t.Errorf("a missing freeform folder was not written again: %q", got)
+		}
+	})
+}
+
+// stampOf is the hash Admiral keeps in plugins/freeform/.admiral-stamp: SHA-256
+// over the files sorted by path, each as path, a zero byte, content, a zero byte.
+func stampOf(files map[string]string) string {
+	names := make([]string, 0, len(files))
+	for n := range files {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	h := sha256.New()
+	for _, n := range names {
+		h.Write([]byte(n + "\x00" + files[n] + "\x00"))
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// S1: a newer embedded copy replaces a freeform folder that still matches its
+// stamp, and leaves one that was edited after the stamp was written.
+func TestFreeformUpgrade(t *testing.T) {
+	writeOld := func(t *testing.T, w *world, stampedAs map[string]string, onDisk map[string]string) {
+		dir := filepath.Join(w.home, "plugins", "freeform")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for name, content := range onDisk {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.WriteFile(filepath.Join(dir, ".admiral-stamp"), []byte(stampOf(stampedAs)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := map[string]string{
+		"plugin.json": `{"name":"freeform","description":"an older copy","command":"python3","args":["plugin.py"]}`,
+		"plugin.py":   "# an older copy\n",
+		"notes.txt":   "a file the newer copy no longer has",
+	}
+	t.Run("an unedited older copy is replaced", func(t *testing.T) {
+		w := newWorld(t)
+		writeOld(t, w, old, old)
+		w.startFresh()
+		w.waitSource("orders", 10*time.Second, "state ok", isOK)
+		dir := filepath.Join(w.home, "plugins", "freeform")
+		if got := w.readFile(filepath.Join(dir, "plugin.json")); strings.Contains(got, "an older copy") {
+			t.Errorf("an unedited older freeform folder was not replaced: %s", got)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "notes.txt")); err == nil {
+			t.Errorf("a file of the older copy is still in the folder")
+		}
+		if got := w.readFile(filepath.Join(dir, ".admiral-stamp")); got == stampOf(old) || len(got) != 64 {
+			t.Errorf("the stamp is %q, want the hash of the newer copy", got)
+		}
+	})
+	t.Run("an older copy edited after its stamp is left alone", func(t *testing.T) {
+		w := newWorld(t)
+		edited := map[string]string{}
+		for k, v := range old {
+			edited[k] = v
+		}
+		edited["plugin.py"] = "# edited by the engineer\n"
+		writeOld(t, w, old, edited)
+		w.startFresh()
+		dir := filepath.Join(w.home, "plugins", "freeform")
+		if got := w.readFile(filepath.Join(dir, "plugin.py")); got != edited["plugin.py"] {
+			t.Errorf("an edited freeform folder was replaced: plugin.py = %q", got)
 		}
 	})
 }

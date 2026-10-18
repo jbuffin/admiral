@@ -25,7 +25,8 @@ const MaxFavoriteSkills = 5
 type Config struct {
 	Fleets         []Fleet // file order is marina order
 	FavoriteSkills []string
-	Sources        json.RawMessage // round-tripped; validated by the sources unit
+	Sources        json.RawMessage // as in the file; nil when there is no sources key
+	SourceList     []Source        // Sources, in panel order
 }
 
 // Fleet is one marina.
@@ -42,6 +43,7 @@ func (c *Config) clone() *Config {
 	out := *c
 	out.FavoriteSkills = slices.Clone(c.FavoriteSkills)
 	out.Sources = slices.Clone(c.Sources)
+	out.SourceList = slices.Clone(c.SourceList)
 	out.Fleets = make([]Fleet, len(c.Fleets))
 	for i, f := range c.Fleets {
 		f.SearchRoots = slices.Clone(f.SearchRoots)
@@ -125,6 +127,9 @@ func Parse(data []byte) (*Config, error) {
 			}
 		case "sources":
 			cfg.Sources = append(json.RawMessage(nil), m.raw...)
+			if cfg.SourceList, err = parseSources(m.raw); err != nil {
+				return nil, err
+			}
 		}
 		// Anything else is kept in the file and ignored here (story 33).
 	}

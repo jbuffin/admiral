@@ -356,7 +356,7 @@ func TestSourceHungRequests(t *testing.T) {
 		pid := p.pid()
 		p.put("hang-orders.refresh", "")
 		began := time.Now()
-		code, body := w.srcReq(http.MethodPost, "/a/refresh", map[string]any{})
+		code, body := w.srcReqPatient(http.MethodPost, "/a/refresh", map[string]any{})
 		took := time.Since(began)
 		if code/100 == 2 || code == http.StatusConflict {
 			t.Errorf("refresh of a hung plugin = %d %s, want a failure that is not 2xx or 409", code, body)

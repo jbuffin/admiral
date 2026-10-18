@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -476,6 +477,30 @@ func (w *world) mustLaunchFrom(fleet, source, orderID string) shipJSON {
 func (w *world) srcReq(method, path string, body any) (int, string) {
 	w.t.Helper()
 	return send(w.t, method, w.in.LocalURL+"/api/sources"+path, body)
+}
+
+// srcReqPatient is srcReq with an HTTP timeout long enough to outwait the 10 s
+// a plugin gets to answer (the shared client gives up after 5 s).
+func (w *world) srcReqPatient(method, path string, body any) (int, string) {
+	w.t.Helper()
+	b, err := json.Marshal(body)
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	req, err := http.NewRequest(method, w.in.LocalURL+"/api/sources"+path, strings.NewReader(string(b)))
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	c := client()
+	c.Timeout = 25 * time.Second
+	resp, err := c.Do(req)
+	if err != nil {
+		w.t.Fatalf("%s %s: %v", method, path, err)
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(data)
 }
 
 func (w *world) mustOK(code int, body string, what ...string) {

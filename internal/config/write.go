@@ -29,7 +29,7 @@ func SetFavoriteSkills(dir string, skills []string) error {
 	return setKey(dir, "favorite_skills", raw)
 }
 
-// SetSources replaces sources in dir/config.json. The sources unit validates it.
+// SetSources replaces sources in dir/config.json.
 func SetSources(dir string, sources json.RawMessage) error {
 	if !json.Valid(sources) {
 		return fmt.Errorf("sources: not valid JSON")
