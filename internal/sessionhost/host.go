@@ -43,6 +43,9 @@ const Internal = "_admiral"
 // not a ship.
 const SetupName = "_setup"
 
+// SetupTerminalEnv is set in the setup session, so `admiral setup` holds an error on screen.
+const SetupTerminalEnv = "ADMIRAL_SETUP_TERMINAL"
+
 // Prefix is the start of every option Admiral owns.
 const Prefix = "@admiral-"
 

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
 // Setup is `admiral setup [--answers <file> --yes] [--dry-run]` (stories 12-18).
@@ -28,6 +29,18 @@ import (
 // keeps its place; fleets and top-level keys the answers don't name are left
 // alone.
 func Setup(args []string, std IO) error {
+	err := setup(args, std)
+	if err != nil && os.Getenv(sessionhost.SetupTerminalEnv) != "" {
+		// In the browser's setup terminal the session ends with setup, and the terminal
+		// closes with it: hold the error on screen until it has been read.
+		fmt.Fprintln(std.Err, "admiral:", err)
+		fmt.Fprint(std.Out, "\nPress Enter to close.")
+		_, _ = bufio.NewReader(std.In).ReadString('\n')
+	}
+	return err
+}
+
+func setup(args []string, std IO) error {
 	fs := newFlags("setup")
 	answers := fs.String("answers", "", "JSON file with the fleets to set up")
 	yes := fs.Bool("yes", false, "write without asking (needs --answers)")

@@ -84,7 +84,7 @@ func (s *Service) serveSetupStart(w http.ResponseWriter, r *http.Request) {
 		// The session environment is spelled out: a tmux server that outlived an
 		// earlier Admiral would otherwise hand setup that one's.
 		args := []string{"new-session", "-d", "-s", sessionhost.SetupName, "-x", "100", "-y", "30",
-			"-e", "ADMIRAL_HOME=" + s.Setup.Home, "-e", "HOME=" + os.Getenv("HOME"), "-e", "PATH=" + os.Getenv("PATH"),
+			"-e", "ADMIRAL_HOME=" + s.Setup.Home, "-e", sessionhost.SetupTerminalEnv + "=1", "-e", "HOME=" + os.Getenv("HOME"), "-e", "PATH=" + os.Getenv("PATH"),
 			"--", s.Setup.Exe, "setup"}
 		if err := s.tmuxRun(args...); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not start setup: " + err.Error()})
