@@ -104,6 +104,8 @@ For all three, Admiral has already refused text that is empty after trimming or 
 | `orders.changed` | `{"panel":"orders"}`, or none for every panel | Admiral asks `orders.list` again. Send it when your data changes, including after you handle `orders.add`. |
 | `panels.changed` | none | Admiral asks `panels.list` again, then each panel's orders. |
 | `auth.required` | `{"message":"Sign in to Acme","url":"https://…","code":"ABCD-1234"}` | The source shows as `auth_required` with the message, a link and a code to enter there. `message` is required; `url` and `code` are optional. Orders you listed stay. |
+
+**Signing in.** If your source needs the engineer to sign in, answer `initialize` and `panels.list` at once (an empty panel list is fine), then send `auth.required`. Never hold a request open while you wait for the engineer: it would hit the 10-second limit, count as a crash and put the source into a restart loop. Send `auth.ok` when sign-in is done, then `panels.changed` or `orders.changed` with the real data.
 | `auth.ok` | none | Clears `auth.required`; the source is `ok` again. |
 
 ## Limits
@@ -113,6 +115,8 @@ Admiral treats everything a plugin sends as untrusted.
 - A request that gets no answer within **10 seconds** fails. A hung `initialize` or `panels.list` also counts as a crash: Admiral kills the process and restarts it. Any other hung request fails only that call.
 - A line over **16 MiB** is dropped.
 - An order list over **5,000 orders**, or an order whose `text` is over **12,000 bytes**, is refused.
+- At most **100 panels**. A panel id or an order id must be non-empty and unique within its list.
+- `plugin.json` is at most 64 KiB. An `auth.required` message is cut to 2,000 characters and its code to 200.
 - A control character (below 0x20, or 0x7f) in an order id or a panel id is refused. `text` may hold `\n`, `\t` and `\r` but no other control character. Titles are cut to one line.
 - A `url` (in an order or in `auth.required`) must be `http:` or `https:`; Admiral drops any other. A `repo` that is not a git remote is dropped.
 

@@ -24,7 +24,7 @@ type Supervisor struct {
 	// under the same key waits for the old process.
 	stopping map[string]*runner
 	order    []string
-	wg      sync.WaitGroup
+	wg       sync.WaitGroup
 }
 
 // Start runs the first reconcile and then follows the config until ctx ends.
