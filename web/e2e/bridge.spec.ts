@@ -187,6 +187,41 @@ test.describe('S5: boarding a ship and typing on the bridge', () => {
     await ctx.close();
   });
 
+  test('the bridge fits every evaluated viewport: prompt and key bar on screen, the bridge inside the screen, and a pane no taller than the box', async ({ page, admiral, sea }, info) => {
+    const touch = isTouch(info);
+    const s = sea({ work: { name: 'Work', color: BLUE } });
+    s.world.skill('work', 'claude', 'review');
+    await admiral.start();
+    await s.world.guardData();
+    const ship = await launchFromOrder(s, 'work', 'alpha');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(admiral.url);
+    const name = await board(page, underwayIn('Work'), touch);
+
+    // 1440x900 first, then narrower and shorter windows, resized with the bridge open.
+    for (const [width, height] of [[1440, 900], [1000, 700], [834, 1194], [1194, 700], [1194, 834]]) {
+      await page.setViewportSize({ width, height });
+      const at = `${width}x${height}`;
+      await expect(keyButton(page, 'Ctrl-C'), at).toBeVisible();
+      await expect
+        .poll(
+          async () => {
+            const keys = await keyButton(page, 'Ctrl-C').boundingBox();
+            const input = await prompt(page, name).boundingBox();
+            const doc = await page.evaluate(() => ({
+              box: (() => { const b = document.querySelector('.bridge')!.getBoundingClientRect(); return b.bottom - innerHeight; })(),
+              bridge: (document.querySelector('.bridge') as HTMLElement).scrollHeight - (document.querySelector('.bridge') as HTMLElement).clientHeight,
+            }));
+            return keys && input && keys.y + keys.height <= height && input.y + input.height <= height && doc.box <= 0 && doc.bridge <= 0;
+          },
+          { message: `${at}: the prompt and key bar are on screen and the bridge holds them without scrolling`, timeout: 5000 },
+        )
+        .toBe(true);
+      // The pane takes the box's grid: what fits under the viewport, never more.
+      await expect.poll(() => Number(paneSize(s, ship.session).split('x')[1]), { message: `${at}: the pane's rows` }).toBeLessThanOrEqual(Math.floor(height / 17));
+    }
+  });
+
   test('a ship that needs you opens its bridge from the header pill', async ({ page, admiral, sea }, info) => {
     test.skip(info.project.name !== 'ipad-landscape');
     const s = sea({ work: { name: 'Work', color: BLUE } });

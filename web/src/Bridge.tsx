@@ -55,6 +55,8 @@ function BridgeView({ session }: { session: string }) {
   const [linkState, setLinkState] = useState<LinkState>('connecting');
   const [draft, setDraft] = useState('');
   const [dismissError, setDismissError] = useState('');
+  const dismissing = useRef(false);
+  const root = useRef<HTMLDivElement>(null);
 
   const status = ship?.status;
   const open = !!ship && live(ship);
@@ -130,6 +132,37 @@ function BridgeView({ session }: { session: string }) {
     };
   }, [session]);
 
+  // The bridge covers open water but is bounded by the screen, not by the page: at narrow widths the
+  // harbor stacks and the page grows, and the terminal must not grow with it. With the soft keyboard up
+  // the visual viewport is shorter than the layout one, so the bottom edge follows what is visible and
+  // the prompt and key bar stay reachable.
+  useEffect(() => {
+    const el = root.current;
+    const main = el?.parentElement;
+    if (!el || !main) return;
+    const vv = window.visualViewport;
+    const place = () => {
+      const r = main.getBoundingClientRect();
+      const covered = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
+      el.style.left = `${Math.max(0, r.left)}px`;
+      el.style.top = `${Math.max(0, r.top)}px`;
+      el.style.bottom = `${covered > 40 ? covered : 0}px`;
+    };
+    place();
+    document.documentElement.classList.add('bridge-open'); // the page behind doesn't scroll
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place);
+    vv?.addEventListener('resize', place);
+    vv?.addEventListener('scroll', place);
+    return () => {
+      document.documentElement.classList.remove('bridge-open');
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place);
+      vv?.removeEventListener('resize', place);
+      vv?.removeEventListener('scroll', place);
+    };
+  }, [!!ship]);
+
   if (!ship) return null;
   const h = harnesses[ship.harness];
   const pill = PILL[ship.status];
@@ -148,11 +181,23 @@ function BridgeView({ session }: { session: string }) {
       setTimeout(() => input('\r'), ENTER_GAP_MS);
     } else input('\r');
   };
+  // The server drops the bridge socket when the ship goes, so the link is closed as the request goes
+  // out. A refusal leaves the read-only last screen up with the server's message.
+  const onDismiss = async () => {
+    if (dismissing.current) return;
+    dismissing.current = true;
+    setDismissError('');
+    link.current?.close();
+    const r = await api('POST', `/api/ships/${encodeURIComponent(session)}/dismiss`);
+    dismissing.current = false;
+    if (r.ok) close();
+    else setDismissError(r.error);
+  };
   const sub = [h.label, ship.fleet_name, ship.skill, ship.repo].filter(Boolean).join(' · ');
   const canType = open && linkState === 'open';
 
   return (
-    <div class="bridge">
+    <div class="bridge" ref={root}>
       <nav class="flotilla" aria-label="Session flotilla">
         <span class="flotilla-title">Flotilla · 1</span>
         <button type="button" class="fl-item press">
@@ -230,7 +275,7 @@ function BridgeView({ session }: { session: string }) {
         <div class="term-keys">
           {status === 'anchored' ? (
             <>
-              <button type="button" class="press term-dismiss" onClick={() => dismiss(session, setDismissError)}>
+              <button type="button" class="press term-dismiss" onClick={onDismiss}>
                 Dismiss
               </button>
               {dismissError && (
@@ -269,12 +314,4 @@ function BridgeView({ session }: { session: string }) {
       </section>
     </div>
   );
-}
-
-// Dismissing an anchored ship ends its session; the ship is gone and the bridge closes. A refusal
-// leaves the bridge open with the server's message.
-async function dismiss(session: string, fail: (message: string) => void): Promise<void> {
-  const r = await api('POST', `/api/ships/${encodeURIComponent(session)}/dismiss`);
-  if (r.ok) close();
-  else fail(r.error);
 }

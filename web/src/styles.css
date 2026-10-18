@@ -1800,17 +1800,32 @@ body.dragging * {
   clip: rect(0 0 0 0);
 }
 
+:root.bridge-open,
+:root.bridge-open body {
+  overflow: hidden;
+}
+
 .bridge {
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: 6;
   background-color: rgba(11, 31, 51, 0.42);
   padding: 14px;
   display: flex;
-  flex-wrap: wrap;
   gap: 14px;
   align-items: stretch;
   overflow: auto;
+}
+
+/* Narrow: the flotilla sits above the terminal, which takes the rest of the height. */
+@media (max-width: 760px) {
+  .bridge {
+    flex-direction: column;
+  }
+
+  .flotilla {
+    flex: 0 0 auto;
+  }
 }
 
 .flotilla {
@@ -1864,9 +1879,9 @@ body.dragging * {
 }
 
 .terminal {
-  flex: 999 1 420px;
+  flex: 999 1 0;
   min-width: 0;
-  min-height: 560px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   border: var(--shape-outline-heavy) solid var(--color-ink);
@@ -1956,10 +1971,15 @@ body.dragging * {
 }
 
 .term-host {
-  flex: 1 1 auto;
-  min-height: 320px;
+  flex: 1 1 0;
+  min-height: 120px;
   position: relative;
   overflow: hidden;
+}
+
+/* Room between the text and the panel's edge; the fit addon takes it off the grid. */
+.term-box .xterm {
+  padding: 8px 12px;
 }
 
 /* The active browser's grid fills the box; another browser's grid is scaled inside it. */
