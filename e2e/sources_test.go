@@ -155,7 +155,7 @@ func TestSourcesConfigValidation(t *testing.T) {
 		{"unknown key in a source", `{"version":1,"fleets":{},"sources":{"s":{"plugin":"freeform","colour":"red"}}}`, "sources.s.colour"},
 		{"plugin missing", `{"version":1,"fleets":{},"sources":{"s":{"name":"S"}}}`, "sources.s.plugin"},
 		{"settings not an object", `{"version":1,"fleets":{},"sources":{"s":{"plugin":"freeform","settings":[]}}}`, "sources.s.settings"},
-		{"duplicate source key", `{"version":1,"fleets":{},"sources":{"s":{"plugin":"freeform"},"s":{"plugin":"freeform"}}}`, "s"},
+		{"duplicate source key", `{"version":1,"fleets":{},"sources":{"dupkey":{"plugin":"freeform"},"dupkey":{"plugin":"freeform"}}}`, "dupkey"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -261,6 +261,7 @@ func TestFreeformOrders(t *testing.T) {
 // deletes the order afterwards.
 func TestFreeformLaunch(t *testing.T) {
 	w := newWorld(t)
+	writeConfig(t, w.home, w.fleetsConfig()) // fleets and no sources key: the fresh install adds the source
 	w.startFresh()
 	w.waitSource("orders", 10*time.Second, "state ok", isOK)
 	panel := w.panelID("orders")

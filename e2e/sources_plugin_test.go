@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -85,6 +86,11 @@ func TestSourceHandshakeAndRefresh(t *testing.T) {
 	if n := len(p.callsOf("orders.add")) + len(p.callsOf("orders.edit")) + len(p.callsOf("orders.remove")); n != 0 {
 		t.Errorf("a refused mutation still reached the plugin (%d calls)", n)
 	}
+
+	// plugins stop when Admiral shuts down
+	pid := p.pid()
+	w.in.Stop()
+	p.waitDead(5*time.Second, pid, "after Admiral shut down")
 }
 
 // A plugin answering another protocolVersion puts its source in error.
@@ -105,9 +111,13 @@ func TestSourceUntrustedOrders(t *testing.T) {
 	w.startSources(tpSource("a", p, nil))
 	w.waitSource("a", 10*time.Second, "state ok", isOK)
 
+	// push sets the plugin's orders, notifies, and waits until Admiral has
+	// pulled the list, so an absence check below proves a rejection and not a delay.
 	push := func(orders ...map[string]any) {
+		before := len(p.callsOf("orders.list"))
 		p.mainOrders(orders...)
 		p.do("orders-changed", "")
+		p.waitCall(5*time.Second, "orders.list", func(rpcCall) bool { return len(p.callsOf("orders.list")) > before })
 	}
 	push(
 		map[string]any{"id": "ok", "title": "Plain", "text": "line1\nline2\tx", "url": "https://example.com/i/1", "hot": true,
@@ -133,15 +143,13 @@ func TestSourceUntrustedOrders(t *testing.T) {
 
 	// each of these is a protocol error: the order (or list) must not be shown,
 	// and Admiral keeps serving.
-	p.mainOrders(ord("ok", "Plain"), ord("ctl\x01id", "Bad id"))
-	p.do("orders-changed", "")
-	time.Sleep(time.Second)
+	push(ord("ok", "Plain"), ord("ctl\x01id", "Bad id"))
+	time.Sleep(200 * time.Millisecond)
 	if s, _ := find(w.sources(), "a"); s.hasOrder("ctl\x01id") {
 		t.Errorf("an order id with a control character was accepted: %s", dump(s.Panels))
 	}
-	p.mainOrders(map[string]any{"id": "big", "title": "Big", "text": strings.Repeat("a", 12001)})
-	p.do("orders-changed", "")
-	time.Sleep(time.Second)
+	push(map[string]any{"id": "big", "title": "Big", "text": strings.Repeat("a", 12001)})
+	time.Sleep(200 * time.Millisecond)
 	if s, _ := find(w.sources(), "a"); s.hasOrder("big") {
 		t.Errorf("an order text over 12,000 bytes was accepted")
 	}
@@ -149,9 +157,8 @@ func TestSourceUntrustedOrders(t *testing.T) {
 	for i := range many {
 		many[i] = ord("n"+strconv.Itoa(i), "n")
 	}
-	p.mainOrders(many...)
-	p.do("orders-changed", "")
-	time.Sleep(2 * time.Second)
+	push(many...)
+	time.Sleep(500 * time.Millisecond)
 	if s, _ := find(w.sources(), "a"); len(s.orderIDs()) > 5000 {
 		t.Errorf("an order list over 5,000 orders was accepted (%d)", len(s.orderIDs()))
 	}
@@ -420,7 +427,7 @@ func TestSourceProtocolErrors(t *testing.T) {
 // stop sources; a removed source keeps its data dir and its key is not reused.
 func TestTwoSourcesOfOnePlugin(t *testing.T) {
 	w := newWorld(t)
-	a, b, c := w.newTP("a"), w.newTP("b"), w.newTP("c")
+	a, b, c, d := w.newTP("a"), w.newTP("b"), w.newTP("c"), w.newTP("d")
 	a.mainOrders(ord("a1", "From A"))
 	b.mainOrders(ord("b1", "From B"))
 	defA := tpSource("a", a, map[string]any{"title": "Alpha"})
@@ -473,7 +480,7 @@ func TestTwoSourcesOfOnePlugin(t *testing.T) {
 	}
 
 	// the API: add generates a unique key and never reuses a data dir
-	body1 := map[string]any{"plugin": "testplug", "name": "New", "settings": c.settings(nil)}
+	body1 := map[string]any{"plugin": "testplug", "name": "New", "settings": d.settings(nil)}
 	code, raw := w.srcReq(http.MethodPost, "", body1)
 	w.mustOK(code, raw, "POST /api/sources")
 	var added []string
@@ -534,5 +541,30 @@ func TestSourcePushNotifications(t *testing.T) {
 	})
 	if n := len(p.callsOf("orders.refresh")); n != 0 {
 		t.Errorf("the plugin received %d orders.refresh calls, want none: Admiral pulls on a notification, it does not ask for a refresh", n)
+	}
+}
+
+// Launch orders asks the server for directories with a source and an order:
+// the server looks the order's repo up itself (story 60).
+func TestLaunchOrdersDirsFromSource(t *testing.T) {
+	w := newWorld(t)
+	p := w.newTP("a")
+	p.mainOrders(map[string]any{"id": "o1", "title": "Widgets", "repo": "https://github.com/acme/widgets"})
+	w.startSources(tpSource("a", p, nil))
+	w.waitSource("a", 10*time.Second, "order o1", func(s sourceJSON) bool { return isOK(s) && s.hasOrder("o1") })
+	widgets := w.repo("widgets", "https://github.com/acme/widgets")
+	w.repo("other", "https://github.com/acme/other")
+
+	code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/launch-orders/dirs",
+		map[string]any{"fleet": "stay", "harness": "claude", "source": "a", "order_id": "o1"})
+	if code != http.StatusOK {
+		t.Fatalf("POST /api/launch-orders/dirs = %d, want 200: %s", code, body)
+	}
+	var r dirsResp
+	if err := json.Unmarshal([]byte(body), &r); err != nil {
+		t.Fatal(err)
+	}
+	if r.selected() != widgets {
+		t.Errorf("selected = %q, want %q (the checkout of the order's repo, looked up by the server)", r.selected(), widgets)
 	}
 }

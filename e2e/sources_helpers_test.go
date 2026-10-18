@@ -281,7 +281,9 @@ func (p *tplug) setOrders(byPanel map[string][]map[string]any) {
 	p.put("orders.json", string(b))
 }
 
-func (p *tplug) mainOrders(orders ...map[string]any) { p.setOrders(map[string][]map[string]any{"main": orders}) }
+func (p *tplug) mainOrders(orders ...map[string]any) {
+	p.setOrders(map[string][]map[string]any{"main": orders})
+}
 
 func ord(id, title string) map[string]any { return map[string]any{"id": id, "title": title} }
 
@@ -406,6 +408,12 @@ func rawSources(defs ...srcDef) string {
 // stays anchored) and the given sources.
 func (w *world) srcConfig(defs ...srcDef) string {
 	w.t.Helper()
+	return strings.TrimSuffix(w.fleetsConfig(), "}") + `,"sources":` + rawSources(defs...) + `}`
+}
+
+// fleetsConfig is srcConfig without a `sources` key at all.
+func (w *world) fleetsConfig() string {
+	w.t.Helper()
 	fleets := map[string]any{}
 	for key, cue := range map[string][]string{"stay": nil, "sail": {"exit 0"}, "anch": {"exit 1"}} {
 		env := w.harnessEnv()
@@ -417,13 +425,13 @@ func (w *world) srcConfig(defs ...srcDef) string {
 			env["FAKE_CUE"] = path
 		}
 		fleets[key] = map[string]any{"name": key, "color": "#336699", "search_roots": []string{w.work},
-			"claude": map[string]any{"executable": w.fakeExe("claude"), "env": env}}
+			"claude": map[string]any{"executable": w.fakeExe("claude"), "args": []string{"--fa-claude"}, "env": env}}
 	}
 	fb, err := json.Marshal(fleets)
 	if err != nil {
 		w.t.Fatal(err)
 	}
-	return `{"version":1,"fleets":` + string(fb) + `,"sources":` + rawSources(defs...) + `}`
+	return `{"version":1,"fleets":` + string(fb) + `}`
 }
 
 // startSources installs the test plugin as "testplug", writes a config with
