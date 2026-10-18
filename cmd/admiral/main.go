@@ -32,7 +32,11 @@ import (
 	"github.com/jbuffin/admiral/web"
 )
 
-var version = "dev"
+// version and commit are stamped by make release and make build (-ldflags -X).
+var (
+	version = "dev"
+	commit  = "unknown"
+)
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -53,6 +57,10 @@ func main() {
 // run dispatches on the first argument; subcommands slot in before the
 // default, which starts the server.
 func run(args []string) error {
+	if len(args) == 1 && args[0] == "--version" {
+		fmt.Printf("admiral %s (%s)\n", version, commit)
+		return nil
+	}
 	if len(args) == 0 || args[0] == "" || args[0][0] == '-' {
 		return serve(args)
 	}
@@ -78,6 +86,8 @@ func run(args []string) error {
 		return cli.Attach(args[1:], std)
 	case "completion":
 		return cli.Completion(args[1:], std)
+	case "service":
+		return cli.Service(args[1:], std)
 	}
 	return &cli.UsageError{Msg: fmt.Sprintf("unknown command %q", args[0])}
 }

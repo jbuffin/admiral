@@ -120,8 +120,9 @@ func TestPackagingS1_SharedBuildHasPlaceholdersAndNotices(t *testing.T) {
 			t.Errorf("the embedded UI has no %q placeholder letters", letters)
 		}
 	}
-	if !strings.Contains(string(bin), "logo-claude") {
-		t.Errorf("the embedded UI has no logo-claude symbol id")
+	// The symbol ids are built as `logo-${harness}`, so only the unknown one is a literal.
+	if !strings.Contains(string(bin), "logo-unknown") {
+		t.Errorf("the embedded UI has no logo symbol ids")
 	}
 
 	notices, err := os.ReadFile(filepath.Join(r.extract, r.topDir, "THIRD_PARTY_NOTICES"))

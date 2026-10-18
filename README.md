@@ -15,7 +15,62 @@ The designs are done and the MVP build has started.
 - `GLOSSARY.md`: the words Admiral uses.
 - `cmd/admiral/`, `internal/`: the Go server and CLI. `internal/auth` is access control, `internal/server` is HTTP and WebSocket, `internal/home` finds `$ADMIRAL_HOME`, `internal/config` loads, validates, watches and writes `$ADMIRAL_HOME/config.json`. `internal/sessionhost` is the one tmux control-mode connection on `$ADMIRAL_HOME/tmux.sock` (it re-reads the sessions about every half second, and a global `alert-bell` hook stamps bells), `internal/launcher` creates ships (names, hook bundle in `$ADMIRAL_HOME/harness/`, command lines), `internal/state` is `$ADMIRAL_HOME/state.json` (ship positions, each dock's last directory), `internal/ships` serves `GET`/`POST /api/ships`, `PUT /api/ships/<session>/position`, `POST /api/ships/<session>/input-seen` (a browser sent input: clears needs you), `POST /api/ships/<session>/dismiss` (ends an anchored ship) and the WebSocket `ships` message. A ship's `status` is `underway`, `needs_you`, `anchored` (with `exit_code` or `exit_signal`) or `sailing_off` (exit 0, session killed after 3 s); hooks, a Codex bell and the 10 s no-hook rule decide needs you, and `HiddenOrders` lists the orders ships hide.
 - `web/`: the Preact UI. `web/embed.go` embeds the built `web/dist` into the binary.
+- `packaging/`: the Homebrew formula, the curl install script and the notices generator. `make release` builds the tarball.
 - `e2e/`: server tests that run the real binary.
+
+## Install
+
+Admiral runs on Apple silicon Macs only. It needs `tmux` and `python3` (for the Orders plugins).
+
+**Homebrew** (installs `tmux` and `python@3.15` with it):
+
+```sh
+brew install jbuffin/admiral/admiral
+```
+
+**curl script** (installs to `~/.local/bin`, no `sudo`; it warns when `tmux` or `python3` is missing but doesn't install them: `brew install tmux python@3.15`):
+
+```sh
+curl -fsSL https://github.com/jbuffin/admiral/releases/latest/download/install.sh | sh
+```
+
+`PREFIX=<dir>` changes where `bin/admiral` goes, and `ADMIRAL_VERSION=<x.y.z>` picks a release. The script checks the tarball against its SHA-256 file before it unpacks anything.
+
+Then:
+
+```sh
+admiral setup            # find your harnesses and add your first fleet
+admiral service install  # start Admiral at login, and restart it if it stops
+```
+
+`admiral service install` writes the LaunchAgent `~/Library/LaunchAgents/dev.jasonbuffin.admiral.plist`, points it at the stable path (`$(brew --prefix)/bin/admiral` under Homebrew, never the versioned Cellar path), gives ships the `PATH` of your login shell, logs to `$ADMIRAL_HOME/logs/admiral.log` and prints the "On other devices" URL with the token. Open that URL on your iPad. `admiral service status` says whether the job is installed and loaded and prints the URL again; `admiral service uninstall` removes it. After `brew upgrade admiral`, restart the service with `launchctl kickstart -k gui/$UID/dev.jasonbuffin.admiral`. `admiral --version` prints the version and commit.
+
+The binary is ad-hoc signed, not notarized. Installing with Homebrew or the script leaves no quarantine attribute, so Gatekeeper doesn't stop it; a tarball downloaded in a browser would need `xattr -d com.apple.quarantine`.
+
+### Idle memory
+
+One fleet, the Orders source, no ships, on an M-series Mac (macOS 27, Go 1.26, tmux 3.7c, python 3.14), resident set size from `ps -o rss`:
+
+| process | RSS |
+| --- | --- |
+| `admiral` | about 16 MB |
+| the freeform plugin (`python3 plugin.py`) | about 19 MB |
+| Admiral's tmux server and its control client | about 4 MB and 5 MB |
+
+Each ship adds its harness, and a pane in tmux.
+
+### Personal builds
+
+A build from your own checkout can carry the official harness logos: put them in `web/logos/official/` (see "Logos" below) and run `make build`. `make release` refuses to run while that folder holds files, so a shared tarball only ever has the lettered placeholders. Admiral is not affiliated with or endorsed by Anthropic, OpenAI or GitHub. Claude, Codex, Copilot and their logos are trademarks of their owners.
+
+### Cutting a release
+
+1. Tag the commit, `git tag v0.1.0`, with no files in `web/logos/official/` and a clean tree.
+2. Run `npm --prefix web ci` and `make release`. It rebuilds the UI from clean, builds `bin/admiral` for darwin/arm64 stamped with the tag (`VERSION=x.y.z` overrides `git describe`) and the commit, checks `codesign -v`, and writes `dist/admiral-<version>-darwin-arm64.tar.gz` and `.tar.gz.sha256`. The tarball holds `admiral`, `THIRD_PARTY_NOTICES` and a reference copy of `plugins/freeform/`. Never `strip` the binary: that breaks its signature.
+3. Create the GitHub release `v<version>` and upload the tarball, the `.sha256` file and `packaging/install.sh`.
+4. In the tap repo `jbuffin/homebrew-admiral`, copy `packaging/homebrew/admiral.rb` to `Formula/admiral.rb`, replace `VERSION` and `SHA256_OF_THE_TARBALL` with the release's, then run `brew style` and `brew audit --strict --online jbuffin/admiral/admiral`.
+
+There is no `LICENSE` file yet.
 
 ## Development
 
