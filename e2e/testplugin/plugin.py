@@ -35,7 +35,7 @@ Files the test writes in flagdir:
                   do-orders-changed   sends orders.changed (content: params, or none)
                   do-panels-changed   sends panels.changed
                   do-garbage          writes a line that is not JSON
-                  do-oversize         writes a 17 MiB line
+                  do-oversize         writes a 17 MiB line of valid JSON
 """
 import json
 import os
@@ -115,7 +115,9 @@ def control_loop():
             elif cmd == "garbage":
                 raw_emit("this is not json\n")
             elif cmd == "oversize":
-                raw_emit("x" * (17 * 1024 * 1024) + "\n")
+                # valid JSON, so only the size limit can be why it is dropped
+                raw_emit('{"jsonrpc":"2.0","method":"orders.changed","params":{"pad":"'
+                         + "x" * (17 * 1024 * 1024) + '"}}\n')
 
 
 def handle(msg):

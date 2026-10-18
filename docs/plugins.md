@@ -64,14 +64,20 @@ Requests are `{"jsonrpc":"2.0","id":1,"method":"…","params":{…}}`. Answer ea
 {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"capabilities":["add","edit","remove"],"settingsSchema":{"type":"object","properties":{"project":{"type":"string"}}}}}
 ```
 
-`settings` is the object from `config.json` (`{}` when there is none). Answer with `protocolVersion` 1. Any other number puts the source in `error`. `capabilities` lists what the source can do, from `add`, `edit`, `remove` and `refresh`; leave out what you don't support and Admiral refuses those calls itself with a 409. `settingsSchema` is a JSON Schema for `settings`, which Admiral renders as a form.
+`settings` is the object from `config.json` (`{}` when there is none). Answer with `protocolVersion` 1. Any other number puts the source in `error`, and Admiral does not start it again until the engineer saves its settings or presses Restart. `capabilities` lists what the source can do, from `add`, `edit`, `remove` and `refresh`; leave out what you don't support and Admiral refuses those calls itself with a 409. `settingsSchema` is a JSON Schema for `settings`, which Admiral renders as a form.
 
-**`panels.list`** → `[{"id":"orders","title":"Orders"}]`. A panel is one list of orders in the source.
-
-**`orders.list`** `{"panel":"orders"}` → a list of orders:
+**`panels.list`**: a panel is one list of orders in the source.
 
 ```json
-[{"id":"a1f3","title":"Fix the flaky test","text":"Fix the flaky test\nsee the CI log","url":"https://example.com/issues/12","hot":true,"repo":"https://github.com/acme/widgets"}]
+{"jsonrpc":"2.0","id":2,"method":"panels.list","params":{}}
+{"jsonrpc":"2.0","id":2,"result":[{"id":"orders","title":"Orders"}]}
+```
+
+**`orders.list`**: the orders of one panel.
+
+```json
+{"jsonrpc":"2.0","id":3,"method":"orders.list","params":{"panel":"orders"}}
+{"jsonrpc":"2.0","id":3,"result":[{"id":"a1f3","title":"Fix the flaky test","text":"Fix the flaky test\nsee the CI log","url":"https://example.com/issues/12","hot":true,"repo":"https://github.com/acme/widgets"}]}
 ```
 
 | Field | Meaning |
@@ -85,28 +91,66 @@ Requests are `{"jsonrpc":"2.0","id":1,"method":"…","params":{…}}`. Answer ea
 
 Admiral hides an order while a ship launched from it exists, whatever that ship's status, and shows it again once the ship is gone, if you still list it. A plugin that wants a launched order to disappear for good deletes it when it hears `orders.launched`, as freeform does.
 
-**`orders.refresh`** `{"panel":"orders"}` (`panel` may be absent for all panels) → `{}`. Re-read your upstream. When you have new data, send `orders.changed`. Only sent to sources with the `refresh` capability.
+**`orders.refresh`**: re-read your upstream. `panel` may be left out for all panels. When you have new data, send `orders.changed`. Only sent to sources with the `refresh` capability.
 
-**`orders.add`** `{"panel":"orders","text":"…"}` → `{"id":"a1f3"}`. Only with `add`.
+```json
+{"jsonrpc":"2.0","id":4,"method":"orders.refresh","params":{"panel":"orders"}}
+{"jsonrpc":"2.0","id":4,"result":{}}
+```
 
-**`orders.edit`** `{"panel":"orders","id":"a1f3","text":"…"}` → `{}`. Only with `edit`.
+**`orders.add`**: only with `add`.
 
-**`orders.remove`** `{"panel":"orders","id":"a1f3"}` → `{}`. Only with `remove`.
+```json
+{"jsonrpc":"2.0","id":5,"method":"orders.add","params":{"panel":"orders","text":"Fix the flaky test\nsee the CI log"}}
+{"jsonrpc":"2.0","id":5,"result":{"id":"a1f3"}}
+```
 
-For all three, Admiral has already refused text that is empty after trimming or over 12,000 bytes. You can refuse more: answer with an `error` and its message is shown to the engineer.
+**`orders.edit`**: only with `edit`.
 
-**`orders.launched`** `{"id":"a1f3"}` → `{}`. A ship was launched from this order. The call carries only the order id, because a source's orders are all its own. If your process was down at the time, Admiral sends it after your next `initialize`. If Admiral itself restarts first, the call is lost.
+```json
+{"jsonrpc":"2.0","id":6,"method":"orders.edit","params":{"panel":"orders","id":"a1f3","text":"Fix the flaky test again"}}
+{"jsonrpc":"2.0","id":6,"result":{}}
+```
+
+**`orders.remove`**: only with `remove`.
+
+```json
+{"jsonrpc":"2.0","id":7,"method":"orders.remove","params":{"panel":"orders","id":"a1f3"}}
+{"jsonrpc":"2.0","id":7,"result":{}}
+```
+
+For all three, Admiral has already refused text that is empty after trimming, over 12,000 bytes, or holding a control character other than `\n`, `\t` and `\r`. You can refuse more: answer with an `error` and its message (cut to one line of at most 300 characters) is shown to the engineer.
+
+```json
+{"jsonrpc":"2.0","id":8,"error":{"code":-32602,"message":"No such order"}}
+```
+
+**`orders.launched`**: a ship was launched from this order. The call carries only the order id, because a source's orders are all its own. If your process was down at the time, Admiral sends it after your next `initialize`. If Admiral itself restarts first, the call is lost. Admiral refuses a second launch of an order while its ship exists.
+
+```json
+{"jsonrpc":"2.0","id":9,"method":"orders.launched","params":{"id":"a1f3"}}
+{"jsonrpc":"2.0","id":9,"result":{}}
+```
 
 ### Plugin → Admiral notifications
 
-| Notification | Params | Effect |
-| --- | --- | --- |
-| `orders.changed` | `{"panel":"orders"}`, or none for every panel | Admiral asks `orders.list` again. Send it when your data changes, including after you handle `orders.add`. |
-| `panels.changed` | none | Admiral asks `panels.list` again, then each panel's orders. |
-| `auth.required` | `{"message":"Sign in to Acme","url":"https://…","code":"ABCD-1234"}` | The source shows as `auth_required` with the message, a link and a code to enter there. `message` is required; `url` and `code` are optional. Orders you listed stay. |
+| Notification | Effect |
+| --- | --- |
+| `orders.changed` | Admiral asks `orders.list` again, for the panel in `params` or for every panel when there are none. Send it when your data changes, including after you handle `orders.add`. |
+| `panels.changed` | Admiral asks `panels.list` again, then each panel's orders. |
+| `auth.required` | The source shows as `auth_required` with the message, a link and a code to enter there. `message` is required; `url` and `code` are optional. Orders you listed stay. |
+| `auth.ok` | Clears `auth.required`; the source is `ok` again. |
+
+One full line of each:
+
+```json
+{"jsonrpc":"2.0","method":"orders.changed","params":{"panel":"orders"}}
+{"jsonrpc":"2.0","method":"panels.changed"}
+{"jsonrpc":"2.0","method":"auth.required","params":{"message":"Sign in to Acme","url":"https://acme.example/device","code":"ABCD-1234"}}
+{"jsonrpc":"2.0","method":"auth.ok"}
+```
 
 **Signing in.** If your source needs the engineer to sign in, answer `initialize` and `panels.list` at once (an empty panel list is fine), then send `auth.required`. Never hold a request open while you wait for the engineer: it would hit the 10-second limit, count as a crash and put the source into a restart loop. Send `auth.ok` when sign-in is done, then `panels.changed` or `orders.changed` with the real data.
-| `auth.ok` | none | Clears `auth.required`; the source is `ok` again. |
 
 ## Limits
 
@@ -118,6 +162,8 @@ Admiral treats everything a plugin sends as untrusted.
 - At most **100 panels**. A panel id or an order id must be non-empty and unique within its list.
 - `plugin.json` is at most 64 KiB. An `auth.required` message is cut to 2,000 characters and its code to 200.
 - A control character (below 0x20, or 0x7f) in an order id or a panel id is refused. `text` may hold `\n`, `\t` and `\r` but no other control character. Titles are cut to one line.
+- A `settingsSchema` that is not a JSON object, or is over 256 KiB, is replaced with `{}`.
+- Error messages you answer with, and the text of a crash, are cut to one line of at most 300 characters.
 - A `url` (in an order or in `auth.required`) must be `http:` or `https:`; Admiral drops any other. A `repo` that is not a git remote is dropped.
 
 A **protocol error** is a line that is not JSON, a reply to a request that is not waiting, a list that breaks a limit, or a notification Admiral does not know. Admiral logs it, drops that message and keeps the process running. A list that breaks a limit is dropped whole, and the panel keeps the orders it had. Only a failed or hung `initialize` or `panels.list` counts as a crash.

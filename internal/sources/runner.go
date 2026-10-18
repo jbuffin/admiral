@@ -119,6 +119,19 @@ func (r *runner) loop() {
 			backoff = firstBackoff
 		}
 		r.fail(err)
+		var stay *incompatibleError
+		if errors.As(err, &stay) {
+			// Starting it again would change nothing: wait for a settings
+			// save or a Restart, which may come with a fixed plugin.
+			r.logf("%v; not restarting until its settings are saved or Restart is pressed", err)
+			select {
+			case <-r.restartCh:
+				backoff = firstBackoff
+				continue
+			case <-r.ctx.Done():
+				return
+			}
+		}
 		r.logf("%v; restarting in %s", err, backoff)
 		timer := time.NewTimer(backoff)
 		select {
@@ -139,7 +152,7 @@ func (r *runner) loop() {
 func (r *runner) fail(err error) {
 	r.mu.Lock()
 	r.state, r.readOnly, r.ready = StateError, true, false
-	r.errMsg = err.Error()
+	r.errMsg = cleanMsg(err.Error())
 	r.auth = nil
 	r.mu.Unlock()
 	r.notify()
@@ -270,7 +283,7 @@ func parseInitialize(raw json.RawMessage) ([]string, json.RawMessage, error) {
 		if res.ProtocolVersion != nil {
 			got = fmt.Sprint(*res.ProtocolVersion)
 		}
-		return nil, nil, fmt.Errorf("the order source speaks protocol version %s, but Admiral speaks version %d", got, protocolVersion)
+		return nil, nil, &incompatibleError{fmt.Sprintf("the order source speaks protocol version %s, but Admiral speaks version %d", got, protocolVersion)}
 	}
 	caps := []string{}
 	for _, c := range res.Capabilities {
@@ -278,12 +291,22 @@ func parseInitialize(raw json.RawMessage) ([]string, json.RawMessage, error) {
 			caps = append(caps, c)
 		}
 	}
+	// The schema becomes a form in the UI: only an object of sane size goes on.
 	schema := res.SettingsSchema
-	if len(schema) == 0 || string(schema) == "null" {
+	var obj map[string]json.RawMessage
+	if len(schema) > maxSchema || json.Unmarshal(schema, &obj) != nil || obj == nil {
 		schema = json.RawMessage("{}")
 	}
 	return caps, schema, nil
 }
+
+// maxSchema is the largest settingsSchema Admiral passes on, in bytes.
+const maxSchema = 256 << 10
+
+// incompatibleError is a plugin that speaks another protocol version.
+type incompatibleError struct{ msg string }
+
+func (e *incompatibleError) Error() string { return e.msg }
 
 // mergePanels takes a new panel list and keeps the orders of panels that stay.
 // r.mu must be held.
@@ -326,6 +349,9 @@ func (r *runner) pullPanels(ctx context.Context, p *proc) {
 	res, err := p.call(ctx, "panels.list", map[string]any{}, callTimeout)
 	if err != nil {
 		r.logf("panels.list failed: %v", err)
+		if errors.Is(err, errTimeout) {
+			p.kill() // a hung panels.list is a crash; the session sees the exit and backs off
+		}
 		return
 	}
 	panels, err := parsePanels(res)

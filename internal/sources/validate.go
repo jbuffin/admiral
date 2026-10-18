@@ -45,6 +45,18 @@ func isControl(r rune) bool { return r < 0x20 || r == 0x7f }
 
 func hasControl(s string) bool { return strings.IndexFunc(s, isControl) >= 0 }
 
+// hasTextControl reports a control character an order's text may not hold:
+// line breaks, tabs and the CR of pasted CRLF text are fine.
+func hasTextControl(s string) bool {
+	return strings.IndexFunc(s, func(r rune) bool { return isControl(r) && r != '\n' && r != '\t' && r != '\r' }) >= 0
+}
+
+// maxErrorRunes caps a plugin's error text wherever Admiral shows or logs it.
+const maxErrorRunes = 300
+
+// cleanMsg makes text from a plugin fit to show: one line, capped.
+func cleanMsg(s string) string { return truncate(oneLine(s), maxErrorRunes) }
+
 // oneLine makes a title a single trimmed line: its first non-blank line, with
 // any other control character turned into a space.
 func oneLine(s string) string {
@@ -152,7 +164,7 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 			if len(*it.Text) > MaxOrderText {
 				return nil, fmt.Errorf("orders.list: the text of order %q is %d bytes, at most %d allowed", id, len(*it.Text), MaxOrderText)
 			}
-			if strings.IndexFunc(*it.Text, func(r rune) bool { return isControl(r) && r != '\n' && r != '\t' && r != '\r' }) >= 0 {
+			if hasTextControl(*it.Text) {
 				return nil, fmt.Errorf("orders.list: the text of order %q holds a control character", id)
 			}
 			o.Text = *it.Text

@@ -275,6 +275,10 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 	// An order from a source is launched with the source's text, whatever the
 	// client sent. Without a source the client's own text is used.
 	if req.Source != "" {
+		if HiddenOrders(s.List())[OrderKey{req.Source, req.OrderID}] {
+			writeError(w, http.StatusConflict, "this order already has a ship")
+			return
+		}
 		var lerr *launcher.Error
 		if req.Text, _, lerr = s.Orders.Order(req.Source, req.OrderID); lerr != nil {
 			writeError(w, lerr.Status, lerr.Msg)

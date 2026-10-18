@@ -39,7 +39,7 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
-func (e *rpcError) Error() string { return e.Message }
+func (e *rpcError) Error() string { return cleanMsg(e.Message) }
 
 type reply struct {
 	result json.RawMessage

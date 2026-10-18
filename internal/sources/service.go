@@ -160,6 +160,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
@@ -399,6 +400,7 @@ func (s *Service) serveSchema(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	_, _ = w.Write(append(slices.Clone(schema), '\n'))
 }
 
@@ -432,7 +434,7 @@ func callError(w http.ResponseWriter, err error) {
 	var rpc *rpcError
 	switch {
 	case errors.As(err, &rpc):
-		writeError(w, http.StatusUnprocessableEntity, rpc.Message)
+		writeError(w, http.StatusUnprocessableEntity, rpc.Error())
 	case errors.Is(err, errTimeout):
 		writeError(w, http.StatusGatewayTimeout, err.Error())
 	default:
@@ -469,6 +471,8 @@ func checkText(text string) string {
 	switch {
 	case strings.TrimSpace(text) == "":
 		return "An order cannot be empty"
+	case hasTextControl(text):
+		return "An order cannot hold control characters other than line breaks and tabs, such as the escape codes in pasted terminal output"
 	case len(text) > MaxOrderText:
 		return fmt.Sprintf("An order can hold at most 12,000 bytes, and this one is %d", len(text))
 	}
@@ -527,7 +531,7 @@ func (s *Service) serveAddOrder(w http.ResponseWriter, r *http.Request) {
 		ID string `json:"id"`
 	}
 	if err := json.Unmarshal(res, &added); err != nil || added.ID == "" || hasControl(added.ID) {
-		rn.logf("protocol error: orders.add answered %s", res)
+		rn.logf("protocol error: orders.add answered %s", cleanMsg(string(res)))
 		writeError(w, http.StatusBadGateway, "the order source did not answer with the new order's id")
 		return
 	}

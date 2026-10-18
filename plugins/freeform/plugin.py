@@ -72,6 +72,8 @@ def check_text(params):
         raise RpcError(INVALID_PARAMS, "text must be a string")
     if not text.strip():
         raise RpcError(INVALID_PARAMS, "An order cannot be empty")
+    if any((ord(c) < 0x20 or ord(c) == 0x7F) and c not in "\n\t\r" for c in text):
+        raise RpcError(INVALID_PARAMS, "An order cannot hold control characters other than line breaks and tabs")
     if len(text.encode("utf-8")) > MAX_TEXT_BYTES:
         raise RpcError(INVALID_PARAMS, "An order can hold at most %d bytes" % MAX_TEXT_BYTES)
     return text

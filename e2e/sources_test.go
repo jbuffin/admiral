@@ -36,6 +36,15 @@ func (w *world) configSources() map[string]map[string]any {
 	return cfg.Sources
 }
 
+// decodeID is the id in an order-add response.
+func decodeID(body string) string {
+	var r struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal([]byte(body), &r)
+	return r.ID
+}
+
 func (w *world) panelID(key string) string {
 	w.t.Helper()
 	s, ok := find(w.sources(), key)
@@ -186,7 +195,12 @@ func TestFreeformUpgrade(t *testing.T) {
 	}
 	t.Run("an unedited older copy is replaced", func(t *testing.T) {
 		w := newWorld(t)
-		writeOld(t, w, old, old)
+		// Finder leaves a .DS_Store; go:embed never carried one, so it is not an edit.
+		withFinder := map[string]string{".DS_Store": "finder"}
+		for k, v := range old {
+			withFinder[k] = v
+		}
+		writeOld(t, w, old, withFinder)
 		w.startFresh()
 		w.waitSource("orders", 10*time.Second, "state ok", isOK)
 		dir := filepath.Join(w.home, "plugins", "freeform")
@@ -305,6 +319,18 @@ func TestFreeformOrders(t *testing.T) {
 			t.Errorf("PUT of a %s text = %d %q, want 4xx with a message", name, code, body)
 		}
 	}
+	// pasted terminal output must not get in and freeze the panel
+	code, body = w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": panel, "text": "red \x1b[31mtext\x1b[0m"})
+	if code/100 != 4 || !strings.Contains(body, "control character") {
+		t.Errorf("POST of an order with an escape code = %d %q, want 4xx saying control characters are refused", code, body)
+	}
+	code, body = w.srcReq(http.MethodPut, "/orders/orders/"+first.ID, map[string]any{"text": "x\x07y"})
+	if code/100 != 4 {
+		t.Errorf("PUT of a text with a bell = %d %q, want 4xx", code, body)
+	}
+	code, body = w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": panel, "text": "crlf\r\ntext\tis fine"})
+	w.mustOK(code, body, "POST of CRLF text")
+	w.srcReq(http.MethodDelete, "/orders/orders/"+decodeID(body), nil)
 	code, body = w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": panel, "text": strings.Repeat("b", 12000)})
 	w.mustOK(code, body, "POST of exactly 12,000 bytes")
 	s := w.waitSource("orders", 5*time.Second, "two orders", func(s sourceJSON) bool { return len(s.orderIDs()) == 2 })

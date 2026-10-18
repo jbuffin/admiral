@@ -102,6 +102,34 @@ func TestSourceProtocolVersionMismatch(t *testing.T) {
 	if s.errText() == "" {
 		t.Errorf("source = %s, want an error message", dump(s))
 	}
+	// no backoff loop: it stays down until Restart
+	time.Sleep(3 * time.Second)
+	if n := len(p.starts()); n != 1 {
+		t.Errorf("an incompatible plugin was started %d times, want once until Restart", n)
+	}
+	w.mustOK(w.srcReq(http.MethodPost, "/a/restart", nil))
+	p.waitStarts(3*time.Second, 2)
+}
+
+// A panels.list that hangs after the source is up is a crash, like a hung
+// initialize: the process is killed and started again.
+func TestSourceHungPanelsList(t *testing.T) {
+	w := newWorld(t)
+	p := w.newTP("a")
+	p.mainOrders(ord("o1", "First"))
+	w.startSources(tpSource("a", p, nil))
+	w.waitSource("a", 10*time.Second, "state ok", isOK)
+	pid := p.pid()
+	p.put("hang-panels.list", "")
+	p.do("panels-changed", "")
+	p.waitDead(14*time.Second, pid, "killed after a hung panels.list")
+	s := w.waitSource("a", 5*time.Second, "state error", func(s sourceJSON) bool { return s.State == "error" })
+	if !s.ReadOnly || !s.hasOrder("o1") {
+		t.Errorf("source = %s, want read-only with its last orders", dump(s))
+	}
+	p.clear("hang-panels.list")
+	p.waitStarts(8*time.Second, 2)
+	w.waitSource("a", 5*time.Second, "state ok again", isOK)
 }
 
 // What a plugin sends is untrusted: urls, repos, ids, titles and sizes.
@@ -338,6 +366,11 @@ func TestHiddenOrdersByShips(t *testing.T) {
 	p.waitCall(3*time.Second, "orders.launched", func(c rpcCall) bool { return c.Params["id"] == "o1" })
 	p.waitCall(3*time.Second, "orders.launched", func(c rpcCall) bool { return c.Params["id"] == "o2" })
 
+	// the order already has a ship: a second launch is refused
+	if code, body := w.launchFrom("stay", "a", "o1"); code != http.StatusConflict || !strings.Contains(body, "already has a ship") {
+		t.Errorf("a second launch of o1 = %d %s, want 409 saying the order already has a ship", code, body)
+	}
+
 	w.mustOK(send(t, http.MethodPost, w.in.LocalURL+"/api/ships/"+anchored.Session+"/dismiss", nil))
 	w.waitSource("a", 5*time.Second, "o1 shown again after Dismiss", func(s sourceJSON) bool { return s.hasOrder("o1") && !s.hasOrder("o2") })
 	w.mustTmux("kill-session", "-t", underway.Session)
@@ -408,6 +441,7 @@ func TestSourceProtocolErrors(t *testing.T) {
 	w.startSources(tpSource("a", p, nil))
 	w.waitSource("a", 10*time.Second, "state ok", isOK)
 
+	pid := p.pid()
 	for _, cmd := range []string{"garbage", "oversize"} {
 		p.do(cmd, "")
 		time.Sleep(500 * time.Millisecond)
@@ -419,6 +453,11 @@ func TestSourceProtocolErrors(t *testing.T) {
 		w.waitSource("a", 12*time.Second, "the source usable again after "+cmd, func(s sourceJSON) bool { return isOK(s) && !s.ReadOnly && s.hasOrder("o1") })
 		code, body := w.srcReq(http.MethodPost, "/a/refresh", map[string]any{})
 		w.mustOK(code, body, "refresh after a "+cmd+" line")
+		// the message was dropped and the plugin left running: same process,
+		// never initialized again
+		if p.pid() != pid || !p.alive(pid) || len(p.starts()) != 1 {
+			t.Errorf("after a %s line the plugin was killed or restarted (pid %d, was %d, starts %d)", cmd, p.pid(), pid, len(p.starts()))
+		}
 	}
 }
 

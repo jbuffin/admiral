@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/jbuffin/admiral/plugins"
 )
@@ -22,7 +23,8 @@ const StampFile = ".admiral-stamp"
 const FreeformName = "freeform"
 
 // Stamp is the hash a folder's files carry in StampFile: SHA-256 over every
-// file but the stamp, sorted by slash-separated path relative to the folder,
+// file but the stamp and those go:embed skips (names starting with . or _),
+// sorted by slash-separated path relative to the folder,
 // each as path, a zero byte, content, a zero byte.
 func Stamp(files map[string][]byte) string {
 	names := make([]string, 0, len(files))
@@ -56,11 +58,22 @@ func embeddedFreeform() (map[string][]byte, error) {
 func diskFiles(dir string) (map[string][]byte, error) {
 	files := map[string][]byte{}
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+		if err != nil {
 			return err
 		}
+		// go:embed leaves out names starting with . or _, so the stamp never
+		// covered them; Finder's .DS_Store must not make a folder look edited.
+		if p != dir && (strings.HasPrefix(d.Name(), ".") || strings.HasPrefix(d.Name(), "_")) {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
 		rel, err := filepath.Rel(dir, p)
-		if err != nil || rel == StampFile {
+		if err != nil {
 			return err
 		}
 		data, err := os.ReadFile(p)
