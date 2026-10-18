@@ -1,0 +1,286 @@
+import type { Locator, Page } from '@playwright/test';
+import { launchFromOrder, orderTitle, paneWrite, reachable, release, screenText, stdinOf } from './bridge';
+import { expect, header, isTouch, needsYouIn, ships, spyOnPage, test, underwayIn, water } from './sea';
+
+// The bridge (u11 S5-S7). The names below are the contract the bridge UI is
+// built to; the prototype supplies the copy and labels
+// (designs/prototype/index.html:340-410, 1044-1067).
+//
+//   tapping a ship opens the bridge over open water (u10's board(session)):
+//     a navigation "Session flotilla" with the text "Flotilla · 1" and one button, the lead row:
+//       the ship's name, then "<skill> · lead" ("review · lead" here)
+//     a region "Attached terminal" holding
+//       the ship's name, then "<Harness> · <Fleet> · <skill> · <repo>" ("Claude · Work · review · alpha")
+//         and under it the order's first line (the ship's `title`)
+//       a status pill: "Underway", "Needs you", "Anchored · exit N" or "Sailing off"
+//       a button "Close terminal and return to open water"
+//       the terminal (xterm.js: a `.xterm` element)
+//       a textbox "Input to <name>" (placeholder "type here and press Enter")
+//       buttons "Send Enter", "Send Esc", "Send Tab", "Send Up", "Send Down", "Send Ctrl-C"
+//       buttons "Approve · y" and "Deny · n" only while the ship needs you
+//       the note "Keys go straight to the session"
+//     an anchored ship has instead a button "Dismiss", the note "The harness exited. This is its last screen.",
+//       and no textbox and no key buttons
+//   Enter at the prompt sends the text as typed (not trimmed), then CR; Approve sends "y" and Deny "n", nothing else;
+//     the key buttons send Enter \r, Esc \x1b, Tab \t, Up \x1b[A, Down \x1b[B and Ctrl-C \x03; typing into the terminal sends the keys
+//   while the server is away the region shows the text "Reconnecting…", an ancestor of the terminal inside the region has
+//     opacity below 1, the textbox and the key buttons are disabled, and nothing typed is queued; the header banner
+//     (role alert inside the banner) says "Reconnecting…" too
+//   a 401 on reconnect stops the retries and shows the text "Open the URL Admiral printed"
+//   window.__admiral.screen() returns the terminal's text (see bridge.ts)
+
+const BLUE = '#2E7DD7';
+const NAME_OF = /^Board (.+?), /;
+
+const press = (l: Locator, touch: boolean) => (touch ? l.tap() : l.click());
+
+const terminal = (page: Page) => page.getByRole('region', { name: 'Attached terminal' });
+const flotilla = (page: Page) => page.getByRole('navigation', { name: 'Session flotilla' });
+const closeButton = (page: Page) => terminal(page).getByRole('button', { name: 'Close terminal and return to open water' });
+const prompt = (page: Page, name: string) => terminal(page).getByRole('textbox', { name: `Input to ${name}` });
+const keyButton = (page: Page, key: string) => terminal(page).getByRole('button', { name: `Send ${key}` });
+
+/** Taps the ship and returns its name from its accessible name. */
+async function board(page: Page, re: RegExp, touch: boolean) {
+  const ship = ships(page, re);
+  await expect(ship).toBeVisible();
+  const name = NAME_OF.exec((await ship.getAttribute('aria-label')) ?? '')?.[1];
+  expect(name, 'the ship button carries its accessible name').toBeTruthy();
+  await press(ship, touch);
+  await expect(terminal(page)).toBeVisible();
+  return name!;
+}
+
+test.describe('S5: boarding a ship and typing on the bridge', () => {
+  test('tapping a ship opens the bridge; the prompt, key buttons, Approve and typing reach the harness', async ({ page, admiral, sea }, info) => {
+    const touch = isTouch(info);
+    const s = sea({ work: { name: 'Work', color: BLUE } });
+    s.world.skill('work', 'claude', 'review');
+    await admiral.start();
+    await s.world.guardData();
+    const ship = await launchFromOrder(s, 'work', 'alpha');
+    await spyOnPage(page);
+    await page.goto(admiral.url);
+
+    const name = await board(page, underwayIn('Work'), touch);
+
+    // Header, flotilla and terminal.
+    const t = terminal(page);
+    await expect(t.getByText(name, { exact: true })).toBeVisible();
+    await expect(t.getByText('Claude · Work · review · alpha', { exact: true })).toBeVisible();
+    await expect(t.getByText(orderTitle, { exact: true })).toBeVisible();
+    await expect(t.getByText('Underway', { exact: true })).toBeVisible();
+    await expect(t.getByText('Keys go straight to the session', { exact: true })).toBeVisible();
+    await expect(t.locator('.xterm')).toBeVisible();
+    await expect(flotilla(page).getByText('Flotilla · 1', { exact: true })).toBeVisible();
+    const lead = flotilla(page).getByRole('button');
+    await expect(lead).toHaveCount(1);
+    await expect(lead.getByText(name, { exact: true })).toBeVisible();
+    await expect(lead.getByText('review · lead', { exact: true })).toBeVisible();
+    await expect(prompt(page, name)).toHaveAttribute('placeholder', 'type here and press Enter');
+
+    // Not needs-you: no Approve and no Deny.
+    await expect(t.getByRole('button', { name: 'Approve · y' })).toHaveCount(0);
+    await expect(t.getByRole('button', { name: 'Deny · n' })).toHaveCount(0);
+
+    // The ❯ prompt sends the line as typed (not trimmed), then CR.
+    await prompt(page, name).fill('  hi ');
+    await prompt(page, name).press('Enter');
+    await expect.poll(() => stdinOf(s, ship.session)).toBe('  hi \r');
+    await expect(prompt(page, name)).toHaveValue('');
+    // An empty line sends just CR.
+    await prompt(page, name).press('Enter');
+    await expect.poll(() => stdinOf(s, ship.session)).toBe('  hi \r\r');
+
+    // The key buttons.
+    let want = '  hi \r\r';
+    for (const [key, bytes] of [
+      ['Enter', '\r'],
+      ['Esc', '\x1b'],
+      ['Tab', '\t'],
+      ['Up', '\x1b[A'],
+      ['Down', '\x1b[B'],
+      ['Ctrl-C', '\x03'],
+    ] as const) {
+      await press(keyButton(page, key), touch);
+      want += bytes;
+      await expect.poll(() => stdinOf(s, ship.session), `after Send ${key}`).toBe(want);
+    }
+
+    // Typing into the terminal works too.
+    await press(t.locator('.xterm'), touch);
+    await page.keyboard.type('ab');
+    want += 'ab';
+    await expect.poll(() => stdinOf(s, ship.session)).toBe(want);
+
+    // Approve and Deny show only while the ship needs you, send one byte, and the keystroke clears needs-you.
+    s.setState(ship.session, 'needs_you');
+    await expect(t.getByText('Needs you', { exact: true })).toBeVisible();
+    await expect(t.getByRole('button', { name: 'Deny · n' })).toBeVisible();
+    await press(t.getByRole('button', { name: 'Approve · y' }), touch);
+    want += 'y';
+    await expect.poll(() => stdinOf(s, ship.session)).toBe(want);
+    await expect(t.getByText('Underway', { exact: true })).toBeVisible();
+    await expect(t.getByRole('button', { name: 'Approve · y' })).toHaveCount(0);
+    s.setState(ship.session, 'needs_you');
+    await expect(t.getByRole('button', { name: 'Deny · n' })).toBeVisible();
+    await press(t.getByRole('button', { name: 'Deny · n' }), touch);
+    want += 'n';
+    await expect.poll(() => stdinOf(s, ship.session)).toBe(want);
+
+    // Closing the bridge leaves the session running; the ship is still at sea.
+    await press(closeButton(page), touch);
+    await expect(terminal(page)).toHaveCount(0);
+    await expect(ships(page, underwayIn('Work'))).toBeVisible();
+    expect((await s.ship(ship.session))?.status).toBe('underway');
+  });
+
+  test('a ship that needs you opens its bridge from the header pill', async ({ page, admiral, sea }, info) => {
+    test.skip(info.project.name !== 'ipad-landscape');
+    const s = sea({ work: { name: 'Work', color: BLUE } });
+    await admiral.start();
+    const ship = await s.launch('work', 'alpha');
+    s.setState(ship.session, 'needs_you');
+    await spyOnPage(page);
+    await page.goto(admiral.url);
+    await expect(ships(page, needsYouIn('Work'))).toBeVisible();
+    await header(page).getByRole('button', { name: '1 needs you' }).tap();
+    await expect(terminal(page)).toBeVisible();
+    await expect(terminal(page).getByText('Needs you', { exact: true })).toBeVisible();
+    await expect(terminal(page).getByRole('button', { name: 'Approve · y' })).toBeVisible();
+  });
+});
+
+test.describe('S6: the server goes away', () => {
+  test('restarting with the bridge open: Reconnecting…, dimmed, input disabled and unqueued; back, the screen is replaced and input works', async ({ page, admiral, sea }, info) => {
+    test.setTimeout(60_000);
+    const touch = isTouch(info);
+    const s = sea({ work: { name: 'Work', color: BLUE } });
+    s.world.skill('work', 'claude', 'review');
+    await admiral.start();
+    await s.world.guardData();
+    const ship = await launchFromOrder(s, 'work', 'alpha');
+    await spyOnPage(page);
+    await page.goto(admiral.url);
+    const name = await board(page, underwayIn('Work'), touch);
+    const t = terminal(page);
+    await expect(t.getByText('Reconnecting…')).toHaveCount(0);
+    paneWrite(s, ship.session, 'before-restart\r\n');
+    await expect.poll(() => screenText(page)).toContain('before-restart');
+
+    await admiral.stopServer();
+    await expect(t.getByText('Reconnecting…')).toBeVisible({ timeout: 10_000 });
+    await expect(header(page).getByRole('alert').getByText('Reconnecting…')).toBeVisible();
+    await expect(prompt(page, name)).toBeDisabled();
+    await expect(keyButton(page, 'Esc')).toBeDisabled();
+    // It keeps its last screen and dims: some ancestor of the terminal, inside the region, is translucent.
+    await expect(t.locator('.xterm')).toBeVisible();
+    expect(await screenText(page)).toContain('before-restart');
+    expect(
+      await t.locator('.xterm').evaluate((el) => {
+        let min = 1;
+        for (let n: Element | null = el; n && n.getAttribute('aria-label') !== 'Attached terminal'; n = n.parentElement) {
+          min = Math.min(min, Number(getComputedStyle(n).opacity));
+        }
+        return min;
+      }),
+    ).toBeLessThan(1);
+
+    // Keys pressed now go nowhere, and are not replayed later.
+    await t.locator('.xterm').click({ force: true });
+    await page.keyboard.type('q');
+    paneWrite(s, ship.session, 'while-away\r\n');
+    await admiral.resumeServer();
+
+    await expect(t.getByText('Reconnecting…')).toHaveCount(0, { timeout: 20_000 });
+    await expect(header(page).getByRole('alert')).toHaveCount(0);
+    await expect(prompt(page, name)).toBeEnabled();
+    await expect.poll(() => screenText(page)).toContain('while-away');
+    expect(stdinOf(s, ship.session), 'nothing typed while disconnected is queued').toBe('');
+    await prompt(page, name).fill('back');
+    await prompt(page, name).press('Enter');
+    await expect.poll(() => stdinOf(s, ship.session)).toBe('back\r');
+  });
+
+  test('a rotated token stops the retries and says to open the URL Admiral printed', async ({ page, admiral, sea }, info) => {
+    test.skip(info.project.name !== 'desktop');
+    test.setTimeout(90_000);
+    const s = sea({ work: { name: 'Work', color: BLUE } });
+    s.world.skill('work', 'claude', 'review');
+    // Loopback peers need no token (u1), so the page is loaded from the Mac's own LAN address.
+    await admiral.start({ lan: true });
+    if (!admiral.lanUrl || !(await reachable(admiral.lanUrl))) {
+      if (process.env.CI) throw new Error(`the Mac's address ${admiral.lanUrl || '(none)'} does not answer: this must run on CI`);
+      test.skip(true, `no answer from ${admiral.lanUrl || 'a LAN address'} within 3s (macOS firewall dialog? VPN? no network?)`);
+    }
+    await launchFromOrder(s, 'work', 'alpha');
+    await spyOnPage(page);
+    await page.goto(`${admiral.lanUrl}?token=${admiral.token}`);
+    await board(page, underwayIn('Work'), false);
+
+    const sockets: string[] = [];
+    page.on('websocket', (ws) => sockets.push(ws.url()));
+    admiral.rotateToken();
+    await admiral.restart();
+
+    await expect(page.getByText('Open the URL Admiral printed').first()).toBeVisible({ timeout: 30_000 });
+    // The retries stop: no WebSocket is opened for longer than the 10 s cap.
+    const seen = sockets.length;
+    await page.waitForTimeout(12_000);
+    expect(sockets.length, 'WebSockets opened after the message appeared').toBe(seen);
+    await expect(page.getByText('Open the URL Admiral printed').first()).toBeVisible();
+  });
+});
+
+test.describe('S7: an anchored ship and a ship that exits with the bridge open', () => {
+  test('boarding an anchored ship opens it read-only on its last screen; Dismiss removes the ship and closes the bridge', async ({ page, admiral, sea }, info) => {
+    const touch = isTouch(info);
+    const s = sea({ work: { name: 'Work', color: BLUE, cue: ['lines 5', 'exit 3'] } });
+    await admiral.start();
+    await s.launch('work', 'alpha');
+    await spyOnPage(page);
+    await page.goto(admiral.url);
+
+    const name = await board(page, /^Board .+, Claude in Work, anchored, exited 3$/, touch);
+    const t = terminal(page);
+    await expect(t.getByText('Anchored · exit 3', { exact: true })).toBeVisible();
+    await expect(t.getByText('The harness exited. This is its last screen.', { exact: true })).toBeVisible();
+    await expect.poll(() => screenText(page)).toContain('line 0005');
+    await expect(prompt(page, name)).toHaveCount(0);
+    await expect(t.getByRole('button', { name: /^Send / })).toHaveCount(0);
+    await expect(t.getByText('Keys go straight to the session')).toHaveCount(0);
+
+    await press(t.getByRole('button', { name: 'Dismiss' }), touch);
+    await expect(terminal(page)).toHaveCount(0);
+    await expect(ships(page)).toHaveCount(0);
+    await expect.poll(async () => (await s.ships()).length).toBe(0);
+  });
+
+  test('exit 0 with the bridge open closes it as the ship sails off; a failure turns it read-only with Dismiss', async ({ page, admiral, sea }, info) => {
+    test.setTimeout(60_000);
+    const touch = isTouch(info);
+    const s = sea({
+      zero: { name: 'Zero', color: BLUE, cue: ['wait go', 'exit 0'] },
+      three: { name: 'Three', color: '#E0762B', cue: ['lines 2', 'wait go', 'exit 3'] },
+    });
+    await admiral.start();
+    const zero = await s.launch('zero', 'alpha', 'recorded');
+    const three = await s.launch('three', 'beta', 'recorded');
+    await spyOnPage(page);
+    await page.goto(admiral.url);
+
+    await board(page, underwayIn('Zero'), touch);
+    release(s, zero.session);
+    await expect(terminal(page)).toHaveCount(0, { timeout: 10_000 });
+    await expect(water(page).getByRole('button', { name: /Zero/ })).toHaveCount(0, { timeout: 10_000 });
+
+    const name = await board(page, underwayIn('Three'), touch);
+    const t = terminal(page);
+    await expect(prompt(page, name)).toBeVisible();
+    release(s, three.session);
+    await expect(t.getByText('Anchored · exit 3', { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(prompt(page, name)).toHaveCount(0);
+    await expect(t.getByRole('button', { name: 'Dismiss' })).toBeVisible();
+    await expect.poll(() => screenText(page)).toContain('line 0002');
+  });
+});
