@@ -1,6 +1,6 @@
-import { computed, signal } from '@preact/signals';
+import { computed, effect, signal } from '@preact/signals';
 import type { HarnessName } from './config';
-import type { Order } from './sources';
+import { type Order, panelViews } from './sources';
 
 // An order as launch needs it: where it came from and what it says.
 export interface OrderRef {
@@ -13,12 +13,23 @@ export interface Pointer {
   y: number;
 }
 
-// The card under the pointer while it is dragged, and the dock below it.
+// The order under the pointer while it is dragged, and the dock below it.
 export const dragging = signal<(OrderRef & Pointer & { dock: string | null }) | null>(null);
-// The card picked by a tap.
+// The order picked by a tap.
 export const selected = signal<OrderRef | null>(null);
 // The open launch orders: this order for this dock.
 export const launching = signal<(OrderRef & { fleet: string; harness: HarnessName }) | null>(null);
+
+// An order that leaves the sidebar (launched elsewhere, removed, filtered out)
+// is no longer selected, and Escape deselects.
+effect(() => {
+  const s = selected.peek();
+  const shown = panelViews.value.some((v) => v.source.key === s?.source && v.orders.some((o) => o.id === s.order.id));
+  if (s && !shown) selected.value = null;
+});
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') selected.value = null;
+});
 
 export const armed = computed(() => dragging.value !== null || selected.value !== null);
 
@@ -35,10 +46,10 @@ export function openLaunch(ref: OrderRef, fleet: string, harness: HarnessName): 
 const DRAG_THRESHOLD = 8;
 
 // Drag is Pointer Events, not HTML5 drag (ADR 0004). A press that stays under
-// the threshold is a tap. A touch that moves mainly sideways picks the card up;
+// the threshold is a tap. A touch that moves mainly sideways picks the order up;
 // one that moves mainly down or up is a scroll and is left alone. A mouse
 // picks it up in any direction.
-export function pressCard(e: PointerEvent, ref: OrderRef): void {
+export function pressOrder(e: PointerEvent, ref: OrderRef): void {
   if (e.button !== 0 || !e.isPrimary || dragging.value) return;
   if ((e.target as Element).closest('button, a, input, textarea')) return;
   const id = e.pointerId;
@@ -95,13 +106,21 @@ export const departed = signal<{ dock: string; n: number } | null>(null);
 const reducedMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 let departures = 0;
 
-// Told to the ships layer (u10): the 201 body's ship, with the order it carried.
+// Told to the ships layer (u10) after the 201 from POST /api/ships: the dock, the
+// order's source and ID, and the new ship's session. The `ships` push can arrive
+// before or after this event, so the ships layer must handle either order.
 export interface Launched {
   fleet: string;
   harness: HarnessName;
   source: string;
   order_id: string;
   session: string;
+}
+
+declare global {
+  interface WindowEventMap {
+    'admiral:launched': CustomEvent<Launched>;
+  }
 }
 
 export function announceLaunch(d: Launched): void {

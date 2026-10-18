@@ -1147,7 +1147,7 @@ body.dragging * {
   transform: rotate(-5deg);
 }
 
-.ghost-card {
+.ghost-order {
   width: 250px;
   display: flex;
   flex-direction: column;
@@ -1252,18 +1252,29 @@ body.dragging * {
 .modal.launch {
   max-width: 540px;
   max-height: calc(100vh - 32px);
-  overflow: auto;
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
   box-shadow: 0 8px 0 var(--color-ink-deep);
 }
 
+/* The header and footer stay in view; only the body scrolls. */
+.modal.launch[open] {
+  display: flex;
+  flex-direction: column;
+}
+
 .modal.launch .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 0;
   gap: 0;
 }
 
 .launch-form {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
+  min-height: 0;
 }
 
 .launch-head {
@@ -1297,8 +1308,11 @@ body.dragging * {
 
 .launch-body {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
   padding: 16px 18px;
 }
 
@@ -1364,7 +1378,7 @@ body.dragging * {
   box-shadow: 0 4px 0 rgba(20, 48, 74, 0.35);
   display: flex;
   flex-direction: column;
-  max-height: 300px;
+  max-height: 240px;
   overflow: auto;
   border: var(--shape-outline) solid var(--color-ink);
   border-radius: var(--shape-radius-card);

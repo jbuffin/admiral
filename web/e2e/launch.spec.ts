@@ -42,6 +42,10 @@ async function openLaunch(page: Page, touch: boolean, title: string, fleet: stri
   return d;
 }
 
+// Whether a touch pointerdown on the element goes by uncancelled.
+const touchGoesThrough = (l: Locator) =>
+  l.evaluate((el) => el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'touch', isPrimary: true })));
+
 const directory = (d: Locator) => d.getByRole('combobox', { name: 'Directory' });
 const radio = (d: Locator, name: string | RegExp) => d.getByRole('radio', { name });
 const hoist = (d: Locator) => d.getByRole('button', { name: 'Hoist sails' });
@@ -87,10 +91,15 @@ test.describe('S4: launch with Commodore', () => {
     await expect(radio(d, /^Commodore/)).toBeChecked();
     await expect(d.getByText('Task force', { exact: true })).toBeVisible();
     await expect(radio(d, 'betaskill')).toHaveCount(0); // the favorite is not installed for alpha
-    await directory(d).click();
+    await press(directory(d), touch);
     await directory(d).fill('');
     const names = await page.getByRole('option').allInnerTexts();
     expect(names.map((n) => n.trim().split(/\s/)[0])).toEqual(['alpha', 'beta', 'work']);
+    // Each entry sets what it is: a checkout or a search root.
+    expect(names.map((n) => n.trim().split(/\s/).slice(1).join(' '))).toEqual(['checkout', 'checkout', 'search root']);
+    // WebKit drops the click that follows a touch whose pointerdown was cancelled, so a row must not cancel it.
+    await expect(page.getByRole('option', { name: /^beta/ })).toBeVisible();
+    expect(await touchGoesThrough(page.getByRole('option', { name: /^beta/ }))).toBe(true);
     await directory(d).fill('bet');
     await expect(page.getByRole('option', { name: /^alpha/ })).toHaveCount(0);
     await press(page.getByRole('option', { name: /^beta/ }), touch);
@@ -126,13 +135,14 @@ test.describe('S5: the dialog in one flow', () => {
     await w.seedOrder(justLaunch);
     await w.seedOrder('Order B\nsecond line');
     await w.seedOrder('Order C\nthird line');
+    await w.seedOrder('Order D\nfourth line');
     await page.goto(admiral.url);
 
     // Commodore is absent on this dock: disabled, told why, and the default is Just launch.
     let d = await openLaunch(page, touch, 'Run the audit', 'Work', 'Claude');
     await expect(radio(d, /^Commodore/)).toBeDisabled();
-    await (touch ? d.getByText('Commodore', { exact: true }).tap() : d.getByText('Commodore', { exact: true }).hover());
     await expect(d.getByText('Commodore not found')).toBeVisible();
+    await expect(d.getByText('Task force', { exact: true })).toBeVisible(); // the badge stays on the disabled row
     await expect(radio(d, 'Just launch')).toBeChecked();
     await press(hoist(d), touch);
     await expect(d).toHaveCount(0);
@@ -146,13 +156,23 @@ test.describe('S5: the dialog in one flow', () => {
     const list = d.getByRole('listbox', { name: 'Installed skills' });
 
     // A name with whitespace is refused where it is typed; nothing launches.
-    for (const bad of ['foo bar', 'foo\tbar']) {
+    for (const bad of ['foo bar', 'foo\tbar', 'foo ', ' foo']) {
       await custom.fill(bad);
       await press(hoist(d), touch);
       await expect(d.getByText('Skill names have no spaces')).toBeVisible();
       await expect(d).toBeVisible();
       expect(w.records().length).toBe(1);
     }
+
+    // A pasted newline is refused, not dropped.
+    await custom.fill('');
+    await custom.evaluate((el) => {
+      const data = new DataTransfer();
+      data.setData('text', 'foo\nbar');
+      el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }));
+    });
+    await expect(d.getByText('Skill names have no spaces')).toBeVisible();
+    await expect(custom).toHaveValue('');
 
     // No match: the empty state says what will happen.
     await custom.fill('zzz');
@@ -162,6 +182,8 @@ test.describe('S5: the dialog in one flow', () => {
     await custom.fill('sk');
     await expect(list).toContainText('Installed skills');
     await expect(list.getByRole('option')).toHaveCount(6);
+    expect(await touchGoesThrough(list.getByRole('option').first())).toBe(true); // see S4
+    await expect(hoist(d)).toBeInViewport(); // the footer stays in view while the list is open
     for (const n of ['sk1', 'sk2', 'sk3', 'sk4']) {
       await press(list.getByRole('button', { name: `Star ${n}` }), touch);
       await expect(list.getByRole('button', { name: `Unstar ${n}` })).toBeVisible();
@@ -212,6 +234,16 @@ test.describe('S5: the dialog in one flow', () => {
     await expect(d).toHaveCount(0);
     await expect.poll(() => w.records().length).toBe(3);
     expect(World.prompt(w.records()[2])).toBe('/foo Order C\nthird line');
+    w.endShips();
+
+    // Order D: a leading dollar sign goes too.
+    d = await openLaunch(page, touch, 'Order D', 'Work', 'Claude');
+    await d.getByRole('textbox', { name: 'Custom skill' }).fill('$foo');
+    await press(d.getByRole('heading', { name: 'Launch orders' }), touch); // leave the field, so the list is closed
+    await press(hoist(d), touch);
+    await expect(d).toHaveCount(0);
+    await expect.poll(() => w.records().length).toBe(4);
+    expect(World.prompt(w.records()[3])).toBe('/foo Order D\nfourth line');
     w.endShips();
   });
 });

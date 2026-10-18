@@ -2,7 +2,7 @@ import { signal } from '@preact/signals';
 import { useState } from 'preact/hooks';
 import { Menu, MenuItem } from './Menu';
 import { SourceIcon } from './SourceIcon';
-import { isSelected, pressCard } from './launch';
+import { isSelected, pressOrder } from './launch';
 import { type Order, type Source, api, can, declares, isWebUrl, sourcePath } from './sources';
 
 const editing = signal<string | null>(null);
@@ -30,7 +30,7 @@ export function OrderItem({ source, panelId, order, fail }: { source: Source; pa
   return (
     <li
       class={`${hasEdit || hasRemove ? 'order with-menu' : 'order'}${isSelected({ source: source.key, order }) ? ' selected' : ''}`}
-      onPointerDown={(e) => pressCard(e, { source: source.key, order })}
+      onPointerDown={(e) => pressOrder(e, { source: source.key, order })}
     >
       <div class="order-main">
         <div class="order-meta">

@@ -14,7 +14,6 @@ interface DirEntry {
 }
 interface Skill {
   name: string;
-  favorite: boolean;
 }
 interface SkillsData {
   skills: Skill[];
@@ -31,26 +30,47 @@ const titleOf = (text: string) => text.split('\n')[0];
 // A typed name loses one leading slash or dollar sign.
 const bare = (typed: string) => typed.trim().replace(/^[/$]/, '');
 
-function defaultChoice(d: SkillsData): Choice {
+// The skills of this directory that are favorites. The favorites themselves are
+// the server's list, pushed in the config message, not what the GET returned.
+const favoritesOf = (d: SkillsData, names: string[]) => d.skills.filter((s) => names.includes(s.name));
+
+function defaultChoice(d: SkillsData, names: string[]): Choice {
   if (d.commodore.found) return 'commodore';
-  const fav = d.skills.find((s) => s.favorite);
+  const fav = favoritesOf(d, names)[0];
   return fav ? `skill:${fav.name}` : 'none';
 }
 
 // Keeps the choice unless the skill it names is gone from this directory.
-function keep(prev: Choice | null, d: SkillsData): Choice {
+function keep(prev: Choice | null, d: SkillsData, names: string[]): Choice {
   if (prev === 'none' || prev === 'custom') return prev;
   if (prev === 'commodore' && d.commodore.found) return prev;
-  if (prev?.startsWith('skill:') && d.skills.some((s) => s.favorite && s.name === prev.slice(6))) return prev;
-  return defaultChoice(d);
+  if (prev?.startsWith('skill:') && favoritesOf(d, names).some((s) => s.name === prev.slice(6))) return prev;
+  return defaultChoice(d, names);
 }
+
+// Focusing a field selects its text, so typing replaces it; the mouseup that ends
+// the focusing click would drop the selection, so it is swallowed once.
+const selectOnFocus = {
+  onFocus: (e: FocusEvent) => {
+    const el = e.target as HTMLInputElement;
+    el.select();
+    el.dataset.fresh = '1';
+  },
+  onMouseUp: (e: MouseEvent) => {
+    const el = e.target as HTMLInputElement;
+    if (el.dataset.fresh) {
+      e.preventDefault();
+      delete el.dataset.fresh;
+    }
+  },
+};
 
 export function Ghost() {
   const d = dragging.value;
   if (!d) return null;
   return (
     <div class="ghost" style={`left:${d.x - 125}px;top:${d.y - 40}px`} aria-hidden="true">
-      <div class="ghost-card">
+      <div class="ghost-order">
         {isWebUrl(d.order.url) && <span class="ghost-id">{d.order.id}</span>}
         <span class="ghost-title">{titleOf(d.order.title)}</span>
         <span class="ghost-hint">{d.dock ? 'Let go to give launch orders' : 'Drop on a dock'}</span>
@@ -91,18 +111,21 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
   const [dirHi, setDirHi] = useState(0);
 
   const [skills, setSkills] = useState<SkillsData | null>(null);
+  const [reading, setReading] = useState(true); // the skills of this directory are on their way
   const [choice, setChoice] = useState<Choice | null>(null);
   const [custom, setCustom] = useState('');
   const [listOpen, setListOpen] = useState(false);
   const [hi, setHi] = useState(0);
   const [note, setNote] = useState('');
   const [spaceError, setSpaceError] = useState(false);
+  const [starring, setStarring] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
   const dirBox = useRef<HTMLDivElement>(null);
   const skillBox = useRef<HTMLDivElement>(null);
   const asked = useRef(0);
+  const favNames = config.value?.favorite_skills ?? [];
 
   useEffect(() => {
     let live = true;
@@ -124,17 +147,37 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
 
   // The skills depend on the directory, so they are read again when it changes.
   useEffect(() => {
+    // The old directory's skills are not the new one's: nothing to pick until they arrive.
+    setSkills(null);
+    setChoice((prev) => (prev === 'none' || prev === 'custom' ? prev : null));
     if (!dir) return;
+    setReading(true);
     const n = ++asked.current;
     const q = new URLSearchParams({ fleet: fleet.key, harness, dir });
     api<SkillsData>('GET', `/api/launch-orders/skills?${q}`).then((r) => {
       if (n !== asked.current) return;
-      if (!r.ok) return setError(r.error);
+      setReading(false);
+      if (!r.ok) {
+        // No skills to offer: Just launch, and the launch itself shows what is wrong.
+        setChoice((prev) => (prev === 'custom' ? prev : 'none'));
+        return setError(r.error);
+      }
       setError('');
       setSkills(r.data);
-      setChoice((prev) => keep(prev, r.data));
+      setChoice((prev) => keep(prev, r.data, config.value?.favorite_skills ?? []));
     });
   }, [dir]);
+
+  // Starring or unstarring arrives as the server's config push; a choice that was
+  // a favorite no longer offered falls back to the default.
+  useEffect(() => {
+    if (skills) setChoice((prev) => keep(prev, skills, favNames));
+  }, [favNames.join('\n')]);
+
+  // An opened list is brought into view inside the scrolling body.
+  useEffect(() => {
+    if (listOpen) document.getElementById('launch-skills')?.scrollIntoView({ block: 'nearest' });
+  }, [listOpen]);
 
   // A press outside a list closes it.
   useEffect(() => {
@@ -155,7 +198,7 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
   const query = bare(custom).toLowerCase();
   const matches = (skills?.skills ?? []).filter((s) => !query || s.name.toLowerCase().includes(query));
   const rows = matches.slice(0, MAX_ROWS);
-  const favorites = (skills?.skills ?? []).filter((s) => s.favorite);
+  const favorites = skills ? favoritesOf(skills, favNames) : [];
 
   const pickDir = (e: DirEntry) => {
     setDir(e.path);
@@ -170,31 +213,25 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
   };
 
   const toggleStar = async (s: Skill) => {
+    if (starring) return;
     // All favorites, not only those installed on this dock: the PUT replaces the list.
-    const names = config.value?.favorite_skills ?? [];
-    const next = s.favorite ? names.filter((n) => n !== s.name) : [...names, s.name];
-    const r = await api<{ favorite_skills: string[] }>('PUT', '/api/favorites', { skills: next });
-    if (!r.ok) return setNote(r.error);
-    setNote('');
-    const now = r.data.favorite_skills;
-    if (config.value) config.value = { ...config.value, favorite_skills: now };
-    setSkills((cur) => {
-      if (!cur) return cur;
-      const updated = { ...cur, skills: cur.skills.map((k) => ({ ...k, favorite: now.includes(k.name) })) };
-      setChoice((prev) => keep(prev, updated));
-      return updated;
-    });
+    const next = favNames.includes(s.name) ? favNames.filter((n) => n !== s.name) : [...favNames, s.name];
+    setStarring(true);
+    const r = await api('PUT', '/api/favorites', { skills: next });
+    setStarring(false);
+    setNote(r.ok ? '' : r.error);
   };
 
   const hoist = async (ev?: Event) => {
     ev?.preventDefault();
-    if (busy || !skills || !dir) return;
+    if (busy || reading || !dir) return;
     let skill: { kind: string; name?: string };
     if (choice === 'commodore') skill = { kind: 'commodore' };
     else if (choice === 'none') skill = { kind: 'none' };
     else if (choice === 'custom') {
       const name = bare(custom);
-      if (/\s/.test(name)) return setSpaceError(true);
+      // The raw value: a space or tab at either end is refused too, not trimmed away.
+      if (/\s/.test(custom)) return setSpaceError(true);
       if (!name) return setError('Type a skill name, or pick another.');
       skill = { kind: 'skill', name };
     } else skill = { kind: 'skill', name: choice!.slice(6) };
@@ -283,6 +320,7 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
                   spellcheck={false}
                   value={typed ?? entry?.name ?? ''}
                   disabled={!entries}
+                  {...selectOnFocus}
                   onClick={() => setDirOpen(true)}
                   onInput={(e) => {
                     setTyped((e.target as HTMLInputElement).value);
@@ -300,11 +338,11 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
                         role="option"
                         aria-selected={i === dirHi}
                         class={i === dirHi ? 'row hi' : 'row'}
-                        onPointerDown={(ev) => ev.preventDefault()}
+                        onMouseDown={(ev) => ev.preventDefault()}
                         onClick={() => pickDir(e)}
                       >
                         <span class="row-name">{e.name}</span>
-                        <span class="row-kind">{e.kind === 'root' ? 'search root' : 'checkout'}</span>
+                        <span class="row-kind">{e.kind === 'search_root' ? 'search root' : 'checkout'}</span>
                         {e.ships_here > 0 && <span class="row-busy">ship underway</span>}
                       </div>
                     ))}
@@ -329,7 +367,7 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
                     {skills && !skills.commodore.found ? 'Commodore not found' : COMMODORE_DESC}
                   </span>
                 </span>
-                {skills?.commodore.found && <span class="badge">Task force</span>}
+                <span class="badge">Task force</span>
               </div>
 
               {favorites.slice(0, 5).map((s) => (
@@ -360,9 +398,18 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
                   autocapitalize="off"
                   spellcheck={false}
                   value={custom}
-                  onFocus={() => {
+                  onFocus={(e) => {
+                    selectOnFocus.onFocus(e);
                     setChoice('custom');
                     setListOpen(true);
+                  }}
+                  onMouseUp={selectOnFocus.onMouseUp}
+                  // A field drops a pasted newline without a word, so the paste is refused here instead.
+                  onPaste={(e) => {
+                    if (!/\s/.test(e.clipboardData?.getData('text') ?? '')) return;
+                    e.preventDefault();
+                    setChoice('custom');
+                    setSpaceError(true);
                   }}
                   onInput={(e) => {
                     setCustom((e.target as HTMLInputElement).value);
@@ -382,10 +429,10 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
                     </div>
                     {rows.map((s, i) => (
                       <div key={s.name} class={i === hi ? 'row hi' : 'row'}>
-                        <div role="option" aria-selected={i === hi} class="row-pick" onPointerDown={(ev) => ev.preventDefault()} onClick={() => pickSkill(s.name)}>
+                        <div role="option" aria-selected={i === hi} class="row-pick" onMouseDown={(ev) => ev.preventDefault()} onClick={() => pickSkill(s.name)}>
                           <span class="row-name">{s.name}</span>
                         </div>
-                        <Star on={s.favorite} name={s.name} onToggle={() => toggleStar(s)} />
+                        <Star on={favNames.includes(s.name)} name={s.name} onToggle={() => toggleStar(s)} />
                       </div>
                     ))}
                     {rows.length === 0 && <div class="list-empty">No installed skill matches. It will launch with the name exactly as typed.</div>}
@@ -410,7 +457,7 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
             Stay in port
           </button>
           {!dirsError && (
-            <button type="submit" class="launch-button primary press" disabled={!skills || !dir || busy}>
+            <button type="submit" class="launch-button primary press" disabled={reading || !dir || busy}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M12 3v14M12 4l7 10h-7M3 18c2 2 4 2 6 0 2 2 4 2 6 0 2 2 4 2 6 0" />
               </svg>
