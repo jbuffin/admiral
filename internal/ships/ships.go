@@ -63,19 +63,26 @@ type Service struct {
 }
 
 func (s *Service) ship(sess sessionhost.Session) Ship {
+	sh := FromSession(sess, time.Now())
+	if p, ok := s.State.Position(sess.Name); ok {
+		sh.Position = &p
+	}
+	return sh
+}
+
+// FromSession is a ship as read from its tmux session, without a position. The
+// CLI uses it to list ships when the server is not running.
+func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	o, session := sess.Options, sess.Name
 	sh := Ship{Session: session, Name: o["name"], Fleet: o["fleet"], FleetName: o["fleet-name"],
 		FleetColor: o["fleet-color"], Harness: o["harness"], Dir: o["dir"], Repo: filepath.Base(o["dir"]),
-		Source: o["source"], Title: o["title"], OrderID: o["order"], Launched: o["launched"], Status: status(sess, time.Now())}
+		Source: o["source"], Title: o["title"], OrderID: o["order"], Launched: o["launched"], Status: status(sess, now)}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
 	if o["dir"] == "" {
 		sh.Repo = ""
 	}
 	if sk := o["skill"]; sk != "" {
 		sh.Skill = &sk
-	}
-	if p, ok := s.State.Position(session); ok {
-		sh.Position = &p
 	}
 	return sh
 }

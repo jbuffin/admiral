@@ -39,6 +39,10 @@ import (
 // slugs to it, and it is never reported.
 const Internal = "_admiral"
 
+// SetupName is the session that runs `admiral setup` for the browser. It is
+// not a ship.
+const SetupName = "_setup"
+
 // Prefix is the start of every option Admiral owns.
 const Prefix = "@admiral-"
 
@@ -459,4 +463,36 @@ func (h *Host) set(next map[string]Session, unreadable []string, ok bool) {
 			}
 		}
 	}
+}
+
+// ReadOnce lists the sessions of the tmux server on sock with one command and
+// no control connection, so it starts nothing. With no server running there
+// are no sessions. Like Sessions, it leaves out the internal session.
+func ReadOnce(tmux, sock string) ([]Session, error) {
+	run := func(args ...string) ([]string, error) {
+		out, err := exec.Command(tmux, append([]string{"-f", "/dev/null", "-S", sock}, args...)...).Output()
+		if err != nil {
+			return nil, err
+		}
+		return strings.Split(strings.TrimRight(string(out), "\n"), "\n"), nil
+	}
+	names, err := run("list-sessions", "-F", "#{session_name}")
+	if err != nil {
+		return nil, nil // no server on the socket: nothing is running
+	}
+	rows, err := run("list-panes", "-a", "-F", format)
+	if err != nil {
+		return nil, err
+	}
+	known := map[string]bool{}
+	for _, n := range names {
+		known[n] = true
+	}
+	found, _ := parseRows(rows, known)
+	out := make([]Session, 0, len(found))
+	for _, s := range found {
+		out = append(out, s)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
 }

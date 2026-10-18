@@ -5,6 +5,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
@@ -14,6 +15,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 )
 
 const cookieMaxAge = 400 * 24 * 60 * 60
@@ -29,31 +32,135 @@ func LoadOrCreateToken(home string) (string, error) {
 	} else if !os.IsNotExist(err) {
 		return "", err
 	}
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
+	token, err := newToken()
+	if err != nil {
 		return "", err
 	}
-	token := base64.RawURLEncoding.EncodeToString(raw)
 	if err := os.WriteFile(path, []byte(token+"\n"), 0o600); err != nil {
 		return "", err
 	}
 	return token, os.Chmod(path, 0o600) // WriteFile keeps the mode of a file that already existed
 }
 
+func newToken() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+// RotateToken replaces the token in <home>/token with a new one (mode 0600)
+// and returns it. The file is replaced by a rename, so a reader sees the old
+// token or the new one. A running server notices (Auth.Watch).
+func RotateToken(home string) (string, error) {
+	token, err := newToken()
+	if err != nil {
+		return "", err
+	}
+	tmp, err := os.CreateTemp(home, ".token.*")
+	if err != nil {
+		return "", err
+	}
+	defer os.Remove(tmp.Name()) // no-op after a successful rename
+	if _, err := tmp.WriteString(token + "\n"); err != nil {
+		tmp.Close()
+		return "", err
+	}
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	return token, os.Rename(tmp.Name(), filepath.Join(home, "token"))
+}
+
 // Auth guards one listener.
 type Auth struct {
-	token  string
 	cookie string
+
+	mu    sync.Mutex
+	token string
+	socks map[*socket]struct{}
+}
+
+// socket is a non-local WebSocket request and the token it got in with.
+type socket struct {
+	token  string
+	cancel context.CancelFunc
 }
 
 // New returns the guard for a server on port. The port is in the cookie name
 // so a test instance on the same host never overwrites the real one's cookie.
 func New(token, port string) *Auth {
-	return &Auth{token: token, cookie: "admiral_token_" + port}
+	return &Auth{token: token, cookie: "admiral_token_" + port, socks: map[*socket]struct{}{}}
+}
+
+func (a *Auth) current() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.token
 }
 
 func (a *Auth) valid(candidate string) bool {
-	return subtle.ConstantTimeCompare([]byte(candidate), []byte(a.token)) == 1
+	return subtle.ConstantTimeCompare([]byte(candidate), []byte(a.current())) == 1
+}
+
+// SetToken makes token the one that is accepted and ends every non-local
+// WebSocket that got in with another (the dashboard's and the bridge's alike:
+// their handlers read with the request's context, which is cancelled here).
+func (a *Auth) SetToken(token string) {
+	a.mu.Lock()
+	a.token = token
+	var stale []*socket
+	for s := range a.socks {
+		if s.token != token {
+			stale = append(stale, s)
+		}
+	}
+	a.mu.Unlock()
+	for _, s := range stale {
+		s.cancel()
+	}
+}
+
+// Watch follows <home>/token until ctx ends, so `admiral token rotate` takes
+// effect without a restart (story 8). It watches by polling: the file is a few
+// bytes, and a rename over it is seen the same as a write.
+func (a *Auth) Watch(ctx context.Context, home string) {
+	path := filepath.Join(home, "token")
+	tick := time.NewTicker(200 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-tick.C:
+			if b, err := os.ReadFile(path); err == nil {
+				if t := strings.TrimSpace(string(b)); t != "" && t != a.current() {
+					a.SetToken(t)
+				}
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// track runs next for a non-local WebSocket, which SetToken can end.
+func (a *Auth) track(w http.ResponseWriter, r *http.Request, next http.Handler) {
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	a.mu.Lock()
+	s := &socket{token: a.token, cancel: cancel}
+	a.socks[s] = struct{}{}
+	a.mu.Unlock()
+	defer func() {
+		a.mu.Lock()
+		delete(a.socks, s)
+		a.mu.Unlock()
+	}()
+	next.ServeHTTP(w, r.WithContext(ctx))
 }
 
 // Middleware applies the checks in order: Host (loopback peers), Origin
@@ -95,6 +202,14 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 		}
 		unauthorized(w, r)
 	})
+}
+
+func (a *Auth) serve(w http.ResponseWriter, r *http.Request, next http.Handler, isWS bool) {
+	if isWS {
+		a.track(w, r, next)
+		return
+	}
+	next.ServeHTTP(w, r)
 }
 
 func (a *Auth) redirectWithCookie(w http.ResponseWriter, r *http.Request, query url.Values) {

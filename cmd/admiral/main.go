@@ -59,6 +59,14 @@ func run(args []string) error {
 		return cli.Fleet(args[1:], std)
 	case "config":
 		return cli.Config(args[1:], std)
+	case "token":
+		return cli.Token(args[1:], std)
+	case "ships":
+		return cli.Ships(args[1:], std)
+	case "attach":
+		return cli.Attach(args[1:], std)
+	case "completion":
+		return cli.Completion(args[1:], std)
 	}
 	return &cli.UsageError{Msg: fmt.Sprintf("unknown command %q", args[0])}
 }
@@ -96,6 +104,12 @@ func serve(args []string) error {
 		return fmt.Errorf("config: %w", err)
 	}
 	defer cfg.Close()
+	// No configuration means no fleets (a valid file without any, or none yet).
+	if cfg.View().Error == nil && len(cfg.Current().Fleets) == 0 {
+		if _, err := cli.OfferSetup(cli.Std()); err != nil {
+			return err
+		}
+	}
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {
 		return err
@@ -155,7 +169,10 @@ func serve(args []string) error {
 		supervisor.Wait()
 		_ = st.Flush()
 	}()
-	srv := &http.Server{Handler: auth.New(token, port).Middleware(s.Handler())}
+	guard := auth.New(token, port)
+	background.Add(1)
+	go func() { defer background.Done(); guard.Watch(bg, dir) }()
+	srv := &http.Server{Handler: guard.Middleware(s.Handler())}
 
 	fmt.Printf("Admiral is running at http://127.0.0.1:%s/\n", port)
 	bindHost, _, _ := net.SplitHostPort(*listen)

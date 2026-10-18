@@ -326,6 +326,7 @@ func (w *world) installFakeTmux() (dir, rec string) {
 	}
 	dir = filepath.Join(w.root, "faketmux")
 	rec = filepath.Join(w.root, "attach.rec")
+	_ = os.Remove(rec) // each install starts a fresh recording, as the subtests share one root
 	w.writeRaw(filepath.Join(dir, "tmux"), `#!/bin/sh
 for a in "$@"; do
 	if [ "$a" = attach ] || [ "$a" = attach-session ]; then
