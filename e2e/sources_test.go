@@ -330,10 +330,11 @@ func TestFreeformOrders(t *testing.T) {
 	}
 	code, body = w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": panel, "text": "crlf\r\ntext\tis fine"})
 	w.mustOK(code, body, "POST of CRLF text")
-	w.srcReq(http.MethodDelete, "/orders/orders/"+decodeID(body), nil)
+	crlfID := decodeID(body)
+	w.srcReq(http.MethodDelete, "/orders/orders/"+crlfID, nil)
 	code, body = w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": panel, "text": strings.Repeat("b", 12000)})
 	w.mustOK(code, body, "POST of exactly 12,000 bytes")
-	s := w.waitSource("orders", 5*time.Second, "two orders", func(s sourceJSON) bool { return len(s.orderIDs()) == 2 })
+	s := w.waitSource("orders", 5*time.Second, "two orders", func(s sourceJSON) bool { return len(s.orderIDs()) == 2 && !s.hasOrder(crlfID) })
 	if o, _ := s.order(first.ID); o.Title != "Rewrite the parser" {
 		t.Errorf("a refused edit changed the order: %+v", o)
 	}
