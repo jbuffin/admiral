@@ -4,6 +4,7 @@ import { armed, departed, dockKey, dragging, openLaunch, selected } from './laun
 import { LogoFlag } from './Logos';
 import { Breakwater, Rowboat } from './Scenery';
 import { Ship } from './Ship';
+import { atSea, ships } from './ships';
 
 // Marina heights (tokens): 3 docks 300, otherwise the 2-dock height.
 const heightFor = (docks: number) => (docks >= 3 ? 300 : 240);
@@ -41,7 +42,8 @@ function DockView({ fleet, dock, top, index, height }: { fleet: Fleet; dock: Doc
   const key = dockKey(fleet.key, dock.harness);
   const hot = dragging.value?.dock === key;
   const leaving = departed.value?.dock === key ? departed.value.n : 0;
-  const status = armed.value ? (hot ? 'Let go to launch' : 'Drop here') : mark ? mark.short : 'All in port';
+  const here = ships.value.filter((s) => s.fleet === fleet.key && s.harness === dock.harness && atSea(s)).length;
+  const status = armed.value ? (hot ? 'Let go to launch' : 'Drop here') : mark ? mark.short : here > 0 ? `${here} at sea` : 'All in port';
   return (
     <button
       type="button"

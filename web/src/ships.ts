@@ -1,0 +1,207 @@
+import { computed, effect, signal } from '@preact/signals';
+import { chime } from './chime';
+import { config, type HarnessName } from './config';
+import { connectionState, onMessage } from './connection';
+import { placeShip, type PlacedShip, type Rect } from './placement';
+
+// What the `ships` message carries (internal/ships).
+export interface WireShip {
+  session: string;
+  name: string;
+  fleet: string;
+  fleet_name: string;
+  fleet_color: string;
+  harness: HarnessName;
+  dir: string;
+  repo: string;
+  skill: string | null;
+  source: string;
+  order_id: string;
+  launched: string;
+  status: 'underway' | 'needs_you' | 'anchored' | 'sailing_off';
+  exit_code: number | null;
+  exit_signal: string | null;
+  position: { x: number; y: number } | null;
+}
+
+export interface Spot {
+  x: number;
+  y: number;
+}
+
+export const ships = signal<WireShip[]>([]);
+export const shipsLoaded = signal(false);
+
+// Captains' colors, tokens.json `bot`.
+const BOTS = ['#7FC8FF', '#FFC23D', '#9BE08A', '#FF9A7A', '#C9B6FF', '#FFF6E3', '#6FE3C8'];
+
+// A stable hash of the session, so a ship's captain never changes and matches across browsers.
+function hash(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+export const botFor = (session: string) => BOTS[hash(session) % BOTS.length];
+// A ship's bob starts at its own point in the cycle.
+export const bobDelay = (session: string) => `-${((hash(session) % 32) / 10).toFixed(1)}s`;
+
+export const atSea = (s: WireShip) => s.status === 'underway' || s.status === 'needs_you';
+
+const launchedAt = (s: WireShip) => Date.parse(s.launched) || 0;
+
+// The ship the header's "N needs you" boards: the earliest launched.
+export const needsYou = computed(() =>
+  ships.value.filter((s) => s.status === 'needs_you').sort((a, b) => launchedAt(a) - launchedAt(b) || (a.session < b.session ? -1 : 1)),
+);
+
+// Boarding opens the bridge (u11 replaces this body). Until then it only tells a test page that asked.
+export function board(session: string): void {
+  window.__admiral?.boarded.push(session);
+}
+
+declare global {
+  interface Window {
+    __admiral?: { boarded: string[] };
+  }
+}
+
+// Sessions that appeared after the page's first `ships` message: they sail in.
+export const arrivals = signal<ReadonlySet<string>>(new Set());
+// Sailing-off ships stay on screen until their animation ends, even when the server has dropped them.
+export const leaving = signal<ReadonlyMap<string, WireShip>>(new Map());
+const sailedOff = new Set<string>();
+const SAIL_OFF_MS = 2500;
+const SAIL_IN_MS = 2400;
+
+let baseline = true; // the next `ships` message is the first of this connection: nothing sails in or chimes
+
+// A reconnect starts over: the first message after it is only a baseline.
+effect(() => {
+  if (connectionState.value !== 'open') baseline = true;
+});
+
+// u9 tells the launching browser a ship has sailed, possibly before the `ships` push.
+window.addEventListener('admiral:launched', (e) => {
+  announced.add(e.detail.session);
+});
+const announced = new Set<string>();
+
+function arrive(session: string): void {
+  arrivals.value = new Set(arrivals.value).add(session);
+  setTimeout(() => {
+    const next = new Set(arrivals.value);
+    next.delete(session);
+    arrivals.value = next;
+  }, SAIL_IN_MS);
+}
+
+onMessage('ships', (msg: { ships: WireShip[] }) => {
+  const before = new Map(ships.value.map((s) => [s.session, s]));
+  const first = baseline;
+  const now = msg.ships;
+  for (const s of now) {
+    const was = before.get(s.session);
+    if (!first) {
+      if (!was) arrive(s.session);
+      else if (was.status !== 'needs_you' && s.status === 'needs_you') chime();
+    } else if (announced.has(s.session)) arrive(s.session);
+    announced.delete(s.session);
+    if (s.status === 'sailing_off' && !sailedOff.has(s.session)) {
+      sailedOff.add(s.session);
+      leaving.value = new Map(leaving.value).set(s.session, s);
+      setTimeout(() => {
+        const next = new Map(leaving.value);
+        next.delete(s.session);
+        leaving.value = next;
+      }, SAIL_OFF_MS);
+    }
+  }
+  baseline = false;
+  ships.value = now;
+  shipsLoaded.value = true;
+});
+
+// What is on the water: the server's ships, minus sailing-off ones whose animation has ended, plus
+// sailing-off ships the server has already dropped.
+export const visible = computed(() => {
+  const here = new Set(ships.value.map((s) => s.session));
+  const sailing = [...leaving.value.values()].filter((l) => !here.has(l.session));
+  return [...ships.value.filter((s) => s.status !== 'sailing_off' || leaving.value.has(s.session)), ...sailing];
+});
+
+// ---- placement ----
+
+// Measured against the 1194x834 reference open water: the plaque is up to 140 px
+// wide and a ship with its plaque about 140 px tall. Fixed numbers, so every
+// browser computes the same spot.
+const FOOTPRINT = { w: 140 / 1194, h: 140 / 834 };
+const KEEP_OUT: Rect[] = [
+  { x: 0.01, y: 0.015, w: 0.46, h: 0.065 }, // the hint chip (prototype:208)
+  { x: 0.66, y: 0, w: 0.34, h: 1 }, // the marinas' land
+];
+
+// Spots this browser has worked out and sent, until the server's push carries them.
+const local = signal<ReadonlyMap<string, Spot>>(new Map());
+// Spots dropped by a drag, shown until the server's push agrees.
+export const dropped = signal<ReadonlyMap<string, Spot>>(new Map());
+export const dragged = signal<{ session: string } & Spot | null>(null);
+
+const clamp = (n: number) => Math.min(1, Math.max(0, n));
+
+export function putPosition(session: string, p: Spot): void {
+  const spot = { x: clamp(p.x), y: clamp(p.y) };
+  void fetch(`/api/ships/${encodeURIComponent(session)}/position`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(spot),
+  }).catch(() => {});
+}
+
+export function drop(session: string, p: Spot): void {
+  const spot = { x: clamp(p.x), y: clamp(p.y) };
+  dropped.value = new Map(dropped.value).set(session, spot);
+  putPosition(session, spot);
+}
+
+// A drop is shown until the server's push has the same spot (or the ship is gone).
+effect(() => {
+  const list = ships.value;
+  if (dropped.peek().size === 0) return;
+  const next = new Map(dropped.peek());
+  for (const [session, spot] of next) {
+    const s = list.find((x) => x.session === session);
+    if (!s || (s.position && Math.abs(s.position.x - spot.x) < 1e-9 && Math.abs(s.position.y - spot.y) < 1e-9)) next.delete(session);
+  }
+  if (next.size !== dropped.peek().size) dropped.value = next;
+});
+
+// Every ship without a position gets one, in launch order, each fed to the next.
+// Any browser may send it: they all work out the same spot.
+effect(() => {
+  const fleets = config.value?.fleets.map((f) => f.key);
+  const list = ships.value;
+  if (!fleets) return;
+  const known = local.peek();
+  const pending = list
+    .filter((s) => !s.position && !known.has(s.session))
+    .sort((a, b) => launchedAt(a) - launchedAt(b) || (a.session < b.session ? -1 : 1));
+  if (pending.length === 0) return;
+  const placed: PlacedShip[] = list.flatMap((s) => {
+    const p = s.position ?? known.get(s.session);
+    return p ? [{ session: s.session, fleet: s.fleet, ...p }] : [];
+  });
+  const next = new Map(known);
+  for (const s of pending) {
+    const spot = placeShip({ fleets, placed, ship: s, footprint: FOOTPRINT, keepOut: KEEP_OUT });
+    placed.push({ session: s.session, fleet: s.fleet, ...spot });
+    next.set(s.session, spot);
+    putPosition(s.session, spot);
+  }
+  local.value = next;
+});
+
+// Where a ship is drawn: under the finger, else where it was dropped, else the server's, else where this browser put it.
+export function spotOf(s: WireShip): Spot | undefined {
+  if (dragged.value?.session === s.session) return dragged.value;
+  return dropped.value.get(s.session) ?? s.position ?? local.value.get(s.session);
+}
