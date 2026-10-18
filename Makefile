@@ -38,8 +38,9 @@ OFFICIAL_LOGOS = web/logos/official
 RELEASE_NAME = admiral-$(VERSION)-darwin-arm64
 
 release:
+	@test -n "$(VERSION)" || { echo "make release: VERSION is empty; give a version or build from a git checkout" >&2; exit 1; }
 	@for d in '$(OFFICIAL_LOGOS)' web/logos/official; do \
-		if [ -n "$$(find "$$d" -type f ! -name '.*' 2>/dev/null)" ]; then \
+		if [ -n "$$(find -L "$$d" ! -type d ! -name '.*' 2>/dev/null)" ]; then \
 		echo "make release: $$d holds official logos; a shared build ships the placeholders. Move them away and run again." >&2; exit 1; fi; done
 	rm -rf web/dist
 	npm --prefix web run build

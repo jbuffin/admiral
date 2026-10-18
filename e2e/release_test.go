@@ -202,29 +202,82 @@ func TestPackagingS1_SharedBuildHasPlaceholdersAndNotices(t *testing.T) {
 	}
 }
 
-// S1: a file in the official-logos folder makes make release fail, naming the
-// folder, before it writes a tarball.
+// S1: official logos in the folder make make release fail, naming it, before it
+// writes anything. A symlinked file and a folder that is a symlink count too.
 func TestPackagingS1_OfficialLogosRefuseTheRelease(t *testing.T) {
-	tmp := t.TempDir()
-	logos := filepath.Join(tmp, "official")
-	if err := os.MkdirAll(logos, 0o755); err != nil {
-		t.Fatal(err)
+	refused := func(t *testing.T, extra ...string) {
+		t.Helper()
+		dist := filepath.Join(t.TempDir(), "dist")
+		args := append([]string{"release", "VERSION=" + releaseVer, "DIST=" + dist, "BIN=" + filepath.Join(t.TempDir(), "admiral")}, extra...)
+		cmd := exec.Command("make", args...)
+		cmd.Dir = repoRoot
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			t.Fatalf("make release succeeded with official logos present:\n%s", tail(string(out), 800))
+		}
+		if !strings.Contains(strings.ToLower(string(out)), "official") {
+			t.Errorf("make release failed without naming the official logos:\n%s", tail(string(out), 800))
+		}
+		if m, _ := filepath.Glob(filepath.Join(dist, "*")); len(m) > 0 {
+			t.Errorf("make release wrote %v despite refusing", m)
+		}
 	}
-	if err := os.WriteFile(filepath.Join(logos, "claude.svg"), []byte("<svg/>"), 0o644); err != nil {
-		t.Fatal(err)
+	// A folder with logos in it, and the same logos behind symlinks.
+	withLogo := func(t *testing.T) string {
+		d := filepath.Join(t.TempDir(), "official")
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, "claude.svg"), []byte("<svg/>"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return d
 	}
-	dist := filepath.Join(tmp, "dist")
-	cmd := exec.Command("make", "release", "VERSION="+releaseVer, "DIST="+dist, "BIN="+filepath.Join(tmp, "admiral"), "OFFICIAL_LOGOS="+logos)
+	t.Run("file", func(t *testing.T) { refused(t, "OFFICIAL_LOGOS="+withLogo(t)) })
+	t.Run("symlinked file", func(t *testing.T) {
+		real := withLogo(t)
+		d := filepath.Join(t.TempDir(), "official")
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(real, "claude.svg"), filepath.Join(d, "claude.svg")); err != nil {
+			t.Fatal(err)
+		}
+		refused(t, "OFFICIAL_LOGOS="+d)
+	})
+	t.Run("symlinked folder", func(t *testing.T) {
+		link := filepath.Join(t.TempDir(), "official")
+		if err := os.Symlink(withLogo(t), link); err != nil {
+			t.Fatal(err)
+		}
+		refused(t, "OFFICIAL_LOGOS="+link)
+	})
+	// The real folder, whatever OFFICIAL_LOGOS says: a temporary symlink there,
+	// removed afterwards. Never overwrites anything that is already there.
+	t.Run("the real folder as a symlink", func(t *testing.T) {
+		real := filepath.Join(repoRoot, "web", "logos", "official")
+		if _, err := os.Lstat(real); err == nil {
+			t.Skip("web/logos/official exists: personal logos are in place")
+		}
+		if err := os.MkdirAll(filepath.Dir(real), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(withLogo(t), real); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.Remove(real) })
+		refused(t, "OFFICIAL_LOGOS="+t.TempDir())
+	})
+}
+
+// make release with an empty version is refused, not built as admiral--darwin.
+func TestPackagingS1_EmptyVersionRefusesTheRelease(t *testing.T) {
+	dist := filepath.Join(t.TempDir(), "dist")
+	cmd := exec.Command("make", "release", "VERSION=", "DIST="+dist, "BIN="+filepath.Join(t.TempDir(), "admiral"))
 	cmd.Dir = repoRoot
 	out, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatalf("make release succeeded with a file in the official logos folder:\n%s", tail(string(out), 800))
-	}
-	if !strings.Contains(strings.ToLower(string(out)), "official") {
-		t.Errorf("make release failed without naming the official logos:\n%s", tail(string(out), 800))
-	}
-	if m, _ := filepath.Glob(filepath.Join(dist, "*")); len(m) > 0 {
-		t.Errorf("make release wrote %v despite refusing", m)
+	if err == nil || !strings.Contains(string(out), "VERSION is empty") {
+		t.Fatalf("make release VERSION= should fail saying VERSION is empty: %v\n%s", err, tail(string(out), 600))
 	}
 }
 

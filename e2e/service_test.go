@@ -21,7 +21,9 @@ import (
 // status     first stdout line "Service: not installed" (no plist),
 //            "Service: installed, not loaded" or "Service: installed, loaded"
 //            (the exit code of `launchctl print gui/<uid>/<label>`: 0 loaded;
-//            its output is never read), then, when installed, the token line.
+//            its output is never read), then, when installed, the token line, or
+//            "No token yet; Admiral creates it the first time it starts." when
+//            there is no token (status never creates one).
 //
 // launchctl and the login shell are fakes: nothing here loads a job.
 

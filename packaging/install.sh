@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs Admiral from a release tarball. Needs no admin rights and writes only under PREFIX.
 #
-#   curl -fsSL https://github.com/jbuffin/admiral/releases/latest/download/install.sh | sh
+#   curl --proto '=https' --tlsv1.2 -fsSL https://github.com/jbuffin/admiral/releases/latest/download/install.sh | sh
 #
 # PREFIX           where bin/admiral goes (default ~/.local)
 # ADMIRAL_VERSION  the release to download (default: the latest)

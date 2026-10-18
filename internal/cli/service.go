@@ -87,11 +87,16 @@ func serviceInstall(std IO) error {
 	}
 	// A job that isn't loaded makes bootout fail; that's the normal first install.
 	_, _ = launchctl("bootout", serviceDomain()+"/"+ServiceLabel)
-	msg, err := launchctl("bootstrap", serviceDomain(), plist)
-	if err != nil {
-		// A job that was running may not have finished unloading yet.
-		time.Sleep(time.Second)
-		msg, err = launchctl("bootstrap", serviceDomain(), plist)
+	// A job that was running may still be shutting down (Admiral drains for
+	// up to 2 s), and bootstrap fails until it is gone.
+	var msg string
+	for try := 0; try < 3; try++ {
+		if try > 0 {
+			time.Sleep(time.Second)
+		}
+		if msg, err = launchctl("bootstrap", serviceDomain(), plist); err == nil {
+			break
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("launchctl bootstrap: %v: %s", err, msg)

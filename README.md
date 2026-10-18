@@ -31,7 +31,7 @@ brew install jbuffin/admiral/admiral
 **curl script** (installs to `~/.local/bin`, no `sudo`; it warns when `tmux` or `python3` is missing but doesn't install them: `brew install tmux python@3.15`):
 
 ```sh
-curl -fsSL https://github.com/jbuffin/admiral/releases/latest/download/install.sh | sh
+curl --proto '=https' --tlsv1.2 -fsSL https://github.com/jbuffin/admiral/releases/latest/download/install.sh | sh
 ```
 
 `PREFIX=<dir>` changes where `bin/admiral` goes, and `ADMIRAL_VERSION=<x.y.z>` picks a release. The script checks the tarball against its SHA-256 file before it unpacks anything.
@@ -143,7 +143,7 @@ The terminal is xterm.js (MIT) with the fit and WebGL addons, loaded when the fi
 | `admiral ships [--port N] [--names]` | Lists ships (`NAME SESSION FLEET HARNESS STATUS REPO`, tab-separated) as the running server on `--port` sees them, if it serves this `ADMIRAL_HOME`. Otherwise it reads tmux and says so on the first line. `--names` prints display names only. |
 | `admiral attach <ship>` | Attaches this terminal to the ship's tmux session (`Ctrl-b d` detaches), by display name or session name. Read-only for an anchored ship. `_admiral` and `_setup` are refused. |
 | `admiral completion zsh \| bash` | Completes ship names for `attach`. |
-| `admiral service install \| uninstall \| status` | `install` writes the LaunchAgent `~/Library/LaunchAgents/dev.jasonbuffin.admiral.plist`, loads it and prints the "On other devices" URL; `uninstall` unloads it and removes the plist; `status` says `Service: not installed`, `installed, not loaded` or `installed, loaded` (from the exit code of `launchctl print`) and prints the URL. |
+| `admiral service install \| uninstall \| status` | `install` writes the LaunchAgent `~/Library/LaunchAgents/dev.jasonbuffin.admiral.plist`, loads it and prints the "On other devices" URL; `uninstall` unloads it and removes the plist; `status` says `Service: not installed`, `installed, not loaded` or `installed, loaded` (from the exit code of `launchctl print`) and prints the URL (`No token yet; Admiral creates it the first time it starts.` when there is no token). |
 | `admiral --version` | Prints `admiral <version> (<commit>)`. |
 
 The answers file for `setup --answers` is JSON holding the same `fleets` object as `config.json`, in the order the fleets should have:
