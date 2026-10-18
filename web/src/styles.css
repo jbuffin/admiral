@@ -1644,7 +1644,7 @@ body.dragging * {
 
 /* Away from the marinas, which are on the right. */
 .sail-off {
-  animation: sailoff 2.3s ease-in forwards;
+  animation: sailoff 2s ease-in forwards;
 }
 
 .plaque {

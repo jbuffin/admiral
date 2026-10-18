@@ -30,6 +30,8 @@ export interface PlaceInput {
   footprint: { w: number; h: number };
   /** Areas no ship may cover, such as the hint chip. */
   keepOut: Rect[];
+  /** How far from the left edge ships start, as a fraction of the width. */
+  inset?: number;
 }
 
 const EPS = 1e-6;
@@ -40,6 +42,17 @@ const LAST = 0.57;
 const BAND = 0.23;
 // Coarse spots first, so ships line up in rows, then every 1 % of the water.
 const FINE = 0.01;
+
+// A ship's box and the land, measured against the narrowest evaluated layout
+// (834x1194: the sea ends at about 0.65 of the width) and the shortest open
+// water (760 px, the sea's minimum height). The slot is up to 140 px wide and
+// about 137 px tall, so each layout's real box fits inside the nominal one.
+export const FOOTPRINT = { w: 142 / 834, h: 142 / 760 };
+export const INSET = 12 / 834; // ships keep off the orders panel's edge
+export const KEEP_OUT: Rect[] = [
+  { x: 0.01, y: 0.015, w: 0.46, h: 0.065 }, // the hint chip (prototype:208)
+  { x: 0.65, y: 0, w: 0.35, h: 1 }, // the marinas' land
+];
 
 const overlap = (a: Rect, b: Rect) =>
   Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) - EPS) *
@@ -56,7 +69,7 @@ function band(fleets: string[], fleet: string, h: number): [number, number] {
   return [Math.min(from, bottom), Math.min(from + BAND, bottom)];
 }
 
-export function placeShip({ fleets, placed, ship, footprint, keepOut }: PlaceInput): { x: number; y: number } {
+export function placeShip({ fleets, placed, ship, footprint, keepOut, inset = 0 }: PlaceInput): { x: number; y: number } {
   const { w, h } = footprint;
   const [top, bottom] = band(fleets, ship.fleet, h);
   const maxX = 1 - w;
@@ -74,20 +87,20 @@ export function placeShip({ fleets, placed, ship, footprint, keepOut }: PlaceInp
   };
   const cols = (step: number) => {
     const out: number[] = [];
-    for (let x = 0; x <= maxX + EPS; x += step) out.push(Math.min(x, maxX));
+    for (let x = inset; x <= maxX + EPS; x += step) out.push(Math.min(x, maxX));
     return out;
   };
   const free = (x: number, y: number) => covered(x, y, others) === 0 && covered(x, y, keepOut) === 0;
 
   for (const [rowStep, colStep] of [
-    [h, w * 1.5],
+    [h, w * 1.25],
     [FINE, FINE],
   ]) {
     for (const y of rows(rowStep)) for (const x of cols(colStep)) if (free(x, y)) return { x, y };
   }
 
   // Nothing is free: the spot that covers the least, the first one on a tie.
-  let best = { x: 0, y: top };
+  let best = { x: inset, y: top };
   let least = Infinity;
   for (const y of rows(FINE)) {
     for (const x of cols(FINE)) {

@@ -56,6 +56,7 @@ function press(e: PointerEvent, s: WireShip): void {
   };
   const end = (ev: PointerEvent, cancelled: boolean) => {
     if (ev.pointerId !== id) return;
+    if (el.hasPointerCapture(id)) el.releasePointerCapture(id);
     window.removeEventListener('pointermove', move);
     window.removeEventListener('pointerup', up);
     window.removeEventListener('pointercancel', cancel);
@@ -65,6 +66,12 @@ function press(e: PointerEvent, s: WireShip): void {
   };
   const up = (ev: PointerEvent) => end(ev, false);
   const cancel = (ev: PointerEvent) => end(ev, true);
+  // Captured, so a mouse released outside the window still ends the drag.
+  try {
+    el.setPointerCapture(id);
+  } catch {
+    // a pointer that is not active (a synthetic event) can't be captured; the window listeners still work
+  }
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
   window.addEventListener('pointercancel', cancel);
@@ -72,7 +79,8 @@ function press(e: PointerEvent, s: WireShip): void {
 
 function ShipView({ s }: { s: WireShip }) {
   const spot = spotOf(s);
-  const h = harnesses[s.harness];
+  // A harness this build doesn't know gets a plain label and an empty flag.
+  const label = (harnesses as Partial<typeof harnesses>)[s.harness]?.label ?? s.harness;
   const needsYou = s.status === 'needs_you';
   const state = { underway: 'underway', needs_you: 'needs-you', anchored: 'anchored', sailing_off: 'sailing-off' }[s.status] as
     | 'underway'
@@ -90,7 +98,7 @@ function ShipView({ s }: { s: WireShip }) {
       type="button"
       class={cls}
       style={`left:${spot.x * 100}%;top:${spot.y * 100}%`}
-      aria-label={`Board ${s.name}, ${h.label} in ${s.fleet_name}, ${statusWords(s)}`}
+      aria-label={`Board ${s.name}, ${label} in ${s.fleet_name}, ${statusWords(s)}`}
       onPointerDown={(e) => press(e, s)}
       // A keyboard or assistive-technology activation has no pointer; a pointer's tap boards on release.
       onClick={(e) => e.detail === 0 && board(s.session)}

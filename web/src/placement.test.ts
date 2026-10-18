@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type PlacedShip, type PlaceInput, type Rect, placeShip } from './placement';
+import { FOOTPRINT, INSET, KEEP_OUT, type PlacedShip, type PlaceInput, type Rect, placeShip } from './placement';
 
 // u10 S1. Expected values come from the spec: the first fleet's general area is
 // roughly 9-32 % of the height and the second's 57-80 % (the prototype's slots,
@@ -116,5 +116,25 @@ describe('placeShip', () => {
     const first = placeShip(input);
     expect(placeShip(structuredClone(input))).toEqual(first);
     expect(placeShip({ ...input, placed: [...placed].reverse() })).toEqual(first);
+  });
+});
+
+describe('placeShip with the real footprint, inset and keep-out areas', () => {
+  const fleets = ['work', 'home'];
+  const boxOf = (p: { x: number; y: number }): Rect => ({ x: p.x, y: p.y, ...FOOTPRINT });
+
+  it('keeps six ships of each fleet on the water, off the land and the left edge, and apart', () => {
+    const placed: PlacedShip[] = [];
+    for (let i = 0; i < 12; i++) {
+      const fleet = fleets[i % 2];
+      const session = `s-${i}`;
+      const spot = placeShip({ fleets, placed, ship: { session, fleet }, footprint: FOOTPRINT, keepOut: KEEP_OUT, inset: INSET });
+      placed.push({ session, fleet, ...spot });
+    }
+    for (const [i, p] of placed.entries()) {
+      expect(p.x).toBeGreaterThanOrEqual(INSET - EPS);
+      for (const k of KEEP_OUT) expect(overlap(boxOf(p), k), `ship ${i} in a keep-out area`).toBe(0);
+      for (const q of placed.slice(i + 1)) expect(overlap(boxOf(p), boxOf(q)), `ships ${i} and ${placed.indexOf(q)}`).toBe(0);
+    }
   });
 });

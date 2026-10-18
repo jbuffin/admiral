@@ -2,7 +2,7 @@ import { computed, effect, signal } from '@preact/signals';
 import { chime } from './chime';
 import { config, type HarnessName } from './config';
 import { connectionState, onMessage } from './connection';
-import { placeShip, type PlacedShip, type Rect } from './placement';
+import { FOOTPRINT, INSET, KEEP_OUT, placeShip, type PlacedShip } from './placement';
 
 // What the `ships` message carries (internal/ships).
 export interface WireShip {
@@ -70,7 +70,7 @@ export const arrivals = signal<ReadonlySet<string>>(new Set());
 // Sailing-off ships stay on screen until their animation ends, even when the server has dropped them.
 export const leaving = signal<ReadonlyMap<string, WireShip>>(new Map());
 const sailedOff = new Set<string>();
-const SAIL_OFF_MS = 2500;
+const SAIL_OFF_MS = 2300; // the animation takes 2 s; the brief allows 2.5 s
 const SAIL_IN_MS = 2400;
 
 let baseline = true; // the next `ships` message is the first of this connection: nothing sails in or chimes
@@ -81,10 +81,10 @@ effect(() => {
 });
 
 // u9 tells the launching browser a ship has sailed, possibly before the `ships` push.
+const announced = new Set<string>();
 window.addEventListener('admiral:launched', (e) => {
   announced.add(e.detail.session);
 });
-const announced = new Set<string>();
 
 function arrive(session: string): void {
   arrivals.value = new Set(arrivals.value).add(session);
@@ -99,11 +99,12 @@ onMessage('ships', (msg: { ships: WireShip[] }) => {
   const before = new Map(ships.value.map((s) => [s.session, s]));
   const first = baseline;
   const now = msg.ships;
+  let asking = false;
   for (const s of now) {
     const was = before.get(s.session);
     if (!first) {
       if (!was) arrive(s.session);
-      else if (was.status !== 'needs_you' && s.status === 'needs_you') chime();
+      else if (was.status !== 'needs_you' && s.status === 'needs_you') asking = true;
     } else if (announced.has(s.session)) arrive(s.session);
     announced.delete(s.session);
     if (s.status === 'sailing_off' && !sailedOff.has(s.session)) {
@@ -116,6 +117,7 @@ onMessage('ships', (msg: { ships: WireShip[] }) => {
       }, SAIL_OFF_MS);
     }
   }
+  if (asking) chime(); // once, however many ships turned needs you in this message
   baseline = false;
   ships.value = now;
   shipsLoaded.value = true;
@@ -131,15 +133,6 @@ export const visible = computed(() => {
 
 // ---- placement ----
 
-// Measured against the 1194x834 reference open water: the plaque is up to 140 px
-// wide and a ship with its plaque about 140 px tall. Fixed numbers, so every
-// browser computes the same spot.
-const FOOTPRINT = { w: 140 / 1194, h: 140 / 834 };
-const KEEP_OUT: Rect[] = [
-  { x: 0.01, y: 0.015, w: 0.46, h: 0.065 }, // the hint chip (prototype:208)
-  { x: 0.66, y: 0, w: 0.34, h: 1 }, // the marinas' land
-];
-
 // Spots this browser has worked out and sent, until the server's push carries them.
 const local = signal<ReadonlyMap<string, Spot>>(new Map());
 // Spots dropped by a drag, shown until the server's push agrees.
@@ -148,31 +141,54 @@ export const dragged = signal<{ session: string } & Spot | null>(null);
 
 const clamp = (n: number) => Math.min(1, Math.max(0, n));
 
-export function putPosition(session: string, p: Spot): void {
+export async function putPosition(session: string, p: Spot): Promise<boolean> {
   const spot = { x: clamp(p.x), y: clamp(p.y) };
-  void fetch(`/api/ships/${encodeURIComponent(session)}/position`, {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(spot),
-  }).catch(() => {});
+  try {
+    const res = await fetch(`/api/ships/${encodeURIComponent(session)}/position`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(spot),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+const SETTLE_MS = 1500;
+// Drops whose PUT succeeded: the next push from the server replaces them.
+const accepted = new Set<string>();
+
+function forget(session: string, spot: Spot): void {
+  // Only the drop that was sent: a newer drop of the same ship stays.
+  if (dropped.peek().get(session) !== spot) return;
+  const next = new Map(dropped.peek());
+  next.delete(session);
+  dropped.value = next;
+  accepted.delete(session);
 }
 
 export function drop(session: string, p: Spot): void {
   const spot = { x: clamp(p.x), y: clamp(p.y) };
   dropped.value = new Map(dropped.value).set(session, spot);
-  putPosition(session, spot);
+  accepted.delete(session);
+  void putPosition(session, spot).then((ok) => {
+    if (!ok) return forget(session, spot); // the server's spot wins
+    accepted.add(session);
+    setTimeout(() => forget(session, spot), SETTLE_MS);
+  });
 }
 
-// A drop is shown until the server's push has the same spot (or the ship is gone).
+// A drop the server accepted gives way to the next push; one still in flight stays until it settles.
 effect(() => {
   const list = ships.value;
-  if (dropped.peek().size === 0) return;
+  if (accepted.size === 0) return;
   const next = new Map(dropped.peek());
-  for (const [session, spot] of next) {
-    const s = list.find((x) => x.session === session);
-    if (!s || (s.position && Math.abs(s.position.x - spot.x) < 1e-9 && Math.abs(s.position.y - spot.y) < 1e-9)) next.delete(session);
+  for (const session of accepted) {
+    next.delete(session);
+    accepted.delete(session);
   }
-  if (next.size !== dropped.peek().size) dropped.value = next;
+  dropped.value = next;
 });
 
 // Every ship without a position gets one, in launch order, each fed to the next.
@@ -192,7 +208,7 @@ effect(() => {
   });
   const next = new Map(known);
   for (const s of pending) {
-    const spot = placeShip({ fleets, placed, ship: s, footprint: FOOTPRINT, keepOut: KEEP_OUT });
+    const spot = placeShip({ fleets, placed, ship: s, footprint: FOOTPRINT, keepOut: KEEP_OUT, inset: INSET });
     placed.push({ session: s.session, fleet: s.fleet, ...spot });
     next.set(s.session, spot);
     putPosition(s.session, spot);

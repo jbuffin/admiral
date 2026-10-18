@@ -100,6 +100,42 @@ test.describe('S2: a launched ship appears in open water', () => {
   });
 });
 
+test.describe('S2: placement on screen', () => {
+  test('four ships of one fleet sit inside the sea and clear of each other and of every dock', async ({ page, admiral, sea }, info) => {
+    test.skip(info.project.name !== 'ipad-portrait'); // the narrowest layout, where the sea is shortest of width
+    const s = sea({ work: { name: 'Work', color: BLUE }, home: { name: 'Home', color: ORANGE } });
+    await admiral.start();
+    for (const repo of ['alpha', 'bravo', 'charlie', 'delta']) await s.launch('work', repo);
+    await page.goto(admiral.url);
+    await expect(ships(page, underwayIn('Work'))).toHaveCount(4);
+    await expect.poll(async () => (await s.ships()).every((x) => x.position)).toBe(true);
+    await expect(header(page).getByText('4 at sea', { exact: true })).toBeVisible();
+    await page.waitForTimeout(2800); // past the sail-in, so the boxes are where they rest
+
+    const boxes = await page.evaluate(() => {
+      const r = (el: Element) => {
+        const b = el.getBoundingClientRect();
+        return { left: b.left, top: b.top, right: b.right, bottom: b.bottom };
+      };
+      return {
+        sea: r(document.querySelector('.sea')!),
+        ships: [...document.querySelectorAll('.ship-slot')].map(r),
+        docks: [...document.querySelectorAll('[data-dock]')].map(r),
+      };
+    });
+    expect(boxes.ships).toHaveLength(4);
+    const apart = (a: typeof boxes.sea, b: typeof boxes.sea) => a.right <= b.left + 0.5 || b.right <= a.left + 0.5 || a.bottom <= b.top + 0.5 || b.bottom <= a.top + 0.5;
+    boxes.ships.forEach((b, i) => {
+      expect(b.left, `ship ${i} left of the sea`).toBeGreaterThanOrEqual(boxes.sea.left - 0.5);
+      expect(b.right, `ship ${i} right of the sea`).toBeLessThanOrEqual(boxes.sea.right + 0.5);
+      expect(b.top, `ship ${i} above the sea`).toBeGreaterThanOrEqual(boxes.sea.top - 0.5);
+      expect(b.bottom, `ship ${i} below the sea`).toBeLessThanOrEqual(boxes.sea.bottom + 0.5);
+      boxes.docks.forEach((d, k) => expect(apart(b, d), `ship ${i} over dock ${k}`).toBe(true));
+      boxes.ships.slice(i + 1).forEach((o, k) => expect(apart(b, o), `ships ${i} and ${i + 1 + k} overlap`).toBe(true));
+    });
+  });
+});
+
 test.describe('S3: a ship that needs you', () => {
   test.beforeEach(({}, info) => test.skip(info.project.name !== 'ipad-landscape'));
 
