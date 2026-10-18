@@ -1,7 +1,8 @@
-import { useState } from 'preact/hooks';
+import { useRef, useState } from 'preact/hooks';
 import { KEYS, ENTER_GAP_MS } from './Bridge';
 import { signedOut } from './connection';
 import { closeSetup, probeSetup, SETUP_SESSION, setupOpen } from './setup';
+import { useBridgePlacement } from './useBridgePlacement';
 import { useBridgeTerminal } from './useBridgeTerminal';
 
 // The setup terminal: `admiral setup` in a bridge-style terminal over open water. It is not a ship, so
@@ -12,6 +13,8 @@ export function SetupTerminal() {
 
 function SetupView() {
   const [draft, setDraft] = useState('');
+  const root = useRef<HTMLDivElement>(null);
+  useBridgePlacement(root, true);
   const { host, link, linkState, activity } = useBridgeTerminal({ session: SETUP_SESSION, open: true, gone: closeSetup, probe: probeSetup });
   const reconnecting = linkState === 'reconnecting';
   const canType = linkState === 'open';
@@ -31,7 +34,7 @@ function SetupView() {
   };
 
   return (
-    <div class="bridge">
+    <div class="bridge" ref={root}>
       <section class="terminal" aria-label="Setup terminal">
         <div class="term-head">
           <div class="term-title">

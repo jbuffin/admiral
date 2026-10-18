@@ -80,6 +80,14 @@ test.describe('S5: the setup terminal', () => {
     await press(page.getByRole('button', { name: 'Set up a fleet' }), touch);
     await expect(terminal(page)).toBeVisible();
     await expect(terminal(page).locator('.xterm')).toBeVisible();
+    // Like the bridge: the prompt and the key bar stay on the screen, and the page behind doesn't scroll.
+    const view = page.viewportSize()!;
+    for (const part of ['.term-prompt', '.term-keys']) {
+      const box = (await terminal(page).locator(part).boundingBox())!;
+      expect(box.y, `${part} starts on the screen`).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height, `${part} ends on the screen`).toBeLessThanOrEqual(view.height);
+    }
+    await expect(page.locator('html')).toHaveClass(/bridge-open/);
     await press(terminal(page).locator('.xterm'), touch);
 
     await shows(page, 'Fleet key');
@@ -104,6 +112,7 @@ test.describe('S5: the setup terminal', () => {
     await answer(page, 'y');
 
     await expect(terminal(page)).toBeHidden({ timeout: 15_000 });
+    await expect(page.locator('html')).not.toHaveClass(/bridge-open/);
     await expect(page.getByRole('region', { name: 'Crew marina' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Set up a fleet' })).toHaveCount(0);
     await expect(countButton(page, '1 fleet')).toBeVisible();
