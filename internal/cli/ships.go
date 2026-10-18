@@ -19,21 +19,32 @@ import (
 	"github.com/jbuffin/admiral/internal/ships"
 )
 
+type shipsBody struct {
+	Ships []ships.Ship `json:"ships"`
+	Home  string       `json:"home"`
+}
+
+// probe asks the server on port for its ships, and returns them only when it
+// serves this home (its `home` field is home.ID of dir): another Admiral may hold
+// the port.
+func probe(port, dir string) (shipsBody, bool) {
+	client := &http.Client{Timeout: time.Second}
+	resp, err := client.Get("http://" + net.JoinHostPort("127.0.0.1", port) + "/api/ships")
+	if err != nil {
+		return shipsBody{}, false
+	}
+	defer resp.Body.Close()
+	var body shipsBody
+	ok := resp.StatusCode == http.StatusOK && json.NewDecoder(resp.Body).Decode(&body) == nil && body.Home == home.ID(dir)
+	return body, ok
+}
+
 // readShips is the ships as the running server sees them (so the status
 // matches the dashboard), or, with the server down, as read from tmux
 // directly. running says which.
 func readShips(port, dir string) (list []ships.Ship, running bool, err error) {
-	client := &http.Client{Timeout: 3 * time.Second}
-	if resp, err := client.Get("http://" + net.JoinHostPort("127.0.0.1", port) + "/api/ships"); err == nil {
-		defer resp.Body.Close()
-		var body struct {
-			Ships []ships.Ship `json:"ships"`
-			Home  string       `json:"home"`
-		}
-		// Only this home's server counts: another Admiral may hold the port.
-		if resp.StatusCode == http.StatusOK && json.NewDecoder(resp.Body).Decode(&body) == nil && body.Home == home.ID(dir) {
-			return body.Ships, true, nil
-		}
+	if body, ok := probe(port, dir); ok {
+		return body.Ships, true, nil
 	}
 	list, err = shipsFromTmux(dir)
 	return list, false, err

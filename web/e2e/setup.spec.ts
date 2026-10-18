@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, symlinkSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { screenText } from './bridge';
@@ -25,7 +25,7 @@ import { isTouch, spyOnPage } from './sea';
 // of claude defaults to ~/.claude, a suggested search root is listed and none
 // is picked for you:
 //
-//   Fleet key                       crew  (not "work": a wrapper claude-<key> on the machine's PATH becomes the executable default)
+//   Fleet key                       crew
 //   Fleet name                      Crew
 //   Color                           (Enter: the next palette color)
 //   Harnesses                       claude          (comma-separated; default: all detected)
@@ -68,7 +68,11 @@ test.describe('S5: the setup terminal', () => {
     mkdirSync(join(code, 'alpha'), { recursive: true });
     execFileSync('git', ['init', '-q'], { cwd: join(code, 'alpha'), env: { PATH: process.env.PATH ?? '', HOME: user, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' } });
     // The setup in Admiral's tmux inherits the server's environment: a temp HOME and the fakes on PATH.
-    await admiral.start({ env: { HOME: user, PATH: `${fakeharness}:${process.env.PATH ?? ''}` } });
+    // PATH is the fakes, tmux and the system directories, so no wrapper of the developer's own can change the defaults.
+    const tools = join(admiral.home, 'tools');
+    mkdirSync(tools);
+    symlinkSync(execFileSync('which', ['tmux'], { encoding: 'utf8' }).trim(), join(tools, 'tmux'));
+    await admiral.start({ env: { HOME: user, PATH: `${fakeharness}:${tools}:/usr/bin:/bin:/usr/sbin:/sbin` } });
     await spyOnPage(page);
     await page.goto(admiral.url);
 

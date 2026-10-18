@@ -25,7 +25,9 @@ var skipped = map[string]bool{
 // Detection is what setup finds on this Mac. It lists only the names in ~ for
 // identity directories (story 14). The walk and the wrapper scan skip every
 // dot-directory and every identity directory in use, wherever it is, so they
-// never list what is inside one.
+// never list what is inside one. Looking for a harness by name only stats
+// <dir>/<name>, so that still covers the PATH entries inside an identity
+// directory (Claude Code's local install puts claude in ~/.claude/local).
 type Detection struct {
 	Home string
 	Dirs []string // where executables are looked for: PATH, then the probes
@@ -39,8 +41,8 @@ type Detection struct {
 var harnessNames = []string{"claude", "codex", "copilot"}
 
 // Detect looks at pathEnv (and the probe directories) and at the names in
-// userHome. admiralHome and the identity directories in skip are never walked
-// or scanned, nor are PATH entries inside one.
+// userHome. admiralHome and the identity directories in skip are never walked,
+// and no PATH entry inside one is listed for wrappers.
 func Detect(userHome, pathEnv, admiralHome string, skip []string) Detection {
 	inside := func(p string) bool {
 		for _, id := range skip {
@@ -52,13 +54,17 @@ func Detect(userHome, pathEnv, admiralHome string, skip []string) Detection {
 	}
 	d := Detection{Home: userHome, Harness: map[string]string{}}
 	seen := map[string]bool{}
+	var scan []string // the entries whose names may be listed, for wrappers
 	add := func(dir string) {
 		if strings.HasPrefix(dir, "~/") {
 			dir = filepath.Join(userHome, dir[2:])
 		}
-		if filepath.IsAbs(dir) && !seen[dir] && !inside(dir) { // a relative entry means whatever the cwd is
+		if filepath.IsAbs(dir) && !seen[dir] { // a relative entry means whatever the cwd is
 			seen[dir] = true
 			d.Dirs = append(d.Dirs, dir)
+			if !inside(dir) {
+				scan = append(scan, dir)
+			}
 		}
 	}
 	for _, dir := range filepath.SplitList(pathEnv) {
@@ -74,7 +80,7 @@ func Detect(userHome, pathEnv, admiralHome string, skip []string) Detection {
 		}
 	}
 	wrapper := map[string]bool{}
-	for _, dir := range d.Dirs {
+	for _, dir := range scan {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue
@@ -186,11 +192,11 @@ func (d Detection) Report(w io.Writer) {
 	}
 }
 
-// WrappersOf are the detected wrappers whose name starts with the harness's.
+// WrappersOf are the detected wrappers named <harness>-something.
 func (d Detection) WrappersOf(harness string) []string {
 	var out []string
 	for _, w := range d.Wrappers {
-		if strings.HasPrefix(filepath.Base(w), harness) {
+		if strings.HasPrefix(filepath.Base(w), harness+"-") {
 			out = append(out, w)
 		}
 	}

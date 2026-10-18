@@ -157,6 +157,29 @@ func TestU12_S1_SetupUnattended(t *testing.T) {
 		}
 	})
 
+	t.Run("a harness installed inside an identity directory on PATH is found, and nothing is listed from inside it", func(t *testing.T) {
+		w := setupWorld(t)
+		local := filepath.Join(w.userHom, ".claude", "local") // Claude Code's local install
+		w.writeRaw(filepath.Join(local, "claude"), "#!/bin/sh\nexit 0\n", 0o755)
+		w.writeRaw(filepath.Join(local, "claude-inner"), "#!/bin/sh\nexit 0\n", 0o755)
+		file := w.answers(t, `"zulu":{"name":"Zulu","search_roots":["~/code"],"claude":{"env":{"CLAUDE_CONFIG_DIR":"~/.claude-z"}}}`)
+
+		// CLAUDE_CONFIG_DIR unset: the identity directory in use is the default, ~/.claude.
+		r := w.admiralWith(cliOpts{path: []string{local}, env: []string{"CLAUDE_CONFIG_DIR="}}, "setup", "--answers", file, "--yes")
+		w.expectExit(r, 0, "setup with claude in ~/.claude/local on PATH")
+		if got := w.readConfig().dock(t, "zulu", "claude").Executable; got != filepath.Join(local, "claude") {
+			t.Errorf("executable = %q, want the claude found on PATH inside the identity directory, %q", got, filepath.Join(local, "claude"))
+		}
+		if !strings.Contains(strings.Join(linesWith(r.stdout, "Harness claude: "), "\n"), filepath.Join(local, "claude")) {
+			t.Errorf("the report should name that claude:\n%s", r.stdout)
+		}
+		for _, l := range linesWith(r.stdout, "Wrapper: ") {
+			if strings.Contains(l, ".claude/local") {
+				t.Errorf("listed a wrapper from inside an identity directory: %s", l)
+			}
+		}
+	})
+
 	t.Run("a second run adds and updates, keeps hand edits and unknown keys, and shows the diff", func(t *testing.T) {
 		w := setupWorld(t)
 		oldFleet := `"old":{"name":"Old","search_roots":["~/code"],"claude":{"executable":` + quote(w.fakeExe2("claude")) + `,"env":{"CLAUDE_CONFIG_DIR":"~/.claude-old"}}}`

@@ -32,6 +32,13 @@ func Resolve() (string, error) {
 // ID names a data directory without giving its path away. A server reports it
 // so that a command can tell whether the server on a port serves its directory.
 func ID(dir string) string {
+	// Both sides name the directory their own way (relative, through a symlink).
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real
+	}
 	sum := sha256.Sum256([]byte(filepath.Clean(dir)))
 	return hex.EncodeToString(sum[:8])
 }

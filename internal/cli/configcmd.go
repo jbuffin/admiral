@@ -27,7 +27,7 @@ func Config(args []string, std IO) error {
 		_, err = std.Out.Write(data)
 		return err
 	case "validate":
-		data, err := readFile(dir)
+		data, err := config.ReadConfig(dir)
 		if err != nil {
 			return err
 		}
@@ -41,14 +41,11 @@ func Config(args []string, std IO) error {
 	return usagef("unknown command %q: want show, validate or edit", "config "+args[0])
 }
 
-// readFile is config.json, or the empty config when there is no file yet.
-func readFile(dir string) ([]byte, error) { return config.ReadConfig(dir) }
-
 // configEdit opens a copy of config.json in $EDITOR (vi without one) and saves
 // the result only when it loads, so it also works on a file that is invalid
 // now. An edit that doesn't load is kept in the temporary file and named.
 func configEdit(dir string, std IO) error {
-	data, err := readFile(dir)
+	data, err := config.ReadConfig(dir)
 	if err != nil {
 		return err
 	}

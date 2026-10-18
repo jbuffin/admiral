@@ -135,13 +135,24 @@ func identityDirsOf(dir string) []string {
 		return dirs
 	}
 	if cfg, err := config.Parse(data); err == nil {
-		for _, f := range cfg.Fleets {
-			for _, h := range f.Harnesses {
-				dirs = append(dirs, config.IdentityDir(h.Name, h.Env))
-			}
+		for k := range identityInUse(cfg) {
+			_, d, _ := strings.Cut(k, "\x00")
+			dirs = append(dirs, d)
 		}
 	}
 	return dirs
+}
+
+// identityInUse maps harness+directory ("claude\x00/home/me/.claude") to the key of
+// the fleet using it.
+func identityInUse(cfg *config.Config) map[string]string {
+	used := map[string]string{}
+	for _, f := range cfg.Fleets {
+		for _, h := range f.Harnesses {
+			used[h.Name+"\x00"+config.IdentityDir(h.Name, h.Env)] = f.Key
+		}
+	}
+	return used
 }
 
 // session is one run of setup: the fleets as they will be written.
@@ -156,8 +167,8 @@ type session struct {
 }
 
 type answered struct {
-	key string
-	a   *config.Object
+	key     string
+	answers *config.Object
 }
 
 // replan starts again from the file as it is now and applies the same answers.
@@ -168,7 +179,7 @@ func (s *session) replan() error {
 	}
 	s.fleets, s.touched = fleets, nil
 	for _, l := range s.log {
-		if err := s.apply(l.key, l.a); err != nil {
+		if err := s.apply(l.key, l.answers); err != nil {
 			return err
 		}
 	}
@@ -665,18 +676,12 @@ func expandTilde(p, userHome string) string {
 	return filepath.Clean(p)
 }
 
-// identityDirsInUse maps harness+directory to the fleet using it, for the
-// default a new fleet is offered.
+// identityDirsInUse is what the fleets as they stand hold, for the default a new
+// fleet is offered.
 func (s *session) identityDirsInUse() map[string]string {
-	used := map[string]string{}
 	cfg, err := config.Parse([]byte(`{"version":1,"fleets":` + string(s.fleets.JSON()) + `}`))
 	if err != nil {
-		return used
+		return map[string]string{}
 	}
-	for _, f := range cfg.Fleets {
-		for _, h := range f.Harnesses {
-			used[h.Name+"\x00"+config.IdentityDir(h.Name, h.Env)] = f.Key
-		}
-	}
-	return used
+	return identityInUse(cfg)
 }

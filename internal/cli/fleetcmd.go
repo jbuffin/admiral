@@ -32,7 +32,7 @@ func loadConfig() (*config.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := readFile(dir)
+	data, err := config.ReadConfig(dir)
 	if err != nil {
 		return nil, err
 	}

@@ -47,6 +47,6 @@ func Token(args []string, std IO) error {
 
 // serves says whether the server on the port is this home's.
 func serves(port, dir string) bool {
-	_, running, _ := readShips(port, dir)
-	return running
+	_, ok := probe(port, dir)
+	return ok
 }
