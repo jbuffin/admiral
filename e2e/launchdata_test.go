@@ -283,12 +283,12 @@ func TestSkillIndexLocationsPerHarness(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.harness+"/"+filepath.Base(c.dir), func(t *testing.T) {
-			sameSet(t, "skills", d.skills("work", c.harness, c.dir).names(), c.want)
+			sameSet(t, "skills", d.skills(t, "work", c.harness, c.dir).names(), c.want)
 		})
 	}
 	// Read fresh on every request.
 	writeSkill(t, filepath.Join(d.claude.dir, "skills"), "late")
-	if got := d.skills("work", "claude", p2).names(); !contains(got, "late") {
+	if got := d.skills(t, "work", "claude", p2).names(); !contains(got, "late") {
 		t.Errorf("a skill installed after the first request is missing: %v", got)
 	}
 }
@@ -309,8 +309,8 @@ func TestSkillIndexExpandsHomeFromTheFleetEnvironment(t *testing.T) {
 		"work": map[string]any{"name": "Work", "search_roots": []string{w.work}, "claude": dock("claude"), "codex": dock("codex")}}})
 	writeConfig(t, w.home, string(b))
 	w.start()
-	sameSet(t, "claude skills", w.skills("work", "claude", proj).names(), []string{"fleet-claude"})
-	sameSet(t, "codex skills", w.skills("work", "codex", proj).names(), []string{"fleet-agents"})
+	sameSet(t, "claude skills", w.skills(t, "work", "claude", proj).names(), []string{"fleet-claude"})
+	sameSet(t, "codex skills", w.skills(t, "work", "codex", proj).names(), []string{"fleet-agents"})
 }
 
 // S4: Claude Code plugins: installed_plugins.json, enabledPlugins (user and
@@ -344,9 +344,9 @@ func TestSkillIndexClaudePlugins(t *testing.T) {
 	d.start()
 
 	base := []string{"jasonbuffin:commodore", "jasonbuffin:alpha", "jasonbuffin:xs", "dflt:ds", "loc:ls", "dp:dps"}
-	sameSet(t, "skills for p1 (pd disabled by the project)", d.skills("work", "claude", p1).names(), base)
-	sameSet(t, "skills for p2", d.skills("work", "claude", p2).names(), append(base, "pd:pds"))
-	if got := d.skills("work", "codex", p1).names(); len(got) != 0 {
+	sameSet(t, "skills for p1 (pd disabled by the project)", d.skills(t, "work", "claude", p1).names(), base)
+	sameSet(t, "skills for p2", d.skills(t, "work", "claude", p2).names(), append(base, "pd:pds"))
+	if got := d.skills(t, "work", "codex", p1).names(); len(got) != 0 {
 		t.Errorf("Codex must not see Claude plugins: %v", got)
 	}
 
@@ -376,28 +376,28 @@ func TestSkillIndexClaudePlugins(t *testing.T) {
 func TestCommodoreLookup(t *testing.T) {
 	cases := []struct {
 		name, harness string
-		setup         func(d *dataWorld)
+		setup         func(t *testing.T, d *dataWorld)
 		found         bool
 		skill         string // the invocation name
 		prompt        string
 	}{
-		{"absent", "claude", func(d *dataWorld) {}, false, "", ""},
-		{"claude plugin", "claude", func(d *dataWorld) {
+		{"absent", "claude", func(t *testing.T, d *dataWorld) {}, false, "", ""},
+		{"claude plugin", "claude", func(t *testing.T, d *dataWorld) {
 			d.claude.plugin("jasonbuffin@mk", "jasonbuffin", filepath.Join(d.claude.dir, "plugins", "cache", "mk", "jasonbuffin", "1"), nil, "engineering/commodore")
 			d.claude.enable("jasonbuffin@mk", true)
 		}, true, "jasonbuffin:commodore", "/jasonbuffin:commodore do it"},
-		{"codex plain", "codex", func(d *dataWorld) { writeSkill(t, filepath.Join(d.codex, "skills"), "commodore") },
+		{"codex plain", "codex", func(t *testing.T, d *dataWorld) { writeSkill(t, filepath.Join(d.codex, "skills"), "commodore") },
 			true, "commodore", "$commodore do it"},
-		{"codex with only the claude plugin", "codex", func(d *dataWorld) {
+		{"codex with only the claude plugin", "codex", func(t *testing.T, d *dataWorld) {
 			d.claude.plugin("jasonbuffin@mk", "jasonbuffin", filepath.Join(d.claude.dir, "plugins", "cache", "mk", "jasonbuffin", "1"), nil, "commodore")
 			d.claude.enable("jasonbuffin@mk", true)
 		}, false, "", ""},
-		{"plain beats plugin", "claude", func(d *dataWorld) {
+		{"plain beats plugin", "claude", func(t *testing.T, d *dataWorld) {
 			writeSkill(t, filepath.Join(d.claude.dir, "skills"), "commodore")
 			d.claude.plugin("jasonbuffin@mk", "jasonbuffin", filepath.Join(d.claude.dir, "plugins", "cache", "mk", "jasonbuffin", "1"), nil, "commodore")
 			d.claude.enable("jasonbuffin@mk", true)
 		}, true, "commodore", "/commodore do it"},
-		{"plugins by plugin name", "claude", func(d *dataWorld) {
+		{"plugins by plugin name", "claude", func(t *testing.T, d *dataWorld) {
 			for _, n := range []string{"zzz", "aaa"} {
 				d.claude.plugin(n+"@mk", n, filepath.Join(d.claude.dir, "plugins", "cache", "mk", n, "1"), nil, "commodore")
 				d.claude.enable(n+"@mk", true)
@@ -408,9 +408,9 @@ func TestCommodoreLookup(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			d := newDataWorld(t)
 			proj := d.repo("proj")
-			c.setup(d)
+			c.setup(t, d)
 			d.start()
-			got := d.skills("work", c.harness, proj).Commodore
+			got := d.skills(t, "work", c.harness, proj).Commodore
 			if got.Found != c.found || got.Name != c.skill {
 				t.Errorf("commodore = %+v, want found %v name %q", got, c.found, c.skill)
 			}
@@ -461,7 +461,7 @@ func TestFavorites(t *testing.T) {
 		t.Errorf("GET /api/config favorite_skills = %v right after the PUT, want %v", api.FavoriteSkills, five)
 	}
 	waitWS(t, c, 3*time.Second, "the five favorites", func(b cfgBody) bool { return reflect.DeepEqual(b.FavoriteSkills, five) })
-	for _, s := range d.skills("work", "claude", proj).Skills {
+	for _, s := range d.skills(t, "work", "claude", proj).Skills {
 		if want := s.Name == "f1"; s.Favorite != want {
 			t.Errorf("skill %s favorite = %v, want %v", s.Name, s.Favorite, want)
 		}

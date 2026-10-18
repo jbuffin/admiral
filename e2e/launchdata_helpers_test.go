@@ -27,6 +27,14 @@ type dataWorld struct {
 	cop    string // COPILOT_HOME
 }
 
+func init() {
+	// The engineer's own identity directories must never reach Admiral: a fleet
+	// that sets none would read them for its skills.
+	for _, k := range []string{"CLAUDE_CONFIG_DIR", "CODEX_HOME", "COPILOT_HOME", "CLAUDE_CODE_PLUGIN_CACHE_DIR"} {
+		_ = os.Unsetenv(k)
+	}
+}
+
 func newDataWorld(t *testing.T) *dataWorld {
 	t.Helper()
 	w := newWorld(t)
@@ -294,15 +302,15 @@ func (w *world) getSkills(fleet, harness, dir string) (int, string) {
 	return send(w.t, http.MethodGet, w.in.LocalURL+"/api/launch-orders/skills?"+q.Encode(), nil)
 }
 
-func (w *world) skills(fleet, harness, dir string) skillsResp {
-	w.t.Helper()
+func (w *world) skills(t *testing.T, fleet, harness, dir string) skillsResp {
+	t.Helper()
 	code, body := w.getSkills(fleet, harness, dir)
 	if code != http.StatusOK {
-		w.t.Fatalf("GET /api/launch-orders/skills = %d, want 200: %s", code, body)
+		t.Fatalf("GET /api/launch-orders/skills = %d, want 200: %s", code, body)
 	}
 	var r skillsResp
 	if err := json.Unmarshal([]byte(body), &r); err != nil {
-		w.t.Fatalf("skills response is not JSON: %v\n%s", err, body)
+		t.Fatalf("skills response is not JSON: %v\n%s", err, body)
 	}
 	return r
 }
