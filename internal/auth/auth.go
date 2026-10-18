@@ -214,7 +214,7 @@ func (a *Auth) serve(w http.ResponseWriter, r *http.Request, next http.Handler, 
 
 func (a *Auth) redirectWithCookie(w http.ResponseWriter, r *http.Request, query url.Values) {
 	http.SetCookie(w, &http.Cookie{
-		Name: a.cookie, Value: a.token, Path: "/", MaxAge: cookieMaxAge,
+		Name: a.cookie, Value: a.current(), Path: "/", MaxAge: cookieMaxAge,
 		HttpOnly: true, SameSite: http.SameSiteStrictMode,
 	})
 	query.Del("token")

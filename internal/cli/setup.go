@@ -384,20 +384,78 @@ func (s *session) askKey(in *bufio.Reader) (string, error) {
 	}
 }
 
+// known is what the file already holds for a fleet key: the defaults of a
+// re-run, so that answering every question with Enter changes nothing (story 17).
+type known struct {
+	name, color string
+	roots       []string
+	harnesses   []string
+	exe, dir    map[string]string // by harness: executable, identity directory
+}
+
+func (s *session) known(key string) known {
+	k := known{exe: map[string]string{}, dir: map[string]string{}}
+	raw, ok := s.fleets.Get(key)
+	if !ok {
+		return k
+	}
+	fleet, err := config.ParseObject(raw)
+	if err != nil {
+		return k
+	}
+	str := func(o *config.Object, field string) string {
+		var v string
+		if r, ok := o.Get(field); ok {
+			_ = json.Unmarshal(r, &v)
+		}
+		return v
+	}
+	k.name, k.color = str(fleet, "name"), str(fleet, "color")
+	r, has := fleet.Get("search_roots")
+	k.roots = stringsOf(r, has)
+	for _, h := range config.Harnesses() {
+		dock, err := dockOf(fleet, h)
+		if err != nil {
+			continue
+		}
+		if _, has := fleet.Get(h); !has {
+			continue
+		}
+		k.harnesses = append(k.harnesses, h)
+		k.exe[h] = str(dock, "executable")
+		if env, err := envOf(dock); err == nil {
+			v, _, _ := config.IdentityVar(h)
+			k.dir[h] = str(env, v)
+		}
+	}
+	return k
+}
+
 func (s *session) askFleet(in *bufio.Reader, key string, taken map[string]string) (*config.Object, error) {
 	w := s.io.Out
+	have := s.known(key)
 	a := config.NewObject()
-	name, err := prompt(in, w, "Fleet name", strings.ToUpper(key[:1])+key[1:])
+	defName := strings.ToUpper(key[:1]) + key[1:]
+	if have.name != "" {
+		defName = have.name
+	}
+	name, err := prompt(in, w, "Fleet name", defName)
 	if err != nil {
 		return nil, err
 	}
 	a.SetValue("name", name)
 
 	next := config.PaletteColor(s.fleets.Len())
+	if _, exists := s.fleets.Get(key); exists {
+		next = have.color // a fleet without a color keeps the next palette color it is given
+	}
 	for {
 		color, err := prompt(in, w, "Color", next)
 		if err != nil {
 			return nil, err
+		}
+		if color == "" {
+			break
 		}
 		if colorRe.MatchString(color) {
 			a.SetValue("color", color)
@@ -406,10 +464,12 @@ func (s *session) askFleet(in *bufio.Reader, key string, taken map[string]string
 		fmt.Fprintln(w, "A color looks like #RRGGBB.")
 	}
 
-	var detected []string
-	for _, h := range harnessNames {
-		if _, ok := s.det.Harness[h]; ok {
-			detected = append(detected, h)
+	detected := have.harnesses
+	if len(detected) == 0 {
+		for _, h := range harnessNames {
+			if _, ok := s.det.Harness[h]; ok {
+				detected = append(detected, h)
+			}
 		}
 	}
 	var chosen []string
@@ -427,7 +487,11 @@ func (s *session) askFleet(in *bufio.Reader, key string, taken map[string]string
 	docks := map[string]*config.Object{}
 	for _, h := range chosen {
 		dock := config.NewObject()
-		exe, err := prompt(in, w, "Executable for "+h, s.det.Harness[h])
+		defExe := s.det.Harness[h]
+		if have.exe[h] != "" {
+			defExe = have.exe[h]
+		}
+		exe, err := prompt(in, w, "Executable for "+h, defExe)
 		if err != nil {
 			return nil, err
 		}
@@ -436,7 +500,9 @@ func (s *session) askFleet(in *bufio.Reader, key string, taken map[string]string
 		}
 		v, def, _ := config.IdentityVar(h)
 		suggest := def
-		if _, used := taken[h+"\x00"+expandTilde(def, s.det.Home)]; used {
+		if have.dir[h] != "" {
+			suggest = have.dir[h]
+		} else if owner, used := taken[h+"\x00"+expandTilde(def, s.det.Home)]; used && owner != key {
 			suggest = def + "-" + key
 		}
 		dirAnswer, err := prompt(in, w, "Identity directory for "+h, suggest)
@@ -490,7 +556,7 @@ func (s *session) askFleet(in *bufio.Reader, key string, taken map[string]string
 	}
 	roots := []string{}
 	for {
-		answer, err := prompt(in, w, "Search roots (comma-separated)", "")
+		answer, err := prompt(in, w, "Search roots (comma-separated)", strings.Join(have.roots, ", "))
 		if err != nil {
 			return nil, err
 		}
