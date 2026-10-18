@@ -161,7 +161,7 @@ func writeJSON(t *testing.T, path string, v any) {
 }
 
 const (
-	decoySecret = "decoy-secret-7f3a91"
+	decoySecret = "decoy-secret-7f3a91" // gitleaks:allow
 	decoyHelper = "decoy-helper-4c82d0"
 )
 

@@ -16,6 +16,8 @@ import (
 	"unicode"
 
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/repofinder"
+	"github.com/jbuffin/admiral/internal/skillindex"
 )
 
 // maxCommand keeps one tmux invocation under the size tmux's client protocol
@@ -110,6 +112,21 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	case !st.IsDir():
 		return nil, refuse(http.StatusBadRequest, "%s is not a directory", req.Dir)
 	}
+	// The list is read again here: a checkout can vanish, or be named in a
+	// request that never came from the list (story 84). The cleaned path is
+	// the one used from here on.
+	dir, listed := repofinder.Contains(repofinder.List(fleet.SearchRoots), req.Dir)
+	if !listed {
+		return nil, refuse(http.StatusBadRequest, "directory %s is not a checkout or search root of fleet %s", req.Dir, fleet.Name)
+	}
+	req.Dir = dir
+	if req.Skill.Kind == "commodore" {
+		name, ok := skillindex.Commodore(skillindex.Installed(req.Harness, dock.Environ(), req.Dir))
+		if !ok {
+			return nil, refuse(http.StatusBadRequest, "Commodore not found for %s in fleet %s", req.Harness, fleet.Name)
+		}
+		skill = name
+	}
 	exe, found := dock.Resolve()
 	if !found {
 		return nil, refuse(http.StatusBadRequest, "%s executable %s not found for fleet %s", req.Harness, dock.Executable, fleet.Name)
@@ -175,12 +192,11 @@ func commandSize(argv []string) int {
 	return n
 }
 
-// skillName is the skill's name without its / or $ prefix; "" for Just launch.
+// skillName is the skill's name without its / or $ prefix; "" for Just launch
+// and for Commodore, whose name Launch looks up in the skill index.
 func skillName(s Skill) (string, error) {
 	switch s.Kind {
-	case "commodore":
-		return "commodore", nil
-	case "none":
+	case "commodore", "none":
 		return "", nil
 	case "skill":
 		name := s.Name
