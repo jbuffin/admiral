@@ -1,11 +1,39 @@
 import { test as base, expect } from '@playwright/test';
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const bin = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'admiral');
+
+const testPlugin = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'e2e', 'testplugin', 'plugin.py');
+
+// The control directory of one test-plugin source (see the plugin's docstring):
+// the test writes what the plugin should list or do, and reads what it logged.
+export interface Flags {
+  /** The directory to put in the source's settings as `flagdir`. */
+  dir: string;
+  /** Orders per panel id, read on every orders.list. */
+  orders(byPanel: Record<string, unknown[]>): void;
+  /** Panels, read on every panels.list. */
+  panels(list: { id: string; title: string }[]): void;
+  /** A flag file (crash-on-initialize, slow-initialize…) or a do-<command> file. */
+  put(name: string, content?: string): void;
+  remove(name: string): void;
+  /** How many times the plugin process has been initialized. */
+  starts(): number;
+}
 
 // One Admiral per test: its own ADMIRAL_HOME, its own config.json and its own
 // port, so scenarios can each start from a different config.
@@ -21,6 +49,13 @@ export interface Admiral {
   fakeHarness(name: string): string;
   /** A path under home that is not there, for a dock whose executable is missing. */
   missingHarness(name: string): string;
+  /**
+   * Installs the misbehaving test plugin (e2e/testplugin) as plugins/<folder>.
+   * The freeform plugin is not installed here: the server writes it at start.
+   */
+  installTestPlugin(folder?: string): void;
+  /** A fresh flag directory for one test-plugin source. */
+  flags(label: string): Flags;
   /** Starts the server on a free port, with whatever config.json holds. */
   start(): Promise<void>;
 }
@@ -52,6 +87,36 @@ class Instance implements Admiral {
 
   missingHarness(name: string) {
     return join(this.home, 'no-such-dir', name);
+  }
+
+  installTestPlugin(folder = 'testplug') {
+    const dir = join(this.home, 'plugins', folder);
+    mkdirSync(dir, { recursive: true });
+    copyFileSync(testPlugin, join(dir, 'plugin.py'));
+    chmodSync(join(dir, 'plugin.py'), 0o755);
+    writeFileSync(join(dir, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>');
+    writeFileSync(
+      join(dir, 'plugin.json'),
+      JSON.stringify({ name: folder, description: `Test plugin ${folder}`, command: './plugin.py', args: [], icon: 'icon.svg' }),
+    );
+  }
+
+  flags(label: string): Flags {
+    const dir = join(this.home, 'flags', label);
+    mkdirSync(dir, { recursive: true });
+    const write = (name: string, text: string) => {
+      const tmp = join(dir, `.${name}.tmp`);
+      writeFileSync(tmp, text);
+      renameSync(tmp, join(dir, name));
+    };
+    return {
+      dir,
+      orders: (byPanel) => write('orders.json', JSON.stringify(byPanel)),
+      panels: (list) => write('panels.json', JSON.stringify(list)),
+      put: (name, content = '') => write(name, content),
+      remove: (name) => rmSync(join(dir, name), { force: true }),
+      starts: () => (existsSync(join(dir, 'starts')) ? readFileSync(join(dir, 'starts'), 'utf8').split('\n').filter(Boolean).length : 0),
+    };
   }
 
   start() {

@@ -1,6 +1,7 @@
 package sources
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -36,19 +37,20 @@ type Service struct {
 
 // sourceState is a runner's state, copied.
 type sourceState struct {
-	def      config.Source
-	state    string
-	readOnly bool
-	errMsg   string
-	auth     *Auth
-	caps     []string
-	panels   []Panel
+	def       config.Source
+	state     string
+	readOnly  bool
+	errMsg    string
+	auth      *Auth
+	caps      []string
+	panels    []Panel
+	hasSchema bool
 }
 
 func (r *runner) snapshot() sourceState {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	st := sourceState{def: r.def, state: r.state, readOnly: r.readOnly, errMsg: r.errMsg, caps: slices.Clone(r.caps)}
+	st := sourceState{def: r.def, state: r.state, readOnly: r.readOnly, errMsg: r.errMsg, caps: slices.Clone(r.caps), hasSchema: r.schema != nil}
 	if r.auth != nil {
 		a := *r.auth
 		st.auth = &a
@@ -68,6 +70,7 @@ type SourceView struct {
 	Plugin       string   `json:"plugin"`
 	IconURL      string   `json:"icon_url"`
 	Capabilities []string `json:"capabilities"`
+	HasSchema    bool     `json:"has_schema"`
 	State        string   `json:"state"`
 	ReadOnly     bool     `json:"read_only"`
 	Error        *string  `json:"error"`
@@ -80,7 +83,7 @@ func (s *Service) View() []SourceView {
 	hidden := ships.HiddenOrders(s.Ships())
 	out := []SourceView{}
 	for _, st := range s.Sup.snapshot() {
-		v := SourceView{Key: st.def.Key, Name: st.def.Name, Plugin: st.def.Plugin, Capabilities: st.caps,
+		v := SourceView{Key: st.def.Key, Name: st.def.Name, Plugin: st.def.Plugin, Capabilities: st.caps, HasSchema: st.hasSchema,
 			State: st.state, ReadOnly: st.readOnly, Auth: st.auth, Panels: []Panel{}}
 		if m, dir, err := LoadManifest(s.Home, st.def.Plugin); err == nil {
 			if v.Name == "" {
@@ -150,6 +153,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sources/{key}/restart", s.serveRestart)
 	mux.HandleFunc("POST /api/sources/{key}/refresh", s.serveRefresh)
 	mux.HandleFunc("GET /api/sources/{key}/schema", s.serveSchema)
+	mux.HandleFunc("GET /api/sources/{key}/settings", s.serveSettings)
 	mux.HandleFunc("POST /api/sources/{key}/orders", s.serveAddOrder)
 	mux.HandleFunc("PUT /api/sources/{key}/orders/{id}", s.serveEditOrder)
 	mux.HandleFunc("DELETE /api/sources/{key}/orders/{id}", s.serveRemoveOrder)
@@ -342,7 +346,13 @@ func (s *Service) serveSave(w http.ResponseWriter, r *http.Request) {
 		list[i].Name = strings.TrimSpace(*req.Name)
 	}
 	if settings != nil {
-		list[i].Settings = settings
+		kept, err := keepSecrets(list[i].Settings, settings)
+		if err != nil {
+			s.mu.Unlock()
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		list[i].Settings = kept
 	}
 	gen := s.Sup.Generation(key)
 	err := s.write(list)
@@ -354,6 +364,230 @@ func (s *Service) serveSave(w http.ResponseWriter, r *http.Request) {
 	s.Sup.ReconcileForce(key, gen)
 	v, _ := s.view(key)
 	writeJSON(w, http.StatusOK, v)
+}
+
+// unchangedMarker stands in for a stored secret in what the settings view
+// returns. Saving it back keeps the stored value, so a secret never leaves
+// the server and a save that did not touch it does not wipe it.
+const unchangedMarker = "__admiral_unchanged__"
+
+func (s *Service) schemaOf(key string) json.RawMessage {
+	rn := s.Sup.runner(key)
+	if rn == nil {
+		return nil
+	}
+	rn.mu.Lock()
+	defer rn.mu.Unlock()
+	return rn.schema
+}
+
+// decodeValue reads JSON keeping numbers exactly as written.
+func decodeValue(raw json.RawMessage) any {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var v any
+	_ = dec.Decode(&v)
+	return v
+}
+
+// maskSecrets replaces the stored strings and numbers in v with the marker,
+// except those the schema sc declares as plain values: reached only through
+// "properties" and a single "items" schema, of type string, number or integer,
+// and not "format": "password". Anything the walk cannot follow with certainty
+// (no schema, "$ref", combinators, "additionalProperties", keys the schema
+// does not list) is masked, so a schema Admiral cannot read never lets a
+// secret out. Empty strings, booleans and nulls hold no secret and stay.
+func maskSecrets(v any, sc map[string]any) any {
+	switch t := v.(type) {
+	case string:
+		if t != "" && !declaredPlain(sc, false) {
+			return unchangedMarker
+		}
+	case json.Number:
+		if !declaredPlain(sc, true) {
+			return unchangedMarker
+		}
+	case []any:
+		var items map[string]any
+		if followable(sc) {
+			items, _ = sc["items"].(map[string]any)
+		}
+		for i := range t {
+			t[i] = maskSecrets(t[i], items)
+		}
+	case map[string]any:
+		var props map[string]any
+		if followable(sc) {
+			props, _ = sc["properties"].(map[string]any)
+		}
+		for k, val := range t {
+			child, _ := props[k].(map[string]any)
+			t[k] = maskSecrets(val, child)
+		}
+	}
+	return v
+}
+
+// schemaKeywords are the only keywords a schema node may use and still be
+// followed. A node with any other keyword (prefixItems, dependentSchemas,
+// $ref, oneOf…) and everything under it is masked.
+var schemaKeywords = map[string]bool{
+	"type": true, "properties": true, "items": true, "required": true, "title": true, "description": true,
+	"format": true, "enum": true, "const": true, "default": true, "examples": true, "minimum": true,
+	"maximum": true, "exclusiveMinimum": true, "exclusiveMaximum": true, "multipleOf": true,
+	"minLength": true, "maxLength": true, "pattern": true, "minItems": true, "maxItems": true,
+	"uniqueItems": true, "minProperties": true, "maxProperties": true, "$schema": true, "$id": true,
+	"$comment": true, "$defs": true, "definitions": true, "additionalProperties": true,
+	"readOnly": true, "deprecated": true,
+}
+
+// followable says the schema node uses only keywords maskSecrets understands.
+func followable(sc map[string]any) bool {
+	if sc == nil {
+		return false
+	}
+	for k := range sc {
+		if !schemaKeywords[k] {
+			return false
+		}
+	}
+	if it, ok := sc["items"]; ok {
+		if _, isObj := it.(map[string]any); !isObj {
+			return false
+		}
+	}
+	return true
+}
+
+// publicScalars reports whether the list holds only strings, numbers, booleans and nulls.
+func publicScalars(list []any) bool {
+	for _, e := range list {
+		switch e.(type) {
+		case string, json.Number, bool, nil:
+		default:
+			return false
+		}
+	}
+	return len(list) > 0
+}
+
+// declaredPlain says the schema node makes a string (or, with number set, a
+// number) public: it declares that type, or a type list of scalars, or an
+// enum or const of scalars with no type; and it is not marked a secret
+// ("format": "password" in any case, or "writeOnly": true).
+func declaredPlain(sc map[string]any, number bool) bool {
+	if !followable(sc) {
+		return false
+	}
+	if f, _ := sc["format"].(string); strings.EqualFold(f, "password") || sc["writeOnly"] == true {
+		return false
+	}
+	switch t := sc["type"].(type) {
+	case string:
+		if number {
+			return t == "number" || t == "integer"
+		}
+		return t == "string"
+	case []any:
+		for _, e := range t {
+			if x, _ := e.(string); x != "string" && x != "number" && x != "integer" && x != "null" {
+				return false
+			}
+		}
+		return len(t) > 0
+	case nil:
+		if list, ok := sc["enum"].([]any); ok {
+			return publicScalars(list)
+		}
+		if c, ok := sc["const"]; ok {
+			return publicScalars([]any{c})
+		}
+	}
+	return false
+}
+
+// restoreSecrets puts the stored value back wherever the engineer left the
+// marker, at the same path. A marker with nothing stored is dropped from an
+// object; a string that only starts with the marker is refused.
+func restoreSecrets(in, old any) (any, error) {
+	switch t := in.(type) {
+	case string:
+		if strings.HasPrefix(t, unchangedMarker) && t != unchangedMarker {
+			return nil, errors.New("a setting starts with the reserved text " + unchangedMarker + " but is not exactly that text")
+		}
+	case []any:
+		oldList, _ := old.([]any)
+		for i, e := range t {
+			if e == unchangedMarker {
+				if i >= len(oldList) {
+					return nil, errors.New("a list holds " + unchangedMarker + " where nothing is stored")
+				}
+				t[i] = oldList[i]
+				continue
+			}
+			var prev any
+			if i < len(oldList) {
+				prev = oldList[i]
+			}
+			r, err := restoreSecrets(e, prev)
+			if err != nil {
+				return nil, err
+			}
+			t[i] = r
+		}
+	case map[string]any:
+		oldMap, _ := old.(map[string]any)
+		for k, val := range t {
+			if val == unchangedMarker {
+				if prev, ok := oldMap[k]; ok {
+					t[k] = prev
+				} else {
+					delete(t, k)
+				}
+				continue
+			}
+			r, err := restoreSecrets(val, oldMap[k])
+			if err != nil {
+				return nil, err
+			}
+			t[k] = r
+		}
+	}
+	return in, nil
+}
+
+// keepSecrets is restoreSecrets over raw JSON settings.
+func keepSecrets(stored, incoming json.RawMessage) (json.RawMessage, error) {
+	v, err := restoreSecrets(decodeValue(incoming), decodeValue(stored))
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(v)
+}
+
+// serveSettings is the name and settings the form starts from, with each
+// stored secret hidden behind the marker.
+func (s *Service) serveSettings(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("key")
+	def, ok := s.Config.Current().Source(key)
+	if !ok {
+		writeError(w, http.StatusNotFound, "source "+key+" not found")
+		return
+	}
+	var schema map[string]any
+	_ = json.Unmarshal(s.schemaOf(key), &schema)
+	settings := maskSecrets(decodeValue(def.Settings), schema)
+	if settings == nil {
+		settings = map[string]any{}
+	}
+	name := def.Name
+	if name == "" {
+		if v, ok := s.view(key); ok {
+			name = v.Name
+		}
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"name": name, "settings": settings})
 }
 
 func (s *Service) serveDelete(w http.ResponseWriter, r *http.Request) {
