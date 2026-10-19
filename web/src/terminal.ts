@@ -58,6 +58,7 @@ export async function createTerminal(host: HTMLElement): Promise<Term> {
   box.className = 'term-box';
   host.append(box);
   term.open(box);
+  swipeToScroll(box);
   try {
     const gl = new WebglAddon();
     gl.onContextLoss(() => gl.dispose());
@@ -115,4 +116,44 @@ export async function createTerminal(host: HTMLElement): Promise<Term> {
     },
   };
   return t;
+}
+
+// xterm.js 6 scrolls on wheel events only, so a swipe on iPad does nothing. A one-finger drag is
+// turned into wheel events, which xterm.js handles as it does a trackpad: scrollback, or arrows and
+// mouse reports when the app has the alternate screen or mouse mode.
+function swipeToScroll(box: HTMLElement) {
+  let last: { id: number; y: number } | undefined;
+  box.addEventListener(
+    'touchstart',
+    (e) => {
+      const t = e.touches.length === 1 ? e.touches[0] : undefined;
+      last = t && { id: t.identifier, y: t.clientY };
+    },
+    { passive: true },
+  );
+  box.addEventListener(
+    'touchmove',
+    (e) => {
+      const t = last && Array.from(e.changedTouches).find((c) => c.identifier === last?.id);
+      if (!last || !t || e.touches.length !== 1) return;
+      const dy = last.y - t.clientY;
+      last.y = t.clientY;
+      e.preventDefault();
+      if (dy === 0) return;
+      const at = document.elementFromPoint(t.clientX, t.clientY) ?? box;
+      at.dispatchEvent(
+        new WheelEvent('wheel', {
+          deltaY: dy,
+          deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+          clientX: t.clientX,
+          clientY: t.clientY,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    },
+    { passive: false },
+  );
+  box.addEventListener('touchend', () => (last = undefined));
+  box.addEventListener('touchcancel', () => (last = undefined));
 }
