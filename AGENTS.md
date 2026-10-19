@@ -1,6 +1,6 @@
 # Admiral
 
-Visual dashboard that launches coding-agent sessions in the background and lets the engineer watch and attach to them. Design phase; designs live in `designs/`.
+Visual dashboard that launches coding-agent sessions in the background and lets the engineer watch and attach to them. The build has started; designs live in `designs/`.
 
 ## Agent skills
 
