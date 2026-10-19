@@ -4,6 +4,7 @@ import { connect } from './connection';
 import { Header } from './Header';
 import { Ghost, LaunchOrders } from './LaunchOrders';
 import { LogoSprite } from './Logos';
+import { Ships } from './OpenWater';
 import { Marina, SetUpMarina } from './Marina';
 import { Sidebar } from './Sidebar';
 import { Lighthouse, Shore, Trees, WaterScenery } from './Scenery';
@@ -29,6 +30,7 @@ export function App() {
             <Trees />
             {fleets && (fleets.length === 0 ? <SetUpMarina /> : fleets.map((f) => <Marina key={f.key} fleet={f} />))}
           </div>
+          <Ships />
         </main>
       </div>
       <Ghost />

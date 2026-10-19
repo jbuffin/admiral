@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Admiral } from './fixtures';
@@ -34,6 +34,7 @@ export class World {
   readonly root: string;
   readonly work: string;
   private readonly rec: string;
+  private ended = 0;
   private readonly cue: string;
 
   constructor(
@@ -233,7 +234,10 @@ export class World {
     const sock = join(this.root, 'tmux.sock');
     const list = spawnSync('tmux', ['-S', sock, 'list-sessions', '-F', '#{session_name}'], { encoding: 'utf8' });
     for (const name of list.stdout.split('\n')) {
-      if (name && name !== '_admiral') spawnSync('tmux', ['-S', sock, 'kill-session', '-t', name]);
+      if (!name || name === '_admiral') continue;
+      spawnSync('tmux', ['-S', sock, 'kill-session', '-t', name]);
+      // Ship names are picked at random and a free one can come round again: keep what this one recorded under its own name.
+      if (existsSync(join(this.rec, name))) renameSync(join(this.rec, name), join(this.rec, `${name}~${this.ended++}`));
     }
   }
 }
