@@ -24,11 +24,15 @@ Files the test writes in flagdir:
 
   orders.json   {"<panel id>": [order, ...]}, read on every orders.list
   panels.json   [{"id", "title"}], read on every panels.list (default one
-                panel "main")
+                panel "main"); settings.panels, a list of {title, ...}, wins
+                when it is set and lists one panel per entry, id = title
   crash-on-initialize / crash-on-panels
                 exit with status 1 when that request arrives, for as long as
                 the file exists
   hang-<method>   never answer that method (hang-initialize, hang-orders.list…)
+  fail-orders.list-<panel id>
+                orders.list for that panel answers with a JSON-RPC error whose
+                message is the file's content, for as long as the file exists
   slow-initialize   file content is the seconds initialize waits before answering
   do-<command>  consumed once, content is the command's argument, the plugin:
                   do-crash            exits with status 1
@@ -166,7 +170,15 @@ def handle(msg):
     elif method == "panels.list":
         if flag("crash-on-panels"):
             os._exit(1)
-        result = read_json("panels.json", [{"id": "main", "title": settings.get("title", "Test")}])
+        if settings.get("panels"):
+            result = [{"id": p["title"], "title": p["title"]} for p in settings["panels"]]
+        else:
+            result = read_json("panels.json", [{"id": "main", "title": settings.get("title", "Test")}])
+    elif method == "orders.list" and flagdir and flag("fail-orders.list-" + str(params.get("panel"))):
+        with open(path("fail-orders.list-" + str(params.get("panel")))) as f:
+            message = f.read().strip()
+        emit({"jsonrpc": "2.0", "id": msg.get("id"), "error": {"code": -32000, "message": message}})
+        return
     elif method == "orders.list":
         result = read_json("orders.json", {}).get(params.get("panel"), [])
     elif method == "orders.add":

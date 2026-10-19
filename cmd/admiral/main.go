@@ -159,8 +159,8 @@ func serve(args []string) error {
 	shipService := &ships.Service{Host: host, State: st, Hub: hub, Launcher: &launcher.Launcher{
 		Tmux: tmuxPath, Socket: sock, Home: dir, Config: cfg.Current}}
 
-	if err := sources.InstallFreeform(dir); err != nil {
-		fmt.Fprintln(os.Stderr, "admiral: could not install the freeform plugin:", err)
+	if err := sources.InstallPlugins(dir); err != nil {
+		fmt.Fprintln(os.Stderr, "admiral: could not install the bundled plugins:", err)
 	}
 	seedSources(cfg)
 	supervisor := &sources.Supervisor{Home: dir, Config: cfg}

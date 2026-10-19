@@ -1,9 +1,9 @@
 #!/bin/sh
 # Prints THIRD_PARTY_NOTICES: the licence text of the Go toolchain, every Go
 # module the binary links, every production npm package in the UI (the whole
-# tree, from the lockfile) and the bundled fonts. Run from the repo root after
-# `npm --prefix web ci`; `make release` calls it. It fails when an entry has no
-# licence text.
+# tree, from the lockfile), the bundled fonts and the GitHub plugin icon. Run
+# from the repo root after `npm --prefix web ci`; `make release` calls it. It
+# fails when an entry has no licence text.
 set -eu
 
 # licence_text <dir> prints the first licence file in dir, or fails.
@@ -57,3 +57,9 @@ for f in web/public/licenses/OFL-*.txt; do
 	echo "-- $f"
 	cat "$f"
 done
+
+echo
+echo "== Primer Octicons (the GitHub plugin's icon) =="
+echo
+echo "-- plugins/github/LICENSE-octicons"
+cat plugins/github/LICENSE-octicons

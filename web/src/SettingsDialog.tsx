@@ -14,7 +14,10 @@ interface Prop {
   title?: string;
   description?: string;
   format?: string;
+  writeOnly?: boolean;
   enum?: unknown[];
+  items?: Prop;
+  properties?: Record<string, Prop>;
 }
 interface Schema {
   properties?: Record<string, Prop>;
@@ -23,7 +26,16 @@ interface Schema {
 
 const MarkerHint = () => <small>{UNCHANGED} keeps a stored value.</small>;
 
-const simple = (p: Prop) => (p.enum ? true : ['string', 'number', 'integer', 'boolean'].includes(p.type ?? ''));
+const scalar = (p: Prop) => ['string', 'number', 'integer', 'boolean'].includes(p.type ?? '');
+const simple = (p: Prop) => !!p.enum || scalar(p);
+const flaggedSecret = (p: Prop) => p.format?.toLowerCase() === 'password' || p.writeOnly === true;
+// Lists of secrets stay JSON: a row field cannot tell a kept secret from a cleared one.
+const isStrings = (p: Prop) => p.type === 'array' && p.items?.type === 'string' && !p.items.enum && !flaggedSecret(p) && !flaggedSecret(p.items);
+const isObjects = (p: Prop) =>
+  p.type === 'array' && p.items?.type === 'object' && !!p.items.properties && !flaggedSecret(p) && !flaggedSecret(p.items) && Object.values(p.items.properties).every((f) => scalar(f) && !f.enum && !flaggedSecret(f));
+// Whether a list property is drawn as rows. Decided once at load, from the schema and the stored value:
+// a value that is not an array, or that holds a masked value, stays a JSON field so it round-trips untouched.
+const asRows = (p: Prop, v: unknown) => (isStrings(p) || isObjects(p)) && (v === undefined || (Array.isArray(v) && !JSON.stringify(v).includes(UNCHANGED)));
 
 export function SettingsDialog() {
   const key = settingsFor.value;
@@ -72,7 +84,7 @@ function SettingsForm({ sourceKey, onClose }: { sourceKey: string; onClose: () =
       if (sch.ok && sch.data.properties) {
         setSchema(sch.data);
         const text: Record<string, string> = {};
-        for (const [k, p] of Object.entries(sch.data.properties)) if (!simple(p)) text[k] = settings[k] === undefined ? '' : JSON.stringify(settings[k]);
+        for (const [k, p] of Object.entries(sch.data.properties)) if (!simple(p) && !asRows(p, settings[k])) text[k] = settings[k] === undefined ? '' : JSON.stringify(settings[k]);
         setJson(text);
       }
       setLoaded(true);
@@ -88,6 +100,13 @@ function SettingsForm({ sourceKey, onClose }: { sourceKey: string; onClose: () =
     try {
       if (schema) {
         settings = { ...values };
+        for (const [k, p] of Object.entries(schema.properties ?? {})) {
+          if (!(isStrings(p) || isObjects(p)) || k in json) continue;
+          // Rows nothing was typed into are dropped; no rows left deletes the key.
+          const rows = (Array.isArray(settings[k]) ? (settings[k] as unknown[]) : []).filter((r) => (typeof r === 'string' ? r !== '' : typeof r === 'object' && r !== null && Object.keys(r).length > 0));
+          if (rows.length === 0) delete settings[k];
+          else settings[k] = rows;
+        }
         for (const [k, t] of Object.entries(json)) {
           if (t.trim() === '') delete settings[k];
           else settings[k] = JSON.parse(t);
@@ -236,6 +255,68 @@ function Field(props: { id: string; prop: Prop; required: boolean; stored?: bool
           </button>
         )}
       </>
+    );
+  }
+  if ((isStrings(prop) || isObjects(prop)) && props.text === undefined) {
+    const rows = Array.isArray(value) ? (value as unknown[]) : [];
+    const strings = isStrings(prop);
+    const fields = Object.entries(prop.items?.properties ?? {});
+    const setRow = (i: number, v: unknown) => props.onValue(rows.map((r, j) => (j === i ? v : r)));
+    return (
+      <fieldset class="rows">
+        <legend>{label}</legend>
+        {hint}
+        {rows.map((row, i) => (
+          <div class="item" key={i}>
+            {strings ? (
+              <input type="text" autocomplete="off" aria-label={`${label} ${i + 1}`} value={String(row ?? '')} onInput={(e) => setRow(i, (e.target as HTMLInputElement).value)} />
+            ) : (
+              fields.map(([fk, fp]) => {
+                const cur = (row as Record<string, unknown>)?.[fk];
+                const put = (v: unknown) => {
+                  const next = { ...(row as Record<string, unknown>) };
+                  if (v === undefined) delete next[fk];
+                  else next[fk] = v;
+                  setRow(i, next);
+                };
+                const fl = fp.title ?? fk;
+                const fh = fp.description && <small>{fp.description}</small>;
+                if (fp.type === 'boolean') {
+                  return (
+                    <label class="check" key={fk}>
+                      <input type="checkbox" checked={cur === true} onChange={(e) => put((e.target as HTMLInputElement).checked)} />
+                      <span>{fl}</span>
+                      {fh}
+                    </label>
+                  );
+                }
+                const num = fp.type === 'number' || fp.type === 'integer';
+                return (
+                  <label key={fk}>
+                    <span>{fl}</span>
+                    <input
+                      type={(num ? 'number' : 'text') as 'password'}
+                      step={fp.type === 'integer' ? 1 : num ? 'any' : undefined}
+                      value={cur === undefined ? '' : String(cur)}
+                      onInput={(e) => {
+                        const t = (e.target as HTMLInputElement).value;
+                        put(t === '' ? undefined : num ? Number(t) : t);
+                      }}
+                    />
+                    {fh}
+                  </label>
+                );
+              })
+            )}
+            <button type="button" class="small-button press" aria-label={`Remove ${label} ${i + 1}`} onClick={() => props.onValue(rows.filter((_, j) => j !== i))}>
+              Remove
+            </button>
+          </div>
+        ))}
+        <button type="button" class="small-button press" aria-label={`Add ${label}`} onClick={() => props.onValue([...rows, strings ? '' : {}])}>
+          Add
+        </button>
+      </fieldset>
     );
   }
   // Anything else is edited as JSON.

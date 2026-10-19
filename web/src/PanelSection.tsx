@@ -85,8 +85,12 @@ export function PanelSection({ view }: { view: PanelView }) {
       {open && (
         <div class="panel-body">
           {source.state === 'auth_required' && source.auth && <SignInCard auth={source.auth} />}
-          {(source.state === 'error' || refusal) && (
-            <SourceProblem sourceKey={source.key} message={source.state === 'error' ? source.error : null} extra={refusal ?? undefined} />
+          {(source.state === 'error' || refusal || panel.error) && (
+            <SourceProblem
+              sourceKey={source.key}
+              message={source.state === 'error' ? source.error : null}
+              extra={refusal ?? (source.state === 'error' ? undefined : panel.error ?? undefined)}
+            />
           )}
           {declares(source, 'add') && <AddOrder view={view} onError={setRefusal} />}
           <ul class="orders-list">
