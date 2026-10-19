@@ -24,7 +24,8 @@ Files the test writes in flagdir:
 
   orders.json   {"<panel id>": [order, ...]}, read on every orders.list
   panels.json   [{"id", "title"}], read on every panels.list (default one
-                panel "main")
+                panel "main"); settings.panels, a list of {title, ...}, wins
+                when it is set and lists one panel per entry, id = title
   crash-on-initialize / crash-on-panels
                 exit with status 1 when that request arrives, for as long as
                 the file exists
@@ -169,7 +170,10 @@ def handle(msg):
     elif method == "panels.list":
         if flag("crash-on-panels"):
             os._exit(1)
-        result = read_json("panels.json", [{"id": "main", "title": settings.get("title", "Test")}])
+        if settings.get("panels"):
+            result = [{"id": p["title"], "title": p["title"]} for p in settings["panels"]]
+        else:
+            result = read_json("panels.json", [{"id": "main", "title": settings.get("title", "Test")}])
     elif method == "orders.list" and flagdir and flag("fail-orders.list-" + str(params.get("panel"))):
         with open(path("fail-orders.list-" + str(params.get("panel")))) as f:
             message = f.read().strip()
