@@ -17,11 +17,11 @@ import { expect, header, isTouch, needsYouIn, ships, spyOnPage, test, underwayIn
 //       the terminal (xterm.js: a `.xterm` element)
 //       a textbox "Input to <name>" (placeholder "type here and press Enter")
 //       buttons "Send Enter", "Send Esc", "Send Tab", "Send Up", "Send Down", "Send Ctrl-C"
-//       buttons "Approve · y" and "Deny · n" only while the ship needs you
+//       no Approve or Deny buttons: a ship that needs you is answered in its terminal (engineer, 2026-10-18)
 //       the note "Keys go straight to the session"
 //     an anchored ship has instead a button "Dismiss", the note "The harness exited. This is its last screen.",
 //       and no textbox and no key buttons
-//   Enter at the prompt sends the text as typed (not trimmed), then CR; Approve sends "y" and Deny "n", nothing else;
+//   Enter at the prompt sends the text as typed (not trimmed), then CR;
 //     the key buttons send Enter \r, Esc \x1b, Tab \t, Up \x1b[A, Down \x1b[B and Ctrl-C \x03; typing into the terminal sends the keys
 //   while the server is away the region shows the text "Reconnecting…", an ancestor of the terminal inside the region has
 //     opacity below 1, the textbox and the key buttons are disabled, and nothing typed is queued; the header banner
@@ -66,7 +66,7 @@ async function board(page: Page, re: RegExp, touch: boolean) {
 }
 
 test.describe('S5: boarding a ship and typing on the bridge', () => {
-  test('tapping a ship opens the bridge; the prompt, key buttons, Approve and typing reach the harness', async ({ page, admiral, sea }, info) => {
+  test('tapping a ship opens the bridge; the prompt, key buttons and typing reach the harness', async ({ page, admiral, sea }, info) => {
     const touch = isTouch(info);
     const s = sea({ work: { name: 'Work', color: BLUE } });
     s.world.skill('work', 'claude', 'review');
@@ -127,20 +127,14 @@ test.describe('S5: boarding a ship and typing on the bridge', () => {
     want += 'ab';
     await expect.poll(() => stdinOf(s, ship.session)).toBe(want);
 
-    // Approve and Deny show only while the ship needs you, send one byte, and the keystroke clears needs-you.
+    // A ship that needs you shows no Approve or Deny: you answer in the terminal, and the keystroke clears needs-you.
     s.setState(ship.session, 'needs_you');
     await expect(t.getByText('Needs you', { exact: true })).toBeVisible();
-    await expect(t.getByRole('button', { name: 'Deny · n' })).toBeVisible();
-    await press(t.getByRole('button', { name: 'Approve · y' }), touch);
-    want += 'y';
+    await expect(t.getByRole('button', { name: /Approve|Deny/ })).toHaveCount(0);
+    await press(t.getByRole('button', { name: 'Send Enter' }), touch);
+    want += '\r';
     await expect.poll(() => stdinOf(s, ship.session)).toBe(want);
     await expect(t.getByText('Underway', { exact: true })).toBeVisible();
-    await expect(t.getByRole('button', { name: 'Approve · y' })).toHaveCount(0);
-    s.setState(ship.session, 'needs_you');
-    await expect(t.getByRole('button', { name: 'Deny · n' })).toBeVisible();
-    await press(t.getByRole('button', { name: 'Deny · n' }), touch);
-    want += 'n';
-    await expect.poll(() => stdinOf(s, ship.session)).toBe(want);
 
     // Closing the bridge leaves the session running; the ship is still at sea.
     await press(closeButton(page), touch);
@@ -262,7 +256,7 @@ test.describe('S5: boarding a ship and typing on the bridge', () => {
     await header(page).getByRole('button', { name: '1 needs you' }).tap();
     await expect(terminal(page)).toBeVisible();
     await expect(terminal(page).getByText('Needs you', { exact: true })).toBeVisible();
-    await expect(terminal(page).getByRole('button', { name: 'Approve · y' })).toBeVisible();
+    await expect(terminal(page).getByRole('button', { name: /Approve|Deny/ })).toHaveCount(0);
   });
 });
 

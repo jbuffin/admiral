@@ -295,17 +295,6 @@ function BridgeView({ session }: { session: string }) {
           ) : (
             open && (
               <>
-                {status === 'needs_you' && (
-                  <>
-                    <button type="button" class="press term-yes" disabled={!canType} onClick={() => input('y')}>
-                      Approve · y
-                    </button>
-                    <button type="button" class="press term-no" disabled={!canType} onClick={() => input('n')}>
-                      Deny · n
-                    </button>
-                    <span class="term-sep" aria-hidden="true" />
-                  </>
-                )}
                 {KEYS.map(([name, label, bytes]) => (
                   <button type="button" class="term-key" aria-label={`Send ${name}`} disabled={!canType} onClick={() => input(bytes)}>
                     {label}

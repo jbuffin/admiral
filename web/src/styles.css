@@ -2058,8 +2058,6 @@ body.dragging * {
   font-weight: 600;
 }
 
-.term-yes,
-.term-no,
 .term-dismiss {
   border-radius: 10px;
   border: var(--shape-outline) solid var(--color-ink-deep);
@@ -2070,23 +2068,10 @@ body.dragging * {
   box-shadow: 0 3px 0 var(--color-ink-deep);
 }
 
-.term-yes {
-  background-color: var(--color-success);
-}
-
-.term-no {
-  background-color: #ff9a7a;
-}
-
 .term-dismiss {
   background-color: var(--color-parchment);
 }
 
-.term-sep {
-  width: 2px;
-  height: 26px;
-  background-color: var(--color-navy-border);
-}
 
 .term-grow {
   flex: 1 1 auto;

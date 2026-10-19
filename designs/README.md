@@ -23,7 +23,7 @@ Add `?scene=` to the prototype URL:
 ## Try it
 
 - Drag an order card onto a dock (or tap a card, then tap a dock), pick a skill, Hoist sails. The moored ship leaves the marina, a ship sails into open water, a new ship fades in at the dock, crew boats join, and after a few seconds a Commodore ship starts needing you.
-- Tap a ship or a crew boat to board it. Type at the `❯` prompt, use the key buttons, or Approve / Deny.
+- Tap a ship or a crew boat to board it. Type at the `❯` prompt or use the key buttons; a ship that needs you is answered in its terminal.
 - Drag ships around open water.
 - Collapse panels or the whole sidebar; combine or split the Work queue (not in the MVP); filter.
 
