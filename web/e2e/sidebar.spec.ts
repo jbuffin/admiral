@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Locator, Page } from '@playwright/test';
 import { type Flags, expect, test } from './fixtures';
 import { isTouch } from './sea';
+import { TouchPointer, centerOf, touchSetup } from './world';
 
 // The sidebar scenarios (u8 S1-S7). The page is driven by roles, accessible
 // names and visible text only. The names below are the contract the sidebar
@@ -411,5 +414,76 @@ test.describe('S7: sign-in and crashed sources', () => {
     await expect(row.getByRole('alert')).toBeVisible();
     await expect(row.getByRole('button', { name: 'Restart' })).toBeVisible();
     await expect(row.getByRole('region')).toHaveCount(0);
+  });
+});
+
+test.describe('S8: rearranging sources and panels', () => {
+  // Drags a grip to a point, with the mouse on desktop and dispatched pointer events on touch.
+  async function dragGrip(page: Page, grip: Locator, to: { x: number; y: number }, touch: boolean) {
+    const from = await centerOf(grip);
+    if (touch) {
+      const t = await TouchPointer.on(grip);
+      await t.down(from);
+      await t.moveTo(to);
+      await t.up();
+      return;
+    }
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 8 });
+    await page.mouse.up();
+  }
+  const names = (l: Locator) => l.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
+  const panelOrder = (page: Page) => names(sidebar(page).getByRole('region'));
+  const sourceOrder = (page: Page) => names(sidebar(page).getByRole('group'));
+  const above = async (l: Locator) => {
+    const box = (await l.boundingBox())!;
+    return { x: box.x + box.width / 2, y: box.y + 4 };
+  };
+
+  test('drag a panel above another and a source above another; both hold across a reload and in config.json', async ({
+    page,
+    admiral,
+  }, info) => {
+    const touch = isTouch(info);
+    admiral.installTestPlugin();
+    const f = admiral.flags('tracker');
+    f.panels([
+      { id: 'todo', title: 'Todo' },
+      { id: 'done', title: 'Done' },
+    ]);
+    f.orders({ todo: [{ id: 'ABC-1', title: 'Rotate the keys' }], done: [{ id: 'ABC-2', title: 'Tidy the docs' }] });
+    admiral.writeConfig(sourcesConfig({ orders: freeform, tracker: tracker(f) }));
+    await admiral.start();
+    if (touch) await touchSetup(page);
+    await page.goto(admiral.url);
+    await cards(panel(page, 'Done'), 'Tidy the docs');
+    await expect.poll(() => panelOrder(page)).toEqual(['Orders', 'Todo', 'Done']);
+    // A source with one panel has no panel grip.
+    await expect(source(page, 'Orders').getByRole('button', { name: 'Move Orders' })).toHaveCount(1); // the source's
+    await expect(panel(page, 'Orders').getByRole('button', { name: /^Move / })).toHaveCount(0);
+
+    await dragGrip(page, panel(page, 'Done').getByRole('button', { name: 'Move Done' }), await above(panel(page, 'Todo')), touch);
+    await expect.poll(() => panelOrder(page)).toEqual(['Orders', 'Done', 'Todo']);
+
+    await dragGrip(page, source(page, 'Tracker').getByRole('button', { name: 'Move Tracker' }), await above(source(page, 'Orders')), touch);
+    await expect.poll(() => sourceOrder(page)).toEqual(['Tracker', 'Orders']);
+    await expect.poll(() => panelOrder(page)).toEqual(['Done', 'Todo', 'Orders']);
+
+    const config = JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8'));
+    expect(Object.keys(config.sources)).toEqual(['tracker', 'orders']);
+    expect(config.sources.tracker.panel_order).toEqual(['done', 'todo']);
+    expect(f.starts()).toBe(1); // rearranging never restarts a source
+
+    await page.reload();
+    await cards(panel(page, 'Done'), 'Tidy the docs');
+    await expect.poll(() => panelOrder(page)).toEqual(['Done', 'Todo', 'Orders']);
+
+    // The arrow keys move a focused grip one place.
+    if (!touch) {
+      await panel(page, 'Done').getByRole('button', { name: 'Move Done' }).focus();
+      await page.keyboard.press('ArrowDown');
+      await expect.poll(() => panelOrder(page)).toEqual(['Todo', 'Done', 'Orders']);
+    }
   });
 });
