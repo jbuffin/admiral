@@ -147,6 +147,10 @@ func startAdmiral(t *testing.T, home, listen string) *instance {
 	in := &instance{Home: home, listen: listen, cmd: cmd, done: make(chan struct{}), stderrBuf: stderr}
 	go func() { _ = cmd.Wait(); close(in.done) }()
 	t.Cleanup(in.Stop)
+	// Admiral starts a tmux server that outlives it; end this home's.
+	t.Cleanup(func() {
+		_ = exec.Command("tmux", "-S", filepath.Join(home, "tmux.sock"), "kill-server").Run()
+	})
 
 	lines := make(chan string, 8)
 	go func() {

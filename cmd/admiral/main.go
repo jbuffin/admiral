@@ -9,14 +9,21 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/auth"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/home"
+	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/server"
+	"github.com/jbuffin/admiral/internal/sessionhost"
+	"github.com/jbuffin/admiral/internal/ships"
+	"github.com/jbuffin/admiral/internal/state"
 	"github.com/jbuffin/admiral/web"
 )
 
@@ -64,7 +71,45 @@ func serve(args []string) error {
 	}
 	_, port, _ := net.SplitHostPort(ln.Addr().String())
 
-	s := &server.Server{Version: version, UI: web.UI(), Messages: map[string]server.MessageHandler{}, Config: cfg}
+	// Without tmux Admiral still serves its config; there are no ships and a
+	// launch is refused.
+	tmuxPath, err := exec.LookPath("tmux")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "admiral: tmux not found on PATH: ships are unavailable")
+		tmuxPath = ""
+	} else if tmuxPath, err = filepath.Abs(tmuxPath); err != nil {
+		return err
+	}
+	if err := launcher.WriteBundle(dir); err != nil {
+		return fmt.Errorf("hook bundle: %w", err)
+	}
+	st, err := state.Open(dir)
+	if err != nil {
+		return fmt.Errorf("state: %w", err)
+	}
+	sock := filepath.Join(dir, "tmux.sock")
+	hub := server.NewHub()
+	host := sessionhost.New(tmuxPath, sock)
+	shipService := &ships.Service{Host: host, State: st, Hub: hub, Launcher: &launcher.Launcher{
+		Tmux: tmuxPath, Socket: sock, Home: dir, Config: cfg.Current}}
+
+	s := &server.Server{Version: version, UI: web.UI(), Messages: map[string]server.MessageHandler{}, Config: cfg,
+		Hub: hub, Modules: []server.Module{shipService}}
+	bg, stopBackground := context.WithCancel(context.Background())
+	var background sync.WaitGroup
+	runs := []func(context.Context){shipService.Run, s.WatchConfig}
+	if tmuxPath != "" {
+		runs = append(runs, host.Run)
+	}
+	for _, run := range runs {
+		background.Add(1)
+		go func() { defer background.Done(); run(bg) }()
+	}
+	defer func() {
+		stopBackground()
+		background.Wait()
+		_ = st.Flush()
+	}()
 	srv := &http.Server{Handler: auth.New(token, port).Middleware(s.Handler())}
 
 	fmt.Printf("Admiral is running at http://127.0.0.1:%s/\n", port)
