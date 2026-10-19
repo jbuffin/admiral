@@ -103,7 +103,16 @@ test.describe('S2: the freeform list', () => {
     await expect(orders.getByRole('alert')).toBeVisible();
     await countOf(orders, 1);
 
+    // The panel's last card: its menu sits over the panel's edge, not clipped by it. Each item is the
+    // element at its own center.
     await orders.getByRole('button', { name: 'Actions for Fix the flaky retry helper' }).click();
+    for (const item of await page.getByRole('menuitem').all()) {
+      const onTop = await item.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+      });
+      expect(onTop, `${await item.textContent()} is on top`).toBe(true);
+    }
     await page.getByRole('menuitem', { name: 'Remove' }).click();
     await noCards(orders, 'Fix the flaky retry helper');
     await countOf(orders, 0);

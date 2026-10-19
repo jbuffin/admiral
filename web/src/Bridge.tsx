@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { signedOut } from './connection';
 import { harnesses } from './harnesses';
+import { KEYS, touchKeyboard } from './keys';
 import { LogoFlag } from './Logos';
 import { api } from './sources';
 import { useBridgePlacement } from './useBridgePlacement';
@@ -19,20 +20,59 @@ const PILL = {
   sailing_off: { text: () => 'Sailing off', color: '#6FE3C8' },
 };
 
-// What the key buttons send. The labels and the accessible names are the prototype's.
-export const KEYS = [
-  ['Enter', '⏎ Enter', '\r'],
-  ['Esc', 'Esc', '\x1b'],
-  ['Tab', 'Tab', '\t'],
-  ['Up', '↑', '\x1b[A'],
-  ['Down', '↓', '\x1b[B'],
-  ['Ctrl-C', '^C', '\x03'],
-] as const;
-
-// How long the line's text goes ahead of its Enter, so a TUI doesn't take the two as one paste.
-export const ENTER_GAP_MS = 50;
-
 const close = () => (boardedSession.value = null);
+
+// Copies on a tap. An iPad on the Mac's plain-http LAN address has no navigator.clipboard (it needs a
+// secure origin), so there a hidden text box is copied, still inside the tap.
+function copyText(text: string): boolean {
+  if (window.isSecureContext && navigator.clipboard) {
+    void navigator.clipboard.writeText(text);
+    return true;
+  }
+  const box = document.createElement('textarea');
+  box.value = text;
+  box.readOnly = true;
+  box.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+  document.body.append(box);
+  box.select();
+  box.setSelectionRange(0, text.length);
+  const ok = document.execCommand('copy');
+  box.remove();
+  return ok;
+}
+
+// The command that attaches a real terminal to the ship's tmux session.
+function AttachChip({ name }: { name: string }) {
+  const command = `admiral attach ${name}`;
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+  return (
+    <button type="button" class="term-attach" aria-label={`Copy ${command}`} onClick={() => setCopied(copyText(command))}>
+      <span class="term-attach-text">{copied ? 'Copied' : command}</span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" aria-hidden="true">
+        <rect x="8" y="8" width="13" height="13" rx="2" />
+        <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
+      </svg>
+    </button>
+  );
+}
+
+// Full view: the terminal takes the whole screen, over the header and the orders panel. Shared with
+// the setup terminal.
+export function FullViewToggle({ full, set }: { full: boolean; set: (on: boolean) => void }) {
+  const label = full ? 'Exit full view' : 'Full view';
+  return (
+    <button type="button" class="press term-full" aria-label={label} title={label} aria-pressed={full} onClick={() => set(!full)}>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        {full ? <path d="M9 3v6H3M15 3v6h6M9 21v-6H3M15 21v-6h6" /> : <path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6" />}
+      </svg>
+    </button>
+  );
+}
 
 export function Bridge() {
   const session = boardedSession.value;
@@ -47,7 +87,7 @@ function BridgeView({ session }: { session: string }) {
     if (over) close();
   }, [over]);
 
-  const [draft, setDraft] = useState('');
+  const [full, setFull] = useState(false);
   const [dismissError, setDismissError] = useState('');
   const dismissing = useRef(false);
   const root = useRef<HTMLDivElement>(null);
@@ -56,7 +96,7 @@ function BridgeView({ session }: { session: string }) {
   const open = !!ship && live(ship);
   const { host, link, linkState, activity } = useBridgeTerminal({ session, open, gone: close });
 
-  useBridgePlacement(root, !!ship);
+  useBridgePlacement(root, !!ship, full);
 
   if (!ship) return null;
   const h = harnesses[ship.harness];
@@ -66,15 +106,6 @@ function BridgeView({ session }: { session: string }) {
   const input = (data: string) => {
     activity.current();
     link.current?.send({ type: 'input', data });
-  };
-  const submit = (e: Event) => {
-    e.preventDefault();
-    const text = draft;
-    setDraft('');
-    if (text) {
-      input(text);
-      setTimeout(() => input('\r'), ENTER_GAP_MS);
-    } else input('\r');
   };
   // The server drops the bridge socket when the ship goes, so the link is closed as the request goes
   // out. A refusal leaves the read-only last screen up with the server's message.
@@ -92,7 +123,7 @@ function BridgeView({ session }: { session: string }) {
   const canType = open && linkState === 'open';
 
   return (
-    <div class="bridge" ref={root}>
+    <div class={full ? 'bridge full' : 'bridge'} ref={root}>
       <nav class="flotilla" aria-label="Session flotilla">
         <span class="flotilla-title">Flotilla · 1</span>
         <button type="button" class="fl-item press">
@@ -126,6 +157,7 @@ function BridgeView({ session }: { session: string }) {
             <span class="term-name">{ship.name}</span>
             <span class="term-sub">{sub}</span>
             {ship.title && <span class="term-order">{ship.title}</span>}
+            {open && <AttachChip name={ship.name} />}
           </div>
           {signedOut.value ? (
             <span class="term-notice">Open the URL Admiral printed</span>
@@ -135,6 +167,7 @@ function BridgeView({ session }: { session: string }) {
           <span class="term-pill" style={`background-color:${pill.color}`}>
             {pill.text(ship)}
           </span>
+          <FullViewToggle full={full} set={setFull} />
           <button type="button" class="press term-close" aria-label="Close terminal and return to open water" onClick={close}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3" stroke-linecap="round" aria-hidden="true">
               <path d="M6 6l12 12M18 6L6 18" />
@@ -144,57 +177,35 @@ function BridgeView({ session }: { session: string }) {
 
         <div class={reconnecting ? 'term-body dim' : 'term-body'}>
           <div class="term-host" ref={host} />
-          {open && (
-            <form class="term-prompt" onSubmit={submit}>
-              <label for="adm-cmd" class="sr-only">
-                Input to {ship.name}
-              </label>
-              <span aria-hidden="true" class="term-caret">
-                ❯
-              </span>
-              <input
-                id="adm-cmd"
-                class="term-in"
-                value={draft}
-                disabled={!canType}
-                onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
-                autocomplete="off"
-                autocapitalize="off"
-                spellcheck={false}
-                placeholder="type here and press Enter"
-              />
-            </form>
-          )}
         </div>
 
-        <div class="term-keys">
-          {status === 'anchored' ? (
-            <>
-              <button type="button" class="press term-dismiss" onClick={onDismiss}>
-                Dismiss
-              </button>
-              {dismissError && (
-                <span class="term-note" role="alert">
-                  {dismissError}
-                </span>
-              )}
+        {status === 'anchored' ? (
+          <div class="term-keys">
+            <button type="button" class="press term-dismiss" onClick={onDismiss}>
+              Dismiss
+            </button>
+            {dismissError && (
+              <span class="term-note" role="alert">
+                {dismissError}
+              </span>
+            )}
+            <span class="term-grow" />
+            <span class="term-note">The harness exited. This is its last screen.</span>
+          </div>
+        ) : (
+          open &&
+          touchKeyboard() && (
+            <div class="term-keys">
+              {KEYS.map(([name, label, bytes]) => (
+                <button type="button" class="term-key" aria-label={`Send ${name}`} disabled={!canType} onClick={() => input(bytes)}>
+                  {label}
+                </button>
+              ))}
               <span class="term-grow" />
-              <span class="term-note">The harness exited. This is its last screen.</span>
-            </>
-          ) : (
-            open && (
-              <>
-                {KEYS.map(([name, label, bytes]) => (
-                  <button type="button" class="term-key" aria-label={`Send ${name}`} disabled={!canType} onClick={() => input(bytes)}>
-                    {label}
-                  </button>
-                ))}
-                <span class="term-grow" />
-                <span class="term-note">Keys go straight to the session</span>
-              </>
-            )
-          )}
-        </div>
+              <span class="term-note">Keys go straight to the session</span>
+            </div>
+          )
+        )}
       </section>
     </div>
   );

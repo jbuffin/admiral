@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'preact/hooks';
+import { touchKeyboard } from './keys';
 import { OrderItem } from './OrderItem';
 import { SignInCard } from './SignInCard';
 import { SourceIcon } from './SourceIcon';
 import { type PanelView, api, can, declares, filter, panelCollapsed, setPanelCollapsed, sourcePath } from './sources';
 
 export const countLabel = (n: number) => `${n} ${n === 1 ? 'order' : 'orders'}`;
-
-const touchKeyboard = () => matchMedia('(pointer: coarse)').matches;
 
 // A source's error with its Restart button; shared by panels and source rows.
 export function SourceProblem({ sourceKey, message, extra }: { sourceKey: string; message: string | null; extra?: string }) {

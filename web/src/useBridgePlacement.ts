@@ -6,8 +6,9 @@ import type { RefObject } from 'preact';
 // the visual viewport is shorter than the layout one, so the bottom edge follows what is visible and
 // the prompt and key bar stay reachable.
 // The bridge and the setup terminal are placed the same way; `present` is whether the overlay has
-// its content (a ship that is gone renders nothing).
-export function useBridgePlacement(root: RefObject<HTMLDivElement | null>, present: boolean): void {
+// its content (a ship that is gone renders nothing). In full view the overlay covers the header and
+// the orders panel too, so only its bottom edge follows the keyboard.
+export function useBridgePlacement(root: RefObject<HTMLDivElement | null>, present: boolean, full = false): void {
   useEffect(() => {
     const el = root.current;
     const main = el?.parentElement;
@@ -16,8 +17,8 @@ export function useBridgePlacement(root: RefObject<HTMLDivElement | null>, prese
     const place = () => {
       const r = main.getBoundingClientRect();
       const covered = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
-      el.style.left = `${Math.max(0, r.left)}px`;
-      el.style.top = `${Math.max(0, r.top)}px`;
+      el.style.left = full ? '0px' : `${Math.max(0, r.left)}px`;
+      el.style.top = full ? '0px' : `${Math.max(0, r.top)}px`;
       el.style.bottom = `${covered > 40 ? covered : 0}px`;
     };
     place();
@@ -39,5 +40,5 @@ export function useBridgePlacement(root: RefObject<HTMLDivElement | null>, prese
       vv?.removeEventListener('resize', place);
       vv?.removeEventListener('scroll', place);
     };
-  }, [present]);
+  }, [present, full]);
 }
