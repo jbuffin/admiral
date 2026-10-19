@@ -64,6 +64,9 @@ async function typeIn(page: Page, text: string) {
 }
 
 /** Taps the ship and returns its name from its accessible name. */
+// Below 1000 px the open orders drawer covers the sea's left edge, where ships are placed; keep it closed.
+test.beforeEach(({ page }) => page.addInitScript(() => localStorage.setItem('admiral.sidebar.drawer', '0')));
+
 async function board(page: Page, re: RegExp, touch: boolean) {
   const ship = ships(page, re);
   await expect(ship).toBeVisible();
@@ -274,13 +277,15 @@ test.describe('S5: boarding a ship and typing on the bridge', () => {
           return Math.abs(b.left - Math.max(0, m.left)) < 1 && Math.abs(b.top - Math.max(0, m.top)) < 1;
         });
       await expect.poll(matchesMain, { message: `${width}x${height}: at first` }).toBe(true);
-      const side = page.getByRole('complementary', { name: 'Orders', exact: true });
-      await press(side.getByRole('button', { name: 'Collapse orders' }), touch);
-      await expect(page.getByRole('complementary', { name: 'Orders, collapsed', exact: true })).toBeVisible();
-      await expect.poll(matchesMain, { message: `${width}x${height}: after collapsing` }).toBe(true);
-      await press(page.getByRole('button', { name: 'Expand orders' }), touch);
-      await expect(side).toBeVisible();
-      await expect.poll(matchesMain, { message: `${width}x${height}: after expanding` }).toBe(true);
+      // Wide, the panel starts expanded; narrow, the drawer starts closed. Toggle it both ways.
+      const collapse = page.getByRole('button', { name: 'Collapse orders' });
+      const expand = page.getByRole('button', { name: 'Expand orders' });
+      const order = (await collapse.isVisible()) ? [collapse, expand] : [expand, collapse];
+      for (const [i, button] of order.entries()) {
+        await press(button, touch);
+        await expect(order[1 - i]).toBeVisible();
+        await expect.poll(matchesMain, { message: `${width}x${height}: after toggling ${i + 1} time(s)` }).toBe(true);
+      }
     }
   });
 
@@ -294,7 +299,7 @@ test.describe('S5: boarding a ship and typing on the bridge', () => {
     await page.goto(admiral.url);
     await board(page, underwayIn('Work'), touch);
     const t = terminal(page);
-    const orders = page.getByRole('complementary', { name: 'Orders', exact: true });
+    const orders = page.getByRole('complementary', { name: /^Orders/ });
     const covers = () =>
       page.evaluate(() => {
         const b = document.querySelector('.terminal')!.getBoundingClientRect();

@@ -97,7 +97,8 @@ function ShipView({ s }: { s: WireShip }) {
     <button
       type="button"
       class={cls}
-      style={`left:${spot.x * 100}%;top:${spot.y * 100}%`}
+      // Clamped by the slot's largest box, so a ship stays in view when the window shrinks.
+      style={`left:clamp(0px,${spot.x * 100}%,100% - 140px);top:clamp(0px,${spot.y * 100}%,100% - 142px)`}
       aria-label={`Board ${s.name}, ${label} in ${s.fleet_name}, ${statusWords(s)}`}
       onPointerDown={(e) => press(e, s)}
       // A keyboard or assistive-technology activation has no pointer; a pointer's tap boards on release.

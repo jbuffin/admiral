@@ -215,6 +215,18 @@ class Instance implements Admiral {
 }
 
 export const test = base.extend<{ admiral: Admiral }>({
+  // Below 1000 px the orders panel is a drawer that starts closed; open it, as the
+  // panel's tests expect, unless the test set it. A test that needs the sea closes it.
+  page: async ({ page }, use) => {
+    await page.addInitScript(() => {
+      try {
+        if (localStorage.getItem('admiral.sidebar.drawer') === null) localStorage.setItem('admiral.sidebar.drawer', '1');
+      } catch {
+        // no storage: the drawer starts closed
+      }
+    });
+    await use(page);
+  },
   admiral: async ({}, use) => {
     const a = new Instance();
     try {
