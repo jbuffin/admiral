@@ -1,0 +1,96 @@
+import { harnesses, logoId } from './harnesses';
+import { parseLogoSvg } from './logoSvg';
+import type { HarnessName } from './config';
+
+// Official logo files, when the engineer has put them in web/logos/official/
+// (gitignored; see the README). Each is named for its harness and carries its
+// own field, because the vendors' usage rules set the field.
+const official = import.meta.glob('/logos/official/*.svg', { query: '?raw', import: 'default', eager: true }) as Record<
+  string,
+  string
+>;
+
+const officialSymbol = (h: HarnessName) => parseLogoSvg(official[`/logos/official/${h}.svg`]);
+const isOfficial = (h: HarnessName) => officialSymbol(h) !== undefined;
+
+// The flag draws a logo by id, so swapping logos changes only these symbols.
+// The placeholders are the lettered set and carry their own field. An official
+// symbol is only the mark; the flag draws its field behind it.
+function Symbol({ harness }: { harness: HarnessName }) {
+  const o = officialSymbol(harness);
+  if (o) {
+    return (
+      <symbol id={logoId(harness)} viewBox={o.viewBox} preserveAspectRatio="xMidYMid meet" dangerouslySetInnerHTML={{ __html: o.inner }} />
+    );
+  }
+  const letters = { claude: 'Cl', copilot: 'Co', codex: 'Cx' }[harness];
+  return (
+    <symbol id={logoId(harness)} viewBox="0 0 40 28" preserveAspectRatio="xMidYMid slice">
+      <rect width="40" height="28" style={{ fill: `var(--harness-${harness}-flag)` }} />
+      <text
+        x="20"
+        y="19"
+        text-anchor="middle"
+        font-family="Bricolage Grotesque, sans-serif"
+        font-weight="800"
+        font-size="13"
+        style={{ fill: `var(--harness-${harness}-ink)` }}
+      >
+        {letters}
+      </text>
+    </symbol>
+  );
+}
+
+// The two flag sizes: the pier's flag in its own 40×28 box, and the flag at a
+// ship's masthead in the ship's 100×96 box.
+const flags = {
+  pier: { x: 2, y: 3, width: 36, height: 22, stroke: 2.6 },
+  sea: { x: 51, y: 2, width: 29, height: 15, stroke: 2 },
+};
+type FlagKind = keyof typeof flags;
+
+// The swallow-tail pennant, with its notch 77% of the way across.
+const pennant = ({ x, y, width, height }: (typeof flags)[FlagKind]) =>
+  `M${x} ${y}H${x + width}L${x + width * 0.77} ${y + height / 2}L${x + width} ${y + height}H${x}Z`;
+
+export function LogoSprite() {
+  return (
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <defs>
+        {(Object.keys(harnesses) as HarnessName[]).map((h) => (
+          <Symbol key={h} harness={h} />
+        ))}
+        {(Object.keys(flags) as FlagKind[]).map((k) => (
+          <clipPath key={k} id={`pennant-${k}`}>
+            <path d={pennant(flags[k])} />
+          </clipPath>
+        ))}
+      </defs>
+    </svg>
+  );
+}
+
+// A pennant carrying the harness logo, clipped to the flag shape and outlined.
+// Behind an official logo it draws the harness's field over the whole pennant
+// and sets the mark whole, centered in the solid part with a little clear space.
+export function LogoFlag({ harness, kind }: { harness: HarnessName; kind: FlagKind }) {
+  const f = flags[kind];
+  const pad = f.height * 0.15;
+  const mark = { x: f.x + pad, y: f.y + pad, width: f.width * 0.77 - 2 * pad, height: f.height - 2 * pad };
+  return (
+    <>
+      <g clip-path={`url(#pennant-${kind})`}>
+        {isOfficial(harness) ? (
+          <>
+            <rect x={f.x} y={f.y} width={f.width} height={f.height} fill={harnesses[harness].field} />
+            <use href={`#${logoId(harness)}`} {...mark} />
+          </>
+        ) : (
+          <use href={`#${logoId(harness)}`} x={f.x} y={f.y} width={f.width} height={f.height} />
+        )}
+      </g>
+      <path d={pennant(f)} fill="none" stroke="#14304A" stroke-width={f.stroke} stroke-linejoin="round" />
+    </>
+  );
+}
