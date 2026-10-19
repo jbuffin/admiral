@@ -397,11 +397,6 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <span style="font-size: 12px; color: #9DB8CF">The harness exited. This is its last screen.</span>
 </sc-if>
 <sc-if value="{{bridge.live}}" hint-placeholder-val="{{ true }}">
-<sc-if value="{{bridge.asking}}" hint-placeholder-val="{{ false }}">
-<button type="button" class="press" onClick="{{answerYes}}" style="height: 40px; padding: 0 14px; border-radius: 10px; border: 2.5px solid #0B1F33; background-color: #9BE08A; color: #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 14px; box-shadow: 0 3px 0 #0B1F33">Approve · y</button>
-<button type="button" class="press" onClick="{{answerNo}}" style="height: 40px; padding: 0 14px; border-radius: 10px; border: 2.5px solid #0B1F33; background-color: #FF9A7A; color: #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 14px; box-shadow: 0 3px 0 #0B1F33">Deny · n</button>
-<span aria-hidden="true" style="width: 2px; height: 26px; background-color: #3A6489"></span>
-</sc-if>
 <sc-for list="{{keys}}" as="k" hint-placeholder-count="6">
 <button type="button" class="key" onClick="{{k.press}}" aria-label="{{k.aria}}" style="height: 40px; min-width: 44px; padding: 0 10px; border-radius: 10px; border: 2px solid #3A6489; background-color: #1B3D5C; color: #F4EEDF; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; font-weight: 600">{{k.label}}</button>
 </sc-for>
@@ -1118,8 +1113,6 @@ class Component extends DCLogic {
       hasBridge: !!bridge,
       bridge: bridge || { ship: { task: {} }, agents: [], lines: [] },
       keys,
-      answerYes: () => self.sendRaw('y', { k: 'tool', t: '✓ approved. Carrying on.' }),
-      answerNo: () => self.sendRaw('n', { k: 'agent', t: 'Understood. Trying another approach.' }),
       closeBridge: () => self.put({ open: null, draft: '' }),
       dismiss: () => self.put((st) => ({ open: null, draft: '', ships: st.ships.filter((x) => x.id !== st.open) })),
       draft: s.draft || '',

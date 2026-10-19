@@ -16,6 +16,7 @@ export interface WireShip {
   repo: string;
   skill: string | null;
   source: string;
+  title: string;
   order_id: string;
   launched: string;
   status: 'underway' | 'needs_you' | 'anchored' | 'sailing_off';
@@ -54,14 +55,19 @@ export const needsYou = computed(() =>
   ships.value.filter((s) => s.status === 'needs_you').sort((a, b) => launchedAt(a) - launchedAt(b) || (a.session < b.session ? -1 : 1)),
 );
 
-// Boarding opens the bridge (u11 replaces this body). Until then it only tells a test page that asked.
+// The session whose bridge is open, if any.
+export const boardedSession = signal<string | null>(null);
+
+// Boarding opens the bridge over open water. A test page that asked is told too.
 export function board(session: string): void {
   window.__admiral?.boarded.push(session);
+  boardedSession.value = session;
 }
 
 declare global {
   interface Window {
-    __admiral?: { boarded: string[] };
+    // The tests create this object; `screen` is set while a bridge's terminal is up.
+    __admiral?: { boarded: string[]; screen?: () => string };
   }
 }
 

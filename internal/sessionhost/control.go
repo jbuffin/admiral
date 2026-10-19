@@ -26,10 +26,21 @@ type reply struct {
 }
 
 // parser turns control-mode output into replies, in command order, and calls
-// notify for each notification line.
+// notify for each notification line. With onReply set, replies are handed to it
+// on the parser's own goroutine instead of the channel, so a reply and the
+// notifications around it are seen in the order tmux sent them.
 type parser struct {
 	replies chan reply
+	onReply func(reply)
 	notify  func(line string)
+}
+
+func (p *parser) deliver(r reply) {
+	if p.onReply != nil {
+		p.onReply(r)
+		return
+	}
+	p.replies <- r
 }
 
 // run reads r until it ends.
@@ -48,12 +59,12 @@ func (p *parser) run(r io.Reader) error {
 		case in && strings.HasPrefix(line, "%end ") && strings.TrimPrefix(line, "%end ") == id:
 			in = false
 			if mine {
-				p.replies <- reply{lines: block}
+				p.deliver(reply{lines: block})
 			}
 		case in && strings.HasPrefix(line, "%error ") && strings.TrimPrefix(line, "%error ") == id:
 			in = false
 			if mine {
-				p.replies <- reply{lines: block, err: errors.New(strings.Join(block, "\n"))}
+				p.deliver(reply{lines: block, err: errors.New(strings.Join(block, "\n"))})
 			}
 		case in:
 			block = append(block, line)

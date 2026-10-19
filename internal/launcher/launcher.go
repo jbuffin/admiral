@@ -99,7 +99,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	// The name and the time are ours.
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
-		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}}
+		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
 			return nil, refuse(http.StatusBadRequest, "%s contains a control character", o[0])
@@ -189,9 +189,34 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	return out, nil
 }
 
+// orderTitle is the first line of an order from a source, with control
+// characters dropped; the title never refuses a launch. A launch with no source has none.
+func orderTitle(req Request) string {
+	if req.Source == "" {
+		return ""
+	}
+	first, _, _ := strings.Cut(strings.TrimLeft(req.Text, " \t\r\n"), "\n")
+	first = strings.Map(func(r rune) rune {
+		if isControl(r) {
+			return -1
+		}
+		return r
+	}, first)
+	if r := []rune(first); len(r) > 200 {
+		first = string(r[:200])
+	}
+	return strings.TrimSpace(first)
+}
+
 // hasControl reports a character below 0x20 or 0x7f.
 func hasControl(s string) bool {
 	return strings.IndexFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0
+}
+
+// isControl is a character a title must not carry: C0 and C1 controls, the bidi
+// controls and the line and paragraph separators.
+func isControl(r rune) bool {
+	return r < 0x20 || (r >= 0x7f && r <= 0x9f) || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069) || r == 0x2028 || r == 0x2029
 }
 
 func commandSize(argv []string) int {

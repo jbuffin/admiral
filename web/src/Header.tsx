@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'preact/hooks';
 import { AdmiralMark } from './AdmiralMark';
 import { toggleSound, muted } from './chime';
 import { config } from './config';
+import { offline, signedOut } from './connection';
 import { atSea, board, needsYou, ships, shipsLoaded } from './ships';
 
 const aboutOpen = signal(false);
@@ -44,18 +45,25 @@ function About() {
   );
 }
 
-// The banner slot sits under the header's row. It holds one message: the
-// config error now; u11 puts the reconnect banner above it.
+// The banner slot sits under the header's row: the connection banner above the config error.
 function Banners() {
   const error = config.value?.error;
-  if (!error) return null;
   return (
-    <div class="banner" role="alert">
-      <strong class="banner-file" title={error.file}>
-        {error.file}
-      </strong>
-      <span>{error.message}</span>
-    </div>
+    <>
+      {(signedOut.value || offline.value) && (
+        <div class="banner" role="alert">
+          {signedOut.value ? 'Open the URL Admiral printed' : 'Reconnecting…'}
+        </div>
+      )}
+      {error && (
+        <div class="banner" role="alert">
+          <strong class="banner-file" title={error.file}>
+            {error.file}
+          </strong>
+          <span>{error.message}</span>
+        </div>
+      )}
+    </>
   );
 }
 
