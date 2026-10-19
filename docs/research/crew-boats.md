@@ -176,3 +176,81 @@ Open questions before deciding:
 - Probe Claude Code agent teams inside an Admiral ship: does tmux mode split the ship's pane on Admiral's socket, are `--settings` hooks forwarded, and does `Stop` fire in a teammate's own process?
 - Whether Commodore should move its Claude teammates to agent teams, or set `VIEWER=tmux` when it runs inside Admiral.
 - Whether crew boats without a terminal (all subagents, all Codex and Copilot crew) appear in the flotilla read-only or not at all.
+
+## Live check (October 2026)
+
+Live run for [#72](https://github.com/jbuffin/admiral/issues/72) on 2026-10-18. Versions: Claude Code 2.1.303 (Haiku 5.5), Codex CLI 0.162.1 (gpt-6-luna, low effort), Copilot CLI 1.0.98 (default Claude Opus 5.5; subagents picked gpt-5.6-luna), tmux 3.8, macOS.
+
+Setup: each harness ran interactively on a private tmux socket in a throwaway git repo, from the personal fleet's executable and env (Codex with a temporary `CODEX_HOME` holding only `auth.json` and a model line), with Admiral's flag forms (`--settings`, `-c hooks.<Event>=…`, `--plugin-dir`, prompt on the command line). Every hook ran `probe-hook <harness> <event>` by bare name from a directory first on `PATH`, logged `$TMUX_PANE` and the stdin JSON, and set a pane option both with `tmux set -p` (no target) and with `tmux set -p -t "$TMUX_PANE"`.
+
+### Results
+
+| Check | Claude Code | Codex CLI | Copilot CLI |
+| --- | --- | --- | --- |
+| 1. Subagent start/stop hooks fire | **Confirmed.** `SubagentStart`/`SubagentStop` with `agent_id`, `agent_type`; ids match. Differs: an interactive Agent call always ran in the background, even when told `run_in_background` false. | **Confirmed.** `SubagentStart`/`SubagentStop` with `agent_id` (thread id), `agent_type` `default`; ids match. | **Differs from the docs.** `subagentStart` carries `agentId`, `agentType`, `agentName` and `parentAgentId`; ids match `subagentStop`. `general-purpose` fires both. |
+| 2. Subagent tool hooks reach the ship's pane | **Confirmed.** `PreToolUse`/`PostToolUse` with the subagent's `agent_id`, `$TMUX_PANE` = ship pane. | **Confirmed.** Same, with `agent_id`, `agent_type`. | **Confirmed.** `--plugin-dir` hooks fire inside subagents (`preToolUse`, `postToolUse`, `userPromptSubmitted`, `agentStop`, `notification`) with `agentId`, `parentAgentId`; each fired once, not re-emitted on the parent. |
+| 3. Interrupted subagent fires a stop hook | **Differs.** Esc in the lead does not touch a background subagent. Stopping it from the panel (↓, `x`) fired **no** `SubagentStop`; the lead got a task notification and its next `Stop` had `background_tasks: []`. | **Differs.** Esc fired `Interrupt` for the lead's turn only. The subagent kept running and fired `PostToolUse` and `SubagentStop` when it finished 28 s later. | **Failed.** Esc sent by `send-keys` did not interrupt (twice). Ctrl-C aborted the lead and the subagent ("Operation aborted by user") and fired **no hook at all**: no `postToolUse`, `subagentStop` or `agentStop`. |
+| 4. `Stop` lists running background subagents (#69) | **Confirmed.** `Stop` while a subagent ran: `background_tasks: [{id, type: "subagent", status: "running", description, agent_type}]`, plus `shell` entries (`id`, `type`, `status`, `description`, `command`). `id` equals the subagent's `agent_id`. | n/a | n/a |
+| 5. Teammate window: own `$TMUX_PANE` | **Confirmed** (`%1`). | **Confirmed** (`%1`). | **Confirmed** (`%1`). |
+| 5. Teammate window: `@probe-state` on its pane | **Confirmed** with `-t "$TMUX_PANE"`. **Failed** without `-t`: it landed on the ship's pane. | Same. | Same. |
+| 5. Re-task with `send-keys` text, then Enter | **Confirmed**, Enter straight after the text. | **Differs.** Enter right after the text was taken as part of a paste and not submitted. Enter 0.3 s later, or `paste-buffer -p` then Enter, submits. | **Confirmed**, Enter straight after the text. |
+| 6. Hook command found by bare name on `PATH` | **Confirmed.** | **Confirmed**, after the one-time "Hooks need review" (9 hooks, "Trust all"). | **Confirmed.** |
+
+### Payload excerpts
+
+Paths shortened to `<repo>`, `<claude-config>`, `<codex-home>`; common fields (`session_id`, `transcript_path`, `cwd`, `permission_mode`, `timestamp`) left out unless they matter.
+
+Claude Code, a subagent, then the lead's `Stop` while it still runs:
+
+```json
+{"hook_event_name":"PreToolUse","tool_name":"Agent","tool_input":{"description":"Read notes.txt first line","prompt":"Find the file named notes.txt …","subagent_type":"Explore"},"tool_use_id":"toolu_01KM…"}
+{"hook_event_name":"SubagentStart","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore","prompt_id":"651bddf6-…"}
+{"hook_event_name":"PreToolUse","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore","tool_name":"Bash","tool_input":{"command":"find <repo> -name …"}}
+{"hook_event_name":"Stop","stop_hook_active":false,"last_assistant_message":"The Explore agent is still running, …","background_tasks":[{"id":"a0f790cb4a518e0f9","type":"subagent","status":"running","description":"Read notes.txt first line","agent_type":"Explore"}],"session_crons":[]}
+{"hook_event_name":"SubagentStop","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore","agent_transcript_path":"<claude-config>/projects/…/subagents/agent-a0f790cb4a518e0f9.jsonl","stop_hook_active":false,"background_tasks":[{"id":"a0f790cb4a518e0f9","type":"subagent","status":"running", …}],"session_crons":[]}
+{"hook_event_name":"Stop","last_assistant_message":"alpha","background_tasks":[],"session_crons":[]}
+```
+
+Claude Code internal agents (prompt suggestions) after nearly every turn, with no `SubagentStart` before them:
+
+```json
+{"hook_event_name":"SubagentStop","agent_id":"af0aff5a46b69da59","agent_type":"","agent_transcript_path":"…","background_tasks":[…]}
+```
+
+Codex CLI, spawn, a tool call inside the subagent, and its stop:
+
+```json
+{"hook_event_name":"PreToolUse","tool_name":"collaborationspawn_agent","tool_input":{"task_name":"read_first_line","fork_turns":"all","message":"gAAAAABq1YnI… (encrypted)"},"turn_id":"01a15222-26b3-…"}
+{"hook_event_name":"SubagentStart","agent_id":"01a15222-3773-7723-a517-989315c87c35","agent_type":"default","turn_id":"01a15222-3793-…","model":"gpt-6-luna"}
+{"hook_event_name":"PreToolUse","agent_id":"01a15222-3773-7723-a517-989315c87c35","agent_type":"default","tool_name":"Bash","tool_input":{"command":"head -n 1 notes.txt"}}
+{"hook_event_name":"SubagentStop","agent_id":"01a15222-3773-7723-a517-989315c87c35","agent_type":"default","agent_transcript_path":"<codex-home>/sessions/2026/10/18/…","stop_hook_active":false,"last_assistant_message":"alpha"}
+{"hook_event_name":"Interrupt","turn_id":"01a15222-ed87-…","model":"gpt-6-luna"}
+```
+
+Copilot CLI, a `general-purpose` subagent; note `agentStop` from inside it:
+
+```json
+{"toolName":"task","toolArgs":"{\"agent_type\":\"general-purpose\",\"description\":\"Run sleep 30\",\"mode\":\"sync\",\"name\":\"sleeper\",\"prompt\":\"In <repo> run …\"}"}
+{"agentName":"general-purpose","agentId":"788718ef-39f6-45b1-ade6-7cb742bc6958","agentType":"general-purpose","parentAgentId":"796c5372-28bb-496c-bb5b-f9e223ac6ff8"}
+{"toolName":"bash","toolArgs":{"command":"sleep 30","description":"Sleep 30 seconds","initial_wait":60},"agentId":"788718ef-…","agentType":"general-purpose","parentAgentId":"796c5372-…"}
+{"message":"Run command: sleep 30","title":"Permission needed","hook_event_name":"Notification","notification_type":"permission_prompt"}
+{"stopReason":"end_turn","stop_hook_active":false,"agentId":"788718ef-…","agentType":"general-purpose","parentAgentId":"796c5372-…"}
+{"agentId":"788718ef-…","agentType":"general-purpose","agentName":"general-purpose","response":"done","stopReason":"end_turn","stop_hook_active":false,"parentAgentId":"796c5372-…"}
+{"stopReason":"end_turn","stop_hook_active":false}
+```
+
+The first three lines are `preToolUse`, `subagentStart`, `preToolUse`; then `notification`, the subagent's `agentStop`, `subagentStop`, and the lead's `agentStop` (no `agentId`). `subagentStart` sent no `agentDisplayName` or `agentDescription`. The `notification` fired although Copilot's Assisted Permissions approved the command on its own.
+
+### What this changes
+
+- **`tmux set -p` without `-t` does not use `$TMUX_PANE`.** On tmux 3.8 it sets the option on the active pane of the session's current window. With one window per ship that is the ship's pane, so today's bundle works. With a crew window in the same session, the teammate's hooks wrote the ship's pane. This contradicts ADR 0013 ("tmux finds … the pane from `$TMUX` and `$TMUX_PANE`") and ADR 0014's per-crew `@admiral-state`: `admiral hook` must pass `-t "$TMUX_PANE"`.
+- **Copilot subagents have ids.** `subagentStart` carries `agentId`, `agentType` and `parentAgentId`, and `general-purpose` fires start and stop. The earlier Copilot section and ADR 0014's last consequence ("Copilot's `general-purpose` subagent sends no name or id") are wrong for 1.0.98. Key Copilot entries by `agentId` like the other two.
+- **Copilot fires `agentStop` and `userPromptSubmitted` inside subagents**, with `agentId` set. The docs say `agentStop` is the main agent only. Read as is, a subagent finishing sets the ship needs-you mid-turn. `admiral hook` should ignore `agentStop` and `userPromptSubmitted` that carry `agentId`.
+- **An interrupted subagent may never send its stop hook.** Claude Code (stopped from the panel) and Copilot (Ctrl-C) sent none. Claude's next `Stop` with an empty `background_tasks[]` clears it, as ADR 0014 plans. Copilot's Ctrl-C fires no turn-end hook either, so the entry stays until the next `agentStop` or `subagentStop` or the pane dies. Clearing all of a ship's Copilot subagents on its next root `agentStop` would cover it. Codex sends `SubagentStop` when the subagent finishes, because Esc does not stop it.
+- **Claude Code `SubagentStart` fires again on resume** with the same `agent_id` (a background subagent woken by its own background shell). Treat a start for a known id as a no-op.
+- **Claude Code internal agents** fire `SubagentStop` with `agent_type: ""` after most turns and no start. A stop for an unknown id must not change `@admiral-state`, or it overwrites the `Stop` state that came just before.
+- **Claude Code subagents run in the background** in interactive sessions, so the lead's `Stop` usually fires while they run. `background_tasks[]` is what tells "turn over" from "done", and its `id` is the subagent's `agent_id`.
+- **Codex spawn prompts are encrypted** in `PreToolUse` (`message` is an opaque `gAAAA…` blob). `task_name` is the only readable label; the TUI shows it as `/root/<task_name>`.
+- **`admiral crew send` on Codex** must pause about 0.3 s before Enter, or use bracketed paste (`paste-buffer -p`) then Enter. Claude Code and Copilot take Enter at once.
+- Codex warns once per launch that `-c` overrides run it "without the shared background server" (embedded mode). Harmless here.
+- A crew window, like a ship, gets its `PATH` from the tmux client that spawns it (as `launcher.go` already notes); `-e PATH=…` on `new-window` was ignored.

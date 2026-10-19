@@ -18,9 +18,16 @@ A ship's crew boats are its teammates and its subagents, and the flotilla switch
 - Each ship has `ADMIRAL_SHIP=<session>` in its environment. A skill that sees it uses `admiral crew`; without it, the skill runs teammates its own way. Commodore needs no change of its own; only the `agent-teammates` drivers get an Admiral branch.
 - The crew boat's window holds its record as window options next to the ship's session options (ADR 0012): `@admiral-crew-name`, `@admiral-harness`, `@admiral-dir` and `@admiral-launched`. Its pane carries its own `@admiral-state` from its own hooks.
 
-**Subagents come from the harness's subagent hooks** and are kept on the ship's pane as `@admiral-subagents`: id (or Copilot's agent name, when there is no id), type and start time. They are drawn as a smaller mark that cannot be boarded. An entry clears on its stop hook, on the ship's turn ending with no running subagent left (Claude Code's `Stop` `background_tasks[]`), and when the pane dies.
+**Subagents come from the harness's subagent hooks** and are kept on the ship's pane as `@admiral-subagents`: id, type and start time. They are drawn as a smaller mark that cannot be boarded. An interrupted subagent may never send its stop hook, so each harness has its own clearing rule:
 
-**Every hook runs `admiral hook <event>`,** which reads the harness's JSON from stdin and sets the pane options. This replaces ADR 0013's bare `tmux set -p @admiral-state …`. To keep Codex's hook trust across upgrades, the command names no path: Admiral keeps `~/.admiral/bin/admiral` pointing at the running binary, rewrites it at every start, and puts that directory on each ship's and crew boat's `PATH`, so the hook text never changes.
+- **Claude Code**: the list is replaced from every `Stop`'s `background_tasks[]`.
+- **Codex CLI**: on `SubagentStop` only. Its subagents keep running after the lead is interrupted.
+- **Copilot CLI**: on `subagentStop`, and also on the lead's next `userPromptSubmitted` or `agentStop`. Ctrl-C sends no hook at all.
+- **Every harness**: when the pane dies.
+
+A stop for an id Admiral never saw starts is ignored. Claude Code's internal agents send those after most turns.
+
+**Every hook runs `admiral hook <event>`,** which reads the harness's JSON from stdin and sets the options on the pane named by `$TMUX_PANE` (`tmux set -p -t "$TMUX_PANE"`). A bare `set -p` writes to the session's active pane, which is wrong once a ship has crew windows. A working or waiting hook that comes from inside a subagent (Copilot's `agentStop` and `userPromptSubmitted` carry an `agentId`) does not change `@admiral-state`. This replaces ADR 0013's bare `tmux set -p @admiral-state …`. To keep Codex's hook trust across upgrades, the command names no path: Admiral keeps `~/.admiral/bin/admiral` pointing at the running binary, rewrites it at every start, and puts that directory on each ship's and crew boat's `PATH`, so the hook text never changes.
 
 **Needs-you follows each crew boat.** A crew boat's own needs-you shows on the crew boat in the flotilla and also sets the ship needs-you in open water, so a waiting teammate is never hidden behind a quiet lead.
 
@@ -40,4 +47,5 @@ A ship's crew boats are its teammates and its subagents, and the flotilla switch
 - On Codex and Copilot, a Commodore teammate inside Admiral becomes a live interactive session re-tasked by typing, not a one-turn headless job.
 - Changing the hook command brings back Codex's hook review dialog once per fleet, one time.
 - A ship's tmux session can have more than one window. Code that assumed one pane per session (ADRs 0002, 0012) targets the ship's first window.
-- Copilot's `general-purpose` subagent sends no name or id, so it shows as an unnamed subagent.
+
+Amended 2026-10-19 after the live check in [`docs/research/crew-boats.md`](../research/crew-boats.md) ([#72](https://github.com/jbuffin/admiral/issues/72)): hooks pass `-t "$TMUX_PANE"`, subagent-scoped hooks leave `@admiral-state` alone, Copilot subagents carry ids, and subagent entries clear by a rule for each harness.

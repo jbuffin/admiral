@@ -47,4 +47,4 @@ The no-first-hook rule (ADR 0007) shows a ship stopped on any of these dialogs a
 - The first launch in each checkout stops on folder trust, on every harness and in every fleet.
 - A hook bundle change that alters a Codex hook definition brings back the review dialog once per fleet.
 
-Amended 2026-10-18 ([#5](https://github.com/jbuffin/admiral/issues/5)): every hook now runs `admiral hook <event>` through a fixed `~/.admiral/bin` on `PATH`, so the hook text stays the same across upgrades (ADR 0014).
+Amended 2026-10-18 ([#5](https://github.com/jbuffin/admiral/issues/5)): every hook now runs `admiral hook <event>` through a fixed `~/.admiral/bin` on `PATH`, so the hook text stays the same across upgrades (ADR 0014). A live check showed that a bare `tmux set -p` writes to the session's active pane, not to `$TMUX_PANE`, so hooks pass `-t "$TMUX_PANE"`. This went unseen while every ship had a single pane.
