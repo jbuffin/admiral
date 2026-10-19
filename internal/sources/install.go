@@ -80,15 +80,14 @@ func diskFiles(dir string) (map[string][]byte, error) {
 	return files, err
 }
 
-// InstallPlugins installs every plugin Admiral ships. It stops at the first
-// failure.
+// InstallPlugins installs every plugin Admiral ships. A plugin that fails does
+// not stop the others; the errors come back joined.
 func InstallPlugins(home string) error {
+	var errs []error
 	for _, name := range plugins.Names {
-		if err := installPlugin(home, name); err != nil {
-			return err
-		}
+		errs = append(errs, installPlugin(home, name))
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // installPlugin writes the embedded plugin to plugins/<name>/ when the folder

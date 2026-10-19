@@ -25,11 +25,17 @@ DEFAULT_PANELS = [
 ]
 DEFAULT_HOT_LABELS = ["priority: high", "P0", "P1", "urgent"]
 DEFAULT_REFRESH_MINUTES = 5
+MAX_REFRESH_MINUTES = 24 * 60
+
+# What gh prints when the network, not GitHub, failed. It prints the first for
+# a DNS error and the rest raw from Go's transport.
+UNREACHABLE = ("error connecting to", "dial tcp", "i/o timeout", "TLS handshake", "x509:", "connection refused",
+               "connection reset", "no route to host", "network is unreachable", "proxyconnect")
 
 INVALID_PARAMS = -32602
 METHOD_NOT_FOUND = -32601
 
-FIELDS = "number title url repository { nameWithOwner url } labels(first: 20) { nodes { name } }"
+FIELDS = "number title url repository { nameWithOwner url } labels(first: 100) { nodes { name } }"
 SEARCH = ("query($q: String!) { search(query: $q, type: ISSUE, first: %d) { nodes { "
           "... on Issue { %s } ... on PullRequest { %s } } } }" % (MAX_ORDERS, FIELDS, FIELDS))
 
@@ -139,7 +145,7 @@ def read_hot_labels(value):
 
 def read_minutes(value):
     if isinstance(value, int) and not isinstance(value, bool) and value >= 1:
-        return value
+        return min(value, MAX_REFRESH_MINUTES)
     return DEFAULT_REFRESH_MINUTES
 
 
@@ -166,7 +172,9 @@ def get_token():
         token = gh(args).strip()
     except FileNotFoundError:
         raise SignInNeeded("Install the GitHub CLI (brew install gh), then run gh auth login")
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+    except subprocess.TimeoutExpired:  # a locked keychain, say: not a sign-out
+        raise SearchFailed("Couldn't reach %s" % host)
+    except subprocess.CalledProcessError:
         token = ""
     if not token:
         raise SignInNeeded("Run gh auth login -h %s" % host)
@@ -184,7 +192,7 @@ def search(query, token):
         raise unreachable
     except subprocess.CalledProcessError as e:
         message = (e.stderr or "").replace(token, "***").strip()
-        if message.startswith("error connecting to"):
+        if any(m in message for m in UNREACHABLE):
             raise unreachable
         raise SearchFailed("Search failed: %s" % (re.sub(r"^gh: ", "", message) or "gh exited with status %d" % e.returncode))
     try:
@@ -225,6 +233,10 @@ def refresh():
         if fresh:
             notify("auth.required", {"message": str(e)})
         return
+    except SearchFailed as e:  # the token call hung: keep the sign-in state
+        for panel in panels:
+            store(panel, None, str(e))
+        return
     with state_lock:
         was_signed_out = auth_message is not None
         auth_message = None
@@ -232,14 +244,22 @@ def refresh():
         notify("auth.ok")
     for panel in panels:
         try:
-            entry = {"orders": search(panel["query"], token), "error": None}
+            store(panel, search(panel["query"], token), None)
         except SearchFailed as e:
-            entry = {"orders": cache[panel["id"]]["orders"], "error": str(e)}
-        with state_lock:
-            changed = cache[panel["id"]] != entry
-            cache[panel["id"]] = entry
-        if changed:
-            notify("orders.changed", {"panel": panel["id"]})
+            store(panel, None, str(e))
+        except Exception:  # one odd answer must not stop the other panels
+            store(panel, None, "Search failed: unexpected response")
+
+
+def store(panel, orders, error):
+    """Keep a panel's result (its last orders when there are none) and tell
+    Admiral if the panel changed."""
+    with state_lock:
+        entry = {"orders": cache[panel["id"]]["orders"] if orders is None else orders, "error": error}
+        changed = cache[panel["id"]] != entry
+        cache[panel["id"]] = entry
+    if changed:
+        notify("orders.changed", {"panel": panel["id"]})
 
 
 def work():

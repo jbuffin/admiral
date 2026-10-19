@@ -191,7 +191,7 @@ func TestFreshInstallLeavesWhatItShould(t *testing.T) {
 // embeddedPlugins are the plugins Admiral ships inside the binary and installs.
 var embeddedPlugins = []string{"freeform", "github"}
 
-// stampOf is the hash Admiral keeps in plugins/freeform/.admiral-stamp: SHA-256
+// stampOf is the hash Admiral keeps in plugins/<name>/.admiral-stamp: SHA-256
 // over the files sorted by path, each as path, a zero byte, content, a zero byte.
 func stampOf(files map[string]string) string {
 	names := make([]string, 0, len(files))
@@ -209,7 +209,7 @@ func stampOf(files map[string]string) string {
 // S1: a newer embedded copy replaces a plugin folder that still matches its
 // stamp, and leaves one that was edited after the stamp was written. Both
 // plugins Admiral ships, freeform and github, follow the rule.
-func TestFreeformUpgrade(t *testing.T) {
+func TestPluginUpgrade(t *testing.T) {
 	for _, name := range embeddedPlugins {
 		t.Run(name, func(t *testing.T) { testPluginUpgrade(t, name) })
 	}
@@ -848,6 +848,16 @@ func TestGitHubPlugin(t *testing.T) {
 	g.search("assigned", "assignee:@me", ghNode("github.com", "acme/widgets", 13, true, "Fresh PR"))
 	refresh()
 	a, _ = pollPanel("the error gone and the new result", func(a, r panelJSON) bool { return a.Error == nil && len(a.Orders) == 1 })
+	// a transport error that is not a DNS one reads as unreachable too
+	g.fail("assigned", "Post \"https://api.github.com/graphql\": dial tcp 140.82.112.6:443: connect: connection refused")
+	refresh()
+	a, _ = pollPanel("the connection refused error", func(a, r panelJSON) bool { return a.Error != nil })
+	if a.errText() != "Couldn't reach github.com" || len(a.Orders) != 1 {
+		t.Errorf("panel error = %q with %d orders after a refused connection, want \"Couldn't reach github.com\" and the last order", a.errText(), len(a.Orders))
+	}
+	g.search("assigned", "assignee:@me", ghNode("github.com", "acme/widgets", 13, true, "Fresh PR"))
+	refresh()
+	a, _ = pollPanel("the error gone again", func(a, r panelJSON) bool { return a.Error == nil && len(a.Orders) == 1 })
 	if a.Orders[0].ID != "acme/widgets#13" || a.Orders[0].Text != "https://github.com/acme/widgets/pull/13" {
 		t.Errorf("Assigned to me after the refresh = %s, want acme/widgets#13", dump(a.Orders))
 	}

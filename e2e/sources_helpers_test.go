@@ -682,7 +682,7 @@ func (g *fakeGH) calls() []ghCall {
 	return out
 }
 
-// withToken are the search calls that ran with that GH_TOKEN.
+// searchesWith are the search calls that ran with that GH_TOKEN.
 func (g *fakeGH) searchesWith(token string) []ghCall {
 	var out []ghCall
 	for _, c := range g.calls() {
