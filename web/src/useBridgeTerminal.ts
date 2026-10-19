@@ -6,7 +6,7 @@ import type { Term } from './terminal';
 export interface BridgeTerminalOptions {
   /** The session the bridge socket joins. */
   session: string;
-  /** Whether keys typed into the terminal are accepted. */
+  /** Whether keys typed into the terminal are accepted while the bridge is connected. */
   open: boolean;
   /** The session is gone: the caller closes its terminal. */
   gone(): void;
@@ -28,9 +28,11 @@ export function useBridgeTerminal({ session, open, gone, probe }: BridgeTerminal
   const activity = useRef<() => void>(() => {});
   const [linkState, setLinkState] = useState<LinkState>('connecting');
 
-  const openNow = useRef(open);
-  openNow.current = open;
-  useEffect(() => term.current?.setStdin(open), [open]);
+  // Nothing typed while the link is down is queued, so the terminal takes no keys then either.
+  const typeable = open && linkState === 'open';
+  const openNow = useRef(typeable);
+  openNow.current = typeable;
+  useEffect(() => term.current?.setStdin(typeable), [typeable]);
   const goneNow = useRef(gone);
   goneNow.current = gone;
 

@@ -6,6 +6,8 @@ import { type PanelView, api, can, declares, filter, panelCollapsed, setPanelCol
 
 export const countLabel = (n: number) => `${n} ${n === 1 ? 'order' : 'orders'}`;
 
+const touchKeyboard = () => matchMedia('(pointer: coarse)').matches;
+
 // A source's error with its Restart button; shared by panels and source rows.
 export function SourceProblem({ sourceKey, message, extra }: { sourceKey: string; message: string | null; extra?: string }) {
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -126,7 +128,8 @@ function AddOrder({ view, onError }: { view: PanelView; onError: (m: string | nu
         disabled={!can(source, 'add')}
         onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+          // Return adds the order; Shift+Return, or Return on a touch keyboard (which has no Shift+Return), starts a new line.
+          if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !touchKeyboard()) {
             e.preventDefault();
             submit();
           }

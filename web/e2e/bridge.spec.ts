@@ -282,6 +282,8 @@ test.describe('S6: the server goes away', () => {
     await expect(header(page).getByRole('alert').getByText('Reconnecting…')).toBeVisible();
     await expect(prompt(page, name)).toBeDisabled();
     await expect(keyButton(page, 'Esc')).toBeDisabled();
+    // The terminal itself takes no keys either: xterm.js's text box is switched off with stdin.
+    await expect(t.locator('.xterm textarea')).toHaveAttribute('aria-hidden', 'true');
     // It keeps its last screen and dims: some ancestor of the terminal, inside the region, is translucent.
     await expect(t.locator('.xterm')).toBeVisible();
     expect(await screenText(page)).toContain('before-restart');
@@ -304,6 +306,7 @@ test.describe('S6: the server goes away', () => {
     await expect(t.getByText('Reconnecting…')).toHaveCount(0, { timeout: 20_000 });
     await expect(header(page).getByRole('alert')).toHaveCount(0);
     await expect(prompt(page, name)).toBeEnabled();
+    await expect(t.locator('.xterm textarea')).toHaveAttribute('aria-hidden', 'false');
     await expect.poll(() => screenText(page)).toContain('while-away');
     expect(stdinOf(s, ship.session), 'nothing typed while disconnected is queued').toBe('');
     await prompt(page, name).fill('back');

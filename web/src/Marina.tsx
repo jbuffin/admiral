@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'preact/hooks';
 import type { Dock, Fleet } from './config';
 import { harnesses } from './harnesses';
 import { armed, departed, dockKey, dragging, openLaunch, selected } from './launch';
@@ -6,6 +7,18 @@ import { Breakwater, Rowboat } from './Scenery';
 import { Ship } from './Ship';
 import { openSetup } from './setup';
 import { atSea, ships } from './ships';
+
+// The fleets the page has drawn. Once the first marinas are up, a marina for a new fleet (from
+// the setup terminal or a hand edit) sails in (story 20); the ones there on load just appear.
+const drawn = { ready: false, keys: new Set<string>() };
+const useArrival = (key: string | null) => {
+  const [arriving] = useState(() => key !== null && drawn.ready && !drawn.keys.has(key));
+  if (key !== null) drawn.keys.add(key);
+  useEffect(() => {
+    drawn.ready = true;
+  }, []);
+  return arriving;
+};
 
 // Marina heights (tokens): 3 docks 300, otherwise the 2-dock height.
 const heightFor = (docks: number) => (docks >= 3 ? 300 : 240);
@@ -118,8 +131,9 @@ function Basin({ height, rowboatTop, children }: { height: number; rowboatTop: n
 export function Marina({ fleet }: { fleet: Fleet }) {
   const height = heightFor(fleet.docks.length);
   const tops = dockTops(fleet.docks.length, height);
+  const arriving = useArrival(fleet.key);
   return (
-    <section class="marina" aria-label={`${fleet.name} marina`} style={`height:${height}px`}>
+    <section class={arriving ? 'marina marina-in' : 'marina'} aria-label={`${fleet.name} marina`} style={`height:${height}px`}>
       <Basin height={height} rowboatTop={fleet.docks.length >= 3 ? 58 : height - 52}>
         {fleet.docks.length === 0 && <p class="no-docks">No harnesses</p>}
         {fleet.docks.map((d, i) => (
@@ -138,6 +152,7 @@ export function Marina({ fleet }: { fleet: Fleet }) {
 // With no fleets: one empty marina. Tapping it opens the setup terminal (story 19). The
 // button covers the marina; it is not the marina, which holds a basin and a sign.
 export function SetUpMarina() {
+  useArrival(null);
   return (
     <div class="marina" style={`height:${heightFor(0)}px`}>
       <Basin height={heightFor(0)} rowboatTop={heightFor(0) - 52} />

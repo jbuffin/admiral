@@ -24,7 +24,8 @@ var skipped = map[string]bool{
 
 // Detection is what setup finds on this Mac. It lists only the names in ~ for
 // identity directories (story 14). The walk and the wrapper scan skip every
-// dot-directory and every identity directory in use, wherever it is, so they
+// dot-directory, every identity directory in use, wherever it is, and every
+// detected one, so they
 // never list what is inside one. Looking for a harness by name only stats
 // <dir>/<name>, so that still covers the PATH entries inside an identity
 // directory (Claude Code's local install puts claude in ~/.claude/local).
@@ -44,6 +45,16 @@ var harnessNames = []string{"claude", "codex", "copilot"}
 // userHome. admiralHome and the identity directories in skip are never walked,
 // and no PATH entry inside one is listed for wrappers.
 func Detect(userHome, pathEnv, admiralHome string, skip []string) Detection {
+	d := Detection{Home: userHome, Harness: map[string]string{}}
+	// The names first, so the scan below skips the detected identity directories too.
+	if entries, err := os.ReadDir(userHome); err == nil {
+		for _, e := range entries {
+			if hasHarnessPrefix(strings.TrimPrefix(e.Name(), ".")) && strings.HasPrefix(e.Name(), ".") && (e.IsDir() || e.Type()&os.ModeSymlink != 0) {
+				d.Identity = append(d.Identity, filepath.Join(userHome, e.Name()))
+			}
+		}
+	}
+	skip = append(append([]string{}, skip...), d.Identity...)
 	inside := func(p string) bool {
 		for _, id := range skip {
 			if p == id || strings.HasPrefix(p, id+string(filepath.Separator)) {
@@ -52,7 +63,6 @@ func Detect(userHome, pathEnv, admiralHome string, skip []string) Detection {
 		}
 		return false
 	}
-	d := Detection{Home: userHome, Harness: map[string]string{}}
 	seen := map[string]bool{}
 	var scan []string // the entries whose names may be listed, for wrappers
 	add := func(dir string) {
@@ -98,13 +108,6 @@ func Detect(userHome, pathEnv, admiralHome string, skip []string) Detection {
 		}
 	}
 
-	if entries, err := os.ReadDir(userHome); err == nil {
-		for _, e := range entries {
-			if hasHarnessPrefix(strings.TrimPrefix(e.Name(), ".")) && strings.HasPrefix(e.Name(), ".") && (e.IsDir() || e.Type()&os.ModeSymlink != 0) {
-				d.Identity = append(d.Identity, filepath.Join(userHome, e.Name()))
-			}
-		}
-	}
 	d.Suggested = suggestRoots(userHome, admiralHome, inside)
 	return d
 }
@@ -112,6 +115,15 @@ func Detect(userHome, pathEnv, admiralHome string, skip []string) Detection {
 func hasHarnessPrefix(name string) bool {
 	for _, h := range harnessNames {
 		if strings.HasPrefix(name, h) {
+			return true
+		}
+	}
+	return false
+}
+
+func (d Detection) hasIdentity(dir string) bool {
+	for _, id := range d.Identity {
+		if id == dir {
 			return true
 		}
 	}

@@ -240,7 +240,8 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
       // The raw value: a space or tab at either end is refused too, not trimmed away.
       if (/\s/.test(custom)) return setSpaceError(true);
       if (!name) return setError('Type a skill name, or pick another.');
-      skill = { kind: 'skill', name };
+      // Sent as typed: the server takes off the one leading / or $.
+      skill = { kind: 'skill', name: custom };
     } else skill = { kind: 'skill', name: choice!.slice(6) };
     setBusy(true);
     setError('');
