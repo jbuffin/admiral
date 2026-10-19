@@ -54,10 +54,19 @@ type FlagKind = keyof typeof flags;
 const pennant = ({ x, y, width, height }: (typeof flags)[FlagKind]) =>
   `M${x} ${y}H${x + width}L${x + width * 0.77} ${y + height / 2}L${x + width} ${y + height}H${x}Z`;
 
+// A harness this build doesn't know: a plain "?" flag.
+const UNKNOWN = 'logo-unknown';
+
 export function LogoSprite() {
   return (
     <svg width="0" height="0" style="position:absolute" aria-hidden="true">
       <defs>
+        <symbol id={UNKNOWN} viewBox="0 0 40 28" preserveAspectRatio="xMidYMid slice">
+          <rect width="40" height="28" fill="#E9E2D0" />
+          <text x="20" y="19" text-anchor="middle" font-family="Bricolage Grotesque, sans-serif" font-weight="800" font-size="13" fill="#14304A">
+            ?
+          </text>
+        </symbol>
         {(Object.keys(harnesses) as HarnessName[]).map((h) => (
           <Symbol key={h} harness={h} />
         ))}
@@ -74,20 +83,21 @@ export function LogoSprite() {
 // A pennant carrying the harness logo, clipped to the flag shape and outlined.
 // Behind an official logo it draws the harness's field over the whole pennant
 // and sets the mark whole, centered in the solid part with a little clear space.
-export function LogoFlag({ harness, kind }: { harness: HarnessName; kind: FlagKind }) {
+export function LogoFlag({ harness, kind }: { harness: string; kind: FlagKind }) {
   const f = flags[kind];
+  const known = Object.hasOwn(harnesses, harness) ? (harness as HarnessName) : undefined;
   const pad = f.height * 0.15;
   const mark = { x: f.x + pad, y: f.y + pad, width: f.width * 0.77 - 2 * pad, height: f.height - 2 * pad };
   return (
     <>
       <g clip-path={`url(#pennant-${kind})`}>
-        {isOfficial(harness) ? (
+        {known && isOfficial(known) ? (
           <>
-            <rect x={f.x} y={f.y} width={f.width} height={f.height} fill={harnesses[harness].field} />
-            <use href={`#${logoId(harness)}`} {...mark} />
+            <rect x={f.x} y={f.y} width={f.width} height={f.height} fill={harnesses[known].field} />
+            <use href={`#${logoId(known)}`} {...mark} />
           </>
         ) : (
-          <use href={`#${logoId(harness)}`} x={f.x} y={f.y} width={f.width} height={f.height} />
+          <use href={`#${known ? logoId(known) : UNKNOWN}`} x={f.x} y={f.y} width={f.width} height={f.height} />
         )}
       </g>
       <path d={pennant(f)} fill="none" stroke="#14304A" stroke-width={f.stroke} stroke-linejoin="round" />
