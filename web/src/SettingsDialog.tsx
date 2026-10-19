@@ -14,6 +14,7 @@ interface Prop {
   title?: string;
   description?: string;
   format?: string;
+  writeOnly?: boolean;
   enum?: unknown[];
   items?: Prop;
   properties?: Record<string, Prop>;
@@ -25,11 +26,13 @@ interface Schema {
 
 const MarkerHint = () => <small>{UNCHANGED} keeps a stored value.</small>;
 
-const simple = (p: Prop) => (p.enum ? true : ['string', 'number', 'integer', 'boolean'].includes(p.type ?? ''));
 
-const scalar = (p: Prop) => !p.enum && ['string', 'number', 'integer', 'boolean'].includes(p.type ?? '');
-const isStrings = (p: Prop) => p.type === 'array' && p.items?.type === 'string' && !p.items.enum;
-const isObjects = (p: Prop) => p.type === 'array' && p.items?.type === 'object' && !!p.items.properties && Object.values(p.items.properties).every(scalar);
+const scalar = (p: Prop) => ['string', 'number', 'integer', 'boolean'].includes(p.type ?? '');
+const simple = (p: Prop) => !!p.enum || scalar(p);
+const secret = (p: Prop) => p.format === 'password' || p.writeOnly === true;
+// Lists of secrets stay JSON: a row field cannot tell a kept secret from a cleared one.
+const isStrings = (p: Prop) => p.type === 'array' && p.items?.type === 'string' && !p.items.enum && !secret(p.items);
+const isObjects = (p: Prop) => p.type === 'array' && p.items?.type === 'object' && !!p.items.properties && Object.values(p.items.properties).every((f) => simple(f) && !f.enum && !secret(f));
 // Arrays the form draws as rows; any other array stays a JSON field.
 const isList = (p: Prop) => isStrings(p) || isObjects(p);
 
@@ -80,7 +83,7 @@ function SettingsForm({ sourceKey, onClose }: { sourceKey: string; onClose: () =
       if (sch.ok && sch.data.properties) {
         setSchema(sch.data);
         const text: Record<string, string> = {};
-        for (const [k, p] of Object.entries(sch.data.properties)) if (!simple(p) && !isList(p)) text[k] = settings[k] === undefined ? '' : JSON.stringify(settings[k]);
+        for (const [k, p] of Object.entries(sch.data.properties)) if (!simple(p) && (!isList(p) || (settings[k] !== undefined && !Array.isArray(settings[k])))) text[k] = settings[k] === undefined ? '' : JSON.stringify(settings[k]);
         setJson(text);
       }
       setLoaded(true);
@@ -97,7 +100,11 @@ function SettingsForm({ sourceKey, onClose }: { sourceKey: string; onClose: () =
       if (schema) {
         settings = { ...values };
         for (const [k, p] of Object.entries(schema.properties ?? {})) {
-          if (isList(p) && (!Array.isArray(settings[k]) || settings[k].length === 0)) delete settings[k];
+          if (!isList(p) || k in json) continue;
+          // Rows nothing was typed into are dropped; no rows left deletes the key.
+          const rows = (Array.isArray(settings[k]) ? (settings[k] as unknown[]) : []).filter((r) => (typeof r === 'string' ? r !== '' : Object.keys(r as object).length > 0));
+          if (rows.length === 0) delete settings[k];
+          else settings[k] = rows;
         }
         for (const [k, t] of Object.entries(json)) {
           if (t.trim() === '') delete settings[k];
@@ -249,7 +256,7 @@ function Field(props: { id: string; prop: Prop; required: boolean; stored?: bool
       </>
     );
   }
-  if (isList(prop)) {
+  if (isList(prop) && props.text === undefined) {
     const rows = Array.isArray(value) ? (value as unknown[]) : [];
     const strings = isStrings(prop);
     const fields = Object.entries(prop.items?.properties ?? {});

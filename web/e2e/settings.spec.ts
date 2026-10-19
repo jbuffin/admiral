@@ -62,7 +62,7 @@ test('list settings: add rows, save, the new panel appears; remove the last row 
   await expect(dialog).toBeHidden();
 
   // The plugin lists its panels from the saved setting.
-  await expect(page.getByRole('region', { name: /^(Tracker · )?Triage$/ })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Triage', exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Test', exact: true })).toHaveCount(0);
   // Strings stay strings, the integer is a number.
   await expect.poll(() => settingsOf(admiral.url)).toMatchObject({
