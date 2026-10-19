@@ -15,7 +15,7 @@ The UI is mostly live state the server pushes: ships changing state, needing you
 - **Custom CSS.** Plain CSS with custom properties generated from `designs/tokens.json`. No Tailwind, no CSS-in-JS and no component library.
 - **Ships, crew boats, flags and scenery are Preact SVG components** (`<Ship fleet bot harness state/>` and so on), so each part of a drawing can follow the ship's state. The art comes from `designs/assets/`, cleaned up (C2PA metadata removed, run through SVGO) and turned into components. `designs/assets/` remains the design reference only.
 - **Harness logos are a separate `<symbol>` set** that the flag draws with `<use>`. Builds we share include lettered placeholders under the same ids until Anthropic and GitHub grant written permission to use their logos ([#11](https://github.com/jbuffin/admiral/issues/11)).
-- **Drag is our own Pointer Events code**, with `touch-action: none` on draggable elements. No drag library.
+- **Drag is our own Pointer Events code**, with no drag library. Order cards use `touch-action: pan-y`, so a vertical swipe still scrolls the sidebar and only a sideways move picks an order up (story 65); ships in open water use `touch-action: none`.
 - **The terminal is `@xterm/xterm` with `@xterm/addon-fit`**, loaded the first time a bridge opens. It uses `@xterm/addon-webgl` where available and falls back to the DOM renderer.
 - **Fonts are bundled.** Bricolage Grotesque, Archivo and JetBrains Mono are included as WOFF2 subsets with their OFL licences. The UI never loads Google Fonts.
 - **Tests** use Vitest for logic, plus Playwright on WebKit with iPad emulation for the drag and bridge flows, following the testing rule in `AGENTS.md`. Before a release, check on a real iPad by hand.
@@ -34,3 +34,5 @@ The UI is mostly live state the server pushes: ships changing state, needing you
 - None of this depends on the back-end stack. The Go server (ADR 0005) embeds the built UI.
 - Swapping in the official logos changes only the logo symbol set.
 - The prototype guides design only. Where its structure is awkward for a real app, the app is built differently.
+
+Amended 2026-10-18 (MVP build, [spec #45](https://github.com/jbuffin/admiral/issues/45)): order cards use `touch-action: pan-y`, not `none`, per story 65.
