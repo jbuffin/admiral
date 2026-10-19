@@ -20,6 +20,7 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/launcher"
+	"github.com/jbuffin/admiral/internal/launchorders"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
@@ -94,7 +95,8 @@ func serve(args []string) error {
 		Tmux: tmuxPath, Socket: sock, Home: dir, Config: cfg.Current}}
 
 	s := &server.Server{Version: version, UI: web.UI(), Messages: map[string]server.MessageHandler{}, Config: cfg,
-		Hub: hub, Modules: []server.Module{shipService}}
+		Hub: hub, Modules: []server.Module{shipService,
+			&launchorders.Service{Config: cfg, State: st, Ships: shipService.List}}}
 	bg, stopBackground := context.WithCancel(context.Background())
 	var background sync.WaitGroup
 	runs := []func(context.Context){shipService.Run, s.WatchConfig}

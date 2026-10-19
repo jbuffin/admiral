@@ -1,0 +1,9 @@
+title = "Admiral"
+
+[extend]
+useDefault = true
+
+# The e2e helpers plant decoy secrets on purpose, to prove the skill index
+# never returns anything but the plugin key from a settings file.
+[allowlist]
+regexes = ['''decoy-(secret|helper)-[0-9a-f]+''']

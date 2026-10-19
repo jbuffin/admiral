@@ -133,7 +133,8 @@ var identityVars = map[string]struct{ env, dir string }{
 
 // IdentityDir is the directory a harness keeps its sign-in in when launched
 // with env (a fleet's env): the harness's variable there, else in Admiral's
-// own environment, else the harness default; ~ expanded and cleaned. The
+// own environment, else the harness default; ~ expanded (from env's HOME when
+// it has one) and cleaned. The
 // setup and fleet commands reuse it to refuse a shared identity.
 func IdentityDir(harness string, env map[string]string) string {
 	v := identityVars[harness]
@@ -143,6 +144,10 @@ func IdentityDir(harness string, env map[string]string) string {
 	}
 	if dir == "" {
 		dir = v.dir
+	}
+	if h := env["HOME"]; h != "" && (dir == "~" || strings.HasPrefix(dir, "~/")) {
+		// A fleet that sets HOME keeps its default directories there.
+		return filepath.Clean(filepath.Join(h, dir[1:]))
 	}
 	return filepath.Clean(expandHome(dir))
 }

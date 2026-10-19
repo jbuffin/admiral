@@ -68,6 +68,16 @@ func (m *Manager) Current() *Config {
 	return m.cur.clone()
 }
 
+// SetFavoriteSkills writes favorite_skills and reloads before it returns, so
+// the next View and the pushed config already carry the change.
+func (m *Manager) SetFavoriteSkills(skills []string) error {
+	if err := SetFavoriteSkills(filepath.Dir(m.path), skills); err != nil {
+		return err
+	}
+	m.reload()
+	return nil
+}
+
 // Subscribe returns a channel that receives after every reload, whether or not
 // anything changed. Notifications coalesce; call View or Current for the state.
 func (m *Manager) Subscribe() (<-chan struct{}, func()) {

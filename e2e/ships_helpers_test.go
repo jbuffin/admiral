@@ -72,6 +72,7 @@ func newWorld(t *testing.T) *world {
 			t.Fatal(err)
 		}
 	}
+	w.installCommodore()
 	t.Cleanup(func() {
 		_, _ = w.tmux("kill-server")
 		_ = exec.Command("tmux", "-S", w.defaultSocket(), "kill-server").Run()
@@ -101,7 +102,8 @@ func (w *world) baseEnv() []string {
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
 		switch k {
-		case "ADMIRAL_HOME", "HOME", "TMUX", "TMUX_PANE", "TMUX_TMPDIR", "XDG_CONFIG_HOME":
+		case "ADMIRAL_HOME", "HOME", "TMUX", "TMUX_PANE", "TMUX_TMPDIR", "XDG_CONFIG_HOME",
+			"CLAUDE_CONFIG_DIR", "CODEX_HOME", "COPILOT_HOME", "CLAUDE_CODE_PLUGIN_CACHE_DIR":
 			continue
 		}
 		env = append(env, kv)
@@ -257,13 +259,33 @@ func launchAdmiral(t *testing.T, home, listen string, env []string) *fleetInst {
 	return &fleetInst{instance: in, env: env}
 }
 
+// checkout makes a git checkout in the search root, since a launch is refused
+// for any other directory. The remotes a test needs are added with git.
 func (w *world) checkout(name string) string {
 	w.t.Helper()
 	d := filepath.Join(w.work, name)
 	if err := os.MkdirAll(d, 0o755); err != nil {
 		w.t.Fatal(err)
 	}
+	if _, err := os.Lstat(filepath.Join(d, ".git")); err != nil {
+		w.git(d, "init", "-q")
+	}
 	return d
+}
+
+// installCommodore puts a fake commodore skill where each harness looks
+// without any identity variable: under the HOME of Admiral and its ships.
+func (w *world) installCommodore() {
+	w.t.Helper()
+	for _, h := range []string{".claude", ".codex", ".copilot"} {
+		d := filepath.Join(w.userHom, h, "skills", "commodore")
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			w.t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, "SKILL.md"), []byte("---\nname: commodore\ndescription: a fake skill\n---\n"), 0o644); err != nil {
+			w.t.Fatal(err)
+		}
+	}
 }
 
 func (w *world) writeCue(lines ...string) {

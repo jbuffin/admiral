@@ -47,6 +47,10 @@ func setKey(dir, key string, value json.RawMessage) error {
 	path := filepath.Join(dir, FileName)
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
+		if _, lerr := os.Lstat(path); lerr == nil {
+			// A dangling symlink: writing would replace the link with a plain file.
+			return fmt.Errorf("%s is a symlink to a file that is missing, restore it first", path)
+		}
 		data = []byte(`{"version":1,"fleets":{}}`)
 	} else if err != nil {
 		return err
