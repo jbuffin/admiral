@@ -28,3 +28,5 @@ The freeform list is a plugin like any other, not built into Admiral: a single P
 - Plugins run with the engineer's permissions; Admiral runs only the plugins the engineer installs.
 
 Amended 2026-10-18 (MVP build, [spec #45](https://github.com/jbuffin/admiral/issues/45)): Admiral writes and upgrades the embedded freeform plugin itself, the one exception to #21's "Admiral doesn't install plugins".
+
+Amended 2026-10-18 (GitHub plugin): Admiral ships a second plugin, `github`, which reads issues and PRs through the engineer's `gh` login. Admiral embeds it and writes and upgrades it under the same stamp rule as freeform, so the exception now covers the plugins Admiral ships, not only freeform. Only freeform is added as a source on a fresh install; the engineer adds GitHub from "Add source plugin". `gh` is not an install dependency. The plugin asks for it through `auth.required` when it is missing. Also from that work: an error answer to `orders.list` now shows on its panel, which keeps its last orders until the next list succeeds. Before this, Admiral only logged it.
