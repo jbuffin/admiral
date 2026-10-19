@@ -15,6 +15,8 @@ interface Prop {
   description?: string;
   format?: string;
   enum?: unknown[];
+  items?: Prop;
+  properties?: Record<string, Prop>;
 }
 interface Schema {
   properties?: Record<string, Prop>;
@@ -24,6 +26,12 @@ interface Schema {
 const MarkerHint = () => <small>{UNCHANGED} keeps a stored value.</small>;
 
 const simple = (p: Prop) => (p.enum ? true : ['string', 'number', 'integer', 'boolean'].includes(p.type ?? ''));
+
+const scalar = (p: Prop) => !p.enum && ['string', 'number', 'integer', 'boolean'].includes(p.type ?? '');
+const isStrings = (p: Prop) => p.type === 'array' && p.items?.type === 'string' && !p.items.enum;
+const isObjects = (p: Prop) => p.type === 'array' && p.items?.type === 'object' && !!p.items.properties && Object.values(p.items.properties).every(scalar);
+// Arrays the form draws as rows; any other array stays a JSON field.
+const isList = (p: Prop) => isStrings(p) || isObjects(p);
 
 export function SettingsDialog() {
   const key = settingsFor.value;
@@ -72,7 +80,7 @@ function SettingsForm({ sourceKey, onClose }: { sourceKey: string; onClose: () =
       if (sch.ok && sch.data.properties) {
         setSchema(sch.data);
         const text: Record<string, string> = {};
-        for (const [k, p] of Object.entries(sch.data.properties)) if (!simple(p)) text[k] = settings[k] === undefined ? '' : JSON.stringify(settings[k]);
+        for (const [k, p] of Object.entries(sch.data.properties)) if (!simple(p) && !isList(p)) text[k] = settings[k] === undefined ? '' : JSON.stringify(settings[k]);
         setJson(text);
       }
       setLoaded(true);
@@ -88,6 +96,9 @@ function SettingsForm({ sourceKey, onClose }: { sourceKey: string; onClose: () =
     try {
       if (schema) {
         settings = { ...values };
+        for (const [k, p] of Object.entries(schema.properties ?? {})) {
+          if (isList(p) && (!Array.isArray(settings[k]) || settings[k].length === 0)) delete settings[k];
+        }
         for (const [k, t] of Object.entries(json)) {
           if (t.trim() === '') delete settings[k];
           else settings[k] = JSON.parse(t);
@@ -236,6 +247,68 @@ function Field(props: { id: string; prop: Prop; required: boolean; stored?: bool
           </button>
         )}
       </>
+    );
+  }
+  if (isList(prop)) {
+    const rows = Array.isArray(value) ? (value as unknown[]) : [];
+    const strings = isStrings(prop);
+    const fields = Object.entries(prop.items?.properties ?? {});
+    const setRow = (i: number, v: unknown) => props.onValue(rows.map((r, j) => (j === i ? v : r)));
+    return (
+      <fieldset class="rows">
+        <legend>{label}</legend>
+        {hint}
+        {rows.map((row, i) => (
+          <div class="item" key={i}>
+            {strings ? (
+              <input type="text" autocomplete="off" aria-label={`${label} ${i + 1}`} value={String(row ?? '')} onInput={(e) => setRow(i, (e.target as HTMLInputElement).value)} />
+            ) : (
+              fields.map(([fk, fp]) => {
+                const cur = (row as Record<string, unknown>)?.[fk];
+                const put = (v: unknown) => {
+                  const next = { ...(row as Record<string, unknown>) };
+                  if (v === undefined) delete next[fk];
+                  else next[fk] = v;
+                  setRow(i, next);
+                };
+                const fl = fp.title ?? fk;
+                const fh = fp.description && <small>{fp.description}</small>;
+                if (fp.type === 'boolean') {
+                  return (
+                    <label class="check" key={fk}>
+                      <input type="checkbox" checked={cur === true} onChange={(e) => put((e.target as HTMLInputElement).checked)} />
+                      <span>{fl}</span>
+                      {fh}
+                    </label>
+                  );
+                }
+                const num = fp.type === 'number' || fp.type === 'integer';
+                return (
+                  <label key={fk}>
+                    <span>{fl}</span>
+                    <input
+                      type={(num ? 'number' : 'text') as 'password'}
+                      step={fp.type === 'integer' ? 1 : num ? 'any' : undefined}
+                      value={cur === undefined ? '' : String(cur)}
+                      onInput={(e) => {
+                        const t = (e.target as HTMLInputElement).value;
+                        put(num ? (t === '' ? undefined : Number(t)) : t);
+                      }}
+                    />
+                    {fh}
+                  </label>
+                );
+              })
+            )}
+            <button type="button" class="small-button press" aria-label={`Remove ${label} ${i + 1}`} onClick={() => props.onValue(rows.filter((_, j) => j !== i))}>
+              Remove
+            </button>
+          </div>
+        ))}
+        <button type="button" class="small-button press" aria-label={`Add ${label}`} onClick={() => props.onValue([...rows, strings ? '' : {}])}>
+          Add
+        </button>
+      </fieldset>
     );
   }
   // Anything else is edited as JSON.
