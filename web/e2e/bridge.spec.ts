@@ -13,18 +13,20 @@ import { expect, header, isTouch, needsYouIn, ships, spyOnPage, test, underwayIn
 //       the ship's name, then "<Harness> · <Fleet> · <skill> · <repo>" ("Claude · Work · review · alpha")
 //         and under it the order's first line (the ship's `title`)
 //       a status pill: "Underway", "Needs you", "Anchored · exit N" or "Sailing off"
+//       a button "Copy admiral attach <name>" showing that command (a live ship only)
+//       a button "Full view" ("Exit full view" while on): the terminal over the whole screen, header, orders and
+//         flotilla hidden; it ends when the bridge closes (#63)
 //       a button "Close terminal and return to open water"
-//       the terminal (xterm.js: a `.xterm` element)
-//       a textbox "Input to <name>" (placeholder "type here and press Enter")
-//       buttons "Send Enter", "Send Esc", "Send Tab", "Send Up", "Send Down", "Send Ctrl-C"
+//       the terminal (xterm.js: a `.xterm` element), typed into directly; no separate prompt (#63)
+//       on touch screens only: buttons "Send Enter", "Send Newline", "Send Esc", "Send Tab", "Send Up", "Send Down",
+//         "Send Ctrl-C" and the note "Keys go straight to the session"
 //       no Approve or Deny buttons: a ship that needs you is answered in its terminal (engineer, 2026-10-18)
-//       the note "Keys go straight to the session"
 //     an anchored ship has instead a button "Dismiss", the note "The harness exited. This is its last screen.",
-//       and no textbox and no key buttons
-//   Enter at the prompt sends the text as typed (not trimmed), then CR;
-//     the key buttons send Enter \r, Esc \x1b, Tab \t, Up \x1b[A, Down \x1b[B and Ctrl-C \x03; typing into the terminal sends the keys
+//       a terminal that takes no keys, and no key buttons
+//   typing into the terminal sends the keys; Shift+Enter sends ESC CR (a new line, not a submit);
+//     the key buttons send Enter \r, Newline \x1b\r, Esc \x1b, Tab \t, Up \x1b[A, Down \x1b[B and Ctrl-C \x03
 //   while the server is away the region shows the text "Reconnecting…", an ancestor of the terminal inside the region has
-//     opacity below 1, the textbox and the key buttons are disabled, and nothing typed is queued; the header banner
+//     opacity below 1, the terminal and the key buttons take nothing, and nothing typed is queued; the header banner
 //     (role alert inside the banner) says "Reconnecting…" too
 //   a 401 on reconnect stops the retries and shows the text "Open the URL Admiral printed"
 //   window.__admiral.screen() returns the terminal's text (see bridge.ts)
@@ -51,8 +53,15 @@ const press = (l: Locator, touch: boolean) => (touch ? l.tap() : l.click());
 const terminal = (page: Page) => page.getByRole('region', { name: 'Attached terminal' });
 const flotilla = (page: Page) => page.getByRole('navigation', { name: 'Session flotilla' });
 const closeButton = (page: Page) => terminal(page).getByRole('button', { name: 'Close terminal and return to open water' });
-const prompt = (page: Page, name: string) => terminal(page).getByRole('textbox', { name: `Input to ${name}` });
 const keyButton = (page: Page, key: string) => terminal(page).getByRole('button', { name: `Send ${key}` });
+// xterm.js's hidden text box: focused, keys typed go to the session; aria-hidden while it takes none.
+const termInput = (page: Page) => terminal(page).locator('.xterm textarea');
+/** Types into the terminal by focusing its text box, with no pointer on it (a tap would count as activity itself). */
+async function typeIn(page: Page, text: string) {
+  await termInput(page).focus();
+  await page.keyboard.type(text);
+  await page.keyboard.press('Enter');
+}
 
 /** Taps the ship and returns its name from its accessible name. */
 async function board(page: Page, re: RegExp, touch: boolean) {
@@ -66,7 +75,7 @@ async function board(page: Page, re: RegExp, touch: boolean) {
 }
 
 test.describe('S5: boarding a ship and typing on the bridge', () => {
-  test('tapping a ship opens the bridge; the prompt, key buttons and typing reach the harness', async ({ page, admiral, sea }, info) => {
+  test('tapping a ship opens the bridge; typing, Shift+Enter and the key buttons reach the harness', async ({ page, admiral, sea }, info) => {
     const touch = isTouch(info);
     const s = sea({ work: { name: 'Work', color: BLUE } });
     s.world.skill('work', 'claude', 'review');
@@ -84,54 +93,51 @@ test.describe('S5: boarding a ship and typing on the bridge', () => {
     await expect(t.getByText('Claude · Work · review · alpha', { exact: true })).toBeVisible();
     await expect(t.getByText(orderTitle, { exact: true })).toBeVisible();
     await expect(t.getByText('Underway', { exact: true })).toBeVisible();
-    await expect(t.getByText('Keys go straight to the session', { exact: true })).toBeVisible();
+    await expect(t.getByText('Keys go straight to the session', { exact: true })).toHaveCount(touch ? 1 : 0);
+    await expect(t.getByRole('button', { name: /^Send / })).toHaveCount(touch ? 7 : 0);
+    await expect(t.getByRole('button', { name: `Copy admiral attach ${name}` })).toHaveText(`admiral attach ${name}`);
     await expect(t.locator('.xterm')).toBeVisible();
+    await expect(t.getByRole('textbox')).toHaveCount(1); // xterm.js's own: there is no separate prompt
     await expect(flotilla(page).getByText('Flotilla · 1', { exact: true })).toBeVisible();
     const lead = flotilla(page).getByRole('button');
     await expect(lead).toHaveCount(1);
     await expect(lead.getByText(name, { exact: true })).toBeVisible();
     await expect(lead.getByText('review · lead', { exact: true })).toBeVisible();
-    await expect(prompt(page, name)).toHaveAttribute('placeholder', 'type here and press Enter');
 
     // Not needs-you: no Approve and no Deny.
     await expect(t.getByRole('button', { name: 'Approve · y' })).toHaveCount(0);
     await expect(t.getByRole('button', { name: 'Deny · n' })).toHaveCount(0);
 
-    // The ❯ prompt sends the line as typed (not trimmed), then CR.
-    await prompt(page, name).fill('  hi ');
-    await prompt(page, name).press('Enter');
-    await expect.poll(() => stdinOf(s, ship.session)).toBe('  hi \r');
-    await expect(prompt(page, name)).toHaveValue('');
-    // An empty line sends just CR.
-    await prompt(page, name).press('Enter');
-    await expect.poll(() => stdinOf(s, ship.session)).toBe('  hi \r\r');
-
-    // The key buttons.
-    let want = '  hi \r\r';
-    for (const [key, bytes] of [
-      ['Enter', '\r'],
-      ['Esc', '\x1b'],
-      ['Tab', '\t'],
-      ['Up', '\x1b[A'],
-      ['Down', '\x1b[B'],
-      ['Ctrl-C', '\x03'],
-    ] as const) {
-      await press(keyButton(page, key), touch);
-      want += bytes;
-      await expect.poll(() => stdinOf(s, ship.session), `after Send ${key}`).toBe(want);
-    }
-
-    // Typing into the terminal works too.
+    // Typing into the terminal sends the keys as typed; Shift+Enter is a new line, ESC CR, not a submit.
     await press(t.locator('.xterm'), touch);
-    await page.keyboard.type('ab');
-    want += 'ab';
+    await page.keyboard.type('  hi ');
+    await page.keyboard.press('Shift+Enter');
+    await page.keyboard.press('Enter');
+    let want = '  hi \x1b\r\r';
     await expect.poll(() => stdinOf(s, ship.session)).toBe(want);
+
+    // The key buttons, on touch screens.
+    if (touch) {
+      for (const [key, bytes] of [
+        ['Enter', '\r'],
+        ['Newline', '\x1b\r'],
+        ['Esc', '\x1b'],
+        ['Tab', '\t'],
+        ['Up', '\x1b[A'],
+        ['Down', '\x1b[B'],
+        ['Ctrl-C', '\x03'],
+      ] as const) {
+        await press(keyButton(page, key), touch);
+        want += bytes;
+        await expect.poll(() => stdinOf(s, ship.session), `after Send ${key}`).toBe(want);
+      }
+    }
 
     // A ship that needs you shows no Approve or Deny: you answer in the terminal, and the keystroke clears needs-you.
     s.setState(ship.session, 'needs_you');
     await expect(t.getByText('Needs you', { exact: true })).toBeVisible();
     await expect(t.getByRole('button', { name: /Approve|Deny/ })).toHaveCount(0);
-    await press(t.getByRole('button', { name: 'Send Enter' }), touch);
+    await typeIn(page, '');
     want += '\r';
     await expect.poll(() => stdinOf(s, ship.session)).toBe(want);
     await expect(t.getByText('Underway', { exact: true })).toBeVisible();
@@ -143,7 +149,7 @@ test.describe('S5: boarding a ship and typing on the bridge', () => {
     expect((await s.ship(ship.session))?.status).toBe('underway');
   });
 
-  test('typing at the prompt makes that browser the one that sizes the pane', async ({ page, browser, admiral, sea }, info) => {
+  test('typing into the terminal makes that browser the one that sizes the pane', async ({ page, browser, admiral, sea }, info) => {
     const touch = isTouch(info);
     const s = sea({ work: { name: 'Work', color: BLUE } });
     s.world.skill('work', 'claude', 'review');
@@ -152,7 +158,7 @@ test.describe('S5: boarding a ship and typing on the bridge', () => {
     const ship = await launchFromOrder(s, 'work', 'alpha');
     await spyOnPage(page);
     await page.goto(admiral.url);
-    const name = await board(page, underwayIn('Work'), touch);
+    await board(page, underwayIn('Work'), touch);
 
     // A second browser, smaller, boards the same ship and sizes the pane when it joins.
     const full = page.viewportSize()!;
@@ -167,21 +173,19 @@ test.describe('S5: boarding a ship and typing on the bridge', () => {
     const small = await settled(() => paneSize(s, ship.session));
     expect(small).not.toBe(first);
 
-    // The first browser's prompt: Enter (no pointer on the terminal) takes the size back.
-    await prompt(page, name).fill('x');
-    await prompt(page, name).press('Enter');
+    // The first browser's keys (no pointer on the terminal) take the size back.
+    await typeIn(page, 'x');
     await expect.poll(() => paneSize(s, ship.session)).not.toBe(small);
     const large = paneSize(s, ship.session);
 
-    // And the second one's prompt takes it again.
-    await prompt(other, name).fill('y');
-    await prompt(other, name).press('Enter');
+    // And the second one's keys take it again.
+    await typeIn(other, 'y');
     await expect.poll(() => paneSize(s, ship.session)).toBe(small);
     expect(large).not.toBe(small);
     await ctx.close();
   });
 
-  test('the bridge fits every evaluated viewport: prompt and key bar on screen, the bridge inside the screen, and a pane no taller than the box', async ({ page, admiral, sea }, info) => {
+  test('the bridge fits every evaluated viewport: the terminal and the key bar on screen, the bridge inside the screen, and a pane no taller than the box', async ({ page, admiral, sea }, info) => {
     const touch = isTouch(info);
     const s = sea({ work: { name: 'Work', color: BLUE } });
     s.world.skill('work', 'claude', 'review');
@@ -190,25 +194,25 @@ test.describe('S5: boarding a ship and typing on the bridge', () => {
     const ship = await launchFromOrder(s, 'work', 'alpha');
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(admiral.url);
-    const name = await board(page, underwayIn('Work'), touch);
+    await board(page, underwayIn('Work'), touch);
 
     // 1440x900 first, then narrower and shorter windows, resized with the bridge open.
     for (const [width, height] of [[1440, 900], [1000, 700], [834, 1194], [1194, 700], [1194, 834]]) {
       await page.setViewportSize({ width, height });
       const at = `${width}x${height}`;
-      await expect(keyButton(page, 'Ctrl-C'), at).toBeVisible();
+      if (touch) await expect(keyButton(page, 'Ctrl-C'), at).toBeVisible();
       await expect
         .poll(
           async () => {
-            const keys = await keyButton(page, 'Ctrl-C').boundingBox();
-            const input = await prompt(page, name).boundingBox();
+            const keys = touch ? await keyButton(page, 'Ctrl-C').boundingBox() : { y: 0, height: 0 };
+            const input = await terminal(page).locator('.term-body').boundingBox();
             const doc = await page.evaluate(() => ({
               box: (() => { const b = document.querySelector('.bridge')!.getBoundingClientRect(); return b.bottom - innerHeight; })(),
               bridge: (document.querySelector('.bridge') as HTMLElement).scrollHeight - (document.querySelector('.bridge') as HTMLElement).clientHeight,
             }));
             return keys && input && keys.y + keys.height <= height && input.y + input.height <= height && doc.box <= 0 && doc.bridge <= 0;
           },
-          { message: `${at}: the prompt and key bar are on screen and the bridge holds them without scrolling`, timeout: 5000 },
+          { message: `${at}: the terminal and the key bar are on screen and the bridge holds them without scrolling`, timeout: 5000 },
         )
         .toBe(true);
       // The pane takes the box's grid: what fits under the viewport, never more.
@@ -244,6 +248,49 @@ test.describe('S5: boarding a ship and typing on the bridge', () => {
     }
   });
 
+  test('full view puts the terminal over the whole screen; it ends when the bridge closes', async ({ page, admiral, sea }, info) => {
+    const touch = isTouch(info);
+    const s = sea({ work: { name: 'Work', color: BLUE } });
+    s.world.skill('work', 'claude', 'review');
+    await admiral.start();
+    await s.world.guardData();
+    const ship = await launchFromOrder(s, 'work', 'alpha');
+    await page.goto(admiral.url);
+    await board(page, underwayIn('Work'), touch);
+    const t = terminal(page);
+    const orders = page.getByRole('complementary', { name: 'Orders', exact: true });
+    const covers = () =>
+      page.evaluate(() => {
+        const b = document.querySelector('.terminal')!.getBoundingClientRect();
+        return b.left <= 0 && b.top <= 0 && b.right >= innerWidth && b.bottom >= innerHeight;
+      });
+    const before = await settled(() => paneSize(s, ship.session));
+
+    await press(t.getByRole('button', { name: 'Full view' }), touch);
+    await expect.poll(covers, { message: 'the terminal covers the screen' }).toBe(true);
+    await expect(flotilla(page)).toBeHidden();
+    await expect(t.getByText('Claude · Work · review · alpha', { exact: true })).toBeHidden();
+    await expect(t.getByRole('button', { name: /^Copy admiral attach / })).toBeVisible();
+    // The pane grows to the bigger box.
+    await expect.poll(() => paneSize(s, ship.session)).not.toBe(before);
+
+    // Off again: the bridge is back over open water.
+    await press(t.getByRole('button', { name: 'Exit full view' }), touch);
+    await expect(flotilla(page)).toBeVisible();
+    await expect.poll(covers).toBe(false);
+
+    // On, then close: boarding again opens the normal bridge.
+    await press(t.getByRole('button', { name: 'Full view' }), touch);
+    await expect.poll(covers).toBe(true);
+    await press(closeButton(page), touch);
+    await expect(terminal(page)).toHaveCount(0);
+    await expect(orders).toBeVisible();
+    await board(page, underwayIn('Work'), touch);
+    await expect(flotilla(page)).toBeVisible();
+    await expect(t.getByRole('button', { name: 'Full view' })).toBeVisible();
+    await expect.poll(covers).toBe(false);
+  });
+
   test('a ship that needs you opens its bridge from the header pill', async ({ page, admiral, sea }, info) => {
     test.skip(info.project.name !== 'ipad-landscape');
     const s = sea({ work: { name: 'Work', color: BLUE } });
@@ -271,7 +318,7 @@ test.describe('S6: the server goes away', () => {
     const ship = await launchFromOrder(s, 'work', 'alpha');
     await spyOnPage(page);
     await page.goto(admiral.url);
-    const name = await board(page, underwayIn('Work'), touch);
+    await board(page, underwayIn('Work'), touch);
     const t = terminal(page);
     await expect(t.getByText('Reconnecting…')).toHaveCount(0);
     paneWrite(s, ship.session, 'before-restart\r\n');
@@ -280,8 +327,7 @@ test.describe('S6: the server goes away', () => {
     await admiral.stopServer();
     await expect(t.getByText('Reconnecting…')).toBeVisible({ timeout: 10_000 });
     await expect(header(page).getByRole('alert').getByText('Reconnecting…')).toBeVisible();
-    await expect(prompt(page, name)).toBeDisabled();
-    await expect(keyButton(page, 'Esc')).toBeDisabled();
+    if (touch) await expect(keyButton(page, 'Esc')).toBeDisabled();
     // The terminal itself takes no keys either: xterm.js's text box is switched off with stdin.
     await expect(t.locator('.xterm textarea')).toHaveAttribute('aria-hidden', 'true');
     // It keeps its last screen and dims: some ancestor of the terminal, inside the region, is translucent.
@@ -305,12 +351,11 @@ test.describe('S6: the server goes away', () => {
 
     await expect(t.getByText('Reconnecting…')).toHaveCount(0, { timeout: 20_000 });
     await expect(header(page).getByRole('alert')).toHaveCount(0);
-    await expect(prompt(page, name)).toBeEnabled();
+    if (touch) await expect(keyButton(page, 'Esc')).toBeEnabled();
     await expect(t.locator('.xterm textarea')).toHaveAttribute('aria-hidden', 'false');
     await expect.poll(() => screenText(page)).toContain('while-away');
     expect(stdinOf(s, ship.session), 'nothing typed while disconnected is queued').toBe('');
-    await prompt(page, name).fill('back');
-    await prompt(page, name).press('Enter');
+    await typeIn(page, 'back');
     await expect.poll(() => stdinOf(s, ship.session)).toBe('back\r');
   });
 
@@ -390,13 +435,14 @@ test.describe('S7: an anchored ship and a ship that exits with the bridge open',
     await spyOnPage(page);
     await page.goto(admiral.url);
 
-    const name = await board(page, /^Board .+, Claude in Work, anchored, exited 3$/, touch);
+    await board(page, /^Board .+, Claude in Work, anchored, exited 3$/, touch);
     const t = terminal(page);
     await expect(t.getByText('Anchored · exit 3', { exact: true })).toBeVisible();
     await expect(t.getByText('The harness exited. This is its last screen.', { exact: true })).toBeVisible();
     await expect.poll(() => screenText(page)).toContain('line 0005');
-    await expect(prompt(page, name)).toHaveCount(0);
+    await expect(termInput(page)).toHaveAttribute('aria-hidden', 'true');
     await expect(t.getByRole('button', { name: /^Send / })).toHaveCount(0);
+    await expect(t.getByRole('button', { name: /^Copy admiral attach / })).toHaveCount(0);
     await expect(t.getByText('Keys go straight to the session')).toHaveCount(0);
 
     await press(t.getByRole('button', { name: 'Dismiss' }), touch);
@@ -423,12 +469,12 @@ test.describe('S7: an anchored ship and a ship that exits with the bridge open',
     await expect(terminal(page)).toHaveCount(0, { timeout: 10_000 });
     await expect(ships(page, /Claude in Zero,/)).toHaveCount(0, { timeout: 10_000 });
 
-    const name = await board(page, underwayIn('Three'), touch);
+    await board(page, underwayIn('Three'), touch);
     const t = terminal(page);
-    await expect(prompt(page, name)).toBeVisible();
+    await expect(termInput(page)).toHaveAttribute('aria-hidden', 'false');
     release(s, three.session);
     await expect(t.getByText('Anchored · exit 3', { exact: true })).toBeVisible({ timeout: 10_000 });
-    await expect(prompt(page, name)).toHaveCount(0);
+    await expect(termInput(page)).toHaveAttribute('aria-hidden', 'true');
     await expect(t.getByRole('button', { name: 'Dismiss' })).toBeVisible();
     await expect.poll(() => screenText(page)).toContain('line 0002');
   });

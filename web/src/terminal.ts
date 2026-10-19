@@ -3,6 +3,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { joinSequence, type JoinMsg } from './bridgeReplay';
+import { NEWLINE } from './keys';
 
 // xterm.js with the fit addon and WebGL where the browser has it. This module is loaded when the
 // first bridge opens, so the dashboard doesn't carry the terminal until then (story 103).
@@ -42,6 +43,13 @@ export async function createTerminal(host: HTMLElement): Promise<Term> {
       cursor: color('--color-terminal-you', '#FFC23D'),
       selectionBackground: '#3A6489',
     },
+  });
+  // xterm.js sends CR for Shift+Enter as for Enter, so the harness would submit. Send a new line instead.
+  term.attachCustomKeyEventHandler((e) => {
+    if (e.key !== 'Enter' || !e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return true;
+    if (e.type === 'keydown') term.input(NEWLINE);
+    e.preventDefault();
+    return false;
   });
   const fitter = new FitAddon();
   term.loadAddon(fitter);
