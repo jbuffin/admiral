@@ -14,6 +14,7 @@ export interface Panel {
   id: string;
   title: string;
   orders: Order[];
+  error?: string | null;
 }
 
 export interface Auth {

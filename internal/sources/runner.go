@@ -308,25 +308,35 @@ type incompatibleError struct{ msg string }
 
 func (e *incompatibleError) Error() string { return e.msg }
 
-// mergePanels takes a new panel list and keeps the orders of panels that stay.
-// r.mu must be held.
+// mergePanels takes a new panel list and keeps the orders and the error of
+// panels that stay. r.mu must be held.
 func (r *runner) mergePanels(fresh []Panel) {
 	for i, pn := range fresh {
 		for _, old := range r.panels {
 			if old.ID == pn.ID {
 				fresh[i].Orders = old.Orders
+				fresh[i].Error = old.Error
 			}
 		}
 	}
 	r.panels = fresh
 }
 
-// pullOrders asks for one panel's orders. A bad or missing answer is logged and
-// the panel keeps what it had.
+// pullOrders asks for one panel's orders. An error answer from the plugin is
+// logged and shown on the panel until its next good list. Any other bad or
+// missing answer is logged and the panel keeps what it had.
 func (r *runner) pullOrders(ctx context.Context, p *proc, panel string) {
 	res, err := p.call(ctx, "orders.list", map[string]any{"panel": panel}, callTimeout)
 	if err != nil {
 		r.logf("orders.list for panel %q failed: %v", panel, err)
+		var rpc *rpcError
+		if errors.As(err, &rpc) {
+			msg := rpc.Error()
+			if msg == "" {
+				msg = "This panel's orders couldn't be listed."
+			}
+			r.setPanelError(panel, msg)
+		}
 		return
 	}
 	orders, err := parseOrders(res)
@@ -338,6 +348,19 @@ func (r *runner) pullOrders(ctx context.Context, p *proc, panel string) {
 	for i := range r.panels {
 		if r.panels[i].ID == panel {
 			r.panels[i].Orders = orders
+			r.panels[i].Error = ""
+		}
+	}
+	r.mu.Unlock()
+	r.notify()
+}
+
+// setPanelError shows a message on one panel and tells the watchers.
+func (r *runner) setPanelError(panel, msg string) {
+	r.mu.Lock()
+	for i := range r.panels {
+		if r.panels[i].ID == panel {
+			r.panels[i].Error = msg
 		}
 	}
 	r.mu.Unlock()

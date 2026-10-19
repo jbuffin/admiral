@@ -32,6 +32,9 @@ type Panel struct {
 	ID     string  `json:"id"`
 	Title  string  `json:"title"`
 	Orders []Order `json:"orders"`
+	// Error is the plugin's last orders.list refusal for this panel. Admiral
+	// sets it, never the plugin.
+	Error string `json:"error,omitempty"`
 }
 
 // Auth is what a plugin asks the engineer to do to sign in.
