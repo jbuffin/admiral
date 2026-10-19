@@ -126,9 +126,10 @@ func TestLaunchCommandLine(t *testing.T) {
 // S2: prompt forms.
 func TestPromptForms(t *testing.T) {
 	w := newWorld(t)
-	// Many launches: the harness exits at once (remain-on-exit keeps the ship)
+	// Many launches: the harness exits at once with status 3 (remain-on-exit keeps
+	// an anchored ship, where status 0 would sail it off after 3 s)
 	// so the ships do not each hold a pty; CI runners have few.
-	w.writeCue("exit 0")
+	w.writeCue("exit 3")
 	w.start()
 	type tc struct {
 		name, text string
@@ -429,9 +430,10 @@ func checkCopilotBundle(t *testing.T, docs []any) {
 // S4: names are distinct and the session name is their slug.
 func TestShipNames(t *testing.T) {
 	w := newWorld(t)
-	// Many launches: the harness exits at once (remain-on-exit keeps the ship)
+	// Many launches: the harness exits at once with status 3 (remain-on-exit keeps
+	// an anchored ship, where status 0 would sail it off after 3 s)
 	// so the ships do not each hold a pty; CI runners have few.
-	w.writeCue("exit 0")
+	w.writeCue("exit 3")
 	w.start()
 	slug := regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 	seen := map[string]bool{}
@@ -468,8 +470,9 @@ func TestShipNamesGetNumerals(t *testing.T) {
 	}
 	w := newWorld(t)
 	// macOS runs out of ptys at about 125 live panes. The harness exits at once;
-	// remain-on-exit keeps the ship and frees the pty.
-	w.writeCue("exit 0")
+	// remain-on-exit keeps the ship and frees the pty. Exit 3, not 0: an exit-0
+	// ship sails off and its session is killed after 3 s.
+	w.writeCue("exit 3")
 	w.start()
 	names := map[string]bool{}
 	for i := 0; i < 220; i++ {
@@ -872,9 +875,10 @@ func TestDirectoryWithFormatCharacters(t *testing.T) {
 // a command separator unless it is escaped), on every harness's command line.
 func TestTrailingSemicolons(t *testing.T) {
 	w := newWorld(t)
-	// Many launches: the harness exits at once (remain-on-exit keeps the ship)
+	// Many launches: the harness exits at once with status 3 (remain-on-exit keeps
+	// an anchored ship, where status 0 would sail it off after 3 s)
 	// so the ships do not each hold a pty; CI runners have few.
-	w.writeCue("exit 0")
+	w.writeCue("exit 3")
 	w.start()
 	n := 0
 	for _, harness := range []string{"claude", "codex", "copilot"} {
