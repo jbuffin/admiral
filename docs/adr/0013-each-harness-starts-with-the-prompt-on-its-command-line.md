@@ -18,7 +18,7 @@ copilot <args> --plugin-dir ~/.admiral/harness/copilot --interactive='<prompt>'
 
 `--` lets a prompt start with `-` on Claude Code and Codex, and Copilot only takes such a prompt in the `--interactive=` form.
 
-**The prompt** is `/<skill> <order text>` on Claude Code and Copilot and `$<skill> <order text>` on Codex, for Commodore, favorites and custom skills alike. The order text is one argument, newlines kept, with only leading and trailing whitespace trimmed. "Just launch" sends the order text exactly as written.
+**The prompt** is `/<skill> <order text>` on Claude Code and Copilot and `$<skill> <order text>` on Codex, for Commodore, favorites and custom skills alike. The order text is one argument, newlines kept, with only leading and trailing whitespace trimmed. "Just launch" sends the order text exactly as written. Just launch can also take optional text typed in launch orders; it goes first, trimmed, then a blank line and the order text as written.
 
 **A custom skill name** is used as typed, except that one leading `/` or `$` is stripped. A name containing whitespace is refused in the field ("Skill names have no spaces").
 

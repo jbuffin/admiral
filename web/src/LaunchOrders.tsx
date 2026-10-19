@@ -114,9 +114,10 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
   const [reading, setReading] = useState(true); // the skills of this directory are on their way
   const [choice, setChoice] = useState<Choice | null>(null);
   const [custom, setCustom] = useState('');
+  const [note, setNote] = useState(''); // Just launch's optional text, sent before the order
   const [listOpen, setListOpen] = useState(false);
   const [hi, setHi] = useState(0);
-  const [note, setNote] = useState('');
+  const [starError, setStarError] = useState('');
   const [spaceError, setSpaceError] = useState(false);
   const [starring, setStarring] = useState(false);
   const [error, setError] = useState('');
@@ -222,7 +223,7 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
     const next = favNames.includes(s.name) ? favNames.filter((n) => n !== s.name) : [...favNames, s.name];
     setStarring(true);
     const r = await api<{ favorite_skills: string[] }>('PUT', '/api/favorites', { skills: next });
-    setNote(r.ok ? '' : r.error);
+    setStarError(r.ok ? '' : r.error);
     // Stay busy until the config push carries the new list, so a second star builds on it;
     // if the push already arrived (or nothing changed) there is nothing to wait for.
     const pushed = (config.value?.favorite_skills ?? []).join('\n');
@@ -252,6 +253,7 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
       skill,
       source,
       order_id: order.id,
+      ...(skill.kind === 'none' && note.trim() && { note }),
     });
     setBusy(false);
     if (!r.ok) return setError(r.error);
@@ -446,16 +448,30 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
                     {rows.length === 0 && <div class="list-empty">No installed skill matches. It will launch with the name exactly as typed.</div>}
                   </div>
                 )}
-                {note && <p class="launch-warn">{note}</p>}
+                {starError && <p class="launch-warn">{starError}</p>}
               </div>
 
-              <label class={choice === 'none' ? 'choice on' : 'choice'}>
-                <input {...radio('none')} />
-                <span class="choice-text">
-                  <span class="choice-title">Just launch</span>
-                  <span class="choice-desc">Start the harness and give it the order as written.</span>
-                </span>
-              </label>
+              <div class={choice === 'none' ? 'choice custom on' : 'choice custom'}>
+                <label class="custom-label">
+                  <input {...radio('none')} />
+                  <span class="choice-text">
+                    <span class="choice-title">Just launch</span>
+                    <span class="choice-desc">Start the harness and give it the order as written.</span>
+                  </span>
+                </label>
+                <textarea
+                  class="launch-input launch-text"
+                  aria-label="Text before the order"
+                  placeholder="Optional text to send before the order"
+                  rows={2}
+                  value={note}
+                  onFocus={() => setChoice('none')}
+                  onInput={(e) => {
+                    setNote((e.target as HTMLTextAreaElement).value);
+                    setChoice('none');
+                  }}
+                />
+              </div>
               {error && <p role="alert">{error}</p>}
             </>
           )}

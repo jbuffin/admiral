@@ -37,6 +37,7 @@ type Request struct {
 	Source  string `json:"source"`
 	OrderID string `json:"order_id"`
 	Text    string `json:"text"`
+	Note    string `json:"note"` // Just launch only: optional text sent before the order
 }
 
 // Skill is the order's skill: Commodore, a named one, or none (Just launch).
@@ -143,7 +144,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	}
 
 	argv := append([]string{exe}, dock.Args...)
-	prompt := promptFor(req.Harness, skill, req.Skill.Kind, req.Text)
+	prompt := promptFor(req.Harness, skill, req.Skill.Kind, req.Note, req.Text)
 	switch req.Harness {
 	case "claude":
 		argv = append(argv, "--settings", claudeSettingsPath(l.Home))
@@ -250,10 +251,17 @@ func skillName(s Skill) (string, error) {
 }
 
 // promptFor builds the prompt argument: /skill text (Claude Code, Copilot) or
-// $skill text (Codex), the text trimmed; Just launch sends the text as written.
-func promptFor(harness, skill, kind, text string) string {
+// $skill text (Codex), the text trimmed; Just launch sends the text as written,
+// after the note and a blank line when there is one.
+func promptFor(harness, skill, kind, note, text string) string {
 	if kind == "none" {
-		return text
+		switch note = strings.TrimSpace(note); {
+		case note == "":
+			return text
+		case text == "":
+			return note
+		}
+		return note + "\n\n" + text
 	}
 	mark := "/"
 	if harness == "codex" {
