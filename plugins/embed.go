@@ -3,8 +3,11 @@ package plugins
 
 import "embed"
 
-// Freeform is the freeform plugin's folder, as plugins/freeform/. Admiral
-// writes it to $ADMIRAL_HOME/plugins/freeform/ on a fresh install.
+// Shipped holds every plugin Admiral ships, one folder each: plugins/freeform/
+// and plugins/github/. Admiral writes each to $ADMIRAL_HOME/plugins/<name>/.
 //
-//go:embed freeform
-var Freeform embed.FS
+//go:embed freeform github
+var Shipped embed.FS
+
+// Names lists the folders of Shipped.
+var Names = []string{"freeform", "github"}

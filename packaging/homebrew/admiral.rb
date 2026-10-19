@@ -16,6 +16,7 @@ class Admiral < Formula
   def install
     bin.install "admiral"
     (share/"admiral/plugins").install "plugins/freeform"
+    (share/"admiral/plugins").install "plugins/github"
     prefix.install "LICENSE", "THIRD_PARTY_NOTICES"
   end
 

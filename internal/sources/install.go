@@ -19,9 +19,6 @@ import (
 // from one the engineer edited.
 const StampFile = ".admiral-stamp"
 
-// FreeformName is the plugin Admiral installs itself.
-const FreeformName = "freeform"
-
 // Stamp is the hash a folder's files carry in StampFile: SHA-256 over every
 // file but the stamp and those go:embed skips (names starting with . or _),
 // sorted by slash-separated path relative to the folder,
@@ -42,14 +39,14 @@ func Stamp(files map[string][]byte) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func embeddedFreeform() (map[string][]byte, error) {
+func embedded(name string) (map[string][]byte, error) {
 	files := map[string][]byte{}
-	err := fs.WalkDir(plugins.Freeform, FreeformName, func(p string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(plugins.Shipped, name, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
-		data, err := fs.ReadFile(plugins.Freeform, p)
-		files[p[len(FreeformName)+1:]] = data
+		data, err := fs.ReadFile(plugins.Shipped, p)
+		files[p[len(name)+1:]] = data
 		return err
 	})
 	return files, err
@@ -83,17 +80,27 @@ func diskFiles(dir string) (map[string][]byte, error) {
 	return files, err
 }
 
-// InstallFreeform writes the embedded freeform plugin to plugins/freeform/
-// when the folder is missing, and replaces it with a newer embedded copy when
-// the folder still matches its stamp. An edited folder, or one without a
-// stamp, is left alone.
-func InstallFreeform(home string) error {
-	files, err := embeddedFreeform()
+// InstallPlugins installs every plugin Admiral ships. It stops at the first
+// failure.
+func InstallPlugins(home string) error {
+	for _, name := range plugins.Names {
+		if err := installPlugin(home, name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// installPlugin writes the embedded plugin to plugins/<name>/ when the folder
+// is missing, and replaces it with a newer embedded copy when the folder still
+// matches its stamp. An edited folder, or one without a stamp, is left alone.
+func installPlugin(home, name string) error {
+	files, err := embedded(name)
 	if err != nil {
 		return err
 	}
 	want := Stamp(files)
-	dir := filepath.Join(pluginsDir(home), FreeformName)
+	dir := filepath.Join(pluginsDir(home), name)
 
 	if _, err := os.Lstat(dir); err == nil {
 		have, err := os.ReadFile(filepath.Join(dir, StampFile))
@@ -111,7 +118,7 @@ func InstallFreeform(home string) error {
 	if err := os.MkdirAll(pluginsDir(home), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.MkdirTemp(pluginsDir(home), ".freeform-")
+	tmp, err := os.MkdirTemp(pluginsDir(home), "."+name+"-")
 	if err != nil {
 		return err
 	}
@@ -132,7 +139,7 @@ func InstallFreeform(home string) error {
 		return err
 	}
 	if err := os.Rename(tmp, dir); err != nil {
-		return fmt.Errorf("install %s: %w", FreeformName, err)
+		return fmt.Errorf("install %s: %w", name, err)
 	}
 	return nil
 }
