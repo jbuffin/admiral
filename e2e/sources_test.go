@@ -428,3 +428,189 @@ func TestPluginsAPI(t *testing.T) {
 		}
 	}
 }
+
+// The settings view hands the form its starting values, and a stored password
+// never leaves the server: the form gets a marker, and saving the marker back
+// keeps the stored value.
+func TestSourceSettingsHidePasswords(t *testing.T) {
+	w := newWorld(t)
+	p := w.newTP("pw")
+	schema := map[string]any{"type": "object", "properties": map[string]any{
+		"flagdir": map[string]any{"type": "string"},
+		"token":   map[string]any{"type": "string", "format": "password"},
+		"empty":   map[string]any{"type": "string", "format": "password"},
+	}}
+	w.startSources(tpSource("pw", p, map[string]any{"settingsSchema": schema, "token": "s3cret"}))
+	w.waitSource("pw", 10*time.Second, "state ok", isOK)
+
+	view := func() (string, map[string]any) {
+		code, body := w.srcReq(http.MethodGet, "/pw/settings", nil)
+		if code != http.StatusOK {
+			t.Fatalf("GET settings = %d %s, want 200", code, body)
+		}
+		var v struct {
+			Name     string         `json:"name"`
+			Settings map[string]any `json:"settings"`
+		}
+		if err := json.Unmarshal([]byte(body), &v); err != nil {
+			t.Fatalf("settings view is not JSON: %v\n%s", err, body)
+		}
+		return v.Name, v.Settings
+	}
+	stored := func() string {
+		raw, err := os.ReadFile(filepath.Join(w.home, "config.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+
+	name, settings := view()
+	if name != "Test pw" || settings["flagdir"] != p.dir || settings["token"] != "__admiral_unchanged__" {
+		t.Errorf("settings view = %q %v, want the name, the flagdir, the marker for the stored token and nothing for the unset one", name, settings)
+	}
+	if _, there := settings["empty"]; there {
+		t.Errorf("settings view = %v, want a password that was never set to stay absent", settings)
+	}
+	if code, _ := w.srcReq(http.MethodGet, "/nosuch/settings", nil); code != http.StatusNotFound {
+		t.Errorf("GET settings of an unknown source = %d, want 404", code)
+	}
+
+	// Saving the marker back keeps the stored secret.
+	keep := map[string]any{"flagdir": p.dir, "token": "__admiral_unchanged__", "settingsSchema": schema}
+	if code, body := w.srcReq(http.MethodPut, "/pw", map[string]any{"settings": keep}); code != http.StatusOK {
+		t.Fatalf("PUT with the marker = %d %s, want 200", code, body)
+	}
+	if !strings.Contains(stored(), "s3cret") || strings.Contains(stored(), "__admiral_unchanged__") {
+		t.Errorf("after a save with the marker config.json = %s, want the stored token kept and no marker", stored())
+	}
+
+	// A new value replaces it.
+	keep["token"] = "n3w"
+	if code, body := w.srcReq(http.MethodPut, "/pw", map[string]any{"settings": keep}); code != http.StatusOK {
+		t.Fatalf("PUT with a new token = %d %s, want 200", code, body)
+	}
+	if !strings.Contains(stored(), "n3w") || strings.Contains(stored(), "s3cret") {
+		t.Errorf("after a save with a new token config.json = %s, want n3w and no s3cret", stored())
+	}
+}
+
+// A secret never reaches the page when the schema is not known (the source
+// crashed before it answered initialize) or when it sits inside an object, and
+// a save cannot write the marker with text added to it.
+func TestSourceSettingsMaskUnknownAndNestedSecrets(t *testing.T) {
+	w := newWorld(t)
+	p := w.newTP("nest")
+	p.put("crash-on-initialize", "")
+	nested := map[string]any{"type": "object", "properties": map[string]any{
+		"flagdir": map[string]any{"type": "string"},
+		"auth": map[string]any{"type": "object", "properties": map[string]any{
+			"token": map[string]any{"type": "string", "format": "password"},
+			"user":  map[string]any{"type": "string"},
+		}},
+	}}
+	w.startSources(tpSource("nest", p, map[string]any{
+		"settingsSchema": nested, "auth": map[string]any{"token": "s3cret", "user": "me"},
+	}))
+	w.waitSource("nest", 10*time.Second, "state error", func(s sourceJSON) bool { return s.State == "error" })
+
+	code, body := w.srcReq(http.MethodGet, "/nest/settings", nil)
+	if code != http.StatusOK || strings.Contains(body, "s3cret") || strings.Contains(body, "\"me\"") {
+		t.Fatalf("GET settings of a source with no schema = %d %s, want 200 with every string masked", code, body)
+	}
+
+	p.clear("crash-on-initialize")
+	if code, body := w.srcReq(http.MethodPost, "/nest/restart", nil); code != http.StatusOK {
+		t.Fatalf("restart = %d %s", code, body)
+	}
+	w.waitSource("nest", 10*time.Second, "state ok", isOK)
+	code, body = w.srcReq(http.MethodGet, "/nest/settings", nil)
+	if code != http.StatusOK || strings.Contains(body, "s3cret") || !strings.Contains(body, `"user":"me"`) {
+		t.Errorf("GET settings with the schema known = %d %s, want only the nested password masked", code, body)
+	}
+
+	bad := map[string]any{"flagdir": p.dir, "settingsSchema": nested, "auth": map[string]any{"token": "__admiral_unchanged__n3w"}}
+	if code, _ := w.srcReq(http.MethodPut, "/nest", map[string]any{"settings": bad}); code != http.StatusBadRequest {
+		t.Errorf("PUT with text added to the marker = %d, want 400", code)
+	}
+	keep := map[string]any{"flagdir": p.dir, "settingsSchema": nested, "auth": map[string]any{"token": "__admiral_unchanged__", "user": "me"}}
+	if code, body := w.srcReq(http.MethodPut, "/nest", map[string]any{"settings": keep}); code != http.StatusOK {
+		t.Fatalf("PUT with the nested marker = %d %s, want 200", code, body)
+	}
+	raw, err := os.ReadFile(filepath.Join(w.home, "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "s3cret") || strings.Contains(string(raw), "__admiral_unchanged__") {
+		t.Errorf("config.json = %s, want the nested token kept and no marker", raw)
+	}
+}
+
+// The settings view fails closed: a value comes back in clear only when the
+// schema declares it as a plain string or number, however the schema is wrong,
+// missing or shaped.
+func TestSourceSettingsFailClosed(t *testing.T) {
+	w := newWorld(t)
+	cases := []struct {
+		key    string
+		extra  map[string]any
+		crash  bool
+		secret string
+	}{
+		{"noschema", map[string]any{"noSettingsSchema": true, "token": "s3cretA"}, false, "s3cretA"},
+		{"notobject", map[string]any{"settingsSchema": "not an object", "token": "s3cretB"}, false, "s3cretB"},
+		{"items", map[string]any{"settingsSchema": map[string]any{"type": "object", "properties": map[string]any{
+			"flagdir":  map[string]any{"type": "string"},
+			"accounts": map[string]any{"type": "array", "items": map[string]any{"type": "string", "format": "password"}},
+		}}, "accounts": []string{"s3cretC"}}, false, "s3cretC"},
+		{"undeclared", map[string]any{"token": "s3cretD"}, false, "s3cretD"},
+		{"badprops", map[string]any{"settingsSchema": map[string]any{"properties": "x"}, "token": "s3cretE"}, false, "s3cretE"},
+		{"numeric", map[string]any{"pin": 987654}, true, "987654"},
+		{"public", map[string]any{"settingsSchema": map[string]any{"type": "object", "additionalProperties": true,
+			"properties": map[string]any{
+				"url":  map[string]any{"type": "string"},
+				"mode": map[string]any{"enum": []string{"fast", "slow"}},
+			}}, "url": "https://example.com/pubvisible", "mode": "slow", "other": "s3cretI"}, false, "s3cretI"},
+		{"prefix", map[string]any{"settingsSchema": map[string]any{"type": "object", "properties": map[string]any{
+			"accounts": map[string]any{"type": "array", "prefixItems": []any{map[string]any{"type": "string", "format": "password"}}},
+		}}, "accounts": []string{"s3cretF"}}, false, "s3cretF"},
+		{"dependent", map[string]any{"settingsSchema": map[string]any{"type": "object", "dependentSchemas": map[string]any{"a": map[string]any{}},
+			"properties": map[string]any{"token": map[string]any{"type": "string"}}}, "token": "s3cretG"}, false, "s3cretG"},
+		{"writeonly", map[string]any{"settingsSchema": map[string]any{"type": "object", "properties": map[string]any{
+			"token": map[string]any{"type": "string", "writeOnly": true},
+		}}, "token": "s3cretH"}, false, "s3cretH"},
+	}
+	var defs []srcDef
+	plugs := map[string]*tplug{}
+	for _, c := range cases {
+		p := w.newTP(c.key)
+		if c.crash {
+			p.put("crash-on-initialize", "")
+		}
+		plugs[c.key] = p
+		defs = append(defs, tpSource(c.key, p, c.extra))
+	}
+	w.startSources(defs...)
+	for _, c := range cases {
+		want := "state ok"
+		pred := isOK
+		if c.crash {
+			want, pred = "state error", func(s sourceJSON) bool { return s.State == "error" }
+		}
+		w.waitSource(c.key, 10*time.Second, want, pred)
+		code, body := w.srcReq(http.MethodGet, "/"+c.key+"/settings", nil)
+		if code != http.StatusOK || strings.Contains(body, c.secret) {
+			t.Errorf("GET settings of %s = %d %s, want 200 without %s", c.key, code, body, c.secret)
+		}
+	}
+	// What the schema makes public is still shown, however the node is closed.
+	_, pubBody := w.srcReq(http.MethodGet, "/public/settings", nil)
+	if !strings.Contains(pubBody, "pubvisible") || !strings.Contains(pubBody, `"mode":"slow"`) {
+		t.Errorf("GET settings = %s, want the declared url and the enum-only mode in clear", pubBody)
+	}
+	// What the schema declares plain is still shown.
+	_, body := w.srcReq(http.MethodGet, "/undeclared/settings", nil)
+	if !strings.Contains(body, plugs["undeclared"].dir) {
+		t.Errorf("GET settings = %s, want the declared flagdir in clear", body)
+	}
+}
