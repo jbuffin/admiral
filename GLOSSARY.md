@@ -72,7 +72,7 @@ A ship whose harness has exited. A clean exit sails off and disappears; a ship w
 _Avoid_: docked, finished, done
 
 **Bridge**:
-The attached-terminal view that opens when the engineer taps a ship: the session's live terminal output, a prompt to type into, key buttons, and the flotilla.
+The attached-terminal view that opens when the engineer taps a ship: the session's live terminal, which the engineer types into directly, the flotilla, and key buttons on touch devices.
 _Avoid_: modal, detail view
 
 **Flotilla**:

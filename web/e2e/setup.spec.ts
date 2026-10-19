@@ -84,9 +84,11 @@ test.describe('S5: the setup terminal', () => {
     await press(page.getByRole('button', { name: 'Set up a fleet' }), touch);
     await expect(terminal(page)).toBeVisible();
     await expect(terminal(page).locator('.xterm')).toBeVisible();
-    // Like the bridge: the prompt and the key bar stay on the screen, and the page behind doesn't scroll.
+    // Like the bridge: no prompt, keys on touch screens only, the terminal and the bar on the screen, and the
+    // page behind doesn't scroll.
+    await expect(terminal(page).getByRole('button', { name: /^Send / })).toHaveCount(touch ? 7 : 0);
     const view = page.viewportSize()!;
-    for (const part of ['.term-prompt', '.term-keys']) {
+    for (const part of ['.term-body', '.term-keys']) {
       const box = (await terminal(page).locator(part).boundingBox())!;
       expect(box.y, `${part} starts on the screen`).toBeGreaterThanOrEqual(0);
       expect(box.y + box.height, `${part} ends on the screen`).toBeLessThanOrEqual(view.height);

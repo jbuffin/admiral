@@ -621,10 +621,9 @@ button:focus-visible {
   flex: 0 0 auto;
 }
 
+/* On the page's top layer, placed from its button, so no panel clips it. */
 .menu-list {
-  position: absolute;
-  right: 0;
-  top: 100%;
+  position: fixed;
   z-index: 20;
   min-width: 140px;
   display: flex;
@@ -1965,6 +1964,70 @@ body.dragging * {
   color: var(--color-ink);
 }
 
+.term-attach {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 28px;
+  margin-top: 2px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  border: 2px solid var(--color-ink);
+  background-color: var(--color-parchment-light);
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.term-attach-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Full view: the terminal over the whole screen, with a one-line head. */
+.bridge.full {
+  padding: 0;
+  background-color: var(--color-ink);
+}
+
+.bridge.full .flotilla,
+.bridge.full .term-sub,
+.bridge.full .term-order {
+  display: none;
+}
+
+.bridge.full .terminal {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.bridge.full .term-head {
+  flex-wrap: nowrap;
+  padding: 4px 6px 4px 12px;
+}
+
+.bridge.full .term-title {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.bridge.full .term-name {
+  font-size: 16px;
+  white-space: nowrap;
+}
+
+.bridge.full .term-attach {
+  margin-top: 0;
+  min-width: 0;
+}
+
 .term-notice {
   font-size: 13px;
   font-weight: 700;
@@ -1981,7 +2044,8 @@ body.dragging * {
   color: var(--color-ink);
 }
 
-.term-close {
+.term-close,
+.term-full {
   width: var(--shape-min-touch-target);
   height: var(--shape-min-touch-target);
   border-radius: var(--shape-radius-card);
@@ -2030,37 +2094,6 @@ body.dragging * {
   left: 0;
   top: 0;
   transform-origin: 0 0;
-}
-
-.term-prompt {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.term-caret {
-  color: var(--color-terminal-you);
-  font-weight: 600;
-  font-family: var(--font-mono);
-}
-
-.term-in {
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 36px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--color-terminal-you);
-  caret-color: var(--color-terminal-you);
-  font-family: var(--font-mono);
-  font-size: 13.5px;
-  outline: none;
-}
-
-.term-in::placeholder {
-  color: #5f7f99;
 }
 
 .term-keys {
