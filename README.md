@@ -68,11 +68,11 @@ A build from your own checkout can carry the official harness logos: put them in
 Tag `v<x.y.z>`; the version is `<x.y.z>`. `make release` drops the leading `v` once, so the tarball name, `admiral --version`, `install.sh`'s URL and the formula's `url` all use `<x.y.z>`.
 
 1. Tag the commit, `git tag v0.1.0`, with no files in `web/logos/official/` and a clean tree.
-2. Run `npm --prefix web ci` and `make release`. It rebuilds the UI from clean, builds `bin/admiral` for darwin/arm64 with `-trimpath`, stamped with the version (`VERSION=x.y.z` on the command line overrides `git describe`) and the commit, checks `codesign -v`, and writes `dist/admiral-<x.y.z>-darwin-arm64.tar.gz`, its `.sha256` and a copy of `install.sh`. The tarball holds `admiral`, `THIRD_PARTY_NOTICES` and a reference copy of `plugins/freeform/`. Never `strip` the binary: that breaks its signature.
+2. Run `npm --prefix web ci` and `make release`. It rebuilds the UI from clean, builds `bin/admiral` for darwin/arm64 with `-trimpath`, stamped with the version (`VERSION=x.y.z` on the command line overrides `git describe`) and the commit, checks `codesign -v`, and writes `dist/admiral-<x.y.z>-darwin-arm64.tar.gz`, its `.sha256` and a copy of `install.sh`. The tarball holds `admiral`, `LICENSE`, `THIRD_PARTY_NOTICES` and a reference copy of `plugins/freeform/`. Never `strip` the binary: that breaks its signature.
 3. Create the GitHub release for the tag `v<x.y.z>` and upload everything in `dist/`: the tarball, the `.sha256` file and `install.sh`.
 4. In the tap repo `jbuffin/homebrew-admiral`, copy `packaging/homebrew/admiral.rb` to `Formula/admiral.rb`, replace `VERSION` and `SHA256_OF_THE_TARBALL` with the release's, then run `brew style` and `brew audit --strict --online jbuffin/admiral/admiral`. The formula has no `version` line because Homebrew reads it from the `url`; if the audit disagrees, the audit decides.
 
-There is no `LICENSE` file yet.
+Admiral is released under the MIT License (`LICENSE`). Its bundled third-party code keeps its own licences, listed in `THIRD_PARTY_NOTICES`.
 
 ## Development
 

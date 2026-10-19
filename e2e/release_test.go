@@ -40,7 +40,7 @@ func TestPackagingS1_ReleaseTarball(t *testing.T) {
 	}
 
 	entries := tarEntries(t, r.tarball)
-	for _, name := range []string{"admiral", "THIRD_PARTY_NOTICES", "plugins/freeform/plugin.json"} {
+	for _, name := range []string{"admiral", "LICENSE", "THIRD_PARTY_NOTICES", "plugins/freeform/plugin.json"} {
 		if entries[r.topDir+"/"+name] == nil {
 			t.Errorf("tarball has no %s/%s; entries: %v", r.topDir, name, keys(entries))
 		}

@@ -51,6 +51,7 @@ release:
 	mkdir -p $(DIST)/$(RELEASE_NAME)/plugins
 	cp $(BIN) $(DIST)/$(RELEASE_NAME)/admiral
 	cp -R plugins/freeform $(DIST)/$(RELEASE_NAME)/plugins/freeform
+	cp LICENSE $(DIST)/$(RELEASE_NAME)/LICENSE
 	sh packaging/notices.sh > $(DIST)/$(RELEASE_NAME)/THIRD_PARTY_NOTICES
 	COPYFILE_DISABLE=1 tar --uid 0 --gid 0 --uname "" --gname "" -czf $(DIST)/$(RELEASE_NAME).tar.gz -C $(DIST) $(RELEASE_NAME)
 	cp packaging/install.sh $(DIST)/install.sh

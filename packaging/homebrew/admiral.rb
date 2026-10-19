@@ -4,6 +4,7 @@
 class Admiral < Formula
   desc "Visual dashboard that launches coding-agent sessions and lets you watch them"
   homepage "https://github.com/jbuffin/admiral"
+  license "MIT"
   url "https://github.com/jbuffin/admiral/releases/download/vVERSION/admiral-VERSION-darwin-arm64.tar.gz"
   sha256 "SHA256_OF_THE_TARBALL"
 
@@ -15,7 +16,7 @@ class Admiral < Formula
   def install
     bin.install "admiral"
     (share/"admiral/plugins").install "plugins/freeform"
-    prefix.install "THIRD_PARTY_NOTICES"
+    prefix.install "LICENSE", "THIRD_PARTY_NOTICES"
   end
 
   def caveats
