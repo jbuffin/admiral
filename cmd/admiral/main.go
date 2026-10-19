@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/auth"
+	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/web"
@@ -52,13 +53,18 @@ func serve(args []string) error {
 	if err != nil {
 		return fmt.Errorf("token: %w", err)
 	}
+	cfg, err := config.Open(dir)
+	if err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+	defer cfg.Close()
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {
 		return err
 	}
 	_, port, _ := net.SplitHostPort(ln.Addr().String())
 
-	s := &server.Server{Version: version, UI: web.UI(), Messages: map[string]server.MessageHandler{}}
+	s := &server.Server{Version: version, UI: web.UI(), Messages: map[string]server.MessageHandler{}, Config: cfg}
 	srv := &http.Server{Handler: auth.New(token, port).Middleware(s.Handler())}
 
 	fmt.Printf("Admiral is running at http://127.0.0.1:%s/\n", port)

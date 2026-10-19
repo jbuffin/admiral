@@ -13,7 +13,7 @@ The designs are done and the MVP build has started.
 - `docs/architecture.md`: an early proposal for the build, superseded by the spec and the ADRs.
 - `docs/adr/`: decisions.
 - `GLOSSARY.md`: the words Admiral uses.
-- `cmd/admiral/`, `internal/`: the Go server and CLI. `internal/auth` is access control, `internal/server` is HTTP and WebSocket, `internal/home` finds `$ADMIRAL_HOME`.
+- `cmd/admiral/`, `internal/`: the Go server and CLI. `internal/auth` is access control, `internal/server` is HTTP and WebSocket, `internal/home` finds `$ADMIRAL_HOME`, `internal/config` loads, validates, watches and writes `$ADMIRAL_HOME/config.json`.
 - `web/`: the Preact UI. `web/embed.go` embeds the built `web/dist` into the binary.
 - `e2e/`: server tests that run the real binary.
 
