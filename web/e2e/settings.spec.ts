@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 
@@ -78,4 +80,37 @@ test('list settings: add rows, save, the new panel appears; remove the last row 
   await expect(dialog).toBeHidden();
   await expect.poll(async () => 'labels' in (await settingsOf(admiral.url))).toBe(false);
   expect((await settingsOf(admiral.url)).panels).toEqual([{ title: 'Triage', query: 'is:open', limit: 5 }]);
+});
+
+test('list settings: a list holding a masked secret is a JSON field and Save keeps the secret', async ({ page, admiral }) => {
+  admiral.installTestPlugin();
+  const f = admiral.flags('tracker');
+  const keyed = {
+    type: 'object',
+    properties: {
+      flagdir: { type: 'string' },
+      panels: {
+        type: 'array',
+        title: 'Panels',
+        items: { type: 'object', properties: { title: { type: 'string', title: 'Title' }, token: { type: 'string', format: 'password' } } },
+      },
+    },
+  };
+  admiral.writeConfig({
+    version: 1,
+    fleets: {},
+    sources: { tracker: { plugin: 'testplug', name: 'Tracker', settings: { flagdir: f.dir, settingsSchema: keyed, panels: [{ title: 'Triage', token: 's3cret' }] } } },
+  });
+  await admiral.start();
+  await page.goto(admiral.url);
+  await expect(page.getByRole('region', { name: 'Triage', exact: true })).toBeVisible();
+
+  const dialog = await openSettings(page);
+  await expect(dialog.getByRole('textbox', { name: 'Panels' })).toHaveValue(/__admiral_unchanged__/);
+  await expect(dialog.getByRole('button', { name: /^Add.*Panels/ })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Save' }).click();
+  await expect(dialog).toBeHidden();
+
+  const stored = () => JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8')).sources.tracker.settings.panels;
+  await expect.poll(stored).toEqual([{ title: 'Triage', token: 's3cret' }]);
 });

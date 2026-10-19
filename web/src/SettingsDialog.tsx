@@ -26,15 +26,16 @@ interface Schema {
 
 const MarkerHint = () => <small>{UNCHANGED} keeps a stored value.</small>;
 
-
 const scalar = (p: Prop) => ['string', 'number', 'integer', 'boolean'].includes(p.type ?? '');
 const simple = (p: Prop) => !!p.enum || scalar(p);
-const secret = (p: Prop) => p.format === 'password' || p.writeOnly === true;
+const flaggedSecret = (p: Prop) => p.format?.toLowerCase() === 'password' || p.writeOnly === true;
 // Lists of secrets stay JSON: a row field cannot tell a kept secret from a cleared one.
-const isStrings = (p: Prop) => p.type === 'array' && p.items?.type === 'string' && !p.items.enum && !secret(p.items);
-const isObjects = (p: Prop) => p.type === 'array' && p.items?.type === 'object' && !!p.items.properties && Object.values(p.items.properties).every((f) => simple(f) && !f.enum && !secret(f));
-// Arrays the form draws as rows; any other array stays a JSON field.
-const isList = (p: Prop) => isStrings(p) || isObjects(p);
+const isStrings = (p: Prop) => p.type === 'array' && p.items?.type === 'string' && !p.items.enum && !flaggedSecret(p) && !flaggedSecret(p.items);
+const isObjects = (p: Prop) =>
+  p.type === 'array' && p.items?.type === 'object' && !!p.items.properties && !flaggedSecret(p) && !flaggedSecret(p.items) && Object.values(p.items.properties).every((f) => scalar(f) && !f.enum && !flaggedSecret(f));
+// Whether a list property is drawn as rows. Decided once at load, from the schema and the stored value:
+// a value that is not an array, or that holds a masked value, stays a JSON field so it round-trips untouched.
+const asRows = (p: Prop, v: unknown) => (isStrings(p) || isObjects(p)) && (v === undefined || (Array.isArray(v) && !JSON.stringify(v).includes(UNCHANGED)));
 
 export function SettingsDialog() {
   const key = settingsFor.value;
@@ -83,7 +84,7 @@ function SettingsForm({ sourceKey, onClose }: { sourceKey: string; onClose: () =
       if (sch.ok && sch.data.properties) {
         setSchema(sch.data);
         const text: Record<string, string> = {};
-        for (const [k, p] of Object.entries(sch.data.properties)) if (!simple(p) && (!isList(p) || (settings[k] !== undefined && !Array.isArray(settings[k])))) text[k] = settings[k] === undefined ? '' : JSON.stringify(settings[k]);
+        for (const [k, p] of Object.entries(sch.data.properties)) if (!simple(p) && !asRows(p, settings[k])) text[k] = settings[k] === undefined ? '' : JSON.stringify(settings[k]);
         setJson(text);
       }
       setLoaded(true);
@@ -100,9 +101,9 @@ function SettingsForm({ sourceKey, onClose }: { sourceKey: string; onClose: () =
       if (schema) {
         settings = { ...values };
         for (const [k, p] of Object.entries(schema.properties ?? {})) {
-          if (!isList(p) || k in json) continue;
+          if (!(isStrings(p) || isObjects(p)) || k in json) continue;
           // Rows nothing was typed into are dropped; no rows left deletes the key.
-          const rows = (Array.isArray(settings[k]) ? (settings[k] as unknown[]) : []).filter((r) => (typeof r === 'string' ? r !== '' : Object.keys(r as object).length > 0));
+          const rows = (Array.isArray(settings[k]) ? (settings[k] as unknown[]) : []).filter((r) => (typeof r === 'string' ? r !== '' : typeof r === 'object' && r !== null && Object.keys(r).length > 0));
           if (rows.length === 0) delete settings[k];
           else settings[k] = rows;
         }
@@ -256,7 +257,7 @@ function Field(props: { id: string; prop: Prop; required: boolean; stored?: bool
       </>
     );
   }
-  if (isList(prop) && props.text === undefined) {
+  if ((isStrings(prop) || isObjects(prop)) && props.text === undefined) {
     const rows = Array.isArray(value) ? (value as unknown[]) : [];
     const strings = isStrings(prop);
     const fields = Object.entries(prop.items?.properties ?? {});
@@ -299,7 +300,7 @@ function Field(props: { id: string; prop: Prop; required: boolean; stored?: bool
                       value={cur === undefined ? '' : String(cur)}
                       onInput={(e) => {
                         const t = (e.target as HTMLInputElement).value;
-                        put(num ? (t === '' ? undefined : Number(t)) : t);
+                        put(t === '' ? undefined : num ? Number(t) : t);
                       }}
                     />
                     {fh}
