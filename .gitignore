@@ -6,3 +6,4 @@ web/playwright-report/
 web/dist/*
 !web/dist/.gitkeep
 web/src/tokens.css
+web/logos/official/
