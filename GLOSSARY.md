@@ -57,7 +57,7 @@ One running harness session, launched from a dock and run in its own tmux sessio
 _Avoid_: boat (for the lead), agent, card
 
 **Crew boat**:
-A smaller boat around a ship: a Commodore teammate, or a subagent the harness spawned.
+A smaller boat around a ship: a teammate the ship's skill started, which the engineer can board, or a subagent the harness spawned, which is drawn differently and cannot be boarded because it has no terminal of its own.
 _Avoid_: child, worker, sub-ship
 
 **Open water**:

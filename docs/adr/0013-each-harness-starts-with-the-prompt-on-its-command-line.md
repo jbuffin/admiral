@@ -46,3 +46,5 @@ The no-first-hook rule (ADR 0007) shows a ship stopped on any of these dialogs a
 - On Codex, a fleet's own `-c hooks.<Event>=…` for an event Admiral hooks is replaced by Admiral's, because the last `-c` wins. Repeated `--settings` and `--plugin-dir` combine with the fleet's own.
 - The first launch in each checkout stops on folder trust, on every harness and in every fleet.
 - A hook bundle change that alters a Codex hook definition brings back the review dialog once per fleet.
+
+Amended 2026-10-18 ([#5](https://github.com/jbuffin/admiral/issues/5)): every hook now runs `admiral hook <event>` through a fixed `~/.admiral/bin` on `PATH`, so the hook text stays the same across upgrades (ADR 0014).
