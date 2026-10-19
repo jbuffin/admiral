@@ -32,7 +32,15 @@ export function useBridgeTerminal({ session, open, gone, probe }: BridgeTerminal
   const typeable = open && linkState === 'open';
   const openNow = useRef(typeable);
   openNow.current = typeable;
-  useEffect(() => term.current?.setStdin(typeable), [typeable]);
+  // Boarding puts the cursor in the terminal the first time it takes keys, so typing starts right away.
+  const focused = useRef(false);
+  useEffect(() => {
+    term.current?.setStdin(typeable);
+    if (typeable && term.current && !focused.current) {
+      focused.current = true;
+      term.current.focus();
+    }
+  }, [typeable]);
   const goneNow = useRef(gone);
   goneNow.current = gone;
 

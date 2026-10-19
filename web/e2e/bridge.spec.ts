@@ -108,8 +108,10 @@ test.describe('S5: boarding a ship and typing on the bridge', () => {
     await expect(t.getByRole('button', { name: 'Approve · y' })).toHaveCount(0);
     await expect(t.getByRole('button', { name: 'Deny · n' })).toHaveCount(0);
 
-    // Typing into the terminal sends the keys as typed; Shift+Enter is a new line, ESC CR, not a submit.
-    await press(t.locator('.xterm'), touch);
+    // Boarding focuses the terminal, so typing needs no tap first (iPad Safari still wants one for its keyboard).
+    // Keys go as typed; Shift+Enter is a new line, ESC CR, not a submit.
+    await expect(termInput(page)).toBeFocused();
+    if (touch) await press(t.locator('.xterm'), touch);
     await page.keyboard.type('  hi ');
     await page.keyboard.press('Shift+Enter');
     await page.keyboard.press('Enter');
