@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { touchKeyboard } from './keys';
 import { OrderItem } from './OrderItem';
+import { gripKey, pressGrip, reordering, savePanelOrder } from './reorder';
 import { SignInCard } from './SignInCard';
 import { SourceIcon } from './SourceIcon';
 import { type PanelView, api, can, declares, filter, panelCollapsed, setPanelCollapsed, sourcePath } from './sources';
@@ -49,14 +50,43 @@ const Chevron = ({ open }: { open: boolean }) => (
   </svg>
 );
 
+// The handle that moves a source or a panel within its list, by drag or by the
+// arrow keys.
+export function ReorderGrip({ label, group, itemKey, keys, commit }: { label: string; group: string; itemKey: string; keys: string[]; commit: (keys: string[]) => void }) {
+  return (
+    <button
+      type="button"
+      class="reorder-grip"
+      aria-label={label}
+      onPointerDown={(e) => pressGrip(e, group, itemKey, keys, commit)}
+      onKeyDown={(e) => gripKey(e, itemKey, keys, commit)}
+    >
+      <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true">
+        <circle cx="3" cy="3" r="1.6" />
+        <circle cx="9" cy="3" r="1.6" />
+        <circle cx="3" cy="8" r="1.6" />
+        <circle cx="9" cy="8" r="1.6" />
+        <circle cx="3" cy="13" r="1.6" />
+        <circle cx="9" cy="13" r="1.6" />
+      </svg>
+    </button>
+  );
+}
+
 export function PanelSection({ view }: { view: PanelView }) {
   const { source, panel, orders } = view;
+  const group = `panels:${source.key}`;
+  const panelIds = source.panels.map((p) => p.id);
+  const lifted = reordering.value?.group === group && reordering.value.key === panel.id;
   const open = !panelCollapsed(view.key);
   const [refusal, setRefusal] = useState<string | null>(null);
   const total = orders.length;
   return (
-    <section class="panel" id={`panel-${view.key}`} aria-label={view.title}>
+    <section class={lifted ? 'panel lifted' : 'panel'} id={`panel-${view.key}`} aria-label={view.title} data-reorder={group} data-key={panel.id}>
       <div class="panel-head">
+        {panelIds.length > 1 && (
+          <ReorderGrip label={`Move ${view.title}`} group={group} itemKey={panel.id} keys={panelIds} commit={(ids) => savePanelOrder(source.key, ids, setRefusal)} />
+        )}
         <button type="button" class="panel-toggle" aria-expanded={open} onClick={() => setPanelCollapsed(view.key, open)}>
           <Chevron open={open} />
           <SourceIcon source={source} size={20} />

@@ -2,6 +2,7 @@ package sources
 
 import (
 	"context"
+	"slices"
 	"sync"
 
 	"github.com/jbuffin/admiral/internal/config"
@@ -110,7 +111,7 @@ func (s *Supervisor) reconcile(force string, gen uint64) {
 		case def.Key == force && r.gen.Load() == gen:
 			r.restart()
 			dirty = true
-		case old.Name != def.Name:
+		case old.Name != def.Name, !slices.Equal(old.PanelOrder, def.PanelOrder):
 			dirty = true
 		}
 	}
