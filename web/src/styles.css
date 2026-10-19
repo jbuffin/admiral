@@ -931,7 +931,9 @@ button:focus-visible {
   gap: 30px;
   padding: 26px 14px 30px 0;
   position: relative;
-  overflow: hidden;
+  /* Clip marinas below the window, but not the breakwater rocks, which reach out over the sea. */
+  overflow-x: visible;
+  overflow-y: clip;
   z-index: 3;
   background-color: var(--color-grass);
 }
