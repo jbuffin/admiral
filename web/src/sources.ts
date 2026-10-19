@@ -130,21 +130,23 @@ export const sourcePath = (key: string, rest = '') => `/api/sources/${enc(key)}$
 
 // Per-browser memory of the collapses. localStorage can be missing or throw
 // (private windows), so every use is guarded and the page works without it.
-function read(key: string): boolean {
+function readRaw(key: string): string | null {
   try {
-    return localStorage.getItem(key) === '1';
+    return localStorage.getItem(key);
   } catch {
-    return false;
+    return null;
   }
 }
-function write(key: string, on: boolean): void {
+function writeRaw(key: string, value: string | null): void {
   try {
-    if (on) localStorage.setItem(key, '1');
-    else localStorage.removeItem(key);
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
   } catch {
     // not remembered
   }
 }
+const read = (key: string) => readRaw(key) === '1';
+const write = (key: string, on: boolean) => writeRaw(key, on ? '1' : null);
 
 const panelKey = (k: string) => `admiral.collapsed.${k}`;
 const collapsedPanels = signal<Record<string, boolean>>({});
@@ -154,8 +156,22 @@ export function setPanelCollapsed(k: string, on: boolean): void {
   write(panelKey(k), on);
 }
 
-export const sidebarCollapsed = signal(read('admiral.sidebar.collapsed'));
+// Too narrow for the panel beside the sea (styles.css), the panel is a drawer over
+// the sea. It starts closed, so it does not hide the ships until it is opened, and
+// it has its own memory: '0' is closed and '1' is open.
+const narrowQuery = typeof matchMedia === 'function' ? matchMedia('(max-width: 1000px)') : null;
+const narrow = signal(narrowQuery?.matches ?? false);
+narrowQuery?.addEventListener('change', (e) => (narrow.value = e.matches));
+const drawerOpen = signal(readRaw('admiral.sidebar.drawer') === '1');
+
+const rememberedCollapsed = signal(read('admiral.sidebar.collapsed'));
+export const sidebarCollapsed = computed(() => (narrow.value ? !drawerOpen.value : rememberedCollapsed.value));
 export function setSidebarCollapsed(on: boolean): void {
-  sidebarCollapsed.value = on;
+  if (narrow.value) {
+    drawerOpen.value = !on;
+    writeRaw('admiral.sidebar.drawer', on ? '0' : '1');
+    return;
+  }
+  rememberedCollapsed.value = on;
   write('admiral.sidebar.collapsed', on);
 }

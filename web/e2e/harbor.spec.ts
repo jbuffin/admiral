@@ -176,21 +176,26 @@ test.describe('S4: layout fits', () => {
     expect(scroll.h, 'vertical scroll').toBeLessThanOrEqual(0);
   });
 
-  test('ipad-portrait: the zones wrap and nothing scrolls sideways', async ({ page, admiral }, info) => {
+  test('ipad-portrait: the zones fit and the page does not scroll', async ({ page, admiral }, info) => {
     test.skip(info.project.name !== 'ipad-portrait');
     admiral.writeConfig(twoFleets(admiral));
     await admiral.start();
     await page.goto(admiral.url);
     await expect.poll(() => fleetNames(page)).toEqual(['Work', 'Home']);
 
-    const { width } = page.viewportSize()!;
+    const { width, height } = page.viewportSize()!;
     for (const zone of [page.getByRole('main', { name: 'Open water' }), page.getByLabel('Marinas', { exact: true })]) {
       await expect(zone).toBeVisible();
       const b = (await zone.boundingBox())!;
       expect(b.x + b.width).toBeLessThanOrEqual(width + 0.5);
+      expect(b.y + b.height).toBeLessThanOrEqual(height + 0.5);
     }
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
-    expect(overflow, 'horizontal scroll').toBeLessThanOrEqual(0);
+    const scroll = await page.evaluate(() => ({
+      w: document.documentElement.scrollWidth - innerWidth,
+      h: document.documentElement.scrollHeight - innerHeight,
+    }));
+    expect(scroll.w, 'horizontal scroll').toBeLessThanOrEqual(0);
+    expect(scroll.h, 'vertical scroll').toBeLessThanOrEqual(0);
   });
 });
 
