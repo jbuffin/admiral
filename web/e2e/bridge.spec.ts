@@ -289,6 +289,13 @@ test.describe('S5: boarding a ship and typing on the bridge', () => {
     await expect(flotilla(page)).toBeVisible();
     await expect(t.getByRole('button', { name: 'Full view' })).toBeVisible();
     await expect.poll(covers).toBe(false);
+
+    // A tap on the water around the terminal closes it too.
+    await press(t.locator('.term-body'), touch); // a tap on the terminal keeps it open
+    await expect(terminal(page)).toBeVisible();
+    const corner = { position: { x: 4, y: 4 } };
+    await (touch ? page.locator('.bridge').tap(corner) : page.locator('.bridge').click(corner));
+    await expect(terminal(page)).toHaveCount(0);
   });
 
   test('a ship that needs you opens its bridge from the header pill', async ({ page, admiral, sea }, info) => {

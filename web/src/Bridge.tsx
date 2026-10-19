@@ -74,6 +74,18 @@ export function FullViewToggle({ full, set }: { full: boolean; set: (on: boolean
   );
 }
 
+// A tap on the dimmed water around the terminal closes it, as the close button does. The press and the
+// click must both land outside the terminal, so a text selection that ends outside keeps it open.
+// Shared with the setup terminal.
+export function useCloseOutside(close: () => void) {
+  const pressedOutside = useRef(false);
+  const outside = (e: MouseEvent) => !(e.target as Element).closest('.terminal, button');
+  return {
+    onPointerDown: (e: PointerEvent) => (pressedOutside.current = outside(e)),
+    onClick: (e: MouseEvent) => pressedOutside.current && outside(e) && close(),
+  };
+}
+
 export function Bridge() {
   const session = boardedSession.value;
   return session ? <BridgeView key={session} session={session} /> : null;
@@ -91,6 +103,7 @@ function BridgeView({ session }: { session: string }) {
   const [dismissError, setDismissError] = useState('');
   const dismissing = useRef(false);
   const root = useRef<HTMLDivElement>(null);
+  const closeOutside = useCloseOutside(close);
 
   const status = ship?.status;
   const open = !!ship && live(ship);
@@ -123,7 +136,7 @@ function BridgeView({ session }: { session: string }) {
   const canType = open && linkState === 'open';
 
   return (
-    <div class={full ? 'bridge full' : 'bridge'} ref={root}>
+    <div class={full ? 'bridge full' : 'bridge'} ref={root} {...closeOutside}>
       <nav class="flotilla" aria-label="Session flotilla">
         <span class="flotilla-title">Flotilla · 1</span>
         <button type="button" class="fl-item press">
