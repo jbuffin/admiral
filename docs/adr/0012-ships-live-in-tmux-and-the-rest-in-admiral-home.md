@@ -19,7 +19,7 @@ Decided in [What survives a restart and where it lives](https://github.com/jbuff
   - `plugins/`: plugins (ADR 0010).
   - `data/<source-key>/`: one dir per order source instance, handed to its plugin on start. The freeform list keeps `orders.json` there.
   - `tmux.sock`: Admiral's tmux socket, used with `tmux -S`.
-- **`state.json` holds what a second device should see the same:** ship positions in open water, keyed by tmux session, and the last directory used on each dock (fleet key and harness). It is JSON with `"version": 1`, held in memory and written atomically (temp file and rename), debounced about a second after a drag. Admiral drops a ship's position when the ship goes, and on startup drops any position whose session no longer exists. A corrupt file or one with an unknown version is moved aside to `state.json.bad`, and Admiral starts with defaults.
+- **`state.json` holds what a second device should see the same:** ship positions in open water, keyed by tmux session, the last directory used on each dock (fleet key and harness), and when each directory was last launched into. It is JSON with `"version": 1`, held in memory and written atomically (temp file and rename), debounced about a second after a drag. Admiral drops a ship's position when the ship goes, and on startup drops any position whose session no longer exists. A corrupt file or one with an unknown version is moved aside to `state.json.bad`, and Admiral starts with defaults.
 - **Purely visual settings stay in each browser's `localStorage`:** the mute toggle and the collapsed panels and sidebar. The filter text is not stored (story 49).
 - **`admiral ships` and `admiral attach <ship>`.** `ships` lists the ships. `attach` takes a ship's display name or tmux session name, with shell completion, prints "Ctrl-b d to detach" once, and runs `tmux -S $ADMIRAL_HOME/tmux.sock attach -t <session>`, read-only (`-r`) for an anchored ship. Plain `tmux -S ~/.admiral/tmux.sock attach -t saltpaw` works too. An attached terminal is one more tmux client: typing in it is typing on the bridge, and it follows the bridge's sizing rule (ADR 0011).
 
@@ -34,7 +34,7 @@ Decided in [What survives a restart and where it lives](https://github.com/jbuff
 
 ## Consequences
 
-- Deleting `state.json` loses only ship positions and last directories.
+- Deleting `state.json` loses only ship positions, last directories and when each directory was last used.
 - Backing up, inspecting or removing Admiral means one directory.
 - Resuming a conversation by ID is out of the MVP, so Admiral records no conversation IDs.
 - A ship launched before a change to its fleet keeps its recorded fleet name and color (ADR 0010) because they are on its tmux session.
