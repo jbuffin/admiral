@@ -8,12 +8,12 @@ import { isTouch } from './sea';
 //
 //   complementary "Orders" / "Orders, collapsed"; buttons "Collapse orders" / "Expand orders"
 //   textbox "Filter orders"
-//   one named region per panel, titled "<panel title>" or "<source name> · <panel title>";
+//   one named region per panel, titled "<panel title>", inside its source's group;
 //     in it: a button with that title (aria-expanded), the count as text labelled "<n> orders",
 //     textbox "Add order" + button "Add", button "Refresh", button "Restart", alert
 //   per card: its text, a "High" badge, the ID as a link, button "Actions for <title>" (menuitems Edit, Remove)
 //   rail buttons named "<panel title>, <n> orders"
-//   one group per source named by the source's name: button "Source actions" (menuitems Settings, Remove, Refresh),
+//   one group per source named by the source's name, holding its panels: button "Source actions" (menuitems Settings, Remove, Refresh),
 //     and, when the source has no panels, its Restart button and alert
 //   button "Add source plugin" opening a list with a button per plugin
 //   dialog "Settings": textbox "Name", the schema's fields or textbox "Settings JSON", button "Save", which closes the view
@@ -141,8 +141,8 @@ test.describe('S3: a source with refresh only', () => {
     await admiral.start();
     await page.goto(admiral.url);
 
-    const todo = panel(page, 'Tracker · Todo');
-    const done = panel(page, 'Tracker · Done');
+    const todo = panel(page, 'Todo');
+    const done = panel(page, 'Done');
     await countOf(todo, 2);
     await countOf(done, 1);
 
@@ -177,30 +177,30 @@ test.describe('S4: collapse is remembered, the filter is not', () => {
     await admiral.start();
     await page.goto(admiral.url);
 
-    await cards(panel(page, 'Tracker · Todo'), 'Rotate the keys');
-    await toggle(page, 'Tracker · Todo', true).click();
-    await expect(toggle(page, 'Tracker · Todo', false)).toBeVisible();
+    await cards(panel(page, 'Todo'), 'Rotate the keys');
+    await toggle(page, 'Todo', true).click();
+    await expect(toggle(page, 'Todo', false)).toBeVisible();
     await expect(page.getByText('Rotate the keys')).toHaveCount(0);
-    await countOf(panel(page, 'Tracker · Todo'), 1); // collapsed, the count still shows
+    await countOf(panel(page, 'Todo'), 1); // collapsed, the count still shows
 
     await filter(page).fill('tidy');
     await page.reload();
-    await expect(toggle(page, 'Tracker · Todo', false)).toBeVisible();
+    await expect(toggle(page, 'Todo', false)).toBeVisible();
     await expect(filter(page)).toHaveValue('');
-    await cards(panel(page, 'Tracker · Done'), 'Tidy the docs');
+    await cards(panel(page, 'Done'), 'Tidy the docs');
 
     await sidebar(page).getByRole('button', { name: 'Collapse orders' }).click();
     await expect(rail(page)).toBeVisible();
     await expect(rail(page).getByRole('button', { name: 'Expand orders' })).toBeVisible();
-    await expect(rail(page).getByRole('button', { name: /^Tracker · Done, 1 orders?$/ })).toBeVisible();
+    await expect(rail(page).getByRole('button', { name: /^Done, 1 orders?$/ })).toBeVisible();
     await page.reload();
     await expect(rail(page)).toBeVisible();
     await expect(sidebar(page)).toHaveCount(0);
 
     // A rail button opens the sidebar again; the panel collapse is still remembered.
-    await rail(page).getByRole('button', { name: /^Tracker · Done, 1 orders?$/ }).click();
+    await rail(page).getByRole('button', { name: /^Done, 1 orders?$/ }).click();
     await expect(sidebar(page)).toBeVisible();
-    await expect(toggle(page, 'Tracker · Todo', false)).toBeVisible();
+    await expect(toggle(page, 'Todo', false)).toBeVisible();
     await expect(filter(page)).toHaveValue('');
   });
 });
@@ -226,8 +226,8 @@ test.describe('S5: filter', () => {
     admiral.writeConfig(sourcesConfig({ tracker: tracker(f) }));
     await admiral.start();
     await page.goto(admiral.url);
-    const todo = panel(page, 'Tracker · Todo');
-    const done = panel(page, 'Tracker · Done');
+    const todo = panel(page, 'Todo');
+    const done = panel(page, 'Done');
     await countOf(todo, 2);
     await countOf(done, 2);
 
@@ -283,12 +283,12 @@ test.describe('S6: add and configure source plugins', () => {
     await addPlugin('Alpha', a);
     await addPlugin('Beta', b);
 
-    // Both run the same plugin and list a panel titled "Test", so the panel
-    // headers carry the source names.
+    // Both run the same plugin and list a panel titled "Test"; each sits
+    // under its own source.
     await expect(source(page, 'Alpha')).toBeVisible();
     await expect(source(page, 'Beta')).toBeVisible();
-    await cards(panel(page, 'Alpha · Test'), 'Alpha order');
-    await cards(panel(page, 'Beta · Test'), 'Beta order');
+    await cards(source(page, 'Alpha').getByRole('region', { name: 'Test', exact: true }), 'Alpha order');
+    await cards(source(page, 'Beta').getByRole('region', { name: 'Test', exact: true }), 'Beta order');
 
     // Saving one source's settings restarts that source and no other.
     await expect.poll(() => a.starts()).toBeGreaterThanOrEqual(1);
@@ -303,16 +303,15 @@ test.describe('S6: add and configure source plugins', () => {
     await expect.poll(() => a.starts()).toBeGreaterThan(beforeA);
     expect(b.starts()).toBe(beforeB);
     await expect(dialog).toBeHidden();
-    await cards(panel(page, 'Alpha · Test'), 'Alpha order');
+    await cards(source(page, 'Alpha').getByRole('region', { name: 'Test', exact: true }), 'Alpha order');
 
     // Remove one: its row and panels go, the other stays.
     await source(page, 'Alpha').getByRole('button', { name: 'Source actions' }).click();
     await page.getByRole('menuitem', { name: 'Remove' }).click();
     await page.getByRole('button', { name: 'Confirm remove' }).click();
     await expect(source(page, 'Alpha')).toHaveCount(0);
-    await expect(page.getByRole('region', { name: /^Alpha/ })).toHaveCount(0);
     await expect(source(page, 'Beta')).toBeVisible();
-    await expect(panel(page, 'Test')).toBeVisible(); // alone now, so no source name is needed
+    await expect(panel(page, 'Test')).toBeVisible();
   });
 });
 
@@ -411,6 +410,6 @@ test.describe('S7: sign-in and crashed sources', () => {
     const row = source(page, 'Early');
     await expect(row.getByRole('alert')).toBeVisible();
     await expect(row.getByRole('button', { name: 'Restart' })).toBeVisible();
-    await expect(page.getByRole('region', { name: /Early/ })).toHaveCount(0);
+    await expect(row.getByRole('region')).toHaveCount(0);
   });
 });
