@@ -43,24 +43,106 @@ func SetSources(dir string, sources json.RawMessage) error {
 func setKey(dir, key string, value json.RawMessage) error {
 	writeMu.Lock()
 	defer writeMu.Unlock()
-
 	path := filepath.Join(dir, FileName)
+	_, out, err := renderKey(path, key, value)
+	if err != nil {
+		return err
+	}
+	return replaceFile(path, out)
+}
+
+// SetFleets replaces fleets in dir/config.json. The result must load, which
+// setKey alone does not check (it validates only what it read).
+func SetFleets(dir string, fleets json.RawMessage) error {
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	path := filepath.Join(dir, FileName)
+	_, out, err := renderKey(path, "fleets", fleets)
+	if err != nil {
+		return err
+	}
+	if _, err := Parse(out); err != nil {
+		return err
+	}
+	return replaceFile(path, out)
+}
+
+// PreviewFleets is the config.json before and after SetFleets, both indented
+// the way Admiral writes it, so a diff shows only what changed. A missing file
+// is the empty config.
+func PreviewFleets(dir string, fleets json.RawMessage) (before, after []byte, err error) {
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	before, after, err = renderKey(filepath.Join(dir, FileName), "fleets", fleets)
+	if err != nil {
+		return nil, nil, err
+	}
+	if _, err := Parse(after); err != nil {
+		return nil, nil, err
+	}
+	return before, after, nil
+}
+
+// Fleets is the fleets object of dir/config.json in file order; empty when
+// there is no file. A file that doesn't validate is an error.
+func Fleets(dir string) (*Object, error) {
+	data, err := readConfig(filepath.Join(dir, FileName))
+	if err != nil {
+		return nil, err
+	}
+	if _, err := Parse(data); err != nil {
+		return nil, fmt.Errorf("%s is invalid, fix it first (admiral config edit): %w", filepath.Join(dir, FileName), err)
+	}
+	top, err := ParseObject(data)
+	if err != nil {
+		return nil, err
+	}
+	raw, ok := top.Get("fleets")
+	if !ok {
+		return NewObject(), nil
+	}
+	return ParseObject(raw)
+}
+
+// WriteFile replaces dir/config.json with data, which must load. The text is
+// saved as it is, so a hand edit keeps its layout.
+func WriteFile(dir string, data []byte) error {
+	if _, err := Parse(data); err != nil {
+		return err
+	}
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	return replaceFile(filepath.Join(dir, FileName), data)
+}
+
+// ReadConfig is dir/config.json, or the empty config when there is no file yet.
+// A dangling symlink is an error: writing would replace the link.
+func ReadConfig(dir string) ([]byte, error) { return readConfig(filepath.Join(dir, FileName)) }
+
+func readConfig(path string) ([]byte, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		if _, lerr := os.Lstat(path); lerr == nil {
 			// A dangling symlink: writing would replace the link with a plain file.
-			return fmt.Errorf("%s is a symlink to a file that is missing, restore it first", path)
+			return nil, fmt.Errorf("%s is a symlink to a file that is missing, restore it first", path)
 		}
-		data = []byte(`{"version":1,"fleets":{}}`)
-	} else if err != nil {
-		return err
+		return []byte(`{"version":1,"fleets":{}}`), nil
+	}
+	return data, err
+}
+
+// renderKey returns the file as it is (indented) and with key replaced.
+func renderKey(path, key string, value json.RawMessage) (before, after []byte, err error) {
+	data, err := readConfig(path)
+	if err != nil {
+		return nil, nil, err
 	}
 	if _, err := Parse(data); err != nil {
-		return fmt.Errorf("%s is invalid, fix it first: %w", path, err)
+		return nil, nil, fmt.Errorf("%s is invalid, fix it first: %w", path, err)
 	}
 	top, err := members("", data)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	var out bytes.Buffer
@@ -87,12 +169,20 @@ func setKey(dir, key string, value json.RawMessage) error {
 		write(key, value)
 	}
 	out.WriteByte('}')
+	if after, err = indent(out.Bytes()); err != nil {
+		return nil, nil, err
+	}
+	before, err = indent(data)
+	return before, after, err
+}
+
+func indent(raw []byte) ([]byte, error) {
 	var pretty bytes.Buffer
-	if err := json.Indent(&pretty, out.Bytes(), "", "  "); err != nil {
-		return err
+	if err := json.Indent(&pretty, raw, "", "  "); err != nil {
+		return nil, err
 	}
 	pretty.WriteByte('\n')
-	return replaceFile(path, pretty.Bytes())
+	return pretty.Bytes(), nil
 }
 
 // replaceFile writes a temp file beside path and renames it over, so a reader

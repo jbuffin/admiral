@@ -2,6 +2,7 @@ import { useEffect } from 'preact/hooks';
 import { config } from './config';
 import { connect } from './connection';
 import { Bridge } from './Bridge';
+import { SetupTerminal } from './SetupTerminal';
 import { Header } from './Header';
 import { Ghost, LaunchOrders } from './LaunchOrders';
 import { LogoSprite } from './Logos';
@@ -33,6 +34,7 @@ export function App() {
           </div>
           <Ships />
           <Bridge />
+          <SetupTerminal />
         </main>
       </div>
       <Ghost />

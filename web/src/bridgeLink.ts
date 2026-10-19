@@ -1,4 +1,4 @@
-import { nextDelay, probe, RETRY_FIRST_MS, signedOut } from './connection';
+import { nextDelay, probe as probeShips, RETRY_FIRST_MS, signedOut, type Probe } from './connection';
 import type { JoinMsg } from './bridgeReplay';
 
 export type LinkState = 'connecting' | 'open' | 'reconnecting';
@@ -12,6 +12,8 @@ export interface LinkHandlers {
   gone(): void;
   /** The size to join with. */
   dims(): { cols: number; rows: number };
+  /** What a failed reconnect asks to learn why: whether the session is still listed. Ships by default. */
+  probe?: () => Promise<Probe>;
 }
 
 // One browser's WebSocket to a ship's bridge (GET /ws/bridge/<session>; the messages are in the
@@ -66,7 +68,7 @@ export class BridgeLink {
     this.delay = nextDelay(this.delay);
     this.retry = setTimeout(async () => {
       if (this.stopped || signedOut.value) return;
-      const p = await probe();
+      const p = await (this.h.probe ?? probeShips)();
       if (this.stopped) return;
       if (p.kind === 'signed-out') signedOut.value = true;
       else if (p.kind === 'down') this.schedule();

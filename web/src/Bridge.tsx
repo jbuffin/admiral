@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { Term } from './terminal';
-import { BridgeLink, type LinkState } from './bridgeLink';
 import { signedOut } from './connection';
 import { harnesses } from './harnesses';
 import { LogoFlag } from './Logos';
 import { api } from './sources';
+import { useBridgePlacement } from './useBridgePlacement';
+import { useBridgeTerminal } from './useBridgeTerminal';
 import { botFor, boardedSession, leaving, ships, shipsLoaded, type WireShip } from './ships';
 
 const live = (s: WireShip) => s.status === 'underway' || s.status === 'needs_you';
@@ -20,7 +20,7 @@ const PILL = {
 };
 
 // What the key buttons send. The labels and the accessible names are the prototype's.
-const KEYS = [
+export const KEYS = [
   ['Enter', '⏎ Enter', '\r'],
   ['Esc', 'Esc', '\x1b'],
   ['Tab', 'Tab', '\t'],
@@ -30,7 +30,7 @@ const KEYS = [
 ] as const;
 
 // How long the line's text goes ahead of its Enter, so a TUI doesn't take the two as one paste.
-const ENTER_GAP_MS = 50;
+export const ENTER_GAP_MS = 50;
 
 const close = () => (boardedSession.value = null);
 
@@ -47,12 +47,6 @@ function BridgeView({ session }: { session: string }) {
     if (over) close();
   }, [over]);
 
-  const host = useRef<HTMLDivElement>(null);
-  const term = useRef<Term | undefined>(undefined);
-  const link = useRef<BridgeLink | undefined>(undefined);
-  const active = useRef(true);
-  const activity = useRef<() => void>(() => {});
-  const [linkState, setLinkState] = useState<LinkState>('connecting');
   const [draft, setDraft] = useState('');
   const [dismissError, setDismissError] = useState('');
   const dismissing = useRef(false);
@@ -60,114 +54,9 @@ function BridgeView({ session }: { session: string }) {
 
   const status = ship?.status;
   const open = !!ship && live(ship);
-  const openNow = useRef(open);
-  openNow.current = open;
-  useEffect(() => term.current?.setStdin(open), [open]);
+  const { host, link, linkState, activity } = useBridgeTerminal({ session, open, gone: close });
 
-  useEffect(() => {
-    let disposed = false;
-    let observer: ResizeObserver | undefined;
-    const claim = () => {
-      // This browser sets the pane's size from now on.
-      active.current = true;
-      const d = term.current?.fit();
-      if (d) link.current?.send({ type: 'resize', cols: d.cols, rows: d.rows });
-    };
-    const onActivity = () => {
-      if (!active.current) claim();
-      else link.current?.send({ type: 'active' });
-    };
-    activity.current = onActivity;
-    const onVisibility = () => link.current?.send({ type: 'visible', visible: document.visibilityState === 'visible' });
-    void import('./terminal').then(async ({ createTerminal }) => {
-      if (disposed || !host.current) return;
-      const t = await createTerminal(host.current);
-      if (disposed) return t.dispose();
-      term.current = t;
-      t.setStdin(openNow.current);
-      t.fit();
-      if (window.__admiral) window.__admiral.screen = () => t.text();
-      t.onData((data) => {
-        onActivity();
-        link.current?.send({ type: 'input', data });
-      });
-      link.current = new BridgeLink(session, {
-        state: setLinkState,
-        join: (j) => {
-          // A live ship is sized to this browser when it joins; a ship that has exited keeps its own grid.
-          const ours = t.size();
-          active.current = j.size.cols === ours.cols && j.size.rows === ours.rows;
-          t.join(j);
-          if (!active.current) t.follow(j.size.cols, j.size.rows);
-        },
-        output: (b) => t.write(b),
-        size: (cols, rows) => {
-          const ours = t.size();
-          if (cols === ours.cols && rows === ours.rows && active.current) return;
-          // Another browser sized the pane: follow its grid and scale it, don't reflow.
-          active.current = false;
-          t.follow(cols, rows);
-        },
-        gone: close,
-        dims: () => t.size(),
-      });
-      observer = new ResizeObserver(() => (active.current ? claim() : t.follow(t.size().cols, t.size().rows)));
-      observer.observe(host.current);
-    });
-    const region = host.current?.closest('section');
-    region?.addEventListener('pointerdown', onActivity);
-    window.addEventListener('resize', claim);
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      disposed = true;
-      observer?.disconnect();
-      region?.removeEventListener('pointerdown', onActivity);
-      window.removeEventListener('resize', claim);
-      document.removeEventListener('visibilitychange', onVisibility);
-      link.current?.close();
-      link.current = undefined;
-      if (window.__admiral) delete window.__admiral.screen;
-      term.current?.dispose();
-      term.current = undefined;
-    };
-  }, [session]);
-
-  // The bridge covers open water but is bounded by the screen, not by the page: at narrow widths the
-  // harbor stacks and the page grows, and the terminal must not grow with it. With the soft keyboard up
-  // the visual viewport is shorter than the layout one, so the bottom edge follows what is visible and
-  // the prompt and key bar stay reachable.
-  useEffect(() => {
-    const el = root.current;
-    const main = el?.parentElement;
-    if (!el || !main) return;
-    const vv = window.visualViewport;
-    const place = () => {
-      const r = main.getBoundingClientRect();
-      const covered = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
-      el.style.left = `${Math.max(0, r.left)}px`;
-      el.style.top = `${Math.max(0, r.top)}px`;
-      el.style.bottom = `${covered > 40 ? covered : 0}px`;
-    };
-    place();
-    document.documentElement.classList.add('bridge-open'); // the page behind doesn't scroll
-    // The orders panel collapsing and a header banner coming or going move `main` without a window resize.
-    const observer = new ResizeObserver(place);
-    observer.observe(main);
-    const header = document.querySelector('.app-header');
-    if (header) observer.observe(header);
-    window.addEventListener('resize', place);
-    window.addEventListener('scroll', place);
-    vv?.addEventListener('resize', place);
-    vv?.addEventListener('scroll', place);
-    return () => {
-      document.documentElement.classList.remove('bridge-open');
-      observer.disconnect();
-      window.removeEventListener('resize', place);
-      window.removeEventListener('scroll', place);
-      vv?.removeEventListener('resize', place);
-      vv?.removeEventListener('scroll', place);
-    };
-  }, [!!ship]);
+  useBridgePlacement(root, !!ship);
 
   if (!ship) return null;
   const h = harnesses[ship.harness];
