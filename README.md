@@ -13,7 +13,7 @@ The designs are done and the MVP build has started.
 - `docs/architecture.md`: an early proposal for the build, superseded by the spec and the ADRs.
 - `docs/adr/`: decisions.
 - `GLOSSARY.md`: the words Admiral uses.
-- `cmd/admiral/`, `internal/`: the Go server and CLI. `internal/auth` is access control, `internal/server` is HTTP and WebSocket, `internal/home` finds `$ADMIRAL_HOME`, `internal/config` loads, validates, watches and writes `$ADMIRAL_HOME/config.json`.
+- `cmd/admiral/`, `internal/`: the Go server and CLI. `internal/auth` is access control, `internal/server` is HTTP and WebSocket, `internal/home` finds `$ADMIRAL_HOME`, `internal/config` loads, validates, watches and writes `$ADMIRAL_HOME/config.json`. `internal/sessionhost` is the one tmux control-mode connection on `$ADMIRAL_HOME/tmux.sock` (it re-reads the sessions about every half second, and a global `alert-bell` hook stamps bells), `internal/launcher` creates ships (names, hook bundle in `$ADMIRAL_HOME/harness/`, command lines), `internal/state` is `$ADMIRAL_HOME/state.json` (ship positions, each dock's last directory), `internal/ships` serves `GET`/`POST /api/ships`, `PUT /api/ships/<session>/position` and the WebSocket `ships` message.
 - `web/`: the Preact UI. `web/embed.go` embeds the built `web/dist` into the binary.
 - `e2e/`: server tests that run the real binary.
 
@@ -34,6 +34,8 @@ make e2e                            # builds, then the server and browser tests
 Admiral keeps its data in `$ADMIRAL_HOME` (default `~/.admiral/`). Every test starts the binary with a fresh temporary one on a free port, so tests never touch yours.
 
 Tests sit at two seams. `e2e/` (Go) starts `bin/admiral` and drives it over HTTP and WebSocket. `web/e2e/` (Playwright, WebKit) loads the page at iPad landscape, iPad portrait and desktop sizes. Vitest covers pure UI state logic only.
+
+Tests that launch ships use the fake harnesses in `e2e/fakeharness/` (`claude`, `codex` and `copilot` are symlinks to `fake.sh`). A test puts one as the `executable` of a fleet and passes two variables in the fleet's `env`: `FAKE_RECORD_DIR` (where to record) and `FAKE_CUE` (an optional cue file). Started in a ship's pane, the fake writes `<FAKE_RECORD_DIR>/<tmux session>/` with `harness`, `argv` (each argument followed by a NUL byte), `env` (one `NAME=value` per line), `cwd`, `name` (the `@admiral-name` option as read at start), `options` (all session options at start) and last an empty `recorded` file to wait for. Then it runs the cue file, one cue per line: `hook <needs_you|working>` runs `tmux set -p @admiral-state <state>`, `bell` rings the bell, `sleep <n>` waits n seconds, `exit <n>` exits with status n. It creates `cues-done` when the cues end, then stays running unless a cue exited. The same protocol is in the header of `fake.sh`. Tests that run tmux set `TMUX_TMPDIR` to a temporary directory and talk to tmux only with `tmux -S <home>/tmux.sock`.
 
 The server tests that connect through the Mac's own LAN address skip, with a message, when that address doesn't answer. They always run in CI.
 

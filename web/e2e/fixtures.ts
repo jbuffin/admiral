@@ -1,5 +1,5 @@
 import { test as base, expect } from '@playwright/test';
-import { type ChildProcess, spawn } from 'node:child_process';
+import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -91,6 +91,8 @@ class Instance implements Admiral {
       await gone;
       clearTimeout(hard);
     }
+    // Admiral starts a tmux server that outlives it; end this home's.
+    spawnSync('tmux', ['-S', join(this.home, 'tmux.sock'), 'kill-server']);
     rmSync(this.home, { recursive: true, force: true });
   }
 }

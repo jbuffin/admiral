@@ -170,3 +170,29 @@ func markSharedIdentities(fleets []Fleet) {
 		}
 	}
 }
+
+// Resolve looks the harness's executable up again. Found is computed when the
+// config loads, and the file can vanish after that.
+func (h Harness) Resolve() (string, bool) {
+	return resolveExecutable(h.Executable, h.Env)
+}
+
+// Fleet returns the fleet with this key.
+func (c *Config) Fleet(key string) (Fleet, bool) {
+	for _, f := range c.Fleets {
+		if f.Key == key {
+			return f, true
+		}
+	}
+	return Fleet{}, false
+}
+
+// Harness returns the fleet's dock for this harness.
+func (f Fleet) Harness(name string) (Harness, bool) {
+	for _, h := range f.Harnesses {
+		if h.Name == name {
+			return h, true
+		}
+	}
+	return Harness{}, false
+}
