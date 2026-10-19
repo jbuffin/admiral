@@ -1,5 +1,5 @@
 import { useRef, useState } from 'preact/hooks';
-import { FullViewToggle } from './Bridge';
+import { FullViewToggle, useCloseOutside } from './Bridge';
 import { signedOut } from './connection';
 import { KEYS, touchKeyboard } from './keys';
 import { closeSetup, probeSetup, SETUP_SESSION, setupOpen } from './setup';
@@ -16,6 +16,7 @@ export function SetupTerminal() {
 function SetupView() {
   const [full, setFull] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const closeOutside = useCloseOutside(() => (setupOpen.value = false));
   useBridgePlacement(root, true, full);
   const { host, link, linkState, activity } = useBridgeTerminal({ session: SETUP_SESSION, open: true, gone: closeSetup, probe: probeSetup });
   const reconnecting = linkState === 'reconnecting';
@@ -27,7 +28,7 @@ function SetupView() {
   };
 
   return (
-    <div class={full ? 'bridge full' : 'bridge'} ref={root}>
+    <div class={full ? 'bridge full' : 'bridge'} ref={root} {...closeOutside}>
       <section class="terminal" aria-label="Setup terminal">
         <div class="term-head">
           <div class="term-title">
