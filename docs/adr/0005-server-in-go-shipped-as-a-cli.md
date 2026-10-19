@@ -10,7 +10,7 @@ The Admiral server runs all day on the engineer's Mac, so it must be very light 
 
 The server is written in Go. It ships as one `admiral` binary for macOS on Apple Silicon, with the built UI embedded, and talks to Admiral's tmux socket in control mode through a parser of its own.
 
-It installs from a Homebrew tap or a `curl` install script. `admiral service install` writes a LaunchAgent so the server runs at login. The binary is ad-hoc signed, and neither install path is quarantined, so the MVP needs no Developer ID or notarization.
+It installs from a Homebrew tap or a `curl` install script. The tap brings `tmux` and `python3`; the `curl` script only warns when they are missing and prints the `brew install` command, because it never uses `sudo` or installs system packages. `admiral service install` writes a LaunchAgent so the server runs at login. The binary is ad-hoc signed, and neither install path is quarantined, so the MVP needs no Developer ID or notarization.
 
 ## Considered options
 
@@ -24,3 +24,5 @@ It installs from a Homebrew tap or a `curl` install script. `admiral service ins
 - The MVP targets macOS on Apple Silicon only. Linux is not a target but stays possible: launchd lives behind the `service` command, and the server core uses no macOS-only APIs.
 - A menu-bar Mac app comes after the MVP, as a small Swift shell that registers the same binary with `SMAppService`. That is when a Developer ID and notarization are needed.
 - The UI's build output is embedded in the binary, whatever the front-end stack.
+
+Amended 2026-10-18 (MVP build, [spec #45](https://github.com/jbuffin/admiral/issues/45)): the `curl` installer warns about a missing `tmux` or `python3` instead of installing them (story 11 is met in full by the Homebrew path only). Admiral is MIT-licensed.
