@@ -178,7 +178,7 @@ func (d Detection) Report(w io.Writer) {
 		if p, ok := d.Harness[h]; ok {
 			fmt.Fprintf(w, "Harness %s: %s\n", h, p)
 		} else {
-			fmt.Fprintf(w, "Harness %s: not found\n", h)
+			fmt.Fprintf(w, "Harness %s: not found on PATH or in %s\n", h, strings.Join(probeDirs, ", "))
 		}
 	}
 	for _, p := range d.Wrappers {
