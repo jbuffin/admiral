@@ -1,6 +1,7 @@
 import { useEffect } from 'preact/hooks';
 import { config } from './config';
 import { connect } from './connection';
+import { Bridge } from './Bridge';
 import { Header } from './Header';
 import { Ghost, LaunchOrders } from './LaunchOrders';
 import { LogoSprite } from './Logos';
@@ -31,6 +32,7 @@ export function App() {
             {fleets && (fleets.length === 0 ? <SetUpMarina /> : fleets.map((f) => <Marina key={f.key} fleet={f} />))}
           </div>
           <Ships />
+          <Bridge />
         </main>
       </div>
       <Ghost />

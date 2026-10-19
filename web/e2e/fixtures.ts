@@ -11,6 +11,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -56,8 +57,19 @@ export interface Admiral {
   installTestPlugin(folder?: string): void;
   /** A fresh flag directory for one test-plugin source. */
   flags(label: string): Flags;
-  /** Starts the server on a free port, with whatever config.json holds. */
-  start(): Promise<void>;
+  /** Starts the server on a free port, with whatever config.json holds. `lan` listens on 0.0.0.0 and fills `lanUrl` and `token`. */
+  start(opts?: { lan?: boolean }): Promise<void>;
+  /** With `start({ lan: true })`: the Mac's non-loopback address (http://<ip>:<port>/) and the token the server printed. */
+  lanUrl: string;
+  token: string;
+  /** Stops the server process only: the home, the ships and their tmux server stay. */
+  stopServer(): Promise<void>;
+  /** Starts the server again on the same address and home. */
+  resumeServer(): Promise<void>;
+  /** stopServer, then resumeServer. */
+  restart(): Promise<void>;
+  /** Writes a new token file, as `admiral token rotate` would; the server picks it up on its next start. Returns the token. */
+  rotateToken(): string;
 }
 
 class Instance implements Admiral {
@@ -119,12 +131,23 @@ class Instance implements Admiral {
     };
   }
 
-  start() {
+  lanUrl = '';
+  token = '';
+  private lan = false;
+  private listen = '127.0.0.1:0';
+
+  start(opts: { lan?: boolean } = {}) {
+    this.lan = !!opts.lan;
+    this.listen = this.lan ? '0.0.0.0:0' : '127.0.0.1:0';
+    return this.resumeServer();
+  }
+
+  resumeServer() {
     return new Promise<void>((done, fail) => {
       // A harness identity variable from the engineer's shell must not reach the server.
       const env: NodeJS.ProcessEnv = { ...process.env, ADMIRAL_HOME: this.home };
       for (const v of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'COPILOT_HOME']) delete env[v];
-      const proc = spawn(bin, ['--listen', '127.0.0.1:0'], {
+      const proc = spawn(bin, ['--listen', this.listen], {
         env,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -135,18 +158,22 @@ class Instance implements Admiral {
       proc.once('exit', (code) => fail(new Error(`admiral exited with ${code}: ${out}`)));
       proc.stdout!.on('data', (b: Buffer) => {
         out += b.toString();
-        const m = /Admiral is running at (http:\/\/127\.0\.0\.1:\d+\/)/.exec(out);
-        if (m) {
-          clearTimeout(timer);
-          this.url = m[1];
-          done();
-        }
+        const m = /Admiral is running at (http:\/\/127\.0\.0\.1:(\d+)\/)/.exec(out);
+        if (!m) return;
+        const other = /On other devices: (http:\/\/[\d.]+:\d+\/)\?token=([\w-]+)/.exec(out);
+        if (this.lan && !other) return;
+        clearTimeout(timer);
+        this.url = m[1];
+        // A restart comes back on the same port.
+        this.listen = `${this.lan ? '0.0.0.0' : '127.0.0.1'}:${m[2]}`;
+        if (other) [, this.lanUrl, this.token] = other;
+        done();
       });
       proc.stderr!.on('data', (b: Buffer) => (out += b.toString()));
     });
   }
 
-  async stop() {
+  async stopServer() {
     const proc = this.proc;
     if (proc && proc.exitCode === null && proc.signalCode === null) {
       proc.removeAllListeners('exit');
@@ -156,6 +183,21 @@ class Instance implements Admiral {
       await gone;
       clearTimeout(hard);
     }
+  }
+
+  async restart() {
+    await this.stopServer();
+    await this.resumeServer();
+  }
+
+  rotateToken() {
+    const token = randomBytes(24).toString('base64url');
+    writeFileSync(join(this.home, 'token'), token + '\n', { mode: 0o600 });
+    return token;
+  }
+
+  async stop() {
+    await this.stopServer();
     // Admiral starts a tmux server that outlives it; end this home's.
     // Admiral is gone by now, so nothing starts a new one; wait until the socket stops answering.
     const sock = join(this.home, 'tmux.sock');
