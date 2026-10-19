@@ -86,6 +86,14 @@ func (s *Service) serveDirs(w http.ResponseWriter, r *http.Request) {
 	}
 	entries := repofinder.List(fleet.SearchRoots)
 	live := s.Ships()
+	// The checkouts most recently used first; the search roots stay last.
+	checkouts := slices.IndexFunc(entries, func(e repofinder.Entry) bool { return e.Kind != repofinder.KindCheckout })
+	if checkouts < 0 {
+		checkouts = len(entries)
+	}
+	slices.SortStableFunc(entries[:checkouts], func(a, b repofinder.Entry) int {
+		return lastUsed(s.State, b.Path, live).Compare(lastUsed(s.State, a.Path, live))
+	})
 	selected, reason := s.preselect(&entries, fleet, req, live)
 
 	out := make([]dirEntry, len(entries))
@@ -184,17 +192,23 @@ func (a use) compare(b use) int {
 	return 0
 }
 
-// recency ranks a directory with no new state: the latest launch of an
-// existing ship there, else this dock's last directory, else the fleet's other
-// docks' last directories, else not at all.
+// lastUsed is the latest launch into dir: the recorded one, or an existing
+// ship's if that is later. It is zero for a directory never launched into.
+func lastUsed(st *state.Store, dir string, live []ships.Ship) time.Time {
+	latest := st.DirUsed(dir)
+	for _, sh := range live {
+		if t, err := time.Parse(time.RFC3339, sh.Launched); err == nil && sh.Dir == dir && t.After(latest) {
+			latest = t
+		}
+	}
+	return latest
+}
+
+// recency ranks a directory: its latest launch, else this dock's last
+// directory, else the fleet's other docks' last directories, else not at all.
 func (s *Service) recency(fleet config.Fleet, harness string, live []ships.Ship) func(string) use {
 	return func(dir string) use {
-		var latest time.Time
-		for _, sh := range live {
-			if t, err := time.Parse(time.RFC3339, sh.Launched); err == nil && sh.Dir == dir && t.After(latest) {
-				latest = t
-			}
-		}
+		latest := lastUsed(s.State, dir, live)
 		switch {
 		case !latest.IsZero():
 			return use{0, latest}

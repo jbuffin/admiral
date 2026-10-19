@@ -223,6 +223,45 @@ func TestSeveralMatchesFloatMostRecentlyUsed(t *testing.T) {
 	}
 }
 
+// The checkouts are listed most recently used first, on any of the fleet's
+// docks, and the order survives the ships and a restart. The pre-selection is
+// unchanged by it.
+func TestDirsMostRecentlyUsedFirst(t *testing.T) {
+	d := newDataWorld(t)
+	a := d.repo("a")
+	b := d.repo("b", "https://github.com/acme/b")
+	c := d.repo("c")
+	d.start()
+
+	d.launch(d.launchReq("work", "claude", c, noSkill, "go"))
+	d.launch(d.launchReq("work", "codex", a, noSkill, "go"))
+	want := []string{a, c, b, d.work}
+
+	r := d.dirs("work", "claude", "", "")
+	if got := r.paths(); !reflect.DeepEqual(got, want) {
+		t.Errorf("entries = %v, want %v", got, want)
+	}
+	if r.selected() != c || r.reason() != "last_used" {
+		t.Errorf("selected %q (%s), want this dock's last directory %q", r.selected(), r.reason(), c)
+	}
+	r = d.dirs("work", "claude", "https://github.com/acme/b", "")
+	if got := r.paths(); !reflect.DeepEqual(got, want) {
+		t.Errorf("with a match, entries = %v, want %v", got, want)
+	}
+	if r.selected() != b || r.reason() != "repo" {
+		t.Errorf("selected %q (%s), want the match %q", r.selected(), r.reason(), b)
+	}
+
+	d.in.Stop()
+	if _, err := d.tmux("kill-server"); err != nil {
+		t.Fatal(err)
+	}
+	d.start()
+	if got := d.dirs("work", "claude", "", "").paths(); !reflect.DeepEqual(got, want) {
+		t.Errorf("with no ships after a restart, entries = %v, want %v", got, want)
+	}
+}
+
 // S3: ships_here counts the ships that are underway or need you in a directory,
 // whichever fleet launched them.
 func TestShipsHere(t *testing.T) {

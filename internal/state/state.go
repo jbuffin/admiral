@@ -1,6 +1,7 @@
 // Package state holds what Admiral remembers besides config and tmux
-// (ADR 0012): where each ship sits on the water and the last directory
-// launched into at each dock. It lives in $ADMIRAL_HOME/state.json.
+// (ADR 0012): where each ship sits on the water, the last directory
+// launched into at each dock, and when each directory was last launched into.
+// It lives in $ADMIRAL_HOME/state.json.
 package state
 
 import (
@@ -29,9 +30,10 @@ type Position struct {
 }
 
 type file struct {
-	Version   int                 `json:"version"`
-	Positions map[string]Position `json:"positions"` // by tmux session
-	LastDirs  map[string]string   `json:"last_dirs"` // by DockKey
+	Version   int                  `json:"version"`
+	Positions map[string]Position  `json:"positions"` // by tmux session
+	LastDirs  map[string]string    `json:"last_dirs"` // by DockKey
+	DirsUsed  map[string]time.Time `json:"dirs_used"` // by directory
 }
 
 // DockKey keys a dock's last directory.
@@ -52,7 +54,7 @@ type Store struct {
 // moved to state.json.bad and the store starts empty.
 func Open(dir string) (*Store, error) {
 	s := &Store{path: filepath.Join(dir, FileName), data: file{Version: Version,
-		Positions: map[string]Position{}, LastDirs: map[string]string{}}}
+		Positions: map[string]Position{}, LastDirs: map[string]string{}, DirsUsed: map[string]time.Time{}}}
 	raw, err := os.ReadFile(s.path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s, nil
@@ -72,6 +74,9 @@ func Open(dir string) (*Store, error) {
 	}
 	if f.LastDirs != nil {
 		s.data.LastDirs = f.LastDirs
+	}
+	if f.DirsUsed != nil {
+		s.data.DirsUsed = f.DirsUsed
 	}
 	return s, nil
 }
@@ -108,11 +113,20 @@ func (s *Store) LastDir(fleet, harness string) string {
 	return s.data.LastDirs[DockKey(fleet, harness)]
 }
 
+// SetLastDir also records that dir was used now, on any dock.
 func (s *Store) SetLastDir(fleet, harness, dir string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.data.LastDirs[DockKey(fleet, harness)] = dir
+	s.data.DirsUsed[dir] = time.Now()
 	s.changed()
+}
+
+// DirUsed is when dir was last launched into, or zero if never.
+func (s *Store) DirUsed(dir string) time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.data.DirsUsed[dir]
 }
 
 // changed schedules a write; every change pushes it back, so a burst makes one.

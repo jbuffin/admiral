@@ -11,7 +11,7 @@ An order is freeform text, so Admiral cannot read a repository from it ([Orders 
 The engineer picks the ship's directory in launch orders from a list Admiral builds. Admiral never accepts a typed path, and it never creates its own worktrees ([Where a ship's session runs](https://github.com/jbuffin/admiral/issues/12)).
 
 - **Search roots belong to the fleet.** Each fleet lists its own search roots, so work and personal checkouts never mix.
-- **The list holds git checkouts and search roots, nothing else.** Admiral looks up to two levels below each search root and stops at a git checkout, never searching inside one. Checkouts come first in the list. The fleet's search roots sit at the bottom, so they show when the filter matches no checkout. A plain folder that is not a search root cannot be chosen.
+- **The list holds git checkouts and search roots, nothing else.** Admiral looks up to two levels below each search root and stops at a git checkout, never searching inside one. Checkouts come first in the list, the most recently launched into first, on any of the fleet's docks. The fleet's search roots sit at the bottom, so they show when the filter matches no checkout. A plain folder that is not a search root cannot be chosen.
 - **The directory field is a searchable dropdown above the skill choice.** Typing filters the list by name.
 - **Pre-selection**, first match wins:
   1. the order's `repo` hint from its order source, when it matches a listed checkout's git remote;
