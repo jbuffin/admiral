@@ -167,6 +167,22 @@ func TestPromptForms(t *testing.T) {
 			})
 		}
 	}
+	// Just launch's note goes first, trimmed, then a blank line and the order as written.
+	notes := []struct{ name, note, text, want string }{
+		{"note before the order", "  Plan first\nthen act \n", " the order\n", "Plan first\nthen act\n\n the order\n"},
+		{"blank note is no note", " \n ", "as written ", "as written "},
+	}
+	for i, c := range notes {
+		c, repo := c, "note"+string(rune('a'+i))
+		t.Run(c.name, func(t *testing.T) {
+			w := w.at(t)
+			req := w.order("work", "claude", repo, noSkill, c.text)
+			req["note"] = c.note
+			if got := promptOf(t, w, w.record(w.launch(req).Session)); got != c.want {
+				t.Errorf("prompt = %q, want %q", got, c.want)
+			}
+		})
+	}
 	t.Run("name with whitespace is refused", func(t *testing.T) {
 		w := w.at(t) // helpers must fail this subtest, not its parent
 		before := w.sessions()

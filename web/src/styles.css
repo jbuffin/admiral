@@ -1494,6 +1494,13 @@ body.dragging * {
   font-family: var(--font-mono);
 }
 
+.launch-text {
+  height: auto;
+  min-height: 46px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
 .launch-list {
   position: absolute;
   left: 0;

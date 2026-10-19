@@ -151,6 +151,7 @@ test.describe('S5: the dialog in one flow', () => {
     await w.seedOrder('Order B\nsecond line');
     await w.seedOrder('Order C\nthird line');
     await w.seedOrder('Order D\nfourth line');
+    await w.seedOrder('Order E\nfifth line');
     await page.goto(admiral.url);
 
     // Commodore is absent on this dock: disabled, told why, and the default is Just launch.
@@ -259,6 +260,17 @@ test.describe('S5: the dialog in one flow', () => {
     await expect(d).toHaveCount(0);
     await expect.poll(() => w.records().length).toBe(4);
     expect(World.prompt(w.records()[3])).toBe('/foo Order D\nfourth line');
+    w.endShips();
+
+    // Order E: typing text for Just launch picks it, and the text goes before the order.
+    d = await openLaunch(page, touch, 'Order E', 'Work', 'Claude');
+    await expect(radio(d, 'sk1')).toBeChecked();
+    await d.getByRole('textbox', { name: 'Text before the order' }).fill('Plan first\nthen act');
+    await expect(radio(d, 'Just launch')).toBeChecked();
+    await press(hoist(d), touch);
+    await expect(d).toHaveCount(0);
+    await expect.poll(() => w.records().length).toBe(5);
+    expect(World.prompt(w.records()[4])).toBe('Plan first\nthen act\n\nOrder E\nfifth line');
     w.endShips();
   });
 });
