@@ -28,7 +28,8 @@ export default defineConfig({
   reporter: [['list']],
   use: { baseURL, trace: 'retain-on-failure' },
   webServer: {
-    command: `${bin} --listen 127.0.0.1:${port}`,
+    command: `node scripts/serve-e2e.mjs ${bin} 127.0.0.1:${port}`,
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 10_000 },
     url: `${baseURL}/`,
     timeout: 15_000,
     reuseExistingServer: false,
