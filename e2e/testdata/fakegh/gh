@@ -1,0 +1,99 @@
+#!/bin/sh
+# Fake `gh` for the GitHub plugin's e2e test. A test puts this folder first on
+# Admiral's PATH and steers it through $FAKEGH_DIR, a folder the test owns.
+#
+# It records every call in $FAKEGH_DIR/calls/<call>/:
+#   argv         the arguments, each followed by a NUL byte
+#   env          GH_TOKEN, GH_NO_UPDATE_NOTIFIER and GH_PROMPT_DISABLED as
+#                NAME=value lines; a variable that was not set has no line
+#
+# It answers three kinds of call and nothing else (anything else exits 2):
+#
+#   gh --version
+#
+#   gh auth token -h HOST [-u USER]
+#     prints $FAKEGH_DIR/token-USER (with -u) or $FAKEGH_DIR/token (without)
+#     and exits 0. With no such file it is signed out: it prints
+#     "no oauth token found for HOST" on stderr and exits 1, as gh does.
+#
+#   gh api graphql ...   (the search)
+#     Looks for a canned search in $FAKEGH_DIR/search/: a <key>.match file
+#     holds a string, and the first key (in name order) whose string appears
+#     in any argument answers. Then, in this order:
+#       <key>.fail   exit with <key>.exit (default 1), printing the file's
+#                    content on stderr and nothing on stdout
+#       <key>.json   printed on stdout, exit 0
+#     No key matches: stderr says so, exit 1.
+#     The answer is the GraphQL response as GitHub sends it, whole. The fake
+#     does not run --jq or --template, so it refuses them (exit 2).
+call_dir=$(mktemp -d "$FAKEGH_DIR/calls/call.XXXXXX" 2>/dev/null) || {
+	mkdir -p "$FAKEGH_DIR/calls"
+	call_dir=$(mktemp -d "$FAKEGH_DIR/calls/call.XXXXXX")
+}
+for a in "$@"; do printf '%s\0' "$a"; done > "$call_dir/argv"
+{
+	[ -n "${GH_TOKEN+x}" ] && printf 'GH_TOKEN=%s\n' "$GH_TOKEN"
+	[ -n "${GH_NO_UPDATE_NOTIFIER+x}" ] && printf 'GH_NO_UPDATE_NOTIFIER=%s\n' "$GH_NO_UPDATE_NOTIFIER"
+	[ -n "${GH_PROMPT_DISABLED+x}" ] && printf 'GH_PROMPT_DISABLED=%s\n' "$GH_PROMPT_DISABLED"
+	true
+} > "$call_dir/env"
+
+case "$1" in
+--version)
+	echo "gh version 2.99.0 (fake)"
+	exit 0
+	;;
+auth)
+	[ "$2" = token ] || { echo "fakegh: unsupported: gh $*" >&2; exit 2; }
+	shift 2
+	host= user=
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		-h|--hostname) host=$2; shift 2 ;;
+		-u|--user) user=$2; shift 2 ;;
+		*) echo "fakegh: unsupported argument to gh auth token: $1" >&2; exit 2 ;;
+		esac
+	done
+	file="$FAKEGH_DIR/token"
+	[ -n "$user" ] && file="$FAKEGH_DIR/token-$user"
+	if [ -s "$file" ]; then
+		cat "$file"
+		exit 0
+	fi
+	echo "no oauth token found for ${host:-github.com}" >&2
+	exit 1
+	;;
+api)
+	[ "$2" = graphql ] || { echo "fakegh: unsupported: gh $*" >&2; exit 2; }
+	for a in "$@"; do
+		case "$a" in
+		--jq|-q|--template|-t|--jq=*|--template=*) echo "fakegh: $a is not supported; read the whole response" >&2; exit 2 ;;
+		esac
+	done
+	for m in "$FAKEGH_DIR"/search/*.match; do
+		[ -e "$m" ] || continue
+		key=${m%.match}
+		needle=$(cat "$m")
+		for a in "$@"; do
+			case "$a" in
+			*"$needle"*)
+				if [ -e "$key.fail" ]; then
+					cat "$key.fail" >&2
+					code=1
+					[ -s "$key.exit" ] && code=$(cat "$key.exit")
+					exit "$code"
+				fi
+				cat "$key.json"
+				exit 0
+				;;
+			esac
+		done
+	done
+	echo "fakegh: no canned search matches this call" >&2
+	exit 1
+	;;
+*)
+	echo "fakegh: unsupported: gh $*" >&2
+	exit 2
+	;;
+esac

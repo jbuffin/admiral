@@ -26,7 +26,7 @@ func TestPackagingVersionFlag(t *testing.T) {
 }
 
 // S1: make release builds the tarball and its checksum; the tarball holds the
-// signed arm64 binary, the notices and the freeform plugin.
+// signed arm64 binary, the notices and both plugins Admiral ships.
 func TestPackagingS1_ReleaseTarball(t *testing.T) {
 	r := theRelease(t)
 
@@ -40,7 +40,7 @@ func TestPackagingS1_ReleaseTarball(t *testing.T) {
 	}
 
 	entries := tarEntries(t, r.tarball)
-	for _, name := range []string{"admiral", "LICENSE", "THIRD_PARTY_NOTICES", "plugins/freeform/plugin.json"} {
+	for _, name := range []string{"admiral", "LICENSE", "THIRD_PARTY_NOTICES", "plugins/freeform/plugin.json", "plugins/github/plugin.json"} {
 		if entries[r.topDir+"/"+name] == nil {
 			t.Errorf("tarball has no %s/%s; entries: %v", r.topDir, name, keys(entries))
 		}
@@ -66,17 +66,19 @@ func TestPackagingS1_ReleaseTarball(t *testing.T) {
 		t.Errorf("DIST/install.sh is not a copy of packaging/install.sh (%v)", err)
 	}
 
-	// The reference copy matches the repo's plugin (u7's source of the embedded copy).
-	srcDir := filepath.Join(repoRoot, "plugins", "freeform")
-	srcs, err := os.ReadDir(srcDir)
-	if err != nil || len(srcs) == 0 {
-		t.Fatalf("plugins/freeform/ is missing from the repo (u7): %v", err)
-	}
-	for _, e := range srcs {
-		src, _ := os.ReadFile(filepath.Join(srcDir, e.Name()))
-		got, err := os.ReadFile(filepath.Join(r.extract, r.topDir, "plugins", "freeform", e.Name()))
-		if err != nil || string(got) != string(src) {
-			t.Errorf("tarball copy of plugins/freeform/%s differs from the repo's (%v)", e.Name(), err)
+	// The reference copies match the repo's plugins (the source of the embedded copies).
+	for _, plugin := range []string{"freeform", "github"} {
+		srcDir := filepath.Join(repoRoot, "plugins", plugin)
+		srcs, err := os.ReadDir(srcDir)
+		if err != nil || len(srcs) == 0 {
+			t.Fatalf("plugins/%s/ is missing from the repo: %v", plugin, err)
+		}
+		for _, e := range srcs {
+			src, _ := os.ReadFile(filepath.Join(srcDir, e.Name()))
+			got, err := os.ReadFile(filepath.Join(r.extract, r.topDir, "plugins", plugin, e.Name()))
+			if err != nil || string(got) != string(src) {
+				t.Errorf("tarball copy of plugins/%s/%s differs from the repo's (%v)", plugin, e.Name(), err)
+			}
 		}
 	}
 }
@@ -173,7 +175,7 @@ func TestPackagingS1_SharedBuildHasPlaceholdersAndNotices(t *testing.T) {
 	if !slices.Contains(wants, "@preact/signals-core") {
 		t.Fatalf("the lockfile should list @preact/signals-core as a production package; derived %v", wants)
 	}
-	wants = append(wants, "go1.")
+	wants = append(wants, "go1.", "Octicons")
 	fonts, _ := filepath.Glob(filepath.Join(repoRoot, "web", "public", "licenses", "OFL-*.txt"))
 	if len(fonts) == 0 {
 		t.Fatal("no OFL licence files under web/public/licenses/")

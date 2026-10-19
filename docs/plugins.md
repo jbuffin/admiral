@@ -2,7 +2,7 @@
 
 An order source is a program that gives Admiral a list of orders to launch ships from. You can write one in any language. Admiral starts it as a subprocess and talks to it in JSON-RPC 2.0, one message per line, on its stdin and stdout.
 
-The freeform plugin in [`plugins/freeform/`](../plugins/freeform/) is the reference. It is a single Python file with no dependencies, and every example below is something it does. Read it next to this page. (ADR 0006 explains why plugins are subprocesses. After the MVP, a GitHub plugin becomes the worked example for sources with sign-in.)
+The freeform plugin in [`plugins/freeform/`](../plugins/freeform/) is the reference. It is a single Python file with no dependencies, and every example below is something it does. Read it next to this page. The GitHub plugin in [`plugins/github/`](../plugins/github/) is the second example, for sources with sign-in, settings lists and refresh; see [Worked example: GitHub](#worked-example-github). (ADR 0006 explains why plugins are subprocesses.)
 
 ## What you ship
 
@@ -28,7 +28,7 @@ A folder in `$ADMIRAL_HOME/plugins/<name>/` holding a `plugin.json`:
 
 `GET /api/plugins` lists every folder: `[{name, description, icon_url, valid, error}]`. A broken manifest shows `valid: false` and an `error` saying why.
 
-An engineer installs a plugin by copying its folder into `plugins/`. Admiral writes only the freeform plugin itself, on a fresh install. It also keeps a `.admiral-stamp` file there, the SHA-256 of the folder's files, so it can replace the folder with a newer copy when you have not edited it. If you edit the freeform plugin, Admiral leaves your copy alone.
+An engineer installs a plugin by copying its folder into `plugins/`. Admiral writes the two plugins it ships, freeform and GitHub, on a fresh install, but adds only freeform as a source. It also keeps a `.admiral-stamp` file there, the SHA-256 of the folder's files, so it can replace the folder with a newer copy when you have not edited it. If you edit one of them, Admiral leaves your copy alone.
 
 ## Sources and settings
 
@@ -66,7 +66,7 @@ Requests are `{"jsonrpc":"2.0","id":1,"method":"…","params":{…}}`. Answer ea
 
 `settings` is the object from `config.json` (`{}` when there is none). Answer with `protocolVersion` 1. Any other number puts the source in `error`, and Admiral does not start it again until the engineer saves its settings or presses Restart. `capabilities` lists what the source can do, from `add`, `edit`, `remove` and `refresh`; leave out what you don't support and Admiral refuses those calls itself with a 409. `settingsSchema` is a JSON Schema for `settings`, which Admiral renders as a form.
 
-**Settings and secrets.** Mark a secret with `"format": "password"` (or `"writeOnly": true`). Admiral never sends a stored value back to the page unless the schema declares it as a plain string, number or integer (or an `enum` or `const` of scalars) reached through `properties` and `items`, in nodes that use only common keywords (`type`, `properties`, `items`, `required`, `title`, `description`, `format`, `enum`, `const`, `default`, `examples`, the length and range limits, `$defs`, `definitions`, `additionalProperties`, `readOnly`, `deprecated`). Everything else comes back as `__admiral_unchanged__`, and saving that text keeps the stored value.
+**Settings and secrets.** Mark a secret with `"format": "password"` (or `"writeOnly": true`). Admiral never sends a stored value back to the page unless the schema declares it as a plain string, number or integer (or an `enum` or `const` of scalars) reached through `properties` and `items`, in nodes that use only common keywords (`type`, `properties`, `items`, `required`, `title`, `description`, `format`, `enum`, `const`, `default`, `examples`, the length and range limits, `$defs`, `definitions`, `additionalProperties`, `readOnly`, `deprecated`). Everything else comes back as `__admiral_unchanged__`, and saving that text keeps the stored value. Admiral restores a masked value inside a list by its position, so removing a row above a masked value restores the wrong stored value into it.
 
 **`panels.list`**: a panel is one list of orders in the source.
 
@@ -92,6 +92,8 @@ Requests are `{"jsonrpc":"2.0","id":1,"method":"…","params":{…}}`. Answer ea
 | `repo` | Optional git remote of the repository the order belongs to (`https://github.com/acme/widgets` or `git@github.com:acme/widgets.git`). Admiral uses it to preselect a checkout. |
 
 Admiral hides an order while a ship launched from it exists, whatever that ship's status, and shows it again once the ship is gone, if you still list it. A plugin that wants a launched order to disappear for good deletes it when it hears `orders.launched`, as freeform does.
+
+If you can't list a panel, say so with an `error` instead of a list. Its message (cut to one line of at most 300 characters; "This panel's orders couldn't be listed." if it is empty) is shown on that panel. The panel keeps the orders it had, the other panels and the source's state don't change, and the message stays until your next successful `orders.list` for that panel. A source in `error` shows its own error instead. A timeout or an invalid list isn't an error answer: Admiral logs it and shows nothing.
 
 **`orders.refresh`**: re-read your upstream. `panel` may be left out for all panels. When you have new data, send `orders.changed`. Only sent to sources with the `refresh` capability.
 
@@ -121,7 +123,7 @@ Admiral hides an order while a ship launched from it exists, whatever that ship'
 {"jsonrpc":"2.0","id":7,"result":{}}
 ```
 
-For all three, Admiral has already refused text that is empty after trimming, over 12,000 bytes, or holding a control character other than `\n`, `\t` and `\r`. You can refuse more: answer with an `error` and its message (cut to one line of at most 300 characters) is shown to the engineer.
+For all three, Admiral has already refused text that is empty after trimming, over 12,000 bytes, or holding a control character other than `\n`, `\t` and `\r`. You can refuse more: answer with an `error` and its message (cut to one line of at most 300 characters) is shown to the engineer. The same goes for `orders.refresh` and, on the panel, for `orders.list`.
 
 ```json
 {"jsonrpc":"2.0","id":8,"error":{"code":-32602,"message":"No such order"}}
@@ -175,6 +177,75 @@ A **protocol error** is a line that is not JSON, a reply to a request that is no
 When your process exits or is killed, the source shows `state: "error"` with a message. Its panels keep their last orders, but the source is **read-only**: Admiral refuses adding, editing, removing and refreshing with a 409. The engineer can still launch a ship from the orders, change the source's settings and press **Restart**. Admiral also restarts the process itself, after 1 second, then 2, 4 and so on up to 1 minute. The wait starts over at 1 second if the process had run for 60 seconds before it died. The source is writable again once the new process has answered `initialize` and `panels.list`.
 
 If the process exits before it answers `panels.list`, the source has no panels to show, but its error and the Restart button still appear.
+
+## Worked example: GitHub
+
+[`plugins/github/plugin.py`](../plugins/github/plugin.py) lists the issues and pull requests that GitHub searches find. Each panel is one saved search, each result is an order whose `text` is its URL, and all GitHub access goes through the `gh` CLI. It covers what freeform doesn't.
+
+**A list in the settings, with defaults.** `panels` is an array of `{title, query}` objects, and `hotLabels` an array of strings. Admiral renders both as rows. The form ignores `default`, so the plugin applies its defaults itself, states them in each `description`, and skips what it can't use: a panel with no title or no query, a non-integer `refreshMinutes`.
+
+```python
+"panels": {
+    "type": "array",
+    "title": "Panels",
+    "description": "One panel per GitHub search. Default: Assigned to me, Review requested",
+    "items": {"type": "object", "properties": {"title": {"type": "string", "title": "Title"},
+                                               "query": {"type": "string", "title": "Query"}}},
+},
+```
+
+```python
+for e in entries or DEFAULT_PANELS:
+    base, n = slug(e["title"]), 1
+    pid = base
+    while pid in used:
+        n += 1
+        pid = "%s-%d" % (base, n)
+```
+
+**Signing in.** The plugin has no token of its own. It asks `gh auth token` and hands the answer to each `gh` call as `GH_TOKEN`. When `gh` is missing, or has no login for the host, it sends `auth.required` and keeps trying on its timer; the first call that finds a token sends `auth.ok`. `initialize` and `panels.list` answer at once, and nothing is sent before the answer to `panels.list`.
+
+```python
+except FileNotFoundError:
+    raise SignInNeeded("Install the GitHub CLI (brew install gh), then run gh auth login")
+...
+raise SignInNeeded("Run gh auth login -h %s" % host)
+```
+
+**Refresh, and a timer of its own.** The plugin declares only `refresh`. Admiral never polls, so a source that wants fresh data does its own polling. One worker thread searches at start, every `refreshMinutes`, and whenever `orders.refresh` wakes it. `orders.refresh` answers `{}` at once, because searching takes longer than a request may wait and the line that reads Admiral's requests must never block on `gh`.
+
+```python
+def orders_refresh(params):
+    wake.set()
+    return {}
+```
+
+**`orders.changed` per panel.** The worker keeps the last orders and last error of each panel and sends `orders.changed {"panel": id}` only for a panel whose orders or error differ from before. `orders.list` answers from that cache and never runs a search.
+
+```python
+changed = cache[panel["id"]] != entry
+cache[panel["id"]] = entry
+if changed:
+    notify("orders.changed", {"panel": panel["id"]})
+```
+
+**`repo` and `hot`.** `repo` is the repository's URL, so Admiral can preselect its checkout. `hot` is true when any label is in `hotLabels`, compared in lower case.
+
+```python
+return {"id": "%s#%d" % (repo["nameWithOwner"], node["number"]), "title": node["title"],
+        "text": node["url"], "url": node["url"], "repo": repo["url"],
+        "hot": bool(labels & hot_labels)}
+```
+
+**Errors from `orders.list`.** A failed search keeps the panel's last orders and records the error; the next `orders.list` for that panel answers with it, and Admiral shows it on the panel. The message says which of two things went wrong: GitHub refused the search ("Search failed: ...", as `gh` printed it), or GitHub couldn't be reached ("Couldn't reach github.com", including a `gh` call that hung past its 8-second limit). Every call has its own timeout under Admiral's 10 seconds, because a hung call would leave a stale panel looking current: Admiral shows only error answers.
+
+```python
+if entry["error"]:
+    raise RpcError(-32000, entry["error"])
+return entry["orders"]
+```
+
+`orders.launched` does nothing. Admiral hides an order while its ship exists, and the order comes back if the search still finds it.
 
 ## Try it
 

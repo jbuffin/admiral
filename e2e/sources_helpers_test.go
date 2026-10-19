@@ -6,8 +6,11 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -35,6 +38,7 @@ type panelJSON struct {
 	ID     string      `json:"id"`
 	Title  string      `json:"title"`
 	Orders []orderJSON `json:"orders"`
+	Error  *string     `json:"error"`
 }
 
 type authJSON struct {
@@ -55,6 +59,10 @@ type sourceJSON struct {
 	Auth         *authJSON   `json:"auth"`
 	Panels       []panelJSON `json:"panels"`
 }
+
+func (p panelJSON) orderIDs() []string { return sourceJSON{Panels: []panelJSON{p}}.orderIDs() }
+
+func (p panelJSON) hasOrder(id string) bool { return sourceJSON{Panels: []panelJSON{p}}.hasOrder(id) }
 
 func (s sourceJSON) orderIDs() []string {
 	ids := []string{}
@@ -533,4 +541,190 @@ func (w *world) dataDir(key string) string { return filepath.Join(w.home, "data"
 func (w *world) readFile(path string) string {
 	b, _ := os.ReadFile(path)
 	return string(b)
+}
+
+// ---- the fake gh ----
+
+// fakeGH steers testdata/fakegh/gh, which the GitHub plugin finds first on
+// PATH. dir is the folder the fake reads its answers from and records its
+// calls in (see the script's header).
+type fakeGH struct {
+	t   *testing.T
+	dir string
+}
+
+// newFakeGH puts the fake gh first on PATH for every Admiral this world starts.
+func (w *world) newFakeGH() *fakeGH {
+	w.t.Helper()
+	bin, err := filepath.Abs(filepath.Join("testdata", "fakegh"))
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	g := &fakeGH{t: w.t, dir: filepath.Join(w.root, "fakegh")}
+	if err := os.MkdirAll(filepath.Join(g.dir, "search"), 0o755); err != nil {
+		w.t.Fatal(err)
+	}
+	w.extra = append(w.extra, "FAKEGH_DIR="+g.dir, "PATH="+bin+":"+os.Getenv("PATH"))
+	return g
+}
+
+func (g *fakeGH) write(rel, content string) {
+	g.t.Helper()
+	if err := os.WriteFile(filepath.Join(g.dir, rel), []byte(content), 0o600); err != nil {
+		g.t.Fatal(err)
+	}
+}
+
+// token signs the account in (user "" is the host's active account).
+func (g *fakeGH) token(user, token string) {
+	g.t.Helper()
+	if user == "" {
+		g.write("token", token+"\n")
+		return
+	}
+	g.write("token-"+user, token+"\n")
+}
+
+// search canns a search: a call with an argument holding match is answered with
+// the GraphQL response for these nodes.
+func (g *fakeGH) search(key, match string, nodes ...map[string]any) {
+	g.t.Helper()
+	b, err := json.Marshal(map[string]any{"data": map[string]any{"search": map[string]any{"issueCount": len(nodes), "nodes": nodes}}})
+	if err != nil {
+		g.t.Fatal(err)
+	}
+	g.write("search/"+key+".match", match)
+	g.write("search/"+key+".json", string(b))
+	g.unfail(key)
+}
+
+// fail makes that search exit 1 with stderr on the next calls.
+func (g *fakeGH) fail(key, stderr string) { g.t.Helper(); g.write("search/"+key+".fail", stderr+"\n") }
+
+func (g *fakeGH) unfail(key string) {
+	g.t.Helper()
+	if err := os.Remove(filepath.Join(g.dir, "search", key+".fail")); err != nil && !os.IsNotExist(err) {
+		g.t.Fatal(err)
+	}
+}
+
+// ghNode is an issue or pull request as the GraphQL search returns it.
+func ghNode(host, repo string, n int, pull bool, title string, labels ...string) map[string]any {
+	kind, segment := "Issue", "issues"
+	if pull {
+		kind, segment = "PullRequest", "pull"
+	}
+	owner, name, _ := strings.Cut(repo, "/")
+	names := []map[string]any{}
+	for _, l := range labels {
+		names = append(names, map[string]any{"name": l})
+	}
+	return map[string]any{
+		"__typename": kind, "number": n, "title": title,
+		"url":        "https://" + host + "/" + repo + "/" + segment + "/" + strconv.Itoa(n),
+		"updatedAt":  "2026-10-18T09:00:00Z",
+		"repository": map[string]any{"nameWithOwner": repo, "name": name, "owner": map[string]any{"login": owner}, "url": "https://" + host + "/" + repo},
+		"labels":     map[string]any{"nodes": names},
+	}
+}
+
+// ghCall is one recorded run of the fake gh.
+type ghCall struct {
+	Argv []string
+	Env  map[string]string
+	at   time.Time
+}
+
+func (c ghCall) has(args ...string) bool {
+	for i := 0; i+len(args) <= len(c.Argv); i++ {
+		if slices.Equal(c.Argv[i:i+len(args)], args) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c ghCall) mentions(s string) bool {
+	for _, a := range c.Argv {
+		if strings.Contains(a, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// calls are the runs recorded so far, oldest first.
+func (g *fakeGH) calls() []ghCall {
+	g.t.Helper()
+	dirs, _ := filepath.Glob(filepath.Join(g.dir, "calls", "call.*"))
+	var out []ghCall
+	for _, d := range dirs {
+		argv, err := os.ReadFile(filepath.Join(d, "argv"))
+		if err != nil {
+			continue // still being written
+		}
+		c := ghCall{Env: map[string]string{}}
+		if len(argv) > 0 {
+			c.Argv = strings.Split(strings.TrimSuffix(string(argv), "\x00"), "\x00")
+		}
+		env, _ := os.ReadFile(filepath.Join(d, "env"))
+		for _, l := range strings.Split(string(env), "\n") {
+			if k, v, ok := strings.Cut(l, "="); ok {
+				c.Env[k] = v
+			}
+		}
+		if fi, err := os.Stat(d); err == nil {
+			c.at = fi.ModTime()
+		}
+		out = append(out, c)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].at.Before(out[j].at) })
+	return out
+}
+
+// searchesWith are the search calls that ran with that GH_TOKEN.
+func (g *fakeGH) searchesWith(token string) []ghCall {
+	var out []ghCall
+	for _, c := range g.calls() {
+		if c.has("api", "graphql") && c.Env["GH_TOKEN"] == token {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// pythonOnlyPath is a PATH folder holding python3 and tmux and no gh.
+func (w *world) pythonOnlyPath() string {
+	w.t.Helper()
+	dir := filepath.Join(w.root, "nogh-bin")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		w.t.Fatal(err)
+	}
+	for _, name := range []string{"python3", "tmux"} {
+		exe, err := exec.LookPath(name)
+		if err != nil {
+			w.t.Fatalf("%s is required: %v", name, err)
+		}
+		if err := os.Symlink(exe, filepath.Join(dir, name)); err != nil {
+			w.t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+// panel finds a source's panel by title.
+func (s sourceJSON) panel(title string) (panelJSON, bool) {
+	for _, p := range s.Panels {
+		if p.Title == title {
+			return p, true
+		}
+	}
+	return panelJSON{}, false
+}
+
+func (p panelJSON) errText() string {
+	if p.Error == nil {
+		return ""
+	}
+	return *p.Error
 }
