@@ -187,8 +187,10 @@ If the process exits before it answers `panels.list`, the source has no panels t
 ```python
 "panels": {
     "type": "array",
+    "title": "Panels",
     "description": "One panel per GitHub search. Default: Assigned to me, Review requested",
-    "items": {"type": "object", "properties": {"title": {"type": "string"}, "query": {"type": "string"}}},
+    "items": {"type": "object", "properties": {"title": {"type": "string", "title": "Title"},
+                                               "query": {"type": "string", "title": "Query"}}},
 },
 ```
 

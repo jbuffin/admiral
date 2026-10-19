@@ -42,25 +42,29 @@ SEARCH = ("query($q: String!) { search(query: $q, type: ISSUE, first: %d) { node
 SETTINGS_SCHEMA = {
     "type": "object",
     "properties": {
-        "host": {"type": "string", "description": "The GitHub host. Default: github.com"},
-        "account": {"type": "string", "description": "The gh user to sign in as. Default: the host's active account"},
+        "host": {"type": "string", "title": "Host", "description": "The GitHub host. Default: github.com"},
+        "account": {"type": "string", "title": "Account",
+                    "description": "The gh user to sign in as. Default: the host's active account"},
         "panels": {
             "type": "array",
+            "title": "Panels",
             "description": "One panel per GitHub search. Default: Assigned to me, Review requested",
             "items": {
                 "type": "object",
                 "properties": {
-                    "title": {"type": "string", "description": "The panel's title"},
-                    "query": {"type": "string", "description": "A GitHub search, e.g. repo:acme/widgets is:open label:bug"},
+                    "title": {"type": "string", "title": "Title", "description": "The panel's title"},
+                    "query": {"type": "string", "title": "Query",
+                              "description": "A GitHub search, e.g. repo:acme/widgets is:open label:bug"},
                 },
             },
         },
         "hotLabels": {
             "type": "array",
+            "title": "Hot labels",
             "description": "Labels that mark an order hot, in any case. Default: priority: high, P0, P1, urgent",
             "items": {"type": "string"},
         },
-        "refreshMinutes": {"type": "integer", "description": "Minutes between searches. Default: 5"},
+        "refreshMinutes": {"type": "integer", "title": "Refresh minutes", "description": "Minutes between searches. Default: 5"},
     },
     "additionalProperties": False,
 }
