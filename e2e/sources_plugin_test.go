@@ -607,3 +607,50 @@ func TestLaunchOrdersDirsFromSource(t *testing.T) {
 		t.Errorf("selected = %q, want %q (the checkout of the order's repo, looked up by the server)", r.selected(), widgets)
 	}
 }
+
+// Story 17 (issue #65): an orders.list error shows on its panel, which keeps
+// its last orders. The next successful orders.list clears it.
+func TestSourceOrdersListErrorShowsOnPanel(t *testing.T) {
+	w := newWorld(t)
+	p := w.newTP("a")
+	p.put("panels.json", `[{"id":"one","title":"One"},{"id":"two","title":"Two"}]`)
+	p.setOrders(map[string][]map[string]any{
+		"one": {ord("o1", "First")},
+		"two": {ord("t1", "Second")},
+	})
+	w.startSources(tpSource("a", p, nil))
+	w.waitSource("a", 10*time.Second, "both panels' orders", func(s sourceJSON) bool {
+		return len(s.Panels) == 2 && len(s.Panels[0].Orders) == 1 && len(s.Panels[1].Orders) == 1
+	})
+
+	p.put("fail-orders.list-one", "Search failed: bad query")
+	p.setOrders(map[string][]map[string]any{
+		"one": {ord("o2", "Changed")},
+		"two": {ord("t2", "Second, changed")},
+	})
+	p.do("orders-changed", "")
+	s := w.waitSource("a", 5*time.Second, "panel one's error and panel two's new orders", func(s sourceJSON) bool {
+		return len(s.Panels) == 2 && s.Panels[0].Error != nil && s.Panels[1].hasOrder("t2")
+	})
+	if got := *s.Panels[0].Error; got != "Search failed: bad query" {
+		t.Errorf("panel one's error = %q, want the plugin's message", got)
+	}
+	if ids := s.Panels[0].orderIDs(); !reflect.DeepEqual(ids, []string{"o1"}) {
+		t.Errorf("panel one's orders = %v, want its last orders [o1]", ids)
+	}
+	if s.Panels[1].Error != nil {
+		t.Errorf("panel two's error = %q, want none", *s.Panels[1].Error)
+	}
+	if s.State != "ok" || s.Error != nil {
+		t.Errorf("source state = %q, error = %v: a panel's error must not touch the source", s.State, s.Error)
+	}
+
+	p.clear("fail-orders.list-one")
+	p.do("orders-changed", `{"panel":"one"}`)
+	s = w.waitSource("a", 5*time.Second, "panel one's error cleared", func(s sourceJSON) bool {
+		return len(s.Panels) == 2 && s.Panels[0].Error == nil && s.Panels[0].hasOrder("o2")
+	})
+	if ids := s.Panels[0].orderIDs(); !reflect.DeepEqual(ids, []string{"o2"}) {
+		t.Errorf("panel one's orders = %v, want [o2]", ids)
+	}
+}

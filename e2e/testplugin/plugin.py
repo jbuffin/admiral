@@ -29,6 +29,9 @@ Files the test writes in flagdir:
                 exit with status 1 when that request arrives, for as long as
                 the file exists
   hang-<method>   never answer that method (hang-initialize, hang-orders.list…)
+  fail-orders.list-<panel id>
+                orders.list for that panel answers with a JSON-RPC error whose
+                message is the file's content, for as long as the file exists
   slow-initialize   file content is the seconds initialize waits before answering
   do-<command>  consumed once, content is the command's argument, the plugin:
                   do-crash            exits with status 1
@@ -167,6 +170,11 @@ def handle(msg):
         if flag("crash-on-panels"):
             os._exit(1)
         result = read_json("panels.json", [{"id": "main", "title": settings.get("title", "Test")}])
+    elif method == "orders.list" and flagdir and flag("fail-orders.list-" + str(params.get("panel"))):
+        with open(path("fail-orders.list-" + str(params.get("panel")))) as f:
+            message = f.read().strip()
+        emit({"jsonrpc": "2.0", "id": msg.get("id"), "error": {"code": -32000, "message": message}})
+        return
     elif method == "orders.list":
         result = read_json("orders.json", {}).get(params.get("panel"), [])
     elif method == "orders.add":

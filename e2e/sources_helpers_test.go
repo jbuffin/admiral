@@ -35,6 +35,7 @@ type panelJSON struct {
 	ID     string      `json:"id"`
 	Title  string      `json:"title"`
 	Orders []orderJSON `json:"orders"`
+	Error  *string     `json:"error"`
 }
 
 type authJSON struct {
@@ -55,6 +56,10 @@ type sourceJSON struct {
 	Auth         *authJSON   `json:"auth"`
 	Panels       []panelJSON `json:"panels"`
 }
+
+func (p panelJSON) orderIDs() []string { return sourceJSON{Panels: []panelJSON{p}}.orderIDs() }
+
+func (p panelJSON) hasOrder(id string) bool { return sourceJSON{Panels: []panelJSON{p}}.hasOrder(id) }
 
 func (s sourceJSON) orderIDs() []string {
 	ids := []string{}
