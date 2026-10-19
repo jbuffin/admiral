@@ -30,7 +30,11 @@ export function App() {
             <Shore />
             <Lighthouse />
             <Trees />
-            {fleets && (fleets.length === 0 ? <SetUpMarina /> : fleets.map((f) => <Marina key={f.key} fleet={f} />))}
+            <div class="moorings">
+              <div class="moorings-in">
+                {fleets && (fleets.length === 0 ? <SetUpMarina /> : fleets.map((f) => <Marina key={f.key} fleet={f} />))}
+              </div>
+            </div>
           </div>
           <Ships />
           <Bridge />
