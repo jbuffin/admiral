@@ -74,8 +74,9 @@ func newWorld(t *testing.T) *world {
 	}
 	w.installCommodore()
 	t.Cleanup(func() {
-		_, _ = w.tmux("kill-server")
-		_ = exec.Command("tmux", "-S", w.defaultSocket(), "kill-server").Run()
+		// Registered before any Admiral this world starts, so it runs after they stop.
+		killTmux(w.sock())
+		killTmux(w.defaultSocket())
 		_ = os.RemoveAll(root)
 	})
 	return w

@@ -23,6 +23,7 @@ export interface Fleet {
 export interface Config {
   fleets: Fleet[];
   error: { file: string; message: string } | null;
+  favorite_skills: string[];
 }
 
 // null until the server's first `config` message arrives, so the page claims
@@ -30,4 +31,4 @@ export interface Config {
 export const config = signal<Config | null>(null);
 export const configLoaded = computed(() => config.value !== null);
 
-onMessage('config', (msg) => (config.value = { fleets: msg.fleets, error: msg.error }));
+onMessage('config', (msg) => (config.value = { fleets: msg.fleets, error: msg.error, favorite_skills: msg.favorite_skills ?? [] }));

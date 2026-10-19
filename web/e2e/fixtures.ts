@@ -157,7 +157,12 @@ class Instance implements Admiral {
       clearTimeout(hard);
     }
     // Admiral starts a tmux server that outlives it; end this home's.
-    spawnSync('tmux', ['-S', join(this.home, 'tmux.sock'), 'kill-server']);
+    // Admiral is gone by now, so nothing starts a new one; wait until the socket stops answering.
+    const sock = join(this.home, 'tmux.sock');
+    spawnSync('tmux', ['-S', sock, 'kill-server']);
+    for (let i = 0; i < 20 && spawnSync('tmux', ['-S', sock, 'list-sessions']).status === 0; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
     rmSync(this.home, { recursive: true, force: true });
   }
 }
