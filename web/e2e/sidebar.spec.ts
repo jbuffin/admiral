@@ -1,5 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { type Flags, expect, test } from './fixtures';
+import { isTouch } from './sea';
 
 // The sidebar scenarios (u8 S1-S7). The page is driven by roles, accessible
 // names and visible text only. The names below are the contract the sidebar
@@ -60,20 +61,24 @@ test.describe('S2: the freeform list', () => {
   test('add a three-line order, edit it, remove it; a refused text shows the server message and adds nothing', async ({
     page,
     admiral,
-  }) => {
+  }, info) => {
+    const touch = isTouch(info);
     await admiral.start();
     await page.goto(admiral.url);
     const orders = panel(page, 'Orders');
     const add = orders.getByRole('textbox', { name: 'Add order' });
+    const addButton = orders.getByRole('button', { name: 'Add', exact: true });
 
-    // Enter adds, Shift+Enter is a new line.
+    // Enter adds, Shift+Enter is a new line. A touch keyboard has no Shift+Return, so there
+    // Return is a new line and the Add button adds.
     await add.click();
     await page.keyboard.type('Fix the flaky test');
-    await page.keyboard.press('Shift+Enter');
+    await page.keyboard.press(touch ? 'Enter' : 'Shift+Enter');
     await page.keyboard.type('It fails on CI only.');
-    await page.keyboard.press('Shift+Enter');
+    await page.keyboard.press(touch ? 'Enter' : 'Shift+Enter');
     await page.keyboard.type('Start with the retry helper.');
-    await page.keyboard.press('Enter');
+    if (touch) await addButton.tap();
+    else await page.keyboard.press('Enter');
 
     await cards(orders, 'Fix the flaky test');
     await noCards(orders, 'It fails on CI only.');
@@ -93,7 +98,8 @@ test.describe('S2: the freeform list', () => {
 
     // Over-long: the server refuses, the page shows why and adds nothing.
     await add.fill('x'.repeat(12_001));
-    await add.press('Enter');
+    if (touch) await addButton.tap();
+    else await add.press('Enter');
     await expect(orders.getByRole('alert')).toBeVisible();
     await countOf(orders, 1);
 

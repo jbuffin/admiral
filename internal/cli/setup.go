@@ -588,6 +588,8 @@ func (s *session) askFleet(in *bufio.Reader, key string, taken map[string]string
 		suggest := def
 		if have.dir[h] != "" {
 			suggest = have.dir[h]
+		} else if owner, used := taken[h+"\x00"+expandTilde(def+"-"+key, s.det.Home)]; s.det.hasIdentity(expandTilde(def+"-"+key, s.det.Home)) && (!used || owner == key) {
+			suggest = def + "-" + key // the detected ~/.<harness>-<key> made for this fleet
 		} else if owner, used := taken[h+"\x00"+expandTilde(def, s.det.Home)]; used && owner != key {
 			suggest = def + "-" + key
 		}
@@ -597,41 +599,26 @@ func (s *session) askFleet(in *bufio.Reader, key string, taken map[string]string
 		}
 		env := config.NewObject()
 		env.SetValue(v, dirAnswer)
+		// Each harness gets its own extra variables (story 15).
+		fmt.Fprintf(w, "Extra variables for %s (NAME=value lines, blank to finish):\n", h)
+		for {
+			line, err := prompt(in, w, "  NAME=value", "")
+			if err != nil {
+				return nil, err
+			}
+			if line == "" {
+				break
+			}
+			n, val, ok := strings.Cut(line, "=")
+			if !ok || n == "" {
+				fmt.Fprintln(w, "Write it as NAME=value.")
+				continue
+			}
+			env.SetValue(n, val)
+		}
 		dock.Set("env", env.JSON())
 		docks[h] = dock
 		taken[h+"\x00"+expandTilde(dirAnswer, s.det.Home)] = key
-	}
-
-	fmt.Fprintln(w, "Extra variables (NAME=value lines, blank to finish):")
-	extra := map[string]string{}
-	var extraOrder []string
-	for {
-		line, err := prompt(in, w, "  NAME=value", "")
-		if err != nil {
-			return nil, err
-		}
-		if line == "" {
-			break
-		}
-		n, v, ok := strings.Cut(line, "=")
-		if !ok || n == "" {
-			fmt.Fprintln(w, "Write it as NAME=value.")
-			continue
-		}
-		if _, dup := extra[n]; !dup {
-			extraOrder = append(extraOrder, n)
-		}
-		extra[n] = v
-	}
-	for _, h := range chosen {
-		if len(extraOrder) == 0 {
-			break
-		}
-		env, _ := envOf(docks[h])
-		for _, n := range extraOrder {
-			env.SetValue(n, extra[n])
-		}
-		docks[h].Set("env", env.JSON())
 	}
 
 	if len(s.det.Suggested) > 0 {

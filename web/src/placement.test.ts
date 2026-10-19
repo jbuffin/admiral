@@ -90,15 +90,24 @@ describe('placeShip', () => {
     expect(inWater(p)).toBe(true);
   });
 
-  it('with the band full, still lands inside the band and open water, not stacked on a ship', () => {
+  it('with the band full, takes the free water nearest the band rather than overlap a ship', () => {
     const tiled: PlacedShip[] = [];
     for (const y of [0.09, 0.26]) {
       for (let i = 0; i < 8; i++) tiled.push({ session: `t-${y}-${i}`, fleet: 'work', x: i * footprint.w, y });
     }
     const p = place({ placed: tiled, ship: ship('new', 'work') });
     expect(inWater(p)).toBe(true);
-    expect(p.y).toBeGreaterThanOrEqual(0.07);
-    expect(p.y).toBeLessThanOrEqual(0.34);
+    for (const o of tiled) expect(overlap(box(p), box(o))).toBe(0);
+    expect(p.y).toBeCloseTo(0.43, 4);
+  });
+
+  it('with all open water full, still lands inside it, not stacked on a ship', () => {
+    const tiled: PlacedShip[] = [];
+    for (let r = 0; r * footprint.h <= 1 - footprint.h + EPS; r++) {
+      for (let i = 0; i < 8; i++) tiled.push({ session: `t-${r}-${i}`, fleet: 'work', x: i * footprint.w, y: r * footprint.h });
+    }
+    const p = place({ placed: tiled, ship: ship('new', 'work') });
+    expect(inWater(p)).toBe(true);
     const covered = tiled.reduce((sum, o) => sum + overlap(box(p), box(o)), 0);
     expect(covered).toBeLessThan(0.9 * footprint.w * footprint.h);
   });
