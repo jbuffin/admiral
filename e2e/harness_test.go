@@ -90,13 +90,51 @@ func newHome(t *testing.T) string {
 	return filepath.Join(t.TempDir(), "admiral-home")
 }
 
+// The engineer's own values, captured before any test sets its own.
+var (
+	userHome     = os.Getenv("HOME")
+	identityVars = []string{"CLAUDE_CONFIG_DIR", "CODEX_HOME", "COPILOT_HOME"}
+	userIdentity = map[string]string{}
+)
+
+func init() {
+	for _, k := range identityVars {
+		userIdentity[k] = os.Getenv(k)
+	}
+}
+
+// hermeticEnv is the test process's environment with the engineer's HOME
+// replaced by a temp directory and their harness identity variables dropped.
+// A value a test set itself (t.Setenv) passes through.
+func hermeticEnv(t *testing.T) []string {
+	t.Helper()
+	drop := map[string]bool{}
+	for _, k := range identityVars {
+		if os.Getenv(k) == userIdentity[k] {
+			drop[k] = true
+		}
+	}
+	var env []string
+	for _, kv := range os.Environ() {
+		k, _, _ := strings.Cut(kv, "=")
+		if drop[k] || (k == "HOME" && os.Getenv("HOME") == userHome) {
+			continue
+		}
+		env = append(env, kv)
+	}
+	if os.Getenv("HOME") == userHome {
+		env = append(env, "HOME="+t.TempDir())
+	}
+	return env
+}
+
 // startAdmiral starts bin/admiral --listen <listen> with the given home. It
 // waits up to 10 s for the two printed lines and stops the process on cleanup.
 func startAdmiral(t *testing.T, home, listen string) *instance {
 	t.Helper()
 	bin := binaryPath(t)
 	cmd := exec.Command(bin, "--listen", listen)
-	cmd.Env = append(os.Environ(), "ADMIRAL_HOME="+home)
+	cmd.Env = append(hermeticEnv(t), "ADMIRAL_HOME="+home)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
