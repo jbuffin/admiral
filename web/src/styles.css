@@ -385,6 +385,43 @@ button:focus-visible {
   min-height: var(--shape-min-touch-target);
 }
 
+/* The grip that moves a source or a panel. A touch on it never scrolls, so it
+   picks the item up in any direction. */
+.reorder-grip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-height: var(--shape-min-touch-target);
+  margin-right: -4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: grab;
+  touch-action: none;
+  -webkit-touch-callout: none;
+}
+
+.source-block.lifted,
+.panel.lifted {
+  position: relative;
+  z-index: 2;
+  transform: scale(1.02);
+  transition: transform 0.12s;
+}
+
+.source-block.lifted {
+  border-radius: var(--shape-radius-panel);
+  background-color: var(--color-sidebar);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 22%);
+}
+
+.panel.lifted {
+  box-shadow: 0 6px 18px rgb(0 0 0 / 22%);
+}
+
 .source-name {
   flex: 1 1 auto;
   min-width: 0;

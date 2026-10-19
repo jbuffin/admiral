@@ -2,7 +2,8 @@ import { signal } from '@preact/signals';
 import { useState } from 'preact/hooks';
 import { AddSource } from './AddSource';
 import { Menu, MenuItem } from './Menu';
-import { PanelSection, SourceProblem, countLabel } from './PanelSection';
+import { PanelSection, ReorderGrip, SourceProblem, countLabel } from './PanelSection';
+import { arranged, reordering, saveSourceOrder } from './reorder';
 import { SettingsDialog, openSettings } from './SettingsDialog';
 import { SignInCard } from './SignInCard';
 import { SourceIcon } from './SourceIcon';
@@ -51,6 +52,8 @@ function Rail() {
   );
 }
 
+const orderRefusal = signal<string | null>(null);
+
 function Expanded() {
   const list = sources.value;
   return (
@@ -78,15 +81,23 @@ function Expanded() {
           onInput={(e) => (filter.value = (e.target as HTMLInputElement).value)}
         />
       </div>
+      {orderRefusal.value && <p role="alert">{orderRefusal.value}</p>}
       {sourcesLoaded.value &&
-        list!.map((s) => (
-          <div class="source-block" role="group" aria-label={s.name} key={s.key}>
-            <SourceRow source={s} />
-            {panelViews.value.filter((v) => v.source.key === s.key).map((v) => (
-              <PanelSection key={v.key} view={v} />
-            ))}
-          </div>
-        ))}
+        arranged('sources', list!, (s) => s.key).map((s) => {
+          const lifted = reordering.value?.group === 'sources' && reordering.value.key === s.key;
+          return (
+            <div class={lifted ? 'source-block lifted' : 'source-block'} role="group" aria-label={s.name} key={s.key} data-reorder="sources" data-key={s.key}>
+              <SourceRow source={s} />
+              {arranged(
+                `panels:${s.key}`,
+                panelViews.value.filter((v) => v.source.key === s.key),
+                (v) => v.panel.id,
+              ).map((v) => (
+                <PanelSection key={v.key} view={v} />
+              ))}
+            </div>
+          );
+        })}
       <AddSource />
     </aside>
   );
@@ -100,6 +111,18 @@ function SourceRow({ source }: { source: Source }) {
   return (
     <div class="source">
       <div class="source-row">
+        {sources.value!.length > 1 && (
+          <ReorderGrip
+            label={`Move ${source.name}`}
+            group="sources"
+            itemKey={source.key}
+            keys={sources.value!.map((s) => s.key)}
+            commit={(keys) => {
+              orderRefusal.value = null;
+              saveSourceOrder(keys, (m) => (orderRefusal.value = m));
+            }}
+          />
+        )}
         <SourceIcon source={source} size={24} />
         <span class="source-name">{source.name}</span>
         {source.state === 'starting' && <span class="source-state">Starting…</span>}

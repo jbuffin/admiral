@@ -15,6 +15,9 @@ type Source struct {
 	Plugin   string
 	Name     string          // display name; empty means the plugin's
 	Settings json.RawMessage // a JSON object; nil when the file has none
+	// PanelOrder lists panel IDs in the order the sidebar shows them; panels
+	// it does not name follow in the plugin's order.
+	PanelOrder []string
 }
 
 // NameRe is what source keys and plugin names may hold. Both end up in paths.
@@ -91,6 +94,10 @@ func parseSource(path, key string, raw json.RawMessage) (Source, error) {
 				return Source{}, fmt.Errorf("%s: %v", p, err)
 			}
 			s.Settings = buf.Bytes()
+		case "panel_order":
+			if s.PanelOrder, err = stringList(p, m.raw); err != nil {
+				return Source{}, err
+			}
 		default:
 			return Source{}, fmt.Errorf("%s: unknown key", p)
 		}
@@ -122,6 +129,11 @@ func SourcesJSON(list []Source) (json.RawMessage, error) {
 		if s.Settings != nil {
 			b.WriteString(`,"settings":`)
 			b.Write(s.Settings)
+		}
+		if len(s.PanelOrder) > 0 {
+			o, _ := json.Marshal(s.PanelOrder)
+			b.WriteString(`,"panel_order":`)
+			b.Write(o)
 		}
 		b.WriteByte('}')
 	}

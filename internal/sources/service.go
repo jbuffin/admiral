@@ -110,9 +110,25 @@ func (s *Service) View() []SourceView {
 			p.Orders = orders
 			v.Panels = append(v.Panels, p)
 		}
+		sortPanels(v.Panels, st.def.PanelOrder)
 		out = append(out, v)
 	}
 	return out
+}
+
+// sortPanels puts the panels that order names first, in its order; the rest
+// keep the plugin's order after them.
+func sortPanels(panels []Panel, order []string) {
+	if len(order) == 0 {
+		return
+	}
+	rank := func(id string) int {
+		if i := slices.Index(order, id); i >= 0 {
+			return i
+		}
+		return len(order)
+	}
+	slices.SortStableFunc(panels, func(a, b Panel) int { return rank(a.ID) - rank(b.ID) })
 }
 
 func (s *Service) message() any {
@@ -148,6 +164,8 @@ func (s *Service) Connected(c *server.Client) { _ = c.SendOnce("sources", s.mess
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/sources", s.serveList)
 	mux.HandleFunc("POST /api/sources", s.serveAdd)
+	mux.HandleFunc("PUT /api/source-order", s.serveSourceOrder)
+	mux.HandleFunc("PUT /api/sources/{key}/panel-order", s.servePanelOrder)
 	mux.HandleFunc("PUT /api/sources/{key}", s.serveSave)
 	mux.HandleFunc("DELETE /api/sources/{key}", s.serveDelete)
 	mux.HandleFunc("POST /api/sources/{key}/restart", s.serveRestart)
@@ -608,6 +626,74 @@ func (s *Service) serveDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Sup.Reconcile()
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": key})
+}
+
+// serveSourceOrder rearranges the sources. The request names every source
+// once, so a list sent before another browser added or removed one is refused.
+func (s *Service) serveSourceOrder(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Sources []string `json:"sources"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	s.mu.Lock()
+	cfg := s.Config.Current()
+	list := make([]config.Source, 0, len(req.Sources))
+	for _, key := range req.Sources {
+		def, ok := cfg.Source(key)
+		if !ok || slices.ContainsFunc(list, func(d config.Source) bool { return d.Key == key }) {
+			break
+		}
+		list = append(list, def)
+	}
+	if len(list) != len(req.Sources) || len(list) != len(cfg.SourceList) {
+		s.mu.Unlock()
+		writeError(w, http.StatusConflict, "The sources changed while you were moving one; try again")
+		return
+	}
+	err := s.write(list)
+	s.mu.Unlock()
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	s.Sup.Reconcile()
+	writeJSON(w, http.StatusOK, map[string][]string{"sources": req.Sources})
+}
+
+// servePanelOrder keeps the order of one source's panels.
+func (s *Service) servePanelOrder(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("key")
+	var req struct {
+		Panels []string `json:"panels"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	for i, id := range req.Panels {
+		if id == "" || hasControl(id) || slices.Contains(req.Panels[:i], id) {
+			writeError(w, http.StatusBadRequest, "panels must be distinct panel IDs")
+			return
+		}
+	}
+	s.mu.Lock()
+	list := slices.Clone(s.Config.Current().SourceList)
+	i := slices.IndexFunc(list, func(d config.Source) bool { return d.Key == key })
+	if i < 0 {
+		s.mu.Unlock()
+		writeError(w, http.StatusNotFound, "source "+key+" not found")
+		return
+	}
+	list[i].PanelOrder = req.Panels
+	err := s.write(list)
+	s.mu.Unlock()
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	s.Sup.Reconcile()
+	writeJSON(w, http.StatusOK, map[string][]string{"panels": req.Panels})
 }
 
 func (s *Service) serveRestart(w http.ResponseWriter, r *http.Request) {
