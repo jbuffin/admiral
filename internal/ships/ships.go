@@ -266,7 +266,7 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	s.State.SetLastDir(req.Fleet, req.Harness, req.Dir)
+	s.State.SetLastDir(req.Fleet, req.Harness, got.Options["dir"]) // the cleaned path the launch used
 	// Not the request's context: a client that hangs up must not abandon the read.
 	syncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	_ = s.Host.Sync(syncCtx)
