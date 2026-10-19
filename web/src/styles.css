@@ -330,7 +330,7 @@ button:focus-visible {
 .filter input {
   flex: 1 1 auto;
   min-width: 0;
-  height: 40px;
+  height: var(--shape-min-touch-target);
   border: 0;
   background: none;
   font: inherit;
@@ -682,6 +682,9 @@ button:focus-visible {
 }
 
 .signin a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--shape-min-touch-target);
   color: var(--color-ink);
   overflow-wrap: anywhere;
 }
@@ -903,6 +906,10 @@ button:focus-visible {
   width: 100%;
   flex: 0 0 auto;
   z-index: 1;
+}
+
+.marina-in {
+  animation: marina-in 1.1s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .quay {
@@ -1597,7 +1604,7 @@ body.dragging * {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bob, .ship-needs-you, .wave, .frantic, .drift, .rowboat, .moored.leaving, .moored.arriving, .ping, .pop, .sail-in, .sail-off {
+  .bob, .ship-needs-you, .wave, .frantic, .drift, .rowboat, .moored.leaving, .moored.arriving, .ping, .pop, .sail-in, .sail-off, .marina-in {
     animation: none !important;
   }
 }
@@ -1807,6 +1814,12 @@ body.dragging * {
 @keyframes sailin {
   0% { transform: translateX(420px) scale(0.5); opacity: 0; }
   60% { opacity: 1; }
+  100% { transform: none; opacity: 1; }
+}
+
+@keyframes marina-in {
+  0% { transform: translateX(110%); opacity: 0; }
+  50% { opacity: 1; }
   100% { transform: none; opacity: 1; }
 }
 

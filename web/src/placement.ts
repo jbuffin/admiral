@@ -81,9 +81,9 @@ export function placeShip({ fleets, placed, ship, footprint, keepOut, inset = 0 
     .map((p) => ({ x: p.x, y: p.y, w, h }));
   const covered = (x: number, y: number, rects: Rect[]) => rects.reduce((sum, r) => sum + overlap({ x, y, w, h }, r), 0);
 
-  const rows = (step: number) => {
+  const rows = (step: number, from = top, to = bottom) => {
     const out: number[] = [];
-    for (let y = top; y <= bottom + EPS; y += step) out.push(y);
+    for (let y = from; y <= to + EPS; y += step) out.push(y);
     return out;
   };
   const cols = (step: number) => {
@@ -99,6 +99,11 @@ export function placeShip({ fleets, placed, ship, footprint, keepOut, inset = 0 
   ]) {
     for (const y of rows(rowStep)) for (const x of cols(colStep)) if (free(x, y)) return { x, y };
   }
+
+  // The band is full: the fleet's area is no hard lane, so any free spot in open water, nearest the band first.
+  const near = (y: number) => (y < top ? top - y : y > bottom ? y - bottom : 0);
+  const anywhere = rows(FINE, 0, 1 - h).sort((a, b) => near(a) - near(b));
+  for (const y of anywhere) for (const x of cols(FINE)) if (free(x, y)) return { x, y };
 
   // Nothing is free: the spot that covers the least, the first one on a tie.
   let best = { x: inset, y: top };

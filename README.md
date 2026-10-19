@@ -2,7 +2,7 @@
 
 A visual dashboard for launching and watching coding-agent sessions (Claude Code, Codex CLI, GitHub Copilot CLI): your work queues on the left, a cartoon ocean of running sessions in the middle, and one marina per fleet on the right. Drag a task onto a harness's dock to start a session in the background, on Commodore or another skill; tap a ship to attach to its terminal.
 
-The designs are done and the MVP build has started.
+The MVP is built: every part of the [MVP spec](https://github.com/jbuffin/admiral/issues/45) has landed, from the server and harbor to the bridge, setup and packaging.
 
 ![Admiral harbor](designs/screenshots/harbor-1440x900.png)
 
