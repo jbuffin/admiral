@@ -309,6 +309,15 @@ test.describe('S4: dragging and boarding ships', () => {
       })
       .toBe(true);
     expect(await boarded(page)).toEqual([one.session]);
+
+    // A shorter, narrower window keeps the ship in view rather than pushing it off the water.
+    await page.setViewportSize({ width: 1000, height: 560 });
+    await expect
+      .poll(async () => {
+        const [b, w] = [(await again.boundingBox())!, (await water(page).boundingBox())!];
+        return b.x >= w.x - 0.5 && b.y >= w.y - 0.5 && b.x + b.width <= w.x + w.width + 0.5 && b.y + b.height <= w.y + w.height + 0.5;
+      })
+      .toBe(true);
   });
 });
 

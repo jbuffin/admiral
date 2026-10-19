@@ -15,8 +15,11 @@ body {
   font-size: 15px;
 }
 
+/* The page is the window's height and never scrolls; only the orders panel does. */
 .app {
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -187,15 +190,18 @@ button:focus-visible {
 
 .harbor {
   display: flex;
-  flex-wrap: wrap;
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  min-height: 0;
   align-items: stretch;
   background-color: var(--color-ocean);
 }
 
 .orders {
-  flex: 1 1 var(--size-sidebar-basis);
+  flex: 0 0 var(--size-sidebar-basis);
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -205,6 +211,33 @@ button:focus-visible {
   color: var(--color-ink);
   -webkit-user-select: none;
   user-select: none;
+}
+
+/* The panel scrolls rather than squashing its sections. */
+.orders > * {
+  flex-shrink: 0;
+}
+
+/* Too narrow for the panel and the sea side by side: the expanded panel opens
+   over the sea, which keeps the width it has beside the rail, so ships stay put. */
+@media (max-width: 1000px) {
+  .harbor {
+    position: relative;
+  }
+
+  .orders:not(.rail) {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--size-sidebar-basis);
+    z-index: 7; /* over the ships and the bridge, under full view */
+    box-shadow: 6px 0 0 rgba(11, 31, 51, 0.25);
+  }
+
+  .orders:not(.rail) + .main {
+    margin-left: 76px;
+  }
 }
 
 .orders input,
@@ -844,12 +877,10 @@ button:focus-visible {
 .main {
   flex: 999 1 640px;
   min-width: 0;
-  min-height: 760px;
   position: relative;
   overflow: hidden;
   background-color: var(--color-ocean);
   display: flex;
-  flex-wrap: wrap;
   align-items: stretch;
 }
 
@@ -864,6 +895,7 @@ button:focus-visible {
 .hint {
   position: absolute;
   left: 16px;
+  right: calc(var(--size-marina-column-basis) + 16px);
   top: 16px;
   display: flex;
   flex-wrap: wrap;
@@ -886,12 +918,12 @@ button:focus-visible {
 .sea {
   flex: 999 1 420px;
   min-width: 0;
-  min-height: 760px;
   position: relative;
 }
 
+/* The land keeps its width; the sea takes what is left. */
 .land {
-  flex: 1 1 var(--size-marina-column-basis);
+  flex: 0 0 var(--size-marina-column-basis);
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -899,6 +931,7 @@ button:focus-visible {
   gap: 30px;
   padding: 26px 14px 30px 0;
   position: relative;
+  overflow: hidden;
   z-index: 3;
   background-color: var(--color-grass);
 }
@@ -2015,6 +2048,7 @@ body.dragging * {
 
 /* Full view: the terminal over the whole screen, with a one-line head. */
 .bridge.full {
+  z-index: 8;
   padding: 0;
   background-color: var(--color-ink);
 }
