@@ -1739,6 +1739,30 @@ body.dragging * {
   cursor: pointer;
 }
 
+.pill-hit:active .pill {
+  transform: translateY(3px);
+}
+
+.pill-hit .pill {
+  cursor: pointer;
+}
+
+.marina-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  padding: 0;
+  border: 0;
+  border-radius: 24px;
+  background: none;
+  cursor: pointer;
+}
+
+.marina-hit:focus-visible {
+  outline: 3px solid var(--color-parchment);
+  outline-offset: -6px;
+}
+
 .pill-face {
   display: inline-flex;
   align-items: center;

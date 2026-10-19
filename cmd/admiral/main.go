@@ -19,6 +19,7 @@ import (
 
 	"github.com/jbuffin/admiral/internal/auth"
 	"github.com/jbuffin/admiral/internal/bridge"
+	"github.com/jbuffin/admiral/internal/cli"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/launcher"
@@ -35,7 +36,16 @@ var version = "dev"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
+		var help *cli.HelpError
+		if errors.As(err, &help) {
+			fmt.Println(help)
+			return
+		}
 		fmt.Fprintln(os.Stderr, "admiral:", err)
+		var usage *cli.UsageError
+		if errors.As(err, &usage) {
+			os.Exit(2)
+		}
 		os.Exit(1)
 	}
 }
@@ -43,10 +53,33 @@ func main() {
 // run dispatches on the first argument; subcommands slot in before the
 // default, which starts the server.
 func run(args []string) error {
-	if len(args) > 0 && args[0] != "" && args[0][0] != '-' {
-		return fmt.Errorf("unknown command %q", args[0])
+	if len(args) == 0 || args[0] == "" || args[0][0] == '-' {
+		return serve(args)
 	}
-	return serve(args)
+	std := cli.Std()
+	for _, a := range args[1:] {
+		if cli.IsHelp(a) {
+			fmt.Println(cli.Usage(args[0]))
+			return nil
+		}
+	}
+	switch args[0] {
+	case "setup":
+		return cli.Setup(args[1:], std)
+	case "fleet":
+		return cli.Fleet(args[1:], std)
+	case "config":
+		return cli.Config(args[1:], std)
+	case "token":
+		return cli.Token(args[1:], std)
+	case "ships":
+		return cli.Ships(args[1:], std)
+	case "attach":
+		return cli.Attach(args[1:], std)
+	case "completion":
+		return cli.Completion(args[1:], std)
+	}
+	return &cli.UsageError{Msg: fmt.Sprintf("unknown command %q", args[0])}
 }
 
 // seedSources gives a first run its "Orders" source. It looks only at startup,
@@ -82,6 +115,12 @@ func serve(args []string) error {
 		return fmt.Errorf("config: %w", err)
 	}
 	defer cfg.Close()
+	// No configuration means no fleets (a valid file without any, or none yet).
+	if cfg.View().Error == nil && len(cfg.Current().Fleets) == 0 {
+		if _, err := cli.OfferSetup(cli.Std()); err != nil {
+			return err
+		}
+	}
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {
 		return err
@@ -118,6 +157,9 @@ func serve(args []string) error {
 	sourceService := &sources.Service{Home: dir, Config: cfg, Sup: supervisor, Hub: hub, Ships: shipService.List}
 	supervisor.OnChange = sourceService.Notify
 	bridgeService := bridge.New(tmuxPath, sock, shipService)
+	if exe, err := os.Executable(); err == nil && tmuxPath != "" {
+		bridgeService.Host, bridgeService.Setup = host, &bridge.SetupCommand{Exe: exe, Home: dir}
+	}
 	shipService.Orders = sourceService
 	shipService.OnChange = func() { sourceService.Notify(); bridgeService.ShipsChanged() }
 
@@ -141,7 +183,10 @@ func serve(args []string) error {
 		supervisor.Wait()
 		_ = st.Flush()
 	}()
-	srv := &http.Server{Handler: auth.New(token, port).Middleware(s.Handler())}
+	guard := auth.New(token, port)
+	background.Add(1)
+	go func() { defer background.Done(); guard.Watch(bg, dir) }()
+	srv := &http.Server{Handler: guard.Middleware(s.Handler())}
 
 	fmt.Printf("Admiral is running at http://127.0.0.1:%s/\n", port)
 	bindHost, _, _ := net.SplitHostPort(*listen)

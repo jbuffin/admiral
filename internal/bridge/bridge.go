@@ -44,6 +44,13 @@ type Service struct {
 	Ships  Ships
 	Idle   time.Duration
 
+	// Host and Setup serve the setup terminal (u12): the `_setup` session that
+	// runs `admiral setup`, watched like a ship but never listed as one. Both
+	// are optional.
+	Host    *sessionhost.Host
+	Setup   *SetupCommand
+	setupMu sync.Mutex
+
 	mu      sync.Mutex
 	watches map[string]*watch
 	closing bool
@@ -61,6 +68,8 @@ func New(tmux, sock string, sh Ships) *Service {
 // Routes registers the bridge endpoint.
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ws/bridge/{session}", s.serve)
+	mux.HandleFunc("GET /api/setup", s.serveSetupStatus)
+	mux.HandleFunc("POST /api/setup", s.serveSetupStart)
 }
 
 // Connected does nothing: the bridge sends nothing on the main socket.
@@ -237,7 +246,7 @@ func (w *watch) shutdown() {
 		c.Close()
 	}
 	for _, b := range bs {
-		b.kill()
+		b.end()
 	}
 }
 
@@ -344,7 +353,7 @@ func shipState(sh ships.Ship) shipMsg {
 // shipChanged sends the ship's state to the browsers when it differs from what
 // they last got, and closes them when the ship is gone.
 func (w *watch) shipChanged() {
-	sh, ok := w.s.Ships.Get(w.session)
+	sh, ok := w.s.get(w.session)
 	if !ok {
 		w.shutdown()
 		return
@@ -427,7 +436,7 @@ func parseSize(s string) (cols, rows int, ok bool) {
 // makeActive lets b size the pane at the size it last reported.
 func (w *watch) makeActive(b *browser) {
 	cols, rows, hidden := b.dims()
-	sh, ok := w.s.Ships.Get(w.session)
+	sh, ok := w.s.get(w.session)
 	if hidden || cols == 0 || !ok || !live(sh) {
 		return
 	}
@@ -467,7 +476,7 @@ func (w *watch) join(b *browser, resize bool) {
 	pane := w.pane
 	w.mu.Unlock()
 	cols, rows, _ := b.dims()
-	sh, ok := w.s.Ships.Get(w.session)
+	sh, ok := w.s.get(w.session)
 	if !ok {
 		w.shutdown()
 		return
@@ -517,7 +526,7 @@ func (w *watch) input(b *browser, data string) {
 	if data == "" {
 		return
 	}
-	sh, err := w.s.Ships.InputSeen(w.session)
+	sh, err := w.s.inputSeen(w.session)
 	switch {
 	case errors.Is(err, ships.ErrExited):
 		b.send(map[string]string{"type": "refused", "reason": sh.Status})

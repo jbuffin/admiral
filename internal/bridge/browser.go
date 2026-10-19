@@ -140,6 +140,15 @@ func (b *browser) kill() {
 	_ = b.conn.CloseNow()
 }
 
+// end closes the connection with a close frame, for a session that has ended: the page then
+// sees a normal close, not a failed connection it would log as an error.
+func (b *browser) end() {
+	b.mu.Lock()
+	b.closed = true
+	b.mu.Unlock()
+	go func() { _ = b.conn.Close(websocket.StatusGoingAway, "the session has ended") }()
+}
+
 // write drains the queue until the browser is closed.
 func (b *browser) write(ctx context.Context) {
 	for {
@@ -186,9 +195,9 @@ type in struct {
 
 func (s *Service) serve(rw http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
-	// Only a current ship is watchable: tmux resolves a bare name to any
+	// Only a current ship (or the setup terminal) is watchable: tmux resolves a bare name to any
 	// session it prefixes, so the check is on the exact name.
-	if _, ok := s.Ships.Get(session); !ok {
+	if _, ok := s.get(session); !ok {
 		rw.Header().Set("Content-Type", "application/json")
 		rw.WriteHeader(http.StatusNotFound)
 		_, _ = rw.Write([]byte(`{"error":"ship not found"}` + "\n"))

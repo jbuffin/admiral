@@ -31,4 +31,8 @@ export interface Config {
 export const config = signal<Config | null>(null);
 export const configLoaded = computed(() => config.value !== null);
 
-onMessage('config', (msg) => (config.value = { fleets: msg.fleets, error: msg.error, favorite_skills: msg.favorite_skills ?? [] }));
+export function applyConfig(msg: { fleets: Fleet[]; error: Config['error']; favorite_skills?: string[] }): void {
+  config.value = { fleets: msg.fleets, error: msg.error, favorite_skills: msg.favorite_skills ?? [] };
+}
+
+onMessage('config', applyConfig);
