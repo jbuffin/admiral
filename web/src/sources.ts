@@ -91,14 +91,12 @@ export function sourceColor(list: Source[], s: Source): { bg: string; ink: strin
 export const panelViews = computed<PanelView[]>(() => {
   const list = sources.value ?? [];
   const q = filter.value.trim().toLowerCase();
-  const titles = new Map<string, number>();
-  for (const s of list) for (const p of s.panels) titles.set(p.title, (titles.get(p.title) ?? 0) + 1);
   return list.flatMap((s) =>
     s.panels.map((panel) => ({
       key: `${s.key}/${panel.id}`,
       source: s,
       panel,
-      title: s.panels.length > 1 || titles.get(panel.title)! > 1 ? `${s.name} · ${panel.title}` : panel.title,
+      title: panel.title,
       orders: panel.orders.filter((o) => matches(o, q)),
       color: sourceColor(list, s).bg,
     })),
