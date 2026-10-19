@@ -220,6 +220,40 @@ test.describe('S5: boarding a ship and typing on the bridge', () => {
     }
   });
 
+  test('a swipe on the terminal scrolls back through its history', async ({ page, admiral, sea }, info) => {
+    test.skip(!isTouch(info), 'touch screens only');
+    const s = sea({ work: { name: 'Work', color: BLUE } });
+    s.world.skill('work', 'claude', 'review');
+    await admiral.start();
+    await s.world.guardData();
+    const ship = await launchFromOrder(s, 'work', 'alpha');
+    await spyOnPage(page);
+    await page.goto(admiral.url);
+    await board(page, underwayIn('Work'), true);
+    paneWrite(s, ship.session, Array.from({ length: 200 }, (_, i) => `line ${i}`).join('\r\n'));
+    await expect.poll(() => screenText(page)).toContain('line 199');
+
+    // xterm.js's scrollbar thumb settles at the bottom; dragging a finger down the terminal lifts it.
+    const thumb = terminal(page).locator('.scrollbar.vertical .slider');
+    const top = async () => (await thumb.boundingBox())?.y ?? NaN;
+    let before = NaN;
+    await expect
+      .poll(async () => {
+        const was = before;
+        before = await top();
+        return before > 0 && before === was;
+      })
+      .toBe(true);
+    const box = (await terminal(page).locator('.term-box').boundingBox())!;
+    const x = box.x + box.width / 2;
+    const touchAt = (y: number) => [{ identifier: 1, clientX: x, clientY: y, pageX: x, pageY: y }];
+    const target = terminal(page).locator('.xterm-screen');
+    await target.dispatchEvent('touchstart', { touches: touchAt(box.y + 40), changedTouches: touchAt(box.y + 40) });
+    for (let y = box.y + 60; y <= box.y + 300; y += 20) await target.dispatchEvent('touchmove', { touches: touchAt(y), changedTouches: touchAt(y) });
+    await target.dispatchEvent('touchend', { touches: [], changedTouches: touchAt(box.y + 300) });
+    await expect.poll(top).toBeLessThan(before);
+  });
+
   test('the bridge follows open water when the orders panel collapses and expands', async ({ page, admiral, sea }, info) => {
     const touch = isTouch(info);
     const s = sea({ work: { name: 'Work', color: BLUE } });
