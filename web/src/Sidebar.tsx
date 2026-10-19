@@ -80,7 +80,7 @@ function Expanded() {
       </div>
       {sourcesLoaded.value &&
         list!.map((s) => (
-          <div class="source-block" key={s.key}>
+          <div class="source-block" role="group" aria-label={s.name} key={s.key}>
             <SourceRow source={s} />
             {panelViews.value.filter((v) => v.source.key === s.key).map((v) => (
               <PanelSection key={v.key} view={v} />
@@ -98,7 +98,7 @@ function SourceRow({ source }: { source: Source }) {
   const [refusal, setRefusal] = useState<string | null>(null);
   const noPanels = source.panels.length === 0;
   return (
-    <div class="source" role="group" aria-label={source.name}>
+    <div class="source">
       <div class="source-row">
         <SourceIcon source={source} size={24} />
         <span class="source-name">{source.name}</span>
