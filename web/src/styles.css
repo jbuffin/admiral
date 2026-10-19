@@ -1,0 +1,47 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-ink);
+  color: var(--color-text-on-dark);
+  font-family: var(--font-body);
+  font-size: 15px;
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background-color: var(--color-ink);
+  border-bottom: 3px solid var(--color-ink-deep);
+}
+
+.app-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.app-name {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 29px;
+  line-height: 1;
+  color: var(--color-sunny);
+  letter-spacing: -0.01em;
+}
+
+.app-subtitle {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--color-text-on-dark-muted);
+}
