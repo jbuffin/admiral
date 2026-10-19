@@ -320,5 +320,5 @@ var seq atomic.Int64
 // launchReq builds a launch request for an existing directory.
 func (w *world) launchReq(fleet, harness, dir string, skill map[string]any, text string) map[string]any {
 	return map[string]any{"fleet": fleet, "harness": harness, "dir": dir, "skill": skill,
-		"source": "todo", "order_id": "o" + strconv.Itoa(int(seq.Add(1))), "text": text}
+		"order_id": "o" + strconv.Itoa(int(seq.Add(1))), "text": text}
 }

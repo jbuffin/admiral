@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/repofinder"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/ships"
@@ -25,6 +26,7 @@ type Service struct {
 	Config *config.Manager
 	State  *state.Store
 	Ships  func() []ships.Ship
+	Orders ships.Orders
 }
 
 // Routes registers the launch orders API.
@@ -45,8 +47,12 @@ type dirEntry struct {
 type dirsRequest struct {
 	Fleet   string `json:"fleet"`
 	Harness string `json:"harness"`
-	Repo    string `json:"repo"`
-	Text    string `json:"text"`
+	Source  string `json:"source"`
+	OrderID string `json:"order_id"`
+	// Repo and Text are read only when there is no source: with one, the
+	// server looks both up in the order.
+	Repo string `json:"repo"`
+	Text string `json:"text"`
 }
 
 // serveDirs answers with the list and the pre-selection. It is a POST only
@@ -56,6 +62,13 @@ func (s *Service) serveDirs(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
 		return
+	}
+	if req.Source != "" {
+		var lerr *launcher.Error
+		if req.Text, req.Repo, lerr = s.Orders.Order(req.Source, req.OrderID); lerr != nil {
+			writeError(w, lerr.Status, lerr.Msg)
+			return
+		}
 	}
 	cfg := s.Config.Current()
 	fleet, ok := cfg.Fleet(req.Fleet)

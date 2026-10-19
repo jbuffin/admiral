@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
+	"github.com/jbuffin/admiral/internal/sources"
 	"github.com/jbuffin/admiral/internal/state"
 	"github.com/jbuffin/admiral/web"
 )
@@ -44,6 +46,19 @@ func run(args []string) error {
 		return fmt.Errorf("unknown command %q", args[0])
 	}
 	return serve(args)
+}
+
+// seedSources gives a first run its "Orders" source. It looks only at startup,
+// so a sources key deleted by hand stays gone until the next start, and it
+// adds nothing to a config that does not validate or already has the key.
+func seedSources(cfg *config.Manager) {
+	if cfg.View().Error != nil || cfg.Current().Sources != nil {
+		return
+	}
+	err := cfg.SetSources(json.RawMessage(`{"orders":{"plugin":"freeform","name":"Orders"}}`))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "admiral: could not add the Orders source to the config:", err)
+	}
 }
 
 func serve(args []string) error {
@@ -94,12 +109,22 @@ func serve(args []string) error {
 	shipService := &ships.Service{Host: host, State: st, Hub: hub, Launcher: &launcher.Launcher{
 		Tmux: tmuxPath, Socket: sock, Home: dir, Config: cfg.Current}}
 
+	if err := sources.InstallFreeform(dir); err != nil {
+		fmt.Fprintln(os.Stderr, "admiral: could not install the freeform plugin:", err)
+	}
+	seedSources(cfg)
+	supervisor := &sources.Supervisor{Home: dir, Config: cfg}
+	sourceService := &sources.Service{Home: dir, Config: cfg, Sup: supervisor, Hub: hub, Ships: shipService.List}
+	supervisor.OnChange = sourceService.Notify
+	shipService.Orders, shipService.OnChange = sourceService, sourceService.Notify
+
 	s := &server.Server{Version: version, UI: web.UI(), Messages: map[string]server.MessageHandler{}, Config: cfg,
-		Hub: hub, Modules: []server.Module{shipService,
-			&launchorders.Service{Config: cfg, State: st, Ships: shipService.List}}}
+		Hub: hub, Modules: []server.Module{shipService, sourceService,
+			&launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}}}
 	bg, stopBackground := context.WithCancel(context.Background())
 	var background sync.WaitGroup
-	runs := []func(context.Context){shipService.Run, s.WatchConfig}
+	supervisor.Start(bg)
+	runs := []func(context.Context){shipService.Run, s.WatchConfig, sourceService.Run}
 	if tmuxPath != "" {
 		runs = append(runs, host.Run)
 	}
@@ -110,6 +135,7 @@ func serve(args []string) error {
 	defer func() {
 		stopBackground()
 		background.Wait()
+		supervisor.Wait()
 		_ = st.Flush()
 	}()
 	srv := &http.Server{Handler: auth.New(token, port).Middleware(s.Handler())}

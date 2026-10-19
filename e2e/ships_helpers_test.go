@@ -345,10 +345,12 @@ func send(t *testing.T, method, url string, body any) (int, string) {
 	return resp.StatusCode, string(data)
 }
 
-// order builds a launch request for a checkout under w.work.
+// order builds a launch request for a checkout under w.work. It names no
+// source, so the server uses the text as sent; a launch that names a source
+// must name one that exists (see launchFrom).
 func (w *world) order(fleet, harness, repo string, skill map[string]any, text string) map[string]any {
 	return map[string]any{"fleet": fleet, "harness": harness, "dir": w.checkout(repo), "skill": skill,
-		"source": "todo", "order_id": "o-" + repo, "text": text}
+		"order_id": "o-" + repo, "text": text}
 }
 
 var commodore = map[string]any{"kind": "commodore"}
