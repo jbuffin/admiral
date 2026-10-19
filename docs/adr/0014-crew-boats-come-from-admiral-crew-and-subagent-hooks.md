@@ -27,7 +27,7 @@ A ship's crew boats are its teammates and its subagents, and the flotilla switch
 
 A stop for an id Admiral never saw starts is ignored. Claude Code's internal agents send those after most turns.
 
-**Every hook runs `admiral hook <event>`,** which reads the harness's JSON from stdin and sets the options on the pane named by `$TMUX_PANE` (`tmux set -p -t "$TMUX_PANE"`). A bare `set -p` writes to the session's active pane, which is wrong once a ship has crew windows. A working or waiting hook that comes from inside a subagent (Copilot's `agentStop` and `userPromptSubmitted` carry an `agentId`) does not change `@admiral-state`. This replaces ADR 0013's bare `tmux set -p @admiral-state …`. To keep Codex's hook trust across upgrades, the command names no path: Admiral keeps `~/.admiral/bin/admiral` pointing at the running binary, rewrites it at every start, and puts that directory on each ship's and crew boat's `PATH`, so the hook text never changes.
+**Every hook runs `admiral hook <event>`,** which reads the harness's JSON from stdin and sets the options on the pane named by `$TMUX_PANE` (`tmux set -p -t "$TMUX_PANE"`). A bare `set -p` writes to the session's active pane, which is wrong once a ship has crew windows. A working or waiting hook that comes from inside a subagent (Copilot's `agentStop` and `userPromptSubmitted` carry an `agentId`) does not change `@admiral-state`. This replaces ADR 0013's bare `tmux set -p @admiral-state …`. To keep Codex's hook trust across upgrades, the command names no path: Admiral keeps `~/.admiral/bin/admiral` pointing at the running binary, rewrites it at every start, and puts that directory first on each ship's and crew boat's `PATH`, so the hook text never changes and `admiral` always resolves to the build that launched the ship, never to another install earlier on `PATH`.
 
 **Needs-you follows each crew boat.** A crew boat's own needs-you shows on the crew boat in the flotilla and also sets the ship needs-you in open water, so a waiting teammate is never hidden behind a quiet lead.
 
@@ -49,3 +49,5 @@ A stop for an id Admiral never saw starts is ignored. Claude Code's internal age
 - A ship's tmux session can have more than one window. Code that assumed one pane per session (ADRs 0002, 0012) targets the ship's first window.
 
 Amended 2026-10-19 after the live check in [`docs/research/crew-boats.md`](../research/crew-boats.md) ([#72](https://github.com/jbuffin/admiral/issues/72)): hooks pass `-t "$TMUX_PANE"`, subagent-scoped hooks leave `@admiral-state` alone, Copilot subagents carry ids, and subagent entries clear by a rule for each harness.
+
+Amended 2026-10-19 ([#69](https://github.com/jbuffin/admiral/issues/69)): `~/.admiral/bin` goes first on `PATH`, not just somewhere on it.
