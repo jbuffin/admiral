@@ -207,13 +207,19 @@ func showOption(t *testing.T, w *world, session string, args ...string) string {
 func TestSessionOptionsAndHookBundle(t *testing.T) {
 	w := newWorld(t)
 	w.start()
+	// An order from a source: the freeform source of a fresh install.
+	w.waitSource("orders", 10*time.Second, "state ok", isOK)
+	code, body := w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": w.panelID("orders"), "text": "go"})
+	w.mustOK(code, body, "add an order")
+	orderID := w.waitSource("orders", 5*time.Second, "the order", func(s sourceJSON) bool { return len(s.orderIDs()) == 1 }).orderIDs()[0]
 	req := w.order("work", "claude", "optrepo", commodore, "go")
+	req["source"], req["order_id"] = "orders", orderID
 	ship := w.launch(req)
 	r := w.record(ship.Session)
 
 	want := map[string]string{"@admiral-name": ship.Name, "@admiral-fleet": "work", "@admiral-fleet-name": "Work",
 		"@admiral-fleet-color": "#336699", "@admiral-harness": "claude", "@admiral-dir": ship.Dir,
-		"@admiral-skill": "commodore", "@admiral-source": "todo", "@admiral-order": "o-optrepo"}
+		"@admiral-skill": "commodore", "@admiral-source": "orders", "@admiral-order": orderID}
 	for k, v := range want {
 		if got := showOption(t, w, ship.Session, "-v", k); got != v {
 			t.Errorf("%s = %q, want %q", k, got, v)

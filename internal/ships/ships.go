@@ -40,12 +40,24 @@ type Ship struct {
 	Position   *state.Position `json:"position"`
 }
 
+// Orders is where a launch finds its order: the order sources.
+type Orders interface {
+	// Order is the text to launch with and the order's repo. It refuses with a
+	// launcher.Error when the source or the order is unknown.
+	Order(source, id string) (text, repo string, err *launcher.Error)
+	// Launched tells the source its order was launched.
+	Launched(source, id string)
+}
+
 // Service ties the session host, the launcher and the state together.
 type Service struct {
 	Host     *sessionhost.Host
 	Launcher *launcher.Launcher
 	State    *state.Store
 	Hub      *server.Hub
+	Orders   Orders
+	// OnChange runs after every push of the ships. It must not block.
+	OnChange func()
 }
 
 func (s *Service) ship(sess sessionhost.Session) Ship {
@@ -81,7 +93,12 @@ func (s *Service) message() any {
 	return map[string]any{"type": "ships", "ships": s.List()}
 }
 
-func (s *Service) broadcast() { s.Hub.BroadcastOnce("ships", s.message) }
+func (s *Service) broadcast() {
+	s.Hub.BroadcastOnce("ships", s.message)
+	if s.OnChange != nil {
+		s.OnChange()
+	}
+}
 
 // Connected sends a new client the ships.
 func (s *Service) Connected(c *server.Client) { _ = c.SendOnce("ships", s.message) }
@@ -255,8 +272,19 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
 		return
 	}
-	// The spec's request carries no text: from the order sources unit the
-	// server takes it from the order and ignores this field.
+	// An order from a source is launched with the source's text, whatever the
+	// client sent. Without a source the client's own text is used.
+	if req.Source != "" {
+		if HiddenOrders(s.List())[OrderKey{req.Source, req.OrderID}] {
+			writeError(w, http.StatusConflict, "this order already has a ship")
+			return
+		}
+		var lerr *launcher.Error
+		if req.Text, _, lerr = s.Orders.Order(req.Source, req.OrderID); lerr != nil {
+			writeError(w, lerr.Status, lerr.Msg)
+			return
+		}
+	}
 	got, err := s.Launcher.Launch(req)
 	if err != nil {
 		if le, ok := err.(*launcher.Error); ok {
@@ -267,6 +295,9 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.State.SetLastDir(req.Fleet, req.Harness, got.Options["dir"]) // the cleaned path the launch used
+	if req.Source != "" {
+		s.Orders.Launched(req.Source, req.OrderID)
+	}
 	// Not the request's context: a client that hangs up must not abandon the read.
 	syncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	_ = s.Host.Sync(syncCtx)
