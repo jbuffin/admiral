@@ -29,6 +29,17 @@ Touch must work on iPad Safari. Use the harnesses' official logos on flags; neve
 
 Test only what is likely to break: state logic, protocol handling, and the drag and bridge flows. Don't test markup, styling or one-line glue code, and don't write a test for every small scenario. Prefer a few end-to-end checks over many unit tests. This applies to the server as well as the UI.
 
+### More docs
+
+Read these when the task touches the area:
+
+- [`docs/agents/codebase.md`](docs/agents/codebase.md): the package map, API routes, ship statuses and the setup terminal. Read it before changing the server, the launcher or ships.
+- [`docs/agents/testing.md`](docs/agents/testing.md): the test seams, `$ADMIRAL_HOME` isolation, the fake harness cue language and the LAN-address skips. Read it before writing or changing a test.
+- [`docs/bridge-protocol.md`](docs/bridge-protocol.md): the bridge WebSocket messages. Read it before changing the bridge or `web/src/bridgeLink.ts`.
+- [`docs/cli.md`](docs/cli.md): every `admiral` command and the setup answers file. Read it before changing `internal/cli/`.
+- [`docs/agents/releasing.md`](docs/agents/releasing.md): the Release workflow, its one-time setup and the manual fallback. Read it before cutting a release or changing `release.yml`.
+- [`docs/personal-builds.md`](docs/personal-builds.md): building with the official harness logos. Read it before touching `web/logos/` or `web/src/Logos.tsx`.
+
 ### Before you push
 
 CI runs `make e2e-critical`: the Go e2e tests and only the `@critical` browser flows, on the iPad viewport. The CI runner's virtual GPU resets under WebKit, so the full browser matrix flakes there (#94). Your Mac is where the full matrix runs: before you push a branch that changes code or tests, run `make e2e`, and push once it passes.

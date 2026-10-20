@@ -3,7 +3,7 @@ import { parseLogoSvg } from './logoSvg';
 import type { HarnessName } from './config';
 
 // Official logo files, when the engineer has put them in web/logos/official/
-// (gitignored; see the README). Each is named for its harness and carries its
+// (gitignored; see docs/personal-builds.md). Each is named for its harness and carries its
 // own field, because the vendors' usage rules set the field.
 const official = import.meta.glob('/logos/official/*.svg', { query: '?raw', import: 'default', eager: true }) as Record<
   string,

@@ -16,8 +16,8 @@ export interface LinkHandlers {
   probe?: () => Promise<Probe>;
 }
 
-// One browser's WebSocket to a ship's bridge (GET /ws/bridge/<session>; the messages are in the
-// README). It keeps nothing for the server that is away: input sent while it is down is dropped.
+// One browser's WebSocket to a ship's bridge (GET /ws/bridge/<session>; the messages are in
+// docs/bridge-protocol.md). It keeps nothing for the server that is away: input sent while it is down is dropped.
 // When the socket drops it retries after 1 s, doubling to 10 s, and rejoins like a new browser.
 export class BridgeLink {
   state: LinkState = 'connecting';

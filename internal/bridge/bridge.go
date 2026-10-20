@@ -5,7 +5,7 @@
 //
 // Wire protocol: GET /ws/bridge/<the ship's tmux session name>, a WebSocket.
 // The first message from the browser is {"type":"join","cols":C,"rows":R}.
-// The messages are described in README.md ("The bridge protocol").
+// The messages are described in docs/bridge-protocol.md.
 package bridge
 
 import (
