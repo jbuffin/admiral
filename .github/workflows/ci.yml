@@ -36,3 +36,13 @@ jobs:
           name: playwright-traces
           path: web/test-results/
           if-no-files-found: ignore
+      # Temporary, for #94: which processes the OS killed or crashed during the run.
+      - name: Crash reports and memory kills
+        if: always()
+        run: |
+          memory_pressure | tail -3 || true
+          for d in ~/Library/Logs/DiagnosticReports /Library/Logs/DiagnosticReports; do
+            ls -la "$d" 2>/dev/null || true
+            for f in "$d"/*; do [ -f "$f" ] && { echo "== $f"; head -c 1500 "$f"; echo; }; done
+          done
+          log show --last 25m --style compact --predicate 'eventMessage CONTAINS[c] "jetsam" OR eventMessage CONTAINS[c] "memorystatus" OR eventMessage CONTAINS[c] "IOSurface" OR process == "ReportCrash"' 2>/dev/null | tail -150 || true
