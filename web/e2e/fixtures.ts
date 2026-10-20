@@ -79,6 +79,11 @@ class Instance implements Admiral {
   home = mkdtempSync(join(tmpdir(), 'admiral-ui-'));
   url = '';
   private proc?: ChildProcess;
+  /** Everything every server process of this test printed, for the report. */
+  log = '';
+  /** Set when a server process exits without stopServer asking it to. */
+  died = '';
+  onDeath?: () => void;
 
   writeConfigText(text: string) {
     mkdirSync(this.home, { recursive: true });
@@ -158,23 +163,36 @@ class Instance implements Admiral {
       });
       this.proc = proc;
       let out = '';
+      let running = false;
       const timer = setTimeout(() => fail(new Error(`admiral did not print its URL: ${out}`)), 15_000);
       proc.once('error', fail);
-      proc.once('exit', (code) => fail(new Error(`admiral exited with ${code}: ${out}`)));
-      proc.stdout!.on('data', (b: Buffer) => {
+      // An exit stopServer did not ask for fails the test: before the URL, the
+      // start fails; after it, the test's open pages close and teardown reports it.
+      proc.once('exit', (code, signal) => {
+        const how = signal ? `was killed by ${signal}` : `exited with ${code}`;
+        if (!running) return fail(new Error(`admiral ${how}: ${out}`));
+        this.died = `admiral ${how} during the test`;
+        this.onDeath?.();
+      });
+      const record = (b: Buffer) => {
         out += b.toString();
+        this.log += b.toString();
+      };
+      proc.stdout!.on('data', (b: Buffer) => {
+        record(b);
         const m = /Admiral is running at (http:\/\/127\.0\.0\.1:(\d+)\/)/.exec(out);
-        if (!m) return;
+        if (running || !m) return;
         const other = /On other devices: (http:\/\/[\d.]+:\d+\/)\?token=([\w-]+)/.exec(out);
         if (this.lan && !other) return;
         clearTimeout(timer);
+        running = true;
         this.url = m[1];
         // A restart comes back on the same port.
         this.listen = `${this.lan ? '0.0.0.0' : '127.0.0.1'}:${m[2]}`;
         if (other) [, this.lanUrl, this.token] = other;
         done();
       });
-      proc.stderr!.on('data', (b: Buffer) => (out += b.toString()));
+      proc.stderr!.on('data', record);
     });
   }
 
@@ -227,13 +245,17 @@ export const test = base.extend<{ admiral: Admiral }>({
     });
     await use(page);
   },
-  admiral: async ({}, use) => {
+  admiral: async ({ context }, use, info) => {
     const a = new Instance();
+    // Close the test's pages so whatever it awaits fails now, not at its timeout.
+    a.onDeath = () => void context.close().catch(() => {});
     try {
       await use(a);
     } finally {
       await a.stop();
+      if (a.died || info.status !== info.expectedStatus) await info.attach('admiral server log', { body: a.log || '(no output)', contentType: 'text/plain' });
     }
+    if (a.died) throw new Error(`${a.died}. Its output is attached as "admiral server log":\n${a.log.slice(-4000)}`);
   },
 });
 
