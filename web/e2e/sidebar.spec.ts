@@ -470,9 +470,16 @@ test.describe('S8: rearranging sources and panels', () => {
     await expect.poll(() => sourceOrder(page)).toEqual(['Tracker', 'Orders']);
     await expect.poll(() => panelOrder(page)).toEqual(['Done', 'Todo', 'Orders']);
 
-    const config = JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8'));
-    expect(Object.keys(config.sources)).toEqual(['tracker', 'orders']);
-    expect(config.sources.tracker.panel_order).toEqual(['done', 'todo']);
+    // The page reorders before the server writes config.json, so wait for the file.
+    await expect
+      .poll(() => {
+        const config = JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8'));
+        return [Object.keys(config.sources), config.sources.tracker.panel_order];
+      })
+      .toEqual([
+        ['tracker', 'orders'],
+        ['done', 'todo'],
+      ]);
     expect(f.starts()).toBe(1); // rearranging never restarts a source
 
     await page.reload();
