@@ -1,22 +1,22 @@
 # Formula for the jbuffin/admiral tap (the jbuffin/homebrew-admiral repo).
-# The release process fills in `url` and `sha256` for each release; see
-# "Cutting a release" in the README.
+# packaging/homebrew/render.sh fills in VERSION and SHA256_OF_THE_TARBALL and
+# drops these comments; the Release workflow pushes the result to the tap.
 class Admiral < Formula
   desc "Visual dashboard that launches coding-agent sessions and lets you watch them"
   homepage "https://github.com/jbuffin/admiral"
-  license "MIT"
   url "https://github.com/jbuffin/admiral/releases/download/vVERSION/admiral-VERSION-darwin-arm64.tar.gz"
   sha256 "SHA256_OF_THE_TARBALL"
+  license "MIT"
 
-  depends_on :macos
   depends_on arch: :arm64
+  depends_on :macos
   depends_on "python@3.15"
   depends_on "tmux"
 
   def install
     bin.install "admiral"
-    (share/"admiral/plugins").install "plugins/freeform"
-    (share/"admiral/plugins").install "plugins/github"
+    (pkgshare/"plugins").install "plugins/freeform"
+    (pkgshare/"plugins").install "plugins/github"
     prefix.install "LICENSE", "THIRD_PARTY_NOTICES"
   end
 
