@@ -61,7 +61,7 @@ test.describe('S1: fresh install', () => {
 });
 
 test.describe('S2: the freeform list', () => {
-  test('add a three-line order, edit it, remove it; a refused text shows the server message and adds nothing', async ({
+  test('add a three-line order, edit it, remove it; a refused text shows the server message and adds nothing', { tag: '@critical' }, async ({
     page,
     admiral,
   }, info) => {
@@ -256,7 +256,7 @@ test.describe('S5: filter', () => {
 });
 
 test.describe('S6: add and configure source plugins', () => {
-  test('the same plugin twice, settings saved, one restarts, one removed', async ({ page, admiral }) => {
+  test('the same plugin twice, settings saved, one restarts, one removed', { tag: '@critical' }, async ({ page, admiral }) => {
     admiral.installTestPlugin();
     const a = admiral.flags('alpha');
     const b = admiral.flags('beta');

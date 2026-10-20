@@ -85,7 +85,7 @@ test.describe('S1: marinas and docks from config', () => {
 });
 
 test.describe('S2: editing config.json updates the page live', () => {
-  test('add a fleet, break the file, fix it: marinas and banner follow with no reload', async ({ page, admiral }) => {
+  test('add a fleet, break the file, fix it: marinas and banner follow with no reload', { tag: '@critical' }, async ({ page, admiral }) => {
     admiral.writeConfig(config(admiral, { zulu: workFleet(admiral) }));
     await admiral.start();
     await page.goto(admiral.url);

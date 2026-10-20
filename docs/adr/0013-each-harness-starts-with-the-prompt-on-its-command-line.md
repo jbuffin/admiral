@@ -10,7 +10,7 @@ Admiral starts each ship's harness itself (ADR 0003) as an argument list, with n
 
 **The command line** is the fleet's executable, the fleet's `args`, Admiral's flags, then the prompt:
 
-```
+```sh
 claude  <args> --settings ~/.admiral/harness/claude-settings.json -- '<prompt>'
 codex   <args> -c 'hooks.<Event>=[…]' … -c 'tui.notification_method="bel"' -- '<prompt>'
 copilot <args> --plugin-dir ~/.admiral/harness/copilot --interactive='<prompt>'
@@ -27,6 +27,7 @@ copilot <args> --plugin-dir ~/.admiral/harness/copilot --interactive='<prompt>'
 **The bundle lives in `~/.admiral/harness/`:** Claude Code's settings file and Copilot's plugin folder. Admiral rewrites them at every start and all fleets share them. Codex's hooks need no file.
 
 **Admiral skips no harness dialog.**
+
 - Codex hooks are trusted through Codex's own review dialog, once per fleet, as in ADR 0007. Admiral never passes `hooks.state`, although a per-launch `-c 'hooks.state={…}'` with Codex's hash would skip the dialog.
 - Search roots are not pre-trusted. Each harness asks for folder trust the first time it runs in a checkout, and the engineer answers on the bridge.
 - Codex's "Update available" dialog is left on. A fleet that wants it off adds `-c check_for_update_on_startup=false` to its `args`.

@@ -29,6 +29,12 @@ Touch must work on iPad Safari. Use the harnesses' official logos on flags; neve
 
 Test only what is likely to break: state logic, protocol handling, and the drag and bridge flows. Don't test markup, styling or one-line glue code, and don't write a test for every small scenario. Prefer a few end-to-end checks over many unit tests. This applies to the server as well as the UI.
 
+### Before you push
+
+CI runs `make e2e-critical`: the Go e2e tests and only the `@critical` browser flows, on the iPad viewport. The CI runner's virtual GPU resets under WebKit, so the full browser matrix flakes there (#94). Your Mac is where the full matrix runs: before you push a branch that changes code or tests, run `make e2e`, and push once it passes.
+
+Keep the `@critical` set to the flows Admiral cannot ship broken. Every minute of browser time on CI is another chance for a GPU reset to fail the run.
+
 ### Running the tests on a Mac
 
 - Run one Playwright suite at a time on a machine. Several runs at once (each with its own WebKit workers and trace screenshots) can exhaust WindowServer's IOSurfaces and crash it, which logs you out. Local runs use 2 workers and no trace screenshots (`web/playwright.config.ts`); CI keeps the defaults.

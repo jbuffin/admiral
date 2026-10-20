@@ -251,7 +251,7 @@ return entry["orders"]
 
 Run the reference plugin by hand and type a request:
 
-```
+```console
 $ python3 plugins/freeform/plugin.py
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"settings":{},"dataDir":"/tmp/freeform-data"}}
 {"jsonrpc":"2.0","id":2,"method":"orders.add","params":{"panel":"orders","text":"Fix the flaky test"}}
