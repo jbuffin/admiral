@@ -1,3 +1,9 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/hero-light.png">
+  <img alt="Admiral: launch coding agents by dragging a task onto a dock, then watch every session sail as a ship you can board" src="docs/images/hero-light.png" width="1280">
+</picture>
+
 # Admiral
 
 A visual dashboard for launching and watching coding-agent sessions (Claude Code, Codex CLI, GitHub Copilot CLI): your work queues on the left, a cartoon ocean of running sessions in the middle, and one marina per fleet on the right. Drag a task onto a harness's dock to start a session in the background, on Commodore or another skill; tap a ship to attach to its terminal.
