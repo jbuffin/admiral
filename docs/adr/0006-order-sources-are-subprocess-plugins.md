@@ -4,7 +4,7 @@ Status: accepted
 
 ## Context
 
-Orders come from many outside systems: a freeform list first, then GitHub through `gh`, CargoWise PAVE through the engineer's `edi` CLI, and mail and calendars through Office 365 and Microsoft Graph. Each source needs its own way of fetching, and its own auth: some reuse a CLI that is already signed in, others need an OAuth sign-in. Other people should be able to add sources without a new Admiral release, and a broken source must not take the server down.
+Orders come from many outside systems: a freeform list first, then GitHub through `gh`, an internal work system through its own signed-in CLI, and mail and calendars through Office 365 and Microsoft Graph. Each source needs its own way of fetching, and its own auth: some reuse a CLI that is already signed in, others need an OAuth sign-in. Other people should be able to add sources without a new Admiral release, and a broken source must not take the server down.
 
 ## Decision
 
@@ -17,7 +17,7 @@ The freeform list is a plugin like any other, not built into Admiral: a single P
 - **Compiled into Admiral.** The simplest, but only an Admiral release can add a source.
 - **A command that prints orders as JSON.** Trivial to write, but it can only be polled, and it can't run a sign-in or describe its settings.
 - **Long-lived JSON-RPC subprocess** (chosen).
-- **WASM (Extism).** Sandboxed, but that sandbox makes it hard to shell out to `gh` or `edi` or reach the network, which is what these sources do.
+- **WASM (Extism).** Sandboxed, but that sandbox makes it hard to shell out to `gh` or another CLI or reach the network, which is what these sources do.
 - **Existing MCP servers as sources.** They exist for GitHub, Atlassian and Microsoft 365, but they expose general tools, not "list my orders", so each would still need a mapping layer.
 
 ## Consequences
