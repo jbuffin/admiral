@@ -565,6 +565,16 @@ button:focus-visible {
   gap: 6px;
 }
 
+.order-id,
+.term-order-id {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .order-id {
   position: relative;
   z-index: 1; /* above the title, so the whole padded box takes the tap */
@@ -572,12 +582,6 @@ button:focus-visible {
   display: inline-block;
   padding: 15px 6px;
   margin: -15px -6px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--color-text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .high {
@@ -2091,18 +2095,13 @@ body.dragging * {
 }
 
 .term-order-id {
-  position: relative;
   align-self: flex-start;
   max-width: 100%;
-  /* padding and the matching negative margin give a 44 px target without moving the text */
-  padding: 15px 6px;
-  margin: -15px -6px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--color-text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* a 44 px target that takes its own room, so it never covers the title or the attach chip */
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 14px 6px;
+  margin: 0 -6px;
 }
 
 .term-attach {

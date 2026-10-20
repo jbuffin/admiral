@@ -908,8 +908,8 @@ func (s *Service) serveRemoveOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 // Order is what a launch needs from an order: the text to send, the repo to
-// look for and the order's web URL. A launch from a source that is down still works, from the last
-// list Admiral saw. The order is looked up whether or not a ship hides it.
+// look for and the order's web URL. A launch from a source that is down still
+// works, from the last list Admiral saw. The order is looked up whether or not a ship hides it.
 func (s *Service) Order(source, id string) (text, repo, url string, err *launcher.Error) {
 	rn := s.Sup.runner(source)
 	if rn == nil {
