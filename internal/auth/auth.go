@@ -179,8 +179,9 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 			http.Error(w, "forbidden host", http.StatusForbidden)
 			return
 		}
+		// https too: behind a TLS proxy such as Cloudflare Tunnel the page's origin is https.
 		if origin := r.Header.Get("Origin"); origin != "" && (isWS || r.Method != http.MethodGet) &&
-			!strings.EqualFold(origin, "http://"+r.Host) {
+			!strings.EqualFold(origin, "http://"+r.Host) && !strings.EqualFold(origin, "https://"+r.Host) {
 			http.Error(w, "forbidden origin", http.StatusForbidden)
 			return
 		}

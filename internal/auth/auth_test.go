@@ -83,6 +83,9 @@ func TestNonLocalPeer(t *testing.T) {
 	if r := do("POST", "/api/x", lan, map[string]string{"Origin": "http://evil.example", "Cookie": cookie["Cookie"]}); r.Code != 403 {
 		t.Errorf("foreign Origin: %d", r.Code)
 	}
+	if r := do("GET", "/ws", lan, map[string]string{"Upgrade": "websocket", "Host": "admiral.example", "Origin": "https://admiral.example", "Cookie": cookie["Cookie"]}); r.Code != 200 {
+		t.Errorf("ws from https page behind a TLS proxy: %d", r.Code)
+	}
 }
 
 func TestLoopbackPeer(t *testing.T) {
