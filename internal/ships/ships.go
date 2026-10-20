@@ -35,6 +35,7 @@ type Ship struct {
 	Skill      *string         `json:"skill"`
 	Source     string          `json:"source"`
 	Title      string          `json:"title"`
+	URL        string          `json:"url"`
 	OrderID    string          `json:"order_id"`
 	Launched   string          `json:"launched"`
 	Status     string          `json:"status"`
@@ -45,9 +46,9 @@ type Ship struct {
 
 // Orders is where a launch finds its order: the order sources.
 type Orders interface {
-	// Order is the text to launch with and the order's repo. It refuses with a
-	// launcher.Error when the source or the order is unknown.
-	Order(source, id string) (text, repo string, err *launcher.Error)
+	// Order is the text to launch with, the order's repo and its web URL. It
+	// refuses with a launcher.Error when the source or the order is unknown.
+	Order(source, id string) (text, repo, url string, err *launcher.Error)
 	// Launched tells the source its order was launched.
 	Launched(source, id string)
 }
@@ -77,7 +78,7 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	o, session := sess.Options, sess.Name
 	sh := Ship{Session: session, Name: o["name"], Fleet: o["fleet"], FleetName: o["fleet-name"],
 		FleetColor: o["fleet-color"], Harness: o["harness"], Dir: o["dir"], Repo: filepath.Base(o["dir"]),
-		Source: o["source"], Title: o["title"], OrderID: o["order"], Launched: o["launched"], Status: status(sess, now)}
+		Source: o["source"], Title: o["title"], URL: o["url"], OrderID: o["order"], Launched: o["launched"], Status: status(sess, now)}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
 	if o["dir"] == "" {
 		sh.Repo = ""
@@ -291,7 +292,7 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var lerr *launcher.Error
-		if req.Text, _, lerr = s.Orders.Order(req.Source, req.OrderID); lerr != nil {
+		if req.Text, _, req.URL, lerr = s.Orders.Order(req.Source, req.OrderID); lerr != nil {
 			writeError(w, lerr.Status, lerr.Msg)
 			return
 		}

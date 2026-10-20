@@ -26,6 +26,8 @@ The page itself takes the ship's status from the main `/ws` socket; the `ship` a
 
 An order's first line rides the ship as `title` (the eleventh session option, `@admiral-title`, set at launch with control characters, bidi controls and line separators dropped; empty for a launch with no source).
 
+The order's web URL rides the ship as `url` (the twelfth session option, `@admiral-url`, taken at launch from the source's order (sources keep only http and https URLs); empty for a launch with no source, an order without one, or a ship launched before this option existed).
+
 When the server goes away an open bridge keeps its last screen, dims, says "Reconnecting…", disables input and queues nothing. The page's own socket and the bridge retry after 1 s, doubling to 10 s, and the bridge rejoins as a new browser. Browsers don't expose why a WebSocket handshake failed, so each failed reconnect asks `GET /api/ships`: a 401 stops every retry and shows "Open the URL Admiral printed"; a ship missing from the list closes the bridge.
 
 The terminal is xterm.js (MIT) with the fit and WebGL addons, loaded when the first bridge opens.
