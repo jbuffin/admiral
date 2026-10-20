@@ -46,9 +46,10 @@ type Ship struct {
 
 // Orders is where a launch finds its order: the order sources.
 type Orders interface {
-	// Order is the text to launch with, the order's repo and its web URL. It
-	// refuses with a launcher.Error when the source or the order is unknown.
-	Order(source, id string) (text, repo, url string, err *launcher.Error)
+	// Order is the text to launch with, the order's title, its repo and its web
+	// URL. It refuses with a launcher.Error when the source or the order is
+	// unknown.
+	Order(source, id string) (text, title, repo, url string, err *launcher.Error)
 	// Launched tells the source its order was launched.
 	Launched(source, id string)
 }
@@ -292,7 +293,7 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var lerr *launcher.Error
-		if req.Text, _, req.URL, lerr = s.Orders.Order(req.Source, req.OrderID); lerr != nil {
+		if req.Text, req.Title, _, req.URL, lerr = s.Orders.Order(req.Source, req.OrderID); lerr != nil {
 			writeError(w, lerr.Status, lerr.Msg)
 			return
 		}

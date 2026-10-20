@@ -38,9 +38,10 @@ type Request struct {
 	OrderID string `json:"order_id"`
 	Text    string `json:"text"`
 	Note    string `json:"note"` // Just launch only: optional text sent before the order
-	// URL is the order's web URL, set by the server from the source's order,
-	// never by the client.
-	URL string `json:"-"`
+	// Title and URL are the order's title and web URL, set by the server from
+	// the source's order, never by the client.
+	Title string `json:"-"`
+	URL   string `json:"-"`
 }
 
 // Skill is the order's skill: Commodore, a named one, or none (Just launch).
@@ -209,14 +210,18 @@ func appendPrompt(argv []string, prompt string, dock bool) []string {
 	return argv
 }
 
-// orderTitle is the first line of an order's or a dock launch's text, with
-// control characters dropped; the title never refuses a launch. A launch with
-// an order id but no source has no title.
+// orderTitle is the first line of an order's title, or of a dock launch's
+// text, with control characters dropped; the title never refuses a launch. A
+// launch with an order id but no source has no title.
 func orderTitle(req Request) string {
 	if req.Source == "" && req.OrderID != "" {
 		return ""
 	}
-	first, _, _ := strings.Cut(strings.TrimLeft(req.Text, " \t\r\n"), "\n")
+	line := req.Text
+	if req.Title != "" {
+		line = req.Title
+	}
+	first, _, _ := strings.Cut(strings.TrimLeft(line, " \t\r\n"), "\n")
 	first = strings.Map(func(r rune) rune {
 		if isControl(r) {
 			return -1

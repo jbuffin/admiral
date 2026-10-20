@@ -24,7 +24,7 @@ Server to browser:
 
 The page itself takes the ship's status from the main `/ws` socket; the `ship` and `refused` messages are for other clients of the bridge.
 
-An order's first line rides the ship as `title` (the eleventh session option, `@admiral-title`, set at launch with control characters, bidi controls and line separators dropped; empty for a launch with no source).
+The first line of an order's title rides the ship as `title` (the eleventh session option, `@admiral-title`, set at launch with control characters, bidi controls and line separators dropped). A dock launch takes the first line of its text instead; a launch with an order ID but no source has none.
 
 The order's web URL rides the ship as `url` (the twelfth session option, `@admiral-url`, taken at launch from the source's order (sources keep only http and https URLs); empty for a launch with no source, an order without one, or a ship launched before this option existed).
 

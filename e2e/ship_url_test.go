@@ -38,12 +38,13 @@ func (in *fleetInst) urlOf(t *testing.T, session string) (string, bool) {
 
 // A ship keeps its order's web URL, across a restart; an order with no url or a
 // non-web one, or a launch with no order, leaves it empty. The URL comes only
-// from the order lookup, never from the launch request.
+// from the order lookup, never from the launch request. The ship's title is the
+// order's title even when the order's text is only its URL, as GitHub's is.
 func TestShipKeepsItsOrdersURL(t *testing.T) {
 	w := newWorld(t)
 	p := w.newTP("a")
 	p.mainOrders(
-		map[string]any{"id": "web", "title": "Web order", "url": "https://example.com/issues/106"},
+		map[string]any{"id": "web", "title": "Web order", "text": "https://example.com/issues/106", "url": "https://example.com/issues/106"},
 		map[string]any{"id": "none", "title": "No url order"},
 		map[string]any{"id": "js", "title": "Script url order", "url": "javascript:alert(1)"},
 		map[string]any{"id": "ftp", "title": "Ftp url order", "url": "ftp://x/y"},
@@ -88,6 +89,9 @@ func TestShipKeepsItsOrdersURL(t *testing.T) {
 	}
 	w.in.waitShipsList(t, 10*time.Second, "all five ships", func(l []shipJSON) bool { return len(l) == 5 })
 	check("after launch")
+	if got, _ := w.in.titleOf(t, ships["web"].Session); got != "Web order" {
+		t.Errorf("ship from an order whose text is its url has title %q, want the order's title", got)
+	}
 
 	w.restart()
 	w.in.waitShipsList(t, 10*time.Second, "all five ships after the restart", func(l []shipJSON) bool { return len(l) == 5 })
