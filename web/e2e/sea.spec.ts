@@ -55,7 +55,7 @@ async function shipNamed(page: Page, re: RegExp) {
 }
 
 test.describe('S2: a launched ship appears in open water', () => {
-  test('launching through the dock puts a ship at sea with the fleet stripe, flag and plaque; another browser sees it in the same spot', async ({ page, browser, admiral, sea }, info) => {
+  test('launching through the dock puts a ship at sea with the fleet stripe, flag and plaque; another browser sees it in the same spot', { tag: '@critical' }, async ({ page, browser, admiral, sea }, info) => {
     const touch = isTouch(info);
     const s = sea({ work: { name: 'Work', color: BLUE }, home: { name: 'Home', color: ORANGE } });
     s.world.checkout('alpha');

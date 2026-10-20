@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 // S7: the page loads, shows the header, has no console errors and talks to no
 // host but the server (story 10).
-test('page shows Admiral, logs no errors and requests only the server', async ({ page, baseURL }) => {
+test('page shows Admiral, logs no errors and requests only the server', { tag: '@critical' }, async ({ page, baseURL }) => {
   const errors: string[] = [];
   const foreign: string[] = [];
   const server = new URL(baseURL!);
