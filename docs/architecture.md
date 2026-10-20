@@ -2,7 +2,7 @@
 
 **Superseded** by the [Admiral MVP spec](https://github.com/jbuffin/admiral/issues/45) and the ADRs. Kept for history: parts of it (LAN access as an opt-in, a `state.db`, GitHub as the first order source, the build order) no longer hold.
 
-A starting point for the build, not a decision record. The decisions it rests on are in `docs/adr/`. Admiral is a standalone session launcher (ADR 0003); it does not use Commodore Launcher.
+A starting point for the build, not a decision record. The decisions it rests on are in `docs/adr/`. Admiral is a standalone session launcher (ADR 0003).
 
 ## Shape
 
