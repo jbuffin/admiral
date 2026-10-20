@@ -30,7 +30,7 @@ brew install jbuffin/admiral/admiral
 curl --proto '=https' --tlsv1.2 -fsSL https://github.com/jbuffin/admiral/releases/latest/download/install.sh | sh
 ```
 
-`PREFIX=<dir>` changes where `bin/admiral` goes, and `ADMIRAL_VERSION=<x.y.z>` picks a release. The script checks the tarball against its SHA-256 file before it unpacks anything. If `~/.local/bin` isn't on your `PATH`, the script warns; add it, for example `export PATH="$HOME/.local/bin:$PATH"` in `~/.zshrc`.
+Set the options after the pipe, before `sh`: `curl … | PREFIX=<dir> ADMIRAL_VERSION=<x.y.z> sh`. `PREFIX=<dir>` changes where `bin/admiral` goes, and `ADMIRAL_VERSION=<x.y.z>` picks a release. The script checks the tarball against its SHA-256 file before it unpacks anything. If `~/.local/bin` isn't on your `PATH`, the script warns; add it, for example `export PATH="$HOME/.local/bin:$PATH"` in `~/.zshrc`.
 
 The binary is ad-hoc signed, not notarized. Installing with Homebrew or the script leaves no quarantine attribute, so Gatekeeper doesn't stop it; a tarball downloaded in a browser would need `xattr -d com.apple.quarantine`.
 
@@ -41,11 +41,11 @@ admiral setup            # find your harnesses and add your first fleet
 admiral service install  # start Admiral at login, and restart it if it stops
 ```
 
-`admiral service install` prints the "On other devices" URL with your token. Open that URL on your iPad or another device. `admiral service status` says whether the service is running and prints the URL again.
+`admiral service install` prints the "On other devices" URL with your token. Open that URL on your iPad or another device. Admiral logs to `$ADMIRAL_HOME/logs/admiral.log`. `admiral service status` says whether the service is installed and loaded, and prints the URL again.
 
 ## Upgrade
 
-With Homebrew, run `brew upgrade admiral`. With the curl script, run it again (the same command as above). Then restart the service so it runs the new version:
+With Homebrew, run `brew upgrade admiral`. With the curl script, run it again with the same `PREFIX`. Then restart the service so it runs the new version:
 
 ```sh
 launchctl kickstart -k gui/$UID/dev.jasonbuffin.admiral
@@ -55,18 +55,19 @@ To switch from the curl script to Homebrew:
 
 ```sh
 brew install jbuffin/admiral/admiral
-$(brew --prefix)/bin/admiral service install   # points the LaunchAgent at the Homebrew binary
-rm ~/.local/bin/admiral
+$(brew --prefix)/bin/admiral service install   # points the LaunchAgent at the Homebrew binary; set ADMIRAL_HOME again here if you use one
+rm ~/.local/bin/admiral                        # or <PREFIX>/bin/admiral
 ```
 
 ## Uninstall
 
 ```sh
 admiral service uninstall
-brew uninstall admiral        # or, for a curl install: rm ~/.local/bin/admiral
+tmux -S ~/.admiral/tmux.sock kill-server   # ends every running ship's session; use $ADMIRAL_HOME/tmux.sock if you set it
+brew uninstall admiral                     # or, for a curl install: rm ~/.local/bin/admiral (or <PREFIX>/bin/admiral)
 ```
 
-This leaves `$ADMIRAL_HOME` (default `~/.admiral/`), which holds your config, token and state. Delete it to remove everything.
+Admiral's tmux server and ships outlive the service, so end them first. This leaves `$ADMIRAL_HOME` (default `~/.admiral/`), which holds your config, token, state, `logs/`, and `plugins/` and `data/` (your own order-source plugins and their data). Delete it to remove everything.
 
 ## Development
 
@@ -77,18 +78,16 @@ npm --prefix web ci                 # once per checkout
 npm --prefix web exec playwright install webkit   # once, for the browser tests
 make build                          # UI, then bin/admiral
 bin/admiral --listen 127.0.0.1:7420 # prints the local URL and the URL for other devices
-make lint                           # go vet and the TypeScript check
+make lint                           # go vet, the TypeScript check and the docs lint
 make test                           # Go and Vitest unit tests
 make e2e                            # builds, then the server and browser tests
 ```
 
-For UI work, run `bin/admiral --listen 127.0.0.1:7420` and then `npm --prefix web run dev`. Vite forwards `/api` and `/ws` to the server (set `ADMIRAL_SERVER` for another address).
-
-For the code map, tests and releases, start from [`AGENTS.md`](AGENTS.md) and `docs/agents/`.
+For UI work, run `bin/admiral --listen 127.0.0.1:7420` and then `npm --prefix web run dev`. Vite forwards `/api` and `/ws` to the server (set `ADMIRAL_SERVER` for another address). For the code map, tests and releases, start from [`AGENTS.md`](AGENTS.md) and `docs/agents/`.
 
 ## More
 
-- [Plugin guide](docs/plugins.md): write an order source.
+- [Plugin guide](docs/plugins.md): write an order source plugin.
 - [Command line reference](docs/cli.md): every `admiral` command.
 - [Personal builds](docs/personal-builds.md): build with the official harness logos.
 - Admiral is released under the MIT License ([`LICENSE`](LICENSE)). Its bundled third-party code keeps its own licences, listed in `THIRD_PARTY_NOTICES`.

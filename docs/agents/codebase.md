@@ -1,6 +1,6 @@
 # Codebase
 
-Where things are in the repo, and a few runtime pieces that are easy to miss. Read this before changing the server, the launcher or the setup terminal.
+The package map, API routes and ship statuses, idle memory figures and the setup terminal. Read this before changing the server, the launcher, ships or the setup terminal.
 
 ## Layout
 
