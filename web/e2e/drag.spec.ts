@@ -59,7 +59,7 @@ async function expectAtRest(page: Page) {
 test.describe('S1: touch drag', () => {
   test.beforeEach(({}, info) => test.skip(info.project.name !== 'ipad-landscape'));
 
-  test('a horizontal drag arms every dock, the dock under the finger is gold, release opens launch orders for it', async ({ page, admiral }) => {
+  test('a horizontal drag arms every dock, the dock under the finger is gold, release opens launch orders for it', { tag: '@critical' }, async ({ page, admiral }) => {
     const { order, start } = await harbor(page, admiral, true);
     const finger = await TouchPointer.on(order);
 
