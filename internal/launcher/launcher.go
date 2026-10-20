@@ -207,7 +207,8 @@ func appendPrompt(argv []string, prompt string, dock bool) []string {
 }
 
 // orderTitle is the first line of an order's or a dock launch's text, with
-// control characters dropped; the title never refuses a launch.
+// control characters dropped; the title never refuses a launch. A launch with
+// an order id but no source has no title.
 func orderTitle(req Request) string {
 	if req.Source == "" && req.OrderID != "" {
 		return ""

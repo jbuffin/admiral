@@ -1143,6 +1143,9 @@ button:focus-visible {
   pointer-events: none;
 }
 
+/* A tap on the moored ship is a tap on its dock. */
+.moored:not(.leaving) { pointer-events: auto; }
+
 .pier {
   position: relative;
   width: 100%;

@@ -63,7 +63,7 @@ func TestDockLaunchPrompt(t *testing.T) {
 	for _, c := range cases {
 		for _, harness := range []string{"claude", "codex", "copilot"} {
 			n++
-			repo := "dl"+string(rune('a'+n%26))+string(rune('a'+n/26))
+			repo := "dl" + string(rune('a'+n%26)) + string(rune('a'+n/26))
 			t.Run(c.name+"/"+harness, func(t *testing.T) {
 				w := w.at(t)
 				ship := w.launch(w.dockLaunch(harness, repo, c.text))
@@ -89,7 +89,7 @@ func TestDockLaunchWithoutText(t *testing.T) {
 	w.start()
 	for label, text := range map[string]string{"empty": "", "whitespace": " \n\t "} {
 		for _, harness := range []string{"claude", "codex", "copilot"} {
-			text, harness, repo := text, harness, "dn-"+label+"-"+harness
+			repo := "dn-" + label + "-" + harness
 			t.Run(harness+"/"+label, func(t *testing.T) {
 				w := w.at(t)
 				ship := w.launch(w.dockLaunch(harness, repo, text))

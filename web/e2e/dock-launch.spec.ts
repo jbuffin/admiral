@@ -75,6 +75,14 @@ test.describe('Launch orders without an order', () => {
     await press(d.getByRole('button', { name: 'Stay in port' }), touch);
     await expect(d).toHaveCount(0);
 
+    // A tap on the ship moored at the dock opens launch orders too.
+    await press(dock(page, 'Work', 'Claude').locator('.moored'), touch);
+    d = dialog(page);
+    await expect(d).toBeVisible();
+    await expect(d.getByRole('textbox', { name: 'What should it do?' })).toBeVisible();
+    await press(d.getByRole('button', { name: 'Stay in port' }), touch);
+    await expect(d).toHaveCount(0);
+
     // With an order selected, the same tap opens launch orders for that order, skill picker and all.
     await press(sidebar(page).getByText('Fix the flaky test', { exact: true }), touch);
     await press(dock(page, 'Work', 'Claude'), touch);
