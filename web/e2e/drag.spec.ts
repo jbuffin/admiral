@@ -205,8 +205,10 @@ test.describe('S3: tap to select', () => {
   test('a tap selects the order and arms the docks, a tap on a dock opens launch orders, a second tap on the order deselects', async ({ page, admiral }) => {
     const { order } = await harbor(page, admiral, false);
 
-    // A dock tapped with nothing selected opens nothing.
+    // A dock tapped with nothing selected opens launch orders with no order (#102).
     await dock(page, 'Work', 'Claude').tap();
+    await expect(dialog(page)).toHaveCount(1);
+    await dialog(page).getByRole('button', { name: 'Stay in port' }).tap();
     await expect(dialog(page)).toHaveCount(0);
 
     await order.tap();

@@ -17,8 +17,8 @@ export interface Pointer {
 export const dragging = signal<(OrderRef & Pointer & { dock: string | null }) | null>(null);
 // The order picked by a tap.
 export const selected = signal<OrderRef | null>(null);
-// The open launch orders: this order for this dock.
-export const launching = signal<(OrderRef & { fleet: string; harness: HarnessName }) | null>(null);
+// The open launch orders: this order for this dock, or the dock alone (a dock launch).
+export const launching = signal<(Partial<OrderRef> & { fleet: string; harness: HarnessName }) | null>(null);
 
 // An order that leaves the sidebar (launched elsewhere, removed, filtered out)
 // is no longer selected, and Escape deselects.
@@ -38,7 +38,7 @@ export const dockKey = (fleet: string, harness: string) => `${fleet}/${harness}`
 const sameOrder = (a: OrderRef, b: OrderRef) => a.source === b.source && a.order.id === b.order.id;
 export const isSelected = (r: OrderRef) => !!selected.value && sameOrder(selected.value, r);
 
-export function openLaunch(ref: OrderRef, fleet: string, harness: HarnessName): void {
+export function openLaunch(ref: OrderRef | null, fleet: string, harness: HarnessName): void {
   selected.value = null;
   launching.value = { ...ref, fleet, harness };
 }
