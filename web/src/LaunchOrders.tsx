@@ -321,6 +321,19 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
             <p class="launch-note">{dirsError}</p>
           ) : (
             <>
+              {!order && (
+                <div class="field">
+                  <label for="launch-text">What should it do?</label>
+                  <textarea
+                    id="launch-text"
+                    class="launch-input launch-text"
+                    placeholder="Optional. Leave empty to start the harness with no prompt."
+                    rows={4}
+                    value={note}
+                    onInput={(e) => setNote((e.target as HTMLTextAreaElement).value)}
+                  />
+                </div>
+              )}
               <div class="field" ref={dirBox}>
                 <label for="launch-dir">Directory</label>
                 <input
@@ -365,7 +378,7 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
                 {entry && entry.ships_here > 0 && <p class="launch-warn">Another ship already runs here</p>}
               </div>
 
-              {order ? (
+              {order && (
                 <>
               <span class="label">Sail with</span>
               {/* Not a label: a tap on the text of a disabled row must reach the row, to show why it is off. */}
@@ -479,18 +492,6 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
                 />
               </div>
                 </>
-              ) : (
-                <div class="field">
-                  <label for="launch-text">What should it do?</label>
-                  <textarea
-                    id="launch-text"
-                    class="launch-input launch-text"
-                    placeholder="Optional. Leave empty to start the harness with no prompt."
-                    rows={4}
-                    value={note}
-                    onInput={(e) => setNote((e.target as HTMLTextAreaElement).value)}
-                  />
-                </div>
               )}
               {error && <p role="alert">{error}</p>}
             </>

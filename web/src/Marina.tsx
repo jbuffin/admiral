@@ -65,6 +65,7 @@ function DockView({ fleet, dock, top, index, height }: { fleet: Fleet; dock: Doc
       data-dock={key}
       onClick={() => {
         // A tap on a dock launches the selected order, or just the dock when none is selected.
+        if (dragging.value) return;
         openLaunch(selected.value, fleet.key, dock.harness);
       }}
       style={`top:${top}px`}

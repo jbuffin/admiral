@@ -63,7 +63,7 @@ func TestDockLaunchPrompt(t *testing.T) {
 	for _, c := range cases {
 		for _, harness := range []string{"claude", "codex", "copilot"} {
 			n++
-			c, harness, repo := c, harness, "dl"+string(rune('a'+n%26))+string(rune('a'+n/26))
+			repo := "dl"+string(rune('a'+n%26))+string(rune('a'+n/26))
 			t.Run(c.name+"/"+harness, func(t *testing.T) {
 				w := w.at(t)
 				ship := w.launch(w.dockLaunch(harness, repo, c.text))
@@ -128,7 +128,6 @@ func TestDockLaunchRefusesASkill(t *testing.T) {
 	w.start()
 	w.launch(w.dockLaunch("claude", "dr-ok", "control")) // the endpoint works, so a refusal isn't a missing route
 	for name, skill := range map[string]map[string]any{"commodore": commodore, "named skill": customSkill("foo")} {
-		skill := skill
 		t.Run(name, func(t *testing.T) {
 			w := w.at(t)
 			req := w.dockLaunch("claude", "dr-"+name, "hello")

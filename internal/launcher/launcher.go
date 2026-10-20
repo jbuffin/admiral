@@ -206,11 +206,10 @@ func appendPrompt(argv []string, prompt string, dock bool) []string {
 	return argv
 }
 
-// orderTitle is the first line of an order from a source or of a dock launch's
-// text, with control characters dropped; the title never refuses a launch. A
-// launch with an order id but no source has none.
+// orderTitle is the first line of an order's or a dock launch's text, with
+// control characters dropped; the title never refuses a launch.
 func orderTitle(req Request) string {
-	if req.Source == "" && !req.dockLaunch() {
+	if req.Source == "" && req.OrderID != "" {
 		return ""
 	}
 	first, _, _ := strings.Cut(strings.TrimLeft(req.Text, " \t\r\n"), "\n")

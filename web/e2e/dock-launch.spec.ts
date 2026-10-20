@@ -40,6 +40,10 @@ test.describe('Launch orders without an order', () => {
     await expect(text).toBeVisible();
     const directory = d.getByRole('combobox', { name: 'Directory' });
     const hoist = d.getByRole('button', { name: 'Hoist sails' });
+    // The text box comes first, then the directory, then the buttons.
+    const above = async (a: typeof text, b: typeof text) => expect((await a.boundingBox())!.y).toBeLessThan((await b.boundingBox())!.y);
+    await above(text, directory);
+    await above(directory, hoist);
     await expect(d.getByRole('button', { name: 'Stay in port' })).toBeVisible();
 
     // A dock with no last directory selects nothing, and Hoist sails waits for a pick.
