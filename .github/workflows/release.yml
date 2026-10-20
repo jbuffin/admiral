@@ -3,7 +3,7 @@ name: Release
 # Cuts a release from main: picks the next version, builds and checks it, tags
 # it, publishes the GitHub release and pushes the formula to the tap. Nothing is
 # tagged or published until the build, the tests and the offline formula audit
-# pass. See "Cutting a release" in the README.
+# pass. See docs/agents/releasing.md.
 
 on:
   workflow_dispatch:

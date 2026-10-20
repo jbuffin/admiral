@@ -1,0 +1,11 @@
+# Testing
+
+How Admiral's tests are set up. The rules for what to test are in [`AGENTS.md`](../../AGENTS.md).
+
+Admiral keeps its data in `$ADMIRAL_HOME` (default `~/.admiral/`). Every test starts the binary with a fresh temporary one on a free port, so tests never touch yours.
+
+Tests sit at two seams. `e2e/` (Go) starts `bin/admiral` and drives it over HTTP and WebSocket. `web/e2e/` (Playwright, WebKit) loads the page at iPad landscape, iPad portrait and desktop sizes. Vitest covers pure UI state logic only.
+
+Tests that launch ships use the fake harnesses in `e2e/fakeharness/` (`claude`, `codex` and `copilot` are symlinks to `fake.sh`). A test puts one as the `executable` of a fleet and passes two variables in the fleet's `env`: `FAKE_RECORD_DIR` (where to record) and `FAKE_CUE` (an optional cue file). Started in a ship's pane, the fake writes `<FAKE_RECORD_DIR>/<tmux session>/` with `harness`, `argv` (each argument followed by a NUL byte), `env` (one `NAME=value` per line), `cwd`, `name` (the `@admiral-name` option as read at start), `options` (all session options at start) and last an empty `recorded` file to wait for. Then it runs the cue file, one cue per line: `hook <needs_you|working>` runs `tmux set -p @admiral-state <state>`, `bell` rings the bell, `sleep <n>` waits n seconds, `exit <n>` exits with status n, `lines <n>` prints n numbered lines (`line 0001`…) in cycling SGR colours, `altscreen` switches to the alternate screen with application cursor keys and bracketed paste on and prints `ALT SCREEN`, and `wait <name>` blocks until the file `<tmux session>/<name>` exists in the recording directory. When the cues end it puts the terminal in raw mode (`stty raw -echo`), creates `cues-done` and stays running unless a cue exited; from then on it records every byte it reads from the terminal, exactly as received, in `stdin` (a test sends input only after `cues-done`). The same protocol is in the header of `fake.sh`. Tests that run tmux set `TMUX_TMPDIR` to a temporary directory and talk to tmux only with `tmux -S <home>/tmux.sock`.
+
+The server tests that connect through the Mac's own LAN address skip, with a message, when that address doesn't answer. They always run in CI.
