@@ -64,7 +64,28 @@ export const declares = (s: Source, capability: string) => s.capabilities.includ
 export const can = (s: Source, capability: string) => declares(s, capability) && !s.read_only;
 export const isWebUrl = (u?: string) => !!u && /^https?:\/\//i.test(u);
 
-export const matches = (o: Order, q: string) => !q || `${o.id} ${o.title}`.toLowerCase().includes(q);
+// A web address reduced to what tells two pages apart: no scheme, www.,
+// query, fragment or trailing slash.
+const bareUrl = (u: string) =>
+  u.toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/[?#].*$/, '').replace(/[.,;:!]+$/, '').replace(/\/+$/, '');
+
+// Every web address an order carries: its link and any in its text.
+const urlsOf = (o: Order) =>
+  [o.url, ...(`${o.title} ${o.text ?? ''}`.match(/https?:\/\/[^\s<>"')\]]+/gi) ?? [])].filter(isWebUrl).map((u) => bareUrl(u!));
+
+// One address names the other's page or a page under it, segment by segment.
+const sameOrUnder = (a: string, b: string) => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+
+// A pasted web address matches an order that carries it, a page under it, or
+// a page it is under; anything else matches the ID or title.
+export const matches = (o: Order, q: string) => {
+  if (!q) return true;
+  if (isWebUrl(q)) {
+    const want = bareUrl(q);
+    return urlsOf(o).some((u) => sameOrUnder(u, want));
+  }
+  return `${o.id} ${o.title}`.toLowerCase().includes(q);
+};
 
 // A panel as the sidebar shows it: its title, its orders after the filter, and
 // the colour that tells its source apart.
