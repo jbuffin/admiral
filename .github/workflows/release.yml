@@ -45,6 +45,14 @@ jobs:
           echo "Releases run from main only, not $GITHUB_REF." >&2
           exit 1
 
+      - name: Check the tap secret
+        if: ${{ !inputs.dry_run }}
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          test -n "$TAP_TOKEN" || { echo "The HOMEBREW_TAP_TOKEN secret is not set." >&2; exit 1; }
+          git ls-remote "https://x-access-token:$TAP_TOKEN@github.com/$TAP_REPO.git" >/dev/null
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -118,7 +126,6 @@ jobs:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          test -n "$TAP_TOKEN" || { echo "The HOMEBREW_TAP_TOKEN secret is not set." >&2; exit 1; }
           clone=$RUNNER_TEMP/tap
           git clone "https://x-access-token:$TAP_TOKEN@github.com/$TAP_REPO.git" "$clone"
           mkdir -p "$clone/Formula"
