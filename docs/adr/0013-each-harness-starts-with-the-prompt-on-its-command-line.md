@@ -49,3 +49,5 @@ The no-first-hook rule (ADR 0007) shows a ship stopped on any of these dialogs a
 - A hook bundle change that alters a Codex hook definition brings back the review dialog once per fleet.
 
 Amended 2026-10-18 ([#5](https://github.com/jbuffin/admiral/issues/5)): every hook now runs `admiral hook <event>` through a fixed `~/.admiral/bin` on `PATH`, so the hook text stays the same across upgrades (ADR 0014). A live check showed that a bare `tmux set -p` writes to the session's active pane, not to `$TMUX_PANE`, so hooks pass `-t "$TMUX_PANE"`. This went unseen while every ship had a single pane.
+
+Amended 2026-10-20 ([#102](https://github.com/jbuffin/admiral/issues/102)): tapping a dock with no order selected opens launch orders without an order, which offers no skill, only a text box and the directory. The text is sent as the prompt as one argument, newlines kept and leading and trailing whitespace trimmed, with no guard, so text starting with `/` or `$` runs that skill or command. When the text is empty, the command line ends after Admiral's flags: no `--` and no prompt, and the harness starts idle. The no-first-hook rule (ADR 0007) shows that ship as needs-you.
