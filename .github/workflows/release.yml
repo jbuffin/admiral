@@ -1,0 +1,162 @@
+name: Release
+
+# Cuts a release from main: picks the next version, builds and checks it, tags
+# it, publishes the GitHub release and pushes the formula to the tap. Nothing is
+# tagged or published until the build, the tests and the offline formula audit
+# pass. See "Cutting a release" in the README.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Part of the version to raise
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      version:
+        description: Exact version x.y.z instead of the bump (optional)
+        type: string
+        required: false
+      dry_run:
+        description: Build and audit only; tag, publish and push nothing
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  TAP: jbuffin/admiral
+  TAP_REPO: jbuffin/homebrew-admiral
+  HOMEBREW_NO_AUTO_UPDATE: "1"
+  HOMEBREW_NO_INSTALL_CLEANUP: "1"
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - name: Refuse refs other than main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "Releases run from main only, not $GITHUB_REF." >&2
+          exit 1
+
+      # The tap is pushed over SSH with a write deploy key on the tap repo.
+      # github.com's host keys come from GitHub's API, so host checking stays on.
+      - name: Check the tap deploy key
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAP_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+        run: |
+          test -n "$TAP_KEY" || { echo "The HOMEBREW_TAP_DEPLOY_KEY secret is not set." >&2; exit 1; }
+          key=$RUNNER_TEMP/tap-key
+          hosts=$RUNNER_TEMP/tap-known-hosts
+          (umask 077 && printf '%s\n' "$TAP_KEY" > "$key")
+          gh api meta --jq '.ssh_keys[] | "github.com " + .' > "$hosts"
+          ssh="ssh -i $key -o IdentitiesOnly=yes -o UserKnownHostsFile=$hosts -o StrictHostKeyChecking=yes"
+          echo "TAP_SSH=$ssh" >> "$GITHUB_ENV"
+          GIT_SSH_COMMAND=$ssh git ls-remote "git@github.com:$TAP_REPO.git" >/dev/null
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Pick the version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          version=$(sh packaging/next-version.sh "$BUMP" "$VERSION")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Releasing $version" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: brew install tmux
+      - run: npm ci
+        working-directory: web
+      - run: make build
+      - run: make lint
+      - run: make test
+
+      - name: Build the release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          make release VERSION="$VERSION"
+          tarball=dist/admiral-$VERSION-darwin-arm64.tar.gz
+          echo "sha256=$(cut -d ' ' -f 1 "$tarball.sha256")" >> "$GITHUB_ENV"
+
+      # The tarball isn't published yet, so this audit stays offline. The
+      # online audit runs once the release exists.
+      - name: Render and check the formula
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          sh packaging/homebrew/render.sh "$VERSION" "$sha256" > "$RUNNER_TEMP/admiral.rb"
+          brew tap-new --no-git jbuffin/admiral-check
+          cp "$RUNNER_TEMP/admiral.rb" "$(brew --repository)/Library/Taps/jbuffin/homebrew-admiral-check/Formula/admiral.rb"
+          brew style jbuffin/admiral-check/admiral
+          brew audit --strict jbuffin/admiral-check/admiral
+          brew untap jbuffin/admiral-check
+
+      - name: Tag and publish the GitHub release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$VERSION" -m "Admiral $VERSION" "$GITHUB_SHA"
+          git push origin "v$VERSION"
+          gh release create "v$VERSION" --verify-tag --title "Admiral $VERSION" --generate-notes \
+            "dist/admiral-$VERSION-darwin-arm64.tar.gz" \
+            "dist/admiral-$VERSION-darwin-arm64.tar.gz.sha256" \
+            dist/install.sh
+
+      # The formula is committed in a local clone and audited online from it
+      # before anything reaches the tap.
+      - name: Update the tap
+        if: ${{ !inputs.dry_run }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          export GIT_SSH_COMMAND=$TAP_SSH
+          clone=$RUNNER_TEMP/tap
+          git clone "git@github.com:$TAP_REPO.git" "$clone"
+          mkdir -p "$clone/Formula"
+          cp "$RUNNER_TEMP/admiral.rb" "$clone/Formula/admiral.rb"
+          git -C "$clone" add Formula/admiral.rb
+          git -C "$clone" -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "admiral $VERSION"
+          brew tap "$TAP" "$clone"
+          brew audit --strict --online "$TAP/admiral"
+          brew untap "$TAP"
+          git -C "$clone" push origin HEAD:main
+
+      - name: Smoke-check both install paths
+        if: ${{ !inputs.dry_run }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          brew tap "$TAP"
+          brew install "$TAP/admiral"
+          brew test admiral
+          "$(brew --prefix)/bin/admiral" --version | grep -q "^admiral $VERSION "
+
+          curl --proto '=https' --tlsv1.2 -fsSL "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION/install.sh" \
+            | ADMIRAL_VERSION="$VERSION" PREFIX="$RUNNER_TEMP/curl-install" sh
+          "$RUNNER_TEMP/curl-install/bin/admiral" --version | grep -q "^admiral $VERSION "

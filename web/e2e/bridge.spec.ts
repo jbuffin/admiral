@@ -78,7 +78,7 @@ async function board(page: Page, re: RegExp, touch: boolean) {
 }
 
 test.describe('S5: boarding a ship and typing on the bridge', () => {
-  test('tapping a ship opens the bridge; typing, Shift+Enter and the key buttons reach the harness', async ({ page, admiral, sea }, info) => {
+  test('tapping a ship opens the bridge; typing, Shift+Enter and the key buttons reach the harness', { tag: '@critical' }, async ({ page, admiral, sea }, info) => {
     const touch = isTouch(info);
     const s = sea({ work: { name: 'Work', color: BLUE } });
     s.world.skill('work', 'claude', 'review');
@@ -356,7 +356,7 @@ test.describe('S5: boarding a ship and typing on the bridge', () => {
 });
 
 test.describe('S6: the server goes away', () => {
-  test('restarting with the bridge open: Reconnecting…, dimmed, input disabled and unqueued; back, the screen is replaced and input works', async ({ page, admiral, sea }, info) => {
+  test('restarting with the bridge open: Reconnecting…, dimmed, input disabled and unqueued; back, the screen is replaced and input works', { tag: '@critical' }, async ({ page, admiral, sea }, info) => {
     test.setTimeout(60_000);
     const touch = isTouch(info);
     const s = sea({ work: { name: 'Work', color: BLUE } });

@@ -1,4 +1,4 @@
-.PHONY: build test lint e2e release
+.PHONY: build test lint lint-docs e2e e2e-critical release
 
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shell git diff --quiet HEAD 2>/dev/null || echo -dirty)
 BIN ?= bin/admiral
@@ -11,13 +11,27 @@ test:
 	go test -count=1 $$(go list ./... | grep -v /e2e)
 	npm --prefix web test
 
-lint:
+lint: lint-docs
 	go vet ./...
 	npm --prefix web run typecheck
+
+# Every tracked Markdown file: markdownlint, then relative links and anchors.
+# External URLs are never fetched.
+DOCS = $(shell git ls-files '*.md')
+lint-docs:
+	web/node_modules/.bin/markdownlint-cli2 $(DOCS)
+	cd web && node_modules/.bin/remark --frail --quiet --no-stdout --use remark-validate-links $(addprefix ../,$(DOCS))
 
 e2e: build
 	go test -count=1 ./e2e/...
 	npm --prefix web run e2e
+
+# What CI runs: the Go e2e tests and the @critical browser flows on the iPad
+# viewport. The CI runner's virtual GPU resets under WebKit about 40 times a
+# minute, so the full matrix flakes there (#94); it runs locally before a PR.
+e2e-critical: build
+	go test -count=1 ./e2e/...
+	npm --prefix web run e2e -- --project ipad-landscape --grep @critical
 
 # The release: a clean UI build, the darwin/arm64 binary stamped with the
 # version and commit, and the tarball with its checksum in $(DIST). A shared

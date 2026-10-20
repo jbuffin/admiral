@@ -61,7 +61,7 @@ test.describe('S1: fresh install', () => {
 });
 
 test.describe('S2: the freeform list', () => {
-  test('add a three-line order, edit it, remove it; a refused text shows the server message and adds nothing', async ({
+  test('add a three-line order, edit it, remove it; a refused text shows the server message and adds nothing', { tag: '@critical' }, async ({
     page,
     admiral,
   }, info) => {
@@ -256,7 +256,7 @@ test.describe('S5: filter', () => {
 });
 
 test.describe('S6: add and configure source plugins', () => {
-  test('the same plugin twice, settings saved, one restarts, one removed', async ({ page, admiral }) => {
+  test('the same plugin twice, settings saved, one restarts, one removed', { tag: '@critical' }, async ({ page, admiral }) => {
     admiral.installTestPlugin();
     const a = admiral.flags('alpha');
     const b = admiral.flags('beta');
@@ -470,9 +470,16 @@ test.describe('S8: rearranging sources and panels', () => {
     await expect.poll(() => sourceOrder(page)).toEqual(['Tracker', 'Orders']);
     await expect.poll(() => panelOrder(page)).toEqual(['Done', 'Todo', 'Orders']);
 
-    const config = JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8'));
-    expect(Object.keys(config.sources)).toEqual(['tracker', 'orders']);
-    expect(config.sources.tracker.panel_order).toEqual(['done', 'todo']);
+    // The page reorders before the server writes config.json, so wait for the file.
+    await expect
+      .poll(() => {
+        const config = JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8'));
+        return [Object.keys(config.sources), config.sources.tracker.panel_order];
+      })
+      .toEqual([
+        ['tracker', 'orders'],
+        ['done', 'todo'],
+      ]);
     expect(f.starts()).toBe(1); // rearranging never restarts a source
 
     await page.reload();
