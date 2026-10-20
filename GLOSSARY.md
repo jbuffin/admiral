@@ -40,11 +40,11 @@ The harbor on the land side of the screen that belongs to one fleet. It holds on
 _Avoid_: shipyard, yard (older design names)
 
 **Dock**:
-One harness within one fleet (Work Fleet's Claude dock). Dropping an order on a dock opens launch orders for that fleet and harness. A ship waits moored at each dock.
+One harness within one fleet (Work Fleet's Claude dock). Dropping an order on a dock opens launch orders for that fleet and harness, and tapping a dock with no order selected opens launch orders without one. A ship waits moored at each dock.
 _Avoid_: slot, target
 
 **Launch orders**:
-The dialog that opens when an order is dropped on a dock. The engineer chooses what the session starts with: Commodore (the default, a task force), a favorite skill, a custom skill typed in with type-ahead over installed skills, or no skill at all, which sends the order's text to the harness as it is.
+The dialog that opens on a dock, with an order dropped on it or with none. With an order, the engineer chooses what the session starts with: Commodore (the default, a task force), a favorite skill, a custom skill typed in with type-ahead over installed skills, or no skill at all, which sends the order's text to the harness as it is. Without an order there is no skill to choose: the engineer may type the text the harness starts with, or leave it empty to start the harness idle, and the ship has no order.
 _Avoid_: launch menu, modal
 
 **Favorite skill**:
