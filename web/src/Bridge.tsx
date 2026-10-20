@@ -134,6 +134,8 @@ function BridgeView({ session }: { session: string }) {
   };
   const sub = [h.label, ship.fleet_name, ship.skill, ship.repo].filter(Boolean).join(' · ');
   const canType = open && linkState === 'open';
+  // Ships launched before @admiral-url have no url, but a pasted order's title is often the link itself.
+  const orderHref = isWebUrl(ship.url) ? ship.url : isWebUrl(ship.title) && !/\s/.test(ship.title) ? ship.title : undefined;
 
   return (
     <div class={full ? 'bridge full' : 'bridge'} ref={root} {...closeOutside}>
@@ -169,12 +171,14 @@ function BridgeView({ session }: { session: string }) {
           <div class="term-title">
             <span class="term-name">{ship.name}</span>
             <span class="term-sub">{sub}</span>
-            {ship.title && <span class="term-order">{ship.title}</span>}
-            {isWebUrl(ship.url) && (
-              <a class="term-order-id" href={ship.url} target="_blank" rel="noopener noreferrer">
-                {ship.order_id}
-              </a>
-            )}
+            {ship.title &&
+              (orderHref ? (
+                <a class="term-order" href={orderHref} target="_blank" rel="noopener noreferrer">
+                  {ship.title}
+                </a>
+              ) : (
+                <span class="term-order">{ship.title}</span>
+              ))}
             {open && <AttachChip name={ship.name} />}
           </div>
           {signedOut.value ? (

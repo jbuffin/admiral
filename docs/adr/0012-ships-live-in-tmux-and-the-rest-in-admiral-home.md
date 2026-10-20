@@ -10,7 +10,7 @@ Ships run in tmux sessions on Admiral's own socket and outlive the Admiral serve
 
 Decided in [What survives a restart and where it lives](https://github.com/jbuffin/admiral/issues/36).
 
-- **tmux is the only record of a ship.** Each ship's tmux session holds everything about it as session options next to `@admiral-name`: `@admiral-fleet` (key), `@admiral-fleet-name`, `@admiral-fleet-color`, `@admiral-harness`, `@admiral-dir`, `@admiral-skill`, `@admiral-source` and `@admiral-order` (the order source key and the order's `id`) `@admiral-launched` (launch time) and `@admiral-title` (the order's first line, control and bidi characters stripped, shown in the bridge header). On startup Admiral lists the sessions on its socket and rebuilds every ship from them, anchored ones included, because the dead pane is still there (ADR 0008). Admiral keeps no ship table of its own.
+- **tmux is the only record of a ship.** Each ship's tmux session holds everything about it as session options next to `@admiral-name`: `@admiral-fleet` (key), `@admiral-fleet-name`, `@admiral-fleet-color`, `@admiral-harness`, `@admiral-dir`, `@admiral-skill`, `@admiral-source` and `@admiral-order` (the order source key and the order's `id`) `@admiral-launched` (launch time) and `@admiral-title` (the first line of the order's title, or of a dock launch's text, control and bidi characters stripped, shown in the bridge header). On startup Admiral lists the sessions on its socket and rebuilds every ship from them, anchored ones included, because the dead pane is still there (ADR 0008). Admiral keeps no ship table of its own.
 - **A dead tmux server ends every ship.** After a reboot or a `kill-server`, open water starts empty. There is no lost-ships list and no relaunch offer.
 - **An order stays hidden while a ship with its source and `id` exists**, anchored ships included. Once the ship is gone (sailed off, dismissed, or lost with tmux), the order shows again if its source still lists it. Nothing beyond the ship's tmux options records this. The freeform list deletes an order on launch, so for it the question never comes up.
 - **`$ADMIRAL_HOME` (default `~/.admiral/`) is the data dir as well as the config dir:**
@@ -41,3 +41,5 @@ Decided in [What survives a restart and where it lives](https://github.com/jbuff
 - Anyone with a shell on the Mac can attach to a ship, as with any tmux socket the user owns.
 
 Amended 2026-10-18 (MVP build, [spec #45](https://github.com/jbuffin/admiral/issues/45)): the filter text is not stored (story 49); ships also record `@admiral-title` for the bridge header (story 102).
+
+Amended 2026-10-20: `@admiral-title` holds the order's title, not the first line of its text. The GitHub source sends each order's URL as its text, so the first line hid the readable title.

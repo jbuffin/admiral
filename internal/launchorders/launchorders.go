@@ -65,7 +65,7 @@ func (s *Service) serveDirs(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Source != "" {
 		var lerr *launcher.Error
-		if req.Text, req.Repo, _, lerr = s.Orders.Order(req.Source, req.OrderID); lerr != nil {
+		if req.Text, _, req.Repo, _, lerr = s.Orders.Order(req.Source, req.OrderID); lerr != nil {
 			writeError(w, lerr.Status, lerr.Msg)
 			return
 		}
