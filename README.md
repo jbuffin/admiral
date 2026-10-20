@@ -41,7 +41,7 @@ admiral setup            # find your harnesses and add your first fleet
 admiral service install  # start Admiral at login, and restart it if it stops
 ```
 
-`admiral service install` prints the "On other devices" URL with your token. Open that URL on your iPad or another device. Admiral logs to `$ADMIRAL_HOME/logs/admiral.log`. `admiral service status` says whether the service is installed and loaded, and prints the URL again.
+`admiral service install` prints the "On other devices" URL with your token. Open that URL on your iPad or another device. Admiral logs to `~/.admiral/logs/admiral.log` (under `$ADMIRAL_HOME` if you set it). `admiral service status` says whether the service is installed and loaded, and prints the URL again.
 
 ## Upgrade
 
@@ -67,7 +67,7 @@ tmux -S ~/.admiral/tmux.sock kill-server   # ends every running ship's session; 
 brew uninstall admiral                     # or, for a curl install: rm ~/.local/bin/admiral (or <PREFIX>/bin/admiral)
 ```
 
-Admiral's tmux server and ships outlive the service, so end them first. This leaves `$ADMIRAL_HOME` (default `~/.admiral/`), which holds your config, token, state, `logs/`, and `plugins/` and `data/` (your own order-source plugins and their data). Delete it to remove everything.
+Admiral's tmux server and ships outlive the service, so end them with `kill-server` before you delete `$ADMIRAL_HOME`. Uninstalling leaves `$ADMIRAL_HOME` (default `~/.admiral/`), which holds your config, token, state, `logs/`, `plugins/` (the bundled plugins and any you added) and `data/` (each order source's data). Delete it to remove everything.
 
 ## Development
 
