@@ -30,6 +30,9 @@ export default defineConfig({
   use: {
     baseURL,
     trace: process.env.CI ? 'retain-on-failure' : { mode: 'retain-on-failure', screenshots: false },
+    // The CI runner's virtual GPU resets under WebKit's animations, and a reset
+    // mid-test loses WebGL or stalls the page (#94). Tests of motion opt back in.
+    contextOptions: process.env.CI ? { reducedMotion: 'reduce' } : {},
   },
   webServer: {
     command: `node scripts/serve-e2e.mjs ${bin} 127.0.0.1:${port}`,

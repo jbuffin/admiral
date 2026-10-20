@@ -352,6 +352,7 @@ test.describe('S5: a ship that finishes, and motion', () => {
   test('with reduced motion nothing bobs, shakes, sails or ripples, and the header pill stops pulsing', async ({ page, admiral, sea }, info) => {
     test.skip(info.project.name !== 'desktop');
     const s = sea({ work: { name: 'Work', color: BLUE }, ask: { name: 'Ask', color: ORANGE, cue: ['hook needs_you'] } });
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
     await admiral.start();
     await page.goto(admiral.url);
     await s.launch('work', 'alpha');
