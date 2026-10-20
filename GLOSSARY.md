@@ -15,7 +15,6 @@ What a session starts on, named in the harness's launch prompt with the order's 
 
 **Commodore**:
 The default skill: it plans the work, assembles a task force of teammates and sees it through to a merged PR. Admiral starts it like any other skill.
-_Avoid_: Commodore Launcher (a separate CLI Admiral does not use)
 
 **Order**:
 One item from an order source, shown as a card in the Orders sidebar, not yet launched: freeform text, a URL or anything else, handed to the chosen skill as it is. Launching an order puts a ship to sea.
