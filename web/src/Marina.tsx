@@ -64,8 +64,8 @@ function DockView({ fleet, dock, top, index, height }: { fleet: Fleet; dock: Doc
       class={armed.value ? (hot ? 'dock ready hot' : 'dock ready') : 'dock'}
       data-dock={key}
       onClick={() => {
-        // A tap on a dock launches the selected order; with none selected it does nothing.
-        if (selected.value) openLaunch(selected.value, fleet.key, dock.harness);
+        // A tap on a dock launches the selected order, or just the dock when none is selected.
+        openLaunch(selected.value, fleet.key, dock.harness);
       }}
       style={`top:${top}px`}
       aria-label={mark ? `${label}. ${mark.full.join('. ')}` : label}

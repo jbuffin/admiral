@@ -85,7 +85,7 @@ export function LaunchOrders() {
   const fleet = config.value?.fleets.find((f) => f.key === l.fleet);
   const dock = fleet?.docks.find((d) => d.harness === l.harness);
   if (!fleet || !dock) return null;
-  return <Dialog key={`${l.source}/${l.order.id}/${l.fleet}/${l.harness}`} fleet={fleet} dock={dock} />;
+  return <Dialog key={`${l.source ?? ''}/${l.order?.id ?? ''}/${l.fleet}/${l.harness}`} fleet={fleet} dock={dock} />;
 }
 
 function Star({ on, name, onToggle }: { on: boolean; name: string; onToggle: () => void }) {
@@ -99,7 +99,7 @@ function Star({ on, name, onToggle }: { on: boolean; name: string; onToggle: () 
 }
 
 function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
-  const { source, order, harness } = launching.value!;
+  const { source = '', order, harness } = launching.value!;
   const h = harnesses[harness];
   const close = () => (launching.value = null);
 
@@ -111,10 +111,10 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
   const [dirHi, setDirHi] = useState(0);
 
   const [skills, setSkills] = useState<SkillsData | null>(null);
-  const [reading, setReading] = useState(true); // the skills of this directory are on their way
+  const [reading, setReading] = useState(!!order); // the skills of this directory are on their way; a dock launch has none
   const [choice, setChoice] = useState<Choice | null>(null);
   const [custom, setCustom] = useState('');
-  const [note, setNote] = useState(''); // Just launch's optional text, sent before the order
+  const [note, setNote] = useState(''); // Just launch's optional text before the order; a dock launch's whole prompt
   const [listOpen, setListOpen] = useState(false);
   const [hi, setHi] = useState(0);
   const [starError, setStarError] = useState('');
@@ -134,12 +134,13 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
       fleet: fleet.key,
       harness,
       source,
-      order_id: order.id,
+      order_id: order?.id ?? '',
     }).then((r) => {
       if (!live) return;
       if (!r.ok) return setDirsError(r.error);
       setEntries(r.data.entries);
-      setDir(r.data.selected ?? r.data.entries[0]?.path ?? '');
+      // A dock launch has no order to guess a checkout from: the last one or nothing.
+      setDir(r.data.selected ?? (order ? r.data.entries[0]?.path : '') ?? '');
     });
     return () => {
       live = false;
@@ -151,7 +152,7 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
     // The old directory's skills are not the new one's: nothing to offer until they arrive.
     // The choice stays, and keep() applies it to the new skills.
     setSkills(null);
-    if (!dir) return;
+    if (!dir || !order) return;
     setReading(true);
     const n = ++asked.current;
     const q = new URLSearchParams({ fleet: fleet.key, harness, dir });
@@ -234,7 +235,8 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
     ev?.preventDefault();
     if (busy || reading || !dir) return;
     let skill: { kind: string; name?: string };
-    if (choice === 'commodore') skill = { kind: 'commodore' };
+    if (!order) skill = { kind: 'none' };
+    else if (choice === 'commodore') skill = { kind: 'commodore' };
     else if (choice === 'none') skill = { kind: 'none' };
     else if (choice === 'custom') {
       const name = bare(custom);
@@ -252,13 +254,13 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
       dir,
       skill,
       source,
-      order_id: order.id,
-      ...(skill.kind === 'none' && note.trim() && { note }),
+      order_id: order?.id ?? '',
+      ...(!order ? { text: note } : skill.kind === 'none' && note.trim() && { note }),
     });
     setBusy(false);
     if (!r.ok) return setError(r.error);
     close();
-    announceLaunch({ fleet: fleet.key, harness, source, order_id: order.id, session: r.data.ship.session });
+    announceLaunch({ fleet: fleet.key, harness, source, order_id: order?.id ?? '', session: r.data.ship.session });
   };
 
   // Escape closes an open list first; otherwise it is Stay in port.
@@ -308,10 +310,12 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
           </div>
         </header>
         <div class="launch-body">
-          <div class="launch-order">
-            {isWebUrl(order.url) && <span class="launch-order-id">{order.id}</span>}
-            <span class="launch-order-title">{titleOf(order.title)}</span>
-          </div>
+          {order && (
+            <div class="launch-order">
+              {isWebUrl(order.url) && <span class="launch-order-id">{order.id}</span>}
+              <span class="launch-order-title">{titleOf(order.title)}</span>
+            </div>
+          )}
 
           {dirsError ? (
             <p class="launch-note">{dirsError}</p>
@@ -361,6 +365,8 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
                 {entry && entry.ships_here > 0 && <p class="launch-warn">Another ship already runs here</p>}
               </div>
 
+              {order ? (
+                <>
               <span class="label">Sail with</span>
               {/* Not a label: a tap on the text of a disabled row must reach the row, to show why it is off. */}
               <div
@@ -472,6 +478,20 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
                   }}
                 />
               </div>
+                </>
+              ) : (
+                <div class="field">
+                  <label for="launch-text">What should it do?</label>
+                  <textarea
+                    id="launch-text"
+                    class="launch-input launch-text"
+                    placeholder="Optional. Leave empty to start the harness with no prompt."
+                    rows={4}
+                    value={note}
+                    onInput={(e) => setNote((e.target as HTMLTextAreaElement).value)}
+                  />
+                </div>
+              )}
               {error && <p role="alert">{error}</p>}
             </>
           )}

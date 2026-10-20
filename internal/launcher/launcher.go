@@ -95,6 +95,12 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	if err != nil {
 		return nil, err
 	}
+	if req.dockLaunch() {
+		if req.Skill.Kind != "none" {
+			return nil, refuse(http.StatusBadRequest, "a launch with no order cannot name a skill")
+		}
+		req.Text, req.Note = strings.TrimSpace(req.Text), ""
+	}
 	// The options are tmux's record of the ship, read back over the control
 	// connection one line each; a control character would break the framing.
 	// The name and the time are ours.
@@ -148,16 +154,10 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	switch req.Harness {
 	case "claude":
 		argv = append(argv, "--settings", claudeSettingsPath(l.Home))
-		argv = append(argv, "--")
-		if prompt != "" {
-			argv = append(argv, prompt)
-		}
+		argv = appendPrompt(argv, prompt, req.dockLaunch())
 	case "codex":
 		argv = append(argv, codexFlags()...)
-		argv = append(argv, "--")
-		if prompt != "" {
-			argv = append(argv, prompt)
-		}
+		argv = appendPrompt(argv, prompt, req.dockLaunch())
 	case "copilot":
 		argv = append(argv, "--plugin-dir", copilotPluginDir(l.Home))
 		if prompt != "" {
@@ -190,10 +190,27 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	return out, nil
 }
 
-// orderTitle is the first line of an order from a source, with control
-// characters dropped; the title never refuses a launch. A launch with no source has none.
+// dockLaunch is a launch from a dock with no order: the text is the prompt.
+func (r Request) dockLaunch() bool { return r.Source == "" && r.OrderID == "" }
+
+// appendPrompt ends argv with the prompt after "--". A dock launch with no
+// prompt starts the harness bare, with no "--" either.
+func appendPrompt(argv []string, prompt string, dock bool) []string {
+	if dock && prompt == "" {
+		return argv
+	}
+	argv = append(argv, "--")
+	if prompt != "" {
+		argv = append(argv, prompt)
+	}
+	return argv
+}
+
+// orderTitle is the first line of an order from a source or of a dock launch's
+// text, with control characters dropped; the title never refuses a launch. A
+// launch with an order id but no source has none.
 func orderTitle(req Request) string {
-	if req.Source == "" {
+	if req.Source == "" && !req.dockLaunch() {
 		return ""
 	}
 	first, _, _ := strings.Cut(strings.TrimLeft(req.Text, " \t\r\n"), "\n")
