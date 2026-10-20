@@ -29,6 +29,7 @@ jobs:
       - run: make test
       - run: npx playwright install webkit
         working-directory: web
+      - run: echo "T0=$(date '+%Y-%m-%d %H:%M:%S')" >> "$GITHUB_ENV"
       - run: make e2e
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -36,13 +37,25 @@ jobs:
           name: playwright-traces
           path: web/test-results/
           if-no-files-found: ignore
-      # Temporary, for #94: which processes the OS killed or crashed during the run.
-      - name: Crash reports and memory kills
+      # Temporary, for #94: GPU events with reduced motion, then the same suite with motion.
+      - name: GPU events with reduced motion
         if: always()
         run: |
-          memory_pressure | tail -3 || true
-          for d in ~/Library/Logs/DiagnosticReports /Library/Logs/DiagnosticReports; do
-            ls -la "$d" 2>/dev/null || true
-            for f in "$d"/*; do [ -f "$f" ] && { echo "== $f"; head -c 1500 "$f"; echo; }; done
-          done
-          log show --last 25m --style compact --predicate 'eventMessage CONTAINS[c] "jetsam" OR eventMessage CONTAINS[c] "memorystatus" OR eventMessage CONTAINS[c] "IOSurface" OR process == "ReportCrash"' 2>/dev/null | tail -150 || true
+          log show --start "$T0" --style compact --predicate 'sender == "AppleParavirtGPU" OR eventMessage CONTAINS[c] "gpu reset" OR eventMessage CONTAINS[c] "gpurestart" OR eventMessage CONTAINS[c] "context lost"' > gpu.log 2>/dev/null || true
+          echo "GPU events: $(tail -n +2 gpu.log | wc -l)"
+          tail -n +2 gpu.log | cut -c 25- | sed -E 's/0x[0-9a-f]+/X/g; s/[0-9]+/N/g' | cut -c1-140 | sort | uniq -c | sort -rn | head -15
+      - run: echo "T1=$(date '+%Y-%m-%d %H:%M:%S')" >> "$GITHUB_ENV"
+        if: always()
+      - name: e2e again with motion
+        if: always()
+        continue-on-error: true
+        run: npx playwright test
+        working-directory: web
+        env:
+          E2E_MOTION: '1'
+      - name: GPU events with motion
+        if: always()
+        run: |
+          log show --start "$T1" --style compact --predicate 'sender == "AppleParavirtGPU" OR eventMessage CONTAINS[c] "gpu reset" OR eventMessage CONTAINS[c] "gpurestart" OR eventMessage CONTAINS[c] "context lost"' > gpu.log 2>/dev/null || true
+          echo "GPU events: $(tail -n +2 gpu.log | wc -l)"
+          tail -n +2 gpu.log | cut -c 25- | sed -E 's/0x[0-9a-f]+/X/g; s/[0-9]+/N/g' | cut -c1-140 | sort | uniq -c | sort -rn | head -15
