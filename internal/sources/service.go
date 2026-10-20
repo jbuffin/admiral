@@ -907,13 +907,13 @@ func (s *Service) serveRemoveOrder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"removed": id})
 }
 
-// Order is what a launch needs from an order: the text to send and the repo to
-// look for. A launch from a source that is down still works, from the last
+// Order is what a launch needs from an order: the text to send, the repo to
+// look for and the order's web URL. A launch from a source that is down still works, from the last
 // list Admiral saw. The order is looked up whether or not a ship hides it.
-func (s *Service) Order(source, id string) (text, repo string, err *launcher.Error) {
+func (s *Service) Order(source, id string) (text, repo, url string, err *launcher.Error) {
 	rn := s.Sup.runner(source)
 	if rn == nil {
-		return "", "", &launcher.Error{Status: http.StatusBadRequest, Msg: "unknown order source " + strconv.Quote(source)}
+		return "", "", "", &launcher.Error{Status: http.StatusBadRequest, Msg: "unknown order source " + strconv.Quote(source)}
 	}
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
@@ -921,13 +921,13 @@ func (s *Service) Order(source, id string) (text, repo string, err *launcher.Err
 		for _, o := range p.Orders {
 			if o.ID == id {
 				if o.Text != "" {
-					return o.Text, o.Repo, nil
+					return o.Text, o.Repo, o.URL, nil
 				}
-				return o.Title, o.Repo, nil
+				return o.Title, o.Repo, o.URL, nil
 			}
 		}
 	}
-	return "", "", &launcher.Error{Status: http.StatusNotFound, Msg: "order " + strconv.Quote(id) + " not found in source " + source}
+	return "", "", "", &launcher.Error{Status: http.StatusNotFound, Msg: "order " + strconv.Quote(id) + " not found in source " + source}
 }
 
 // Launched tells the source its order was launched.

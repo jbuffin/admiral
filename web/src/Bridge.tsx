@@ -3,7 +3,7 @@ import { signedOut } from './connection';
 import { harnesses } from './harnesses';
 import { KEYS, touchKeyboard } from './keys';
 import { LogoFlag } from './Logos';
-import { api } from './sources';
+import { api, isWebUrl } from './sources';
 import { useBridgePlacement } from './useBridgePlacement';
 import { useBridgeTerminal } from './useBridgeTerminal';
 import { botFor, boardedSession, leaving, ships, shipsLoaded, type WireShip } from './ships';
@@ -170,6 +170,11 @@ function BridgeView({ session }: { session: string }) {
             <span class="term-name">{ship.name}</span>
             <span class="term-sub">{sub}</span>
             {ship.title && <span class="term-order">{ship.title}</span>}
+            {isWebUrl(ship.url) && (
+              <a class="term-order-id" href={ship.url} target="_blank" rel="noopener noreferrer">
+                {ship.order_id}
+              </a>
+            )}
             {open && <AttachChip name={ship.name} />}
           </div>
           {signedOut.value ? (

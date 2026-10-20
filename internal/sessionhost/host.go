@@ -60,11 +60,11 @@ const format = "#{session_name}" + sep + "#{pane_dead}" + sep + "#{pane_dead_sta
 	"#{@admiral-name}" + sep + "#{@admiral-fleet}" + sep + "#{@admiral-fleet-name}" + sep +
 	"#{@admiral-fleet-color}" + sep + "#{@admiral-harness}" + sep + "#{@admiral-dir}" + sep +
 	"#{@admiral-skill}" + sep + "#{@admiral-source}" + sep + "#{@admiral-order}" + sep +
-	"#{@admiral-launched}" + sep + "#{@admiral-title}"
+	"#{@admiral-launched}" + sep + "#{@admiral-title}" + sep + "#{@admiral-url}"
 
 // optionNames are the session options in the order format lists them.
 var optionNames = []string{"name", "fleet", "fleet-name", "fleet-color", "harness", "dir",
-	"skill", "source", "order", "launched", "title"}
+	"skill", "source", "order", "launched", "title", "url"}
 
 // Session is one tmux session as last read.
 type Session struct {

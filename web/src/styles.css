@@ -2090,6 +2090,21 @@ body.dragging * {
   color: var(--color-ink);
 }
 
+.term-order-id {
+  position: relative;
+  align-self: flex-start;
+  max-width: 100%;
+  /* padding and the matching negative margin give a 44 px target without moving the text */
+  padding: 15px 6px;
+  margin: -15px -6px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .term-attach {
   align-self: flex-start;
   display: inline-flex;
@@ -2124,7 +2139,8 @@ body.dragging * {
 
 .bridge.full .flotilla,
 .bridge.full .term-sub,
-.bridge.full .term-order {
+.bridge.full .term-order,
+.bridge.full .term-order-id {
   display: none;
 }
 

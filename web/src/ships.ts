@@ -17,6 +17,7 @@ export interface WireShip {
   skill: string | null;
   source: string;
   title: string;
+  url: string;
   order_id: string;
   launched: string;
   status: 'underway' | 'needs_you' | 'anchored' | 'sailing_off';
