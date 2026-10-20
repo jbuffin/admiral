@@ -1,6 +1,6 @@
 # Codebase
 
-The package map, API routes and ship statuses, idle memory figures and the setup terminal. Read this before changing the server, the launcher, ships or the setup terminal.
+This file holds the package map, API routes and ship statuses, idle memory figures and the setup terminal. Read it before changing the server, the launcher, ships or the setup terminal.
 
 ## Layout
 
