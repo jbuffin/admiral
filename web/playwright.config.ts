@@ -29,7 +29,9 @@ export default defineConfig({
   reporter: [['list']],
   use: {
     baseURL,
-    trace: process.env.CI ? 'retain-on-failure' : { mode: 'retain-on-failure', screenshots: false },
+    // No screenshots: their screencast exhausts IOSurfaces locally and resets the
+    // CI runner's virtual GPU, which loses WebGL and stalls WebKit (#94).
+    trace: { mode: 'retain-on-failure', screenshots: false },
   },
   webServer: {
     command: `node scripts/serve-e2e.mjs ${bin} 127.0.0.1:${port}`,
