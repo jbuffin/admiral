@@ -36,7 +36,9 @@ INVALID_PARAMS = -32602
 METHOD_NOT_FOUND = -32601
 
 FIELDS = "number title url repository { nameWithOwner url } labels(first: 100) { nodes { name } }"
-SEARCH = ("query($q: String!) { search(query: $q, type: ISSUE, first: %d) { nodes { "
+# GitHub's advanced search, the one github.com uses: it knows qualifiers such as
+# is:blocked, and it reads AND, OR and parentheses.
+SEARCH = ("query($q: String!) { search(query: $q, type: ISSUE_ADVANCED, first: %d) { nodes { "
           "... on Issue { %s } ... on PullRequest { %s } } } }" % (MAX_ORDERS, FIELDS, FIELDS))
 
 SETTINGS_SCHEMA = {
@@ -54,7 +56,7 @@ SETTINGS_SCHEMA = {
                 "properties": {
                     "title": {"type": "string", "title": "Title", "description": "The panel's title"},
                     "query": {"type": "string", "title": "Query",
-                              "description": "A GitHub search, e.g. repo:acme/widgets is:open label:bug"},
+                              "description": "A GitHub search, as on github.com, e.g. repo:acme/widgets is:open label:bug"},
                 },
             },
         },
