@@ -45,13 +45,22 @@ jobs:
           echo "Releases run from main only, not $GITHUB_REF." >&2
           exit 1
 
-      - name: Check the tap secret
+      # The tap is pushed over SSH with a write deploy key on the tap repo.
+      # github.com's host keys come from GitHub's API, so host checking stays on.
+      - name: Check the tap deploy key
         if: ${{ !inputs.dry_run }}
         env:
-          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          TAP_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
         run: |
-          test -n "$TAP_TOKEN" || { echo "The HOMEBREW_TAP_TOKEN secret is not set." >&2; exit 1; }
-          git ls-remote "https://x-access-token:$TAP_TOKEN@github.com/$TAP_REPO.git" >/dev/null
+          test -n "$TAP_KEY" || { echo "The HOMEBREW_TAP_DEPLOY_KEY secret is not set." >&2; exit 1; }
+          key=$RUNNER_TEMP/tap-key
+          hosts=$RUNNER_TEMP/tap-known-hosts
+          (umask 077 && printf '%s\n' "$TAP_KEY" > "$key")
+          gh api meta --jq '.ssh_keys[] | "github.com " + .' > "$hosts"
+          ssh="ssh -i $key -o IdentitiesOnly=yes -o UserKnownHostsFile=$hosts -o StrictHostKeyChecking=yes"
+          echo "TAP_SSH=$ssh" >> "$GITHUB_ENV"
+          GIT_SSH_COMMAND=$ssh git ls-remote "git@github.com:$TAP_REPO.git" >/dev/null
 
       - uses: actions/checkout@v4
         with:
@@ -123,11 +132,11 @@ jobs:
       - name: Update the tap
         if: ${{ !inputs.dry_run }}
         env:
-          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
+          export GIT_SSH_COMMAND=$TAP_SSH
           clone=$RUNNER_TEMP/tap
-          git clone "https://x-access-token:$TAP_TOKEN@github.com/$TAP_REPO.git" "$clone"
+          git clone "git@github.com:$TAP_REPO.git" "$clone"
           mkdir -p "$clone/Formula"
           cp "$RUNNER_TEMP/admiral.rb" "$clone/Formula/admiral.rb"
           git -C "$clone" add Formula/admiral.rb

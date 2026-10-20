@@ -81,7 +81,16 @@ Run the **Release** workflow on `main` (Actions → Release → Run workflow, or
 - Last, it installs the release with `brew install jbuffin/admiral/admiral` and `brew test admiral`, and again with the published `install.sh`, and checks that both print the version.
 - `dry_run` stops after the formula check, so it builds and audits but tags, publishes and pushes nothing.
 
-One-time setup: the public tap repo `jbuffin/homebrew-admiral`, and a secret `HOMEBREW_TAP_TOKEN` in this repo: a fine-grained token with Contents read and write on the tap repo only.
+One-time setup: the public tap repo `jbuffin/homebrew-admiral`, a deploy key with write access on it, and that key's private half in this repo's secret `HOMEBREW_TAP_DEPLOY_KEY`. To replace the key:
+
+```sh
+ssh-keygen -t ed25519 -N '' -C "admiral release workflow" -f tap-key
+gh repo deploy-key add tap-key.pub -R jbuffin/homebrew-admiral --allow-write --title "admiral Release workflow"
+gh secret set HOMEBREW_TAP_DEPLOY_KEY -R jbuffin/admiral < tap-key
+rm tap-key tap-key.pub
+```
+
+Then delete the old key with `gh repo deploy-key delete <id> -R jbuffin/homebrew-admiral`.
 
 By hand, if the workflow can't run:
 
