@@ -6,7 +6,7 @@ A starting point for the build, not a decision record. The decisions it rests on
 
 ## Shape
 
-```
+```text
  Browser (Mac, or iPad over LAN/VPN)
    Admiral web UI ──── HTTP + WebSocket ────┐
                                             │

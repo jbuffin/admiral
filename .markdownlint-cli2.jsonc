@@ -1,0 +1,11 @@
+{
+  "config": {
+    // The docs put each paragraph on one line.
+    "MD013": false,
+    // The research docs repeat the same subheadings under each harness.
+    "MD024": { "siblings_only": true },
+    // The README opens with a hero image that switches with the color scheme.
+    "MD033": { "allowed_elements": ["picture", "source", "img"] },
+    "MD041": { "allow_preamble": true }
+  }
+}

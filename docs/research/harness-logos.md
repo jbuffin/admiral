@@ -14,7 +14,7 @@ Checked 2026-10-17 against the vendors' own pages and asset kits. The logo files
 | --- | --- | --- | --- | --- |
 | Claude Code | **Claude Spark - Clay** from Anthropic's press kit | SVG 94×94, single fill `#D97757` | As supplied, with no recoloring | Plain-text "runs Claude Code" is allowed. Any logo use needs Anthropic's written permission. |
 | Copilot CLI | **Copilot_Icon_White** / **Copilot_Icon_Black** from GitHub's logo kit | SVG 96×96 (also PNG, PDF; `_Clearspace` variants 128×128) | White or black, highest contrast | Allowed to show that a project integrates with GitHub, less prominently than your own brand, with no modification. Otherwise prior written permission is needed. |
-| Codex CLI | **OpenAI Blossom** (OpenAI's symbol) from openai.com/brand. I found no separate Codex mark. | Not confirmed; see the caveat below | Approved color formats only | Only where it directly relates to OpenAI services, never more prominent than your own brand, and never altered. Permission requests go to partnercomms@openai.com. |
+| Codex CLI | **OpenAI Blossom** (OpenAI's symbol) from openai.com/brand. I found no separate Codex mark. | Not confirmed; see the caveat below | Approved color formats only | Only where it directly relates to OpenAI services, never more prominent than your own brand, and never altered. Permission requests go to <partnercomms@openai.com>. |
 
 ## Claude Code (Anthropic)
 
@@ -35,7 +35,7 @@ There is no Claude Code-specific symbol. The Claude Code logo is a wide lockup, 
 - Don't place the mark on a background that interferes with its readability or display.
 - Don't add a ™ symbol.
 - Don't imply sponsorship or endorsement.
-- Requests go to marketing@anthropic.com (the page addresses this to companies with an existing business relationship).
+- Requests go to <marketing@anthropic.com> (the page addresses this to companies with an existing business relationship).
 
 **Claude Code specifically** ([Legal and compliance, "Using the Claude Code name and logo"](https://code.claude.com/docs/en/legal-and-compliance)): you may say in plain text that a product runs Claude Code. You may not use the Claude Code or Anthropic names or logos in your own product name or logo, or in a way that suggests Anthropic built, endorses or partners with the product. "Any other use of Anthropic's names or logos is governed by our Trademark Guidelines and requires our written permission."
 
@@ -73,7 +73,7 @@ There is no Claude Code-specific symbol. The Claude Code logo is a wide lockup, 
 - Don't "use the logo more prominently than your own or in unrelated contexts". Don't put it on merchandise, alter it, or fold it into your own branding.
 - The Blossom has prescribed clear space ("DO use the established spacing rules"). I could not get the number. The wordmark has its own clear space and is not used together with the Blossom.
 - Logos must appear "in their approved color formats" without distortion. Co-branded material needs approval from both brands. Don't pair the Blossom with the partnership lockup.
-- Permission: "permission requests for the use of our logos … please contact partnercomms@openai.com"; legal questions go to legal@openai.com.
+- Permission: "permission requests for the use of our logos … please contact <partnercomms@openai.com>"; legal questions go to <legal@openai.com>.
 - [App Developer Terms](https://openai.com/policies/developer-apps-terms/) (for apps built on OpenAI's app platform; not Admiral's case, but they show OpenAI's stance): OpenAI Assets are licensed "solely to promote your Apps", and you must not suggest that OpenAI created, supports, certifies or endorses the app.
 
 **Constraint for Admiral:** an unaltered Blossom in an approved color (black or white), with its prescribed clear space, on a contrasting field. A white Blossom on the placeholder navy `#1F3B57` is plausible. Pointing at a Codex ship is a direct relation to an OpenAI service. Acknowledging ownership means a trademark notice somewhere, such as an About or credits screen.
@@ -83,7 +83,7 @@ There is no Claude Code-specific symbol. The Claude Code logo is a wide lockup, 
 1. **Every logo goes in unaltered: no recoloring, no clipping into the swallowtail, original aspect ratio, and the vendor's padding.** Each flag needs a field color that contrasts with the logo's fixed colors: ivory or white for Claude's Clay spark, and dark for the white Copilot icon and white Blossom.
 2. **Attribution:** add a trademark notice (in About or a footer) saying that Claude Code is Anthropic's, Copilot GitHub's and Codex OpenAI's, and that Admiral is not affiliated with or endorsed by any of them. All three vendors forbid implying endorsement. OpenAI also asks for an ownership acknowledgment. Anthropic's guidelines say not to add ™ to its marks.
 3. **Prominence:** the logos must stay smaller than Admiral's own mark. Flags already are.
-4. **Permission:** Anthropic requires written permission for any logo use beyond plain-text naming. GitHub requires prior written permission outside its "integrates with GitHub" allowance. OpenAI routes logo permission requests to partnercomms@openai.com. For a personal tool running locally the exposure is low. Before Admiral is shared with other people, which is a standing preference, either get permission or keep the official files out of the distributed package: the engineer supplies them, or Admiral fetches them from the vendor URLs above at install. Keep the lettered fallback (Cl, Co, Cx) for when no file is present.
+4. **Permission:** Anthropic requires written permission for any logo use beyond plain-text naming. GitHub requires prior written permission outside its "integrates with GitHub" allowance. OpenAI routes logo permission requests to <partnercomms@openai.com>. For a personal tool running locally the exposure is low. Before Admiral is shared with other people, which is a standing preference, either get permission or keep the official files out of the distributed package: the engineer supplies them, or Admiral fetches them from the vendor URLs above at install. Keep the lettered fallback (Cl, Co, Cx) for when no file is present.
 
 ## Sources
 

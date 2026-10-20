@@ -1,9 +1,20 @@
 name: CI
 
+# Docs-only changes are checked by docs.yml instead.
 on:
   pull_request:
+    paths-ignore: &docs
+      - 'docs/**'
+      - 'designs/**'
+      - '**/*.md'
   push:
     branches: [main]
+    paths-ignore: *docs
+
+# A newer push to a PR cancels its run. Each push to main runs on its own.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
