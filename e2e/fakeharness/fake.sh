@@ -24,6 +24,12 @@
 #
 #   hook <state>   run `tmux set -p @admiral-state <state>`, the command Admiral's
 #                  hook bundle uses (state is needs_you or working)
+#   event <Event> <json>
+#                  run the command the hook bundle holds for <Event>, as the harness
+#                  would: the payload <json> (the rest of the line) on its stdin, then
+#                  append the event name to `events-done` in the recording directory.
+#                  Claude only: the bundle is the file after `--settings` in its argv
+#                  (needs jq). A fault writes `event-error` instead.
 #   bell           ring the terminal bell
 #   sleep <n>      sleep n seconds
 #   exit <n>       create `cues-done`, then exit with status n
@@ -61,6 +67,24 @@ if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 	while read -r cmd arg; do
 		case "$cmd" in
 		hook) tmux set -p @admiral-state "$arg" ;;
+		event)
+			ev=${arg%% *}
+			payload=${arg#"$ev"}
+			settings=""
+			prev=""
+			for a in "$@"; do
+				[ "$prev" = "--settings" ] && settings=$a
+				prev=$a
+			done
+			command=""
+			[ -n "$settings" ] && command=$(jq -r --arg e "$ev" '.hooks[$e][0].hooks[0].command // empty' "$settings" 2>>"$d/event-error")
+			if [ -z "$command" ]; then
+				echo "no hook command for $ev in settings '$settings'" >>"$d/event-error"
+			else
+				printf '%s' "$payload" | sh -c "$command" >>"$d/event-stdout" 2>>"$d/event-error"
+			fi
+			echo "$ev" >>"$d/events-done"
+			;;
 		bell) printf '\a' ;;
 		sleep) sleep "$arg" ;;
 		lines) awk -v n="$arg" 'BEGIN { for (i = 1; i <= n; i++) printf "\033[3%dmline %04d\033[0m\n", i % 6 + 1, i }' ;;

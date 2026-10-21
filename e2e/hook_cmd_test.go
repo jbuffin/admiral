@@ -1,0 +1,184 @@
+package e2e
+
+import (
+	"bytes"
+	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+// `admiral hook <event>` (#69): the command every harness hook runs. It reads
+// the harness's JSON on stdin and sets @admiral-state on $TMUX_PANE, or does
+// nothing. The seam is the built binary with a stdin payload and a recording
+// tmux first on PATH, so the table below is payload in, state out. The payloads
+// are the live-check excerpts in docs/research/crew-boats.md and the Stop
+// payloads in the probe (Claude Code 2.1.306), cut to the fields that matter.
+
+const (
+	claudeStopSubagent = `{"hook_event_name":"Stop","stop_hook_active":false,"last_assistant_message":"The Explore agent is still running","background_tasks":[{"id":"a0f790cb4a518e0f9","type":"subagent","status":"running","description":"Read notes.txt first line","agent_type":"Explore"}],"session_crons":[]}`
+	claudeStopNone     = `{"hook_event_name":"Stop","last_assistant_message":"alpha","background_tasks":[],"session_crons":[]}`
+	claudeStopShell    = `{"hook_event_name":"Stop","background_tasks":[{"id":"bvoz9m2jt","type":"shell","status":"running","description":"Ticks every 40s, three total","command":"for i in 1 2 3; do sleep 40; echo tick-$i; done"}],"session_crons":[]}`
+	claudeStopShellAnd = `{"hook_event_name":"Stop","background_tasks":[{"id":"bom9319x3","type":"shell","status":"running","description":"Sleep 60","command":"sleep 60"},{"id":"a109","type":"subagent","status":"running","description":"d","agent_type":"general-purpose"}],"session_crons":[]}`
+	claudeStopMate     = `{"hook_event_name":"Stop","background_tasks":[{"id":"t1","type":"teammate","status":"running","description":"d"}]}`
+	claudeStopDone     = `{"hook_event_name":"Stop","background_tasks":[{"id":"a109","type":"subagent","status":"completed","description":"d","agent_type":"general-purpose"}]}`
+	codexStop          = `{"hook_event_name":"Stop","turn_id":"01a15222-ed87","last_assistant_message":"done"}`
+)
+
+func TestHookDecision(t *testing.T) {
+	const none = ""
+	cases := []struct {
+		name, event, payload, want string
+	}{
+		// A1, A2, A12 and the rest of the Stop rule.
+		{"claude Stop with a running subagent", "Stop", claudeStopSubagent, none},
+		{"claude Stop with background_tasks empty", "Stop", claudeStopNone, "needs_you"},
+		{"claude Stop with only a running shell task", "Stop", claudeStopShell, "needs_you"},
+		{"claude Stop with a running shell and a running subagent", "Stop", claudeStopShellAnd, none},
+		{"claude Stop with a running teammate", "Stop", claudeStopMate, none},
+		{"claude Stop with a finished subagent", "Stop", claudeStopDone, "needs_you"},
+		{"codex Stop has no background_tasks", "Stop", codexStop, "needs_you"},
+		// The rest of Claude's and Codex's table is unchanged.
+		{"PermissionRequest", "PermissionRequest", `{"hook_event_name":"PermissionRequest","tool_name":"Bash"}`, "needs_you"},
+		{"UserPromptSubmit", "UserPromptSubmit", `{"hook_event_name":"UserPromptSubmit","prompt":"go"}`, "working"},
+		{"PostToolUse", "PostToolUse", `{"hook_event_name":"PostToolUse","tool_name":"Bash"}`, "working"},
+		{"codex Interrupt", "Interrupt", `{"hook_event_name":"Interrupt","turn_id":"01a15222-ed87","model":"gpt-6-luna"}`, "working"},
+		{"PreToolUse of AskUserQuestion", "PreToolUse", `{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","tool_input":{}}`, "needs_you"},
+		{"PreToolUse of Bash", "PreToolUse", `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls"}}`, "working"},
+		{"PreToolUse of Bash inside a subagent", "PreToolUse", `{"hook_event_name":"PreToolUse","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore","tool_name":"Bash","tool_input":{"command":"find ."}}`, "working"},
+		{"claude permission_prompt", "Notification", `{"hook_event_name":"Notification","notification_type":"permission_prompt","message":"Claude needs your permission"}`, "needs_you"},
+		{"claude elicitation_dialog", "Notification", `{"hook_event_name":"Notification","notification_type":"elicitation_dialog"}`, "needs_you"},
+		// A3, A4 and Copilot's table.
+		{"copilot agentStop inside a subagent", "agentStop", `{"stopReason":"end_turn","stop_hook_active":false,"agentId":"788718ef-39f6-45b1-ade6-7cb742bc6958","agentType":"general-purpose","parentAgentId":"796c5372-28bb-496c-bb5b-f9e223ac6ff8"}`, none},
+		{"copilot agentStop of the lead", "agentStop", `{"stopReason":"end_turn","stop_hook_active":false}`, "needs_you"},
+		{"copilot userPromptSubmitted inside a subagent", "userPromptSubmitted", `{"prompt":"go","agentId":"788718ef-39f6-45b1-ade6-7cb742bc6958","agentType":"general-purpose","parentAgentId":"796c5372-28bb-496c-bb5b-f9e223ac6ff8"}`, none},
+		{"copilot userPromptSubmitted of the lead", "userPromptSubmitted", `{"prompt":"go"}`, "working"},
+		{"copilot preToolUse of ask_user", "preToolUse", `{"toolName":"ask_user","toolArgs":{"question":"which?"}}`, "needs_you"},
+		{"copilot postToolUse", "postToolUse", `{"toolName":"bash","toolArgs":{"command":"ls"}}`, "working"},
+		{"copilot permission_prompt", "notification", `{"message":"Run command: sleep 30","title":"Permission needed","hook_event_name":"Notification","notification_type":"permission_prompt"}`, "needs_you"},
+		{"copilot elicitation_dialog", "notification", `{"hook_event_name":"Notification","notification_type":"elicitation_dialog"}`, "needs_you"},
+	}
+	w := newWorld(t)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			res := w.at(t).runHook(c.event, c.payload, "%7")
+			res.requireQuiet(t)
+			if c.want == none {
+				if len(res.calls) != 0 {
+					t.Errorf("admiral hook %s wrote %q, want no tmux call", c.event, res.calls)
+				}
+				return
+			}
+			res.requireOneWrite(t, "%7", c.want)
+		})
+	}
+}
+
+// A5: nothing the harness sends can make `admiral hook` fail, block or write.
+func TestHookNeverFails(t *testing.T) {
+	w := newWorld(t)
+	for _, c := range []struct{ name, event, payload, pane string }{
+		{"empty stdin", "Stop", "", "%7"},
+		{"malformed JSON", "Stop", `{"hook_event_name":"Stop","background_tasks":[`, "%7"},
+		{"not an object", "Stop", `["Stop"]`, "%7"},
+		{"unknown event", "NoSuchEvent", claudeStopNone, "%7"},
+		{"no TMUX_PANE", "Stop", claudeStopNone, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			res := w.at(t).runHook(c.event, c.payload, c.pane)
+			res.requireQuiet(t)
+			if len(res.calls) != 0 {
+				t.Errorf("wrote %q, want no tmux call", res.calls)
+			}
+		})
+	}
+	t.Run("no event", func(t *testing.T) {
+		res := w.at(t).runHook("", claudeStopNone, "%7")
+		res.requireQuiet(t)
+		if len(res.calls) != 0 {
+			t.Errorf("wrote %q, want no tmux call", res.calls)
+		}
+	})
+}
+
+// A11: `hook` is internal, so no help text names it.
+func TestHookIsNotListed(t *testing.T) {
+	w := newWorld(t)
+	r := w.admiral("nosuchcommand", "--help")
+	w.expectExit(r, 0, "admiral nosuchcommand --help")
+	if strings.Contains(r.both(), "hook") {
+		t.Errorf("the command list names hook:\n%s", r.both())
+	}
+}
+
+type hookResult struct {
+	stdout, stderr string
+	code           int
+	calls          [][]string // each tmux call, without the program name
+}
+
+func (r hookResult) requireQuiet(t *testing.T) {
+	t.Helper()
+	if r.code != 0 {
+		t.Errorf("exit %d, want 0 (stderr %q)", r.code, r.stderr)
+	}
+	if r.stdout != "" {
+		t.Errorf("stdout %q, want nothing: some harnesses read hook stdout as a decision", r.stdout)
+	}
+}
+
+// requireOneWrite checks the single tmux call is `set -p -t <pane> @admiral-state <state>`.
+func (r hookResult) requireOneWrite(t *testing.T, pane, state string) {
+	t.Helper()
+	if len(r.calls) != 1 {
+		t.Fatalf("tmux calls = %q, want exactly one", r.calls)
+	}
+	argv := r.calls[0]
+	n := len(argv)
+	if argv[0] != "set" || !has(argv, "-p") || !hasPair(argv, "-t", pane) || n < 2 || argv[n-2] != "@admiral-state" || argv[n-1] != state {
+		t.Errorf("tmux %q, want set -p -t %s @admiral-state %s", argv, pane, state)
+	}
+}
+
+// runHook runs `admiral hook <event>` with the payload on stdin and $TMUX_PANE
+// set to pane (unset when empty), with a recording tmux first on PATH.
+func (w *world) runHook(event, payload, pane string) hookResult {
+	w.t.Helper()
+	dir := filepath.Join(w.root, "rectmux")
+	rec := filepath.Join(w.t.TempDir(), "calls")
+	w.writeRaw(filepath.Join(dir, "tmux"), "#!/bin/sh\nprintf '%s\\0' \"$@\" >>\"$FAKE_TMUX_RECORD\"\nprintf '\\n' >>\"$FAKE_TMUX_RECORD\"\n", 0o755)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	args := []string{"hook"}
+	if event != "" {
+		args = append(args, event)
+	}
+	cmd := exec.CommandContext(ctx, binaryPath(w.t), args...)
+	cmd.Dir = w.userHom
+	cmd.Stdin = strings.NewReader(payload)
+	for _, kv := range w.baseEnv() {
+		if k, _, _ := strings.Cut(kv, "="); k != "PATH" {
+			cmd.Env = append(cmd.Env, kv)
+		}
+	}
+	cmd.Env = append(cmd.Env, "PATH="+dir+":"+os.Getenv("PATH"), "FAKE_TMUX_RECORD="+rec)
+	if pane != "" {
+		cmd.Env = append(cmd.Env, "TMUX_PANE="+pane)
+	}
+	var out, errb bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	res := hookResult{}
+	if err := cmd.Run(); err != nil {
+		ee, ok := err.(*exec.ExitError)
+		if !ok || ctx.Err() != nil {
+			w.t.Fatalf("admiral hook %s: %v", event, err)
+		}
+		res.code = ee.ExitCode()
+	}
+	res.stdout, res.stderr = out.String(), errb.String()
+	res.calls = attachCalls(w, rec)
+	return res
+}

@@ -19,14 +19,15 @@ import (
 // POST /api/ships; ships are observed over GET /api/ships, the WebSocket
 // `ships` message, tmux itself and what the fake harness recorded.
 
-var hookCmd = regexp.MustCompile(`^tmux set -p @admiral-state (needs_you|working)$`)
+// hookCmd is the one command text every hook runs: `admiral hook <event>` with
+// the harness's own event name, found by bare name on the ship's PATH.
+var hookCmd = regexp.MustCompile(`^admiral hook ([A-Za-z]+)$`)
 
 var allOptions = []string{"@admiral-name", "@admiral-fleet", "@admiral-fleet-name", "@admiral-fleet-color",
 	"@admiral-harness", "@admiral-dir", "@admiral-skill", "@admiral-source", "@admiral-order", "@admiral-launched"}
 
-// codexHooks is the spec's Codex event → state mapping.
-var codexHooks = map[string]string{"PermissionRequest": "needs_you", "Stop": "needs_you",
-	"UserPromptSubmit": "working", "PostToolUse": "working", "Interrupt": "working"}
+// codexHooks are the events Codex gets a hook for; each runs `admiral hook <event>`.
+var codexHooks = []string{"Interrupt", "PermissionRequest", "PostToolUse", "Stop", "UserPromptSubmit"}
 
 // promptOf extracts the prompt argument from a harness's argv and checks the
 // Admiral-owned part of the command line around it.
@@ -78,7 +79,7 @@ func TestLaunchCommandLine(t *testing.T) {
 				t.Errorf("prompt = %q", got)
 			}
 			if harness == "codex" {
-				events := map[string]string{}
+				events := []string{}
 				bell := false
 				for i, a := range r.argv {
 					if a != "-c" || i+1 >= len(r.argv) {
@@ -89,15 +90,15 @@ func TestLaunchCommandLine(t *testing.T) {
 						bell = true
 					}
 					if ev, rest, ok := strings.Cut(strings.TrimPrefix(v, "hooks."), "="); ok && strings.HasPrefix(v, "hooks.") {
-						for _, state := range []string{"needs_you", "working"} {
-							if strings.Contains(rest, "tmux set -p @admiral-state "+state) {
-								events[ev] += state
-							}
+						if !strings.Contains(rest, `command="admiral hook `+ev+`"`) {
+							t.Errorf("codex -c %s = %s, want the command \"admiral hook %s\" with no path", ev, rest, ev)
 						}
+						events = append(events, ev)
 					}
 				}
+				sort.Strings(events)
 				if !reflect.DeepEqual(events, codexHooks) {
-					t.Errorf("codex -c hooks.<Event> flags carry states %v, want exactly %v", events, codexHooks)
+					t.Errorf("codex -c hooks.<Event> flags cover events %v, want exactly %v", events, codexHooks)
 				}
 				if !bell {
 					t.Errorf(`codex argv lacks -c 'tui.notification_method="bel"': %q`, r.argv)
@@ -334,8 +335,8 @@ func leaves(v any, f func(string)) {
 	}
 }
 
-// statesUnder returns the hook states found under every map key named event.
-func statesUnder(v any, event string) []string {
+// commandsUnder returns the hook commands found under every map key named event.
+func commandsUnder(v any, event string) []string {
 	found := map[string]bool{}
 	var walk func(any)
 	walk = func(v any) {
@@ -348,8 +349,8 @@ func statesUnder(v any, event string) []string {
 			for k, e := range x {
 				if k == event {
 					leaves(e, func(s string) {
-						if m := hookCmd.FindStringSubmatch(s); m != nil {
-							found[m[1]] = true
+						if hookCmd.MatchString(s) {
+							found[s] = true
 						}
 					})
 				}
@@ -366,14 +367,16 @@ func statesUnder(v any, event string) []string {
 	return out
 }
 
+// requireExactHookCommands is A8: every hook command is `admiral hook <event>`,
+// with no tmux call and no path to the binary.
 func requireExactHookCommands(t *testing.T, doc any) {
 	t.Helper()
 	count := 0
 	leaves(doc, func(s string) {
-		if strings.Contains(s, "tmux") || strings.Contains(s, "@admiral-state") {
+		if strings.Contains(s, "tmux") || strings.Contains(s, "@admiral-state") || strings.Contains(s, "hook ") {
 			count++
 			if !hookCmd.MatchString(s) {
-				t.Errorf("hook command %q is not exactly `tmux set -p @admiral-state <needs_you|working>`", s)
+				t.Errorf("hook command %q is not exactly `admiral hook <event>`", s)
 			}
 		}
 	})
@@ -386,38 +389,27 @@ func checkClaudeBundle(t *testing.T, doc any) {
 	t.Helper()
 	requireExactHookCommands(t, doc)
 	hooks, _ := doc.(map[string]any)["hooks"].(map[string]any)
-	only := func(ev string, want ...string) {
-		if got := statesUnder(hooks, ev); !reflect.DeepEqual(got, want) {
-			t.Errorf("Claude Code %s hooks set states %v, want %v", ev, got, want)
+	for _, ev := range []string{"PermissionRequest", "PreToolUse", "Notification", "Stop", "UserPromptSubmit", "PostToolUse"} {
+		if got, want := commandsUnder(hooks, ev), []string{"admiral hook " + ev}; !reflect.DeepEqual(got, want) {
+			t.Errorf("Claude Code %s hooks run %v, want %v", ev, got, want)
 		}
 	}
-	only("PermissionRequest", "needs_you")
-	only("Stop", "needs_you")
-	only("UserPromptSubmit", "working")
-	only("PostToolUse", "working")
-	only("Notification", "needs_you")
-	only("PreToolUse", "needs_you", "working")
-	// Matching hooks run in parallel, so a working PreToolUse hook must not
-	// match AskUserQuestion's needs_you hook: it needs a matcher, never "" or "*".
+	// The AskUserQuestion split stays: a group matching AskUserQuestion, and no
+	// group that matches every tool.
 	entries, _ := hooks["PreToolUse"].([]any)
 	askSeen := false
 	for _, e := range entries {
 		m, _ := e.(map[string]any)
 		matcher, _ := m["matcher"].(string)
-		states := statesUnder(map[string]any{"x": m}, "x")
-		switch {
-		case len(states) == 1 && states[0] == "needs_you":
-			if strings.Contains(matcher, "AskUserQuestion") {
-				askSeen = true
-			}
-		case len(states) == 1 && states[0] == "working":
-			if matcher == "" || matcher == "*" || matcher == ".*" {
-				t.Errorf("PreToolUse working hook has matcher %q: it would race AskUserQuestion's needs_you", matcher)
-			}
+		if matcher == "" || matcher == "*" || matcher == ".*" {
+			t.Errorf("PreToolUse group has matcher %q: it would match AskUserQuestion too", matcher)
+		}
+		if strings.Contains(matcher, "AskUserQuestion") && !strings.Contains(matcher, "?!") {
+			askSeen = true
 		}
 	}
 	if !askSeen {
-		t.Errorf("no PreToolUse needs_you hook with an AskUserQuestion matcher: %v", entries)
+		t.Errorf("no PreToolUse group with an AskUserQuestion matcher: %v", entries)
 	}
 	raw, _ := json.Marshal(hooks["Notification"])
 	for _, m := range []string{"permission_prompt", "elicitation_dialog"} {
@@ -430,17 +422,11 @@ func checkClaudeBundle(t *testing.T, doc any) {
 func checkCopilotBundle(t *testing.T, docs []any) {
 	t.Helper()
 	requireExactHookCommands(t, docs)
-	check := func(ev string, want ...string) {
-		got := statesUnder(docs, ev)
-		if !reflect.DeepEqual(got, want) {
-			t.Errorf("Copilot %s hooks set states %v, want %v", ev, got, want)
+	for _, ev := range []string{"notification", "preToolUse", "agentStop", "userPromptSubmitted", "postToolUse"} {
+		if got, want := commandsUnder(docs, ev), []string{"admiral hook " + ev}; !reflect.DeepEqual(got, want) {
+			t.Errorf("Copilot %s hooks run %v, want %v", ev, got, want)
 		}
 	}
-	check("notification", "needs_you")
-	check("preToolUse", "needs_you")
-	check("agentStop", "needs_you")
-	check("userPromptSubmitted", "working")
-	check("postToolUse", "working")
 	raw, _ := json.Marshal(docs)
 	for _, m := range []string{"permission_prompt", "elicitation_dialog", "ask_user"} {
 		if !strings.Contains(string(raw), m) {
