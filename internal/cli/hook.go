@@ -1,0 +1,84 @@
+package cli
+
+import (
+	"encoding/json"
+	"io"
+	"os"
+	"os/exec"
+)
+
+// Hook is `admiral hook <event>`, the command every harness hook runs (ADR
+// 0013, 0014). It reads the harness's hook JSON on stdin and sets
+// @admiral-state on $TMUX_PANE, or does nothing. It is internal, so no usage
+// text names it, and it never fails: a harness treats a hook's exit code and
+// output as its own signal.
+func Hook(args []string, std IO) error {
+	pane := os.Getenv("TMUX_PANE")
+	if len(args) == 0 || pane == "" {
+		return nil
+	}
+	raw, _ := io.ReadAll(io.LimitReader(std.In, 1<<20))
+	var p hookPayload
+	if json.Unmarshal(raw, &p) != nil {
+		return nil
+	}
+	if state := hookState(args[0], p); state != "" {
+		_ = exec.Command("tmux", "set", "-p", "-t", pane, "@admiral-state", state).Run()
+	}
+	return nil
+}
+
+// hookPayload holds the fields of Claude Code's, Codex's and Copilot's hook
+// JSON that decide a state.
+type hookPayload struct {
+	ToolName         string `json:"tool_name"`         // Claude Code
+	ToolNameCopilot  string `json:"toolName"`          // Copilot
+	NotificationType string `json:"notification_type"` // Claude Code, Copilot
+	AgentID          string `json:"agentId"`           // Copilot: set inside a subagent
+	BackgroundTasks  []struct {
+		Type   string `json:"type"`
+		Status string `json:"status"`
+	} `json:"background_tasks"` // Claude Code's Stop; Codex sends none
+}
+
+// hookState is the state an event sets, or "" for none. Claude Code and Codex
+// share event names, so one rule serves both.
+func hookState(event string, p hookPayload) string {
+	switch event {
+	case "PermissionRequest":
+		return "needs_you"
+	case "PreToolUse":
+		if p.ToolName == "AskUserQuestion" {
+			return "needs_you"
+		}
+		return "working"
+	case "UserPromptSubmit", "PostToolUse", "Interrupt", "postToolUse":
+		return "working"
+	case "Notification", "notification":
+		if p.NotificationType == "permission_prompt" || p.NotificationType == "elicitation_dialog" {
+			return "needs_you"
+		}
+	case "Stop":
+		// Only a subagent or an agent-team teammate holds the turn open; a
+		// background shell (a Monitor) doesn't.
+		for _, t := range p.BackgroundTasks {
+			if t.Status == "running" && (t.Type == "subagent" || t.Type == "teammate") {
+				return ""
+			}
+		}
+		return "needs_you"
+	case "preToolUse":
+		if p.ToolNameCopilot == "ask_user" {
+			return "needs_you"
+		}
+	case "agentStop":
+		if p.AgentID == "" {
+			return "needs_you"
+		}
+	case "userPromptSubmitted":
+		if p.AgentID == "" {
+			return "working"
+		}
+	}
+	return ""
+}

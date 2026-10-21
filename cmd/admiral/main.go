@@ -88,6 +88,8 @@ func run(args []string) error {
 		return cli.Completion(args[1:], std)
 	case "service":
 		return cli.Service(args[1:], std)
+	case "hook":
+		return cli.Hook(args[1:], std)
 	}
 	return &cli.UsageError{Msg: fmt.Sprintf("unknown command %q", args[0])}
 }
@@ -148,6 +150,11 @@ func serve(args []string) error {
 	}
 	if err := launcher.WriteBundle(dir); err != nil {
 		return fmt.Errorf("hook bundle: %w", err)
+	}
+	if exe, err := os.Executable(); err == nil {
+		if err := launcher.LinkBinary(dir, exe); err != nil {
+			return fmt.Errorf("hook binary link: %w", err)
+		}
 	}
 	st, err := state.Open(dir)
 	if err != nil {

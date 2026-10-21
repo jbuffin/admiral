@@ -11,38 +11,33 @@ import (
 // the ship's state in a pane option, which Admiral watches. It is rewritten at
 // every start and shared by all fleets.
 
-const (
-	needsYou = "needs_you"
-	working  = "working"
-)
-
-func hookCommand(state string) string { return "tmux set -p @admiral-state " + state }
+// hookCommand is the same for every harness: `admiral hook` works the state out
+// from the event and the payload, and finds the binary through the ship's PATH
+// ($ADMIRAL_HOME/bin).
+func hookCommand(event string) string { return "admiral hook " + event }
 
 // Claude Code: settings file passed with --settings.
 // Format: https://code.claude.com/docs/en/hooks (event → matcher groups → handlers).
 // Matching hooks of one event run in parallel, so the working PreToolUse hook
 // matches every tool except AskUserQuestion, whose hook says needs_you.
 func claudeSettings() any {
-	cmd := func(state string) []any {
-		return []any{map[string]any{"type": "command", "command": hookCommand(state)}}
-	}
-	group := func(matcher, state string) map[string]any {
-		g := map[string]any{"hooks": cmd(state)}
+	group := func(matcher, event string) map[string]any {
+		g := map[string]any{"hooks": []any{map[string]any{"type": "command", "command": hookCommand(event)}}}
 		if matcher != "" {
 			g["matcher"] = matcher
 		}
 		return g
 	}
 	return map[string]any{"hooks": map[string]any{
-		"PermissionRequest": []any{group("", needsYou)},
+		"PermissionRequest": []any{group("", "PermissionRequest")},
 		"PreToolUse": []any{
-			group("AskUserQuestion", needsYou),
-			group("^(?!AskUserQuestion$).*", working),
+			group("AskUserQuestion", "PreToolUse"),
+			group("^(?!AskUserQuestion$).*", "PreToolUse"),
 		},
-		"Notification":     []any{group("permission_prompt", needsYou), group("elicitation_dialog", needsYou)},
-		"Stop":             []any{group("", needsYou)},
-		"UserPromptSubmit": []any{group("", working)},
-		"PostToolUse":      []any{group("", working)},
+		"Notification":     []any{group("permission_prompt", "Notification"), group("elicitation_dialog", "Notification")},
+		"Stop":             []any{group("", "Stop")},
+		"UserPromptSubmit": []any{group("", "UserPromptSubmit")},
+		"PostToolUse":      []any{group("", "PostToolUse")},
 	}}
 }
 
@@ -55,19 +50,19 @@ func claudeSettings() any {
 // beside it. That page does not say what --plugin-dir expects, so loading a
 // plugin from a directory is unconfirmed against a real Copilot.
 func copilotHooks() any {
-	entry := func(matcher, state string) map[string]any {
-		e := map[string]any{"type": "command", "bash": hookCommand(state)}
+	entry := func(matcher, event string) map[string]any {
+		e := map[string]any{"type": "command", "bash": hookCommand(event)}
 		if matcher != "" {
 			e["matcher"] = matcher
 		}
 		return e
 	}
 	return map[string]any{"version": 1, "hooks": map[string]any{
-		"notification":        []any{entry("permission_prompt|elicitation_dialog", needsYou)},
-		"preToolUse":          []any{entry("ask_user", needsYou)},
-		"agentStop":           []any{entry("", needsYou)},
-		"userPromptSubmitted": []any{entry("", working)},
-		"postToolUse":         []any{entry("", working)},
+		"notification":        []any{entry("permission_prompt|elicitation_dialog", "notification")},
+		"preToolUse":          []any{entry("ask_user", "preToolUse")},
+		"agentStop":           []any{entry("", "agentStop")},
+		"userPromptSubmitted": []any{entry("", "userPromptSubmitted")},
+		"postToolUse":         []any{entry("", "postToolUse")},
 	}}
 }
 
@@ -76,17 +71,31 @@ func copilotHooks() any {
 // [[hooks.Event.hooks]] of type "command"), written inline. That page does not
 // say how -c maps onto hook tables; the inline form below is the same value as
 // the config.toml tables.
-var codexEvents = []struct{ event, state string }{
-	{"PermissionRequest", needsYou}, {"Stop", needsYou},
-	{"UserPromptSubmit", working}, {"PostToolUse", working}, {"Interrupt", working},
-}
+var codexEvents = []string{"PermissionRequest", "Stop", "UserPromptSubmit", "PostToolUse", "Interrupt"}
 
 func codexFlags() []string {
 	var out []string
 	for _, e := range codexEvents {
-		out = append(out, "-c", fmt.Sprintf(`hooks.%s=[{hooks=[{type="command",command="%s"}]}]`, e.event, hookCommand(e.state)))
+		out = append(out, "-c", fmt.Sprintf(`hooks.%s=[{hooks=[{type="command",command="%s"}]}]`, e, hookCommand(e)))
 	}
 	return append(out, "-c", `tui.notification_method="bel"`)
+}
+
+// LinkBinary points dir/bin/admiral at the running binary, which hooks reach
+// through the ship's PATH. The link is replaced at every start, so it follows
+// a rebuilt or moved binary.
+func LinkBinary(dir, exe string) error {
+	bin := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(bin, 0o700); err != nil {
+		return err
+	}
+	link := filepath.Join(bin, "admiral")
+	tmp := link + ".new"
+	_ = os.Remove(tmp)
+	if err := os.Symlink(exe, tmp); err != nil {
+		return err
+	}
+	return os.Rename(tmp, link)
 }
 
 // WriteBundle rewrites the Claude Code settings file and the Copilot plugin

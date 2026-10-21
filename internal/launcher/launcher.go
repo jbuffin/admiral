@@ -300,7 +300,8 @@ func promptFor(harness, skill, kind, note, text string) string {
 }
 
 // shipEnv is the fleet's environment over Admiral's, minus the tmux variables
-// the pane gets from its own tmux, with the tmux directory last on PATH.
+// the pane gets from its own tmux, with $ADMIRAL_HOME/bin first on PATH (hooks
+// run `admiral`) and the tmux directory last.
 func (l *Launcher) shipEnv(dock config.Harness) map[string]string {
 	env := map[string]string{}
 	for _, kv := range dock.Environ() {
@@ -308,12 +309,11 @@ func (l *Launcher) shipEnv(dock config.Harness) map[string]string {
 			env[k] = v
 		}
 	}
-	dir := filepath.Dir(l.Tmux)
+	path := filepath.Join(l.Home, "bin")
 	if p := env["PATH"]; p != "" {
-		env["PATH"] = p + string(os.PathListSeparator) + dir
-	} else {
-		env["PATH"] = dir
+		path += string(os.PathListSeparator) + p
 	}
+	env["PATH"] = path + string(os.PathListSeparator) + filepath.Dir(l.Tmux)
 	return env
 }
 
