@@ -499,6 +499,24 @@ button:focus-visible {
   white-space: nowrap;
 }
 
+.autopilot-badge {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 2px solid var(--color-ink);
+  background-color: var(--color-sunny);
+  color: var(--color-ink);
+}
+
+.autopilot-badge.paused {
+  background-color: var(--color-parchment-light);
+  opacity: 0.7;
+}
+
 .count {
   min-width: 28px;
   height: 26px;

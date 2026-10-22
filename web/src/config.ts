@@ -24,6 +24,7 @@ export interface Config {
   fleets: Fleet[];
   error: { file: string; message: string } | null;
   favorite_skills: string[];
+  autopilot: { max_ships: number } | null;
 }
 
 // null until the server's first `config` message arrives, so the page claims
@@ -31,8 +32,8 @@ export interface Config {
 export const config = signal<Config | null>(null);
 export const configLoaded = computed(() => config.value !== null);
 
-export function applyConfig(msg: { fleets: Fleet[]; error: Config['error']; favorite_skills?: string[] }): void {
-  config.value = { fleets: msg.fleets, error: msg.error, favorite_skills: msg.favorite_skills ?? [] };
+export function applyConfig(msg: { fleets: Fleet[]; error: Config['error']; favorite_skills?: string[]; autopilot?: Config['autopilot'] }): void {
+  config.value = { fleets: msg.fleets, error: msg.error, favorite_skills: msg.favorite_skills ?? [], autopilot: msg.autopilot ?? null };
 }
 
 onMessage('config', applyConfig);

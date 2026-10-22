@@ -101,7 +101,8 @@ test.describe('autopilot in the panel header', () => {
 
     await expect(badge(panel(page, 'Orders'))).toBeVisible();
     for (const name of ['Notes', 'Quiet']) {
-      const p = panel(page, name);
+      // A second source's panel is titled "Orders" too, inside the source's group.
+      const p = sidebar(page).getByRole('group', { name, exact: true }).getByRole('region', { name: 'Orders', exact: true });
       await expect(p).toBeVisible();
       await expect(badge(p)).toHaveCount(0);
       await expect(p.getByRole('button', { name: /autopilot$/ })).toHaveCount(0);
