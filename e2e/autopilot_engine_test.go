@@ -100,6 +100,14 @@ func holdThat(t *testing.T, msg string, check func() bool) {
 	}
 }
 
+// sail lets the ship's harness exit: its recording directory exists once the
+// harness has started.
+func (w *world) sail(session string) {
+	w.t.Helper()
+	w.waitFile(session, "recorded")
+	w.touch(session, "go")
+}
+
 func live(s shipJSON) bool { return s.Status == "underway" || s.Status == "needs_you" }
 
 func fromOrder(id string) func(shipJSON) bool {
@@ -203,7 +211,7 @@ func TestEngineCapOneLaunchesOneShipAtATime(t *testing.T) {
 		return len(w.shipsWhere(func(shipJSON) bool { return true })) == 1
 	})
 
-	w.touch(first.Session, "go")
+	w.sail(first.Session)
 	w.waitShipCount(15*time.Second, "the next order's ship", func(s shipJSON) bool { return s.Session != first.Session && live(s) }, 1)
 }
 
@@ -241,7 +249,7 @@ func TestEngineGlobalCapCountsHandLaunchedShips(t *testing.T) {
 		return len(w.shipsWhere(fromOrder("o1"))) == 0 && len(w.shipsWhere(fromOrder("o2"))) == 0
 	})
 
-	w.touch(h1.Session, "go")
+	w.sail(h1.Session)
 	_ = h2
 	w.waitShipCount(15*time.Second, "the order launched once a slot opened", fromOrder("o1"), 1)
 }
@@ -262,12 +270,12 @@ func TestEngineLaunchesEachOrderOncePerListing(t *testing.T) {
 	w.waitSource("a", 10*time.Second, "both orders", func(s sourceJSON) bool { return len(s.orderIDs()) == 2 })
 
 	hand := w.mustLaunchFrom("work", "a", "o1")
-	w.touch(hand.Session, "go")
+	w.sail(hand.Session)
 	w.in.waitShipsList(t, 15*time.Second, "the hand ship gone", func(l []shipJSON) bool { return len(l) == 0 })
 
 	w.writeAutopilotConfig(map[string]any{"a": tpAutopilot(p, "main", apEntry(true, 1, nil))}, 0)
 	second := w.waitShipCount(15*time.Second, "o2's ship", fromOrder("o2"), 1)[0]
-	w.touch(second.Session, "go")
+	w.sail(second.Session)
 	w.in.waitShipsList(t, 15*time.Second, "o2's ship gone", func(l []shipJSON) bool { return len(l) == 0 })
 	holdThat(t, "autopilot launched an order that was already launched and is still listed", func() bool {
 		return len(w.in.ships(t)) == 0
@@ -344,9 +352,13 @@ func TestEnginePauseRouteRefusesUnknownPanels(t *testing.T) {
 	w := newWorld(t)
 	p := w.newTP("a")
 	p.mainOrders()
-	w.startSources(tpSource("a", p, nil))
+	w.installPlugin("testplug", "testplug")
+	w.writeAutopilotConfig(map[string]any{"a": tpAutopilot(p, "main", apEntry(true, 1, nil)), "b": tpAutopilot(w.newTP("b"), "other", apEntry(true, 1, nil))}, 0)
+	w.start()
 	w.waitSource("a", 10*time.Second, "state ok", isOK)
-	for _, path := range []string{"/api/sources/a/panels/main/autopilot", "/api/sources/nosuch/panels/main/autopilot"} {
+	w.setPaused("a", "main", true) // a panel with an entry takes it
+	// "b" has an entry for a panel its plugin does not list; "a/side" has none.
+	for _, path := range []string{"/api/sources/a/panels/side/autopilot", "/api/sources/b/panels/main/autopilot", "/api/sources/nosuch/panels/main/autopilot"} {
 		code, body := send(t, http.MethodPut, w.in.LocalURL+path, map[string]any{"paused": true})
 		if code != http.StatusNotFound {
 			t.Errorf("PUT %s = %d, want 404: %s", path, code, body)
