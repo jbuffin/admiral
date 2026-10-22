@@ -153,6 +153,8 @@ func (w *world) harnessEnv() map[string]string {
 	return map[string]string{
 		"FAKE_RECORD_DIR": w.rec, "FAKE_CUE": w.cue,
 		"FLEET_VAR": "fleet-value", "TILDE_VAR": "~/tilde", "ADMIRAL_OVER": "fleet",
+		// The ship contract (#112) wins over a fleet env of the same name.
+		"ADMIRAL_SHIP": "fleet", "ADMIRAL_REPORT": "fleet", "ADMIRAL_INBOX": "fleet",
 	}
 }
 

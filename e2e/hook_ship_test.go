@@ -3,6 +3,7 @@ package e2e
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -98,6 +99,74 @@ func TestShipHookRunsBundleCommand(t *testing.T) {
 			t.Errorf("pane %s got @admiral-state %q: the write must target $TMUX_PANE", id, state(id))
 		}
 	}
+}
+
+// #113: the hook leaves @admiral-reason beside @admiral-state, in real tmux. A
+// permission prompt makes Claude fire PermissionRequest and Notification in no
+// fixed order, and the permission reason survives either; the next working
+// event clears it; nothing of the payload but the tool name is stored.
+func TestShipHookReason(t *testing.T) {
+	w := newWorld(t)
+	const secret = "Drop the production database?"
+	w.writeCue(
+		"event PermissionRequest "+`{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"echo secret-command"}}`,
+		"wait go1",
+		"event Notification "+`{"hook_event_name":"Notification","notification_type":"permission_prompt","message":"needs permission for secret-command"}`,
+		"wait go2",
+		"event PostToolUse "+`{"hook_event_name":"PostToolUse","tool_name":"Bash"}`,
+		"wait go3",
+		"event Notification "+`{"hook_event_name":"Notification","notification_type":"permission_prompt","message":"x"}`,
+		"wait go4",
+		"event PermissionRequest "+`{"hook_event_name":"PermissionRequest","tool_name":"Edit"}`,
+		"wait go5",
+		"event PreToolUse "+`{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"`+secret+`"}]}}`,
+		"wait go6",
+		"event UserPromptSubmit "+`{"hook_event_name":"UserPromptSubmit","prompt":"go"}`,
+		"wait go7",
+		"event Notification "+`{"hook_event_name":"Notification","notification_type":"elicitation_dialog"}`,
+	)
+	w.start()
+	ship := w.launch(w.order("work", "claude", "hookreason", commodore, "x"))
+	r := w.record(ship.Session)
+	events := func() int { return strings.Count(readIf(filepath.Join(r.dir, "events-done")), "\n") }
+	step := func(n int, state, reason string) {
+		t.Helper()
+		deadline := time.Now().Add(10 * time.Second)
+		for events() < n {
+			if time.Now().After(deadline) {
+				t.Fatalf("event %d did not finish in 10s; hook errors: %s", n, readIf(filepath.Join(r.dir, "event-error")))
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if got := w.paneState(ship.Session); got != state {
+			t.Errorf("after event %d @admiral-state = %q, want %q", n, got, state)
+		}
+		if got := w.paneReason(ship.Session); got != reason {
+			t.Errorf("after event %d @admiral-reason = %q, want %q", n, got, reason)
+		}
+	}
+	release := func(n int) { touch(t, filepath.Join(r.dir, "go"+strconv.Itoa(n))) }
+	step(1, "needs_you", "permission:Bash")
+	release(1)
+	step(2, "needs_you", "permission:Bash") // the Notification after it doesn't replace it
+	release(2)
+	step(3, "working", "")
+	release(3)
+	step(4, "needs_you", "notification:permission_prompt")
+	release(4)
+	step(5, "needs_you", "permission:Edit") // the PermissionRequest after a Notification does
+	release(5)
+	step(6, "needs_you", "question")
+	if out := w.mustTmux("show-options", "-p", "-t", ship.Session); strings.Contains(out, secret) || strings.Contains(out, "secret-command") {
+		t.Errorf("the pane options hold payload text:\n%s", out)
+	}
+	release(6)
+	step(7, "working", "")
+	// A reason left beside working (a lost unset) is kept by the Notification's
+	// -o, but -q keeps tmux from skipping the state write that follows it.
+	w.mustTmux("set-option", "-p", "-t", ship.Session, "@admiral-reason", "stale")
+	release(7)
+	step(8, "needs_you", "stale")
 }
 
 func readIf(p string) string {

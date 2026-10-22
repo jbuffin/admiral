@@ -116,6 +116,20 @@ func TestLaunchCommandLine(t *testing.T) {
 			if r.env["ADMIRAL_BASE"] != "base" || r.env["ADMIRAL_OVER"] != "fleet" {
 				t.Errorf("env: Admiral's variable = %q (want base), fleet's override = %q (want fleet)", r.env["ADMIRAL_BASE"], r.env["ADMIRAL_OVER"])
 			}
+			// #112: the ship's own session, report file and inbox, set before the
+			// harness runs and winning over the fleet's same-named variables.
+			if r.env["ADMIRAL_SHIP"] != ship.Session {
+				t.Errorf("ADMIRAL_SHIP = %q, want the session %s", r.env["ADMIRAL_SHIP"], ship.Session)
+			}
+			if want := filepath.Join(w.home, "reports", ship.Session+".json"); r.env["ADMIRAL_REPORT"] != want {
+				t.Errorf("ADMIRAL_REPORT = %q, want %s", r.env["ADMIRAL_REPORT"], want)
+			}
+			if want := filepath.Join(w.home, "inbox", ship.Session) + "/"; r.env["ADMIRAL_INBOX"] != want {
+				t.Errorf("ADMIRAL_INBOX = %q, want %s", r.env["ADMIRAL_INBOX"], want)
+			}
+			if got := strings.TrimSpace(readIf(filepath.Join(r.dir, "dirs"))); got != "inbox=yes reports=yes" {
+				t.Errorf("before the harness ran: %q, want the inbox directory and reports/ to exist", got)
+			}
 			parts := strings.Split(r.env["PATH"], ":")
 			if last := parts[len(parts)-1]; last != filepath.Dir(tmuxPath) {
 				t.Errorf("PATH must end with the tmux directory %s, got last element %q", filepath.Dir(tmuxPath), last)

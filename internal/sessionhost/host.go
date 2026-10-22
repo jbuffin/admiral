@@ -57,7 +57,7 @@ const sep = "\x1f"
 // format is what one `list-panes -a` row holds.
 const format = "#{session_name}" + sep + "#{pane_dead}" + sep + "#{pane_dead_status}" + sep +
 	"#{pane_dead_signal}" + sep + "#{@admiral-bell}" + sep + "#{@admiral-state}" + sep +
-	"#{@admiral-name}" + sep + "#{@admiral-fleet}" + sep + "#{@admiral-fleet-name}" + sep +
+	"#{@admiral-reason}" + sep + "#{@admiral-name}" + sep + "#{@admiral-fleet}" + sep + "#{@admiral-fleet-name}" + sep +
 	"#{@admiral-fleet-color}" + sep + "#{@admiral-harness}" + sep + "#{@admiral-dir}" + sep +
 	"#{@admiral-skill}" + sep + "#{@admiral-source}" + sep + "#{@admiral-order}" + sep +
 	"#{@admiral-launched}" + sep + "#{@admiral-title}" + sep + "#{@admiral-url}"
@@ -71,6 +71,7 @@ type Session struct {
 	Name       string
 	Options    map[string]string // without the @admiral- prefix; every name in optionNames is present
 	State      string            // the pane option @admiral-state, "" until a hook sets it
+	Reason     string            // the pane option @admiral-reason: why the ship needs you, "" when it does not
 	PaneDead   bool
 	ExitStatus int    // valid when PaneDead and Signal is empty
 	Signal     string // the signal that killed the pane, e.g. "kill"; then there is no exit status
@@ -115,10 +116,10 @@ type Host struct {
 	unread   map[string]bool // sessions seen but unreadable (their row was malformed)
 	subs     map[chan Event]struct{}
 
-	cmdMu   sync.Mutex // one command at a time on the control connection
-	stdin   io.Writer
-	rep     chan reply
-	orphans int // replies still to come for commands that gave up waiting
+	cmdMu sync.Mutex // one command at a time on the control connection
+	stdin io.Writer
+	rep   chan reply
+	queue []*inflight // command lists tmux has not finished answering, oldest first
 
 	lost bool // set by a failed connection, until the next successful read
 
@@ -236,7 +237,7 @@ func (h *Host) connect(ctx context.Context) error {
 	go func() { parsed <- p.run(stdout); close(p.replies) }()
 
 	h.cmdMu.Lock()
-	h.stdin, h.rep, h.orphans = stdin, p.replies, 0
+	h.stdin, h.rep, h.queue = stdin, p.replies, nil
 	h.cmdMu.Unlock()
 	defer func() {
 		_ = stdin.Close()
@@ -316,38 +317,66 @@ func (h *Host) poll(ctx context.Context) error {
 	return nil
 }
 
-// command sends one command line and waits for its reply. A command that
-// gives up (cancelled, or tmux too slow) still has a reply coming; it is
-// counted in orphans and discarded by the commands after it, so no command
-// ever reads another's reply.
+// inflight is a command list written to tmux and not yet fully answered.
+type inflight struct {
+	left  int // replies still to come
+	lines []string
+	err   error
+}
+
+// take records the next reply for the list. tmux stops a list at its first
+// failing command, so an error reply is the list's last.
+func (s *inflight) take(r reply) {
+	s.left--
+	s.lines = r.lines
+	if r.err != nil {
+		s.err, s.left = r.err, 0
+	}
+}
+
+// command sends one command line and waits for its reply.
 func (h *Host) command(ctx context.Context, line string) ([]string, error) {
+	return h.commandList(ctx, line)
+}
+
+// commandList sends the commands as one `;`-joined line and waits for the reply
+// to each. tmux runs the list as one unit, so no other client's command lands
+// between them. It returns the last reply's lines, and the error of the command
+// that failed, after which tmux ran no more of the list. A list that gives up
+// (cancelled, or tmux too slow) stays in the queue, and the lists after it read
+// and discard its replies, so no list ever reads another's.
+func (h *Host) commandList(ctx context.Context, cmds ...string) ([]string, error) {
+	if len(cmds) == 0 {
+		return nil, fmt.Errorf("no commands to send")
+	}
 	h.cmdMu.Lock()
 	defer h.cmdMu.Unlock()
 	if h.stdin == nil {
 		return nil, fmt.Errorf("not connected")
 	}
+	line := strings.Join(cmds, " ; ")
 	if _, err := io.WriteString(h.stdin, line+"\n"); err != nil {
 		return nil, err
 	}
-	pending := h.orphans + 1 // replies to read, ours the last
-	for {
+	mine := &inflight{left: len(cmds)}
+	h.queue = append(h.queue, mine)
+	for mine.left > 0 {
 		select {
 		case r, ok := <-h.rep:
 			if !ok {
 				return nil, fmt.Errorf("control connection closed")
 			}
-			if pending--; pending == 0 {
-				h.orphans = 0
-				return r.lines, r.err
+			head := h.queue[0]
+			if head.take(r); head.left == 0 {
+				h.queue = h.queue[1:]
 			}
 		case <-ctx.Done():
-			h.orphans = pending
 			return nil, ctx.Err()
 		case <-time.After(10 * time.Second):
-			h.orphans = pending
 			return nil, fmt.Errorf("tmux did not answer %q", line)
 		}
 	}
+	return mine.lines, mine.err
 }
 
 // parseRows folds the rows of list-panes (one per pane) into one session each:
@@ -366,15 +395,15 @@ func parseRows(rows []string, known map[string]bool) (sessions map[string]Sessio
 		if name == Internal || !known[name] {
 			continue
 		}
-		if len(f) != 6+len(optionNames) {
+		if len(f) != 7+len(optionNames) {
 			bad[name] = true
 			continue
 		}
-		s := Session{Name: name, PaneDead: f[1] == "1", Signal: f[3], BellStamp: f[4], State: f[5],
+		s := Session{Name: name, PaneDead: f[1] == "1", Signal: f[3], BellStamp: f[4], State: f[5], Reason: f[6],
 			Options: map[string]string{}}
 		s.ExitStatus, _ = strconv.Atoi(f[2])
 		for i, n := range optionNames {
-			s.Options[n] = f[6+i]
+			s.Options[n] = f[7+i]
 		}
 		if first, dup := sessions[name]; dup {
 			if !maps.Equal(first.Options, s.Options) {
