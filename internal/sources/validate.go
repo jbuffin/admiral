@@ -35,6 +35,19 @@ type Panel struct {
 	// Error is the plugin's last orders.list refusal for this panel. Admiral
 	// sets it, never the plugin.
 	Error string `json:"error,omitempty"`
+	// Autopilot is the engineer's autopilot entry for the panel, or nil when it
+	// has none. Admiral sets it, never the plugin.
+	Autopilot *AutopilotView `json:"autopilot"`
+	// Listed says the panel has had a successful orders.list since the source
+	// last started. Autopilot prunes only what listed panels no longer hold.
+	Listed bool `json:"-"`
+}
+
+// AutopilotView is a panel's autopilot entry as the UI receives it.
+type AutopilotView struct {
+	Enabled  bool `json:"enabled"`
+	Paused   bool `json:"paused"`
+	MaxShips int  `json:"max_ships"`
 }
 
 // Auth is what a plugin asks the engineer to do to sign in.

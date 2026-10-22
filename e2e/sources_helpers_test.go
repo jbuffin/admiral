@@ -39,6 +39,12 @@ type panelJSON struct {
 	Title  string      `json:"title"`
 	Orders []orderJSON `json:"orders"`
 	Error  *string     `json:"error"`
+	// Autopilot is null for a panel with no autopilot entry in config.
+	Autopilot *struct {
+		Enabled  bool `json:"enabled"`
+		Paused   bool `json:"paused"`
+		MaxShips int  `json:"max_ships"`
+	} `json:"autopilot"`
 }
 
 type authJSON struct {

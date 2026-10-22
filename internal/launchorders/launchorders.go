@@ -18,6 +18,7 @@ import (
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/ships"
 	"github.com/jbuffin/admiral/internal/skillindex"
+	"github.com/jbuffin/admiral/internal/sources"
 	"github.com/jbuffin/admiral/internal/state"
 )
 
@@ -84,16 +85,7 @@ func (s *Service) serveDirs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "This fleet has no search roots")
 		return
 	}
-	entries := repofinder.List(fleet.SearchRoots)
-	live := s.Ships()
-	// The checkouts most recently used first; the search roots stay last.
-	checkouts := slices.IndexFunc(entries, func(e repofinder.Entry) bool { return e.Kind != repofinder.KindCheckout })
-	if checkouts < 0 {
-		checkouts = len(entries)
-	}
-	slices.SortStableFunc(entries[:checkouts], func(a, b repofinder.Entry) int {
-		return lastUsed(s.State, b.Path, live).Compare(lastUsed(s.State, a.Path, live))
-	})
+	entries, live := s.list(fleet)
 	selected, reason := s.preselect(&entries, fleet, req, live)
 
 	out := make([]dirEntry, len(entries))
@@ -110,6 +102,43 @@ func (s *Service) serveDirs(w http.ResponseWriter, r *http.Request) {
 		sel, why = &selected, &reason
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"entries": out, "selected": sel, "reason": why})
+}
+
+// list is the fleet's checkouts and search roots, the checkouts most recently
+// used first and the search roots last, and the ships it was ranked against.
+func (s *Service) list(fleet config.Fleet) ([]repofinder.Entry, []ships.Ship) {
+	entries := repofinder.List(fleet.SearchRoots)
+	live := s.Ships()
+	checkouts := slices.IndexFunc(entries, func(e repofinder.Entry) bool { return e.Kind != repofinder.KindCheckout })
+	if checkouts < 0 {
+		checkouts = len(entries)
+	}
+	slices.SortStableFunc(entries[:checkouts], func(a, b repofinder.Entry) int {
+		return lastUsed(s.State, b.Path, live).Compare(lastUsed(s.State, a.Path, live))
+	})
+	return entries, live
+}
+
+// Dir is the directory autopilot launches the order in: the one the launch
+// dialog pre-selects for it, when that comes from the order's repo or the
+// repository URLs in its text (ADR 0009 rules 1 and 2). It never falls back to
+// the dock's last directory. It returns "" and why when no checkout matches.
+func (s *Service) Dir(fleet config.Fleet, harness string, o sources.Order) (string, string) {
+	if !fleet.CanLaunch() {
+		return "", "fleet " + fleet.Name + " has no search roots"
+	}
+	text := o.Text
+	if text == "" {
+		text = o.Title
+	}
+	entries, live := s.list(fleet)
+	dir, reason := s.preselect(&entries, fleet, dirsRequest{Fleet: fleet.Key, Harness: harness, Repo: o.Repo, Text: text}, live)
+	if reason != "repo" && reason != "text" || !slices.ContainsFunc(entries, func(e repofinder.Entry) bool {
+		return e.Path == dir && e.Kind == repofinder.KindCheckout
+	}) {
+		return "", "no checkout in fleet " + fleet.Name + " has the order's repository"
+	}
+	return dir, ""
 }
 
 // preselect picks the directory (ADR 0009) and floats several matching

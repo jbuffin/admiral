@@ -17,8 +17,12 @@ What a session starts on, named in the harness's launch prompt with the order's 
 The default skill: it plans the work, assembles a task force of teammates and sees it through to a merged PR. Admiral starts it like any other skill.
 
 **Order**:
-One item from an order source, shown as a card in the Orders sidebar, not yet launched: freeform text, a URL or anything else, handed to the chosen skill as it is. Launching an order puts a ship to sea.
+One item from an order source, shown as a card in the Orders sidebar, not yet launched: freeform text, a URL or anything else, handed to the chosen skill as it is. Launching an order puts a ship to sea, whether the engineer launches it or autopilot does.
 _Avoid_: job, ticket, card (in code)
+
+**Autopilot**:
+A panel setting that launches the panel's orders without the engineer, in the order the panel lists them. The panel names the fleet, skill and arguments its ships use. Autopilot launches only while two **caps** have room: the global cap on every ship underway or needing you, hand-launched ones included, and the panel's cap on those launched from that panel. A paused panel launches nothing and leaves its running ships alone.
+_Avoid_: auto-launch, bot
 
 **Order source**:
 One configured instance of a plugin that supplies orders: a freeform list the engineer writes first, then GitHub issues and PRs, Jira, Linear and others. The same plugin can be added as more than one source, such as two GitHub accounts. Sources belong to Admiral, not to a fleet. Each source contributes one or more panels.
@@ -52,7 +56,7 @@ A skill the engineer starred, up to five, shown in launch orders after Commodore
 _Avoid_: configured skill, skill list
 
 **Ship**:
-One running harness session, launched from a dock and run in its own tmux session (ADR 0002). Wooden hull, a stripe in its fleet color, the harness logo on its flag, a square bot as captain. Each ship has a generated name, unique among the ships that exist, that it keeps for life; the name carries no meaning.
+One running harness session, launched from a dock by the engineer or by autopilot, and run in its own tmux session (ADR 0002). Wooden hull, a stripe in its fleet color, the harness logo on its flag, a square bot as captain. Each ship has a generated name, unique among the ships that exist, that it keeps for life; the name carries no meaning.
 _Avoid_: boat (for the lead), agent, card
 
 **Crew boat**:

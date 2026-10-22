@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/auth"
+	"github.com/jbuffin/admiral/internal/autopilot"
 	"github.com/jbuffin/admiral/internal/bridge"
 	"github.com/jbuffin/admiral/internal/cli"
 	"github.com/jbuffin/admiral/internal/config"
@@ -177,14 +178,45 @@ func serve(args []string) error {
 	}
 	seedSources(cfg)
 	supervisor := &sources.Supervisor{Home: dir, Config: cfg}
-	sourceService := &sources.Service{Home: dir, Config: cfg, Sup: supervisor, Hub: hub, Ships: shipService.List}
-	supervisor.OnChange = sourceService.Notify
+	sourceService := &sources.Service{Home: dir, Config: cfg, Sup: supervisor, Hub: hub, Ships: shipService.List, State: st}
+	apStore, err := autopilot.OpenStore(dir)
+	if err != nil {
+		return fmt.Errorf("autopilot: %w", err)
+	}
+	launchService := &launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}
+	// A ship launched but not yet listed by the host counts as running.
+	allShips := func() []ships.Ship { return append(shipService.List(), shipService.Pending()...) }
+	sourceService.Ships = allShips
+	engine := &autopilot.Engine{
+		Config: cfg.Current,
+		Ships:  allShips,
+		Sources: func() []autopilot.Source {
+			var out []autopilot.Source
+			for _, l := range sourceService.Listings() {
+				out = append(out, autopilot.Source{Key: l.Key, Listed: l.Listed, Panels: l.Panels})
+			}
+			return out
+		},
+		Paused: st.Paused,
+		Dir:    launchService.Dir,
+		Launch: shipService.LaunchOrder,
+		Record: func(r outcomes.Record) { outcomeLog.Enqueue(r, nil) },
+		Now:    time.Now,
+		Store:  apStore,
+		OnHot:  sourceService.Notify,
+		Logf: func(format string, args ...any) {
+			fmt.Fprintf(os.Stderr, "admiral: "+format+"\n", args...)
+		},
+	}
+	sourceService.Hot = engine.Hot
+	sourceService.OnLaunched = engine.Launched
+	supervisor.OnChange = func() { sourceService.Notify(); engine.Poke() }
 	bridgeService := bridge.New(tmuxPath, sock, shipService)
 	if exe, err := os.Executable(); err == nil && tmuxPath != "" {
 		bridgeService.Host, bridgeService.Setup = host, &bridge.SetupCommand{Exe: exe, Home: dir}
 	}
 	shipService.Orders = sourceService
-	shipService.OnChange = func() { sourceService.Notify(); bridgeService.ShipsChanged() }
+	shipService.OnChange = func() { sourceService.Notify(); bridgeService.ShipsChanged(); engine.Poke() }
 
 	s := &server.Server{Version: version, UI: web.UI(), Messages: map[string]server.MessageHandler{}, Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService,
@@ -197,6 +229,23 @@ func serve(args []string) error {
 	shipsCtx, stopShips := context.WithCancel(bg)
 	shipsDone := make(chan struct{})
 	go func() { defer close(shipsDone); shipService.Run(shipsCtx) }()
+	// Autopilot stops with the ships' run, before the log closes, so a record
+	// it writes at shutdown is kept.
+	engineDone := make(chan struct{})
+	go func() { defer close(engineDone); engine.Run(shipsCtx) }()
+	configChanges, unsubscribe := cfg.Subscribe()
+	go func() {
+		defer unsubscribe()
+		for {
+			select {
+			case <-configChanges:
+				sourceService.Notify() // an autopilot-only edit does not restart a source
+				engine.Poke()
+			case <-shipsCtx.Done():
+				return
+			}
+		}
+	}()
 	runs := []func(context.Context){s.WatchConfig, sourceService.Run, bridgeService.Run}
 	if tmuxPath != "" {
 		runs = append(runs, host.Run)
@@ -208,6 +257,7 @@ func serve(args []string) error {
 	defer func() {
 		stopShips()
 		<-shipsDone
+		<-engineDone
 		outcomeLog.Close()
 		stopBackground()
 		background.Wait()
