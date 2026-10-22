@@ -16,10 +16,11 @@ import (
 	"github.com/jbuffin/admiral/internal/launcher"
 )
 
-// maxOutcomeLine is the longest line Outcomes prints. A report of up to 1 MiB
-// (internal/ships) can grow sixfold when the writer escapes <, > and &, so a
-// longer line is skipped, not read.
-const maxOutcomeLine = 4 << 20
+// maxOutcomeLine is the longest line Outcomes prints, newline not counted. A
+// report of up to 1 MiB (internal/ships) can grow sixfold when the writer
+// escapes <, > and &, so this leaves room for any `ended` the writer produces;
+// a longer line is skipped, not read.
+const maxOutcomeLine = 7 << 20
 
 var outcomeFile = regexp.MustCompile(`^(\d{4}-\d{2})\.jsonl$`)
 
@@ -130,7 +131,7 @@ func readLine(r *bufio.Reader) ([]byte, error) {
 		chunk, err := r.ReadSlice('\n')
 		if !tooLong {
 			line = append(line, chunk...)
-			tooLong = len(line) > maxOutcomeLine
+			tooLong = len(bytes.TrimSuffix(line, []byte("\n"))) > maxOutcomeLine
 		}
 		if err == bufio.ErrBufferFull {
 			if tooLong {

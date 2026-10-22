@@ -24,7 +24,7 @@ var oMistEnded = `{"v":1,"ts":"2026-09-02T12:00:00Z","ship":"mistral","event":"e
 // oHuge is longer than the command reads: it is skipped, and the lines after
 // it still print.
 var oHuge = `{"v":1,"ts":"2026-09-02T13:00:00Z","ship":"mistral","event":"ended","report":{"notes":"` +
-	strings.Repeat("x", 5<<20) + `"}}`
+	strings.Repeat("x", 8<<20) + `"}}`
 
 // seedOutcomes writes two month files for two ships. The August file holds a
 // line cut short, as a crash mid-write leaves one. Saltpaw II's name is used
@@ -136,7 +136,7 @@ func TestOutcomesCommand(t *testing.T) {
 	})
 }
 
-// clip keeps a failure message readable when a line holds a 100 KiB report.
+// clipLong keeps a failure message readable when a line holds a 100 KiB report.
 func clipLong(s string) string {
 	var out []string
 	for _, l := range strings.Split(s, "\n") {
