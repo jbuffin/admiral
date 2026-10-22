@@ -11,8 +11,8 @@ type View struct {
 	Error          *ErrorView    `json:"error"` // the banner; null when the file is fine
 }
 
-// AutopilotView is the top-level autopilot setting: the most autopilot ships
-// across every panel.
+// AutopilotView is the top-level autopilot setting: the most ships underway or
+// needing you across Admiral, hand launches included, before autopilot stops launching.
 type AutopilotView struct {
 	MaxShips int `json:"max_ships"`
 }
