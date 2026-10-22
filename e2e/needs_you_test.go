@@ -110,6 +110,28 @@ func (w *world) paneState(session string) string {
 	return out
 }
 
+// paneReason is @admiral-reason on the ship's pane, "" when unset.
+func (w *world) paneReason(session string) string {
+	w.t.Helper()
+	out, err := w.tmux("show-options", "-t", session, "-p", "-qv", "@admiral-reason")
+	if err != nil {
+		w.t.Fatalf("reading @admiral-reason of %s: %v\n%s", session, err, out)
+	}
+	return out
+}
+
+// waitPaneReason waits for @admiral-reason on the pane to be want.
+func (w *world) waitPaneReason(session, want string) {
+	w.t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for w.paneReason(session) != want {
+		if time.Now().After(deadline) {
+			w.t.Fatalf("@admiral-reason of %s = %q after 5s, want %q", session, w.paneReason(session), want)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 func (w *world) setPaneState(session, state string) {
 	w.t.Helper()
 	w.mustTmux("set-option", "-p", "-t", session, "@admiral-state", state)
@@ -192,6 +214,7 @@ func TestCodexBellNeedsYou(t *testing.T) {
 	if got := w.paneState(c.Session); got != "needs_you" {
 		t.Errorf("after a Codex bell @admiral-state = %q, want needs_you", got)
 	}
+	w.waitPaneReason(c.Session, "bell")
 	waitStatus(t, ws, 5*time.Second, c.Session, "underway")
 	if got := w.paneState(c.Session); got != "working" {
 		t.Errorf("after the working hook @admiral-state = %q, want working", got)
@@ -264,9 +287,13 @@ func TestInputSeenClearsNeedsYou(t *testing.T) {
 	s := w.launchIn("f", "claude", "s4")
 	w.waitFile(s.Session, "cues-done")
 	w.in.waitStatusList(t, 3*time.Second, s.Session, "needs_you")
+	w.mustTmux("set-option", "-p", "-t", s.Session, "@admiral-reason", "stop")
 
 	if code := w.inputSeen(s.Session); code/100 != 2 {
 		t.Fatalf("input-seen = %d, want 2xx", code)
+	}
+	if got := w.paneReason(s.Session); got != "" {
+		t.Errorf("after input-seen @admiral-reason = %q, want it cleared", got)
 	}
 	if got := statusOf(w.in.ships(t), s.Session); got != "underway" {
 		t.Errorf("right after input-seen GET status = %q, want underway", got)

@@ -18,6 +18,8 @@
 #   cwd       its working directory (physical path)
 #   name      the session option @admiral-name, as read at start
 #   options   the output of `tmux show-options`, run as its first action (all session options)
+#   dirs      "inbox=yes|no reports=yes|no": whether $ADMIRAL_INBOX is a directory and
+#             the directory of $ADMIRAL_REPORT exists, checked before anything else
 #   recorded  empty marker file
 #
 # Cue file: read once after recording, one cue per line, run in order:
@@ -50,6 +52,9 @@
 
 # The first thing it does: read the session options, so a test can prove
 # Admiral set them before the harness could run anything.
+dirs="inbox=no reports=no"
+[ -d "$ADMIRAL_INBOX" ] && dirs="inbox=yes reports=no"
+[ -d "$(dirname "$ADMIRAL_REPORT")" ] && dirs=${dirs%reports=no}reports=yes
 first=$(tmux show-options 2>&1)
 me=$(basename "$0")
 sess=$(tmux display-message -p '#{session_name}')
@@ -61,6 +66,7 @@ env >"$d/env"
 pwd -P >"$d/cwd"
 tmux show-options -v @admiral-name >"$d/name"
 printf '%s\n' "$first" >"$d/options"
+printf '%s\n' "$dirs" >"$d/dirs"
 : >"$d/recorded"
 
 if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then

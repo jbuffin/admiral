@@ -82,3 +82,7 @@ func hookState(event string, p hookPayload) string {
 	}
 	return ""
 }
+
+// hookReason is the short code @admiral-reason holds with needs_you, or "".
+// STUB: no behaviour yet.
+func hookReason(event string, p hookPayload) string { return "" }
