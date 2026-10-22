@@ -2,9 +2,11 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,8 +16,9 @@ import (
 	"github.com/jbuffin/admiral/internal/launcher"
 )
 
-// maxOutcomeLine is the longest line Outcomes reads: an `ended` record holds a
-// report of up to 1 MiB (internal/ships), with room for the rest of the record.
+// maxOutcomeLine is the longest line Outcomes prints. A report of up to 1 MiB
+// (internal/ships) can grow sixfold when the writer escapes <, > and &, so a
+// longer line is skipped, not read.
 const maxOutcomeLine = 4 << 20
 
 var outcomeFile = regexp.MustCompile(`^(\d{4}-\d{2})\.jsonl$`)
@@ -30,8 +33,9 @@ func parseSince(s string) (time.Time, error) {
 
 // Outcomes is `admiral outcomes [--since <date>] [--ship <name>]` (ADR 0015):
 // the outcome log's lines as stored, month files ascending, read straight from
-// the files so the server need not run. A line that is not a JSON object with a
-// ship and a time, such as one a crash cut short, is skipped.
+// the files so the server need not run. A line is skipped unless it is a JSON
+// object with a ship and a time (a crash can leave one cut short), and when it
+// is longer than maxOutcomeLine.
 func Outcomes(args []string, std IO) error {
 	fs := newFlags("outcomes")
 	sinceArg := fs.String("since", "", "only records at or after this date (YYYY-MM-DD, UTC) or RFC 3339 time")
@@ -39,13 +43,16 @@ func Outcomes(args []string, std IO) error {
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
+	if fs.NArg() > 0 {
+		return usagef("unexpected %q: outcomes takes --since and --ship, no arguments", fs.Arg(0))
+	}
 	set := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
 	var since time.Time
 	if set["since"] {
 		t, err := parseSince(*sinceArg)
 		if err != nil {
-			return usagef("outcomes: --since wants YYYY-MM-DD or an RFC 3339 time, got %q", *sinceArg)
+			return usagef("--since %q: want YYYY-MM-DD or an RFC 3339 time", *sinceArg)
 		}
 		since = t
 	}
@@ -89,26 +96,51 @@ func printOutcomes(path string, since time.Time, ships map[string]bool, std IO) 
 		return err
 	}
 	defer f.Close()
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64<<10), maxOutcomeLine)
-	for sc.Scan() {
-		line := sc.Bytes()
-		var rec struct {
-			Ts   time.Time `json:"ts"`
-			Ship string    `json:"ship"`
+	r := bufio.NewReaderSize(f, 64<<10)
+	for {
+		line, err := readLine(r)
+		if len(line) > 0 {
+			var rec struct {
+				Ts   time.Time `json:"ts"`
+				Ship string    `json:"ship"`
+			}
+			ok := line[0] == '{' && json.Unmarshal(line, &rec) == nil && !rec.Ts.IsZero() && rec.Ship != ""
+			if ok && (ships == nil || ships[rec.Ship]) && !rec.Ts.Before(since) {
+				if _, err := fmt.Fprintf(std.Out, "%s\n", line); err != nil {
+					return err
+				}
+			}
 		}
-		if len(line) == 0 || line[0] != '{' || json.Unmarshal(line, &rec) != nil || rec.Ts.IsZero() {
-			continue
+		if err == io.EOF {
+			return nil
 		}
-		if (ships != nil && !ships[rec.Ship]) || rec.Ts.Before(since) {
-			continue
-		}
-		if _, err := fmt.Fprintf(std.Out, "%s\n", line); err != nil {
-			return err
+		if err != nil {
+			return fmt.Errorf("%s: %w", path, err)
 		}
 	}
-	if err := sc.Err(); err != nil {
-		return fmt.Errorf("%s: %w", path, err)
+}
+
+// readLine is the next line without its newline. A line longer than
+// maxOutcomeLine comes back empty, as if it were malformed, and the rest of it
+// is discarded unread into memory, so one huge record cannot hide the others.
+func readLine(r *bufio.Reader) ([]byte, error) {
+	var line []byte
+	tooLong := false
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if !tooLong {
+			line = append(line, chunk...)
+			tooLong = len(line) > maxOutcomeLine
+		}
+		if err == bufio.ErrBufferFull {
+			if tooLong {
+				line = nil
+			}
+			continue
+		}
+		if tooLong {
+			return nil, err
+		}
+		return bytes.TrimSuffix(line, []byte("\n")), err
 	}
-	return nil
 }

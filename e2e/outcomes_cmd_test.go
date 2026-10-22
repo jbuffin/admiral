@@ -21,6 +21,11 @@ const (
 var oMistEnded = `{"v":1,"ts":"2026-09-02T12:00:00Z","ship":"mistral","event":"ended","exit_code":0,"report":{"notes":"` +
 	strings.Repeat("x", 100<<10) + `"}}`
 
+// oHuge is longer than the command reads: it is skipped, and the lines after
+// it still print.
+var oHuge = `{"v":1,"ts":"2026-09-02T13:00:00Z","ship":"mistral","event":"ended","report":{"notes":"` +
+	strings.Repeat("x", 5<<20) + `"}}`
+
 // seedOutcomes writes two month files for two ships. The August file holds a
 // line cut short, as a crash mid-write leaves one. Saltpaw II's name is used
 // twice.
@@ -31,11 +36,11 @@ func seedOutcomes(w *world) {
 		oSaltLaunched1, oMistLaunched, `{"v":1,"ts":"2026-08-31T09:5`, oSaltEnded1,
 	}, "\n")+"\n", 0o600)
 	w.writeRaw(filepath.Join(dir, "2026-09.jsonl"), strings.Join([]string{
-		oMistNeedsYou, oSaltLaunched2, oMistEnded, oSaltUnderway,
+		oMistNeedsYou, oSaltLaunched2, oMistEnded, oHuge, oSaltUnderway,
 	}, "\n")+"\n", 0o600)
 }
 
-func lines(ls ...string) string { return strings.Join(ls, "\n") + "\n" }
+func outLines(ls ...string) string { return strings.Join(ls, "\n") + "\n" }
 
 func TestOutcomesCommand(t *testing.T) {
 	w := newWorld(t)
@@ -48,21 +53,21 @@ func TestOutcomesCommand(t *testing.T) {
 		want string
 	}{
 		{"all, files ascending, malformed line skipped", nil,
-			lines(oSaltLaunched1, oMistLaunched, oSaltEnded1, oMistNeedsYou, oSaltLaunched2, oMistEnded, oSaltUnderway)},
+			outLines(oSaltLaunched1, oMistLaunched, oSaltEnded1, oMistNeedsYou, oSaltLaunched2, oMistEnded, oSaltUnderway)},
 		{"ship by session name", []string{"--ship", "mistral"},
-			lines(oMistLaunched, oMistNeedsYou, oMistEnded)},
+			outLines(oMistLaunched, oMistNeedsYou, oMistEnded)},
 		{"ship by display name through Slug", []string{"--ship", "Saltpaw II"},
-			lines(oSaltLaunched1, oSaltEnded1, oSaltLaunched2, oSaltUnderway)},
+			outLines(oSaltLaunched1, oSaltEnded1, oSaltLaunched2, oSaltUnderway)},
 		{"ship by session name with a reused display name", []string{"--ship=saltpaw-ii"},
-			lines(oSaltLaunched1, oSaltEnded1, oSaltLaunched2, oSaltUnderway)},
+			outLines(oSaltLaunched1, oSaltEnded1, oSaltLaunched2, oSaltUnderway)},
 		{"since a date is UTC midnight and includes it", []string{"--since", "2026-09-01"},
-			lines(oMistNeedsYou, oSaltLaunched2, oMistEnded, oSaltUnderway)},
+			outLines(oMistNeedsYou, oSaltLaunched2, oMistEnded, oSaltUnderway)},
 		{"since an RFC 3339 time", []string{"--since", "2026-09-02T12:00:00Z"},
-			lines(oMistEnded, oSaltUnderway)},
+			outLines(oMistEnded, oSaltUnderway)},
 		{"since an RFC 3339 time with an offset", []string{"--since", "2026-09-01T02:00:00+02:00"},
-			lines(oMistNeedsYou, oSaltLaunched2, oMistEnded, oSaltUnderway)},
+			outLines(oMistNeedsYou, oSaltLaunched2, oMistEnded, oSaltUnderway)},
 		{"ship and since together", []string{"--since", "2026-09-01", "--ship", "Mistral"},
-			lines(oMistNeedsYou, oMistEnded)},
+			outLines(oMistNeedsYou, oMistEnded)},
 		{"nothing matches the ship", []string{"--ship", "nobody"}, ""},
 		{"nothing matches the date", []string{"--since", "2027-01-01"}, ""},
 	}
@@ -78,7 +83,7 @@ func TestOutcomesCommand(t *testing.T) {
 			r := w.admiral(append([]string{"outcomes"}, c.args...)...)
 			w.expectExit(r, 0, "outcomes "+strings.Join(c.args, " "))
 			if r.stdout != c.want {
-				t.Fatalf("outcomes %v printed:\n%s\nwant:\n%s", c.args, clip(r.stdout), clip(c.want))
+				t.Fatalf("outcomes %v printed:\n%s\nwant:\n%s", c.args, clipLong(r.stdout), clipLong(c.want))
 			}
 		})
 	}
@@ -91,11 +96,11 @@ func TestOutcomesCommand(t *testing.T) {
 			t.Fatalf("printed %q, want nothing", r.stdout)
 		}
 		// The next call finds a log written since.
-		empty.writeRaw(filepath.Join(empty.home, "outcomes", "2026-09.jsonl"), lines(oSaltUnderway), 0o600)
+		empty.writeRaw(filepath.Join(empty.home, "outcomes", "2026-09.jsonl"), outLines(oSaltUnderway), 0o600)
 		r = empty.admiral("outcomes")
 		empty.expectExit(r, 0, "outcomes after a record was written")
-		if r.stdout != lines(oSaltUnderway) {
-			t.Fatalf("printed %q, want %q", r.stdout, lines(oSaltUnderway))
+		if r.stdout != outLines(oSaltUnderway) {
+			t.Fatalf("printed %q, want %q", r.stdout, outLines(oSaltUnderway))
 		}
 	})
 
@@ -110,6 +115,15 @@ func TestOutcomesCommand(t *testing.T) {
 		})
 	}
 
+	t.Run("positional argument", func(t *testing.T) {
+		w := w.sub(t)
+		r := w.admiral("outcomes", "mistral")
+		w.expectExit(r, 2, "outcomes mistral")
+		if r.stdout != "" {
+			t.Fatalf("printed %q, want nothing", clipLong(r.stdout))
+		}
+	})
+
 	t.Run("help", func(t *testing.T) {
 		w := w.sub(t)
 		r := w.admiral("outcomes", "--help")
@@ -123,7 +137,7 @@ func TestOutcomesCommand(t *testing.T) {
 }
 
 // clip keeps a failure message readable when a line holds a 100 KiB report.
-func clip(s string) string {
+func clipLong(s string) string {
 	var out []string
 	for _, l := range strings.Split(s, "\n") {
 		if len(l) > 200 {
