@@ -27,8 +27,9 @@ type Config struct {
 	FavoriteSkills []string
 	Sources        json.RawMessage // as in the file; nil when there is no sources key
 	SourceList     []Source        // Sources, in panel order
-	// AutopilotMaxShips is the most autopilot ships running at once, across
-	// every panel.
+	// AutopilotMaxShips is the most ships underway or needing you at once that
+	// autopilot lets stand: it counts every such ship, hand launches included,
+	// and stops launching when they reach it.
 	AutopilotMaxShips int
 }
 

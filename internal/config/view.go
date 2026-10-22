@@ -4,10 +4,17 @@ package config
 // WebSocket `config` message. It never carries env or args, which may hold
 // secrets.
 type View struct {
-	Type           string      `json:"type"`
-	Fleets         []FleetView `json:"fleets"`
-	FavoriteSkills []string    `json:"favorite_skills"`
-	Error          *ErrorView  `json:"error"` // the banner; null when the file is fine
+	Type           string        `json:"type"`
+	Fleets         []FleetView   `json:"fleets"`
+	FavoriteSkills []string      `json:"favorite_skills"`
+	Autopilot      AutopilotView `json:"autopilot"`
+	Error          *ErrorView    `json:"error"` // the banner; null when the file is fine
+}
+
+// AutopilotView is the top-level autopilot setting: the most autopilot ships
+// across every panel.
+type AutopilotView struct {
+	MaxShips int `json:"max_ships"`
 }
 
 type FleetView struct {
@@ -40,7 +47,8 @@ func (m *Manager) View() View {
 }
 
 func (m *Manager) viewLocked() View {
-	v := View{Type: "config", Fleets: []FleetView{}, FavoriteSkills: m.cur.FavoriteSkills}
+	v := View{Type: "config", Fleets: []FleetView{}, FavoriteSkills: m.cur.FavoriteSkills,
+		Autopilot: AutopilotView{MaxShips: m.cur.AutopilotMaxShips}}
 	for _, f := range m.cur.Fleets {
 		fv := FleetView{Key: f.Key, Name: f.Name, Color: f.Color, Ink: f.Ink,
 			SearchRoots: f.SearchRoots, CanLaunch: f.CanLaunch(), Docks: []DockView{}}

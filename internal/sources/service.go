@@ -19,6 +19,7 @@ import (
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/ships"
+	"github.com/jbuffin/admiral/internal/state"
 )
 
 // Service is the sources' HTTP and WebSocket surface. Its GET handlers never
@@ -29,6 +30,12 @@ type Service struct {
 	Sup    *Supervisor
 	Ships  func() []ships.Ship
 	Hub    *server.Hub
+	// State keeps which panels the engineer paused.
+	State *state.Store
+	// Hot says autopilot gave up on an order; nil says none.
+	Hot func(source, orderID string) bool
+	// OnLaunched runs when an order has been launched, by hand or by autopilot.
+	OnLaunched func(source, orderID string)
 
 	mu     sync.Mutex // one config read-modify-write at a time
 	poke   chan struct{}
@@ -166,6 +173,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sources", s.serveAdd)
 	mux.HandleFunc("PUT /api/source-order", s.serveSourceOrder)
 	mux.HandleFunc("PUT /api/sources/{key}/panel-order", s.servePanelOrder)
+	mux.HandleFunc("PUT /api/sources/{key}/panels/{panel}/autopilot", s.servePause)
 	mux.HandleFunc("PUT /api/sources/{key}", s.serveSave)
 	mux.HandleFunc("DELETE /api/sources/{key}", s.serveDelete)
 	mux.HandleFunc("POST /api/sources/{key}/restart", s.serveRestart)
@@ -696,6 +704,52 @@ func (s *Service) servePanelOrder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string][]string{"panels": req.Panels})
 }
 
+// servePause pauses or resumes autopilot on one panel. Pausing stops new
+// launches and leaves the running ships alone.
+func (s *Service) servePause(w http.ResponseWriter, r *http.Request) {
+	key, panel := r.PathValue("key"), r.PathValue("panel")
+	var req struct {
+		Paused *bool `json:"paused"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	if req.Paused == nil {
+		writeError(w, http.StatusBadRequest, "paused is required")
+		return
+	}
+	def, ok := s.Config.Current().Source(key)
+	if !ok {
+		writeError(w, http.StatusNotFound, "source "+key+" not found")
+		return
+	}
+	if _, ok := def.Autopilot[panel]; !ok {
+		writeError(w, http.StatusNotFound, "panel "+strconv.Quote(panel)+" of source "+key+" has no autopilot entry")
+		return
+	}
+	s.State.SetPaused(key, panel, *req.Paused)
+	s.Sup.changed() // pushes the sources and wakes autopilot
+	writeJSON(w, http.StatusOK, map[string]any{"paused": *req.Paused})
+}
+
+// Listing is one source's raw listing, for autopilot: the orders a ship hides
+// are still in it. Listed says the source is ok and has listed since Admiral
+// started, so a missing order is really gone.
+type Listing struct {
+	Key    string
+	Listed bool
+	Panels []Panel
+}
+
+// Listings is every source's raw listing, in config order.
+func (s *Service) Listings() []Listing {
+	var out []Listing
+	for _, st := range s.Sup.snapshot() {
+		out = append(out, Listing{Key: st.def.Key, Listed: st.state == StateOK, Panels: st.panels})
+	}
+	return out
+}
+
 func (s *Service) serveRestart(w http.ResponseWriter, r *http.Request) {
 	key := r.PathValue("key")
 	if !s.Sup.Restart(key) {
@@ -934,6 +988,9 @@ func (s *Service) Order(source, id string) (text, title, repo, url, panel string
 
 // Launched tells the source its order was launched.
 func (s *Service) Launched(source, id string) {
+	if s.OnLaunched != nil {
+		s.OnLaunched(source, id)
+	}
 	if rn := s.Sup.runner(source); rn != nil {
 		rn.launched(id)
 	}

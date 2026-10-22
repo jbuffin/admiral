@@ -90,6 +90,10 @@ func Outcomes(args []string, std IO) error {
 	return nil
 }
 
+// shiplessEvents are the events with no ship: autopilot's, about an order. A
+// --ship filter drops them, since none matches an empty ship.
+var shiplessEvents = map[string]bool{"skipped": true, "launch_failed": true}
+
 // printOutcomes streams one file's matching lines to std.Out.
 func printOutcomes(path string, since time.Time, ships map[string]bool, std IO) error {
 	f, err := os.Open(path)
@@ -102,10 +106,12 @@ func printOutcomes(path string, since time.Time, ships map[string]bool, std IO) 
 		line, err := readLine(r)
 		if len(line) > 0 {
 			var rec struct {
-				Ts   time.Time `json:"ts"`
-				Ship string    `json:"ship"`
+				Ts    time.Time `json:"ts"`
+				Ship  string    `json:"ship"`
+				Event string    `json:"event"`
 			}
-			ok := line[0] == '{' && json.Unmarshal(line, &rec) == nil && !rec.Ts.IsZero() && rec.Ship != ""
+			ok := line[0] == '{' && json.Unmarshal(line, &rec) == nil && !rec.Ts.IsZero() &&
+				(rec.Ship != "" || shiplessEvents[rec.Event])
 			if ok && (ships == nil || ships[rec.Ship]) && !rec.Ts.Before(since) {
 				if _, err := fmt.Fprintf(std.Out, "%s\n", line); err != nil {
 					return err

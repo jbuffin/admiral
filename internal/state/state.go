@@ -34,6 +34,9 @@ type file struct {
 	Positions map[string]Position  `json:"positions"` // by tmux session
 	LastDirs  map[string]string    `json:"last_dirs"` // by DockKey
 	DirsUsed  map[string]time.Time `json:"dirs_used"` // by directory
+	// Paused holds the autopilot panels the engineer paused, by source key and
+	// panel id. Optional, so Version stays 1.
+	Paused map[string]map[string]bool `json:"paused,omitempty"`
 }
 
 // DockKey keys a dock's last directory.
@@ -77,6 +80,9 @@ func Open(dir string) (*Store, error) {
 	}
 	if f.DirsUsed != nil {
 		s.data.DirsUsed = f.DirsUsed
+	}
+	if f.Paused != nil {
+		s.data.Paused = f.Paused
 	}
 	return s, nil
 }
@@ -127,6 +133,35 @@ func (s *Store) DirUsed(dir string) time.Time {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.data.DirsUsed[dir]
+}
+
+// Paused says the engineer paused autopilot on the panel.
+func (s *Store) Paused(source, panel string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.data.Paused[source][panel]
+}
+
+// SetPaused pauses or resumes autopilot on the panel. A pause outlives a
+// removed source, and applies to one added again under the same key.
+func (s *Store) SetPaused(source, panel string, paused bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if paused {
+		if s.data.Paused == nil {
+			s.data.Paused = map[string]map[string]bool{}
+		}
+		if s.data.Paused[source] == nil {
+			s.data.Paused[source] = map[string]bool{}
+		}
+		s.data.Paused[source][panel] = true
+	} else {
+		delete(s.data.Paused[source], panel)
+		if len(s.data.Paused[source]) == 0 {
+			delete(s.data.Paused, source)
+		}
+	}
+	s.changed()
 }
 
 // changed schedules a write; every change pushes it back, so a burst makes one.
