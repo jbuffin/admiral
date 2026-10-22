@@ -48,6 +48,10 @@ type Ship struct {
 	ExitCode   *int            `json:"exit_code"`
 	ExitSignal *string         `json:"exit_signal"`
 	Position   *state.Position `json:"position"`
+	// Reason and StopSince are set only while the ship needs you: the validated
+	// reason code (`idle` for a ship no hook has spoken for) and when the stop began.
+	Reason    string `json:"reason,omitempty"`
+	StopSince string `json:"stop_since,omitempty"`
 }
 
 // Orders is where a launch finds its order: the order sources.
@@ -106,6 +110,17 @@ const NotKnownMsg = "ships are not known yet"
 
 func (s *Service) ship(sess sessionhost.Session) Ship {
 	sh := FromSession(sess, time.Now())
+	if sh.Status == StatusNeedsYou {
+		// The track's Since is set in the same pass as its status; before that
+		// pass the stop is just beginning.
+		since := time.Now()
+		s.mu.Lock()
+		if tr := s.tracks[sess.Name]; tr != nil && !tr.Since.IsZero() {
+			since = tr.Since
+		}
+		s.mu.Unlock()
+		sh.StopSince = since.UTC().Format(time.RFC3339Nano)
+	}
 	if p, ok := s.State.Position(sess.Name); ok {
 		sh.Position = &p
 	}
@@ -120,6 +135,9 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 		FleetColor: o["fleet-color"], Harness: o["harness"], Dir: o["dir"], Repo: filepath.Base(o["dir"]),
 		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], OrderID: o["order"], Launched: o["launched"], Status: status(sess, now)}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
+	if sh.Status == StatusNeedsYou {
+		sh.Reason = reasonOf(sess)
+	}
 	if o["dir"] == "" {
 		sh.Repo = ""
 	}
@@ -248,7 +266,7 @@ func prunes(ev sessionhost.Event) bool {
 func (s *Service) signature() string {
 	var b strings.Builder
 	for _, sh := range s.List() {
-		b.WriteString(sh.Session + "=" + sh.Status + ";")
+		b.WriteString(sh.Session + "=" + sh.Status + ":" + sh.Reason + ";")
 	}
 	return b.String()
 }
