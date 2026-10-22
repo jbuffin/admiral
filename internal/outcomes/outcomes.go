@@ -23,8 +23,8 @@ type Record struct {
 }
 
 type item struct {
-	rec       Record
-	onWritten func()
+	rec    Record
+	onDone func(err error)
 }
 
 // Writer appends records to $ADMIRAL_HOME/outcomes/<YYYY-MM>.jsonl from one
@@ -44,6 +44,7 @@ type Writer struct {
 	// Both are touched by the writer goroutine, and overflowing also by Enqueue.
 	failing     bool // the last write failed, and said so
 	overflowing bool // a drop has been logged since the queue last drained
+	lateLogged  bool // a record that came after Close has been logged
 }
 
 // New starts a writer for the outcomes directory dir. logf takes the one line
@@ -54,17 +55,22 @@ func New(dir string, logf func(format string, args ...any)) *Writer {
 	return w
 }
 
-// Enqueue queues r and never blocks. onWritten, when not nil, runs on the
-// writer goroutine after r was written, and never when the write failed. A
-// record that finds the queue full is dropped, and the first drop is logged.
-func (w *Writer) Enqueue(r Record, onWritten func()) {
+// Enqueue queues r and never blocks. onDone, when not nil, runs on the writer
+// goroutine after r was tried, with the error of a failed write, and never for
+// a record that was dropped. A record that finds the queue full is dropped, and
+// the first drop is logged; so is the first one that comes after Close.
+func (w *Writer) Enqueue(r Record, onDone func(err error)) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.closed {
+		if !w.lateLogged {
+			w.lateLogged = true
+			w.logf("outcome log: a %s record for %s came after the log was closed and is dropped", r.Event, r.Ship)
+		}
 		return
 	}
 	select {
-	case w.queue <- item{r, onWritten}:
+	case w.queue <- item{r, onDone}:
 	default:
 		if !w.overflowing {
 			w.overflowing = true
@@ -87,8 +93,8 @@ func (w *Writer) Close() {
 func (w *Writer) run() {
 	defer close(w.done)
 	for it := range w.queue {
-		if w.write(it.rec) == nil && it.onWritten != nil {
-			it.onWritten()
+		if err := w.write(it.rec); it.onDone != nil {
+			it.onDone(err)
 		}
 		w.mu.Lock()
 		if len(w.queue) == 0 {

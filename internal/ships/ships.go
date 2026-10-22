@@ -71,6 +71,9 @@ type Service struct {
 	pass   sync.Mutex        // one observe at a time
 	mu     sync.Mutex        // guards tracks and what they point to
 	tracks map[string]*track // the ships the log follows, by session
+	// launching counts the launches under way: a name is not known before
+	// Launch returns, so removeShipFiles keeps files until none is.
+	launching int
 }
 
 func (s *Service) ship(sess sessionhost.Session) Ship {
@@ -316,8 +319,12 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	s.mu.Lock()
+	s.launching++
+	s.mu.Unlock()
 	got, err := s.Launcher.Launch(req)
 	if err != nil {
+		s.launchDone()
 		if le, ok := err.(*launcher.Error); ok {
 			writeError(w, le.Status, le.Msg)
 		} else {
@@ -327,6 +334,7 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 	}
 	s.State.SetLastDir(req.Fleet, req.Harness, got.Options["dir"]) // the cleaned path the launch used
 	s.launched(req, got, panel)
+	s.launchDone()
 	if req.Source != "" {
 		s.Orders.Launched(req.Source, req.OrderID)
 	}
@@ -439,6 +447,7 @@ func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.observe(ctx) // the ship's `ended` goes into the log before `dismissed`
+	s.retryEnded(sess)
 	s.record(outcomes.Record{Ship: session, Event: "dismissed"}, nil)
 	if err := s.killShip(ctx, session); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -465,4 +474,12 @@ func (s *Service) launched(req launcher.Request, got *launcher.Launched, panel s
 		s.tracks = map[string]*track{}
 	}
 	s.tracks[got.Session] = &track{tally: tally{Status: StatusUnderway}, saved: map[string]string{}}
+}
+
+// launchDone ends the launch serveLaunch counted, once `launched` has replaced
+// the name's track or the launch failed.
+func (s *Service) launchDone() {
+	s.mu.Lock()
+	s.launching--
+	s.mu.Unlock()
 }

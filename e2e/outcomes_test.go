@@ -173,10 +173,12 @@ func exists(p string) bool { _, err := os.Lstat(p); return err == nil }
 // waitPaneDead waits for the ship's pane to be dead (it stays under remain-on-exit).
 func (w *world) waitPaneDead(session string) {
 	w.t.Helper()
-	for deadline := time.Now().Add(10 * time.Second); strings.TrimSpace(w.mustTmux("list-panes", "-t", session, "-F", "#{pane_dead}")) != "1"; time.Sleep(50 * time.Millisecond) {
+	deadline := time.Now().Add(10 * time.Second)
+	for strings.TrimSpace(w.mustTmux("list-panes", "-t", session, "-F", "#{pane_dead}")) != "1" {
 		if time.Now().After(deadline) {
 			w.t.Fatalf("the pane of %s never died", session)
 		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 
@@ -439,10 +441,12 @@ func TestOutcomeRestartEndsAShipThatSailedOff(t *testing.T) {
 // AC5: an outcomes directory that can't be written doesn't stop launching, logs
 // one error however many records fail, and the next record after the directory
 // becomes writable is written. Admiral still lets an exit-0 ship sail off, and
-// keeps the report and inbox of a ship whose `ended` it could not write.
+// keeps the report and inbox of a ship whose `ended` it could not write. A ship
+// whose `ended` failed gets it again when it is dismissed, before `dismissed`.
 func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 	w := newWorld(t)
-	w.outFleets(map[string][]string{"f": {"hook working", "sleep 1", "hook needs_you"}, "z": {"hook working", "wait go", "exit 0"}})
+	w.outFleets(map[string][]string{"f": {"hook working", "sleep 1", "hook needs_you"}, "z": {"hook working", "wait go", "exit 0"},
+		"y": {"hook working", "wait go", "exit 3"}})
 	blocker := filepath.Join(w.home, "outcomes")
 	if err := os.WriteFile(blocker, []byte("a file where the directory belongs"), 0o600); err != nil {
 		t.Fatal(err)
@@ -470,9 +474,17 @@ func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 			t.Fatalf("the exit-0 ship did not sail off while the log was unwritable")
 		}
 	}
-	if !exists(reportPath) || !exists(inboxPath) {
-		t.Errorf("a ship that sailed off without its ended in the log lost its report or inbox")
+	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+		if !exists(reportPath) || !exists(inboxPath) {
+			t.Fatalf("a ship that sailed off without its ended in the log lost its report or inbox")
+		}
 	}
+
+	y := w.launchIn("y", "claude", "unw-dismiss")
+	_, yInbox := shipPaths(w.record(y.Session))
+	w.touch(y.Session, "go")
+	w.in.waitStatusList(t, 10*time.Second, y.Session, "anchored")
+	time.Sleep(time.Second) // its `ended` has been tried, and failed, by now
 
 	if err := os.Remove(blocker); err != nil {
 		t.Fatal(err)
@@ -482,6 +494,17 @@ func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 	}
 	c := w.launchIn("f", "claude", "unw3")
 	w.waitEvent(c.Session, "launched", 1)
+	if got := eventsOf(w.shipLog(y.Session)); len(got) != 0 {
+		t.Fatalf("the records of the anchored ship are %v while the log was unwritable, want none", got)
+	}
+	if code := w.dismiss(y.Session); code/100 != 2 {
+		t.Fatalf("Dismiss = %d, want 2xx", code)
+	}
+	log := w.waitEvent(y.Session, "dismissed", 1)
+	if got, want := eventsOf(log), []string{"ended", "dismissed"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("records after Dismiss = %v, want %v (its launched was lost with the log)", got, want)
+	}
+	waitGone(t, 5*time.Second, yInbox)
 	if got := w.stderrLines("outcome log:"); got != 1 {
 		t.Errorf("a record written after the repair added log lines: %d in all, want 1", got)
 	}

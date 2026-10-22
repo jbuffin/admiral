@@ -159,7 +159,11 @@ func TestWriterLogsAFailureOnceAndRetriesLater(t *testing.T) {
 	w.Now = fixedClock("2026-01-15T10:00:00Z")
 	written := make(chan string, 8)
 	enq := func(ship string) {
-		w.Enqueue(Record{Ship: ship, Event: "dismissed"}, func() { written <- ship })
+		w.Enqueue(Record{Ship: ship, Event: "dismissed"}, func(err error) {
+			if err == nil {
+				written <- ship
+			}
+		})
 	}
 	waitLogged := func(n int) {
 		t.Helper()
@@ -234,7 +238,7 @@ func TestWriterDropsOnOverflowAndLogsOncePerFill(t *testing.T) {
 	stall := func(release chan struct{}) {
 		t.Helper()
 		inside := make(chan struct{})
-		w.Enqueue(Record{Ship: "stall", Event: "dismissed"}, func() { close(inside); <-release })
+		w.Enqueue(Record{Ship: "stall", Event: "dismissed"}, func(error) { close(inside); <-release })
 		select {
 		case <-inside:
 		case <-time.After(5 * time.Second):
@@ -283,5 +287,17 @@ func TestWriterDropsOnOverflowAndLogsOncePerFill(t *testing.T) {
 	w.Close()
 	if lines := strings.Join(sink.lines, "\n"); !strings.Contains(strings.ToLower(lines), "outcome") {
 		t.Errorf("the overflow line %q doesn't say it is about the outcome log", lines)
+	}
+}
+
+// A record that comes after Close is dropped, and the first one is logged.
+func TestWriterLogsARecordAfterCloseOnce(t *testing.T) {
+	var sink logSink
+	w := New(t.TempDir(), sink.logf)
+	w.Close()
+	w.Enqueue(Record{Ship: "late1", Event: "dismissed"}, nil)
+	w.Enqueue(Record{Ship: "late2", Event: "dismissed"}, nil)
+	if n := sink.count(); n != 1 {
+		t.Errorf("two records after Close logged %d lines (%q), want one", n, sink.lines)
 	}
 }

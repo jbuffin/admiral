@@ -471,11 +471,14 @@ func TestRestartKeepsAnchoredAndNeedsYou(t *testing.T) {
 // restart is killed on start.
 func TestRestartKillsShipThatSailedOff(t *testing.T) {
 	w := newWorld(t)
-	w.cueFleets(map[string][]string{"zero": {"hook working", "sleep 2", "exit 0"}})
+	w.cueFleets(map[string][]string{"zero": {"hook working", "wait go", "exit 0"}})
 	w.start()
 	s := w.launchIn("zero", "claude", "s8zero")
+	w.waitFile(s.Session, "recorded") // the harness is up and waiting
 	w.in.Stop()
-	w.waitFile(s.Session, "cues-done")
+	// The ship exits only now, so Admiral's stop can't race its exit.
+	w.touch(s.Session, "go")
+	w.waitPaneDead(s.Session)
 	if !w.hasSession(s.Session) {
 		t.Fatalf("setup: the dead pane's session should survive Admiral being stopped")
 	}

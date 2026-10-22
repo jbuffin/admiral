@@ -43,7 +43,10 @@ type tally struct {
 
 // options is the part of the tally kept in tmux; an empty value is unset.
 func (t tally) options() map[string]string {
-	o := map[string]string{sessionhost.OptNeedsCount: "", sessionhost.OptNeedsSecs: "", sessionhost.OptStopSince: ""}
+	o := map[string]string{}
+	for _, n := range tallyOptions {
+		o[n] = ""
+	}
 	if t.Count > 0 {
 		o[sessionhost.OptNeedsCount] = strconv.Itoa(t.Count)
 	}
@@ -64,6 +67,9 @@ func baseline(sess sessionhost.Session, now time.Time) tally {
 	t := tally{Status: status(sess, now)}
 	t.Count, _ = strconv.Atoi(sess.Options[sessionhost.OptNeedsCount])
 	t.Seconds, _ = strconv.ParseFloat(sess.Options[sessionhost.OptNeedsSecs], 64)
+	if math.IsNaN(t.Seconds) || math.IsInf(t.Seconds, 0) { // ParseFloat takes both, and JSON can't hold them
+		t.Seconds = 0
+	}
 	if since, err := time.Parse(time.RFC3339Nano, sess.Options[sessionhost.OptStopSince]); err == nil {
 		t.Since = since
 		if t.Status != StatusNeedsYou {
@@ -126,9 +132,17 @@ type track struct {
 	seen  bool              // the host has listed the session; a launch is tracked before it does
 }
 
-// endState says whether `ended` reached the log, and whether the ship's files
-// wait for it to.
-type endState struct{ written, clean bool }
+// endState says whether `ended` reached the log, whether its write failed (so
+// Dismiss queues it again), and whether the ship's files wait for it to.
+type endState struct{ written, failed, clean bool }
+
+// ending is a ship whose pane died and whose `ended` is to be queued.
+type ending struct {
+	sess  sessionhost.Session
+	tally tally
+	end   *endState
+	owner *track
+}
 
 // baselineAll starts tracking every ship that is not tracked yet, as found.
 func (s *Service) baselineAll() {
@@ -150,10 +164,10 @@ func (s *Service) baselineAll() {
 	}
 }
 
-// record queues r; a service without a log drops it.
-func (s *Service) record(r outcomes.Record, onWritten func()) {
+// record queues r; a service without a log drops it. onDone is Enqueue's.
+func (s *Service) record(r outcomes.Record, onDone func(err error)) {
 	if s.Outcomes != nil {
-		s.Outcomes.Enqueue(r, onWritten)
+		s.Outcomes.Enqueue(r, onDone)
 	}
 }
 
@@ -168,12 +182,6 @@ func (s *Service) observe(ctx context.Context) {
 	type write struct {
 		session string
 		opts    map[string]string
-	}
-	type ending struct {
-		sess  sessionhost.Session
-		tally tally
-		end   *endState
-		owner *track
 	}
 	var writes []write
 	var endings []ending
@@ -215,7 +223,7 @@ func (s *Service) observe(ctx context.Context) {
 	}
 	s.mu.Unlock()
 	for _, e := range endings { // the report is read outside the lock
-		s.queueEnded(e.sess, e.tally, e.end, e.owner)
+		s.queueEnded(e)
 	}
 	for _, w := range writes {
 		if s.Host.SetOptions(ctx, w.session, w.opts) == nil {
@@ -230,8 +238,10 @@ func (s *Service) observe(ctx context.Context) {
 
 // queueEnded queues the `ended` record of a ship whose pane died. Once it is
 // written, the ship is marked in tmux so no later start writes it again, and
-// the files of a ship that was killed meanwhile go.
-func (s *Service) queueEnded(sess sessionhost.Session, t tally, end *endState, owner *track) {
+// the files of a ship that was killed meanwhile go. A write that fails sets
+// end.failed, which is what lets Dismiss queue the record again.
+func (s *Service) queueEnded(e ending) {
+	sess, t, end, owner := e.sess, e.tally, e.end, e.owner
 	name := sess.Name
 	var code, sig any
 	if sess.Signal != "" {
@@ -246,26 +256,53 @@ func (s *Service) queueEnded(sess sessionhost.Session, t tally, end *endState, o
 	s.record(outcomes.Record{Ship: name, Event: "ended", Fields: map[string]any{
 		"exit_code": code, "signal": sig, "duration_s": duration,
 		"needs_you_count": t.Count, "needs_you_s": seconds(t.Seconds), "report": s.readReport(name),
-	}}, func() {
+	}}, func(err error) {
+		if err != nil {
+			s.mu.Lock()
+			end.failed = true
+			s.mu.Unlock()
+			return
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = s.Host.SetOptions(ctx, name, map[string]string{sessionhost.OptEnded: "1"}) // the session may be gone
+		merr := s.Host.SetOptions(ctx, name, map[string]string{sessionhost.OptEnded: "1"})
 		s.mu.Lock()
 		end.written = true
+		killed := end.clean
 		// A newer ship under the same name owns the files now.
 		clean := end.clean && (s.tracks[name] == nil || s.tracks[name] == owner)
 		s.mu.Unlock()
+		// A killed ship's session is usually gone by now. Without the marker the
+		// next start writes `ended` a second time (ADR 0012).
+		if merr != nil && !killed && !strings.Contains(merr.Error(), "can't find session") {
+			fmt.Fprintf(os.Stderr, "admiral: ship %s: its ended marker cannot be set: %v\n", name, merr)
+		}
 		if clean {
 			s.removeShipFiles(name)
 		}
 	})
 }
 
+// retryEnded queues `ended` again for a ship whose first write failed, and
+// does nothing while that write is still pending.
+func (s *Service) retryEnded(sess sessionhost.Session) {
+	s.mu.Lock()
+	tr := s.tracks[sess.Name]
+	if tr == nil || tr.end == nil || !tr.end.failed {
+		s.mu.Unlock()
+		return
+	}
+	tr.end.failed = false
+	e := ending{sess, tr.tally, tr.end, tr}
+	s.mu.Unlock()
+	s.queueEnded(e)
+}
+
 // killShip ends a ship's session, as Admiral does whether or not the log works,
 // and removes its report and inbox once its `ended` is in the log: now if it is,
 // or when the writer gets there. A ship killed while its `ended` fails keeps its
 // files. A ship Admiral has no `ended` for is not cleaned unless tmux held the
-// ended marker.
+// ended marker. Dismiss must run observe first, so that tr.end exists to be set.
 func (s *Service) killShip(ctx context.Context, name string) error {
 	marked := false
 	if sess, ok := s.find(name); ok {
@@ -294,42 +331,60 @@ func (s *Service) killShip(ctx context.Context, name string) error {
 // signalName is a signal as the UI and the log show it: upper case, no SIG.
 func signalName(sig string) string { return strings.TrimPrefix(strings.ToUpper(sig), "SIG") }
 
-// removeShipFiles deletes the ship's report and inbox, unless a ship with that
-// name is running again or reports/ or inbox/ is not a real directory (a link
-// there would send the delete elsewhere).
-func (s *Service) removeShipFiles(session string) {
+// shipFiles is $ADMIRAL_HOME, made absolute, and the ship's report path and
+// inbox directory; ok is false for a session name that has none.
+func (s *Service) shipFiles(session string) (home, report, inbox string, ok bool) {
 	home, err := filepath.Abs(s.Launcher.Home)
+	if err != nil {
+		return "", "", "", false
+	}
+	report, inbox, ok = launcher.ShipFiles(home, session)
+	return home, report, inbox, ok
+}
+
+// removeShipFiles deletes the ship's report and inbox, unless a launch is under
+// way (it may be reusing the name before Admiral can tell), a ship with that
+// name is running again, or reports/ or inbox/ is not a real directory. The
+// deletes go through a root on $ADMIRAL_HOME, so none leaves the home; a link
+// swapped in inside the home can still send one elsewhere within it. The lock
+// is held throughout, so a launch can't start between the check and the delete.
+func (s *Service) removeShipFiles(session string) {
+	home, report, inbox, ok := s.shipFiles(session)
+	if !ok {
+		return
+	}
+	root, err := os.OpenRoot(home)
 	if err != nil {
 		return
 	}
-	report, inbox, ok := launcher.ShipFiles(home, session)
-	if !ok {
+	defer root.Close()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.launching > 0 {
 		return
 	}
 	if sess, running := s.find(session); running && !sess.PaneDead {
 		return
 	}
-	if realDir(filepath.Dir(report)) {
-		_ = os.Remove(report)
+	if rel, err := filepath.Rel(home, report); err == nil && realDir(root, filepath.Dir(rel)) {
+		_ = root.Remove(rel)
 	}
-	if realDir(filepath.Dir(inbox)) {
-		_ = os.RemoveAll(inbox)
+	if rel, err := filepath.Rel(home, inbox); err == nil && realDir(root, filepath.Dir(rel)) {
+		_ = root.RemoveAll(rel)
 	}
 }
 
-func realDir(path string) bool {
-	fi, err := os.Lstat(path)
+// realDir is whether name, relative to root, is a directory itself and not a
+// link to one: a link would send a delete under it somewhere else.
+func realDir(root *os.Root, name string) bool {
+	fi, err := root.Lstat(name)
 	return err == nil && fi.IsDir()
 }
 
 // readReport is the ship's report as the JSON it holds: nil when the file is
 // missing, or too large or not JSON, which is logged.
 func (s *Service) readReport(session string) json.RawMessage {
-	home, err := filepath.Abs(s.Launcher.Home)
-	if err != nil {
-		return nil
-	}
-	path, _, ok := launcher.ShipFiles(home, session)
+	_, path, _, ok := s.shipFiles(session)
 	if !ok {
 		return nil
 	}

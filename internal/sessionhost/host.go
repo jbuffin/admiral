@@ -60,8 +60,9 @@ const format = "#{session_name}" + sep + "#{pane_dead}" + sep + "#{pane_dead_sta
 	"#{@admiral-reason}" + sep + "#{@admiral-name}" + sep + "#{@admiral-fleet}" + sep + "#{@admiral-fleet-name}" + sep +
 	"#{@admiral-fleet-color}" + sep + "#{@admiral-harness}" + sep + "#{@admiral-dir}" + sep +
 	"#{@admiral-skill}" + sep + "#{@admiral-source}" + sep + "#{@admiral-order}" + sep +
-	"#{@admiral-launched}" + sep + "#{@admiral-title}" + sep + "#{@admiral-url}" + sep + "#{@admiral-ended}" + sep +
-	"#{@admiral-needs-count}" + sep + "#{@admiral-needs-s}" + sep + "#{@admiral-stop-since}"
+	"#{@admiral-launched}" + sep + "#{@admiral-title}" + sep + "#{@admiral-url}" + sep +
+	"#{@admiral-" + OptEnded + "}" + sep + "#{@admiral-" + OptNeedsCount + "}" + sep +
+	"#{@admiral-" + OptNeedsSecs + "}" + sep + "#{@admiral-" + OptStopSince + "}"
 
 // The session options Admiral keeps for the outcome log (ADR 0012): the marker
 // of a ship whose `ended` was written, and the running needs-you tally.
