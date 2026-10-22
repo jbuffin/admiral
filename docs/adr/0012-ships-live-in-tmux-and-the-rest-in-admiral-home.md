@@ -19,6 +19,7 @@ Decided in [What survives a restart and where it lives](https://github.com/jbuff
   - `plugins/`: plugins (ADR 0010).
   - `data/<source-key>/`: one dir per order source instance, handed to its plugin on start. The freeform list keeps `orders.json` there.
   - `tmux.sock`: Admiral's tmux socket, used with `tmux -S`.
+  - `outcomes/`, `reports/` and `inbox/`: the outcome log, and a ship's report file and inbox (ADR 0015).
 - **`state.json` holds what a second device should see the same:** ship positions in open water, keyed by tmux session, the last directory used on each dock (fleet key and harness), and when each directory was last launched into. It is JSON with `"version": 1`, held in memory and written atomically (temp file and rename), debounced about a second after a drag. Admiral drops a ship's position when the ship goes, and on startup drops any position whose session no longer exists. A corrupt file or one with an unknown version is moved aside to `state.json.bad`, and Admiral starts with defaults.
 - **Purely visual settings stay in each browser's `localStorage`:** the mute toggle and the collapsed panels and sidebar. The filter text is not stored (story 49).
 - **`admiral ships` and `admiral attach <ship>`.** `ships` lists the ships. `attach` takes a ship's display name or tmux session name, with shell completion, prints "Ctrl-b d to detach" once, and runs `tmux -S $ADMIRAL_HOME/tmux.sock attach -t <session>`, read-only (`-r`) for an anchored ship. Plain `tmux -S ~/.admiral/tmux.sock attach -t saltpaw` works too. An attached terminal is one more tmux client: typing in it is typing on the bridge, and it follows the bridge's sizing rule (ADR 0011).
@@ -43,3 +44,5 @@ Decided in [What survives a restart and where it lives](https://github.com/jbuff
 Amended 2026-10-18 (MVP build, [spec #45](https://github.com/jbuffin/admiral/issues/45)): the filter text is not stored (story 49); ships also record `@admiral-title` for the bridge header (story 102).
 
 Amended 2026-10-20: `@admiral-title` holds the order's title, not the first line of its text. The GitHub source sends each order's URL as its text, so the first line hid the readable title.
+
+Amended 2026-10-22 ([#113](https://github.com/jbuffin/admiral/issues/113)): `$ADMIRAL_HOME` also holds `outcomes/`, `reports/` and `inbox/`. tmux is still the only record of a live ship; the outcome log is an append-only history of every ship's lifecycle events, written as they happen and never read back to rebuild ships, see [ADR 0015](0015-outcomes-are-an-append-only-history-beside-tmux.md).
