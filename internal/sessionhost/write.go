@@ -10,16 +10,27 @@ const StateOption = Prefix + "state"
 const ReasonOption = Prefix + "reason"
 
 // SetPaneState writes @admiral-state on the ship's pane, and with it
-// @admiral-reason: the reason first, so a poll never sees needs_you without it,
-// or an unset for an empty reason. tmux accepts the write on a dead pane
-// without storing anything, so callers check PaneDead first.
+// @admiral-reason, or unsets the reason when it is empty. needs_you gets its
+// reason first and working loses the state first, so a poll never sees
+// needs_you without a reason. The writes are two commands, since control mode
+// answers each command line holding `;` once per command. tmux accepts the
+// write on a dead pane without storing anything, so callers check PaneDead
+// first.
 func (h *Host) SetPaneState(ctx context.Context, session, value, reason string) error {
 	target := tmuxQuote("=" + session + ":")
-	set := "set-option -p -u -t " + target + " " + ReasonOption
+	setReason := "set-option -p -u -t " + target + " " + ReasonOption
 	if reason != "" {
-		set = "set-option -p -t " + target + " " + ReasonOption + " " + tmuxQuote(reason)
+		setReason = "set-option -p -t " + target + " " + ReasonOption + " " + tmuxQuote(reason)
 	}
-	_, err := h.command(ctx, set+" ; set-option -p -t "+target+" "+StateOption+" "+value)
+	setState := "set-option -p -t " + target + " " + StateOption + " " + value
+	first, second := setReason, setState
+	if reason == "" {
+		first, second = setState, setReason
+	}
+	if _, err := h.command(ctx, first); err != nil {
+		return err
+	}
+	_, err := h.command(ctx, second)
 	return err
 }
 
