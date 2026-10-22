@@ -362,7 +362,7 @@ func (s *Service) removeShipFiles(session string, owner *track) {
 	defer root.Close()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.launching > 0 || s.tracks[session] != owner {
+	if tr := s.tracks[session]; s.launching > 0 || (tr != nil && tr != owner) { // a pruned track is the dying ship's
 		return
 	}
 	if sess, running := s.find(session); running && !sess.PaneDead {
