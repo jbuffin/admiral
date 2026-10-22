@@ -110,15 +110,15 @@ func (s *Service) View() []SourceView {
 			p.Orders = orders
 			v.Panels = append(v.Panels, p)
 		}
-		sortPanels(v.Panels, st.def.PanelOrder)
+		SortPanels(v.Panels, st.def.PanelOrder)
 		out = append(out, v)
 	}
 	return out
 }
 
-// sortPanels puts the panels that order names first, in its order; the rest
+// SortPanels puts the panels that order names first, in its order; the rest
 // keep the plugin's order after them.
-func sortPanels(panels []Panel, order []string) {
+func SortPanels(panels []Panel, order []string) {
 	if len(order) == 0 {
 		return
 	}

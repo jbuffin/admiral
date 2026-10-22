@@ -124,8 +124,8 @@ func (r *rig) setShips(list ...ships.Ship) { r.ships = list }
 
 func want(t *testing.T, what string, got, want []string) {
 	t.Helper()
-	if got == nil {
-		got = []string{}
+	if len(got) == 0 && len(want) == 0 {
+		return
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("%s: launched %v, want %v", what, got, want)
@@ -357,7 +357,7 @@ func TestEngineBacksOffAndGivesUp(t *testing.T) {
 
 	r.now = r.now.Add(24 * time.Hour)
 	want(t, "a day after giving up", r.pass(), nil)
-	if len(r.recordsOf("launch_failed")) != 3 {
+	if len(r.recordsOf("launch_failed")) != 2 { // the two of the third round: o1's and o2's
 		t.Errorf("a given-up order wrote another launch_failed record")
 	}
 
