@@ -91,6 +91,8 @@ func run(args []string) error {
 		return cli.Service(args[1:], std)
 	case "hook":
 		return cli.Hook(args[1:], std)
+	case "outcomes":
+		return cli.Outcomes(args[1:], std)
 	}
 	return &cli.UsageError{Msg: fmt.Sprintf("unknown command %q", args[0])}
 }

@@ -1,0 +1,48 @@
+# 15. Outcomes are an append-only history beside tmux
+
+Status: accepted
+
+## Context
+
+Autopilot (rung 1 is [#113](https://github.com/jbuffin/admiral/issues/113)) needs to know how ships went: which orders ended, how often a ship needed the engineer, and why. ADR 0012 keeps a ship only in its tmux session, so a ship that is dismissed or sails off leaves nothing behind, and a retro has nothing to read. The history has to survive the ships it describes without becoming a second record of the ships that are alive.
+
+## Decision
+
+**tmux stays the only record of a live ship (ADR 0012).** The outcome log is a history beside it. Admiral appends to it as events happen and never reads it back, not to rebuild ships and not to decide anything.
+
+- **One file per UTC month,** `$ADMIRAL_HOME/outcomes/<YYYY-MM>.jsonl`, named for the month of the record's `ts`. One JSON object per line with `v` (1), `ts` (RFC 3339, UTC), `ship` (the session name) and `event`, plus the event's own fields. Nothing is rotated or pruned.
+- **Five events.** `launched` (fleet, harness, skill, order source, panel, order id and URL, title, directory, `autopilot`), `needs_you` (a `reason`), `underway` (`waited_s`), `ended` and `dismissed`. An `underway` record means a needs-you stop cleared, not that the ship's status is underway. `ended` carries `exit_code` or `signal`, `duration_s`, `needs_you_count`, `needs_you_s` and the ship's `report`.
+- **One writer goroutine, `O_APPEND`.** Records are queued and written in order, the file opened for each one. A write failure is logged once until a write succeeds, and never blocks a launch, a hook or a status change. The queue holds 1024 records; one that finds it full is dropped, and a drop is logged once each time the queue fills, until it drains.
+- **A needs-you stop is one stop** whatever its reason does while it lasts. Admiral compares each ship's status with the last pass it saw: moving into needs-you writes `needs_you`, moving out to underway writes `underway`. A stop that the pane's death ends gets no `underway`.
+- **Reasons** come from `@admiral-reason` (ADR 0007), kept only if they match `^[A-Za-z0-9_.:-]{1,64}$`. A needs-you state whose reason is missing or malformed is `unknown`. `idle` is a needs-you state with no hook state at all: no hook within 10 seconds of launch (`NoHookWait`, ADR 0007), so a ship that has never spoken. A dock launch with no text starts the harness idle (GLOSSARY.md, Launch orders), so it will usually stop with this reason.
+- **`ended` is written once.** When a pane is dead and the session has no `@admiral-ended` option, Admiral queues `ended`; once it is written, Admiral sets the option. The log is never read to find out. A start-up writes `ended` for every ship that died while Admiral was stopped, before it kills an exit-0 ship. `duration_s` runs from `@admiral-launched` to the pane's death time (tmux's one-second resolution).
+- **A ship's report and inbox go after its `ended` is written.** `ended` carries `$ADMIRAL_REPORT` as the ship left it: JSON, at most 1 MiB, read without following a link; `null` when there is no file, and `null` with a line in Admiral's log when it cannot be opened (a link included), is too large, is not JSON or is not a regular file. It is `null` without a line when the report path cannot be built. A ship that was dismissed or sailed off has `reports/<session>.json` and `inbox/<session>/` removed once the writer has written its `ended`. If the write fails, the files stay. The next start retries only a dead pane still in tmux; a ship Admiral killed meanwhile loses its `ended` (see the gaps). Dismiss queues once more an `ended` that has already failed when it runs (a write still pending that fails afterwards is not retried), then `dismissed`, so the two are in that order in the log. The deletes go through an `os.Root` on `$ADMIRAL_HOME`, so none leaves the home. They are skipped, and the files kept, while any launch is in flight (a launch's name is not known before it returns, and it may be reusing one), when a newer ship's track holds the name, when a ship with that name is running again, when `reports/` or `inbox/` is not a real directory, and when the root cannot be opened.
+- **Counters live in tmux too.** The count of needs-you stops, their total seconds and the start of the open stop are session options: `@admiral-needs-count`, `@admiral-needs-s` and `@admiral-stop-since`. A restart reads them back, so a stop that was open stays one stop and `ended` still has the totals.
+- **Ships from before this change** have no `launched` record. They get `ended` when they end, with counters from the time Admiral first sees them.
+- **`admiral outcomes [--since <date>] [--ship <name>]`** prints the stored lines for retros and scripts (`docs/cli.md`). It reads the files directly, so it works with the server stopped.
+- **`$ADMIRAL_HOME` also holds** `outcomes/`, the log; `reports/`, one `<session>.json` a ship writes; and `inbox/`, one directory per ship (`$ADMIRAL_INBOX`). Admiral creates `reports/` and the ship's inbox before the harness starts.
+
+## Considered options
+
+- **An append-only file beside tmux** (chosen). Nothing to keep consistent with the sessions, cheap to write, and `grep` and `jq` read it.
+- **Keep the history in tmux session options.** A session's options go with the session, and that is the moment the history is for.
+- **SQLite or a table in `state.json`.** The same objections as ADR 0012 gave: a dependency and a second record that can disagree with tmux, for lines nobody queries yet.
+- **Read the log back to rebuild a ship or to decide `ended`.** It would put a second source of truth beside tmux and make a damaged file a startup problem.
+
+## Consequences
+
+- A retro can read what each ship did without Admiral running, and `ended` carries what the ship reported.
+- The log is a history, not a ledger. Records can be lost: a full queue drops them, and a record whose write fails is not tried again. The retries are for `ended` only: Dismiss queues a failed one once more, and the next start writes it for a dead pane that has no marker.
+- **A ship can skew its own record.** `@admiral-ended` and the counter options are session options, and any process in the ship's pane can write them. A ship can suppress its `ended`, or skew its counters and `needs_you_s`. A value that does not parse is dropped: a count or seconds becomes 0, as does a seconds value that is `NaN`, infinite or too large to round-trip through JSON (a count past the integer range is read as the largest or, if negative, the smallest integer, and negative values are kept), and an unparseable `@admiral-stop-since` is no open stop, or, for a ship that needs you, a new stop from now with a count of at least 1. Admiral reads the counters back only when it starts or reconnects to tmux, but honours `@admiral-ended` on every pass. This matters once autopilot reads the log: treat what a ship put in `report` and these options as the ship's own word.
+- **Accepted gaps.**
+  - A session removed without a dead pane (an external `tmux kill-session`, `kill-server`, a reboot) gets no `ended`, and its report and inbox stay.
+  - A ship Admiral kills (sail-off, start-up, or a dismiss whose retry fails too) while its `ended` write is failing loses that `ended` and keeps its files. Sail-off and Dismiss never wait on the log.
+  - A failed `ended` is retried only when the ship is dismissed (once, if the write had already failed by then) or at the next start, not otherwise within the run. A ship that sails off before then, or whose retry fails too, gets no `ended`.
+  - If the write of `@admiral-ended` fails on a live session after `ended` was written, Admiral logs it. The duplicate `ended` on the next start stays a gap (below).
+  - If setting `@admiral-ended` fails after `ended` was written, the next start writes `ended` again, so the log can hold two for one ship.
+  - `waited_s` and `needs_you_s` include Admiral's downtime for a stop that cleared to underway while Admiral was stopped. A stop closed by the pane's death uses the pane's death time, as `duration_s` does.
+  - Records that fail while `outcomes/` is unwritable are dropped, not replayed, so a ship launched then can have an `ended` without a `launched`.
+  - `needs_you_count` can exceed the `needs_you` lines for a ship launched before this change: its open stop counted as one with no record.
+  - A line cut short by a crash stays in the file, and the next record is appended onto it, so that record is lost too (it can be a retried `ended`). `admiral outcomes` skips the merged line, as it skips any line that is not a JSON object with a ship and a time.
+- `admiral outcomes` prints each stored line as it is. JSON escapes C0 controls (ESC included), `"`, `\`, `<`, `>`, `&` and U+2028/2029, so no 7-bit escape sequence reaches the terminal. C1 controls and bidirectional marks can pass through unescaped in `dir`, `order_url`, `order_id`, `panel` and `skill.name`; `report` can also hold DEL and invalid UTF-8. `title` has the bidi embedding, override and isolate controls (U+202A–202E, U+2066–2069) and U+2028/2029 stripped at launch (`orderTitle`), along with C0 and C1 controls, but not U+200E, U+200F or U+061C. `source`, `fleet`, `harness` and `reason` are restricted to ASCII, and `ship` is a `launcher.Slug` output for a ship Admiral launched. Use `jq -a` to view lines safely.
+- `admiral outcomes` skips a line over 7 MiB, which the writer cannot produce (a 1 MiB report grows at most about 6 MiB when escaped), so that is only a safety net for a damaged file.
