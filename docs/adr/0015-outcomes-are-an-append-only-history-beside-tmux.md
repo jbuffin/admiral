@@ -37,6 +37,8 @@ Autopilot (rung 1 is [#113](https://github.com/jbuffin/admiral/issues/113)) need
 - **Accepted gaps.**
   - A session removed without a dead pane (an external `tmux kill-session`, `kill-server`, a reboot) gets no `ended`, and its report and inbox stay.
   - A ship Admiral kills (sail-off, dismiss, start-up) while its `ended` write is failing loses that `ended` and keeps its files. Sail-off and Dismiss never wait on the log.
+  - A failed `ended` is retried only at the next start, not within the run. A ship dismissed before then gets `dismissed` with no `ended`.
+  - If setting `@admiral-ended` fails after `ended` was written, the next start writes `ended` again, so the log can hold two for one ship.
   - `waited_s` and `needs_you_s` include Admiral's downtime for a stop that ended while Admiral was stopped, unlike `duration_s`, which uses the pane's death time.
   - `needs_you_count` can exceed the `needs_you` lines for a ship launched before this change: its open stop counted as one with no record.
   - A line cut short by a crash stays in the file. `admiral outcomes` skips it, as it skips any line that is not a JSON object with a time.
