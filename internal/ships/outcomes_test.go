@@ -88,7 +88,7 @@ func TestBaselineKeepsAnOpenStop(t *testing.T) {
 // A ship can set its own tally options to anything: a non-finite seconds value
 // would make `ended` unmarshalable, so it counts as unset.
 func TestBaselineIgnoresNonFiniteSeconds(t *testing.T) {
-	for _, v := range []string{"NaN", "+Inf", "-Inf", "inf"} {
+	for _, v := range []string{"NaN", "+Inf", "-Inf", "inf", "1.7e308"} {
 		sess := sessionhost.Session{Options: map[string]string{sessionhost.OptNeedsSecs: v}}
 		if got := baseline(sess, time.Now()).Seconds; got != 0 {
 			t.Errorf("%s: Seconds = %v, want 0", v, got)

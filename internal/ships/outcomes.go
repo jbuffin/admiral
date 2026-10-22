@@ -67,7 +67,8 @@ func baseline(sess sessionhost.Session, now time.Time) tally {
 	t := tally{Status: status(sess, now)}
 	t.Count, _ = strconv.Atoi(sess.Options[sessionhost.OptNeedsCount])
 	t.Seconds, _ = strconv.ParseFloat(sess.Options[sessionhost.OptNeedsSecs], 64)
-	if math.IsNaN(t.Seconds) || math.IsInf(t.Seconds, 0) { // ParseFloat takes both, and JSON can't hold them
+	// ParseFloat takes NaN and Inf, and seconds() overflows on a huge value; JSON can't hold either.
+	if math.IsNaN(t.Seconds) || math.IsInf(t.Seconds*10, 0) {
 		t.Seconds = 0
 	}
 	if since, err := time.Parse(time.RFC3339Nano, sess.Options[sessionhost.OptStopSince]); err == nil {
@@ -269,16 +270,15 @@ func (s *Service) queueEnded(e ending) {
 		s.mu.Lock()
 		end.written = true
 		killed := end.clean
-		// A newer ship under the same name owns the files now.
-		clean := end.clean && (s.tracks[name] == nil || s.tracks[name] == owner)
+		clean := end.clean
 		s.mu.Unlock()
 		// A killed ship's session is usually gone by now. Without the marker the
 		// next start writes `ended` a second time (ADR 0012).
-		if merr != nil && !killed && !strings.Contains(merr.Error(), "can't find session") {
+		if merr != nil && !killed && !sessionhost.IsNoSession(merr) {
 			fmt.Fprintf(os.Stderr, "admiral: ship %s: its ended marker cannot be set: %v\n", name, merr)
 		}
 		if clean {
-			s.removeShipFiles(name)
+			s.removeShipFiles(name, owner)
 		}
 	})
 }
@@ -323,7 +323,7 @@ func (s *Service) killShip(ctx context.Context, name string) error {
 	}
 	s.mu.Unlock()
 	if clean {
-		s.removeShipFiles(name)
+		s.removeShipFiles(name, tr)
 	}
 	return nil
 }
@@ -343,12 +343,14 @@ func (s *Service) shipFiles(session string) (home, report, inbox string, ok bool
 }
 
 // removeShipFiles deletes the ship's report and inbox, unless a launch is under
-// way (it may be reusing the name before Admiral can tell), a ship with that
-// name is running again, or reports/ or inbox/ is not a real directory. The
+// way (it may be reusing the name before Admiral can tell), a newer ship's track
+// holds the name (owner is the dying ship's, nil if it had none), a ship with
+// that name is running again, or reports/ or inbox/ is not a real directory. The
 // deletes go through a root on $ADMIRAL_HOME, so none leaves the home; a link
-// swapped in inside the home can still send one elsewhere within it. The lock
-// is held throughout, so a launch can't start between the check and the delete.
-func (s *Service) removeShipFiles(session string) {
+// swapped in inside the home can still send one elsewhere within it. The checks
+// and the deletes share one hold of s.mu, so a launch that counts itself after
+// the checks waits for the deletes; one that counted before them keeps the files.
+func (s *Service) removeShipFiles(session string, owner *track) {
 	home, report, inbox, ok := s.shipFiles(session)
 	if !ok {
 		return
@@ -360,7 +362,7 @@ func (s *Service) removeShipFiles(session string) {
 	defer root.Close()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.launching > 0 {
+	if s.launching > 0 || s.tracks[session] != owner {
 		return
 	}
 	if sess, running := s.find(session); running && !sess.PaneDead {

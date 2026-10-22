@@ -72,7 +72,8 @@ type Service struct {
 	mu     sync.Mutex        // guards tracks and what they point to
 	tracks map[string]*track // the ships the log follows, by session
 	// launching counts the launches under way: a name is not known before
-	// Launch returns, so removeShipFiles keeps files until none is.
+	// Launch returns, so removeShipFiles skips the delete, and keeps the files,
+	// until none is.
 	launching int
 }
 
@@ -322,9 +323,9 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.launching++
 	s.mu.Unlock()
+	defer s.launchDone()
 	got, err := s.Launcher.Launch(req)
 	if err != nil {
-		s.launchDone()
 		if le, ok := err.(*launcher.Error); ok {
 			writeError(w, le.Status, le.Msg)
 		} else {
@@ -334,7 +335,6 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 	}
 	s.State.SetLastDir(req.Fleet, req.Harness, got.Options["dir"]) // the cleaned path the launch used
 	s.launched(req, got, panel)
-	s.launchDone()
 	if req.Source != "" {
 		s.Orders.Launched(req.Source, req.OrderID)
 	}
@@ -476,8 +476,8 @@ func (s *Service) launched(req launcher.Request, got *launcher.Launched, panel s
 	s.tracks[got.Session] = &track{tally: tally{Status: StatusUnderway}, saved: map[string]string{}}
 }
 
-// launchDone ends the launch serveLaunch counted, once `launched` has replaced
-// the name's track or the launch failed.
+// launchDone ends the launch serveLaunch counted, once the launch has failed or
+// its ship is in the host's list.
 func (s *Service) launchDone() {
 	s.mu.Lock()
 	s.launching--

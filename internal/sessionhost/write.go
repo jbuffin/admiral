@@ -3,6 +3,7 @@ package sessionhost
 import (
 	"context"
 	"sort"
+	"strings"
 )
 
 // StateOption is the pane option the hooks write: needs_you or working.
@@ -62,6 +63,11 @@ func (h *Host) SetOptions(ctx context.Context, session string, opts map[string]s
 	}
 	_, err := h.commandList(ctx, cmds...)
 	return err
+}
+
+// IsNoSession is whether err is tmux saying the session is not there.
+func IsNoSession(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "can't find session")
 }
 
 // KillSession ends the ship's session, whatever its pane is doing.
