@@ -183,7 +183,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	}
 	session := Slug(name)
 	opts[0][1] = name
-	if err := l.shipDirs(env, session); err != nil {
+	if err := l.shipContract(env, session); err != nil {
 		return nil, err
 	}
 
@@ -320,22 +320,29 @@ func (l *Launcher) shipEnv(dock config.Harness) map[string]string {
 	return env
 }
 
-// shipDirs adds the variables of the ship contract (#112) to env, which win over
-// the fleet's, and creates the directories the ship's skill writes to before the
-// harness starts: reports/ for ADMIRAL_REPORT and the ship's own inbox.
-func (l *Launcher) shipDirs(env map[string]string, session string) error {
+// shipContract adds the ship's own variables to env, which win over the fleet's,
+// and prepares what they name before the harness starts: reports/ for
+// ADMIRAL_REPORT, and an empty inbox for ADMIRAL_INBOX. A name can be reused, so
+// any report or inbox left under it by a ship that never sailed off is removed.
+func (l *Launcher) shipContract(env map[string]string, session string) error {
 	home, err := filepath.Abs(l.Home)
 	if err != nil {
 		return refuse(http.StatusInternalServerError, "could not resolve %s: %v", l.Home, err)
 	}
+	report := filepath.Join(home, "reports", session+".json")
 	inbox := filepath.Join(home, "inbox", session)
-	for _, d := range []string{filepath.Join(home, "reports"), inbox} {
+	for _, p := range []string{report, inbox} {
+		if err := os.RemoveAll(p); err != nil {
+			return refuse(http.StatusInternalServerError, "could not clear %s: %v", p, err)
+		}
+	}
+	for _, d := range []string{filepath.Dir(report), inbox} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return refuse(http.StatusInternalServerError, "could not create %s: %v", d, err)
 		}
 	}
 	env["ADMIRAL_SHIP"] = session
-	env["ADMIRAL_REPORT"] = filepath.Join(home, "reports", session+".json")
+	env["ADMIRAL_REPORT"] = report
 	env["ADMIRAL_INBOX"] = inbox + string(os.PathSeparator)
 	return nil
 }

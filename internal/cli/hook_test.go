@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-// hookReason (#113) is the code @admiral-reason holds with needs_you: a short
-// word, plus the tool name or notification type when the payload's is a safe
-// token. Payloads go through encoding/json so the field tags are exercised.
+// The reason hookDecision returns (#113) is the code @admiral-reason holds with
+// needs_you: a short word, plus the tool name or notification type when the
+// payload's is a safe token. Payloads go through encoding/json so the field tags are exercised.
 func TestHookReason(t *testing.T) {
 	long64 := strings.Repeat("a", 64)
 	cases := []struct {
@@ -50,8 +50,8 @@ func TestHookReason(t *testing.T) {
 			if err := json.Unmarshal([]byte(c.payload), &p); err != nil {
 				t.Fatal(err)
 			}
-			if got := hookReason(c.event, p); got != c.want {
-				t.Errorf("hookReason(%s) = %q, want %q", c.event, got, c.want)
+			if _, got := hookDecision(c.event, p); got != c.want {
+				t.Errorf("hookDecision(%s) reason = %q, want %q", c.event, got, c.want)
 			}
 		})
 	}

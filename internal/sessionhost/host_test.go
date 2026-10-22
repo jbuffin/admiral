@@ -108,6 +108,19 @@ func TestCancelledCommandDoesNotShiftReplies(t *testing.T) {
 		if err != nil || len(got) != 1 || got[0] != "second" {
 			t.Fatalf("round %d: the next command got %q (%v), want its own reply [second]", i, got, err)
 		}
+		// A list answers once per command; the orphans of a cancelled list and the
+		// replies of the next must each be counted, or SetNeedsYou shifts them.
+		if _, err := h.commandList(dead, "display-message -p x ; display-message -p y", 2); err == nil {
+			t.Fatal("a cancelled list should report the cancellation")
+		}
+		got, err = h.commandList(ctx, "display-message -p a ; display-message -p b", 2)
+		if err != nil || len(got) != 1 || got[0] != "b" {
+			t.Fatalf("round %d: the list got %q (%v), want the last reply [b]", i, got, err)
+		}
+		got, err = h.command(ctx, "display-message -p third")
+		if err != nil || len(got) != 1 || got[0] != "third" {
+			t.Fatalf("round %d: the command after a list got %q (%v), want [third]", i, got, err)
+		}
 	}
 }
 

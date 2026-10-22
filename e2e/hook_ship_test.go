@@ -149,8 +149,11 @@ func TestShipHookReason(t *testing.T) {
 	step(2, "needs_you", "permission:Bash") // the Notification after it doesn't replace it
 	release(2)
 	step(3, "working", "")
+	// A reason left beside working (a lost unset) is kept by the Notification's
+	// -o, but -q keeps tmux from skipping the state write that follows it.
+	w.mustTmux("set-option", "-p", "-t", ship.Session, "@admiral-reason", "stale")
 	release(3)
-	step(4, "needs_you", "notification:permission_prompt")
+	step(4, "needs_you", "stale")
 	release(4)
 	step(5, "needs_you", "permission:Edit") // the PermissionRequest after a Notification does
 	release(5)

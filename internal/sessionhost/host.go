@@ -322,6 +322,14 @@ func (h *Host) poll(ctx context.Context) error {
 // counted in orphans and discarded by the commands after it, so no command
 // ever reads another's reply.
 func (h *Host) command(ctx context.Context, line string) ([]string, error) {
+	return h.commandList(ctx, line, 1)
+}
+
+// commandList sends a line of n commands joined by `;` and waits for the n
+// replies tmux gives it, one per command. It runs the list as one unit, so no
+// other tmux client's command lands between them. It returns the last reply's
+// lines, and the first error among the replies.
+func (h *Host) commandList(ctx context.Context, line string, n int) ([]string, error) {
 	h.cmdMu.Lock()
 	defer h.cmdMu.Unlock()
 	if h.stdin == nil {
@@ -330,16 +338,20 @@ func (h *Host) command(ctx context.Context, line string) ([]string, error) {
 	if _, err := io.WriteString(h.stdin, line+"\n"); err != nil {
 		return nil, err
 	}
-	pending := h.orphans + 1 // replies to read, ours the last
+	pending := h.orphans + n // replies to read, ours the last n
+	var firstErr error
 	for {
 		select {
 		case r, ok := <-h.rep:
 			if !ok {
 				return nil, fmt.Errorf("control connection closed")
 			}
+			if pending <= n && firstErr == nil {
+				firstErr = r.err
+			}
 			if pending--; pending == 0 {
 				h.orphans = 0
-				return r.lines, r.err
+				return r.lines, firstErr
 			}
 		case <-ctx.Done():
 			h.orphans = pending

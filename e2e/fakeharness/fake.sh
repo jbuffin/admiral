@@ -50,11 +50,16 @@
 # byte it reads to `stdin` in the recording directory, exactly as received. A
 # test sends input only after `cues-done` exists.
 
-# The first thing it does: read the session options, so a test can prove
-# Admiral set them before the harness could run anything.
+# The first things it does: check the ship's directories exist, and read the
+# session options, so a test can prove Admiral made and set them before the
+# harness could run anything.
 dirs="inbox=no reports=no"
 [ -d "$ADMIRAL_INBOX" ] && dirs="inbox=yes reports=no"
-[ -d "$(dirname "$ADMIRAL_REPORT")" ] && dirs=${dirs%reports=no}reports=yes
+if [ -z "$ADMIRAL_REPORT" ]; then
+  dirs=${dirs%reports=no}reports=unset
+elif [ -d "$(dirname "$ADMIRAL_REPORT")" ]; then
+  dirs=${dirs%reports=no}reports=yes
+fi
 first=$(tmux show-options 2>&1)
 me=$(basename "$0")
 sess=$(tmux display-message -p '#{session_name}')

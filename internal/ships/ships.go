@@ -210,7 +210,7 @@ func (s *Service) bell(ctx context.Context, session string) {
 	if !ok || sess.Options["harness"] != "codex" || sess.PaneDead || sess.State == "needs_you" {
 		return
 	}
-	if err := s.Host.SetPaneState(ctx, session, "needs_you", "bell"); err == nil {
+	if err := s.Host.SetNeedsYou(ctx, session, "bell"); err == nil {
 		_ = s.Host.Sync(ctx)
 	}
 }
@@ -375,7 +375,7 @@ func (s *Service) InputSeen(session string) (Ship, error) {
 	case StatusAnchored, StatusSailingOff:
 		return s.ship(sess), ErrExited
 	case StatusNeedsYou:
-		if err := s.Host.SetPaneState(ctx, session, "working", ""); err != nil {
+		if err := s.Host.SetWorking(ctx, session); err != nil {
 			return Ship{}, err
 		}
 		_ = s.Host.Sync(ctx)
