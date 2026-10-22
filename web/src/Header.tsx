@@ -5,6 +5,7 @@ import { toggleSound, muted } from './chime';
 import { config } from './config';
 import { offline, signedOut } from './connection';
 import { openSetup } from './setup';
+import { anyAutopilot } from './sources';
 import { atSea, board, needsYou, ships, shipsLoaded } from './ships';
 
 const aboutOpen = signal(false);
@@ -71,6 +72,8 @@ function Banners() {
 function SeaPills() {
   const asking = needsYou.value;
   const off = muted.value;
+  const cap = anyAutopilot.value ? config.value?.autopilot?.max_ships : undefined;
+  const count = ships.value.filter(atSea).length;
   return (
     <>
       {shipsLoaded.value && (
@@ -79,7 +82,7 @@ function SeaPills() {
             <path d="M3 17c2 0 2-1.5 4.5-1.5S9.5 17 12 17s2.5-1.5 4.5-1.5S19 17 21 17" />
             <path d="M6 13l6-9 6 9z" />
           </svg>
-          {ships.value.filter(atSea).length} at sea
+          {cap === undefined ? count : `${count} / ${cap}`} at sea
         </span>
       )}
       {asking.length > 0 && (

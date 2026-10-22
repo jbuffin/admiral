@@ -10,11 +10,18 @@ export interface Order {
   repo?: string;
 }
 
+export interface PanelAutopilot {
+  enabled: boolean;
+  paused: boolean;
+  max_ships: number;
+}
+
 export interface Panel {
   id: string;
   title: string;
   orders: Order[];
   error?: string | null;
+  autopilot?: PanelAutopilot | null;
 }
 
 export interface Auth {
@@ -52,6 +59,8 @@ export interface PluginInfo {
 // the two states apart.
 export const sources = signal<Source[] | null>(null);
 export const sourcesLoaded = computed(() => sources.value !== null);
+// Whether some panel runs autopilot, paused or not: the header then shows the ship cap.
+export const anyAutopilot = computed(() => !!sources.value?.some((s) => s.panels.some((p) => p.autopilot?.enabled)));
 
 onMessage('sources', (msg) => (sources.value = msg.sources));
 

@@ -32,6 +32,17 @@ export function SourceProblem({ sourceKey, message, extra }: { sourceKey: string
   );
 }
 
+// Shows a panel's autopilot is on, or paused. Not drawn for a panel that has none.
+export function AutopilotBadge({ paused }: { paused: boolean }) {
+  return (
+    <span class={paused ? 'autopilot-badge paused' : 'autopilot-badge'} role="img" aria-label={paused ? 'Autopilot paused' : 'Autopilot on'}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        {paused ? <path d="M9 5v14M15 5v14" /> : <path d="M12 3l9 18-9-4-9 4z" />}
+      </svg>
+    </span>
+  );
+}
+
 const Chevron = ({ open }: { open: boolean }) => (
   <svg
     class="chevron"
@@ -81,6 +92,7 @@ export function PanelSection({ view }: { view: PanelView }) {
   const open = !panelCollapsed(view.key);
   const [refusal, setRefusal] = useState<string | null>(null);
   const total = orders.length;
+  const autopilot = panel.autopilot;
   return (
     <section class={lifted ? 'panel lifted' : 'panel'} id={`panel-${view.key}`} aria-label={view.title} data-reorder={group} data-key={panel.id}>
       <div class="panel-head">
@@ -95,6 +107,24 @@ export function PanelSection({ view }: { view: PanelView }) {
         <span class="count" role="img" aria-label={countLabel(total)}>
           {total}
         </span>
+        {autopilot?.enabled && (
+          <>
+            <AutopilotBadge paused={autopilot.paused} />
+            <button
+              type="button"
+              class="icon-button press"
+              aria-label={autopilot.paused ? 'Resume autopilot' : 'Pause autopilot'}
+              onClick={async () => {
+                const r = await api('PUT', sourcePath(source.key, `/panels/${encodeURIComponent(panel.id)}/autopilot`), { paused: !autopilot.paused });
+                setRefusal(r.ok ? null : r.error);
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">
+                {autopilot.paused ? <path d="M7 4l13 8-13 8z" /> : <path d="M7 4h3v16H7zM14 4h3v16h-3z" />}
+              </svg>
+            </button>
+          </>
+        )}
         {declares(source, 'refresh') && (
           <button
             type="button"
