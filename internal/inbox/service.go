@@ -33,6 +33,7 @@ type Service struct {
 	scanMu   sync.Mutex // one refresh at a time
 	mu       sync.Mutex // guards items
 	items    []Item
+	notify   chan struct{} // a ship changed; buffered, so Notify never blocks
 	watched  map[string]os.FileInfo
 	watcher  *fsnotify.Watcher
 }
@@ -55,8 +56,25 @@ func (s *Service) List() []Item {
 
 func (s *Service) message() any { return map[string]any{"type": "inbox", "items": s.List()} }
 
-// Notify pushes the items again, for a change in the ships that name them.
-func (s *Service) Notify() { s.Hub.BroadcastOnce("inbox", s.message) }
+// Notify asks Run to push the items again, for a change in the ships that name
+// them. It never blocks.
+func (s *Service) Notify() {
+	select {
+	case s.notifyChan() <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Service) notifyChan() chan struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.notify == nil {
+		s.notify = make(chan struct{}, 1)
+	}
+	return s.notify
+}
+
+func (s *Service) broadcast() { s.Hub.BroadcastOnce("inbox", s.message) }
 
 // Connected sends a new client the items.
 func (s *Service) Connected(c *server.Client) { _ = c.SendOnce("inbox", s.message) }
@@ -113,39 +131,44 @@ func (s *Service) Refresh() {
 	s.scanMu.Lock()
 	s.syncWatches()
 	items := scan(s.Home)
-	s.scanMu.Unlock()
 	s.mu.Lock()
-	s.items = items
+	s.items = items // under scanMu, so an older scan cannot land after a newer one
 	s.mu.Unlock()
-	s.Notify()
+	s.scanMu.Unlock()
+	s.broadcast()
 }
 
 // Run watches the inbox until ctx ends: $ADMIRAL_HOME (inbox/ may not exist
 // yet), inbox/ and every ship's directory.
 func (s *Service) Run(ctx context.Context) {
 	_ = os.MkdirAll(filepath.Join(s.Home, "inbox"), 0o700)
-	w, err := fsnotify.NewWatcher()
-	if err != nil {
+	var events <-chan fsnotify.Event
+	var errs <-chan error
+	if w, err := fsnotify.NewWatcher(); err != nil {
 		fmt.Fprintln(os.Stderr, "admiral: the inbox cannot be watched:", err)
-		return
+	} else {
+		defer w.Close()
+		s.scanMu.Lock()
+		s.watcher, s.watched = w, map[string]os.FileInfo{}
+		s.scanMu.Unlock()
+		events, errs = w.Events, w.Errors
 	}
-	defer w.Close()
-	s.scanMu.Lock()
-	s.watcher, s.watched = w, map[string]os.FileInfo{}
-	s.scanMu.Unlock()
 	s.Refresh()
+	changed := s.notifyChan()
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
 	for {
 		select {
-		case ev, ok := <-w.Events:
+		case <-changed:
+			s.broadcast()
+		case ev, ok := <-events:
 			if !ok {
 				return
 			}
 			if s.relevant(ev) {
 				timer.Reset(settle)
 			}
-		case <-w.Errors:
+		case <-errs:
 		case <-timer.C:
 			s.Refresh()
 		case <-ctx.Done():
