@@ -42,6 +42,8 @@ type Request struct {
 	// the source's order, never by the client.
 	Title string `json:"-"`
 	URL   string `json:"-"`
+	// Panel is the panel the order was listed in, set by Admiral.
+	Panel string `json:"-"`
 	// Autopilot, LowStakes and ExtraArgs are set by autopilot, never by the
 	// client: this launch is autopilot's, how it treats a low-stakes decision,
 	// and the panel's args for the harness.
@@ -86,6 +88,9 @@ type Launcher struct {
 
 // Launch checks req and creates the ship. Nothing is created when it refuses.
 func (l *Launcher) Launch(req Request) (*Launched, error) {
+	if req.Autopilot && req.LowStakes != "advisor" && req.LowStakes != "never" {
+		return nil, refuse(http.StatusBadRequest, "low_stakes must be advisor or never, got %q", req.LowStakes)
+	}
 	if l.Tmux == "" {
 		return nil, refuse(http.StatusServiceUnavailable, "tmux not found on PATH, so ships cannot be launched")
 	}
@@ -116,7 +121,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	// The name and the time are ours.
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
-		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}}
+		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"panel", req.Panel}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
 			return nil, refuse(http.StatusBadRequest, "%s contains a control character", o[0])

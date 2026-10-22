@@ -36,6 +36,7 @@ type Ship struct {
 	Repo       string          `json:"repo"`
 	Skill      *string         `json:"skill"`
 	Source     string          `json:"source"`
+	Panel      string          `json:"panel"`
 	Title      string          `json:"title"`
 	URL        string          `json:"url"`
 	OrderID    string          `json:"order_id"`
@@ -78,7 +79,25 @@ type Service struct {
 	// launchingOrders holds the orders with a launch under way, so a second
 	// launch of one is refused.
 	launchingOrders map[OrderKey]bool
+	// listing holds the orders of launched ships the host has not listed yet,
+	// so the hiding that ends with the launch does not end before the ship is
+	// in the list.
+	listing map[OrderKey]unlisted
 }
+
+// unlisted is a launched ship the host has not listed yet.
+type unlisted struct {
+	session string
+	at      time.Time
+}
+
+// listedWithin is how long a launched ship may stay unlisted before its order
+// stops being held; a ship killed before the host saw it must not hold one for good.
+const listedWithin = 30 * time.Second
+
+// NotKnownMsg is the 503 a launch from a source gets while the ship list says
+// nothing about which orders hold a ship.
+const NotKnownMsg = "ships are not known yet"
 
 func (s *Service) ship(sess sessionhost.Session) Ship {
 	sh := FromSession(sess, time.Now())
@@ -94,7 +113,7 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	o, session := sess.Options, sess.Name
 	sh := Ship{Session: session, Name: o["name"], Fleet: o["fleet"], FleetName: o["fleet-name"],
 		FleetColor: o["fleet-color"], Harness: o["harness"], Dir: o["dir"], Repo: filepath.Base(o["dir"]),
-		Source: o["source"], Title: o["title"], URL: o["url"], OrderID: o["order"], Launched: o["launched"], Status: status(sess, now)}
+		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], OrderID: o["order"], Launched: o["launched"], Status: status(sess, now)}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
 	if o["dir"] == "" {
 		sh.Repo = ""
@@ -320,11 +339,15 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 // LaunchOrder launches a ship and does the bookkeeping, for a hand launch and
 // for autopilot alike so the refusal rules cannot drift. An order from a source
 // is launched with the source's text, whatever the request holds; one that
-// already has a ship, or whose launch is still running, is refused with 409.
+// already has a ship, or whose launch is still running, is refused with 409;
+// while the ships are not known, with 503.
 func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	var panel string
+	key := OrderKey{req.Source, req.OrderID}
 	if req.Source != "" {
-		key := OrderKey{req.Source, req.OrderID}
+		if !s.Host.Known() {
+			return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: NotKnownMsg}
+		}
 		if !s.lockOrder(key) {
 			return Ship{}, &launcher.Error{Status: http.StatusConflict, Msg: "this order already has a ship"}
 		}
@@ -335,6 +358,9 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 		var lerr *launcher.Error
 		if req.Text, req.Title, _, req.URL, panel, lerr = s.Orders.Order(req.Source, req.OrderID); lerr != nil {
 			return Ship{}, lerr
+		}
+		if req.Panel == "" {
+			req.Panel = panel
 		}
 	}
 	s.mu.Lock()
@@ -349,7 +375,7 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 		return Ship{}, &launcher.Error{Status: http.StatusInternalServerError, Msg: err.Error()}
 	}
 	s.State.SetLastDir(req.Fleet, req.Harness, got.Options["dir"]) // the cleaned path the launch used
-	s.launched(req, got, panel)
+	s.launched(req, got, req.Panel)
 	if req.Source != "" {
 		s.Orders.Launched(req.Source, req.OrderID)
 	}
@@ -357,12 +383,25 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	syncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	_ = s.Host.Sync(syncCtx)
 	cancel()
-	s.broadcast()
 	sess := sessionhost.Session{Name: got.Session, Options: got.Options}
 	if now, ok := s.find(got.Session); ok {
 		sess = now
+	} else if req.Source != "" {
+		s.holdUnlisted(key, got.Session)
 	}
+	s.broadcast()
 	return s.ship(sess), nil
+}
+
+// holdUnlisted keeps the order's key refused until the host lists the ship, for
+// when the sync after a launch failed.
+func (s *Service) holdUnlisted(key OrderKey, session string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.listing == nil {
+		s.listing = map[OrderKey]unlisted{}
+	}
+	s.listing[key] = unlisted{session, time.Now()}
 }
 
 // lockOrder takes the order's key for the length of a launch; false when
@@ -372,6 +411,12 @@ func (s *Service) lockOrder(key OrderKey) bool {
 	defer s.mu.Unlock()
 	if s.launchingOrders[key] {
 		return false
+	}
+	if u, ok := s.listing[key]; ok {
+		if _, listed := s.find(u.session); !listed && time.Since(u.at) < listedWithin {
+			return false
+		}
+		delete(s.listing, key)
 	}
 	if s.launchingOrders == nil {
 		s.launchingOrders = map[OrderKey]bool{}
