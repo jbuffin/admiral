@@ -320,6 +320,16 @@ func (l *Launcher) shipEnv(dock config.Harness) map[string]string {
 	return env
 }
 
+// ShipFiles are the report file and the inbox directory of a ship under the
+// home, the paths ADMIRAL_REPORT and ADMIRAL_INBOX name. ok is false for a
+// session name that would reach outside reports/ and inbox/.
+func ShipFiles(home, session string) (report, inbox string, ok bool) {
+	if session == "." || !filepath.IsLocal(session) || strings.ContainsRune(session, filepath.Separator) {
+		return "", "", false
+	}
+	return filepath.Join(home, "reports", session+".json"), filepath.Join(home, "inbox", session), true
+}
+
 // shipContract adds the ship's own variables to env, which win over the fleet's,
 // and prepares what they name before the harness starts: reports/ for
 // ADMIRAL_REPORT, and an empty inbox for ADMIRAL_INBOX. A name can be reused, so
@@ -329,8 +339,10 @@ func (l *Launcher) shipContract(env map[string]string, session string) error {
 	if err != nil {
 		return refuse(http.StatusInternalServerError, "could not resolve %s: %v", l.Home, err)
 	}
-	report := filepath.Join(home, "reports", session+".json")
-	inbox := filepath.Join(home, "inbox", session)
+	report, inbox, ok := ShipFiles(home, session)
+	if !ok {
+		return refuse(http.StatusInternalServerError, "%q is not a name a ship can have", session)
+	}
 	for _, p := range []string{report, inbox} {
 		if err := os.RemoveAll(p); err != nil {
 			return refuse(http.StatusInternalServerError, "could not clear %s: %v", p, err)

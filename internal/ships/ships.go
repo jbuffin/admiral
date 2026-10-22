@@ -68,6 +68,7 @@ type Service struct {
 	// Outcomes is the outcome log; nil keeps none.
 	Outcomes *outcomes.Writer
 
+	pass   sync.Mutex        // one observe at a time
 	mu     sync.Mutex        // guards tracks and what they point to
 	tracks map[string]*track // the ships the log follows, by session
 }
@@ -149,8 +150,7 @@ func (s *Service) Run(ctx context.Context) {
 		// An exit-0 ship from before a restart is not shown sailing off again.
 		for _, sess := range s.Host.Sessions() {
 			if sess.IsShip() && exitedCleanly(sess) {
-				_ = s.Host.KillSession(ctx, sess.Name)
-				s.cleanAfterEnded(sess.Name)
+				_ = s.killShip(ctx, sess.Name)
 			}
 		}
 		_ = s.Host.Sync(ctx)
@@ -246,10 +246,7 @@ func (s *Service) sailOff(ctx context.Context, since map[string]time.Time) {
 			since[sess.Name] = now
 		}
 		if now.Sub(since[sess.Name]) >= SailOffDelay {
-			if s.Host.KillSession(ctx, sess.Name) == nil {
-				killed = true
-				s.cleanAfterEnded(sess.Name)
-			}
+			killed = s.killShip(ctx, sess.Name) == nil || killed
 		}
 	}
 	for name := range since {
@@ -443,11 +440,10 @@ func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 	}
 	s.observe(ctx) // the ship's `ended` goes into the log before `dismissed`
 	s.record(outcomes.Record{Ship: session, Event: "dismissed"}, nil)
-	if err := s.Host.KillSession(ctx, session); err != nil {
+	if err := s.killShip(ctx, session); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.cleanAfterEnded(session)
 	_ = s.Host.Sync(ctx)
 	s.keep()
 	s.broadcast()

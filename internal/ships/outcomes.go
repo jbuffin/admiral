@@ -15,9 +15,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
+
+// tallyOptions are the session options that hold a tally.
+var tallyOptions = []string{sessionhost.OptNeedsCount, sessionhost.OptNeedsSecs, sessionhost.OptStopSince}
 
 // maxReport is the most of a ship's report file that Admiral reads. The ship
 // writes the file, so a larger one counts as invalid.
@@ -39,15 +43,15 @@ type tally struct {
 
 // options is the part of the tally kept in tmux; an empty value is unset.
 func (t tally) options() map[string]string {
-	o := map[string]string{"needs-count": "", "needs-s": "", "stop-since": ""}
+	o := map[string]string{sessionhost.OptNeedsCount: "", sessionhost.OptNeedsSecs: "", sessionhost.OptStopSince: ""}
 	if t.Count > 0 {
-		o["needs-count"] = strconv.Itoa(t.Count)
+		o[sessionhost.OptNeedsCount] = strconv.Itoa(t.Count)
 	}
 	if t.Seconds > 0 {
-		o["needs-s"] = strconv.FormatFloat(t.Seconds, 'f', 3, 64)
+		o[sessionhost.OptNeedsSecs] = strconv.FormatFloat(t.Seconds, 'f', 3, 64)
 	}
 	if !t.Since.IsZero() {
-		o["stop-since"] = t.Since.UTC().Format(time.RFC3339Nano)
+		o[sessionhost.OptStopSince] = t.Since.UTC().Format(time.RFC3339Nano)
 	}
 	return o
 }
@@ -58,9 +62,9 @@ func (t tally) options() map[string]string {
 // still has its Since, and the first advance closes it.
 func baseline(sess sessionhost.Session, now time.Time) tally {
 	t := tally{Status: status(sess, now)}
-	t.Count, _ = strconv.Atoi(sess.Options["needs-count"])
-	t.Seconds, _ = strconv.ParseFloat(sess.Options["needs-s"], 64)
-	if since, err := time.Parse(time.RFC3339Nano, sess.Options["stop-since"]); err == nil {
+	t.Count, _ = strconv.Atoi(sess.Options[sessionhost.OptNeedsCount])
+	t.Seconds, _ = strconv.ParseFloat(sess.Options[sessionhost.OptNeedsSecs], 64)
+	if since, err := time.Parse(time.RFC3339Nano, sess.Options[sessionhost.OptStopSince]); err == nil {
 		t.Since = since
 		if t.Status != StatusNeedsYou {
 			t.Status = StatusNeedsYou // the stop was open when Admiral stopped
@@ -138,10 +142,11 @@ func (s *Service) baselineAll() {
 		if _, ok := s.tracks[sess.Name]; ok || !sess.IsShip() {
 			continue
 		}
-		t := baseline(sess, now)
-		saved := map[string]string{"needs-count": sess.Options["needs-count"], "needs-s": sess.Options["needs-s"],
-			"stop-since": sess.Options["stop-since"]}
-		s.tracks[sess.Name] = &track{tally: t, saved: saved, seen: true}
+		saved := map[string]string{}
+		for _, n := range tallyOptions {
+			saved[n] = sess.Options[n]
+		}
+		s.tracks[sess.Name] = &track{tally: baseline(sess, now), saved: saved, seen: true}
 	}
 }
 
@@ -154,17 +159,27 @@ func (s *Service) record(r outcomes.Record, onWritten func()) {
 
 // observe compares each tracked ship with the last pass and writes what changed:
 // needs_you and underway from the status, ended for a pane that died. It forgets
-// ships that are gone.
+// ships that are gone, unless the host has lost tmux and knows of none. One pass
+// at a time, so Dismiss's `ended` is queued before its `dismissed`.
 func (s *Service) observe(ctx context.Context) {
+	s.pass.Lock()
+	defer s.pass.Unlock()
 	now := time.Now()
 	type write struct {
 		session string
 		opts    map[string]string
 	}
+	type ending struct {
+		sess  sessionhost.Session
+		tally tally
+		end   *endState
+	}
 	var writes []write
+	var endings []ending
 	live := map[string]bool{}
+	sessions, lost := s.Host.Snapshot()
 	s.mu.Lock()
-	for _, sess := range s.Host.Sessions() {
+	for _, sess := range sessions {
 		live[sess.Name] = true
 		tr, ok := s.tracks[sess.Name]
 		if !ok || !sess.IsShip() {
@@ -181,8 +196,9 @@ func (s *Service) observe(ctx context.Context) {
 			s.record(r, nil)
 		}
 		tr.tally = next
-		if sess.PaneDead && tr.end == nil && sess.Options["ended"] == "" {
-			s.queueEnded(sess, tr)
+		if sess.PaneDead && tr.end == nil && sess.Options[sessionhost.OptEnded] == "" {
+			tr.end = &endState{}
+			endings = append(endings, ending{sess, next, tr.end})
 		}
 		if o := next.options(); !maps.Equal(o, tr.saved) {
 			writes = append(writes, write{sess.Name, o})
@@ -191,12 +207,15 @@ func (s *Service) observe(ctx context.Context) {
 	for _, name := range s.Host.Unreadable() {
 		live[name] = true
 	}
-	for name := range s.tracks {
-		if tr := s.tracks[name]; !live[name] && tr.seen {
+	for name, tr := range s.tracks {
+		if !lost && !live[name] && tr.seen {
 			delete(s.tracks, name)
 		}
 	}
 	s.mu.Unlock()
+	for _, e := range endings { // the report is read outside the lock
+		s.queueEnded(e.sess, e.tally, e.end)
+	}
 	for _, w := range writes {
 		if s.Host.SetOptions(ctx, w.session, w.opts) == nil {
 			s.mu.Lock()
@@ -210,11 +229,9 @@ func (s *Service) observe(ctx context.Context) {
 
 // queueEnded queues the `ended` record of a ship whose pane died. Once it is
 // written, the ship is marked in tmux so no later start writes it again, and
-// the files of a ship that was dismissed or sailed off meanwhile go. s.mu is held.
-func (s *Service) queueEnded(sess sessionhost.Session, tr *track) {
+// the files of a ship that was killed meanwhile go.
+func (s *Service) queueEnded(sess sessionhost.Session, t tally, end *endState) {
 	name := sess.Name
-	end := &endState{}
-	tr.end = end
 	var code, sig any
 	if sess.Signal != "" {
 		sig = signalName(sess.Signal)
@@ -222,16 +239,16 @@ func (s *Service) queueEnded(sess sessionhost.Session, tr *track) {
 		code = sess.ExitStatus
 	}
 	var duration any
-	if t, err := time.Parse(time.RFC3339, sess.Options["launched"]); err == nil && !sess.DeadTime.IsZero() {
-		duration = max(seconds(sess.DeadTime.Sub(t).Seconds()), 0)
+	if l, err := time.Parse(time.RFC3339, sess.Options["launched"]); err == nil && !sess.DeadTime.IsZero() {
+		duration = max(seconds(sess.DeadTime.Sub(l).Seconds()), 0)
 	}
 	s.record(outcomes.Record{Ship: name, Event: "ended", Fields: map[string]any{
 		"exit_code": code, "signal": sig, "duration_s": duration,
-		"needs_you_count": tr.Count, "needs_you_s": seconds(tr.Seconds), "report": s.readReport(name),
+		"needs_you_count": t.Count, "needs_you_s": seconds(t.Seconds), "report": s.readReport(name),
 	}}, func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = s.Host.SetOptions(ctx, name, map[string]string{"ended": "1"}) // the session may be gone
+		_ = s.Host.SetOptions(ctx, name, map[string]string{sessionhost.OptEnded: "1"}) // the session may be gone
 		s.mu.Lock()
 		end.written = true
 		clean := end.clean
@@ -242,53 +259,75 @@ func (s *Service) queueEnded(sess sessionhost.Session, tr *track) {
 	})
 }
 
-// cleanAfterEnded removes the ship's report and inbox once its `ended` is in the
-// log: at once when it is, or when the writer gets there. Called when the ship's
-// session is killed; if the write fails the files stay.
-func (s *Service) cleanAfterEnded(name string) {
+// killShip ends a ship's session, as Admiral does whether or not the log works,
+// and removes its report and inbox once its `ended` is in the log: now if it is,
+// or when the writer gets there. A ship killed while its `ended` fails keeps its
+// files. A ship Admiral has no `ended` for is not cleaned unless tmux held the
+// ended marker.
+func (s *Service) killShip(ctx context.Context, name string) error {
+	marked := false
+	if sess, ok := s.find(name); ok {
+		marked = sess.Options[sessionhost.OptEnded] != ""
+	}
 	s.mu.Lock()
-	if tr, ok := s.tracks[name]; ok && tr.end != nil && !tr.end.written {
-		tr.end.clean = true
-		s.mu.Unlock()
-		return
+	tr := s.tracks[name] // before the kill, so a pass can't prune it from under us
+	s.mu.Unlock()
+	if err := s.Host.KillSession(ctx, name); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	clean := marked
+	if tr != nil && tr.end != nil {
+		if clean = tr.end.written; !clean {
+			tr.end.clean = true
+		}
 	}
 	s.mu.Unlock()
-	s.removeShipFiles(name)
+	if clean {
+		s.removeShipFiles(name)
+	}
+	return nil
 }
 
 // signalName is a signal as the UI and the log show it: upper case, no SIG.
 func signalName(sig string) string { return strings.TrimPrefix(strings.ToUpper(sig), "SIG") }
 
-// shipFiles are the ship's report file and inbox directory under the home, or
-// nothing when the name would reach outside reports/ and inbox/.
-func (s *Service) shipFiles(session string) (report, inbox string, ok bool) {
-	if session == "." || !filepath.IsLocal(session) || strings.ContainsRune(session, filepath.Separator) {
-		return "", "", false
-	}
-	home := s.Launcher.Home
-	return filepath.Join(home, "reports", session+".json"), filepath.Join(home, "inbox", session), true
-}
-
 // removeShipFiles deletes the ship's report and inbox, unless a ship with that
-// name is running again.
+// name is running again or reports/ or inbox/ is not a real directory (a link
+// there would send the delete elsewhere).
 func (s *Service) removeShipFiles(session string) {
-	report, inbox, ok := s.shipFiles(session)
+	home, err := filepath.Abs(s.Launcher.Home)
+	if err != nil {
+		return
+	}
+	report, inbox, ok := launcher.ShipFiles(home, session)
 	if !ok {
 		return
 	}
-	if _, running := s.find(session); running {
-		if sess, _ := s.find(session); !sess.PaneDead {
-			return
-		}
+	if sess, running := s.find(session); running && !sess.PaneDead {
+		return
 	}
-	_ = os.Remove(report)
-	_ = os.RemoveAll(inbox)
+	if realDir(filepath.Dir(report)) {
+		_ = os.Remove(report)
+	}
+	if realDir(filepath.Dir(inbox)) {
+		_ = os.RemoveAll(inbox)
+	}
+}
+
+func realDir(path string) bool {
+	fi, err := os.Lstat(path)
+	return err == nil && fi.IsDir()
 }
 
 // readReport is the ship's report as the JSON it holds: nil when the file is
 // missing, or too large or not JSON, which is logged.
 func (s *Service) readReport(session string) json.RawMessage {
-	path, _, ok := s.shipFiles(session)
+	home, err := filepath.Abs(s.Launcher.Home)
+	if err != nil {
+		return nil
+	}
+	path, _, ok := launcher.ShipFiles(home, session)
 	if !ok {
 		return nil
 	}

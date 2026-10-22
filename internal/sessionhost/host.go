@@ -63,13 +63,22 @@ const format = "#{session_name}" + sep + "#{pane_dead}" + sep + "#{pane_dead_sta
 	"#{@admiral-launched}" + sep + "#{@admiral-title}" + sep + "#{@admiral-url}" + sep + "#{@admiral-ended}" + sep +
 	"#{@admiral-needs-count}" + sep + "#{@admiral-needs-s}" + sep + "#{@admiral-stop-since}"
 
+// The session options Admiral keeps for the outcome log (ADR 0012): the marker
+// of a ship whose `ended` was written, and the running needs-you tally.
+const (
+	OptEnded      = "ended"
+	OptNeedsCount = "needs-count"
+	OptNeedsSecs  = "needs-s"
+	OptStopSince  = "stop-since"
+)
+
 // fixedFields is how many fields of a row come before the options.
 const fixedFields = 8
 
 // optionNames are the session options in the order format lists them. The last
 // four are Admiral's outcome bookkeeping (ended marker, needs-you tally).
 var optionNames = []string{"name", "fleet", "fleet-name", "fleet-color", "harness", "dir",
-	"skill", "source", "order", "launched", "title", "url", "ended", "needs-count", "needs-s", "stop-since"}
+	"skill", "source", "order", "launched", "title", "url", OptEnded, OptNeedsCount, OptNeedsSecs, OptStopSince}
 
 // Session is one tmux session as last read.
 type Session struct {
@@ -159,6 +168,18 @@ func (h *Host) Sessions() []Session {
 		out = append(out, h.sessions[n])
 	}
 	return out
+}
+
+// Snapshot is Sessions, and whether the connection to tmux is lost: then the
+// list is empty because nothing is known, not because the ships are gone.
+func (h *Host) Snapshot() (sessions []Session, lost bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := make([]Session, 0, len(h.order))
+	for _, n := range h.order {
+		out = append(out, h.sessions[n])
+	}
+	return out, h.lost
 }
 
 // Unreadable lists the sessions tmux reports but whose options could not be

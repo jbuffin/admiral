@@ -322,11 +322,11 @@ func TestOutcomeReportInvalidMissingAndDismiss(t *testing.T) {
 			lines++
 		}
 		deadline := time.Now().Add(3 * time.Second)
-		for w.stderrLines("report") < lines && time.Now().Before(deadline) {
+		for w.stderrLines("its report") < lines && time.Now().Before(deadline) {
 			time.Sleep(50 * time.Millisecond)
 		}
 		time.Sleep(300 * time.Millisecond)
-		if got := w.stderrLines("report"); got != lines {
+		if got := w.stderrLines("its report"); got != lines {
 			t.Errorf("%s: Admiral logged %d lines about the report so far, want %d (one per bad file, none for a missing one); stderr: %s",
 				c.repo, got, lines, w.in.stderrBuf.String())
 		}
@@ -426,10 +426,11 @@ func TestOutcomeRestartEndsAShipThatSailedOff(t *testing.T) {
 
 // AC5: an outcomes directory that can't be written doesn't stop launching, logs
 // one error however many records fail, and the next record after the directory
-// becomes writable is written.
+// becomes writable is written. Admiral still lets an exit-0 ship sail off, and
+// keeps the report and inbox of a ship whose `ended` it could not write.
 func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 	w := newWorld(t)
-	w.outFleets(map[string][]string{"f": {"hook working", "sleep 1", "hook needs_you"}})
+	w.outFleets(map[string][]string{"f": {"hook working", "sleep 1", "hook needs_you"}, "z": {"hook working", "sleep 1", "exit 0"}})
 	blocker := filepath.Join(w.home, "outcomes")
 	if err := os.WriteFile(blocker, []byte("a file where the directory belongs"), 0o600); err != nil {
 		t.Fatal(err)
@@ -439,12 +440,24 @@ func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 	a := w.launchIn("f", "claude", "unw1")
 	b := w.launchIn("f", "claude", "unw2")
 	w.in.waitStatusList(t, 10*time.Second, a.Session, "needs_you")
+	w.in.waitStatusList(t, 10*time.Second, b.Session, "needs_you")
 	time.Sleep(1 * time.Second)
 	if code, _ := send(t, http.MethodGet, w.in.LocalURL+"/api/ships", nil); code != 200 || !w.hasSession(b.Session) {
 		t.Errorf("with an unwritable log GET /api/ships = %d, ship b present: %v", code, w.hasSession(b.Session))
 	}
-	if got := w.stderrLines("outcome"); got != 1 {
+	if got := w.stderrLines("outcome log:"); got != 1 {
 		t.Errorf("Admiral logged %d lines about the outcome log across four failed records, want 1; stderr: %s", got, w.in.stderrBuf.String())
+	}
+
+	z := w.launchIn("z", "claude", "unw-sail")
+	reportPath, inboxPath := w.seedShipFiles(w.record(z.Session), `{"status":"done"}`)
+	for deadline := time.Now().Add(15 * time.Second); w.hasSession(z.Session); time.Sleep(100 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the exit-0 ship did not sail off while the log was unwritable")
+		}
+	}
+	if !exists(reportPath) || !exists(inboxPath) {
+		t.Errorf("a ship that sailed off without its ended in the log lost its report or inbox")
 	}
 
 	if err := os.Remove(blocker); err != nil {
@@ -455,7 +468,7 @@ func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 	}
 	c := w.launchIn("f", "claude", "unw3")
 	w.waitEvent(c.Session, "launched", 1)
-	if got := w.stderrLines("outcome"); got != 1 {
+	if got := w.stderrLines("outcome log:"); got != 1 {
 		t.Errorf("a record written after the repair added log lines: %d in all, want 1", got)
 	}
 }
