@@ -27,6 +27,9 @@ type Config struct {
 	FavoriteSkills []string
 	Sources        json.RawMessage // as in the file; nil when there is no sources key
 	SourceList     []Source        // Sources, in panel order
+	// AutopilotMaxShips is the most autopilot ships running at once, across
+	// every panel.
+	AutopilotMaxShips int
 }
 
 // Fleet is one marina.
@@ -43,7 +46,10 @@ func (c *Config) clone() *Config {
 	out := *c
 	out.FavoriteSkills = slices.Clone(c.FavoriteSkills)
 	out.Sources = slices.Clone(c.Sources)
-	out.SourceList = slices.Clone(c.SourceList)
+	out.SourceList = make([]Source, len(c.SourceList))
+	for i, s := range c.SourceList {
+		out.SourceList[i] = s.clone()
+	}
 	out.Fleets = make([]Fleet, len(c.Fleets))
 	for i, f := range c.Fleets {
 		f.SearchRoots = slices.Clone(f.SearchRoots)
@@ -106,7 +112,7 @@ func Parse(data []byte) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg := &Config{FavoriteSkills: []string{}}
+	cfg := &Config{FavoriteSkills: []string{}, AutopilotMaxShips: DefaultAutopilotMaxShips}
 	var fleetsRaw json.RawMessage
 	haveVersion := false
 	for _, m := range top {
@@ -125,6 +131,10 @@ func Parse(data []byte) (*Config, error) {
 			if len(cfg.FavoriteSkills) > MaxFavoriteSkills {
 				return nil, fmt.Errorf("favorite_skills: at most %d allowed, got %d", MaxFavoriteSkills, len(cfg.FavoriteSkills))
 			}
+		case "autopilot":
+			if cfg.AutopilotMaxShips, err = parseAutopilot(m.raw); err != nil {
+				return nil, err
+			}
 		case "sources":
 			cfg.Sources = append(json.RawMessage(nil), m.raw...)
 			if cfg.SourceList, err = parseSources(m.raw); err != nil {
@@ -140,6 +150,9 @@ func Parse(data []byte) (*Config, error) {
 		if cfg.Fleets, err = parseFleets(fleetsRaw); err != nil {
 			return nil, err
 		}
+	}
+	if err := checkAutopilotFleets(cfg); err != nil {
+		return nil, err
 	}
 	assignColors(cfg.Fleets)
 	markSharedIdentities(cfg.Fleets)

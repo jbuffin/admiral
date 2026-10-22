@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -18,6 +19,26 @@ type Source struct {
 	// PanelOrder lists panel IDs in the order the sidebar shows them; panels
 	// it does not name follow in the plugin's order.
 	PanelOrder []string
+	// Autopilot holds the per-panel autopilot entries by panel id.
+	Autopilot map[string]PanelAutopilot
+	// autopilotRaw is the autopilot object as read, compacted. SourcesJSON
+	// writes it back as it is, so a UI save adds no defaults to the file.
+	autopilotRaw json.RawMessage
+}
+
+func (s Source) clone() Source {
+	s.Settings = slices.Clone(s.Settings)
+	s.PanelOrder = slices.Clone(s.PanelOrder)
+	s.autopilotRaw = slices.Clone(s.autopilotRaw)
+	if s.Autopilot != nil {
+		ap := make(map[string]PanelAutopilot, len(s.Autopilot))
+		for k, e := range s.Autopilot {
+			e.Args = slices.Clone(e.Args)
+			ap[k] = e
+		}
+		s.Autopilot = ap
+	}
+	return s
 }
 
 // NameRe is what source keys and plugin names may hold. Both end up in paths.
@@ -98,6 +119,15 @@ func parseSource(path, key string, raw json.RawMessage) (Source, error) {
 			if s.PanelOrder, err = stringList(p, m.raw); err != nil {
 				return Source{}, err
 			}
+		case "autopilot":
+			if s.Autopilot, err = parsePanelAutopilot(p, m.raw); err != nil {
+				return Source{}, err
+			}
+			var buf bytes.Buffer
+			if err := json.Compact(&buf, m.raw); err != nil {
+				return Source{}, fmt.Errorf("%s: %v", p, err)
+			}
+			s.autopilotRaw = buf.Bytes()
 		default:
 			return Source{}, fmt.Errorf("%s: unknown key", p)
 		}
@@ -129,6 +159,10 @@ func SourcesJSON(list []Source) (json.RawMessage, error) {
 		if s.Settings != nil {
 			b.WriteString(`,"settings":`)
 			b.Write(s.Settings)
+		}
+		if s.autopilotRaw != nil {
+			b.WriteString(`,"autopilot":`)
+			b.Write(s.autopilotRaw)
 		}
 		if len(s.PanelOrder) > 0 {
 			o, _ := json.Marshal(s.PanelOrder)

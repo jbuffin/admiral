@@ -75,6 +75,9 @@ type Service struct {
 	// Launch returns, so removeShipFiles skips the delete, and keeps the files,
 	// until none is.
 	launching int
+	// launchingOrders holds the orders with a launch under way, so a second
+	// launch of one is refused.
+	launchingOrders map[OrderKey]bool
 }
 
 func (s *Service) ship(sess sessionhost.Session) Ship {
@@ -306,18 +309,32 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
 		return
 	}
+	got, lerr := s.LaunchOrder(req)
+	if lerr != nil {
+		writeError(w, lerr.Status, lerr.Msg)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"ship": got})
+}
+
+// LaunchOrder launches a ship and does the bookkeeping, for a hand launch and
+// for autopilot alike so the refusal rules cannot drift. An order from a source
+// is launched with the source's text, whatever the request holds; one that
+// already has a ship, or whose launch is still running, is refused with 409.
+func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	var panel string
-	// An order from a source is launched with the source's text, whatever the
-	// client sent. Without a source the client's own text is used.
 	if req.Source != "" {
-		if HiddenOrders(s.List())[OrderKey{req.Source, req.OrderID}] {
-			writeError(w, http.StatusConflict, "this order already has a ship")
-			return
+		key := OrderKey{req.Source, req.OrderID}
+		if !s.lockOrder(key) {
+			return Ship{}, &launcher.Error{Status: http.StatusConflict, Msg: "this order already has a ship"}
+		}
+		defer s.unlockOrder(key)
+		if HiddenOrders(s.List())[key] {
+			return Ship{}, &launcher.Error{Status: http.StatusConflict, Msg: "this order already has a ship"}
 		}
 		var lerr *launcher.Error
 		if req.Text, req.Title, _, req.URL, panel, lerr = s.Orders.Order(req.Source, req.OrderID); lerr != nil {
-			writeError(w, lerr.Status, lerr.Msg)
-			return
+			return Ship{}, lerr
 		}
 	}
 	s.mu.Lock()
@@ -327,11 +344,9 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 	got, err := s.Launcher.Launch(req)
 	if err != nil {
 		if le, ok := err.(*launcher.Error); ok {
-			writeError(w, le.Status, le.Msg)
-		} else {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			return Ship{}, le
 		}
-		return
+		return Ship{}, &launcher.Error{Status: http.StatusInternalServerError, Msg: err.Error()}
 	}
 	s.State.SetLastDir(req.Fleet, req.Harness, got.Options["dir"]) // the cleaned path the launch used
 	s.launched(req, got, panel)
@@ -347,7 +362,28 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 	if now, ok := s.find(got.Session); ok {
 		sess = now
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"ship": s.ship(sess)})
+	return s.ship(sess), nil
+}
+
+// lockOrder takes the order's key for the length of a launch; false when
+// another launch of it holds the key.
+func (s *Service) lockOrder(key OrderKey) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.launchingOrders[key] {
+		return false
+	}
+	if s.launchingOrders == nil {
+		s.launchingOrders = map[OrderKey]bool{}
+	}
+	s.launchingOrders[key] = true
+	return true
+}
+
+func (s *Service) unlockOrder(key OrderKey) {
+	s.mu.Lock()
+	delete(s.launchingOrders, key)
+	s.mu.Unlock()
 }
 
 func (s *Service) servePosition(w http.ResponseWriter, r *http.Request) {
@@ -466,7 +502,7 @@ func (s *Service) launched(req launcher.Request, got *launcher.Launched, panel s
 	s.record(outcomes.Record{Ship: got.Session, Event: "launched", Fields: map[string]any{
 		"fleet": o["fleet"], "harness": req.Harness, "skill": map[string]string{"kind": req.Skill.Kind, "name": o["skill"]},
 		"source": req.Source, "panel": panel, "order_id": req.OrderID, "order_url": o["url"], "title": o["title"],
-		"dir": o["dir"], "autopilot": false,
+		"dir": o["dir"], "autopilot": req.Autopilot,
 	}}, nil)
 	s.mu.Lock()
 	defer s.mu.Unlock()
