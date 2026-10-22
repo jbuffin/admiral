@@ -77,7 +77,20 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 @keyframes drift{0%,100%{transform:translateX(0)}50%{transform:translateX(14px)}}
 @keyframes flyin{0%{transform:translate(160px,60px) scale(.5);opacity:0}100%{transform:none;opacity:1}}
 @keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
-@media (prefers-reduced-motion: reduce){.sail-in,.bob,.attn,.wave,.frantic,.pop,.ping,.drift,.fl-item,.caret{animation:none !important}}
+.adm textarea:focus-visible,.adm a:focus-visible{outline:3px solid #FFC23D;outline-offset:2px}
+.adm textarea{font:inherit}
+.adm textarea::placeholder{color:#6B7F92}
+.adm button:disabled{opacity:.45;cursor:default;pointer-events:none}
+.ib-drawer{animation:ibdrawer .28s cubic-bezier(.2,.9,.3,1) both}
+.ib-sheet{animation:ibsheet .3s cubic-bezier(.2,.9,.3,1) both}
+.ib-fold{animation:ibfold .25s ease-out both}
+.ib-gone{display:none}
+.ib-wrap.ib-slide{overflow:hidden;animation:ibslide .45s ease-in forwards}
+@keyframes ibdrawer{0%{transform:translateX(100%);opacity:.4}100%{transform:none;opacity:1}}
+@keyframes ibsheet{0%{transform:translateY(100%)}100%{transform:none}}
+@keyframes ibfold{0%{transform:scaleY(1.6);opacity:.2}100%{transform:none;opacity:1}}
+@keyframes ibslide{0%{transform:none;opacity:1;max-height:90px}55%{transform:translateX(70px);opacity:0;max-height:90px}100%{transform:translateX(70px);opacity:0;max-height:0;margin-top:-6px}}
+@media (prefers-reduced-motion: reduce){.sail-in,.bob,.attn,.wave,.frantic,.pop,.ping,.drift,.fl-item,.caret,.ib-drawer,.ib-sheet,.ib-fold,.ib-wrap.ib-slide{animation:none !important}}
 </style>
 </helmet>
 <div class="adm" onPointerMove="{{onMove}}" onPointerUp="{{onUp}}" onPointerCancel="{{onCancel}}" style="min-height: 100vh; position: relative; display: flex; flex-direction: column; background-color: #14304A; color: #14304A; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-size: 15px">
@@ -98,17 +111,15 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </div>
 </div>
 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
+<button type="button" class="press" onClick="{{toggleInbox}}" aria-label="{{inbox.btnAria}}" aria-expanded="{{inboxOpen}}" style="{{inbox.btnStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13l2.5-8h13L21 13v6H3z"></path><path d="M3 13h5l1.5 3h5L16 13h5"></path></svg>Needs you<sc-if value="{{inbox.hasCount}}" hint-placeholder-val="{{ true }}"><span style="min-width: 26px; height: 26px; padding: 0 7px; border-radius: 999px; background-color: #14304A; color: #FFC23D; font-weight: 700; font-size: 13.5px; display: inline-flex; align-items: center; justify-content: center">{{inbox.count}}</span></sc-if></button>
 <span style="display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: 999px; background-color: #21486B; font-weight: 600; font-size: 14px; color: #F4EEDF"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6FE3C8" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M3 17c2 0 2-1.5 4.5-1.5S9.5 17 12 17s2.5-1.5 4.5-1.5S19 17 21 17"></path><path d="M6 13l6-9 6 9z"></path></svg>{{atSea}} at sea</span>
-<sc-if value="{{hasNeed}}" hint-placeholder-val="{{ true }}">
-<button type="button" class="press ping" onClick="{{openNeed}}" style="display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 999px; border: 2.5px solid #0B1F33; background-color: #FF7A59; color: #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 15px">{{need}} needs you</button>
-</sc-if>
 <button type="button" class="press" onClick="{{toggleSound}}" aria-label="{{soundLabel}}" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: 999px; border: 2px solid #3A6489; background-color: #14304A; color: #F4EEDF; font-weight: 600; font-size: 14px">
 <sc-if value="{{sound}}" hint-placeholder-val="{{ true }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4EEDF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"></path><path d="M16.5 8.5a5 5 0 0 1 0 7"></path><path d="M19 6a8.5 8.5 0 0 1 0 12"></path></svg></sc-if><sc-if value="{{muted}}" hint-placeholder-val="{{ false }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4EEDF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"></path><path d="M16 9l5 6M21 9l-5 6"></path></svg></sc-if>{{soundText}}</button>
 <span style="display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: 999px; background-color: #21486B; font-size: 13px; color: #BFD7EA"><span style="width: 9px; height: 9px; border-radius: 50%; background-color: #4CD38A"></span>2 Commodore profiles</span>
 </div>
 </header>
 
-<div style="display: flex; flex-wrap: wrap; flex: 1 1 auto; align-items: stretch; background-color: #29B2C2">
+<div style="display: flex; flex-wrap: {{rowWrap}}; flex: 1 1 auto; align-items: stretch; background-color: #29B2C2">
 
 <sc-if value="{{sidebarOpen}}" hint-placeholder-val="{{ true }}">
 <aside aria-label="Orders" style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 16px; background-color: #FFF1CF; border-right: 3px solid #14304A">
@@ -179,7 +190,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </aside>
 </sc-if>
 
-<main aria-label="Open water" style="flex: 999 1 640px; min-width: 0; min-height: 760px; position: relative; overflow: hidden; background-color: #29B2C2; display: flex; flex-wrap: wrap; align-items: stretch">
+<main aria-label="Open water" style="flex: 999 1 640px; min-width: 0; min-height: 760px; position: relative; overflow: hidden; background-color: #29B2C2; display: flex; flex-wrap: {{mainWrap}}; align-items: stretch">
 <svg style="position: absolute; left: 0; top: 0; width: 100%; height: 100%" viewBox="0 0 1000 760" preserveAspectRatio="xMidYMid slice" fill="none" aria-hidden="true">
 <circle cx="420" cy="390" r="200" stroke="#5FCFD9" stroke-width="3" opacity="0.45"></circle>
 <circle cx="420" cy="390" r="140" stroke="#5FCFD9" stroke-width="2" stroke-dasharray="4 10" opacity="0.45"></circle>
@@ -328,7 +339,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </div>
 
 <sc-if value="{{hasBridge}}" hint-placeholder-val="{{ false }}">
-<div style="position: absolute; inset: 0; z-index: 6; background-color: rgba(11,31,51,.42); padding: 14px; display: flex; flex-wrap: wrap; gap: 14px; align-items: stretch; overflow: auto">
+<div style="position: absolute; inset: 0; z-index: 6; background-color: rgba(11,31,51,.42); padding: 14px; display: flex; flex-wrap: {{bridgeWrap}}; gap: 14px; align-items: stretch; overflow: auto">
 <nav aria-label="Session flotilla" style="flex: 1 1 200px; display: flex; flex-direction: column; gap: 10px; min-width: 0">
 <span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 15px; color: #FFF6E3; padding: 0 4px">Flotilla · {{bridge.crewCount}}</span>
 <sc-for list="{{bridge.agents}}" as="agent" hint-placeholder-count="3">
@@ -390,11 +401,6 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <span style="font-size: 12px; color: #9DB8CF">The harness exited. This is its last screen.</span>
 </sc-if>
 <sc-if value="{{bridge.live}}" hint-placeholder-val="{{ true }}">
-<sc-if value="{{bridge.asking}}" hint-placeholder-val="{{ false }}">
-<button type="button" class="press" onClick="{{answerYes}}" style="height: 40px; padding: 0 14px; border-radius: 10px; border: 2.5px solid #0B1F33; background-color: #9BE08A; color: #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 14px; box-shadow: 0 3px 0 #0B1F33">Approve · y</button>
-<button type="button" class="press" onClick="{{answerNo}}" style="height: 40px; padding: 0 14px; border-radius: 10px; border: 2.5px solid #0B1F33; background-color: #FF9A7A; color: #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 14px; box-shadow: 0 3px 0 #0B1F33">Deny · n</button>
-<span aria-hidden="true" style="width: 2px; height: 26px; background-color: #3A6489"></span>
-</sc-if>
 <sc-for list="{{keys}}" as="k" hint-placeholder-count="6">
 <button type="button" class="key" onClick="{{k.press}}" aria-label="{{k.aria}}" style="height: 40px; min-width: 44px; padding: 0 10px; border-radius: 10px; border: 2px solid #3A6489; background-color: #1B3D5C; color: #F4EEDF; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; font-weight: 600">{{k.label}}</button>
 </sc-for>
@@ -406,6 +412,196 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </div>
 </sc-if>
 </main>
+
+<sc-if value="{{inboxOpen}}" hint-placeholder-val="{{ true }}">
+<aside aria-label="Needs you inbox" role="{{inbox.role}}" aria-modal="{{inbox.modal}}" tabindex="-1" class="{{inbox.cls}}" style="{{inbox.style}}">
+<div style="position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0">
+<div style="flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 16px; background-color: #FFF6E3; border-bottom: 3px solid #14304A">
+<h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 24px; line-height: 1.05; letter-spacing: -0.01em; color: #14304A">Needs you</h2>
+<span style="flex: 1 1 auto; font-size: 13px; color: #3E5870">{{inbox.headCount}}</span>
+<button type="button" class="press" onClick="{{closeInbox}}" aria-label="Close the inbox" style="width: 44px; height: 44px; flex: 0 0 auto; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+</div>
+
+<div data-ib-list="1" style="flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 14px 14px 20px; display: flex; flex-direction: column; gap: 14px">
+<sc-for list="{{inbox.cards}}" as="c" hint-placeholder-count="3">
+<div class="{{c.wrapCls}}" data-ib="{{c.id}}">
+
+<sc-if value="{{c.done}}" hint-placeholder-val="{{ false }}">
+<div class="ib-fold" role="status" style="display: flex; align-items: center; gap: 10px; min-height: 58px; padding: 8px 14px; border-radius: 16px; border: 2.5px solid #14304A; background-color: #DDF7F3; box-shadow: 0 3px 0 #14304A">
+<span style="width: 26px; height: 26px; flex: 0 0 auto; border-radius: 50%; background-color: #9BE08A; border: 2.5px solid #14304A; display: flex; align-items: center; justify-content: center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>
+<span style="flex: 1 1 auto; min-width: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 15.5px; line-height: 1.25">{{c.doneText}}</span>
+<span style="flex: 0 0 auto; font-size: 12.5px; color: #3E5870">{{c.shipName}}</span>
+</div>
+</sc-if>
+
+<sc-if value="{{c.open}}" hint-placeholder-val="{{ true }}">
+<article style="display: flex; flex-direction: column; gap: 14px; padding: 14px; border-radius: 16px; border: 2.5px solid #14304A; background-color: #FFFAEE; box-shadow: 0 3px 0 #14304A">
+
+<div style="display: flex; align-items: center; gap: 10px">
+<svg width="40" height="28" viewBox="0 0 40 28" aria-hidden="true" style="flex: 0 0 auto"><path d="M2 3 L38 3 L30 14 L38 25 L2 25 Z" fill="{{c.flag}}" stroke="#14304A" stroke-width="2.6" stroke-linejoin="round"></path><text x="15" y="18.5" text-anchor="middle" font-family="Bricolage Grotesque, sans-serif" font-weight="800" font-size="12" fill="{{c.flagInk}}">{{c.mono}}</text></svg>
+<div style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+<span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 16px; line-height: 1.15">{{c.shipName}}</span>
+<span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #3E5870"><span aria-hidden="true" style="width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; background-color: {{c.fleetColor}}; border: 1.5px solid #14304A"></span>{{c.fleetName}} · {{c.harness}}</span>
+</div>
+<span style="flex: 0 0 auto; font-size: 12.5px; font-weight: 600; color: #3E5870; text-align: right">{{c.age}}</span>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="align-self: flex-start; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 2px 8px; border-radius: 6px; border: 1.5px solid #14304A; background-color: {{c.kindBg}}">{{c.kindLabel}}</span>
+<h3 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 19px; line-height: 1.2; overflow-wrap: anywhere">{{c.title}}</h3>
+<sc-if value="{{c.hasOrder}}" hint-placeholder-val="{{ false }}"><a href="{{c.orderUrl}}" target="_blank" rel="noopener" style="align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; font-size: 13.5px; font-weight: 600">Open the order ↗</a></sc-if>
+</div>
+
+<sc-if value="{{c.isQuestion}}" hint-placeholder-val="{{ false }}">
+<sc-for list="{{c.qs}}" as="q" hint-placeholder-count="2">
+<div role="group" aria-label="{{q.aria}}" style="display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 2px dashed #8AA2B6">
+<span style="font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #3E5870">{{q.counter}}</span>
+<p style="margin: 0; font-size: 16px; font-weight: 500; line-height: 1.45; overflow-wrap: anywhere">{{q.text}}</p>
+<sc-for list="{{q.opts}}" as="o" hint-placeholder-count="3">
+<button type="button" role="{{o.role}}" aria-checked="{{o.on}}" class="{{o.cls}}" onClick="{{o.pick}}" style="display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 56px; padding: 12px 14px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; text-align: left">
+<span class="dot" style="width: 20px; height: 20px; flex: 0 0 auto; margin-top: 2px; border-radius: {{o.dotRadius}}; border: 3px solid #14304A; background-color: #FFFDF6; box-shadow: inset 0 0 0 3px #FFFDF6"></span>
+<span style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<span style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px"><span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 16.5px; line-height: 1.2">{{o.label}}</span><sc-if value="{{o.rec}}" hint-placeholder-val="{{ false }}"><span style="font-size: 11.5px; font-weight: 700; background-color: #14304A; color: #FFC23D; border-radius: 8px; padding: 3px 8px">Recommended</span></sc-if></span>
+<sc-if value="{{o.hasDesc}}" hint-placeholder-val="{{ false }}"><span style="font-size: 13.5px; color: #3E5870; line-height: 1.35">{{o.desc}}</span></sc-if>
+</span>
+</button>
+</sc-for>
+<button type="button" role="{{q.other.role}}" aria-checked="{{q.other.on}}" class="{{q.other.cls}}" onClick="{{q.other.pick}}" style="display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 12px 14px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; text-align: left">
+<span class="dot" style="width: 20px; height: 20px; flex: 0 0 auto; border-radius: {{q.other.dotRadius}}; border: 3px solid #14304A; background-color: #FFFDF6; box-shadow: inset 0 0 0 3px #FFFDF6"></span>
+<span style="flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px"><span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 16.5px; line-height: 1.2">Other</span><span style="font-size: 13.5px; color: #3E5870">Write your own answer</span></span>
+</button>
+<sc-if value="{{q.other.on}}" hint-placeholder-val="{{ false }}">
+<input type="text" value="{{q.other.text}}" onChange="{{q.other.onText}}" aria-label="{{q.other.aria}}" autocomplete="off" placeholder="Your answer" style="width: 100%; height: 48px; padding: 0 12px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFFFF; font-family: 'Archivo', sans-serif; font-size: 16px; color: #14304A">
+</sc-if>
+<textarea value="{{q.note}}" onChange="{{q.onNote}}" aria-label="{{q.noteAria}}" rows="2" placeholder="Add a note (optional)" style="display: block; width: 100%; min-height: 64px; padding: 10px 12px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFFFF; font-size: 16px; line-height: 1.4; color: #14304A; resize: vertical"></textarea>
+</div>
+</sc-for>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
+<button type="button" class="press" disabled="{{c.sendOff}}" onClick="{{c.send}}" style="min-height: 48px; padding: 0 22px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFC23D; box-shadow: 0 4px 0 #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 17px">Send answers</button>
+<span style="font-size: 13px; color: #3E5870">{{c.progress}}</span>
+</div>
+</sc-if>
+
+<sc-if value="{{c.isReview}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; border-radius: 12px; background-color: #FFFDF6; border: 2px dashed #8AA2B6">
+<span style="font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #3E5870">Summary</span>
+<p style="margin: 0; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere">{{c.rv.summary}}</p>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 13px; color: #3E5870">
+<a href="{{c.rv.prUrl}}" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; min-height: 44px; font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600">{{c.rv.prLabel}} ↗</a>
+<span>Pending review #{{c.rv.reviewId}}, not yet submitted</span>
+</div>
+
+<sc-if value="{{c.rv.modeNone}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-wrap: wrap; gap: 10px">
+<button type="button" class="press" onClick="{{c.rv.openSubmit}}" style="flex: 1 1 110px; min-height: 48px; padding: 0 16px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFC23D; box-shadow: 0 4px 0 #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 17px">Submit</button>
+<a class="press" href="{{c.rv.editHref}}" target="_blank" rel="noopener" style="flex: 1 1 110px; min-height: 48px; padding: 0 16px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; color: #14304A; text-decoration: none; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 17px; display: flex; align-items: center; justify-content: center">Edit ↗</a>
+<button type="button" class="press" onClick="{{c.rv.askDiscard}}" style="flex: 1 1 110px; min-height: 48px; padding: 0 16px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; color: #C2412A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 17px">Discard</button>
+</div>
+</sc-if>
+
+<sc-if value="{{c.rv.modeChoose}}" hint-placeholder-val="{{ false }}">
+<div role="group" aria-label="Submit the review as" style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 15px">Submit the review as</span>
+<sc-for list="{{c.rv.events}}" as="ev" hint-placeholder-count="3">
+<button type="button" class="press" onClick="{{ev.pick}}" style="display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; min-height: 56px; padding: 10px 14px; border-radius: 14px; border: 2.5px solid #14304A; background-color: {{ev.bg}}; box-shadow: 0 3px 0 #14304A; text-align: left"><span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 14.5px">{{ev.id}}</span><span style="font-size: 13px; color: #3E5870">{{ev.desc}}</span></button>
+</sc-for>
+<button type="button" class="press" onClick="{{c.rv.cancel}}" style="align-self: flex-start; min-height: 44px; padding: 0 16px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; font-weight: 600; font-size: 15px">Cancel</button>
+</div>
+</sc-if>
+
+<sc-if value="{{c.rv.modeConfirm}}" hint-placeholder-val="{{ false }}">
+<div role="group" aria-label="Confirm the review" style="display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFF0B8">
+<p style="margin: 0; font-size: 15px; line-height: 1.4">Submit this review as <b style="font-family: 'JetBrains Mono', monospace">{{c.rv.event}}</b>? It is posted to the PR as you.</p>
+<div style="display: flex; flex-wrap: wrap; gap: 10px">
+<button type="button" class="press" onClick="{{c.rv.confirm}}" style="flex: 1 1 140px; min-height: 48px; padding: 0 16px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFC23D; box-shadow: 0 4px 0 #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 16px">Submit {{c.rv.event}}</button>
+<button type="button" class="press" onClick="{{c.rv.change}}" style="flex: 1 1 90px; min-height: 48px; padding: 0 16px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; font-weight: 600; font-size: 15px">Change</button>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{c.rv.modeDiscard}}" hint-placeholder-val="{{ false }}">
+<div role="group" aria-label="Confirm discarding the review" style="display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 12px; border: 2.5px solid #C2412A; background-color: #FFD9CC">
+<p style="margin: 0; font-size: 15px; line-height: 1.4">Discard this pending review? The draft comments are deleted from GitHub.</p>
+<div style="display: flex; flex-wrap: wrap; gap: 10px">
+<button type="button" class="press" onClick="{{c.rv.discard}}" style="flex: 1 1 140px; min-height: 48px; padding: 0 16px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FF9A7A; box-shadow: 0 4px 0 #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 16px">Discard review</button>
+<button type="button" class="press" onClick="{{c.rv.cancel}}" style="flex: 1 1 90px; min-height: 48px; padding: 0 16px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; font-weight: 600; font-size: 15px">Keep it</button>
+</div>
+</div>
+</sc-if>
+</sc-if>
+
+<sc-if value="{{c.isFindings}}" hint-placeholder-val="{{ false }}">
+<a href="{{c.fd.prUrl}}" target="_blank" rel="noopener" style="align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600">{{c.fd.prLabel}} ↗</a>
+<sc-for list="{{c.fd.cards}}" as="f" hint-placeholder-count="3">
+<div style="display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 12px; border: 2px solid #14304A; background-color: #FFFDF6; box-shadow: 0 2px 0 #14304A">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+<span style="font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 2px 8px; border-radius: 6px; border: 1.5px solid #14304A; background-color: {{f.verdictBg}}">{{f.verdict}}</span>
+<span style="flex: 1 1 auto; min-width: 0; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #3E5870; overflow-wrap: anywhere">{{f.source}}</span>
+</div>
+<blockquote style="margin: 0; padding: 2px 0 2px 10px; border-left: 4px solid #FFC23D; font-size: 14.5px; line-height: 1.45; overflow-wrap: anywhere">{{f.quote}}</blockquote>
+<p style="margin: 0; font-size: 14px; line-height: 1.45; color: #3E5870; overflow-wrap: anywhere"><b style="color: #14304A">Why:</b> {{f.reason}}</p>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #3E5870">{{f.proposalLabel}}</span>
+<sc-if value="{{f.editing}}" hint-placeholder-val="{{ false }}">
+<textarea value="{{f.text}}" onChange="{{f.onText}}" aria-label="{{f.textAria}}" rows="4" style="display: block; width: 100%; min-height: 96px; padding: 10px 12px; border-radius: 10px; border: 2.5px solid #14304A; background-color: #FFFFFF; font-family: 'JetBrains Mono', monospace; font-size: 16px; line-height: 1.4; color: #14304A; resize: vertical"></textarea>
+</sc-if>
+<sc-if value="{{f.shown}}" hint-placeholder-val="{{ true }}">
+<pre style="margin: 0; padding: 10px 12px; border-radius: 10px; background-color: #0E2235; color: #F4EEDF; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere">{{f.text}}</pre>
+</sc-if>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #3E5870">Evidence</span>
+<sc-for list="{{f.evidence}}" as="ev" hint-placeholder-count="2"><span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.5; color: #3E5870; overflow-wrap: anywhere">{{ev.t}}</span></sc-for>
+</div>
+<div role="group" aria-label="{{f.groupAria}}" style="display: flex; gap: 8px">
+<button type="button" class="press" aria-pressed="{{f.isApprove}}" onClick="{{f.approve}}" style="flex: 1 1 0; min-height: 48px; border-radius: 12px; border: 2.5px solid #14304A; background-color: {{f.approveBg}}; box-shadow: {{f.approveShadow}}; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 15px">Approve</button>
+<button type="button" class="press" aria-pressed="{{f.isEdit}}" onClick="{{f.edit}}" style="flex: 1 1 0; min-height: 48px; border-radius: 12px; border: 2.5px solid #14304A; background-color: {{f.editBg}}; box-shadow: {{f.editShadow}}; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 15px">Edit</button>
+<button type="button" class="press" aria-pressed="{{f.isReject}}" onClick="{{f.reject}}" style="flex: 1 1 0; min-height: 48px; border-radius: 12px; border: 2.5px solid #14304A; background-color: {{f.rejectBg}}; box-shadow: {{f.rejectShadow}}; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 15px">Reject</button>
+</div>
+</div>
+</sc-for>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
+<button type="button" class="press" disabled="{{c.sendOff}}" onClick="{{c.send}}" style="min-height: 48px; padding: 0 22px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFC23D; box-shadow: 0 4px 0 #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 17px">Send</button>
+<span style="font-size: 13px; color: #3E5870">{{c.progress}}</span>
+</div>
+</sc-if>
+
+<sc-if value="{{c.isLive}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 12px; border: 2px solid #C2412A; background-color: #FFD9CC">
+<span style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px"><span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 16px">{{c.reasonText}}</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #3E5870">{{c.reasonCode}}</span></span>
+<span style="font-size: 13.5px; color: #3E5870">{{c.age}}</span>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
+<button type="button" class="press" onClick="{{c.attach}}" aria-label="{{c.attachAria}}" style="min-height: 48px; padding: 0 22px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFC23D; box-shadow: 0 4px 0 #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 17px; display: flex; align-items: center; gap: 8px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>Attach</button>
+<span style="flex: 1 1 140px; font-size: 13px; color: #3E5870">Opens the bridge. The inbox never types for you.</span>
+</div>
+</sc-if>
+
+</article>
+</sc-if>
+</div>
+</sc-for>
+
+<sc-if value="{{inbox.empty}}" hint-placeholder-val="{{ false }}">
+<div role="status" style="flex: 1 1 auto; min-height: 280px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 32px 16px; text-align: center">
+<svg aria-hidden="true" width="52" height="96" viewBox="0 0 26 48" fill="none"><path d="M8 44 L10 14 L16 14 L18 44 Z" fill="#FFFDF6" stroke="#14304A" stroke-width="2.2" stroke-linejoin="round"></path><path d="M9.2 26 L16.8 26 L17.4 34 L8.6 34 Z" fill="#E5484D"></path><rect x="9" y="7" width="8" height="7" fill="#FFC23D" stroke="#14304A" stroke-width="2"></rect><path d="M7 7 L13 2 L19 7 Z" fill="#E5484D" stroke="#14304A" stroke-width="2" stroke-linejoin="round"></path><path d="M5 44 L21 44" stroke="#14304A" stroke-width="2.5" stroke-linecap="round"></path></svg>
+<h3 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 24px; line-height: 1.1">Nothing needs you</h3>
+<p style="margin: 0; max-width: 260px; font-size: 14.5px; line-height: 1.45; color: #3E5870">Every ship is underway or in port. New questions, reviews and stops show up here.</p>
+</div>
+</sc-if>
+</div>
+
+<sc-if value="{{inbox.showNav}}" hint-placeholder-val="{{ false }}">
+<nav aria-label="Inbox items" style="flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 10px 14px max(10px, env(safe-area-inset-bottom)); background-color: #FFF6E3; border-top: 3px solid #14304A">
+<button type="button" class="press" disabled="{{inbox.backOff}}" onClick="{{inbox.back}}" style="min-width: 108px; min-height: 48px; padding: 0 16px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 16px">← Back</button>
+<span aria-live="polite" style="flex: 1 1 auto; text-align: center; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 16px">{{inbox.pos}}</span>
+<button type="button" class="press" disabled="{{inbox.nextOff}}" onClick="{{inbox.next}}" style="min-width: 108px; min-height: 48px; padding: 0 16px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFC23D; box-shadow: 0 3px 0 #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 16px">Next →</button>
+</nav>
+</sc-if>
+</div>
+</aside>
+</sc-if>
 </div>
 
 <sc-if value="{{hasGhost}}" hint-placeholder-val="{{ false }}">
@@ -476,7 +672,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"scene":{"editor":"enum","options":["harbor","launch","bridge","tablet"],"default":"harbor"},"$preview":{"width":1440,"height":900}}'>
+<script type="text/x-dc" data-dc-script data-props='{"scene":{"editor":"enum","options":["harbor","launch","bridge","tablet","inbox","inbox-bridge","inbox-empty"],"default":"harbor"},"$preview":{"width":1440,"height":900}}'>
 class Component extends DCLogic {
   D() {
     if (this._d) return this._d;
@@ -580,7 +776,7 @@ class Component extends DCLogic {
         subs: [{ id: 's1-a', name: 'planner', job: 'Break the task into steps', bot: B[1] }, { id: 's1-b', name: 'builder', job: 'Persist the retry queue', bot: B[2] }, { id: 's1-c', name: 'checker', job: 'Write and run tests', bot: B[4] }] },
       { id: 's2', name: 'Morning Tern', task: { id: 'commodore-launcher#39', title: 'Flaky profile parser test' }, yard: 'work:copilot', skill: 'Triage', status: 'working', bot: B[1],
         subs: [{ id: 's2-a', name: 'scout', job: 'Reproduce the flake', bot: B[6] }] },
-      { id: 's3', name: 'Brass Kettle', task: { id: 'admiral#1', title: 'Scaffold the Admiral server' }, yard: 'home:claude', skill: 'Commodore', status: 'attention', bot: B[2],
+      { id: 's3', name: 'Brass Kettle', task: { id: 'admiral#1', title: 'Scaffold the Admiral server' }, yard: 'home:claude', skill: 'Commodore', status: 'attention', bot: B[2], reason: 'permission:Bash', since: Date.now() - 21 * 60000,
         ask: 'Teammate schema wants to run a migration on the dev database. Approve? (y/n)',
         subs: [{ id: 's3-a', name: 'schema', job: 'Model fleets, docks and ships', bot: B[3] }, { id: 's3-b', name: 'api', job: 'Session attach endpoint', bot: B[0] }] },
       { id: 's4', name: 'Little Bramble', task: { id: 'MOB-1166', title: 'Crash report breadcrumbs' }, yard: 'work:codex', skill: 'Wayfinder', status: 'done', exit: 1, bot: B[3], subs: [] },
@@ -590,7 +786,18 @@ class Component extends DCLogic {
 
   seed() {
     const scene = this.props.scene || 'harbor';
-    const s = { inited: true, merged: true, collapsed: { linear: true }, sidebar: true, selected: null, ghost: null, hoverYard: null, pending: null, choice: 'commodore', customText: '', acOpen: false, acIdx: 0, ships: this.initialShips(), taken: {}, open: null, focus: 'lead', logs: {}, draft: '', sound: true, q: '', place: {}, lifted: null, dock: {} };
+    const s = { inited: true, merged: true, collapsed: { linear: true }, sidebar: true, selected: null, ghost: null, hoverYard: null, pending: null, choice: 'commodore', customText: '', acOpen: false, acIdx: 0, ships: this.initialShips(), taken: {}, open: null, focus: 'lead', logs: {}, draft: '', sound: true, q: '', place: {}, lifted: null, dock: {},
+      inboxOpen: false, wide: this.isWide(), ibItems: this.sampleInbox(Date.now()), ibUi: {}, ibDone: {}, ibGone: {}, ibCur: null };
+    if (scene === 'inbox' || scene === 'inbox-bridge') {
+      s.inboxOpen = true;
+      s.ships = s.ships.map((x) => x.id === 's1' ? Object.assign({}, x, { status: 'attention', reason: 'question', since: Date.now() - 6 * 60000, ask: 'Should the retry queue survive an app update? (y/n)' }) : x);
+    }
+    if (scene === 'inbox-bridge') s.open = 's3';
+    if (scene === 'inbox-empty') {
+      s.inboxOpen = true;
+      s.ibItems = [];
+      s.ships = s.ships.map((x) => x.id === 's3' ? Object.assign({}, x, { status: 'working' }) : x);
+    }
     if (scene === 'launch') { s.pending = { taskId: 'MOB-1183', yardId: 'work:claude' }; s.choice = 'custom'; s.customText = 'te'; s.acOpen = true; }
     if (scene === 'bridge') s.open = 's3';
     if (scene === 'tablet') s.selected = 'admiral#3';
@@ -702,7 +909,7 @@ class Component extends DCLogic {
     setTimeout(() => this.put((prev) => ({ ships: prev.ships.map((x) => x.id === id ? Object.assign({}, x, { fresh: false, subs: crew.map((c, j) => ({ id: id + '-' + j, name: c[0], job: c[1], bot: BOTS[(n + j + 1) % BOTS.length], fresh: true })) }) : x) })), 1800);
     if (isC) {
       setTimeout(() => {
-        this.put((prev) => ({ ships: prev.ships.map((x) => x.id === id && x.status === 'working' ? Object.assign({}, x, { status: 'attention', ask: 'planner found two viable approaches. Keep the existing API shape? (y/n)' }) : x) }));
+        this.put((prev) => ({ ships: prev.ships.map((x) => x.id === id && x.status === 'working' ? Object.assign({}, x, { status: 'attention', reason: 'question', since: Date.now(), ask: 'planner found two viable approaches. Keep the existing API shape? (y/n)' }) : x) }));
         this.chirp();
       }, 9000);
     }
@@ -782,6 +989,319 @@ class Component extends DCLogic {
     const txt = (this.S().draft || '').trim();
     if (!txt) return;
     this.sendRaw(txt, { k: 'agent', t: 'Aye, Admiral. Carrying on.' });
+  }
+
+  // ---- Needs You inbox (prototype for #116) ----
+  // Items follow the contract in #112, which has no ship field: the ship is
+  // the inbox directory a file sits in. The sample items carry `ship` beside
+  // the contract fields only to stand in for that directory.
+  // Wide is the drawer: 1024px and up, in landscape. Phones and iPads in portrait get the sheet.
+  wideQuery() { return '(min-width: 1024px) and (orientation: landscape)'; }
+  isWide() { try { return window.matchMedia(this.wideQuery()).matches; } catch (err) { return true; } }
+
+  componentDidMount() {
+    try {
+      const mq = window.matchMedia(this.wideQuery());
+      this.mq = mq;
+      this.onMq = () => this.put({ wide: mq.matches });
+      if (mq.addEventListener) mq.addEventListener('change', this.onMq); else mq.addListener(this.onMq);
+      this.onMq();
+    } catch (err) {}
+    this.ibFocus();
+    this.clock = setInterval(() => this.put({ tick: Date.now() }), 30000);
+  }
+  componentWillUnmount() {
+    try { if (this.mq) { if (this.mq.removeEventListener) this.mq.removeEventListener('change', this.onMq); else this.mq.removeListener(this.onMq); } } catch (err) {}
+    clearInterval(this.clock);
+  }
+
+  sampleInbox(now) {
+    const ago = (min) => now - min * 60000;
+    return [
+      { id: 'q-1', ship: 's2', kind: 'question', created: ago(190), title: 'Retry policy for the flaky parser test',
+        order_url: 'https://github.com/example/commodore-launcher/issues/39',
+        question: { questions: [
+          { id: '1', text: 'Which retry policy should the parser test use?', recommended: 'Exponential backoff', multi: false, options: [
+            { label: 'Fixed delay', description: 'Wait 200 ms between tries. Simple and predictable.' },
+            { label: 'Exponential backoff', description: 'Wait 100 ms, then double each try. Fewer wasted tries.' },
+            { label: 'No retry', description: 'Fail on the first flake and fix the cause.' }] },
+          { id: '2', text: 'Which platforms should the flake guard cover?', multi: true, options: [
+            { label: 'macOS', description: 'The CI runner and local Macs.' },
+            { label: 'Linux', description: 'The container the release job uses.' },
+            { label: 'Windows', description: 'Not built today.' }] }] } },
+      { id: 'q-2', ship: 's5', kind: 'question', created: ago(95), title: 'Which changelog format should the draft use?',
+        order_url: 'https://linear.app/example/issue/LIN-19',
+        question: { questions: [
+          { id: '1', text: 'The repo has two changelog styles. Which one should the draft follow?', recommended: 'Keep a Changelog', multi: false, options: [
+            { label: 'Keep a Changelog', description: 'Added, Changed and Fixed sections per release.' },
+            { label: 'Release-note prose', description: 'A short paragraph per release, as in the 1.x notes.' }] }] } },
+      { id: 'r-1', ship: 's1', kind: 'review', created: ago(60), title: 'Review of the offline queue retries',
+        order_url: 'https://example.atlassian.net/browse/MOB-1172',
+        review: { pr_url: 'https://github.com/example/mobile-app/pull/88', review_id: 4182913,
+          summary: 'The retry queue is saved to disk and drains on reconnect, and the tests cover both. One concern: the drain loop has no upper bound on batch size, so a long outage could send thousands of requests at once. Two nits on naming.' } },
+      { id: 'f-1', ship: 's3', kind: 'findings', created: ago(33), title: 'Feedback on the server scaffold PR',
+        order_url: 'https://github.com/example/admiral/issues/1',
+        findings: { pr_url: 'https://github.com/example/admiral/pull/130', cards: [
+          { id: 'r1', source: 'copilot-pull-request-reviewer', quote: 'This goroutine is never stopped when the server shuts down.', verdict: 'agree',
+            reason: 'The watcher starts in Serve and nothing cancels it, so tests leak it.',
+            proposal: { kind: 'diff', content: '- go s.watch(ctx)\n+ go s.watch(s.ctx)\n+ defer s.cancel()' },
+            evidence: ['internal/server/server.go:84', 'go test ./internal/server -run TestShutdown: leaked goroutine before, none after'] },
+          { id: 'r2', source: 'riley-dev (reviewer)', quote: 'Please rename Ship to Vessel everywhere.', verdict: 'disagree',
+            reason: 'GLOSSARY.md defines the word as ship and every screen uses it.',
+            proposal: { kind: 'reply', content: 'Thanks. The glossary fixes the word as ship, so I am keeping it. I can add a glossary note if the name is confusing.' },
+            evidence: ['GLOSSARY.md: Ship', 'grep -c Vessel: 0 matches'] },
+          { id: 'r3', source: 'check: lint', quote: 'warning: exported function Serve should have a comment', verdict: 'unclear',
+            reason: 'The rule is not in the repo lint config, so it is unclear whether the check is required.',
+            proposal: { kind: 'reply', content: 'Which lint config is this from? It is not in .golangci.yml, so I could not reproduce it.' },
+            evidence: ['.golangci.yml has no revive rules', 'golangci-lint run: no warnings locally'] }] } }
+    ];
+  }
+
+  reasonWords(code) {
+    if (code.indexOf('permission:') === 0) { const tool = code.slice(11); return (tool === 'Bash' ? 'Wants to run ' : 'Wants to use ') + tool; }
+    if (code === 'question') return 'Asked a question';
+    if (code === 'stop') return 'Finished and is waiting';
+    if (code === 'bell') return 'Rang the bell';
+    if (code === 'idle') return 'Has gone quiet';
+    if (code === 'notification:permission_prompt') return 'Needs a permission answer';
+    if (code.indexOf('notification:') === 0) return 'Sent a notification';
+    return 'Needs you';
+  }
+  agoText(ms) {
+    const m = Math.max(0, Math.round(ms / 60000));
+    if (m < 1) return 'under a minute';
+    if (m < 60) return m + ' min';
+    const h = Math.floor(m / 60);
+    return h + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '');
+  }
+
+  // The queue: sample items and live stops, oldest first. Dismissing a ship
+  // deletes its inbox, so its items go with it.
+  // withGone keeps the items that have slid out, flagged, so the drawer can
+  // hold their place and its other cards keep their DOM nodes (and focus).
+  ibList(st, withGone) {
+    const live = st.ships.filter((x) => x.status === 'attention').map((x) => ({ id: 'live:' + x.id, kind: 'live', ship: x.id, t: x.since || 0 }));
+    const kept = st.ibItems.filter((it) => (withGone || !st.ibGone[it.id]) && st.ships.some((x) => x.id === it.ship)).map((it) => ({ id: it.id, kind: it.kind, ship: it.ship, t: it.created, it, gone: !!st.ibGone[it.id] }));
+    return kept.concat(live).sort((a, b) => a.t - b.t);
+  }
+
+  ibSet(id, fn) { this.put((st) => ({ ibUi: Object.assign({}, st.ibUi, { [id]: fn(st.ibUi[id] || {}) }) })); }
+  ibAns(id, qid, fn) {
+    this.ibSet(id, (u) => {
+      const a = Object.assign({ sel: [], other: false, otherText: '', note: '' }, (u.ans || {})[qid]);
+      return Object.assign({}, u, { ans: Object.assign({}, u.ans, { [qid]: fn(a) }) });
+    });
+  }
+  ibPickOpt(id, qid, label, multi) {
+    this.ibAns(id, qid, (a) => {
+      if (!multi) return Object.assign({}, a, { sel: [label], other: false });
+      const sel = a.sel.indexOf(label) >= 0 ? a.sel.filter((x) => x !== label) : a.sel.concat([label]);
+      return Object.assign({}, a, { sel });
+    });
+  }
+  ibPickOther(id, qid, multi) {
+    this.ibAns(id, qid, (a) => multi ? Object.assign({}, a, { other: !a.other }) : Object.assign({}, a, { other: true, sel: [] }));
+  }
+  ibMode(id, mode, event) { this.ibSet(id, (u) => Object.assign({}, u, { mode, event: event === undefined ? u.event : event })); }
+  ibDecide(id, cid, dec, proposal) {
+    this.ibSet(id, (u) => {
+      const txt = Object.assign({}, u.txt);
+      if (dec === 'edit' && txt[cid] === undefined) txt[cid] = proposal;
+      return Object.assign({}, u, { dec: Object.assign({}, u.dec, { [cid]: dec }), txt });
+    });
+  }
+  ibEditText(id, cid, v) { this.ibSet(id, (u) => Object.assign({}, u, { txt: Object.assign({}, u.txt, { [cid]: v }) })); }
+
+  // An action collapses the card to one line. About 5 s later it slides out,
+  // and the next card takes its place. The badge drops at the action.
+  ibResolve(id, text) {
+    this.put((st) => ({ ibDone: Object.assign({}, st.ibDone, { [id]: { text } }), ibCur: st.ibCur || id }));
+    setTimeout(() => this.ibReveal(id), 60);
+    setTimeout(() => this.put((st) => ({ ibDone: Object.assign({}, st.ibDone, { [id]: { text, leaving: true } }) })), 5000);
+    setTimeout(() => {
+      this.put((st) => {
+        const list = this.ibList(st);
+        const i = list.findIndex((e) => e.id === id);
+        const next = list[i + 1] || list[i - 1];
+        const cur = st.ibCur === id || !st.ibCur;
+        return { ibGone: Object.assign({}, st.ibGone, { [id]: true }), ibCur: cur ? (next ? next.id : null) : st.ibCur };
+      });
+      if (!this.S().wide) this.ibScrollTop();
+    }, 5450);
+  }
+  // Scrolls the card's folded line into the list's visible area (not the page).
+  ibReveal(id) {
+    try {
+      const el = document.querySelector('[data-ib="' + id + '"]');
+      const box = document.querySelector('[data-ib-list]');
+      if (!el || !box) return;
+      const b = box.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      if (r.top < b.top) box.scrollTop -= b.top - r.top + 8;
+      else if (r.bottom > b.bottom) box.scrollTop += r.bottom - b.bottom + 8;
+    } catch (err) {}
+  }
+  ibScrollTop() { setTimeout(() => { const box = document.querySelector('[data-ib-list]'); if (box) box.scrollTop = 0; }, 0); }
+  // The sheet is modal, so focus goes to it when it opens.
+  ibFocus() {
+    setTimeout(() => {
+      const a = document.querySelector('aside[aria-label="Needs you inbox"]');
+      if (a && !this.S().wide) a.focus({ preventScroll: true });
+    }, 30);
+  }
+  ibAttach(shipId) { this.put((st) => ({ open: shipId, focus: 'lead', draft: '', inboxOpen: !!st.wide })); }
+
+  ibModel(s) {
+    const self = this;
+    const { H, F } = this.D();
+    const now = Date.now();
+    const wide = !!s.wide;
+    const list = this.ibList(s);
+    const open = list.filter((e) => !s.ibDone[e.id]);
+    const count = open.length;
+    const cur = wide ? null : (list.find((e) => e.id === s.ibCur) || open[0] || list[0] || null);
+    const shown = wide ? this.ibList(s, true) : (cur ? [cur] : []);
+    const idx = cur ? list.indexOf(cur) : -1;
+    const rank = cur && !s.ibDone[cur.id] ? open.indexOf(cur) + 1 : 0;
+    const label = (url) => { const m = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(url); return m ? m[1] + '#' + m[2] : url; };
+    const KIND = { question: ['Question', '#DDF7F3'], review: ['Review', '#C9B6FF'], findings: ['Findings', '#FFE08A'], live: ['Needs you', '#FF9A7A'] };
+
+    const cards = shown.map((e) => {
+      if (e.gone) return { id: e.id, wrapCls: 'ib-gone', done: false, open: false };
+      const sh = s.ships.find((x) => x.id === e.ship);
+      const parts = sh.yard.split(':');
+      const h = H[parts[1]];
+      const f = F.find((x) => x.id === parts[0]);
+      const done = s.ibDone[e.id];
+      const u = s.ibUi[e.id] || {};
+      const c = {
+        id: e.id, shipName: sh.name, mono: h.mono, flag: h.flag, flagInk: h.ink, harness: h.name, fleetName: f.name, fleetColor: f.color,
+        done: !!done, open: !done, doneText: done ? done.text : '',
+        wrapCls: 'ib-wrap' + (done && done.leaving ? ' ib-slide' : ''),
+        kindLabel: KIND[e.kind][0], kindBg: KIND[e.kind][1],
+        isQuestion: false, isReview: false, isFindings: false, isLive: false, hasOrder: false
+      };
+      if (e.kind === 'live') {
+        const code = sh.reason || 'question';
+        c.isLive = true;
+        c.title = sh.task.id + ' ' + sh.task.title;
+        c.age = 'Waiting ' + self.agoText(now - (sh.since || now));
+        c.reasonText = self.reasonWords(code);
+        c.reasonCode = code;
+        c.attachAria = 'Attach to ' + sh.name + ' and open its bridge';
+        c.attach = () => self.ibAttach(sh.id);
+        return c;
+      }
+      const it = e.it;
+      c.title = it.title;
+      c.age = self.agoText(now - it.created) + ' ago';
+      c.hasOrder = !!it.order_url;
+      c.orderUrl = it.order_url;
+      if (e.kind === 'question') {
+        const qs = it.question.questions;
+        const ans = u.ans || {};
+        let answered = 0;
+        c.isQuestion = true;
+        c.qs = qs.map((q, qi) => {
+          const a = Object.assign({ sel: [], other: false, otherText: '', note: '' }, ans[q.id]);
+          const multi = !!q.multi;
+          if (a.sel.length > 0 || (a.other && a.otherText.trim() !== '')) answered++;
+          return {
+            aria: 'Question ' + (qi + 1), noteAria: 'Note for question ' + (qi + 1),
+            counter: (qs.length > 1 ? 'Question ' + (qi + 1) + ' of ' + qs.length + ' · ' : '') + (multi ? 'Choose any' : 'Choose one'),
+            text: q.text, note: a.note,
+            onNote: (ev) => { const v = ev.target.value; self.ibAns(e.id, q.id, (x) => Object.assign({}, x, { note: v })); },
+            opts: q.options.map((o) => {
+              const on = a.sel.indexOf(o.label) >= 0;
+              return { label: o.label, desc: o.description || '', hasDesc: !!o.description, rec: q.recommended === o.label, on, role: multi ? 'checkbox' : 'radio',
+                dotRadius: multi ? '6px' : '50%', cls: 'opt press' + (on ? ' on' : ''), pick: () => self.ibPickOpt(e.id, q.id, o.label, multi) };
+            }),
+            other: { on: a.other, role: multi ? 'checkbox' : 'radio', dotRadius: multi ? '6px' : '50%', cls: 'opt press' + (a.other ? ' on' : ''),
+              pick: () => self.ibPickOther(e.id, q.id, multi), text: a.otherText, aria: 'Your own answer to question ' + (qi + 1),
+              onText: (ev) => { const v = ev.target.value; self.ibAns(e.id, q.id, (x) => Object.assign({}, x, { otherText: v })); } }
+          };
+        });
+        c.sendOff = answered < qs.length;
+        c.progress = answered + ' of ' + qs.length + ' answered';
+        c.send = () => self.ibResolve(e.id, 'Answered');
+      } else if (e.kind === 'review') {
+        const r = it.review;
+        const mode = u.mode || null;
+        const EV = [['COMMENT', 'Leave comments without approving or blocking.', '#FFFDF6'], ['APPROVE', 'Approve the changes.', '#DDF7F3'], ['REQUEST_CHANGES', 'Block the merge until changes are made.', '#FFD9CC']];
+        c.isReview = true;
+        c.rv = {
+          summary: r.summary, prUrl: r.pr_url, prLabel: label(r.pr_url), reviewId: r.review_id, editHref: r.pr_url + '/files',
+          modeNone: !mode, modeChoose: mode === 'choose', modeConfirm: mode === 'confirm', modeDiscard: mode === 'discard', event: u.event || '',
+          events: EV.map((x) => ({ id: x[0], desc: x[1], bg: x[2], pick: () => self.ibMode(e.id, 'confirm', x[0]) })),
+          openSubmit: () => self.ibMode(e.id, 'choose'), askDiscard: () => self.ibMode(e.id, 'discard'),
+          cancel: () => self.ibMode(e.id, null), change: () => self.ibMode(e.id, 'choose'),
+          confirm: () => self.ibResolve(e.id, 'Review submitted: ' + u.event),
+          discard: () => self.ibResolve(e.id, 'Review discarded')
+        };
+      } else {
+        const d = u.dec || {};
+        const txt = u.txt || {};
+        const cards2 = it.findings.cards;
+        const VERDICT = { agree: ['Agree', '#9BE08A'], disagree: ['Disagree', '#FF9A7A'], unclear: ['Unclear', '#FFE08A'] };
+        const ON = '0 0 0 3px #FFC23D, 0 3px 0 #14304A';
+        const OFF = '0 2px 0 #14304A';
+        let decided = 0;
+        c.isFindings = true;
+        c.fd = {
+          prUrl: it.findings.pr_url, prLabel: label(it.findings.pr_url),
+          cards: cards2.map((k, ki) => {
+            const dec = d[k.id] || null;
+            if (dec) decided++;
+            const text = dec === 'edit' && txt[k.id] !== undefined ? txt[k.id] : k.proposal.content;
+            return {
+              verdict: VERDICT[k.verdict][0], verdictBg: VERDICT[k.verdict][1], source: k.source, quote: k.quote, reason: k.reason,
+              proposalLabel: k.proposal.kind === 'diff' ? 'Proposed change' : 'Proposed reply', text,
+              editing: dec === 'edit', shown: dec !== 'edit', textAria: 'Edit the proposal for card ' + (ki + 1), groupAria: 'Decision for card ' + (ki + 1),
+              onText: (ev) => self.ibEditText(e.id, k.id, ev.target.value),
+              evidence: k.evidence.map((t) => ({ t })),
+              isApprove: dec === 'approve', isEdit: dec === 'edit', isReject: dec === 'reject',
+              approveBg: dec === 'approve' ? '#9BE08A' : '#FFFDF6', editBg: dec === 'edit' ? '#FFF0B8' : '#FFFDF6', rejectBg: dec === 'reject' ? '#FF9A7A' : '#FFFDF6',
+              approveShadow: dec === 'approve' ? ON : OFF, editShadow: dec === 'edit' ? ON : OFF, rejectShadow: dec === 'reject' ? ON : OFF,
+              approve: () => self.ibDecide(e.id, k.id, 'approve', k.proposal.content),
+              edit: () => self.ibDecide(e.id, k.id, 'edit', k.proposal.content),
+              reject: () => self.ibDecide(e.id, k.id, 'reject', k.proposal.content)
+            };
+          })
+        };
+        c.sendOff = decided < cards2.length;
+        c.progress = decided + ' of ' + cards2.length + ' decided';
+        c.send = () => {
+          const n = { approve: 0, edit: 0, reject: 0 };
+          cards2.forEach((k) => { if (d[k.id]) n[d[k.id]]++; });
+          const bits = [];
+          if (n.approve) bits.push(n.approve + ' approved');
+          if (n.edit) bits.push(n.edit + ' edited');
+          if (n.reject) bits.push(n.reject + ' rejected');
+          self.ibResolve(e.id, 'Sent ' + bits.join(', '));
+        };
+      }
+      return c;
+    });
+
+    const prev = idx > 0 ? list[idx - 1] : null;
+    const next = idx >= 0 && idx < list.length - 1 ? list[idx + 1] : null;
+    return {
+      count, hasCount: count > 0,
+      btnAria: count ? 'Needs you, ' + count + (count === 1 ? ' item' : ' items') : 'Needs you, nothing waiting',
+      btnStyle: 'display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-radius: 999px; font-family: Bricolage Grotesque, sans-serif; font-weight: 700; font-size: 15px; '
+        + (count ? 'border: 2.5px solid #0B1F33; background-color: #FF7A59; color: #14304A' : 'border: 2px solid #3A6489; background-color: #21486B; color: #F4EEDF'),
+      cls: wide ? 'ib-drawer' : 'ib-sheet',
+      role: wide ? 'complementary' : 'dialog', modal: wide ? null : 'true',
+      style: wide ? 'flex: 0 0 400px; min-width: 0; position: sticky; top: 0; align-self: flex-start; height: calc(100dvh - 73px); outline: none; background-color: #FFF1CF; border-left: 3px solid #14304A'
+        : 'position: fixed; inset: 0; z-index: 40; outline: none; background-color: #FFF1CF',
+      headCount: wide ? (count ? count + ' waiting' : '') : '',
+      showNav: !wide && list.length > 0,
+      pos: cur ? (rank ? rank + ' of ' + count : count + ' left') : '',
+      backOff: !prev, nextOff: !next,
+      back: () => { if (prev) { self.put({ ibCur: prev.id }); self.ibScrollTop(); } },
+      next: () => { if (next) { self.put({ ibCur: next.id }); self.ibScrollTop(); } },
+      cards, empty: list.length === 0
+    };
   }
 
   renderVals() {
@@ -951,23 +1471,24 @@ class Component extends DCLogic {
       pick: (e) => { if (e && e.preventDefault) e.preventDefault(); self.put({ customText: k.name, acOpen: false, choice: 'custom' }); }
     }));
 
-    const need = s.ships.filter((x) => x.status === 'attention');
     const g = s.ghost;
+    const inbox = this.ibModel(s);
+    const drawer = !!(s.inboxOpen && s.wide);
 
     return {
       onMove: (e) => self.move(e),
       onUp: (e) => self.up(e),
       onCancel: () => self.cancel(),
       atSea: s.ships.filter((x) => x.status !== 'done').length,
-      need: need.length,
-      hasNeed: need.length > 0,
-      openNeed: () => { if (need[0]) self.put({ open: need[0].id, focus: 'lead', draft: '' }); },
+      inbox, inboxOpen: !!s.inboxOpen, rowWrap: drawer ? 'nowrap' : 'wrap', mainWrap: drawer ? 'nowrap' : 'wrap', bridgeWrap: drawer ? 'nowrap' : 'wrap',
+      toggleInbox: () => { self.put((st) => ({ inboxOpen: !st.inboxOpen })); self.ibFocus(); },
+      closeInbox: () => self.put({ inboxOpen: false }),
       sound: !!s.sound, muted: !s.sound,
       soundText: s.sound ? 'Sound on' : 'Muted',
       soundLabel: s.sound ? 'Mute attention sounds' : 'Turn attention sounds on',
       toggleSound: () => { const on = !self.S().sound; self.put({ sound: on }); if (on) setTimeout(() => self.chirp(), 30); },
-      sidebarOpen: !!s.sidebar, sidebarClosed: !s.sidebar,
-      toggleSidebar: () => self.put((st) => ({ sidebar: !st.sidebar })),
+      sidebarOpen: !!s.sidebar && !drawer, sidebarClosed: !s.sidebar || drawer,
+      toggleSidebar: () => self.put((st) => (st.inboxOpen && st.wide) ? { sidebar: true, inboxOpen: false } : { sidebar: !st.sidebar }),
       q: s.q || '',
       onFilter: (e) => self.put({ q: e.target.value }),
       panels, fleets, ships, lanes,
@@ -976,8 +1497,6 @@ class Component extends DCLogic {
       hasBridge: !!bridge,
       bridge: bridge || { ship: { task: {} }, agents: [], lines: [] },
       keys,
-      answerYes: () => self.sendRaw('y', { k: 'tool', t: '✓ approved. Carrying on.' }),
-      answerNo: () => self.sendRaw('n', { k: 'agent', t: 'Understood. Trying another approach.' }),
       closeBridge: () => self.put({ open: null, draft: '' }),
       dismiss: () => self.put((st) => ({ open: null, draft: '', ships: st.ships.filter((x) => x.id !== st.open) })),
       draft: s.draft || '',
