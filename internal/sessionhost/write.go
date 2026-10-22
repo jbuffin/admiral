@@ -32,7 +32,7 @@ func (h *Host) setPane(ctx context.Context, session, state, reason string) error
 	if reason != "" {
 		setReason = "set-option -p -t " + target + " " + ReasonOption + " " + tmuxQuote(reason)
 	}
-	_, err := h.commandList(ctx, setReason+" ; set-option -p -t "+target+" "+StateOption+" "+state, 2)
+	_, err := h.commandList(ctx, setReason, "set-option -p -t "+target+" "+StateOption+" "+state)
 	return err
 }
 

@@ -122,6 +122,8 @@ func TestShipHookReason(t *testing.T) {
 		"event PreToolUse "+`{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"`+secret+`"}]}}`,
 		"wait go6",
 		"event UserPromptSubmit "+`{"hook_event_name":"UserPromptSubmit","prompt":"go"}`,
+		"wait go7",
+		"event Notification "+`{"hook_event_name":"Notification","notification_type":"elicitation_dialog"}`,
 	)
 	w.start()
 	ship := w.launch(w.order("work", "claude", "hookreason", commodore, "x"))
@@ -149,11 +151,8 @@ func TestShipHookReason(t *testing.T) {
 	step(2, "needs_you", "permission:Bash") // the Notification after it doesn't replace it
 	release(2)
 	step(3, "working", "")
-	// A reason left beside working (a lost unset) is kept by the Notification's
-	// -o, but -q keeps tmux from skipping the state write that follows it.
-	w.mustTmux("set-option", "-p", "-t", ship.Session, "@admiral-reason", "stale")
 	release(3)
-	step(4, "needs_you", "stale")
+	step(4, "needs_you", "notification:permission_prompt")
 	release(4)
 	step(5, "needs_you", "permission:Edit") // the PermissionRequest after a Notification does
 	release(5)
@@ -163,6 +162,11 @@ func TestShipHookReason(t *testing.T) {
 	}
 	release(6)
 	step(7, "working", "")
+	// A reason left beside working (a lost unset) is kept by the Notification's
+	// -o, but -q keeps tmux from skipping the state write that follows it.
+	w.mustTmux("set-option", "-p", "-t", ship.Session, "@admiral-reason", "stale")
+	release(7)
+	step(8, "needs_you", "stale")
 }
 
 func readIf(p string) string {

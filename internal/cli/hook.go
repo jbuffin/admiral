@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
-	"strings"
 )
 
 // Hook is `admiral hook <event>`, the command every harness hook runs (ADR
@@ -24,8 +23,8 @@ func Hook(args []string, std IO) error {
 	if json.Unmarshal(raw, &p) != nil {
 		return nil
 	}
-	if state, reason := hookDecision(args[0], p); state != "" {
-		_ = exec.Command("tmux", hookCall(pane, state, reason)...).Run()
+	if state, reason, ifUnset := hookDecision(args[0], p); state != "" {
+		_ = exec.Command("tmux", hookCall(pane, state, reason, ifUnset)...).Run()
 	}
 	return nil
 }
@@ -35,12 +34,12 @@ func Hook(args []string, std IO) error {
 // needs_you without it. A notification's reason is written only if none is set
 // (-o), so permission:Bash survives Claude's PermissionRequest and Notification
 // in either order; -q keeps a set reason from making tmux skip the state write.
-func hookCall(pane, state, reason string) []string {
+func hookCall(pane, state, reason string, ifUnset bool) []string {
 	call := []string{"set", "-p"}
 	switch {
 	case reason == "":
 		call = append(call, "-u", "-t", pane, "@admiral-reason")
-	case strings.HasPrefix(reason, "notification"):
+	case ifUnset:
 		call = append(call, "-o", "-q", "-t", pane, "@admiral-reason", reason)
 	default:
 		call = append(call, "-t", pane, "@admiral-reason", reason)
@@ -65,45 +64,46 @@ type hookPayload struct {
 // @admiral-reason holds with it; "" for no state. Claude Code and Codex share
 // event names, so one rule serves both. Only a tool name or notification type
 // is ever kept in a reason, and only as a safe token: nothing else of the
-// payload is stored.
-func hookDecision(event string, p hookPayload) (state, reason string) {
+// payload is stored. ifUnset says the reason must not replace one already set:
+// a notification is Claude's second word on a prompt that PermissionRequest named.
+func hookDecision(event string, p hookPayload) (state, reason string, ifUnset bool) {
 	switch event {
 	case "PermissionRequest":
-		return "needs_you", withToken("permission", p.ToolName)
+		return "needs_you", withToken("permission", p.ToolName), false
 	case "PreToolUse":
 		if p.ToolName == "AskUserQuestion" {
-			return "needs_you", "question"
+			return "needs_you", "question", false
 		}
-		return "working", ""
+		return "working", "", false
 	case "UserPromptSubmit", "PostToolUse", "Interrupt", "postToolUse":
-		return "working", ""
+		return "working", "", false
 	case "Notification", "notification":
 		if p.NotificationType == "permission_prompt" || p.NotificationType == "elicitation_dialog" {
-			return "needs_you", withToken("notification", p.NotificationType)
+			return "needs_you", withToken("notification", p.NotificationType), true
 		}
 	case "Stop":
 		// Only a subagent or an agent-team teammate holds the turn open; a
 		// background shell (a Monitor) doesn't.
 		for _, t := range p.BackgroundTasks {
 			if t.Status == "running" && (t.Type == "subagent" || t.Type == "teammate") {
-				return "", ""
+				return "", "", false
 			}
 		}
-		return "needs_you", "stop"
+		return "needs_you", "stop", false
 	case "preToolUse":
 		if p.ToolNameCopilot == "ask_user" {
-			return "needs_you", "question"
+			return "needs_you", "question", false
 		}
 	case "agentStop":
 		if p.AgentID == "" {
-			return "needs_you", "stop"
+			return "needs_you", "stop", false
 		}
 	case "userPromptSubmitted":
 		if p.AgentID == "" {
-			return "working", ""
+			return "working", "", false
 		}
 	}
-	return "", ""
+	return "", "", false
 }
 
 var safeToken = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,64}$`)

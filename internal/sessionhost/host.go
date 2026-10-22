@@ -116,10 +116,10 @@ type Host struct {
 	unread   map[string]bool // sessions seen but unreadable (their row was malformed)
 	subs     map[chan Event]struct{}
 
-	cmdMu   sync.Mutex // one command at a time on the control connection
-	stdin   io.Writer
-	rep     chan reply
-	orphans int // replies still to come for commands that gave up waiting
+	cmdMu sync.Mutex // one command at a time on the control connection
+	stdin io.Writer
+	rep   chan reply
+	queue []*sent // command lists tmux has not finished answering, oldest first
 
 	lost bool // set by a failed connection, until the next successful read
 
@@ -237,7 +237,7 @@ func (h *Host) connect(ctx context.Context) error {
 	go func() { parsed <- p.run(stdout); close(p.replies) }()
 
 	h.cmdMu.Lock()
-	h.stdin, h.rep, h.orphans = stdin, p.replies, 0
+	h.stdin, h.rep, h.queue = stdin, p.replies, nil
 	h.cmdMu.Unlock()
 	defer func() {
 		_ = stdin.Close()
@@ -317,50 +317,63 @@ func (h *Host) poll(ctx context.Context) error {
 	return nil
 }
 
-// command sends one command line and waits for its reply. A command that
-// gives up (cancelled, or tmux too slow) still has a reply coming; it is
-// counted in orphans and discarded by the commands after it, so no command
-// ever reads another's reply.
-func (h *Host) command(ctx context.Context, line string) ([]string, error) {
-	return h.commandList(ctx, line, 1)
+// sent is a command list written to tmux and not yet fully answered.
+type sent struct {
+	left  int // replies still to come
+	lines []string
+	err   error
 }
 
-// commandList sends a line of n commands joined by `;` and waits for the n
-// replies tmux gives it, one per command. It runs the list as one unit, so no
-// other tmux client's command lands between them. It returns the last reply's
-// lines, and the first error among the replies.
-func (h *Host) commandList(ctx context.Context, line string, n int) ([]string, error) {
+// take records the next reply for the list. tmux stops a list at its first
+// failing command, so an error reply is the list's last.
+func (s *sent) take(r reply) {
+	s.left--
+	s.lines = r.lines
+	if r.err != nil {
+		s.err, s.left = r.err, 0
+	}
+}
+
+// command sends one command line and waits for its reply.
+func (h *Host) command(ctx context.Context, line string) ([]string, error) {
+	return h.commandList(ctx, line)
+}
+
+// commandList sends the commands as one `;`-joined line and waits for the reply
+// to each. tmux runs the list as one unit, so no other client's command lands
+// between them. It returns the last reply's lines, and the error of the command
+// that failed, after which tmux ran no more of the list. A list that gives up
+// (cancelled, or tmux too slow) stays in the queue, and the lists after it read
+// and discard its replies, so no list ever reads another's.
+func (h *Host) commandList(ctx context.Context, cmds ...string) ([]string, error) {
 	h.cmdMu.Lock()
 	defer h.cmdMu.Unlock()
 	if h.stdin == nil {
 		return nil, fmt.Errorf("not connected")
 	}
+	line := strings.Join(cmds, " ; ")
 	if _, err := io.WriteString(h.stdin, line+"\n"); err != nil {
 		return nil, err
 	}
-	pending := h.orphans + n // replies to read, ours the last n
-	var firstErr error
-	for {
+	mine := &sent{left: len(cmds)}
+	h.queue = append(h.queue, mine)
+	for mine.left > 0 {
 		select {
 		case r, ok := <-h.rep:
 			if !ok {
 				return nil, fmt.Errorf("control connection closed")
 			}
-			if pending <= n && firstErr == nil {
-				firstErr = r.err
-			}
-			if pending--; pending == 0 {
-				h.orphans = 0
-				return r.lines, firstErr
+			head := h.queue[0]
+			if head.take(r); head.left == 0 {
+				h.queue = h.queue[1:]
 			}
 		case <-ctx.Done():
-			h.orphans = pending
 			return nil, ctx.Err()
 		case <-time.After(10 * time.Second):
-			h.orphans = pending
 			return nil, fmt.Errorf("tmux did not answer %q", line)
 		}
 	}
+	return mine.lines, mine.err
 }
 
 // parseRows folds the rows of list-panes (one per pane) into one session each:
