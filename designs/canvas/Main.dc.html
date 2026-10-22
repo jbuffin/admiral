@@ -1108,7 +1108,7 @@ class Component extends DCLogic {
   // An action collapses the card to one line. About 5 s later it slides out,
   // and the next card takes its place. The badge drops at the action.
   ibResolve(id, text) {
-    this.put((st) => ({ ibDone: Object.assign({}, st.ibDone, { [id]: { text } }) }));
+    this.put((st) => ({ ibDone: Object.assign({}, st.ibDone, { [id]: { text } }), ibCur: st.ibCur || id }));
     setTimeout(() => this.put((st) => ({ ibDone: Object.assign({}, st.ibDone, { [id]: { text, leaving: true } }) })), 5000);
     setTimeout(() => this.put((st) => {
       const list = this.ibList(st);

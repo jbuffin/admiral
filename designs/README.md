@@ -29,7 +29,7 @@ Add `?scene=` to the prototype URL:
 - Tap a ship or a crew boat to board it. Type into the terminal (Shift+Enter for a new line), or use the key buttons on a touch screen; a ship that needs you is answered in its terminal. Full view gives the terminal the whole screen, and the chip under the ship's name copies `admiral attach <ship>`.
 - Drag ships around open water.
 - Open the inbox with the **Needs you** button in the header; its badge counts every item, live stops included. At 1024px wide and up it is a drawer on the right that sits beside the bridge, and the Orders sidebar collapses while it is open. Below 1024px it is a full-screen sheet with one item at a time, Back and Next. Resize the window to see both.
-- In the inbox, answer the questions (pick an option, or Other for your own answer, and send), submit a review (Submit, choose COMMENT, APPROVE or REQUEST_CHANGES, then confirm), discard a review, or approve, edit or reject each finding and send. The item folds to one line for about 5 seconds, then slides out and the badge has already dropped by one. A live stop has Attach, which opens that ship's bridge and never types into it.
+- In the inbox, answer a question (pick an option, or Other to write your own, then Send answers), submit a review (choose COMMENT, APPROVE or REQUEST_CHANGES, then confirm), discard a review, or approve, edit or reject each finding and Send. The item folds to one line for about 5 seconds and then slides out. The badge drops as soon as you act. A live stop has Attach, which opens that ship's bridge and types nothing into it.
 - Collapse panels or the whole sidebar; combine or split the Work queue (not in the MVP); filter.
 
 ## What is fake
