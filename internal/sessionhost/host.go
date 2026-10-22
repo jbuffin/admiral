@@ -56,15 +56,30 @@ const sep = "\x1f"
 
 // format is what one `list-panes -a` row holds.
 const format = "#{session_name}" + sep + "#{pane_dead}" + sep + "#{pane_dead_status}" + sep +
-	"#{pane_dead_signal}" + sep + "#{@admiral-bell}" + sep + "#{@admiral-state}" + sep +
+	"#{pane_dead_signal}" + sep + "#{pane_dead_time}" + sep + "#{@admiral-bell}" + sep + "#{@admiral-state}" + sep +
 	"#{@admiral-reason}" + sep + "#{@admiral-name}" + sep + "#{@admiral-fleet}" + sep + "#{@admiral-fleet-name}" + sep +
 	"#{@admiral-fleet-color}" + sep + "#{@admiral-harness}" + sep + "#{@admiral-dir}" + sep +
 	"#{@admiral-skill}" + sep + "#{@admiral-source}" + sep + "#{@admiral-order}" + sep +
-	"#{@admiral-launched}" + sep + "#{@admiral-title}" + sep + "#{@admiral-url}"
+	"#{@admiral-launched}" + sep + "#{@admiral-title}" + sep + "#{@admiral-url}" + sep +
+	"#{@admiral-" + OptEnded + "}" + sep + "#{@admiral-" + OptNeedsCount + "}" + sep +
+	"#{@admiral-" + OptNeedsSecs + "}" + sep + "#{@admiral-" + OptStopSince + "}"
 
-// optionNames are the session options in the order format lists them.
+// The session options Admiral keeps for the outcome log (ADR 0012): the marker
+// of a ship whose `ended` was written, and the running needs-you tally.
+const (
+	OptEnded      = "ended"
+	OptNeedsCount = "needs-count"
+	OptNeedsSecs  = "needs-s"
+	OptStopSince  = "stop-since"
+)
+
+// fixedFields is how many fields of a row come before the options.
+const fixedFields = 8
+
+// optionNames are the session options in the order format lists them. The last
+// four are Admiral's outcome bookkeeping (ended marker, needs-you tally).
 var optionNames = []string{"name", "fleet", "fleet-name", "fleet-color", "harness", "dir",
-	"skill", "source", "order", "launched", "title", "url"}
+	"skill", "source", "order", "launched", "title", "url", OptEnded, OptNeedsCount, OptNeedsSecs, OptStopSince}
 
 // Session is one tmux session as last read.
 type Session struct {
@@ -73,9 +88,10 @@ type Session struct {
 	State      string            // the pane option @admiral-state, "" until a hook sets it
 	Reason     string            // the pane option @admiral-reason: why the ship needs you, "" when it does not
 	PaneDead   bool
-	ExitStatus int    // valid when PaneDead and Signal is empty
-	Signal     string // the signal that killed the pane, e.g. "kill"; then there is no exit status
-	BellStamp  string // changes on every bell
+	ExitStatus int       // valid when PaneDead and Signal is empty
+	Signal     string    // the signal that killed the pane, e.g. "kill"; then there is no exit status
+	DeadTime   time.Time // when the pane died, at tmux's one-second resolution; zero while it lives
+	BellStamp  string    // changes on every bell
 }
 
 // IsShip is true for a session Admiral launched (or that looks like one).
@@ -146,13 +162,20 @@ func (h *Host) Socket() string { return h.sock }
 
 // Sessions returns the ships' sessions in a stable order (by name).
 func (h *Host) Sessions() []Session {
+	out, _ := h.Snapshot()
+	return out
+}
+
+// Snapshot is Sessions, and whether the connection to tmux is lost: then the
+// list is empty because nothing is known, not because the ships are gone.
+func (h *Host) Snapshot() (sessions []Session, lost bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	out := make([]Session, 0, len(h.order))
 	for _, n := range h.order {
 		out = append(out, h.sessions[n])
 	}
-	return out
+	return out, h.lost
 }
 
 // Unreadable lists the sessions tmux reports but whose options could not be
@@ -395,15 +418,18 @@ func parseRows(rows []string, known map[string]bool) (sessions map[string]Sessio
 		if name == Internal || !known[name] {
 			continue
 		}
-		if len(f) != 7+len(optionNames) {
+		if len(f) != fixedFields+len(optionNames) {
 			bad[name] = true
 			continue
 		}
-		s := Session{Name: name, PaneDead: f[1] == "1", Signal: f[3], BellStamp: f[4], State: f[5], Reason: f[6],
+		s := Session{Name: name, PaneDead: f[1] == "1", Signal: f[3], BellStamp: f[5], State: f[6], Reason: f[7],
 			Options: map[string]string{}}
 		s.ExitStatus, _ = strconv.Atoi(f[2])
+		if sec, err := strconv.ParseInt(f[4], 10, 64); err == nil && sec > 0 {
+			s.DeadTime = time.Unix(sec, 0)
+		}
 		for i, n := range optionNames {
-			s.Options[n] = f[7+i]
+			s.Options[n] = f[fixedFields+i]
 		}
 		if first, dup := sessions[name]; dup {
 			if !maps.Equal(first.Options, s.Options) {

@@ -12,10 +12,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/launcher"
+	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/state"
@@ -46,10 +48,10 @@ type Ship struct {
 
 // Orders is where a launch finds its order: the order sources.
 type Orders interface {
-	// Order is the text to launch with, the order's title, its repo and its web
-	// URL. It refuses with a launcher.Error when the source or the order is
-	// unknown.
-	Order(source, id string) (text, title, repo, url string, err *launcher.Error)
+	// Order is the text to launch with, the order's title, its repo, its web
+	// URL and the id of the panel it is in. It refuses with a launcher.Error
+	// when the source or the order is unknown.
+	Order(source, id string) (text, title, repo, url, panel string, err *launcher.Error)
 	// Launched tells the source its order was launched.
 	Launched(source, id string)
 }
@@ -63,6 +65,16 @@ type Service struct {
 	Orders   Orders
 	// OnChange runs after every push of the ships. It must not block.
 	OnChange func()
+	// Outcomes is the outcome log; nil keeps none.
+	Outcomes *outcomes.Writer
+
+	pass   sync.Mutex        // one observe at a time
+	mu     sync.Mutex        // guards tracks and what they point to
+	tracks map[string]*track // the ships the log follows, by session
+	// launching counts the launches under way: a name is not known before
+	// Launch returns, so removeShipFiles skips the delete, and keeps the files,
+	// until none is.
+	launching int
 }
 
 func (s *Service) ship(sess sessionhost.Session) Ship {
@@ -136,10 +148,13 @@ func (s *Service) Run(ctx context.Context) {
 	defer cancel()
 	select {
 	case <-s.Host.Ready():
+		// A ship that died while Admiral was stopped gets its `ended` first.
+		s.baselineAll()
+		s.observe(ctx)
 		// An exit-0 ship from before a restart is not shown sailing off again.
 		for _, sess := range s.Host.Sessions() {
 			if sess.IsShip() && exitedCleanly(sess) {
-				_ = s.Host.KillSession(ctx, sess.Name)
+				_ = s.killShip(ctx, sess.Name)
 			}
 		}
 		_ = s.Host.Sync(ctx)
@@ -154,11 +169,13 @@ func (s *Service) Run(ctx context.Context) {
 	defer timer.Stop()
 	for {
 		var bells []string
+		resumed := false
 		gone, changed := false, false
 		select {
 		case ev := <-events:
 			for more := true; more; { // one push for a burst
 				gone = gone || prunes(ev)
+				resumed = resumed || ev.Kind == sessionhost.Resumed
 				if ev.Kind == sessionhost.Bell {
 					bells = append(bells, ev.Session)
 				}
@@ -177,6 +194,10 @@ func (s *Service) Run(ctx context.Context) {
 		for _, name := range bells {
 			s.bell(ctx, name)
 		}
+		if resumed {
+			s.baselineAll()
+		}
+		s.observe(ctx)
 		s.sailOff(ctx, sailing)
 		if gone {
 			s.keep()
@@ -229,7 +250,7 @@ func (s *Service) sailOff(ctx context.Context, since map[string]time.Time) {
 			since[sess.Name] = now
 		}
 		if now.Sub(since[sess.Name]) >= SailOffDelay {
-			killed = s.Host.KillSession(ctx, sess.Name) == nil || killed
+			killed = s.killShip(ctx, sess.Name) == nil || killed
 		}
 	}
 	for name := range since {
@@ -285,6 +306,7 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
 		return
 	}
+	var panel string
 	// An order from a source is launched with the source's text, whatever the
 	// client sent. Without a source the client's own text is used.
 	if req.Source != "" {
@@ -293,11 +315,15 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var lerr *launcher.Error
-		if req.Text, req.Title, _, req.URL, lerr = s.Orders.Order(req.Source, req.OrderID); lerr != nil {
+		if req.Text, req.Title, _, req.URL, panel, lerr = s.Orders.Order(req.Source, req.OrderID); lerr != nil {
 			writeError(w, lerr.Status, lerr.Msg)
 			return
 		}
 	}
+	s.mu.Lock()
+	s.launching++
+	s.mu.Unlock()
+	defer s.launchDone()
 	got, err := s.Launcher.Launch(req)
 	if err != nil {
 		if le, ok := err.(*launcher.Error); ok {
@@ -308,6 +334,7 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.State.SetLastDir(req.Fleet, req.Harness, got.Options["dir"]) // the cleaned path the launch used
+	s.launched(req, got, panel)
 	if req.Source != "" {
 		s.Orders.Launched(req.Source, req.OrderID)
 	}
@@ -419,7 +446,10 @@ func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "ship "+session+" is "+st+", and only an anchored ship can be dismissed")
 		return
 	}
-	if err := s.Host.KillSession(ctx, session); err != nil {
+	s.observe(ctx) // the ship's `ended` goes into the log before `dismissed`
+	s.retryEnded(sess)
+	s.record(outcomes.Record{Ship: session, Event: "dismissed"}, nil)
+	if err := s.killShip(ctx, session); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -427,4 +457,29 @@ func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 	s.keep()
 	s.broadcast()
 	writeJSON(w, http.StatusOK, map[string]any{"dismissed": session})
+}
+
+// launched writes the `launched` record of a ship just created and starts
+// following it: no other record of a ship comes before this one.
+func (s *Service) launched(req launcher.Request, got *launcher.Launched, panel string) {
+	o := got.Options
+	s.record(outcomes.Record{Ship: got.Session, Event: "launched", Fields: map[string]any{
+		"fleet": o["fleet"], "harness": req.Harness, "skill": map[string]string{"kind": req.Skill.Kind, "name": o["skill"]},
+		"source": req.Source, "panel": panel, "order_id": req.OrderID, "order_url": o["url"], "title": o["title"],
+		"dir": o["dir"], "autopilot": false,
+	}}, nil)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.tracks == nil {
+		s.tracks = map[string]*track{}
+	}
+	s.tracks[got.Session] = &track{tally: tally{Status: StatusUnderway}, saved: map[string]string{}}
+}
+
+// launchDone ends the launch serveLaunch counted, once the launch has failed or
+// its ship is in the host's list.
+func (s *Service) launchDone() {
+	s.mu.Lock()
+	s.launching--
+	s.mu.Unlock()
 }

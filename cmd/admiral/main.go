@@ -24,6 +24,7 @@ import (
 	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/launchorders"
+	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
@@ -163,7 +164,10 @@ func serve(args []string) error {
 	sock := filepath.Join(dir, "tmux.sock")
 	hub := server.NewHub()
 	host := sessionhost.New(tmuxPath, sock)
-	shipService := &ships.Service{Host: host, State: st, Hub: hub, Launcher: &launcher.Launcher{
+	outcomeLog := outcomes.New(filepath.Join(dir, "outcomes"), func(format string, args ...any) {
+		fmt.Fprintf(os.Stderr, "admiral: "+format+"\n", args...)
+	})
+	shipService := &ships.Service{Host: host, State: st, Hub: hub, Outcomes: outcomeLog, Launcher: &launcher.Launcher{
 		Tmux: tmuxPath, Socket: sock, Home: dir, Config: cfg.Current}}
 
 	if err := sources.InstallPlugins(dir); err != nil {
@@ -186,7 +190,12 @@ func serve(args []string) error {
 	bg, stopBackground := context.WithCancel(context.Background())
 	var background sync.WaitGroup
 	supervisor.Start(bg)
-	runs := []func(context.Context){shipService.Run, s.WatchConfig, sourceService.Run, bridgeService.Run}
+	// The ships' run stops first and the log closes next, while the host is
+	// still up, so a written `ended` can still set its marker.
+	shipsCtx, stopShips := context.WithCancel(bg)
+	shipsDone := make(chan struct{})
+	go func() { defer close(shipsDone); shipService.Run(shipsCtx) }()
+	runs := []func(context.Context){s.WatchConfig, sourceService.Run, bridgeService.Run}
 	if tmuxPath != "" {
 		runs = append(runs, host.Run)
 	}
@@ -195,6 +204,9 @@ func serve(args []string) error {
 		go func() { defer background.Done(); run(bg) }()
 	}
 	defer func() {
+		stopShips()
+		<-shipsDone
+		outcomeLog.Close()
 		stopBackground()
 		background.Wait()
 		supervisor.Wait()

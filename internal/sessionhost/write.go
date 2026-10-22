@@ -1,6 +1,10 @@
 package sessionhost
 
-import "context"
+import (
+	"context"
+	"sort"
+	"strings"
+)
 
 // StateOption is the pane option the hooks write: needs_you or working.
 const StateOption = Prefix + "state"
@@ -34,6 +38,36 @@ func (h *Host) setPane(ctx context.Context, session, state, reason string) error
 	}
 	_, err := h.commandList(ctx, setReason, "set-option -p -t "+target+" "+StateOption+" "+state)
 	return err
+}
+
+// SetOptions writes session options of the ship in one command list. Names are
+// without the prefix; an empty value unsets the option. Unlike a pane option, a
+// session option is stored while the pane is dead.
+func (h *Host) SetOptions(ctx context.Context, session string, opts map[string]string) error {
+	names := make([]string, 0, len(opts))
+	for n := range opts {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	target := tmuxQuote("=" + session + ":")
+	cmds := make([]string, 0, len(names))
+	for _, n := range names {
+		if opts[n] == "" {
+			cmds = append(cmds, "set-option -u -t "+target+" "+Prefix+n)
+		} else {
+			cmds = append(cmds, "set-option -t "+target+" "+Prefix+n+" "+tmuxQuote(opts[n]))
+		}
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	_, err := h.commandList(ctx, cmds...)
+	return err
+}
+
+// IsNoSession is whether err is tmux saying the session is not there.
+func IsNoSession(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "can't find session")
 }
 
 // KillSession ends the ship's session, whatever its pane is doing.
