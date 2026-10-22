@@ -23,28 +23,29 @@ func Hook(args []string, std IO) error {
 	if json.Unmarshal(raw, &p) != nil {
 		return nil
 	}
-	if state, reason, ifUnset := hookDecision(args[0], p); state != "" {
-		_ = exec.Command("tmux", hookCall(pane, state, reason, ifUnset)...).Run()
+	if w := hookDecision(args[0], p); w.state != "" {
+		_ = exec.Command("tmux", hookCall(pane, w)...).Run()
 	}
 	return nil
 }
 
 // hookCall is the one tmux call that writes the reason and the state, reason
 // first (for working too, as Host.setPane does) so the poll never sees
-// needs_you without it. A notification's reason is written only if none is set
-// (-o), so permission:Bash survives Claude's PermissionRequest and Notification
-// in either order; -q keeps a set reason from making tmux skip the state write.
-func hookCall(pane, state, reason string, ifUnset bool) []string {
+// needs_you without it. A write with ifUnset (a notification's) sets the reason
+// only if none is set (-o), so permission:Bash survives Claude's
+// PermissionRequest and Notification in either order; -q keeps a set reason from
+// making tmux skip the state write.
+func hookCall(pane string, w hookWrite) []string {
 	call := []string{"set", "-p"}
 	switch {
-	case reason == "":
+	case w.reason == "":
 		call = append(call, "-u", "-t", pane, "@admiral-reason")
-	case ifUnset:
-		call = append(call, "-o", "-q", "-t", pane, "@admiral-reason", reason)
+	case w.ifUnset:
+		call = append(call, "-o", "-q", "-t", pane, "@admiral-reason", w.reason)
 	default:
-		call = append(call, "-t", pane, "@admiral-reason", reason)
+		call = append(call, "-t", pane, "@admiral-reason", w.reason)
 	}
-	return append(call, ";", "set", "-p", "-t", pane, "@admiral-state", state)
+	return append(call, ";", "set", "-p", "-t", pane, "@admiral-state", w.state)
 }
 
 // hookPayload holds the fields of Claude Code's, Codex's and Copilot's hook
@@ -60,50 +61,57 @@ type hookPayload struct {
 	} `json:"background_tasks"` // Claude Code's Stop; Codex sends none
 }
 
-// hookDecision is the state an event sets and, for needs_you, the short code
-// @admiral-reason holds with it; "" for no state. Claude Code and Codex share
-// event names, so one rule serves both. Only a tool name or notification type
-// is ever kept in a reason, and only as a safe token: nothing else of the
-// payload is stored. ifUnset says the reason must not replace one already set:
-// a notification is Claude's second word on a prompt that PermissionRequest named.
-func hookDecision(event string, p hookPayload) (state, reason string, ifUnset bool) {
+// hookWrite is what a hook writes to the pane: the state, and for needs_you the
+// short code @admiral-reason holds with it. ifUnset says the reason must not
+// replace one already set: a notification is Claude's second word on a prompt
+// that PermissionRequest named.
+type hookWrite struct {
+	state, reason string
+	ifUnset       bool
+}
+
+// hookDecision is what an event writes; a zero hookWrite is no state. Claude
+// Code and Codex share event names, so one rule serves both. Only a tool name or
+// notification type is ever kept in a reason, and only as a safe token: nothing
+// else of the payload is stored.
+func hookDecision(event string, p hookPayload) hookWrite {
 	switch event {
 	case "PermissionRequest":
-		return "needs_you", withToken("permission", p.ToolName), false
+		return hookWrite{state: "needs_you", reason: withToken("permission", p.ToolName)}
 	case "PreToolUse":
 		if p.ToolName == "AskUserQuestion" {
-			return "needs_you", "question", false
+			return hookWrite{state: "needs_you", reason: "question"}
 		}
-		return "working", "", false
+		return hookWrite{state: "working"}
 	case "UserPromptSubmit", "PostToolUse", "Interrupt", "postToolUse":
-		return "working", "", false
+		return hookWrite{state: "working"}
 	case "Notification", "notification":
 		if p.NotificationType == "permission_prompt" || p.NotificationType == "elicitation_dialog" {
-			return "needs_you", withToken("notification", p.NotificationType), true
+			return hookWrite{state: "needs_you", reason: withToken("notification", p.NotificationType), ifUnset: true}
 		}
 	case "Stop":
 		// Only a subagent or an agent-team teammate holds the turn open; a
 		// background shell (a Monitor) doesn't.
 		for _, t := range p.BackgroundTasks {
 			if t.Status == "running" && (t.Type == "subagent" || t.Type == "teammate") {
-				return "", "", false
+				return hookWrite{}
 			}
 		}
-		return "needs_you", "stop", false
+		return hookWrite{state: "needs_you", reason: "stop"}
 	case "preToolUse":
 		if p.ToolNameCopilot == "ask_user" {
-			return "needs_you", "question", false
+			return hookWrite{state: "needs_you", reason: "question"}
 		}
 	case "agentStop":
 		if p.AgentID == "" {
-			return "needs_you", "stop", false
+			return hookWrite{state: "needs_you", reason: "stop"}
 		}
 	case "userPromptSubmitted":
 		if p.AgentID == "" {
-			return "working", "", false
+			return hookWrite{state: "working"}
 		}
 	}
-	return "", "", false
+	return hookWrite{}
 }
 
 var safeToken = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,64}$`)

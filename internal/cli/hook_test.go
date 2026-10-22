@@ -51,7 +51,7 @@ func TestHookReason(t *testing.T) {
 			if err := json.Unmarshal([]byte(c.payload), &p); err != nil {
 				t.Fatal(err)
 			}
-			if _, got, _ := hookDecision(c.event, p); got != c.want {
+			if got := hookDecision(c.event, p).reason; got != c.want {
 				t.Errorf("hookDecision(%s) reason = %q, want %q", c.event, got, c.want)
 			}
 		})

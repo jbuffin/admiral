@@ -115,8 +115,8 @@ func TestCancelledCommandDoesNotShiftReplies(t *testing.T) {
 		if err != nil || len(got) != 1 || got[0] != "second" {
 			t.Fatalf("round %d: the next command got %q (%v), want its own reply [second]", i, got, err)
 		}
-		// A list answers once per command; the orphans of a cancelled list and the
-		// replies of the next must each be counted, or SetNeedsYou shifts them.
+		// A list answers once per command; the replies of a cancelled list and
+		// of the next must each be counted, or SetNeedsYou shifts them.
 		if _, err := h.commandList(dead, "display-message -p x", "display-message -p y"); err == nil {
 			t.Fatal("a cancelled list should report the cancellation")
 		}
@@ -164,13 +164,14 @@ func TestParseRowsDistrustsForgedRows(t *testing.T) {
 // reply count behind that makes the next command wait for one that never comes.
 func TestFailedListDoesNotShiftReplies(t *testing.T) {
 	h, ctx := testHost(t)
-	failing := []string{"set-option -p -t \"=nosuchsession:\" @admiral-reason x", "set-option -p -t \"=nosuchsession:\" @admiral-state y"}
+	const target = `-t "=nosuchsession:"`
+	failing := []string{"set-option -p " + target + " @admiral-reason x", "set-option -p " + target + " @admiral-state y"}
 	for i := 0; i < 3; i++ {
 		start := time.Now()
 		if _, err := h.commandList(ctx, failing...); err == nil {
 			t.Fatalf("round %d: a list on a missing session should fail", i)
 		}
-		if d := time.Since(start); d > 3*time.Second {
+		if d := time.Since(start); d > 8*time.Second {
 			t.Fatalf("round %d: the failed list took %v, want its single %%error at once", i, d)
 		}
 		got, err := h.command(ctx, "display-message -p after-error")

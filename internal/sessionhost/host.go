@@ -119,7 +119,7 @@ type Host struct {
 	cmdMu sync.Mutex // one command at a time on the control connection
 	stdin io.Writer
 	rep   chan reply
-	queue []*sent // command lists tmux has not finished answering, oldest first
+	queue []*inflight // command lists tmux has not finished answering, oldest first
 
 	lost bool // set by a failed connection, until the next successful read
 
@@ -317,8 +317,8 @@ func (h *Host) poll(ctx context.Context) error {
 	return nil
 }
 
-// sent is a command list written to tmux and not yet fully answered.
-type sent struct {
+// inflight is a command list written to tmux and not yet fully answered.
+type inflight struct {
 	left  int // replies still to come
 	lines []string
 	err   error
@@ -326,7 +326,7 @@ type sent struct {
 
 // take records the next reply for the list. tmux stops a list at its first
 // failing command, so an error reply is the list's last.
-func (s *sent) take(r reply) {
+func (s *inflight) take(r reply) {
 	s.left--
 	s.lines = r.lines
 	if r.err != nil {
@@ -346,6 +346,9 @@ func (h *Host) command(ctx context.Context, line string) ([]string, error) {
 // (cancelled, or tmux too slow) stays in the queue, and the lists after it read
 // and discard its replies, so no list ever reads another's.
 func (h *Host) commandList(ctx context.Context, cmds ...string) ([]string, error) {
+	if len(cmds) == 0 {
+		return nil, fmt.Errorf("no commands to send")
+	}
 	h.cmdMu.Lock()
 	defer h.cmdMu.Unlock()
 	if h.stdin == nil {
@@ -355,7 +358,7 @@ func (h *Host) commandList(ctx context.Context, cmds ...string) ([]string, error
 	if _, err := io.WriteString(h.stdin, line+"\n"); err != nil {
 		return nil, err
 	}
-	mine := &sent{left: len(cmds)}
+	mine := &inflight{left: len(cmds)}
 	h.queue = append(h.queue, mine)
 	for mine.left > 0 {
 		select {
