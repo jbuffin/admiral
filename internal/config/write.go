@@ -34,7 +34,18 @@ func SetSources(dir string, sources json.RawMessage) error {
 	if !json.Valid(sources) {
 		return fmt.Errorf("sources: not valid JSON")
 	}
-	return setKey(dir, "sources", sources)
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	path := filepath.Join(dir, FileName)
+	_, out, err := renderKey(path, "sources", sources)
+	if err != nil {
+		return err
+	}
+	// The whole file, not the sources alone: an autopilot entry names a fleet.
+	if _, err := Parse(out); err != nil {
+		return err
+	}
+	return replaceFile(path, out)
 }
 
 // setKey replaces one top-level key, keeping every other key, value and the

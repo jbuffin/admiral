@@ -42,6 +42,12 @@ type Request struct {
 	// the source's order, never by the client.
 	Title string `json:"-"`
 	URL   string `json:"-"`
+	// Autopilot, LowStakes and ExtraArgs are set by autopilot, never by the
+	// client: this launch is autopilot's, how it treats a low-stakes decision,
+	// and the panel's args for the harness.
+	Autopilot bool     `json:"-"`
+	LowStakes string   `json:"-"`
+	ExtraArgs []string `json:"-"`
 }
 
 // Skill is the order's skill: Commodore, a named one, or none (Just launch).
@@ -154,6 +160,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	}
 
 	argv := append([]string{exe}, dock.Args...)
+	argv = append(argv, req.ExtraArgs...)
 	prompt := promptFor(req.Harness, skill, req.Skill.Kind, req.Note, req.Text)
 	switch req.Harness {
 	case "claude":
@@ -187,7 +194,20 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		return nil, err
 	}
 
-	if err := l.create(session, req.Dir, opts, env, argv); err != nil {
+	// Admiral owns both names: a hand launch has neither, even if the fleet's
+	// env or Admiral's own environment (which the tmux server inherits) sets them.
+	var unset []string
+	if req.Autopilot {
+		env["ADMIRAL_AUTOPILOT"] = "1"
+		env["ADMIRAL_LOW_STAKES"] = req.LowStakes
+	} else {
+		for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES"} {
+			delete(env, k)
+			unset = append(unset, k)
+		}
+	}
+
+	if err := l.create(session, req.Dir, opts, env, unset, argv); err != nil {
 		return nil, err
 	}
 	out := &Launched{Session: session, Options: map[string]string{}}
@@ -379,7 +399,7 @@ func (l *Launcher) pickName() (string, error) {
 // create makes the session on a placeholder, sets its options, then replaces
 // the placeholder with the harness: new-session starts its command at once, and
 // the harness's first hook must find the options already there.
-func (l *Launcher) create(session, dir string, opts [][2]string, env map[string]string, argv []string) error {
+func (l *Launcher) create(session, dir string, opts [][2]string, env map[string]string, unset, argv []string) error {
 	target := "=" + session + ":" // "=" matches the name exactly; tmux wants the colon
 	pane := target
 	cdir := strings.ReplaceAll(dir, "#", "##") // tmux format-expands -c; ## is a literal #
@@ -390,6 +410,10 @@ func (l *Launcher) create(session, dir string, opts [][2]string, env map[string]
 	}
 	for _, o := range opts {
 		cmds = append(cmds, []string{"set-option", "-t", target, "@admiral-" + o[0], o[1]})
+	}
+	for _, k := range unset {
+		// -r, not -u: -u would fall back to the server's own environment.
+		cmds = append(cmds, []string{"set-environment", "-r", "-t", target, k})
 	}
 	keys := make([]string, 0, len(env))
 	for k := range env {
