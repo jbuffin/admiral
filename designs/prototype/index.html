@@ -87,6 +87,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 .ib-drawer{animation:ibdrawer .28s cubic-bezier(.2,.9,.3,1) both}
 .ib-sheet{animation:ibsheet .3s cubic-bezier(.2,.9,.3,1) both}
 .ib-fold{animation:ibfold .25s ease-out both}
+.ib-gone{display:none}
 .ib-wrap.ib-slide{overflow:hidden;animation:ibslide .45s ease-in forwards}
 @keyframes ibdrawer{0%{transform:translateX(100%);opacity:.4}100%{transform:none;opacity:1}}
 @keyframes ibsheet{0%{transform:translateY(100%)}100%{transform:none}}
@@ -197,7 +198,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </aside>
 </sc-if>
 
-<main aria-label="Open water" style="flex: 999 1 640px; min-width: 0; min-height: 760px; position: relative; overflow: hidden; background-color: #29B2C2; display: flex; flex-wrap: wrap; align-items: stretch">
+<main aria-label="Open water" style="flex: 999 1 640px; min-width: 0; min-height: 760px; position: relative; overflow: hidden; background-color: #29B2C2; display: flex; flex-wrap: {{mainWrap}}; align-items: stretch">
 <svg style="position: absolute; left: 0; top: 0; width: 100%; height: 100%" viewBox="0 0 1000 760" preserveAspectRatio="xMidYMid slice" fill="none" aria-hidden="true">
 <circle cx="420" cy="390" r="200" stroke="#5FCFD9" stroke-width="3" opacity="0.45"></circle>
 <circle cx="420" cy="390" r="140" stroke="#5FCFD9" stroke-width="2" stroke-dasharray="4 10" opacity="0.45"></circle>
@@ -346,7 +347,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </div>
 
 <sc-if value="{{hasBridge}}" hint-placeholder-val="{{ false }}">
-<div style="position: absolute; inset: 0; z-index: 6; background-color: rgba(11,31,51,.42); padding: 14px; display: flex; flex-wrap: wrap; gap: 14px; align-items: stretch; overflow: auto">
+<div style="position: absolute; inset: 0; z-index: 6; background-color: rgba(11,31,51,.42); padding: 14px; display: flex; flex-wrap: {{bridgeWrap}}; gap: 14px; align-items: stretch; overflow: auto">
 <nav aria-label="Session flotilla" style="flex: 1 1 200px; display: flex; flex-direction: column; gap: 10px; min-width: 0">
 <span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 15px; color: #FFF6E3; padding: 0 4px">Flotilla · {{bridge.crewCount}}</span>
 <sc-for list="{{bridge.agents}}" as="agent" hint-placeholder-count="3">
@@ -421,7 +422,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </main>
 
 <sc-if value="{{inboxOpen}}" hint-placeholder-val="{{ true }}">
-<aside aria-label="Needs you inbox" class="{{inbox.cls}}" style="{{inbox.style}}">
+<aside aria-label="Needs you inbox" role="{{inbox.role}}" aria-modal="{{inbox.modal}}" tabindex="-1" class="{{inbox.cls}}" style="{{inbox.style}}">
 <div style="position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0">
 <div style="flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 16px; background-color: #FFF6E3; border-bottom: 3px solid #14304A">
 <h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 24px; line-height: 1.05; letter-spacing: -0.01em; color: #14304A">Needs you</h2>
@@ -429,9 +430,9 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <button type="button" class="press" onClick="{{closeInbox}}" aria-label="Close the inbox" style="width: 44px; height: 44px; flex: 0 0 auto; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
 </div>
 
-<div style="flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 14px 14px 20px; display: flex; flex-direction: column; gap: 14px">
+<div data-ib-list="1" style="flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 14px 14px 20px; display: flex; flex-direction: column; gap: 14px">
 <sc-for list="{{inbox.cards}}" as="c" hint-placeholder-count="3">
-<div class="{{c.wrapCls}}">
+<div class="{{c.wrapCls}}" data-ib="{{c.id}}">
 
 <sc-if value="{{c.done}}" hint-placeholder-val="{{ false }}">
 <div class="ib-fold" role="status" style="display: flex; align-items: center; gap: 10px; min-height: 58px; padding: 8px 14px; border-radius: 16px; border: 2.5px solid #14304A; background-color: #DDF7F3; box-shadow: 0 3px 0 #14304A">
@@ -1134,18 +1135,22 @@ class Component extends DCLogic {
   }
 
   // ---- Needs You inbox (prototype for #116) ----
-  // Items follow the contract in #112. The ship an item belongs to is the
-  // inbox directory it sits in, so it is a key beside the item, not a field.
-  isWide() { try { return window.matchMedia('(min-width: 1024px)').matches; } catch (err) { return true; } }
+  // Items follow the contract in #112, which has no ship field: the ship is
+  // the inbox directory a file sits in. The sample items carry `ship` beside
+  // the contract fields only to stand in for that directory.
+  // Wide is the drawer: 1024px and up, in landscape. Phones and iPads in portrait get the sheet.
+  wideQuery() { return '(min-width: 1024px) and (orientation: landscape)'; }
+  isWide() { try { return window.matchMedia(this.wideQuery()).matches; } catch (err) { return true; } }
 
   componentDidMount() {
     try {
-      const mq = window.matchMedia('(min-width: 1024px)');
+      const mq = window.matchMedia(this.wideQuery());
       this.mq = mq;
       this.onMq = () => this.put({ wide: mq.matches });
       if (mq.addEventListener) mq.addEventListener('change', this.onMq); else mq.addListener(this.onMq);
       this.onMq();
     } catch (err) {}
+    this.ibFocus();
     this.clock = setInterval(() => this.put({ tick: Date.now() }), 30000);
   }
   componentWillUnmount() {
@@ -1178,8 +1183,8 @@ class Component extends DCLogic {
         review: { pr_url: 'https://github.com/example/mobile-app/pull/88', review_id: 4182913,
           summary: 'The retry queue is saved to disk and drains on reconnect, and the tests cover both. One concern: the drain loop has no upper bound on batch size, so a long outage could send thousands of requests at once. Two nits on naming.' } },
       { id: 'f-1', ship: 's3', kind: 'findings', created: ago(33), title: 'Feedback on the server scaffold PR',
-        order_url: 'https://github.com/jbuffin/admiral/issues/1',
-        findings: { pr_url: 'https://github.com/jbuffin/admiral/pull/130', cards: [
+        order_url: 'https://github.com/example/admiral/issues/1',
+        findings: { pr_url: 'https://github.com/example/admiral/pull/130', cards: [
           { id: 'r1', source: 'copilot-pull-request-reviewer', quote: 'This goroutine is never stopped when the server shuts down.', verdict: 'agree',
             reason: 'The watcher starts in Serve and nothing cancels it, so tests leak it.',
             proposal: { kind: 'diff', content: '- go s.watch(ctx)\n+ go s.watch(s.ctx)\n+ defer s.cancel()' },
@@ -1215,9 +1220,11 @@ class Component extends DCLogic {
 
   // The queue: sample items and live stops, oldest first. Dismissing a ship
   // deletes its inbox, so its items go with it.
-  ibList(st) {
+  // withGone keeps the items that have slid out, flagged, so the drawer can
+  // hold their place and its other cards keep their DOM nodes (and focus).
+  ibList(st, withGone) {
     const live = st.ships.filter((x) => x.status === 'attention').map((x) => ({ id: 'live:' + x.id, kind: 'live', ship: x.id, t: x.since || 0 }));
-    const kept = st.ibItems.filter((it) => !st.ibGone[it.id] && st.ships.some((x) => x.id === it.ship)).map((it) => ({ id: it.id, kind: it.kind, ship: it.ship, t: it.created, it }));
+    const kept = st.ibItems.filter((it) => (withGone || !st.ibGone[it.id]) && st.ships.some((x) => x.id === it.ship)).map((it) => ({ id: it.id, kind: it.kind, ship: it.ship, t: it.created, it, gone: !!st.ibGone[it.id] }));
     return kept.concat(live).sort((a, b) => a.t - b.t);
   }
 
@@ -1252,14 +1259,38 @@ class Component extends DCLogic {
   // and the next card takes its place. The badge drops at the action.
   ibResolve(id, text) {
     this.put((st) => ({ ibDone: Object.assign({}, st.ibDone, { [id]: { text } }), ibCur: st.ibCur || id }));
+    setTimeout(() => this.ibReveal(id), 60);
     setTimeout(() => this.put((st) => ({ ibDone: Object.assign({}, st.ibDone, { [id]: { text, leaving: true } }) })), 5000);
-    setTimeout(() => this.put((st) => {
-      const list = this.ibList(st);
-      const i = list.findIndex((e) => e.id === id);
-      const next = list[i + 1] || list[i - 1];
-      const cur = st.ibCur === id || !st.ibCur;
-      return { ibGone: Object.assign({}, st.ibGone, { [id]: true }), ibCur: cur ? (next ? next.id : null) : st.ibCur };
-    }), 5450);
+    setTimeout(() => {
+      this.put((st) => {
+        const list = this.ibList(st);
+        const i = list.findIndex((e) => e.id === id);
+        const next = list[i + 1] || list[i - 1];
+        const cur = st.ibCur === id || !st.ibCur;
+        return { ibGone: Object.assign({}, st.ibGone, { [id]: true }), ibCur: cur ? (next ? next.id : null) : st.ibCur };
+      });
+      if (!this.S().wide) this.ibScrollTop();
+    }, 5450);
+  }
+  // Scrolls the card's folded line into the list's visible area (not the page).
+  ibReveal(id) {
+    try {
+      const el = document.querySelector('[data-ib="' + id + '"]');
+      const box = document.querySelector('[data-ib-list]');
+      if (!el || !box) return;
+      const b = box.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      if (r.top < b.top) box.scrollTop -= b.top - r.top + 8;
+      else if (r.bottom > b.bottom) box.scrollTop += r.bottom - b.bottom + 8;
+    } catch (err) {}
+  }
+  ibScrollTop() { setTimeout(() => { const box = document.querySelector('[data-ib-list]'); if (box) box.scrollTop = 0; }, 0); }
+  // The sheet is modal, so focus goes to it when it opens.
+  ibFocus() {
+    setTimeout(() => {
+      const a = document.querySelector('aside[aria-label="Needs you inbox"]');
+      if (a && !this.S().wide) a.focus({ preventScroll: true });
+    }, 30);
   }
   ibAttach(shipId) { this.put((st) => ({ open: shipId, focus: 'lead', draft: '', inboxOpen: !!st.wide })); }
 
@@ -1272,13 +1303,14 @@ class Component extends DCLogic {
     const open = list.filter((e) => !s.ibDone[e.id]);
     const count = open.length;
     const cur = wide ? null : (list.find((e) => e.id === s.ibCur) || open[0] || list[0] || null);
-    const shown = wide ? list : (cur ? [cur] : []);
+    const shown = wide ? this.ibList(s, true) : (cur ? [cur] : []);
     const idx = cur ? list.indexOf(cur) : -1;
     const rank = cur && !s.ibDone[cur.id] ? open.indexOf(cur) + 1 : 0;
     const label = (url) => { const m = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(url); return m ? m[1] + '#' + m[2] : url; };
     const KIND = { question: ['Question', '#DDF7F3'], review: ['Review', '#C9B6FF'], findings: ['Findings', '#FFE08A'], live: ['Needs you', '#FF9A7A'] };
 
     const cards = shown.map((e) => {
+      if (e.gone) return { id: e.id, wrapCls: 'ib-gone', done: false, open: false };
       const sh = s.ships.find((x) => x.id === e.ship);
       const parts = sh.yard.split(':');
       const h = H[parts[1]];
@@ -1402,14 +1434,15 @@ class Component extends DCLogic {
       btnStyle: 'display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-radius: 999px; font-family: Bricolage Grotesque, sans-serif; font-weight: 700; font-size: 15px; '
         + (count ? 'border: 2.5px solid #0B1F33; background-color: #FF7A59; color: #14304A' : 'border: 2px solid #3A6489; background-color: #21486B; color: #F4EEDF'),
       cls: wide ? 'ib-drawer' : 'ib-sheet',
-      style: wide ? 'flex: 0 0 400px; min-width: 0; position: relative; background-color: #FFF1CF; border-left: 3px solid #14304A'
-        : 'position: fixed; inset: 0; z-index: 40; background-color: #FFF1CF',
+      role: wide ? 'complementary' : 'dialog', modal: wide ? null : 'true',
+      style: wide ? 'flex: 0 0 400px; min-width: 0; position: sticky; top: 0; align-self: flex-start; height: calc(100dvh - 73px); outline: none; background-color: #FFF1CF; border-left: 3px solid #14304A'
+        : 'position: fixed; inset: 0; z-index: 40; outline: none; background-color: #FFF1CF',
       headCount: wide ? (count ? count + ' waiting' : '') : '',
       showNav: !wide && list.length > 0,
       pos: cur ? (rank ? rank + ' of ' + count : count + ' left') : '',
       backOff: !prev, nextOff: !next,
-      back: () => { if (prev) self.put({ ibCur: prev.id }); },
-      next: () => { if (next) self.put({ ibCur: next.id }); },
+      back: () => { if (prev) { self.put({ ibCur: prev.id }); self.ibScrollTop(); } },
+      next: () => { if (next) { self.put({ ibCur: next.id }); self.ibScrollTop(); } },
       cards, empty: list.length === 0
     };
   }
@@ -1590,8 +1623,8 @@ class Component extends DCLogic {
       onUp: (e) => self.up(e),
       onCancel: () => self.cancel(),
       atSea: s.ships.filter((x) => x.status !== 'done').length,
-      inbox, inboxOpen: !!s.inboxOpen, rowWrap: drawer ? 'nowrap' : 'wrap',
-      toggleInbox: () => self.put((st) => ({ inboxOpen: !st.inboxOpen })),
+      inbox, inboxOpen: !!s.inboxOpen, rowWrap: drawer ? 'nowrap' : 'wrap', mainWrap: drawer ? 'nowrap' : 'wrap', bridgeWrap: drawer ? 'nowrap' : 'wrap',
+      toggleInbox: () => { self.put((st) => ({ inboxOpen: !st.inboxOpen })); self.ibFocus(); },
       closeInbox: () => self.put({ inboxOpen: false }),
       sound: !!s.sound, muted: !s.sound,
       soundText: s.sound ? 'Sound on' : 'Muted',
