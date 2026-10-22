@@ -203,14 +203,14 @@ func (s *Service) signature() string {
 }
 
 // bell makes a Codex ship that rang its bell need you. Codex has no waiting
-// hook; other harnesses' bells are ignored. The state goes into the pane so it
-// has one source of truth and survives a restart.
+// hook; other harnesses' bells are ignored. The state and its reason, bell, go
+// into the pane so they have one source of truth and survive a restart.
 func (s *Service) bell(ctx context.Context, session string) {
 	sess, ok := s.find(session)
 	if !ok || sess.Options["harness"] != "codex" || sess.PaneDead || sess.State == "needs_you" {
 		return
 	}
-	if err := s.Host.SetPaneState(ctx, session, "needs_you"); err == nil {
+	if err := s.Host.SetPaneState(ctx, session, "needs_you", "bell"); err == nil {
 		_ = s.Host.Sync(ctx)
 	}
 }
@@ -375,7 +375,7 @@ func (s *Service) InputSeen(session string) (Ship, error) {
 	case StatusAnchored, StatusSailingOff:
 		return s.ship(sess), ErrExited
 	case StatusNeedsYou:
-		if err := s.Host.SetPaneState(ctx, session, "working"); err != nil {
+		if err := s.Host.SetPaneState(ctx, session, "working", ""); err != nil {
 			return Ship{}, err
 		}
 		_ = s.Host.Sync(ctx)

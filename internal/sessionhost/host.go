@@ -57,7 +57,7 @@ const sep = "\x1f"
 // format is what one `list-panes -a` row holds.
 const format = "#{session_name}" + sep + "#{pane_dead}" + sep + "#{pane_dead_status}" + sep +
 	"#{pane_dead_signal}" + sep + "#{@admiral-bell}" + sep + "#{@admiral-state}" + sep +
-	"#{@admiral-name}" + sep + "#{@admiral-fleet}" + sep + "#{@admiral-fleet-name}" + sep +
+	"#{@admiral-reason}" + sep + "#{@admiral-name}" + sep + "#{@admiral-fleet}" + sep + "#{@admiral-fleet-name}" + sep +
 	"#{@admiral-fleet-color}" + sep + "#{@admiral-harness}" + sep + "#{@admiral-dir}" + sep +
 	"#{@admiral-skill}" + sep + "#{@admiral-source}" + sep + "#{@admiral-order}" + sep +
 	"#{@admiral-launched}" + sep + "#{@admiral-title}" + sep + "#{@admiral-url}"
@@ -71,6 +71,7 @@ type Session struct {
 	Name       string
 	Options    map[string]string // without the @admiral- prefix; every name in optionNames is present
 	State      string            // the pane option @admiral-state, "" until a hook sets it
+	Reason     string            // the pane option @admiral-reason: why the ship needs you, "" when it does not
 	PaneDead   bool
 	ExitStatus int    // valid when PaneDead and Signal is empty
 	Signal     string // the signal that killed the pane, e.g. "kill"; then there is no exit status
@@ -366,15 +367,15 @@ func parseRows(rows []string, known map[string]bool) (sessions map[string]Sessio
 		if name == Internal || !known[name] {
 			continue
 		}
-		if len(f) != 6+len(optionNames) {
+		if len(f) != 7+len(optionNames) {
 			bad[name] = true
 			continue
 		}
-		s := Session{Name: name, PaneDead: f[1] == "1", Signal: f[3], BellStamp: f[4], State: f[5],
+		s := Session{Name: name, PaneDead: f[1] == "1", Signal: f[3], BellStamp: f[4], State: f[5], Reason: f[6],
 			Options: map[string]string{}}
 		s.ExitStatus, _ = strconv.Atoi(f[2])
 		for i, n := range optionNames {
-			s.Options[n] = f[6+i]
+			s.Options[n] = f[7+i]
 		}
 		if first, dup := sessions[name]; dup {
 			if !maps.Equal(first.Options, s.Options) {

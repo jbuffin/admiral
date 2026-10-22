@@ -115,12 +115,12 @@ func TestCancelledCommandDoesNotShiftReplies(t *testing.T) {
 // row, is unreadable; a row that starts with no known session is dropped.
 func TestParseRowsDistrustsForgedRows(t *testing.T) {
 	row := func(name, order string) string {
-		f := make([]string, 6+len(optionNames))
+		f := make([]string, 7+len(optionNames))
 		f[0] = name
 		for i, n := range optionNames {
-			f[6+i] = "v"
+			f[7+i] = "v"
 			if n == "order" {
-				f[6+i] = order
+				f[7+i] = order
 			}
 		}
 		return strings.Join(f, sep)

@@ -41,7 +41,7 @@ func TestHookReason(t *testing.T) {
 		{"copilot agentStop of the lead", "agentStop", `{"stopReason":"end_turn"}`, "stop"},
 		{"copilot agentStop of a subagent", "agentStop", `{"agentId":"788718ef","stopReason":"end_turn"}`, ""},
 		{"copilot permission_prompt", "notification", `{"notification_type":"permission_prompt"}`, "notification:permission_prompt"},
-		{"copilot notification with a bad type", "notification", `{"notification_type":"elicitation dialog"}`, "notification"},
+		{"copilot notification with a bad type sets no state", "notification", `{"notification_type":"elicitation dialog"}`, ""},
 		{"copilot working event", "userPromptSubmitted", `{"prompt":"go"}`, ""},
 	}
 	for _, c := range cases {
