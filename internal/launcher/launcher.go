@@ -249,7 +249,13 @@ func orderTitle(req Request) string {
 	if req.Title != "" {
 		line = req.Title
 	}
-	first, _, _ := strings.Cut(strings.TrimLeft(line, " \t\r\n"), "\n")
+	return CleanTitle(line)
+}
+
+// CleanTitle is the first line of s with control characters dropped, capped at
+// 200 characters: what a title may carry into a tmux option or a log line.
+func CleanTitle(s string) string {
+	first, _, _ := strings.Cut(strings.TrimLeft(s, " \t\r\n"), "\n")
 	first = strings.Map(func(r rune) rune {
 		if isControl(r) {
 			return -1

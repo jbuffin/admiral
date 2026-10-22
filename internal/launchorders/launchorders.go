@@ -133,7 +133,9 @@ func (s *Service) Dir(fleet config.Fleet, harness string, o sources.Order) (stri
 	}
 	entries, live := s.list(fleet)
 	dir, reason := s.preselect(&entries, fleet, dirsRequest{Fleet: fleet.Key, Harness: harness, Repo: o.Repo, Text: text}, live)
-	if reason != "repo" && reason != "text" {
+	if reason != "repo" && reason != "text" || !slices.ContainsFunc(entries, func(e repofinder.Entry) bool {
+		return e.Path == dir && e.Kind == repofinder.KindCheckout
+	}) {
 		return "", "no checkout in fleet " + fleet.Name + " has the order's repository"
 	}
 	return dir, ""

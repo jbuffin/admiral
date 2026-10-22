@@ -95,6 +95,10 @@ func (s *Store) failureOf(source, id string) failure {
 func (s *Store) markLaunched(source, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	_, failing := s.failures[pair{source, id}]
+	if s.launched[pair{source, id}] && !failing {
+		return nil
+	}
 	s.launched[pair{source, id}] = true
 	delete(s.failures, pair{source, id})
 	return s.save()
@@ -107,8 +111,9 @@ func (s *Store) setFailure(source, id string, f failure) error {
 	return s.save()
 }
 
-// prune drops what the source no longer lists: listed holds its order ids.
-func (s *Store) prune(source string, listed map[string]bool) error {
+// prune drops what the source no longer lists: listed holds its order ids. It
+// says whether it dropped an order autopilot had given up on.
+func (s *Store) prune(source string, listed map[string]bool) (cooled bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	changed := false
@@ -120,14 +125,15 @@ func (s *Store) prune(source string, listed map[string]bool) error {
 	}
 	for p := range s.failures {
 		if p.Source == source && !listed[p.OrderID] {
+			cooled = cooled || s.failures[p].GaveUp
 			delete(s.failures, p)
 			changed = true
 		}
 	}
 	if !changed {
-		return nil
+		return false, nil
 	}
-	return s.save()
+	return cooled, s.save()
 }
 
 // save writes the file atomically. s.mu must be held.

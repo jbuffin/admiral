@@ -38,6 +38,9 @@ type Panel struct {
 	// Autopilot is the engineer's autopilot entry for the panel, or nil when it
 	// has none. Admiral sets it, never the plugin.
 	Autopilot *AutopilotView `json:"autopilot"`
+	// Listed says the panel has had a successful orders.list since the source
+	// last started. Autopilot prunes only what listed panels no longer hold.
+	Listed bool `json:"-"`
 }
 
 // AutopilotView is a panel's autopilot entry as the UI receives it.

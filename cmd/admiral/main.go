@@ -184,9 +184,12 @@ func serve(args []string) error {
 		return fmt.Errorf("autopilot: %w", err)
 	}
 	launchService := &launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}
+	// A ship launched but not yet listed by the host counts as running.
+	allShips := func() []ships.Ship { return append(shipService.List(), shipService.Pending()...) }
+	sourceService.Ships = allShips
 	engine := &autopilot.Engine{
 		Config: cfg.Current,
-		Ships:  shipService.List,
+		Ships:  allShips,
 		Sources: func() []autopilot.Source {
 			var out []autopilot.Source
 			for _, l := range sourceService.Listings() {
@@ -200,6 +203,7 @@ func serve(args []string) error {
 		Record: func(r outcomes.Record) { outcomeLog.Enqueue(r, nil) },
 		Now:    time.Now,
 		Store:  apStore,
+		OnHot:  sourceService.Notify,
 		Logf: func(format string, args ...any) {
 			fmt.Fprintf(os.Stderr, "admiral: "+format+"\n", args...)
 		},

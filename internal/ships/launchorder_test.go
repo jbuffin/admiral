@@ -3,6 +3,7 @@ package ships
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/launcher"
@@ -30,5 +31,20 @@ func TestLaunchOrderRefusesWhileShipsAreNotKnown(t *testing.T) {
 		Skill: launcher.Skill{Kind: "none"}, Source: "s", OrderID: "o1"})
 	if lerr == nil || lerr.Msg != "ships are not known yet" || lerr.Status != http.StatusServiceUnavailable {
 		t.Fatalf("LaunchOrder before the host is ready = %v, want a 503 \"ships are not known yet\"", lerr)
+	}
+}
+
+// A ship launched but not yet listed by the host counts as running, so a
+// pass that counts ships against a cap sees it.
+func TestPendingListsAnUnlistedShipUntilItExpires(t *testing.T) {
+	s := &Service{Host: sessionhost.New("tmux", t.TempDir()+"/tmux.sock")}
+	s.holdUnlisted(OrderKey{"s", "o1"}, "ship-1", "p")
+	got := s.Pending()
+	if len(got) != 1 || got[0].Source != "s" || got[0].OrderID != "o1" || got[0].Panel != "p" || got[0].Status != StatusUnderway {
+		t.Fatalf("Pending = %+v, want one underway ship of s/p/o1", got)
+	}
+	s.listing[OrderKey{"s", "o1"}] = unlisted{"ship-1", "p", time.Now().Add(-listedWithin)}
+	if got := s.Pending(); len(got) != 0 {
+		t.Errorf("Pending after the hold expired = %+v, want none", got)
 	}
 }

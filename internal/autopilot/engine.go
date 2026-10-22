@@ -8,6 +8,7 @@ import (
 	"context"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,8 +26,9 @@ var backoff = []time.Duration{10 * time.Minute, time.Hour}
 // Source is one order source as a pass sees it.
 type Source struct {
 	Key string
-	// Listed says the source's runner is ok and has listed its panels since
-	// Admiral started. Only then does the raw listing say which orders are gone.
+	// Listed says the source's runner is ok and every panel has had a successful
+	// orders.list since the source started. Only then does the raw listing say
+	// which orders are gone.
 	Listed bool
 	// Panels is the raw listing: the orders a ship hides are still in it.
 	Panels []sources.Panel
@@ -47,6 +49,9 @@ type Engine struct {
 	Record func(outcomes.Record)
 	Now    func() time.Time
 	Store  *Store
+	// OnHot runs when an order becomes hot or stops being; nil does nothing. The
+	// sources view shows the mark, so the caller pushes it. It must not block.
+	OnHot func()
 	// Logf takes one line; nil logs nothing.
 	Logf func(format string, args ...any)
 
@@ -176,8 +181,9 @@ func (e *Engine) Pass() {
 					perPanel[cell]++
 					hidden[ships.OrderKey{Source: def.Key, OrderID: o.ID}] = true
 					e.logf("autopilot: launched %s from %s/%s", sh.Session, def.Key, p.ID)
-				case lerr.Status == http.StatusConflict:
-					// The order has a ship or a launch of it is running: not a failure.
+				case lerr.Status == http.StatusConflict, lerr.Status == http.StatusNotFound && strings.HasPrefix(lerr.Msg, "order "):
+					// The order has a ship or a launch of it is running, or it
+					// left the listing since the pass began: not a failure.
 				case lerr.Status == http.StatusServiceUnavailable && lerr.Msg == ships.NotKnownMsg:
 					return // no ship list to count against; the next change tries again
 				default:
@@ -199,8 +205,12 @@ func (e *Engine) forget(src Source) {
 			listed[o.ID] = true
 		}
 	}
-	if err := e.Store.prune(src.Key, listed); err != nil {
+	cooled, err := e.Store.prune(src.Key, listed)
+	if err != nil {
 		e.logf("autopilot: could not save %s: %v", FileName, err)
+	}
+	if cooled && e.OnHot != nil {
+		e.OnHot()
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -229,7 +239,7 @@ func (e *Engine) skip(source, panel string, o sources.Order, reason string) {
 	}
 	e.logf("autopilot: skipped %s/%s order %s: %s", source, panel, o.ID, reason)
 	e.Record(outcomes.Record{Event: "skipped", Fields: map[string]any{
-		"source": source, "panel": panel, "order_id": o.ID, "title": o.Title, "reason": reason}})
+		"source": source, "panel": panel, "order_id": o.ID, "title": launcher.CleanTitle(o.Title), "reason": reason}})
 }
 
 // failed counts a failed launch: it backs the order off, and the third gives up
@@ -237,7 +247,7 @@ func (e *Engine) skip(source, panel string, o sources.Order, reason string) {
 func (e *Engine) failed(source, panel string, o sources.Order, lerr *launcher.Error, now time.Time) {
 	f := e.Store.failureOf(source, o.ID)
 	f.Attempts++
-	fields := map[string]any{"source": source, "panel": panel, "order_id": o.ID, "title": o.Title,
+	fields := map[string]any{"source": source, "panel": panel, "order_id": o.ID, "title": launcher.CleanTitle(o.Title),
 		"reason": lerr.Msg, "attempt": f.Attempts}
 	if f.Attempts <= len(backoff) {
 		f.NextRetry = now.Add(backoff[f.Attempts-1])
@@ -250,4 +260,7 @@ func (e *Engine) failed(source, panel string, o sources.Order, lerr *launcher.Er
 	}
 	e.logf("autopilot: launch of %s/%s order %s failed (attempt %d): %s", source, panel, o.ID, f.Attempts, lerr.Msg)
 	e.Record(outcomes.Record{Event: "launch_failed", Fields: fields})
+	if f.GaveUp && e.OnHot != nil {
+		e.OnHot()
+	}
 }

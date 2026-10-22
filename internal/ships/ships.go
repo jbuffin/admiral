@@ -88,6 +88,7 @@ type Service struct {
 // unlisted is a launched ship the host has not listed yet.
 type unlisted struct {
 	session string
+	panel   string
 	at      time.Time
 }
 
@@ -387,7 +388,7 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	if now, ok := s.find(got.Session); ok {
 		sess = now
 	} else if req.Source != "" {
-		s.holdUnlisted(key, got.Session)
+		s.holdUnlisted(key, got.Session, req.Panel)
 	}
 	s.broadcast()
 	return s.ship(sess), nil
@@ -395,13 +396,29 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 
 // holdUnlisted keeps the order's key refused until the host lists the ship, for
 // when the sync after a launch failed.
-func (s *Service) holdUnlisted(key OrderKey, session string) {
+func (s *Service) holdUnlisted(key OrderKey, session, panel string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.listing == nil {
 		s.listing = map[OrderKey]unlisted{}
 	}
-	s.listing[key] = unlisted{session, time.Now()}
+	s.listing[key] = unlisted{session, panel, time.Now()}
+}
+
+// Pending is the ships launched but not yet in the host's list, as underway
+// ships, so a count of running ships includes them. They are held for at most
+// listedWithin.
+func (s *Service) Pending() []Ship {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Ship
+	for key, u := range s.listing {
+		if _, listed := s.find(u.session); listed || time.Since(u.at) >= listedWithin {
+			continue
+		}
+		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: key.OrderID, Panel: u.panel, Status: StatusUnderway})
+	}
+	return out
 }
 
 // lockOrder takes the order's key for the length of a launch; false when

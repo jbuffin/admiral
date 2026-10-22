@@ -739,8 +739,9 @@ func (s *Service) servePause(w http.ResponseWriter, r *http.Request) {
 }
 
 // Listing is one source's raw listing, for autopilot: the orders a ship hides
-// are still in it. Listed says the source is ok and has listed since Admiral
-// started, so a missing order is really gone.
+// are still in it. Listed says the source is ok and every panel has had a
+// successful orders.list since the source started, so a missing order is
+// really gone.
 type Listing struct {
 	Key    string
 	Listed bool
@@ -751,7 +752,11 @@ type Listing struct {
 func (s *Service) Listings() []Listing {
 	var out []Listing
 	for _, st := range s.Sup.snapshot() {
-		out = append(out, Listing{Key: st.def.Key, Listed: st.state == StateOK, Panels: st.panels})
+		listed := st.state == StateOK
+		for _, p := range st.panels {
+			listed = listed && p.Listed
+		}
+		out = append(out, Listing{Key: st.def.Key, Listed: listed, Panels: st.panels})
 	}
 	return out
 }

@@ -479,3 +479,51 @@ func TestEnginePicksTheDirectoryTheDialogPicks(t *testing.T) {
 		}
 	}
 }
+
+// A panel whose first orders.list after a restart fails lists nothing, which is
+// not the same as its orders being gone: the launched set keeps the order, so
+// it is not launched again when the panel lists it.
+func TestEngineKeepsTheLaunchedSetWhenAPanelFailsToList(t *testing.T) {
+	w := newWorld(t)
+	w.writeCue("wait go", "exit 0")
+	w.repo("r1", remoteOf("r1"))
+	p := w.newTP("a")
+	p.mainOrders(apOrder("o1", remoteOf("r1")))
+	w.installPlugin("testplug", "testplug")
+	w.writeAutopilotConfig(map[string]any{"a": tpAutopilot(p, "main", apEntry(true, 1, nil))}, 0)
+	w.start()
+	first := w.waitShipCount(15*time.Second, "o1's ship", fromOrder("o1"), 1)[0]
+	w.sail(first.Session)
+	w.in.waitShipsList(t, 15*time.Second, "o1's ship gone", func(l []shipJSON) bool { return len(l) == 0 })
+
+	p.put("fail-orders.list-main", "listing failed")
+	w.restart()
+	w.waitSource("a", 10*time.Second, "ok with a panel that failed to list", func(s sourceJSON) bool {
+		return s.State == "ok" && len(s.Panels) == 1 && s.Panels[0].Error != nil
+	})
+	p.clear("fail-orders.list-main")
+	p.do("orders-changed", "")
+	w.waitSource("a", 5*time.Second, "o1 listed again", func(s sourceJSON) bool { return s.hasOrder("o1") })
+	holdThat(t, "an order autopilot had launched was launched again after its panel failed to list", func() bool {
+		return len(w.in.ships(t)) == 0
+	})
+}
+
+// An order autopilot gave up on shows as hot in the sources view and is not launched.
+func TestEngineShowsAGivenUpOrderAsHot(t *testing.T) {
+	w := newWorld(t)
+	w.repo("r1", remoteOf("r1"))
+	p := w.newTP("a")
+	p.mainOrders(apOrder("o1", remoteOf("r1")))
+	w.installPlugin("testplug", "testplug")
+	w.writeAutopilotConfig(map[string]any{"a": tpAutopilot(p, "main", apEntry(true, 1, nil))}, 0)
+	seed := `{"version":1,"launched":[],"failures":[{"source":"a","order_id":"o1","attempts":3,"next_retry":"0001-01-01T00:00:00Z","gave_up":true}]}`
+	if err := os.WriteFile(filepath.Join(w.home, "autopilot.json"), []byte(seed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w.start()
+	w.waitSource("a", 10*time.Second, "o1 shown as hot", func(s sourceJSON) bool {
+		return len(s.Panels) == 1 && len(s.Panels[0].Orders) == 1 && s.Panels[0].Orders[0].Hot
+	})
+	holdThat(t, "autopilot launched an order it gave up on", func() bool { return len(w.in.ships(t)) == 0 })
+}
