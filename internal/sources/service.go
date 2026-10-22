@@ -111,10 +111,16 @@ func (s *Service) View() []SourceView {
 			orders := make([]Order, 0, len(p.Orders))
 			for _, o := range p.Orders {
 				if !hidden[ships.OrderKey{Source: st.def.Key, OrderID: o.ID}] {
+					// A plugin's hot mark stays; Admiral's is added to it.
+					o.Hot = o.Hot || (s.Hot != nil && s.Hot(st.def.Key, o.ID))
 					orders = append(orders, o)
 				}
 			}
 			p.Orders = orders
+			p.Autopilot = nil
+			if e, ok := st.def.Autopilot[p.ID]; ok {
+				p.Autopilot = &AutopilotView{Enabled: e.Enabled, Paused: s.State.Paused(st.def.Key, p.ID), MaxShips: e.MaxShips}
+			}
 			v.Panels = append(v.Panels, p)
 		}
 		SortPanels(v.Panels, st.def.PanelOrder)
