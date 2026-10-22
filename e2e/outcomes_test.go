@@ -170,6 +170,16 @@ func waitGone(t *testing.T, d time.Duration, paths ...string) {
 
 func exists(p string) bool { _, err := os.Lstat(p); return err == nil }
 
+// waitPaneDead waits for the ship's pane to be dead (it stays under remain-on-exit).
+func (w *world) waitPaneDead(session string) {
+	w.t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); strings.TrimSpace(w.mustTmux("list-panes", "-t", session, "-F", "#{pane_dead}")) != "1"; time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			w.t.Fatalf("the pane of %s never died", session)
+		}
+	}
+}
+
 // killPane kills the harness process; the pane stays dead under remain-on-exit.
 func (w *world) killPane(session string) {
 	w.t.Helper()
@@ -400,14 +410,16 @@ func TestOutcomeRestartAddsNoLaunchedAndEndsADeadShip(t *testing.T) {
 // kill, and then its files go.
 func TestOutcomeRestartEndsAShipThatSailedOff(t *testing.T) {
 	w := newWorld(t)
-	w.outFleets(map[string][]string{"f": {"hook working", "sleep 1", "exit 0"}})
+	w.outFleets(map[string][]string{"f": {"hook working", "wait go", "exit 0"}})
 	w.start()
 	ship := w.launchIn("f", "claude", "zero")
 	rec := w.record(ship.Session)
 	w.waitEvent(ship.Session, "launched", 1)
 	w.in.Stop()
-	w.waitFile(ship.Session, "cues-done")
+	// The ship exits only now, so Admiral's stop can't race its exit and the files.
 	reportPath, inboxPath := w.seedShipFiles(rec, `{"status":"done"}`)
+	w.touch(ship.Session, "go")
+	w.waitPaneDead(ship.Session)
 
 	w.restart()
 	waitGone(t, 15*time.Second, reportPath, inboxPath)
@@ -430,7 +442,7 @@ func TestOutcomeRestartEndsAShipThatSailedOff(t *testing.T) {
 // keeps the report and inbox of a ship whose `ended` it could not write.
 func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 	w := newWorld(t)
-	w.outFleets(map[string][]string{"f": {"hook working", "sleep 1", "hook needs_you"}, "z": {"hook working", "sleep 1", "exit 0"}})
+	w.outFleets(map[string][]string{"f": {"hook working", "sleep 1", "hook needs_you"}, "z": {"hook working", "wait go", "exit 0"}})
 	blocker := filepath.Join(w.home, "outcomes")
 	if err := os.WriteFile(blocker, []byte("a file where the directory belongs"), 0o600); err != nil {
 		t.Fatal(err)
@@ -451,6 +463,8 @@ func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 
 	z := w.launchIn("z", "claude", "unw-sail")
 	reportPath, inboxPath := w.seedShipFiles(w.record(z.Session), `{"status":"done"}`)
+	w.touch(z.Session, "go")
+	w.in.waitStatusList(t, 10*time.Second, z.Session, "sailing_off")
 	for deadline := time.Now().Add(15 * time.Second); w.hasSession(z.Session); time.Sleep(100 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatalf("the exit-0 ship did not sail off while the log was unwritable")

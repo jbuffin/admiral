@@ -173,6 +173,7 @@ func (s *Service) observe(ctx context.Context) {
 		sess  sessionhost.Session
 		tally tally
 		end   *endState
+		owner *track
 	}
 	var writes []write
 	var endings []ending
@@ -198,7 +199,7 @@ func (s *Service) observe(ctx context.Context) {
 		tr.tally = next
 		if sess.PaneDead && tr.end == nil && sess.Options[sessionhost.OptEnded] == "" {
 			tr.end = &endState{}
-			endings = append(endings, ending{sess, next, tr.end})
+			endings = append(endings, ending{sess, next, tr.end, tr})
 		}
 		if o := next.options(); !maps.Equal(o, tr.saved) {
 			writes = append(writes, write{sess.Name, o})
@@ -214,7 +215,7 @@ func (s *Service) observe(ctx context.Context) {
 	}
 	s.mu.Unlock()
 	for _, e := range endings { // the report is read outside the lock
-		s.queueEnded(e.sess, e.tally, e.end)
+		s.queueEnded(e.sess, e.tally, e.end, e.owner)
 	}
 	for _, w := range writes {
 		if s.Host.SetOptions(ctx, w.session, w.opts) == nil {
@@ -230,7 +231,7 @@ func (s *Service) observe(ctx context.Context) {
 // queueEnded queues the `ended` record of a ship whose pane died. Once it is
 // written, the ship is marked in tmux so no later start writes it again, and
 // the files of a ship that was killed meanwhile go.
-func (s *Service) queueEnded(sess sessionhost.Session, t tally, end *endState) {
+func (s *Service) queueEnded(sess sessionhost.Session, t tally, end *endState, owner *track) {
 	name := sess.Name
 	var code, sig any
 	if sess.Signal != "" {
@@ -251,7 +252,8 @@ func (s *Service) queueEnded(sess sessionhost.Session, t tally, end *endState) {
 		_ = s.Host.SetOptions(ctx, name, map[string]string{sessionhost.OptEnded: "1"}) // the session may be gone
 		s.mu.Lock()
 		end.written = true
-		clean := end.clean
+		// A newer ship under the same name owns the files now.
+		clean := end.clean && (s.tracks[name] == nil || s.tracks[name] == owner)
 		s.mu.Unlock()
 		if clean {
 			s.removeShipFiles(name)

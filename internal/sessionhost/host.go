@@ -161,12 +161,7 @@ func (h *Host) Socket() string { return h.sock }
 
 // Sessions returns the ships' sessions in a stable order (by name).
 func (h *Host) Sessions() []Session {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	out := make([]Session, 0, len(h.order))
-	for _, n := range h.order {
-		out = append(out, h.sessions[n])
-	}
+	out, _ := h.Snapshot()
 	return out
 }
 
