@@ -24,6 +24,7 @@ import (
 	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/launchorders"
+	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
@@ -163,7 +164,11 @@ func serve(args []string) error {
 	sock := filepath.Join(dir, "tmux.sock")
 	hub := server.NewHub()
 	host := sessionhost.New(tmuxPath, sock)
-	shipService := &ships.Service{Host: host, State: st, Hub: hub, Launcher: &launcher.Launcher{
+	outcomeLog := outcomes.New(filepath.Join(dir, "outcomes"), func(format string, args ...any) {
+		fmt.Fprintf(os.Stderr, "admiral: "+format+"\n", args...)
+	})
+	defer outcomeLog.Close() // after the background work below has stopped
+	shipService := &ships.Service{Host: host, State: st, Hub: hub, Outcomes: outcomeLog, Launcher: &launcher.Launcher{
 		Tmux: tmuxPath, Socket: sock, Home: dir, Config: cfg.Current}}
 
 	if err := sources.InstallPlugins(dir); err != nil {
