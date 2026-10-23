@@ -1,4 +1,4 @@
-.PHONY: build test lint lint-docs e2e e2e-critical release
+.PHONY: build test test-short lint lint-docs check e2e e2e-critical release
 
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shell git diff --quiet HEAD 2>/dev/null || echo -dirty)
 BIN ?= bin/admiral
@@ -10,6 +10,16 @@ build:
 test:
 	go test -count=1 $$(go list ./... | grep -v /e2e)
 	npm --prefix web test
+
+# The unit tests minus the ones that need tmux or macOS (they skip under
+# -short). PR CI runs this on Ubuntu.
+test-short:
+	go test -short -count=1 $$(go list ./... | grep -v /e2e)
+	npm --prefix web test
+
+# What PR CI runs, on Ubuntu: no tmux, no browser, nothing macOS-only. The full
+# suite runs on the Mac before a push and in the release (see AGENTS.md).
+check: build lint test-short
 
 lint: lint-docs
 	go vet ./...
@@ -26,9 +36,10 @@ e2e: build
 	go test -count=1 ./e2e/...
 	npm --prefix web run e2e
 
-# What CI runs: the Go e2e tests and the @critical browser flows on the iPad
-# viewport. The CI runner's virtual GPU resets under WebKit about 40 times a
-# minute, so the full matrix flakes there (#94); it runs locally before a PR.
+# What the macOS workflow and the release run: the Go e2e tests and the
+# @critical browser flows on the iPad viewport. The macOS runner's virtual GPU
+# resets under WebKit about 40 times a minute, so the full matrix flakes there
+# (#94); it runs locally before a push.
 e2e-critical: build
 	go test -count=1 ./e2e/...
 	npm --prefix web run e2e -- --project ipad-landscape --grep @critical
