@@ -7,7 +7,7 @@
 #   env          GH_TOKEN, GH_NO_UPDATE_NOTIFIER and GH_PROMPT_DISABLED as
 #                NAME=value lines; a variable that was not set has no line
 #
-# It answers three kinds of call and nothing else (anything else exits 2):
+# It answers four kinds of call and nothing else (anything else exits 2):
 #
 #   gh --version
 #
@@ -26,6 +26,26 @@
 #     No key matches: stderr says so, exit 1.
 #     The answer is the GraphQL response as GitHub sends it, whole. The fake
 #     does not run --jq or --template, so it refuses them (exit 2).
+#
+#   gh api [-X METHOD] [-f NAME=VALUE]... [--hostname HOST] [--input FILE|-] ENDPOINT
+#     a REST call (ENDPOINT is not "graphql"). Like gh, the method is GET unless
+#     -X/--method says otherwise, and POST when there are -f/-F fields or --input
+#     and no -X. -F/--field is refused (it reads @files and types values, which
+#     Admiral must never ask of an item's text), as are --jq and --template.
+#     Besides argv and env, the call directory records:
+#       method     the method in effect
+#       endpoint   the ENDPOINT, without a leading slash
+#       host       the --hostname value, if any
+#       stdin      what --input - read, if given
+#     A canned answer lives in $FAKEGH_DIR/rest/ as <key>.endpoint (exactly the
+#     endpoint, no leading slash), optional <key>.method (default GET) and
+#     optional <key>.host (the --hostname that must be given; default any).
+#     The first key (in name order) that matches answers:
+#       <key>.status   the HTTP status (default 200)
+#       <key>.json     the body, printed on stdout (default {})
+#       <key>.stderr   for a status of 300 or more, printed on stderr
+#                      (default "gh: HTTP <status>"); the exit is then 1, as gh's
+#     No key matches: stderr says so, exit 1.
 call_dir=$(mktemp -d "$FAKEGH_DIR/calls/call.XXXXXX" 2>/dev/null) || {
 	mkdir -p "$FAKEGH_DIR/calls"
 	call_dir=$(mktemp -d "$FAKEGH_DIR/calls/call.XXXXXX")
@@ -64,12 +84,59 @@ auth)
 	exit 1
 	;;
 api)
-	[ "$2" = graphql ] || { echo "fakegh: unsupported: gh $*" >&2; exit 2; }
 	for a in "$@"; do
 		case "$a" in
 		--jq|-q|--template|-t|--jq=*|--template=*) echo "fakegh: $a is not supported; read the whole response" >&2; exit 2 ;;
 		esac
 	done
+	if [ "$2" != graphql ]; then
+		shift
+		method= endpoint= host= input= fields=
+		while [ $# -gt 0 ]; do
+			case "$1" in
+			-X|--method) method=$2; shift 2 ;;
+			-f|--raw-field) fields="$fields $2"; shift 2 ;;
+			--hostname) host=$2; shift 2 ;;
+			--input) input=$2; shift 2 ;;
+			-H|--header) shift 2 ;;
+			-F|--field) echo "fakegh: $1 is not supported; pass item text with -f" >&2; exit 2 ;;
+			-*) echo "fakegh: unsupported argument to gh api: $1" >&2; exit 2 ;;
+			*) [ -z "$endpoint" ] || { echo "fakegh: two endpoints: $endpoint and $1" >&2; exit 2; }
+			   endpoint=${1#/}; shift ;;
+			esac
+		done
+		if [ -z "$method" ]; then
+			method=GET
+			{ [ -n "$fields" ] || [ -n "$input" ]; } && method=POST
+		fi
+		printf '%s\n' "$method" > "$call_dir/method"
+		printf '%s\n' "$endpoint" > "$call_dir/endpoint"
+		[ -n "$host" ] && printf '%s\n' "$host" > "$call_dir/host"
+		if [ "$input" = - ]; then
+			cat > "$call_dir/stdin"
+		elif [ -n "$input" ]; then
+			cp "$input" "$call_dir/stdin"
+		fi
+		for e in "$FAKEGH_DIR"/rest/*.endpoint; do
+			[ -e "$e" ] || continue
+			key=${e%.endpoint}
+			[ "$(cat "$e")" = "$endpoint" ] || continue
+			want=GET
+			[ -s "$key.method" ] && want=$(cat "$key.method")
+			[ "$want" = "$method" ] || continue
+			if [ -s "$key.host" ] && [ "$(cat "$key.host")" != "$host" ]; then continue; fi
+			status=200
+			[ -s "$key.status" ] && status=$(cat "$key.status")
+			if [ -e "$key.json" ]; then cat "$key.json"; else echo '{}'; fi
+			if [ "$status" -ge 300 ]; then
+				if [ -e "$key.stderr" ]; then cat "$key.stderr" >&2; else echo "gh: HTTP $status" >&2; fi
+				exit 1
+			fi
+			exit 0
+		done
+		echo "fakegh: no canned REST answer for $method $endpoint" >&2
+		exit 1
+	fi
 	for m in "$FAKEGH_DIR"/search/*.match; do
 		[ -e "$m" ] || continue
 		key=${m%.match}
