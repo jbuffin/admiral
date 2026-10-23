@@ -1,6 +1,7 @@
 import { signal } from '@preact/signals';
 import { useState } from 'preact/hooks';
 import { AddSource } from './AddSource';
+import { closeInbox, inboxDrawerOpen } from './inboxState';
 import { Menu, MenuItem } from './Menu';
 import { PanelSection, ReorderGrip, SourceProblem, countLabel } from './PanelSection';
 import { arranged, reordering, saveSourceOrder } from './reorder';
@@ -15,10 +16,16 @@ const Chevrons = ({ right }: { right: boolean }) => (
   </svg>
 );
 
+// Expanding Orders closes the inbox drawer, which collapses it while it is open.
+function expand() {
+  closeInbox(false);
+  setSidebarCollapsed(false);
+}
+
 export function Sidebar() {
   return (
     <>
-      {sidebarCollapsed.value ? <Rail /> : <Expanded />}
+      {sidebarCollapsed.value || inboxDrawerOpen.value ? <Rail /> : <Expanded />}
       <SettingsDialog />
     </>
   );
@@ -27,7 +34,7 @@ export function Sidebar() {
 function Rail() {
   return (
     <aside class="orders rail" aria-label="Orders, collapsed">
-      <button type="button" class="rail-toggle press" aria-label="Expand orders" onClick={() => setSidebarCollapsed(false)}>
+      <button type="button" class="rail-toggle press" aria-label="Expand orders" onClick={expand}>
         <Chevrons right />
       </button>
       {panelViews.value.map((v) => (
@@ -38,7 +45,7 @@ function Rail() {
           aria-label={`${v.title}, ${countLabel(v.orders.length)}`}
           style={{ backgroundColor: v.color }}
           onClick={() => {
-            setSidebarCollapsed(false);
+            expand();
             requestAnimationFrame(() => document.getElementById(`panel-${v.key}`)?.scrollIntoView({ block: 'nearest' }));
           }}
         >

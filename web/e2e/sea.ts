@@ -141,6 +141,8 @@ export const notes = (page: Page) => page.evaluate(() => (window as unknown as {
 
 export const water = (page: Page) => page.getByRole('main', { name: 'Open water' });
 export const header = (page: Page) => page.getByRole('banner');
+/** The header's Needs You inbox button: "Needs you, <n> item(s)" or "Needs you, nothing waiting". */
+export const inboxButton = (page: Page) => header(page).getByRole('button', { name: /^Needs you, / });
 
 /** All ships in open water, or one by a part of its accessible name: "Board <name>, <Harness> in <Fleet>, <status in words>". */
 export const ships = (page: Page, name: RegExp = /^Board /) => water(page).getByRole('button', { name });

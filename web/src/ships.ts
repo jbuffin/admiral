@@ -23,6 +23,9 @@ export interface WireShip {
   status: 'underway' | 'needs_you' | 'anchored' | 'sailing_off';
   exit_code: number | null;
   exit_signal: string | null;
+  // Set only while the ship needs you: why (a validated code, `idle` and `unknown` included) and since when (RFC 3339).
+  reason?: string;
+  stop_since?: string;
   position: { x: number; y: number } | null;
 }
 
@@ -50,11 +53,6 @@ export const bobDelay = (session: string) => `-${((hash(session) % 32) / 10).toF
 export const atSea = (s: WireShip) => s.status === 'underway' || s.status === 'needs_you';
 
 const launchedAt = (s: WireShip) => Date.parse(s.launched) || 0;
-
-// The ship the header's "N needs you" boards: the earliest launched.
-export const needsYou = computed(() =>
-  ships.value.filter((s) => s.status === 'needs_you').sort((a, b) => launchedAt(a) - launchedAt(b) || (a.session < b.session ? -1 : 1)),
-);
 
 // The session whose bridge is open, if any.
 export const boardedSession = signal<string | null>(null);

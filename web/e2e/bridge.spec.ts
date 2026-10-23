@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { launchFromOrder, orderTitle, paneSize, paneWrite, reachable, release, screenText, stdinOf } from './bridge';
-import { expect, header, isTouch, needsYouIn, ships, spyOnPage, test, underwayIn } from './sea';
+import { expect, header, inboxButton, isTouch, needsYouIn, ships, spyOnPage, test, underwayIn } from './sea';
 
 // The bridge (u11 S5-S7). The names below are the contract the bridge UI is
 // built to; the prototype supplies the copy and labels
@@ -339,7 +339,7 @@ test.describe('S5: boarding a ship and typing on the bridge', () => {
     await expect(terminal(page)).toHaveCount(0);
   });
 
-  test('a ship that needs you opens its bridge from the header pill', async ({ page, admiral, sea }, info) => {
+  test('a ship that needs you opens its bridge from the inbox with Attach', async ({ page, admiral, sea }, info) => {
     test.skip(info.project.name !== 'ipad-landscape');
     const s = sea({ work: { name: 'Work', color: BLUE } });
     await admiral.start();
@@ -348,7 +348,8 @@ test.describe('S5: boarding a ship and typing on the bridge', () => {
     await spyOnPage(page);
     await page.goto(admiral.url);
     await expect(ships(page, needsYouIn('Work'))).toBeVisible();
-    await header(page).getByRole('button', { name: '1 needs you' }).tap();
+    await inboxButton(page).tap();
+    await page.getByRole('button', { name: /^Attach to / }).tap();
     await expect(terminal(page)).toBeVisible();
     await expect(terminal(page).getByText('Needs you', { exact: true })).toBeVisible();
     await expect(terminal(page).getByRole('button', { name: /Approve|Deny/ })).toHaveCount(0);
