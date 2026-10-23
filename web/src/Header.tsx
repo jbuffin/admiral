@@ -103,6 +103,7 @@ function SeaPills() {
   const count = ships.value.filter(atSea).length;
   return (
     <>
+      <InboxButton />
       {shipsLoaded.value && (
         <span class="pill pill-lit">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6FE3C8" stroke-width="2.4" stroke-linecap="round" aria-hidden="true">
@@ -112,7 +113,6 @@ function SeaPills() {
           {cap === undefined ? count : `${count} / ${cap}`} at sea
         </span>
       )}
-      <InboxButton />
       <button type="button" class="pill-hit" aria-label={off ? 'Turn chime on' : 'Mute chime'} onClick={toggleSound}>
         <span class="pill-face sound">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4EEDF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

@@ -294,7 +294,7 @@ test.describe('items are untrusted text', () => {
     await press(inboxButton(page), touch);
     const inbox = panel(page, info);
 
-    // The drawer shows both items at once, the sheet one at a time: look at each item's own card.
+    // The drawer shows both items at once, the sheet one at a time: look at each item on its own.
     const bad = inbox.getByRole('article').filter({ hasText: 'bold' });
     await expect(bad.getByText('<b>bold</b> <img src=x onerror=alert(1)>')).toBeVisible();
     await expect(inbox.locator('b, img')).toHaveCount(0);

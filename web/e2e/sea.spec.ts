@@ -145,7 +145,7 @@ test.describe('S2: placement on screen', () => {
 test.describe('S3: a ship that needs you', () => {
   test.beforeEach(({}, info) => test.skip(info.project.name !== 'ipad-landscape'));
 
-  test('shows the "!" and the header within 2 s, chimes once unless muted, boards from the header, and the mute is remembered', async ({ page, admiral, sea }) => {
+  test('shows the "!" and the header within 2 s, chimes once unless muted, boards from the inbox, and the mute is remembered', async ({ page, admiral, sea }) => {
     const s = sea({ work: { name: 'Work', color: BLUE } });
     await admiral.start();
     const one = await s.launch('work', 'alpha');

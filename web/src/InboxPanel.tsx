@@ -221,7 +221,7 @@ function Item({ entry }: { entry: Entry }) {
   if (entry.folded !== null) return <Fold text={entry.folded} name={name} />;
   const harness = entry.item?.harness ?? ship?.harness ?? '';
   const [tag, tagBg] = KIND[entry.type === 'stop' ? 'stop' : (entry.item?.kind ?? 'question')] ?? KIND.question;
-  const title = entry.item ? entry.item.title : ship?.title || ship?.order_id || ship?.repo || name;
+  const title = entry.item ? entry.item.title : [ship?.order_id, ship?.title].filter(Boolean).join(' ') || ship?.repo || name;
   const href = safeHref(entry.item?.order_url);
   const since = entry.item?.created ?? ship?.stop_since;
   return (
@@ -239,7 +239,7 @@ function Item({ entry }: { entry: Entry }) {
             </span>
           )}
         </div>
-        {since && entry.type === 'item' && <span class="inbox-age">{waited(since, clock.value)}</span>}
+        {since && <span class="inbox-age">{waited(since, clock.value)}</span>}
       </div>
       <div class="inbox-titles">
         <span class="inbox-kind" style={`background-color:${tagBg}`}>
