@@ -278,12 +278,12 @@ func serve(args []string) error {
 	}}
 	// Resume orders: the report's text goes to the panel autopilot.resume_source names.
 	inboxService.ResumeTarget = func() *config.ResumeSource { return cfg.Current().ResumeSource }
-	inboxService.AddOrder = func(ctx context.Context, source, panel, text string) (string, bool, error) {
+	inboxService.AddOrder = func(ctx context.Context, source, panel, text string) (string, error) {
 		id, fail := sourceService.AddOrder(ctx, source, panel, text)
 		if fail != nil {
-			return "", fail.Status != http.StatusBadRequest, fail // a text the source refuses stays refused
+			return "", fail
 		}
-		return id, false, nil
+		return id, nil
 	}
 	shipService.BeforeRemoveFiles = inboxService.CaptureResume
 	changed := supervisor.OnChange

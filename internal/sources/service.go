@@ -813,15 +813,28 @@ func (s *Service) mutable(w http.ResponseWriter, key, capability string) (*runne
 type RequestError struct {
 	Status int
 	Msg    string
+	// transient: nothing was changed and the same request may work later (a
+	// source that is missing, restarting or read-only, a panel not there yet, a
+	// plugin that refused). sent: the request reached the plugin and the outcome is
+	// unknown (a timeout, a plugin that died, an answer that is not an order id).
+	// A request with neither was refused for good.
+	transient, sent bool
 }
 
 func (e *RequestError) Error() string { return e.Msg }
+
+// Retryable says nothing was changed and the request may work later.
+func (e *RequestError) Retryable() bool { return e.transient }
+
+// Uncertain says the plugin may have done what was asked: sending it again may
+// do it twice.
+func (e *RequestError) Uncertain() bool { return e.sent }
 
 // mutableFor is mutable for a caller that has no response to write.
 func (s *Service) mutableFor(key, capability string) (*runner, *proc, *RequestError) {
 	rn := s.Sup.runner(key)
 	if rn == nil {
-		return nil, nil, &RequestError{http.StatusNotFound, "source " + key + " not found"}
+		return nil, nil, &RequestError{Status: http.StatusNotFound, Msg: "source " + key + " not found", transient: true}
 	}
 	rn.mu.Lock()
 	readOnly, state, caps := rn.readOnly, rn.state, rn.caps
@@ -829,11 +842,11 @@ func (s *Service) mutableFor(key, capability string) (*runner, *proc, *RequestEr
 	p, live := rn.live()
 	switch {
 	case readOnly:
-		return nil, nil, &RequestError{http.StatusConflict, "The source is read-only until it runs again"}
+		return nil, nil, &RequestError{Status: http.StatusConflict, Msg: "The source is read-only until it runs again", transient: true}
 	case !live:
-		return nil, nil, &RequestError{http.StatusConflict, "The source is " + state + ", not running yet"}
+		return nil, nil, &RequestError{Status: http.StatusConflict, Msg: "The source is " + state + ", not running yet", transient: true}
 	case !slices.Contains(caps, capability):
-		return nil, nil, &RequestError{http.StatusConflict, "The source cannot " + capability + " orders"}
+		return nil, nil, &RequestError{Status: http.StatusConflict, Msg: "The source cannot " + capability + " orders", transient: true}
 	}
 	return rn, p, nil
 }
@@ -843,11 +856,11 @@ func callFailure(err error) *RequestError {
 	var rpc *rpcError
 	switch {
 	case errors.As(err, &rpc):
-		return &RequestError{http.StatusUnprocessableEntity, rpc.Error()}
+		return &RequestError{Status: http.StatusUnprocessableEntity, Msg: rpc.Error(), transient: true} // the plugin refused: nothing changed
 	case errors.Is(err, errTimeout):
-		return &RequestError{http.StatusGatewayTimeout, err.Error()}
+		return &RequestError{Status: http.StatusGatewayTimeout, Msg: err.Error(), sent: true}
 	}
-	return &RequestError{http.StatusBadGateway, err.Error()}
+	return &RequestError{Status: http.StatusBadGateway, Msg: err.Error(), sent: true}
 }
 
 // callError answers a failed request to a plugin.
@@ -939,11 +952,11 @@ func (s *Service) AddOrder(ctx context.Context, key, panel, text string) (string
 		return "", fail
 	}
 	if msg := checkText(text); msg != "" {
-		return "", &RequestError{http.StatusBadRequest, msg}
+		return "", &RequestError{Status: http.StatusBadRequest, Msg: msg}
 	}
 	id, found := panelOf(rn, panel, "")
 	if !found {
-		return "", &RequestError{http.StatusNotFound, "panel " + strconv.Quote(panel) + " not found"}
+		return "", &RequestError{Status: http.StatusNotFound, Msg: "panel " + strconv.Quote(panel) + " not found", transient: true}
 	}
 	panel = id
 	res, err := p.call(ctx, "orders.add", map[string]any{"panel": panel, "text": text}, callTimeout)
@@ -955,7 +968,7 @@ func (s *Service) AddOrder(ctx context.Context, key, panel, text string) (string
 	}
 	if err := json.Unmarshal(res, &added); err != nil || added.ID == "" || hasControl(added.ID) {
 		rn.logf("protocol error: orders.add answered %s", cleanMsg(string(res)))
-		return "", &RequestError{http.StatusBadGateway, "the order source did not answer with the new order's id"}
+		return "", &RequestError{Status: http.StatusBadGateway, Msg: "the order source did not answer with the new order's id", sent: true}
 	}
 	rn.wantPull(false, panel)
 	return added.ID, nil

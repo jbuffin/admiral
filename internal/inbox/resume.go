@@ -5,9 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -20,7 +23,8 @@ import (
 // an answer, the report's `resume` text becomes an order in the panel that
 // autopilot.resume_source names. The text is copied into Admiral's own state
 // first, so it outlives the report's deletion and a restart, and it stays there
-// until an add succeeds or the source refuses the text for good.
+// until an add succeeds, the source refuses the text for good, or an add is
+// uncertain (the plugin may have added it): never twice.
 
 // maxReport is the most of a report that is read; a ship wrote it.
 const maxReport = 1 << 20
@@ -97,7 +101,11 @@ func (s *Service) CaptureResume(session string) {
 		})
 		return
 	}
-	sum := sha256.Sum256(b)
+	// The key is the order itself, not the report: a ship that rewrites its report
+	// without changing them adds nothing new.
+	ids := slices.Clone(r.Inbox)
+	slices.Sort(ids)
+	sum := sha256.Sum256([]byte(r.Resume + "\x00" + strings.Join(ids, "\x00")))
 	fresh, err := s.Kept.QueueResume(session+":"+hex.EncodeToString(sum[:8]), session, r.Resume)
 	switch {
 	case err != nil:
@@ -120,11 +128,16 @@ func (s *Service) captureAll() {
 	defer root.Close()
 	reports, err := realDir(root, "reports")
 	if err != nil {
-		s.Kept.KeepResumes(nil)
-		return
+		if errors.Is(err, fs.ErrNotExist) {
+			s.Kept.KeepResumes(nil)
+		}
+		return // a reports/ that cannot be opened proves nothing about the done orders
 	}
 	defer reports.Close()
-	names, _ := listDir(reports)
+	names, err := listDir(reports)
+	if err != nil {
+		return
+	}
 	have := map[string]bool{}
 	for _, n := range names {
 		if session, ok := strings.CutSuffix(n, ".json"); ok && validSession(session) {
@@ -152,9 +165,13 @@ func (s *Service) kickResume() {
 // change in a source or the config. It never blocks.
 func (s *Service) KickResume() { s.kickResume() }
 
-// addResumes tries every resume order that waits, one at a time, and says
-// whether any is left to try again. It makes plugin calls: never under answerMu.
-func (s *Service) addResumes() (left bool) {
+// addResumes tries the resume orders that wait, one at a time (only session's
+// when it is not empty), and says whether any is left to try again. It makes
+// plugin calls: never under answerMu. A failure that changed nothing and may pass
+// is tried again later; one that is final is dropped; one that may have added the
+// order is counted as done and recorded as uncertain, because a second order can
+// launch a second ship.
+func (s *Service) addResumes(session string) (left bool) {
 	if s.Kept == nil || s.AddOrder == nil || s.ResumeTarget == nil {
 		return false
 	}
@@ -162,8 +179,10 @@ func (s *Service) addResumes() (left bool) {
 	defer s.resumeMu.Unlock()
 	pending := s.Kept.PendingResumes()
 	keys := make([]string, 0, len(pending))
-	for k := range pending {
-		keys = append(keys, k)
+	for k, r := range pending {
+		if session == "" || r.Session == session {
+			keys = append(keys, k)
+		}
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
@@ -172,30 +191,46 @@ func (s *Service) addResumes() (left bool) {
 			continue // nothing to try until the config names a target
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), addTimeout)
-		id, retry, err := s.AddOrder(ctx, t.Source, t.Panel, pending[key].Text)
+		id, err := s.AddOrder(ctx, t.Source, t.Panel, pending[key].Text)
 		cancel()
-		session := pending[key].Session
+		who := pending[key].Session
+		var fail interface {
+			Retryable() bool
+			Uncertain() bool
+		}
+		uncertain := false
 		if err != nil {
-			if retry {
+			errors.As(err, &fail)
+			switch {
+			case fail != nil && fail.Retryable():
 				left = true
 				if s.lastErr[key] != err.Error() {
-					fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume order is not added yet: %v\n", session, err)
+					fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume order is not added yet: %v\n", who, err)
 					if s.lastErr == nil {
 						s.lastErr = map[string]string{}
 					}
 					s.lastErr[key] = err.Error()
 				}
 				continue
+			case fail != nil && fail.Uncertain():
+				uncertain = true
+				fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume order may not have landed, and is not sent again: %v\n", who, err)
+			default:
+				fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume order is dropped: %v\n", who, err)
 			}
-			fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume order is dropped: %v\n", session, err)
 		}
 		delete(s.lastErr, key)
 		if ferr := s.Kept.FinishResume(key); ferr != nil {
-			fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume order cannot be marked done: %v\n", session, ferr)
+			fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume order cannot be marked done: %v\n", who, ferr)
 		}
-		if err == nil && s.Outcomes != nil {
-			s.Outcomes.Enqueue(outcomes.Record{Ship: session, Event: "resumed",
-				Fields: map[string]any{"source": t.Source, "panel": t.Panel, "order": id}}, nil)
+		if (err == nil || uncertain) && s.Outcomes != nil {
+			fields := map[string]any{"source": t.Source, "panel": t.Panel}
+			if uncertain {
+				fields["uncertain"] = true
+			} else {
+				fields["order"] = id
+			}
+			s.Outcomes.Enqueue(outcomes.Record{Ship: who, Event: "resumed", Fields: fields}, nil)
 		}
 	}
 	return left
@@ -217,7 +252,7 @@ func (s *Service) resumeLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		}
-		if s.addResumes() {
+		if s.addResumes("") {
 			retry.Reset(resumeRetry)
 		}
 	}

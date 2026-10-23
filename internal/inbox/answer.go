@@ -61,9 +61,10 @@ func (s *Service) Answer(session, id, kind string, build func(Item) (file any, r
 	if err := s.writeAnswered(session, id, kind, build); err != nil {
 		return err
 	}
-	// Outside answerMu: adding the resume order calls the source. The text is in
-	// the state already, so the files may go whether or not the add worked.
-	s.addResumes()
+	// Outside answerMu: adding the ship's resume order calls the source. The text is
+	// in the state already, so the files may go whether or not the add worked; the
+	// loop tries the rest.
+	s.addResumes(session)
 	s.answerMu.Lock()
 	s.release(session)
 	s.answerMu.Unlock()
