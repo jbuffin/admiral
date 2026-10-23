@@ -212,6 +212,14 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		}
 	}
 
+	// A Commodore on Claude compacts at 200k tokens; only the fleet's own env
+	// overrides that, not a value Admiral inherited.
+	if req.Skill.Kind == "commodore" && req.Harness == "claude" {
+		if _, set := dock.Env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"]; !set {
+			env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = "200000"
+		}
+	}
+
 	if err := l.create(session, req.Dir, opts, env, unset, argv); err != nil {
 		return nil, err
 	}
