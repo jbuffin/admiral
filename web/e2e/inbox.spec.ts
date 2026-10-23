@@ -2,7 +2,7 @@ import type { Locator, Page, TestInfo } from '@playwright/test';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Admiral, expect } from './fixtures';
-import { animationsOn, boarded, header, isTouch, spyOnPage, test } from './sea';
+import { animationsOn, boarded, inboxButton, isTouch, spyOnPage, test } from './sea';
 
 // The Needs You inbox in the web UI (#116 u3). Items are files the test writes into the test Admiral's
 // $ADMIRAL_HOME/inbox/<session>/ after the ship has launched; a needs-you stop is a fake harness that
@@ -30,7 +30,6 @@ const wide = (info: TestInfo) => {
 };
 const press = (l: Locator, touch: boolean) => (touch ? l.tap() : l.click());
 
-const inboxButton = (page: Page) => header(page).getByRole('button', { name: /^Needs you, / });
 const panel = (page: Page, info: TestInfo) => page.getByRole(wide(info) ? 'complementary' : 'dialog', { name: 'Needs you inbox' });
 const position = (p: Locator) => p.getByText(/^\d+ of \d+$/);
 
@@ -295,13 +294,15 @@ test.describe('items are untrusted text', () => {
     await press(inboxButton(page), touch);
     const inbox = panel(page, info);
 
-    await expect(inbox.getByText('<b>bold</b> <img src=x onerror=alert(1)>')).toBeVisible();
+    // The drawer shows both items at once, the sheet one at a time: look at each item's own card.
+    const bad = inbox.getByRole('article').filter({ hasText: 'bold' });
+    await expect(bad.getByText('<b>bold</b> <img src=x onerror=alert(1)>')).toBeVisible();
     await expect(inbox.locator('b, img')).toHaveCount(0);
-    await expect(inbox.getByRole('link', { name: /Open the order/ })).toHaveCount(0);
+    await expect(bad.getByRole('link', { name: /Open the order/ })).toHaveCount(0);
     expect(await page.locator('a[href^="javascript" i]').count()).toBe(0);
 
     if (!wide(info)) await press(inbox.getByRole('button', { name: /Next/ }), touch);
-    const link = inbox.getByRole('link', { name: /Open the order/ });
+    const link = inbox.getByRole('article').filter({ hasText: 'A good link' }).getByRole('link', { name: /Open the order/ });
     await expect(link).toHaveAttribute('href', 'https://example.com/issues/9');
     await expect(link).toHaveAttribute('rel', /noopener/);
     await expect(link).toHaveAttribute('rel', /noreferrer/);

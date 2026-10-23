@@ -1944,6 +1944,7 @@ body.dragging * {
 }
 
 .pill-face.needs {
+  height: 44px;
   padding: 0 16px;
   border: 2.5px solid var(--color-ink-deep);
   background-color: var(--color-coral);
@@ -2322,4 +2323,563 @@ body.dragging * {
   padding: 0 12px 8px;
   font-size: 13px;
   color: var(--color-text-muted);
+}
+
+/* The Needs You inbox (#116): the header button, the wide layout's drawer and the narrow layout's sheet. */
+
+.pill-face.needs.idle {
+  border: 2px solid var(--color-navy-border);
+  background-color: var(--color-navy-panel);
+  color: var(--color-text-on-dark);
+}
+
+.inbox-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background-color: var(--color-ink);
+  color: var(--color-sunny);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.inbox-drawer,
+.inbox-sheet {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background-color: var(--color-sidebar);
+  color: var(--color-ink);
+  outline: none;
+}
+
+/* A fixed 400px column beside open water, as tall as the harbor. */
+.inbox-drawer {
+  flex: 0 0 400px;
+  border-left: 3px solid var(--color-ink);
+  animation: inboxdrawer 0.28s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+.inbox-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  animation: inboxsheet 0.3s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+.inbox-top {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 10px 16px;
+  background-color: var(--color-parchment);
+  border-bottom: 3px solid var(--color-ink);
+}
+
+.inbox-top h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 24px;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+}
+
+.inbox-waiting-count {
+  flex: 1 1 auto;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.inbox-close {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  border: var(--shape-outline) solid var(--color-ink);
+  background-color: var(--color-parchment-light);
+  box-shadow: 0 3px 0 var(--color-ink);
+}
+
+.inbox-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 14px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.inbox-list button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.inbox-item {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 16px;
+  border: var(--shape-outline) solid var(--color-ink);
+  background-color: var(--color-panel);
+  box-shadow: 0 3px 0 var(--color-ink);
+}
+
+.inbox-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.inbox-flag {
+  flex: 0 0 auto;
+}
+
+.inbox-who {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.inbox-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.inbox-fleet {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.inbox-fleet-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-ink);
+}
+
+.inbox-age {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-align: right;
+}
+
+.inbox-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inbox-kind {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1.5px solid var(--color-ink);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.inbox-titles h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 19px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.inbox-link {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.inbox-question {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 2px dashed #8aa2b6;
+}
+
+.inbox-eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.inbox-question-text {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.inbox-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: var(--shape-outline) solid var(--color-ink);
+  background-color: var(--color-parchment-light);
+  box-shadow: 0 3px 0 var(--color-ink);
+  text-align: left;
+}
+
+.inbox-option.on {
+  background-color: var(--color-selected);
+}
+
+.inbox-dot {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  margin-top: 2px;
+  border: 3px solid var(--color-ink);
+  background-color: var(--color-parchment-light);
+  box-shadow: inset 0 0 0 3px var(--color-parchment-light);
+}
+
+.inbox-dot.radio {
+  border-radius: 50%;
+}
+
+.inbox-dot.checkbox {
+  border-radius: 5px;
+}
+
+.inbox-option.on .inbox-dot {
+  background-color: var(--color-ink);
+}
+
+.inbox-option-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.inbox-option-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16.5px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.inbox-option-desc {
+  font-size: 13.5px;
+  color: var(--color-text-muted);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.inbox-recommended {
+  padding: 3px 8px;
+  border-radius: 8px;
+  background-color: var(--color-ink);
+  color: var(--color-sunny);
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.inbox-input,
+.inbox-note {
+  display: block;
+  width: 100%;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: var(--shape-outline) solid var(--color-ink);
+  background-color: #fff;
+  font-family: var(--font-body);
+  font-size: 16px;
+  color: var(--color-ink);
+}
+
+.inbox-input {
+  height: 48px;
+}
+
+.inbox-note {
+  min-height: 64px;
+  padding: 10px 12px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.inbox-send-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.inbox-primary {
+  min-height: 48px;
+  padding: 0 22px;
+  border-radius: 14px;
+  border: var(--shape-outline) solid var(--color-ink);
+  background-color: var(--color-sunny);
+  box-shadow: 0 4px 0 var(--color-ink);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 17px;
+}
+
+.inbox-attach {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inbox-progress,
+.inbox-hint {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.inbox-hint {
+  flex: 1 1 140px;
+}
+
+.inbox-error {
+  margin: 0;
+  color: var(--color-attention-border);
+  font-size: 13.5px;
+}
+
+.inbox-reason {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 2px solid var(--color-attention-border);
+  background-color: var(--color-attention-plaque);
+}
+
+.inbox-reason-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+.inbox-reason-words {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.inbox-reason-code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.inbox-waiting {
+  font-size: 13.5px;
+  color: var(--color-text-muted);
+}
+
+.inbox-fold {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 58px;
+  padding: 8px 14px;
+  border-radius: 16px;
+  border: var(--shape-outline) solid var(--color-ink);
+  background-color: var(--color-foam);
+  box-shadow: 0 3px 0 var(--color-ink);
+  animation: inboxfold 0.25s ease-out both;
+}
+
+.inbox-check {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: var(--shape-outline) solid var(--color-ink);
+  background-color: var(--color-success);
+}
+
+.inbox-fold-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15.5px;
+  line-height: 1.25;
+}
+
+.inbox-fold-ship {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+}
+
+/* The hold is 5 s (HOLD_MS in inbox.ts): the slide-out ends as the entry is removed. */
+.inbox-wrap.folded {
+  overflow: hidden;
+  animation: inboxslide 0.45s ease-in 4.55s forwards;
+}
+
+.inbox-empty {
+  flex: 1 1 auto;
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.inbox-empty h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.inbox-empty p {
+  margin: 0;
+  max-width: 260px;
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+.inbox-nav {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px max(10px, env(safe-area-inset-bottom));
+  background-color: var(--color-parchment);
+  border-top: 3px solid var(--color-ink);
+}
+
+.inbox-step {
+  min-width: 108px;
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: 14px;
+  border: var(--shape-outline) solid var(--color-ink);
+  background-color: var(--color-parchment-light);
+  box-shadow: 0 3px 0 var(--color-ink);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.inbox-step.next {
+  background-color: var(--color-sunny);
+}
+
+.inbox-step:disabled {
+  opacity: 0.45;
+}
+
+.inbox-pos {
+  flex: 1 1 auto;
+  text-align: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.inbox-sheet textarea:focus-visible,
+.inbox-drawer textarea:focus-visible,
+.inbox-list a:focus-visible {
+  outline: 3px solid var(--color-sunny);
+  outline-offset: 2px;
+}
+
+/* Beside the drawer, open water and the bridge are 550 to 700px wide: they take the narrow rules. */
+@media (max-width: 1180px) {
+  :root.inbox-drawer-open .bridge {
+    flex-direction: column;
+  }
+
+  :root.inbox-drawer-open .flotilla {
+    flex: 0 0 auto;
+  }
+}
+
+@keyframes inboxdrawer {
+  0% { transform: translateX(100%); opacity: 0.4; }
+  100% { transform: none; opacity: 1; }
+}
+
+@keyframes inboxsheet {
+  0% { transform: translateY(100%); }
+  100% { transform: none; }
+}
+
+@keyframes inboxfold {
+  0% { transform: scaleY(1.6); opacity: 0.2; }
+  100% { transform: none; opacity: 1; }
+}
+
+@keyframes inboxslide {
+  0% { transform: none; opacity: 1; max-height: 90px; }
+  55% { transform: translateX(70px); opacity: 0; max-height: 90px; }
+  100% { transform: translateX(70px); opacity: 0; max-height: 0; margin-top: -6px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inbox-drawer, .inbox-sheet, .inbox-fold, .inbox-wrap.folded {
+    animation: none !important;
+  }
+
+  .pill-face.needs {
+    transition: none;
+  }
 }

@@ -19,6 +19,8 @@ export function useBridgePlacement(root: RefObject<HTMLDivElement | null>, prese
       const covered = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
       el.style.left = full ? '0px' : `${Math.max(0, r.left)}px`;
       el.style.top = full ? '0px' : `${Math.max(0, r.top)}px`;
+      // Beside the inbox drawer, which sits to the right of `main`, the bridge ends where `main` does.
+      el.style.right = full ? '0px' : `${Math.max(0, window.innerWidth - r.right)}px`;
       el.style.bottom = `${covered > 40 ? covered : 0}px`;
     };
     place();

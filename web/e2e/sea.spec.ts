@@ -6,6 +6,7 @@ import {
   gesture,
   hex,
   header,
+  inboxButton,
   isTouch,
   needsYouIn,
   notes,
@@ -30,8 +31,9 @@ import { TouchPointer, centerOf, dialog, dock, sidebar, touchSetup } from './wor
 //     "underway", "needs you", "anchored, exited <code>" (or "anchored, killed (<SIGNAL>)"), "sailing off"
 //   its plaque is text inside the ship: the name, then "<repo> · <skill>" (just "<repo>" with no skill),
 //     "<repo> · exited <code>" when anchored; a ship that needs you shows the text "!"
-//   the header (banner) says "N at sea" (underway and needs-you ships) and, when any ship needs you,
-//     a button "N needs you" that boards the needs-you ship with the earliest launch
+//   the header (banner) says "N at sea" (underway and needs-you ships) and has the inbox button
+//     "Needs you, <n> item(s)" (u3 of #116), which counts a ship that needs you; the inbox lists it
+//     with an Attach button that boards it
 //   the sound toggle is a button in the header: text "Sound on" with the name "Mute chime",
 //     or text "Muted" with the name "Turn chime on"; turning sound on plays the chime
 //   the chime is WebAudio, the prototype's recipe: three oscillators started, one per note
@@ -43,6 +45,9 @@ import { TouchPointer, centerOf, dialog, dock, sidebar, touchSetup } from './wor
 
 const BLUE = '#2E7DD7';
 const ORANGE = '#E0762B';
+
+// The Attach button of the first needs-you stop in the inbox.
+const attach = (page: Page) => page.getByRole('button', { name: /^Attach to / });
 
 const press = (l: Locator, touch: boolean) => (touch ? l.tap() : l.click());
 
@@ -156,14 +161,14 @@ test.describe('S3: a ship that needs you', () => {
     s.setState(one.session, 'needs_you');
     await expect(ships(page, needsYouIn('Work'))).toBeVisible({ timeout: 3000 });
     await expect(ships(page, needsYouIn('Work')).getByText('!', { exact: true })).toBeVisible();
-    const pill = header(page).getByRole('button', { name: '1 needs you' });
-    await expect(pill).toBeVisible();
+    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, 1 item');
     await expect.poll(() => notes(page)).toBe(3); // one chime: the prototype's three notes
     await page.waitForTimeout(800);
     expect(await notes(page)).toBe(3);
 
-    // Tapping "1 needs you" boards that ship, through board(session).
-    await pill.tap();
+    // The inbox lists the ship; Attach boards it, through board(session).
+    await inboxButton(page).tap();
+    await attach(page).tap();
     await expect.poll(() => boarded(page)).toEqual([one.session]);
 
     // Muted: no chime for the next ship that needs you.
@@ -173,7 +178,7 @@ test.describe('S3: a ship that needs you', () => {
     await expect(soundToggle(page)).toHaveAccessibleName('Turn chime on');
     s.setState(one.session, 'working');
     await expect(ships(page, underwayIn('Work'))).toBeVisible({ timeout: 3000 });
-    await expect(header(page).getByRole('button', { name: /needs you$/ })).toHaveCount(0);
+    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, nothing waiting');
     s.setState(one.session, 'needs_you');
     await expect(ships(page, needsYouIn('Work'))).toBeVisible({ timeout: 3000 });
     await page.waitForTimeout(800);
@@ -189,7 +194,7 @@ test.describe('S3: a ship that needs you', () => {
     await expect.poll(() => notes(page)).toBe(3);
   });
 
-  test('"N needs you" boards the needs-you ship that launched first', async ({ page, admiral, sea }) => {
+  test('the inbox lists the ships in the order they asked, and Attach boards the first', async ({ page, admiral, sea }) => {
     const s = sea({ work: { name: 'Work', color: BLUE }, home: { name: 'Home', color: ORANGE } });
     await admiral.start();
     const earlier = await s.launch('work', 'alpha');
@@ -199,13 +204,17 @@ test.describe('S3: a ship that needs you', () => {
     await page.goto(admiral.url);
     await expect(ships(page)).toHaveCount(2);
 
-    // The later ship asks first, so the order of asking is not the order of launch.
+    // The later ship asks first, so the order of asking is not the order of launch: the inbox goes by asking.
     s.setState(later.session, 'needs_you');
     await expect(ships(page, needsYouIn('Home'))).toBeVisible({ timeout: 3000 });
     s.setState(earlier.session, 'needs_you');
     await expect(ships(page, needsYouIn('Work'))).toBeVisible({ timeout: 3000 });
-    await header(page).getByRole('button', { name: '2 needs you' }).tap();
-    await expect.poll(() => boarded(page)).toEqual([earlier.session]);
+    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, 2 items');
+    await inboxButton(page).tap();
+    await expect(attach(page)).toHaveCount(2);
+    await expect(attach(page).first()).toHaveAccessibleName(new RegExp(`^Attach to ${later.name}`));
+    await attach(page).first().tap();
+    await expect.poll(() => boarded(page)).toEqual([later.session]);
   });
 
   test('a ship that already needs you when the page loads plays no chime', async ({ page, admiral, sea }) => {
@@ -235,7 +244,7 @@ test.describe('S3: a ship that needs you', () => {
     held.forEach((send) => send());
 
     await expect(ships(page, needsYouIn('Work'))).toBeVisible();
-    await expect(header(page).getByRole('button', { name: '1 needs you' })).toBeVisible();
+    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, 1 item');
     await page.waitForTimeout(1200);
     expect(await notes(page)).toBe(0);
   });
@@ -349,7 +358,7 @@ test.describe('S5: a ship that finishes, and motion', () => {
     await expect(header(page).getByText('0 at sea', { exact: true })).toBeVisible();
   });
 
-  test('with reduced motion nothing bobs, shakes, sails or ripples, and the header pill stops pulsing', async ({ page, admiral, sea }, info) => {
+  test('with reduced motion nothing bobs, shakes, sails or ripples, and the inbox button stops pulsing', async ({ page, admiral, sea }, info) => {
     test.skip(info.project.name !== 'desktop');
     const s = sea({ work: { name: 'Work', color: BLUE }, ask: { name: 'Ask', color: ORANGE, cue: ['hook needs_you'] } });
     await admiral.start();
@@ -360,8 +369,7 @@ test.describe('S5: a ship that finishes, and motion', () => {
     const shaking = ships(page, needsYouIn('Ask'));
     await expect(calm).toBeVisible();
     await expect(shaking).toBeVisible();
-    const pill = header(page).getByRole('button', { name: '1 needs you' });
-    await expect(pill).toBeVisible();
+    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, 1 item');
 
     // The control: with motion allowed, there is motion to turn off.
     expect(await animationsOn(calm)).toBeGreaterThan(0);

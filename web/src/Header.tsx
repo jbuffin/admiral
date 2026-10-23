@@ -7,7 +7,8 @@ import { offline, onMessage, signedOut } from './connection';
 import { openSetup } from './setup';
 import { chipLabel, chipText, resources } from './resources';
 import { anyAutopilot } from './sources';
-import { atSea, board, needsYou, ships, shipsLoaded } from './ships';
+import { InboxButton } from './InboxPanel';
+import { atSea, ships, shipsLoaded } from './ships';
 
 const aboutOpen = signal(false);
 
@@ -97,7 +98,6 @@ function ResourceChips() {
 }
 
 function SeaPills() {
-  const asking = needsYou.value;
   const off = muted.value;
   const cap = anyAutopilot.value ? config.value?.autopilot?.max_ships : undefined;
   const count = ships.value.filter(atSea).length;
@@ -112,11 +112,7 @@ function SeaPills() {
           {cap === undefined ? count : `${count} / ${cap}`} at sea
         </span>
       )}
-      {asking.length > 0 && (
-        <button type="button" class="pill-hit" onClick={() => board(asking[0].session)}>
-          <span class="pill-face needs ping">{asking.length} needs you</span>
-        </button>
-      )}
+      <InboxButton />
       <button type="button" class="pill-hit" aria-label={off ? 'Turn chime on' : 'Mute chime'} onClick={toggleSound}>
         <span class="pill-face sound">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4EEDF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
