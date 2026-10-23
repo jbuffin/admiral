@@ -116,6 +116,10 @@ func TestLaunchCommandLine(t *testing.T) {
 			if r.env["ADMIRAL_BASE"] != "base" || r.env["ADMIRAL_OVER"] != "fleet" {
 				t.Errorf("env: Admiral's variable = %q (want base), fleet's override = %q (want fleet)", r.env["ADMIRAL_BASE"], r.env["ADMIRAL_OVER"])
 			}
+			// #139: only a Commodore ship on claude gets the default compact window.
+			if got, ok := r.env[compactWindow]; ok != (harness == "claude") || (ok && got != "200000") {
+				t.Errorf("%s = %q (set %v), want 200000 on claude, unset on codex and copilot (ran %s)", compactWindow, got, ok, harness)
+			}
 			// #112: the ship's own session, report file and inbox, set before the
 			// harness runs and winning over the fleet's same-named variables.
 			if r.env["ADMIRAL_SHIP"] != ship.Session {
@@ -136,6 +140,51 @@ func TestLaunchCommandLine(t *testing.T) {
 			}
 		})
 	}
+}
+
+const compactWindow = "CLAUDE_CODE_AUTO_COMPACT_WINDOW"
+
+// #139: Commodore ships on claude get a 200k autocompact window unless the
+// fleet's own env sets it; Admiral's own environment doesn't count as the fleet's.
+func TestCommodoreCompactWindow(t *testing.T) {
+	t.Run("fleet env overrides", func(t *testing.T) {
+		w := newWorld(t)
+		var cfg map[string]any
+		if err := json.Unmarshal([]byte(w.config()), &cfg); err != nil {
+			t.Fatal(err)
+		}
+		dock := cfg["fleets"].(map[string]any)["work"].(map[string]any)["claude"].(map[string]any)
+		dock["env"].(map[string]any)[compactWindow] = "1000000"
+		b, err := json.Marshal(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeConfig(t, w.home, string(b))
+		w.start()
+		r := w.record(w.launch(w.order("work", "claude", "ov", commodore, "x")).Session)
+		if got := r.env[compactWindow]; got != "1000000" {
+			t.Errorf("%s = %q, want the fleet's 1000000", compactWindow, got)
+		}
+	})
+	t.Run("other claude launches don't get it", func(t *testing.T) {
+		w := newWorld(t)
+		w.start()
+		for name, skill := range map[string]map[string]any{"custom skill": customSkill("foo"), "no skill": noSkill} {
+			r := w.record(w.launch(w.order("work", "claude", "other-"+strings.ReplaceAll(name, " ", "-"), skill, "x")).Session)
+			if got, ok := r.env[compactWindow]; ok {
+				t.Errorf("%s: %s = %q, want it unset", name, compactWindow, got)
+			}
+		}
+	})
+	t.Run("Admiral's environment does not override", func(t *testing.T) {
+		w := newWorld(t)
+		w.extra = []string{compactWindow + "=1000000"}
+		w.start()
+		r := w.record(w.launch(w.order("work", "claude", "inh", commodore, "x")).Session)
+		if got := r.env[compactWindow]; got != "200000" {
+			t.Errorf("%s = %q, want 200000 (a value only Admiral inherited is not the fleet's)", compactWindow, got)
+		}
+	})
 }
 
 // S2: prompt forms.
