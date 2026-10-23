@@ -52,5 +52,11 @@ export default defineConfig({
       name: 'desktop',
       use: { browserName: 'webkit', viewport: { width: 1440, height: 900 } },
     },
+    {
+      // The other specs were built for iPad and desktop sizes: the phone runs the inbox only.
+      name: 'phone',
+      testMatch: /inbox\.spec\.ts$/,
+      use: { browserName: 'webkit', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true },
+    },
   ],
 });
