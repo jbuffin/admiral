@@ -232,6 +232,7 @@ func serve(args []string) error {
 	shipService.OnChange = func() {
 		sourceService.Notify()
 		bridgeService.ShipsChanged()
+		resourceSet.Wake() // a ship that stopped holding a unit frees it
 		resourceService.Broadcast()
 		engine.Poke()
 	}
@@ -259,6 +260,7 @@ func serve(args []string) error {
 			case <-configChanges:
 				sourceService.Notify() // an autopilot-only edit does not restart a source
 				resourceSet.Refresh()  // the resources' checks run at once
+				resourceSet.Wake()
 				resourceService.Broadcast()
 				engine.Poke()
 			case <-shipsCtx.Done():
