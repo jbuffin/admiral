@@ -482,9 +482,13 @@ func TestInboxReviewRefusesBadTargets(t *testing.T) {
 	before := time.Now()
 	for i, c := range cases {
 		id := "b-" + fmt.Sprintf("%02d", i)
-		if code, resp := w.in.act(t, ship.Session, id, "discard", nil); !ok2xx(code) {
+		code, resp := w.in.act(t, ship.Session, id, "discard", nil)
+		if !ok2xx(code) {
 			t.Errorf("discard with %s = %d, want 2xx: %s", c.name, code, resp)
 			continue
+		}
+		if !strings.Contains(resp, `"invalid_target":true`) {
+			t.Errorf("discard with %s answered %s, want invalid_target true: nothing changed on GitHub", c.name, resp)
 		}
 		if got, want := readAnswer(t, dir, id, before), map[string]any{"version": float64(1), "id": id, "kind": "review", "action": "discarded"}; !reflect.DeepEqual(got, want) {
 			t.Errorf("answer file of %s = %v, want %v", id, got, want)
@@ -552,7 +556,11 @@ func TestInboxReviewGone(t *testing.T) {
 	for i, id := range []string{"gone-get", "gone-del", "gone-422", "own-422", "gone-state", "own-del"} {
 		seedItem(t, dir, id, reviewAt(id, "2026-10-22T10:0"+itoa(i)+":00Z", "https://github.com/acme/widgets/pull/12", 200+i))
 	}
-	w.in.waitInbox(t, "gone-get", "gone-del", "gone-422", "own-422", "gone-state", "own-del")
+	// A 404 from a token that cannot see the repository reads the same as a deleted
+	// review. Admiral looks for the pull request before it calls the review gone.
+	seedItem(t, dir, "noaccess-get", reviewAt("noaccess-get", "2026-10-22T10:06:00Z", "https://github.com/acme/widgets/pull/13", 300))
+	seedItem(t, dir, "noaccess-del", reviewAt("noaccess-del", "2026-10-22T10:07:00Z", "https://github.com/acme/widgets/pull/14", 301))
+	w.in.waitInbox(t, "gone-get", "gone-del", "gone-422", "own-422", "gone-state", "own-del", "noaccess-get", "noaccess-del")
 	ep := func(n int) string { return "repos/acme/widgets/pulls/12/reviews/" + itoa(n) }
 	notFound := json.RawMessage(`{"message":"Not Found"}`)
 	// GitHub's error bodies carry a documentation_url, and the one for deleting a
@@ -565,6 +573,11 @@ func TestInboxReviewGone(t *testing.T) {
 	g.rest("p2", "POST", ep(202)+"/events", 422, json.RawMessage(`{"message":"Unprocessable Entity","errors":["Can not submit a review that is not pending"],`+doc+`}`), "gh: Unprocessable Entity (HTTP 422)\nCan not submit a review that is not pending\n")
 	g.rest("g3", "GET", ep(203), 200, map[string]any{"state": "PENDING", "body": "b"}, "")
 	g.rest("p3", "POST", ep(203)+"/events", 422, json.RawMessage(`{"message":"Unprocessable Entity","errors":["Can not approve your own pull request"],`+doc+`}`), "gh: Unprocessable Entity (HTTP 422)\nCan not approve your own pull request\n")
+	g.rest("pr12", "GET", "repos/acme/widgets/pulls/12", 200, map[string]any{"number": 12}, "")
+	g.rest("n1", "GET", "repos/acme/widgets/pulls/13/reviews/300", 404, notFound, "gh: Not Found (HTTP 404)\n")
+	g.rest("pr13", "GET", "repos/acme/widgets/pulls/13", 404, notFound, "gh: Not Found (HTTP 404)\n")
+	g.rest("n2", "DELETE", "repos/acme/widgets/pulls/14/reviews/301", 404, notFound, "gh: Not Found (HTTP 404)\n")
+	g.rest("pr14", "GET", "repos/acme/widgets/pulls/14", 500, map[string]any{"message": "Server Error"}, "gh: Server Error (HTTP 500)\n")
 	// The review was submitted on GitHub already: its state says so, and no POST follows.
 	g.rest("g4", "GET", ep(204), 200, map[string]any{"state": "APPROVED", "body": "b"}, "")
 	// A Discard 422 that is not about the review being pending stays an error.
@@ -586,6 +599,16 @@ func TestInboxReviewGone(t *testing.T) {
 	if code, _ := w.in.act(t, ship.Session, "own-del", "discard", nil); ok2xx(code) {
 		t.Errorf("a Discard 422 that is not about pending = %d, want an error", code)
 	}
+	for _, id := range []string{"noaccess-get", "noaccess-del"} {
+		act := map[string]string{"noaccess-get": "submit", "noaccess-del": "discard"}[id]
+		code, resp := w.in.act(t, ship.Session, id, act, map[string]any{"event": "APPROVE"})
+		if ok2xx(code) || !strings.Contains(resp, "Not Found") && !strings.Contains(resp, "Server Error") {
+			t.Errorf("%s of %s with the pull request out of reach = %d %q, want an error with gh's message", act, id, code, resp)
+		}
+	}
+	if n := len(g.callsTo("GET", "repos/acme/widgets/pulls/12")); n != 2 {
+		t.Errorf("the pull request was looked up %d times for the two 404s on a visible one, want 2", n)
+	}
 	if n := len(g.callsTo("POST", ep(204)+"/events")); n != 0 {
 		t.Errorf("gh posted %d times for a review that is not pending, want none", n)
 	}
@@ -605,8 +628,8 @@ func TestInboxReviewGone(t *testing.T) {
 	if n := countEvent(log, "review_submitted"); n != 0 {
 		t.Errorf("%d review_submitted records, want none", n)
 	}
-	w.in.waitInbox(t, "own-422", "own-del")
-	for _, id := range []string{"own-422", "own-del"} {
+	w.in.waitInbox(t, "own-422", "own-del", "noaccess-get", "noaccess-del")
+	for _, id := range []string{"own-422", "own-del", "noaccess-get", "noaccess-del"} {
 		if exists(filepath.Join(dir, id+".answer.json")) {
 			t.Errorf("%s was answered", id)
 		}

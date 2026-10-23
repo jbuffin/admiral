@@ -85,6 +85,10 @@ func targetOf(it Item) (target, string, error) {
 	return target{strings.ToLower(m[1]), m[2], m[3], m[4], id}, r.Summary, nil
 }
 
+func (t target) pullEndpoint() string {
+	return "repos/" + t.owner + "/" + t.repo + "/pulls/" + t.pr
+}
+
 func (t target) endpoint() string {
 	return "repos/" + t.owner + "/" + t.repo + "/pulls/" + t.pr + "/reviews/" + t.reviewID
 }
@@ -171,11 +175,12 @@ func (g *ghRun) call(method, endpoint string, body any) ([]byte, *GhError) {
 	default:
 		e.Msg = "gh failed: " + err.Error()
 	}
-	if g.note != "" {
-		e.Msg += " (" + g.note + ")"
-	}
+	// gh's text is cut first, so the note on where gh ran always survives.
 	if len(e.Msg) > ghStderrCap {
 		e.Msg = strings.ToValidUTF8(e.Msg[:ghStderrCap], "")
+	}
+	if g.note != "" {
+		e.Msg += " (" + g.note + ")"
 	}
 	return nil, e
 }
@@ -232,13 +237,21 @@ type SubmitRequest struct {
 
 var reviewEvents = map[string]bool{"COMMENT": true, "APPROVE": true, "REQUEST_CHANGES": true}
 
+// ReviewResult is what a review action did. InvalidTarget is a Discard that ran
+// nothing, because the item names no review GitHub could have: nothing changed
+// on GitHub.
+type ReviewResult struct {
+	Action        string
+	InvalidTarget bool
+}
+
 // SubmitReview submits the pending review of a review item as the engineer, with
 // the body it has on GitHub now (the engineer may have edited it there), or the
 // item's summary when that is empty. It returns what happened: ActionSubmitted,
 // or ActionGone when GitHub no longer has a pending review.
-func (s *Service) SubmitReview(session, id string, req SubmitRequest) (string, error) {
+func (s *Service) SubmitReview(session, id string, req SubmitRequest) (ReviewResult, error) {
 	if !reviewEvents[req.Event] {
-		return "", invalid("event must be COMMENT, APPROVE or REQUEST_CHANGES")
+		return ReviewResult{}, invalid("event must be COMMENT, APPROVE or REQUEST_CHANGES")
 	}
 	return s.reviewAction(session, id, false, req.Event, req.Edited)
 }
@@ -247,37 +260,37 @@ func (s *Service) SubmitReview(session, id string, req SubmitRequest) (string, e
 // ActionDiscarded, or ActionGone when GitHub no longer has a pending review. A
 // review whose target is invalid has nothing to delete: it is discarded without
 // gh, so that an item no other action can answer still has a way out.
-func (s *Service) DiscardReview(session, id string) (string, error) {
+func (s *Service) DiscardReview(session, id string) (ReviewResult, error) {
 	return s.reviewAction(session, id, true, "", false)
 }
 
 // reviewAction runs gh for a review item and writes the answer. gh runs outside
 // answerMu; only the answer is written under it, and an item has one action at a
 // time, so a double tap runs gh once.
-func (s *Service) reviewAction(session, id string, discard bool, event string, edited bool) (string, error) {
+func (s *Service) reviewAction(session, id string, discard bool, event string, edited bool) (ReviewResult, error) {
 	it, err := s.open(session, id)
 	if err != nil {
-		return "", err
+		return ReviewResult{}, err
 	}
 	if it.Kind != KindReview {
-		return "", invalid("item %s is a %s, not a review", id, it.Kind)
+		return ReviewResult{}, invalid("item %s is a %s, not a review", id, it.Kind)
 	}
 	t, summary, err := targetOf(it)
 	if err != nil && !discard {
-		return "", err
+		return ReviewResult{}, err
 	}
 	invalidTarget := err != nil
 	var g *ghRun
 	if !invalidTarget {
 		if g, err = s.ghFor(session, t.host); err != nil {
-			return "", err
+			return ReviewResult{}, err
 		}
 	}
 	key := session + "/" + id
 	s.actMu.Lock()
 	if s.acting[key] {
 		s.actMu.Unlock()
-		return "", ErrBusy
+		return ReviewResult{}, ErrBusy
 	}
 	if s.acting == nil {
 		s.acting = map[string]bool{}
@@ -291,7 +304,7 @@ func (s *Service) reviewAction(session, id string, discard bool, event string, e
 	}()
 	// An answer may have landed while this request waited for the item.
 	if _, err := s.open(session, id); err != nil {
-		return "", err
+		return ReviewResult{}, err
 	}
 
 	action, gerr := ActionDiscarded, (*GhError)(nil)
@@ -321,7 +334,14 @@ func (s *Service) reviewAction(session, id string, discard bool, event string, e
 	}
 	if gerr != nil {
 		if !gerr.gone() {
-			return "", gerr
+			return ReviewResult{}, gerr
+		}
+		// GitHub answers 404 for a repository the token cannot see, too: the review
+		// is gone only if the pull request is still there to be seen.
+		if gerr.status == 404 {
+			if _, perr := g.call("GET", t.pullEndpoint(), nil); perr != nil {
+				return ReviewResult{}, &GhError{Msg: "GitHub did not find the review or its pull request, so the token may not reach it: " + perr.Msg, status: perr.status}
+			}
 		}
 		action = ActionGone
 	}
@@ -347,5 +367,5 @@ func (s *Service) reviewAction(session, id string, discard bool, event string, e
 		}
 		return file, []outcomes.Record{rec}, nil
 	})
-	return action, err
+	return ReviewResult{action, invalidTarget && action == ActionDiscarded}, err
 }

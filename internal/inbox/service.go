@@ -138,7 +138,7 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 		}
 		err = s.AnswerQuestion(session, id, req)
 	}
-	respond(w, session, id, "", err)
+	respond(w, session, id, ReviewResult{}, err)
 }
 
 // serveSubmit submits the pending review of a review item as the engineer.
@@ -148,15 +148,15 @@ func (s *Service) serveSubmit(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, 64<<10, &req) {
 		return
 	}
-	action, err := s.SubmitReview(session, id, req)
-	respond(w, session, id, action, err)
+	res, err := s.SubmitReview(session, id, req)
+	respond(w, session, id, res, err)
 }
 
 // serveDiscard deletes the pending review of a review item.
 func (s *Service) serveDiscard(w http.ResponseWriter, r *http.Request) {
 	session, id := r.PathValue("session"), r.PathValue("id")
-	action, err := s.DiscardReview(session, id)
-	respond(w, session, id, action, err)
+	res, err := s.DiscardReview(session, id)
+	respond(w, session, id, res, err)
 }
 
 // serveFindings takes the engineer's decision on every card of a findings item.
@@ -166,19 +166,22 @@ func (s *Service) serveFindings(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, 1<<20, &req) {
 		return
 	}
-	respond(w, session, id, "", s.AnswerFindings(session, id, req))
+	respond(w, session, id, ReviewResult{}, s.AnswerFindings(session, id, req))
 }
 
 // respond answers a request with the item answered, or with the error and the
-// status it calls for. action is what a review did, for the UI to show.
-func respond(w http.ResponseWriter, session, id, action string, err error) {
+// status it calls for. res is what a review did, for the UI to show.
+func respond(w http.ResponseWriter, session, id string, res ReviewResult, err error) {
 	var bad *InvalidError
 	var gh *GhError
 	switch {
 	case err == nil:
 		out := map[string]any{"answered": id}
-		if action != "" {
-			out["action"] = action
+		if res.Action != "" {
+			out["action"] = res.Action
+		}
+		if res.InvalidTarget {
+			out["invalid_target"] = true // nothing was changed on GitHub
 		}
 		writeJSON(w, http.StatusOK, out)
 	case errors.Is(err, ErrNotFound):

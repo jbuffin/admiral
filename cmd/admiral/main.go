@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -267,11 +268,11 @@ func serve(args []string) error {
 		}
 		f, ok := cfg.Current().Fleet(fleet)
 		if !ok {
-			return nil, "fleet " + fleet + " is not in the config"
+			return nil, "the ship's fleet " + strconv.Quote(fleet) + " is not in the config"
 		}
 		dock, ok := f.Harness(harness)
 		if !ok {
-			return nil, "fleet " + fleet + " has no " + harness + " dock in the config"
+			return nil, "fleet " + strconv.Quote(fleet) + " has no " + harness + " dock in the config"
 		}
 		return dock.Environ(), ""
 	}}
