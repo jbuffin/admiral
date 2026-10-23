@@ -7,7 +7,7 @@ Tag `v<x.y.z>`; the version is `<x.y.z>`. `make release` drops the leading `v` o
 Run the **Release** workflow on `main` (Actions → Release → Run workflow, or `gh workflow run release.yml -f bump=patch`). It refuses any other branch, and only one release runs at a time.
 
 - `bump` is `patch`, `minor` or `major`. The workflow raises the highest `v<x.y.z>` tag (with none, the first release is `0.1.0`). `version` takes an exact `x.y.z` instead and must not be tagged yet. `packaging/next-version.sh` does this; run it locally to see what a bump would give.
-- It runs `make build lint test` and `make release`, renders the formula with `packaging/homebrew/render.sh`, and checks it with `brew style` and an offline `brew audit --strict`. A failure up to here tags and publishes nothing.
+- It first runs `macos.yml` (build, lint, the unit tests and `make e2e-critical`), the only automatic run of the e2e suites on CI. Then it runs `make release`, renders the formula with `packaging/homebrew/render.sh`, and checks it with `brew style` and an offline `brew audit --strict`. A failure up to here tags and publishes nothing.
 - It then tags the commit, creates the GitHub release with generated notes and the tarball, its `.sha256` and `install.sh`, and commits the formula to `Formula/admiral.rb` in the tap `jbuffin/homebrew-admiral`. It runs `brew audit --strict --online` before pushing to the tap's `main`.
 - Last, it installs the release with `brew install jbuffin/admiral/admiral` and `brew test admiral`, and again with the published `install.sh`, and checks that both print the version.
 - `dry_run` stops after the formula check, so it builds and audits but tags, publishes and pushes nothing.

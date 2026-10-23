@@ -11,7 +11,7 @@ import (
 // isTerminal is true for a terminal, not for /dev/null or a pipe (both of which
 // a launchd job and the tests have).
 func isTerminal(f *os.File) bool {
-	_, err := unix.IoctlGetTermios(int(f.Fd()), unix.TIOCGETA)
+	_, err := unix.IoctlGetTermios(int(f.Fd()), getTermios)
 	return err == nil
 }
 

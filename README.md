@@ -81,6 +81,7 @@ make build                          # UI, then bin/admiral
 bin/admiral --listen 127.0.0.1:7420 # prints the local URL and the URL for other devices
 make lint                           # go vet, the TypeScript check and the docs lint
 make test                           # Go and Vitest unit tests
+make check                          # what PR CI runs: build, lint, the unit tests without tmux
 make e2e                            # builds, then the server and browser tests
 ```
 

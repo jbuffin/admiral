@@ -14,10 +14,7 @@ import (
 // The events u5 depends on, from a real tmux on a private socket: every bell
 // (not just the first), a pane's exit status, and a pane killed by a signal.
 func TestBellsAndPaneDeath(t *testing.T) {
-	tmux, err := exec.LookPath("tmux")
-	if err != nil {
-		t.Fatal("tmux is required:", err)
-	}
+	tmux := needTmux(t)
 	dir, err := os.MkdirTemp("/tmp", "sh")
 	if err != nil {
 		t.Fatal(err)
@@ -72,13 +69,23 @@ func TestBellsAndPaneDeath(t *testing.T) {
 	}
 }
 
-// testHost is a Host connected to a real tmux on a private socket.
-func testHost(t *testing.T) (*Host, context.Context) {
+// needTmux finds tmux. Under -short (PR CI, which has no tmux) the test skips.
+func needTmux(t *testing.T) string {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("needs tmux: skipped under -short")
+	}
 	tmux, err := exec.LookPath("tmux")
 	if err != nil {
 		t.Fatal("tmux is required:", err)
 	}
+	return tmux
+}
+
+// testHost is a Host connected to a real tmux on a private socket.
+func testHost(t *testing.T) (*Host, context.Context) {
+	t.Helper()
+	tmux := needTmux(t)
 	dir, err := os.MkdirTemp("/tmp", "sh")
 	if err != nil {
 		t.Fatal(err)

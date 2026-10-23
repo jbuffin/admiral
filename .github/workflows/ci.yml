@@ -1,15 +1,13 @@
 name: CI
 
-# Docs-only changes are checked by docs.yml instead.
+# The light check every PR gets, on Ubuntu: build, lint (code and docs) and the
+# unit tests that need neither tmux nor macOS. The e2e suites run on the Mac
+# before a push (with evidence in the PR) and in the release; macos.yml runs
+# them on demand.
 on:
   pull_request:
-    paths-ignore: &docs
-      - 'docs/**'
-      - 'designs/**'
-      - '**/*.md'
   push:
     branches: [main]
-    paths-ignore: *docs
 
 # A newer push to a PR cancels its run. Each push to main runs on its own.
 concurrency:
@@ -21,7 +19,7 @@ permissions:
 
 jobs:
   check:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -32,18 +30,6 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - run: brew install tmux
       - run: npm ci
         working-directory: web
-      - run: make build
-      - run: make lint
-      - run: make test
-      - run: npx playwright install webkit
-        working-directory: web
-      - run: make e2e-critical
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: playwright-traces
-          path: web/test-results/
-          if-no-files-found: ignore
+      - run: make check

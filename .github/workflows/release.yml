@@ -36,7 +36,13 @@ env:
   HOMEBREW_NO_INSTALL_CLEANUP: "1"
 
 jobs:
+  # The full check, e2e suites included (macos.yml). PR CI runs only the light
+  # one, so this is where the e2e suites gate what ships.
+  check:
+    uses: ./.github/workflows/macos.yml
+
   release:
+    needs: check
     runs-on: macos-latest
     steps:
       - name: Refuse refs other than main
@@ -84,12 +90,8 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - run: brew install tmux
       - run: npm ci
         working-directory: web
-      - run: make build
-      - run: make lint
-      - run: make test
 
       - name: Build the release
         env:
