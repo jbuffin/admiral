@@ -26,17 +26,20 @@ import (
 // Ship is one ship as sent to the UI. ExitCode and ExitSignal are set only on
 // an anchored ship.
 type Ship struct {
-	Session    string          `json:"session"`
-	Name       string          `json:"name"`
-	Fleet      string          `json:"fleet"`
-	FleetName  string          `json:"fleet_name"`
-	FleetColor string          `json:"fleet_color"`
-	Harness    string          `json:"harness"`
-	Dir        string          `json:"dir"`
-	Repo       string          `json:"repo"`
-	Skill      *string         `json:"skill"`
-	Source     string          `json:"source"`
-	Panel      string          `json:"panel"`
+	Session    string  `json:"session"`
+	Name       string  `json:"name"`
+	Fleet      string  `json:"fleet"`
+	FleetName  string  `json:"fleet_name"`
+	FleetColor string  `json:"fleet_color"`
+	Harness    string  `json:"harness"`
+	Dir        string  `json:"dir"`
+	Repo       string  `json:"repo"`
+	Skill      *string `json:"skill"`
+	Source     string  `json:"source"`
+	Panel      string  `json:"panel"`
+	// Resources are the locked resources recorded at launch (#118); a ship
+	// holds them while it is underway or needs you.
+	Resources  []string        `json:"-"`
 	Title      string          `json:"title"`
 	URL        string          `json:"url"`
 	OrderID    string          `json:"order_id"`
@@ -87,9 +90,10 @@ type Service struct {
 
 // unlisted is a launched ship the host has not listed yet.
 type unlisted struct {
-	session string
-	panel   string
-	at      time.Time
+	session   string
+	panel     string
+	at        time.Time
+	resources []string
 }
 
 // listedWithin is how long a launched ship may stay unlisted before its order
@@ -121,6 +125,9 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	}
 	if sk := o["skill"]; sk != "" {
 		sh.Skill = &sk
+	}
+	if r := o["resources"]; r != "" {
+		sh.Resources = strings.Split(r, ",")
 	}
 	return sh
 }
@@ -388,7 +395,7 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	if now, ok := s.find(got.Session); ok {
 		sess = now
 	} else if req.Source != "" {
-		s.holdUnlisted(key, got.Session, req.Panel)
+		s.holdUnlisted(key, got.Session, req.Panel, req.Resources)
 	}
 	s.broadcast()
 	return s.ship(sess), nil
@@ -396,13 +403,13 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 
 // holdUnlisted keeps the order's key refused until the host lists the ship, for
 // when the sync after a launch failed.
-func (s *Service) holdUnlisted(key OrderKey, session, panel string) {
+func (s *Service) holdUnlisted(key OrderKey, session, panel string, resources []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.listing == nil {
 		s.listing = map[OrderKey]unlisted{}
 	}
-	s.listing[key] = unlisted{session, panel, time.Now()}
+	s.listing[key] = unlisted{session, panel, time.Now(), resources}
 }
 
 // Pending is the ships launched but not yet in the host's list, as underway
@@ -416,7 +423,7 @@ func (s *Service) Pending() []Ship {
 		if _, listed := s.find(u.session); listed || time.Since(u.at) >= listedWithin {
 			continue
 		}
-		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: key.OrderID, Panel: u.panel, Status: StatusUnderway})
+		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: key.OrderID, Panel: u.panel, Resources: u.resources, Status: StatusUnderway})
 	}
 	return out
 }

@@ -23,6 +23,10 @@ type PanelAutopilot struct {
 	Args      []string // extra harness args, after the fleet's own
 	MaxShips  int      // most ships from this panel at once
 	LowStakes string   // advisor or never
+	// Resources names the locked resources an order of this panel needs; nil
+	// when none. Each is checked against the top-level resources once the whole
+	// file is parsed.
+	Resources []string
 }
 
 // Skill is what a launch runs, in the kinds the launcher takes.
@@ -102,6 +106,13 @@ func parseAutopilotEntry(path string, raw json.RawMessage) (PanelAutopilot, erro
 		case "max_ships":
 			if e.MaxShips, err = positiveInt(p, m.raw); err != nil {
 				return PanelAutopilot{}, err
+			}
+		case "resources":
+			if e.Resources, err = stringList(p, m.raw); err != nil {
+				return PanelAutopilot{}, err
+			}
+			if len(e.Resources) == 0 {
+				e.Resources = nil
 			}
 		case "low_stakes":
 			if e.LowStakes, err = str(p, m.raw); err != nil {

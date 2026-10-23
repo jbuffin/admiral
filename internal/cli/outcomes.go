@@ -92,7 +92,7 @@ func Outcomes(args []string, std IO) error {
 
 // shiplessEvents are the events with no ship: autopilot's, about an order. A
 // --ship filter drops them, since none matches an empty ship.
-var shiplessEvents = map[string]bool{"skipped": true, "launch_failed": true}
+var shiplessEvents = map[string]bool{"skipped": true, "launch_failed": true, "resource_wait": true}
 
 // printOutcomes streams one file's matching lines to std.Out.
 func printOutcomes(path string, since time.Time, ships map[string]bool, std IO) error {

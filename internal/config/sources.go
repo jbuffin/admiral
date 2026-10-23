@@ -34,6 +34,7 @@ func (s Source) clone() Source {
 		ap := make(map[string]PanelAutopilot, len(s.Autopilot))
 		for k, e := range s.Autopilot {
 			e.Args = slices.Clone(e.Args)
+			e.Resources = slices.Clone(e.Resources)
 			ap[k] = e
 		}
 		s.Autopilot = ap

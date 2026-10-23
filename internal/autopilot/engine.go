@@ -15,6 +15,7 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/outcomes"
+	"github.com/jbuffin/admiral/internal/resources"
 	"github.com/jbuffin/admiral/internal/ships"
 	"github.com/jbuffin/admiral/internal/sources"
 )
@@ -52,12 +53,21 @@ type Engine struct {
 	// OnHot runs when an order becomes hot or stops being; nil does nothing. The
 	// sources view shows the mark, so the caller pushes it. It must not block.
 	OnHot func()
+	// Resources gates the launches of panels that name resources (#118); nil
+	// gates nothing.
+	Resources *resources.Set
+	// OnWait runs when a panel starts or stops waiting for resources, or the
+	// resources it waits for change; nil does nothing. The sources view shows
+	// it, so the caller pushes it. It must not block.
+	OnWait func()
 	// Logf takes one line; nil logs nothing.
 	Logf func(format string, args ...any)
 
 	pass    sync.Mutex // one pass at a time
 	mu      sync.Mutex // guards skipped
 	skipped map[pair]string
+	waits   map[pair]*wait       // orders waiting for resources
+	waiting map[[2]string]string // panel -> the order its wait shows
 	poke    chan struct{}
 	pokeMu  sync.Once
 }
@@ -141,6 +151,7 @@ func (e *Engine) Pass() {
 		for _, p := range panels {
 			entry, ok := def.Autopilot[p.ID]
 			if !ok || !entry.Enabled || e.Paused(def.Key, p.ID) {
+				e.endPanelWaits(def.Key, p.ID)
 				continue
 			}
 			fleet, ok := cfg.Fleet(entry.Fleet)
@@ -157,6 +168,7 @@ func (e *Engine) Pass() {
 				}
 				key := pair{def.Key, o.ID}
 				if hidden[ships.OrderKey{Source: def.Key, OrderID: o.ID}] || e.Store.hasLaunched(def.Key, o.ID) {
+					e.endWait(def.Key, p.ID, o.ID)
 					continue
 				}
 				if f := e.Store.failureOf(def.Key, o.ID); f.GaveUp || now.Before(f.NextRetry) {
@@ -170,11 +182,23 @@ func (e *Engine) Pass() {
 				e.mu.Lock()
 				delete(e.skipped, key)
 				e.mu.Unlock()
+				release := func() {}
+				if e.Resources != nil && len(entry.Resources) > 0 {
+					rel, waits := e.Resources.Reserve(entry.Resources)
+					if waits != nil {
+						e.startWait(def.Key, p.ID, o, waits)
+						break // the panel's other orders need the same resources
+					}
+					release = rel
+				}
+				e.endWait(def.Key, p.ID, o.ID)
 				req := launcher.Request{Fleet: entry.Fleet, Harness: entry.Harness, Dir: dir,
 					Skill:  launcher.Skill{Kind: entry.Skill.Kind, Name: entry.Skill.Name},
 					Source: def.Key, OrderID: o.ID, Panel: p.ID, Autopilot: true, LowStakes: entry.LowStakes,
-					ExtraArgs: slices.Clone(entry.Args)}
-				switch sh, lerr := e.Launch(req); {
+					ExtraArgs: slices.Clone(entry.Args), Resources: slices.Clone(entry.Resources)}
+				sh, lerr := e.Launch(req)
+				release() // a launched ship is counted from the ship list now
+				switch {
 				case lerr == nil:
 					e.Launched(def.Key, o.ID)
 					total++
@@ -213,11 +237,20 @@ func (e *Engine) forget(src Source) {
 		e.OnHot()
 	}
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	for k := range e.skipped {
 		if k.Source == src.Key && !listed[k.OrderID] {
 			delete(e.skipped, k)
 		}
+	}
+	var gone []pair
+	for k := range e.waits {
+		if k.Source == src.Key && !listed[k.OrderID] {
+			gone = append(gone, k)
+		}
+	}
+	e.mu.Unlock()
+	for _, k := range gone {
+		e.endWait(k.Source, e.waitPanel(k), k.OrderID)
 	}
 }
 
@@ -262,5 +295,108 @@ func (e *Engine) failed(source, panel string, o sources.Order, lerr *launcher.Er
 	e.Record(outcomes.Record{Event: "launch_failed", Fields: fields})
 	if f.GaveUp && e.OnHot != nil {
 		e.OnHot()
+	}
+}
+
+// wait is an order waiting for resources.
+type wait struct {
+	panel    string
+	names    []string
+	recorded bool // the resource_wait record is written
+}
+
+func (e *Engine) waitPanel(k pair) string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if w := e.waits[k]; w != nil {
+		return w.panel
+	}
+	return ""
+}
+
+// WaitingFor is the resources the panel's waiting order waits for, sorted; empty
+// when the panel isn't waiting.
+func (e *Engine) WaitingFor(source, panel string) []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.waitingFor(source, panel)
+}
+
+func (e *Engine) waitingFor(source, panel string) []string {
+	id, ok := e.waiting[[2]string{source, panel}]
+	if !ok {
+		return []string{}
+	}
+	return slices.Clone(e.waits[pair{source, id}].names)
+}
+
+// startWait notes that the order waits for these resources. It writes the
+// order's resource_wait record the first time every check has finished once, so
+// at most one per wait however its busy and missing resources change.
+func (e *Engine) startWait(source, panel string, o sources.Order, waits []resources.Wait) {
+	names, pending := make([]string, len(waits)), false
+	for i, w := range waits {
+		names[i] = w.Name
+		pending = pending || w.Why == resources.Pending
+	}
+	key := pair{source, o.ID}
+	e.mu.Lock()
+	before := e.waitingFor(source, panel)
+	if e.waits == nil {
+		e.waits, e.waiting = map[pair]*wait{}, map[[2]string]string{}
+	}
+	w := e.waits[key]
+	if w == nil {
+		w = &wait{panel: panel}
+		e.waits[key] = w
+	}
+	w.names = names
+	e.waiting[[2]string{source, panel}] = o.ID
+	record := !pending && !w.recorded
+	w.recorded = w.recorded || record
+	changed := !slices.Equal(before, names)
+	e.mu.Unlock()
+	if record {
+		e.logf("autopilot: %s/%s order %s waits for %s", source, panel, o.ID, strings.Join(names, ", "))
+		e.Record(outcomes.Record{Event: "resource_wait", Fields: map[string]any{
+			"source": source, "panel": panel, "order_id": o.ID, "title": launcher.CleanTitle(o.Title), "resources": waits}})
+	}
+	if changed && e.OnWait != nil {
+		e.OnWait()
+	}
+}
+
+// endWait notes that the order doesn't wait any more.
+func (e *Engine) endWait(source, panel, orderID string) {
+	key := pair{source, orderID}
+	e.mu.Lock()
+	if e.waits[key] == nil {
+		e.mu.Unlock()
+		return
+	}
+	before := e.waitingFor(source, panel)
+	delete(e.waits, key)
+	if e.waiting[[2]string{source, panel}] == orderID {
+		delete(e.waiting, [2]string{source, panel})
+	}
+	changed := !slices.Equal(before, e.waitingFor(source, panel))
+	e.mu.Unlock()
+	if changed && e.OnWait != nil {
+		e.OnWait()
+	}
+}
+
+// endPanelWaits ends every wait of a panel autopilot has stopped looking at.
+func (e *Engine) endPanelWaits(source, panel string) {
+	e.mu.Lock()
+	var ids []string
+	for k, w := range e.waits {
+		if k.Source == source && w.panel == panel {
+			ids = append(ids, k.OrderID)
+		}
+	}
+	e.mu.Unlock()
+	for _, id := range ids {
+		e.endWait(source, panel, id)
 	}
 }

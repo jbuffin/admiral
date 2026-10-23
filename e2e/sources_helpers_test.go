@@ -44,6 +44,10 @@ type panelJSON struct {
 		Enabled  bool `json:"enabled"`
 		Paused   bool `json:"paused"`
 		MaxShips int  `json:"max_ships"`
+		// Resources and WaitingFor are #118's: the entry's locked resources and
+		// those its waiting order waits for.
+		Resources  []string `json:"resources"`
+		WaitingFor []string `json:"waiting_for"`
 	} `json:"autopilot"`
 }
 
