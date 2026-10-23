@@ -239,10 +239,12 @@ var reviewEvents = map[string]bool{"COMMENT": true, "APPROVE": true, "REQUEST_CH
 
 // ReviewResult is what a review action did. InvalidTarget is a Discard that ran
 // nothing, because the item names no review GitHub could have: nothing changed
-// on GitHub.
+// on GitHub. Forgotten is a review removed from the inbox without gh, for the
+// same reason.
 type ReviewResult struct {
 	Action        string
 	InvalidTarget bool
+	Forgotten     bool
 }
 
 // SubmitReview submits the pending review of a review item as the engineer, with
@@ -253,7 +255,7 @@ func (s *Service) SubmitReview(session, id string, req SubmitRequest) (ReviewRes
 	if !reviewEvents[req.Event] {
 		return ReviewResult{}, invalid("event must be COMMENT, APPROVE or REQUEST_CHANGES")
 	}
-	return s.reviewAction(session, id, false, req.Event, req.Edited)
+	return s.reviewAction(session, id, false, false, req.Event, req.Edited)
 }
 
 // DiscardReview deletes the pending review of a review item. It returns
@@ -261,13 +263,21 @@ func (s *Service) SubmitReview(session, id string, req SubmitRequest) (ReviewRes
 // review whose target is invalid has nothing to delete: it is discarded without
 // gh, so that an item no other action can answer still has a way out.
 func (s *Service) DiscardReview(session, id string) (ReviewResult, error) {
-	return s.reviewAction(session, id, true, "", false)
+	return s.reviewAction(session, id, true, false, "", false)
+}
+
+// ForgetReview removes a review item from the inbox without running gh, for a
+// review no action can clear any more (a deleted repository, lost access, a
+// revoked token, a host that is gone). Nothing changes on GitHub. It is allowed
+// on any review item; Submit stays strict.
+func (s *Service) ForgetReview(session, id string) (ReviewResult, error) {
+	return s.reviewAction(session, id, true, true, "", false)
 }
 
 // reviewAction runs gh for a review item and writes the answer. gh runs outside
 // answerMu; only the answer is written under it, and an item has one action at a
 // time, so a double tap runs gh once.
-func (s *Service) reviewAction(session, id string, discard bool, event string, edited bool) (ReviewResult, error) {
+func (s *Service) reviewAction(session, id string, discard, forget bool, event string, edited bool) (ReviewResult, error) {
 	it, err := s.open(session, id)
 	if err != nil {
 		return ReviewResult{}, err
@@ -279,9 +289,9 @@ func (s *Service) reviewAction(session, id string, discard bool, event string, e
 	if err != nil && !discard {
 		return ReviewResult{}, err
 	}
-	invalidTarget := err != nil
+	invalidTarget := err != nil && !forget
 	var g *ghRun
-	if !invalidTarget {
+	if !invalidTarget && !forget {
 		if g, err = s.ghFor(session, t.host); err != nil {
 			return ReviewResult{}, err
 		}
@@ -309,7 +319,7 @@ func (s *Service) reviewAction(session, id string, discard bool, event string, e
 
 	action, gerr := ActionDiscarded, (*GhError)(nil)
 	switch {
-	case invalidTarget:
+	case invalidTarget || forget:
 	case discard:
 		_, gerr = g.call("DELETE", t.endpoint(), nil)
 	default:
@@ -340,7 +350,10 @@ func (s *Service) reviewAction(session, id string, discard bool, event string, e
 		// is gone only if the pull request is still there to be seen.
 		if gerr.status == 404 {
 			if _, perr := g.call("GET", t.pullEndpoint(), nil); perr != nil {
-				return ReviewResult{}, &GhError{Msg: "GitHub did not find the review or its pull request, so the token may not reach it: " + perr.Msg, status: perr.status}
+				if perr.status == 404 {
+					return ReviewResult{}, &GhError{Msg: "GitHub did not find the review or its pull request, so the token may not reach it: " + perr.Msg, status: perr.status}
+				}
+				return ReviewResult{}, perr
 			}
 		}
 		action = ActionGone
@@ -360,6 +373,8 @@ func (s *Service) reviewAction(session, id string, discard bool, event string, e
 			file.Event = event
 			rec.Event = "review_submitted"
 			rec.Fields["review_event"], rec.Fields["edited"] = event, edited
+		case forget:
+			rec.Fields["unreachable"] = true
 		case action == ActionGone:
 			rec.Fields["external"] = true
 		case invalidTarget:
@@ -367,5 +382,5 @@ func (s *Service) reviewAction(session, id string, discard bool, event string, e
 		}
 		return file, []outcomes.Record{rec}, nil
 	})
-	return ReviewResult{action, invalidTarget && action == ActionDiscarded}, err
+	return ReviewResult{action, invalidTarget && action == ActionDiscarded, forget}, err
 }

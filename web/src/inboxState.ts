@@ -168,8 +168,8 @@ export function editReview(key: string, patch: Partial<ReviewUi>): void {
 const opened = new Set<string>();
 export const markEdited = (key: string) => void opened.add(key);
 
-// Whether the server takes `discard {"forget": true}` (u5). Until it does, "Remove from inbox" stays hidden.
-export const FORGET_SUPPORTED = false;
+// Whether the server takes `discard {"forget": true}`; false would hide "Remove from inbox".
+export const FORGET_SUPPORTED = true;
 
 const itemPath = (it: InboxItem, verb: string) => `/api/inbox/${encodeURIComponent(it.session)}/${encodeURIComponent(it.id)}/${verb}`;
 

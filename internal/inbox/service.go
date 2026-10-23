@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -152,10 +153,22 @@ func (s *Service) serveSubmit(w http.ResponseWriter, r *http.Request) {
 	respond(w, session, id, res, err)
 }
 
-// serveDiscard deletes the pending review of a review item.
+// serveDiscard deletes the pending review of a review item, or with
+// {"forget": true} removes the item from the inbox without gh.
 func (s *Service) serveDiscard(w http.ResponseWriter, r *http.Request) {
 	session, id := r.PathValue("session"), r.PathValue("id")
-	res, err := s.DiscardReview(session, id)
+	var req struct {
+		Forget bool `json:"forget"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "the request is not a valid JSON object: "+err.Error())
+		return
+	}
+	discard := s.DiscardReview
+	if req.Forget {
+		discard = s.ForgetReview
+	}
+	res, err := discard(session, id)
 	respond(w, session, id, res, err)
 }
 
@@ -182,6 +195,9 @@ func respond(w http.ResponseWriter, session, id string, res ReviewResult, err er
 		}
 		if res.InvalidTarget {
 			out["invalid_target"] = true // nothing was changed on GitHub
+		}
+		if res.Forgotten {
+			out["forgotten"] = true // likewise
 		}
 		writeJSON(w, http.StatusOK, out)
 	case errors.Is(err, ErrNotFound):

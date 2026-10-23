@@ -35,24 +35,77 @@ type Skill struct {
 	Name string // for kind skill
 }
 
-func parseAutopilot(raw json.RawMessage) (int, error) {
+// ResumeSource is the panel that gets a ship's resume order (#116): a source
+// and one of its panels. Config checks the shape only; the source and panel are
+// looked up when an order is added, so removing the source stays possible.
+type ResumeSource struct {
+	Source string
+	Panel  string
+}
+
+// Autopilot is the top-level autopilot object.
+type Autopilot struct {
+	MaxShips int
+	// Resume is nil when the file names no resume_source.
+	Resume *ResumeSource
+}
+
+func parseAutopilot(raw json.RawMessage) (Autopilot, error) {
 	ms, err := members("autopilot", raw)
 	if err != nil {
-		return 0, err
+		return Autopilot{}, err
 	}
-	max := DefaultAutopilotMaxShips
+	ap := Autopilot{MaxShips: DefaultAutopilotMaxShips}
 	for _, m := range ms {
 		p := "autopilot." + m.key
 		switch m.key {
 		case "max_ships":
-			if max, err = positiveInt(p, m.raw); err != nil {
-				return 0, err
+			if ap.MaxShips, err = positiveInt(p, m.raw); err != nil {
+				return Autopilot{}, err
+			}
+		case "resume_source":
+			if ap.Resume, err = parseResumeSource(p, m.raw); err != nil {
+				return Autopilot{}, err
 			}
 		default:
-			return 0, fmt.Errorf("%s: unknown key", p)
+			return Autopilot{}, fmt.Errorf("%s: unknown key", p)
 		}
 	}
-	return max, nil
+	return ap, nil
+}
+
+func parseResumeSource(path string, raw json.RawMessage) (*ResumeSource, error) {
+	ms, err := members(path, raw)
+	if err != nil {
+		return nil, err
+	}
+	var r ResumeSource
+	have := map[string]bool{}
+	for _, m := range ms {
+		p := path + "." + m.key
+		have[m.key] = true
+		var dst *string
+		switch m.key {
+		case "source":
+			dst = &r.Source
+		case "panel":
+			dst = &r.Panel
+		default:
+			return nil, fmt.Errorf("%s: unknown key", p)
+		}
+		if *dst, err = str(p, m.raw); err != nil {
+			return nil, err
+		}
+		if *dst == "" {
+			return nil, fmt.Errorf("%s: must not be empty", p)
+		}
+	}
+	for _, k := range []string{"source", "panel"} {
+		if !have[k] {
+			return nil, fmt.Errorf("%s.%s: required", path, k)
+		}
+	}
+	return &r, nil
 }
 
 func parsePanelAutopilot(path string, raw json.RawMessage) (map[string]PanelAutopilot, error) {
