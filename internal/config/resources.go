@@ -16,7 +16,7 @@ type Resource struct {
 	Check    []string // argv, run with no shell; exit 0 means present. Nil when none
 }
 
-// resourceNameRe is what a resource name may hold.
+// resourceNameRe is what a resource name may contain.
 var resourceNameRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
 
 func parseResources(raw json.RawMessage) (map[string]Resource, error) {
@@ -28,7 +28,7 @@ func parseResources(raw json.RawMessage) (map[string]Resource, error) {
 	for _, m := range ms {
 		path := "resources." + m.key
 		if !resourceNameRe.MatchString(m.key) {
-			return nil, fmt.Errorf("%s: resource names may hold only letters, digits, . - and _, up to 64 characters", path)
+			return nil, fmt.Errorf("%s: resource names may contain only letters, digits, . - and _, up to 64 characters", path)
 		}
 		if out[m.key], err = parseResource(path, m.raw); err != nil {
 			return nil, err

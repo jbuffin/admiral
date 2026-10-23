@@ -50,7 +50,8 @@ const (
 // Options are the seams of a Set, in the idiom of sources.Service.
 type Options struct {
 	Config func() *config.Config
-	// Ships is every ship that may hold a unit: the host's list and the
+	// Ships is called under the Set's lock and must not call back into the Set.
+	// It is every ship that may hold a unit: the host's list and the
 	// launched ships it has not listed yet.
 	Ships func() []ships.Ship
 	// CheckTimeout and CheckEvery default to 10 s and 15 s.
@@ -71,7 +72,7 @@ type Holder struct {
 	Label   string `json:"label,omitempty"`
 }
 
-// State is one resource as the API shows it. It holds no timestamps, so an
+// State is one resource as the API shows it. It has no timestamps, so an
 // unchanged state doesn't push again.
 type State struct {
 	Name     string   `json:"name"`
@@ -213,10 +214,7 @@ func (s *Set) announce() { s.announceTo(nil) }
 
 // announceTo wakes Changed's waiters and runs hook, or OnChange when hook is nil.
 func (s *Set) announceTo(hook func()) {
-	s.mu.Lock()
-	close(s.changed)
-	s.changed = make(chan struct{})
-	s.mu.Unlock()
+	s.Wake()
 	if hook == nil {
 		hook = s.opt.OnChange
 	}
@@ -225,8 +223,18 @@ func (s *Set) announceTo(hook func()) {
 	}
 }
 
-// Changed is closed when a lock is released, a reservation drops or a check
-// state changes. Fetch a fresh one each time.
+// Wake closes the channel Changed returned, without running OnChange. The
+// caller tells the Set about changes it can't see itself: a ship that stopped
+// holding a unit, a config whose resources changed.
+func (s *Set) Wake() {
+	s.mu.Lock()
+	close(s.changed)
+	s.changed = make(chan struct{})
+	s.mu.Unlock()
+}
+
+// Changed is closed when a lock is released, a reservation drops, a check
+// state changes or the caller wakes the Set. Fetch a fresh one each time.
 func (s *Set) Changed() <-chan struct{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()

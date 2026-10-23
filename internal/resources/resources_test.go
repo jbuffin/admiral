@@ -361,3 +361,24 @@ func TestCheckTimeoutKillsTheProcessGroup(t *testing.T) {
 		}
 	}
 }
+
+// A ship that stops holding a unit wakes a Changed waiter once the caller says
+// the ships changed; this is how a waiting lock learns of a freed unit.
+func TestWakeAnnouncesAShipThatStoppedHoldingAUnit(t *testing.T) {
+	r := newRig(t, map[string]config.Resource{"phone": {Capacity: 1}})
+	r.ships = []ships.Ship{hold("a", ships.StatusUnderway, "phone")}
+	if _, err := r.set.Lock("phone", "install"); !errors.Is(err, resources.ErrBusy) {
+		t.Fatalf("Lock = %v, want ErrBusy while the ship holds the unit", err)
+	}
+	changed := r.set.Changed()
+	r.ships[0].Status = ships.StatusAnchored
+	r.set.Wake()
+	select {
+	case <-changed:
+	case <-time.After(time.Second):
+		t.Fatal("Changed was not closed by Wake")
+	}
+	if _, err := r.set.Lock("phone", "install"); err != nil {
+		t.Errorf("Lock after the ship anchored: %v", err)
+	}
+}

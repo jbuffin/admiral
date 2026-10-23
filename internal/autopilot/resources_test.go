@@ -118,8 +118,8 @@ func TestALaunchInFlightHoldsItsUnit(t *testing.T) {
 	}
 }
 
-// A lock holds the unit like a ship: nothing launches until it is released.
-func TestALockBlocksALaunchUntilReleased(t *testing.T) {
+// A lock holds the unit like a ship: an order waits until it is released.
+func TestALaunchWaitsForALockUntilReleased(t *testing.T) {
 	r := gated(t, phone, "phone")
 	rel, err := r.engine.Resources.Lock("phone", "install")
 	if err != nil {
