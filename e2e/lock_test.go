@@ -283,6 +283,41 @@ func TestLockBusyExits75AndWaitRunsAfterTheFirstEnds(t *testing.T) {
 	}
 }
 
+// A --wait lock waits behind an autopilot ship that holds the unit and takes it
+// once the ship's session is gone: main.go wakes the Set when a ship changes.
+func TestLockWaitsBehindAShipUntilItEnds(t *testing.T) {
+	w := newWorld(t)
+	w.writeCue("wait go", "exit 0")
+	w.repo("r1", remoteOf("r1"))
+	p := w.newTP("a")
+	p.mainOrders(apOrder("o1", remoteOf("r1")))
+	w.installPlugin("testplug", "testplug")
+	w.writeLockConfig(map[string]any{"a": tpAutopilot(p, "main", apEntry(true, 1, map[string]any{"resources": []string{"phone"}}))})
+	w.start()
+	ship := w.waitShipCount(10*time.Second, "o1's ship", fromOrder("o1"), 1)[0]
+	w.waitLock("held by the ship", func(r lockRes) bool {
+		return r.InUse == 1 && len(r.Holders) == 1 && r.Holders[0].Kind == "ship"
+	})
+
+	l := w.startLock("", "--wait")
+	time.Sleep(time.Second)
+	if _, err := os.Stat(filepath.Join(l.dir, "started")); err == nil || l.exited() {
+		t.Fatalf("a --wait lock ran while a ship held the only unit; stderr %q", l.err.String())
+	}
+	w.mustTmux("kill-session", "-t", ship.Session)
+	deadline := time.Now().Add(10 * time.Second)
+	for _, err := os.Stat(filepath.Join(l.dir, "started")); err != nil; _, err = os.Stat(filepath.Join(l.dir, "started")) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the --wait lock never ran within 10s of the ship's session ending; stderr %q", l.err.String())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	l.release()
+	if code := w.waitExit(l, "after release"); code != 0 {
+		t.Errorf("admiral lock exited %d, want 0", code)
+	}
+}
+
 // A killed `admiral lock` (SIGKILL, no chance to clean up) frees the unit: the
 // dropped connection releases it.
 func TestLockKilledReleasesTheUnit(t *testing.T) {

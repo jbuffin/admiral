@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -15,6 +16,10 @@ import (
 	"github.com/jbuffin/admiral/internal/resources"
 	"github.com/jbuffin/admiral/internal/server"
 )
+
+// retryEvery is how often a waiting request tries again besides Changed: a ship
+// that was only pending frees its unit when it expires, with no wake.
+const retryEvery = 15 * time.Second
 
 // maxLabel is the longest holder label, in characters.
 const maxLabel = 64
@@ -71,13 +76,18 @@ func (rt *Route) serve(w http.ResponseWriter, r *http.Request) {
 			fail(w, http.StatusConflict, "no unit of the resource is free")
 			return
 		}
+		retry := time.NewTimer(retryEvery)
 		select {
 		case <-changed:
+		case <-retry.C:
 		case <-r.Context().Done():
+			retry.Stop()
 			return
 		case <-rt.Stopping:
+			retry.Stop()
 			return
 		}
+		retry.Stop()
 	}
 	defer release()
 	if rt.OnTake != nil {
