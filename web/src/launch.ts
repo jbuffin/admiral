@@ -5,6 +5,8 @@ import { type Order, panelViews } from './sources';
 // An order as launch needs it: where it came from and what it says.
 export interface OrderRef {
   source: string;
+  // One order can be listed in two panels, which may need different resources.
+  panel: string;
   order: Order;
 }
 
@@ -24,7 +26,7 @@ export const launching = signal<(Partial<OrderRef> & { fleet: string; harness: H
 // is no longer selected, and Escape deselects.
 effect(() => {
   const s = selected.peek();
-  const shown = panelViews.value.some((v) => v.source.key === s?.source && v.orders.some((o) => o.id === s.order.id));
+  const shown = panelViews.value.some((v) => v.source.key === s?.source && v.panel.id === s.panel && v.orders.some((o) => o.id === s.order.id));
   if (s && !shown) selected.value = null;
 });
 window.addEventListener('keydown', (e) => {
@@ -35,7 +37,7 @@ export const armed = computed(() => dragging.value !== null || selected.value !=
 
 export const dockKey = (fleet: string, harness: string) => `${fleet}/${harness}`;
 
-const sameOrder = (a: OrderRef, b: OrderRef) => a.source === b.source && a.order.id === b.order.id;
+const sameOrder = (a: OrderRef, b: OrderRef) => a.source === b.source && a.panel === b.panel && a.order.id === b.order.id;
 export const isSelected = (r: OrderRef) => !!selected.value && sameOrder(selected.value, r);
 
 export function openLaunch(ref: OrderRef | null, fleet: string, harness: HarnessName): void {

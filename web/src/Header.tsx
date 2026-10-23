@@ -5,6 +5,7 @@ import { toggleSound, muted } from './chime';
 import { config } from './config';
 import { offline, onMessage, signedOut } from './connection';
 import { openSetup } from './setup';
+import { chipLabel, chipText, resources } from './resources';
 import { anyAutopilot } from './sources';
 import { atSea, board, needsYou, ships, shipsLoaded } from './ships';
 
@@ -76,6 +77,25 @@ function Banners() {
   );
 }
 
+// One chip per resource: lit when its check passes (or it has none), muted while the first check runs,
+// and in the banner's attention colors when the check fails. The units and holders are in its label.
+function ResourceChips() {
+  const shipName = (session: string) => ships.value.find((s) => s.session === session)?.name ?? session;
+  return (
+    <>
+      {resources.value.map((r) => {
+        const label = chipLabel(r, shipName);
+        const look = r.check === 'missing' ? ' pill-missing' : r.check === 'pending' ? '' : ' pill-lit';
+        return (
+          <span key={r.name} class={`pill resource-chip${look}`} role="img" aria-label={label} title={label}>
+            {chipText(r)}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 function SeaPills() {
   const asking = needsYou.value;
   const off = muted.value;
@@ -126,6 +146,7 @@ export function Header() {
           </div>
         </div>
         <div class="header-pills">
+          <ResourceChips />
           <SeaPills />
           {n !== undefined && (
             <button type="button" class="pill-hit fleet-count" onClick={() => void openSetup()}>

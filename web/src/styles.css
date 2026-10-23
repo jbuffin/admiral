@@ -2309,3 +2309,17 @@ body.dragging * {
 .term-box .xterm-viewport {
   background-color: var(--color-terminal-bg) !important;
 }
+
+.pill-missing {
+  background-color: var(--color-attention-plaque);
+  border: var(--shape-outline) solid var(--color-attention-border);
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.panel-waiting {
+  margin: 0;
+  padding: 0 12px 8px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}

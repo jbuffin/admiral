@@ -29,8 +29,8 @@ export function OrderItem({ source, panelId, order, fail }: { source: Source; pa
 
   return (
     <li
-      class={`${hasEdit || hasRemove ? 'order with-menu' : 'order'}${isSelected({ source: source.key, order }) ? ' selected' : ''}`}
-      onPointerDown={(e) => pressOrder(e, { source: source.key, order })}
+      class={`${hasEdit || hasRemove ? 'order with-menu' : 'order'}${isSelected({ source: source.key, panel: panelId, order }) ? ' selected' : ''}`}
+      onPointerDown={(e) => pressOrder(e, { source: source.key, panel: panelId, order })}
     >
       <div class="order-main">
         <div class="order-meta">
