@@ -58,6 +58,10 @@ type Options struct {
 	// OnChange runs, outside the Set's lock, when a check state changed, a lock
 	// was released or a reservation dropped. It must not block.
 	OnChange func()
+	// OnDrop, when set, runs in place of OnChange for a dropped reservation.
+	// The engine drops its own reservations inside a pass, so it needs no wake-up
+	// for them.
+	OnDrop func()
 }
 
 // Holder is one thing holding a unit: a ship by session, or a lock by label.
@@ -205,13 +209,19 @@ func (s *Set) record(name string, argv []string, ok bool) {
 }
 
 // announce wakes Changed's waiters and runs OnChange.
-func (s *Set) announce() {
+func (s *Set) announce() { s.announceTo(nil) }
+
+// announceTo wakes Changed's waiters and runs hook, or OnChange when hook is nil.
+func (s *Set) announceTo(hook func()) {
 	s.mu.Lock()
 	close(s.changed)
 	s.changed = make(chan struct{})
 	s.mu.Unlock()
-	if s.opt.OnChange != nil {
-		s.opt.OnChange()
+	if hook == nil {
+		hook = s.opt.OnChange
+	}
+	if hook != nil {
+		hook()
 	}
 }
 
@@ -323,7 +333,7 @@ func (s *Set) Reserve(names []string) (release func(), waits []Wait) {
 				s.reserved[name]--
 			}
 			s.mu.Unlock()
-			s.announce()
+			s.announceTo(s.opt.OnDrop)
 		})
 	}, nil
 }

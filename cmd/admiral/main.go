@@ -215,7 +215,10 @@ func serve(args []string) error {
 	// looks again and the UI is told.
 	var resourceService *resources.Service
 	resourceSet := resources.New(resources.Options{Config: cfg.Current, Ships: allShips,
-		OnChange: func() { resourceService.Broadcast(); engine.Poke() }})
+		OnChange: func() { resourceService.Broadcast(); engine.Poke() },
+		// The engine drops its reservations inside a pass; poking it for each would
+		// make a refused launch (a 503, a 409) start the next pass at once.
+		OnDrop: func() { resourceService.Broadcast() }})
 	resourceService = &resources.Service{Set: resourceSet, Hub: hub}
 	engine.Resources = resourceSet
 	engine.OnWait = sourceService.Notify
