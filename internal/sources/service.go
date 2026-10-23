@@ -800,10 +800,28 @@ func (s *Service) serveSchema(w http.ResponseWriter, r *http.Request) {
 // mutable finds the source and its process for an operation that needs the
 // capability cap; it answers the request itself when it cannot.
 func (s *Service) mutable(w http.ResponseWriter, key, capability string) (*runner, *proc, bool) {
+	rn, p, fail := s.mutableFor(key, capability)
+	if fail != nil {
+		writeError(w, fail.Status, fail.Msg)
+		return nil, nil, false
+	}
+	return rn, p, true
+}
+
+// RequestError is why an operation on a source's orders was refused, as the
+// status the HTTP route answers with and the message it carries.
+type RequestError struct {
+	Status int
+	Msg    string
+}
+
+func (e *RequestError) Error() string { return e.Msg }
+
+// mutableFor is mutable for a caller that has no response to write.
+func (s *Service) mutableFor(key, capability string) (*runner, *proc, *RequestError) {
 	rn := s.Sup.runner(key)
 	if rn == nil {
-		writeError(w, http.StatusNotFound, "source "+key+" not found")
-		return nil, nil, false
+		return nil, nil, &RequestError{http.StatusNotFound, "source " + key + " not found"}
 	}
 	rn.mu.Lock()
 	readOnly, state, caps := rn.readOnly, rn.state, rn.caps
@@ -811,28 +829,31 @@ func (s *Service) mutable(w http.ResponseWriter, key, capability string) (*runne
 	p, live := rn.live()
 	switch {
 	case readOnly:
-		writeError(w, http.StatusConflict, "The source is read-only until it runs again")
+		return nil, nil, &RequestError{http.StatusConflict, "The source is read-only until it runs again"}
 	case !live:
-		writeError(w, http.StatusConflict, "The source is "+state+", not running yet")
+		return nil, nil, &RequestError{http.StatusConflict, "The source is " + state + ", not running yet"}
 	case !slices.Contains(caps, capability):
-		writeError(w, http.StatusConflict, "The source cannot "+capability+" orders")
-	default:
-		return rn, p, true
+		return nil, nil, &RequestError{http.StatusConflict, "The source cannot " + capability + " orders"}
 	}
-	return nil, nil, false
+	return rn, p, nil
+}
+
+// callFailure is a failed request to a plugin, as the route answers it.
+func callFailure(err error) *RequestError {
+	var rpc *rpcError
+	switch {
+	case errors.As(err, &rpc):
+		return &RequestError{http.StatusUnprocessableEntity, rpc.Error()}
+	case errors.Is(err, errTimeout):
+		return &RequestError{http.StatusGatewayTimeout, err.Error()}
+	}
+	return &RequestError{http.StatusBadGateway, err.Error()}
 }
 
 // callError answers a failed request to a plugin.
 func callError(w http.ResponseWriter, err error) {
-	var rpc *rpcError
-	switch {
-	case errors.As(err, &rpc):
-		writeError(w, http.StatusUnprocessableEntity, rpc.Error())
-	case errors.Is(err, errTimeout):
-		writeError(w, http.StatusGatewayTimeout, err.Error())
-	default:
-		writeError(w, http.StatusBadGateway, err.Error())
-	}
+	f := callFailure(err)
+	writeError(w, f.Status, f.Msg)
 }
 
 func (s *Service) serveRefresh(w http.ResponseWriter, r *http.Request) {
@@ -902,34 +923,42 @@ func (s *Service) serveAddOrder(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	rn, p, ok := s.mutable(w, r.PathValue("key"), "add")
-	if !ok {
+	id, fail := s.AddOrder(r.Context(), r.PathValue("key"), req.Panel, req.Text)
+	if fail != nil {
+		writeError(w, fail.Status, fail.Msg)
 		return
 	}
-	if msg := checkText(req.Text); msg != "" {
-		writeError(w, http.StatusBadRequest, msg)
-		return
+	writeJSON(w, http.StatusCreated, map[string]string{"id": id})
+}
+
+// AddOrder adds an order to a panel of a source, as the add route does, and
+// returns its id. The source must run and be able to add; a refusal says why.
+func (s *Service) AddOrder(ctx context.Context, key, panel, text string) (string, *RequestError) {
+	rn, p, fail := s.mutableFor(key, "add")
+	if fail != nil {
+		return "", fail
 	}
-	panel, found := panelOf(rn, req.Panel, "")
+	if msg := checkText(text); msg != "" {
+		return "", &RequestError{http.StatusBadRequest, msg}
+	}
+	id, found := panelOf(rn, panel, "")
 	if !found {
-		writeError(w, http.StatusNotFound, "panel "+strconv.Quote(req.Panel)+" not found")
-		return
+		return "", &RequestError{http.StatusNotFound, "panel " + strconv.Quote(panel) + " not found"}
 	}
-	res, err := p.call(r.Context(), "orders.add", map[string]any{"panel": panel, "text": req.Text}, callTimeout)
+	panel = id
+	res, err := p.call(ctx, "orders.add", map[string]any{"panel": panel, "text": text}, callTimeout)
 	if err != nil {
-		callError(w, err)
-		return
+		return "", callFailure(err)
 	}
 	var added struct {
 		ID string `json:"id"`
 	}
 	if err := json.Unmarshal(res, &added); err != nil || added.ID == "" || hasControl(added.ID) {
 		rn.logf("protocol error: orders.add answered %s", cleanMsg(string(res)))
-		writeError(w, http.StatusBadGateway, "the order source did not answer with the new order's id")
-		return
+		return "", &RequestError{http.StatusBadGateway, "the order source did not answer with the new order's id"}
 	}
 	rn.wantPull(false, panel)
-	writeJSON(w, http.StatusCreated, map[string]string{"id": added.ID})
+	return added.ID, nil
 }
 
 func (s *Service) serveEditOrder(w http.ResponseWriter, r *http.Request) {

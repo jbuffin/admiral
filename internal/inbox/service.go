@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/state"
@@ -38,12 +39,21 @@ type Service struct {
 	Dock func(session string) (env []string, why string)
 	// Kept holds the records of sailed-off ships whose inbox is kept; nil keeps none.
 	Kept *state.Store
+	// ResumeTarget is autopilot.resume_source; nil when the config names none.
+	ResumeTarget func() *config.ResumeSource
+	// AddOrder adds an order to a panel of a source. retry says whether a failure
+	// may pass (a source that is not running yet) or is for good (a text it refuses).
+	AddOrder func(ctx context.Context, source, panel, text string) (id string, retry bool, err error)
 
-	answerMu sync.Mutex      // one answer at a time
-	actMu    sync.Mutex      // guards acting
-	acting   map[string]bool // the items a gh action is running on
-	scanMu   sync.Mutex      // one refresh at a time
-	mu       sync.Mutex      // guards items
+	answerMu sync.Mutex        // one answer at a time
+	actMu    sync.Mutex        // guards acting
+	acting   map[string]bool   // the items a gh action is running on
+	resumeMu sync.Mutex        // one pass over the resume orders at a time
+	lastErr  map[string]string // the last failure logged for a resume order; under resumeMu
+	noTarget sync.Once
+	resume   chan struct{} // resume orders may be ready; buffered; under mu
+	scanMu   sync.Mutex    // one refresh at a time
+	mu       sync.Mutex    // guards items
 	items    []Item
 	notify   chan struct{} // a ship changed; buffered, so Notify never blocks
 	watched  map[string]os.FileInfo
@@ -71,6 +81,7 @@ func (s *Service) message() any { return map[string]any{"type": "inbox", "items"
 // Notify asks Run to push the items again, for a change in the ships that name
 // them. It never blocks.
 func (s *Service) Notify() {
+	s.kickResume()
 	select {
 	case s.notifyChan() <- struct{}{}:
 	default:
@@ -229,6 +240,7 @@ func (s *Service) Refresh() {
 	s.items = items // under scanMu, so an older scan cannot land after a newer one
 	s.mu.Unlock()
 	s.scanMu.Unlock()
+	s.captureAll() // answers written by someone else count too
 	s.broadcast()
 }
 
@@ -247,6 +259,8 @@ func (s *Service) Run(ctx context.Context) {
 		s.scanMu.Unlock()
 		events, errs = w.Events, w.Errors
 	}
+	go s.resumeLoop(ctx)
+	s.captureAll() // before the sweep deletes the report of an inbox answered while Admiral was down
 	s.sweepKept()
 	s.Refresh()
 	changed := s.notifyChan()

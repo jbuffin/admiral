@@ -58,6 +58,21 @@ func (s *Service) open(session, id string) (Item, error) {
 // directory that is gone is ErrNotFound. When the answer is the last one of a
 // ship whose inbox is kept, the ship's files go.
 func (s *Service) Answer(session, id, kind string, build func(Item) (file any, recs []outcomes.Record, err error)) error {
+	if err := s.writeAnswered(session, id, kind, build); err != nil {
+		return err
+	}
+	// Outside answerMu: adding the resume order calls the source. The text is in
+	// the state already, so the files may go whether or not the add worked.
+	s.addResumes()
+	s.answerMu.Lock()
+	s.release(session)
+	s.answerMu.Unlock()
+	s.Refresh()
+	return nil
+}
+
+// writeAnswered is Answer up to the answer file, under answerMu.
+func (s *Service) writeAnswered(session, id, kind string, build func(Item) (file any, recs []outcomes.Record, err error)) error {
 	if !validSession(session) || !idPattern.MatchString(id) {
 		return ErrNotFound
 	}
@@ -97,8 +112,7 @@ func (s *Service) Answer(session, id, kind string, build func(Item) (file any, r
 			s.Outcomes.Enqueue(r, nil)
 		}
 	}
-	s.release(session)
-	s.Refresh()
+	s.CaptureResume(session) // before anything deletes the report
 	return nil
 }
 

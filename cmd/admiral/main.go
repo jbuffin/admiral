@@ -276,6 +276,18 @@ func serve(args []string) error {
 		}
 		return dock.Environ(), ""
 	}}
+	// Resume orders: the report's text goes to the panel autopilot.resume_source names.
+	inboxService.ResumeTarget = func() *config.ResumeSource { return cfg.Current().ResumeSource }
+	inboxService.AddOrder = func(ctx context.Context, source, panel, text string) (string, bool, error) {
+		id, fail := sourceService.AddOrder(ctx, source, panel, text)
+		if fail != nil {
+			return "", fail.Status != http.StatusBadRequest, fail // a text the source refuses stays refused
+		}
+		return id, false, nil
+	}
+	shipService.BeforeRemoveFiles = inboxService.CaptureResume
+	changed := supervisor.OnChange
+	supervisor.OnChange = func() { changed(); inboxService.KickResume() }
 	shipService.Orders = sourceService
 	shipService.OnChange = func() {
 		sourceService.Notify()
@@ -312,6 +324,7 @@ func serve(args []string) error {
 				resourceSet.Wake()
 				resourceService.Broadcast()
 				engine.Poke()
+				inboxService.KickResume()
 			case <-shipsCtx.Done():
 				return
 			}
