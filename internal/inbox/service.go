@@ -14,10 +14,14 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/server"
+	"github.com/jbuffin/admiral/internal/state"
 )
 
 // settle lets a ship finish writing before the inbox is read again.
 const settle = 100 * time.Millisecond
+
+// rescanEvery is how often the inbox is read when it cannot be watched.
+const rescanEvery = 30 * time.Second
 
 // Service reads and serves the inbox of $ADMIRAL_HOME.
 type Service struct {
@@ -28,10 +32,17 @@ type Service struct {
 	Ship func(session string) (name, harness string, ok bool)
 	// Outcomes is the outcome log; nil keeps none.
 	Outcomes *outcomes.Writer
+	// Dock is the environment of the dock a ship was launched from, for gh. With no
+	// env, why says which of the ship and its dock is unknown.
+	Dock func(session string) (env []string, why string)
+	// Kept holds the records of sailed-off ships whose inbox is kept; nil keeps none.
+	Kept *state.Store
 
-	answerMu sync.Mutex // one answer at a time
-	scanMu   sync.Mutex // one refresh at a time
-	mu       sync.Mutex // guards items
+	answerMu sync.Mutex      // one answer at a time
+	actMu    sync.Mutex      // guards acting
+	acting   map[string]bool // the items a gh action is running on
+	scanMu   sync.Mutex      // one refresh at a time
+	mu       sync.Mutex      // guards items
 	items    []Item
 	notify   chan struct{} // a ship changed; buffered, so Notify never blocks
 	watched  map[string]os.FileInfo
@@ -83,6 +94,9 @@ func (s *Service) Connected(c *server.Client) { _ = c.SendOnce("inbox", s.messag
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/inbox", s.serveList)
 	mux.HandleFunc("POST /api/inbox/{session}/{id}/answer", s.serveAnswer)
+	mux.HandleFunc("POST /api/inbox/{session}/{id}/submit", s.serveSubmit)
+	mux.HandleFunc("POST /api/inbox/{session}/{id}/discard", s.serveDiscard)
+	mux.HandleFunc("POST /api/inbox/{session}/{id}/findings", s.serveFindings)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -100,26 +114,90 @@ func (s *Service) serveList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": s.List()})
 }
 
-// serveAnswer takes the engineer's answer to an item. Only question items so
-// far; the other kinds answer 400.
+// decode reads the request body, at most max bytes, as a JSON object into v.
+func decode(w http.ResponseWriter, r *http.Request, max int64, v any) bool {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, max)).Decode(v); err != nil {
+		writeError(w, http.StatusBadRequest, "the request is not a valid JSON object: "+err.Error())
+		return false
+	}
+	return true
+}
+
+// serveAnswer takes the engineer's answer to a question item. A review is
+// answered by submit or discard, and findings by findings.
 func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	session, id := r.PathValue("session"), r.PathValue("id")
-	var req QuestionRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256<<10)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "the answer is not a valid JSON object: "+err.Error())
+	it, err := s.open(session, id)
+	if err == nil && it.Kind != KindQuestion {
+		err = invalid("item %s is a %s: answer it with %s", id, it.Kind, map[string]string{KindReview: "submit or discard", KindFindings: "findings"}[it.Kind])
+	}
+	if err == nil {
+		var req QuestionRequest
+		if !decode(w, r, 256<<10, &req) {
+			return
+		}
+		err = s.AnswerQuestion(session, id, req)
+	}
+	respond(w, session, id, ReviewResult{}, err)
+}
+
+// serveSubmit submits the pending review of a review item as the engineer.
+func (s *Service) serveSubmit(w http.ResponseWriter, r *http.Request) {
+	session, id := r.PathValue("session"), r.PathValue("id")
+	var req SubmitRequest
+	if !decode(w, r, 64<<10, &req) {
 		return
 	}
-	err := s.AnswerQuestion(session, id, req)
+	res, err := s.SubmitReview(session, id, req)
+	respond(w, session, id, res, err)
+}
+
+// serveDiscard deletes the pending review of a review item.
+func (s *Service) serveDiscard(w http.ResponseWriter, r *http.Request) {
+	session, id := r.PathValue("session"), r.PathValue("id")
+	res, err := s.DiscardReview(session, id)
+	respond(w, session, id, res, err)
+}
+
+// serveFindings takes the engineer's decision on every card of a findings item.
+func (s *Service) serveFindings(w http.ResponseWriter, r *http.Request) {
+	session, id := r.PathValue("session"), r.PathValue("id")
+	var req FindingsRequest
+	if !decode(w, r, 1<<20, &req) {
+		return
+	}
+	respond(w, session, id, ReviewResult{}, s.AnswerFindings(session, id, req))
+}
+
+// respond answers a request with the item answered, or with the error and the
+// status it calls for. res is what a review did, for the UI to show.
+func respond(w http.ResponseWriter, session, id string, res ReviewResult, err error) {
 	var bad *InvalidError
+	var gh *GhError
 	switch {
 	case err == nil:
-		writeJSON(w, http.StatusOK, map[string]any{"answered": id})
+		out := map[string]any{"answered": id}
+		if res.Action != "" {
+			out["action"] = res.Action
+		}
+		if res.InvalidTarget {
+			out["invalid_target"] = true // nothing was changed on GitHub
+		}
+		writeJSON(w, http.StatusOK, out)
 	case errors.Is(err, ErrNotFound):
 		writeError(w, http.StatusNotFound, "no item "+id+" in the inbox of "+session)
 	case errors.Is(err, ErrAnswered):
 		writeError(w, http.StatusConflict, "item "+id+" is already answered")
+	case errors.Is(err, ErrBusy):
+		writeError(w, http.StatusConflict, err.Error())
 	case errors.As(err, &bad):
 		writeError(w, http.StatusBadRequest, bad.Msg)
+	case errors.As(err, &gh):
+		status := http.StatusBadGateway
+		if gh.Missing {
+			status = http.StatusServiceUnavailable
+		}
+		writeError(w, status, gh.Msg)
 	default:
 		writeError(w, http.StatusInternalServerError, err.Error())
 	}
@@ -153,10 +231,17 @@ func (s *Service) Run(ctx context.Context) {
 		s.scanMu.Unlock()
 		events, errs = w.Events, w.Errors
 	}
+	s.sweepKept()
 	s.Refresh()
 	changed := s.notifyChan()
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
+	var rescan <-chan time.Time // with no watcher, the inbox is read on a clock
+	if events == nil {
+		t := time.NewTicker(rescanEvery)
+		defer t.Stop()
+		rescan = t.C
+	}
 	for {
 		select {
 		case <-changed:
@@ -168,7 +253,10 @@ func (s *Service) Run(ctx context.Context) {
 			if s.relevant(ev) {
 				timer.Reset(settle)
 			}
-		case <-errs:
+		case <-errs: // events may have been lost: read again
+			timer.Reset(settle)
+		case <-rescan:
+			s.Refresh()
 		case <-timer.C:
 			s.Refresh()
 		case <-ctx.Done():

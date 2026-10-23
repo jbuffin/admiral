@@ -31,12 +31,24 @@ type Position struct {
 
 type file struct {
 	Version   int                  `json:"version"`
-	Positions map[string]Position  `json:"positions"` // by tmux session
-	LastDirs  map[string]string    `json:"last_dirs"` // by DockKey
-	DirsUsed  map[string]time.Time `json:"dirs_used"` // by directory
+	Positions map[string]Position  `json:"positions"`              // by tmux session
+	LastDirs  map[string]string    `json:"last_dirs"`              // by DockKey
+	DirsUsed  map[string]time.Time `json:"dirs_used"`              // by directory
+	Kept      map[string]KeptShip  `json:"kept_inboxes,omitempty"` // by tmux session
 	// Paused holds the autopilot panels the engineer paused, by source key and
 	// panel id. Optional, so Version stays 1.
 	Paused map[string]map[string]bool `json:"paused,omitempty"`
+}
+
+// KeptShip is what Admiral remembers of a ship that sailed off with an item
+// still unanswered in its inbox (ADR 0016): enough to name it in the inbox and
+// to find its dock for gh once the tmux session is gone.
+type KeptShip struct {
+	Name       string `json:"name"`
+	Fleet      string `json:"fleet"`
+	FleetName  string `json:"fleet_name,omitempty"`
+	FleetColor string `json:"fleet_color,omitempty"`
+	Harness    string `json:"harness"`
 }
 
 // DockKey keys a dock's last directory.
@@ -84,7 +96,53 @@ func Open(dir string) (*Store, error) {
 	if f.Paused != nil {
 		s.data.Paused = f.Paused
 	}
+	if f.Kept != nil {
+		s.data.Kept = f.Kept
+	}
 	return s, nil
+}
+
+// KeepInbox records a sailed-off ship whose inbox is kept, and writes the file
+// now: a lost record would let a new launch reuse the name and clear the inbox.
+func (s *Store) KeepInbox(session string, k KeptShip) error {
+	s.mu.Lock()
+	if s.data.Kept == nil {
+		s.data.Kept = map[string]KeptShip{}
+	}
+	s.data.Kept[session] = k
+	s.mu.Unlock()
+	return s.Flush()
+}
+
+// KeptInbox is the record of a ship whose inbox is kept.
+func (s *Store) KeptInbox(session string) (KeptShip, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	k, ok := s.data.Kept[session]
+	return k, ok
+}
+
+// KeptInboxes is the sessions that have a record.
+func (s *Store) KeptInboxes() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]string, 0, len(s.data.Kept))
+	for session := range s.data.Kept {
+		out = append(out, session)
+	}
+	return out
+}
+
+// DropInbox forgets the record, once the ship's files are gone.
+func (s *Store) DropInbox(session string) error {
+	s.mu.Lock()
+	_, ok := s.data.Kept[session]
+	delete(s.data.Kept, session)
+	s.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	return s.Flush()
 }
 
 func (s *Store) Position(session string) (Position, bool) {

@@ -5,5 +5,12 @@ useDefault = true
 
 # The e2e helpers plant decoy secrets on purpose, to prove the skill index
 # never returns anything but the plugin key from a settings file.
-[allowlist]
+[[allowlists]]
 regexes = ['''decoy-(secret|helper)-[0-9a-f]+''']
+
+# The first wording of an e2e failure message (in the test-writer commit's
+# history, line 277 of e2e/inbox_actions_test.go) read as a key. The tree no
+# longer holds it; this keeps the scan of that commit clean.
+[[allowlists]]
+regexTarget = "line"
+regexes = ['''fleet's GH_TOKEN fake-token-[a-z0-9]+, GH_PROMPT_DISABLED=1''']

@@ -202,7 +202,7 @@ func (s *Service) Run(ctx context.Context) {
 		// An exit-0 ship from before a restart is not shown sailing off again.
 		for _, sess := range s.Host.Sessions() {
 			if sess.IsShip() && exitedCleanly(sess) {
-				_ = s.killShip(ctx, sess.Name)
+				_ = s.killShip(ctx, sess.Name, true)
 			}
 		}
 		_ = s.Host.Sync(ctx)
@@ -298,7 +298,7 @@ func (s *Service) sailOff(ctx context.Context, since map[string]time.Time) {
 			since[sess.Name] = now
 		}
 		if now.Sub(since[sess.Name]) >= SailOffDelay {
-			killed = s.killShip(ctx, sess.Name) == nil || killed
+			killed = s.killShip(ctx, sess.Name, true) == nil || killed
 		}
 	}
 	for name := range since {
@@ -572,7 +572,7 @@ func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 	s.observe(ctx) // the ship's `ended` goes into the log before `dismissed`
 	s.retryEnded(sess)
 	s.record(outcomes.Record{Ship: session, Event: "dismissed"}, nil)
-	if err := s.killShip(ctx, session); err != nil {
+	if err := s.killShip(ctx, session, false); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

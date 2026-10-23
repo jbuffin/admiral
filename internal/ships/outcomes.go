@@ -15,9 +15,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/sessionhost"
+	"github.com/jbuffin/admiral/internal/state"
 )
 
 // tallyOptions are the session options that hold a tally.
@@ -303,15 +305,23 @@ func (s *Service) retryEnded(sess sessionhost.Session) {
 // or when the writer gets there. A ship killed while its `ended` fails keeps its
 // files. A ship Admiral has no `ended` for is not cleaned unless tmux held the
 // ended marker. Dismiss must run observe first, so that tr.end exists to be set.
-func (s *Service) killShip(ctx context.Context, name string) error {
+// With keepInbox, a ship with an item still unanswered keeps its files and
+// leaves a record in the state, which the answer that clears the last item
+// removes (ADR 0016); Dismiss never keeps.
+func (s *Service) killShip(ctx context.Context, name string, keepInbox bool) error {
 	marked := false
-	if sess, ok := s.find(name); ok {
+	sess, found := s.find(name)
+	if found {
 		marked = sess.Options[sessionhost.OptEnded] != ""
 	}
+	kept := keepInbox && found && s.keepInbox(sess)
 	s.mu.Lock()
 	tr := s.tracks[name] // before the kill, so a pass can't prune it from under us
 	s.mu.Unlock()
 	if err := s.Host.KillSession(ctx, name); err != nil {
+		if kept {
+			_ = s.State.DropInbox(name)
+		}
 		return err
 	}
 	s.mu.Lock()
@@ -326,6 +336,28 @@ func (s *Service) killShip(ctx context.Context, name string) error {
 		s.removeShipFiles(name, tr)
 	}
 	return nil
+}
+
+// keepInbox records the ship, before its session goes, when its inbox holds an
+// item with no answer, and says whether it did. The inbox is looked at again
+// once the record is down: an answer that landed in between has found no record
+// to clear.
+func (s *Service) keepInbox(sess sessionhost.Session) bool {
+	home, _, _, ok := s.shipFiles(sess.Name)
+	if !ok || !inbox.Unanswered(home, sess.Name) {
+		return false
+	}
+	o := sess.Options
+	rec := state.KeptShip{Name: o["name"], Fleet: o["fleet"], FleetName: o["fleet-name"], FleetColor: o["fleet-color"], Harness: o["harness"]}
+	if err := s.State.KeepInbox(sess.Name, rec); err != nil {
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: its inbox cannot be kept: %v\n", sess.Name, err)
+		return false
+	}
+	if !inbox.Unanswered(home, sess.Name) {
+		_ = s.State.DropInbox(sess.Name)
+		return false
+	}
+	return true
 }
 
 // signalName is a signal as the UI and the log show it: upper case, no SIG.
@@ -351,15 +383,10 @@ func (s *Service) shipFiles(session string) (home, report, inbox string, ok bool
 // and the deletes share one hold of s.mu, so a launch that counts itself after
 // the checks waits for the deletes; one that counted before them keeps the files.
 func (s *Service) removeShipFiles(session string, owner *track) {
-	home, report, inbox, ok := s.shipFiles(session)
+	home, _, _, ok := s.shipFiles(session)
 	if !ok {
 		return
 	}
-	root, err := os.OpenRoot(home)
-	if err != nil {
-		return
-	}
-	defer root.Close()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if tr := s.tracks[session]; s.launching > 0 || (tr != nil && tr != owner) { // a pruned track is the dying ship's
@@ -368,19 +395,10 @@ func (s *Service) removeShipFiles(session string, owner *track) {
 	if sess, running := s.find(session); running && !sess.PaneDead {
 		return
 	}
-	if rel, err := filepath.Rel(home, report); err == nil && realDir(root, filepath.Dir(rel)) {
-		_ = root.Remove(rel)
+	if _, kept := s.State.KeptInbox(session); kept { // an item waits for its answer
+		return
 	}
-	if rel, err := filepath.Rel(home, inbox); err == nil && realDir(root, filepath.Dir(rel)) {
-		_ = root.RemoveAll(rel)
-	}
-}
-
-// realDir is whether name, relative to root, is a directory itself and not a
-// link to one: a link would send a delete under it somewhere else.
-func realDir(root *os.Root, name string) bool {
-	fi, err := root.Lstat(name)
-	return err == nil && fi.IsDir()
+	launcher.RemoveShipFiles(home, session)
 }
 
 // readReport is the ship's report as the JSON it holds: nil when the file is

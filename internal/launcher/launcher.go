@@ -86,6 +86,9 @@ type Launcher struct {
 	Socket string
 	Home   string // $ADMIRAL_HOME
 	Config func() *config.Config
+	// Kept says whether a session's inbox is kept after the ship sailed off
+	// (ADR 0016). Its name is never picked, so the launch cannot clear the inbox.
+	Kept func(session string) bool
 
 	mu sync.Mutex // one launch at a time, so two don't pick one name
 }
@@ -373,6 +376,34 @@ func ShipFiles(home, session string) (report, inbox string, ok bool) {
 	return filepath.Join(home, "reports", session+".json"), filepath.Join(home, "inbox", session), true
 }
 
+// RemoveShipFiles deletes a ship's report and inbox. The deletes go through a
+// root on home, so none leaves it, and each is skipped unless reports/ or
+// inbox/ is a real directory and not a link.
+func RemoveShipFiles(home, session string) {
+	report, inbox, ok := ShipFiles(home, session)
+	if !ok {
+		return
+	}
+	root, err := os.OpenRoot(home)
+	if err != nil {
+		return
+	}
+	defer root.Close()
+	if rel, err := filepath.Rel(home, report); err == nil && realDir(root, filepath.Dir(rel)) {
+		_ = root.Remove(rel)
+	}
+	if rel, err := filepath.Rel(home, inbox); err == nil && realDir(root, filepath.Dir(rel)) {
+		_ = root.RemoveAll(rel)
+	}
+}
+
+// realDir is whether name, relative to root, is a directory itself and not a
+// link to one: a link would send a delete under it somewhere else.
+func realDir(root *os.Root, name string) bool {
+	fi, err := root.Lstat(name)
+	return err == nil && fi.IsDir()
+}
+
 // shipContract adds the ship's own variables to env, which win over the fleet's,
 // and prepares what they name before the harness starts: reports/ for
 // ADMIRAL_REPORT, and an empty inbox for ADMIRAL_INBOX. A name can be reused, so
@@ -416,7 +447,15 @@ func (l *Launcher) pickName() (string, error) {
 			sessions[s], shipNames[n] = true, true
 		}
 	}
-	return pickName(func(n string) bool { return shipNames[n] || sessions[Slug(n)] }), nil
+	return pickName(taken(shipNames, sessions, l.Kept)), nil
+}
+
+// taken says whether a ship name is in use: by a ship's name, by a session, or
+// by a kept inbox.
+func taken(shipNames, sessions map[string]bool, kept func(session string) bool) func(name string) bool {
+	return func(n string) bool {
+		return shipNames[n] || sessions[Slug(n)] || (kept != nil && kept(Slug(n)))
+	}
 }
 
 // create makes the session on a placeholder, sets its options, then replaces
