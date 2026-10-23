@@ -155,7 +155,7 @@ export interface ReviewUi {
   event: string;
   busy: boolean;
   error: string;
-  /** A failure of the last action, which offers "Remove from inbox" (the server side is u5's). */
+  /** A failure of the last action, which offers "Remove from inbox". */
   gh: boolean;
 }
 const reviews = signal<Record<string, ReviewUi>>({});

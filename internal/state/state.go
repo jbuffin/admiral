@@ -1,6 +1,7 @@
 // Package state holds what Admiral remembers besides config and tmux
 // (ADR 0012): where each ship sits on the water, the last directory
-// launched into at each dock, and when each directory was last launched into.
+// launched into at each dock, when each directory was last launched into, and the
+// resume orders that wait to be added (ADR 0016).
 // It lives in $ADMIRAL_HOME/state.json.
 package state
 

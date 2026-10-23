@@ -17,7 +17,7 @@ import { type Sea, type SeaFleet, inboxButton, isTouch, test } from './sea';
 //   after an action: role status "Review submitted: APPROVE" / "Review discarded" / "Review no longer pending on
 //     GitHub" / "Review removed from the inbox; nothing changed on GitHub" / "Removed from the inbox"
 //   a failure: role alert holding gh's message as text, the item still open, its buttons usable again
-//     and, for a 502/503 on a review, the button "Remove from inbox" (the server side is u5's)
+//     and, for a 502/503 on a review, the button "Remove from inbox"
 //   findings item (an article): per finding card a group "Decision for card <n>" with buttons Approve, Edit, Reject
 //     (aria-pressed on the chosen one); Edit opens textbox "Edit the proposal for card <n>" with buttons Save
 //     and Cancel; "<d> of <n> decided"; button "Send" (disabled until every card is decided)
