@@ -223,10 +223,19 @@ func (s *Service) addResumes(session string) (left bool) {
 			continue // nothing to try until the config names a target
 		}
 		r := pending[key]
-		recorded := func(string) {}
+		release := func(string) {}
 		if s.ResumeAdd != nil {
-			recorded = s.ResumeAdd(t.Source, t.Panel, Origin{Dir: r.Dir, Source: r.OriginSource, Panel: r.OriginPanel})
+			release = s.ResumeAdd(t.Source, t.Panel, Origin{Dir: r.Dir, Source: r.OriginSource, Panel: r.OriginPanel})
 		}
+		// Released once, whichever way the add ends, a panic included.
+		released := false
+		recorded := func(id string) {
+			if !released {
+				released = true
+				release(id)
+			}
+		}
+		defer recorded("")
 		ctx, cancel := context.WithTimeout(context.Background(), addTimeout)
 		id, err := s.AddOrder(ctx, t.Source, t.Panel, r.Text)
 		cancel()

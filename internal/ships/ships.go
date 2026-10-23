@@ -89,7 +89,8 @@ type Service struct {
 	Outcomes *outcomes.Writer
 	// BeforeRemoveFiles runs with a ship's session just before its report and
 	// inbox are deleted, to keep what Admiral still needs from them. It must not block.
-	// The ship's tmux options go along, for a session that may be gone by then.
+	// The inbox.Origin built from the ship's tmux options goes along, for a
+	// session that may be gone by then.
 	BeforeRemoveFiles func(session string, from inbox.Origin)
 
 	pass   sync.Mutex        // one observe at a time

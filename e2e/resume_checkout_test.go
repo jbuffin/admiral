@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -203,6 +204,13 @@ func TestResumeOrderKeepsItsCheckoutAcrossARestart(t *testing.T) {
 	w.sailOff(ship.Session)
 	w.answerQuestion(ship.Session, "q-1")
 	w.waitSource("orders", 15*time.Second, "the resume order", func(s sourceJSON) bool { return len(s.orderIDs()) == 1 })
+	// The record is written after the order shows in the listing.
+	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(w.readFile(filepath.Join(w.home, "autopilot.json")), `"resumes"`); {
+		if time.Now().After(deadline) {
+			t.Fatal("within 10s autopilot.json never held the resume order's record")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 	w.restart()
 	w.waitSource("orders", 10*time.Second, "the resume order after the restart", func(s sourceJSON) bool { return len(s.orderIDs()) == 1 })
 	w.rcHoldNoResumeShip("a paused resume panel launched an order")

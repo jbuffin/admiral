@@ -230,6 +230,9 @@ func (e *Engine) Pass() {
 				// from (#120), but with the skill of this panel's: its text starts
 				// with the skill already.
 				entry, cell := panelEntry, panelCell
+				// Read before the record: the add writes it before it releases the
+				// hold, so no hold and then no record means it is unrecorded.
+				adding := e.addingTo(def.Key, p.ID)
 				rec, resume := e.Store.resumeOf(def.Key, o.ID)
 				if org := originOf(cfg, rec); resume && org != nil {
 					entry, cell = org.entry, [2]string{org.source, org.panel}
@@ -252,14 +255,14 @@ func (e *Engine) Pass() {
 				if f := e.Store.failureOf(def.Key, o.ID); f.GaveUp || now.Before(f.NextRetry) {
 					continue
 				}
-				if !resume && e.addingTo(def.Key, p.ID) {
+				if !resume && adding {
 					continue // it may be the order being added, not recorded yet
 				}
 				var dir, reason string
 				if resume {
 					dir, reason = rec.Dir, ""
 					if e.Checkout == nil || !e.Checkout(fleet, dir) {
-						dir, reason = "", "the checkout of the ship that wrote the report is gone: "+rec.Dir
+						dir, reason = "", "the checkout of the ship that wrote the report is gone or is not a checkout of fleet "+fleet.Name+": "+rec.Dir
 					}
 				} else {
 					dir, reason = e.Dir(fleet, entry.Harness, o)
