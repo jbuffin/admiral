@@ -16,6 +16,16 @@ import (
 // ($ADMIRAL_HOME/bin).
 func hookCommand(event string) string { return "admiral hook " + event }
 
+// guardGroup runs the review guard (#115) on the tool calls its matcher names. The
+// guard acts only on an autopilot ship, so every ship's settings can carry it.
+// Claude Code lets a call through when a PreToolUse command hook times out or
+// fails, so the handler has a short timeout and onFailure "block" (Claude Code
+// 2.1.295 and later) turns both into a refusal.
+func guardGroup(matcher string) map[string]any {
+	return map[string]any{"matcher": matcher,
+		"hooks": []any{map[string]any{"type": "command", "command": "admiral guard pretooluse", "timeout": 10, "onFailure": "block"}}}
+}
+
 // Claude Code: settings file passed with --settings.
 // Format: https://code.claude.com/docs/en/hooks (event → matcher groups → handlers).
 // Matching hooks of one event run in parallel, so the working PreToolUse hook
@@ -33,6 +43,8 @@ func claudeSettings() any {
 		"PreToolUse": []any{
 			group("AskUserQuestion", "PreToolUse"),
 			group("^(?!AskUserQuestion$).*", "PreToolUse"),
+			guardGroup("Bash"),
+			guardGroup("^mcp__.*pull_request_review.*$"),
 		},
 		"Notification":     []any{group("permission_prompt", "Notification"), group("elicitation_dialog", "Notification")},
 		"Stop":             []any{group("", "Stop")},

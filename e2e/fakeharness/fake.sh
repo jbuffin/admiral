@@ -31,7 +31,17 @@
 #                  would: the payload <json> (the rest of the line) on its stdin, then
 #                  append the event name to `events-done` in the recording directory.
 #                  Claude only: the bundle is the file after `--settings` in its argv
-#                  (needs jq). A fault writes `event-error` instead.
+#                  (needs jq). It runs every handler of every group whose matcher
+#                  matches: the matcher is a regex tested against the payload's
+#                  tool_name (for Notification, notification_type), and a group with
+#                  no matcher always matches. The match is unanchored, as jq's test()
+#                  is: "Bash" also matches BashOutput, which is looser than Claude.
+#                  Each handler appends "<Event>", its exit code and its command, tab
+#                  separated, to `handlers`, and its stderr goes to `handler-<n>.stderr`
+#                  (n counts from 1, in the order of `handlers`). A handler's exit code
+#                  is not a fault. `events-done` still gets one line per cue, and
+#                  `event-error` holds only a fault of the fake itself (no settings, no
+#                  command, bad jq).
 #   bell           ring the terminal bell
 #   sleep <n>      sleep n seconds
 #   exit <n>       create `cues-done`, then exit with status n
@@ -87,12 +97,20 @@ if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 				[ "$prev" = "--settings" ] && settings=$a
 				prev=$a
 			done
-			command=""
-			[ -n "$settings" ] && command=$(jq -r --arg e "$ev" '.hooks[$e][0].hooks[0].command // empty' "$settings" 2>>"$d/event-error")
-			if [ -z "$command" ]; then
+			# The handlers of every group whose matcher matches, run one at a time
+			# in file order. A matcher is tested against tool_name (for Notification,
+			# notification_type); a group with none always matches.
+			subject=$(printf '%s' "$payload" | jq -r --arg e "$ev" 'if $e == "Notification" then .notification_type else .tool_name end // ""' 2>>"$d/event-error")
+			: >"$d/.cmds"
+			[ -n "$settings" ] && jq -r --arg e "$ev" --arg s "$subject" '.hooks[$e][]? | (.matcher // "") as $m | select($m == "" or ($s | test($m))) | .hooks[]?.command' "$settings" >"$d/.cmds" 2>>"$d/event-error"
+			if [ ! -s "$d/.cmds" ]; then
 				echo "no hook command for $ev in settings '$settings'" >>"$d/event-error"
 			else
-				printf '%s' "$payload" | sh -c "$command" >>"$d/event-stdout" 2>>"$d/event-error"
+				while IFS= read -r command; do
+					n=$(($(wc -l 2>/dev/null <"$d/handlers" || echo 0) + 1))
+					printf '%s' "$payload" | sh -c "$command" >>"$d/event-stdout" 2>"$d/handler-$n.stderr"
+					printf '%s\t%s\t%s\n' "$ev" "$?" "$command" >>"$d/handlers"
+				done <"$d/.cmds"
 			fi
 			echo "$ev" >>"$d/events-done"
 			;;

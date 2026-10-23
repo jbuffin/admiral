@@ -58,6 +58,11 @@ func main() {
 			}
 			os.Exit(exit.Code)
 		}
+		// Guard has already written its reason to stderr, which is all the agent reads.
+		var denied *cli.GuardDenied
+		if errors.As(err, &denied) {
+			os.Exit(2)
+		}
 		fmt.Fprintln(os.Stderr, "admiral:", err)
 		var usage *cli.UsageError
 		if errors.As(err, &usage) {
@@ -106,6 +111,8 @@ func run(args []string) error {
 		return cli.Service(args[1:], std)
 	case "hook":
 		return cli.Hook(args[1:], std)
+	case "guard":
+		return cli.Guard(args[1:], std)
 	case "outcomes":
 		return cli.Outcomes(args[1:], std)
 	case "lock":

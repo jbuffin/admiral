@@ -1,6 +1,7 @@
 #!/bin/sh
 # Prints THIRD_PARTY_NOTICES: the licence text of the Go toolchain, every Go
-# module the binary links, every production npm package in the UI (the whole
+# module the binary links (not the whole module graph, which lists modules
+# that are never downloaded), every production npm package in the UI (the whole
 # tree, from the lockfile), the bundled fonts and the GitHub plugin icon. Run
 # from the repo root after `npm --prefix web ci`; `make release` calls it. It
 # fails when an entry has no licence text.
@@ -25,7 +26,7 @@ licence_text "$(go env GOROOT)"
 
 echo
 echo "== Go modules =="
-mods=$(go list -m -f '{{if not .Main}}{{.Path}} {{.Version}} {{.Dir}}{{end}}' all)
+mods=$(go list -deps -f '{{with .Module}}{{if not .Main}}{{.Path}} {{.Version}} {{.Dir}}{{end}}{{end}}' ./cmd/admiral | sort -u)
 while read -r path version dir; do
 	echo
 	echo "-- $path $version"
