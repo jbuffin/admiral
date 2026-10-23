@@ -5,5 +5,10 @@ useDefault = true
 
 # The e2e helpers plant decoy secrets on purpose, to prove the skill index
 # never returns anything but the plugin key from a settings file.
-[allowlist]
+[[allowlists]]
 regexes = ['''decoy-(secret|helper)-[0-9a-f]+''']
+
+# A test failure message that names the fake gh's variables reads as a key.
+[[allowlists]]
+regexTarget = "line"
+regexes = ['''fleet's GH_TOKEN fake-token-[a-z0-9]+, GH_PROMPT_DISABLED=1''']
