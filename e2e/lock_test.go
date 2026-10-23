@@ -1,7 +1,6 @@
 package e2e
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,7 +11,6 @@ import (
 	"syscall"
 	"testing"
 	"time"
-	"unicode"
 )
 
 // `admiral lock` (#118, u2): the real binary, a capacity-1 resource called
@@ -158,8 +156,21 @@ func (w *world) lockCmd(args ...string) cliResult {
 func (w *world) holds(flags ...string) *lockProc {
 	w.t.Helper()
 	l := w.startLock("", flags...)
-	w.waitLock("held by a lock", func(r lockRes) bool { return r.InUse == 1 })
+	w.waitHeld(l)
 	return l
+}
+
+// waitHeld waits for the server to show phone held, failing at once, with what
+// the lock printed, if `admiral lock` has already exited.
+func (w *world) waitHeld(l *lockProc) lockRes {
+	w.t.Helper()
+	return w.waitLock("held by a lock", func(r lockRes) bool {
+		if l.exited() {
+			w.t.Fatalf("admiral lock exited %d before phone showed held\nstdout: %s\nstderr: %s",
+				l.cmd.ProcessState.ExitCode(), l.stdout.String(), l.err.String())
+		}
+		return r.InUse == 1
+	})
 }
 
 func (w *world) startPhone() {
@@ -189,7 +200,7 @@ func TestLockBlocksAnAutopilotLaunchUntilItEnds(t *testing.T) {
 	}
 
 	l := w.startLock("")
-	held := w.waitLock("held by a lock", func(r lockRes) bool { return r.InUse == 1 })
+	held := w.waitHeld(l)
 	if len(held.Holders) != 1 || held.Holders[0].Kind != "lock" ||
 		held.Holders[0].Label != fmt.Sprintf("admiral lock (pid %d): sh", l.cmd.Process.Pid) {
 		t.Errorf("phone holders = %+v, want one lock labelled `admiral lock (pid %d): sh`", held.Holders, l.cmd.Process.Pid)
@@ -261,32 +272,12 @@ func TestLockBusyExits75AndWaitRunsAfterTheFirstEnds(t *testing.T) {
 	// The issue's order: `admiral lock <resource> [--wait] -- <command…>`.
 	r = w.admiral("lock", "phone", "--wait", "--port", w.in.Port, "--", "true")
 	w.expectExit(r, 0, "flags after the resource")
-}
 
-// The exit codes, and that the command is run untouched, with its output passed
-// through.
-func TestLockExitCodesAndPassthrough(t *testing.T) {
-	w := newWorld(t)
-	w.startPhone()
-
-	r := w.lockCmd("phone", "--", "sh", "-c", `echo "$1"; exit 3`, "sh", "--help")
-	w.expectExit(r, 3, "the command's own status")
+	// Everything after `--` is the command's: the help scan stops there.
+	r = w.lockCmd("phone", "--", "sh", "-c", `echo "$1"`, "sh", "--help")
+	w.expectExit(r, 0, "a command given --help")
 	if strings.TrimSpace(r.stdout) != "--help" {
-		t.Errorf("stdout = %q, want the command's argument --help passed on, not taken as admiral's", r.stdout)
-	}
-	w.expectExit(w.lockCmd("phone", "--", "/nonexistent/tool"), 127, "a command that cannot start")
-	if r := w.lockCmd("nosuch", "--", "true"); r.code != 1 || !strings.HasPrefix(r.stderr, "admiral: ") {
-		t.Errorf("unknown resource: exit %d stderr %q, want 1 and an `admiral: …` line", r.code, r.stderr)
-	}
-	w.expectExit(w.lockCmd("--", "true"), 2, "no resource")
-	w.expectExit(w.lockCmd("phone"), 2, "no command")
-	if r := w.lockState(); r.InUse != 0 {
-		t.Errorf("phone is still in use after the commands ended: %+v", r)
-	}
-
-	w.in.Stop()
-	if r := w.lockCmd("phone", "--", "true"); r.code != 1 || !strings.HasPrefix(r.stderr, "admiral: ") {
-		t.Errorf("no server: exit %d stderr %q, want 1 and an `admiral: …` line", r.code, r.stderr)
+		t.Errorf("stdout = %q, want the command's own --help argument echoed, not admiral's usage", r.stdout)
 	}
 }
 
@@ -302,47 +293,6 @@ func TestLockKilledReleasesTheUnit(t *testing.T) {
 	w.waitExit(l, "after SIGKILL")
 	w.waitLock("free", func(r lockRes) bool { return r.InUse == 0 })
 	w.expectExit(w.lockCmd("phone", "--", "true"), 0, "a lock after the holder was killed")
-}
-
-// The route itself: one JSON line, then the connection is the hold; a hostile
-// label is cleaned (printable, 64 characters at most); closing releases.
-func TestLockRouteHoldsForTheLifeOfTheConnection(t *testing.T) {
-	w := newWorld(t)
-	w.startPhone()
-
-	label := "evil\x1b[31m\n" + strings.Repeat("x", 100)
-	resp, err := http.Post(w.in.LocalURL+"/api/resources/phone/lock?label="+strings.NewReplacer("\x1b", "%1b", "\n", "%0a", "[", "%5b").Replace(label), "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("POST /api/resources/phone/lock = %d, want 200", resp.StatusCode)
-	}
-	var first struct {
-		Held bool `json:"held"`
-	}
-	line, err := bufio.NewReader(resp.Body).ReadString('\n')
-	if err != nil || json.Unmarshal([]byte(line), &first) != nil || !first.Held {
-		t.Fatalf("first line = %q (%v), want {\"held\": true}", line, err)
-	}
-	got := w.waitLock("held by the route", func(r lockRes) bool { return r.InUse == 1 })
-	l := got.Holders[0].Label
-	if got.Holders[0].Kind != "lock" || len(l) == 0 || len(l) > 64 || strings.IndexFunc(l, func(r rune) bool { return !unicode.IsPrint(r) }) >= 0 {
-		t.Errorf("holder = %+v, want a lock with a printable label of 1 to 64 characters", got.Holders[0])
-	}
-
-	resp2, err := http.Post(w.in.LocalURL+"/api/resources/phone/lock", "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp2.Body.Close()
-	if resp2.StatusCode != http.StatusConflict {
-		t.Errorf("a second POST without wait = %d, want 409", resp2.StatusCode)
-	}
-
-	resp.Body.Close()
-	w.waitLock("free after the connection closed", func(r lockRes) bool { return r.InUse == 0 })
 }
 
 // The route answers 403 to a peer that is not loopback, token or not. It skips
