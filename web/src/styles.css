@@ -136,6 +136,11 @@ button:focus-visible {
   color: var(--color-text-muted);
 }
 
+.about .about-version {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
 .about-close {
   min-height: var(--shape-min-touch-target);
   padding: 0 20px;
