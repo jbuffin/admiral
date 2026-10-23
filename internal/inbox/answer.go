@@ -27,29 +27,43 @@ func (e *InvalidError) Error() string { return e.Msg }
 
 func invalid(format string, args ...any) error { return &InvalidError{fmt.Sprintf(format, args...)} }
 
-// Answer writes the answer to item id of session and records `answered`. build
-// gets the item, which has the given kind, and returns the answer file's content
-// or an *InvalidError. One answer at a time: under the lock the item is read
-// again and the answer file checked, so two answers to one item write one file.
-// The file goes through a temp file and a rename, next to the item, and the item
-// is never touched. A ship directory that is gone is ErrNotFound.
-func (s *Service) Answer(session, id, kind string, build func(Item) (any, error)) error {
+// open reads item id of session when it is still unanswered: ErrNotFound for an
+// item that is not there, ErrAnswered for one with an answer.
+func (s *Service) open(session, id string) (Item, error) {
+	if !idPattern.MatchString(id) {
+		return Item{}, ErrNotFound
+	}
+	dir, err := openShipDir(s.Home, session)
+	if err != nil {
+		return Item{}, ErrNotFound
+	}
+	defer dir.Close()
+	it, err := readItem(dir, session, id)
+	if err != nil {
+		return Item{}, ErrNotFound
+	}
+	if Answered(dir, id) {
+		return Item{}, ErrAnswered
+	}
+	return it, nil
+}
+
+// Answer writes the answer to item id of session and records what build says.
+// build gets the item, which has the given kind, and returns the answer file's
+// content and the outcome records (their ship is set here), or an *InvalidError.
+// It does no network I/O: anything slow runs before Answer, outside the lock.
+// One answer at a time: under the lock the item is read again and the answer
+// file checked, so two answers to one item write one file. The file goes through
+// a temp file and a link, next to the item, and the item is never touched. A ship
+// directory that is gone is ErrNotFound. When the answer is the last one of a
+// ship whose inbox is kept, the ship's files go.
+func (s *Service) Answer(session, id, kind string, build func(Item) (file any, recs []outcomes.Record, err error)) error {
 	if !validSession(session) || !idPattern.MatchString(id) {
 		return ErrNotFound
 	}
 	s.answerMu.Lock()
 	defer s.answerMu.Unlock()
-	root, err := os.OpenRoot(s.Home)
-	if err != nil {
-		return ErrNotFound
-	}
-	defer root.Close()
-	inbox, err := realDir(root, "inbox")
-	if err != nil {
-		return ErrNotFound
-	}
-	defer inbox.Close()
-	dir, err := realDir(inbox, session)
+	dir, err := openShipDir(s.Home, session)
 	if err != nil {
 		return ErrNotFound
 	}
@@ -64,26 +78,34 @@ func (s *Service) Answer(session, id, kind string, build func(Item) (any, error)
 	if it.Kind != kind {
 		return invalid("item %s is a %s, not a %s", id, it.Kind, kind)
 	}
-	answer, err := build(it)
+	file, recs, err := build(it)
 	if err != nil {
 		return err
 	}
-	if err := writeAnswer(dir, id, answer); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
+	if err := writeAnswer(dir, id, file); err != nil {
+		switch {
+		case errors.Is(err, fs.ErrExist):
+			return ErrAnswered
+		case errors.Is(err, fs.ErrNotExist):
 			return ErrNotFound
 		}
 		return err
 	}
 	if s.Outcomes != nil {
-		s.Outcomes.Enqueue(outcomes.Record{Ship: session, Event: "answered", Fields: map[string]any{"item": id, "kind": kind}}, nil)
+		for _, r := range recs {
+			r.Ship = session
+			s.Outcomes.Enqueue(r, nil)
+		}
 	}
+	s.release(session)
 	s.Refresh()
 	return nil
 }
 
-// writeAnswer writes v as dir/<id>.answer.json through a temp file and a rename.
+// writeAnswer writes v as dir/<id>.answer.json through a temp file and a link.
 // The temp name starts with a dot and does not end in .json, so a reader never
-// takes it for an item or an answer.
+// takes it for an item or an answer. A link fails when the answer exists, so an
+// answer written by a ship, or by another Admiral, is never replaced.
 func writeAnswer(dir *os.Root, id string, v any) error {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -102,11 +124,9 @@ func writeAnswer(dir *os.Root, id string, v any) error {
 		err = cerr
 	}
 	if err == nil {
-		err = dir.Rename(tmp, answerName(id))
+		err = dir.Link(tmp, answerName(id))
 	}
-	if err != nil {
-		_ = dir.Remove(tmp)
-	}
+	_ = dir.Remove(tmp)
 	return err
 }
 
@@ -153,26 +173,26 @@ func questionsOf(it Item) ([]question, error) {
 // choice must be one of the question's option labels (a list only on a multi
 // question); text of the engineer's own can stand alone.
 func (s *Service) AnswerQuestion(session, id string, req QuestionRequest) error {
-	return s.Answer(session, id, KindQuestion, func(it Item) (any, error) {
+	return s.Answer(session, id, KindQuestion, func(it Item) (any, []outcomes.Record, error) {
 		qs, err := questionsOf(it)
 		if err != nil {
-			return nil, invalid("item %s has no questions", id)
+			return nil, nil, invalid("item %s has no questions", id)
 		}
 		answers := map[string]QuestionAnswer{}
 		for _, q := range qs {
 			a, ok := req.Answers[q.ID]
 			if !ok {
-				return nil, invalid("question %s has no answer", q.ID)
+				return nil, nil, invalid("question %s has no answer", q.ID)
 			}
 			a, err := checkChoice(q, a)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			answers[q.ID] = a
 		}
 		for qid := range req.Answers {
 			if _, ok := answers[qid]; !ok {
-				return nil, invalid("the item has no question %q", qid)
+				return nil, nil, invalid("the item has no question %q", qid)
 			}
 		}
 		file := struct {
@@ -183,7 +203,7 @@ func (s *Service) AnswerQuestion(session, id string, req QuestionRequest) error 
 			Answers  map[string]QuestionAnswer `json:"answers"`
 			Note     string                    `json:"note,omitempty"`
 		}{1, id, KindQuestion, time.Now().UTC().Format(time.RFC3339), answers, req.Note}
-		return file, nil
+		return file, []outcomes.Record{{Event: "answered", Fields: map[string]any{"item": id, "kind": KindQuestion}}}, nil
 	})
 }
 

@@ -186,7 +186,8 @@ func serve(args []string) error {
 		fmt.Fprintf(os.Stderr, "admiral: "+format+"\n", args...)
 	})
 	shipService := &ships.Service{Host: host, State: st, Hub: hub, Outcomes: outcomeLog, Launcher: &launcher.Launcher{
-		Tmux: tmuxPath, Socket: sock, Home: dir, Config: cfg.Current}}
+		Tmux: tmuxPath, Socket: sock, Home: dir, Config: cfg.Current,
+		Kept: func(session string) bool { _, ok := st.KeptInbox(session); return ok }}}
 
 	if err := sources.InstallPlugins(dir); err != nil {
 		fmt.Fprintln(os.Stderr, "admiral: could not install the bundled plugins:", err)
@@ -248,9 +249,26 @@ func serve(args []string) error {
 	if err != nil {
 		return err
 	}
-	inboxService := &inbox.Service{Home: absDir, Hub: hub, Outcomes: outcomeLog, Ship: func(session string) (string, string, bool) {
-		sh, ok := shipService.Get(session)
-		return sh.Name, sh.Harness, ok
+	// A ship that sailed off with an item unanswered is known from its record.
+	inboxService := &inbox.Service{Home: absDir, Hub: hub, Outcomes: outcomeLog, Kept: st, Ship: func(session string) (string, string, bool) {
+		if sh, ok := shipService.Get(session); ok {
+			return sh.Name, sh.Harness, true
+		}
+		k, ok := st.KeptInbox(session)
+		return k.Name, k.Harness, ok
+	}, Dock: func(session string) ([]string, bool) {
+		fleet, harness := "", ""
+		if sh, ok := shipService.Get(session); ok {
+			fleet, harness = sh.Fleet, sh.Harness
+		} else if k, ok := st.KeptInbox(session); ok {
+			fleet, harness = k.Fleet, k.Harness
+		}
+		f, ok := cfg.Current().Fleet(fleet)
+		if !ok {
+			return nil, false
+		}
+		dock, ok := f.Harness(harness)
+		return dock.Environ(), ok
 	}}
 	shipService.Orders = sourceService
 	shipService.OnChange = func() {

@@ -178,6 +178,40 @@ func realDir(root *os.Root, name string) (*os.Root, error) {
 	return root.OpenRoot(name)
 }
 
+// openShipDir opens the directory of session's inbox, which must be a directory
+// itself and not a link, through a root on home. The caller closes it. A
+// directory that is not there is ErrNotFound.
+func openShipDir(home, session string) (*os.Root, error) {
+	if !validSession(session) {
+		return nil, ErrNotFound
+	}
+	root, err := os.OpenRoot(home)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+	defer root.Close()
+	inbox, err := realDir(root, "inbox")
+	if err != nil {
+		return nil, ErrNotFound
+	}
+	defer inbox.Close()
+	dir, err := realDir(inbox, session)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+	return dir, nil
+}
+
+// Unanswered is whether the session's inbox holds an item with no answer.
+func Unanswered(home, session string) bool {
+	dir, err := openShipDir(home, session)
+	if err != nil {
+		return false
+	}
+	defer dir.Close()
+	return len(scanShip(dir, session)) > 0
+}
+
 // scan is the open items of every ship directory under home, oldest first. A
 // file that is not a valid item, and an item with an answer, is left out.
 func scan(home string) []Item {

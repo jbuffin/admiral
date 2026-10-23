@@ -27,7 +27,7 @@ import (
 //
 // A 2xx is success. A failure is a non-2xx with {"error": "..."} that carries
 // gh's message. Answer files and outcome fields follow ADR 0016 and #116:
-// review_submitted {item, kind, event, edited}, review_discarded {item, kind}
+// review_submitted {item, kind, review_event, edited} (a log line's own `event` is the record name), review_discarded {item, kind}
 // (plus external:true when the review was already gone), and
 // card_approved/card_edited/card_rejected {item, kind, card}.
 
@@ -283,7 +283,7 @@ func TestInboxReviewSubmit(t *testing.T) {
 	}
 	w.in.waitInbox(t, "r-2")
 	log := w.waitEvent(ship.Session, "review_submitted", 1)
-	if e := lastOf(log, "review_submitted"); e["item"] != "r-1" || e["kind"] != "review" || e["event"] != "APPROVE" || e["edited"] != true {
+	if e := lastOf(log, "review_submitted"); e["item"] != "r-1" || e["kind"] != "review" || e["review_event"] != "APPROVE" || e["edited"] != true {
 		t.Errorf("review_submitted = %v, want item r-1, kind review, event APPROVE, edited true", e)
 	}
 
@@ -309,7 +309,7 @@ func TestInboxReviewSubmit(t *testing.T) {
 		t.Errorf("body sent = %q, want the item's summary when GitHub's body is empty", v)
 	}
 	log = w.waitEvent(ship.Session, "review_submitted", 2)
-	if e := lastOf(log, "review_submitted"); e["item"] != "r-2" || e["event"] != "REQUEST_CHANGES" || e["edited"] != false {
+	if e := lastOf(log, "review_submitted"); e["item"] != "r-2" || e["review_event"] != "REQUEST_CHANGES" || e["edited"] != false {
 		t.Errorf("review_submitted = %v, want item r-2, event REQUEST_CHANGES, edited false", e)
 	}
 	if n := countEvent(log, "answered"); n != 0 {

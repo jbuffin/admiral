@@ -38,3 +38,13 @@ func TestShipContractClearsWhatANameLeft(t *testing.T) {
 		t.Errorf("env = %v", env)
 	}
 }
+
+// A name whose inbox is kept is never drawn, so no launch clears it.
+func TestPickNameSkipsAKeptInbox(t *testing.T) {
+	keptAll := func(session string) bool { return session != Slug(names[7]) }
+	for range 20 {
+		if got := pickName(taken(nil, nil, keptAll)); got != names[7] {
+			t.Fatalf("picked %q, want %q, the only name with no kept inbox", got, names[7])
+		}
+	}
+}
