@@ -34,6 +34,8 @@ import (
 // counts, wherever the shell would run it.
 type guardState struct {
 	steered bool
+	moved   bool // a cd, pushd or popd: relative files are not read
+	startup bool // BASH_ENV, ENV or ZDOTDIR set on the line: a shell runs a startup file
 	lookups [][]string
 	// stdin is the text on the standard input of the call being checked, when
 	// the line shows it literally (stdinOK); feeders holds the literal output of
@@ -145,7 +147,11 @@ func mcpMerges(tool string) bool {
 // `git-credential`, or `status` with -t or --show-token anywhere in the arguments.
 func authReadsToken(sub string, args []string) bool {
 	return sub == "token" || sub == "git-credential" || sub == "status" && slices.ContainsFunc(args, func(a string) bool {
-		return a == "--show-token" || shortFlagHas(a, "t")
+		if name, val, has := strings.Cut(a, "="); name == "--show-token" {
+			on, ok := boolFlag(has, val)
+			return on || !ok
+		}
+		return shortFlagHas(a, "t")
 	})
 }
 
@@ -381,7 +387,12 @@ func (g guardCheck) apiMerge(args []string, line *lineText) string {
 	if len(seg) == 1 && seg[0] == "graphql" {
 		return g.graphqlMutates(p, line)
 	}
-	if !p.writes() {
+	// A word that could be -X, or an endpoint followed by more words, hides the
+	// method and the route.
+	if len(p.positional) > 1 && hasPlaceholder(p.positional[0]) {
+		return ruleGhAPIMerge
+	}
+	if !p.writes() && !p.flagWord {
 		return ""
 	}
 	if len(seg) == 1 && hasPlaceholder(seg[0]) && onlyExpansion(seg[0]) {
@@ -439,12 +450,9 @@ func (g guardCheck) retargets(p apiArgs, line *lineText) bool {
 	// The body is decoded, so a \u escape can't hide the key; one that is not a
 	// JSON object, or is not shown, is refused.
 	b, ok := g.inputBody(p.input)
-	var body map[string]json.RawMessage
-	if !ok || json.Unmarshal([]byte(b), &body) != nil {
-		return true
-	}
+	body, ok2 := decodeBody(b)
 	_, has := body["base"]
-	return has
+	return !ok || !ok2 || has
 }
 
 // routeExtends says whether an expansion after this literal prefix of a path
@@ -580,15 +588,14 @@ func (g guardCheck) graphqlMutates(p apiArgs, line *lineText) string {
 	}
 	if p.hasInput {
 		b, ok := g.inputBody(p.input)
-		var body struct {
-			Query     string `json:"query"`
-			Variables any    `json:"variables"`
-		}
-		if !ok || json.Unmarshal([]byte(b), &body) != nil {
+		body, ok2 := decodeBody(b)
+		query, ok3 := bodyString(body, "query")
+		var vars any
+		if raw, has := body["variables"]; has && json.Unmarshal(raw, &vars) != nil || !ok || !ok2 || !ok3 {
 			return ruleGraphqlMerge
 		}
-		vars, _ := json.Marshal(body.Variables)
-		queries = append(queries, body.Query, string(vars))
+		text, _ := json.Marshal(vars)
+		queries = append(queries, query, string(text))
 	}
 	expanded := false
 	for _, q := range queries {

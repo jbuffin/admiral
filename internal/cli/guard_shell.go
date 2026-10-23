@@ -134,6 +134,9 @@ func (g guardCheck) command(text string, depth int) string {
 					if a.Name != nil && steersGh(a.Name.Value+"=") {
 						g.st.steered = true
 					}
+					if a.Name != nil && slices.Contains(startupNames, a.Name.Value) {
+						g.st.startup = true
+					}
 				}
 			}
 		}
@@ -226,9 +229,20 @@ var wrappers = map[string]wrapper{
 	"stdbuf":     {"ioe", []string{"input", "output", "error"}, 0, ""},
 	"caffeinate": {"tw", nil, 0, ""},
 	"xargs":      {"ILnPsdEaJRS", []string{"replace", "max-lines", "max-args", "max-procs", "max-chars", "delimiter", "eof", "arg-file"}, 0, ""},
+	"arch":       {},
+	"script":     {"tF", nil, 1, ""}, // script [-q] [-t time] file command…
+	"flock":      {"wE", []string{"timeout", "conflict-exit-code"}, 1, ""},
+	"watch":      {"n", []string{"interval"}, 0, ""},
+	"unbuffer":   {},
+	"doas":       {"uC", nil, 0, ""},
+	"gtimeout":   {"sk", []string{"signal", "kill-after"}, 1, ""},
+	"npx":        {"pc", []string{"package", "call"}, 0, "c"},
 	// zsh precommand modifiers.
 	"noglob": {}, "nocorrect": {}, "builtin": {}, "-": {}, "repeat": {positionals: 1},
 }
+
+// joinedWrappers run the words after their flags as one command line (sh -c "$*").
+var joinedWrappers = []string{"watch"}
 
 // shells run a script given with -c, or read one from stdin.
 var shells = []string{"sh", "bash", "zsh", "dash", "ksh", "fish"}
@@ -252,7 +266,16 @@ func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *li
 		if steersGh(a.Name.Value + "=") {
 			g.st.steered = true
 		}
+		if slices.Contains(startupNames, a.Name.Value) {
+			g.st.startup = true
+		}
 	}
+	return g.callWords(c, words, redirs, line, depth)
+}
+
+// callWords is call for the words of a command, after its assignments: gh behind
+// wrappers, a shell, eval, and the rest.
+func (g guardCheck) callWords(c *syntax.CallExpr, words []string, redirs []*syntax.Redirect, line *lineText, depth int) string {
 	viaXargs := false
 	for len(words) > 0 {
 		if hasPlaceholder(words[0]) {
@@ -279,6 +302,12 @@ func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *li
 			if slices.ContainsFunc(words[1:len(words)-len(args)], steersWrapper) {
 				g.st.steered = true
 			}
+			if slices.ContainsFunc(words[1:len(words)-len(args)], startupAssign) {
+				g.st.startup = true
+			}
+			if slices.Contains(joinedWrappers, w) && len(args) > 0 {
+				return g.command(markWords.Replace(strings.Join(args, " ")), depth+1)
+			}
 			if w == "xargs" {
 				viaXargs = true // it adds the words it reads from stdin
 				g.st.steered = true
@@ -295,6 +324,9 @@ func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *li
 		switch {
 		case w == "cd" || w == "pushd" || w == "popd":
 			g.st.steered = true
+			g.st.moved = true
+		case w == "find":
+			return g.findExec(c, args, redirs, line, depth)
 		case w == "alias" || w == "unalias" || w == "hash" && hashRenames(args):
 			return ruleShellAlias
 		case w == "source" || w == ".":
@@ -308,6 +340,9 @@ func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *li
 			}
 			if gitCredential(args) {
 				return ruleTokenRead
+			}
+			if gitShellAlias(args) {
+				return ruleGitAlias
 			}
 		case w == "printenv":
 			if len(args) == 0 || slices.ContainsFunc(args, func(a string) bool { return slices.Contains(tokenNames, a) }) {
@@ -342,6 +377,49 @@ func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *li
 	return ""
 }
 
+// startupNames are the variables that make a shell run a file when it starts.
+var startupNames = []string{"BASH_ENV", "ENV", "ZDOTDIR"}
+
+// startupAssign says whether a word is an assignment of one of startupNames.
+func startupAssign(word string) bool {
+	return slices.ContainsFunc(startupNames, func(n string) bool { return strings.HasPrefix(word, n+"=") })
+}
+
+// gitShellAlias says whether a git call defines an alias that runs a shell
+// (a value starting with !): git -c alias.x=!…, or git config alias.x '!…'.
+func gitShellAlias(args []string) bool {
+	for i, a := range args {
+		switch {
+		case strings.HasPrefix(a, "alias.") && strings.Contains(a, "=!"):
+			return true
+		case strings.HasPrefix(a, "-calias.") && strings.Contains(a, "=!"):
+			return true
+		case strings.HasPrefix(a, "alias.") && i+1 < len(args) && strings.HasPrefix(args[i+1], "!"):
+			return true
+		}
+	}
+	return false
+}
+
+// findExec is the rule for find: each command after -exec, -execdir, -ok or -okdir,
+// up to its ; or +, is checked as a call of its own.
+func (g guardCheck) findExec(c *syntax.CallExpr, args []string, redirs []*syntax.Redirect, line *lineText, depth int) string {
+	for i := 0; i < len(args); i++ {
+		if !slices.Contains([]string{"-exec", "-execdir", "-ok", "-okdir"}, args[i]) {
+			continue
+		}
+		end := i + 1
+		for end < len(args) && args[end] != ";" && args[end] != "+" {
+			end++
+		}
+		if r := g.callWords(c, args[i+1:end], redirs, line, depth); r != "" {
+			return r
+		}
+		i = end
+	}
+	return ""
+}
+
 // tokenNames are the variables gh takes a token from.
 var tokenNames = []string{"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"}
 
@@ -354,7 +432,7 @@ func gitCredential(args []string) bool {
 			i++
 		case strings.HasPrefix(a, "-"):
 		default:
-			return a == "credential"
+			return a == "credential" || strings.HasPrefix(a, "credential-")
 		}
 	}
 	return false
@@ -402,8 +480,27 @@ func parses(text string) bool {
 // the literal output of the echo, printf or cat before a pipe. Anything else is
 // not shown.
 func (g guardCheck) stdinOf(s *syntax.Stmt) (string, bool) {
+	// A shell may read several redirects of fd 0 (zsh's MULTIOS reads them all, bash
+	// the last), so more than one source, or a duplicated descriptor, is not shown.
+	sources := 0
 	for _, r := range s.Redirs {
 		switch r.Op {
+		case syntax.Hdoc, syntax.DashHdoc, syntax.WordHdoc, syntax.RdrIn, syntax.DplIn, syntax.RdrInOut:
+			if r.N == nil || r.N.Value == "0" {
+				sources++
+			}
+		}
+	}
+	if sources > 1 {
+		return "", false
+	}
+	for _, r := range s.Redirs {
+		if r.N != nil && r.N.Value != "0" {
+			continue
+		}
+		switch r.Op {
+		case syntax.DplIn, syntax.RdrInOut:
+			return "", false
 		case syntax.Hdoc, syntax.DashHdoc:
 			if r.Hdoc != nil {
 				if t := heredocText(r); !hasPlaceholder(t) {
@@ -558,7 +655,10 @@ func skipWrapperFlags(spec wrapper, args []string) (rest []string, script string
 // here-string on the command, or else unknown (a pipe, a file), which gets the
 // text rule on the statement.
 func (g guardCheck) shell(c *syntax.CallExpr, args []string, redirs []*syntax.Redirect, line *lineText, depth int) string {
-	cFlag := false
+	if g.st.startup {
+		return ruleShellScript // BASH_ENV, ENV or ZDOTDIR makes the shell run a file first
+	}
+	cFlag, rc := false, false
 	i := 0
 	for ; i < len(args); i++ {
 		a := args[i]
@@ -571,9 +671,11 @@ func (g guardCheck) shell(c *syntax.CallExpr, args []string, redirs []*syntax.Re
 		}
 		switch {
 		case a == "--rcfile" || a == "--init-file":
+			rc = true
 			i++
 		case a[1] != '-':
 			cFlag = cFlag || a[0] == '-' && strings.Contains(a, "c")
+			rc = rc || shortFlagHas(a, "i") // an interactive shell reads its rc file
 			i += strings.Count(a, "o") + strings.Count(a, "O")
 		}
 	}
@@ -584,6 +686,9 @@ func (g guardCheck) shell(c *syntax.CallExpr, args []string, redirs []*syntax.Re
 		return g.script(c, args[i], line, depth)
 	}
 	if i < len(args) {
+		if rc {
+			return ruleShellScript
+		}
 		return g.scriptFile(args[i], line, depth)
 	}
 	found := false

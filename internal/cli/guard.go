@@ -57,6 +57,7 @@ const (
 	ruleGhAlias     = "gh_alias"
 	ruleGhExtension = "gh_extension"
 	ruleGhUnknown   = "gh_unknown"
+	ruleGitAlias    = "git_shell_alias"
 	ruleTokenRead   = "token_read"
 )
 
@@ -67,7 +68,7 @@ func reasonFor(rule string) string {
 	switch rule {
 	case ruleGhPrReview, ruleGhAPIEvent, ruleGhAPISubmit, ruleGraphqlReview, ruleMcpReview, ruleUnparsed:
 		return guardReason
-	case ruleShellScript, ruleShellAlias, ruleGhAlias, ruleGhExtension, ruleGhUnknown, ruleTokenRead:
+	case ruleShellScript, ruleShellAlias, ruleGhAlias, ruleGhExtension, ruleGhUnknown, ruleGitAlias, ruleTokenRead:
 		return opaqueReason
 	}
 	return mergeReason
@@ -338,6 +339,7 @@ type apiArgs struct {
 	input      string
 	hasInput   bool
 	method     string // -X or --method; "" when not given
+	flagWord   bool   // a flag word holds an expansion, so the method (or any flag) is unknown
 	fieldFlag  bool   // a -f or -F was given, which makes gh send a POST
 }
 
@@ -371,6 +373,7 @@ func parseAPI(args []string) (p apiArgs) {
 		case strings.HasPrefix(a, "--"):
 			name, val, has := strings.Cut(a[2:], "=")
 			if _, valued := long[name]; !valued {
+				p.flagWord = p.flagWord || hasPlaceholder(name)
 				continue
 			}
 			if !has && i+1 < len(args) {
@@ -382,6 +385,7 @@ func parseAPI(args []string) (p apiArgs) {
 			for j := 1; j < len(a); j++ {
 				name, valued := short[a[j]]
 				if !valued {
+					p.flagWord = p.flagWord || a[j] == placeholder[0]
 					continue
 				}
 				val := a[j+1:]
@@ -524,14 +528,22 @@ func (g guardCheck) apiReview(args []string, line *lineText) string {
 	return ""
 }
 
-// readFile reads a file named on a command line, relative to the payload's cwd,
+// readFile reads a file named on a command line, relative to the payload's cwd (a
+// relative path is not read once the line has a cd, pushd or popd, and ~/ is the
+// home directory),
 // at most 1 MiB. Only a regular file is read: a pipe, a device or the guard's
 // own stdin would give the guard nothing to judge.
 func (g guardCheck) readFile(name string) (string, bool) {
 	if name == "/dev/stdin" || strings.HasPrefix(name, "/dev/fd/") {
 		return "", false
 	}
+	if rest, ok := strings.CutPrefix(name, "~/"); ok {
+		name = filepath.Join(os.Getenv("HOME"), rest)
+	}
 	if !filepath.IsAbs(name) {
+		if g.st.moved {
+			return "", false // a cd on the line: the relative path is not the one the call reads
+		}
 		name = filepath.Join(g.cwd, name)
 	}
 	if st, err := os.Stat(name); err != nil || !st.Mode().IsRegular() {
@@ -575,10 +587,9 @@ func (g guardCheck) eventSubmits(p apiArgs, line *lineText) bool {
 		return false
 	}
 	b, ok := g.inputBody(p.input)
-	var body struct {
-		Event string `json:"event"`
-	}
-	return !ok || json.Unmarshal([]byte(b), &body) != nil || reviewEvent(body.Event)
+	body, ok2 := decodeBody(b)
+	event, ok3 := bodyString(body, "event")
+	return !ok || !ok2 || !ok3 || reviewEvent(event)
 }
 
 // anyReviewEvent reports an APPROVE or REQUEST_CHANGES string anywhere in a
@@ -636,15 +647,17 @@ func (g guardCheck) graphqlSubmits(p apiArgs, line *lineText, own string) bool {
 	}
 	if p.hasInput {
 		b, ok := g.inputBody(p.input)
-		var body struct {
-			Query     string `json:"query"`
-			Variables any    `json:"variables"`
-		}
-		if !ok || json.Unmarshal([]byte(b), &body) != nil {
+		body, ok2 := decodeBody(b)
+		query, ok3 := bodyString(body, "query")
+		if !ok || !ok2 || !ok3 {
 			return true
 		}
-		queries = append(queries, body.Query)
-		eventVar = anyReviewEvent(body.Variables)
+		var vars any
+		if raw, has := body["variables"]; has && json.Unmarshal(raw, &vars) != nil {
+			return true
+		}
+		queries = append(queries, query)
+		eventVar = anyReviewEvent(vars)
 	}
 	varsUnsure := unknownVar || eventVar || slices.ContainsFunc(vars, reviewEvent)
 	varsExpand := slices.ContainsFunc(vars, hasPlaceholder)
@@ -683,4 +696,33 @@ func (g guardCheck) inputBody(name string) (string, bool) {
 		return g.st.stdin, g.st.stdinOK
 	}
 	return g.readFile(name)
+}
+
+// decodeBody reads an --input body as a JSON object. A key is read by its exact
+// name, as GitHub reads it, so a body with two keys that differ only in case is
+// refused (Go's decoder would match either), and so is one that is not an object.
+func decodeBody(b string) (map[string]json.RawMessage, bool) {
+	var body map[string]json.RawMessage
+	if json.Unmarshal([]byte(b), &body) != nil || body == nil {
+		return nil, false
+	}
+	for k := range body {
+		for k2 := range body {
+			if k != k2 && strings.EqualFold(k, k2) {
+				return nil, false
+			}
+		}
+	}
+	return body, true
+}
+
+// bodyString is a string-valued key of a decoded body; ok is false for a value
+// that is not a string. A missing key is the empty string.
+func bodyString(body map[string]json.RawMessage, key string) (string, bool) {
+	raw, has := body[key]
+	if !has {
+		return "", true
+	}
+	var s string
+	return s, json.Unmarshal(raw, &s) == nil
 }

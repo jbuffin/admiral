@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -729,5 +731,119 @@ func TestGuardReadsScriptFiles(t *testing.T) {
 				t.Errorf("Guard = %v, want a refusal for rule %s", denied, r.want)
 			}
 		})
+	}
+}
+
+// Shapes that hid a merge, a gate write or a review from the guard: a method
+// held in an expansion, a second input redirect, JSON keys that differ in case,
+// programs that run their arguments, a relative file read after a cd, and the
+// startup files and credential helpers of the shell and git. want is a rule, "*"
+// for any refusal, or wantAllowed.
+func TestGuardClosesTheLastBypasses(t *testing.T) {
+	const (
+		mergeBody = `{"query":"mutation{mergePullRequest(input:{pullRequestId:\"X\"}){clientMutationId}}","Query":"query{viewer{login}}"}`
+		deleteGql = `{"query":"mutation{deleteRepositoryRuleset(input:{repositoryRulesetId:\"X\"}){clientMutationId}}","QUERY":"query{x}"}`
+		reviewGql = `{"query":"mutation{submitPullRequestReview(input:{pullRequestReviewId:\"x\",event:APPROVE}){clientMutationId}}","Query":"query{x}"}`
+		eventBody = `{"event":"APPROVE","Event":"COMMENT"}`
+		harmless  = `{"query":"query{viewer{login}}"}`
+		merge     = "gh pr merge 5 --admin -s"
+	)
+	rows := []struct {
+		name, cmd string
+		files     map[string]string
+		want      string
+	}{
+		// An expansion as the method word of gh api.
+		{"method word by substitution", `gh api $(echo -X) PUT repos/o/r/pulls/5/merge`, nil, wantRuleGhAPIMerge},
+		{"method flag half by substitution", `gh api -$(echo X)PUT repos/o/r/pulls/5/merge`, nil, wantRuleGhAPIMerge},
+		{"method flag in a variable", `F=-XPUT; gh api $F repos/o/r/pulls/5/merge`, nil, wantRuleGhAPIMerge},
+		{"method word and a ruleset delete", `gh api $(echo -X) DELETE repos/o/r/rulesets/5`, nil, wantRuleGhAPIMerge},
+		{"a GET with a literal endpoint", `gh api repos/o/r/pulls/5/merge`, nil, wantAllowed},
+		{"an endpoint in a variable, alone", `gh api "$URL" -q .state`, nil, wantAllowed},
+
+		// Stdin counts as shown only with exactly one input source.
+		{"here-string then a file", `gh api graphql --input - <<< '` + harmless + `' < evil.json`, map[string]string{"evil.json": mergeBody}, "*"},
+		{"here-string then a file, bash -c", `bash -c "gh api graphql -F query=@- <<< 'query{viewer{login}}' < evil.graphql"`, map[string]string{"evil.graphql": "mutation{mergePullRequest(input:{pullRequestId:\"X\"}){clientMutationId}}"}, "*"},
+		{"review event then a file", `gh api repos/o/r/pulls/12/reviews --input - <<< '{"event":"COMMENT"}' < ev.json`, map[string]string{"ev.json": `{"event":"APPROVE"}`}, "*"},
+		{"base PATCH then a file", `gh api -X PATCH repos/o/r/pulls/12 --input - <<< '{"title":"x"}' < b.json`, map[string]string{"b.json": `{"base":"dev"}`}, "*"},
+		{"a duplicated descriptor", "exec 3< evil.json\necho '" + harmless + "' | gh api graphql --input - <&3", map[string]string{"evil.json": mergeBody}, "*"},
+		{"a read-write redirect", `echo '` + harmless + `' | gh api graphql --input - <>evil.json`, map[string]string{"evil.json": mergeBody}, "*"},
+		{"one here-string", `gh api graphql --input - <<< '` + harmless + `'`, nil, wantAllowed},
+		{"one literal file", `gh api graphql --input - < q.json`, map[string]string{"q.json": harmless}, wantAllowed},
+
+		// JSON keys that differ only in case.
+		{"merge body, file", `gh api graphql --input body.json`, map[string]string{"body.json": mergeBody}, "*"},
+		{"merge body, heredoc", "gh api graphql --input - <<'EOF'\n" + mergeBody + "\nEOF", nil, "*"},
+		{"ruleset delete body", `gh api graphql --input body.json`, map[string]string{"body.json": deleteGql}, "*"},
+		{"review body, graphql", `gh api graphql --input body.json`, map[string]string{"body.json": reviewGql}, "*"},
+		{"review body, rest", `gh api repos/o/r/pulls/12/reviews --input body.json`, map[string]string{"body.json": eventBody}, "*"},
+		{"a harmless body", `gh api graphql --input body.json`, map[string]string{"body.json": harmless}, wantAllowed},
+
+		// Programs that run their arguments as a command.
+		{"find -exec", `find . -maxdepth 0 -exec ` + merge + ` \;`, nil, wantRuleGhPrMerge},
+		{"find -execdir", `find . -maxdepth 0 -execdir ` + merge + ` +`, nil, wantRuleGhPrMerge},
+		{"find -exec a review", `find . -maxdepth 0 -exec gh pr review 5 --approve \;`, nil, "gh_pr_review"},
+		{"find -exec the merge route", `find . -maxdepth 0 -exec gh api -X PUT repos/o/r/pulls/5/merge \;`, nil, wantRuleGhAPIMerge},
+		{"arch", `arch -arm64 ` + merge, nil, wantRuleGhPrMerge},
+		{"script", `script -q /dev/null ` + merge, nil, wantRuleGhPrMerge},
+		{"flock", `flock /tmp/l ` + merge, nil, wantRuleGhPrMerge},
+		{"watch", `watch -n 1 ` + merge, nil, wantRuleGhPrMerge},
+		{"watch with a string", `watch '` + merge + `'`, nil, wantRuleGhPrMerge},
+		{"unbuffer", `unbuffer ` + merge, nil, wantRuleGhPrMerge},
+		{"doas", `doas ` + merge, nil, wantRuleGhPrMerge},
+		{"gtimeout", `gtimeout 5 ` + merge, nil, wantRuleGhPrMerge},
+		{"npx", `npx -y ` + merge, nil, wantRuleGhPrMerge},
+		{"a git alias that runs a shell", `git -c alias.m='!` + merge + `' m`, nil, "git_shell_alias"},
+		{"a git alias set in config", `git config alias.m '!` + merge + `'`, nil, "git_shell_alias"},
+		{"find -exec of a harmless command", `find . -name '*.go' -exec grep -l x {} +`, nil, wantAllowed},
+		{"a git alias that is a plain command", `git config alias.st status`, nil, wantAllowed},
+
+		// A relative file is not read after a cd.
+		{"bash FILE after cd", `cd sub && bash scripts/check.sh`, map[string]string{"scripts/check.sh": "make check\n"}, wantRuleShellScript},
+		{"source after pushd", `pushd sub; source env.sh`, map[string]string{"env.sh": "export X=1\n"}, wantRuleShellScript},
+		{"--input after cd", `cd sub && gh api graphql --input body.json`, map[string]string{"body.json": harmless}, "*"},
+		{"-F query=@file after cd", `(cd sub; gh api graphql -F query=@q.graphql)`, map[string]string{"q.graphql": "query{viewer{login}}"}, "*"},
+		{"-F event=@file after cd", `cd sub && gh api repos/o/r/pulls/12/reviews -F event=@ev.txt`, map[string]string{"ev.txt": "COMMENT"}, "*"},
+		{"a script that cds then reads", `bash a.sh`, map[string]string{"a.sh": "cd sub\nbash scripts/check.sh\n", "scripts/check.sh": "make check\n"}, wantRuleShellScript},
+
+		// Startup files, rc options and credential helpers.
+		{"BASH_ENV inline", `BASH_ENV=m.sh bash c.sh`, map[string]string{"c.sh": "make check\n", "m.sh": merge}, wantRuleShellScript},
+		{"BASH_ENV exported", `export BASH_ENV=m.sh; bash c.sh`, map[string]string{"c.sh": "make check\n", "m.sh": merge}, wantRuleShellScript},
+		{"ZDOTDIR through env", `env ZDOTDIR=sub zsh c.sh`, map[string]string{"c.sh": "make check\n"}, wantRuleShellScript},
+		{"--rcfile beside a script", `bash --rcfile m.sh c.sh`, map[string]string{"c.sh": "make check\n", "m.sh": merge}, wantRuleShellScript},
+		{"-i beside a script", `bash -i c.sh`, map[string]string{"c.sh": "make check\n"}, wantRuleShellScript},
+		{"--show-token=true", `gh auth status --show-token=true`, nil, wantRuleTokenRead},
+		{"--show-token=false", `gh auth status --show-token=false`, nil, wantAllowed},
+		{"git credential-osxkeychain", `git credential-osxkeychain get`, nil, wantRuleTokenRead},
+		{"git credential helper through git", `git credential-store get`, nil, wantRuleTokenRead},
+	}
+	for _, r := range rows {
+		t.Run(r.name, func(t *testing.T) {
+			denied := runMergeGuard(t, guardTestCase{tool: "Bash", input: bashInput(r.cmd), files: r.files}, "squash", &fakeLookup{ok: true})
+			switch {
+			case r.want == wantAllowed && denied != nil:
+				t.Errorf("Guard refused with rule %s, want it allowed", denied.Rule)
+			case r.want == "*" && denied == nil:
+				t.Errorf("Guard allowed it, want a refusal")
+			case r.want != wantAllowed && r.want != "*" && (denied == nil || denied.Rule != r.want):
+				t.Errorf("Guard = %v, want a refusal for rule %s", denied, r.want)
+			}
+		})
+	}
+}
+
+// An absolute path still reads after a cd, and ~/ is the home directory.
+func TestGuardReadsAbsoluteAndHomePaths(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.WriteFile(filepath.Join(home, "env.sh"), []byte("export X=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	abs := filepath.Join(home, "env.sh")
+	for _, cmd := range []string{`cd sub && source ` + abs, `source ~/env.sh`, `cd sub && . ~/env.sh`} {
+		denied := runMergeGuard(t, guardTestCase{tool: "Bash", input: bashInput(cmd)}, "squash", &fakeLookup{ok: true})
+		if denied != nil {
+			t.Errorf("%q: refused with rule %s, want it allowed", cmd, denied.Rule)
+		}
 	}
 }
