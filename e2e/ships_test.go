@@ -166,16 +166,6 @@ func TestCommodoreCompactWindow(t *testing.T) {
 			t.Errorf("%s = %q, want the fleet's 1000000", compactWindow, got)
 		}
 	})
-	t.Run("other claude launches don't get it", func(t *testing.T) {
-		w := newWorld(t)
-		w.start()
-		for name, skill := range map[string]map[string]any{"custom skill": customSkill("foo"), "no skill": noSkill} {
-			r := w.record(w.launch(w.order("work", "claude", "other-"+strings.ReplaceAll(name, " ", "-"), skill, "x")).Session)
-			if got, ok := r.env[compactWindow]; ok {
-				t.Errorf("%s: %s = %q, want it unset", name, compactWindow, got)
-			}
-		}
-	})
 	t.Run("Admiral's environment does not override", func(t *testing.T) {
 		w := newWorld(t)
 		w.extra = []string{compactWindow + "=1000000"}
@@ -225,8 +215,13 @@ func TestPromptForms(t *testing.T) {
 			t.Run(c.name+"/"+harness, func(t *testing.T) {
 				w := w.at(t) // helpers must fail this subtest, not its parent
 				ship := w.launch(w.order("work", harness, repo, c.skill, c.text))
-				if got := promptOf(t, w, w.record(ship.Session)); got != c.want[harness] {
+				r := w.record(ship.Session)
+				if got := promptOf(t, w, r); got != c.want[harness] {
 					t.Errorf("prompt = %q, want %q", got, c.want[harness])
+				}
+				// #139: only a Commodore gets the autocompact window.
+				if got, ok := r.env[compactWindow]; ok && c.skill["kind"] != "commodore" {
+					t.Errorf("%s = %q on a %v skill, want it unset", compactWindow, got, c.skill["kind"])
 				}
 			})
 		}
