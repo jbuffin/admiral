@@ -14,6 +14,8 @@ export interface PanelAutopilot {
   enabled: boolean;
   paused: boolean;
   max_ships: number;
+  resources: string[];
+  waiting_for: string[];
 }
 
 export interface Panel {

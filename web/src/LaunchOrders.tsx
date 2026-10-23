@@ -4,7 +4,9 @@ import { harnesses } from './harnesses';
 import { announceLaunch, dragging, launching } from './launch';
 import { LogoFlag } from './Logos';
 import { Modal } from './Modal';
-import { api, isWebUrl } from './sources';
+import { launchHint, panelNeeds, resources } from './resources';
+import { ships } from './ships';
+import { api, isWebUrl, sources } from './sources';
 
 interface DirEntry {
   path: string;
@@ -85,7 +87,7 @@ export function LaunchOrders() {
   const fleet = config.value?.fleets.find((f) => f.key === l.fleet);
   const dock = fleet?.docks.find((d) => d.harness === l.harness);
   if (!fleet || !dock) return null;
-  return <Dialog key={`${l.source ?? ''}/${l.order?.id ?? ''}/${l.fleet}/${l.harness}`} fleet={fleet} dock={dock} />;
+  return <Dialog key={`${l.source ?? ''}/${l.panel ?? ''}/${l.order?.id ?? ''}/${l.fleet}/${l.harness}`} fleet={fleet} dock={dock} />;
 }
 
 function Star({ on, name, onToggle }: { on: boolean; name: string; onToggle: () => void }) {
@@ -99,7 +101,7 @@ function Star({ on, name, onToggle }: { on: boolean; name: string; onToggle: () 
 }
 
 function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
-  const { source = '', order, harness } = launching.value!;
+  const { source = '', panel, order, harness } = launching.value!;
   const h = harnesses[harness];
   const close = () => (launching.value = null);
 
@@ -127,6 +129,8 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
   const skillBox = useRef<HTMLDivElement>(null);
   const asked = useRef(0);
   const favNames = config.value?.favorite_skills ?? [];
+  const needs = panelNeeds(sources.value?.find((s) => s.key === source)?.panels.find((p) => p.id === panel));
+  const hint = order ? launchHint(needs, resources.value) : null;
 
   useEffect(() => {
     let live = true;
@@ -316,6 +320,7 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
               <span class="launch-order-title">{titleOf(order.title)}</span>
             </div>
           )}
+          {hint && <p class="launch-warn">{hint}</p>}
 
           {dirsError ? (
             <p class="launch-note">{dirsError}</p>

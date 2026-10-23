@@ -142,6 +142,7 @@ export function PanelSection({ view }: { view: PanelView }) {
           </button>
         )}
       </div>
+      {autopilot && autopilot.waiting_for.length > 0 && <p class="panel-waiting">waiting for {autopilot.waiting_for.join(', ')}</p>}
       {open && (
         <div class="panel-body">
           {source.state === 'auth_required' && source.auth && <SignInCard auth={source.auth} />}
