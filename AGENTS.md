@@ -42,9 +42,18 @@ Read these when the task touches the area:
 
 ### Before you push
 
-CI runs `make e2e-critical`: the Go e2e tests and only the `@critical` browser flows, on the iPad viewport. The CI runner's virtual GPU resets under WebKit, so the full browser matrix flakes there (#94). Your Mac is where the full matrix runs: before you push a branch that changes code or tests, run `make e2e`, and push once it passes.
+PR CI is light: `make check` on Ubuntu (build, lint, and the unit tests that need neither tmux nor macOS). The e2e suites run on CI only in the release, through `macos.yml`, which you can also start by hand from the Actions tab. So your Mac is the gate: before you push a branch that changes code or tests, run `make e2e` on its head commit, and push once it passes.
 
-Keep the `@critical` set to the flows Admiral cannot ship broken. Every minute of browser time on CI is another chance for a GPU reset to fail the run.
+A PR that changes code or tests carries **e2e evidence** in its body, under `## E2E evidence` (the PR template has the slot):
+
+- The commit `make e2e` ran on (`git rev-parse --short HEAD`). It matches the PR's head, or the later commits are listed with why they need no rerun (docs only, for example).
+- The Go e2e result line (`ok  github.com/jbuffin/admiral/e2e …`) and Playwright's summary (`N passed`, and any `skipped` or `flaky` lines), pasted from the output as they printed.
+
+A docs-only PR says `Docs only` there instead.
+
+A unit test that needs tmux or macOS skips under `go test -short`, the way `needTmux` in `internal/sessionhost/host_test.go` does, so `make check` stays green on Ubuntu.
+
+Keep the `@critical` set to the flows Admiral cannot ship broken. The release runs them on a macOS runner whose virtual GPU resets under WebKit, so the full browser matrix flakes there (#94).
 
 ### Running the tests on a Mac
 
