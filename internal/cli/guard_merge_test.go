@@ -117,7 +117,6 @@ func TestGuardRefusesMergesOnAnAutopilotShip(t *testing.T) {
 		b("direct merge in a substitution", `echo $(gh pr merge 12 --squash)`, wantRuleGhPrMerge),
 		b("direct merge by absolute path", `/opt/homebrew/bin/gh pr merge 12 -s`, wantRuleGhPrMerge),
 		b("a program held in a variable", `$GH pr merge 12 --squash`, wantRuleGhPrMerge),
-		b("a direct merge after a good auto-merge", `gh pr merge 12 --auto -s; gh pr merge 13 --squash`, wantRuleGhPrMerge),
 
 		// gh api merge routes. Only a write merges: GET asks whether it merged.
 		b("api PUT pulls merge", `gh api -X PUT `+mergeRoute, wantRuleGhAPIMerge),
@@ -317,6 +316,7 @@ func TestGuardAutoMerge(t *testing.T) {
 		{"C7 a body that looks like a flag", `gh pr merge 12 --auto -s -b "--rebase -m"`, "squash", yes, wantAllowed},
 		{"C7 after ready", `gh pr ready 12 && gh pr merge 12 --auto -s`, "squash", yes, wantAllowed},
 		{"C7 a later cd does not steer it", `gh pr merge 12 --auto -s && cd /tmp`, "squash", yes, wantAllowed},
+		{"a direct merge after a good auto-merge", `gh pr merge 12 --auto -s; gh pr merge 13 --squash`, "squash", yes, wantRuleGhPrMerge},
 		{"C7 a git command that does not steer", `git status && gh pr merge 12 --auto -s`, "squash", yes, wantAllowed},
 
 		// Refused: the method.
@@ -450,10 +450,9 @@ func TestGuardMergeReason(t *testing.T) {
 	if strings.Contains(errb, "xyzzy") {
 		t.Errorf("the refusal repeats the command: %q", errb)
 	}
-	// Every merge rule gives the one merge reason; the rules that are not merges give the review one.
+	// The merge rules give the merge reason; a review rule keeps the review one.
 	for cmd, wantReason := range map[string]string{
 		`gh api -X PUT repos/o/r/pulls/12/merge`:             denied.Reason,
-		`gh api -X DELETE repos/o/r/rulesets/5`:              denied.Reason,
 		`gh pr merge 12 --auto`:                              denied.Reason,
 		`gh pr review 12 --approve`:                          wantGuardReason,
 		`gh api repos/o/r/pulls/12/reviews -f event=APPROVE`: wantGuardReason,
@@ -462,5 +461,10 @@ func TestGuardMergeReason(t *testing.T) {
 		if !errors.As(err, &denied) || denied.Reason != wantReason {
 			t.Errorf("%q: refused with %v, want the reason %q", cmd, err, wantReason)
 		}
+	}
+	// A write to the gate gets some reason of its own, not the review one [D].
+	err, _, _ = runGuardTest(t, guardTestCase{tool: "Bash", input: bashInput(`gh api -X DELETE repos/o/r/rulesets/5`)}.payload(t), "1")
+	if !errors.As(err, &denied) || denied.Reason == "" || denied.Reason == wantGuardReason {
+		t.Errorf("a gate write was refused with %v, want a reason that is not the review one", err)
 	}
 }

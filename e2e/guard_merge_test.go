@@ -226,7 +226,6 @@ func TestGuardCmdMergeRefusalsAndAllowances(t *testing.T) {
 	for cmd, rule := range map[string]string{
 		"gh pr merge 12 --squash":                         "gh_pr_merge",
 		"gh api -X PUT repos/acme/widgets/pulls/12/merge": "gh_api_merge",
-		"gh api -X DELETE repos/acme/widgets/rulesets/5":  "gh_api_gate_write",
 		"gh pr merge 12 --auto --rebase":                  "auto_merge_method",
 	} {
 		w.runGuardCmd(guardPayload(cmd), env...).requireMergeRefusal(t)
@@ -237,6 +236,11 @@ func TestGuardCmdMergeRefusalsAndAllowances(t *testing.T) {
 		if !found {
 			t.Errorf("%q: the outcome log holds no guard_denied line with rule %s:\n%s", cmd, rule, strings.Join(outcomeLines(t, home), "\n"))
 		}
+	}
+	// A write to the gate: refused with a reason that is not the review one [D].
+	gate := w.runGuardCmd(guardPayload("gh api -X DELETE repos/acme/widgets/rulesets/5"), env...)
+	if reason := strings.TrimSuffix(gate.stderr, "\n"); gate.code != 2 || reason == "" || reason == guardReason {
+		t.Errorf("a ruleset delete: exit %d, stderr %q, want exit 2 and a reason that is not the review one", gate.code, gate.stderr)
 	}
 	// A merge tool of the GitHub MCP server.
 	mcp := `{"hook_event_name":"PreToolUse","tool_name":"mcp__github__merge_pull_request","tool_input":{"pullNumber":12},"cwd":"/"}`
