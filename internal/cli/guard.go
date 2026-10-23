@@ -9,9 +9,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/jbuffin/admiral/internal/outcomes"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 // guardReason is what the agent reads when the guard refuses. It names no
@@ -140,14 +142,13 @@ func guardDecision(raw []byte) (tool, rule string) {
 		if json.Unmarshal(p.ToolInput, &in) != nil || in.Command == nil {
 			return p.ToolName, ruleUnparsed
 		}
-		if tokenRead.MatchString(*in.Command) {
-			return p.ToolName, ruleTokenRead
-		}
-		g := guardCheck{cwd: p.Cwd, st: &guardState{}}
+		g := guardCheck{cwd: p.Cwd, st: &guardState{feeders: map[*syntax.Stmt]string{}}}
 		if rule := g.command(*in.Command, 0); rule != "" {
 			return p.ToolName, rule
 		}
 		return p.ToolName, g.confirmMerges()
+	case mcpMerges(p.ToolName):
+		return p.ToolName, ruleMcpMerge
 	case strings.Contains(p.ToolName, "pull_request_review"):
 		var in struct {
 			Event string `json:"event"`
@@ -155,8 +156,6 @@ func guardDecision(raw []byte) (tool, rule string) {
 		if json.Unmarshal(p.ToolInput, &in) == nil && reviewEvent(in.Event) {
 			return p.ToolName, ruleMcpReview
 		}
-	case mcpMerges(p.ToolName):
-		return p.ToolName, ruleMcpMerge
 	}
 	return p.ToolName, ""
 }
@@ -204,7 +203,7 @@ func ghSubcommand(args []string) []string {
 		case strings.HasPrefix(a, "-"):
 		default:
 			words = append(words, a)
-			if words[0] == "api" || len(words) == 2 && words[0] == "pr" && (words[1] == "review" || words[1] == "merge" || words[1] == "edit") {
+			if words[0] == "api" || len(words) == 2 && words[0] == "pr" && ghPrChecked(words[1]) {
 				return append(words, args[i+1:]...)
 			}
 		}
@@ -212,15 +211,21 @@ func ghSubcommand(args []string) []string {
 	return words
 }
 
+// ghPrChecked says whether a word after `gh pr` is one of the subcommands the
+// guard reads the arguments of.
+func ghPrChecked(word string) bool { return word == "review" || word == "merge" || word == "edit" }
+
 // ghCommands are gh's built-in commands. A first word that is none of them is an
 // alias or an extension, which can run anything under another name, so it is
 // refused; so are `alias` and `extension` themselves.
 var ghCommands = map[string]bool{
-	"agent-task": true, "api": true, "attestation": true, "auth": true, "browse": true, "cache": true,
-	"codespace": true, "completion": true, "config": true, "copilot": true, "gist": true, "gpg-key": true,
-	"help": true, "issue": true, "label": true, "licenses": true, "org": true, "pr": true, "project": true,
-	"release": true, "repo": true, "ruleset": true, "run": true, "search": true, "secret": true,
-	"ssh-key": true, "status": true, "variable": true, "workflow": true,
+	"accessibility": true, "actions": true, "agent-task": true, "api": true, "attestation": true, "auth": true, "browse": true, "cache": true,
+	"codespace": true, "completion": true, "config": true, "copilot": true, "discussion": true,
+	"environment": true, "exit-codes": true, "formatting": true, "gist": true, "gpg-key": true,
+	"help": true, "issue": true, "label": true, "licenses": true, "mintty": true, "org": true, "pr": true,
+	"preview": true, "project": true, "reference": true, "release": true, "repo": true, "ruleset": true,
+	"run": true, "search": true, "secret": true, "skill": true, "ssh-key": true, "status": true,
+	"telemetry": true, "variable": true, "version": true, "workflow": true,
 }
 
 // gh is the rule for a gh call: `pr review`, `pr merge`, `pr edit` and `api` are
@@ -230,6 +235,10 @@ var ghCommands = map[string]bool{
 func (g guardCheck) gh(args []string, line *lineText) string {
 	sub := ghSubcommand(args)
 	switch {
+	case len(sub) >= 2 && sub[0] == "pr" && hasPlaceholder(sub[1]):
+		return ruleGhPrMerge // the word could be merge, edit or review
+	case len(sub) >= 2 && sub[0] == "auth" && hasPlaceholder(sub[1]):
+		return ruleTokenRead
 	case len(sub) >= 2 && sub[0] == "pr" && sub[1] == "review":
 		if prReviewSubmits(sub[2:]) {
 			return ruleGhPrReview
@@ -242,7 +251,7 @@ func (g guardCheck) gh(args []string, line *lineText) string {
 		}
 	case len(sub) >= 2 && sub[0] == "auth" && authReadsToken(sub[1], args):
 		return ruleTokenRead
-	case len(sub) >= 1 && (sub[0] == "alias"):
+	case len(sub) >= 1 && sub[0] == "alias":
 		return ruleGhAlias
 	case len(sub) >= 1 && (sub[0] == "extension" || sub[0] == "ext"):
 		return ruleGhExtension
@@ -283,7 +292,9 @@ func prReviewSubmits(args []string) bool {
 			case "approve", "request-changes":
 				return true
 			case "comment":
-				comment = comment || !has || val != "false"
+				on, ok := boolFlag(has, val)
+				comment = comment || on
+				unsure = unsure || !ok
 			case "body", "body-file", "repo":
 				if has {
 					unsure = unsure || hasSplit(val)
@@ -563,10 +574,7 @@ func (g guardCheck) eventSubmits(p apiArgs, line *lineText) bool {
 	if !p.hasInput {
 		return false
 	}
-	if p.input == "-" {
-		return eventText.MatchString(line.text) || eventExpansion.MatchString(line.text)
-	}
-	b, ok := g.readFile(p.input)
+	b, ok := g.inputBody(p.input)
 	var body struct {
 		Event string `json:"event"`
 	}
@@ -626,10 +634,8 @@ func (g guardCheck) graphqlSubmits(p apiArgs, line *lineText, own string) bool {
 			vars = append(vars, strings.TrimSpace(v))
 		}
 	}
-	if p.hasInput && p.input == "-" {
-		queries = append(queries, line.text)
-	} else if p.hasInput {
-		b, ok := g.readFile(p.input)
+	if p.hasInput {
+		b, ok := g.inputBody(p.input)
 		var body struct {
 			Query     string `json:"query"`
 			Variables any    `json:"variables"`
@@ -657,4 +663,24 @@ func (g guardCheck) graphqlSubmits(p apiArgs, line *lineText, own string) bool {
 		}
 	}
 	return false
+}
+
+// boolFlag reads the value of a boolean flag as gh's pflag does, with
+// strconv.ParseBool: no value is true, and ok is false for one that is not a
+// boolean (an expansion included), which the caller treats as unreadable.
+func boolFlag(has bool, val string) (on, ok bool) {
+	if !has {
+		return true, true
+	}
+	on, err := strconv.ParseBool(val)
+	return on, err == nil
+}
+
+// inputBody is the text of an --input body: a file the guard can read, or stdin
+// when the line shows it literally.
+func (g guardCheck) inputBody(name string) (string, bool) {
+	if name == "-" {
+		return g.st.stdin, g.st.stdinOK
+	}
+	return g.readFile(name)
 }

@@ -112,9 +112,18 @@ func (g guardCheck) command(text string, depth int) string {
 	line := &lineText{text: text}
 	rule := ""
 	visit := func(n syntax.Node) bool {
+		if p, ok := n.(*syntax.ParamExp); ok && p.Param != nil && slices.Contains(tokenNames, p.Param.Value) && rule == "" {
+			rule = ruleTokenRead
+		}
+		if b, ok := n.(*syntax.BinaryCmd); ok && (b.Op == syntax.Pipe || b.Op == syntax.PipeAll) {
+			if txt, ok := literalOutput(b.X); ok {
+				g.st.feeders[b.Y] = txt
+			}
+		}
 		if s, ok := n.(*syntax.Stmt); ok && rule == "" {
 			switch cmd := s.Cmd.(type) {
 			case *syntax.CallExpr:
+				g.st.stdin, g.st.stdinOK = g.stdinOf(s)
 				rule = g.call(cmd, s.Redirs, line, depth)
 			case *syntax.ForClause:
 				if it, ok := cmd.Loop.(*syntax.WordIter); ok && slices.Contains(steerNames, it.Name.Value) {
@@ -155,6 +164,10 @@ func (g guardCheck) command(text string, depth int) string {
 	return rule
 }
 
+// tokenExpansion is an expansion of a token variable in text the guard could not
+// parse: $NAME or ${NAME…}.
+var tokenExpansion = regexp.MustCompile(`\$\{?(?:GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN)\b`)
+
 // shortFlag is a short flag word whose letters include a or r (-a, -r, -ab),
 // which in a line about a review is --approve or --request-changes.
 var shortFlag = regexp.MustCompile(`(?:^|[^\w-])-[A-Za-z]*[ar][A-Za-z]*(?:=\S*)?(?:[^\w-]|$)`)
@@ -165,6 +178,9 @@ var shortFlag = regexp.MustCompile(`(?:^|[^\w-])-[A-Za-z]*[ar][A-Za-z]*(?:=\S*)?
 func textRule(text string) string {
 	if r := mergeTextRule(text); r != "" {
 		return r
+	}
+	if tokenExpansion.MatchString(text) {
+		return ruleTokenRead
 	}
 	if reviewEventText(text) || strings.Contains(strings.ToLower(text), "review") && shortFlag.MatchString(text) {
 		return ruleUnparsed
@@ -237,15 +253,19 @@ func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *li
 			g.st.steered = true
 		}
 	}
+	viaXargs := false
 	for len(words) > 0 {
 		if hasPlaceholder(words[0]) {
-			if sub := ghSubcommand(words[1:]); len(sub) >= 1 && slices.Contains([]string{"api", "alias", "extension", "ext", "auth"}, sub[0]) || len(sub) >= 2 && sub[0] == "pr" && (sub[1] == "review" || sub[1] == "merge" || sub[1] == "edit") {
+			if sub := ghSubcommand(words[1:]); len(sub) >= 1 && slices.Contains([]string{"api", "alias", "extension", "ext", "auth"}, sub[0]) || len(sub) >= 2 && sub[0] == "pr" && (ghPrChecked(sub[1]) || hasPlaceholder(sub[1])) {
 				return g.gh(words[1:], line)
 			}
 			if r := line.span(c); r != "" || !onlyExpansion(words[0]) {
 				return r
 			}
-			return line.wholeRule()
+			if r := line.wholeRule(); r != "" {
+				return r
+			}
+			return ruleShellScript // a command held in a variable: the guard cannot see what it is
 		}
 		w, args := strings.TrimPrefix(filepath.Base(words[0]), "="), words[1:] // =gh is zsh's path lookup
 		if spec, ok := wrappers[w]; ok {
@@ -256,8 +276,15 @@ func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *li
 					return r
 				}
 			}
-			if slices.ContainsFunc(words[1:len(words)-len(args)], steersWrapper) || w == "xargs" {
-				g.st.steered = true // xargs adds the words it reads from stdin
+			if slices.ContainsFunc(words[1:len(words)-len(args)], steersWrapper) {
+				g.st.steered = true
+			}
+			if w == "xargs" {
+				viaXargs = true // it adds the words it reads from stdin
+				g.st.steered = true
+			}
+			if w == "env" && len(args) == 0 {
+				return ruleTokenRead // a bare env prints the environment, token included
 			}
 			words = args
 			continue
@@ -271,15 +298,35 @@ func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *li
 		case w == "alias" || w == "unalias" || w == "hash" && hashRenames(args):
 			return ruleShellAlias
 		case w == "source" || w == ".":
-			return ruleShellScript
+			if viaXargs || len(args) == 0 {
+				return ruleShellScript
+			}
+			return g.scriptFile(args[0], line, depth)
 		case w == "git":
 			if gitSteers(args) {
 				g.st.steered = true
 			}
+			if gitCredential(args) {
+				return ruleTokenRead
+			}
+		case w == "printenv":
+			if len(args) == 0 || slices.ContainsFunc(args, func(a string) bool { return slices.Contains(tokenNames, a) }) {
+				return ruleTokenRead
+			}
+		case w == "security":
+			if keychainSecret(args) {
+				return ruleTokenRead
+			}
 		case w == "gh":
-			return g.gh(args, line)
+			if r := g.gh(args, line); r != "" || !viaXargs {
+				return r
+			}
+			return ruleShellScript // the arguments come from stdin
 		case slices.Contains(shells, w):
-			return g.shell(c, args, redirs, line, depth)
+			if r := g.shell(c, args, redirs, line, depth); r != "" || !viaXargs {
+				return r
+			}
+			return ruleShellScript
 		case w == "eval":
 			return g.script(c, strings.Join(args, " "), line, depth)
 		case w == "trap":
@@ -293,6 +340,128 @@ func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *li
 		return ""
 	}
 	return ""
+}
+
+// tokenNames are the variables gh takes a token from.
+var tokenNames = []string{"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"}
+
+// gitCredential says whether a git command is `git credential`, which prints the
+// stored credentials.
+func gitCredential(args []string) bool {
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "-C" || a == "-c" || a == "--git-dir" || a == "--work-tree" || a == "--namespace":
+			i++
+		case strings.HasPrefix(a, "-"):
+		default:
+			return a == "credential"
+		}
+	}
+	return false
+}
+
+// keychainSecret says whether a security call prints a password: find-generic- or
+// find-internet-password with -w or -g.
+func keychainSecret(args []string) bool {
+	return len(args) > 0 && (args[0] == "find-generic-password" || args[0] == "find-internet-password") &&
+		slices.ContainsFunc(args[1:], func(a string) bool { return shortFlagHas(a, "wg") })
+}
+
+// shortFlagHas says whether a short flag cluster (-ab) holds one of the letters.
+func shortFlagHas(a, letters string) bool {
+	return len(a) > 1 && a[0] == '-' && a[1] != '-' && strings.ContainsAny(a[1:], letters)
+}
+
+// scriptFile is the rule for a script file a shell, source or . is given: the
+// file is read as the guard reads any file named on a command (a regular file of
+// at most 1 MiB, from the call's cwd) and checked as a command line of its own.
+// A file it cannot read, or that does not parse, is refused.
+func (g guardCheck) scriptFile(name string, line *lineText, depth int) string {
+	if hasPlaceholder(name) {
+		return ruleShellScript
+	}
+	text, ok := g.readFile(name)
+	if !ok || !parses(text) {
+		return ruleShellScript
+	}
+	return g.command(text, depth+1)
+}
+
+// parses says whether text is a script, in bash or in zsh.
+func parses(text string) bool {
+	for _, lang := range []syntax.LangVariant{syntax.LangBash, syntax.LangZsh} {
+		if _, err := syntax.NewParser(syntax.Variant(lang)).Parse(strings.NewReader(text), ""); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// stdinOf is the text on the standard input of a statement when the line shows it
+// literally: a heredoc or here-string with no expansion, a file redirected in, or
+// the literal output of the echo, printf or cat before a pipe. Anything else is
+// not shown.
+func (g guardCheck) stdinOf(s *syntax.Stmt) (string, bool) {
+	for _, r := range s.Redirs {
+		switch r.Op {
+		case syntax.Hdoc, syntax.DashHdoc:
+			if r.Hdoc != nil {
+				if t := heredocText(r); !hasPlaceholder(t) {
+					return t, true
+				}
+			}
+			return "", false
+		case syntax.WordHdoc:
+			if t := wordText(r.Word); !hasPlaceholder(t) {
+				return t, true
+			}
+			return "", false
+		case syntax.RdrIn:
+			if t := wordText(r.Word); !hasPlaceholder(t) {
+				return g.readFile(t)
+			}
+			return "", false
+		}
+	}
+	t, ok := g.st.feeders[s]
+	return t, ok
+}
+
+// literalOutput is the text a statement prints when it is echo or printf with
+// literal words and no escapes (a shell may read the escapes differently from the
+// guard), or cat of a literal heredoc or here-string.
+func literalOutput(x *syntax.Stmt) (string, bool) {
+	c, ok := x.Cmd.(*syntax.CallExpr)
+	if !ok || len(c.Args) == 0 {
+		return "", false
+	}
+	words := make([]string, len(c.Args))
+	for i, w := range c.Args {
+		if words[i] = wordText(w); hasPlaceholder(words[i]) || strings.Contains(words[i], `\`) {
+			return "", false
+		}
+	}
+	switch words[0] {
+	case "echo":
+		if len(x.Redirs) == 0 && !slices.ContainsFunc(words[1:], func(a string) bool { return strings.HasPrefix(a, "-") }) {
+			return strings.Join(words[1:], " ") + "\n", true
+		}
+	case "printf":
+		if len(x.Redirs) == 0 && len(words) == 2 && !strings.ContainsAny(words[1], "%-") {
+			return words[1], true
+		}
+	case "cat":
+		if len(words) == 1 && len(x.Redirs) == 1 {
+			r := x.Redirs[0]
+			switch {
+			case r.Op == syntax.WordHdoc && !hasPlaceholder(wordText(r.Word)):
+				return wordText(r.Word), true
+			case (r.Op == syntax.Hdoc || r.Op == syntax.DashHdoc) && r.Hdoc != nil && !hasPlaceholder(heredocText(r)):
+				return heredocText(r), true
+			}
+		}
+	}
+	return "", false
 }
 
 // aliasTables are the shell variables that define names for commands: zsh's
@@ -415,7 +584,7 @@ func (g guardCheck) shell(c *syntax.CallExpr, args []string, redirs []*syntax.Re
 		return g.script(c, args[i], line, depth)
 	}
 	if i < len(args) {
-		return ruleShellScript // a script file: the guard is not shown what is in it
+		return g.scriptFile(args[i], line, depth)
 	}
 	found := false
 	for _, r := range redirs {

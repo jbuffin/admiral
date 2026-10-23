@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/launcher"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 // The merge half of the guard (#120). On an autopilot ship the only way to merge
@@ -34,11 +35,17 @@ import (
 type guardState struct {
 	steered bool
 	lookups [][]string
+	// stdin is the text on the standard input of the call being checked, when
+	// the line shows it literally (stdinOK); feeders holds the literal output of
+	// the statement on the left of each pipe.
+	stdin   string
+	stdinOK bool
+	feeders map[*syntax.Stmt]string
 }
 
-// steerNames are the variables that choose the repository, the host, the git
-// directory or the credentials gh runs with.
-var steerNames = []string{"GH_REPO", "GH_HOST", "GIT_DIR", "GIT_WORK_TREE"}
+// steerNames are the variables that choose the repository, the host, the config
+// (and so the account), the git directory or the token gh runs with.
+var steerNames = []string{"GH_REPO", "GH_HOST", "GH_CONFIG_DIR", "GIT_DIR", "GIT_WORK_TREE", "GH_TOKEN", "GITHUB_TOKEN"}
 
 // steersGh says whether a word is an assignment of one of steerNames.
 func steersGh(word string) bool {
@@ -72,7 +79,7 @@ var steeringBuiltins = []string{"read", "mapfile", "readarray", "getopts", "prin
 func steersBuiltin(word string, args []string, src string) bool {
 	if word == "set" {
 		return slices.ContainsFunc(args, func(a string) bool {
-			return a == "allexport" || len(a) > 1 && a[0] == '-' && a[1] != '-' && strings.Contains(a, "a")
+			return a == "allexport" || shortFlagHas(a, "a")
 		})
 	}
 	return slices.Contains(steeringBuiltins, word) && slices.ContainsFunc(steerNames, func(n string) bool { return strings.Contains(src, n) })
@@ -138,21 +145,17 @@ func mcpMerges(tool string) bool {
 // `git-credential`, or `status` with -t or --show-token anywhere in the arguments.
 func authReadsToken(sub string, args []string) bool {
 	return sub == "token" || sub == "git-credential" || sub == "status" && slices.ContainsFunc(args, func(a string) bool {
-		return a == "--show-token" || len(a) > 1 && a[0] == '-' && a[1] != '-' && strings.Contains(a, "t")
+		return a == "--show-token" || shortFlagHas(a, "t")
 	})
 }
-
-// tokenRead is a call that reads the GitHub token: `gh auth token`, or a mention
-// of the variables gh takes one from.
-var tokenRead = regexp.MustCompile(`\b(?:GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN)\b|\bgh\b[^\n;|&]*\bauth\s+token\b`)
 
 // Text the guard could not parse is judged by what it mentions: a merge, a route
 // that merges, or a rule that gates one. mergeTextRule is the merge counterpart
 // of the review text rule.
 var (
-	prMergeText   = regexp.MustCompile(`(?is)\bpr\b.*\bmerge\b`)
-	mergeRouteTxt = regexp.MustCompile(`(?i)\bpulls/\S*merge|/merges\b`)
-	gateRouteText = regexp.MustCompile(`(?i)\brulesets\b|/protection\b`)
+	prMergeText    = regexp.MustCompile(`(?is)\bpr\b.*\bmerge\b`)
+	mergeRouteText = regexp.MustCompile(`(?i)\bpulls/\S*merge|/merges\b`)
+	gateRouteText  = regexp.MustCompile(`(?i)\brulesets\b|/protection\b`)
 )
 
 // mergeTextRule is the rule that refuses text which mentions a merge or a write
@@ -161,7 +164,7 @@ func mergeTextRule(text string) string {
 	switch {
 	case prMergeText.MatchString(text):
 		return ruleGhPrMerge
-	case mergeRouteTxt.MatchString(text):
+	case mergeRouteText.MatchString(text):
 		return ruleGhAPIMerge
 	case slices.ContainsFunc(graphqlMerges, func(m string) bool { return strings.Contains(text, m) }):
 		return ruleGraphqlMerge
@@ -251,7 +254,11 @@ func (g guardCheck) prMerge(args []string, repo string) string {
 		}
 		return attached
 	}
-	boolean := func(has bool, val string) bool { return !has || val != "false" }
+	boolean := func(has bool, val string) bool {
+		on, ok := boolFlag(has, val)
+		unsure = unsure || !ok // gh would refuse the flag or read it another way
+		return on
+	}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
@@ -429,19 +436,22 @@ func (g guardCheck) retargets(p apiArgs, line *lineText) bool {
 	if !p.hasInput {
 		return false
 	}
-	if p.input == "-" {
-		return strings.Contains(line.text, "base")
+	// The body is decoded, so a \u escape can't hide the key; one that is not a
+	// JSON object, or is not shown, is refused.
+	b, ok := g.inputBody(p.input)
+	var body map[string]json.RawMessage
+	if !ok || json.Unmarshal([]byte(b), &body) != nil {
+		return true
 	}
-	b, ok := g.readFile(p.input)
-	return !ok || strings.Contains(b, "base")
+	_, has := body["base"]
+	return has
 }
 
 // routeExtends says whether an expansion after this literal prefix of a path
 // could complete a merge or gate route: the root, repos/<o>/<r> and what is above
-// it, pulls (unless the write is a PATCH, which edits a pull request), pulls/<n>,
-// anything under branches, orgs/<o>. Under issues, comments and
-// the like an expansion would have to hide a "../" to get anywhere, which the
-// path normalisation already resolves.
+// it, pulls or issues (unless the write is a PATCH, which edits one), pulls/<n>,
+// anything under branches, orgs/<o>. Under comments and the like an expansion
+// would have to carry a "../" to get anywhere, and GitHub does not resolve one.
 func routeExtends(prefix []string, patch bool) bool {
 	if len(prefix) == 0 || hasPlaceholder(prefix[0]) {
 		return true
@@ -464,6 +474,8 @@ func routeExtends(prefix []string, patch bool) bool {
 	switch {
 	case len(t) == 0:
 		return true
+	case t[0] == "issues" && len(t) == 1:
+		return !patch // issues/$N is an edit of an issue, a PATCH; another method could be anything
 	case t[0] == "pulls":
 		return len(t) == 2 || len(t) == 1 && !patch // pulls/$N is a PATCH of a pull request, or the merge route's PUT
 	}
@@ -552,24 +564,13 @@ func (g guardCheck) graphqlUnreadable(args []string) bool {
 // mutation.
 func (g guardCheck) graphqlMutates(p apiArgs, line *lineText) string {
 	var queries []string
-	stmt := line.text[min(line.stmtFrom, len(line.text)):min(line.stmtTo, len(line.text))]
-	stdin := func() bool { // text for stdin is on the statement, not read from elsewhere
-		return strings.Contains(stmt, "<<") || strings.Contains(stmt, "echo ") || strings.Contains(stmt, "printf ")
-	}
 	for _, f := range p.fields {
 		if f.key != "query" {
 			continue
 		}
 		v := f.val
 		if f.typed && strings.HasPrefix(v, "@") {
-			if v == "@-" {
-				if !stdin() {
-					return ruleGraphqlMerge
-				}
-				queries = append(queries, line.text)
-				continue
-			}
-			b, ok := g.readFile(v[1:])
+			b, ok := g.inputBody(v[1:]) // @- is stdin
 			if !ok {
 				return ruleGraphqlMerge
 			}
@@ -577,21 +578,17 @@ func (g guardCheck) graphqlMutates(p apiArgs, line *lineText) string {
 		}
 		queries = append(queries, v)
 	}
-	switch {
-	case p.hasInput && p.input == "-":
-		if !stdin() {
-			return ruleGraphqlMerge
-		}
-		queries = append(queries, line.text)
-	case p.hasInput:
-		b, ok := g.readFile(p.input)
+	if p.hasInput {
+		b, ok := g.inputBody(p.input)
 		var body struct {
-			Query string `json:"query"`
+			Query     string `json:"query"`
+			Variables any    `json:"variables"`
 		}
 		if !ok || json.Unmarshal([]byte(b), &body) != nil {
 			return ruleGraphqlMerge
 		}
-		queries = append(queries, body.Query, b)
+		vars, _ := json.Marshal(body.Variables)
+		queries = append(queries, body.Query, string(vars))
 	}
 	expanded := false
 	for _, q := range queries {
@@ -752,11 +749,11 @@ func rulesetUnbypassable(get func(string) ([]byte, error), repo string, r rulese
 		return false, err
 	}
 	var rs struct {
-		Enforcement        string `json:"enforcement"`
-		CurrentUserCanByps string `json:"current_user_can_bypass"`
+		Enforcement          string `json:"enforcement"`
+		CurrentUserCanBypass string `json:"current_user_can_bypass"`
 	}
 	if err := json.Unmarshal(out, &rs); err != nil {
 		return false, err
 	}
-	return rs.Enforcement == "active" && rs.CurrentUserCanByps == "never", nil
+	return rs.Enforcement == "active" && rs.CurrentUserCanBypass == "never", nil
 }
