@@ -37,6 +37,7 @@ type Module interface {
 // Server holds what the handlers share.
 type Server struct {
 	Version  string
+	Commit   string
 	UI       fs.FS
 	Messages map[string]MessageHandler
 	Config   *config.Manager
@@ -69,7 +70,7 @@ func (s *Server) serveWS(w http.ResponseWriter, r *http.Request) {
 	defer conn.CloseNow()
 	ctx := r.Context()
 
-	hello, _ := json.Marshal(map[string]string{"type": "hello", "version": s.Version})
+	hello, _ := json.Marshal(map[string]string{"type": "hello", "version": s.Version, "commit": s.Commit})
 	wctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	err = conn.Write(wctx, websocket.MessageText, hello)
 	cancel()

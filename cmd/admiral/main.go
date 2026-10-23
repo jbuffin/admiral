@@ -218,7 +218,7 @@ func serve(args []string) error {
 	shipService.Orders = sourceService
 	shipService.OnChange = func() { sourceService.Notify(); bridgeService.ShipsChanged(); engine.Poke() }
 
-	s := &server.Server{Version: version, UI: web.UI(), Messages: map[string]server.MessageHandler{}, Config: cfg,
+	s := &server.Server{Version: version, Commit: commit, UI: web.UI(), Messages: map[string]server.MessageHandler{}, Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService,
 			&launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}, bridgeService}}
 	bg, stopBackground := context.WithCancel(context.Background())

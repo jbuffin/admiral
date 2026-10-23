@@ -3,12 +3,18 @@ import { useEffect, useRef } from 'preact/hooks';
 import { AdmiralMark } from './AdmiralMark';
 import { toggleSound, muted } from './chime';
 import { config } from './config';
-import { offline, signedOut } from './connection';
+import { offline, onMessage, signedOut } from './connection';
 import { openSetup } from './setup';
 import { anyAutopilot } from './sources';
 import { atSea, board, needsYou, ships, shipsLoaded } from './ships';
 
 const aboutOpen = signal(false);
+
+// The server's build, as `admiral --version` prints it: "0.2.11 (7dbf87b)".
+const serverVersion = signal('');
+onMessage('hello', (msg: { version: string; commit?: string }) => {
+  serverVersion.value = msg.commit ? `${msg.version} (${msg.commit})` : msg.version;
+});
 
 function outsideBody(dialog: HTMLDialogElement | null, e: MouseEvent) {
   const r = dialog?.getBoundingClientRect();
@@ -39,6 +45,7 @@ function About() {
           Admiral is not affiliated with or endorsed by Anthropic, OpenAI or GitHub. Claude, Codex, Copilot and their
           logos are trademarks of their owners.
         </p>
+        {serverVersion.value && <p class="about-version">Version {serverVersion.value}</p>}
         <button type="button" class="press about-close" onClick={() => ref.current?.close()}>
           Close
         </button>
