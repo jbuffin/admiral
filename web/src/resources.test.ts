@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import type { Source } from './sources';
 import { type Resource, chipLabel, chipText, launchHint } from './resources';
 
 const phone = (over: Partial<Resource> = {}): Resource => ({ name: 'phone', capacity: 1, in_use: 0, holders: [], check: 'ok', ...over });
 const held: Resource = phone({ in_use: 1, holders: [{ kind: 'ship', session: 's1' }] });
+const panelNeeding = (resources: string[]) =>
+  [{ key: 'a', panels: [{ id: 'p', autopilot: { resources } }] }] as unknown as Source[];
+const hint = (needs: string[], all: Resource[]) => launchHint(panelNeeding(needs), 'a', 'p', all);
 const name = (s: string) => (s === 's1' ? 'brave-otter' : s);
 
 describe('resource chip', () => {
@@ -29,15 +33,17 @@ describe('resource chip', () => {
 
 describe('launch orders hint', () => {
   it('names a resource in use or missing', () => {
-    expect(launchHint(['phone'], [held])).toBe('phone is in use');
-    expect(launchHint(['phone'], [phone({ check: 'missing' })])).toBe('phone is missing');
-    expect(launchHint(['phone'], [phone({ in_use: 2, holders: [] })])).toBe('phone is in use');
+    expect(hint(['phone'], [held])).toBe('phone is in use');
+    expect(hint(['phone'], [phone({ check: 'missing' })])).toBe('phone is missing');
+    expect(hint(['phone'], [phone({ in_use: 2, holders: [] })])).toBe('phone is in use');
   });
 
   it('says nothing when a unit is free, the check is pending, or the panel needs none', () => {
-    expect(launchHint(['phone'], [phone({ capacity: 2, in_use: 1 })])).toBeNull();
-    expect(launchHint(['phone'], [phone({ check: 'pending', in_use: 1 })])).toBeNull();
-    expect(launchHint([], [held])).toBeNull();
-    expect(launchHint(['tablet'], [held])).toBeNull();
+    expect(hint(['phone'], [phone({ capacity: 2, in_use: 1 })])).toBeNull();
+    expect(hint(['phone'], [phone({ check: 'pending', in_use: 1 })])).toBeNull();
+    expect(hint([], [held])).toBeNull();
+    expect(hint(['tablet'], [held])).toBeNull();
+    expect(launchHint(panelNeeding(['phone']), 'a', 'other', [held])).toBeNull(); // another panel of the source needs nothing
+    expect(launchHint(null, 'a', 'p', [held])).toBeNull();
   });
 });

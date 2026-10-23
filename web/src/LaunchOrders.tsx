@@ -4,7 +4,7 @@ import { harnesses } from './harnesses';
 import { announceLaunch, dragging, launching } from './launch';
 import { LogoFlag } from './Logos';
 import { Modal } from './Modal';
-import { launchHint, panelNeeds, resources } from './resources';
+import { launchHint, resources } from './resources';
 import { ships } from './ships';
 import { api, isWebUrl, sources } from './sources';
 
@@ -129,8 +129,7 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
   const skillBox = useRef<HTMLDivElement>(null);
   const asked = useRef(0);
   const favNames = config.value?.favorite_skills ?? [];
-  const needs = panelNeeds(sources.value?.find((s) => s.key === source)?.panels.find((p) => p.id === panel));
-  const hint = order ? launchHint(needs, resources.value) : null;
+  const hint = order ? launchHint(sources.value, source, panel, resources.value) : null;
 
   useEffect(() => {
     let live = true;

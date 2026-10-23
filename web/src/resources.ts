@@ -1,6 +1,6 @@
 import { signal } from '@preact/signals';
 import { onMessage } from './connection';
-import type { Panel } from './sources';
+import type { Source } from './sources';
 
 // What the `resources` message carries (internal/resources).
 export type Holder = { kind: 'ship'; session: string } | { kind: 'lock'; label: string };
@@ -33,9 +33,10 @@ export function chipLabel(r: Resource, shipName: (session: string) => string): s
   return held.length > 0 ? `${of}, held by ${held.join(', ')}` : of;
 }
 
-// The line Launch orders shows for an order whose panel needs these resources: the first one that is
+// The line Launch orders shows for an order whose panel (autopilot.resources) needs resources: the first one that is
 // missing, or has no free unit. A resource still being checked, or not known, says nothing.
-export function launchHint(needs: string[], all: Resource[]): string | null {
+export function launchHint(sources: Source[] | null, sourceKey: string, panelId: string | undefined, all: Resource[]): string | null {
+  const needs = sources?.find((s) => s.key === sourceKey)?.panels.find((p) => p.id === panelId)?.autopilot?.resources ?? [];
   for (const name of needs) {
     const r = all.find((x) => x.name === name);
     if (!r || r.check === 'pending') continue;
@@ -45,4 +46,3 @@ export function launchHint(needs: string[], all: Resource[]): string | null {
   return null;
 }
 
-export const panelNeeds = (panel: Panel | undefined) => panel?.autopilot?.resources ?? [];

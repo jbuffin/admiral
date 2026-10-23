@@ -26,7 +26,7 @@ export const launching = signal<(Partial<OrderRef> & { fleet: string; harness: H
 // is no longer selected, and Escape deselects.
 effect(() => {
   const s = selected.peek();
-  const shown = panelViews.value.some((v) => v.source.key === s?.source && v.orders.some((o) => o.id === s.order.id));
+  const shown = panelViews.value.some((v) => v.source.key === s?.source && v.panel.id === s.panel && v.orders.some((o) => o.id === s.order.id));
   if (s && !shown) selected.value = null;
 });
 window.addEventListener('keydown', (e) => {

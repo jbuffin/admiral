@@ -69,10 +69,12 @@ test.describe('locked resources in the UI', () => {
       .toEqual([['phone']]);
 
     const holder = (await resources(admiral.url))[0].holders[0].session as string;
-    const body = await get(admiral.url, 'api/ships');
-    const ships = (Array.isArray(body) ? body : body.ships) as Json[];
-    const shipName = ships.find((s) => s.session === holder)?.name as string;
-    expect(shipName, 'the holding ship is in the ships list').toBeTruthy();
+    const shipsList = async () => {
+      const body = await get(admiral.url, 'api/ships');
+      return (Array.isArray(body) ? body : body.ships) as Json[];
+    };
+    await expect.poll(async () => (await shipsList()).some((s) => s.session === holder), { message: 'the holding ship is in the ships list' }).toBe(true);
+    const shipName = (await shipsList()).find((s) => s.session === holder)!.name as string;
     const waiting = (await panels(admiral.url)).find((p) => p.autopilot?.waiting_for?.length)!;
     const running = (await panels(admiral.url)).find((p) => !p.autopilot?.waiting_for?.length)!;
 
