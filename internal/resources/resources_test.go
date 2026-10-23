@@ -1,6 +1,7 @@
 package resources_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -36,9 +37,10 @@ import (
 //	  all-or-nothing: with every name free and its check "ok" or "none" it reserves a
 //	  unit of each and returns release (idempotent); otherwise it reserves nothing and
 //	  returns, for each name that is not ready, Wait{Name, Why "busy"|"missing"|"pending"}.
-//	(*Set).Lock(name, label string) (release func(), ok bool)
-//	  non-blocking; ok is false when no unit is free or the name is unknown; the
-//	  check isn't consulted. release is idempotent.
+//	(*Set).Lock(name, label string) (release func(), err error)
+//	  non-blocking; err is resources.ErrBusy when no unit is free and
+//	  resources.ErrUnknown when the name isn't defined; the check isn't consulted.
+//	  release is idempotent.
 //	(*Set).Changed() <-chan struct{}   // closed when a lock is released, a reservation
 //	                                   // dropped or a check state changed; fetch a fresh one each time
 
@@ -111,7 +113,7 @@ func TestUnitsHeld(t *testing.T) {
 		{"capacity 2 with a ship and a lock is full", map[string]config.Resource{"phone": {Capacity: 2}},
 			[]ships.Ship{hold("a", ships.StatusUnderway, "phone")}, 1, 0, 2,
 			[]resources.Holder{{Kind: "ship", Session: "a"}, {Kind: "lock", Label: "lock-0"}}, false},
-		{"capacity 2 with a ship, a lock and a reservation never goes past capacity by itself",
+		{"capacity 2 with a ship and a reservation is full",
 			map[string]config.Resource{"phone": {Capacity: 2}},
 			[]ships.Ship{hold("a", ships.StatusUnderway, "phone")}, 0, 1, 2,
 			[]resources.Holder{{Kind: "ship", Session: "a"}}, false},
@@ -121,7 +123,7 @@ func TestUnitsHeld(t *testing.T) {
 			r := newRig(t, tc.defs)
 			r.ships = tc.ships
 			for i := 0; i < tc.locks; i++ {
-				if _, ok := r.set.Lock("phone", "lock-"+strconv.Itoa(i)); !ok {
+				if _, err := r.set.Lock("phone", "lock-"+strconv.Itoa(i)); err != nil {
 					t.Fatalf("lock %d refused", i)
 				}
 			}
@@ -230,15 +232,15 @@ func TestReserveTakesEveryNameOrNone(t *testing.T) {
 func TestLocks(t *testing.T) {
 	r := newRig(t, map[string]config.Resource{"phone": {Capacity: 1, Check: []string{"false"}}})
 	r.set.CheckNow() // the check fails; a lock doesn't care
-	rel, ok := r.set.Lock("phone", "install")
-	if !ok {
-		t.Fatal("Lock refused although a unit is free and only the check fails")
+	rel, err := r.set.Lock("phone", "install")
+	if err != nil {
+		t.Fatalf("Lock refused although a unit is free and only the check fails: %v", err)
 	}
-	if _, ok := r.set.Lock("phone", "second"); ok {
-		t.Error("a second Lock got the only unit")
+	if _, err := r.set.Lock("phone", "second"); !errors.Is(err, resources.ErrBusy) {
+		t.Errorf("a second Lock = %v, want ErrBusy", err)
 	}
-	if _, ok := r.set.Lock("nope", "x"); ok {
-		t.Error("Lock of an undefined resource succeeded")
+	if _, err := r.set.Lock("nope", "x"); !errors.Is(err, resources.ErrUnknown) {
+		t.Errorf("Lock of an undefined resource = %v, want ErrUnknown", err)
 	}
 	if _, waits := r.set.Reserve([]string{"phone"}); len(waits) == 0 {
 		t.Error("Reserve passed while a lock holds the unit")
@@ -256,11 +258,11 @@ func TestLocks(t *testing.T) {
 		t.Error("OnChange did not run on release")
 	}
 	rel() // idempotent: the unit isn't freed twice
-	if _, ok := r.set.Lock("phone", "third"); !ok {
-		t.Error("Lock refused after the release")
+	if _, err := r.set.Lock("phone", "third"); err != nil {
+		t.Errorf("Lock after the release: %v", err)
 	}
-	if _, ok := r.set.Lock("phone", "fourth"); ok {
-		t.Error("a double release freed a second unit")
+	if _, err := r.set.Lock("phone", "fourth"); !errors.Is(err, resources.ErrBusy) {
+		t.Errorf("after a double release, Lock = %v, want ErrBusy: the second release freed a unit", err)
 	}
 }
 

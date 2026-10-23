@@ -165,3 +165,34 @@ func TestSetFleetsKeepsTheResourcesObject(t *testing.T) {
 		t.Errorf("SetFleets dropped the resources object:\n%s", b)
 	}
 }
+
+// The Manager's write path (the one the UI uses) accepts a panel that names a
+// resource the file defines, wherever the resources key sits, and refuses one
+// that names an undefined resource.
+func TestManagerSetSourcesChecksPanelResourcesAgainstTheFile(t *testing.T) {
+	dir := t.TempDir()
+	good := `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},"resources":{"phone":{}}}`
+	p := writeFile(t, dir, good)
+	m, err := config.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	panel := func(res string) json.RawMessage {
+		return json.RawMessage(`{"s":{"plugin":"freeform","autopilot":{"p":` + apEntry(`"resources":`+res) + `}}}`)
+	}
+
+	if err := m.SetSources(panel(`["nope"]`)); err == nil {
+		t.Fatal("SetSources accepted a panel naming an undefined resource")
+	}
+	if b, _ := os.ReadFile(p); string(b) != good {
+		t.Errorf("a refused write changed config.json:\n%s", b)
+	}
+	if err := m.SetSources(panel(`["phone"]`)); err != nil {
+		t.Fatalf("SetSources with a defined resource: %v", err)
+	}
+	src, _ := m.Current().Source("s")
+	if got := src.Autopilot["p"].Resources; !reflect.DeepEqual(got, []string{"phone"}) {
+		t.Errorf("panel resources after the write = %v, want [phone]", got)
+	}
+}

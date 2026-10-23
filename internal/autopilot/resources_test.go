@@ -2,6 +2,7 @@ package autopilot
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -84,7 +85,7 @@ func TestALaunchInFlightHoldsItsUnit(t *testing.T) {
 	launch := r.engine.Launch
 	var lockDuringLaunch bool
 	r.engine.Launch = func(req launcher.Request) (ships.Ship, *launcher.Error) {
-		if rel, ok := r.engine.Resources.Lock("phone", "install"); ok {
+		if rel, err := r.engine.Resources.Lock("phone", "install"); err == nil {
 			lockDuringLaunch = true
 			rel()
 		}
@@ -94,8 +95,8 @@ func TestALaunchInFlightHoldsItsUnit(t *testing.T) {
 	if lockDuringLaunch {
 		t.Error("a lock got the unit while a launch was in flight")
 	}
-	if _, ok := r.engine.Resources.Lock("phone", "install"); ok {
-		t.Error("a lock got the unit after the launch: the ship should hold it")
+	if _, err := r.engine.Resources.Lock("phone", "install"); !errors.Is(err, resources.ErrBusy) {
+		t.Errorf("Lock after the launch = %v, want ErrBusy: the ship holds the unit", err)
 	}
 
 	for _, lerr := range []*launcher.Error{
@@ -108,9 +109,9 @@ func TestALaunchInFlightHoldsItsUnit(t *testing.T) {
 			r := gated(t, phone, "phone")
 			r.failWith = lerr
 			r.pass()
-			rel, ok := r.engine.Resources.Lock("phone", "install")
-			if !ok {
-				t.Fatal("the failed launch kept its unit")
+			rel, err := r.engine.Resources.Lock("phone", "install")
+			if err != nil {
+				t.Fatalf("the failed launch kept its unit: %v", err)
 			}
 			rel()
 		})
@@ -120,9 +121,9 @@ func TestALaunchInFlightHoldsItsUnit(t *testing.T) {
 // A lock holds the unit like a ship: nothing launches until it is released.
 func TestALockBlocksALaunchUntilReleased(t *testing.T) {
 	r := gated(t, phone, "phone")
-	rel, ok := r.engine.Resources.Lock("phone", "install")
-	if !ok {
-		t.Fatal("lock refused")
+	rel, err := r.engine.Resources.Lock("phone", "install")
+	if err != nil {
+		t.Fatal(err)
 	}
 	want(t, "locked", r.pass(), nil)
 	rel()
@@ -184,8 +185,8 @@ func TestOneResourceWaitRecordPerWait(t *testing.T) {
 	set := r.engine.Resources
 	waitChanges := 0
 	r.engine.OnWait = func() { waitChanges++ }
-	set.CheckNow() // ipad missing
-	rel, _ := set.Lock("phone", "install")
+	set.CheckNow()                         // ipad missing
+	rel, _ := set.Lock("phone", "install") // the unit is free: no error
 
 	want(t, "waiting", r.pass(), nil)
 	recs := r.recordsOf("resource_wait")
@@ -241,8 +242,8 @@ func TestOneResourceWaitRecordPerWait(t *testing.T) {
 	}
 	set.CheckNow()
 	want(t, "free", r.pass(), []string{"s/p/o1"})
-	if got := r.engine.WaitingFor("s", "p"); !reflect.DeepEqual(got, []string{"phone"}) {
-		t.Errorf("WaitingFor(p) with o3 behind the launched o1 = %v, want [phone]", got)
+	if got := r.engine.WaitingFor("s", "p"); !reflect.DeepEqual(got, []string{"ipad", "phone"}) {
+		t.Errorf("WaitingFor(p) with o3 behind the launched o1 = %v, want [ipad phone]: o1's ship holds the only unit of each", got)
 	}
 	if n := len(r.recordsOf("resource_wait")); n != 4 {
 		t.Errorf("resource_wait records after the launch = %d, want 4: o3 was already waiting", n)
