@@ -23,6 +23,7 @@ type PanelAutopilot struct {
 	Args      []string // extra harness args, after the fleet's own
 	MaxShips  int      // most ships from this panel at once
 	LowStakes string   // advisor or never
+	AutoMerge string   // squash, merge or rebase; empty when the panel does not auto-merge
 	// Resources names the locked resources an order of this panel needs; nil
 	// when none. Each is checked against the top-level resources once the whole
 	// file is parsed.
@@ -159,6 +160,13 @@ func parseAutopilotEntry(path string, raw json.RawMessage) (PanelAutopilot, erro
 		case "max_ships":
 			if e.MaxShips, err = positiveInt(p, m.raw); err != nil {
 				return PanelAutopilot{}, err
+			}
+		case "auto_merge":
+			if e.AutoMerge, err = str(p, m.raw); err != nil {
+				return PanelAutopilot{}, err
+			}
+			if e.AutoMerge != "squash" && e.AutoMerge != "merge" && e.AutoMerge != "rebase" {
+				return PanelAutopilot{}, fmt.Errorf("%s: must be squash, merge or rebase, got %q", p, e.AutoMerge)
 			}
 		case "resources":
 			if e.Resources, err = stringList(p, m.raw); err != nil {

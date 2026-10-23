@@ -45,6 +45,7 @@ func claudeSettings() any {
 			group("^(?!AskUserQuestion$).*", "PreToolUse"),
 			guardGroup("Bash"),
 			guardGroup("^mcp__.*pull_request_review.*$"),
+			guardGroup("^mcp__.*(merge_pull_request|auto_merge).*$"),
 		},
 		"Notification":     []any{group("permission_prompt", "Notification"), group("elicitation_dialog", "Notification")},
 		"Stop":             []any{group("", "Stop")},

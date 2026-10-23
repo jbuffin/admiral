@@ -17,6 +17,12 @@ import (
 // command, so a refusal never repeats text the ship wrote.
 const guardReason = "Autopilot ships leave reviews PENDING. The engineer submits them from the inbox."
 
+// mergeReason is what the agent reads when the guard refuses a merge, or a write
+// to the rules that gate one.
+const mergeReason = "Autopilot ships merge only with gh pr merge --auto, using the panel's merge method, " +
+	"on a pull request whose base branch requires an approving review. Any other merge, " +
+	"and any change to those branch rules, is for the engineer."
+
 // The rule codes a refusal carries into its guard_denied outcome line.
 const (
 	ruleGhPrReview    = "gh_pr_review"
@@ -25,7 +31,27 @@ const (
 	ruleGraphqlReview = "graphql_review"
 	ruleMcpReview     = "mcp_review"
 	ruleUnparsed      = "unparsed"
+
+	ruleGhPrMerge         = "gh_pr_merge"
+	ruleGhAPIMerge        = "gh_api_merge"
+	ruleGraphqlMerge      = "graphql_merge"
+	ruleGhAPIGateWrite    = "gh_api_gate_write"
+	ruleGraphqlGateWrite  = "graphql_gate_write"
+	ruleMcpMerge          = "mcp_merge"
+	ruleAutoMergeMethod   = "auto_merge_method"
+	ruleAutoMergeSteered  = "auto_merge_steered"
+	ruleAutoMergeUnproven = "auto_merge_unconfirmed"
 )
+
+// reasonFor is the reason a rule refuses with: the review reason for the review
+// rules and anything unreadable, the merge reason for the rest.
+func reasonFor(rule string) string {
+	switch rule {
+	case ruleGhPrReview, ruleGhAPIEvent, ruleGhAPISubmit, ruleGraphqlReview, ruleMcpReview, ruleUnparsed:
+		return guardReason
+	}
+	return mergeReason
+}
 
 // GuardDenied is a refusal. main exits 2 on it and prints nothing more, because
 // Guard has already written the reason to stderr, which Claude Code feeds back to
@@ -36,7 +62,8 @@ func (e *GuardDenied) Error() string { return e.Reason }
 
 // Guard is `admiral guard pretooluse`, the PreToolUse hook that keeps an
 // autopilot ship from submitting a pull-request review as APPROVE or
-// REQUEST_CHANGES (#115). It is internal like Hook, but unlike Hook it is
+// REQUEST_CHANGES (#115), and from merging a pull request other than with
+// `gh pr merge --auto` under the rules of guard_merge.go (#120). It is internal like Hook, but unlike Hook it is
 // meant to fail: a refusal exits 2 with the reason on stderr. Outside autopilot
 // (ADMIRAL_AUTOPILOT not exactly 1) it does nothing at all.
 func Guard(args []string, std IO) error {
@@ -49,8 +76,9 @@ func Guard(args []string, std IO) error {
 		return nil
 	}
 	recordGuardDenied(tool, rule)
-	_, _ = io.WriteString(std.Err, guardReason+"\n")
-	return &GuardDenied{Rule: rule, Reason: guardReason}
+	reason := reasonFor(rule)
+	_, _ = io.WriteString(std.Err, reason+"\n")
+	return &GuardDenied{Rule: rule, Reason: reason}
 }
 
 // recordGuardDenied appends the guard_denied line of the ship named in the
@@ -94,7 +122,13 @@ func guardDecision(raw []byte) (tool, rule string) {
 		if json.Unmarshal(p.ToolInput, &in) != nil || in.Command == nil {
 			return p.ToolName, ruleUnparsed
 		}
-		return p.ToolName, guardCheck{cwd: p.Cwd}.command(*in.Command, 0)
+		g := guardCheck{cwd: p.Cwd, st: &guardState{}}
+		if rule := g.command(*in.Command, 0); rule != "" {
+			return p.ToolName, rule
+		}
+		return p.ToolName, g.confirmMerges()
+	case mcpMerges(p.ToolName):
+		return p.ToolName, ruleMcpMerge
 	case strings.Contains(p.ToolName, "pull_request_review"):
 		var in struct {
 			Event string `json:"event"`
@@ -128,12 +162,16 @@ var (
 )
 
 // guardCheck holds what resolving a command needs of the payload: the directory
-// that relative files named on the command line are read from.
-type guardCheck struct{ cwd string }
+// that relative files named on the command line are read from, and the state the
+// walk over the command line builds up (see merge.go).
+type guardCheck struct {
+	cwd string
+	st  *guardState
+}
 
 // ghSubcommand drops the flags that sit before gh's subcommand words (-R and
 // --repo, --hostname with their values, and any other flag) until it reaches
-// `pr review` or `api`, after which the arguments are left as they are. gh
+// `pr review`, `pr merge` or `api`, after which the arguments are left as they are. gh
 // accepts -R before `review` as well as before `pr`.
 func ghSubcommand(args []string) []string {
 	var words []string
@@ -145,7 +183,7 @@ func ghSubcommand(args []string) []string {
 		case strings.HasPrefix(a, "-"):
 		default:
 			words = append(words, a)
-			if words[0] == "api" || len(words) == 2 && words[0] == "pr" && words[1] == "review" {
+			if words[0] == "api" || len(words) == 2 && words[0] == "pr" && (words[1] == "review" || words[1] == "merge") {
 				return append(words, args[i+1:]...)
 			}
 		}
@@ -153,8 +191,9 @@ func ghSubcommand(args []string) []string {
 	return words
 }
 
-// gh is the rule for a gh call: `pr review` and `api` are checked, anything else
-// is allowed, because no other gh command can submit a review.
+// gh is the rule for a gh call: `pr review`, `pr merge` and `api` are checked,
+// anything else is allowed, because no other gh command can submit a review or
+// merge (`pr ready` only takes a pull request out of draft).
 func (g guardCheck) gh(args []string, line *lineText) string {
 	sub := ghSubcommand(args)
 	switch {
@@ -162,6 +201,10 @@ func (g guardCheck) gh(args []string, line *lineText) string {
 		if prReviewSubmits(sub[2:]) {
 			return ruleGhPrReview
 		}
+	case len(sub) >= 2 && sub[0] == "pr" && sub[1] == "merge":
+		return g.prMerge(sub[2:], ghGlobalRepo(args))
+	case len(sub) >= 2 && (sub[0] == "pr" && sub[1] == "checkout" || sub[0] == "repo" && sub[1] == "set-default"):
+		g.st.steered = true
 	case len(sub) >= 1 && sub[0] == "api":
 		return g.api(sub[1:], line)
 	}
@@ -238,6 +281,8 @@ type apiArgs struct {
 	fields     []apiField
 	input      string
 	hasInput   bool
+	method     string // -X or --method; "" when not given
+	fieldFlag  bool   // a -f or -F was given, which makes gh send a POST
 }
 
 // parseAPI splits gh api's arguments by pflag's rules; the flags that take a
@@ -249,12 +294,16 @@ func parseAPI(args []string) (p apiArgs) {
 	set := func(name, val string) {
 		switch long[name] {
 		case "f", "F":
+			p.fieldFlag = true
 			// A field with no = is dropped by gh, unless an expansion could hold one.
 			if k, v, ok := strings.Cut(val, "="); ok || hasPlaceholder(val) {
 				p.fields = append(p.fields, apiField{k, v, long[name] == "F"})
 			}
 		case "i":
 			p.input, p.hasInput = val, true
+		}
+		if name == "method" {
+			p.method = val
 		}
 	}
 	for i := 0; i < len(args); i++ {
@@ -349,11 +398,19 @@ func reviewRoute(seg []string) string {
 	return ""
 }
 
-// api is the rule for gh api: the reviews endpoint with a submitting event, the
-// submit endpoint, or GraphQL with a review mutation. An endpoint with an
+// api is the rule for gh api: the review rules, then the merge rules
+// (guard_merge.go). The review rules cover the reviews endpoint with a submitting
+// event, the submit endpoint, or GraphQL with a review mutation. An endpoint with an
 // expansion that matches no route could be either, so an event that submits (or
 // that the guard cannot read) refuses, and so does the text rule on the call.
 func (g guardCheck) api(args []string, line *lineText) string {
+	if rule := g.apiReview(args, line); rule != "" {
+		return rule
+	}
+	return g.apiMerge(args, line)
+}
+
+func (g guardCheck) apiReview(args []string, line *lineText) string {
 	p := parseAPI(args)
 	if len(p.positional) == 0 {
 		return ""

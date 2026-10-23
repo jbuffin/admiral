@@ -111,8 +111,15 @@ func (g guardCheck) command(text string, depth int) string {
 	rule := ""
 	visit := func(n syntax.Node) bool {
 		if s, ok := n.(*syntax.Stmt); ok && rule == "" {
-			if call, ok := s.Cmd.(*syntax.CallExpr); ok {
-				rule = g.call(call, s.Redirs, line, depth)
+			switch cmd := s.Cmd.(type) {
+			case *syntax.CallExpr:
+				rule = g.call(cmd, s.Redirs, line, depth)
+			case *syntax.DeclClause:
+				for _, a := range cmd.Args {
+					if a.Name != nil && steersGh(a.Name.Value+"=") {
+						g.st.steered = true
+					}
+				}
 			}
 		}
 		return rule == ""
@@ -210,9 +217,14 @@ func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *li
 	for i, w := range c.Args {
 		words[i] = wordText(w)
 	}
+	for _, a := range c.Assigns {
+		if a.Name != nil && steersGh(a.Name.Value+"=") {
+			g.st.steered = true
+		}
+	}
 	for len(words) > 0 {
 		if hasPlaceholder(words[0]) {
-			if sub := ghSubcommand(words[1:]); len(sub) >= 1 && sub[0] == "api" || len(sub) >= 2 && sub[0] == "pr" && sub[1] == "review" {
+			if sub := ghSubcommand(words[1:]); len(sub) >= 1 && sub[0] == "api" || len(sub) >= 2 && sub[0] == "pr" && (sub[1] == "review" || sub[1] == "merge") {
 				return g.gh(words[1:], line)
 			}
 			if r := line.span(c); r != "" || !onlyExpansion(words[0]) {
@@ -229,10 +241,19 @@ func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *li
 					return r
 				}
 			}
+			if slices.ContainsFunc(words[1:len(words)-len(args)], steersGh) {
+				g.st.steered = true
+			}
 			words = args
 			continue
 		}
 		switch {
+		case w == "cd" || w == "pushd" || w == "popd":
+			g.st.steered = true
+		case w == "git":
+			if gitSteers(args) {
+				g.st.steered = true
+			}
 		case w == "gh":
 			return g.gh(args, line)
 		case slices.Contains(shells, w):
