@@ -2980,9 +2980,12 @@ body.dragging * {
 .inbox-finding {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-top: 12px;
-  border-top: 2px dashed #8aa2b6;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 2px solid var(--color-ink);
+  background-color: #FFFDF6;
+  box-shadow: 0 2px 0 var(--color-ink);
 }
 .inbox-finding-head {
   display: flex;

@@ -18,6 +18,7 @@ import {
   editReview,
   editingOf,
   findingsUiOf,
+  isEditing,
   markEdited,
   reviewOf,
   sendFindings,
@@ -364,6 +365,7 @@ function FindingCardView({ entry, card, n }: { entry: Entry; card: FindingCard; 
   const d = decisionsOf(entry);
   const dec = d.decision(card.id);
   const draft = editingOf(entry.key, card.id);
+  const locked = findingsUiOf(entry.key).busy; // the answer is on its way: what is sent is what the fold says
   const shown = d.proposal(card.id);
   const [verdict, vbg] = VERDICT[card.verdict];
   const press = (name: string) => {
@@ -397,13 +399,14 @@ function FindingCardView({ entry, card, n }: { entry: Entry; card: FindingCard; 
                 aria-label={`Edit the proposal for card ${n}`}
                 rows={5}
                 value={draft}
+                readOnly={locked}
                 onInput={(e) => setEditing(entry.key, card.id, (e.target as HTMLTextAreaElement).value)}
               />
               <div class="inbox-actions">
                 <button
                   type="button"
                   class="press inbox-primary"
-                  disabled={draft.trim() === ''}
+                  disabled={draft.trim() === '' || locked}
                   onClick={() => {
                     decide(entry, (x) => x.save(card.id, draft));
                     setEditing(entry.key, card.id, undefined);
@@ -428,13 +431,14 @@ function FindingCardView({ entry, card, n }: { entry: Entry; card: FindingCard; 
         </div>
       )}
       <div class="inbox-decide" role="group" aria-label={`Decision for card ${n}`}>
-        {DECISIONS.filter(([name]) => name !== 'Edit' || shown).map(([name, value, bg]) => (
+        {DECISIONS.filter(([name]) => name !== 'Edit' || (shown && (shown.kind === 'diff' || shown.kind === 'reply'))).map(([name, value, bg]) => (
           <button
             key={name}
             type="button"
             class={`press inbox-decision${dec === value ? ' on' : ''}`}
             style={dec === value ? `background-color:${bg}` : undefined}
             aria-pressed={dec === value}
+            disabled={locked}
             onClick={() => press(name)}
           >
             {name}
@@ -452,6 +456,7 @@ function FindingsBody({ entry }: { entry: Entry }) {
   const cards = cardsOf(entry);
   const pr = prLink(entry.item?.findings?.pr_url);
   const { decided, total } = d.progress();
+  const open = isEditing(entry.key);
   return (
     <>
       <PrLine pr={pr} />
@@ -460,12 +465,13 @@ function FindingsBody({ entry }: { entry: Entry }) {
       ))}
       <Failure message={ui.error} />
       <div class="inbox-send-row">
-        <button type="button" class="press inbox-primary" disabled={!d.canSend() || ui.busy} onClick={() => void sendFindings(entry)}>
+        <button type="button" class="press inbox-primary" disabled={!d.canSend() || open || ui.busy} onClick={() => void sendFindings(entry)}>
           Send
         </button>
         <span class="inbox-progress">
           {decided} of {total} decided
         </span>
+        {open && <span class="inbox-hint">Save or Cancel the open edit first.</span>}
       </div>
     </>
   );

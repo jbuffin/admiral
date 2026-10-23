@@ -84,7 +84,7 @@ export function createDecisions(cards: FindingCard[]) {
     summary() {
       const n = (d: Decision) => [...chosen.values()].filter((x) => x === d).length;
       const parts = (['approved', 'edited', 'rejected'] as const).filter(n).map((d) => `${n(d)} ${d}`);
-      return `Sent ${parts.join(', ')}`;
+      return parts.length === 0 ? 'Sent, no cards' : `Sent ${parts.join(', ')}`;
     },
   };
 }

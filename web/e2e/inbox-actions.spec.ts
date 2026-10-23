@@ -1,5 +1,5 @@
 import type { Locator, Page, TestInfo } from '@playwright/test';
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Admiral, expect } from './fixtures';
 import { FakeGh } from './fakegh';
@@ -392,9 +392,35 @@ test.describe('a findings item', () => {
     const send = inbox.getByRole('button', { name: 'Send', exact: true });
     await expect(send).toBeEnabled();
     await press(send, touch);
-    await expect(inbox.getByRole('status')).toBeVisible();
+    await expect(inbox.getByRole('status')).toHaveText(/Sent, no cards/);
     const file = join(admiral.home, 'inbox', ship.session, 'f-1.answer.json');
     await expect.poll(() => existsSync(file)).toBe(true);
     expect(JSON.parse(readFileSync(file, 'utf8')).cards).toEqual({});
+  });
+
+  test('Send waits while an edit is open, and a reused ship name and item id starts fresh', async ({ page, admiral, sea }, info) => {
+    const touch = isTouch(info);
+    const { ship } = await setup(admiral, sea);
+    seed(admiral, ship.session, 'f-1', findings([findingCard('a'), findingCard('b')]));
+    const inbox = await open(page, admiral, info, 1);
+    const send = inbox.getByRole('button', { name: 'Send', exact: true });
+    const group = (n: number) => inbox.getByRole('group', { name: `Decision for card ${n}` });
+    await press(group(1).getByRole('button', { name: 'Approve', exact: true }), touch);
+    await press(group(2).getByRole('button', { name: 'Approve', exact: true }), touch);
+    await expect(send).toBeEnabled();
+    await press(group(2).getByRole('button', { name: 'Edit', exact: true }), touch);
+    await expect(send).toBeDisabled();
+    await expect(inbox.getByText(/Save or Cancel/)).toBeVisible();
+    await press(inbox.getByRole('button', { name: 'Cancel' }), touch);
+    await press(send, touch);
+    await expect(inbox.getByRole('status').filter({ hasText: 'Sent 2 approved' })).toBeVisible();
+    await expect(inbox.getByText('Nothing needs you')).toBeVisible({ timeout: 10_000 });
+
+    // The ship sails off, its name is reused, and the new ship writes an item with the same id.
+    rmSync(join(admiral.home, 'inbox', ship.session, 'f-1.answer.json'));
+    seed(admiral, ship.session, 'f-1', findings([findingCard('c'), findingCard('d'), findingCard('e')]));
+    await expect(inbox.getByText('quote of c')).toBeVisible();
+    await expect(inbox.getByText('0 of 3 decided')).toBeVisible();
+    await expect(send).toBeDisabled();
   });
 });

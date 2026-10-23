@@ -29,10 +29,16 @@ setInterval(() => (clock.value = Date.now()), 30_000);
 const sending = new Map<string, InboxItem>();
 const itemKey = (it: InboxItem) => `item:${it.session}/${it.id}`;
 
+// The per-item stores below are declared further down; the first refresh runs while the module loads.
+let storesReady = false;
+
 function refresh(): void {
   const served = items.peek();
   const open = new Set(served.map(itemKey));
   queue.sync({ items: [...served, ...[...sending].filter(([k]) => !open.has(k)).map(([, it]) => it)], ships: ships.peek() }, Date.now());
+  // What was entered on an item that has left goes with it: a reused ship name and item id starts fresh.
+  const live = new Set(queue.entries().map((e) => e.key));
+  if (storesReady) for (const key of itemStateKeys()) if (!live.has(key)) forgetItemState(key);
   bump();
 }
 effect(() => {
@@ -168,6 +174,24 @@ export const FORGET_SUPPORTED = false;
 const itemPath = (it: InboxItem, verb: string) => `/api/inbox/${encodeURIComponent(it.session)}/${encodeURIComponent(it.id)}/${verb}`;
 
 // Runs an action on an item. The badge drops at the tap; a refusal brings it back and keeps what was entered.
+// Every key that holds per-item state, and the one place that clears it.
+function itemStateKeys(): Set<string> {
+  return new Set([...Object.keys(drafts.peek()), ...Object.keys(reviews.peek()), ...Object.keys(editing.peek()), ...Object.keys(findingsUi.peek()), ...decisions.keys(), ...opened]);
+}
+function forgetItemState(key: string): void {
+  const without = <T,>(m: Record<string, T>) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== key));
+  drafts.value = without(drafts.peek());
+  reviews.value = without(reviews.peek());
+  editing.value = without(editing.peek());
+  findingsUi.value = without(findingsUi.peek());
+  decisions.delete(key);
+  cardsByItem.delete(key);
+  opened.delete(key);
+  fbump();
+}
+
+const inflight = new Set<string>();
+
 async function act(
   entry: Entry,
   verb: string,
@@ -176,15 +200,21 @@ async function act(
   setBusy: (busy: boolean, error: string, gh: boolean) => void,
 ): Promise<void> {
   const it = entry.item;
-  if (!it) return;
+  if (!it || inflight.has(entry.key)) return;
+  inflight.add(entry.key);
   setBusy(true, '', false);
   sending.set(entry.key, it);
   inbox.setPending(entry.key, true);
   const r = await api<{ action?: string; invalid_target?: boolean }>('POST', itemPath(it, verb), body);
-  if (r.ok) inbox.fold(entry.key, foldText(r.data ?? {}));
-  else inbox.setPending(entry.key, false);
+  inflight.delete(entry.key);
   sending.delete(entry.key);
-  setBusy(false, r.ok ? '' : r.error, !r.ok && (r.status === 502 || r.status === 503));
+  if (r.ok) {
+    inbox.fold(entry.key, foldText(r.data ?? {}));
+    forgetItemState(entry.key); // the fold needs none of it, and a reused name and id must start fresh
+  } else {
+    inbox.setPending(entry.key, false);
+    setBusy(false, r.error, r.status === 502 || r.status === 503);
+  }
   refresh();
 }
 
@@ -237,6 +267,7 @@ export function decide(entry: Entry, fn: (d: Decisions) => unknown): void {
 // The text being edited on a card, by item key then card id; absent when its textarea is closed.
 const editing = signal<Record<string, Record<string, string>>>({});
 export const editingOf = (key: string, id: string): string | undefined => editing.value[key]?.[id];
+export const isEditing = (key: string): boolean => Object.keys(editing.value[key] ?? {}).length > 0;
 export function setEditing(key: string, id: string, text: string | undefined): void {
   const mine = { ...editing.value[key] };
   if (text === undefined) delete mine[id];
@@ -249,12 +280,15 @@ export const findingsUiOf = (key: string) => findingsUi.value[key] ?? { busy: fa
 
 export function sendFindings(entry: Entry): Promise<void> {
   const d = decisionsOf(entry);
-  if (!d.canSend()) return Promise.resolve();
+  if (!d.canSend() || isEditing(entry.key)) return Promise.resolve();
+  const summary = d.summary();
   return act(
     entry,
     'findings',
     d.payload(),
-    () => d.summary(),
+    () => summary,
     (busy, error) => (findingsUi.value = { ...findingsUi.value, [entry.key]: { busy, error } }),
   );
 }
+
+storesReady = true;

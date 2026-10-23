@@ -213,7 +213,7 @@ export function prLink(url: string | undefined): { href: string; host: string; l
       href: url,
       host: u.host,
       label: u.host === 'github.com' && m ? `${m[1]}/${m[2]}#${m[3]}` : url,
-      files: `${url.replace(/\/+$/, '')}/files`,
+      files: `${u.origin}${u.pathname.replace(/\/+$/, '')}/files`,
     };
   } catch {
     return undefined;

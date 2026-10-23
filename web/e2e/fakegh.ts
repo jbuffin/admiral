@@ -41,7 +41,7 @@ export class FakeGh {
   /** The `gh api` calls so far, oldest first. */
   calls(): Call[] {
     const root = join(this.dir, 'calls');
-    // Each call's directory has a random suffix, so the order is the order they were made in.
+    // A call's directory name ends in a random suffix, so the order comes from when each directory was made.
     return readdirSync(root)
       .map((d) => join(root, d))
       .filter((d) => existsSync(join(d, 'endpoint')))
