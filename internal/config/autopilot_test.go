@@ -156,3 +156,32 @@ func TestSetSourcesRefusesAnAutopilotFleetThatIsGone(t *testing.T) {
 		t.Errorf("config.json lost the autopilot object:\n%s", b)
 	}
 }
+
+// autopilot.resume_source (#116 u5) names the source and panel that get a ship's
+// resume order. Parse checks only the shape; whether the source and panel exist
+// is checked when an order is added, so a source can still be deleted.
+func TestAutopilotResumeSourceShape(t *testing.T) {
+	good := []string{
+		`{"resume_source":{"source":"orders","panel":"orders"}}`,
+		`{"max_ships":2,"resume_source":{"source":"not-a-source-yet","panel":"nowhere"}}`,
+	}
+	for _, top := range good {
+		if _, err := config.Parse([]byte(apConfig(top, `{}`))); err != nil {
+			t.Errorf("autopilot %s: %v, want it to parse", top, err)
+		}
+	}
+	bad := []struct{ name, top, want string }{
+		{"a string", `{"resume_source":"orders"}`, "autopilot.resume_source"},
+		{"a missing source", `{"resume_source":{"panel":"orders"}}`, "autopilot.resume_source.source"},
+		{"a missing panel", `{"resume_source":{"source":"orders"}}`, "autopilot.resume_source.panel"},
+		{"an empty source", `{"resume_source":{"source":"","panel":"orders"}}`, "autopilot.resume_source.source"},
+		{"a number for the panel", `{"resume_source":{"source":"orders","panel":3}}`, "autopilot.resume_source.panel"},
+		{"an unknown key", `{"resume_source":{"source":"orders","panel":"orders","x":1}}`, "autopilot.resume_source.x"},
+	}
+	for _, c := range bad {
+		_, err := config.Parse([]byte(apConfig(c.top, `{}`)))
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: error %v, want one naming %s", c.name, err, c.want)
+		}
+	}
+}

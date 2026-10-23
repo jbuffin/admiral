@@ -257,8 +257,7 @@ test.describe('a review item', () => {
     await expect(inbox.getByRole('link', { name: /^Edit/ })).toHaveCount(0);
   });
 
-  // u5 adds `discard {"forget": true}` to the server; until then this cannot pass against the real server.
-  test.fixme('Remove from inbox after a gh failure forgets the item', async ({ page, admiral, sea }, info) => {
+  test('Remove from inbox after a gh failure forgets the item', async ({ page, admiral, sea }, info) => {
     const touch = isTouch(info);
     const { gh, ship } = await setup(admiral, sea);
     gh.can('DELETE', REVIEW, { status: 500, stderr: 'gh: Server Error (HTTP 500)' });
