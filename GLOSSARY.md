@@ -74,6 +74,10 @@ The ocean in the middle of the screen where ships sail once launched. Work Fleet
 A ship whose session cannot move until the engineer does: a question, an approval, or a finished turn waiting for the next prompt. It shakes, waves its flag fast and plays a chime.
 _Avoid_: alert, blocked, error
 
+**Inbox**:
+Everything waiting on the engineer in one queue, oldest first. An **item** is a file a ship wrote in its inbox directory (`$ADMIRAL_INBOX`): a question, a pending review or a set of finding cards. A **needs-you stop** is a ship that needs you right now; it shows in the inbox as a live entry and has no file. Answering an item writes an answer file beside it, and the item leaves the inbox. Say "finding card" for a card; items and ships are not cards.
+_Avoid_: notifications, tasks, card (for an item)
+
 **Anchored**:
 A ship whose harness has exited. A clean exit sails off and disappears; a ship whose harness exited with an error stays anchored, still in open water with a red mark, until the engineer dismisses it.
 _Avoid_: docked, finished, done

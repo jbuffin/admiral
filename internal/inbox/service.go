@@ -1,0 +1,229 @@
+package inbox
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"github.com/fsnotify/fsnotify"
+	"github.com/jbuffin/admiral/internal/outcomes"
+	"github.com/jbuffin/admiral/internal/server"
+)
+
+// settle lets a ship finish writing before the inbox is read again.
+const settle = 100 * time.Millisecond
+
+// Service reads and serves the inbox of $ADMIRAL_HOME.
+type Service struct {
+	// Home is $ADMIRAL_HOME, absolute.
+	Home string
+	Hub  *server.Hub
+	// Ship says whether a session is a ship Admiral knows, and its name and harness.
+	Ship func(session string) (name, harness string, ok bool)
+	// Outcomes is the outcome log; nil keeps none.
+	Outcomes *outcomes.Writer
+
+	answerMu sync.Mutex // one answer at a time
+	scanMu   sync.Mutex // one refresh at a time
+	mu       sync.Mutex // guards items
+	items    []Item
+	notify   chan struct{} // a ship changed; buffered, so Notify never blocks
+	watched  map[string]os.FileInfo
+	watcher  *fsnotify.Watcher
+}
+
+// List is the open items, oldest first, with the name and harness of the ships
+// that are known.
+func (s *Service) List() []Item {
+	s.mu.Lock()
+	items := append([]Item{}, s.items...)
+	s.mu.Unlock()
+	if s.Ship != nil {
+		for i := range items {
+			if name, harness, ok := s.Ship(items[i].Session); ok {
+				items[i].Name, items[i].Harness = name, harness
+			}
+		}
+	}
+	return items
+}
+
+func (s *Service) message() any { return map[string]any{"type": "inbox", "items": s.List()} }
+
+// Notify asks Run to push the items again, for a change in the ships that name
+// them. It never blocks.
+func (s *Service) Notify() {
+	select {
+	case s.notifyChan() <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Service) notifyChan() chan struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.notify == nil {
+		s.notify = make(chan struct{}, 1)
+	}
+	return s.notify
+}
+
+func (s *Service) broadcast() { s.Hub.BroadcastOnce("inbox", s.message) }
+
+// Connected sends a new client the items.
+func (s *Service) Connected(c *server.Client) { _ = c.SendOnce("inbox", s.message) }
+
+// Routes registers the inbox API.
+func (s *Service) Routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/inbox", s.serveList)
+	mux.HandleFunc("POST /api/inbox/{session}/{id}/answer", s.serveAnswer)
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func (s *Service) serveList(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"items": s.List()})
+}
+
+// serveAnswer takes the engineer's answer to an item. Only question items so
+// far; the other kinds answer 400.
+func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
+	session, id := r.PathValue("session"), r.PathValue("id")
+	var req QuestionRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256<<10)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "the answer is not a valid JSON object: "+err.Error())
+		return
+	}
+	err := s.AnswerQuestion(session, id, req)
+	var bad *InvalidError
+	switch {
+	case err == nil:
+		writeJSON(w, http.StatusOK, map[string]any{"answered": id})
+	case errors.Is(err, ErrNotFound):
+		writeError(w, http.StatusNotFound, "no item "+id+" in the inbox of "+session)
+	case errors.Is(err, ErrAnswered):
+		writeError(w, http.StatusConflict, "item "+id+" is already answered")
+	case errors.As(err, &bad):
+		writeError(w, http.StatusBadRequest, bad.Msg)
+	default:
+		writeError(w, http.StatusInternalServerError, err.Error())
+	}
+}
+
+// Refresh reads the inbox again and pushes it. The watches are brought up to
+// date first, so a directory that came back cannot hide a file renamed into it.
+func (s *Service) Refresh() {
+	s.scanMu.Lock()
+	s.syncWatches()
+	items := scan(s.Home)
+	s.mu.Lock()
+	s.items = items // under scanMu, so an older scan cannot land after a newer one
+	s.mu.Unlock()
+	s.scanMu.Unlock()
+	s.broadcast()
+}
+
+// Run watches the inbox until ctx ends: $ADMIRAL_HOME (inbox/ may not exist
+// yet), inbox/ and every ship's directory.
+func (s *Service) Run(ctx context.Context) {
+	_ = os.MkdirAll(filepath.Join(s.Home, "inbox"), 0o700)
+	var events <-chan fsnotify.Event
+	var errs <-chan error
+	if w, err := fsnotify.NewWatcher(); err != nil {
+		fmt.Fprintln(os.Stderr, "admiral: the inbox cannot be watched:", err)
+	} else {
+		defer w.Close()
+		s.scanMu.Lock()
+		s.watcher, s.watched = w, map[string]os.FileInfo{}
+		s.scanMu.Unlock()
+		events, errs = w.Events, w.Errors
+	}
+	s.Refresh()
+	changed := s.notifyChan()
+	timer := time.NewTimer(time.Hour)
+	timer.Stop()
+	for {
+		select {
+		case <-changed:
+			s.broadcast()
+		case ev, ok := <-events:
+			if !ok {
+				return
+			}
+			if s.relevant(ev) {
+				timer.Reset(settle)
+			}
+		case <-errs:
+		case <-timer.C:
+			s.Refresh()
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// relevant is whether an event can change what is served: not a chmod, not a
+// dot file (a temp file; the rename that publishes it is its own event), and
+// in $ADMIRAL_HOME only inbox itself.
+func (s *Service) relevant(ev fsnotify.Event) bool {
+	base := filepath.Base(ev.Name)
+	if ev.Op == fsnotify.Chmod || (base[0] == '.' && filepath.Dir(ev.Name) != s.Home) {
+		return false
+	}
+	return filepath.Dir(ev.Name) != s.Home || base == "inbox"
+}
+
+// syncWatches watches $ADMIRAL_HOME, inbox/ and each ship directory, drops the
+// watch of one that is gone, and renews one whose directory was replaced.
+func (s *Service) syncWatches() {
+	if s.watcher == nil {
+		return
+	}
+	want := map[string]os.FileInfo{}
+	add := func(path string, follow bool) {
+		stat := os.Lstat
+		if follow {
+			stat = os.Stat
+		}
+		if fi, err := stat(path); err == nil && fi.IsDir() {
+			want[path] = fi
+		}
+	}
+	add(s.Home, true)
+	inbox := filepath.Join(s.Home, "inbox")
+	add(inbox, false)
+	if _, ok := want[inbox]; ok {
+		names, _ := os.ReadDir(inbox)
+		for _, e := range names {
+			if validSession(e.Name()) {
+				add(filepath.Join(inbox, e.Name()), false)
+			}
+		}
+	}
+	for path, fi := range s.watched {
+		if now, ok := want[path]; !ok || !os.SameFile(fi, now) {
+			_ = s.watcher.Remove(path)
+			delete(s.watched, path)
+		}
+	}
+	for path, fi := range want {
+		if _, ok := s.watched[path]; !ok && s.watcher.Add(path) == nil {
+			s.watched[path] = fi
+		}
+	}
+}

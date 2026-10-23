@@ -23,6 +23,7 @@ import (
 	"github.com/jbuffin/admiral/internal/cli"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/home"
+	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/launchorders"
 	"github.com/jbuffin/admiral/internal/lockroute"
@@ -243,6 +244,14 @@ func serve(args []string) error {
 	if exe, err := os.Executable(); err == nil && tmuxPath != "" {
 		bridgeService.Host, bridgeService.Setup = host, &bridge.SetupCommand{Exe: exe, Home: dir}
 	}
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	inboxService := &inbox.Service{Home: absDir, Hub: hub, Outcomes: outcomeLog, Ship: func(session string) (string, string, bool) {
+		sh, ok := shipService.Get(session)
+		return sh.Name, sh.Harness, ok
+	}}
 	shipService.Orders = sourceService
 	shipService.OnChange = func() {
 		sourceService.Notify()
@@ -250,10 +259,11 @@ func serve(args []string) error {
 		resourceSet.Wake() // a ship that stopped holding a unit frees it
 		resourceService.Broadcast()
 		engine.Poke()
+		inboxService.Notify()
 	}
 
 	s := &server.Server{Version: version, Commit: commit, UI: web.UI(), Messages: map[string]server.MessageHandler{}, Config: cfg,
-		Hub: hub, Modules: []server.Module{shipService, sourceService,
+		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService,
 			&launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}, bridgeService, resourceService, lockRoute}}
 	bg, stopBackground := context.WithCancel(context.Background())
 	var background sync.WaitGroup
@@ -283,7 +293,7 @@ func serve(args []string) error {
 			}
 		}
 	}()
-	runs := []func(context.Context){s.WatchConfig, sourceService.Run, bridgeService.Run, resourceSet.Run}
+	runs := []func(context.Context){s.WatchConfig, sourceService.Run, bridgeService.Run, resourceSet.Run, inboxService.Run}
 	if tmuxPath != "" {
 		runs = append(runs, host.Run)
 	}
