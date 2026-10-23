@@ -38,12 +38,12 @@ func TestLaunchOrderRefusesWhileShipsAreNotKnown(t *testing.T) {
 // pass that counts ships against a cap sees it.
 func TestPendingListsAnUnlistedShipUntilItExpires(t *testing.T) {
 	s := &Service{Host: sessionhost.New("tmux", t.TempDir()+"/tmux.sock")}
-	s.holdUnlisted(OrderKey{"s", "o1"}, "ship-1", "p")
+	s.holdUnlisted(OrderKey{"s", "o1"}, "ship-1", "p", nil)
 	got := s.Pending()
 	if len(got) != 1 || got[0].Source != "s" || got[0].OrderID != "o1" || got[0].Panel != "p" || got[0].Status != StatusUnderway {
 		t.Fatalf("Pending = %+v, want one underway ship of s/p/o1", got)
 	}
-	s.listing[OrderKey{"s", "o1"}] = unlisted{"ship-1", "p", time.Now().Add(-listedWithin)}
+	s.listing[OrderKey{"s", "o1"}] = unlisted{"ship-1", "p", time.Now().Add(-listedWithin), nil}
 	if got := s.Pending(); len(got) != 0 {
 		t.Errorf("Pending after the hold expired = %+v, want none", got)
 	}

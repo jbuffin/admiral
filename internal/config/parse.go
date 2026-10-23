@@ -31,6 +31,9 @@ type Config struct {
 	// autopilot lets stand: it counts every such ship, hand launches included,
 	// and stops launching when they reach it.
 	AutopilotMaxShips int
+	// Resources are the locked resources by name (#118); nil when the file
+	// defines none.
+	Resources map[string]Resource
 }
 
 // Fleet is one marina.
@@ -47,6 +50,7 @@ func (c *Config) clone() *Config {
 	out := *c
 	out.FavoriteSkills = slices.Clone(c.FavoriteSkills)
 	out.Sources = slices.Clone(c.Sources)
+	out.Resources = c.cloneResources()
 	out.SourceList = make([]Source, len(c.SourceList))
 	for i, s := range c.SourceList {
 		out.SourceList[i] = s.clone()
@@ -136,6 +140,10 @@ func Parse(data []byte) (*Config, error) {
 			if cfg.AutopilotMaxShips, err = parseAutopilot(m.raw); err != nil {
 				return nil, err
 			}
+		case "resources":
+			if cfg.Resources, err = parseResources(m.raw); err != nil {
+				return nil, err
+			}
 		case "sources":
 			cfg.Sources = append(json.RawMessage(nil), m.raw...)
 			if cfg.SourceList, err = parseSources(m.raw); err != nil {
@@ -153,6 +161,9 @@ func Parse(data []byte) (*Config, error) {
 		}
 	}
 	if err := checkAutopilotFleets(cfg); err != nil {
+		return nil, err
+	}
+	if err := checkPanelResources(cfg); err != nil {
 		return nil, err
 	}
 	assignColors(cfg.Fleets)

@@ -48,6 +48,10 @@ type AutopilotView struct {
 	Enabled  bool `json:"enabled"`
 	Paused   bool `json:"paused"`
 	MaxShips int  `json:"max_ships"`
+	// Resources are the locked resources the entry names, and WaitingFor those
+	// its waiting order waits for (#118); both are [] when there are none.
+	Resources  []string `json:"resources"`
+	WaitingFor []string `json:"waiting_for"`
 }
 
 // Auth is what a plugin asks the engineer to do to sign in.

@@ -26,6 +26,7 @@ import (
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/launchorders"
 	"github.com/jbuffin/admiral/internal/outcomes"
+	"github.com/jbuffin/admiral/internal/resources"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
@@ -209,6 +210,18 @@ func serve(args []string) error {
 		},
 	}
 	sourceService.Hot = engine.Hot
+	sourceService.WaitingFor = engine.WaitingFor
+	// A check, a lock or a reservation changing frees or fills a unit: autopilot
+	// looks again and the UI is told.
+	var resourceService *resources.Service
+	resourceSet := resources.New(resources.Options{Config: cfg.Current, Ships: allShips,
+		OnChange: func() { resourceService.Broadcast(); engine.Poke() },
+		// The engine drops its reservations inside a pass; poking it for each would
+		// make a refused launch (a 503, a 409) start the next pass at once.
+		OnDrop: func() { resourceService.Broadcast() }})
+	resourceService = &resources.Service{Set: resourceSet, Hub: hub}
+	engine.Resources = resourceSet
+	engine.OnWait = sourceService.Notify
 	sourceService.OnLaunched = engine.Launched
 	supervisor.OnChange = func() { sourceService.Notify(); engine.Poke() }
 	bridgeService := bridge.New(tmuxPath, sock, shipService)
@@ -216,11 +229,17 @@ func serve(args []string) error {
 		bridgeService.Host, bridgeService.Setup = host, &bridge.SetupCommand{Exe: exe, Home: dir}
 	}
 	shipService.Orders = sourceService
-	shipService.OnChange = func() { sourceService.Notify(); bridgeService.ShipsChanged(); engine.Poke() }
+	shipService.OnChange = func() {
+		sourceService.Notify()
+		bridgeService.ShipsChanged()
+		resourceSet.Wake() // a ship that stopped holding a unit frees it
+		resourceService.Broadcast()
+		engine.Poke()
+	}
 
 	s := &server.Server{Version: version, Commit: commit, UI: web.UI(), Messages: map[string]server.MessageHandler{}, Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService,
-			&launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}, bridgeService}}
+			&launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}, bridgeService, resourceService}}
 	bg, stopBackground := context.WithCancel(context.Background())
 	var background sync.WaitGroup
 	supervisor.Start(bg)
@@ -240,13 +259,16 @@ func serve(args []string) error {
 			select {
 			case <-configChanges:
 				sourceService.Notify() // an autopilot-only edit does not restart a source
+				resourceSet.Refresh()  // the resources' checks run at once
+				resourceSet.Wake()
+				resourceService.Broadcast()
 				engine.Poke()
 			case <-shipsCtx.Done():
 				return
 			}
 		}
 	}()
-	runs := []func(context.Context){s.WatchConfig, sourceService.Run, bridgeService.Run}
+	runs := []func(context.Context){s.WatchConfig, sourceService.Run, bridgeService.Run, resourceSet.Run}
 	if tmuxPath != "" {
 		runs = append(runs, host.Run)
 	}

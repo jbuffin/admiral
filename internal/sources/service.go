@@ -34,6 +34,9 @@ type Service struct {
 	State *state.Store
 	// Hot says autopilot gave up on an order; nil says none.
 	Hot func(source, orderID string) bool
+	// WaitingFor says which resources a panel's waiting order waits for; nil
+	// says none.
+	WaitingFor func(source, panel string) []string
 	// OnLaunched runs when an order has been launched, by hand or by autopilot.
 	OnLaunched func(source, orderID string)
 
@@ -119,7 +122,12 @@ func (s *Service) View() []SourceView {
 			p.Orders = orders
 			p.Autopilot = nil
 			if e, ok := st.def.Autopilot[p.ID]; ok {
-				p.Autopilot = &AutopilotView{Enabled: e.Enabled, Paused: s.State.Paused(st.def.Key, p.ID), MaxShips: e.MaxShips}
+				view := &AutopilotView{Enabled: e.Enabled, Paused: s.State.Paused(st.def.Key, p.ID), MaxShips: e.MaxShips,
+					Resources: append([]string{}, e.Resources...), WaitingFor: []string{}}
+				if s.WaitingFor != nil {
+					view.WaitingFor = append(view.WaitingFor, s.WaitingFor(st.def.Key, p.ID)...)
+				}
+				p.Autopilot = view
 			}
 			v.Panels = append(v.Panels, p)
 		}

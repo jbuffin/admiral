@@ -21,8 +21,12 @@ One item from an order source, shown as a card in the Orders sidebar, not yet la
 _Avoid_: job, ticket, card (in code)
 
 **Autopilot**:
-A panel setting that launches the panel's orders without the engineer, in the order the panel lists them. The panel names the fleet, skill and arguments its ships use. Autopilot launches only while two **caps** have room: the global cap on every ship underway or needing you, hand-launched ones included, and the panel's cap on those launched from that panel. A paused panel launches nothing and leaves its running ships alone.
+A panel setting that launches the panel's orders without the engineer, in the order the panel lists them. The panel names the fleet, skill and arguments its ships use. Autopilot launches only while two **caps** have room: the global cap on every ship underway or needing you, hand-launched ones included, and the panel's cap on those launched from that panel. It also launches an order only when every **resource** its panel names has a free unit and passes its check; otherwise the order waits for them. A paused panel launches nothing and leaves its running ships alone.
 _Avoid_: auto-launch, bot
+
+**Resource**:
+A named thing with a capacity, such as a phone for on-device checks, that a panel's autopilot entry says its orders need. A resource has a number of **units** (its `capacity`, 1 by default), and an optional check that tells whether it is present. A ship that autopilot launched holds one unit of each resource its panel named while it is underway or needing you; a lock taken by hand holds one too. Autopilot launches an order only when every resource it needs has a free unit and passes its check, and the order waits for them until then. Ships launched by hand hold none.
+_Avoid_: device, lock (a lock is how a person holds a unit, not the resource), blocked
 
 **Order source**:
 One configured instance of a plugin that supplies orders: a freeform list the engineer writes first, then GitHub issues and PRs, Jira, Linear and others. The same plugin can be added as more than one source, such as two GitHub accounts. Sources belong to Admiral, not to a fleet. Each source contributes one or more panels.

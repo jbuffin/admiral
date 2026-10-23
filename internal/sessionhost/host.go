@@ -60,7 +60,7 @@ const format = "#{session_name}" + sep + "#{pane_dead}" + sep + "#{pane_dead_sta
 	"#{@admiral-reason}" + sep + "#{@admiral-name}" + sep + "#{@admiral-fleet}" + sep + "#{@admiral-fleet-name}" + sep +
 	"#{@admiral-fleet-color}" + sep + "#{@admiral-harness}" + sep + "#{@admiral-dir}" + sep +
 	"#{@admiral-skill}" + sep + "#{@admiral-source}" + sep + "#{@admiral-order}" + sep +
-	"#{@admiral-launched}" + sep + "#{@admiral-title}" + sep + "#{@admiral-url}" + sep + "#{@admiral-panel}" + sep +
+	"#{@admiral-launched}" + sep + "#{@admiral-title}" + sep + "#{@admiral-url}" + sep + "#{@admiral-panel}" + sep + "#{@admiral-resources}" + sep +
 	"#{@admiral-" + OptEnded + "}" + sep + "#{@admiral-" + OptNeedsCount + "}" + sep +
 	"#{@admiral-" + OptNeedsSecs + "}" + sep + "#{@admiral-" + OptStopSince + "}"
 
@@ -79,7 +79,7 @@ const fixedFields = 8
 // optionNames are the session options in the order format lists them. The last
 // four are Admiral's outcome bookkeeping (ended marker, needs-you tally).
 var optionNames = []string{"name", "fleet", "fleet-name", "fleet-color", "harness", "dir",
-	"skill", "source", "order", "launched", "title", "url", "panel", OptEnded, OptNeedsCount, OptNeedsSecs, OptStopSince}
+	"skill", "source", "order", "launched", "title", "url", "panel", "resources", OptEnded, OptNeedsCount, OptNeedsSecs, OptStopSince}
 
 // Session is one tmux session as last read.
 type Session struct {
