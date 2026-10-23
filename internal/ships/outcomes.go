@@ -398,6 +398,9 @@ func (s *Service) removeShipFiles(session string, owner *track) {
 	if _, kept := s.State.KeptInbox(session); kept { // an item waits for its answer
 		return
 	}
+	if s.BeforeRemoveFiles != nil {
+		s.BeforeRemoveFiles(session)
+	}
 	launcher.RemoveShipFiles(home, session)
 }
 

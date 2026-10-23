@@ -1,6 +1,7 @@
 // Package state holds what Admiral remembers besides config and tmux
 // (ADR 0012): where each ship sits on the water, the last directory
-// launched into at each dock, and when each directory was last launched into.
+// launched into at each dock, when each directory was last launched into, and the
+// resume orders that wait to be added (ADR 0016).
 // It lives in $ADMIRAL_HOME/state.json.
 package state
 
@@ -38,6 +39,19 @@ type file struct {
 	// Paused holds the autopilot panels the engineer paused, by source key and
 	// panel id. Optional, so Version stays 1.
 	Paused map[string]map[string]bool `json:"paused,omitempty"`
+	// Resumes holds the resume orders of ADR 0016, by session and report hash.
+	// Optional, so Version stays 1.
+	Resumes map[string]Resume `json:"resume_orders,omitempty"`
+}
+
+// Resume is one report's resume order. Until it is added Text holds the order,
+// so it outlives the report's deletion and a restart; once it is added (or
+// refused for good) Done is set and Text is dropped, and the entry stays so the
+// same report never adds it twice.
+type Resume struct {
+	Session string `json:"session"`
+	Text    string `json:"text,omitempty"`
+	Done    bool   `json:"done,omitempty"`
 }
 
 // KeptShip is what Admiral remembers of a ship that sailed off with an item
@@ -99,6 +113,9 @@ func Open(dir string) (*Store, error) {
 	if f.Kept != nil {
 		s.data.Kept = f.Kept
 	}
+	if f.Resumes != nil {
+		s.data.Resumes = f.Resumes
+	}
 	return s, nil
 }
 
@@ -143,6 +160,67 @@ func (s *Store) DropInbox(session string) error {
 		return nil
 	}
 	return s.Flush()
+}
+
+// QueueResume records the resume order of a report, unless the key is known
+// already (pending or done), and writes the file now: the report may be deleted
+// right after. It says whether the order is new.
+func (s *Store) QueueResume(key, session, text string) (bool, error) {
+	s.mu.Lock()
+	if _, seen := s.data.Resumes[key]; seen {
+		s.mu.Unlock()
+		return false, nil
+	}
+	if s.data.Resumes == nil {
+		s.data.Resumes = map[string]Resume{}
+	}
+	s.data.Resumes[key] = Resume{Session: session, Text: text}
+	s.mu.Unlock()
+	return true, s.Flush()
+}
+
+// PendingResumes is the resume orders not added yet, by key.
+func (s *Store) PendingResumes() map[string]Resume {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[string]Resume{}
+	for k, r := range s.data.Resumes {
+		if !r.Done {
+			out[k] = r
+		}
+	}
+	return out
+}
+
+// FinishResume marks a resume order added, or dropped for good, and drops its text.
+func (s *Store) FinishResume(key string) error {
+	s.mu.Lock()
+	r, ok := s.data.Resumes[key]
+	if ok {
+		s.data.Resumes[key] = Resume{Session: r.Session, Done: true}
+	}
+	s.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	return s.Flush()
+}
+
+// KeepResumes drops the done entries of sessions that have no report any more,
+// so a session name that is drawn again starts clean. Pending ones stay.
+func (s *Store) KeepResumes(withReport map[string]bool) {
+	s.mu.Lock()
+	changed := false
+	for k, r := range s.data.Resumes {
+		if r.Done && !withReport[r.Session] {
+			delete(s.data.Resumes, k)
+			changed = true
+		}
+	}
+	s.mu.Unlock()
+	if changed {
+		_ = s.Flush()
+	}
 }
 
 func (s *Store) Position(session string) (Position, bool) {

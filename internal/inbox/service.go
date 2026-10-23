@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/state"
@@ -37,12 +39,22 @@ type Service struct {
 	Dock func(session string) (env []string, why string)
 	// Kept holds the records of sailed-off ships whose inbox is kept; nil keeps none.
 	Kept *state.Store
+	// ResumeTarget is autopilot.resume_source; nil when the config names none.
+	ResumeTarget func() *config.ResumeSource
+	// AddOrder adds an order to a panel of a source. A failure says through
+	// AddKind() AddKind whether it may pass or the order may have been added; any
+	// other failure is final.
+	AddOrder func(ctx context.Context, source, panel, text string) (id string, err error)
 
-	answerMu sync.Mutex      // one answer at a time
-	actMu    sync.Mutex      // guards acting
-	acting   map[string]bool // the items a gh action is running on
-	scanMu   sync.Mutex      // one refresh at a time
-	mu       sync.Mutex      // guards items
+	answerMu sync.Mutex        // one answer at a time
+	actMu    sync.Mutex        // guards acting
+	acting   map[string]bool   // the items a gh action is running on
+	resumeMu sync.Mutex        // one pass over the resume orders at a time
+	lastErr  map[string]string // the last failure logged for a resume order; under resumeMu
+	noTarget sync.Once
+	resume   chan struct{} // resume orders may be ready; buffered; under mu
+	scanMu   sync.Mutex    // one refresh at a time
+	mu       sync.Mutex    // guards items
 	items    []Item
 	notify   chan struct{} // a ship changed; buffered, so Notify never blocks
 	watched  map[string]os.FileInfo
@@ -70,6 +82,7 @@ func (s *Service) message() any { return map[string]any{"type": "inbox", "items"
 // Notify asks Run to push the items again, for a change in the ships that name
 // them. It never blocks.
 func (s *Service) Notify() {
+	s.kickResume()
 	select {
 	case s.notifyChan() <- struct{}{}:
 	default:
@@ -152,10 +165,22 @@ func (s *Service) serveSubmit(w http.ResponseWriter, r *http.Request) {
 	respond(w, session, id, res, err)
 }
 
-// serveDiscard deletes the pending review of a review item.
+// serveDiscard deletes the pending review of a review item, or with
+// {"forget": true} removes the item from the inbox without gh.
 func (s *Service) serveDiscard(w http.ResponseWriter, r *http.Request) {
 	session, id := r.PathValue("session"), r.PathValue("id")
-	res, err := s.DiscardReview(session, id)
+	var req struct {
+		Forget bool `json:"forget"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "the request is not a valid JSON object: "+err.Error())
+		return
+	}
+	discard := s.DiscardReview
+	if req.Forget {
+		discard = s.ForgetReview
+	}
+	res, err := discard(session, id)
 	respond(w, session, id, res, err)
 }
 
@@ -182,6 +207,9 @@ func respond(w http.ResponseWriter, session, id string, res ReviewResult, err er
 		}
 		if res.InvalidTarget {
 			out["invalid_target"] = true // nothing was changed on GitHub
+		}
+		if res.Forgotten {
+			out["forgotten"] = true // likewise
 		}
 		writeJSON(w, http.StatusOK, out)
 	case errors.Is(err, ErrNotFound):
@@ -213,6 +241,7 @@ func (s *Service) Refresh() {
 	s.items = items // under scanMu, so an older scan cannot land after a newer one
 	s.mu.Unlock()
 	s.scanMu.Unlock()
+	s.captureAll() // answers written by someone else count too
 	s.broadcast()
 }
 
@@ -231,6 +260,8 @@ func (s *Service) Run(ctx context.Context) {
 		s.scanMu.Unlock()
 		events, errs = w.Events, w.Errors
 	}
+	go s.resumeLoop(ctx)
+	s.captureAll() // before the sweep deletes the report of an inbox answered while Admiral was down
 	s.sweepKept()
 	s.Refresh()
 	changed := s.notifyChan()

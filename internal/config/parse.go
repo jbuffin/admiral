@@ -31,6 +31,8 @@ type Config struct {
 	// autopilot lets stand: it counts every such ship, hand launches included,
 	// and stops launching when they reach it.
 	AutopilotMaxShips int
+	// ResumeSource is autopilot.resume_source, nil when the file sets none.
+	ResumeSource *ResumeSource
 	// Resources are the locked resources by name (#118); nil when the file
 	// defines none.
 	Resources map[string]Resource
@@ -137,9 +139,11 @@ func Parse(data []byte) (*Config, error) {
 				return nil, fmt.Errorf("favorite_skills: at most %d allowed, got %d", MaxFavoriteSkills, len(cfg.FavoriteSkills))
 			}
 		case "autopilot":
-			if cfg.AutopilotMaxShips, err = parseAutopilot(m.raw); err != nil {
+			var ap Autopilot
+			if ap, err = parseAutopilot(m.raw); err != nil {
 				return nil, err
 			}
+			cfg.AutopilotMaxShips, cfg.ResumeSource = ap.MaxShips, ap.Resume
 		case "resources":
 			if cfg.Resources, err = parseResources(m.raw); err != nil {
 				return nil, err

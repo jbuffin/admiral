@@ -75,6 +75,9 @@ type Service struct {
 	OnChange func()
 	// Outcomes is the outcome log; nil keeps none.
 	Outcomes *outcomes.Writer
+	// BeforeRemoveFiles runs with a ship's session just before its report and
+	// inbox are deleted, to keep what Admiral still needs from them. It must not block.
+	BeforeRemoveFiles func(session string)
 
 	pass   sync.Mutex        // one observe at a time
 	mu     sync.Mutex        // guards tracks and what they point to
