@@ -3,6 +3,7 @@ package e2e
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -55,8 +56,9 @@ func (g *fakeGH) argvLines() (lines []string) {
 const (
 	prViewWidgets = `{"url":"https://github.com/acme/widgets/pull/12","baseRefName":"main"}`
 	rulesEndpoint = "repos/acme/widgets/rules/branches/main"
+	rsEndpoint    = "repos/acme/widgets/rulesets/7"
 	protEndpoint  = "repos/acme/widgets/branches/main/protection"
-	mergeCmd      = "gh pr merge 12 --auto --squash"
+	mergeCmd      = "gh pr merge " + prURL + " --auto --squash"
 )
 
 // hasCall says whether one recorded call holds every one of the parts.
@@ -73,55 +75,84 @@ func hasCall(calls []string, parts ...string) bool {
 	return false
 }
 
-func rulesJSON(counts ...string) string {
-	var rules []string
-	for _, c := range counts {
-		rules = append(rules, `{"type":"pull_request","parameters":{"required_approving_review_count":`+c+`,"dismiss_stale_reviews_on_push":false}}`)
-	}
-	return "[" + strings.Join(rules, ",") + "]"
+// pullRequestRule is one rule of rules/branches/main as GitHub prints it: its
+// approvals, and whether it dismisses stale reviews on a push or requires
+// approval of the last push.
+func pullRequestRule(count string, dismiss, lastPush bool) string {
+	return `{"type":"pull_request","ruleset_source_type":"Repository","ruleset_source":"acme/widgets","ruleset_id":7,` +
+		`"parameters":{"required_approving_review_count":` + count + `,"dismiss_stale_reviews_on_push":` + strconv.FormatBool(dismiss) +
+		`,"require_last_push_approval":` + strconv.FormatBool(lastPush) + `}}`
 }
 
-func protectionJSON(count string) string {
-	return `{"url":"x","required_pull_request_reviews":{"required_approving_review_count":` + count + `}}`
+func rulesJSON(rules ...string) string { return "[" + strings.Join(rules, ",") + "]" }
+
+// rulesetJSON is GET repos/acme/widgets/rulesets/7.
+func rulesetJSON(enforcement, canBypass string) string {
+	return `{"id":7,"enforcement":"` + enforcement + `","current_user_can_bypass":"` + canBypass + `"}`
 }
 
-// The lookup reads GitHub's answer the way C7 says: the rules of the base
-// branch first (the largest count of the pull_request rules), then classic
-// protection, and anything it cannot confirm refuses.
+// protectionJSON is classic protection of main.
+func protectionJSON(count string, dismiss, enforceAdmins bool, bypass string) string {
+	return `{"url":"x","enforce_admins":{"enabled":` + strconv.FormatBool(enforceAdmins) + `},"required_pull_request_reviews":` +
+		`{"required_approving_review_count":` + count + `,"dismiss_stale_reviews":` + strconv.FormatBool(dismiss) +
+		`,"bypass_pull_request_allowances":` + bypass + `}}`
+}
+
+// The lookup proves GitHub is the gate (D8, D9): the rules of the base branch
+// first, one pull_request rule with an approving review that goes stale on a push
+// (or needs the last push approved) in a ruleset the token's user can never
+// bypass; then classic protection with the same, enforced on admins; anything
+// else, or any failure, refuses.
 func TestGuardAutoMergeLookupAgainstGitHub(t *testing.T) {
 	type answer struct {
 		status int
 		body   string
 	}
 	missing := answer{404, `{"message":"Not Found","status":"404"}`}
+	forbidden := answer{403, `{"message":"Forbidden"}`}
+	never := answer{0, rulesetJSON("active", "never")}
+	fresh := pullRequestRule("1", true, false)
+	fullProt := answer{0, protectionJSON("1", true, true, `{"users":[],"teams":[],"apps":[]}`)}
 	rows := []struct {
 		name         string
-		rules, prot  answer
+		rules, rs    answer
+		prot         answer
 		prView       string // "" is prViewWidgets
 		prViewFail   string
 		prViewBroken bool // no base to ask about: the lookup stops after gh pr view
 		wantAllowed  bool
+		wantRSRead   bool // the ruleset was read
 		wantProtRead bool // the classic protection was asked for
 	}{
-		{name: "rules require one approval", rules: answer{0, rulesJSON("1")}, prot: missing, wantAllowed: true},
-		{name: "rules require two approvals", rules: answer{0, rulesJSON("2")}, prot: missing, wantAllowed: true},
-		{name: "the largest of several pull_request rules counts", rules: answer{0, rulesJSON("0", "2")}, prot: missing, wantAllowed: true},
-		{name: "no rules, protection requires one", rules: answer{0, `[]`}, prot: answer{0, protectionJSON("1")}, wantAllowed: true, wantProtRead: true},
-		{name: "rules ask for none, protection requires one", rules: answer{0, rulesJSON("0")}, prot: answer{0, protectionJSON("1")}, wantAllowed: true, wantProtRead: true},
+		{name: "one approval, stale reviews dismissed, never bypassed", rules: answer{0, rulesJSON(fresh)}, rs: never, prot: missing, wantAllowed: true, wantRSRead: true},
+		{name: "two approvals", rules: answer{0, rulesJSON(pullRequestRule("2", true, false))}, rs: never, prot: missing, wantAllowed: true, wantRSRead: true},
+		{name: "last-push approval instead of dismissal", rules: answer{0, rulesJSON(pullRequestRule("1", false, true))}, rs: never, prot: missing, wantAllowed: true, wantRSRead: true},
+		{name: "the rule that qualifies counts among several", rules: answer{0, rulesJSON(pullRequestRule("0", true, true), pullRequestRule("1", false, false), fresh)}, rs: never, prot: missing, wantAllowed: true, wantRSRead: true},
+		{name: "no freshness setting", rules: answer{0, rulesJSON(pullRequestRule("1", false, false))}, rs: never, prot: missing, wantProtRead: true},
+		{name: "no approvals required", rules: answer{0, rulesJSON(pullRequestRule("0", true, true))}, rs: never, prot: missing, wantProtRead: true},
+		{name: "a ruleset the user can bypass", rules: answer{0, rulesJSON(fresh)}, rs: answer{0, rulesetJSON("active", "always")}, prot: missing, wantRSRead: true, wantProtRead: true},
+		{name: "a ruleset the user can bypass with a pull request", rules: answer{0, rulesJSON(fresh)}, rs: answer{0, rulesetJSON("active", "pull_request_only")}, prot: missing, wantRSRead: true, wantProtRead: true},
+		{name: "a ruleset that is not active", rules: answer{0, rulesJSON(fresh)}, rs: answer{0, rulesetJSON("evaluate", "never")}, prot: missing, wantRSRead: true, wantProtRead: true},
+		{name: "a ruleset with no bypass field", rules: answer{0, rulesJSON(fresh)}, rs: answer{0, `{"enforcement":"active"}`}, prot: missing, wantRSRead: true, wantProtRead: true},
+		{name: "the ruleset read fails", rules: answer{0, rulesJSON(fresh)}, rs: missing, prot: missing, wantRSRead: true, wantProtRead: true},
+		{name: "the ruleset read is not JSON", rules: answer{0, rulesJSON(fresh)}, rs: answer{0, `<html>`}, prot: missing, wantRSRead: true, wantProtRead: true},
+		{name: "a rule with no ruleset id", rules: answer{0, `[{"type":"pull_request","ruleset_source_type":"Repository","parameters":{"required_approving_review_count":1,"dismiss_stale_reviews_on_push":true}}]`}, rs: never, prot: missing, wantProtRead: true},
+		{name: "no rules, protection qualifies", rules: answer{0, `[]`}, prot: fullProt, wantAllowed: true, wantProtRead: true},
+		{name: "rules fall short, protection qualifies", rules: answer{0, rulesJSON(pullRequestRule("1", false, false))}, rs: never, prot: fullProt, wantAllowed: true, wantProtRead: true},
 		{name: "no rules and no protection", rules: answer{0, `[]`}, prot: missing, wantProtRead: true},
-		{name: "rules ask for none and there is no protection", rules: answer{0, rulesJSON("0")}, prot: missing, wantProtRead: true},
-		{name: "rules without a pull_request rule", rules: answer{0, `[{"type":"required_status_checks","parameters":{}}]`}, prot: missing, wantProtRead: true},
-		{name: "protection requires none", rules: answer{0, `[]`}, prot: answer{0, protectionJSON("0")}, wantProtRead: true},
+		{name: "protection without freshness", rules: answer{0, `[]`}, prot: answer{0, protectionJSON("1", false, true, `{}`)}, wantProtRead: true},
+		{name: "protection that does not enforce admins", rules: answer{0, `[]`}, prot: answer{0, protectionJSON("1", true, false, `{}`)}, wantProtRead: true},
+		{name: "protection with a bypass allowance", rules: answer{0, `[]`}, prot: answer{0, protectionJSON("1", true, true, `{"users":[{"login":"x"}],"teams":[],"apps":[]}`)}, wantProtRead: true},
+		{name: "protection requires no approval", rules: answer{0, `[]`}, prot: answer{0, protectionJSON("0", true, true, `{}`)}, wantProtRead: true},
 		{name: "protection without required reviews", rules: answer{0, `[]`}, prot: answer{0, `{"url":"x","enforce_admins":{"enabled":true}}`}, wantProtRead: true},
-		{name: "rules forbidden, no protection", rules: answer{403, `{"message":"Forbidden"}`}, prot: missing, wantProtRead: true},
-		{name: "rules forbidden, protection forbidden", rules: answer{403, `{"message":"Forbidden"}`}, prot: answer{403, `{"message":"Forbidden"}`}, wantProtRead: true},
+		{name: "rules forbidden, no protection", rules: forbidden, prot: missing, wantProtRead: true},
+		{name: "rules forbidden, protection forbidden", rules: forbidden, prot: forbidden, wantProtRead: true},
 		{name: "rules that are not JSON, no protection", rules: answer{0, `<html>`}, prot: missing, wantProtRead: true},
 		{name: "rules that are not a list, no protection", rules: answer{0, `{"message":"x"}`}, prot: missing, wantProtRead: true},
 		{name: "protection that is not JSON", rules: answer{0, `[]`}, prot: answer{0, `<html>`}, wantProtRead: true},
-		{name: "the PR cannot be resolved", rules: answer{0, rulesJSON("1")}, prot: missing, prViewFail: "no pull requests found", prViewBroken: true},
-		{name: "the PR answer is not JSON", rules: answer{0, rulesJSON("1")}, prot: missing, prView: `no`, prViewBroken: true},
-		{name: "the PR answer has no base", rules: answer{0, rulesJSON("1")}, prot: missing, prView: `{"url":"https://github.com/acme/widgets/pull/12"}`, prViewBroken: true},
-		{name: "a stacked PR whose base asks for none", rules: answer{0, rulesJSON("0")}, prot: missing, prView: `{"url":"https://github.com/acme/widgets/pull/12","baseRefName":"main"}`, wantProtRead: true},
+		{name: "the PR cannot be resolved", rules: answer{0, rulesJSON(fresh)}, rs: never, prot: missing, prViewFail: "no pull requests found", prViewBroken: true},
+		{name: "the PR answer is not JSON", rules: answer{0, rulesJSON(fresh)}, rs: never, prot: missing, prView: `no`, prViewBroken: true},
+		{name: "the PR answer has no base", rules: answer{0, rulesJSON(fresh)}, rs: never, prot: missing, prView: `{"url":"https://github.com/acme/widgets/pull/12"}`, prViewBroken: true},
 	}
 	for _, r := range rows {
 		t.Run(r.name, func(t *testing.T) {
@@ -136,6 +167,7 @@ func TestGuardAutoMergeLookupAgainstGitHub(t *testing.T) {
 				g.write("pr_view.json", prViewWidgets)
 			}
 			g.restRaw("rules", rulesEndpoint, r.rules.status, r.rules.body)
+			g.restRaw("ruleset", rsEndpoint, r.rs.status, r.rs.body)
 			g.restRaw("protection", protEndpoint, r.prot.status, r.prot.body)
 
 			res := w.runGuardCmd(guardPayload(mergeCmd), shipEnv(t.TempDir(), "saltpaw-ii", "ADMIRAL_AUTOPILOT=1", "ADMIRAL_AUTO_MERGE=squash")...)
@@ -145,12 +177,15 @@ func TestGuardAutoMergeLookupAgainstGitHub(t *testing.T) {
 				res.requireMergeRefusal(t)
 			}
 			calls := g.argvLines()
-			if !hasCall(calls, "pr view", "12", "--json url,baseRefName") {
-				t.Errorf("the lookup never ran gh pr view 12 --json url,baseRefName; calls:\n%s", strings.Join(calls, "\n"))
+			if !hasCall(calls, "pr view", prURL, "--json url,baseRefName") {
+				t.Errorf("the lookup never ran gh pr view %s --json url,baseRefName; calls:\n%s", prURL, strings.Join(calls, "\n"))
 			}
 			if !r.prViewBroken {
 				if !hasCall(calls, "api", "-X GET", rulesEndpoint) {
 					t.Errorf("the lookup never GET %s; calls:\n%s", rulesEndpoint, strings.Join(calls, "\n"))
+				}
+				if got := hasCall(calls, "api", "-X GET", rsEndpoint); got != r.wantRSRead {
+					t.Errorf("the lookup read the ruleset = %v, want %v; calls:\n%s", got, r.wantRSRead, strings.Join(calls, "\n"))
 				}
 				if got := hasCall(calls, "api", "-X GET", protEndpoint); got != r.wantProtRead {
 					t.Errorf("the lookup asked for the classic protection = %v, want %v; calls:\n%s", got, r.wantProtRead, strings.Join(calls, "\n"))
@@ -168,21 +203,26 @@ func TestGuardAutoMergeLookupAgainstGitHub(t *testing.T) {
 	}
 }
 
-// The owner, repo and base come from what gh pr view returns, not from the
-// command: a -R in the command is handed to gh pr view and nothing else.
+// The owner, repo and base come from what gh pr view returns for the URL the
+// command names, and the REST calls carry them in the endpoint.
 func TestGuardAutoMergeLookupUsesTheResolvedPR(t *testing.T) {
 	w := newWorld(t)
 	g := w.newFakeGH()
-	g.write("pr_view.json", `{"url":"https://github.com/acme/widgets/pull/12","baseRefName":"release"}`)
-	g.restRaw("rules", "repos/acme/widgets/rules/branches/release", 0, rulesJSON("1"))
-	res := w.runGuardCmd(guardPayload("gh pr merge 12 --auto --squash -R acme/widgets"), shipEnv(t.TempDir(), "saltpaw-ii", "ADMIRAL_AUTOPILOT=1", "ADMIRAL_AUTO_MERGE=squash")...)
+	const ghe = "https://ghe.example.com/acme/widgets/pull/12"
+	g.write("pr_view.json", `{"url":"`+ghe+`","baseRefName":"release/1"}`)
+	g.restRaw("rules", "repos/acme/widgets/rules/branches/release/1", 0, rulesJSON(pullRequestRule("1", true, false)))
+	g.restRaw("ruleset", rsEndpoint, 0, rulesetJSON("active", "never"))
+	res := w.runGuardCmd(guardPayload("gh pr merge "+ghe+" --auto --squash"), shipEnv(t.TempDir(), "saltpaw-ii", "ADMIRAL_AUTOPILOT=1", "ADMIRAL_AUTO_MERGE=squash")...)
 	res.requireQuiet(t)
 	calls := g.argvLines()
-	if !hasCall(calls, "pr view", "12", "-R acme/widgets", "--json url,baseRefName") {
-		t.Errorf("gh pr view was not given the PR and -R; calls:\n%s", strings.Join(calls, "\n"))
+	if !hasCall(calls, "pr view", ghe, "--json url,baseRefName") {
+		t.Errorf("gh pr view was not given the PR's URL; calls:\n%s", strings.Join(calls, "\n"))
 	}
-	if !hasCall(calls, "api", "-X GET", "repos/acme/widgets/rules/branches/release") {
-		t.Errorf("the rules of the resolved base were not read; calls:\n%s", strings.Join(calls, "\n"))
+	if !hasCall(calls, "api", "-X GET", "--hostname ghe.example.com", "repos/acme/widgets/rules/branches/release/1") {
+		t.Errorf("the rules of the resolved base were not read on the PR's host; calls:\n%s", strings.Join(calls, "\n"))
+	}
+	if !hasCall(calls, "api", "-X GET", "--hostname ghe.example.com", rsEndpoint) {
+		t.Errorf("the ruleset was not read on the PR's host; calls:\n%s", strings.Join(calls, "\n"))
 	}
 	for _, c := range calls {
 		if strings.HasPrefix(c, "api") && strings.Contains(c, "-R") {
@@ -199,7 +239,7 @@ func TestGuardAutoMergeLookupTimesOut(t *testing.T) {
 	g := w.newFakeGH()
 	g.write("pr_view.json", prViewWidgets)
 	g.write("pr_view.sleep", "30\n")
-	g.restRaw("rules", rulesEndpoint, 0, rulesJSON("1"))
+	g.restRaw("rules", rulesEndpoint, 0, rulesJSON(pullRequestRule("1", true, false)))
 	start := time.Now()
 	res := w.runGuardCmd(guardPayload(mergeCmd), shipEnv(t.TempDir(), "saltpaw-ii", "ADMIRAL_AUTOPILOT=1", "ADMIRAL_AUTO_MERGE=squash")...)
 	took := time.Since(start)
@@ -216,7 +256,8 @@ func TestGuardCmdMergeRefusalsAndAllowances(t *testing.T) {
 	w := newWorld(t)
 	g := w.newFakeGH()
 	g.write("pr_view.json", prViewWidgets)
-	g.restRaw("rules", rulesEndpoint, 0, rulesJSON("1"))
+	g.restRaw("rules", rulesEndpoint, 0, rulesJSON(pullRequestRule("1", true, false)))
+	g.restRaw("ruleset", rsEndpoint, 0, rulesetJSON("active", "never"))
 	home := t.TempDir()
 	env := shipEnv(home, "saltpaw-ii", "ADMIRAL_AUTOPILOT=1", "ADMIRAL_AUTO_MERGE=squash")
 
@@ -226,7 +267,9 @@ func TestGuardCmdMergeRefusalsAndAllowances(t *testing.T) {
 	for cmd, rule := range map[string]string{
 		"gh pr merge 12 --squash":                         "gh_pr_merge",
 		"gh api -X PUT repos/acme/widgets/pulls/12/merge": "gh_api_merge",
-		"gh pr merge 12 --auto --rebase":                  "auto_merge_method",
+		"gh pr merge " + prURL + " --auto --rebase":       "auto_merge_method",
+		"echo 'gh pr merge 5 --admin' | bash":             "gh_pr_merge",
+		"gh pr merge 12 --auto --squash":                  "auto_merge_steered",
 	} {
 		w.runGuardCmd(guardPayload(cmd), env...).requireMergeRefusal(t)
 		found := false

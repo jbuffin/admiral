@@ -53,13 +53,15 @@ func (l *lineText) offsets(n syntax.Node) (from, to int) {
 	return min(int(n.Pos().Offset()), to), to
 }
 
-// wholeRule is the long-spelling text rule on the whole line, for a judgment with
+// wholeRule is the long-spelling text rule (review and merge) on the whole line, for a judgment with
 // no text of its own: the program, script, file or query was set on another part
 // of the line (a variable, a file written earlier). Short flags are not matched here.
 func (l *lineText) wholeRule() string {
 	if !l.wholeDone {
 		if reviewEventText(l.text) {
 			l.whole = ruleUnparsed
+		} else {
+			l.whole = mergeTextRule(l.text)
 		}
 		l.wholeDone = true
 	}
@@ -114,6 +116,10 @@ func (g guardCheck) command(text string, depth int) string {
 			switch cmd := s.Cmd.(type) {
 			case *syntax.CallExpr:
 				rule = g.call(cmd, s.Redirs, line, depth)
+			case *syntax.ForClause:
+				if it, ok := cmd.Loop.(*syntax.WordIter); ok && slices.Contains(steerNames, it.Name.Value) {
+					g.st.steered = true
+				}
 			case *syntax.DeclClause:
 				for _, a := range cmd.Args {
 					if a.Name != nil && steersGh(a.Name.Value+"=") {
@@ -155,8 +161,11 @@ var shortFlag = regexp.MustCompile(`(?:^|[^\w-])-[A-Za-z]*[ar][A-Za-z]*(?:=\S*)?
 
 // textRule is the fallback for a command the guard cannot read: it refuses text
 // that mentions a review and an event that submits one, in a long or short
-// spelling.
+// spelling, and text that mentions a merge or a write to the gate (mergeTextRule).
 func textRule(text string) string {
+	if r := mergeTextRule(text); r != "" {
+		return r
+	}
 	if reviewEventText(text) || strings.Contains(strings.ToLower(text), "review") && shortFlag.MatchString(text) {
 		return ruleUnparsed
 	}
@@ -224,7 +233,7 @@ func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *li
 	}
 	for len(words) > 0 {
 		if hasPlaceholder(words[0]) {
-			if sub := ghSubcommand(words[1:]); len(sub) >= 1 && sub[0] == "api" || len(sub) >= 2 && sub[0] == "pr" && (sub[1] == "review" || sub[1] == "merge") {
+			if sub := ghSubcommand(words[1:]); len(sub) >= 1 && sub[0] == "api" || len(sub) >= 2 && sub[0] == "pr" && (sub[1] == "review" || sub[1] == "merge" || sub[1] == "edit") {
 				return g.gh(words[1:], line)
 			}
 			if r := line.span(c); r != "" || !onlyExpansion(words[0]) {
@@ -247,9 +256,16 @@ func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *li
 			words = args
 			continue
 		}
+		if steersBuiltin(w, args, line.text[min(int(c.Pos().Offset()), len(line.text)):min(int(c.End().Offset()), len(line.text))]) {
+			g.st.steered = true
+		}
 		switch {
 		case w == "cd" || w == "pushd" || w == "popd":
 			g.st.steered = true
+		case w == "alias" || w == "unalias":
+			return ruleShellAlias
+		case w == "source" || w == ".":
+			return ruleShellScript
 		case w == "git":
 			if gitSteers(args) {
 				g.st.steered = true
@@ -260,6 +276,8 @@ func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *li
 			return g.shell(c, args, redirs, line, depth)
 		case w == "eval":
 			return g.script(c, strings.Join(args, " "), line, depth)
+		case w == "trap" && len(args) > 0 && !strings.HasPrefix(args[0], "-"):
+			return g.script(c, args[0], line, depth) // the handler is a script
 		}
 		return ""
 	}
@@ -370,6 +388,9 @@ func (g guardCheck) shell(c *syntax.CallExpr, args []string, redirs []*syntax.Re
 		}
 		return g.script(c, args[i], line, depth)
 	}
+	if i < len(args) {
+		return ruleShellScript // a script file: the guard is not shown what is in it
+	}
 	found := false
 	for _, r := range redirs {
 		var body string
@@ -381,6 +402,8 @@ func (g guardCheck) shell(c *syntax.CallExpr, args []string, redirs []*syntax.Re
 			body = heredocText(r)
 		case syntax.WordHdoc:
 			body = wordText(r.Word)
+		case syntax.RdrIn, syntax.RdrInOut:
+			return ruleShellScript // sh < file
 		default:
 			continue
 		}
@@ -392,7 +415,12 @@ func (g guardCheck) shell(c *syntax.CallExpr, args []string, redirs []*syntax.Re
 	if found {
 		return ""
 	}
-	return line.stmt()
+	// Nothing on the command shows the script: it comes down a pipe, or the shell
+	// reads its own stdin.
+	if r := line.stmt(); r != "" {
+		return r
+	}
+	return ruleShellScript
 }
 
 // wordText is the text of a word with its quoting resolved and a placeholder for

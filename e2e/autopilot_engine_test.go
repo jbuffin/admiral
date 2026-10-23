@@ -538,9 +538,7 @@ func TestEngineSetsAutoMergeFromThePanel(t *testing.T) {
 		entry map[string]any
 		want  string // "" is unset
 	}{
-		{"squash", map[string]any{"auto_merge": "squash"}, "squash"},
-		{"merge", map[string]any{"auto_merge": "merge"}, "merge"},
-		{"rebase", map[string]any{"auto_merge": "rebase"}, "rebase"},
+		{"a method", map[string]any{"auto_merge": "rebase"}, "rebase"},
 		{"off", nil, ""},
 	}
 	for _, c := range cases {

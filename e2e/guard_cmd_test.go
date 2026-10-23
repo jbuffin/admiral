@@ -285,13 +285,14 @@ func TestGuardIsInTheGeneratedSettings(t *testing.T) {
 		if n != 1 {
 			t.Errorf("the merge matcher %q has %d guard handlers, want 1", m, n)
 		}
-		for _, tool := range []string{"mcp__github__merge_pull_request", "mcp__github__enable_pull_request_auto_merge", "mcp__github__enable_auto_merge"} {
+		for _, tool := range []string{"mcp__github__merge_pull_request", "mcp__github__enable_pull_request_auto_merge", "mcp__github__enable_auto_merge",
+			"mcp__github__mergePullRequest", "mcp__github__enqueue_pull_request", "mcp__github__MERGE_NOW"} {
 			if !re.MatchString(tool) {
 				t.Errorf("the merge matcher %q does not match %s", m, tool)
 			}
 		}
-		for _, tool := range []string{"Read", "mcp__github__get_pull_request", "mcp__github__create_pull_request_review"} {
-			if re.MatchString(tool) && tool != "mcp__github__create_pull_request_review" {
+		for _, tool := range []string{"Read", "Bash", "mcp__github__get_pull_request", "mcp__github__create_pull_request_review"} {
+			if re.MatchString(tool) {
 				t.Errorf("the merge matcher %q matches %s, want only merge tools", m, tool)
 			}
 		}
