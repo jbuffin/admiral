@@ -270,11 +270,11 @@ func TestInboxReviewSubmit(t *testing.T) {
 			t.Errorf("argv %q holds the item text as its own argument or uses -F", post.Argv)
 		}
 	}
-	if post.Host != "" && post.Host != "github.com" {
-		t.Errorf("--hostname = %q for a github.com PR, want none or github.com", post.Host)
+	if post.Host != "github.com" {
+		t.Errorf("--hostname = %q for a github.com PR, want github.com", post.Host)
 	}
 	if post.Env["GH_TOKEN"] != "fake-token-f" || post.Env["GH_PROMPT_DISABLED"] != "1" || post.Env["GH_NO_UPDATE_NOTIFIER"] != "1" {
-		t.Errorf("gh env = %v, want the fleet's GH_TOKEN fake-token-f, GH_PROMPT_DISABLED=1 and GH_NO_UPDATE_NOTIFIER=1", post.Env)
+		t.Errorf("gh env = %v, want fake-token-f as the fleet's token and both GH_ switches set to 1", post.Env)
 	}
 
 	got := readAnswer(t, dir, "r-1", before)
@@ -420,7 +420,9 @@ func TestInboxReviewMissingGh(t *testing.T) {
 
 // S5: a pr_url or review_id that does not have the form
 // https://<host>/<owner>/<repo>/pull/<n> with an integer review id is refused
-// without running gh, on Submit and on Discard alike.
+// without running gh. Submit refuses it. Discard has nothing on GitHub to
+// delete, so it answers the item as discarded (invalid_target), which is the
+// item's way out of the inbox.
 func TestInboxReviewRefusesBadTargets(t *testing.T) {
 	w, g := reviewWorld(t)
 	ship, dir := w.ghShip("f", "rev5")
@@ -465,9 +467,6 @@ func TestInboxReviewRefusesBadTargets(t *testing.T) {
 		if code, resp := w.in.act(t, ship.Session, id, "submit", map[string]any{"event": "APPROVE"}); !refused(code) {
 			t.Errorf("submit with %s = %d, want 400 or 422: %s", c.name, code, resp)
 		}
-		if code, resp := w.in.act(t, ship.Session, id, "discard", nil); !refused(code) {
-			t.Errorf("discard with %s = %d, want 400 or 422: %s", c.name, code, resp)
-		}
 	}
 	// An event Admiral does not know is refused too, on a good target.
 	seedItem(t, dir, "ok-1", reviewAt("ok-1", "2026-10-22T10:00:00Z", prURL, 123))
@@ -477,11 +476,30 @@ func TestInboxReviewRefusesBadTargets(t *testing.T) {
 			t.Errorf("submit with event %q = %d, want 400 or 422: %s", ev, code, resp)
 		}
 	}
-	// A question item takes no review action.
+	w.noAnswerOrOutcome(ship.Session, dir, append(all, "ok-1"), "review_submitted", "review_discarded")
+
+	// Discard answers each of them as discarded, without gh.
+	before := time.Now()
+	for i, c := range cases {
+		id := "b-" + fmt.Sprintf("%02d", i)
+		if code, resp := w.in.act(t, ship.Session, id, "discard", nil); !ok2xx(code) {
+			t.Errorf("discard with %s = %d, want 2xx: %s", c.name, code, resp)
+			continue
+		}
+		if got, want := readAnswer(t, dir, id, before), map[string]any{"version": float64(1), "id": id, "kind": "review", "action": "discarded"}; !reflect.DeepEqual(got, want) {
+			t.Errorf("answer file of %s = %v, want %v", id, got, want)
+		}
+	}
+	log := w.waitEvent(ship.Session, "review_discarded", len(cases))
+	for _, r := range log {
+		if r["event"] == "review_discarded" && (r["invalid_target"] != true || r["external"] != nil) {
+			t.Errorf("review_discarded = %v, want invalid_target true and no external flag", r)
+		}
+	}
 	if calls := g.restCalls(); len(calls) != 0 {
 		t.Errorf("gh was run for a refused request: %v", calls)
 	}
-	w.noAnswerOrOutcome(ship.Session, dir, append(all, "ok-1"), "review_submitted", "review_discarded")
+	w.in.waitInbox(t, "ok-1")
 }
 
 // The host comes from the pr_url and the environment from the ship's fleet:
@@ -531,22 +549,29 @@ func TestInboxReviewHostAndFleetEnvironment(t *testing.T) {
 func TestInboxReviewGone(t *testing.T) {
 	w, g := reviewWorld(t)
 	ship, dir := w.ghShip("f", "rev8")
-	for i, id := range []string{"gone-get", "gone-del", "gone-422", "own-422"} {
+	for i, id := range []string{"gone-get", "gone-del", "gone-422", "own-422", "gone-state", "own-del"} {
 		seedItem(t, dir, id, reviewAt(id, "2026-10-22T10:0"+itoa(i)+":00Z", "https://github.com/acme/widgets/pull/12", 200+i))
 	}
-	w.in.waitInbox(t, "gone-get", "gone-del", "gone-422", "own-422")
+	w.in.waitInbox(t, "gone-get", "gone-del", "gone-422", "own-422", "gone-state", "own-del")
 	ep := func(n int) string { return "repos/acme/widgets/pulls/12/reviews/" + itoa(n) }
 	notFound := json.RawMessage(`{"message":"Not Found"}`)
+	// GitHub's error bodies carry a documentation_url, and the one for deleting a
+	// review has "pending" in its anchor; that is not the review being gone.
+	doc := `"documentation_url":"https://docs.github.com/rest/pulls/reviews#delete-a-pending-review-for-a-pull-request"`
 
 	g.rest("g0", "GET", ep(200), 404, notFound, "gh: Not Found (HTTP 404)\n")
 	g.rest("d1", "DELETE", ep(201), 404, notFound, "gh: Not Found (HTTP 404)\n")
 	g.rest("g2", "GET", ep(202), 200, map[string]any{"state": "PENDING", "body": "b"}, "")
-	g.rest("p2", "POST", ep(202)+"/events", 422, json.RawMessage(`{"message":"Unprocessable Entity","errors":["Can not submit a review that is not pending"]}`), "gh: Unprocessable Entity (HTTP 422)\nCan not submit a review that is not pending\n")
+	g.rest("p2", "POST", ep(202)+"/events", 422, json.RawMessage(`{"message":"Unprocessable Entity","errors":["Can not submit a review that is not pending"],`+doc+`}`), "gh: Unprocessable Entity (HTTP 422)\nCan not submit a review that is not pending\n")
 	g.rest("g3", "GET", ep(203), 200, map[string]any{"state": "PENDING", "body": "b"}, "")
-	g.rest("p3", "POST", ep(203)+"/events", 422, json.RawMessage(`{"message":"Unprocessable Entity","errors":["Can not approve your own pull request"]}`), "gh: Unprocessable Entity (HTTP 422)\nCan not approve your own pull request\n")
+	g.rest("p3", "POST", ep(203)+"/events", 422, json.RawMessage(`{"message":"Unprocessable Entity","errors":["Can not approve your own pull request"],`+doc+`}`), "gh: Unprocessable Entity (HTTP 422)\nCan not approve your own pull request\n")
+	// The review was submitted on GitHub already: its state says so, and no POST follows.
+	g.rest("g4", "GET", ep(204), 200, map[string]any{"state": "APPROVED", "body": "b"}, "")
+	// A Discard 422 that is not about the review being pending stays an error.
+	g.rest("d5", "DELETE", ep(205), 422, json.RawMessage(`{"message":"Validation Failed","errors":["Something else"],`+doc+`}`), "gh: Validation Failed (HTTP 422)\n")
 
 	before := time.Now()
-	for _, c := range []struct{ id, action string }{{"gone-get", "submit"}, {"gone-del", "discard"}, {"gone-422", "submit"}} {
+	for _, c := range []struct{ id, action string }{{"gone-get", "submit"}, {"gone-del", "discard"}, {"gone-422", "submit"}, {"gone-state", "submit"}} {
 		if code, resp := w.in.act(t, ship.Session, c.id, c.action, map[string]any{"event": "APPROVE"}); !ok2xx(code) {
 			t.Fatalf("%s of %s with the review gone = %d, want 2xx: %s", c.action, c.id, code, resp)
 		}
@@ -558,7 +583,13 @@ func TestInboxReviewGone(t *testing.T) {
 	if code, _ := w.in.act(t, ship.Session, "own-422", "submit", map[string]any{"event": "APPROVE"}); ok2xx(code) {
 		t.Errorf("a 422 that is not 'not pending' = %d, want an error", code)
 	}
-	log := w.waitEvent(ship.Session, "review_discarded", 3)
+	if code, _ := w.in.act(t, ship.Session, "own-del", "discard", nil); ok2xx(code) {
+		t.Errorf("a Discard 422 that is not about pending = %d, want an error", code)
+	}
+	if n := len(g.callsTo("POST", ep(204)+"/events")); n != 0 {
+		t.Errorf("gh posted %d times for a review that is not pending, want none", n)
+	}
+	log := w.waitEvent(ship.Session, "review_discarded", 4)
 	items := map[any]bool{}
 	for _, r := range log {
 		if r["event"] == "review_discarded" {
@@ -568,15 +599,17 @@ func TestInboxReviewGone(t *testing.T) {
 			}
 		}
 	}
-	if !reflect.DeepEqual(items, map[any]bool{"gone-get": true, "gone-del": true, "gone-422": true}) {
-		t.Errorf("review_discarded for %v, want the three gone items", items)
+	if !reflect.DeepEqual(items, map[any]bool{"gone-get": true, "gone-del": true, "gone-422": true, "gone-state": true}) {
+		t.Errorf("review_discarded for %v, want the four gone items", items)
 	}
 	if n := countEvent(log, "review_submitted"); n != 0 {
 		t.Errorf("%d review_submitted records, want none", n)
 	}
-	w.in.waitInbox(t, "own-422")
-	if exists(filepath.Join(dir, "own-422.answer.json")) {
-		t.Errorf("own-422 was answered")
+	w.in.waitInbox(t, "own-422", "own-del")
+	for _, id := range []string{"own-422", "own-del"} {
+		if exists(filepath.Join(dir, id+".answer.json")) {
+			t.Errorf("%s was answered", id)
+		}
 	}
 }
 
@@ -663,6 +696,19 @@ func TestInboxFindingsSend(t *testing.T) {
 	if code, _ := w.in.act(t, ship.Session, "f-1", "findings", req); code != http.StatusConflict && code != http.StatusNotFound {
 		t.Errorf("sending twice = %d, want 409 (or 404)", code)
 	}
+
+	// An item with no cards takes an empty list, so it can leave the inbox.
+	empty := findingsCards()
+	empty["id"] = "f-0"
+	seedItem(t, dir, "f-0", empty)
+	w.in.waitInbox(t, "f-0", "q-1")
+	if code, resp := w.in.act(t, ship.Session, "f-0", "findings", map[string]any{"cards": []any{}}); !ok2xx(code) {
+		t.Fatalf("sending an empty list to an item with no cards = %d: %s", code, resp)
+	}
+	if got, want := readAnswer(t, dir, "f-0", before), map[string]any{"version": float64(1), "id": "f-0", "kind": "findings", "cards": map[string]any{}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("answer file = %v, want %v", got, want)
+	}
+	w.in.waitInbox(t, "q-1")
 }
 
 // S7: a ship that exits 0 with an unanswered item keeps its inbox and report.
@@ -730,6 +776,31 @@ func TestInboxKeepsUnansweredFilesAfterSailOff(t *testing.T) {
 	}
 	waitGone(t, 15*time.Second, inboxPath, reportPath)
 	w.in.waitInbox(t)
+	// The record goes with the files, or the name is never drawn again.
+	deadline = time.Now().Add(15 * time.Second)
+	for kept(t, w.home, ship.Session) {
+		if time.Now().After(deadline) {
+			t.Fatalf("state.json still holds a kept_inboxes entry for %s", ship.Session)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// kept is whether state.json holds a kept inbox record for the session.
+func kept(t *testing.T, home, session string) bool {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(home, "state.json"))
+	if err != nil {
+		return false
+	}
+	var st struct {
+		Kept map[string]json.RawMessage `json:"kept_inboxes"`
+	}
+	if err := json.Unmarshal(raw, &st); err != nil {
+		t.Fatalf("state.json is not JSON: %v", err)
+	}
+	_, ok := st.Kept[session]
+	return ok
 }
 
 // refused is a request the server turns down as invalid: not a missing route

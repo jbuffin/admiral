@@ -57,9 +57,7 @@ func (s *Service) AnswerFindings(session, id string, req FindingsRequest) error 
 		for _, c := range cardIDs(it) {
 			want[c] = true
 		}
-		if len(want) == 0 {
-			return nil, nil, invalid("item %s has no cards", id)
-		}
+		// An item with no cards takes an empty list, so it can still be answered.
 		cards := map[string]cardAnswer{}
 		var recs []outcomes.Record
 		for _, c := range req.Cards {

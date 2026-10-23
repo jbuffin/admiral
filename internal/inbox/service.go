@@ -32,9 +32,9 @@ type Service struct {
 	Ship func(session string) (name, harness string, ok bool)
 	// Outcomes is the outcome log; nil keeps none.
 	Outcomes *outcomes.Writer
-	// Dock is the environment of the dock a ship was launched from, for gh; ok is
-	// false when the ship or its dock is unknown.
-	Dock func(session string) (env []string, ok bool)
+	// Dock is the environment of the dock a ship was launched from, for gh. With no
+	// env, why says which of the ship and its dock is unknown.
+	Dock func(session string) (env []string, why string)
 	// Kept holds the records of sailed-off ships whose inbox is kept; nil keeps none.
 	Kept *state.Store
 

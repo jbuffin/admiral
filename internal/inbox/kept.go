@@ -5,7 +5,7 @@ import "github.com/jbuffin/admiral/internal/launcher"
 // release removes the report and inbox of a sailed-off ship whose inbox was
 // kept, once none of its items is unanswered, and then drops its record. The
 // files go first, so the name cannot be drawn again while they exist. It runs
-// under answerMu, or before the service serves anything.
+// under answerMu.
 func (s *Service) release(session string) {
 	if s.Kept == nil {
 		return
@@ -23,6 +23,8 @@ func (s *Service) sweepKept() {
 	if s.Kept == nil {
 		return
 	}
+	s.answerMu.Lock()
+	defer s.answerMu.Unlock()
 	for _, session := range s.Kept.KeptInboxes() {
 		s.release(session)
 	}

@@ -24,6 +24,13 @@ const (
 	ghStdoutCap = 1 << 20
 )
 
+// What a review action did, as the answer file and the response say it.
+const (
+	ActionSubmitted = "submitted"
+	ActionDiscarded = "discarded"
+	ActionGone      = "gone" // GitHub no longer had a pending review to act on
+)
+
 // ErrBusy is an action on an item that another action is still running on.
 var ErrBusy = errors.New("another action on this item is still running")
 
@@ -34,13 +41,13 @@ type GhError struct {
 	// Missing is a gh that is not on PATH.
 	Missing bool
 	status  int    // the HTTP status gh printed, 0 if none
-	detail  string // what gh printed, for gone
+	detail  string // GitHub's message and errors, for gone
 }
 
 func (e *GhError) Error() string { return e.Msg }
 
 // gone is GitHub saying the review is not there (404) or is no longer pending (a
-// 422 that names pending).
+// 422 whose message or errors name pending; its documentation_url does not count).
 func (e *GhError) gone() bool {
 	return e.status == 404 || (e.status == 422 && strings.Contains(strings.ToLower(e.detail), "pending"))
 }
@@ -92,7 +99,7 @@ type ghRun struct {
 }
 
 // ghFor finds gh and the environment for session's ship. A ship Admiral has no
-// dock for runs gh in Admiral's own environment, and an error says so.
+// dock for runs gh in Admiral's own environment, and an error says why.
 func (s *Service) ghFor(session, host string) (*ghRun, error) {
 	bin, err := exec.LookPath("gh")
 	if err != nil {
@@ -100,13 +107,15 @@ func (s *Service) ghFor(session, host string) (*ghRun, error) {
 	}
 	g := &ghRun{bin: bin, host: host}
 	if s.Dock != nil {
-		if env, ok := s.Dock(session); ok {
-			g.env = env
-		}
+		env, why := s.Dock(session)
+		g.env, g.note = env, why+", so gh ran in Admiral's own environment"
+	} else {
+		g.note = "no dock lookup, so gh ran in Admiral's own environment"
 	}
 	if g.env == nil {
 		g.env = os.Environ()
-		g.note = "ship " + session + " is unknown, so gh ran in Admiral's own environment"
+	} else {
+		g.note = ""
 	}
 	g.env = append(g.env, "GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1")
 	return g, nil
@@ -115,10 +124,8 @@ func (s *Service) ghFor(session, host string) (*ghRun, error) {
 // call runs `gh api` for method and endpoint, with body as JSON on stdin when it
 // is not nil, and returns gh's stdout. The item's text is only ever in the body.
 func (g *ghRun) call(method, endpoint string, body any) ([]byte, *GhError) {
-	args := []string{"api", "--method", method}
-	if g.host != "github.com" {
-		args = append(args, "--hostname", g.host)
-	}
+	// Always the PR's host: without it a GH_HOST in the environment would take the call elsewhere.
+	args := []string{"api", "--method", method, "--hostname", g.host}
 	var stdin *bytes.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)
@@ -143,7 +150,11 @@ func (g *ghRun) call(method, endpoint string, body any) ([]byte, *GhError) {
 	if err == nil {
 		return stdout.buf.Bytes(), nil
 	}
-	e := &GhError{detail: stderr.buf.String() + "\n" + stdout.buf.String()}
+	texts := githubTexts(stdout.buf.Bytes())
+	e := &GhError{detail: strings.Join(texts, "\n")}
+	if e.detail == "" {
+		e.detail = stderr.buf.String()
+	}
 	if m := httpStatus.FindStringSubmatch(stderr.buf.String()); m != nil {
 		fmt.Sscan(m[1], &e.status)
 	}
@@ -151,45 +162,52 @@ func (g *ghRun) call(method, endpoint string, body any) ([]byte, *GhError) {
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		e.Msg = fmt.Sprintf("gh did not answer within %s", ghTimeout)
 	case msg != "":
-		e.Msg = "gh failed: " + msg + githubMessage(stdout.buf.Bytes(), msg)
+		e.Msg = "gh failed: " + msg
+		for _, t := range texts {
+			if !strings.Contains(msg, t) {
+				e.Msg += "\n" + t
+			}
+		}
 	default:
 		e.Msg = "gh failed: " + err.Error()
 	}
 	if g.note != "" {
 		e.Msg += " (" + g.note + ")"
 	}
+	if len(e.Msg) > ghStderrCap {
+		e.Msg = strings.ToValidUTF8(e.Msg[:ghStderrCap], "")
+	}
 	return nil, e
 }
 
-// githubMessage is the error text of GitHub's JSON body that gh's stderr does not
-// already show, set off by a newline.
-func githubMessage(body []byte, shown string) string {
+// githubTexts is the message and the error texts of GitHub's JSON error body.
+func githubTexts(body []byte) []string {
 	var j struct {
 		Message string            `json:"message"`
 		Errors  []json.RawMessage `json:"errors"`
 	}
 	if json.Unmarshal(body, &j) != nil {
-		return ""
+		return nil
 	}
-	texts := []string{j.Message}
+	var texts []string
+	add := func(t string) {
+		if t != "" {
+			texts = append(texts, t)
+		}
+	}
+	add(j.Message)
 	for _, raw := range j.Errors {
 		var s string
 		var o struct {
 			Message string `json:"message"`
 		}
 		if json.Unmarshal(raw, &s) == nil {
-			texts = append(texts, s)
+			add(s)
 		} else if json.Unmarshal(raw, &o) == nil {
-			texts = append(texts, o.Message)
+			add(o.Message)
 		}
 	}
-	var out string
-	for _, t := range texts {
-		if t != "" && !strings.Contains(shown, t) {
-			out += "\n" + t
-		}
-	}
-	return out
+	return texts
 }
 
 // capped keeps the first max bytes written and drops the rest.
@@ -216,25 +234,27 @@ var reviewEvents = map[string]bool{"COMMENT": true, "APPROVE": true, "REQUEST_CH
 
 // SubmitReview submits the pending review of a review item as the engineer, with
 // the body it has on GitHub now (the engineer may have edited it there), or the
-// item's summary when that is empty. It returns what happened: submitted, or gone
-// when GitHub no longer has a pending review.
+// item's summary when that is empty. It returns what happened: ActionSubmitted,
+// or ActionGone when GitHub no longer has a pending review.
 func (s *Service) SubmitReview(session, id string, req SubmitRequest) (string, error) {
 	if !reviewEvents[req.Event] {
 		return "", invalid("event must be COMMENT, APPROVE or REQUEST_CHANGES")
 	}
-	return s.reviewAction(session, id, req.Event, req.Edited)
+	return s.reviewAction(session, id, false, req.Event, req.Edited)
 }
 
 // DiscardReview deletes the pending review of a review item. It returns
-// discarded, or gone when GitHub no longer has a pending review.
+// ActionDiscarded, or ActionGone when GitHub no longer has a pending review. A
+// review whose target is invalid has nothing to delete: it is discarded without
+// gh, so that an item no other action can answer still has a way out.
 func (s *Service) DiscardReview(session, id string) (string, error) {
-	return s.reviewAction(session, id, "", false)
+	return s.reviewAction(session, id, true, "", false)
 }
 
-// reviewAction runs gh for a review item and writes the answer. An empty event
-// is a discard. gh runs outside answerMu; only the answer is written under it,
-// and an item has one action at a time, so a double tap runs gh once.
-func (s *Service) reviewAction(session, id, event string, edited bool) (string, error) {
+// reviewAction runs gh for a review item and writes the answer. gh runs outside
+// answerMu; only the answer is written under it, and an item has one action at a
+// time, so a double tap runs gh once.
+func (s *Service) reviewAction(session, id string, discard bool, event string, edited bool) (string, error) {
 	it, err := s.open(session, id)
 	if err != nil {
 		return "", err
@@ -243,12 +263,15 @@ func (s *Service) reviewAction(session, id, event string, edited bool) (string, 
 		return "", invalid("item %s is a %s, not a review", id, it.Kind)
 	}
 	t, summary, err := targetOf(it)
-	if err != nil {
+	if err != nil && !discard {
 		return "", err
 	}
-	g, err := s.ghFor(session, t.host)
-	if err != nil {
-		return "", err
+	invalidTarget := err != nil
+	var g *ghRun
+	if !invalidTarget {
+		if g, err = s.ghFor(session, t.host); err != nil {
+			return "", err
+		}
 	}
 	key := session + "/" + id
 	s.actMu.Lock()
@@ -266,30 +289,41 @@ func (s *Service) reviewAction(session, id, event string, edited bool) (string, 
 		delete(s.acting, key)
 		s.actMu.Unlock()
 	}()
+	// An answer may have landed while this request waited for the item.
+	if _, err := s.open(session, id); err != nil {
+		return "", err
+	}
 
-	action, gerr := "", (*GhError)(nil)
-	if event == "" {
-		action = "discarded"
+	action, gerr := ActionDiscarded, (*GhError)(nil)
+	switch {
+	case invalidTarget:
+	case discard:
 		_, gerr = g.call("DELETE", t.endpoint(), nil)
-	} else {
+	default:
+		action = ActionSubmitted
 		var current []byte
 		if current, gerr = g.call("GET", t.endpoint(), nil); gerr == nil {
 			var r struct {
-				Body string `json:"body"`
+				State string `json:"state"`
+				Body  string `json:"body"`
 			}
 			_ = json.Unmarshal(current, &r)
-			if r.Body == "" {
-				r.Body = summary
+			switch {
+			case r.State != "" && r.State != "PENDING": // submitted on GitHub already
+				action = ActionGone
+			default:
+				if r.Body == "" {
+					r.Body = summary
+				}
+				_, gerr = g.call("POST", t.endpoint()+"/events", map[string]string{"event": event, "body": r.Body})
 			}
-			action = "submitted"
-			_, gerr = g.call("POST", t.endpoint()+"/events", map[string]string{"event": event, "body": r.Body})
 		}
 	}
 	if gerr != nil {
 		if !gerr.gone() {
 			return "", gerr
 		}
-		action = "gone"
+		action = ActionGone
 	}
 	err = s.Answer(session, id, KindReview, func(Item) (any, []outcomes.Record, error) {
 		file := struct {
@@ -300,17 +334,16 @@ func (s *Service) reviewAction(session, id, event string, edited bool) (string, 
 			Action   string `json:"action"`
 			Event    string `json:"event,omitempty"`
 		}{1, id, KindReview, time.Now().UTC().Format(time.RFC3339), action, ""}
-		rec := outcomes.Record{Fields: map[string]any{"item": id, "kind": KindReview}}
-		switch action {
-		case "submitted":
+		rec := outcomes.Record{Event: "review_discarded", Fields: map[string]any{"item": id, "kind": KindReview}}
+		switch {
+		case action == ActionSubmitted:
 			file.Event = event
 			rec.Event = "review_submitted"
 			rec.Fields["review_event"], rec.Fields["edited"] = event, edited
-		case "gone":
+		case action == ActionGone:
 			rec.Fields["external"] = true
-			fallthrough
-		default:
-			rec.Event = "review_discarded"
+		case invalidTarget:
+			rec.Fields["invalid_target"] = true
 		}
 		return file, []outcomes.Record{rec}, nil
 	})

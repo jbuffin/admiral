@@ -256,19 +256,24 @@ func serve(args []string) error {
 		}
 		k, ok := st.KeptInbox(session)
 		return k.Name, k.Harness, ok
-	}, Dock: func(session string) ([]string, bool) {
+	}, Dock: func(session string) ([]string, string) {
 		fleet, harness := "", ""
 		if sh, ok := shipService.Get(session); ok {
 			fleet, harness = sh.Fleet, sh.Harness
 		} else if k, ok := st.KeptInbox(session); ok {
 			fleet, harness = k.Fleet, k.Harness
+		} else {
+			return nil, "ship " + session + " is unknown"
 		}
 		f, ok := cfg.Current().Fleet(fleet)
 		if !ok {
-			return nil, false
+			return nil, "fleet " + fleet + " is not in the config"
 		}
 		dock, ok := f.Harness(harness)
-		return dock.Environ(), ok
+		if !ok {
+			return nil, "fleet " + fleet + " has no " + harness + " dock in the config"
+		}
+		return dock.Environ(), ""
 	}}
 	shipService.Orders = sourceService
 	shipService.OnChange = func() {
