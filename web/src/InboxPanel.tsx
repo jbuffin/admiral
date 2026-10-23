@@ -1,14 +1,30 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { harnesses } from './harnesses';
-import { type Entry, type InboxQuestion, reasonWords, safeHref, waited } from './inbox';
+import { type Entry, type InboxQuestion, prLink, reasonWords, safeHref, waited } from './inbox';
+import { type FindingCard, type Verdict } from './findings';
 import {
   answeredQuestion,
   choose,
   chooseOther,
+  cardsOf,
   clock,
   closeInbox,
+  FORGET_SUPPORTED,
+  decide,
+  decisionsOf,
+  discardReview,
   draftOf,
   editDraft,
+  editReview,
+  editingOf,
+  findingsUiOf,
+  isEditing,
+  markEdited,
+  reviewOf,
+  sendFindings,
+  setEditing,
+  submitReview,
+  watchDecisions,
   inbox,
   inboxOpen,
   pickOf,
@@ -215,6 +231,252 @@ function StopBody({ entry, name }: { entry: Entry; name: string }) {
   );
 }
 
+const EVENTS: [string, string, string][] = [
+  ['COMMENT', 'Leave comments without approving or blocking.', '#FFF6DA'],
+  ['APPROVE', 'Approve the changes.', '#DDF7F3'],
+  ['REQUEST_CHANGES', 'Block the merge until changes are made.', '#FFD9CC'],
+];
+
+function PrLine({ pr }: { pr: ReturnType<typeof prLink> }) {
+  if (!pr) return null;
+  return (
+    <span class="inbox-pr">
+      <a class="inbox-link" href={pr.href} target="_blank" rel="noopener noreferrer">
+        {pr.label} ↗
+      </a>
+      <span class="inbox-host">{pr.host}</span>
+    </span>
+  );
+}
+
+function Failure({ message, children }: { message: string; children?: preact.ComponentChildren }) {
+  if (!message) return null;
+  return (
+    <div class="inbox-failure">
+      <p class="inbox-error" role="alert">
+        {message}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+function ReviewBody({ entry }: { entry: Entry }) {
+  const r = entry.item?.review;
+  const ui = reviewOf(entry.key);
+  const pr = prLink(r?.pr_url);
+  const busy = ui.busy;
+  const set = (step: 'idle' | 'choose' | 'confirm' | 'discard') => editReview(entry.key, { step, error: '', gh: false });
+  return (
+    <>
+      <div class="inbox-summary">
+        <span class="inbox-eyebrow">Summary</span>
+        <p class="inbox-summary-text">{typeof r?.summary === 'string' ? r.summary : ''}</p>
+      </div>
+      <div class="inbox-prrow">
+        <PrLine pr={pr} />
+        <span class="inbox-hint">Pending review #{String(r?.review_id ?? '')}, not yet submitted</span>
+      </div>
+      {ui.step === 'idle' && (
+        <div class="inbox-actions">
+          <button type="button" class="press inbox-primary" disabled={busy} onClick={() => set('choose')}>
+            Submit
+          </button>
+          {pr && (
+            <a class="press inbox-secondary" href={pr.files} target="_blank" rel="noopener noreferrer" onClick={() => markEdited(entry.key)}>
+              Edit ↗
+            </a>
+          )}
+          <button type="button" class="press inbox-danger" disabled={busy} onClick={() => set('discard')}>
+            Discard
+          </button>
+        </div>
+      )}
+      {ui.step === 'choose' && (
+        <div class="inbox-ask" role="group" aria-label="Submit the review as">
+          {EVENTS.map(([ev, desc, bg]) => (
+            <button key={ev} type="button" class="press inbox-event" style={`background-color:${bg}`} onClick={() => editReview(entry.key, { step: 'confirm', event: ev, error: '', gh: false })}>
+              <span class="inbox-event-id">{ev}</span>
+              <span class="inbox-option-desc">{desc}</span>
+            </button>
+          ))}
+          <button type="button" class="press inbox-secondary" onClick={() => set('idle')}>
+            Cancel
+          </button>
+        </div>
+      )}
+      {ui.step === 'confirm' && (
+        <div class="inbox-ask confirm">
+          <p>
+            Submit this review as <b>{ui.event}</b>? It is posted to the PR as you.
+          </p>
+          <div class="inbox-actions">
+            <button type="button" class="press inbox-primary" disabled={busy} onClick={() => void submitReview(entry, ui.event)}>
+              Submit {ui.event}
+            </button>
+            <button type="button" class="press inbox-secondary" disabled={busy} onClick={() => set('choose')}>
+              Change
+            </button>
+          </div>
+        </div>
+      )}
+      {ui.step === 'discard' && (
+        <div class="inbox-ask discard">
+          <p>Discard this pending review? The draft comments are deleted from GitHub.</p>
+          <div class="inbox-actions">
+            <button type="button" class="press inbox-danger solid" disabled={busy} onClick={() => void discardReview(entry)}>
+              Discard review
+            </button>
+            <button type="button" class="press inbox-secondary" disabled={busy} onClick={() => set('idle')}>
+              Keep it
+            </button>
+          </div>
+        </div>
+      )}
+      {busy && (
+        <p class="inbox-hint" role="status" aria-live="polite">
+          Asking GitHub…
+        </p>
+      )}
+      <Failure message={ui.error}>
+        {ui.gh && FORGET_SUPPORTED && (
+          <button type="button" class="press inbox-secondary" disabled={busy} onClick={() => void discardReview(entry, true)}>
+            Remove from inbox — the review may still be pending on GitHub
+          </button>
+        )}
+      </Failure>
+    </>
+  );
+}
+
+const VERDICT: Record<Verdict, [string, string]> = {
+  agree: ['Agree', '#9BE08A'],
+  disagree: ['Disagree', '#FF9A7A'],
+  unclear: ['Unclear', '#FFE08A'],
+};
+const DECISIONS = [
+  ['Approve', 'approved', '#BDEFB0'],
+  ['Edit', 'edited', '#FFF0B8'],
+  ['Reject', 'rejected', '#FFC9B8'],
+] as const;
+
+function FindingCardView({ entry, card, n }: { entry: Entry; card: FindingCard; n: number }) {
+  watchDecisions();
+  const d = decisionsOf(entry);
+  const dec = d.decision(card.id);
+  const draft = editingOf(entry.key, card.id);
+  const locked = findingsUiOf(entry.key).busy; // the answer is on its way: what is sent is what the fold says
+  const shown = d.proposal(card.id);
+  const [verdict, vbg] = VERDICT[card.verdict];
+  const press = (name: string) => {
+    if (name === 'Approve') decide(entry, (x) => x.approve(card.id));
+    else if (name === 'Reject') {
+      setEditing(entry.key, card.id, undefined);
+      decide(entry, (x) => x.reject(card.id));
+    } else setEditing(entry.key, card.id, shown?.content ?? '');
+  };
+  return (
+    <section class="inbox-finding" aria-label={`Finding card ${n}`}>
+      <div class="inbox-finding-head">
+        <span class="inbox-kind" style={`background-color:${vbg}`}>
+          {verdict}
+        </span>
+        <span class="inbox-source">{card.source}</span>
+      </div>
+      <blockquote class="inbox-quote">{card.quote}</blockquote>
+      <p class="inbox-why">
+        <b>Why:</b> {card.reason}
+      </p>
+      {shown && (
+        <div class="inbox-proposal">
+          <span class="inbox-eyebrow">{shown.kind === 'reply' ? 'Proposed reply' : 'Proposed change'}</span>
+          {draft === undefined ? (
+            <pre class="inbox-pre">{shown.content}</pre>
+          ) : (
+            <>
+              <textarea
+                class="inbox-edit"
+                aria-label={`Edit the proposal for card ${n}`}
+                rows={5}
+                value={draft}
+                readOnly={locked}
+                onInput={(e) => setEditing(entry.key, card.id, (e.target as HTMLTextAreaElement).value)}
+              />
+              <div class="inbox-actions">
+                <button
+                  type="button"
+                  class="press inbox-primary"
+                  disabled={draft.trim() === '' || locked}
+                  onClick={() => {
+                    decide(entry, (x) => x.save(card.id, draft));
+                    setEditing(entry.key, card.id, undefined);
+                  }}
+                >
+                  Save
+                </button>
+                <button type="button" class="press inbox-secondary" onClick={() => setEditing(entry.key, card.id, undefined)}>
+                  Cancel
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+      {card.evidence.length > 0 && (
+        <div class="inbox-evidence">
+          <span class="inbox-eyebrow">Evidence</span>
+          {card.evidence.map((e, i) => (
+            <code key={i}>{e}</code>
+          ))}
+        </div>
+      )}
+      <div class="inbox-decide" role="group" aria-label={`Decision for card ${n}`}>
+        {DECISIONS.filter(([name]) => name !== 'Edit' || (shown && (shown.kind === 'diff' || shown.kind === 'reply'))).map(([name, value, bg]) => (
+          <button
+            key={name}
+            type="button"
+            class={`press inbox-decision${dec === value ? ' on' : ''}`}
+            style={dec === value ? `background-color:${bg}` : undefined}
+            aria-pressed={dec === value}
+            disabled={locked}
+            onClick={() => press(name)}
+          >
+            {name}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function FindingsBody({ entry }: { entry: Entry }) {
+  watchDecisions();
+  const d = decisionsOf(entry);
+  const ui = findingsUiOf(entry.key);
+  const cards = cardsOf(entry);
+  const pr = prLink(entry.item?.findings?.pr_url);
+  const { decided, total } = d.progress();
+  const open = isEditing(entry.key);
+  return (
+    <>
+      <PrLine pr={pr} />
+      {cards.map((c, i) => (
+        <FindingCardView key={c.id} entry={entry} card={c} n={i + 1} />
+      ))}
+      <Failure message={ui.error} />
+      <div class="inbox-send-row">
+        <button type="button" class="press inbox-primary" disabled={!d.canSend() || open || ui.busy} onClick={() => void sendFindings(entry)}>
+          Send
+        </button>
+        <span class="inbox-progress">
+          {decided} of {total} decided
+        </span>
+        {open && <span class="inbox-hint">Save or Cancel the open edit first.</span>}
+      </div>
+    </>
+  );
+}
+
 function Item({ entry }: { entry: Entry }) {
   const ship = entry.ship ?? ships.value.find((s) => s.session === entry.session);
   const name = entry.item?.name ?? ship?.name ?? entry.session;
@@ -252,7 +514,7 @@ function Item({ entry }: { entry: Entry }) {
           </a>
         )}
       </div>
-      {entry.type === 'stop' ? <StopBody entry={entry} name={name} /> : entry.item?.kind === 'question' && <QuestionBody entry={entry} />}
+      {entry.type === 'stop' ? <StopBody entry={entry} name={name} /> : entry.item?.kind === 'review' ? <ReviewBody entry={entry} /> : entry.item?.kind === 'findings' ? <FindingsBody entry={entry} /> : entry.item?.kind === 'question' && <QuestionBody entry={entry} />}
     </article>
   );
 }

@@ -18,7 +18,7 @@ export interface InboxItem {
   order_url?: string;
   question?: { questions: InboxQuestion[] };
   review?: { pr_url?: string; review_id?: number | string; summary?: string };
-  findings?: unknown;
+  findings?: { pr_url?: string; cards?: unknown };
 }
 
 export interface InboxQuestion {
@@ -65,6 +65,8 @@ export function createQueue() {
   // Answered items a stale push may still serve: they stay out until the server stops serving them.
   const answered = new Set<string>();
   const stopFirstSeen = new Map<string, number>();
+  // Entries whose action is in flight: they leave the count at the tap and come back if it fails.
+  const pending = new Set<string>();
   let cursor: string | null = null;
 
   const merge = (): Entry[] => {
@@ -141,7 +143,11 @@ export function createQueue() {
     },
 
     entries,
-    count: () => served.length,
+    count: () => served.filter((e) => !pending.has(e.key)).length,
+    setPending(key: string, on: boolean) {
+      if (on) pending.add(key);
+      else pending.delete(key);
+    },
     position(): { n: number; total: number } | null {
       const all = entries();
       if (all.length === 0) return null;
@@ -190,6 +196,25 @@ export function safeHref(url: string | undefined): string | undefined {
   try {
     const { protocol } = new URL(url);
     return protocol === 'https:' || protocol === 'http:' ? url : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// A PR address from an item file: only https addresses count. `label` is "owner/repo#n" for a github.com PR
+// and the address itself otherwise; `files` is the PR's changed-files page.
+export function prLink(url: string | undefined): { href: string; host: string; label: string; files: string } | undefined {
+  if (!url) return undefined;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:') return undefined;
+    const m = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\/?$/.exec(u.pathname);
+    return {
+      href: url,
+      host: u.host,
+      label: u.host === 'github.com' && m ? `${m[1]}/${m[2]}#${m[3]}` : url,
+      files: `${u.origin}${u.pathname.replace(/\/+$/, '')}/files`,
+    };
   } catch {
     return undefined;
   }
