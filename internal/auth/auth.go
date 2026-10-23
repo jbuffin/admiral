@@ -173,7 +173,7 @@ func (a *Auth) track(w http.ResponseWriter, r *http.Request, next http.Handler, 
 func (a *Auth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		isWS := strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
-		local := isLoopbackPeer(r)
+		local := IsLoopbackPeer(r)
 
 		if local && !hostAllowed(r.Host) {
 			http.Error(w, "forbidden host", http.StatusForbidden)
@@ -249,7 +249,8 @@ func unauthorized(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(unauthorizedPage))
 }
 
-func isLoopbackPeer(r *http.Request) bool {
+// IsLoopbackPeer reports whether the request came from this Mac.
+func IsLoopbackPeer(r *http.Request) bool {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return false

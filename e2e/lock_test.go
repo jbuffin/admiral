@@ -125,6 +125,8 @@ func (w *world) startLock(extra string, flags ...string) *lockProc {
 	args = append(args, "phone", "--", "sh", "-c", script, "sh", dir)
 	cmd := exec.Command(binaryPath(w.t), args...)
 	cmd.Dir, cmd.Env = w.userHom, w.baseEnv()
+	// A killed lock leaves its command running with our pipes open; Wait must not wait for it.
+	cmd.WaitDelay = 500 * time.Millisecond
 	l := &lockProc{cmd: cmd, stdout: &syncBuffer{}, err: &syncBuffer{}, done: make(chan struct{}), dir: dir}
 	cmd.Stdout, cmd.Stderr = l.stdout, l.err
 	if err := cmd.Start(); err != nil {

@@ -25,6 +25,7 @@ import (
 	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/launchorders"
+	"github.com/jbuffin/admiral/internal/lockroute"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/resources"
 	"github.com/jbuffin/admiral/internal/server"
@@ -48,6 +49,13 @@ func main() {
 			fmt.Println(help)
 			return
 		}
+		var exit *cli.ExitError
+		if errors.As(err, &exit) {
+			if exit.Msg != "" {
+				fmt.Fprintln(os.Stderr, "admiral:", exit.Msg)
+			}
+			os.Exit(exit.Code)
+		}
 		fmt.Fprintln(os.Stderr, "admiral:", err)
 		var usage *cli.UsageError
 		if errors.As(err, &usage) {
@@ -69,6 +77,9 @@ func run(args []string) error {
 	}
 	std := cli.Std()
 	for _, a := range args[1:] {
+		if a == "--" {
+			break // the rest is a command's own arguments
+		}
 		if cli.IsHelp(a) {
 			fmt.Println(cli.Usage(args[0]))
 			return nil
@@ -95,6 +106,8 @@ func run(args []string) error {
 		return cli.Hook(args[1:], std)
 	case "outcomes":
 		return cli.Outcomes(args[1:], std)
+	case "lock":
+		return cli.Lock(args[1:], std)
 	}
 	return &cli.UsageError{Msg: fmt.Sprintf("unknown command %q", args[0])}
 }
@@ -224,6 +237,8 @@ func serve(args []string) error {
 	engine.OnWait = sourceService.Notify
 	sourceService.OnLaunched = engine.Launched
 	supervisor.OnChange = func() { sourceService.Notify(); engine.Poke() }
+	stopping := make(chan struct{})
+	lockRoute := &lockroute.Route{Set: resourceSet, Stopping: stopping, OnTake: func() { resourceService.Broadcast() }}
 	bridgeService := bridge.New(tmuxPath, sock, shipService)
 	if exe, err := os.Executable(); err == nil && tmuxPath != "" {
 		bridgeService.Host, bridgeService.Setup = host, &bridge.SetupCommand{Exe: exe, Home: dir}
@@ -239,7 +254,7 @@ func serve(args []string) error {
 
 	s := &server.Server{Version: version, Commit: commit, UI: web.UI(), Messages: map[string]server.MessageHandler{}, Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService,
-			&launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}, bridgeService, resourceService}}
+			&launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}, bridgeService, resourceService, lockRoute}}
 	bg, stopBackground := context.WithCancel(context.Background())
 	var background sync.WaitGroup
 	supervisor.Start(bg)
@@ -290,6 +305,7 @@ func serve(args []string) error {
 	background.Add(1)
 	go func() { defer background.Done(); guard.Watch(bg, dir) }()
 	srv := &http.Server{Handler: guard.Middleware(s.Handler())}
+	srv.RegisterOnShutdown(func() { close(stopping) }) // a held lock would hold up the shutdown
 
 	fmt.Printf("Admiral is running at http://127.0.0.1:%s/\n", port)
 	bindHost, _, _ := net.SplitHostPort(*listen)
