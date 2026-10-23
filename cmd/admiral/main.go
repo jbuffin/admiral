@@ -221,13 +221,14 @@ func serve(args []string) error {
 			}
 			return out
 		},
-		Paused: st.Paused,
-		Dir:    launchService.Dir,
-		Launch: shipService.LaunchOrder,
-		Record: func(r outcomes.Record) { outcomeLog.Enqueue(r, nil) },
-		Now:    time.Now,
-		Store:  apStore,
-		OnHot:  sourceService.Notify,
+		Paused:   st.Paused,
+		Dir:      launchService.Dir,
+		Checkout: launchService.Checkout,
+		Launch:   shipService.LaunchOrder,
+		Record:   func(r outcomes.Record) { outcomeLog.Enqueue(r, nil) },
+		Now:      time.Now,
+		Store:    apStore,
+		OnHot:    sourceService.Notify,
 		Logf: func(format string, args ...any) {
 			fmt.Fprintf(os.Stderr, "admiral: "+format+"\n", args...)
 		},
@@ -292,7 +293,18 @@ func serve(args []string) error {
 		}
 		return id, nil
 	}
-	shipService.BeforeRemoveFiles = inboxService.CaptureResume
+	// A resume order launches where the ship that wrote the report ran (#120).
+	inboxService.Origin = func(session string) (inbox.Origin, bool) {
+		if sh, ok := shipService.Get(session); ok {
+			return sh.Origin(), true
+		}
+		k, ok := st.KeptInbox(session)
+		return inbox.Origin{Dir: k.Dir, Source: k.OriginSource, Panel: k.OriginPanel}, ok
+	}
+	inboxService.ResumeAdd = func(source, panel string, from inbox.Origin) func(string) {
+		return engine.BeginResume(source, panel, from.Dir, from.Source, from.Panel)
+	}
+	shipService.BeforeRemoveFiles = inboxService.CaptureResumeFrom
 	changed := supervisor.OnChange
 	supervisor.OnChange = func() { changed(); inboxService.KickResume() }
 	shipService.Orders = sourceService

@@ -54,6 +54,12 @@ type Request struct {
 	// or needs you (#118), recorded on the session. Set by autopilot only; a
 	// hand launch holds none.
 	Resources []string `json:"-"`
+	// OriginSource and OriginPanel are the autopilot panel whose entry the
+	// launch runs under, and whose max_ships it counts against (#120). Set by
+	// autopilot only: a resume order's ship runs under the resume panel but
+	// counts against the panel of the ship that wrote the report.
+	OriginSource string `json:"-"`
+	OriginPanel  string `json:"-"`
 }
 
 // Skill is the order's skill: Commodore, a named one, or none (Just launch).
@@ -128,7 +134,8 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	// The name and the time are ours.
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
-		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")}}
+		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")},
+		{"origin-source", req.OriginSource}, {"origin-panel", req.OriginPanel}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
 			return nil, refuse(http.StatusBadRequest, "%s contains a control character", o[0])

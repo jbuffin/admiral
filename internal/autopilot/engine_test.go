@@ -233,7 +233,7 @@ func TestEngineRequestComesFromThePanelEntry(t *testing.T) {
 	}
 	got := r.launches[0]
 	exp := launcher.Request{Fleet: "work", Harness: "claude", Dir: "/w/o1", Skill: launcher.Skill{Kind: "skill", Name: "review"},
-		Source: "s", OrderID: "o1", Panel: "p", Autopilot: true, LowStakes: "advisor", ExtraArgs: []string{"--permission-mode", "auto"}}
+		Source: "s", OrderID: "o1", Panel: "p", OriginSource: "s", OriginPanel: "p", Autopilot: true, LowStakes: "advisor", ExtraArgs: []string{"--permission-mode", "auto"}}
 	if !reflect.DeepEqual(got, exp) {
 		t.Errorf("request = %+v, want %+v", got, exp)
 	}

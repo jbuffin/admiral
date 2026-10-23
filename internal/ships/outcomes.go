@@ -280,7 +280,7 @@ func (s *Service) queueEnded(e ending) {
 			fmt.Fprintf(os.Stderr, "admiral: ship %s: its ended marker cannot be set: %v\n", name, merr)
 		}
 		if clean {
-			s.removeShipFiles(name, owner)
+			s.removeShipFiles(name, owner, FromSession(sess, time.Now()).Origin())
 		}
 	})
 }
@@ -333,7 +333,7 @@ func (s *Service) killShip(ctx context.Context, name string, keepInbox bool) err
 	}
 	s.mu.Unlock()
 	if clean {
-		s.removeShipFiles(name, tr)
+		s.removeShipFiles(name, tr, FromSession(sess, time.Now()).Origin())
 	}
 	return nil
 }
@@ -348,7 +348,8 @@ func (s *Service) keepInbox(sess sessionhost.Session) bool {
 		return false
 	}
 	o := sess.Options
-	rec := state.KeptShip{Name: o["name"], Fleet: o["fleet"], FleetName: o["fleet-name"], FleetColor: o["fleet-color"], Harness: o["harness"]}
+	rec := state.KeptShip{Name: o["name"], Fleet: o["fleet"], FleetName: o["fleet-name"], FleetColor: o["fleet-color"], Harness: o["harness"],
+		Dir: o["dir"], OriginSource: o["origin-source"], OriginPanel: o["origin-panel"]}
 	if err := s.State.KeepInbox(sess.Name, rec); err != nil {
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: its inbox cannot be kept: %v\n", sess.Name, err)
 		return false
@@ -382,7 +383,7 @@ func (s *Service) shipFiles(session string) (home, report, inbox string, ok bool
 // swapped in inside the home can still send one elsewhere within it. The checks
 // and the deletes share one hold of s.mu, so a launch that counts itself after
 // the checks waits for the deletes; one that counted before them keeps the files.
-func (s *Service) removeShipFiles(session string, owner *track) {
+func (s *Service) removeShipFiles(session string, owner *track, from inbox.Origin) {
 	home, _, _, ok := s.shipFiles(session)
 	if !ok {
 		return
@@ -399,7 +400,7 @@ func (s *Service) removeShipFiles(session string, owner *track) {
 		return
 	}
 	if s.BeforeRemoveFiles != nil {
-		s.BeforeRemoveFiles(session)
+		s.BeforeRemoveFiles(session, from)
 	}
 	launcher.RemoveShipFiles(home, session)
 }
