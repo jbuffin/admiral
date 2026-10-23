@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -26,14 +27,18 @@ type ExitError struct {
 	Msg  string
 }
 
-func (e *ExitError) Error() string { return e.Msg }
+func (e *ExitError) Error() string {
+	if e.Msg == "" {
+		return fmt.Sprintf("exit %d", e.Code)
+	}
+	return e.Msg
+}
 
 // Lock is `admiral lock [--port <n>] [--wait] <resource> -- <command…>` (#118):
 // it holds one unit of the resource while the command runs, and exits with the
 // command's status. The hold is an open request to the running server, so a
 // killed `admiral lock` frees the unit.
 func Lock(args []string, std IO) error {
-	const usage = "usage: admiral lock [--port <n>] [--wait] <resource> -- <command…>"
 	// Everything after the first -- is the command's, untouched.
 	var command []string
 	for i, a := range args {
@@ -43,7 +48,7 @@ func Lock(args []string, std IO) error {
 		}
 	}
 	if len(command) == 0 {
-		return usagef("%s", usage)
+		return usagef("%s", Usage("lock"))
 	}
 	fs := newFlags("lock")
 	port := fs.String("port", DefaultPort, "the port Admiral listens on")
@@ -52,7 +57,7 @@ func Lock(args []string, std IO) error {
 		return err
 	}
 	if fs.NArg() == 0 {
-		return usagef("%s", usage)
+		return usagef("%s", Usage("lock"))
 	}
 	// Flags may follow the resource too.
 	resource := fs.Arg(0)
@@ -93,26 +98,41 @@ func Lock(args []string, std IO) error {
 	var held struct {
 		Held bool `json:"held"`
 	}
-	line, err := bufio.NewReader(resp.Body).ReadBytes('\n')
+	body := bufio.NewReader(resp.Body)
+	line, err := body.ReadBytes('\n')
 	if err != nil || json.Unmarshal(line, &held) != nil || !held.Held {
 		return fmt.Errorf("the server did not confirm the lock")
 	}
 
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = std.In, std.Out, std.Err
-	// From here an interrupt belongs to the command.
+	// From here SIGTERM goes on to the command. The terminal delivers SIGINT, SIGHUP
+	// and SIGQUIT to the command itself (the same foreground group), so they are
+	// caught only to be ignored: passing them on would deliver them twice.
 	sigs := make(chan os.Signal, 4)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
 	defer signal.Stop(sigs)
 	if err := cmd.Start(); err != nil {
 		return &ExitError{lockExitNotStarted, fmt.Sprintf("%s: %v", command[0], err)}
 	}
 	done := make(chan struct{})
+	// The hold is the response: if it ends while the command runs, the server went
+	// away and the unit is free, so say so. The command keeps its own exit status.
+	go func() {
+		_, _ = io.Copy(io.Discard, body)
+		select {
+		case <-done:
+		default:
+			fmt.Fprintf(std.Err, "admiral: lost the lock on %s (the server went away); %s is still running without it\n", resource, filepath.Base(command[0]))
+		}
+	}()
 	go func() {
 		for {
 			select {
 			case s := <-sigs:
-				_ = cmd.Process.Signal(s)
+				if s == syscall.SIGTERM {
+					_ = cmd.Process.Signal(s)
+				}
 			case <-done:
 				return
 			}

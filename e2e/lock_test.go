@@ -226,6 +226,9 @@ func TestLockBlocksAnAutopilotLaunchUntilItEnds(t *testing.T) {
 	if code := w.waitExit(l, "after release"); code != 0 {
 		t.Errorf("admiral lock exited %d, want its command's 0; stderr %q", code, l.err.String())
 	}
+	if strings.Contains(l.err.String(), "lost the lock") {
+		t.Errorf("a command that ended first still got the lost-lock line: %q", l.err.String())
+	}
 	w.waitShipCount(10*time.Second, "o1's ship after the lock ended", fromOrder("o1"), 1)
 }
 
@@ -330,6 +333,30 @@ func TestLockKilledReleasesTheUnit(t *testing.T) {
 	w.waitExit(l, "after SIGKILL")
 	w.waitLock("free", func(r lockRes) bool { return r.InUse == 0 })
 	w.expectExit(w.lockCmd("phone", "--", "true"), 0, "a lock after the holder was killed")
+}
+
+// When Admiral stops under a running `admiral lock`, the lock says so on stderr
+// and leaves the command running; the lock's exit status is the command's.
+func TestLockLostWhenTheServerStops(t *testing.T) {
+	w := newWorld(t)
+	w.startPhone()
+	l := w.holds()
+	w.in.Stop()
+	deadline := time.Now().Add(10 * time.Second)
+	want := "lost the lock on phone (the server went away); sh is still running without it"
+	for !strings.Contains(l.err.String(), want) {
+		if time.Now().After(deadline) {
+			t.Fatalf("no lost-lock line within 10s of the server stopping; stderr %q", l.err.String())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if l.exited() {
+		t.Fatalf("admiral lock exited when the server stopped; the command should keep running: %q", l.err.String())
+	}
+	l.release()
+	if code := w.waitExit(l, "after release"); code != 0 {
+		t.Errorf("admiral lock exited %d, want its command's 0", code)
+	}
 }
 
 // The route answers 403 to a peer that is not loopback, token or not. It skips
