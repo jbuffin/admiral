@@ -133,6 +133,9 @@ func TestGuardRefusesMergesOnAnAutopilotShip(t *testing.T) {
 		b("api merges with fields and no -X", `gh api repos/o/r/merges -f base=main -f head=topic`, wantRuleGhAPIMerge),
 		b("api merges with -F", `gh api repos/o/r/merges -F base=main -F head=topic`, wantRuleGhAPIMerge),
 		file("api merges with --input", `gh api repos/o/r/merges --input m.json`, map[string]string{"m.json": `{"base":"main","head":"topic"}`}, wantRuleGhAPIMerge),
+		b("api expansion spanning the merge segment", `gh api -X PUT repos/o/r/pulls/$N`, wantRuleGhAPIMerge),
+		b("api expansion before a merge segment", `gh api -X PUT "$P/merge"`, wantRuleGhAPIMerge),
+		b("api expansion spanning the protection segment", `gh api -X DELETE repos/o/r/branches/$B`, wantRuleGhAPIMerge),
 		b("api merge in a pipeline", `echo '{}' | gh api -X PUT `+mergeRoute+` --input -`, wantRuleGhAPIMerge),
 
 		// GraphQL merges.
@@ -346,6 +349,11 @@ func TestGuardAutoMerge(t *testing.T) {
 		{"an expansion inside the PR", `gh pr merge "topic-$N" --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
 		{"an expansion as -R", `gh pr merge 12 --auto -s -R "$REPO"`, "squash", yes, wantRuleAutoMergeSteered},
 		{"an expansion as --repo=", `gh pr merge 12 --auto -s --repo=$REPO`, "squash", yes, wantRuleAutoMergeSteered},
+		{"env -C", `env -C /other/checkout gh pr merge --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
+		{"sudo --chdir", `sudo --chdir=/other/checkout gh pr merge --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
+		{"env -u GH_REPO", `env -u GH_REPO gh pr merge 12 --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
+		{"inline GIT_DIR", `GIT_DIR=/other/.git gh pr merge --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
+		{"xargs adds the PR", `echo 12 | xargs gh pr merge --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
 		{"arguments held in a variable", `gh pr merge $ARGS --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
 
 		// Refused: GitHub does not confirm that the base requires a review.
@@ -392,6 +400,7 @@ func TestGuardAutoMergeLookupArguments(t *testing.T) {
 		{"-R", `gh pr merge 12 --auto -s -R o/r`, []string{"12", "-R", "o/r"}},
 		{"--repo with a space", `gh pr merge 12 --auto -s --repo o/r`, []string{"12", "-R", "o/r"}},
 		{"--repo=", `gh pr merge 12 --auto -s --repo=o/r`, []string{"12", "-R", "o/r"}},
+		{"-R attached before merge", `gh pr -Racme/other merge 12 --auto -s`, []string{"12", "-R", "acme/other"}},
 		{"-R and no PR argument", `gh pr merge -R o/r --auto -s`, []string{"-R", "o/r"}},
 		{"flags before the PR", `gh pr merge --auto -s --delete-branch 12`, []string{"12"}},
 		{"a body is not a PR", `gh pr merge 12 --auto -s -b "some text"`, []string{"12"}},

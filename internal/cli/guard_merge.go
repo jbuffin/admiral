@@ -29,10 +29,29 @@ type guardState struct {
 	lookups [][]string
 }
 
-// steersGh says whether a word is an assignment of the variables that choose gh's
-// repository or host.
+// steersGh says whether a word is an assignment of the variables that choose the
+// repository, the host or the git directory gh reads them from.
 func steersGh(word string) bool {
-	return strings.HasPrefix(word, "GH_REPO=") || strings.HasPrefix(word, "GH_HOST=")
+	for _, v := range []string{"GH_REPO=", "GH_HOST=", "GIT_DIR=", "GIT_WORK_TREE="} {
+		if strings.HasPrefix(word, v) {
+			return true
+		}
+	}
+	return false
+}
+
+// steersWrapper says whether a word a wrapper (env, sudo, xargs…) consumed changes
+// where or how gh runs: a variable it sets, a directory it moves to, or an
+// environment it clears or unsets. The lookup runs in the payload's cwd and
+// environment, so any of them could point gh at another pull request.
+func steersWrapper(word string) bool {
+	switch {
+	case steersGh(word), word == "-u", word == "-i", word == "--ignore-environment",
+		strings.HasPrefix(word, "-C"), strings.HasPrefix(word, "-D"),
+		strings.HasPrefix(word, "--chdir"), strings.HasPrefix(word, "--unset"):
+		return true
+	}
+	return false
 }
 
 // gitSteers says whether a git command changes the branch, the remotes or the
@@ -65,6 +84,8 @@ func ghGlobalRepo(args []string) (repo string) {
 			}
 		case strings.HasPrefix(a, "--repo="):
 			repo = a[len("--repo="):]
+		case strings.HasPrefix(a, "-R") && len(a) > 2:
+			repo = a[2:]
 		case a == "--hostname":
 			i++
 		case !strings.HasPrefix(a, "-"):
@@ -245,6 +266,25 @@ func (g guardCheck) apiMerge(args []string, line *lineText) string {
 	}
 	if len(seg) >= 3 && is(seg[0], "orgs") && is(seg[2], "rulesets") {
 		return ruleGhAPIGateWrite
+	}
+	// An expansion can span segments ($P holding 12/merge). Past the last one the
+	// path must be plainly something else, and the expansion must not be the end.
+	last := -1
+	for i, s := range seg {
+		if hasPlaceholder(s) {
+			last = i
+		}
+	}
+	if last >= 0 {
+		rest := seg[last+1:]
+		switch {
+		case len(rest) == 0:
+			return ruleGhAPIMerge
+		case slices.Contains([]string{"merge", "merges"}, rest[len(rest)-1]):
+			return ruleGhAPIMerge
+		case slices.Contains(rest, "protection") || slices.Contains(rest, "rulesets"):
+			return ruleGhAPIGateWrite
+		}
 	}
 	return ""
 }

@@ -241,8 +241,8 @@ func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *li
 					return r
 				}
 			}
-			if slices.ContainsFunc(words[1:len(words)-len(args)], steersGh) {
-				g.st.steered = true
+			if slices.ContainsFunc(words[1:len(words)-len(args)], steersWrapper) || w == "xargs" {
+				g.st.steered = true // xargs adds the words it reads from stdin
 			}
 			words = args
 			continue
