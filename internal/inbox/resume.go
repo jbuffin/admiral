@@ -36,6 +36,18 @@ const resumeRetry = 15 * time.Second
 // addTimeout bounds one add.
 const addTimeout = 10 * time.Second
 
+// AddKind is what a failed add says about trying again.
+type AddKind int
+
+const (
+	// AddFinal: the source refused the order for good; it is dropped.
+	AddFinal AddKind = iota
+	// AddRetryable: nothing was changed and the add may work later.
+	AddRetryable
+	// AddUncertain: the order was sent and may have landed; it is never sent again.
+	AddUncertain
+)
+
 // readReport is the report of session as the ship wrote it, nil when it is
 // missing or unusable.
 func (s *Service) readReport(session string) []byte {
@@ -194,15 +206,15 @@ func (s *Service) addResumes(session string) (left bool) {
 		id, err := s.AddOrder(ctx, t.Source, t.Panel, pending[key].Text)
 		cancel()
 		who := pending[key].Session
-		var fail interface {
-			Retryable() bool
-			Uncertain() bool
-		}
+		var fail interface{ AddKind() AddKind }
 		uncertain := false
 		if err != nil {
-			errors.As(err, &fail)
-			switch {
-			case fail != nil && fail.Retryable():
+			kind := AddFinal
+			if errors.As(err, &fail) {
+				kind = fail.AddKind()
+			}
+			switch kind {
+			case AddRetryable:
 				left = true
 				if s.lastErr[key] != err.Error() {
 					fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume order is not added yet: %v\n", who, err)
@@ -212,7 +224,7 @@ func (s *Service) addResumes(session string) (left bool) {
 					s.lastErr[key] = err.Error()
 				}
 				continue
-			case fail != nil && fail.Uncertain():
+			case AddUncertain:
 				uncertain = true
 				fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume order may not have landed, and is not sent again: %v\n", who, err)
 			default:

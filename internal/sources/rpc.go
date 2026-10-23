@@ -242,6 +242,13 @@ func (p *proc) write(v any, timeout time.Duration) error {
 	return err
 }
 
+// notSentError is a call whose request line never went out, so the plugin did
+// nothing: a caller that must not repeat a request may repeat this one.
+type notSentError struct{ err error }
+
+func (e *notSentError) Error() string { return e.err.Error() }
+func (e *notSentError) Unwrap() error { return e.err }
+
 // call sends a request and waits for its answer. It fails after timeout, when
 // ctx ends and when the process exits.
 func (p *proc) call(ctx context.Context, method string, params any, timeout time.Duration) (json.RawMessage, error) {
@@ -260,10 +267,10 @@ func (p *proc) call(ctx context.Context, method string, params any, timeout time
 		forget()
 		select {
 		case <-p.exited:
-			return nil, errors.New(p.exitReason())
+			return nil, &notSentError{errors.New(p.exitReason())}
 		default:
 		}
-		return nil, fmt.Errorf("could not write to the order source: %w", err)
+		return nil, &notSentError{fmt.Errorf("could not write to the order source: %w", err)}
 	}
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()

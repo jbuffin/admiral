@@ -11,11 +11,10 @@ import (
 	"github.com/jbuffin/admiral/internal/state"
 )
 
-type addFailure struct{ retry, uncertain bool }
+type addFailure struct{ kind AddKind }
 
-func (e addFailure) Error() string   { return "add failed" }
-func (e addFailure) Retryable() bool { return e.retry }
-func (e addFailure) Uncertain() bool { return e.uncertain }
+func (e addFailure) Error() string    { return "add failed" }
+func (e addFailure) AddKind() AddKind { return e.kind }
 
 // resumeFixture is a home with one ship whose report lists q-1, answered.
 type resumeFixture struct {
@@ -73,8 +72,8 @@ func TestAddResumesByHowTheAddFailed(t *testing.T) {
 	}{
 		{"it worked", nil, 0, false},
 		{"the source refused the text", errors.New("An order cannot be empty"), 0, false},
-		{"the source is not running yet", addFailure{retry: true}, 1, true},
-		{"the plugin may have added it", addFailure{uncertain: true}, 0, false},
+		{"the source is not running yet", addFailure{AddRetryable}, 1, true},
+		{"the plugin may have added it", addFailure{AddUncertain}, 0, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

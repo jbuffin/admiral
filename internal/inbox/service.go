@@ -41,9 +41,9 @@ type Service struct {
 	Kept *state.Store
 	// ResumeTarget is autopilot.resume_source; nil when the config names none.
 	ResumeTarget func() *config.ResumeSource
-	// AddOrder adds an order to a panel of a source. A failure may say, through
-	// Retryable() bool and Uncertain() bool, that nothing changed and it may pass,
-	// or that the order may have been added; any other failure is final.
+	// AddOrder adds an order to a panel of a source. A failure says through
+	// AddKind() AddKind whether it may pass or the order may have been added; any
+	// other failure is final.
 	AddOrder func(ctx context.Context, source, panel, text string) (id string, err error)
 
 	answerMu sync.Mutex        // one answer at a time

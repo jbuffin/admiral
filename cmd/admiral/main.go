@@ -280,7 +280,7 @@ func serve(args []string) error {
 	inboxService.ResumeTarget = func() *config.ResumeSource { return cfg.Current().ResumeSource }
 	inboxService.AddOrder = func(ctx context.Context, source, panel, text string) (string, error) {
 		id, fail := sourceService.AddOrder(ctx, source, panel, text)
-		if fail != nil {
+		if fail != nil { // not `return ...AddOrder(...)`: a nil *RequestError would be a non-nil error
 			return "", fail
 		}
 		return id, nil

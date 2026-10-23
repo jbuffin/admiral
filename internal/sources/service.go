@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/ships"
@@ -813,28 +814,24 @@ func (s *Service) mutable(w http.ResponseWriter, key, capability string) (*runne
 type RequestError struct {
 	Status int
 	Msg    string
-	// transient: nothing was changed and the same request may work later (a
-	// source that is missing, restarting or read-only, a panel not there yet, a
-	// plugin that refused). sent: the request reached the plugin and the outcome is
-	// unknown (a timeout, a plugin that died, an answer that is not an order id).
-	// A request with neither was refused for good.
-	transient, sent bool
+	// kind is what a caller that repeats the request needs to know; the zero
+	// value is a final refusal.
+	kind inbox.AddKind
 }
 
 func (e *RequestError) Error() string { return e.Msg }
 
-// Retryable says nothing was changed and the request may work later.
-func (e *RequestError) Retryable() bool { return e.transient }
-
-// Uncertain says the plugin may have done what was asked: sending it again may
-// do it twice.
-func (e *RequestError) Uncertain() bool { return e.sent }
+// AddKind says whether the request may be sent again: it changed nothing and may
+// work later (a source that is missing or not running, a panel not there yet, a
+// plugin that refused), it may have been done (it was sent and the outcome is
+// unknown), or it was refused for good.
+func (e *RequestError) AddKind() inbox.AddKind { return e.kind }
 
 // mutableFor is mutable for a caller that has no response to write.
 func (s *Service) mutableFor(key, capability string) (*runner, *proc, *RequestError) {
 	rn := s.Sup.runner(key)
 	if rn == nil {
-		return nil, nil, &RequestError{Status: http.StatusNotFound, Msg: "source " + key + " not found", transient: true}
+		return nil, nil, &RequestError{Status: http.StatusNotFound, Msg: "source " + key + " not found", kind: inbox.AddRetryable}
 	}
 	rn.mu.Lock()
 	readOnly, state, caps := rn.readOnly, rn.state, rn.caps
@@ -842,11 +839,11 @@ func (s *Service) mutableFor(key, capability string) (*runner, *proc, *RequestEr
 	p, live := rn.live()
 	switch {
 	case readOnly:
-		return nil, nil, &RequestError{Status: http.StatusConflict, Msg: "The source is read-only until it runs again", transient: true}
+		return nil, nil, &RequestError{Status: http.StatusConflict, Msg: "The source is read-only until it runs again", kind: inbox.AddRetryable}
 	case !live:
-		return nil, nil, &RequestError{Status: http.StatusConflict, Msg: "The source is " + state + ", not running yet", transient: true}
+		return nil, nil, &RequestError{Status: http.StatusConflict, Msg: "The source is " + state + ", not running yet", kind: inbox.AddRetryable}
 	case !slices.Contains(caps, capability):
-		return nil, nil, &RequestError{Status: http.StatusConflict, Msg: "The source cannot " + capability + " orders", transient: true}
+		return nil, nil, &RequestError{Status: http.StatusConflict, Msg: "The source cannot " + capability + " orders", kind: inbox.AddRetryable}
 	}
 	return rn, p, nil
 }
@@ -854,13 +851,16 @@ func (s *Service) mutableFor(key, capability string) (*runner, *proc, *RequestEr
 // callFailure is a failed request to a plugin, as the route answers it.
 func callFailure(err error) *RequestError {
 	var rpc *rpcError
+	var unsent *notSentError
 	switch {
 	case errors.As(err, &rpc):
-		return &RequestError{Status: http.StatusUnprocessableEntity, Msg: rpc.Error(), transient: true} // the plugin refused: nothing changed
+		return &RequestError{Status: http.StatusUnprocessableEntity, Msg: rpc.Error(), kind: inbox.AddRetryable} // the plugin refused: nothing changed
+	case errors.As(err, &unsent):
+		return &RequestError{Status: http.StatusBadGateway, Msg: err.Error(), kind: inbox.AddRetryable} // the request never went out
 	case errors.Is(err, errTimeout):
-		return &RequestError{Status: http.StatusGatewayTimeout, Msg: err.Error(), sent: true}
+		return &RequestError{Status: http.StatusGatewayTimeout, Msg: err.Error(), kind: inbox.AddUncertain}
 	}
-	return &RequestError{Status: http.StatusBadGateway, Msg: err.Error(), sent: true}
+	return &RequestError{Status: http.StatusBadGateway, Msg: err.Error(), kind: inbox.AddUncertain}
 }
 
 // callError answers a failed request to a plugin.
@@ -956,7 +956,7 @@ func (s *Service) AddOrder(ctx context.Context, key, panel, text string) (string
 	}
 	id, found := panelOf(rn, panel, "")
 	if !found {
-		return "", &RequestError{Status: http.StatusNotFound, Msg: "panel " + strconv.Quote(panel) + " not found", transient: true}
+		return "", &RequestError{Status: http.StatusNotFound, Msg: "panel " + strconv.Quote(panel) + " not found", kind: inbox.AddRetryable}
 	}
 	panel = id
 	res, err := p.call(ctx, "orders.add", map[string]any{"panel": panel, "text": text}, callTimeout)
@@ -968,7 +968,7 @@ func (s *Service) AddOrder(ctx context.Context, key, panel, text string) (string
 	}
 	if err := json.Unmarshal(res, &added); err != nil || added.ID == "" || hasControl(added.ID) {
 		rn.logf("protocol error: orders.add answered %s", cleanMsg(string(res)))
-		return "", &RequestError{Status: http.StatusBadGateway, Msg: "the order source did not answer with the new order's id", sent: true}
+		return "", &RequestError{Status: http.StatusBadGateway, Msg: "the order source did not answer with the new order's id", kind: inbox.AddUncertain}
 	}
 	rn.wantPull(false, panel)
 	return added.ID, nil
