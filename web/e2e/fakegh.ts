@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, readdirSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, existsSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -41,10 +41,11 @@ export class FakeGh {
   /** The `gh api` calls so far, oldest first. */
   calls(): Call[] {
     const root = join(this.dir, 'calls');
+    // Each call's directory has a random suffix, so the order is the order they were made in.
     return readdirSync(root)
-      .sort()
       .map((d) => join(root, d))
       .filter((d) => existsSync(join(d, 'endpoint')))
+      .sort((a, b) => statSync(a).birthtimeMs - statSync(b).birthtimeMs)
       .map((d) => ({
         method: readFileSync(join(d, 'method'), 'utf8').trim(),
         endpoint: readFileSync(join(d, 'endpoint'), 'utf8').trim(),

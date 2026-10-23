@@ -140,7 +140,7 @@ export async function api<T = unknown>(
   method: string,
   path: string,
   body?: unknown,
-): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
+): Promise<{ ok: true; data: T } | { ok: false; error: string; status?: number }> {
   try {
     const res = await fetch(path, {
       method,
@@ -149,7 +149,7 @@ export async function api<T = unknown>(
     });
     const data = await res.json().catch(() => null);
     if (res.ok) return { ok: true, data };
-    return { ok: false, error: data?.error ?? `The server answered ${res.status}` };
+    return { ok: false, error: data?.error ?? `The server answered ${res.status}`, status: res.status };
   } catch {
     return { ok: false, error: 'Could not reach Admiral' };
   }

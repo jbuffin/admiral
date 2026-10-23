@@ -1,5 +1,6 @@
 import { computed, effect, signal } from '@preact/signals';
 import { onMessage } from './connection';
+import { type Decisions, type FindingCard, createDecisions, readCards } from './findings';
 import { type Entry, type InboxItem, type InboxQuestion, createQueue } from './inbox';
 import { ships } from './ships';
 import { api } from './sources';
@@ -70,6 +71,10 @@ export const inbox = {
     queue.fold(key, text, Date.now());
     bump();
   },
+  setPending(key: string, on: boolean) {
+    queue.setPending(key, on);
+    bump();
+  },
 };
 
 // ---- what the engineer has entered on an item ----
@@ -134,4 +139,122 @@ export async function sendAnswers(entry: Entry): Promise<void> {
   sending.delete(entry.key);
   editDraft(entry.key, (x) => ({ ...x, sending: false, error: r.ok ? '' : r.error }));
   refresh();
+}
+
+// ---- review items ----
+
+export type ReviewStep = 'idle' | 'choose' | 'confirm' | 'discard';
+export interface ReviewUi {
+  step: ReviewStep;
+  event: string;
+  busy: boolean;
+  error: string;
+  /** A failure of the last action, which offers "Remove from inbox" (the server side is u5's). */
+  gh: boolean;
+}
+const reviews = signal<Record<string, ReviewUi>>({});
+const noReview: ReviewUi = { step: 'idle', event: '', busy: false, error: '', gh: false };
+export const reviewOf = (key: string): ReviewUi => reviews.value[key] ?? noReview;
+export function editReview(key: string, patch: Partial<ReviewUi>): void {
+  reviews.value = { ...reviews.value, [key]: { ...reviewOf(key), ...patch } };
+}
+// The engineer pressed Edit on this item in this page's life: Submit says so.
+const opened = new Set<string>();
+export const markEdited = (key: string) => void opened.add(key);
+
+// Whether the server takes `discard {"forget": true}` (u5). Until it does, "Remove from inbox" stays hidden.
+export const FORGET_SUPPORTED = false;
+
+const itemPath = (it: InboxItem, verb: string) => `/api/inbox/${encodeURIComponent(it.session)}/${encodeURIComponent(it.id)}/${verb}`;
+
+// Runs an action on an item. The badge drops at the tap; a refusal brings it back and keeps what was entered.
+async function act(
+  entry: Entry,
+  verb: string,
+  body: unknown,
+  foldText: (data: { action?: string; invalid_target?: boolean }) => string,
+  setBusy: (busy: boolean, error: string, gh: boolean) => void,
+): Promise<void> {
+  const it = entry.item;
+  if (!it) return;
+  setBusy(true, '', false);
+  sending.set(entry.key, it);
+  inbox.setPending(entry.key, true);
+  const r = await api<{ action?: string; invalid_target?: boolean }>('POST', itemPath(it, verb), body);
+  if (r.ok) inbox.fold(entry.key, foldText(r.data ?? {}));
+  else inbox.setPending(entry.key, false);
+  sending.delete(entry.key);
+  setBusy(false, r.ok ? '' : r.error, !r.ok && (r.status === 502 || r.status === 503));
+  refresh();
+}
+
+export function submitReview(entry: Entry, event: string): Promise<void> {
+  return act(
+    entry,
+    'submit',
+    { event, edited: opened.has(entry.key) },
+    (d) => (d.action === 'gone' ? 'Review no longer pending on GitHub' : `Review submitted: ${event}`),
+    (busy, error, gh) => editReview(entry.key, { busy, error, gh }),
+  );
+}
+
+export function discardReview(entry: Entry, forget = false): Promise<void> {
+  return act(
+    entry,
+    'discard',
+    forget ? { forget: true } : undefined,
+    (d) => (forget ? 'Removed from the inbox' : d.invalid_target ? 'Review removed from the inbox; nothing changed on GitHub' : d.action === 'gone' ? 'Review no longer pending on GitHub' : 'Review discarded'),
+    (busy, error, gh) => editReview(entry.key, { busy, error, gh }),
+  );
+}
+
+// ---- findings items ----
+
+const decisions = new Map<string, Decisions>();
+const cardsByItem = new Map<string, FindingCard[]>();
+export function cardsOf(entry: Entry): FindingCard[] {
+  decisionsOf(entry);
+  return cardsByItem.get(entry.key)!;
+}
+const fver = signal(0);
+const fbump = () => (fver.value = fver.peek() + 1);
+export function decisionsOf(entry: Entry): Decisions {
+  let d = decisions.get(entry.key);
+  if (!d) {
+    const cards = readCards(entry.item?.findings?.cards);
+    cardsByItem.set(entry.key, cards);
+    decisions.set(entry.key, (d = createDecisions(cards)));
+  }
+  return d;
+}
+/** Read before a render that shows the decisions, so it re-renders when they change. */
+export const watchDecisions = () => void fver.value;
+export function decide(entry: Entry, fn: (d: Decisions) => unknown): void {
+  fn(decisionsOf(entry));
+  fbump();
+}
+
+// The text being edited on a card, by item key then card id; absent when its textarea is closed.
+const editing = signal<Record<string, Record<string, string>>>({});
+export const editingOf = (key: string, id: string): string | undefined => editing.value[key]?.[id];
+export function setEditing(key: string, id: string, text: string | undefined): void {
+  const mine = { ...editing.value[key] };
+  if (text === undefined) delete mine[id];
+  else mine[id] = text;
+  editing.value = { ...editing.value, [key]: mine };
+}
+
+const findingsUi = signal<Record<string, { busy: boolean; error: string }>>({});
+export const findingsUiOf = (key: string) => findingsUi.value[key] ?? { busy: false, error: '' };
+
+export function sendFindings(entry: Entry): Promise<void> {
+  const d = decisionsOf(entry);
+  if (!d.canSend()) return Promise.resolve();
+  return act(
+    entry,
+    'findings',
+    d.payload(),
+    () => d.summary(),
+    (busy, error) => (findingsUi.value = { ...findingsUi.value, [entry.key]: { busy, error } }),
+  );
 }
