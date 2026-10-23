@@ -184,7 +184,7 @@ var (
 
 // guardCheck holds what resolving a command needs of the payload: the directory
 // that relative files named on the command line are read from, and the state the
-// walk over the command line builds up (see merge.go).
+// walk over the command line builds up (see guard_merge.go).
 type guardCheck struct {
 	cwd string
 	st  *guardState
@@ -240,6 +240,8 @@ func (g guardCheck) gh(args []string, line *lineText) string {
 		if prEditRetargets(sub[2:]) {
 			return rulePrBaseChange
 		}
+	case len(sub) >= 2 && sub[0] == "auth" && authReadsToken(sub[1], args):
+		return ruleTokenRead
 	case len(sub) >= 1 && (sub[0] == "alias"):
 		return ruleGhAlias
 	case len(sub) >= 1 && (sub[0] == "extension" || sub[0] == "ext"):

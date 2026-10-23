@@ -134,6 +134,14 @@ func mcpMerges(tool string) bool {
 	return !slices.ContainsFunc([]string{"list_", "get_", "search_"}, func(p string) bool { return strings.HasPrefix(name, p) })
 }
 
+// authReadsToken says whether a gh auth call prints a token: `token`,
+// `git-credential`, or `status` with -t or --show-token anywhere in the arguments.
+func authReadsToken(sub string, args []string) bool {
+	return sub == "token" || sub == "git-credential" || sub == "status" && slices.ContainsFunc(args, func(a string) bool {
+		return a == "--show-token" || len(a) > 1 && a[0] == '-' && a[1] != '-' && strings.Contains(a, "t")
+	})
+}
+
 // tokenRead is a call that reads the GitHub token: `gh auth token`, or a mention
 // of the variables gh takes one from.
 var tokenRead = regexp.MustCompile(`\b(?:GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN)\b|\bgh\b[^\n;|&]*\bauth\s+token\b`)
@@ -142,7 +150,7 @@ var tokenRead = regexp.MustCompile(`\b(?:GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOK
 // that merges, or a rule that gates one. mergeTextRule is the merge counterpart
 // of the review text rule.
 var (
-	prMergeText   = regexp.MustCompile(`(?i)\bpr\b[^\n;|&]*\bmerge\b`)
+	prMergeText   = regexp.MustCompile(`(?is)\bpr\b.*\bmerge\b`)
 	mergeRouteTxt = regexp.MustCompile(`(?i)\bpulls/\S*merge|/merges\b`)
 	gateRouteText = regexp.MustCompile(`(?i)\brulesets\b|/protection\b`)
 )
@@ -398,7 +406,7 @@ func (g guardCheck) apiMerge(args []string, line *lineText) string {
 	if last >= 0 {
 		rest := seg[last+1:]
 		switch {
-		case len(rest) == 0 && routeExtends(seg[:last]):
+		case len(rest) == 0 && routeExtends(seg[:last], strings.EqualFold(p.method, "PATCH")):
 			return ruleGhAPIMerge
 		case len(rest) > 0 && slices.Contains([]string{"merge", "merges"}, rest[len(rest)-1]):
 			return ruleGhAPIMerge
@@ -430,10 +438,11 @@ func (g guardCheck) retargets(p apiArgs, line *lineText) bool {
 
 // routeExtends says whether an expansion after this literal prefix of a path
 // could complete a merge or gate route: the root, repos/<o>/<r> and what is above
-// it, pulls/<n>, anything under branches, orgs/<o>. Under issues, comments and
+// it, pulls (unless the write is a PATCH, which edits a pull request), pulls/<n>,
+// anything under branches, orgs/<o>. Under issues, comments and
 // the like an expansion would have to hide a "../" to get anywhere, which the
 // path normalisation already resolves.
-func routeExtends(prefix []string) bool {
+func routeExtends(prefix []string, patch bool) bool {
 	if len(prefix) == 0 || hasPlaceholder(prefix[0]) {
 		return true
 	}
@@ -456,7 +465,7 @@ func routeExtends(prefix []string) bool {
 	case len(t) == 0:
 		return true
 	case t[0] == "pulls":
-		return len(t) == 2
+		return len(t) == 2 || len(t) == 1 && !patch // pulls/$N is a PATCH of a pull request, or the merge route's PUT
 	}
 	return t[0] == "branches" || t[0] == "rulesets" || hasPlaceholder(t[0])
 }
@@ -508,10 +517,6 @@ func gqlOpaque(q string) bool {
 	}
 	return false
 }
-
-// plainQuery is a literal query operation, the only text an expansion in a
-// GraphQL query is allowed beside.
-var plainQuery = regexp.MustCompile(`\bquery\b[^"']*\{`)
 
 // graphqlUnreadable says whether a gh api graphql call names a query file or an
 // --input body that cannot be read, which is refused before the review rules so
@@ -588,19 +593,15 @@ func (g guardCheck) graphqlMutates(p apiArgs, line *lineText) string {
 		}
 		queries = append(queries, body.Query, b)
 	}
+	expanded := false
 	for _, q := range queries {
 		if hasPlaceholder(q) {
-			if !onlyExpansion(q) && gqlOpaque(q) {
+			// An expansion in a query can be any text: a value that closes its string
+			// and adds a mutation. Only a query with a literal operation and no
+			// mutation, whose expansions are values, passes.
+			expanded = true
+			if onlyExpansion(q) || strings.Contains(q, "mutation") || gqlOpaque(q) {
 				return ruleGraphqlMerge
-			}
-			if onlyExpansion(q) {
-				// The query was set elsewhere on the line: it must be shown there, as a
-				// plain query, and not through a substitution in this statement.
-				if strings.Contains(stmt, "$(") || strings.Contains(stmt, "`") || strings.Contains(stmt, "<(") ||
-					!plainQuery.MatchString(line.text) || strings.Contains(line.text, "mutation") {
-					return ruleGraphqlMerge
-				}
-				q = line.text
 			}
 		}
 		switch {
@@ -612,6 +613,11 @@ func (g guardCheck) graphqlMutates(p apiArgs, line *lineText) string {
 			(strings.Contains(line.text, "baseRefName") || strings.Contains(q, "baseRefName") || gqlInputBound.MatchString(q) || hasPlaceholder(q)):
 			return rulePrBaseChange
 		}
+	}
+	// operationName picks which of several operations runs, which an expansion
+	// could have added.
+	if expanded && slices.ContainsFunc(p.fields, func(f apiField) bool { return f.key == "operationName" }) {
+		return ruleGraphqlMerge
 	}
 	return ""
 }

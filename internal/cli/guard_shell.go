@@ -227,13 +227,19 @@ func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *li
 		words[i] = wordText(w)
 	}
 	for _, a := range c.Assigns {
-		if a.Name != nil && steersGh(a.Name.Value+"=") {
+		if a.Name == nil {
+			continue
+		}
+		if slices.Contains(aliasTables, a.Name.Value) {
+			return ruleShellAlias
+		}
+		if steersGh(a.Name.Value + "=") {
 			g.st.steered = true
 		}
 	}
 	for len(words) > 0 {
 		if hasPlaceholder(words[0]) {
-			if sub := ghSubcommand(words[1:]); len(sub) >= 1 && sub[0] == "api" || len(sub) >= 2 && sub[0] == "pr" && (sub[1] == "review" || sub[1] == "merge" || sub[1] == "edit") {
+			if sub := ghSubcommand(words[1:]); len(sub) >= 1 && slices.Contains([]string{"api", "alias", "extension", "ext", "auth"}, sub[0]) || len(sub) >= 2 && sub[0] == "pr" && (sub[1] == "review" || sub[1] == "merge" || sub[1] == "edit") {
 				return g.gh(words[1:], line)
 			}
 			if r := line.span(c); r != "" || !onlyExpansion(words[0]) {
@@ -262,7 +268,7 @@ func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *li
 		switch {
 		case w == "cd" || w == "pushd" || w == "popd":
 			g.st.steered = true
-		case w == "alias" || w == "unalias":
+		case w == "alias" || w == "unalias" || w == "hash" && hashRenames(args):
 			return ruleShellAlias
 		case w == "source" || w == ".":
 			return ruleShellScript
@@ -276,12 +282,29 @@ func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *li
 			return g.shell(c, args, redirs, line, depth)
 		case w == "eval":
 			return g.script(c, strings.Join(args, " "), line, depth)
-		case w == "trap" && len(args) > 0 && !strings.HasPrefix(args[0], "-"):
-			return g.script(c, args[0], line, depth) // the handler is a script
+		case w == "trap":
+			if len(args) > 0 && args[0] == "--" {
+				args = args[1:]
+			}
+			if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+				return g.script(c, args[0], line, depth) // the handler is a script
+			}
 		}
 		return ""
 	}
 	return ""
+}
+
+// aliasTables are the shell variables that define names for commands: zsh's
+// aliases, functions and commands, and bash's BASH_ALIASES and BASH_CMDS.
+var aliasTables = []string{"aliases", "galiases", "saliases", "functions", "commands", "BASH_ALIASES", "BASH_CMDS"}
+
+// hashRenames says whether a hash call binds a name to a path (bash's -p, zsh's
+// name=path), which runs another program under that name.
+func hashRenames(args []string) bool {
+	return slices.ContainsFunc(args, func(a string) bool {
+		return strings.Contains(a, "=") || len(a) > 1 && a[0] == '-' && a[1] != '-' && strings.Contains(a, "p")
+	})
 }
 
 var markWords = strings.NewReplacer(placeholder+splitMark, marker, placeholder, marker)
@@ -295,7 +318,10 @@ func (g guardCheck) script(c *syntax.CallExpr, text string, line *lineText, dept
 		if r := line.span(c); r != "" {
 			return r
 		}
-		return line.wholeRule()
+		if r := line.wholeRule(); r != "" {
+			return r
+		}
+		return ruleShellScript // the script is built or read somewhere the guard cannot see
 	}
 	return g.command(markWords.Replace(text), depth+1)
 }
