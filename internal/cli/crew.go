@@ -95,10 +95,11 @@ func crewTarget(ship string) (*crewShip, error) {
 		if session == "" {
 			return nil, fmt.Errorf("no ship called %q (admiral ships lists them)", ship)
 		}
-		// An autopilot ship's teammates must not be launched into another ship,
-		// whose guard rules and credentials differ.
-		if os.Getenv("ADMIRAL_AUTOPILOT") == "1" && env != "" && session != env {
-			return nil, fmt.Errorf("an autopilot ship cannot launch crew in another ship (--ship %s is not %s)", ship, env)
+		// An autopilot ship must not reach the crew of another ship, whose guard
+		// rules and credentials differ. With no ADMIRAL_SHIP (a crew boat's) it
+		// reaches none by --ship: fail closed.
+		if os.Getenv("ADMIRAL_AUTOPILOT") == "1" && session != env {
+			return nil, fmt.Errorf("an autopilot ship cannot reach crew of another ship (--ship %s is not this ship)", ship)
 		}
 	}
 	l := &launcher.Launcher{Tmux: tmux, Socket: sock, Home: dir}
