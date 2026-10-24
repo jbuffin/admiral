@@ -47,14 +47,14 @@ type retroWrite struct {
 // retroStep makes the retro orders due this pass. It runs after the launches and
 // holds no lock across the plugin call; e.pass keeps two passes from adding for
 // the same panel at once.
-func (e *Engine) retroStep(cfg *config.Config, list []ships.Ship, srcs map[string]Source) {
+func (e *Engine) retroStep(cfg *config.Config, known bool, list []ships.Ship, srcs map[string]Source) {
 	if e.Log == nil || e.AddOrder == nil {
 		return
 	}
 	e.rewriteRetros()
 	// The ship list is empty while it is not known, so no ship can say a retro is
-	// still out there.
-	if e.Known != nil && !e.Known() {
+	// still out there. known is what Pass read before it took the list.
+	if !known {
 		return
 	}
 	type due struct {

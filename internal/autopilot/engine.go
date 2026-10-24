@@ -197,6 +197,9 @@ func (e *Engine) Pass() {
 	e.pass.Lock()
 	defer e.pass.Unlock()
 	cfg := e.Config()
+	// Known is read before the list: a list read while not known is empty, and
+	// the host may recover before the retro step runs.
+	known := e.Known == nil || e.Known()
 	list := e.Ships()
 	srcs := map[string]Source{}
 	for _, src := range e.Sources() {
@@ -204,7 +207,7 @@ func (e *Engine) Pass() {
 		e.forget(src)
 	}
 	// After the launches, however they end: the retro step needs no room under a cap.
-	defer e.retroStep(cfg, list, srcs)
+	defer e.retroStep(cfg, known, list, srcs)
 
 	total, perPanel := 0, map[[2]string]int{}
 	for _, sh := range list {

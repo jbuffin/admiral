@@ -43,6 +43,7 @@ type rig struct {
 	held     []heldWrite
 	minutes  int    // the clock of the log's lines
 	unknown  bool   // the ship list is not known
+	recover  bool   // the ship list becomes known right after Ships reads it empty, as tmux recovering mid-pass
 	afterLog func() // runs after Log has copied the lines, as a write confirmed during the read
 }
 
@@ -85,8 +86,15 @@ func (r *rig) newEngine() *Engine {
 		r.t.Fatal(err)
 	}
 	return &Engine{
-		Config:  func() *config.Config { return r.cfg },
-		Ships:   func() []ships.Ship { return slices.Clone(r.ships) },
+		Config: func() *config.Config { return r.cfg },
+		Ships: func() []ships.Ship {
+			// Like the host, the list is empty while it is not known.
+			if r.unknown {
+				r.unknown = !r.recover
+				return nil
+			}
+			return slices.Clone(r.ships)
+		},
 		Sources: func() []Source { return r.src },
 		Paused:  func(source, panel string) bool { return r.paused[[2]string{source, panel}] },
 		Dir: func(_ config.Fleet, _ string, o sources.Order) (string, string) {

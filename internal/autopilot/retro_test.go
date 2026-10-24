@@ -308,6 +308,13 @@ func TestRetroOneAtATime(t *testing.T) {
 		{"the ship list is not known", false,
 			func(r *rig) { r.src[1].Panels[0].Orders = nil; r.unknown = true },
 			func(r *rig) { r.unknown = false }},
+		{"the ship list became known during the pass", false,
+			func(r *rig) {
+				r.src[1].Panels[0].Orders = nil
+				r.setShips(ships.Ship{Session: "retro-ship", Source: "rs", OrderID: "ro1", Status: ships.StatusAnchored})
+				r.unknown, r.recover = true, true
+			},
+			func(r *rig) { r.setShips() }},
 		{"Admiral restarted with the order listed", false,
 			func(r *rig) { r.engine = r.newEngine() },
 			func(r *rig) { r.src[1].Panels[0].Orders = nil }},
