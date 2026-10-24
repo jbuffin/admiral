@@ -27,7 +27,7 @@ var allOptions = []string{"@admiral-name", "@admiral-fleet", "@admiral-fleet-nam
 	"@admiral-harness", "@admiral-dir", "@admiral-skill", "@admiral-source", "@admiral-order", "@admiral-launched"}
 
 // codexHooks are the events Codex gets a hook for; each runs `admiral hook <event>`.
-var codexHooks = []string{"Interrupt", "PermissionRequest", "PostToolUse", "Stop", "UserPromptSubmit"}
+var codexHooks = []string{"Interrupt", "PermissionRequest", "PostToolUse", "Stop", "SubagentStart", "SubagentStop", "UserPromptSubmit"}
 
 // promptOf extracts the prompt argument from a harness's argv and checks the
 // Admiral-owned part of the command line around it.

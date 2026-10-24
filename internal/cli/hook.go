@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/sessionhost"
@@ -26,12 +29,32 @@ func Hook(args []string, std IO) error {
 	valid := json.Unmarshal(raw, &p) == nil
 	// Every event stamps the pane's last activity, a crew boat's last_activity,
 	// in the same tmux call as the state it may write.
-	call := []string{"set", "-p", "-t", pane, sessionhost.ActivityOption, time.Now().UTC().Format(time.RFC3339)}
-	if w := hookDecision(args[0], p); valid && w.state != "" {
-		call = append(append(call, ";"), hookCall(pane, w)...)
+	now := time.Now().UTC()
+	call := []string{"set", "-p", "-t", pane, sessionhost.ActivityOption, now.Format(time.RFC3339)}
+	if valid {
+		w := hookDecision(args[0], p)
+		if w == stopWrite {
+			w = leadDecision(args[0], p, readCrewFacts(pane, now))
+		}
+		if w.state != "" {
+			call = append(append(call, ";"), hookCall(pane, w)...)
+		}
+		if sub := subagentCall(pane, args[0], p, now); sub != nil {
+			call = append(append(call, ";"), sub...)
+		}
 	}
 	_ = exec.Command("tmux", call...).Run()
 	return nil
+}
+
+// tmuxOut is one tmux call's stdout without its trailing newline. -u keeps
+// the unit separator in a format intact. It gives up after tmuxDeadline, so a
+// stuck server can't stall the reads (the final write has no deadline); the caller takes its failed-read path.
+func tmuxOut(args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), tmuxDeadline)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "tmux", append([]string{"-u"}, args...)...).Output()
+	return strings.TrimRight(string(out), "\n"), err
 }
 
 // hookCall is the one tmux call that writes the reason and the state, reason
@@ -60,10 +83,17 @@ type hookPayload struct {
 	ToolNameCopilot  string `json:"toolName"`          // Copilot
 	NotificationType string `json:"notification_type"` // Claude Code, Copilot
 	AgentID          string `json:"agentId"`           // Copilot: set inside a subagent
-	BackgroundTasks  []struct {
-		Type   string `json:"type"`
-		Status string `json:"status"`
-	} `json:"background_tasks"` // Claude Code's Stop; Codex sends none
+	AgentTypeCopilot string `json:"agentType"`         // Copilot
+	SubagentID       string `json:"agent_id"`          // Claude Code, Codex: SubagentStart and SubagentStop
+	SubagentType     string `json:"agent_type"`        // Claude Code, Codex
+	// Claude Code's Stop; Codex sends none. A nil slice is "absent" and an
+	// empty one is `[]`, which tells Claude's Stop from Codex's.
+	BackgroundTasks []struct {
+		ID        string `json:"id"`
+		Type      string `json:"type"`
+		Status    string `json:"status"`
+		AgentType string `json:"agent_type"`
+	} `json:"background_tasks"`
 }
 
 // hookWrite is what a hook writes to the pane: the state, and for needs_you the
@@ -102,17 +132,17 @@ func hookDecision(event string, p hookPayload) hookWrite {
 				return hookWrite{}
 			}
 		}
-		return hookWrite{state: "needs_you", reason: "stop"}
+		return stopWrite
 	case "preToolUse":
 		if p.ToolNameCopilot == "ask_user" {
 			return hookWrite{state: "needs_you", reason: "question"}
 		}
 	case "agentStop":
-		if p.AgentID == "" {
-			return hookWrite{state: "needs_you", reason: "stop"}
+		if p.lead() {
+			return stopWrite
 		}
 	case "userPromptSubmitted":
-		if p.AgentID == "" {
+		if p.lead() {
 			return hookWrite{state: "working"}
 		}
 	}
@@ -128,4 +158,221 @@ func withToken(prefix, token string) string {
 		return prefix + ":" + token
 	}
 	return prefix
+}
+
+// stopWrite is what a Stop writes when nothing holds the turn open.
+var stopWrite = hookWrite{state: "needs_you", reason: "stop"}
+
+// launchWindow is how long a crew pane with no hook yet counts as working
+// (ADR 0007's no-hook window): `crew launch` writes no state.
+const launchWindow = 10 * time.Second
+
+// tmuxDeadline bounds each of the hook's tmux reads.
+const tmuxDeadline = 2 * time.Second
+
+// safeID is id when it is a safe token, else "" (drop the entry).
+func safeID(s string) string {
+	if safeToken.MatchString(s) {
+		return s
+	}
+	return ""
+}
+
+// subagentList is @admiral-subagents after an event: the list before it, the
+// harness ("claude", "codex", "copilot", or "" when tmux could not say) and
+// the payload in, the new list out (ADR 0014). Ids and types come from the
+// payload, so an id that is not a safe token is dropped and a type that is not
+// one is stored as "".
+func subagentList(event string, p hookPayload, harness string, cur []sessionhost.Subagent, now time.Time) []sessionhost.Subagent {
+	listed := func(id string) int {
+		for i, a := range cur {
+			if a.ID == id {
+				return i
+			}
+		}
+		return -1
+	}
+	add := func(id, typ string) []sessionhost.Subagent {
+		id = safeID(id)
+		if id == "" || listed(id) >= 0 || len(cur) >= sessionhost.MaxSubagents {
+			return cur
+		}
+		return append(append([]sessionhost.Subagent(nil), cur...),
+			sessionhost.Subagent{ID: id, Type: safeID(typ), Start: now.Format(time.RFC3339)})
+	}
+	remove := func(id string) []sessionhost.Subagent {
+		i := listed(id)
+		if i < 0 {
+			return cur
+		}
+		return append(append([]sessionhost.Subagent(nil), cur[:i]...), cur[i+1:]...)
+	}
+	switch event {
+	case "SubagentStart":
+		return add(p.SubagentID, p.SubagentType)
+	case "SubagentStop":
+		return remove(p.SubagentID)
+	case "subagentStart":
+		return add(p.AgentID, p.AgentTypeCopilot)
+	case "subagentStop":
+		return remove(p.AgentID)
+	case "agentStop", "userPromptSubmitted":
+		if p.lead() {
+			return nil
+		}
+	case "Stop":
+		// Codex's Stop has no background_tasks and must not clear the list.
+		// Without a harness, a present background_tasks (even []) is Claude's.
+		if harness == "claude" || (harness == "" && p.BackgroundTasks != nil) {
+			var out []sessionhost.Subagent
+			for _, t := range p.BackgroundTasks {
+				id := safeID(t.ID)
+				if t.Status != "running" || (t.Type != "subagent" && t.Type != "teammate") || id == "" || len(out) >= sessionhost.MaxSubagents {
+					continue
+				}
+				if slices.ContainsFunc(out, func(a sessionhost.Subagent) bool { return a.ID == id }) {
+					continue
+				}
+				if i := listed(id); i >= 0 {
+					out = append(out, cur[i])
+				} else {
+					out = append(out, sessionhost.Subagent{ID: id, Type: safeID(t.AgentType), Start: now.Format(time.RFC3339)})
+				}
+			}
+			return out
+		}
+	}
+	return cur
+}
+
+// lead says the Copilot payload comes from the lead, not from inside a subagent.
+func (p hookPayload) lead() bool { return p.AgentID == "" }
+
+// subagentCall is the tmux call that writes @admiral-subagents for an event, or
+// nil when it doesn't change. It reads tmux only on the events that can change
+// the list: the harness for a Stop, the current list for all but a Copilot
+// lead's clear-all, which unsets it whatever it holds. A failed read writes
+// nothing.
+func subagentCall(pane, event string, p hookPayload, now time.Time) []string {
+	var cur []sessionhost.Subagent
+	harness, read := "", true
+	switch event {
+	case "agentStop", "userPromptSubmitted":
+		if !p.lead() {
+			return nil
+		}
+		read = false
+	case "SubagentStart", "SubagentStop", "subagentStart", "subagentStop", "Stop":
+		if event == "Stop" {
+			harness, _ = tmuxOut("display", "-p", "-t", pane, "#{@admiral-harness}")
+			if harness == "codex" {
+				return nil
+			}
+		}
+		raw, err := tmuxOut("show-options", "-pqv", "-t", pane, sessionhost.SubagentsOption)
+		if err != nil {
+			return nil
+		}
+		cur = sessionhost.DecodeSubagents(raw)
+	default:
+		return nil
+	}
+	next := sessionhost.EncodeSubagents(subagentList(event, p, harness, cur, now))
+	switch {
+	case read && next == sessionhost.EncodeSubagents(cur):
+		return nil
+	case next == "":
+		return []string{"set", "-p", "-u", "-q", "-t", pane, sessionhost.SubagentsOption}
+	}
+	return []string{"set", "-p", "-t", pane, sessionhost.SubagentsOption, next}
+}
+
+// crewFacts is what the lead rule needs to know about the pane and its crew.
+type crewFacts struct {
+	ThisIsCrew     bool // $TMUX_PANE is in a crew window
+	CrewWorking    bool // some live crew pane of the session is working
+	CrewReadFailed bool // the list-panes read of the crew errored
+}
+
+// leadDecision is hookDecision with the lead rule on top: a lead's Stop waits
+// while a crew boat works. A crew boat's own Stop, and a Stop whose crew read
+// failed, keep the plain rule: a missed chime is worse than an extra one.
+func leadDecision(event string, p hookPayload, f crewFacts) hookWrite {
+	w := hookDecision(event, p)
+	if w == stopWrite && !f.ThisIsCrew && f.CrewWorking && !f.CrewReadFailed {
+		return hookWrite{}
+	}
+	return w
+}
+
+// crewPaneFact is one pane of a crew window as the lead rule reads it.
+type crewPaneFact struct {
+	Dead        bool
+	State       string // the pane's own @admiral-state
+	HasActivity bool   // @admiral-activity is set
+	Launched    string // the window's @admiral-launched, RFC 3339
+}
+
+// crewPaneWorking says whether a crew pane holds its lead's Stop: a live pane
+// whose own state is working, or one with no hook yet inside its launch window.
+// A dead pane keeps its state and never counts.
+func crewPaneWorking(f crewPaneFact, now time.Time) bool {
+	switch {
+	case f.Dead:
+		return false
+	case f.State == "working":
+		return true
+	case f.HasActivity || f.State != "":
+		return false
+	}
+	t, err := time.Parse(time.RFC3339, f.Launched)
+	return err == nil && now.Sub(t) < launchWindow
+}
+
+// readCrewFacts reads the session of pane with one list-panes call, then the
+// pane's own @admiral-state (show-options -p: the format would fall back to the
+// window's and the session's, which nothing sets, so it agrees with
+// sessionhost.ReadCrew) of each live crew pane until one works.
+func readCrewFacts(pane string, now time.Time) crewFacts {
+	const sep = "\x1f"
+	out, err := tmuxOut("list-panes", "-s", "-t", pane, "-F",
+		strings.Join([]string{"#{pane_id}", "#{pane_dead}", "#{@admiral-crew-name}", "#{@admiral-launched}", "#{@admiral-activity}"}, sep))
+	if err != nil {
+		return crewFacts{CrewReadFailed: true}
+	}
+	var f crewFacts
+	own := false
+	type row struct {
+		id   string
+		fact crewPaneFact
+	}
+	var crew []row
+	for _, line := range strings.Split(out, "\n") {
+		c := strings.Split(line, sep)
+		if len(c) != 5 {
+			continue
+		}
+		if c[0] == pane {
+			own = true
+			f.ThisIsCrew = c[2] != ""
+		} else if c[2] != "" {
+			crew = append(crew, row{c[0], crewPaneFact{Dead: c[1] == "1", HasActivity: c[4] != "", Launched: c[3]}})
+		}
+	}
+	if !own {
+		return crewFacts{CrewReadFailed: true}
+	}
+	if f.ThisIsCrew {
+		return f
+	}
+	for _, r := range crew {
+		if !r.fact.Dead {
+			r.fact.State, _ = tmuxOut("show-options", "-pqv", "-t", r.id, "@admiral-state")
+		}
+		if crewPaneWorking(r.fact, now) {
+			f.CrewWorking = true
+			break
+		}
+	}
+	return f
 }
