@@ -71,8 +71,8 @@ func Outcomes(args []string, std IO) error {
 	sort.Strings(files)
 	for _, path := range files {
 		m := outcomeFile.FindStringSubmatch(filepath.Base(path))
-		if m == nil {
-			continue
+		if fi, err := os.Lstat(path); m == nil || err != nil || !fi.Mode().IsRegular() {
+			continue // a FIFO or a device would hang the read
 		}
 		if month, err := time.Parse("2006-01", m[1]); err == nil && !since.IsZero() && !month.AddDate(0, 1, 0).After(since) {
 			continue // every record in it is older than since

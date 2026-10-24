@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -80,5 +81,39 @@ func TestReadWalksFilesInNameOrderAndSkipsWhatItCannotUse(t *testing.T) {
 	}
 	if n := len(Read(filepath.Join(dir, "nowhere"))); n != 0 {
 		t.Errorf("Read of a missing directory = %d lines, want none", n)
+	}
+}
+
+// The count needs a few keys of a line; the rest, a report above all, is not held.
+func TestReadKeepsOnlyTheKeysTheCountUses(t *testing.T) {
+	dir := t.TempDir()
+	line := `{"v":1,"ts":"2026-10-01T00:00:00Z","ship":"a","event":"ended","exit_code":0,"report":{"notes":"big"},"order_id":"o1","autopilot":true}`
+	if err := os.WriteFile(filepath.Join(dir, "2026-10.jsonl"), []byte(line+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := Read(dir)
+	if len(got) != 1 || !reflect.DeepEqual(got[0].Fields, map[string]any{"order_id": "o1", "autopilot": true}) {
+		t.Errorf("Read = %v, want one line holding order_id and autopilot only", got)
+	}
+}
+
+// A FIFO named like a month file would block the open for good; it is skipped.
+func TestReadSkipsFilesThatAreNotRegular(t *testing.T) {
+	dir := t.TempDir()
+	if err := syscall.Mkfifo(filepath.Join(dir, "2026-11.jsonl"), 0o600); err != nil {
+		t.Skipf("no FIFOs here: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "2026-10.jsonl"), []byte(`{"v":1,"ts":"2026-10-01T00:00:00Z","ship":"a","event":"launched"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan []Line, 1)
+	go func() { done <- Read(dir) }()
+	select {
+	case got := <-done:
+		if len(got) != 1 {
+			t.Errorf("Read = %v, want the one regular file's line", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Read blocked on a FIFO")
 	}
 }
