@@ -1,6 +1,7 @@
 package autopilot
 
 import (
+	"fmt"
 	"net/http"
 	"reflect"
 	"slices"
@@ -32,6 +33,15 @@ type rig struct {
 	launches []launcher.Request
 	records  []outcomes.Record
 	engine   *Engine
+
+	// The retro seams (#117); retro_test.go drives them.
+	lines   []outcomes.Line   // the outcome log the engine counts from
+	logs    []string          // what the engine logged
+	adds    []addCall         // every AddOrder call
+	addErr  func(n int) error // the error of the nth AddOrder call (1-based), nil for success
+	hold    bool              // Record keeps its writes until confirm
+	held    []heldWrite
+	minutes int // the clock of the log's lines
 }
 
 func entry(max int) config.PanelAutopilot {
@@ -93,9 +103,20 @@ func (r *rig) newEngine() *Engine {
 			r.ships = append(r.ships, sh)
 			return sh, nil
 		},
-		Record: func(rec outcomes.Record) { r.records = append(r.records, rec) },
-		Now:    func() time.Time { return r.now },
-		Store:  store,
+		Record: func(rec outcomes.Record, done func(error)) {
+			r.records = append(r.records, rec)
+			w := heldWrite{rec, done}
+			if r.hold {
+				r.held = append(r.held, w)
+				return
+			}
+			r.commit(w, nil)
+		},
+		Log:      func() []outcomes.Line { return slices.Clone(r.lines) },
+		AddOrder: r.addOrder,
+		Logf:     func(format string, args ...any) { r.logs = append(r.logs, fmt.Sprintf(format, args...)) },
+		Now:      func() time.Time { return r.now },
+		Store:    store,
 	}
 }
 
