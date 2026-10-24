@@ -142,10 +142,12 @@ func ReadCrew(tmux, sock, session string) ([]Crew, error) {
 		}
 		return strings.Split(strings.TrimRight(string(out), "\n"), "\n"), nil
 	}
-	rows, err := run("list-panes", "-s", "-t", "="+session+":", "-F", format)
+	nonce := newNonce()
+	rows, err := run("list-panes", "-s", "-t", "="+session+":", "-F", rowFormat(nonce))
 	if err != nil {
 		return nil, err
 	}
+	rows = ownRows(rows, nonce)
 	return parseCrew(rows, map[string]bool{session: true})[session], nil
 }
 

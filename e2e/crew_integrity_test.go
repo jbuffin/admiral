@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 // What a crew boat can make of its own option text (#152 u4 security round 1).
@@ -21,11 +22,26 @@ func forgedRow(session, pane string) string {
 	return strings.Join(f, "\x1f")
 }
 
+// noForgedBoat requires that the forged boat evil is on no list and has no bridge.
+func (w *world) noForgedBoat(t *testing.T, victim string) {
+	t.Helper()
+	for _, s := range fetchShips(t, w.in) {
+		if _, ok := crewOf(s, "evil"); ok {
+			t.Fatalf("the forged crew boat evil is listed on %s: %s", s.Session, s.rawAll)
+		}
+	}
+	if r := w.admiral("ships"); strings.Contains(r.stdout, "evil") {
+		t.Fatalf("admiral ships lists the forged boat:\n%s", r.stdout)
+	}
+	expectBridgeRefused(t, w.in.LocalURL, victim+"/crew/evil", "", nil, "", http.StatusNotFound)
+}
+
 func TestCrewNamesAreNotForged(t *testing.T) {
 	w := newWorld(t)
 	w.cueFleets(map[string][]string{"one": {"hook working", "wait go", "exit 1"}})
 	w.start()
 	ship, shipPane := w.crewShip("one", "alpha")
+	victim, _ := w.crewShip("one", "bravo") // the ship the forged row names
 	scout := w.crewBoat(ship.Session, "scout", "claude")
 	cook := w.crewBoat(ship.Session, "cook", "claude")
 	mallory := w.crewBoat(ship.Session, "mallory", "claude")
@@ -33,21 +49,34 @@ func TestCrewNamesAreNotForged(t *testing.T) {
 
 	t.Run("a newline in a boat's name does not forge a crew boat on another pane", func(t *testing.T) {
 		w := w.at(t)
-		name := "junk\n" + forgedRow(ship.Session, shipPane) + "\n"
+		name := "junk\n" + forgedRow(victim.Session, shipPane) + "\n"
 		w.mustTmux("set-option", "-w", "-t", w.winOf(mallory.pane), "@admiral-crew-name", name)
 		s := w.waitShip(ship.Session, "mallory gone", func(s apiShip) bool { _, ok := crewOf(s, "mallory"); return !ok })
 		if _, ok := crewOf(s, "evil"); ok {
 			t.Errorf("the forged crew boat evil is listed: %s", s.rawAll)
 		}
+		w.noForgedBoat(t, victim.Session)
 		if len(s.Crew) != 2 {
 			t.Errorf("the other two boats should stay, got %s", s.rawAll)
 		}
-		expectBridgeRefused(t, w.in.LocalURL, ship.Session+"/crew/evil", "", nil, "", http.StatusNotFound)
-		r := w.admiral("ships")
-		if strings.Contains(r.stdout, "evil") {
-			t.Errorf("admiral ships lists the forged boat:\n%s", r.stdout)
+		w.mustTmux("set-option", "-w", "-t", w.winOf(mallory.pane), "@admiral-crew-name", "mallory")
+		w.waitShip(ship.Session, "mallory back", crewIs("mallory", "underway"))
+	})
+
+	t.Run("an invalid UTF-8 byte before the newline does not forge a crew boat either", func(t *testing.T) {
+		w := w.at(t)
+		// tmux's substitution of control characters gives up on a value that is not
+		// valid UTF-8 and prints it raw, so the reader must not rely on it.
+		name := "\xff\n" + forgedRow(victim.Session, shipPane) + "\n"
+		// -u: without it a client in a plain locale rewrites the invalid byte.
+		w.mustTmux("-u", "set-option", "-w", "-t", w.winOf(mallory.pane), "@admiral-crew-name", name)
+		deadline := time.Now().Add(2 * time.Second) // four polls
+		for time.Now().Before(deadline) {
+			w.noForgedBoat(t, victim.Session)
+			time.Sleep(200 * time.Millisecond)
 		}
 		w.mustTmux("set-option", "-w", "-t", w.winOf(mallory.pane), "@admiral-crew-name", "mallory")
+		time.Sleep(1200 * time.Millisecond) // the ship reads again
 		w.waitShip(ship.Session, "mallory back", crewIs("mallory", "underway"))
 	})
 

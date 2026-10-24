@@ -22,6 +22,8 @@ package sessionhost
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"maps"
@@ -55,11 +57,41 @@ const PollInterval = 500 * time.Millisecond
 
 const sep = "\x1f"
 
-// format is what one `list-panes -a` row holds. Every free text in it (the
-// session name and each @admiral-* option) goes through unprintable, because
-// tmux prints option values raw: a newline or a \x1f an agent put in its own
-// pane's option would otherwise end its row early and forge another.
+// format is what one `list-panes` row holds, after the nonce (see rowFormat).
+// Every free text in it (the session name and each @admiral-* option) goes
+// through unprintable as a second layer: tmux prints option values raw, so a
+// newline or a \x1f an agent put in its own pane's option could end its row
+// early and forge another. tmux copies a value that is not valid UTF-8 through
+// raw, whatever the substitution says, so the nonce is what holds.
 var format = unprintable(rawFormat)
+
+// newNonce is 16 random hex characters, fresh for every read.
+func newNonce() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic(err) // the system has no randomness; a fixed nonce would be none
+	}
+	return hex.EncodeToString(b[:])
+}
+
+// rowFormat is the format of one read: the read's nonce is the first field of
+// every row. Option text is written before the read and can't know it, so a row
+// it forges has no nonce, and ownRows drops it.
+func rowFormat(nonce string) string { return nonce + sep + format }
+
+// ownRows keeps the rows that start with the read's nonce, without it. A row
+// broken by its own option text keeps its nonce and loses the field count,
+// where parseRows holds its ship unreadable; the lines after a raw newline
+// don't start with the nonce and are dropped before anything counts fields.
+func ownRows(rows []string, nonce string) []string {
+	own := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if rest, ok := strings.CutPrefix(r, nonce+sep); ok {
+			own = append(own, rest)
+		}
+	}
+	return own
+}
 
 // ctrl matches the ASCII control characters, the newline and the field
 // separator among them. The class is spelled with a range of literal bytes: the
@@ -102,11 +134,13 @@ const fixedFields = 8
 // (a window option; set only on a crew boat's window), the pane id, the window id
 // the pane's last hook time and its @admiral-subagents. The subagents come last
 // and outside optionNames (a change of them is no OptionChanged), after the
-// fields parseCrew reads by position. tmux prints option values raw: a \x1f in
-// one makes its row the wrong length (the ship is unreadable), and a raw newline
-// in the last field (the subagents) leaves a fragment that is parsed as a row if
-// it is well formed. Only a raw `tmux set -p` can plant either; `admiral hook`
-// writes JSON, which escapes both. There is no hardening in code.
+// fields parseCrew reads by position. tmux prints option values raw. The reader
+// guards against a control character in one (see format): the nonce that starts
+// every row of a read drops the lines a raw newline leaves, so none is parsed as
+// a row; the substitution turns control characters into spaces, but tmux skips
+// it for a value that is not valid UTF-8. A row that a value still breaks has
+// the wrong length, and its ship is unreadable. `admiral hook` writes JSON,
+// which escapes both.
 const tailFields = 5
 
 // optionNames are the session options in the order format lists them. The last
@@ -379,10 +413,12 @@ func (h *Host) poll(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	rows, err := h.command(ctx, "list-panes -a -F '"+format+"'")
+	nonce := newNonce() // per command: the format is built for each poll
+	rows, err := h.command(ctx, "list-panes -a -F '"+rowFormat(nonce)+"'")
 	if err != nil {
 		return err
 	}
+	rows = ownRows(rows, nonce)
 	known := map[string]bool{}
 	for _, n := range names {
 		known[n] = true
@@ -622,10 +658,12 @@ func ReadOnce(tmux, sock string) ([]Session, error) {
 	if err != nil {
 		return nil, nil // no server on the socket: nothing is running
 	}
-	rows, err := run("list-panes", "-a", "-F", format)
+	nonce := newNonce()
+	rows, err := run("list-panes", "-a", "-F", rowFormat(nonce))
 	if err != nil {
 		return nil, err
 	}
+	rows = ownRows(rows, nonce)
 	known := map[string]bool{}
 	for _, n := range names {
 		known[n] = true
