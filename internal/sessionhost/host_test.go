@@ -142,7 +142,7 @@ func TestCancelledCommandDoesNotShiftReplies(t *testing.T) {
 // row, is unreadable; a row that starts with no known session is dropped.
 func TestParseRowsDistrustsForgedRows(t *testing.T) {
 	row := func(name, order string) string {
-		f := make([]string, fixedFields+len(optionNames))
+		f := make([]string, fixedFields+len(optionNames)+tailFields)
 		f[0] = name
 		for i, n := range optionNames {
 			f[fixedFields+i] = "v"
@@ -193,6 +193,66 @@ func TestFailedListDoesNotShiftReplies(t *testing.T) {
 		got, err = h.command(ctx, "display-message -p after-cancel")
 		if err != nil || len(got) != 1 || got[0] != "after-cancel" {
 			t.Fatalf("round %d: the command after a cancelled failing list got %q (%v), want [after-cancel]", i, got, err)
+		}
+	}
+}
+
+// A ship with a crew window (even the current one) reads as before, its state
+// writes land on its own pane, and a Codex crew boat's bell marks that boat
+// needs_you without flagging the ship.
+func TestShipWithCrewWindow(t *testing.T) {
+	h, ctx := testHost(t)
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command(h.tmux, append([]string{"-S", h.sock}, args...)...)
+		cmd.Env = h.env
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("tmux %v: %v\n%s", args, err, out)
+		}
+	}
+	run("new-session", "-d", "-s", "ship", "sleep", "60")
+	run("set-option", "-t", "=ship:", "@admiral-name", "Ship")
+	run("set-option", "-t", "=ship:", "@admiral-harness", "claude")
+	run("new-window", "-t", "=ship:", "-n", "mate", "sh", "-c", `sleep 1; printf '\a'; sleep 60`) // not -d: the crew window is current
+	run("set-option", "-w", "-t", "=ship:mate", "monitor-bell", "on")
+	run("set-option", "-w", "-t", "=ship:mate", "@admiral-crew-name", "mate")
+	run("set-option", "-w", "-t", "=ship:mate", "@admiral-harness", "codex")
+	if err := h.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.SetNeedsYou(ctx, "ship", "stop"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var ship Session
+	for _, s := range h.Sessions() {
+		if s.Name == "ship" {
+			ship = s
+		}
+	}
+	if ship.Options["harness"] != "claude" || ship.State != "needs_you" || len(h.Unreadable()) != 0 {
+		t.Fatalf("ship = harness %q state %q, unreadable %v; want claude, needs_you (written to its own pane), none", ship.Options["harness"], ship.State, h.Unreadable())
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		crew, err := ReadCrew(h.tmux, h.sock, "ship")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(crew) == 1 && crew[0].Name == "mate" && crew[0].State == CrewNeedsYou {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("crew = %+v after 10s, want mate needs_you from its own bell", crew)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	_ = h.Sync(ctx)
+	for _, s := range h.Sessions() {
+		if s.Name == "ship" && s.BellStamp != "" {
+			t.Errorf("ship BellStamp = %q; the crew boat's bell must not flag the ship", s.BellStamp)
 		}
 	}
 }

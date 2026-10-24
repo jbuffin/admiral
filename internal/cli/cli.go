@@ -38,6 +38,7 @@ var usages = map[string]string{
 	"ships":      "usage: admiral ships [--port <n>] [--names]",
 	"attach":     "usage: admiral attach <ship>   (a display name or a session name; Ctrl-b d detaches)",
 	"outcomes":   "usage: admiral outcomes [--since <date>] [--ship <name>]   (JSON lines; a date is YYYY-MM-DD in UTC, or RFC 3339)",
+	"crew":       "usage: admiral crew launch --name <name> --dir <dir> [--harness <h>] [--ship <ship>] -- <prompt>\n       admiral crew send <name> [text] [--ship <ship>]   (text from stdin without an argument)\n       admiral crew list [--json] [--ship <ship>]\n       admiral crew close <name> [--ship <ship>]",
 	"lock":       "usage: admiral lock [--port <n>] [--wait] <resource> -- <command…>   (holds one unit of the resource while the command runs; exits 75 if busy)",
 	"completion": "usage: admiral completion zsh|bash",
 	"service":    "usage: admiral service install | uninstall | status",
@@ -49,7 +50,7 @@ func Usage(command string) string {
 	if u, ok := usages[first]; ok {
 		return u
 	}
-	return "usage: admiral [--listen host:port] | setup | fleet | config | token | ships | attach | outcomes | lock | completion | service | --version"
+	return "usage: admiral [--listen host:port] | setup | fleet | config | token | ships | attach | crew | outcomes | lock | completion | service | --version"
 }
 
 func usagef(format string, a ...any) error { return &UsageError{fmt.Sprintf(format, a...)} }

@@ -6,13 +6,16 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"time"
+
+	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
 // Hook is `admiral hook <event>`, the command every harness hook runs (ADR
-// 0013, 0014). It reads the harness's hook JSON on stdin and sets
-// @admiral-state on $TMUX_PANE, with @admiral-reason for needs_you, or does
-// nothing. It is internal, so no usage text names it, and it never fails: a
-// harness treats a hook's exit code and output as its own signal.
+// 0013, 0014). It reads the harness's hook JSON on stdin and stamps
+// @admiral-activity on $TMUX_PANE and sets @admiral-state there, with
+// @admiral-reason for needs_you, when the event decides a state. It is
+// internal, so no usage text names it, and it never fails: a harness treats a hook's exit code and output as its own signal.
 func Hook(args []string, std IO) error {
 	pane := os.Getenv("TMUX_PANE")
 	if len(args) == 0 || pane == "" {
@@ -20,12 +23,14 @@ func Hook(args []string, std IO) error {
 	}
 	raw, _ := io.ReadAll(io.LimitReader(std.In, 1<<20))
 	var p hookPayload
-	if json.Unmarshal(raw, &p) != nil {
-		return nil
+	valid := json.Unmarshal(raw, &p) == nil
+	// Every event stamps the pane's last activity, a crew boat's last_activity,
+	// in the same tmux call as the state it may write.
+	call := []string{"set", "-p", "-t", pane, sessionhost.ActivityOption, time.Now().UTC().Format(time.RFC3339)}
+	if w := hookDecision(args[0], p); valid && w.state != "" {
+		call = append(append(call, ";"), hookCall(pane, w)...)
 	}
-	if w := hookDecision(args[0], p); w.state != "" {
-		_ = exec.Command("tmux", hookCall(pane, w)...).Run()
-	}
+	_ = exec.Command("tmux", call...).Run()
 	return nil
 }
 
