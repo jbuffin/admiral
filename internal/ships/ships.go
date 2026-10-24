@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/home"
+	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/server"
@@ -39,19 +40,30 @@ type Ship struct {
 	Panel      string  `json:"panel"`
 	// Resources are the locked resources recorded at launch (#118); a ship
 	// holds them while it is underway or needs you.
-	Resources  []string        `json:"-"`
-	Title      string          `json:"title"`
-	URL        string          `json:"url"`
-	OrderID    string          `json:"order_id"`
-	Launched   string          `json:"launched"`
-	Status     string          `json:"status"`
-	ExitCode   *int            `json:"exit_code"`
-	ExitSignal *string         `json:"exit_signal"`
-	Position   *state.Position `json:"position"`
+	Resources []string `json:"-"`
+	// OriginSource and OriginPanel are the autopilot panel the ship counts
+	// against, when it is not the one it was launched in (#120); empty for a
+	// ship autopilot did not launch.
+	OriginSource string          `json:"-"`
+	OriginPanel  string          `json:"-"`
+	Title        string          `json:"title"`
+	URL          string          `json:"url"`
+	OrderID      string          `json:"order_id"`
+	Launched     string          `json:"launched"`
+	Status       string          `json:"status"`
+	ExitCode     *int            `json:"exit_code"`
+	ExitSignal   *string         `json:"exit_signal"`
+	Position     *state.Position `json:"position"`
 	// Reason and StopSince are set only while the ship needs you: the validated
 	// reason code (`idle` for a ship no hook has spoken for) and when the stop began.
 	Reason    string `json:"reason,omitempty"`
 	StopSince string `json:"stop_since,omitempty"`
+}
+
+// Origin is where the ship ran, for a resume order of its report: its checkout
+// and the autopilot panel it counts against.
+func (sh Ship) Origin() inbox.Origin {
+	return inbox.Origin{Dir: sh.Dir, Source: sh.OriginSource, Panel: sh.OriginPanel}
 }
 
 // Orders is where a launch finds its order: the order sources.
@@ -77,7 +89,9 @@ type Service struct {
 	Outcomes *outcomes.Writer
 	// BeforeRemoveFiles runs with a ship's session just before its report and
 	// inbox are deleted, to keep what Admiral still needs from them. It must not block.
-	BeforeRemoveFiles func(session string)
+	// The inbox.Origin built from the ship's tmux options goes along, for a
+	// session that may be gone by then.
+	BeforeRemoveFiles func(session string, from inbox.Origin)
 
 	pass   sync.Mutex        // one observe at a time
 	mu     sync.Mutex        // guards tracks and what they point to
@@ -97,10 +111,11 @@ type Service struct {
 
 // unlisted is a launched ship the host has not listed yet.
 type unlisted struct {
-	session   string
-	panel     string
-	at        time.Time
-	resources []string
+	session                   string
+	panel                     string
+	at                        time.Time
+	resources                 []string
+	originSource, originPanel string
 }
 
 // listedWithin is how long a launched ship may stay unlisted before its order
@@ -150,6 +165,7 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	if r := o["resources"]; r != "" {
 		sh.Resources = strings.Split(r, ",")
 	}
+	sh.OriginSource, sh.OriginPanel = o["origin-source"], o["origin-panel"]
 	return sh
 }
 
@@ -416,7 +432,7 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	if now, ok := s.find(got.Session); ok {
 		sess = now
 	} else if req.Source != "" {
-		s.holdUnlisted(key, got.Session, req.Panel, req.Resources)
+		s.holdUnlisted(key, got.Session, req.Panel, req.Resources, req.OriginSource, req.OriginPanel)
 	}
 	s.broadcast()
 	return s.ship(sess), nil
@@ -424,13 +440,13 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 
 // holdUnlisted keeps the order's key refused until the host lists the ship, for
 // when the sync after a launch failed.
-func (s *Service) holdUnlisted(key OrderKey, session, panel string, resources []string) {
+func (s *Service) holdUnlisted(key OrderKey, session, panel string, resources []string, originSource, originPanel string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.listing == nil {
 		s.listing = map[OrderKey]unlisted{}
 	}
-	s.listing[key] = unlisted{session, panel, time.Now(), resources}
+	s.listing[key] = unlisted{session, panel, time.Now(), resources, originSource, originPanel}
 }
 
 // Pending is the ships launched but not yet in the host's list, as underway
@@ -444,7 +460,8 @@ func (s *Service) Pending() []Ship {
 		if _, listed := s.find(u.session); listed || time.Since(u.at) >= listedWithin {
 			continue
 		}
-		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: key.OrderID, Panel: u.panel, Resources: u.resources, Status: StatusUnderway})
+		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: key.OrderID, Panel: u.panel, Resources: u.resources,
+			OriginSource: u.originSource, OriginPanel: u.originPanel, Status: StatusUnderway})
 	}
 	return out
 }

@@ -18,8 +18,9 @@ page = f'''<!doctype html>
 <!--
   Admiral clickable prototype. Open this file in a browser.
   Scenes: ?scene=harbor (default), ?scene=launch, ?scene=bridge, ?scene=tablet,
-  ?scene=inbox, ?scene=inbox-bridge, ?scene=inbox-empty, ?scene=ships, ?scene=orders,
-  ?scene=phone-launch (the last three are phone scenes; elsewhere they match harbor),
+  ?scene=inbox, ?scene=inbox-bridge, ?scene=inbox-empty, ?scene=crew,
+  ?scene=crew-bridge, ?scene=crew-attn, ?scene=crew-dismiss, ?scene=ships, ?scene=orders,
+  ?scene=phone-launch (ships, orders and phone-launch are phone scenes; elsewhere they match harbor),
   ?scene=chat, ?scene=chat-terminal, ?scene=chat-new, ?scene=settings
   Generated from designs/canvas/Main.dc.html by the design handoff; edit the
   .dc.html source, not this file.

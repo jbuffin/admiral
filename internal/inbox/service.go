@@ -45,6 +45,14 @@ type Service struct {
 	// AddKind() AddKind whether it may pass or the order may have been added; any
 	// other failure is final.
 	AddOrder func(ctx context.Context, source, panel, text string) (id string, err error)
+	// Origin is where a ship ran, live or kept; ok is false for a ship Admiral
+	// does not know.
+	Origin func(session string) (Origin, bool)
+	// ResumeAdd is called before each add to the panel, and its result after, with
+	// the id the add gave ("" when it gave none). Autopilot holds off on the
+	// panel's unrecorded orders in between, and remembers where the order
+	// launches (#120). Nil does nothing.
+	ResumeAdd func(source, panel string, from Origin) (done func(orderID string))
 
 	answerMu sync.Mutex        // one answer at a time
 	actMu    sync.Mutex        // guards acting

@@ -1,0 +1,6 @@
+<!-- Admiral subagent: a small bot standing on its ship's deck, bow side of the mast. It has no terminal, so it cannot be boarded. Replace #FF9A7A with a bot color. 8.5 units square in the ship's 100x96 drawing; up to four stand on deck. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 8.5 8.5" fill="none">
+<rect x="0.8" y="0.8" width="6.9" height="6.9" rx="1.2" fill="#FF9A7A" stroke="#14304A" stroke-width="1.3"/>
+<rect x="2.3" y="3.1" width="1.4" height="1.4" fill="#14304A"/>
+<rect x="4.8" y="3.1" width="1.4" height="1.4" fill="#14304A"/>
+</svg>

@@ -16,6 +16,13 @@ import (
 // ($ADMIRAL_HOME/bin).
 func hookCommand(event string) string { return "admiral hook " + event }
 
+// MergeToolMatcher is the PreToolUse matcher for MCP tools that could merge or
+// enqueue a pull request: any mcp__ tool with merge or enqueue in its name, in
+// any case. It spells the case out because a matcher is a JavaScript regular
+// expression, which has no (?i). `admiral guard pretooluse` refuses every tool
+// this matches, bar the read-only ones, so the two agree by construction.
+const MergeToolMatcher = "^mcp__.*([Mm][Ee][Rr][Gg][Ee]|[Ee][Nn][Qq][Uu][Ee][Uu][Ee])"
+
 // guardGroup runs the review guard (#115) on the tool calls its matcher names. The
 // guard acts only on an autopilot ship, so every ship's settings can carry it.
 // Claude Code lets a call through when a PreToolUse command hook times out or
@@ -45,6 +52,7 @@ func claudeSettings() any {
 			group("^(?!AskUserQuestion$).*", "PreToolUse"),
 			guardGroup("Bash"),
 			guardGroup("^mcp__.*pull_request_review.*$"),
+			guardGroup(MergeToolMatcher),
 		},
 		"Notification":     []any{group("permission_prompt", "Notification"), group("elicitation_dialog", "Notification")},
 		"Stop":             []any{group("", "Stop")},

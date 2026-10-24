@@ -7,7 +7,7 @@
 #   env          GH_TOKEN, GH_NO_UPDATE_NOTIFIER and GH_PROMPT_DISABLED as
 #                NAME=value lines; a variable that was not set has no line
 #
-# It answers four kinds of call and nothing else (anything else exits 2):
+# It answers five kinds of call and nothing else (anything else exits 2):
 #
 #   gh --version
 #
@@ -15,6 +15,13 @@
 #     prints $FAKEGH_DIR/token-USER (with -u) or $FAKEGH_DIR/token (without)
 #     and exits 0. With no such file it is signed out: it prints
 #     "no oauth token found for HOST" on stderr and exits 1, as gh does.
+#
+#   gh pr view [PR] [-R REPO] --json FIELDS
+#     the guard's lookup of a pull request. Prints $FAKEGH_DIR/pr_view.json
+#     (the answer as gh prints it), or with $FAKEGH_DIR/pr_view.fail exits 1 and
+#     prints that file on stderr, or with $FAKEGH_DIR/pr_view.sleep sleeps that
+#     many seconds first (it execs sleep, so a killed gh dies at once). With no
+#     pr_view.json it is not found: stderr says so, exit 1. --json is required.
 #
 #   gh api graphql ...   (the search)
 #     Looks for a canned search in $FAKEGH_DIR/search/: a <key>.match file
@@ -81,6 +88,31 @@ auth)
 		exit 0
 	fi
 	echo "no oauth token found for ${host:-github.com}" >&2
+	exit 1
+	;;
+pr)
+	[ "$2" = view ] || { echo "fakegh: unsupported: gh $*" >&2; exit 2; }
+	shift 2
+	json=
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--json) json=$2; shift 2 ;;
+		-R|--repo) shift 2 ;;
+		-*) echo "fakegh: unsupported argument to gh pr view: $1" >&2; exit 2 ;;
+		*) shift ;;
+		esac
+	done
+	[ -n "$json" ] || { echo "fakegh: gh pr view needs --json" >&2; exit 2; }
+	[ -s "$FAKEGH_DIR/pr_view.sleep" ] && exec sleep "$(cat "$FAKEGH_DIR/pr_view.sleep")"
+	if [ -e "$FAKEGH_DIR/pr_view.fail" ]; then
+		cat "$FAKEGH_DIR/pr_view.fail" >&2
+		exit 1
+	fi
+	if [ -e "$FAKEGH_DIR/pr_view.json" ]; then
+		cat "$FAKEGH_DIR/pr_view.json"
+		exit 0
+	fi
+	echo "fakegh: no canned pr view" >&2
 	exit 1
 	;;
 api)

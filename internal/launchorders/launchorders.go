@@ -141,6 +141,14 @@ func (s *Service) Dir(fleet config.Fleet, harness string, o sources.Order) (stri
 	return dir, ""
 }
 
+// Checkout says dir is a checkout of the fleet, not just one of its search
+// roots.
+func (s *Service) Checkout(fleet config.Fleet, dir string) bool {
+	return slices.ContainsFunc(repofinder.List(fleet.SearchRoots), func(e repofinder.Entry) bool {
+		return e.Path == dir && e.Kind == repofinder.KindCheckout
+	})
+}
+
 // preselect picks the directory (ADR 0009) and floats several matching
 // checkouts to the top of entries, the most recently used first.
 func (s *Service) preselect(entries *[]repofinder.Entry, fleet config.Fleet, req dirsRequest, live []ships.Ship) (string, string) {

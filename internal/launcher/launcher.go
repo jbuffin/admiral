@@ -49,11 +49,18 @@ type Request struct {
 	// and the panel's args for the harness.
 	Autopilot bool     `json:"-"`
 	LowStakes string   `json:"-"`
+	AutoMerge string   `json:"-"` // squash, merge or rebase; the guard allows gh pr merge --auto with it
 	ExtraArgs []string `json:"-"`
 	// Resources are the locked resources the ship holds while it is underway
 	// or needs you (#118), recorded on the session. Set by autopilot only; a
 	// hand launch holds none.
 	Resources []string `json:"-"`
+	// OriginSource and OriginPanel are the autopilot panel whose entry the
+	// launch runs under, and whose max_ships it counts against (#120). Set by
+	// autopilot only: a resume order's ship runs under the resume panel but
+	// counts against the panel of the ship that wrote the report.
+	OriginSource string `json:"-"`
+	OriginPanel  string `json:"-"`
 }
 
 // Skill is the order's skill: Commodore, a named one, or none (Just launch).
@@ -128,7 +135,8 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	// The name and the time are ours.
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
-		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")}}
+		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")},
+		{"origin-source", req.OriginSource}, {"origin-panel", req.OriginPanel}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
 			return nil, refuse(http.StatusBadRequest, "%s contains a control character", o[0])
@@ -206,17 +214,26 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		return nil, err
 	}
 
-	// Admiral owns both names: a hand launch has neither, even if the fleet's
-	// env or Admiral's own environment (which the tmux server inherits) sets them.
+	// Admiral owns these names: a hand launch has none of them, and an autopilot
+	// launch has ADMIRAL_AUTO_MERGE only when its panel names a method, even if
+	// the fleet's env or Admiral's own environment (which the tmux server
+	// inherits) sets them.
 	var unset []string
+	ours := map[string]string{}
 	if req.Autopilot {
-		env["ADMIRAL_AUTOPILOT"] = "1"
-		env["ADMIRAL_LOW_STAKES"] = req.LowStakes
-	} else {
-		for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES"} {
-			delete(env, k)
-			unset = append(unset, k)
+		ours["ADMIRAL_AUTOPILOT"] = "1"
+		ours["ADMIRAL_LOW_STAKES"] = req.LowStakes
+		if req.AutoMerge != "" {
+			ours["ADMIRAL_AUTO_MERGE"] = req.AutoMerge
 		}
+	}
+	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE"} {
+		if v, ok := ours[k]; ok {
+			env[k] = v
+			continue
+		}
+		delete(env, k)
+		unset = append(unset, k)
 	}
 
 	// A Commodore on Claude compacts at 200k tokens; only the fleet's own env

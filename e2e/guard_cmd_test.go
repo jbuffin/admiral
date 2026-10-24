@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -267,6 +268,33 @@ func TestGuardIsInTheGeneratedSettings(t *testing.T) {
 	for _, m := range []string{"Bash", "^mcp__.*pull_request_review.*$"} {
 		if guards[m] != 1 {
 			t.Errorf("PreToolUse has %d group(s) with matcher %q running admiral guard pretooluse, want 1\n%s", guards[m], m, raw)
+		}
+		delete(guards, m)
+	}
+	// #120: one more group, for the MCP tools that merge a pull request or
+	// enable auto-merge, which matches those and leaves the read tools alone.
+	if len(guards) != 1 {
+		t.Errorf("PreToolUse has the guard on matchers %v beside Bash and the review tools, want exactly one merge matcher\n%s", guards, raw)
+	}
+	for m, n := range guards {
+		re, err := regexp.Compile(m)
+		if err != nil {
+			t.Errorf("the merge matcher %q is not a regular expression: %v", m, err)
+			continue
+		}
+		if n != 1 {
+			t.Errorf("the merge matcher %q has %d guard handlers, want 1", m, n)
+		}
+		for _, tool := range []string{"mcp__github__merge_pull_request", "mcp__github__enable_pull_request_auto_merge", "mcp__github__enable_auto_merge",
+			"mcp__github__mergePullRequest", "mcp__github__enqueue_pull_request", "mcp__github__MERGE_NOW"} {
+			if !re.MatchString(tool) {
+				t.Errorf("the merge matcher %q does not match %s", m, tool)
+			}
+		}
+		for _, tool := range []string{"Read", "Bash", "mcp__github__get_pull_request", "mcp__github__create_pull_request_review"} {
+			if re.MatchString(tool) {
+				t.Errorf("the merge matcher %q matches %s, want only merge tools", m, tool)
+			}
 		}
 	}
 	if working != 2 {

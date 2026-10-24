@@ -64,8 +64,12 @@ One running harness session, launched from a dock by the engineer or by autopilo
 _Avoid_: boat (for the lead), agent, card
 
 **Crew boat**:
-A smaller boat around a ship: a teammate the ship's skill started, which the engineer can board, or a subagent the harness spawned, which is drawn differently and cannot be boarded because it has no terminal of its own.
+A smaller boat rafted beside a ship: a teammate the ship's skill started with `admiral crew`, in its own tmux window, which the engineer can board. It may carry a **role** the skill gave it, such as `test-writer`.
 _Avoid_: child, worker, sub-ship
+
+**Subagent**:
+A helper the harness runs inside a session, drawn as a small bot on its ship's deck. It has no terminal of its own, so it cannot be boarded; tapping the deck crew shows each subagent's type.
+_Avoid_: crew boat (for a subagent), mark
 
 **Open water**:
 The ocean in the middle of the screen where ships sail once launched. Work Fleet ships drift toward the top and Home Fleet ships toward the bottom; the engineer can drag ships anywhere.
@@ -87,4 +91,4 @@ The attached-terminal view that opens when the engineer taps a ship: the session
 _Avoid_: modal, detail view
 
 **Flotilla**:
-The column of the boarded ship and its crew boats beside the terminal. Picking one switches the terminal to that agent.
+The column of the boarded ship and its crew boats beside the terminal, with the ship's subagents listed under them. Picking the ship or a crew boat switches the terminal to that agent; subagents can't be picked.
