@@ -94,10 +94,10 @@ func TestAutopilotParseErrors(t *testing.T) {
 		{"top max_ships not an integer", apConfig(`{"max_ships":1.5}`, `{}`), "autopilot.max_ships"},
 		{"skill kind", apConfig(``, `{"p":{"fleet":"work","harness":"claude","skill":{"kind":"mystery"}}}`), "sources.s.autopilot.p.skill"},
 		{"named skill without a name", apConfig(``, `{"p":{"fleet":"work","harness":"claude","skill":{"kind":"skill"}}}`), "sources.s.autopilot.p.skill"},
-		{"retro_every negative", apConfig(``, `{"p":`+apEntry(`"retro_every":-1`)+`}`), "sources.s.autopilot.p.retro_every"},
-		{"retro_every not an integer", apConfig(``, `{"p":`+apEntry(`"retro_every":1.5`)+`}`), "sources.s.autopilot.p.retro_every"},
-		{"retro_every a string", apConfig(``, `{"p":`+apEntry(`"retro_every":"5"`)+`}`), "sources.s.autopilot.p.retro_every"},
-		{"retro_every a boolean", apConfig(``, `{"p":`+apEntry(`"retro_every":true`)+`}`), "sources.s.autopilot.p.retro_every"},
+		{"retro_every negative", apConfig(``, `{"p":`+apEntry(`"retro_every":-1`)+`}`), "sources.s.autopilot.p.retro_every: must"},
+		{"retro_every not an integer", apConfig(``, `{"p":`+apEntry(`"retro_every":1.5`)+`}`), "sources.s.autopilot.p.retro_every: must"},
+		{"retro_every a string", apConfig(``, `{"p":`+apEntry(`"retro_every":"5"`)+`}`), "sources.s.autopilot.p.retro_every: must"},
+		{"retro_every a boolean", apConfig(``, `{"p":`+apEntry(`"retro_every":true`)+`}`), "sources.s.autopilot.p.retro_every: must"},
 		{"skill name with a space", apConfig(``, `{"p":{"fleet":"work","harness":"claude","skill":{"kind":"skill","name":"a b"}}}`), "sources.s.autopilot.p.skill"},
 	}
 	for _, c := range cases {

@@ -41,12 +41,17 @@ func (w *world) retroConfig() {
 
 // oneRun adds an order for the checkout, waits for autopilot's ship, lets it
 // sail off and waits for its ended record. It returns the ship's launched ts.
-func (w *world) oneRun(name string) string {
+// seen holds the sessions of earlier runs, so a ship that is slow to leave the
+// list is not taken for this one.
+func (w *world) oneRun(name string, seen map[string]bool) string {
 	w.t.Helper()
 	code, body := send(w.t, http.MethodPost, w.in.LocalURL+"/api/sources/orders/orders",
 		map[string]any{"panel": "orders", "text": "Review " + remoteOf(name)})
 	w.mustOK(code, body, "add an order")
-	ship := w.waitShipCount(15*time.Second, "the ship of "+name, func(s shipJSON) bool { return live(s) && s.OrderID != "" }, 1)[0]
+	fresh := func(s shipJSON) bool { return live(s) && !seen[s.Session] }
+	w.waitShipCount(15*time.Second, "the ship of "+name, fresh, 1)
+	ship := w.shipsWhere(fresh)[0]
+	seen[ship.Session] = true
 	w.sail(ship.Session)
 	w.waitEvent(ship.Session, "ended", 1)
 	for _, m := range w.shipLog(ship.Session) {
@@ -71,7 +76,8 @@ func TestRetroOrderAfterNRunsAcrossARestart(t *testing.T) {
 	w.waitSource("orders", 10*time.Second, "state ok", isOK)
 	w.waitSource("retros", 10*time.Second, "state ok", isOK)
 
-	first := w.oneRun("r1")
+	seen := map[string]bool{}
+	first := w.oneRun("r1", seen)
 	w.holdOrders("a retro was added after one run of two", "retros")
 
 	w.restart()
@@ -79,7 +85,7 @@ func TestRetroOrderAfterNRunsAcrossARestart(t *testing.T) {
 	w.waitSource("retros", 10*time.Second, "state ok", isOK)
 	w.holdOrders("a restart added a retro", "retros")
 
-	w.oneRun("r2")
+	w.oneRun("r2", seen)
 	want := "/retro orders/orders --since " + first
 	w.waitOrders("retros", want)
 	rec := w.waitOutcome("retro_queued", 1)[0]
@@ -88,7 +94,7 @@ func TestRetroOrderAfterNRunsAcrossARestart(t *testing.T) {
 		t.Errorf("retro_queued = %v, want a ship-less record for orders/orders since %s with the order id", rec, first)
 	}
 
-	w.oneRun("r3")
+	w.oneRun("r3", seen)
 	w.holdOrders("a third run added another retro", "retros", want)
 	if n := len(w.outcomesOf("retro_queued")); n != 1 {
 		t.Errorf("%d retro_queued records after the third run, want 1", n)

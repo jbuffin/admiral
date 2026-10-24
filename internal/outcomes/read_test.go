@@ -35,8 +35,8 @@ func TestReadWalksFilesInNameOrderAndSkipsWhatItCannotUse(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// 2026-09 sorts first although its file is written second, and its lines
-	// carry later timestamps than the October file: position decides, not ts.
+	// 2026-09 sorts first although its file is written second: the file name
+	// decides the order. (Within a file it is the line's position, never ts.)
 	write("2026-10.jsonl",
 		`{"v":1,"ts":"2026-10-01T00:00:00Z","ship":"b","event":"ended","exit":0}`,
 		`this is not json`,

@@ -25,6 +25,12 @@ import (
 //	Log      func() []outcomes.Line              // the outcome log, outcomes.Read of the home's outcomes directory
 //	AddOrder func(ctx context.Context, source, panel, text string) (id string, err error)
 //
+// A retro_queued record has exactly the fields source, panel, since (an RFC 3339
+// UTC string), text, resume_source, resume_panel and order_id; an uncertain one
+// has uncertain: true and no order_id. No other key, and no uncertain: false.
+// outcomes.ErrDropped is what Enqueue passes to onDone for a record the full
+// queue dropped; the engine treats it like a failed write.
+//
 // An AddOrder error may implement `AddKind() inbox.AddKind` (as
 // sources.RequestError does); one that doesn't is final. The resume panel comes
 // from Config().ResumeSource. config.PanelAutopilot.RetroEvery is the N: 0
@@ -296,10 +302,7 @@ func TestRetroOneAtATime(t *testing.T) {
 				r.setShips(ships.Ship{Session: "retro-ship", Source: "rs", OrderID: "ro1", Status: ships.StatusAnchored})
 			},
 			func(r *rig) { r.setShips() }},
-		{"a ship has an uncertain retro's text for its title", true,
-			func(r *rig) {
-				r.setShips(ships.Ship{Session: "retro-ship", Source: "rs", Title: "/retro s/p --since TS", Status: ships.StatusUnderway})
-			},
+		{"a ship has an uncertain retro's text for its title", true, nil,
 			func(r *rig) { r.setShips() }},
 		{"Admiral restarted with the order listed", false,
 			func(r *rig) { r.engine = r.newEngine() },
@@ -351,6 +354,7 @@ func TestRetroWaitsForItsRecordAndWritesItAgain(t *testing.T) {
 	r.run("a")
 	r.run("b")
 	r.pass()
+	r.src[1].Panels[0].Orders = nil // the order has gone: only the unconfirmed record holds the panel
 	r.run("c")
 	r.run("d")
 	r.pass()
@@ -372,6 +376,11 @@ func TestRetroWaitsForItsRecordAndWritesItAgain(t *testing.T) {
 		t.Errorf("%d log lines for the lost record, want 1: %q", n, r.logs)
 	}
 
+	r.confirm(outcomes.ErrDropped) // the queue was full: the writer says so
+	r.pass()
+	if len(r.held) != 1 {
+		t.Fatalf("%d writes held after a dropped record, want it written again", len(r.held))
+	}
 	r.confirm(nil)
 	r.pass()
 	if len(r.adds) != 1 || len(r.held) != 0 {
