@@ -571,7 +571,7 @@ func TestCrewAPI_Ending(t *testing.T) {
 	t.Run("a crew boat that exits alone anchors and never ends the ship", func(t *testing.T) {
 		w := w.sub(t)
 		s, _ := w.crewShip("zero", "fold")
-		a := w.crewBoat(s.Session, "a", "claude")
+		w.crewBoat(s.Session, "a", "claude")
 		b := w.crewBoat(s.Session, "b", "claude")
 		w.waitShip(s.Session, "two live crew boats", func(x apiShip) bool { return x.CrewLive == 2 })
 
