@@ -1655,7 +1655,7 @@ class Component extends DCLogic {
     });
     return {
       qs: out, sendOff: answered < qs.length, progress: answered + ' of ' + qs.length + ' answered',
-      showSend: !opts.tapSends || extra,
+      showSend: !opts.tapSends || extra || answered > 0,
       send: () => opts.onSend(answers)
     };
   }
@@ -1991,7 +1991,7 @@ class Component extends DCLogic {
         style: 'position: relative; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 2px; border-radius: 14px; color: #14304A; border: 2.5px solid ' + (on ? '#14304A' : 'transparent') + '; background-color: ' + (on ? '#FFC23D' : 'transparent') + '; box-shadow: ' + (on ? '0 2px 0 #14304A' : 'none'),
         hasBadge: t.count > 0, badge: isChat ? '' : t.count,
         badgeStyle: isChat ? 'position: absolute; top: -3px; left: 19px; width: 14px; height: 14px; border-radius: 50%; border: 2.5px solid #FFF6E3; background-color: #FF7A59'
-          : 'position: absolute; top: -7px; left: 15px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; border: 2px solid #FFF6E3; background-color: ' + t.badgeBg + '; color: ' + t.badgeInk + '; font-family: Archivo, sans-serif; font-weight: 700; font-size: 11.5px; display: flex; align-items: center; justify-content: center',
+          : 'position: absolute; top: -7px; left: 15px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; border: 2px solid #FFF6E3; background-color: ' + (t.badgeBg || '#14304A') + '; color: ' + (t.badgeInk || '#FFC23D') + '; font-family: Archivo, sans-serif; font-weight: 700; font-size: 11.5px; display: flex; align-items: center; justify-content: center',
         go: () => { self.put(isChat ? { tab: 'chat', chatUnread: false } : { tab: t.id }); if (isChat) self.chatScroll(); }
       };
     });
@@ -2026,7 +2026,6 @@ class Component extends DCLogic {
           }))
         };
       });
-    const nAttn = needsYou;
     const dockTask = phone && s.dockSheet ? (this.findTask(s.dockSheet) || { id: s.dockSheet, title: '' }) : null;
     const dockSheet = dockTask ? {
       title: 'Launch ' + dockTask.id, task: dockTask.title,
@@ -2187,7 +2186,7 @@ class Component extends DCLogic {
       },
       settingsOpen: !!s.settingsOpen, set, openSettings: () => self.openSettings(),
       gearStyle: gearBase,
-      shipRows, shipsHint: shipRows.length + (shipRows.length === 1 ? ' ship' : ' ships') + (nAttn ? ', ' + nAttn + ' need' + (nAttn === 1 ? 's' : '') + ' you' : ''),
+      shipRows, shipsHint: shipRows.length + (shipRows.length === 1 ? ' ship' : ' ships') + (needsYou ? ', ' + needsYou + ' need' + (needsYou === 1 ? 's' : '') + ' you' : ''),
       hasDockSheet: !!dockSheet, dockSheet: dockSheet || { fleets: [] },
       toggleInbox: () => { self.put((st) => ({ inboxOpen: !st.inboxOpen, chatOpen: st.size === 'middle' ? false : st.chatOpen })); self.ibFocus(); },
       closeInbox: () => self.put({ inboxOpen: false }),
