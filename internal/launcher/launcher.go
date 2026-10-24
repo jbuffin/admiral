@@ -182,20 +182,17 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	argv := append([]string{exe}, dock.Args...)
 	argv = append(argv, req.ExtraArgs...)
 	prompt := promptFor(req.Harness, skill, req.Skill.Kind, req.Note, req.Text)
-	switch req.Harness {
-	case "claude":
-		argv = append(argv, "--settings", claudeSettingsPath(l.Home))
-		argv = appendPrompt(argv, prompt, req.dockLaunch())
-	case "codex":
-		argv = append(argv, codexFlags()...)
-		argv = appendPrompt(argv, prompt, req.dockLaunch())
-	case "copilot":
-		argv = append(argv, "--plugin-dir", copilotPluginDir(l.Home))
+	flags, known := l.hookFlags(req.Harness)
+	if !known {
+		return nil, refuse(http.StatusBadRequest, "unknown harness %q", req.Harness)
+	}
+	argv = append(argv, flags...)
+	if req.Harness == "copilot" {
 		if prompt != "" {
 			argv = append(argv, "--interactive="+prompt)
 		}
-	default:
-		return nil, refuse(http.StatusBadRequest, "unknown harness %q", req.Harness)
+	} else {
+		argv = appendPrompt(argv, prompt, req.dockLaunch())
 	}
 	env := l.shipEnv(dock)
 	if n := commandSize(argv); n > maxMessage {
@@ -252,6 +249,20 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		out.Options[o[0]] = o[1]
 	}
 	return out, nil
+}
+
+// hookFlags are the flags that wire the harness to Admiral's hooks; known is
+// false for a harness Admiral does not launch.
+func (l *Launcher) hookFlags(harness string) (flags []string, known bool) {
+	switch harness {
+	case "claude":
+		return []string{"--settings", claudeSettingsPath(l.Home)}, true
+	case "codex":
+		return codexFlags(), true
+	case "copilot":
+		return []string{"--plugin-dir", copilotPluginDir(l.Home)}, true
+	}
+	return nil, false
 }
 
 // dockLaunch is a launch from a dock with no order: the text is the prompt.
@@ -555,6 +566,10 @@ func batches(cmds [][]string) [][]string {
 
 // run executes the tmux binary on Admiral's socket with an argument list.
 func (l *Launcher) run(args ...string) (string, error) { return l.runWith("", args...) }
+
+// RunTmux runs the tmux binary on Admiral's socket, stripped of $TMUX like run,
+// for the commands (`admiral crew`) that drive a ship's windows.
+func (l *Launcher) RunTmux(args ...string) (string, error) { return l.run(args...) }
 
 // runWith is run with PATH replaced, when path is not empty.
 func (l *Launcher) runWith(path string, args ...string) (string, error) {

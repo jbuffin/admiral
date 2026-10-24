@@ -106,8 +106,9 @@ func (w *world) sub(t *testing.T) *world {
 }
 
 type cliOpts struct {
-	path []string // directories in front of the fake harnesses on PATH
-	env  []string // KEY=value, last wins
+	path  []string // directories in front of the fake harnesses on PATH
+	env   []string // KEY=value, last wins
+	stdin string   // standard input; none when empty
 }
 
 // admiral runs bin/admiral with the world's temporary HOME and ADMIRAL_HOME,
@@ -123,6 +124,9 @@ func (w *world) admiralWith(o cliOpts, args ...string) cliResult {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, binaryPath(w.t), args...)
 	cmd.Dir = w.userHom
+	if o.stdin != "" {
+		cmd.Stdin = strings.NewReader(o.stdin)
+	}
 	var env []string
 	pathDirs := append(append([]string{}, o.path...), fakeDir(w.t))
 	for _, kv := range w.baseEnv() {
