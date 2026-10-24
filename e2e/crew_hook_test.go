@@ -56,6 +56,8 @@ func TestCrewHook_LeadWaitsForWorkingCrew(t *testing.T) {
 	// Both the ship and scout are working; the ship's turn ends.
 	hook(shipPane, "UserPromptSubmit", prompt)
 	hook(scout.pane, "UserPromptSubmit", prompt)
+	// mate has had no hook yet, so its 10 s launch window would hold the lead.
+	hook(mate.pane, "Stop", stop)
 	hook(shipPane, "Stop", stop)
 	wantState(shipPane, "the lead's Stop while scout works", "working", "")
 
