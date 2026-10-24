@@ -94,6 +94,9 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 .ph-bridge .fl-item{animation:none}
 @keyframes phbridge{0%{transform:translateX(100%)}100%{transform:none}}
 .ph-tab{min-height:56px;user-select:none;-webkit-user-select:none}
+.merge-btn{width:36px;height:36px;flex:0 0 auto}
+@media (pointer: coarse){.merge-btn{width:44px;height:44px}}
+.merge-btn-ph{width:44px;height:44px}
 .ph-strip{scrollbar-width:none}
 .ph-strip::-webkit-scrollbar{display:none}
 @media (max-height: 499px){.ph-tab{min-height:48px}}
@@ -195,7 +198,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </span>
 <span style="min-width: 28px; height: 26px; padding: 0 8px; border-radius: 999px; background-color: #14304A; color: #FFC23D; font-weight: 700; font-size: 12.5px; display: flex; align-items: center; justify-content: center">{{panel.count}}</span>
 <sc-if value="{{panel.hasMerge}}" hint-placeholder-val="{{ false }}">
-<button type="button" class="press" onClick="{{panel.onMerge}}" aria-label="{{panel.mergeAria}}" title="{{panel.mergeAria}}" style="width: {{mergeSize}}; height: {{mergeSize}}; border-radius: 10px; border: 2px solid #14304A; background-color: #DDF7F3; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 0 #14304A"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4v5a5 5 0 0 0 5 5h7M18 4v16M15 17l3 3 3-3"></path></svg></button>
+<button type="button" class="{{mergeCls}}" onClick="{{panel.onMerge}}" aria-label="{{panel.mergeAria}}" title="{{panel.mergeAria}}" style="border-radius: 10px; border: 2px solid #14304A; background-color: #DDF7F3; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 0 #14304A"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4v5a5 5 0 0 0 5 5h7M18 4v16M15 17l3 3 3-3"></path></svg></button>
 </sc-if>
 </div>
 <sc-if value="{{panel.open}}" hint-placeholder-val="{{ true }}">
@@ -2164,7 +2167,7 @@ class Component extends DCLogic {
       ordersStyle: phone ? 'position: absolute; top: 0; bottom: 0; left: env(safe-area-inset-left); right: env(safe-area-inset-right); overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 14px; padding: 16px 16px 24px; background-color: #FFF1CF'
         : 'flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 16px; background-color: #FFF1CF; border-right: 3px solid #14304A',
       ordersHint: phone ? 'Tap an order to pick a dock and launch it' : 'Drag a card onto a dock to launch',
-      mergeSize: phone ? '44px' : '36px',
+      mergeCls: 'press merge-btn' + (phone ? ' merge-btn-ph' : ''),
       filterSize: phone ? '16px' : '14.5px', termInSize: phone ? '16px' : '13.5px', skillInSize: phone ? '16px' : '14px', keyH: phone ? '44px' : '40px',
       // On a phone the dialog fits the screen: its sail-with list scrolls and the buttons stay in view.
       pendDialogStyle: 'width: 100%; max-width: 540px; border: 3px solid #14304A; border-radius: 24px; background-color: #FFF6E3; box-shadow: 0 8px 0 #0B1F33; overflow: hidden' + (phone ? '; max-height: 100%; display: flex; flex-direction: column' : ''),
