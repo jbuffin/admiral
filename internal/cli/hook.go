@@ -129,3 +129,36 @@ func withToken(prefix, token string) string {
 	}
 	return prefix
 }
+
+// subagentList is @admiral-subagents after an event: the list before it, the
+// harness ("claude", "codex", "copilot", or "" when tmux could not say) and
+// the payload in, the new list out (ADR 0014).
+func subagentList(event string, p hookPayload, harness string, cur []sessionhost.Subagent, now time.Time) []sessionhost.Subagent {
+	return nil
+}
+
+// crewFacts is what the lead rule needs to know about the pane and its crew.
+type crewFacts struct {
+	ThisIsCrew     bool // $TMUX_PANE is in a crew window
+	CrewWorking    bool // some live crew pane of the session is working
+	CrewReadFailed bool // the list-panes read of the crew errored
+}
+
+// leadDecision is hookDecision with the lead rule on top: a lead's Stop waits
+// while a crew boat works.
+func leadDecision(event string, p hookPayload, f crewFacts) hookWrite {
+	return hookWrite{}
+}
+
+// crewPaneFact is one pane of a crew window as the lead rule reads it.
+type crewPaneFact struct {
+	Dead        bool
+	State       string // the pane's own @admiral-state
+	HasActivity bool   // @admiral-activity is set
+	Launched    string // the window's @admiral-launched, RFC 3339
+}
+
+// crewPaneWorking says whether a crew pane holds its lead's Stop.
+func crewPaneWorking(f crewPaneFact, now time.Time) bool {
+	return false
+}
