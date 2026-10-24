@@ -273,21 +273,28 @@ func (w *world) runHook(event, payload, pane string) hookResult {
 		res.code = ee.ExitCode()
 	}
 	res.stdout, res.stderr = out.String(), errb.String()
-	res.calls = withoutActivityStamp(attachCalls(w, rec))
+	res.calls = withoutActivityStamp(w.t, attachCalls(w, rec), pane)
 	return res
 }
 
-// withoutActivityStamp drops the `set -p -t <pane> @admiral-activity <time>`
-// that opens every hook call (the crew boat's last_activity, which the crew test
-// checks), so the table above stays about the state and reason a hook writes.
-func withoutActivityStamp(calls [][]string) [][]string {
+// withoutActivityStamp checks, then drops, the `set -p -t <pane> @admiral-activity
+// <RFC 3339>` that opens every hook call (the crew boat's last_activity), in the
+// same call as any state write, so the table above stays about the state and
+// reason a hook writes.
+func withoutActivityStamp(t *testing.T, calls [][]string, pane string) [][]string {
+	t.Helper()
 	var out [][]string
 	for _, c := range calls {
-		if len(c) >= 6 && c[0] == "set" && c[4] == "@admiral-activity" {
-			c = c[6:]
-			if len(c) > 0 && c[0] == ";" {
-				c = c[1:]
-			}
+		if len(c) < 6 || c[0] != "set" || c[1] != "-p" || c[2] != "-t" || c[3] != pane || c[4] != "@admiral-activity" {
+			t.Errorf("hook call %q does not open with `set -p -t %s @admiral-activity <time>`", c, pane)
+			continue
+		}
+		if _, err := time.Parse(time.RFC3339, c[5]); err != nil {
+			t.Errorf("hook call %q: the stamp is not RFC 3339", c)
+		}
+		c = c[6:]
+		if len(c) > 0 && c[0] == ";" {
+			c = c[1:]
 		}
 		if len(c) > 0 {
 			out = append(out, c)
