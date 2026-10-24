@@ -1170,6 +1170,7 @@ class Component extends DCLogic {
       this.onMq();
     } catch (err) {}
     this.ibFocus();
+    if (this.S().dockSheet) this.focusSel('[data-dock-sheet]');
     this.clock = setInterval(() => this.put({ tick: Date.now() }), 30000);
   }
   componentWillUnmount() {
@@ -1501,7 +1502,7 @@ class Component extends DCLogic {
         cls: 'task press' + (s.selected === t.id ? ' sel' : ''),
         down: (e) => self.startDrag(e, t.id),
         click: () => self.tapTask(t.id),
-        aria: SRC[t.src].label + ' ' + t.id + ', ' + t.title + '. Drag onto a dock, or select it and tap a dock.'
+        aria: SRC[t.src].label + ' ' + t.id + ', ' + t.title + (s.size === 'phone' ? '. Tap to pick a dock and launch it.' : '. Drag onto a dock, or select it and tap a dock.')
       }))
     }));
 
