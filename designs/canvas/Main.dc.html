@@ -93,7 +93,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 .ph-bridge{animation:phbridge .3s cubic-bezier(.2,.9,.3,1) both}
 .ph-bridge .fl-item{animation:none}
 @keyframes phbridge{0%{transform:translateX(100%)}100%{transform:none}}
-.ph-tab{min-height:56px}
+.ph-tab{min-height:56px;user-select:none;-webkit-user-select:none}
 .ph-strip{scrollbar-width:none}
 .ph-strip::-webkit-scrollbar{display:none}
 @media (max-height: 499px){.ph-tab{min-height:48px}}
@@ -195,7 +195,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </span>
 <span style="min-width: 28px; height: 26px; padding: 0 8px; border-radius: 999px; background-color: #14304A; color: #FFC23D; font-weight: 700; font-size: 12.5px; display: flex; align-items: center; justify-content: center">{{panel.count}}</span>
 <sc-if value="{{panel.hasMerge}}" hint-placeholder-val="{{ false }}">
-<button type="button" class="press" onClick="{{panel.onMerge}}" aria-label="{{panel.mergeAria}}" title="{{panel.mergeAria}}" style="width: 36px; height: 36px; border-radius: 10px; border: 2px solid #14304A; background-color: #DDF7F3; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 0 #14304A"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4v5a5 5 0 0 0 5 5h7M18 4v16M15 17l3 3 3-3"></path></svg></button>
+<button type="button" class="press" onClick="{{panel.onMerge}}" aria-label="{{panel.mergeAria}}" title="{{panel.mergeAria}}" style="width: {{mergeSize}}; height: {{mergeSize}}; border-radius: 10px; border: 2px solid #14304A; background-color: #DDF7F3; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 0 #14304A"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4v5a5 5 0 0 0 5 5h7M18 4v16M15 17l3 3 3-3"></path></svg></button>
 </sc-if>
 </div>
 <sc-if value="{{panel.open}}" hint-placeholder-val="{{ true }}">
@@ -742,9 +742,9 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 
 <sc-if value="{{chat.isChat}}" hint-placeholder-val="{{ true }}">
 <div style="flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px; background-color: #FFFDF6; border-bottom: 2px solid #14304A">
-<button type="button" class="press" onClick="{{chat.askNew}}" style="display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 9px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFF6E3; box-shadow: 0 2px 0 #14304A; font-weight: 600; font-size: 13px; white-space: nowrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>New chat</button>
-<button type="button" class="press" onClick="{{chat.openTerm}}" style="display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 9px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFF6E3; box-shadow: 0 2px 0 #14304A; font-weight: 600; font-size: 13px; white-space: nowrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l6 6-6 6M12 19h8"></path></svg>Open terminal</button>
-<button type="button" class="press" onClick="{{openSettings}}" style="display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 9px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFF6E3; box-shadow: 0 2px 0 #14304A; font-weight: 600; font-size: 13px; white-space: nowrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"></path></svg>Chat settings</button>
+<button type="button" class="press" onClick="{{chat.askNew}}" aria-label="New chat" title="New chat" style="display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 44px; min-width: 44px; padding: 0 9px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFF6E3; box-shadow: 0 2px 0 #14304A; font-weight: 600; font-size: 13px; white-space: nowrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg><sc-if value="{{chat.labels}}" hint-placeholder-val="{{ true }}">New chat</sc-if></button>
+<button type="button" class="press" onClick="{{chat.openTerm}}" aria-label="Open terminal" title="Open terminal" style="display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 44px; min-width: 44px; padding: 0 9px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFF6E3; box-shadow: 0 2px 0 #14304A; font-weight: 600; font-size: 13px; white-space: nowrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l6 6-6 6M12 19h8"></path></svg><sc-if value="{{chat.labels}}" hint-placeholder-val="{{ true }}">Open terminal</sc-if></button>
+<button type="button" class="press" onClick="{{openSettings}}" aria-label="Chat settings" title="Chat settings" style="display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 44px; min-width: 44px; padding: 0 9px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFF6E3; box-shadow: 0 2px 0 #14304A; font-weight: 600; font-size: 13px; white-space: nowrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"></path></svg><sc-if value="{{chat.labels}}" hint-placeholder-val="{{ true }}">Chat settings</sc-if></button>
 </div>
 <sc-if value="{{chat.confirmNew}}" hint-placeholder-val="{{ false }}">
 <div role="group" aria-label="Start a new chat" style="flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; padding: 10px 14px; background-color: #FFF0B8; border-bottom: 2.5px solid #14304A">
@@ -758,7 +758,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 
 <div data-chat-list="1" style="flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 14px 12px 8px; display: flex; flex-direction: column; gap: 12px; background-color: #FFF1CF">
 <sc-for list="{{chat.items}}" as="m" hint-placeholder-count="5">
-<div class="{{m.wrapCls}}" style="{{m.rowStyle}}">
+<div class="{{m.wrapCls}}" data-kind="{{m.kind}}" style="{{m.rowStyle}}">
 <sc-if value="{{m.isDivider}}" hint-placeholder-val="{{ false }}">
 <div role="separator" style="flex: 1 1 auto; display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 600; color: #3E5870"><span style="flex: 1 1 0; height: 0; border-top: 2px dashed #8AA2B6"></span>{{m.text}}<span style="flex: 1 1 0; height: 0; border-top: 2px dashed #8AA2B6"></span></div>
 </sc-if>
@@ -863,7 +863,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 
 <sc-if value="{{hasPending}}" hint-placeholder-val="{{ false }}">
 <div style="{{pendWrapStyle}}">
-<div role="dialog" aria-modal="true" aria-labelledby="adm-orders" class="pop" style="width: 100%; max-width: 540px; border: 3px solid #14304A; border-radius: 24px; background-color: #FFF6E3; box-shadow: 0 8px 0 #0B1F33; overflow: hidden">
+<div role="dialog" aria-modal="true" aria-labelledby="adm-orders" class="pop" style="{{pendDialogStyle}}">
 <div style="display: flex; align-items: center; gap: 14px; padding: 16px 18px; background-color: {{pend.fleetColor}}; color: {{pend.fleetInk}}; border-bottom: 3px solid #14304A">
 <svg width="56" height="40" viewBox="0 0 40 28" aria-hidden="true"><path d="M2 3 L38 3 L30 14 L38 25 L2 25 Z" fill="{{pend.flag}}" stroke="#14304A" stroke-width="2.2" stroke-linejoin="round"></path><text x="15" y="18.5" text-anchor="middle" font-family="Bricolage Grotesque, sans-serif" font-weight="800" font-size="12" fill="{{pend.ink}}">{{pend.mono}}</text></svg>
 <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
@@ -871,7 +871,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <span style="font-size: 14px; font-weight: 600">{{pend.fleet}} · {{pend.harness}} dock</span>
 </div>
 </div>
-<div style="padding: 16px 18px; display: flex; flex-direction: column; gap: 12px">
+<div style="{{pendBodyStyle}}">
 <div style="display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 12px; background-color: #FFFDF6; border: 2px dashed #8AA2B6">
 <span style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: #3E5870">{{pend.taskId}}</span>
 <span style="font-weight: 600; font-size: 15px">{{pend.taskTitle}}</span>
@@ -930,8 +930,8 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <h3 id="adm-set-general" style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 19px">General</h3>
 <div style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFFDF6">
 <span style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px"><span style="font-weight: 600; font-size: 15.5px">Attention sounds</span><span style="font-size: 13px; color: #3E5870">A chime when a ship needs you.</span></span>
-<button type="button" class="press" onClick="{{toggleSound}}" aria-label="{{soundLabel}}" style="flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 999px; border: 2px solid #3A6489; background-color: #14304A; color: #F4EEDF; font-weight: 600; font-size: 14px">
-<sc-if value="{{sound}}" hint-placeholder-val="{{ true }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4EEDF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"></path><path d="M16.5 8.5a5 5 0 0 1 0 7"></path><path d="M19 6a8.5 8.5 0 0 1 0 12"></path></svg></sc-if><sc-if value="{{muted}}" hint-placeholder-val="{{ false }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4EEDF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"></path><path d="M16 9l5 6M21 9l-5 6"></path></svg></sc-if>{{soundText}}</button>
+<button type="button" class="press" onClick="{{set.toggleSound}}" aria-label="{{set.soundLabel}}" style="flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 999px; border: 2px solid #3A6489; background-color: #14304A; color: #F4EEDF; font-weight: 600; font-size: 14px">
+<sc-if value="{{set.sound}}" hint-placeholder-val="{{ true }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4EEDF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"></path><path d="M16.5 8.5a5 5 0 0 1 0 7"></path><path d="M19 6a8.5 8.5 0 0 1 0 12"></path></svg></sc-if><sc-if value="{{set.muted}}" hint-placeholder-val="{{ false }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4EEDF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"></path><path d="M16 9l5 6M21 9l-5 6"></path></svg></sc-if>{{set.soundText}}</button>
 </div>
 </section>
 <section aria-labelledby="adm-set-chat" style="display: flex; flex-direction: column; gap: 12px">
@@ -967,6 +967,8 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </div>
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props='{"scene":{"editor":"enum","options":["harbor","launch","bridge","tablet","inbox","inbox-bridge","inbox-empty","ships","orders","phone-launch","chat","chat-terminal","chat-new","settings"],"default":"harbor"},"$preview":{"width":1440,"height":900}}'>
+// The Needs you drawer's width, shared with the chat button and panel that sit left of it.
+const INBOX_DRAWER_W = 400;
 class Component extends DCLogic {
   D() {
     if (this._d) return this._d;
@@ -1086,7 +1088,7 @@ class Component extends DCLogic {
     const size = this.sizeNow();
     const s = { inited: true, merged: true, collapsed: { linear: true }, sidebar: true, selected: null, ghost: null, hoverYard: null, pending: null, choice: 'commodore', customText: '', acOpen: false, acIdx: 0, ships: this.initialShips(), taken: {}, open: null, focus: 'lead', logs: {}, draft: '', sound: true, q: '', place: {}, lifted: null, dock: {},
       inboxOpen: false, size, wide: size === 'wide', tab: 'inbox', dockSheet: null, shipHi: null,
-      chatOpen: false, chatItems: this.chatSample(), chatTyping: false, chatDraft: '', chatView: 'chat', chatConfirmNew: false, chatUnread: true, chatFocus: false,
+      chatOpen: false, chatItems: this.chatSample(), chatTyping: false, chatDraft: '', chatView: 'chat', chatConfirmNew: false, chatUnread: false, chatFocus: false,
       chatReplies: 0, chatClock: 15, tlines: this.chatTermSample(), tdraft: '', extra: [], settingsOpen: false,
       settings: { fleet: this.defaultChatFleet(), model: 'sonnet', effort: '' }, setDraft: null, vvh: 0, vvt: 0,
       ibItems: this.sampleInbox(Date.now()), ibUi: {}, ibDone: {}, ibGone: {}, ibCur: null };
@@ -1112,7 +1114,7 @@ class Component extends DCLogic {
     if (scene === 'chat' || scene === 'chat-terminal' || scene === 'chat-new') { s.tab = 'chat'; s.chatOpen = true; s.chatUnread = false; }
     if (scene === 'chat-terminal') s.chatView = 'terminal';
     if (scene === 'chat-new') s.chatItems = this.chatFresh();
-    if (scene === 'settings') { s.settingsOpen = true; s.setDraft = Object.assign({}, s.settings); }
+    if (scene === 'settings') { s.settingsOpen = true; s.setDraft = Object.assign({}, s.settings, { sound: s.sound }); }
     return s;
   }
   S() { return (this.state && this.state.inited) ? this.state : this.seed(); }
@@ -1226,17 +1228,34 @@ class Component extends DCLogic {
   // The first fleet that has a Claude dock.
   defaultChatFleet() { const F = this.D().F; const f = F.find((x) => x.yards.indexOf('claude') >= 0); return (f || F[0]).id; }
   chatVisible(st) { return st.size === 'phone' ? st.tab === 'chat' : !!st.chatOpen; }
-  chatScroll() { setTimeout(() => { const el = document.querySelector('[data-chat-list]'); if (el) el.scrollTop = el.scrollHeight; }, 30); }
-  // The bot types for about a second, then says `text`. `after` can add to the state at the same moment.
-  chatBotSays(text, after) {
+  // After a change the list shows the newest AdmiralBot message, or the open question card, from its top.
+  // After the engineer's own message, or the typing dots, it goes to the bottom.
+  chatScroll() {
+    setTimeout(() => {
+      const el = document.querySelector('[data-chat-list]');
+      if (!el || !el.lastElementChild) return;
+      const last = el.lastElementChild;
+      const kind = last.getAttribute('data-kind');
+      if (kind === 'bot' || kind === 'card') el.scrollTop += last.getBoundingClientRect().top - el.getBoundingClientRect().top - 8;
+      else el.scrollTop = el.scrollHeight;
+    }, 30);
+  }
+  closeChat() {
+    this.put({ chatOpen: false });
+    const opener = this.chatOpener;
+    this.chatOpener = null;
+    setTimeout(() => { if (opener && opener.isConnected) opener.focus({ preventScroll: true }); }, 30);
+  }
+  // The bot types for about a second, then says `text`.
+  chatBotSays(text) {
     const gen = this.S().chatGen || 0;
     this.put({ chatTyping: true });
     this.chatScroll();
     setTimeout(() => {
       this.put((st) => {
         if ((st.chatGen || 0) !== gen) return {};
-        return Object.assign({ chatTyping: false, chatItems: st.chatItems.concat([{ id: 'b' + st.chatItems.length, kind: 'msg', who: 'bot', text, time: this.chatTime(st.chatClock) }]),
-          chatClock: st.chatClock + 1, chatUnread: this.chatVisible(st) ? st.chatUnread : true }, after ? after(st) : {});
+        return { chatTyping: false, chatItems: st.chatItems.concat([{ id: 'b' + st.chatItems.length, kind: 'msg', who: 'bot', text, time: this.chatTime(st.chatClock) }]),
+          chatClock: st.chatClock + 1, chatUnread: this.chatVisible(st) ? st.chatUnread : true };
       });
       this.chatScroll();
     }, 1000);
@@ -1267,9 +1286,9 @@ class Component extends DCLogic {
     const toWork = !a.other && label === 'Work queue';
     const where = toWork ? 'Work queue' : 'Freeform';
     const order = toWork ? { id: 'commodore-launcher#46', title: 'Release build is slow on CI', src: 'github', panel: 'work' } : { id: 'FF-2', title: 'Release build is slow on CI', src: 'freeform', panel: 'freeform' };
-    this.put((prev) => ({ chatItems: prev.chatItems.map((i) => i.id === 'q1' ? { id: 'q1', kind: 'fold', text: 'Answered: ' + label + (a.note ? ' (with a note)' : ''), time: this.chatTime(prev.chatClock) } : i), chatClock: prev.chatClock + 1 }));
-    this.chatBotSays('Added an order to ' + where + ': ' + order.title + '.' + (a.other ? ' I have no panel called "' + a.other + '", so it went to Freeform.' : ''),
-      (prev) => ({ extra: prev.extra.concat([order]) }));
+    // The order is added when the answer is taken, so starting a new chat before the reply cannot drop it.
+    this.put((prev) => ({ chatItems: prev.chatItems.map((i) => i.id === 'q1' ? { id: 'q1', kind: 'fold', text: 'Answered: ' + label + (a.note ? ' (with a note)' : ''), time: this.chatTime(prev.chatClock) } : i), chatClock: prev.chatClock + 1, extra: prev.extra.concat([order]) }));
+    this.chatBotSays('Added an order to ' + where + ': ' + order.title + '.' + (a.other ? ' I have no panel called "' + a.other + '", so it went to Freeform.' : ''));
   }
   chatNew() { this.put((st) => ({ chatItems: this.chatFresh(), chatGen: (st.chatGen || 0) + 1, chatTyping: false, chatConfirmNew: false, chatDraft: '', chatReplies: 0, chatClock: 31, chatUnread: false, tlines: this.chatTermSample().slice(0, 2), tdraft: '' })); this.chatScroll(); }
   chatTermAdd(line, reply) {
@@ -1277,15 +1296,15 @@ class Component extends DCLogic {
     if (reply) setTimeout(() => this.put((st) => ({ tlines: st.tlines.concat([reply]) })), 650);
     setTimeout(() => { const el = document.querySelector('[data-chat-term]'); if (el) el.scrollTop = el.scrollHeight; }, 700);
   }
-  openSettings() { this.put((st) => ({ settingsOpen: true, setDraft: Object.assign({}, st.settings) })); this.focusSel('[data-settings]'); }
+  openSettings() { this.put((st) => ({ settingsOpen: true, setDraft: Object.assign({}, st.settings, { sound: st.sound }) })); this.focusSel('[data-settings]'); }
   closeSettings() { this.put({ settingsOpen: false, setDraft: null }); }
   // One layer closes per Escape: Settings first, then the chat panel or sheet.
   onEsc(e) {
     if (e.key !== 'Escape') return;
     const st = this.S();
     if (st.settingsOpen) { this.closeSettings(); return; }
-    if (st.pending || st.dockSheet) return;
-    if (st.size !== 'phone' && st.chatOpen) this.put({ chatOpen: false });
+    if (st.pending || (st.dockSheet && st.size === 'phone')) return;
+    if (st.size !== 'phone' && st.chatOpen) this.closeChat();
   }
 
   acList(st) {
@@ -1432,7 +1451,8 @@ class Component extends DCLogic {
   componentDidMount() {
     try {
       this.mqs = [window.matchMedia(this.phoneQuery()), window.matchMedia(this.wideQuery())];
-      this.onMq = () => { const size = this.sizeNow(); this.put({ size, wide: size === 'wide' }); };
+      // At middle the inbox and the chat are both full-screen sheets: if both were open, keep the chat.
+      this.onMq = () => { const size = this.sizeNow(); this.put((st) => Object.assign({ size, wide: size === 'wide' }, size === 'middle' && st.inboxOpen && st.chatOpen ? { inboxOpen: false } : {})); };
       this.mqs.forEach((mq) => { if (mq.addEventListener) mq.addEventListener('change', this.onMq); else mq.addListener(this.onMq); });
       this.onMq();
     } catch (err) {}
@@ -1624,7 +1644,8 @@ class Component extends DCLogic {
             dotRadius: multi ? '6px' : '50%', cls: 'opt press' + (on ? ' on' : ''),
             pick: () => {
               self.ibPickOpt(id, q.id, o.label, multi);
-              if (opts.tapSends && !multi && qs.length === 1) opts.onSend([{ sel: [o.label], other: '', note: a.note.trim() }]);
+              // One tap sends, unless a note is typed or Other is on: then it only selects, and Send answers sends.
+              if (opts.tapSends && !multi && qs.length === 1 && a.note.trim() === '' && !a.other) opts.onSend([{ sel: [o.label], other: '', note: a.note.trim() }]);
             } };
         }),
         other: { on: a.other, role: multi ? 'checkbox' : 'radio', dotRadius: multi ? '6px' : '50%', cls: 'opt press' + (a.other ? ' on' : ''),
@@ -1759,7 +1780,7 @@ class Component extends DCLogic {
       cls: phone ? undefined : wide ? 'ib-drawer' : 'ib-sheet',
       role: phone ? 'region' : wide ? 'complementary' : 'dialog', modal: wide || phone ? null : 'true',
       style: phone ? 'position: absolute; top: 0; bottom: 0; left: env(safe-area-inset-left); right: env(safe-area-inset-right); outline: none; background-color: #FFF1CF'
-        : wide ? 'flex: 0 0 400px; min-width: 0; position: sticky; top: 0; align-self: flex-start; height: calc(100dvh - 73px); outline: none; background-color: #FFF1CF; border-left: 3px solid #14304A'
+        : wide ? 'flex: 0 0 ' + INBOX_DRAWER_W + 'px; min-width: 0; position: sticky; top: 0; align-self: flex-start; height: calc(100dvh - 73px); outline: none; background-color: #FFF1CF; border-left: 3px solid #14304A'
         : 'position: fixed; inset: 0; z-index: 40; outline: none; background-color: #FFF1CF',
       showClose: !phone,
       navPad: phone ? '10px calc(14px + env(safe-area-inset-right)) 10px calc(14px + env(safe-area-inset-left))' : '10px 14px max(10px, env(safe-area-inset-bottom))',
@@ -1954,18 +1975,24 @@ class Component extends DCLogic {
     const showTabs = phone && !bridge && !(tabId === 'chat' && s.chatFocus);
     const needsYou = s.ships.filter((x) => x.status === 'attention').length;
     const chatDot = !!s.chatUnread && tabId !== 'chat';
-    const tabDefs = [['inbox', 'Inbox', inbox.count, 'Inbox', '#14304A', '#FFC23D'], ['chat', 'Chat', chatDot ? 1 : 0, 'Chat', '#FF7A59', '#14304A'], ['ships', 'Ships', needsYou, 'Ships', '#FF7A59', '#14304A'], ['orders', 'Orders', 0]];
+    const tabDefs = [
+      { id: 'inbox', label: 'Inbox', count: inbox.count, badgeBg: '#14304A', badgeInk: '#FFC23D' },
+      { id: 'chat', label: 'Chat', count: chatDot ? 1 : 0 },
+      { id: 'ships', label: 'Ships', count: needsYou, badgeBg: '#FF7A59', badgeInk: '#14304A' },
+      { id: 'orders', label: 'Orders', count: 0 }
+    ];
     const tabs = tabDefs.map((t) => {
-      const on = tabId === t[0];
+      const on = tabId === t.id;
+      const isChat = t.id === 'chat';
       return {
-        label: t[1], isInbox: t[0] === 'inbox', isChat: t[0] === 'chat', isShips: t[0] === 'ships', isOrders: t[0] === 'orders',
+        label: t.label, isInbox: t.id === 'inbox', isChat, isShips: t.id === 'ships', isOrders: t.id === 'orders',
         current: on ? 'page' : undefined,
-        aria: t[1] + (t[2] ? (t[0] === 'chat' ? ', new reply' : ', ' + t[2] + (t[0] === 'inbox' ? (t[2] === 1 ? ' item' : ' items') : ' needing you')) : ''),
+        aria: t.label + (t.count ? (isChat ? ', new reply' : ', ' + t.count + (t.id === 'inbox' ? (t.count === 1 ? ' item' : ' items') : ' needing you')) : ''),
         style: 'position: relative; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 2px; border-radius: 14px; color: #14304A; border: 2.5px solid ' + (on ? '#14304A' : 'transparent') + '; background-color: ' + (on ? '#FFC23D' : 'transparent') + '; box-shadow: ' + (on ? '0 2px 0 #14304A' : 'none'),
-        hasBadge: t[2] > 0, badge: t[0] === 'chat' ? '' : t[2],
-        badgeStyle: t[0] === 'chat' ? 'position: absolute; top: -3px; left: 19px; width: 14px; height: 14px; border-radius: 50%; border: 2.5px solid #FFF6E3; background-color: #FF7A59'
-          : 'position: absolute; top: -7px; left: 15px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; border: 2px solid #FFF6E3; background-color: ' + (t[4] || '#14304A') + '; color: ' + (t[5] || '#FFC23D') + '; font-family: Archivo, sans-serif; font-weight: 700; font-size: 11.5px; display: flex; align-items: center; justify-content: center',
-        go: () => { self.put(t[0] === 'chat' ? { tab: 'chat', chatUnread: false } : { tab: t[0] }); if (t[0] === 'chat') self.chatScroll(); }
+        hasBadge: t.count > 0, badge: isChat ? '' : t.count,
+        badgeStyle: isChat ? 'position: absolute; top: -3px; left: 19px; width: 14px; height: 14px; border-radius: 50%; border: 2.5px solid #FFF6E3; background-color: #FF7A59'
+          : 'position: absolute; top: -7px; left: 15px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; border: 2px solid #FFF6E3; background-color: ' + t.badgeBg + '; color: ' + t.badgeInk + '; font-family: Archivo, sans-serif; font-weight: 700; font-size: 11.5px; display: flex; align-items: center; justify-content: center',
+        go: () => { self.put(isChat ? { tab: 'chat', chatUnread: false } : { tab: t.id }); if (isChat) self.chatScroll(); }
       };
     });
 
@@ -1999,7 +2026,7 @@ class Component extends DCLogic {
           }))
         };
       });
-    const nAttn = shipRows.filter((r) => r.status.indexOf('Needs you') === 0).length;
+    const nAttn = needsYou;
     const dockTask = phone && s.dockSheet ? (this.findTask(s.dockSheet) || { id: s.dockSheet, title: '' }) : null;
     const dockSheet = dockTask ? {
       title: 'Launch ' + dockTask.id, task: dockTask.title,
@@ -2021,7 +2048,10 @@ class Component extends DCLogic {
     } : null;
     // ---- Chat and Settings ----
     const size = s.size;
-    const kbd = !!s.vvh && s.vvh < (window.innerHeight || 0) - 120;
+    // The keyboard shrinks the visual viewport; compare it with the layout viewport's own height.
+    const clientH = document.documentElement.clientHeight || window.innerHeight || 0;
+    const kbd = !!s.vvh && s.vvh < clientH - 120;
+    const chatRight = (drawer ? INBOX_DRAWER_W + 20 : 20) + 'px';
     const vvBox = kbd ? 'top: ' + s.vvt + 'px; height: ' + s.vvh + 'px' : 'top: 0; height: 100dvh';
     const chatShown = phone ? tabId === 'chat' : !!s.chatOpen;
     const fleetOf = (id) => F.find((x) => x.id === id) || F[0];
@@ -2030,7 +2060,7 @@ class Component extends DCLogic {
     const botRow = 'display: flex; align-items: flex-start; gap: 8px';
     const cardModel = this.qModel('chat-q1', this.chatQuestion().questions, (s.ibUi || {})['chat-q1'] || {}, { tapSends: true, onSend: (a) => self.chatAnswer(a) });
     const chatItems = s.chatItems.map((it) => {
-      const m = { id: it.id, text: it.text, time: it.time, isDivider: false, isMsg: false, isBot: false, isTyping: false, isCard: false, isFold: false, rowStyle: botRow };
+      const m = { id: it.id, kind: it.kind === 'msg' ? (it.who === 'me' ? 'me' : 'bot') : it.kind, text: it.text, time: it.time, isDivider: false, isMsg: false, isBot: false, isTyping: false, isCard: false, isFold: false, rowStyle: botRow };
       if (it.kind === 'divider') { m.isDivider = true; m.rowStyle = 'display: flex'; return m; }
       if (it.kind === 'card') { m.isCard = true; m.isBot = true; m.card = cardModel; return m; }
       if (it.kind === 'fold') { m.isFold = true; m.rowStyle = 'display: flex'; m.card = { doneText: it.text, doneRight: it.time }; return m; }
@@ -2042,16 +2072,18 @@ class Component extends DCLogic {
         + (me ? 'border-radius: 16px 16px 4px 16px; background-color: #FFC23D' : 'border-radius: 16px 16px 16px 4px; background-color: #FFFDF6');
       return m;
     });
-    if (s.chatTyping) chatItems.push({ id: 'typing', isDivider: false, isMsg: false, isBot: true, isTyping: true, isCard: false, isFold: false, rowStyle: botRow });
+    if (s.chatTyping) chatItems.push({ id: 'typing', kind: 'typing', isDivider: false, isMsg: false, isBot: true, isTyping: true, isCard: false, isFold: false, rowStyle: botRow });
     const keyBottom = phone ? (showTabs ? '10px' : 'max(10px, env(safe-area-inset-bottom))') : size === 'middle' ? 'max(10px, env(safe-area-inset-bottom))' : '10px';
     const chat = {
-      role: phone ? 'region' : size === 'middle' ? 'dialog' : 'dialog', modal: size === 'middle' ? 'true' : undefined,
+      role: phone ? 'region' : 'dialog', modal: size === 'middle' ? 'true' : undefined,
       cls: phone ? undefined : size === 'middle' ? 'ib-sheet' : 'chat-pop',
       style: phone ? 'position: absolute; top: 0; bottom: 0; left: env(safe-area-inset-left); right: env(safe-area-inset-right); display: flex; flex-direction: column; outline: none; background-color: #FFF1CF'
         : size === 'middle' ? 'position: fixed; left: 0; right: 0; ' + vvBox + '; z-index: 40; display: flex; flex-direction: column; outline: none; background-color: #FFF1CF'
-        : 'position: fixed; z-index: 15; right: ' + (drawer ? 420 : 20) + 'px; bottom: 96px; width: 380px; max-width: calc(100vw - 40px); height: 560px; max-height: calc(100dvh - 185px); display: flex; flex-direction: column; outline: none; overflow: hidden; background-color: #FFF1CF; border: 3px solid #14304A; border-radius: 20px; box-shadow: 0 8px 0 #0B1F33',
+        : 'position: fixed; z-index: 15; right: ' + chatRight + '; bottom: ' + (kbd ? clientH - (s.vvt + s.vvh) + 12 : 96) + 'px; width: 380px; max-width: calc(100vw - 40px); height: 560px; max-height: ' + (kbd ? (s.vvh - 24) + 'px' : 'calc(100dvh - 185px)') + '; display: flex; flex-direction: column; outline: none; overflow: hidden; background-color: #FFF1CF; border: 3px solid #14304A; border-radius: 20px; box-shadow: 0 8px 0 #0B1F33',
+      // The 380px floating panel is too narrow for three labelled buttons on one row, so there they are icons (with a name and a tooltip).
+      labels: size !== 'wide',
       title: 'AdmiralBot', sub: 'Claude · ' + fleetOf(cfg.fleet).name + ' · ' + cfg.model + (cfg.effort ? ' · ' + cfg.effort : ''),
-      showClose: !phone, close: () => self.put({ chatOpen: false }),
+      showClose: !phone, close: () => self.closeChat(),
       isTerminal: s.chatView === 'terminal', isChat: s.chatView !== 'terminal',
       backToChat: () => { self.put({ chatView: 'chat' }); self.chatScroll(); },
       openTerm: () => self.put({ chatView: 'terminal', chatConfirmNew: false }),
@@ -2060,7 +2092,7 @@ class Component extends DCLogic {
       draft: s.chatDraft || '', rows: Math.min(4, (s.chatDraft || '').split('\n').length),
       onDraft: (e) => self.put({ chatDraft: e.target.value }),
       inKey: (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); self.chatSend(); } },
-      onFocus: () => { self.put({ chatFocus: true }); setTimeout(() => window.scrollTo(0, 0), 50); },
+      onFocus: () => { self.put({ chatFocus: true }); if (phone) setTimeout(() => window.scrollTo(0, 0), 50); },
       onBlur: () => setTimeout(() => { const a = document.activeElement; if (!a || a.id !== 'adm-chat-input') self.put({ chatFocus: false }); }, 200),
       send: () => self.chatSend(), formSend: (e) => { if (e && e.preventDefault) e.preventDefault(); self.chatSend(); },
       tlines: s.tlines.map((l) => ({ cls: 'ln ln-' + l.k, t: l.t })), tdraft: s.tdraft || '',
@@ -2068,6 +2100,7 @@ class Component extends DCLogic {
       tsend: (e) => { if (e && e.preventDefault) e.preventDefault(); const t = (self.S().tdraft || '').trim(); if (t) self.chatTermAdd({ k: 'you', t: '❯ ' + t }, { k: 'agent', t: 'Aye. I only add orders; launching stays with you.' }); },
       tkeys: keyDefs.map((d) => ({ label: d[1], aria: 'Send ' + d[0] + ' to the chat session', press: () => self.chatTermAdd({ k: 'you', t: '❯ [' + d[0] + ']' }, d[2]) }))
     };
+    const sdSound = s.setDraft ? !!s.setDraft.sound : !!s.sound;
     const set = {
       wrapStyle: phone ? 'position: fixed; inset: 0; z-index: 70' : 'position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; padding: 16px',
       cls: phone ? undefined : 'pop',
@@ -2077,12 +2110,16 @@ class Component extends DCLogic {
       bodyPad: phone ? '16px calc(16px + env(safe-area-inset-right)) 20px calc(16px + env(safe-area-inset-left))' : '16px 18px',
       footPad: phone ? '12px calc(16px + env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))' : '14px 18px',
       selStyle: 'height: 48px; padding: 0 10px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFFFF; font-family: Archivo, sans-serif; font-size: 16px; color: #14304A',
-      close: () => self.closeSettings(), save: () => self.put((st) => ({ settings: Object.assign({}, st.setDraft || st.settings), settingsOpen: false, setDraft: null })),
+      close: () => self.closeSettings(), save: () => {
+        const turnedOn = !!(self.S().setDraft && self.S().setDraft.sound && !self.S().sound);
+        self.put((st) => ({ settings: { fleet: (st.setDraft || st.settings).fleet, model: (st.setDraft || st.settings).model, effort: (st.setDraft || st.settings).effort }, sound: st.setDraft ? st.setDraft.sound : st.sound, settingsOpen: false, setDraft: null }));
+        if (turnedOn) setTimeout(() => self.chirp(), 30);
+      },
+      // Sound follows Save and Cancel like the other fields.
+      sound: sdSound, muted: !sdSound, soundText: sdSound ? 'Sound on' : 'Muted', soundLabel: sdSound ? 'Mute attention sounds' : 'Turn attention sounds on',
+      toggleSound: () => self.put((st) => ({ setDraft: Object.assign({}, st.setDraft || st.settings, { sound: !(st.setDraft ? st.setDraft.sound : st.sound) }) })),
       fleet: (s.setDraft || cfg).fleet, model: (s.setDraft || cfg).model, effort: (s.setDraft || cfg).effort,
-      fleets: F.map((f) => ({ v: f.id, t: f.name + (f.id === defFleet.id ? ' (default)' : '') })),
       fleetHint: 'Default: ' + defFleet.name + ', the first fleet with a Claude dock.',
-      models: [['sonnet', 'sonnet (default)'], ['opus', 'opus'], ['haiku', 'haiku']].map((o) => ({ v: o[0], t: o[1] })),
-      efforts: [['', 'Harness default'], ['low', 'low'], ['medium', 'medium'], ['high', 'high']].map((o) => ({ v: o[0], t: o[1] })),
       onFleet: (e) => { const v = e.target.value; self.put((st) => ({ setDraft: Object.assign({}, st.setDraft || st.settings, { fleet: v }) })); },
       onModel: (e) => { const v = e.target.value; self.put((st) => ({ setDraft: Object.assign({}, st.setDraft || st.settings, { model: v }) })); },
       onEffort: (e) => { const v = e.target.value; self.put((st) => ({ setDraft: Object.assign({}, st.setDraft || st.settings, { effort: v }) })); }
@@ -2092,7 +2129,7 @@ class Component extends DCLogic {
     set.line = '"chat": {"fleet": "' + sd.fleet + '", "model": "' + sd.model + '"' + (sd.effort ? ', "effort": "' + sd.effort + '"' : '') + '}';
     const gearBase = 'display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 44px; height: 44px; border-radius: 50%; border: 2px solid #3A6489; background-color: #14304A; color: #F4EEDF';
 
-    const ORIG_MAIN ='flex: 999 1 640px; min-width: 0; min-height: 760px; position: relative; overflow: hidden; background-color: #29B2C2; display: flex; flex-wrap: ' + (drawer ? 'nowrap' : 'wrap') + '; align-items: stretch';
+    const harborMain = 'flex: 999 1 640px; min-width: 0; min-height: 760px; position: relative; overflow: hidden; background-color: #29B2C2; display: flex; flex-wrap: ' + (drawer ? 'nowrap' : 'wrap') + '; align-items: stretch';
     const bridgeWrap = drawer ? 'nowrap' : 'wrap';
     if (bridge) {
       bridge.overlayCls = phone ? 'ph-bridge' : undefined;
@@ -2124,19 +2161,30 @@ class Component extends DCLogic {
         : "min-height: 100vh; position: relative; display: flex; flex-direction: column; background-color: #14304A; color: #14304A; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-size: 15px",
       rowStyle: phone ? 'position: relative; flex: 1 1 0; min-height: 0; background-color: #FFF1CF'
         : 'display: flex; flex-wrap: ' + (drawer ? 'nowrap' : 'wrap') + '; flex: 1 1 auto; align-items: stretch; background-color: #29B2C2',
-      mainStyle: phone ? 'display: contents' : ORIG_MAIN,
+      mainStyle: phone ? 'display: contents' : harborMain,
       ordersStyle: phone ? 'position: absolute; top: 0; bottom: 0; left: env(safe-area-inset-left); right: env(safe-area-inset-right); overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 14px; padding: 16px 16px 24px; background-color: #FFF1CF'
         : 'flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 16px; background-color: #FFF1CF; border-right: 3px solid #14304A',
       ordersHint: phone ? 'Tap an order to pick a dock and launch it' : 'Drag a card onto a dock to launch',
+      mergeSize: phone ? '44px' : '36px',
       filterSize: phone ? '16px' : '14.5px', termInSize: phone ? '16px' : '13.5px', skillInSize: phone ? '16px' : '14px', keyH: phone ? '44px' : '40px',
+      // On a phone the dialog fits the screen: its sail-with list scrolls and the buttons stay in view.
+      pendDialogStyle: 'width: 100%; max-width: 540px; border: 3px solid #14304A; border-radius: 24px; background-color: #FFF6E3; box-shadow: 0 8px 0 #0B1F33; overflow: hidden' + (phone ? '; max-height: 100%; display: flex; flex-direction: column' : ''),
+      pendBodyStyle: 'padding: 16px 18px; display: flex; flex-direction: column; gap: 12px' + (phone ? '; flex: 1 1 auto; min-height: 0; overflow-y: auto' : ''),
       pendWrapStyle: phone ? 'position: fixed; inset: 0; z-index: 60; background-color: rgba(11,31,51,.55); display: flex; align-items: flex-start; justify-content: center; padding: max(16px, env(safe-area-inset-top)) 12px max(16px, env(safe-area-inset-bottom)); overflow: auto'
         : 'position: absolute; inset: 0; z-index: 20; background-color: rgba(11,31,51,.55); display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; overflow: auto',
       tabs, showTabs, tabShips: phone && tabId === 'ships',
       chat, chatShown, chatOpen: !!s.chatOpen, chatClosed: !s.chatOpen, chatUnread: !!s.chatUnread,
       showChatBtn: size === 'middle', chatFab: size === 'wide',
       chatBtnAria: (s.chatOpen ? 'Close the chat with AdmiralBot' : 'Open the chat with AdmiralBot') + (s.chatUnread && !s.chatOpen ? ', new reply' : ''),
-      chatFabStyle: 'position: fixed; z-index: 16; right: ' + (drawer ? 420 : 20) + 'px; bottom: 20px; width: 60px; height: 60px; border-radius: 50%; border: 3px solid #14304A; background-color: #FFC23D; box-shadow: 0 4px 0 #14304A; display: flex; align-items: center; justify-content: center',
-      toggleChat: () => { self.put((st) => { const open = !st.chatOpen; return { chatOpen: open, chatUnread: open ? false : st.chatUnread, inboxOpen: open && st.size === 'middle' ? false : st.inboxOpen }; }); self.chatScroll(); self.focusSel('[data-chat]'); },
+      chatFabStyle: 'position: fixed; z-index: 16; right: ' + chatRight + '; bottom: 20px; width: 60px; height: 60px; border-radius: 50%; border: 3px solid #14304A; background-color: #FFC23D; box-shadow: 0 4px 0 #14304A; display: flex; align-items: center; justify-content: center',
+      toggleChat: (e) => {
+        if (self.S().chatOpen) { self.closeChat(); return; }
+        // Safari does not focus a button on tap, so take the opener from the event, not from activeElement.
+        self.chatOpener = (e && e.currentTarget) || document.activeElement;
+        self.put((st) => ({ chatOpen: true, chatUnread: false, inboxOpen: st.size === 'middle' ? false : st.inboxOpen }));
+        self.chatScroll();
+        self.focusSel('[data-chat]');
+      },
       settingsOpen: !!s.settingsOpen, set, openSettings: () => self.openSettings(),
       gearStyle: gearBase,
       shipRows, shipsHint: shipRows.length + (shipRows.length === 1 ? ' ship' : ' ships') + (nAttn ? ', ' + nAttn + ' need' + (nAttn === 1 ? 's' : '') + ' you' : ''),

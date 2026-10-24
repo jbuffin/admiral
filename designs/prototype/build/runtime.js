@@ -91,7 +91,7 @@
     if (tag === 'sc-def') return null;
     if (tag === 'sc-use') {
       var def = DEFS[node.getAttribute('name')];
-      if (!def) return null;
+      if (!def) { console.warn('sc-use: no <sc-def> named "' + node.getAttribute('name') + '"'); return null; }
       var bound = {};
       bound[node.getAttribute('as') || 'it'] = value(node.getAttribute('value') || '', scopes);
       return h(React.Fragment, { key: key }, children(def, scopes.concat([bound])));
