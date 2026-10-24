@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -54,8 +55,26 @@ const PollInterval = 500 * time.Millisecond
 
 const sep = "\x1f"
 
-// format is what one `list-panes -a` row holds.
-const format = "#{session_name}" + sep + "#{pane_dead}" + sep + "#{pane_dead_status}" + sep +
+// format is what one `list-panes -a` row holds. Every free text in it (the
+// session name and each @admiral-* option) goes through unprintable, because
+// tmux prints option values raw: a newline or a \x1f an agent put in its own
+// pane's option would otherwise end its row early and forge another.
+var format = unprintable(rawFormat)
+
+// ctrl matches the ASCII control characters, the newline and the field
+// separator among them. The class is spelled with a range of literal bytes: the
+// colon in [[:cntrl:]] ends a tmux format modifier.
+const ctrl = "[\x01-\x1f\x7f]"
+
+var freeText = regexp.MustCompile(`#\{(session_name|@[a-z-]+)\}`)
+
+// unprintable wraps each free text of a format in a substitution that turns a
+// control character into a space.
+func unprintable(f string) string {
+	return freeText.ReplaceAllString(f, "#{s/"+ctrl+"/ /:$1}")
+}
+
+const rawFormat = "#{session_name}" + sep + "#{pane_dead}" + sep + "#{pane_dead_status}" + sep +
 	"#{pane_dead_signal}" + sep + "#{pane_dead_time}" + sep + "#{@admiral-bell}" + sep + "#{@admiral-state}" + sep +
 	"#{@admiral-reason}" + sep + "#{@admiral-name}" + sep + "#{@admiral-fleet}" + sep + "#{@admiral-fleet-name}" + sep +
 	"#{@admiral-fleet-color}" + sep + "#{@admiral-harness}" + sep + "#{@admiral-dir}" + sep +
@@ -149,6 +168,7 @@ type Host struct {
 	mu       sync.Mutex
 	sessions map[string]Session
 	order    []string
+	clashes  map[string]bool // crew names two windows claim, as last logged
 	unread   map[string]bool // sessions seen but unreadable (their row was malformed)
 	subs     map[chan Event]struct{}
 
@@ -368,6 +388,7 @@ func (h *Host) poll(ctx context.Context) error {
 		known[n] = true
 	}
 	next, unreadable := parseRows(rows, known)
+	h.noteClashes(crewClashes(rows, known))
 	h.set(next, unreadable, true)
 	h.once.Do(func() { close(h.ready) })
 	return nil
@@ -492,6 +513,21 @@ func parseRows(rows []string, known map[string]bool) (sessions map[string]Sessio
 	}
 	sort.Strings(unreadable)
 	return sessions, unreadable
+}
+
+// noteClashes says once, on stderr, for each crew name that two windows of a
+// session claim (the name is read for neither), and again if it clashes anew.
+func (h *Host) noteClashes(now []string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	next := map[string]bool{}
+	for _, c := range now {
+		next[c] = true
+		if !h.clashes[c] {
+			fmt.Fprintf(os.Stderr, "admiral: crew boat %s: two windows claim this name, so neither is listed\n", c)
+		}
+	}
+	h.clashes = next
 }
 
 // set replaces the last read and publishes the difference as events. A failed

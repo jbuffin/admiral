@@ -82,6 +82,26 @@ func shipSessions(dir string) ([]sessionhost.Session, error) {
 	return out, nil
 }
 
+// row prints one line of the table. The fields come from option text an agent
+// can write, so none reaches the terminal with a control character in it.
+func row(out io.Writer, fields ...string) {
+	for i, f := range fields {
+		fields[i] = printable(f)
+	}
+	fmt.Fprintln(out, strings.Join(fields, "\t"))
+}
+
+// printable turns the control characters (below 0x20, and 0x7f to 0x9f) into
+// spaces.
+func printable(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
+			return ' '
+		}
+		return r
+	}, s)
+}
+
 func statusText(s ships.Ship) string { return exitText(s.Status, s.ExitCode, s.ExitSignal) }
 
 // exitText is a status, with how it ended when it is anchored.
@@ -121,7 +141,7 @@ func Ships(args []string, std IO) error {
 			fmt.Fprintln(std.Err, notice)
 		}
 		for _, s := range list {
-			fmt.Fprintln(std.Out, s.Name)
+			fmt.Fprintln(std.Out, printable(s.Name))
 		}
 		return nil
 	}
@@ -130,7 +150,7 @@ func Ships(args []string, std IO) error {
 	}
 	fmt.Fprintln(std.Out, "NAME\tSESSION\tFLEET\tHARNESS\tSTATUS\tREPO")
 	for _, s := range list {
-		fmt.Fprintf(std.Out, "%s\t%s\t%s\t%s\t%s\t%s\n", s.Name, s.Session, s.Fleet, s.Harness, statusText(s), s.Repo)
+		row(std.Out, s.Name, s.Session, s.Fleet, s.Harness, statusText(s), s.Repo)
 		// One line per crew boat (teammates; subagents have no window), under the
 		// ship's, in the same six columns with SESSION and FLEET empty.
 		crew := append([]ships.CrewBoat(nil), s.Crew...)
@@ -140,7 +160,7 @@ func Ships(args []string, std IO) error {
 			if c.Dir != "" {
 				repo = filepath.Base(c.Dir)
 			}
-			fmt.Fprintf(std.Out, "  %s\t\t\t%s\t%s\t%s\n", c.Name, c.Harness, exitText(c.Status, c.ExitCode, c.ExitSignal), repo)
+			row(std.Out, "  "+c.Name, "", "", c.Harness, exitText(c.Status, c.ExitCode, c.ExitSignal), repo)
 		}
 	}
 	return nil

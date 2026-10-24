@@ -19,10 +19,10 @@ type frame struct {
 	data   []byte
 }
 
-// browser is one WebSocket on a bridge, a ship's or a crew boat's. Everything bound for it goes
-// through an in-order queue that a writer goroutine drains, so the control
-// client's reader never waits on a slow browser. Output bytes that arrive
-// while a frame is still queued are merged into it.
+// browser is one WebSocket on a bridge, a ship's or a crew boat's. Everything
+// bound for it goes through an in-order queue that a writer goroutine drains, so
+// the control client's reader never waits on a slow browser. Output bytes that
+// arrive while a frame is still queued are merged into it.
 type browser struct {
 	conn *websocket.Conn
 

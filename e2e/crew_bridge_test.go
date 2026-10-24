@@ -3,6 +3,7 @@ package e2e
 import (
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -293,6 +294,38 @@ func TestCrewBridge(t *testing.T) {
 		if strings.Contains(w.capture(b.pane), "typed-in-anchored") {
 			t.Errorf("input reached an anchored crew boat")
 		}
+	})
+
+	t.Run("a boat closed and relaunched under its name inside one poll closes the old bridge", func(t *testing.T) {
+		w := w.at(t)
+		old := w.crewBoat(ship.Session, "relay", "claude")
+		w.waitShip(ship.Session, "relay", crewIs("relay", "underway"))
+		oldBridge, _ := w.dialCrew(t, ship.Session, "relay", 80, 24)
+		oldWin := w.winOf(old.pane)
+		// Back to back: the pair can finish inside one poll, where the crew
+		// signature (names and statuses) never changes.
+		w.expectExit(crewCall(w, ship.Session, "", "close", "relay"), 0, "crew close relay")
+		w.expectExit(crewCall(w, ship.Session, "", "launch", "--name", "relay", "--harness", "claude",
+			"--dir", filepath.Join(w.root, "anywhere"), "--", "go"), 0, "crew launch relay")
+		oldBridge.waitFor(10*time.Second, "the bridge on the closed boat to close", func() bool {
+			oldBridge.mu.Lock()
+			defer oldBridge.mu.Unlock()
+			return oldBridge.err != nil
+		})
+		w.waitFile(ship.Session+"/crew/relay", "recorded")
+		fresh := w.paneOf(ship.Session, "relay")
+		if w.winOf(fresh.pane) == oldWin {
+			t.Fatalf("the relaunched boat has the old window %s", oldWin)
+		}
+		w.waitPaneWorking(fresh.pane)
+		// The API lists relay before and after the swap, so let the server's polls
+		// (every 500 ms) read the new window before dialling it.
+		time.Sleep(1500 * time.Millisecond)
+		nb, _ := w.dialCrew(t, ship.Session, "relay", 80, 24)
+		w.paneWriteID(fresh.pane, "RELAY-NEW\r\n")
+		m := nb.mark()
+		w.paneWriteID(fresh.pane, "RELAY-NEW-LIVE\r\n")
+		nb.waitOutput(5*time.Second, m, "RELAY-NEW-LIVE")
 	})
 
 	// Closing runs before the ship anchors: the ship's pane must still take output

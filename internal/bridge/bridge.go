@@ -213,9 +213,15 @@ func (s *Service) enter(session string, t target, b *browser) (*watch, error) {
 		c.start()
 	}
 	<-c.ready
-	if c.err != nil {
+	c.mu.Lock()
+	err, gone := c.err, c.gone
+	c.mu.Unlock()
+	if err == nil && gone { // the session ended while the client attached
+		err = errGone
+	}
+	if err != nil {
 		w.leave(b)
-		return nil, c.err
+		return nil, err
 	}
 	if freshWatch && !t.crew {
 		w.resolve()
@@ -469,6 +475,16 @@ func (c *conn) notify(line string) {
 				b.output(payload)
 			}
 		}
+	case strings.HasPrefix(line, "%window-close "), strings.HasPrefix(line, "%unlinked-window-close "):
+		// A crew boat's window closed. This ends its bridge at once, and a boat
+		// closed and relaunched under the same name inside one poll leaves the
+		// ship's crew signature unchanged, so the push never says so.
+		_, win, _ := strings.Cut(line, " ")
+		for _, w := range c.snapshot() {
+			if w.crew && w.win == strings.TrimSpace(win) {
+				w.drop()
+			}
+		}
 	case strings.HasPrefix(line, "%layout-change "):
 		win, _, _ := strings.Cut(line[len("%layout-change "):], " ")
 		for _, w := range c.snapshot() {
@@ -527,7 +543,7 @@ func crewState(c sessionhost.Crew) shipMsg {
 	return m
 }
 
-// crewBoat is the crew boat of a ship called name.
+// crewBoat is the crew boat called name of the ship in session.
 func (s *Service) crewBoat(session, name string) (sessionhost.Crew, bool) {
 	if session == sessionhost.SetupName {
 		return sessionhost.Crew{}, false
@@ -545,7 +561,7 @@ func (s *Service) crewBoat(session, name string) (sessionhost.Crew, bool) {
 // runs and it takes input and a size. ok is false when it is gone. A crew boat
 // follows its own status and never the ship's: an anchored ship keeps its live
 // crew boats.
-func (w *watch) state() (st shipMsg, live_, ok bool) {
+func (w *watch) state() (st shipMsg, takesInput, ok bool) {
 	if !w.crew {
 		sh, ok := w.c.s.get(w.c.session)
 		return shipState(sh), live(sh), ok
