@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -285,6 +286,9 @@ func withoutActivityStamp(t *testing.T, calls [][]string, pane string) [][]strin
 	t.Helper()
 	var out [][]string
 	for _, c := range calls {
+		if len(c) > 0 && c[0] == "-u" {
+			continue // a read (harness, crew, subagents): the recording tmux answers none
+		}
 		if len(c) < 6 || c[0] != "set" || c[1] != "-p" || c[2] != "-t" || c[3] != pane || c[4] != "@admiral-activity" {
 			t.Errorf("hook call %q does not open with `set -p -t %s @admiral-activity <time>`", c, pane)
 			continue
@@ -296,8 +300,24 @@ func withoutActivityStamp(t *testing.T, calls [][]string, pane string) [][]strin
 		if len(c) > 0 && c[0] == ";" {
 			c = c[1:]
 		}
-		if len(c) > 0 {
-			out = append(out, c)
+		// The @admiral-subagents write is covered by TestCrewHook_LeadWaitsForWorkingCrew.
+		var kept []string
+		var cmd []string
+		for _, a := range append(c, ";") {
+			if a != ";" {
+				cmd = append(cmd, a)
+				continue
+			}
+			if len(cmd) > 0 && !slices.Contains(cmd, "@admiral-subagents") {
+				if len(kept) > 0 {
+					kept = append(kept, ";")
+				}
+				kept = append(kept, cmd...)
+			}
+			cmd = nil
+		}
+		if len(kept) > 0 {
+			out = append(out, kept)
 		}
 	}
 	return out
