@@ -1116,8 +1116,9 @@ class Component extends DCLogic {
     return { crew, marks, crewMore, markMore };
   }
 
-  // PROTOTYPE #153: a teammate's role, as `admiral crew launch --role` would record it.
-  // Commodore's roles get an emblem on the sail; any other role, or none, keeps the plain sail.
+  // PROTOTYPE #153: a teammate's role, as `admiral crew launch --role` would record it (#152).
+  // The flotilla shows the label. Every role draws the same boat for now; the emblems
+  // (d, w) are kept for a later pass on per-role boats.
   roles() {
     return {
       'implementer': { label: 'Implementer', d: 'M38 29 L45 22 M41.5 16.5 L49.5 24.5', w: 3.4 },
@@ -1858,7 +1859,7 @@ class Component extends DCLogic {
             id: b.id, name: b.name, bot: b.bot, flag: h.flag, stripe: anchored ? '#9AA5AF' : f.color,
             pos: 'position: absolute; left: ' + c.x + 'px; top: ' + c.y + 'px;',
             cls: b.fresh ? 'pop' : '',
-            w: c.w, h: c.h, showName: c.name, sailUp: !anchored && !role, roleSail: !anchored && !!role, glyph: role ? role.d : '', glyphW: role ? role.w : 0, anchored, attn: battn,
+            w: c.w, h: c.h, showName: c.name, sailUp: !anchored, anchored, attn: battn,
             motion: anchored ? 'crew-still' : 'bob',
             flagCls: anchored ? 'flag' : 'flag wave',
             btnStyle: 'width: ' + Math.max(44, c.w) + 'px; min-height: 44px; justify-content: center',
@@ -1888,7 +1889,7 @@ class Component extends DCLogic {
         const agents = list.map((a, k) => ({
           id: a.id, label: a.label, role: a.role, bot: a.bot, flag: sh.flag, stripe: sh.fleetColor,
           isLead: k === 0, isSub: k > 0, attn: a.state === 'attention', anchored: a.state === 'anchored',
-          plainSail: !a.rd, roleSail: !!a.rd, glyph: a.rd, glyphW: a.rw,
+          plainSail: true,
           cls: 'fl-item press' + (a.id === s.focus ? ' on' : '') + (a.state === 'attention' ? ' attn attn-row' : ''),
           delay: (k * 90) + 'ms',
           pick: () => self.put({ focus: a.id, bMenu: false })
