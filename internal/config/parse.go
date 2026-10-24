@@ -36,7 +36,21 @@ type Config struct {
 	// Resources are the locked resources by name (#118); nil when the file
 	// defines none.
 	Resources map[string]Resource
+	// Chat is the AdmiralBot chat session's settings (#119), resolved: Fleet is
+	// never a missing fleet, and Model is never empty.
+	Chat Chat
 }
+
+// Chat is the top-level `chat` key. Effort is empty for the harness default,
+// which config.json leaves out.
+type Chat struct {
+	Fleet  string
+	Model  string
+	Effort string
+}
+
+// DefaultChatModel is the chat's model when config.json sets none.
+const DefaultChatModel = "sonnet"
 
 // Fleet is one marina.
 type Fleet struct {
@@ -122,6 +136,7 @@ func Parse(data []byte) (*Config, error) {
 	cfg := &Config{FavoriteSkills: []string{}, AutopilotMaxShips: DefaultAutopilotMaxShips}
 	var fleetsRaw json.RawMessage
 	haveVersion := false
+	var chat Chat
 	for _, m := range top {
 		switch m.key {
 		case "version":
@@ -144,6 +159,10 @@ func Parse(data []byte) (*Config, error) {
 				return nil, err
 			}
 			cfg.AutopilotMaxShips, cfg.ResumeSource = ap.MaxShips, ap.Resume
+		case "chat":
+			if chat, err = parseChat(m.raw); err != nil {
+				return nil, err
+			}
 		case "resources":
 			if cfg.Resources, err = parseResources(m.raw); err != nil {
 				return nil, err
@@ -170,9 +189,56 @@ func Parse(data []byte) (*Config, error) {
 	if err := checkPanelResources(cfg); err != nil {
 		return nil, err
 	}
+	cfg.Chat = resolveChat(chat, cfg.Fleets)
 	assignColors(cfg.Fleets)
 	markSharedIdentities(cfg.Fleets)
 	return cfg, nil
+}
+
+func parseChat(raw json.RawMessage) (Chat, error) {
+	ms, err := members("chat", raw)
+	if err != nil {
+		return Chat{}, err
+	}
+	var c Chat
+	for _, m := range ms {
+		p := "chat." + m.key
+		switch m.key {
+		case "fleet":
+			c.Fleet, err = str(p, m.raw)
+		case "model":
+			c.Model, err = str(p, m.raw)
+		case "effort":
+			c.Effort, err = str(p, m.raw)
+		}
+		if err != nil {
+			return Chat{}, err
+		}
+	}
+	return c, nil
+}
+
+// resolveChat fills the defaults: the first fleet with a Claude dock (else the
+// first fleet) when the named fleet is unset or gone, and sonnet. A missing
+// fleet never fails the load.
+func resolveChat(c Chat, fleets []Fleet) Chat {
+	if c.Model == "" {
+		c.Model = DefaultChatModel
+	}
+	if slices.ContainsFunc(fleets, func(f Fleet) bool { return f.Key == c.Fleet }) {
+		return c
+	}
+	c.Fleet = ""
+	for _, f := range fleets {
+		if slices.ContainsFunc(f.Harnesses, func(h Harness) bool { return h.Name == "claude" }) {
+			c.Fleet = f.Key
+			return c
+		}
+	}
+	if len(fleets) > 0 {
+		c.Fleet = fleets[0].Key
+	}
+	return c
 }
 
 func checkVersion(raw json.RawMessage) error {

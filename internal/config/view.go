@@ -8,6 +8,7 @@ type View struct {
 	Fleets         []FleetView   `json:"fleets"`
 	FavoriteSkills []string      `json:"favorite_skills"`
 	Autopilot      AutopilotView `json:"autopilot"`
+	Chat           ChatView      `json:"chat"`
 	Error          *ErrorView    `json:"error"` // the banner; null when the file is fine
 }
 
@@ -15,6 +16,14 @@ type View struct {
 // needing you across Admiral, hand launches included, before autopilot stops launching.
 type AutopilotView struct {
 	MaxShips int `json:"max_ships"`
+}
+
+// ChatView is the chat settings with their defaults filled in. Effort is empty
+// for the harness default.
+type ChatView struct {
+	Fleet  string `json:"fleet"`
+	Model  string `json:"model"`
+	Effort string `json:"effort"`
 }
 
 type FleetView struct {
@@ -48,7 +57,8 @@ func (m *Manager) View() View {
 
 func (m *Manager) viewLocked() View {
 	v := View{Type: "config", Fleets: []FleetView{}, FavoriteSkills: m.cur.FavoriteSkills,
-		Autopilot: AutopilotView{MaxShips: m.cur.AutopilotMaxShips}}
+		Autopilot: AutopilotView{MaxShips: m.cur.AutopilotMaxShips},
+		Chat:      ChatView{m.cur.Chat.Fleet, m.cur.Chat.Model, m.cur.Chat.Effort}}
 	for _, f := range m.cur.Fleets {
 		fv := FleetView{Key: f.Key, Name: f.Name, Color: f.Color, Ink: f.Ink,
 			SearchRoots: f.SearchRoots, CanLaunch: f.CanLaunch(), Docks: []DockView{}}

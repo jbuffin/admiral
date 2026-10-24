@@ -29,6 +29,20 @@ func SetFavoriteSkills(dir string, skills []string) error {
 	return setKey(dir, "favorite_skills", raw)
 }
 
+// SetChat replaces chat in dir/config.json. Fleet and model are always written;
+// effort only when set, so the harness default leaves no field.
+func SetChat(dir string, c Chat) error {
+	obj := map[string]string{"fleet": c.Fleet, "model": c.Model}
+	if c.Effort != "" {
+		obj["effort"] = c.Effort
+	}
+	raw, err := json.Marshal(obj) // map keys sort: effort, fleet, model
+	if err != nil {
+		return err
+	}
+	return setKey(dir, "chat", raw)
+}
+
 // SetSources replaces sources in dir/config.json.
 func SetSources(dir string, sources json.RawMessage) error {
 	if !json.Valid(sources) {

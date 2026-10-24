@@ -79,6 +79,15 @@ func (m *Manager) SetFavoriteSkills(skills []string) error {
 	return nil
 }
 
+// SetChat writes chat and reloads before it returns.
+func (m *Manager) SetChat(c Chat) error {
+	if err := SetChat(filepath.Dir(m.path), c); err != nil {
+		return err
+	}
+	m.reload()
+	return nil
+}
+
 // SetSources writes sources and reloads before it returns. It refuses a value
 // the parser would refuse, so a bad write never leaves the file invalid.
 func (m *Manager) SetSources(sources json.RawMessage) error {
