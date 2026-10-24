@@ -103,7 +103,7 @@ func (w *world) baseEnv() []string {
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
 		switch k {
-		case "ADMIRAL_HOME", "HOME", "TMUX", "TMUX_PANE", "TMUX_TMPDIR", "XDG_CONFIG_HOME",
+		case "ADMIRAL_HOME", "ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_INBOX", "HOME", "TMUX", "TMUX_PANE", "TMUX_TMPDIR", "XDG_CONFIG_HOME",
 			"CLAUDE_CONFIG_DIR", "CODEX_HOME", "COPILOT_HOME", "CLAUDE_CODE_PLUGIN_CACHE_DIR", "CLAUDE_CODE_AUTO_COMPACT_WINDOW":
 			continue
 		}
