@@ -71,7 +71,9 @@ func TestChatConfig(t *testing.T) {
 			"version":         float64(1),
 			"favorite_skills": []any{"review"},
 			"fleets":          map[string]any{"work": map[string]any{"name": "Work Fleet", "claude": map[string]any{}}},
-			"chat":            map[string]any{"fleet": "work", "model": "opus", "effort": "high"},
+			// The first start seeds the Orders source (seedSources); it is not the chat key's doing.
+			"sources": map[string]any{"orders": map[string]any{"plugin": "freeform", "name": "Orders"}},
+			"chat":    map[string]any{"fleet": "work", "model": "opus", "effort": "high"},
 		}
 		if got := configOnDisk(t, home); !reflect.DeepEqual(got, want) {
 			t.Errorf("config.json after save = %v, want %v", got, want)
