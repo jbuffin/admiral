@@ -81,7 +81,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 .mark-tip{position:absolute;z-index:8;white-space:nowrap;pointer-events:none;padding:5px 10px;border-radius:10px;border:2.5px solid #14304A;background:#FFFDF6;box-shadow:0 3px 0 #14304A;font-size:12px;color:#14304A;animation:pop .35s cubic-bezier(.3,1.6,.5,1) both}
 .foot-box{position:absolute;pointer-events:none;border:2px dashed rgba(255,253,246,.9);border-radius:6px;background:rgba(255,253,246,.08)}
 .fl-item.attn-row{background:#FFD9CC !important;border-color:#C2412A !important}
-.fl-mark{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:12px;border:2px dashed #9DB8CF;background:rgba(255,246,227,.82);font-size:12.5px;color:#14304A}
+.fl-mark{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:12px;border:2px dashed #9DB8CF;background:#E4D6B8;font-size:12.5px;color:#14304A}
 .b-menu{position:absolute;right:0;top:50px;z-index:9;min-width:190px;display:flex;flex-direction:column;padding:4px;border-radius:14px;border:2.5px solid #14304A;background:#FFFDF6;box-shadow:0 3px 0 #14304A}
 .b-menu button{min-height:44px;padding:0 12px;border:0;border-radius:8px;background:none;text-align:left;font-weight:600;color:#14304A}
 .b-menu button:hover:not(:disabled){background:#FFF0B8}
@@ -255,6 +255,11 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <path d="M32 9 L32 33 L52 33 Z" fill="#FFF6E3" stroke="#14304A" stroke-width="2.2" stroke-linejoin="round"></path>
 <path d="M28 15 L28 33 L19 33 Z" fill="#FFF6E3" stroke="#14304A" stroke-width="2" stroke-linejoin="round"></path>
 </sc-if>
+<sc-if value="{{sub.roleSail}}" hint-placeholder-val="{{ false }}">
+<path d="M32 8 L54 11 L55 33 L32 33 Z" fill="#FFF6E3" stroke="#14304A" stroke-width="2.2" stroke-linejoin="round"></path>
+<path d="M28 17 L28 33 L20 33 Z" fill="#FFF6E3" stroke="#14304A" stroke-width="2" stroke-linejoin="round"></path>
+<path d="{{sub.glyph}}" fill="none" stroke="#14304A" stroke-width="{{sub.glyphW}}" stroke-linecap="round" stroke-linejoin="round"></path>
+</sc-if>
 <sc-if value="{{sub.anchored}}" hint-placeholder-val="{{ false }}">
 <path d="M32 27 Q42 29 46 33 L32 33 Z" fill="#E4D6B8" stroke="#14304A" stroke-width="2" stroke-linejoin="round"></path>
 <path d="M22 31 L48 31" stroke="#14304A" stroke-width="2.4" stroke-linecap="round"></path>
@@ -287,16 +292,6 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </sc-if>
 <sc-if value="{{m.gull}}" hint-placeholder-val="{{ false }}">
 <span class="gull" style="display: block; animation-delay: {{m.delay}}"><svg width="26" height="14" viewBox="0 0 26 14" fill="none" aria-hidden="true"><path d="M2 6 Q7 0 13 7 Q19 0 24 6" stroke="#FFFDF6" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M2 6 Q7 0 13 7 Q19 0 24 6" stroke="#14304A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path><circle cx="13" cy="8" r="1.8" fill="{{m.flag}}" stroke="#14304A" stroke-width="1"></circle></svg></span>
-</sc-if>
-<sc-if value="{{m.deck}}" hint-placeholder-val="{{ false }}">
-<span style="display: flex; align-items: flex-end; gap: 2px; padding-bottom: 4px">
-<svg width="30" height="16" viewBox="0 0 30 16" fill="none" aria-hidden="true">
-<sc-for list="{{m.bots}}" as="b" hint-placeholder-count="3">
-<g transform="translate({{b.x}} {{b.y}})"><rect x="0" y="0" width="8.5" height="8.5" rx="1.5" fill="{{b.color}}" stroke="#14304A" stroke-width="1.6"></rect><rect x="2" y="3" width="1.6" height="1.6" fill="#14304A"></rect><rect x="5" y="3" width="1.6" height="1.6" fill="#14304A"></rect><path d="M4.25 8.5 L4.25 11.5" stroke="#14304A" stroke-width="1.6"></path></g>
-</sc-for>
-</svg>
-<sc-if value="{{m.extra}}" hint-placeholder-val="{{ false }}"><span style="margin-left: -2px; margin-bottom: 2px; padding: 0 4px; border-radius: 999px; background-color: #FFFDF6; border: 1.5px solid #14304A; font-size: 9.5px; font-weight: 800; color: #14304A">{{m.extraText}}</span></sc-if>
-</span>
 </sc-if>
 <sc-if value="{{m.more}}" hint-placeholder-val="{{ false }}">
 <span style="min-width: 24px; height: 20px; padding: 0 5px; border-radius: 999px; background-color: #FFFDF6; border: 2px solid #14304A; font-size: 10.5px; font-weight: 800; color: #14304A; display: inline-flex; align-items: center; justify-content: center">{{m.text}}</span>
@@ -333,6 +328,12 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <circle cx="38" cy="79.5" r="2.6" fill="#FFF6E3" stroke="#14304A" stroke-width="1.8"></circle>
 <circle cx="54" cy="79.5" r="2.6" fill="#FFF6E3" stroke="#14304A" stroke-width="1.8"></circle>
 <circle cx="70" cy="79.5" r="2.6" fill="#FFF6E3" stroke="#14304A" stroke-width="1.8"></circle>
+<sc-for list="{{ship.deckBots}}" as="b" hint-placeholder-count="0">
+<g transform="{{b.tf}}"><rect x="0" y="0" width="8.5" height="8.5" rx="1.5" fill="{{b.color}}" stroke="#14304A" stroke-width="1.6"></rect><rect x="2" y="3" width="1.6" height="1.6" fill="#14304A"></rect><rect x="5" y="3" width="1.6" height="1.6" fill="#14304A"></rect></g>
+</sc-for>
+<sc-if value="{{ship.hasDeckMore}}" hint-placeholder-val="{{ false }}">
+<rect x="10" y="43" width="17" height="9" rx="4.5" fill="#FFFDF6" stroke="#14304A" stroke-width="1.4"></rect><text x="18.5" y="50" text-anchor="middle" font-family="Archivo, sans-serif" font-weight="800" font-size="7" fill="#14304A">{{ship.deckMore}}</text>
+</sc-if>
 </svg>
 <sc-if value="{{ship.attn}}" hint-placeholder-val="{{ false }}">
 <span class="ping" style="position: absolute; left: 4px; top: -8px; width: 30px; height: 30px; border-radius: 50%; background-color: #FF7A59; border: 2.5px solid #14304A; display: flex; align-items: center; justify-content: center; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 18px; color: #14304A">!</span>
@@ -432,7 +433,8 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <path d="M4 37 L60 37 L54 46 Q46 51 32 51 L18 51 Q8 49 4 37 Z" fill="#A0613A" stroke="#14304A" stroke-width="2.5" stroke-linejoin="round"></path>
 <path d="M6 40 L59 40 L57.5 44.5 L8 44.5 Z" fill="{{agent.stripe}}"></path>
 <path d="M30 37 L30 6" stroke="#14304A" stroke-width="3" stroke-linecap="round"></path>
-<path d="M32 9 L32 33 L52 33 Z" fill="#FFFDF6" stroke="#14304A" stroke-width="2.2" stroke-linejoin="round"></path>
+<sc-if value="{{agent.plainSail}}" hint-placeholder-val="{{ true }}"><path d="M32 9 L32 33 L52 33 Z" fill="#FFFDF6" stroke="#14304A" stroke-width="2.2" stroke-linejoin="round"></path></sc-if>
+<sc-if value="{{agent.roleSail}}" hint-placeholder-val="{{ false }}"><path d="M32 8 L54 11 L55 33 L32 33 Z" fill="#FFFDF6" stroke="#14304A" stroke-width="2.2" stroke-linejoin="round"></path><path d="{{agent.glyph}}" fill="none" stroke="#14304A" stroke-width="{{agent.glyphW}}" stroke-linecap="round" stroke-linejoin="round"></path></sc-if>
 <path d="M31 3 L43 6 L31 10 Z" fill="{{agent.flag}}" stroke="#14304A" stroke-width="1.5"></path>
 <rect x="4" y="24" width="13" height="13" rx="2" fill="{{agent.bot}}" stroke="#14304A" stroke-width="2"></rect>
 </svg>
@@ -1053,20 +1055,20 @@ class Component extends DCLogic {
   crewShips(crowd) {
     const B = this.D().BOTS;
     const min = (m) => Date.now() - m * 60000;
-    const tm = (id, name, job, bot, state, exit) => ({ id, name, job, bot, state: state || 'working', exit });
-    const s1crew = [tm('s1-a', 'planner', 'Break the task into steps', B[1]), tm('s1-b', 'builder', 'Persist the retry queue', B[2]), tm('s1-c', 'checker', 'Write and run tests', B[4], 'attention')];
+    const tm = (id, name, job, bot, state, exit, role) => ({ id, name, job, bot, state: state || 'working', exit, role });
+    const s1crew = [tm('s1-a', 'retry-impl', 'Persist the retry queue', B[1], null, null, 'implementer'), tm('s1-b', 'retry-review', 'Review the retry queue', B[2], null, null, 'reviewer'), tm('s1-c', 'retry-tests', 'Write the failing tests', B[4], 'attention', null, 'test-writer')];
     const s1marks = [{ id: 'm1', type: 'Explore', started: min(3) }, { id: 'm2', type: 'general-purpose', started: min(1) }, { id: 'm3', type: 'Plan', started: min(6) }];
     if (crowd) {
-      s1crew.push(tm('s1-d', 'docs', 'Update the README', B[5]), tm('s1-e', 'perf', 'Profile the queue', B[6]), tm('s1-f', 'i18n', 'Translate strings', B[0], 'anchored', 1));
+      s1crew.push(tm('s1-d', 'retry-sec', 'Security review of the queue', B[5], null, null, 'security-reviewer'), tm('s1-e', 'device', 'Run it on the test phone', B[6], null, null, 'target-steward'), tm('s1-f', 'notes', 'Write the PR notes', B[0], 'anchored', 1, 'scribe'), tm('s1-g', 'briefs', 'Check the briefs', B[3], null, null, 'brief-checker'), tm('s1-h', 'ci-triage', 'Sort the CI failures', B[2], null, null, 'triager'));
       s1marks.push({ id: 'm4', type: 'Explore', started: min(2) }, { id: 'm5', type: 'code-reviewer', started: min(4) }, { id: 'm6', type: 'Explore', started: min(0.5) }, { id: 'm7', type: 'statusline-setup', started: min(8) });
     }
     return [
       { id: 's1', name: 'Saltpaw', task: { id: 'MOB-1172', title: 'Offline queue retries' }, yard: 'work:claude', skill: 'Commodore', status: 'working', bot: B[0], subs: s1crew, marks: s1marks,
-        crewAsk: 'checker wants to run the device test suite on the shared emulator. Approve? (y/n)' },
+        crewAsk: 'retry-tests wants to run the device test suite on the shared emulator. Approve? (y/n)' },
       { id: 's2', name: 'Morning Tern', task: { id: 'commodore-launcher#39', title: 'Flaky profile parser test' }, yard: 'work:copilot', skill: 'Triage', status: 'working', bot: B[1], subs: [],
         marks: [{ id: 'm8', type: 'explore', started: min(2) }, { id: 'm9', type: 'task', started: min(1) }] },
       { id: 's3', name: 'Brass Kettle', task: { id: 'admiral#1', title: 'Scaffold the Admiral server' }, yard: 'home:claude', skill: 'Commodore', status: 'working', bot: B[2],
-        subs: [tm('s3-a', 'schema', 'Model fleets, docks and ships', B[3]), tm('s3-b', 'api', 'Session attach endpoint', B[0], 'anchored', 1)], marks: [{ id: 'm10', type: 'Explore', started: min(5) }] },
+        subs: [tm('s3-a', 'schema', 'Model fleets, docks and ships', B[3], null, null, 'implementer'), tm('s3-b', 'api', 'Session attach endpoint', B[0], 'anchored', 1, 'implementer')], marks: [{ id: 'm10', type: 'Explore', started: min(5) }] },
       { id: 's4', name: 'Little Bramble', task: { id: 'MOB-1166', title: 'Crash report breadcrumbs' }, yard: 'work:codex', skill: 'Wayfinder', status: 'done', exit: 1, bot: B[3],
         subs: [tm('s4-a', 'fixer', 'Patch the breadcrumb buffer', B[1]), tm('s4-b', 'notes', 'Write the incident notes', B[6])], marks: [] },
       { id: 's5', name: "Gull's Errand", task: { id: 'LIN-19', title: 'Draft the changelog' }, yard: 'home:codex', skill: 'release-notes', status: 'working', bot: B[4], subs: [], marks: [] }
@@ -1089,12 +1091,10 @@ class Component extends DCLogic {
       for (let k = 0; k < shown; k++) marks.push({ x: x0 + k * 26 - 9, y: 146 });
       if (markMore) marks.push({ x: x0 + shown * 26 - 9, y: 146, more: true });
     } else if (v === 'D') {
-      // Horseshoe: a crew boat on each flank, then rows under the plaque; subagents ride the deck.
-      const flank = [[-50, 34], [106, 30]];
-      for (let k = 0; k < n; k++) {
-        if (k < 2) crew.push({ x: flank[k][0], y: flank[k][1], w: 46, h: 41, name: true });
-        else { const r = k - 2; crew.push({ x: -22 + (r % 3) * 50, y: 138 + Math.floor(r / 3) * 56, w: 46, h: 41, name: true }); }
-      }
+      // Rafted (C's spots, a little bigger so the role emblem reads); subagents ride the deck.
+      const slots = [[-30, 44], [-52, 58], [-72, 40]];
+      for (let k = 0; k < Math.min(n, slots.length); k++) crew.push({ x: slots[k][0], y: slots[k][1], w: 38, h: 33, name: false });
+      crewMore = Math.max(0, n - slots.length);
     } else if (v === 'B') {
       // Convoy: smaller crew boats in rows under the plaque, paper boats in the wake.
       for (let k = 0; k < n; k++) crew.push({ x: -22 + (k % 3) * 50, y: 136 + Math.floor(k / 3) * 56, w: 40, h: 35, name: true });
@@ -1114,6 +1114,21 @@ class Component extends DCLogic {
       if (markMore) marks.push({ x: gs[shown][0], y: gs[shown][1], more: true });
     }
     return { crew, marks, crewMore, markMore };
+  }
+
+  // PROTOTYPE #153: a teammate's role, as `admiral crew launch --role` would record it.
+  // Commodore's roles get an emblem on the sail; any other role, or none, keeps the plain sail.
+  roles() {
+    return {
+      'implementer': { label: 'Implementer', d: 'M38 29 L45 22 M41.5 16.5 L49.5 24.5', w: 3.4 },
+      'test-writer': { label: 'Test writer', d: 'M40 15 L46 15 M41.5 15 L41.5 20 L37.5 28.5 L48.5 28.5 L44.5 20 L44.5 15 M39.5 24.5 L46.5 24.5', w: 2.4 },
+      'reviewer': { label: 'Reviewer', d: 'M41 15.5 a4.5 4.5 0 1 0 0.01 0 M44.5 23.5 L49 28', w: 2.8 },
+      'security-reviewer': { label: 'Security reviewer', d: 'M43 14.5 L49 17 L49 21 Q49 26.5 43 29 Q37 26.5 37 21 L37 17 Z', w: 2.6 },
+      'triager': { label: 'Triager', d: 'M37 17 L49 17 M39 22 L47 22 M41 27 L45 27', w: 2.8 },
+      'target-steward': { label: 'Target steward', d: 'M43 16 a6 6 0 1 0 0.01 0 M43 20.5 a1.5 1.5 0 1 0 0.01 0', w: 2.6 },
+      'brief-checker': { label: 'Brief checker', d: 'M37.5 22 L41.5 26.5 L49 17', w: 3 },
+      'scribe': { label: 'Scribe', d: 'M38 28.5 L39.5 24 L47 16.5 L49.5 19 L42 26.5 Z M38 28.5 L41 27.5', w: 2.2 }
+    };
   }
 
   ago(t) { const m = Math.max(0, Math.round((Date.now() - t) / 60000)); return m < 1 ? 'just started' : m + 'm'; }
@@ -1777,12 +1792,14 @@ class Component extends DCLogic {
           aria: 'Subagent ' + mk.type + ' of ' + sh.name + ', cannot be boarded',
           tap: () => { if (!self.recentDrag()) self.showTip(sh.id, mk.id); } };
       });
+      let deckBots = []; let deckMore = '';
       if (s.variant === 'D' && shMarks.length) {
         // Up to four little bots stand on deck, bow side of the mast; more show as +N.
         const shown = shMarks.length > 4 ? 3 : shMarks.length;
-        const bots = shMarks.slice(0, shown).map((mk, k) => ({ x: 2 + k * 9, y: 4 - (k % 2) * 2, color: BOTS[(i + k + 3) % BOTS.length] }));
-        markEls.push({ deck: true, bots, extra: shMarks.length > shown, extraText: '+' + (shMarks.length - shown), delay: '0s',
-          pos: 'left: 0px; top: 26px; z-index: 3; width: 44px; height: 44px; align-items: flex-end; justify-content: flex-start;',
+        deckBots = shMarks.slice(0, shown).map((mk, k) => ({ tf: 'translate(' + (8 + k * 9) + ' ' + (53.5 - (k % 2) * 1.5) + ')', color: BOTS[(i + k + 3) % BOTS.length] }));
+        deckMore = shMarks.length > shown ? '+' + (shMarks.length - shown) : '';
+        markEls.push({ deck: true, delay: '0s',
+          pos: 'left: -4px; top: 32px; z-index: 3; width: 44px; height: 44px;',
           aria: shMarks.length + ' subagents on ' + sh.name + ': ' + shMarks.map((x) => x.type).join(', ') + '. Cannot be boarded',
           tap: () => { if (!self.recentDrag()) self.showTip(sh.id, '+deck'); } });
       }
@@ -1826,7 +1843,7 @@ class Component extends DCLogic {
         flagCls: attn ? 'flag frantic' : 'flag wave',
         attn, done,
         label: crewAttn.length ? crewAttn.map((b) => b.name).join(', ') + ' needs you' : done ? sh.task.id + ' · exited ' + sh.exit : sh.task.id + ' · ' + sh.skill,
-        marks: markEls, hasTip: !!tip, tip: tip || {},
+        marks: markEls, hasTip: !!tip, tip: tip || {}, deckBots, hasDeckMore: !!deckMore, deckMore,
         showBox: !!s.boxes, box: 'left: ' + bx + 'px; top: ' + by + 'px; width: ' + bw + 'px; height: ' + bh + 'px;',
         plaqueStyle: 'display: block; margin-top: -2px; padding: 3px 8px; max-width: 140px; border-radius: 9px; background-color: ' + (attn ? '#FFD9CC' : '#FFF6E3') + '; border: 2.5px solid ' + (attn ? '#C2412A' : '#14304A') + '; box-shadow: 0 2px 0 #14304A',
         aria: 'Board ' + sh.name + ', ' + h.name + ' in ' + f.name + ', ' + statusText,
@@ -1836,18 +1853,19 @@ class Component extends DCLogic {
           const anchored = b.state === 'anchored';
           const battn = b.state === 'attention';
           const bs = Math.max(14, Math.round(c.w * 0.4));
+          const role = s.proto && b.role ? this.roles()[b.role] : null;
           return {
             id: b.id, name: b.name, bot: b.bot, flag: h.flag, stripe: anchored ? '#9AA5AF' : f.color,
             pos: 'position: absolute; left: ' + c.x + 'px; top: ' + c.y + 'px;',
             cls: b.fresh ? 'pop' : '',
-            w: c.w, h: c.h, showName: c.name, sailUp: !anchored, anchored, attn: battn,
+            w: c.w, h: c.h, showName: c.name, sailUp: !anchored && !role, roleSail: !anchored && !!role, glyph: role ? role.d : '', glyphW: role ? role.w : 0, anchored, attn: battn,
             motion: anchored ? 'crew-still' : 'bob',
             flagCls: anchored ? 'flag' : 'flag wave',
             btnStyle: 'width: ' + Math.max(44, c.w) + 'px; min-height: 44px; justify-content: center',
             badgeStyle: 'position: absolute; left: -4px; top: -4px; width: ' + bs + 'px; height: ' + bs + 'px; border-radius: 50%; border: 2px solid #14304A; display: flex; align-items: center; justify-content: center; font-size: ' + Math.round(bs * 0.7) + 'px',
             tagStyle: 'font-size: ' + (c.w < 50 ? 9.5 : 10.5) + 'px; font-weight: 700; color: #14304A; background-color: ' + (battn ? '#FFD9CC' : anchored ? '#E4D6B8' : '#DDF7F3') + '; border: 1.5px solid ' + (battn ? '#C2412A' : '#14304A') + '; border-radius: 6px; padding: 0 5px; margin-top: -4px',
             delay: '-' + ((i + j) * 0.6 + 0.3).toFixed(1) + 's',
-            aria: 'Board ' + b.name + ', crew of ' + sh.name + (battn ? ', needs you' : anchored ? ', anchored' : ''),
+            aria: 'Board ' + b.name + (role ? ', ' + role.label.toLowerCase() : '') + ', crew of ' + sh.name + (battn ? ', needs you' : anchored ? ', anchored' : ''),
             open: () => { if (!self.recentDrag()) self.put({ open: sh.id, focus: b.id, draft: '', bMenu: false }); }
           };
         })
@@ -1861,11 +1879,16 @@ class Component extends DCLogic {
       if (sh && rawSh) {
         const isC = sh.skill === 'Commodore';
         const list = [{ id: 'lead', label: sh.name, role: isC ? 'Commodore · lead' : sh.skill + ' · lead', bot: sh.bot }]
-          .concat(rawSh.subs.map((b) => ({ id: b.id, label: b.name, state: b.state, exit: b.exit, bot: b.bot,
-            role: s.proto ? (b.state === 'anchored' ? 'Teammate · anchored, exit ' + b.exit : b.state === 'attention' ? 'Teammate · needs you' : 'Teammate · ' + b.job) : (isC ? 'Teammate · ' : 'Subagent · ') + b.job })));
+          .concat(rawSh.subs.map((b) => {
+            const r = s.proto && b.role ? this.roles()[b.role] : null;
+            const who = r ? r.label : 'Teammate';
+            return { id: b.id, label: b.name, state: b.state, exit: b.exit, bot: b.bot, rd: r ? r.d : '', rw: r ? r.w : 0,
+              role: s.proto ? (b.state === 'anchored' ? who + ' · anchored, exit ' + b.exit : b.state === 'attention' ? who + ' · needs you' : who + ' · ' + b.job) : (isC ? 'Teammate · ' : 'Subagent · ') + b.job };
+          }));
         const agents = list.map((a, k) => ({
           id: a.id, label: a.label, role: a.role, bot: a.bot, flag: sh.flag, stripe: sh.fleetColor,
           isLead: k === 0, isSub: k > 0, attn: a.state === 'attention', anchored: a.state === 'anchored',
+          plainSail: !a.rd, roleSail: !!a.rd, glyph: a.rd, glyphW: a.rw,
           cls: 'fl-item press' + (a.id === s.focus ? ' on' : '') + (a.state === 'attention' ? ' attn attn-row' : ''),
           delay: (k * 90) + 'ms',
           pick: () => self.put({ focus: a.id, bMenu: false })
@@ -1970,7 +1993,7 @@ class Component extends DCLogic {
       closeCrew: () => self.put((st) => ({ bMenu: false, focus: 'lead', ships: st.ships.map((x) => x.id === st.open ? Object.assign({}, x, { subs: x.subs.filter((b) => b.id !== st.focus) }) : x) })),
       proto: {
         on: !!s.proto, boxes: !!s.boxes, boxCls: s.boxes ? 'on' : '',
-        label: s.variant + ' (' + { A: 'Escort ring', B: 'Convoy', C: 'Rafted + gulls', D: 'Horseshoe + deck crew' }[s.variant] + ')',
+        label: s.variant + ' (' + { A: 'Escort ring', B: 'Convoy', C: 'Rafted + gulls', D: 'Rafted + deck crew' }[s.variant] + ')',
         prev: () => self.cycle(-1), next: () => self.cycle(1),
         toggleBoxes: () => { self.setParam('boxes', !s.boxes); self.put({ boxes: !s.boxes }); },
         crowdLabel: s.crowd ? 'crowd: on' : 'crowd: off',
