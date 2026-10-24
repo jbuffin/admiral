@@ -51,6 +51,20 @@ func readShips(port, dir string) (list []ships.Ship, running bool, err error) {
 }
 
 func shipsFromTmux(dir string) ([]ships.Ship, error) {
+	sessions, err := shipSessions(dir)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	list := []ships.Ship{}
+	for _, s := range sessions {
+		list = append(list, ships.FromSession(s, now))
+	}
+	return list, nil
+}
+
+// shipSessions are the ships' sessions as tmux has them, with their crew boats.
+func shipSessions(dir string) ([]sessionhost.Session, error) {
 	tmux, err := exec.LookPath("tmux")
 	if err != nil {
 		return nil, fmt.Errorf("tmux not found on PATH")
@@ -59,26 +73,28 @@ func shipsFromTmux(dir string) ([]ships.Ship, error) {
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now()
-	list := []ships.Ship{}
+	var out []sessionhost.Session
 	for _, s := range sessions {
 		if s.IsShip() {
-			list = append(list, ships.FromSession(s, now))
+			out = append(out, s)
 		}
 	}
-	return list, nil
+	return out, nil
 }
 
-func statusText(s ships.Ship) string {
+func statusText(s ships.Ship) string { return exitText(s.Status, s.ExitCode, s.ExitSignal) }
+
+// exitText is a status, with how it ended when it is anchored.
+func exitText(status string, code *int, signal *string) string {
 	switch {
-	case s.Status != ships.StatusAnchored:
-		return s.Status
-	case s.ExitSignal != nil:
-		return "anchored (" + *s.ExitSignal + ")"
-	case s.ExitCode != nil:
-		return fmt.Sprintf("anchored (exit %d)", *s.ExitCode)
+	case status != ships.StatusAnchored:
+		return status
+	case signal != nil:
+		return "anchored (" + *signal + ")"
+	case code != nil:
+		return fmt.Sprintf("anchored (exit %d)", *code)
 	}
-	return s.Status
+	return status
 }
 
 // Ships is `admiral ships [--port <n>] [--names]` (story 125): a tab-separated
@@ -115,23 +131,45 @@ func Ships(args []string, std IO) error {
 	fmt.Fprintln(std.Out, "NAME\tSESSION\tFLEET\tHARNESS\tSTATUS\tREPO")
 	for _, s := range list {
 		fmt.Fprintf(std.Out, "%s\t%s\t%s\t%s\t%s\t%s\n", s.Name, s.Session, s.Fleet, s.Harness, statusText(s), s.Repo)
+		// One line per crew boat (teammates; subagents have no window), under the
+		// ship's, in the same six columns with SESSION and FLEET empty.
+		crew := append([]ships.CrewBoat(nil), s.Crew...)
+		sort.Slice(crew, func(i, j int) bool { return crew[i].Name < crew[j].Name })
+		for _, c := range crew {
+			repo := ""
+			if c.Dir != "" {
+				repo = filepath.Base(c.Dir)
+			}
+			fmt.Fprintf(std.Out, "  %s\t\t\t%s\t%s\t%s\n", c.Name, c.Harness, exitText(c.Status, c.ExitCode, c.ExitSignal), repo)
+		}
 	}
 	return nil
 }
 
-// Attach is `admiral attach <ship>` (story 125, ADR 0012): the ship's tmux
-// session in this terminal. The ship is found from tmux, so it works without the
-// server. The pane keeps the size the bridge gave it (ignore-size) and an
-// anchored ship is read-only.
+// Attach is `admiral attach <ship> [<crew>]` (story 125, ADR 0012, #72 story 18):
+// the ship's tmux session in this terminal, on its own window, or on a crew
+// boat's window. The ship is found from tmux, so it works without the server.
+// The pane keeps the size the bridge gave it (ignore-size) and an anchored ship
+// or crew boat is read-only.
+//
+// The whole argument list is tried as a ship first (Saltpaw II, with or without
+// quotes); failing that the last argument is the crew boat's name, which holds
+// no space, and the rest is the ship's.
 func Attach(args []string, std IO) error {
 	if len(args) == 0 {
-		return usagef("usage: admiral attach <ship>")
+		return usagef("usage: admiral attach <ship> [<crew>]")
 	}
-	name := strings.Join(args, " ") // Saltpaw II, with or without quotes
-	for _, hidden := range []string{sessionhost.Internal, sessionhost.SetupName} {
-		if name == hidden {
-			return fmt.Errorf("%s is Admiral's own session, not a ship", hidden)
+	refuse := func(name string) error {
+		for _, hidden := range []string{sessionhost.Internal, sessionhost.SetupName} {
+			if name == hidden {
+				return fmt.Errorf("%s is Admiral's own session, not a ship", hidden)
+			}
 		}
+		return nil
+	}
+	name := strings.Join(args, " ")
+	if err := refuse(name); err != nil {
+		return err
 	}
 	dir, err := admiralHome()
 	if err != nil {
@@ -142,25 +180,55 @@ func Attach(args []string, std IO) error {
 		return fmt.Errorf("tmux not found on PATH")
 	}
 	sock := filepath.Join(dir, "tmux.sock")
-	list, err := shipsFromTmux(dir)
+	sessions, err := shipSessions(dir)
 	if err != nil {
 		return err
 	}
-	var found *ships.Ship
-	for i, s := range list {
-		if s.Session == name || s.Name == name {
-			found = &list[i]
-			break
+	find := func(name string) *sessionhost.Session {
+		for i, s := range sessions {
+			if s.Name == name || s.Options["name"] == name {
+				return &sessions[i]
+			}
+		}
+		return nil
+	}
+	ship, crewName := find(name), ""
+	if ship == nil && len(args) > 1 {
+		shipName := strings.Join(args[:len(args)-1], " ")
+		if err := refuse(shipName); err != nil {
+			return err
+		}
+		if ship = find(shipName); ship != nil {
+			crewName = args[len(args)-1]
 		}
 	}
-	if found == nil {
+	if ship == nil {
 		return fmt.Errorf("no ship called %q (admiral ships lists them)", name)
 	}
 	argv := []string{tmux, "-u", "-S", sock, "attach", "-f", "ignore-size"}
-	if found.Status != ships.StatusUnderway && found.Status != ships.StatusNeedsYou {
-		argv = append(argv, "-r")
+	// The ship's own window, never "=session": that is whichever window is current.
+	where := "=" + ship.Name + ":^"
+	if crewName == "" {
+		if st := ships.FromSession(*ship, time.Now()).Status; st != ships.StatusUnderway && st != ships.StatusNeedsYou {
+			argv = append(argv, "-r")
+		}
+	} else {
+		var boat *sessionhost.Crew
+		for i, c := range ship.Crew {
+			if c.Name == crewName {
+				boat = &ship.Crew[i]
+			}
+		}
+		if boat == nil {
+			return fmt.Errorf("no crew boat called %q on ship %q (admiral ships lists them)", crewName, ship.Options["name"])
+		}
+		// The crew boat's own status decides, not the ship's.
+		if boat.State == sessionhost.CrewAnchored {
+			argv = append(argv, "-r")
+		}
+		where = "=" + ship.Name + ":" + boat.WindowID
 	}
-	argv = append(argv, "-t", "="+found.Session)
+	argv = append(argv, "-t", where)
 	fmt.Fprintln(std.Out, "Ctrl-b d to detach")
 	return syscall.Exec(tmux, argv, os.Environ())
 }

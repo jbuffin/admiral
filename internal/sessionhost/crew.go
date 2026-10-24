@@ -3,6 +3,7 @@ package sessionhost
 import (
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -32,6 +33,8 @@ type Crew struct {
 	LastActivity time.Time // zero before the boat's first hook
 	PaneID       string
 	WindowID     string
+	ExitStatus   int    // valid when State is CrewAnchored and Signal is empty
+	Signal       string // the signal that killed the pane, e.g. "kill"; then there is no exit status
 }
 
 // CrewState maps a crew pane to its state: anchored whenever the pane is dead,
@@ -73,6 +76,10 @@ func parseCrew(rows []string, known map[string]bool) map[string][]Crew {
 			if SafeToken.MatchString(f[7]) {
 				c.Reason = f[7]
 			}
+		}
+		if c.State == CrewAnchored {
+			c.Signal = f[3]
+			c.ExitStatus, _ = strconv.Atoi(f[2])
 		}
 		if t, err := time.Parse(time.RFC3339, tail[3]); err == nil {
 			c.LastActivity = t

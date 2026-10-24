@@ -295,24 +295,8 @@ func TestCrewBridge(t *testing.T) {
 		}
 	})
 
-	t.Run("input to a live crew boat of an anchored ship is accepted", func(t *testing.T) {
-		w := w.at(t)
-		w.releaseGo(ship.Session, "")
-		w.waitShip(ship.Session, "the ship anchored", func(s apiShip) bool { return s.Status == "anchored" })
-		scout, j := w.dialCrew(t, ship.Session, "scout", 80, 24)
-		scout.active()
-		if j.Ship.Status == "anchored" {
-			t.Errorf("a live crew boat of an anchored ship joins as %q", j.Ship.Status)
-		}
-		scout.input("typed-under-anchored-ship")
-		w.waitCapture(a.pane, "typed-under-anchored-ship")
-		for _, r := range scout.texts(0, "refused") {
-			t.Errorf("input to a live crew boat was refused: %s", r)
-		}
-		scout.resize(95, 28)
-		w.waitWinSize(aWin, "95x28")
-	})
-
+	// Closing runs before the ship anchors: the ship's pane must still take output
+	// to show its bridge stays open.
 	t.Run("closing a crew boat closes its bridge and leaves the ship's open", func(t *testing.T) {
 		w := w.at(t)
 		cook, _ := w.dialCrew(t, ship.Session, "cook", 80, 24)
@@ -338,4 +322,69 @@ func TestCrewBridge(t *testing.T) {
 		w.paneWriteID(shipPane, "SHIP-STILL-OPEN\r\n")
 		sb.waitOutput(5*time.Second, m, "SHIP-STILL-OPEN")
 	})
+
+	t.Run("input to a live crew boat of an anchored ship is accepted", func(t *testing.T) {
+		w := w.at(t)
+		w.releaseGo(ship.Session, "")
+		w.waitShip(ship.Session, "the ship anchored", func(s apiShip) bool { return s.Status == "anchored" })
+		scout, j := w.dialCrew(t, ship.Session, "scout", 80, 24)
+		scout.active()
+		if j.Ship.Status == "anchored" {
+			t.Errorf("a live crew boat of an anchored ship joins as %q", j.Ship.Status)
+		}
+		scout.input("typed-under-anchored-ship")
+		w.waitCapture(a.pane, "typed-under-anchored-ship")
+		for _, r := range scout.texts(0, "refused") {
+			t.Errorf("input to a live crew boat was refused: %s", r)
+		}
+		scout.resize(95, 28)
+		w.waitWinSize(aWin, "95x28")
+	})
+}
+
+// A ship's bridge and the bridge on a crew boat share the session's one control
+// client, which detaches after the last browser has left the ship and all its crew
+// boats, and a crew-first attach leaves the ship's window at its size.
+func TestCrewBridgeSharesOneControlClient(t *testing.T) {
+	w := newWorld(t)
+	w.extra = append(w.extra, "ADMIRAL_BRIDGE_IDLE=1s")
+	w.cueFleets(map[string][]string{"one": {"hook working", "wait go", "exit 1"}})
+	w.start()
+	ship, shipPane := w.crewShip("one", "alpha")
+	a := w.crewBoat(ship.Session, "scout", "claude")
+	shipWin := w.winOf(shipPane)
+	w.waitShip(ship.Session, "scout", crewIs("scout", "underway"))
+	// A first client sizes the ship's window and detaches; the next client to
+	// attach would set it to its own 80x24 if the windows were not pinned.
+	first, _ := w.joinBridge(t, ship.Session, 133, 41)
+	first.active()
+	w.waitWinSize(shipWin, "133x41")
+	first.close()
+	for deadline := time.Now().Add(6 * time.Second); len(w.controlClients(ship.Session)) != 0; time.Sleep(100 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the first control client never detached")
+		}
+	}
+
+	scout, _ := w.dialCrew(t, ship.Session, "scout", 90, 25)
+	scout.active()
+	w.waitWinSize(w.winOf(a.pane), "90x25")
+	w.expectWinSizes("a crew bridge opened first", map[string]string{shipWin: "133x41"})
+	sb, _ := w.joinBridge(t, ship.Session, 100, 30)
+	if got := w.controlClients(ship.Session); len(got) != 1 {
+		t.Errorf("a ship bridge and a crew bridge open: %d control clients (%v), want 1", len(got), got)
+	}
+	sb.close()
+	time.Sleep(1500 * time.Millisecond)
+	if got := w.controlClients(ship.Session); len(got) != 1 {
+		t.Errorf("the crew bridge is still open: %d control clients, want the shared one", len(got))
+	}
+	scout.close()
+	deadline := time.Now().Add(6 * time.Second)
+	for len(w.controlClients(ship.Session)) != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("the control client was still attached 6s after the last browser left the ship and its crew")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }

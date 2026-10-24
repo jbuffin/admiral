@@ -27,6 +27,9 @@ type CrewBoat struct {
 	Reason       string `json:"reason,omitempty"`
 	Launched     string `json:"launched"`
 	LastActivity string `json:"last_activity,omitempty"`
+	// ExitCode and ExitSignal are set only on an anchored boat (a signal wins).
+	ExitCode   *int    `json:"exit_code,omitempty"`
+	ExitSignal *string `json:"exit_signal,omitempty"`
 }
 
 // crewBoats is the wire form of a session's crew, never nil.
@@ -34,12 +37,28 @@ func crewBoats(l []sessionhost.Crew) []CrewBoat {
 	out := make([]CrewBoat, 0, len(l))
 	for _, c := range l {
 		b := CrewBoat{Name: c.Name, Harness: c.Harness, Dir: c.Dir, Status: c.State, Reason: c.Reason, Launched: c.Launched}
+		b.ExitCode, b.ExitSignal = CrewExit(c)
 		if !c.LastActivity.IsZero() {
 			b.LastActivity = c.LastActivity.UTC().Format(time.RFC3339)
 		}
 		out = append(out, b)
 	}
 	return out
+}
+
+// CrewExit is how an anchored crew boat ended: a signal, else the exit code. A
+// crew boat anchors whatever its exit code, so 0 is reported too. Both are nil
+// while it lives.
+func CrewExit(c sessionhost.Crew) (code *int, sig *string) {
+	if c.State != sessionhost.CrewAnchored {
+		return nil, nil
+	}
+	if c.Signal != "" {
+		n := strings.TrimPrefix(strings.ToUpper(c.Signal), "SIG")
+		return nil, &n
+	}
+	n := c.ExitStatus
+	return &n, nil
 }
 
 // crewLive counts the crew boats with a live pane: underway or needs you.
@@ -97,6 +116,52 @@ func crewSignature(sh Ship) string {
 	}
 	b.WriteString("|live=" + strconv.Itoa(sh.CrewLive))
 	return b.String()
+}
+
+// Crew is the crew boats of a ship as tmux has them, with their pane and window
+// ids, for the bridge. ok is false when the session is not a ship.
+func (s *Service) Crew(session string) ([]sessionhost.Crew, bool) {
+	sess, ok := s.find(session)
+	if !ok {
+		return nil, false
+	}
+	return sess.Crew, true
+}
+
+// CrewInputSeen records that a browser sent input to the crew boat in a window:
+// it clears that boat's needs you, by pane id, and returns the boat as it is
+// now. ErrNotFound when the boat is gone, ErrExited when it is anchored. The
+// ship's own status doesn't matter: an anchored ship keeps its live crew.
+func (s *Service) CrewInputSeen(session, windowID string) (sessionhost.Crew, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	find := func() (sessionhost.Crew, bool) {
+		l, _ := s.Crew(session)
+		for _, c := range l {
+			if c.WindowID == windowID {
+				return c, true
+			}
+		}
+		return sessionhost.Crew{}, false
+	}
+	c, ok := find()
+	if !ok {
+		return sessionhost.Crew{}, ErrNotFound
+	}
+	switch c.State {
+	case sessionhost.CrewAnchored:
+		return c, ErrExited
+	case sessionhost.CrewNeedsYou:
+		if err := s.Host.SetPaneWorking(ctx, c.PaneID); err != nil {
+			return sessionhost.Crew{}, err
+		}
+		_ = s.Host.Sync(ctx)
+		s.broadcast()
+		if c, ok = find(); !ok {
+			return sessionhost.Crew{}, ErrNotFound
+		}
+	}
+	return c, nil
 }
 
 // serveCrewClose kills one crew boat's window, live or anchored, as

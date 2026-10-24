@@ -19,7 +19,7 @@ type frame struct {
 	data   []byte
 }
 
-// browser is one WebSocket on a ship's bridge. Everything bound for it goes
+// browser is one WebSocket on a bridge, a ship's or a crew boat's. Everything bound for it goes
 // through an in-order queue that a writer goroutine drains, so the control
 // client's reader never waits on a slow browser. Output bytes that arrive
 // while a frame is still queued are merged into it.
@@ -193,16 +193,36 @@ type in struct {
 	Data    string `json:"data"`
 }
 
+func notFound(rw http.ResponseWriter, what string) {
+	rw.Header().Set("Content-Type", "application/json")
+	rw.WriteHeader(http.StatusNotFound)
+	_, _ = rw.Write([]byte(`{"error":"` + what + ` not found"}` + "\n"))
+}
+
 func (s *Service) serve(rw http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
 	// Only a current ship (or the setup terminal) is watchable: tmux resolves a bare name to any
 	// session it prefixes, so the check is on the exact name.
 	if _, ok := s.get(session); !ok {
-		rw.Header().Set("Content-Type", "application/json")
-		rw.WriteHeader(http.StatusNotFound)
-		_, _ = rw.Write([]byte(`{"error":"ship not found"}` + "\n"))
+		notFound(rw, "ship")
 		return
 	}
+	s.serveBridge(rw, r, session, target{})
+}
+
+// serveCrew is the bridge on a crew boat: its pane and window, found by name at
+// the handshake. The name never reaches tmux; the boat's ids do.
+func (s *Service) serveCrew(rw http.ResponseWriter, r *http.Request) {
+	session := r.PathValue("session")
+	c, ok := s.crewBoat(session, r.PathValue("name"))
+	if !ok {
+		notFound(rw, "crew boat")
+		return
+	}
+	s.serveBridge(rw, r, session, target{crew: true, pane: c.PaneID, win: c.WindowID})
+}
+
+func (s *Service) serveBridge(rw http.ResponseWriter, r *http.Request, session string, t target) {
 	conn, err := websocket.Accept(rw, r, nil)
 	if err != nil {
 		return
@@ -227,7 +247,7 @@ func (s *Service) serve(rw http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			b.setDims(m.Cols, m.Rows)
-			if w, err = s.enter(session, b); err != nil {
+			if w, err = s.enter(session, t, b); err != nil {
 				_ = conn.Close(websocket.StatusInternalError, "the ship's terminal could not be attached")
 				return
 			}
