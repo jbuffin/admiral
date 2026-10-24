@@ -28,6 +28,7 @@ type Crew struct {
 	Dir          string
 	Launched     string
 	State        string    // CrewAnchored, CrewNeedsYou or CrewUnderway
+	Reason       string    // only while needs_you: the pane's @admiral-reason if it is a safe token, else "unknown"
 	LastActivity time.Time // zero before the boat's first hook
 	PaneID       string
 	WindowID     string
@@ -46,7 +47,8 @@ func CrewState(paneDead bool, paneState string) string {
 }
 
 // parseCrew reads the crew boats of the list-panes rows, by session and sorted
-// by name. A boat with several panes is read from its first.
+// by name. A boat with several panes is read from its first. It is the one crew
+// rule: parseRows folds its result into each Session, and ReadCrew returns it.
 func parseCrew(rows []string, known map[string]bool) map[string][]Crew {
 	out := map[string][]Crew{}
 	seen := map[string]bool{}
@@ -66,6 +68,12 @@ func parseCrew(rows []string, known map[string]bool) map[string][]Crew {
 		}
 		c := Crew{Session: f[0], Name: tail[0], Harness: opt["harness"], Dir: opt["dir"], Launched: opt["launched"],
 			State: CrewState(f[1] == "1", f[6]), PaneID: tail[1], WindowID: tail[2]}
+		if c.State == CrewNeedsYou {
+			c.Reason = "unknown"
+			if SafeToken.MatchString(f[7]) {
+				c.Reason = f[7]
+			}
+		}
 		if t, err := time.Parse(time.RFC3339, tail[3]); err == nil {
 			c.LastActivity = t
 		}
