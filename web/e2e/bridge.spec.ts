@@ -168,9 +168,10 @@ test.describe('S5: boarding a ship and typing on the bridge', () => {
     // A second browser, smaller, boards the same ship and sizes the pane when it joins.
     const full = page.viewportSize()!;
     const first = await settled(() => paneSize(s, ship.session));
+    // (not under 761px wide, which is the phone layout and has no open water to board from)
     // (its own context: a second tab in one context would leave this page hidden, and a hidden browser can't size the pane)
     const { hasTouch, isMobile } = info.project.use;
-    const ctx = await browser.newContext({ viewport: { width: full.width - 360, height: full.height - 300 }, hasTouch, isMobile });
+    const ctx = await browser.newContext({ viewport: { width: Math.max(full.width - 360, 800), height: full.height - 300 }, hasTouch, isMobile });
     const other = await ctx.newPage();
     await spyOnPage(other);
     await other.goto(admiral.url);
