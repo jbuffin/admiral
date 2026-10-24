@@ -13,12 +13,13 @@ page = f'''<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Admiral prototype</title>
 <!--
   Admiral clickable prototype. Open this file in a browser.
   Scenes: ?scene=harbor (default), ?scene=launch, ?scene=bridge, ?scene=tablet,
-  ?scene=inbox, ?scene=inbox-bridge, ?scene=inbox-empty
+  ?scene=inbox, ?scene=inbox-bridge, ?scene=inbox-empty, ?scene=ships, ?scene=orders,
+  ?scene=phone-launch (the last three are phone scenes; elsewhere they match harbor)
   Generated from designs/canvas/Main.dc.html by the design handoff; edit the
   .dc.html source, not this file.
 -->

@@ -90,11 +90,36 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 @keyframes ibsheet{0%{transform:translateY(100%)}100%{transform:none}}
 @keyframes ibfold{0%{transform:scaleY(1.6);opacity:.2}100%{transform:none;opacity:1}}
 @keyframes ibslide{0%{transform:none;opacity:1;max-height:90px}55%{transform:translateX(70px);opacity:0;max-height:90px}100%{transform:translateX(70px);opacity:0;max-height:0;margin-top:-6px}}
-@media (prefers-reduced-motion: reduce){.sail-in,.bob,.attn,.wave,.frantic,.pop,.ping,.drift,.fl-item,.caret,.ib-drawer,.ib-sheet,.ib-fold,.ib-wrap.ib-slide{animation:none !important}}
+.ph-bridge{animation:phbridge .3s cubic-bezier(.2,.9,.3,1) both}
+.ph-bridge .fl-item{animation:none}
+@keyframes phbridge{0%{transform:translateX(100%)}100%{transform:none}}
+.ph-tab{min-height:56px}
+.ph-strip{scrollbar-width:none}
+.ph-strip::-webkit-scrollbar{display:none}
+@media (max-height: 499px){.ph-tab{min-height:48px}}
+@media (prefers-reduced-motion: reduce){.sail-in,.bob,.attn,.wave,.frantic,.pop,.ping,.drift,.fl-item,.caret,.ib-drawer,.ib-sheet,.ib-fold,.ib-wrap.ib-slide,.ph-bridge{animation:none !important}}
 </style>
 </helmet>
-<div class="adm" onPointerMove="{{onMove}}" onPointerUp="{{onUp}}" onPointerCancel="{{onCancel}}" style="min-height: 100vh; position: relative; display: flex; flex-direction: column; background-color: #14304A; color: #14304A; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-size: 15px">
+<div class="adm" onPointerMove="{{onMove}}" onPointerUp="{{onUp}}" onPointerCancel="{{onCancel}}" style="{{rootStyle}}">
 
+<sc-if value="{{phone}}" hint-placeholder-val="{{ false }}">
+<header style="flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: max(8px, env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 8px calc(12px + env(safe-area-inset-left)); background-color: #14304A; color: #F4EEDF; border-bottom: 3px solid #0B1F33">
+<svg width="34" height="34" viewBox="0 0 46 46" fill="none" aria-hidden="true" style="flex: 0 0 auto">
+<path d="M5 20 Q23 0 41 20 Z" fill="#0B1F33" stroke="#FFC23D" stroke-width="2.5" stroke-linejoin="round"></path>
+<circle cx="23" cy="12" r="3" fill="#FFC23D"></circle>
+<rect x="9" y="20" width="28" height="22" rx="4" fill="#FFC23D" stroke="#0B1F33" stroke-width="2.5"></rect>
+<rect x="15" y="27" width="5" height="5" fill="#14304A"></rect>
+<rect x="26" y="27" width="5" height="5" fill="#14304A"></rect>
+<rect x="18" y="36" width="10" height="3" fill="#14304A"></rect>
+</svg>
+<span style="font-family: 'Bricolage Grotesque', 'Helvetica Neue', sans-serif; font-weight: 800; font-size: 24px; line-height: 1; color: #FFC23D; letter-spacing: -0.01em">Admiral</span>
+<span style="flex: 1 1 auto"></span>
+<span style="display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: 999px; background-color: #21486B; font-weight: 600; font-size: 13.5px; color: #F4EEDF; white-space: nowrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6FE3C8" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M3 17c2 0 2-1.5 4.5-1.5S9.5 17 12 17s2.5-1.5 4.5-1.5S19 17 21 17"></path><path d="M6 13l6-9 6 9z"></path></svg>{{atSea}} at sea</span>
+<span data-slot="settings" style="flex: 0 0 44px; width: 44px; height: 44px"></span>
+</header>
+</sc-if>
+
+<sc-if value="{{notPhone}}" hint-placeholder-val="{{ true }}">
 <header style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; background-color: #14304A; color: #F4EEDF; border-bottom: 3px solid #0B1F33">
 <div style="display: flex; align-items: center; gap: 12px">
 <svg width="46" height="46" viewBox="0 0 46 46" fill="none" aria-hidden="true">
@@ -118,23 +143,26 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <span style="display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: 999px; background-color: #21486B; font-size: 13px; color: #BFD7EA"><span style="width: 9px; height: 9px; border-radius: 50%; background-color: #4CD38A"></span>2 Commodore profiles</span>
 </div>
 </header>
+</sc-if>
 
-<div style="display: flex; flex-wrap: {{rowWrap}}; flex: 1 1 auto; align-items: stretch; background-color: #29B2C2">
+<div style="{{rowStyle}}">
 
 <sc-if value="{{sidebarOpen}}" hint-placeholder-val="{{ true }}">
-<aside aria-label="Orders" style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 16px; background-color: #FFF1CF; border-right: 3px solid #14304A">
+<aside aria-label="Orders" style="{{ordersStyle}}">
 <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px">
 <div style="display: flex; flex-direction: column; gap: 2px">
 <h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 24px; line-height: 1.05; letter-spacing: -0.01em; color: #14304A">Orders</h2>
-<span style="font-size: 13px; color: #3E5870">Drag a card onto a dock to launch</span>
+<span style="font-size: 13px; color: #3E5870">{{ordersHint}}</span>
 </div>
+<sc-if value="{{notPhone}}" hint-placeholder-val="{{ true }}">
 <button type="button" class="press" onClick="{{toggleSidebar}}" aria-label="Collapse orders" style="width: 44px; height: 44px; flex: 0 0 auto; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 6l-6 6 6 6M19 6l-6 6 6 6"></path></svg></button>
+</sc-if>
 </div>
 
 <div style="display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 12px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFFFF">
 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3E5870" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4.5 4.5"></path></svg>
 <label for="adm-filter" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Filter orders</label>
-<input id="adm-filter" value="{{q}}" onChange="{{onFilter}}" autocomplete="off" placeholder="Filter by title or ID" style="flex: 1 1 auto; min-width: 0; height: 40px; border: 0; background: none; font-family: 'Archivo', sans-serif; font-size: 14.5px; color: #14304A; outline: none">
+<input id="adm-filter" value="{{q}}" onChange="{{onFilter}}" autocomplete="off" placeholder="Filter by title or ID" style="flex: 1 1 auto; min-width: 0; height: 40px; border: 0; background: none; font-family: 'Archivo', sans-serif; font-size: {{filterSize}}; color: #14304A; outline: none">
 </div>
 
 <sc-for list="{{panels}}" as="panel" hint-placeholder-count="3">
@@ -166,7 +194,8 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </span>
 <span style="font-weight: 600; font-size: 14.5px; line-height: 1.3; color: #14304A">{{task.title}}</span>
 </span>
-<svg width="12" height="20" viewBox="0 0 12 20" fill="#9AAFC0" aria-hidden="true" style="flex: 0 0 auto"><circle cx="3" cy="4" r="1.7"></circle><circle cx="9" cy="4" r="1.7"></circle><circle cx="3" cy="10" r="1.7"></circle><circle cx="9" cy="10" r="1.7"></circle><circle cx="3" cy="16" r="1.7"></circle><circle cx="9" cy="16" r="1.7"></circle></svg>
+<sc-if value="{{notPhone}}" hint-placeholder-val="{{ true }}"><svg width="12" height="20" viewBox="0 0 12 20" fill="#9AAFC0" aria-hidden="true" style="flex: 0 0 auto"><circle cx="3" cy="4" r="1.7"></circle><circle cx="9" cy="4" r="1.7"></circle><circle cx="3" cy="10" r="1.7"></circle><circle cx="9" cy="10" r="1.7"></circle><circle cx="3" cy="16" r="1.7"></circle><circle cx="9" cy="16" r="1.7"></circle></svg></sc-if>
+<sc-if value="{{phone}}" hint-placeholder-val="{{ false }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9AAFC0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: 0 0 auto"><path d="M8 5l8 7-8 7"></path></svg></sc-if>
 </button>
 </sc-for>
 <sc-if value="{{panel.empty}}" hint-placeholder-val="{{ false }}">
@@ -190,7 +219,8 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </aside>
 </sc-if>
 
-<main aria-label="Open water" style="flex: 999 1 640px; min-width: 0; min-height: 760px; position: relative; overflow: hidden; background-color: #29B2C2; display: flex; flex-wrap: {{mainWrap}}; align-items: stretch">
+<main aria-label="Open water" style="{{mainStyle}}">
+<sc-if value="{{notPhone}}" hint-placeholder-val="{{ true }}">
 <svg style="position: absolute; left: 0; top: 0; width: 100%; height: 100%" viewBox="0 0 1000 760" preserveAspectRatio="xMidYMid slice" fill="none" aria-hidden="true">
 <circle cx="420" cy="390" r="200" stroke="#5FCFD9" stroke-width="3" opacity="0.45"></circle>
 <circle cx="420" cy="390" r="140" stroke="#5FCFD9" stroke-width="2" stroke-dasharray="4 10" opacity="0.45"></circle>
@@ -337,13 +367,27 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </section>
 </sc-for>
 </div>
+</sc-if>
 
 <sc-if value="{{hasBridge}}" hint-placeholder-val="{{ false }}">
-<div style="position: absolute; inset: 0; z-index: 6; background-color: rgba(11,31,51,.42); padding: 14px; display: flex; flex-wrap: {{bridgeWrap}}; gap: 14px; align-items: stretch; overflow: auto">
-<nav aria-label="Session flotilla" style="flex: 1 1 200px; display: flex; flex-direction: column; gap: 10px; min-width: 0">
+<div class="{{bridge.overlayCls}}" style="{{bridge.overlayStyle}}">
+<sc-if value="{{phone}}" hint-placeholder-val="{{ false }}">
+<div style="flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: max(8px, env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 8px calc(12px + env(safe-area-inset-left)); background-color: #FFF6E3; border-bottom: 3px solid #14304A">
+<button type="button" class="press" onClick="{{closeBridge}}" aria-label="Back" style="flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; min-width: 44px; height: 44px; padding: 0 12px 0 8px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 15px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg>Back</button>
+<svg width="40" height="26" viewBox="0 0 40 26" aria-hidden="true" style="flex: 0 0 auto"><path d="M2 2 L38 2 L30 13 L38 24 L2 24 Z" fill="{{bridge.ship.flag}}" stroke="#14304A" stroke-width="2.5" stroke-linejoin="round"></path><text x="15" y="17.5" text-anchor="middle" font-family="Bricolage Grotesque, sans-serif" font-weight="800" font-size="12" fill="{{bridge.ship.flagInk}}">{{bridge.ship.mono}}</text></svg>
+<div style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+<span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 17px; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{bridge.ship.name}}</span>
+<span style="font-size: 12px; color: #3E5870; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{bridge.ship.harness}} · {{bridge.ship.task.id}}</span>
+</div>
+<span style="{{bridge.statusStyle}}">{{bridge.statusText}}</span>
+</div>
+</sc-if>
+<nav aria-label="Session flotilla" class="{{bridge.stripCls}}" style="{{bridge.navStyle}}">
+<sc-if value="{{notPhone}}" hint-placeholder-val="{{ true }}">
 <span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 15px; color: #FFF6E3; padding: 0 4px">Flotilla · {{bridge.crewCount}}</span>
+</sc-if>
 <sc-for list="{{bridge.agents}}" as="agent" hint-placeholder-count="3">
-<button type="button" class="{{agent.cls}}" onClick="{{agent.pick}}" style="animation-delay: {{agent.delay}}; display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 8px; border-radius: 16px; border: 2.5px solid #14304A; background-color: #FFF6E3; box-shadow: 0 3px 0 #14304A; text-align: left; min-height: 64px">
+<button type="button" class="{{agent.cls}}" onClick="{{agent.pick}}" style="{{agent.style}}">
 <sc-if value="{{agent.isLead}}" hint-placeholder-val="{{ true }}">
 <svg width="52" height="50" viewBox="0 0 100 96" fill="none" aria-hidden="true">
 <path d="M50 64 L50 3" stroke="#14304A" stroke-width="5" stroke-linecap="round"></path>
@@ -364,15 +408,16 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <rect x="4" y="24" width="13" height="13" rx="2" fill="{{agent.bot}}" stroke="#14304A" stroke-width="2"></rect>
 </svg>
 </sc-if>
-<span style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+<span style="{{agent.textStyle}}">
 <span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 15px; line-height: 1.15">{{agent.label}}</span>
-<span style="font-size: 12px; color: #3E5870">{{agent.role}}</span>
+<span style="{{agent.roleStyle}}">{{agent.role}}</span>
 </span>
 </button>
 </sc-for>
 </nav>
 
-<section aria-label="Attached terminal" style="flex: 999 1 420px; min-width: 0; min-height: 560px; display: flex; flex-direction: column; border: 3px solid #14304A; border-radius: 20px; overflow: hidden; background-color: #0E2235; box-shadow: 0 6px 0 #0B1F33">
+<section aria-label="Attached terminal" style="{{bridge.termStyle}}">
+<sc-if value="{{notPhone}}" hint-placeholder-val="{{ true }}">
 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 10px 10px 14px; background-color: #FFF6E3; border-bottom: 3px solid #14304A">
 <svg width="40" height="26" viewBox="0 0 40 26" aria-hidden="true"><path d="M2 2 L38 2 L30 13 L38 24 L2 24 Z" fill="{{bridge.ship.flag}}" stroke="#14304A" stroke-width="2.5" stroke-linejoin="round"></path><text x="15" y="17.5" text-anchor="middle" font-family="Bricolage Grotesque, sans-serif" font-weight="800" font-size="12" fill="{{bridge.ship.flagInk}}">{{bridge.ship.mono}}</text></svg>
 <div style="flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px">
@@ -382,6 +427,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <span style="{{bridge.statusStyle}}">{{bridge.statusText}}</span>
 <button type="button" class="press" onClick="{{closeBridge}}" aria-label="Close terminal and return to open water" style="width: 44px; height: 44px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
 </div>
+</sc-if>
 <div style="flex: 1 1 auto; min-height: 0; overflow: auto; padding: 16px 18px 8px; display: flex; flex-direction: column; gap: 6px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13.5px; line-height: 1.55">
 <sc-for list="{{bridge.lines}}" as="line" hint-placeholder-count="6">
 <div class="{{line.cls}}">{{line.t}}</div>
@@ -390,22 +436,24 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <form onSubmit="{{send}}" style="display: flex; align-items: center; gap: 8px; margin-top: 4px">
 <label for="adm-cmd" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Input to {{bridge.focusName}}</label>
 <span aria-hidden="true" style="color: #FFC23D; font-weight: 600">❯</span>
-<input id="adm-cmd" class="term-in" value="{{draft}}" onChange="{{onDraft}}" autocomplete="off" spellcheck="false" placeholder="type here and press Enter" style="flex: 1 1 auto; min-width: 0; height: 32px; padding: 0; border: 0; background: none; color: #FFC23D; font-family: 'JetBrains Mono', monospace; font-size: 13.5px; outline: none; caret-color: #FFC23D">
+<input id="adm-cmd" class="term-in" value="{{draft}}" onChange="{{onDraft}}" autocomplete="off" spellcheck="false" placeholder="type here and press Enter" style="flex: 1 1 auto; min-width: 0; height: 32px; padding: 0; border: 0; background: none; color: #FFC23D; font-family: 'JetBrains Mono', monospace; font-size: {{termInSize}}; outline: none; caret-color: #FFC23D">
 </form>
 </sc-if>
 </div>
-<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; background-color: #14304A; border-top: 3px solid #0B1F33">
+<div style="{{bridge.keysStyle}}">
 <sc-if value="{{bridge.anchored}}" hint-placeholder-val="{{ false }}">
-<button type="button" class="press" onClick="{{dismiss}}" style="height: 40px; padding: 0 14px; border-radius: 10px; border: 2.5px solid #0B1F33; background-color: #FFF6E3; color: #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 14px; box-shadow: 0 3px 0 #0B1F33">Dismiss</button>
+<button type="button" class="press" onClick="{{dismiss}}" style="height: {{keyH}}; padding: 0 14px; border-radius: 10px; border: 2.5px solid #0B1F33; background-color: #FFF6E3; color: #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 14px; box-shadow: 0 3px 0 #0B1F33">Dismiss</button>
 <span style="flex: 1 1 auto"></span>
 <span style="font-size: 12px; color: #9DB8CF">The harness exited. This is its last screen.</span>
 </sc-if>
 <sc-if value="{{bridge.live}}" hint-placeholder-val="{{ true }}">
 <sc-for list="{{keys}}" as="k" hint-placeholder-count="6">
-<button type="button" class="key" onClick="{{k.press}}" aria-label="{{k.aria}}" style="height: 40px; min-width: 44px; padding: 0 10px; border-radius: 10px; border: 2px solid #3A6489; background-color: #1B3D5C; color: #F4EEDF; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; font-weight: 600">{{k.label}}</button>
+<button type="button" class="key" onClick="{{k.press}}" aria-label="{{k.aria}}" style="height: {{keyH}}; min-width: 44px; padding: 0 10px; border-radius: 10px; border: 2px solid #3A6489; background-color: #1B3D5C; color: #F4EEDF; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; font-weight: 600">{{k.label}}</button>
 </sc-for>
 <span style="flex: 1 1 auto"></span>
+<sc-if value="{{notPhone}}" hint-placeholder-val="{{ true }}">
 <span style="font-size: 12px; color: #9DB8CF">Keys go straight to the session</span>
+</sc-if>
 </sc-if>
 </div>
 </section>
@@ -413,13 +461,15 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </sc-if>
 </main>
 
-<sc-if value="{{inboxOpen}}" hint-placeholder-val="{{ true }}">
+<sc-if value="{{inboxShown}}" hint-placeholder-val="{{ true }}">
 <aside aria-label="Needs you inbox" role="{{inbox.role}}" aria-modal="{{inbox.modal}}" tabindex="-1" class="{{inbox.cls}}" style="{{inbox.style}}">
 <div style="position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0">
 <div style="flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 16px; background-color: #FFF6E3; border-bottom: 3px solid #14304A">
 <h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 24px; line-height: 1.05; letter-spacing: -0.01em; color: #14304A">Needs you</h2>
 <span style="flex: 1 1 auto; font-size: 13px; color: #3E5870">{{inbox.headCount}}</span>
+<sc-if value="{{inbox.showClose}}" hint-placeholder-val="{{ true }}">
 <button type="button" class="press" onClick="{{closeInbox}}" aria-label="Close the inbox" style="width: 44px; height: 44px; flex: 0 0 auto; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+</sc-if>
 </div>
 
 <div data-ib-list="1" style="flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 14px 14px 20px; display: flex; flex-direction: column; gap: 14px">
@@ -593,7 +643,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </div>
 
 <sc-if value="{{inbox.showNav}}" hint-placeholder-val="{{ false }}">
-<nav aria-label="Inbox items" style="flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 10px 14px max(10px, env(safe-area-inset-bottom)); background-color: #FFF6E3; border-top: 3px solid #14304A">
+<nav aria-label="Inbox items" style="flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: {{inbox.navPad}}; background-color: #FFF6E3; border-top: 3px solid #14304A">
 <button type="button" class="press" disabled="{{inbox.backOff}}" onClick="{{inbox.back}}" style="min-width: 108px; min-height: 48px; padding: 0 16px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 16px">← Back</button>
 <span aria-live="polite" style="flex: 1 1 auto; text-align: center; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 16px">{{inbox.pos}}</span>
 <button type="button" class="press" disabled="{{inbox.nextOff}}" onClick="{{inbox.next}}" style="min-width: 108px; min-height: 48px; padding: 0 16px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFC23D; box-shadow: 0 3px 0 #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 16px">Next →</button>
@@ -602,7 +652,93 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </div>
 </aside>
 </sc-if>
+
+<sc-if value="{{tabShips}}" hint-placeholder-val="{{ false }}">
+<section aria-label="Ships" style="position: absolute; top: 0; bottom: 0; left: env(safe-area-inset-left); right: env(safe-area-inset-right); overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 12px; padding: 16px 14px 24px; background-color: #FFF1CF">
+<div style="display: flex; flex-direction: column; gap: 2px">
+<h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 24px; line-height: 1.05; letter-spacing: -0.01em; color: #14304A">Ships</h2>
+<span style="font-size: 13px; color: #3E5870">{{shipsHint}}</span>
 </div>
+<sc-for list="{{shipRows}}" as="row" hint-placeholder-count="3">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<button type="button" class="press" onClick="{{row.open}}" aria-label="{{row.aria}}" style="{{row.style}}">
+<span aria-hidden="true" style="{{row.stripe}}"></span>
+<svg width="40" height="28" viewBox="0 0 40 28" aria-hidden="true" style="flex: 0 0 auto; margin-left: 4px"><path d="M2 3 L38 3 L30 14 L38 25 L2 25 Z" fill="{{row.flag}}" stroke="#14304A" stroke-width="2.6" stroke-linejoin="round"></path><text x="15" y="18.5" text-anchor="middle" font-family="Bricolage Grotesque, sans-serif" font-weight="800" font-size="12" fill="{{row.flagInk}}">{{row.mono}}</text></svg>
+<span style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<span style="display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 8px"><span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 17px; line-height: 1.2">{{row.name}}</span><span style="font-size: 12px; color: #3E5870">{{row.fleetName}} · {{row.harness}}</span></span>
+<span style="{{row.statusStyle}}">{{row.status}}</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #3E5870; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{row.task}}</span>
+</span>
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: 0 0 auto"><path d="M8 5l8 7-8 7"></path></svg>
+</button>
+<sc-for list="{{row.crew}}" as="boat" hint-placeholder-count="2">
+<button type="button" class="press" disabled="{{boat.off}}" onClick="{{boat.open}}" aria-label="{{boat.aria}}" style="{{boat.style}}">
+<span aria-hidden="true" style="{{boat.stripe}}"></span>
+<span style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+<span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 15px; line-height: 1.2">{{boat.name}}</span>
+<span style="font-size: 12px; color: #3E5870; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{boat.role}}</span>
+</span>
+<sc-if value="{{boat.canBoard}}" hint-placeholder-val="{{ true }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: 0 0 auto"><path d="M8 5l8 7-8 7"></path></svg></sc-if>
+</button>
+</sc-for>
+</div>
+</sc-for>
+</section>
+</sc-if>
+
+<sc-if value="{{tabChat}}" hint-placeholder-val="{{ false }}">
+<section aria-label="Chat" style="position: absolute; top: 0; bottom: 0; left: env(safe-area-inset-left); right: env(safe-area-inset-right); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; text-align: center; background-color: #FFF1CF">
+<h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 24px; line-height: 1.1; color: #14304A">Chat</h2>
+<p style="margin: 0; font-size: 15px; line-height: 1.45; color: #3E5870">Chat comes in Part B</p>
+</section>
+</sc-if>
+</div>
+
+<sc-if value="{{showTabs}}" hint-placeholder-val="{{ false }}">
+<nav aria-label="Sections" style="flex: 0 0 auto; display: flex; gap: 6px; padding: 6px calc(8px + env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left)); background-color: #FFF6E3; border-top: 3px solid #14304A">
+<sc-for list="{{tabs}}" as="tab" hint-placeholder-count="4">
+<button type="button" class="ph-tab" onClick="{{tab.go}}" aria-current="{{tab.current}}" aria-label="{{tab.aria}}" style="{{tab.style}}">
+<span style="position: relative; display: flex">
+<sc-if value="{{tab.isInbox}}" hint-placeholder-val="{{ true }}"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13l2.5-8h13L21 13v6H3z"></path><path d="M3 13h5l1.5 3h5L16 13h5"></path></svg></sc-if>
+<sc-if value="{{tab.isChat}}" hint-placeholder-val="{{ false }}"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H11l-5 4v-4H4z"></path></svg></sc-if>
+<sc-if value="{{tab.isShips}}" hint-placeholder-val="{{ false }}"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17c2 0 2-1.5 4.5-1.5S9.5 17 12 17s2.5-1.5 4.5-1.5S19 17 21 17"></path><path d="M6 13l6-9 6 9z"></path></svg></sc-if>
+<sc-if value="{{tab.isOrders}}" hint-placeholder-val="{{ false }}"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10a1 1 0 0 1 1 1v15H6V5a1 1 0 0 1 1-1z"></path><path d="M9 9h6M9 13h6M9 17h3"></path></svg></sc-if>
+<sc-if value="{{tab.hasBadge}}" hint-placeholder-val="{{ false }}"><span style="{{tab.badgeStyle}}">{{tab.badge}}</span></sc-if>
+</span>
+<span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 12.5px; line-height: 1">{{tab.label}}</span>
+</button>
+</sc-for>
+</nav>
+</sc-if>
+
+<sc-if value="{{hasDockSheet}}" hint-placeholder-val="{{ false }}">
+<div style="position: fixed; inset: 0; z-index: 45">
+<div onClick="{{dockSheet.close}}" aria-hidden="true" style="position: absolute; inset: 0; background-color: rgba(11,31,51,.55)"></div>
+<div role="dialog" aria-modal="true" aria-labelledby="adm-dock-sheet" tabindex="-1" data-dock-sheet="1" onKeyDown="{{dockSheet.key}}" class="ib-sheet" style="position: absolute; left: 0; right: 0; bottom: 0; max-height: 88%; display: flex; flex-direction: column; outline: none; background-color: #FFF6E3; border-top: 3px solid #14304A; border-radius: 24px 24px 0 0; box-shadow: 0 -6px 0 #0B1F33">
+<div style="flex: 0 0 auto; display: flex; align-items: flex-start; gap: 10px; padding: 16px calc(16px + env(safe-area-inset-right)) 10px calc(16px + env(safe-area-inset-left))">
+<div style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<h2 id="adm-dock-sheet" style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 22px; line-height: 1.1; letter-spacing: -0.01em">{{dockSheet.title}}</h2>
+<span style="font-size: 13.5px; line-height: 1.35; color: #3E5870; overflow-wrap: anywhere">{{dockSheet.task}}</span>
+</div>
+<button type="button" class="press" onClick="{{dockSheet.close}}" style="flex: 0 0 auto; min-height: 44px; padding: 0 16px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; font-weight: 600; font-size: 15px">Cancel</button>
+</div>
+<div style="flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 14px; padding: 4px calc(16px + env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))">
+<sc-for list="{{dockSheet.fleets}}" as="fleet" hint-placeholder-count="2">
+<div role="group" aria-label="{{fleet.name}}" style="display: flex; flex-direction: column; gap: 8px">
+<span style="align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 12px; border: 2.5px solid #14304A; background-color: {{fleet.color}}; color: {{fleet.ink}}; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 15px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{fleet.ink}}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="2"></circle><path d="M12 7v14M5 13a7 7 0 0 0 14 0M8 11h8"></path></svg>{{fleet.name}}</span>
+<sc-for list="{{fleet.docks}}" as="dock" hint-placeholder-count="3">
+<button type="button" class="press" onClick="{{dock.pick}}" aria-label="{{dock.aria}}" style="position: relative; overflow: hidden; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 60px; padding: 8px 14px 8px 22px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; text-align: left">
+<span aria-hidden="true" style="position: absolute; left: 0; top: 0; bottom: 0; width: 10px; background-color: {{fleet.color}}; border-right: 2.5px solid #14304A"></span>
+<svg width="40" height="28" viewBox="0 0 40 28" aria-hidden="true" style="flex: 0 0 auto"><path d="M2 3 L38 3 L30 14 L38 25 L2 25 Z" fill="{{dock.flag}}" stroke="#14304A" stroke-width="2.6" stroke-linejoin="round"></path><text x="15" y="18.5" text-anchor="middle" font-family="Bricolage Grotesque, sans-serif" font-weight="800" font-size="12" fill="{{dock.ink}}">{{dock.mono}}</text></svg>
+<span style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px"><span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 17px; line-height: 1.2">{{dock.name}}</span><span style="font-size: 12.5px; color: #3E5870">{{dock.status}}</span></span>
+</button>
+</sc-for>
+</div>
+</sc-for>
+</div>
+</div>
+</div>
+</sc-if>
 
 <sc-if value="{{hasGhost}}" hint-placeholder-val="{{ false }}">
 <div class="ghost" style="{{ghost.style}}">
@@ -615,7 +751,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </sc-if>
 
 <sc-if value="{{hasPending}}" hint-placeholder-val="{{ false }}">
-<div style="position: absolute; inset: 0; z-index: 20; background-color: rgba(11,31,51,.55); display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; overflow: auto">
+<div style="{{pendWrapStyle}}">
 <div role="dialog" aria-modal="true" aria-labelledby="adm-orders" class="pop" style="width: 100%; max-width: 540px; border: 3px solid #14304A; border-radius: 24px; background-color: #FFF6E3; box-shadow: 0 8px 0 #0B1F33; overflow: hidden">
 <div style="display: flex; align-items: center; gap: 14px; padding: 16px 18px; background-color: {{pend.fleetColor}}; color: {{pend.fleetInk}}; border-bottom: 3px solid #14304A">
 <svg width="56" height="40" viewBox="0 0 40 28" aria-hidden="true"><path d="M2 3 L38 3 L30 14 L38 25 L2 25 Z" fill="{{pend.flag}}" stroke="#14304A" stroke-width="2.2" stroke-linejoin="round"></path><text x="15" y="18.5" text-anchor="middle" font-family="Bricolage Grotesque, sans-serif" font-weight="800" font-size="12" fill="{{pend.ink}}">{{pend.mono}}</text></svg>
@@ -642,7 +778,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </sc-for>
 <div class="{{customCls}}" style="display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A">
 <label for="adm-skill" style="display: flex; align-items: center; gap: 12px; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 18px"><span class="dot" style="width: 20px; height: 20px; border-radius: 50%; border: 3px solid #14304A; background-color: #FFFDF6; box-shadow: inset 0 0 0 3px #FFFDF6"></span>Custom skill</label>
-<input id="adm-skill" role="combobox" aria-expanded="{{acOpen}}" aria-controls="adm-skill-list" aria-autocomplete="list" value="{{customText}}" onChange="{{onCustom}}" onFocus="{{pickCustom}}" onBlur="{{acBlur}}" onKeyDown="{{acKey}}" autocomplete="off" spellcheck="false" placeholder="Start typing a skill name" style="height: 46px; padding: 0 12px; border-radius: 10px; border: 2.5px solid #14304A; background-color: #FFFFFF; font-family: 'JetBrains Mono', monospace; font-size: 14px; color: #14304A">
+<input id="adm-skill" role="combobox" aria-expanded="{{acOpen}}" aria-controls="adm-skill-list" aria-autocomplete="list" value="{{customText}}" onChange="{{onCustom}}" onFocus="{{pickCustom}}" onBlur="{{acBlur}}" onKeyDown="{{acKey}}" autocomplete="off" spellcheck="false" placeholder="Start typing a skill name" style="height: 46px; padding: 0 12px; border-radius: 10px; border: 2.5px solid #14304A; background-color: #FFFFFF; font-family: 'JetBrains Mono', monospace; font-size: {{skillInSize}}; color: #14304A">
 <sc-if value="{{acOpen}}" hint-placeholder-val="{{ false }}">
 <div id="adm-skill-list" role="listbox" aria-label="Installed skills" style="display: flex; flex-direction: column; border: 2.5px solid #14304A; border-radius: 12px; background-color: #FFFFFF; overflow: hidden">
 <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background-color: #EEF4F8; border-bottom: 2px solid #14304A; font-size: 11.5px; font-weight: 700; color: #3E5870; letter-spacing: .04em; text-transform: uppercase"><span>Installed skills</span><span>{{acCount}}</span></div>
@@ -672,7 +808,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"scene":{"editor":"enum","options":["harbor","launch","bridge","tablet","inbox","inbox-bridge","inbox-empty"],"default":"harbor"},"$preview":{"width":1440,"height":900}}'>
+<script type="text/x-dc" data-dc-script data-props='{"scene":{"editor":"enum","options":["harbor","launch","bridge","tablet","inbox","inbox-bridge","inbox-empty","ships","orders","phone-launch"],"default":"harbor"},"$preview":{"width":1440,"height":900}}'>
 class Component extends DCLogic {
   D() {
     if (this._d) return this._d;
@@ -786,8 +922,9 @@ class Component extends DCLogic {
 
   seed() {
     const scene = this.props.scene || 'harbor';
+    const size = this.sizeNow();
     const s = { inited: true, merged: true, collapsed: { linear: true }, sidebar: true, selected: null, ghost: null, hoverYard: null, pending: null, choice: 'commodore', customText: '', acOpen: false, acIdx: 0, ships: this.initialShips(), taken: {}, open: null, focus: 'lead', logs: {}, draft: '', sound: true, q: '', place: {}, lifted: null, dock: {},
-      inboxOpen: false, wide: this.isWide(), ibItems: this.sampleInbox(Date.now()), ibUi: {}, ibDone: {}, ibGone: {}, ibCur: null };
+      inboxOpen: false, size, wide: size === 'wide', tab: 'inbox', dockSheet: null, shipHi: null, ibItems: this.sampleInbox(Date.now()), ibUi: {}, ibDone: {}, ibGone: {}, ibCur: null };
     if (scene === 'inbox' || scene === 'inbox-bridge') {
       s.inboxOpen = true;
       s.ships = s.ships.map((x) => x.id === 's1' ? Object.assign({}, x, { status: 'attention', reason: 'question', since: Date.now() - 6 * 60000, ask: 'Should the retry queue survive an app update? (y/n)' }) : x);
@@ -798,9 +935,14 @@ class Component extends DCLogic {
       s.ibItems = [];
       s.ships = s.ships.map((x) => x.id === 's3' ? Object.assign({}, x, { status: 'working' }) : x);
     }
-    if (scene === 'launch') { s.pending = { taskId: 'MOB-1183', yardId: 'work:claude' }; s.choice = 'custom'; s.customText = 'te'; s.acOpen = true; }
+    if (scene === 'launch') { s.pending = { taskId: 'MOB-1183', yardId: 'work:claude' }; s.choice = 'custom'; s.customText = 'te'; s.acOpen = true; s.tab = 'orders'; }
     if (scene === 'bridge') s.open = 's3';
-    if (scene === 'tablet') s.selected = 'admiral#3';
+    if (scene === 'tablet') { s.selected = 'admiral#3'; s.tab = 'orders'; }
+    // The next three are phone scenes. At the other sizes they look like harbor, because
+    // the tab and the dock sheet show only on a phone.
+    if (scene === 'ships') s.tab = 'ships';
+    if (scene === 'orders') s.tab = 'orders';
+    if (scene === 'phone-launch') { s.tab = 'orders'; s.dockSheet = 'MOB-1183'; }
     return s;
   }
   S() { return (this.state && this.state.inited) ? this.state : this.seed(); }
@@ -826,6 +968,7 @@ class Component extends DCLogic {
   }
 
   startDrag(e, id) {
+    if (this.S().size === 'phone') return;
     if (e.button !== undefined && e.button !== 0) return;
     this.drag = { kind: 'task', id, sx: e.clientX, sy: e.clientY, moved: false };
   }
@@ -866,6 +1009,7 @@ class Component extends DCLogic {
   recentDrag() { return this.justDragged && Date.now() - this.justDragged < 400; }
 
   tapTask(id) {
+    if (this.S().size === 'phone') { this.put({ dockSheet: id }); this.focusSel('[data-dock-sheet]'); return; }
     if (this.recentDrag()) return;
     this.put((st) => ({ selected: st.selected === id ? null : id }));
   }
@@ -874,6 +1018,8 @@ class Component extends DCLogic {
     if (!st.selected) return;
     this.put({ pending: { taskId: st.selected, yardId }, selected: null, choice: 'commodore', customText: '', acOpen: false });
   }
+
+  focusSel(sel) { setTimeout(() => { const el = document.querySelector(sel); if (el) el.focus({ preventScroll: true }); }, 30); }
 
   acList(st) {
     const q = (st.customText || '').trim().toLowerCase();
@@ -900,6 +1046,12 @@ class Component extends DCLogic {
     const id = 's' + Date.now();
     const ship = { id, name: NAMES[n % NAMES.length], task: { id: task.id, title: task.title }, yard: p.yardId, skill, status: 'working', subs: [], bot: BOTS[n % BOTS.length], fresh: true };
     const yid = p.yardId;
+    const phone = st.size === 'phone';
+    if (phone) {
+      // The new ship is the first one after those that need you, so show the Ships tab and mark it for a moment.
+      this.put({ tab: 'ships', shipHi: id });
+      setTimeout(() => this.put((prev) => prev.shipHi === id ? { shipHi: null } : {}), 2600);
+    }
     this.put((prev) => ({ ships: prev.ships.concat([ship]), taken: Object.assign({}, prev.taken, { [task.id]: true }), pending: null, customText: '', choice: 'commodore', acOpen: false, dock: Object.assign({}, prev.dock, { [yid]: 'leaving' }) }));
     setTimeout(() => this.put((prev) => ({ dock: Object.assign({}, prev.dock, { [yid]: 'gone' }) })), 1100);
     setTimeout(() => this.put((prev) => ({ dock: Object.assign({}, prev.dock, { [yid]: 'arriving' }) })), 1900);
@@ -995,23 +1147,33 @@ class Component extends DCLogic {
   // Items follow the contract in #112, which has no ship field: the ship is
   // the inbox directory a file sits in. The sample items carry `ship` beside
   // the contract fields only to stand in for that directory.
-  // Wide is the drawer: 1024px and up, in landscape. Phones and iPads in portrait get the sheet.
+  // Three size classes, decided here and nowhere else.
+  // phone:  (max-width: 760px), as web/src/styles.css, or a short window (an iPhone in
+  //         landscape), so rotating a phone never brings back open water. Tab bar, lists, bridge on top.
+  // wide:   1024px and up, in landscape, unless phone matches. The inbox is a drawer. Desktop and iPad landscape.
+  // middle: everything else: iPad portrait and desktop windows from 761px to 1023px. The harbor as today;
+  //         the inbox is a full-screen sheet.
+  phoneQuery() { return '(max-width: 760px), (max-height: 499px)'; }
   wideQuery() { return '(min-width: 1024px) and (orientation: landscape)'; }
-  isWide() { try { return window.matchMedia(this.wideQuery()).matches; } catch (err) { return true; } }
+  sizeNow() {
+    try {
+      if (window.matchMedia(this.phoneQuery()).matches) return 'phone';
+      return window.matchMedia(this.wideQuery()).matches ? 'wide' : 'middle';
+    } catch (err) { return 'wide'; }
+  }
 
   componentDidMount() {
     try {
-      const mq = window.matchMedia(this.wideQuery());
-      this.mq = mq;
-      this.onMq = () => this.put({ wide: mq.matches });
-      if (mq.addEventListener) mq.addEventListener('change', this.onMq); else mq.addListener(this.onMq);
+      this.mqs = [window.matchMedia(this.phoneQuery()), window.matchMedia(this.wideQuery())];
+      this.onMq = () => { const size = this.sizeNow(); this.put({ size, wide: size === 'wide' }); };
+      this.mqs.forEach((mq) => { if (mq.addEventListener) mq.addEventListener('change', this.onMq); else mq.addListener(this.onMq); });
       this.onMq();
     } catch (err) {}
     this.ibFocus();
     this.clock = setInterval(() => this.put({ tick: Date.now() }), 30000);
   }
   componentWillUnmount() {
-    try { if (this.mq) { if (this.mq.removeEventListener) this.mq.removeEventListener('change', this.onMq); else this.mq.removeListener(this.onMq); } } catch (err) {}
+    try { (this.mqs || []).forEach((mq) => { if (mq.removeEventListener) mq.removeEventListener('change', this.onMq); else mq.removeListener(this.onMq); }); } catch (err) {}
     clearInterval(this.clock);
   }
 
@@ -1146,7 +1308,7 @@ class Component extends DCLogic {
   ibFocus() {
     setTimeout(() => {
       const a = document.querySelector('aside[aria-label="Needs you inbox"]');
-      if (a && !this.S().wide) a.focus({ preventScroll: true });
+      if (a && this.S().size === 'middle') a.focus({ preventScroll: true });
     }, 30);
   }
   ibAttach(shipId) { this.put((st) => ({ open: shipId, focus: 'lead', draft: '', inboxOpen: !!st.wide })); }
@@ -1156,6 +1318,7 @@ class Component extends DCLogic {
     const { H, F } = this.D();
     const now = Date.now();
     const wide = !!s.wide;
+    const phone = s.size === 'phone';
     const list = this.ibList(s);
     const open = list.filter((e) => !s.ibDone[e.id]);
     const count = open.length;
@@ -1290,11 +1453,15 @@ class Component extends DCLogic {
       btnAria: count ? 'Needs you, ' + count + (count === 1 ? ' item' : ' items') : 'Needs you, nothing waiting',
       btnStyle: 'display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-radius: 999px; font-family: Bricolage Grotesque, sans-serif; font-weight: 700; font-size: 15px; '
         + (count ? 'border: 2.5px solid #0B1F33; background-color: #FF7A59; color: #14304A' : 'border: 2px solid #3A6489; background-color: #21486B; color: #F4EEDF'),
-      cls: wide ? 'ib-drawer' : 'ib-sheet',
-      role: wide ? 'complementary' : 'dialog', modal: wide ? null : 'true',
-      style: wide ? 'flex: 0 0 400px; min-width: 0; position: sticky; top: 0; align-self: flex-start; height: calc(100dvh - 73px); outline: none; background-color: #FFF1CF; border-left: 3px solid #14304A'
+      // On a phone the inbox is the Inbox tab's content: the sheet's one-at-a-time layout, in place instead of over the harbor.
+      cls: phone ? undefined : wide ? 'ib-drawer' : 'ib-sheet',
+      role: phone ? 'region' : wide ? 'complementary' : 'dialog', modal: wide || phone ? null : 'true',
+      style: phone ? 'position: absolute; top: 0; bottom: 0; left: env(safe-area-inset-left); right: env(safe-area-inset-right); outline: none; background-color: #FFF1CF'
+        : wide ? 'flex: 0 0 400px; min-width: 0; position: sticky; top: 0; align-self: flex-start; height: calc(100dvh - 73px); outline: none; background-color: #FFF1CF; border-left: 3px solid #14304A'
         : 'position: fixed; inset: 0; z-index: 40; outline: none; background-color: #FFF1CF',
-      headCount: wide ? (count ? count + ' waiting' : '') : '',
+      showClose: !phone,
+      navPad: phone ? '10px calc(14px + env(safe-area-inset-right)) 10px calc(14px + env(safe-area-inset-left))' : '10px 14px max(10px, env(safe-area-inset-bottom))',
+      headCount: wide || phone ? (count ? count + ' waiting' : '') : '',
       showNav: !wide && list.length > 0,
       pos: cur ? (rank ? rank + ' of ' + count : count + ' left') : '',
       backOff: !prev, nextOff: !next,
@@ -1475,12 +1642,117 @@ class Component extends DCLogic {
     const inbox = this.ibModel(s);
     const drawer = !!(s.inboxOpen && s.wide);
 
+    // ---- Phone layout: tab bar, Ships list, dock sheet ----
+    const phone = s.size === 'phone';
+    const tabId = s.tab || 'inbox';
+    const showTabs = phone && !bridge;
+    const needsYou = s.ships.filter((x) => x.status === 'attention').length;
+    const tabDefs = [['inbox', 'Inbox', inbox.count, 'Inbox', '#14304A', '#FFC23D'], ['chat', 'Chat', 0], ['ships', 'Ships', needsYou, 'Ships', '#FF7A59', '#14304A'], ['orders', 'Orders', 0]];
+    const tabs = tabDefs.map((t) => {
+      const on = tabId === t[0];
+      return {
+        label: t[1], isInbox: t[0] === 'inbox', isChat: t[0] === 'chat', isShips: t[0] === 'ships', isOrders: t[0] === 'orders',
+        current: on ? 'page' : undefined,
+        aria: t[1] + (t[2] ? ', ' + t[2] + (t[0] === 'inbox' ? (t[2] === 1 ? ' item' : ' items') : ' needing you') : ''),
+        style: 'position: relative; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 2px; border-radius: 14px; color: #14304A; border: 2.5px solid ' + (on ? '#14304A' : 'transparent') + '; background-color: ' + (on ? '#FFC23D' : 'transparent') + '; box-shadow: ' + (on ? '0 2px 0 #14304A' : 'none'),
+        hasBadge: t[2] > 0, badge: t[2],
+        badgeStyle: 'position: absolute; top: -7px; left: 15px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; border: 2px solid #FFF6E3; background-color: ' + (t[4] || '#14304A') + '; color: ' + (t[5] || '#FFC23D') + '; font-family: Archivo, sans-serif; font-weight: 700; font-size: 11.5px; display: flex; align-items: center; justify-content: center',
+        go: () => self.put({ tab: t[0] })
+      };
+    });
+
+    // Ships that need you first, longest waiting first as the inbox orders them; then the rest, newest first.
+    const nowMs = Date.now();
+    const shipRows = !phone ? [] : s.ships.filter((x) => x.status === 'attention').sort((a, b) => (a.since || 0) - (b.since || 0))
+      .concat(s.ships.filter((x) => x.status !== 'attention').slice().reverse()).map((sh) => {
+        const parts = sh.yard.split(':');
+        const h = H[parts[1]];
+        const f = F.find((x) => x.id === parts[0]);
+        const attn = sh.status === 'attention';
+        const done = sh.status === 'done';
+        const hi = s.shipHi === sh.id;
+        const status = attn ? 'Needs you · ' + self.reasonWords(sh.reason || 'question') + ' · waiting ' + self.agoText(nowMs - (sh.since || nowMs))
+          : done ? 'Anchored, exited ' + sh.exit : 'Underway';
+        const isC = sh.skill === 'Commodore';
+        const stripe = 'position: absolute; left: 0; top: 0; bottom: 0; width: 10px; background-color: ' + f.color + '; border-right: 2.5px solid #14304A';
+        return {
+          name: sh.name, flag: h.flag, flagInk: h.ink, mono: h.mono, harness: h.name, fleetName: f.name, task: sh.task.id + ' ' + sh.task.title,
+          status, stripe,
+          statusStyle: 'font-size: 13.5px; font-weight: 600; line-height: 1.3; color: ' + (attn ? '#C2412A' : '#3E5870'),
+          style: 'position: relative; overflow: hidden; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 64px; padding: 10px 12px 10px 20px; border-radius: 14px; text-align: left; border: 2.5px solid ' + (attn ? '#C2412A' : '#14304A') + '; background-color: ' + (hi ? '#FFF0B8' : attn ? '#FFD9CC' : '#FFFAEE') + '; box-shadow: ' + (hi ? '0 0 0 4px #FFC23D, 0 3px 0 #14304A' : '0 3px 0 #14304A'),
+          aria: 'Board ' + sh.name + ', ' + h.name + ' in ' + f.name + ', ' + status,
+          open: () => self.put({ open: sh.id, focus: 'lead', draft: '' }),
+          crew: sh.subs.map((b) => ({
+            name: b.name, role: (isC ? 'Teammate · ' : 'Subagent · ') + b.job, canBoard: isC, off: !isC,
+            stripe,
+            style: 'position: relative; overflow: hidden; display: flex; align-items: center; gap: 10px; width: calc(100% - 22px); margin-left: 22px; min-height: 56px; padding: 8px 12px 8px 20px; border-radius: 12px; text-align: left; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 2px 0 #14304A',
+            aria: isC ? 'Board ' + b.name + ', crew of ' + sh.name : b.name + ', a subagent of ' + sh.name + ', cannot be boarded',
+            open: () => self.put({ open: sh.id, focus: b.id, draft: '' })
+          }))
+        };
+      });
+    const nAttn = shipRows.filter((r) => r.status.indexOf('Needs you') === 0).length;
+    const dockTask = phone && s.dockSheet ? (this.findTask(s.dockSheet) || { id: s.dockSheet, title: '' }) : null;
+    const dockSheet = dockTask ? {
+      title: 'Launch ' + dockTask.id, task: dockTask.title,
+      close: () => self.put({ dockSheet: null }),
+      key: (e) => { if (e.key === 'Escape') self.put({ dockSheet: null }); },
+      fleets: F.map((f) => ({
+        name: f.name, color: f.color, ink: f.ink,
+        docks: f.yards.map((hid) => {
+          const id = f.id + ':' + hid;
+          const h = H[hid];
+          const n = s.ships.filter((x) => x.yard === id && x.status !== 'done').length;
+          return {
+            name: h.name, mono: h.mono, flag: h.flag, ink: h.ink, status: n ? n + ' at sea' : 'All in port',
+            aria: 'Launch ' + dockTask.id + ' on ' + f.name + ', ' + h.name + ' dock',
+            pick: () => self.put({ dockSheet: null, pending: { taskId: dockTask.id, yardId: id }, selected: null, choice: 'commodore', customText: '', acOpen: false })
+          };
+        })
+      }))
+    } : null;
+    const ORIG_MAIN = 'flex: 999 1 640px; min-width: 0; min-height: 760px; position: relative; overflow: hidden; background-color: #29B2C2; display: flex; flex-wrap: ' + (drawer ? 'nowrap' : 'wrap') + '; align-items: stretch';
+    const bridgeWrap = drawer ? 'nowrap' : 'wrap';
+    if (bridge) {
+      bridge.overlayCls = phone ? 'ph-bridge' : undefined;
+      bridge.overlayStyle = phone ? 'position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; overflow: hidden; background-color: #14304A'
+        : 'position: absolute; inset: 0; z-index: 6; background-color: rgba(11,31,51,.42); padding: 14px; display: flex; flex-wrap: ' + bridgeWrap + '; gap: 14px; align-items: stretch; overflow: auto';
+      if (phone) bridge.statusStyle += '; flex: 0 0 auto; white-space: nowrap';
+      bridge.stripCls = phone ? 'ph-strip' : undefined;
+      bridge.navStyle = phone ? 'flex: 0 0 auto; display: flex; flex-direction: row; gap: 8px; overflow-x: auto; overscroll-behavior-x: contain; padding: 8px calc(12px + env(safe-area-inset-right)) 8px calc(12px + env(safe-area-inset-left)); background-color: #0B1F33'
+        : 'flex: 1 1 200px; display: flex; flex-direction: column; gap: 10px; min-width: 0';
+      bridge.termStyle = phone ? 'flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background-color: #0E2235'
+        : 'flex: 999 1 420px; min-width: 0; min-height: 560px; display: flex; flex-direction: column; border: 3px solid #14304A; border-radius: 20px; overflow: hidden; background-color: #0E2235; box-shadow: 0 6px 0 #0B1F33';
+      bridge.keysStyle = phone ? 'flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px calc(12px + env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left)); background-color: #14304A; border-top: 3px solid #0B1F33'
+        : 'display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; background-color: #14304A; border-top: 3px solid #0B1F33';
+      bridge.agents.forEach((a) => {
+        a.style = (phone ? 'flex: 0 0 auto; ' : '') + 'animation-delay: ' + a.delay + '; display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 8px; border-radius: 16px; border: 2.5px solid #14304A; background-color: #FFF6E3; box-shadow: 0 3px 0 #14304A; text-align: left; min-height: ' + (phone ? '56px' : '64px');
+        a.textStyle = 'display: flex; flex-direction: column; gap: 2px; min-width: 0' + (phone ? '; max-width: 190px' : '');
+        a.roleStyle = 'font-size: 12px; color: #3E5870' + (phone ? '; overflow: hidden; text-overflow: ellipsis; white-space: nowrap' : '');
+      });
+    }
+
     return {
       onMove: (e) => self.move(e),
       onUp: (e) => self.up(e),
       onCancel: () => self.cancel(),
       atSea: s.ships.filter((x) => x.status !== 'done').length,
-      inbox, inboxOpen: !!s.inboxOpen, rowWrap: drawer ? 'nowrap' : 'wrap', mainWrap: drawer ? 'nowrap' : 'wrap', bridgeWrap: drawer ? 'nowrap' : 'wrap',
+      inbox, inboxOpen: !!s.inboxOpen, inboxShown: phone ? tabId === 'inbox' : !!s.inboxOpen,
+      phone, notPhone: !phone,
+      rootStyle: phone ? "position: fixed; inset: 0; display: flex; flex-direction: column; overflow: hidden; background-color: #14304A; color: #14304A; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-size: 15px"
+        : "min-height: 100vh; position: relative; display: flex; flex-direction: column; background-color: #14304A; color: #14304A; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-size: 15px",
+      rowStyle: phone ? 'position: relative; flex: 1 1 0; min-height: 0; background-color: #FFF1CF'
+        : 'display: flex; flex-wrap: ' + (drawer ? 'nowrap' : 'wrap') + '; flex: 1 1 auto; align-items: stretch; background-color: #29B2C2',
+      mainStyle: phone ? 'display: contents' : ORIG_MAIN,
+      ordersStyle: phone ? 'position: absolute; top: 0; bottom: 0; left: env(safe-area-inset-left); right: env(safe-area-inset-right); overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 14px; padding: 16px 16px 24px; background-color: #FFF1CF'
+        : 'flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 16px; background-color: #FFF1CF; border-right: 3px solid #14304A',
+      ordersHint: phone ? 'Tap an order to pick a dock and launch it' : 'Drag a card onto a dock to launch',
+      filterSize: phone ? '16px' : '14.5px', termInSize: phone ? '16px' : '13.5px', skillInSize: phone ? '16px' : '14px', keyH: phone ? '44px' : '40px',
+      pendWrapStyle: phone ? 'position: fixed; inset: 0; z-index: 60; background-color: rgba(11,31,51,.55); display: flex; align-items: flex-start; justify-content: center; padding: max(16px, env(safe-area-inset-top)) 12px max(16px, env(safe-area-inset-bottom)); overflow: auto'
+        : 'position: absolute; inset: 0; z-index: 20; background-color: rgba(11,31,51,.55); display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; overflow: auto',
+      tabs, showTabs, tabShips: phone && tabId === 'ships', tabChat: phone && tabId === 'chat',
+      shipRows, shipsHint: shipRows.length + (shipRows.length === 1 ? ' ship' : ' ships') + (nAttn ? ', ' + nAttn + ' need' + (nAttn === 1 ? 's' : '') + ' you' : ''),
+      hasDockSheet: !!dockSheet, dockSheet: dockSheet || { fleets: [] },
       toggleInbox: () => { self.put((st) => ({ inboxOpen: !st.inboxOpen })); self.ibFocus(); },
       closeInbox: () => self.put({ inboxOpen: false }),
       sound: !!s.sound, muted: !s.sound,
