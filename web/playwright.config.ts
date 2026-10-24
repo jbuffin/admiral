@@ -19,6 +19,8 @@ if (!process.env.ADMIRAL_E2E_PORT) {
   ]).toString().trim();
   process.env.ADMIRAL_E2E_HOME = join(mkdtempSync(join(tmpdir(), 'admiral-e2e-')), 'home');
 }
+// The phone shell's spec runs on the phone project only.
+const phoneSpecs = /phone\.spec\.ts$/;
 const port = process.env.ADMIRAL_E2E_PORT;
 const baseURL = `http://127.0.0.1:${port}`;
 
@@ -42,21 +44,24 @@ export default defineConfig({
   projects: [
     {
       name: 'ipad-landscape',
+      testIgnore: phoneSpecs,
       use: { browserName: 'webkit', viewport: { width: 1194, height: 834 }, hasTouch: true, isMobile: true },
     },
     {
       name: 'ipad-portrait',
+      testIgnore: phoneSpecs,
       use: { browserName: 'webkit', viewport: { width: 834, height: 1194 }, hasTouch: true, isMobile: true },
     },
     {
       name: 'desktop',
+      testIgnore: phoneSpecs,
       use: { browserName: 'webkit', viewport: { width: 1440, height: 900 } },
     },
     {
-      // The other specs were built for iPad and desktop sizes: the phone runs the inbox specs only.
+      // The other specs were built for iPad and desktop sizes: the phone runs the inbox specs and its own.
       name: 'phone',
-      testMatch: /inbox(-actions)?\.spec\.ts$/,
-      use: { browserName: 'webkit', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true },
+      testMatch: /(inbox(-actions)?|phone)\.spec\.ts$/,
+      use: { browserName: 'webkit', viewport: { width: 402, height: 874 }, hasTouch: true, isMobile: true },
     },
   ],
 });

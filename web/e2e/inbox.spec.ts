@@ -2,7 +2,7 @@ import type { Locator, Page, TestInfo } from '@playwright/test';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Admiral, expect } from './fixtures';
-import { animationsOn, boarded, inboxButton, isTouch, spyOnPage, test } from './sea';
+import { animationsOn, boarded, badge, badgeName, isTouch, phone, spyOnPage, test } from './sea';
 
 // The Needs You inbox in the web UI (#116 u3). Items are files the test writes into the test Admiral's
 // $ADMIRAL_HOME/inbox/<session>/ after the ship has launched; a needs-you stop is a fake harness that
@@ -11,6 +11,8 @@ import { animationsOn, boarded, inboxButton, isTouch, spyOnPage, test } from './
 //
 //   header: button "Needs you, <n> item(s)" / "Needs you, nothing waiting", aria-expanded
 //   wide (>= 1024 wide, landscape): complementary "Needs you inbox" (the drawer), button "Close the inbox"
+//   phone: the Inbox tab ("Inbox, <n> item(s)", "Inbox" when empty) holds region "Needs you inbox", with the sheet's
+//     "Back" / "Next" and "n of N" and no Close button; there is no header button, and the badge is the tab
 //   otherwise: dialog "Needs you inbox", aria-modal="true" (the sheet), buttons "Back" and "Next", text "n of N"
 //   item: its title, the ship's name, "Recommended" on the recommended option,
 //     radio / checkbox per option (name starts with the label), radio "Other" revealing textbox "Your answer",
@@ -30,7 +32,8 @@ const wide = (info: TestInfo) => {
 };
 const press = (l: Locator, touch: boolean) => (touch ? l.tap() : l.click());
 
-const panel = (page: Page, info: TestInfo) => page.getByRole(wide(info) ? 'complementary' : 'dialog', { name: 'Needs you inbox' });
+const panel = (page: Page, info: TestInfo) =>
+  phone(info) ? page.getByRole('region', { name: 'Needs you inbox' }) : page.getByRole(wide(info) ? 'complementary' : 'dialog', { name: 'Needs you inbox' });
 const position = (p: Locator) => p.getByText(/^\d+ of \d+$/);
 
 const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000).toISOString();
@@ -91,12 +94,12 @@ test.describe('S2: the badge, the inbox and a question', () => {
     seed(admiral, ship.session, 'r-1', review(5));
     await page.goto(admiral.url);
 
-    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, 2 items');
-    await expect(inboxButton(page)).toHaveAttribute('aria-expanded', 'false');
-    await press(inboxButton(page), touch);
+    await expect(badge(page, info)).toHaveAccessibleName(badgeName(info, 'Needs you, 2 items'));
+    if (!phone(info)) await expect(badge(page, info)).toHaveAttribute('aria-expanded', 'false');
+    await press(badge(page, info), touch);
     const inbox = panel(page, info);
     await expect(inbox).toBeVisible();
-    await expect(inboxButton(page)).toHaveAttribute('aria-expanded', 'true');
+    if (!phone(info)) await expect(badge(page, info)).toHaveAttribute('aria-expanded', 'true');
 
     // The oldest first, with its ship's name.
     await expect(inbox.getByText('Which way?')).toBeVisible();
@@ -124,7 +127,7 @@ test.describe('S2: the badge, the inbox and a question', () => {
 
     // At once: the folded line, and the badge without it. The review item still counts.
     await expect(inbox.getByRole('status').filter({ hasText: 'Answered' })).toBeVisible();
-    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, 1 item');
+    await expect(badge(page, info)).toHaveAccessibleName(badgeName(info, 'Needs you, 1 item'));
 
     // The answer is a file beside the item, with the choices keyed by question id.
     const file = join(admiral.home, 'inbox', ship.session, 'q-1.answer.json');
@@ -136,7 +139,7 @@ test.describe('S2: the badge, the inbox and a question', () => {
     await expect(inbox.getByRole('status').filter({ hasText: 'Answered' })).toBeHidden({ timeout: 10_000 });
     await expect(inbox.getByText('Review PR 12')).toBeVisible();
     await expect(inbox.getByText('Which way?')).toHaveCount(0);
-    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, 1 item');
+    await expect(badge(page, info)).toHaveAccessibleName(badgeName(info, 'Needs you, 1 item'));
   });
 });
 
@@ -144,8 +147,8 @@ test.describe('S5: nothing waiting', () => {
   test('the button says nothing is waiting and the inbox says "Nothing needs you"', async ({ page, admiral }, info) => {
     await admiral.start();
     await page.goto(admiral.url);
-    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, nothing waiting');
-    await press(inboxButton(page), isTouch(info));
+    await expect(badge(page, info)).toHaveAccessibleName(badgeName(info, 'Needs you, nothing waiting'));
+    await press(badge(page, info), isTouch(info));
     await expect(panel(page, info).getByText('Nothing needs you')).toBeVisible();
   });
 });
@@ -160,13 +163,13 @@ test.describe('S3: the drawer beside the bridge', () => {
     const ship = await s.launch('work', 'alpha');
     seed(admiral, ship.session, 'q-1', question(10));
     await page.goto(admiral.url);
-    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, 1 item');
+    await expect(badge(page, info)).toHaveAccessibleName(badgeName(info, 'Needs you, 1 item'));
 
     const orders = page.getByRole('complementary', { name: 'Orders', exact: true });
     const rail = page.getByRole('complementary', { name: 'Orders, collapsed', exact: true });
     await expect(orders).toBeVisible();
 
-    await press(inboxButton(page), touch);
+    await press(badge(page, info), touch);
     await expect(panel(page, info)).toBeVisible();
     await expect(rail).toBeVisible();
     await expect(orders).toHaveCount(0);
@@ -178,12 +181,12 @@ test.describe('S3: the drawer beside the bridge', () => {
     // Collapsed by the engineer first: closing the drawer leaves it collapsed.
     await press(page.getByRole('button', { name: 'Collapse orders' }), touch);
     await expect(rail).toBeVisible();
-    await press(inboxButton(page), touch);
+    await press(badge(page, info), touch);
     await press(panel(page, info).getByRole('button', { name: 'Close the inbox' }), touch);
     await expect(rail).toBeVisible();
 
     // Expanding Orders while the drawer is open closes the drawer.
-    await press(inboxButton(page), touch);
+    await press(badge(page, info), touch);
     await expect(panel(page, info)).toBeVisible();
     await press(page.getByRole('button', { name: 'Expand orders' }), touch);
     await expect(panel(page, info)).toHaveCount(0);
@@ -200,13 +203,13 @@ test.describe('S3: the drawer beside the bridge', () => {
     await page.goto(admiral.url);
 
     // The stop and the item are two entries.
-    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, 2 items');
-    expect(await animationsOn(inboxButton(page))).toBeGreaterThan(0);
+    await expect(badge(page, info)).toHaveAccessibleName(badgeName(info, 'Needs you, 2 items'));
+    expect(await animationsOn(badge(page, info))).toBeGreaterThan(0);
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    expect(await animationsOn(inboxButton(page))).toBe(0);
+    expect(await animationsOn(badge(page, info))).toBe(0);
     await page.emulateMedia({ reducedMotion: 'no-preference' });
 
-    await press(inboxButton(page), touch);
+    await press(badge(page, info), touch);
     const drawer = panel(page, info);
     await expect(drawer.getByText('Wants to run Bash')).toBeVisible();
     await expect(drawer.getByText('permission:Bash')).toBeVisible();
@@ -221,7 +224,7 @@ test.describe('S3: the drawer beside the bridge', () => {
     // The terminal ends where the drawer begins; the inbox is still open and still counts.
     const [t, d] = [await terminal.boundingBox(), await drawer.boundingBox()];
     expect(t!.x + t!.width).toBeLessThanOrEqual(d!.x + 1);
-    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, 2 items');
+    await expect(badge(page, info)).toHaveAccessibleName(badgeName(info, 'Needs you, 2 items'));
 
     // At 1133x744 the key row and the drawer's bottom edge are on the screen (#116: it was 40px below the fold).
     await page.setViewportSize({ width: 1133, height: 744 });
@@ -239,19 +242,20 @@ test.describe('S3: the drawer beside the bridge', () => {
 test.describe('S4: the sheet', () => {
   test.beforeEach(({}, info) => test.skip(wide(info), 'the sheet is the narrow layout'));
 
-  test('a modal dialog: Back, Next and "n of N" work, Escape closes it and focus returns to the button', async ({ page, admiral, sea }) => {
+  test('Back, Next and "n of N" work; as a modal dialog Escape closes it and focus returns to the button (not on a phone, where it is a tab)', async ({ page, admiral, sea }, info) => {
     const s = sea({ work: { name: 'Work', color: BLUE } });
     await admiral.start();
     const ship = await s.launch('work', 'alpha');
     seed(admiral, ship.session, 'q-1', question(10));
     seed(admiral, ship.session, 'r-1', review(5));
     await page.goto(admiral.url);
-    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, 2 items');
+    await expect(badge(page, info)).toHaveAccessibleName(badgeName(info, 'Needs you, 2 items'));
 
-    await inboxButton(page).tap();
-    const sheet = panel(page, test.info());
+    await badge(page, info).tap();
+    const sheet = panel(page, info);
     await expect(sheet).toBeVisible();
-    await expect(sheet).toHaveAttribute('aria-modal', 'true');
+    if (!phone(info)) await expect(sheet).toHaveAttribute('aria-modal', 'true');
+    else await expect(sheet.getByRole('button', { name: 'Close the inbox' })).toHaveCount(0);
 
     // One item at a time, oldest first.
     const back = sheet.getByRole('button', { name: /Back/ });
@@ -269,6 +273,8 @@ test.describe('S4: the sheet', () => {
     await back.tap();
     await expect(position(sheet)).toHaveText('1 of 2');
 
+    if (phone(info)) return;
+
     // Focus stays inside the sheet however far Tab goes.
     for (let i = 0; i < 25; i++) {
       await page.keyboard.press('Tab');
@@ -277,7 +283,7 @@ test.describe('S4: the sheet', () => {
 
     await page.keyboard.press('Escape');
     await expect(sheet).toHaveCount(0);
-    await expect(inboxButton(page)).toBeFocused();
+    await expect(badge(page, info)).toBeFocused();
   });
 });
 
@@ -290,8 +296,8 @@ test.describe('items are untrusted text', () => {
     seed(admiral, ship.session, 'q-bad', question(10, { title: '<b>bold</b> <img src=x onerror=alert(1)>', order_url: 'javascript:alert(1)' }));
     seed(admiral, ship.session, 'q-ok', question(5, { title: 'A good link', order_url: 'https://example.com/issues/9' }));
     await page.goto(admiral.url);
-    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, 2 items');
-    await press(inboxButton(page), touch);
+    await expect(badge(page, info)).toHaveAccessibleName(badgeName(info, 'Needs you, 2 items'));
+    await press(badge(page, info), touch);
     const inbox = panel(page, info);
 
     // The drawer shows both items at once, the sheet one at a time: look at each item on its own.

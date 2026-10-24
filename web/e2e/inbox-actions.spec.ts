@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, w
 import { join } from 'node:path';
 import { type Admiral, expect } from './fixtures';
 import { FakeGh } from './fakegh';
-import { type Sea, type SeaFleet, inboxButton, isTouch, test } from './sea';
+import { type Sea, type SeaFleet, badge, badgeName, isTouch, phone, test } from './sea';
 
 // Review and findings items in the web inbox (#116 u4). Items are files written after the ship has launched;
 // GitHub is the fake gh (e2e/testdata/fakegh), put first on Admiral's PATH. The names below are the contract,
@@ -32,7 +32,8 @@ const wide = (info: TestInfo) => {
   return !!v && v.width >= 1024 && v.width > v.height;
 };
 const press = (l: Locator, touch: boolean) => (touch ? l.tap() : l.click());
-const panel = (page: Page, info: TestInfo) => page.getByRole(wide(info) ? 'complementary' : 'dialog', { name: 'Needs you inbox' });
+const panel = (page: Page, info: TestInfo) =>
+  phone(info) ? page.getByRole('region', { name: 'Needs you inbox' }) : page.getByRole(wide(info) ? 'complementary' : 'dialog', { name: 'Needs you inbox' });
 
 const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000).toISOString();
 
@@ -84,8 +85,8 @@ async function setup(admiral: Admiral, sea: (fleets: Record<string, SeaFleet>) =
 
 async function open(page: Page, admiral: Admiral, info: TestInfo, count: number) {
   await page.goto(admiral.url);
-  await expect(inboxButton(page)).toHaveAccessibleName(`Needs you, ${count} item${count === 1 ? '' : 's'}`);
-  await press(inboxButton(page), isTouch(info));
+  await expect(badge(page, info)).toHaveAccessibleName(badgeName(info, `Needs you, ${count} item${count === 1 ? '' : 's'}`));
+  await press(badge(page, info), isTouch(info));
   const inbox = panel(page, info);
   await expect(inbox).toBeVisible();
   return inbox;
@@ -133,7 +134,7 @@ test.describe('a review item', () => {
     await press(inbox.getByRole('button', { name: 'Submit APPROVE' }), touch);
 
     await expect(inbox.getByRole('status').filter({ hasText: 'Review submitted: APPROVE' })).toBeVisible();
-    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, nothing waiting');
+    await expect(badge(page, info)).toHaveAccessibleName(badgeName(info, 'Needs you, nothing waiting'));
 
     // gh read the review, then posted the event; the event is in the POST's stdin.
     await expect.poll(() => gh.calls().map((c) => `${c.method} ${c.endpoint}`)).toEqual([`GET ${REVIEW}`, `POST ${REVIEW}/events`]);
@@ -198,7 +199,7 @@ test.describe('a review item', () => {
     await press(inbox.getByRole('button', { name: 'Discard', exact: true }), touch);
     await press(inbox.getByRole('button', { name: 'Discard review' }), touch);
     await expect(inbox.getByRole('status').filter({ hasText: 'Review discarded' })).toBeVisible();
-    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, nothing waiting');
+    await expect(badge(page, info)).toHaveAccessibleName(badgeName(info, 'Needs you, nothing waiting'));
     await expect.poll(() => gh.calls().map((c) => `${c.method} ${c.endpoint}`)).toEqual([`DELETE ${REVIEW}`]);
     expect(seen).toEqual([]);
   });
@@ -219,7 +220,7 @@ test.describe('a review item', () => {
     await expect(alert).toContainText('<b>boom</b> from GitHub');
     await expect(alert.locator('b')).toHaveCount(0);
     await expect(inbox.getByRole('status').filter({ hasText: 'Review submitted' })).toHaveCount(0);
-    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, 1 item');
+    await expect(badge(page, info)).toHaveAccessibleName(badgeName(info, 'Needs you, 1 item'));
     expect(existsSync(join(admiral.home, 'inbox', ship.session, 'r-1.answer.json'))).toBe(false);
 
     // The engineer's way back is still there: Submit works again, and this time GitHub answers.
@@ -245,7 +246,7 @@ test.describe('a review item', () => {
     await press(inbox.getByRole('button', { name: /^COMMENT/ }), touch);
     await press(inbox.getByRole('button', { name: 'Submit COMMENT' }), touch);
     await expect(inbox.getByRole('status').filter({ hasText: 'Review no longer pending on GitHub' })).toBeVisible();
-    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, nothing waiting');
+    await expect(badge(page, info)).toHaveAccessibleName(badgeName(info, 'Needs you, nothing waiting'));
   });
 
   test('a PR address that is not https is not a link, and Edit is not offered', async ({ page, admiral, sea }, info) => {
@@ -269,7 +270,7 @@ test.describe('a review item', () => {
     await expect(inbox.getByRole('alert')).toContainText('Server Error');
     await press(inbox.getByRole('button', { name: /Remove from inbox/ }), touch);
     await expect(inbox.getByRole('status').filter({ hasText: 'Removed from the inbox' })).toBeVisible();
-    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, nothing waiting');
+    await expect(badge(page, info)).toHaveAccessibleName(badgeName(info, 'Needs you, nothing waiting'));
   });
 });
 
@@ -332,7 +333,7 @@ test.describe('a findings item', () => {
     await press(send, touch);
 
     await expect(inbox.getByRole('status').filter({ hasText: 'Sent 1 approved, 1 edited, 1 rejected' })).toBeVisible();
-    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, nothing waiting');
+    await expect(badge(page, info)).toHaveAccessibleName(badgeName(info, 'Needs you, nothing waiting'));
 
     // The answer file: the wire decisions, and a proposal only on the edited card, with the original kind.
     const file = join(admiral.home, 'inbox', ship.session, 'f-1.answer.json');

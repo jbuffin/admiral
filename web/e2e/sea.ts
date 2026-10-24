@@ -152,6 +152,14 @@ export const ships = (page: Page, name: RegExp = /^Board (?!.+, teammate, crew o
 export const underwayIn = (fleet: string) => new RegExp(`^Board .+, Claude in ${fleet}, underway$`);
 export const needsYouIn = (fleet: string) => new RegExp(`^Board .+, Claude in ${fleet}, needs you$`);
 
+/** The phone project has no header button: its Inbox tab carries the count ("Inbox, <n> item(s)", "Inbox" when empty). */
+export const phone = (info: TestInfo) => info.project.name === 'phone';
+export const badge = (page: Page, info: TestInfo) =>
+  phone(info) ? page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: /^Inbox/ }) : inboxButton(page);
+/** A header button name ("Needs you, 2 items", "Needs you, nothing waiting") as the badge is named on this project. */
+export const badgeName = (info: TestInfo, name: string) =>
+  phone(info) ? name.replace(/^Needs you, nothing waiting$/, 'Inbox').replace(/^Needs you, /, 'Inbox, ') : name;
+
 export const soundToggle = (page: Page) => header(page).getByRole('button', { name: /^(Mute chime|Turn chime on)$/ });
 
 /** The ship's top-left as fractions of open water, as the server records it. */
