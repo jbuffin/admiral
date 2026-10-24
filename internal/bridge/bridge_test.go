@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
 )
 
@@ -16,7 +17,11 @@ type oneShip struct{}
 func (oneShip) Get(session string) (ships.Ship, bool) {
 	return ships.Ship{Session: session, Status: ships.StatusUnderway}, session == "ship"
 }
-func (oneShip) InputSeen(string) (ships.Ship, error) { return ships.Ship{}, nil }
+func (oneShip) InputSeen(string) (ships.Ship, error)   { return ships.Ship{}, nil }
+func (oneShip) Crew(string) ([]sessionhost.Crew, bool) { return nil, false }
+func (oneShip) CrewInputSeen(string, string) (sessionhost.Crew, error) {
+	return sessionhost.Crew{}, ships.ErrNotFound
+}
 
 // A control client that fails to attach must not leave a linger timer behind to
 // close a client that was never there: the server has to outlive the idle time.
@@ -50,9 +55,9 @@ func TestFailedAttachDoesNotCrashAfterTheIdleLinger(t *testing.T) {
 	}
 	res.Body.Close()
 	s.mu.Lock()
-	n := len(s.watches)
+	n := len(s.conns)
 	s.mu.Unlock()
 	if n != 0 {
-		t.Errorf("%d watches remain after a failed attach, want 0", n)
+		t.Errorf("%d control clients remain after a failed attach, want 0", n)
 	}
 }

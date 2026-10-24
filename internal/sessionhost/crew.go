@@ -3,8 +3,11 @@ package sessionhost
 import (
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jbuffin/admiral/internal/launcher"
 )
 
 // ActivityOption is the pane option `admiral hook` stamps with the time of every
@@ -32,6 +35,8 @@ type Crew struct {
 	LastActivity time.Time // zero before the boat's first hook
 	PaneID       string
 	WindowID     string
+	ExitStatus   int    // valid when State is CrewAnchored and Signal is empty
+	Signal       string // the signal that killed the pane, e.g. "kill"; then there is no exit status
 }
 
 // CrewState maps a crew pane to its state: anchored whenever the pane is dead,
@@ -50,18 +55,42 @@ func CrewState(paneDead bool, paneState string) string {
 // by name. A boat with several panes is read from its first. It is the one crew
 // rule: parseRows folds its result into each Session, and ReadCrew returns it.
 func parseCrew(rows []string, known map[string]bool) map[string][]Crew {
+	out, _ := readCrew(rows, known)
+	return out
+}
+
+// crewClashes are the crew names ("session/name") that two windows of one
+// session claim, which parseCrew leaves out.
+func crewClashes(rows []string, known map[string]bool) []string {
+	_, clashes := readCrew(rows, known)
+	return clashes
+}
+
+// readCrew is parseCrew's rule and the names it leaves out. A name is only read
+// when it is a valid crew name, and a name that two windows of one session claim
+// is read for neither: a boat can rewrite its own @admiral-crew-name, and the
+// first window must not win a name from the boat that launched with it.
+func readCrew(rows []string, known map[string]bool) (map[string][]Crew, []string) {
 	out := map[string][]Crew{}
-	seen := map[string]bool{}
+	seen := map[string]string{} // session NUL name -> the window that claimed it
+	clash := map[string]bool{}
 	for _, row := range rows {
 		f := strings.Split(row, sep)
 		if len(f) != fixedFields+len(optionNames)+tailFields || !known[f[0]] || f[0] == Internal {
 			continue
 		}
 		tail := f[fixedFields+len(optionNames):]
-		if tail[0] == "" || seen[f[0]+"\x00"+tail[0]] {
+		key := f[0] + "\x00" + tail[0]
+		if !launcher.CrewName.MatchString(tail[0]) {
 			continue
 		}
-		seen[f[0]+"\x00"+tail[0]] = true
+		if win, dup := seen[key]; dup {
+			if win != tail[2] { // another window; a second pane of the same window is the same boat
+				clash[key] = true
+			}
+			continue
+		}
+		seen[key] = tail[2]
 		opt := map[string]string{}
 		for i, n := range optionNames {
 			opt[n] = f[fixedFields+i]
@@ -74,15 +103,32 @@ func parseCrew(rows []string, known map[string]bool) map[string][]Crew {
 				c.Reason = f[7]
 			}
 		}
+		if c.State == CrewAnchored {
+			c.Signal = f[3]
+			c.ExitStatus, _ = strconv.Atoi(f[2])
+		}
 		if t, err := time.Parse(time.RFC3339, tail[3]); err == nil {
 			c.LastActivity = t
 		}
 		out[f[0]] = append(out[f[0]], c)
 	}
+	var clashes []string
+	for key := range clash {
+		session, name, _ := strings.Cut(key, "\x00")
+		clashes = append(clashes, session+"/"+name)
+		kept := out[session][:0]
+		for _, c := range out[session] {
+			if c.Name != name {
+				kept = append(kept, c)
+			}
+		}
+		out[session] = kept
+	}
+	sort.Strings(clashes)
 	for _, l := range out {
 		sort.Slice(l, func(i, j int) bool { return l[i].Name < l[j].Name })
 	}
-	return out
+	return out, clashes
 }
 
 // ReadCrew lists the crew boats of one ship's session with one tmux command and
@@ -96,10 +142,12 @@ func ReadCrew(tmux, sock, session string) ([]Crew, error) {
 		}
 		return strings.Split(strings.TrimRight(string(out), "\n"), "\n"), nil
 	}
-	rows, err := run("list-panes", "-s", "-t", "="+session+":", "-F", format)
+	nonce := newNonce()
+	rows, err := run("list-panes", "-s", "-t", "="+session+":", "-F", rowFormat(nonce))
 	if err != nil {
 		return nil, err
 	}
+	rows = ownRows(rows, nonce)
 	return parseCrew(rows, map[string]bool{session: true})[session], nil
 }
 

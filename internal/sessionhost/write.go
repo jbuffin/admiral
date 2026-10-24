@@ -31,7 +31,17 @@ func (h *Host) SetWorking(ctx context.Context, session string) error {
 // needs_you without it, and tmux runs a client's list without another client's
 // commands between.
 func (h *Host) setPane(ctx context.Context, session, state, reason string) error {
-	target := tmuxQuote(h.shipPane(session))
+	return h.setPaneAt(ctx, h.shipPane(session), state, reason)
+}
+
+// SetPaneWorking is SetWorking for a crew boat: the pane is named by its id, so
+// the write never lands on the ship's pane.
+func (h *Host) SetPaneWorking(ctx context.Context, paneID string) error {
+	return h.setPaneAt(ctx, paneID, "working", "")
+}
+
+func (h *Host) setPaneAt(ctx context.Context, pane, state, reason string) error {
+	target := tmuxQuote(pane)
 	setReason := "set-option -p -u -t " + target + " " + ReasonOption
 	if reason != "" {
 		setReason = "set-option -p -t " + target + " " + ReasonOption + " " + tmuxQuote(reason)

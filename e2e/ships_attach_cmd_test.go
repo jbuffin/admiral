@@ -100,8 +100,8 @@ func TestU12_S4_ShipsAndAttach(t *testing.T) {
 			t.Fatalf("attach should run tmux attach once, recorded %v", calls)
 		}
 		argv := calls[0]
-		if !hasPair(argv, "-S", sock) || !has(argv, "attach") || !hasPair(argv, "-f", "ignore-size") || !hasPair(argv, "-t", "="+live.Session) {
-			t.Errorf("argv = %q, want -S %s attach -f ignore-size -t =%s", argv, sock, live.Session)
+		if !hasPair(argv, "-S", sock) || !has(argv, "attach") || !hasPair(argv, "-f", "ignore-size") || !hasPair(argv, "-t", "="+live.Session+":^") {
+			t.Errorf("argv = %q, want -S %s attach -f ignore-size -t =%s:^", argv, sock, live.Session)
 		}
 		if has(argv, "-r") {
 			t.Errorf("an underway ship attaches read-write, got %q", argv)
@@ -113,8 +113,8 @@ func TestU12_S4_ShipsAndAttach(t *testing.T) {
 		// By session name, the anchored ship, read-only.
 		w.expectExit(attach(gone.Session), 0, "attach by session name")
 		calls = attachCalls(w, rec)
-		if len(calls) != 2 || !hasPair(calls[1], "-t", "="+gone.Session) || !has(calls[1], "-r") || !hasPair(calls[1], "-f", "ignore-size") {
-			t.Errorf("anchored attach = %q, want -r, -f ignore-size and -t =%s", calls, gone.Session)
+		if len(calls) != 2 || !hasPair(calls[1], "-t", "="+gone.Session+":^") || !has(calls[1], "-r") || !hasPair(calls[1], "-f", "ignore-size") {
+			t.Errorf("anchored attach = %q, want -r, -f ignore-size and -t =%s:^", calls, gone.Session)
 		}
 
 		// Refusals: nothing reaches tmux, and the exit code is 1.
@@ -167,7 +167,7 @@ func TestU12_S4_ShipsAndAttach(t *testing.T) {
 		}
 		dir, rec := w.installFakeTmux()
 		w.expectExit(w.admiralWith(cliOpts{path: []string{dir}, env: []string{"FAKE_TMUX_RECORD=" + rec, "LANG=", "LC_ALL=", "LC_CTYPE="}}, "attach", live.Name), 0, "attach with the server down and no locale")
-		if calls := attachCalls(w, rec); len(calls) != 1 || !hasPair(calls[0], "-t", "="+live.Session) {
+		if calls := attachCalls(w, rec); len(calls) != 1 || !hasPair(calls[0], "-t", "="+live.Session+":^") {
 			t.Errorf("attach without a server recorded %q", calls)
 		}
 	})
