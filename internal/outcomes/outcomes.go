@@ -1,16 +1,20 @@
 // Package outcomes is the append-only history of ships that have started,
-// needed the engineer, and ended. It is written,
-// never read back.
+// needed the engineer, and ended. Admiral writes it and reads it back for one
+// purpose only: autopilot counts runs toward retro orders (ADR 0017).
 package outcomes
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 )
+
+// ErrDropped is what Enqueue passes to onDone for a record it dropped.
+var ErrDropped = errors.New("outcome log: the record was dropped")
 
 // queueSize is how many records wait for the writer before new ones are dropped.
 const queueSize = 1024
@@ -55,27 +59,38 @@ func New(dir string, logf func(format string, args ...any)) *Writer {
 	return w
 }
 
-// Enqueue queues r and never blocks. onDone, when not nil, runs on the writer
-// goroutine after r was tried, with the error of a failed write, and never for
-// a record that was dropped. A record that finds the queue full is dropped, and
-// the first drop is logged; so is the first one that comes after Close.
+// Enqueue queues r and never blocks. onDone, when not nil, runs after r was
+// tried, with the error of a failed write: on the writer goroutine, or for a
+// dropped record on the caller's, with ErrDropped. A record that finds the queue
+// full is dropped, and the first drop is logged; so is the first one that comes
+// after Close.
 func (w *Writer) Enqueue(r Record, onDone func(err error)) {
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	if w.closed {
 		if !w.lateLogged {
 			w.lateLogged = true
 			w.logf("outcome log: a %s record for %s came after the log was closed and is dropped", r.Event, r.Ship)
 		}
+		w.mu.Unlock()
+		drop(onDone)
 		return
 	}
 	select {
 	case w.queue <- item{r, onDone}:
+		w.mu.Unlock()
 	default:
 		if !w.overflowing {
 			w.overflowing = true
 			w.logf("outcome log: the queue of %d records is full, dropping records until it drains", queueSize)
 		}
+		w.mu.Unlock()
+		drop(onDone)
+	}
+}
+
+func drop(onDone func(err error)) {
+	if onDone != nil {
+		onDone(ErrDropped)
 	}
 }
 

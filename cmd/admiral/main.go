@@ -225,10 +225,19 @@ func serve(args []string) error {
 		Dir:      launchService.Dir,
 		Checkout: launchService.Checkout,
 		Launch:   shipService.LaunchOrder,
-		Record:   func(r outcomes.Record) { outcomeLog.Enqueue(r, nil) },
-		Now:      time.Now,
-		Store:    apStore,
-		OnHot:    sourceService.Notify,
+		Record:   outcomeLog.Enqueue,
+		Log:      func() []outcomes.Line { return outcomes.Read(filepath.Join(dir, "outcomes")) },
+		AddOrder: func(ctx context.Context, source, panel, text string) (string, error) {
+			id, fail := sourceService.AddOrder(ctx, source, panel, text)
+			if fail != nil { // not `return ...AddOrder(...)`: a nil *RequestError would be a non-nil error
+				return "", fail
+			}
+			return id, nil
+		},
+		Known: host.Known,
+		Now:   time.Now,
+		Store: apStore,
+		OnHot: sourceService.Notify,
 		Logf: func(format string, args ...any) {
 			fmt.Fprintf(os.Stderr, "admiral: "+format+"\n", args...)
 		},

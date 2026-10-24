@@ -1,6 +1,7 @@
 package autopilot
 
 import (
+	"fmt"
 	"net/http"
 	"reflect"
 	"slices"
@@ -32,6 +33,18 @@ type rig struct {
 	launches []launcher.Request
 	records  []outcomes.Record
 	engine   *Engine
+
+	// The retro seams (#117); retro_test.go drives them.
+	lines    []outcomes.Line   // the outcome log the engine counts from
+	logs     []string          // what the engine logged
+	adds     []addCall         // every AddOrder call
+	addErr   func(n int) error // the error of the nth AddOrder call (1-based), nil for success
+	hold     bool              // Record keeps its writes until confirm
+	held     []heldWrite
+	minutes  int    // the clock of the log's lines
+	unknown  bool   // the ship list is not known
+	recover  bool   // the ship list becomes known right after Ships reads it empty, as tmux recovering mid-pass
+	afterLog func() // runs after Log has copied the lines, as a write confirmed during the read
 }
 
 func entry(max int) config.PanelAutopilot {
@@ -73,8 +86,15 @@ func (r *rig) newEngine() *Engine {
 		r.t.Fatal(err)
 	}
 	return &Engine{
-		Config:  func() *config.Config { return r.cfg },
-		Ships:   func() []ships.Ship { return slices.Clone(r.ships) },
+		Config: func() *config.Config { return r.cfg },
+		Ships: func() []ships.Ship {
+			// Like the host, the list is empty while it is not known.
+			if r.unknown {
+				r.unknown = !r.recover
+				return nil
+			}
+			return slices.Clone(r.ships)
+		},
 		Sources: func() []Source { return r.src },
 		Paused:  func(source, panel string) bool { return r.paused[[2]string{source, panel}] },
 		Dir: func(_ config.Fleet, _ string, o sources.Order) (string, string) {
@@ -93,9 +113,27 @@ func (r *rig) newEngine() *Engine {
 			r.ships = append(r.ships, sh)
 			return sh, nil
 		},
-		Record: func(rec outcomes.Record) { r.records = append(r.records, rec) },
-		Now:    func() time.Time { return r.now },
-		Store:  store,
+		Record: func(rec outcomes.Record, done func(error)) {
+			r.records = append(r.records, rec)
+			w := heldWrite{rec, done}
+			if r.hold {
+				r.held = append(r.held, w)
+				return
+			}
+			r.commit(w, nil)
+		},
+		Log: func() []outcomes.Line {
+			lines := slices.Clone(r.lines)
+			if r.afterLog != nil {
+				r.afterLog()
+			}
+			return lines
+		},
+		Known:    func() bool { return !r.unknown },
+		AddOrder: r.addOrder,
+		Logf:     func(format string, args ...any) { r.logs = append(r.logs, fmt.Sprintf(format, args...)) },
+		Now:      func() time.Time { return r.now },
+		Store:    store,
 	}
 }
 

@@ -51,7 +51,7 @@ func TestAutopilotParse(t *testing.T) {
 	}
 	src, _ := cfg.Source("s")
 	want := config.PanelAutopilot{Enabled: true, Fleet: "work", Harness: "claude", Skill: config.Skill{Kind: "commodore"},
-		Args: []string{"--permission-mode", "auto"}, MaxShips: 2, LowStakes: "never"}
+		Args: []string{"--permission-mode", "auto"}, MaxShips: 2, LowStakes: "never", RetroEvery: 5}
 	if got := src.Autopilot["prs-needs-review"]; !reflect.DeepEqual(got, want) {
 		t.Errorf("entry = %+v, want %+v", got, want)
 	}
@@ -66,7 +66,7 @@ func TestAutopilotParse(t *testing.T) {
 		}
 		src, _ := cfg.Source("s")
 		want := config.PanelAutopilot{Enabled: false, Fleet: "work", Harness: "claude", Skill: config.Skill{Kind: "skill", Name: "review"},
-			Args: []string{}, MaxShips: 1, LowStakes: "advisor"}
+			Args: []string{}, MaxShips: 1, LowStakes: "advisor", RetroEvery: 5}
 		if got := src.Autopilot["p"]; !reflect.DeepEqual(got, want) {
 			t.Errorf("entry = %+v, want %+v", got, want)
 		}
@@ -94,6 +94,10 @@ func TestAutopilotParseErrors(t *testing.T) {
 		{"top max_ships not an integer", apConfig(`{"max_ships":1.5}`, `{}`), "autopilot.max_ships"},
 		{"skill kind", apConfig(``, `{"p":{"fleet":"work","harness":"claude","skill":{"kind":"mystery"}}}`), "sources.s.autopilot.p.skill"},
 		{"named skill without a name", apConfig(``, `{"p":{"fleet":"work","harness":"claude","skill":{"kind":"skill"}}}`), "sources.s.autopilot.p.skill"},
+		{"retro_every negative", apConfig(``, `{"p":`+apEntry(`"retro_every":-1`)+`}`), "sources.s.autopilot.p.retro_every: must"},
+		{"retro_every not an integer", apConfig(``, `{"p":`+apEntry(`"retro_every":1.5`)+`}`), "sources.s.autopilot.p.retro_every: must"},
+		{"retro_every a string", apConfig(``, `{"p":`+apEntry(`"retro_every":"5"`)+`}`), "sources.s.autopilot.p.retro_every: must"},
+		{"retro_every a boolean", apConfig(``, `{"p":`+apEntry(`"retro_every":true`)+`}`), "sources.s.autopilot.p.retro_every: must"},
 		{"skill name with a space", apConfig(``, `{"p":{"fleet":"work","harness":"claude","skill":{"kind":"skill","name":"a b"}}}`), "sources.s.autopilot.p.skill"},
 	}
 	for _, c := range cases {
@@ -135,6 +139,30 @@ func TestAutopilotAutoMerge(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "sources.s.autopilot.p.auto_merge") {
 			t.Errorf("auto_merge %s: error %v, want one naming sources.s.autopilot.p.auto_merge", v, err)
 		}
+	}
+}
+
+// retro_every (#117): a whole number of runs, 5 when the entry says none, and
+// 0 to turn retros off (the one value max_ships' positive-integer rule refuses).
+func TestAutopilotRetroEvery(t *testing.T) {
+	for _, c := range []struct {
+		name, extra string
+		want        int
+	}{
+		{"absent", ``, 5},
+		{"zero turns retros off", `"retro_every":0`, 0},
+		{"two", `"retro_every":2`, 2},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cfg, err := config.Parse([]byte(apConfig(``, `{"p":`+apEntry(c.extra)+`}`)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			src, _ := cfg.Source("s")
+			if got := src.Autopilot["p"].RetroEvery; got != c.want {
+				t.Errorf("RetroEvery = %d, want %d", got, c.want)
+			}
+		})
 	}
 }
 

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -14,13 +13,8 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/launcher"
+	"github.com/jbuffin/admiral/internal/outcomes"
 )
-
-// maxOutcomeLine is the longest line Outcomes prints, newline not counted. A
-// report of up to 1 MiB (internal/ships) can grow sixfold when the writer
-// escapes <, > and &, so this leaves room for any `ended` the writer produces;
-// a longer line is skipped, not read.
-const maxOutcomeLine = 7 << 20
 
 var outcomeFile = regexp.MustCompile(`^(\d{4}-\d{2})\.jsonl$`)
 
@@ -77,8 +71,8 @@ func Outcomes(args []string, std IO) error {
 	sort.Strings(files)
 	for _, path := range files {
 		m := outcomeFile.FindStringSubmatch(filepath.Base(path))
-		if m == nil {
-			continue
+		if fi, err := os.Lstat(path); m == nil || err != nil || !fi.Mode().IsRegular() {
+			continue // a FIFO or a device would hang the read
 		}
 		if month, err := time.Parse("2006-01", m[1]); err == nil && !since.IsZero() && !month.AddDate(0, 1, 0).After(since) {
 			continue // every record in it is older than since
@@ -90,9 +84,9 @@ func Outcomes(args []string, std IO) error {
 	return nil
 }
 
-// shiplessEvents are the events with no ship: autopilot's, about an order. A
+// shiplessEvents are the events with no ship: autopilot's, about an order or a panel. A
 // --ship filter drops them, since none matches an empty ship.
-var shiplessEvents = map[string]bool{"skipped": true, "launch_failed": true, "resource_wait": true}
+var shiplessEvents = map[string]bool{"skipped": true, "launch_failed": true, "resource_wait": true, "retro_queued": true}
 
 // printOutcomes streams one file's matching lines to std.Out.
 func printOutcomes(path string, since time.Time, ships map[string]bool, std IO) error {
@@ -103,7 +97,7 @@ func printOutcomes(path string, since time.Time, ships map[string]bool, std IO) 
 	defer f.Close()
 	r := bufio.NewReaderSize(f, 64<<10)
 	for {
-		line, err := readLine(r)
+		line, err := outcomes.ReadLine(r)
 		if len(line) > 0 {
 			var rec struct {
 				Ts    time.Time `json:"ts"`
@@ -124,30 +118,5 @@ func printOutcomes(path string, since time.Time, ships map[string]bool, std IO) 
 		if err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
-	}
-}
-
-// readLine is the next line without its newline. A line longer than
-// maxOutcomeLine comes back empty, as if it were malformed, and the rest of it
-// is discarded unread into memory, so one huge record cannot hide the others.
-func readLine(r *bufio.Reader) ([]byte, error) {
-	var line []byte
-	tooLong := false
-	for {
-		chunk, err := r.ReadSlice('\n')
-		if !tooLong {
-			line = append(line, chunk...)
-			tooLong = len(bytes.TrimSuffix(line, []byte("\n"))) > maxOutcomeLine
-		}
-		if err == bufio.ErrBufferFull {
-			if tooLong {
-				line = nil
-			}
-			continue
-		}
-		if tooLong {
-			return nil, err
-		}
-		return bytes.TrimSuffix(line, []byte("\n")), err
 	}
 }
