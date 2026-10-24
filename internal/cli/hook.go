@@ -23,13 +23,11 @@ func Hook(args []string, std IO) error {
 	}
 	raw, _ := io.ReadAll(io.LimitReader(std.In, 1<<20))
 	var p hookPayload
-	if json.Unmarshal(raw, &p) != nil {
-		p = hookPayload{}
-	}
+	valid := json.Unmarshal(raw, &p) == nil
 	// Every event stamps the pane's last activity, a crew boat's last_activity,
 	// in the same tmux call as the state it may write.
 	call := []string{"set", "-p", "-t", pane, sessionhost.ActivityOption, time.Now().UTC().Format(time.RFC3339)}
-	if w := hookDecision(args[0], p); w.state != "" {
+	if w := hookDecision(args[0], p); valid && w.state != "" {
 		call = append(append(call, ";"), hookCall(pane, w)...)
 	}
 	_ = exec.Command("tmux", call...).Run()

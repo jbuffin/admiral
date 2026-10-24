@@ -273,6 +273,25 @@ func (w *world) runHook(event, payload, pane string) hookResult {
 		res.code = ee.ExitCode()
 	}
 	res.stdout, res.stderr = out.String(), errb.String()
-	res.calls = attachCalls(w, rec)
+	res.calls = withoutActivityStamp(attachCalls(w, rec))
 	return res
+}
+
+// withoutActivityStamp drops the `set -p -t <pane> @admiral-activity <time>`
+// that opens every hook call (the crew boat's last_activity, which the crew test
+// checks), so the table above stays about the state and reason a hook writes.
+func withoutActivityStamp(calls [][]string) [][]string {
+	var out [][]string
+	for _, c := range calls {
+		if len(c) >= 6 && c[0] == "set" && c[4] == "@admiral-activity" {
+			c = c[6:]
+			if len(c) > 0 && c[0] == ";" {
+				c = c[1:]
+			}
+		}
+		if len(c) > 0 {
+			out = append(out, c)
+		}
+	}
+	return out
 }
