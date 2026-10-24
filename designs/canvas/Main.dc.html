@@ -97,10 +97,22 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 .ph-strip{scrollbar-width:none}
 .ph-strip::-webkit-scrollbar{display:none}
 @media (max-height: 499px){.ph-tab{min-height:48px}}
-@media (prefers-reduced-motion: reduce){.sail-in,.bob,.attn,.wave,.frantic,.pop,.ping,.drift,.fl-item,.caret,.ib-drawer,.ib-sheet,.ib-fold,.ib-wrap.ib-slide,.ph-bridge{animation:none !important}}
+.chat-pop{transform-origin:100% 100%;animation:chatpop .22s cubic-bezier(.2,.9,.3,1) both}
+.chat-dot{width:8px;height:8px;border-radius:50%;background-color:#14304A;animation:chatdot 1s ease-in-out infinite}
+@keyframes chatpop{0%{transform:translateY(16px) scale(.94);opacity:0}100%{transform:none;opacity:1}}
+@keyframes chatdot{0%,60%,100%{transform:translateY(0);opacity:.35}30%{transform:translateY(-4px);opacity:1}}
+@media (prefers-reduced-motion: reduce){.sail-in,.bob,.attn,.wave,.frantic,.pop,.ping,.drift,.fl-item,.caret,.ib-drawer,.ib-sheet,.ib-fold,.ib-wrap.ib-slide,.ph-bridge,.chat-pop,.chat-dot{animation:none !important}}
 </style>
 </helmet>
 <div class="adm" onPointerMove="{{onMove}}" onPointerUp="{{onUp}}" onPointerCancel="{{onCancel}}" style="{{rootStyle}}">
+
+<sc-def name="fold">
+<div class="ib-fold" role="status" style="display: flex; align-items: center; gap: 10px; min-height: 58px; padding: 8px 14px; border-radius: 16px; border: 2.5px solid #14304A; background-color: #DDF7F3; box-shadow: 0 3px 0 #14304A">
+<span style="width: 26px; height: 26px; flex: 0 0 auto; border-radius: 50%; background-color: #9BE08A; border: 2.5px solid #14304A; display: flex; align-items: center; justify-content: center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>
+<span style="flex: 1 1 auto; min-width: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 15.5px; line-height: 1.25">{{c.doneText}}</span>
+<span style="flex: 0 0 auto; font-size: 12.5px; color: #3E5870">{{c.doneRight}}</span>
+</div>
+</sc-def>
 
 <sc-if value="{{phone}}" hint-placeholder-val="{{ false }}">
 <header style="flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: max(8px, env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 8px calc(12px + env(safe-area-inset-left)); background-color: #14304A; color: #F4EEDF; border-bottom: 3px solid #0B1F33">
@@ -115,7 +127,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <span style="font-family: 'Bricolage Grotesque', 'Helvetica Neue', sans-serif; font-weight: 800; font-size: 24px; line-height: 1; color: #FFC23D; letter-spacing: -0.01em">Admiral</span>
 <span style="flex: 1 1 auto"></span>
 <span style="display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: 999px; background-color: #21486B; font-weight: 600; font-size: 13.5px; color: #F4EEDF; white-space: nowrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6FE3C8" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M3 17c2 0 2-1.5 4.5-1.5S9.5 17 12 17s2.5-1.5 4.5-1.5S19 17 21 17"></path><path d="M6 13l6-9 6 9z"></path></svg>{{atSea}} at sea</span>
-<span data-slot="settings" style="flex: 0 0 44px; width: 44px; height: 44px"></span>
+<button type="button" class="press" onClick="{{openSettings}}" aria-label="Settings" style="{{gearStyle}}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"></path></svg></button>
 </header>
 </sc-if>
 
@@ -137,10 +149,14 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </div>
 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
 <button type="button" class="press" onClick="{{toggleInbox}}" aria-label="{{inbox.btnAria}}" aria-expanded="{{inboxOpen}}" style="{{inbox.btnStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13l2.5-8h13L21 13v6H3z"></path><path d="M3 13h5l1.5 3h5L16 13h5"></path></svg>Needs you<sc-if value="{{inbox.hasCount}}" hint-placeholder-val="{{ true }}"><span style="min-width: 26px; height: 26px; padding: 0 7px; border-radius: 999px; background-color: #14304A; color: #FFC23D; font-weight: 700; font-size: 13.5px; display: inline-flex; align-items: center; justify-content: center">{{inbox.count}}</span></sc-if></button>
+<sc-if value="{{showChatBtn}}" hint-placeholder-val="{{ false }}">
+<button type="button" class="press" data-allowed="chat-entry" onClick="{{toggleChat}}" aria-label="{{chatBtnAria}}" aria-expanded="{{chatOpen}}" style="position: relative; display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-radius: 999px; border: 2px solid #3A6489; background-color: #21486B; color: #F4EEDF; font-family: Bricolage Grotesque, sans-serif; font-weight: 700; font-size: 15px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H11l-5 4v-4H4z"></path></svg>Chat<sc-if value="{{chatUnread}}" hint-placeholder-val="{{ true }}"><span aria-hidden="true" style="position: absolute; top: -3px; right: -3px; width: 14px; height: 14px; border-radius: 50%; background-color: #FF7A59; border: 2.5px solid #14304A"></span></sc-if></button>
+</sc-if>
 <span style="display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: 999px; background-color: #21486B; font-weight: 600; font-size: 14px; color: #F4EEDF"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6FE3C8" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M3 17c2 0 2-1.5 4.5-1.5S9.5 17 12 17s2.5-1.5 4.5-1.5S19 17 21 17"></path><path d="M6 13l6-9 6 9z"></path></svg>{{atSea}} at sea</span>
 <button type="button" class="press" onClick="{{toggleSound}}" aria-label="{{soundLabel}}" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: 999px; border: 2px solid #3A6489; background-color: #14304A; color: #F4EEDF; font-weight: 600; font-size: 14px">
 <sc-if value="{{sound}}" hint-placeholder-val="{{ true }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4EEDF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"></path><path d="M16.5 8.5a5 5 0 0 1 0 7"></path><path d="M19 6a8.5 8.5 0 0 1 0 12"></path></svg></sc-if><sc-if value="{{muted}}" hint-placeholder-val="{{ false }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4EEDF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"></path><path d="M16 9l5 6M21 9l-5 6"></path></svg></sc-if>{{soundText}}</button>
 <span style="display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: 999px; background-color: #21486B; font-size: 13px; color: #BFD7EA"><span style="width: 9px; height: 9px; border-radius: 50%; background-color: #4CD38A"></span>2 Commodore profiles</span>
+<button type="button" class="press" data-allowed="settings" onClick="{{openSettings}}" aria-label="Settings" style="{{gearStyle}}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"></path></svg></button>
 </div>
 </header>
 </sc-if>
@@ -166,7 +182,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </div>
 
 <sc-for list="{{panels}}" as="panel" hint-placeholder-count="3">
-<section style="border: 2.5px solid #14304A; border-radius: 16px; background-color: #FFFAEE; box-shadow: 0 3px 0 #14304A; overflow: hidden">
+<section data-allowed="{{panel.allowed}}" style="border: 2.5px solid #14304A; border-radius: 16px; background-color: #FFFAEE; box-shadow: 0 3px 0 #14304A; overflow: hidden">
 <div style="display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 4px">
 <button type="button" onClick="{{panel.toggle}}" aria-expanded="{{panel.open}}" style="flex: 1 1 auto; min-width: 0; min-height: 44px; border: 0; background: none; display: flex; align-items: center; gap: 6px; padding: 0 4px; text-align: left">
 <svg style="transform: {{panel.chev}}; transition: transform .2s; flex: 0 0 auto" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
@@ -214,7 +230,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <aside aria-label="Orders, collapsed" style="flex: 0 0 76px; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 16px 0; background-color: #FFF1CF; border-right: 3px solid #14304A">
 <button type="button" class="press" onClick="{{toggleSidebar}}" aria-label="Expand orders" style="width: 48px; height: 48px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 6l6 6-6 6M5 6l6 6-6 6"></path></svg></button>
 <sc-for list="{{panels}}" as="panel" hint-placeholder-count="3">
-<button type="button" class="press" onClick="{{toggleSidebar}}" aria-label="{{panel.title}}, {{panel.count}} tasks" style="position: relative; width: 52px; height: 52px; border-radius: 14px; border: 2.5px solid #14304A; background-color: {{panel.railColor}}; box-shadow: 0 3px 0 #14304A; color: #FFFFFF; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 18px">{{panel.initial}}<span style="position: absolute; top: -8px; right: -8px; min-width: 24px; height: 24px; border-radius: 999px; background-color: #FFC23D; color: #14304A; border: 2px solid #14304A; font-size: 12px; display: flex; align-items: center; justify-content: center">{{panel.count}}</span></button>
+<button type="button" class="press" data-allowed="{{panel.allowed}}" onClick="{{toggleSidebar}}" aria-label="{{panel.title}}, {{panel.count}} tasks" style="position: relative; width: 52px; height: 52px; border-radius: 14px; border: 2.5px solid #14304A; background-color: {{panel.railColor}}; box-shadow: 0 3px 0 #14304A; color: #FFFFFF; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 18px">{{panel.initial}}<span style="position: absolute; top: -8px; right: -8px; min-width: 24px; height: 24px; border-radius: 999px; background-color: #FFC23D; color: #14304A; border: 2px solid #14304A; font-size: 12px; display: flex; align-items: center; justify-content: center">{{panel.count}}</span></button>
 </sc-for>
 </aside>
 </sc-if>
@@ -477,11 +493,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <div class="{{c.wrapCls}}" data-ib="{{c.id}}">
 
 <sc-if value="{{c.done}}" hint-placeholder-val="{{ false }}">
-<div class="ib-fold" role="status" style="display: flex; align-items: center; gap: 10px; min-height: 58px; padding: 8px 14px; border-radius: 16px; border: 2.5px solid #14304A; background-color: #DDF7F3; box-shadow: 0 3px 0 #14304A">
-<span style="width: 26px; height: 26px; flex: 0 0 auto; border-radius: 50%; background-color: #9BE08A; border: 2.5px solid #14304A; display: flex; align-items: center; justify-content: center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>
-<span style="flex: 1 1 auto; min-width: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 15.5px; line-height: 1.25">{{c.doneText}}</span>
-<span style="flex: 0 0 auto; font-size: 12.5px; color: #3E5870">{{c.shipName}}</span>
-</div>
+<sc-use name="fold" as="c" value="{{c}}"></sc-use>
 </sc-if>
 
 <sc-if value="{{c.open}}" hint-placeholder-val="{{ true }}">
@@ -503,6 +515,8 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </div>
 
 <sc-if value="{{c.isQuestion}}" hint-placeholder-val="{{ false }}">
+<sc-use name="qbody" as="c" value="{{c}}"></sc-use>
+<sc-def name="qbody">
 <sc-for list="{{c.qs}}" as="q" hint-placeholder-count="2">
 <div role="group" aria-label="{{q.aria}}" style="display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 2px dashed #8AA2B6">
 <span style="font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #3E5870">{{q.counter}}</span>
@@ -526,10 +540,13 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <textarea value="{{q.note}}" onChange="{{q.onNote}}" aria-label="{{q.noteAria}}" rows="2" placeholder="Add a note (optional)" style="display: block; width: 100%; min-height: 64px; padding: 10px 12px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFFFF; font-size: 16px; line-height: 1.4; color: #14304A; resize: vertical"></textarea>
 </div>
 </sc-for>
+<sc-if value="{{c.showSend}}" hint-placeholder-val="{{ true }}">
 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
 <button type="button" class="press" disabled="{{c.sendOff}}" onClick="{{c.send}}" style="min-height: 48px; padding: 0 22px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFC23D; box-shadow: 0 4px 0 #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 17px">Send answers</button>
 <span style="font-size: 13px; color: #3E5870">{{c.progress}}</span>
 </div>
+</sc-if>
+</sc-def>
 </sc-if>
 
 <sc-if value="{{c.isReview}}" hint-placeholder-val="{{ false }}">
@@ -686,11 +703,105 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </section>
 </sc-if>
 
-<sc-if value="{{tabChat}}" hint-placeholder-val="{{ false }}">
-<section aria-label="Chat" style="position: absolute; top: 0; bottom: 0; left: env(safe-area-inset-left); right: env(safe-area-inset-right); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; text-align: center; background-color: #FFF1CF">
-<h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 24px; line-height: 1.1; color: #14304A">Chat</h2>
-<p style="margin: 0; font-size: 15px; line-height: 1.45; color: #3E5870">Chat comes in Part B</p>
+<sc-if value="{{chatShown}}" hint-placeholder-val="{{ false }}">
+<section aria-label="Chat with AdmiralBot" role="{{chat.role}}" aria-modal="{{chat.modal}}" tabindex="-1" data-chat="1" class="{{chat.cls}}" style="{{chat.style}}">
+<div style="flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 14px; background-color: #FFF6E3; border-bottom: 3px solid #14304A">
+<span aria-hidden="true" style="flex: 0 0 auto; width: 40px; height: 40px; border-radius: 50%; border: 2.5px solid #14304A; background-color: #14304A; display: flex; align-items: center; justify-content: center"><svg width="28" height="28" viewBox="0 0 46 46" fill="none"><path d="M5 20 Q23 0 41 20 Z" fill="#0B1F33" stroke="#FFC23D" stroke-width="2.5" stroke-linejoin="round"></path><circle cx="23" cy="12" r="3" fill="#FFC23D"></circle><rect x="9" y="20" width="28" height="22" rx="4" fill="#FFC23D" stroke="#0B1F33" stroke-width="2.5"></rect><rect x="15" y="27" width="5" height="5" fill="#14304A"></rect><rect x="26" y="27" width="5" height="5" fill="#14304A"></rect><rect x="18" y="36" width="10" height="3" fill="#14304A"></rect></svg></span>
+<div style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+<h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 20px; line-height: 1.1; letter-spacing: -0.01em">{{chat.title}}</h2>
+<span style="font-size: 12px; color: #3E5870; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{chat.sub}}</span>
+</div>
+<sc-if value="{{chat.showClose}}" hint-placeholder-val="{{ true }}">
+<button type="button" class="press" onClick="{{chat.close}}" aria-label="Close the chat" style="width: 44px; height: 44px; flex: 0 0 auto; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+</sc-if>
+</div>
+
+<sc-if value="{{chat.isTerminal}}" hint-placeholder-val="{{ false }}">
+<div style="flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 14px; background-color: #FFFDF6; border-bottom: 3px solid #14304A">
+<button type="button" class="press" onClick="{{chat.backToChat}}" aria-label="Back to chat" style="flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 14px 0 8px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFF6E3; box-shadow: 0 3px 0 #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 15px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg>Back to chat</button>
+<span style="flex: 1 1 auto; min-width: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">Chat session</span>
+</div>
+<div data-chat-term="1" style="flex: 1 1 auto; min-height: 0; overflow: auto; padding: 14px 16px 8px; display: flex; flex-direction: column; gap: 6px; background-color: #0E2235; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13.5px; line-height: 1.55">
+<sc-for list="{{chat.tlines}}" as="line" hint-placeholder-count="6">
+<div class="{{line.cls}}">{{line.t}}</div>
+</sc-for>
+<form onSubmit="{{chat.tsend}}" style="display: flex; align-items: center; gap: 8px; margin-top: 4px">
+<label for="adm-chat-cmd" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Input to the chat session</label>
+<span aria-hidden="true" style="color: #FFC23D; font-weight: 600">❯</span>
+<input id="adm-chat-cmd" class="term-in" value="{{chat.tdraft}}" onChange="{{chat.onTdraft}}" autocomplete="off" spellcheck="false" placeholder="type here and press Enter" style="flex: 1 1 auto; min-width: 0; height: 32px; padding: 0; border: 0; background: none; color: #FFC23D; font-family: 'JetBrains Mono', monospace; font-size: {{termInSize}}; outline: none; caret-color: #FFC23D">
+</form>
+</div>
+<div style="flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px {{chat.padBottom}}; background-color: #14304A; border-top: 3px solid #0B1F33">
+<sc-for list="{{chat.tkeys}}" as="k" hint-placeholder-count="6">
+<button type="button" class="key" onClick="{{k.press}}" aria-label="{{k.aria}}" style="height: {{keyH}}; min-width: 44px; padding: 0 10px; border-radius: 10px; border: 2px solid #3A6489; background-color: #1B3D5C; color: #F4EEDF; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; font-weight: 600">{{k.label}}</button>
+</sc-for>
+<span style="flex: 1 1 auto"></span>
+<span style="font-size: 12px; color: #9DB8CF">The session behind the chat</span>
+</div>
+</sc-if>
+
+<sc-if value="{{chat.isChat}}" hint-placeholder-val="{{ true }}">
+<div style="flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px; background-color: #FFFDF6; border-bottom: 2px solid #14304A">
+<button type="button" class="press" onClick="{{chat.askNew}}" style="display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 9px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFF6E3; box-shadow: 0 2px 0 #14304A; font-weight: 600; font-size: 13px; white-space: nowrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>New chat</button>
+<button type="button" class="press" onClick="{{chat.openTerm}}" style="display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 9px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFF6E3; box-shadow: 0 2px 0 #14304A; font-weight: 600; font-size: 13px; white-space: nowrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l6 6-6 6M12 19h8"></path></svg>Open terminal</button>
+<button type="button" class="press" onClick="{{openSettings}}" style="display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 9px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFF6E3; box-shadow: 0 2px 0 #14304A; font-weight: 600; font-size: 13px; white-space: nowrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"></path></svg>Chat settings</button>
+</div>
+<sc-if value="{{chat.confirmNew}}" hint-placeholder-val="{{ false }}">
+<div role="group" aria-label="Start a new chat" style="flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; padding: 10px 14px; background-color: #FFF0B8; border-bottom: 2.5px solid #14304A">
+<p style="margin: 0; font-size: 15px; font-weight: 600; line-height: 1.35">Start a new chat? This clears the conversation.</p>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<button type="button" class="press" onClick="{{chat.doNew}}" style="min-height: 44px; padding: 0 16px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFC23D; box-shadow: 0 3px 0 #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 15px">Start new chat</button>
+<button type="button" class="press" onClick="{{chat.keepChat}}" style="min-height: 44px; padding: 0 16px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; font-weight: 600; font-size: 15px">Keep chatting</button>
+</div>
+</div>
+</sc-if>
+
+<div data-chat-list="1" style="flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 14px 12px 8px; display: flex; flex-direction: column; gap: 12px; background-color: #FFF1CF">
+<sc-for list="{{chat.items}}" as="m" hint-placeholder-count="5">
+<div class="{{m.wrapCls}}" style="{{m.rowStyle}}">
+<sc-if value="{{m.isDivider}}" hint-placeholder-val="{{ false }}">
+<div role="separator" style="flex: 1 1 auto; display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 600; color: #3E5870"><span style="flex: 1 1 0; height: 0; border-top: 2px dashed #8AA2B6"></span>{{m.text}}<span style="flex: 1 1 0; height: 0; border-top: 2px dashed #8AA2B6"></span></div>
+</sc-if>
+<sc-if value="{{m.isBot}}" hint-placeholder-val="{{ false }}">
+<span aria-hidden="true" style="flex: 0 0 auto; width: 30px; height: 30px; margin-top: 2px; border-radius: 50%; border: 2px solid #14304A; background-color: #14304A; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 46 46" fill="none"><path d="M5 20 Q23 0 41 20 Z" fill="#0B1F33" stroke="#FFC23D" stroke-width="2.5" stroke-linejoin="round"></path><circle cx="23" cy="12" r="3" fill="#FFC23D"></circle><rect x="9" y="20" width="28" height="22" rx="4" fill="#FFC23D" stroke="#0B1F33" stroke-width="2.5"></rect><rect x="15" y="27" width="5" height="5" fill="#14304A"></rect><rect x="26" y="27" width="5" height="5" fill="#14304A"></rect></svg></span>
+</sc-if>
+<sc-if value="{{m.isMsg}}" hint-placeholder-val="{{ true }}">
+<div style="{{m.colStyle}}">
+<span style="{{m.bubbleStyle}}">{{m.text}}</span>
+<span style="font-size: 11.5px; color: #3E5870">{{m.who}} · {{m.time}}</span>
+</div>
+</sc-if>
+<sc-if value="{{m.isTyping}}" hint-placeholder-val="{{ false }}">
+<div role="status" aria-label="AdmiralBot is typing" style="display: inline-flex; align-items: center; gap: 5px; padding: 14px 16px; border-radius: 16px; border: 2.5px solid #14304A; background-color: #FFFDF6"><span class="chat-dot"></span><span class="chat-dot" style="animation-delay: .18s"></span><span class="chat-dot" style="animation-delay: .36s"></span></div>
+</sc-if>
+<sc-if value="{{m.isCard}}" hint-placeholder-val="{{ false }}">
+<article style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 16px; border: 2.5px solid #14304A; background-color: #FFFAEE; box-shadow: 0 3px 0 #14304A">
+<div style="display: flex; align-items: center; gap: 8px"><span style="font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 2px 8px; border-radius: 6px; border: 1.5px solid #14304A; background-color: #DDF7F3">Question</span><span style="font-size: 12px; color: #3E5870">AdmiralBot asks · {{m.time}}</span></div>
+<sc-use name="qbody" as="c" value="{{m.card}}"></sc-use>
+</article>
+</sc-if>
+<sc-if value="{{m.isFold}}" hint-placeholder-val="{{ false }}">
+<div style="flex: 1 1 auto; min-width: 0"><sc-use name="fold" as="c" value="{{m.card}}"></sc-use></div>
+</sc-if>
+</div>
+</sc-for>
+</div>
+
+<form onSubmit="{{chat.formSend}}" style="flex: 0 0 auto; display: flex; align-items: flex-end; gap: 8px; padding: 10px 12px {{chat.padBottom}}; background-color: #FFF6E3; border-top: 3px solid #14304A">
+<label for="adm-chat-input" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Message AdmiralBot</label>
+<textarea id="adm-chat-input" value="{{chat.draft}}" onChange="{{chat.onDraft}}" onKeyDown="{{chat.inKey}}" onFocus="{{chat.onFocus}}" onBlur="{{chat.onBlur}}" rows="{{chat.rows}}" placeholder="Message AdmiralBot" style="flex: 1 1 auto; min-width: 0; display: block; padding: 10px 12px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFFFFF; font-size: 16px; line-height: 1.35; color: #14304A; resize: none; max-height: 120px"></textarea>
+<button type="button" class="press" onClick="{{chat.send}}" aria-label="Send message" style="flex: 0 0 auto; min-width: 72px; min-height: 48px; padding: 0 16px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFC23D; box-shadow: 0 4px 0 #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 16px">Send</button>
+</form>
+</sc-if>
 </section>
+</sc-if>
+
+<sc-if value="{{chatFab}}" hint-placeholder-val="{{ false }}">
+<button type="button" class="press" data-allowed="chat-entry" onClick="{{toggleChat}}" aria-label="{{chatBtnAria}}" aria-expanded="{{chatOpen}}" style="{{chatFabStyle}}">
+<sc-if value="{{chatOpen}}" hint-placeholder-val="{{ false }}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></sc-if>
+<sc-if value="{{chatClosed}}" hint-placeholder-val="{{ true }}"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H11l-5 4v-4H4z"></path></svg></sc-if>
+<sc-if value="{{chatUnread}}" hint-placeholder-val="{{ true }}"><span aria-hidden="true" style="position: absolute; top: -2px; right: -2px; width: 18px; height: 18px; border-radius: 50%; background-color: #FF7A59; border: 3px solid #14304A"></span></sc-if>
+</button>
 </sc-if>
 </div>
 
@@ -806,9 +917,56 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </div>
 </sc-if>
 
+<sc-if value="{{settingsOpen}}" hint-placeholder-val="{{ false }}">
+<div style="{{set.wrapStyle}}">
+<div onClick="{{set.close}}" aria-hidden="true" style="position: absolute; inset: 0; background-color: rgba(11,31,51,.55)"></div>
+<div role="dialog" aria-modal="true" aria-labelledby="adm-settings" tabindex="-1" data-settings="1" class="{{set.cls}}" style="{{set.dialogStyle}}">
+<div style="flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: {{set.headPad}}; background-color: #FFF6E3; border-bottom: 3px solid #14304A">
+<h2 id="adm-settings" style="flex: 1 1 auto; margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 26px; line-height: 1.05; letter-spacing: -0.01em">Settings</h2>
+<button type="button" class="press" onClick="{{set.close}}" aria-label="Close settings" style="width: 44px; height: 44px; flex: 0 0 auto; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+</div>
+<div style="flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 18px; padding: {{set.bodyPad}}">
+<section aria-labelledby="adm-set-general" style="display: flex; flex-direction: column; gap: 10px">
+<h3 id="adm-set-general" style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 19px">General</h3>
+<div style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFFDF6">
+<span style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px"><span style="font-weight: 600; font-size: 15.5px">Attention sounds</span><span style="font-size: 13px; color: #3E5870">A chime when a ship needs you.</span></span>
+<button type="button" class="press" onClick="{{toggleSound}}" aria-label="{{soundLabel}}" style="flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 999px; border: 2px solid #3A6489; background-color: #14304A; color: #F4EEDF; font-weight: 600; font-size: 14px">
+<sc-if value="{{sound}}" hint-placeholder-val="{{ true }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4EEDF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"></path><path d="M16.5 8.5a5 5 0 0 1 0 7"></path><path d="M19 6a8.5 8.5 0 0 1 0 12"></path></svg></sc-if><sc-if value="{{muted}}" hint-placeholder-val="{{ false }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4EEDF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"></path><path d="M16 9l5 6M21 9l-5 6"></path></svg></sc-if>{{soundText}}</button>
+</div>
+</section>
+<section aria-labelledby="adm-set-chat" style="display: flex; flex-direction: column; gap: 12px">
+<h3 id="adm-set-chat" style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 19px">Chat</h3>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<label for="adm-set-fleet" style="font-weight: 600; font-size: 15px">Fleet</label>
+<select id="adm-set-fleet" value="{{set.fleet}}" onChange="{{set.onFleet}}" style="{{set.selStyle}}"><option value="work">Work Fleet (default)</option><option value="home">Home Fleet</option></select>
+<span style="font-size: 13px; color: #3E5870">{{set.fleetHint}}</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<label for="adm-set-model" style="font-weight: 600; font-size: 15px">Model</label>
+<select id="adm-set-model" value="{{set.model}}" onChange="{{set.onModel}}" style="{{set.selStyle}}"><option value="sonnet">sonnet (default)</option><option value="opus">opus</option><option value="haiku">haiku</option></select>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<label for="adm-set-effort" style="font-weight: 600; font-size: 15px">Effort</label>
+<select id="adm-set-effort" value="{{set.effort}}" onChange="{{set.onEffort}}" style="{{set.selStyle}}"><option value="">Harness default</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select>
+<span style="font-size: 13px; color: #3E5870">Harness default passes no effort flag.</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #3E5870">Writes to config.json</span>
+<code data-config-line="1" style="display: block; padding: 10px 12px; border-radius: 10px; background-color: #0E2235; color: #F4EEDF; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.5; overflow-wrap: anywhere">{{set.line}}</code>
+</div>
+</section>
+</div>
+<div style="flex: 0 0 auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; padding: {{set.footPad}}; border-top: 3px solid #14304A; background-color: #FFE7AE">
+<button type="button" class="press" onClick="{{set.close}}" style="height: 48px; padding: 0 18px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 600; font-size: 16px">Cancel</button>
+<button type="button" class="press" onClick="{{set.save}}" style="height: 48px; padding: 0 22px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFC23D; box-shadow: 0 4px 0 #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 17px">Save</button>
+</div>
+</div>
+</div>
+</sc-if>
+
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"scene":{"editor":"enum","options":["harbor","launch","bridge","tablet","inbox","inbox-bridge","inbox-empty","ships","orders","phone-launch"],"default":"harbor"},"$preview":{"width":1440,"height":900}}'>
+<script type="text/x-dc" data-dc-script data-props='{"scene":{"editor":"enum","options":["harbor","launch","bridge","tablet","inbox","inbox-bridge","inbox-empty","ships","orders","phone-launch","chat","chat-terminal","chat-new","settings"],"default":"harbor"},"$preview":{"width":1440,"height":900}}'>
 class Component extends DCLogic {
   D() {
     if (this._d) return this._d;
@@ -821,8 +979,11 @@ class Component extends DCLogic {
       { id: 'work', name: 'Work Fleet', profile: 'work', color: '#3366E0', ink: '#FFFFFF', yards: ['claude', 'copilot', 'codex'] },
       { id: 'home', name: 'Home Fleet', profile: 'home', color: '#F28C28', ink: '#14304A', yards: ['claude', 'codex'] }
     ];
-    const SRC = { jira: { label: 'Jira', color: '#2F6FEB' }, github: { label: 'GitHub', color: '#14304A' }, linear: { label: 'Linear', color: '#6B4BE0' } };
+    const SRC = { freeform: { label: 'Freeform', color: '#5B7083' }, jira: { label: 'Jira', color: '#2F6FEB' }, github: { label: 'GitHub', color: '#14304A' }, linear: { label: 'Linear', color: '#6B4BE0' } };
     const T = {
+      freeform: [
+        { id: 'FF-1', title: 'Update the README screenshots', src: 'freeform' }
+      ],
       jira: [
         { id: 'MOB-1183', title: 'Doc scan crashes on Android 15', src: 'jira', hot: true },
         { id: 'MOB-1190', title: 'Upgrade React Native to 0.81', src: 'jira' },
@@ -924,7 +1085,11 @@ class Component extends DCLogic {
     const scene = this.props.scene || 'harbor';
     const size = this.sizeNow();
     const s = { inited: true, merged: true, collapsed: { linear: true }, sidebar: true, selected: null, ghost: null, hoverYard: null, pending: null, choice: 'commodore', customText: '', acOpen: false, acIdx: 0, ships: this.initialShips(), taken: {}, open: null, focus: 'lead', logs: {}, draft: '', sound: true, q: '', place: {}, lifted: null, dock: {},
-      inboxOpen: false, size, wide: size === 'wide', tab: 'inbox', dockSheet: null, shipHi: null, ibItems: this.sampleInbox(Date.now()), ibUi: {}, ibDone: {}, ibGone: {}, ibCur: null };
+      inboxOpen: false, size, wide: size === 'wide', tab: 'inbox', dockSheet: null, shipHi: null,
+      chatOpen: false, chatItems: this.chatSample(), chatTyping: false, chatDraft: '', chatView: 'chat', chatConfirmNew: false, chatUnread: true, chatFocus: false,
+      chatReplies: 0, chatClock: 15, tlines: this.chatTermSample(), tdraft: '', extra: [], settingsOpen: false,
+      settings: { fleet: this.defaultChatFleet(), model: 'sonnet', effort: '' }, setDraft: null, vvh: 0, vvt: 0,
+      ibItems: this.sampleInbox(Date.now()), ibUi: {}, ibDone: {}, ibGone: {}, ibCur: null };
     if (scene === 'inbox' || scene === 'inbox-bridge') {
       s.inboxOpen = true;
       s.ships = s.ships.map((x) => x.id === 's1' ? Object.assign({}, x, { status: 'attention', reason: 'question', since: Date.now() - 6 * 60000, ask: 'Should the retry queue survive an app update? (y/n)' }) : x);
@@ -943,6 +1108,11 @@ class Component extends DCLogic {
     if (scene === 'ships') s.tab = 'ships';
     if (scene === 'orders') s.tab = 'orders';
     if (scene === 'phone-launch') { s.tab = 'orders'; s.dockSheet = 'MOB-1183'; }
+    // The chat scenes open the chat at every size: the Chat tab on a phone, the sheet on middle, the floating panel on wide.
+    if (scene === 'chat' || scene === 'chat-terminal' || scene === 'chat-new') { s.tab = 'chat'; s.chatOpen = true; s.chatUnread = false; }
+    if (scene === 'chat-terminal') s.chatView = 'terminal';
+    if (scene === 'chat-new') s.chatItems = this.chatFresh();
+    if (scene === 'settings') { s.settingsOpen = true; s.setDraft = Object.assign({}, s.settings); }
     return s;
   }
   S() { return (this.state && this.state.inited) ? this.state : this.seed(); }
@@ -956,7 +1126,7 @@ class Component extends DCLogic {
 
   findTask(id) {
     const T = this.D().T;
-    return T.jira.concat(T.ghwork, T.home, T.linear).find((t) => t.id === id);
+    return T.freeform.concat(T.jira, T.ghwork, T.home, T.linear, this.S().extra || []).find((t) => t.id === id);
   }
 
   yardAt(e) {
@@ -1020,6 +1190,103 @@ class Component extends DCLogic {
   }
 
   focusSel(sel) { setTimeout(() => { const el = document.querySelector(sel); if (el) el.focus({ preventScroll: true }); }, 30); }
+
+  // ---- Chat with AdmiralBot (prototype for #119) ----
+  // One long-lived chat session. All text is fake. The bot's only write action is adding an order; it never
+  // launches a ship, so no sample text picks a dock. Chat questions stay in the chat: an inbox item belongs
+  // to a ship, and the chat is not a ship.
+  chatTime(n) { const t = 9 * 60 + n; const h = Math.floor(t / 60); return (h > 12 ? h - 12 : h) + ':' + ('0' + (t % 60)).slice(-2) + (h >= 12 ? ' PM' : ' AM'); }
+  chatSample() {
+    return [
+      { id: 'd1', kind: 'divider', text: 'Earlier messages were compacted' },
+      { id: 'm1', kind: 'msg', who: 'me', text: 'What needs me?', time: '9:12 AM' },
+      { id: 'm2', kind: 'msg', who: 'bot', text: 'Brass Kettle needs you: it wants to run a Bash command. Five items wait in your inbox, so open the Inbox to answer them.', time: '9:12 AM' },
+      { id: 'm3', kind: 'msg', who: 'me', text: 'Check out why the release build is slow on CI', time: '9:14 AM' },
+      { id: 'q1', kind: 'card', time: '9:14 AM' }
+    ];
+  }
+  chatFresh() {
+    return [{ id: 'g1', kind: 'msg', who: 'bot', text: "Hi, I'm AdmiralBot. I can tell you what needs you and add an order to a panel. What should I check out?", time: '9:30 AM' }];
+  }
+  chatQuestion() {
+    return { questions: [{ id: '1', text: 'Which panel should I add this order to?', recommended: 'Freeform', multi: false, options: [
+      { label: 'Freeform', description: 'Your own list, for orders that start in a conversation.' },
+      { label: 'Work queue', description: 'The Jira and GitHub orders for work.' }] }] };
+  }
+  chatTermSample() {
+    return [
+      { k: 'sys', t: 'admiral ▸ chat session · Claude · Work Fleet (profile work) · model sonnet' },
+      { k: 'agent', t: 'Ready. Waiting for your message.' },
+      { k: 'tool', t: '▸ read ships: 5 ships, 1 needs you' },
+      { k: 'tool', t: '▸ read inbox: 5 items' },
+      { k: 'you', t: '❯ Check out why the release build is slow on CI' },
+      { k: 'ask', t: 'Which panel should I add this order to? (Freeform or Work queue)' }
+    ];
+  }
+  // The first fleet that has a Claude dock.
+  defaultChatFleet() { const F = this.D().F; const f = F.find((x) => x.yards.indexOf('claude') >= 0); return (f || F[0]).id; }
+  chatVisible(st) { return st.size === 'phone' ? st.tab === 'chat' : !!st.chatOpen; }
+  chatScroll() { setTimeout(() => { const el = document.querySelector('[data-chat-list]'); if (el) el.scrollTop = el.scrollHeight; }, 30); }
+  // The bot types for about a second, then says `text`. `after` can add to the state at the same moment.
+  chatBotSays(text, after) {
+    const gen = this.S().chatGen || 0;
+    this.put({ chatTyping: true });
+    this.chatScroll();
+    setTimeout(() => {
+      this.put((st) => {
+        if ((st.chatGen || 0) !== gen) return {};
+        return Object.assign({ chatTyping: false, chatItems: st.chatItems.concat([{ id: 'b' + st.chatItems.length, kind: 'msg', who: 'bot', text, time: this.chatTime(st.chatClock) }]),
+          chatClock: st.chatClock + 1, chatUnread: this.chatVisible(st) ? st.chatUnread : true }, after ? after(st) : {});
+      });
+      this.chatScroll();
+    }, 1000);
+  }
+  chatSend() {
+    const st = this.S();
+    const text = (st.chatDraft || '').trim();
+    if (!text) return;
+    const replies = [
+      'Noted. I can read your ships and your inbox, and add an order to a panel. Tell me what to check out and I will ask where it goes.',
+      'I only add orders. Launching one stays with you.',
+      'Anything else you want me to look at?'
+    ];
+    this.put((prev) => ({ chatItems: prev.chatItems.concat([{ id: 'u' + prev.chatItems.length, kind: 'msg', who: 'me', text, time: this.chatTime(prev.chatClock) }]), chatClock: prev.chatClock + 1, chatDraft: '', chatReplies: prev.chatReplies + 1 }));
+    this.chatBotSays(replies[st.chatReplies % replies.length]);
+    this.chatScroll();
+    // Keep the keyboard up on iOS: focus inside the tap.
+    const ta = document.getElementById('adm-chat-input');
+    if (ta) ta.focus();
+  }
+  // answers: one entry per question, {sel, other, note}. The chat asks one single-choice question.
+  chatAnswer(answers) {
+    const st = this.S();
+    const card = st.chatItems.find((i) => i.id === 'q1');
+    if (!card || card.kind !== 'card' || !answers[0]) return;
+    const a = answers[0];
+    const label = a.other || a.sel[0];
+    const toWork = !a.other && label === 'Work queue';
+    const where = toWork ? 'Work queue' : 'Freeform';
+    const order = toWork ? { id: 'commodore-launcher#46', title: 'Release build is slow on CI', src: 'github', panel: 'work' } : { id: 'FF-2', title: 'Release build is slow on CI', src: 'freeform', panel: 'freeform' };
+    this.put((prev) => ({ chatItems: prev.chatItems.map((i) => i.id === 'q1' ? { id: 'q1', kind: 'fold', text: 'Answered: ' + label + (a.note ? ' (with a note)' : ''), time: this.chatTime(prev.chatClock) } : i), chatClock: prev.chatClock + 1 }));
+    this.chatBotSays('Added an order to ' + where + ': ' + order.title + '.' + (a.other ? ' I have no panel called "' + a.other + '", so it went to Freeform.' : ''),
+      (prev) => ({ extra: prev.extra.concat([order]) }));
+  }
+  chatNew() { this.put((st) => ({ chatItems: this.chatFresh(), chatGen: (st.chatGen || 0) + 1, chatTyping: false, chatConfirmNew: false, chatDraft: '', chatReplies: 0, chatClock: 31, chatUnread: false, tlines: this.chatTermSample().slice(0, 2), tdraft: '' })); this.chatScroll(); }
+  chatTermAdd(line, reply) {
+    this.put((st) => ({ tlines: st.tlines.concat([line]), tdraft: '' }));
+    if (reply) setTimeout(() => this.put((st) => ({ tlines: st.tlines.concat([reply]) })), 650);
+    setTimeout(() => { const el = document.querySelector('[data-chat-term]'); if (el) el.scrollTop = el.scrollHeight; }, 700);
+  }
+  openSettings() { this.put((st) => ({ settingsOpen: true, setDraft: Object.assign({}, st.settings) })); this.focusSel('[data-settings]'); }
+  closeSettings() { this.put({ settingsOpen: false, setDraft: null }); }
+  // One layer closes per Escape: Settings first, then the chat panel or sheet.
+  onEsc(e) {
+    if (e.key !== 'Escape') return;
+    const st = this.S();
+    if (st.settingsOpen) { this.closeSettings(); return; }
+    if (st.pending || st.dockSheet) return;
+    if (st.size !== 'phone' && st.chatOpen) this.put({ chatOpen: false });
+  }
 
   acList(st) {
     const q = (st.customText || '').trim().toLowerCase();
@@ -1171,11 +1438,28 @@ class Component extends DCLogic {
     } catch (err) {}
     this.ibFocus();
     if (this.S().dockSheet) this.focusSel('[data-dock-sheet]');
+    if (this.S().settingsOpen) this.focusSel('[data-settings]');
+    this.chatScroll();
+    // The on-screen keyboard shrinks the visual viewport, not the layout one: size the chat to what is visible.
+    try {
+      const vv = window.visualViewport;
+      if (vv) {
+        this.vv = vv;
+        this.onVv = () => this.put({ vvh: Math.round(vv.height), vvt: Math.round(vv.offsetTop) });
+        vv.addEventListener('resize', this.onVv);
+        vv.addEventListener('scroll', this.onVv);
+        this.onVv();
+      }
+    } catch (err) {}
+    this.onKeyEsc = (e) => this.onEsc(e);
+    document.addEventListener('keydown', this.onKeyEsc);
     this.clock = setInterval(() => this.put({ tick: Date.now() }), 30000);
   }
   componentWillUnmount() {
     try { (this.mqs || []).forEach((mq) => { if (mq.removeEventListener) mq.removeEventListener('change', this.onMq); else mq.removeListener(this.onMq); }); } catch (err) {}
     clearInterval(this.clock);
+    try { if (this.vv) { this.vv.removeEventListener('resize', this.onVv); this.vv.removeEventListener('scroll', this.onVv); } } catch (err) {}
+    document.removeEventListener('keydown', this.onKeyEsc);
   }
 
   sampleInbox(now) {
@@ -1314,6 +1598,47 @@ class Component extends DCLogic {
   }
   ibAttach(shipId) { this.put((st) => ({ open: shipId, focus: 'lead', draft: '', inboxOpen: !!st.wide })); }
 
+  // The question card's model, shared by the inbox and the chat (the markup is the `qbody` partial).
+  // In the chat a tap on an option of a single-choice question sends it (opts.tapSends); Send then
+  // shows only for Other, a note, or a multi-select question.
+  qModel(id, qs, u, opts) {
+    const self = this;
+    const ans = u.ans || {};
+    let answered = 0;
+    let extra = false;
+    const answers = [];
+    const out = qs.map((q, qi) => {
+      const a = Object.assign({ sel: [], other: false, otherText: '', note: '' }, ans[q.id]);
+      const multi = !!q.multi;
+      if (a.sel.length > 0 || (a.other && a.otherText.trim() !== '')) answered++;
+      if (multi || a.other || a.note.trim() !== '') extra = true;
+      answers.push({ sel: a.sel, other: a.other ? a.otherText.trim() : '', note: a.note.trim() });
+      return {
+        aria: 'Question ' + (qi + 1), noteAria: 'Note for question ' + (qi + 1),
+        counter: (qs.length > 1 ? 'Question ' + (qi + 1) + ' of ' + qs.length + ' · ' : '') + (multi ? 'Choose any' : 'Choose one'),
+        text: q.text, note: a.note,
+        onNote: (ev) => { const v = ev.target.value; self.ibAns(id, q.id, (x) => Object.assign({}, x, { note: v })); },
+        opts: q.options.map((o) => {
+          const on = a.sel.indexOf(o.label) >= 0;
+          return { label: o.label, desc: o.description || '', hasDesc: !!o.description, rec: q.recommended === o.label, on, role: multi ? 'checkbox' : 'radio',
+            dotRadius: multi ? '6px' : '50%', cls: 'opt press' + (on ? ' on' : ''),
+            pick: () => {
+              self.ibPickOpt(id, q.id, o.label, multi);
+              if (opts.tapSends && !multi && qs.length === 1) opts.onSend([{ sel: [o.label], other: '', note: a.note.trim() }]);
+            } };
+        }),
+        other: { on: a.other, role: multi ? 'checkbox' : 'radio', dotRadius: multi ? '6px' : '50%', cls: 'opt press' + (a.other ? ' on' : ''),
+          pick: () => self.ibPickOther(id, q.id, multi), text: a.otherText, aria: 'Your own answer to question ' + (qi + 1),
+          onText: (ev) => { const v = ev.target.value; self.ibAns(id, q.id, (x) => Object.assign({}, x, { otherText: v })); } }
+      };
+    });
+    return {
+      qs: out, sendOff: answered < qs.length, progress: answered + ' of ' + qs.length + ' answered',
+      showSend: !opts.tapSends || extra,
+      send: () => opts.onSend(answers)
+    };
+  }
+
   ibModel(s) {
     const self = this;
     const { H, F } = this.D();
@@ -1340,7 +1665,7 @@ class Component extends DCLogic {
       const u = s.ibUi[e.id] || {};
       const c = {
         id: e.id, shipName: sh.name, mono: h.mono, flag: h.flag, flagInk: h.ink, harness: h.name, fleetName: f.name, fleetColor: f.color,
-        done: !!done, open: !done, doneText: done ? done.text : '',
+        done: !!done, open: !done, doneText: done ? done.text : '', doneRight: sh.name,
         wrapCls: 'ib-wrap' + (done && done.leaving ? ' ib-slide' : ''),
         kindLabel: KIND[e.kind][0], kindBg: KIND[e.kind][1],
         isQuestion: false, isReview: false, isFindings: false, isLive: false, hasOrder: false
@@ -1362,32 +1687,8 @@ class Component extends DCLogic {
       c.hasOrder = !!it.order_url;
       c.orderUrl = it.order_url;
       if (e.kind === 'question') {
-        const qs = it.question.questions;
-        const ans = u.ans || {};
-        let answered = 0;
         c.isQuestion = true;
-        c.qs = qs.map((q, qi) => {
-          const a = Object.assign({ sel: [], other: false, otherText: '', note: '' }, ans[q.id]);
-          const multi = !!q.multi;
-          if (a.sel.length > 0 || (a.other && a.otherText.trim() !== '')) answered++;
-          return {
-            aria: 'Question ' + (qi + 1), noteAria: 'Note for question ' + (qi + 1),
-            counter: (qs.length > 1 ? 'Question ' + (qi + 1) + ' of ' + qs.length + ' · ' : '') + (multi ? 'Choose any' : 'Choose one'),
-            text: q.text, note: a.note,
-            onNote: (ev) => { const v = ev.target.value; self.ibAns(e.id, q.id, (x) => Object.assign({}, x, { note: v })); },
-            opts: q.options.map((o) => {
-              const on = a.sel.indexOf(o.label) >= 0;
-              return { label: o.label, desc: o.description || '', hasDesc: !!o.description, rec: q.recommended === o.label, on, role: multi ? 'checkbox' : 'radio',
-                dotRadius: multi ? '6px' : '50%', cls: 'opt press' + (on ? ' on' : ''), pick: () => self.ibPickOpt(e.id, q.id, o.label, multi) };
-            }),
-            other: { on: a.other, role: multi ? 'checkbox' : 'radio', dotRadius: multi ? '6px' : '50%', cls: 'opt press' + (a.other ? ' on' : ''),
-              pick: () => self.ibPickOther(e.id, q.id, multi), text: a.otherText, aria: 'Your own answer to question ' + (qi + 1),
-              onText: (ev) => { const v = ev.target.value; self.ibAns(e.id, q.id, (x) => Object.assign({}, x, { otherText: v })); } }
-          };
-        });
-        c.sendOff = answered < qs.length;
-        c.progress = answered + ' of ' + qs.length + ' answered';
-        c.send = () => self.ibResolve(e.id, 'Answered');
+        Object.assign(c, self.qModel(e.id, it.question.questions, u, { tapSends: false, onSend: () => self.ibResolve(e.id, 'Answered') }));
       } else if (e.kind === 'review') {
         const r = it.review;
         const mode = u.mode || null;
@@ -1479,12 +1780,15 @@ class Component extends DCLogic {
     const q = (s.q || '').trim().toLowerCase();
 
     const avail = (list) => list.filter((t) => !s.taken[t.id] && (!q || (t.id + ' ' + t.title).toLowerCase().indexOf(q) !== -1));
+    // Orders the chat added: to the Freeform panel, or to the Work queue.
+    const added = (panel) => (s.extra || []).filter((o) => o.panel === panel);
     let raw = s.merged
-      ? [{ id: 'work', title: 'Work queue', srcs: ['jira', 'github'], tasks: avail(T.jira.concat(T.ghwork)), canSplit: true }]
-      : [{ id: 'jira', title: 'Jira · MOB', srcs: ['jira'], tasks: avail(T.jira), canMerge: true }, { id: 'ghwork', title: 'GitHub · commodore-launcher', srcs: ['github'], tasks: avail(T.ghwork), canMerge: true }];
+      ? [{ id: 'work', title: 'Work queue', srcs: ['jira', 'github'], tasks: avail(T.jira.concat(T.ghwork, added('work'))), canSplit: true }]
+      : [{ id: 'jira', title: 'Jira · MOB', srcs: ['jira'], tasks: avail(T.jira), canMerge: true }, { id: 'ghwork', title: 'GitHub · commodore-launcher', srcs: ['github'], tasks: avail(T.ghwork.concat(added('work'))), canMerge: true }];
+    raw = [{ id: 'freeform', title: 'Freeform', srcs: ['freeform'], tasks: avail(T.freeform.concat(added('freeform'))), allowed: 'freeform' }].concat(raw);
     raw = raw.concat([{ id: 'home', title: 'Home · GitHub', srcs: ['github'], tasks: avail(T.home) }, { id: 'linear', title: 'Linear · Personal', srcs: ['linear'], tasks: avail(T.linear) }]);
     const panels = raw.map((p) => ({
-      id: p.id, title: p.title, count: p.tasks.length,
+      id: p.id, title: p.title, count: p.tasks.length, allowed: p.allowed,
       open: !s.collapsed[p.id],
       chev: s.collapsed[p.id] ? 'rotate(-90deg)' : 'none',
       toggle: () => self.put((st) => ({ collapsed: Object.assign({}, st.collapsed, { [p.id]: !st.collapsed[p.id] }) })),
@@ -1646,19 +1950,22 @@ class Component extends DCLogic {
     // ---- Phone layout: tab bar, Ships list, dock sheet ----
     const phone = s.size === 'phone';
     const tabId = s.tab || 'inbox';
-    const showTabs = phone && !bridge;
+    // While the chat's text box has focus the tab bar steps aside, so the keyboard has room.
+    const showTabs = phone && !bridge && !(tabId === 'chat' && s.chatFocus);
     const needsYou = s.ships.filter((x) => x.status === 'attention').length;
-    const tabDefs = [['inbox', 'Inbox', inbox.count, 'Inbox', '#14304A', '#FFC23D'], ['chat', 'Chat', 0], ['ships', 'Ships', needsYou, 'Ships', '#FF7A59', '#14304A'], ['orders', 'Orders', 0]];
+    const chatDot = !!s.chatUnread && tabId !== 'chat';
+    const tabDefs = [['inbox', 'Inbox', inbox.count, 'Inbox', '#14304A', '#FFC23D'], ['chat', 'Chat', chatDot ? 1 : 0, 'Chat', '#FF7A59', '#14304A'], ['ships', 'Ships', needsYou, 'Ships', '#FF7A59', '#14304A'], ['orders', 'Orders', 0]];
     const tabs = tabDefs.map((t) => {
       const on = tabId === t[0];
       return {
         label: t[1], isInbox: t[0] === 'inbox', isChat: t[0] === 'chat', isShips: t[0] === 'ships', isOrders: t[0] === 'orders',
         current: on ? 'page' : undefined,
-        aria: t[1] + (t[2] ? ', ' + t[2] + (t[0] === 'inbox' ? (t[2] === 1 ? ' item' : ' items') : ' needing you') : ''),
+        aria: t[1] + (t[2] ? (t[0] === 'chat' ? ', new reply' : ', ' + t[2] + (t[0] === 'inbox' ? (t[2] === 1 ? ' item' : ' items') : ' needing you')) : ''),
         style: 'position: relative; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 2px; border-radius: 14px; color: #14304A; border: 2.5px solid ' + (on ? '#14304A' : 'transparent') + '; background-color: ' + (on ? '#FFC23D' : 'transparent') + '; box-shadow: ' + (on ? '0 2px 0 #14304A' : 'none'),
-        hasBadge: t[2] > 0, badge: t[2],
-        badgeStyle: 'position: absolute; top: -7px; left: 15px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; border: 2px solid #FFF6E3; background-color: ' + (t[4] || '#14304A') + '; color: ' + (t[5] || '#FFC23D') + '; font-family: Archivo, sans-serif; font-weight: 700; font-size: 11.5px; display: flex; align-items: center; justify-content: center',
-        go: () => self.put({ tab: t[0] })
+        hasBadge: t[2] > 0, badge: t[0] === 'chat' ? '' : t[2],
+        badgeStyle: t[0] === 'chat' ? 'position: absolute; top: -3px; left: 19px; width: 14px; height: 14px; border-radius: 50%; border: 2.5px solid #FFF6E3; background-color: #FF7A59'
+          : 'position: absolute; top: -7px; left: 15px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; border: 2px solid #FFF6E3; background-color: ' + (t[4] || '#14304A') + '; color: ' + (t[5] || '#FFC23D') + '; font-family: Archivo, sans-serif; font-weight: 700; font-size: 11.5px; display: flex; align-items: center; justify-content: center',
+        go: () => { self.put(t[0] === 'chat' ? { tab: 'chat', chatUnread: false } : { tab: t[0] }); if (t[0] === 'chat') self.chatScroll(); }
       };
     });
 
@@ -1712,7 +2019,80 @@ class Component extends DCLogic {
         })
       }))
     } : null;
-    const ORIG_MAIN = 'flex: 999 1 640px; min-width: 0; min-height: 760px; position: relative; overflow: hidden; background-color: #29B2C2; display: flex; flex-wrap: ' + (drawer ? 'nowrap' : 'wrap') + '; align-items: stretch';
+    // ---- Chat and Settings ----
+    const size = s.size;
+    const kbd = !!s.vvh && s.vvh < (window.innerHeight || 0) - 120;
+    const vvBox = kbd ? 'top: ' + s.vvt + 'px; height: ' + s.vvh + 'px' : 'top: 0; height: 100dvh';
+    const chatShown = phone ? tabId === 'chat' : !!s.chatOpen;
+    const fleetOf = (id) => F.find((x) => x.id === id) || F[0];
+    const defFleet = fleetOf(this.defaultChatFleet());
+    const cfg = s.settings;
+    const botRow = 'display: flex; align-items: flex-start; gap: 8px';
+    const cardModel = this.qModel('chat-q1', this.chatQuestion().questions, (s.ibUi || {})['chat-q1'] || {}, { tapSends: true, onSend: (a) => self.chatAnswer(a) });
+    const chatItems = s.chatItems.map((it) => {
+      const m = { id: it.id, text: it.text, time: it.time, isDivider: false, isMsg: false, isBot: false, isTyping: false, isCard: false, isFold: false, rowStyle: botRow };
+      if (it.kind === 'divider') { m.isDivider = true; m.rowStyle = 'display: flex'; return m; }
+      if (it.kind === 'card') { m.isCard = true; m.isBot = true; m.card = cardModel; return m; }
+      if (it.kind === 'fold') { m.isFold = true; m.rowStyle = 'display: flex'; m.card = { doneText: it.text, doneRight: it.time }; return m; }
+      const me = it.who === 'me';
+      m.isMsg = true; m.isBot = !me; m.who = me ? 'You' : 'AdmiralBot';
+      m.rowStyle = me ? 'display: flex; justify-content: flex-end' : botRow;
+      m.colStyle = 'max-width: 84%; display: flex; flex-direction: column; gap: 3px; align-items: ' + (me ? 'flex-end' : 'flex-start');
+      m.bubbleStyle = 'padding: 9px 13px; border: 2.5px solid #14304A; font-size: 15.5px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; '
+        + (me ? 'border-radius: 16px 16px 4px 16px; background-color: #FFC23D' : 'border-radius: 16px 16px 16px 4px; background-color: #FFFDF6');
+      return m;
+    });
+    if (s.chatTyping) chatItems.push({ id: 'typing', isDivider: false, isMsg: false, isBot: true, isTyping: true, isCard: false, isFold: false, rowStyle: botRow });
+    const keyBottom = phone ? (showTabs ? '10px' : 'max(10px, env(safe-area-inset-bottom))') : size === 'middle' ? 'max(10px, env(safe-area-inset-bottom))' : '10px';
+    const chat = {
+      role: phone ? 'region' : size === 'middle' ? 'dialog' : 'dialog', modal: size === 'middle' ? 'true' : undefined,
+      cls: phone ? undefined : size === 'middle' ? 'ib-sheet' : 'chat-pop',
+      style: phone ? 'position: absolute; top: 0; bottom: 0; left: env(safe-area-inset-left); right: env(safe-area-inset-right); display: flex; flex-direction: column; outline: none; background-color: #FFF1CF'
+        : size === 'middle' ? 'position: fixed; left: 0; right: 0; ' + vvBox + '; z-index: 40; display: flex; flex-direction: column; outline: none; background-color: #FFF1CF'
+        : 'position: fixed; z-index: 15; right: ' + (drawer ? 420 : 20) + 'px; bottom: 96px; width: 380px; max-width: calc(100vw - 40px); height: 560px; max-height: calc(100dvh - 185px); display: flex; flex-direction: column; outline: none; overflow: hidden; background-color: #FFF1CF; border: 3px solid #14304A; border-radius: 20px; box-shadow: 0 8px 0 #0B1F33',
+      title: 'AdmiralBot', sub: 'Claude · ' + fleetOf(cfg.fleet).name + ' · ' + cfg.model + (cfg.effort ? ' · ' + cfg.effort : ''),
+      showClose: !phone, close: () => self.put({ chatOpen: false }),
+      isTerminal: s.chatView === 'terminal', isChat: s.chatView !== 'terminal',
+      backToChat: () => { self.put({ chatView: 'chat' }); self.chatScroll(); },
+      openTerm: () => self.put({ chatView: 'terminal', chatConfirmNew: false }),
+      askNew: () => self.put({ chatConfirmNew: true }), keepChat: () => self.put({ chatConfirmNew: false }), doNew: () => self.chatNew(), confirmNew: !!s.chatConfirmNew,
+      items: chatItems, padBottom: keyBottom,
+      draft: s.chatDraft || '', rows: Math.min(4, (s.chatDraft || '').split('\n').length),
+      onDraft: (e) => self.put({ chatDraft: e.target.value }),
+      inKey: (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); self.chatSend(); } },
+      onFocus: () => { self.put({ chatFocus: true }); setTimeout(() => window.scrollTo(0, 0), 50); },
+      onBlur: () => setTimeout(() => { const a = document.activeElement; if (!a || a.id !== 'adm-chat-input') self.put({ chatFocus: false }); }, 200),
+      send: () => self.chatSend(), formSend: (e) => { if (e && e.preventDefault) e.preventDefault(); self.chatSend(); },
+      tlines: s.tlines.map((l) => ({ cls: 'ln ln-' + l.k, t: l.t })), tdraft: s.tdraft || '',
+      onTdraft: (e) => self.put({ tdraft: e.target.value }),
+      tsend: (e) => { if (e && e.preventDefault) e.preventDefault(); const t = (self.S().tdraft || '').trim(); if (t) self.chatTermAdd({ k: 'you', t: '❯ ' + t }, { k: 'agent', t: 'Aye. I only add orders; launching stays with you.' }); },
+      tkeys: keyDefs.map((d) => ({ label: d[1], aria: 'Send ' + d[0] + ' to the chat session', press: () => self.chatTermAdd({ k: 'you', t: '❯ [' + d[0] + ']' }, d[2]) }))
+    };
+    const set = {
+      wrapStyle: phone ? 'position: fixed; inset: 0; z-index: 70' : 'position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; padding: 16px',
+      cls: phone ? undefined : 'pop',
+      dialogStyle: phone ? 'position: absolute; inset: 0; display: flex; flex-direction: column; outline: none; background-color: #FFF1CF'
+        : 'position: relative; width: 100%; max-width: 560px; max-height: 100%; display: flex; flex-direction: column; outline: none; overflow: hidden; border: 3px solid #14304A; border-radius: 24px; background-color: #FFF1CF; box-shadow: 0 8px 0 #0B1F33',
+      headPad: phone ? 'max(10px, env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 10px calc(16px + env(safe-area-inset-left))' : '12px 12px 12px 18px',
+      bodyPad: phone ? '16px calc(16px + env(safe-area-inset-right)) 20px calc(16px + env(safe-area-inset-left))' : '16px 18px',
+      footPad: phone ? '12px calc(16px + env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))' : '14px 18px',
+      selStyle: 'height: 48px; padding: 0 10px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFFFF; font-family: Archivo, sans-serif; font-size: 16px; color: #14304A',
+      close: () => self.closeSettings(), save: () => self.put((st) => ({ settings: Object.assign({}, st.setDraft || st.settings), settingsOpen: false, setDraft: null })),
+      fleet: (s.setDraft || cfg).fleet, model: (s.setDraft || cfg).model, effort: (s.setDraft || cfg).effort,
+      fleets: F.map((f) => ({ v: f.id, t: f.name + (f.id === defFleet.id ? ' (default)' : '') })),
+      fleetHint: 'Default: ' + defFleet.name + ', the first fleet with a Claude dock.',
+      models: [['sonnet', 'sonnet (default)'], ['opus', 'opus'], ['haiku', 'haiku']].map((o) => ({ v: o[0], t: o[1] })),
+      efforts: [['', 'Harness default'], ['low', 'low'], ['medium', 'medium'], ['high', 'high']].map((o) => ({ v: o[0], t: o[1] })),
+      onFleet: (e) => { const v = e.target.value; self.put((st) => ({ setDraft: Object.assign({}, st.setDraft || st.settings, { fleet: v }) })); },
+      onModel: (e) => { const v = e.target.value; self.put((st) => ({ setDraft: Object.assign({}, st.setDraft || st.settings, { model: v }) })); },
+      onEffort: (e) => { const v = e.target.value; self.put((st) => ({ setDraft: Object.assign({}, st.setDraft || st.settings, { effort: v }) })); }
+    };
+    const sd = s.setDraft || cfg;
+    // Fleet and model are always written; effort only when it is not the harness default.
+    set.line = '"chat": {"fleet": "' + sd.fleet + '", "model": "' + sd.model + '"' + (sd.effort ? ', "effort": "' + sd.effort + '"' : '') + '}';
+    const gearBase = 'display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 44px; height: 44px; border-radius: 50%; border: 2px solid #3A6489; background-color: #14304A; color: #F4EEDF';
+
+    const ORIG_MAIN ='flex: 999 1 640px; min-width: 0; min-height: 760px; position: relative; overflow: hidden; background-color: #29B2C2; display: flex; flex-wrap: ' + (drawer ? 'nowrap' : 'wrap') + '; align-items: stretch';
     const bridgeWrap = drawer ? 'nowrap' : 'wrap';
     if (bridge) {
       bridge.overlayCls = phone ? 'ph-bridge' : undefined;
@@ -1740,7 +2120,7 @@ class Component extends DCLogic {
       atSea: s.ships.filter((x) => x.status !== 'done').length,
       inbox, inboxOpen: !!s.inboxOpen, inboxShown: phone ? tabId === 'inbox' : !!s.inboxOpen,
       phone, notPhone: !phone,
-      rootStyle: phone ? "position: fixed; inset: 0; display: flex; flex-direction: column; overflow: hidden; background-color: #14304A; color: #14304A; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-size: 15px"
+      rootStyle: phone ? "position: fixed; left: 0; right: 0; " + vvBox + "; display: flex; flex-direction: column; overflow: hidden; background-color: #14304A; color: #14304A; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-size: 15px"
         : "min-height: 100vh; position: relative; display: flex; flex-direction: column; background-color: #14304A; color: #14304A; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-size: 15px",
       rowStyle: phone ? 'position: relative; flex: 1 1 0; min-height: 0; background-color: #FFF1CF'
         : 'display: flex; flex-wrap: ' + (drawer ? 'nowrap' : 'wrap') + '; flex: 1 1 auto; align-items: stretch; background-color: #29B2C2',
@@ -1751,10 +2131,17 @@ class Component extends DCLogic {
       filterSize: phone ? '16px' : '14.5px', termInSize: phone ? '16px' : '13.5px', skillInSize: phone ? '16px' : '14px', keyH: phone ? '44px' : '40px',
       pendWrapStyle: phone ? 'position: fixed; inset: 0; z-index: 60; background-color: rgba(11,31,51,.55); display: flex; align-items: flex-start; justify-content: center; padding: max(16px, env(safe-area-inset-top)) 12px max(16px, env(safe-area-inset-bottom)); overflow: auto'
         : 'position: absolute; inset: 0; z-index: 20; background-color: rgba(11,31,51,.55); display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; overflow: auto',
-      tabs, showTabs, tabShips: phone && tabId === 'ships', tabChat: phone && tabId === 'chat',
+      tabs, showTabs, tabShips: phone && tabId === 'ships',
+      chat, chatShown, chatOpen: !!s.chatOpen, chatClosed: !s.chatOpen, chatUnread: !!s.chatUnread,
+      showChatBtn: size === 'middle', chatFab: size === 'wide',
+      chatBtnAria: (s.chatOpen ? 'Close the chat with AdmiralBot' : 'Open the chat with AdmiralBot') + (s.chatUnread && !s.chatOpen ? ', new reply' : ''),
+      chatFabStyle: 'position: fixed; z-index: 16; right: ' + (drawer ? 420 : 20) + 'px; bottom: 20px; width: 60px; height: 60px; border-radius: 50%; border: 3px solid #14304A; background-color: #FFC23D; box-shadow: 0 4px 0 #14304A; display: flex; align-items: center; justify-content: center',
+      toggleChat: () => { self.put((st) => { const open = !st.chatOpen; return { chatOpen: open, chatUnread: open ? false : st.chatUnread, inboxOpen: open && st.size === 'middle' ? false : st.inboxOpen }; }); self.chatScroll(); self.focusSel('[data-chat]'); },
+      settingsOpen: !!s.settingsOpen, set, openSettings: () => self.openSettings(),
+      gearStyle: gearBase,
       shipRows, shipsHint: shipRows.length + (shipRows.length === 1 ? ' ship' : ' ships') + (nAttn ? ', ' + nAttn + ' need' + (nAttn === 1 ? 's' : '') + ' you' : ''),
       hasDockSheet: !!dockSheet, dockSheet: dockSheet || { fleets: [] },
-      toggleInbox: () => { self.put((st) => ({ inboxOpen: !st.inboxOpen })); self.ibFocus(); },
+      toggleInbox: () => { self.put((st) => ({ inboxOpen: !st.inboxOpen, chatOpen: st.size === 'middle' ? false : st.chatOpen })); self.ibFocus(); },
       closeInbox: () => self.put({ inboxOpen: false }),
       sound: !!s.sound, muted: !s.sound,
       soundText: s.sound ? 'Sound on' : 'Muted',
