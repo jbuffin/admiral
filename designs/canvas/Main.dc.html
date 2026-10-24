@@ -280,6 +280,16 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <sc-if value="{{m.gull}}" hint-placeholder-val="{{ false }}">
 <span class="gull" style="display: block; animation-delay: {{m.delay}}"><svg width="26" height="14" viewBox="0 0 26 14" fill="none" aria-hidden="true"><path d="M2 6 Q7 0 13 7 Q19 0 24 6" stroke="#FFFDF6" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M2 6 Q7 0 13 7 Q19 0 24 6" stroke="#14304A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path><circle cx="13" cy="8" r="1.8" fill="{{m.flag}}" stroke="#14304A" stroke-width="1"></circle></svg></span>
 </sc-if>
+<sc-if value="{{m.deck}}" hint-placeholder-val="{{ false }}">
+<span style="display: flex; align-items: flex-end; gap: 2px; padding-bottom: 4px">
+<svg width="30" height="16" viewBox="0 0 30 16" fill="none" aria-hidden="true">
+<sc-for list="{{m.bots}}" as="b" hint-placeholder-count="3">
+<g transform="translate({{b.x}} {{b.y}})"><rect x="0" y="0" width="8.5" height="8.5" rx="1.5" fill="{{b.color}}" stroke="#14304A" stroke-width="1.6"></rect><rect x="2" y="3" width="1.6" height="1.6" fill="#14304A"></rect><rect x="5" y="3" width="1.6" height="1.6" fill="#14304A"></rect><path d="M4.25 8.5 L4.25 11.5" stroke="#14304A" stroke-width="1.6"></path></g>
+</sc-for>
+</svg>
+<sc-if value="{{m.extra}}" hint-placeholder-val="{{ false }}"><span style="margin-left: -2px; margin-bottom: 2px; padding: 0 4px; border-radius: 999px; background-color: #FFFDF6; border: 1.5px solid #14304A; font-size: 9.5px; font-weight: 800; color: #14304A">{{m.extraText}}</span></sc-if>
+</span>
+</sc-if>
 <sc-if value="{{m.more}}" hint-placeholder-val="{{ false }}">
 <span style="min-width: 24px; height: 20px; padding: 0 5px; border-radius: 999px; background-color: #FFFDF6; border: 2px solid #14304A; font-size: 10.5px; font-weight: 800; color: #14304A; display: inline-flex; align-items: center; justify-content: center">{{m.text}}</span>
 </sc-if>
@@ -935,6 +945,13 @@ class Component extends DCLogic {
       const x0 = 50 - (total * 26) / 2;
       for (let k = 0; k < shown; k++) marks.push({ x: x0 + k * 26 - 9, y: 146 });
       if (markMore) marks.push({ x: x0 + shown * 26 - 9, y: 146, more: true });
+    } else if (v === 'D') {
+      // Horseshoe: a crew boat on each flank, then rows under the plaque; subagents ride the deck.
+      const flank = [[-50, 34], [106, 30]];
+      for (let k = 0; k < n; k++) {
+        if (k < 2) crew.push({ x: flank[k][0], y: flank[k][1], w: 46, h: 41, name: true });
+        else { const r = k - 2; crew.push({ x: -22 + (r % 3) * 50, y: 138 + Math.floor(r / 3) * 56, w: 46, h: 41, name: true }); }
+      }
     } else if (v === 'B') {
       // Convoy: smaller crew boats in rows under the plaque, paper boats in the wake.
       for (let k = 0; k < n; k++) crew.push({ x: -22 + (k % 3) * 50, y: 136 + Math.floor(k / 3) * 56, w: 40, h: 35, name: true });
@@ -968,7 +985,7 @@ class Component extends DCLogic {
     }
     if (scene === 'inbox-bridge') s.open = 's3';
     // PROTOTYPE #153: crew boat scenes and variant state.
-    s.variant = ['A', 'B', 'C'].indexOf(this.props.variant) >= 0 ? this.props.variant : 'A';
+    s.variant = ['A', 'B', 'C', 'D'].indexOf(this.props.variant) >= 0 ? this.props.variant : 'D';
     s.proto = scene.indexOf('crew') === 0 || !!this.props.variant;
     s.boxes = this.props.boxes === '1';
     s.crowd = this.props.crowd === '1';
@@ -1211,7 +1228,7 @@ class Component extends DCLogic {
     window.addEventListener('keydown', this.onProtoKey);
   }
   cycle(d) {
-    const V = ['A', 'B', 'C'];
+    const V = ['A', 'B', 'C', 'D'];
     const v = V[(V.indexOf(this.S().variant) + d + V.length) % V.length];
     this.put({ variant: v, tip: null });
     try { const u = new URL(location.href); u.searchParams.set('variant', v); history.replaceState(null, '', u); } catch (err) {}
@@ -1520,7 +1537,7 @@ class Component extends DCLogic {
 
   renderVals() {
     const s = this.S();
-    const { H, F, SRC, T, SLOTS, SUBPOS, DOCKY } = this.D();
+    const { H, F, SRC, T, SLOTS, SUBPOS, DOCKY, BOTS } = this.D();
     const self = this;
     const q = (s.q || '').trim().toLowerCase();
 
@@ -1617,6 +1634,15 @@ class Component extends DCLogic {
           aria: 'Subagent ' + mk.type + ' of ' + sh.name + ', cannot be boarded',
           tap: () => { if (!self.recentDrag()) self.showTip(sh.id, mk.id); } };
       });
+      if (s.variant === 'D' && shMarks.length) {
+        // Up to four little bots stand on deck, bow side of the mast; more show as +N.
+        const shown = shMarks.length > 4 ? 3 : shMarks.length;
+        const bots = shMarks.slice(0, shown).map((mk, k) => ({ x: 2 + k * 9, y: 4 - (k % 2) * 2, color: BOTS[(i + k + 3) % BOTS.length] }));
+        markEls.push({ deck: true, bots, extra: shMarks.length > shown, extraText: '+' + (shMarks.length - shown), delay: '0s',
+          pos: 'left: 0px; top: 26px; z-index: 3; width: 44px; height: 44px; align-items: flex-end; justify-content: flex-start;',
+          aria: shMarks.length + ' subagents on ' + sh.name + ': ' + shMarks.map((x) => x.type).join(', ') + '. Cannot be boarded',
+          tap: () => { if (!self.recentDrag()) self.showTip(sh.id, '+deck'); } });
+      }
       if (lay.crewMore) {
         const last = lay.crew[lay.crew.length - 1];
         const hidden = sh.subs.slice(lay.crew.length);
@@ -1628,12 +1654,15 @@ class Component extends DCLogic {
       let tip = null;
       if (s.tip && s.tip.ship === sh.id) {
         const k = shMarks.findIndex((x) => x.id === s.tip.id);
-        const pt = s.tip.id === '+more' ? lay.marks[lay.marks.length - 1] : lay.marks[k];
+        const pt = s.tip.id === '+deck' ? { x: 20, y: 0 } : s.tip.id === '+more' ? lay.marks[lay.marks.length - 1] : lay.marks[k];
         if (pt) {
-          const t = s.tip.id === '+more'
+          const t = s.tip.id === '+deck'
+            ? { title: shMarks.length + ' subagent' + (shMarks.length === 1 ? '' : 's'), sub: shMarks.map((x) => x.type + ' ' + this.ago(x.started)).join(' · ') + ' · no terminal' }
+            : s.tip.id === '+more'
             ? { title: lay.markMore + ' more subagents', sub: shMarks.slice(lay.marks.length - 1).map((x) => x.type).join(', ') }
             : { title: shMarks[k].type, sub: 'subagent · ' + this.ago(shMarks[k].started) + ' · no terminal' };
-          tip = Object.assign(t, { pos: 'left: ' + (pt.x - 20) + 'px; top: ' + (pt.y + (s.variant === 'C' ? -44 : 18)) + 'px;' });
+          const wrap = s.tip.id === '+deck' ? ' white-space: normal; width: 230px;' : '';
+          tip = Object.assign(t, { pos: 'left: ' + (pt.x - 20) + 'px; top: ' + (pt.y + (s.variant === 'C' ? -40 : s.variant === 'D' ? -14 - Math.ceil(shMarks.length / 2) * 17 : 18)) + 'px;' + wrap });
         }
       }
       // The footprint: the box placement would have to reserve for this ship.
@@ -1798,7 +1827,7 @@ class Component extends DCLogic {
       closeCrew: () => self.put((st) => ({ bMenu: false, focus: 'lead', ships: st.ships.map((x) => x.id === st.open ? Object.assign({}, x, { subs: x.subs.filter((b) => b.id !== st.focus) }) : x) })),
       proto: {
         on: !!s.proto, boxes: !!s.boxes, boxCls: s.boxes ? 'on' : '',
-        label: s.variant + ' (' + { A: 'Escort ring', B: 'Convoy', C: 'Rafted + gulls' }[s.variant] + ')',
+        label: s.variant + ' (' + { A: 'Escort ring', B: 'Convoy', C: 'Rafted + gulls', D: 'Horseshoe + deck crew' }[s.variant] + ')',
         prev: () => self.cycle(-1), next: () => self.cycle(1),
         toggleBoxes: () => { self.setParam('boxes', !s.boxes); self.put({ boxes: !s.boxes }); },
         crowdLabel: s.crowd ? 'crowd: on' : 'crowd: off',
