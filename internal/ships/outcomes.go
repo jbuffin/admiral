@@ -9,7 +9,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -31,7 +30,7 @@ const maxReport = 1 << 20
 
 // reasonPattern is what a reason must match to reach the log: any process in a
 // pane can set @admiral-reason.
-var reasonPattern = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,64}$`)
+var reasonPattern = sessionhost.SafeToken
 
 // tally is what the log needs to know of a ship between two passes. Count,
 // Seconds and Since live in the ship's tmux session options, so a restart of

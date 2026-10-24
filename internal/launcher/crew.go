@@ -1,6 +1,7 @@
 package launcher
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -189,4 +190,32 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 		}
 	}
 	return nil
+}
+
+// ErrCrewGone is CloseCrew's answer for a window that is already gone; the
+// error's text is tmux's own.
+var ErrCrewGone = errors.New("crew window is gone")
+
+type windowGone struct{ msg string }
+
+func (e windowGone) Error() string        { return e.msg }
+func (e windowGone) Is(target error) bool { return target == ErrCrewGone }
+
+// CloseCrew kills one crew boat's window by its tmux window id, and with it the
+// teammate's process; ctx bounds the kill. tmux never reuses a window id within
+// one server, so an id from a stale read can't close another boat's window.
+// `admiral crew close` and the server's close route both end here.
+func (l *Launcher) CloseCrew(ctx context.Context, windowID string) error {
+	out, err := l.runCtx(ctx, "kill-window", "-t", windowID)
+	if err == nil {
+		return nil
+	}
+	out = strings.TrimSpace(out)
+	if out == "" {
+		out = err.Error()
+	}
+	if strings.Contains(out, "can't find window") {
+		return windowGone{out}
+	}
+	return errors.New(out)
 }

@@ -1,6 +1,9 @@
 package sessionhost
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 // SubagentsOption is the pane option `admiral hook` keeps the subagents of a
 // ship's harness in: a JSON array of Subagent (ADR 0014).
@@ -31,18 +34,30 @@ func EncodeSubagents(l []Subagent) string {
 }
 
 // DecodeSubagents reads the option's value. An unset or unreadable value is no
-// subagents, and an entry without an id is dropped. A reader treats the list of
-// a dead pane as empty: the harness is gone, so its subagents are too.
+// subagents. Every entry is re-checked, whatever wrote it: an id that is not a
+// safe token, a start that is not RFC 3339, or an id seen before drops the entry
+// (the first one wins), and a type that is not a safe token reads as "". A
+// reader treats the list of a dead pane as empty: the harness is gone, so its
+// subagents are too.
 func DecodeSubagents(s string) []Subagent {
 	var l []Subagent
 	if s == "" || json.Unmarshal([]byte(s), &l) != nil {
 		return nil
 	}
-	out := l[:0]
+	out := make([]Subagent, 0, len(l))
+	seen := map[string]bool{}
 	for _, a := range l {
-		if a.ID != "" {
-			out = append(out, a)
+		if !SafeToken.MatchString(a.ID) || seen[a.ID] {
+			continue
 		}
+		if _, err := time.Parse(time.RFC3339, a.Start); err != nil {
+			continue
+		}
+		if !SafeToken.MatchString(a.Type) {
+			a.Type = ""
+		}
+		seen[a.ID] = true
+		out = append(out, a)
 	}
 	if len(out) > MaxSubagents {
 		out = out[:MaxSubagents]
