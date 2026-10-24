@@ -1,7 +1,8 @@
 import type { Page } from '@playwright/test';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { type LaunchedShip, type Sea } from './sea';
 
 // Helpers for the bridge scenarios (u11): launching a ship the way the dialog
@@ -106,4 +107,50 @@ export async function reachable(url: string) {
   } catch {
     return false;
   }
+}
+
+const bin = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'admiral');
+
+/**
+ * `admiral crew launch` against this Admiral's home, as a ship's lead would run it. The boat runs the fleet's fake
+ * with the fleet's cue file, so it is driven by `wait <name>` cues and `releaseCrew`. Resolves once the boat's fake
+ * has recorded and the server lists it in the ship's `crew[]`.
+ */
+export async function launchCrew(sea: Sea, session: string, name: string) {
+  const env: NodeJS.ProcessEnv = { ...process.env, ADMIRAL_HOME: sea.a.home };
+  for (const v of ['ADMIRAL_SHIP', 'ADMIRAL_AUTOPILOT', 'ADMIRAL_REPORT', 'ADMIRAL_INBOX']) delete env[v];
+  const r = spawnSync(bin, ['crew', 'launch', '--ship', session, '--name', name, '--dir', sea.world.checkout(`crew-${name}`), '--', 'go'], { env, encoding: 'utf8' });
+  if (r.status !== 0) throw new Error(`crew launch ${name} exited ${r.status}: ${r.stdout}${r.stderr}`);
+  const dir = join(sea.world.root, 'rec', session, 'crew', name);
+  const deadline = Date.now() + 15_000;
+  while (!existsSync(join(dir, 'recorded'))) {
+    if (Date.now() > deadline) throw new Error(`the fake of crew boat ${name} never recorded`);
+    await new Promise((res) => setTimeout(res, 50));
+  }
+  while (!(await crewOf(sea, session)).some((c) => c.name === name)) {
+    if (Date.now() > deadline) throw new Error(`GET /api/ships never listed crew boat ${name}`);
+    await new Promise((res) => setTimeout(res, 100));
+  }
+  return dir;
+}
+
+/** The ship's `crew[]` as the server lists it. */
+export async function crewOf(sea: Sea, session: string): Promise<{ name: string; status: string }[]> {
+  const body = await (await fetch(`${sea.a.url}api/ships`)).json();
+  const list = (Array.isArray(body) ? body : body.ships) as { session: string; crew?: { name: string; status: string }[] }[];
+  return list.find((s) => s.session === session)?.crew ?? [];
+}
+
+/** Lets a crew boat's fake that is blocked in a `wait <name>` cue go on. */
+export function releaseCrew(sea: Sea, session: string, crew: string, name: string) {
+  writeFileSync(join(sea.world.root, 'rec', session, 'crew', crew, name), '');
+}
+
+/** Writes to a crew boat's pane terminal, as paneWrite does for the ship's. */
+export function crewPaneWrite(sea: Sea, session: string, crew: string, data: string) {
+  const sock = join(sea.world.root, 'tmux.sock');
+  const r = spawnSync('tmux', ['-S', sock, 'list-panes', '-s', '-t', `=${session}`, '-F', '#{@admiral-crew-name}\t#{pane_tty}'], { encoding: 'utf8' });
+  const tty = r.stdout.split('\n').find((l) => l.startsWith(`${crew}\t`))?.split('\t')[1];
+  if (r.status !== 0 || !tty) throw new Error(`no pane terminal for crew boat ${crew} of ${session}: ${r.stderr}`);
+  writeFileSync(tty, data);
 }
