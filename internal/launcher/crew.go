@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -69,10 +70,12 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	if err != nil {
 		return err
 	}
+	shipHarness, err := shipOpt("harness")
+	if err != nil {
+		return err
+	}
 	if req.Harness == "" {
-		if req.Harness, err = shipOpt("harness"); err != nil {
-			return err
-		}
+		req.Harness = shipHarness
 	}
 	fleet, ok := l.Config().Fleet(fleetKey)
 	if !ok {
@@ -99,21 +102,35 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 		argv = appendPrompt(argv, req.Prompt, true)
 	}
 
-	env := l.shipEnv(dock)
-	for _, k := range shipEnvNames {
+	// The window inherits the ship's session environment, so -e carries only what
+	// this dock sets itself; the caller's own environment (the ship harness's tool
+	// shell, or another fleet's credentials under --ship) never goes in. PATH
+	// is the spawning client's, built as a ship's is.
+	env := map[string]string{}
+	for k, v := range dock.Env {
+		env[k] = v
+	}
+	// The ship's own variables and Admiral's, which only the session sets, so a
+	// crew boat of an autopilot ship stays under its guard.
+	for _, k := range append([]string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE"}, shipEnvNames...) {
 		delete(env, k)
 	}
-	// Admiral owns these, and only the ship's own session environment (which the
-	// window inherits) may set them, so a crew boat of an autopilot ship stays
-	// under its guard and Admiral's own environment never leaks one in.
-	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE"} {
-		delete(env, k)
+	delete(env, "PATH")
+	clientPath := l.shipEnv(dock)["PATH"]
+	// What the session holds that this boat must not have: the ship's own
+	// variables, and the keys the ship's dock sets that this dock doesn't. env -u
+	// clears them for this process without touching the ship's session.
+	clear := append([]string(nil), shipEnvNames...)
+	if shipDock, ok := fleet.Harness(shipHarness); ok {
+		for k := range shipDock.Env {
+			if _, set := dock.Env[k]; !set && k != "PATH" && !slices.Contains(clear, k) {
+				clear = append(clear, k)
+			}
+		}
 	}
-	// The window inherits the ship's session environment, so a variable the
-	// ship's harness has and this one does not must be cleared: env -u does that
-	// for the three that are the ship's own.
+	sort.Strings(clear)
 	command := []string{"env"}
-	for _, k := range shipEnvNames {
+	for _, k := range clear {
 		command = append(command, "-u", k)
 	}
 	command = append(command, argv...)
@@ -166,7 +183,7 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	}
 	cmds = append(cmds, append(append(respawn, "--"), command...))
 	for _, batch := range batches(cmds) {
-		if out, err := l.runWith(env["PATH"], batch...); err != nil {
+		if out, err := l.runWith(clientPath, batch...); err != nil {
 			_, _ = l.run("kill-window", "-t", w)
 			return fmt.Errorf("tmux could not start the crew boat: %s", strings.TrimSpace(out))
 		}

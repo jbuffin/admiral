@@ -30,9 +30,10 @@ type crewRow struct {
 
 func crewCall(w *world, ship string, stdin string, args ...string) cliResult {
 	w.t.Helper()
-	o := cliOpts{stdin: stdin}
+	// FAKE_CALLER_ONLY is in the caller's environment only: a teammate must not get it.
+	o := cliOpts{stdin: stdin, env: []string{"FAKE_CALLER_ONLY=1"}}
 	if ship != "" {
-		o.env = []string{"ADMIRAL_SHIP=" + ship}
+		o.env = append(o.env, "ADMIRAL_SHIP="+ship)
 	}
 	return w.admiralWith(o, append([]string{"crew"}, args...)...)
 }
@@ -158,6 +159,9 @@ func TestCrew_LaunchSendListCloseAndRestart(t *testing.T) {
 				t.Errorf("scout has %s=%q; a teammate gets none of the ship's contract", k, v)
 			}
 		}
+		if _, ok := scout.env["FAKE_CALLER_ONLY"]; ok {
+			t.Errorf("scout has FAKE_CALLER_ONLY: a teammate must not inherit the caller's environment")
+		}
 		if scout.env["FLEET_VAR"] != "fleet-value" {
 			t.Errorf("scout FLEET_VAR = %q, want the fleet's dock env", scout.env["FLEET_VAR"])
 		}
@@ -170,6 +174,9 @@ func TestCrew_LaunchSendListCloseAndRestart(t *testing.T) {
 
 		mate := w.record(sess + "/crew/mate")
 		w.waitFile(sess+"/crew/mate", "cues-done")
+		if _, ok := mate.env["FAKE_CALLER_ONLY"]; ok {
+			t.Errorf("mate has FAKE_CALLER_ONLY: a teammate must not inherit the caller's environment")
+		}
 		if mate.harness != "codex" || len(mate.argv) < 3 || mate.argv[0] != "--fa-codex" ||
 			mate.argv[len(mate.argv)-2] != "--" || mate.argv[len(mate.argv)-1] != "-- second job" ||
 			!has(mate.argv, `tui.notification_method="bel"`) {
@@ -300,11 +307,21 @@ func TestCrew_LaunchSendListCloseAndRestart(t *testing.T) {
 				t.Errorf("crew %s stderr = %q, want it to name `nobody`", args[0], r.stderr)
 			}
 		}
+		// Control characters other than newline and tab are not typed into a teammate.
+		w.expectExit(crewCall(w, sess, "", "send", "scout", "a\x07b"), 1, "send text with a control character")
+		// An autopilot ship cannot launch crew into another ship.
 		// A harness the ship's fleet has no dock for.
 		w.writeCue("hook working")
 		lone := w.launch(w.order("claudeonly", "claude", "beta", noSkill, "go"))
 		w.waitFile(lone.Session, "cues-done")
 		w.expectExit(crewCall(w, lone.Session, "", "launch", "--name", "x", "--harness", "codex", "--dir", other, "--", "hi"), 1, "a harness with no dock")
+		auto := w.admiralWith(cliOpts{env: []string{"ADMIRAL_SHIP=" + sess, "ADMIRAL_AUTOPILOT=1"}},
+			"crew", "launch", "--ship", lone.Session, "--name", "x", "--dir", other, "--", "hi")
+		w.expectExit(auto, 1, "an autopilot ship launching into another ship")
+		if !strings.Contains(auto.stderr, "autopilot") {
+			t.Errorf("autopilot --ship stderr = %q, want it to say why", auto.stderr)
+		}
+		w.expectExit(w.admiralWith(cliOpts{env: []string{"ADMIRAL_SHIP=" + sess, "ADMIRAL_AUTOPILOT=1"}}, "crew", "list", "--ship", sess), 0, "an autopilot ship reading its own crew")
 		for _, p := range w.crewPanes(lone.Session) {
 			if p.crew != "" {
 				t.Errorf("a refused launch left a crew window: %+v", p)

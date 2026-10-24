@@ -95,6 +95,11 @@ func crewTarget(ship string) (*crewShip, error) {
 		if session == "" {
 			return nil, fmt.Errorf("no ship called %q (admiral ships lists them)", ship)
 		}
+		// An autopilot ship's teammates must not be launched into another ship,
+		// whose guard rules and credentials differ.
+		if os.Getenv("ADMIRAL_AUTOPILOT") == "1" && env != "" && session != env {
+			return nil, fmt.Errorf("an autopilot ship cannot launch crew in another ship (--ship %s is not %s)", ship, env)
+		}
 	}
 	l := &launcher.Launcher{Tmux: tmux, Socket: sock, Home: dir}
 	if l.Config, err = crewConfig(); err != nil {
@@ -201,10 +206,13 @@ func crewSend(args []string, std IO) error {
 		if err != nil {
 			return err
 		}
-		text = strings.TrimRight(string(b), "\n")
+		text = strings.TrimRight(string(b), "\r\n")
 	}
 	if text == "" {
 		return usagef("crew send: no text")
+	}
+	if i := strings.IndexFunc(text, func(r rune) bool { return (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f }); i >= 0 {
+		return fmt.Errorf("the text holds a control character (byte %d); only newline and tab are sent", i)
 	}
 	return c.submit(boat, text)
 }
@@ -220,6 +228,7 @@ func (c *crewShip) submit(boat sessionhost.Crew, text string) error {
 		return fmt.Errorf("tmux could not load the text: %s", strings.TrimSpace(string(out)))
 	}
 	if out, err := c.l.RunTmux("paste-buffer", "-p", "-d", "-b", buf, "-t", boat.PaneID); err != nil {
+		_, _ = c.l.RunTmux("delete-buffer", "-b", buf)
 		return fmt.Errorf("tmux could not paste into %s: %s", boat.Name, strings.TrimSpace(out))
 	}
 	if boat.Harness == "codex" {
