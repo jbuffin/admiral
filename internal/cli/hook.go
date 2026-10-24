@@ -49,7 +49,7 @@ func Hook(args []string, std IO) error {
 
 // tmuxOut is one tmux call's stdout without its trailing newline. -u keeps
 // the unit separator in a format intact. It gives up after tmuxDeadline, so a
-// stuck server can't hold the harness; the caller takes its failed-read path.
+// stuck server can't stall the reads (the final write has no deadline); the caller takes its failed-read path.
 func tmuxOut(args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), tmuxDeadline)
 	defer cancel()
@@ -132,14 +132,14 @@ func hookDecision(event string, p hookPayload) hookWrite {
 				return hookWrite{}
 			}
 		}
-		return hookWrite{state: "needs_you", reason: "stop"}
+		return stopWrite
 	case "preToolUse":
 		if p.ToolNameCopilot == "ask_user" {
 			return hookWrite{state: "needs_you", reason: "question"}
 		}
 	case "agentStop":
 		if p.lead() {
-			return hookWrite{state: "needs_you", reason: "stop"}
+			return stopWrite
 		}
 	case "userPromptSubmitted":
 		if p.lead() {
