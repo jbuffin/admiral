@@ -7,6 +7,7 @@ import { PanelSection, ReorderGrip, SourceProblem, countLabel } from './PanelSec
 import { arranged, reordering, saveSourceOrder } from './reorder';
 import { SettingsDialog, openSettings } from './SettingsDialog';
 import { SignInCard } from './SignInCard';
+import { phone } from './sizeClass';
 import { SourceIcon } from './SourceIcon';
 import { type Source, api, can, declares, filter, panelViews, setSidebarCollapsed, sidebarCollapsed, sourcePath, sources, sourcesLoaded } from './sources';
 
@@ -25,7 +26,7 @@ function expand() {
 export function Sidebar() {
   return (
     <>
-      {sidebarCollapsed.value || inboxDrawerOpen.value ? <Rail /> : <Expanded />}
+      {!phone.value && (sidebarCollapsed.value || inboxDrawerOpen.value) ? <Rail /> : <Expanded />}
       <SettingsDialog />
     </>
   );
@@ -68,11 +69,13 @@ function Expanded() {
       <div class="orders-head">
         <div>
           <h2>Orders</h2>
-          <span class="orders-sub">Drag a card onto a dock to launch</span>
+          <span class="orders-sub">{phone.value ? 'Tap an order to pick a dock and launch it' : 'Drag a card onto a dock to launch'}</span>
         </div>
-        <button type="button" class="rail-toggle small press" aria-label="Collapse orders" onClick={() => setSidebarCollapsed(true)}>
-          <Chevrons right={false} />
-        </button>
+        {!phone.value && (
+          <button type="button" class="rail-toggle small press" aria-label="Collapse orders" onClick={() => setSidebarCollapsed(true)}>
+            <Chevrons right={false} />
+          </button>
+        )}
       </div>
       <div class="filter">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true">

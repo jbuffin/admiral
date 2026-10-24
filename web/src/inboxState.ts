@@ -3,16 +3,14 @@ import { onMessage } from './connection';
 import { type Decisions, type FindingCard, createDecisions, readCards } from './findings';
 import { type Entry, type InboxItem, type InboxQuestion, createQueue } from './inbox';
 import { ships } from './ships';
+import { wide } from './sizeClass';
 import { api } from './sources';
 
 // The signals behind the Needs You inbox: the served items, the queue (inbox.ts) over them and the
 // ships, the open state and what the engineer has entered on each item.
 
-const WIDE = '(min-width: 1024px) and (orientation: landscape)';
-const wideQuery = typeof matchMedia === 'function' ? matchMedia(WIDE) : null;
-// Wide is the drawer beside the bridge; everything else is the full-screen sheet.
-export const wide = signal(wideQuery?.matches ?? false);
-wideQuery?.addEventListener('change', (e) => (wide.value = e.matches));
+// Wide is the drawer beside the bridge; everything else is the full-screen sheet (a phone: the Inbox tab).
+export { wide };
 
 const items = signal<InboxItem[]>([]);
 onMessage('inbox', (msg: { items: InboxItem[] }) => (items.value = msg.items));

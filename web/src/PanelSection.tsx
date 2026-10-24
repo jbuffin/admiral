@@ -3,6 +3,7 @@ import { touchKeyboard } from './keys';
 import { OrderItem } from './OrderItem';
 import { gripKey, pressGrip, reordering, savePanelOrder } from './reorder';
 import { SignInCard } from './SignInCard';
+import { phone } from './sizeClass';
 import { SourceIcon } from './SourceIcon';
 import { type PanelView, api, can, declares, filter, panelCollapsed, setPanelCollapsed, sourcePath } from './sources';
 
@@ -64,6 +65,7 @@ const Chevron = ({ open }: { open: boolean }) => (
 // The handle that moves a source or a panel within its list, by drag or by the
 // arrow keys.
 export function ReorderGrip({ label, group, itemKey, keys, commit }: { label: string; group: string; itemKey: string; keys: string[]; commit: (keys: string[]) => void }) {
+  if (phone.value) return null; // a phone's Orders tab has no dragging
   return (
     <button
       type="button"

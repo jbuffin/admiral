@@ -2136,14 +2136,12 @@ body.dragging * {
 }
 
 /* Narrow: the flotilla sits above the terminal, which takes the rest of the height. */
-@media (max-width: 760px) {
-  .bridge {
-    flex-direction: column;
-  }
+:root.phone .bridge {
+  flex-direction: column;
+}
 
-  .flotilla {
-    flex: 0 0 auto;
-  }
+:root.phone .flotilla {
+  flex: 0 0 auto;
 }
 
 .flotilla-title {
@@ -3509,4 +3507,319 @@ body.dragging * {
   background-color: var(--color-sunny);
   font-weight: 800;
   font-size: 17px;
+}
+
+/* The phone shell (#119): header, one tab body, the tab bar. Keyed off the root `phone` class (sizeClass.ts). */
+:root.phone .header-row {
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: max(8px, env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 8px calc(12px + env(safe-area-inset-left));
+}
+
+:root.phone .app-name {
+  font-size: 24px;
+}
+
+.phone-grow {
+  flex: 1 1 auto;
+}
+
+.phone-body {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  background-color: var(--color-sidebar);
+}
+
+.phone-pane {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px calc(14px + env(safe-area-inset-right)) 24px calc(14px + env(safe-area-inset-left));
+  background-color: var(--color-sidebar);
+  color: var(--color-ink);
+}
+
+.phone-pane-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.phone-pane-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 24px;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+}
+
+.phone-pane-head span {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.phone-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  padding: 6px calc(8px + env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left));
+  background-color: var(--color-parchment);
+  border-top: var(--shape-outline-heavy) solid var(--color-ink);
+}
+
+.phone-tab {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: var(--shape-min-touch-target);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 4px 2px;
+  border-radius: 14px;
+  border: var(--shape-outline) solid transparent;
+  background: none;
+  color: var(--color-ink);
+}
+
+.phone-tab.on {
+  border-color: var(--color-ink);
+  background-color: var(--color-sunny);
+  box-shadow: 0 2px 0 var(--color-ink);
+}
+
+.phone-tab-icon {
+  position: relative;
+  display: flex;
+}
+
+.phone-tab-label {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12.5px;
+  line-height: 1;
+}
+
+.phone-badge {
+  position: absolute;
+  top: -7px;
+  left: 15px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  border: 2px solid var(--color-parchment);
+  background-color: var(--color-ink);
+  color: var(--color-sunny);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 11.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.phone-badge.ships {
+  background-color: var(--color-coral);
+  color: var(--color-ink);
+}
+
+.ship-row {
+  position: relative;
+  overflow: hidden;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 12px 10px 20px;
+  border-radius: 14px;
+  border: var(--shape-outline) solid var(--color-ink);
+  background-color: var(--color-panel);
+  box-shadow: var(--shape-press-shadow);
+  color: var(--color-ink);
+  text-align: left;
+}
+
+.ship-row.asking {
+  border-color: var(--color-attention-border);
+  background-color: var(--color-attention-plaque);
+}
+
+.ship-row-stripe {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  border-right: var(--shape-outline) solid var(--color-ink);
+}
+
+.ship-row-flag {
+  flex: 0 0 auto;
+  margin-left: 4px;
+}
+
+.ship-row-go {
+  flex: 0 0 auto;
+}
+
+.ship-row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ship-row-name {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 8px;
+}
+
+.ship-row-name b {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.ship-row-name small {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.ship-row-status {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--color-text-muted);
+}
+
+.ship-row.asking .ship-row-status {
+  color: var(--color-attention-border);
+}
+
+.ship-row-order {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The Inbox tab is the sheet in place, not over the page. */
+.inbox-sheet.in-tab {
+  position: absolute;
+  z-index: auto;
+  animation: none;
+}
+
+/* The Orders tab: the whole panel at full width, never a drawer or the rail. */
+:root.phone .orders {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  margin: 0;
+  padding: 16px calc(16px + env(safe-area-inset-right)) 24px calc(16px + env(safe-area-inset-left));
+  border-right: 0;
+  box-shadow: none;
+  z-index: auto;
+}
+
+/* A phone's bridge: full screen, with a top bar in place of the terminal's head. */
+.bridge.phone-bridge {
+  background-color: var(--color-parchment);
+}
+
+.phone-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: max(8px, env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 8px calc(12px + env(safe-area-inset-left));
+  background-color: var(--color-parchment);
+  border-bottom: var(--shape-outline-heavy) solid var(--color-ink);
+  color: var(--color-ink);
+}
+
+.phone-back {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: var(--shape-min-touch-target);
+  height: var(--shape-min-touch-target);
+  padding: 0 12px 0 8px;
+  border-radius: 12px;
+  border: var(--shape-outline) solid var(--color-ink);
+  background-color: var(--color-parchment-light);
+  box-shadow: var(--shape-press-shadow);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.phone-flag {
+  flex: 0 0 auto;
+}
+
+.phone-who {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+.phone-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.phone-sub {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Settings is a full-screen page on a phone; Sound lives there. */
+:root.phone .modal.app-settings {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }

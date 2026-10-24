@@ -33,6 +33,7 @@ import {
 } from './inboxState';
 import { LogoFlag } from './Logos';
 import { board, ships } from './ships';
+import { phone } from './sizeClass';
 
 // Item files are written by ships and are untrusted: every field below is rendered as text, and the only
 // links are http(s) addresses (safeHref).
@@ -562,17 +563,19 @@ function Drawer() {
 
 const FOCUSABLE = 'button:not([disabled]), a[href], input, textarea, [tabindex]:not([tabindex="-1"])';
 
-// Everything else: a full-screen modal sheet with one item at a time.
-function Sheet() {
+// Everything else: a full-screen modal sheet with one item at a time. On a phone it is the Inbox tab's
+// content instead: the same one-at-a-time layout in place, a region with no Close button.
+function Sheet({ tab = false }: { tab?: boolean }) {
   const root = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const all = inbox.entries();
   const pos = inbox.position();
   const cur = all.find((e) => e.key === inbox.currentKey());
-  useEffect(() => root.current?.focus({ preventScroll: true }), []);
+  useEffect(() => (tab ? undefined : root.current?.focus({ preventScroll: true })), []);
   // Its scroll resets only when the current item changes.
   useEffect(() => void list.current?.scrollTo(0, 0), [cur?.key]);
   const onKeyDown = (e: KeyboardEvent) => {
+    if (tab) return;
     if (e.key === 'Escape') {
       e.stopPropagation(); // launch.ts and Menu.tsx also listen for Escape
       closeInbox();
@@ -585,11 +588,19 @@ function Sheet() {
     }
   };
   return (
-    <div class="inbox-sheet" role="dialog" aria-modal="true" aria-label="Needs you inbox" tabIndex={-1} ref={root} onKeyDown={onKeyDown}>
+    <div
+      class={tab ? 'inbox-sheet in-tab' : 'inbox-sheet'}
+      role={tab ? 'region' : 'dialog'}
+      aria-modal={tab ? undefined : 'true'}
+      aria-label="Needs you inbox"
+      tabIndex={-1}
+      ref={root}
+      onKeyDown={onKeyDown}
+    >
       <div class="inbox-top">
         <h2>Needs you</h2>
-        <span class="inbox-waiting-count" />
-        <CloseButton />
+        <span class="inbox-waiting-count">{tab && inbox.count() > 0 ? `${inbox.count()} waiting` : ''}</span>
+        {!tab && <CloseButton />}
       </div>
       <div class="inbox-list" ref={list}>
         {cur ? <Wrap key={cur.key} entry={cur} /> : <Empty />}
@@ -616,5 +627,8 @@ export function InboxDrawer() {
 }
 
 export function InboxSheet() {
-  return inboxOpen.value && !wide.value ? <Sheet /> : null;
+  return inboxOpen.value && !wide.value && !phone.value ? <Sheet /> : null;
 }
+
+// The phone's Inbox tab: shown whatever `inboxOpen` says, since Attach closes the sheet and the tab stays.
+export const InboxTab = () => <Sheet tab />;

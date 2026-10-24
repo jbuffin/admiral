@@ -10,6 +10,7 @@ import { Menu, MenuItem } from './Menu';
 import { Modal } from './Modal';
 import { api, isWebUrl } from './sources';
 import { useBridgePlacement } from './useBridgePlacement';
+import { phone } from './sizeClass';
 import { useBridgeTerminal } from './useBridgeTerminal';
 import { board, boarded, botFor, leaving, ships, shipsLoaded, unboard, type WireCrew, type WireShip } from './ships';
 
@@ -137,7 +138,8 @@ function BridgeView({ session }: { session: string }) {
   // An error belongs to the terminal it came from.
   useEffect(() => setActionError(''), [crew]);
 
-  useBridgePlacement(root, !!ship, full);
+  const onPhone = phone.value; // a phone's bridge is always full screen, with its own top bar
+  useBridgePlacement(root, !!ship, full || onPhone);
 
   if (!ship) return null;
   const h = harnesses[(boat ?? ship).harness];
@@ -187,7 +189,7 @@ function BridgeView({ session }: { session: string }) {
 
   return (
     <>
-      <div class={full ? 'bridge full' : 'bridge'} ref={root} {...closeOutside}>
+      <div class={onPhone ? 'bridge full phone-bridge' : full ? 'bridge full' : 'bridge'} ref={root} {...(onPhone ? {} : closeOutside)}>
         <nav class="flotilla" aria-label="Session flotilla">
           <span class="flotilla-title">Flotilla · {1 + ship.crew.length}</span>
           <button type="button" class={crew ? 'fl-item press' : 'fl-item on press'} aria-current={crew ? undefined : 'true'} onClick={() => board(session)}>
@@ -258,6 +260,32 @@ function BridgeView({ session }: { session: string }) {
         </nav>
 
         <section class="terminal" aria-label="Attached terminal">
+          {onPhone ? (
+            <div class="phone-bar">
+              <button type="button" class="press phone-back" aria-label="Back" onClick={close}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M15 5l-7 7 7 7" />
+                </svg>
+                Back
+              </button>
+              <svg width="40" height="26" viewBox="0 0 40 26" aria-hidden="true" class="phone-flag">
+                <LogoFlag harness={(boat ?? ship).harness} kind="bridge" />
+              </svg>
+              <div class="phone-who">
+                <span class="phone-name">
+                  {ship.name}
+                  {crew && <span class="term-crew"> › {crew}</span>}
+                </span>
+                <span class="phone-line">
+                  <span class="term-pill" style={`background-color:${pill.color}`}>
+                    {pill.text(pillOf)}
+                  </span>
+                  <span class="phone-sub">{[h.label, ship.order_id || ship.repo].filter(Boolean).join(' · ')}</span>
+                </span>
+              </div>
+              {signedOut.value ? <span class="term-notice">Open the URL Admiral printed</span> : reconnecting && <span class="term-notice">Reconnecting…</span>}
+            </div>
+          ) : (
           <div class="term-head">
             <svg width="40" height="26" viewBox="0 0 40 26" aria-hidden="true">
               <LogoFlag harness={(boat ?? ship).harness} kind="bridge" />
@@ -303,6 +331,7 @@ function BridgeView({ session }: { session: string }) {
               </svg>
             </button>
           </div>
+          )}
 
           <div class={reconnecting ? 'term-body dim' : 'term-body'}>
             <div class="term-host" ref={host} />

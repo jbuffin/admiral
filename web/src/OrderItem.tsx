@@ -3,6 +3,7 @@ import { useState } from 'preact/hooks';
 import { Menu, MenuItem } from './Menu';
 import { SourceIcon } from './SourceIcon';
 import { isSelected, pressOrder } from './launch';
+import { phone } from './sizeClass';
 import { type Order, type Source, api, can, declares, isWebUrl, sourcePath } from './sources';
 
 const editing = signal<string | null>(null);
@@ -18,6 +19,12 @@ const Grip = () => (
   </svg>
 );
 
+const Chevron = () => (
+  <svg class="grip" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9AAFC0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M8 5l8 7-8 7" />
+  </svg>
+);
+
 export function OrderItem({ source, panelId, order, fail }: { source: Source; panelId: string; order: Order; fail: (m: string) => void }) {
   const id = `${source.key}/${panelId}/${order.id}`;
   const title = order.title.split('\n')[0];
@@ -30,7 +37,7 @@ export function OrderItem({ source, panelId, order, fail }: { source: Source; pa
   return (
     <li
       class={`${hasEdit || hasRemove ? 'order with-menu' : 'order'}${isSelected({ source: source.key, panel: panelId, order }) ? ' selected' : ''}`}
-      onPointerDown={(e) => pressOrder(e, { source: source.key, panel: panelId, order })}
+      onPointerDown={phone.value ? undefined : (e) => pressOrder(e, { source: source.key, panel: panelId, order })}
     >
       <div class="order-main">
         <div class="order-meta">
@@ -64,7 +71,7 @@ export function OrderItem({ source, panelId, order, fail }: { source: Source; pa
           )}
         </Menu>
       )}
-      <Grip />
+      {phone.value ? <Chevron /> : <Grip />}
     </li>
   );
 }

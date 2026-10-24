@@ -9,12 +9,28 @@ import { Ghost, LaunchOrders } from './LaunchOrders';
 import { LogoSprite } from './Logos';
 import { Ships } from './OpenWater';
 import { Marina, SetUpMarina } from './Marina';
+import { PhoneShell } from './PhoneShell';
 import { Sidebar } from './Sidebar';
+import { phone } from './sizeClass';
 import { Lighthouse, Shore, Trees, WaterScenery } from './Scenery';
 
 export function App() {
   useEffect(connect, []);
   const fleets = config.value?.fleets;
+  if (phone.value) {
+    return (
+      <div class="app">
+        <LogoSprite />
+        <Header />
+        <PhoneShell>
+          <Bridge />
+          <SetupTerminal />
+        </PhoneShell>
+        <Ghost />
+        <LaunchOrders />
+      </div>
+    );
+  }
   return (
     <div class="app">
       <LogoSprite />

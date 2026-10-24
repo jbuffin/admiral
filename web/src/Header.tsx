@@ -10,6 +10,7 @@ import { chipLabel, chipText, resources } from './resources';
 import { anyAutopilot } from './sources';
 import { InboxButton } from './InboxPanel';
 import { atSea, ships, shipsLoaded } from './ships';
+import { phone } from './sizeClass';
 
 const aboutOpen = signal(false);
 
@@ -98,22 +99,40 @@ function ResourceChips() {
   );
 }
 
-function SeaPills() {
-  const off = muted.value;
+function AtSea() {
   const cap = anyAutopilot.value ? config.value?.autopilot?.max_ships : undefined;
   const count = ships.value.filter(atSea).length;
+  if (!shipsLoaded.value) return null;
+  return (
+    <span class="pill pill-lit">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6FE3C8" stroke-width="2.4" stroke-linecap="round" aria-hidden="true">
+        <path d="M3 17c2 0 2-1.5 4.5-1.5S9.5 17 12 17s2.5-1.5 4.5-1.5S19 17 21 17" />
+        <path d="M6 13l6-9 6 9z" />
+      </svg>
+      {cap === undefined ? count : `${count} / ${cap}`} at sea
+    </span>
+  );
+}
+
+function SettingsButton() {
+  return (
+    <button type="button" id={GEAR_ID} class="press about-button" aria-label="Settings" onClick={openAppSettings}>
+      <span class="about-face">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F4EEDF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7" />
+        </svg>
+      </span>
+    </button>
+  );
+}
+
+function SeaPills() {
+  const off = muted.value;
   return (
     <>
       <InboxButton />
-      {shipsLoaded.value && (
-        <span class="pill pill-lit">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6FE3C8" stroke-width="2.4" stroke-linecap="round" aria-hidden="true">
-            <path d="M3 17c2 0 2-1.5 4.5-1.5S9.5 17 12 17s2.5-1.5 4.5-1.5S19 17 21 17" />
-            <path d="M6 13l6-9 6 9z" />
-          </svg>
-          {cap === undefined ? count : `${count} / ${cap}`} at sea
-        </span>
-      )}
+      <AtSea />
       <button type="button" class="pill-hit" aria-label={off ? 'Turn chime on' : 'Mute chime'} onClick={toggleSound}>
         <span class="pill-face sound">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4EEDF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -127,7 +146,25 @@ function SeaPills() {
   );
 }
 
+// The phone header (prototype :147-161): the mark, the name, how many are at sea and Settings, where Sound lives.
+function PhoneHeader() {
+  return (
+    <header class="app-header phone-header">
+      <div class="header-row">
+        <AdmiralMark size={34} />
+        <span class="app-name">Admiral</span>
+        <span class="phone-grow" />
+        <AtSea />
+        <SettingsButton />
+      </div>
+      <Banners />
+      <AppSettings />
+    </header>
+  );
+}
+
 export function Header() {
+  if (phone.value) return <PhoneHeader />;
   // An invalid config at startup has no count (no good config was ever loaded): the "Set up a fleet"
   // marina is the way in. After a good one, the last good config's count stays under the banner.
   const fleets = config.value?.fleets;
@@ -153,14 +190,7 @@ export function Header() {
               </span>
             </button>
           )}
-          <button type="button" id={GEAR_ID} class="press about-button" aria-label="Settings" onClick={openAppSettings}>
-            <span class="about-face">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F4EEDF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="3" />
-                <path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7" />
-              </svg>
-            </span>
-          </button>
+          <SettingsButton />
           <button type="button" class="press about-button" aria-label="About Admiral" onClick={() => (aboutOpen.value = true)}>
             <span class="about-face">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F4EEDF" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
