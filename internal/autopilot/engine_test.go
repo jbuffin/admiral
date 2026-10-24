@@ -35,13 +35,15 @@ type rig struct {
 	engine   *Engine
 
 	// The retro seams (#117); retro_test.go drives them.
-	lines   []outcomes.Line   // the outcome log the engine counts from
-	logs    []string          // what the engine logged
-	adds    []addCall         // every AddOrder call
-	addErr  func(n int) error // the error of the nth AddOrder call (1-based), nil for success
-	hold    bool              // Record keeps its writes until confirm
-	held    []heldWrite
-	minutes int // the clock of the log's lines
+	lines    []outcomes.Line   // the outcome log the engine counts from
+	logs     []string          // what the engine logged
+	adds     []addCall         // every AddOrder call
+	addErr   func(n int) error // the error of the nth AddOrder call (1-based), nil for success
+	hold     bool              // Record keeps its writes until confirm
+	held     []heldWrite
+	minutes  int    // the clock of the log's lines
+	unknown  bool   // the ship list is not known
+	afterLog func() // runs after Log has copied the lines, as a write confirmed during the read
 }
 
 func entry(max int) config.PanelAutopilot {
@@ -112,7 +114,14 @@ func (r *rig) newEngine() *Engine {
 			}
 			r.commit(w, nil)
 		},
-		Log:      func() []outcomes.Line { return slices.Clone(r.lines) },
+		Log: func() []outcomes.Line {
+			lines := slices.Clone(r.lines)
+			if r.afterLog != nil {
+				r.afterLog()
+			}
+			return lines
+		},
+		Known:    func() bool { return !r.unknown },
 		AddOrder: r.addOrder,
 		Logf:     func(format string, args ...any) { r.logs = append(r.logs, fmt.Sprintf(format, args...)) },
 		Now:      func() time.Time { return r.now },

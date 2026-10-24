@@ -144,6 +144,15 @@ func TestCountRuns(t *testing.T) {
 			b.ended("n")
 			return time.Time{}
 		}, map[Panel]int{sp: 0, {"r", "q"}: 1}},
+		{"a retro ship is told by its panel too, and a record with no id and no text matches nothing", func(b *logb) time.Time {
+			b.retro("s", "p", "r", "ro1")
+			b.launched("m", "r", "other", "ro1") // the id of the retro, in another panel of its source
+			b.ended("m")
+			b.add("retro_queued", "", map[string]any{"source": "s", "panel": "p", "resume_source": "r", "resume_panel": "q", "uncertain": true})
+			b.add("launched", "n", map[string]any{"source": "r", "panel": "q", "order_id": "ro9", "autopilot": true})
+			b.ended("n")
+			return time.Time{}
+		}, map[Panel]int{sp: 0, {"r", "other"}: 1, {"r", "q"}: 1}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

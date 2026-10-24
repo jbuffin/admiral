@@ -234,6 +234,7 @@ func serve(args []string) error {
 			}
 			return id, nil
 		},
+		Known: host.Known,
 		Now:   time.Now,
 		Store: apStore,
 		OnHot: sourceService.Notify,

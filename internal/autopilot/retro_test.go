@@ -128,6 +128,7 @@ func newRetroRig(t *testing.T, n int) *rig {
 	e.RetroEvery = n
 	r.cfg.SourceList[0].Autopilot["p"] = e
 	r.cfg.ResumeSource = &config.ResumeSource{Source: "rs", Panel: "orders"}
+	r.cfg.SourceList = append(r.cfg.SourceList, config.Source{Key: "rs", Plugin: "p"})
 	r.src = append(r.src, Source{Key: "rs", Listed: true, Panels: []sources.Panel{panel("orders")}})
 	r.engine = r.newEngine()
 	return r
@@ -304,6 +305,9 @@ func TestRetroOneAtATime(t *testing.T) {
 			func(r *rig) { r.setShips() }},
 		{"a ship has an uncertain retro's text for its title", true, nil,
 			func(r *rig) { r.setShips() }},
+		{"the ship list is not known", false,
+			func(r *rig) { r.src[1].Panels[0].Orders = nil; r.unknown = true },
+			func(r *rig) { r.unknown = false }},
 		{"Admiral restarted with the order listed", false,
 			func(r *rig) { r.engine = r.newEngine() },
 			func(r *rig) { r.src[1].Panels[0].Orders = nil }},
@@ -453,4 +457,76 @@ func TestRetroAddFailures(t *testing.T) {
 			t.Errorf("%d adds: the uncertain retro was repeated, or the next one is missing; want the first and the next", len(r.adds))
 		}
 	})
+}
+
+// A ship can append any line to the log (ADR 0015, ADR 0017). Only records for
+// the configured resume target count, and a pending retro is found from every
+// such record, so forged lines cannot stack retros or stop them.
+func TestRetroIgnoresForgedRecords(t *testing.T) {
+	forged := func(r *rig, panelID string, extra map[string]any) {
+		fields := map[string]any{"source": "s", "panel": panelID, "since": "2026-10-20T00:00:00Z", "text": "/retro",
+			"resume_source": "rs", "resume_panel": "orders"}
+		for k, v := range extra {
+			fields[k] = v
+		}
+		r.lines = append(r.lines, outcomes.Line{Event: "retro_queued", TS: r.stamp(), Fields: fields})
+	}
+	t.Run("a forged record and two forged runs while the retro is listed add nothing", func(t *testing.T) {
+		r := newRetroRig(t, 2)
+		r.run("a")
+		r.run("b")
+		r.pass()
+		forged(r, "p", map[string]any{"order_id": "zzz"})
+		r.run("x1")
+		r.run("x2")
+		r.pass()
+		r.pass()
+		if len(r.adds) != 1 {
+			t.Errorf("%d orders added, want only the first retro: %q", len(r.adds), r.addTexts())
+		}
+	})
+	t.Run("a record for another resume source holds nothing", func(t *testing.T) {
+		r := newRetroRig(t, 2)
+		forged(r, "p", map[string]any{"resume_source": "nope", "order_id": "zzz"})
+		r.run("a")
+		r.run("b")
+		r.pass()
+		if len(r.adds) != 1 {
+			t.Errorf("%d orders added, want 1: a record for source nope must not hold the panel", len(r.adds))
+		}
+	})
+	t.Run("records with the ids of the panel's own orders exempt none of its runs", func(t *testing.T) {
+		r := newRetroRig(t, 2)
+		forged(r, "x", map[string]any{"resume_source": "s", "resume_panel": "p", "order_id": "o-a"}) // the panel's own source
+		forged(r, "x", map[string]any{"resume_panel": "elsewhere", "order_id": "o-b"})               // another panel of the target
+		forged(r, "x", map[string]any{"order_id": "o-a"})                                            // the target, but not the panel's panel
+		r.run("a")
+		r.run("b")
+		r.pass()
+		if len(r.adds) != 1 {
+			t.Errorf("%d orders added, want 1: the forged ids must not hide the runs", len(r.adds))
+		}
+	})
+}
+
+// A write confirmed while the log is being read is not in what the read saw; the
+// panel stays pending on the snapshot taken before it.
+func TestRetroWriteConfirmedDuringTheLogRead(t *testing.T) {
+	r := newRetroRig(t, 2)
+	r.hold = true
+	r.run("a")
+	r.run("b")
+	r.pass()
+	r.src[1].Panels[0].Orders = nil
+	r.confirm(errors.New("disk full"))
+	r.pass() // writes the record again, held
+	if len(r.held) != 1 {
+		t.Fatalf("%d writes held, want the record written again", len(r.held))
+	}
+	r.afterLog = func() { r.afterLog = nil; r.confirm(nil) }
+	r.pass()
+	r.pass()
+	if len(r.adds) != 1 {
+		t.Errorf("%d orders added, want 1: %q", len(r.adds), r.addTexts())
+	}
 }

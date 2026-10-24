@@ -13,7 +13,6 @@ import (
 
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/inbox"
-	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/ships"
 )
@@ -53,6 +52,11 @@ func (e *Engine) retroStep(cfg *config.Config, list []ships.Ship, srcs map[strin
 		return
 	}
 	e.rewriteRetros()
+	// The ship list is empty while it is not known, so no ship can say a retro is
+	// still out there.
+	if e.Known != nil && !e.Known() {
+		return
+	}
 	type due struct {
 		panel Panel
 		every int
@@ -73,14 +77,32 @@ func (e *Engine) retroStep(cfg *config.Config, list []ships.Ship, srcs map[strin
 	if len(panels) == 0 {
 		return
 	}
-	counts := CountRuns(e.Log())
+	// The unconfirmed writes are taken before the log is read: a write confirmed
+	// after that is in the snapshot, though the read may have missed its line.
+	unwritten := e.unwritten()
+	log := e.Log()
+	if cfg.ResumeSource != nil {
+		log = ForTarget(log, *cfg.ResumeSource)
+	}
+	counts := CountRuns(log)
 	for _, d := range panels {
 		c := counts[d.panel]
-		if c.Runs < d.every || e.retroPending(d.panel, c, list, srcs) {
+		if c.Runs < d.every || unwritten[d.panel] || e.retroPending(cfg, c, list, srcs) {
 			continue
 		}
 		e.addRetro(d.panel, c, cfg.ResumeSource)
 	}
+}
+
+// unwritten is the panels whose retro_queued is not confirmed written.
+func (e *Engine) unwritten() map[Panel]bool {
+	e.retros.mu.Lock()
+	defer e.retros.mu.Unlock()
+	out := make(map[Panel]bool, len(e.retros.writes))
+	for p := range e.retros.writes {
+		out[p] = true
+	}
+	return out
 }
 
 // rewriteRetros writes again the records whose write failed.
@@ -131,36 +153,34 @@ func (e *Engine) retroWritten(p Panel, err error) {
 	}
 }
 
-// retroPending says the panel's last retro is not cleared: its record is not
-// confirmed, its order is still listed or its source has not listed yet, or a
-// ship of it exists in any status. The log carries the last two over a restart.
-func (e *Engine) retroPending(p Panel, c Count, list []ships.Ship, srcs map[string]Source) bool {
-	e.retros.mu.Lock()
-	_, unwritten := e.retros.writes[p]
-	e.retros.mu.Unlock()
-	if unwritten {
-		return true
-	}
-	r := c.Retro
-	if r == nil {
+// retroPending says one of the panel's retros is not cleared: its source has not
+// listed, or a retro's order is still listed, or a ship of it exists in any
+// status. Every retro of the panel is checked, not only the last, so a forged
+// record cannot clear the real one. The log, which carries them across a
+// restart, holds only records for the configured resume target (ForTarget).
+func (e *Engine) retroPending(cfg *config.Config, c Count, list []ships.Ship, srcs map[string]Source) bool {
+	target := cfg.ResumeSource
+	if target == nil || len(c.Retros) == 0 {
 		return false
 	}
-	src, ok := srcs[r.ResumeSource]
-	if !ok || !src.Listed {
-		return true
-	}
-	for _, pn := range src.Panels {
-		if pn.ID != r.ResumePanel {
-			continue
+	if slices.ContainsFunc(cfg.SourceList, func(s config.Source) bool { return s.Key == target.Source }) {
+		src, ok := srcs[target.Source]
+		if !ok || !src.Listed {
+			return true
 		}
-		for _, o := range pn.Orders {
-			if r.OrderID != "" && o.ID == r.OrderID || r.OrderID == "" && launcher.CleanTitle(o.Title) == r.Text {
-				return true
+		for _, pn := range src.Panels {
+			if pn.ID != target.Panel {
+				continue
+			}
+			for _, o := range pn.Orders {
+				if slices.ContainsFunc(c.Retros, func(r Retro) bool { return r.matches(o.ID, o.Title) }) {
+					return true
+				}
 			}
 		}
 	}
 	return slices.ContainsFunc(list, func(sh ships.Ship) bool {
-		return sh.Source == r.ResumeSource && (r.OrderID != "" && sh.OrderID == r.OrderID || r.OrderID == "" && sh.Title == r.Text)
+		return sh.Source == target.Source && slices.ContainsFunc(c.Retros, func(r Retro) bool { return r.matches(sh.OrderID, sh.Title) })
 	})
 }
 

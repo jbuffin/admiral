@@ -56,6 +56,9 @@ type Engine struct {
 	// Log is the outcome log, outcomes.Read of the home's outcomes directory; nil
 	// turns retro orders off.
 	Log func() []outcomes.Line
+	// Known says the ship list can be trusted (sessionhost.Host.Known). While it
+	// is not, the list is empty and the retro step adds nothing; nil means always.
+	Known func() bool
 	// AddOrder adds an order to a panel (sources.Service.AddOrder); nil turns
 	// retro orders off. An error that implements AddKind() inbox.AddKind says
 	// whether to try again; one that doesn't is final.
