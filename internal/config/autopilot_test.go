@@ -109,6 +109,35 @@ func TestAutopilotParseErrors(t *testing.T) {
 	}
 }
 
+// A panel's auto_merge (#120) is the merge method its autopilot ships may enable
+// auto-merge with. Absent is off; anything but the three methods is an error.
+func TestAutopilotAutoMerge(t *testing.T) {
+	for _, m := range []string{"squash", "merge", "rebase"} {
+		cfg, err := config.Parse([]byte(apConfig(``, `{"p":`+apEntry(`"auto_merge":"`+m+`"`)+`}`)))
+		if err != nil {
+			t.Errorf("auto_merge %q: %v, want it to parse", m, err)
+			continue
+		}
+		src, _ := cfg.Source("s")
+		if got := src.Autopilot["p"].AutoMerge; got != m {
+			t.Errorf("auto_merge %q parsed as %q", m, got)
+		}
+	}
+	cfg, err := config.Parse([]byte(apConfig(``, `{"p":`+apEntry(``)+`}`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if src, _ := cfg.Source("s"); src.Autopilot["p"].AutoMerge != "" {
+		t.Errorf("auto_merge with no key = %q, want off (empty)", src.Autopilot["p"].AutoMerge)
+	}
+	for _, v := range []string{`""`, `"Squash"`, `"ff"`, `"squash,merge"`, `true`, `1`, `["squash"]`} {
+		_, err := config.Parse([]byte(apConfig(``, `{"p":`+apEntry(`"auto_merge":`+v)+`}`)))
+		if err == nil || !strings.Contains(err.Error(), "sources.s.autopilot.p.auto_merge") {
+			t.Errorf("auto_merge %s: error %v, want one naming sources.s.autopilot.p.auto_merge", v, err)
+		}
+	}
+}
+
 // The five UI writes rebuild the whole sources object through SourcesJSON. The
 // autopilot object must come back as the engineer wrote it: no defaults added,
 // key order kept.

@@ -289,7 +289,7 @@ func (e *Engine) Pass() {
 				e.endWait(def.Key, p.ID, o.ID)
 				req := launcher.Request{Fleet: entry.Fleet, Harness: entry.Harness, Dir: dir,
 					Skill:  launcher.Skill{Kind: entry.Skill.Kind, Name: entry.Skill.Name},
-					Source: def.Key, OrderID: o.ID, Panel: p.ID, OriginSource: cell[0], OriginPanel: cell[1], Autopilot: true, LowStakes: entry.LowStakes,
+					Source: def.Key, OrderID: o.ID, Panel: p.ID, OriginSource: cell[0], OriginPanel: cell[1], Autopilot: true, LowStakes: entry.LowStakes, AutoMerge: entry.AutoMerge,
 					ExtraArgs: slices.Clone(entry.Args), Resources: slices.Clone(entry.Resources)}
 				sh, lerr := e.Launch(req)
 				release() // a launched ship is counted from the ship list now

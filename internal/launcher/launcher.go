@@ -49,6 +49,7 @@ type Request struct {
 	// and the panel's args for the harness.
 	Autopilot bool     `json:"-"`
 	LowStakes string   `json:"-"`
+	AutoMerge string   `json:"-"` // squash, merge or rebase; the guard allows gh pr merge --auto with it
 	ExtraArgs []string `json:"-"`
 	// Resources are the locked resources the ship holds while it is underway
 	// or needs you (#118), recorded on the session. Set by autopilot only; a
@@ -213,17 +214,26 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		return nil, err
 	}
 
-	// Admiral owns both names: a hand launch has neither, even if the fleet's
-	// env or Admiral's own environment (which the tmux server inherits) sets them.
+	// Admiral owns these names: a hand launch has none of them, and an autopilot
+	// launch has ADMIRAL_AUTO_MERGE only when its panel names a method, even if
+	// the fleet's env or Admiral's own environment (which the tmux server
+	// inherits) sets them.
 	var unset []string
+	ours := map[string]string{}
 	if req.Autopilot {
-		env["ADMIRAL_AUTOPILOT"] = "1"
-		env["ADMIRAL_LOW_STAKES"] = req.LowStakes
-	} else {
-		for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES"} {
-			delete(env, k)
-			unset = append(unset, k)
+		ours["ADMIRAL_AUTOPILOT"] = "1"
+		ours["ADMIRAL_LOW_STAKES"] = req.LowStakes
+		if req.AutoMerge != "" {
+			ours["ADMIRAL_AUTO_MERGE"] = req.AutoMerge
 		}
+	}
+	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE"} {
+		if v, ok := ours[k]; ok {
+			env[k] = v
+			continue
+		}
+		delete(env, k)
+		unset = append(unset, k)
 	}
 
 	// A Commodore on Claude compacts at 200k tokens; only the fleet's own env

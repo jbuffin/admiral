@@ -64,6 +64,9 @@ func (c guardTestCase) payload(t *testing.T) string {
 	t.Helper()
 	cwd := t.TempDir()
 	for name, content := range c.files {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(cwd, name)), 0o755); err != nil {
+			t.Fatal(err)
+		}
 		if err := os.WriteFile(filepath.Join(cwd, name), []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -168,7 +171,7 @@ func guardTestCases() []guardTestCase {
 		review("bash reading a here-string", `bash <<< 'gh pr review 12 -a'`),
 		review("a backslash delimiter hides nothing", "cat <<\\EOF\nx\nEOF\ngh pr review 12 --approve"),
 		b("bash reading a pipe falls back to the text rule", `echo 'gh pr review 12 --approve' | bash`, wantRuleUnparsed),
-		b("bash running a file falls back to the text rule", `bash review-approve.sh`, wantRuleUnparsed),
+		b("bash running a file that does not exist", `bash review-approve.sh`, "shell_script"),
 		review("a program from a substitution", `$(which gh) pr review 12 --approve`),
 		review("a program from a variable", `GH=gh; $GH pr review 12 -a`),
 		b("api endpoint with a fragment", `gh api 'repos/o/r/pulls/12/reviews#x' -f event=APPROVE`, wantRuleGhApiEvent),
@@ -213,7 +216,7 @@ func guardTestCases() []guardTestCase {
 		review("zsh noglob", `noglob gh pr review 1 -a`),
 		review("zsh =gh", `=gh pr review 1 -a`),
 		b("a pipe into bash, short flag", `echo 'gh pr review 1 -a' | bash`, wantRuleUnparsed),
-		b("a process substitution into bash, short flag", `bash <(echo 'gh pr review 1 -a')`, wantRuleUnparsed),
+		b("a process substitution into bash, short flag", `bash <(echo 'gh pr review 1 -a')`, "shell_script"),
 		b("a command whose output is the program, short flag", `$(echo gh pr review 1 -a)`, wantRuleUnparsed),
 
 		// Round 4: the text rule only where a call could hide a submit.
@@ -224,7 +227,7 @@ func guardTestCases() []guardTestCase {
 		b("pr view piped into jq -r", `gh pr view "$PR" --json reviews | jq -r '.reviews[].state'`, wantAllowed),
 		b("pr review --comment with an unquoted body", `gh pr review 1 --comment -b $M`, wantAllowed),
 		b("graphql addPullRequestReview, only the pull request in a variable", `gh api graphql -f query='mutation($id:ID!){addPullRequestReview(input:{pullRequestId:$id}){clientMutationId}}' -f id="$PR_ID"`, wantAllowed),
-		b("graphql mutation with COMMENT and an expansion elsewhere", `gh api graphql -f query="mutation{addPullRequestReview(input:{pullRequestId:\"$ID\",event:COMMENT}){clientMutationId}}"`, wantAllowed),
+		b("graphql mutation with COMMENT and an expansion elsewhere (refused since #120: pass $ID as a variable)", `gh api graphql -f query="mutation{addPullRequestReview(input:{pullRequestId:\"$ID\",event:COMMENT}){clientMutationId}}"`, "graphql_merge"),
 		b("graphql event bound to a variable from an expansion", `gh api graphql -f query='mutation($e:PullRequestReviewEvent!,$id:ID!){addPullRequestReview(input:{pullRequestId:$id,event:$e}){clientMutationId}}' -f e="$E" -f id="$PR_ID"`, wantRuleGraphqlReview),
 		b("graphql event position is an expansion", `gh api graphql -f query="mutation{submitPullRequestReview(input:{pullRequestReviewId:\"x\",event:$E}){clientMutationId}}"`, wantRuleGraphqlReview),
 		b("an expansion in single quotes of a -c script (event)", `E=APPROVE; bash -c "gh api repos/o/r/pulls/1/reviews -f event='$E'"`, wantRuleGhApiEvent),
@@ -250,17 +253,17 @@ func guardTestCases() []guardTestCase {
 		b("bash -c of a variable", `C='gh pr review 1 --approve'; bash -c "$C"`, wantRuleUnparsed),
 		b("a variable piped into bash", `C='gh pr review 1 --approve'; echo "$C" | bash`, wantRuleUnparsed),
 		b("a heredoc of a variable fed to bash", "C='gh pr review 1 --approve'\nbash <<EOF\n$C\nEOF", wantRuleUnparsed),
-		b("a script written to a file, then run", "cat > /tmp/r.sh <<'EOF'\ngh pr review 1 --approve\nEOF\nbash /tmp/r.sh", wantRuleUnparsed),
+		b("a script written to a file, then run", "cat > /tmp/r.sh <<'EOF'\ngh pr review 1 --approve\nEOF\nbash /tmp/r.sh", "shell_script"),
 		b("a graphql query set in a variable", "QUERY='mutation { submitPullRequestReview(input: {pullRequestReviewId: \"PRR_x\", event: APPROVE}) { clientMutationId } }'\ngh api graphql -f query=\"$QUERY\"", wantRuleGraphqlReview),
-		b("pr create with review and -race, then a script", "gh pr create --title t --body \"$(cat <<'EOF'\nReady for review. go test -race ./...\nEOF\n)\"; bash scripts/check.sh", wantAllowed),
-		b("a harmless query in a variable, after a body that mentions review", "Q='query{viewer{login}}'; gh pr create --title t --body \"$(cat <<'EOF'\nReady for review.\n- go test -race ./...\nEOF\n)\"; gh api graphql -f query=\"$Q\"", wantAllowed),
-		b("pr review --comment then a script", `gh pr review $PR --comment -b "$(cat body.md)"; bash scripts/lint.sh`, wantAllowed),
+		b("pr create with review and -race, then a script (the script file does not exist)", "gh pr create --title t --body \"$(cat <<'EOF'\nReady for review. go test -race ./...\nEOF\n)\"; bash scripts/check.sh", "shell_script"),
+		b("a harmless query in a variable, after a body that mentions review (refused since #120: the guard cannot see a variable)", "Q='query{viewer{login}}'; gh pr create --title t --body \"$(cat <<'EOF'\nReady for review.\n- go test -race ./...\nEOF\n)\"; gh api graphql -f query=\"$Q\"", "graphql_merge"),
+		b("pr review --comment then a script (the script file does not exist)", `gh pr review $PR --comment -b "$(cat body.md)"; bash scripts/lint.sh`, "shell_script"),
 		b("a path with an expansion after a body that asks for review and approval", `gh pr create --title t --body 'Please review and approve when ready'; $HOME/bin/lint`, wantAllowed),
 		b("a script name with an expansion after the same body", `gh pr create --title t --body 'Please review and approve when ready'; ./scripts/$TASK.sh`, wantAllowed),
 		b("a graphql query that is an expansion between newlines", "QUERY='\nmutation { submitPullRequestReview(input: {pullRequestReviewId: \"PRR_x\", event: APPROVE}) { clientMutationId } }'\ngh api graphql -f query=\"\n$QUERY\n\"", wantRuleGraphqlReview),
 		b("pr view of APPROVED reviews", `gh pr view $PR --json reviews --jq '.reviews[] | select(.state=="APPROVED")'`, wantAllowed),
 		// Known gap: the whole line has no short flags, or every line with review and -r would be refused.
-		b("a program set in a variable, short flag (known gap)", `CMD='gh pr review 1 -a'; $CMD`, wantAllowed),
+		b("a program set in a variable, short flag", `CMD='gh pr review 1 -a'; $CMD`, "shell_script"),
 
 		// MCP tools.
 		mcp("mcp create review APPROVE", "mcp__github__create_pull_request_review", map[string]any{"event": "APPROVE"}, wantRuleMcpReview),
@@ -399,14 +402,16 @@ func TestGuardReason(t *testing.T) {
 // found 88 s at this size, past Claude Code's hook timeout).
 func TestGuardDecidesNestedSubstitutionsFast(t *testing.T) {
 	const n = 40000
-	cmd := strings.Repeat("$(", n) + "true" + strings.Repeat(")", n) + "; gh api repos/o/r/pulls/1/reviews/2/events --input ev.json"
+	cmd := "echo " + strings.Repeat("$(", n) + "true" + strings.Repeat(")", n) + "; gh api repos/o/r/pulls/1/reviews/2/events --input ev.json"
 	deny := guardTestCase{tool: "Bash", input: bashInput(cmd)}
 	start := time.Now()
 	err, _, _ := runGuardTest(t, deny.payload(t), "1")
 	took := time.Since(start)
 	var denied *GuardDenied
-	if !errors.As(err, &denied) || denied.Rule != wantRuleGhApiSubmit {
-		t.Errorf("Guard = %v, want a *GuardDenied for rule %s", err, wantRuleGhApiSubmit)
+	// Each level is a command held in an expansion, which is refused as soon as it is
+	// reached (shell_script); the submit after it would be refused too.
+	if !errors.As(err, &denied) {
+		t.Errorf("Guard = %v, want a *GuardDenied", err)
 	}
 	if took > time.Second {
 		t.Errorf("Guard took %v on %d nested substitutions, want well under a second", took, n)
