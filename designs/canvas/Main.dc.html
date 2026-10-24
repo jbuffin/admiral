@@ -68,6 +68,16 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 .caret{animation:blink 1s steps(1) infinite}
 .ghost{pointer-events:none;transform:rotate(-5deg)}
 .adm input::placeholder{color:#6B7F92}
+.mark-btn{position:absolute;background:none;border:0;padding:0;width:44px;height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer;touch-action:manipulation}
+.crew-still{display:block}
+.mark-tip{position:absolute;z-index:8;white-space:nowrap;pointer-events:none;padding:5px 10px;border-radius:10px;border:2.5px solid #14304A;background:#FFFDF6;box-shadow:0 3px 0 #14304A;font-size:12px;color:#14304A;animation:pop .35s cubic-bezier(.3,1.6,.5,1) both}
+.fl-item.attn-row{background:#FFD9CC !important;border-color:#C2412A !important}
+.fl-mark{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:12px;border:2px dashed #9DB8CF;background:#E4D6B8;font-size:12.5px;color:#14304A}
+.b-menu{position:absolute;right:0;top:50px;z-index:9;min-width:190px;display:flex;flex-direction:column;padding:4px;border-radius:14px;border:2.5px solid #14304A;background:#FFFDF6;box-shadow:0 3px 0 #14304A}
+.b-menu button{min-height:44px;padding:0 12px;border:0;border-radius:8px;background:none;text-align:left;font-weight:600;color:#14304A}
+.b-menu button:hover:not(:disabled){background:#FFF0B8}
+.b-menu button:disabled{opacity:.5;cursor:default}
+
 @keyframes sailin{0%{transform:translateX(420px) scale(.5);opacity:0}60%{opacity:1}100%{transform:none;opacity:1}}
 @keyframes bob{0%,100%{transform:translateY(0) rotate(-1.8deg)}50%{transform:translateY(-5px) rotate(1.8deg)}}
 @keyframes shake{0%,46%,100%{transform:rotate(0)}6%{transform:translateX(-4px) rotate(-7deg)}14%{transform:translateX(4px) rotate(7deg)}22%{transform:translateX(-3px) rotate(-4deg)}30%{transform:translateX(3px) rotate(4deg)}38%{transform:translateX(-1px) rotate(-1deg)}}
@@ -90,7 +100,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 @keyframes ibsheet{0%{transform:translateY(100%)}100%{transform:none}}
 @keyframes ibfold{0%{transform:scaleY(1.6);opacity:.2}100%{transform:none;opacity:1}}
 @keyframes ibslide{0%{transform:none;opacity:1;max-height:90px}55%{transform:translateX(70px);opacity:0;max-height:90px}100%{transform:translateX(70px);opacity:0;max-height:0;margin-top:-6px}}
-@media (prefers-reduced-motion: reduce){.sail-in,.bob,.attn,.wave,.frantic,.pop,.ping,.drift,.fl-item,.caret,.ib-drawer,.ib-sheet,.ib-fold,.ib-wrap.ib-slide{animation:none !important}}
+@media (prefers-reduced-motion: reduce){.sail-in,.bob,.attn,.wave,.frantic,.pop,.ping,.drift,.fl-item,.caret,.mark-tip,.ib-drawer,.ib-sheet,.ib-fold,.ib-wrap.ib-slide{animation:none !important}}
 </style>
 </helmet>
 <div class="adm" onPointerMove="{{onMove}}" onPointerUp="{{onUp}}" onPointerCancel="{{onCancel}}" style="min-height: 100vh; position: relative; display: flex; flex-direction: column; background-color: #14304A; color: #14304A; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-size: 15px">
@@ -217,25 +227,54 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <div class="{{ship.outerCls}}" style="{{ship.pos}}" onPointerDown="{{ship.down}}">
 <sc-for list="{{ship.subs}}" as="sub" hint-placeholder-count="0">
 <div class="{{sub.cls}}" style="{{sub.pos}}">
-<button type="button" class="sub-btn" onClick="{{sub.open}}" aria-label="{{sub.aria}}">
-<span class="bob" style="display: block; animation-delay: {{sub.delay}}">
-<svg width="52" height="46" viewBox="0 0 64 56" fill="none" aria-hidden="true">
+<button type="button" class="sub-btn" onClick="{{sub.open}}" aria-label="{{sub.aria}}" style="{{sub.btnStyle}}">
+<span class="{{sub.motion}}" style="display: block; position: relative; animation-delay: {{sub.delay}}">
+<svg width="{{sub.w}}" height="{{sub.h}}" viewBox="0 0 64 56" fill="none" aria-hidden="true">
 <path d="M4 50 q7 -5 14 0 t14 0 t14 0 t14 0" stroke="#DDF7F3" stroke-width="2.5" stroke-linecap="round"></path>
 <path d="M4 37 L60 37 L54 46 Q46 51 32 51 L18 51 Q8 49 4 37 Z" fill="#A0613A" stroke="#14304A" stroke-width="2.5" stroke-linejoin="round"></path>
 <path d="M6 40 L59 40 L57.5 44.5 L8 44.5 Z" fill="{{sub.stripe}}"></path>
 <path d="M30 37 L30 6" stroke="#14304A" stroke-width="3" stroke-linecap="round"></path>
+<sc-if value="{{sub.sailUp}}" hint-placeholder-val="{{ true }}">
 <path d="M32 9 L32 33 L52 33 Z" fill="#FFF6E3" stroke="#14304A" stroke-width="2.2" stroke-linejoin="round"></path>
 <path d="M28 15 L28 33 L19 33 Z" fill="#FFF6E3" stroke="#14304A" stroke-width="2" stroke-linejoin="round"></path>
-<path class="flag wave" d="M31 3 L43 6 L31 10 Z" fill="{{sub.flag}}" stroke="#14304A" stroke-width="1.5" stroke-linejoin="round"></path>
+</sc-if>
+<sc-if value="{{sub.roleSail}}" hint-placeholder-val="{{ false }}">
+<path d="M32 8 L54 11 L55 33 L32 33 Z" fill="#FFF6E3" stroke="#14304A" stroke-width="2.2" stroke-linejoin="round"></path>
+<path d="M28 17 L28 33 L20 33 Z" fill="#FFF6E3" stroke="#14304A" stroke-width="2" stroke-linejoin="round"></path>
+<path d="{{sub.glyph}}" fill="none" stroke="#14304A" stroke-width="{{sub.glyphW}}" stroke-linecap="round" stroke-linejoin="round"></path>
+</sc-if>
+<sc-if value="{{sub.anchored}}" hint-placeholder-val="{{ false }}">
+<path d="M32 27 Q42 29 46 33 L32 33 Z" fill="#E4D6B8" stroke="#14304A" stroke-width="2" stroke-linejoin="round"></path>
+<path d="M22 31 L48 31" stroke="#14304A" stroke-width="2.4" stroke-linecap="round"></path>
+</sc-if>
+<path class="{{sub.flagCls}}" d="M31 3 L43 6 L31 10 Z" fill="{{sub.flag}}" stroke="#14304A" stroke-width="1.5" stroke-linejoin="round"></path>
 <rect x="4" y="24" width="13" height="13" rx="2" fill="{{sub.bot}}" stroke="#14304A" stroke-width="2"></rect>
 <rect x="7" y="28" width="2.5" height="2.5" fill="#14304A"></rect>
 <rect x="11.5" y="28" width="2.5" height="2.5" fill="#14304A"></rect>
 </svg>
+<sc-if value="{{sub.attn}}" hint-placeholder-val="{{ false }}">
+<span class="ping" style="{{sub.badgeStyle}}; background-color: #FF7A59; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; color: #14304A">!</span>
+</sc-if>
+<sc-if value="{{sub.anchored}}" hint-placeholder-val="{{ false }}">
+<span style="{{sub.badgeStyle}}; background-color: #C2412A"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#FFFDF6" stroke-width="5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></span>
+</sc-if>
 </span>
-<span style="font-size: 10.5px; font-weight: 700; color: #14304A; background-color: #DDF7F3; border: 1.5px solid #14304A; border-radius: 6px; padding: 0 5px; margin-top: -4px">{{sub.name}}</span>
+<sc-if value="{{sub.showName}}" hint-placeholder-val="{{ true }}">
+<span style="{{sub.tagStyle}}">{{sub.name}}</span>
+</sc-if>
 </button>
 </div>
 </sc-for>
+<sc-for list="{{ship.marks}}" as="m" hint-placeholder-count="0">
+<button type="button" class="mark-btn" style="{{m.pos}}" onClick="{{m.tap}}" aria-label="{{m.aria}}">
+<sc-if value="{{m.more}}" hint-placeholder-val="{{ false }}">
+<span style="min-width: 24px; height: 20px; padding: 0 5px; border-radius: 999px; background-color: #FFFDF6; border: 2px solid #14304A; font-size: 10.5px; font-weight: 800; color: #14304A; display: inline-flex; align-items: center; justify-content: center">{{m.text}}</span>
+</sc-if>
+</button>
+</sc-for>
+<sc-if value="{{ship.hasTip}}" hint-placeholder-val="{{ false }}">
+<span class="mark-tip" style="{{ship.tip.pos}}"><b>{{ship.tip.title}}</b> · {{ship.tip.sub}}</span>
+</sc-if>
 <button type="button" class="ship-btn" onClick="{{ship.open}}" aria-label="{{ship.aria}}">
 <span class="{{ship.innerCls}}" style="display: block; position: relative; animation-delay: {{ship.delay}}">
 <svg width="100" height="96" viewBox="0 0 100 96" fill="none" aria-hidden="true">
@@ -260,6 +299,12 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <circle cx="38" cy="79.5" r="2.6" fill="#FFF6E3" stroke="#14304A" stroke-width="1.8"></circle>
 <circle cx="54" cy="79.5" r="2.6" fill="#FFF6E3" stroke="#14304A" stroke-width="1.8"></circle>
 <circle cx="70" cy="79.5" r="2.6" fill="#FFF6E3" stroke="#14304A" stroke-width="1.8"></circle>
+<sc-for list="{{ship.deckBots}}" as="b" hint-placeholder-count="0">
+<g transform="{{b.tf}}"><rect x="0" y="0" width="8.5" height="8.5" rx="1.5" fill="{{b.color}}" stroke="#14304A" stroke-width="1.6"></rect><rect x="2" y="3" width="1.6" height="1.6" fill="#14304A"></rect><rect x="5" y="3" width="1.6" height="1.6" fill="#14304A"></rect></g>
+</sc-for>
+<sc-if value="{{ship.hasDeckMore}}" hint-placeholder-val="{{ false }}">
+<rect x="10" y="43" width="17" height="9" rx="4.5" fill="#FFFDF6" stroke="#14304A" stroke-width="1.4"></rect><text x="18.5" y="50" text-anchor="middle" font-family="Archivo, sans-serif" font-weight="800" font-size="7" fill="#14304A">{{ship.deckMore}}</text>
+</sc-if>
 </svg>
 <sc-if value="{{ship.attn}}" hint-placeholder-val="{{ false }}">
 <span class="ping" style="position: absolute; left: 4px; top: -8px; width: 30px; height: 30px; border-radius: 50%; background-color: #FF7A59; border: 2.5px solid #14304A; display: flex; align-items: center; justify-content: center; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 18px; color: #14304A">!</span>
@@ -359,7 +404,8 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <path d="M4 37 L60 37 L54 46 Q46 51 32 51 L18 51 Q8 49 4 37 Z" fill="#A0613A" stroke="#14304A" stroke-width="2.5" stroke-linejoin="round"></path>
 <path d="M6 40 L59 40 L57.5 44.5 L8 44.5 Z" fill="{{agent.stripe}}"></path>
 <path d="M30 37 L30 6" stroke="#14304A" stroke-width="3" stroke-linecap="round"></path>
-<path d="M32 9 L32 33 L52 33 Z" fill="#FFFDF6" stroke="#14304A" stroke-width="2.2" stroke-linejoin="round"></path>
+<sc-if value="{{agent.plainSail}}" hint-placeholder-val="{{ true }}"><path d="M32 9 L32 33 L52 33 Z" fill="#FFFDF6" stroke="#14304A" stroke-width="2.2" stroke-linejoin="round"></path></sc-if>
+<sc-if value="{{agent.roleSail}}" hint-placeholder-val="{{ false }}"><path d="M32 8 L54 11 L55 33 L32 33 Z" fill="#FFFDF6" stroke="#14304A" stroke-width="2.2" stroke-linejoin="round"></path><path d="{{agent.glyph}}" fill="none" stroke="#14304A" stroke-width="{{agent.glyphW}}" stroke-linecap="round" stroke-linejoin="round"></path></sc-if>
 <path d="M31 3 L43 6 L31 10 Z" fill="{{agent.flag}}" stroke="#14304A" stroke-width="1.5"></path>
 <rect x="4" y="24" width="13" height="13" rx="2" fill="{{agent.bot}}" stroke="#14304A" stroke-width="2"></rect>
 </svg>
@@ -368,8 +414,20 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 15px; line-height: 1.15">{{agent.label}}</span>
 <span style="font-size: 12px; color: #3E5870">{{agent.role}}</span>
 </span>
+<sc-if value="{{agent.attn}}" hint-placeholder-val="{{ false }}">
+<span class="ping" style="margin-left: auto; flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%; background-color: #FF7A59; border: 2.5px solid #14304A; display: flex; align-items: center; justify-content: center; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 14px">!</span>
+</sc-if>
+<sc-if value="{{agent.anchored}}" hint-placeholder-val="{{ false }}">
+<span style="margin-left: auto; flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%; background-color: #C2412A; border: 2.5px solid #14304A; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FFFDF6" stroke-width="4.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></span>
+</sc-if>
 </button>
 </sc-for>
+<sc-if value="{{bridge.hasMarks}}" hint-placeholder-val="{{ false }}">
+<span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 13px; color: #FFF6E3; padding: 6px 4px 0">Subagents · {{bridge.markCount}} <span style="font-weight: 500; opacity: .8">· no terminal</span></span>
+<sc-for list="{{bridge.marks}}" as="m" hint-placeholder-count="2">
+<div class="fl-mark" role="note"><svg width="18" height="18" viewBox="0 0 22 26" fill="none" aria-hidden="true"><circle cx="11" cy="15" r="8" fill="#FFFDF6" stroke="#14304A" stroke-width="2.2"></circle><path d="M3.6 13 L18.4 13 L18.6 17 L3.4 17 Z" fill="{{m.stripe}}"></path></svg><b>{{m.type}}</b><span style="margin-left: auto; color: #3E5870">{{m.age}}</span></div>
+</sc-for>
+</sc-if>
 </nav>
 
 <section aria-label="Attached terminal" style="flex: 999 1 420px; min-width: 0; min-height: 560px; display: flex; flex-direction: column; border: 3px solid #14304A; border-radius: 20px; overflow: hidden; background-color: #0E2235; box-shadow: 0 6px 0 #0B1F33">
@@ -380,6 +438,19 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <span style="font-size: 13px; color: #3E5870">{{bridge.ship.harness}} · {{bridge.ship.fleetName}} · {{bridge.ship.skill}} · {{bridge.ship.task.id}} {{bridge.ship.task.title}}</span>
 </div>
 <span style="{{bridge.statusStyle}}">{{bridge.statusText}}</span>
+<sc-if value="{{bridge.isCrew}}" hint-placeholder-val="{{ false }}">
+<span style="position: relative">
+<button type="button" class="press" onClick="{{toggleBMenu}}" aria-label="More for {{bridge.focusName}}" aria-haspopup="menu" aria-expanded="{{bMenuOpen}}" style="width: 44px; height: 44px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="#14304A" aria-hidden="true"><circle cx="5" cy="12" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="19" cy="12" r="2"></circle></svg></button>
+<sc-if value="{{bMenuOpen}}" hint-placeholder-val="{{ false }}">
+<div class="b-menu" role="menu">
+<sc-if value="{{bridge.isCrew}}" hint-placeholder-val="{{ false }}">
+<button type="button" role="menuitem" onClick="{{closeCrew}}" disabled="{{bridge.crewLive}}">Close crew boat</button>
+<sc-if value="{{bridge.crewLive}}" hint-placeholder-val="{{ false }}"><span style="padding: 0 12px 8px; font-size: 11.5px; color: #3E5870; max-width: 220px">Still working. Its ship's skill closes it, or it anchors when its harness exits.</span></sc-if>
+</sc-if>
+</div>
+</sc-if>
+</span>
+</sc-if>
 <button type="button" class="press" onClick="{{closeBridge}}" aria-label="Close terminal and return to open water" style="width: 44px; height: 44px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
 </div>
 <div style="flex: 1 1 auto; min-height: 0; overflow: auto; padding: 16px 18px 8px; display: flex; flex-direction: column; gap: 6px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13.5px; line-height: 1.55">
@@ -395,6 +466,10 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </sc-if>
 </div>
 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; background-color: #14304A; border-top: 3px solid #0B1F33">
+<sc-if value="{{bridge.crewAnchored}}" hint-placeholder-val="{{ false }}">
+<span style="flex: 1 1 auto"></span>
+<span style="font-size: 12px; color: #9DB8CF">This teammate's harness exited. Close its crew boat from ⋯.</span>
+</sc-if>
 <sc-if value="{{bridge.anchored}}" hint-placeholder-val="{{ false }}">
 <button type="button" class="press" onClick="{{dismiss}}" style="height: 40px; padding: 0 14px; border-radius: 10px; border: 2.5px solid #0B1F33; background-color: #FFF6E3; color: #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 14px; box-shadow: 0 3px 0 #0B1F33">Dismiss</button>
 <span style="flex: 1 1 auto"></span>
@@ -412,6 +487,23 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </div>
 </sc-if>
 </main>
+<sc-if value="{{hasConfirm}}" hint-placeholder-val="{{ false }}">
+<div style="position: fixed; inset: 0; z-index: 40; background-color: rgba(11,31,51,.55); display: flex; align-items: center; justify-content: center; padding: 16px">
+<div role="alertdialog" aria-labelledby="adm-dismiss-t" aria-describedby="adm-dismiss-d" class="pop" style="width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 20px; border: 3px solid #14304A; background-color: #FFF6E3; box-shadow: 0 6px 0 #0B1F33">
+<span id="adm-dismiss-t" style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 20px">Dismiss {{confirm.ship}}?</span>
+<span id="adm-dismiss-d" style="font-size: 14px; line-height: 1.45; color: #14304A"><b>{{confirm.count}}</b> {{confirm.rest}}</span>
+<div style="display: flex; flex-wrap: wrap; gap: 6px">
+<sc-for list="{{confirm.crew}}" as="c" hint-placeholder-count="2">
+<span style="font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; border: 2px solid #14304A; background-color: {{c.bg}}">{{c.name}} · {{c.state}}</span>
+</sc-for>
+</div>
+<div style="display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 4px">
+<button type="button" class="press" onClick="{{cancelConfirm}}" style="height: 44px; padding: 0 16px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFDF6; font-weight: 700; box-shadow: 0 3px 0 #14304A">Keep it</button>
+<button type="button" class="press" onClick="{{confirmDismiss}}" style="height: 44px; padding: 0 16px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FF7A59; color: #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; box-shadow: 0 3px 0 #14304A">Dismiss ship and crew</button>
+</div>
+</div>
+</div>
+</sc-if>
 
 <sc-if value="{{inboxOpen}}" hint-placeholder-val="{{ true }}">
 <aside aria-label="Needs you inbox" role="{{inbox.role}}" aria-modal="{{inbox.modal}}" tabindex="-1" class="{{inbox.cls}}" style="{{inbox.style}}">
@@ -672,7 +764,7 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"scene":{"editor":"enum","options":["harbor","launch","bridge","tablet","inbox","inbox-bridge","inbox-empty"],"default":"harbor"},"$preview":{"width":1440,"height":900}}'>
+<script type="text/x-dc" data-dc-script data-props='{"scene":{"editor":"enum","options":["harbor","launch","bridge","tablet","inbox","inbox-bridge","inbox-empty","crew","crew-bridge","crew-attn","crew-dismiss"],"default":"harbor"},"$preview":{"width":1440,"height":900}}'>
 class Component extends DCLogic {
   D() {
     if (this._d) return this._d;
@@ -723,12 +815,11 @@ class Component extends DCLogic {
     const BOTS = ['#7FC8FF', '#FFC23D', '#9BE08A', '#FF9A7A', '#C9B6FF', '#FFF6E3', '#6FE3C8'];
     const NAMES = ['Saltpaw', 'Morning Tern', 'Brass Kettle', 'Little Bramble', "Gull's Errand", 'Tidecaller', 'Jib & Jolly', 'Kelpie', 'Sea Biscuit', 'Lantern Fish', 'Puffin Post'];
     const SLOTS = {
-      work: [[8, 11], [38, 9], [66, 13], [20, 30], [50, 28], [78, 32]],
-      home: [[8, 59], [38, 57], [66, 61], [20, 78], [50, 76], [78, 80]]
+      work: [[14, 11], [40, 9], [66, 13], [24, 30], [52, 28], [78, 32]],
+      home: [[14, 59], [40, 57], [66, 61], [24, 78], [52, 76], [78, 80]]
     };
-    const SUBPOS = [[-30, 78], [84, 74], [-40, 18], [92, 14]];
     const DOCKY = { 3: [56, 108, 160], 2: [80, 140] };
-    this._d = { H, F, SRC, T, SKILLS, BOTS, NAMES, SLOTS, SUBPOS, DOCKY };
+    this._d = { H, F, SRC, T, SKILLS, BOTS, NAMES, SLOTS, DOCKY };
     return this._d;
   }
 
@@ -769,20 +860,57 @@ class Component extends DCLogic {
     return out;
   }
 
+  // A ship's `subs` are its teammates (crew boats, boarded from the flotilla); `state` is
+  // working, attention or anchored, and `role` is what `admiral crew launch --role` records.
+  // Its `marks` are the subagents the harness runs, which have no terminal.
   initialShips() {
     const B = this.D().BOTS;
+    const min = (m) => Date.now() - m * 60000;
     return [
       { id: 's1', name: 'Saltpaw', task: { id: 'MOB-1172', title: 'Offline queue retries' }, yard: 'work:claude', skill: 'Commodore', status: 'working', bot: B[0],
-        subs: [{ id: 's1-a', name: 'planner', job: 'Break the task into steps', bot: B[1] }, { id: 's1-b', name: 'builder', job: 'Persist the retry queue', bot: B[2] }, { id: 's1-c', name: 'checker', job: 'Write and run tests', bot: B[4] }] },
-      { id: 's2', name: 'Morning Tern', task: { id: 'commodore-launcher#39', title: 'Flaky profile parser test' }, yard: 'work:copilot', skill: 'Triage', status: 'working', bot: B[1],
-        subs: [{ id: 's2-a', name: 'scout', job: 'Reproduce the flake', bot: B[6] }] },
+        subs: [{ id: 's1-a', name: 'planner', job: 'Break the task into steps', bot: B[1] }, { id: 's1-b', name: 'builder', job: 'Persist the retry queue', bot: B[2], role: 'implementer' }, { id: 's1-c', name: 'checker', job: 'Write and run tests', bot: B[4], role: 'test-writer' }],
+        marks: [{ id: 'm1', type: 'Explore', started: min(3) }, { id: 'm2', type: 'general-purpose', started: min(1) }, { id: 'm3', type: 'Plan', started: min(6) }] },
+      { id: 's2', name: 'Morning Tern', task: { id: 'commodore-launcher#39', title: 'Flaky profile parser test' }, yard: 'work:copilot', skill: 'Triage', status: 'working', bot: B[1], subs: [],
+        marks: [{ id: 'm4', type: 'explore', started: min(2) }, { id: 'm5', type: 'task', started: min(1) }] },
       { id: 's3', name: 'Brass Kettle', task: { id: 'admiral#1', title: 'Scaffold the Admiral server' }, yard: 'home:claude', skill: 'Commodore', status: 'attention', bot: B[2], reason: 'permission:Bash', since: Date.now() - 21 * 60000,
         ask: 'Teammate schema wants to run a migration on the dev database. Approve? (y/n)',
-        subs: [{ id: 's3-a', name: 'schema', job: 'Model fleets, docks and ships', bot: B[3] }, { id: 's3-b', name: 'api', job: 'Session attach endpoint', bot: B[0] }] },
-      { id: 's4', name: 'Little Bramble', task: { id: 'MOB-1166', title: 'Crash report breadcrumbs' }, yard: 'work:codex', skill: 'Wayfinder', status: 'done', exit: 1, bot: B[3], subs: [] },
-      { id: 's5', name: "Gull's Errand", task: { id: 'LIN-19', title: 'Draft the changelog' }, yard: 'home:codex', skill: 'release-notes', status: 'working', bot: B[4], subs: [] }
+        subs: [{ id: 's3-a', name: 'schema', job: 'Model fleets, docks and ships', bot: B[3], role: 'implementer' }, { id: 's3-b', name: 'api', job: 'Session attach endpoint', bot: B[0], role: 'implementer' }],
+        marks: [{ id: 'm6', type: 'Explore', started: min(5) }] },
+      { id: 's4', name: 'Little Bramble', task: { id: 'MOB-1166', title: 'Crash report breadcrumbs' }, yard: 'work:codex', skill: 'Wayfinder', status: 'done', exit: 1, bot: B[3], subs: [], marks: [] },
+      { id: 's5', name: "Gull's Errand", task: { id: 'LIN-19', title: 'Draft the changelog' }, yard: 'home:codex', skill: 'release-notes', status: 'working', bot: B[4], subs: [], marks: [] }
     ];
   }
+
+  // ?scene=crew: every crew boat state at once. Saltpaw's checker needs you, Brass Kettle's
+  // api has anchored, and Little Bramble anchored with two crew boats still working.
+  crewScene(ships) {
+    const B = this.D().BOTS;
+    return ships.map((x) => {
+      if (x.id === 's1') return Object.assign({}, x, { crewAsk: 'checker wants to run the device test suite on the shared emulator. Approve? (y/n)',
+        subs: x.subs.map((b) => b.id === 's1-c' ? Object.assign({}, b, { state: 'attention', reason: 'permission:Bash', since: Date.now() - 4 * 60000 }) : b) });
+      if (x.id === 's3') return Object.assign({}, x, { status: 'working', subs: x.subs.map((b) => b.id === 's3-b' ? Object.assign({}, b, { state: 'anchored', exit: 1 }) : b) });
+      if (x.id === 's4') return Object.assign({}, x, { subs: [{ id: 's4-a', name: 'fixer', job: 'Patch the breadcrumb buffer', bot: B[1] }, { id: 's4-b', name: 'notes', job: 'Write the incident notes', bot: B[6] }] });
+      return x;
+    });
+  }
+
+  // Crew boats raft along the ship's stern, relative to its 100px slot (the ship is
+  // 100x96; its plaque hangs below at about x -20..120, y 94..132). Past three, the
+  // rest go behind a "+N crew" pill and show in the flotilla.
+  crewLayout(n) {
+    const slots = [[-30, 44], [-52, 58], [-72, 40]];
+    const crew = slots.slice(0, Math.min(n, slots.length)).map((xy) => ({ x: xy[0], y: xy[1], w: 38, h: 33 }));
+    return { crew, crewMore: Math.max(0, n - slots.length) };
+  }
+
+  // Role labels for the flotilla. A role Admiral doesn't know shows as it was given.
+  roleLabel(role) {
+    const L = { 'implementer': 'Implementer', 'test-writer': 'Test writer', 'reviewer': 'Reviewer', 'security-reviewer': 'Security reviewer',
+      'triager': 'Triager', 'target-steward': 'Target steward', 'brief-checker': 'Brief checker', 'scribe': 'Scribe' };
+    return role ? L[role] || role : 'Teammate';
+  }
+
+  ago(t) { const m = Math.max(0, Math.round((Date.now() - t) / 60000)); return m < 1 ? 'just started' : m + 'm'; }
 
   seed() {
     const scene = this.props.scene || 'harbor';
@@ -793,6 +921,16 @@ class Component extends DCLogic {
       s.ships = s.ships.map((x) => x.id === 's1' ? Object.assign({}, x, { status: 'attention', reason: 'question', since: Date.now() - 6 * 60000, ask: 'Should the retry queue survive an app update? (y/n)' }) : x);
     }
     if (scene === 'inbox-bridge') s.open = 's3';
+    s.tip = null; s.bMenu = false; s.confirm = null;
+    if (scene.indexOf('crew') === 0) {
+      s.ships = this.crewScene(s.ships);
+      // Spots that leave each ship's rafted crew room on an iPad too; placement that
+      // makes that room on its own belongs to the app (#154).
+      s.place = { s1: { x: 110, y: 110 }, s2: { x: 390, y: 90 }, s4: { x: 390, y: 330 }, s3: { x: 110, y: 430 }, s5: { x: 390, y: 600 } };
+    }
+    if (scene === 'crew-bridge') { s.open = 's3'; s.focus = 's3-b'; s.bMenu = true; }
+    if (scene === 'crew-attn') { s.open = 's1'; s.focus = 's1-c'; }
+    if (scene === 'crew-dismiss') { s.open = 's4'; s.confirm = 's4'; }
     if (scene === 'inbox-empty') {
       s.inboxOpen = true;
       s.ibItems = [];
@@ -898,15 +1036,15 @@ class Component extends DCLogic {
     const skill = st.choice === 'custom' ? (st.customText.trim() || 'custom') : map[st.choice];
     const n = st.ships.length;
     const id = 's' + Date.now();
-    const ship = { id, name: NAMES[n % NAMES.length], task: { id: task.id, title: task.title }, yard: p.yardId, skill, status: 'working', subs: [], bot: BOTS[n % BOTS.length], fresh: true };
+    const ship = { id, name: NAMES[n % NAMES.length], task: { id: task.id, title: task.title }, yard: p.yardId, skill, status: 'working', subs: [], marks: [], bot: BOTS[n % BOTS.length], fresh: true };
     const yid = p.yardId;
     this.put((prev) => ({ ships: prev.ships.concat([ship]), taken: Object.assign({}, prev.taken, { [task.id]: true }), pending: null, customText: '', choice: 'commodore', acOpen: false, dock: Object.assign({}, prev.dock, { [yid]: 'leaving' }) }));
     setTimeout(() => this.put((prev) => ({ dock: Object.assign({}, prev.dock, { [yid]: 'gone' }) })), 1100);
     setTimeout(() => this.put((prev) => ({ dock: Object.assign({}, prev.dock, { [yid]: 'arriving' }) })), 1900);
     setTimeout(() => this.put((prev) => ({ dock: Object.assign({}, prev.dock, { [yid]: null }) })), 3000);
     const isC = skill === 'Commodore';
-    const crew = isC ? [['planner', 'Break the task into steps'], ['builder', 'Implement the change'], ['checker', 'Write and run tests']] : [['scout', 'Explore the codebase']];
-    setTimeout(() => this.put((prev) => ({ ships: prev.ships.map((x) => x.id === id ? Object.assign({}, x, { fresh: false, subs: crew.map((c, j) => ({ id: id + '-' + j, name: c[0], job: c[1], bot: BOTS[(n + j + 1) % BOTS.length], fresh: true })) }) : x) })), 1800);
+    const crew = isC ? [['planner', 'Break the task into steps', null], ['builder', 'Implement the change', 'implementer'], ['checker', 'Write and run tests', 'test-writer']] : [];
+    setTimeout(() => this.put((prev) => ({ ships: prev.ships.map((x) => x.id === id ? Object.assign({}, x, { fresh: false, subs: crew.map((c, j) => ({ id: id + '-' + j, name: c[0], job: c[1], role: c[2], bot: BOTS[(n + j + 1) % BOTS.length], fresh: true })), marks: [{ id: id + '-m', type: 'Explore', started: Date.now() }] }) : x) })), 1800);
     if (isC) {
       setTimeout(() => {
         this.put((prev) => ({ ships: prev.ships.map((x) => x.id === id && x.status === 'working' ? Object.assign({}, x, { status: 'attention', reason: 'question', since: Date.now(), ask: 'planner found two viable approaches. Keep the existing API shape? (y/n)' }) : x) }));
@@ -944,12 +1082,15 @@ class Component extends DCLogic {
     const f = F.find((x) => x.id === parts[0]);
     if (agentId !== 'lead') {
       const b = sh.subs.find((x) => x.id === agentId) || { name: agentId, job: '' };
-      return [
+      const CL = [
         { k: 'sys', t: 'admiral ▸ attached to ' + b.name + ' (crew of ' + sh.name + ')' },
         { k: 'agent', t: 'Picked up: ' + b.job + '.' },
-        { k: 'tool', t: '▸ reading files…' },
-        { k: 'agent', t: 'Making steady progress. Will report back to the lead.' }
+        { k: 'tool', t: '▸ reading files…' }
       ];
+      if (b.state === 'attention') CL.push({ k: 'ask', t: sh.crewAsk || 'Waiting on you.' });
+      else if (b.state === 'anchored') { CL.push({ k: 'agent', t: 'Wrote my report to the lead.' }); CL.push({ k: 'err', t: 'Error: rate limited, giving up' }); CL.push({ k: 'sys', t: 'Pane is dead (status ' + b.exit + ')' }); }
+      else CL.push({ k: 'agent', t: 'Making steady progress. Will report back to the lead.' });
+      return CL;
     }
     const L = [
       { k: 'sys', t: 'admiral ▸ ' + h.name + ' · ' + f.name + ' (profile ' + f.profile + ') · skill ' + sh.skill },
@@ -981,7 +1122,11 @@ class Component extends DCLogic {
       return { logs: Object.assign({}, prev.logs, { [key]: cur.concat([line]) }) };
     });
     addLine({ k: 'you', t: '❯ ' + shown });
-    this.put((prev) => ({ draft: '', ships: prev.ships.map((x) => x.id === shipId && x.status === 'attention' ? Object.assign({}, x, { status: 'working' }) : x) }));
+    this.put((prev) => ({ draft: '', ships: prev.ships.map((x) => {
+      if (x.id !== shipId) return x;
+      if (focus !== 'lead') return Object.assign({}, x, { subs: x.subs.map((b) => b.id === focus && b.state === 'attention' ? Object.assign({}, b, { state: 'working' }) : b) });
+      return x.status === 'attention' ? Object.assign({}, x, { status: 'working' }) : x;
+    }) }));
     if (reply) setTimeout(() => addLine(reply), 650);
   }
   send(e) {
@@ -1009,6 +1154,12 @@ class Component extends DCLogic {
     } catch (err) {}
     this.ibFocus();
     this.clock = setInterval(() => this.put({ tick: Date.now() }), 30000);
+  }
+  // A tap on a ship's deck crew lists its subagents for a moment.
+  showTip(shipId, id) {
+    this.put({ tip: { ship: shipId, id } });
+    clearTimeout(this.tipT);
+    this.tipT = setTimeout(() => this.put({ tip: null }), 2600);
   }
   componentWillUnmount() {
     try { if (this.mq) { if (this.mq.removeEventListener) this.mq.removeEventListener('change', this.onMq); else this.mq.removeListener(this.onMq); } } catch (err) {}
@@ -1081,6 +1232,8 @@ class Component extends DCLogic {
   // hold their place and its other cards keep their DOM nodes (and focus).
   ibList(st, withGone) {
     const live = st.ships.filter((x) => x.status === 'attention').map((x) => ({ id: 'live:' + x.id, kind: 'live', ship: x.id, t: x.since || 0 }));
+    // A crew boat that needs you is a live stop of its own, under its ship.
+    st.ships.forEach((x) => x.subs.forEach((b) => { if (b.state === 'attention') live.push({ id: 'live:' + b.id, kind: 'live', ship: x.id, crew: b.id, t: b.since || 0 }); }));
     const kept = st.ibItems.filter((it) => (withGone || !st.ibGone[it.id]) && st.ships.some((x) => x.id === it.ship)).map((it) => ({ id: it.id, kind: it.kind, ship: it.ship, t: it.created, it, gone: !!st.ibGone[it.id] }));
     return kept.concat(live).sort((a, b) => a.t - b.t);
   }
@@ -1149,7 +1302,7 @@ class Component extends DCLogic {
       if (a && !this.S().wide) a.focus({ preventScroll: true });
     }, 30);
   }
-  ibAttach(shipId) { this.put((st) => ({ open: shipId, focus: 'lead', draft: '', inboxOpen: !!st.wide })); }
+  ibAttach(shipId, focus) { this.put((st) => ({ open: shipId, focus: focus || 'lead', draft: '', inboxOpen: !!st.wide })); }
 
   ibModel(s) {
     const self = this;
@@ -1182,14 +1335,17 @@ class Component extends DCLogic {
         isQuestion: false, isReview: false, isFindings: false, isLive: false, hasOrder: false
       };
       if (e.kind === 'live') {
-        const code = sh.reason || 'question';
+        const b = e.crew ? sh.subs.find((x) => x.id === e.crew) : null;
+        const who = b || sh;
+        const code = who.reason || 'question';
         c.isLive = true;
+        if (b) c.shipName = sh.name + ' › ' + b.name;
         c.title = sh.task.id + ' ' + sh.task.title;
-        c.age = 'Waiting ' + self.agoText(now - (sh.since || now));
+        c.age = 'Waiting ' + self.agoText(now - (who.since || now));
         c.reasonText = self.reasonWords(code);
         c.reasonCode = code;
-        c.attachAria = 'Attach to ' + sh.name + ' and open its bridge';
-        c.attach = () => self.ibAttach(sh.id);
+        c.attachAria = 'Attach to ' + (b ? b.name + ', crew of ' + sh.name : sh.name) + ' and open its bridge';
+        c.attach = () => self.ibAttach(sh.id, b ? b.id : null);
         return c;
       }
       const it = e.it;
@@ -1306,7 +1462,7 @@ class Component extends DCLogic {
 
   renderVals() {
     const s = this.S();
-    const { H, F, SRC, T, SLOTS, SUBPOS, DOCKY } = this.D();
+    const { H, F, SRC, T, SLOTS, DOCKY, BOTS } = this.D();
     const self = this;
     const q = (s.q || '').trim().toLowerCase();
 
@@ -1385,9 +1541,37 @@ class Component extends DCLogic {
       const list = SLOTS[f.id];
       const slot = list[counters[f.id]++ % list.length];
       const pl = s.place[sh.id];
-      const attn = sh.status === 'attention';
+      const crewAttn = sh.subs.filter((b) => b.state === 'attention');
+      const attn = sh.status === 'attention' || crewAttn.length > 0;
       const done = sh.status === 'done';
       const statusText = attn ? 'needs your attention' : done ? 'anchored, exited ' + sh.exit : 'underway';
+      const shMarks = sh.marks || [];
+      const lay = this.crewLayout(sh.subs.length);
+      const markEls = [];
+      // Subagents stand on deck, bow side of the mast: up to four bots, or three and +N.
+      // They are drawn in the ship's svg so they bob and shake with it; one 44px button
+      // over them shows the list.
+      let deckBots = []; let deckMore = '';
+      if (shMarks.length) {
+        const shown = shMarks.length > 4 ? 3 : shMarks.length;
+        deckBots = shMarks.slice(0, shown).map((mk, k) => ({ tf: 'translate(' + (8 + k * 9) + ' ' + (53.5 - (k % 2) * 1.5) + ')', color: BOTS[(i + k + 3) % BOTS.length] }));
+        deckMore = shMarks.length > shown ? '+' + (shMarks.length - shown) : '';
+        markEls.push({ pos: 'left: -4px; top: 32px; z-index: 3; width: 44px; height: 44px;',
+          aria: shMarks.length + ' subagent' + (shMarks.length === 1 ? '' : 's') + ' on ' + sh.name + ': ' + shMarks.map((x) => x.type).join(', ') + '. They have no terminal',
+          tap: () => { if (!self.recentDrag()) self.showTip(sh.id, 'deck'); } });
+      }
+      if (lay.crewMore) {
+        const last = lay.crew[lay.crew.length - 1];
+        const hiddenAttn = sh.subs.slice(lay.crew.length).some((b) => b.state === 'attention');
+        markEls.push({ more: true, text: '+' + lay.crewMore + ' crew' + (hiddenAttn ? ' !' : ''),
+          pos: 'left: ' + (last.x + 4) + 'px; top: ' + (last.y + last.h + 14) + 'px; width: 64px;', aria: lay.crewMore + ' more crew boats; board the ship to see them',
+          tap: () => { if (!self.recentDrag()) self.put({ open: sh.id, focus: 'lead', draft: '' }); } });
+      }
+      const tip = s.tip && s.tip.ship === sh.id && shMarks.length ? {
+        title: shMarks.length + ' subagent' + (shMarks.length === 1 ? '' : 's'),
+        sub: shMarks.map((x) => x.type + ' ' + this.ago(x.started)).join(' · ') + ' · no terminal',
+        pos: 'left: 0px; top: ' + (-14 - Math.ceil(shMarks.length / 2) * 17) + 'px; white-space: normal; width: 230px;'
+      } : null;
       return {
         id: sh.id, name: sh.name, task: sh.task, skill: sh.skill, bot: sh.bot,
         harness: h.name, fleetName: f.name, fleetColor: f.color, flag: h.flag, flagInk: h.ink, mono: h.mono,
@@ -1398,18 +1582,31 @@ class Component extends DCLogic {
         delay: '-' + (i * 0.8).toFixed(1) + 's',
         flagCls: attn ? 'flag frantic' : 'flag wave',
         attn, done,
-        label: done ? sh.task.id + ' · exited ' + sh.exit : sh.task.id + ' · ' + sh.skill,
+        label: crewAttn.length ? crewAttn.map((b) => b.name).join(', ') + ' needs you' : done ? sh.task.id + ' · exited ' + sh.exit : sh.task.id + ' · ' + sh.skill,
+        marks: markEls, hasTip: !!tip, tip: tip || {}, deckBots, hasDeckMore: !!deckMore, deckMore,
         plaqueStyle: 'display: block; margin-top: -2px; padding: 3px 8px; max-width: 140px; border-radius: 9px; background-color: ' + (attn ? '#FFD9CC' : '#FFF6E3') + '; border: 2.5px solid ' + (attn ? '#C2412A' : '#14304A') + '; box-shadow: 0 2px 0 #14304A',
         aria: 'Board ' + sh.name + ', ' + h.name + ' in ' + f.name + ', ' + statusText,
         open: () => { if (!self.recentDrag()) self.put({ open: sh.id, focus: 'lead', draft: '' }); },
-        subs: sh.subs.map((b, j) => ({
-          id: b.id, name: b.name, bot: b.bot, flag: h.flag, stripe: f.color,
-          pos: 'position: absolute; left: ' + SUBPOS[j % 4][0] + 'px; top: ' + SUBPOS[j % 4][1] + 'px;',
-          cls: b.fresh ? 'pop' : '',
-          delay: '-' + ((i + j) * 0.6 + 0.3).toFixed(1) + 's',
-          aria: 'Board ' + b.name + ', crew of ' + sh.name,
-          open: () => { if (!self.recentDrag()) self.put({ open: sh.id, focus: b.id, draft: '' }); }
-        }))
+        subs: sh.subs.slice(0, lay.crew.length).map((b, j) => {
+          const c = lay.crew[j];
+          const anchored = b.state === 'anchored';
+          const battn = b.state === 'attention';
+          const bs = Math.max(14, Math.round(c.w * 0.4));
+          return {
+            id: b.id, name: b.name, bot: b.bot, flag: h.flag, stripe: anchored ? '#9AA5AF' : f.color,
+            pos: 'position: absolute; left: ' + c.x + 'px; top: ' + c.y + 'px;',
+            cls: b.fresh ? 'pop' : '',
+            w: c.w, h: c.h, showName: false, sailUp: !anchored, anchored, attn: battn,
+            motion: anchored ? 'crew-still' : 'bob',
+            flagCls: anchored ? 'flag' : 'flag wave',
+            btnStyle: 'width: ' + Math.max(44, c.w) + 'px; min-height: 44px; justify-content: center',
+            badgeStyle: 'position: absolute; left: -4px; top: -4px; width: ' + bs + 'px; height: ' + bs + 'px; border-radius: 50%; border: 2px solid #14304A; display: flex; align-items: center; justify-content: center; font-size: ' + Math.round(bs * 0.7) + 'px',
+            tagStyle: 'font-size: ' + (c.w < 50 ? 9.5 : 10.5) + 'px; font-weight: 700; color: #14304A; background-color: ' + (battn ? '#FFD9CC' : anchored ? '#E4D6B8' : '#DDF7F3') + '; border: 1.5px solid ' + (battn ? '#C2412A' : '#14304A') + '; border-radius: 6px; padding: 0 5px; margin-top: -4px',
+            delay: '-' + ((i + j) * 0.6 + 0.3).toFixed(1) + 's',
+            aria: 'Board ' + b.name + (b.role ? ', ' + this.roleLabel(b.role).toLowerCase() : '') + ', crew of ' + sh.name + (battn ? ', needs you' : anchored ? ', anchored' : ''),
+            open: () => { if (!self.recentDrag()) self.put({ open: sh.id, focus: b.id, draft: '', bMenu: false }); }
+          };
+        })
       };
     });
 
@@ -1420,25 +1617,47 @@ class Component extends DCLogic {
       if (sh && rawSh) {
         const isC = sh.skill === 'Commodore';
         const list = [{ id: 'lead', label: sh.name, role: isC ? 'Commodore · lead' : sh.skill + ' · lead', bot: sh.bot }]
-          .concat(rawSh.subs.map((b) => ({ id: b.id, label: b.name, role: (isC ? 'Teammate · ' : 'Subagent · ') + b.job, bot: b.bot })));
+          .concat(rawSh.subs.map((b) => {
+            const who = this.roleLabel(b.role);
+            return { id: b.id, label: b.name, state: b.state, exit: b.exit, bot: b.bot,
+              role: b.state === 'anchored' ? who + ' · anchored, exit ' + b.exit : b.state === 'attention' ? who + ' · needs you' : who + ' · ' + b.job };
+          }));
         const agents = list.map((a, k) => ({
           id: a.id, label: a.label, role: a.role, bot: a.bot, flag: sh.flag, stripe: sh.fleetColor,
-          isLead: k === 0, isSub: k > 0,
-          cls: 'fl-item press' + (a.id === s.focus ? ' on' : ''),
+          isLead: k === 0, isSub: k > 0, attn: a.state === 'attention', anchored: a.state === 'anchored',
+          plainSail: true,
+          cls: 'fl-item press' + (a.id === s.focus ? ' on' : '') + (a.state === 'attention' ? ' attn attn-row' : ''),
           delay: (k * 90) + 'ms',
-          pick: () => self.put({ focus: a.id })
+          pick: () => self.put({ focus: a.id, bMenu: false })
         }));
         const focusAgent = list.find((a) => a.id === s.focus) || list[0];
+        const isCrew = focusAgent.id !== 'lead';
+        const fAnch = isCrew && focusAgent.state === 'anchored';
+        const fAttn = isCrew ? focusAgent.state === 'attention' : rawSh.status === 'attention';
+        const marksRaw = rawSh.marks || [];
         const key = sh.id + ':' + focusAgent.id;
         const lines = (s.logs[key] || this.defaultLog(rawSh, focusAgent.id)).map((l) => ({ cls: 'ln ln-' + l.k, t: l.t }));
         bridge = {
           ship: sh, agents, lines, focusName: focusAgent.label,
           crewCount: list.length,
           asking: sh.attn && focusAgent.id === 'lead',
-          live: !sh.done, anchored: sh.done,
-          statusText: sh.attn ? 'Needs you' : sh.done ? 'Anchored · exit ' + rawSh.exit : 'Underway',
-          statusStyle: 'font-family: Bricolage Grotesque, sans-serif; font-weight: 700; font-size: 13px; padding: 4px 12px; border-radius: 999px; border: 2px solid #14304A; color: #14304A; background-color: ' + (sh.attn ? '#FF7A59' : sh.done ? '#FF9A7A' : '#6FE3C8')
+          live: isCrew ? fAnch ? false : true : !sh.done, anchored: !isCrew && sh.done,
+          isCrew, crewLive: isCrew && !fAnch, crewAnchored: fAnch,
+          hasMarks: marksRaw.length > 0, markCount: marksRaw.length,
+          marks: marksRaw.map((m) => ({ type: m.type, age: this.ago(m.started), stripe: sh.fleetColor })),
+          statusText: fAttn ? 'Needs you' : fAnch ? 'Anchored · exit ' + focusAgent.exit : sh.done ? 'Anchored · exit ' + rawSh.exit : 'Underway',
+          statusStyle: 'font-family: Bricolage Grotesque, sans-serif; font-weight: 700; font-size: 13px; padding: 4px 12px; border-radius: 999px; border: 2px solid #14304A; color: #14304A; background-color: ' + (fAttn ? '#FF7A59' : (fAnch || sh.done) ? '#FF9A7A' : '#6FE3C8')
         };
+      }
+    }
+    let confirmVals = null;
+    if (s.confirm) {
+      const csh = s.ships.find((x) => x.id === s.confirm);
+      if (csh) {
+        const live = csh.subs.filter((b) => b.state !== 'anchored');
+        confirmVals = { ship: csh.name, count: live.length + ' crew boat' + (live.length === 1 ? ' is' : 's are') + ' still working.',
+          rest: 'Dismissing ' + csh.name + ' ends ' + (live.length === 1 ? 'it' : 'them') + ' too. Their commits and reports stay on disk.',
+          crew: csh.subs.map((b) => ({ name: b.name, state: b.state === 'anchored' ? 'anchored' : b.state === 'attention' ? 'needs you' : 'working', bg: b.state === 'anchored' ? '#E4D6B8' : b.state === 'attention' ? '#FFD9CC' : '#DDF7F3' })) };
       }
     }
     const keyDefs = [['Enter', '⏎ Enter', null], ['Esc', 'Esc', { k: 'sys', t: '(escape)' }], ['Tab', 'Tab', null], ['Up', '↑', null], ['Down', '↓', null], ['Ctrl-C', '^C', { k: 'sys', t: '^C interrupted. Session paused, waiting for input.' }]];
@@ -1498,7 +1717,17 @@ class Component extends DCLogic {
       bridge: bridge || { ship: { task: {} }, agents: [], lines: [] },
       keys,
       closeBridge: () => self.put({ open: null, draft: '' }),
-      dismiss: () => self.put((st) => ({ open: null, draft: '', ships: st.ships.filter((x) => x.id !== st.open) })),
+      dismiss: () => self.put((st) => {
+        const sh = st.ships.find((x) => x.id === st.open);
+        if (sh && sh.subs.some((b) => b.state !== 'anchored')) return { confirm: sh.id };
+        return { open: null, draft: '', ships: st.ships.filter((x) => x.id !== st.open) };
+      }),
+      hasConfirm: !!confirmVals, confirm: confirmVals || { crew: [] },
+      cancelConfirm: () => self.put({ confirm: null }),
+      confirmDismiss: () => self.put((st) => ({ confirm: null, open: null, draft: '', ships: st.ships.filter((x) => x.id !== st.confirm) })),
+      bMenuOpen: !!s.bMenu,
+      toggleBMenu: () => self.put((st) => ({ bMenu: !st.bMenu })),
+      closeCrew: () => self.put((st) => ({ bMenu: false, focus: 'lead', ships: st.ships.map((x) => x.id === st.open ? Object.assign({}, x, { subs: x.subs.filter((b) => b.id !== st.focus) }) : x) })),
       draft: s.draft || '',
       onDraft: (e) => self.put({ draft: e.target.value }),
       send: (e) => self.send(e),
