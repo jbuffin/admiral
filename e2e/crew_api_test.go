@@ -363,7 +363,9 @@ func TestCrewAPI_Shape(t *testing.T) {
 		c := dialWS(t, w.in.instance)
 		got := wsShip(t, c, 10*time.Second, a.Session, "crew, a subagent and a last_activity", ready)
 		check(t, "WS", got)
-		emptyList(t, "WS, ship without crew", wsShip(t, c, 10*time.Second, b.Session, "the ship without crew", func(apiShip) bool { return true }))
+		// A connection gets one `ships` message at connect, with every ship, so the
+		// second ship is read from a fresh connection.
+		emptyList(t, "WS, ship without crew", wsShip(t, dialWS(t, w.in.instance), 10*time.Second, b.Session, "the ship without crew", func(apiShip) bool { return true }))
 
 		// SubagentStop empties the list on the wire within a tick, on the same connection.
 		w.sub(t).hookAt(aPane, "SubagentStop", hookSubEnd)

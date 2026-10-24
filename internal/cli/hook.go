@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -149,12 +148,10 @@ func hookDecision(event string, p hookPayload) hookWrite {
 	return hookWrite{}
 }
 
-var safeToken = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,64}$`)
-
 // withToken is prefix:token, or the bare prefix when token isn't short and made
 // of characters tmux and a format leave alone.
 func withToken(prefix, token string) string {
-	if safeToken.MatchString(token) {
+	if sessionhost.SafeToken.MatchString(token) {
 		return prefix + ":" + token
 	}
 	return prefix
@@ -172,7 +169,7 @@ const tmuxDeadline = 2 * time.Second
 
 // safeID is id when it is a safe token, else "" (drop the entry).
 func safeID(s string) string {
-	if safeToken.MatchString(s) {
+	if sessionhost.SafeToken.MatchString(s) {
 		return s
 	}
 	return ""
