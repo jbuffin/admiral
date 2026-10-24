@@ -12,6 +12,10 @@ import (
 // DefaultAutopilotMaxShips is the top-level cap when the file sets none.
 const DefaultAutopilotMaxShips = 3
 
+// DefaultRetroEvery is how many autopilot runs of a panel pass between retro
+// orders when the entry says none (#117).
+const DefaultRetroEvery = 5
+
 // PanelAutopilot is one panel's autopilot entry: which orders it launches and
 // how (#114). Config can't check that the panel exists; panels come from the
 // running plugin.
@@ -24,6 +28,9 @@ type PanelAutopilot struct {
 	MaxShips  int      // most ships from this panel at once
 	LowStakes string   // advisor or never
 	AutoMerge string   // squash, merge or rebase; empty when the panel does not auto-merge
+	// RetroEvery is how many runs of this panel pass between retro orders; 0
+	// turns them off.
+	RetroEvery int
 	// Resources names the locked resources an order of this panel needs; nil
 	// when none. Each is checked against the top-level resources once the whole
 	// file is parsed.
@@ -128,7 +135,7 @@ func parseAutopilotEntry(path string, raw json.RawMessage) (PanelAutopilot, erro
 	if err != nil {
 		return PanelAutopilot{}, err
 	}
-	e := PanelAutopilot{Args: []string{}, MaxShips: 1, LowStakes: "advisor"}
+	e := PanelAutopilot{Args: []string{}, MaxShips: 1, LowStakes: "advisor", RetroEvery: DefaultRetroEvery}
 	have := map[string]bool{}
 	for _, m := range ms {
 		p := path + "." + m.key
@@ -167,6 +174,10 @@ func parseAutopilotEntry(path string, raw json.RawMessage) (PanelAutopilot, erro
 			}
 			if e.AutoMerge != "squash" && e.AutoMerge != "merge" && e.AutoMerge != "rebase" {
 				return PanelAutopilot{}, fmt.Errorf("%s: must be squash, merge or rebase, got %q", p, e.AutoMerge)
+			}
+		case "retro_every":
+			if e.RetroEvery, err = nonNegativeInt(p, m.raw); err != nil {
+				return PanelAutopilot{}, err
 			}
 		case "resources":
 			if e.Resources, err = stringList(p, m.raw); err != nil {
@@ -236,6 +247,14 @@ func positiveInt(path string, raw json.RawMessage) (int, error) {
 	n, err := strconv.Atoi(string(bytes.TrimSpace(raw)))
 	if err != nil || n < 1 {
 		return 0, fmt.Errorf("%s: must be a positive integer, got %s", path, raw)
+	}
+	return n, nil
+}
+
+func nonNegativeInt(path string, raw json.RawMessage) (int, error) {
+	n, err := strconv.Atoi(string(bytes.TrimSpace(raw)))
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("%s: must be an integer of 0 or more, got %s", path, raw)
 	}
 	return n, nil
 }

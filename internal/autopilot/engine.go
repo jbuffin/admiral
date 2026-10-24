@@ -1,7 +1,7 @@
 // Package autopilot launches the orders of panels the engineer has put on
 // autopilot (#114). A pass looks at the ships and the listings and launches
-// what the caps leave room for; it never reads a ship's outcome back from the
-// log (ADR 0015).
+// what the caps leave room for. It reads the outcome log for one purpose only:
+// counting runs toward retro orders (#117, ADR 0017).
 package autopilot
 
 import (
@@ -49,10 +49,19 @@ type Engine struct {
 	Checkout func(fleet config.Fleet, dir string) bool
 	// Launch is ships.Service.LaunchOrder.
 	Launch func(launcher.Request) (ships.Ship, *launcher.Error)
-	// Record writes a record to the outcome log.
-	Record func(outcomes.Record)
-	Now    func() time.Time
-	Store  *Store
+	// Record writes a record to the outcome log (outcomes.Writer.Enqueue). done,
+	// when not nil, gets the error of a failed or dropped write, or nil once the
+	// line is in the log.
+	Record func(r outcomes.Record, done func(error))
+	// Log is the outcome log, outcomes.Read of the home's outcomes directory; nil
+	// turns retro orders off.
+	Log func() []outcomes.Line
+	// AddOrder adds an order to a panel (sources.Service.AddOrder); nil turns
+	// retro orders off. An error that implements AddKind() inbox.AddKind says
+	// whether to try again; one that doesn't is final.
+	AddOrder func(ctx context.Context, source, panel, text string) (id string, err error)
+	Now      func() time.Time
+	Store    *Store
 	// OnHot runs when an order becomes hot or stops being; nil does nothing. The
 	// sources view shows the mark, so the caller pushes it. It must not block.
 	OnHot func()
@@ -66,7 +75,7 @@ type Engine struct {
 	// Logf takes one line; nil logs nothing.
 	Logf func(format string, args ...any)
 
-	pass    sync.Mutex // one pass at a time
+	pass    sync.Mutex // one pass at a time; also keeps two retro adds for a panel apart
 	mu      sync.Mutex // guards skipped
 	skipped map[pair]string
 	waits   map[pair]*wait       // orders waiting for resources
@@ -74,6 +83,8 @@ type Engine struct {
 	adding  map[[2]string]int    // panel -> resume adds in flight; under mu
 	poke    chan struct{}
 	pokeMu  sync.Once
+
+	retros retroState
 }
 
 func (e *Engine) logf(format string, args ...any) {
@@ -189,6 +200,8 @@ func (e *Engine) Pass() {
 		srcs[src.Key] = src
 		e.forget(src)
 	}
+	// After the launches, however they end: the retro step needs no room under a cap.
+	defer e.retroStep(cfg, list, srcs)
 
 	total, perPanel := 0, map[[2]string]int{}
 	for _, sh := range list {
@@ -367,7 +380,7 @@ func (e *Engine) skip(source, panel string, o sources.Order, reason string) {
 	}
 	e.logf("autopilot: skipped %s/%s order %s: %s", source, panel, o.ID, reason)
 	e.Record(outcomes.Record{Event: "skipped", Fields: map[string]any{
-		"source": source, "panel": panel, "order_id": o.ID, "title": launcher.CleanTitle(o.Title), "reason": reason}})
+		"source": source, "panel": panel, "order_id": o.ID, "title": launcher.CleanTitle(o.Title), "reason": reason}}, nil)
 }
 
 // failed counts a failed launch: it backs the order off, and the third gives up
@@ -387,7 +400,7 @@ func (e *Engine) failed(source, panel string, o sources.Order, lerr *launcher.Er
 		e.logf("autopilot: could not save %s: %v", FileName, err)
 	}
 	e.logf("autopilot: launch of %s/%s order %s failed (attempt %d): %s", source, panel, o.ID, f.Attempts, lerr.Msg)
-	e.Record(outcomes.Record{Event: "launch_failed", Fields: fields})
+	e.Record(outcomes.Record{Event: "launch_failed", Fields: fields}, nil)
 	if f.GaveUp && e.OnHot != nil {
 		e.OnHot()
 	}
@@ -454,7 +467,7 @@ func (e *Engine) startWait(source, panel string, o sources.Order, waits []resour
 	if record {
 		e.logf("autopilot: %s/%s order %s waits for %s", source, panel, o.ID, strings.Join(names, ", "))
 		e.Record(outcomes.Record{Event: "resource_wait", Fields: map[string]any{
-			"source": source, "panel": panel, "order_id": o.ID, "title": launcher.CleanTitle(o.Title), "resources": waits}})
+			"source": source, "panel": panel, "order_id": o.ID, "title": launcher.CleanTitle(o.Title), "resources": waits}}, nil)
 	}
 	if changed && e.OnWait != nil {
 		e.OnWait()
