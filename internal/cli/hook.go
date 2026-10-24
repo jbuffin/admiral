@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -31,7 +33,7 @@ func Hook(args []string, std IO) error {
 	call := []string{"set", "-p", "-t", pane, sessionhost.ActivityOption, now.Format(time.RFC3339)}
 	if valid {
 		w := hookDecision(args[0], p)
-		if w == stopWrite && (args[0] == "Stop" || args[0] == "agentStop") {
+		if w == stopWrite {
 			w = leadDecision(args[0], p, readCrewFacts(pane, now))
 		}
 		if w.state != "" {
@@ -46,9 +48,12 @@ func Hook(args []string, std IO) error {
 }
 
 // tmuxOut is one tmux call's stdout without its trailing newline. -u keeps
-// the unit separator in a format intact.
+// the unit separator in a format intact. It gives up after tmuxDeadline, so a
+// stuck server can't hold the harness; the caller takes its failed-read path.
 func tmuxOut(args ...string) (string, error) {
-	out, err := exec.Command("tmux", append([]string{"-u"}, args...)...).Output()
+	ctx, cancel := context.WithTimeout(context.Background(), tmuxDeadline)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "tmux", append([]string{"-u"}, args...)...).Output()
 	return strings.TrimRight(string(out), "\n"), err
 }
 
@@ -133,11 +138,11 @@ func hookDecision(event string, p hookPayload) hookWrite {
 			return hookWrite{state: "needs_you", reason: "question"}
 		}
 	case "agentStop":
-		if p.AgentID == "" {
+		if p.lead() {
 			return hookWrite{state: "needs_you", reason: "stop"}
 		}
 	case "userPromptSubmitted":
-		if p.AgentID == "" {
+		if p.lead() {
 			return hookWrite{state: "working"}
 		}
 	}
@@ -161,6 +166,9 @@ var stopWrite = hookWrite{state: "needs_you", reason: "stop"}
 // launchWindow is how long a crew pane with no hook yet counts as working
 // (ADR 0007's no-hook window): `crew launch` writes no state.
 const launchWindow = 10 * time.Second
+
+// tmuxDeadline bounds each of the hook's tmux reads.
+const tmuxDeadline = 2 * time.Second
 
 // safeID is id when it is a safe token, else "" (drop the entry).
 func safeID(s string) string {
@@ -209,7 +217,7 @@ func subagentList(event string, p hookPayload, harness string, cur []sessionhost
 	case "subagentStop":
 		return remove(p.AgentID)
 	case "agentStop", "userPromptSubmitted":
-		if p.AgentID == "" {
+		if p.lead() {
 			return nil
 		}
 	case "Stop":
@@ -220,6 +228,9 @@ func subagentList(event string, p hookPayload, harness string, cur []sessionhost
 			for _, t := range p.BackgroundTasks {
 				id := safeID(t.ID)
 				if t.Status != "running" || (t.Type != "subagent" && t.Type != "teammate") || id == "" || len(out) >= sessionhost.MaxSubagents {
+					continue
+				}
+				if slices.ContainsFunc(out, func(a sessionhost.Subagent) bool { return a.ID == id }) {
 					continue
 				}
 				if i := listed(id); i >= 0 {
@@ -234,20 +245,24 @@ func subagentList(event string, p hookPayload, harness string, cur []sessionhost
 	return cur
 }
 
+// lead says the Copilot payload comes from the lead, not from inside a subagent.
+func (p hookPayload) lead() bool { return p.AgentID == "" }
+
 // subagentCall is the tmux call that writes @admiral-subagents for an event, or
 // nil when it doesn't change. It reads tmux only on the events that can change
 // the list: the harness for a Stop, the current list for all but a Copilot
-// lead's clear-all, which unsets it. A failed read writes nothing.
+// lead's clear-all, which unsets it whatever it holds. A failed read writes
+// nothing.
 func subagentCall(pane, event string, p hookPayload, now time.Time) []string {
 	var cur []sessionhost.Subagent
+	harness, read := "", true
 	switch event {
 	case "agentStop", "userPromptSubmitted":
-		if p.AgentID != "" {
+		if !p.lead() {
 			return nil
 		}
-		return []string{"set", "-p", "-u", "-q", "-t", pane, sessionhost.SubagentsOption}
+		read = false
 	case "SubagentStart", "SubagentStop", "subagentStart", "subagentStop", "Stop":
-		harness := ""
 		if event == "Stop" {
 			harness, _ = tmuxOut("display", "-p", "-t", pane, "#{@admiral-harness}")
 			if harness == "codex" {
@@ -259,16 +274,17 @@ func subagentCall(pane, event string, p hookPayload, now time.Time) []string {
 			return nil
 		}
 		cur = sessionhost.DecodeSubagents(raw)
-		next := sessionhost.EncodeSubagents(subagentList(event, p, harness, cur, now))
-		if next == sessionhost.EncodeSubagents(cur) {
-			return nil
-		}
-		if next == "" {
-			return []string{"set", "-p", "-u", "-q", "-t", pane, sessionhost.SubagentsOption}
-		}
-		return []string{"set", "-p", "-t", pane, sessionhost.SubagentsOption, next}
+	default:
+		return nil
 	}
-	return nil
+	next := sessionhost.EncodeSubagents(subagentList(event, p, harness, cur, now))
+	switch {
+	case read && next == sessionhost.EncodeSubagents(cur):
+		return nil
+	case next == "":
+		return []string{"set", "-p", "-u", "-q", "-t", pane, sessionhost.SubagentsOption}
+	}
+	return []string{"set", "-p", "-t", pane, sessionhost.SubagentsOption, next}
 }
 
 // crewFacts is what the lead rule needs to know about the pane and its crew.

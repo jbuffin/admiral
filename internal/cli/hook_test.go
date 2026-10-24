@@ -111,6 +111,8 @@ func TestHookSubagentList(t *testing.T) {
 		{"claude Stop replaces the list from running subagents, keeping known starts", "claude", "Stop",
 			`{"hook_event_name":"Stop","background_tasks":[{"id":"` + cID + `","type":"subagent","status":"running","agent_type":"Explore"},{"id":"c2","type":"subagent","status":"running","agent_type":"Plan"},{"id":"sh1","type":"shell","status":"running","command":"sleep 99"},{"id":"d3","type":"subagent","status":"completed","agent_type":"Plan"}],"session_crons":[]}`,
 			list("gone:Plan", cID+":Explore"), with(list(cID+":Explore"), "c2", "Plan")},
+		{"claude Stop lists a repeated id once", "claude", "Stop",
+			`{"background_tasks":[{"id":"c2","type":"subagent","status":"running","agent_type":"Plan"},{"id":"c2","type":"teammate","status":"running","agent_type":"Plan"}]}`, nil, with(nil, "c2", "Plan")},
 		{"claude Stop keeps a running teammate", "claude", "Stop",
 			`{"background_tasks":[{"id":"m1","type":"teammate","status":"running","agent_type":"general-purpose"}]}`, nil, with(nil, "m1", "general-purpose")},
 		{"claude Stop with only a shell empties the list", "claude", "Stop",
