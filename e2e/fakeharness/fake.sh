@@ -10,7 +10,10 @@
 #   FAKE_CUE         path of a cue file (optional)
 #
 # Recording: <FAKE_RECORD_DIR>/<tmux session name>/ gets these files, written in
-# this order, with `recorded` created last so a test can wait for it:
+# this order, with `recorded` created last so a test can wait for it. A crew boat
+# (its window has @admiral-crew-name) records in
+# <FAKE_RECORD_DIR>/<tmux session name>/crew/<crew name>/ instead, with the same
+# files, so a ship and its crew boats on one harness never overwrite each other:
 #
 #   harness   the name it was run as (claude, codex or copilot)
 #   argv      its arguments, each one followed by a NUL byte
@@ -18,14 +21,19 @@
 #   cwd       its working directory (physical path)
 #   name      the session option @admiral-name, as read at start
 #   options   the output of `tmux show-options`, run as its first action (all session options)
+#   window-options
+#             the output of `tmux show-options -w -t "$TMUX_PANE"` at the same moment (the
+#             options of the pane's window), so a test proves a crew window's options
+#             were set before the harness started
 #   dirs      "inbox=yes|no reports=yes|no": whether $ADMIRAL_INBOX is a directory and
 #             the directory of $ADMIRAL_REPORT exists, checked before anything else
 #   recorded  empty marker file
 #
 # Cue file: read once after recording, one cue per line, run in order:
 #
-#   hook <state>   run `tmux set -p @admiral-state <state>`, the command Admiral's
-#                  hook bundle uses (state is needs_you or working)
+#   hook <state>   run `tmux set -p -t "$TMUX_PANE" @admiral-state <state>` (state is
+#                  needs_you or working). It names the pane: a bare `set -p` lands
+#                  on the session's active pane, which is not a crew boat's
 #   event <Event> <json>
 #                  run the command the hook bundle holds for <Event>, as the harness
 #                  would: the payload <json> (the rest of the line) on its stdin, then
@@ -71,9 +79,12 @@ elif [ -d "$(dirname "$ADMIRAL_REPORT")" ]; then
   dirs=${dirs%reports=no}reports=yes
 fi
 first=$(tmux show-options 2>&1)
+firstw=$(tmux show-options -w -t "$TMUX_PANE" 2>&1)
 me=$(basename "$0")
 sess=$(tmux display-message -p '#{session_name}')
 d="$FAKE_RECORD_DIR/$sess"
+crew=$(tmux show-options -wqv -t "$TMUX_PANE" @admiral-crew-name)
+[ -n "$crew" ] && d="$d/crew/$crew"
 mkdir -p "$d"
 echo "$me" >"$d/harness"
 printf '%s\0' "$@" >"$d/argv"
@@ -81,13 +92,14 @@ env >"$d/env"
 pwd -P >"$d/cwd"
 tmux show-options -v @admiral-name >"$d/name"
 printf '%s\n' "$first" >"$d/options"
+printf '%s\n' "$firstw" >"$d/window-options"
 printf '%s\n' "$dirs" >"$d/dirs"
 : >"$d/recorded"
 
 if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 	while read -r cmd arg; do
 		case "$cmd" in
-		hook) tmux set -p @admiral-state "$arg" ;;
+		hook) tmux set -p -t "$TMUX_PANE" @admiral-state "$arg" ;;
 		event)
 			ev=${arg%% *}
 			payload=${arg#"$ev"}
