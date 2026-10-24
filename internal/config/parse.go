@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"maps"
 	"os"
 	"path/filepath"
@@ -51,6 +52,13 @@ type Chat struct {
 
 // DefaultChatModel is the chat's model when config.json sets none.
 const DefaultChatModel = "sonnet"
+
+// ChatModels and ChatEfforts are what chat.model and chat.effort may hold. An
+// empty effort is the harness default.
+var (
+	ChatModels  = []string{"sonnet", "opus", "haiku"}
+	ChatEfforts = []string{"", "low", "medium", "high"}
+)
 
 // Fleet is one marina.
 type Fleet struct {
@@ -210,6 +218,8 @@ func parseChat(raw json.RawMessage) (Chat, error) {
 			c.Model, err = str(p, m.raw)
 		case "effort":
 			c.Effort, err = str(p, m.raw)
+		default:
+			return Chat{}, fmt.Errorf("%s: unknown key", p)
 		}
 		if err != nil {
 			return Chat{}, err
@@ -220,10 +230,19 @@ func parseChat(raw json.RawMessage) (Chat, error) {
 
 // resolveChat fills the defaults: the first fleet with a Claude dock (else the
 // first fleet) when the named fleet is unset or gone, and sonnet. A missing
-// fleet never fails the load.
+// fleet, or a model or effort outside the lists, never fails the load: the
+// default is used and a warning is logged.
 func resolveChat(c Chat, fleets []Fleet) Chat {
+	if c.Model != "" && !slices.Contains(ChatModels, c.Model) {
+		log.Printf("config: chat.model %q is not one of %v, using %s", c.Model, ChatModels, DefaultChatModel)
+		c.Model = ""
+	}
 	if c.Model == "" {
 		c.Model = DefaultChatModel
+	}
+	if !slices.Contains(ChatEfforts, c.Effort) {
+		log.Printf("config: chat.effort %q is not one of %q, using the harness default", c.Effort, ChatEfforts)
+		c.Effort = ""
 	}
 	if slices.ContainsFunc(fleets, func(f Fleet) bool { return f.Key == c.Fleet }) {
 		return c

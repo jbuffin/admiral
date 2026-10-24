@@ -343,17 +343,22 @@ func (s *Service) serveChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
 		return
 	}
-	if !slices.Contains([]string{"sonnet", "opus", "haiku"}, req.Model) {
+	if !slices.Contains(config.ChatModels, req.Model) {
 		writeError(w, http.StatusBadRequest, "model must be sonnet, opus or haiku, got "+strconv.Quote(req.Model))
 		return
 	}
-	if !slices.Contains([]string{"", "low", "medium", "high"}, req.Effort) {
+	if !slices.Contains(config.ChatEfforts, req.Effort) {
 		writeError(w, http.StatusBadRequest, "effort must be empty, low, medium or high, got "+strconv.Quote(req.Effort))
+		return
+	}
+	cur := s.Config.Current()
+	if req.Fleet != "" && !slices.ContainsFunc(cur.Fleets, func(f config.Fleet) bool { return f.Key == req.Fleet }) {
+		writeError(w, http.StatusBadRequest, "no fleet named "+strconv.Quote(req.Fleet))
 		return
 	}
 	chat := config.Chat{Fleet: req.Fleet, Model: req.Model, Effort: req.Effort}
 	if chat.Fleet == "" {
-		chat.Fleet = s.Config.Current().Chat.Fleet
+		chat.Fleet = cur.Chat.Fleet
 	}
 	if chat.Fleet != "" { // no fleets at all: nothing to write
 		if err := s.Config.SetChat(chat); err != nil {

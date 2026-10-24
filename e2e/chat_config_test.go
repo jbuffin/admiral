@@ -123,3 +123,21 @@ func TestChatConfig(t *testing.T) {
 		}
 	})
 }
+
+func TestChatConfigRefusals(t *testing.T) {
+	home := newHome(t)
+	writeConfig(t, home, `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}}}`)
+	in := startAdmiral(t, home, "127.0.0.1:0")
+	for _, body := range []map[string]any{
+		{"fleet": "gone", "model": "opus", "effort": ""},
+		{"fleet": "work", "model": "gpt", "effort": ""},
+		{"fleet": "work", "model": "opus", "effort": "max"},
+	} {
+		if code, _ := send(t, http.MethodPut, in.LocalURL+"/api/chat", body); code != http.StatusBadRequest {
+			t.Errorf("PUT /api/chat %v = %d, want 400", body, code)
+		}
+	}
+	if _, ok := configOnDisk(t, home)["chat"]; ok {
+		t.Error("a refused PUT must not write `chat`")
+	}
+}

@@ -36,11 +36,21 @@ func SetChat(dir string, c Chat) error {
 	if c.Effort != "" {
 		obj["effort"] = c.Effort
 	}
-	raw, err := json.Marshal(obj) // map keys sort: effort, fleet, model
+	raw, err := json.Marshal(obj)
 	if err != nil {
 		return err
 	}
-	return setKey(dir, "chat", raw)
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	path := filepath.Join(dir, FileName)
+	_, out, err := renderKey(path, "chat", raw)
+	if err != nil {
+		return err
+	}
+	if _, err := Parse(out); err != nil {
+		return err
+	}
+	return replaceFile(path, out)
 }
 
 // SetSources replaces sources in dir/config.json.

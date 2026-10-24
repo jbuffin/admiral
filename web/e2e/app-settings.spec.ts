@@ -75,7 +75,7 @@ test('general settings: Sound follows Save and Cancel, and the header pill stays
   await dialog.getByRole('button', { name: 'Cancel' }).click();
   await expect(dialog).toBeHidden();
   await expect(pill('Mute chime')).toBeVisible();
-  expect(await storedMute(page)).not.toBe('1');
+  await expect.poll(() => storedMute(page)).not.toBe('1');
 
   // Save applies it: the same admiral.muted state as the header pill.
   dialog = await openSettings(page);
@@ -84,7 +84,7 @@ test('general settings: Sound follows Save and Cancel, and the header pill stays
   await dialog.getByRole('button', { name: 'Save' }).click();
   await expect(dialog).toBeHidden();
   await expect(pill('Turn chime on')).toBeVisible();
-  expect(await storedMute(page)).toBe('1');
+  await expect.poll(() => storedMute(page)).toBe('1');
 
   // And it unmutes the same way.
   dialog = await openSettings(page);
@@ -92,5 +92,22 @@ test('general settings: Sound follows Save and Cancel, and the header pill stays
   await dialog.getByRole('button', { name: 'Save' }).click();
   await expect(dialog).toBeHidden();
   await expect(pill('Mute chime')).toBeVisible();
-  expect(await storedMute(page)).toBe('0');
+  await expect.poll(() => storedMute(page)).toBe('0');
+});
+
+test('settings: the gear is focused again after Escape and after Cancel', async ({ page, admiral }) => {
+  admiral.writeConfig(config(admiral.fakeHarness('claude')));
+  await admiral.start();
+  await page.goto(admiral.url);
+  const gear = page.getByRole('button', { name: 'Settings', exact: true });
+
+  const dialog = await openSettings(page);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(gear).toBeFocused();
+
+  const again = await openSettings(page);
+  await again.getByRole('button', { name: 'Cancel' }).click();
+  await expect(again).toBeHidden();
+  await expect(gear).toBeFocused();
 });

@@ -11,12 +11,21 @@ import { api } from './sources';
 const open = signal(false);
 export const openAppSettings = () => (open.value = true);
 
+// Every way out ends here. A tap on a button leaves WebKit's focus on <body>, so the dialog's own
+// restore has nothing to return to: the gear is focused by id, once the dialog is gone.
+const GEAR_ID = 'app-settings-gear';
+export { GEAR_ID };
+function close() {
+  open.value = false;
+  setTimeout(() => document.getElementById(GEAR_ID)?.focus(), 0);
+}
+
 const MODELS = ['sonnet', 'opus', 'haiku'];
 const EFFORTS = ['low', 'medium', 'high'];
 
 export function AppSettings() {
   if (!open.value) return null;
-  return <Form onClose={() => (open.value = false)} />;
+  return <Form onClose={close} />;
 }
 
 function Form({ onClose }: { onClose: () => void }) {
@@ -34,8 +43,11 @@ function Form({ onClose }: { onClose: () => void }) {
 
   async function save() {
     setSaving(true);
-    // With no fleet there is nothing to write for the chat.
-    if (fleet) {
+    // With no fleet there is nothing to write for the chat, and an unchanged chat is not written.
+    // Sound applies on its own, whatever the PUT answers.
+    if (sound === muted.value) setMuted(!sound); // the draft disagrees with the stored state
+    const changed = !stored || fleet !== stored.fleet || model !== stored.model || effort !== stored.effort;
+    if (fleet && changed) {
       const r = await api('PUT', '/api/chat', { fleet, model, effort });
       if (!r.ok) {
         setError(r.error);
@@ -43,7 +55,6 @@ function Form({ onClose }: { onClose: () => void }) {
         return;
       }
     }
-    if (sound === muted.value) setMuted(!sound); // the draft disagrees with the stored state
     onClose();
   }
 
@@ -118,7 +129,7 @@ function Form({ onClose }: { onClose: () => void }) {
           </div>
           <div class="app-set-field">
             <span class="app-set-caption">Writes to config.json</span>
-            <code class="app-set-line">{line}</code>
+            <code class="app-set-line">{fleet ? line : 'Nothing: there is no fleet to chat in.'}</code>
           </div>
         </section>
         {error && <div role="alert">{error}</div>}
