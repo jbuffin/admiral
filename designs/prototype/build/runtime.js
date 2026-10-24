@@ -6,6 +6,10 @@
  * DCLogic` whose renderVals() feeds the template. This file renders that same
  * template with React so the prototype runs in any browser, outside the design
  * canvas. It is a reference for behaviour and look, not production code.
+ *
+ * One extension beyond that format: <sc-def>/<sc-use> partials, so the chat
+ * reuses the inbox's question card instead of copying it. The design canvas
+ * does not know them.
  */
 (function () {
   'use strict';
@@ -23,6 +27,7 @@
   var VOID = { input: 1, img: 1, br: 1, hr: 1, meta: 1, link: 1 };
   var WHOLE = /^\s*\{\{\s*([^}]+?)\s*\}\}\s*$/;
   var ANY = /\{\{\s*([^}]+?)\s*\}\}/g;
+  var DEFS = {};
 
   function camel(s) { return s.replace(/-([a-z])/g, function (_, c) { return c.toUpperCase(); }); }
 
@@ -81,6 +86,17 @@
     if (node.nodeType !== 1) return null;
     var tag = node.localName;
 
+    // A partial: <sc-def name="x">...</sc-def> declares it, and <sc-use name="x" as="c" value="{{card}}"></sc-use>
+    // renders it with `c` bound to the value. A format extension of this prototype, not part of the design canvas.
+    if (tag === 'sc-def') return null;
+    if (tag === 'sc-use') {
+      var def = DEFS[node.getAttribute('name')];
+      if (!def) { console.warn('sc-use: no <sc-def> named "' + node.getAttribute('name') + '"'); return null; }
+      var bound = {};
+      bound[node.getAttribute('as') || 'it'] = value(node.getAttribute('value') || '', scopes);
+      return h(React.Fragment, { key: key }, children(def, scopes.concat([bound])));
+    }
+
     if (tag === 'sc-if') {
       if (!lookup((node.getAttribute('value') || '').replace(/^\s*\{\{\s*|\s*\}\}\s*$/g, ''), scopes)) return null;
       return h(React.Fragment, { key: key }, children(node, scopes));
@@ -118,6 +134,8 @@
     render() {
       var vals = this.renderVals() || {};
       var tpl = document.getElementById('dc-template').content;
+      DEFS = {};
+      tpl.querySelectorAll('sc-def').forEach(function (d) { DEFS[d.getAttribute('name')] = d; });
       var nodes = children(tpl, [vals]);
       return h(React.Fragment, null, nodes);
     }
