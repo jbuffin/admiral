@@ -24,7 +24,7 @@ import (
 
 type crewRow struct {
 	Name, Harness, Dir, State, Launched string
-	LastActivity                        *string
+	LastActivity                        *string `json:"last_activity"`
 	raw                                 map[string]any
 }
 
