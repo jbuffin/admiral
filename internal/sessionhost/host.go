@@ -440,11 +440,11 @@ func (h *Host) commandList(ctx context.Context, cmds ...string) ([]string, error
 // crew boat's window (its window options shadow the ship's) never sets a field of
 // the session, whatever its order or state: it only joins Crew, read by
 // parseCrew's rule. A session with only crew rows is not a session. known holds
-// the session names list-sessions reported. A value holding a newline or the field separator can
-// split a row or forge one, so a session is unreadable, and left out, when a
-// row of it has the wrong number of fields, when its rows disagree on the
-// options, or (for a row that starts with some other name) never: a row whose
-// first field is no known session is dropped as a fragment.
+// the session names list-sessions reported. A value holding a newline or the
+// field separator can split a row or forge one, so a session is unreadable, and
+// left out, when a row of it has the wrong number of fields, when its rows
+// disagree on the options, or (for a row that starts with some other name)
+// never: a row whose first field is no known session is dropped as a fragment.
 func parseRows(rows []string, known map[string]bool) (sessions map[string]Session, unreadable []string) {
 	sessions = map[string]Session{}
 	bad := map[string]bool{}
