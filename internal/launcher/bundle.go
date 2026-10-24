@@ -58,6 +58,8 @@ func claudeSettings() any {
 		"Stop":             []any{group("", "Stop")},
 		"UserPromptSubmit": []any{group("", "UserPromptSubmit")},
 		"PostToolUse":      []any{group("", "PostToolUse")},
+		"SubagentStart":    []any{group("", "SubagentStart")},
+		"SubagentStop":     []any{group("", "SubagentStop")},
 	}}
 }
 
@@ -83,6 +85,8 @@ func copilotHooks() any {
 		"agentStop":           []any{entry("", "agentStop")},
 		"userPromptSubmitted": []any{entry("", "userPromptSubmitted")},
 		"postToolUse":         []any{entry("", "postToolUse")},
+		"subagentStart":       []any{entry("", "subagentStart")},
+		"subagentStop":        []any{entry("", "subagentStop")},
 	}}
 }
 
@@ -91,7 +95,7 @@ func copilotHooks() any {
 // [[hooks.Event.hooks]] of type "command"), written inline. That page does not
 // say how -c maps onto hook tables; the inline form below is the same value as
 // the config.toml tables.
-var codexEvents = []string{"PermissionRequest", "Stop", "UserPromptSubmit", "PostToolUse", "Interrupt"}
+var codexEvents = []string{"PermissionRequest", "Stop", "UserPromptSubmit", "PostToolUse", "Interrupt", "SubagentStart", "SubagentStop"}
 
 func codexFlags() []string {
 	var out []string
