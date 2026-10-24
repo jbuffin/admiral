@@ -309,12 +309,14 @@ func TestCrew_LaunchSendListCloseAndRestart(t *testing.T) {
 		}
 		// Control characters other than newline and tab are not typed into a teammate.
 		w.expectExit(crewCall(w, sess, "", "send", "scout", "a\x07b"), 1, "send text with a control character")
-		// An autopilot ship cannot launch crew into another ship.
 		// A harness the ship's fleet has no dock for.
 		w.writeCue("hook working")
 		lone := w.launch(w.order("claudeonly", "claude", "beta", noSkill, "go"))
 		w.waitFile(lone.Session, "cues-done")
 		w.expectExit(crewCall(w, lone.Session, "", "launch", "--name", "x", "--harness", "codex", "--dir", other, "--", "hi"), 1, "a harness with no dock")
+		// An autopilot ship cannot reach the crew of another ship, nor can a
+		// crew boat of one (ADMIRAL_SHIP cleared): that fails closed.
+		w.expectExit(w.admiralWith(cliOpts{env: []string{"ADMIRAL_AUTOPILOT=1"}}, "crew", "list", "--ship", sess), 1, "an autopilot crew boat with --ship and no ADMIRAL_SHIP")
 		auto := w.admiralWith(cliOpts{env: []string{"ADMIRAL_SHIP=" + sess, "ADMIRAL_AUTOPILOT=1"}},
 			"crew", "launch", "--ship", lone.Session, "--name", "x", "--dir", other, "--", "hi")
 		w.expectExit(auto, 1, "an autopilot ship launching into another ship")
