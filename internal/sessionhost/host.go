@@ -83,7 +83,11 @@ const fixedFields = 8
 // (a window option; set only on a crew boat's window), the pane id, the window id
 // the pane's last hook time and its @admiral-subagents. The subagents come last
 // and outside optionNames (a change of them is no OptionChanged), after the
-// fields parseCrew reads by position.
+// fields parseCrew reads by position. tmux prints option values raw: a \x1f in
+// one makes its row the wrong length (the ship is unreadable), and a raw newline
+// in the last field (the subagents) leaves a fragment that is parsed as a row if
+// it is well formed. Only a raw `tmux set -p` can plant either; `admiral hook`
+// writes JSON, which escapes both. There is no hardening in code.
 const tailFields = 5
 
 // optionNames are the session options in the order format lists them. The last
@@ -435,8 +439,8 @@ func (h *Host) commandList(ctx context.Context, cmds ...string) ([]string, error
 // the first pane that is not a crew boat's stands for the session. A row from a
 // crew boat's window (its window options shadow the ship's) never sets a field of
 // the session, whatever its order or state: it only joins Crew, read by
-// parseCrew's rule. A session with only crew rows is not a session. known holds the session names
-// list-sessions reported. A value holding a newline or the field separator can
+// parseCrew's rule. A session with only crew rows is not a session. known holds
+// the session names list-sessions reported. A value holding a newline or the field separator can
 // split a row or forge one, so a session is unreadable, and left out, when a
 // row of it has the wrong number of fields, when its rows disagree on the
 // options, or (for a row that starts with some other name) never: a row whose

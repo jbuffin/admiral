@@ -535,9 +535,10 @@ func TestCrewAPI_CloseRoute(t *testing.T) {
 	if strings.Join(crewNames(got), ",") != "gone,keep" || got.CrewLive != 1 {
 		t.Errorf("after closing live: crew %v, crew_live %d, want [gone keep] and 1", crewNames(got), got.CrewLive)
 	}
-	if hasWindow("live") || alive(live.pid) {
-		t.Errorf("the closed crew boat still has a window or a process")
+	if hasWindow("live") {
+		t.Errorf("the closed crew boat still has a window")
 	}
+	waitDead(t, "the closed crew boat", live.pid)
 
 	if code, body := send(t, http.MethodPost, closeURL(s.Session, "gone"), nil); code/100 != 2 {
 		t.Fatalf("close an anchored crew boat = %d: %s", code, body)
@@ -584,7 +585,6 @@ func TestCrewAPI_Ending(t *testing.T) {
 		if c, _ := crewOf(now, "b"); c.Status != "underway" || !alive(b.pid) || now.CrewLive != 1 {
 			t.Errorf("b = %+v alive=%v crew_live=%d, want underway, alive and 1", c, alive(b.pid), now.CrewLive)
 		}
-		_ = a
 
 		// Sail-off: the ship's own exit 0 takes the live crew boat with it.
 		w.releaseGo(s.Session, "")

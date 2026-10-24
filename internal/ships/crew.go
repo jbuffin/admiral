@@ -121,7 +121,7 @@ func (s *Service) serveCrewClose(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "crew boat "+name+" not found")
 		return
 	}
-	switch err := s.Launcher.CloseCrew(windowID); {
+	switch err := s.Launcher.CloseCrew(ctx, windowID); {
 	case errors.Is(err, launcher.ErrCrewGone):
 		writeError(w, http.StatusNotFound, "crew boat "+name+" not found")
 		return

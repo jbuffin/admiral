@@ -4,6 +4,7 @@
 package launcher
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -571,9 +572,18 @@ func (l *Launcher) run(args ...string) (string, error) { return l.runWith("", ar
 // for the commands (`admiral crew`) that drive a ship's windows.
 func (l *Launcher) RunTmux(args ...string) (string, error) { return l.run(args...) }
 
+// runCtx is run, ended with ctx.
+func (l *Launcher) runCtx(ctx context.Context, args ...string) (string, error) {
+	return l.runWithCtx(ctx, "", args...)
+}
+
 // runWith is run with PATH replaced, when path is not empty.
 func (l *Launcher) runWith(path string, args ...string) (string, error) {
-	cmd := exec.Command(l.Tmux, append([]string{"-f", "/dev/null", "-S", l.Socket}, args...)...)
+	return l.runWithCtx(context.Background(), path, args...)
+}
+
+func (l *Launcher) runWithCtx(ctx context.Context, path string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, l.Tmux, append([]string{"-f", "/dev/null", "-S", l.Socket}, args...)...)
 	for _, kv := range os.Environ() {
 		if strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_PANE=") || (path != "" && strings.HasPrefix(kv, "PATH=")) {
 			continue
