@@ -18,7 +18,8 @@ page = f'''<!doctype html>
 <!--
   Admiral clickable prototype. Open this file in a browser.
   Scenes: ?scene=harbor (default), ?scene=launch, ?scene=bridge, ?scene=tablet,
-  ?scene=inbox, ?scene=inbox-bridge, ?scene=inbox-empty
+  ?scene=inbox, ?scene=inbox-bridge, ?scene=inbox-empty, ?scene=crew,
+  ?scene=crew-bridge, ?scene=crew-attn, ?scene=crew-dismiss
   Generated from designs/canvas/Main.dc.html by the design handoff; edit the
   .dc.html source, not this file.
 -->
