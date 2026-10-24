@@ -31,13 +31,25 @@ func (h *Host) SetWorking(ctx context.Context, session string) error {
 // needs_you without it, and tmux runs a client's list without another client's
 // commands between.
 func (h *Host) setPane(ctx context.Context, session, state, reason string) error {
-	target := tmuxQuote("=" + session + ":")
+	target := tmuxQuote(h.shipPane(session))
 	setReason := "set-option -p -u -t " + target + " " + ReasonOption
 	if reason != "" {
 		setReason = "set-option -p -t " + target + " " + ReasonOption + " " + tmuxQuote(reason)
 	}
 	_, err := h.commandList(ctx, setReason, "set-option -p -t "+target+" "+StateOption+" "+state)
 	return err
+}
+
+// shipPane is the target of the ship's own pane: its pane id as last read, or
+// the session's first window. "=session:" would be the current window's active
+// pane, which a crew boat's window can be.
+func (h *Host) shipPane(session string) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if id := h.sessions[session].PaneID; id != "" {
+		return id
+	}
+	return "=" + session + ":^"
 }
 
 // SetOptions writes session options of the ship in one command list. Names are

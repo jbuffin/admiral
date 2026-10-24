@@ -105,6 +105,8 @@ func run(args []string) error {
 		return cli.Ships(args[1:], std)
 	case "attach":
 		return cli.Attach(args[1:], std)
+	case "crew":
+		return cli.Crew(args[1:], std)
 	case "completion":
 		return cli.Completion(args[1:], std)
 	case "service":

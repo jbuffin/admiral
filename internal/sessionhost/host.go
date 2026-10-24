@@ -12,7 +12,7 @@
 // or signal) is read from pane_dead*. A bell is the one thing the poll can't
 // see: window_bell_flag stays set after the first bell, and stays 0 while a
 // control client is attached to the ship (the bridge, later), so the host
-// installs a global `alert-bell` hook that stamps the session's @admiral-bell
+// installs a global `alert-bell` hook that stamps the ringing pane's @admiral-bell
 // option with a new value on every bell, and the poll reports a change of it.
 //
 // The host never launches anything: the launcher runs the tmux binary with an
@@ -63,7 +63,8 @@ const format = "#{session_name}" + sep + "#{pane_dead}" + sep + "#{pane_dead_sta
 	"#{@admiral-launched}" + sep + "#{@admiral-title}" + sep + "#{@admiral-url}" + sep + "#{@admiral-panel}" + sep + "#{@admiral-resources}" + sep +
 	"#{@admiral-origin-source}" + sep + "#{@admiral-origin-panel}" + sep +
 	"#{@admiral-" + OptEnded + "}" + sep + "#{@admiral-" + OptNeedsCount + "}" + sep +
-	"#{@admiral-" + OptNeedsSecs + "}" + sep + "#{@admiral-" + OptStopSince + "}"
+	"#{@admiral-" + OptNeedsSecs + "}" + sep + "#{@admiral-" + OptStopSince + "}" + sep +
+	"#{@admiral-crew-name}" + sep + "#{pane_id}" + sep + "#{window_id}" + sep + "#{" + ActivityOption + "}"
 
 // The session options Admiral keeps for the outcome log (ADR 0012): the marker
 // of a ship whose `ended` was written, and the running needs-you tally.
@@ -76,6 +77,11 @@ const (
 
 // fixedFields is how many fields of a row come before the options.
 const fixedFields = 8
+
+// tailFields is how many fields of a row come after the options: the crew name
+// (a window option; set only on a crew boat's window), the pane id, the window id
+// and the pane's last hook time.
+const tailFields = 4
 
 // optionNames are the session options in the order format lists them. The last
 // four are Admiral's outcome bookkeeping (ended marker, needs-you tally).
@@ -93,6 +99,7 @@ type Session struct {
 	Signal     string    // the signal that killed the pane, e.g. "kill"; then there is no exit status
 	DeadTime   time.Time // when the pane died, at tmux's one-second resolution; zero while it lives
 	BellStamp  string    // changes on every bell
+	PaneID     string    // the ship's own pane, so writes never land on a crew boat's
 }
 
 // IsShip is true for a session Admiral launched (or that looks like one).
@@ -309,19 +316,19 @@ func (h *Host) connect(ctx context.Context) error {
 }
 
 // bellHook writes the script the alert-bell hook runs and returns the command
-// that installs the hook. The script stamps the session with the time and its
+// that installs the hook. The script stamps the ringing window's pane with the time and its
 // own pid, so two bells in a second differ.
 func (h *Host) bellHook() (string, error) {
 	script := filepath.Join(filepath.Dir(h.sock), "harness", "bell.sh")
-	body := "#!/bin/sh\nexec " + shQuote(h.tmux) + " -S " + shQuote(h.sock) +
-		` set-option -t "=$1:" @admiral-bell "$(date +%s)-$$"` + "\n"
+	body := "#!/bin/sh\n" + shQuote(h.tmux) + " -S " + shQuote(h.sock) +
+		` set-option -p -t "$2" @admiral-bell "$(date +%s)-$$"` + "\n" + crewBell(h.tmux, h.sock)
 	if err := os.MkdirAll(filepath.Dir(script), 0o700); err != nil {
 		return "", err
 	}
 	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
 		return "", err
 	}
-	run := "run-shell -b " + tmuxQuote(shQuote(script)+" #{q:hook_session_name}")
+	run := "run-shell -b " + tmuxQuote(shQuote(script)+" #{q:hook_session_name} #{hook_window}")
 	return "set-hook -g alert-bell " + tmuxQuote(run), nil
 }
 
@@ -417,7 +424,8 @@ func (h *Host) commandList(ctx context.Context, cmds ...string) ([]string, error
 }
 
 // parseRows folds the rows of list-panes (one per pane) into one session each:
-// the first pane stands for the session. known holds the session names
+// the first pane stands for the session. A row from a crew boat's window is left
+// out (ReadCrew reads those), since its window options shadow the ship's. known holds the session names
 // list-sessions reported. A value holding a newline or the field separator can
 // split a row or forge one, so a session is unreadable, and left out, when a
 // row of it has the wrong number of fields, when its rows disagree on the
@@ -432,12 +440,15 @@ func parseRows(rows []string, known map[string]bool) (sessions map[string]Sessio
 		if name == Internal || !known[name] {
 			continue
 		}
-		if len(f) != fixedFields+len(optionNames) {
+		if len(f) != fixedFields+len(optionNames)+tailFields {
 			bad[name] = true
 			continue
 		}
+		if f[fixedFields+len(optionNames)] != "" {
+			continue // a crew boat's pane: its window options shadow the ship's
+		}
 		s := Session{Name: name, PaneDead: f[1] == "1", Signal: f[3], BellStamp: f[5], State: f[6], Reason: f[7],
-			Options: map[string]string{}}
+			Options: map[string]string{}, PaneID: f[fixedFields+len(optionNames)+1]}
 		s.ExitStatus, _ = strconv.Atoi(f[2])
 		if sec, err := strconv.ParseInt(f[4], 10, 64); err == nil && sec > 0 {
 			s.DeadTime = time.Unix(sec, 0)
