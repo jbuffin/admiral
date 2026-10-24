@@ -59,7 +59,11 @@ export function chime(): void {
 }
 
 export function toggleSound(): void {
-  muted.value = !muted.value;
+  setMuted(!muted.value);
+}
+
+export function setMuted(next: boolean): void {
+  muted.value = next;
   try {
     localStorage.setItem(KEY, muted.value ? '1' : '0');
   } catch {

@@ -3317,3 +3317,196 @@ body.dragging * {
   outline: 3px solid var(--color-sunny);
   outline-offset: 2px;
 }
+
+/* The app Settings modal (#119): General and Chat. */
+.modal.app-settings {
+  max-width: min(560px, 100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+  background-color: var(--color-sidebar);
+  box-shadow: 0 8px 0 var(--color-ink-deep);
+}
+
+.modal.app-settings[open] {
+  display: flex;
+}
+
+.modal.app-settings .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0;
+  gap: 0;
+}
+
+.app-settings-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px 12px 18px;
+  background-color: var(--color-parchment);
+  border-bottom: var(--shape-outline-heavy) solid var(--color-ink);
+}
+
+.app-settings-head h2 {
+  flex: 1 1 auto;
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 26px;
+  line-height: 1.05;
+}
+
+.app-settings-x {
+  width: var(--shape-min-touch-target);
+  height: var(--shape-min-touch-target);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: var(--shape-outline) solid var(--color-ink);
+  border-radius: var(--shape-radius-card);
+  background-color: var(--color-parchment-light);
+  box-shadow: var(--shape-press-shadow);
+  color: var(--color-ink);
+  cursor: pointer;
+}
+
+.app-settings-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px 18px;
+}
+
+.app-settings-body section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.app-settings-body h3 {
+  font-size: 19px;
+}
+
+.app-set-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: var(--shape-outline) solid var(--color-ink);
+  background-color: var(--color-parchment-light);
+}
+
+.app-set-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.app-set-text strong {
+  font-weight: 600;
+  font-size: 15.5px;
+}
+
+.app-settings-body small {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.app-set-sound {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--shape-min-touch-target);
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 2px solid var(--color-navy-border);
+  background-color: var(--color-ink);
+  color: var(--color-text-on-dark);
+  font: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.app-set-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.app-set-field label {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.app-set-field select {
+  height: 48px;
+  padding: 0 10px;
+  border-radius: var(--shape-radius-card);
+  border: var(--shape-outline) solid var(--color-ink);
+  background-color: #fff;
+  font-family: var(--font-body);
+  font-size: 16px;
+  color: var(--color-ink);
+}
+
+.app-set-caption {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.app-set-line {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background-color: var(--color-terminal-bg);
+  color: var(--color-text-on-dark);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.app-settings-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 18px;
+  border-top: var(--shape-outline-heavy) solid var(--color-ink);
+  background-color: #ffe7ae;
+}
+
+.app-set-cancel,
+.app-set-save {
+  height: 48px;
+  padding: 0 18px;
+  border: var(--shape-outline) solid var(--color-ink);
+  border-radius: 14px;
+  background-color: var(--color-parchment-light);
+  box-shadow: var(--shape-press-shadow);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--color-ink);
+  cursor: pointer;
+}
+
+.app-set-save {
+  padding: 0 22px;
+  background-color: var(--color-sunny);
+  font-weight: 800;
+  font-size: 17px;
+}

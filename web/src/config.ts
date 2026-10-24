@@ -25,6 +25,14 @@ export interface Config {
   error: { file: string; message: string } | null;
   favorite_skills: string[];
   autopilot: { max_ships: number } | null;
+  // The AdmiralBot chat's settings, defaults filled in; effort '' is the harness default.
+  chat: ChatSettings;
+}
+
+export interface ChatSettings {
+  fleet: string;
+  model: string;
+  effort: string;
 }
 
 // null until the server's first `config` message arrives, so the page claims
@@ -32,8 +40,9 @@ export interface Config {
 export const config = signal<Config | null>(null);
 export const configLoaded = computed(() => config.value !== null);
 
-export function applyConfig(msg: { fleets: Fleet[]; error: Config['error']; favorite_skills?: string[]; autopilot?: Config['autopilot'] }): void {
-  config.value = { fleets: msg.fleets, error: msg.error, favorite_skills: msg.favorite_skills ?? [], autopilot: msg.autopilot ?? null };
+export function applyConfig(msg: { fleets: Fleet[]; error: Config['error']; favorite_skills?: string[]; autopilot?: Config['autopilot']; chat?: ChatSettings }): void {
+  config.value = { fleets: msg.fleets, error: msg.error, favorite_skills: msg.favorite_skills ?? [], autopilot: msg.autopilot ?? null,
+    chat: msg.chat ?? { fleet: '', model: 'sonnet', effort: '' } };
 }
 
 onMessage('config', applyConfig);

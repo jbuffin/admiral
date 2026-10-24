@@ -5,6 +5,7 @@ import { toggleSound, muted } from './chime';
 import { config } from './config';
 import { offline, onMessage, signedOut } from './connection';
 import { openSetup } from './setup';
+import { AppSettings, openAppSettings } from './AppSettings';
 import { chipLabel, chipText, resources } from './resources';
 import { anyAutopilot } from './sources';
 import { InboxButton } from './InboxPanel';
@@ -152,6 +153,14 @@ export function Header() {
               </span>
             </button>
           )}
+          <button type="button" class="press about-button" aria-label="Settings" onClick={openAppSettings}>
+            <span class="about-face">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F4EEDF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7" />
+              </svg>
+            </span>
+          </button>
           <button type="button" class="press about-button" aria-label="About Admiral" onClick={() => (aboutOpen.value = true)}>
             <span class="about-face">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F4EEDF" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
@@ -164,6 +173,7 @@ export function Header() {
       </div>
       <Banners />
       <About />
+      <AppSettings />
     </header>
   );
 }
