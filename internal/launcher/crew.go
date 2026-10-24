@@ -190,3 +190,22 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	}
 	return nil
 }
+
+// ErrCrewGone is CloseCrew's answer for a window that is already gone.
+var ErrCrewGone = errors.New("crew window is gone")
+
+// CloseCrew kills one crew boat's window by its tmux window id, and with it the
+// teammate's process. tmux never reuses a window id within one server, so an id
+// from a stale read can't close another boat's window. `admiral crew close` and
+// the server's close route both end here.
+func (l *Launcher) CloseCrew(windowID string) error {
+	out, err := l.run("kill-window", "-t", windowID)
+	if err == nil {
+		return nil
+	}
+	out = strings.TrimSpace(out)
+	if strings.Contains(out, "can't find window") {
+		return fmt.Errorf("%w: %s", ErrCrewGone, out)
+	}
+	return errors.New(out)
+}

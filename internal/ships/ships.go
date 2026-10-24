@@ -58,6 +58,12 @@ type Ship struct {
 	// reason code (`idle` for a ship no hook has spoken for) and when the stop began.
 	Reason    string `json:"reason,omitempty"`
 	StopSince string `json:"stop_since,omitempty"`
+	// Crew is the ship's crew boats (teammates), by name; Subagents its running
+	// subagents (marks); CrewLive how many crew boats have a live pane. Always
+	// present, empty lists as [].
+	Crew      []CrewBoat             `json:"crew"`
+	Subagents []sessionhost.Subagent `json:"subagents"`
+	CrewLive  int                    `json:"crew_live"`
 }
 
 // Origin is where the ship ran, for a resume order of its report: its checkout
@@ -139,6 +145,11 @@ func (s *Service) ship(sess sessionhost.Session) Ship {
 		s.mu.Unlock()
 		sh.StopSince = since.UTC().Format(time.RFC3339Nano)
 	}
+	// Only the wire counts the crew: the ship's own status stays what FromSession
+	// gives, for the CLI, the outcome log and every decision about the ship.
+	if _, reason, since, ok := wireStatus(sh.Status, sh.Crew); ok {
+		sh.Status, sh.Reason, sh.StopSince = StatusNeedsYou, reason, since
+	}
 	if p, ok := s.State.Position(sess.Name); ok {
 		sh.Position = &p
 	}
@@ -153,6 +164,11 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 		FleetColor: o["fleet-color"], Harness: o["harness"], Dir: o["dir"], Repo: filepath.Base(o["dir"]),
 		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], OrderID: o["order"], Launched: o["launched"], Status: status(sess, now)}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
+	sh.Crew, sh.Subagents = crewBoats(sess.Crew), sess.Subagents
+	if sh.Subagents == nil {
+		sh.Subagents = []sessionhost.Subagent{}
+	}
+	sh.CrewLive = crewLive(sh.Crew)
 	if sh.Status == StatusNeedsYou {
 		sh.Reason = reasonOf(sess)
 	}
@@ -201,6 +217,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/ships/{session}/position", s.servePosition)
 	mux.HandleFunc("POST /api/ships/{session}/input-seen", s.serveInputSeen)
 	mux.HandleFunc("POST /api/ships/{session}/dismiss", s.serveDismiss)
+	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/close", s.serveCrewClose)
 }
 
 // tick is how often Run looks for changes that no tmux event announces: the
@@ -281,11 +298,12 @@ func prunes(ev sessionhost.Event) bool {
 	return ev.Kind == sessionhost.SessionRemoved || ev.Kind == sessionhost.Resumed
 }
 
-// signature is the statuses of the ships, to tell when a clock moved one.
+// signature is the statuses of the ships and their crew boats and subagents, to
+// tell when a clock or a hook moved one.
 func (s *Service) signature() string {
 	var b strings.Builder
 	for _, sh := range s.List() {
-		b.WriteString(sh.Session + "=" + sh.Status + ":" + sh.Reason + ";")
+		b.WriteString(sh.Session + "=" + sh.Status + ":" + sh.Reason + crewSignature(sh) + ";")
 	}
 	return b.String()
 }

@@ -165,6 +165,50 @@ func TestParseRowsDistrustsForgedRows(t *testing.T) {
 	}
 }
 
+// A crew row never sets a ship field, whatever the order of the rows: the ship's
+// row can come after its crew's, a session with only crew rows is no session, and
+// a crew row's options (which differ from the session's) don't make it unreadable.
+func TestParseRowsFoldsCrewWithoutLeaking(t *testing.T) {
+	row := func(name, crew, state, dead string, opts string) string {
+		f := make([]string, fixedFields+len(optionNames)+tailFields)
+		f[0], f[1], f[6] = name, dead, state
+		for i, n := range optionNames {
+			f[fixedFields+i] = opts
+			if n == "name" {
+				f[fixedFields+i] = opts + "-" + n
+			}
+		}
+		tail := fixedFields + len(optionNames)
+		f[tail], f[tail+1], f[tail+2] = crew, "%"+name+crew, "@"+name+crew
+		if crew == "" {
+			f[tail+4] = `[{"id":"a1","type":"Explore","start":"2026-10-24T10:00:00Z"}]`
+		}
+		return strings.Join(f, sep)
+	}
+	known := map[string]bool{"ship": true, "orphan": true}
+	got, unreadable := parseRows([]string{
+		row("ship", "mate", "needs_you", "1", "crewopts"), // crew first, dead, other options
+		row("ship", "", "working", "0", "shipopts"),
+		row("orphan", "mate", "needs_you", "0", "crewopts"), // its ship window is gone
+	}, known)
+	if len(unreadable) != 0 {
+		t.Errorf("unreadable = %v, want none", unreadable)
+	}
+	if _, ok := got["orphan"]; ok || len(got) != 1 {
+		t.Errorf("sessions = %v, want only ship (a session of crew rows alone is no session)", got)
+	}
+	s := got["ship"]
+	if s.PaneDead || s.State != "working" || s.Options["harness"] != "shipopts" || s.PaneID != "%ship" {
+		t.Errorf("ship = %+v, want its own row's fields, none of the crew row's", s)
+	}
+	if len(s.Crew) != 1 || s.Crew[0].Name != "mate" || s.Crew[0].State != CrewAnchored || s.Crew[0].Harness != "crewopts" {
+		t.Errorf("crew = %+v, want mate, anchored, read from its own row", s.Crew)
+	}
+	if len(s.Subagents) != 1 || s.Subagents[0].ID != "a1" {
+		t.Errorf("subagents = %+v, want a1 from the ship's row", s.Subagents)
+	}
+}
+
 // tmux stops a command list at its first failing command and answers it with
 // one %error, so the list's replies are fewer than its commands. Neither a list
 // that errored, nor one that was cancelled before its error arrived, may leave a

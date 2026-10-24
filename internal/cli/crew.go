@@ -315,8 +315,8 @@ func crewClose(args []string, std IO) error {
 	if err != nil {
 		return err
 	}
-	if out, err := c.l.RunTmux("kill-window", "-t", boat.WindowID); err != nil {
-		return fmt.Errorf("tmux could not close %s: %s", boat.Name, strings.TrimSpace(out))
+	if err := c.l.CloseCrew(boat.WindowID); err != nil {
+		return fmt.Errorf("tmux could not close %s: %s", boat.Name, err)
 	}
 	return nil
 }

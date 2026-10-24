@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/jbuffin/admiral/internal/outcomes"
+	"github.com/jbuffin/admiral/internal/sessionhost"
 	"mvdan.cc/sh/v3/syntax"
 )
 
@@ -116,7 +117,7 @@ func recordGuardDenied(tool, rule string) {
 		return
 	}
 	fields := map[string]any{"rule": rule}
-	if safeToken.MatchString(tool) {
+	if sessionhost.SafeToken.MatchString(tool) {
 		fields["tool"] = tool
 	}
 	w := outcomes.New(filepath.Join(dir, "outcomes"), func(string, ...any) {})
