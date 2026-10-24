@@ -76,12 +76,32 @@ func (s *Service) readReport(session string) []byte {
 	return b
 }
 
+// Origin is where a ship ran: its checkout, and the autopilot panel it counted
+// against, if autopilot launched it (#120). A resume order of its report
+// launches in that checkout, under that panel's entry.
+type Origin struct {
+	Dir, Source, Panel string
+}
+
 // CaptureResume copies the resume text of session's report into the state when
 // every item the report lists is answered, and says nothing otherwise. It does
 // no network I/O. Whatever deletes a report calls it first.
 func (s *Service) CaptureResume(session string) {
+	var from Origin
+	if s.Origin != nil {
+		from, _ = s.Origin(session)
+	}
+	s.CaptureResumeFrom(session, from)
+}
+
+// CaptureResumeFrom is CaptureResume for a caller that has the ship's origin
+// from a session that may be gone by now; with no directory it asks s.Origin.
+func (s *Service) CaptureResumeFrom(session string, from Origin) {
 	if s.Kept == nil || !validSession(session) {
 		return
+	}
+	if from.Dir == "" && s.Origin != nil {
+		from, _ = s.Origin(session)
 	}
 	b := s.readReport(session)
 	if b == nil {
@@ -118,7 +138,7 @@ func (s *Service) CaptureResume(session string) {
 	ids := slices.Clone(r.Inbox)
 	slices.Sort(ids)
 	sum := sha256.Sum256([]byte(r.Resume + "\x00" + strings.Join(ids, "\x00")))
-	fresh, err := s.Kept.QueueResume(session+":"+hex.EncodeToString(sum[:8]), session, r.Resume)
+	fresh, err := s.Kept.QueueResume(session+":"+hex.EncodeToString(sum[:8]), session, r.Resume, from.Dir, from.Source, from.Panel)
 	switch {
 	case err != nil:
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume order cannot be kept: %v\n", session, err)
@@ -202,10 +222,24 @@ func (s *Service) addResumes(session string) (left bool) {
 		if t == nil {
 			continue // nothing to try until the config names a target
 		}
+		r := pending[key]
+		release := func(string) {}
+		if s.ResumeAdd != nil {
+			release = s.ResumeAdd(t.Source, t.Panel, Origin{Dir: r.Dir, Source: r.OriginSource, Panel: r.OriginPanel})
+		}
+		// Released once, whichever way the add ends, a panic included.
+		released := false
+		recorded := func(id string) {
+			if !released {
+				released = true
+				release(id)
+			}
+		}
+		defer recorded("")
 		ctx, cancel := context.WithTimeout(context.Background(), addTimeout)
-		id, err := s.AddOrder(ctx, t.Source, t.Panel, pending[key].Text)
+		id, err := s.AddOrder(ctx, t.Source, t.Panel, r.Text)
 		cancel()
-		who := pending[key].Session
+		who := r.Session
 		var fail interface{ AddKind() AddKind }
 		uncertain := false
 		if err != nil {
@@ -215,6 +249,7 @@ func (s *Service) addResumes(session string) (left bool) {
 			}
 			switch kind {
 			case AddRetryable:
+				recorded("")
 				left = true
 				if s.lastErr[key] != err.Error() {
 					fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume order is not added yet: %v\n", who, err)
@@ -227,11 +262,13 @@ func (s *Service) addResumes(session string) (left bool) {
 			case AddUncertain:
 				uncertain = true
 				fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume order may not have landed, and is not sent again: %v\n", who, err)
+				fmt.Fprintf(os.Stderr, "admiral: ship %s: if it did, it is an ordinary order: the add gave no id, so its checkout is not recorded\n", who)
 			default:
 				fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume order is dropped: %v\n", who, err)
 			}
 		}
 		delete(s.lastErr, key)
+		recorded(id) // the order is in the state's hands now: "" when the add gave no id
 		if ferr := s.Kept.FinishResume(key); ferr != nil {
 			fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume order cannot be marked done: %v\n", who, ferr)
 		}

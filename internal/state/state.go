@@ -47,11 +47,15 @@ type file struct {
 // Resume is one report's resume order. Until it is added Text holds the order,
 // so it outlives the report's deletion and a restart; once it is added (or
 // refused for good) Done is set and Text is dropped, and the entry stays so the
-// same report never adds it twice.
+// same report never adds it twice. Dir and the origin are where the ship ran and
+// the autopilot panel it counted against (#120); they go with Text.
 type Resume struct {
-	Session string `json:"session"`
-	Text    string `json:"text,omitempty"`
-	Done    bool   `json:"done,omitempty"`
+	Session      string `json:"session"`
+	Text         string `json:"text,omitempty"`
+	Dir          string `json:"dir,omitempty"`
+	OriginSource string `json:"origin_source,omitempty"`
+	OriginPanel  string `json:"origin_panel,omitempty"`
+	Done         bool   `json:"done,omitempty"`
 }
 
 // KeptShip is what Admiral remembers of a ship that sailed off with an item
@@ -63,6 +67,10 @@ type KeptShip struct {
 	FleetName  string `json:"fleet_name,omitempty"`
 	FleetColor string `json:"fleet_color,omitempty"`
 	Harness    string `json:"harness"`
+	// Dir and the origin panel are for the resume order of its report (#120).
+	Dir          string `json:"dir,omitempty"`
+	OriginSource string `json:"origin_source,omitempty"`
+	OriginPanel  string `json:"origin_panel,omitempty"`
 }
 
 // DockKey keys a dock's last directory.
@@ -165,16 +173,25 @@ func (s *Store) DropInbox(session string) error {
 // QueueResume records the resume order of a report, unless the key is known
 // already (pending or done), and writes the file now: the report may be deleted
 // right after. It says whether the order is new.
-func (s *Store) QueueResume(key, session, text string) (bool, error) {
+func (s *Store) QueueResume(key, session, text, dir, originSource, originPanel string) (bool, error) {
 	s.mu.Lock()
-	if _, seen := s.data.Resumes[key]; seen {
+	if r, seen := s.data.Resumes[key]; seen {
+		// A capture that came when the ship was already gone knew no directory.
+		fill := !r.Done && r.Dir == "" && dir != ""
+		if fill {
+			r.Dir, r.OriginSource, r.OriginPanel = dir, originSource, originPanel
+			s.data.Resumes[key] = r
+		}
 		s.mu.Unlock()
+		if fill {
+			return false, s.Flush()
+		}
 		return false, nil
 	}
 	if s.data.Resumes == nil {
 		s.data.Resumes = map[string]Resume{}
 	}
-	s.data.Resumes[key] = Resume{Session: session, Text: text}
+	s.data.Resumes[key] = Resume{Session: session, Text: text, Dir: dir, OriginSource: originSource, OriginPanel: originPanel}
 	s.mu.Unlock()
 	return true, s.Flush()
 }

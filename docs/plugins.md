@@ -109,6 +109,8 @@ If you can't list a panel, say so with an `error` instead of a list. Its message
 {"jsonrpc":"2.0","id":5,"result":{"id":"a1f3"}}
 ```
 
+The `id` must be the one `orders.list` later gives the new order: Admiral records where a resume order launches under it (ADR 0016). An id is never reused for another order.
+
 **`orders.edit`**: only with `edit`.
 
 ```json
