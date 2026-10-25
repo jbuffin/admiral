@@ -49,13 +49,13 @@ func TestCrew_LaunchArgsAndRole(t *testing.T) {
 
 		w.expectExit(launch(w, "--name", "cx", "--harness", "codex", "--arg", "-m", "--arg", "x", "--", "do it"), 0, "codex with --arg")
 		cx := w.record(sess + "/crew/cx").argv
-		if n := len(cx); n < 5 || !reflect.DeepEqual(cx[n-4:], []string{"-m", "x", "--", "do it"}) || cx[0] != "--fa-codex" || !has(cx, `tui.notification_method="bel"`) {
+		if n := len(cx); n < 5 || !reflect.DeepEqual(cx[n-4:], []string{"-m", "x", "--", "do it"}) || cx[0] != "--fa-codex" || cx[n-5] != `tui.notification_method="bel"` {
 			t.Errorf("codex argv = %q, want its dock args and hook flags, then -m x, then -- and the prompt", cx)
 		}
 
 		w.expectExit(launch(w, "--name", "cp", "--harness", "copilot", "--arg", "--model", "--arg", "x", "--", "do it"), 0, "copilot with --arg")
 		cp := w.record(sess + "/crew/cp").argv
-		if n := len(cp); n < 4 || !reflect.DeepEqual(cp[n-3:], []string{"--model", "x", "--interactive=do it"}) || cp[0] != "--fa-copilot" {
+		if n := len(cp); n < 4 || !reflect.DeepEqual(cp[n-3:], []string{"--model", "x", "--interactive=do it"}) || cp[0] != "--fa-copilot" || n < 6 || cp[n-5] != "--plugin-dir" {
 			t.Errorf("copilot argv = %q, want its dock args and hook flags, then --model x, then --interactive=<prompt>", cp)
 		}
 	})
@@ -114,6 +114,7 @@ func TestCrew_LaunchArgsAndRole(t *testing.T) {
 			{"codex", []string{"--arg", "-c", "--arg", "hooks.Stop=[]"}, "hooks.Stop=[]"},
 			{"copilot", []string{"--arg", "--plugin-dir", "--arg", "/tmp/x"}, "--plugin-dir"},
 			{"claude", []string{"--arg=--"}, "--"},
+			{"codex", []string{"--arg", "exec"}, "exec"},
 		}
 		for _, c := range cases {
 			args := append([]string{"--name", "refused", "--harness", c.harness}, c.args...)
@@ -137,4 +138,3 @@ func TestCrew_LaunchArgsAndRole(t *testing.T) {
 		}
 	})
 }
-
