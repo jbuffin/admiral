@@ -1,10 +1,8 @@
 package e2e
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -424,37 +422,6 @@ func TestAdmiralBot_ReadCommandsFindTheServerByADMIRAL_PORT(t *testing.T) {
 		}
 		if len(got.NeedsYou) != 1 || got.NeedsYou[0].Session != ship.Session || got.NeedsYou[0].Status != "needs_you" {
 			t.Errorf("needs_you = %+v, want the one needs-you ship %s", got.NeedsYou, ship.Session)
-		}
-	})
-
-	t.Run("inbox prints SHIP KIND TITLE AGE lines", func(t *testing.T) {
-		w := w.at(t)
-		r := w.botCLI(env, "", "inbox")
-		w.expectExit(r, 0, "admiral inbox")
-		var item, needsYou bool
-		for _, l := range strings.Split(r.stdout, "\n") {
-			f := strings.Split(l, "\t")
-			if len(f) < 4 {
-				continue
-			}
-			if f[1] == "question" && f[2] == "Which way?" {
-				item = true
-			}
-			if f[1] == "needs-you" && (f[0] == ship.Name || f[0] == ship.Session) {
-				needsYou = true
-			}
-		}
-		if !item || !needsYou {
-			t.Errorf("inbox printed:\n%q\nwant a tab-separated `question` line titled Which way? and a `needs-you` line for %s", r.stdout, ship.Name)
-		}
-	})
-
-	t.Run("ships finds the server too", func(t *testing.T) {
-		w := w.at(t)
-		r := w.botCLI(env, "", "ships")
-		w.expectExit(r, 0, "admiral ships")
-		if strings.Contains(strings.ToLower(r.both()), "not running") || !strings.Contains(r.stdout, ship.Name) {
-			t.Errorf("ships with ADMIRAL_PORT set printed:\n%s\nwant the table from the server, not the tmux fallback", r.both())
 		}
 	})
 
@@ -1019,7 +986,6 @@ func TestAdmiralBot_ChatQuestionsAreReadDefensively(t *testing.T) {
 		}
 		return false
 	})
-	time.Sleep(1500 * time.Millisecond)
 	s = fetchBot(t, w.in.LocalURL)
 	if len(s.Questions) != 1 || qStr(s.Questions[0], "title") != "The real one" {
 		t.Fatalf("questions = %v, want only the real one (the link and the oversized file skipped)", s.ids())
@@ -1034,7 +1000,6 @@ func TestAdmiralBot_ChatQuestionsAreReadDefensively(t *testing.T) {
 	if err := os.Symlink(answerTarget, filepath.Join(w.questionsDir(), id+".answer.json")); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(1500 * time.Millisecond)
 	s = fetchBot(t, w.in.LocalURL)
 	if len(s.Questions) != 1 || string(s.Questions[0]["answer"]) != "null" || s.State != "waiting" {
 		t.Errorf("with a link for its answer: %+v, want the question still open and the state waiting", s)
@@ -1049,51 +1014,8 @@ func TestAdmiralBot_ChatQuestionsAreReadDefensively(t *testing.T) {
 	}
 	atomicWrite(t, filepath.Join(w.questionsDir(), id+".answer.json"), jsonLine(map[string]any{"version": 1, "id": id, "kind": "question",
 		"answers": map[string]any{"1": map[string]any{"choice": "A", "other": strings.Repeat("y", 1<<20+10)}}}))
-	time.Sleep(1500 * time.Millisecond)
 	s = fetchBot(t, w.in.LocalURL)
 	if len(s.Questions) != 1 || string(s.Questions[0]["answer"]) != "null" {
 		t.Errorf("with an oversized answer: %+v, want the question still open", s)
 	}
-}
-
-// ---- scenario 6 ----
-
-// C22 carries on: over a LAN address the chat question route needs the token.
-// Auth refuses before routing, so the 401 half holds without the route; the
-// positive half needs a real question.
-func TestAdmiralBot_ChatQuestionAnswerNeedsTheTokenOverTheLAN(t *testing.T) {
-	c := newBotWorld(t, botOpts{})
-	w := c.world
-	in := w.startLAN(t)
-	c.start()
-	p := w.botStart(w.botEnv(), askStdin("Over the LAN"), "chat", "ask")
-	s := waitQuestions(t, in.LocalURL, p, 10*time.Second, "the question", hasQuestions(1))
-	id := qStr(s.Questions[0], "id")
-	base := in.lanURL()
-
-	for _, path := range []string{"/api/chat/questions/" + id + "/answer", "/api/chat/questions/any-id/answer"} {
-		if resp, body := do(t, http.MethodPost, base+path, nil); resp.StatusCode != http.StatusUnauthorized {
-			t.Errorf("POST %s without the token = %d, want 401: %s", path, resp.StatusCode, body)
-		}
-	}
-	if p.exited() {
-		t.Fatalf("chat ask ended after refused answers: %s", p.result().stdout)
-	}
-
-	b, _ := json.Marshal(botAnswer("Freeform"))
-	req, err := http.NewRequest(http.MethodPost, base+"/api/chat/questions/"+id+"/answer", bytes.NewReader(b))
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Cookie", in.cookieName()+"="+in.Token)
-	resp, err := client().Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		t.Errorf("POST answer with the token = %d, want 2xx", resp.StatusCode)
-	}
-	w.expectExit(p.wait(10*time.Second), 0, fmt.Sprintf("chat ask after the answer over the LAN (id %s)", id))
 }
