@@ -8,10 +8,10 @@ export interface ShipProps {
   variant?: 'moored' | 'sea';
   /** Where in its bob a ship starts, as a negative CSS time. */
   bobDelay?: string;
-  // A ship that needs you shakes and its flag flutters faster; an anchored one is still,
-  // with a red X; a ship sailing off wears a green check.
   /** Subagents standing on deck: the colors of the bots shown, and the "+N" chip when there are more. */
   deck?: { colors: string[]; more: string };
+  // A ship that needs you shakes and its flag flutters faster; an anchored one is still,
+  // with a red X; a ship sailing off wears a green check.
   state?: 'underway' | 'needs-you' | 'anchored' | 'sailing-off';
 }
 

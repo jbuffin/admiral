@@ -226,7 +226,7 @@ test.describe('crew boats and subagents on the sea', () => {
       },
     });
     await admiral.start();
-    const ship = await s.launch('work', 'alpha', 'recorded');
+    const ship = await s.launch('work', 'a-long-repository-name', 'recorded'); // a long plaque makes the slot wider than the 100 px ship
     // Fixture proof: the boat is really running and listed before any sea assertion.
     await launchCrew(s, ship.session, 'api');
     expect(await crewOf(s, ship.session)).toEqual([expect.objectContaining({ name: 'api', status: 'underway' })]);
@@ -254,16 +254,36 @@ test.describe('crew boats and subagents on the sea', () => {
     expect((await wireOf(admiral.url, ship.session))?.position).toEqual(spot);
 
     // A subagent starts: a deck button, a tip on a tap, nothing boarded; it stops: the button goes.
-    const before = (await boarded(page)).length;
     const deck = water(page).getByRole('button', { name: new RegExp(`^1 subagent on ${escape(ship.name)}`) });
     await expect(deck).toHaveCount(0);
     release(s, ship.session, 'sub');
     await expect.poll(async () => (await wireOf(admiral.url, ship.session))?.subagents.length).toBe(1);
     await expect(deck).toBeVisible();
+
+    // Boats and deck button are placed from the ship drawing, whatever the slot's width: the boat sits at its raft
+    // spot (-30, 44) from the ship svg, and the deck button covers the first bot (svg x 8-16.5).
+    const svg = await water(page).locator('.ship-slot .ship-btn svg').first().boundingBox();
+    const box = await boat('api').boundingBox();
+    const deckBox = await deck.boundingBox();
+    const slot = await water(page).locator('.ship-slot').first().boundingBox();
+    expect(slot!.width).toBeGreaterThan(svg!.width + 4);
+    expect(Math.abs(box!.x - (svg!.x - 30))).toBeLessThan(1.5);
+    expect(deckBox!.x).toBeLessThanOrEqual(svg!.x + 8);
+    expect(deckBox!.x + deckBox!.width).toBeGreaterThanOrEqual(svg!.x + 16.5);
+
+    // A boat tapped while the ship has a subagent still boards the boat (the deck button is under it), and shows no tip.
+    await press(boat('api'), touch);
+    await expect(t.getByText(`${ship.name} › api`, { exact: true })).toBeVisible();
+    expect((await boarded(page)).at(-1)).toBe(`${ship.session}/api`);
+    await expect(water(page).getByText(/Explore.*no terminal/)).toHaveCount(0);
+    await press(t.getByRole('button', { name: 'Close terminal and return to open water' }), touch);
+    await expect(t).toHaveCount(0);
+    const afterBoat = (await boarded(page)).length;
+
     await press(deck, touch);
     await expect(water(page).getByText(/Explore.*no terminal/)).toBeVisible();
     await expect(terminal(page)).toHaveCount(0);
-    expect((await boarded(page)).length).toBe(before);
+    expect((await boarded(page)).length).toBe(afterBoat);
     release(s, ship.session, 'unsub');
     await expect.poll(async () => (await wireOf(admiral.url, ship.session))?.subagents.length).toBe(0);
     await expect(deck).toHaveCount(0);

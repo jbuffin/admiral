@@ -33,7 +33,7 @@ export function shouldChime(before: WireShip[], now: WireShip[], first: boolean)
     const prev = was.get(s.session);
     if (!prev) return false;
     if (prev.status !== 'needs_you' && s.status === 'needs_you') return true;
-    const asked = new Set(prev.crew.filter(crewAsks).map((c) => c.name));
+    const asked = new Set((prev.crew ?? []).filter(crewAsks).map((c) => c.name));
     return (s.crew ?? []).some((c) => crewAsks(c) && !asked.has(c.name));
   });
 }

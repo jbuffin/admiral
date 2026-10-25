@@ -1779,6 +1779,8 @@ body.dragging * {
   min-width: 100px;
   max-width: 140px;
   pointer-events: auto;
+  /* One ship's z-indices never reach a neighbour's. */
+  isolation: isolate;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
@@ -1802,6 +1804,15 @@ body.dragging * {
   cursor: inherit;
 }
 
+/* The crew boats, pill, deck button and tip are placed from the ship drawing, a 100 px box centred in the slot. */
+.ship-marks {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 100px;
+  margin-left: -50px;
+}
+
 .crew-boat,
 .crew-more,
 .deck-crew {
@@ -1818,6 +1829,7 @@ body.dragging * {
 }
 
 .crew-boat {
+  z-index: 4; /* above the deck button, so a boat's sail is never the deck's */
   width: 44px;
   min-height: 44px;
 }
@@ -1846,6 +1858,7 @@ body.dragging * {
 }
 
 .crew-more {
+  z-index: 4;
   width: 64px;
   height: 44px;
 }

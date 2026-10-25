@@ -15,8 +15,9 @@ const RAFT_SPOTS = [
   [-72, 40],
 ];
 const BOAT_H = 33;
-// Presses that start on these act on their own tap; they never drag or board the ship.
-const OWN_TAPS = '.crew-boat, .crew-more, .deck-crew';
+// Presses that start on these act on their own tap; they never drag or board the ship. (A press on the deck button
+// may drag the ship; a tap there shows the tip and never boards.)
+const OWN_TAPS = '.crew-boat, .crew-more';
 
 // The ship whose subagents the deck tip lists, for a moment.
 const tip = signal<string | null>(null);
@@ -53,6 +54,7 @@ function detail(s: WireShip): string {
 function press(e: PointerEvent, s: WireShip): void {
   if (e.button !== 0 || !e.isPrimary || (e.target as Element).closest(OWN_TAPS)) return;
   const el = e.currentTarget as HTMLElement;
+  const onDeck = !!(e.target as Element).closest('.deck-crew');
   const layer = el.parentElement!;
   const id = e.pointerId;
   const from = { x: e.clientX, y: e.clientY };
@@ -85,7 +87,7 @@ function press(e: PointerEvent, s: WireShip): void {
     window.removeEventListener('pointerup', up);
     window.removeEventListener('pointercancel', cancel);
     if (moved && !cancelled) drop(s.session, at(ev));
-    else if (!moved && !cancelled) board(s.session);
+    else if (!moved && !cancelled) onDeck ? showTip(s.session) : board(s.session);
     dragged.value = null;
   };
   const up = (ev: PointerEvent) => end(ev, false);
@@ -157,45 +159,47 @@ function ShipView({ s }: { s: WireShip }) {
           <span class="plaque-detail">{needs ?? detail(s)}</span>
         </span>
       </button>
-      {shown.map((c, j) => {
-        const [x, y] = RAFT_SPOTS[j];
-        const anchored = c.status === 'anchored';
-        const asks = crewAsks(c);
-        const key = `${s.session}/${c.name}`;
-        return (
-          <button
-            key={c.name}
-            type="button"
-            class={popping.value.has(key) ? 'crew-boat pop' : 'crew-boat'}
-            style={`left:${x}px;top:${y}px`}
-            aria-label={`Board ${c.name}, teammate, crew of ${s.name}${asks ? ', needs you' : anchored ? ', anchored' : ''}`}
-            onClick={() => board(s.session, c.name)}
-          >
-            <span class={anchored ? 'crew-still' : 'bob'} style={`display:block;position:relative;${anchored ? '' : `animation-delay:-${(j * 0.6 + 0.3).toFixed(1)}s`}`}>
-              <CrewBoat boat={c} stripe={s.fleet_color} bot={botFor(key)} size="sea" />
-              {asks && (
-                <span class="crew-bang ping" aria-hidden="true">
-                  !
-                </span>
-              )}
-            </span>
+      <div class="ship-marks">
+        {shown.map((c, j) => {
+          const [x, y] = RAFT_SPOTS[j];
+          const anchored = c.status === 'anchored';
+          const asks = crewAsks(c);
+          const key = `${s.session}/${c.name}`;
+          return (
+            <button
+              key={c.name}
+              type="button"
+              class={popping.value.has(key) ? 'crew-boat pop' : 'crew-boat'}
+              style={`left:${x}px;top:${y}px`}
+              aria-label={`Board ${c.name}, teammate, crew of ${s.name}${asks ? ', needs you' : anchored ? ', anchored' : ''}`}
+              onClick={() => board(s.session, c.name)}
+            >
+              <span class={anchored ? 'crew-still' : 'bob'} style={`display:block;position:relative;${anchored ? '' : `animation-delay:calc(${bobDelay(s.session)} - ${(j * 0.6 + 0.3).toFixed(1)}s)`}`}>
+                <CrewBoat boat={c} stripe={s.fleet_color} bot={botFor(key)} size="sea" />
+                {asks && (
+                  <span class="crew-bang ping" aria-hidden="true">
+                    !
+                  </span>
+                )}
+              </span>
+            </button>
+          );
+        })}
+        {pill && (
+          <button type="button" class="crew-more" style={`left:${last[0] + 4}px;top:${last[1] + BOAT_H + 14}px`} aria-label={pill.name} onClick={() => board(s.session)}>
+            <span>{pill.text}</span>
           </button>
-        );
-      })}
-      {pill && (
-        <button type="button" class="crew-more" style={`left:${last[0] + 4}px;top:${last[1] + BOAT_H + 14}px`} aria-label={pill.name} onClick={() => board(s.session)}>
-          <span>{pill.text}</span>
-        </button>
-      )}
-      {subs.length > 0 && (
-        <button type="button" class="deck-crew" aria-label={deckLabel(s.name, subs)} onClick={() => showTip(s.session)} />
-      )}
-      {subs.length > 0 && tip.value === s.session && (
-        <div class="deck-tip" role="status" style={`top:${-14 - Math.ceil(subs.length / 2) * 17}px`}>
-          <b>{count}</b>
-          {` · ${rest.join(' · ')}`}
-        </div>
-      )}
+        )}
+        {subs.length > 0 && (
+          <button type="button" class="deck-crew" aria-label={deckLabel(s.name, subs)} onClick={(e) => e.detail === 0 && showTip(s.session)} />
+        )}
+        {subs.length > 0 && tip.value === s.session && (
+          <div class="deck-tip" role="status" style={`top:${-14 - Math.ceil(subs.length / 2) * 17}px`}>
+            <b>{count}</b>
+            {` · ${rest.join(' · ')}`}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
