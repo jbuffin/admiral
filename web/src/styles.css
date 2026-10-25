@@ -469,6 +469,7 @@ button:focus-visible {
 
 .panel-head {
   display: flex;
+  flex-wrap: wrap; /* the 44px buttons drop to a second line rather than squeeze the title out */
   align-items: center;
   gap: 6px;
   padding: 6px 8px 6px 4px;
@@ -476,7 +477,7 @@ button:focus-visible {
 
 .panel-toggle {
   flex: 1 1 auto;
-  min-width: 0;
+  min-width: 9.5rem; /* the chevron, the icon and a title like "Work queue" */
   min-height: var(--shape-min-touch-target);
   display: flex;
   align-items: center;
