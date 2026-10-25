@@ -344,10 +344,17 @@ describe('crew stops (#154)', () => {
     expect(q.entries()).toEqual([]);
   });
 
+  it('a crew stop folds "Back underway" when its boat is answered on an anchored ship', () => {
+    const q = createQueue();
+    sync(q, [ship('a', 'anchored', undefined, '', [boat('api', 'needs_you', { last_activity: at(2) })])]);
+    expect(keys(q)).toEqual(['stop:a/api']);
+    sync(q, [ship('a', 'anchored', undefined, '', [boat('api', 'underway')])], T0 + 1000);
+    expect(q.entries()[0]).toMatchObject({ key: 'stop:a/api', folded: 'Back underway' });
+  });
+
   it.each([
     ['the boat is closed', () => ship('a', 'underway', undefined, '', [])],
     ['the boat anchors', () => ship('a', 'underway', undefined, '', [boat('api', 'anchored', { exit_code: 0 })])],
-    ['the ship is anchored', () => ship('a', 'anchored', undefined, '', [boat('api', 'underway')])],
     ['the ship is sailing off', () => ship('a', 'sailing_off', undefined, '', [boat('api', 'needs_you')])],
   ])('a crew stop leaves silently when %s', (_why, next) => {
     const q = createQueue();

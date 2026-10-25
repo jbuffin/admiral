@@ -1,8 +1,9 @@
 import type { WireCrew, WireShip } from './ships';
 
-// The Needs You inbox queue (#116): one list, oldest first, of the served inbox items and the ships that
-// need you (needs-you stops), crew boats included. It is pure: time comes in as `now` and nothing here sets a timer or reads a
-// signal, so it never imports ships.ts at runtime. inboxState.ts wires it to the signals and the clock.
+// The Needs You inbox queue (#116): one list, oldest first, of the served inbox items and the ships and
+// crew boats that need you (needs-you stops). It is pure: time comes in as `now` and nothing here sets a
+// timer or reads a signal, so it never imports ships.ts at runtime. inboxState.ts wires it to the signals
+// and the clock.
 
 // An item file as the server serves it (internal/inbox): the file's fields, plus the ship's session and,
 // when the ship is known, its name and harness. Item files are written by ships and are untrusted.
@@ -128,7 +129,10 @@ export function createQueue() {
         if (e.type !== 'stop' || held.has(e.key)) continue;
         const ship = ships.get(e.session);
         const sailing = ship?.status === 'underway' || ship?.status === 'needs_you';
-        const back = e.crew ? sailing && ship!.crew?.find((c) => c.name === e.crew!.name)?.status === 'underway' : sailing && !needsYou(ship!);
+        // A boat is answered whatever its ship's status, bar a ship that is sailing off or gone.
+        const back = e.crew
+          ? ship !== undefined && ship.status !== 'sailing_off' && ship.crew?.find((c) => c.name === e.crew!.name)?.status === 'underway'
+          : sailing && !needsYou(ship!);
         if (back) held.set(e.key, { entry: e, text: 'Back underway', until: now + HOLD_MS });
       }
       const live = new Set<string>();
