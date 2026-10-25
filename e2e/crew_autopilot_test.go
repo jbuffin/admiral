@@ -53,6 +53,13 @@ func TestCrew_LaunchUnderAutopilot(t *testing.T) {
 			t.Errorf("a refused launch left %d new crew windows", after-before)
 		}
 
+		// The hook refusal runs first and gives its own message.
+		r = launch(w, true, "--name", "hooks", "--arg", "--settings", "--arg", "x", "--", "hi")
+		w.expectExit(r, 1, "autopilot with --settings")
+		if !strings.Contains(r.stderr, "override or disable Admiral's hooks") {
+			t.Errorf("stderr = %q, want the hook refusal", r.stderr)
+		}
+
 		w.expectExit(launch(w, true, "--name", "ok", "--arg", "--model", "--arg", "opus", "--", "do it"), 0, "autopilot with --model opus")
 		got := w.record(sess + "/crew/ok").argv
 		want := []string{"--fa-claude", "--settings", filepath.Join(w.home, "harness", "claude-settings.json"), "--model", "opus", "--", "do it"}
@@ -75,6 +82,15 @@ func TestCrew_LaunchUnderAutopilot(t *testing.T) {
 			t.Errorf("refused launches left %d new crew windows", after-before)
 		}
 		w.expectExit(launch(w, true, "--name", "cl", "--", "hi"), 0, "autopilot claude")
+
+		// A codex ship with no --harness resolves to codex and is refused.
+		cship := w.launch(w.order("work", "codex", "bravo", noSkill, "go"))
+		r := w.admiralWith(cliOpts{env: []string{"ADMIRAL_SHIP=" + cship.Session, "ADMIRAL_AUTOPILOT=1"}},
+			"crew", "launch", "--dir", dir, "--name", "from-codex", "--", "hi")
+		w.expectExit(r, 1, "autopilot on a codex ship without --harness")
+		if !strings.Contains(r.stderr, "codex") {
+			t.Errorf("stderr = %q, want it to name codex", r.stderr)
+		}
 
 		// Without autopilot, the same launches succeed.
 		for _, h := range []string{"codex", "copilot"} {

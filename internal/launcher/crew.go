@@ -102,8 +102,8 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 		return err
 	}
 	if req.Autopilot {
-		if req.Harness != "claude" {
-			return fmt.Errorf("a caller with ADMIRAL_AUTOPILOT=1 can launch only claude crew: %s has no autopilot guard", req.Harness)
+		if !slices.Contains(AutopilotHarnesses, req.Harness) {
+			return fmt.Errorf("a caller with ADMIRAL_AUTOPILOT=1 can launch only %s crew: `admiral guard` doesn't cover %s", strings.Join(AutopilotHarnesses, ", "), req.Harness)
 		}
 		if err := AutopilotArgs(req.Harness, dock.Args, req.Args); err != nil {
 			return err

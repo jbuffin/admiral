@@ -21,7 +21,6 @@ func TestAutopilotArgs(t *testing.T) {
 		{"empty", "claude", nil, nil},
 		{"model spaced", "claude", nil, []string{"--model", "opus"}},
 		{"model joined", "claude", nil, []string{"--model=opus"}},
-		{"model takes a dash-led value", "claude", nil, []string{"--model", "--dangerously-skip-permissions"}},
 		{"advisor spaced", "claude", nil, []string{"--advisor", "opus"}},
 		{"advisor joined", "claude", nil, []string{"--advisor=opus"}},
 		{"effort spaced", "claude", nil, []string{"--effort", "high"}},
@@ -32,19 +31,22 @@ func TestAutopilotArgs(t *testing.T) {
 		{"all together", "claude", nil, []string{"--model", "opus", "--advisor", "opus", "--effort", "high"}},
 		{"mode equal to the dock's", "claude", auto, []string{"--permission-mode", "auto"}},
 		{"mode stricter than an auto dock: plan", "claude", auto, []string{"--permission-mode", "plan"}},
-		{"mode stricter than an auto dock: default", "claude", auto, []string{"--permission-mode=default"}},
 		{"mode equal to a joined dock's", "claude", plan, []string{"--permission-mode", "plan"}},
 		{"mode of a later dock value wins", "claude", []string{"--permission-mode", "bypassPermissions", "--permission-mode", "plan"}, []string{"--permission-mode", "plan"}},
 		{"no dock mode: plan", "claude", nil, []string{"--permission-mode", "plan"}},
 		{"no dock mode: dontAsk", "claude", nil, []string{"--permission-mode", "dontAsk"}},
-		{"no dock mode: default", "claude", nil, []string{"--permission-mode", "default"}},
 		{"no dock mode: manual", "claude", nil, []string{"--permission-mode", "manual"}},
-		{"dock args of other flags are ignored", "claude", []string{"--model", "x"}, []string{"--permission-mode", "default"}},
 
 		{"codex -m", "codex", nil, []string{"-m", "x"}},
 		{"codex --model", "codex", nil, []string{"--model", "x"}},
 		{"codex --model joined", "codex", nil, []string{"--model=x"}},
+		{"dock args of other flags are ignored", "claude", []string{"--model", "x"}, []string{"--permission-mode", "plan"}},
+		{"dock with a default mode: plan", "claude", []string{"--permission-mode", "default"}, []string{"--permission-mode", "plan"}},
+		{"disallowedTools when the dock sets other flags", "claude", []string{"--model", "x"}, []string{"--disallowedTools", "Edit(/x/**)"}},
+
 		{"codex -s read-only", "codex", nil, []string{"-s", "read-only"}},
+		{"codex -sread-only", "codex", nil, []string{"-sread-only"}},
+		{"codex -s=read-only", "codex", nil, []string{"-s=read-only"}},
 		{"codex --sandbox read-only", "codex", nil, []string{"--sandbox", "read-only"}},
 		{"codex --sandbox= read-only", "codex", nil, []string{"--sandbox=read-only"}},
 		{"codex -c effort", "codex", nil, []string{"-c", "model_reasoning_effort=high"}},
@@ -84,6 +86,17 @@ func TestAutopilotArgs(t *testing.T) {
 		{"stray value after a value flag", "claude", nil, []string{"--model", "opus", "extra"}, "extra"},
 		{"disallowedTools with no value", "claude", nil, []string{"--disallowedTools"}, "--disallowedTools"},
 		{"dash-led token ends disallowedTools", "claude", nil, []string{"--disallowedTools", "Edit(/x/**)", "--dangerously-skip-permissions"}, "--dangerously-skip-permissions"},
+		{"model takes no dash-led value", "claude", nil, []string{"--model", "--dangerously-skip-permissions"}, "--dangerously-skip-permissions"},
+		{"model joined dash-led value", "claude", nil, []string{"--model=-x"}, "-x"},
+		{"advisor dash-led value", "claude", nil, []string{"--advisor", "-x"}, "-x"},
+		{"advisor joined dash-led value", "claude", nil, []string{"--advisor=-x"}, "-x"},
+		{"effort dash-led value", "claude", nil, []string{"--effort", "-x"}, "-x"},
+		{"effort joined dash-led value", "claude", nil, []string{"--effort=-x"}, "-x"},
+		{"disallowedTools over a dock's list", "claude", []string{"--disallowedTools", "Bash"}, []string{"--disallowedTools", "Edit(/x/**)"}, "--disallowedTools"},
+		{"disallowedTools joined over a dock's list", "claude", []string{"--disallowedTools=Bash"}, []string{"--disallowedTools", "Edit(/x/**)"}, "--disallowedTools"},
+		{"disallowedTools over a dock's joined list", "claude", []string{"--disallowedTools", "Bash"}, []string{"--disallowedTools=Edit(/x/**)"}, "--disallowedTools"},
+		{"mode default is not a claude mode", "claude", nil, []string{"--permission-mode", "default"}, "default"},
+		{"mode default joined", "claude", auto, []string{"--permission-mode=default"}, "default"},
 		{"auto dock: bypassPermissions", "claude", auto, []string{"--permission-mode", "bypassPermissions"}, "bypassPermissions"},
 		{"plan dock: default is looser", "claude", plan, []string{"--permission-mode", "default"}, "default"},
 		{"plan dock: joined default", "claude", plan, []string{"--permission-mode=default"}, "default"},
@@ -113,5 +126,13 @@ func TestAutopilotArgs(t *testing.T) {
 		} else if !strings.Contains(err.Error(), tc.value) {
 			t.Errorf("%s: error %q does not name %q", tc.name, err, tc.value)
 		}
+	}
+}
+
+// A joined value is named once in the refusal.
+func TestAutopilotArgs_JoinedValueNamedOnce(t *testing.T) {
+	err := AutopilotArgs("claude", nil, []string{"--permission-mode=bypassPermissions"})
+	if err == nil || strings.Count(err.Error(), "bypassPermissions") != 1 {
+		t.Errorf("error %v should name bypassPermissions once", err)
 	}
 }
