@@ -153,6 +153,8 @@ test('#174 S1, S2: crew rows sit under their ship; a boat that needs you moves i
   const s = sea({ work: { name: 'Work', color: BLUE, cue: ['wait needs', 'hook needs_you', 'wait end', 'exit 1'] } });
   await admiral.start();
   const old = await s.launch('work', 'alpha', 'recorded');
+  // `launched` has one-second resolution; a tie would leave the order to the server's.
+  await page.waitForTimeout(1100);
   const young = await s.launch('work', 'beta', 'recorded');
   await launchCrew(s, old.session, 'api');
   await launchCrew(s, old.session, 'web');
