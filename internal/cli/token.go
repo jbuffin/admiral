@@ -19,7 +19,7 @@ func Token(args []string, std IO) error {
 		return usagef("usage: admiral token rotate [--port <n>]")
 	}
 	fs := newFlags("token rotate")
-	port := fs.String("port", DefaultPort, "the port Admiral listens on, for the URL")
+	port := fs.String("port", defaultPort(), "the port Admiral listens on, for the URL")
 	if err := parseFlags(fs, args[1:]); err != nil {
 		return err
 	}

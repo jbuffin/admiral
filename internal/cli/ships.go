@@ -121,7 +121,7 @@ func exitText(status string, code *int, signal *string) string {
 // table, or just the display names for shell completion.
 func Ships(args []string, std IO) error {
 	fs := newFlags("ships")
-	port := fs.String("port", DefaultPort, "the port Admiral listens on")
+	port := fs.String("port", defaultPort(), "the port Admiral listens on")
 	names := fs.Bool("names", false, "print display names only, one per line")
 	if err := parseFlags(fs, args); err != nil {
 		return err

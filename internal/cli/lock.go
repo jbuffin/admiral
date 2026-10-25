@@ -51,7 +51,7 @@ func Lock(args []string, std IO) error {
 		return usagef("%s", Usage("lock"))
 	}
 	fs := newFlags("lock")
-	port := fs.String("port", DefaultPort, "the port Admiral listens on")
+	port := fs.String("port", defaultPort(), "the port Admiral listens on")
 	wait := fs.Bool("wait", false, "wait for a unit instead of exiting 75")
 	if err := parseFlags(fs, args); err != nil {
 		return err

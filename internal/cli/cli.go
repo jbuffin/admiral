@@ -1,5 +1,5 @@
 // Package cli holds Admiral's command-line commands other than the server:
-// setup, fleet, config, token, ships, attach, outcomes, lock and completion (ADR 0010, 0012, 0015).
+// setup, fleet, config, token, ships, attach, outcomes, inbox, orders, chat, lock and completion (ADR 0010, 0012, 0015).
 //
 // Exit codes: 0 ok, 1 error, 2 usage. A command returns a *UsageError for the
 // last; main maps it. An *ExitError carries its own code (lock's 75 and 127,
@@ -42,6 +42,9 @@ var usages = map[string]string{
 	"lock":       "usage: admiral lock [--port <n>] [--wait] <resource> -- <command…>   (holds one unit of the resource while the command runs; exits 75 if busy)",
 	"completion": "usage: admiral completion zsh|bash",
 	"service":    "usage: admiral service install | uninstall | status",
+	"inbox":      "usage: admiral inbox [--port <n>] [--json]",
+	"orders":     "usage: admiral orders [--port <n>] [--json]\n       admiral orders add --source <key> --panel <id> [--port <n>] [-- <text>]   (text from stdin without an argument)",
+	"chat":       "usage: admiral chat ask [--timeout <dur>] [--wait <id>]   (a question as JSON on stdin: {title, questions})",
 }
 
 // Usage is the usage text of a command ("fleet add" has its command's).
@@ -50,7 +53,7 @@ func Usage(command string) string {
 	if u, ok := usages[first]; ok {
 		return u
 	}
-	return "usage: admiral [--listen host:port] | setup | fleet | config | token | ships | attach | crew | outcomes | lock | completion | service | --version"
+	return "usage: admiral [--listen host:port] | setup | fleet | config | token | ships | attach | crew | outcomes | inbox | orders | chat | lock | completion | service | --version"
 }
 
 func usagef(format string, a ...any) error { return &UsageError{fmt.Sprintf(format, a...)} }

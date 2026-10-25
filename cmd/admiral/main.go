@@ -120,6 +120,12 @@ func run(args []string) error {
 		return cli.Outcomes(args[1:], std)
 	case "lock":
 		return cli.Lock(args[1:], std)
+	case "inbox":
+		return cli.Inbox(args[1:], std)
+	case "orders":
+		return cli.Orders(args[1:], std)
+	case "chat":
+		return cli.Chat(args[1:], std)
 	}
 	return &cli.UsageError{Msg: fmt.Sprintf("unknown command %q", args[0])}
 }
@@ -197,7 +203,7 @@ func serve(args []string) error {
 		fmt.Fprintf(os.Stderr, "admiral: "+format+"\n", args...)
 	})
 	shipService := &ships.Service{Host: host, State: st, Hub: hub, Outcomes: outcomeLog, Launcher: &launcher.Launcher{
-		Tmux: tmuxPath, Socket: sock, Home: dir, Config: cfg.Current,
+		Tmux: tmuxPath, Socket: sock, Home: dir, Port: port, Config: cfg.Current,
 		Kept: func(session string) bool { _, ok := st.KeptInbox(session); return ok }}}
 
 	if err := sources.InstallPlugins(dir); err != nil {
@@ -329,7 +335,7 @@ func serve(args []string) error {
 		inboxService.Notify()
 	}
 
-	chatService := &chat.Service{Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, Tmux: tmuxPath, Socket: sock}
+	chatService := &chat.Service{Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Home: absDir}
 	s := &server.Server{Version: version, Commit: commit, UI: web.UI(), Messages: map[string]server.MessageHandler{}, Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService,
 			&launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}, bridgeService, resourceService, lockRoute, chatService}}
