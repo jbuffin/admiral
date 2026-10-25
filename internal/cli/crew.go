@@ -146,8 +146,14 @@ func crewLaunch(args []string, std IO) error {
 	dir := fs.String("dir", "", "the directory it works in")
 	harness := fs.String("harness", "", "the harness (default: the ship's)")
 	ship := fs.String("ship", "", "the ship (default: the one this runs in)")
+	role := fs.String("role", "", "the crew boat's role, lowercase letters, digits and -")
+	var extra stringList
+	fs.Var(&extra, "arg", "an argument for the harness, repeatable")
 	if err := parseFlags(fs, args); err != nil {
 		return err
+	}
+	if *role != "" && !launcher.CrewName.MatchString(*role) {
+		return usagef("crew launch: --role %q must be lowercase letters, digits and -", *role)
 	}
 	if fs.NArg() > 0 || *name == "" || *dir == "" || !hasPrompt || len(prompt) == 0 {
 		return usagef("%s", Usage("crew"))
@@ -156,7 +162,7 @@ func crewLaunch(args []string, std IO) error {
 	if err != nil {
 		return err
 	}
-	err = c.l.LaunchCrew(launcher.CrewRequest{Session: c.session, Name: *name, Harness: *harness, Dir: *dir, Prompt: strings.Join(prompt, " ")})
+	err = c.l.LaunchCrew(launcher.CrewRequest{Session: c.session, Name: *name, Harness: *harness, Dir: *dir, Prompt: strings.Join(prompt, " "), Args: extra, Role: *role})
 	if errors.Is(err, launcher.ErrCrewNameTaken) {
 		return &ExitError{Code: crewExitTaken, Msg: err.Error()}
 	}
@@ -259,7 +265,14 @@ type crewRow struct {
 	State        string  `json:"state"`
 	Launched     string  `json:"launched"`
 	LastActivity *string `json:"last_activity"`
+	Role         *string `json:"role"`
 }
+
+// stringList is a repeatable string flag.
+type stringList []string
+
+func (l *stringList) String() string     { return strings.Join(*l, " ") }
+func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
 
 func crewList(args []string, std IO) error {
 	fs := newFlags("crew list")
@@ -281,7 +294,11 @@ func crewList(args []string, std IO) error {
 	}
 	rows := make([]crewRow, 0, len(boats))
 	for _, b := range boats {
-		r := crewRow{b.Name, b.Harness, b.Dir, b.State, b.Launched, nil}
+		r := crewRow{b.Name, b.Harness, b.Dir, b.State, b.Launched, nil, nil}
+		if b.Role != "" {
+			role := b.Role
+			r.Role = &role
+		}
 		if !b.LastActivity.IsZero() {
 			t := b.LastActivity.UTC().Format(time.RFC3339)
 			r.LastActivity = &t
