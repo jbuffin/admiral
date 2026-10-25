@@ -33,6 +33,7 @@ type Crew struct {
 	State        string    // CrewAnchored, CrewNeedsYou or CrewUnderway
 	Reason       string    // only while needs_you: the pane's @admiral-reason if it is a safe token, else "unknown"
 	LastActivity time.Time // zero before the boat's first hook
+	Transcript   string    // the pane's @admiral-crew-transcript when valid (ADR 0021), else empty
 	Role         string    // the @admiral-role the launcher gave it, empty when none or not a valid role
 	PaneID       string
 	WindowID     string
