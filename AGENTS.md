@@ -33,7 +33,7 @@ Test only what is likely to break: state logic, protocol handling, and the drag 
 
 Read these when the task touches the area:
 
-- [`docs/agents/codebase.md`](docs/agents/codebase.md): the package map, API routes, ship statuses, idle memory figures and the setup terminal. Read it before changing the server, the launcher, ships or the setup terminal.
+- [`docs/agents/codebase.md`](docs/agents/codebase.md): the package map, API routes, ship statuses, idle memory figures, the setup terminal and the chat session. Read it before changing the server, the launcher, ships, the setup terminal or the chat session.
 - [`docs/agents/testing.md`](docs/agents/testing.md): the test seams, `$ADMIRAL_HOME` isolation, the fake harness cue language and the LAN-address skips. Read it before writing or changing a test.
 - [`docs/bridge-protocol.md`](docs/bridge-protocol.md): the bridge WebSocket messages. Read it before changing the bridge or `web/src/bridgeLink.ts`.
 - [`docs/cli.md`](docs/cli.md): every `admiral` command and the setup answers file. Read it before changing `internal/cli/`.
