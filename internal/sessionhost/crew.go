@@ -33,6 +33,7 @@ type Crew struct {
 	State        string    // CrewAnchored, CrewNeedsYou or CrewUnderway
 	Reason       string    // only while needs_you: the pane's @admiral-reason if it is a safe token, else "unknown"
 	LastActivity time.Time // zero before the boat's first hook
+	Role         string    // the @admiral-role the launcher gave it, empty when none or not a valid role
 	PaneID       string
 	WindowID     string
 	ExitStatus   int    // valid when State is CrewAnchored and Signal is empty
@@ -97,6 +98,9 @@ func readCrew(rows []string, known map[string]bool) (map[string][]Crew, []string
 		}
 		c := Crew{Session: f[0], Name: tail[0], Harness: opt["harness"], Dir: opt["dir"], Launched: opt["launched"],
 			State: CrewState(f[1] == "1", f[6]), PaneID: tail[1], WindowID: tail[2]}
+		if launcher.CrewName.MatchString(tail[4]) { // option text is untrusted
+			c.Role = tail[4]
+		}
 		if c.State == CrewNeedsYou {
 			c.Reason = "unknown"
 			if SafeToken.MatchString(f[7]) {

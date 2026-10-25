@@ -27,6 +27,8 @@ type CrewRequest struct {
 	Harness string
 	Dir     string
 	Prompt  string
+	Args    []string // pass-through harness args (--arg), after the hook flags and before the prompt
+	Role    string   // optional @admiral-role; the caller has checked its shape
 }
 
 // shipEnvNames are the ship's own variables; a teammate gets none of them (a
@@ -90,11 +92,15 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	if !known {
 		return fmt.Errorf("unknown harness %q", req.Harness)
 	}
+	if err := RefuseHookArgs(req.Harness, req.Args); err != nil {
+		return err
+	}
 	exe, found := dock.Resolve()
 	if !found {
 		return fmt.Errorf("%s executable %s not found for fleet %s", req.Harness, dock.Executable, fleet.Name)
 	}
 	argv := append(append([]string{exe}, dock.Args...), flags...)
+	argv = append(argv, req.Args...)
 	if req.Harness == "copilot" {
 		if req.Prompt != "" {
 			argv = append(argv, "--interactive="+req.Prompt)
@@ -162,8 +168,12 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 		{"set-option", "-w", "-t", w, "monitor-bell", "on"},
 		{"set-option", "-w", "-t", w, "automatic-rename", "off"},
 	}
-	for _, o := range [][2]string{{"crew-name", req.Name}, {"harness", req.Harness}, {"dir", dir},
-		{"launched", time.Now().UTC().Format(time.RFC3339)}} {
+	opts := [][2]string{{"crew-name", req.Name}, {"harness", req.Harness}, {"dir", dir},
+		{"launched", time.Now().UTC().Format(time.RFC3339)}}
+	if req.Role != "" {
+		opts = append(opts, [2]string{"role", req.Role})
+	}
+	for _, o := range opts {
 		cmds = append(cmds, []string{"set-option", "-w", "-t", w, "@admiral-" + o[0], o[1]})
 	}
 	respawn := []string{"respawn-pane", "-k", "-t", w, "-c", cdir}

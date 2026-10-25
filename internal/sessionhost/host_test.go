@@ -181,7 +181,7 @@ func TestParseRowsFoldsCrewWithoutLeaking(t *testing.T) {
 		tail := fixedFields + len(optionNames)
 		f[tail], f[tail+1], f[tail+2] = crew, "%"+name+crew, "@"+name+crew
 		if crew == "" {
-			f[tail+4] = `[{"id":"a1","type":"Explore","start":"2026-10-24T10:00:00Z"}]`
+			f[tail+5] = `[{"id":"a1","type":"Explore","start":"2026-10-24T10:00:00Z"}]`
 		}
 		return strings.Join(f, sep)
 	}
