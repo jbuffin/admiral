@@ -25,14 +25,15 @@ export function raft(crew: WireCrew[]): { shown: WireCrew[]; hidden: WireCrew[];
 }
 
 // Whether this `ships` message plays the chime: a ship turns needs_you, or a crew boat is needs_you that was not.
-// One answer per message, however many turned. A ship that is new in `now` never chimes; its boats can.
+// One answer per message, however many turned. A ship that is new in `now` never chimes, nor do its boats.
 export function shouldChime(before: WireShip[], now: WireShip[], first: boolean): boolean {
   if (first) return false;
   const was = new Map(before.map((s) => [s.session, s]));
   return now.some((s) => {
     const prev = was.get(s.session);
-    if (prev && prev.status !== 'needs_you' && s.status === 'needs_you') return true;
-    const asked = new Set((prev?.crew ?? []).filter(crewAsks).map((c) => c.name));
+    if (!prev) return false;
+    if (prev.status !== 'needs_you' && s.status === 'needs_you') return true;
+    const asked = new Set(prev.crew.filter(crewAsks).map((c) => c.name));
     return (s.crew ?? []).some((c) => crewAsks(c) && !asked.has(c.name));
   });
 }

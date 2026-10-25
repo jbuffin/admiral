@@ -1822,9 +1822,6 @@ body.dragging * {
   min-height: 44px;
 }
 
-.crew-boat:nth-of-type(2) { z-index: 1; }
-.crew-boat:nth-of-type(3) { z-index: 0; }
-
 .crew-still {
   display: block;
 }
