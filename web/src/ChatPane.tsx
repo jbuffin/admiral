@@ -32,6 +32,7 @@ import {
   viewport,
 } from './chat';
 import { signedOut } from './connection';
+import { KIND } from './InboxPanel';
 import { KEYS, touchKeyboard } from './keys';
 import { QuestionCard } from './QuestionCard';
 import { foldText } from './questions';
@@ -163,6 +164,11 @@ function ChatPane({ mode }: { mode: Mode }) {
   );
 }
 
+function openTerminal(): void {
+  chatView.value = 'terminal';
+  confirmNew.value = false;
+}
+
 function ActionButton({ name, labels, onClick, children }: { name: string; labels: boolean; onClick: (e: MouseEvent) => void; children: preact.ComponentChildren }) {
   return (
     <button type="button" class="press chat-action" aria-label={name} title={touchKeyboard() ? undefined : name} onClick={onClick}>
@@ -201,7 +207,7 @@ function Conversation({ mode }: { mode: Mode }) {
         <ActionButton name="New chat" labels={labels} onClick={() => (confirmNew.value = true)}>
           <path d="M12 5v14M5 12h14" />
         </ActionButton>
-        <ActionButton name="Open terminal" labels={labels} onClick={() => ((chatView.value = 'terminal'), (confirmNew.value = false))}>
+        <ActionButton name="Open terminal" labels={labels} onClick={openTerminal}>
           <path d="M4 6l6 6-6 6M12 19h8" />
         </ActionButton>
         <ActionButton name="Chat settings" labels={labels} onClick={(e) => openAppSettings(e.currentTarget as HTMLElement)}>
@@ -222,20 +228,6 @@ function Conversation({ mode }: { mode: Mode }) {
           </div>
         </div>
       )}
-      {(notice || hint) && (
-        <div class="chat-notice" role="status">
-          <span>{notice || 'AdmiralBot is waiting on a prompt in the terminal.'}</span>
-          {running || (!notice && hint) ? (
-            <button type="button" class="press chat-notice-button" onClick={() => ((chatView.value = 'terminal'), (confirmNew.value = false))}>
-              Open the terminal
-            </button>
-          ) : (
-            <button type="button" class="press chat-notice-button" onClick={() => void startChat()}>
-              Start the chat again
-            </button>
-          )}
-        </div>
-      )}
       <div class="chat-list" ref={list}>
         {items.map((it) => (it.kind === 'card' ? <Card key={it.id} q={it.q} /> : it.kind === 'fold' ? <Folded key={it.id} q={it.q} /> : <Bubble key={it.id} me={it.kind === 'me'} text={it.text} at={it.at} />))}
         {typing && (
@@ -249,6 +241,20 @@ function Conversation({ mode }: { mode: Mode }) {
           </div>
         )}
       </div>
+      {(notice || hint) && (
+        <div class="chat-notice" role="status">
+          <span>{notice || 'AdmiralBot is waiting on a prompt in the terminal.'}</span>
+          {running || (!notice && hint) ? (
+            <button type="button" class="press chat-notice-button" onClick={openTerminal}>
+              Open the terminal
+            </button>
+          ) : (
+            <button type="button" class="press chat-notice-button" onClick={() => void startChat()}>
+              Start the chat again
+            </button>
+          )}
+        </div>
+      )}
       <Box />
     </>
   );
@@ -281,8 +287,8 @@ function Card({ q }: { q: ChatQuestion }) {
       <Avatar />
       <article class="chat-card">
         <div class="chat-card-head">
-          <span class="inbox-kind" style="background-color:#DDF7F3">
-            Question
+          <span class="inbox-kind" style={`background-color:${KIND.question[1]}`}>
+            {KIND.question[0]}
           </span>
           <span class="chat-meta">AdmiralBot asks · {clockTime(q.created)}</span>
         </div>

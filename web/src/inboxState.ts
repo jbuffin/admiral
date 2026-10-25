@@ -1,7 +1,7 @@
 import { computed, effect, signal } from '@preact/signals';
 import { onMessage } from './connection';
 import { type Decisions, type FindingCard, createDecisions, readCards } from './findings';
-import { type Entry, type InboxItem, type InboxQuestion, createQueue } from './inbox';
+import { type Entry, type InboxItem, createQueue } from './inbox';
 import { type Draft, answerBody, blankDraft } from './questions';
 import { ships } from './ships';
 import { wide } from './sizeClass';
@@ -81,7 +81,6 @@ export const inbox = {
 
 // ---- what the engineer has entered on an item ----
 
-export type { Draft, Pick } from './questions';
 const drafts = signal<Record<string, Draft>>({});
 export const draftOf = (key: string): Draft => drafts.value[key] ?? blankDraft();
 export function editDraft(key: string, fn: (d: Draft) => Draft): void {

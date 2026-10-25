@@ -65,7 +65,7 @@ function openInbox(): void {
   inboxOpen.value = true;
 }
 
-const KIND: Record<string, [string, string]> = {
+export const KIND: Record<string, [string, string]> = {
   question: ['Question', '#DDF7F3'],
   review: ['Review', '#C9B6FF'],
   findings: ['Findings', '#FFE08A'],
