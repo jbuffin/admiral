@@ -1,10 +1,9 @@
 import { computed, effect, signal } from '@preact/signals';
-import { appSettingsOpen } from './AppSettings';
 import type { Probe } from './connection';
 import { onMessage } from './connection';
 import type { InboxQuestion } from './inbox';
 import { inboxOpen } from './inboxState';
-import { dockSheet, launching } from './launch';
+import { selected } from './launch';
 import { phoneTab } from './phoneTab';
 import { type AnswerBody, type Draft, blankDraft } from './questions';
 import { phone, wide } from './sizeClass';
@@ -123,16 +122,19 @@ effect(() => {
   if (chatOpen.value && !wide.value && !phone.value && inboxOpen.value) inboxOpen.value = false;
 });
 
-// Escape closes one layer: Settings (which closes itself), then the New chat bar, then the panel or sheet.
+// Escape closes one layer per press: a dialog, a menu or an armed order first (each handles its own Escape, and the
+// panel is non-modal, so they can be open over it), then the New chat bar, then the panel or sheet. A phone's
+// Chat tab is a tab, not a layer, so Escape only dismisses its bar there.
 export const confirmNew = signal(false);
 window.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || e.defaultPrevented) return;
-  if (appSettingsOpen.peek() || launching.peek() || (dockSheet.peek() && phone.peek()) || phone.peek()) return;
-  if (!chatOpen.peek()) return;
+  // The listener runs before a dialog's own cancel step, so an open dialog still matches here.
+  if (document.querySelector('dialog[open], .menu-list') || selected.peek()) return;
+  if (!showing()) return;
   // Esc is Claude Code's interrupt key: typed in the chat's terminal it goes to Claude only.
   if ((e.target as Element | null)?.closest?.('.chat-term')) return;
   if (confirmNew.peek()) confirmNew.value = false;
-  else closeChat();
+  else if (!phone.peek()) closeChat();
 });
 
 // ---- the keyboard ----
@@ -174,14 +176,19 @@ export async function startChat(): Promise<void> {
 }
 
 export async function sendMessage(): Promise<void> {
-  const text = draft.peek().trim();
+  const typed = draft.peek();
+  const text = typed.trim();
   if (!text || sendingMessage.peek()) return;
   sendingMessage.value = true;
   chatError.value = '';
   const r = await api('POST', '/api/chat/messages', { text });
   sendingMessage.value = false;
   if (!r.ok) chatError.value = r.error;
-  else if (draft.peek().trim() === text) draft.value = '';
+  else {
+    // Keep only what was typed while the POST was out, so a second Enter doesn't send the text again.
+    const now = draft.peek();
+    draft.value = now.startsWith(typed) ? now.slice(typed.length) : now;
+  }
 }
 
 export async function newChat(): Promise<void> {

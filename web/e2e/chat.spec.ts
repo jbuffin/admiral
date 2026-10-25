@@ -1,5 +1,5 @@
 import type { Locator, Page, TestInfo } from '@playwright/test';
-import { Chat, askBody } from './chat';
+import { Chat, askBody, firstChatSnapshot } from './chat';
 import { expect, test } from './fixtures';
 import { screenText } from './bridge';
 
@@ -77,7 +77,9 @@ test.describe('where it opens', () => {
     const chat = new Chat(admiral);
     await admiral.start();
     await chat.beginWith([{ user: 'Where is the fleet?' }, { assistant: 'Safe in the harbour.' }]);
+    const snapshot = firstChatSnapshot(page);
     await page.goto(admiral.url);
+    await snapshot; // the first snapshot is what counts as seen
     await expect(entry(page)).toHaveAccessibleName(openName);
     chat.assistant('a-late', 'A second reply.');
     await expect(entry(page)).toHaveAccessibleName(`${openName}, new reply`);
@@ -275,5 +277,19 @@ test.describe('New chat, the terminal and closing', () => {
         await expect(b).toContainText(name);
       }
     }
+  });
+
+  test('C17: Escape over an open dialog closes only the dialog, and the chat stays', async ({ page, admiral }, info) => {
+    test.skip(info.project.name !== 'desktop', 'About is a dialog that can open over the wide panel');
+    const chat = new Chat(admiral);
+    await admiral.start();
+    await chat.begin();
+    await page.goto(admiral.url);
+    await openChat(page, info);
+    await page.getByRole('button', { name: 'About Admiral' }).click();
+    await expect(page.getByRole('dialog', { name: 'About Admiral' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog', { name: 'About Admiral' })).toBeHidden();
+    await expect(panel(page)).toBeVisible();
   });
 });

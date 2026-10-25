@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Page } from '@playwright/test';
 import { type Admiral, expect } from './fixtures';
 
 // Helpers for the chat scenarios (#119 u6). A Chat is one Admiral whose only fleet, "chat", carries the
@@ -204,4 +205,18 @@ export class Chat {
   async inbox() {
     return (await fetch(`${this.a.url}api/inbox`)).text();
   }
+}
+
+/**
+ * Resolves when the page has received its first `chat` snapshot. Call it before `page.goto`: a line written
+ * before that snapshot is read counts as already seen, so it never sets the dot.
+ */
+export function firstChatSnapshot(page: Page): Promise<void> {
+  return new Promise((resolve) => {
+    page.on('websocket', (ws) =>
+      ws.on('framereceived', (f) => {
+        if (String(f.payload).includes('"type":"chat"')) resolve();
+      }),
+    );
+  });
 }

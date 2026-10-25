@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { Chat } from './chat';
+import { Chat, firstChatSnapshot } from './chat';
 import { expect, test } from './fixtures';
 
 // The AdmiralBot chat on a phone (issue #119, u6), at the `phone` project's 402x874. The Chat tab is a region
@@ -42,7 +42,9 @@ test('C15: the dot shows on the tab for a reply that lands while another tab sho
   const chat = new Chat(admiral);
   await admiral.start();
   await chat.beginWith([{ user: 'Hello' }, { assistant: 'Hello, engineer.' }]);
+  const snapshot = firstChatSnapshot(page);
   await page.goto(admiral.url);
+  await snapshot; // the first snapshot is what counts as seen
   await expect(chatTab(page)).toHaveAccessibleName('Chat');
   chat.assistant('a-late', 'One more thing.');
   await expect(chatTab(page)).toHaveAccessibleName('Chat, new reply');
