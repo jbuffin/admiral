@@ -570,7 +570,8 @@ button:focus-visible {
   align-items: stretch;
 }
 
-.grip {
+.grip,
+.order-go {
   flex: 0 0 auto;
 }
 
@@ -644,7 +645,8 @@ button:focus-visible {
   right: 0;
 }
 
-.order.with-menu > .grip {
+.order.with-menu > .grip,
+.order.with-menu > .order-go {
   align-self: flex-end;
 }
 
@@ -3532,6 +3534,11 @@ body.dragging * {
   background-color: var(--color-sidebar);
 }
 
+.phone-tabs-pane {
+  position: absolute;
+  inset: 0;
+}
+
 .phone-pane {
   position: absolute;
   inset: 0;
@@ -3738,6 +3745,18 @@ body.dragging * {
   border-right: 0;
   box-shadow: none;
   z-index: auto;
+}
+
+/* The key bar is one row at 402 wide: no hint, and a tighter fit. */
+:root.phone .term-keys {
+  gap: 6px;
+  padding: 8px;
+}
+
+:root.phone .term-keys button {
+  min-width: 0;
+  flex: 1 1 0;
+  padding: 0 6px;
 }
 
 /* A phone's bridge: full screen, with a top bar in place of the terminal's head. */

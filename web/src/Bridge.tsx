@@ -366,11 +366,11 @@ function BridgeView({ session }: { session: string }) {
               <div class="term-keys">
                 {KEYS.map(([name, label, bytes]) => (
                   <button type="button" class="term-key" aria-label={`Send ${name}`} disabled={!canType} onClick={() => input(bytes)}>
-                    {label}
+                    {onPhone && name === 'Newline' ? '⇧⏎' : label}
                   </button>
                 ))}
-                <span class="term-grow" />
-                <span class="term-note">Keys go straight to the session</span>
+                {!onPhone && <span class="term-grow" />}
+                {!onPhone && <span class="term-note">Keys go straight to the session</span>}
               </div>
             )
           )}

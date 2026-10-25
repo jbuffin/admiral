@@ -29,11 +29,10 @@ import {
   inboxOpen,
   pickOf,
   sendAnswers,
-  wide,
 } from './inboxState';
 import { LogoFlag } from './Logos';
 import { board, ships } from './ships';
-import { phone } from './sizeClass';
+import { phone, wide } from './sizeClass';
 
 // Item files are written by ships and are untrusted: every field below is rendered as text, and the only
 // links are http(s) addresses (safeHref).

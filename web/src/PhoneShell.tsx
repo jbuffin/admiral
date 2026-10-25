@@ -74,7 +74,7 @@ function TabBar() {
 const exitWords = (s: WireShip) => (s.exit_signal ? `killed (${s.exit_signal})` : `exited ${s.exit_code ?? '?'}`);
 
 function statusLine(s: WireShip): string {
-  if (s.status === 'needs_you') return `Needs you · ${reasonWords(s.reason ?? 'unknown')} · waiting ${waited(s.stop_since ?? '', clock.value)}`;
+  if (s.status === 'needs_you') return `Needs you · ${reasonWords(s.reason ?? 'question')} · waiting ${waited(s.stop_since ?? '', clock.value)}`;
   if (s.status === 'anchored') return `Anchored, ${exitWords(s)}`;
   return 'Underway';
 }
@@ -130,10 +130,13 @@ export function PhoneShell({ children }: { children?: preact.ComponentChildren }
   return (
     <>
       <div class="phone-body">
+        {/* The pane under a bridge is out of reach of VoiceOver and Tab. */}
+        <div class="phone-tabs-pane" inert={boardedSession.value !== null}>
         {phoneTab.value === 'inbox' && <InboxTab />}
         {phoneTab.value === 'chat' && <ChatTab />}
         {phoneTab.value === 'ships' && <ShipsTab />}
         {phoneTab.value === 'orders' && <Sidebar />}
+        </div>
         {children}
       </div>
       {boardedSession.value === null && <TabBar />}

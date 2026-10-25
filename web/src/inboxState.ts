@@ -9,9 +9,6 @@ import { api } from './sources';
 // The signals behind the Needs You inbox: the served items, the queue (inbox.ts) over them and the
 // ships, the open state and what the engineer has entered on each item.
 
-// Wide is the drawer beside the bridge; everything else is the full-screen sheet (a phone: the Inbox tab).
-export { wide };
-
 const items = signal<InboxItem[]>([]);
 onMessage('inbox', (msg: { items: InboxItem[] }) => (items.value = msg.items));
 

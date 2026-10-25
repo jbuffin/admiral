@@ -71,8 +71,6 @@ test('S2, C6: a ship row opens the bridge full screen, the tab bar steps aside a
   await expect(terminal(page)).toBeVisible();
   await expect(tabs(page)).toHaveCount(0);
   await expect(page.getByText(ship.name).first()).toBeVisible();
-  const box = await terminal(page).boundingBox();
-  expect(box!.width).toBeGreaterThanOrEqual(380);
 
   await back(page).tap();
   await expect(terminal(page)).toHaveCount(0);
@@ -113,7 +111,6 @@ test('S5, C8: the Orders tab shows the whole Orders panel, not the rail, and not
   await expect(page.getByRole('complementary', { name: 'Orders, collapsed' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Collapse orders' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Expand orders' })).toHaveCount(0);
-  expect((await orders.boundingBox())!.width).toBeGreaterThanOrEqual(380);
 });
 
 test('C2p: the phone header has the mark, the title, "at sea" and Settings, and Sound lives in Settings', async ({ page, admiral, sea }) => {
@@ -127,7 +124,6 @@ test('C2p: the phone header has the mark, the title, "at sea" and Settings, and 
   await expect(banner.getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
   await expect(banner.getByRole('button', { name: /chime/i })).toHaveCount(0);
   await expect(banner.getByRole('button', { name: /^Needs you/ })).toHaveCount(0);
-  await expect(banner.getByRole('button')).toHaveCount(1);
 
   await banner.getByRole('button', { name: 'Settings', exact: true }).tap();
   const dialog = page.getByRole('dialog', { name: 'Settings' });

@@ -20,7 +20,7 @@ const Grip = () => (
 );
 
 const Chevron = () => (
-  <svg class="grip" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9AAFC0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <svg class="order-go" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9AAFC0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     <path d="M8 5l8 7-8 7" />
   </svg>
 );
