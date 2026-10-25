@@ -363,7 +363,10 @@ test.describe('a crew boat in the inbox', () => {
     const t = terminal(page);
     await expect(t.getByText(`${ship.name} › api`, { exact: true })).toBeVisible();
 
-    // A key typed on the crew bridge answers the boat, and the stop folds.
+    // A key typed on the crew bridge answers the boat, and the stop folds. The bridge shows the boat's screen first,
+    // so the key has a socket to travel on.
+    crewPaneWrite(s, ship.session, 'api', 'crew-screen\r\n');
+    await expect.poll(() => screenText(page)).toContain('crew-screen');
     await termInput(page).focus();
     await page.keyboard.type('y');
     if (!wide(info)) await press(inboxButton(page), touch);
