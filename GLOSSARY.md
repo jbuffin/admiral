@@ -60,7 +60,7 @@ A skill the engineer starred, up to five, shown in launch orders after Commodore
 _Avoid_: configured skill, skill list
 
 **AdmiralBot**:
-The chat: one Claude Code session that Admiral keeps in its own tmux session, `_chat`, outside the ships, so the engineer can talk to it from any device. Every browser sees the same conversation. It is not a ship: it never shows in open water or the Ships list, and takes no part in caps, guards or resources. New chat clears it for every device. Open terminal shows its real terminal. Its model, effort and fleet come from the `chat` settings.
+The chat: one Claude Code session that Admiral keeps in its own tmux session, `_chat`, outside the ships, so the engineer can talk to it from any device. Every browser sees the same conversation. It is not a ship: it never shows in open water or the Ships list, and takes no part in caps, guards or resources. New chat clears it for every device. Open terminal shows its real terminal. Its model, effort and fleet come from the `chat` settings. It works through the `admiral` command line only (ADR 0020): it reads ships, outcomes, the inbox and the orders, and its only write is adding an order. When it needs the engineer to choose, it asks a **chat question**, which looks like an inbox question but stays in the chat. "The AdmiralBot skill" is a Claude Code project skill the chat loads, not a **Skill** a ship starts on.
 _Avoid_: assistant, chat ship, chat agent
 
 **Ship**:
