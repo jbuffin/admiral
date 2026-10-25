@@ -294,16 +294,14 @@ func subagentCall(pane, event string, p hookPayload, now time.Time) []string {
 // (ADR 0019): the option holds "<unix nanoseconds> <source> <transcript path>"
 // in one write, so a reader never sees a torn pair, and a second SessionStart on
 // the same path still changes it. Only the chat's bundle registers SessionStart.
-// A path that is not absolute, does not end in .jsonl or holds a control
-// character is not recorded (the .jsonl ending also keeps the argument from
-// ending in the ";" tmux reads as a separator).
+// A path sessionhost.ValidTranscriptPath refuses is not recorded (the .jsonl
+// ending also keeps the argument from ending in the ";" tmux reads as a separator).
 func transcriptCall(pane, event string, p hookPayload, now time.Time) []string {
 	if event != "SessionStart" {
 		return nil
 	}
 	path := p.TranscriptPath
-	if !strings.HasPrefix(path, "/") || !strings.HasSuffix(path, ".jsonl") || len(path) > 4096 ||
-		strings.IndexFunc(path, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
+	if !sessionhost.ValidTranscriptPath(path) {
 		return nil
 	}
 	source := safeID(p.Source)

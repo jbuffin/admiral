@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
 // Message is one turn of text in the conversation.
@@ -38,18 +40,21 @@ type transcriptLine struct {
 	Timestamp   string `json:"timestamp"`
 	IsMeta      bool   `json:"isMeta"`
 	IsSidechain bool   `json:"isSidechain"`
-	Message     struct {
+	// Claude Code's compaction summary is a user line that only the transcript shows.
+	IsCompactSummary          bool `json:"isCompactSummary"`
+	IsVisibleInTranscriptOnly bool `json:"isVisibleInTranscriptOnly"`
+	Message                   struct {
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
 }
 
 // parseLine is the message a transcript line carries, if it carries one: the
 // text of a user turn or of an assistant turn's text block. Tool use and results,
-// thinking, meta and sidechain lines, system lines, a line with no uuid and the
-// local-command lines `/clear` leaves are not messages.
+// thinking, meta and sidechain lines, compaction summaries, system lines, a line
+// with no uuid and the local-command lines `/clear` leaves are not messages.
 func parseLine(line []byte) (Message, bool) {
 	var l transcriptLine
-	if json.Unmarshal(line, &l) != nil || l.UUID == "" || l.IsMeta || l.IsSidechain {
+	if json.Unmarshal(line, &l) != nil || l.UUID == "" || l.IsMeta || l.IsSidechain || l.IsCompactSummary || l.IsVisibleInTranscriptOnly {
 		return Message{}, false
 	}
 	if l.Type != "user" && l.Type != "assistant" {
@@ -111,8 +116,7 @@ var errRefused = errors.New("not a regular transcript file under the Claude conf
 // path is matched against the real projects/, found by walking up from the file.
 // It returns the real projects/ and the path below it.
 func resolveTranscript(configDir, p string) (root, rel string, err error) {
-	if !filepath.IsAbs(p) || !strings.HasSuffix(p, ".jsonl") || len(p) > 4096 ||
-		strings.IndexFunc(p, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
+	if !sessionhost.ValidTranscriptPath(p) {
 		return "", "", errRefused
 	}
 	p = filepath.Clean(p)
