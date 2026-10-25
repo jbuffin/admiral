@@ -84,6 +84,36 @@ func (s *Service) writeAnswered(session, id, kind string, build func(Item) (file
 		return ErrNotFound
 	}
 	defer dir.Close()
+	var recs []outcomes.Record
+	err = WriteAnswerFile(dir, session, id, kind, func(it Item) (any, error) {
+		file, r, err := build(it)
+		recs = r
+		return file, err
+	})
+	if err != nil {
+		return err
+	}
+	if s.Outcomes != nil {
+		for _, r := range recs {
+			r.Ship = session
+			s.Outcomes.Enqueue(r, nil)
+		}
+	}
+	s.CaptureResume(session) // before anything deletes the report
+	return nil
+}
+
+// WriteAnswerFile writes the answer to item id in dir, whose items are the
+// session's: it reads the item again, checks that it has the kind and no answer,
+// asks build for the answer file's content and publishes it through writeAnswer.
+// ErrNotFound is an item that is not there (or a directory that vanished
+// meanwhile), ErrAnswered one with an answer already, and an *InvalidError a
+// wrong kind or an answer build refused. The caller holds the lock that makes
+// this one answer at a time.
+func WriteAnswerFile(dir *os.Root, session, id, kind string, build func(Item) (any, error)) error {
+	if !idPattern.MatchString(id) {
+		return ErrNotFound
+	}
 	it, err := readItem(dir, session, id)
 	if err != nil {
 		return ErrNotFound
@@ -94,7 +124,7 @@ func (s *Service) writeAnswered(session, id, kind string, build func(Item) (file
 	if it.Kind != kind {
 		return invalid("item %s is a %s, not a %s", id, it.Kind, kind)
 	}
-	file, recs, err := build(it)
+	file, err := build(it)
 	if err != nil {
 		return err
 	}
@@ -107,13 +137,6 @@ func (s *Service) writeAnswered(session, id, kind string, build func(Item) (file
 		}
 		return err
 	}
-	if s.Outcomes != nil {
-		for _, r := range recs {
-			r.Ship = session
-			s.Outcomes.Enqueue(r, nil)
-		}
-	}
-	s.CaptureResume(session) // before anything deletes the report
 	return nil
 }
 
@@ -189,37 +212,48 @@ func questionsOf(it Item) ([]question, error) {
 // question); text of the engineer's own can stand alone.
 func (s *Service) AnswerQuestion(session, id string, req QuestionRequest) error {
 	return s.Answer(session, id, KindQuestion, func(it Item) (any, []outcomes.Record, error) {
-		qs, err := questionsOf(it)
+		file, err := BuildQuestionAnswer(it, req)
 		if err != nil {
-			return nil, nil, invalid("item %s has no questions", id)
+			return nil, nil, err
 		}
-		answers := map[string]QuestionAnswer{}
-		for _, q := range qs {
-			a, ok := req.Answers[q.ID]
-			if !ok {
-				return nil, nil, invalid("question %s has no answer", q.ID)
-			}
-			a, err := checkChoice(q, a)
-			if err != nil {
-				return nil, nil, err
-			}
-			answers[q.ID] = a
-		}
-		for qid := range req.Answers {
-			if _, ok := answers[qid]; !ok {
-				return nil, nil, invalid("the item has no question %q", qid)
-			}
-		}
-		file := struct {
-			Version  int                       `json:"version"`
-			ID       string                    `json:"id"`
-			Kind     string                    `json:"kind"`
-			Answered string                    `json:"answered"`
-			Answers  map[string]QuestionAnswer `json:"answers"`
-			Note     string                    `json:"note,omitempty"`
-		}{1, id, KindQuestion, time.Now().UTC().Format(time.RFC3339), answers, req.Note}
 		return file, []outcomes.Record{{Event: "answered", Fields: map[string]any{"item": id, "kind": KindQuestion}}}, nil
 	})
+}
+
+// BuildQuestionAnswer is the answer file for a question item and the engineer's
+// request, or an *InvalidError: every question needs an answer, a choice is one of
+// the question's option labels (a list only on a multi question), and text of the
+// engineer's own can stand alone. It writes nothing.
+func BuildQuestionAnswer(it Item, req QuestionRequest) (any, error) {
+	qs, err := questionsOf(it)
+	if err != nil {
+		return nil, invalid("item %s has no questions", it.ID)
+	}
+	answers := map[string]QuestionAnswer{}
+	for _, q := range qs {
+		a, ok := req.Answers[q.ID]
+		if !ok {
+			return nil, invalid("question %s has no answer", q.ID)
+		}
+		a, err := checkChoice(q, a)
+		if err != nil {
+			return nil, err
+		}
+		answers[q.ID] = a
+	}
+	for qid := range req.Answers {
+		if _, ok := answers[qid]; !ok {
+			return nil, invalid("the item has no question %q", qid)
+		}
+	}
+	return struct {
+		Version  int                       `json:"version"`
+		ID       string                    `json:"id"`
+		Kind     string                    `json:"kind"`
+		Answered string                    `json:"answered"`
+		Answers  map[string]QuestionAnswer `json:"answers"`
+		Note     string                    `json:"note,omitempty"`
+	}{1, it.ID, KindQuestion, time.Now().UTC().Format(time.RFC3339), answers, req.Note}, nil
 }
 
 // checkChoice validates one question's answer and returns it normalised.

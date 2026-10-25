@@ -269,3 +269,25 @@ func scanShip(dir *os.Root, session string) []Item {
 	}
 	return items
 }
+
+// ValidID is whether id can name an item file (ADR 0016's id rule).
+func ValidID(id string) bool { return idPattern.MatchString(id) }
+
+// MaxItem is the most of an item or answer file that Admiral reads.
+const MaxItem = maxItem
+
+// AnswerName is the file that holds the answer to item id.
+func AnswerName(id string) string { return answerName(id) }
+
+// ReadItem reads and validates dir/<id>.json as item id of session, never
+// following a link and never waiting on a pipe. A file that is not a valid item
+// is an error.
+func ReadItem(dir *os.Root, session, id string) (Item, error) {
+	if !idPattern.MatchString(id) {
+		return Item{}, errSkip
+	}
+	return readItem(dir, session, id)
+}
+
+// ParseItem validates b as item id of session against #112's item format.
+func ParseItem(b []byte, session, id string) (Item, error) { return parseItem(b, session, id) }
