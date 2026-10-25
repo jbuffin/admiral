@@ -192,6 +192,11 @@ func (l *Launcher) StartChat() error {
 	for k := range unset {
 		names = append(names, k)
 	}
+	// A fresh session starts with none of the old one's chat questions, once nothing
+	// can refuse the start any more.
+	if l.BeforeChat != nil {
+		l.BeforeChat()
+	}
 	if err := l.createSession(session, dir, opts, env, names, argv, false); err != nil {
 		return err
 	}

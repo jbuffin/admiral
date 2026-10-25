@@ -336,6 +336,7 @@ func serve(args []string) error {
 	}
 
 	chatService := &chat.Service{Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Home: absDir}
+	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
 	s := &server.Server{Version: version, Commit: commit, UI: web.UI(), Messages: map[string]server.MessageHandler{}, Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService,
 			&launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}, bridgeService, resourceService, lockRoute, chatService}}

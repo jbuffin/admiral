@@ -27,7 +27,7 @@ Never use the `AskUserQuestion` tool: it is denied here. Ask with `admiral chat 
 
 Run every command as plain `admiral …`: no path, no `VAR=…` prefix and no `cd`, or the allow rules will not match and the command is refused.
 
-Order text and question JSON always go on stdin, in exactly this form. Never write the text after `--`: a command over 10,000 characters is refused.
+Order text and question JSON always go on stdin, in exactly this form. Never write the text after `--`: shell quoting breaks on it. A command over 10,000 characters is refused, and the heredoc counts toward that.
 
 ```sh
 admiral orders add --source <key> --panel <id> <<'EOF'
@@ -35,7 +35,7 @@ The order's text
 EOF
 ```
 
-`<key>` and `<id>` come from `admiral orders`. Use the Freeform source's panel unless the engineer names another.
+`<key>` and `<id>` come from `admiral orders`. With one writable panel, use it. With more than one and none named by the engineer, ask which (below), with the panels' titles as the options.
 
 If `admiral orders add` says the order may have been added (exit 5), never add it again. Check with `admiral orders` and tell the engineer.
 
@@ -46,7 +46,7 @@ The order's text is what the ship starts on, as it is. Admiral puts it after the
 - Say what to do, in the engineer's words, and what done looks like.
 - Put the full URL of the repository, issue or pull request in the text. Admiral finds the checkout the ship runs in from the repository URLs in the text; with none, the ship may start in the wrong folder or have to ask.
 - Keep what the engineer said that matters (branch names, constraints, what to leave alone) and nothing you made up.
-- Keep it under 12,000 characters, with no control characters other than newline and tab.
+- Keep it under about 9,000 characters, with no control characters other than newline and tab.
 
 ## Asking the engineer
 

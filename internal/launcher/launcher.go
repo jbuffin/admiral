@@ -94,7 +94,10 @@ type Launcher struct {
 	Socket string
 	Home   string // $ADMIRAL_HOME
 	Port   string // the port Admiral listens on; the chat's ADMIRAL_PORT
-	Config func() *config.Config
+	// BeforeChat runs just before the chat's session is created, when the launcher's
+	// checks have passed: the chat service withdraws the old chat questions there.
+	BeforeChat func()
+	Config     func() *config.Config
 	// Kept says whether a session's inbox is kept after the ship sailed off
 	// (ADR 0016). Its name is never picked, so the launch cannot clear the inbox.
 	Kept func(session string) bool

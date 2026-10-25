@@ -79,6 +79,9 @@ type Service struct {
 	cmu sync.Mutex // the question cache; the directory is read under it, never under mu
 	qs  []Question // the questions as last read
 	qAt time.Time
+	// What each question and answer file read as, by id, while its time and size hold.
+	qItems   map[string]cachedQuestion
+	qAnswers map[string]cachedAnswer
 }
 
 // state is the chat as last read. It is cleared when the pane changes.
@@ -447,8 +450,6 @@ func (s *Service) start() *launcher.Error {
 	if s.exists() {
 		return nil
 	}
-	// A fresh session starts with none of the old one's questions.
-	s.withdrawQuestions()
 	err := s.Launcher.StartChat()
 	var le *launcher.Error
 	switch {
@@ -595,7 +596,7 @@ func (s *Service) serveNew(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, NotStarted)
 			return
 		}
-		s.withdrawQuestions()
+		s.WithdrawQuestions()
 		s.mu.Lock()
 		s.clearLocked()
 		s.mu.Unlock()

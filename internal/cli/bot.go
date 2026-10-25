@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/inbox"
+	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/ships"
 )
 
@@ -55,7 +56,7 @@ func Inbox(args []string, std IO) error {
 		return err
 	}
 	if fs.NArg() > 0 {
-		return usagef("usage: admiral inbox [--port <n>] [--json]")
+		return usagef("%s", Usage("inbox"))
 	}
 	dir, err := admiralHome()
 	if err != nil {
@@ -158,7 +159,7 @@ func Orders(args []string, std IO) error {
 		return err
 	}
 	if fs.NArg() > 0 {
-		return usagef("usage: admiral orders [--port <n>] [--json]   |   admiral orders add --source <key> --panel <id> [--port <n>] [-- <text>]")
+		return usagef("%s", Usage("orders"))
 	}
 	dir, err := admiralHome()
 	if err != nil {
@@ -205,7 +206,7 @@ func ordersAdd(args []string, std IO) error {
 		return err
 	}
 	if *source == "" || *panel == "" {
-		return usagef("usage: admiral orders add --source <key> --panel <id> [--port <n>] [-- <text>]")
+		return usagef("%s", Usage("orders"))
 	}
 	var text string
 	if fs.NArg() > 0 {
@@ -266,7 +267,7 @@ const askPoll = 100 * time.Millisecond
 // Chat is `admiral chat ask [--timeout <dur>] [--wait <id>]` (ADR 0020).
 func Chat(args []string, std IO) error {
 	if len(args) == 0 || args[0] != "ask" {
-		return usagef("usage: admiral chat ask [--timeout <dur>] [--wait <id>]")
+		return usagef("%s", Usage("chat"))
 	}
 	fs := newFlags("chat ask")
 	timeout := fs.Duration("timeout", askDefaultTimeout, "how long to wait for the answer")
@@ -275,7 +276,7 @@ func Chat(args []string, std IO) error {
 		return err
 	}
 	if fs.NArg() > 0 || *timeout <= 0 {
-		return usagef("usage: admiral chat ask [--timeout <dur>] [--wait <id>]")
+		return usagef("%s", Usage("chat"))
 	}
 	if os.Getenv("ADMIRAL_SHIP") != "" {
 		return usagef("a ship cannot ask in the chat: chat questions are for AdmiralBot")
@@ -366,7 +367,7 @@ func writeQuestion(root *os.Root, stdin []byte) (string, error) {
 	if in.Questions == nil {
 		return "", usagef("the question has no questions")
 	}
-	if _, err := inbox.ParseItem(item, "_chat", id); err != nil {
+	if _, err := inbox.ParseItem(item, launcher.ChatSession, id); err != nil {
 		return "", usagef("the question is not valid: it needs a title and questions of {id, text, multi, options: [{label}]}, each id once")
 	}
 	dir, err := questionsRoot(root)
@@ -412,6 +413,9 @@ func readAnswerFile(root *os.Root, id string) ([]byte, bool) {
 		return nil, false
 	}
 	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return nil, false
+	}
 	b, err := io.ReadAll(io.LimitReader(f, inbox.MaxItem+1))
 	var obj map[string]json.RawMessage
 	if err != nil || len(b) > inbox.MaxItem || json.Unmarshal(b, &obj) != nil || obj == nil {

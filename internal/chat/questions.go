@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/inbox"
+	"github.com/jbuffin/admiral/internal/launcher"
 )
 
 // Chat questions (ADR 0020): AdmiralBot asks with `admiral chat ask`, which writes
@@ -21,7 +22,7 @@ import (
 
 // Session is what a chat question carries as its `session`, so its key can't
 // collide with a ship's.
-const Session = "_chat"
+const Session = launcher.ChatSession
 
 // maxQuestions is how many chat questions are served: the newest.
 const maxQuestions = 20
@@ -81,12 +82,36 @@ func subDir(root *os.Root, name string) (*os.Root, error) {
 	return root.OpenRoot(name)
 }
 
-// scanQuestions reads the questions directory: every valid question item, with its
-// answer if one is there. A file that fails is skipped and never hides another.
+// fileKey says whether a cached read is still of the file as it is.
+type fileKey struct {
+	mod  time.Time
+	size int64
+}
+
+// cachedQuestion is what one question file read as: no item for a file that is
+// not a valid question, and so never read again until it changes.
+type cachedQuestion struct {
+	key  fileKey
+	item *inbox.Item
+}
+
+// cachedAnswer is what one answer file read as; nil answer is no answer.
+type cachedAnswer struct {
+	key    fileKey
+	exists bool
+	answer json.RawMessage
+}
+
+// scanQuestions reads the questions directory: the newest valid question items,
+// each with its answer if one is there, oldest first. A file that fails is skipped
+// and never hides another. Ids start with a time, so the names are read newest
+// first until maxQuestions valid ones are found, and a file whose modification time
+// and size haven't changed is not read again. The caller holds cmu.
 func (s *Service) scanQuestions() []Question {
 	out := []Question{}
 	dir, err := s.openQuestions()
 	if err != nil {
+		s.qItems, s.qAnswers = nil, nil
 		return out
 	}
 	defer dir.Close()
@@ -96,16 +121,37 @@ func (s *Service) scanQuestions() []Question {
 	}
 	names, _ := f.Readdirnames(-1)
 	f.Close()
+	var ids []string
+	here := map[string]bool{}
 	for _, n := range names {
-		id, ok := strings.CutSuffix(n, ".json")
-		if !ok || !inbox.ValidID(id) {
+		here[n] = true
+		if id, ok := strings.CutSuffix(n, ".json"); ok && inbox.ValidID(id) {
+			ids = append(ids, id)
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(ids)))
+	if s.qItems == nil {
+		s.qItems, s.qAnswers = map[string]cachedQuestion{}, map[string]cachedAnswer{}
+	}
+	for n := range s.qItems {
+		if !here[n+".json"] {
+			delete(s.qItems, n)
+		}
+	}
+	for n := range s.qAnswers {
+		if !here[inbox.AnswerName(n)] {
+			delete(s.qAnswers, n)
+		}
+	}
+	for _, id := range ids {
+		if len(out) == maxQuestions {
+			break
+		}
+		it := s.questionItem(dir, id)
+		if it == nil {
 			continue
 		}
-		it, err := inbox.ReadItem(dir, Session, id)
-		if err != nil || it.Kind != inbox.KindQuestion {
-			continue
-		}
-		out = append(out, Question{Item: it, Answer: readAnswer(dir, id)})
+		out = append(out, Question{Item: *it, Answer: s.answerOf(dir, id)})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		a, b := out[i].Item, out[j].Item
@@ -114,14 +160,58 @@ func (s *Service) scanQuestions() []Question {
 		}
 		return a.ID < b.ID
 	})
-	if len(out) > maxQuestions {
-		out = out[len(out)-maxQuestions:]
-	}
 	return out
 }
 
-// readAnswer is the answer file's content, or nil when there is none that can be
-// trusted: a link, a file that is not regular, one over 1 MiB, or not a JSON object.
+// questionItem is the valid question item in dir/<id>.json, or nil.
+func (s *Service) questionItem(dir *os.Root, id string) *inbox.Item {
+	fi, err := dir.Lstat(id + ".json")
+	if err != nil {
+		return nil
+	}
+	key := fileKey{fi.ModTime(), fi.Size()}
+	if c, ok := s.qItems[id]; ok && c.key == key {
+		return c.item
+	}
+	c := cachedQuestion{key: key}
+	if it, err := inbox.ReadItem(dir, Session, id); err == nil && it.Kind == inbox.KindQuestion {
+		c.item = &it
+	}
+	s.qItems[id] = c
+	return c.item
+}
+
+// answerOf is the answer to question id as served, or nil.
+func (s *Service) answerOf(dir *os.Root, id string) json.RawMessage {
+	fi, err := dir.Lstat(inbox.AnswerName(id))
+	if err != nil {
+		delete(s.qAnswers, id)
+		return nil
+	}
+	key := fileKey{fi.ModTime(), fi.Size()}
+	if c, ok := s.qAnswers[id]; ok && c.key == key {
+		return c.answer
+	}
+	c := cachedAnswer{key: key, exists: true, answer: readAnswer(dir, id)}
+	s.qAnswers[id] = c
+	return c.answer
+}
+
+// answerFile is the part of an answer file that reaches a browser: the envelope and
+// each question's choice and text, nothing else a writer put there.
+type answerFile struct {
+	Version  int                             `json:"version"`
+	ID       string                          `json:"id"`
+	Kind     string                          `json:"kind"`
+	Answered string                          `json:"answered,omitempty"`
+	Answers  map[string]inbox.QuestionAnswer `json:"answers"`
+	Note     string                          `json:"note,omitempty"`
+}
+
+// readAnswer is the answer file as served, or nil when there is none that can be
+// trusted: a link, a file that is not regular, one over 1 MiB, not an answer, or
+// one whose choices are not a label or a list of labels. Only the fields of
+// answerFile are kept.
 func readAnswer(dir *os.Root, id string) json.RawMessage {
 	name := inbox.AnswerName(id)
 	fi, err := dir.Lstat(name)
@@ -140,11 +230,23 @@ func readAnswer(dir *os.Root, id string) json.RawMessage {
 	if err != nil || len(b) > inbox.MaxItem {
 		return nil
 	}
-	var obj map[string]json.RawMessage
-	if json.Unmarshal(b, &obj) != nil || obj == nil {
+	var a answerFile
+	if json.Unmarshal(b, &a) != nil || a.Answers == nil {
 		return nil
 	}
-	return json.RawMessage(strings.TrimSpace(string(b)))
+	for _, q := range a.Answers {
+		var one string
+		var many []string
+		c := strings.TrimSpace(string(q.Choice))
+		if c != "" && c != "null" && json.Unmarshal(q.Choice, &one) != nil && json.Unmarshal(q.Choice, &many) != nil {
+			return nil
+		}
+	}
+	out, err := json.Marshal(a)
+	if err != nil {
+		return nil
+	}
+	return out
 }
 
 // questions is the served questions, read again when the last read is older than
@@ -168,25 +270,37 @@ func unanswered(qs []Question) bool {
 	return false
 }
 
-// withdrawQuestions removes every file in chat/questions, answered or not: New
+// WithdrawQuestions removes every file in chat/questions, answered or not: New
 // chat, and a fresh session after the old one ended. A waiting `admiral chat ask`
 // sees its question gone and exits 4.
-func (s *Service) withdrawQuestions() {
+func (s *Service) WithdrawQuestions() {
 	s.qmu.Lock()
 	defer s.qmu.Unlock()
-	if dir, err := s.openQuestions(); err == nil {
-		if f, err := dir.Open("."); err == nil {
-			names, _ := f.Readdirnames(-1)
-			f.Close()
-			for _, n := range names {
-				_ = dir.Remove(n)
-			}
-		}
-		dir.Close()
-	}
+	// A second pass after the first: a question renamed in while the listing was
+	// being removed is withdrawn too.
+	s.removeAll()
+	s.removeAll()
 	s.cmu.Lock()
 	s.qs, s.qAt = nil, time.Time{}
 	s.cmu.Unlock()
+}
+
+// removeAll removes what chat/questions holds now.
+func (s *Service) removeAll() {
+	dir, err := s.openQuestions()
+	if err != nil {
+		return
+	}
+	defer dir.Close()
+	f, err := dir.Open(".")
+	if err != nil {
+		return
+	}
+	names, _ := f.Readdirnames(-1)
+	f.Close()
+	for _, n := range names {
+		_ = dir.Remove(n)
+	}
 }
 
 // serveAnswer writes the engineer's answer to a chat question. It writes no
