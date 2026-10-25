@@ -1,8 +1,9 @@
-import type { WireShip } from './ships';
+import type { WireCrew, WireShip } from './ships';
 
-// The Needs You inbox queue (#116): one list, oldest first, of the served inbox items and the ships that
-// need you (needs-you stops). It is pure: time comes in as `now` and nothing here sets a timer or reads a
-// signal, so it never imports ships.ts at runtime. inboxState.ts wires it to the signals and the clock.
+// The Needs You inbox queue (#116): one list, oldest first, of the served inbox items and the ships and
+// crew boats that need you (needs-you stops). It is pure: time comes in as `now` and nothing here sets a
+// timer or reads a signal, so it never imports ships.ts at runtime. inboxState.ts wires it to the signals
+// and the clock.
 
 // An item file as the server serves it (internal/inbox): the file's fields, plus the ship's session and,
 // when the ship is known, its name and harness. Item files are written by ships and are untrusted.
@@ -36,6 +37,8 @@ export interface Entry {
   id?: string;
   item?: InboxItem;
   ship?: WireShip;
+  /** Set on a crew stop only: the crew boat that needs you. `ship` is its lead. */
+  crew?: WireCrew;
   /** The folded line's text while the entry is held after an action, else null. */
   folded: string | null;
   since: number;
@@ -46,6 +49,12 @@ export const HOLD_MS = 5000;
 
 const itemKey = (session: string, id: string) => `item:${session}/${id}`;
 const stopKey = (session: string) => `stop:${session}`;
+const crewKey = (session: string, crew: string) => `stop:${session}/${crew}`;
+
+// The wire says needs_you/crew while only a crew boat waits, so the ship itself needs you on any other reason.
+const needsYou = (s: WireShip) => s.status === 'needs_you' && s.reason !== 'crew';
+// A sailing-off ship's session is about to die with its crew, so none of them waits on you.
+const waiting = (s: WireShip) => (s.status === 'sailing_off' ? [] : (s.crew ?? []).filter((c) => c.status === 'needs_you'));
 
 const compare = (a: Entry, b: Entry) =>
   a.since - b.since ||
@@ -65,6 +74,8 @@ export function createQueue() {
   // Answered items a stale push may still serve: they stay out until the server stops serving them.
   const answered = new Set<string>();
   const stopFirstSeen = new Map<string, number>();
+  // A crew stop's start, kept from first sight: the server keeps none for a crew boat.
+  const crewSince = new Map<string, number>();
   // Entries whose action is in flight: they leave the count at the tap and come back if it fails.
   const pending = new Set<string>();
   let cursor: string | null = null;
@@ -77,10 +88,15 @@ export function createQueue() {
       out.push({ key, type: 'item', session: it.session, id: it.id, item: it, folded: null, since: Date.parse(it.created) || 0 });
     }
     for (const s of input.ships) {
-      if (s.status !== 'needs_you') continue;
       const key = stopKey(s.session);
-      if (held.has(key)) continue;
-      out.push({ key, type: 'stop', session: s.session, ship: s, folded: null, since: Date.parse(s.stop_since ?? '') || (stopFirstSeen.get(key) ?? 0) });
+      if (needsYou(s) && !held.has(key)) {
+        out.push({ key, type: 'stop', session: s.session, ship: s, folded: null, since: Date.parse(s.stop_since ?? '') || (stopFirstSeen.get(key) ?? 0) });
+      }
+      for (const c of waiting(s)) {
+        const ck = crewKey(s.session, c.name);
+        if (held.has(ck)) continue;
+        out.push({ key: ck, type: 'stop', session: s.session, id: c.name, ship: s, crew: c, folded: null, since: crewSince.get(ck) ?? 0 });
+      }
     }
     return out;
   };
@@ -107,17 +123,30 @@ export function createQueue() {
       const open = new Set(next.items.map((it) => itemKey(it.session, it.id)));
       for (const key of answered) if (!open.has(key)) answered.delete(key);
       const ships = new Map(next.ships.map((s) => [s.session, s]));
-      // A needs-you stop whose ship went back to underway folds; any other way out is silent.
+      // A needs-you stop whose ship, or crew boat, went back to underway folds; any other way out is silent.
+      // A ship that needed you itself folds when the wire turns to underway or to needs_you/crew.
       for (const e of served) {
-        if (e.type === 'stop' && ships.get(e.session)?.status === 'underway' && !held.has(e.key)) {
-          held.set(e.key, { entry: e, text: 'Back underway', until: now + HOLD_MS });
-        }
+        if (e.type !== 'stop' || held.has(e.key)) continue;
+        const ship = ships.get(e.session);
+        const sailing = ship?.status === 'underway' || ship?.status === 'needs_you';
+        // A boat is answered whatever its ship's status, bar a ship that is sailing off or gone.
+        const back = e.crew
+          ? ship !== undefined && ship.status !== 'sailing_off' && ship.crew?.find((c) => c.name === e.crew!.name)?.status === 'underway'
+          : sailing && !needsYou(ship!);
+        if (back) held.set(e.key, { entry: e, text: 'Back underway', until: now + HOLD_MS });
       }
+      const live = new Set<string>();
       for (const s of next.ships) {
         const key = stopKey(s.session);
-        if (s.status === 'needs_you' && !stopFirstSeen.has(key)) stopFirstSeen.set(key, now);
-        if (s.status !== 'needs_you') stopFirstSeen.delete(key);
+        if (needsYou(s) && !stopFirstSeen.has(key)) stopFirstSeen.set(key, now);
+        if (!needsYou(s)) stopFirstSeen.delete(key);
+        for (const c of waiting(s)) {
+          const ck = crewKey(s.session, c.name);
+          live.add(ck);
+          if (!crewSince.has(ck)) crewSince.set(ck, Date.parse(c.last_activity ?? '') || Date.parse(c.launched) || now);
+        }
       }
+      for (const ck of crewSince.keys()) if (!live.has(ck)) crewSince.delete(ck);
       input = next;
       served = merge();
       settle(before);

@@ -1,6 +1,6 @@
-import type { Locator, Page } from '@playwright/test';
+import type { Locator, Page, TestInfo } from '@playwright/test';
 import { closeCrew, crewOf, crewPaneWrite, launchCrew, paneWrite, release, releaseCrew, screenText } from './bridge';
-import { boarded, expect, gesture, isTouch, needsYouIn, notes, spyOnPage, test, underwayIn, ships, water } from './sea';
+import { boarded, expect, gesture, inboxButton, isTouch, needsYouIn, notes, spyOnPage, test, underwayIn, ships, water } from './sea';
 
 // Crew boats on the bridge (#154 u1; #72's crew flow, the flotilla half). The names below are the contract the
 // bridge UI is built to; the prototype (scenes crew-bridge, crew-attn, crew-dismiss) supplies copy and labels.
@@ -317,5 +317,65 @@ test.describe('crew boats and subagents on the sea', () => {
     await expect(t.getByText(ship.name, { exact: true })).toBeVisible();
     await expect(t.getByText(`${ship.name} ›`)).toHaveCount(0);
     expect((await boarded(page)).at(-1)).toBe(ship.session);
+  });
+});
+
+// A crew boat in the Needs You inbox (#154 u3). The names below are the contract the inbox is built to:
+//   a crew boat that needs you while its ship is underway is one live stop, with the name line "<ship> › <crew>",
+//     and the ship has no stop of its own; it reads the boat's reason ("Wants to run Bash")
+//   its Attach button is named "Attach to <crew>, crew of <ship> and open its bridge" and boards the boat
+//     (window.__admiral.boarded ends in "<session>/<crew>")
+//   a key typed on the crew bridge clears the boat, and the stop folds to "Back underway" (role status)
+test.describe('a crew boat in the inbox', () => {
+  const wide = (info: TestInfo) => {
+    const v = info.project.use.viewport;
+    return !!v && v.width >= 1024 && v.width > v.height;
+  };
+  const panel = (page: Page, info: TestInfo) => page.getByRole(wide(info) ? 'complementary' : 'dialog', { name: 'Needs you inbox' });
+
+  test('a waiting crew boat is a stop of its own; Attach boards it; answering there folds it', async ({ page, admiral, sea }, info) => {
+    test.setTimeout(60_000);
+    const touch = isTouch(info);
+    // The boat runs the ship's fake and cue: both park on `wait needs`, and only the boat's file is ever written.
+    const s = sea({ work: { name: 'Work', color: BLUE, cue: ['wait needs', 'event PermissionRequest {"tool_name":"Bash"}', 'wait end', 'exit 0'] } });
+    await admiral.start();
+    const ship = await s.launch('work', 'alpha', 'recorded');
+    await launchCrew(s, ship.session, 'api');
+    await spyOnPage(page);
+    await page.goto(admiral.url);
+    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, nothing waiting');
+
+    // The boat needs you; the ship stays underway. Fixture proof: the wire says so before any inbox assertion.
+    releaseCrew(s, ship.session, 'api', 'needs');
+    await expect.poll(() => crewOf(s, ship.session)).toEqual([expect.objectContaining({ name: 'api', status: 'needs_you' })]);
+    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, 1 item');
+
+    await press(inboxButton(page), touch);
+    const drawer = panel(page, info);
+    await expect(drawer.getByText(`${ship.name} › api`, { exact: true })).toBeVisible();
+    await expect(drawer.getByText('Wants to run Bash')).toBeVisible();
+    await expect(drawer.getByText(/^Waiting /)).toBeVisible();
+    // No stop for the ship itself.
+    await expect(drawer.getByRole('button', { name: new RegExp(`^Attach to ${ship.name}`) })).toHaveCount(0);
+
+    await press(drawer.getByRole('button', { name: `Attach to api, crew of ${ship.name} and open its bridge` }), touch);
+    await expect.poll(async () => (await boarded(page)).at(-1)).toMatch(new RegExp(`${ship.session}/api$`));
+    const t = terminal(page);
+    await expect(t.getByText(`${ship.name} › api`, { exact: true })).toBeVisible();
+
+    // A key typed on the crew bridge answers the boat, and the stop folds. The bridge shows the boat's screen first,
+    // so the key has a socket to travel on.
+    crewPaneWrite(s, ship.session, 'api', 'crew-screen\r\n');
+    await expect.poll(() => screenText(page)).toContain('crew-screen');
+    // The sheet closed at Attach; open it again before the key, so the fold shows while it is open whenever the
+    // push lands (the fold is held for 5 s only).
+    if (!wide(info)) await press(inboxButton(page), touch);
+    await expect(panel(page, info).getByText(`${ship.name} › api`, { exact: true })).toBeVisible();
+    await termInput(page).focus();
+    await page.keyboard.type('y');
+    const fold = panel(page, info).getByRole('status').filter({ hasText: 'Back underway' });
+    await expect(fold).toBeVisible();
+    await expect(fold.getByText(`${ship.name} › api`, { exact: true })).toBeVisible();
+    await expect(inboxButton(page)).toHaveAccessibleName('Needs you, nothing waiting');
   });
 });

@@ -199,8 +199,10 @@ function QuestionBody({ entry }: { entry: Entry }) {
   );
 }
 
-function StopBody({ entry, name }: { entry: Entry; name: string }) {
-  const code = entry.ship?.reason ?? 'unknown';
+function StopBody({ entry, name, shipName }: { entry: Entry; name: string; shipName: string }) {
+  const code = (entry.crew ? entry.crew.reason : entry.ship?.reason) ?? 'unknown';
+  const crew = entry.crew;
+  const wait = new Date(entry.since).toISOString();
   return (
     <>
       <div class="inbox-reason">
@@ -208,15 +210,15 @@ function StopBody({ entry, name }: { entry: Entry; name: string }) {
           <span class="inbox-reason-words">{reasonWords(code)}</span>
           <span class="inbox-reason-code">{code}</span>
         </span>
-        <span class="inbox-waiting">Waiting {waited(entry.ship?.stop_since ?? '', clock.value)}</span>
+        <span class="inbox-waiting">Waiting {waited(wait, clock.value)}</span>
       </div>
       <div class="inbox-send-row">
         <button
           type="button"
           class="press inbox-primary inbox-attach"
-          aria-label={`Attach to ${name} and open its bridge`}
+          aria-label={crew ? `Attach to ${crew.name}, crew of ${shipName} and open its bridge` : `Attach to ${name} and open its bridge`}
           onClick={() => {
-            board(entry.session);
+            board(entry.session, crew?.name);
             if (!wide.value) closeInbox(false); // the drawer stays beside the bridge; the sheet would cover it
           }}
         >
@@ -479,13 +481,14 @@ function FindingsBody({ entry }: { entry: Entry }) {
 
 function Item({ entry }: { entry: Entry }) {
   const ship = entry.ship ?? ships.value.find((s) => s.session === entry.session);
-  const name = entry.item?.name ?? ship?.name ?? entry.session;
+  const shipName = entry.item?.name ?? ship?.name ?? entry.session;
+  const name = entry.crew ? `${shipName} › ${entry.crew.name}` : shipName;
   if (entry.folded !== null) return <Fold text={entry.folded} name={name} />;
   const harness = entry.item?.harness ?? ship?.harness ?? '';
   const [tag, tagBg] = KIND[entry.type === 'stop' ? 'stop' : (entry.item?.kind ?? 'question')] ?? KIND.question;
   const title = entry.item ? entry.item.title : [ship?.order_id, ship?.title].filter(Boolean).join(' ') || ship?.repo || name;
   const href = safeHref(entry.item?.order_url);
-  const since = entry.item?.created ?? ship?.stop_since;
+  const since = entry.item?.created ?? (entry.type === 'stop' ? new Date(entry.since).toISOString() : undefined);
   return (
     <article class="inbox-item">
       <div class="inbox-head">
@@ -514,7 +517,7 @@ function Item({ entry }: { entry: Entry }) {
           </a>
         )}
       </div>
-      {entry.type === 'stop' ? <StopBody entry={entry} name={name} /> : entry.item?.kind === 'review' ? <ReviewBody entry={entry} /> : entry.item?.kind === 'findings' ? <FindingsBody entry={entry} /> : entry.item?.kind === 'question' && <QuestionBody entry={entry} />}
+      {entry.type === 'stop' ? <StopBody entry={entry} name={name} shipName={shipName} /> : entry.item?.kind === 'review' ? <ReviewBody entry={entry} /> : entry.item?.kind === 'findings' ? <FindingsBody entry={entry} /> : entry.item?.kind === 'question' && <QuestionBody entry={entry} />}
     </article>
   );
 }
