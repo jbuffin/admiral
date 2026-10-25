@@ -8,12 +8,15 @@ export function Modal({
   onClose,
   onCancel,
   variant,
+  role,
   children,
 }: {
   label: string;
   onClose: () => void;
   onCancel?: (e: Event) => void;
   variant?: string;
+  /** `alertdialog` for a question that asks before a destructive step. */
+  role?: 'alertdialog';
   children: ComponentChildren;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -25,6 +28,7 @@ export function Modal({
     <dialog
       ref={ref}
       class={variant ? `modal ${variant}` : 'modal'}
+      role={role}
       aria-label={label}
       onCancel={onCancel}
       onClose={onClose}

@@ -1,5 +1,6 @@
 import { nextDelay, probe as probeShips, RETRY_FIRST_MS, signedOut, type Probe } from './connection';
 import type { JoinMsg } from './bridgeReplay';
+import { bridgePath } from './crew';
 
 export type LinkState = 'connecting' | 'open' | 'reconnecting';
 
@@ -8,16 +9,16 @@ export interface LinkHandlers {
   join(j: JoinMsg): void;
   output(bytes: Uint8Array): void;
   size(cols: number, rows: number): void;
-  /** The ship is gone: the bridge closes. */
+  /** The ship, or the crew boat, is gone: the bridge closes or returns to the ship. */
   gone(): void;
   /** The size to join with. */
   dims(): { cols: number; rows: number };
-  /** What a failed reconnect asks to learn why: whether the session is still listed. Ships by default. */
+  /** What a failed reconnect asks to learn why: whether the session is still listed. Ships by default. A crew link lists the session only while its boat is still in the ship's `crew[]`. */
   probe?: () => Promise<Probe>;
 }
 
-// One browser's WebSocket to a ship's bridge (GET /ws/bridge/<session>; the messages are in
-// docs/bridge-protocol.md). It keeps nothing for the server that is away: input sent while it is down is dropped.
+// One browser's WebSocket to a ship's bridge (GET /ws/bridge/<session>), or to one of its crew boats'
+// (GET /ws/bridge/<session>/crew/<name>); the messages are in docs/bridge-protocol.md. It keeps nothing for the server that is away: input sent while it is down is dropped.
 // When the socket drops it retries after 1 s, doubling to 10 s, and rejoins like a new browser.
 export class BridgeLink {
   state: LinkState = 'connecting';
@@ -29,6 +30,7 @@ export class BridgeLink {
   constructor(
     private readonly session: string,
     private readonly h: LinkHandlers,
+    private readonly crew?: string,
   ) {
     this.open();
   }
@@ -40,7 +42,7 @@ export class BridgeLink {
 
   private open() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${location.host}/ws/bridge/${encodeURIComponent(this.session)}`);
+    const ws = new WebSocket(`${proto}://${location.host}${bridgePath(this.session, this.crew)}`);
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
     ws.onopen = () => {

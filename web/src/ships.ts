@@ -1,8 +1,28 @@
-import { computed, effect, signal } from '@preact/signals';
+import { batch, computed, effect, signal } from '@preact/signals';
 import { chime } from './chime';
 import { config, type HarnessName } from './config';
 import { connectionState, onMessage } from './connection';
 import { FOOTPRINT, INSET, KEEP_OUT, placeShip, type PlacedShip } from './placement';
+
+// A teammate's crew boat on the `ships` message (internal/ships/crew.go). A live boat has no exit_code or exit_signal.
+export interface WireCrew {
+  name: string;
+  harness: HarnessName;
+  dir: string;
+  status: 'underway' | 'needs_you' | 'anchored';
+  reason?: string;
+  launched: string;
+  last_activity?: string;
+  exit_code?: number;
+  exit_signal?: string;
+}
+
+// A subagent: a bot on its ship's deck, with no terminal (internal/sessionhost/subagents.go). `start` is RFC 3339.
+export interface WireSubagent {
+  id: string;
+  type: string;
+  start: string;
+}
 
 // What the `ships` message carries (internal/ships).
 export interface WireShip {
@@ -27,6 +47,10 @@ export interface WireShip {
   reason?: string;
   stop_since?: string;
   position: { x: number; y: number } | null;
+  crew: WireCrew[];
+  subagents: WireSubagent[];
+  // Crew boats that are not anchored.
+  crew_live: number;
 }
 
 export interface Spot {
@@ -57,10 +81,17 @@ const launchedAt = (s: WireShip) => Date.parse(s.launched) || 0;
 // The session whose bridge is open, if any.
 export const boardedSession = signal<string | null>(null);
 
-// Boarding opens the bridge over open water. A test page that asked is told too.
-export function board(session: string): void {
-  window.__admiral?.boarded.push(session);
-  boardedSession.value = session;
+// The crew boat of the boarded ship whose terminal the bridge shows, if any.
+export const boardedCrew = signal<string | null>(null);
+
+// Boarding opens the bridge over open water: the ship's terminal, or one of its crew boats'. A test page that
+// asked is told too: `<session>` for a ship, `<session>/<crew>` for a crew boat.
+export function board(session: string, crew?: string): void {
+  window.__admiral?.boarded.push(crew ? `${session}/${crew}` : session);
+  batch(() => {
+    boardedSession.value = session;
+    boardedCrew.value = crew ?? null;
+  });
 }
 
 declare global {
