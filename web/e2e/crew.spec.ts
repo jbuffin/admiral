@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { closeCrew, crewOf, crewPaneWrite, launchCrew, paneWrite, release, releaseCrew, screenText } from './bridge';
-import { boarded, expect, isTouch, spyOnPage, test, underwayIn, ships } from './sea';
+import { boarded, expect, gesture, isTouch, needsYouIn, notes, spyOnPage, test, underwayIn, ships, water } from './sea';
 
 // Crew boats on the bridge (#154 u1; #72's crew flow, the flotilla half). The names below are the contract the
 // bridge UI is built to; the prototype (scenes crew-bridge, crew-attn, crew-dismiss) supplies copy and labels.
@@ -184,5 +184,138 @@ test.describe('a crew boat on the bridge', () => {
     await press(dialog.getByRole('button', { name: 'Dismiss ship and crew' }), touch);
     await expect(terminal(page)).toHaveCount(0);
     await expect.poll(async () => (await s.ships()).length).toBe(0);
+  });
+});
+
+// Crew boats and subagents on the sea (#154 u2; #72's crew flow, the sea half). The names below are the contract the
+// open-water UI is built to; the prototype (scenes crew, crew-attn) supplies copy and geometry.
+//
+//   a crew boat is a button in open water, a sibling of its ship's button, named
+//     "Board <crew>, teammate, crew of <ship>", plus ", needs you" or ", anchored"
+//   tapping it boards the boat (board(session, crew)): the head reads "<ship> › <crew>", __admiral.boarded gets
+//     "<session>/<crew>", and the ship does not move
+//   a crew boat that needs you: the ship's slot holds `.ship-needs-you` (the shake), the ship's plaque reads
+//     "<crew> needs you", and the chime plays once (3 notes)
+//   subagents: a button "N subagent(s) on <ship>: <types>. They have no terminal" on the ship's deck; tapping it
+//     shows a tip ("N subagent(s) · Explore just started · no terminal") and boards nothing
+//   more than three crew boats: three boats and a button "+N crew" named "N more crew boats; board the ship to see
+//     them"; tapping it boards the ship
+//
+// The ship and the boat run the same cue file. The ship is released at `sub` and `unsub`; the boat is released at
+// all of them before `needs`, which makes it needs-you; `end` makes it exit.
+
+const SUB_START = '{"hook_event_name":"SubagentStart","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore"}';
+const SUB_STOP = '{"hook_event_name":"SubagentStop","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore","background_tasks":[]}';
+
+type Wire = { session: string; status: string; reason?: string; position: { x: number; y: number } | null; subagents: { type: string }[]; crew: { name: string; status: string }[] };
+const wireOf = async (url: string, session: string) => {
+  const body = await (await fetch(`${url}api/ships`)).json();
+  return ((Array.isArray(body) ? body : body.ships) as Wire[]).find((s) => s.session === session);
+};
+const escape = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+test.describe('crew boats and subagents on the sea', () => {
+  test('a crew boat rafts beside its ship, boards on a tap without moving the ship, asks for you, and anchors; subagents ride the deck', async ({ page, admiral, sea }, info) => {
+    test.setTimeout(90_000);
+    const touch = isTouch(info);
+    const s = sea({
+      work: {
+        name: 'Work',
+        color: BLUE,
+        cue: ['wait sub', `event SubagentStart ${SUB_START}`, 'wait unsub', `event SubagentStop ${SUB_STOP}`, 'wait needs', 'hook needs_you', 'wait end', 'exit 0'],
+      },
+    });
+    await admiral.start();
+    const ship = await s.launch('work', 'a-long-repository-name', 'recorded'); // a long plaque makes the slot wider than the 100 px ship
+    // Fixture proof: the boat is really running and listed before any sea assertion.
+    await launchCrew(s, ship.session, 'api');
+    expect(await crewOf(s, ship.session)).toEqual([expect.objectContaining({ name: 'api', status: 'underway' })]);
+    expect((await wireOf(admiral.url, ship.session))?.subagents).toEqual([]);
+
+    await spyOnPage(page);
+    await page.goto(admiral.url);
+    const shipButton = ships(page, underwayIn('Work'));
+    await expect(shipButton).toBeVisible();
+    const boat = (crew: string, tail = '') => water(page).getByRole('button', { name: `Board ${crew}, teammate, crew of ${ship.name}${tail}`, exact: true });
+
+    // It rafts beside its ship, as its own button.
+    await expect(boat('api')).toBeVisible();
+    await expect.poll(async () => (await wireOf(admiral.url, ship.session))?.position).not.toBeNull();
+    const spot = (await wireOf(admiral.url, ship.session))?.position;
+
+    // Tapping it boards the boat and leaves the ship where it was.
+    await press(boat('api'), touch);
+    const t = terminal(page);
+    await expect(t.getByText(`${ship.name} › api`, { exact: true })).toBeVisible();
+    expect((await boarded(page)).at(-1)).toBe(`${ship.session}/api`);
+    await press(t.getByRole('button', { name: 'Close terminal and return to open water' }), touch);
+    await expect(t).toHaveCount(0);
+    await page.waitForTimeout(500);
+    expect((await wireOf(admiral.url, ship.session))?.position).toEqual(spot);
+
+    // A subagent starts: a deck button, a tip on a tap, nothing boarded; it stops: the button goes.
+    const deck = water(page).getByRole('button', { name: new RegExp(`^1 subagent on ${escape(ship.name)}`) });
+    await expect(deck).toHaveCount(0);
+    release(s, ship.session, 'sub');
+    await expect.poll(async () => (await wireOf(admiral.url, ship.session))?.subagents.length).toBe(1);
+    await expect(deck).toBeVisible();
+
+    // Boats and deck button are placed from the ship drawing, whatever the slot's width: the boat sits at its raft
+    // spot (-30, 44) from the drawing's left, and the deck button covers the first bot (x 8-16.5). The drawing is
+    // 100 px wide, centred in the slot; the slot's box is measured, not the svg's, which the bob rotates.
+    const slot = await water(page).locator('.ship-slot').first().boundingBox();
+    const box = await boat('api').boundingBox();
+    const deckBox = await deck.boundingBox();
+    expect(slot!.width).toBeGreaterThan(104);
+    const left = slot!.x + slot!.width / 2 - 50;
+    expect(Math.abs(box!.x - (left - 30))).toBeLessThan(1);
+    expect(deckBox!.x).toBeLessThanOrEqual(left + 8);
+    expect(deckBox!.x + deckBox!.width).toBeGreaterThanOrEqual(left + 16.5);
+
+    // A boat tapped while the ship has a subagent still boards the boat (the deck button is under it), and shows no tip.
+    // The tap lands in the overlap of the boat and the deck button, not on the boat's centre.
+    await (touch ? boat('api').tap({ position: { x: 34, y: 30 } }) : boat('api').click({ position: { x: 34, y: 30 } }));
+    await expect(t.getByText(`${ship.name} › api`, { exact: true })).toBeVisible();
+    expect((await boarded(page)).at(-1)).toBe(`${ship.session}/api`);
+    await expect(water(page).getByText(/Explore.*no terminal/)).toHaveCount(0);
+    await press(t.getByRole('button', { name: 'Close terminal and return to open water' }), touch);
+    await expect(t).toHaveCount(0);
+    const afterBoat = (await boarded(page)).length;
+
+    await press(deck, touch);
+    await expect(water(page).getByText(/Explore.*no terminal/)).toBeVisible();
+    await expect(terminal(page)).toHaveCount(0);
+    expect((await boarded(page)).length).toBe(afterBoat);
+    release(s, ship.session, 'unsub');
+    await expect.poll(async () => (await wireOf(admiral.url, ship.session))?.subagents.length).toBe(0);
+    await expect(deck).toHaveCount(0);
+
+    // The boat asks for you: the ship shakes, the plaque names the boat, the boat is named so, one chime.
+    await gesture(page, touch); // arms audio, as the first tap on an iPad does
+    expect(await notes(page)).toBe(0);
+    for (const name of ['sub', 'unsub', 'needs']) releaseCrew(s, ship.session, 'api', name);
+    await expect.poll(async () => (await wireOf(admiral.url, ship.session))?.crew[0]?.status).toBe('needs_you');
+    await expect(boat('api', ', needs you')).toBeVisible();
+    await expect(ships(page, needsYouIn('Work'))).toBeVisible();
+    await expect(water(page).locator('.ship-slot .ship-needs-you')).toHaveCount(1);
+    await expect(water(page).locator('.plaque.asking')).toContainText('api needs you');
+    await expect.poll(() => notes(page)).toBe(3); // one chime: the prototype's three notes
+    await page.waitForTimeout(800);
+    expect(await notes(page)).toBe(3);
+
+    // The boat exits: anchored.
+    releaseCrew(s, ship.session, 'api', 'end');
+    await expect.poll(async () => (await wireOf(admiral.url, ship.session))?.crew[0]?.status).toBe('anchored');
+    await expect(boat('api', ', anchored')).toBeVisible();
+
+    // More than three boats: three raft, the rest are a "+N crew" button that boards the ship.
+    for (const name of ['b', 'c', 'd']) await launchCrew(s, ship.session, name);
+    await expect(water(page).getByRole('button', { name: /^Board .+, teammate, crew of / })).toHaveCount(3);
+    const more = water(page).getByRole('button', { name: /^1 more crew boats?; board the ship to see them$/ });
+    await expect(more).toHaveText(/\+1 crew/);
+    await press(more, touch);
+    await expect(t.getByText(ship.name, { exact: true })).toBeVisible();
+    await expect(t.getByText(`${ship.name} ›`)).toHaveCount(0);
+    expect((await boarded(page)).at(-1)).toBe(ship.session);
   });
 });

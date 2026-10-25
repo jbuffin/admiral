@@ -32,6 +32,8 @@ export interface PlaceInput {
   keepOut: Rect[];
   /** How far from the left edge ships start, as a fraction of the width. */
   inset?: number;
+  /** Room a new ship keeps free on its left for its crew boats, as a fraction of the width. */
+  reach?: number;
 }
 
 const EPS = 1e-6;
@@ -50,6 +52,10 @@ const FINE = 0.01;
 // about 137 px tall, so each layout's real box fits inside the nominal one.
 export const FOOTPRINT = { w: 142 / 758, h: 142 / 760 };
 export const INSET = 12 / 758; // ships keep off the orders panel's edge
+// The crew boats raft off a ship's bow (tokens.json size.crewRaft: as far as -72 px), so every new ship keeps
+// this much room free on its left. Already-placed ships don't move; (x, y) still marks the ship's own top-left.
+export const REACH_PX = 76;
+export const REACH = REACH_PX / 758;
 export const KEEP_OUT: Rect[] = [
   { x: 0.01, y: 0.015, w: 0.46, h: 0.065 }, // the hint chip (prototype:208)
   { x: 0.61, y: 0, w: 0.39, h: 1 }, // the marinas' land
@@ -70,7 +76,7 @@ function band(fleets: string[], fleet: string, h: number): [number, number] {
   return [Math.min(from, bottom), Math.min(from + BAND, bottom)];
 }
 
-export function placeShip({ fleets, placed, ship, footprint, keepOut, inset = 0 }: PlaceInput): { x: number; y: number } {
+export function placeShip({ fleets, placed, ship, footprint, keepOut, inset = 0, reach = 0 }: PlaceInput): { x: number; y: number } {
   const { w, h } = footprint;
   const [top, bottom] = band(fleets, ship.fleet, h);
   const maxX = 1 - w;
@@ -78,8 +84,9 @@ export function placeShip({ fleets, placed, ship, footprint, keepOut, inset = 0 
   const others: Rect[] = placed
     .filter((p) => p.session !== ship.session)
     .sort((a, b) => (a.session < b.session ? -1 : a.session > b.session ? 1 : 0))
-    .map((p) => ({ x: p.x, y: p.y, w, h }));
-  const covered = (x: number, y: number, rects: Rect[]) => rects.reduce((sum, r) => sum + overlap({ x, y, w, h }, r), 0);
+    .map((p) => ({ x: p.x - reach, y: p.y, w: w + reach, h }));
+  const covered = (x: number, y: number, rects: Rect[]) =>
+    rects.reduce((sum, r) => sum + overlap({ x: x - reach, y, w: w + reach, h }, r), 0);
 
   const rows = (step: number, from = top, to = bottom) => {
     const out: number[] = [];
@@ -88,7 +95,7 @@ export function placeShip({ fleets, placed, ship, footprint, keepOut, inset = 0 
   };
   const cols = (step: number) => {
     const out: number[] = [];
-    for (let x = inset; x <= maxX + EPS; x += step) out.push(Math.min(x, maxX));
+    for (let x = inset + reach; x <= maxX + EPS; x += step) out.push(Math.min(x, maxX));
     return out;
   };
   const free = (x: number, y: number) => covered(x, y, others) === 0 && covered(x, y, keepOut) === 0;
@@ -106,7 +113,7 @@ export function placeShip({ fleets, placed, ship, footprint, keepOut, inset = 0 
   for (const y of anywhere) for (const x of cols(FINE)) if (free(x, y)) return { x, y };
 
   // Nothing is free: the spot that covers the least, the first one on a tie.
-  let best = { x: inset, y: top };
+  let best = { x: inset + reach, y: top };
   let least = Infinity;
   for (const y of rows(FINE)) {
     for (const x of cols(FINE)) {

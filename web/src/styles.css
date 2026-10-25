@@ -1247,6 +1247,10 @@ button:focus-visible {
   animation: drift 7s ease-in-out infinite;
 }
 
+.pop {
+  animation: pop 0.6s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+
 @keyframes bob {
   0%, 100% { transform: translateY(0) rotate(-1.8deg); }
   50% { transform: translateY(-5px) rotate(1.8deg); }
@@ -1755,7 +1759,7 @@ body.dragging * {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bob, .ship-needs-you, .wave, .frantic, .drift, .rowboat, .moored.leaving, .moored.arriving, .ping, .pop, .sail-in, .sail-off, .marina-in {
+  .bob, .ship-needs-you, .wave, .frantic, .drift, .rowboat, .moored.leaving, .moored.arriving, .ping, .pop, .sail-in, .sail-off, .marina-in, .deck-tip {
     animation: none !important;
   }
 }
@@ -1771,23 +1775,135 @@ body.dragging * {
 
 .ship-slot {
   position: absolute;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   width: max-content;
   min-width: 100px;
   max-width: 140px;
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  text-align: center;
   pointer-events: auto;
+  /* One ship's z-indices never reach a neighbour's. */
+  isolation: isolate;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
   cursor: grab;
+}
+
+/* The ship's own button holds the drawing and the plaque; the crew boats, the "+N crew" pill and the deck button
+   are its siblings in the slot, so a tap on one never boards the ship. */
+.ship-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: center;
+  color: inherit;
+  cursor: inherit;
+}
+
+/* The crew boats, pill, deck button and tip are placed from the ship drawing, a 100 px box centred in the slot. */
+.ship-marks {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 100px;
+  margin-left: -50px;
+}
+
+.crew-boat,
+.crew-more,
+.deck-crew {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.crew-boat {
+  z-index: 4; /* above the deck button, so a boat's sail is never the deck's */
+  width: 44px;
+  min-height: 44px;
+}
+
+.crew-still {
+  display: block;
+}
+
+/* A crew boat that needs you wears the coral "!" (15 px, at the boat's top-left). */
+.crew-bang {
+  position: absolute;
+  left: -4px;
+  top: -4px;
+  width: 15px;
+  height: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2px solid var(--color-ink);
+  background-color: var(--color-coral);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 10px;
+  color: var(--color-ink);
+}
+
+.crew-more {
+  z-index: 4;
+  width: 64px;
+  height: 44px;
+}
+
+.crew-more > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background-color: var(--color-parchment);
+  border: 2px solid var(--color-ink);
+  font-size: 10.5px;
+  font-weight: 800;
+  color: var(--color-ink);
+}
+
+.deck-crew {
+  left: -4px;
+  top: 32px;
+  z-index: 3;
+  width: 44px;
+  height: 44px;
+}
+
+.deck-tip {
+  position: absolute;
+  left: 0;
+  z-index: 8;
+  width: 230px;
+  padding: 5px 10px;
+  border-radius: 10px;
+  border: 2.5px solid var(--color-ink);
+  background-color: var(--color-parchment);
+  box-shadow: 0 3px 0 var(--color-ink);
+  font-size: 12px;
+  color: var(--color-ink);
+  pointer-events: none;
+  animation: pop 0.35s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+
+.ship-slot.tipped {
+  z-index: 6; /* the tip paints over a neighbouring ship */
 }
 
 .ship-slot.lifted {
@@ -1956,6 +2072,11 @@ body.dragging * {
 
 .ping {
   animation: ping 1.1s ease-in-out infinite;
+}
+
+@keyframes pop {
+  0% { transform: scale(0) translateY(20px); opacity: 0; }
+  100% { transform: none; opacity: 1; }
 }
 
 @keyframes ping {

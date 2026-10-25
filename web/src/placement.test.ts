@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FOOTPRINT, INSET, KEEP_OUT, type PlacedShip, type PlaceInput, type Rect, placeShip } from './placement';
+import { FOOTPRINT, INSET, KEEP_OUT, REACH, type PlacedShip, type PlaceInput, type Rect, placeShip } from './placement';
 
 // u10 S1. Expected values come from the spec: the first fleet's general area is
 // roughly 9-32 % of the height and the second's 57-80 % (the prototype's slots,
@@ -145,5 +145,53 @@ describe('placeShip with the real footprint, inset and keep-out areas', () => {
       for (const k of KEEP_OUT) expect(overlap(boxOf(p), k), `ship ${i} in a keep-out area`).toBe(0);
       for (const q of placed.slice(i + 1)) expect(overlap(boxOf(p), boxOf(q)), `ships ${i} and ${placed.indexOf(q)}`).toBe(0);
     }
+  });
+});
+
+// Crew boats (#154 u2). Every new ship gets room on its left for the crew boats that may raft there: a left reach
+// of REACH (a fraction of the width, about 76 px of the 758 px layout, past the crew spots' furthest -72).
+// `placeShip` takes it as `reach` (default 0, so the cases above are unchanged). The candidate's box and every
+// placed ship's box grow to the left by the reach: {x - reach, y, w + reach, h}. (x, y) still means the ship's
+// top-left, so a stored position means what it meant before; placed ships are only read, never moved.
+describe('placeShip with a left reach', () => {
+  const reach = REACH;
+  const reachBox = (p: { x: number; y: number }): Rect => ({ x: p.x - reach, y: p.y, ...footprint });
+  const withReach = (p: { x: number; y: number }): Rect => ({ x: p.x - reach, y: p.y, w: footprint.w + reach, h: footprint.h });
+  const next = (placed: PlacedShip[], session: string, extra: Partial<PlaceInput> = {}) =>
+    placeShip({ fleets: ['work', 'home'], placed, ship: ship(session, 'work'), footprint, keepOut: [], reach, ...extra });
+
+  it('is wide enough for the crew boats: past the crew spots at -72 px, and not a whole ship', () => {
+    expect(REACH).toBeGreaterThanOrEqual(72 / 758);
+    expect(REACH).toBeLessThan(FOOTPRINT.w);
+  });
+
+  it('starts the first column past the inset and the reach', () => {
+    const inset = 0.02;
+    const p = next([], 'a', { inset });
+    expect(p.x).toBeGreaterThanOrEqual(inset + reach - EPS);
+  });
+
+  it("never lets a new ship's reach cover a ship that is already placed, however it was placed", () => {
+    // Ships placed with no reach at all (older ones), packed against the left edge and each other.
+    const old = fill('work', 4);
+    const p = next(old, 'new');
+    for (const o of old) {
+      expect(overlap(withReach(p), box(o)), `reach covers ${o.session}`).toBe(0);
+      expect(overlap(box(p), withReach(o))).toBe(0);
+    }
+    expect(inWater(p)).toBe(true);
+  });
+
+  it("keeps every new ship's reach clear of the others' when ships are placed in turn", () => {
+    const placed: PlacedShip[] = [];
+    for (let i = 0; i < 6; i++) placed.push({ session: `r-${i}`, fleet: 'work', ...next(placed, `r-${i}`) });
+    for (const [i, p] of placed.entries()) {
+      expect(inWater(p)).toBe(true);
+      for (const q of placed.slice(i + 1)) {
+        expect(overlap(withReach(p), box(q)), `${p.session} reach over ${q.session}`).toBe(0);
+        expect(overlap(withReach(q), box(p)), `${q.session} reach over ${p.session}`).toBe(0);
+      }
+    }
+    expect(reachBox(placed[0]).x).toBeLessThan(placed[0].x);
   });
 });
