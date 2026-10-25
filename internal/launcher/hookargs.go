@@ -43,15 +43,6 @@ func RefuseHookArgs(harness string, args []string) error {
 		if i+1 < len(args) {
 			next = args[i+1]
 		}
-		// claude's --setting-sources takes user, project or local, and "project"
-		// there is a value, not the subcommand.
-		prev := ""
-		if i > 0 {
-			prev = args[i-1]
-		}
-		if harness == "claude" && prev == "--setting-sources" && a == "project" {
-			continue
-		}
 		if bad := hookArg(harness, a, next); bad != "" {
 			return fmt.Errorf("--arg %q is refused: it would override or disable Admiral's hooks, run a subcommand or leave this machine", bad)
 		}

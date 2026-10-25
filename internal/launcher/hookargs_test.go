@@ -46,6 +46,8 @@ func TestRefuseHookArgs(t *testing.T) {
 		{"codex", []string{"-c", "\vhooks.Stop=[]"}, "hooks.Stop"}, // an ASCII control character
 		{"codex", []string{"-c", "\u00a0hooks.Stop=[]"}, "hooks.Stop"},
 		{"codex", []string{"-phooks"}, "-phooks"},
+		{"claude", []string{"--setting-sources", "project"}, "project"},
+		{"claude", []string{"--model", "--setting-sources", "project"}, "project"},
 		{"codex", []string{"cloud-tasks"}, "cloud-tasks"},
 		{"codex", []string{"tcp-tunnel"}, "tcp-tunnel"},
 		{"codex", []string{"stdio-to-uds"}, "stdio-to-uds"},
@@ -89,7 +91,7 @@ func TestRefuseHookArgs(t *testing.T) {
 		{"codex", []string{"-m", "x"}},
 		{"codex", []string{"--sandbox", "read-only"}},
 		{"claude", []string{"--model", "opus"}},
-		{"claude", []string{"--setting-sources", "project"}},
+		{"claude", []string{"--setting-sources=project"}},
 		{"claude", []string{"--disallowedTools", "Edit(/x/**)"}},
 		{"copilot", []string{"--model", "x"}},
 		{"copilot", []string{"--add-dir", "/x"}},
