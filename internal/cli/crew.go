@@ -147,7 +147,7 @@ func crewLaunch(args []string, std IO) error {
 	harness := fs.String("harness", "", "the harness (default: the ship's)")
 	ship := fs.String("ship", "", "the ship (default: the one this runs in)")
 	role := fs.String("role", "", "the crew boat's role, lowercase letters, digits and -")
-	var extra stringList
+	var extra list
 	fs.Var(&extra, "arg", "an argument for the harness, repeatable")
 	if err := parseFlags(fs, args); err != nil {
 		return err
@@ -267,12 +267,6 @@ type crewRow struct {
 	LastActivity *string `json:"last_activity"`
 	Role         *string `json:"role"`
 }
-
-// stringList is a repeatable string flag.
-type stringList []string
-
-func (l *stringList) String() string     { return strings.Join(*l, " ") }
-func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
 
 func crewList(args []string, std IO) error {
 	fs := newFlags("crew list")

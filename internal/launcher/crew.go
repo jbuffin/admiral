@@ -48,6 +48,9 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	if !CrewName.MatchString(req.Name) {
 		return fmt.Errorf("crew name %q must be lowercase letters, digits and -", req.Name)
 	}
+	if req.Role != "" && !CrewName.MatchString(req.Role) {
+		return fmt.Errorf("crew role %q must be lowercase letters, digits and -", req.Role)
+	}
 	st, err := os.Stat(req.Dir)
 	switch {
 	case err != nil:

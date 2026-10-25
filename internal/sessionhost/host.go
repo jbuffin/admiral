@@ -137,17 +137,16 @@ const (
 const fixedFields = 8
 
 // tailFields is how many fields of a row come after the options: the crew name
-// (a window option; set only on a crew boat's window), the pane id, the window id
-// the pane's last hook time, the window's @admiral-role and the pane's
-// @admiral-subagents. The subagents come last
-// and outside optionNames (a change of them is no OptionChanged), after the
-// fields parseCrew reads by position. tmux prints option values raw. The reader
-// guards against a control character in one (see format): the nonce that starts
-// every row of a read drops the lines a raw newline leaves, so none is parsed as
-// a row; the substitution turns control characters into spaces, but tmux skips
-// it for a value that is not valid UTF-8. A row that a value still breaks has
-// the wrong length, and its ship is unreadable. `admiral hook` writes JSON,
-// which escapes both.
+// (a window option; set only on a crew boat's window), the pane id, the window
+// id, the pane's last hook time, the window's @admiral-role and the pane's
+// @admiral-subagents. The subagents come last and outside optionNames (a change
+// of them is no OptionChanged), after the fields parseCrew reads by position.
+// tmux prints option values raw. The reader guards against a control character
+// in one (see format): the nonce that starts every row of a read drops the lines
+// a raw newline leaves, so none is parsed as a row; the substitution turns
+// control characters into spaces, but tmux skips it for a value that is not
+// valid UTF-8. A row that a value still breaks has the wrong length, and its
+// ship is unreadable. `admiral hook` writes JSON, which escapes both.
 const tailFields = 6
 
 // optionNames are the session options in the order format lists them. The last
