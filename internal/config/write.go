@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 )
 
@@ -30,8 +31,16 @@ func SetFavoriteSkills(dir string, skills []string) error {
 }
 
 // SetChat replaces chat in dir/config.json. Fleet and model are always written;
-// effort only when set, so the harness default leaves no field.
+// effort only when set, so the harness default leaves no field. It refuses a
+// model or effort outside the lists and a fleet the file doesn't hold: Parse
+// would replace each with a default, and a write must not do that silently.
 func SetChat(dir string, c Chat) error {
+	if !slices.Contains(ChatModels, c.Model) {
+		return fmt.Errorf("chat.model %q is not one of %v", c.Model, ChatModels)
+	}
+	if !slices.Contains(ChatEfforts, c.Effort) {
+		return fmt.Errorf("chat.effort %q is not one of %q", c.Effort, ChatEfforts)
+	}
 	obj := map[string]string{"fleet": c.Fleet, "model": c.Model}
 	if c.Effort != "" {
 		obj["effort"] = c.Effort
@@ -47,8 +56,12 @@ func SetChat(dir string, c Chat) error {
 	if err != nil {
 		return err
 	}
-	if _, err := Parse(out); err != nil {
+	cfg, err := Parse(out)
+	if err != nil {
 		return err
+	}
+	if _, ok := cfg.Fleet(c.Fleet); !ok {
+		return fmt.Errorf("chat.fleet %q is not a fleet in the config", c.Fleet)
 	}
 	return replaceFile(path, out)
 }
