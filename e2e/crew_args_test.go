@@ -55,7 +55,7 @@ func TestCrew_LaunchArgsAndRole(t *testing.T) {
 
 		w.expectExit(launch(w, "--name", "cp", "--harness", "copilot", "--arg", "--model", "--arg", "x", "--", "do it"), 0, "copilot with --arg")
 		cp := w.record(sess + "/crew/cp").argv
-		if n := len(cp); n < 4 || !reflect.DeepEqual(cp[n-3:], []string{"--model", "x", "--interactive=do it"}) || cp[0] != "--fa-copilot" || n < 6 || cp[n-5] != "--plugin-dir" {
+		if n := len(cp); n < 6 || !reflect.DeepEqual(cp[n-3:], []string{"--model", "x", "--interactive=do it"}) || cp[0] != "--fa-copilot" || cp[n-5] != "--plugin-dir" || !strings.HasSuffix(cp[n-4], "/harness/copilot") {
 			t.Errorf("copilot argv = %q, want its dock args and hook flags, then --model x, then --interactive=<prompt>", cp)
 		}
 	})
