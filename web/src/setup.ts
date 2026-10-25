@@ -1,7 +1,7 @@
 import { effect, signal } from '@preact/signals';
 import { applyConfig } from './config';
 import type { Probe } from './connection';
-import { boardedSession } from './ships';
+import { boarded, unboard } from './ships';
 
 // The setup terminal (stories 19-21): `admiral setup` in the tmux session `_setup`, shown with the
 // bridge's terminal. Open from the "Set up a fleet" marina and from the header's fleet count.
@@ -18,13 +18,13 @@ export async function openSetup(): Promise<void> {
   } catch {
     return;
   }
-  boardedSession.value = null; // one terminal over open water at a time
+  unboard(); // one terminal over open water at a time
   setupOpen.value = true;
 }
 
 // The bridge of a ship and the setup terminal are never both up.
 effect(() => {
-  if (boardedSession.value) setupOpen.value = false;
+  if (boarded.value) setupOpen.value = false;
 });
 
 // The terminal closes when the `_setup` session ends, whether setup wrote the file or not.

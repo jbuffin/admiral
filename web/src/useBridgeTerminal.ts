@@ -1,25 +1,29 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { BridgeLink, type LinkState } from './bridgeLink';
-import type { Probe } from './connection';
+import { probe as probeShips, type Probe } from './connection';
+import { findCrew } from './crew';
+import type { WireShip } from './ships';
 import type { Term } from './terminal';
 
 export interface BridgeTerminalOptions {
   /** The session the bridge socket joins. */
   session: string;
+  /** A crew boat of that ship: the socket joins its terminal instead of the ship's. */
+  crew?: string;
   /** Whether keys typed into the terminal are accepted while the bridge is connected. */
   open: boolean;
-  /** The session is gone: the caller closes its terminal. */
+  /** The session, or the crew boat, is gone: the caller closes its terminal or returns to the ship. */
   gone(): void;
-  /** What a failed reconnect asks: is the session still there? Ships by default. */
+  /** What a failed reconnect asks: is the session still there? Ships by default; for a crew boat, is it still in its ship's `crew[]`. */
   probe?: () => Promise<Probe>;
 }
 
 /**
  * xterm.js in `host` joined to a session's bridge: this browser sizes the pane while it is the
- * active one and follows another's grid otherwise (ADR 0011). A ship's bridge and the setup
- * terminal both run on it.
+ * active one and follows another's grid otherwise (ADR 0011). A ship's bridge (or one of its crew
+ * boats') and the setup terminal all run on it; a new session or crew boat reconnects.
  */
-export function useBridgeTerminal({ session, open, gone, probe }: BridgeTerminalOptions) {
+export function useBridgeTerminal({ session, crew, open, gone, probe }: BridgeTerminalOptions) {
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<Term | undefined>(undefined);
   const link = useRef<BridgeLink | undefined>(undefined);
@@ -46,6 +50,8 @@ export function useBridgeTerminal({ session, open, gone, probe }: BridgeTerminal
 
   useEffect(() => {
     let disposed = false;
+    setLinkState('connecting');
+    focused.current = false;
     let observer: ResizeObserver | undefined;
     const claim = () => {
       // This browser sets the pane's size from now on.
@@ -90,8 +96,8 @@ export function useBridgeTerminal({ session, open, gone, probe }: BridgeTerminal
         },
         gone: () => goneNow.current(),
         dims: () => t.size(),
-        probe,
-      });
+        probe: probe ?? (crew === undefined ? undefined : () => crewProbe(session, crew)),
+      }, crew);
       observer = new ResizeObserver(() => (active.current ? claim() : t.follow(t.size().cols, t.size().rows)));
       observer.observe(host.current);
     });
@@ -111,7 +117,17 @@ export function useBridgeTerminal({ session, open, gone, probe }: BridgeTerminal
       term.current?.dispose();
       term.current = undefined;
     };
-  }, [session]);
+  }, [session, crew]);
 
   return { host, link, linkState, activity };
+}
+
+// A crew link's reconnect check: the ship is listed only while the boat is in its `crew[]`, so a boat closed
+// elsewhere ends the link instead of looping on a 404. A ship that is itself gone is passed through as it is.
+async function crewProbe(session: string, crew: string): Promise<Probe> {
+  const p = await probeShips();
+  if (p.kind !== 'ok') return p;
+  const list = p.ships as unknown as WireShip[];
+  if (!list.some((s) => s.session === session)) return p;
+  return { kind: 'ok', ships: findCrew(list, session, crew) ? [{ session }] : [] };
 }

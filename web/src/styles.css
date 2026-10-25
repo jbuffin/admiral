@@ -2041,11 +2041,153 @@ body.dragging * {
   padding: 8px 12px 8px 8px;
   border-radius: 16px;
   border: var(--shape-outline) solid var(--color-ink);
-  background-color: var(--color-selected);
+  background-color: var(--color-parchment-light);
   box-shadow: var(--shape-press-shadow);
   color: var(--color-ink);
   text-align: left;
   cursor: pointer;
+  animation: flyin 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.15) backwards;
+}
+
+.fl-item.on {
+  background-color: var(--color-sunny);
+}
+
+/* A crew boat that needs you: coral row, the boat shakes. */
+.fl-item.attn-row {
+  background-color: var(--color-attention-plaque);
+  border-color: var(--color-attention-border);
+}
+
+.fl-item.attn-row > svg:first-child {
+  animation: shake 1.3s ease-in-out infinite;
+}
+
+.fl-badge {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2.5px solid var(--color-ink);
+}
+
+.fl-bang {
+  width: 24px;
+  height: 24px;
+  background-color: var(--color-coral);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.fl-x {
+  width: 22px;
+  height: 22px;
+  background-color: var(--color-anchored-mark);
+}
+
+.flotilla-subtitle {
+  padding: 6px 4px 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--color-parchment);
+}
+
+.flotilla-subtitle-note {
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+/* A subagent: no terminal, so not a button. */
+.fl-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  border: 2px dashed #9db8cf;
+  background-color: var(--color-stone);
+  font-size: 12.5px;
+  color: var(--color-ink);
+}
+
+.fl-sub-age {
+  margin-left: auto;
+  color: var(--color-text-muted);
+}
+
+@keyframes flyin {
+  0% { transform: translateX(-40px) scale(0.9); opacity: 0; }
+  100% { transform: none; opacity: 1; }
+}
+
+.term-crew {
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.menu-note {
+  max-width: 220px;
+  padding: 0 12px 8px;
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+}
+
+.confirm-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.confirm-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.confirm-chip {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 2px solid var(--color-ink);
+}
+
+.confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.confirm-keep,
+.confirm-go {
+  min-height: var(--shape-min-touch-target);
+  padding: 0 16px;
+  border-radius: 12px;
+  border: var(--shape-outline) solid var(--color-ink);
+  background-color: var(--color-parchment-light);
+  color: var(--color-ink);
+  font: inherit;
+  font-weight: 700;
+  box-shadow: 0 3px 0 var(--color-ink);
+  cursor: pointer;
+}
+
+.confirm-go {
+  background-color: var(--color-coral);
+  font-family: var(--font-display);
+  font-weight: 800;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fl-item, .fl-item.attn-row > svg:first-child {
+    animation: none !important;
+  }
 }
 
 .fl-text {

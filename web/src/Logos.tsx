@@ -42,12 +42,13 @@ function Symbol({ harness }: { harness: HarnessName }) {
   );
 }
 
-// The two flag sizes: the pier's flag in its own 40×28 box, and the flag at a
-// ship's masthead in the ship's 100×96 box.
+// The flag sizes: the pier's flag in its own 40×28 box, the flag at a ship's masthead in the
+// ship's 100×96 box, and a crew boat's in its 64×56 box.
 const flags = {
   pier: { x: 2, y: 3, width: 36, height: 22, stroke: 2.6 },
   sea: { x: 51, y: 2, width: 29, height: 15, stroke: 2 },
   bridge: { x: 2, y: 2, width: 36, height: 22, stroke: 2.5 },
+  crew: { x: 31, y: 2.5, width: 13, height: 8, stroke: 1.5 },
 };
 type FlagKind = keyof typeof flags;
 
