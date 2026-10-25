@@ -1,5 +1,5 @@
 import type { Locator, Page, TestInfo } from '@playwright/test';
-import { closeCrew, crewOf, crewPaneWrite, launchCrew, paneWrite, release, releaseCrew, screenText } from './bridge';
+import { SUB_START, SUB_STOP, closeCrew, crewOf, crewPaneWrite, launchCrew, paneWrite, release, releaseCrew, screenText, wireOf } from './bridge';
 import { boarded, expect, gesture, inboxButton, isTouch, needsYouIn, notes, spyOnPage, test, underwayIn, ships, water } from './sea';
 
 // Crew boats on the bridge (#154 u1; #72's crew flow, the flotilla half). The names below are the contract the
@@ -204,14 +204,6 @@ test.describe('a crew boat on the bridge', () => {
 // The ship and the boat run the same cue file. The ship is released at `sub` and `unsub`; the boat is released at
 // all of them before `needs`, which makes it needs-you; `end` makes it exit.
 
-const SUB_START = '{"hook_event_name":"SubagentStart","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore"}';
-const SUB_STOP = '{"hook_event_name":"SubagentStop","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore","background_tasks":[]}';
-
-type Wire = { session: string; status: string; reason?: string; position: { x: number; y: number } | null; subagents: { type: string }[]; crew: { name: string; status: string }[] };
-const wireOf = async (url: string, session: string) => {
-  const body = await (await fetch(`${url}api/ships`)).json();
-  return ((Array.isArray(body) ? body : body.ships) as Wire[]).find((s) => s.session === session);
-};
 const escape = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 test.describe('crew boats and subagents on the sea', () => {
