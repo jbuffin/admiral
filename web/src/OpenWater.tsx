@@ -114,7 +114,7 @@ function ShipView({ s }: { s: WireShip }) {
     | 'anchored'
     | 'sailing-off';
   const lifted = dragged.value?.session === s.session;
-  const cls = ['ship-slot', arrivals.value.has(s.session) && 'sail-in', s.status === 'sailing_off' && 'sail-off', lifted && 'lifted']
+  const cls = ['ship-slot', arrivals.value.has(s.session) && 'sail-in', s.status === 'sailing_off' && 'sail-off', lifted && 'lifted', tip.value === s.session && 'tipped']
     .filter(Boolean)
     .join(' ');
   // The slot waits for a spot before it shows.

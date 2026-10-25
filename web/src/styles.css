@@ -1902,6 +1902,10 @@ body.dragging * {
   animation: pop 0.35s cubic-bezier(0.3, 1.6, 0.5, 1) both;
 }
 
+.ship-slot.tipped {
+  z-index: 6; /* the tip paints over a neighbouring ship */
+}
+
 .ship-slot.lifted {
   z-index: 6;
   cursor: grabbing;

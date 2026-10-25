@@ -261,18 +261,20 @@ test.describe('crew boats and subagents on the sea', () => {
     await expect(deck).toBeVisible();
 
     // Boats and deck button are placed from the ship drawing, whatever the slot's width: the boat sits at its raft
-    // spot (-30, 44) from the ship svg, and the deck button covers the first bot (svg x 8-16.5).
-    const svg = await water(page).locator('.ship-slot .ship-btn svg').first().boundingBox();
+    // spot (-30, 44) from the drawing's left, and the deck button covers the first bot (x 8-16.5). The drawing is
+    // 100 px wide, centred in the slot; the slot's box is measured, not the svg's, which the bob rotates.
+    const slot = await water(page).locator('.ship-slot').first().boundingBox();
     const box = await boat('api').boundingBox();
     const deckBox = await deck.boundingBox();
-    const slot = await water(page).locator('.ship-slot').first().boundingBox();
-    expect(slot!.width).toBeGreaterThan(svg!.width + 4);
-    expect(Math.abs(box!.x - (svg!.x - 30))).toBeLessThan(1.5);
-    expect(deckBox!.x).toBeLessThanOrEqual(svg!.x + 8);
-    expect(deckBox!.x + deckBox!.width).toBeGreaterThanOrEqual(svg!.x + 16.5);
+    expect(slot!.width).toBeGreaterThan(104);
+    const left = slot!.x + slot!.width / 2 - 50;
+    expect(Math.abs(box!.x - (left - 30))).toBeLessThan(1);
+    expect(deckBox!.x).toBeLessThanOrEqual(left + 8);
+    expect(deckBox!.x + deckBox!.width).toBeGreaterThanOrEqual(left + 16.5);
 
     // A boat tapped while the ship has a subagent still boards the boat (the deck button is under it), and shows no tip.
-    await press(boat('api'), touch);
+    // The tap lands in the overlap of the boat and the deck button, not on the boat's centre.
+    await (touch ? boat('api').tap({ position: { x: 34, y: 30 } }) : boat('api').click({ position: { x: 34, y: 30 } }));
     await expect(t.getByText(`${ship.name} › api`, { exact: true })).toBeVisible();
     expect((await boarded(page)).at(-1)).toBe(`${ship.session}/api`);
     await expect(water(page).getByText(/Explore.*no terminal/)).toHaveCount(0);
