@@ -45,7 +45,7 @@ var autopilotRules = map[string][]flagRule{
 		{names: []string{"--advisor"}, arity: arityOne, valueFits: notDashLed},
 		{names: []string{"--effort"}, arity: arityOne, valueFits: notDashLed},
 		// Whether a repeat adds to the dock's list or replaces it is unverified.
-		{names: []string{"--disallowedTools"}, arity: arityMany, dockUnset: true},
+		{names: []string{"--disallowedTools", "--disallowed-tools"}, arity: arityMany, dockUnset: true},
 		{names: []string{"--permission-mode"}, arity: arityOne, valueFits: noLooserMode},
 	},
 	"codex": {

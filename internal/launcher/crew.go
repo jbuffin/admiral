@@ -132,7 +132,7 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 		env[k] = v
 	}
 	// The ship's own variables and Admiral's, which only the session sets, so a
-	// crew boat of an autopilot ship stays under its guard.
+	// crew boat of an autopilot ship stays under `admiral guard`.
 	for _, k := range append([]string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE"}, shipEnvNames...) {
 		delete(env, k)
 	}
