@@ -31,7 +31,7 @@ const noOpenWater = async (page: Page) => {
 
 test.beforeEach(({}, info) => test.skip(info.project.name !== 'phone', 'the phone shell is the phone project only'));
 
-test('S1, S4, C3, C4: the Ships tab lists the needs-you ship first and badges the tab, in portrait and landscape', async ({ page, admiral, sea }) => {
+test('S1, S4, C3, C4: the Ships tab lists the needs-you ship first and badges the tab, in portrait and landscape', { tag: '@critical' }, async ({ page, admiral, sea }) => {
   const s = sea({ work: { name: 'Work', color: BLUE } });
   await admiral.start();
   const first = await s.launch('work', 'alpha');

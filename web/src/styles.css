@@ -3817,7 +3817,7 @@ body.dragging * {
   color: var(--color-parchment-light);
 }
 
-.sub-note {
+.subagent-note {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -3924,6 +3924,12 @@ body.dragging * {
   align-items: center;
   gap: 6px;
   min-width: 0;
+}
+
+/* The status pill keeps one line; the harness · order text takes the squeeze. */
+.phone-line .term-pill {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .phone-sub {

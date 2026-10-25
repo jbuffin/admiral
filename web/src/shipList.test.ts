@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import * as shipListModule from './shipList';
-import { sortShips } from './shipList';
+import { askingCount, asksYou, shipStatusLine, sortShips } from './shipList';
 import type { WireCrew, WireShip } from './ships';
 
 // The phone Ships list (issue #119, u2, C5). The interface it is built to, pure:
@@ -64,13 +63,6 @@ describe('sortShips', () => {
 //   sortShips              the needs-you group by the ship's stop_since, else its earliest needing boat's
 //                          last_activity ?? launched; an empty stamp sorts last in the group, never first by accident
 
-// The new exports are reached through the module so a missing one fails at runtime, not at compile time.
-const list = shipListModule as unknown as {
-  asksYou(s: WireShip): boolean;
-  askingCount(l: WireShip[]): number;
-  shipStatusLine(s: WireShip, now: number): string;
-};
-
 const boat = (name: string, status: WireCrew['status'], launchedMin: number, activityMin?: number): WireCrew =>
   ({
     name,
@@ -83,10 +75,10 @@ const withCrew = (s: WireShip, ...crew: WireCrew[]): WireShip => ({ ...s, crew }
 
 describe('crew boats and the needs-you group', () => {
   it('puts an anchored ship with a needing boat in the group, and an underway or anchored one without it out', () => {
-    expect(list.asksYou(withCrew(ship('a', 'anchored', 1), boat('api', 'needs_you', 1, 5)))).toBe(true);
-    expect(list.asksYou(withCrew(ship('b', 'needs_you', 1, 5), boat('api', 'underway', 1)))).toBe(true);
-    expect(list.asksYou(withCrew(ship('c', 'underway', 1), boat('api', 'underway', 1), boat('web', 'anchored', 1)))).toBe(false);
-    expect(list.asksYou(withCrew(ship('d', 'anchored', 1), boat('api', 'anchored', 1)))).toBe(false);
+    expect(asksYou(withCrew(ship('a', 'anchored', 1), boat('api', 'needs_you', 1, 5)))).toBe(true);
+    expect(asksYou(withCrew(ship('b', 'needs_you', 1, 5), boat('api', 'underway', 1)))).toBe(true);
+    expect(asksYou(withCrew(ship('c', 'underway', 1), boat('api', 'underway', 1), boat('web', 'anchored', 1)))).toBe(false);
+    expect(asksYou(withCrew(ship('d', 'anchored', 1), boat('api', 'anchored', 1)))).toBe(false);
   });
 
   it('sorts an anchored ship with a needing boat among the needs-you ships by that boat’s last activity', () => {
@@ -124,7 +116,7 @@ describe('crew boats and the needs-you group', () => {
       withCrew(ship('quiet', 'underway', 3), boat('api', 'underway', 3)),
       withCrew(ship('gone', 'sailing_off', 4), boat('api', 'needs_you', 4, 4)),
     ];
-    expect(list.askingCount(l)).toBe(2);
+    expect(askingCount(l)).toBe(2);
     expect(order(l).slice(0, 2)).toEqual(['anchored-crew', 'plain']);
   });
 });
@@ -134,20 +126,20 @@ describe('shipStatusLine', () => {
 
   it('names the crew boats for a ship that needs you only through them', () => {
     const s = { ...withCrew(ship('s', 'needs_you', 1, 20), boat('api', 'needs_you', 1, 20), boat('web', 'needs_you', 1, 25)), reason: 'crew' } as WireShip;
-    expect(list.shipStatusLine(s, now)).toBe('Needs you · api, web · waiting 40 min');
+    expect(shipStatusLine(s, now)).toBe('Needs you · api, web · waiting 40 min');
   });
 
   it('does the same for an anchored ship with a needing boat, waiting from the boat’s last activity', () => {
     const s = withCrew(ship('s', 'anchored', 1), boat('quiet', 'underway', 1), boat('api', 'needs_you', 1, 30));
-    expect(list.shipStatusLine(s, now)).toBe('Needs you · api · waiting 30 min');
+    expect(shipStatusLine(s, now)).toBe('Needs you · api · waiting 30 min');
   });
 
   it('keeps the ship’s own reason when it needs you itself', () => {
-    expect(list.shipStatusLine(ship('s', 'needs_you', 1, 50), now)).toBe('Needs you · Wants to run Bash · waiting 10 min');
+    expect(shipStatusLine(ship('s', 'needs_you', 1, 50), now)).toBe('Needs you · Wants to run Bash · waiting 10 min');
   });
 
   it('reads Underway and Anchored as before', () => {
-    expect(list.shipStatusLine(ship('s', 'underway', 1), now)).toBe('Underway');
-    expect(list.shipStatusLine({ ...ship('s', 'anchored', 1), exit_code: 1 } as WireShip, now)).toBe('Anchored, exited 1');
+    expect(shipStatusLine(ship('s', 'underway', 1), now)).toBe('Underway');
+    expect(shipStatusLine({ ...ship('s', 'anchored', 1), exit_code: 1 } as WireShip, now)).toBe('Anchored, exited 1');
   });
 });

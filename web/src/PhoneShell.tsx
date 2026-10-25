@@ -138,11 +138,11 @@ function CrewRow({ ship, boat }: { ship: WireShip; boat: WireCrew }) {
 // Subagents have no terminal, so the note is not a button.
 function SubagentNote({ ship }: { ship: WireShip }) {
   return (
-    <div class="sub-note" role="note">
+    <div class="subagent-note" role="note">
       <b>Subagents · {ship.subagents.length} · no terminal</b>
-      {ship.subagents.map((m) => (
-        <span key={m.id}>
-          {m.type} · {age(m.start, clock.value)}
+      {ship.subagents.map((a) => (
+        <span key={a.id}>
+          {a.type} · {age(a.start, clock.value)}
         </span>
       ))}
     </div>
