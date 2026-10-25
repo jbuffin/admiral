@@ -2,6 +2,7 @@ import { useEffect } from 'preact/hooks';
 import { config } from './config';
 import { connect } from './connection';
 import { Bridge } from './Bridge';
+import { ChatFab, ChatHost } from './ChatPane';
 import { SetupTerminal } from './SetupTerminal';
 import { Header } from './Header';
 import { InboxDrawer, InboxSheet } from './InboxPanel';
@@ -12,7 +13,7 @@ import { Ships } from './OpenWater';
 import { Marina, SetUpMarina } from './Marina';
 import { PhoneShell } from './PhoneShell';
 import { Sidebar } from './Sidebar';
-import { phone } from './sizeClass';
+import { phone, wide } from './sizeClass';
 import { Lighthouse, Shore, Trees, WaterScenery } from './Scenery';
 
 export function App() {
@@ -62,6 +63,8 @@ export function App() {
         <InboxDrawer />
       </div>
       <InboxSheet />
+      <ChatHost />
+      {wide.value && <ChatFab />}
       <Ghost />
       <LaunchOrders />
     </div>

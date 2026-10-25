@@ -9,15 +9,23 @@ import { api } from './sources';
 // The source settings of SettingsDialog.tsx are a different dialog.
 
 const open = signal(false);
-export const openAppSettings = () => (open.value = true);
+export { open as appSettingsOpen };
+// Where focus goes when Settings closes: the button that opened it, else the gear.
+let returnTo: HTMLElement | null = null;
+export function openAppSettings(from?: HTMLElement | null): void {
+  returnTo = from ?? null;
+  open.value = true;
+}
 
 // Every way out ends here. A tap on a button leaves WebKit's focus on <body>, so the dialog's own
-// restore has nothing to return to: the gear is focused by id, once the dialog is gone.
+// restore has nothing to return to: the opener, or the gear by id, is focused once the dialog is gone.
 const GEAR_ID = 'app-settings-gear';
 export { GEAR_ID };
 function close() {
   open.value = false;
-  setTimeout(() => document.getElementById(GEAR_ID)?.focus(), 0);
+  const from = returnTo;
+  returnTo = null;
+  setTimeout(() => (from?.isConnected ? from : document.getElementById(GEAR_ID))?.focus(), 0);
 }
 
 const MODELS = ['sonnet', 'opus', 'haiku'];

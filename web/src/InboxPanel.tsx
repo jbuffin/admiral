@@ -1,11 +1,8 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { harnesses } from './harnesses';
-import { type Entry, type InboxQuestion, prLink, reasonWords, safeHref, waited } from './inbox';
+import { type Entry, prLink, reasonWords, safeHref, waited } from './inbox';
 import { type FindingCard, type Verdict } from './findings';
 import {
-  answeredQuestion,
-  choose,
-  chooseOther,
   cardsOf,
   clock,
   closeInbox,
@@ -27,10 +24,11 @@ import {
   watchDecisions,
   inbox,
   inboxOpen,
-  pickOf,
   sendAnswers,
 } from './inboxState';
+import { chatOpen } from './chat';
 import { LogoFlag } from './Logos';
+import { QuestionCard } from './QuestionCard';
 import { board, ships } from './ships';
 import { phone, wide } from './sizeClass';
 
@@ -47,7 +45,7 @@ export function InboxButton() {
       class="pill-hit"
       aria-label={label}
       aria-expanded={inboxOpen.value}
-      onClick={() => (inboxOpen.value ? closeInbox() : (inboxOpen.value = true))}
+      onClick={() => (inboxOpen.value ? closeInbox() : openInbox())}
     >
       <span class={`pill-face needs${n === 0 ? ' idle' : ''}${inbox.pulsing() ? ' ping' : ''}`}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -59,6 +57,12 @@ export function InboxButton() {
       </span>
     </button>
   );
+}
+
+// At the middle size the inbox and the chat are both full-screen sheets: opening one closes the other.
+function openInbox(): void {
+  if (!wide.value && !phone.value) chatOpen.value = false;
+  inboxOpen.value = true;
 }
 
 const KIND: Record<string, [string, string]> = {
@@ -101,102 +105,9 @@ function Fold({ text, name }: { text: string; name: string }) {
   );
 }
 
-function Option({
-  role,
-  on,
-  label,
-  desc,
-  recommended,
-  onPick,
-}: {
-  role: 'radio' | 'checkbox';
-  on: boolean;
-  label: string;
-  desc?: string;
-  recommended?: boolean;
-  onPick: () => void;
-}) {
-  return (
-    <button type="button" class={`inbox-option press${on ? ' on' : ''}`} role={role} aria-checked={on} onClick={onPick}>
-      <span class={`inbox-dot ${role}`} aria-hidden="true" />
-      <span class="inbox-option-text">
-        <span class="inbox-option-label">
-          {label}
-          {recommended && <span class="inbox-recommended">Recommended</span>}
-        </span>
-        {desc && <span class="inbox-option-desc">{desc}</span>}
-      </span>
-    </button>
-  );
-}
-
-function Question({ entry, q, i, of }: { entry: Entry; q: InboxQuestion; i: number; of: number }) {
-  const p = pickOf(draftOf(entry.key), q);
-  const role = q.multi ? 'checkbox' : 'radio';
-  return (
-    <div class="inbox-question" role="group" aria-label={`Question ${i + 1} of ${of}`}>
-      <span class="inbox-eyebrow">
-        {of > 1 ? `Question ${i + 1} of ${of} · ` : ''}
-        {q.multi ? 'Choose any' : 'Choose one'}
-      </span>
-      <p class="inbox-question-text">{q.text}</p>
-      {q.options.map((o) => (
-        <Option key={o.label} role={role} on={p.sel.includes(o.label)} label={o.label} desc={o.description} recommended={q.recommended === o.label} onPick={() => choose(entry.key, q, o.label)} />
-      ))}
-      <Option role={role} on={p.other} label="Other" desc="Write your own answer" onPick={() => chooseOther(entry.key, q)} />
-      {p.other && (
-        <input
-          type="text"
-          class="inbox-input"
-          aria-label={`Your answer to question ${i + 1}`}
-          placeholder="Your answer"
-          autocomplete="off"
-          value={p.text}
-          onInput={(e) => {
-            const text = (e.target as HTMLInputElement).value;
-            editDraft(entry.key, (d) => ({ ...d, picks: { ...d.picks, [q.id]: { ...pickOf(d, q), text } } }));
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
 function QuestionBody({ entry }: { entry: Entry }) {
   const qs = entry.item?.question?.questions ?? [];
-  const d = draftOf(entry.key);
-  const done = qs.filter((q) => answeredQuestion(pickOf(d, q))).length;
-  return (
-    <>
-      {qs.map((q, i) => (
-        <Question key={q.id} entry={entry} q={q} i={i} of={qs.length} />
-      ))}
-      <textarea
-        class="inbox-note"
-        aria-label="Note (optional)"
-        placeholder="Add a note (optional)"
-        rows={2}
-        value={d.note}
-        onInput={(e) => {
-          const note = (e.target as HTMLTextAreaElement).value;
-          editDraft(entry.key, (x) => ({ ...x, note }));
-        }}
-      />
-      {d.error && (
-        <p class="inbox-error" role="alert">
-          {d.error}
-        </p>
-      )}
-      <div class="inbox-send-row">
-        <button type="button" class="press inbox-primary" disabled={qs.length === 0 || done < qs.length || d.sending} onClick={() => void sendAnswers(entry)}>
-          Send answers
-        </button>
-        <span class="inbox-progress">
-          {done} of {qs.length} answered
-        </span>
-      </div>
-    </>
-  );
+  return <QuestionCard questions={qs} draft={draftOf(entry.key)} edit={(fn) => editDraft(entry.key, fn)} onSend={() => void sendAnswers(entry)} />;
 }
 
 function StopBody({ entry, name, shipName }: { entry: Entry; name: string; shipName: string }) {

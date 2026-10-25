@@ -8,6 +8,7 @@ import { openSetup } from './setup';
 import { AppSettings, GEAR_ID, openAppSettings } from './AppSettings';
 import { chipLabel, chipText, resources } from './resources';
 import { anyAutopilot } from './sources';
+import { ChatHeaderButton } from './ChatPane';
 import { InboxButton } from './InboxPanel';
 import { atSea, ships, shipsLoaded } from './ships';
 import { phone } from './sizeClass';
@@ -116,7 +117,7 @@ function AtSea() {
 
 function SettingsButton() {
   return (
-    <button type="button" id={GEAR_ID} class="press about-button" aria-label="Settings" onClick={openAppSettings}>
+    <button type="button" id={GEAR_ID} class="press about-button" aria-label="Settings" onClick={(e) => openAppSettings(e.currentTarget)}>
       <span class="about-face">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F4EEDF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="3" />
@@ -132,6 +133,7 @@ function SeaPills() {
   return (
     <>
       <InboxButton />
+      <ChatHeaderButton />
       <AtSea />
       <button type="button" class="pill-hit" aria-label={off ? 'Turn chime on' : 'Mute chime'} onClick={toggleSound}>
         <span class="pill-face sound">

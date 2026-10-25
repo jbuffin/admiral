@@ -1,11 +1,13 @@
-import { signal } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
+import { boxFocused, chatUnread } from './chat';
+import { ChatTab } from './ChatPane';
 import { dockSheet, newShip, takeShipFocus } from './launch';
 import { harnesses } from './harnesses';
 import { reasonWords, waited } from './inbox';
 import { InboxTab } from './InboxPanel';
 import { clock, inbox } from './inboxState';
 import { LogoFlag } from './Logos';
+import { phoneTab } from './phoneTab';
 import { Sidebar } from './Sidebar';
 import { board, boarded, ships, type WireShip } from './ships';
 import { sortShips } from './shipList';
@@ -13,8 +15,7 @@ import { sortShips } from './shipList';
 // The phone's shell: a tab bar under one tab body (prototype :2210-2262). Opening or closing a bridge never
 // writes the tab, so Back lands on the tab the bridge was opened from.
 
-type Tab = 'inbox' | 'chat' | 'ships' | 'orders';
-export const phoneTab = signal<Tab>('inbox');
+export { phoneTab };
 
 const needsYou = () => ships.value.filter((s) => s.status === 'needs_you').length;
 
@@ -43,9 +44,10 @@ const icon = {
 function TabBar() {
   const items = inbox.count();
   const asking = needsYou();
-  const tabs: { id: Tab; label: string; count: number; name: string }[] = [
+  const dot = chatUnread.value && phoneTab.value !== 'chat';
+  const tabs: { id: keyof typeof icon; label: string; count: number; name: string }[] = [
     { id: 'inbox', label: 'Inbox', count: items, name: `Inbox, ${items} ${items === 1 ? 'item' : 'items'}` },
-    { id: 'chat', label: 'Chat', count: 0, name: 'Chat' },
+    { id: 'chat', label: 'Chat', count: 0, name: 'Chat, new reply' },
     { id: 'ships', label: 'Ships', count: asking, name: `Ships, ${asking} needing you` },
     { id: 'orders', label: 'Orders', count: 0, name: 'Orders' },
   ];
@@ -57,7 +59,7 @@ function TabBar() {
           type="button"
           class={`press phone-tab${phoneTab.value === t.id ? ' on' : ''}`}
           aria-current={phoneTab.value === t.id ? 'page' : undefined}
-          aria-label={t.count > 0 ? t.name : t.label}
+          aria-label={t.count > 0 || (t.id === 'chat' && dot) ? t.name : t.label}
           onClick={() => (phoneTab.value = t.id)}
         >
           <span class="phone-tab-icon">
@@ -65,6 +67,7 @@ function TabBar() {
               {icon[t.id]}
             </svg>
             {t.count > 0 && <span class={`phone-badge ${t.id}`}>{t.count}</span>}
+            {t.id === 'chat' && dot && <span class="phone-dot" aria-hidden="true" />}
           </span>
           <span class="phone-tab-label">{t.label}</span>
         </button>
@@ -131,9 +134,6 @@ function ShipsTab() {
   );
 }
 
-// The chat is u6's: until then its tab is empty.
-const ChatTab = () => <section class="phone-pane" aria-label="Chat" />;
-
 export function PhoneShell({ children }: { children?: preact.ComponentChildren }) {
   return (
     <>
@@ -147,7 +147,8 @@ export function PhoneShell({ children }: { children?: preact.ComponentChildren }
         </div>
         {children}
       </div>
-      {boarded.value === null && <TabBar />}
+      {/* While the chat's box has focus the bar steps aside, so the keyboard has room. */}
+      {boarded.value === null && !(phoneTab.value === 'chat' && boxFocused.value) && <TabBar />}
     </>
   );
 }

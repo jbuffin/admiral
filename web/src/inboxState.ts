@@ -2,6 +2,7 @@ import { computed, effect, signal } from '@preact/signals';
 import { onMessage } from './connection';
 import { type Decisions, type FindingCard, createDecisions, readCards } from './findings';
 import { type Entry, type InboxItem, type InboxQuestion, createQueue } from './inbox';
+import { type Draft, answerBody, blankDraft } from './questions';
 import { ships } from './ships';
 import { wide } from './sizeClass';
 import { api } from './sources';
@@ -80,62 +81,21 @@ export const inbox = {
 
 // ---- what the engineer has entered on an item ----
 
-export interface Pick {
-  sel: string[];
-  other: boolean;
-  text: string;
-}
-export interface Draft {
-  picks: Record<string, Pick>;
-  note: string;
-  error: string;
-  sending: boolean;
-}
-const blank = (): Draft => ({ picks: {}, note: '', error: '', sending: false });
+export type { Draft, Pick } from './questions';
 const drafts = signal<Record<string, Draft>>({});
-export const draftOf = (key: string): Draft => drafts.value[key] ?? blank();
+export const draftOf = (key: string): Draft => drafts.value[key] ?? blankDraft();
 export function editDraft(key: string, fn: (d: Draft) => Draft): void {
   drafts.value = { ...drafts.value, [key]: fn(draftOf(key)) };
-}
-
-const emptyPick: Pick = { sel: [], other: false, text: '' };
-export const pickOf = (d: Draft, q: InboxQuestion): Pick => d.picks[q.id] ?? emptyPick;
-export const answeredQuestion = (p: Pick) => p.sel.length > 0 || (p.other && p.text.trim() !== '');
-
-export function choose(key: string, q: InboxQuestion, label: string): void {
-  editDraft(key, (d) => {
-    const p = pickOf(d, q);
-    const sel = q.multi ? (p.sel.includes(label) ? p.sel.filter((l) => l !== label) : [...p.sel, label]) : [label];
-    return { ...d, picks: { ...d.picks, [q.id]: { ...p, sel, other: q.multi ? p.other : false } } };
-  });
-}
-export function chooseOther(key: string, q: InboxQuestion): void {
-  editDraft(key, (d) => {
-    const p = pickOf(d, q);
-    return { ...d, picks: { ...d.picks, [q.id]: q.multi ? { ...p, other: !p.other } : { ...p, sel: [], other: true } } };
-  });
 }
 
 // Sends a question's answers. On success it folds to "Answered"; a refusal keeps what was entered and says why.
 export async function sendAnswers(entry: Entry): Promise<void> {
   const it = entry.item;
   if (!it?.question) return;
-  const d = draftOf(entry.key);
-  const answers: Record<string, { choice?: string | string[]; other?: string }> = {};
-  for (const q of it.question.questions) {
-    const p = pickOf(d, q);
-    const a: { choice?: string | string[]; other?: string } = {};
-    if (p.sel.length > 0) a.choice = q.multi ? p.sel : p.sel[0];
-    if (p.other && p.text.trim()) a.other = p.text.trim();
-    answers[q.id] = a;
-  }
+  const body = answerBody(it.question.questions, draftOf(entry.key));
   editDraft(entry.key, (x) => ({ ...x, sending: true, error: '' }));
   sending.set(entry.key, it);
-  const note = d.note.trim();
-  const r = await api('POST', `/api/inbox/${encodeURIComponent(it.session)}/${encodeURIComponent(it.id)}/answer`, {
-    answers,
-    ...(note && { note }),
-  });
+  const r = await api('POST', `/api/inbox/${encodeURIComponent(it.session)}/${encodeURIComponent(it.id)}/answer`, body);
   if (r.ok) inbox.fold(entry.key, 'Answered');
   sending.delete(entry.key);
   editDraft(entry.key, (x) => ({ ...x, sending: false, error: r.ok ? '' : r.error }));
