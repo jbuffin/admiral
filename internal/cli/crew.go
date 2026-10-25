@@ -266,6 +266,7 @@ type crewRow struct {
 	Launched     string  `json:"launched"`
 	LastActivity *string `json:"last_activity"`
 	Role         *string `json:"role"`
+	Transcript   *string `json:"transcript"`
 }
 
 func crewList(args []string, std IO) error {
@@ -288,10 +289,14 @@ func crewList(args []string, std IO) error {
 	}
 	rows := make([]crewRow, 0, len(boats))
 	for _, b := range boats {
-		r := crewRow{b.Name, b.Harness, b.Dir, b.State, b.Launched, nil, nil}
+		r := crewRow{b.Name, b.Harness, b.Dir, b.State, b.Launched, nil, nil, nil}
 		if b.Role != "" {
 			role := b.Role
 			r.Role = &role
+		}
+		if b.Transcript != "" {
+			tr := b.Transcript
+			r.Transcript = &tr
 		}
 		if !b.LastActivity.IsZero() {
 			t := b.LastActivity.UTC().Format(time.RFC3339)

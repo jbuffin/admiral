@@ -14,6 +14,10 @@ import (
 // hook event (RFC 3339): a crew boat's last_activity.
 const ActivityOption = Prefix + "activity"
 
+// CrewTranscriptOption is the pane option `admiral hook` records a crew boat's
+// transcript path in (ADR 0021). Crew boats only, never a ship or the chat.
+const CrewTranscriptOption = Prefix + "crew-transcript"
+
 // The states a crew boat shows (#72 story 9). A crew boat never sails off, and
 // is never "working": underway covers both.
 const (
@@ -101,6 +105,9 @@ func readCrew(rows []string, known map[string]bool) (map[string][]Crew, []string
 			State: CrewState(f[1] == "1", f[6]), PaneID: tail[1], WindowID: tail[2]}
 		if launcher.CrewName.MatchString(tail[4]) { // option text is untrusted
 			c.Role = tail[4]
+		}
+		if ValidCrewTranscriptPath(tail[5]) { // option text is untrusted
+			c.Transcript = tail[5]
 		}
 		if c.State == CrewNeedsYou {
 			c.Reason = "unknown"

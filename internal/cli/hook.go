@@ -45,6 +45,10 @@ func Hook(args []string, std IO) error {
 		if ts := transcriptCall(pane, args[0], p, now); ts != nil {
 			call = append(append(call, ";"), ts...)
 		}
+		// Last, so a failure here can't undo the writes before it.
+		if ct := crewTranscriptCall(pane, args[0], p); ct != nil {
+			call = append(append(call, ";"), ct...)
+		}
 	}
 	_ = exec.Command("tmux", call...).Run()
 	return nil
@@ -82,15 +86,16 @@ func hookCall(pane string, w hookWrite) []string {
 // hookPayload holds the fields of Claude Code's, Codex's and Copilot's hook
 // JSON that decide a state.
 type hookPayload struct {
-	ToolName         string `json:"tool_name"`         // Claude Code
-	ToolNameCopilot  string `json:"toolName"`          // Copilot
-	NotificationType string `json:"notification_type"` // Claude Code, Copilot
-	AgentID          string `json:"agentId"`           // Copilot: set inside a subagent
-	AgentTypeCopilot string `json:"agentType"`         // Copilot
-	SubagentID       string `json:"agent_id"`          // Claude Code, Codex: SubagentStart and SubagentStop
-	SubagentType     string `json:"agent_type"`        // Claude Code, Codex
-	TranscriptPath   string `json:"transcript_path"`   // Claude Code: SessionStart, for the chat
-	Source           string `json:"source"`            // Claude Code: SessionStart (startup, resume, clear, compact)
+	ToolName          string `json:"tool_name"`         // Claude Code
+	ToolNameCopilot   string `json:"toolName"`          // Copilot
+	NotificationType  string `json:"notification_type"` // Claude Code, Copilot
+	AgentID           string `json:"agentId"`           // Copilot: set inside a subagent
+	AgentTypeCopilot  string `json:"agentType"`         // Copilot
+	SubagentID        string `json:"agent_id"`          // Claude Code, Codex: SubagentStart and SubagentStop
+	SubagentType      string `json:"agent_type"`        // Claude Code, Codex
+	TranscriptPath    string `json:"transcript_path"`   // Claude Code, Codex: any event (null reads ""); the chat's SessionStart and a crew boat's (ADR 0021)
+	TranscriptCopilot string `json:"transcriptPath"`    // Copilot: a lead agentStop's, for a crew boat
+	Source            string `json:"source"`            // Claude Code: SessionStart (startup, resume, clear, compact)
 	// Claude Code's Stop; Codex sends none. A nil slice is "absent" and an
 	// empty one is `[]`, which tells Claude's Stop from Codex's.
 	BackgroundTasks []struct {
@@ -401,6 +406,22 @@ func readCrewFacts(pane string, now time.Time) crewFacts {
 	return f
 }
 
-// crewTranscriptCall is the red-phase stub of the call that records a crew
-// boat's transcript path (#175, ADR 0021). It records nothing yet.
-func crewTranscriptCall(pane, event string, p hookPayload) []string { return nil }
+// crewTranscriptCall is the tmux call that records a crew boat's transcript
+// path in its pane option (#175, ADR 0021), or nil when the payload has none
+// that sessionhost.ValidCrewTranscriptPath accepts. Claude and Codex send
+// transcript_path on any event (Codex may send null); Copilot's transcriptPath
+// counts only on a lead agentStop. The `if -F` runs the write only where the
+// pane's window has @admiral-crew-name, so a ship's pane and the chat never get
+// the option, and the path needs no escaping: the crew check refused every
+// character that would need it.
+func crewTranscriptCall(pane, event string, p hookPayload) []string {
+	path := p.TranscriptPath
+	if event == "agentStop" && p.lead() && p.TranscriptCopilot != "" {
+		path = p.TranscriptCopilot
+	}
+	if !sessionhost.ValidCrewTranscriptPath(path) {
+		return nil
+	}
+	return []string{"if", "-F", "-t", pane, "#{@admiral-crew-name}",
+		"set -p -t " + pane + " " + sessionhost.CrewTranscriptOption + " '" + path + "'"}
+}
