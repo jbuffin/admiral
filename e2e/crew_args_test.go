@@ -1,7 +1,6 @@
 package e2e
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -139,5 +138,3 @@ func TestCrew_LaunchArgsAndRole(t *testing.T) {
 	})
 }
 
-// keep encoding/json in use for a role field decoded as a string pointer.
-var _ = json.Marshal
