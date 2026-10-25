@@ -16,29 +16,42 @@ const (
 
 // flagRule is one flag on a harness's autopilot allowlist. names holds every
 // spelling; a single-dash name also takes its value joined (-cKEY=V, -c=KEY=V),
-// and a double-dash name takes it after "=". ok, when set, vets each value
-// against the dock's args.
+// and a double-dash name takes it after "=". valueFits, when set, vets each
+// value against the dock's args. dockUnset refuses the flag when the dock's args
+// already set it, for a flag whose repeat may replace the dock's value.
 type flagRule struct {
-	names []string
-	arity arity
-	ok    func(value string, dock []string) bool
+	names     []string
+	arity     arity
+	valueFits func(value string, dock []string) bool
+	dockUnset bool
 }
 
+// AutopilotHarnesses are the harnesses `admiral guard` covers, the only ones a
+// caller with ADMIRAL_AUTOPILOT=1 may launch as crew. Each needs a table in
+// autopilotRules. Adding codex or copilot here is not enough: settle the copilot
+// flags noted below, and check the table against the harness's own parser.
+var AutopilotHarnesses = []string{"claude"}
+
 // autopilotRules is each harness's allowlist (#175): the flags a caller with
-// ADMIRAL_AUTOPILOT=1 may pass, none of which loosens the dock. Only claude's
-// is reachable today, since LaunchCrew refuses the other harnesses first.
+// ADMIRAL_AUTOPILOT=1 may pass. Claude's flags select a model or effort, deny
+// tools, or keep the dock's permission mode or stricter. Codex's and copilot's
+// are unreachable until AutopilotHarnesses names them. Copilot's --add-dir (file
+// access) and --available-tools (an allowlist of tools, which a crew list may
+// widen past a dock's) are the engineer's decision but can loosen the dock, so
+// settle them before copilot is covered.
 var autopilotRules = map[string][]flagRule{
 	"claude": {
-		{names: []string{"--model"}, arity: arityOne},
-		{names: []string{"--advisor"}, arity: arityOne},
-		{names: []string{"--effort"}, arity: arityOne},
-		{names: []string{"--disallowedTools"}, arity: arityMany},
-		{names: []string{"--permission-mode"}, arity: arityOne, ok: noLooserMode},
+		{names: []string{"--model"}, arity: arityOne, valueFits: notDashLed},
+		{names: []string{"--advisor"}, arity: arityOne, valueFits: notDashLed},
+		{names: []string{"--effort"}, arity: arityOne, valueFits: notDashLed},
+		// Whether a repeat adds to the dock's list or replaces it is unverified.
+		{names: []string{"--disallowedTools"}, arity: arityMany, dockUnset: true},
+		{names: []string{"--permission-mode"}, arity: arityOne, valueFits: noLooserMode},
 	},
 	"codex": {
 		{names: []string{"-m", "--model"}, arity: arityOne},
-		{names: []string{"-s", "--sandbox"}, arity: arityOne, ok: func(v string, _ []string) bool { return v == "read-only" }},
-		{names: []string{"-c", "--config"}, arity: arityOne, ok: func(v string, _ []string) bool {
+		{names: []string{"-s", "--sandbox"}, arity: arityOne, valueFits: func(v string, _ []string) bool { return v == "read-only" }},
+		{names: []string{"-c", "--config"}, arity: arityOne, valueFits: func(v string, _ []string) bool {
 			key, _, _ := strings.Cut(v, "=")
 			return configKey(key) == "model_reasoning_effort"
 		}},
@@ -52,20 +65,34 @@ var autopilotRules = map[string][]flagRule{
 	},
 }
 
+// notDashLed reports whether a value is safe to hand a claude flag that takes
+// the next arg whatever it is: one that starts with "-" would read as a flag if
+// claude's parsing ever changed.
+func notDashLed(value string, _ []string) bool {
+	return !strings.HasPrefix(value, "-")
+}
+
 // modeRank orders claude's permission modes from strictest to loosest. default
 // and manual are one rank: manual is default's current spelling.
 var modeRank = map[string]int{"plan": 0, "dontAsk": 1, "default": 2, "manual": 2, "acceptEdits": 3, "auto": 4, "bypassPermissions": 5}
 
-// noLooserMode reports whether a --permission-mode is no looser than the dock's.
-// A dock with no mode runs as default; one with an unknown mode only takes plan.
+// strictestRank is plan's: what a dock with a mode this table doesn't know allows.
+const strictestRank = 0
+
+// noLooserMode reports whether a crew --permission-mode is no looser than the
+// dock's. A dock with no mode runs as default. Claude 2.1.310 doesn't take
+// default as a value, so a crew boat can't say it; it is only the baseline.
 func noLooserMode(mode string, dock []string) bool {
 	rank, known := modeRank[mode]
-	if !known {
+	if !known || mode == "default" {
 		return false
 	}
 	base := modeRank["default"]
 	if m := dockMode(dock); m != "" {
-		base = modeRank[m] // unknown: 0
+		var known bool
+		if base, known = modeRank[m]; !known {
+			base = strictestRank
+		}
 	}
 	return rank <= base
 }
@@ -101,6 +128,9 @@ func AutopilotArgs(harness string, dockArgs []string, args []string) error {
 			return refuseArg(a, "it is not on the autopilot args allowlist")
 		}
 		i++
+		if rule.dockUnset && dockSets(dockArgs, rule.names) {
+			return refuseArg(a, "the dock already sets it")
+		}
 		var values []string
 		if joined {
 			values = []string{value}
@@ -123,8 +153,11 @@ func AutopilotArgs(harness string, dockArgs []string, args []string) error {
 			}
 		}
 		for _, v := range values {
-			if rule.ok != nil && !rule.ok(v, dockArgs) {
-				return refuseArg(a+" "+v, "that value could loosen the dock")
+			if rule.valueFits != nil && !rule.valueFits(v, dockArgs) {
+				if joined {
+					return refuseArg(a, "that value is not allowed")
+				}
+				return refuseArg(a+" "+v, "that value is not allowed")
 			}
 		}
 	}
@@ -151,4 +184,16 @@ func matchRule(rules []flagRule, arg string) (r *flagRule, value string, joined 
 
 func refuseArg(arg, why string) error {
 	return fmt.Errorf("--arg %s is refused: %s", arg, why)
+}
+
+// dockSets reports whether the dock's args set one of the flags, in either spelling.
+func dockSets(dock, names []string) bool {
+	for _, a := range dock {
+		for _, n := range names {
+			if a == n || strings.HasPrefix(a, n+"=") {
+				return true
+			}
+		}
+	}
+	return false
 }
