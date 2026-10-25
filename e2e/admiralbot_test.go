@@ -35,7 +35,7 @@ import (
 // ---- the world ----
 
 type botOpts struct {
-	chatArgs []string              // the chat dock's args; default --fa-chat
+	chatArgs []string              // the chat dock's args; default a ship's widening ones
 	shipCue  []string              // the cue file of the "ship" fleet
 	sources  func(w *world) string // builds the raw `sources` object once the world exists
 }
@@ -53,7 +53,8 @@ func newBotWorld(t *testing.T, o botOpts) *chatWorld {
 		t.Fatal(err)
 	}
 	if o.chatArgs == nil {
-		o.chatArgs = []string{"--fa-chat"}
+		// A ship's dock args, as engineers set them: the chat must not take them.
+		o.chatArgs = []string{"--fa-chat", "--allowedTools", "Bash(git *)", "--add-dir", "/tmp"}
 	}
 	shipCue := filepath.Join(w.root, "cue-ship")
 	if o.shipCue != nil {
@@ -601,18 +602,23 @@ func TestAdmiralBot_ChatSessionIsFenced(t *testing.T) {
 			return -1
 		}
 		settings := idx("--settings")
-		dock := idx("--fa-chat")
+		model := idx("--model")
 		for _, pair := range [][2]string{{"--permission-mode", "dontAsk"}, {"--setting-sources", "project"}, {"--tools", "Bash,Skill,Read"}} {
 			if !hasPair(r.argv, pair[0], pair[1]) {
 				t.Errorf("argv = %q, want %s %s as separate elements", r.argv, pair[0], pair[1])
 			}
-			if i := idx(pair[0]); !(dock >= 0 && dock < i && i < settings) {
-				t.Errorf("argv = %q, want %s after the dock's args and before --settings", r.argv, pair[0])
+			if i := idx(pair[0]); !(model >= 0 && model < i && i < settings) {
+				t.Errorf("argv = %q, want %s after --model and before --settings", r.argv, pair[0])
 			}
 		}
 		i := idx("--append-system-prompt")
-		if i < 0 || i+1 >= len(r.argv) || !(dock < i && i < settings) {
-			t.Fatalf("argv = %q, want --append-system-prompt <paragraph> after the dock's args and before --settings", r.argv)
+		if i < 0 || i+1 >= len(r.argv) || !(model < i && i < settings) {
+			t.Fatalf("argv = %q, want --append-system-prompt <paragraph> after --model and before --settings", r.argv)
+		}
+		for _, a := range []string{"--fa-chat", "--allowedTools", "Bash(git *)", "--add-dir", "/tmp"} {
+			if has(r.argv, a) {
+				t.Errorf("argv = %q holds the dock's %q: the chat takes no dock args", r.argv, a)
+			}
 		}
 		if p := r.argv[i+1]; !strings.Contains(p, "AdmiralBot") || strings.HasPrefix(p, "--") {
 			t.Errorf("the system prompt element = %q, want one paragraph that says it is AdmiralBot", p)
@@ -710,37 +716,6 @@ func TestAdmiralBot_ChatSessionIsFenced(t *testing.T) {
 			t.Errorf("the ship's env has ADMIRAL_PORT=%q, even with it in tmux's global environment", v)
 		}
 	})
-}
-
-// A chat dock whose args skip or change permissions is refused: the fence would
-// not hold.
-func TestAdmiralBot_ChatStartRefusesDockArgsThatChangePermissions(t *testing.T) {
-	for name, args := range map[string][]string{
-		"skip":            {"--dangerously-skip-permissions"},
-		"allow skip":      {"--allow-dangerously-skip-permissions"},
-		"mode with value": {"--permission-mode", "plan"},
-		"sources":         {"--setting-sources", "user"},
-		"tools":           {"--tools", "Bash"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			c := newBotWorld(t, botOpts{chatArgs: append([]string{"--fa-chat"}, args...)})
-			w := c.world
-			w.start()
-			code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/start", nil)
-			if code != http.StatusConflict {
-				t.Fatalf("POST /api/chat/start = %d, want 409: %s", code, body)
-			}
-			if !strings.Contains(body, args[0]) {
-				t.Errorf("the 409 body %q does not name %s", body, args[0])
-			}
-			if s := fetchBot(t, w.in.LocalURL); s.Running || !strings.Contains(s.Error, args[0]) {
-				t.Errorf("session = %+v, want not running with an error naming %s", s, args[0])
-			}
-			if has(w.sessions(), chatSessionName) {
-				t.Errorf("the chat started anyway: sessions %v", w.sessions())
-			}
-		})
-	}
 }
 
 // ---- scenarios 4 and 5: chat ask ----

@@ -21,25 +21,6 @@ var skillText []byte
 const chatPrompt = "You are AdmiralBot, the engineer's assistant in Admiral. Use the admiralbot skill for everything you do. " +
 	"You only add orders: you never launch ships and never change files."
 
-// fenceFlags are the dock args that skip or change the permissions the chat is
-// started with; a dock that holds one is refused (ADR 0020).
-var fenceFlags = []string{"--dangerously-skip-permissions", "--allow-dangerously-skip-permissions",
-	"--permission-mode", "--setting-sources", "--tools"}
-
-// fenceFlag is the first of the dock's args that is one of fenceFlags, also in
-// its --flag=value form.
-func fenceFlag(args []string) (string, bool) {
-	for _, a := range args {
-		name, _, _ := strings.Cut(a, "=")
-		for _, f := range fenceFlags {
-			if name == f {
-				return f, true
-			}
-		}
-	}
-	return "", false
-}
-
 // WriteChatSkill writes the AdmiralBot skill to
 // $ADMIRAL_HOME/chat/.claude/skills/admiralbot/SKILL.md through a root on home:
 // a temp file and a rename, so a link planted at the path is replaced and never
@@ -120,8 +101,8 @@ var chatOwned = []string{"ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_INBOX", "ADM
 var chatVar = regexp.MustCompile(`^ADMIRAL_[A-Za-z0-9_]+$`)
 
 // StartChat creates the `_chat` session (ADR 0018, 0019): the chat fleet's
-// Claude dock, then the chat's model and effort, then the chat hook bundle, in
-// $ADMIRAL_HOME/chat. The caller has checked that no `_chat` session exists. The
+// Claude executable and env (not its args), then the chat's model and effort, the
+// fence and the chat hook bundle, in $ADMIRAL_HOME/chat. The caller has checked that no `_chat` session exists. The
 // session is made as a ship's is (a placeholder, its options, its environment,
 // then the harness in its place), but with no remain-on-exit, so it ends with
 // Claude, and with none of a ship's variables.
@@ -138,9 +119,6 @@ func (l *Launcher) StartChat() error {
 	if !found {
 		return refuse(http.StatusBadRequest, "claude executable %s not found for fleet %s", dock.Executable, fleet.Name)
 	}
-	if f, bad := fenceFlag(dock.Args); bad {
-		return refuse(http.StatusConflict, "fleet %s's Claude dock has %s in its args, which would change what the chat may run: remove it to start the chat", fleet.Name, f)
-	}
 	home, err := filepath.Abs(l.Home)
 	if err != nil {
 		return refuse(http.StatusInternalServerError, "could not resolve %s: %v", l.Home, err)
@@ -155,12 +133,15 @@ func (l *Launcher) StartChat() error {
 
 	// Each value is its own argument: nothing here goes through a shell.
 	chat := cfg.Chat
-	argv := append([]string{exe}, dock.Args...)
+	// The dock's args are a ship's: they commonly widen permissions (--allowedTools,
+	// --add-dir, --plugin-dir, --mcp-config, --resume), so the chat keeps only the
+	// dock's executable and env (ADR 0020).
+	argv := []string{exe}
 	argv = append(argv, "--model", chat.Model)
 	if chat.Effort != "" {
 		argv = append(argv, "--effort", chat.Effort)
 	}
-	// The fence (ADR 0020): after the dock's args, each flag and value its own element.
+	// The fence (ADR 0020), each flag and value its own element.
 	argv = append(argv, "--permission-mode", "dontAsk", "--setting-sources", "project", "--tools", "Bash,Skill,Read",
 		"--append-system-prompt", chatPrompt, "--settings", claudeChatSettingsPath(l.Home))
 
