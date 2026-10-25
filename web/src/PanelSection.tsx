@@ -109,39 +109,43 @@ export function PanelSection({ view }: { view: PanelView }) {
         <span class="count" role="img" aria-label={countLabel(total)}>
           {total}
         </span>
-        {autopilot?.enabled && (
-          <>
-            <AutopilotBadge paused={autopilot.paused} />
+        {(autopilot?.enabled || declares(source, 'refresh')) && (
+          <div class="panel-actions">
+          {autopilot?.enabled && (
+            <>
+              <AutopilotBadge paused={autopilot.paused} />
+              <button
+                type="button"
+                class="icon-button press"
+                aria-label={autopilot.paused ? 'Resume autopilot' : 'Pause autopilot'}
+                onClick={async () => {
+                  const r = await api('PUT', sourcePath(source.key, `/panels/${encodeURIComponent(panel.id)}/autopilot`), { paused: !autopilot.paused });
+                  setRefusal(r.ok ? null : r.error);
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">
+                  {autopilot.paused ? <path d="M7 4l13 8-13 8z" /> : <path d="M7 4h3v16H7zM14 4h3v16h-3z" />}
+                </svg>
+              </button>
+            </>
+          )}
+          {declares(source, 'refresh') && (
             <button
               type="button"
               class="icon-button press"
-              aria-label={autopilot.paused ? 'Resume autopilot' : 'Pause autopilot'}
+              aria-label="Refresh"
+              disabled={!can(source, 'refresh')}
               onClick={async () => {
-                const r = await api('PUT', sourcePath(source.key, `/panels/${encodeURIComponent(panel.id)}/autopilot`), { paused: !autopilot.paused });
+                const r = await api('POST', sourcePath(source.key, '/refresh'), { panel: panel.id });
                 setRefusal(r.ok ? null : r.error);
               }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">
-                {autopilot.paused ? <path d="M7 4l13 8-13 8z" /> : <path d="M7 4h3v16H7zM14 4h3v16h-3z" />}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" />
               </svg>
             </button>
-          </>
-        )}
-        {declares(source, 'refresh') && (
-          <button
-            type="button"
-            class="icon-button press"
-            aria-label="Refresh"
-            disabled={!can(source, 'refresh')}
-            onClick={async () => {
-              const r = await api('POST', sourcePath(source.key, '/refresh'), { panel: panel.id });
-              setRefusal(r.ok ? null : r.error);
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" />
-            </svg>
-          </button>
+          )}
+          </div>
         )}
       </div>
       {autopilot && autopilot.waiting_for.length > 0 && <p class="panel-waiting">waiting for {autopilot.waiting_for.join(', ')}</p>}

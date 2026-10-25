@@ -1,6 +1,6 @@
 import { signal } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
-import { newShip } from './launch';
+import { dockSheet, newShip, takeShipFocus } from './launch';
 import { harnesses } from './harnesses';
 import { reasonWords, waited } from './inbox';
 import { InboxTab } from './InboxPanel';
@@ -50,7 +50,7 @@ function TabBar() {
     { id: 'orders', label: 'Orders', count: 0, name: 'Orders' },
   ];
   return (
-    <nav class="phone-tabs" aria-label="Sections">
+    <nav class="phone-tabs" aria-label="Sections" inert={dockSheet.value !== null}>
       {tabs.map((t) => (
         <button
           key={t.id}
@@ -88,13 +88,9 @@ function Row({ ship }: { ship: WireShip }) {
   const fresh = newShip.value === ship.session;
   const ref = useRef<HTMLButtonElement>(null);
   // The row of a ship this phone just launched takes focus once, whenever it appears.
-  const focused = useRef(false);
   useEffect(() => {
-    if (fresh && !focused.current) {
-      focused.current = true;
-      ref.current?.focus();
-    }
-  }, [fresh]);
+    if (takeShipFocus(ship.session)) ref.current?.focus();
+  }, []);
   return (
     <button ref={ref} type="button" class={`press ship-row${asking ? ' asking' : ''}${fresh ? ' fresh' : ''}`} aria-label={`Board ${ship.name}, ${h} in ${ship.fleet_name}, ${status}`} onClick={() => board(ship.session)}>
       <span class="ship-row-stripe" style={`background-color:${ship.fleet_color}`} aria-hidden="true" />
@@ -143,7 +139,7 @@ export function PhoneShell({ children }: { children?: preact.ComponentChildren }
     <>
       <div class="phone-body">
         {/* The pane under a bridge is out of reach of VoiceOver and Tab. */}
-        <div class="phone-tabs-pane" inert={boarded.value !== null}>
+        <div class="phone-tabs-pane" inert={boarded.value !== null || dockSheet.value !== null}>
         {phoneTab.value === 'inbox' && <InboxTab />}
         {phoneTab.value === 'chat' && <ChatTab />}
         {phoneTab.value === 'ships' && <ShipsTab />}

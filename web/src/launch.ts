@@ -52,6 +52,15 @@ export function forgetOpener(): void {
 }
 // The ship a phone launch just made: the Ships tab highlights its row for a moment and focuses it.
 export const newShip = signal<string | null>(null);
+// The same ship, for focus: the row takes it once when it mounts, however late the ships push brings it,
+// and never again when the Ships tab is reopened.
+let focusShip: string | null = null;
+export const wantShipFocus = (session: string) => void (focusShip = session);
+export function takeShipFocus(session: string): boolean {
+  if (focusShip !== session) return false;
+  focusShip = null;
+  return true;
+}
 
 export const armed = computed(() => dragging.value !== null || selected.value !== null);
 

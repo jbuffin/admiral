@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { type Dock, type Fleet, config } from './config';
 import { harnesses } from './harnesses';
-import { announceLaunch, dragging, forgetOpener, launching, newShip, returnFocus } from './launch';
+import { announceLaunch, dragging, forgetOpener, launching, newShip, returnFocus, wantShipFocus } from './launch';
 import { LogoFlag } from './Logos';
 import { Modal } from './Modal';
 import { phoneTab } from './PhoneShell';
@@ -275,6 +275,7 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
       const session = r.data.ship.session;
       phoneTab.value = 'ships';
       newShip.value = session;
+      wantShipFocus(session);
       setTimeout(() => {
         if (newShip.value === session) newShip.value = null;
       }, 2600);

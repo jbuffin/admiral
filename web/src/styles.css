@@ -469,15 +469,15 @@ button:focus-visible {
 
 .panel-head {
   display: flex;
-  flex-wrap: wrap; /* the 44px buttons drop to a second line rather than squeeze the title out */
+  flex-wrap: wrap; /* the actions drop to a second line, as one group, rather than squeeze the title out */
   align-items: center;
   gap: 6px;
   padding: 6px 8px 6px 4px;
 }
 
 .panel-toggle {
-  flex: 1 1 auto;
-  min-width: 9.5rem; /* the chevron, the icon and a title like "Work queue" */
+  flex: 1 1 0;
+  min-width: 9rem; /* the chevron, the icon and a title like "Work queue" */
   min-height: var(--shape-min-touch-target);
   display: flex;
   align-items: center;
@@ -501,8 +501,20 @@ button:focus-visible {
   font-size: 16.5px;
   line-height: 1.15;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+/* The autopilot badge and the buttons move as one group. */
+.panel-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .autopilot-badge {
@@ -3849,12 +3861,15 @@ body.dragging * {
   position: absolute;
   inset: 0;
   z-index: 0;
+  border: 0;
   border-radius: inherit;
+  padding: 0;
+  margin: 0;
   background: none;
+  cursor: pointer;
 }
 
-:root.phone .order .order-main,
-:root.phone .order .grip {
+:root.phone .order .order-main {
   pointer-events: none;
 }
 
@@ -4034,6 +4049,3 @@ body.dragging * {
   max-height: calc(100dvh - max(16px, env(safe-area-inset-top)) - max(16px, env(safe-area-inset-bottom)));
 }
 
-:root.phone .launch-body {
-  overflow-y: auto;
-}

@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from 'preact/hooks';
 import { config } from './config';
 import { harnesses } from './harnesses';
-import { dockSheet, openLaunch, returnFocus } from './launch';
+import { dockSheet, forgetOpener, openLaunch, returnFocus } from './launch';
 import { LogoFlag } from './Logos';
 import { marks, restingStatus, Sign } from './Marina';
 import { phone } from './sizeClass';
@@ -17,7 +17,16 @@ export function DockSheet() {
   useLayoutEffect(() => {
     if (open) ref.current?.querySelector<HTMLElement>('button')?.focus({ preventScroll: true });
   }, [open]);
+  // Leaving the phone layout (a resize, a split view) drops the sheet, so coming back doesn't reopen it.
+  useLayoutEffect(() => {
+    if (!phone.value && dockSheet.value) {
+      dockSheet.value = null;
+      forgetOpener();
+    }
+  }, [phone.value]);
   // Escape closes the sheet wherever focus is (the order's button, say, if a browser leaves it there).
+  // It swallows every other Escape handler, so it relies on the sheet being the only thing open: it is
+  // removed as soon as a dock is picked, before Launch orders (a native dialog) opens.
   useLayoutEffect(() => {
     if (!open) return;
     const esc = (e: KeyboardEvent) => {
