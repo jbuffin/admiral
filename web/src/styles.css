@@ -3926,13 +3926,18 @@ body.dragging * {
   min-width: 0;
 }
 
-/* The status pill keeps one line; the harness · order text takes the squeeze. */
+/* The status pill keeps one line. The harness · order or repo text takes the squeeze first, then the pill ellipsizes
+   rather than run under ⋯ (a crew bar at 320 px, or "Anchored · killed (SIGTERM)"). */
 .phone-line .term-pill {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .phone-sub {
+  flex: 0 1000 auto;
   min-width: 0;
   font-size: 12px;
   color: var(--color-text-muted);

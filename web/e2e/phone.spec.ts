@@ -257,6 +257,15 @@ test('#174 S5, S6, S7: a crew row boards the boat full screen and Back returns t
   await board('web');
   await back(page).tap();
   await expect(shipsTab(page)).toBeVisible();
+
+  // At 320 px the anchored pill ellipsizes rather than run under ⋯.
+  await page.setViewportSize({ width: 320, height: 640 });
+  await board('web');
+  const pill = (await terminal(page).locator('.phone-line .term-pill').boundingBox())!;
+  const more = (await terminal(page).getByRole('button', { name: 'More for web' }).boundingBox())!;
+  expect(pill.x + pill.width).toBeLessThanOrEqual(more.x);
+  await back(page).tap();
+  await expect(shipsTab(page)).toBeVisible();
   await page.setViewportSize({ width: 402, height: 874 });
 
   // S6: ⋯ on the phone bar closes the anchored boat and returns to the ship.
