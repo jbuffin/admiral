@@ -81,7 +81,8 @@ test.describe('where it opens', () => {
     await expect(entry(page)).toHaveAccessibleName(openName);
     chat.assistant('a-late', 'A second reply.');
     await expect(entry(page)).toHaveAccessibleName(`${openName}, new reply`);
-    await openChat(page, info);
+    await press(entry(page), info); // its name carries ", new reply" now, so openChat's exact name would miss it
+    await expect(panel(page)).toBeVisible();
     await expect(panel(page).getByText('A second reply.')).toBeVisible();
     await press(panel(page).getByRole('button', { name: 'Close the chat' }), info);
     await expect(entry(page)).toHaveAccessibleName(openName);
@@ -215,6 +216,7 @@ test.describe('New chat, the terminal and closing', () => {
     const chat = new Chat(admiral, ['lines 6']);
     await admiral.start();
     await chat.begin();
+    await page.addInitScript(() => ((window as unknown as { __admiral: unknown }).__admiral = { boarded: [] })); // the tests create it (bridge.ts)
     await page.goto(admiral.url);
     await openChat(page, info);
     await press(panel(page).getByRole('button', { name: 'Open terminal' }), info);
