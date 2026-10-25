@@ -400,3 +400,7 @@ func readCrewFacts(pane string, now time.Time) crewFacts {
 	}
 	return f
 }
+
+// crewTranscriptCall is the red-phase stub of the call that records a crew
+// boat's transcript path (#175, ADR 0021). It records nothing yet.
+func crewTranscriptCall(pane, event string, p hookPayload) []string { return nil }
