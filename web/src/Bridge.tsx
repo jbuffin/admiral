@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { signedOut } from './connection';
-import { attachCommand, crewRowText, findCrew, takesInput } from './crew';
+import { age, attachCommand, crewRowText, findCrew, takesInput } from './crew';
 import { harnesses } from './harnesses';
+import { CrewBoat } from './CrewBoat';
 import { clock } from './inboxState';
 import { KEYS, touchKeyboard } from './keys';
 import { LogoFlag } from './Logos';
@@ -29,38 +30,8 @@ const backToShip = () => {
   if (boarded.value) boarded.value = { session: boarded.value.session };
 };
 
-// A subagent's age on the flotilla: under a minute is "just started"; a start that does not parse shows none.
-function age(start: string, now: number): string {
-  const t = Date.parse(start);
-  if (Number.isNaN(t)) return '';
-  const m = Math.max(0, Math.round((now - t) / 60000));
-  return m < 1 ? 'just started' : `${m}m`;
-}
-
 const CHIP_BG = { underway: 'var(--color-foam)', needs_you: 'var(--color-attention-plaque)', anchored: 'var(--color-stone)' };
 const CHIP_STATE = { underway: 'working', needs_you: 'needs you', anchored: 'anchored' };
-
-// The small crew boat of the flotilla (designs/assets/crew-boat.svg, anchored: crew-boat-anchored.svg).
-function CrewBoat({ boat, stripe, bot }: { boat: WireCrew; stripe: string; bot: string }) {
-  const anchored = boat.status === 'anchored';
-  return (
-    <svg width="52" height="46" viewBox="0 0 64 56" fill="none" aria-hidden="true">
-      <path d="M4 37 L60 37 L54 46 Q46 51 32 51 L18 51 Q8 49 4 37 Z" fill="#A0613A" stroke="#14304A" stroke-width="2.5" stroke-linejoin="round" />
-      <path d="M6 40 L59 40 L57.5 44.5 L8 44.5 Z" fill={anchored ? '#9AA5AF' : stripe} />
-      <path d="M30 37 L30 6" stroke="#14304A" stroke-width="3" stroke-linecap="round" />
-      {anchored ? (
-        <>
-          <path d="M32 27 Q42 29 46 33 L32 33 Z" fill="#E4D6B8" stroke="#14304A" stroke-width="2" stroke-linejoin="round" />
-          <path d="M22 31 L48 31" stroke="#14304A" stroke-width="2.4" stroke-linecap="round" />
-        </>
-      ) : (
-        <path d="M32 9 L32 33 L52 33 Z" fill="#FFF6E3" stroke="#14304A" stroke-width="2.2" stroke-linejoin="round" />
-      )}
-      <LogoFlag harness={boat.harness} kind="crew" />
-      <rect x="4" y="24" width="13" height="13" rx="2" fill={bot} stroke="#14304A" stroke-width="2" />
-    </svg>
-  );
-}
 
 // Copies on a tap. An iPad on the Mac's plain-http LAN address has no navigator.clipboard (it needs a
 // secure origin), so there a hidden text box is copied, still inside the tap.
@@ -251,7 +222,7 @@ function BridgeView({ session }: { session: string }) {
                 aria-current={c.name === crew ? 'true' : undefined}
                 onClick={() => board(session, c.name)}
               >
-                <CrewBoat boat={c} stripe={ship.fleet_color} bot={botFor(`${session}/${c.name}`)} />
+                <CrewBoat boat={c} stripe={ship.fleet_color} bot={botFor(`${session}/${c.name}`)} size="flotilla" />
                 <span class="fl-text">
                   <span class="fl-name">{c.name}</span>
                   <span class="fl-role">{crewRowText(c)}</span>

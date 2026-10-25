@@ -10,6 +10,8 @@ export interface ShipProps {
   bobDelay?: string;
   // A ship that needs you shakes and its flag flutters faster; an anchored one is still,
   // with a red X; a ship sailing off wears a green check.
+  /** Subagents standing on deck: the colors of the bots shown, and the "+N" chip when there are more. */
+  deck?: { colors: string[]; more: string };
   state?: 'underway' | 'needs-you' | 'anchored' | 'sailing-off';
 }
 
@@ -18,7 +20,7 @@ const SAIL = '#FFF6E3';
 
 // Ships face left. Cleaned from designs/assets/ship.svg: no metadata, the
 // fleet color, the bot's color and the harness's logo are props.
-export function Ship({ fleetColor, bot, harness, variant = 'sea', state = 'underway', bobDelay = '0s' }: ShipProps) {
+export function Ship({ fleetColor, bot, harness, variant = 'sea', state = 'underway', bobDelay = '0s', deck }: ShipProps) {
   if (variant === 'moored') return <MooredShip fleetColor={fleetColor} bot={bot} harness={harness} />;
   const needsYou = state === 'needs-you';
   const still = state === 'anchored' || state === 'sailing-off';
@@ -42,6 +44,21 @@ export function Ship({ fleetColor, bot, harness, variant = 'sea', state = 'under
         {[38, 54, 70].map((cx) => (
           <circle key={cx} cx={cx} cy="79.5" r="2.6" fill={SAIL} stroke={OUTLINE} stroke-width="1.8" />
         ))}
+        {deck?.colors.map((color, k) => (
+          <g key={k} transform={`translate(${8 + k * 9} ${53.5 - (k % 2) * 1.5})`}>
+            <rect width="8.5" height="8.5" rx="1.5" fill={color} stroke={OUTLINE} stroke-width="1.6" />
+            <rect x="2" y="3" width="1.6" height="1.6" fill={OUTLINE} />
+            <rect x="5" y="3" width="1.6" height="1.6" fill={OUTLINE} />
+          </g>
+        ))}
+        {deck?.more && (
+          <>
+            <rect x="10" y="43" width="17" height="9" rx="4.5" fill="#FFFDF6" stroke={OUTLINE} stroke-width="1.4" />
+            <text x="18.5" y="50" text-anchor="middle" font-family="Archivo, sans-serif" font-weight="800" font-size="7" fill={OUTLINE}>
+              {deck.more}
+            </text>
+          </>
+        )}
       </svg>
       {needsYou && (
         <span class="ship-bang ping" aria-hidden="true">

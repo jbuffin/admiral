@@ -144,8 +144,9 @@ export const header = (page: Page) => page.getByRole('banner');
 /** The header's Needs You inbox button: "Needs you, <n> item(s)" or "Needs you, nothing waiting". */
 export const inboxButton = (page: Page) => header(page).getByRole('button', { name: /^Needs you, / });
 
-/** All ships in open water, or one by a part of its accessible name: "Board <name>, <Harness> in <Fleet>, <status in words>". */
-export const ships = (page: Page, name: RegExp = /^Board /) => water(page).getByRole('button', { name });
+/** All ships in open water (not their crew boats, "Board <crew>, teammate, crew of <ship>"), or one by a part of its
+ *  accessible name: "Board <name>, <Harness> in <Fleet>, <status in words>". */
+export const ships = (page: Page, name: RegExp = /^Board (?!.+, teammate, crew of ).+, .+ in .+, /) => water(page).getByRole('button', { name });
 
 // The status words in a ship's name: underway, needs you, "anchored, exited 3", sailing off.
 export const underwayIn = (fleet: string) => new RegExp(`^Board .+, Claude in ${fleet}, underway$`);

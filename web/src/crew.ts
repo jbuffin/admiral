@@ -34,3 +34,11 @@ const shellQuote = (a: string) => (/^[A-Za-z0-9._/][A-Za-z0-9._/-]*$/.test(a) ? 
 export function attachCommand(ship: string, crew?: string): string {
   return ['admiral attach', ...ship.split(' ').map(shellQuote), ...(crew === undefined ? [] : [shellQuote(crew)])].join(' ');
 }
+
+// A subagent's age: under a minute is "just started"; a start that does not parse shows none.
+export function age(start: string, now: number): string {
+  const t = Date.parse(start);
+  if (Number.isNaN(t)) return '';
+  const m = Math.max(0, Math.floor((now - t) / 60000));
+  return m < 1 ? 'just started' : `${m}m`;
+}

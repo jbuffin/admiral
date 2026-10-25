@@ -1,9 +1,31 @@
-import { useRef } from 'preact/hooks';
+import { signal } from '@preact/signals';
+import { CrewBoat } from './CrewBoat';
+import { crewAsks, deckLabel, plaqueNeeds, raft, subagentTip } from './crewSea';
 import { harnesses } from './harnesses';
+import { REACH_PX } from './placement';
 import { Ship } from './Ship';
-import { arrivals, board, botFor, bobDelay, drop, dragged, spotOf, visible, type WireShip } from './ships';
+import { arrivals, board, botFor, bobDelay, drop, dragged, popping, spotOf, visible, type WireShip } from './ships';
 
 const DRAG_THRESHOLD = 8;
+const TIP_MS = 2600;
+// tokens.json size.crewRaft (top-left of each crew boat, in px from the ship's top-left) and size.subagentBot.
+const RAFT_SPOTS = [
+  [-30, 44],
+  [-52, 58],
+  [-72, 40],
+];
+const BOAT_H = 33;
+// Presses that start on these act on their own tap; they never drag or board the ship.
+const OWN_TAPS = '.crew-boat, .crew-more, .deck-crew';
+
+// The ship whose subagents the deck tip lists, for a moment.
+const tip = signal<string | null>(null);
+let tipTimer: ReturnType<typeof setTimeout> | undefined;
+function showTip(session: string): void {
+  tip.value = session;
+  clearTimeout(tipTimer);
+  tipTimer = setTimeout(() => (tip.value = null), TIP_MS);
+}
 
 function statusWords(s: WireShip): string {
   switch (s.status) {
@@ -29,7 +51,7 @@ function detail(s: WireShip): string {
 // A press that stays under the threshold is a tap and boards the ship; one that moves is a drag
 // and moves it (Pointer Events, so touch and mouse). The spot is a fraction of open water.
 function press(e: PointerEvent, s: WireShip): void {
-  if (e.button !== 0 || !e.isPrimary) return;
+  if (e.button !== 0 || !e.isPrimary || (e.target as Element).closest(OWN_TAPS)) return;
   const el = e.currentTarget as HTMLElement;
   const layer = el.parentElement!;
   const id = e.pointerId;
@@ -38,8 +60,10 @@ function press(e: PointerEvent, s: WireShip): void {
   const water = layer.getBoundingClientRect();
   // A ship stays on the sea, not on the marinas' land.
   const sea = layer.parentElement?.querySelector('.sea')?.getBoundingClientRect() ?? water;
+  // A ship with crew keeps the crew boats' reach on its left in view.
+  const reach = s.crew?.length ? REACH_PX : 0;
   const room = {
-    x: [water.left, Math.min(water.right, sea.right) - start.width],
+    x: [water.left + reach, Math.min(water.right, sea.right) - start.width],
     y: [water.top, Math.min(water.bottom, sea.bottom) - start.height],
   };
   let moved = false;
@@ -93,23 +117,86 @@ function ShipView({ s }: { s: WireShip }) {
     .join(' ');
   // The slot waits for a spot before it shows.
   if (!spot) return null;
+  const crew = s.crew ?? [];
+  const subs = s.subagents ?? [];
+  const { shown, pill } = raft(crew);
+  const needs = plaqueNeeds(crew);
+  const asking = needsYou || needs !== null;
+  const bots = subs.length > 4 ? 3 : subs.length;
+  const deck = {
+    colors: subs.slice(0, bots).map((_, k) => botFor(`${s.session}#${k}`)),
+    more: subs.length > bots ? `+${subs.length - bots}` : '',
+  };
+  const [count, ...rest] = subagentTip(subs, Date.now()).split(' · ');
+  const last = RAFT_SPOTS[shown.length - 1];
   return (
-    <button
-      type="button"
+    <div
       class={cls}
-      // Clamped by the slot's largest box, so a ship stays in view when the window shrinks.
-      style={`left:clamp(0px,${spot.x * 100}%,100% - 140px);top:clamp(0px,${spot.y * 100}%,100% - 142px)`}
-      aria-label={`Board ${s.name}, ${label} in ${s.fleet_name}, ${statusWords(s)}`}
+      // Clamped by the slot's largest box, so a ship stays in view when the window shrinks; a ship with crew
+      // keeps their reach on its left in view too.
+      style={`left:clamp(${crew.length ? REACH_PX : 0}px,${spot.x * 100}%,100% - 140px);top:clamp(0px,${spot.y * 100}%,100% - 142px)`}
       onPointerDown={(e) => press(e, s)}
-      // A keyboard or assistive-technology activation has no pointer; a pointer's tap boards on release.
-      onClick={(e) => e.detail === 0 && board(s.session)}
     >
-      <Ship fleetColor={s.fleet_color} bot={botFor(s.session)} harness={s.harness} state={state} bobDelay={bobDelay(s.session)} />
-      <span class={needsYou ? 'plaque asking' : 'plaque'}>
-        <span class="plaque-name">{s.name}</span>
-        <span class="plaque-detail">{detail(s)}</span>
-      </span>
-    </button>
+      <button
+        type="button"
+        class="ship-btn"
+        aria-label={`Board ${s.name}, ${label} in ${s.fleet_name}, ${statusWords(s)}`}
+        // A keyboard or assistive-technology activation has no pointer; a pointer's tap boards on release.
+        onClick={(e) => e.detail === 0 && board(s.session)}
+      >
+        <Ship
+          fleetColor={s.fleet_color}
+          bot={botFor(s.session)}
+          harness={s.harness}
+          state={state}
+          bobDelay={bobDelay(s.session)}
+          deck={subs.length ? deck : undefined}
+        />
+        <span class={asking ? 'plaque asking' : 'plaque'}>
+          <span class="plaque-name">{s.name}</span>
+          <span class="plaque-detail">{needs ?? detail(s)}</span>
+        </span>
+      </button>
+      {shown.map((c, j) => {
+        const [x, y] = RAFT_SPOTS[j];
+        const anchored = c.status === 'anchored';
+        const asks = crewAsks(c);
+        const key = `${s.session}/${c.name}`;
+        return (
+          <button
+            key={c.name}
+            type="button"
+            class={popping.value.has(key) ? 'crew-boat pop' : 'crew-boat'}
+            style={`left:${x}px;top:${y}px`}
+            aria-label={`Board ${c.name}, teammate, crew of ${s.name}${asks ? ', needs you' : anchored ? ', anchored' : ''}`}
+            onClick={() => board(s.session, c.name)}
+          >
+            <span class={anchored ? 'crew-still' : 'bob'} style={`display:block;position:relative;${anchored ? '' : `animation-delay:-${(j * 0.6 + 0.3).toFixed(1)}s`}`}>
+              <CrewBoat boat={c} stripe={s.fleet_color} bot={botFor(key)} size="sea" />
+              {asks && (
+                <span class="crew-bang ping" aria-hidden="true">
+                  !
+                </span>
+              )}
+            </span>
+          </button>
+        );
+      })}
+      {pill && (
+        <button type="button" class="crew-more" style={`left:${last[0] + 4}px;top:${last[1] + BOAT_H + 14}px`} aria-label={pill.name} onClick={() => board(s.session)}>
+          <span>{pill.text}</span>
+        </button>
+      )}
+      {subs.length > 0 && (
+        <button type="button" class="deck-crew" aria-label={deckLabel(s.name, subs)} onClick={() => showTip(s.session)} />
+      )}
+      {subs.length > 0 && tip.value === s.session && (
+        <div class="deck-tip" role="status" style={`top:${-14 - Math.ceil(subs.length / 2) * 17}px`}>
+          <b>{count}</b>
+          {` · ${rest.join(' · ')}`}
+        </div>
+      )}
+    </div>
   );
 }
 

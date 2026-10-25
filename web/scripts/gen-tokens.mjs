@@ -18,8 +18,8 @@ function walk(value, path) {
   } else if (value && typeof value === 'object') {
     for (const [k, v] of Object.entries(value)) walk(v, [...path, k]);
   } else {
-    // Sizes are CSS px; motion entries are prose, so they stay out of CSS.
-    if (path[0] === 'motion') return;
+    // Sizes are CSS px; motion entries and notes are prose, so they stay out of CSS.
+    if (path[0] === 'motion' || path.at(-1) === 'note') return;
     const px = typeof value === 'number';
     vars.push(`  --${path.map(kebab).join('-')}: ${px ? `${value}px` : value};`);
   }

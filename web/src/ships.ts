@@ -1,8 +1,9 @@
 import { computed, effect, signal } from '@preact/signals';
 import { chime } from './chime';
 import { config, type HarnessName } from './config';
+import { shouldChime } from './crewSea';
 import { connectionState, onMessage } from './connection';
-import { FOOTPRINT, INSET, KEEP_OUT, placeShip, type PlacedShip } from './placement';
+import { FOOTPRINT, INSET, KEEP_OUT, REACH, placeShip, type PlacedShip } from './placement';
 
 // A teammate's crew boat on the `ships` message (internal/ships/crew.go). A live boat has no exit_code or exit_signal.
 export interface WireCrew {
@@ -121,6 +122,20 @@ window.addEventListener('admiral:launched', (e) => {
   if (!ships.peek().some((s) => s.session === e.detail.session)) announced.set(e.detail.session, Date.now());
 });
 
+// Crew boats (`<session>/<crew>`) that joined a ship after the page's first `ships` message: they pop in.
+// A boat there from the start (a reconnect, a server restart) does not.
+export const popping = signal<ReadonlySet<string>>(new Set());
+const POP_MS = 1200; // the animation takes 0.6 s
+
+function pop(keys: string[]): void {
+  popping.value = new Set([...popping.value, ...keys]);
+  setTimeout(() => {
+    const next = new Set(popping.value);
+    for (const k of keys) next.delete(k);
+    popping.value = next;
+  }, POP_MS);
+}
+
 function arrive(session: string): void {
   arrivals.value = new Set(arrivals.value).add(session);
   setTimeout(() => {
@@ -134,13 +149,16 @@ onMessage('ships', (msg: { ships: WireShip[] }) => {
   const before = new Map(ships.value.map((s) => [s.session, s]));
   const first = baseline;
   const now = msg.ships;
-  let asking = false;
   for (const [session, at] of announced) if (Date.now() - at > ANNOUNCED_MS) announced.delete(session);
   for (const s of now) {
     const was = before.get(s.session);
     if (!first) {
       if (!was) arrive(s.session);
-      else if (was.status !== 'needs_you' && s.status === 'needs_you') asking = true;
+      else {
+        const known = new Set(was.crew?.map((c) => c.name));
+        const joined = (s.crew ?? []).filter((c) => !known.has(c.name)).map((c) => `${s.session}/${c.name}`);
+        if (joined.length) pop(joined);
+      }
     } else if (announced.has(s.session)) arrive(s.session);
     announced.delete(s.session);
     if (s.status === 'sailing_off' && !sailedOff.has(s.session)) {
@@ -153,7 +171,7 @@ onMessage('ships', (msg: { ships: WireShip[] }) => {
       }, SAIL_OFF_MS);
     }
   }
-  if (asking) chime(); // once, however many ships turned needs you in this message
+  if (shouldChime([...before.values()], now, first)) chime(); // once, however many ships or crew boats turned needs you
   baseline = false;
   ships.value = now;
   shipsLoaded.value = true;
@@ -245,7 +263,7 @@ effect(() => {
   });
   const next = new Map(known);
   for (const s of pending) {
-    const spot = placeShip({ fleets, placed, ship: s, footprint: FOOTPRINT, keepOut: KEEP_OUT, inset: INSET });
+    const spot = placeShip({ fleets, placed, ship: s, footprint: FOOTPRINT, keepOut: KEEP_OUT, inset: INSET, reach: REACH });
     placed.push({ session: s.session, fleet: s.fleet, ...spot });
     next.set(s.session, spot);
     putPosition(s.session, spot);
