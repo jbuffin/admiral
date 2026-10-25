@@ -48,7 +48,7 @@ The harbor on the land side of the screen that belongs to one fleet. It holds on
 _Avoid_: shipyard, yard (older design names)
 
 **Dock**:
-One harness within one fleet (Work Fleet's Claude dock). Dropping an order on a dock opens launch orders for that fleet and harness, and tapping a dock with no order selected opens launch orders without one. A ship waits moored at each dock.
+One harness within one fleet (Work Fleet's Claude dock). Dropping an order on a dock opens launch orders for that fleet and harness, as does picking the dock in the phone's dock sheet after tapping an order, and tapping a dock with no order selected opens launch orders without one. A ship waits moored at each dock.
 _Avoid_: slot, target
 
 **Launch orders**:
