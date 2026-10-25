@@ -84,6 +84,11 @@ func parseFlags(fs *flag.FlagSet, args []string) error {
 		}
 		return &UsageError{err.Error()}
 	}
+	if f := fs.Lookup("port"); f != nil {
+		if _, err := parsePort(f.Value.String()); err != nil {
+			return &UsageError{"--port: " + err.Error()}
+		}
+	}
 	return nil
 }
 

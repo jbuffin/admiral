@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -28,8 +27,12 @@ type shipsBody struct {
 // serves this home (its `home` field is home.ID of dir): another Admiral may hold
 // the port.
 func probe(port, dir string) (shipsBody, bool) {
+	base, err := loopbackURL(port)
+	if err != nil {
+		return shipsBody{}, false
+	}
 	client := &http.Client{Timeout: time.Second}
-	resp, err := client.Get("http://" + net.JoinHostPort("127.0.0.1", port) + "/api/ships")
+	resp, err := client.Get(base + "/api/ships")
 	if err != nil {
 		return shipsBody{}, false
 	}

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -79,7 +78,11 @@ func Lock(args []string, std IO) error {
 	if *wait {
 		q.Set("wait", "1")
 	}
-	target := "http://" + net.JoinHostPort("127.0.0.1", *port) + "/api/resources/" + url.PathEscape(resource) + "/lock?" + q.Encode()
+	base, err := loopbackURL(*port)
+	if err != nil {
+		return err
+	}
+	target := base + "/api/resources/" + url.PathEscape(resource) + "/lock?" + q.Encode()
 	// No client timeout: it would cut the hold, which is the response body.
 	resp, err := (&http.Client{}).Post(target, "", nil)
 	if err != nil {
