@@ -200,7 +200,9 @@ function QuestionBody({ entry }: { entry: Entry }) {
 }
 
 function StopBody({ entry, name }: { entry: Entry; name: string }) {
-  const code = entry.ship?.reason ?? 'unknown';
+  const code = (entry.crew ? entry.crew.reason : entry.ship?.reason) ?? 'unknown';
+  const crew = entry.crew;
+  const wait = crew ? new Date(entry.since).toISOString() : (entry.ship?.stop_since ?? '');
   return (
     <>
       <div class="inbox-reason">
@@ -208,15 +210,15 @@ function StopBody({ entry, name }: { entry: Entry; name: string }) {
           <span class="inbox-reason-words">{reasonWords(code)}</span>
           <span class="inbox-reason-code">{code}</span>
         </span>
-        <span class="inbox-waiting">Waiting {waited(entry.ship?.stop_since ?? '', clock.value)}</span>
+        <span class="inbox-waiting">Waiting {waited(wait, clock.value)}</span>
       </div>
       <div class="inbox-send-row">
         <button
           type="button"
           class="press inbox-primary inbox-attach"
-          aria-label={`Attach to ${name} and open its bridge`}
+          aria-label={crew ? `Attach to ${crew.name}, crew of ${entry.ship?.name ?? entry.session} and open its bridge` : `Attach to ${name} and open its bridge`}
           onClick={() => {
-            board(entry.session);
+            board(entry.session, crew?.name);
             if (!wide.value) closeInbox(false); // the drawer stays beside the bridge; the sheet would cover it
           }}
         >
@@ -479,13 +481,14 @@ function FindingsBody({ entry }: { entry: Entry }) {
 
 function Item({ entry }: { entry: Entry }) {
   const ship = entry.ship ?? ships.value.find((s) => s.session === entry.session);
-  const name = entry.item?.name ?? ship?.name ?? entry.session;
+  const shipName = entry.item?.name ?? ship?.name ?? entry.session;
+  const name = entry.crew ? `${shipName} › ${entry.crew.name}` : shipName;
   if (entry.folded !== null) return <Fold text={entry.folded} name={name} />;
   const harness = entry.item?.harness ?? ship?.harness ?? '';
   const [tag, tagBg] = KIND[entry.type === 'stop' ? 'stop' : (entry.item?.kind ?? 'question')] ?? KIND.question;
   const title = entry.item ? entry.item.title : [ship?.order_id, ship?.title].filter(Boolean).join(' ') || ship?.repo || name;
   const href = safeHref(entry.item?.order_url);
-  const since = entry.item?.created ?? ship?.stop_since;
+  const since = entry.item?.created ?? (entry.crew ? new Date(entry.since).toISOString() : ship?.stop_since);
   return (
     <article class="inbox-item">
       <div class="inbox-head">
