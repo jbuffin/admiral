@@ -154,6 +154,17 @@ export function releaseCrew(sea: Sea, session: string, crew: string, name: strin
   writeFileSync(join(sea.world.root, 'rec', session, 'crew', crew, name), '');
 }
 
+/** Hook cues (`event <json>`) that start and stop a subagent in the ship's pane. */
+export const SUB_START = '{"hook_event_name":"SubagentStart","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore"}';
+export const SUB_STOP = '{"hook_event_name":"SubagentStop","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore","background_tasks":[]}';
+
+type Wire = { session: string; status: string; reason?: string; position: { x: number; y: number } | null; subagents: { type: string }[]; crew: { name: string; status: string }[] };
+/** One ship as GET /api/ships lists it. */
+export const wireOf = async (url: string, session: string) => {
+  const body = await (await fetch(`${url}api/ships`)).json();
+  return ((Array.isArray(body) ? body : body.ships) as Wire[]).find((s) => s.session === session);
+};
+
 /** Writes to a crew boat's pane terminal, as paneWrite does for the ship's. */
 export function crewPaneWrite(sea: Sea, session: string, crew: string, data: string) {
   const sock = join(sea.world.root, 'tmux.sock');
