@@ -58,6 +58,15 @@
 #   altscreen      switch to the alternate screen (\033[?1049h), set application cursor
 #                  keys (\033[?1h) and bracketed paste (\033[?2004h), clear it and print
 #                  "ALT SCREEN" at the top left, leaving the cursor at column 10, row 0
+#   bracketedpaste ask the terminal for bracketed paste (\033[?2004h) without the
+#                  alternate screen, so tmux's `paste-buffer -p` brackets what it pastes
+#   record         start the raw-stdin recorder now, in the background, and create
+#                  `recording`. The terminal goes raw (stty raw -echo) from here on, so
+#                  later output has no NL to CRLF translation; put `record` first in a
+#                  cue file that prints nothing, or in none that relies on cooked output.
+#                  Every byte read is appended to `stdin` while the later cues run, so a
+#                  `wait <name>` then `event SessionStart ...` can follow input. Without
+#                  it the recorder starts only after the cues end, as below.
 #   wait <name>    block until the file <FAKE_RECORD_DIR>/<tmux session>/<name> exists,
 #                  so a test decides when the next cue (an exit, say) runs
 #
@@ -66,7 +75,8 @@
 # NL to CRLF on output), creates `cues-done`, and stays running until the tmux
 # server is killed. From then on it is the raw-stdin recorder: it appends every
 # byte it reads to `stdin` in the recording directory, exactly as received. A
-# test sends input only after `cues-done` exists.
+# test sends input only after `cues-done` exists (or `recording`, after a
+# `record` cue, which starts the recorder before the other cues).
 
 # The first things it does: check the ship's directories exist, and read the
 # session options, so a test can prove Admiral made and set them before the
@@ -96,6 +106,7 @@ printf '%s\n' "$firstw" >"$d/window-options"
 printf '%s\n' "$dirs" >"$d/dirs"
 : >"$d/recorded"
 
+exec 3<&0 # the terminal, for a `record` cue: the loop below reads the cue file on fd 0
 if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 	while read -r cmd arg; do
 		case "$cmd" in
@@ -130,6 +141,13 @@ if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 		sleep) sleep "$arg" ;;
 		lines) awk -v n="$arg" 'BEGIN { for (i = 1; i <= n; i++) printf "\033[3%dmline %04d\033[0m\n", i % 6 + 1, i }' ;;
 		altscreen) printf '\033[?1049h\033[?1h\033[?2004h\033[2J\033[HALT SCREEN' ;;
+		bracketedpaste) printf '\033[?2004h' ;;
+		record)
+			stty raw -echo <&3 2>/dev/null
+			cat -u <&3 >>"$d/stdin" &
+			recorder=$!
+			: >"$d/recording"
+			;;
 		wait)
 			while [ ! -e "$d/$arg" ]; do sleep 0.1; done
 			;;
@@ -142,4 +160,9 @@ if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 fi
 stty raw -echo 2>/dev/null
 : >"$d/cues-done"
+# After a `record` cue the recorder already runs; stay as long as it does.
+if [ -n "$recorder" ]; then
+	wait "$recorder"
+	exit
+fi
 exec cat -u >"$d/stdin"
