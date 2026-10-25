@@ -38,6 +38,9 @@ type chatSession struct {
 	State    string    `json:"state"`
 	Messages []chatMsg `json:"messages"`
 	Error    string    `json:"error"`
+	// The brief says the `chat` message has the shape of GET /api/chat/session;
+	// ships nests its payload, so a nested {"chat": {...}} is read as well.
+	Chat *chatSession `json:"chat"`
 }
 
 // chatWorld is a world whose config has one fleet, "chat", for the chat only,
@@ -109,6 +112,24 @@ func (c *chatWorld) waitStdin(want string) {
 		}
 		if time.Now().After(deadline) {
 			c.t.Fatalf("within 5s the fake's terminal input never became %q; it is %q", want, got)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func (c *chatWorld) waitStdinOneOf(wants ...string) {
+	c.t.Helper()
+	var got string
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		got = c.stdin()
+		for _, w := range wants {
+			if got == w {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			c.t.Fatalf("within 5s the fake's terminal input never became one of %q; it is %q", wants, got)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -252,6 +273,9 @@ func waitChatWS(t *testing.T, c *websocket.Conn, d time.Duration, what string, p
 			continue
 		}
 		last = string(data)
+		if m.Chat != nil {
+			m = *m.Chat
+		}
 		if pred(m) {
 			return m
 		}
@@ -318,6 +342,11 @@ func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
 
 	if s := c.session(); s.Running || s.State != "" {
 		t.Fatalf("before the chat starts: %+v, want running false and state \"\"", s)
+	}
+	for _, path := range []string{"/api/chat/messages", "/api/chat/new"} {
+		if code, _ := send(t, http.MethodPost, w.in.LocalURL+path, map[string]any{"text": "hello"}); code != http.StatusConflict {
+			t.Errorf("POST %s while the chat is not running = %d, want 409", path, code)
+		}
 	}
 	// A tmux server that outlived another Admiral, or was started from a ship's shell.
 	for _, kv := range [][2]string{{"ADMIRAL_SHIP", "leak-ship"}, {"ADMIRAL_REPORT", "/leak/report"}, {"ADMIRAL_INBOX", "/leak/inbox"},
@@ -468,10 +497,10 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 		sessionStartCue(tp1, "startup"),
 		"wait go-prompt",
 		`event UserPromptSubmit {"prompt":"hello"}`,
-		"wait go-stop",
-		`event Stop {"background_tasks":[]}`,
 		"wait go-perm",
 		`event Notification {"notification_type":"permission_prompt"}`,
+		"wait go-stop",
+		`event Stop {"background_tasks":[]}`,
 		"wait go-clear",
 		sessionStartCue(tp2, "clear"),
 	)
@@ -492,14 +521,6 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 		}
 		if got := c.stdin(); got != "" {
 			t.Errorf("the refused message reached the pane: %q", got)
-		}
-	})
-
-	t.Run("send is validated", func(t *testing.T) {
-		for name, text := range map[string]string{"empty": "", "blank": " \n\t ", "too long": strings.Repeat("x", 17*1024)} {
-			if code, _ := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/messages", map[string]any{"text": text}); code != http.StatusBadRequest {
-				t.Errorf("POST /api/chat/messages with %s text = %d, want 400", name, code)
-			}
 		}
 	})
 
@@ -554,10 +575,18 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 
 	t.Run("state follows the hooks", func(t *testing.T) {
 		c := &chatWorld{world: w.at(t), cfgDir: c.cfgDir}
-		for _, step := range []struct{ file, state string }{{"go-prompt", "working"}, {"go-stop", "idle"}, {"go-perm", "waiting"}} {
+		for _, step := range []struct{ file, state string }{{"go-prompt", "working"}, {"go-perm", "waiting"}, {"go-stop", "idle"}} {
 			c.touch(step.file)
 			c.waitSession(5*time.Second, "state "+step.state, func(s chatSession) bool { return s.State == step.state })
 			waitChatWS(t, ws2, 5*time.Second, "state "+step.state, func(s chatSession) bool { return s.State == step.state })
+		}
+	})
+
+	t.Run("send is validated", func(t *testing.T) {
+		for name, text := range map[string]string{"empty": "", "blank": " \n\t ", "too long": strings.Repeat("x", 64*1024)} {
+			if code, _ := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/messages", map[string]any{"text": text}); code != http.StatusBadRequest {
+				t.Errorf("POST /api/chat/messages with %s text = %d, want 400", name, code)
+			}
 		}
 	})
 
@@ -590,7 +619,8 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 		}
 		waitChatWS(t, ws1, 3*time.Second, "an empty conversation", messagesAre())
 		waitChatWS(t, ws2, 3*time.Second, "an empty conversation", messagesAre())
-		c.waitStdin(want + "/clear\r")
+		// /clear typed as keys, or pasted as one bracketed paste: either reaches the pane.
+		c.waitStdinOneOf(want+"/clear\r", want+"\x1b[200~/clear\x1b[201~\r")
 		c.touch("go-clear")
 		c.waitEvents(5)
 		c.stays(1500*time.Millisecond, "an empty conversation after SessionStart (clear)", messagesAre())
@@ -600,7 +630,7 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 
 	t.Run("a restarted Admiral serves the same conversation", func(t *testing.T) {
 		c := &chatWorld{world: w.at(t), cfgDir: c.cfgDir}
-		w.restart()
+		c.restart()
 		got := c.waitSession(10*time.Second, "the same conversation", messagesAre("user: After the clear"))
 		if !got.Running || got.Error != "" {
 			t.Errorf("after the restart: %+v, want running with no error", got)
@@ -668,11 +698,12 @@ func TestChatSession_OnlyARealTranscriptUnderProjectsIsRead(t *testing.T) {
 	appendLines(t, real, good, `{"type":"user","uuid":"big","message":{"role":"user","content":"`+strings.Repeat("y", 1<<20+10)+`"}}`,
 		userLine("u-2", "Another real line", nil))
 
+	appendLines(t, filepath.Join(c.cfgDir, "projects", "p", "viaLink.jsonl"), userLine("v-1", "Read through the link", nil))
 	linked := filepath.Join(c.cfgDir, "projects", "p", "linked.jsonl")
 	if err := os.Symlink(real, linked); err != nil {
 		t.Fatal(err)
 	}
-	outside := filepath.Join(w.root, "outside", "x.jsonl")
+	outside := filepath.Join(c.cfgDir, "elsewhere", "x.jsonl")
 	appendLines(t, outside, userLine("o-1", "OUTSIDE-NOISE", nil))
 	realDir := filepath.Join(c.cfgDir, "elsewhere")
 	appendLines(t, filepath.Join(realDir, "viadir.jsonl"), userLine("d-1", "DIRLINK-NOISE", nil))
@@ -683,7 +714,8 @@ func TestChatSession_OnlyARealTranscriptUnderProjectsIsRead(t *testing.T) {
 		"wait go-1", sessionStartCue(linked, "startup"),
 		"wait go-2", sessionStartCue(outside, "startup"),
 		"wait go-3", sessionStartCue(filepath.Join(c.cfgDir, "projects", "dirlink", "viadir.jsonl"), "startup"),
-		"wait go-4", sessionStartCue(real, "startup"))
+		"wait go-4", sessionStartCue(real, "startup"),
+		"wait go-5", sessionStartCue(filepath.Join(w.root, "cfglink", "projects", "p", "viaLink.jsonl"), "startup"))
 	w.start()
 	c.start()
 	c.waitFile(chatSessionName, "recording")
@@ -694,7 +726,14 @@ func TestChatSession_OnlyARealTranscriptUnderProjectsIsRead(t *testing.T) {
 		c.stays(1500*time.Millisecond, "no messages for "+what, messagesAre())
 	}
 	c.touch("go-4")
-	c.waitSession(10*time.Second, "the real transcript's lines (the over-long line skipped)", messagesAre("user: A real line", "user: Another real line"))
+	real2 := []string{"user: A real line", "user: Another real line"}
+	c.waitSession(10*time.Second, "the real transcript's lines (the over-long line skipped)", messagesAre(real2...))
+	// Claude may report the path through the link a dotfiles config dir is; a
+	// different transcript named that way must be read too (the dock's
+	// CLAUDE_CONFIG_DIR is that link).
+	c.touch("go-5")
+	c.waitEvents(5)
+	c.waitSession(10*time.Second, "the transcript named through the config dir's link", messagesAre("user: Read through the link"))
 }
 
 // C22: over a LAN address the chat's routes need the token, as the others do.
