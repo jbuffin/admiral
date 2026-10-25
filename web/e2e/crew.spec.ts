@@ -367,10 +367,15 @@ test.describe('a crew boat in the inbox', () => {
     // so the key has a socket to travel on.
     crewPaneWrite(s, ship.session, 'api', 'crew-screen\r\n');
     await expect.poll(() => screenText(page)).toContain('crew-screen');
+    // The sheet closed at Attach; open it again before the key, so the fold shows while it is open whenever the
+    // push lands (the fold is held for 5 s only).
+    if (!wide(info)) await press(inboxButton(page), touch);
+    await expect(panel(page, info).getByText(`${ship.name} › api`, { exact: true })).toBeVisible();
     await termInput(page).focus();
     await page.keyboard.type('y');
-    if (!wide(info)) await press(inboxButton(page), touch);
-    await expect(panel(page, info).getByRole('status').filter({ hasText: 'Back underway' })).toBeVisible();
+    const fold = panel(page, info).getByRole('status').filter({ hasText: 'Back underway' });
+    await expect(fold).toBeVisible();
+    await expect(fold.getByText(`${ship.name} › api`, { exact: true })).toBeVisible();
     await expect(inboxButton(page)).toHaveAccessibleName('Needs you, nothing waiting');
   });
 });
