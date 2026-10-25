@@ -1,6 +1,8 @@
 package launcher
 
 import (
+	_ "embed"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -9,6 +11,78 @@ import (
 
 	"github.com/jbuffin/admiral/internal/config"
 )
+
+// skillText is the AdmiralBot skill (ADR 0020), written at every chat start.
+//
+//go:embed admiralbot/SKILL.md
+var skillText []byte
+
+// chatPrompt is the paragraph appended to the chat's system prompt.
+const chatPrompt = "You are AdmiralBot, the engineer's assistant in Admiral. Use the admiralbot skill for everything you do. " +
+	"You only add orders: you never launch ships and never change files."
+
+// fenceFlags are the dock args that skip or change the permissions the chat is
+// started with; a dock that holds one is refused (ADR 0020).
+var fenceFlags = []string{"--dangerously-skip-permissions", "--allow-dangerously-skip-permissions",
+	"--permission-mode", "--setting-sources", "--tools"}
+
+// fenceFlag is the first of the dock's args that is one of fenceFlags, also in
+// its --flag=value form.
+func fenceFlag(args []string) (string, bool) {
+	for _, a := range args {
+		name, _, _ := strings.Cut(a, "=")
+		for _, f := range fenceFlags {
+			if name == f {
+				return f, true
+			}
+		}
+	}
+	return "", false
+}
+
+// WriteChatSkill writes the AdmiralBot skill to
+// $ADMIRAL_HOME/chat/.claude/skills/admiralbot/SKILL.md through a root on home:
+// a temp file and a rename, so a link planted at the path is replaced and never
+// followed. A directory on the way that is a link is refused.
+func WriteChatSkill(home string) error {
+	root, err := os.OpenRoot(home)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	dir := ""
+	for _, part := range []string{"chat", ".claude", "skills", "admiralbot"} {
+		dir = filepath.Join(dir, part)
+		fi, err := root.Lstat(dir)
+		switch {
+		case os.IsNotExist(err):
+			if err := root.Mkdir(dir, 0o700); err != nil {
+				return err
+			}
+		case err != nil:
+			return err
+		case !fi.IsDir():
+			return fmt.Errorf("%s is not a directory", dir)
+		}
+	}
+	tmp := filepath.Join(dir, ".SKILL.md.tmp")
+	_ = root.Remove(tmp)
+	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(skillText)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = root.Rename(tmp, filepath.Join(dir, "SKILL.md"))
+	}
+	if err != nil {
+		_ = root.Remove(tmp)
+	}
+	return err
+}
 
 // ChatSession is the chat's tmux session name; sessionhost.ChatName is this.
 const ChatSession = "_chat"
@@ -64,6 +138,9 @@ func (l *Launcher) StartChat() error {
 	if !found {
 		return refuse(http.StatusBadRequest, "claude executable %s not found for fleet %s", dock.Executable, fleet.Name)
 	}
+	if f, bad := fenceFlag(dock.Args); bad {
+		return refuse(http.StatusConflict, "fleet %s's Claude dock has %s in its args, which would change what the chat may run: remove it to start the chat", fleet.Name, f)
+	}
 	home, err := filepath.Abs(l.Home)
 	if err != nil {
 		return refuse(http.StatusInternalServerError, "could not resolve %s: %v", l.Home, err)
@@ -71,6 +148,9 @@ func (l *Launcher) StartChat() error {
 	dir := ChatDir(home)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return refuse(http.StatusInternalServerError, "could not create %s: %v", dir, err)
+	}
+	if err := WriteChatSkill(home); err != nil {
+		return refuse(http.StatusInternalServerError, "could not write the AdmiralBot skill: %v", err)
 	}
 
 	// Each value is its own argument: nothing here goes through a shell.
@@ -80,7 +160,9 @@ func (l *Launcher) StartChat() error {
 	if chat.Effort != "" {
 		argv = append(argv, "--effort", chat.Effort)
 	}
-	argv = append(argv, "--settings", claudeChatSettingsPath(l.Home))
+	// The fence (ADR 0020): after the dock's args, each flag and value its own element.
+	argv = append(argv, "--permission-mode", "dontAsk", "--setting-sources", "project", "--tools", "Bash,Skill,Read",
+		"--append-system-prompt", chatPrompt, "--settings", claudeChatSettingsPath(l.Home))
 
 	// Admiral's own environment may hold a ship's variables, and the tmux server
 	// may too (one that outlived an earlier Admiral, or started from a ship's
@@ -98,6 +180,9 @@ func (l *Launcher) StartChat() error {
 	}
 	env["ADMIRAL_HOME"] = home
 	delete(unset, "ADMIRAL_HOME")
+	if l.Port != "" {
+		env["ADMIRAL_PORT"] = l.Port
+	}
 	for k := range env {
 		delete(unset, k)
 	}

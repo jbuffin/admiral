@@ -63,7 +63,12 @@ func claudeSettings() any {
 	}}
 }
 
-// claudeChatSettings is the chat session's bundle (ADR 0019). It registers only
+// ChatAllow is what the chat's Claude may run without a prompt (ADR 0020), and
+// nothing else: the chat runs under --permission-mode dontAsk.
+var ChatAllow = []any{"Bash(admiral ships *)", "Bash(admiral outcomes *)", "Bash(admiral inbox *)",
+	"Bash(admiral orders *)", "Bash(admiral chat ask *)", "Skill(admiralbot)"}
+
+// claudeChatSettings is the chat session's bundle (ADR 0019, 0020). It registers only
 // what the chat needs: SessionStart (the transcript's path), the events that set
 // working, idle and waiting, and nothing else. Not idle_prompt, which fires after
 // a minute of quiet and would turn every idle chat into waiting; not
@@ -79,7 +84,11 @@ func claudeChatSettings() any {
 		}
 		return g
 	}
-	return map[string]any{"hooks": map[string]any{
+	return map[string]any{"permissions": map[string]any{
+		"allow":                               ChatAllow,
+		"deny":                                []any{"Edit", "Write", "NotebookEdit"},
+		"blockReadsOutsideWorkingDirectories": true,
+	}, "hooks": map[string]any{
 		"SessionStart":     []any{group("", "SessionStart")},
 		"UserPromptSubmit": []any{group("", "UserPromptSubmit")},
 		"PreToolUse":       []any{group("AskUserQuestion", "PreToolUse")},

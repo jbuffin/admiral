@@ -93,6 +93,7 @@ type Launcher struct {
 	Tmux   string // the tmux binary
 	Socket string
 	Home   string // $ADMIRAL_HOME
+	Port   string // the port Admiral listens on; the chat's ADMIRAL_PORT
 	Config func() *config.Config
 	// Kept says whether a session's inbox is kept after the ship sailed off
 	// (ADR 0016). Its name is never picked, so the launch cannot clear the inbox.
@@ -212,7 +213,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		return nil, err
 	}
 
-	// Admiral owns these names: a hand launch has none of them, and an autopilot
+	// Admiral owns these names (ADMIRAL_PORT is the chat's alone): a hand launch has none of them, and an autopilot
 	// launch has ADMIRAL_AUTO_MERGE only when its panel names a method, even if
 	// the fleet's env or Admiral's own environment (which the tmux server
 	// inherits) sets them.
@@ -225,7 +226,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 			ours["ADMIRAL_AUTO_MERGE"] = req.AutoMerge
 		}
 	}
-	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE"} {
+	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT"} {
 		if v, ok := ours[k]; ok {
 			env[k] = v
 			continue
