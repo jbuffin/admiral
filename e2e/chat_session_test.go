@@ -382,8 +382,10 @@ func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
 		if settings == "" {
 			t.Fatalf("argv = %q has no --settings <bundle>", r.argv)
 		}
-		if !(idx("--fa-chat") >= 0 && idx("--fa-chat") < idx("--model") && idx("--model") < idx("--settings")) {
-			t.Errorf("argv = %q, want the dock's args, then the chat's own, then the hook flags", r.argv)
+		// ADR 0020: the chat takes the dock's executable and env, never its args (a
+		// ship's args commonly widen permissions), so its own argv is all it gets.
+		if idx("--fa-chat") >= 0 || !(idx("--model") >= 0 && idx("--model") < idx("--settings")) {
+			t.Errorf("argv = %q, want no dock args, then the chat's own, then the hook flags", r.argv)
 		}
 		if settings == filepath.Join(w.home, "harness", "claude-settings.json") {
 			t.Errorf("the chat uses the ships' bundle %s; it needs its own", settings)
