@@ -54,12 +54,15 @@ When the panel, or anything else, is a real choice, ask instead of guessing, the
 
 ```sh
 admiral chat ask <<'EOF'
-{"title": "Where should this order go?",
- "questions": [{"id": "panel", "text": "Which panel?", "multi": false,
-                "options": [{"label": "Freeform", "description": "your own list"},
-                            {"label": "Work queue"}]}]}
+title: Where should this order go?
+question: panel | Which panel?
+multi: false
+option: Freeform | your own list
+option: Work queue
 EOF
 ```
+
+One `key: value` per line. `question: <id> | <text>` starts a question, and the `multi:` and `option:` lines after it belong to it (`multi: true` lets the engineer pick several). `option: <label> | <description>` takes the description only if it has one. Keep `|` out of labels. Do not write the question as JSON: a body with both `{` and `"` is refused in this chat.
 
 It prints the answer as JSON, with the chosen label under `answers.<id>.choice` (a list on a `multi` question) and any words of the engineer's own under `other`.
 

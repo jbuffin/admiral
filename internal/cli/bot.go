@@ -304,6 +304,9 @@ func Chat(args []string, std IO) error {
 		if err != nil {
 			return err
 		}
+		if b, err = askForm(b); err != nil {
+			return err
+		}
 		if id, err = writeQuestion(root, b); err != nil {
 			return err
 		}
