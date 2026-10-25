@@ -4555,3 +4555,20 @@ body.dragging * {
     animation: none !important;
   }
 }
+
+/* A phone turned sideways has about 400px of height: the title and its subtitle share one line, so the thread keeps room. */
+@media (max-height: 499px) {
+  .chat-head {
+    padding: 4px 12px;
+  }
+
+  .chat-avatar.big {
+    display: none;
+  }
+
+  .chat-titles {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 10px;
+  }
+}
