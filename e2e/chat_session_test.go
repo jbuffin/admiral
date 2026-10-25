@@ -424,7 +424,8 @@ func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
 			t.Errorf("env PATH = %q, want $ADMIRAL_HOME/bin first", r.env["PATH"])
 		}
 		for k := range r.env {
-			if strings.HasPrefix(k, "ADMIRAL_") && k != "ADMIRAL_HOME" {
+			// ADMIRAL_PORT is the chat's own since ADR 0020: the port Admiral listens on.
+			if strings.HasPrefix(k, "ADMIRAL_") && k != "ADMIRAL_HOME" && !(k == "ADMIRAL_PORT" && r.env[k] == w.in.Port) {
 				t.Errorf("env has %s=%q; the tmux server's global environment must not reach the chat", k, r.env[k])
 			}
 		}
