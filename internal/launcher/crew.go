@@ -29,6 +29,9 @@ type CrewRequest struct {
 	Prompt  string
 	Args    []string // pass-through harness args (--arg), after the hook flags and before the prompt
 	Role    string   // optional @admiral-role; the caller has checked its shape
+	// Autopilot is a caller with ADMIRAL_AUTOPILOT=1: only claude launches, and
+	// Args must fit the autopilot args allowlist.
+	Autopilot bool
 }
 
 // shipEnvNames are the ship's own variables; a teammate gets none of them (a
@@ -97,6 +100,14 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	}
 	if err := RefuseHookArgs(req.Harness, req.Args); err != nil {
 		return err
+	}
+	if req.Autopilot {
+		if req.Harness != "claude" {
+			return fmt.Errorf("a caller with ADMIRAL_AUTOPILOT=1 can launch only claude crew: %s has no autopilot guard", req.Harness)
+		}
+		if err := AutopilotArgs(req.Harness, dock.Args, req.Args); err != nil {
+			return err
+		}
 	}
 	exe, found := dock.Resolve()
 	if !found {

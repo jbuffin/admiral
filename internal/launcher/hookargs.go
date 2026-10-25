@@ -104,14 +104,7 @@ func hookArg(harness, arg, next string) string {
 // features table or the hooks feature, or a profile (which layers a config file).
 func codexConfigRefused(kv string) bool {
 	key, _, _ := strings.Cut(kv, "=")
-	// Codex trims the key like Rust's str::trim (every Unicode space) and reads
-	// quoted TOML segments, so drop spaces and quotes everywhere.
-	key = strings.Map(func(r rune) rune {
-		if unicode.IsSpace(r) || r == '"' || r == '\'' {
-			return -1
-		}
-		return r
-	}, key)
+	key = configKey(key)
 	switch {
 	case key == "hooks", strings.HasPrefix(key, "hooks."),
 		key == "features", key == "profile", key == "profiles", strings.HasPrefix(key, "profiles."):
@@ -119,4 +112,16 @@ func codexConfigRefused(kv string) bool {
 	}
 	feature, ok := strings.CutPrefix(key, "features.")
 	return ok && slices.Contains(codexHookFeatures, feature)
+}
+
+// configKey is a codex config key as codex reads it. Codex trims the key like
+// Rust's str::trim (every Unicode space) and reads quoted TOML segments, so
+// spaces and quotes are dropped everywhere.
+func configKey(key string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) || r == '"' || r == '\'' {
+			return -1
+		}
+		return r
+	}, key)
 }
