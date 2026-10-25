@@ -973,9 +973,13 @@ func TestAdmiralBot_ChatAskWorksOnFilesAlone(t *testing.T) {
 func TestAdmiralBot_NewChatWithdrawsChatQuestions(t *testing.T) {
 	c := newBotWorld(t, botOpts{})
 	w := c.world
+	// New chat needs the chat's transcript recorded (a SessionStart), or it would
+	// type /clear into the trust dialog.
+	w.writeCue(sessionStartCue(filepath.Join(c.cfgDir, "projects", "p", "t.jsonl"), "startup"))
 	w.start()
 	ws := dialWS(t, w.in.instance)
 	c.start()
+	waitQuestions(t, w.in.LocalURL, nil, 10*time.Second, "the chat started (its transcript recorded)", func(s botSession) bool { return s.Running && s.Error == "" })
 
 	p := w.botStart(w.botEnv(), askStdin("Will be withdrawn"), "chat", "ask")
 	waitQuestions(t, w.in.LocalURL, p, 10*time.Second, "the question", hasQuestions(1))
