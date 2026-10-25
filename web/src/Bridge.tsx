@@ -179,6 +179,17 @@ function BridgeView({ session }: { session: string }) {
     if (r.ok) backToShip();
     else setActionError(r.error);
   };
+  // Closing a crew boat is in ⋯, on the wide head and the phone bar alike.
+  const crewMenu = crew && (
+    <Menu id={`crew-${session}-${crew}`} label={`More for ${crew}`}>
+      <MenuItem onSelect={onCloseCrew} disabled={boat?.status !== 'anchored'}>
+        Close crew boat
+      </MenuItem>
+      {boat?.status !== 'anchored' && (
+        <span class="menu-note" role="none">Still working. Its ship's skill closes it, or it anchors when its harness exits.</span>
+      )}
+    </Menu>
+  );
   // The boat's dir is its own checkout, not the ship's repo, so the repo is the lead's alone.
   const sub = [h.label, ship.fleet_name, ship.skill, crew ? undefined : ship.repo].filter(Boolean).join(' · ');
   const canType = open && linkState === 'open';
@@ -284,6 +295,7 @@ function BridgeView({ session }: { session: string }) {
                 </span>
               </div>
               {signedOut.value ? <span class="term-notice">Open the URL Admiral printed</span> : reconnecting && <span class="term-notice">Reconnecting…</span>}
+              {crewMenu}
             </div>
           ) : (
           <div class="term-head">
@@ -314,16 +326,7 @@ function BridgeView({ session }: { session: string }) {
             <span class="term-pill" style={`background-color:${pill.color}`}>
               {pill.text(pillOf)}
             </span>
-            {crew && (
-              <Menu id={`crew-${session}-${crew}`} label={`More for ${crew}`}>
-                <MenuItem onSelect={onCloseCrew} disabled={boat?.status !== 'anchored'}>
-                  Close crew boat
-                </MenuItem>
-                {boat?.status !== 'anchored' && (
-                  <span class="menu-note" role="none">Still working. Its ship's skill closes it, or it anchors when its harness exits.</span>
-                )}
-              </Menu>
-            )}
+            {crewMenu}
             <FullViewToggle full={full} set={setFull} />
             <button type="button" class="press term-close" aria-label="Close terminal and return to open water" onClick={close}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3" stroke-linecap="round" aria-hidden="true">

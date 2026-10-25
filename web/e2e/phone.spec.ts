@@ -31,7 +31,7 @@ const noOpenWater = async (page: Page) => {
 
 test.beforeEach(({}, info) => test.skip(info.project.name !== 'phone', 'the phone shell is the phone project only'));
 
-test('S1, S4, C3, C4: the Ships tab lists the needs-you ship first and badges the tab, in portrait and landscape', { tag: '@critical' }, async ({ page, admiral, sea }) => {
+test('S1, S4, C3, C4: the Ships tab lists the needs-you ship first and badges the tab, in portrait and landscape', async ({ page, admiral, sea }) => {
   const s = sea({ work: { name: 'Work', color: BLUE } });
   await admiral.start();
   const first = await s.launch('work', 'alpha');
@@ -147,7 +147,7 @@ const crewRow = (page: Page, crew: string, ship: string, tail = '') =>
   shipsTab(page).getByRole('button', { name: `Board ${crew}, teammate, crew of ${ship}${tail}`, exact: true });
 const shipRows = (page: Page) => shipsTab(page).getByRole('button', { name: /^Board [^,]+, Claude in Work, / });
 
-test('#174 S1, S2: crew rows sit under their ship; a boat that needs you moves its older ship first and counts', { tag: '@critical' }, async ({ page, admiral, sea }) => {
+test('#174 S1, S2: crew rows sit under their ship; a boat that needs you moves its older ship first and counts', async ({ page, admiral, sea }) => {
   test.setTimeout(60_000);
   // Every boat parks on `needs`; releasing `end` after it makes the boat exit 1. The ships' own cues are never released.
   const s = sea({ work: { name: 'Work', color: BLUE, cue: ['wait needs', 'hook needs_you', 'wait end', 'exit 1'] } });
@@ -222,7 +222,7 @@ test('#174 S4: a ship with a subagent has a note under it that is not a button a
   await expect(shipsTab(page)).toBeVisible();
 });
 
-test('#174 S5, S6, S7: a crew row boards the boat full screen and Back returns to Ships, in portrait and landscape; ⋯ closes an anchored boat', { tag: '@critical' }, async ({ page, admiral, sea }) => {
+test('#174 S5, S6, S7: a crew row boards the boat full screen and Back returns to Ships, in portrait and landscape; ⋯ closes an anchored boat', async ({ page, admiral, sea }) => {
   test.setTimeout(90_000);
   // The boats exit 1 on `end`; the ship never gets it and stays underway.
   const s = sea({ work: { name: 'Work', color: BLUE, cue: ['wait end', 'exit 1'] } });

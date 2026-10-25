@@ -3,21 +3,21 @@ import { boxFocused, chatUnread } from './chat';
 import { ChatTab } from './ChatPane';
 import { dockSheet, newShip, takeShipFocus } from './launch';
 import { harnesses } from './harnesses';
-import { reasonWords, waited } from './inbox';
 import { InboxTab } from './InboxPanel';
 import { clock, inbox } from './inboxState';
 import { LogoFlag } from './Logos';
 import { phoneTab } from './phoneTab';
 import { Sidebar } from './Sidebar';
-import { board, boarded, ships, type WireShip } from './ships';
-import { sortShips } from './shipList';
+import { board, boarded, ships, type WireCrew, type WireShip } from './ships';
+import { age, crewRowText } from './crew';
+import { askingCount, asksYou, shipStatusLine, sortShips } from './shipList';
 
 // The phone's shell: a tab bar under one tab body (prototype :2210-2262). Opening or closing a bridge never
 // writes the tab, so Back lands on the tab the bridge was opened from.
 
 export { phoneTab };
 
-const needsYou = () => ships.value.filter((s) => s.status === 'needs_you').length;
+const needsYou = () => askingCount(ships.value);
 
 const icon = {
   inbox: (
@@ -76,18 +76,10 @@ function TabBar() {
   );
 }
 
-const exitWords = (s: WireShip) => (s.exit_signal ? `killed (${s.exit_signal})` : `exited ${s.exit_code ?? '?'}`);
-
-function statusLine(s: WireShip): string {
-  if (s.status === 'needs_you') return `Needs you · ${reasonWords(s.reason ?? 'question')} · waiting ${waited(s.stop_since ?? '', clock.value)}`;
-  if (s.status === 'anchored') return `Anchored, ${exitWords(s)}`;
-  return 'Underway';
-}
-
 function Row({ ship }: { ship: WireShip }) {
   const h = harnesses[ship.harness]?.label ?? ship.harness;
-  const status = statusLine(ship);
-  const asking = ship.status === 'needs_you';
+  const status = shipStatusLine(ship, clock.value);
+  const asking = asksYou(ship);
   const fresh = newShip.value === ship.session;
   const ref = useRef<HTMLButtonElement>(null);
   // The row of a ship this phone just launched takes focus once, whenever it appears.
@@ -117,9 +109,49 @@ function Row({ ship }: { ship: WireShip }) {
   );
 }
 
+// A crew boat under its ship, indented. The wire has no role (#157), so every boat is a Teammate.
+function CrewRow({ ship, boat }: { ship: WireShip; boat: WireCrew }) {
+  const asking = boat.status === 'needs_you';
+  const anchored = boat.status === 'anchored';
+  const state = asking ? ', needs you' : anchored ? ', anchored' : '';
+  return (
+    <button
+      type="button"
+      class={`press crew-row${asking ? ' asking' : ''}${anchored ? ' anchored' : ''}`}
+      aria-label={`Board ${boat.name}, teammate, crew of ${ship.name}${state}`}
+      onClick={() => board(ship.session, boat.name)}
+    >
+      <span class="ship-row-stripe" style={`background-color:${anchored ? '#9AA5AF' : ship.fleet_color}`} aria-hidden="true" />
+      <span class="ship-row-text">
+        <b class="crew-row-name">{boat.name}</b>
+        <span class="ship-row-status">{crewRowText(boat)}</span>
+      </span>
+      {asking && <span class="crew-badge ask" aria-hidden="true">!</span>}
+      {anchored && <span class="crew-badge out" aria-hidden="true">✕</span>}
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="ship-row-go">
+        <path d="M8 5l8 7-8 7" />
+      </svg>
+    </button>
+  );
+}
+
+// Subagents have no terminal, so the note is not a button.
+function SubagentNote({ ship }: { ship: WireShip }) {
+  return (
+    <div class="sub-note" role="note">
+      <b>Subagents · {ship.subagents.length} · no terminal</b>
+      {ship.subagents.map((m) => (
+        <span key={m.id}>
+          {m.type} · {age(m.start, clock.value)}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function ShipsTab() {
   const list = sortShips(ships.value);
-  const asking = needsYou();
+  const asking = askingCount(list);
   const hint = `${list.length} ${list.length === 1 ? 'ship' : 'ships'}${asking ? `, ${asking} ${asking === 1 ? 'needs' : 'need'} you` : ''}`;
   return (
     <section class="phone-pane ships-tab" aria-label="Ships">
@@ -128,7 +160,13 @@ function ShipsTab() {
         <span>{hint}</span>
       </div>
       {list.map((s) => (
-        <Row key={s.session} ship={s} />
+        <div class="ship-group" key={s.session}>
+          <Row ship={s} />
+          {(s.crew ?? []).map((c) => (
+            <CrewRow key={c.name} ship={s} boat={c} />
+          ))}
+          {(s.subagents ?? []).length > 0 && <SubagentNote ship={s} />}
+        </div>
       ))}
     </section>
   );

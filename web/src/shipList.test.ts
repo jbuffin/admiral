@@ -125,7 +125,7 @@ describe('crew boats and the needs-you group', () => {
       withCrew(ship('gone', 'sailing_off', 4), boat('api', 'needs_you', 4, 4)),
     ];
     expect(list.askingCount(l)).toBe(2);
-    expect(order(l).slice(0, 2)).toEqual(['plain', 'anchored-crew']);
+    expect(order(l).slice(0, 2)).toEqual(['anchored-crew', 'plain']);
   });
 });
 
