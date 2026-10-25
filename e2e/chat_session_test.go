@@ -349,6 +349,14 @@ func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
 		}
 	}
 	// A tmux server that outlived another Admiral, or was started from a ship's shell.
+	// Admiral's host starts the server a moment after the page is up: wait for it.
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		if _, err := w.tmux("list-sessions"); err == nil {
+			break
+		} else if time.Now().After(deadline) {
+			t.Fatalf("within 5s Admiral's tmux server never came up: %v", err)
+		}
+	}
 	for _, kv := range [][2]string{{"ADMIRAL_SHIP", "leak-ship"}, {"ADMIRAL_REPORT", "/leak/report"}, {"ADMIRAL_INBOX", "/leak/inbox"},
 		{"ADMIRAL_AUTOPILOT", "1"}, {"ADMIRAL_AUTOPILOT_LOW_STAKES", "1"}} {
 		w.mustTmux("set-environment", "-g", kv[0], kv[1])
@@ -461,7 +469,7 @@ func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
 			t.Errorf("a refused attach still ran tmux attach: %q", got)
 		}
 		// The chat's Claude can run tmux on its own session; it must not make itself a ship.
-		w.mustTmux("set-option", "-t", "="+chatSessionName, "@admiral-name", "Sneaky")
+		w.mustTmux("set-option", "-t", "="+chatSessionName+":", "@admiral-name", "Sneaky")
 		deadline := time.Now().Add(2 * time.Second)
 		for time.Now().Before(deadline) {
 			for _, s := range w.in.ships(t) {
