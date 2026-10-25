@@ -10,6 +10,8 @@ This touches three earlier decisions. [ADR 0007](0007-needs-you-comes-from-harne
 
 ## Decision
 
+_Scope note: crew boats also record their transcript path, in their own pane option, under [ADR 0021](0021-crew-boats-record-their-transcript-path.md). Admiral never reads those files._
+
 **Admiral learns the transcript's path from a hook, through tmux, and tails the file.**
 
 - **The path arrives in a pane option.** The chat's hook bundle (`$ADMIRAL_HOME/harness/chat-claude-settings.json`, a second bundle beside the ships') registers `SessionStart`. `admiral hook SessionStart` writes one option on `$TMUX_PANE`, `@admiral-transcript`, holding a time stamp, the hook's `source` and the payload's `transcript_path`. It is the way `@admiral-state` reaches Admiral. No hook calls the server, so ADR 0016's last bullet holds. Ships' bundles don't register `SessionStart`, so ships are untouched.
