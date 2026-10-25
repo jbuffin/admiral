@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bridgePath, crewRowText, findCrew, takesInput } from './crew';
+import { attachCommand, bridgePath, crewRowText, findCrew, takesInput } from './crew';
 import type { WireCrew, WireShip } from './ships';
 
 // Crew boats on the bridge (#154 u1). The interface the module `./crew` is built to, all pure:
@@ -66,5 +66,14 @@ describe('takesInput', () => {
     expect(takesInput(ship('s', 'underway'))).toBe(true);
     expect(takesInput(ship('s', 'needs_you'))).toBe(true);
     expect(takesInput(ship('s', 'anchored'))).toBe(false);
+  });
+});
+
+describe('attachCommand', () => {
+  it('leaves ordinary names alone and quotes the ones a shell would act on', () => {
+    expect(attachCommand('alpha-1', 'api')).toBe('admiral attach alpha-1 api');
+    expect(attachCommand('alpha')).toBe('admiral attach alpha');
+    expect(attachCommand('a b', "it's;rm")).toBe("admiral attach 'a b' 'it'\\''s;rm'");
+    expect(attachCommand('alpha', '-x')).toBe("admiral attach alpha '-x'");
   });
 });

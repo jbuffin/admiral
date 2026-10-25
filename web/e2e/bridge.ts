@@ -134,6 +134,14 @@ export async function launchCrew(sea: Sea, session: string, name: string) {
   return dir;
 }
 
+/** Closes a crew boat from outside the page, as `admiral crew close` does. */
+export function closeCrew(sea: Sea, session: string, name: string) {
+  const env: NodeJS.ProcessEnv = { ...process.env, ADMIRAL_HOME: sea.a.home };
+  for (const v of ['ADMIRAL_SHIP', 'ADMIRAL_AUTOPILOT', 'ADMIRAL_REPORT', 'ADMIRAL_INBOX']) delete env[v];
+  const r = spawnSync(bin, ['crew', 'close', name, '--ship', session], { env, encoding: 'utf8' });
+  if (r.status !== 0) throw new Error(`crew close ${name} exited ${r.status}: ${r.stdout}${r.stderr}`);
+}
+
 /** The ship's `crew[]` as the server lists it. */
 export async function crewOf(sea: Sea, session: string): Promise<{ name: string; status: string }[]> {
   const body = await (await fetch(`${sea.a.url}api/ships`)).json();

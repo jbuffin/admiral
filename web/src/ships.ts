@@ -1,4 +1,4 @@
-import { batch, computed, effect, signal } from '@preact/signals';
+import { computed, effect, signal } from '@preact/signals';
 import { chime } from './chime';
 import { config, type HarnessName } from './config';
 import { connectionState, onMessage } from './connection';
@@ -74,25 +74,21 @@ export const botFor = (session: string) => BOTS[hash(session) % BOTS.length];
 // A ship's bob starts at its own point in the cycle.
 export const bobDelay = (session: string) => `-${((hash(session) % 32) / 10).toFixed(1)}s`;
 
-export const atSea = (s: WireShip) => s.status === 'underway' || s.status === 'needs_you';
+export { atSea } from './crew';
 
 const launchedAt = (s: WireShip) => Date.parse(s.launched) || 0;
 
-// The session whose bridge is open, if any.
-export const boardedSession = signal<string | null>(null);
+// What the bridge shows, if open: a ship's terminal, or one of its crew boats'.
+export const boarded = signal<{ session: string; crew?: string } | null>(null);
 
-// The crew boat of the boarded ship whose terminal the bridge shows, if any.
-export const boardedCrew = signal<string | null>(null);
-
-// Boarding opens the bridge over open water: the ship's terminal, or one of its crew boats'. A test page that
-// asked is told too: `<session>` for a ship, `<session>/<crew>` for a crew boat.
+// Boarding opens the bridge over open water. A test page that asked is told too: `<session>` for a ship,
+// `<session>/<crew>` for a crew boat.
 export function board(session: string, crew?: string): void {
   window.__admiral?.boarded.push(crew ? `${session}/${crew}` : session);
-  batch(() => {
-    boardedSession.value = session;
-    boardedCrew.value = crew ?? null;
-  });
+  boarded.value = crew === undefined ? { session } : { session, crew };
 }
+
+export const unboard = () => (boarded.value = null);
 
 declare global {
   interface Window {

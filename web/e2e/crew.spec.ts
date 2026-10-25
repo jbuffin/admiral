@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
-import { crewOf, crewPaneWrite, launchCrew, paneWrite, release, releaseCrew, screenText } from './bridge';
+import { closeCrew, crewOf, crewPaneWrite, launchCrew, paneWrite, release, releaseCrew, screenText } from './bridge';
 import { boarded, expect, isTouch, spyOnPage, test, underwayIn, ships } from './sea';
 
 // Crew boats on the bridge (#154 u1; #72's crew flow, the flotilla half). The names below are the contract the
@@ -121,6 +121,34 @@ test.describe('a crew boat on the bridge', () => {
     await expect(t.getByText(ship.name, { exact: true })).toBeVisible();
     await expect.poll(() => screenText(page)).toContain('ship-screen');
     await expect.poll(() => crewOf(s, ship.session)).toEqual([]);
+  });
+
+  test('a crew boat closed elsewhere while it is boarded sends the bridge back to the ship and does not reconnect', async ({ page, admiral, sea }, info) => {
+    test.setTimeout(60_000);
+    const touch = isTouch(info);
+    const s = sea({ work: { name: 'Work', color: BLUE, cue: ['wait needs', 'exit 0'] } });
+    await admiral.start();
+    const ship = await s.launch('work', 'alpha', 'recorded');
+    paneWrite(s, ship.session, 'ship-screen\r\n');
+    await launchCrew(s, ship.session, 'api');
+    const sockets: string[] = [];
+    page.on('websocket', (ws) => sockets.push(ws.url()));
+    await spyOnPage(page);
+    await page.goto(admiral.url);
+    await press(ships(page, underwayIn('Work')), touch);
+    const t = terminal(page);
+    await press(crewRow(page, 'api'), touch);
+    await expect(t.getByText(`${ship.name} › api`, { exact: true })).toBeVisible();
+
+    closeCrew(s, ship.session, 'api');
+    await expect(t.getByText(`${ship.name} › api`)).toHaveCount(0);
+    await expect(flotilla(page).getByRole('button').first()).toHaveAttribute('aria-current', 'true');
+    await expect.poll(() => screenText(page)).toContain('ship-screen');
+    // Nothing opens a socket to the closed boat again.
+    const crewSockets = () => sockets.filter((u) => u.endsWith('/crew/api')).length;
+    const before = crewSockets();
+    await page.waitForTimeout(3000);
+    expect(crewSockets()).toBe(before);
   });
 
   test('Dismiss on an anchored ship with a live crew boat asks first; Keep it leaves both, Dismiss ship and crew ends both', async ({ page, admiral, sea }, info) => {

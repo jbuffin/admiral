@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { signedOut } from './connection';
-import { crewRowText, findCrew, takesInput } from './crew';
+import { attachCommand, crewRowText, findCrew, takesInput } from './crew';
 import { harnesses } from './harnesses';
+import { clock } from './inboxState';
 import { KEYS, touchKeyboard } from './keys';
 import { LogoFlag } from './Logos';
 import { Menu, MenuItem } from './Menu';
@@ -9,7 +10,7 @@ import { Modal } from './Modal';
 import { api, isWebUrl } from './sources';
 import { useBridgePlacement } from './useBridgePlacement';
 import { useBridgeTerminal } from './useBridgeTerminal';
-import { board, botFor, boardedCrew, boardedSession, leaving, ships, shipsLoaded, type WireCrew, type WireShip } from './ships';
+import { board, boarded, botFor, leaving, ships, shipsLoaded, unboard, type WireCrew, type WireShip } from './ships';
 
 const enc = encodeURIComponent;
 
@@ -23,15 +24,16 @@ const PILL = {
   sailing_off: { text: () => 'Sailing off', color: '#6FE3C8' },
 };
 
-const close = () => {
-  boardedSession.value = null;
-  boardedCrew.value = null;
+const close = unboard;
+const backToShip = () => {
+  if (boarded.value) boarded.value = { session: boarded.value.session };
 };
-const backToShip = () => (boardedCrew.value = null);
 
-// A subagent's age on the flotilla: under a minute is "just started".
-function age(start: string): string {
-  const m = Math.max(0, Math.round((Date.now() - Date.parse(start)) / 60000));
+// A subagent's age on the flotilla: under a minute is "just started"; a start that does not parse shows none.
+function age(start: string, now: number): string {
+  const t = Date.parse(start);
+  if (Number.isNaN(t)) return '';
+  const m = Math.max(0, Math.round((now - t) / 60000));
   return m < 1 ? 'just started' : `${m}m`;
 }
 
@@ -112,11 +114,11 @@ export function FullViewToggle({ full, set }: { full: boolean; set: (on: boolean
 }
 
 // A tap on the dimmed water around the terminal closes it, as the close button does. The press and the
-// click must both land outside the terminal, so a text selection that ends outside keeps it open.
-// Shared with the setup terminal.
+// click must both land outside the terminal and the flotilla's content, so a text selection that ends outside
+// keeps it open. Shared with the setup terminal.
 export function useCloseOutside(close: () => void) {
   const pressedOutside = useRef(false);
-  const outside = (e: MouseEvent) => !(e.target as Element).closest('.terminal, button');
+  const outside = (e: MouseEvent) => !(e.target as Element).closest('.terminal, button, .flotilla-title, .flotilla-subtitle, .fl-sub');
   return {
     onPointerDown: (e: PointerEvent) => (pressedOutside.current = outside(e)),
     onClick: (e: MouseEvent) => pressedOutside.current && outside(e) && close(),
@@ -124,7 +126,7 @@ export function useCloseOutside(close: () => void) {
 }
 
 export function Bridge() {
-  const session = boardedSession.value;
+  const session = boarded.value?.session;
   return session ? <BridgeView key={session} session={session} /> : null;
 }
 
@@ -137,7 +139,7 @@ function BridgeView({ session }: { session: string }) {
   }, [over]);
   // The boarded crew boat, while the ship still lists it. One that is closed here or elsewhere sends the bridge
   // back to the ship's terminal.
-  const crewName = boardedCrew.value ?? undefined;
+  const crewName = boarded.value?.crew;
   const boat = crewName === undefined ? undefined : findCrew(ships.value, session, crewName);
   const crew = boat ? crewName : undefined;
   const crewGone = shipsLoaded.value && !!ship && crewName !== undefined && !boat;
@@ -149,11 +151,20 @@ function BridgeView({ session }: { session: string }) {
   const [actionError, setActionError] = useState('');
   const [confirming, setConfirming] = useState(false);
   const dismissing = useRef(false);
+  const closingCrew = useRef(false);
   const root = useRef<HTMLDivElement>(null);
   const closeOutside = useCloseOutside(close);
 
   const open = !!ship && takesInput(ship, boat);
-  const { host, link, linkState, activity } = useBridgeTerminal({ session, crew, open, gone: crew ? backToShip : close });
+  const { host, link, linkState, activity } = useBridgeTerminal({
+    session,
+    crew,
+    open,
+    // A crew link is told the boat is gone, or the whole ship: the ship's own bridge closes with the ship.
+    gone: crew ? () => (ships.value.some((s) => s.session === session) ? backToShip() : close()) : close,
+  });
+  // An error belongs to the terminal it came from.
+  useEffect(() => setActionError(''), [crew]);
 
   useBridgePlacement(root, !!ship, full);
 
@@ -187,17 +198,21 @@ function BridgeView({ session }: { session: string }) {
   // Live crew boats end with the ship, so Dismiss asks first.
   const onDismissTap = () => (ship.crew_live > 0 ? setConfirming(true) : onDismiss());
   const onCloseCrew = async () => {
-    if (!crew) return;
+    if (!crew || closingCrew.current) return;
+    closingCrew.current = true;
     setActionError('');
     const r = await api('POST', `/api/ships/${enc(session)}/crew/${enc(crew)}/close`);
+    closingCrew.current = false;
     if (r.ok) backToShip();
     else setActionError(r.error);
   };
-  const sub = [h.label, ship.fleet_name, ship.skill, ship.repo].filter(Boolean).join(' · ');
+  // The boat's dir is its own checkout, not the ship's repo, so the repo is the lead's alone.
+  const sub = [h.label, ship.fleet_name, ship.skill, crew ? undefined : ship.repo].filter(Boolean).join(' · ');
   const canType = open && linkState === 'open';
   // Ships launched before @admiral-url have no url, but a pasted order's title is often the link itself.
   const orderHref = isWebUrl(ship.url) ? ship.url : isWebUrl(ship.title) && !/\s/.test(ship.title) ? ship.title : undefined;
-  const live = ship.crew.filter((c) => c.status !== 'anchored').length;
+  const live = ship.crew_live;
+  const now = clock.value;
 
   return (
     <>
@@ -264,7 +279,7 @@ function BridgeView({ session }: { session: string }) {
                     <path d="M3.6 13 L18.4 13 L18.6 17 L3.4 17 Z" fill={ship.fleet_color} />
                   </svg>
                   <b>{m.type}</b>
-                  <span class="fl-sub-age">{age(m.start)}</span>
+                  <span class="fl-sub-age">{age(m.start, now)}</span>
                 </div>
               ))}
             </>
@@ -290,7 +305,7 @@ function BridgeView({ session }: { session: string }) {
                 ) : (
                   <span class="term-order">{ship.title}</span>
                 ))}
-              {open && <AttachChip command={crew ? `admiral attach ${ship.name} ${crew}` : `admiral attach ${ship.name}`} />}
+              {open && <AttachChip command={attachCommand(ship.name, crew)} />}
             </div>
             {signedOut.value ? (
               <span class="term-notice">Open the URL Admiral printed</span>
@@ -306,7 +321,7 @@ function BridgeView({ session }: { session: string }) {
                   Close crew boat
                 </MenuItem>
                 {boat?.status !== 'anchored' && (
-                  <span class="menu-note">Still working. Its ship's skill closes it, or it anchors when its harness exits.</span>
+                  <span class="menu-note" role="none">Still working. Its ship's skill closes it, or it anchors when its harness exits.</span>
                 )}
               </Menu>
             )}

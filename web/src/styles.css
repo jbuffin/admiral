@@ -2046,7 +2046,7 @@ body.dragging * {
   color: var(--color-ink);
   text-align: left;
   cursor: pointer;
-  animation: flyin 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+  animation: flyin 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.15) backwards;
 }
 
 .fl-item.on {
@@ -2057,6 +2057,9 @@ body.dragging * {
 .fl-item.attn-row {
   background-color: var(--color-attention-plaque);
   border-color: var(--color-attention-border);
+}
+
+.fl-item.attn-row > svg:first-child {
   animation: shake 1.3s ease-in-out infinite;
 }
 
@@ -2182,7 +2185,7 @@ body.dragging * {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fl-item, .fl-item.attn-row {
+  .fl-item, .fl-item.attn-row > svg:first-child {
     animation: none !important;
   }
 }

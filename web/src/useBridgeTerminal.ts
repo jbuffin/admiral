@@ -123,9 +123,11 @@ export function useBridgeTerminal({ session, crew, open, gone, probe }: BridgeTe
 }
 
 // A crew link's reconnect check: the ship is listed only while the boat is in its `crew[]`, so a boat closed
-// elsewhere ends the link instead of looping on a 404.
+// elsewhere ends the link instead of looping on a 404. A ship that is itself gone is passed through as it is.
 async function crewProbe(session: string, crew: string): Promise<Probe> {
   const p = await probeShips();
   if (p.kind !== 'ok') return p;
-  return { kind: 'ok', ships: findCrew(p.ships as unknown as WireShip[], session, crew) ? [{ session }] : [] };
+  const list = p.ships as unknown as WireShip[];
+  if (!list.some((s) => s.session === session)) return p;
+  return { kind: 'ok', ships: findCrew(list, session, crew) ? [{ session }] : [] };
 }

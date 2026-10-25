@@ -16,11 +16,20 @@ export function bridgePath(session: string, crew?: string): string {
 }
 
 export function findCrew(list: { session: string; crew: WireCrew[] }[], session: string, crew: string): WireCrew | undefined {
-  return list.find((s) => s.session === session)?.crew.find((c) => c.name === crew);
+  return list.find((s) => s.session === session)?.crew?.find((c) => c.name === crew);
 }
+
+// Whether a ship or crew boat is at sea: underway, or asking for you. Its terminal takes keys.
+export const atSea = (s: Pick<WireShip, 'status'>) => s.status === 'underway' || s.status === 'needs_you';
 
 // Whether the boarded terminal takes keys. A crew boat has its own status: a live one of an anchored ship still does.
 export function takesInput(ship: Pick<WireShip, 'status'>, crew?: Pick<WireCrew, 'status'>): boolean {
-  const status = (crew ?? ship).status;
-  return status === 'underway' || status === 'needs_you';
+  return atSea(crew ?? ship);
+}
+
+// An argument of `admiral attach`, quoted for a shell when its name needs it: single quotes, and not a leading `-`.
+const shellQuote = (a: string) => (/^[A-Za-z0-9._/][A-Za-z0-9._/-]*$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`);
+
+export function attachCommand(ship: string, crew?: string): string {
+  return ['admiral attach', shellQuote(ship), ...(crew === undefined ? [] : [shellQuote(crew)])].join(' ');
 }
