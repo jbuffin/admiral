@@ -7,16 +7,19 @@ import (
 	"unicode"
 )
 
-// subcommands are the names of each harness's subcommands, read from
-// `<harness> --help` of claude 2.1.310, codex-cli 0.163.0 and GitHub Copilot CLI
-// 1.0.103 (aliases included). A bare --arg that equals one would run that
+// subcommands are the names of each harness's subcommands, aliases and hidden
+// commands included, on claude 2.1.310, codex-cli 0.163.0 and GitHub Copilot CLI
+// 1.0.103. The visible ones are from `<harness> --help`; the hidden ones (not in
+// --help) were found in the binaries and each confirmed by `<harness> <name> --help`. A bare --arg that equals one would run that
 // subcommand in place of the session, and with it none of Admiral's hooks.
 var subcommands = map[string][]string{
 	"claude": {"agents", "attach", "auth", "auto-mode", "doctor", "gateway", "import", "install", "logs", "mcp",
-		"plugin", "plugins", "purge", "respawn", "rm", "setup-token", "stop", "kill", "ultrareview", "update", "upgrade", "help"},
+		"plugin", "plugins", "purge", "respawn", "rm", "setup-token", "stop", "kill", "ultrareview", "update", "upgrade", "help",
+		"remote-control", "rc", "remote", "project", "sandbox", "design-login"},
 	"codex": {"agents", "exec", "e", "review", "login", "logout", "mcp", "plugin", "app-server", "remote-control", "app",
 		"completion", "update", "doctor", "sandbox", "debug", "apply", "a", "resume", "queue", "archive", "delete",
-		"migrate-rollouts", "unarchive", "fork", "cloud", "exec-server", "features", "help"},
+		"migrate-rollouts", "unarchive", "fork", "cloud", "exec-server", "features", "help",
+		"cloud-tasks", "tcp-tunnel", "stdio-to-uds", "responses-api-proxy", "execpolicy"},
 	"copilot": {"app", "login", "help", "init", "config", "update", "version", "workflow", "sessions", "memories",
 		"plugin", "mcp", "skill", "instruction", "lsp", "sandbox", "completion"},
 }
@@ -34,7 +37,7 @@ var codexHookFeatures = []string{"hooks", "codex_hooks"}
 func RefuseHookArgs(harness string, args []string) error {
 	for i, a := range args {
 		if hasControl(a) {
-			return fmt.Errorf("--arg %q is refused: it holds a control character", a)
+			return fmt.Errorf("--arg %q is refused: it holds an ASCII control character", a)
 		}
 		next := ""
 		if i+1 < len(args) {
