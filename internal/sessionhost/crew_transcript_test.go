@@ -77,6 +77,8 @@ func TestValidCrewTranscriptPath(t *testing.T) {
 		{"/a/b\u202ec.jsonl", false},
 		{"/a/b\u2066c.jsonl", false},
 		{"/a/b\u2069c.jsonl", false},
+		{"/a/b\u2028c.jsonl", false},
+		{"/a/b\u2029c.jsonl", false},
 		{"/a/b\u00e9c.jsonl", true},
 	} {
 		if got := ValidCrewTranscriptPath(c.in); got != c.want {
