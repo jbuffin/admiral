@@ -73,7 +73,8 @@ describe('attachCommand', () => {
   it('leaves ordinary names alone and quotes the ones a shell would act on', () => {
     expect(attachCommand('alpha-1', 'api')).toBe('admiral attach alpha-1 api');
     expect(attachCommand('alpha')).toBe('admiral attach alpha');
-    expect(attachCommand('a b', "it's;rm")).toBe("admiral attach 'a b' 'it'\\''s;rm'");
+    expect(attachCommand('Saltpaw II', 'api')).toBe('admiral attach Saltpaw II api');
+    expect(attachCommand('Salt;paw', "it's rm")).toBe("admiral attach 'Salt;paw' 'it'\\''s rm'");
     expect(attachCommand('alpha', '-x')).toBe("admiral attach alpha '-x'");
   });
 });

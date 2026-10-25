@@ -28,8 +28,9 @@ export function takesInput(ship: Pick<WireShip, 'status'>, crew?: Pick<WireCrew,
 }
 
 // An argument of `admiral attach`, quoted for a shell when its name needs it: single quotes, and not a leading `-`.
+// `admiral attach Saltpaw II` takes a ship's words unquoted, so each word is quoted on its own.
 const shellQuote = (a: string) => (/^[A-Za-z0-9._/][A-Za-z0-9._/-]*$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`);
 
 export function attachCommand(ship: string, crew?: string): string {
-  return ['admiral attach', shellQuote(ship), ...(crew === undefined ? [] : [shellQuote(crew)])].join(' ');
+  return ['admiral attach', ...ship.split(' ').map(shellQuote), ...(crew === undefined ? [] : [shellQuote(crew)])].join(' ');
 }
