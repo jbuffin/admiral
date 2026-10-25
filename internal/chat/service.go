@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/config"
@@ -27,6 +28,10 @@ import (
 // recorded a transcript. On a first start in a new folder Claude may be on its
 // folder-trust dialog, where a pasted message would land (ADR 0019).
 const NotStarted = "Open the terminal to finish starting the chat"
+
+// Unreadable is the error when the recorded transcript is one Admiral refuses to
+// read, so the engineer knows why the chat is blank.
+const Unreadable = "Admiral can't read this chat's transcript"
 
 // maxSend is the longest message a send takes.
 const maxSend = 16 << 10
@@ -62,22 +67,24 @@ type Service struct {
 
 	op sync.Mutex // start, New chat and send, one at a time
 
-	mu sync.Mutex // everything below
-	st state
+	mu     sync.Mutex // everything below; no tmux call runs under it
+	st     state
+	ticket uint64 // numbers the option reads, so a late one can't undo a newer
 }
 
 // state is the chat as last read. It is cleared when the pane changes.
 type state struct {
-	pane     string // the pane id of the `_chat` session read last
-	opts     chatOptions
-	readAt   time.Time
-	optRaw   string // the transcript option's value acted on last
-	path     string // the transcript path in it
-	fol      *follower
-	msgs     []Message
-	bytes    int
-	refused  string // a path already logged as refused
-	snapshot Snapshot
+	pane    string // the pane id of the `_chat` session read last
+	opts    chatOptions
+	readAt  time.Time
+	optRaw  string // the transcript option's value acted on last
+	path    string // the transcript path in it
+	fol     *follower
+	msgs    []Message
+	bytes   int
+	refused string // a path already logged as refused
+	unread  bool   // the recorded path is one Admiral refuses to read
+	optSeq  uint64 // the ticket of the option read applied last
 }
 
 // chatOptions are the options one tmux read returns.
@@ -121,6 +128,9 @@ func (s *Service) Run(ctx context.Context) {
 			}
 		case <-tick.C:
 		}
+		if s.Hub.Len() == 0 {
+			continue // nobody to tell; a request reads the chat itself
+		}
 		s.broadcast()
 	}
 }
@@ -134,9 +144,8 @@ func (s *Service) message() wire { return wire{Type: "chat", Snapshot: s.current
 
 // current reads the chat and returns it.
 func (s *Service) current() Snapshot {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.refreshLocked(false)
+	snap, _ := s.refresh(false)
+	return snap
 }
 
 // session is the `_chat` session as the host last read it.
@@ -152,26 +161,44 @@ func (s *Service) session() (sessionhost.Session, bool) {
 	return sessionhost.Session{}, false
 }
 
-// refreshLocked reads the session, its options and its transcript and returns the
-// snapshot. force reads the options even if they were read a moment ago.
-func (s *Service) refreshLocked(force bool) Snapshot {
-	st := &s.st
+// refresh reads the session from the host, its options from tmux and its
+// transcript, and returns the snapshot. force reads the options even if they were
+// read a moment ago, and then a failed read is an error (the snapshot is still
+// returned). The tmux call runs outside the lock, so a stuck tmux holds up only
+// the caller that made it.
+func (s *Service) refresh(force bool) (Snapshot, error) {
 	sess, running := s.session()
+	var (
+		opts    chatOptions
+		have    bool
+		readErr error
+		ticket  uint64
+	)
+	if running {
+		s.mu.Lock()
+		need := force || sess.PaneID != s.st.pane || time.Since(s.st.readAt) >= optionEvery
+		s.ticket++
+		ticket = s.ticket
+		s.mu.Unlock()
+		if need {
+			opts, readErr = s.readOptions(sess.PaneID)
+			have = readErr == nil
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := &s.st
 	if !running {
 		*st = state{}
-		st.snapshot = Snapshot{Messages: []Message{}}
-		return st.snapshot
+		return Snapshot{Messages: []Message{}}, nil
 	}
 	if sess.PaneID != st.pane {
 		// A new session (the first one Admiral sees, or a restart): nothing of the
 		// old one's conversation carries over, and a transcript is read from its start.
 		*st = state{pane: sess.PaneID}
 	}
-	if force || time.Since(st.readAt) >= optionEvery {
-		if o, err := s.readOptions(sess.PaneID); err == nil {
-			st.opts = o
-			st.readAt = time.Now()
-		}
+	if have && ticket > st.optSeq {
+		st.opts, st.readAt, st.optSeq = opts, time.Now(), ticket
 	}
 	if st.opts.transcript != st.optRaw {
 		s.transcriptChangedLocked(st.opts.transcript)
@@ -179,11 +206,16 @@ func (s *Service) refreshLocked(force bool) Snapshot {
 	s.followLocked()
 
 	snap := Snapshot{Running: true, State: mapState(sess.State, sess.Reason), Messages: append([]Message{}, st.msgs...)}
-	if st.optRaw == "" {
+	switch {
+	case st.optRaw == "":
 		snap.Error = NotStarted
+	case st.unread:
+		snap.Error = Unreadable
 	}
-	st.snapshot = snap
-	return snap
+	if force && readErr != nil {
+		return snap, readErr
+	}
+	return snap, nil
 }
 
 // mapState turns the hook's ship vocabulary into the chat's: working is working;
@@ -207,20 +239,16 @@ func (s *Service) transcriptChangedLocked(raw string) {
 	st.optRaw = raw
 	_, source, path, ok := parseTranscriptOption(raw)
 	if !ok {
-		st.path, st.fol = "", nil
+		st.path, st.fol, st.unread = "", nil, false
 		st.msgs, st.bytes = nil, 0
 		return
 	}
 	switch {
 	case path != st.path || st.fol == nil:
-		st.path, st.fol = path, &follower{}
+		st.path, st.fol, st.unread = path, &follower{}, false
 		st.msgs, st.bytes = nil, 0
 	case source == "clear" && !first:
-		st.msgs, st.bytes = nil, 0
-		if _, info, f, err := s.openLocked(); err == nil {
-			f.Close()
-			st.fol.toEnd(info.Size())
-		}
+		s.clearLocked()
 	}
 }
 
@@ -237,15 +265,15 @@ func parseTranscriptOption(raw string) (stamp, source, path string, ok bool) {
 // dock of the fleet it started with.
 func (s *Service) configDir() string {
 	cfg := s.Config()
-	key := s.st.opts.fleet
-	if key == "" {
-		key = cfg.Chat.Fleet
+	// The fleet the session started with. The option can be written from inside the
+	// chat, so one that names no fleet falls back to the chat's own.
+	f, ok := cfg.Fleet(s.st.opts.fleet)
+	if !ok {
+		f, _ = cfg.Fleet(cfg.Chat.Fleet)
 	}
 	var env map[string]string
-	if f, ok := cfg.Fleet(key); ok {
-		if d, ok := f.Harness("claude"); ok {
-			env = d.Env
-		}
+	if d, ok := f.Harness("claude"); ok {
+		env = d.Env
 	}
 	return config.IdentityDir("claude", env)
 }
@@ -262,7 +290,9 @@ func (s *Service) openLocked() (string, os.FileInfo, *os.File, error) {
 		if r, err = os.OpenRoot(root); err == nil {
 			defer r.Close()
 			var f *os.File
-			if f, err = r.Open(rel); err == nil {
+			// O_NONBLOCK: a FIFO swapped in after the checks must not block the open.
+			// A regular file reads the same either way.
+			if f, err = r.OpenFile(rel, os.O_RDONLY|syscall.O_NONBLOCK, 0); err == nil {
 				var info os.FileInfo
 				if info, err = f.Stat(); err == nil && info.Mode().IsRegular() {
 					return rel, info, f, nil
@@ -287,9 +317,11 @@ func (s *Service) followLocked() {
 	}
 	_, info, f, err := s.openLocked()
 	if err != nil {
+		st.unread = errors.Is(err, errRefused)
 		return
 	}
 	defer f.Close()
+	st.unread = false
 	st.fol.read(f, info, s.add, func() { st.msgs, st.bytes = nil, 0 })
 }
 
@@ -304,9 +336,10 @@ func (s *Service) add(m Message) {
 	}
 }
 
-// readOptions reads the chat's options off its pane in one tmux call. The
-// transcript option comes last: it is the only one the chat can write, so a
-// separator in it can't shift the others.
+// readOptions reads the chat's options off its pane in one tmux call. The chat
+// can write any of them. The transcript is last, so a separator in it can't shift
+// the others; one in another option only shifts the fields after it, which makes
+// the settings look changed (New chat then restarts the session).
 func (s *Service) readOptions(pane string) (chatOptions, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -464,13 +497,16 @@ func (s *Service) serveSend(w http.ResponseWriter, r *http.Request) {
 // ready is the chat's pane when a message can go in: it runs, and a SessionStart
 // has recorded its transcript.
 func (s *Service) ready() (pane string, status int, msg string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	snap := s.refreshLocked(true)
+	snap, err := s.refresh(true)
 	switch {
 	case !snap.Running:
 		return "", http.StatusConflict, "the chat is not running"
-	case s.st.optRaw == "":
+	case err != nil:
+		return "", http.StatusBadGateway, "could not read the chat's state: " + err.Error()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.st.optRaw == "" {
 		return "", http.StatusConflict, NotStarted
 	}
 	return s.st.pane, 0, ""
@@ -503,14 +539,19 @@ func (s *Service) paste(pane, text string) error {
 func (s *Service) serveNew(w http.ResponseWriter, r *http.Request) {
 	s.op.Lock()
 	defer s.op.Unlock()
-	s.mu.Lock()
-	snap := s.refreshLocked(true)
-	opts, pane, noPath := s.st.opts, s.st.pane, s.st.optRaw == ""
-	s.mu.Unlock()
+	snap, err := s.refresh(true)
 	if !snap.Running {
 		writeError(w, http.StatusConflict, "the chat is not running")
 		return
 	}
+	if err != nil {
+		// Without the options the settings can't be compared: don't restart a healthy session.
+		writeError(w, http.StatusBadGateway, "could not read the chat's state: "+err.Error())
+		return
+	}
+	s.mu.Lock()
+	opts, pane, noPath := s.st.opts, s.st.pane, s.st.optRaw == ""
+	s.mu.Unlock()
 	chat := s.Config().Chat
 	if opts.model == chat.Model && opts.effort == chat.Effort && opts.fleet == chat.Fleet {
 		if noPath {

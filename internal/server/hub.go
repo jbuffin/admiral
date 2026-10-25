@@ -98,6 +98,13 @@ func (h *Hub) snapshot() []*Client {
 	return out
 }
 
+// Len is how many clients are connected.
+func (h *Hub) Len() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.clients)
+}
+
 // SendTo pushes v to one client; it reports whether that client is connected.
 func (h *Hub) SendTo(id int, v any) bool {
 	h.mu.Lock()

@@ -38,9 +38,6 @@ type chatSession struct {
 	State    string    `json:"state"`
 	Messages []chatMsg `json:"messages"`
 	Error    string    `json:"error"`
-	// The brief says the `chat` message has the shape of GET /api/chat/session;
-	// ships nests its payload, so a nested {"chat": {...}} is read as well.
-	Chat *chatSession `json:"chat"`
 }
 
 // chatWorld is a world whose config has one fleet, "chat", for the chat only,
@@ -273,9 +270,6 @@ func waitChatWS(t *testing.T, c *websocket.Conn, d time.Duration, what string, p
 			continue
 		}
 		last = string(data)
-		if m.Chat != nil {
-			m = *m.Chat
-		}
 		if pred(m) {
 			return m
 		}
@@ -358,7 +352,8 @@ func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
 		}
 	}
 	for _, kv := range [][2]string{{"ADMIRAL_SHIP", "leak-ship"}, {"ADMIRAL_REPORT", "/leak/report"}, {"ADMIRAL_INBOX", "/leak/inbox"},
-		{"ADMIRAL_AUTOPILOT", "1"}, {"ADMIRAL_AUTOPILOT_LOW_STAKES", "1"}} {
+		{"ADMIRAL_AUTOPILOT", "1"}, {"ADMIRAL_AUTOPILOT_LOW_STAKES", "1"},
+		{"ADMIRAL_LOW_STAKES", "never"}, {"ADMIRAL_AUTO_MERGE", "squash"}} {
 		w.mustTmux("set-environment", "-g", kv[0], kv[1])
 	}
 
@@ -427,7 +422,7 @@ func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
 			t.Errorf("env PATH = %q, want $ADMIRAL_HOME/bin first", r.env["PATH"])
 		}
 		for k := range r.env {
-			if k == "ADMIRAL_SHIP" || k == "ADMIRAL_REPORT" || k == "ADMIRAL_INBOX" || strings.HasPrefix(k, "ADMIRAL_AUTOPILOT") {
+			if strings.HasPrefix(k, "ADMIRAL_") && k != "ADMIRAL_HOME" {
 				t.Errorf("env has %s=%q; the tmux server's global environment must not reach the chat", k, r.env[k])
 			}
 		}
@@ -544,6 +539,7 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 		assistantLine("a-3", "msg_1", map[string]any{"type": "text", "text": "The log has three entries."}),
 		`this is not json {`,
 		userLine("u-3", "META-NOISE", map[string]any{"isMeta": true}),
+		userLine("u-3b", "COMPACT-NOISE", map[string]any{"isCompactSummary": true, "isVisibleInTranscriptOnly": true}),
 		jsonLine(map[string]any{"type": "assistant", "uuid": "a-4", "isSidechain": true, "message": map[string]any{"role": "assistant", "id": "msg_9", "content": []any{map[string]any{"type": "text", "text": "SIDECHAIN-NOISE"}}}}),
 		jsonLine(map[string]any{"type": "system", "uuid": "s-1", "subtype": "local_command", "content": "SYSTEM-NOISE"}),
 		userLine("u-4", []any{map[string]any{"type": "text", "text": "Now list the ships"}}, nil),
@@ -732,6 +728,9 @@ func TestChatSession_OnlyARealTranscriptUnderProjectsIsRead(t *testing.T) {
 		c.touch(fmt.Sprintf("go-%d", i+1))
 		c.waitEvents(i + 1)
 		c.stays(1500*time.Millisecond, "no messages for "+what, messagesAre())
+		if got := c.session().Error; got != "Admiral can't read this chat's transcript" {
+			t.Errorf("for %s the session error = %q, want it to say the transcript can't be read", what, got)
+		}
 	}
 	c.touch("go-4")
 	real2 := []string{"user: A real line", "user: Another real line"}

@@ -16,7 +16,7 @@ This touches three earlier decisions. [ADR 0007](0007-needs-you-comes-from-harne
 - **Admiral reads the transcript for the chat only, never for a ship.** This is the one place ADR 0007's rule bends. State still comes from hooks (`working`, `needs_you` with a reason, which the chat service maps to `working`, `idle` and `waiting`), and only the text of the conversation comes from the file.
 - **The file is Claude Code's undocumented JSONL, and Admiral owns that risk.** A line that doesn't parse, has no `uuid`, or is over 1 MiB is skipped, and a skipped line never fails the chat. If Claude Code changes the format, the conversation goes blank or short while the terminal still works.
 - **The path is untrusted.** Anything in the chat session can write a pane option. Admiral takes only an absolute path ending in `.jsonl` under `<Claude config dir>/projects/`, where the config dir is the chat dock's `CLAUDE_CONFIG_DIR`, else Admiral's own, else `~/.claude`. It refuses the file or any directory below `projects/` that is a symlink, and a file that isn't regular. It reads from the last offset, and serves the last 200 messages and about 256 KiB of text.
-- **The conversation is what the user and the assistant said.** User text and assistant `text` blocks only. Tool use, tool results, thinking, meta lines, sidechains, system lines and the local-command lines `/clear` leaves are left out.
+- **The conversation is what the user and the assistant said.** User text and assistant `text` blocks only. Tool use, tool results, thinking, meta lines, sidechains, compaction summaries (a `user` line Claude Code writes after auto-compaction, flagged `isCompactSummary`), system lines and the local-command lines `/clear` leaves are left out.
 - **Sending is a paste.** A message goes into the pane as one bracketed paste through a named tmux buffer (the text on stdin, never on a command line), then Enter. New chat sends `/clear`. The answer to a question will come through `admiral chat ask`, a file in its own directory (the shape of ADR 0016, never the inbox), and is built in a later unit.
 - **Open terminal** is the real TUI through the bridge, as `_setup` is.
 
@@ -24,7 +24,7 @@ This touches three earlier decisions. [ADR 0007](0007-needs-you-comes-from-harne
 
 **ADR 0012.** Admiral still records no conversation IDs and never resumes. The transcript path holds Claude's session id, and it lives only in the chat pane's tmux option, for the chat only, and nothing uses it to resume. A restarted Admiral reads the option back and serves the same conversation. A dead tmux server loses it, as ADR 0018 says.
 
-**The chat is never a ship.** `IsShip` refuses `_setup` and `_chat` by name, so the chat, whose Claude can run `tmux set` on its own session, can't make itself a ship by setting `@admiral-name`.
+**The chat is never a ship.** `IsShip` refuses `_setup` and `_chat` by name, so the chat, whose Claude can run `tmux set` on its own session, can't make itself a ship by setting `@admiral-name`. Admiral's tmux socket is one trust domain: the chat can still drive ships through tmux (send keys, rename a session), so the name guard is defence in depth against a plain `set @admiral-name`, not isolation.
 
 ## Considered options
 
@@ -34,7 +34,7 @@ This touches three earlier decisions. [ADR 0007](0007-needs-you-comes-from-harne
 
 ## Consequences
 
-- A change to Claude Code's transcript can blank the conversation. Nothing else breaks.
+- A change to Claude Code's transcript can blank the conversation. Nothing else breaks. A transcript path Admiral refuses to read (outside `projects/`, a symlink, not a regular file) gives the session an error, "Admiral can't read this chat's transcript", instead of a silently empty chat.
 - **Unverified:** that Claude Code keeps a multi-line bracketed paste as one message, and that Enter right after the end of the paste submits it; that a long pasted message is stored in the transcript in full, not as the TUI's `[Pasted text …]` placeholder; and that `/clear` gives a new transcript path. Admiral serves nothing from before a `SessionStart` with `source: "clear"` on the same path, so the conversation empties either way.
 - On the first start in a new folder, Claude may stop on its folder-trust dialog before any hook fires, and a pasted message would land in it. Until a path has been recorded for the running session, the session carries an error telling the engineer to open the terminal, and sending is refused. Admiral doesn't pre-trust the folder, since that writes Claude's config (ADR 0007).
 - New chat empties every browser's conversation at once, without waiting for the hook. A transcript is written asynchronously and may lag, so a message sent right after New chat can race the new path.
