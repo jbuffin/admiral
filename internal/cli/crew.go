@@ -162,7 +162,7 @@ func crewLaunch(args []string, std IO) error {
 	if err != nil {
 		return err
 	}
-	err = c.l.LaunchCrew(launcher.CrewRequest{Session: c.session, Name: *name, Harness: *harness, Dir: *dir, Prompt: strings.Join(prompt, " "), Args: extra, Role: *role})
+	err = c.l.LaunchCrew(launcher.CrewRequest{Session: c.session, Name: *name, Harness: *harness, Dir: *dir, Prompt: strings.Join(prompt, " "), Args: extra, Role: *role, Autopilot: os.Getenv("ADMIRAL_AUTOPILOT") == "1"})
 	if errors.Is(err, launcher.ErrCrewNameTaken) {
 		return &ExitError{Code: crewExitTaken, Msg: err.Error()}
 	}
