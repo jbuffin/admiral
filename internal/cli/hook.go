@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -365,7 +366,7 @@ func crewPaneWorking(f crewPaneFact, now time.Time) bool {
 func readCrewFacts(pane string, now time.Time) crewFacts {
 	const sep = "\x1f"
 	out, err := tmuxOut("list-panes", "-s", "-t", pane, "-F",
-		strings.Join([]string{"#{pane_id}", "#{pane_dead}", "#{@admiral-crew-name}", "#{@admiral-launched}", "#{@admiral-activity}"}, sep))
+		strings.Join([]string{"#{pane_id}", "#{pane_dead}", sessionhost.CrewNameFormat, "#{@admiral-launched}", "#{@admiral-activity}"}, sep))
 	if err != nil {
 		return crewFacts{CrewReadFailed: true}
 	}
@@ -406,6 +407,9 @@ func readCrewFacts(pane string, now time.Time) crewFacts {
 	return f
 }
 
+// paneID is a tmux pane id, the only $TMUX_PANE the nested command takes.
+var paneID = regexp.MustCompile(`^%[0-9]+$`)
+
 // crewTranscriptCall is the tmux call that records a crew boat's transcript
 // path in its pane option (#175, ADR 0021), or nil when the payload has none
 // that sessionhost.ValidCrewTranscriptPath accepts. Claude and Codex send
@@ -419,9 +423,9 @@ func crewTranscriptCall(pane, event string, p hookPayload) []string {
 	if event == "agentStop" && p.lead() && p.TranscriptCopilot != "" {
 		path = p.TranscriptCopilot
 	}
-	if !sessionhost.ValidCrewTranscriptPath(path) {
+	if !paneID.MatchString(pane) || !sessionhost.ValidCrewTranscriptPath(path) {
 		return nil
 	}
-	return []string{"if", "-F", "-t", pane, "#{@admiral-crew-name}",
+	return []string{"if", "-F", "-t", pane, sessionhost.CrewGateFormat,
 		"set -p -t " + pane + " " + sessionhost.CrewTranscriptOption + " '" + path + "'"}
 }

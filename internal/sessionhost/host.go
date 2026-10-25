@@ -121,7 +121,7 @@ const rawFormat = "#{session_name}" + sep + "#{pane_dead}" + sep + "#{pane_dead_
 	"#{@admiral-origin-source}" + sep + "#{@admiral-origin-panel}" + sep +
 	"#{@admiral-" + OptEnded + "}" + sep + "#{@admiral-" + OptNeedsCount + "}" + sep +
 	"#{@admiral-" + OptNeedsSecs + "}" + sep + "#{@admiral-" + OptStopSince + "}" + sep +
-	"#{@admiral-crew-name}" + sep + "#{pane_id}" + sep + "#{window_id}" + sep + "#{" + ActivityOption + "}" + sep +
+	CrewNameFormat + sep + "#{pane_id}" + sep + "#{window_id}" + sep + "#{" + ActivityOption + "}" + sep +
 	"#{@admiral-role}" + sep + "#{" + CrewTranscriptOption + "}" + sep + "#{" + SubagentsOption + "}"
 
 // The session options Admiral keeps for the outcome log (ADR 0012): the marker
