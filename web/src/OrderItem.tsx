@@ -2,7 +2,7 @@ import { signal } from '@preact/signals';
 import { useState } from 'preact/hooks';
 import { Menu, MenuItem } from './Menu';
 import { SourceIcon } from './SourceIcon';
-import { isSelected, pressOrder } from './launch';
+import { isSelected, openDockSheet, pressOrder } from './launch';
 import { phone } from './sizeClass';
 import { type Order, type Source, api, can, declares, isWebUrl, sourcePath } from './sources';
 
@@ -39,6 +39,14 @@ export function OrderItem({ source, panelId, order, fail }: { source: Source; pa
       class={`${hasEdit || hasRemove ? 'order with-menu' : 'order'}${isSelected({ source: source.key, panel: panelId, order }) ? ' selected' : ''}`}
       onPointerDown={phone.value ? undefined : (e) => pressOrder(e, { source: source.key, panel: panelId, order })}
     >
+      {phone.value && (
+        <button
+          type="button"
+          class="order-hit"
+          aria-label={`${source.name}${isWebUrl(order.url) ? ` ${order.id}` : ''}, ${title}. Tap to pick a dock and launch it.`}
+          onClick={(e) => openDockSheet({ source: source.key, panel: panelId, order }, e.currentTarget)}
+        />
+      )}
       <div class="order-main">
         <div class="order-meta">
           <SourceIcon source={source} size={16} />

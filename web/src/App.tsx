@@ -5,6 +5,7 @@ import { Bridge } from './Bridge';
 import { SetupTerminal } from './SetupTerminal';
 import { Header } from './Header';
 import { InboxDrawer, InboxSheet } from './InboxPanel';
+import { DockSheet } from './DockSheet';
 import { Ghost, LaunchOrders } from './LaunchOrders';
 import { LogoSprite } from './Logos';
 import { Ships } from './OpenWater';
@@ -27,6 +28,7 @@ export function App() {
           <SetupTerminal />
         </PhoneShell>
         <Ghost />
+        <DockSheet />
         <LaunchOrders />
       </div>
     );

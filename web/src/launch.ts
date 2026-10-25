@@ -33,6 +33,26 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') selected.value = null;
 });
 
+// The phone's dock sheet: the order a tap picked, and the button that opened it. Focus goes back to that
+// button when the sheet or the launch orders it leads to closes without a launch.
+export const dockSheet = signal<OrderRef | null>(null);
+let opener: HTMLElement | null = null;
+export function openDockSheet(ref: OrderRef, from: HTMLElement): void {
+  opener = from;
+  dockSheet.value = ref;
+}
+export function returnFocus(): void {
+  const el = opener;
+  opener = null;
+  // After the dialog or sheet is out of the page, or the browser's own restore would win.
+  if (el) requestAnimationFrame(() => el.isConnected && el.focus());
+}
+export function forgetOpener(): void {
+  opener = null;
+}
+// The ship a phone launch just made: the Ships tab highlights its row for a moment and focuses it.
+export const newShip = signal<string | null>(null);
+
 export const armed = computed(() => dragging.value !== null || selected.value !== null);
 
 export const dockKey = (fleet: string, harness: string) => `${fleet}/${harness}`;

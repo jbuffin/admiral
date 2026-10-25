@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { type Dock, type Fleet, config } from './config';
 import { harnesses } from './harnesses';
-import { announceLaunch, dragging, launching } from './launch';
+import { announceLaunch, dragging, forgetOpener, launching, newShip, returnFocus } from './launch';
 import { LogoFlag } from './Logos';
 import { Modal } from './Modal';
+import { phoneTab } from './PhoneShell';
 import { launchHint, resources } from './resources';
 import { ships } from './ships';
+import { phone } from './sizeClass';
 import { api, isWebUrl, sources } from './sources';
 
 interface DirEntry {
@@ -103,7 +105,10 @@ function Star({ on, name, onToggle }: { on: boolean; name: string; onToggle: () 
 function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
   const { source = '', panel, order, harness } = launching.value!;
   const h = harnesses[harness];
-  const close = () => (launching.value = null);
+  const close = () => {
+    launching.value = null;
+    returnFocus();
+  };
 
   const [entries, setEntries] = useState<DirEntry[] | null>(null);
   const [dirsError, setDirsError] = useState('');
@@ -262,8 +267,18 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
     });
     setBusy(false);
     if (!r.ok) return setError(r.error);
-    close();
+    launching.value = null;
+    forgetOpener();
     announceLaunch({ fleet: fleet.key, harness, source, order_id: order?.id ?? '', session: r.data.ship.session });
+    if (phone.value) {
+      // The new ship's row shows for a moment on the Ships tab, as the prototype does (:1489-1494).
+      const session = r.data.ship.session;
+      phoneTab.value = 'ships';
+      newShip.value = session;
+      setTimeout(() => {
+        if (newShip.value === session) newShip.value = null;
+      }, 2600);
+    }
   };
 
   // Escape closes an open list first; otherwise it is Stay in port.

@@ -3842,3 +3842,197 @@ body.dragging * {
   border-radius: 0;
   box-shadow: none;
 }
+
+/* The phone's order button: it covers the row under the order's link and menu, so a tap anywhere else opens the dock sheet. */
+.order-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  background: none;
+}
+
+:root.phone .order .order-main,
+:root.phone .order .grip {
+  pointer-events: none;
+}
+
+:root.phone .order .order-id,
+:root.phone .order .menu {
+  pointer-events: auto;
+}
+
+:root.phone .order .menu {
+  z-index: 2;
+}
+
+/* The phone's dock sheet (prototype :933-960): the inbox sheet, as a bottom sheet over a dimmed backdrop. */
+.dock-sheet-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+}
+
+.dock-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(11, 31, 51, 0.55);
+}
+
+.inbox-sheet.dock-sheet {
+  position: absolute;
+  inset: auto 0 0 0;
+  z-index: auto;
+  max-height: 88%;
+  background-color: var(--color-parchment);
+  border-top: 3px solid var(--color-ink);
+  border-radius: 24px 24px 0 0;
+  box-shadow: 0 -6px 0 var(--color-ink-deep);
+}
+
+.dock-sheet-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px calc(16px + env(safe-area-inset-right)) 10px calc(16px + env(safe-area-inset-left));
+}
+
+.dock-sheet-what {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dock-sheet-what h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 22px;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+.dock-sheet-what span {
+  font-size: 13.5px;
+  line-height: 1.35;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.dock-sheet-cancel {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 2.5px solid var(--color-ink);
+  background-color: #fffdf6;
+  box-shadow: 0 3px 0 var(--color-ink);
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.dock-sheet-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px calc(16px + env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+}
+
+.dock-sheet-fleet {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dock-sheet .sign {
+  position: static;
+  align-self: flex-start;
+  box-shadow: none;
+  border-width: 2.5px;
+}
+
+.dock-sheet .no-docks {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--color-text-muted);
+}
+
+.dock-pick {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 14px 8px 22px;
+  border-radius: 14px;
+  border: 2.5px solid var(--color-ink);
+  background-color: #fffdf6;
+  box-shadow: 0 3px 0 var(--color-ink);
+  color: var(--color-ink);
+  text-align: left;
+}
+
+.dock-pick-stripe {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  border-right: 2.5px solid var(--color-ink);
+}
+
+.dock-pick-flag {
+  flex: 0 0 auto;
+}
+
+.dock-pick-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.dock-pick-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.dock-pick-status {
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+}
+
+.dock-pick-status.marked {
+  font-weight: 700;
+  color: var(--color-attention-border);
+}
+
+/* The new ship's row, for a moment after a phone launch. */
+.ship-row.fresh {
+  background-color: #fff0b8;
+  box-shadow: 0 0 0 4px #ffc23d, 0 3px 0 var(--color-ink);
+}
+
+/* Launch orders on a phone (prototype :2423-2425): a top-aligned card between 12px gutters, whose body scrolls. */
+:root.phone .modal.launch {
+  width: calc(100% - 24px);
+  max-width: 540px;
+  margin: max(16px, env(safe-area-inset-top)) auto auto;
+  max-height: calc(100dvh - max(16px, env(safe-area-inset-top)) - max(16px, env(safe-area-inset-bottom)));
+}
+
+:root.phone .launch-body {
+  overflow-y: auto;
+}

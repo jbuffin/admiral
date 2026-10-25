@@ -31,7 +31,7 @@ function dockTops(count: number, height: number): number[] {
 
 // What replaces "All in port" on a dock whose config is wrong. The server's
 // full text goes in the accessible name and title.
-function marks(fleet: Fleet, dock: Dock): { short: string; full: string[] } | undefined {
+export function marks(fleet: Fleet, dock: Dock): { short: string; full: string[] } | undefined {
   const full: string[] = [];
   let short = '';
   if (!dock.executable_found) {
@@ -49,6 +49,14 @@ function marks(fleet: Fleet, dock: Dock): { short: string; full: string[] } | un
   return short ? { short, full } : undefined;
 }
 
+// The status line of a dock with nothing armed.
+export function restingStatus(fleet: Fleet, dock: Dock): string {
+  const mark = marks(fleet, dock);
+  if (mark) return mark.short;
+  const here = ships.value.filter((s) => s.fleet === fleet.key && s.harness === dock.harness && atSea(s)).length;
+  return here > 0 ? `${here} at sea` : 'All in port';
+}
+
 function DockView({ fleet, dock, top, index, height }: { fleet: Fleet; dock: Dock; top: number; index: number; height: number }) {
   const h = harnesses[dock.harness];
   const mark = marks(fleet, dock);
@@ -56,8 +64,7 @@ function DockView({ fleet, dock, top, index, height }: { fleet: Fleet; dock: Doc
   const key = dockKey(fleet.key, dock.harness);
   const hot = dragging.value?.dock === key;
   const leaving = departed.value?.dock === key ? departed.value.n : 0;
-  const here = ships.value.filter((s) => s.fleet === fleet.key && s.harness === dock.harness && atSea(s)).length;
-  const status = armed.value ? (hot ? 'Let go to launch' : 'Drop here') : mark ? mark.short : here > 0 ? `${here} at sea` : 'All in port';
+  const status = armed.value ? (hot ? 'Let go to launch' : 'Drop here') : restingStatus(fleet, dock);
   return (
     <button
       type="button"
@@ -97,7 +104,7 @@ function DockView({ fleet, dock, top, index, height }: { fleet: Fleet; dock: Doc
   );
 }
 
-function Sign({ color, ink, children }: { color: string; ink: string; children: preact.ComponentChildren }) {
+export function Sign({ color, ink, children }: { color: string; ink: string; children: preact.ComponentChildren }) {
   return (
     <div class="sign" style={`background-color:${color};color:${ink}`}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={ink} stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

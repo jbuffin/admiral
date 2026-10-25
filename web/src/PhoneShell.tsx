@@ -1,4 +1,6 @@
 import { signal } from '@preact/signals';
+import { useEffect, useRef } from 'preact/hooks';
+import { newShip } from './launch';
 import { harnesses } from './harnesses';
 import { reasonWords, waited } from './inbox';
 import { InboxTab } from './InboxPanel';
@@ -83,8 +85,18 @@ function Row({ ship }: { ship: WireShip }) {
   const h = harnesses[ship.harness]?.label ?? ship.harness;
   const status = statusLine(ship);
   const asking = ship.status === 'needs_you';
+  const fresh = newShip.value === ship.session;
+  const ref = useRef<HTMLButtonElement>(null);
+  // The row of a ship this phone just launched takes focus once, whenever it appears.
+  const focused = useRef(false);
+  useEffect(() => {
+    if (fresh && !focused.current) {
+      focused.current = true;
+      ref.current?.focus();
+    }
+  }, [fresh]);
   return (
-    <button type="button" class={`press ship-row${asking ? ' asking' : ''}`} aria-label={`Board ${ship.name}, ${h} in ${ship.fleet_name}, ${status}`} onClick={() => board(ship.session)}>
+    <button ref={ref} type="button" class={`press ship-row${asking ? ' asking' : ''}${fresh ? ' fresh' : ''}`} aria-label={`Board ${ship.name}, ${h} in ${ship.fleet_name}, ${status}`} onClick={() => board(ship.session)}>
       <span class="ship-row-stripe" style={`background-color:${ship.fleet_color}`} aria-hidden="true" />
       <svg width="40" height="28" viewBox="0 0 40 28" aria-hidden="true" class="ship-row-flag">
         <LogoFlag harness={ship.harness} kind="pier" />
