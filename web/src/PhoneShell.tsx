@@ -5,7 +5,7 @@ import { InboxTab } from './InboxPanel';
 import { clock, inbox } from './inboxState';
 import { LogoFlag } from './Logos';
 import { Sidebar } from './Sidebar';
-import { board, boardedSession, ships, type WireShip } from './ships';
+import { board, boarded, ships, type WireShip } from './ships';
 import { sortShips } from './shipList';
 
 // The phone's shell: a tab bar under one tab body (prototype :2210-2262). Opening or closing a bridge never
@@ -131,7 +131,7 @@ export function PhoneShell({ children }: { children?: preact.ComponentChildren }
     <>
       <div class="phone-body">
         {/* The pane under a bridge is out of reach of VoiceOver and Tab. */}
-        <div class="phone-tabs-pane" inert={boardedSession.value !== null}>
+        <div class="phone-tabs-pane" inert={boarded.value !== null}>
         {phoneTab.value === 'inbox' && <InboxTab />}
         {phoneTab.value === 'chat' && <ChatTab />}
         {phoneTab.value === 'ships' && <ShipsTab />}
@@ -139,7 +139,7 @@ export function PhoneShell({ children }: { children?: preact.ComponentChildren }
         </div>
         {children}
       </div>
-      {boardedSession.value === null && <TabBar />}
+      {boarded.value === null && <TabBar />}
     </>
   );
 }
