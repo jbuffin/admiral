@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { HOLD_MS, createQueue, reasonWords, safeHref, waited, type InboxItem } from './inbox';
-import type { WireShip } from './ships';
+import type { WireCrew, WireShip } from './ships';
 
 // The inbox queue (#116 u3, S1). The interface the module is built to, all pure: time comes in as `now`
 // (epoch ms), nothing here sets a timer.
@@ -17,21 +17,43 @@ import type { WireShip } from './ships';
 //   q.currentKey(), q.move(±1), q.select(key)
 //   q.pulsing()                      at least one needs-you stop is open (not folded)
 //
-// Keys: items `item:<session>/<id>`, needs-you stops `stop:<session>`.
+// Keys: items `item:<session>/<id>`, needs-you stops `stop:<session>`, crew stops `stop:<session>/<crew>`.
+//
+// Crew stops (#154 u3). The seam: a crew boat with status needs_you in a ship's `crew[]` is an entry of its own,
+//   { key: 'stop:<session>/<crew>', type: 'stop', session, id: <crew name>, ship: <the WireShip>, crew: <the WireCrew>,
+//     folded, since }
+// `crew` is set on crew stops only. `since` is frozen at first sight: Date.parse(last_activity) || Date.parse(launched)
+// || now, and later pushes do not move it. The ship's own stop exists when `status === 'needs_you' && reason !== 'crew'`
+// (the wire shows needs_you/crew while only a crew boat waits); that one predicate also drives its "Back underway" fold
+// and its first-seen time. A crew stop folds "Back underway" when its boat goes back to underway; any other way out is
+// silent. Crew stops count and pulse like ship stops.
 
 const T0 = Date.parse('2026-10-22T10:00:00Z');
 const at = (min: number) => new Date(T0 + min * 60_000).toISOString();
 
 const item = (session: string, id: string, min: number, extra: Partial<InboxItem> = {}): InboxItem =>
   ({ version: 1, id, session, kind: 'question', created: at(min), title: `Item ${id}`, ...extra }) as InboxItem;
-const ship = (session: string, status: WireShip['status'], stopMin?: number, reason = 'permission:Bash'): WireShip =>
+const ship = (session: string, status: WireShip['status'], stopMin?: number, reason = 'permission:Bash', crew: WireCrew[] = []): WireShip =>
   ({
     session,
     name: session,
     status,
     reason: status === 'needs_you' ? reason : undefined,
     stop_since: status === 'needs_you' && stopMin !== undefined ? at(stopMin) : undefined,
+    crew,
   }) as unknown as WireShip;
+const boat = (name: string, status: WireCrew['status'], extra: Partial<WireCrew> = {}): WireCrew =>
+  ({
+    name,
+    harness: 'claude',
+    dir: '/w',
+    status,
+    reason: status === 'needs_you' ? 'permission:Bash' : undefined,
+    launched: at(-30),
+    ...extra,
+  }) as WireCrew;
+// A lead that is underway itself while one of its crew boats waits: the wire says needs_you/crew.
+const crewOnly = (session: string, boats: WireCrew[]) => ship(session, 'needs_you', 1, 'crew', boats);
 
 const keys = (q: ReturnType<typeof createQueue>) => q.entries().map((e) => e.key);
 
@@ -257,6 +279,144 @@ describe('leaving without an action', () => {
     q.sync({ items: [], ships: [ship('a', 'needs_you', 20)] }, T0 + 9000);
     expect(q.count()).toBe(1);
     expect(q.entries()[0]).toMatchObject({ key: 'stop:a', folded: null });
+  });
+});
+
+describe('crew stops (#154)', () => {
+  const sync = (q: ReturnType<typeof createQueue>, ships: WireShip[], now = T0) => q.sync({ items: [], ships }, now);
+
+  it('a crew-only ship has a crew stop and no ship stop', () => {
+    const q = createQueue();
+    sync(q, [crewOnly('a', [boat('api', 'needs_you', { last_activity: at(2) })])]);
+    expect(keys(q)).toEqual(['stop:a/api']);
+    expect(q.entries()[0]).toMatchObject({ type: 'stop', session: 'a', id: 'api', folded: null });
+    expect(q.entries()[0].crew).toMatchObject({ name: 'api', reason: 'permission:Bash' });
+    expect(q.entries()[0].ship).toMatchObject({ session: 'a' });
+  });
+
+  it('a boat that is working makes no stop', () => {
+    const q = createQueue();
+    sync(q, [ship('a', 'underway', undefined, '', [boat('api', 'underway')])]);
+    expect(q.entries()).toEqual([]);
+  });
+
+  it('a ship that needs you itself and a waiting crew boat make two entries, oldest first', () => {
+    const q = createQueue();
+    sync(q, [ship('a', 'needs_you', 5, 'permission:Bash', [boat('api', 'needs_you', { last_activity: at(2) })])]);
+    expect(keys(q)).toEqual(['stop:a/api', 'stop:a']);
+    expect(q.count()).toBe(2);
+  });
+
+  it('an anchored ship with a waiting crew boat still shows the crew stop', () => {
+    const q = createQueue();
+    sync(q, [ship('a', 'anchored', undefined, '', [boat('api', 'needs_you', { last_activity: at(2) })])]);
+    expect(keys(q)).toEqual(['stop:a/api']);
+  });
+
+  it("the ship's own stop folds when it is answered, though the wire stays needs_you/crew", () => {
+    const q = createQueue();
+    const api = boat('api', 'needs_you', { last_activity: at(2) });
+    sync(q, [ship('a', 'needs_you', 1, 'permission:Bash', [api])]);
+    sync(q, [crewOnly('a', [api])], T0 + 1000);
+    expect(q.entries().find((e) => e.key === 'stop:a')).toMatchObject({ folded: 'Back underway' });
+    expect(q.entries().find((e) => e.key === 'stop:a/api')).toMatchObject({ folded: null });
+    expect(q.count()).toBe(1);
+    q.tick(T0 + 1000 + HOLD_MS);
+    expect(keys(q)).toEqual(['stop:a/api']);
+  });
+
+  it('a ship stop first seen after a crew-only stretch counts from its own first sight', () => {
+    const q = createQueue();
+    const api = boat('api', 'needs_you', { last_activity: at(2) });
+    sync(q, [crewOnly('a', [api])]);
+    sync(q, [ship('a', 'needs_you', undefined, 'permission:Bash', [api])], T0 + 5 * 60_000);
+    expect(q.entries().find((e) => e.key === 'stop:a')!.since).toBe(T0 + 5 * 60_000);
+  });
+
+  it('a crew stop whose boat goes back to underway folds "Back underway"', () => {
+    const q = createQueue();
+    sync(q, [crewOnly('a', [boat('api', 'needs_you', { last_activity: at(2) })])]);
+    sync(q, [ship('a', 'underway', undefined, '', [boat('api', 'underway')])], T0 + 1000);
+    expect(q.entries()[0]).toMatchObject({ key: 'stop:a/api', folded: 'Back underway' });
+    expect(q.count()).toBe(0);
+    expect(q.pulsing()).toBe(false);
+    q.tick(T0 + 1000 + HOLD_MS);
+    expect(q.entries()).toEqual([]);
+  });
+
+  it.each([
+    ['the boat is closed', () => ship('a', 'underway', undefined, '', [])],
+    ['the boat anchors', () => ship('a', 'underway', undefined, '', [boat('api', 'anchored', { exit_code: 0 })])],
+    ['the ship is anchored', () => ship('a', 'anchored', undefined, '', [boat('api', 'underway')])],
+    ['the ship is sailing off', () => ship('a', 'sailing_off', undefined, '', [boat('api', 'needs_you')])],
+  ])('a crew stop leaves silently when %s', (_why, next) => {
+    const q = createQueue();
+    sync(q, [crewOnly('a', [boat('api', 'needs_you', { last_activity: at(2) })])]);
+    expect(keys(q)).toEqual(['stop:a/api']);
+    sync(q, [next()], T0 + 1000);
+    expect(q.entries()).toEqual([]);
+  });
+
+  it('a crew stop leaves silently when its ship is gone, and the cursor moves on', () => {
+    const q = createQueue();
+    q.sync({ items: [item('z', '1', 9)], ships: [crewOnly('a', [boat('api', 'needs_you', { last_activity: at(2) })])] }, T0);
+    expect(q.currentKey()).toBe('stop:a/api');
+    q.sync({ items: [item('z', '1', 9)], ships: [] }, T0 + 1000);
+    expect(keys(q)).toEqual(['item:z/1']);
+    expect(q.currentKey()).toBe('item:z/1');
+  });
+
+  it('since is last_activity, else launched, else the first sight, and later pushes do not move it', () => {
+    const q = createQueue();
+    sync(q, [
+      crewOnly('a', [
+        boat('act', 'needs_you', { last_activity: at(3) }),
+        boat('lau', 'needs_you', { launched: at(-10), last_activity: undefined }),
+        boat('now', 'needs_you', { launched: undefined, last_activity: undefined } as Partial<WireCrew>),
+      ]),
+    ]);
+    const since = () => Object.fromEntries(q.entries().map((e) => [e.id, e.since]));
+    expect(since()).toEqual({ lau: T0 - 10 * 60_000, act: T0 + 3 * 60_000, now: T0 });
+    // A later hook restamps last_activity, and a later push arrives; nothing moves.
+    sync(q, [
+      crewOnly('a', [
+        boat('act', 'needs_you', { last_activity: at(8) }),
+        boat('lau', 'needs_you', { launched: at(-10), last_activity: at(9) }),
+        boat('now', 'needs_you', { launched: undefined, last_activity: at(9) } as Partial<WireCrew>),
+      ]),
+    ], T0 + 20 * 60_000);
+    expect(since()).toEqual({ lau: T0 - 10 * 60_000, act: T0 + 3 * 60_000, now: T0 });
+  });
+
+  it('a boat that waits again after it left is a new stop with a new since', () => {
+    const q = createQueue();
+    sync(q, [crewOnly('a', [boat('api', 'needs_you', { last_activity: at(2) })])]);
+    sync(q, [ship('a', 'underway', undefined, '', [boat('api', 'underway')])], T0 + 1000);
+    q.tick(T0 + 1000 + HOLD_MS);
+    sync(q, [crewOnly('a', [boat('api', 'needs_you', { last_activity: at(20) })])], T0 + 9000);
+    expect(q.entries()[0]).toMatchObject({ key: 'stop:a/api', folded: null, since: T0 + 20 * 60_000 });
+  });
+
+  it('crew stops of one ship, and the ship stop on a tie, keep a stable order whatever the wire order', () => {
+    const same = at(4);
+    const boats = [boat('b', 'needs_you', { last_activity: same }), boat('a', 'needs_you', { last_activity: same })];
+    const q1 = createQueue();
+    sync(q1, [ship('s', 'needs_you', 4, 'permission:Bash', boats)]);
+    const q2 = createQueue();
+    sync(q2, [ship('s', 'needs_you', 4, 'permission:Bash', [...boats].reverse())]);
+    expect(keys(q1)).toEqual(['stop:s', 'stop:s/a', 'stop:s/b']);
+    expect(keys(q2)).toEqual(keys(q1));
+  });
+
+  it('crew stops count and pulse like ship stops', () => {
+    const q = createQueue();
+    q.sync({ items: [item('z', '1', 9)], ships: [crewOnly('a', [boat('api', 'needs_you', { last_activity: at(2) }), boat('db', 'needs_you', { last_activity: at(3) })])] }, T0);
+    expect(q.count()).toBe(3);
+    expect(q.pulsing()).toBe(true);
+    q.fold('stop:a/api', 'Back underway', T0);
+    q.fold('stop:a/db', 'Back underway', T0);
+    expect(q.count()).toBe(1);
+    expect(q.pulsing()).toBe(false);
   });
 });
 
