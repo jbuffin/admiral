@@ -119,7 +119,7 @@ func TestCrewTranscript_HooksPerHarnessAndReadBack(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, b := range []struct{ name, harness string }{{"cl", "claude"}, {"cx", "codex"}, {"cp", "copilot"}, {"fresh", "claude"}} {
+	for _, b := range []struct{ name, harness string }{{"cl", "claude"}, {"cx", "codex"}, {"cp", "copilot"}, {"fresh", "claude"}, {"0", "claude"}} {
 		w.expectExit(crewCall(w, sess, "", "launch", "--name", b.name, "--harness", b.harness, "--dir", dir, "--", "go"), 0, "crew launch "+b.name)
 		w.waitFile(sess+"/crew/"+b.name, "cues-done")
 	}
@@ -149,12 +149,17 @@ func TestCrewTranscript_HooksPerHarnessAndReadBack(t *testing.T) {
 	wantTranscript(w, sess, "cl", good, true, "a Claude path with a space")
 	for name, bad := range map[string]string{
 		"relative": "x/abc.jsonl", "not .jsonl": "/a/abc.txt", "control char": "/a/b\u0001c.jsonl",
-		"single quote": "/a/it's.jsonl", "double quote": `/a/"x".jsonl`, "backslash": `/a/b\c.jsonl`, "backtick": "/a/`x`.jsonl",
-		"dollar": "/a/$HOME.jsonl", "hash": "/a/#{pane_id}.jsonl", "semicolon": "/a/b;kill-server.jsonl", "braces": "/a/{b}.jsonl",
+		"single quote": "/a/it's.jsonl", "semicolon": "/a/b;kill-server.jsonl", // the unit table has the full list
 	} {
 		hook(cl, "PostToolUse", payload("tool_name", "Bash", "transcript_path", bad))
 		wantTranscript(w, sess, "cl", good, true, "an invalid path ("+name+")")
 	}
+
+	// A boat named "0": tmux's `if -F` treats a format of "0" as false, so the
+	// gate must test for a non-empty name instead.
+	const zeroPath = "/tmp/zero/boat.jsonl"
+	hook(w.paneOf(sess, "0").pane, "UserPromptSubmit", payload("transcript_path", zeroPath))
+	wantTranscript(w, sess, "0", zeroPath, true, "a crew boat named 0")
 
 	// Codex: null records nothing, a path does.
 	cx := w.paneOf(sess, "cx").pane

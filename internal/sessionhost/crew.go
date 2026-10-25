@@ -18,6 +18,15 @@ const ActivityOption = Prefix + "activity"
 // transcript path in (ADR 0021). Crew boats only, never a ship or the chat.
 const CrewTranscriptOption = Prefix + "crew-transcript"
 
+// CrewNameFormat is the format that reads a window's @admiral-crew-name: the
+// reader's marker of a crew boat. CrewGateFormat is true exactly when it is
+// non-empty, which the hook uses in tmux's `if -F`. A bare name format is no
+// gate: tmux reads "0", a valid crew name, as false.
+const (
+	CrewNameFormat = "#{" + Prefix + "crew-name}"
+	CrewGateFormat = "#{!=:" + CrewNameFormat + ",}"
+)
+
 // The states a crew boat shows (#72 story 9). A crew boat never sails off, and
 // is never "working": underway covers both.
 const (

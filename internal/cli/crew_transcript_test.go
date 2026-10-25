@@ -15,7 +15,7 @@ import (
 func TestCrewTranscriptCall(t *testing.T) {
 	const pane = "%7"
 	call := func(path string) []string {
-		return []string{"if", "-F", "-t", pane, "#{@admiral-crew-name}",
+		return []string{"if", "-F", "-t", pane, "#{!=:#{@admiral-crew-name},}",
 			"set -p -t " + pane + " @admiral-crew-transcript '" + path + "'"}
 	}
 	const withSpace = "/Users/me/My Projects/.claude/projects/x/abc.jsonl"
@@ -55,6 +55,8 @@ func TestCrewTranscriptCall(t *testing.T) {
 		{"semicolon", "Stop", `{"transcript_path":` + jstr("/a/b;kill-server.jsonl") + `}`, nil},
 		{"open brace", "Stop", `{"transcript_path":` + jstr("/a/{b.jsonl") + `}`, nil},
 		{"close brace", "Stop", `{"transcript_path":` + jstr("/a/b}.jsonl") + `}`, nil},
+		{"C1 control (U+0085)", "Stop", `{"transcript_path":` + jstr("/a/b\u0085c.jsonl") + `}`, nil},
+		{"bidi override (U+202E)", "Stop", `{"transcript_path":` + jstr("/a/b\u202ec.jsonl") + `}`, nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -66,5 +68,16 @@ func TestCrewTranscriptCall(t *testing.T) {
 				t.Errorf("crewTranscriptCall(%s) = %q, want %q", c.event, got, c.want)
 			}
 		})
+	}
+}
+
+// The pane id is spliced into the nested command, so only a tmux pane id (%N)
+// gets the write.
+func TestCrewTranscriptCallRefusesOddPane(t *testing.T) {
+	p := hookPayload{TranscriptPath: "/a/b.jsonl"}
+	for _, pane := range []string{"", "7", "%", "%7;kill-server", "%7 x", "main:0.1"} {
+		if got := crewTranscriptCall(pane, "Stop", p); got != nil {
+			t.Errorf("crewTranscriptCall(pane %q) = %q, want nil", pane, got)
+		}
 	}
 }

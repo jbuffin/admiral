@@ -289,7 +289,7 @@ func crewList(args []string, std IO) error {
 	}
 	rows := make([]crewRow, 0, len(boats))
 	for _, b := range boats {
-		r := crewRow{b.Name, b.Harness, b.Dir, b.State, b.Launched, nil, nil, nil}
+		r := crewRow{Name: b.Name, Harness: b.Harness, Dir: b.Dir, State: b.State, Launched: b.Launched}
 		if b.Role != "" {
 			role := b.Role
 			r.Role = &role

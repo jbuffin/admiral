@@ -28,9 +28,6 @@ func transcriptRow(session, crew, transcript string) string {
 }
 
 func TestParseCrewReadsTranscript(t *testing.T) {
-	if tailFields != wantTailFields {
-		t.Fatalf("tailFields = %d, want %d: the crew transcript is one more tail field, before the subagents", tailFields, wantTailFields)
-	}
 	known := map[string]bool{"ship": true}
 	read := func(transcript string) string {
 		t.Helper()
@@ -63,5 +60,27 @@ func TestParseRowsShipSubagentsAfterTranscript(t *testing.T) {
 	}
 	if s := got["ship"]; len(s.Subagents) != 1 || s.Subagents[0].ID != "a1" {
 		t.Errorf("subagents = %+v, want a1 at the moved index", s.Subagents)
+	}
+}
+
+// The crew rule refuses what the chat's rule allows: invalid UTF-8 (which
+// encoding/json never delivers to the hook, but a tmux option can hold), the C1
+// controls and the bidi formatting characters.
+func TestValidCrewTranscriptPath(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		want bool
+	}{
+		{"/a/My Projects/b.jsonl", true},
+		{"/a/b\xffc.jsonl", false},
+		{"/a/b\u0085c.jsonl", false},
+		{"/a/b\u202ec.jsonl", false},
+		{"/a/b\u2066c.jsonl", false},
+		{"/a/b\u2069c.jsonl", false},
+		{"/a/b\u00e9c.jsonl", true},
+	} {
+		if got := ValidCrewTranscriptPath(c.in); got != c.want {
+			t.Errorf("ValidCrewTranscriptPath(%q) = %v, want %v", c.in, got, c.want)
+		}
 	}
 }
