@@ -36,6 +36,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jbuffin/admiral/internal/launcher"
 )
 
 // Internal is the hidden session control mode is attached to. No ship name
@@ -45,6 +47,10 @@ const Internal = "_admiral"
 // SetupName is the session that runs `admiral setup` for the browser. It is
 // not a ship.
 const SetupName = "_setup"
+
+// ChatName is the session that runs the AdmiralBot chat (ADR 0018, 0019). It is
+// not a ship.
+const ChatName = launcher.ChatSession
 
 // SetupTerminalEnv is set in the setup session, so `admiral setup` holds an error on screen.
 const SetupTerminalEnv = "ADMIRAL_SETUP_TERMINAL"
@@ -167,8 +173,12 @@ type Session struct {
 	Subagents []Subagent
 }
 
-// IsShip is true for a session Admiral launched (or that looks like one).
-func (s Session) IsShip() bool { return s.Name != Internal && s.Options["name"] != "" }
+// IsShip is true for a session Admiral launched (or that looks like one). The
+// setup and chat sessions never are: the chat's Claude can set options on its
+// own session, and must not make itself a ship by setting @admiral-name.
+func (s Session) IsShip() bool {
+	return s.Name != Internal && s.Name != SetupName && s.Name != ChatName && s.Options["name"] != ""
+}
 
 // EventKind says what changed.
 type EventKind int

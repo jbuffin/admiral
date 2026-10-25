@@ -545,7 +545,7 @@ func crewState(c sessionhost.Crew) shipMsg {
 
 // crewBoat is the crew boat called name of the ship in session.
 func (s *Service) crewBoat(session, name string) (sessionhost.Crew, bool) {
-	if session == sessionhost.SetupName {
+	if _, own := ownSessions[session]; own {
 		return sessionhost.Crew{}, false
 	}
 	l, _ := s.Ships.Crew(session)

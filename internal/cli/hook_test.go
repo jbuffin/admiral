@@ -236,3 +236,36 @@ func TestHookCrewPaneWorking(t *testing.T) {
 		})
 	}
 }
+
+// SessionStart records the chat's transcript path in one option, and only a path
+// the chat service could read; nothing else of the payload is kept.
+func TestTranscriptCall(t *testing.T) {
+	now := time.Unix(1700000000, 5).UTC()
+	call := func(event, payload string) []string {
+		var p hookPayload
+		if err := json.Unmarshal([]byte(payload), &p); err != nil {
+			t.Fatal(err)
+		}
+		return transcriptCall("%1", event, p, now)
+	}
+	got := call("SessionStart", `{"transcript_path":"/h/.claude/projects/p/a.jsonl","source":"clear","cwd":"/x"}`)
+	want := []string{"set", "-p", "-t", "%1", sessionhost.TranscriptOption, "1700000000000000005 clear /h/.claude/projects/p/a.jsonl"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("call = %q, want %q", got, want)
+	}
+	if got := call("SessionStart", `{"transcript_path":"/p/a.jsonl","source":"a b"}`); got == nil || !strings.Contains(got[5], " unknown ") {
+		t.Errorf("a source that is not a safe token is stored as unknown, got %q", got)
+	}
+	for name, c := range map[string][2]string{
+		"another event":  {"Stop", `{"transcript_path":"/p/a.jsonl"}`},
+		"relative":       {"SessionStart", `{"transcript_path":"p/a.jsonl"}`},
+		"not jsonl":      {"SessionStart", `{"transcript_path":"/p/a.txt"}`},
+		"ends in a semi": {"SessionStart", `{"transcript_path":"/p/a.jsonl;"}`},
+		"newline":        {"SessionStart", `{"transcript_path":"/p/a\n.jsonl"}`},
+		"none":           {"SessionStart", `{}`},
+	} {
+		if got := call(c[0], c[1]); got != nil {
+			t.Errorf("%s: wrote %q, want nothing", name, got)
+		}
+	}
+}

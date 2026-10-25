@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,6 +41,9 @@ func Hook(args []string, std IO) error {
 		}
 		if sub := subagentCall(pane, args[0], p, now); sub != nil {
 			call = append(append(call, ";"), sub...)
+		}
+		if ts := transcriptCall(pane, args[0], p, now); ts != nil {
+			call = append(append(call, ";"), ts...)
 		}
 	}
 	_ = exec.Command("tmux", call...).Run()
@@ -85,6 +89,8 @@ type hookPayload struct {
 	AgentTypeCopilot string `json:"agentType"`         // Copilot
 	SubagentID       string `json:"agent_id"`          // Claude Code, Codex: SubagentStart and SubagentStop
 	SubagentType     string `json:"agent_type"`        // Claude Code, Codex
+	TranscriptPath   string `json:"transcript_path"`   // Claude Code: SessionStart, for the chat
+	Source           string `json:"source"`            // Claude Code: SessionStart (startup, resume, clear, compact)
 	// Claude Code's Stop; Codex sends none. A nil slice is "absent" and an
 	// empty one is `[]`, which tells Claude's Stop from Codex's.
 	BackgroundTasks []struct {
@@ -282,6 +288,29 @@ func subagentCall(pane, event string, p hookPayload, now time.Time) []string {
 		return []string{"set", "-p", "-u", "-q", "-t", pane, sessionhost.SubagentsOption}
 	}
 	return []string{"set", "-p", "-t", pane, sessionhost.SubagentsOption, next}
+}
+
+// transcriptCall is the tmux call that records a SessionStart for the chat
+// (ADR 0019): the option holds "<unix nanoseconds> <source> <transcript path>"
+// in one write, so a reader never sees a torn pair, and a second SessionStart on
+// the same path still changes it. Only the chat's bundle registers SessionStart.
+// A path that is not absolute, does not end in .jsonl or holds a control
+// character is not recorded (the .jsonl ending also keeps the argument from
+// ending in the ";" tmux reads as a separator).
+func transcriptCall(pane, event string, p hookPayload, now time.Time) []string {
+	if event != "SessionStart" {
+		return nil
+	}
+	path := p.TranscriptPath
+	if !strings.HasPrefix(path, "/") || !strings.HasSuffix(path, ".jsonl") || len(path) > 4096 ||
+		strings.IndexFunc(path, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
+		return nil
+	}
+	source := safeID(p.Source)
+	if source == "" {
+		source = "unknown"
+	}
+	return []string{"set", "-p", "-t", pane, sessionhost.TranscriptOption, strconv.FormatInt(now.UnixNano(), 10) + " " + source + " " + path}
 }
 
 // crewFacts is what the lead rule needs to know about the pane and its crew.

@@ -59,6 +59,10 @@ _Avoid_: launch menu, modal
 A skill the engineer starred, up to five, shown in launch orders after Commodore on every dock where it is installed.
 _Avoid_: configured skill, skill list
 
+**AdmiralBot**:
+The chat: one Claude Code session that Admiral keeps in its own tmux session, `_chat`, outside the ships, so the engineer can talk to it from any device. Every browser sees the same conversation. It is not a ship: it never shows in open water or the Ships list, and takes no part in caps, guards or resources. New chat clears it for every device. Open terminal shows its real terminal. Its model, effort and fleet come from the `chat` settings.
+_Avoid_: assistant, chat ship, chat agent
+
 **Ship**:
 One running harness session, launched from a dock by the engineer or by autopilot, and run in its own tmux session (ADR 0002). Wooden hull, a stripe in its fleet color, the harness logo on its flag, a square bot as captain. Each ship has a generated name, unique among the ships that exist, that it keeps for life; the name carries no meaning.
 _Avoid_: boat (for the lead), agent, card

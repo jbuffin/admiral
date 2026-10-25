@@ -21,6 +21,7 @@ import (
 	"github.com/jbuffin/admiral/internal/auth"
 	"github.com/jbuffin/admiral/internal/autopilot"
 	"github.com/jbuffin/admiral/internal/bridge"
+	"github.com/jbuffin/admiral/internal/chat"
 	"github.com/jbuffin/admiral/internal/cli"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/home"
@@ -328,9 +329,10 @@ func serve(args []string) error {
 		inboxService.Notify()
 	}
 
+	chatService := &chat.Service{Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, Tmux: tmuxPath, Socket: sock}
 	s := &server.Server{Version: version, Commit: commit, UI: web.UI(), Messages: map[string]server.MessageHandler{}, Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService,
-			&launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}, bridgeService, resourceService, lockRoute}}
+			&launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}, bridgeService, resourceService, lockRoute, chatService}}
 	bg, stopBackground := context.WithCancel(context.Background())
 	var background sync.WaitGroup
 	supervisor.Start(bg)
@@ -360,7 +362,7 @@ func serve(args []string) error {
 			}
 		}
 	}()
-	runs := []func(context.Context){s.WatchConfig, sourceService.Run, bridgeService.Run, resourceSet.Run, inboxService.Run}
+	runs := []func(context.Context){s.WatchConfig, sourceService.Run, bridgeService.Run, resourceSet.Run, inboxService.Run, chatService.Run}
 	if tmuxPath != "" {
 		runs = append(runs, host.Run)
 	}

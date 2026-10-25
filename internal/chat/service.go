@@ -1,0 +1,571 @@
+package chat
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"log"
+	"net/http"
+	"os"
+	"os/exec"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/launcher"
+	"github.com/jbuffin/admiral/internal/server"
+	"github.com/jbuffin/admiral/internal/sessionhost"
+)
+
+// NotStarted is the error the session carries until the first SessionStart has
+// recorded a transcript. On a first start in a new folder Claude may be on its
+// folder-trust dialog, where a pasted message would land (ADR 0019).
+const NotStarted = "Open the terminal to finish starting the chat"
+
+// maxSend is the longest message a send takes.
+const maxSend = 16 << 10
+
+// optionEvery is how often the chat's options are read from tmux at most.
+const optionEvery = 200 * time.Millisecond
+
+const sep = "\x1f"
+
+// Snapshot is what GET /api/chat/session and the `chat` WebSocket message carry.
+// The wire message adds "type". Chat questions (a later unit) will join it.
+type Snapshot struct {
+	Running  bool      `json:"running"`
+	State    string    `json:"state"` // idle, working or waiting; "" while not running
+	Messages []Message `json:"messages"`
+	Error    string    `json:"error,omitempty"`
+}
+
+// wire is the WebSocket form of a Snapshot.
+type wire struct {
+	Type string `json:"type"`
+	Snapshot
+}
+
+// Service is the chat session's server module.
+type Service struct {
+	Host     *sessionhost.Host
+	Hub      *server.Hub
+	Launcher *launcher.Launcher
+	Config   func() *config.Config
+	Tmux     string // the tmux binary
+	Socket   string
+
+	op sync.Mutex // start, New chat and send, one at a time
+
+	mu sync.Mutex // everything below
+	st state
+}
+
+// state is the chat as last read. It is cleared when the pane changes.
+type state struct {
+	pane     string // the pane id of the `_chat` session read last
+	opts     chatOptions
+	readAt   time.Time
+	optRaw   string // the transcript option's value acted on last
+	path     string // the transcript path in it
+	fol      *follower
+	msgs     []Message
+	bytes    int
+	refused  string // a path already logged as refused
+	snapshot Snapshot
+}
+
+// chatOptions are the options one tmux read returns.
+type chatOptions struct {
+	model, effort, fleet string
+	transcript           string // "<unix ns> <source> <path>", "" before the first SessionStart
+}
+
+// Routes registers the chat API.
+func (s *Service) Routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/chat/session", s.serveSession)
+	mux.HandleFunc("POST /api/chat/start", s.serveStart)
+	mux.HandleFunc("POST /api/chat/messages", s.serveSend)
+	mux.HandleFunc("POST /api/chat/new", s.serveNew)
+}
+
+// Connected sends a new client the chat.
+func (s *Service) Connected(c *server.Client) {
+	m := s.message()
+	_ = c.SendOnce("chat", func() any { return m })
+}
+
+// Run follows the session until ctx ends: on every event of the host about it,
+// and on a short tick for what the host doesn't see (the chat's options and its
+// transcript), it pushes the chat when it changed.
+func (s *Service) Run(ctx context.Context) {
+	if s.Host == nil {
+		return
+	}
+	events, cancel := s.Host.Subscribe()
+	defer cancel()
+	tick := time.NewTicker(500 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev := <-events:
+			if ev.Session != sessionhost.ChatName && ev.Kind != sessionhost.Reset && ev.Kind != sessionhost.Resumed {
+				continue
+			}
+		case <-tick.C:
+		}
+		s.broadcast()
+	}
+}
+
+func (s *Service) broadcast() {
+	m := s.message()
+	s.Hub.BroadcastOnce("chat", func() any { return m })
+}
+
+func (s *Service) message() wire { return wire{Type: "chat", Snapshot: s.current()} }
+
+// current reads the chat and returns it.
+func (s *Service) current() Snapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.refreshLocked(false)
+}
+
+// session is the `_chat` session as the host last read it.
+func (s *Service) session() (sessionhost.Session, bool) {
+	if s.Host == nil {
+		return sessionhost.Session{}, false
+	}
+	for _, sess := range s.Host.Sessions() {
+		if sess.Name == sessionhost.ChatName && !sess.PaneDead {
+			return sess, true
+		}
+	}
+	return sessionhost.Session{}, false
+}
+
+// refreshLocked reads the session, its options and its transcript and returns the
+// snapshot. force reads the options even if they were read a moment ago.
+func (s *Service) refreshLocked(force bool) Snapshot {
+	st := &s.st
+	sess, running := s.session()
+	if !running {
+		*st = state{}
+		st.snapshot = Snapshot{Messages: []Message{}}
+		return st.snapshot
+	}
+	if sess.PaneID != st.pane {
+		// A new session (the first one Admiral sees, or a restart): nothing of the
+		// old one's conversation carries over, and a transcript is read from its start.
+		*st = state{pane: sess.PaneID}
+	}
+	if force || time.Since(st.readAt) >= optionEvery {
+		if o, err := s.readOptions(sess.PaneID); err == nil {
+			st.opts = o
+			st.readAt = time.Now()
+		}
+	}
+	if st.opts.transcript != st.optRaw {
+		s.transcriptChangedLocked(st.opts.transcript)
+	}
+	s.followLocked()
+
+	snap := Snapshot{Running: true, State: mapState(sess.State, sess.Reason), Messages: append([]Message{}, st.msgs...)}
+	if st.optRaw == "" {
+		snap.Error = NotStarted
+	}
+	st.snapshot = snap
+	return snap
+}
+
+// mapState turns the hook's ship vocabulary into the chat's: working is working;
+// needs you with the reason stop is idle; any other needs you is waiting.
+func mapState(state, reason string) string {
+	switch {
+	case state == "working":
+		return "working"
+	case state == "needs_you" && reason != "stop":
+		return "waiting"
+	}
+	return "idle"
+}
+
+// transcriptChangedLocked acts on a new value of the transcript option: a new
+// path starts a new conversation read from its start; the same path with source
+// "clear" empties it and serves only what is written after.
+func (s *Service) transcriptChangedLocked(raw string) {
+	st := &s.st
+	first := st.optRaw == ""
+	st.optRaw = raw
+	_, source, path, ok := parseTranscriptOption(raw)
+	if !ok {
+		st.path, st.fol = "", nil
+		st.msgs, st.bytes = nil, 0
+		return
+	}
+	switch {
+	case path != st.path || st.fol == nil:
+		st.path, st.fol = path, &follower{}
+		st.msgs, st.bytes = nil, 0
+	case source == "clear" && !first:
+		st.msgs, st.bytes = nil, 0
+		if _, info, f, err := s.openLocked(); err == nil {
+			f.Close()
+			st.fol.toEnd(info.Size())
+		}
+	}
+}
+
+// parseTranscriptOption splits "<unix ns> <source> <path>".
+func parseTranscriptOption(raw string) (stamp, source, path string, ok bool) {
+	parts := strings.SplitN(raw, " ", 3)
+	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
+		return "", "", "", false
+	}
+	return parts[0], parts[1], parts[2], true
+}
+
+// configDir is the Claude config directory the running chat uses: that of the
+// dock of the fleet it started with.
+func (s *Service) configDir() string {
+	cfg := s.Config()
+	key := s.st.opts.fleet
+	if key == "" {
+		key = cfg.Chat.Fleet
+	}
+	var env map[string]string
+	if f, ok := cfg.Fleet(key); ok {
+		if d, ok := f.Harness("claude"); ok {
+			env = d.Env
+		}
+	}
+	return config.IdentityDir("claude", env)
+}
+
+// openLocked opens the transcript at the recorded path if it may be read.
+func (s *Service) openLocked() (string, os.FileInfo, *os.File, error) {
+	st := &s.st
+	if st.path == "" {
+		return "", nil, nil, fs.ErrNotExist
+	}
+	root, rel, err := resolveTranscript(s.configDir(), st.path)
+	if err == nil {
+		var r *os.Root
+		if r, err = os.OpenRoot(root); err == nil {
+			defer r.Close()
+			var f *os.File
+			if f, err = r.Open(rel); err == nil {
+				var info os.FileInfo
+				if info, err = f.Stat(); err == nil && info.Mode().IsRegular() {
+					return rel, info, f, nil
+				}
+				f.Close()
+				err = errRefused
+			}
+		}
+	}
+	if errors.Is(err, errRefused) && st.refused != st.path {
+		st.refused = st.path
+		log.Printf("admiral: chat: not reading %q: %v", st.path, err)
+	}
+	return "", nil, nil, err
+}
+
+// followLocked reads what the transcript has gained.
+func (s *Service) followLocked() {
+	st := &s.st
+	if st.fol == nil {
+		return
+	}
+	_, info, f, err := s.openLocked()
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	st.fol.read(f, info, s.add, func() { st.msgs, st.bytes = nil, 0 })
+}
+
+// add keeps a message, and only the last maxMessages of them within maxBytes.
+func (s *Service) add(m Message) {
+	st := &s.st
+	st.msgs = append(st.msgs, m)
+	st.bytes += len(m.Text)
+	for len(st.msgs) > 1 && (len(st.msgs) > maxMessages || st.bytes > maxBytes) {
+		st.bytes -= len(st.msgs[0].Text)
+		st.msgs = st.msgs[1:]
+	}
+}
+
+// readOptions reads the chat's options off its pane in one tmux call. The
+// transcript option comes last: it is the only one the chat can write, so a
+// separator in it can't shift the others.
+func (s *Service) readOptions(pane string) (chatOptions, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	format := strings.Join([]string{"#{" + sessionhost.ChatModelOption + "}", "#{" + sessionhost.ChatEffortOption + "}",
+		"#{" + sessionhost.ChatFleetOption + "}", "#{" + sessionhost.TranscriptOption + "}"}, sep)
+	out, err := s.tmux(ctx, "", "-u", "display-message", "-p", "-t", pane, format)
+	if err != nil {
+		return chatOptions{}, err
+	}
+	f := strings.SplitN(strings.TrimSuffix(out, "\n"), sep, 4)
+	if len(f) != 4 {
+		return chatOptions{}, fmt.Errorf("unexpected options %q", out)
+	}
+	return chatOptions{model: f[0], effort: f[1], fleet: f[2], transcript: f[3]}, nil
+}
+
+// tmux runs the tmux binary on Admiral's socket with stdin as given.
+func (s *Service) tmux(ctx context.Context, stdin string, args ...string) (string, error) {
+	// -u is a tmux flag, not a command: it goes before the command.
+	var flags []string
+	for len(args) > 0 && args[0] == "-u" {
+		flags, args = append(flags, args[0]), args[1:]
+	}
+	cmd := exec.CommandContext(ctx, s.Tmux, append(append([]string{"-f", "/dev/null", "-S", s.Socket}, flags...), args...)...)
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "TMUX=") && !strings.HasPrefix(kv, "TMUX_PANE=") {
+			cmd.Env = append(cmd.Env, kv)
+		}
+	}
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	if err := cmd.Run(); err != nil {
+		return out.String(), fmt.Errorf("tmux %s: %w: %s", args[0], err, strings.TrimSpace(errOut.String()))
+	}
+	return out.String(), nil
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func (s *Service) serveSession(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.current())
+}
+
+// sync makes the host read the sessions now, so what a start or restart did is
+// known before the answer.
+func (s *Service) sync() {
+	if s.Host == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = s.Host.Sync(ctx)
+}
+
+// exists says whether the `_chat` session is in tmux.
+func (s *Service) exists() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := s.tmux(ctx, "", "has-session", "-t", "="+sessionhost.ChatName)
+	return err == nil
+}
+
+// start makes the session if there is none.
+func (s *Service) start() *launcher.Error {
+	if s.Launcher == nil || s.Tmux == "" {
+		return &launcher.Error{Status: http.StatusServiceUnavailable, Msg: "the chat needs tmux"}
+	}
+	if s.exists() {
+		return nil
+	}
+	if err := s.Launcher.StartChat(); err != nil {
+		var le *launcher.Error
+		if errors.As(err, &le) {
+			return le
+		}
+		return &launcher.Error{Status: http.StatusInternalServerError, Msg: err.Error()}
+	}
+	return nil
+}
+
+// serveStart starts the chat session, or leaves the running one alone.
+func (s *Service) serveStart(w http.ResponseWriter, r *http.Request) {
+	s.op.Lock()
+	defer s.op.Unlock()
+	if err := s.start(); err != nil {
+		writeError(w, err.Status, err.Msg)
+		return
+	}
+	s.sync()
+	s.broadcast()
+	writeJSON(w, http.StatusOK, map[string]bool{"running": true})
+}
+
+// clean is a message ready to paste: line ends as LF, control characters
+// (an escape among them, which could end the bracketed paste early) dropped,
+// except LF and tab.
+func clean(text string) string {
+	text = strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(text)
+	text = strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' {
+			return r
+		}
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
+			return -1
+		}
+		return r
+	}, text)
+	return strings.TrimSpace(text)
+}
+
+// serveSend pastes a message into the chat and presses Enter.
+func (s *Service) serveSend(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Text string `json:"text"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
+		return
+	}
+	text := clean(req.Text)
+	switch {
+	case text == "":
+		writeError(w, http.StatusBadRequest, "the message is empty")
+		return
+	case len(text) > maxSend:
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("the message is %d bytes; at most %d", len(text), maxSend))
+		return
+	}
+	s.op.Lock()
+	defer s.op.Unlock()
+	pane, status, msg := s.ready()
+	if pane == "" {
+		writeError(w, status, msg)
+		return
+	}
+	if err := s.paste(pane, text); err != nil {
+		writeError(w, http.StatusBadGateway, "could not send the message: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"sent": true})
+}
+
+// ready is the chat's pane when a message can go in: it runs, and a SessionStart
+// has recorded its transcript.
+func (s *Service) ready() (pane string, status int, msg string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snap := s.refreshLocked(true)
+	switch {
+	case !snap.Running:
+		return "", http.StatusConflict, "the chat is not running"
+	case s.st.optRaw == "":
+		return "", http.StatusConflict, NotStarted
+	}
+	return s.st.pane, 0, ""
+}
+
+// paste puts text into the pane as one bracketed paste, then Enter. The text goes
+// to tmux on stdin through a buffer of its own, never on a command line or through
+// a shell. -r keeps LF as LF; tmux's own sanitising stays on.
+func (s *Service) paste(pane, text string) error {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return err
+	}
+	buf := "admiral-chat-" + hex.EncodeToString(b[:])
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := s.tmux(ctx, text, "load-buffer", "-b", buf, "-"); err != nil {
+		return err
+	}
+	if _, err := s.tmux(ctx, "", "paste-buffer", "-p", "-r", "-d", "-b", buf, "-t", pane); err != nil {
+		_, _ = s.tmux(ctx, "", "delete-buffer", "-b", buf)
+		return err
+	}
+	_, err := s.tmux(ctx, "", "send-keys", "-t", pane, "Enter")
+	return err
+}
+
+// serveNew resets the conversation: /clear when the running session matches the
+// config, else a new session. Every browser's conversation empties at once.
+func (s *Service) serveNew(w http.ResponseWriter, r *http.Request) {
+	s.op.Lock()
+	defer s.op.Unlock()
+	s.mu.Lock()
+	snap := s.refreshLocked(true)
+	opts, pane, noPath := s.st.opts, s.st.pane, s.st.optRaw == ""
+	s.mu.Unlock()
+	if !snap.Running {
+		writeError(w, http.StatusConflict, "the chat is not running")
+		return
+	}
+	chat := s.Config().Chat
+	if opts.model == chat.Model && opts.effort == chat.Effort && opts.fleet == chat.Fleet {
+		if noPath {
+			writeError(w, http.StatusConflict, NotStarted)
+			return
+		}
+		s.mu.Lock()
+		s.clearLocked()
+		s.mu.Unlock()
+		s.broadcast()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		// Typed, then Enter: the way an engineer runs a command.
+		if _, err := s.tmux(ctx, "", "send-keys", "-t", pane, "-l", "/clear"); err != nil {
+			writeError(w, http.StatusBadGateway, "could not clear the chat: "+err.Error())
+			return
+		}
+		if _, err := s.tmux(ctx, "", "send-keys", "-t", pane, "Enter"); err != nil {
+			writeError(w, http.StatusBadGateway, "could not clear the chat: "+err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"running": true})
+		return
+	}
+	// The settings changed since this session started: a new one takes them.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := s.tmux(ctx, "", "kill-session", "-t", "="+sessionhost.ChatName); err != nil {
+		writeError(w, http.StatusBadGateway, "could not end the chat: "+err.Error())
+		return
+	}
+	s.mu.Lock()
+	s.st = state{}
+	s.mu.Unlock()
+	if err := s.start(); err != nil {
+		s.sync()
+		s.broadcast()
+		writeError(w, err.Status, err.Msg)
+		return
+	}
+	s.sync()
+	s.broadcast()
+	writeJSON(w, http.StatusOK, map[string]bool{"running": true})
+}
+
+// clearLocked empties the conversation and keeps the transcript followed from
+// its current end, so nothing already written comes back.
+func (s *Service) clearLocked() {
+	st := &s.st
+	st.msgs, st.bytes = nil, 0
+	if st.fol == nil {
+		return
+	}
+	if _, info, f, err := s.openLocked(); err == nil {
+		f.Close()
+		st.fol.toEnd(info.Size())
+	}
+}

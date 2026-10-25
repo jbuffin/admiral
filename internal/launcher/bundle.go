@@ -63,6 +63,32 @@ func claudeSettings() any {
 	}}
 }
 
+// claudeChatSettings is the chat session's bundle (ADR 0019). It registers only
+// what the chat needs: SessionStart (the transcript's path), the events that set
+// working, idle and waiting, and nothing else. Not idle_prompt, which fires after
+// a minute of quiet and would turn every idle chat into waiting; not
+// SubagentStart/SubagentStop or the guards, which would write crew and guard
+// facts on the chat's pane. SessionStart has no matcher, since Claude Code would
+// match it against the source. PostToolUse takes the chat out of waiting once the
+// engineer has answered in the terminal.
+func claudeChatSettings() any {
+	group := func(matcher, event string) map[string]any {
+		g := map[string]any{"hooks": []any{map[string]any{"type": "command", "command": hookCommand(event)}}}
+		if matcher != "" {
+			g["matcher"] = matcher
+		}
+		return g
+	}
+	return map[string]any{"hooks": map[string]any{
+		"SessionStart":     []any{group("", "SessionStart")},
+		"UserPromptSubmit": []any{group("", "UserPromptSubmit")},
+		"PreToolUse":       []any{group("AskUserQuestion", "PreToolUse")},
+		"PostToolUse":      []any{group("", "PostToolUse")},
+		"Notification":     []any{group("permission_prompt", "Notification"), group("elicitation_dialog", "Notification")},
+		"Stop":             []any{group("", "Stop")},
+	}}
+}
+
 // Copilot: a plugin folder with a manifest and hooks.json.
 // hooks.json: https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-hooks-reference
 // (version 1, camelCase events, `bash` command, regex `matcher` on the tool
@@ -127,7 +153,8 @@ func LinkBinary(dir, exe string) error {
 func WriteBundle(dir string) error {
 	root := filepath.Join(dir, "harness")
 	files := map[string]any{
-		filepath.Join(root, "claude-settings.json"): claudeSettings(),
+		filepath.Join(root, "claude-settings.json"):      claudeSettings(),
+		filepath.Join(root, "chat-claude-settings.json"): claudeChatSettings(),
 		filepath.Join(root, "copilot", "plugin.json"): map[string]any{"name": "admiral",
 			"description": "Tells Admiral when a ship needs you", "version": "1.0.0"},
 		filepath.Join(root, "copilot", "hooks.json"): copilotHooks(),
@@ -149,5 +176,8 @@ func WriteBundle(dir string) error {
 
 func claudeSettingsPath(home string) string {
 	return filepath.Join(home, "harness", "claude-settings.json")
+}
+func claudeChatSettingsPath(home string) string {
+	return filepath.Join(home, "harness", "chat-claude-settings.json")
 }
 func copilotPluginDir(home string) string { return filepath.Join(home, "harness", "copilot") }

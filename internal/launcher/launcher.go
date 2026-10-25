@@ -491,13 +491,20 @@ func taken(shipNames, sessions map[string]bool, kept func(session string) bool) 
 // the placeholder with the harness: new-session starts its command at once, and
 // the harness's first hook must find the options already there.
 func (l *Launcher) create(session, dir string, opts [][2]string, env map[string]string, unset, argv []string) error {
+	return l.createSession(session, dir, opts, env, unset, argv, true)
+}
+
+// createSession is create; anchor says whether the pane stays after its harness
+// exits (a ship is anchored, ADR 0008) and rings the bell flag. The chat's does not,
+// so its session ends with Claude (ADR 0019).
+func (l *Launcher) createSession(session, dir string, opts [][2]string, env map[string]string, unset, argv []string, anchor bool) error {
 	target := "=" + session + ":" // "=" matches the name exactly; tmux wants the colon
 	pane := target
 	cdir := strings.ReplaceAll(dir, "#", "##") // tmux format-expands -c; ## is a literal #
-	cmds := [][]string{
-		{"set-option", "-t", target, "history-limit", "10000"},
-		{"set-option", "-p", "-t", pane, "remain-on-exit", "on"},
-		{"set-option", "-w", "-t", pane, "monitor-bell", "on"},
+	cmds := [][]string{{"set-option", "-t", target, "history-limit", "10000"}}
+	if anchor {
+		cmds = append(cmds, []string{"set-option", "-p", "-t", pane, "remain-on-exit", "on"},
+			[]string{"set-option", "-w", "-t", pane, "monitor-bell", "on"})
 	}
 	for _, o := range opts {
 		cmds = append(cmds, []string{"set-option", "-t", target, "@admiral-" + o[0], o[1]})

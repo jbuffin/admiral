@@ -19,33 +19,42 @@ type SetupCommand struct {
 	Home string
 }
 
-// setupSession stands in for a ship when the bridge watches the `_setup` session:
-// underway while the session exists, gone when it ends. It never reaches the
-// ships list.
-func (s *Service) setupSession() (ships.Ship, bool) {
-	if s.Host == nil {
+// ownSessions are the sessions the bridge watches that are not ships, and the
+// name each shows under.
+var ownSessions = map[string]string{sessionhost.SetupName: "Setup", sessionhost.ChatName: "Chat session"}
+
+// standIn stands in for a ship when the bridge watches `_setup` or `_chat`:
+// underway while the session exists, gone when it ends. Neither reaches the ships
+// list.
+func (s *Service) standIn(session string) (ships.Ship, bool) {
+	name, own := ownSessions[session]
+	if s.Host == nil || !own {
 		return ships.Ship{}, false
 	}
 	for _, sess := range s.Host.Sessions() {
-		if sess.Name == sessionhost.SetupName {
-			return ships.Ship{Session: sess.Name, Name: "Setup", Status: ships.StatusUnderway}, true
+		if sess.Name == session {
+			return ships.Ship{Session: sess.Name, Name: name, Status: ships.StatusUnderway}, true
 		}
 	}
 	return ships.Ship{}, false
 }
 
-// get is the ship for a session, or the setup terminal's stand-in.
+// setupSession is the setup terminal's stand-in.
+func (s *Service) setupSession() (ships.Ship, bool) { return s.standIn(sessionhost.SetupName) }
+
+// get is the ship for a session, or the stand-in of the setup terminal or the chat.
 func (s *Service) get(session string) (ships.Ship, bool) {
-	if session == sessionhost.SetupName {
-		return s.setupSession()
+	if _, own := ownSessions[session]; own {
+		return s.standIn(session)
 	}
 	return s.Ships.Get(session)
 }
 
-// inputSeen is Ships.InputSeen; the setup terminal has no needs-you state.
+// inputSeen is Ships.InputSeen; the setup terminal and the chat have no needs-you
+// state a keystroke could clear.
 func (s *Service) inputSeen(session string) (ships.Ship, error) {
-	if session == sessionhost.SetupName {
-		if sh, ok := s.setupSession(); ok {
+	if _, own := ownSessions[session]; own {
+		if sh, ok := s.standIn(session); ok {
 			return sh, nil
 		}
 		return ships.Ship{}, ships.ErrNotFound
