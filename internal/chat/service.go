@@ -42,12 +42,14 @@ const optionEvery = 200 * time.Millisecond
 const sep = "\x1f"
 
 // Snapshot is what GET /api/chat/session and the `chat` WebSocket message carry.
-// The wire message adds "type". Chat questions (a later unit) will join it.
+// The wire message adds "type". Questions are the chat questions (ADR 0020): the
+// newest 20, oldest first, served whether or not the chat is running.
 type Snapshot struct {
-	Running  bool      `json:"running"`
-	State    string    `json:"state"` // idle, working or waiting; "" while not running
-	Messages []Message `json:"messages"`
-	Error    string    `json:"error,omitempty"`
+	Running   bool       `json:"running"`
+	State     string     `json:"state"` // idle, working or waiting; "" while not running
+	Messages  []Message  `json:"messages"`
+	Questions []Question `json:"questions"`
+	Error     string     `json:"error,omitempty"`
 }
 
 // wire is the WebSocket form of a Snapshot.
@@ -64,12 +66,19 @@ type Service struct {
 	Config   func() *config.Config
 	Tmux     string // the tmux binary
 	Socket   string
+	Home     string // $ADMIRAL_HOME, where chat/questions/ is
 
-	op sync.Mutex // start, New chat and send, one at a time
+	op  sync.Mutex // start, New chat and send, one at a time
+	qmu sync.Mutex // answering and withdrawing chat questions, one at a time
 
-	mu     sync.Mutex // everything below; no tmux call runs under it
-	st     state
-	ticket uint64 // numbers the option reads, so a late one can't undo a newer
+	mu       sync.Mutex // everything below; no tmux call runs under it
+	st       state
+	ticket   uint64 // numbers the option reads, so a late one can't undo a newer
+	startErr string // why the last start was refused, until a start works
+
+	cmu sync.Mutex // the question cache; the directory is read under it, never under mu
+	qs  []Question // the questions as last read
+	qAt time.Time
 }
 
 // state is the chat as last read. It is cleared when the pane changes.
@@ -99,11 +108,12 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/chat/start", s.serveStart)
 	mux.HandleFunc("POST /api/chat/messages", s.serveSend)
 	mux.HandleFunc("POST /api/chat/new", s.serveNew)
+	mux.HandleFunc("POST /api/chat/questions/{id}/answer", s.serveAnswer)
 }
 
 // Connected sends a new client the chat.
 func (s *Service) Connected(c *server.Client) {
-	m := s.message()
+	m := wire{Type: "chat", Snapshot: s.currentFresh()}
 	_ = c.SendOnce("chat", func() any { return m })
 }
 
@@ -142,6 +152,13 @@ func (s *Service) broadcast() {
 
 func (s *Service) message() wire { return wire{Type: "chat", Snapshot: s.current()} }
 
+// currentFresh is current with the questions read from their directory now: a
+// request, and a new connection, must not see a stale list.
+func (s *Service) currentFresh() Snapshot {
+	snap, _ := s.refreshQ(false, true)
+	return snap
+}
+
 // current reads the chat and returns it.
 func (s *Service) current() Snapshot {
 	snap, _ := s.refresh(false)
@@ -166,7 +183,12 @@ func (s *Service) session() (sessionhost.Session, bool) {
 // read a moment ago, and then a failed read is an error (the snapshot is still
 // returned). The tmux call runs outside the lock, so a stuck tmux holds up only
 // the caller that made it.
-func (s *Service) refresh(force bool) (Snapshot, error) {
+func (s *Service) refresh(force bool) (Snapshot, error) { return s.refreshQ(force, force) }
+
+// refreshQ is refresh, and fresh reads the questions directory even if it was read a
+// moment ago.
+func (s *Service) refreshQ(force, fresh bool) (Snapshot, error) {
+	qs := s.questions(fresh)
 	sess, running := s.session()
 	var (
 		opts    chatOptions
@@ -190,7 +212,7 @@ func (s *Service) refresh(force bool) (Snapshot, error) {
 	st := &s.st
 	if !running {
 		*st = state{}
-		return Snapshot{Messages: []Message{}}, nil
+		return Snapshot{Messages: []Message{}, Questions: qs, Error: s.startErr}, nil
 	}
 	if sess.PaneID != st.pane {
 		// A new session (the first one Admiral sees, or a restart): nothing of the
@@ -205,7 +227,10 @@ func (s *Service) refresh(force bool) (Snapshot, error) {
 	}
 	s.followLocked()
 
-	snap := Snapshot{Running: true, State: mapState(sess.State, sess.Reason), Messages: append([]Message{}, st.msgs...)}
+	snap := Snapshot{Running: true, State: mapState(sess.State, sess.Reason), Messages: append([]Message{}, st.msgs...), Questions: qs}
+	if unanswered(qs) {
+		snap.State = "waiting"
+	}
 	switch {
 	case st.optRaw == "":
 		snap.Error = NotStarted
@@ -392,7 +417,7 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 func (s *Service) serveSession(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.current())
+	writeJSON(w, http.StatusOK, s.currentFresh())
 }
 
 // sync makes the host read the sessions now, so what a start or restart did is
@@ -422,12 +447,24 @@ func (s *Service) start() *launcher.Error {
 	if s.exists() {
 		return nil
 	}
-	if err := s.Launcher.StartChat(); err != nil {
-		var le *launcher.Error
-		if errors.As(err, &le) {
-			return le
-		}
-		return &launcher.Error{Status: http.StatusInternalServerError, Msg: err.Error()}
+	// A fresh session starts with none of the old one's questions.
+	s.withdrawQuestions()
+	err := s.Launcher.StartChat()
+	var le *launcher.Error
+	switch {
+	case err == nil:
+	case errors.As(err, &le):
+	default:
+		le = &launcher.Error{Status: http.StatusInternalServerError, Msg: err.Error()}
+	}
+	s.mu.Lock()
+	s.startErr = ""
+	if le != nil {
+		s.startErr = le.Msg
+	}
+	s.mu.Unlock()
+	if le != nil {
+		return le
 	}
 	return nil
 }
@@ -558,6 +595,7 @@ func (s *Service) serveNew(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, NotStarted)
 			return
 		}
+		s.withdrawQuestions()
 		s.mu.Lock()
 		s.clearLocked()
 		s.mu.Unlock()
