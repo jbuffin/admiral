@@ -201,11 +201,14 @@ func TestAutopilotSettingsRefusalsLeaveTheFileUnchanged(t *testing.T) {
 }
 
 // ADR 0022, fleet switch: unchanged args that pass the stored fleet's dock but
-// fail the new fleet's dock are refused. Only args that already fail the stored
-// fleet's dock skip the check (see the next test).
+// fail the new fleet's dock are refused. So are stored args that already fail:
+// only a save that keeps the fleet skips the check (see the next test).
 func TestAutopilotSettingsFleetSwitchChecksArgsAgainstTheNewDock(t *testing.T) {
 	args := []string{"--disallowedTools", "Bash"}
-	a := newApSettings(t, map[string]any{"p2": apNew(map[string]any{"enabled": false, "args": args})}, func(cfg map[string]any) {
+	a := newApSettings(t, map[string]any{
+		"p2": apNew(map[string]any{"enabled": false, "args": args}),
+		"p3": apNew(map[string]any{"enabled": false, "args": []string{"--dangerously-skip-permissions"}}),
+	}, func(cfg map[string]any) {
 		fleets := cfg["fleets"].(map[string]any)
 		strict := map[string]any{}
 		for k, v := range fleets["home"].(map[string]any) {
@@ -227,6 +230,11 @@ func TestAutopilotSettingsFleetSwitchChecksArgsAgainstTheNewDock(t *testing.T) {
 	before := a.bytes()
 	code, body := a.put("p2", apNew(map[string]any{"enabled": false, "fleet": "strict", "args": args}), g.Version)
 	a.wantRefused(code, body, http.StatusBadRequest, "--arg --disallowedTools is refused: the dock already sets it", before, "a fleet switch to a dock that already sets the flag")
+
+	// Stored args that already fail do not pass a fleet switch.
+	g3 := a.get("p3")
+	code, body = a.put("p3", apNew(map[string]any{"enabled": false, "fleet": "strict", "args": []string{"--dangerously-skip-permissions"}}), g3.Version)
+	a.wantRefused(code, body, http.StatusBadRequest, "--dangerously-skip-permissions is refused", before, "a fleet switch with stored args that fail")
 }
 
 // AC 3: stored args that fail the allowlist (a hand edit) survive a save of
@@ -308,10 +316,16 @@ func TestAutopilotSettingsStaleVersionIsRefused(t *testing.T) {
 		t.Fatalf("GET version is still %q after a hand edit to the entry", v)
 	}
 
+	a.setPaused("a", "main", true)
 	code, body := a.put("main", apNew(map[string]any{"max_ships": 2}), g.Version)
 	a.wantRefused(code, body, http.StatusConflict, apMsgChanged, edited, "a PUT with a stale version")
+	code, body = a.put("main", apNew(map[string]any{"max_ships": 2}), "")
+	a.wantRefused(code, body, http.StatusBadRequest, "version is required", edited, "a PUT without a version")
 	code, body = a.del("main", g.Version)
 	a.wantRefused(code, body, http.StatusConflict, apMsgChanged, edited, "a DELETE with a stale version")
+	if p, ok := a.autopilotView("a", "main"); !ok || p.Autopilot == nil || !p.Autopilot.Paused {
+		t.Errorf("after the stale DELETE the panel's autopilot = %+v, want it still paused", p.Autopilot)
+	}
 
 	// A hand edit to another panel's entry is no conflict for this one.
 	cur := a.get("main").Version

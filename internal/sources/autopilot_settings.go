@@ -116,7 +116,7 @@ func (s *Service) serveAutopilotSettings(w http.ResponseWriter, r *http.Request)
 
 // serveSaveAutopilotSettings sets one panel's entry. The args pass the
 // autopilot allowlist against the chosen fleet's claude dock, except stored
-// args that already fail and are saved unchanged (ADR 0022).
+// args that already fail and are saved unchanged with the fleet (ADR 0022).
 func (s *Service) serveSaveAutopilotSettings(w http.ResponseWriter, r *http.Request) {
 	key, panel, ok := s.panelParams(w, r)
 	if !ok {
@@ -133,11 +133,15 @@ func (s *Service) serveSaveAutopilotSettings(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "entry must be an object")
 		return
 	}
+	if req.Version == "" {
+		writeError(w, http.StatusBadRequest, "version is required")
+		return
+	}
 	next := parseStoredArgs(req.Entry)
 	check := func(old json.RawMessage, cfg *config.Config) error {
 		if old != nil {
 			stored := parseStoredArgs(old)
-			if slices.Equal(stored.Args, next.Args) && argsError(cfg, stored.Fleet, stored.Args) != "" {
+			if stored.Fleet == next.Fleet && slices.Equal(stored.Args, next.Args) && argsError(cfg, stored.Fleet, stored.Args) != "" {
 				return nil
 			}
 		}
@@ -147,16 +151,18 @@ func (s *Service) serveSaveAutopilotSettings(w http.ResponseWriter, r *http.Requ
 	}
 	s.mu.Lock()
 	_, err := s.Config.SetPanelAutopilot(key, panel, req.Entry, req.Version, check)
-	var v autopilotSettings
-	if err == nil {
-		v, err = s.autopilotSettingsOf(key, panel)
-	}
-	s.mu.Unlock()
 	if err != nil {
+		s.mu.Unlock()
 		writeAutopilotError(w, key, err)
 		return
 	}
-	s.Sup.changed() // pushes the sources and wakes autopilot
+	v, verr := s.autopilotSettingsOf(key, panel)
+	s.mu.Unlock()
+	s.Sup.Reconcile() // pushes the sources and wakes autopilot
+	if verr != nil {
+		writeAutopilotError(w, key, verr)
+		return
+	}
 	writeJSON(w, http.StatusOK, v)
 }
 
@@ -173,12 +179,15 @@ func (s *Service) serveRemoveAutopilot(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	_, err := s.Config.SetPanelAutopilot(key, panel, nil, version, nil)
+	if err == nil {
+		s.State.SetPaused(key, panel, false)
+	}
 	s.mu.Unlock()
 	if err != nil {
 		writeAutopilotError(w, key, err)
 		return
 	}
-	s.State.SetPaused(key, panel, false)
-	s.Sup.changed()
+	s.Sup.Reconcile()
+	s.Sup.changed() // the pause went too, which Reconcile doesn't see
 	writeJSON(w, http.StatusOK, map[string]string{"removed": panel})
 }
