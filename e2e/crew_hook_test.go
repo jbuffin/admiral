@@ -118,3 +118,74 @@ func TestCrewHook_LeadWaitsForWorkingCrew(t *testing.T) {
 	}
 	wantState(shipPane, "the ship after SubagentStop", "needs_you", "stop")
 }
+
+// A Stop that waits on a Monitor (#110): Commodore's coordinator ends its turn
+// to wait for its watchdog's events, so a Stop leaves @admiral-state alone while
+// a Monitor the session armed still runs. A Monitor reports as a "shell" task,
+// so only the id its PostToolUse gave (kept in @admiral-monitors) tells it from
+// a background Bash, which still doesn't hold the ship.
+func TestHook_StopWaitsForMonitor(t *testing.T) {
+	w := newWorld(t)
+	w.start()
+	ship := w.launch(w.order("work", "claude", "alpha", noSkill, "go"))
+	w.waitFile(ship.Session, "cues-done")
+	pane := strings.TrimSpace(w.mustTmux("display-message", "-p", "-t", "="+ship.Session+":0", "#{pane_id}"))
+
+	hook := func(event, stdin string) {
+		t.Helper()
+		r := w.admiralWith(cliOpts{env: []string{"TMUX=" + w.sock() + ",0,0", "TMUX_PANE=" + pane}, stdin: stdin}, "hook", event)
+		w.expectExit(r, 0, "admiral hook "+event)
+	}
+	opt := func(name string) string {
+		out, _ := w.tmux("show-options", "-pqv", "-t", pane, name)
+		return out
+	}
+	wantState := func(who, state, reason string) {
+		t.Helper()
+		if s, r := opt("@admiral-state"), opt("@admiral-reason"); s != state || r != reason {
+			t.Errorf("%s: @admiral-state %q reason %q, want %q and %q", who, s, r, state, reason)
+		}
+	}
+	monitor := func(id string, persistent bool) string {
+		return `{"hook_event_name":"PostToolUse","tool_name":"Monitor","tool_input":{"command":"watch.sh"},"tool_response":{"taskId":"` + id + `","timeoutMs":1800000,"persistent":` + strconv.FormatBool(persistent) + `}}`
+	}
+	// The live check's Stop on claude 2.1.310: a background Bash and a Monitor.
+	stop := func(running ...string) string {
+		var tasks []string
+		for _, id := range running {
+			tasks = append(tasks, `{"id":"`+id+`","type":"shell","status":"running","description":"d","command":"c"}`)
+		}
+		return `{"hook_event_name":"Stop","background_tasks":[` + strings.Join(tasks, ",") + `],"session_crons":[]}`
+	}
+	const prompt = `{"hook_event_name":"UserPromptSubmit","prompt":"go"}`
+
+	hook("UserPromptSubmit", prompt)
+	hook("PostToolUse", monitor("bwatch01", false))
+	if got := opt("@admiral-monitors"); got != "bwatch01" {
+		t.Fatalf("after the Monitor's PostToolUse @admiral-monitors = %q, want bwatch01", got)
+	}
+	hook("Stop", stop("bdevsrv1", "bwatch01"))
+	wantState("a Stop while the Monitor runs", "working", "")
+
+	// The Monitor's event wakes the session; its next Stop has the Monitor gone.
+	hook("UserPromptSubmit", prompt)
+	hook("Stop", stop("bdevsrv1"))
+	wantState("a Stop with only a background Bash running", "needs_you", "stop")
+	if got := opt("@admiral-monitors"); got != "" {
+		t.Errorf("after the Monitor ended @admiral-monitors = %q, want it unset", got)
+	}
+
+	// A persistent Monitor has no timeout to wake the session, so it never holds.
+	hook("UserPromptSubmit", prompt)
+	hook("PostToolUse", monitor("bwatch02", true))
+	hook("Stop", stop("bwatch02"))
+	wantState("a Stop while a persistent Monitor runs", "needs_you", "stop")
+
+	// A Stop with nothing running clears an id left behind.
+	hook("PostToolUse", monitor("bwatch03", false))
+	hook("Stop", stop())
+	wantState("a Stop with no task running", "needs_you", "stop")
+	if got := opt("@admiral-monitors"); got != "" {
+		t.Errorf("after a Stop with no task running @admiral-monitors = %q, want it unset", got)
+	}
+}

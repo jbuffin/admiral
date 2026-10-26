@@ -34,11 +34,18 @@ func Hook(args []string, std IO) error {
 	call := []string{"set", "-p", "-t", pane, sessionhost.ActivityOption, now.Format(time.RFC3339)}
 	if valid {
 		w := hookDecision(args[0], p)
+		mon, held := monitorCall(pane, args[0], p)
+		if w == stopWrite && held {
+			w = hookWrite{}
+		}
 		if w == stopWrite {
 			w = leadDecision(args[0], p, readCrewFacts(pane, now))
 		}
 		if w.state != "" {
 			call = append(append(call, ";"), hookCall(pane, w)...)
+		}
+		if mon != nil {
+			call = append(append(call, ";"), mon...)
 		}
 		if sub := subagentCall(pane, args[0], p, now); sub != nil {
 			call = append(append(call, ";"), sub...)
@@ -97,14 +104,20 @@ type hookPayload struct {
 	TranscriptPath    string `json:"transcript_path"`   // Claude Code, Codex: any event (null reads ""); the chat's SessionStart and a crew boat's (ADR 0021)
 	TranscriptCopilot string `json:"transcriptPath"`    // Copilot: a lead agentStop's, for a crew boat
 	Source            string `json:"source"`            // Claude Code: SessionStart (startup, resume, clear, compact)
+	// Claude Code's PostToolUse; any JSON, read only for a Monitor (monitorID).
+	ToolResponse json.RawMessage `json:"tool_response"`
 	// Claude Code's Stop; Codex sends none. A nil slice is "absent" and an
 	// empty one is `[]`, which tells Claude's Stop from Codex's.
-	BackgroundTasks []struct {
-		ID        string `json:"id"`
-		Type      string `json:"type"`
-		Status    string `json:"status"`
-		AgentType string `json:"agent_type"`
-	} `json:"background_tasks"`
+	BackgroundTasks []backgroundTask `json:"background_tasks"`
+}
+
+// backgroundTask is one entry of Claude Code's Stop background_tasks. A Monitor
+// is type "shell", like a background Bash: only its id tells them apart.
+type backgroundTask struct {
+	ID        string `json:"id"`
+	Type      string `json:"type"`
+	Status    string `json:"status"`
+	AgentType string `json:"agent_type"`
 }
 
 // hookWrite is what a hook writes to the pane: the state, and for needs_you the
@@ -137,7 +150,8 @@ func hookDecision(event string, p hookPayload) hookWrite {
 		}
 	case "Stop":
 		// Only a subagent or an agent-team teammate holds the turn open; a
-		// background shell (a Monitor) doesn't.
+		// background shell doesn't. A running Monitor holds it too, but only
+		// its recorded id tells it from a shell (monitorCall).
 		for _, t := range p.BackgroundTasks {
 			if t.Status == "running" && (t.Type == "subagent" || t.Type == "teammate") {
 				return hookWrite{}
@@ -294,6 +308,85 @@ func subagentCall(pane, event string, p hookPayload, now time.Time) []string {
 		return []string{"set", "-p", "-u", "-q", "-t", pane, sessionhost.SubagentsOption}
 	}
 	return []string{"set", "-p", "-t", pane, sessionhost.SubagentsOption, next}
+}
+
+// monitorsOption is the pane option that holds the task ids of the Monitors a
+// Claude session armed and that may still run, space-separated (#110).
+const monitorsOption = sessionhost.Prefix + "monitors"
+
+// maxMonitors caps the list, as sessionhost.MaxSubagents does the subagents.
+const maxMonitors = 64
+
+// monitorID is the task id a PostToolUse of Claude's Monitor reports, or "" for
+// any other event or tool, an id that is not a safe token, and a persistent
+// Monitor: only one with a timeout is sure to wake the session again.
+func monitorID(event string, p hookPayload) string {
+	if event != "PostToolUse" || p.ToolName != "Monitor" {
+		return ""
+	}
+	var r struct {
+		TaskID     string `json:"taskId"`
+		Persistent bool   `json:"persistent"`
+	}
+	if json.Unmarshal(p.ToolResponse, &r) != nil || r.Persistent {
+		return ""
+	}
+	return safeID(r.TaskID)
+}
+
+// monitorList is @admiral-monitors after an event: a Monitor's PostToolUse adds
+// its id, and a Claude Stop keeps only the ids its background_tasks lists as
+// running. held says the Stop waits on one of them: the session ended its turn
+// to wait for the Monitor's event, which wakes it, not for the engineer.
+func monitorList(event string, p hookPayload, cur []string) (next []string, held bool) {
+	if id := monitorID(event, p); id != "" {
+		if slices.Contains(cur, id) {
+			return cur, false
+		}
+		// A full list drops its oldest id, so a new Monitor is always kept.
+		if len(cur) >= maxMonitors {
+			cur = cur[len(cur)-maxMonitors+1:]
+		}
+		return append(append([]string(nil), cur...), id), false
+	}
+	if event != "Stop" || p.BackgroundTasks == nil {
+		return cur, false
+	}
+	for _, id := range cur {
+		if slices.ContainsFunc(p.BackgroundTasks, func(t backgroundTask) bool { return t.ID == id && t.Status == "running" }) {
+			next = append(next, id)
+		}
+	}
+	return next, len(next) > 0
+}
+
+// monitorCall is the tmux call that writes @admiral-monitors for an event, or
+// nil when it doesn't change, and whether a Stop waits on a running Monitor. It
+// reads tmux only for a Monitor's PostToolUse and a Claude Stop with a running
+// task; a Claude Stop with none clears the list unread. A failed read writes
+// nothing and holds nothing.
+func monitorCall(pane, event string, p hookPayload) (call []string, held bool) {
+	switch {
+	case monitorID(event, p) != "":
+	case event == "Stop" && slices.ContainsFunc(p.BackgroundTasks, func(t backgroundTask) bool { return t.Status == "running" }):
+	case event == "Stop" && p.BackgroundTasks != nil:
+		return []string{"set", "-p", "-u", "-q", "-t", pane, monitorsOption}, false
+	default:
+		return nil, false
+	}
+	raw, err := tmuxOut("show-options", "-pqv", "-t", pane, monitorsOption)
+	if err != nil {
+		return nil, false
+	}
+	cur := strings.Fields(raw)
+	next, held := monitorList(event, p, cur)
+	switch {
+	case slices.Equal(next, cur):
+		return nil, held
+	case len(next) == 0:
+		return []string{"set", "-p", "-u", "-q", "-t", pane, monitorsOption}, held
+	}
+	return []string{"set", "-p", "-t", pane, monitorsOption, strings.Join(next, " ")}, held
 }
 
 // transcriptCall is the tmux call that records a SessionStart for the chat
