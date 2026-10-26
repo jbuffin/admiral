@@ -5,7 +5,7 @@ The design reference for building Admiral. Start with the prototype, then read t
 | Path | What |
 | --- | --- |
 | `prototype/index.html` | The clickable prototype. Open it in a browser (no server needed; React is vendored in `prototype/vendor/`). It is the reference for look, layout and motion. |
-| `screenshots/` | The prototype rendered at desktop (1440×900), iPad landscape (1194×834) and iPad portrait (834×1194) and, for the phone layout, phone (402×874: inbox, ships, bridge, launch, chat). The chat and the settings are rendered too. Not every scene is rendered at every size. |
+| `screenshots/` | The prototype rendered at desktop (1440×900), iPad landscape (1194×834) and iPad portrait (834×1194) and, for the phone layout, phone (402×874: inbox, ships, bridge, launch, chat). The chat, the settings and the Autopilot form are rendered too. Not every scene is rendered at every size. |
 | `tokens.json` | Colors, fonts, sizes and motion timings taken from the prototype. |
 | `assets/` | The ship, crew boat (live and anchored), subagent bot, flag, Admiral mark and scenery as standalone SVGs. |
 | `canvas/` | The source design files (`.dc.html`, a Design Component format: HTML with `{{holes}}`, `<sc-if>`, `<sc-for>` and a `Component` class) and the canvas layout. `Main.dc.html` also uses `<sc-def>` and `<sc-use>` partials (one question card for the inbox and the chat), which only `runtime.js` knows. |
@@ -33,6 +33,11 @@ Add `?scene=` to the prototype URL:
 - `chat-terminal`: the chat's terminal view, "Chat session".
 - `chat-new`: just after New chat, with the fresh greeting.
 - `settings`: the Settings modal open, with its General and Chat sections.
+- `autopilot`: the Autopilot form for Home · GitHub, a panel with an autopilot entry (#181).
+- `autopilot-new`: the form for Linear · Personal, a panel with no entry, with the warning that `autopilot.resume_source` isn't set.
+- `autopilot-refused`: Save refused, because an extra argument isn't on the autopilot args allowlist.
+- `autopilot-locked`: the Work queue's hand-edited arguments fail the allowlist, so the form shows them read-only and keeps them.
+- `autopilot-invalid`: config.json doesn't load, so the form is read-only and can't save.
 
 On a phone, `harbor` and `inbox` show the Inbox tab and `bridge` shows Brass Kettle's bridge full screen.
 
@@ -65,6 +70,7 @@ The component decides the size class in one place (`phoneQuery()` and `wideQuery
 - Settings: the gear button in the header opens it (on a phone it is full screen and the only place for Sound). The Chat section writes the `chat` key of config.json: fleet (default: the first fleet with a Claude dock), model (default sonnet) and effort (Harness default writes nothing). **Chat settings** in the chat opens the same modal. Save only closes it here.
 - Open the inbox with the **Needs you** button in the header; its badge counts every item, live stops included. On a window at least 1024px wide and in landscape it is a drawer on the right that sits beside the bridge, and the Orders sidebar collapses while it is open. On an iPad in portrait or a narrow desktop window it is a full-screen sheet with one item at a time, Back and Next. Resize or rotate to see both.
 - In the inbox, answer a question (pick an option, or Other to write your own, then Send answers), submit a review (choose COMMENT, APPROVE or REQUEST_CHANGES, then confirm), discard a review, or approve, edit or reject each finding and Send. The item folds to one line for about 5 seconds and then slides out. The badge drops as soon as you act. A live stop has Attach, which opens that ship's bridge and types nothing into it.
+- Autopilot: every panel header has an autopilot gear, which opens the Autopilot form for that panel. A panel whose autopilot is on also shows the badge and the pause button. When the header is too narrow, its controls wrap onto a row under the title. The form edits that panel's entry under `sources.<key>.autopilot`. The harness is fixed to Claude Code. The skill is Commodore, a favorite, None or a typed name. The extra arguments must pass the autopilot args allowlist. The panel cap, retro count, low-stakes policy, auto-merge and resources are set here too. The global cap and `resume_source` are shown but not edited. Save writes the entry (a refused save shows the server's message), and **Remove autopilot** asks first, then deletes the entry and clears the pause.
 - Collapse panels or the whole sidebar; combine or split the Work queue (not in the MVP); filter.
 
 ## What is fake

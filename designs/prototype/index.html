@@ -224,20 +224,27 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 
 <sc-for list="{{panels}}" as="panel" hint-placeholder-count="3">
 <section data-allowed="{{panel.allowed}}" style="border: 2.5px solid #14304A; border-radius: 16px; background-color: #FFFAEE; box-shadow: 0 3px 0 #14304A; overflow: hidden">
-<div style="display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 4px">
-<button type="button" onClick="{{panel.toggle}}" aria-expanded="{{panel.open}}" style="flex: 1 1 auto; min-width: 0; min-height: 44px; border: 0; background: none; display: flex; align-items: center; gap: 6px; padding: 0 4px; text-align: left">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; padding: 6px 8px 6px 4px">
+<button type="button" onClick="{{panel.toggle}}" aria-expanded="{{panel.open}}" style="flex: 1 1 140px; min-width: 0; min-height: 44px; border: 0; background: none; display: flex; align-items: center; gap: 6px; padding: 0 4px; text-align: left">
 <svg style="transform: {{panel.chev}}; transition: transform .2s; flex: 0 0 auto" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
 <span style="font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 16.5px; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{panel.title}}</span>
 </button>
+<span style="margin-left: auto; display: flex; align-items: center; gap: 6px">
 <span style="display: flex; align-items: center">
 <sc-for list="{{panel.chips}}" as="chip" hint-placeholder-count="1">
 <span title="{{chip.label}}" style="width: 24px; height: 24px; margin-left: -6px; border-radius: 50%; border: 2px solid #FFFAEE; background-color: {{chip.color}}; color: #FFFFFF; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{chip.initial}}</span>
 </sc-for>
 </span>
 <span style="min-width: 28px; height: 26px; padding: 0 8px; border-radius: 999px; background-color: #14304A; color: #FFC23D; font-weight: 700; font-size: 12.5px; display: flex; align-items: center; justify-content: center">{{panel.count}}</span>
+<sc-if value="{{panel.apOn}}" hint-placeholder-val="{{ false }}">
+<span role="img" aria-label="{{panel.apBadgeAria}}" style="flex: 0 0 auto; width: 26px; height: 26px; border-radius: 999px; border: 2px solid #14304A; background-color: {{panel.apBadgeBg}}; opacity: {{panel.apBadgeOp}}; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{panel.apBadgePath}}"></path></svg></span>
+<button type="button" class="{{mergeCls}}" onClick="{{panel.apPause}}" aria-label="{{panel.apPauseAria}}" title="{{panel.apPauseAria}}" style="border-radius: 10px; border: 2px solid #14304A; background-color: #FFFDF6; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 0 #14304A"><svg width="16" height="16" viewBox="0 0 24 24" fill="#14304A" stroke="#14304A" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="{{panel.apPausePath}}"></path></svg></button>
+</sc-if>
+<button type="button" class="{{mergeCls}}" data-ap-gear="{{panel.id}}" onClick="{{panel.apOpen}}" aria-label="{{panel.apGearAria}}" title="{{panel.apGearAria}}" style="border-radius: 10px; border: 2px solid #14304A; background-color: #FFFDF6; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 0 #14304A"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"></path></svg></button>
 <sc-if value="{{panel.hasMerge}}" hint-placeholder-val="{{ false }}">
 <button type="button" class="{{mergeCls}}" onClick="{{panel.onMerge}}" aria-label="{{panel.mergeAria}}" title="{{panel.mergeAria}}" style="border-radius: 10px; border: 2px solid #14304A; background-color: #DDF7F3; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 0 #14304A"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4v5a5 5 0 0 0 5 5h7M18 4v16M15 17l3 3 3-3"></path></svg></button>
 </sc-if>
+</span>
 </div>
 <sc-if value="{{panel.open}}" hint-placeholder-val="{{ true }}">
 <div style="display: flex; flex-direction: column; gap: 8px; padding: 2px 10px 12px">
@@ -1083,6 +1090,129 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 </div>
 </sc-if>
 
+<sc-if value="{{apOpen}}" hint-placeholder-val="{{ false }}">
+<div style="{{set.wrapStyle}}">
+<div onClick="{{ap.close}}" aria-hidden="true" style="position: absolute; inset: 0; background-color: rgba(11,31,51,.55)"></div>
+<div role="dialog" aria-modal="true" aria-labelledby="adm-ap" tabindex="-1" data-ap="1" class="{{set.cls}}" style="{{set.dialogStyle}}">
+<div style="flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: {{set.headPad}}; background-color: #FFF6E3; border-bottom: 3px solid #14304A">
+<span style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<h2 id="adm-ap" style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 26px; line-height: 1.05; letter-spacing: -0.01em">Autopilot</h2>
+<span style="font-size: 13.5px; color: #3E5870; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{ap.panelTitle}}</span>
+</span>
+<button type="button" class="press" onClick="{{ap.close}}" aria-label="Close autopilot settings" style="width: 44px; height: 44px; flex: 0 0 auto; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+</div>
+<div style="flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 16px; padding: {{set.bodyPad}}">
+<sc-if value="{{ap.invalid}}" hint-placeholder-val="{{ false }}">
+<div role="alert" style="display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFD9CC">
+<span style="font-weight: 700; font-size: 15px">Fix config.json first</span>
+<span style="font-size: 13.5px; line-height: 1.4">config.json doesn't load, so Admiral is running on the last good config. Saving is off until the file loads again.</span>
+<code style="font-family: 'JetBrains Mono', monospace; font-size: 12px; overflow-wrap: anywhere">{{ap.invalidError}}</code>
+</div>
+</sc-if>
+<div style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFFDF6">
+<span style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px"><span style="font-weight: 600; font-size: 15.5px">Launch this panel's orders</span><span style="font-size: 13px; color: #3E5870">{{ap.enabledHint}}</span></span>
+<button type="button" role="switch" aria-checked="{{ap.enabled}}" aria-label="Autopilot" class="press" disabled="{{ap.ro}}" onClick="{{ap.toggle}}" style="{{ap.switchStyle}}"><span aria-hidden="true" style="{{ap.knobStyle}}"></span></button>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<label for="adm-ap-fleet" style="font-weight: 600; font-size: 15px">Fleet</label>
+<select id="adm-ap-fleet" value="{{ap.fleet}}" onChange="{{ap.onFleet}}" disabled="{{ap.ro}}" style="{{set.selStyle}}"><option value="work">Work Fleet</option><option value="home">Home Fleet</option></select>
+<span style="font-size: 13px; color: #3E5870">Only fleets with a Claude dock.</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<span style="font-weight: 600; font-size: 15px">Harness</span>
+<span style="display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 12px; border-radius: 12px; border: 2.5px dashed #3E5870; background-color: #FFF6E3">
+<span aria-hidden="true" style="width: 28px; height: 28px; flex: 0 0 auto; border-radius: 7px; border: 2px solid #14304A; background-color: #FF7A59; color: #14304A; font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center">Cl</span>
+<span style="flex: 1 1 auto; font-weight: 600; white-space: nowrap">Claude Code</span>
+<span style="font-size: 12.5px; color: #3E5870; text-align: right">Autopilot runs on Claude Code only, for now</span>
+</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<label for="adm-ap-skill" style="font-weight: 600; font-size: 15px">Skill</label>
+<select id="adm-ap-skill" value="{{ap.skillSel}}" onChange="{{ap.onSkill}}" disabled="{{ap.ro}}" style="{{set.selStyle}}"><option value="commodore">Commodore</option><option value="skill:code-review">code-review ★</option><option value="skill:tdd">tdd ★</option><option value="skill:diagnosing-bugs">diagnosing-bugs ★</option><option value="none">None (just launch)</option><option value="custom">Another skill…</option></select>
+<sc-if value="{{ap.isCustom}}" hint-placeholder-val="{{ false }}">
+<label for="adm-ap-skill-name" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Skill name</label>
+<input id="adm-ap-skill-name" value="{{ap.customSkill}}" onChange="{{ap.onCustomSkill}}" disabled="{{ap.ro}}" autocomplete="off" spellcheck="false" placeholder="Skill name, such as triage" style="height: 46px; padding: 0 12px; border-radius: 10px; border: 2.5px solid #14304A; background-color: #FFFFFF; font-family: 'JetBrains Mono', monospace; font-size: {{skillInSize}}; color: #14304A">
+</sc-if>
+<span style="font-size: 13px; color: #3E5870">Commodore, then your favorite skills. The ship starts on the skill by name.</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span id="adm-ap-args" style="font-weight: 600; font-size: 15px">Extra arguments</span>
+<sc-if value="{{ap.argsLocked}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 12px; border: 2.5px dashed #3E5870; background-color: #FFF6E3">
+<code style="font-family: 'JetBrains Mono', monospace; font-size: 13px; overflow-wrap: anywhere">{{ap.argsText}}</code>
+<span style="font-size: 13px; line-height: 1.4; color: #3E5870">{{ap.argsLockedWhy}} Edit them in config.json; a save here keeps them as they are.</span>
+</div>
+</sc-if>
+<sc-if value="{{ap.argsEditable}}" hint-placeholder-val="{{ true }}">
+<sc-for list="{{ap.args}}" as="a" hint-placeholder-count="2">
+<span style="display: flex; align-items: center; gap: 8px">
+<input aria-label="{{a.aria}}" value="{{a.value}}" onChange="{{a.onChange}}" disabled="{{ap.ro}}" autocomplete="off" spellcheck="false" style="flex: 1 1 auto; min-width: 0; height: 46px; padding: 0 12px; border-radius: 10px; border: 2.5px solid {{a.border}}; background-color: #FFFFFF; font-family: 'JetBrains Mono', monospace; font-size: {{skillInSize}}; color: #14304A">
+<button type="button" class="press" onClick="{{a.remove}}" disabled="{{ap.ro}}" aria-label="{{a.removeAria}}" style="width: 44px; height: 44px; flex: 0 0 auto; border-radius: 10px; border: 2px solid #14304A; background-color: #FFFDF6; box-shadow: 0 2px 0 #14304A; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+</span>
+</sc-for>
+<button type="button" class="press" onClick="{{ap.addArg}}" disabled="{{ap.ro}}" style="align-self: flex-start; min-height: 44px; padding: 0 14px; border-radius: 12px; border: 2px solid #14304A; background-color: #FFFDF6; box-shadow: 0 2px 0 #14304A; font-weight: 600; font-size: 14px">+ Add argument</button>
+<span style="font-size: 13px; line-height: 1.4; color: #3E5870">One argument per row, after the fleet's own. Allowed: <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px; white-space: nowrap">--model</code>, <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px; white-space: nowrap">--advisor</code>, <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px; white-space: nowrap">--effort</code>, <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px; white-space: nowrap">--disallowedTools</code>, and <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px; white-space: nowrap">--permission-mode</code> no looser than the dock's.</span>
+</sc-if>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 14px">
+<div style="flex: 1 1 200px; display: flex; flex-direction: column; gap: 4px">
+<label for="adm-ap-max" style="font-weight: 600; font-size: 15px">Ships at once</label>
+<input id="adm-ap-max" type="number" inputmode="numeric" min="1" value="{{ap.maxShips}}" onChange="{{ap.onMax}}" disabled="{{ap.ro}}" style="{{ap.numStyle}}">
+<span style="font-size: 13px; color: #3E5870">{{ap.capHint}}</span>
+</div>
+<div style="flex: 1 1 200px; display: flex; flex-direction: column; gap: 4px">
+<label for="adm-ap-retro" style="font-weight: 600; font-size: 15px">Retro every</label>
+<input id="adm-ap-retro" type="number" inputmode="numeric" min="0" value="{{ap.retro}}" onChange="{{ap.onRetro}}" disabled="{{ap.ro}}" style="{{ap.numStyle}}">
+<span style="font-size: 13px; color: #3E5870">{{ap.retroHint}}</span>
+</div>
+</div>
+<sc-if value="{{ap.noResume}}" hint-placeholder-val="{{ false }}">
+<div role="note" style="display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFE7AE; font-size: 13.5px; line-height: 1.4">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14304A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: 0 0 auto; margin-top: 1px"><path d="M12 3l10 18H2z"></path><path d="M12 10v5M12 18v.5"></path></svg>
+<span><b>autopilot.resume_source</b> isn't set in config.json, so this panel queues no resume or retro orders. Set it by hand to turn them on.</span>
+</div>
+</sc-if>
+<div role="radiogroup" aria-labelledby="adm-ap-low" style="display: flex; flex-direction: column; gap: 6px">
+<span id="adm-ap-low" style="font-weight: 600; font-size: 15px">Low-stakes calls</span>
+<span style="display: flex; flex-wrap: wrap; gap: 8px"><sc-for list="{{ap.lowOpts}}" as="o" hint-placeholder-count="2"><button type="button" role="radio" aria-checked="{{o.on}}" class="press" onClick="{{o.pick}}" disabled="{{ap.ro}}" style="{{o.style}}">{{o.label}}</button></sc-for></span>
+<span style="font-size: 13px; color: #3E5870">Passed to the ship as ADMIRAL_LOW_STAKES.</span>
+</div>
+<div role="radiogroup" aria-labelledby="adm-ap-merge" style="display: flex; flex-direction: column; gap: 6px">
+<span id="adm-ap-merge" style="font-weight: 600; font-size: 15px">Auto-merge</span>
+<span style="display: flex; flex-wrap: wrap; gap: 8px"><sc-for list="{{ap.mergeOpts}}" as="o" hint-placeholder-count="4"><button type="button" role="radio" aria-checked="{{o.on}}" class="press" onClick="{{o.pick}}" disabled="{{ap.ro}}" style="{{o.style}}">{{o.label}}</button></sc-for></span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span id="adm-ap-res" style="font-weight: 600; font-size: 15px">Resources its orders need</span>
+<span role="group" aria-labelledby="adm-ap-res" style="display: flex; flex-wrap: wrap; gap: 8px"><sc-for list="{{ap.res}}" as="r" hint-placeholder-count="2"><button type="button" role="checkbox" aria-checked="{{r.on}}" class="press" onClick="{{r.pick}}" disabled="{{ap.ro}}" style="{{r.style}}">{{r.label}}</button></sc-for></span>
+<span style="font-size: 13px; color: #3E5870">From the resources in config.json. An order waits until each has a free unit.</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #3E5870">Writes to config.json</span>
+<code data-config-line="1" style="display: block; padding: 10px 12px; border-radius: 10px; background-color: #0E2235; color: #F4EEDF; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere">{{ap.line}}</code>
+</div>
+</div>
+<sc-if value="{{ap.refusal}}" hint-placeholder-val="{{ false }}">
+<div role="alert" style="flex: 0 0 auto; padding: 10px 18px; border-top: 3px solid #14304A; background-color: #FFD9CC; font-size: 14px; line-height: 1.4"><b>Not saved.</b> <span style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px; overflow-wrap: anywhere">{{ap.refusal}}</span></div>
+</sc-if>
+<sc-if value="{{ap.confirmRemove}}" hint-placeholder-val="{{ false }}">
+<div role="alert" style="flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 18px; border-top: 3px solid #14304A; background-color: #FFE7AE">
+<span style="flex: 1 1 220px; font-size: 14px; line-height: 1.4">Remove autopilot from <b>{{ap.panelTitle}}</b>? Its entry leaves config.json and the pause clears. Ships already out keep sailing.</span>
+<button type="button" class="press" onClick="{{ap.keep}}" style="height: 44px; padding: 0 16px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; font-weight: 600">Keep it</button>
+<button type="button" class="press" onClick="{{ap.doRemove}}" style="height: 44px; padding: 0 16px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FF7A59; box-shadow: 0 3px 0 #14304A; font-weight: 800">Remove</button>
+</div>
+</sc-if>
+<div style="flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: {{set.footPad}}; border-top: 3px solid #14304A; background-color: #FFE7AE">
+<sc-if value="{{ap.canRemove}}" hint-placeholder-val="{{ true }}">
+<button type="button" class="press" onClick="{{ap.askRemove}}" disabled="{{ap.ro}}" style="height: 48px; padding: 0 14px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; font-weight: 600; font-size: 15px; color: #C2412A">Remove autopilot</button>
+</sc-if>
+<span style="flex: 1 1 auto"></span>
+<button type="button" class="press" onClick="{{ap.close}}" style="height: 48px; padding: 0 18px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFFDF6; box-shadow: 0 3px 0 #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 600; font-size: 16px">Cancel</button>
+<button type="button" class="press" onClick="{{ap.save}}" disabled="{{ap.ro}}" style="height: 48px; padding: 0 22px; border-radius: 14px; border: 2.5px solid #14304A; background-color: #FFC23D; box-shadow: 0 4px 0 #14304A; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 17px">Save</button>
+</div>
+</div>
+</div>
+</sc-if>
+
 </div>
 </template>
 <script>
@@ -1241,6 +1371,8 @@ a{color:#1C6FD1}a:hover{color:#14304A}
 <script>
 // The Needs you drawer's width, shared with the chat button and panel that sit left of it.
 const INBOX_DRAWER_W = 400;
+// The favorite skills the autopilot mock offers after Commodore; the launch dialog's favorites in the app.
+const AP_FAVS = ['code-review', 'tdd', 'diagnosing-bugs'];
 class Component extends DCLogic {
   D() {
     if (this._d) return this._d;
@@ -1398,6 +1530,7 @@ class Component extends DCLogic {
       inboxOpen: false, size, wide: size === 'wide', tab: 'inbox', dockSheet: null, shipHi: null,
       chatOpen: false, chatItems: this.chatSample(), chatTyping: false, chatDraft: '', chatView: 'chat', chatConfirmNew: false, chatUnread: false, chatFocus: false,
       chatReplies: 0, chatClock: 15, tlines: this.chatTermSample(), tdraft: '', extra: [], settingsOpen: false,
+      apOpen: null, apDraft: null, apStore: this.apSample(), apPaused: {}, apRefusal: '', apConfirm: false, apInvalid: false, apResume: true,
       settings: { fleet: this.defaultChatFleet(), model: 'sonnet', effort: '' }, setDraft: null, vvh: 0, vvt: 0,
       ibItems: this.sampleInbox(Date.now()), ibUi: {}, ibDone: {}, ibGone: {}, ibCur: null };
     if (scene === 'inbox' || scene === 'inbox-bridge') {
@@ -1433,6 +1566,13 @@ class Component extends DCLogic {
     if (scene === 'chat-terminal') s.chatView = 'terminal';
     if (scene === 'chat-new') s.chatItems = this.chatFresh();
     if (scene === 'settings') { s.settingsOpen = true; s.setDraft = Object.assign({}, s.settings, { sound: s.sound }); }
+    // Autopilot settings (#181): Home · GitHub has an entry, Linear · Personal has none, and the Work
+    // queue's hand-edited args fail the allowlist.
+    const apAt = { autopilot: 'home', 'autopilot-new': 'linear', 'autopilot-refused': 'home', 'autopilot-locked': 'work', 'autopilot-invalid': 'home' }[scene];
+    if (apAt) { s.apOpen = apAt; s.apDraft = this.apDraftOf(s.apStore[apAt]); s.tab = 'orders'; }
+    if (scene === 'autopilot-new') s.apResume = false;
+    if (scene === 'autopilot-invalid') s.apInvalid = true;
+    if (scene === 'autopilot-refused') { s.apDraft.args.push('--dangerously-skip-permissions'); s.apRefusal = this.apArgsWhy(s.apDraft.args); }
     return s;
   }
   S() { return (this.state && this.state.inited) ? this.state : this.seed(); }
@@ -1616,10 +1756,76 @@ class Component extends DCLogic {
   }
   openSettings() { this.put((st) => ({ settingsOpen: true, setDraft: Object.assign({}, st.settings, { sound: st.sound }) })); this.focusSel('[data-settings]'); }
   closeSettings() { this.put({ settingsOpen: false, setDraft: null }); }
+
+  // ---- Autopilot settings (mock for #181) ----
+  // apStore is each panel's autopilot entry as config.json holds it, keyed by panel id.
+  apSample() {
+    return {
+      home: { enabled: true, fleet: 'home', harness: 'claude', skill: { kind: 'commodore' }, args: ['--model', 'opus'], resources: ['phone'], auto_merge: 'squash' },
+      work: { enabled: true, fleet: 'work', harness: 'claude', skill: { kind: 'skill', name: 'tdd' }, args: ['--dangerously-skip-permissions'], max_ships: 2 }
+    };
+  }
+  // The form's draft of an entry; a panel with none gets the defaults, switched on.
+  apDraftOf(e) {
+    const sk = (e && e.skill) || { kind: 'commodore' };
+    const fav = sk.kind === 'skill' && AP_FAVS.indexOf(sk.name) >= 0;
+    return {
+      enabled: e ? !!e.enabled : true, fleet: (e && e.fleet) || 'work',
+      skillSel: sk.kind !== 'skill' ? sk.kind : fav ? 'skill:' + sk.name : 'custom', customSkill: sk.kind === 'skill' && !fav ? sk.name : '',
+      args: ((e && e.args) || []).slice(), max_ships: (e && e.max_ships) || 1, retro_every: e && e.retro_every !== undefined ? e.retro_every : 5,
+      low_stakes: (e && e.low_stakes) || 'advisor', auto_merge: (e && e.auto_merge) || '', resources: ((e && e.resources) || []).slice()
+    };
+  }
+  // The entry a save writes. A default is written only when the stored entry already had that key,
+  // so a save adds no key a hand edit wouldn't have. Locked args are kept as stored.
+  apEntry(d, stored, keepArgs) {
+    const had = (k) => !!stored && Object.prototype.hasOwnProperty.call(stored, k);
+    const skill = d.skillSel === 'commodore' || d.skillSel === 'none' ? { kind: d.skillSel } : { kind: 'skill', name: d.skillSel === 'custom' ? d.customSkill.trim() : d.skillSel.slice(6) };
+    const e = { enabled: d.enabled, fleet: d.fleet, harness: 'claude', skill };
+    const args = keepArgs ? stored.args : d.args.filter((a) => a !== '');
+    if (args.length || had('args')) e.args = args;
+    if (d.max_ships !== 1 || had('max_ships')) e.max_ships = d.max_ships;
+    if (d.low_stakes !== 'advisor' || had('low_stakes')) e.low_stakes = d.low_stakes;
+    if (d.retro_every !== 5 || had('retro_every')) e.retro_every = d.retro_every;
+    if (d.auto_merge) e.auto_merge = d.auto_merge;
+    if (d.resources.length || had('resources')) e.resources = d.resources;
+    return e;
+  }
+  // The server's message for the first argument the autopilot allowlist refuses, or ''. A stand-in for
+  // launcher.AutopilotArgs: it knows the flag names only, not their values or the dock's permission mode.
+  apArgsWhy(args) {
+    const ok = ['--model', '--advisor', '--effort', '--disallowedTools', '--disallowed-tools', '--permission-mode'];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '') continue;
+      if (ok.indexOf(a.split('=')[0]) < 0) return '--arg ' + a + ' is refused: it is not on the autopilot args allowlist';
+      if (a.indexOf('=') < 0) i++;
+    }
+    return '';
+  }
+  openAp(id) { this.put((st) => ({ apOpen: id, apDraft: this.apDraftOf(st.apStore[id]), apRefusal: '', apConfirm: false })); this.focusSel('[data-ap]'); }
+  closeAp() { const id = this.S().apOpen; this.put({ apOpen: null, apDraft: null, apRefusal: '', apConfirm: false }); this.focusSel('[data-ap-gear="' + id + '"]'); }
+  saveAp() {
+    const st = this.S();
+    if (st.apInvalid) return;
+    const stored = st.apStore[st.apOpen];
+    const locked = !!(stored && stored.args && this.apArgsWhy(stored.args));
+    const why = locked ? '' : this.apArgsWhy(st.apDraft.args);
+    if (why) { this.put({ apRefusal: why }); return; }
+    const entry = this.apEntry(st.apDraft, stored, locked);
+    this.put((s2) => ({ apStore: Object.assign({}, s2.apStore, { [s2.apOpen]: entry }) }));
+    this.closeAp();
+  }
+  removeAp() {
+    const id = this.S().apOpen;
+    this.put((st) => { const store = Object.assign({}, st.apStore); delete store[id]; const paused = Object.assign({}, st.apPaused); delete paused[id]; return { apStore: store, apPaused: paused }; });
+    this.closeAp();
+  }
   // One layer closes per Escape: Settings first, then the chat panel or sheet.
   onEsc(e) {
     if (e.key !== 'Escape') return;
     const st = this.S();
+    if (st.apOpen) { if (st.apConfirm) this.put({ apConfirm: false }); else this.closeAp(); return; }
     if (st.settingsOpen) { this.closeSettings(); return; }
     if (st.pending || (st.dockSheet && st.size === 'phone')) return;
     if (st.size !== 'phone' && st.chatOpen) this.closeChat();
@@ -1784,6 +1990,7 @@ class Component extends DCLogic {
     this.ibFocus();
     if (this.S().dockSheet) this.focusSel('[data-dock-sheet]');
     if (this.S().settingsOpen) this.focusSel('[data-settings]');
+    if (this.S().apOpen) this.focusSel('[data-ap]');
     this.chatScroll();
     // The on-screen keyboard shrinks the visual viewport, not the layout one: size the chat to what is visible.
     try {
@@ -2153,6 +2360,15 @@ class Component extends DCLogic {
       hasMerge: !!(p.canSplit || p.canMerge),
       mergeAria: p.canSplit ? 'Split into one panel per source' : 'Combine Jira and GitHub into one panel',
       onMerge: () => self.put((st) => ({ merged: !st.merged })),
+      apOn: !!(s.apStore[p.id] && s.apStore[p.id].enabled),
+      apBadgeAria: s.apPaused[p.id] ? 'Autopilot paused' : 'Autopilot on',
+      apBadgeBg: s.apPaused[p.id] ? '#FFFDF6' : '#FFC23D', apBadgeOp: s.apPaused[p.id] ? '0.7' : '1',
+      apBadgePath: s.apPaused[p.id] ? 'M9 5v14M15 5v14' : 'M12 3l9 18-9-4-9 4z',
+      apPauseAria: s.apPaused[p.id] ? 'Resume autopilot' : 'Pause autopilot',
+      apPausePath: s.apPaused[p.id] ? 'M7 4l13 8-13 8z' : 'M7 4h3v16H7zM14 4h3v16h-3z',
+      apPause: () => self.put((st) => ({ apPaused: Object.assign({}, st.apPaused, { [p.id]: !st.apPaused[p.id] }) })),
+      apOpen: () => self.openAp(p.id),
+      apGearAria: 'Autopilot settings for ' + p.title,
       initial: p.title.charAt(0),
       railColor: SRC[p.srcs[0]].color,
       empty: p.tasks.length === 0,
@@ -2540,6 +2756,51 @@ class Component extends DCLogic {
     const sd = s.setDraft || cfg;
     // Fleet and model are always written; effort only when it is not the harness default.
     set.line = '"chat": {"fleet": "' + sd.fleet + '", "model": "' + sd.model + '"' + (sd.effort ? ', "effort": "' + sd.effort + '"' : '') + '}';
+    // ---- Autopilot settings (#181) ----
+    let ap = {};
+    if (s.apOpen && s.apDraft) {
+      const d = s.apDraft;
+      const stored = s.apStore[s.apOpen];
+      const lockWhy = stored && stored.args ? self.apArgsWhy(stored.args) : '';
+      const upd = (patch) => self.put((st) => ({ apDraft: Object.assign({}, st.apDraft, patch), apRefusal: '' }));
+      const pill = (on) => 'min-height: 44px; padding: 0 14px; border-radius: 999px; border: 2.5px solid #14304A; font-weight: 600; font-size: 14px; '
+        + (on ? 'background-color: #14304A; color: #F4EEDF' : 'background-color: #FFFDF6; color: #14304A');
+      const refused = (s.apRefusal.match(/^--arg (\S+)/) || [])[1];
+      const srcKey = { freeform: 'freeform', jira: 'jira', ghwork: 'github-work', work: 'work-queue', home: 'github-home', linear: 'linear' }[s.apOpen];
+      const n = d.retro_every;
+      ap = {
+        panelTitle: (raw.find((p) => p.id === s.apOpen) || { title: s.apOpen }).title,
+        ro: !!s.apInvalid, invalid: !!s.apInvalid, invalidError: 'sources.github-home.autopilot.home.max_ships: must be an integer of 1 or more, got 0',
+        enabled: d.enabled, toggle: () => upd({ enabled: !d.enabled }),
+        enabledHint: d.enabled ? 'In list order, while the caps have room. Pause in the panel header stops it for a while.' : 'Off. The settings stay in config.json and nothing launches.',
+        switchStyle: 'flex: 0 0 auto; position: relative; width: 64px; height: 44px; padding: 0; border-radius: 999px; border: 2.5px solid #14304A; background-color: ' + (d.enabled ? '#4FA85A' : '#E4D6B8'),
+        knobStyle: 'position: absolute; box-sizing: border-box; top: 3.5px; left: ' + (d.enabled ? '23.5px' : '3.5px') + '; width: 32px; height: 32px; border-radius: 50%; border: 2.5px solid #14304A; background-color: #FFFDF6; transition: left .15s',
+        fleet: d.fleet, onFleet: (e) => upd({ fleet: e.target.value }),
+        skillSel: d.skillSel, onSkill: (e) => upd({ skillSel: e.target.value }), isCustom: d.skillSel === 'custom',
+        customSkill: d.customSkill, onCustomSkill: (e) => upd({ customSkill: e.target.value }),
+        argsLocked: !!lockWhy, argsEditable: !lockWhy, argsText: stored && stored.args ? stored.args.join(' ') : '',
+        argsLockedWhy: 'Set by hand, and a save from here would be refused: ' + lockWhy.replace(/^--arg \S+ is refused: /, '') + '.',
+        args: d.args.map((v, i) => ({
+          value: v, aria: 'Argument ' + (i + 1), border: refused && v === refused ? '#C2412A' : '#14304A',
+          onChange: (e) => { const a = self.S().apDraft.args.slice(); a[i] = e.target.value; upd({ args: a }); },
+          remove: () => upd({ args: self.S().apDraft.args.filter((_, j) => j !== i) }), removeAria: 'Remove argument ' + (v || i + 1)
+        })),
+        addArg: () => upd({ args: d.args.concat(['']) }),
+        numStyle: 'height: 48px; padding: 0 12px; border-radius: 12px; border: 2.5px solid #14304A; background-color: #FFFFFF; font-family: Archivo, sans-serif; font-size: 16px; color: #14304A',
+        maxShips: String(d.max_ships), onMax: (e) => upd({ max_ships: Math.max(1, parseInt(e.target.value, 10) || 1) }),
+        capHint: 'This panel\u2019s cap. The global cap is 3, set in config.json.',
+        retro: String(n), onRetro: (e) => upd({ retro_every: Math.max(0, parseInt(e.target.value, 10) || 0) }),
+        retroHint: n === 0 ? 'Off: no retro orders.' : 'Runs between retro orders. 0 turns them off.',
+        noResume: !s.apResume,
+        lowOpts: [['advisor', 'advisor (default)'], ['never', 'never']].map((o) => ({ label: o[1], on: d.low_stakes === o[0], style: pill(d.low_stakes === o[0]), pick: () => upd({ low_stakes: o[0] }) })),
+        mergeOpts: [['', 'Off'], ['squash', 'squash'], ['merge', 'merge'], ['rebase', 'rebase']].map((o) => ({ label: o[1], on: d.auto_merge === o[0], style: pill(d.auto_merge === o[0]), pick: () => upd({ auto_merge: o[0] }) })),
+        res: ['phone', 'simulator'].map((r) => { const on = d.resources.indexOf(r) >= 0; return { label: (on ? '\u2713 ' : '') + r, on, style: pill(on), pick: () => upd({ resources: on ? d.resources.filter((x) => x !== r) : d.resources.concat([r]) }) }; }),
+        line: 'sources.' + srcKey + '.autopilot.' + s.apOpen + ' = ' + JSON.stringify(self.apEntry(d, stored, !!lockWhy)),
+        refusal: s.apRefusal, confirmRemove: !!s.apConfirm, canRemove: !!stored,
+        askRemove: () => self.put({ apConfirm: true }), keep: () => self.put({ apConfirm: false }), doRemove: () => self.removeAp(),
+        close: () => self.closeAp(), save: () => self.saveAp()
+      };
+    }
     const gearBase = 'display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 44px; height: 44px; border-radius: 50%; border: 2px solid #3A6489; background-color: #14304A; color: #F4EEDF';
 
     const harborMain = 'flex: 999 1 640px; min-width: 0; min-height: 760px; position: relative; overflow: hidden; background-color: #29B2C2; display: flex; flex-wrap: ' + (drawer ? 'nowrap' : 'wrap') + '; align-items: stretch';
@@ -2601,7 +2862,7 @@ class Component extends DCLogic {
         self.chatScroll();
         self.focusSel('[data-chat]');
       },
-      settingsOpen: !!s.settingsOpen, set, openSettings: () => self.openSettings(),
+      settingsOpen: !!s.settingsOpen, set, apOpen: !!s.apOpen, ap, openSettings: () => self.openSettings(),
       gearStyle: gearBase,
       shipRows, shipsHint: shipRows.length + (shipRows.length === 1 ? ' ship' : ' ships') + (needsYou ? ', ' + needsYou + ' need' + (needsYou === 1 ? 's' : '') + ' you' : ''),
       hasDockSheet: !!dockSheet, dockSheet: dockSheet || { fleets: [] },

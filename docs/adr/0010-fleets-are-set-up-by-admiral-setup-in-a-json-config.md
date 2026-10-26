@@ -18,7 +18,7 @@ Follow Commodore Launcher's configuration model, adapted to fleets ([How the eng
 - **Safety rules carry over.** An unknown key inside a fleet or a harness is an error, not a warning. Two fleets using the same harness must set different `CLAUDE_CONFIG_DIR` / `CODEX_HOME` / `COPILOT_HOME`: `setup` and `fleet add/edit` refuse a shared one, and a hand edit that shares one loads with a warning on both docks. Nothing clears inherited identity variables, so each harness should set its own.
 - **A bad file never takes Admiral down.** An invalid file keeps the last good config in use (none at startup) and shows a banner naming the file and the error. A missing executable is flagged on its dock. A fleet with no search roots shows its docks but cannot launch.
 - **Running ships keep the settings they launched with.** A change applies to the next launch. A ship whose fleet or harness is removed stays at sea in its recorded fleet color.
-- **The UI writes two parts of the file:** `favorite_skills` (up to five skill names, starred in launch orders) and `sources` (the order sources and their settings, from their forms). Fleets are never edited in the UI except through the setup terminal.
+- **The UI writes two parts of the file:** `favorite_skills` (up to five skill names, starred in launch orders) and `sources` (the order sources and their settings, from their forms, and each panel's autopilot entry under `sources.<key>.autopilot`, from the panel's Autopilot form: [#181](https://github.com/jbuffin/admiral/issues/181), [ADR 0022](0022-a-ui-save-of-autopilot-args-passes-the-crew-allowlist.md)). Fleets are never edited in the UI except through the setup terminal. The top-level `autopilot` and `resources` keys stay hand-edited.
 
 ## Considered options
 
