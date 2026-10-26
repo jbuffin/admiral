@@ -4669,3 +4669,297 @@ body.dragging * {
     gap: 10px;
   }
 }
+
+/* The autopilot settings form (#181) reuses the app Settings modal's shell. */
+.ap-panel {
+  display: block;
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 13.5px;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ap-label {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.ap-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: var(--shape-outline) solid var(--color-ink);
+  background-color: var(--color-attention-plaque);
+  color: var(--color-ink);
+}
+
+.ap-alert code,
+.ap-strip span code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.ap-switch {
+  flex: 0 0 auto;
+  position: relative;
+  width: 64px;
+  height: var(--shape-min-touch-target);
+  padding: 0;
+  border-radius: 999px;
+  border: var(--shape-outline) solid var(--color-ink);
+  background-color: #e4d6b8;
+  cursor: pointer;
+}
+
+.ap-switch.on {
+  background-color: #4fa85a;
+}
+
+.ap-switch span {
+  position: absolute;
+  box-sizing: border-box;
+  top: 3.5px;
+  left: 3.5px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: var(--shape-outline) solid var(--color-ink);
+  background-color: var(--color-parchment-light);
+  transition: left 0.15s;
+}
+
+.ap-switch.on span {
+  left: 23.5px;
+}
+
+.ap-harness {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 12px;
+  border-radius: var(--shape-radius-card);
+  border: var(--shape-outline) dashed var(--color-text-muted);
+  background-color: var(--color-parchment);
+}
+
+.ap-harness small {
+  flex: 1 1 auto;
+  text-align: right;
+  font-size: 12.5px;
+}
+
+.app-set-field input[type='text'],
+.app-set-field input[type='number'] {
+  height: 46px;
+  min-width: 0;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: var(--shape-outline) solid var(--color-ink);
+  background-color: #fff;
+  font-family: var(--font-body);
+  font-size: 16px;
+  color: var(--color-ink);
+}
+
+.app-set-field input.ap-mono {
+  font-family: var(--font-mono);
+}
+
+.app-set-field input.refused {
+  border-color: var(--color-attention-border);
+}
+
+.ap-arg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ap-arg input {
+  flex: 1 1 auto;
+}
+
+.ap-icon,
+.ap-add,
+.ap-pill {
+  min-height: var(--shape-min-touch-target);
+  border: 2px solid var(--color-ink);
+  background-color: var(--color-parchment-light);
+  color: var(--color-ink);
+  font: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.ap-icon {
+  width: var(--shape-min-touch-target);
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  box-shadow: 0 2px 0 var(--color-ink);
+}
+
+.ap-add {
+  align-self: flex-start;
+  padding: 0 14px;
+  border-radius: 12px;
+  box-shadow: 0 2px 0 var(--color-ink);
+}
+
+.ap-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ap-pill {
+  padding: 0 14px;
+  border-radius: 999px;
+  border-width: var(--shape-outline);
+}
+
+.ap-pill[aria-checked='true'] {
+  background-color: var(--color-ink);
+  color: var(--color-text-on-dark);
+}
+
+.ap-locked {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: var(--shape-outline) dashed var(--color-text-muted);
+  background-color: var(--color-parchment);
+}
+
+.ap-locked code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.ap-pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.ap-pair > * {
+  flex: 1 1 200px;
+}
+
+.ap-note {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: var(--shape-outline) solid var(--color-ink);
+  background-color: #ffe7ae;
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+.ap-strip {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  border-top: var(--shape-outline-heavy) solid var(--color-ink);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--color-ink);
+}
+
+.modal .ap-strip[role='alert'],
+.modal .ap-alert[role='alert'] {
+  margin: 0;
+  color: var(--color-ink);
+  font-size: 14px;
+}
+
+.ap-strip.refusal {
+  background-color: var(--color-attention-plaque);
+}
+
+.ap-strip.refusal span {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.ap-strip.confirm {
+  background-color: #ffe7ae;
+}
+
+.ap-strip.confirm > span {
+  flex: 1 1 220px;
+}
+
+.ap-foot {
+  align-items: center;
+}
+
+.ap-spacer {
+  flex: 1 1 auto;
+}
+
+.ap-remove,
+.ap-danger {
+  color: var(--color-attention-border);
+}
+
+.ap-danger {
+  background-color: var(--color-coral);
+  color: var(--color-ink);
+  font-weight: 800;
+}
+
+/* A disabled control reads as disabled (the prototype's autopilot-invalid scene). */
+.ap-form button:disabled,
+.ap-form input:disabled,
+.ap-form select:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Long titles and arguments shrink inside the dialog instead of widening it. */
+/* The dialog is a flex row; its body must be allowed to shrink below its content. */
+.ap-form .modal-body,
+.ap-form .app-settings-head h2 {
+  min-width: 0;
+}
+
+.ap-form .app-settings-head h2:focus {
+  outline: none;
+}
+
+.ap-form .app-settings-body > *,
+.ap-form .app-set-field > *,
+.ap-form .app-set-text {
+  min-width: 0;
+}
+
+.ap-form .app-settings-body {
+  overflow-x: hidden;
+}
+
+.ap-form .ap-harness {
+  flex-wrap: wrap;
+}
+
+.ap-form .ap-strip.refusal {
+  display: block;
+}
