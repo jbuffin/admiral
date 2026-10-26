@@ -49,6 +49,8 @@ func TestHookDecision(t *testing.T) {
 		{"PermissionRequest with a tool name that is not a safe token", "PermissionRequest", `{"hook_event_name":"PermissionRequest","tool_name":"Bash; kill-server #{pane_id}"}`, "needs_you", "permission"},
 		{"UserPromptSubmit", "UserPromptSubmit", `{"hook_event_name":"UserPromptSubmit","prompt":"go"}`, "working", ""},
 		{"PostToolUse", "PostToolUse", `{"hook_event_name":"PostToolUse","tool_name":"Bash"}`, "working", ""},
+		{"PostToolUse whose tool_response is a string", "PostToolUse", `{"hook_event_name":"PostToolUse","tool_name":"Read","tool_response":"file text"}`, "working", ""},
+		{"PostToolUse of a Monitor", "PostToolUse", `{"hook_event_name":"PostToolUse","tool_name":"Monitor","tool_response":{"taskId":"bp7cr4s34","timeoutMs":60000,"persistent":false}}`, "working", ""},
 		{"codex Interrupt", "Interrupt", `{"hook_event_name":"Interrupt","turn_id":"01a15222-ed87","model":"gpt-6-luna"}`, "working", ""},
 		// AC3: the question text and tool input never reach tmux.
 		{"PreToolUse of AskUserQuestion", "PreToolUse", `{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Drop the production database?","options":[{"label":"Yes, drop it"}]}]}}`, "needs_you", "question"},
@@ -300,7 +302,8 @@ func withoutActivityStamp(t *testing.T, calls [][]string, pane string) [][]strin
 		if len(c) > 0 && c[0] == ";" {
 			c = c[1:]
 		}
-		// The @admiral-subagents write is covered by TestCrewHook_LeadWaitsForWorkingCrew.
+		// The @admiral-subagents and @admiral-monitors writes are covered by
+		// TestCrewHook_LeadWaitsForWorkingCrew and TestHook_StopWaitsForMonitor.
 		var kept []string
 		var cmd []string
 		for _, a := range append(c, ";") {
@@ -308,7 +311,7 @@ func withoutActivityStamp(t *testing.T, calls [][]string, pane string) [][]strin
 				cmd = append(cmd, a)
 				continue
 			}
-			if len(cmd) > 0 && !slices.Contains(cmd, "@admiral-subagents") {
+			if len(cmd) > 0 && !slices.Contains(cmd, "@admiral-subagents") && !slices.Contains(cmd, "@admiral-monitors") {
 				if len(kept) > 0 {
 					kept = append(kept, ";")
 				}
