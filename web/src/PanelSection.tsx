@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { AutopilotSettings } from './AutopilotSettings';
 import { touchKeyboard } from './keys';
 import { OrderItem } from './OrderItem';
 import { gripKey, pressGrip, reordering, savePanelOrder } from './reorder';
@@ -93,6 +94,8 @@ export function PanelSection({ view }: { view: PanelView }) {
   const lifted = reordering.value?.group === group && reordering.value.key === panel.id;
   const open = !panelCollapsed(view.key);
   const [refusal, setRefusal] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const gear = useRef<HTMLButtonElement>(null);
   const total = orders.length;
   const autopilot = panel.autopilot;
   return (
@@ -109,8 +112,7 @@ export function PanelSection({ view }: { view: PanelView }) {
         <span class="count" role="img" aria-label={countLabel(total)}>
           {total}
         </span>
-        {(autopilot?.enabled || declares(source, 'refresh')) && (
-          <div class="panel-actions">
+        <div class="panel-actions">
           {autopilot?.enabled && (
             <>
               <AutopilotBadge paused={autopilot.paused} />
@@ -129,6 +131,19 @@ export function PanelSection({ view }: { view: PanelView }) {
               </button>
             </>
           )}
+          <button
+            ref={gear}
+            type="button"
+            class="icon-button press"
+            aria-label={`Autopilot settings for ${view.title}`}
+            aria-haspopup="dialog"
+            onClick={() => setSettingsOpen(true)}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1" />
+            </svg>
+          </button>
           {declares(source, 'refresh') && (
             <button
               type="button"
@@ -145,9 +160,19 @@ export function PanelSection({ view }: { view: PanelView }) {
               </svg>
             </button>
           )}
-          </div>
-        )}
+        </div>
       </div>
+      {settingsOpen && (
+        <AutopilotSettings
+          sourceKey={source.key}
+          panelId={panel.id}
+          panelTitle={view.title}
+          onClose={() => {
+            setSettingsOpen(false);
+            setTimeout(() => gear.current?.focus(), 0); // a tap leaves WebKit's focus on <body>, so the dialog's own restore has nothing to return to
+          }}
+        />
+      )}
       {autopilot && autopilot.waiting_for.length > 0 && <p class="panel-waiting">waiting for {autopilot.waiting_for.join(', ')}</p>}
       {open && (
         <div class="panel-body">
