@@ -172,7 +172,7 @@ func TestAutopilotSettingsPutEnablesAPanel(t *testing.T) {
 // AC 2 and the fleet switch: a save that the whole-file check, the fleet
 // lookup or the args allowlist refuses leaves config.json byte for byte.
 func TestAutopilotSettingsRefusalsLeaveTheFileUnchanged(t *testing.T) {
-	stored := apNew(map[string]any{"args": []string{"--panel-arg"}, "max_ships": 2})
+	stored := apNew(map[string]any{"enabled": false, "args": []string{"--panel-arg"}, "max_ships": 2})
 	a := newApSettings(t, map[string]any{"main": stored}, nil)
 	g := a.get("main")
 	if g.ArgsError == "" {
@@ -187,9 +187,9 @@ func TestAutopilotSettingsRefusalsLeaveTheFileUnchanged(t *testing.T) {
 		msg   string
 	}{
 		{"args off the allowlist", apNew(map[string]any{"args": []string{"--dangerously-skip-permissions"}}), 400, "--dangerously-skip-permissions is refused"},
-		{"a fleet switch with the stored failing args", apNew(map[string]any{"fleet": "home", "args": []string{"--panel-arg"}, "max_ships": 2}), 400, "--panel-arg is refused"},
-		{"an unknown fleet", apNew(map[string]any{"fleet": "nope"}), 400, "nope"},
+		{"an unknown fleet", apNew(map[string]any{"fleet": "nope"}), 400, `no fleet "nope"`},
 		{"max_ships 0", apNew(map[string]any{"max_ships": 0}), 400, "max_ships"},
+		{"a bad low_stakes", apNew(map[string]any{"low_stakes": "sometimes"}), 400, "low_stakes"},
 		{"a harness other than claude", apNew(map[string]any{"harness": "codex"}), 400, "Claude Code only"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -200,15 +200,44 @@ func TestAutopilotSettingsRefusalsLeaveTheFileUnchanged(t *testing.T) {
 	}
 }
 
+// ADR 0022, fleet switch: unchanged args that pass the stored fleet's dock but
+// fail the new fleet's dock are refused. Only args that already fail the stored
+// fleet's dock skip the check (see the next test).
+func TestAutopilotSettingsFleetSwitchChecksArgsAgainstTheNewDock(t *testing.T) {
+	args := []string{"--disallowedTools", "Bash"}
+	a := newApSettings(t, map[string]any{"p2": apNew(map[string]any{"enabled": false, "args": args})}, func(cfg map[string]any) {
+		fleets := cfg["fleets"].(map[string]any)
+		strict := map[string]any{}
+		for k, v := range fleets["home"].(map[string]any) {
+			strict[k] = v
+		}
+		claude := map[string]any{}
+		for k, v := range strict["claude"].(map[string]any) {
+			claude[k] = v
+		}
+		claude["args"] = args // the dock already sets --disallowedTools
+		strict["claude"] = claude
+		strict["name"] = "Strict"
+		fleets["strict"] = strict
+	})
+	g := a.get("p2")
+	if g.ArgsError != "" {
+		t.Fatalf("GET args_error = %q, want none: the stored args pass the work dock", g.ArgsError)
+	}
+	before := a.bytes()
+	code, body := a.put("p2", apNew(map[string]any{"enabled": false, "fleet": "strict", "args": args}), g.Version)
+	a.wantRefused(code, body, http.StatusBadRequest, "--arg --disallowedTools is refused: the dock already sets it", before, "a fleet switch to a dock that already sets the flag")
+}
+
 // AC 3: stored args that fail the allowlist (a hand edit) survive a save of
 // other fields. The file is rewritten, so compare the parsed args. The save
 // also keeps the other panel's entry, the rest of the source and the unknown
 // top-level key.
 func TestAutopilotSettingsKeepStoredFailingArgs(t *testing.T) {
 	failing := []any{"--panel-arg", "--dangerously-skip-permissions"}
-	other := apNew(map[string]any{"fleet": "home", "args": []string{"--model", "opus"}})
+	other := apNew(map[string]any{"enabled": false, "fleet": "home", "args": []string{"--model", "opus"}})
 	a := newApSettings(t, map[string]any{
-		"main": apNew(map[string]any{"args": failing, "max_ships": 1}),
+		"main": apNew(map[string]any{"enabled": false, "args": failing, "max_ships": 1}),
 		"gone": other, // a panel the plugin does not send
 	}, nil)
 	g := a.get("main")
@@ -217,6 +246,9 @@ func TestAutopilotSettingsKeepStoredFailingArgs(t *testing.T) {
 	}
 	var stored map[string]any
 	_ = json.Unmarshal(g.Entry, &stored)
+	if stored == nil {
+		t.Fatalf("GET entry = %s, want the stored entry", g.Entry)
+	}
 	stored["max_ships"] = 2
 	code, body := a.put("main", stored, g.Version)
 	a.mustOK(code, body, "PUT with the stored failing args and a new max_ships")
@@ -236,7 +268,7 @@ func TestAutopilotSettingsKeepStoredFailingArgs(t *testing.T) {
 // AC 4: a save that changes nothing, even one that spells the entry in
 // another key order, writes nothing. The bytes (tabs, the unknown key) stay.
 func TestAutopilotSettingsUnchangedPutWritesNothing(t *testing.T) {
-	a := newApSettings(t, map[string]any{"main": apNew(map[string]any{"max_ships": 2, "args": []string{"--model", "opus"}})}, nil)
+	a := newApSettings(t, map[string]any{"main": apNew(map[string]any{"enabled": false, "max_ships": 2, "args": []string{"--model", "opus"}})}, nil)
 	g := a.get("main")
 	before := a.bytes()
 	info, err := os.Stat(configPath(a.home))
@@ -261,8 +293,8 @@ func TestAutopilotSettingsUnchangedPutWritesNothing(t *testing.T) {
 // stays; so is a Remove. A hand edit to another panel's entry is not a conflict.
 func TestAutopilotSettingsStaleVersionIsRefused(t *testing.T) {
 	a := newApSettings(t, map[string]any{
-		"main":  apNew(map[string]any{"max_ships": 1}),
-		"other": apNew(map[string]any{"max_ships": 1}),
+		"main":  apNew(map[string]any{"enabled": false, "max_ships": 1}),
+		"other": apNew(map[string]any{"enabled": false, "max_ships": 1}),
 	}, nil)
 	g := a.get("main")
 
@@ -280,6 +312,12 @@ func TestAutopilotSettingsStaleVersionIsRefused(t *testing.T) {
 	a.wantRefused(code, body, http.StatusConflict, apMsgChanged, edited, "a PUT with a stale version")
 	code, body = a.del("main", g.Version)
 	a.wantRefused(code, body, http.StatusConflict, apMsgChanged, edited, "a DELETE with a stale version")
+
+	// A hand edit to another panel's entry is no conflict for this one.
+	cur := a.get("main").Version
+	writeConfig(t, a.home, strings.Replace(edited, `"max_ships": 1`, `"max_ships": 5`, 1))
+	code, body = a.put("main", apNew(map[string]any{"max_ships": 2}), cur)
+	a.mustOK(code, body, "a PUT after a hand edit to another panel")
 }
 
 // AC 6: Remove deletes the entry and clears the pause, so the pause does not
@@ -335,7 +373,7 @@ func TestAutopilotSettingsDeleteClearsThePause(t *testing.T) {
 // AC 7: while config.json does not load, GET still answers with the error, and
 // PUT and DELETE are refused without touching the file.
 func TestAutopilotSettingsRefusedWhileTheConfigIsInvalid(t *testing.T) {
-	a := newApSettings(t, map[string]any{"main": apNew(map[string]any{"max_ships": 1})}, nil)
+	a := newApSettings(t, map[string]any{"main": apNew(map[string]any{"enabled": false, "max_ships": 1})}, nil)
 	g := a.get("main")
 
 	bad := strings.Replace(a.bytes(), `"harness": "claude"`, `"harness": "codex"`, 1)
