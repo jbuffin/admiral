@@ -373,7 +373,10 @@ func TestFreeformOrders(t *testing.T) {
 	code, body = w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": panel, "text": "crlf\r\ntext\tis fine"})
 	w.mustOK(code, body, "POST of CRLF text")
 	crlfID := decodeID(body)
-	w.srcReq(http.MethodDelete, "/orders/orders/"+crlfID, nil)
+	// the remove route looks the id up in the source's last list, which the add only asks to refresh
+	w.waitSource("orders", 5*time.Second, "the CRLF order", func(s sourceJSON) bool { return s.hasOrder(crlfID) })
+	code, body = w.srcReq(http.MethodDelete, "/orders/orders/"+crlfID, nil)
+	w.mustOK(code, body, "DELETE of the CRLF order")
 	code, body = w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": panel, "text": strings.Repeat("b", 12000)})
 	w.mustOK(code, body, "POST of exactly 12,000 bytes")
 	s := w.waitSource("orders", 5*time.Second, "two orders", func(s sourceJSON) bool { return len(s.orderIDs()) == 2 && !s.hasOrder(crlfID) })
