@@ -123,7 +123,7 @@ func (a *apSettings) entryOf(panel string) map[string]any {
 
 func (a *apSettings) wantRefused(code int, body string, want int, msg, before, what string) {
 	a.t.Helper()
-	if code != want || !strings.Contains(body, msg) {
+	if code != want || !strings.Contains(strings.ReplaceAll(body, `\"`, `"`), msg) {
 		a.t.Errorf("%s = %d %s, want %d containing %q", what, code, body, want, msg)
 	}
 	if got := a.bytes(); got != before {
@@ -278,7 +278,7 @@ func TestAutopilotSettingsUnchangedPutWritesNothing(t *testing.T) {
 	time.Sleep(1100 * time.Millisecond) // a rewrite would move the mtime
 
 	// The same entry as a different JSON text: reversed key order.
-	reordered := `{"version":` + string(mustJSON(t, g.Version)) + `,"entry":{"args":["--model","opus"],"max_ships":2,"skill":{"kind":"none"},"harness":"claude","fleet":"work","enabled":true}}`
+	reordered := `{"version":` + string(mustJSON(t, g.Version)) + `,"entry":{"args":["--model","opus"],"max_ships":2,"skill":{"kind":"none"},"harness":"claude","fleet":"work","enabled":false}}`
 	code, body := a.srcReq(http.MethodPut, a.path("main"), json.RawMessage(reordered))
 	a.mustOK(code, body, "PUT the entry unchanged")
 	if got := a.bytes(); got != before {
