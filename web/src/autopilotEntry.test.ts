@@ -90,6 +90,14 @@ describe('a changed field is written', () => {
   });
 });
 
+describe('blank argument rows', () => {
+  it('are dropped when args is touched, and kept when it is not', () => {
+    const s = { ...base, args: ['--model', ''] };
+    expect(save(s, ['args'], { args: ['--model', 'opus', '', ''] })).toStrictEqual({ ...s, args: ['--model', 'opus'] });
+    expect(save(s, [])).toStrictEqual(s);
+  });
+});
+
 describe('auto_merge', () => {
   it('Off removes the key the stored entry had', () => {
     expect(save({ ...base, auto_merge: 'squash' }, ['auto_merge'], { auto_merge: '' })).toStrictEqual(base);

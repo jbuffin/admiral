@@ -167,6 +167,7 @@ export function PanelSection({ view }: { view: PanelView }) {
           sourceKey={source.key}
           panelId={panel.id}
           panelTitle={view.title}
+          hadAutopilot={!!autopilot}
           onClose={() => {
             setSettingsOpen(false);
             setTimeout(() => gear.current?.focus(), 0); // a tap leaves WebKit's focus on <body>, so the dialog's own restore has nothing to return to

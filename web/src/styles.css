@@ -4926,3 +4926,40 @@ body.dragging * {
   color: var(--color-ink);
   font-weight: 800;
 }
+
+/* A disabled control reads as disabled (the prototype's autopilot-invalid scene). */
+.ap-form button:disabled,
+.ap-form input:disabled,
+.ap-form select:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Long titles and arguments shrink inside the dialog instead of widening it. */
+/* The dialog is a flex row; its body must be allowed to shrink below its content. */
+.ap-form .modal-body,
+.ap-form .app-settings-head h2 {
+  min-width: 0;
+}
+
+.ap-form .app-settings-head h2:focus {
+  outline: none;
+}
+
+.ap-form .app-settings-body > *,
+.ap-form .app-set-field > *,
+.ap-form .app-set-text {
+  min-width: 0;
+}
+
+.ap-form .app-settings-body {
+  overflow-x: hidden;
+}
+
+.ap-form .ap-harness {
+  flex-wrap: wrap;
+}
+
+.ap-form .ap-strip.refusal {
+  display: block;
+}

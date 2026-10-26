@@ -205,6 +205,23 @@ test.describe('autopilot settings form', () => {
     expect(configText(admiral)).toBe(before);
   });
 
+  test('a name typed under "Another skill…" that starts with a favorite stays in the field', async ({ page, admiral }, info) => {
+    const touch = isTouch(info);
+    setup(admiral, new World(admiral, { favorites: ['review'] }), { stored: entry() });
+    await admiral.start();
+    await openPage(page, admiral, entry());
+
+    const d = await openForm(page, touch);
+    await d.getByRole('combobox', { name: 'Skill' }).selectOption({ label: 'Another skill…' });
+    const name = d.getByRole('textbox', { name: 'Skill name' });
+    await name.pressSequentially('review-pr');
+    await expect(name).toHaveValue('review-pr');
+    await expect(d.getByRole('combobox', { name: 'Skill' })).toHaveValue('custom');
+    await press(save(d), touch);
+    await expect(d).toBeHidden();
+    await expect.poll(() => storedEntry(admiral)?.skill).toEqual({ kind: 'skill', name: 'review-pr' });
+  });
+
   test('a hand edit made after the form opened is refused with the reopen message, and the hand edit stays', async ({ page, admiral }, info) => {
     const touch = isTouch(info);
     const stored = entry({ enabled: false, max_ships: 2 });
@@ -280,14 +297,18 @@ test.describe('autopilot settings form', () => {
     await expect.poll(async () => (await getSettings(admiral.url)).config_error, { message: 'the server reports the broken file' }).not.toBe('');
     const before = configText(admiral);
 
-    const d = await openForm(page, touch);
+    // openForm waits for the switch, which a form with no values does not draw.
+    await press(gearOf(page), touch);
+    const d = form(page);
     const alert = d.getByRole('alert').filter({ hasText: 'Fix config.json first' });
     await expect(alert).toBeVisible();
     await expect(alert.locator('code')).not.toBeEmpty();
-    await expect(d.getByRole('switch', { name: 'Autopilot', exact: true })).toBeDisabled();
-    await expect(d.getByRole('spinbutton', { name: 'Ships at once' })).toBeDisabled();
+    // GET answers no entry while the file is broken, so the form shows no values rather than a new entry's.
+    await expect(d.getByRole('switch', { name: 'Autopilot', exact: true })).toHaveCount(0);
+    await expect(d.getByRole('spinbutton', { name: 'Ships at once' })).toHaveCount(0);
+    await expect(d.getByText('Writes to config.json')).toHaveCount(0);
     await expect(save(d)).toBeDisabled();
-    await expect(removeButton(d)).toBeDisabled();
+    await expect(removeButton(d)).toBeDisabled(); // the panel ran autopilot before the file broke
 
     // A disabled button is not proof: press them anyway and see that nothing goes out.
     await save(d).click({ force: true });

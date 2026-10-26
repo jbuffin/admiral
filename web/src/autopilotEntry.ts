@@ -50,7 +50,9 @@ export function draftOf(stored: Entry | null, firstClaudeFleet: string): Draft {
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-export function buildEntry(stored: Entry | null, draft: Draft, touched: ReadonlySet<EntryKey>): Entry {
+export function buildEntry(stored: Entry | null, drafted: Draft, touched: ReadonlySet<EntryKey>): Entry {
+  // Blank rows from "+ Add argument" are not sent; a stored "" in untouched args still goes back as it was.
+  const draft = touched.has('args') ? { ...drafted, args: drafted.args.filter((a) => a !== '') } : drafted;
   const out: Entry = { ...stored };
   const had = (k: string) => !!stored && k in stored;
   // A new entry is written from its draft; a stored one only where the engineer changed it.

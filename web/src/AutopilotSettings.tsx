@@ -29,13 +29,31 @@ const merges: [string, string][] = [
   ['rebase', 'rebase'],
 ];
 
-export function AutopilotSettings({ sourceKey, panelId, panelTitle, onClose }: { sourceKey: string; panelId: string; panelTitle: string; onClose: () => void }) {
+// The picker's choice, held apart from the typed name so a name that is or starts with a favorite stays in "Another skill…".
+const pickOf = (skill: Draft['skill'], favorites: string[]) =>
+  skill.kind === 'skill' ? (favorites.includes(skill.name ?? '') ? `skill:${skill.name}` : 'custom') : skill.kind;
+
+export function AutopilotSettings({
+  sourceKey,
+  panelId,
+  panelTitle,
+  hadAutopilot,
+  onClose,
+}: {
+  sourceKey: string;
+  panelId: string;
+  panelTitle: string;
+  hadAutopilot: boolean; // the panel ran autopilot in the last good config
+  onClose: () => void;
+}) {
   const path = sourcePath(sourceKey, `/panels/${encodeURIComponent(panelId)}/autopilot/settings`);
   const fleets = (config.value?.fleets ?? []).filter((f) => f.docks.some((d) => d.harness === 'claude'));
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [touched, setTouched] = useState<ReadonlySet<EntryKey>>(new Set());
+  const [skillPick, setSkillPick] = useState('commodore');
+  const [customName, setCustomName] = useState('');
   const [maxText, setMaxText] = useState('');
   const [retroText, setRetroText] = useState('');
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -50,6 +68,8 @@ export function AutopilotSettings({ sourceKey, panelId, panelTitle, onClose }: {
       const d = draftOf(r.data.entry, fleets[0]?.key ?? '');
       setLoaded(r.data);
       setDraft(d);
+      setSkillPick(pickOf(d.skill, config.value?.favorite_skills ?? []));
+      setCustomName(d.skill.kind === 'skill' ? (d.skill.name ?? '') : '');
       setMaxText(String(d.max_ships));
       setRetroText(String(d.retro_every));
     });
@@ -60,7 +80,7 @@ export function AutopilotSettings({ sourceKey, panelId, panelTitle, onClose }: {
 
   const title = (
     <header class="app-settings-head">
-      <h2>
+      <h2 tabIndex={-1} autofocus>
         Autopilot settings
         <small class="ap-panel">{panelTitle}</small>
       </h2>
@@ -74,7 +94,7 @@ export function AutopilotSettings({ sourceKey, panelId, panelTitle, onClose }: {
 
   if (!loaded || !draft) {
     return (
-      <Modal label="Autopilot settings" variant="app-settings" onClose={onClose}>
+      <Modal label="Autopilot settings" variant="app-settings ap-form" onClose={onClose}>
         {title}
         <div class="app-settings-body">{loadError ? <div role="alert">{loadError}</div> : <p>Loading…</p>}</div>
       </Modal>
@@ -84,6 +104,8 @@ export function AutopilotSettings({ sourceKey, panelId, panelTitle, onClose }: {
   const stored = loaded.entry;
   const configError = loaded.config_error || config.value?.error?.message || '';
   const ro = !!configError || busy;
+  // An unreadable file answers no entry; the form then has no values to show, and drawing a new entry's would be false.
+  const blind = !!configError && !stored;
   const locked = loaded.args_error !== '';
   const noFleet = fleets.length === 0;
   const maxOk = /^\d+$/.test(maxText) && Number(maxText) >= 1;
@@ -100,16 +122,15 @@ export function AutopilotSettings({ sourceKey, panelId, panelTitle, onClose }: {
   // The fleet and skill pickers: values the stored entry holds that the lists lack stay choosable.
   const fleetKeys = [...new Set([...fleets.map((f) => f.key), draft.fleet].filter(Boolean))];
   const favorites = config.value?.favorite_skills ?? [];
-  const isFavorite = draft.skill.kind === 'skill' && favorites.includes(draft.skill.name ?? '');
-  const skillValue = draft.skill.kind === 'skill' ? (isFavorite ? `skill:${draft.skill.name}` : 'custom') : draft.skill.kind;
   const pickSkill = (v: string) => {
+    setSkillPick(v);
     if (v === 'commodore' || v === 'none') edit('skill', { skill: { kind: v } });
-    else if (v === 'custom') edit('skill', { skill: { kind: 'skill', name: '' } });
+    else if (v === 'custom') edit('skill', { skill: { kind: 'skill', name: customName.trim() } });
     else edit('skill', { skill: { kind: 'skill', name: v.slice('skill:'.length) } });
   };
 
   const names = [...new Set([...resources.value.map((r) => r.name), ...draft.resources])];
-  const refusedArg = refusal?.match(/^--arg (\S+)/)?.[1];
+  const refusedArg = refusal?.match(/^--arg (.+?) is refused: /)?.[1].split(' ').pop(); // a flag's value is the last word, as in "--model bad"
 
   async function save() {
     setBusy(true);
@@ -133,7 +154,7 @@ export function AutopilotSettings({ sourceKey, panelId, panelTitle, onClose }: {
   return (
     <Modal
       label="Autopilot settings"
-      variant="app-settings"
+      variant="app-settings ap-form"
       onClose={onClose}
       onCancel={(e) => {
         if (confirming) {
@@ -151,6 +172,8 @@ export function AutopilotSettings({ sourceKey, panelId, panelTitle, onClose }: {
             <code>{configError}</code>
           </div>
         )}
+        {!blind && (
+          <>
         <div class="app-set-row">
           <span class="app-set-text">
             <strong>Launch this panel's orders</strong>
@@ -183,7 +206,7 @@ export function AutopilotSettings({ sourceKey, panelId, panelTitle, onClose }: {
         </div>
         <div class="app-set-field">
           <label for="ap-skill">Skill</label>
-          <select id="ap-skill" value={skillValue} disabled={ro} onChange={(e) => pickSkill(e.currentTarget.value)}>
+          <select id="ap-skill" value={skillPick} disabled={ro} onChange={(e) => pickSkill(e.currentTarget.value)}>
             <option value="commodore">Commodore</option>
             {favorites.map((f) => (
               <option key={f} value={`skill:${f}`}>
@@ -193,7 +216,7 @@ export function AutopilotSettings({ sourceKey, panelId, panelTitle, onClose }: {
             <option value="none">None (just launch)</option>
             <option value="custom">Another skill…</option>
           </select>
-          {skillValue === 'custom' && (
+          {skillPick === 'custom' && (
             <input
               type="text"
               aria-label="Skill name"
@@ -201,9 +224,12 @@ export function AutopilotSettings({ sourceKey, panelId, panelTitle, onClose }: {
               autocomplete="off"
               spellcheck={false}
               placeholder="Skill name, such as triage"
-              value={draft.skill.name ?? ''}
+              value={customName}
               disabled={ro}
-              onInput={(e) => edit('skill', { skill: { kind: 'skill', name: e.currentTarget.value.trim() } })}
+              onInput={(e) => {
+                setCustomName(e.currentTarget.value);
+                edit('skill', { skill: { kind: 'skill', name: e.currentTarget.value.trim() } });
+              }}
             />
           )}
           <small>Commodore, then your favorite skills. The ship starts on the skill by name.</small>
@@ -214,7 +240,7 @@ export function AutopilotSettings({ sourceKey, panelId, panelTitle, onClose }: {
             <div class="ap-locked">
               <code>{(stored?.args ?? []).join(' ')}</code>
               <small>
-                Set by hand, and a save from here would be refused: {loaded.args_error.replace(/^--arg \S+ is refused: /, '')}. Edit them in config.json; a save here keeps them as they are.
+                Set by hand, and a save from here would be refused: {loaded.args_error.replace(/^--arg .+? is refused: /, '')}. Edit them in config.json; a save here keeps them as they are.
               </small>
             </div>
           ) : (
@@ -344,6 +370,8 @@ export function AutopilotSettings({ sourceKey, panelId, panelTitle, onClose }: {
           <span class="app-set-caption">Writes to config.json</span>
           <code class="app-set-line">{line}</code>
         </div>
+          </>
+        )}
       </div>
       {refusal && (
         <div role="alert" class="ap-strip refusal">
@@ -364,7 +392,7 @@ export function AutopilotSettings({ sourceKey, panelId, panelTitle, onClose }: {
         </div>
       )}
       <footer class="app-settings-foot ap-foot">
-        {(stored || configError) && ( // an unreadable file answers no entry, so Remove stays, disabled
+        {(stored || (configError && hadAutopilot)) && (
           <button type="button" class="press app-set-cancel ap-remove" disabled={ro} onClick={() => setConfirming(true)}>
             Remove autopilot
           </button>
@@ -373,7 +401,7 @@ export function AutopilotSettings({ sourceKey, panelId, panelTitle, onClose }: {
         <button type="button" class="press app-set-cancel" onClick={onClose}>
           Cancel
         </button>
-        <button type="button" class="press app-set-save" disabled={ro || noFleet || !maxOk || !retroOk} onClick={() => void save()}>
+        <button type="button" class="press app-set-save" disabled={ro || noFleet || !maxOk || !retroOk || (skillPick === 'custom' && !customName.trim())} onClick={() => void save()}>
           Save
         </button>
       </footer>
