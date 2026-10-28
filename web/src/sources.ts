@@ -8,6 +8,7 @@ export interface Order {
   url?: string;
   hot?: boolean;
   repo?: string;
+  labels?: string[];
 }
 
 export interface PanelAutopilot {
@@ -88,14 +89,14 @@ const urlsOf = (o: Order) =>
 const sameOrUnder = (a: string, b: string) => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
 
 // A pasted web address matches an order that carries it, a page under it, or
-// a page it is under; anything else matches the ID or title.
+// a page it is under; anything else matches the ID, title or a label.
 export const matches = (o: Order, q: string) => {
   if (!q) return true;
   if (isWebUrl(q)) {
     const want = bareUrl(q);
     return urlsOf(o).some((u) => sameOrUnder(u, want));
   }
-  return `${o.id} ${o.title}`.toLowerCase().includes(q);
+  return `${o.id} ${o.title}`.toLowerCase().includes(q) || !!o.labels?.some((l) => l.toLowerCase().includes(q));
 };
 
 // A panel as the sidebar shows it: its title, its orders after the filter, and

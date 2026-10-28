@@ -85,7 +85,7 @@ function Expanded() {
         <input
           type="text"
           aria-label="Filter orders"
-          placeholder="Filter by title, ID or link"
+          placeholder="Filter by title, ID, label or link"
           autocomplete="off"
           value={filter.value}
           onInput={(e) => (filter.value = (e.target as HTMLInputElement).value)}

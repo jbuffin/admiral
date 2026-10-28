@@ -25,9 +25,30 @@ const Chevron = () => (
   </svg>
 );
 
+const SHOWN_LABELS = 3;
+
+function Labels({ labels }: { labels: string[] }) {
+  const hidden = labels.slice(SHOWN_LABELS);
+  return (
+    <ul class="order-labels" aria-label="Labels">
+      {labels.slice(0, SHOWN_LABELS).map((l) => (
+        <li class="order-label" key={l} title={l}>
+          {l}
+        </li>
+      ))}
+      {hidden.length > 0 && (
+        <li class="order-label" title={hidden.join(', ')} aria-label={`+${hidden.length}: ${hidden.join(', ')}`}>
+          +{hidden.length}
+        </li>
+      )}
+    </ul>
+  );
+}
+
 export function OrderItem({ source, panelId, order, fail }: { source: Source; panelId: string; order: Order; fail: (m: string) => void }) {
   const id = `${source.key}/${panelId}/${order.id}`;
   const title = order.title.split('\n')[0];
+  const labels = order.labels ?? [];
   const hasEdit = declares(source, 'edit');
   const hasRemove = declares(source, 'remove');
   const path = sourcePath(source.key, `/orders/${encodeURIComponent(order.id)}`);
@@ -43,7 +64,7 @@ export function OrderItem({ source, panelId, order, fail }: { source: Source; pa
         <button
           type="button"
           class="order-hit"
-          aria-label={`${source.name}${isWebUrl(order.url) ? ` ${order.id}` : ''}, ${title}. Tap to pick a dock and launch it.`}
+          aria-label={`${source.name}${isWebUrl(order.url) ? ` ${order.id}` : ''}, ${title}. Tap to pick a dock and launch it.${labels.length ? ` Labels: ${labels.join(', ')}.` : ''}`}
           onClick={(e) => openDockSheet({ source: source.key, panel: panelId, order }, e.currentTarget)}
         />
       )}
@@ -58,6 +79,7 @@ export function OrderItem({ source, panelId, order, fail }: { source: Source; pa
           {order.hot && <span class="high">High</span>}
         </div>
         <span class="order-title">{title}</span>
+        {labels.length > 0 && <Labels labels={labels} />}
       </div>
       {(hasEdit || hasRemove) && (
         <Menu id={id} label={`Actions for ${title}`} disabled={!can(source, 'edit') && !can(source, 'remove')}>

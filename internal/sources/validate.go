@@ -25,6 +25,8 @@ type Order struct {
 	URL   string `json:"url"`
 	Hot   bool   `json:"hot"`
 	Repo  string `json:"repo"`
+	// Labels are the label names a plugin sent, empty ones dropped; omitted when none.
+	Labels []string `json:"labels,omitempty"`
 }
 
 // Panel is one list of orders in a source.
@@ -152,12 +154,13 @@ func parsePanels(raw json.RawMessage) ([]Panel, error) {
 // a protocol error, so a plugin cannot get half a list shown.
 func parseOrders(raw json.RawMessage) ([]Order, error) {
 	var items []struct {
-		ID    *string `json:"id"`
-		Title *string `json:"title"`
-		Text  *string `json:"text"`
-		URL   *string `json:"url"`
-		Hot   *bool   `json:"hot"`
-		Repo  *string `json:"repo"`
+		ID     *string  `json:"id"`
+		Title  *string  `json:"title"`
+		Text   *string  `json:"text"`
+		URL    *string  `json:"url"`
+		Hot    *bool    `json:"hot"`
+		Repo   *string  `json:"repo"`
+		Labels []string `json:"labels"`
 	}
 	if err := decodeInto(raw, &items); err != nil {
 		return nil, fmt.Errorf("orders.list: %w", err)
@@ -203,6 +206,11 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 		if it.Repo != nil {
 			if _, ok := repofinder.Identity(*it.Repo); ok {
 				o.Repo = strings.TrimSpace(*it.Repo)
+			}
+		}
+		for _, l := range it.Labels {
+			if l != "" && !hasControl(l) {
+				o.Labels = append(o.Labels, l)
 			}
 		}
 		o.Hot = it.Hot != nil && *it.Hot
