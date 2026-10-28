@@ -14,7 +14,7 @@ import { TouchPointer, centerOf, touchSetup } from './world';
 //   one named region per panel, titled "<panel title>", inside its source's group;
 //     in it: a button with that title (aria-expanded), the count as text labelled "<n> orders",
 //     textbox "Add order" + button "Add", button "Refresh", button "Restart", alert
-//   per card: its text, a "High" badge, the ID as a link, button "Actions for <title>" (menuitems Edit, Remove)
+//   per card: its text, a "High" badge, a list "Labels" of label chips (listitems; a "+N" item for the rest), only when it has labels, the ID as a link, button "Actions for <title>" (menuitems Edit, Remove)
 //   rail buttons named "<panel title>, <n> orders"
 //   one group per source named by the source's name, holding its panels: button "Source actions" (menuitems Settings, Remove, Refresh),
 //     and, when the source has no panels, its Restart button and alert
@@ -165,6 +165,44 @@ test.describe('S3: a source with refresh only', () => {
     await expect(todo.getByText('High')).toHaveCount(1);
     await expect(done.getByText('High')).toHaveCount(0);
   });
+  test('an order shows 3 labels and a +2 chip; none shows no row; a hot order shows High and its P0 label', async ({
+    page,
+    admiral,
+  }) => {
+    admiral.installTestPlugin();
+    const f = admiral.flags('tracker');
+    f.panels([{ id: 'todo', title: 'Todo' }]);
+    f.orders({
+      todo: [
+        {
+          id: 'ABC-1',
+          title: 'Rotate the keys',
+          url: 'https://example.com/ABC-1',
+          labels: ['bug', 'ready-for-agent', 'Needs Review', 'infra', 'later'],
+        },
+        { id: 'ABC-2', title: 'Tidy the docs', url: 'https://example.com/ABC-2' },
+        { id: 'ABC-3', title: 'Page the on-call', url: 'https://example.com/ABC-3', hot: true, labels: ['P0'] },
+      ],
+    });
+    admiral.writeConfig(sourcesConfig({ tracker: tracker(f) }));
+    await admiral.start();
+    await page.goto(admiral.url);
+
+    const todo = panel(page, 'Todo');
+    await countOf(todo, 3);
+    // An order's chips are the items of its "Labels" list, found from the order's own title.
+    const chipsOf = (title: string) =>
+      todo.getByRole('listitem').filter({ has: page.getByText(title) }).getByRole('list', { name: 'Labels' });
+
+    const chips = chipsOf('Rotate the keys').getByRole('listitem');
+    await expect(chips).toHaveText(['bug', 'ready-for-agent', 'Needs Review', '+2']);
+
+    await expect(chipsOf('Tidy the docs')).toHaveCount(0);
+
+    const hot = todo.getByRole('listitem').filter({ has: page.getByText('Page the on-call') });
+    await expect(hot.getByText('High')).toHaveCount(1);
+    await expect(hot.getByRole('list', { name: 'Labels' }).getByRole('listitem')).toHaveText(['P0']);
+  });
 });
 
 test.describe('S4: collapse is remembered, the filter is not', () => {
@@ -219,7 +257,7 @@ test.describe('S5: filter', () => {
     f.orders({
       todo: [
         { id: 'ALPHA-1', title: 'Fix login' },
-        { id: 'ALPHA-2', title: 'Write docs' },
+        { id: 'ALPHA-2', title: 'Write docs', labels: ['Needs-Design'] },
       ],
       done: [
         { id: 'BETA-1', title: 'Fix tests' },
@@ -241,6 +279,14 @@ test.describe('S5: filter', () => {
     await cards(todo, 'Fix login');
     await cards(done, 'Fix tests');
     await noCards(page, 'Write docs', 'Ship release');
+
+    // By label, case-insensitive: only the orders with that label stay.
+    await expect(filter(page)).toHaveAttribute('placeholder', 'Filter by title, ID, label or link');
+    await filter(page).fill('needs-DESIGN');
+    await countOf(todo, 1);
+    await countOf(done, 0);
+    await cards(todo, 'Write docs');
+    await noCards(page, 'Fix login', 'Fix tests', 'Ship release');
 
     // By ID: one panel has no match and stays, with its count at 0.
     await filter(page).fill('beta-2');
