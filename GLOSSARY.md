@@ -20,6 +20,10 @@ The default skill: it plans the work, assembles a task force of teammates and se
 One item from an order source, shown as a card in the Orders sidebar, not yet launched: freeform text, a URL or anything else, handed to the chosen skill as it is. Launching an order puts a ship to sea, whether the engineer launches it or autopilot does.
 _Avoid_: job, ticket, card (in code)
 
+**Label**:
+A tag the order's tracker puts on it, such as `bug` or `P0`, shown on the order's card. Admiral shows labels and never sets them. Labels are not the hot flag: hot is Admiral's own flag, shown as **High**, which a source may derive from labels.
+_Avoid_: tag
+
 **Autopilot**:
 A panel setting that launches the panel's orders without the engineer, in the order the panel lists them. The panel names the fleet, skill and arguments its ships use. Autopilot launches only while two **caps** have room: the global cap on every ship underway or needing you, hand-launched ones included, and the panel's cap on those launched from that panel. It also launches an order only when every **resource** its panel names has a free unit and passes its check; otherwise the order waits for them. A paused panel launches nothing and leaves its running ships alone.
 _Avoid_: auto-launch, bot
