@@ -89,6 +89,7 @@ Requests are `{"jsonrpc":"2.0","id":1,"method":"…","params":{…}}`. Answer ea
 | `text` | What a ship is launched with. If you leave it out, the title is used. |
 | `url` | Optional link to the order. |
 | `hot` | Optional. Marks an order that needs attention. |
+| `labels` | Optional. An array of label-name strings (`["bug", "ready-for-agent"]`), in the order you want them shown. Admiral shows them as chips on the order and its filter matches them. A plugin that leaves it out gets no chips. |
 | `repo` | Optional git remote of the repository the order belongs to (`https://github.com/acme/widgets` or `git@github.com:acme/widgets.git`). Admiral uses it to preselect a checkout. |
 
 Admiral hides an order while a ship launched from it exists, whatever that ship's status, and shows it again once the ship is gone, if you still list it. A plugin that wants a launched order to disappear for good deletes it when it hears `orders.launched`, as freeform does.
@@ -231,12 +232,12 @@ if changed:
     notify("orders.changed", {"panel": panel["id"]})
 ```
 
-**`repo` and `hot`.** `repo` is the repository's URL, so Admiral can preselect its checkout. `hot` is true when any label is in `hotLabels`, compared in lower case.
+**`repo`, `hot` and `labels`.** `repo` is the repository's URL, so Admiral can preselect its checkout. `hot` is true when any label is in `hotLabels`, compared in lower case. `labels` lists every label name on the issue or PR (the first 100), in GitHub's order and original casing, whether or not it made the order hot.
 
 ```python
 return {"id": "%s#%d" % (repo["nameWithOwner"], node["number"]), "title": node["title"],
         "text": node["url"], "url": node["url"], "repo": repo["url"],
-        "hot": bool(labels & hot_labels)}
+        "hot": bool(labels & hot_labels), "labels": names}
 ```
 
 **Errors from `orders.list`.** A failed search keeps the panel's last orders and records the error; the next `orders.list` for that panel answers with it, and Admiral shows it on the panel. The message says which of two things went wrong: GitHub refused the search ("Search failed: ...", as `gh` printed it), or GitHub couldn't be reached ("Couldn't reach github.com", including a `gh` call that hung past its 8-second limit). Every call has its own timeout under Admiral's 10 seconds, because a hung call would leave a stale panel looking current: Admiral shows only error answers.

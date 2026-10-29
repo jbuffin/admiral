@@ -745,9 +745,9 @@ func TestGitHubPlugin(t *testing.T) {
 		t.Errorf("panel ids = %q, %q, want slugs of the titles", assigned.ID, review2.ID)
 	}
 	wantAssigned := []orderJSON{
-		{ID: "acme/widgets#12", Title: "Flaky login test", Text: "https://github.com/acme/widgets/issues/12", URL: "https://github.com/acme/widgets/issues/12", Repo: "https://github.com/acme/widgets", Hot: true},
-		{ID: "acme/widgets#7", Title: "Bump deps", Text: "https://github.com/acme/widgets/pull/7", URL: "https://github.com/acme/widgets/pull/7", Repo: "https://github.com/acme/widgets"},
-		{ID: "acme/api#3", Title: "Slow query", Text: "https://github.com/acme/api/issues/3", URL: "https://github.com/acme/api/issues/3", Repo: "https://github.com/acme/api", Hot: true},
+		{ID: "acme/widgets#12", Title: "Flaky login test", Text: "https://github.com/acme/widgets/issues/12", URL: "https://github.com/acme/widgets/issues/12", Repo: "https://github.com/acme/widgets", Hot: true, Labels: []string{"p0", "bug"}},
+		{ID: "acme/widgets#7", Title: "Bump deps", Text: "https://github.com/acme/widgets/pull/7", URL: "https://github.com/acme/widgets/pull/7", Repo: "https://github.com/acme/widgets", Labels: []string{"dependencies"}},
+		{ID: "acme/api#3", Title: "Slow query", Text: "https://github.com/acme/api/issues/3", URL: "https://github.com/acme/api/issues/3", Repo: "https://github.com/acme/api", Hot: true, Labels: []string{"Priority: High"}},
 	}
 	if !reflect.DeepEqual(assigned.Orders, wantAssigned) {
 		t.Errorf("Assigned to me orders = %s\nwant %s", dump(assigned.Orders), dump(wantAssigned))
@@ -802,7 +802,8 @@ func TestGitHubPlugin(t *testing.T) {
 		t.Errorf("work panels = %s, want only the two usable entries, with ids bugs and bugs-2", dump(s.Panels))
 	}
 	wantSorted := []orderJSON{{ID: "acme/widgets#21", Title: "Oldest bug", Text: "https://git.example.test/acme/widgets/issues/21",
-		URL: "https://git.example.test/acme/widgets/issues/21", Repo: "https://git.example.test/acme/widgets", Hot: true}}
+		URL: "https://git.example.test/acme/widgets/issues/21", Repo: "https://git.example.test/acme/widgets", Hot: true,
+		Labels: []string{"Needs-Attention", "P0"}}}
 	if !reflect.DeepEqual(s.Panels[0].Orders, wantSorted) {
 		t.Errorf("work panel 1 orders = %s, want %s (hot because hotLabels is needs-attention, not because of P0)", dump(s.Panels[0].Orders), dump(wantSorted))
 	}

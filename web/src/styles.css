@@ -627,6 +627,30 @@ button:focus-visible {
   padding: 1px 5px;
 }
 
+/* Neutral chips, sized like .high; not interactive, so a tap or drag reaches the order. */
+.order-labels {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.order-label {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  background-color: var(--color-stone);
+  border-radius: 5px;
+  padding: 1px 5px;
+  white-space: nowrap;
+  max-width: 14ch; /* a longer label is cut with an ellipsis; its title holds the full name */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .order-title {
   font-weight: 600;
   font-size: 14.5px;

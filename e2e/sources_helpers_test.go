@@ -32,6 +32,8 @@ type orderJSON struct {
 	URL   string `json:"url"`
 	Hot   bool   `json:"hot"`
 	Repo  string `json:"repo"`
+	// Labels is absent for an order with none.
+	Labels []string `json:"labels,omitempty"`
 }
 
 type panelJSON struct {

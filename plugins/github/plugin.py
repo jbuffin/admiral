@@ -219,10 +219,11 @@ def search(query, token):
 def to_order(node):
     try:
         repo = node["repository"]
-        labels = {l["name"].lower() for l in node["labels"]["nodes"]}
+        names = [l["name"] for l in node["labels"]["nodes"]]
+        labels = {n.lower() for n in names}
         return {"id": "%s#%d" % (repo["nameWithOwner"], node["number"]), "title": node["title"],
                 "text": node["url"], "url": node["url"], "repo": repo["url"],
-                "hot": bool(labels & hot_labels)}
+                "hot": bool(labels & hot_labels), "labels": names}
     except (KeyError, TypeError, AttributeError):  # a node of another type is empty
         return None
 
