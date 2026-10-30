@@ -111,6 +111,7 @@ jobs:
           brew tap-new --no-git jbuffin/admiral-check
           cp "$RUNNER_TEMP/admiral.rb" "$(brew --repository)/Library/Taps/jbuffin/homebrew-admiral-check/Formula/admiral.rb"
           brew style jbuffin/admiral-check/admiral
+          brew trust --formula jbuffin/admiral-check/admiral
           brew audit --strict jbuffin/admiral-check/admiral
           brew untap jbuffin/admiral-check
 
@@ -145,6 +146,7 @@ jobs:
           git -C "$clone" -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -m "admiral $VERSION"
           brew tap "$TAP" "$clone"
+          brew trust --formula "$TAP/admiral"
           brew audit --strict --online "$TAP/admiral"
           brew untap "$TAP"
           git -C "$clone" push origin HEAD:main
