@@ -65,7 +65,11 @@ func TestCrewTerminal(t *testing.T) {
 	w := newWorld(t)
 	w.cueFleets(map[string][]string{"one": {"hook working", "wait go", "exit 1"}})
 	w.start()
+	// A few ship names are one word, and the attach checks need a spaced one.
 	ship, shipPane := w.crewShip("one", "alpha")
+	for !strings.Contains(ship.Name, " ") {
+		ship, shipPane = w.crewShip("one", "alpha")
+	}
 	bare, _ := w.crewShip("one", "bravo") // a ship with no crew
 	scout := w.crewBoat(ship.Session, "scout", "claude")
 	cook := w.crewBoat(ship.Session, "cook", "claude")
@@ -107,9 +111,6 @@ func TestCrewTerminal(t *testing.T) {
 		// A spaced display name still attaches as a ship (the argument list is
 		// tried as a ship first), and then crew names split off the end.
 		words := strings.Fields(ship.Name)
-		if len(words) < 2 {
-			t.Fatalf("the ship's display name %q should hold a space", ship.Name)
-		}
 		dir, rec := w.installFakeTmux()
 		attach := func(args ...string) cliResult {
 			return w.admiralWith(cliOpts{path: []string{dir}, env: []string{"FAKE_TMUX_RECORD=" + rec}}, append([]string{"attach"}, args...)...)
