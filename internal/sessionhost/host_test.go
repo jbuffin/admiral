@@ -109,14 +109,15 @@ func testHost(t *testing.T) (*Host, context.Context) {
 }
 
 // A command that gives up (here: a context already cancelled) must not leave
-// its reply behind for the next command to read as its own.
+// its reply behind for the next command to read as its own. tmux can answer
+// before the command sees the cancellation, and then it returns its own reply.
 func TestCancelledCommandDoesNotShiftReplies(t *testing.T) {
 	h, ctx := testHost(t)
 	for i := 0; i < 5; i++ {
 		dead, cancel := context.WithCancel(context.Background())
 		cancel()
-		if _, err := h.command(dead, "display-message -p first"); err == nil {
-			t.Fatal("a cancelled command should report the cancellation")
+		if got, err := h.command(dead, "display-message -p first"); err == nil && (len(got) != 1 || got[0] != "first") {
+			t.Fatalf("round %d: a cancelled command that was answered got %q, want its own reply [first]", i, got)
 		}
 		got, err := h.command(ctx, "display-message -p second")
 		if err != nil || len(got) != 1 || got[0] != "second" {
@@ -124,8 +125,8 @@ func TestCancelledCommandDoesNotShiftReplies(t *testing.T) {
 		}
 		// A list answers once per command; the replies of a cancelled list and
 		// of the next must each be counted, or SetNeedsYou shifts them.
-		if _, err := h.commandList(dead, "display-message -p x", "display-message -p y"); err == nil {
-			t.Fatal("a cancelled list should report the cancellation")
+		if got, err := h.commandList(dead, "display-message -p x", "display-message -p y"); err == nil && (len(got) != 1 || got[0] != "y") {
+			t.Fatalf("round %d: a cancelled list that was answered got %q, want its last reply [y]", i, got)
 		}
 		got, err = h.commandList(ctx, "display-message -p a", "display-message -p b")
 		if err != nil || len(got) != 1 || got[0] != "b" {
