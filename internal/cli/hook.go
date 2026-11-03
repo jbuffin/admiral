@@ -43,6 +43,14 @@ func Hook(args []string, std IO) error {
 		}
 		if w.state != "" {
 			call = append(append(call, ";"), hookCall(pane, w)...)
+			call = append(call, ";", "set", "-p", "-u", "-q", "-t", pane, crewHeldOption)
+		}
+		if w.crewHeld {
+			call = append(call, ";", "set", "-p", "-t", pane, crewHeldOption, "1")
+		}
+		if w.flagLead != "" {
+			call = append(append(call, ";"), hookCall(w.flagLead, stopWrite)...)
+			call = append(call, ";", "set", "-p", "-u", "-q", "-t", w.flagLead, crewHeldOption)
 		}
 		if mon != nil {
 			call = append(append(call, ";"), mon...)
@@ -123,10 +131,13 @@ type backgroundTask struct {
 // hookWrite is what a hook writes to the pane: the state, and for needs_you the
 // short code @admiral-reason holds with it. ifUnset says the reason must not
 // replace one already set: a notification is Claude's second word on a prompt
-// that PermissionRequest named.
+// that PermissionRequest named. crewHeld marks a lead whose Stop waits on its
+// crew, and flagLead is the pane of such a lead that this event must flag.
 type hookWrite struct {
 	state, reason string
 	ifUnset       bool
+	crewHeld      bool
+	flagLead      string
 }
 
 // hookDecision is what an event writes; a zero hookWrite is no state. Claude
@@ -410,20 +421,34 @@ func transcriptCall(pane, event string, p hookPayload, now time.Time) []string {
 	return []string{"set", "-p", "-t", pane, sessionhost.TranscriptOption, strconv.FormatInt(now.UnixNano(), 10) + " " + source + " " + path}
 }
 
+// crewHeldOption marks a lead pane whose Stop waits on working crew (#189). Any
+// state the lead writes next clears it. A lead held by a Monitor isn't marked:
+// the Monitor wakes it.
+const crewHeldOption = sessionhost.Prefix + "crew-held"
+
 // crewFacts is what the lead rule needs to know about the pane and its crew.
 type crewFacts struct {
-	ThisIsCrew     bool // $TMUX_PANE is in a crew window
-	CrewWorking    bool // some live crew pane of the session is working
-	CrewReadFailed bool // the list-panes read of the crew errored
+	ThisIsCrew     bool   // $TMUX_PANE is in a crew window
+	CrewWorking    bool   // some live crew pane of the session, other than this one, is working
+	CrewReadFailed bool   // the list-panes read of the crew errored
+	RestingLead    string // for a crew pane: the lead whose Stop waited on the crew, once none works
 }
 
-// leadDecision is hookDecision with the lead rule on top: a lead's Stop waits
-// while a crew boat works. A crew boat's own Stop, and a Stop whose crew read
-// failed, keep the plain rule: a missed chime is worse than an extra one.
+// leadDecision is hookDecision with the lead rule on top. A crew boat's own
+// Stop is idle: it waits for its lead, not the engineer (ADR 0014). A lead's
+// Stop waits while a crew boat works, and the last boat to go idle then flags
+// that lead, which nothing else would wake. A Stop whose crew read failed keeps
+// the plain rule: a missed chime is worse than an extra one.
 func leadDecision(event string, p hookPayload, f crewFacts) hookWrite {
 	w := hookDecision(event, p)
-	if w == stopWrite && !f.ThisIsCrew && f.CrewWorking && !f.CrewReadFailed {
-		return hookWrite{}
+	if w != stopWrite || f.CrewReadFailed {
+		return w
+	}
+	switch {
+	case f.ThisIsCrew:
+		return hookWrite{state: sessionhost.CrewIdle, flagLead: f.RestingLead}
+	case f.CrewWorking:
+		return hookWrite{crewHeld: true}
 	}
 	return w
 }
@@ -455,16 +480,18 @@ func crewPaneWorking(f crewPaneFact, now time.Time) bool {
 // readCrewFacts reads the session of pane with one list-panes call, then the
 // pane's own @admiral-state (show-options -p: the format would fall back to the
 // window's and the session's, which nothing sets, so it agrees with
-// sessionhost.ReadCrew) of each live crew pane until one works.
+// sessionhost.ReadCrew) of each live crew pane until one works. A crew pane reads
+// the other boats only when a lead waits on the crew, and writes its own idle
+// first: of two boats that stop together, the later read sees both idle.
 func readCrewFacts(pane string, now time.Time) crewFacts {
 	const sep = "\x1f"
 	out, err := tmuxOut("list-panes", "-s", "-t", pane, "-F",
-		strings.Join([]string{"#{pane_id}", "#{pane_dead}", sessionhost.CrewNameFormat, "#{@admiral-launched}", "#{@admiral-activity}"}, sep))
+		strings.Join([]string{"#{pane_id}", "#{pane_dead}", sessionhost.CrewNameFormat, "#{@admiral-launched}", "#{@admiral-activity}", "#{" + crewHeldOption + "}"}, sep))
 	if err != nil {
 		return crewFacts{CrewReadFailed: true}
 	}
 	var f crewFacts
-	own := false
+	own, lead := false, ""
 	type row struct {
 		id   string
 		fact crewPaneFact
@@ -472,8 +499,11 @@ func readCrewFacts(pane string, now time.Time) crewFacts {
 	var crew []row
 	for _, line := range strings.Split(out, "\n") {
 		c := strings.Split(line, sep)
-		if len(c) != 5 {
+		if len(c) != 6 {
 			continue
+		}
+		if c[2] == "" && c[5] != "" {
+			lead = c[0]
 		}
 		if c[0] == pane {
 			own = true
@@ -486,7 +516,10 @@ func readCrewFacts(pane string, now time.Time) crewFacts {
 		return crewFacts{CrewReadFailed: true}
 	}
 	if f.ThisIsCrew {
-		return f
+		if lead == "" {
+			return f
+		}
+		_, _ = tmuxOut("set", "-p", "-t", pane, "@admiral-state", sessionhost.CrewIdle)
 	}
 	for _, r := range crew {
 		if !r.fact.Dead {
@@ -496,6 +529,9 @@ func readCrewFacts(pane string, now time.Time) crewFacts {
 			f.CrewWorking = true
 			break
 		}
+	}
+	if f.ThisIsCrew && !f.CrewWorking {
+		f.RestingLead = lead
 	}
 	return f
 }

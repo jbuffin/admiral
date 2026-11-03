@@ -236,6 +236,7 @@ func (w *world) hookAt(pane, event, stdin string) {
 const (
 	hookPrompt = `{"hook_event_name":"UserPromptSubmit","prompt":"go"}`
 	hookStop   = `{"hook_event_name":"Stop","background_tasks":[],"session_crons":[]}`
+	hookPerm   = `{"hook_event_name":"PermissionRequest","tool_name":"Bash"}`
 	hookSubOne = `{"hook_event_name":"SubagentStart","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore"}`
 	hookSubEnd = `{"hook_event_name":"SubagentStop","agent_id":"a0f790cb4a518e0f9","agent_type":"Explore","background_tasks":[]}`
 )
@@ -425,15 +426,15 @@ func TestCrewAPI_InboxCountsCrew(t *testing.T) {
 
 	w.waitShip(s.Session, "an underway ship with two crew boats", func(x apiShip) bool { return x.Status == "underway" && len(x.Crew) == 2 })
 
-	// scout's Stop: the ship reads needs_you for "crew" while its own pane stays working.
-	w.hookAt(scout.pane, "Stop", hookStop)
+	// scout's permission prompt: the ship reads needs_you for "crew" while its own pane stays working.
+	w.hookAt(scout.pane, "PermissionRequest", hookPerm)
 	got := w.waitShip(s.Session, "needs_you for a crew boat", func(x apiShip) bool { return x.Status == "needs_you" })
 	if got.Reason != "crew" {
 		t.Errorf("ship reason = %q, want crew", got.Reason)
 	}
 	sc, _ := crewOf(got, "scout")
-	if sc.Status != "needs_you" || sc.Reason == nil || *sc.Reason != "stop" {
-		t.Errorf("scout on the wire = %+v, want needs_you with reason stop", sc)
+	if sc.Status != "needs_you" || sc.Reason == nil || *sc.Reason != "permission:Bash" {
+		t.Errorf("scout on the wire = %+v, want needs_you with reason permission:Bash", sc)
 	}
 	if mt, _ := crewOf(got, "mate"); mt.Status != "underway" {
 		t.Errorf("mate = %+v, want underway", mt)
@@ -481,14 +482,14 @@ func TestCrewAPI_InboxCountsCrew(t *testing.T) {
 	}
 
 	// A crew boat that dies while needing you also frees the ship.
-	w.hookAt(mate.pane, "Stop", hookStop)
+	w.hookAt(mate.pane, "PermissionRequest", hookPerm)
 	w.waitShip(s.Session, "needs_you for mate", func(x apiShip) bool { return x.Status == "needs_you" && x.Reason == "crew" })
 	w.releaseGo(s.Session, "mate") // exit 1: the pane stays, dead
 	w.waitShip(s.Session, "mate anchored and the ship underway", func(x apiShip) bool { return crewIs("mate", "anchored")(x) && x.Status == "underway" })
 
 	// A ship that needs you for its own reason keeps it. scout is not working
 	// (it needs you) and mate is anchored, so the lead's Stop is not held.
-	w.hookAt(scout.pane, "Stop", hookStop)
+	w.hookAt(scout.pane, "PermissionRequest", hookPerm)
 	w.hookAt(shipPane, "Stop", hookStop)
 	own := w.waitShip(s.Session, "the ship's own stop", func(x apiShip) bool { return x.Status == "needs_you" && crewIs("scout", "needs_you")(x) })
 	if own.Reason != "stop" {
@@ -625,7 +626,7 @@ func TestCrewAPI_RestartKeepsCrew(t *testing.T) {
 	scout := w.crewBoat(s.Session, "scout", "claude")
 	mate := w.crewBoat(s.Session, "mate", "codex")
 	w.hookAt(scout.pane, "PostToolUse", `{"hook_event_name":"PostToolUse","tool_name":"Bash"}`)
-	w.hookAt(mate.pane, "Stop", hookStop)
+	w.hookAt(mate.pane, "PermissionRequest", hookPerm)
 	w.hookAt(shipPane, "SubagentStart", hookSubOne)
 
 	before := w.waitShip(s.Session, "two crew boats (one needing you), a subagent, a last_activity", func(x apiShip) bool {

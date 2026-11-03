@@ -61,11 +61,41 @@ func TestCrewHook_LeadWaitsForWorkingCrew(t *testing.T) {
 	hook(shipPane, "Stop", stop)
 	wantState(shipPane, "the lead's Stop while scout works", "working", "")
 
-	// Scout's own Stop is needs_you, and the lead's next Stop follows it.
+	// Scout's own Stop is idle (#189): it waits for its lead, so the ship stays
+	// underway and the idle boat holds no lead's Stop. A permission prompt on a
+	// crew boat still flags the ship.
+	const monitorArmed = `{"hook_event_name":"PostToolUse","tool_name":"Monitor","tool_input":{"command":"watch.sh"},"tool_response":{"taskId":"bwatch01","timeoutMs":1800000,"persistent":false}}`
+	const stopOnMonitor = `{"hook_event_name":"Stop","background_tasks":[{"id":"bwatch01","type":"shell","status":"running","description":"d","command":"c"}],"session_crons":[]}`
+	hook(shipPane, "PostToolUse", monitorArmed)
+	hook(shipPane, "Stop", stopOnMonitor)
 	hook(scout.pane, "Stop", stop)
-	wantState(scout.pane, "a crew boat's own Stop", "needs_you", "stop")
+	wantState(scout.pane, "a crew boat's own Stop", "idle", "")
+	wantState(shipPane, "a lead a Monitor will wake, once its crew is idle", "working", "")
+	w.waitShip(sess, "scout idle and the ship underway", func(s apiShip) bool {
+		return s.Status == "underway" && len(s.Crew) == 2 && s.Crew[1].Name == "scout" && s.Crew[1].Status == "idle"
+	})
+	hook(shipPane, "UserPromptSubmit", prompt)
 	hook(shipPane, "Stop", stop)
-	wantState(shipPane, "the lead's Stop once no crew boat works", "needs_you", "stop")
+	wantState(shipPane, "the lead's Stop with every crew boat idle", "needs_you", "stop")
+
+	hook(scout.pane, "PermissionRequest", `{"hook_event_name":"PermissionRequest","tool_name":"Bash"}`)
+	wantState(scout.pane, "a crew boat's permission prompt", "needs_you", "permission:Bash")
+	hook(shipPane, "UserPromptSubmit", prompt)
+	w.waitShip(sess, "the ship flagged by its crew", func(s apiShip) bool { return s.Status == "needs_you" && s.Reason == "crew" })
+
+	// A lead with nothing to wake it rests on its crew: the last boat to go idle
+	// flags it, not the first.
+	hook(scout.pane, "UserPromptSubmit", prompt)
+	hook(mate.pane, "UserPromptSubmit", prompt)
+	hook(shipPane, "Stop", stop)
+	wantState(shipPane, "the lead's Stop while its crew works", "working", "")
+	hook(scout.pane, "Stop", stop)
+	wantState(shipPane, "the lead with mate still working", "working", "")
+	hook(mate.pane, "Stop", stop)
+	wantState(shipPane, "the lead once its last boat is idle", "needs_you", "stop")
+	if got := opt(shipPane, "@admiral-crew-held"); got != "" {
+		t.Errorf("after flagging the lead @admiral-crew-held = %q, want it unset", got)
+	}
 
 	// An anchored crew boat that died while working doesn't hold the lead.
 	hook(shipPane, "UserPromptSubmit", prompt)

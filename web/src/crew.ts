@@ -5,6 +5,7 @@ import type { WireCrew, WireShip } from './ships';
 // The flotilla row's second line for a crew boat. The wire has no role (#157), so every boat is a Teammate.
 export function crewRowText(c: WireCrew): string {
   if (c.status === 'needs_you') return 'Teammate · needs you';
+  if (c.status === 'idle') return 'Teammate · idle';
   if (c.status === 'anchored') return `Teammate · anchored, ${c.exit_signal ? `killed (${c.exit_signal})` : `exit ${c.exit_code ?? '?'}`}`;
   return 'Teammate · working';
 }
@@ -22,9 +23,9 @@ export function findCrew(list: { session: string; crew: WireCrew[] }[], session:
 // Whether a ship or crew boat is at sea: underway, or asking for you. Its terminal takes keys.
 export const atSea = (s: Pick<WireShip, 'status'>) => s.status === 'underway' || s.status === 'needs_you';
 
-// Whether the boarded terminal takes keys. A crew boat has its own status: a live one of an anchored ship still does.
+// Whether the boarded terminal takes keys. A crew boat has its own status: a live one, idle too, of an anchored ship still does.
 export function takesInput(ship: Pick<WireShip, 'status'>, crew?: Pick<WireCrew, 'status'>): boolean {
-  return atSea(crew ?? ship);
+  return crew ? crew.status !== 'anchored' : atSea(ship);
 }
 
 // An argument of `admiral attach`, quoted for a shell when its name needs it: single quotes, and not a leading `-`.

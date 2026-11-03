@@ -18,6 +18,7 @@ const enc = encodeURIComponent;
 
 const PILL = {
   underway: { text: () => 'Underway', color: '#6FE3C8' },
+  idle: { text: () => 'Idle', color: '#9AA5AF' },
   needs_you: { text: () => 'Needs you', color: '#FF7A59' },
   anchored: {
     text: (s: { exit_code?: number | null; exit_signal?: string | null }) => (s.exit_signal ? `Anchored · killed (${s.exit_signal})` : `Anchored · exit ${s.exit_code ?? '?'}`),
@@ -31,8 +32,8 @@ const backToShip = () => {
   if (boarded.value) boarded.value = { session: boarded.value.session };
 };
 
-const CHIP_BG = { underway: 'var(--color-foam)', needs_you: 'var(--color-attention-plaque)', anchored: 'var(--color-stone)' };
-const CHIP_STATE = { underway: 'working', needs_you: 'needs you', anchored: 'anchored' };
+const CHIP_BG = { underway: 'var(--color-foam)', idle: 'var(--color-foam)', needs_you: 'var(--color-attention-plaque)', anchored: 'var(--color-stone)' };
+const CHIP_STATE = { underway: 'working', idle: 'idle', needs_you: 'needs you', anchored: 'anchored' };
 
 // Copies on a tap. An iPad on the Mac's plain-http LAN address has no navigator.clipboard (it needs a
 // secure origin), so there a hidden text box is copied, still inside the tap.

@@ -25,7 +25,7 @@ import type { WireCrew, WireShip } from './ships';
 // `crew` is set on crew stops only. `since` is frozen at first sight: Date.parse(last_activity) || Date.parse(launched)
 // || now, and later pushes do not move it. The ship's own stop exists when `status === 'needs_you' && reason !== 'crew'`
 // (the wire shows needs_you/crew while only a crew boat waits); that one predicate also drives its "Back underway" fold
-// and its first-seen time. A crew stop folds "Back underway" when its boat goes back to underway; any other way out is
+// and its first-seen time. A crew stop folds "Back underway" when its boat goes back to underway or idle; any other way out is
 // silent. Crew stops count and pulse like ship stops.
 
 const T0 = Date.parse('2026-10-22T10:00:00Z');
@@ -342,6 +342,13 @@ describe('crew stops (#154)', () => {
     expect(q.pulsing()).toBe(false);
     q.tick(T0 + 1000 + HOLD_MS);
     expect(q.entries()).toEqual([]);
+  });
+
+  it('a crew stop folds "Back underway" when its boat goes straight to idle', () => {
+    const q = createQueue();
+    sync(q, [crewOnly('a', [boat('api', 'needs_you')])]);
+    sync(q, [ship('a', 'underway', undefined, '', [boat('api', 'idle')])], T0 + 1000);
+    expect(q.entries()[0]).toMatchObject({ key: 'stop:a/api', folded: 'Back underway' });
   });
 
   it('a crew stop folds "Back underway" when its boat is answered on an anchored ship', () => {

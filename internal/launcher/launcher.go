@@ -594,7 +594,9 @@ func (l *Launcher) runWith(path string, args ...string) (string, error) {
 }
 
 func (l *Launcher) runWithCtx(ctx context.Context, path string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, l.Tmux, append([]string{"-f", "/dev/null", "-S", l.Socket}, args...)...)
+	// -u: without a UTF-8 locale tmux prints a format's \x1f as "_", and pickName
+	// then sees no session in use.
+	cmd := exec.CommandContext(ctx, l.Tmux, append([]string{"-u", "-f", "/dev/null", "-S", l.Socket}, args...)...)
 	for _, kv := range os.Environ() {
 		if strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_PANE=") || (path != "" && strings.HasPrefix(kv, "PATH=")) {
 			continue

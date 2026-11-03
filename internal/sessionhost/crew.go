@@ -28,9 +28,11 @@ const (
 )
 
 // The states a crew boat shows (#72 story 9). A crew boat never sails off, and
-// is never "working": underway covers both.
+// is never "working": underway covers it. Idle is a live boat whose turn ended
+// and that waits for its lead (#189): it holds no lead's Stop and flags no ship.
 const (
 	CrewAnchored = "anchored"
+	CrewIdle     = "idle"
 	CrewNeedsYou = "needs_you"
 	CrewUnderway = "underway"
 )
@@ -43,7 +45,7 @@ type Crew struct {
 	Harness      string
 	Dir          string
 	Launched     string
-	State        string    // CrewAnchored, CrewNeedsYou or CrewUnderway
+	State        string    // CrewAnchored, CrewIdle, CrewNeedsYou or CrewUnderway
 	Reason       string    // only while needs_you: the pane's @admiral-reason if it is a safe token, else "unknown"
 	LastActivity time.Time // zero before the boat's first hook
 	Transcript   string    // the pane's @admiral-crew-transcript when valid (ADR 0021), else empty
@@ -55,13 +57,15 @@ type Crew struct {
 }
 
 // CrewState maps a crew pane to its state: anchored whenever the pane is dead,
-// whatever the exit code; needs_you when the pane says so; otherwise underway.
+// whatever the exit code; needs_you or idle when the pane says so; otherwise underway.
 func CrewState(paneDead bool, paneState string) string {
 	switch {
 	case paneDead:
 		return CrewAnchored
 	case paneState == "needs_you":
 		return CrewNeedsYou
+	case paneState == CrewIdle:
+		return CrewIdle
 	}
 	return CrewUnderway
 }

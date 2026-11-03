@@ -54,6 +54,8 @@ const crewKey = (session: string, crew: string) => `stop:${session}/${crew}`;
 // The wire says needs_you/crew while only a crew boat waits, so the ship itself needs you on any other reason.
 const needsYou = (s: WireShip) => s.status === 'needs_you' && s.reason !== 'crew';
 // A sailing-off ship's session is about to die with its crew, so none of them waits on you.
+// A crew boat that no longer asks: an answered boat whose next turn ended between two pushes goes straight to idle.
+const isBack = (c?: WireCrew) => c?.status === 'underway' || c?.status === 'idle';
 const waiting = (s: WireShip) => (s.status === 'sailing_off' ? [] : (s.crew ?? []).filter((c) => c.status === 'needs_you'));
 
 const compare = (a: Entry, b: Entry) =>
@@ -123,7 +125,7 @@ export function createQueue() {
       const open = new Set(next.items.map((it) => itemKey(it.session, it.id)));
       for (const key of answered) if (!open.has(key)) answered.delete(key);
       const ships = new Map(next.ships.map((s) => [s.session, s]));
-      // A needs-you stop whose ship, or crew boat, went back to underway folds; any other way out is silent.
+      // A needs-you stop whose ship, or crew boat, went back to underway (or for a boat, idle) folds; any other way out is silent.
       // A ship that needed you itself folds when the wire turns to underway or to needs_you/crew.
       for (const e of served) {
         if (e.type !== 'stop' || held.has(e.key)) continue;
@@ -131,7 +133,7 @@ export function createQueue() {
         const sailing = ship?.status === 'underway' || ship?.status === 'needs_you';
         // A boat is answered whatever its ship's status, bar a ship that is sailing off or gone.
         const back = e.crew
-          ? ship !== undefined && ship.status !== 'sailing_off' && ship.crew?.find((c) => c.name === e.crew!.name)?.status === 'underway'
+          ? ship !== undefined && ship.status !== 'sailing_off' && isBack(ship.crew?.find((c) => c.name === e.crew!.name))
           : sailing && !needsYou(ship!);
         if (back) held.set(e.key, { entry: e, text: 'Back underway', until: now + HOLD_MS });
       }

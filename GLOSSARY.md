@@ -72,7 +72,7 @@ One running harness session, launched from a dock by the engineer or by autopilo
 _Avoid_: boat (for the lead), agent, card
 
 **Crew boat**:
-A smaller boat rafted beside a ship: a teammate the ship's skill started with `admiral crew`, in its own tmux window, which the engineer can board. It may carry a **role** the skill gave it, such as `test-writer`.
+A smaller boat rafted beside a ship: a teammate the ship's skill started with `admiral crew`, in its own tmux window, which the engineer can board. It may carry a **role** the skill gave it, such as `test-writer`. A crew boat that ended its turn is idle: it waits for its lead, not the engineer.
 _Avoid_: child, worker, sub-ship
 
 **Subagent**:
