@@ -29,7 +29,7 @@ A stop for an id Admiral never saw starts is ignored. Claude Code's internal age
 
 **Every hook runs `admiral hook <event>`,** which reads the harness's JSON from stdin and sets the options on the pane named by `$TMUX_PANE` (`tmux set -p -t "$TMUX_PANE"`). A bare `set -p` writes to the session's active pane, which is wrong once a ship has crew windows. A working or waiting hook that comes from inside a subagent (Copilot's `agentStop` and `userPromptSubmitted` carry an `agentId`) does not change `@admiral-state`. This replaces ADR 0013's bare `tmux set -p @admiral-state …`. To keep Codex's hook trust across upgrades, the command names no path: Admiral keeps `~/.admiral/bin/admiral` pointing at the running binary, rewrites it at every start, and puts that directory first on each ship's and crew boat's `PATH`, so the hook text never changes and `admiral` always resolves to the build that launched the ship, never to another install earlier on `PATH`.
 
-**Needs-you follows each crew boat.** A crew boat's own needs-you shows on the crew boat in the flotilla and also sets the ship needs-you in open water, so a waiting teammate is never hidden behind a quiet lead.
+**Needs-you follows each crew boat.** A crew boat's own needs-you shows on the crew boat in the flotilla and also sets the ship needs-you in open water, so a waiting teammate is never hidden behind a quiet lead. A crew boat's plain `Stop` is its lead's to answer, not the engineer's: the boat goes `idle`, which doesn't raise the ship. If the lead's own `Stop` waited on working crew and nothing will wake it, the last boat to go idle flags the lead, with reason `stop`.
 
 **Crew boats live and die with their window.** A teammate whose harness exits stays as an anchored crew boat until `admiral crew close` or the engineer closes it. When the ship goes, its tmux session goes, and its crew with it.
 
@@ -51,3 +51,5 @@ A stop for an id Admiral never saw starts is ignored. Claude Code's internal age
 Amended 2026-10-19 after the live check in [`docs/research/crew-boats.md`](../research/crew-boats.md) ([#72](https://github.com/jbuffin/admiral/issues/72)): hooks pass `-t "$TMUX_PANE"`, subagent-scoped hooks leave `@admiral-state` alone, Copilot subagents carry ids, and subagent entries clear by a rule for each harness.
 
 Amended 2026-10-19 ([#69](https://github.com/jbuffin/admiral/issues/69)): `~/.admiral/bin` goes first on `PATH`, not just somewhere on it.
+
+Amended 2026-11-02 ([#189](https://github.com/jbuffin/admiral/issues/189)): a crew boat's plain `Stop` is `idle`, not needs-you. Permission prompts, questions, elicitation and a Codex boat's bell still flag the boat and its ship.

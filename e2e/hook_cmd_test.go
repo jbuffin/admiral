@@ -155,7 +155,10 @@ func (r hookResult) requireOneWrite(t *testing.T, pane, state, reason string, on
 			cmd = append(cmd, a)
 			continue
 		}
-		sets = append(sets, parseTmuxSet(cmd))
+		// Every state write also clears the lead's crew-held mark (#189).
+		if s := parseTmuxSet(cmd); s.option != "@admiral-crew-held" || !s.unset {
+			sets = append(sets, s)
+		}
 		cmd = nil
 	}
 	if len(sets) != 2 {

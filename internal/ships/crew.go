@@ -61,7 +61,7 @@ func CrewExit(c sessionhost.Crew) (code *int, sig *string) {
 	return &n, nil
 }
 
-// crewLive counts the crew boats with a live pane: underway or needs you.
+// crewLive counts the crew boats with a live pane: underway, idle or needs you.
 func crewLive(crew []CrewBoat) int {
 	n := 0
 	for _, b := range crew {

@@ -10,7 +10,7 @@ export interface WireCrew {
   name: string;
   harness: HarnessName;
   dir: string;
-  status: 'underway' | 'needs_you' | 'anchored';
+  status: 'underway' | 'idle' | 'needs_you' | 'anchored';
   reason?: string;
   launched: string;
   last_activity?: string;

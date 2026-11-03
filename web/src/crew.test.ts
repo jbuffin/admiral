@@ -56,9 +56,11 @@ describe('findCrew', () => {
 describe('takesInput', () => {
   it('follows the boarded crew boat, not the ship', () => {
     const live = crew({ status: 'underway' });
+    const idle = crew({ status: 'idle' });
     const needs = crew({ status: 'needs_you' });
     const done = crew({ status: 'anchored', exit_code: 1 });
     expect(takesInput(ship('s', 'anchored', [live]), live)).toBe(true);
+    expect(takesInput(ship('s', 'underway', [idle]), idle)).toBe(true);
     expect(takesInput(ship('s', 'anchored', [needs]), needs)).toBe(true);
     expect(takesInput(ship('s', 'underway', [done]), done)).toBe(false);
   });

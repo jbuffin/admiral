@@ -115,9 +115,10 @@ func (w *world) baseEnv() []string {
 	return append(env, w.extra...)
 }
 
-// tmux runs the tmux binary against this world's Admiral socket.
+// tmux runs the tmux binary against this world's Admiral socket. -u keeps a tab
+// in a format intact, as the server's own reads do: without it tmux can print "_".
 func (w *world) tmux(args ...string) (string, error) {
-	cmd := exec.Command("tmux", append([]string{"-S", w.sock()}, args...)...)
+	cmd := exec.Command("tmux", append([]string{"-u", "-S", w.sock()}, args...)...)
 	cmd.Env = w.baseEnv()
 	out, err := cmd.CombinedOutput()
 	return strings.TrimRight(string(out), "\n"), err

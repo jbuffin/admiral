@@ -173,6 +173,7 @@ func TestHookLeadRule(t *testing.T) {
 		copSub         = `{"stopReason":"end_turn","agentId":"788718ef","agentType":"general-purpose","parentAgentId":"796c5372"}`
 	)
 	working, idle := crewFacts{CrewWorking: true}, crewFacts{}
+	crewIdle, held := hookWrite{state: "idle"}, hookWrite{crewHeld: true}
 	crew := crewFacts{ThisIsCrew: true}
 	crewWithOthers := crewFacts{ThisIsCrew: true, CrewWorking: true}
 	failed := crewFacts{CrewReadFailed: true, CrewWorking: true}
@@ -181,15 +182,16 @@ func TestHookLeadRule(t *testing.T) {
 		f                    crewFacts
 		want                 hookWrite
 	}{
-		{"claude lead Stop with crew working writes no state", "Stop", claudeStop, working, hookWrite{}},
-		{"codex lead Stop with crew working writes no state", "Stop", codexStop, working, hookWrite{}},
-		{"copilot lead agentStop with crew working writes no state", "agentStop", copLead, working, hookWrite{}},
+		{"claude lead Stop with crew working writes no state, only its wait", "Stop", claudeStop, working, held},
+		{"codex lead Stop with crew working writes no state, only its wait", "Stop", codexStop, working, held},
+		{"copilot lead agentStop with crew working writes no state, only its wait", "agentStop", copLead, working, held},
 		{"claude lead Stop with no crew working is needs_you stop", "Stop", claudeStop, idle, stop},
 		{"codex lead Stop with no crew working is needs_you stop", "Stop", codexStop, idle, stop},
 		{"copilot lead agentStop with no crew working is needs_you stop", "agentStop", copLead, idle, stop},
-		{"a crew boat's own Stop is needs_you with the others idle", "Stop", claudeStop, crew, stop},
-		{"a crew boat's own Stop is needs_you whatever the other crew do", "Stop", codexStop, crewWithOthers, stop},
-		{"a crew boat's own agentStop is needs_you whatever the other crew do", "agentStop", copLead, crewWithOthers, stop},
+		{"a crew boat's own Stop is idle with the others idle", "Stop", claudeStop, crew, crewIdle},
+		{"a crew boat's own Stop is idle whatever the other crew do", "Stop", codexStop, crewWithOthers, crewIdle},
+		{"a crew boat's own agentStop is idle whatever the other crew do", "agentStop", copLead, crewWithOthers, crewIdle},
+		{"the last boat to go idle flags the lead that waited", "Stop", claudeStop, crewFacts{ThisIsCrew: true, RestingLead: "%1"}, hookWrite{state: "idle", flagLead: "%1"}},
 		{"a failed crew read gives needs_you stop", "Stop", claudeStop, failed, stop},
 		{"claude's background_tasks rule still applies with no crew", "Stop", claudeStopTask, idle, hookWrite{}},
 		{"claude's background_tasks rule still applies to a crew boat", "Stop", claudeStopTask, crew, hookWrite{}},
@@ -220,6 +222,7 @@ func TestHookCrewPaneWorking(t *testing.T) {
 	}{
 		{"a live pane working", crewPaneFact{State: "working", HasActivity: true, Launched: ago(time.Minute)}, true},
 		{"a live pane that needs you", crewPaneFact{State: "needs_you", HasActivity: true, Launched: ago(time.Minute)}, false},
+		{"an idle pane, even inside its launch window", crewPaneFact{State: "idle", HasActivity: true, Launched: ago(time.Second)}, false},
 		{"a dead pane keeps its working state and doesn't count", crewPaneFact{Dead: true, State: "working", HasActivity: true, Launched: ago(time.Minute)}, false},
 		{"a dead pane inside its launch window doesn't count", crewPaneFact{Dead: true, Launched: ago(2 * time.Second)}, false},
 		{"no activity yet inside the launch window", crewPaneFact{Launched: ago(3 * time.Second)}, true},
