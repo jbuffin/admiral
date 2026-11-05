@@ -6,17 +6,19 @@ import {
   cardsOf,
   clock,
   closeInbox,
-  FORGET_SUPPORTED,
   decide,
   decisionsOf,
   discardReview,
   draftOf,
   editDraft,
+  editRemoval,
   editReview,
   editingOf,
   findingsUiOf,
   isEditing,
   markEdited,
+  removalOf,
+  removeItem,
   reviewOf,
   sendFindings,
   setEditing,
@@ -162,14 +164,13 @@ function PrLine({ pr }: { pr: ReturnType<typeof prLink> }) {
   );
 }
 
-function Failure({ message, children }: { message: string; children?: preact.ComponentChildren }) {
+function Failure({ message }: { message: string }) {
   if (!message) return null;
   return (
     <div class="inbox-failure">
       <p class="inbox-error" role="alert">
         {message}
       </p>
-      {children}
     </div>
   );
 }
@@ -179,7 +180,7 @@ function ReviewBody({ entry }: { entry: Entry }) {
   const ui = reviewOf(entry.key);
   const pr = prLink(r?.pr_url);
   const busy = ui.busy;
-  const set = (step: 'idle' | 'choose' | 'confirm' | 'discard') => editReview(entry.key, { step, error: '', gh: false });
+  const set = (step: 'idle' | 'choose' | 'confirm' | 'discard') => editReview(entry.key, { step, error: '' });
   return (
     <>
       <div class="inbox-summary">
@@ -208,7 +209,7 @@ function ReviewBody({ entry }: { entry: Entry }) {
       {ui.step === 'choose' && (
         <div class="inbox-ask" role="group" aria-label="Submit the review as">
           {EVENTS.map(([ev, desc, bg]) => (
-            <button key={ev} type="button" class="press inbox-event" style={`background-color:${bg}`} onClick={() => editReview(entry.key, { step: 'confirm', event: ev, error: '', gh: false })}>
+            <button key={ev} type="button" class="press inbox-event" style={`background-color:${bg}`} onClick={() => editReview(entry.key, { step: 'confirm', event: ev, error: '' })}>
               <span class="inbox-event-id">{ev}</span>
               <span class="inbox-option-desc">{desc}</span>
             </button>
@@ -251,13 +252,7 @@ function ReviewBody({ entry }: { entry: Entry }) {
           Asking GitHub…
         </p>
       )}
-      <Failure message={ui.error}>
-        {ui.gh && FORGET_SUPPORTED && (
-          <button type="button" class="press inbox-secondary" disabled={busy} onClick={() => void discardReview(entry, true)}>
-            Remove from inbox — the review may still be pending on GitHub
-          </button>
-        )}
-      </Failure>
+      <Failure message={ui.error} />
     </>
   );
 }
@@ -390,6 +385,36 @@ function FindingsBody({ entry }: { entry: Entry }) {
   );
 }
 
+// Any item can leave the inbox unanswered: one the engineer settled in the ship's terminal, or one that no
+// longer matters. A review's draft stays on GitHub.
+function RemoveRow({ entry }: { entry: Entry }) {
+  const ui = removalOf(entry.key);
+  const review = entry.item?.kind === 'review';
+  if (!ui.confirm) {
+    return (
+      <div class="inbox-remove-row">
+        <button type="button" class="inbox-remove" onClick={() => editRemoval(entry.key, { confirm: true, error: '' })}>
+          Remove from inbox
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div class="inbox-ask discard">
+      <p>{review ? 'Remove this review from the inbox? Nothing changes on GitHub: the pending review stays there.' : 'Remove this item from the inbox? The ship never gets an answer from here.'}</p>
+      <div class="inbox-actions">
+        <button type="button" class="press inbox-danger solid" disabled={ui.busy} onClick={() => void removeItem(entry)}>
+          Remove
+        </button>
+        <button type="button" class="press inbox-secondary" disabled={ui.busy} onClick={() => editRemoval(entry.key, { confirm: false, error: '' })}>
+          Keep it
+        </button>
+      </div>
+      <Failure message={ui.error} />
+    </div>
+  );
+}
+
 function Item({ entry }: { entry: Entry }) {
   const ship = entry.ship ?? ships.value.find((s) => s.session === entry.session);
   const shipName = entry.item?.name ?? ship?.name ?? entry.session;
@@ -429,6 +454,7 @@ function Item({ entry }: { entry: Entry }) {
         )}
       </div>
       {entry.type === 'stop' ? <StopBody entry={entry} name={name} shipName={shipName} /> : entry.item?.kind === 'review' ? <ReviewBody entry={entry} /> : entry.item?.kind === 'findings' ? <FindingsBody entry={entry} /> : entry.item?.kind === 'question' && <QuestionBody entry={entry} />}
+      {entry.type !== 'stop' && entry.item && <RemoveRow entry={entry} />}
     </article>
   );
 }

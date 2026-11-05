@@ -3274,6 +3274,26 @@ body.dragging * {
   font-family: var(--font-mono, monospace);
   font-weight: 800;
 }
+.inbox-remove-row {
+  display: flex;
+  justify-content: flex-end;
+}
+.inbox-remove {
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  font-family: var(--font-body, inherit);
+  font-size: 14px;
+  color: var(--color-text-muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.inbox-remove:focus-visible {
+  outline: 3px solid var(--color-ink);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
 .inbox-failure {
   display: flex;
   flex-direction: column;

@@ -831,3 +831,46 @@ func kept(t *testing.T, home, session string) bool {
 func refused(code int) bool {
 	return code == http.StatusBadRequest || code == http.StatusUnprocessableEntity
 }
+
+// A sailed-off ship keeps its inbox only for the items its report still lists
+// in `inbox`: one answered in its terminal and listed nowhere holds nothing.
+// Remove from inbox clears a kept item, and the files go with the last one.
+func TestInboxKeepsOnlyWhatTheReportListsAfterSailOff(t *testing.T) {
+	w := newWorld(t)
+	w.ghFleets(map[string][]string{"f": {"hook working", "wait go", "exit 0"}})
+	w.start()
+
+	// Settled in the terminal: the report lists nothing, so nothing is kept.
+	done := w.launchIn("f", "claude", "listed0")
+	doneReport, doneInbox := w.seedShipFiles(w.record(done.Session), `{"version":1,"result":"done","inbox":[]}`)
+	seedItem(t, doneInbox, "q-1", questionItem("q-1", "2026-10-22T10:00:00Z"))
+
+	// Still waiting on q-3; q-2 was settled in the terminal.
+	wait := w.launchIn("f", "claude", "listed1")
+	waitReport, waitInbox := w.seedShipFiles(w.record(wait.Session), `{"version":1,"result":"partial","inbox":["q-3"]}`)
+	seedItem(t, waitInbox, "q-2", questionItem("q-2", "2026-10-22T10:01:00Z"))
+	seedItem(t, waitInbox, "q-3", questionItem("q-3", "2026-10-22T10:02:00Z"))
+	w.in.waitInbox(t, "q-1", "q-2", "q-3")
+
+	w.touch(done.Session, "go")
+	w.touch(wait.Session, "go")
+	w.waitEvent(done.Session, "ended", 1)
+	w.waitEvent(wait.Session, "ended", 1)
+	waitGone(t, 15*time.Second, doneInbox, doneReport)
+	time.Sleep(2 * time.Second) // the cleanup, if it were to run, has had its pass
+	if !exists(waitInbox) || !exists(waitReport) || !kept(t, w.home, wait.Session) {
+		t.Fatalf("the ship whose report lists q-3 lost its kept inbox")
+	}
+	if kept(t, w.home, done.Session) {
+		t.Errorf("state.json keeps %s, whose report lists no item", done.Session)
+	}
+	w.in.waitInbox(t, "q-2", "q-3")
+
+	code, resp := w.in.act(t, wait.Session, "q-3", "remove", nil)
+	if !ok2xx(code) || !strings.Contains(resp, `"forgotten":true`) {
+		t.Fatalf("remove = %d %s, want 2xx and forgotten true", code, resp)
+	}
+	waitGone(t, 15*time.Second, waitInbox, waitReport)
+	w.in.waitInbox(t)
+	w.waitEvent(wait.Session, "item_removed", 1)
+}

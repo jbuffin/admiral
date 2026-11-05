@@ -17,7 +17,7 @@ import { type Sea, type SeaFleet, badge, badgeName, isTouch, phone, test } from 
 //   after an action: role status "Review submitted: APPROVE" / "Review discarded" / "Review no longer pending on
 //     GitHub" / "Review removed from the inbox; nothing changed on GitHub" / "Removed from the inbox"
 //   a failure: role alert holding gh's message as text, the item still open, its buttons usable again
-//     and, for a 502/503 on a review, the button "Remove from inbox"
+//   every item: button "Remove from inbox", then buttons "Remove" and "Keep it"; the fold "Removed from the inbox"
 //   findings item (an article): per finding card a group "Decision for card <n>" with buttons Approve, Edit, Reject
 //     (aria-pressed on the chosen one); Edit opens textbox "Edit the proposal for card <n>" with buttons Save
 //     and Cancel; "<d> of <n> decided"; button "Send" (disabled until every card is decided)
@@ -268,9 +268,35 @@ test.describe('a review item', () => {
     await press(inbox.getByRole('button', { name: 'Discard', exact: true }), touch);
     await press(inbox.getByRole('button', { name: 'Discard review' }), touch);
     await expect(inbox.getByRole('alert')).toContainText('Server Error');
-    await press(inbox.getByRole('button', { name: /Remove from inbox/ }), touch);
+    await press(inbox.getByRole('button', { name: 'Remove from inbox', exact: true }), touch);
+    await press(inbox.getByRole('button', { name: 'Remove', exact: true }), touch);
     await expect(inbox.getByRole('status').filter({ hasText: 'Removed from the inbox' })).toBeVisible();
     await expect(badge(page, info)).toHaveAccessibleName(badgeName(info, 'Needs you, nothing waiting'));
+  });
+});
+
+test.describe('a question item', () => {
+  // A question answered in the ship's terminal never gets an answer file; Remove from inbox clears it.
+  test('Remove from inbox asks once, then writes a removed answer', async ({ page, admiral, sea }, info) => {
+    const touch = isTouch(info);
+    const { ship } = await setup(admiral, sea);
+    seed(admiral, ship.session, 'q-1', {
+      kind: 'question',
+      created: minutesAgo(5),
+      title: 'Which track?',
+      question: { questions: [{ id: 'track', text: 'Which track?', options: [{ label: 'Closed' }, { label: 'Internal' }], recommended: 'Closed', multi: false }] },
+    });
+    const inbox = await open(page, admiral, info, 1);
+
+    await press(inbox.getByRole('button', { name: 'Remove from inbox', exact: true }), touch);
+    await press(inbox.getByRole('button', { name: 'Keep it', exact: true }), touch);
+    await expect(inbox.getByText('Which track?').first()).toBeVisible();
+    await press(inbox.getByRole('button', { name: 'Remove from inbox', exact: true }), touch);
+    await press(inbox.getByRole('button', { name: 'Remove', exact: true }), touch);
+    await expect(inbox.getByRole('status').filter({ hasText: 'Removed from the inbox' })).toBeVisible();
+    await expect(badge(page, info)).toHaveAccessibleName(badgeName(info, 'Needs you, nothing waiting'));
+    const answer = JSON.parse(readFileSync(join(admiral.home, 'inbox', ship.session, 'q-1.answer.json'), 'utf8'));
+    expect(answer).toMatchObject({ id: 'q-1', kind: 'question', removed: true });
   });
 });
 
