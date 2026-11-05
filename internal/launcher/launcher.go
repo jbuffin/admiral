@@ -6,6 +6,7 @@ package launcher
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -593,7 +594,17 @@ func (l *Launcher) runWith(path string, args ...string) (string, error) {
 	return l.runWithCtx(context.Background(), path, args...)
 }
 
+// RunTmuxInput is RunTmux with input on tmux's stdin (load-buffer -) and ended
+// with ctx, so text never goes on a command line.
+func (l *Launcher) RunTmuxInput(ctx context.Context, input string, args ...string) (string, error) {
+	return l.runIn(ctx, "", strings.NewReader(input), args...)
+}
+
 func (l *Launcher) runWithCtx(ctx context.Context, path string, args ...string) (string, error) {
+	return l.runIn(ctx, path, nil, args...)
+}
+
+func (l *Launcher) runIn(ctx context.Context, path string, stdin io.Reader, args ...string) (string, error) {
 	// -u: without a UTF-8 locale tmux prints a format's \x1f as "_", and pickName
 	// then sees no session in use.
 	cmd := exec.CommandContext(ctx, l.Tmux, append([]string{"-u", "-f", "/dev/null", "-S", l.Socket}, args...)...)
@@ -606,6 +617,7 @@ func (l *Launcher) runWithCtx(ctx context.Context, path string, args ...string) 
 	if path != "" {
 		cmd.Env = append(cmd.Env, "PATH="+path)
 	}
+	cmd.Stdin = stdin
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
