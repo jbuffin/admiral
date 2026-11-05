@@ -27,6 +27,9 @@ import (
 const (
 	resumeText = "Finish the review of https://github.com/acme/widgets/pull/12 now the questions are answered"
 	sailCue    = "wait go"
+	// anchorCue ends the harness at once and leaves the ship anchored: a ship
+	// still afloat has its resume text typed at its prompt, not an order.
+	anchorCue = "exit 1"
 )
 
 var ordersSource = map[string]any{"orders": map[string]any{"plugin": "freeform", "name": "Orders"}}
@@ -142,7 +145,7 @@ func (w *world) holdOrders(msg, source string, want ...string) {
 // outcome is recorded against the ship.
 func TestResumeOrderAddedWhenTheLastItemIsAnswered(t *testing.T) {
 	w := newWorld(t)
-	w.resumeConfig(map[string][]string{"f": {"hook working"}}, ordersSource, resumeTarget("orders", "orders"))
+	w.resumeConfig(map[string][]string{"f": {anchorCue}}, ordersSource, resumeTarget("orders", "orders"))
 	w.start()
 	w.waitSource("orders", 10*time.Second, "state ok", isOK)
 	ship, _, _ := w.resumeShip("res1", resumeText, []string{"q-1", "q-2"}, "q-1", "q-2")
@@ -169,7 +172,7 @@ func TestResumeOrderAddedWhenTheLastItemIsAnswered(t *testing.T) {
 // the inbox scan, not only the answer route, starts the check.
 func TestResumeOrderAddedForAnswerFilesWrittenDirectly(t *testing.T) {
 	w := newWorld(t)
-	w.resumeConfig(map[string][]string{"f": {"hook working"}}, ordersSource, resumeTarget("orders", "orders"))
+	w.resumeConfig(map[string][]string{"f": {anchorCue}}, ordersSource, resumeTarget("orders", "orders"))
 	w.start()
 	w.waitSource("orders", 10*time.Second, "state ok", isOK)
 	ship, _, dir := w.resumeShip("res1b", resumeText, []string{"q-1", "q-2"}, "q-1", "q-2")
@@ -184,7 +187,7 @@ func TestResumeOrderAddedForAnswerFilesWrittenDirectly(t *testing.T) {
 // S2: a restart, and an answer written again, add no second order.
 func TestResumeOrderIsAddedOnce(t *testing.T) {
 	w := newWorld(t)
-	w.resumeConfig(map[string][]string{"f": {"hook working"}}, ordersSource, resumeTarget("orders", "orders"))
+	w.resumeConfig(map[string][]string{"f": {anchorCue}}, ordersSource, resumeTarget("orders", "orders"))
 	w.start()
 	w.waitSource("orders", 10*time.Second, "state ok", isOK)
 	ship, _, dir := w.resumeShip("res2", resumeText, []string{"q-1", "q-2"}, "q-1", "q-2")
@@ -209,7 +212,7 @@ func TestResumeOrderIsAddedOnce(t *testing.T) {
 // check.
 func TestResumeOrderAddsNothingForReportsThatCannotResume(t *testing.T) {
 	w := newWorld(t)
-	w.resumeConfig(map[string][]string{"f": {"hook working"}}, ordersSource, resumeTarget("orders", "orders"))
+	w.resumeConfig(map[string][]string{"f": {anchorCue}}, ordersSource, resumeTarget("orders", "orders"))
 	w.start()
 	w.waitSource("orders", 10*time.Second, "state ok", isOK)
 
@@ -260,7 +263,7 @@ func TestResumeOrderWithoutAUsableTarget(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			w := newWorld(t)
-			w.resumeConfig(map[string][]string{"f": {"hook working"}}, ordersSource, c.resume)
+			w.resumeConfig(map[string][]string{"f": {anchorCue}}, ordersSource, c.resume)
 			w.start()
 			w.waitSource("orders", 10*time.Second, "state ok", isOK)
 			ship, _, _ := w.resumeShip("res3f", resumeText, []string{"q-1"}, "q-1")
@@ -384,5 +387,35 @@ func TestResumeOrderRetriesUntilTheTargetExists(t *testing.T) {
 	w.holdOrders("a restart added a second resume order", "later", resumeText)
 	if n := len(w.outcomesOf("resumed")); n != 1 {
 		t.Errorf("%d resumed records, want 1", n)
+	}
+}
+
+// A ship still afloat reads its answers itself (ADR 0016): once the last item
+// its report lists is answered, Admiral types the report's resume text at the
+// ship's prompt when its turn has ended, never while it is busy, and adds no
+// order, so no second ship launches in its checkout. The resume panel is set, so
+// the missing order is not for want of a target.
+func TestResumeOfALiveShipIsTypedAtItsPromptOnceItStops(t *testing.T) {
+	w := newWorld(t)
+	w.resumeConfig(map[string][]string{"f": {"record", "hook working", "wait go", "event Stop {}"}}, ordersSource, resumeTarget("orders", "orders"))
+	w.start()
+	w.waitSource("orders", 10*time.Second, "state ok", isOK)
+	const text = "/commodore resume run-1"
+	ship, _, _ := w.resumeShip("live1", text, []string{"q-1"}, "q-1")
+	w.waitFile(ship.Session, "recording")
+
+	w.answerQuestion(ship.Session, "q-1")
+	holdThat(t, "the resume text was typed while the ship was underway", func() bool { return w.stdinOf(ship.Session) == "" })
+	w.holdOrders("an order was added for a ship still afloat", "orders")
+
+	w.touch(ship.Session, "go") // the turn ends: Stop
+	w.waitStdin(t, ship.Session, text+"\r")
+	log := w.waitEvent(ship.Session, "resumed", 1)
+	if r := lastOf(log, "resumed"); r["live"] != true || r["order"] != nil {
+		t.Errorf("resumed = %v, want live true and no order", r)
+	}
+	w.holdOrders("an order was added after the text was typed", "orders")
+	if got := w.stdinOf(ship.Session); got != text+"\r" {
+		t.Errorf("stdin = %q, want the text typed once", got)
 	}
 }

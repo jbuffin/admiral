@@ -53,6 +53,13 @@ type Service struct {
 	// panel's unrecorded orders in between, and remembers where the order
 	// launches (#120). Nil does nothing.
 	ResumeAdd func(source, panel string, from Origin) (done func(orderID string))
+	// Afloat is whether a session is a ship that is underway or needs you. Its
+	// report's resume text is typed at its prompt instead of becoming an order.
+	Afloat func(session string) bool
+	// TypeResume types text at a ship's prompt while it waits there because its
+	// turn ended: afloat is whether the ship is underway or needs you, typed
+	// whether the text went in. Nil types nothing.
+	TypeResume func(session, text string) (afloat, typed bool, err error)
 
 	answerMu sync.Mutex        // one answer at a time
 	actMu    sync.Mutex        // guards acting

@@ -322,6 +322,13 @@ func serve(args []string) error {
 	inboxService.ResumeAdd = func(source, panel string, from inbox.Origin) func(string) {
 		return engine.BeginResume(source, panel, from.Dir, from.Source, from.Panel)
 	}
+	// A ship still afloat reads its answers itself: its resume text is typed at
+	// its prompt once its turn has ended, and no order launches a second ship.
+	inboxService.Afloat = func(session string) bool {
+		sh, ok := shipService.Get(session)
+		return ok && (sh.Status == ships.StatusUnderway || sh.Status == ships.StatusNeedsYou)
+	}
+	inboxService.TypeResume = shipService.TypeResume
 	shipService.BeforeRemoveFiles = inboxService.CaptureResumeFrom
 	changed := supervisor.OnChange
 	supervisor.OnChange = func() { changed(); inboxService.KickResume() }

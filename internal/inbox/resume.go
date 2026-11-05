@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/outcomes"
+	"github.com/jbuffin/admiral/internal/state"
 )
 
 // Resume orders (ADR 0016): once every item a ship's report lists in `inbox` has
@@ -131,7 +132,10 @@ func (s *Service) CaptureResumeFrom(session string, from Origin) {
 			return // a removed item never resumes its ship
 		}
 	}
-	if s.ResumeTarget == nil || s.ResumeTarget() == nil {
+	// A ship still afloat has the text typed at its prompt when it stops, and
+	// needs no resume_source; one that has ended gets an order.
+	afloat := s.Afloat != nil && s.Afloat(session)
+	if !afloat && (s.ResumeTarget == nil || s.ResumeTarget() == nil) {
 		s.noTarget.Do(func() {
 			fmt.Fprintln(os.Stderr, "admiral: autopilot.resume_source is not set in the config, so resume orders are not added")
 		})
@@ -208,7 +212,7 @@ func (s *Service) KickResume() { s.kickResume() }
 // order is counted as done and recorded as uncertain, because a second order can
 // launch a second ship.
 func (s *Service) addResumes(session string) (left bool) {
-	if s.Kept == nil || s.AddOrder == nil || s.ResumeTarget == nil {
+	if s.Kept == nil {
 		return false
 	}
 	s.resumeMu.Lock()
@@ -222,11 +226,21 @@ func (s *Service) addResumes(session string) (left bool) {
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
+		r := pending[key]
+		switch s.typeResume(key, r) {
+		case liveTyped:
+			continue
+		case liveWait:
+			left = true
+			continue
+		}
+		if s.AddOrder == nil || s.ResumeTarget == nil {
+			continue
+		}
 		t := s.ResumeTarget()
 		if t == nil {
 			continue // nothing to try until the config names a target
 		}
-		r := pending[key]
 		release := func(string) {}
 		if s.ResumeAdd != nil {
 			release = s.ResumeAdd(t.Source, t.Panel, Origin{Dir: r.Dir, Source: r.OriginSource, Panel: r.OriginPanel})
@@ -287,6 +301,52 @@ func (s *Service) addResumes(session string) (left bool) {
 		}
 	}
 	return left
+}
+
+// What typeResume did with a resume order.
+const (
+	liveGone  = iota // no ship afloat: the order goes to the resume panel
+	liveWait         // the ship is afloat but not at its prompt: try again when it stops
+	liveTyped        // the text went in at the ship's prompt: done
+)
+
+// typeResume types a resume order's text at the prompt of its ship while the
+// ship is still afloat, so the ship that asked reads its answers and no second
+// ship is launched in its checkout. Under resumeMu.
+func (s *Service) typeResume(key string, r state.Resume) int {
+	if s.TypeResume == nil || !typable(r.Text) {
+		return liveGone
+	}
+	afloat, typed, err := s.TypeResume(r.Session, r.Text)
+	if err != nil && s.lastErr[key] != err.Error() {
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume text could not be typed at its prompt: %v\n", r.Session, err)
+		if s.lastErr == nil {
+			s.lastErr = map[string]string{}
+		}
+		s.lastErr[key] = err.Error()
+	}
+	switch {
+	case typed:
+		delete(s.lastErr, key)
+		if ferr := s.Kept.FinishResume(key); ferr != nil {
+			fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume cannot be marked done: %v\n", r.Session, ferr)
+		}
+		if s.Outcomes != nil {
+			s.Outcomes.Enqueue(outcomes.Record{Ship: r.Session, Event: "resumed", Fields: map[string]any{"live": true}}, nil)
+		}
+		return liveTyped
+	case afloat:
+		return liveWait
+	}
+	return liveGone
+}
+
+// typable is whether text can go in at a prompt: no control character but
+// newline and tab.
+func typable(text string) bool {
+	return strings.TrimSpace(text) != "" && !strings.ContainsFunc(text, func(r rune) bool {
+		return (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f
+	})
 }
 
 // resumeLoop adds the resume orders that wait, when prompted and while one is

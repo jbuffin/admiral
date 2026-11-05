@@ -155,16 +155,15 @@ func rcExpectOrigin(t *testing.T, w *world, ship shipJSON, checkout string) {
 }
 
 // C1: an autopilot build ship's resume order, whose text names no repository,
-// launches in the ship's checkout under the build panel's entry, whichever
-// state the ship is in when the last item is answered.
+// launches in the ship's checkout under the build panel's entry, whether the
+// ship sailed off before the last answer or right after it. (A ship still
+// afloat gets no order: its resume text is typed at its prompt.)
 func TestResumeOrderLaunchesInTheBuildShipsCheckout(t *testing.T) {
-	for _, mode := range []string{"live", "sailed off", "exits right after the answer"} {
+	for _, mode := range []string{"sailed off", "exits right after the answer"} {
 		t.Run(mode, func(t *testing.T) {
 			w, checkout := rcWorld(t, 2)
 			ship, dir := w.rcBuildShip("Build " + rcRemote)
 			switch mode {
-			case "live":
-				writeAnswerFile(t, dir, "q-1")
 			case "sailed off":
 				w.sailOff(ship.Session)
 				w.answerQuestion(ship.Session, "q-1")
@@ -182,8 +181,9 @@ func TestResumeOrderLaunchesInTheBuildShipsCheckout(t *testing.T) {
 func TestResumeOrderOfAHandLaunchedShipRunsUnderTheResumePanel(t *testing.T) {
 	w, checkout := rcWorld(t, 2)
 	ship := w.launch(map[string]any{"fleet": "buildf", "harness": "claude", "dir": checkout, "skill": noSkill, "order_id": "hand", "text": "x"})
-	dir := w.rcReport(ship)
-	writeAnswerFile(t, dir, "q-1")
+	w.rcReport(ship)
+	w.sailOff(ship.Session)
+	w.answerQuestion(ship.Session, "q-1")
 
 	got := w.rcResumeShip()
 	if got.Dir != checkout || got.Fleet != "resumef" {
