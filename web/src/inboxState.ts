@@ -109,11 +109,9 @@ export interface ReviewUi {
   event: string;
   busy: boolean;
   error: string;
-  /** A failure of the last action, which offers "Remove from inbox". */
-  gh: boolean;
 }
 const reviews = signal<Record<string, ReviewUi>>({});
-const noReview: ReviewUi = { step: 'idle', event: '', busy: false, error: '', gh: false };
+const noReview: ReviewUi = { step: 'idle', event: '', busy: false, error: '' };
 export const reviewOf = (key: string): ReviewUi => reviews.value[key] ?? noReview;
 export function editReview(key: string, patch: Partial<ReviewUi>): void {
   reviews.value = { ...reviews.value, [key]: { ...reviewOf(key), ...patch } };
@@ -122,15 +120,20 @@ export function editReview(key: string, patch: Partial<ReviewUi>): void {
 const opened = new Set<string>();
 export const markEdited = (key: string) => void opened.add(key);
 
-// Whether the server takes `discard {"forget": true}`; false would hide "Remove from inbox".
-export const FORGET_SUPPORTED = true;
-
 const itemPath = (it: InboxItem, verb: string) => `/api/inbox/${encodeURIComponent(it.session)}/${encodeURIComponent(it.id)}/${verb}`;
 
 // Runs an action on an item. The badge drops at the tap; a refusal brings it back and keeps what was entered.
 // Every key that holds per-item state, and the one place that clears it.
 function itemStateKeys(): Set<string> {
-  return new Set([...Object.keys(drafts.peek()), ...Object.keys(reviews.peek()), ...Object.keys(editing.peek()), ...Object.keys(findingsUi.peek()), ...decisions.keys(), ...opened]);
+  return new Set([
+    ...Object.keys(drafts.peek()),
+    ...Object.keys(reviews.peek()),
+    ...Object.keys(editing.peek()),
+    ...Object.keys(findingsUi.peek()),
+    ...Object.keys(removals.peek()),
+    ...decisions.keys(),
+    ...opened,
+  ]);
 }
 function forgetItemState(key: string): void {
   const without = <T,>(m: Record<string, T>) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== key));
@@ -138,6 +141,7 @@ function forgetItemState(key: string): void {
   reviews.value = without(reviews.peek());
   editing.value = without(editing.peek());
   findingsUi.value = without(findingsUi.peek());
+  removals.value = without(removals.peek());
   decisions.delete(key);
   cardsByItem.delete(key);
   opened.delete(key);
@@ -151,12 +155,12 @@ async function act(
   verb: string,
   body: unknown,
   foldText: (data: { action?: string; invalid_target?: boolean }) => string,
-  setBusy: (busy: boolean, error: string, gh: boolean) => void,
+  setBusy: (busy: boolean, error: string) => void,
 ): Promise<void> {
   const it = entry.item;
   if (!it || inflight.has(entry.key)) return;
   inflight.add(entry.key);
-  setBusy(true, '', false);
+  setBusy(true, '');
   sending.set(entry.key, it);
   inbox.setPending(entry.key, true);
   const r = await api<{ action?: string; invalid_target?: boolean }>('POST', itemPath(it, verb), body);
@@ -167,7 +171,7 @@ async function act(
     forgetItemState(entry.key); // the fold needs none of it, and a reused name and id must start fresh
   } else {
     inbox.setPending(entry.key, false);
-    setBusy(false, r.error, r.status === 502 || r.status === 503);
+    setBusy(false, r.error);
   }
   refresh();
 }
@@ -178,17 +182,42 @@ export function submitReview(entry: Entry, event: string): Promise<void> {
     'submit',
     { event, edited: opened.has(entry.key) },
     (d) => (d.action === 'gone' ? 'Review no longer pending on GitHub' : `Review submitted: ${event}`),
-    (busy, error, gh) => editReview(entry.key, { busy, error, gh }),
+    (busy, error) => editReview(entry.key, { busy, error }),
   );
 }
 
-export function discardReview(entry: Entry, forget = false): Promise<void> {
+export function discardReview(entry: Entry): Promise<void> {
   return act(
     entry,
     'discard',
-    forget ? { forget: true } : undefined,
-    (d) => (forget ? 'Removed from the inbox' : d.invalid_target ? 'Review removed from the inbox; nothing changed on GitHub' : d.action === 'gone' ? 'Review no longer pending on GitHub' : 'Review discarded'),
-    (busy, error, gh) => editReview(entry.key, { busy, error, gh }),
+    undefined,
+    (d) => (d.invalid_target ? 'Review removed from the inbox; nothing changed on GitHub' : d.action === 'gone' ? 'Review no longer pending on GitHub' : 'Review discarded'),
+    (busy, error) => editReview(entry.key, { busy, error }),
+  );
+}
+
+// ---- removing any item ----
+
+// "Remove from inbox" on an item: asked once, then sent. The ship never gets an answer, and it is not resumed.
+export interface RemoveUi {
+  confirm: boolean;
+  busy: boolean;
+  error: string;
+}
+const removals = signal<Record<string, RemoveUi>>({});
+const noRemoval: RemoveUi = { confirm: false, busy: false, error: '' };
+export const removalOf = (key: string): RemoveUi => removals.value[key] ?? noRemoval;
+export function editRemoval(key: string, patch: Partial<RemoveUi>): void {
+  removals.value = { ...removals.value, [key]: { ...removalOf(key), ...patch } };
+}
+
+export function removeItem(entry: Entry): Promise<void> {
+  return act(
+    entry,
+    'remove',
+    undefined,
+    () => 'Removed from the inbox',
+    (busy, error) => editRemoval(entry.key, { busy, error }),
   );
 }
 

@@ -226,6 +226,13 @@ func TestResumeOrderAddsNothingForReportsThatCannotResume(t *testing.T) {
 	refusedText, _, _ := w.resumeShip("res3d", "bad\u0001text https://github.com/acme/widgets/pull/12", []string{"q-4"}, "q-4")
 	w.answerQuestion(refusedText.Session, "q-4")
 
+	// A removed item was settled elsewhere: the ship is not resumed for it.
+	removed, _, _ := w.resumeShip("res3f", resumeText, []string{"q-6", "q-7"}, "q-6", "q-7")
+	w.answerQuestion(removed.Session, "q-6")
+	if code, resp := w.in.act(t, removed.Session, "q-7", "remove", nil); !ok2xx(code) {
+		t.Fatalf("removing q-7 = %d: %s", code, resp)
+	}
+
 	w.holdOrders("an order was added for a report that cannot resume", "orders")
 	if n := len(w.outcomesOf("resumed")); n != 0 {
 		t.Errorf("%d resumed records, want none", n)

@@ -50,8 +50,12 @@ const (
 
 // readReport is the report of session as the ship wrote it, nil when it is
 // missing or unusable.
-func (s *Service) readReport(session string) []byte {
-	root, err := os.OpenRoot(s.Home)
+func (s *Service) readReport(session string) []byte { return readReportFile(s.Home, session) }
+
+// readReportFile is the report of session under home as the ship wrote it, nil
+// when it is missing or unusable.
+func readReportFile(home, session string) []byte {
+	root, err := os.OpenRoot(home)
 	if err != nil {
 		return nil
 	}
@@ -123,8 +127,8 @@ func (s *Service) CaptureResumeFrom(session string, from Origin) {
 		if !idPattern.MatchString(id) {
 			return
 		}
-		if _, err := dir.Lstat(id + ".json"); err != nil || !Answered(dir, id) {
-			return
+		if _, err := dir.Lstat(id + ".json"); err != nil || !Answered(dir, id) || removed(dir, id) {
+			return // a removed item never resumes its ship
 		}
 	}
 	if s.ResumeTarget == nil || s.ResumeTarget() == nil {

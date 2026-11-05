@@ -87,7 +87,7 @@ A ship whose session cannot move until the engineer does: a question, an approva
 _Avoid_: alert, blocked, error
 
 **Inbox**:
-Everything waiting on the engineer in one queue, oldest first. An **item** is a file a ship wrote in its inbox directory (`$ADMIRAL_INBOX`): a question, a pending review or a set of finding cards. A **needs-you stop** is a ship that needs you right now; it shows in the inbox as a live entry and has no file. Answering an item writes an answer file beside it, and the item leaves the inbox. Say "finding card" for a card; items and ships are not cards.
+Everything waiting on the engineer in one queue, oldest first. An **item** is a file a ship wrote in its inbox directory (`$ADMIRAL_INBOX`): a question, a pending review or a set of finding cards. A **needs-you stop** is a ship that needs you right now; it shows in the inbox as a live entry and has no file. Answering an item writes an answer file beside it, and the item leaves the inbox. **Remove from inbox** takes an item out without answering it, for one the engineer settled in the ship's terminal. Say "finding card" for a card; items and ships are not cards.
 _Avoid_: notifications, tasks, card (for an item)
 
 **Anchored**:

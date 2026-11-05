@@ -338,12 +338,12 @@ func (s *Service) killShip(ctx context.Context, name string, keepInbox bool) err
 }
 
 // keepInbox records the ship, before its session goes, when its inbox holds an
-// item with no answer, and says whether it did. The inbox is looked at again
+// item it still waits for (inbox.Waiting), and says whether it did. The inbox is looked at again
 // once the record is down: an answer that landed in between has found no record
 // to clear.
 func (s *Service) keepInbox(sess sessionhost.Session) bool {
 	home, _, _, ok := s.shipFiles(sess.Name)
-	if !ok || !inbox.Unanswered(home, sess.Name) {
+	if !ok || !inbox.Waiting(home, sess.Name) {
 		return false
 	}
 	o := sess.Options
@@ -353,7 +353,7 @@ func (s *Service) keepInbox(sess sessionhost.Session) bool {
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: its inbox cannot be kept: %v\n", sess.Name, err)
 		return false
 	}
-	if !inbox.Unanswered(home, sess.Name) {
+	if !inbox.Waiting(home, sess.Name) {
 		_ = s.State.DropInbox(sess.Name)
 		return false
 	}

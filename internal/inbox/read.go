@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -202,14 +203,30 @@ func openShipDir(home, session string) (*os.Root, error) {
 	return dir, nil
 }
 
-// Unanswered is whether the session's inbox holds an item with no answer.
-func Unanswered(home, session string) bool {
+// Waiting is whether the inbox of a ship that has sailed off holds an item it
+// still waits for: an unanswered item the ship's report lists in `inbox`. With
+// no report, or a report without an `inbox` list, every unanswered item counts.
+// A ship that took its answer elsewhere (in its terminal) and lists nothing is
+// not kept for an answer it will never read.
+func Waiting(home, session string) bool {
 	dir, err := openShipDir(home, session)
 	if err != nil {
 		return false
 	}
 	defer dir.Close()
-	return len(scanShip(dir, session)) > 0
+	open := scanShip(dir, session)
+	var r struct {
+		Inbox *[]string `json:"inbox"`
+	}
+	if b := readReportFile(home, session); b == nil || json.Unmarshal(b, &r) != nil || r.Inbox == nil {
+		return len(open) > 0
+	}
+	for _, it := range open {
+		if slices.Contains(*r.Inbox, it.ID) {
+			return true
+		}
+	}
+	return false
 }
 
 // scan is the open items of every ship directory under home, oldest first. A
