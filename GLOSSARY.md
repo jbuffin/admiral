@@ -65,7 +65,7 @@ _Avoid_: configured skill, skill list
 
 **AdmiralBot**:
 A fleet's coordinator, which the engineer talks to in that fleet's chat from any device. It does no work itself: it reads Admiral and acts by launching ships, adding orders, answering inbox items and keeping its ledger, only on the engineer's instruction or a commitment they agreed to, and everything it writes is marked **via AdmiralBot**. Each fleet has its own, with a disposable context refilled from its brief. It is not a ship and takes no part in caps or resources. When it needs the engineer to choose, it asks a **chat question**, which stays in the chat and also shows in the Inbox while it waits.
-_Avoid_: assistant, chat ship, chat agent, background session
+_Avoid_: assistant, chat ship, chat agent, background session, handoff (say "a launch via AdmiralBot")
 
 **Ledger**:
 What a fleet's AdmiralBot remembers between resets: its commitments and notes. The engineer can read it and cancel any entry.
