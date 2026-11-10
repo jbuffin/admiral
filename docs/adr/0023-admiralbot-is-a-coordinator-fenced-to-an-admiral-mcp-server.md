@@ -29,12 +29,12 @@ Research for [#222](https://github.com/jbuffin/admiral/issues/222) found that ne
 
 ## Considered options
 
-- **An MCP server for every harness** (chosen). One typed interface, a fence each harness can enforce, and no shell at all. Typed tools also drop ADR 0020's heredoc line format and its 10,000-character limit.
-- **The `admiral` CLI with allow rules** (ADR 0020). It works on Claude Code, but Codex and Copilot can't be held to it.
+- **An MCP server for every harness** (chosen). One typed interface, a fence each harness can enforce, and no shell at all. Typed tools also drop [ADR 0020](0020-admiralbot-reaches-admiral-only-through-the-admiral-cli.md)'s heredoc line format and its 10,000-character limit.
+- **The `admiral` CLI with allow rules** ([ADR 0020](0020-admiralbot-reaches-admiral-only-through-the-admiral-cli.md)). It works on Claude Code, but Codex and Copilot can't be held to it.
 - **AdmiralBot doing work itself** (reading logs, editing code). It needs the tools the fence takes away, and its long-lived context would fill with the work. A ship does the work and its report comes back to the chat as a card.
 
 ## Consequences
 
-- This supersedes ADR 0020's interface and fence, and amends ADR 0018: AdmiralBot is per fleet, set on Preferences, and its writes go beyond adding an order. ADR 0020's chat question files keep their shape; `chat ask` becomes an MCP tool.
+- This supersedes [ADR 0020](0020-admiralbot-reaches-admiral-only-through-the-admiral-cli.md)'s interface and fence, and amends [ADR 0018](0018-the-chat-is-one-long-lived-session.md): AdmiralBot is per fleet, set on Preferences, and its writes go beyond adding an order. [ADR 0020](0020-admiralbot-reaches-admiral-only-through-the-admiral-cli.md)'s chat question files keep their shape; `chat ask` becomes an MCP tool.
 - **Unverified:** whether the harness login survives a separate `CODEX_HOME` or `COPILOT_HOME`, and whether the engineer's plugin MCP servers stay out. Codex and Copilot show greyed out for AdmiralBot, with the reason, until a real session proves each fence.
 - An MCP server is a second process per chat to start and keep in step with it.

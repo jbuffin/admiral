@@ -14,7 +14,7 @@ AdmiralBot lives for weeks ([ADR 0023](0023-admiralbot-is-a-coordinator-fenced-t
 - **Where it lives.** `$ADMIRAL_HOME/chat/<fleet>/ledger.jsonl`, an append-only event log (added, fired, done, cancelled) folded in memory, each event stamped via AdmiralBot or via the engineer. It has the shape of the outcome log ([ADR 0015](0015-outcomes-are-an-append-only-history-beside-tmux.md)).
 - **Instructions are not notes.** Each fleet's **instructions**, about 2,000 characters on Preferences, are the engineer's. AdmiralBot reads them and can never write them. Preferences also lists the notes; the engineer can delete one or promote it to the instructions.
 - **Commitments.** Written only on the engineer's instruction in the chat, and quoted back. A commitment has a trigger from a fixed list Admiral can observe (a ship sailed off or anchored, a PR merged or closed, an issue closed, a time, or none) and one action:
-  - **launch**: the full launch spec is stored when the commitment is made. When the trigger fires, the server runs it with no model turn, waiting for cap room and resources (ADR 0023).
+  - **launch**: the full launch spec is stored when the commitment is made. When the trigger fires, the server runs it with no model turn, waiting for cap room and resources ([ADR 0023](0023-admiralbot-is-a-coordinator-fenced-to-an-admiral-mcp-server.md)).
   - **remind**: the server posts a card into the chat.
   - A launch that can't run (the issue is closed, the dock was removed, a live ship holds the idempotency key) becomes a remind card that says why, and is marked done. A commitment never retries on its own. If its subject closes without the event (a PR closed unmerged, a ship dismissed), it is dropped with a card. One with no trigger, older than 14 days, shows once as a "still want this?" card. Nothing is dropped silently, and the engineer can cancel any commitment from the ledger list.
 - **The brief.** The server renders `chat/<fleet>/brief.md` on every change, under 10,000 characters, and a `SessionStart` hook loads it by reading the file. In priority order, cut from the bottom: the instructions; open commitments with ids and ages; AdmiralBot's waiting chat question; live ships it launched and ships in the fleet waiting on the engineer; active campaigns and routines, a line each; notes; the last six or so messages before the reset.
@@ -25,11 +25,11 @@ AdmiralBot lives for weeks ([ADR 0023](0023-admiralbot-is-a-coordinator-fenced-t
 ## Considered options
 
 - **A server-owned ledger with Admiral-decided resets** (chosen). Promises survive any reset, the context stays small and cheap, and the engineer can see and cancel what AdmiralBot has promised.
-- **One long chat with the harness's compaction** (ADR 0018). Nothing to build, but compaction decides what is kept, and a promise can vanish without anyone noticing.
+- **One long chat with the harness's compaction** ([ADR 0018](0018-the-chat-is-one-long-lived-session.md)). Nothing to build, but compaction decides what is kept, and a promise can vanish without anyone noticing.
 - **Notes and instructions in one list AdmiralBot writes.** Simpler, but AdmiralBot could then loosen its own guidance.
 
 ## Consequences
 
-- This amends ADR 0018: New chat is no longer the only reset, and visible history outlives it. It amends [ADR 0019](0019-the-chat-is-carried-by-its-transcript-and-tmux.md): the UI serves Admiral's conversation log, and `SessionStart` rehydrates from the brief.
+- This amends [ADR 0018](0018-the-chat-is-one-long-lived-session.md): New chat is no longer the only reset, and visible history outlives it. It amends [ADR 0019](0019-the-chat-is-carried-by-its-transcript-and-tmux.md): the UI serves Admiral's conversation log, and `SessionStart` rehydrates from the brief.
 - A commitment fires with no model turn, so a stored launch spec can go stale. It is checked when it fires and turns into a remind card when it can't run.
 - The flush is a model turn, so a reset costs one short turn.
