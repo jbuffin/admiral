@@ -1,6 +1,6 @@
 # 19. The chat is carried by its transcript and tmux
 
-Status: accepted
+Status: accepted, amended by [ADR 0024](0024-admiralbot-memory-is-a-server-owned-ledger.md) (the UI serves Admiral's conversation log, and `SessionStart` rehydrates from the brief)
 
 ## Context
 

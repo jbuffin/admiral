@@ -1,6 +1,6 @@
 # 18. The chat is one long-lived session
 
-Status: accepted
+Status: accepted, amended by [ADR 0023](0023-admiralbot-is-a-coordinator-fenced-to-an-admiral-mcp-server.md) (one AdmiralBot per fleet, set on Preferences, with more writes than adding an order) and [ADR 0024](0024-admiralbot-memory-is-a-server-owned-ledger.md) (Admiral decides resets, and visible history outlives New chat)
 
 ## Context
 

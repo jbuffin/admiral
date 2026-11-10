@@ -64,8 +64,27 @@ A skill the engineer starred, up to five, shown in launch orders after Commodore
 _Avoid_: configured skill, skill list
 
 **AdmiralBot**:
-The chat: one Claude Code session that Admiral keeps in its own tmux session, `_chat`, outside the ships, so the engineer can talk to it from any device. Every browser sees the same conversation. It is not a ship: it never shows in open water or the Ships list, and takes no part in caps, guards or resources. New chat clears it for every device. Open terminal shows its real terminal. Its model, effort and fleet come from the `chat` settings. It works through the `admiral` command line only (ADR 0020): it reads ships, outcomes, the inbox and the orders, and its only write is adding an order. When it needs the engineer to choose, it asks a **chat question**, which looks like an inbox question but stays in the chat. "The AdmiralBot skill" is a Claude Code project skill the chat loads, not a **Skill** a ship starts on.
-_Avoid_: assistant, chat ship, chat agent
+A fleet's coordinator, which the engineer talks to in that fleet's chat from any device. It does no work itself: it reads Admiral and acts by launching ships, adding orders, answering inbox items and keeping its ledger, only on the engineer's instruction or a commitment they agreed to, and everything it writes is marked **via AdmiralBot**. Each fleet has its own, with a disposable context refilled from its brief. It is not a ship and takes no part in caps or resources. When it needs the engineer to choose, it asks a **chat question**, which stays in the chat and also shows in the Inbox while it waits.
+_Avoid_: assistant, chat ship, chat agent, background session, handoff (say "a launch via AdmiralBot")
+
+**Ledger**:
+What a fleet's AdmiralBot remembers between resets: its commitments and notes. The engineer can read it and cancel any entry.
+_Avoid_: memory, log, history
+
+**Commitment**:
+A ledger entry for something AdmiralBot agreed in the chat to do or watch for: a launch or a reminder, run when its trigger fires (a ship sailed off, a PR merged, a time) or held as a plain to-do.
+_Avoid_: task, promise, job
+
+**Note**:
+A ledger entry for a fact the engineer told AdmiralBot to remember.
+
+**Instructions**:
+A fleet's standing guidance for its AdmiralBot, which the engineer writes on Preferences and AdmiralBot can only read. Not a standing order, which is a rule for ships started by outside events.
+_Avoid_: system prompt, rules
+
+**Brief**:
+The page AdmiralBot starts from after each reset: its instructions, open commitments, what is waiting and running, and the last few messages, drawn from the ledger and live state.
+_Avoid_: summary, context
 
 **Ship**:
 One running harness session, launched from a dock by the engineer or by autopilot, and run in its own tmux session (ADR 0002). Wooden hull, a stripe in its fleet color, the harness logo on its flag, a square bot as captain. Each ship has a generated name, unique among the ships that exist, that it keeps for life; the name carries no meaning.
@@ -91,7 +110,7 @@ A ship whose session cannot move until the engineer does: a question, an approva
 _Avoid_: alert, blocked, error
 
 **Inbox**:
-Everything waiting on the engineer in one queue, oldest first. An **item** is a file a ship wrote in its inbox directory (`$ADMIRAL_INBOX`): a question, a pending review or a set of finding cards. A **needs-you stop** is a ship that needs you right now; it shows in the inbox as a live entry and has no file. Answering an item writes an answer file beside it, and the item leaves the inbox. **Remove from inbox** takes an item out without answering it, for one the engineer settled in the ship's terminal. Say "finding card" for a card; items and ships are not cards.
+Everything waiting on the engineer in one queue, oldest first. An **item** is a file a ship wrote in its inbox directory (`$ADMIRAL_INBOX`): a question, a pending review or a set of finding cards. A **needs-you stop** is a ship that needs you right now; it shows in the inbox as a live entry and has no file. **AdmiralBot is waiting** is the other live entry: a fleet's open chat question, answered from Peek or in the chat. The inbox spans every fleet. Answering an item writes an answer file beside it, and the item leaves the inbox. **Remove from inbox** takes an item out without answering it, for one the engineer settled in the ship's terminal. Say "finding card" for a card; items and ships are not cards.
 _Avoid_: notifications, tasks, card (for an item)
 
 **Anchored**:
