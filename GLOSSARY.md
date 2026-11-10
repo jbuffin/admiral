@@ -174,6 +174,14 @@ _Avoid_: alert, blocked, error
 Everything waiting on the engineer in one queue, oldest first. An **item** is a file a ship wrote in its inbox directory (`$ADMIRAL_INBOX`): a question, a pending review or a set of finding cards. A **needs-you stop** is a ship that needs you right now; it shows in the inbox as a live entry and has no file. **AdmiralBot is waiting** is the other live entry: a fleet's open chat question, answered from Peek or in the chat. The inbox spans every fleet. Answering an item writes an answer file beside it, and the item leaves the inbox. **Remove from inbox** takes an item out without answering it, for one the engineer settled in the ship's terminal. Say "finding card" for a card; items and ships are not cards.
 _Avoid_: notifications, tasks, card (for an item)
 
+**Push**:
+The system notification Admiral sends to the engineer about something waiting on them.
+_Avoid_: notification (for an Inbox item)
+
+**Attention count**:
+The number of things waiting on the engineer across every fleet, shown in the tab title, as a favicon dot and as the app icon badge.
+_Avoid_: unread
+
 **Anchored**:
 A ship whose harness has exited with an error. It stays anchored, still in open water with a red mark, until the engineer dismisses it. A clean exit with an open PR moors the ship instead, and any other clean exit sails off and disappears.
 _Avoid_: docked, finished, done
