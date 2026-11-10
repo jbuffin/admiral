@@ -45,17 +45,13 @@ const tracker = (f: Flags, extra: Record<string, unknown> = {}, name = 'Tracker'
 });
 
 test.describe('S1: fresh install', () => {
-  test('one empty "Orders" panel with an Add order field', async ({ page, admiral }) => {
+  test('no source and no panel: the sidebar offers to add a source plugin', async ({ page, admiral }) => {
     await admiral.start();
     await page.goto(admiral.url);
 
     await expect(sidebar(page).getByRole('heading', { level: 2, name: 'Orders' })).toBeVisible();
-    await expect(sidebar(page).getByText('Drag a card onto a dock to launch')).toBeVisible();
-    const orders = panel(page, 'Orders');
-    await expect(orders).toBeVisible();
-    await countOf(orders, 0);
-    await expect(orders.getByRole('textbox', { name: 'Add order' })).toBeVisible();
-    await expect(orders.getByText('All hands deployed. Queue is clear.')).toBeVisible();
+    await expect(panel(page, 'Orders')).toHaveCount(0);
+    await expect(sidebar(page).getByRole('button', { name: 'Add source plugin' })).toBeVisible();
   });
 });
 

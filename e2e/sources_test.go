@@ -56,70 +56,45 @@ func (w *world) panelID(key string) string {
 	return s.Panels[0].ID
 }
 
-// S1: a fresh install has the freeform plugin written, the "orders" source in
-// config.json and one empty "Orders" panel.
+// waitUp waits until the server answers its plugins list: it has started and
+// written the plugin folders.
+func (w *world) waitUp() {
+	w.t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		code, body := send(w.t, http.MethodGet, w.in.LocalURL+"/api/plugins", nil)
+		if code == http.StatusOK && strings.Contains(body, `"github"`) {
+			return
+		}
+		if time.Now().After(deadline) {
+			w.t.Fatalf("within 10s GET /api/plugins never listed the plugins: %d %s", code, body)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// S1: a fresh install adds no source. The plugins are written and listed, and
+// the engineer adds a source to a fleet.
 func TestFreshInstall(t *testing.T) {
 	w := newWorld(t)
 	w.startFresh()
+	w.waitUp()
 
-	var man struct {
-		Name    string `json:"name"`
-		Command string `json:"command"`
+	for _, name := range embeddedPlugins {
+		var man struct {
+			Name    string `json:"name"`
+			Command string `json:"command"`
+		}
+		raw := w.readFile(filepath.Join(w.home, "plugins", name, "plugin.json"))
+		if err := json.Unmarshal([]byte(raw), &man); err != nil || man.Name != name || man.Command == "" {
+			t.Fatalf("plugins/%s/plugin.json must be a manifest named %s with a command, got %q (%v)", name, name, raw, err)
+		}
 	}
-	raw := w.readFile(filepath.Join(w.home, "plugins", "freeform", "plugin.json"))
-	if err := json.Unmarshal([]byte(raw), &man); err != nil || man.Name != "freeform" || man.Command == "" {
-		t.Fatalf("plugins/freeform/plugin.json must be a manifest named freeform with a command, got %q (%v)", raw, err)
+	if got := w.configSources(); len(got) != 0 {
+		t.Errorf("config.json sources = %v, want none on a fresh install", got)
 	}
-	want := map[string]any{"plugin": "freeform", "name": "Orders"}
-	if got := w.configSources()["orders"]; !reflect.DeepEqual(got, want) {
-		t.Errorf(`config.json sources.orders = %v, want %v (written through the write API on the first start)`, got, want)
-	}
-
-	s := w.waitSource("orders", 10*time.Second, "state ok", isOK)
-	if s.Name != "Orders" || s.Plugin != "freeform" {
-		t.Errorf("source = %s, want name Orders, plugin freeform", dump(s))
-	}
-	if !reflect.DeepEqual(sortedCopy(s.Capabilities), []string{"add", "edit", "remove"}) {
-		t.Errorf("freeform capabilities = %v, want add, edit, remove", s.Capabilities)
-	}
-	if len(s.Panels) != 1 || s.Panels[0].Title != "Orders" || len(s.Panels[0].Orders) != 0 {
-		t.Errorf(`freeform panels = %s, want one empty "Orders" panel`, dump(s.Panels))
-	}
-	if s.IconURL == "" {
-		t.Errorf("source has no icon_url")
-	}
-
-	code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/plugins", nil)
-	if code != http.StatusOK || !strings.Contains(body, `"freeform"`) {
-		t.Errorf("GET /api/plugins = %d %s, want 200 listing freeform", code, body)
-	}
-
-	// The GitHub plugin is written and listed too, and is not made a source.
-	var gh struct {
-		Name string `json:"name"`
-	}
-	raw = w.readFile(filepath.Join(w.home, "plugins", "github", "plugin.json"))
-	if err := json.Unmarshal([]byte(raw), &gh); err != nil || gh.Name != "github" {
-		t.Fatalf("plugins/github/plugin.json must be a manifest named github, got %q (%v)", raw, err)
-	}
-	var listed []struct {
-		Name  string `json:"name"`
-		Valid bool   `json:"valid"`
-	}
-	_ = json.Unmarshal([]byte(body), &listed)
-	if !slices.ContainsFunc(listed, func(p struct {
-		Name  string `json:"name"`
-		Valid bool   `json:"valid"`
-	}) bool {
-		return p.Name == "github" && p.Valid
-	}) {
-		t.Errorf("GET /api/plugins = %s, want github listed as valid", body)
-	}
-	if got := w.configSources(); len(got) != 1 {
-		t.Errorf("config.json sources = %v, want only orders: GitHub is a plugin to add, not a source", got)
-	}
-	if list := w.sources(); len(list) != 1 {
-		t.Errorf("GET /api/sources lists %s, want only orders", keysOf(list))
+	if list := w.sources(); len(list) != 0 {
+		t.Errorf("GET /api/sources lists %s, want none", keysOf(list))
 	}
 }
 
@@ -146,7 +121,7 @@ func TestFreshInstallLeavesWhatItShould(t *testing.T) {
 	t.Run("a sources key deleted by hand is not undone until the next start", func(t *testing.T) {
 		w := newWorld(t)
 		w.startFresh()
-		w.waitSource("orders", 10*time.Second, "state ok", isOK)
+		w.waitUp()
 		replaceConfig(t, w.home, `{"version":1,"fleets":{}}`)
 		w.waitSources(10*time.Second, "no sources after the hand edit", func(l []sourceJSON) bool { return len(l) == 0 })
 		time.Sleep(1500 * time.Millisecond)
@@ -155,13 +130,17 @@ func TestFreshInstallLeavesWhatItShould(t *testing.T) {
 		}
 		w.in.Stop()
 		w.startFresh()
-		w.waitSource("orders", 10*time.Second, "the orders source back after a start", isOK)
+		w.waitUp()
+		w.waitSources(5*time.Second, "no source after a start", func(l []sourceJSON) bool { return len(l) == 0 })
+		if got := w.readFile(configPath(w.home)); strings.Contains(got, `"orders"`) {
+			t.Errorf("a start added a source to a file without sources: %s", got)
+		}
 	})
 	for _, name := range embeddedPlugins {
 		t.Run("an edited "+name+" folder is left alone and a missing one is written again", func(t *testing.T) {
 			w := newWorld(t)
 			w.startFresh()
-			w.waitSource("orders", 10*time.Second, "state ok", isOK)
+			w.waitUp()
 			manifest := filepath.Join(w.home, "plugins", name, "plugin.json")
 			var m map[string]any
 			if err := json.Unmarshal([]byte(w.readFile(manifest)), &m); err != nil {
@@ -171,7 +150,7 @@ func TestFreshInstallLeavesWhatItShould(t *testing.T) {
 			writeJSON(t, manifest, m)
 			w.in.Stop()
 			w.startFresh()
-			w.waitSource("orders", 10*time.Second, "state ok", isOK)
+			w.waitUp()
 			if got := w.readFile(manifest); !strings.Contains(got, "edited by the engineer") {
 				t.Errorf("an edited %s folder was overwritten: %s", name, got)
 			}
@@ -180,7 +159,7 @@ func TestFreshInstallLeavesWhatItShould(t *testing.T) {
 				t.Fatal(err)
 			}
 			w.startFresh()
-			w.waitSource("orders", 10*time.Second, "state ok", isOK)
+			w.waitUp()
 			if got := w.readFile(manifest); got == "" || strings.Contains(got, "edited by the engineer") {
 				t.Errorf("a missing %s folder was not written again: %q", name, got)
 			}
@@ -244,7 +223,7 @@ func testPluginUpgrade(t *testing.T, name string) {
 		}
 		writeOld(t, w, old, withFinder)
 		w.startFresh()
-		w.waitSource("orders", 10*time.Second, "state ok", isOK)
+		w.waitUp()
 		dir := filepath.Join(w.home, "plugins", name)
 		if got := w.readFile(filepath.Join(dir, "plugin.json")); strings.Contains(got, "an older copy") {
 			t.Errorf("an unedited older "+name+" folder was not replaced: %s", got)
