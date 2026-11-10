@@ -1,6 +1,6 @@
 # 20. AdmiralBot reaches Admiral only through the admiral CLI
 
-Status: accepted
+Status: superseded by [ADR 0023](0023-admiralbot-is-a-coordinator-fenced-to-an-admiral-mcp-server.md)
 
 ## Context
 
