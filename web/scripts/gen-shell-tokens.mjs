@@ -68,3 +68,18 @@ ${dark.map((l) => `  ${l}`).join('\n')}
 }
 `;
 writeFileSync(join(root, 'src', 'app', 'shell-tokens.css'), css);
+
+// What CSS can't give the shell: the sequence length (to wrap color_index) and the
+// placeholder letters as real text.
+const placeholders = Object.fromEntries(
+  Object.entries(tokens.harness)
+    .filter(([k, v]) => v && typeof v === 'object' && 'placeholder' in v)
+    .map(([k, v]) => [k, v.placeholder]),
+);
+writeFileSync(
+  join(root, 'src', 'app', 'shell-tokens.ts'),
+  `// Generated from designs/redesign/tokens.json by scripts/gen-shell-tokens.mjs. Do not edit.
+export const FLEET_COUNT = ${tokens.fleet.sequence.length};
+export const HARNESS_PLACEHOLDERS: Record<string, string> = ${JSON.stringify(placeholders)};
+`,
+);

@@ -5,7 +5,7 @@
   "scripts": {
     "test": "vitest run",
     "e2e": "playwright test",
-    "dev": "vite",
+    "dev": "node scripts/gen-tokens.mjs && node scripts/gen-shell-tokens.mjs && vite",
     "build": "node scripts/gen-tokens.mjs && node scripts/gen-shell-tokens.mjs && vite build",
     "typecheck": "node scripts/gen-tokens.mjs && node scripts/gen-shell-tokens.mjs && tsc --noEmit"
   },

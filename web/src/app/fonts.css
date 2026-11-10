@@ -1,0 +1,16 @@
+/* Latin WOFF2 subset from @fontsource, bundled so the UI never asks another host. Licence: public/licenses/.
+   Inter is not bundled yet (the registry refused @fontsource-variable/inter), so --font-body falls back to system-ui. */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('../../node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url('../../node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-600-normal.woff2') format('woff2');
+}

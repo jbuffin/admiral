@@ -56,6 +56,13 @@ This file holds the package map, API routes and ship statuses, idle memory figur
 
 The redesigned UI is a second Vite entry: `web/app/index.html` builds to `dist/app/index.html`, with hashed assets in the shared `dist/assets/`, and its source is `web/src/app/`. `serveUI` serves `app/index.html` for `/app` and any extensionless path under `/app/`; everything else keeps the old fallback to the root `index.html`, so `/` stays the old UI. `vite dev` does the same through the `app-shell-fallback` middleware in `web/vite.config.ts`. `web/scripts/gen-shell-tokens.mjs` writes the gitignored `web/src/app/shell-tokens.css` from `designs/redesign/tokens.json` (`gen-tokens.mjs` and `src/tokens.css` for the old UI are unchanged). `npm run build` and `typecheck` run both.
 
+The shell's modules are in `web/src/app/`: `api.ts` (the only place that builds `/api/v1` URLs), `router.ts` (History API routing), `fleets.ts` (the active fleet), `Flag.tsx` (harness flag), `FleetSwitcher.tsx` and `Shell.tsx` (layout). The generator also writes the gitignored `shell-tokens.ts` (the fleet sequence length and the harness placeholder letters), and `npm run dev` runs both generators first.
+
+- Routes: `/app/inbox`, `/app/ships`, `/app/chat`, `/app/campaigns`, `/app/routines`, `/app/crew`, `/app/preferences`. `/app`, `/app/` and unknown paths redirect to `/app/inbox` with `replaceState`, keeping the query.
+- Active fleet: `?fleet=<key>`, kept across navigation. Without it, the last choice (`localStorage` key `admiral.app.fleet`), then the first fleet; an unknown key falls back the same way. Inbox and Preferences name no fleet.
+- Phone (up to 640px wide): a header with the fleet switcher (a sheet) and the surface title, and a bottom tab bar of Inbox, Chat, Ships and More. More opens a sheet with Campaigns, Routines, Crew and Preferences. Wider screens, iPad portrait included, show the 248px sidebar.
+- Harness flags load `/api/v1/logos/<harness>` as an `<img>` and show the placeholder letters when it 404s. Logos are never inlined.
+
 ## Idle memory
 
 One fleet, the Orders source, no ships, on an M-series Mac (macOS 27, Go 1.26, tmux 3.7c, python 3.14), resident set size from `ps -o rss`:
