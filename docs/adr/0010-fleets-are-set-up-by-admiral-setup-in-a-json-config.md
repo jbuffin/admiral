@@ -1,6 +1,6 @@
 # 10. Fleets are set up by `admiral setup` in a JSON config
 
-Status: accepted
+Status: accepted, amended below (sources belong to a fleet, fleets gain `owners` and `clone_root`, and the config migrates itself at startup)
 
 ## Context
 
@@ -33,3 +33,17 @@ Follow Commodore Launcher's configuration model, adapted to fleets ([How the eng
 - The engineer who knows Commodore Launcher recognises the commands, flags and error codes; its profiles are not imported (ADR 0003).
 - A configured skill list is gone: favorites replace it, and launch orders always offers Commodore first. A Commodore the skill index cannot find is shown disabled ("Commodore not found") and cannot launch.
 - Admiral's data dir is `~/.admiral/` too (ADR 0012).
+
+## Amendment (2026-11-10)
+
+From [Grilling: how do order sources work per fleet, with GitHub built in?](https://github.com/jbuffin/admiral/issues/227) ([ADR 0006](0006-order-sources-are-subprocess-plugins.md)):
+
+- **Sources belong to a fleet.** `sources` stays top-level and written by the UI, and each entry has a required `fleet`. Built-in GitHub is a source with `"type": "github"`, one per fleet. The autopilot entry's `fleet` field goes, since a view's fleet is its source's; [#240](https://github.com/jbuffin/admiral/issues/240) later removed the panel autopilot entries altogether.
+- **Two new fleet fields.** `owners` lists the orgs and user accounts whose GitHub repos route to the fleet. `clone_root` is where a missing repo is cloned on launch, by default the fleet's first search root ([ADR 0009](0009-ships-run-in-a-checkout-picked-from-the-fleets-search-roots.md)).
+
+From [Grilling: how does the redesign roll out, and how do today's sources migrate?](https://github.com/jbuffin/admiral/issues/247), **the config migrates itself at startup**, in the first release whose server needs it, whatever the state of the new UI. It writes `config.json.pre-<version>` first, is safe to run twice, and posts one Inbox item saying what changed. The release notes say so too.
+
+- **GitHub.** Each fleet gets a built-in GitHub source with the default views. Each custom panel query from the old global `github` plugin (anything beyond Assigned to me and Review requested) is copied as a custom view onto every fleet. Routing then shows each fleet only its share, so nothing is lost or shown twice; empty views can be deleted by hand.
+- **Other plugin sources** go to the default fleet and can be moved in Settings.
+- **Freeform.** The text of pending orders goes into the migration's Inbox item, and then they are removed. Nothing becomes a launch or a commitment on its own.
+- **`state.json`.** Ship positions and paused autopilot panels are deleted with the old UI, or with the server change that retires them. Each fleet's last-used directories and the kept inbox records stay.

@@ -1,6 +1,6 @@
 # 12. Ships live in tmux, and everything else in `~/.admiral/`
 
-Status: accepted
+Status: accepted, amended by [ADR 0028](0028-a-ship-with-an-open-pr-moors-and-relaunches-for-each-feedback-round.md) (the moored-ship file, which reserves the ship's name while it has no tmux session)
 
 ## Context
 

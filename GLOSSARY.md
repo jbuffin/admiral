@@ -72,16 +72,38 @@ A standing order in the engineer's own words that the reviewer judges before a l
 A standing order in the engineer's own words that Admiral adds to a worker-launched ship's prompt as advice.
 
 **Order source**:
-One configured instance of a plugin that supplies orders: a freeform list the engineer writes first, then GitHub issues and PRs, Jira, Linear and others. The same plugin can be added as more than one source, such as two GitHub accounts. Sources belong to Admiral, not to a fleet. Each source contributes one or more panels.
+Where a fleet's orders come from. GitHub is built in, one per fleet; other trackers, such as Jira or Linear, are plugins. Every source belongs to exactly one fleet, and there is no freeform list.
 _Avoid_: task source, provider, integration, feed
 
-**Panel**:
-A collapsible group of orders in the sidebar. Each panel belongs to one order source.
-_Avoid_: column, list
+**View**:
+A named list of orders from one source, such as GitHub's Assigned to me, Review requested and My PRs, or a custom search.
+_Avoid_: panel, column, list
+
+**Campaign**:
+A parent GitHub issue Admiral follows as one effort through its tree of children. Admiral reads the tree and launches from it, and never writes to it.
+
+**Ready**:
+A campaign child that can start now: open, with every blocker closed, nobody assigned and no live ship holding Admiral's claim on it.
+
+**With you** / **Without you**:
+A campaign child's mode: whether its ship needs the engineer at hand. With-you children start one at a time per fleet; Without-you children can start on their own.
+_Avoid_: AFK, HITL, unattended
+
+**Slice**:
+Several ready Without-you children of a campaign launched as one Commodore ship, which carries them as one stack of PRs.
 
 **Fleet**:
 A named setup such as Work Fleet or Home Fleet. It decides which harnesses its docks run and, for each, the executable, configuration directory and environment, so work and personal setups never mix. Fleets come only from Admiral's configuration, which the engineer sets up with Admiral's setup.
 _Avoid_: profile, workspace, account, group
+
+**Project**:
+A GitHub repo a fleet owns because it is checked out under the fleet's search roots, so the repo's issues and PRs show in that fleet.
+
+**Owner**:
+An org or user account a fleet claims, so its repos route to that fleet when no fleet has them as a project.
+
+**Default fleet**:
+The first fleet in the configuration, which takes the GitHub items no project or owner matches.
 
 **Fleet color**:
 The color that identifies a fleet everywhere: its marina sign, the stripe on each of its ships and crew boats, and the launch orders header.
@@ -126,7 +148,7 @@ The page AdmiralBot starts from after each reset: its instructions, open commitm
 _Avoid_: summary, context
 
 **Ship**:
-One running harness session, launched from a dock by the engineer or by autopilot, and run in its own tmux session (ADR 0002). Wooden hull, a stripe in its fleet color, the harness logo on its flag, a square bot as captain. Each ship has a generated name, unique among the ships that exist, that it keeps for life; the name carries no meaning.
+One harness session and the identity that outlives it, launched by the engineer, a routine or AdmiralBot, and run in its own tmux session (ADR 0002). Wooden hull, a stripe in its fleet color, the harness logo on its flag, a square bot as captain. Each ship has a generated name, unique among the ships that exist, that it keeps for life; the name carries no meaning. A ship that opened a PR stays with it through review: between rounds it is moored, with no session running.
 _Avoid_: boat (for the lead), agent, card
 
 **Crew boat**:
@@ -153,8 +175,19 @@ Everything waiting on the engineer in one queue, oldest first. An **item** is a 
 _Avoid_: notifications, tasks, card (for an item)
 
 **Anchored**:
-A ship whose harness has exited. A clean exit sails off and disappears; a ship whose harness exited with an error stays anchored, still in open water with a red mark, until the engineer dismisses it.
+A ship whose harness has exited with an error. It stays anchored, still in open water with a red mark, until the engineer dismisses it. A clean exit with an open PR moors the ship instead, and any other clean exit sails off and disappears.
 _Avoid_: docked, finished, done
+
+**Moored**:
+A ship carrying an open PR whose harness isn't running, waiting for feedback. It sails off when every PR it carries is merged or closed.
+_Avoid_: parked, sleeping, docked, idle
+
+**Feedback round**:
+One wake of a moored ship, under the same name, to answer the feedback since the last round.
+_Avoid_: review round (Commodore's own review pass)
+
+**Admiral report**:
+What a ship's skill leaves for Admiral at the end of every round, its first build and each feedback round: the result, its PRs and the issues each closes, the crew members it used, and the text that resumes it. Never the transcript.
 
 **Bridge**:
 The attached-terminal view that opens when the engineer taps a ship: the session's live terminal, which the engineer types into directly, the flotilla, and key buttons on touch devices.

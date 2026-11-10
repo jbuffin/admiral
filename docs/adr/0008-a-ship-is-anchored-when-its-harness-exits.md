@@ -1,6 +1,6 @@
 # 8. A ship is anchored when its harness exits
 
-Status: accepted
+Status: accepted, amended by [ADR 0028](0028-a-ship-with-an-open-pr-moors-and-relaunches-for-each-feedback-round.md) (a clean exit with an open PR moors instead of sailing off, and a merged or closed PR ends a ship)
 
 ## Context
 

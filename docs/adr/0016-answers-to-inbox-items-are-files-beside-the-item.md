@@ -1,6 +1,6 @@
 # 16. Answers to inbox items are files beside the item
 
-Status: accepted
+Status: accepted, amended by [ADR 0028](0028-a-ship-with-an-open-pr-moors-and-relaunches-for-each-feedback-round.md) (Ready to merge is a live Inbox entry with no file)
 
 ## Context
 
