@@ -2,6 +2,7 @@ import type { Locator, Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, header, isTouch, test } from './sea';
+import type { Admiral } from './fixtures';
 import { World, sidebar } from './world';
 
 // Autopilot in the UI (#114, u3). The names below are the contract the UI is built to:
