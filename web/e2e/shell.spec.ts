@@ -107,7 +107,7 @@ test.describe('the new shell at /app/', () => {
     await page.goto(admiral.url + 'app?fleet=zulu');
     await expect(page).toHaveURL(/\/app\/inbox\?(.*&)?fleet=zulu/);
     await page.goBack();
-    await expect(page).not.toHaveURL(/\/app\/inbox/);
+    await expect(page).not.toHaveURL(/fleet=zulu/);
   });
 
   test('an unknown fleet key falls back to the first fleet; the choice is remembered', async ({ page, admiral }) => {

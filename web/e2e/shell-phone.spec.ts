@@ -24,7 +24,7 @@ test.describe('the new shell on the phone', () => {
     await expect(page.getByRole('main')).toContainText(WORK);
 
     // Tapping the fleet name opens the sheet.
-    const trigger = page.locator('[aria-haspopup="dialog"]');
+    const trigger = page.getByRole('banner').locator('[aria-haspopup="dialog"]');
     await expect(trigger).toContainText(WORK);
     await trigger.tap();
     const sheet = page.getByRole('dialog', { name: 'Fleets' });
