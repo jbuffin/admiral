@@ -4,14 +4,11 @@
 package launcher
 
 import (
-	"context"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -19,16 +16,9 @@ import (
 
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/repofinder"
+	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/skillindex"
 )
-
-// maxCommand keeps one tmux invocation under the size tmux's client protocol
-// carries in a single message (16 KiB).
-const maxCommand = 12000
-
-// maxMessage is what one tmux client message holds; the harness's command line
-// goes in a single one (respawn-pane), so a longer one cannot be launched.
-const maxMessage = 15000
 
 // Request is what the UI sends to launch a ship.
 type Request struct {
@@ -201,8 +191,8 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		argv = appendPrompt(argv, prompt, req.dockLaunch())
 	}
 	env := l.shipEnv(dock)
-	if n := commandSize(argv); n > maxMessage {
-		return nil, refuse(http.StatusBadRequest, "the order is too long to launch: its command line is %d bytes and tmux carries at most %d", n, maxMessage)
+	if n := sessionhost.CommandSize(argv); n > sessionhost.MaxMessage {
+		return nil, refuse(http.StatusBadRequest, "the order is too long to launch: its command line is %d bytes and tmux carries at most %d", n, sessionhost.MaxMessage)
 	}
 
 	l.mu.Lock()
@@ -326,14 +316,6 @@ func hasControl(s string) bool {
 // controls and the line and paragraph separators.
 func isControl(r rune) bool {
 	return r < 0x20 || (r >= 0x7f && r <= 0x9f) || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069) || r == 0x2028 || r == 0x2029
-}
-
-func commandSize(argv []string) int {
-	n := 0
-	for _, a := range argv {
-		n += len(a) + 1
-	}
-	return n
 }
 
 // skillName is the skill's name without its / or $ prefix; "" for Just launch
@@ -471,15 +453,13 @@ func (l *Launcher) shipContract(env map[string]string, session string) error {
 // tmux server yet means nothing is in use; any other error stops the launch,
 // since a name in use would end with a clash.
 func (l *Launcher) pickName() (string, error) {
-	out, err := l.run("list-sessions", "-F", "#{session_name}\x1f#{@admiral-name}")
-	if err != nil && !strings.Contains(out, "no server running") && !strings.Contains(out, "error connecting") {
-		return "", refuse(http.StatusInternalServerError, "tmux could not list its sessions: %s", strings.TrimSpace(out))
+	rows, err := l.server().SessionRows()
+	if err != nil {
+		return "", refuse(http.StatusInternalServerError, "tmux could not list its sessions: %s", err)
 	}
 	sessions, shipNames := map[string]bool{}, map[string]bool{}
-	for _, row := range strings.Split(out, "\n") {
-		if s, n, ok := strings.Cut(row, "\x1f"); ok {
-			sessions[s], shipNames[n] = true, true
-		}
+	for _, r := range rows {
+		sessions[r[0]], shipNames[r[1]] = true, true
 	}
 	return pickName(taken(shipNames, sessions, l.Kept)), nil
 }
@@ -503,121 +483,16 @@ func (l *Launcher) create(session, dir string, opts [][2]string, env map[string]
 // exits (a ship is anchored, ADR 0008) and rings the bell flag. The chat's does not,
 // so its session ends with Claude (ADR 0019).
 func (l *Launcher) createSession(session, dir string, opts [][2]string, env map[string]string, unset, argv []string, anchor bool) error {
-	target := "=" + session + ":" // "=" matches the name exactly; tmux wants the colon
-	pane := target
-	cdir := strings.ReplaceAll(dir, "#", "##") // tmux format-expands -c; ## is a literal #
-	cmds := [][]string{{"set-option", "-t", target, "history-limit", "10000"}}
-	if anchor {
-		cmds = append(cmds, []string{"set-option", "-p", "-t", pane, "remain-on-exit", "on"},
-			[]string{"set-option", "-w", "-t", pane, "monitor-bell", "on"})
+	err := l.server().StartSession(sessionhost.SessionSpec{Name: session, Dir: dir, Options: opts, Env: env, Unset: unset, Argv: argv, Anchor: anchor})
+	var limit *sessionhost.LimitError
+	if errors.As(err, &limit) {
+		return refuse(http.StatusBadRequest, "%s", limit.Msg)
 	}
-	for _, o := range opts {
-		cmds = append(cmds, []string{"set-option", "-t", target, "@admiral-" + o[0], o[1]})
-	}
-	for _, k := range unset {
-		// -r, not -u: -u would fall back to the server's own environment.
-		cmds = append(cmds, []string{"set-environment", "-r", "-t", target, k})
-	}
-	keys := make([]string, 0, len(env))
-	for k := range env {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		c := []string{"set-environment", "-t", target, k, env[k]}
-		if n := commandSize(c); n > maxMessage {
-			return refuse(http.StatusBadRequest, "environment variable %s is too long to launch: %d bytes and tmux carries at most %d", k, n, maxMessage)
-		}
-		cmds = append(cmds, c)
-	}
-	cmds = append(cmds, append([]string{"respawn-pane", "-k", "-t", pane, "-c", cdir, "--"}, argv...))
-
-	// The session is made on its own, so a failure here (the name taken, say)
-	// never kills a session that was not ours.
-	if out, err := l.run("new-session", "-d", "-s", session, "-c", cdir, "--", "tail", "-f", "/dev/null"); err != nil {
-		return refuse(http.StatusInternalServerError, "tmux could not create the ship's session: %s", strings.TrimSpace(out))
-	}
-	// A pane's PATH is the one of the tmux client that spawns it, whatever the
-	// session environment says, so that client runs with the ship's PATH.
-	for _, batch := range batches(cmds) {
-		if out, err := l.runWith(env["PATH"], batch...); err != nil {
-			_, _ = l.run("kill-session", "-t", target)
-			return refuse(http.StatusInternalServerError, "tmux could not start the ship: %s", strings.TrimSpace(out))
-		}
+	if err != nil {
+		return refuse(http.StatusInternalServerError, "%s", err)
 	}
 	return nil
 }
 
-// batches joins commands with ";" into tmux invocations that fit maxCommand.
-func batches(cmds [][]string) [][]string {
-	var out [][]string
-	var cur []string
-	size := 0
-	for _, c := range cmds {
-		n := 0
-		for _, a := range c {
-			n += len(a) + 1
-		}
-		if len(cur) > 0 && size+n > maxCommand {
-			out = append(out, cur)
-			cur, size = nil, 0
-		}
-		if len(cur) > 0 {
-			cur = append(cur, ";")
-		}
-		for _, a := range c {
-			// An argument ending in ; would be read as a command separator.
-			if strings.HasSuffix(a, ";") {
-				a = strings.TrimSuffix(a, ";") + `\;`
-			}
-			cur = append(cur, a)
-		}
-		size += n
-	}
-	return append(out, cur)
-}
-
-// run executes the tmux binary on Admiral's socket with an argument list.
-func (l *Launcher) run(args ...string) (string, error) { return l.runWith("", args...) }
-
-// RunTmux runs the tmux binary on Admiral's socket, stripped of $TMUX like run,
-// for the commands (`admiral crew`) that drive a ship's windows.
-func (l *Launcher) RunTmux(args ...string) (string, error) { return l.run(args...) }
-
-// runCtx is run, ended with ctx.
-func (l *Launcher) runCtx(ctx context.Context, args ...string) (string, error) {
-	return l.runWithCtx(ctx, "", args...)
-}
-
-// runWith is run with PATH replaced, when path is not empty.
-func (l *Launcher) runWith(path string, args ...string) (string, error) {
-	return l.runWithCtx(context.Background(), path, args...)
-}
-
-// RunTmuxInput is RunTmux with input on tmux's stdin (load-buffer -) and ended
-// with ctx, so text never goes on a command line.
-func (l *Launcher) RunTmuxInput(ctx context.Context, input string, args ...string) (string, error) {
-	return l.runIn(ctx, "", strings.NewReader(input), args...)
-}
-
-func (l *Launcher) runWithCtx(ctx context.Context, path string, args ...string) (string, error) {
-	return l.runIn(ctx, path, nil, args...)
-}
-
-func (l *Launcher) runIn(ctx context.Context, path string, stdin io.Reader, args ...string) (string, error) {
-	// -u: without a UTF-8 locale tmux prints a format's \x1f as "_", and pickName
-	// then sees no session in use.
-	cmd := exec.CommandContext(ctx, l.Tmux, append([]string{"-u", "-f", "/dev/null", "-S", l.Socket}, args...)...)
-	for _, kv := range os.Environ() {
-		if strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_PANE=") || (path != "" && strings.HasPrefix(kv, "PATH=")) {
-			continue
-		}
-		cmd.Env = append(cmd.Env, kv)
-	}
-	if path != "" {
-		cmd.Env = append(cmd.Env, "PATH="+path)
-	}
-	cmd.Stdin = stdin
-	out, err := cmd.CombinedOutput()
-	return string(out), err
-}
+// server is Admiral's tmux, for the launches.
+func (l *Launcher) server() sessionhost.Server { return sessionhost.NewServer(l.Tmux, l.Socket) }

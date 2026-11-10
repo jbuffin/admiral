@@ -2,13 +2,15 @@ package sessionhost
 
 import (
 	"os/exec"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/jbuffin/admiral/internal/launcher"
 )
+
+// CrewName is what a crew boat's name may be (#72 story 3).
+var CrewName = regexp.MustCompile(`^[a-z0-9-]+$`)
 
 // ActivityOption is the pane option `admiral hook` stamps with the time of every
 // hook event (RFC 3339): a crew boat's last_activity.
@@ -100,7 +102,7 @@ func readCrew(rows []string, known map[string]bool) (map[string][]Crew, []string
 		}
 		tail := f[fixedFields+len(optionNames):]
 		key := f[0] + "\x00" + tail[0]
-		if !launcher.CrewName.MatchString(tail[0]) {
+		if !CrewName.MatchString(tail[0]) {
 			continue
 		}
 		if win, dup := seen[key]; dup {
@@ -116,7 +118,7 @@ func readCrew(rows []string, known map[string]bool) (map[string][]Crew, []string
 		}
 		c := Crew{Session: f[0], Name: tail[0], Harness: opt["harness"], Dir: opt["dir"], Launched: opt["launched"],
 			State: CrewState(f[1] == "1", f[6]), PaneID: tail[1], WindowID: tail[2]}
-		if launcher.CrewName.MatchString(tail[4]) { // option text is untrusted
+		if CrewName.MatchString(tail[4]) { // option text is untrusted
 			c.Role = tail[4]
 		}
 		if ValidCrewTranscriptPath(tail[5]) { // option text is untrusted

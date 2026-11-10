@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
 // skillText is the AdmiralBot skill (ADR 0020), written at every chat start.
@@ -66,14 +67,14 @@ func WriteChatSkill(home string) error {
 }
 
 // ChatSession is the chat's tmux session name; sessionhost.ChatName is this.
-const ChatSession = "_chat"
+const ChatSession = sessionhost.ChatName
 
 // The names (after @admiral-) of the session options that record how the chat
 // started; sessionhost spells them with the prefix.
 const (
-	ChatModelOpt  = "chat-model"
-	ChatEffortOpt = "chat-effort"
-	ChatFleetOpt  = "chat-fleet"
+	ChatModelOpt  = sessionhost.ChatModelOpt
+	ChatEffortOpt = sessionhost.ChatEffortOpt
+	ChatFleetOpt  = sessionhost.ChatFleetOpt
 )
 
 // ChatDir is the chat session's working directory, $ADMIRAL_HOME/chat: never a
@@ -175,14 +176,13 @@ func (l *Launcher) StartChat() error {
 			return refuse(http.StatusBadRequest, "%s contains a control character", o[0])
 		}
 	}
-	if n := commandSize(argv); n > maxMessage {
-		return refuse(http.StatusBadRequest, "the chat's command line is %d bytes and tmux carries at most %d", n, maxMessage)
+	if n := sessionhost.CommandSize(argv); n > sessionhost.MaxMessage {
+		return refuse(http.StatusBadRequest, "the chat's command line is %d bytes and tmux carries at most %d", n, sessionhost.MaxMessage)
 	}
 	// The tmux server's global ADMIRAL_* names: -r hides them from this session
 	// (-u would fall back to the server's). A server that isn't up yet has none.
-	if out, err := l.run("show-environment", "-g"); err == nil {
-		for _, line := range strings.Split(out, "\n") {
-			name := strings.TrimPrefix(strings.SplitN(line, "=", 2)[0], "-")
+	if globals, err := l.server().GlobalEnvNames(); err == nil {
+		for _, name := range globals {
 			if chatVar.MatchString(name) && name != "ADMIRAL_HOME" {
 				unset[name] = true
 			}

@@ -5,8 +5,14 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+)
 
-	"github.com/jbuffin/admiral/internal/launcher"
+// The names (after @admiral-) of the session options that record how the chat
+// started.
+const (
+	ChatModelOpt  = "chat-model"
+	ChatEffortOpt = "chat-effort"
+	ChatFleetOpt  = "chat-fleet"
 )
 
 // The pane options the chat session keeps (ADR 0019). The host's shared format
@@ -18,9 +24,9 @@ const (
 	// The chat's model, effort and fleet, set on the session when it starts (the
 	// launcher names them), so a restarted Admiral can tell whether New chat can
 	// clear the session or must restart it.
-	ChatModelOption  = Prefix + launcher.ChatModelOpt
-	ChatEffortOption = Prefix + launcher.ChatEffortOpt
-	ChatFleetOption  = Prefix + launcher.ChatFleetOpt
+	ChatModelOption  = Prefix + ChatModelOpt
+	ChatEffortOption = Prefix + ChatEffortOpt
+	ChatFleetOption  = Prefix + ChatFleetOpt
 )
 
 // ValidTranscriptPath is whether p is a path the chat may record or read, or a

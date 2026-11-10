@@ -6,18 +6,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
-	"time"
+
+	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
 // ErrCrewNameTaken is a crew name another crew boat of the ship already holds.
 var ErrCrewNameTaken = errors.New("crew name taken")
 
 // CrewName is what a crew boat's name may be (#72 story 3).
-var CrewName = regexp.MustCompile(`^[a-z0-9-]+$`)
+var CrewName = sessionhost.CrewName
 
 // CrewRequest is a teammate to launch in a ship's session. Harness is the
 // ship's own when empty.
@@ -67,13 +67,13 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	if err != nil {
 		return err
 	}
-	target := "=" + req.Session + ":"
+	srv := l.server()
 	shipOpt := func(name string) (string, error) {
-		out, err := l.run("show-options", "-qv", "-t", target, "@admiral-"+name)
+		v, err := srv.ShipOption(req.Session, name)
 		if err != nil {
-			return "", fmt.Errorf("no ship session %s: %s", req.Session, strings.TrimSpace(out))
+			return "", fmt.Errorf("no ship session %s: %w", req.Session, err)
 		}
-		return strings.TrimSpace(out), nil
+		return v, nil
 	}
 	fleetKey, err := shipOpt("fleet")
 	if err != nil {
@@ -155,91 +155,32 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 		command = append(command, "-u", k)
 	}
 	command = append(command, argv...)
-	if n := commandSize(command); n > maxMessage {
-		return fmt.Errorf("the prompt is too long to launch: its command line is %d bytes and tmux carries at most %d", n, maxMessage)
+	if n := sessionhost.CommandSize(command); n > sessionhost.MaxMessage {
+		return fmt.Errorf("the prompt is too long to launch: its command line is %d bytes and tmux carries at most %d", n, sessionhost.MaxMessage)
 	}
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	out, err := l.run("list-windows", "-t", target, "-F", "#{@admiral-crew-name}")
+	names, err := srv.CrewNames(req.Session)
 	if err != nil {
-		return fmt.Errorf("tmux could not list the windows of %s: %s", req.Session, strings.TrimSpace(out))
+		return fmt.Errorf("tmux could not list the windows of %s: %w", req.Session, err)
 	}
-	for _, n := range strings.Split(out, "\n") {
+	for _, n := range names {
 		if n == req.Name {
 			return fmt.Errorf("%w: %q is already a crew boat of this ship", ErrCrewNameTaken, req.Name)
 		}
 	}
-
-	cdir := strings.ReplaceAll(dir, "#", "##") // tmux format-expands -c; ## is a literal #
-	win, err := l.run("new-window", "-d", "-P", "-F", "#{window_id}", "-t", target, "-n", req.Name, "-c", cdir, "--", "tail", "-f", "/dev/null")
-	if err != nil {
-		return fmt.Errorf("tmux could not create the crew window: %s", strings.TrimSpace(win))
-	}
-	w := strings.TrimSpace(win)
-	cmds := [][]string{
-		{"set-option", "-w", "-t", w, "remain-on-exit", "on"},
-		{"set-option", "-w", "-t", w, "monitor-bell", "on"},
-		{"set-option", "-w", "-t", w, "automatic-rename", "off"},
-	}
-	opts := [][2]string{{"crew-name", req.Name}, {"harness", req.Harness}, {"dir", dir},
-		{"launched", time.Now().UTC().Format(time.RFC3339)}}
-	if req.Role != "" {
-		opts = append(opts, [2]string{"role", req.Role})
-	}
-	for _, o := range opts {
-		cmds = append(cmds, []string{"set-option", "-w", "-t", w, "@admiral-" + o[0], o[1]})
-	}
-	respawn := []string{"respawn-pane", "-k", "-t", w, "-c", cdir}
-	keys := make([]string, 0, len(env))
-	for k := range env {
-		if k != "PATH" { // the window's PATH is the spawning client's
-			keys = append(keys, k)
-		}
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		kv := k + "=" + env[k]
-		if len(kv) > maxMessage {
-			_, _ = l.run("kill-window", "-t", w)
-			return fmt.Errorf("environment variable %s is too long to launch", k)
-		}
-		respawn = append(respawn, "-e", kv)
-	}
-	cmds = append(cmds, append(append(respawn, "--"), command...))
-	for _, batch := range batches(cmds) {
-		if out, err := l.runWith(clientPath, batch...); err != nil {
-			_, _ = l.run("kill-window", "-t", w)
-			return fmt.Errorf("tmux could not start the crew boat: %s", strings.TrimSpace(out))
-		}
-	}
-	return nil
+	return srv.StartCrew(sessionhost.CrewSpec{Session: req.Session, Name: req.Name, Harness: req.Harness, Dir: dir,
+		Role: req.Role, Env: env, Command: command, ClientPath: clientPath})
 }
 
 // ErrCrewGone is CloseCrew's answer for a window that is already gone; the
 // error's text is tmux's own.
-var ErrCrewGone = errors.New("crew window is gone")
-
-type windowGone struct{ msg string }
-
-func (e windowGone) Error() string        { return e.msg }
-func (e windowGone) Is(target error) bool { return target == ErrCrewGone }
+var ErrCrewGone = sessionhost.ErrWindowGone
 
 // CloseCrew kills one crew boat's window by its tmux window id, and with it the
-// teammate's process; ctx bounds the kill. tmux never reuses a window id within
-// one server, so an id from a stale read can't close another boat's window.
-// `admiral crew close` and the server's close route both end here.
+// teammate's process; ctx bounds the kill. `admiral crew close` and the server's
+// close route both end here.
 func (l *Launcher) CloseCrew(ctx context.Context, windowID string) error {
-	out, err := l.runCtx(ctx, "kill-window", "-t", windowID)
-	if err == nil {
-		return nil
-	}
-	out = strings.TrimSpace(out)
-	if out == "" {
-		out = err.Error()
-	}
-	if strings.Contains(out, "can't find window") {
-		return windowGone{out}
-	}
-	return errors.New(out)
+	return l.server().KillWindow(ctx, windowID)
 }
