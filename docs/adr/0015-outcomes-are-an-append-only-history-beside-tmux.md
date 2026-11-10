@@ -1,6 +1,6 @@
 # 15. Outcomes are an append-only history beside tmux
 
-Status: accepted, amended by [ADR 0025](0025-outside-events-are-quarantined.md) (`launched` gains a `trigger` field, and a trigger log sits beside the outcome log), [ADR 0028](0028-a-ship-with-an-open-pr-moors-and-relaunches-for-each-feedback-round.md) (outcome events for moored, woken, round and merged) and [ADR 0029](0029-the-bridge-answers-simple-prompts-by-sending-the-harness-keys.md) (a `stopped` event when the engineer or AdmiralBot stops a ship)
+Status: accepted, amended by [ADR 0025](0025-outside-events-are-quarantined.md) (`launched` gains a `trigger` field, and a trigger log sits beside the outcome log), [ADR 0028](0028-a-ship-with-an-open-pr-moors-and-relaunches-for-each-feedback-round.md) (outcome events for moored, woken, round and merged), [ADR 0029](0029-the-bridge-answers-simple-prompts-by-sending-the-harness-keys.md) (a `stopped` event when the engineer or AdmiralBot stops a ship) and [ADR 0034](0034-autopilot-is-a-launch-mode-not-a-view-setting.md) (no retro count reads the log back), and on 2026-11-10 (the `usage` event, below)
 
 ## Context
 
@@ -46,3 +46,13 @@ Autopilot (rung 1 is [#113](https://github.com/jbuffin/admiral/issues/113)) need
   - A line cut short by a crash stays in the file, and the next record is appended onto it, so that record is lost too (it can be a retried `ended`). `admiral outcomes` skips the merged line, as it skips any line that is not a JSON object with a time and either a ship or one of the ship-less events.
 - `admiral outcomes` prints each stored line as it is. JSON escapes C0 controls (ESC included), `"`, `\`, `<`, `>`, `&` and U+2028/2029, so no 7-bit escape sequence reaches the terminal. C1 controls and bidirectional marks can pass through unescaped in `dir`, `order_url`, `order_id`, `panel` and `skill.name`; `report` can also hold DEL and invalid UTF-8. `title` has the bidi embedding, override and isolate controls (U+202A–202E, U+2066–2069) and U+2028/2029 stripped at launch (`orderTitle`), along with C0 and C1 controls, but not U+200E, U+200F or U+061C. `source`, `fleet`, `harness` and `reason` are restricted to ASCII, and `ship` is a `launcher.Slug` output for a ship Admiral launched. Use `jq -a` to view lines safely.
 - `admiral outcomes` skips a line over 7 MiB, which the writer cannot produce (a 1 MiB report grows at most about 6 MiB when escaped), so that is only a safety net for a damaged file.
+
+## Amendment (2026-11-10)
+
+[#246](https://github.com/jbuffin/admiral/issues/246) decided how usage is tracked, building on the research in [#245](https://github.com/jbuffin/admiral/issues/245). The outcome log gains a `usage` event.
+
+- **One `usage` record each time a harness process exits.** It carries the ship (or `_chat` for AdmiralBot), fleet, harness, tokens by class, money with its basis, and per-crew-boat totals.
+- **Money only where a harness reports it:** Claude's list-price estimate ("est. $") or Copilot's AI credits ("credits"). Codex records tokens and no money. Admiral keeps no price table, and never adds money across harnesses.
+- **A moored ship gets one record per feedback round,** so a ship that lives for days counts on the days it worked. AdmiralBot gets a record at each reset.
+- **Crew boats roll into their ship.** For Codex, Admiral sums them by `agent_id`; Claude and Copilot already include them.
+- **Live figures are never written.** Admiral reads them from the harness while it runs (Claude Code through a `statusLine` wrapper, Codex through its app-server, Copilot from `events.jsonl`). A fleet's daily total is today's `usage` records plus the live ships.

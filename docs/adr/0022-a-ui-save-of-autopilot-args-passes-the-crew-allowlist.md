@@ -1,6 +1,6 @@
 # 22. A UI save of autopilot args passes the crew allowlist
 
-Status: accepted
+Status: accepted, amended by [ADR 0034](0034-autopilot-is-a-launch-mode-not-a-view-setting.md) (the args checked are a routine's launch args, not a panel's autopilot args) and [ADR 0035](0035-harness-features-follow-probed-capabilities.md) (`AutopilotHarnesses` becomes the harnesses whose guard probe passed)
 
 ## Context
 

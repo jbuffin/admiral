@@ -10,6 +10,14 @@ Use these words in UI copy and in code alike.
 The agent CLI a session runs in: Claude Code, Codex CLI or GitHub Copilot CLI.
 _Avoid_: agent, CLI, tool
 
+**Capability**:
+Something a harness has been proven to do on this machine, which a feature needs before it turns on. A capability counts only once its probe passes, whatever the harness claims.
+_Avoid_: support, feature flag
+
+**Judge call**:
+A one-shot, tool-less model call Admiral makes for a decision: the Lookout, the reviewer, the filing drafter and the advisor.
+_Avoid_: worker turn
+
 **Skill**:
 What a session starts on, named in the harness's launch prompt with the order's text (`/commodore <text>` in Claude Code).
 
@@ -17,7 +25,7 @@ What a session starts on, named in the harness's launch prompt with the order's 
 The default skill: it plans the work, assembles a task force of teammates and sees it through to a merged PR. Admiral starts it like any other skill.
 
 **Order**:
-One item from an order source, shown as a card in the Orders sidebar, not yet launched: freeform text, a URL or anything else, handed to the chosen skill as it is. Launching an order puts a ship to sea, whether the engineer launches it or autopilot does.
+One item from an order source, shown as a card in the Orders sidebar, not yet launched: freeform text, a URL or anything else, handed to the chosen skill as it is. Launching an order puts a ship to sea, whether the engineer launches it or a routine or AdmiralBot does.
 _Avoid_: job, ticket, card (in code)
 
 **Label**:
@@ -25,11 +33,11 @@ A tag the order's tracker puts on it, such as `bug` or `P0`, shown on the order'
 _Avoid_: tag
 
 **Autopilot**:
-A panel setting that launches the panel's orders without the engineer, in the order the panel lists them. The panel names the fleet, skill and arguments its ships use. Autopilot launches only while two **caps** have room: the global cap on every ship underway or needing you, hand-launched ones included, and the panel's cap on those launched from that panel. It also launches an order only when every **resource** its panel names has a free unit and passes its check; otherwise the order waits for them. A paused panel launches nothing and leaves its running ships alone.
+The mode a ship is launched in when nobody is watching: low-stakes calls take the recommended default, high-stakes ones become Inbox questions, the guard holds, and it never merges. Every unattended launch uses it; a hand launch uses it only when the engineer ticks it.
 _Avoid_: auto-launch, bot
 
 **Resource**:
-A named thing with a capacity, such as a phone for on-device checks, that a panel's autopilot entry says its orders need. A resource has a number of **units** (its `capacity`, 1 by default), and an optional check that tells whether it is present. A ship that autopilot launched holds one unit of each resource its panel named while it is underway or needing you; a lock taken by hand holds one too. Autopilot launches an order only when every resource it needs has a free unit and passes its check, and the order waits for them until then. Ships launched by hand hold none.
+A named thing with a capacity, such as a phone for on-device checks, that a launch names as needed: a routine's launch, a commitment or the launch form. A resource has a number of **units** (its `capacity`, 1 by default), and an optional check that tells whether it is present. A ship holds one unit of each resource its launch named while it is underway or needing you; a lock taken by hand holds one too. An unattended launch waits until every resource it names has a free unit and passes its check. A hand launch holds none unless one is named.
 _Avoid_: device, lock (a lock is how a person holds a unit, not the resource), blocked
 
 **Routine**:
@@ -107,6 +115,18 @@ The first fleet in the configuration, which takes the GitHub items no project or
 
 **Fleet color**:
 The color that identifies a fleet everywhere: its marina sign, the stripe on each of its ships and crew boats, and the launch orders header.
+
+**Usage**:
+What a harness reports a session used: tokens and plan quota. All three harnesses report it.
+_Avoid_: cost, budget
+
+**Spend**:
+A money figure that a harness reports itself: Claude's list-price estimate or Copilot's AI credits. Admiral keeps no prices of its own and never adds spend across harnesses.
+_Avoid_: cost, budget
+
+**Quota hold**:
+A fleet's Limit that drops unattended launches to proposals while any plan window is above its line (90% by default), until the window resets. Hand launches and AdmiralBot acting on an instruction are never held.
+_Avoid_: cost, budget
 
 **Marina**:
 The harbor on the land side of the screen that belongs to one fleet. It holds one dock per harness the fleet allows.
