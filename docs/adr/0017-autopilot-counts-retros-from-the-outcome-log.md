@@ -1,6 +1,6 @@
 # 17. Autopilot counts retros from the outcome log
 
-Status: accepted
+Status: accepted, amended by [ADR 0025](0025-outside-events-are-quarantined.md) (routine runs and the circuit breaker are counted from the trigger log, not the outcome log)
 
 ## Context
 

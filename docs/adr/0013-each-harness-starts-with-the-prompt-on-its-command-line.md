@@ -1,6 +1,6 @@
 # 13. Each harness starts with the prompt on its command line
 
-Status: accepted
+Status: accepted, amended by [ADR 0026](0026-untrusted-work-runs-on-a-restricted-ship.md) (outside text for a worker-launched ship goes in `.admiral/untrusted/event.md`, never on the command line)
 
 ## Context
 

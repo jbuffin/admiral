@@ -1,6 +1,6 @@
 # 15. Outcomes are an append-only history beside tmux
 
-Status: accepted
+Status: accepted, amended by [ADR 0025](0025-outside-events-are-quarantined.md) (`launched` gains a `trigger` field, and a trigger log sits beside the outcome log)
 
 ## Context
 

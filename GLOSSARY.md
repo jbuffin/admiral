@@ -32,6 +32,45 @@ _Avoid_: auto-launch, bot
 A named thing with a capacity, such as a phone for on-device checks, that a panel's autopilot entry says its orders need. A resource has a number of **units** (its `capacity`, 1 by default), and an optional check that tells whether it is present. A ship that autopilot launched holds one unit of each resource its panel named while it is underway or needing you; a lock taken by hand holds one too. Autopilot launches an order only when every resource it needs has a free unit and passes its check, and the order waits for them until then. Ships launched by hand hold none.
 _Avoid_: device, lock (a lock is how a person holds a unit, not the resource), blocked
 
+**Routine**:
+The engineer's standing rule for one fleet: when a schedule or a source event fires, do an action, gated by **Before acting**. A scheduled run is the engineer's own act; a source event goes through the Lookout. It is never an order, a commitment or a standing order.
+_Avoid_: schedule, automation, cron job
+
+**Before acting**:
+A routine's setting for how far it may go on its own: Report only, Ask first or Act. It can only lower what the trigger tier and the fleet allow.
+
+**Trigger tier**:
+How far Admiral trusts an outside event, set by who caused it, from T0 (the engineer in Admiral) through T1 (the engineer's own verified chat account), T2 (allowlisted people and trackers, and the engineer's email) and T3 (strangers) to T4 (monitor alerts). An event's text is data, never instructions, unless its tier is T0 or T1.
+
+**Lookout**:
+The judge call that reads an outside event. It has no tools and no network, and returns only fixed fields and a short summary marked tainted, from which Admiral's code picks the action.
+_Avoid_: worker, worker turn
+
+**Trigger log**:
+A fleet's append-only record of every decision Admiral made on a routine or an outside event: tier, sender, rule, reviewer verdict, action and ship. It is not the ledger.
+
+**Restricted ship**:
+A ship launched from untrusted text that cannot send anything out: no push, no GitHub token, no web or MCP tools, and network only to package registries. It either investigates read-only or drafts a fix as local commits.
+
+**Promote**:
+Starting a new normal ship from a restricted ship's trigger-log record and local work, as the engineer's own act. Pushing and PRs start only here; the restricted session is never continued.
+
+**Hold fire**:
+A switch, per fleet or for all of Admiral, that sets every routine to propose only and leaves running ships alone. AdmiralBot or a message from the engineer's own chat account can turn it on; only the engineer in Admiral turns it off.
+
+**Standing order**:
+The engineer's per-fleet rule for work started by outside events, filed as a **Limit**, a **Check** or **Guidance**. It is never an order and never shows in the Orders sidebar.
+_Avoid_: rule, policy, permission
+
+**Limit**:
+A standing order that Admiral's code enforces: a confirmed setting from a fixed catalog, such as a ceiling, an allowlist, a rate, quiet hours or a skip filter.
+
+**Check**:
+A standing order in the engineer's own words that the reviewer judges before a launch.
+
+**Guidance**:
+A standing order in the engineer's own words that Admiral adds to a worker-launched ship's prompt as advice.
+
 **Order source**:
 One configured instance of a plugin that supplies orders: a freeform list the engineer writes first, then GitHub issues and PRs, Jira, Linear and others. The same plugin can be added as more than one source, such as two GitHub accounts. Sources belong to Admiral, not to a fleet. Each source contributes one or more panels.
 _Avoid_: task source, provider, integration, feed
