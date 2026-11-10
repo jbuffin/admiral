@@ -416,6 +416,19 @@ const (
 	testSourceFleet = "work"
 )
 
+// rawSourcesIn is rawSources for definitions that belong to the given fleet
+// unless they name another.
+func rawSourcesIn(fleet string, defs ...srcDef) string {
+	in := make([]srcDef, len(defs))
+	for i, d := range defs {
+		in[i] = d
+		if d.Fleet == "" {
+			in[i].Fleet = fleet
+		}
+	}
+	return rawSources(in...)
+}
+
 // inFleet gives every source in the map (key → source object) that names no
 // fleet this one, and returns the map. It is where a test source gets its fleet.
 func inFleet(fleet string, sources map[string]any) map[string]any {
@@ -536,12 +549,27 @@ func (w *world) addOrdersSource() {
 	if err := json.Unmarshal([]byte(w.readFile(configPath(w.home))), &cfg); err != nil {
 		w.t.Fatal(err)
 	}
-	cfg["sources"] = inFleet(testSourceFleet, w.ordersSource())
+	cfg["sources"] = inFleet(firstFleet(w.t, cfg), w.ordersSource())
 	b, err := json.Marshal(cfg)
 	if err != nil {
 		w.t.Fatal(err)
 	}
 	writeConfig(w.t, w.home, string(b))
+}
+
+// firstFleet is the first fleet key, in sorted order, of a config map.
+func firstFleet(t *testing.T, cfg map[string]any) string {
+	t.Helper()
+	fleets, _ := cfg["fleets"].(map[string]any)
+	keys := make([]string, 0, len(fleets))
+	for k := range fleets {
+		keys = append(keys, k)
+	}
+	if len(keys) == 0 {
+		t.Fatal("the config has no fleets for a source to belong to")
+	}
+	sort.Strings(keys)
+	return keys[0]
 }
 
 // startFresh starts Admiral on an empty ADMIRAL_HOME, as a first run.
