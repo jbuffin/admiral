@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/coder/websocket"
 	"github.com/jbuffin/admiral/internal/server"
@@ -197,6 +198,21 @@ type in struct {
 	API json.RawMessage `json:"api"`
 }
 
+// maxCloseReason is how many bytes a WebSocket close reason may hold (125 for the
+// frame's payload less the 2-byte code).
+const maxCloseReason = 123
+
+// cutAtRune shortens s to at most n bytes without splitting a rune.
+func cutAtRune(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
+}
+
 // supportedAPI reports whether a join's api field names a version this
 // server serves. Missing or null means 1; a string or a float is unsupported.
 func supportedAPI(raw json.RawMessage) bool {
@@ -261,9 +277,7 @@ func (s *Service) serveBridge(rw http.ResponseWriter, r *http.Request, session s
 		}
 		if m.Type == "join" && !supportedAPI(m.API) {
 			reason := "unsupported api version " + string(m.API)
-			if len(reason) > 120 {
-				reason = reason[:120]
-			}
+			reason = cutAtRune(reason, maxCloseReason)
 			ef, _ := json.Marshal(map[string]string{"type": "error", "error": reason})
 			_ = conn.Write(ctx, websocket.MessageText, ef)
 			_ = conn.Close(websocket.StatusPolicyViolation, reason)

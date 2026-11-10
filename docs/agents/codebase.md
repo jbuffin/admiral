@@ -37,7 +37,15 @@ This file holds the package map, API routes and ship statuses, idle memory figur
 
 - `/api/v1/...` and `/ws/v1/...` answer exactly as `/api/...` and `/ws/...` do: status, headers and body. `Handler()` in `internal/server/server.go` strips the `/v1` before routing, so a module registers its routes once, unversioned, and every route (current and future) has a v1 path. The strip sits inside `guard.Middleware`, so v1 gets the same access control, with no path-specific auth code.
 - `GET /api/version` (also `/api/v1/version`) returns `version`, `commit`, `api_versions` (`[1]`) and `capabilities`, with `Cache-Control: no-store`. It needs the same auth as the rest of the API.
-- `capabilities` is an array of strings naming the server features this build serves, one per module (`ships`, `sources`, `inbox`, `launch-orders`, `bridge`, `setup`, `resources`, `chat`), set in `cmd/admiral/main.go`. They are not harness capabilities (GLOSSARY.md, ADR 0035). Within v1 the list only grows.
+- `capabilities` is an array of strings naming the server features this build serves, set in `cmd/admiral/main.go`. Each entry names a feature group, not a module (the bridge module serves two, `bridge` and `setup`; the lock route has none). They are server features, not harness capabilities (GLOSSARY.md, ADR 0035). Within v1 the list only grows:
+  - `ships`: launch, list, move, dismiss and close crew boats on ships.
+  - `sources`: order sources, their panels and autopilot settings.
+  - `inbox`: the inbox items and their answers.
+  - `launch-orders`: launch orders, favorites and the launch dock's directory and skill lists.
+  - `bridge`: the bridge sockets on ships and crew boats.
+  - `setup`: the setup terminal's routes.
+  - `resources`: the resource units and their locks.
+  - `chat`: the chat session.
 - Bodies stay byte-identical, so a URL inside a body stays unversioned (`icon_url` in `/api/sources` and `/api/plugins` is `/api/plugins/<name>/icon`). Rewriting them is left to #258.
 - The bridge socket's `join` carries an optional `api` version; see `docs/bridge-protocol.md`.
 - v1 changes are additive only. The unversioned paths stay for the old UI until #276.

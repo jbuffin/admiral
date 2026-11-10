@@ -43,9 +43,10 @@ func TestAPIv1_MirrorsUnversionedRoutes(t *testing.T) {
 		{"GET", "/config", 200},
 		{"GET", "/ships", 200},
 		{"GET", "/sources", 200},
-		{"GET", "/does-not-exist", 404}, // the JSON catch-all
-		{"DELETE", "/ships", 404},       // a wrong method lands in the catch-all, not a 405
-		{"POST", "/ships", 400},         // an error body: the request is not valid JSON
+		{"GET", "/does-not-exist", 404},            // the JSON catch-all
+		{"DELETE", "/ships", 404},                  // a wrong method lands in the catch-all, not a 405
+		{"POST", "/ships", 400},                    // an error body: the request is not valid JSON
+		{"PUT", "/sources/k%2Fx/panel-order", 400}, // an encoded slash in a path value stays one segment
 	}
 	for _, r := range rows {
 		t.Run(r.method+" "+r.path, func(t *testing.T) {
@@ -197,7 +198,7 @@ func TestAPIv1_AccessParityOverTheLAN(t *testing.T) {
 
 // ---- the bridge socket (needs tmux and a live ship) ----
 
-// AC1 and AC3: a bridge joined on /ws/v1/bridge/<session> gets the join reply
+// AC1 and AC3: a bridge socket joined on /ws/v1/bridge/<session> gets the join reply
 // with "api":1 and with no api; an unsupported or wrong-typed api gets an
 // error frame and a 1008 close, on either path and on every join.
 func TestBridgeJoin_APIVersion(t *testing.T) {

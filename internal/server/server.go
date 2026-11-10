@@ -84,7 +84,14 @@ func stripV1(next http.Handler) http.Handler {
 			*r2 = *r
 			u := *r.URL
 			u.Path = root + rest
-			u.RawPath = ""
+			// Like http.StripPrefix: an encoded %2F in a path value must stay encoded.
+			if u.RawPath != "" {
+				if raw, ok := strings.CutPrefix(u.RawPath, root+"/v1"); ok {
+					u.RawPath = root + raw
+				} else {
+					u.RawPath = ""
+				}
+			}
 			r2.URL = &u
 			r = r2
 			break
