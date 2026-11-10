@@ -11,7 +11,7 @@ import (
 // that pane lives on, through $TMUX: a bare `tmux` found on the PATH the launcher
 // gave the ship, with no -S and no -f (ADR 0012). They need no socket path, no
 // Host and no running Admiral. The builders below return the argument list of
-// one tmux command; Join strings them into one call, and Write runs it.
+// one tmux command; Join strings them into one call, and WriteCurrent runs it.
 
 // CurrentDeadline bounds each read on the current server, so a stuck server
 // can't stall a hook (the final write has no deadline).
@@ -31,11 +31,14 @@ const (
 )
 
 // Join is the calls as one tmux invocation: tmux reads ";" between them as a
-// separator.
+// separator. An empty call is skipped.
 func Join(calls ...[]string) []string {
 	var out []string
-	for i, c := range calls {
-		if i > 0 {
+	for _, c := range calls {
+		if len(c) == 0 {
+			continue
+		}
+		if len(out) > 0 {
 			out = append(out, ";")
 		}
 		out = append(out, c...)
@@ -59,16 +62,16 @@ func UnsetPaneCall(pane, option string) []string {
 // permission:Bash survives Claude's PermissionRequest and Notification in either
 // order; -q keeps a set reason from making tmux skip the state write.
 func StateCall(pane, reason string, ifUnset bool, state string) []string {
-	call := []string{"set", "-p"}
+	reasonCall := []string{"set", "-p"}
 	switch {
 	case reason == "":
-		call = append(call, "-u", "-t", pane, ReasonOption)
+		reasonCall = append(reasonCall, "-u", "-t", pane, ReasonOption)
 	case ifUnset:
-		call = append(call, "-o", "-q", "-t", pane, ReasonOption, reason)
+		reasonCall = append(reasonCall, "-o", "-q", "-t", pane, ReasonOption, reason)
 	default:
-		call = append(call, "-t", pane, ReasonOption, reason)
+		reasonCall = append(reasonCall, "-t", pane, ReasonOption, reason)
 	}
-	return append(call, ";", "set", "-p", "-t", pane, StateOption, state)
+	return Join(reasonCall, SetPaneCall(pane, StateOption, state))
 }
 
 // CrewTranscriptCall records a crew boat's transcript path in its pane option,

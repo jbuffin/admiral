@@ -40,48 +40,32 @@ func Hook(args []string, std IO) error {
 			w = leadDecision(args[0], p, readCrewFacts(pane, now))
 		}
 		if w.state != "" {
-			call = append(append(call, ";"), hookCall(pane, w)...)
-			call = sessionhost.Join(call, sessionhost.UnsetPaneCall(pane, crewHeldOption))
+			call = sessionhost.Join(call,
+				sessionhost.StateCall(pane, w.reason, w.ifUnset, w.state),
+				sessionhost.UnsetPaneCall(pane, crewHeldOption))
 		}
 		if w.crewHeld {
 			call = sessionhost.Join(call, sessionhost.SetPaneCall(pane, crewHeldOption, "1"))
 		}
 		if w.flagLead != "" {
-			call = append(append(call, ";"), hookCall(w.flagLead, stopWrite)...)
-			call = sessionhost.Join(call, sessionhost.UnsetPaneCall(w.flagLead, crewHeldOption))
+			call = sessionhost.Join(call,
+				sessionhost.StateCall(w.flagLead, stopWrite.reason, stopWrite.ifUnset, stopWrite.state),
+				sessionhost.UnsetPaneCall(w.flagLead, crewHeldOption))
 		}
-		if mon != nil {
-			call = append(append(call, ";"), mon...)
-		}
-		if sub := subagentCall(pane, args[0], p, now); sub != nil {
-			call = append(append(call, ";"), sub...)
-		}
-		if ts := transcriptCall(pane, args[0], p, now); ts != nil {
-			call = append(append(call, ";"), ts...)
-		}
-		// Last, so a failure here can't undo the writes before it.
-		if ct := crewTranscriptCall(pane, args[0], p); ct != nil {
-			call = append(append(call, ";"), ct...)
-		}
+		// Each of these is nil when its event writes nothing, and Join skips it.
+		call = sessionhost.Join(call, mon,
+			subagentCall(pane, args[0], p, now),
+			transcriptCall(pane, args[0], p, now),
+			// Last, so a failure here can't undo the writes before it.
+			crewTranscriptCall(pane, args[0], p))
 	}
 	_ = sessionhost.WriteCurrent(call)
 	return nil
 }
 
-// tmuxOut is one tmux call's stdout without its trailing newline. -u keeps
-// the unit separator in a format intact. It gives up after tmuxDeadline, so a
-// stuck server can't stall the reads (the final write has no deadline); the caller takes its failed-read path.
+// tmuxOut reads from the current tmux server; a failed read takes the caller's
+// failed-read path.
 func tmuxOut(args ...string) (string, error) { return sessionhost.ReadCurrent(args...) }
-
-// hookCall is the one tmux call that writes the reason and the state, reason
-// first (for working too, as Host.setPane does) so the poll never sees
-// needs_you without it. A write with ifUnset (a notification's) sets the reason
-// only if none is set (-o), so permission:Bash survives Claude's
-// PermissionRequest and Notification in either order; -q keeps a set reason from
-// making tmux skip the state write.
-func hookCall(pane string, w hookWrite) []string {
-	return sessionhost.StateCall(pane, w.reason, w.ifUnset, w.state)
-}
 
 // hookPayload holds the fields of Claude Code's, Codex's and Copilot's hook
 // JSON that decide a state.
@@ -184,9 +168,6 @@ var stopWrite = hookWrite{state: "needs_you", reason: "stop"}
 // launchWindow is how long a crew pane with no hook yet counts as working
 // (ADR 0007's no-hook window): `crew launch` writes no state.
 const launchWindow = 10 * time.Second
-
-// tmuxDeadline bounds each of the hook's tmux reads.
-const tmuxDeadline = 2 * time.Second
 
 // safeID is id when it is a safe token, else "" (drop the entry).
 func safeID(s string) string {

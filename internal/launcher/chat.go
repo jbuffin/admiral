@@ -66,17 +66,6 @@ func WriteChatSkill(home string) error {
 	return err
 }
 
-// ChatSession is the chat's tmux session name; sessionhost.ChatName is this.
-const ChatSession = sessionhost.ChatName
-
-// The names (after @admiral-) of the session options that record how the chat
-// started; sessionhost spells them with the prefix.
-const (
-	ChatModelOpt  = sessionhost.ChatModelOpt
-	ChatEffortOpt = sessionhost.ChatEffortOpt
-	ChatFleetOpt  = sessionhost.ChatFleetOpt
-)
-
 // ChatDir is the chat session's working directory, $ADMIRAL_HOME/chat: never a
 // fleet's checkout.
 func ChatDir(home string) string { return filepath.Join(home, "chat") }
@@ -169,8 +158,8 @@ func (l *Launcher) StartChat() error {
 		delete(unset, k)
 	}
 
-	const session = ChatSession
-	opts := [][2]string{{ChatModelOpt, chat.Model}, {ChatEffortOpt, chat.Effort}, {ChatFleetOpt, fleet.Key}}
+	const session = sessionhost.ChatName
+	opts := [][2]string{{sessionhost.ChatModelOpt, chat.Model}, {sessionhost.ChatEffortOpt, chat.Effort}, {sessionhost.ChatFleetOpt, fleet.Key}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
 			return refuse(http.StatusBadRequest, "%s contains a control character", o[0])

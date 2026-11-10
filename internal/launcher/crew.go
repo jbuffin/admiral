@@ -16,9 +16,6 @@ import (
 // ErrCrewNameTaken is a crew name another crew boat of the ship already holds.
 var ErrCrewNameTaken = errors.New("crew name taken")
 
-// CrewName is what a crew boat's name may be (#72 story 3).
-var CrewName = sessionhost.CrewName
-
 // CrewRequest is a teammate to launch in a ship's session. Harness is the
 // ship's own when empty.
 type CrewRequest struct {
@@ -48,10 +45,10 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	if l.Tmux == "" {
 		return errors.New("tmux not found on PATH, so crew cannot be launched")
 	}
-	if !CrewName.MatchString(req.Name) {
+	if !sessionhost.CrewName.MatchString(req.Name) {
 		return fmt.Errorf("crew name %q must be lowercase letters, digits and -", req.Name)
 	}
-	if req.Role != "" && !CrewName.MatchString(req.Role) {
+	if req.Role != "" && !sessionhost.CrewName.MatchString(req.Role) {
 		return fmt.Errorf("crew role %q must be lowercase letters, digits and -", req.Role)
 	}
 	st, err := os.Stat(req.Dir)
@@ -173,10 +170,6 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	return srv.StartCrew(sessionhost.CrewSpec{Session: req.Session, Name: req.Name, Harness: req.Harness, Dir: dir,
 		Role: req.Role, Env: env, Command: command, ClientPath: clientPath})
 }
-
-// ErrCrewGone is CloseCrew's answer for a window that is already gone; the
-// error's text is tmux's own.
-var ErrCrewGone = sessionhost.ErrWindowGone
 
 // CloseCrew kills one crew boat's window by its tmux window id, and with it the
 // teammate's process; ctx bounds the kill. `admiral crew close` and the server's

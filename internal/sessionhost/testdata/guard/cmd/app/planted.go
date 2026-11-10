@@ -11,3 +11,9 @@ func planted() {
 	_ = []string{"set", "-p", "@x", "1"}
 	_ = "@admiral-state"
 }
+
+func planted2(pane, f string) {
+	_ = []string{"if", "-F", "-t", pane, f,
+		"set -p -t " + pane}
+	_ = "split-window"
+}

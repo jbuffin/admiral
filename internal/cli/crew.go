@@ -151,7 +151,7 @@ func crewLaunch(args []string, std IO) error {
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
-	if *role != "" && !launcher.CrewName.MatchString(*role) {
+	if *role != "" && !sessionhost.CrewName.MatchString(*role) {
 		return usagef("crew launch: --role %q must be lowercase letters, digits and -", *role)
 	}
 	if fs.NArg() > 0 || *name == "" || *dir == "" || !hasPrompt || len(prompt) == 0 {

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,6 +17,10 @@ import (
 // The boundary guard: no package outside sessionhost runs tmux or builds tmux
 // arguments (admiral#256, ADR 0002). It parses Go source and never runs tmux,
 // so it runs under `go test -short` in make check.
+//
+// Holes it leaves open, by design (each would need type information or flow
+// analysis): os/exec imported under another name, an exec.Cmd{Path: ...} literal,
+// and a program variable with no "tmux" in its name.
 
 var tmuxCommands = map[string]bool{}
 
@@ -25,7 +30,9 @@ func init() {
 		send-keys set-option show-options set-window-option show-window-options
 		set-environment show-environment set-hook capture-pane pipe-pane load-buffer
 		paste-buffer set-buffer delete-buffer resize-window resize-pane attach-session
-		has-session display-message refresh-client select-pane select-window wait-for`) {
+		has-session display-message refresh-client select-pane select-window wait-for
+			if if-shell run-shell split-window rename-window source-file show-buffer save-buffer
+			switch-client detach-client`) {
 		tmuxCommands[c] = true
 	}
 }
@@ -33,6 +40,7 @@ func init() {
 var tmuxAliases = map[string]bool{
 	"set": true, "setw": true, "show": true, "showw": true,
 	"display": true, "attach": true, "has": true, "send": true, "kill-ses": true,
+	"neww": true, "splitw": true, "lsw": true, "ls": true, "killw": true, "if": true,
 }
 
 var tmuxFlags = map[string]bool{"-t": true, "-p": true, "-g": true, "-w": true, "-u": true, "-S": true}
@@ -135,8 +143,12 @@ func scanFile(path string) (map[int]string, error) {
 			case strings.Contains(s, "#{"):
 				add(v.Pos(), "tmux format "+strconv.Quote(s))
 			default:
-				if w := strings.Fields(s); len(w) > 0 && tmuxCommands[w[0]] {
+				w := strings.Fields(s)
+				switch {
+				case len(w) > 0 && tmuxCommands[w[0]]:
 					add(v.Pos(), "tmux command "+strconv.Quote(w[0]))
+				case len(w) > 1 && tmuxAliases[w[0]] && slices.ContainsFunc(w[1:], func(f string) bool { return tmuxFlags[f] }):
+					add(v.Pos(), "tmux alias "+strconv.Quote(w[0])+" with a flag in one literal")
 				}
 			}
 		}
@@ -225,8 +237,9 @@ func TestTmuxGuardCatchesPlantedCall(t *testing.T) {
 	wantLines := []string{
 		"cmd/app/planted.go:7", "cmd/app/planted.go:8", "cmd/app/planted.go:9",
 		"cmd/app/planted.go:10", "cmd/app/planted.go:11", "cmd/app/planted.go:12",
+		"cmd/app/planted.go:16", "cmd/app/planted.go:17", "cmd/app/planted.go:18",
 	}
-	sort.Strings(wantLines) // lines 10-12 sort before 7-9 as strings
+	sort.Strings(wantLines) // lines 10-18 sort before 7-9 as strings
 	if strings.Join(files, "\n") != strings.Join(wantLines, "\n") {
 		t.Errorf("planted violations:\n got  %v\n want %v\nfull report:\n%s",
 			files, wantLines, strings.Join(got, "\n"))

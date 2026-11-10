@@ -28,7 +28,7 @@ type Server struct {
 	tmux, socket string
 	noUTF8       bool // no leading -u
 	keepEnv      bool // TMUX and TMUX_PANE stay in the environment
-	split        bool // a failure carries stderr alone, as the chat's did
+	split        bool // a failure carries stderr alone
 }
 
 // NewServer is the server of tmux, the binary, on socket.
@@ -47,7 +47,7 @@ func (s Server) StderrErrors() Server { s.split = true; return s }
 // FindTmux is the tmux binary on PATH.
 func FindTmux() (string, error) { return exec.LookPath("tmux") }
 
-// MaxCommand keeps one tmux invocation under the size tmux's client protocol
+// maxCommand keeps one tmux invocation under the size tmux's client protocol
 // carries in a single message (16 KiB).
 const maxCommand = 12000
 
