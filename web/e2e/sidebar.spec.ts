@@ -62,7 +62,15 @@ test.describe('S2: the freeform list', () => {
     admiral,
   }, info) => {
     const touch = isTouch(info);
+    // A freeform source in config.json would be migrated away at start, so it is added over the API.
+    admiral.writeConfig({ version: 1, fleets: { work: { name: 'Work' } } });
     await admiral.start();
+    const added = await fetch(`${admiral.url}api/sources`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ plugin: 'freeform', fleet: 'work' }),
+    });
+    expect(added.status).toBe(201);
     await page.goto(admiral.url);
     const orders = panel(page, 'Orders');
     const add = orders.getByRole('textbox', { name: 'Add order' });

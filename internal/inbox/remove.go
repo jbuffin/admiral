@@ -15,7 +15,8 @@ import (
 // engineer settled elsewhere (in the ship's terminal) or that no longer
 // matters. A review goes the way of ForgetReview: nothing changes on GitHub. A
 // question or findings item gets an answer file that says "removed": true and
-// records item_removed. A removed item never resumes its ship.
+// records item_removed. A removed item never resumes its ship. A notice has no
+// ship to sweep it, so dismissing one deletes its file.
 func (s *Service) RemoveItem(session, id string) (ReviewResult, error) {
 	it, err := s.open(session, id)
 	if err != nil {
@@ -23,6 +24,9 @@ func (s *Service) RemoveItem(session, id string) (ReviewResult, error) {
 	}
 	if it.Kind == KindReview {
 		return s.ForgetReview(session, id)
+	}
+	if it.Kind == KindNotice {
+		return ReviewResult{Forgotten: true}, s.dismissNotice(session, id)
 	}
 	err = s.Answer(session, id, it.Kind, func(Item) (any, []outcomes.Record, error) {
 		file := struct {
@@ -35,6 +39,24 @@ func (s *Service) RemoveItem(session, id string) (ReviewResult, error) {
 		return file, []outcomes.Record{{Event: "item_removed", Fields: map[string]any{"item": id, "kind": it.Kind}}}, nil
 	})
 	return ReviewResult{Forgotten: true}, err
+}
+
+// dismissNotice deletes a notice's item file.
+func (s *Service) dismissNotice(session, id string) error {
+	s.answerMu.Lock()
+	dir, err := openShipDir(s.Home, session)
+	if err != nil {
+		s.answerMu.Unlock()
+		return ErrNotFound
+	}
+	err = dir.Remove(id + ".json")
+	dir.Close()
+	s.answerMu.Unlock()
+	if err != nil {
+		return ErrNotFound
+	}
+	s.Refresh()
+	return nil
 }
 
 // serveRemove takes any item out of the inbox (RemoveItem).
