@@ -1,6 +1,6 @@
 # 16. Answers to inbox items are files beside the item
 
-Status: accepted, amended by [ADR 0028](0028-a-ship-with-an-open-pr-moors-and-relaunches-for-each-feedback-round.md) (Ready to merge is a live Inbox entry with no file)
+Status: accepted, amended by [ADR 0028](0028-a-ship-with-an-open-pr-moors-and-relaunches-for-each-feedback-round.md) (Ready to merge is a live Inbox entry with no file) and [ADR 0034](0034-autopilot-is-a-launch-mode-not-a-view-setting.md) (resume orders and `resume_source` are removed; answering a stopped ship's items wakes the same ship)
 
 ## Context
 

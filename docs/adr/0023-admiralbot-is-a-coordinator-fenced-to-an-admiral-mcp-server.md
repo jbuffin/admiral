@@ -1,6 +1,6 @@
 # 23. AdmiralBot is a coordinator fenced to an Admiral MCP server
 
-Status: accepted, amended by [ADR 0027](0027-campaigns-are-read-from-githubs-issue-tree.md) (AdmiralBot reads campaigns, "work on a campaign" is a ledger commitment, and the launch tool gains `issues` and `crew`)
+Status: accepted, amended by [ADR 0027](0027-campaigns-are-read-from-githubs-issue-tree.md) (AdmiralBot reads campaigns, "work on a campaign" is a ledger commitment, and the launch tool gains `issues` and `crew`), [ADR 0034](0034-autopilot-is-a-launch-mode-not-a-view-setting.md) (autopilot mode is the default for every unattended launch, and the guard refuses all merges) and [ADR 0035](0035-harness-features-follow-probed-capabilities.md) (the AdmiralBot harness is a per-fleet choice among harnesses whose fence is proven)
 
 ## Context
 
