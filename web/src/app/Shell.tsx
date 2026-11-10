@@ -120,7 +120,7 @@ function PhoneShell({ surface }: { surface: Surface }) {
             {surfaceById(id).title}
           </Link>
         ))}
-        <button ref={moreBtn} type="button" class="tab" aria-expanded={more} onClick={() => setMore(true)}>
+        <button ref={moreBtn} type="button" class="tab" aria-haspopup="dialog" aria-expanded={more} onClick={() => setMore(true)}>
           <Icon name="more" size={20} />
           More
         </button>
