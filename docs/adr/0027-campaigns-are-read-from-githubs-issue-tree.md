@@ -48,3 +48,4 @@ The obvious way to stop two sessions taking the same child is to claim it by ass
 - Admiral's claims live only on the server, so two Admirals on different machines can start the same child.
 - Amends [ADR 0009](0009-ships-run-in-a-checkout-picked-from-the-fleets-search-roots.md): a campaign's work repo comes first in the checkout preselect, before the order's repo.
 - Amends ADR 0023: AdmiralBot reads campaigns, and "work on a campaign" is a ledger commitment with the rules above.
+- Amends ADR 0023, from [skills#195](https://github.com/jbuffin/skills/issues/195): the launch tool gains `issues` (two or more make a slice; Admiral claims every child, and the idempotency key is the sorted URL set) and `crew` (members pinned by name). Commodore ships AdmiralBot launches run in autopilot mode by default, with no auto-merge.
