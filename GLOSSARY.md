@@ -190,8 +190,12 @@ _Avoid_: review round (Commodore's own review pass)
 What a ship's skill leaves for Admiral at the end of every round, its first build and each feedback round: the result, its PRs and the issues each closes, the crew members it used, and the text that resumes it. Never the transcript.
 
 **Bridge**:
-The attached-terminal view that opens when the engineer taps a ship: the session's live terminal, which the engineer types into directly, the flotilla, and key buttons on touch devices.
+The view that opens when the engineer boards a ship: its conversation, terminal, changes and PR in tabs, with the flotilla above them.
 _Avoid_: modal, detail view
 
+**Conversation**:
+What a ship, crew boat or AdmiralBot and the engineer said and did in a harness session, as Admiral reads it from the harness. A moored ship's conversation spans its feedback rounds.
+_Avoid_: transcript (the harness's file), log, chat (AdmiralBot's), history
+
 **Flotilla**:
-The column of the boarded ship and its crew boats beside the terminal, with the ship's subagents listed under them. Picking the ship or a crew boat switches the terminal to that agent; subagents can't be picked.
+The chips above the bridge's tabs: the boarded ship, then each crew boat with its role. Picking one switches the conversation and terminal to it; subagents get no chip.

@@ -1,6 +1,6 @@
 # 11. The bridge follows the latest active browser
 
-Status: accepted
+Status: accepted, amended by [ADR 0029](0029-the-bridge-answers-simple-prompts-by-sending-the-harness-keys.md) (only the Terminal tab joins the bridge socket and becomes the active browser; the Conversation tab answers simple prompts with the harness's keys)
 
 ## Context
 

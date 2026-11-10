@@ -1,6 +1,6 @@
 # 21. Crew boats record their transcript path
 
-Status: accepted
+Status: accepted, amended by [ADR 0030](0030-ship-conversations-come-from-a-first-party-adapter-per-harness.md) (supersedes the never-read rule: Admiral reads a crew boat's conversation from its recorded path)
 
 ## Context
 
