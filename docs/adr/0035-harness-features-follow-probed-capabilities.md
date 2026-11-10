@@ -4,7 +4,7 @@ Status: accepted
 
 ## Context
 
-Admiral runs ships on Claude Code, Codex CLI and Copilot CLI, but its extras were built on Claude Code. AdmiralBot's fence ([ADR 0023](0023-admiralbot-is-a-coordinator-fenced-to-an-admiral-mcp-server.md)), the judge calls ([ADR 0025](0025-outside-events-are-quarantined.md)), restricted ships ([ADR 0026](0026-untrusted-work-runs-on-a-restricted-ship.md)) and autopilot mode ([ADR 0034](0034-autopilot-is-a-launch-mode-not-a-view-setting.md)) each need something from the harness that the docs claim but that a given version, login or config may not deliver. Autopilot mode today runs only on Claude Code (`launcher.AutopilotHarnesses`). [#241](https://github.com/jbuffin/admiral/issues/241) decided what an engineer with only Codex or only Copilot gets, and how Admiral knows a harness can carry a feature.
+Admiral runs ships on Claude Code, Codex CLI and Copilot CLI, but its extras were built on Claude Code. AdmiralBot's fence (ADR 0023), the judge calls (ADR 0025), restricted ships (ADR 0026) and autopilot mode ([ADR 0034](0034-autopilot-is-a-launch-mode-not-a-view-setting.md)) each need something from the harness that the docs claim but that a given version, login or config may not deliver. Autopilot mode today runs only on Claude Code (`launcher.AutopilotHarnesses`). [#241](https://github.com/jbuffin/admiral/issues/241) decided what an engineer with only Codex or only Copilot gets, and how Admiral knows a harness can carry a feature.
 
 ## Decision
 
