@@ -35,11 +35,12 @@ const countOf = (p: Locator, n: number) => expect(p.getByLabel(new RegExp(`^${n}
 const cards = (p: Locator | Page, ...titles: string[]) => Promise.all(titles.map((t) => expect(p.getByText(t)).toBeVisible()));
 const noCards = (p: Locator | Page, ...titles: string[]) => Promise.all(titles.map((t) => expect(p.getByText(t)).toHaveCount(0)));
 
-// config.json for these tests: no fleets (the sidebar does not need any) and
-// the given sources. A `sources` key at all stops the server adding freeform.
-const sourcesConfig = (sources: Record<string, unknown>) => ({ version: 1, fleets: {}, sources });
+// config.json for these tests: one bare fleet (every source belongs to one; the
+// sidebar needs nothing else of it) and the given sources.
+const sourcesConfig = (sources: Record<string, unknown>) => ({ version: 1, fleets: { work: { name: 'Work' } }, sources });
 const tracker = (f: Flags, extra: Record<string, unknown> = {}, name = 'Tracker') => ({
   plugin: 'testplug',
+  fleet: 'work',
   name,
   settings: { flagdir: f.dir, ...extra },
 });

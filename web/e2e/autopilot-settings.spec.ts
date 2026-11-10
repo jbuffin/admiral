@@ -54,7 +54,7 @@ function setup(admiral: Admiral, w: World, o: Options = {}) {
   flags.orders({ main: o.order ? [{ id: 'o1', title: 'Order o1', repo: remote, text: `Review ${remote}` }] : [] });
   const config = JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8'));
   if (o.onlyWork) delete config.fleets.home;
-  config.sources = { a: { plugin: 'testplug', name: 'Test', settings: { flagdir: flags.dir }, ...(o.stored ? { autopilot: { main: o.stored } } : {}) } };
+  config.sources = { a: { plugin: 'testplug', fleet: 'work', name: 'Test', settings: { flagdir: flags.dir }, ...(o.stored ? { autopilot: { main: o.stored } } : {}) } };
   if (o.resources) config.resources = o.resources;
   admiral.writeConfig(config);
 }

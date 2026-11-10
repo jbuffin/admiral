@@ -51,7 +51,14 @@ func (w *world) resumeConfig(cues map[string][]string, sources map[string]any, r
 		fleets[key] = map[string]any{"name": key, "color": "#336699", "search_roots": []string{w.work},
 			"claude": map[string]any{"executable": w.fakeExe("claude"), "env": env}}
 	}
-	cfg := map[string]any{"version": 1, "fleets": fleets, "sources": sources}
+	// The sources belong to the first fleet.
+	first := ""
+	for key := range cues {
+		if first == "" || key < first {
+			first = key
+		}
+	}
+	cfg := map[string]any{"version": 1, "fleets": fleets, "sources": inFleet(first, sources)}
 	if resume != nil {
 		cfg["autopilot"] = map[string]any{"resume_source": resume}
 	}

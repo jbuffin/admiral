@@ -22,14 +22,27 @@ func TestAutopilotCodexEntryKeepsLastGoodConfig(t *testing.T) {
 	// A source needs a plugin that loads; the test plugin is the one tests have.
 	w := &world{t: t, root: t.TempDir(), home: home}
 	w.installPlugin("testplug", "testplug")
-	settings, _ := json.Marshal(w.newTP("s").settings(nil))
-	source := `"s":{"plugin":"testplug","settings":` + string(settings)
+	def := tpSource("s", w.newTP("s"), nil)
+	def.Fleet = "work"
+	// sources is the source through the shared helper, with the autopilot
+	// entry when one is given.
+	sources := func(autopilot string) string {
+		var m map[string]map[string]any
+		if err := json.Unmarshal([]byte(rawSources(def)), &m); err != nil {
+			t.Fatal(err)
+		}
+		if autopilot != "" {
+			m["s"]["autopilot"] = json.RawMessage(autopilot)
+		}
+		b, _ := json.Marshal(m)
+		return string(b)
+	}
 	entry := func(harness string) string {
-		return `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},"sources":{` + source + `,` +
-			`"autopilot":{"p":{"fleet":"work","harness":"` + harness + `","skill":{"kind":"none"}}}}}}`
+		return `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},"sources":` +
+			sources(`{"p":{"fleet":"work","harness":"`+harness+`","skill":{"kind":"none"}}}`) + `}`
 	}
 	// The good config has no autopilot entry, so it loads before and after u1.
-	writeConfig(t, home, `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},"sources":{`+source+`}}}`)
+	writeConfig(t, home, `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},"sources":`+sources("")+`}`)
 	in := startAdmiral(t, home, "127.0.0.1:0")
 	waitAPI(t, in, "the good config", func(b cfgBody) bool { return b.Error == nil && reflect.DeepEqual(b.keys(), []string{"work"}) })
 
@@ -50,8 +63,13 @@ func TestSourceWritesKeepTheAutopilotObject(t *testing.T) {
 	a, b := w.newTP("a"), w.newTP("b")
 	ap := `{ "prs": {"skill": {"kind":"none"}, "harness":"claude", "fleet":"stay"} }`
 	srcs := func(def srcDef) string {
-		raw, _ := json.Marshal(def.Settings)
-		return `"` + def.Key + `":{"plugin":"testplug","settings":` + string(raw) + `,"autopilot":` + ap + `}`
+		var m map[string]map[string]any
+		if err := json.Unmarshal([]byte(rawSources(def)), &m); err != nil {
+			t.Fatal(err)
+		}
+		m[def.Key]["autopilot"] = json.RawMessage(ap)
+		b, _ := json.Marshal(m)
+		return strings.TrimSuffix(strings.TrimPrefix(string(b), "{"), "}")
 	}
 	w.installPlugin("testplug", "testplug")
 	writeConfig(t, w.home, strings.TrimSuffix(w.fleetsConfig(), "}")+`,"sources":{`+

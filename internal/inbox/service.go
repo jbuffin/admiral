@@ -82,8 +82,16 @@ func (s *Service) List() []Item {
 	s.mu.Lock()
 	items := append([]Item{}, s.items...)
 	s.mu.Unlock()
+	for i := range items {
+		if items[i].Session == AdmiralSession {
+			items[i].Name = "Admiral"
+		}
+	}
 	if s.Ship != nil {
 		for i := range items {
+			if items[i].Session == AdmiralSession {
+				continue
+			}
 			if name, harness, ok := s.Ship(items[i].Session); ok {
 				items[i].Name, items[i].Harness = name, harness
 			}

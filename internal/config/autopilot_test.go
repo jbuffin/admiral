@@ -30,7 +30,7 @@ func apConfig(top, sourceAP string) string {
 	if top != "" {
 		c += `,"autopilot":` + top
 	}
-	return c + `,"sources":{"s":{"plugin":"freeform","autopilot":` + sourceAP + `}}}`
+	return c + `,"sources":{"s":{"plugin":"freeform","fleet":"work","autopilot":` + sourceAP + `}}}`
 }
 
 func apEntry(extra string) string {
@@ -198,7 +198,7 @@ func TestSetSourcesRefusesAnAutopilotFleetThatIsGone(t *testing.T) {
 	dir := t.TempDir()
 	good := `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}}}`
 	p := writeFile(t, dir, good)
-	err := config.SetSources(dir, json.RawMessage(`{"s":{"plugin":"freeform","autopilot":{"p":{"fleet":"nope","harness":"claude","skill":{"kind":"none"}}}}}`))
+	err := config.SetSources(dir, json.RawMessage(`{"s":{"plugin":"freeform","fleet":"work","autopilot":{"p":{"fleet":"nope","harness":"claude","skill":{"kind":"none"}}}}}`))
 	if err == nil {
 		t.Fatal("SetSources accepted an autopilot entry naming a fleet that doesn't exist")
 	}
@@ -206,7 +206,7 @@ func TestSetSourcesRefusesAnAutopilotFleetThatIsGone(t *testing.T) {
 		t.Errorf("a refused write changed config.json:\n%s", b)
 	}
 
-	if err := config.SetSources(dir, json.RawMessage(`{"s":{"plugin":"freeform","autopilot":{"p":{"fleet":"work","harness":"claude","skill":{"kind":"none"}}}}}`)); err != nil {
+	if err := config.SetSources(dir, json.RawMessage(`{"s":{"plugin":"freeform","fleet":"work","autopilot":{"p":{"fleet":"work","harness":"claude","skill":{"kind":"none"}}}}}`)); err != nil {
 		t.Fatalf("SetSources with a valid entry: %v", err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "config.json")); !strings.Contains(string(b), `"autopilot"`) {

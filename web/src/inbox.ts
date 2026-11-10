@@ -11,7 +11,7 @@ export interface InboxItem {
   version: number;
   id: string;
   session: string;
-  kind: 'question' | 'review' | 'findings';
+  kind: 'question' | 'review' | 'findings' | 'notice';
   created: string;
   title: string;
   name?: string;
@@ -20,6 +20,7 @@ export interface InboxItem {
   question?: { questions: InboxQuestion[] };
   review?: { pr_url?: string; review_id?: number | string; summary?: string };
   findings?: { pr_url?: string; cards?: unknown };
+  notice?: { body?: string };
 }
 
 export interface InboxQuestion {

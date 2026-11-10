@@ -33,7 +33,7 @@ func newApSettings(t *testing.T, entries map[string]any, mutate func(cfg map[str
 	p := w.newTP("a")
 	p.mainOrders(apOrder("o1", remoteOf("r1")))
 	w.installPlugin("testplug", "testplug")
-	src := map[string]any{"plugin": "testplug", "name": "Test", "settings": p.settings(nil)}
+	src := map[string]any{"plugin": "testplug", "fleet": testSourceFleet, "name": "Test", "settings": p.settings(nil)}
 	if entries != nil {
 		src["autopilot"] = entries
 	}

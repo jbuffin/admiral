@@ -215,6 +215,7 @@ func (w *world) restart() *fleetInst {
 // launchAdmiral is startAdmiral with an explicit environment.
 func launchAdmiral(t *testing.T, home, listen string, env []string) *fleetInst {
 	t.Helper()
+	expectNoMigration(t, home)
 	cmd := exec.Command(binaryPath(t), "--listen", listen)
 	cmd.Env = env
 	stdout, err := cmd.StdoutPipe()

@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"io"
@@ -403,14 +404,34 @@ func (p *tplug) alive(pid int) bool { return pid > 0 && syscall.Kill(pid, 0) == 
 
 type srcDef struct {
 	Key, Plugin, Name string
+	Fleet             string // defaults to testFleet
 	Settings          map[string]any
+}
+
+// testFleet is the fleet of srcConfig's fleets that a source belongs to unless
+// its definition names another. testSourceFleet is the first of the default
+// fleets (config) that is meant for it.
+const (
+	testFleet       = "stay"
+	testSourceFleet = "work"
+)
+
+// inFleet gives every source in the map (key → source object) that names no
+// fleet this one, and returns the map. It is where a test source gets its fleet.
+func inFleet(fleet string, sources map[string]any) map[string]any {
+	for _, s := range sources {
+		if m, ok := s.(map[string]any); ok && m["fleet"] == nil {
+			m["fleet"] = fleet
+		}
+	}
+	return sources
 }
 
 // rawSources is the `sources` object in the order given.
 func rawSources(defs ...srcDef) string {
 	parts := []string{}
 	for _, d := range defs {
-		m := map[string]any{"plugin": d.Plugin}
+		m := map[string]any{"plugin": d.Plugin, "fleet": cmp.Or(d.Fleet, testFleet)}
 		if d.Name != "" {
 			m["name"] = d.Name
 		}
@@ -482,15 +503,18 @@ func (w *world) orderSrcDef(key, name string) srcDef {
 	}
 	p := w.newTP(key)
 	p.put("panels.json", `[{"id":"orders","title":"Orders"}]`)
-	return tpSource(key, p, map[string]any{"storeOrders": true, "capabilities": []string{"add", "edit", "remove"}})
+	d := tpSource(key, p, map[string]any{"storeOrders": true, "capabilities": []string{"add", "edit", "remove"}})
+	d.Name = name
+	return d
 }
 
 // orderSource is orderSrcDef as the map a config's `sources` holds; extra keys
-// (an `autopilot` object) are set on the source beside its settings.
+// (an `autopilot` object) are set on the source beside its settings. It names no
+// fleet: the config that holds it does (inFleet).
 func (w *world) orderSource(key, name string, extra map[string]any) map[string]any {
 	w.t.Helper()
 	d := w.orderSrcDef(key, name)
-	src := map[string]any{"plugin": d.Plugin, "name": name, "settings": d.Settings}
+	src := map[string]any{"plugin": d.Plugin, "name": d.Name, "settings": d.Settings}
 	for k, v := range extra {
 		src[k] = v
 	}
@@ -512,7 +536,7 @@ func (w *world) addOrdersSource() {
 	if err := json.Unmarshal([]byte(w.readFile(configPath(w.home))), &cfg); err != nil {
 		w.t.Fatal(err)
 	}
-	cfg["sources"] = w.ordersSource()
+	cfg["sources"] = inFleet(testSourceFleet, w.ordersSource())
 	b, err := json.Marshal(cfg)
 	if err != nil {
 		w.t.Fatal(err)
@@ -525,6 +549,18 @@ func (w *world) startFresh() *fleetInst {
 	w.t.Helper()
 	w.in = launchAdmiral(w.t, w.home, "127.0.0.1:"+freePort(w.t), w.baseEnv())
 	return w.in
+}
+
+// startWithFreeform starts Admiral on the default fleets and adds a freeform
+// source (key "freeform") through the API: a freeform source in config.json at
+// startup is migrated away. The source is gone after the next start.
+func (w *world) startWithFreeform() {
+	w.t.Helper()
+	writeConfig(w.t, w.home, w.fleetsConfig())
+	w.startFresh()
+	w.waitUp()
+	code, body := w.srcReq(http.MethodPost, "", map[string]any{"plugin": "freeform", "fleet": testFleet})
+	w.mustOK(code, body, "add the freeform source")
 }
 
 // launchFrom posts a launch that names a source and an order and carries no

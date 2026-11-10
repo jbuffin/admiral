@@ -37,3 +37,5 @@ The answers file for `setup --answers` is JSON holding the same `fleets` object 
 ```
 
 An `executable` left out is looked up on `PATH` (and `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`) and written as the absolute path found, without following symlinks. The identity variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`) is always written, with the harness's default directory when the file leaves it out; two fleets that leave it out share that default and are refused.
+
+A fleet may also carry `owners` (a list of GitHub organizations and users) and `clone_root` (a path). A command that reads a `config.json` from an older Admiral, one with a source that names no fleet or a freeform source, refuses with `config.json is from an older Admiral: start Admiral once (`admiral`) to migrate it`. Only starting Admiral migrates the file.

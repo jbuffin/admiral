@@ -131,7 +131,7 @@ class Instance implements Admiral {
     if (!existsSync(join(this.home, 'plugins', 'testplug', 'plugin.json'))) this.installTestPlugin();
     const f = this.flags(key);
     f.panels([{ id: 'orders', title: 'Orders' }]);
-    return { plugin: 'testplug', name, settings: { flagdir: f.dir, storeOrders: true, capabilities: ['add', 'edit', 'remove'] }, ...extra };
+    return { plugin: 'testplug', fleet: 'work', name, settings: { flagdir: f.dir, storeOrders: true, capabilities: ['add', 'edit', 'remove'] }, ...extra };
   }
 
   flags(label: string): Flags {

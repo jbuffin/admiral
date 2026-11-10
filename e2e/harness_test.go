@@ -132,6 +132,7 @@ func hermeticEnv(t *testing.T) []string {
 // waits up to 10 s for the two printed lines and stops the process on cleanup.
 func startAdmiral(t *testing.T, home, listen string) *instance {
 	t.Helper()
+	expectNoMigration(t, home)
 	bin := binaryPath(t)
 	cmd := exec.Command(bin, "--listen", listen)
 	cmd.Env = append(hermeticEnv(t), "ADMIRAL_HOME="+home)
@@ -358,4 +359,19 @@ func readJSON(t *testing.T, c *websocket.Conn, v any) {
 	if err := json.Unmarshal(data, v); err != nil {
 		t.Fatalf("websocket message %q is not JSON: %v", data, err)
 	}
+}
+
+// expectNoMigration fails a test whose config was migrated at startup: a
+// fixture without a fleet would otherwise migrate silently and still pass. The
+// migration's own tests (TestMigrate...) are exempt.
+func expectNoMigration(t *testing.T, home string) {
+	t.Helper()
+	if strings.HasPrefix(t.Name(), "TestMigrate") {
+		return
+	}
+	t.Cleanup(func() {
+		if m, _ := filepath.Glob(filepath.Join(home, "config.json.pre-*")); len(m) > 0 {
+			t.Errorf("the config was migrated at startup (%s): a fixture is missing a fleet on a source", filepath.Base(m[0]))
+		}
+	})
 }
