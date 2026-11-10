@@ -40,9 +40,14 @@ func TestPackagingS1_ReleaseTarball(t *testing.T) {
 	}
 
 	entries := tarEntries(t, r.tarball)
-	for _, name := range []string{"admiral", "LICENSE", "THIRD_PARTY_NOTICES", "plugins/freeform/plugin.json", "plugins/github/plugin.json"} {
+	for _, name := range []string{"admiral", "LICENSE", "THIRD_PARTY_NOTICES", "plugins/github/plugin.json"} {
 		if entries[r.topDir+"/"+name] == nil {
 			t.Errorf("tarball has no %s/%s; entries: %v", r.topDir, name, keys(entries))
+		}
+	}
+	for name := range entries {
+		if strings.Contains(name, "plugins/freeform") {
+			t.Errorf("tarball still ships %s: freeform is gone", name)
 		}
 	}
 	if h := entries[r.topDir+"/admiral"]; h != nil && h.Mode&0o111 != 0o111 {
@@ -67,7 +72,7 @@ func TestPackagingS1_ReleaseTarball(t *testing.T) {
 	}
 
 	// The reference copies match the repo's plugins (the source of the embedded copies).
-	for _, plugin := range []string{"freeform", "github"} {
+	for _, plugin := range []string{"github"} {
 		srcDir := filepath.Join(repoRoot, "plugins", plugin)
 		srcs, err := os.ReadDir(srcDir)
 		if err != nil || len(srcs) == 0 {

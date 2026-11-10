@@ -136,7 +136,7 @@ func TestS9_SetSourcesKeepsEverythingElse(t *testing.T) {
 	path := writeFile(t, dir, richConfig)
 	before := decode(t, path)
 
-	newSources := json.RawMessage(`{"freeform":{"plugin":"freeform","fleet":"zeta","settings":{}}}`)
+	newSources := json.RawMessage(`{"board":{"plugin":"board","fleet":"zeta","settings":{}}}`)
 	if err := config.SetSources(dir, newSources); err != nil {
 		t.Fatalf("SetSources: %v", err)
 	}

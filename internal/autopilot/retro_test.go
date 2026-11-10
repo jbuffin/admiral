@@ -60,7 +60,7 @@ func (r *rig) stamp() time.Time {
 func isRetro(rec outcomes.Record) bool           { return rec.Event == "retro_queued" }
 func (r *rig) retrosRecorded() []outcomes.Record { return r.recordsOf("retro_queued") }
 
-// addOrder is a plugin that adds the order to its listing, like freeform.
+// addOrder is a plugin that adds the order to its listing.
 func (r *rig) addOrder(_ context.Context, source, panelID, text string) (string, error) {
 	r.adds = append(r.adds, addCall{source, panelID, text})
 	if r.addErr != nil {

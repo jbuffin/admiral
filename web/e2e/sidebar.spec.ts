@@ -56,21 +56,14 @@ test.describe('S1: fresh install', () => {
   });
 });
 
-test.describe('S2: the freeform list', () => {
-  test('add a three-line order, edit it, remove it; a refused text shows the server message and adds nothing', { tag: '@critical' }, async ({
+test.describe('S2: the order list', () => {
+  test('the add, edit and remove flow: a three-line order is added, edited and removed; a refused text shows the server message and adds nothing', { tag: '@critical' }, async ({
     page,
     admiral,
   }, info) => {
     const touch = isTouch(info);
-    // A freeform source in config.json would be migrated away at start, so it is added over the API.
-    admiral.writeConfig({ version: 1, fleets: { work: { name: 'Work' } } });
+    admiral.writeConfig(sourcesConfig({ orders: admiral.ordersSource() }));
     await admiral.start();
-    const added = await fetch(`${admiral.url}api/sources`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ plugin: 'freeform', fleet: 'work' }),
-    });
-    expect(added.status).toBe(201);
     await page.goto(admiral.url);
     const orders = panel(page, 'Orders');
     const add = orders.getByRole('textbox', { name: 'Add order' });

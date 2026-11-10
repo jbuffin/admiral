@@ -33,7 +33,7 @@ import (
 //   The tarball has one top folder, admiral-<v>-darwin-arm64/, holding:
 //     admiral                      the binary (mode 0755, arm64, ad-hoc signed)
 //     THIRD_PARTY_NOTICES          Go modules, npm runtime deps, the OFL fonts
-//     plugins/freeform/            a reference copy of the repo's plugins/freeform/
+//     plugins/github/              a reference copy of the repo's plugins/github/
 //
 // admiral --version         "admiral <version> (<commit>)\n" on stdout, exit 0.
 //   <commit> is the short hash of HEAD, with an optional "-dirty" suffix.
