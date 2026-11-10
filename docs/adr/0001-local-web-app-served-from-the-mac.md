@@ -1,6 +1,6 @@
 # 1. Admiral is a local web app served from the Mac
 
-Status: accepted
+Status: accepted, amended by [ADR 0031](0031-remote-access-goes-through-tailscale-serve.md) (a proxied request is remote even on loopback; Tailscale mode listens on loopback behind `tailscale serve`) and [ADR 0032](0032-devices-pair-for-their-own-tokens-and-the-api-is-versioned.md) (devices pair for their own tokens, and the startup token is retired)
 
 ## Context
 
