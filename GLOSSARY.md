@@ -198,4 +198,4 @@ What a ship, crew boat or AdmiralBot and the engineer said and did in a harness 
 _Avoid_: transcript (the harness's file), log, chat (AdmiralBot's), history
 
 **Flotilla**:
-The column of the boarded ship and its crew boats beside the terminal, with the ship's subagents listed under them. Picking the ship or a crew boat switches the terminal to that agent; subagents can't be picked.
+The chips above the bridge's tabs: the boarded ship, then each crew boat with its role. Picking one switches the conversation and terminal to it; subagents get no chip.
