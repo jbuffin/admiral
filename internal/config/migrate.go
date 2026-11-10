@@ -249,7 +249,7 @@ func pendingOrders(dir, key string) (texts []string, unreadable bool) {
 	var orders []struct {
 		Text string `json:"text"`
 	}
-	if json.Unmarshal(b, &orders) != nil {
+	if json.Unmarshal(b, &orders) != nil || orders == nil {
 		return nil, true
 	}
 	for _, o := range orders {
@@ -284,7 +284,7 @@ func (m *Migration) Notice() (title, body string) {
 		default:
 			b.WriteString(" Its pending orders were:")
 			for _, o := range s.Orders {
-				fmt.Fprintf(&b, "\n  * %s", o)
+				fmt.Fprintf(&b, "\n  * %s", strings.ReplaceAll(o, "\n", "\n    "))
 			}
 			b.WriteString("\n  An order may already have a ship if its launch was never acknowledged.")
 		}

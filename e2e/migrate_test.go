@@ -183,7 +183,9 @@ func TestMigrateOldConfig(t *testing.T) {
 		t.Errorf("notice session %q name %q, want _admiral and Admiral", notice.Session, notice.Name)
 	}
 	body := notice.Notice.Body
-	for _, want := range []string{filepath.Base(backups[0]), orderOne, orderTwo, "tracker", "Zulu", "notes"} {
+	// A multi-line order's continuation lines are indented under its list item.
+	indented := strings.ReplaceAll(orderOne, "\n", "\n    ")
+	for _, want := range []string{filepath.Base(backups[0]), indented, orderTwo, "tracker", "Zulu", "notes"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("notice body lacks %q:\n%s", want, body)
 		}

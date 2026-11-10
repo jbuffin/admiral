@@ -36,10 +36,11 @@ An engineer adds a *source* of your plugin: an entry in the `sources` object of 
 
 ```json
 "sources": {
-  "orders": { "plugin": "freeform", "name": "Orders" },
-  "work-board": { "plugin": "board", "name": "Work", "settings": { "project": "ADM" } }
+  "work-board": { "plugin": "board", "name": "Work", "fleet": "work", "settings": { "project": "ADM" } }
 }
 ```
+
+`fleet` names a fleet defined under `fleets` in the same file (here, one called `work`).
 
 One plugin can back several sources, each with its own settings, its own process and its own data directory, `$ADMIRAL_HOME/data/<source key>/`. The data directory is yours to keep state in. Admiral keeps it when the source is removed and never gives it to a new source.
 

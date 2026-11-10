@@ -149,6 +149,9 @@ func serve(args []string) error {
 		return fmt.Errorf("config migration: %w", err)
 	}
 	if migration != nil {
+		// Posted after the rewrite: a crash between the two loses the notice but
+		// never duplicates it, and the backup and data/<key>/orders.json still
+		// hold the order texts.
 		title, body := migration.Notice()
 		if _, err := inbox.WriteNotice(dir, title, body); err != nil {
 			fmt.Fprintln(os.Stderr, "admiral: could not post the migration notice:", err)

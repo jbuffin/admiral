@@ -140,8 +140,12 @@ func parseItem(b []byte, session, id string) (Item, error) {
 		if _, err := questionsOf(it); err != nil {
 			return Item{}, errSkip
 		}
-	case KindReview, KindFindings, KindNotice:
+	case KindReview, KindFindings:
 		if !isObject(fields[it.Kind]) {
+			return Item{}, errSkip
+		}
+	case KindNotice: // only Admiral's own inbox holds notices
+		if session != AdmiralSession || !isObject(fields[it.Kind]) {
 			return Item{}, errSkip
 		}
 	default:
