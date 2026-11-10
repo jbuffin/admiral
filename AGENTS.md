@@ -21,8 +21,8 @@ Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/ag
 Before writing code, read in this order:
 
 1. `GLOSSARY.md`: the words Admiral uses.
-2. `designs/prototype/index.html` (open it in a browser) and `designs/README.md`: the reference for look, layout and motion.
-3. [Admiral MVP spec](https://github.com/jbuffin/admiral/issues/45): what to build, as user stories and implementation decisions. Behavior wins over the prototype; the prototype wins on visual detail.
+2. `designs/redesign/` and the [wireframe canvas](https://claude.ai/artifact/MS8gLZsMr1NJUiCjw6arqu): the reference for the new shell's look, layout and motion. `designs/prototype/index.html` and `designs/README.md` describe the old UI, which is frozen until the new shell replaces it.
+3. [Admiral MVP spec](https://github.com/jbuffin/admiral/issues/45): what to build, as user stories and implementation decisions. Behavior wins over the designs; the designs win on visual detail.
 4. `docs/adr/`. Open questions are GitHub issues. Do not build a part that depends on one until it is resolved and recorded.
 
 Touch must work on iPad Safari. Use the harnesses' official logos on flags; never redraw them.

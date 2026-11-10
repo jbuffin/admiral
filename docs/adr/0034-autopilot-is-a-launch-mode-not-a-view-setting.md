@@ -39,7 +39,7 @@ What happens to the engine's parts:
 
 ## Consequences
 
-- Supersedes ADR 0017. Nothing counts runs from the outcome log any more, so [ADR 0015](0015-outcomes-are-an-append-only-history-beside-tmux.md) loses its one exception.
+- Supersedes ADR 0017. Nothing counts runs from the outcome log any more, so [ADR 0015](0015-outcomes-are-an-append-only-history-beside-tmux.md) loses its one exception: nothing reads the log back to decide anything. Its `usage` records are read only to show totals (ADR 0015's 2026-11-10 amendment).
 - Removes the resume-order half of ADR 0016: `resume_source`, `resume_orders` added as orders and the origin-panel bookkeeping go. Typing a live ship's resume at its prompt stays.
 - Amends [ADR 0022](0022-a-ui-save-of-autopilot-args-passes-the-crew-allowlist.md): the args checked are a routine's launch args, not a panel's autopilot args. The rule is otherwise unchanged.
 - Amends ADR 0023: autopilot mode is the default for every unattended launch, not only Commodore launches from AdmiralBot, and the guard refuses all merges.

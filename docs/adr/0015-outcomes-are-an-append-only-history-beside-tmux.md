@@ -56,4 +56,5 @@ Autopilot (rung 1 is [#113](https://github.com/jbuffin/admiral/issues/113)) need
 - **A moored ship gets one record per feedback round,** so a ship that lives for days counts on the days it worked. AdmiralBot gets a record at each reset.
 - **Crew boats roll into their ship.** For Codex, Admiral sums them by `agent_id`; Claude and Copilot already include them.
 - **Live figures are never written.** Admiral reads them from the harness while it runs (Claude Code through a `statusLine` wrapper, Codex through its app-server, Copilot from `events.jsonl`). A fleet's daily total is today's `usage` records plus the live ships.
+- **`usage` records are read back for display only.** Admiral reads them to show totals for today, 7 days and 30 days, never to decide anything: the quota hold uses live plan-window figures, and the worker spend cap uses the trigger log. Decided by the engineer while this was recorded (2026-11-10).
 - **Judge calls are not here.** The Lookout, reviewer and filing calls record their cost in their trigger-log records (ADR 0025), and that cost is the worker spend. The new **quota hold** joins ADR 0025's Limit catalog.
