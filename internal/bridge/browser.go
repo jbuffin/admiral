@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/coder/websocket"
+	"github.com/jbuffin/admiral/internal/server"
 )
 
 // maxQueued is how much a browser may fall behind before it is dropped; it
@@ -191,6 +194,36 @@ type in struct {
 	Rows    int    `json:"rows"`
 	Visible bool   `json:"visible"`
 	Data    string `json:"data"`
+	// API is the API version a join asks for; missing means 1.
+	API json.RawMessage `json:"api"`
+}
+
+// maxCloseReason is how many bytes a WebSocket close reason may hold (125 for the
+// frame's payload less the 2-byte code).
+const maxCloseReason = 123
+
+// cutAtRune shortens s to at most n bytes without splitting a rune.
+func cutAtRune(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
+}
+
+// supportedAPI reports whether a join's api field names a version this
+// server serves. Missing or null means 1; a string or a float is unsupported.
+func supportedAPI(raw json.RawMessage) bool {
+	if len(raw) == 0 || string(raw) == "null" {
+		return true
+	}
+	var v int
+	if json.Unmarshal(raw, &v) != nil {
+		return false
+	}
+	return slices.Contains(server.APIVersions, v)
 }
 
 func notFound(rw http.ResponseWriter, what string) {
@@ -241,6 +274,14 @@ func (s *Service) serveBridge(rw http.ResponseWriter, r *http.Request, session s
 		var m in
 		if json.Unmarshal(data, &m) != nil {
 			continue
+		}
+		if m.Type == "join" && !supportedAPI(m.API) {
+			reason := "unsupported api version " + string(m.API)
+			reason = cutAtRune(reason, maxCloseReason)
+			ef, _ := json.Marshal(map[string]string{"type": "error", "error": reason})
+			_ = conn.Write(ctx, websocket.MessageText, ef)
+			_ = conn.Close(websocket.StatusPolicyViolation, reason)
+			return
 		}
 		if w == nil {
 			if m.Type != "join" {
