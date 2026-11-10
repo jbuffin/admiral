@@ -1,5 +1,6 @@
 import preact from '@preact/preset-vite';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 
 // The Go server the dev server forwards to. The proxy passes the browser's own
@@ -11,6 +12,24 @@ export default defineConfig({
   plugins: [
     preact(),
     {
+      // The new shell's deep links under /app/ fall back to its own index.html,
+      // as the Go server does.
+      name: 'app-shell-fallback',
+      configureServer(server) {
+        server.middlewares.use(async (req, res, next) => {
+          const url = req.url ?? '';
+          const path = url.split('?')[0];
+          if (req.method === 'GET' && (path === '/app' || (path.startsWith('/app/') && !/\.[a-z0-9]+$/i.test(path)))) {
+            const html = readFileSync(resolve(__dirname, 'app/index.html'), 'utf8');
+            res.setHeader('Content-Type', 'text/html');
+            res.end(await server.transformIndexHtml('/app/', html));
+            return;
+          }
+          next();
+        });
+      },
+    },
+    {
       // emptyOutDir removes the tracked placeholder that keeps go build working.
       name: 'keep-dist-placeholder',
       closeBundle() {
@@ -18,7 +37,11 @@ export default defineConfig({
       },
     },
   ],
-  build: { assetsInlineLimit: 0 },
+  build: {
+    assetsInlineLimit: 0,
+    // Two pages: the old UI at / and the new shell, built to dist/app/index.html.
+    rollupOptions: { input: { main: resolve(__dirname, 'index.html'), app: resolve(__dirname, 'app/index.html') } },
+  },
   server: {
     proxy: { '/api': { target }, '/ws': { target, ws: true } },
   },

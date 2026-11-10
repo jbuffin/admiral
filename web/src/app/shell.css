@@ -1,0 +1,11 @@
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+h1 {
+  margin: 0;
+  padding: 16px;
+  font-size: var(--font-size-heading);
+}

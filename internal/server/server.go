@@ -9,12 +9,16 @@ import (
 	"io/fs"
 	"mime"
 	"net/http"
+	"os"
 	"path"
+	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/home"
 )
 
 func init() {
@@ -60,6 +64,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/ws", s.serveWS)
 	mux.HandleFunc("GET /api/config", s.serveConfig)
 	mux.HandleFunc("GET /api/version", s.serveVersion)
+	mux.HandleFunc("GET /api/logos/{harness}", serveLogo)
 	for _, m := range s.Modules {
 		m.Routes(mux)
 	}
@@ -186,6 +191,33 @@ func (s *Server) serveConfig(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(s.Config.View())
 }
 
+// serveLogo serves $ADMIRAL_HOME/logos/<harness>.svg, a logo the engineer put
+// there for their own build. Only the harness names Admiral knows are looked
+// up, so the path never takes anything the request wrote.
+func serveLogo(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("harness")
+	if !slices.Contains(config.Harnesses(), name) {
+		http.NotFound(w, r)
+		return
+	}
+	dir, err := home.Resolve()
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "logos", name+".svg"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", "image/svg+xml")
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+	h.Set("Cache-Control", "no-cache")
+	_, _ = w.Write(data)
+}
+
 func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
 	if name == "" {
@@ -194,10 +226,13 @@ func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
 	data, err := fs.ReadFile(s.UI, name)
 	if err != nil && path.Ext(name) == "" {
 		name = "index.html" // client-side route
+		if r.URL.Path == "/app" || strings.HasPrefix(r.URL.Path, "/app/") {
+			name = "app/index.html" // the new shell's own routes
+		}
 		data, err = fs.ReadFile(s.UI, name)
 	}
 	if err != nil {
-		if name == "index.html" {
+		if path.Base(name) == "index.html" {
 			http.Error(w, "UI not built: run make build", http.StatusServiceUnavailable)
 			return
 		}

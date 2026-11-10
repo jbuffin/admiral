@@ -6,8 +6,8 @@
     "test": "vitest run",
     "e2e": "playwright test",
     "dev": "vite",
-    "build": "node scripts/gen-tokens.mjs && vite build",
-    "typecheck": "node scripts/gen-tokens.mjs && tsc --noEmit"
+    "build": "node scripts/gen-tokens.mjs && node scripts/gen-shell-tokens.mjs && vite build",
+    "typecheck": "node scripts/gen-tokens.mjs && node scripts/gen-shell-tokens.mjs && tsc --noEmit"
   },
   "devDependencies": {
     "@playwright/test": "1.55.0",

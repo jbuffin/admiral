@@ -24,7 +24,9 @@ const (
 )
 
 // assignColors gives a fleet without a color the next one in the sequence,
-// counting only such fleets, and picks the ink for every fleet.
+// counting only such fleets, and picks the ink for every fleet. It also sets
+// ColorIndex: the raw counter for a derived color (not wrapped), the palette
+// position for a stored palette color, nil for a custom one.
 func assignColors(fleets []Fleet) {
 	next := 0
 	for i := range fleets {
@@ -33,10 +35,24 @@ func assignColors(fleets []Fleet) {
 			p := palette[next%len(palette)]
 			next++
 			f.Color, f.Ink = p.color, p.ink
+			idx := next - 1
+			f.ColorIndex = &idx
 			continue
 		}
 		f.Ink = inkFor(f.Color)
+		f.ColorIndex = paletteIndex(f.Color)
 	}
+}
+
+// paletteIndex is the position of a color in the default sequence, or nil for a
+// custom color.
+func paletteIndex(color string) *int {
+	for i, p := range palette {
+		if strings.EqualFold(p.color, color) {
+			return &i
+		}
+	}
+	return nil
 }
 
 func inkFor(color string) string {
