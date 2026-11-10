@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Needs you placement</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+.app{--bg:#F4F5F7;--panel:#FFFFFF;--hover:rgba(15,25,40,.045);--sel:rgba(15,25,40,.07);--line:#E5E7EB;--line2:#D6DAE0;--text:#18212C;--text2:#3C4856;--muted:#6B7684;--accent:#0F8C9B;--on-accent:#FFFFFF;
+--needs:#E5532F;--needs-bg:rgba(229,83,47,.07);--run:#0F8C9B;--rev:#5662D6;--err:#D93A36;--amber:#B97F00;--work:#3B6FE0;--home:#D9960F;--shadow:rgba(16,24,40,.06);background:var(--bg);color:var(--text)}
+.app[data-theme=dark]{--bg:#0B1118;--panel:#111922;--hover:rgba(255,255,255,.04);--sel:rgba(255,255,255,.07);--line:rgba(255,255,255,.07);--line2:rgba(255,255,255,.12);--text:#E4E9EF;--text2:#B6C0CB;--muted:#7F8B98;--accent:#2BB5C5;--on-accent:#04191D;
+--needs:#FF7A59;--needs-bg:rgba(255,122,89,.09);--run:#2BB5C5;--rev:#8B9CFF;--err:#F25F5C;--amber:#FFC23D;--work:#5B8CFF;--home:#FFC23D;--shadow:rgba(0,0,0,.3)}
+@media (prefers-color-scheme: dark){.app[data-theme=system]{--bg:#0B1118;--panel:#111922;--hover:rgba(255,255,255,.04);--sel:rgba(255,255,255,.07);--line:rgba(255,255,255,.07);--line2:rgba(255,255,255,.12);--text:#E4E9EF;--text2:#B6C0CB;--muted:#7F8B98;--accent:#2BB5C5;--on-accent:#04191D;
+--needs:#FF7A59;--needs-bg:rgba(255,122,89,.09);--run:#2BB5C5;--rev:#8B9CFF;--err:#F25F5C;--amber:#FFC23D;--work:#5B8CFF;--home:#FFC23D;--shadow:rgba(0,0,0,.3)}}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+.sub{color:var(--muted)}
+.ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nav{display:flex;align-items:center;gap:9px;height:28px;padding:0 8px;border-radius:6px;border:0;background:transparent;color:var(--text2);font:500 13px Inter,sans-serif;width:100%;cursor:pointer;text-align:left}
+.nav:hover{background:var(--hover)}
+.nav.on{background:var(--sel);color:var(--text)}
+.nav.indent{padding-left:32px}
+.sec{display:flex;align-items:center;gap:6px;height:26px;padding:0 8px;margin-top:14px;color:var(--muted);font-size:12px;font-weight:500}
+.btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:6px;border:1px solid var(--line2);background:var(--panel);color:var(--text);font:500 12.5px Inter,sans-serif;cursor:pointer;box-shadow:0 1px 1px var(--shadow)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.ghost{border:0;box-shadow:none;background:transparent;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 8px;border-radius:6px;border:1px solid var(--line2);color:var(--text2);font-size:12px}
+.qc{border:1px solid var(--line);border-radius:8px;background:var(--panel);overflow:hidden}
+.qc.open{border-color:color-mix(in srgb,var(--needs) 45%,var(--line))}
+.qc.sel{box-shadow:0 0 0 2px var(--needs)}
+.qc.done{background:transparent}
+.qhead{display:flex;align-items:center;gap:8px;padding:9px 12px;font-size:13px}
+.qbody{display:flex;flex-direction:column;gap:8px;padding:0 12px 12px 34px}
+.trow{display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border-radius:6px;border:0;background:transparent;color:var(--text);font:13px Inter,sans-serif;width:100%;text-align:left;cursor:pointer}
+.trow:hover{background:var(--hover)}
+.irow{display:flex;gap:10px;padding:10px 12px;border:0;border-radius:6px;background:transparent;color:var(--text);font:13px Inter,sans-serif;width:100%;text-align:left;cursor:pointer}
+.irow:hover{background:var(--hover)}
+.irow.on{background:var(--sel)}
+.seg{display:flex;gap:2px;padding:2px;border-radius:7px;background:var(--sel)}
+.seg button{height:24px;padding:0 10px;border:0;border-radius:5px;background:transparent;color:var(--muted);font:500 12.5px Inter,sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.seg button.on{background:var(--panel);color:var(--text);box-shadow:0 1px 2px var(--shadow)}
+.proto{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);display:flex;align-items:center;gap:4px;padding:5px;border-radius:999px;background:#111;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,.35);font:500 12.5px Inter,sans-serif;z-index:5}
+.proto button{height:30px;min-width:30px;padding:0 10px;border:0;border-radius:999px;background:transparent;color:#cfd3d8;font:500 12.5px Inter,sans-serif;cursor:pointer}
+.proto button.on{background:#fff;color:#111}
+.proto .lbl{padding:0 10px;color:#fff;white-space:nowrap}
+</style>
+</helmet>
+<div class="app" data-theme="{{theme}}" style="position: relative; height: 900px; display: flex; font-family: Inter, system-ui, sans-serif; font-size: 13px; overflow: hidden; -webkit-font-smoothing: antialiased;">
+
+  <nav aria-label="Workspace" style="width: 232px; flex: none; padding: 10px 8px; display: flex; flex-direction: column; gap: 1px;">
+    <div style="display: flex; align-items: center; gap: 8px; padding: 2px 6px 10px;">
+      <svg width="22" height="22" viewBox="0 0 46 46" fill="none" aria-hidden="true"><path d="M5 20 Q23 0 41 20 Z" fill="#0B1F33" stroke="#FFC23D" stroke-width="2.5" stroke-linejoin="round"></path><circle cx="23" cy="12" r="3" fill="#FFC23D"></circle><rect x="9" y="20" width="28" height="22" rx="4" fill="#FFC23D" stroke="#0B1F33" stroke-width="2.5"></rect><rect x="15" y="27" width="5" height="5" fill="#14304A"></rect><rect x="26" y="27" width="5" height="5" fill="#14304A"></rect><rect x="18" y="36" width="10" height="3" fill="#14304A"></rect></svg>
+      <span style="font-weight: 600; flex: 1;">Admiral</span>
+      <span class="pill" style="height: 22px;"><span style="width: 7px; height: 7px; border-radius: 50%; background: var(--work);"></span>Work</span>
+    </div>
+
+    <sc-if value="{{nav.inbox}}" hint-placeholder-val="{{false}}">
+      <button class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"></path></svg><span style="flex: 1;">Inbox</span><span style="color: var(--needs); font-size: 12px; font-weight: 600;">{{counts.all}}</span></button>
+    </sc-if>
+    <button class="{{nav.botCls}}" onClick="{{toChat}}"><svg width="15" height="15" viewBox="0 0 8.5 8.5" aria-hidden="true"><rect x="0.8" y="0.8" width="6.9" height="6.9" rx="1.4" fill="none" stroke="currentColor" stroke-width="0.9"></rect><rect x="2.4" y="3.1" width="1.2" height="1.2" fill="currentColor"></rect><rect x="4.9" y="3.1" width="1.2" height="1.2" fill="currentColor"></rect></svg><span style="flex: 1;">AdmiralBot</span><sc-if value="{{nav.botCount}}" hint-placeholder-val="{{true}}"><span style="color: var(--needs); font-size: 12px; font-weight: 600;">{{counts.fleet}}</span></sc-if></button>
+    <sc-if value="{{nav.needsSub}}" hint-placeholder-val="{{false}}">
+      <button class="{{nav.needsCls}}" onClick="{{toNeeds}}"><span style="flex: 1;">Needs you</span><span style="color: var(--needs); font-size: 12px; font-weight: 600;">{{counts.fleet}}</span></button>
+    </sc-if>
+    <button class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 15h18l-2.4 4.2a2 2 0 0 1-1.7 1H7.1a2 2 0 0 1-1.7-1z"></path><path d="M11 3v12"></path><path d="M11 4.5 17.5 12H11z"></path></svg><span style="flex: 1;">Ships</span><span class="sub" style="font-size: 12px;">6</span></button>
+    <button class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"></path></svg><span style="flex: 1;">Orders</span><span class="sub" style="font-size: 12px;">23</span></button>
+    <button class="nav"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg><span style="flex: 1;">Routines</span></button>
+
+    <div class="sec">Fleets</div>
+    <button class="nav"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--work); margin: 0 3px;"></span><span style="flex: 1;">Work</span><span style="color: var(--needs); font-size: 12px; font-weight: 600;">{{counts.fleet}}</span></button>
+    <button class="nav"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--home); margin: 0 3px;"></span><span style="flex: 1;">Home</span><span style="color: var(--needs); font-size: 12px; font-weight: 600;">{{counts.home}}</span></button>
+
+    <div style="flex: 1;"></div>
+    <div style="margin: 0 4px 70px; padding: 10px 12px; border: 1px dashed var(--line2); border-radius: 8px; font-size: 12px; line-height: 1.5; color: var(--text2);">
+      <div style="font-weight: 600; margin-bottom: 4px;">{{v.key}} · {{v.name}}</div>
+      <div class="sub">{{v.note}}</div>
+    </div>
+  </nav>
+
+  <div style="flex: 1; min-width: 0; margin: 8px 8px 8px 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: flex; overflow: hidden; box-shadow: 0 1px 2px var(--shadow);">
+
+    <main style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
+      <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 16px; border-bottom: 1px solid var(--line);">
+        <span style="font-weight: 500;">AdmiralBot</span>
+        <span class="sub">·</span>
+        <span class="sub">Work fleet</span>
+        <div style="flex: 1;"></div>
+        <sc-if value="{{isC}}" hint-placeholder-val="{{false}}">
+          <div class="seg" role="tablist" aria-label="AdmiralBot view">
+            <button class="{{seg.chat}}" onClick="{{toChat}}">Conversation</button>
+            <button class="{{seg.needs}}" onClick="{{toNeeds}}">Needs you <span style="color: var(--needs); font-weight: 600;">{{counts.fleet}}</span></button>
+          </div>
+        </sc-if>
+        <button class="btn">Open terminal</button>
+      </div>
+
+      <sc-if value="{{showStream}}" hint-placeholder-val="{{true}}">
+        <div style="flex: 1; overflow: auto; padding: 24px 0;">
+          <div style="max-width: 700px; margin: 0 auto; padding: 0 24px; display: flex; flex-direction: column; gap: 18px;">
+            <sc-for list="{{stream}}" as="m" hint-placeholder-count="5">
+              <div style="display: flex; gap: 12px;">
+                <sc-if value="{{m.isUser}}" hint-placeholder-val="{{false}}"><span style="width: 26px; height: 26px; border-radius: 50%; background: var(--sel); flex: none; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;">JB</span></sc-if>
+                <sc-if value="{{m.isBot}}" hint-placeholder-val="{{true}}"><svg width="26" height="26" viewBox="0 0 46 46" fill="none" aria-hidden="true" style="flex: none;"><path d="M5 20 Q23 0 41 20 Z" fill="#0B1F33" stroke="#FFC23D" stroke-width="2.5" stroke-linejoin="round"></path><circle cx="23" cy="12" r="3" fill="#FFC23D"></circle><rect x="9" y="20" width="28" height="22" rx="4" fill="#FFC23D" stroke="#0B1F33" stroke-width="2.5"></rect><rect x="15" y="27" width="5" height="5" fill="#14304A"></rect><rect x="26" y="27" width="5" height="5" fill="#14304A"></rect><rect x="18" y="36" width="10" height="3" fill="#14304A"></rect></svg></sc-if>
+                <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px;">
+                  <span style="font-size: 12px;"><span style="font-weight: 600;">{{m.who}}</span> <span class="sub">{{m.time}}</span></span>
+                  <span style="line-height: 1.55; color: var(--text2);">{{m.text}}</span>
+                  <sc-if value="{{m.hasCard}}" hint-placeholder-val="{{false}}">
+                    <div class="{{m.c.cls}}">
+                      <div class="qhead">
+                        <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" style="flex: none;"><circle cx="8" cy="8" r="6.5" fill="{{m.c.dot}}"></circle><path d="M8 4.6v4.2" stroke="#FFFFFF" stroke-width="1.7" stroke-linecap="round"></path><circle cx="8" cy="11.2" r="1" fill="#FFFFFF"></circle></svg>
+                        <span style="font-weight: 500;">{{m.c.ship}}</span><span class="sub">{{m.c.kind}}</span>
+                        <span class="ell" style="flex: 1;">{{m.c.text}}</span>
+                        <span class="sub" style="font-size: 12px;">{{m.c.age}}</span>
+                      </div>
+                      <sc-if value="{{m.c.isOpen}}" hint-placeholder-val="{{true}}">
+                        <div class="qbody">
+                          <span class="sub" style="line-height: 1.5;">{{m.c.context}}</span>
+                          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                            <sc-for list="{{m.c.opts}}" as="o" hint-placeholder-count="3"><button class="{{o.cls}}" onClick="{{o.pick}}">{{o.label}}</button></sc-for>
+                            <button class="btn ghost">{{m.c.secondary}}</button>
+                          </div>
+                        </div>
+                      </sc-if>
+                      <sc-if value="{{m.c.isDone}}" hint-placeholder-val="{{false}}">
+                        <div class="sub" style="padding: 0 12px 10px 34px; font-size: 12px;">You answered: <span style="color: var(--text2); font-weight: 500;">{{m.c.answer}}</span> · item left the inbox</div>
+                      </sc-if>
+                    </div>
+                  </sc-if>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <sc-if value="{{isA}}" hint-placeholder-val="{{false}}">
+          <div style="padding: 0 24px;">
+            <div style="max-width: 700px; margin: 0 auto; border: 1px solid var(--line); border-bottom: 0; border-radius: 10px 10px 0 0; background: var(--needs-bg); padding: 6px;">
+              <div style="display: flex; align-items: center; gap: 8px; padding: 4px 10px 6px; font-size: 12px;">
+                <span style="width: 7px; height: 7px; border-radius: 50%; background: var(--needs);"></span>
+                <span style="font-weight: 600;">Waiting on you</span><span class="sub">{{counts.fleet}} in this chat, oldest first</span>
+              </div>
+              <sc-for list="{{tray}}" as="t" hint-placeholder-count="3">
+                <button class="trow" onClick="{{t.jump}}"><span style="font-weight: 500;">{{t.ship}}</span><span class="sub ell" style="flex: 1;">{{t.text}}</span><span class="sub" style="font-size: 12px;">{{t.age}}</span></button>
+              </sc-for>
+              <sc-if value="{{homeWaiting}}" hint-placeholder-val="{{true}}">
+                <button class="trow" style="color: var(--muted);"><span style="width: 7px; height: 7px; border-radius: 50%; background: var(--home);"></span><span style="flex: 1;">{{counts.home}} waiting in Home's AdmiralBot</span><span style="font-size: 12px;">Switch fleet</span></button>
+              </sc-if>
+            </div>
+          </div>
+        </sc-if>
+
+        <div style="padding: 0 24px 20px;">
+          <div style="max-width: 700px; margin: 0 auto; border: 1px solid var(--line2); border-radius: 10px; padding: 10px 12px; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px var(--shadow); background: var(--panel);">
+            <label for="cmd" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Message AdmiralBot</label>
+            <input id="cmd" placeholder="Ask AdmiralBot, or @ a ship" style="flex: 1; border: 0; outline: 0; background: transparent; color: var(--text); font: 13.5px Inter, sans-serif;">
+            <button class="btn pri">Send</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{showFilter}}" hint-placeholder-val="{{false}}">
+        <div style="flex: 1; overflow: auto; padding: 24px 0;">
+          <div style="max-width: 700px; margin: 0 auto; padding: 0 24px; display: flex; flex-direction: column; gap: 12px;">
+            <div class="sub" style="font-size: 12px;">The open cards from this conversation, oldest first. Answering one here answers it in the chat too.</div>
+            <sc-for list="{{filterCards}}" as="c" hint-placeholder-count="3">
+              <div class="{{c.cls}}">
+                <div class="qhead">
+                  <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" style="flex: none;"><circle cx="8" cy="8" r="6.5" fill="var(--needs)"></circle><path d="M8 4.6v4.2" stroke="#FFFFFF" stroke-width="1.7" stroke-linecap="round"></path><circle cx="8" cy="11.2" r="1" fill="#FFFFFF"></circle></svg>
+                  <span style="font-weight: 500;">{{c.ship}}</span><span class="sub">{{c.kind}}</span>
+                  <span class="ell" style="flex: 1;">{{c.text}}</span>
+                  <button class="btn ghost" style="height: 22px; padding: 0 4px; font-size: 12px;" onClick="{{c.jump}}">In chat {{c.time}}</button>
+                </div>
+                <div class="qbody">
+                  <span class="sub" style="line-height: 1.5;">{{c.context}}</span>
+                  <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                    <sc-for list="{{c.opts}}" as="o" hint-placeholder-count="3"><button class="{{o.cls}}" onClick="{{o.pick}}">{{o.label}}</button></sc-for>
+                    <button class="btn ghost">{{c.secondary}}</button>
+                  </div>
+                </div>
+              </div>
+            </sc-for>
+            <sc-if value="{{filterEmpty}}" hint-placeholder-val="{{false}}">
+              <div class="sub" style="padding: 40px 0; text-align: center;">Nothing waiting on you in the Work fleet.</div>
+            </sc-if>
+            <sc-if value="{{homeWaiting}}" hint-placeholder-val="{{true}}">
+              <div style="display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px dashed var(--line2); border-radius: 8px; font-size: 12.5px; color: var(--muted);"><span style="width: 7px; height: 7px; border-radius: 50%; background: var(--home);"></span><span style="flex: 1;">{{counts.home}} waiting in the Home fleet</span><button class="btn">Switch fleet</button></div>
+            </sc-if>
+          </div>
+        </div>
+      </sc-if>
+    </main>
+
+    <sc-if value="{{isB}}" hint-placeholder-val="{{false}}">
+      <aside aria-label="Inbox" style="width: 400px; flex: none; border-left: 1px solid var(--line); display: flex; flex-direction: column;">
+        <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--line);">
+          <span style="font-weight: 500;">Inbox</span><span style="color: var(--needs); font-weight: 600; font-size: 12px;">{{counts.all}}</span>
+          <div style="flex: 1;"></div>
+          <span class="sub" style="font-size: 12px;">All fleets · oldest first</span>
+        </div>
+        <div style="flex: 1; overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 2px;">
+          <sc-for list="{{inbox}}" as="i" hint-placeholder-count="4">
+            <div>
+              <button class="{{i.rowCls}}" onClick="{{i.jump}}">
+                <span style="width: 3px; align-self: stretch; border-radius: 2px; background: {{i.fleetColor}};"></span>
+                <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px;">
+                  <span style="display: flex; gap: 8px;"><span class="ell" style="flex: 1;"><span style="font-weight: 500;">{{i.ship}}</span> <span class="sub">{{i.kind}}</span></span><span class="sub" style="font-size: 12px;">{{i.age}}</span></span>
+                  <span class="ell" style="color: var(--text2);">{{i.text}}</span>
+                </span>
+              </button>
+              <sc-if value="{{i.peek}}" hint-placeholder-val="{{false}}">
+                <div style="margin: 2px 6px 8px 19px; display: flex; flex-direction: column; gap: 8px;">
+                  <span class="sub" style="line-height: 1.5;">{{i.context}}</span>
+                  <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                    <sc-for list="{{i.opts}}" as="o" hint-placeholder-count="3"><button class="{{o.cls}}" onClick="{{o.pick}}">{{o.label}}</button></sc-for>
+                    <button class="btn ghost">{{i.secondary}}</button>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+          <sc-if value="{{inboxEmpty}}" hint-placeholder-val="{{false}}">
+            <div class="sub" style="padding: 40px 0; text-align: center;">Inbox zero.</div>
+          </sc-if>
+        </div>
+        <div class="sub" style="border-top: 1px solid var(--line); padding: 10px 14px; font-size: 12px; line-height: 1.5;">AdmiralBot's own chat questions stay in the chat. Ship items from every fleet land here.</div>
+      </aside>
+    </sc-if>
+  </div>
+
+  <div class="proto" role="group" aria-label="Prototype variant switcher">
+    <button onClick="{{prev}}" aria-label="Previous variant">‹</button>
+    <sc-for list="{{vbtns}}" as="b" hint-placeholder-count="3"><button class="{{b.cls}}" onClick="{{b.pick}}">{{b.key}}</button></sc-for>
+    <span class="lbl">{{v.key}} · {{v.name}}</span>
+    <button onClick="{{next}}" aria-label="Next variant">›</button>
+    <button onClick="{{reset}}">Reset</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["system","light","dark"],"default":"system"},"variant":{"editor":"enum","options":["A","B","C"],"default":"A"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { v: null, done: {}, sel: null, tab: 'chat' }; }
+  renderVals() {
+    const VARIANTS = [
+      { key: 'A', name: 'Folded into the chat', note: 'No Inbox. Every ship item arrives as a card in this fleet’s AdmiralBot chat, where it happened. A tray above the composer keeps the open ones in reach. Items from other fleets wait in their own fleet’s chat.' },
+      { key: 'B', name: 'Separate inbox beside the chat', note: 'The chat is for talking to AdmiralBot. Ship items from every fleet sit in an Inbox rail beside it, answered in place with Peek. Only AdmiralBot’s own chat questions live in the chat.' },
+      { key: 'C', name: 'Needs you as a filter on the chat', note: 'Cards live in the chat as in A. “Needs you” filters the conversation down to its open cards, so there is one list without a second home. Scoped to this fleet, like the chat.' }
+    ];
+    const vk = this.state.v ?? this.props.variant ?? 'A';
+    const vi = VARIANTS.findIndex((x) => x.key === vk);
+    const v = VARIANTS[vi];
+    const done = this.state.done;
+    const W = 'var(--work)', H = 'var(--home)';
+    const ITEMS = [
+      { id: 'r1', ship: 'Pale Lantern', kind: 'requested a review', text: 'PR #812 · Upgrade React Native to 0.81', context: 'CI is 3 of 5 green. The iOS pods step is still running.', opts: ['Review 14 files', 'Approve'], secondary: 'Open PR', age: '1h', time: '8:05', fleet: 'work', bot: 'Pale Lantern opened PR #812 and asked for your review.' },
+      { id: 's1', ship: 'Morning Tern', kind: 'finished its turn', text: 'Done. Want me to open the PR?', context: 'Memoized the banner and debounced AppState changes. 3 files changed.', opts: ['Open the PR', 'Reply'], secondary: 'Open bridge', age: '52m', time: '8:20', fleet: 'work', bot: 'Morning Tern finished its turn on MOB-1194 and is waiting for the next prompt.' },
+      { id: 'f1', ship: 'Brass Kettle', kind: 'sent 3 finding cards', text: 'Race in config watcher · missing test · doc drift', context: 'Teammate qa reviewed the profile-reload diff.', opts: ['Approve all 3', 'Look at each'], secondary: 'Open bridge', age: '18m', time: '8:52', fleet: 'home', bot: '' },
+      { id: 'c1', ship: 'AdmiralBot', kind: 'asks', text: 'Relaunch Little Bramble now, or after the rate limit resets at 10:00?', context: 'It anchored on a 429 from the GitHub API at 8:31.', opts: ['Now', 'At 10:00', 'Leave it anchored'], secondary: '', age: '2m', time: '9:12', fleet: 'work', chatQ: true, bot: '' },
+      { id: 'q1', ship: 'Saltpaw', kind: 'asks', text: 'Which device should the on-device check use?', context: 'The fix passes 112 unit tests. The pixel-8 resource is free.', opts: ['Pixel 8', 'Emulator API 35', 'Skip the check'], secondary: 'Open bridge', age: '3m', time: '9:14', fleet: 'work', bot: 'Saltpaw has a question about MOB-1183.' }
+    ];
+    const isA = vk === 'A', isB = vk === 'B', isC = vk === 'C';
+    const answer = (id, label) => this.setState({ done: Object.assign({}, this.state.done, { [id]: label }), sel: this.state.sel === id ? null : this.state.sel });
+    const card = (it) => {
+      const isDone = !!done[it.id];
+      let cls = 'qc' + (isDone ? ' done' : ' open') + (this.state.sel === it.id && !isDone ? ' sel' : '');
+      return Object.assign({}, it, {
+        isOpen: !isDone, isDone, answer: done[it.id] || '', cls, dot: isDone ? 'var(--idle, #9AA3AE)' : 'var(--needs)',
+        fleetColor: it.fleet === 'work' ? W : H,
+        opts: it.opts.map((label, i) => ({ label, cls: i === 0 ? 'btn pri' : 'btn', pick: () => answer(it.id, label) })),
+        jump: () => this.setState({ sel: it.id, tab: 'chat' })
+      });
+    };
+    const open = ITEMS.filter((it) => !done[it.id]);
+    const workOpen = open.filter((it) => it.fleet === 'work');
+    const counts = { all: open.filter((it) => !it.chatQ).length + (isB ? 0 : open.filter((it) => it.chatQ).length), fleet: workOpen.length, home: open.filter((it) => it.fleet === 'home').length };
+    if (isB) counts.fleet = workOpen.filter((it) => !it.chatQ).length;
+
+    const byId = {}; ITEMS.forEach((it) => { byId[it.id] = it; });
+    const botMsg = (time, text, cardIt) => ({ isUser: false, isBot: true, who: 'AdmiralBot', time, text, hasCard: !!cardIt, c: cardIt ? card(cardIt) : {} });
+    const userMsg = { isUser: true, isBot: false, who: 'You', time: '9:12', text: 'Morning. What happened overnight?', hasCard: false, c: {} };
+    let stream;
+    if (isB) {
+      stream = [
+        userMsg,
+        botMsg('9:12', 'Overnight: autopilot sailed 3 ships. One merged, one waits on CI, Little Bramble anchored on a rate limit. Four items are in your inbox, one of them from Home.', byId.c1),
+        botMsg('9:14', 'Saltpaw just asked about the on-device check. It’s at the bottom of your inbox.', null)
+      ];
+    } else {
+      stream = [
+        botMsg('8:05', byId.r1.bot, byId.r1),
+        botMsg('8:20', byId.s1.bot, byId.s1),
+        userMsg,
+        botMsg('9:12', 'Overnight: autopilot sailed 3 ships. One merged, one waits on CI, Little Bramble anchored on a rate limit. One question for you first:', byId.c1),
+        botMsg('9:14', byId.q1.bot, byId.q1)
+      ];
+    }
+    const tray = workOpen.map((it) => ({ ship: it.ship, text: it.text, age: it.age, jump: () => this.setState({ sel: it.id }) }));
+    const inbox = open.filter((it) => !it.chatQ).map((it) => {
+      const c = card(it);
+      const peek = this.state.sel === it.id || (!this.state.sel && it.id === open.filter((x) => !x.chatQ)[0].id);
+      return Object.assign(c, { peek, rowCls: peek ? 'irow on' : 'irow', jump: () => this.setState({ sel: it.id }) });
+    });
+    const tab = isC ? this.state.tab : 'chat';
+    const filterCards = workOpen.map(card);
+    const go = (k) => this.setState({ v: k, sel: null, tab: 'chat' });
+    return {
+      theme: this.props.theme ?? 'system', v, isA, isB, isC, counts, stream, tray, inbox, filterCards,
+      inboxEmpty: inbox.length === 0, filterEmpty: filterCards.length === 0, homeWaiting: counts.home > 0,
+      showStream: tab === 'chat', showFilter: tab === 'needs',
+      nav: { inbox: isB, botCount: isA, needsSub: isC, botCls: (isC && tab === 'needs') ? 'nav' : 'nav on', needsCls: tab === 'needs' ? 'nav indent on' : 'nav indent' },
+      seg: { chat: tab === 'chat' ? 'on' : '', needs: tab === 'needs' ? 'on' : '' },
+      toChat: () => this.setState({ tab: 'chat' }), toNeeds: () => this.setState({ tab: 'needs' }),
+      vbtns: VARIANTS.map((x) => ({ key: x.key, cls: x.key === vk ? 'on' : '', pick: () => go(x.key) })),
+      prev: () => go(VARIANTS[(vi + 2) % 3].key), next: () => go(VARIANTS[(vi + 1) % 3].key),
+      reset: () => this.setState({ done: {}, sel: null, tab: 'chat' })
+    };
+  }
+}
+</script>
+</body>
+</html>
