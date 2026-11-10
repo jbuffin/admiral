@@ -38,7 +38,7 @@ Go then builds the ship's prompt from the routine's template. The raw event text
 
 ### Judge calls and their harness
 
-The Lookout, the reviewer and the filing drafter are judge calls: one-shot, tool-less calls Admiral makes for a decision. Admiral picks the harness: the first in the fleet with no tools and no network proven, in the order Claude, Codex, Copilot. It uses a model pair fixed per harness: a small model for the Lookout (Haiku on Claude) and a stronger one for the reviewer and the drafter (Sonnet on Claude). The Routines and standing orders screen shows the harness and models, with no override ([#241](https://github.com/jbuffin/admiral/issues/241)).
+The Lookout, the reviewer, the filing drafter and autopilot's advisor are judge calls: one-shot, tool-less calls Admiral makes for a decision. Admiral picks the harness: the first in the fleet with no tools and no network proven, in the order Claude, Codex, Copilot. It uses a model pair fixed per harness: a small model for the Lookout (Haiku on Claude) and a stronger one for the reviewer and the drafter (Sonnet on Claude). The Routines and standing orders screen shows the harness and models, with no override ([#241](https://github.com/jbuffin/admiral/issues/241)).
 
 A missing capability turns off only the guard that needs it:
 
@@ -52,7 +52,7 @@ Preferences and the Routines and standing orders screen say which feature is off
 
 The engineer writes standing orders in plain language, per fleet, on the **Routines and standing orders** screen. They apply only to work started by outside events. A hand launch, or AdmiralBot launching on a current instruction or from a commitment, is the engineer's own act, and so is a scheduled routine run. Nothing is shared between fleets; "copy to another fleet" is the only reuse.
 
-- **Limit**: a field from a closed catalog that Go enforces, stored in the fleet's config ([ADR 0010](0010-fleets-are-set-up-by-admiral-setup-in-a-json-config.md)). The catalog: tier and fleet ceilings, sender allowlists, rates and caps, quiet hours, the repo allowlist, the restricted profile level, the wall clock, spend caps, path write-deny (Edit and Write deny rules plus a sandbox `denyWrite` on worker-launched ships), and label and sender skip filters. A Limit applies only once the engineer saves the confirmed field. The UI shows each as a sentence generated from its fields, linking to the field.
+- **Limit**: a field from a closed catalog that Go enforces, stored in the fleet's config ([ADR 0010](0010-fleets-are-set-up-by-admiral-setup-in-a-json-config.md)). The catalog: tier and fleet ceilings, sender allowlists, rates and caps, quiet hours, the repo allowlist, the restricted profile level, the wall clock, spend caps, the quota hold (hold unattended launches above N% of any plan window, 90% by default; [#246](https://github.com/jbuffin/admiral/issues/246)), path write-deny (Edit and Write deny rules plus a sandbox `denyWrite` on worker-launched ships), and label and sender skip filters. A Limit applies only once the engineer saves the confirmed field. The UI shows each as a sentence generated from its fields, linking to the field.
 - **Check**: the engineer's own words, judged by the reviewer. At most 20 per fleet, about 300 characters each, always fleet-wide.
 - **Guidance**: the engineer's own words, about 2,000 characters per fleet. Go puts it in the ship's prompt under a "Standing orders" heading, never in `.admiral/untrusted/`. Only worker-launched ships get it. Neither the Lookout nor the reviewer sees it.
 
@@ -84,7 +84,7 @@ Routines live in `$ADMIRAL_HOME/routines/<fleet>/routines.json`, edited through 
 
 ### The trigger log
 
-Each fleet has an append-only trigger log, `$ADMIRAL_HOME/routines/<fleet>/triggers.jsonl`, separate from the ledger. It holds one record per decision: event ref, tier, sender, rule matched, reviewer verdict and reason, action and ship. Scheduled runs write a record too, at T0. A ship's `trigger` field, carried on its `launched` outcome record, points at its record. A routine's Recent runs are read from it.
+Each fleet has an append-only trigger log, `$ADMIRAL_HOME/routines/<fleet>/triggers.jsonl`, separate from the ledger. It holds one record per decision: event ref, tier, sender, rule matched, reviewer verdict and reason, action and ship. Each judge call records its cost in its record, and those costs make up the worker spend ([#246](https://github.com/jbuffin/admiral/issues/246)). Scheduled runs write a record too, at T0. A ship's `trigger` field, carried on its `launched` outcome record, points at its record. A routine's Recent runs are read from it.
 
 ### Where it shows
 
