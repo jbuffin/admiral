@@ -23,7 +23,7 @@ Research for [#231](https://github.com/jbuffin/admiral/issues/231) found that ev
   - **Lifetime.** The server lives exactly as long as the TUI. When the TUI exits, the wrapper kills the server and deletes the socket. Each feedback round of a moored ship gets a new wrapper and server. Nothing resumes an old server.
   - **The engineer's own `--remote` stays refused** by the launcher. Admiral adds its own after that check.
   - `item/tool/requestUserInput` brings a pending Codex question and its options. The app-server's `requestApproval` only adds the details shown with an approval.
-- **Finding the conversation.** `--session-id` where the harness takes one (Claude Code, Copilot), the hook's `transcript_path` for Codex. The path or id sits in the pane option `@admiral-transcript` for every session, with ADR 0019's checks per harness root (`projects/`, `sessions/`, `session-state/`): no symlinks, a regular file.
+- **Finding the conversation.** `--session-id` where the harness takes one (Claude Code, Copilot), the hook's `transcript_path` for Codex. The path or id sits in the pane option `@admiral-transcript` for every session, with [ADR 0019](0019-the-chat-is-carried-by-its-transcript-and-tmux.md)'s checks per harness root (`projects/`, `sessions/`, `session-state/`): no symlinks, a regular file.
 - **One conversation model.** Every adapter emits the same items: user message; assistant text; tool call with its output folded in; pending question with its options (not from Codex's rollout); turn boundary with "worked for N"; compaction marker. Thinking and system or meta lines are dropped. A subagent's run is one tool-call item, and its separate file isn't read.
 - **State and approvals come from hooks only**, as [ADR 0007](0007-needs-you-comes-from-harness-hooks.md) says: `PermissionRequest` for Claude Code and Codex, Copilot's `notification` hook. "Working" between items comes from hooks too.
 - **Freshness.** Copilot's and Codex's servers give live text. The file routes update per finished item. Watching anything else live means the Terminal tab.
@@ -41,8 +41,8 @@ Research for [#231](https://github.com/jbuffin/admiral/issues/231) found that ev
 
 ## Consequences
 
-- This supersedes ADR 0019's chat-only scope: Admiral reads ships' and crew boats' conversations as well as the chat's. It supersedes ADR 0021's rule that Admiral never opens the file: a crew boat's conversation is read from its recorded path.
-- It amends ADR 0012: session ids live in pane options and in the moored file, and Admiral never resumes from them, so #230's rejection of resuming holds.
+- This supersedes [ADR 0019](0019-the-chat-is-carried-by-its-transcript-and-tmux.md)'s chat-only scope: Admiral reads ships' and crew boats' conversations as well as the chat's. It supersedes [ADR 0021](0021-crew-boats-record-their-transcript-path.md)'s rule that Admiral never opens the file: a crew boat's conversation is read from its recorded path.
+- It amends [ADR 0012](0012-ships-live-in-tmux-and-the-rest-in-admiral-home.md): session ids live in pane options and in the moored file, and Admiral never resumes from them, so #230's rejection of resuming holds.
 - It amends [ADR 0013](0013-each-harness-starts-with-the-prompt-on-its-command-line.md): Claude Code and Copilot ships launch with `--session-id`, Copilot ships with `--ui-server --port N`, and Codex ships through Admiral's wrapper with Admiral's own `--remote`.
 - **Accepted risks.** Copilot's port and Codex's socket take any local client without a token; Admiral controls which fleet launches which ship. Codex's app-server is experimental, and a broken one falls back to the rollout.
 - **Windows.** A future native Windows host (out of scope) keeps the pattern, since the server runs inside the ship's session. If Codex's `unix://` doesn't work there, the documented alternative is `ws://127.0.0.1:<port>` with `--remote-auth-token-env`. The address stays inside the Codex adapter and the wrapper.

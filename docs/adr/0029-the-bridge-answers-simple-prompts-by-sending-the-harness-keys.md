@@ -6,7 +6,7 @@ Status: accepted
 
 Today the bridge is the ship's terminal ([ADR 0011](0011-the-bridge-follows-the-latest-active-browser.md)). The redesign opens it on the ship's conversation instead ([#208](https://github.com/jbuffin/admiral/issues/208)), read from the harness through one adapter per harness ([ADR 0030](0030-ship-conversations-come-from-a-first-party-adapter-per-harness.md)). A ship that needs the engineer often asks a plain question or wants a permission, and sending the engineer to a terminal for each one defeats a conversation view, above all on a phone.
 
-ADR 0011 has no Approve or Deny buttons, because harness prompts are menus and a single key sent blind can answer the wrong thing or land as text. Only Copilot's server offers a supported way to answer through an API, and an observing client that answers would act for the engineer. [#232](https://github.com/jbuffin/admiral/issues/232) decided what the bridge shows and how it answers.
+[ADR 0011](0011-the-bridge-follows-the-latest-active-browser.md) has no Approve or Deny buttons, because harness prompts are menus and a single key sent blind can answer the wrong thing or land as text. Only Copilot's server offers a supported way to answer through an API, and an observing client that answers would act for the engineer. [#232](https://github.com/jbuffin/admiral/issues/232) decided what the bridge shows and how it answers.
 
 ## Decision
 
@@ -19,7 +19,7 @@ ADR 0011 has no Approve or Deny buttons, because harness prompts are menus and a
   - A **single-choice question**, from the adapter: one button per option, which sends its number.
   - A **permission prompt**, from hook state: **Allow once** and **Deny**. The card names the tool from `@admiral-reason` and shows the pending tool call from the conversation when it is there.
 - **Gated on hook state.** A button sends keys only while the hook state still matches its card. If the state has moved on, the card goes away.
-- **Everything else goes to the terminal.** Multi-select, "Other" with free text, "always allow", a question with no options, and any stop whose reason has no card (trust dialog, idle, bell) get a card that says "Answer this in the terminal" with **Open terminal**. The same kind of card covers "Admiral can't read this conversation" (ADR 0030) and "Starting…" before anything is recorded.
+- **Everything else goes to the terminal.** Multi-select, "Other" with free text, "always allow", a question with no options, and any stop whose reason has no card (trust dialog, idle, bell) get a card that says "Answer this in the terminal" with **Open terminal**. The same kind of card covers "Admiral can't read this conversation" ([ADR 0030](0030-ship-conversations-come-from-a-first-party-adapter-per-harness.md)) and "Starting…" before anything is recorded.
 - **Pane size.** Only the Terminal tab joins the bridge WebSocket and can become the active browser. Conversation, Changes and PR never resize the pane, so reading on a phone doesn't shrink the Mac's terminal.
 - **Flotilla.** Chips above the tabs: the ship, then each crew boat with its role. Picking a crew boat switches Conversation, Terminal, the message box and the answer cards to that boat, reading its recorded transcript path. Changes and PR stay the ship's. Subagents get no chip. An exited crew boat's chip stays and reads as exited.
 - **Stop ship** asks for confirmation, then ends the session and its crew boats. The ship leaves as a Dismiss does: it neither moors (even with an open PR) nor stays anchored. It records a `stopped` outcome. AdmiralBot's stop write does the same.
@@ -30,13 +30,13 @@ ADR 0011 has no Approve or Deny buttons, because harness prompts are menus and a
 ## Considered options
 
 - **Keys from a per-harness map, gated on hook state** (chosen). It works on every harness and through the same TUI the engineer would use, and a card that no longer matches the state can't send anything.
-- **Answering through each harness's API.** Only Copilot's server offers it, and Admiral's observing clients register no handlers so they can never answer for the engineer (ADR 0030).
-- **No answer buttons** (ADR 0011). Safe, but every question means switching to the terminal.
+- **Answering through each harness's API.** Only Copilot's server offers it, and Admiral's observing clients register no handlers so they can never answer for the engineer ([ADR 0030](0030-ship-conversations-come-from-a-first-party-adapter-per-harness.md)).
+- **No answer buttons** ([ADR 0011](0011-the-bridge-follows-the-latest-active-browser.md)). Safe, but every question means switching to the terminal.
 - **Switching to the terminal when a ship needs you.** A tab that changes under the engineer's finger is worse than a card with **Open terminal**.
 
 ## Consequences
 
-- This amends ADR 0011: only the Terminal tab joins the bridge socket and becomes the active browser, and the Conversation tab has answer buttons for the two cases the key map covers. The terminal itself is unchanged.
+- This amends [ADR 0011](0011-the-bridge-follows-the-latest-active-browser.md): only the Terminal tab joins the bridge socket and becomes the active browser, and the Conversation tab has answer buttons for the two cases the key map covers. The terminal itself is unchanged.
 - It amends [ADR 0015](0015-outcomes-are-an-append-only-history-beside-tmux.md) with a `stopped` event.
 - A harness release can change its menus. Each harness's key map gets one test against a recorded TUI, and a case the map doesn't cover goes to the terminal.
 - The structured view answers through keystrokes, which is surprising. The hook-state gate is what keeps a stale card from sending keys into a prompt the engineer never saw.
