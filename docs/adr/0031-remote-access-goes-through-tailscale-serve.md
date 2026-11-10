@@ -4,7 +4,7 @@ Status: accepted, amended by [ADR 0032](0032-devices-pair-for-their-own-tokens-a
 
 ## Context
 
-[ADR 0001](0001-local-web-app-served-from-the-mac.md) serves Admiral on the LAN with one startup token, and treats a loopback request as local. The engineer wants to reach Admiral from a phone or iPad away from home. The research in [#215](https://github.com/jbuffin/admiral/issues/215) ([note](../research/remote-access-tailscale.md)) compared opening the tailnet IP by hand (A), staying behind the Mac's own `tailscale serve` (B), and embedding tsnet (C). `tailscale serve` forwards to Admiral on loopback, so under ADR 0001 every request through it would count as local. [#234](https://github.com/jbuffin/admiral/issues/234) decided the shape.
+[ADR 0001](0001-local-web-app-served-from-the-mac.md) serves Admiral on the LAN with one startup token, and treats a loopback request as local. The engineer wants to reach Admiral from a phone or iPad away from home. The research in [#215](https://github.com/jbuffin/admiral/issues/215) ([note](../research/remote-access-tailscale.md)) compared opening the tailnet IP by hand (A), staying behind the Mac's own `tailscale serve` (B), and embedding tsnet (C). `tailscale serve` forwards to Admiral on loopback, so under [ADR 0001](0001-local-web-app-served-from-the-mac.md) every request through it would count as local. [#234](https://github.com/jbuffin/admiral/issues/234) decided the shape.
 
 ## Decision
 
@@ -28,5 +28,5 @@ Status: accepted, amended by [ADR 0032](0032-devices-pair-for-their-own-tokens-a
 
 ## Consequences
 
-- This amends ADR 0001: loopback is local only without proxy headers, Tailscale mode listens on loopback, and the token stays as a second factor beside a Tailscale identity allowlist.
+- This amends [ADR 0001](0001-local-web-app-served-from-the-mac.md): loopback is local only without proxy headers, Tailscale mode listens on loopback, and the token stays as a second factor beside a Tailscale identity allowlist.
 - Web Push and an installed app can rely on HTTPS through the tailnet URL ([ADR 0033](0033-pushes-are-web-push-from-the-mac-with-no-hosted-relay.md)).

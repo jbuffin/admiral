@@ -24,11 +24,11 @@ Under [ADR 0001](0001-local-web-app-served-from-the-mac.md) every remote browser
 ## Considered options
 
 - **Per-device tokens with one-time pairing** (chosen). Each device can be revoked alone, and a token is bound to the login that paired it.
-- **Keep the shared token** (ADR 0001, ADR 0031). Nothing to build, but one leak or one lost phone means signing out everything, and native clients would carry the one secret.
+- **Keep the shared token** ([ADR 0001](0001-local-web-app-served-from-the-mac.md), [ADR 0031](0031-remote-access-goes-through-tailscale-serve.md)). Nothing to build, but one leak or one lost phone means signing out everything, and native clients would carry the one secret.
 - **Scan the QR inside the installed app.** Rejected in #243: it needs camera permission and a decoder library, where a typed code needs neither.
 
 ## Consequences
 
-- This amends ADR 0001: there is a pairing flow, and the one startup token is gone. It amends ADR 0031: the second factor is the device token, bound to the login that paired it, and the sign-in QR carries a pairing code instead of a token.
+- This amends [ADR 0001](0001-local-web-app-served-from-the-mac.md): there is a pairing flow, and the one startup token is gone. It amends [ADR 0031](0031-remote-access-goes-through-tailscale-serve.md): the second factor is the device token, bound to the login that paired it, and the sign-in QR carries a pairing code instead of a token.
 - A push subscription belongs to a paired device and goes with it ([ADR 0033](0033-pushes-are-web-push-from-the-mac-with-no-hosted-relay.md)).
 - An installed app whose cached shell is newer or older than the server reloads when the `/api/version` probe shows a mismatch (#243).

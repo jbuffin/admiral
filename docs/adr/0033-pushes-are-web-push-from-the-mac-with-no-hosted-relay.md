@@ -23,7 +23,7 @@ Today Admiral only chimes in an open browser. Away from the Mac, the engineer ha
 ## Considered options
 
 - **Web Push from the Mac** (chosen). Nothing hosted, and the payload is encrypted to the device. On iOS it needs the Home Screen install, and it has no action buttons.
-- **Native push through an APNs relay.** Needs native apps and a hosted relay, against ADR 0001. Out of scope with the native apps.
+- **Native push through an APNs relay.** Needs native apps and a hosted relay, against [ADR 0001](0001-local-web-app-served-from-the-mac.md). Out of scope with the native apps.
 
 ## Consequences
 
