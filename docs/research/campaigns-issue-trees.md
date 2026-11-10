@@ -30,7 +30,7 @@ A child is **ready** when it is open, every blocker is closed (including blocker
 Each ready child gets a **crew mode** from rules the campaign keeps:
 
 | Child | Mode | Starts on |
-|---|---|---|
+| --- | --- | --- |
 | `wayfinder:grilling`, `wayfinder:prototype` | **with you** (HITL) | `/wayfinder <map> <ticket>` |
 | `wayfinder:research` | **AFK** | `/wayfinder <map> <ticket>` (research may run in parallel) |
 | `wayfinder:task` | AFK, or with you if `needs-human-action` | `/wayfinder` |
@@ -55,7 +55,7 @@ Steps 2 and 3 need AdmiralBot to launch ships, which changes ADR 0020.
 
 ### UI sketch
 
-```
+```text
  WORK FLEET                 │  Map: make milestone 1 playable                    owner/game#230
  ▸ Inbox              3     │  Destination: milestone 1 playable end to end        ██████░░░░░░ 6/13
  ▸ Ships              4     │  Ready 3 · With you 2 · Blocked 4 · Underway 1          [Autopilot AFK ▢]
@@ -81,10 +81,10 @@ A child's order carries its own `repo`, as orders do today. A campaign also keep
 
 ### GitHub reads (primary sources)
 
-- GraphQL `Issue.subIssues`, `subIssuesSummary`, `parent`, `blockedBy`, `blocking`, `assignees`, `repository`: https://docs.github.com/en/graphql/reference/objects#issue. I checked these live with `gh api graphql` against the owner's maps. One query of about 3 points reads a whole level.
-- REST sub-issues (`GET …/issues/{n}/sub_issues`, `…/parent`, `PATCH …/sub_issues/priority`): https://docs.github.com/en/rest/issues/sub-issues
-- REST dependencies (`GET/POST …/dependencies/blocked_by`, `GET …/dependencies/blocking`): https://docs.github.com/en/rest/issues/issue-dependencies
-- Limits: at most 100 sub-issues per parent and 8 levels of nesting; sub-issues may come from another repository: https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/adding-sub-issues. The cross-repo map is at 91, which probably explains its `Part of` children. So the reader also parses `Part of #<n>` and `Blocked by: #…` body lines as the fallback, as the tracker doc describes.
+- GraphQL `Issue.subIssues`, `subIssuesSummary`, `parent`, `blockedBy`, `blocking`, `assignees`, `repository`: <https://docs.github.com/en/graphql/reference/objects#issue>. I checked these live with `gh api graphql` against the owner's maps. One query of about 3 points reads a whole level.
+- REST sub-issues (`GET …/issues/{n}/sub_issues`, `…/parent`, `PATCH …/sub_issues/priority`): <https://docs.github.com/en/rest/issues/sub-issues>
+- REST dependencies (`GET/POST …/dependencies/blocked_by`, `GET …/dependencies/blocking`): <https://docs.github.com/en/rest/issues/issue-dependencies>
+- Limits: at most 100 sub-issues per parent and 8 levels of nesting; sub-issues may come from another repository: <https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/adding-sub-issues>. The cross-repo map is at 91, which probably explains its `Part of` children. So the reader also parses `Part of #<n>` and `Blocked by: #…` body lines as the fallback, as the tracker doc describes.
 - Search qualifiers for trees are missing from GitHub's filtering doc. In my tests `is:blocked` and `has:parent-issue` work under advanced search and `parent-issue:` doesn't. Discover campaigns by search (`label:wayfinder:map`, `has:sub-issues`, or one the engineer pins by URL), then read each tree with GraphQL.
 
 ### Plugins (a work tracker)

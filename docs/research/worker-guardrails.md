@@ -23,7 +23,7 @@ The common rule: separate trigger authority from content trust, let deterministi
 Each event has a **trigger tier**, which says who caused it. Its text is **content**, and content is never instructions unless the tier is T0 or T1.
 
 | Tier | Who | How identity is established |
-|---|---|---|
+| --- | --- | --- |
 | T0 Owner | The engineer in Admiral or the AdmiralBot chat | Admiral's own auth (ADR 0001) |
 | T1 Owner, remote | The engineer's own Slack user ID in the fleet's workspace | Slack-signed event payload, user ID pinned in config |
 | T2 Known | Allowlisted colleagues, issues assigned to the engineer in allowlisted orgs, tracker tickets, the engineer's own email | Source plugin plus a per-fleet sender allowlist |
@@ -87,7 +87,7 @@ The engineer writes standing orders in plain language, and each one is filed int
 ## Defaults
 
 | Setting | Home | Work |
-|---|---|---|
+| --- | --- | --- |
 | T1 (own Slack) ceiling | A5 Commodore | A4 normal ship; Commodore asks first |
 | T2 (known) ceiling | A3 restricted, Draft fix | A2 add order (Ask first) |
 | T3 (stranger) ceiling | A1 propose (hard cap) | A0 report only |
@@ -125,28 +125,30 @@ The engineer writes standing orders in plain language, and each one is filed int
 ## Sources
 
 Opened:
-- https://x.ai/bot/guides/grok-bot-101
-- https://docs.openclaw.ai/gateway/security
-- https://docs.openclaw.ai/gateway/security/tool-permissions
-- https://docs.openclaw.ai/gateway/security/prompt-injection
-- https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent
-- https://docs.github.com/en/copilot/concepts/agents/cloud-agent/risks-and-mitigations
-- https://code.claude.com/docs/en/github-actions
-- https://code.claude.com/docs/en/sandboxing (first 100k characters)
-- https://code.claude.com/docs/en/permission-modes (first 100k characters)
-- https://code.claude.com/docs/en/cli-reference
-- https://learn.chatgpt.com/docs/agent-approvals-security (redirected from developers.openai.com/codex/agent-approvals-security)
-- https://docs.github.com/en/copilot/how-tos/use-copilot-agents/use-copilot-cli
-- https://docs.sentry.io/product/ai-in-sentry/seer/autofix/
-- https://docs.devin.ai/integrations/slack
-- https://cursor.com/docs/integrations/slack
-- https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/
-- https://simonwillison.net/2025/Jun/13/prompt-injection-design-patterns/
-- https://arxiv.org/abs/2503.18813 (CaMeL)
-- https://www.anthropic.com/research/prompt-injection-defenses
+
+- <https://x.ai/bot/guides/grok-bot-101>
+- <https://docs.openclaw.ai/gateway/security>
+- <https://docs.openclaw.ai/gateway/security/tool-permissions>
+- <https://docs.openclaw.ai/gateway/security/prompt-injection>
+- <https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent>
+- <https://docs.github.com/en/copilot/concepts/agents/cloud-agent/risks-and-mitigations>
+- <https://code.claude.com/docs/en/github-actions>
+- <https://code.claude.com/docs/en/sandboxing> (first 100k characters)
+- <https://code.claude.com/docs/en/permission-modes> (first 100k characters)
+- <https://code.claude.com/docs/en/cli-reference>
+- <https://learn.chatgpt.com/docs/agent-approvals-security> (redirected from developers.openai.com/codex/agent-approvals-security)
+- <https://docs.github.com/en/copilot/how-tos/use-copilot-agents/use-copilot-cli>
+- <https://docs.sentry.io/product/ai-in-sentry/seer/autofix/>
+- <https://docs.devin.ai/integrations/slack>
+- <https://cursor.com/docs/integrations/slack>
+- <https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/>
+- <https://simonwillison.net/2025/Jun/13/prompt-injection-design-patterns/>
+- <https://arxiv.org/abs/2503.18813> (CaMeL)
+- <https://www.anthropic.com/research/prompt-injection-defenses>
 
 Known only from search snippets, not opened:
-- Copilot CLI allowing-tools: https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli/allowing-tools
-- Lindy Human in Loop: https://docs.lindy.ai/testing/human-in-the-loop.md
+
+- Copilot CLI allowing-tools: <https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli/allowing-tools>
+- Lindy Human in Loop: <https://docs.lindy.ai/testing/human-in-the-loop.md>
 
 Not available: x.ai/bot and the x.ai changelog returned 403 in earlier research, and no official page on Grok Bot's reviewer exists beyond the guide.

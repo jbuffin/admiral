@@ -15,11 +15,13 @@
 **A. External: do nothing.** The user runs the Tailscale app on the Mac and the iPad and opens `http://<mac 100.x or MagicDNS name>:7420/?token=…`. This works today: the peer is not loopback, so the token check applies, and WireGuard encrypts the traffic. The gaps: the printed URL shows the LAN IP rather than the tailnet one, the page is still HTTP so it is not a secure context (no clipboard, PWA push or service worker), and Admiral also listens on every other interface.
 
 **B. Optional built-in on an existing tailscaled (`tailscale serve`).** Serve runs a Go `httputil.ReverseProxy` that **keeps the incoming Host** (`r.Out.Host = r.In.Host`). It adds `X-Forwarded-*` and `Tailscale-User-Login/Name/Profile-Pic`, and strips copies of those headers sent by the client. It leaves the identity headers out for tagged devices and for Funnel traffic. It needs HTTPS and MagicDNS turned on for the tailnet, and the certificate renews automatically. WebSockets pass through.
+
 - Today this **fails closed**. The request comes from 127.0.0.1 with Host `mac.tailnet.ts.net`, `hostAllowed` rejects that name, and Admiral answers 403.
 - The danger is in fixing it naively. If you add the ts.net name to `hostAllowed`, every tailnet peer, and with Funnel the whole internet, becomes "local" and skips the token. Proper support needs Admiral to treat a loopback request that carries `X-Forwarded-For` or a ts.net Host as remote. It would then require the token, or a `Tailscale-User-Login` on an allowlist, and refuse any request that has no identity header (Funnel or a tagged device). It should also offer `--listen 127.0.0.1:7420` so the LAN path is closed.
 - Cost: a small amount of Go and no new dependencies. Tailscale's own Serve doc says to bind to localhost when you trust these headers.
 
 **C. First-class with tsnet embedded.** Admiral becomes its own tailnet node, for example `admiral.<tailnet>.ts.net`.
+
 - `tsnet.Server{Dir, Hostname, AuthKey, Ephemeral, AdvertiseTags, ClientSecret}`. With no key it prints a login URL, which suits `admiral setup`. State would live under `$ADMIRAL_HOME/tsnet`.
 - `ListenTLS` gives HTTPS with a Let's Encrypt certificate. `LocalClient().WhoIs(RemoteAddr)` returns the caller's login, which is a real identity and could replace the token for tailnet peers.
 - `ListenFunnel` exists, so not exposing it is a code decision.
@@ -33,6 +35,7 @@
   - Every bug in that stack becomes Admiral's to support.
 
 **Alternatives, for comparison only.**
+
 - Cloudflare Tunnel: public hostname, so it needs Cloudflare Access in front. cloudflared connects from loopback with the public Host, so it hits the same 403 and the same "local" trap. The code already mentions it.
 - ngrok: a public URL with traffic through a third party. Not acceptable for an RCE surface without its OAuth gate.
 - Plain WireGuard: you run it yourself, it needs port forwarding or a relay, and it gives no identity or certificates. Admiral sees it the same as option A.
@@ -73,14 +76,14 @@ Service workers, Web Push (Home Screen apps, iOS 16.4+) and `navigator.clipboard
 
 ## Sources
 
-- https://pkg.go.dev/tailscale.com/tsnet
-- https://tailscale.com/kb/1244/tsnet
-- https://tailscale.com/kb/1312/serve
-- https://github.com/tailscale/tailscale/blob/main/ipn/ipnlocal/serve.go (Host preserved, identity headers, tagged devices skipped)
-- https://tailscale.com/kb/1153/enabling-https
-- https://tailscale.com/kb/1028/key-expiry
-- https://tailscale.com/kb/1207/small-tailscale
-- https://olivierforget.net/blog/2024/dropserver-progress-june-2024/ (tsnet +19 MB anecdote)
-- https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/
-- https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts
+- <https://pkg.go.dev/tailscale.com/tsnet>
+- <https://tailscale.com/kb/1244/tsnet>
+- <https://tailscale.com/kb/1312/serve>
+- <https://github.com/tailscale/tailscale/blob/main/ipn/ipnlocal/serve.go> (Host preserved, identity headers, tagged devices skipped)
+- <https://tailscale.com/kb/1153/enabling-https>
+- <https://tailscale.com/kb/1028/key-expiry>
+- <https://tailscale.com/kb/1207/small-tailscale>
+- <https://olivierforget.net/blog/2024/dropserver-progress-june-2024/> (tsnet +19 MB anecdote)
+- <https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/>
+- <https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts>
 - Repo: `internal/auth/auth.go`, `cmd/admiral/main.go` (serve, about lines 146-420), `internal/server/lan.go`, `docs/adr/0001-local-web-app-served-from-the-mac.md`, `web/src/Bridge.tsx`

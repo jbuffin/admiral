@@ -15,7 +15,7 @@ Don't let one chat grow without limit, and don't add a visible bot per campaign.
 
 ## Design
 
-```
+```text
             engineer (desktop / phone)
                      │  Admiral's own conversation log (what the UI shows)
                      ▼
@@ -40,7 +40,7 @@ Don't let one chat grow without limit, and don't add a visible bot per campaign.
 ### What lives where (per fleet, under `$ADMIRAL_HOME/chat/<fleet>/`)
 
 | Kept in | What |
-|---|---|
+| --- | --- |
 | **Ledger** (server-owned, `ledger.json` or SQLite) | Commitments (id, text, trigger or due, source message, status); campaigns (parent issue, mode rules, HITL slot); routines; delegations (ship, order, "tell the engineer when…"); claims; a capped list of notes (preferences) |
 | **`brief.md`** | Rendered by the server from the ledger and live state on every change, kept under 10,000 characters (the cap on `SessionStart` context). Contains open commitments, active campaigns as one line each, pending chat questions, ships waiting on the engineer, events since the bot's last turn, and notes |
 | **`conversation.jsonl`** | The visible chat as Admiral records it: user and assistant text from the transcript tail, worker cards, and reset markers. It is never fed back to the model whole |
@@ -82,7 +82,7 @@ There is no long-lived campaign bot. A campaign's state is its GitHub tree plus 
 ### Failure modes
 
 | Risk | Guard |
-|---|---|
+| --- | --- |
 | A commitment lost on reset | Write-at-promise rule, the flush turn, the brief, and the `PreCompact` instructions. The ledger is the truth, not the summary |
 | Duplicate launches | An idempotency key on order and launch (`campaign:<id>:child:<n>`). The server refuses the key while a live ship holds it |
 | Two actors on one ticket | A server-side claim per ticket (chat, worker or ship), released when the ship ends, plus the GitHub assignee as the external claim. Worker turns for one campaign run one at a time; events queue |
@@ -110,8 +110,8 @@ There is no long-lived campaign bot. A campaign's state is its GitHub tree plus 
 
 ## Sources
 
-- Claude Code: https://code.claude.com/docs/en/context-window, /hooks, /model-config, /settings-reference, /headless, /memory, /costs (all under https://code.claude.com/docs/en/)
-- Model IDs, prices and API compaction (`compact-2026-01-12`, 150K default trigger), context editing and the memory tool: the claude-api skill (cached 2026-11-03), and https://platform.claude.com/docs/en/build-with-claude/compaction (not opened)
-- Anthropic, Effective context engineering, https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents
-- OpenClaw: https://docs.openclaw.ai/concepts/session, https://docs.openclaw.ai/concepts/memory, https://docs.openclaw.ai/concepts/compaction
-- Grok Bot: https://x.ai/bot/guides/grok-bot-101 (says nothing about memory); per-Bot memory and routines from secondary coverage at https://vpsranking.com/news/ai/ai-2026-09-03-xai-grok-bot-persistent-agents/ (not opened). The official x.ai Grok Bot design page was not found or opened.
+- Claude Code: <https://code.claude.com/docs/en/context-window>, /hooks, /model-config, /settings-reference, /headless, /memory, /costs (all under <https://code.claude.com/docs/en/>)
+- Model IDs, prices and API compaction (`compact-2026-01-12`, 150K default trigger), context editing and the memory tool: the claude-api skill (cached 2026-11-03), and <https://platform.claude.com/docs/en/build-with-claude/compaction> (not opened)
+- Anthropic, Effective context engineering, <https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents>
+- OpenClaw: <https://docs.openclaw.ai/concepts/session>, <https://docs.openclaw.ai/concepts/memory>, <https://docs.openclaw.ai/concepts/compaction>
+- Grok Bot: <https://x.ai/bot/guides/grok-bot-101> (says nothing about memory); per-Bot memory and routines from secondary coverage at <https://vpsranking.com/news/ai/ai-2026-09-03-xai-grok-bot-persistent-agents/> (not opened). The official x.ai Grok Bot design page was not found or opened.
