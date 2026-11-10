@@ -1,6 +1,6 @@
 # 9. Ships run in a checkout picked from the fleet's search roots
 
-Status: accepted
+Status: accepted, amended by [ADR 0027](0027-campaigns-are-read-from-githubs-issue-tree.md) (a campaign's work repo comes first in the preselect) and by the amendment below (Admiral clones a missing repo on launch)
 
 ## Context
 
@@ -35,3 +35,9 @@ The engineer picks the ship's directory in launch orders from a list Admiral bui
 - Two ships in one checkout can step on each other. The warning is the only guard.
 - The order source plugin contract gains an optional `repo` on each order in `orders.list`: a repository URL, matched against checkout remotes like a URL in the order's text. The MVP's freeform list leaves it empty.
 - A harness's first run in a directory may stop on its folder-trust prompt. The engineer answers it on the bridge, and ADR 0007's no-first-hook rule shows the ship as needs-you meanwhile.
+
+## Amendment (2026-11-10)
+
+From [Grilling: how do order sources work per fleet, with GitHub built in?](https://github.com/jbuffin/admiral/issues/227): **Admiral clones a missing repo on launch.** Launching on a repo with no checkout in the fleet runs `gh repo clone` into the fleet's `clone_root` (by default its first search root), and launch orders says so beforehand. An existing folder at that path fails the launch visibly and is never overwritten. The new checkout makes the repo a project of that fleet ([ADR 0006](0006-order-sources-are-subprocess-plugins.md)). This replaces "Admiral never clones or creates directories" above. Admiral still makes no worktrees and takes no typed paths.
+
+From [Grilling: how does the campaign model work?](https://github.com/jbuffin/admiral/issues/229): a launch on a campaign child preselects the campaign's work repo first, before the order's `repo` hint ([ADR 0027](0027-campaigns-are-read-from-githubs-issue-tree.md)).
