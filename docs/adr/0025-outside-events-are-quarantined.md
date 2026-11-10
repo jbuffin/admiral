@@ -74,7 +74,7 @@ A routine is the engineer's per-fleet rule: **When** (a schedule or a source eve
 
 Before acting maps onto the ladder: Report only is A0 (a card with the Lookout's summary), Ask first is A1 (an Inbox proposal), and Act is the computed ceiling.
 
-A schedule has no outside text, so no Lookout, no reviewer and no standing orders. Its Do launches a ship from a stored launch spec or prompts AdmiralBot with a turn marked "Routine: <name>". A scheduled launch is a normal ship that can push. It waits for room under the global cap and for its resources, counts toward the fleet's launches-per-hour budget, and becomes Ask first under Hold fire. A missed run gets one late run on start if fewer than 12 hours have passed, otherwise Recent runs records it as missed. A scheduled launch carries the idempotency key `routine:<id>`, and a run is skipped while the last run's ship is live.
+A schedule has no outside text, so no Lookout, no reviewer and no standing orders. Its Do launches a ship from a stored launch spec or prompts AdmiralBot with a turn marked with the routine's name. A scheduled launch is a normal ship that can push. It waits for room under the global cap and for its resources, counts toward the fleet's launches-per-hour budget, and becomes Ask first under Hold fire. A missed run gets one late run on start if fewer than 12 hours have passed, otherwise Recent runs records it as missed. A scheduled launch carries the idempotency key `routine:<id>`, and a run is skipped while the last run's ship is live.
 
 Every routine launch, scheduled or on an event, runs in autopilot mode (ADR 0034), so a routine can only pick a dock whose harness carries autopilot mode.
 
