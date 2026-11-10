@@ -266,6 +266,7 @@ func TestLeftoverFreeformFolder(t *testing.T) {
 		"plugin.py":   "# an earlier copy\n",
 	}
 	write := func(t *testing.T, dir string, files map[string]string, stamp string) {
+		t.Helper()
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -393,7 +394,7 @@ func TestOrderTextValidationAndEditFlow(t *testing.T) {
 		t.Errorf("order = %+v, want title %q (first non-empty line, trimmed) and the whole text %q", first, "Fix the flaky test", text)
 	}
 	if got := w.readFile(store); !strings.Contains(got, "Fix the flaky test") {
-		t.Errorf("data/orders/orders.json = %q, want it to hold the order", got)
+		t.Errorf("data/orders/stored.json = %q, want it to hold the order", got)
 	}
 
 	code, body = w.srcReq(http.MethodPut, "/orders/orders/"+first.ID, map[string]any{"text": "Rewrite the parser\nwith care"})
@@ -403,7 +404,7 @@ func TestOrderTextValidationAndEditFlow(t *testing.T) {
 		return ok && o.Title == "Rewrite the parser" && o.Text == "Rewrite the parser\nwith care"
 	})
 	if got := w.readFile(store); strings.Contains(got, "flaky") || !strings.Contains(got, "Rewrite the parser") {
-		t.Errorf("data/orders/orders.json = %q, want the edit and not the old text", got)
+		t.Errorf("data/orders/stored.json = %q, want the edit and not the old text", got)
 	}
 
 	// limits: empty after trimming and over 12,000 bytes are refused with a message;
@@ -447,7 +448,7 @@ func TestOrderTextValidationAndEditFlow(t *testing.T) {
 	w.mustOK(code, body, "DELETE /api/sources/orders/orders/<id>")
 	w.waitSource("orders", 5*time.Second, "the order removed", func(s sourceJSON) bool { return !s.hasOrder(first.ID) && len(s.orderIDs()) == 1 })
 	if got := w.readFile(store); strings.Contains(got, "Rewrite the parser") {
-		t.Errorf("data/orders/orders.json still holds the removed order: %q", got)
+		t.Errorf("data/orders/stored.json still holds the removed order: %q", got)
 	}
 }
 
@@ -482,7 +483,7 @@ func TestLaunchTakesTheOrdersTextNotTheClients(t *testing.T) {
 	w.in.waitShipsList(t, 10*time.Second, "the ship gone", func(l []shipJSON) bool { return len(l) == 0 })
 	w.waitSource("orders", 5*time.Second, "no orders left", func(s sourceJSON) bool { return len(s.orderIDs()) == 0 })
 	if got := w.readFile(filepath.Join(w.dataDir("orders"), "stored.json")); strings.Contains(got, "Fix the flaky test") {
-		t.Errorf("orders.json still holds the launched order: %q", got)
+		t.Errorf("stored.json still holds the launched order: %q", got)
 	}
 }
 

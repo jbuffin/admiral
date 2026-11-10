@@ -84,7 +84,6 @@ func diskFiles(dir string) (map[string][]byte, error) {
 // not stop the others; the errors come back joined.
 func InstallPlugins(home string) error {
 	var errs []error
-	errs = append(errs, removeRetired(home))
 	for _, name := range plugins.Names {
 		errs = append(errs, installPlugin(home, name))
 	}
@@ -95,10 +94,10 @@ func InstallPlugins(home string) error {
 // plugins/ when it is still Admiral's untouched copy.
 var retired = []string{"freeform"}
 
-// removeRetired deletes the retired plugins' folders. Only a real directory
+// RemoveRetired deletes the retired plugins' folders. Only a real directory
 // whose stamp matches its files goes; an edited copy or a symlink stays, with
 // one log line, and a symlink's target is never touched.
-func removeRetired(home string) error {
+func RemoveRetired(home string) error {
 	var errs []error
 	for _, name := range retired {
 		dir := filepath.Join(pluginsDir(home), name)
@@ -113,9 +112,7 @@ func removeRetired(home string) error {
 			fmt.Fprintf(os.Stderr, "admiral: plugins/%s is a retired plugin, but not a plain folder; left alone\n", name)
 			continue
 		}
-		have, err := os.ReadFile(filepath.Join(dir, StampFile))
-		onDisk, derr := diskFiles(dir)
-		if err != nil || derr != nil || Stamp(onDisk) != string(have) {
+		if _, ok := untouched(dir); !ok {
 			fmt.Fprintf(os.Stderr, "admiral: plugins/%s is a retired plugin, but you edited it; left alone\n", name)
 			continue
 		}
@@ -126,6 +123,21 @@ func removeRetired(home string) error {
 		fmt.Fprintf(os.Stderr, "admiral: removed the retired plugin plugins/%s\n", name)
 	}
 	return errors.Join(errs...)
+}
+
+// untouched reports whether dir is still Admiral's own copy of a plugin: its
+// stamp file matches the files on disk. It returns that stamp. An edited
+// folder, one without a stamp, or one that can't be read is not untouched.
+func untouched(dir string) (string, bool) {
+	have, err := os.ReadFile(filepath.Join(dir, StampFile))
+	if err != nil {
+		return "", false
+	}
+	onDisk, err := diskFiles(dir)
+	if err != nil || Stamp(onDisk) != string(have) {
+		return "", false
+	}
+	return string(have), true
 }
 
 // installPlugin writes the embedded plugin to plugins/<name>/ when the folder
@@ -140,13 +152,9 @@ func installPlugin(home, name string) error {
 	dir := filepath.Join(pluginsDir(home), name)
 
 	if _, err := os.Lstat(dir); err == nil {
-		have, err := os.ReadFile(filepath.Join(dir, StampFile))
-		if err != nil || string(have) == want {
-			return nil
-		}
-		onDisk, err := diskFiles(dir)
-		if err != nil || Stamp(onDisk) != string(have) {
-			return nil // edited by hand, or not readable: not ours to replace
+		stamp, ok := untouched(dir)
+		if !ok || stamp == want {
+			return nil // edited by hand, not readable, or already current
 		}
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err

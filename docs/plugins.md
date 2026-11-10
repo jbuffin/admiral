@@ -93,7 +93,7 @@ Requests are `{"jsonrpc":"2.0","id":1,"method":"…","params":{…}}`. Answer ea
 | `labels` | Optional. An array of label-name strings (`["bug", "ready-for-agent"]`), in the order you want them shown. Admiral shows them as chips on the order and its filter matches them. A plugin that leaves it out gets no chips. |
 | `repo` | Optional git remote of the repository the order belongs to (`https://github.com/acme/widgets` or `git@github.com:acme/widgets.git`). Admiral uses it to preselect a checkout. |
 
-Admiral hides an order while a ship launched from it exists, whatever that ship's status, and shows it again once the ship is gone, if you still list it. A plugin that wants a launched order to disappear for good deletes it when it hears `orders.launched`, as freeform does.
+Admiral hides an order while a ship launched from it exists, whatever that ship's status, and shows it again once the ship is gone, if you still list it. A plugin that wants a launched order to disappear for good deletes it when it hears `orders.launched`, as the example plugin in [Try it](#try-it) does.
 
 If you can't list a panel, say so with an `error` instead of a list. Its message (cut to one line of at most 300 characters; "This panel's orders couldn't be listed." if it is empty) is shown on that panel. The panel keeps the orders it had, the other panels and the source's state don't change, and the message stays until your next successful `orders.list` for that panel. A source in `error` shows its own error instead. A timeout or an invalid list isn't an error answer: Admiral logs it and shows nothing.
 
@@ -184,7 +184,7 @@ If the process exits before it answers `panels.list`, the source has no panels t
 
 ## Worked example: GitHub
 
-[`plugins/github/plugin.py`](../plugins/github/plugin.py) lists the issues and pull requests that GitHub searches find. Each panel is one saved search, each result is an order whose `text` is its URL, and all GitHub access goes through the `gh` CLI. It covers what freeform doesn't.
+[`plugins/github/plugin.py`](../plugins/github/plugin.py) lists the issues and pull requests that GitHub searches find. Each panel is one saved search, each result is an order whose `text` is its URL, and all GitHub access goes through the `gh` CLI. It covers what the example plugin doesn't.
 
 **A list in the settings, with defaults.** `panels` is an array of `{title, query}` objects, and `hotLabels` an array of strings. Admiral renders both as rows. The form ignores `default`, so the plugin applies its defaults itself, states them in each `description`, and skips what it can't use: a panel with no title or no query, a non-integer `refreshMinutes`.
 
@@ -253,7 +253,7 @@ return entry["orders"]
 
 ## Try it
 
-This example plugin keeps a list of orders in memory. It declares the protocol capabilities `add` and `remove`, so the view shows the add field and the remove button. Save it as `plugins/notes/plugin.py` next to this `plugin.json`:
+This example plugin keeps a list of orders in memory. It declares the protocol capabilities `add` and `remove`, so the view shows the add field and the remove button. Make the folder `$ADMIRAL_HOME/plugins/notes/` and save the manifest and the script in it:
 
 ```json
 { "name": "notes", "description": "A list of orders you type yourself.", "command": "python3", "args": ["plugin.py"] }
@@ -290,6 +290,8 @@ for line in sys.stdin:
     if "id" in msg:
         result = handle(msg["method"], msg.get("params") or {})
         print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}), flush=True)
+        if msg["method"] in ("orders.add", "orders.remove"):
+            print(json.dumps({"jsonrpc": "2.0", "method": "orders.changed", "params": {"panel": "orders"}}), flush=True)
 ```
 
 Run it by hand and type a request:
