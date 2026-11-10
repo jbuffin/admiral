@@ -24,7 +24,9 @@ The text is only ever data unless the tier is T0 or T1. Email never rises above 
 
 ### The action ladder
 
-A0 card only, A1 propose, A2 add an order, A3 restricted ship ([ADR 0026](0026-untrusted-work-runs-on-a-restricted-ship.md)), A4 normal ship, A5 Commodore team.
+A0 card only, A1 propose, A3 restricted ship ([ADR 0026](0026-untrusted-work-runs-on-a-restricted-ship.md)), A4 normal ship, A5 Commodore team.
+
+There is no A2. #224 had A2 add an order, but the autopilot engine that launched added orders is retired and freeform orders are gone ([#240](https://github.com/jbuffin/admiral/issues/240), [#227](https://github.com/jbuffin/admiral/issues/227)), so an added order would only wait for a hand launch, as a proposal does. The engineer dropped it while this was recorded (2026-11-10). The other labels keep their numbers.
 
 Go computes the effective action as `min(routine setting, tier ceiling, fleet ceiling, reviewer verdict)`. Each term can only lower it. T3 is hard-capped at A1 in every fleet, and no setting raises it. Where no harness in the fleet can run a restricted ship, A3 drops to A1 and never rises to A4, so untrusted text never reaches an unfenced ship.
 
@@ -62,7 +64,7 @@ AdmiralBot can read standing orders but can't add, change or remove one, not eve
 
 ### The reviewer
 
-- **When it runs**: only when the fleet has at least one Check and the provisional action, `min(routine, tier, fleet)`, is A2 or higher.
+- **When it runs**: only when the fleet has at least one Check and the provisional action, `min(routine, tier, fleet)`, is A3 or higher.
 - **What it sees**: the Lookout's fields (the summary fenced and marked tainted), the routine, the proposed action and repo, and the fleet's Checks. Never the raw event or the brief. It has no tools.
 - **What it returns**: `allow`, `ask` (drops to A1) or `block` (drops to A0, a card that names the Check), with the matching Check's id and a reason of at most 140 characters.
 - **It fails closed.** An error, a timeout or a spent budget counts as `ask`.
@@ -87,7 +89,7 @@ Each fleet has an append-only trigger log, `$ADMIRAL_HOME/routines/<fleet>/trigg
 ### Where it shows
 
 - A1 proposals are Inbox items: launch, dismiss or Mute rule from Peek. They expire after 24 hours unlaunched. A scheduled launch's proposal expires at the next run or after 24 hours, whichever is sooner.
-- Launches (A2 to A5) post a card in the fleet's AdmiralBot chat with Stop, Undo, Promote and Mute rule. Undo stops the ship, removes its local branch and marks the trigger-log record.
+- Launches (A3 to A5) post a card in the fleet's AdmiralBot chat with Stop, Undo, Promote and Mute rule. Undo stops the ship, removes its local branch and marks the trigger-log record.
 - Notify me also pushes a routine's result to the engineer's devices.
 
 ### Budgets
@@ -110,7 +112,7 @@ Every fleet starts on **Work**. **Home** is a "personal" preset the engineer can
 | Setting | Home | Work |
 | --- | --- | --- |
 | T1 ceiling | A5 Commodore | A4 normal ship; Commodore asks first |
-| T2 ceiling | A3 restricted, Draft fix | A2 add an order (Ask first) |
+| T2 ceiling | A3 restricted, Draft fix | A1 propose (decided by the engineer while recording, 2026-11-10) |
 | T3 ceiling | A1 propose (hard cap) | A0 report only |
 | T4 ceiling | A3 Draft fix, at 10 or more events in 14 days | A3 Investigate |
 | Restricted ship can push | no | no |
