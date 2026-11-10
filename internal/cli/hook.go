@@ -41,14 +41,14 @@ func Hook(args []string, std IO) error {
 		}
 		if w.state != "" {
 			call = append(append(call, ";"), hookCall(pane, w)...)
-			call = append(call, ";"); call = append(call, sessionhost.UnsetPaneCall(pane, crewHeldOption)...)
+			call = sessionhost.Join(call, sessionhost.UnsetPaneCall(pane, crewHeldOption))
 		}
 		if w.crewHeld {
-			call = append(call, ";"); call = append(call, sessionhost.SetPaneCall(pane, crewHeldOption, "1")...)
+			call = sessionhost.Join(call, sessionhost.SetPaneCall(pane, crewHeldOption, "1"))
 		}
 		if w.flagLead != "" {
 			call = append(append(call, ";"), hookCall(w.flagLead, stopWrite)...)
-			call = append(call, ";"); call = append(call, sessionhost.UnsetPaneCall(w.flagLead, crewHeldOption)...)
+			call = sessionhost.Join(call, sessionhost.UnsetPaneCall(w.flagLead, crewHeldOption))
 		}
 		if mon != nil {
 			call = append(append(call, ";"), mon...)
