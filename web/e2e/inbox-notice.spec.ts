@@ -23,7 +23,7 @@ test('a notice shows its body as text with its line breaks, and Dismiss removes 
   });
   await page.goto(admiral.url);
   await page.getByRole('button', { name: /^Needs you, 1 item/ }).click();
-  const inbox = page.getByRole('complementary', { name: 'Needs you inbox' });
+  const inbox = page.getByLabel('Needs you inbox');
   await expect(inbox.getByText('Admiral updated your config')).toBeVisible();
 
   // The body is text: line breaks kept, markup shown literally, nothing injected.
