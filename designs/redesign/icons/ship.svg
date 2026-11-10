@@ -1,0 +1,2 @@
+<!-- Ship: line hull and sail. Stroke is currentColor (text2); the hull fills with var(--fleet), the fleet color. Anchored: draw at 55% opacity. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15h18l-2.4 4.2a2 2 0 0 1-1.7 1H7.1a2 2 0 0 1-1.7-1z" style="fill:var(--fleet,currentColor);stroke:var(--fleet,currentColor)"/><path d="M11 3v12"/><path d="M11 4.5 17.5 12H11z"/></svg>

@@ -1,0 +1,2 @@
+<!-- Needs you: filled ring with a bang. currentColor = color.needs; the bang is white. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="currentColor"/><path d="M8 4.8v3.8M8 11h0" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/></svg>
