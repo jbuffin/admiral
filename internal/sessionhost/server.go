@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -498,4 +499,23 @@ func (s Server) SendLiteral(ctx context.Context, pane, text string) error {
 func (s Server) SendEnter(ctx context.Context, pane string) error {
 	_, err := s.run(call{ctx: ctx, args: []string{"send-keys", "-t", pane, "Enter"}})
 	return err
+}
+
+// ShipTarget is the ship's own window, never "=session": that is whichever
+// window is current.
+func ShipTarget(session string) string { return "=" + session + ":^" }
+
+// CrewTarget is a crew boat's window of the ship's session.
+func CrewTarget(session, windowID string) string { return "=" + session + ":" + windowID }
+
+// ExecAttach replaces this process with tmux attached to target on the socket:
+// the pane keeps the size the bridge gave it (ignore-size), and readOnly attaches
+// with -r. It runs the user's own tmux config, as `tmux attach` does, and needs
+// no Host.
+func ExecAttach(tmux, socket, target string, readOnly bool) error {
+	argv := []string{tmux, "-u", "-S", socket, "attach", "-f", "ignore-size"}
+	if readOnly {
+		argv = append(argv, "-r")
+	}
+	return syscall.Exec(tmux, append(argv, "-t", target), os.Environ())
 }

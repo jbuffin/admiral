@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -177,7 +176,7 @@ func serve(args []string) error {
 
 	// Without tmux Admiral still serves its config; there are no ships and a
 	// launch is refused.
-	tmuxPath, err := exec.LookPath("tmux")
+	tmuxPath, err := sessionhost.FindTmux()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "admiral: tmux not found on PATH: ships are unavailable")
 		tmuxPath = ""
