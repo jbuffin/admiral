@@ -6,10 +6,10 @@ import (
 	"io/fs"
 )
 
-// Shipped holds every plugin Admiral ships, one folder each: plugins/freeform/
-// and plugins/github/. Admiral writes each to $ADMIRAL_HOME/plugins/<name>/.
+// Shipped holds every plugin Admiral ships, one folder each: plugins/github/.
+// Admiral writes each to $ADMIRAL_HOME/plugins/<name>/.
 //
-//go:embed freeform github
+//go:embed github
 var Shipped embed.FS
 
 // Names lists the folders of Shipped.

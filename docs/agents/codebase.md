@@ -73,7 +73,7 @@ One fleet, the Orders source, no ships, on an M-series Mac (macOS 27, Go 1.26, t
 | process | RSS |
 | --- | --- |
 | `admiral` | about 16 MB |
-| the freeform plugin (`python3 plugin.py`) | about 19 MB |
+| a Python plugin process (`python3 plugin.py`, measured with a minimal one) | about 19 MB |
 | Admiral's tmux server and its control client | about 4 MB and 5 MB |
 
 Each ship adds its harness, and a pane in tmux.

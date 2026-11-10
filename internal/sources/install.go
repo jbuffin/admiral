@@ -84,8 +84,46 @@ func diskFiles(dir string) (map[string][]byte, error) {
 // not stop the others; the errors come back joined.
 func InstallPlugins(home string) error {
 	var errs []error
+	errs = append(errs, removeRetired(home))
 	for _, name := range plugins.Names {
 		errs = append(errs, installPlugin(home, name))
+	}
+	return errors.Join(errs...)
+}
+
+// retired lists plugins Admiral used to ship. A start removes their folder from
+// plugins/ when it is still Admiral's untouched copy.
+var retired = []string{"freeform"}
+
+// removeRetired deletes the retired plugins' folders. Only a real directory
+// whose stamp matches its files goes; an edited copy or a symlink stays, with
+// one log line, and a symlink's target is never touched.
+func removeRetired(home string) error {
+	var errs []error
+	for _, name := range retired {
+		dir := filepath.Join(pluginsDir(home), name)
+		info, err := os.Lstat(dir)
+		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				errs = append(errs, err)
+			}
+			continue
+		}
+		if !info.IsDir() {
+			fmt.Fprintf(os.Stderr, "admiral: plugins/%s is a retired plugin, but not a plain folder; left alone\n", name)
+			continue
+		}
+		have, err := os.ReadFile(filepath.Join(dir, StampFile))
+		onDisk, derr := diskFiles(dir)
+		if err != nil || derr != nil || Stamp(onDisk) != string(have) {
+			fmt.Fprintf(os.Stderr, "admiral: plugins/%s is a retired plugin, but you edited it; left alone\n", name)
+			continue
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "admiral: removed the retired plugin plugins/%s\n", name)
 	}
 	return errors.Join(errs...)
 }
