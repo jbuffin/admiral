@@ -54,7 +54,7 @@ func putChat(t *testing.T, in *instance, body map[string]any) {
 func TestChatConfig(t *testing.T) {
 	t.Run("defaults, save and reset effort", func(t *testing.T) {
 		home := newHome(t)
-		writeConfig(t, home, `{"version":1,"favorite_skills":["review"],"fleets":{"work":{"name":"Work Fleet","claude":{}}}}`)
+		writeConfig(t, home, `{"version":1,"favorite_skills":["review"],"fleets":{"work":{"name":"Work Fleet","claude":{}}},"sources":{}}`)
 		in := startAdmiral(t, home, "127.0.0.1:0")
 
 		// 1. No `chat` key: the first fleet with a Claude dock, sonnet, no effort. Nothing is written.
@@ -71,8 +71,7 @@ func TestChatConfig(t *testing.T) {
 			"version":         float64(1),
 			"favorite_skills": []any{"review"},
 			"fleets":          map[string]any{"work": map[string]any{"name": "Work Fleet", "claude": map[string]any{}}},
-			// The first start seeds the Orders source (seedSources); it is not the chat key's doing.
-			"sources": map[string]any{"orders": map[string]any{"plugin": "freeform", "name": "Orders"}},
+			"sources":         map[string]any{},
 			"chat":    map[string]any{"fleet": "work", "model": "opus", "effort": "high"},
 		}
 		if got := configOnDisk(t, home); !reflect.DeepEqual(got, want) {

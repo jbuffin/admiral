@@ -20,7 +20,7 @@ const entry = (enabled: boolean) => ({ enabled, fleet: 'work', harness: 'claude'
  * A claude dock on fleet "work" (fake harness) and the given sources; `cap` is the global
  * autopilot.max_ships. The autopilot panel stays empty: the real engine launches listed orders.
  */
-function setup(admiral: { writeConfig(c: unknown): void; home: string }, w: World, sources: Record<string, unknown>, cap?: number) {
+function setup(admiral: Admiral, w: World, sources: Record<string, unknown>, cap?: number) {
   w.writeConfig();
   const config = JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8'));
   config.sources = sources;
@@ -28,7 +28,7 @@ function setup(admiral: { writeConfig(c: unknown): void; home: string }, w: Worl
   admiral.writeConfig(config);
 }
 
-const orders = (enabled = true) => ({ plugin: 'freeform', name: 'Orders', autopilot: { orders: entry(enabled) } });
+const orders = (admiral: Admiral, enabled = true) => admiral.ordersSource('orders', 'Orders', { autopilot: { orders: entry(enabled) } });
 
 const panel = (page: Page, name: string) => sidebar(page).getByRole('region', { name, exact: true });
 const badge = (p: Locator) => p.getByRole('img', { name: /^Autopilot (on|paused)$/ });
@@ -44,7 +44,7 @@ async function panelAutopilot(url: string) {
 test.describe('autopilot in the panel header', () => {
   test('a panel on autopilot shows the badge; pause shows it paused, a reload keeps it, resume runs it again', { tag: '@critical' }, async ({ page, admiral }, info) => {
     const touch = isTouch(info);
-    setup(admiral, new World(admiral), { orders: orders() }, 3);
+    setup(admiral, new World(admiral), { orders: orders(admiral) }, 3);
     await admiral.start();
     await page.goto(admiral.url);
 
@@ -76,7 +76,7 @@ test.describe('autopilot in the panel header', () => {
 
   test('a pause the server refuses leaves the badge running', async ({ page, admiral }, info) => {
     const touch = isTouch(info);
-    setup(admiral, new World(admiral), { orders: orders() }, 3);
+    setup(admiral, new World(admiral), { orders: orders(admiral) }, 3);
     await admiral.start();
     await page.route('**/api/sources/*/panels/*/autopilot', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"no"}' }));
     await page.goto(admiral.url);
@@ -92,9 +92,9 @@ test.describe('autopilot in the panel header', () => {
 
   test('a panel without autopilot, and one whose entry is disabled, show no badge and no control', async ({ page, admiral }) => {
     setup(admiral, new World(admiral), {
-      orders: orders(),
-      notes: { plugin: 'freeform', name: 'Notes' },
-      quiet: { plugin: 'freeform', name: 'Quiet', autopilot: { orders: entry(false) } },
+      orders: orders(admiral),
+      notes: admiral.ordersSource('notes', 'Notes'),
+      quiet: admiral.ordersSource('quiet', 'Quiet', { autopilot: { orders: entry(false) } }),
     }, 3);
     await admiral.start();
     await page.goto(admiral.url);
@@ -113,7 +113,7 @@ test.describe('autopilot in the panel header', () => {
 test.describe('autopilot in the header count', () => {
   test('one ship at sea under a cap of 3 reads "1 / 3 at sea"', async ({ page, admiral }) => {
     const w = new World(admiral);
-    setup(admiral, w, { orders: orders() }, 3);
+    setup(admiral, w, { orders: orders(admiral) }, 3);
     w.checkout('alpha');
     await admiral.start();
     await w.launchDirect('work', 'claude', join(w.work, 'alpha'), 'hand launch');
@@ -125,7 +125,7 @@ test.describe('autopilot in the header count', () => {
 
   test('hand launches over the cap read plainly: "2 / 1 at sea"', async ({ page, admiral }) => {
     const w = new World(admiral);
-    setup(admiral, w, { orders: orders() }, 1);
+    setup(admiral, w, { orders: orders(admiral) }, 1);
     for (const repo of ['alpha', 'bravo']) w.checkout(repo);
     await admiral.start();
     for (const repo of ['alpha', 'bravo']) await w.launchDirect('work', 'claude', join(w.work, repo), 'hand launch');
@@ -137,7 +137,7 @@ test.describe('autopilot in the header count', () => {
 
   test('with no panel on autopilot the cap is not shown', async ({ page, admiral }) => {
     const w = new World(admiral);
-    setup(admiral, w, { orders: orders(false) }, 3);
+    setup(admiral, w, { orders: orders(admiral, false) }, 3);
     w.checkout('alpha');
     await admiral.start();
     await w.launchDirect('work', 'claude', join(w.work, 'alpha'), 'hand launch');

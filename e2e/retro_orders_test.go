@@ -9,8 +9,8 @@ import (
 
 // Retro orders (#117): after `retro_every` finished autopilot runs on a panel,
 // Admiral adds `/retro <source>/<panel> --since <ts>` to the resume panel and
-// writes a ship-less `retro_queued` record. The real binary, a freeform source
-// "orders" on autopilot with retro_every 2, and a freeform source "retros" with
+// writes a ship-less `retro_queued` record. The real binary, a test source
+// "orders" on autopilot with retro_every 2, and a test source "retros" with
 // no autopilot that autopilot.resume_source names.
 //
 // Wire shape under test:
@@ -27,9 +27,9 @@ func (w *world) retroConfig() {
 		w.t.Fatal(err)
 	}
 	cfg["sources"] = map[string]any{
-		"orders": map[string]any{"plugin": "freeform", "name": "Orders",
-			"autopilot": map[string]any{"orders": apEntry(true, 1, map[string]any{"retro_every": 2})}},
-		"retros": map[string]any{"plugin": "freeform", "name": "Retros"},
+		"orders": w.orderSource("orders", "Orders",
+			map[string]any{"autopilot": map[string]any{"orders": apEntry(true, 1, map[string]any{"retro_every": 2})}}),
+		"retros": w.orderSource("retros", "Retros", nil),
 	}
 	cfg["autopilot"] = map[string]any{"resume_source": resumeTarget("retros", "orders")}
 	b, err := json.Marshal(cfg)

@@ -12,7 +12,7 @@ import (
 )
 
 // The autopilot engine (#114, u2): the real binary, the fake harness, and
-// orders from the freeform source and the test plugin. A ship's cue is
+// orders from the test plugin. A ship's cue is
 // `wait go`, then `exit 0`: touching "go" in its recording directory sails it off.
 //
 // Each test that holds ("nothing launches") first sees something launch or
@@ -159,7 +159,7 @@ func (w *world) setPaused(source, panel string, paused bool) {
 	w.mustOK(code, body, "PUT the autopilot pause")
 }
 
-// AC 1, 8 (autopilot half) and the panel option: cap 1 and three freeform
+// AC 1, 8 (autopilot half) and the panel option: cap 1 and three test-source
 // orders give one ship, and the next launches only once it has sailed off. The
 // restart keeps the cap: the running ship fills the panel's cap by its
 // @admiral-panel option.
@@ -169,11 +169,11 @@ func TestEngineCapOneLaunchesOneShipAtATime(t *testing.T) {
 	for _, n := range []string{"r1", "r2", "r3"} {
 		w.repo(n, remoteOf(n))
 	}
-	freeform := func(enabled bool) map[string]any {
-		return map[string]any{"orders": map[string]any{"plugin": "freeform", "name": "Orders",
-			"autopilot": map[string]any{"orders": apEntry(enabled, 1, nil)}}}
+	orders := func(enabled bool) map[string]any {
+		return map[string]any{"orders": w.orderSource("orders", "Orders",
+			map[string]any{"autopilot": map[string]any{"orders": apEntry(enabled, 1, nil)}})}
 	}
-	w.writeAutopilotConfig(freeform(false), 0)
+	w.writeAutopilotConfig(orders(false), 0)
 	w.start()
 	w.waitSource("orders", 10*time.Second, "state ok", isOK)
 	for _, n := range []string{"r1", "r2", "r3"} {
@@ -183,7 +183,7 @@ func TestEngineCapOneLaunchesOneShipAtATime(t *testing.T) {
 	}
 	w.waitSource("orders", 5*time.Second, "three orders", func(s sourceJSON) bool { return len(s.orderIDs()) == 3 })
 
-	w.writeAutopilotConfig(freeform(true), 0) // the engine wakes on the config change
+	w.writeAutopilotConfig(orders(true), 0) // the engine wakes on the config change
 	first := w.waitShipCount(15*time.Second, "the first autopilot ship", live, 1)[0]
 	holdThat(t, "a second ship launched while the first ran, with a panel cap of 1", func() bool {
 		return len(w.shipsWhere(func(shipJSON) bool { return true })) == 1

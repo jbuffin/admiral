@@ -19,12 +19,17 @@ import (
 // AC 6: harness other than claude fails validation and the last good config stays.
 func TestAutopilotCodexEntryKeepsLastGoodConfig(t *testing.T) {
 	home := newHome(t)
+	// A source needs a plugin that loads; the test plugin is the one tests have.
+	w := &world{t: t, root: t.TempDir(), home: home}
+	w.installPlugin("testplug", "testplug")
+	settings, _ := json.Marshal(w.newTP("s").settings(nil))
+	source := `"s":{"plugin":"testplug","settings":` + string(settings)
 	entry := func(harness string) string {
-		return `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},"sources":{"s":{"plugin":"freeform",` +
+		return `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},"sources":{` + source + `,` +
 			`"autopilot":{"p":{"fleet":"work","harness":"` + harness + `","skill":{"kind":"none"}}}}}}`
 	}
 	// The good config has no autopilot entry, so it loads before and after u1.
-	writeConfig(t, home, `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},"sources":{"s":{"plugin":"freeform"}}}`)
+	writeConfig(t, home, `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},"sources":{`+source+`}}}`)
 	in := startAdmiral(t, home, "127.0.0.1:0")
 	waitAPI(t, in, "the good config", func(b cfgBody) bool { return b.Error == nil && reflect.DeepEqual(b.keys(), []string{"work"}) })
 

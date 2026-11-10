@@ -12,7 +12,7 @@ import (
 )
 
 // Resume orders launch where, and as, the ship that wrote the report ran (#120
-// u1). The real binary, the fake harness and two freeform sources:
+// u1). The real binary, the fake harness and two test sources:
 //
 //	builds   panel "orders" on autopilot, fleet buildf, skill Commodore, --origin-arg
 //	orders   panel "orders" on autopilot, fleet resumef, no skill, --resume-arg;
@@ -51,8 +51,8 @@ func rcWorld(t *testing.T, originMax int) (*world, string) {
 	build := apEntry(true, originMax, map[string]any{"fleet": "buildf", "skill": commodore, "args": []string{"--origin-arg"}})
 	resume := apEntry(true, 2, map[string]any{"fleet": "resumef", "low_stakes": "advisor", "args": []string{"--resume-arg"}})
 	cfg["sources"] = map[string]any{
-		"builds": map[string]any{"plugin": "freeform", "name": "Builds", "autopilot": map[string]any{"orders": build}},
-		"orders": map[string]any{"plugin": "freeform", "name": "Orders", "autopilot": map[string]any{"orders": resume}},
+		"builds": w.orderSource("builds", "Builds", map[string]any{"autopilot": map[string]any{"orders": build}}),
+		"orders": w.orderSource("orders", "Orders", map[string]any{"autopilot": map[string]any{"orders": resume}}),
 	}
 	cfg["autopilot"] = map[string]any{"max_ships": 6, "resume_source": resumeTarget("orders", "orders")}
 	b, err := json.Marshal(cfg)

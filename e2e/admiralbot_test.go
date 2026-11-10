@@ -452,7 +452,7 @@ func TestAdmiralBot_OrdersAddIsTheOnlyWrite(t *testing.T) {
 		hang = w.newTP("hang")
 		w.installPlugin("testplug", "testplug")
 		return rawSources(
-			srcDef{Key: "orders", Plugin: "freeform", Name: "Orders"},
+			w.orderSrcDef("orders", "Orders"),
 			tpSource("hang", hang, map[string]any{"capabilities": []string{"add", "refresh"}}))
 	}})
 	w := c.world

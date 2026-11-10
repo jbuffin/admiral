@@ -469,6 +469,57 @@ func tpSource(key string, p *tplug, extra map[string]any) srcDef {
 	return srcDef{Key: key, Plugin: "testplug", Name: "Test " + key, Settings: p.settings(extra)}
 }
 
+// orderSrcDef is the test-only source that stores orders, for the tests whose
+// subject is not an order source but that need orders to launch from. It is the
+// one place a test source's config is decided: key `orders` with one panel
+// "orders" titled "Orders" (panels.json in its flag directory), the add, edit
+// and remove capabilities, and storeOrders so that an added order is kept in
+// the source's data directory, listed and dropped once launched.
+func (w *world) orderSrcDef(key, name string) srcDef {
+	w.t.Helper()
+	if _, err := os.Stat(filepath.Join(w.home, "plugins", "testplug", "plugin.json")); err != nil {
+		w.installPlugin("testplug", "testplug")
+	}
+	p := w.newTP(key)
+	p.put("panels.json", `[{"id":"orders","title":"Orders"}]`)
+	return tpSource(key, p, map[string]any{"storeOrders": true, "capabilities": []string{"add", "edit", "remove"}})
+}
+
+// orderSource is orderSrcDef as the map a config's `sources` holds; extra keys
+// (an `autopilot` object) are set on the source beside its settings.
+func (w *world) orderSource(key, name string, extra map[string]any) map[string]any {
+	w.t.Helper()
+	d := w.orderSrcDef(key, name)
+	src := map[string]any{"plugin": d.Plugin, "name": name, "settings": d.Settings}
+	for k, v := range extra {
+		src[k] = v
+	}
+	return src
+}
+
+// ordersSource is the one source `orders` of a fresh install, as a test
+// source: the sources of a config that needs only orders.
+func (w *world) ordersSource() map[string]any {
+	return map[string]any{"orders": w.orderSource("orders", "Orders", nil)}
+}
+
+// addOrdersSource adds the test source `orders` to the config on disk, so a
+// test that wrote its fleets first has orders to launch from. Call it before
+// start: a config with a `sources` key at all is never seeded.
+func (w *world) addOrdersSource() {
+	w.t.Helper()
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(w.readFile(configPath(w.home))), &cfg); err != nil {
+		w.t.Fatal(err)
+	}
+	cfg["sources"] = w.ordersSource()
+	b, err := json.Marshal(cfg)
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	writeConfig(w.t, w.home, string(b))
+}
+
 // startFresh starts Admiral on an empty ADMIRAL_HOME, as a first run.
 func (w *world) startFresh() *fleetInst {
 	w.t.Helper()
