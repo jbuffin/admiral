@@ -1,6 +1,6 @@
 # 23. AdmiralBot is a coordinator fenced to an Admiral MCP server
 
-Status: accepted
+Status: accepted, amended by [ADR 0027](0027-campaigns-are-read-from-githubs-issue-tree.md) (AdmiralBot reads campaigns, "work on a campaign" is a ledger commitment, and the launch tool gains `issues` and `crew`)
 
 ## Context
 
