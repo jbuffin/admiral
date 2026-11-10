@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"os"
@@ -224,12 +225,18 @@ func itoa(n int) string     { b, _ := json.Marshal(n); return string(b) }
 // it returns the handshake response with a nil client.
 func bridgeDial(t *testing.T, base, session, query string, hdr http.Header, host string) (*bridgeClient, *http.Response, error) {
 	t.Helper()
+	return bridgeDialAt(t, base, "/ws", session, query, hdr, host)
+}
+
+// bridgeDialAt is bridgeDial under another socket prefix: "/ws" or "/ws/v1".
+func bridgeDialAt(t *testing.T, base, prefix, session, query string, hdr http.Header, host string) (*bridgeClient, *http.Response, error) {
+	t.Helper()
 	u, err := url.Parse(base)
 	if err != nil {
 		t.Fatal(err)
 	}
 	u.Scheme = "ws"
-	u.Path = "/ws/bridge/" + session
+	u.Path = prefix + "/bridge/" + session
 	u.RawQuery = query
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -258,6 +265,39 @@ func (w *world) dialBridge(t *testing.T, session string) *bridgeClient {
 		t.Fatalf("GET /ws/bridge/%s was refused (status %d, no bridge endpoint yet?): %v", session, status, err)
 	}
 	return b
+}
+
+// dialBridgeAt connects to a ship's bridge socket under the socket prefix
+// ("/ws" or "/ws/v1") without joining.
+func (w *world) dialBridgeAt(t *testing.T, prefix, session string) *bridgeClient {
+	t.Helper()
+	b, resp, err := bridgeDialAt(t, w.in.LocalURL, prefix, session, "", nil, "")
+	if err != nil {
+		status := 0
+		if resp != nil {
+			status = resp.StatusCode
+		}
+		t.Fatalf("GET %s/bridge/%s was refused (status %d): %v", prefix, session, status, err)
+	}
+	return b
+}
+
+// waitClosed waits for the server to close the socket and returns the close
+// status and reason.
+func (b *bridgeClient) waitClosed(d time.Duration) (websocket.StatusCode, string) {
+	b.t.Helper()
+	b.waitFor(d, "the server closing the socket", func() bool {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		return b.err != nil
+	})
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var ce websocket.CloseError
+	if errors.As(b.err, &ce) {
+		return ce.Code, ce.Reason
+	}
+	return -1, b.err.Error()
 }
 
 // joinBridge dials, sends `join` with the browser's size and waits for the

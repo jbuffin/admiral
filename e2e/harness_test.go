@@ -312,12 +312,18 @@ func do(t *testing.T, method, rawURL string, hdr map[string]string) (*http.Respo
 // the Host header when non-empty. On refusal it returns the handshake response.
 func wsDial(t *testing.T, base, query string, hdr http.Header, host string) (*websocket.Conn, *http.Response, error) {
 	t.Helper()
+	return wsDialAt(t, base, "/ws", query, hdr, host)
+}
+
+// wsDialAt is wsDial on another path, such as the versioned /ws/v1.
+func wsDialAt(t *testing.T, base, path, query string, hdr http.Header, host string) (*websocket.Conn, *http.Response, error) {
+	t.Helper()
 	u, err := url.Parse(base)
 	if err != nil {
 		t.Fatal(err)
 	}
 	u.Scheme = "ws"
-	u.Path = "/ws"
+	u.Path = path
 	u.RawQuery = query
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
