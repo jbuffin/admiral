@@ -1,6 +1,6 @@
 # 15. Outcomes are an append-only history beside tmux
 
-Status: accepted, amended by [ADR 0025](0025-outside-events-are-quarantined.md) (`launched` gains a `trigger` field, and a trigger log sits beside the outcome log) and [ADR 0028](0028-a-ship-with-an-open-pr-moors-and-relaunches-for-each-feedback-round.md) (outcome events for moored, woken, round and merged)
+Status: accepted, amended by [ADR 0025](0025-outside-events-are-quarantined.md) (`launched` gains a `trigger` field, and a trigger log sits beside the outcome log), [ADR 0028](0028-a-ship-with-an-open-pr-moors-and-relaunches-for-each-feedback-round.md) (outcome events for moored, woken, round and merged) and [ADR 0029](0029-the-bridge-answers-simple-prompts-by-sending-the-harness-keys.md) (a `stopped` event when the engineer or AdmiralBot stops a ship)
 
 ## Context
 

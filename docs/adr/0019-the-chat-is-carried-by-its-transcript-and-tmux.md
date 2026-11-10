@@ -1,6 +1,6 @@
 # 19. The chat is carried by its transcript and tmux
 
-Status: accepted, amended by [ADR 0024](0024-admiralbot-memory-is-a-server-owned-ledger.md) (the UI serves Admiral's conversation log, and `SessionStart` rehydrates from the brief)
+Status: accepted, amended by [ADR 0024](0024-admiralbot-memory-is-a-server-owned-ledger.md) (the UI serves Admiral's conversation log, and `SessionStart` rehydrates from the brief) and [ADR 0030](0030-ship-conversations-come-from-a-first-party-adapter-per-harness.md) (supersedes the chat-only scope: Admiral reads every ship's, crew boat's and AdmiralBot's conversation through an adapter per harness)
 
 ## Context
 

@@ -1,6 +1,6 @@
 # 13. Each harness starts with the prompt on its command line
 
-Status: accepted, amended by [ADR 0026](0026-untrusted-work-runs-on-a-restricted-ship.md) (outside text for a worker-launched ship goes in `.admiral/untrusted/event.md`, never on the command line)
+Status: accepted, amended by [ADR 0026](0026-untrusted-work-runs-on-a-restricted-ship.md) (outside text for a worker-launched ship goes in `.admiral/untrusted/event.md`, never on the command line) and [ADR 0030](0030-ship-conversations-come-from-a-first-party-adapter-per-harness.md) (`--session-id` for Claude Code and Copilot, `--ui-server` for Copilot, and a wrapper with Admiral's own `--remote` for Codex)
 
 ## Context
 
