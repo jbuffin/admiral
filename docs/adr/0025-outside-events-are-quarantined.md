@@ -1,6 +1,6 @@
 # 25. Outside events are quarantined: trigger tiers, a Go-computed ceiling and a tool-less Lookout
 
-Status: accepted
+Status: accepted, amended by [ADR 0035](0035-harness-features-follow-probed-capabilities.md) (A3 drops to A1 without a restricted-capable harness, Admiral picks the judge harness and models, and the advisor joins the judge calls)
 
 ## Context
 
@@ -78,7 +78,7 @@ Before acting maps onto the ladder: Report only is A0 (a card with the Lookout's
 
 A schedule has no outside text, so no Lookout, no reviewer and no standing orders. Its Do launches a ship from a stored launch spec or prompts AdmiralBot with a turn marked with the routine's name. A scheduled launch is a normal ship that can push. It waits for room under the global cap and for its resources, counts toward the fleet's launches-per-hour budget, and becomes Ask first under Hold fire. A missed run gets one late run on start if fewer than 12 hours have passed, otherwise Recent runs records it as missed. A scheduled launch carries the idempotency key `routine:<id>`, and a run is skipped while the last run's ship is live.
 
-Every routine launch, scheduled or on an event, runs in autopilot mode (ADR 0034), so a routine can only pick a dock whose harness carries autopilot mode.
+Every routine launch, scheduled or on an event, runs in autopilot mode ([ADR 0034](0034-autopilot-is-a-launch-mode-not-a-view-setting.md)), so a routine can only pick a dock whose harness carries autopilot mode.
 
 Routines live in `$ADMIRAL_HOME/routines/<fleet>/routines.json`, edited through the UI and API, not by `admiral setup` and not in the fleet config. Before acting only ever lowers the ceiling, so it needs no config home. "Describe a routine" sends the prose to the drafter, and the engineer confirms. AdmiralBot can draft a routine and turn one off, but never saves, edits or turns one on.
 
