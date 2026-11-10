@@ -43,13 +43,23 @@ type Server struct {
 	Config   *config.Manager
 	Hub      *Hub
 	Modules  []Module
+	// Capabilities names the server features this build serves, for
+	// GET /api/version. Entries are only ever added within v1. They are not
+	// harness capabilities.
+	Capabilities []string
 }
 
-// Handler returns the routes, without access control.
+// APIVersions are the API versions this build serves.
+var APIVersions = []int{1}
+
+// Handler returns the routes, without access control. /api/v1/... and
+// /ws/v1/... answer as /api/... and /ws/... do: the prefix is stripped before
+// routing, so every current and future route has a v1 path.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", s.serveWS)
 	mux.HandleFunc("GET /api/config", s.serveConfig)
+	mux.HandleFunc("GET /api/version", s.serveVersion)
 	for _, m := range s.Modules {
 		m.Routes(mux)
 	}
@@ -59,7 +69,40 @@ func (s *Server) Handler() http.Handler {
 		_, _ = w.Write([]byte(`{"error":"not found"}` + "\n"))
 	})
 	mux.HandleFunc("/", s.serveUI)
-	return mux
+	return stripV1(mux)
+}
+
+// stripV1 serves /api/v1/x as /api/x and /ws/v1/x (or /ws/v1) as /ws/x.
+func stripV1(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, root := range []string{"/api", "/ws"} {
+			rest, ok := strings.CutPrefix(r.URL.Path, root+"/v1")
+			if !ok || (rest != "" && rest[0] != '/') {
+				continue
+			}
+			r2 := new(http.Request)
+			*r2 = *r
+			u := *r.URL
+			u.Path = root + rest
+			u.RawPath = ""
+			r2.URL = &u
+			r = r2
+			break
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) serveVersion(w http.ResponseWriter, r *http.Request) {
+	caps := s.Capabilities
+	if caps == nil {
+		caps = []string{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"version": s.Version, "commit": s.Commit, "api_versions": APIVersions, "capabilities": caps,
+	})
 }
 
 func (s *Server) serveWS(w http.ResponseWriter, r *http.Request) {

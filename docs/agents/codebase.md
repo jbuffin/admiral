@@ -33,6 +33,15 @@ This file holds the package map, API routes and ship statuses, idle memory figur
 - `packaging/`: the Homebrew formula, the curl install script and the notices generator. `make release` builds the tarball.
 - `e2e/`: server tests that run the real binary.
 
+## API versions
+
+- `/api/v1/...` and `/ws/v1/...` answer exactly as `/api/...` and `/ws/...` do: status, headers and body. `Handler()` in `internal/server/server.go` strips the `/v1` before routing, so a module registers its routes once, unversioned, and every route (current and future) has a v1 path. The strip sits inside `guard.Middleware`, so v1 gets the same access control, with no path-specific auth code.
+- `GET /api/version` (also `/api/v1/version`) returns `version`, `commit`, `api_versions` (`[1]`) and `capabilities`, with `Cache-Control: no-store`. It needs the same auth as the rest of the API.
+- `capabilities` is an array of strings naming the server features this build serves, one per module (`ships`, `sources`, `inbox`, `launch-orders`, `bridge`, `setup`, `resources`, `chat`), set in `cmd/admiral/main.go`. They are not harness capabilities (GLOSSARY.md, ADR 0035). Within v1 the list only grows.
+- Bodies stay byte-identical, so a URL inside a body stays unversioned (`icon_url` in `/api/sources` and `/api/plugins` is `/api/plugins/<name>/icon`). Rewriting them is left to #258.
+- The bridge socket's `join` carries an optional `api` version; see `docs/bridge-protocol.md`.
+- v1 changes are additive only. The unversioned paths stay for the old UI until #276.
+
 ## Idle memory
 
 One fleet, the Orders source, no ships, on an M-series Mac (macOS 27, Go 1.26, tmux 3.7c, python 3.14), resident set size from `ps -o rss`:

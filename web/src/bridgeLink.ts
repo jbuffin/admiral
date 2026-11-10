@@ -47,7 +47,7 @@ export class BridgeLink {
     this.ws = ws;
     ws.onopen = () => {
       const { cols, rows } = this.h.dims();
-      ws.send(JSON.stringify({ type: 'join', cols, rows }));
+      ws.send(JSON.stringify({ type: 'join', api: 1, cols, rows }));
       // A tab that opens or reconnects hidden takes no stream until it is shown again.
       if (document.visibilityState !== 'visible') ws.send(JSON.stringify({ type: 'visible', visible: false }));
     };
