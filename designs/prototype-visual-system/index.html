@@ -101,6 +101,21 @@ h2.sec{font-family:var(--font-display);font-size:var(--fs-h2);font-weight:var(--
 .switch button:hover{background:rgba(255,255,255,.12)}
 .switch span{padding:0 10px;white-space:nowrap}
 
+.cosy .side{padding:8px 6px}
+.cosy .nav{min-height:28px;gap:8px}
+.cosy .brand{padding:4px 8px 8px;font-size:14px}
+.cosy .fleetsw{min-height:30px;margin-bottom:6px}
+.cosy .listhead{padding:9px 12px}
+.cosy .grp{padding:9px 12px 3px}
+.cosy .row{padding:0 12px;gap:8px}
+.cosy .bhead{padding:8px 14px}
+.cosy .tab{min-height:26px}
+.cosy .convo{padding:12px 14px;gap:10px}
+.cosy .qcard{padding:10px 12px}
+.cosy .btn{min-height:30px;padding:0 10px}
+.cosy .compose{margin:0 14px 14px}
+.cosy .compose input{min-height:28px}
+@media (pointer:coarse){.cosy .row{min-height:44px}.cosy .nav,.cosy .btn,.cosy .tab,.cosy .fleetsw{min-height:44px}}
 @media (max-width:980px){.app{grid-template-columns:1fr}.side{display:none}.list{border-right:0;border-bottom:1px solid var(--line);max-height:360px}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -253,7 +268,15 @@ C: {
   statusLabel: true,
 },
 };
-const KEYS = Object.keys(V);
+/* A2: A's colors, glyphs and icons at B's density. On touch, rows stay 44px (see the @media rule). */
+V.A2 = Object.assign({}, V.A, {
+  name: 'Slate, cosier',
+  blurb: 'A as wireframed, at B\'s density: 13px body, 34px rows, 5/6/8 radii, a tighter sidebar and bridge. Colors, status rings, ships, bots and flags are A\'s, unchanged. On a touch screen rows grow back to 44px so they stay tappable.',
+  size: { body: '13px', h2: '17px', rowH: '34px' },
+  radius: { sm: 5, md: 6, lg: 8 },
+  cosy: true,
+});
+const KEYS = ['A', 'A2', 'B']; /* C ruled out */
 
 /* the Admiral mark, kept as is (color) and as a one-color glyph */
 function markColor(sz){return `<svg width="${sz}" height="${sz}" viewBox="0 0 46 46" fill="none" aria-hidden="true"><path d="M5 20 Q23 0 41 20 Z" fill="#0B1F33" stroke="#FFC23D" stroke-width="2.5" stroke-linejoin="round"/><circle cx="23" cy="12" r="3" fill="#FFC23D"/><rect x="9" y="20" width="28" height="22" rx="4" fill="#FFC23D" stroke="#0B1F33" stroke-width="2.5"/><rect x="15" y="27" width="5" height="5" fill="#14304A"/><rect x="26" y="27" width="5" height="5" fill="#14304A"/><rect x="18" y="36" width="10" height="3" fill="#14304A"/></svg>`}
@@ -281,6 +304,7 @@ function applyTokens(v, m){
   r.setProperty('--fs-body', v.size.body); r.setProperty('--fs-h2', v.size.h2); r.setProperty('--row-h', v.size.rowH);
   r.setProperty('--r-sm', v.radius.sm+'px'); r.setProperty('--r-md', v.radius.md+'px'); r.setProperty('--r-lg', v.radius.lg+'px');
   document.documentElement.style.colorScheme = m;
+  document.documentElement.classList.toggle('cosy', !!v.cosy);
 }
 
 /* ---------- render ---------- */
