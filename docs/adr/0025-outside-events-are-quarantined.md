@@ -72,7 +72,7 @@ AdmiralBot can read standing orders but can't add, change or remove one, not eve
 
 ### Routines on outside events
 
-A routine is the engineer's per-fleet rule: **When** (a schedule or a source event), **Do**, **Before acting** (Report only, Ask first or Act), an on/off switch and **Notify me**. A source event always goes through the Lookout and the ceiling above. It can never prompt AdmiralBot, which would put untrusted text in front of it. Events inside Admiral (a ship sailed off, a PR merged) are not routine triggers; they belong to ledger commitments (ADR 0024).
+A routine is the engineer's per-fleet rule: **When** (a schedule or a source event), **Do**, **Before acting** (Report only, Ask first or Act), an on/off switch and **Notify me**. A source event always goes through the Lookout and the ceiling above. It can never prompt AdmiralBot, which would put untrusted text in front of it. Events inside Admiral (a ship sailed off, a PR merged) are not routine triggers; they belong to ledger commitments ([ADR 0024](0024-admiralbot-memory-is-a-server-owned-ledger.md)).
 
 Before acting maps onto the ladder: Report only is A0 (a card with the Lookout's summary), Ask first is A1 (an Inbox proposal), and Act is the computed ceiling.
 
@@ -137,6 +137,6 @@ Per fleet and global. It can be turned on from the UI, `admiral hold`, a T1 Slac
 
 - Amends [ADR 0015](0015-outcomes-are-an-append-only-history-beside-tmux.md): `launched` gains a `trigger` field that points at the trigger-log record. The trigger log is a second append-only file beside the outcome log, and Admiral reads it back for Recent runs and the circuit breaker.
 - Amends [ADR 0017](0017-autopilot-counts-retros-from-the-outcome-log.md): routine runs and the circuit breaker are counted from the trigger log, not the outcome log.
-- Touches [ADR 0001](0001-local-web-app-served-from-the-mac.md) (T1 is a second way to know the engineer), [ADR 0006](0006-order-sources-are-subprocess-plugins.md) (sources supply tier metadata) and ADR 0010 (allowlists and Limits live in the fleet config).
+- Touches [ADR 0001](0001-local-web-app-served-from-the-mac.md) (T1 is a second way to know the engineer), [ADR 0006](0006-order-sources-are-subprocess-plugins.md) (sources supply tier metadata) and [ADR 0010](0010-fleets-are-set-up-by-admiral-setup-in-a-json-config.md) (allowlists and Limits live in the fleet config).
 - AdmiralBot never sees an outside event's raw text: only cards built from the Lookout's fields.
 - How Teams proves a sender is still channel plumbing, open on the map.
