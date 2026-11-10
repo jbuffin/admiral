@@ -6,7 +6,7 @@ Status: accepted
 
 The redesign's bridge opens on the ship's conversation ([#208](https://github.com/jbuffin/admiral/issues/208), [ADR 0029](0029-the-bridge-answers-simple-prompts-by-sending-the-harness-keys.md)). Admiral reads none today. [ADR 0019](0019-the-chat-is-carried-by-its-transcript-and-tmux.md) reads Claude Code's transcript for the chat only, never for a ship. [ADR 0021](0021-crew-boats-record-their-transcript-path.md) records a crew boat's transcript path but never opens the file. [ADR 0012](0012-ships-live-in-tmux-and-the-rest-in-admiral-home.md) records no conversation IDs.
 
-Research for [#231](https://github.com/jbuffin/admiral/issues/231) found that every harness can give a structured conversation without scraping the screen, and a follow-up ([first-party routes](https://github.com/jbuffin/admiral/blob/research/harness-first-party-routes/docs/research/harness-first-party-routes.md)) checked which supported routes run beside the live TUI. [#238](https://github.com/jbuffin/admiral/issues/238) decided the rule and the adapters, and [#239](https://github.com/jbuffin/admiral/issues/239) decided Codex's route.
+Research for [#231](https://github.com/jbuffin/admiral/issues/231) found that every harness can give a structured conversation without scraping the screen, and a follow-up on the `research/harness-first-party-routes` branch checked which supported routes run beside the live TUI. [#238](https://github.com/jbuffin/admiral/issues/238) decided the rule and the adapters, and [#239](https://github.com/jbuffin/admiral/issues/239) decided Codex's route.
 
 ## Decision
 
