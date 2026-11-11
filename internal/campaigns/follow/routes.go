@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jbuffin/admiral/internal/ships"
 	"net/http"
 	"sort"
 	"strings"
@@ -342,14 +343,15 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		ChildURL    string `json:"child_url"`
-		Harness     string `json:"harness"`
-		Dir         string `json:"dir"`
-		Clone       bool   `json:"clone"`
-		CloneRepo   string `json:"clone_repo"` // the repo the form showed, as for POST /api/ships
-		StartAnyway bool   `json:"start_anyway"`
-		Model       string `json:"model"`
-		Effort      string `json:"effort"`
+		ChildURL    string   `json:"child_url"`
+		Issues      []string `json:"issues"` // a slice: two or more children launched as one ship
+		Harness     string   `json:"harness"`
+		Dir         string   `json:"dir"`
+		Clone       bool     `json:"clone"`
+		CloneRepo   string   `json:"clone_repo"` // the repo the form showed, as for POST /api/ships
+		StartAnyway bool     `json:"start_anyway"`
+		Model       string   `json:"model"`
+		Effort      string   `json:"effort"`
 	}
 	if !decode(w, r, &body) {
 		return
@@ -358,8 +360,19 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "this campaign has ended")
 		return
 	}
-	got, lerr := s.launch(r.Context(), f, body.ChildURL, body.StartAnyway, launcher.Request{
-		Fleet: f.Fleet, Harness: body.Harness, Dir: body.Dir, Clone: body.Clone, CloneRepo: body.CloneRepo, Model: body.Model, Effort: body.Effort})
+	if body.Issues != nil && body.ChildURL != "" {
+		writeError(w, http.StatusBadRequest, "send child_url or issues, not both")
+		return
+	}
+	req := launcher.Request{
+		Fleet: f.Fleet, Harness: body.Harness, Dir: body.Dir, Clone: body.Clone, CloneRepo: body.CloneRepo, Model: body.Model, Effort: body.Effort}
+	var got any
+	var lerr *launcher.Error
+	if body.Issues != nil {
+		got, lerr = s.launchSlice(r.Context(), f, body.Issues, req)
+	} else {
+		got, lerr = s.launch(r.Context(), f, body.ChildURL, body.StartAnyway, req)
+	}
 	if lerr != nil {
 		writeError(w, lerr.Status, lerr.Msg)
 		return
@@ -372,24 +385,8 @@ func (s *Service) launch(ctx context.Context, f Followed, childURL string, start
 	_ = s.rereadIfOlder(ctx, f.ID, launchFresh)
 	f, _ = s.Store.Get(f.ID)
 	n := find(s.view(f).Root, childURL)
-	switch {
-	case n == nil:
-		return nil, orderError(http.StatusNotFound, "that issue is not in this campaign")
-	case n.Parent:
-		return nil, orderError(http.StatusBadRequest, "that issue is a parent; launch one of its children")
-	case n.Status == campaigns.Done:
-		return nil, orderError(http.StatusConflict, "that issue is done")
-	case n.Status == campaigns.Underway:
-		return nil, orderError(http.StatusConflict, "that issue already has a ship ("+n.Ship+")")
-	case n.Status == campaigns.Blocked:
-		urls := make([]string, 0, len(n.Blockers))
-		for _, b := range n.Blockers {
-			urls = append(urls, b.URL)
-		}
-		sort.Strings(urls)
-		return nil, orderError(http.StatusConflict, "that issue is blocked by "+strings.Join(urls, ", "))
-	case n.Status == campaigns.ClaimedNoShip && !startAnyway:
-		return nil, orderError(http.StatusConflict, "that issue is assigned to someone and has no ship; send start_anyway to launch it")
+	if lerr := launchable(n, "that issue", startAnyway); lerr != nil {
+		return nil, lerr
 	}
 	req.Source, req.OrderID = SourceKey, OrderID(f.ID, n.URL)
 	req.Skill = launcher.Skill{Kind: n.Skill.Kind, Name: n.Skill.Name}
@@ -398,6 +395,84 @@ func (s *Service) launch(ctx context.Context, f Followed, childURL string, start
 	// the launcher compares clone_repo with the repo's host/owner/repo identity
 	if req.Clone && req.CloneRepo == "" {
 		req.CloneRepo, _ = repofinder.Identity(s.repoFor(f, n))
+	}
+	got, lerr := s.Launch(ctx, req)
+	if lerr != nil {
+		return nil, lerr
+	}
+	return got, nil
+}
+
+// launchable is the refusal for a child that cannot be launched now; what names the child in the message.
+func launchable(n *campaigns.Node, what string, startAnyway bool) *launcher.Error {
+	switch {
+	case n == nil:
+		return orderError(http.StatusNotFound, what+" is not in this campaign")
+	case n.Parent:
+		return orderError(http.StatusBadRequest, what+" is a parent; launch one of its children")
+	case n.Status == campaigns.Done:
+		return orderError(http.StatusConflict, what+" is done")
+	case n.Status == campaigns.Underway:
+		return orderError(http.StatusConflict, what+" already has a ship ("+n.Ship+")")
+	case n.Status == campaigns.Blocked:
+		urls := make([]string, 0, len(n.Blockers))
+		for _, b := range n.Blockers {
+			urls = append(urls, b.URL)
+		}
+		sort.Strings(urls)
+		return orderError(http.StatusConflict, what+" is blocked by "+strings.Join(urls, ", "))
+	case n.Status == campaigns.ClaimedNoShip && !startAnyway:
+		return orderError(http.StatusConflict, what+" is assigned to someone and has no ship; send start_anyway to launch it")
+	}
+	return nil
+}
+
+// launchSlice launches two or more children as one Commodore ship holding all of them; start_anyway is not read,
+// so an assigned child refuses the slice.
+func (s *Service) launchSlice(ctx context.Context, f Followed, issues []string, req launcher.Request) (any, *launcher.Error) {
+	seen := map[string]bool{}
+	for _, u := range issues {
+		k, ok := ships.ClaimKey(u)
+		switch {
+		case !ok:
+			return nil, orderError(http.StatusBadRequest, u+" is not an issue URL")
+		case seen[k]:
+			return nil, orderError(http.StatusBadRequest, "a slice lists each issue once; "+u+" is listed twice")
+		case strings.Contains(u, ","):
+			return nil, orderError(http.StatusBadRequest, u+" cannot be launched in a slice")
+		}
+		seen[k] = true
+	}
+	if len(issues) < 2 {
+		return nil, orderError(http.StatusBadRequest, "a slice is two or more issues; launch one issue with child_url")
+	}
+	_ = s.rereadIfOlder(ctx, f.ID, launchFresh)
+	f, _ = s.Store.Get(f.ID)
+	root := s.view(f).Root
+	nodes := make([]*campaigns.Node, 0, len(issues))
+	for _, u := range issues {
+		n := find(root, u)
+		if lerr := launchable(n, u, false); lerr != nil {
+			return nil, lerr
+		}
+		switch {
+		case n.Mode != campaigns.WithoutYou:
+			return nil, orderError(http.StatusConflict, u+" is With you; a slice launches only Without you children")
+		case n.Skill.Kind != "commodore":
+			return nil, orderError(http.StatusConflict, u+" does not run on the Commodore skill; a slice launches only Commodore children")
+		case n.Status != campaigns.Ready:
+			return nil, orderError(http.StatusConflict, u+" is not ready")
+		case len(nodes) > 0 && s.repoFor(f, n) != s.repoFor(f, nodes[0]):
+			return nil, orderError(http.StatusBadRequest, u+" is in another repo than "+nodes[0].URL+"; a slice stays in one repo")
+		}
+		nodes = append(nodes, n)
+	}
+	req.Source, req.OrderID, req.Issues = SourceKey, SliceOrderID(f.ID, issues), issues
+	req.Skill = launcher.Skill{Kind: "commodore", Name: nodes[0].Skill.Name}
+	req.Text = sliceText(nodes)
+	req.Autopilot = false
+	if req.Clone && req.CloneRepo == "" {
+		req.CloneRepo, _ = repofinder.Identity(s.repoFor(f, nodes[0]))
 	}
 	got, lerr := s.Launch(ctx, req)
 	if lerr != nil {
