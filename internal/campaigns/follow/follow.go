@@ -52,10 +52,8 @@ type Service struct {
 
 	mu    sync.Mutex
 	reads map[string]*reader
-	tried map[string]time.Time    // the last attempt at a read, good or not, for the floors
-	snaps [](map[string]shipSeen) // ship snapshots ShipsChanged took, for the worker to diff in order
+	tried map[string]time.Time // the last attempt at a read, good or not, for the floors
 	poke  chan struct{}
-	prev  map[string]shipSeen // the worker's last snapshot; nil before the first
 }
 
 type shipSeen struct{ status, key string }
@@ -135,12 +133,19 @@ func (s *Service) startReread(id string, again bool) {
 				}
 			}
 			r.mu.Unlock()
-			// a request that came after the last check but before the unlock would be lost
-			if ctx.Err() != nil || !s.takeDirty(r) || !r.mu.TryLock() {
+			// a request that came after the last check but before the unlock must not be lost; dirty stays set
+			// until a read, which holds the lock, takes it
+			if ctx.Err() != nil || !s.isDirty(r) || !r.mu.TryLock() {
 				return
 			}
 		}
 	}()
+}
+
+func (s *Service) isDirty(r *reader) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return r.dirty
 }
 
 func (s *Service) takeDirty(r *reader) bool {
@@ -156,7 +161,15 @@ func (s *Service) takeDirty(r *reader) bool {
 func (s *Service) rereadIfOlder(ctx context.Context, id string, age time.Duration) error {
 	r := s.reader(id)
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	err := s.rereadLocked(ctx, id, age, r)
+	r.mu.Unlock()
+	if s.isDirty(r) { // asked for after the check, while this read held the lock
+		s.startReread(id, false)
+	}
+	return err
+}
+
+func (s *Service) rereadLocked(ctx context.Context, id string, age time.Duration, r *reader) error {
 	forced := s.takeDirty(r)
 	f, ok := s.Store.Get(id)
 	if !ok || f.Ended() || (!forced && !f.ReadAt.IsZero() && s.now().Sub(f.ReadAt) <= age) {
@@ -264,12 +277,20 @@ func (s *Service) Run(ctx context.Context) {
 
 func (s *Service) Connected(c *server.Client) {}
 
-// ShipsChanged is the ships' OnChange hook. It only takes a snapshot and pokes the worker, so it never waits on
-// the store.
+// ShipsChanged is the ships' OnChange hook. It only pokes the service's goroutine, which lists the ships and
+// reads the store, so it never waits on either; pokes that come together are one.
 func (s *Service) ShipsChanged() {
 	if s.Ships == nil {
 		return
 	}
+	s.background()
+	select {
+	case s.poke <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Service) shipsNow() map[string]shipSeen {
 	cur := map[string]shipSeen{}
 	for _, sh := range s.Ships() {
 		if k, ok := ships.ClaimKey(sh.URL); ok {
@@ -280,41 +301,29 @@ func (s *Service) ShipsChanged() {
 			cur[id] = shipSeen{sh.Status, k}
 		}
 	}
-	s.background()
-	s.mu.Lock()
-	s.snaps = append(s.snaps, cur)
-	s.mu.Unlock()
-	select {
-	case s.poke <- struct{}{}:
-	default:
-	}
+	return cur
 }
 
 // watchShips diffs each snapshot with the one before: a child's ship that anchored, is sailing off or is gone
 // rereads the campaign holding the child.
 func (s *Service) watchShips(ctx context.Context) {
 	defer s.wg.Done()
+	var prev map[string]shipSeen
 	for {
 		select {
 		case <-s.poke:
 		case <-ctx.Done():
 			return
 		}
-		s.mu.Lock()
-		snaps := s.snaps
-		s.snaps = nil
-		s.mu.Unlock()
+		cur := s.shipsNow()
+		was := prev
+		prev = cur
 		left := map[string]bool{}
-		for _, cur := range snaps {
-			if s.prev != nil {
-				for id, was := range s.prev {
-					now, present := cur[id]
-					if !present || (leaving(now.status) && !leaving(was.status)) {
-						left[was.key] = true
-					}
-				}
+		for id, w := range was {
+			now, present := cur[id]
+			if !present || (leaving(now.status) && !leaving(w.status)) {
+				left[w.key] = true
 			}
-			s.prev = cur
 		}
 		if len(left) == 0 {
 			continue

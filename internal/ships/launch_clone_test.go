@@ -50,6 +50,9 @@ func TestCloneLaunchRefusals(t *testing.T) {
 		{"a repo that has a checkout, from text", `{` + base + `,"text":"see https://github.com/acme/widget/issues/1"}`, "", 409, checkout},
 		{"a repo that has a checkout, from an order's repo field", `{` + base + `,"source":"s","order_id":"o1"}`, "https://github.com/acme/widget", 409, checkout},
 		{"the repo changed since the form showed it", `{` + base + `,"clone_repo":"github.com/acme/other","text":"https://github.com/acme/widget"}`, "", 409, "reopen the form"},
+		// a campaign launch names the repo as host/owner/repo, the launcher's identity form, never as a URL
+		{"clone_repo in the identity form is the repo the order shows", `{` + base + `,"clone_repo":"github.com/acme/widget","source":"s","order_id":"o1"}`, "https://github.com/acme/widget", 409, checkout},
+		{"clone_repo as a URL is not the identity", `{` + base + `,"clone_repo":"https://github.com/acme/widget","source":"s","order_id":"o1"}`, "https://github.com/acme/widget", 409, "reopen the form"},
 		{"no repo", `{` + base + `,"text":"nothing here"}`, "", 400, "no repository"},
 	}
 	for _, c := range cases {
