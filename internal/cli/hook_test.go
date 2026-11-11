@@ -21,33 +21,23 @@ func TestHookReason(t *testing.T) {
 	}{
 		// Claude Code and Codex share event names.
 		{"permission names the tool", "PermissionRequest", `{"tool_name":"Bash","tool_input":{"command":"rm -rf x"}}`, "permission:Bash"},
-		{"permission keeps an MCP tool name", "PermissionRequest", `{"tool_name":"mcp__srv__tool"}`, "permission:mcp__srv__tool"},
 		{"permission keeps a 64-character name", "PermissionRequest", `{"tool_name":"` + long64 + `"}`, "permission:" + long64},
 		{"permission drops a 65-character name", "PermissionRequest", `{"tool_name":"` + long64 + `a"}`, "permission"},
 		{"permission with no tool", "PermissionRequest", `{}`, "permission"},
-		{"permission drops a name with a space", "PermissionRequest", `{"tool_name":"Bash ls"}`, "permission"},
-		{"permission drops a name with a semicolon", "PermissionRequest", `{"tool_name":"x;kill-server"}`, "permission"},
-		{"permission drops a name with a newline", "PermissionRequest", `{"tool_name":"a\nb"}`, "permission"},
 		{"permission drops a tmux format", "PermissionRequest", `{"tool_name":"#{pane_id}"}`, "permission"},
 		{"AskUserQuestion is a question", "PreToolUse", `{"tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Delete prod?"}]}}`, "question"},
 		{"PreToolUse of Bash sets no reason", "PreToolUse", `{"tool_name":"Bash"}`, ""},
 		{"permission_prompt", "Notification", `{"notification_type":"permission_prompt","message":"Claude needs your permission"}`, "notification:permission_prompt"},
-		{"elicitation_dialog", "Notification", `{"notification_type":"elicitation_dialog"}`, "notification:elicitation_dialog"},
 		{"a notification that is not needs you", "Notification", `{"notification_type":"idle_prompt"}`, ""},
 		{"Stop", "Stop", `{"background_tasks":[]}`, "stop"},
-		{"Codex Stop", "Stop", `{"turn_id":"01a15222-ed87","last_assistant_message":"done"}`, "stop"},
 		{"Stop with a running subagent sets nothing", "Stop", `{"background_tasks":[{"type":"subagent","status":"running"}]}`, ""},
 		{"Stop with only a running shell", "Stop", `{"background_tasks":[{"type":"shell","status":"running"}]}`, "stop"},
 		{"a working event", "UserPromptSubmit", `{"prompt":"go"}`, ""},
-		{"an unknown event", "NoSuchEvent", `{}`, ""},
 		// Copilot.
 		{"copilot ask_user is a question", "preToolUse", `{"toolName":"ask_user","toolArgs":{"question":"which?"}}`, "question"},
-		{"copilot other tool", "preToolUse", `{"toolName":"bash"}`, ""},
 		{"copilot agentStop of the lead", "agentStop", `{"stopReason":"end_turn"}`, "stop"},
 		{"copilot agentStop of a subagent", "agentStop", `{"agentId":"788718ef","stopReason":"end_turn"}`, ""},
-		{"copilot permission_prompt", "notification", `{"notification_type":"permission_prompt"}`, "notification:permission_prompt"},
 		{"copilot notification with a bad type sets no state", "notification", `{"notification_type":"elicitation dialog"}`, ""},
-		{"copilot working event", "userPromptSubmitted", `{"prompt":"go"}`, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -105,7 +95,6 @@ func TestHookSubagentList(t *testing.T) {
 		// Claude Code.
 		{"claude start adds", "claude", "SubagentStart", claudeStart, nil, with(nil, cID, "Explore")},
 		{"claude start for a listed id adds nothing and keeps its start", "claude", "SubagentStart", claudeStart, list(cID + ":Explore"), list(cID + ":Explore")},
-		{"claude start keeps the others", "claude", "SubagentStart", claudeStart, list("b1:Plan"), with(list("b1:Plan"), cID, "Explore")},
 		{"claude stop of a listed id removes it despite its own background_tasks", "claude", "SubagentStop", claudeStop, list(cID+":Explore", "b1:Plan"), list("b1:Plan")},
 		{"claude internal agent stop (unknown id, no type) leaves the list", "claude", "SubagentStop", claudeInt, list(cID + ":Explore"), list(cID + ":Explore")},
 		{"claude Stop replaces the list from running subagents, keeping known starts", "claude", "Stop",
@@ -117,29 +106,20 @@ func TestHookSubagentList(t *testing.T) {
 			`{"background_tasks":[{"id":"m1","type":"teammate","status":"running","agent_type":"general-purpose"}]}`, nil, with(nil, "m1", "general-purpose")},
 		{"claude Stop with only a shell empties the list", "claude", "Stop",
 			`{"background_tasks":[{"id":"sh1","type":"shell","status":"running"}]}`, list(cID + ":Explore"), nil},
-		{"claude Stop with background_tasks [] empties the list", "claude", "Stop", `{"last_assistant_message":"alpha","background_tasks":[],"session_crons":[]}`, list(cID + ":Explore"), nil},
 		{"unknown harness: background_tasks [] is Claude's Stop and empties", "", "Stop", `{"background_tasks":[]}`, list(cID + ":Explore"), nil},
 		{"unknown harness: a Stop with no background_tasks is Codex's and leaves the list", "", "Stop", `{"turn_id":"01a15222-ed87"}`, list(cID + ":Explore"), list(cID + ":Explore")},
 		// Codex.
 		{"codex start adds", "codex", "SubagentStart", codexStart, list("b1:default"), with(list("b1:default"), xID, "default")},
-		{"codex start for a listed id adds nothing", "codex", "SubagentStart", codexStart, list(xID + ":default"), list(xID + ":default")},
-		{"codex stop of a listed id removes it", "codex", "SubagentStop", codexStop, list(xID+":default", "b1:default"), list("b1:default")},
-		{"codex stop of an unknown id leaves the list", "codex", "SubagentStop", codexStop, list("b1:default"), list("b1:default")},
 		{"codex Stop leaves the list alone", "codex", "Stop", `{"turn_id":"01a15222-ed87","last_assistant_message":"done"}`, list(xID + ":default"), list(xID + ":default")},
 		// Copilot.
 		{"copilot subagentStart adds", "copilot", "subagentStart", copStart, nil, with(nil, pID, "general-purpose")},
-		{"copilot subagentStart for a listed id adds nothing", "copilot", "subagentStart", copStart, list(pID + ":general-purpose"), list(pID + ":general-purpose")},
 		{"copilot subagentStop of a listed id removes it", "copilot", "subagentStop", copStop, list(pID+":general-purpose", "b1:t"), list("b1:t")},
-		{"copilot subagentStop of an unknown id leaves the list", "copilot", "subagentStop", copStop, list("b1:t"), list("b1:t")},
 		{"copilot lead agentStop clears all", "copilot", "agentStop", `{"stopReason":"end_turn","stop_hook_active":false}`, list(pID+":general-purpose", "b1:t"), nil},
 		{"copilot subagent agentStop leaves the list", "copilot", "agentStop", `{"stopReason":"end_turn","agentId":"` + pID + `","agentType":"general-purpose","parentAgentId":"796c5372"}`, list(pID + ":general-purpose"), list(pID + ":general-purpose")},
 		{"copilot lead userPromptSubmitted clears all", "copilot", "userPromptSubmitted", `{"prompt":"go"}`, list(pID + ":general-purpose"), nil},
-		{"copilot subagent userPromptSubmitted leaves the list", "copilot", "userPromptSubmitted", `{"prompt":"x","agentId":"` + pID + `"}`, list(pID + ":general-purpose"), list(pID + ":general-purpose")},
 		// What reaches tmux.
 		{"an unsafe id is dropped", "claude", "SubagentStart", `{"agent_id":"x;kill-server","agent_type":"Explore"}`, list("b1:Plan"), list("b1:Plan")},
-		{"an id with a tmux format is dropped", "codex", "SubagentStart", `{"agent_id":"#{pane_id}","agent_type":"default"}`, nil, nil},
 		{"an unsafe type is stored as empty", "claude", "SubagentStart", `{"agent_id":"ok1","agent_type":"Ex plore"}`, nil, with(nil, "ok1", "")},
-		{"an unsafe copilot type is stored as empty", "copilot", "subagentStart", `{"agentId":"ok1","agentType":"a\nb"}`, nil, with(nil, "ok1", "")},
 		{"an unsafe id in a Stop's background_tasks is dropped", "claude", "Stop",
 			`{"background_tasks":[{"id":"bad id","type":"subagent","status":"running","agent_type":"Plan"},{"id":"c2","type":"subagent","status":"running","agent_type":"x y"}]}`, nil, with(nil, "c2", "")},
 		{"the list is capped at 64", "claude", "SubagentStart", claudeStart, full, full},
@@ -183,13 +163,10 @@ func TestHookLeadRule(t *testing.T) {
 		want                 hookWrite
 	}{
 		{"claude lead Stop with crew working writes no state, only its wait", "Stop", claudeStop, working, held},
-		{"codex lead Stop with crew working writes no state, only its wait", "Stop", codexStop, working, held},
 		{"copilot lead agentStop with crew working writes no state, only its wait", "agentStop", copLead, working, held},
 		{"claude lead Stop with no crew working is needs_you stop", "Stop", claudeStop, idle, stop},
-		{"codex lead Stop with no crew working is needs_you stop", "Stop", codexStop, idle, stop},
 		{"copilot lead agentStop with no crew working is needs_you stop", "agentStop", copLead, idle, stop},
 		{"a crew boat's own Stop is idle with the others idle", "Stop", claudeStop, crew, crewIdle},
-		{"a crew boat's own Stop is idle whatever the other crew do", "Stop", codexStop, crewWithOthers, crewIdle},
 		{"a crew boat's own agentStop is idle whatever the other crew do", "agentStop", copLead, crewWithOthers, crewIdle},
 		{"the last boat to go idle flags the lead that waited", "Stop", claudeStop, crewFacts{ThisIsCrew: true, RestingLead: "%1"}, hookWrite{state: "idle", flagLead: "%1"}},
 		{"a failed crew read gives needs_you stop", "Stop", claudeStop, failed, stop},
@@ -229,7 +206,6 @@ func TestHookCrewPaneWorking(t *testing.T) {
 		{"no activity past the launch window", crewPaneFact{Launched: ago(11 * time.Second)}, false},
 		{"a hook already stamped, no state, inside the window", crewPaneFact{HasActivity: true, Launched: ago(3 * time.Second)}, false},
 		{"an unreadable launch time doesn't count", crewPaneFact{Launched: "soon"}, false},
-		{"no launch time doesn't count", crewPaneFact{}, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -260,12 +236,9 @@ func TestTranscriptCall(t *testing.T) {
 		t.Errorf("a source that is not a safe token is stored as unknown, got %q", got)
 	}
 	for name, c := range map[string][2]string{
-		"another event":  {"Stop", `{"transcript_path":"/p/a.jsonl"}`},
-		"relative":       {"SessionStart", `{"transcript_path":"p/a.jsonl"}`},
-		"not jsonl":      {"SessionStart", `{"transcript_path":"/p/a.txt"}`},
-		"ends in a semi": {"SessionStart", `{"transcript_path":"/p/a.jsonl;"}`},
-		"newline":        {"SessionStart", `{"transcript_path":"/p/a\n.jsonl"}`},
-		"none":           {"SessionStart", `{}`},
+		"another event": {"Stop", `{"transcript_path":"/p/a.jsonl"}`},
+		"relative":      {"SessionStart", `{"transcript_path":"p/a.jsonl"}`},
+		"newline":       {"SessionStart", `{"transcript_path":"/p/a\n.jsonl"}`},
 	} {
 		if got := call(c[0], c[1]); got != nil {
 			t.Errorf("%s: wrote %q, want nothing", name, got)

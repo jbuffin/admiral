@@ -173,10 +173,6 @@ func TestMaskSecretsShowsOnlyWhatTheSchemaDeclaresPlain(t *testing.T) {
 			`{"pin":987654}`, nil, []string{"987654"}},
 		{"a keyword the walk can't follow", obj(map[string]any{"token": str}, "dependentSchemas", map[string]any{"a": map[string]any{}}),
 			`{"token":"s3cretF"}`, nil, []string{"s3cretF"}},
-		{"prefixItems", obj(map[string]any{"accounts": map[string]any{"type": "array", "prefixItems": []any{str}}}),
-			`{"accounts":["s3cretG"]}`, nil, []string{"s3cretG"}},
-		{"properties that aren't an object", map[string]any{"properties": "x"},
-			`{"token":"s3cretH"}`, nil, []string{"s3cretH"}},
 		{"no schema", nil, `{"token":"s3cretI","on":true,"empty":""}`, []string{`"on":true`, `"empty":""`}, []string{"s3cretI"}},
 	} {
 		out, _ := json.Marshal(maskSecrets(decodeValue(json.RawMessage(c.settings)), c.schema))

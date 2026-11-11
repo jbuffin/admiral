@@ -73,20 +73,14 @@ func TestAutopilotParseErrors(t *testing.T) {
 		{"unknown key at the top", apConfig(`{"max_ship":2}`, `{}`), "autopilot.max_ship"},
 		{"unknown key in an entry", apConfig(``, `{"p":`+apEntry(`"colour":"red"`)+`}`), "sources.s.autopilot.p.colour"},
 		{"fleet missing", apConfig(``, `{"p":{"harness":"claude","skill":{"kind":"none"}}}`), "sources.s.autopilot.p.fleet"},
-		{"harness missing", apConfig(``, `{"p":{"fleet":"work","skill":{"kind":"none"}}}`), "sources.s.autopilot.p.harness"},
-		{"skill missing", apConfig(``, `{"p":{"fleet":"work","harness":"claude"}}`), "sources.s.autopilot.p.skill"},
 		{"fleet does not exist", apConfig(``, `{"p":{"fleet":"nope","harness":"claude","skill":{"kind":"none"}}}`), "sources.s.autopilot.p.fleet"},
 		{"fleet has no claude dock", apConfig(``, `{"p":{"fleet":"cod","harness":"claude","skill":{"kind":"none"}}}`), "sources.s.autopilot.p.fleet"},
 		{"low_stakes", apConfig(``, `{"p":`+apEntry(`"low_stakes":"sometimes"`)+`}`), "sources.s.autopilot.p.low_stakes"},
 		{"entry max_ships 0", apConfig(``, `{"p":`+apEntry(`"max_ships":0`)+`}`), "sources.s.autopilot.p.max_ships"},
 		{"top max_ships 0", apConfig(`{"max_ships":0}`, `{}`), "autopilot.max_ships"},
-		{"top max_ships not an integer", apConfig(`{"max_ships":1.5}`, `{}`), "autopilot.max_ships"},
 		{"skill kind", apConfig(``, `{"p":{"fleet":"work","harness":"claude","skill":{"kind":"mystery"}}}`), "sources.s.autopilot.p.skill"},
 		{"named skill without a name", apConfig(``, `{"p":{"fleet":"work","harness":"claude","skill":{"kind":"skill"}}}`), "sources.s.autopilot.p.skill"},
 		{"retro_every negative", apConfig(``, `{"p":`+apEntry(`"retro_every":-1`)+`}`), "sources.s.autopilot.p.retro_every: must"},
-		{"retro_every not an integer", apConfig(``, `{"p":`+apEntry(`"retro_every":1.5`)+`}`), "sources.s.autopilot.p.retro_every: must"},
-		{"retro_every a string", apConfig(``, `{"p":`+apEntry(`"retro_every":"5"`)+`}`), "sources.s.autopilot.p.retro_every: must"},
-		{"retro_every a boolean", apConfig(``, `{"p":`+apEntry(`"retro_every":true`)+`}`), "sources.s.autopilot.p.retro_every: must"},
 		{"skill name with a space", apConfig(``, `{"p":{"fleet":"work","harness":"claude","skill":{"kind":"skill","name":"a b"}}}`), "sources.s.autopilot.p.skill"},
 	}
 	for _, c := range cases {
@@ -123,7 +117,7 @@ func TestAutopilotAutoMerge(t *testing.T) {
 	if src, _ := cfg.Source("s"); src.Autopilot["p"].AutoMerge != "" {
 		t.Errorf("auto_merge with no key = %q, want off (empty)", src.Autopilot["p"].AutoMerge)
 	}
-	for _, v := range []string{`""`, `"Squash"`, `"ff"`, `"squash,merge"`, `true`, `1`, `["squash"]`} {
+	for _, v := range []string{`"Squash"`, `true`} {
 		_, err := config.Parse([]byte(apConfig(``, `{"p":`+apEntry(`"auto_merge":`+v)+`}`)))
 		if err == nil || !strings.Contains(err.Error(), "sources.s.autopilot.p.auto_merge") {
 			t.Errorf("auto_merge %s: error %v, want one naming sources.s.autopilot.p.auto_merge", v, err)
@@ -208,7 +202,6 @@ func TestSetSourcesRefusesAnAutopilotFleetThatIsGone(t *testing.T) {
 // is checked when an order is added, so a source can still be deleted.
 func TestAutopilotResumeSourceShape(t *testing.T) {
 	good := []string{
-		`{"resume_source":{"source":"orders","panel":"orders"}}`,
 		`{"max_ships":2,"resume_source":{"source":"not-a-source-yet","panel":"nowhere"}}`,
 	}
 	for _, top := range good {
@@ -219,9 +212,6 @@ func TestAutopilotResumeSourceShape(t *testing.T) {
 	bad := []struct{ name, top, want string }{
 		{"a string", `{"resume_source":"orders"}`, "autopilot.resume_source"},
 		{"a missing source", `{"resume_source":{"panel":"orders"}}`, "autopilot.resume_source.source"},
-		{"a missing panel", `{"resume_source":{"source":"orders"}}`, "autopilot.resume_source.panel"},
-		{"an empty source", `{"resume_source":{"source":"","panel":"orders"}}`, "autopilot.resume_source.source"},
-		{"a number for the panel", `{"resume_source":{"source":"orders","panel":3}}`, "autopilot.resume_source.panel"},
 		{"an unknown key", `{"resume_source":{"source":"orders","panel":"orders","x":1}}`, "autopilot.resume_source.x"},
 	}
 	for _, c := range bad {

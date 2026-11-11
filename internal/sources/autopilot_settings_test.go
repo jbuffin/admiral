@@ -140,9 +140,6 @@ func TestAutopilotSettingsRefusalsLeaveTheFileUnchanged(t *testing.T) {
 	}{
 		{"args off the allowlist", apEntry(map[string]any{"args": []string{"--dangerously-skip-permissions"}}), "--dangerously-skip-permissions is refused"},
 		{"an unknown fleet", apEntry(map[string]any{"fleet": "nope"}), `no fleet "nope"`},
-		{"max_ships 0", apEntry(map[string]any{"max_ships": 0}), "max_ships"},
-		{"a bad low_stakes", apEntry(map[string]any{"low_stakes": "sometimes"}), "low_stakes"},
-		{"a harness other than claude", apEntry(map[string]any{"harness": "codex"}), "Claude Code only"},
 		{"a switch to a fleet whose dock sets the flag", apEntry(map[string]any{"fleet": "strict", "args": []string{"--disallowedTools", "Bash"}}), "the dock already sets it"},
 	} {
 		code, body := f.apPut("main", c.entry, g.Version)

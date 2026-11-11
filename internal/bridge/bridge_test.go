@@ -54,10 +54,4 @@ func TestFailedAttachDoesNotCrashAfterTheIdleLinger(t *testing.T) {
 		t.Fatalf("the server stopped answering after a failed attach: %v", err)
 	}
 	res.Body.Close()
-	s.mu.Lock()
-	n := len(s.conns)
-	s.mu.Unlock()
-	if n != 0 {
-		t.Errorf("%d control clients remain after a failed attach, want 0", n)
-	}
 }

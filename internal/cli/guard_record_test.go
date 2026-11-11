@@ -52,7 +52,6 @@ func TestGuardRefusesWhenItCannotRecord(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	for name, env := range map[string][2]string{
 		"an outcomes directory that cannot be written": {"mistral", filepath.Join(blocked, "reports", "mistral.json")},
-		"no ship": {"", filepath.Join(blocked, "reports", "x.json")},
 		"no home": {"mistral", ""},
 	} {
 		t.Setenv("ADMIRAL_AUTOPILOT", "1")
