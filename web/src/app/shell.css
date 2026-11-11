@@ -405,3 +405,19 @@ button.pill { cursor: pointer; min-height: 32px; }
 .working { margin: 0; color: var(--color-run); font-size: var(--font-size-meta); font-weight: 600; }
 .fold-chevron { display: inline-flex; transform: rotate(-90deg); }
 .fold-chevron.open { transform: none; }
+
+/* Message box: under the conversation, above the on-screen keyboard's scroll. */
+.ship-view-head .stop-ship { margin-left: auto; flex: none; }
+.stop-sheet .line { margin: 4px 0 8px; }
+.msg-box { display: flex; flex-direction: column; gap: 6px; flex: none; padding-top: 10px; padding-bottom: env(safe-area-inset-bottom); }
+.msg-box .alert { margin: 0; }
+.msg-note { margin: 0; font-size: var(--font-size-meta); color: var(--color-muted); }
+.msg-row { display: flex; align-items: flex-end; gap: 8px; }
+.msg-input {
+  flex: 1; min-width: 0; min-height: var(--shape-min-touch-target); max-height: 30dvh; padding: 8px 10px; resize: none;
+  font: inherit; font-size: 16px; color: var(--color-text); background: var(--color-panel);
+  border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md);
+}
+.msg-input:disabled { opacity: 0.6; }
+.msg-actions { display: flex; flex-direction: column; gap: 6px; }
+.msg.user.sent { opacity: 0.55; }

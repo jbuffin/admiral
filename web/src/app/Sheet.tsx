@@ -22,12 +22,12 @@ export function useListKeys(ref: RefObject<HTMLElement | null>, active: boolean,
 }
 
 /** Only a click on the backdrop itself closes it: closing on pointerdown would let the click land underneath. */
-export function Sheet({ label, onClose, wide, children }: { label: string; onClose: () => void; wide?: boolean; children: ComponentChildren }) {
+export function Sheet({ label, onClose, wide, children, kind = '' }: { label: string; onClose: () => void; wide?: boolean; children: ComponentChildren; kind?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   useListKeys(ref, true, onClose);
   return (
-    <div class="backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={ref} class={wide ? 'sheet wide' : 'sheet'} role="dialog" aria-modal="true" aria-label={label}>
+    <div class={`backdrop ${kind}`} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div ref={ref} class={`sheet${wide ? ' wide' : ''} ${kind}`} role="dialog" aria-modal="true" aria-label={label}>
         <h2 class="sheet-title">{label}</h2>
         {children}
       </div>
