@@ -2,6 +2,8 @@ package e2e
 
 import (
 	"encoding/json"
+	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -56,7 +58,7 @@ func TestMooredShipSurvivesRestart(t *testing.T) {
 		return byName(l)[ship.Name].Status == "moored"
 	})
 	got := byName(list)[ship.Name]
-	if len(got.PRs) != 1 || got.PRs[0] != mooredPR || got.MooredAt == "" {
+	if len(got.PRs) != 1 || got.PRs[0].URL != mooredPR || got.PRs[0].State != "OPEN" || got.MooredAt == "" {
 		t.Errorf("moored ship = %+v, want its PR %s and a moored time", got, mooredPR)
 	}
 	if _, err := time.Parse(time.RFC3339, got.MooredAt); err != nil {
@@ -170,4 +172,72 @@ func (g *fakeGH) asked(url string) bool {
 		}
 	}
 	return false
+}
+
+// prChips steers the chips the batched poll reads for a PR: any of them may be "" for none.
+func (g *fakeGH) prChips(url, review, checks, mergeable string) {
+	g.t.Helper()
+	key := strings.NewReplacer("/", "_", ":", "_").Replace(url)
+	for dir, v := range map[string]string{"pr_review": review, "pr_checks": checks, "pr_mergeable": mergeable} {
+		if err := os.MkdirAll(filepath.Join(g.dir, dir), 0o755); err != nil {
+			g.t.Fatal(err)
+		}
+		if v != "" {
+			g.write(dir+"/"+key, v+"\n")
+		}
+	}
+}
+
+func (w *world) kickMoored() {
+	w.t.Helper()
+	if code, body := send(w.t, http.MethodPost, w.in.LocalURL+"/api/moored/refresh", nil); code != http.StatusAccepted {
+		w.t.Fatalf("POST /api/moored/refresh = %d, want 202: %s", code, body)
+	}
+}
+
+func TestMooredShipSailsOffWhenItsPRMerges(t *testing.T) {
+	t.Parallel()
+	w, g := mooring(t, "exit 0")
+	g.prState(mooredPR, "OPEN")
+	g.prChips(mooredPR, "APPROVED", "PENDING", "MERGEABLE")
+	w.start()
+	ship := w.launch(w.order("f", "claude", "widgets", commodore, "do it"))
+	w.exitWith(ship, mooredReport(mooredPR))
+	w.in.waitShipsList(t, 20*time.Second, "the ship moored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "moored" })
+
+	w.kickMoored()
+	list := w.in.waitShipsList(t, 20*time.Second, "the poll's chips on the moored ship", func(l []shipJSON) bool {
+		prs := byName(l)[ship.Name].PRs
+		return len(prs) == 1 && prs[0].Review == "APPROVED"
+	})
+	got := byName(list)[ship.Name]
+	if pr := got.PRs[0]; pr.State != "OPEN" || pr.Checks != "PENDING" || pr.Mergeable != "MERGEABLE" || pr.Conflicts {
+		t.Errorf("chips = %+v, want OPEN, approved, checks PENDING, MERGEABLE, no conflicts", pr)
+	}
+	if _, err := time.Parse(time.RFC3339, got.PolledAt); err != nil || got.Stale {
+		t.Errorf("polled_at = %q, stale = %v; want the poll's time and not stale", got.PolledAt, got.Stale)
+	}
+
+	g.prState(mooredPR, "MERGED")
+	w.kickMoored()
+	w.in.waitShipsList(t, 20*time.Second, "the ship sailed off after the merge", func(l []shipJSON) bool {
+		_, ok := byName(l)[ship.Name]
+		return !ok
+	})
+	if exists(w.mooredFile(ship.Name)) {
+		t.Errorf("the record %s is still there, so the name is still reserved", w.mooredFile(ship.Name))
+	}
+	log := w.waitEvent(ship.Session, "unmoored", 1)
+	n := 0
+	for _, m := range log {
+		if m["event"] == "unmoored" {
+			n++
+		}
+	}
+	ev := lastOf(log, "unmoored")
+	prs, _ := ev["prs"].([]any)
+	first, _ := prs[0].(map[string]any)
+	if n != 1 || ev["reason"] != "merged" || len(prs) != 1 || first["url"] != mooredPR || first["state"] != "MERGED" {
+		t.Errorf("unmoored events = %d, last = %v; want one with reason merged and the PR MERGED", n, ev)
+	}
 }

@@ -11,7 +11,7 @@
 #                fleet's env or in Admiral's own) as
 #                NAME=value lines; a variable that was not set has no line
 #
-# It answers seven kinds of call and nothing else (anything else exits 2):
+# It answers eight kinds of call and nothing else (anything else exits 2):
 #
 #   gh --version
 #
@@ -44,6 +44,24 @@
 #       repo_clone.sleep   sleep that many seconds before cloning, so two clones overlap
 #       repo_clone.fail    leave a partial DIR (a junk file, as an interrupted
 #                          git does), print the file's content on stderr, exit 1
+#
+#   gh api graphql ...   (the moor poll's batched pull request query)
+#     Taken when an argument holds `pullRequest(number:`, before the search
+#     match below. It reads each `ALIAS: repository(owner: "O", name: "N")
+#     { pullRequest(number: 7)` out of the query (literal values) and answers
+#     every alias as GitHub does, under data. The PR is
+#     https://HOST/O/N/pull/7 (HOST from --hostname, else github.com), keyed
+#     like pr_state below. Its files, each holding one word:
+#       pr_state/KEY      state: OPEN, CLOSED or MERGED. No file: NOT_FOUND.
+#       pr_review/KEY     reviewDecision (none: null)
+#       pr_checks/KEY     statusCheckRollup.state (none: null)
+#       pr_mergeable/KEY  mergeable (none: UNKNOWN)
+#       pr_notfound/KEY   any content: NOT_FOUND for this PR even with a state
+#     With a NOT_FOUND PR the answer is gh's partial one: the other PRs still
+#     under data, the missing one a null pullRequest, an errors entry of type
+#     NOT_FOUND, "gh: Could not resolve ..." on stderr, exit 1. With
+#     $FAKEGH_DIR/pr_batch.fail the whole call fails: that file's content on
+#     stderr, nothing on stdout, exit 1.
 #
 #   gh api graphql ...   (the search)
 #     Looks for a canned search in $FAKEGH_DIR/search/: a <key>.match file
@@ -235,6 +253,51 @@ api)
 		done
 		echo "fakegh: no canned REST answer for $method $endpoint" >&2
 		exit 1
+	fi
+	batch=
+	bhost=github.com
+	prev=
+	for a in "$@"; do
+		case "$a" in
+		*"pullRequest(number:"*) batch=$a ;;
+		esac
+		[ "$prev" = --hostname ] && bhost=$a
+		prev=$a
+	done
+	if [ -n "$batch" ]; then
+		if [ -e "$FAKEGH_DIR/pr_batch.fail" ]; then
+			cat "$FAKEGH_DIR/pr_batch.fail" >&2
+			exit 1
+		fi
+		data= errs= missing=0
+		entries=$(printf '%s' "$batch" | tr -d '\n' | grep -oE '[A-Za-z0-9_]+: *repository\(owner: *"[^"]+", *name: *"[^"]+"\) *\{ *pullRequest\(number: *[0-9]+\)' |
+			sed -E 's/^([A-Za-z0-9_]+): *repository\(owner: *"([^"]+)", *name: *"([^"]+)"\) *\{ *pullRequest\(number: *([0-9]+)\)$/\1 \2 \3 \4/')
+		while read -r alias owner name num; do
+			[ -n "$alias" ] || continue
+			key=$(printf '%s' "https://$bhost/$owner/$name/pull/$num" | tr '/:' '__')
+			if [ -e "$FAKEGH_DIR/pr_notfound/$key" ] || [ ! -s "$FAKEGH_DIR/pr_state/$key" ]; then
+				node='null'
+				missing=1
+				errs="$errs${errs:+,}{\"type\":\"NOT_FOUND\",\"path\":[\"$alias\",\"pullRequest\"],\"message\":\"Could not resolve to a PullRequest with the number of $num.\"}"
+			else
+				st=$(cat "$FAKEGH_DIR/pr_state/$key")
+				rv=null ck=null mg='"UNKNOWN"'
+				[ -s "$FAKEGH_DIR/pr_review/$key" ] && rv="\"$(cat "$FAKEGH_DIR/pr_review/$key")\""
+				[ -s "$FAKEGH_DIR/pr_checks/$key" ] && ck="{\"state\":\"$(cat "$FAKEGH_DIR/pr_checks/$key")\"}"
+				[ -s "$FAKEGH_DIR/pr_mergeable/$key" ] && mg="\"$(cat "$FAKEGH_DIR/pr_mergeable/$key")\""
+				node="{\"state\":\"$st\",\"reviewDecision\":$rv,\"mergeable\":$mg,\"statusCheckRollup\":$ck}"
+			fi
+			data="$data${data:+,}\"$alias\":{\"pullRequest\":$node}"
+		done <<EOF2
+$entries
+EOF2
+		if [ "$missing" = 1 ]; then
+			printf '{"data":{%s},"errors":[%s]}\n' "$data" "$errs"
+			echo "gh: Could not resolve to a PullRequest" >&2
+			exit 1
+		fi
+		printf '{"data":{%s}}\n' "$data"
+		exit 0
 	fi
 	for m in "$FAKEGH_DIR"/search/*.match; do
 		[ -e "$m" ] || continue

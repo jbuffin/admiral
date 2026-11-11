@@ -312,8 +312,19 @@ type shipJSON struct {
 	Launched   string   `json:"launched"`
 	Status     string   `json:"status"`
 	Position   *shipPos `json:"position"`
-	PRs        []string `json:"prs"`
+	PRs        []prJSON `json:"prs"`
 	MooredAt   string   `json:"moored_at"`
+	PolledAt   string   `json:"polled_at"`
+	Stale      bool     `json:"stale"`
+}
+
+type prJSON struct {
+	URL       string `json:"url"`
+	State     string `json:"state"`
+	Review    string `json:"review"`
+	Checks    string `json:"checks"`
+	Mergeable string `json:"mergeable"`
+	Conflicts bool   `json:"conflicts"`
 }
 
 func send(t *testing.T, method, url string, body any) (int, string) {
