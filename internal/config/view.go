@@ -26,7 +26,7 @@ type FleetView struct {
 	ColorIndex  *int       `json:"color_index,omitempty"`
 	SearchRoots []string   `json:"search_roots"`
 	Owners      []string   `json:"owners"`
-	CloneRoot   string     `json:"clone_root"` // as stored; empty when unset
+	CloneRoot   string     `json:"clone_root"` // expanded like SearchRoots; empty when unset
 	CanLaunch   bool       `json:"can_launch"`
 	Docks       []DockView `json:"docks"`
 }

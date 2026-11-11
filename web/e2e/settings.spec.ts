@@ -348,4 +348,12 @@ test('a fleet page edits search roots, owners, clone root and colour, keeping wh
 
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
+
+  // "New fleet…" starts setup and sends the person to the old dashboard; setup is left running.
+  await page.goto(admiral.url + 'app/ships');
+  await page.getByRole('navigation').getByRole('button', { name: WORK, exact: true }).click();
+  await page.getByRole('menu').getByRole('menuitem', { name: 'New fleet…' }).click();
+  await expect(page).toHaveURL(admiral.url);
+  const setup = (await (await fetch(`${admiral.url}api/v1/setup`)).json()) as { running: boolean };
+  expect(setup.running).toBe(true);
 });

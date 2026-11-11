@@ -1,7 +1,9 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { activeFleet, chooseFleet, fleetPaint, fleets, loaded } from './fleets';
+import { startSetup } from './api';
+import { activeFleet, chooseFleet, fleetPaint, fleetSearch, fleets, loaded } from './fleets';
 import type { Fleet } from './api';
 import { Icon } from './Icon';
+import { fleetPath, go } from './router';
 import { Sheet, useListKeys } from './Sheet';
 
 const LINE = 'The inbox and shared resources span fleets.';
@@ -38,6 +40,22 @@ export function FleetSwitcher({ sheet }: { sheet: boolean }) {
     close();
   };
 
+  const [setup, setSetup] = useState<{ error?: string; started?: boolean } | null>(null);
+
+  const openSettings = () => {
+    if (!active) return;
+    close(false);
+    go(fleetPath(active.key), fleetSearch.value);
+  };
+
+  // The new shell has no terminal: setup runs detached and the old dashboard joins it.
+  const newFleet = async () => {
+    const r = await startSetup();
+    if (!r.ok) return setSetup({ error: r.error });
+    setSetup({ started: true });
+    setTimeout(() => location.assign('/'), 2500);
+  };
+
   const items = (
     <>
       {fleets.value.map((f) => (
@@ -54,6 +72,26 @@ export function FleetSwitcher({ sheet }: { sheet: boolean }) {
         </button>
       ))}
       <p class="menu-note">{LINE}</p>
+      <button type="button" role="menuitem" class="menu-item" onClick={() => void newFleet()}>
+        <Icon name="plus" size={14} />
+        <span class="menu-name">New fleet…</span>
+      </button>
+      {setup?.error ? (
+        <p class="menu-note error-text" role="alert">
+          {setup.error}
+        </p>
+      ) : null}
+      {setup?.started ? (
+        <p class="menu-note" role="status">
+          Setup is running. Opening the dashboard: tap the fleet count there to join the setup terminal.
+        </p>
+      ) : null}
+      {active ? (
+        <button type="button" role="menuitem" class="menu-item" onClick={openSettings}>
+          <Icon name="preferences" size={14} />
+          <span class="menu-name">{active.name} fleet settings</span>
+        </button>
+      ) : null}
     </>
   );
 

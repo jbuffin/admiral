@@ -25,10 +25,11 @@ const P: Record<string, preact.ComponentChildren> = {
   ),
   preferences: <path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 5v4M6 15v4" />,
   more: <path d="M5 12h.01M12 12h.01M19 12h.01" />,
+  plus: <path d="M12 5v14M5 12h14" />,
   chevron: <path d="M7 10l5 5 5-5" />,
 };
 
-export function Icon({ name, size = 15 }: { name: SurfaceId | 'more' | 'chevron'; size?: number }) {
+export function Icon({ name, size = 15 }: { name: SurfaceId | 'more' | 'chevron' | 'plus'; size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       {P[name]}

@@ -1,7 +1,7 @@
 import type { ComponentChildren, RefObject } from 'preact';
 import { useLayoutEffect, useRef } from 'preact/hooks';
 
-const ITEMS = '[role="menuitemradio"], a';
+const ITEMS = '[role="menuitemradio"], [role="menuitem"], a';
 
 export function useListKeys(ref: RefObject<HTMLElement | null>, active: boolean, onEscape: () => void) {
   useLayoutEffect(() => {

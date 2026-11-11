@@ -1,0 +1,32 @@
+export interface FleetFields {
+  search_roots: string[];
+  owners: string[];
+  clone_root: string;
+  color: string;
+}
+
+const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((v, i) => v === b[i]);
+
+/** What a save sends: only the fields that changed, so one field's stored form is never rewritten by another's save. */
+export function saveBody(shown: FleetFields, edited: FleetFields): Partial<FleetFields> {
+  const body: Partial<FleetFields> = {};
+  if (!sameList(shown.search_roots, edited.search_roots)) body.search_roots = edited.search_roots;
+  if (!sameList(shown.owners, edited.owners)) body.owners = edited.owners;
+  if (shown.clone_root !== edited.clone_root) body.clone_root = edited.clone_root;
+  if (shown.color !== edited.color) body.color = edited.color;
+  return body;
+}
+
+export interface ErrorTarget {
+  field: keyof FleetFields;
+  index?: number;
+}
+
+/** The field a 400's `fleets.<key>.<field>[i]: …` message names; null sends it to the page top. */
+export function errorTarget(message: string, fleetKey: string): ErrorTarget | null {
+  const prefix = `fleets.${fleetKey}.`;
+  if (!message.startsWith(prefix)) return null;
+  const m = /^(search_roots|owners)\[(\d+)\]|^(clone_root|color)\b/.exec(message.slice(prefix.length));
+  if (!m) return null;
+  return m[1] ? { field: m[1] as 'search_roots' | 'owners', index: Number(m[2]) } : { field: m[3] as 'clone_root' | 'color' };
+}

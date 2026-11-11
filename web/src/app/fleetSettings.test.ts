@@ -1,10 +1,3 @@
-// Module under test: web/src/app/fleetSettings.ts
-//   saveBody(shown: FleetFields, edited: FleetFields): Partial<FleetFields>
-//     FleetFields = { search_roots: string[]; owners: string[]; clone_root: string; color: string }
-//     `shown` is what the page drew from the view, `edited` what the form holds now. The result holds only the fields
-//     that differ; a changed list is sent whole; a cleared clone_root or color is "" and a removed list is [].
-//   errorTarget(message: string, fleetKey: string): { field: 'search_roots' | 'owners' | 'clone_root' | 'color'; index?: number } | null
-//     Where a 400's `error` shows: the field its `fleets.<key>.<field>[i]` path names, or null for the page top.
 import { describe, expect, it } from 'vitest';
 import { errorTarget, saveBody } from './fleetSettings';
 
