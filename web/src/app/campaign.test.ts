@@ -153,7 +153,7 @@ describe('matching ships to children', () => {
 describe('launching a slice', () => {
   const ctx = { ended: false, canStart: true };
   const cmd = (n: number, extra: Partial<CampaignNode> = {}) => child(n, 'ready', 'without-you', { skill: { kind: 'commodore', name: '', args: '' }, ...extra });
-  const held = (n: number): Ship => ({ session: `s${n}`, name: `S${n}`, fleet: 'zulu', harness: 'claude', status: 'underway', order_id: '', title: '', tail: '', fleet_color: '', launched: '', crew_live: 0, source: 'campaign', url: url(n) });
+  const held = (n: number): Ship => ({ session: `s${n}`, name: `S${n}`, fleet: 'zulu', harness: 'claude', status: 'underway', order_id: '', title: '', tail: '', fleet_color: '', launched: '', crew_live: 0, dir: '', repo: '', exit_code: null, exit_signal: null, crew: [], source: 'campaign', url: url(n) });
 
   it('admits a ready Without-you Commodore child with no ship', () => {
     expect(canJoinSlice(cmd(31), ctx, [])).toBe(true);
