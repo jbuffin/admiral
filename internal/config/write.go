@@ -134,7 +134,7 @@ func PreviewFleets(dir string, fleets json.RawMessage) (before, after []byte, er
 // Fleets is the fleets object of dir/config.json in file order; empty when
 // there is no file. A file that doesn't validate is an error.
 func Fleets(dir string) (*Object, error) {
-	data, err := readConfig(filepath.Join(dir, FileName))
+	data, err := ReadConfig(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +165,15 @@ func WriteFile(dir string, data []byte) error {
 
 // ReadConfig is dir/config.json, or the empty config when there is no file yet.
 // A dangling symlink is an error: writing would replace the link.
-func ReadConfig(dir string) ([]byte, error) { return readConfig(filepath.Join(dir, FileName)) }
+// A file Admiral would migrate at startup is refused, for the commands that
+// read it: they never migrate.
+func ReadConfig(dir string) ([]byte, error) {
+	data, err := readConfig(filepath.Join(dir, FileName))
+	if err == nil && NeedsMigration(data) {
+		return nil, ErrNeedsMigration
+	}
+	return data, err
+}
 
 func readConfig(path string) ([]byte, error) {
 	data, err := os.ReadFile(path)

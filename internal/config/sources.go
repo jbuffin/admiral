@@ -14,6 +14,7 @@ import (
 type Source struct {
 	Key      string
 	Plugin   string
+	Fleet    string          // the fleet the source belongs to; always set
 	Name     string          // display name; empty means the plugin's
 	Settings json.RawMessage // a JSON object; nil when the file has none
 	// PanelOrder lists panel IDs in the order the sidebar shows them; panels
@@ -103,6 +104,10 @@ func parseSource(path, key string, raw json.RawMessage) (Source, error) {
 			if !NameRe.MatchString(s.Plugin) {
 				return Source{}, fmt.Errorf("%s: plugin names may hold only letters, digits, - and _, got %q", p, s.Plugin)
 			}
+		case "fleet":
+			if s.Fleet, err = str(p, m.raw); err != nil {
+				return Source{}, err
+			}
 		case "name":
 			if s.Name, err = str(p, m.raw); err != nil {
 				return Source{}, err
@@ -136,6 +141,9 @@ func parseSource(path, key string, raw json.RawMessage) (Source, error) {
 	if s.Plugin == "" {
 		return Source{}, fmt.Errorf("%s.plugin: required", path)
 	}
+	if strings.TrimSpace(s.Fleet) == "" {
+		return Source{}, fmt.Errorf("%s.fleet: required, name a fleet from fleets", path)
+	}
 	return s, nil
 }
 
@@ -152,6 +160,9 @@ func SourcesJSON(list []Source) (json.RawMessage, error) {
 		b.WriteString(`:{"plugin":`)
 		p, _ := json.Marshal(s.Plugin)
 		b.Write(p)
+		f, _ := json.Marshal(s.Fleet)
+		b.WriteString(`,"fleet":`)
+		b.Write(f)
 		if s.Name != "" {
 			n, _ := json.Marshal(s.Name)
 			b.WriteString(`,"name":`)
@@ -174,4 +185,14 @@ func SourcesJSON(list []Source) (json.RawMessage, error) {
 	}
 	b.WriteByte('}')
 	return json.RawMessage(b.String()), nil
+}
+
+// checkSourceFleets runs after the fleets are parsed: every source names one.
+func checkSourceFleets(cfg *Config) error {
+	for _, s := range cfg.SourceList {
+		if _, ok := cfg.Fleet(s.Fleet); !ok {
+			return fmt.Errorf("sources.%s.fleet: no fleet %q in fleets (move the source to another fleet or remove it first)", s.Key, s.Fleet)
+		}
+	}
+	return nil
 }

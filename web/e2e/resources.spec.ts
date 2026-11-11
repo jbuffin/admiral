@@ -52,7 +52,7 @@ test.describe('locked resources in the UI', () => {
 
     const config = JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8'));
     const needs = { enabled: true, fleet: 'work', harness: 'claude', skill: { kind: 'none' }, max_ships: 1, low_stakes: 'never', resources: ['phone'] };
-    config.sources = { a: { plugin: 'testplug', name: 'Test', settings: { flagdir: flags.dir }, autopilot: { main: needs, other: needs } } };
+    config.sources = { a: { plugin: 'testplug', fleet: 'work', name: 'Test', settings: { flagdir: flags.dir }, autopilot: { main: needs, other: needs } } };
     config.resources = { phone: { capacity: 1, check: ['test', '-f', flag] } };
     admiral.writeConfig(config);
     await admiral.start();

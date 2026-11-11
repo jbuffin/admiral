@@ -26,11 +26,11 @@ func (w *world) retroConfig() {
 	if err := json.Unmarshal([]byte(w.config()), &cfg); err != nil {
 		w.t.Fatal(err)
 	}
-	cfg["sources"] = map[string]any{
+	cfg["sources"] = inFleet(testSourceFleet, map[string]any{
 		"orders": w.orderSource("orders", "Orders",
 			map[string]any{"autopilot": map[string]any{"orders": apEntry(true, 1, map[string]any{"retro_every": 2})}}),
 		"retros": w.orderSource("retros", "Retros", nil),
-	}
+	})
 	cfg["autopilot"] = map[string]any{"resume_source": resumeTarget("retros", "orders")}
 	b, err := json.Marshal(cfg)
 	if err != nil {

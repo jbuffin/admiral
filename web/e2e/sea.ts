@@ -56,7 +56,8 @@ export class Sea {
         },
       };
     }
-    a.writeConfig({ version: 1, fleets: config });
+    // The test source that stores orders (world.seedOrder), in the first fleet.
+    a.writeConfig({ version: 1, fleets: config, sources: { orders: a.ordersSource('orders', 'Orders', { fleet: this.keys[0] }) } });
   }
 
   /** Launches straight through the API (no source) and returns the ship, once it is underway and its cues have run. */

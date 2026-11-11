@@ -24,7 +24,7 @@ const richConfig = `{
   "version": 1,
   "future_setting": {"a": [1, 2, {"b": null}], "c": "kept"},
   "favorite_skills": ["old"],
-  "sources": {"jira": {"plugin": "jira", "settings": {"project": "ADM"}}},
+  "sources": {"jira": {"plugin": "jira", "fleet": "zeta", "settings": {"project": "ADM"}}},
   "fleets": {
     "zeta": {
       "name": "Zeta",
@@ -136,7 +136,7 @@ func TestS9_SetSourcesKeepsEverythingElse(t *testing.T) {
 	path := writeFile(t, dir, richConfig)
 	before := decode(t, path)
 
-	newSources := json.RawMessage(`{"freeform":{"plugin":"freeform","settings":{}}}`)
+	newSources := json.RawMessage(`{"freeform":{"plugin":"freeform","fleet":"zeta","settings":{}}}`)
 	if err := config.SetSources(dir, newSources); err != nil {
 		t.Fatalf("SetSources: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestS9_WriteRefusedWhileFileInvalid(t *testing.T) {
 // S9: with no file on disk the write creates one with version 1 and empty fleets.
 func TestS9_WriteCreatesFileWhenMissing(t *testing.T) {
 	dir := t.TempDir()
-	if err := config.SetSources(dir, json.RawMessage(`{"freeform":{"plugin":"freeform"}}`)); err != nil {
+	if err := config.SetSources(dir, json.RawMessage(`{}`)); err != nil {
 		t.Fatalf("SetSources on a fresh install: %v", err)
 	}
 	m := decode(t, filepath.Join(dir, "config.json"))
@@ -204,7 +204,7 @@ func TestS9_WriteCreatesFileWhenMissing(t *testing.T) {
 	if !jsonEqual(t, m["fleets"], json.RawMessage(`{}`)) {
 		t.Errorf("fleets = %s, want {}", m["fleets"])
 	}
-	if !jsonEqual(t, m["sources"], json.RawMessage(`{"freeform":{"plugin":"freeform"}}`)) {
+	if !jsonEqual(t, m["sources"], json.RawMessage(`{}`)) {
 		t.Errorf("sources = %s", m["sources"])
 	}
 }

@@ -38,7 +38,7 @@ func (w *world) writeAutopilotConfig(sources map[string]any, global int) {
 	if err := json.Unmarshal([]byte(w.config()), &cfg); err != nil {
 		w.t.Fatal(err)
 	}
-	cfg["sources"] = sources
+	cfg["sources"] = inFleet(testSourceFleet, sources)
 	if global > 0 {
 		cfg["autopilot"] = map[string]any{"max_ships": global}
 	}
@@ -50,7 +50,7 @@ func (w *world) writeAutopilotConfig(sources map[string]any, global int) {
 }
 
 func tpAutopilot(p *tplug, panel string, entry map[string]any) map[string]any {
-	return map[string]any{"plugin": "testplug", "name": "Test", "settings": p.settings(nil),
+	return map[string]any{"plugin": "testplug", "fleet": testSourceFleet, "name": "Test", "settings": p.settings(nil),
 		"autopilot": map[string]any{panel: entry}}
 }
 

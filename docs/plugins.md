@@ -28,7 +28,7 @@ A folder in `$ADMIRAL_HOME/plugins/<name>/` holding a `plugin.json`:
 
 `GET /api/plugins` lists every folder: `[{name, description, icon_url, valid, error}]`. A broken manifest shows `valid: false` and an `error` saying why.
 
-An engineer installs a plugin by copying its folder into `plugins/`. Admiral writes the two plugins it ships, freeform and GitHub, on a fresh install, but adds only freeform as a source. It also keeps a `.admiral-stamp` file there, the SHA-256 of the folder's files, so it can replace the folder with a newer copy when you have not edited it. If you edit one of them, Admiral leaves your copy alone.
+An engineer installs a plugin by copying its folder into `plugins/`. Admiral writes the two plugins it ships, freeform and GitHub, on a fresh install, but adds no source: a source is added to a fleet from the sidebar, and a source in `config.json` names its fleet with `fleet`. It also keeps a `.admiral-stamp` file there, the SHA-256 of the folder's files, so it can replace the folder with a newer copy when you have not edited it. If you edit one of them, Admiral leaves your copy alone.
 
 ## Sources and settings
 
@@ -36,10 +36,11 @@ An engineer adds a *source* of your plugin: an entry in the `sources` object of 
 
 ```json
 "sources": {
-  "orders": { "plugin": "freeform", "name": "Orders" },
-  "work-board": { "plugin": "board", "name": "Work", "settings": { "project": "ADM" } }
+  "work-board": { "plugin": "board", "name": "Work", "fleet": "work", "settings": { "project": "ADM" } }
 }
 ```
+
+`fleet` names a fleet defined under `fleets` in the same file (here, one called `work`).
 
 One plugin can back several sources, each with its own settings, its own process and its own data directory, `$ADMIRAL_HOME/data/<source key>/`. The data directory is yours to keep state in. Admiral keeps it when the source is removed and never gives it to a new source.
 

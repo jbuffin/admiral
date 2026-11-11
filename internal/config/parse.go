@@ -68,6 +68,8 @@ type Fleet struct {
 	Ink         string // text color on Color
 	ColorIndex  *int   // position in the default sequence; nil for a custom Color
 	SearchRoots []string
+	Owners      []string  // GitHub orgs and users whose work belongs to the fleet
+	CloneRoot   string    // where the fleet's clones live; empty when unset
 	Harnesses   []Harness // dock order: claude, copilot, codex, as present
 }
 
@@ -83,6 +85,7 @@ func (c *Config) clone() *Config {
 	out.Fleets = make([]Fleet, len(c.Fleets))
 	for i, f := range c.Fleets {
 		f.SearchRoots = slices.Clone(f.SearchRoots)
+		f.Owners = slices.Clone(f.Owners)
 		f.Harnesses = slices.Clone(f.Harnesses)
 		for j, h := range f.Harnesses {
 			h.Args = slices.Clone(h.Args)
@@ -191,6 +194,9 @@ func Parse(data []byte) (*Config, error) {
 		if cfg.Fleets, err = parseFleets(fleetsRaw); err != nil {
 			return nil, err
 		}
+	}
+	if err := checkSourceFleets(cfg); err != nil {
+		return nil, err
 	}
 	if err := checkAutopilotFleets(cfg); err != nil {
 		return nil, err
@@ -323,6 +329,19 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 			}
 		case "search_roots":
 			if f.SearchRoots, err = searchRoots(p, m.raw); err != nil {
+				return Fleet{}, err
+			}
+		case "owners":
+			if f.Owners, err = stringList(p, m.raw); err != nil {
+				return Fleet{}, err
+			}
+			for i, o := range f.Owners {
+				if strings.TrimSpace(o) == "" {
+					return Fleet{}, fmt.Errorf("%s[%d]: must not be empty", p, i)
+				}
+			}
+		case "clone_root":
+			if f.CloneRoot, err = str(p, m.raw); err != nil {
 				return Fleet{}, err
 			}
 		case "claude", "codex", "copilot":

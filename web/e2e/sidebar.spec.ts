@@ -35,27 +35,24 @@ const countOf = (p: Locator, n: number) => expect(p.getByLabel(new RegExp(`^${n}
 const cards = (p: Locator | Page, ...titles: string[]) => Promise.all(titles.map((t) => expect(p.getByText(t)).toBeVisible()));
 const noCards = (p: Locator | Page, ...titles: string[]) => Promise.all(titles.map((t) => expect(p.getByText(t)).toHaveCount(0)));
 
-// config.json for these tests: no fleets (the sidebar does not need any) and
-// the given sources. A `sources` key at all stops the server adding freeform.
-const sourcesConfig = (sources: Record<string, unknown>) => ({ version: 1, fleets: {}, sources });
+// config.json for these tests: one bare fleet (every source belongs to one; the
+// sidebar needs nothing else of it) and the given sources.
+const sourcesConfig = (sources: Record<string, unknown>) => ({ version: 1, fleets: { work: { name: 'Work' } }, sources });
 const tracker = (f: Flags, extra: Record<string, unknown> = {}, name = 'Tracker') => ({
   plugin: 'testplug',
+  fleet: 'work',
   name,
   settings: { flagdir: f.dir, ...extra },
 });
 
 test.describe('S1: fresh install', () => {
-  test('one empty "Orders" panel with an Add order field', async ({ page, admiral }) => {
+  test('no source and no panel: the sidebar offers to add a source plugin', async ({ page, admiral }) => {
     await admiral.start();
     await page.goto(admiral.url);
 
     await expect(sidebar(page).getByRole('heading', { level: 2, name: 'Orders' })).toBeVisible();
-    await expect(sidebar(page).getByText('Drag a card onto a dock to launch')).toBeVisible();
-    const orders = panel(page, 'Orders');
-    await expect(orders).toBeVisible();
-    await countOf(orders, 0);
-    await expect(orders.getByRole('textbox', { name: 'Add order' })).toBeVisible();
-    await expect(orders.getByText('All hands deployed. Queue is clear.')).toBeVisible();
+    await expect(panel(page, 'Orders')).toHaveCount(0);
+    await expect(sidebar(page).getByRole('button', { name: 'Add source plugin' })).toBeVisible();
   });
 });
 
@@ -65,7 +62,15 @@ test.describe('S2: the freeform list', () => {
     admiral,
   }, info) => {
     const touch = isTouch(info);
+    // A freeform source in config.json would be migrated away at start, so it is added over the API.
+    admiral.writeConfig({ version: 1, fleets: { work: { name: 'Work' } } });
     await admiral.start();
+    const added = await fetch(`${admiral.url}api/sources`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ plugin: 'freeform', fleet: 'work' }),
+    });
+    expect(added.status).toBe(201);
     await page.goto(admiral.url);
     const orders = panel(page, 'Orders');
     const add = orders.getByRole('textbox', { name: 'Add order' });

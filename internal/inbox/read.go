@@ -32,6 +32,9 @@ const (
 	KindQuestion = "question"
 	KindReview   = "review"
 	KindFindings = "findings"
+	// KindNotice is a read-only message from Admiral itself, in the AdmiralSession
+	// directory: a title, a plain-text body and nothing to answer, only to dismiss.
+	KindNotice = "notice"
 )
 
 // Item is one item as served: the item file's fields, passed through as the
@@ -141,10 +144,14 @@ func parseItem(b []byte, session, id string) (Item, error) {
 		if !isObject(fields[it.Kind]) {
 			return Item{}, errSkip
 		}
+	case KindNotice: // only Admiral's own inbox holds notices
+		if session != AdmiralSession || !isObject(fields[it.Kind]) {
+			return Item{}, errSkip
+		}
 	default:
 		return Item{}, errSkip
 	}
-	for _, k := range []string{KindQuestion, KindReview, KindFindings} { // only the kind's own object
+	for _, k := range []string{KindQuestion, KindReview, KindFindings, KindNotice} { // only the kind's own object
 		if k != it.Kind {
 			delete(fields, k)
 		}

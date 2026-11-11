@@ -50,10 +50,10 @@ func rcWorld(t *testing.T, originMax int) (*world, string) {
 	}
 	build := apEntry(true, originMax, map[string]any{"fleet": "buildf", "skill": commodore, "args": []string{"--origin-arg"}})
 	resume := apEntry(true, 2, map[string]any{"fleet": "resumef", "low_stakes": "advisor", "args": []string{"--resume-arg"}})
-	cfg["sources"] = map[string]any{
+	cfg["sources"] = inFleet("resumef", map[string]any{
 		"builds": w.orderSource("builds", "Builds", map[string]any{"autopilot": map[string]any{"orders": build}}),
 		"orders": w.orderSource("orders", "Orders", map[string]any{"autopilot": map[string]any{"orders": resume}}),
-	}
+	})
 	cfg["autopilot"] = map[string]any{"max_ships": 6, "resume_source": resumeTarget("orders", "orders")}
 	b, err := json.Marshal(cfg)
 	if err != nil {

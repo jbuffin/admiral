@@ -72,7 +72,7 @@ func TestChatConfig(t *testing.T) {
 			"favorite_skills": []any{"review"},
 			"fleets":          map[string]any{"work": map[string]any{"name": "Work Fleet", "claude": map[string]any{}}},
 			"sources":         map[string]any{},
-			"chat":    map[string]any{"fleet": "work", "model": "opus", "effort": "high"},
+			"chat":            map[string]any{"fleet": "work", "model": "opus", "effort": "high"},
 		}
 		if got := configOnDisk(t, home); !reflect.DeepEqual(got, want) {
 			t.Errorf("config.json after save = %v, want %v", got, want)

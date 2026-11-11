@@ -79,6 +79,7 @@ type SourceView struct {
 	Key          string   `json:"key"`
 	Name         string   `json:"name"`
 	Plugin       string   `json:"plugin"`
+	Fleet        string   `json:"fleet"`
 	IconURL      string   `json:"icon_url"`
 	Capabilities []string `json:"capabilities"`
 	HasSchema    bool     `json:"has_schema"`
@@ -94,7 +95,7 @@ func (s *Service) View() []SourceView {
 	hidden := ships.HiddenOrders(s.Ships())
 	out := []SourceView{}
 	for _, st := range s.Sup.snapshot() {
-		v := SourceView{Key: st.def.Key, Name: st.def.Name, Plugin: st.def.Plugin, Capabilities: st.caps, HasSchema: st.hasSchema,
+		v := SourceView{Key: st.def.Key, Name: st.def.Name, Plugin: st.def.Plugin, Fleet: st.def.Fleet, Capabilities: st.caps, HasSchema: st.hasSchema,
 			State: st.state, ReadOnly: st.readOnly, Auth: st.auth, Panels: []Panel{}}
 		if m, dir, err := LoadManifest(s.Home, st.def.Plugin); err == nil {
 			if v.Name == "" {
@@ -283,6 +284,7 @@ func settingsObject(raw json.RawMessage) (json.RawMessage, error) {
 
 type sourceRequest struct {
 	Plugin   *string         `json:"plugin"`
+	Fleet    *string         `json:"fleet"`
 	Name     *string         `json:"name"`
 	Settings json.RawMessage `json:"settings"`
 }
@@ -305,6 +307,21 @@ func (s *Service) serveAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	def := config.Source{Plugin: *req.Plugin}
+	// A source belongs to one fleet; with none named it takes the first, so the
+	// add form needs no fleet picker yet.
+	cur := s.Config.Current()
+	if len(cur.Fleets) == 0 {
+		writeError(w, http.StatusConflict, "add a fleet first: a source belongs to a fleet (admiral setup)")
+		return
+	}
+	def.Fleet = cur.Fleets[0].Key
+	if req.Fleet != nil && *req.Fleet != "" {
+		if _, ok := cur.Fleet(*req.Fleet); !ok {
+			writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("fleet %q is not a fleet in the config", *req.Fleet))
+			return
+		}
+		def.Fleet = *req.Fleet
+	}
 	if req.Name != nil {
 		def.Name = strings.TrimSpace(*req.Name)
 	}

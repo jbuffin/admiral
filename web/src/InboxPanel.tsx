@@ -29,6 +29,7 @@ import {
   sendAnswers,
 } from './inboxState';
 import { chatOpen } from './chat';
+import { AdmiralMark } from './AdmiralMark';
 import { LogoFlag } from './Logos';
 import { QuestionCard } from './QuestionCard';
 import { board, ships } from './ships';
@@ -71,6 +72,7 @@ export const KIND: Record<string, [string, string]> = {
   question: ['Question', '#DDF7F3'],
   review: ['Review', '#C9B6FF'],
   findings: ['Findings', '#FFE08A'],
+  notice: ['Notice', '#C8E6C9'],
   stop: ['Needs you', '#FF9A7A'],
 };
 
@@ -415,6 +417,24 @@ function RemoveRow({ entry }: { entry: Entry }) {
   );
 }
 
+// A notice is Admiral's own message: its body is plain text, never markup, and the one action is Dismiss.
+function NoticeBody({ entry }: { entry: Entry }) {
+  const ui = removalOf(entry.key);
+  return (
+    <>
+      <p class="inbox-notice-body" style="white-space:pre-wrap;overflow-wrap:anywhere">
+        {entry.item?.notice?.body ?? ''}
+      </p>
+      <div class="inbox-actions">
+        <button type="button" class="press inbox-secondary" disabled={ui.busy} onClick={() => void removeItem(entry)}>
+          Dismiss
+        </button>
+      </div>
+      <Failure message={ui.error} />
+    </>
+  );
+}
+
 function Item({ entry }: { entry: Entry }) {
   const ship = entry.ship ?? ships.value.find((s) => s.session === entry.session);
   const shipName = entry.item?.name ?? ship?.name ?? entry.session;
@@ -428,9 +448,15 @@ function Item({ entry }: { entry: Entry }) {
   return (
     <article class="inbox-item">
       <div class="inbox-head">
-        <svg width="40" height="28" viewBox="0 0 40 28" aria-hidden="true" class="inbox-flag">
-          <LogoFlag harness={harness} kind="pier" />
-        </svg>
+        {entry.item?.kind === 'notice' ? (
+          <span class="inbox-flag" aria-hidden="true">
+            <AdmiralMark size={28} />
+          </span>
+        ) : (
+          <svg width="40" height="28" viewBox="0 0 40 28" aria-hidden="true" class="inbox-flag">
+            <LogoFlag harness={harness} kind="pier" />
+          </svg>
+        )}
         <div class="inbox-who">
           <span class="inbox-name">{name}</span>
           {ship && (
@@ -453,8 +479,8 @@ function Item({ entry }: { entry: Entry }) {
           </a>
         )}
       </div>
-      {entry.type === 'stop' ? <StopBody entry={entry} name={name} shipName={shipName} /> : entry.item?.kind === 'review' ? <ReviewBody entry={entry} /> : entry.item?.kind === 'findings' ? <FindingsBody entry={entry} /> : entry.item?.kind === 'question' && <QuestionBody entry={entry} />}
-      {entry.type !== 'stop' && entry.item && <RemoveRow entry={entry} />}
+      {entry.type === 'stop' ? <StopBody entry={entry} name={name} shipName={shipName} /> : entry.item?.kind === 'review' ? <ReviewBody entry={entry} /> : entry.item?.kind === 'findings' ? <FindingsBody entry={entry} /> : entry.item?.kind === 'notice' ? <NoticeBody entry={entry} /> : entry.item?.kind === 'question' && <QuestionBody entry={entry} />}
+      {entry.type !== 'stop' && entry.item && entry.item.kind !== 'notice' && <RemoveRow entry={entry} />}
     </article>
   );
 }

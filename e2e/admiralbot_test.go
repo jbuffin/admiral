@@ -343,7 +343,7 @@ func TestAdmiralBot_ReadCommandsFindTheServerByADMIRAL_PORT(t *testing.T) {
 		p.put("panels.json", `[{"id":"main","title":"Main"},{"id":"extra","title":"Extra"}]`)
 		p.setOrders(map[string][]map[string]any{"main": {ord("o1", "First thing")}, "extra": {}})
 		w.installPlugin("testplug", "testplug")
-		return rawSources(tpSource("a", p, nil))
+		return rawSourcesIn("ship", tpSource("a", p, nil))
 	}})
 	w := c.world
 	w.start()
@@ -451,7 +451,7 @@ func TestAdmiralBot_OrdersAddIsTheOnlyWrite(t *testing.T) {
 	c := newBotWorld(t, botOpts{sources: func(w *world) string {
 		hang = w.newTP("hang")
 		w.installPlugin("testplug", "testplug")
-		return rawSources(
+		return rawSourcesIn("ship",
 			w.orderSrcDef("orders", "Orders"),
 			tpSource("hang", hang, map[string]any{"capabilities": []string{"add", "refresh"}}))
 	}})

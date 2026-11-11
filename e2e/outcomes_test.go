@@ -114,7 +114,7 @@ func (w *world) outFleets(cues map[string][]string, defs ...srcDef) {
 	}
 	cfg := map[string]any{"version": 1, "fleets": fleets}
 	if len(defs) > 0 {
-		cfg["sources"] = json.RawMessage(rawSources(defs...))
+		cfg["sources"] = json.RawMessage(rawSourcesIn(firstFleet(w.t, cfg), defs...))
 	}
 	b, err := json.Marshal(cfg)
 	if err != nil {

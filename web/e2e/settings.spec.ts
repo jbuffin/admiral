@@ -45,8 +45,8 @@ test('list settings: add rows, save, the new panel appears; remove the last row 
   const f = admiral.flags('tracker');
   admiral.writeConfig({
     version: 1,
-    fleets: {},
-    sources: { tracker: { plugin: 'testplug', name: 'Tracker', settings: { flagdir: f.dir, settingsSchema: schema } } },
+    fleets: { work: { name: 'Work' } },
+    sources: { tracker: { plugin: 'testplug', fleet: 'work', name: 'Tracker', settings: { flagdir: f.dir, settingsSchema: schema } } },
   });
   await admiral.start();
   await page.goto(admiral.url);
@@ -98,8 +98,8 @@ test('list settings: a list holding a masked secret is a JSON field and Save kee
   };
   admiral.writeConfig({
     version: 1,
-    fleets: {},
-    sources: { tracker: { plugin: 'testplug', name: 'Tracker', settings: { flagdir: f.dir, settingsSchema: keyed, panels: [{ title: 'Triage', token: 's3cret' }] } } },
+    fleets: { work: { name: 'Work' } },
+    sources: { tracker: { plugin: 'testplug', fleet: 'work', name: 'Tracker', settings: { flagdir: f.dir, settingsSchema: keyed, panels: [{ title: 'Triage', token: 's3cret' }] } } },
   });
   await admiral.start();
   await page.goto(admiral.url);

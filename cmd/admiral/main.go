@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -129,19 +128,6 @@ func run(args []string) error {
 	return &cli.UsageError{Msg: fmt.Sprintf("unknown command %q", args[0])}
 }
 
-// seedSources gives a first run its "Orders" source. It looks only at startup,
-// so a sources key deleted by hand stays gone until the next start, and it
-// adds nothing to a config that does not validate or already has the key.
-func seedSources(cfg *config.Manager) {
-	if cfg.View().Error != nil || cfg.Current().Sources != nil {
-		return
-	}
-	err := cfg.SetSources(json.RawMessage(`{"orders":{"plugin":"freeform","name":"Orders"}}`))
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "admiral: could not add the Orders source to the config:", err)
-	}
-}
-
 func serve(args []string) error {
 	fs := flag.NewFlagSet("admiral", flag.ContinueOnError)
 	listen := fs.String("listen", "0.0.0.0:7420", "address to listen on, host:port")
@@ -156,6 +142,20 @@ func serve(args []string) error {
 	token, err := auth.LoadOrCreateToken(dir)
 	if err != nil {
 		return fmt.Errorf("token: %w", err)
+	}
+	// Before the first load, so it sees the migrated file.
+	migration, err := config.Migrate(dir, version)
+	if err != nil {
+		return fmt.Errorf("config migration: %w", err)
+	}
+	if migration != nil {
+		// Posted after the rewrite: a crash between the two loses the notice but
+		// never duplicates it, and the backup and data/<key>/orders.json still
+		// hold the order texts.
+		title, body := migration.Notice()
+		if _, err := inbox.WriteNotice(dir, title, body); err != nil {
+			fmt.Fprintln(os.Stderr, "admiral: could not post the migration notice:", err)
+		}
 	}
 	cfg, err := config.Open(dir)
 	if err != nil {
@@ -208,7 +208,6 @@ func serve(args []string) error {
 	if err := sources.InstallPlugins(dir); err != nil {
 		fmt.Fprintln(os.Stderr, "admiral: could not install the bundled plugins:", err)
 	}
-	seedSources(cfg)
 	supervisor := &sources.Supervisor{Home: dir, Config: cfg}
 	sourceService := &sources.Service{Home: dir, Config: cfg, Sup: supervisor, Hub: hub, Ships: shipService.List, State: st}
 	apStore, err := autopilot.OpenStore(dir)
