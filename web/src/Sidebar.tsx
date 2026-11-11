@@ -153,8 +153,8 @@ function SourceRow({ source }: { source: Source }) {
         </Menu>
       </div>
       {refusal && <p role="alert">{refusal}</p>}
-      {source.warnings.map((w) => (
-        <p key={w} role="alert">
+      {(source.warnings ?? []).map((w) => (
+        <p key={w} role="status">
           {w}
         </p>
       ))}
