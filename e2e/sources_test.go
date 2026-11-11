@@ -80,6 +80,9 @@ func TestFreshInstall(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(w.home, "plugins", "freeform")); err == nil {
 		t.Errorf("a fresh install wrote plugins/freeform: freeform is no longer embedded")
 	}
+	if _, err := os.Lstat(filepath.Join(w.home, "plugins", "github")); err == nil {
+		t.Errorf("a fresh install wrote plugins/github: GitHub is built in, the Python plugin is retired")
+	}
 	if got := w.configSources(); len(got) != 0 {
 		t.Errorf("config.json sources = %v, want none on a fresh install", got)
 	}
@@ -158,7 +161,9 @@ func TestFreshInstallLeavesWhatItShould(t *testing.T) {
 	}
 }
 
-var embeddedPlugins = []string{"github"}
+// embeddedPlugins are the plugins Admiral ships inside the binary and installs:
+// none since GitHub became built in (#260).
+var embeddedPlugins = []string{}
 
 // stampOf is the hash Admiral keeps in plugins/<name>/.admiral-stamp: SHA-256
 // over the files sorted by path, each as path, a zero byte, content, a zero byte.
