@@ -400,3 +400,21 @@ func TestPairAndDevicesHaveUsageText(t *testing.T) {
 		}
 	}
 }
+
+func TestDevicesKeyThatIsOneIdAndAnotherNameIsAmbiguous(t *testing.T) {
+	f := startFake(t, []fakeDevice{tablet, {"d-evil99", "d-aaa111", ""}})
+	for _, args := range [][]string{{"revoke", "d-aaa111"}, {"rename", "d-aaa111", "Slate"}} {
+		_, err := run(Devices, append(args, "--port", f.Port)...)
+		if err == nil || isUsage(err) {
+			t.Fatalf("%v: err = %v, want a plain error (exit 1)", args, err)
+		}
+		for _, id := range []string{"d-aaa111", "d-evil99"} {
+			if !strings.Contains(err.Error(), id) {
+				t.Errorf("%v: error %q does not list the id %s", args, err, id)
+			}
+		}
+	}
+	if n := len(f.mutations()); n != 0 {
+		t.Errorf("%d changes were sent for an ambiguous key", n)
+	}
+}
