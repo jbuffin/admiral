@@ -480,9 +480,9 @@ type record struct {
 	dir     string
 }
 
-// claudeArgvBase is a Claude Code ship's argv without the `--session-id <uuid>` Admiral puts right after the fleet's own
+// sessionArgvBase is a Claude Code or Copilot ship's argv without the `--session-id <uuid>` Admiral puts right after the fleet's own
 // args. The pair is stripped only there and only for a uuid, so one after `--` or one that is not a uuid still fails the exact match.
-func (r record) claudeArgvBase() []string {
+func (r record) sessionArgvBase() []string {
 	if len(r.argv) > 2 && r.argv[1] == "--session-id" && uuidRe.MatchString(r.argv[2]) {
 		return append([]string{r.argv[0]}, r.argv[3:]...)
 	}
