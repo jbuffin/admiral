@@ -14,7 +14,7 @@ test('a permission card shows the tool and its oldest pending call, and Allow on
   seedFleets(admiral, { live: true });
   await admiral.start({ env: withFakeGh(admiral) });
   const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
-  await appendLines(admiral, ship, [line.toolUse('t1', 'Bash', { command: 'rm -rf oldest-build' }), line.toolUse('t2', 'Bash', { command: 'git push newest' })]);
+  await appendLines(admiral, ship, [line.toolUse('t1', 'Bash', { description: 'Tidy the build folder', command: 'rm -rf oldest-build' }), line.toolUse('t2', 'Bash', { description: 'Publish', command: 'git push newest' })]);
   setReason(admiral, ship, 'permission:Bash');
   setState(admiral, ship, 'needs_you');
   await open(page, admiral, ship);
@@ -22,7 +22,8 @@ test('a permission card shows the tool and its oldest pending call, and Allow on
   await expect(button(page, 'Allow once')).toBeVisible();
   await expect(button(page, 'Deny')).toBeVisible();
   await expect(viewPanel(page).getByText('Bash').first()).toBeVisible();
-  await expect(viewPanel(page).getByText(/oldest-build/).last()).toBeVisible();
+  await expect(viewPanel(page).locator('.approve-input')).toHaveText('rm -rf oldest-build');
+  await expect(viewPanel(page).getByText('Tidy the build folder').last()).toBeVisible();
   await button(page, 'Allow once').tap();
 
   await expect.poll(() => received(admiral, ship)).toBe('1');
@@ -50,6 +51,7 @@ test('a card goes when the pane moves on, and a refused answer removes it and se
   seedFleets(admiral, { live: true });
   await admiral.start({ env: withFakeGh(admiral) });
   const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
+  await appendLines(admiral, ship, [line.assistant('Working on it')]);
   setReason(admiral, ship, 'permission:Bash');
   setState(admiral, ship, 'needs_you');
   await open(page, admiral, ship);
@@ -67,6 +69,35 @@ test('a card goes when the pane moves on, and a refused answer removes it and se
   await expect(button(page, 'Allow once')).toHaveCount(0);
   await expect(button(page, 'Deny')).toHaveCount(0);
   expect(received(admiral, ship)).toBe('');
+
+  // A refused card does not hide the next prompt, even one with the same reason.
+  setReason(admiral, ship, 'stop');
+  await expect(terminalCard(page)).toBeVisible();
+  setReason(admiral, ship, 'permission:Edit');
+  await expect(button(page, 'Allow once')).toBeEnabled();
+  await expect(button(page, 'Deny')).toBeEnabled();
+});
+
+test('a double tap on Allow once posts one answer', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
+  setReason(admiral, ship, 'permission:Bash');
+  setState(admiral, ship, 'needs_you');
+  await open(page, admiral, ship);
+  let posts = 0;
+  await page.route('**/api/v1/ships/*/answer', async (route) => {
+    posts++;
+    await new Promise((r) => setTimeout(r, 300));
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"answered":true}' });
+  });
+  await button(page, 'Allow once').evaluate((el: HTMLElement) => {
+    el.click();
+    el.click();
+  });
+  await expect(button(page, 'Allow once')).toBeDisabled();
+  await page.waitForTimeout(600);
+  expect(posts).toBe(1);
 });
 
 test('a prompt Admiral cannot answer shows the terminal card, and only Open terminal leaves the Conversation tab', async ({ page, admiral }) => {

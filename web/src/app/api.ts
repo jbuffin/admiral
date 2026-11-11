@@ -70,6 +70,7 @@ export interface CrewBoat {
 export interface ToolCall {
   name: string;
   summary?: string;
+  input?: string;
   output?: string;
   error?: boolean;
   done: boolean;

@@ -12,6 +12,7 @@ import (
 const (
 	maxText        = 64 << 10 // a message's text, a question's answer
 	maxToolName    = 128
+	maxToolInput   = 4 << 10 // what a permission card shows of a call
 	maxQuestionLen = 4 << 10
 	maxLabel       = 256
 	maxDescription = 2 << 10
@@ -212,6 +213,7 @@ func (d *claudeDecoder) assistant(l claudeLine, b *lineItems) {
 			p.ids = []string{b.add(Item{Kind: KindToolCall, Tool: &ToolCall{
 				Name:    cutTo(blk.Name, maxToolName, "…"),
 				Summary: summary(blk.Input),
+				Input:   approvingInput(blk.Name, blk.Input),
 			}})}
 			p.questions = []string{""}
 		}
@@ -254,6 +256,29 @@ func askedQuestions(input json.RawMessage) []Question {
 		qs = append(qs, out)
 	}
 	return qs
+}
+
+// approvingInput is what the engineer approves by allowing the call; other tools have none.
+func approvingInput(name string, input json.RawMessage) string {
+	key := "file_path"
+	switch name {
+	case "Bash":
+		key = "command"
+	case "NotebookEdit":
+		key = "notebook_path"
+	case "Write", "Edit", "MultiEdit", "Read":
+	default:
+		return ""
+	}
+	var in map[string]json.RawMessage
+	if json.Unmarshal(input, &in) != nil {
+		return ""
+	}
+	var s string
+	if json.Unmarshal(in[key], &s) != nil {
+		return ""
+	}
+	return cutTo(s, maxToolInput, "\n… cut")
 }
 
 func summary(input json.RawMessage) string {

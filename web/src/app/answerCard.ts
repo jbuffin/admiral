@@ -1,16 +1,22 @@
-import type { Item } from './api';
+import type { CrewBoat, Item, Ship } from './api';
 import type { Conversation } from './conversation';
 
 export type AnswerCard =
   | { kind: 'none' }
   | { kind: 'terminal' }
   | { kind: 'permission'; tool: string; reason: string; call?: Item }
-  | { kind: 'question'; reason: string; item: string; options: string[] };
+  | { kind: 'question'; reason: string; item: string; text: string; options: string[]; descriptions: string[] };
 
 const NO_CARD_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode']);
 
 // One AskUserQuestion call with several questions becomes items whose ids share the part before '#'.
 const callOf = (id: string) => id.split('#')[0];
+
+function currentTurnStart(items: Item[]): number {
+  let at = items.length;
+  while (at > 0 && items[at - 1].kind !== 'user' && items[at - 1].kind !== 'turn_end') at--;
+  return at;
+}
 
 function questionCard(reason: string, conv: Conversation): AnswerCard {
   const pending = conv.items.filter((i) => i.kind === 'question' && i.question?.pending);
@@ -20,7 +26,7 @@ function questionCard(reason: string, conv: Conversation): AnswerCard {
   const options = (q.options ?? []).map((o) => o.label);
   if (q.multiSelect || options.length < 1 || options.length > 9) return { kind: 'terminal' };
   if (conv.items.some((i) => i !== newest && i.kind === 'question' && callOf(i.id) === callOf(newest.id))) return { kind: 'terminal' };
-  return { kind: 'question', reason, item: newest.id, options };
+  return { kind: 'question', reason, item: newest.id, text: q.text, options, descriptions: (q.options ?? []).map((o) => o.description ?? '') };
 }
 
 /** What the Conversation tab shows for a ship or boat that may be asking: a card to answer in place, a pointer to the terminal, or nothing. */
@@ -31,8 +37,16 @@ export function answerCard({ harness, status, reason, conv }: { harness: string;
   if (r.startsWith('permission:')) {
     const tool = r.slice('permission:'.length);
     if (tool === '' || NO_CARD_TOOLS.has(tool)) return { kind: 'terminal' };
-    const call = conv.items.find((i) => i.kind === 'tool_call' && i.tool?.name === tool && !i.tool.done);
+    // An orphan call from an earlier turn is not what the pane asks about.
+    const turnStart = currentTurnStart(conv.items);
+    const call = conv.items.slice(turnStart).find((i) => i.kind === 'tool_call' && i.tool?.name === tool && !i.tool.done);
     return { kind: 'permission', tool, reason: r, call };
   }
   return { kind: 'terminal' };
+}
+
+/** The card for what the view targets: the picked boat, else the ship, each by its own harness, status and reason. */
+export function cardFor(ship: Ship, boat: CrewBoat | undefined, conv: Conversation): AnswerCard {
+  const t = boat ?? ship;
+  return answerCard({ harness: t.harness, status: t.status, reason: t.reason, conv });
 }

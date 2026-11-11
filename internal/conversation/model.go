@@ -52,9 +52,11 @@ func (it Item) MarshalJSON() ([]byte, error) {
 type ToolCall struct {
 	Name    string `json:"name"`
 	Summary string `json:"summary,omitempty"`
-	Output  string `json:"output,omitempty"`
-	Error   bool   `json:"error,omitempty"`
-	Done    bool   `json:"done"`
+	// Input is what allowing the call approves: a Bash command in full, or a file's path. Never the model's own description of it.
+	Input  string `json:"input,omitempty"`
+	Output string `json:"output,omitempty"`
+	Error  bool   `json:"error,omitempty"`
+	Done   bool   `json:"done"`
 }
 
 type Question struct {
