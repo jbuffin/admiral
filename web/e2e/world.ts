@@ -71,7 +71,10 @@ export class World {
     };
   }
 
-  /** Writes config.json: fleets work (Claude, Codex) and home (Claude, Codex), searching `work/`. */
+  /**
+   * Writes config.json: fleets work (Claude, Codex) and home (Claude, Codex), searching `work/`, and the
+   * test source "orders" that stores orders (a `sources` key at all stops the server seeding a source).
+   */
   writeConfig() {
     const fleets: { [key: string]: unknown } = {
       work: {
@@ -95,7 +98,7 @@ export class World {
         claude: this.dock('gone', 'claude', this.a.missingHarness('claude')),
       };
     }
-    const config: { [key: string]: unknown } = { version: 1, fleets };
+    const config: { [key: string]: unknown } = { version: 1, fleets, sources: { orders: this.a.ordersSource() } };
     if (this.opts.favorites) config.favorite_skills = this.opts.favorites;
     this.a.writeConfig(config);
   }
@@ -175,9 +178,9 @@ export class World {
     this.removeCheckout(probe);
   }
 
-  /** Puts an order into the freeform source (u7's API) and returns when the server has taken it. */
+  /** Puts an order into the test source "orders" (u7's API) and returns when the server has taken it. */
   async seedOrder(text: string) {
-    // The freeform plugin starts a moment after the server does: ask until it lists its panel.
+    // The plugin starts a moment after the server does: ask until it lists its panel.
     let sources = await this.json('GET', 'api/sources');
     const panelOf = () => {
       const list = (Array.isArray(sources.body) ? sources.body : sources.body.sources) as { key: string; panels: { id: string }[] }[] | undefined;
@@ -189,7 +192,7 @@ export class World {
     }
     const orders = { panels: [panelOf()] };
     if (sources.status !== 200 || !orders.panels[0]) {
-      throw new Error(`no freeform "orders" source with a panel to seed: ${sources.status} ${JSON.stringify(sources.body)}`);
+      throw new Error(`no test "orders" source with a panel to seed: ${sources.status} ${JSON.stringify(sources.body)}`);
     }
     const added = await this.json('POST', 'api/sources/orders/orders', { panel: orders.panels[0]!.id, text });
     if (added.status >= 300) throw new Error(`seeding an order failed: ${added.status} ${JSON.stringify(added.body)}`);

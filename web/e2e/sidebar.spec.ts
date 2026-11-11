@@ -38,7 +38,6 @@ const noCards = (p: Locator | Page, ...titles: string[]) => Promise.all(titles.m
 // config.json for these tests: no fleets (the sidebar does not need any) and
 // the given sources. A `sources` key at all stops the server adding freeform.
 const sourcesConfig = (sources: Record<string, unknown>) => ({ version: 1, fleets: {}, sources });
-const freeform = { plugin: 'freeform', name: 'Orders' };
 const tracker = (f: Flags, extra: Record<string, unknown> = {}, name = 'Tracker') => ({
   plugin: 'testplug',
   name,
@@ -499,7 +498,7 @@ test.describe('S8: rearranging sources and panels', () => {
       { id: 'done', title: 'Done' },
     ]);
     f.orders({ todo: [{ id: 'ABC-1', title: 'Rotate the keys' }], done: [{ id: 'ABC-2', title: 'Tidy the docs' }] });
-    admiral.writeConfig(sourcesConfig({ orders: freeform, tracker: tracker(f) }));
+    admiral.writeConfig(sourcesConfig({ orders: admiral.ordersSource(), tracker: tracker(f) }));
     await admiral.start();
     if (touch) await touchSetup(page);
     await page.goto(admiral.url);

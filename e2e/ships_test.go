@@ -281,8 +281,10 @@ func showOption(t *testing.T, w *world, session string, args ...string) string {
 // the hook bundle.
 func TestSessionOptionsAndHookBundle(t *testing.T) {
 	w := newWorld(t)
+	writeConfig(t, w.home, w.config())
+	w.addOrdersSource()
 	w.start()
-	// An order from a source: the freeform source of a fresh install.
+	// An order from a source: the test source that stores orders.
 	w.waitSource("orders", 10*time.Second, "state ok", isOK)
 	code, body := w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": w.panelID("orders"), "text": "go"})
 	w.mustOK(code, body, "add an order")

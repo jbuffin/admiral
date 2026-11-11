@@ -429,7 +429,8 @@ func (in *fleetInst) titleOf(t *testing.T, session string) (string, bool) {
 // option @admiral-title), survives a restart, and is empty without a source.
 func TestBridgeTitleIsTheOrdersFirstLineAndSurvivesARestart(t *testing.T) {
 	w := liveFleet(t)
-	w.startFresh()
+	w.addOrdersSource()
+	w.start()
 	w.waitSource("orders", 10*time.Second, "state ok", isOK)
 	panel := w.panelID("orders")
 	code, body := w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": panel, "text": "Fix the flaky test\n\nsee the CI log"})

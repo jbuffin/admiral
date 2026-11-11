@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { type LaunchedShip, type Sea } from './sea';
 
 // Helpers for the bridge scenarios (u11): launching a ship the way the dialog
-// does (from a freeform order, with a skill, so the header has a title and the
+// does (from an order of the test source, with a skill, so the header has a title and the
 // lead row a skill), and reaching what the fake harness saw.
 
 /** The order text used by the helpers; its first line is the ship's `title`. */
@@ -19,14 +19,14 @@ interface SourceJSON {
 }
 
 /**
- * Launches a Claude ship from a freeform order with the skill `review` (the
+ * Launches a Claude ship from an order of the test source with the skill `review` (the
  * fleet must have it installed: `world.skill(fleet, 'claude', 'review')`), as
  * the launch dialog does through POST /api/ships. Resolves once the fake has
  * recorded (`until: 'recorded'`) or has run its cues (`'cues-done'`).
  */
 export async function launchFromOrder(sea: Sea, fleet: string, repo: string, until: 'cues-done' | 'recorded' = 'cues-done'): Promise<LaunchedShip> {
   await sea.world.seedOrder(orderText);
-  // The freeform source refreshes a moment after the add: ask until it lists the order.
+  // The source refreshes a moment after the add: ask until it lists the order.
   let sources: unknown;
   let order: { id: string } | undefined;
   const sourcesBy = Date.now() + 10_000;
@@ -37,7 +37,7 @@ export async function launchFromOrder(sea: Sea, fleet: string, repo: string, unt
     if (order || Date.now() > sourcesBy) break;
     await new Promise((r) => setTimeout(r, 100));
   }
-  if (!order) throw new Error(`the seeded order is not in the freeform source: ${JSON.stringify(sources)}`);
+  if (!order) throw new Error(`the seeded order is not in the test source: ${JSON.stringify(sources)}`);
   const res = await fetch(`${sea.a.url}api/ships`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

@@ -13,7 +13,7 @@ import (
 
 // Resume orders (#116 u5): once every item id in a ship's report `inbox` has an
 // answer file, Admiral adds the report's `resume` text as an order to the panel
-// that `autopilot.resume_source` names. The real binary, a freeform source
+// that `autopilot.resume_source` names. The real binary, a test source
 // "orders" (panel "orders") and ships that sit underway.
 //
 // Wire shape under test:
@@ -31,8 +31,6 @@ const (
 	// still afloat has its resume text typed at its prompt, not an order.
 	anchorCue = "exit 1"
 )
-
-var ordersSource = map[string]any{"orders": map[string]any{"plugin": "freeform", "name": "Orders"}}
 
 func resumeTarget(source, panel string) map[string]any {
 	return map[string]any{"source": source, "panel": panel}
@@ -145,7 +143,7 @@ func (w *world) holdOrders(msg, source string, want ...string) {
 // outcome is recorded against the ship.
 func TestResumeOrderAddedWhenTheLastItemIsAnswered(t *testing.T) {
 	w := newWorld(t)
-	w.resumeConfig(map[string][]string{"f": {anchorCue}}, ordersSource, resumeTarget("orders", "orders"))
+	w.resumeConfig(map[string][]string{"f": {anchorCue}}, w.ordersSource(), resumeTarget("orders", "orders"))
 	w.start()
 	w.waitSource("orders", 10*time.Second, "state ok", isOK)
 	ship, _, _ := w.resumeShip("res1", resumeText, []string{"q-1", "q-2"}, "q-1", "q-2")
@@ -172,7 +170,7 @@ func TestResumeOrderAddedWhenTheLastItemIsAnswered(t *testing.T) {
 // the inbox scan, not only the answer route, starts the check.
 func TestResumeOrderAddedForAnswerFilesWrittenDirectly(t *testing.T) {
 	w := newWorld(t)
-	w.resumeConfig(map[string][]string{"f": {anchorCue}}, ordersSource, resumeTarget("orders", "orders"))
+	w.resumeConfig(map[string][]string{"f": {anchorCue}}, w.ordersSource(), resumeTarget("orders", "orders"))
 	w.start()
 	w.waitSource("orders", 10*time.Second, "state ok", isOK)
 	ship, _, dir := w.resumeShip("res1b", resumeText, []string{"q-1", "q-2"}, "q-1", "q-2")
@@ -187,7 +185,7 @@ func TestResumeOrderAddedForAnswerFilesWrittenDirectly(t *testing.T) {
 // S2: a restart, and an answer written again, add no second order.
 func TestResumeOrderIsAddedOnce(t *testing.T) {
 	w := newWorld(t)
-	w.resumeConfig(map[string][]string{"f": {anchorCue}}, ordersSource, resumeTarget("orders", "orders"))
+	w.resumeConfig(map[string][]string{"f": {anchorCue}}, w.ordersSource(), resumeTarget("orders", "orders"))
 	w.start()
 	w.waitSource("orders", 10*time.Second, "state ok", isOK)
 	ship, _, dir := w.resumeShip("res2", resumeText, []string{"q-1", "q-2"}, "q-1", "q-2")
@@ -212,7 +210,7 @@ func TestResumeOrderIsAddedOnce(t *testing.T) {
 // check.
 func TestResumeOrderAddsNothingForReportsThatCannotResume(t *testing.T) {
 	w := newWorld(t)
-	w.resumeConfig(map[string][]string{"f": {anchorCue}}, ordersSource, resumeTarget("orders", "orders"))
+	w.resumeConfig(map[string][]string{"f": {anchorCue}}, w.ordersSource(), resumeTarget("orders", "orders"))
 	w.start()
 	w.waitSource("orders", 10*time.Second, "state ok", isOK)
 
@@ -263,7 +261,7 @@ func TestResumeOrderWithoutAUsableTarget(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			w := newWorld(t)
-			w.resumeConfig(map[string][]string{"f": {anchorCue}}, ordersSource, c.resume)
+			w.resumeConfig(map[string][]string{"f": {anchorCue}}, w.ordersSource(), c.resume)
 			w.start()
 			w.waitSource("orders", 10*time.Second, "state ok", isOK)
 			ship, _, _ := w.resumeShip("res3f", resumeText, []string{"q-1"}, "q-1")
@@ -282,10 +280,10 @@ func TestResumeOrderWithoutAUsableTarget(t *testing.T) {
 
 // sailWorld is a world whose ships sit underway until `go` and then exit 0, so
 // they sail off.
-func sailWorld(t *testing.T, sources map[string]any, resume any) *world {
+func sailWorld(t *testing.T, sources func(*world) map[string]any, resume any) *world {
 	t.Helper()
 	w := newWorld(t)
-	w.resumeConfig(map[string][]string{"f": {"hook working", sailCue, "exit 0"}}, sources, resume)
+	w.resumeConfig(map[string][]string{"f": {"hook working", sailCue, "exit 0"}}, sources(w), resume)
 	w.start()
 	w.waitSource("orders", 10*time.Second, "state ok", isOK)
 	return w
@@ -308,7 +306,7 @@ func (w *world) sailOff(session string) {
 // S4: a sailed-off ship keeps its report and inbox while an item is unanswered.
 // The last answer adds the order, and then the files go.
 func TestResumeOrderForASailedOffShipsKeptInbox(t *testing.T) {
-	w := sailWorld(t, ordersSource, resumeTarget("orders", "orders"))
+	w := sailWorld(t, (*world).ordersSource, resumeTarget("orders", "orders"))
 	ship, reportPath, dir := w.resumeShip("res4", resumeText, []string{"q-1", "q-2"}, "q-1", "q-2")
 	w.answerQuestion(ship.Session, "q-1")
 	w.sailOff(ship.Session)
@@ -330,7 +328,7 @@ func TestResumeOrderForASailedOffShipsKeptInbox(t *testing.T) {
 // The last item was answered while Admiral was down. Start-up adds the order
 // before its sweep of fully answered kept inboxes deletes the report.
 func TestResumeOrderForAnAnswerWrittenWhileAdmiralWasDown(t *testing.T) {
-	w := sailWorld(t, ordersSource, resumeTarget("orders", "orders"))
+	w := sailWorld(t, (*world).ordersSource, resumeTarget("orders", "orders"))
 	ship, reportPath, dir := w.resumeShip("res4b", resumeText, []string{"q-1", "q-2"}, "q-1", "q-2")
 	w.answerQuestion(ship.Session, "q-1")
 	w.sailOff(ship.Session)
@@ -349,7 +347,7 @@ func TestResumeOrderForAnAnswerWrittenWhileAdmiralWasDown(t *testing.T) {
 // A ship that answered everything and then exits: ended deletes its report, and
 // the resume order is added all the same.
 func TestResumeOrderWhenTheShipExitsRightAfterTheLastAnswer(t *testing.T) {
-	w := sailWorld(t, ordersSource, resumeTarget("orders", "orders"))
+	w := sailWorld(t, (*world).ordersSource, resumeTarget("orders", "orders"))
 	ship, _, dir := w.resumeShip("res4c", resumeText, []string{"q-1"}, "q-1")
 	writeAnswerFile(t, dir, "q-1")
 	w.sailOff(ship.Session)
@@ -362,7 +360,7 @@ func TestResumeOrderWhenTheShipExitsRightAfterTheLastAnswer(t *testing.T) {
 // Admiral keeps the text in its own state, through the report's deletion and a
 // restart, and adds the order once, and only once, the target exists.
 func TestResumeOrderRetriesUntilTheTargetExists(t *testing.T) {
-	w := sailWorld(t, ordersSource, resumeTarget("later", "orders"))
+	w := sailWorld(t, (*world).ordersSource, resumeTarget("later", "orders"))
 	ship, reportPath, dir := w.resumeShip("res5", resumeText, []string{"q-1"}, "q-1")
 	w.sailOff(ship.Session)
 	w.answerQuestion(ship.Session, "q-1") // the last answer: the files go, the target is missing
@@ -376,7 +374,7 @@ func TestResumeOrderRetriesUntilTheTargetExists(t *testing.T) {
 	w.waitSource("orders", 10*time.Second, "state ok", isOK)
 	w.holdOrders("a restart added an order to a source that is not there", "orders")
 
-	both := map[string]any{"orders": ordersSource["orders"], "later": map[string]any{"plugin": "freeform", "name": "Later"}}
+	both := map[string]any{"orders": w.orderSource("orders", "Orders", nil), "later": w.orderSource("later", "Later", nil)}
 	w.resumeConfig(map[string][]string{"f": {"hook working", sailCue, "exit 0"}}, both, resumeTarget("later", "orders"))
 	w.waitOrders("later", resumeText)
 	w.waitEvent(ship.Session, "resumed", 1)
@@ -397,7 +395,7 @@ func TestResumeOrderRetriesUntilTheTargetExists(t *testing.T) {
 // the missing order is not for want of a target.
 func TestResumeOfALiveShipIsTypedAtItsPromptOnceItStops(t *testing.T) {
 	w := newWorld(t)
-	w.resumeConfig(map[string][]string{"f": {"record", "hook working", "wait go", "event Stop {}"}}, ordersSource, resumeTarget("orders", "orders"))
+	w.resumeConfig(map[string][]string{"f": {"record", "hook working", "wait go", "event Stop {}"}}, w.ordersSource(), resumeTarget("orders", "orders"))
 	w.start()
 	w.waitSource("orders", 10*time.Second, "state ok", isOK)
 	const text = "/commodore resume run-1"

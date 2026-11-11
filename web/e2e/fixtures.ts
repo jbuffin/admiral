@@ -52,9 +52,15 @@ export interface Admiral {
   missingHarness(name: string): string;
   /**
    * Installs the misbehaving test plugin (e2e/testplugin) as plugins/<folder>.
-   * The freeform plugin is not installed here: the server writes it at start.
    */
   installTestPlugin(folder?: string): void;
+  /**
+   * The test-only source that stores orders, as the object a config's `sources` holds under `key`: one
+   * panel "orders" titled "Orders" and the add, edit and remove capabilities. An order added through the
+   * API is kept, listed and dropped once launched, so a test seeds one with `world.seedOrder`. This is
+   * where a test source's config is decided; `extra` is set on the source beside its settings (autopilot).
+   */
+  ordersSource(key?: string, name?: string, extra?: Record<string, unknown>): Record<string, unknown>;
   /** A fresh flag directory for one test-plugin source. */
   flags(label: string): Flags;
   /**
@@ -119,6 +125,13 @@ class Instance implements Admiral {
       join(dir, 'plugin.json'),
       JSON.stringify({ name: folder, description: `Test plugin ${folder}`, command: './plugin.py', args: [], icon: 'icon.svg' }),
     );
+  }
+
+  ordersSource(key = 'orders', name = 'Orders', extra: Record<string, unknown> = {}) {
+    if (!existsSync(join(this.home, 'plugins', 'testplug', 'plugin.json'))) this.installTestPlugin();
+    const f = this.flags(key);
+    f.panels([{ id: 'orders', title: 'Orders' }]);
+    return { plugin: 'testplug', name, settings: { flagdir: f.dir, storeOrders: true, capabilities: ['add', 'edit', 'remove'] }, ...extra };
   }
 
   flags(label: string): Flags {

@@ -7,7 +7,7 @@ import { World } from './world';
 // built to, from the prototype (designs/canvas/Main.dc.html:933-960, :2002) and the brief:
 //
 //   Orders tab: a focusable button in each order row, named "<source> <id>, <title>. Tap to pick a dock and launch it."
-//     (a freeform order has a hex id the UI never shows, so the id is left out)
+//     (a test-source order has a hex id the UI never shows, so the id is left out)
 //   dock sheet: dialog, named by its heading "Launch <order id>", or "Launch order" when the order shows no id
 //     the order's title and a button "Cancel"
 //     one group per fleet, named by the fleet's name, with one button per dock:

@@ -11,6 +11,12 @@ plugin). Settings, all optional except flagdir:
   title            title of the default panel "main"
   settingsSchema   schema answered by initialize (default: flagdir as a string)
   noSettingsSchema true: answer initialize without any settingsSchema
+  storeOrders      true: keep orders in the data directory the way a real
+                   source does: orders.add stores {id, text} under the panel it
+                   names (orders.edit, orders.remove and orders.launched change
+                   or drop it) and sends orders.changed; orders.list lists the
+                   stored orders after the ones in orders.json. Off, orders.add
+                   answers a fixed id and saves nothing.
 
 Files the plugin writes in flagdir:
 
@@ -19,6 +25,9 @@ Files the plugin writes in flagdir:
   pid       its process id
   cwd       its working directory
   datadir   the dataDir initialize handed it (it also writes dataDir/marker)
+
+With storeOrders the stored orders live in dataDir/stored.json, kept apart
+from the orders.json the test owns.
 
 Files the test writes in flagdir:
 
@@ -48,9 +57,12 @@ import os
 import sys
 import threading
 import time
+import uuid
 
 out_lock = threading.Lock()
+store_lock = threading.Lock()
 flagdir = None
+datadir = None
 settings = {}
 
 
@@ -85,6 +97,59 @@ def read_json(name, default):
 def append(name, line):
     with open(path(name), "a") as f:
         f.write(line + "\n")
+
+
+def stored():
+    try:
+        with open(os.path.join(datadir, "stored.json")) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return []
+
+
+def save_stored(orders):
+    final = os.path.join(datadir, "stored.json")
+    with open(final + ".tmp", "w") as f:
+        json.dump(orders, f)
+    os.replace(final + ".tmp", final)
+
+
+def title_of(text):
+    for line in text.splitlines():
+        if line.strip():
+            return line.strip()
+    return ""
+
+
+def changed(panel):
+    emit({"jsonrpc": "2.0", "method": "orders.changed", "params": {"panel": panel}})
+
+
+def store_add(params):
+    with store_lock:
+        orders = stored()
+        order = {"id": uuid.uuid4().hex[:12],
+                 "panel": params.get("panel"), "text": params.get("text")}
+        orders.append(order)
+        save_stored(orders)
+    changed(order["panel"])
+    return {"id": order["id"]}
+
+
+def store_change(params, edit):
+    """Edit or drop a stored order; an id that is not stored is left alone."""
+    with store_lock:
+        orders = stored()
+        hit = [o for o in orders if o["id"] == params.get("id")]
+        if not hit:
+            return {}
+        if edit:
+            hit[0]["text"] = params.get("text")
+        else:
+            orders = [o for o in orders if o["id"] != params.get("id")]
+        save_stored(orders)
+    changed(hit[0]["panel"])
+    return {}
 
 
 def hang():
@@ -127,13 +192,14 @@ def control_loop():
 
 
 def handle(msg):
-    global flagdir, settings
+    global flagdir, datadir, settings
     method = msg.get("method")
     params = msg.get("params") or {}
     result = {}
     if method == "initialize":
         settings = params.get("settings") or {}
         flagdir = settings["flagdir"]
+        datadir = params.get("dataDir")
         os.makedirs(flagdir, exist_ok=True)
         append("starts", repr(time.time()))
         with open(path("pid"), "w") as f:
@@ -181,8 +247,14 @@ def handle(msg):
         return
     elif method == "orders.list":
         result = read_json("orders.json", {}).get(params.get("panel"), [])
+        if settings.get("storeOrders"):
+            with store_lock:
+                result = result + [{"id": o["id"], "title": title_of(o["text"]), "text": o["text"]}
+                                   for o in stored() if o["panel"] == params.get("panel")]
     elif method == "orders.add":
-        result = {"id": "added-1"}
+        result = store_add(params) if settings.get("storeOrders") else {"id": "added-1"}
+    elif method in ("orders.edit", "orders.remove", "orders.launched") and settings.get("storeOrders"):
+        result = store_change(params, method == "orders.edit")
     elif method in ("orders.refresh", "orders.edit", "orders.remove", "orders.launched"):
         result = {}
     else:
