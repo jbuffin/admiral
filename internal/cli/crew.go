@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -75,7 +74,7 @@ func crewTarget(ship string) (*crewShip, error) {
 	if err != nil {
 		return nil, err
 	}
-	tmux, err := exec.LookPath("tmux")
+	tmux, err := sessionhost.FindTmux()
 	if err != nil {
 		return nil, errors.New("tmux not found on PATH")
 	}
@@ -152,7 +151,7 @@ func crewLaunch(args []string, std IO) error {
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
-	if *role != "" && !launcher.CrewName.MatchString(*role) {
+	if *role != "" && !sessionhost.CrewName.MatchString(*role) {
 		return usagef("crew launch: --role %q must be lowercase letters, digits and -", *role)
 	}
 	if fs.NArg() > 0 || *name == "" || *dir == "" || !hasPrompt || len(prompt) == 0 {
@@ -229,33 +228,23 @@ func crewSend(args []string, std IO) error {
 // with a pause before it for Codex.
 func (c *crewShip) submit(boat sessionhost.Crew, text string) error {
 	buf := fmt.Sprintf("admiral-crew-%d", os.Getpid())
-	cmd := exec.Command(c.tmux, "-f", "/dev/null", "-S", c.sock, "load-buffer", "-b", buf, "-")
-	cmd.Env = withoutTmuxEnv()
-	cmd.Stdin = strings.NewReader(text)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("tmux could not load the text: %s", strings.TrimSpace(string(out)))
+	ctx := context.Background()
+	srv := sessionhost.NewServer(c.tmux, c.sock)
+	// load-buffer has always run with no -u; the rest with it.
+	if err := srv.WithoutUTF8().LoadBuffer(ctx, buf, text); err != nil {
+		return fmt.Errorf("tmux could not load the text: %s", sessionhost.Output(err))
 	}
-	if out, err := c.l.RunTmux("paste-buffer", "-p", "-d", "-b", buf, "-t", boat.PaneID); err != nil {
-		_, _ = c.l.RunTmux("delete-buffer", "-b", buf)
-		return fmt.Errorf("tmux could not paste into %s: %s", boat.Name, strings.TrimSpace(out))
+	if err := srv.PasteBuffer(ctx, boat.PaneID, buf, false); err != nil {
+		_ = srv.DeleteBuffer(ctx, buf)
+		return fmt.Errorf("tmux could not paste into %s: %s", boat.Name, sessionhost.Output(err))
 	}
 	if boat.Harness == "codex" {
 		time.Sleep(codexEnterPause)
 	}
-	if out, err := c.l.RunTmux("send-keys", "-t", boat.PaneID, "Enter"); err != nil {
-		return fmt.Errorf("tmux could not press Enter in %s: %s", boat.Name, strings.TrimSpace(out))
+	if err := srv.SendEnter(ctx, boat.PaneID); err != nil {
+		return fmt.Errorf("tmux could not press Enter in %s: %s", boat.Name, sessionhost.Output(err))
 	}
 	return nil
-}
-
-func withoutTmuxEnv() []string {
-	var env []string
-	for _, kv := range os.Environ() {
-		if !strings.HasPrefix(kv, "TMUX=") && !strings.HasPrefix(kv, "TMUX_PANE=") {
-			env = append(env, kv)
-		}
-	}
-	return env
 }
 
 type crewRow struct {

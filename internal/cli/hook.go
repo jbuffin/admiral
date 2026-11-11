@@ -1,11 +1,9 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"os"
-	"os/exec"
 	"regexp"
 	"slices"
 	"strconv"
@@ -31,7 +29,7 @@ func Hook(args []string, std IO) error {
 	// Every event stamps the pane's last activity, a crew boat's last_activity,
 	// in the same tmux call as the state it may write.
 	now := time.Now().UTC()
-	call := []string{"set", "-p", "-t", pane, sessionhost.ActivityOption, now.Format(time.RFC3339)}
+	call := sessionhost.SetPaneCall(pane, sessionhost.ActivityOption, now.Format(time.RFC3339))
 	if valid {
 		w := hookDecision(args[0], p)
 		mon, held := monitorCall(pane, args[0], p)
@@ -42,62 +40,32 @@ func Hook(args []string, std IO) error {
 			w = leadDecision(args[0], p, readCrewFacts(pane, now))
 		}
 		if w.state != "" {
-			call = append(append(call, ";"), hookCall(pane, w)...)
-			call = append(call, ";", "set", "-p", "-u", "-q", "-t", pane, crewHeldOption)
+			call = sessionhost.Join(call,
+				sessionhost.StateCall(pane, w.reason, w.ifUnset, w.state),
+				sessionhost.UnsetPaneCall(pane, crewHeldOption))
 		}
 		if w.crewHeld {
-			call = append(call, ";", "set", "-p", "-t", pane, crewHeldOption, "1")
+			call = sessionhost.Join(call, sessionhost.SetPaneCall(pane, crewHeldOption, "1"))
 		}
 		if w.flagLead != "" {
-			call = append(append(call, ";"), hookCall(w.flagLead, stopWrite)...)
-			call = append(call, ";", "set", "-p", "-u", "-q", "-t", w.flagLead, crewHeldOption)
+			call = sessionhost.Join(call,
+				sessionhost.StateCall(w.flagLead, stopWrite.reason, stopWrite.ifUnset, stopWrite.state),
+				sessionhost.UnsetPaneCall(w.flagLead, crewHeldOption))
 		}
-		if mon != nil {
-			call = append(append(call, ";"), mon...)
-		}
-		if sub := subagentCall(pane, args[0], p, now); sub != nil {
-			call = append(append(call, ";"), sub...)
-		}
-		if ts := transcriptCall(pane, args[0], p, now); ts != nil {
-			call = append(append(call, ";"), ts...)
-		}
-		// Last, so a failure here can't undo the writes before it.
-		if ct := crewTranscriptCall(pane, args[0], p); ct != nil {
-			call = append(append(call, ";"), ct...)
-		}
+		// Each of these is nil when its event writes nothing, and Join skips it.
+		call = sessionhost.Join(call, mon,
+			subagentCall(pane, args[0], p, now),
+			transcriptCall(pane, args[0], p, now),
+			// Last, so a failure here can't undo the writes before it.
+			crewTranscriptCall(pane, args[0], p))
 	}
-	_ = exec.Command("tmux", call...).Run()
+	_ = sessionhost.WriteCurrent(call)
 	return nil
 }
 
-// tmuxOut is one tmux call's stdout without its trailing newline. -u keeps
-// the unit separator in a format intact. It gives up after tmuxDeadline, so a
-// stuck server can't stall the reads (the final write has no deadline); the caller takes its failed-read path.
-func tmuxOut(args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), tmuxDeadline)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, "tmux", append([]string{"-u"}, args...)...).Output()
-	return strings.TrimRight(string(out), "\n"), err
-}
-
-// hookCall is the one tmux call that writes the reason and the state, reason
-// first (for working too, as Host.setPane does) so the poll never sees
-// needs_you without it. A write with ifUnset (a notification's) sets the reason
-// only if none is set (-o), so permission:Bash survives Claude's
-// PermissionRequest and Notification in either order; -q keeps a set reason from
-// making tmux skip the state write.
-func hookCall(pane string, w hookWrite) []string {
-	call := []string{"set", "-p"}
-	switch {
-	case w.reason == "":
-		call = append(call, "-u", "-t", pane, "@admiral-reason")
-	case w.ifUnset:
-		call = append(call, "-o", "-q", "-t", pane, "@admiral-reason", w.reason)
-	default:
-		call = append(call, "-t", pane, "@admiral-reason", w.reason)
-	}
-	return append(call, ";", "set", "-p", "-t", pane, "@admiral-state", w.state)
-}
+// tmuxOut reads from the current tmux server; a failed read takes the caller's
+// failed-read path.
+func tmuxOut(args ...string) (string, error) { return sessionhost.ReadCurrent(args...) }
 
 // hookPayload holds the fields of Claude Code's, Codex's and Copilot's hook
 // JSON that decide a state.
@@ -201,9 +169,6 @@ var stopWrite = hookWrite{state: "needs_you", reason: "stop"}
 // (ADR 0007's no-hook window): `crew launch` writes no state.
 const launchWindow = 10 * time.Second
 
-// tmuxDeadline bounds each of the hook's tmux reads.
-const tmuxDeadline = 2 * time.Second
-
 // safeID is id when it is a safe token, else "" (drop the entry).
 func safeID(s string) string {
 	if sessionhost.SafeToken.MatchString(s) {
@@ -298,12 +263,12 @@ func subagentCall(pane, event string, p hookPayload, now time.Time) []string {
 		read = false
 	case "SubagentStart", "SubagentStop", "subagentStart", "subagentStop", "Stop":
 		if event == "Stop" {
-			harness, _ = tmuxOut("display", "-p", "-t", pane, "#{@admiral-harness}")
+			harness, _ = tmuxOut(sessionhost.CurrentHarnessCall(pane)...)
 			if harness == "codex" {
 				return nil
 			}
 		}
-		raw, err := tmuxOut("show-options", "-pqv", "-t", pane, sessionhost.SubagentsOption)
+		raw, err := tmuxOut(sessionhost.PaneOptionCall(pane, sessionhost.SubagentsOption)...)
 		if err != nil {
 			return nil
 		}
@@ -316,14 +281,14 @@ func subagentCall(pane, event string, p hookPayload, now time.Time) []string {
 	case read && next == sessionhost.EncodeSubagents(cur):
 		return nil
 	case next == "":
-		return []string{"set", "-p", "-u", "-q", "-t", pane, sessionhost.SubagentsOption}
+		return sessionhost.UnsetPaneCall(pane, sessionhost.SubagentsOption)
 	}
-	return []string{"set", "-p", "-t", pane, sessionhost.SubagentsOption, next}
+	return sessionhost.SetPaneCall(pane, sessionhost.SubagentsOption, next)
 }
 
 // monitorsOption is the pane option that holds the task ids of the Monitors a
 // Claude session armed and that may still run, space-separated (#110).
-const monitorsOption = sessionhost.Prefix + "monitors"
+const monitorsOption = sessionhost.MonitorsOption
 
 // maxMonitors caps the list, as sessionhost.MaxSubagents does the subagents.
 const maxMonitors = 64
@@ -381,11 +346,11 @@ func monitorCall(pane, event string, p hookPayload) (call []string, held bool) {
 	case monitorID(event, p) != "":
 	case event == "Stop" && slices.ContainsFunc(p.BackgroundTasks, func(t backgroundTask) bool { return t.Status == "running" }):
 	case event == "Stop" && p.BackgroundTasks != nil:
-		return []string{"set", "-p", "-u", "-q", "-t", pane, monitorsOption}, false
+		return sessionhost.UnsetPaneCall(pane, monitorsOption), false
 	default:
 		return nil, false
 	}
-	raw, err := tmuxOut("show-options", "-pqv", "-t", pane, monitorsOption)
+	raw, err := tmuxOut(sessionhost.PaneOptionCall(pane, monitorsOption)...)
 	if err != nil {
 		return nil, false
 	}
@@ -395,9 +360,9 @@ func monitorCall(pane, event string, p hookPayload) (call []string, held bool) {
 	case slices.Equal(next, cur):
 		return nil, held
 	case len(next) == 0:
-		return []string{"set", "-p", "-u", "-q", "-t", pane, monitorsOption}, held
+		return sessionhost.UnsetPaneCall(pane, monitorsOption), held
 	}
-	return []string{"set", "-p", "-t", pane, monitorsOption, strings.Join(next, " ")}, held
+	return sessionhost.SetPaneCall(pane, monitorsOption, strings.Join(next, " ")), held
 }
 
 // transcriptCall is the tmux call that records a SessionStart for the chat
@@ -418,13 +383,13 @@ func transcriptCall(pane, event string, p hookPayload, now time.Time) []string {
 	if source == "" {
 		source = "unknown"
 	}
-	return []string{"set", "-p", "-t", pane, sessionhost.TranscriptOption, strconv.FormatInt(now.UnixNano(), 10) + " " + source + " " + path}
+	return sessionhost.SetPaneCall(pane, sessionhost.TranscriptOption, strconv.FormatInt(now.UnixNano(), 10)+" "+source+" "+path)
 }
 
 // crewHeldOption marks a lead pane whose Stop waits on working crew (#189). Any
 // state the lead writes next clears it. A lead held by a Monitor isn't marked:
 // the Monitor wakes it.
-const crewHeldOption = sessionhost.Prefix + "crew-held"
+const crewHeldOption = sessionhost.CrewHeldOption
 
 // crewFacts is what the lead rule needs to know about the pane and its crew.
 type crewFacts struct {
@@ -484,9 +449,8 @@ func crewPaneWorking(f crewPaneFact, now time.Time) bool {
 // the other boats only when a lead waits on the crew, and writes its own idle
 // first: of two boats that stop together, the later read sees both idle.
 func readCrewFacts(pane string, now time.Time) crewFacts {
-	const sep = "\x1f"
-	out, err := tmuxOut("list-panes", "-s", "-t", pane, "-F",
-		strings.Join([]string{"#{pane_id}", "#{pane_dead}", sessionhost.CrewNameFormat, "#{@admiral-launched}", "#{@admiral-activity}", "#{" + crewHeldOption + "}"}, sep))
+	const sep = sessionhost.RowSeparator
+	out, err := tmuxOut(sessionhost.SessionPanesCall(pane)...)
 	if err != nil {
 		return crewFacts{CrewReadFailed: true}
 	}
@@ -519,11 +483,11 @@ func readCrewFacts(pane string, now time.Time) crewFacts {
 		if lead == "" {
 			return f
 		}
-		_, _ = tmuxOut("set", "-p", "-t", pane, "@admiral-state", sessionhost.CrewIdle)
+		_, _ = tmuxOut(sessionhost.SetPaneCall(pane, sessionhost.StateOption, sessionhost.CrewIdle)...)
 	}
 	for _, r := range crew {
 		if !r.fact.Dead {
-			r.fact.State, _ = tmuxOut("show-options", "-pqv", "-t", r.id, "@admiral-state")
+			r.fact.State, _ = tmuxOut(sessionhost.PaneOptionCall(r.id, sessionhost.StateOption)...)
 		}
 		if crewPaneWorking(r.fact, now) {
 			f.CrewWorking = true
@@ -555,6 +519,5 @@ func crewTranscriptCall(pane, event string, p hookPayload) []string {
 	if !paneID.MatchString(pane) || !sessionhost.ValidCrewTranscriptPath(path) {
 		return nil
 	}
-	return []string{"if", "-F", "-t", pane, sessionhost.CrewGateFormat,
-		"set -p -t " + pane + " " + sessionhost.CrewTranscriptOption + " '" + path + "'"}
+	return sessionhost.CrewTranscriptCall(pane, path)
 }

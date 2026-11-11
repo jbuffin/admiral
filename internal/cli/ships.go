@@ -5,12 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/home"
@@ -68,7 +65,7 @@ func shipsFromTmux(dir string) ([]ships.Ship, error) {
 
 // shipSessions are the ships' sessions as tmux has them, with their crew boats.
 func shipSessions(dir string) ([]sessionhost.Session, error) {
-	tmux, err := exec.LookPath("tmux")
+	tmux, err := sessionhost.FindTmux()
 	if err != nil {
 		return nil, fmt.Errorf("tmux not found on PATH")
 	}
@@ -198,7 +195,7 @@ func Attach(args []string, std IO) error {
 	if err != nil {
 		return err
 	}
-	tmux, err := exec.LookPath("tmux")
+	tmux, err := sessionhost.FindTmux()
 	if err != nil {
 		return fmt.Errorf("tmux not found on PATH")
 	}
@@ -228,13 +225,11 @@ func Attach(args []string, std IO) error {
 	if ship == nil {
 		return fmt.Errorf("no ship called %q (admiral ships lists them)", name)
 	}
-	argv := []string{tmux, "-u", "-S", sock, "attach", "-f", "ignore-size"}
 	// The ship's own window, never "=session": that is whichever window is current.
-	where := "=" + ship.Name + ":^"
+	where, readOnly := sessionhost.ShipTarget(ship.Name), false
 	if crewName == "" {
-		if st := ships.FromSession(*ship, time.Now()).Status; st != ships.StatusUnderway && st != ships.StatusNeedsYou {
-			argv = append(argv, "-r")
-		}
+		st := ships.FromSession(*ship, time.Now()).Status
+		readOnly = st != ships.StatusUnderway && st != ships.StatusNeedsYou
 	} else {
 		var boat *sessionhost.Crew
 		for i, c := range ship.Crew {
@@ -246,14 +241,11 @@ func Attach(args []string, std IO) error {
 			return fmt.Errorf("no crew boat called %q on ship %q (admiral ships lists them)", crewName, ship.Options["name"])
 		}
 		// The crew boat's own status decides, not the ship's.
-		if boat.State == sessionhost.CrewAnchored {
-			argv = append(argv, "-r")
-		}
-		where = "=" + ship.Name + ":" + boat.WindowID
+		readOnly = boat.State == sessionhost.CrewAnchored
+		where = sessionhost.CrewTarget(ship.Name, boat.WindowID)
 	}
-	argv = append(argv, "-t", where)
 	fmt.Fprintln(std.Out, "Ctrl-b d to detach")
-	return syscall.Exec(tmux, argv, os.Environ())
+	return sessionhost.ExecAttach(tmux, sock, where, readOnly)
 }
 
 // Completion is `admiral completion zsh|bash`: scripts that complete ship names.

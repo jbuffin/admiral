@@ -1,7 +1,6 @@
 package chat
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -12,7 +11,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"syscall"
@@ -38,8 +36,6 @@ const maxSend = 16 << 10
 
 // optionEvery is how often the chat's options are read from tmux at most.
 const optionEvery = 200 * time.Millisecond
-
-const sep = "\x1f"
 
 // Snapshot is what GET /api/chat/session and the `chat` WebSocket message carry.
 // The wire message adds "type". Questions are the chat questions (ADR 0020): the
@@ -364,48 +360,21 @@ func (s *Service) add(m Message) {
 	}
 }
 
-// readOptions reads the chat's options off its pane in one tmux call. The chat
-// can write any of them. The transcript is last, so a separator in it can't shift
-// the others; one in another option only shifts the fields after it, which makes
-// the settings look changed (New chat then restarts the session).
+// readOptions reads the chat's options off its pane in one tmux call.
 func (s *Service) readOptions(pane string) (chatOptions, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	format := strings.Join([]string{"#{" + sessionhost.ChatModelOption + "}", "#{" + sessionhost.ChatEffortOption + "}",
-		"#{" + sessionhost.ChatFleetOption + "}", "#{" + sessionhost.TranscriptOption + "}"}, sep)
-	out, err := s.tmux(ctx, "", "-u", "display-message", "-p", "-t", pane, format)
+	o, err := s.server().ReadChatOptions(ctx, pane)
 	if err != nil {
 		return chatOptions{}, err
 	}
-	f := strings.SplitN(strings.TrimSuffix(out, "\n"), sep, 4)
-	if len(f) != 4 {
-		return chatOptions{}, fmt.Errorf("unexpected options %q", out)
-	}
-	return chatOptions{model: f[0], effort: f[1], fleet: f[2], transcript: f[3]}, nil
+	return chatOptions{model: o.Model, effort: o.Effort, fleet: o.Fleet, transcript: o.Transcript}, nil
 }
 
-// tmux runs the tmux binary on Admiral's socket with stdin as given.
-func (s *Service) tmux(ctx context.Context, stdin string, args ...string) (string, error) {
-	// -u is a tmux flag, not a command: it goes before the command.
-	var flags []string
-	for len(args) > 0 && args[0] == "-u" {
-		flags, args = append(flags, args[0]), args[1:]
-	}
-	cmd := exec.CommandContext(ctx, s.Tmux, append(append([]string{"-f", "/dev/null", "-S", s.Socket}, flags...), args...)...)
-	for _, kv := range os.Environ() {
-		if !strings.HasPrefix(kv, "TMUX=") && !strings.HasPrefix(kv, "TMUX_PANE=") {
-			cmd.Env = append(cmd.Env, kv)
-		}
-	}
-	if stdin != "" {
-		cmd.Stdin = strings.NewReader(stdin)
-	}
-	var out, errOut bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errOut
-	if err := cmd.Run(); err != nil {
-		return out.String(), fmt.Errorf("tmux %s: %w: %s", args[0], err, strings.TrimSpace(errOut.String()))
-	}
-	return out.String(), nil
+// server is Admiral's tmux as the chat has always run it: no -u, TMUX and
+// TMUX_PANE dropped, a failure that carries stderr.
+func (s *Service) server() sessionhost.Server {
+	return sessionhost.NewServer(s.Tmux, s.Socket).WithoutUTF8().StderrErrors()
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -438,8 +407,7 @@ func (s *Service) sync() {
 func (s *Service) exists() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	_, err := s.tmux(ctx, "", "has-session", "-t", "="+sessionhost.ChatName)
-	return err == nil
+	return s.server().HasSession(ctx, sessionhost.ChatName)
 }
 
 // start makes the session if there is none.
@@ -561,15 +529,15 @@ func (s *Service) paste(pane, text string) error {
 	buf := "admiral-chat-" + hex.EncodeToString(b[:])
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if _, err := s.tmux(ctx, text, "load-buffer", "-b", buf, "-"); err != nil {
+	srv := s.server()
+	if err := srv.LoadBuffer(ctx, buf, text); err != nil {
 		return err
 	}
-	if _, err := s.tmux(ctx, "", "paste-buffer", "-p", "-r", "-d", "-b", buf, "-t", pane); err != nil {
-		_, _ = s.tmux(ctx, "", "delete-buffer", "-b", buf)
+	if err := srv.PasteBuffer(ctx, pane, buf, true); err != nil {
+		_ = srv.DeleteBuffer(ctx, buf)
 		return err
 	}
-	_, err := s.tmux(ctx, "", "send-keys", "-t", pane, "Enter")
-	return err
+	return srv.SendEnter(ctx, pane)
 }
 
 // serveNew resets the conversation: /clear when the running session matches the
@@ -604,11 +572,11 @@ func (s *Service) serveNew(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		// Typed, then Enter: the way an engineer runs a command.
-		if _, err := s.tmux(ctx, "", "send-keys", "-t", pane, "-l", "/clear"); err != nil {
+		if err := s.server().SendLiteral(ctx, pane, "/clear"); err != nil {
 			writeError(w, http.StatusBadGateway, "could not clear the chat: "+err.Error())
 			return
 		}
-		if _, err := s.tmux(ctx, "", "send-keys", "-t", pane, "Enter"); err != nil {
+		if err := s.server().SendEnter(ctx, pane); err != nil {
 			writeError(w, http.StatusBadGateway, "could not clear the chat: "+err.Error())
 			return
 		}
@@ -618,7 +586,7 @@ func (s *Service) serveNew(w http.ResponseWriter, r *http.Request) {
 	// The settings changed since this session started: a new one takes them.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if _, err := s.tmux(ctx, "", "kill-session", "-t", "="+sessionhost.ChatName); err != nil {
+	if err := s.server().KillSession(ctx, sessionhost.ChatName); err != nil {
 		writeError(w, http.StatusBadGateway, "could not end the chat: "+err.Error())
 		return
 	}

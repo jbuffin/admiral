@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -270,17 +269,9 @@ func (c *conn) start() {
 // it has now. They are read before the client attaches: afterwards the windows
 // may already have been resized.
 func (c *conn) windowSizes() []string {
-	out, err := exec.Command(c.s.Tmux, "-f", "/dev/null", "-S", c.s.Socket, "-u", "list-windows", "-t", "="+c.session+":",
-		"-F", "#{window_id} #{window_width}x#{window_height}").Output()
-	if err != nil {
-		return nil
-	}
 	var cmds []string
-	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		id, size, ok := strings.Cut(l, " ")
-		if _, _, sized := parseSize(size); ok && strings.HasPrefix(id, "@") && sized {
-			cmds = append(cmds, "refresh-client -C "+id+":"+size)
-		}
+	for _, w := range sessionhost.NewServer(c.s.Tmux, c.s.Socket).KeepingTMUXEnv().StderrErrors().WindowSizes(c.session) {
+		cmds = append(cmds, sessionhost.ResizeWindowCmd(w.ID, w.Cols, w.Rows))
 	}
 	return cmds
 }
@@ -302,7 +293,7 @@ func (c *conn) fail(err error) {
 func (w *watch) resolve() {
 	defer close(w.ready)
 	got := make(chan error, 1)
-	w.c.client.Do([]string{"display-message -p -t " + quoteArg("="+w.c.session+":^") + " '#{pane_id} #{window_id}'"}, func(out [][]string, errs []error) {
+	w.c.client.Do([]string{sessionhost.FirstPaneCmd(w.c.session)}, func(out [][]string, errs []error) {
 		var f []string
 		if errs[0] == nil && len(out[0]) == 1 {
 			f = strings.Fields(out[0][0])
@@ -515,10 +506,6 @@ func decodeOutput(s string) []byte {
 
 func isOctal(c byte) bool { return c >= '0' && c <= '7' }
 
-func quoteArg(s string) string {
-	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "$", `\$`).Replace(s) + `"`
-}
-
 // live is true while the ship's harness is running.
 func live(sh ships.Ship) bool {
 	return sh.Status == ships.StatusUnderway || sh.Status == ships.StatusNeedsYou
@@ -646,7 +633,7 @@ func (w *watch) setSize(cols, rows int) {
 // resizeCmd sizes this watch's window alone: a whole-client size would be
 // followed by every window of the session.
 func (w *watch) resizeCmd(cols, rows int) string {
-	return fmt.Sprintf("refresh-client -C %s:%dx%d", w.win, cols, rows)
+	return sessionhost.ResizeWindowCmd(w.win, cols, rows)
 }
 
 // refreshSize reads the pane's size, after the commands in before.
@@ -654,23 +641,16 @@ func (w *watch) refreshSize(before []string) {
 	w.mu.Lock()
 	pane := w.pane
 	w.mu.Unlock()
-	cmds := append(before, "display-message -p -t "+pane+" '#{window_width}x#{window_height}'")
+	cmds := append(before, sessionhost.PaneSizeCmd(pane))
 	w.c.client.Do(cmds, func(out [][]string, errs []error) {
 		last := len(cmds) - 1
 		if errs[last] != nil || len(out[last]) != 1 {
 			return
 		}
-		if c, r, ok := parseSize(out[last][0]); ok {
+		if c, r, ok := sessionhost.ParseSize(out[last][0]); ok {
 			w.setSize(c, r)
 		}
 	})
-}
-
-func parseSize(s string) (cols, rows int, ok bool) {
-	a, b, found := strings.Cut(s, "x")
-	cols, e1 := strconv.Atoi(a)
-	rows, e2 := strconv.Atoi(b)
-	return cols, rows, found && e1 == nil && e2 == nil && cols > 0 && rows > 0
 }
 
 // makeActive lets b size the window at the size it last reported.
@@ -706,8 +686,6 @@ type joinMsg struct {
 	Ship shipMsg `json:"ship"`
 }
 
-const modeFormat = "#{cursor_x}|#{cursor_y}|#{cursor_flag}|#{keypad_cursor_flag}|#{alternate_on}|#{bracket_paste_flag}|#{mouse_any_flag}|#{window_width}|#{window_height}|#{history_size}"
-
 // join sends b the screen and scrollback with colours, the cursor and the
 // modes, and from the same point in tmux's stream on, the live output. When
 // size is set b's size is applied first, and b becomes the active browser.
@@ -726,9 +704,9 @@ func (w *watch) join(b *browser, resize bool) {
 		cmds = append(cmds, w.resizeCmd(cols, rows))
 	}
 	cmds = append(cmds,
-		"display-message -p -t "+pane+" '"+modeFormat+"'",
-		"capture-pane -p -e -t "+pane,
-		fmt.Sprintf("capture-pane -p -e -S -%d -E -1 -t %s", scrollbackLines, pane))
+		sessionhost.ModeCmd(pane),
+		sessionhost.ScreenCmd(pane),
+		sessionhost.ScrollbackCmd(pane, scrollbackLines))
 	skip := len(cmds) - 3
 	w.c.client.Do(cmds, func(out [][]string, errs []error) {
 		var j joinMsg
@@ -792,18 +770,6 @@ func (w *watch) input(b *browser, data string) {
 	w.mu.Lock()
 	pane := w.pane
 	w.mu.Unlock()
-	const chunk = 256
-	var cmds []string
-	raw := []byte(data)
-	for len(raw) > 0 {
-		n := min(chunk, len(raw))
-		var sb strings.Builder
-		sb.WriteString("send-keys -H -t " + pane)
-		for _, c := range raw[:n] {
-			fmt.Fprintf(&sb, " %02x", c)
-		}
-		cmds = append(cmds, sb.String())
-		raw = raw[n:]
-	}
+	cmds := sessionhost.SendBytesCmds(pane, []byte(data), 256)
 	w.c.client.Do(cmds, nil)
 }

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
-	"os/exec"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/sessionhost"
@@ -62,8 +61,10 @@ func (s *Service) inputSeen(session string) (ships.Ship, error) {
 	return s.Ships.InputSeen(session)
 }
 
-func (s *Service) tmuxRun(args ...string) error {
-	return exec.Command(s.Tmux, append([]string{"-f", "/dev/null", "-S", s.Socket}, args...)...).Run()
+// server is Admiral's tmux as the setup terminal has always run it: no -u, and
+// TMUX and TMUX_PANE left in the environment.
+func (s *Service) server() sessionhost.Server {
+	return sessionhost.NewServer(s.Tmux, s.Socket).WithoutUTF8().KeepingTMUXEnv()
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -89,13 +90,12 @@ func (s *Service) serveSetupStart(w http.ResponseWriter, r *http.Request) {
 	}
 	s.setupMu.Lock()
 	defer s.setupMu.Unlock()
-	if s.tmuxRun("has-session", "-t", "="+sessionhost.SetupName) != nil {
+	srv := s.server()
+	if !srv.HasSession(context.Background(), sessionhost.SetupName) {
 		// The session environment is spelled out: a tmux server that outlived an
 		// earlier Admiral would otherwise hand setup that one's.
-		args := []string{"new-session", "-d", "-s", sessionhost.SetupName, "-x", "100", "-y", "30",
-			"-e", "ADMIRAL_HOME=" + s.Setup.Home, "-e", sessionhost.SetupTerminalEnv + "=1", "-e", "HOME=" + os.Getenv("HOME"), "-e", "PATH=" + os.Getenv("PATH"),
-			"--", s.Setup.Exe, "setup"}
-		if err := s.tmuxRun(args...); err != nil {
+		env := []string{"ADMIRAL_HOME=" + s.Setup.Home, sessionhost.SetupTerminalEnv + "=1", "HOME=" + os.Getenv("HOME"), "PATH=" + os.Getenv("PATH")}
+		if err := srv.StartDetached(sessionhost.SetupName, 100, 30, env, []string{s.Setup.Exe, "setup"}); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not start setup: " + err.Error()})
 			return
 		}

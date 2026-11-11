@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
@@ -187,7 +186,7 @@ func (s *Service) serveCrewClose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch err := s.Launcher.CloseCrew(ctx, windowID); {
-	case errors.Is(err, launcher.ErrCrewGone):
+	case errors.Is(err, sessionhost.ErrWindowGone):
 		writeError(w, http.StatusNotFound, "crew boat "+name+" not found")
 		return
 	case err != nil:

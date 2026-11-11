@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/inbox"
-	"github.com/jbuffin/admiral/internal/launcher"
+	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
 // Chat questions (ADR 0020): AdmiralBot asks with `admiral chat ask`, which writes
@@ -22,7 +22,7 @@ import (
 
 // Session is what a chat question carries as its `session`, so its key can't
 // collide with a ship's.
-const Session = launcher.ChatSession
+const Session = sessionhost.ChatName
 
 // maxQuestions is how many chat questions are served: the newest.
 const maxQuestions = 20

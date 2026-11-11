@@ -4,9 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"strings"
 	"time"
+
+	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
 // enterPause is how long Codex needs between a paste and the Enter that submits
@@ -35,25 +36,19 @@ func (s *Service) TypeResume(session, text string) (afloat, typed bool, err erro
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	tmux := func(input string, args ...string) error {
-		out, err := s.Launcher.RunTmuxInput(ctx, input, args...)
-		if err != nil {
-			return fmt.Errorf("tmux %s: %v: %s", args[0], err, strings.TrimSpace(out))
-		}
-		return nil
-	}
+	srv := sessionhost.NewServer(s.Launcher.Tmux, s.Launcher.Socket)
 	pane := sess.PaneID
 	if !strings.Contains(text, "\n") {
-		err = tmux("", "send-keys", "-t", pane, "-l", text)
+		err = srv.SendLiteral(ctx, pane, text)
 	} else {
 		var b [8]byte
 		if _, err := rand.Read(b[:]); err != nil {
 			return true, false, err
 		}
 		buf := "admiral-resume-" + hex.EncodeToString(b[:])
-		if err = tmux(text, "load-buffer", "-b", buf, "-"); err == nil {
-			if err = tmux("", "paste-buffer", "-p", "-r", "-d", "-b", buf, "-t", pane); err != nil {
-				_ = tmux("", "delete-buffer", "-b", buf)
+		if err = srv.LoadBuffer(ctx, buf, text); err == nil {
+			if err = srv.PasteBuffer(ctx, pane, buf, true); err != nil {
+				_ = srv.DeleteBuffer(ctx, buf)
 			}
 		}
 	}
@@ -63,7 +58,7 @@ func (s *Service) TypeResume(session, text string) (afloat, typed bool, err erro
 	if sh.Harness == "codex" {
 		time.Sleep(enterPause)
 	}
-	if err := tmux("", "send-keys", "-t", pane, "Enter"); err != nil {
+	if err := srv.SendEnter(ctx, pane); err != nil {
 		// The text is in the prompt: typing it again would double it.
 		return true, true, err
 	}

@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/inbox"
-	"github.com/jbuffin/admiral/internal/launcher"
+	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
 )
 
@@ -370,7 +370,7 @@ func writeQuestion(root *os.Root, stdin []byte) (string, error) {
 	if in.Questions == nil {
 		return "", usagef("the question has no questions")
 	}
-	if _, err := inbox.ParseItem(item, launcher.ChatSession, id); err != nil {
+	if _, err := inbox.ParseItem(item, sessionhost.ChatName, id); err != nil {
 		return "", usagef("the question is not valid: it needs a title and questions of {id, text, multi, options: [{label}]}, each id once")
 	}
 	dir, err := questionsRoot(root)

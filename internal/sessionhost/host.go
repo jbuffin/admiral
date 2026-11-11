@@ -36,8 +36,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/jbuffin/admiral/internal/launcher"
 )
 
 // Internal is the hidden session control mode is attached to. No ship name
@@ -50,7 +48,7 @@ const SetupName = "_setup"
 
 // ChatName is the session that runs the AdmiralBot chat (ADR 0018, 0019). It is
 // not a ship.
-const ChatName = launcher.ChatSession
+const ChatName = "_chat"
 
 // SetupTerminalEnv is set in the setup session, so `admiral setup` holds an error on screen.
 const SetupTerminalEnv = "ADMIRAL_SETUP_TERMINAL"
