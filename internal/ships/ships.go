@@ -40,6 +40,7 @@ type Ship struct {
 	Resources  []string        `json:"-"`
 	Title      string          `json:"title"`
 	URL        string          `json:"url"`
+	Issues     []string        `json:"-"`
 	OrderID    string          `json:"order_id"`
 	Launched   string          `json:"launched"`
 	Status     string          `json:"status"`
@@ -124,6 +125,7 @@ type unlisted struct {
 	at        time.Time
 	resources []string
 	url       string
+	issues    []string
 }
 
 // listedWithin: a ship killed before the host saw it must not hold its order for good.

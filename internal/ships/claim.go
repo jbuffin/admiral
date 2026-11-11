@@ -164,3 +164,7 @@ func cmpName(name, session string) string {
 	}
 	return session
 }
+
+func (s *Service) lockIssues(urls []string, holder string) (heldBy string, ok bool) { return "", true }
+
+func (s *Service) unlockIssues(urls []string) {}

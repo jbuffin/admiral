@@ -613,3 +613,27 @@ func TestARecordWhoseSessionIsStillLiveIsNotMoored(t *testing.T) {
 		t.Errorf("records = %v, want the record kept", recs)
 	}
 }
+
+func TestSailingOffAMooredSliceShipReleasesEveryIssue(t *testing.T) {
+	g := &pollGitHub{}
+	g.set(prSeven, moor.Status{State: "MERGED"})
+	f := mooredService(t, map[string]*pollGitHub{"work": g})
+	if err := moor.Write(f.home, moor.Record{Name: "Slice", Session: "slice", Fleet: "work", Harness: "claude", Checkout: "/src/widgets",
+		URL: sliceA, Issues: []string{sliceA, sliceB}, PRs: []string{prSeven}, MooredAt: time.Now().UTC().Truncate(time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+	ka, _ := ClaimKey(sliceA)
+	kb, _ := ClaimKey(sliceB)
+	if c := f.s.Claims(); c[ka] != "Slice" || c[kb] != "Slice" {
+		t.Fatalf("Claims = %v, want both issues held while the slice ship is moored", c)
+	}
+
+	f.s.PollMoored(context.Background())
+
+	if _, ok := f.ship(t, "Slice"); ok {
+		t.Fatalf("the ship is still listed")
+	}
+	if c := f.s.Claims(); c[ka] != "" || c[kb] != "" {
+		t.Errorf("Claims = %v, want neither issue held once the slice ship sailed off", c)
+	}
+}
