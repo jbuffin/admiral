@@ -1,0 +1,7 @@
+ ✗ Shell Create empty file named y in the scratch directory Operation aborted by user
+   touch /tmp/work/y
+   Approval check
+     └ - Confirmation cancelled for shell command (touch)
+ ● Operation cancelled by user
+ ❯
+ ← open sidebar · Interactive · Manual Approval · / commands · ? help · tab next tab

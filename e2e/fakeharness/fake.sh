@@ -112,6 +112,17 @@
 #                  the shape Copilot records, <id> being the --session-id in its argv. Unlike
 #                  `reply` it is not the last cue and answers nothing. With no usable --session-id
 #                  or no $COPILOT_HOME it writes why to `events-error` and stderr and exits 1.
+#   ask <message>|<option>|...
+#                  Copilot only, needs jq: appends a pending ask_user call to events.jsonl, one
+#                  single-choice property in the oneOf shape Copilot records.
+#   prompted <text>
+#                  Copilot only, needs jq: appends one user.message line holding <text>, the echo of a message
+#                  sent to the pane.
+#   copilothook <event> <json>
+#                  Copilot only, needs jq: runs the commands of the plugin's hooks.json (the
+#                  --plugin-dir in argv) for <event>, <json> on stdin, as Copilot's hook stdin reads
+#                  (snake_case: notification_type, toolName). A matcher is tested against
+#                  notification_type or toolName; the event name goes to `events-done`.
 #   replydelay <n> sleep n seconds before each message's lines are appended, so a test sees the
 #                  message sent and not yet recorded. Put it before `reply`.
 #
@@ -352,6 +363,64 @@ if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 			  line("user.message"; {content: ("Question " + $n)}),
 			  line("assistant.message"; {messageId: ("fake-m-" + $n), content: $t, toolRequests: []}),
 			  line("assistant.turn_end"; {turnId: "0"})' >>"$COPILOT_HOME/session-state/$sid/events.jsonl"
+			;;
+		ask)
+			# Copilot only: a pending ask_user call, <message>|<option>|<option>..., as the recorded oneOf form.
+			sid=""
+			prev=""
+			for a in "$@"; do
+				[ "$prev" = "--session-id" ] && sid=$a
+				prev=$a
+			done
+			case "$sid" in
+			"" | */*) echo "ask cue: no usable --session-id in argv" | tee "$d/events-error" >&2; exit 1 ;;
+			esac
+			[ -n "$COPILOT_HOME" ] || { echo "ask cue: COPILOT_HOME is unset" | tee "$d/events-error" >&2; exit 1; }
+			mkdir -p "$COPILOT_HOME/session-state/$sid"
+			jq -cn --arg a "$arg" '
+			  ($a | split("|")) as $p
+			  | {type: "tool.execution_start", id: "fake-ask", parentId: null, timestamp: (now | todate),
+			     data: {toolCallId: "fake-ask-call", toolName: "ask_user", turnId: "0",
+			            arguments: {message: $p[0], requestedSchema: {type: "object", required: ["answer"],
+			              properties: {answer: {type: "string", title: "Answer", oneOf: ($p[1:] | map({const: ascii_downcase, title: .}))}}}}}}' >>"$COPILOT_HOME/session-state/$sid/events.jsonl"
+			;;
+		prompted)
+			# Copilot only: the echo of a sent message, one user.message line holding <text>.
+			sid=""
+			prev=""
+			for a in "$@"; do
+				[ "$prev" = "--session-id" ] && sid=$a
+				prev=$a
+			done
+			case "$sid" in
+			"" | */*) echo "prompted cue: no usable --session-id in argv" | tee "$d/events-error" >&2; exit 1 ;;
+			esac
+			[ -n "$COPILOT_HOME" ] || { echo "prompted cue: COPILOT_HOME is unset" | tee "$d/events-error" >&2; exit 1; }
+			mkdir -p "$COPILOT_HOME/session-state/$sid"
+			jq -cn --arg t "$arg" '{type: "user.message", id: ("fake-echo-" + ($t | length | tostring)), parentId: null, timestamp: (now | todate), data: {content: $t}}' >>"$COPILOT_HOME/session-state/$sid/events.jsonl"
+			;;
+		copilothook)
+			# Copilot only: run the hook commands of the plugin's hooks.json for <event> <json>, the payload on stdin,
+			# in Copilot's recorded snake_case shape; a matcher is tested against notification_type or toolName.
+			ev=${arg%% *}
+			payload=${arg#"$ev"}
+			plugin=""
+			prev=""
+			for a in "$@"; do
+				[ "$prev" = "--plugin-dir" ] && plugin=$a
+				prev=$a
+			done
+			subject=$(printf '%s' "$payload" | jq -r '.notification_type // .toolName // ""' 2>>"$d/event-error")
+			: >"$d/.cmds"
+			[ -n "$plugin" ] && jq -r --arg e "$ev" --arg s "$subject" '.hooks[$e][]? | (.matcher // "") as $m | select($m == "" or ($s | test($m))) | .bash' "$plugin/hooks.json" >"$d/.cmds" 2>>"$d/event-error"
+			if [ ! -s "$d/.cmds" ]; then
+				echo "no hook command for $ev in plugin '$plugin'" >>"$d/event-error"
+			else
+				while IFS= read -r command; do
+					printf '%s' "$payload" | sh -c "$command" >>"$d/event-stdout" 2>>"$d/handler-copilot.stderr"
+				done <"$d/.cmds"
+			fi
+			echo "$ev" >>"$d/events-done"
 			;;
 		reply)
 			sid=""

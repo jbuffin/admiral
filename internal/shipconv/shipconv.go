@@ -587,7 +587,8 @@ func (s *Service) alive(w *watch) bool {
 	return ok && boat.Launched == w.loc.boatLaunched
 }
 
-// PendingQuestions gives the pending questions of a ship's conversation, or of a crew boat's, oldest first.
+// PendingQuestions gives the pending questions of the current turn of a ship's conversation, or of a crew boat's,
+// oldest first: a question left pending by an earlier turn is not on the pane any more.
 func (s *Service) PendingQuestions(session, crew string) []conversation.Item {
 	loc, ok, none := s.locateBoat(session, crew)
 	if !ok || none {
@@ -604,6 +605,9 @@ func (s *Service) PendingQuestions(session, crew string) []conversation.Item {
 	}
 	var out []conversation.Item
 	for _, it := range items {
+		if it.Kind == conversation.KindUser || it.Kind == conversation.KindTurnEnd {
+			out = nil
+		}
 		if it.Kind == conversation.KindQuestion && it.Question != nil && it.Question.Pending {
 			out = append(out, it)
 		}

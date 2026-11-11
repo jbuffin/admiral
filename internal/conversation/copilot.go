@@ -1,6 +1,7 @@
 package conversation
 
 import (
+	"cmp"
 	"encoding/json"
 	"sort"
 	"strings"
@@ -47,6 +48,7 @@ type copilotData struct {
 type copilotCall struct {
 	id       string
 	question bool
+	summary  string
 }
 
 // copilotDecoder reads a Copilot session's events.jsonl. It allowlists the types it maps, so the
@@ -179,6 +181,13 @@ func (d *copilotDecoder) toolComplete(data copilotData) []emission {
 	if out == "" {
 		out = strings.TrimSpace(data.Error.Message)
 	}
+	failed := data.Success != nil && !*data.Success
+	if c.question && failed {
+		// Copilot refused the call and showed no form, so it is a failed tool call, not an answered question.
+		return []emission{{Item: Item{ID: c.id, Kind: KindToolCall, Tool: &ToolCall{
+			Name: "ask_user", Summary: c.summary, Output: cutTo(out, d.maxOutput, "… [output cut]"), Error: true, Done: true,
+		}}}}
+	}
 	if c.question {
 		answer := strings.TrimSpace(strings.TrimPrefix(out, "User responded:"))
 		return []emission{{Update: true, Item: Item{ID: c.id, Question: &Question{Answer: cutTo(answer, maxText, "…")}}}}
@@ -196,7 +205,11 @@ func copilotQuestion(args json.RawMessage) (Question, bool) {
 		Choices         []string `json:"choices"`
 		RequestedSchema struct {
 			Properties map[string]struct {
-				Enum []string `json:"enum"`
+				Enum  []string `json:"enum"`
+				OneOf []struct {
+					Const string `json:"const"`
+					Title string `json:"title"`
+				} `json:"oneOf"`
 			} `json:"properties"`
 		} `json:"requestedSchema"`
 	}
@@ -216,6 +229,12 @@ func copilotQuestion(args json.RawMessage) (Question, bool) {
 	if len(in.RequestedSchema.Properties) == 1 {
 		for _, p := range in.RequestedSchema.Properties {
 			labels = p.Enum
+			if len(p.OneOf) > 0 {
+				labels = nil
+			}
+			for _, o := range p.OneOf {
+				labels = append(labels, cmp.Or(o.Title, o.Const))
+			}
 		}
 	}
 	for _, label := range labels {

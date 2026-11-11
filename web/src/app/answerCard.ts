@@ -7,6 +7,7 @@ export type AnswerCard =
   | { kind: 'permission'; tool: string; reason: string; call?: Item }
   | { kind: 'question'; reason: string; item: string; text: string; options: string[]; descriptions: string[] };
 
+const SUBAGENT_TOOLS = new Set(['task', 'Task', 'Agent']);
 const NO_CARD_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode']);
 
 // One AskUserQuestion call with several questions becomes items whose ids share the part before '#'.
@@ -19,7 +20,8 @@ function currentTurnStart(items: Item[]): number {
 }
 
 function questionCard(reason: string, conv: Conversation): AnswerCard {
-  const pending = conv.items.filter((i) => i.kind === 'question' && i.question?.pending);
+  // A question an earlier turn left pending is not on the pane any more.
+  const pending = conv.items.slice(currentTurnStart(conv.items)).filter((i) => i.kind === 'question' && i.question?.pending);
   const newest = pending[pending.length - 1];
   const q = newest?.question;
   if (!newest || !q) return { kind: 'terminal' };
@@ -29,10 +31,21 @@ function questionCard(reason: string, conv: Conversation): AnswerCard {
   return { kind: 'question', reason, item: newest.id, text: q.text, options, descriptions: (q.options ?? []).map((o) => o.description ?? '') };
 }
 
+// Copilot's reasons carry no tool name, so the card previews the one call still open in the current turn.
+function copilotCard(r: string, conv: Conversation): AnswerCard {
+  if (r === 'question') return questionCard(r, conv);
+  if (r !== 'notification:permission_prompt') return { kind: 'terminal' };
+  const open = conv.items.slice(currentTurnStart(conv.items)).filter((i) => i.kind === 'tool_call' && !i.tool?.done);
+  // A subagent's own command asks while the launching call is the one open, so that call is not what Allow runs.
+  const call = open.length === 1 && !SUBAGENT_TOOLS.has(open[0].tool?.name ?? '') ? open[0] : undefined;
+  return { kind: 'permission', tool: call?.tool?.name ?? '', reason: r, call };
+}
+
 /** What the Conversation tab shows for a ship or boat that may be asking: a card to answer in place, a pointer to the terminal, or nothing. */
 export function answerCard({ harness, status, reason, conv }: { harness: string; status: string; reason?: string; conv: Conversation }): AnswerCard {
-  if (harness !== 'claude' || status !== 'needs_you' || reason === 'crew') return { kind: 'none' };
+  if ((harness !== 'claude' && harness !== 'copilot') || status !== 'needs_you' || reason === 'crew') return { kind: 'none' };
   const r = reason ?? '';
+  if (harness === 'copilot') return copilotCard(r, conv);
   if (r === 'question' || r === 'permission:AskUserQuestion') return questionCard(r, conv);
   if (r.startsWith('permission:')) {
     const tool = r.slice('permission:'.length);

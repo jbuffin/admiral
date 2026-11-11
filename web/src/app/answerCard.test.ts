@@ -91,9 +91,63 @@ describe('answerCard: none', () => {
     expect(needs('crew', conv).kind).toBe('none');
   });
 
-  it.each(['codex', 'copilot'])('shows nothing for a %s harness', (harness) => {
-    expect(needs('permission:Bash', conv, { harness }).kind).toBe('none');
-    expect(needs('question', conv, { harness }).kind).toBe('none');
+  it('shows nothing for a codex harness', () => {
+    expect(needs('permission:Bash', conv, { harness: 'codex' }).kind).toBe('none');
+    expect(needs('question', conv, { harness: 'codex' }).kind).toBe('none');
+    expect(needs('notification:permission_prompt', conv, { harness: 'codex' }).kind).toBe('none');
+  });
+
+  it('shows nothing for a Copilot ship that is not needing you', () => {
+    expect(needs('notification:permission_prompt', conv, { harness: 'copilot', status: 'working' }).kind).toBe('none');
+  });
+});
+
+describe('answerCard: Copilot', () => {
+  const copilot = (reason: string, conv: Conversation) => needs(reason, conv, { harness: 'copilot' });
+
+  it('shows a permission card on notification:permission_prompt, posting that reason, for the one open call', () => {
+    const conv = ok(call('c1', 'bash', 'ls', true), call('c2', 'bash', 'touch x', false, 'touch x'));
+    expect(copilot('notification:permission_prompt', conv)).toMatchObject({ kind: 'permission', reason: 'notification:permission_prompt', call: { id: 'c2' } });
+    // A Claude pane never gets a Copilot reason's card.
+    expect(needs('notification:permission_prompt', conv).kind).toBe('terminal');
+    expect(needs('notification:elicitation_dialog', ok(ask('q', ['A', 'B']))).kind).toBe('terminal');
+  });
+
+  it('shows the card without a call preview when several calls are open or none is', () => {
+    for (const conv of [ok(call('c1', 'bash', 'a'), call('c2', 'view', 'b')), ok(call('c1', 'bash', 'a', true)), { state: 'none', items: [], more: false } as Conversation]) {
+      const card = copilot('notification:permission_prompt', conv);
+      expect(card.kind).toBe('permission');
+      expect((card as { call?: Item }).call).toBeUndefined();
+    }
+  });
+
+  it('ignores an open call left over from an earlier turn', () => {
+    const conv = ok(call('old', 'bash', 'orphan'), { id: 'e', kind: 'turn_end' }, { id: 'u', kind: 'user', text: 'next' }, call('new', 'bash', 'touch x'));
+    expect(copilot('notification:permission_prompt', conv)).toMatchObject({ call: { id: 'new' } });
+  });
+
+  it('shows the question card for the newest pending single-choice question on question', () => {
+    const conv = ok(ask('old', ['Old']), ask('new', ['Red', 'Green', 'Blue']));
+    expect(copilot('question', conv)).toMatchObject({ kind: 'question', reason: 'question', item: 'new', options: ['Red', 'Green', 'Blue'] });
+  });
+
+  it('sends notification:elicitation_dialog to the terminal, whatever question is pending', () => {
+    expect(copilot('notification:elicitation_dialog', ok(ask('q', ['A', 'B']))).kind).toBe('terminal');
+  });
+
+  it('ignores a question an earlier turn left pending', () => {
+    const stale = ok(ask('old', ['A', 'B']), { id: 'e', kind: 'turn_end' }, { id: 'u', kind: 'user', text: 'next' });
+    expect(copilot('question', stale).kind).toBe('terminal');
+    expect(copilot('question', ok(ask('old', ['A']), { id: 'e', kind: 'turn_end' }, { id: 'u', kind: 'user', text: 'next' }, ask('new', ['B', 'C']))))
+      .toMatchObject({ kind: 'question', item: 'new' });
+  });
+
+  it('shows no preview when the one open call launches a subagent', () => {
+    for (const name of ['task', 'Task', 'Agent']) {
+      const card = copilot('notification:permission_prompt', ok(call('c1', name, 'Explore the repo')));
+      expect(card.kind).toBe('permission');
+      expect((card as { call?: Item }).call).toBeUndefined();
+    }
   });
 });
 
@@ -104,5 +158,6 @@ describe('cardFor', () => {
   it('gives a Claude boat its own card and a boat of another harness none', () => {
     expect(cardFor(ship, boat('claude'), ok()).kind).toBe('permission');
     expect(cardFor(ship, boat('codex'), ok()).kind).toBe('none');
+    expect(cardFor(ship, { ...boat('copilot'), reason: 'notification:permission_prompt' }, ok()).kind).toBe('permission');
   });
 });

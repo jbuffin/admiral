@@ -229,7 +229,7 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Choice == "deny" {
-		// Claude sits at its prompt after a deny and no hook says so.
+		// The pane sits at its prompt after a deny and no hook says so.
 		if err := s.Host.SetPaneNeedsYou(ctx, t.pane, "stop"); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -250,7 +250,7 @@ func (s *Service) answerKeys(ctx context.Context, t target, session string, req 
 	case t.exited:
 		return "", t.what + " has exited"
 	case !ok:
-		return "", t.what + " is not a Claude Code pane: answer in its terminal"
+		return "", t.what + " has no answer keys for its harness: answer in its terminal"
 	}
 	// The poll cache can trail a hook by half a second, so the pane's own options decide.
 	state, err := s.tmux().ReadPaneOption(ctx, t.pane, "state")
@@ -269,7 +269,7 @@ func (s *Service) answerKeys(ctx context.Context, t target, session string, req 
 		case "permission:AskUserQuestion", "permission:ExitPlanMode":
 			return "", "that menu is not a yes or no: answer in the terminal"
 		}
-		if !strings.HasPrefix(reason, "permission:") {
+		if !strings.HasPrefix(reason, "permission:") && !(t.harness == "copilot" && reason == "notification:permission_prompt") {
 			return "", t.what + " is no longer asking that"
 		}
 		keys, _ = m.Permission(req.Choice)
@@ -292,6 +292,8 @@ func (s *Service) answerKeys(ctx context.Context, t target, session string, req 
 		return "", "that question is not the one the pane is asking"
 	case len(qs) > 1 && callOf(qs[len(qs)-2].ID) == callOf(q.ID):
 		return "", "the call holds several questions: answer in the terminal"
+	case !q.Question.Pending:
+		return "", "that question is not the one the pane is asking"
 	case q.Question.MultiSelect:
 		return "", "a multi-select question is answered in the terminal"
 	case req.Option > len(q.Question.Options):

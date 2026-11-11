@@ -7,7 +7,7 @@ const VERBS: Record<string, [one: string, many: string]> = {
   Write: ['edited 1 file', 'edited {n} files'],
 };
 // Edit and Write say the same thing, so they count together.
-const VERB_OF: Record<string, string> = { Write: 'Edit' };
+const VERB_OF: Record<string, string> = { Write: 'Edit', view: 'Read', bash: 'Bash', edit: 'Edit', create: 'Edit' };
 
 const duration = (ms: number) => {
   const m = Math.floor(ms / 60_000);
