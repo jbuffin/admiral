@@ -656,7 +656,7 @@ export const stopDialog = (page: Page) => page.getByRole('dialog', { name: 'Stop
 /** What the fake harness's pane received, without the bracketed-paste markers a paste wraps around the text. */
 export const received = (a: Admiral, ship: LaunchedShip) => readFileSync(join(a.home, 'rec', ship.session, 'stdin'), 'utf8').replaceAll('\x1b[200~', '').replaceAll('\x1b[201~', '');
 
-/** The events the ship's outcome log holds, in order (the log is `$ADMIRAL_HOME/outcomes/<YYYY-MM>.jsonl`). */
+/** The launched, ended and stopped events the ship's outcome log holds, in order (the log is `$ADMIRAL_HOME/outcomes/<YYYY-MM>.jsonl`). */
 export function outcomeEvents(a: Admiral, ship: LaunchedShip): string[] {
   const dir = join(a.home, 'outcomes');
   if (!existsSync(dir)) return [];
@@ -667,5 +667,7 @@ export function outcomeEvents(a: Admiral, ship: LaunchedShip): string[] {
     .filter(Boolean)
     .map((l) => JSON.parse(l) as { ship: string; event: string })
     .filter((r) => r.ship === ship.session)
-    .map((r) => r.event);
+    .map((r) => r.event)
+    // The log also notes each status change the server happened to see, which depends on how long a journey takes.
+    .filter((e) => ['launched', 'ended', 'stopped'].includes(e));
 }

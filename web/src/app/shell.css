@@ -408,7 +408,11 @@ button.pill { cursor: pointer; min-height: 32px; }
 
 /* Message box: under the conversation, above the on-screen keyboard's scroll. */
 .ship-view-head .stop-ship { margin-left: auto; flex: none; }
-.stop-sheet .line { margin: 4px 0 8px; }
+.stop-backdrop .line { margin: 4px 0 8px; }
+.convo-area { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+@media (min-width: 641px) {
+  .stop-backdrop .sheet { width: 520px; max-width: 100%; padding-bottom: 16px; border-radius: var(--shape-radius-lg); }
+}
 .msg-box { display: flex; flex-direction: column; gap: 6px; flex: none; padding-top: 10px; padding-bottom: env(safe-area-inset-bottom); }
 .msg-box .alert { margin: 0; }
 .msg-note { margin: 0; font-size: var(--font-size-meta); color: var(--color-muted); }
