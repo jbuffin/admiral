@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, type CrewBoat, type Ship } from './api';
 import { cardFor } from './answerCard';
 import { Composer, useComposer } from './Composer';
@@ -7,7 +7,7 @@ import { fleetSearch } from './fleets';
 import type { Entry } from './inbox';
 import { rowShip, rowVerb } from './inboxRow';
 import { discardFold, lockedBy, submitFold } from './itemActions';
-import { blankReview, FindingsBody, Failure, RemoveRow, ReviewBody, type ReviewUi, useActing } from './PeekItem';
+import { blankReview, FindingsBody, useFindings, Failure, RemoveRow, ReviewBody, type ReviewUi, useActing } from './PeekItem';
 import { PeekQuestions } from './PeekQuestions';
 import { EVENTS } from './PeekItem';
 import type { KeyAct } from './peekKeys';
@@ -15,7 +15,7 @@ import { bridgeSearch } from './peekLink';
 import { go, shipPath, surfacePath } from './router';
 import { targetFor, useShipConversation } from './ShipView';
 import { lastTurn } from './turns';
-import { ships } from './shipsLink';
+import { ships, shipsLoaded } from './shipsLink';
 import { SURFACES } from './surfaces';
 import { type AnswerBody, answeredQuestion, blankDraft, choose, foldText, pickOf, type Draft } from '../questions';
 
@@ -69,6 +69,7 @@ export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => vo
   const [review, setReview] = useState<ReviewUi>(blankReview);
   const [removing, setRemoving] = useState(false);
   const acting = useActing(entry, fold, lockedBy);
+  const findings = useFindings(entry);
   const send = async (body: AnswerBody) => {
     setDraft((d) => ({ ...d, sending: true, error: '' }));
     const r = await call('POST', `/inbox/${encodeURIComponent(entry.session)}/${encodeURIComponent(entry.id!)}/answer`, body);
@@ -83,6 +84,7 @@ export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => vo
       acting.clear();
       setRemoving(true);
     } else if (a.kind === 'pick' && question) {
+      if (questionLocked || draft.sending) return;
       const qs = entry.item?.question?.questions ?? [];
       const q = qs.find((x) => !answeredQuestion(pickOf(draft, x)));
       const o = q?.options[a.n - 1];
@@ -93,9 +95,14 @@ export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => vo
       setReview((r) => ({ ...r, step: 'confirm', event: EVENTS[a.n - 1][0] }));
     }
   };
-  peekKeys.current = mine;
-  // A newer Peek has already taken the slot when this one unmounts.
-  useEffect(() => () => void (peekKeys.current === mine && (peekKeys.current = null)), []);
+  // The slot calls the latest render's handler, so it is claimed once per Peek.
+  const latest = useRef(mine);
+  latest.current = mine;
+  useEffect(() => {
+    const slot = (a: KeyAct) => latest.current(a);
+    peekKeys.current = slot;
+    return () => void (peekKeys.current === slot && (peekKeys.current = null));
+  }, []);
   const form = !item ? null : (
     <div class="peek-form">
       {question ? (
@@ -110,7 +117,7 @@ export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => vo
           discard={() => void acting.run('discard', {}, discardFold)}
         />
       ) : kind === 'findings' ? (
-        <FindingsBody entry={entry} acting={acting} />
+        <FindingsBody entry={entry} acting={acting} state={findings} />
       ) : null}
       {removable ? <RemoveRow entry={entry} confirm={removing} setConfirm={setRemoving} acting={{ ...acting, locked: false }} /> : null}
       {kind === 'review' || kind === 'findings' || removing ? <Failure message={acting.error} /> : null}
@@ -159,7 +166,7 @@ export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => vo
         ) : (
           <>
             {form}
-            <p class="line">This ship is gone.</p>
+            {shipsLoaded.value ? <p class="line">This ship is gone.</p> : null}
           </>
         )}
       </div>

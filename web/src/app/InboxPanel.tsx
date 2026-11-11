@@ -157,6 +157,8 @@ export function InboxPanel({ surface, title, phone }: { surface: Surface; title:
   const peekable = groups.flatMap((g) => g.rows).filter((e) => e.folded === null && e.item?.kind !== 'notice');
   const onKey = useRef<(e: KeyboardEvent) => void>(() => {});
   onKey.current = (ev) => {
+    // A modal sheet or dialog over the Inbox owns its keys.
+    if (ev.defaultPrevented || (ev.target instanceof Element && ev.target.closest('[aria-modal="true"]'))) return;
     const a = keyAction(ev);
     if (!a) return;
     if (a.kind === 'bridge') {

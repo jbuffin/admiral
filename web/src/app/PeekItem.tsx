@@ -239,16 +239,21 @@ function FindingCardView({ card, n, d, draft, setDraft, locked, changed }: CardP
   );
 }
 
-export function FindingsBody({ entry, acting }: { entry: Entry; acting: Acting }) {
+/** The findings decisions and open edits; the open Peek holds them so they survive its conversation changing shape. */
+export function useFindings(entry: Entry) {
   const made = useRef<{ cards: FindingCard[]; d: Decisions } | undefined>(undefined);
   if (!made.current) {
     const cards = readCards(entry.item?.findings?.cards);
     made.current = { cards, d: createDecisions(cards) };
   }
-  const { cards, d } = made.current;
   const [, setRev] = useState(0);
-  const changed = () => setRev((n) => n + 1);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  return { ...made.current, drafts, setDrafts, changed: () => setRev((n) => n + 1) };
+}
+export type Findings = ReturnType<typeof useFindings>;
+
+export function FindingsBody({ entry, acting, state }: { entry: Entry; acting: Acting; state: Findings }) {
+  const { cards, d, drafts, setDrafts, changed } = state;
   const pr = prLink(entry.item?.findings?.pr_url);
   const { decided, total } = d.progress();
   const open = Object.keys(drafts).length > 0;
