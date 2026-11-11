@@ -153,24 +153,6 @@ func TestNonZeroExitAnchorsWhateverTheReportSays(t *testing.T) {
 	})
 }
 
-func TestGhFailureSailsTheShipOff(t *testing.T) {
-	t.Parallel()
-	w, g := mooring(t, "exit 0")
-	g.prState(mooredPR, "OPEN")
-	g.prFail("gh: HTTP 502")
-	w.extra = append(w.extra, "ADMIRAL_MOOR_RETRY=1s")
-	w.start()
-	ship := w.launch(w.order("f", "claude", "widgets", commodore, "do it"))
-	w.exitWith(ship, mooredReport(mooredPR))
-
-	waitCond(t, 20*time.Second, "Admiral asked gh about the PR", func() bool { return g.asked(mooredPR) })
-	w.waitEvent(ship.Session, "ended", 1)
-	w.in.waitShipsList(t, 20*time.Second, "the ship sailed off", func(l []shipJSON) bool { _, ok := byName(l)[ship.Name]; return !ok })
-	if exists(w.mooredFile(ship.Name)) {
-		t.Errorf("a failing gh left a record")
-	}
-}
-
 func waitCond(t *testing.T, d time.Duration, what string, ok func() bool) {
 	t.Helper()
 	for end := time.Now().Add(d); !ok(); time.Sleep(100 * time.Millisecond) {

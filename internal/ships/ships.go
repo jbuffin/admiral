@@ -103,6 +103,7 @@ type Service struct {
 	listing map[OrderKey]unlisted
 	// settling holds the exit-0 ships whose PRs are being checked, by session.
 	settling map[string]bool
+	settleWG sync.WaitGroup
 
 	mooredMu     sync.Mutex
 	moored       []moor.Record // read from $ADMIRAL_HOME/moored on first use
@@ -215,12 +216,13 @@ const tick = 500 * time.Millisecond
 func (s *Service) Run(ctx context.Context) {
 	events, cancel := s.Host.Subscribe()
 	defer cancel()
+	defer s.settleWG.Wait()
 	select {
 	case <-s.Host.Ready():
 		// A ship that died while Admiral was stopped gets its `ended` first.
 		s.baselineAll()
 		s.observe(ctx)
-		// An exit-0 ship from before a restart is not shown sailing off again.
+		// An exit-0 ship from before a restart is checked at once, not after another sail-off delay.
 		for _, sess := range s.Host.Sessions() {
 			if sess.IsShip() && exitedCleanly(sess) {
 				s.settle(ctx, sess)

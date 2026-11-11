@@ -17,13 +17,19 @@ type Skill struct {
 
 // Record is a moored ship, kept in $ADMIRAL_HOME/moored/<name>.json while no tmux session holds it.
 type Record struct {
-	Name     string    `json:"name"`
-	Session  string    `json:"session"`
-	Fleet    string    `json:"fleet"`
-	Harness  string    `json:"harness"`
-	Model    string    `json:"model"`
-	Skill    Skill     `json:"skill"`
-	Checkout string    `json:"checkout"`
+	Name     string `json:"name"`
+	Session  string `json:"session"`
+	Fleet    string `json:"fleet"`
+	Harness  string `json:"harness"`
+	Model    string `json:"model"`
+	Skill    Skill  `json:"skill"`
+	Checkout string `json:"checkout"`
+	// The order the ship was launched from, so its order stays hidden while it is moored.
+	Source   string    `json:"source"`
+	Panel    string    `json:"panel"`
+	OrderID  string    `json:"order_id"`
+	URL      string    `json:"url"`
+	Title    string    `json:"title"`
 	PRs      []string  `json:"prs"`
 	Resume   string    `json:"resume"`
 	Round    int       `json:"round"`
