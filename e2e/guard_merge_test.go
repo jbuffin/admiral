@@ -248,4 +248,3 @@ func TestGuardAutoMergeLookupTimesOut(t *testing.T) {
 		t.Errorf("the guard took %v on a hung gh, want it to refuse inside the hook's 10 s timeout (about 7 s)", took)
 	}
 }
-
