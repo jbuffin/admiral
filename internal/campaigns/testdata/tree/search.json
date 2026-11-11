@@ -8,7 +8,7 @@
           "title": "Add retry to the sync job",
           "url": "https://github.com/acme/campaign/issues/2",
           "state": "OPEN",
-          "body": "Part of #1",
+          "authorAssociation": "MEMBER", "body": "Part of #1",
           "repository": {
             "nameWithOwner": "acme/campaign"
           },
@@ -48,7 +48,7 @@
           "title": "Rollout checklist",
           "url": "https://github.com/acme/campaign/issues/52",
           "state": "OPEN",
-          "body": "Part of #10",
+          "authorAssociation": "MEMBER", "body": "Part of #10",
           "repository": {
             "nameWithOwner": "acme/campaign"
           },

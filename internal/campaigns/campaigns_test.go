@@ -388,3 +388,28 @@ func blockedBy(b ...github.Blocker) opt {
 	return func(n *github.TreeNode) { n.BlockedBy = b }
 }
 func openBlocker(n int) github.Blocker { return github.Blocker{URL: u(n), Title: "Blocker"} }
+
+func TestRootsOwnBlockersDoNotBlockItsChildren(t *testing.T) {
+	root := tree(child(2), child(3, blockedBy(openBlocker(90))))
+	root.BlockedBy = []github.Blocker{openBlocker(91)}
+	c := Build(Input{Tree: root})
+	if got := mustNode(t, c, u(2)).Status; got != Ready {
+		t.Errorf("a child of a blocked campaign root is %q, want ready", got)
+	}
+	if n := mustNode(t, c, u(3)); n.Status != Blocked || len(n.Blockers) != 1 || n.Blockers[0].URL != u(90) {
+		t.Errorf("a child keeps its own blockers and not the root's: %+v", n)
+	}
+}
+
+func TestParentWithUnreadableChildrenIsNeverLaunchable(t *testing.T) {
+	hidden := child(3)
+	hidden.Parent, hidden.Unreadable = true, 2
+	c := Build(Input{Tree: tree(child(2), hidden)})
+	n := mustNode(t, c, u(3))
+	if !n.Parent || n.Status != "" || n.Unreadable != 2 {
+		t.Errorf("a node with sub-issues it couldn't read = %+v, want a parent that says 2 are unreadable", n)
+	}
+	if got := urls(c.Ready); strings.Join(got, " ") != u(2) {
+		t.Errorf("ready set = %v, want only #2", got)
+	}
+}

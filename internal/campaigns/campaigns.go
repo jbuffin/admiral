@@ -56,18 +56,19 @@ type Input struct {
 // Node is one issue of the folded tree. A nested parent has Parent set and no
 // Status, Mode or Skill.
 type Node struct {
-	Number   int
-	Title    string
-	URL      string
-	Repo     string
-	Closed   bool
-	Parent   bool
-	Status   Status
-	Blockers []github.Blocker // the open blockers, for a blocked child
-	Ship     string           // the ship holding the claim, for an underway child
-	Mode     Mode
-	Skill    Skill
-	Children []*Node
+	Number     int
+	Title      string
+	URL        string
+	Repo       string
+	Closed     bool
+	Parent     bool
+	Unreadable int // sub-issues GitHub counts that couldn't be read, so the children shown may be incomplete
+	Status     Status
+	Blockers   []github.Blocker // the open blockers, for a blocked child
+	Ship       string           // the ship holding the claim, for an underway child
+	Mode       Mode
+	Skill      Skill
+	Children   []*Node
 }
 
 // Progress counts closed children of all launchable children.
@@ -100,10 +101,11 @@ type builder struct {
 // fold builds the node for n. above holds the open blockers of its open ancestors, parent is its nearest parent.
 func (b *builder) fold(n *github.TreeNode, above []github.Blocker, parent *github.TreeNode, root bool) *Node {
 	out := &Node{Number: n.Number, Title: n.Title, URL: n.URL, Repo: n.Repo, Closed: n.Closed}
-	if root || len(n.Children) > 0 {
-		out.Parent = true
+	if root || n.Parent || len(n.Children) > 0 {
+		out.Parent, out.Unreadable = true, n.Unreadable
 		below := above
-		if !n.Closed {
+		// The root's own blockers are about the campaign, not its children; a nested parent's still block everything under it.
+		if !n.Closed && !root {
 			below = mergeBlockers(openBlockers(n.BlockedBy), above)
 		}
 		for _, ch := range n.Children {
