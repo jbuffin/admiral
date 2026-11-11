@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/jbuffin/admiral/internal/moor"
-	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
 func wakeFile(f *mooredFixture, name string) string {
@@ -69,13 +68,4 @@ func TestEndingAMooringForGoodRemovesTheWakeState(t *testing.T) {
 			t.Errorf("the poll left the wake state of a ship that sailed off: %v", err)
 		}
 	})
-}
-
-func TestAWokenShipThatSailsOffAfterItsRoundLeavesNoWakeState(t *testing.T) {
-	f := mooredService(t, nil)
-	seedWake(t, f, "Nelson")
-	f.s.endMooring(sessionhost.Session{Name: "nelson", Options: map[string]string{"name": "Nelson", "round": "2"}})
-	if _, err := os.Stat(wakeFile(f, "Nelson")); !os.IsNotExist(err) {
-		t.Errorf("a ship that sailed off after its round left its wake state: %v", err)
-	}
 }

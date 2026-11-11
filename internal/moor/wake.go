@@ -294,12 +294,29 @@ func contains(ids []string, id string) bool {
 	return false
 }
 
-// resolved clears what a poll sees gone from the snapshot, so the condition coming back is new.
+// passed is a context that ended without failing: a check run that succeeded, was neutral or skipped, or a status that succeeded.
+func passed(c CheckContext) bool {
+	switch c.Kind {
+	case "CheckRun":
+		return c.State == "SUCCESS" || c.State == "NEUTRAL" || c.State == "SKIPPED"
+	case "StatusContext":
+		return c.State == "SUCCESS"
+	}
+	return false
+}
+
+// resolved clears from the snapshot what a poll sees resolved, so its return is new. A check that is running again or has left the poll's window is not resolved.
 func resolved(s Snapshot, st Status, failed []string) Snapshot {
 	if s.Head == st.Head {
 		var still []string
 		for _, n := range s.Failing {
-			if contains(failed, n) {
+			done := false
+			for _, c := range st.Contexts {
+				if c.Name == n && passed(c) && !contains(failed, n) {
+					done = true
+				}
+			}
+			if !done {
 				still = append(still, n)
 			}
 		}
@@ -308,7 +325,7 @@ func resolved(s Snapshot, st Status, failed []string) Snapshot {
 	if st.Mergeable == "MERGEABLE" {
 		s.Conflicting = false
 	}
-	if st.MergeState != "" && st.MergeState != "UNKNOWN" && !behind(st) {
+	if st.MergeState != "" && st.MergeState != "UNKNOWN" && st.MergeState != "BEHIND" {
 		s.Behind = false
 	}
 	return s

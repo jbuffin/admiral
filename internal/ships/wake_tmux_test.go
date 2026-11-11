@@ -350,10 +350,20 @@ func TestAWokenShipThatEndsWithNoPRLeavesNoRecordAndLogsHowTheRoundEnded(t *test
 		t.Run(c.name, func(t *testing.T) {
 			r := newWakeRig(t, 0)
 			r.moored(t, 0)
+			wakeState := filepath.Join(r.home, "moored", "wake", "Saltpaw.json")
+			if err := os.MkdirAll(filepath.Dir(wakeState), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(wakeState, []byte(`{"prs":{}}`+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
 			if _, lerr := r.s.Wake(context.Background(), "saltpaw", ""); lerr != nil {
 				t.Fatal(lerr)
 			}
 			_, env := r.started(t, 1)
+			if _, err := os.Stat(wakeState); err != nil {
+				t.Fatalf("the wake took the wake state with it: %v", err)
+			}
 			if c.status == "0" {
 				for _, l := range strings.Split(env, "\n") {
 					if v, ok := strings.CutPrefix(l, "ADMIRAL_REPORT="); ok {
@@ -381,6 +391,9 @@ func TestAWokenShipThatEndsWithNoPRLeavesNoRecordAndLogsHowTheRoundEnded(t *test
 			}
 			if recs, _ := moor.List(r.home); len(recs) != 0 {
 				t.Errorf("moored records = %+v, want none", recs)
+			}
+			if _, err := os.Stat(wakeState); c.end == "sailed" && !os.IsNotExist(err) {
+				t.Errorf("a ship that sailed off after its round left its wake state: %v", err)
 			}
 		})
 	}

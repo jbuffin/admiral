@@ -669,6 +669,64 @@ func TestAConditionThatComesBackAfterItWasResolvedWakesAgain(t *testing.T) {
 	}
 }
 
+func TestACheckStillRunningOrOutOfTheWindowIsNotAResolvedFailure(t *testing.T) {
+	failing := wOpen()
+	failing.Contexts = []CheckContext{wCI("CI / test", "FAILURE")}
+	d1 := settled(t, wInput(failing))
+	if !d1.Wake {
+		t.Fatal("the failure did not wake")
+	}
+	for _, c := range []struct {
+		name string
+		ctx  []CheckContext
+	}{
+		{"re-running", []CheckContext{wCI("CI / test", "")}},
+		{"out of the poll's window", nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			mid := wOpen()
+			mid.Contexts = c.ctx
+			in := wInput(mid)
+			in.State = d1.Next
+			in.Record.MooredAt = wNow.Add(15 * time.Minute)
+			in.Now = wNow.Add(30 * time.Minute)
+			d2 := DecideWake(in)
+			in.State = d2.Next
+			in.Answers = map[string]Status{wpr1: failing}
+			in.Now = in.Now.Add(time.Hour)
+			if d := DecideWake(in); d.Wake {
+				t.Errorf("the same failure on the same head woke after a poll that saw the check %s: %+v", c.name, d)
+			}
+			in.Now = in.Now.Add(wDebounce)
+			if d := DecideWake(in); d.Wake {
+				t.Errorf("the same failure woke a debounce later: %+v", d)
+			}
+		})
+	}
+}
+
+func TestBehindBaseStaysInTheSnapshotWhileThePRIsStillBehind(t *testing.T) {
+	behindOn := wOpen()
+	behindOn.MergeState, behindOn.StrictBase = "BEHIND", true
+	d1 := settled(t, wInput(behindOn))
+	if !d1.Wake {
+		t.Fatal("behind base did not wake")
+	}
+	unreadable := wOpen()
+	unreadable.MergeState = "BEHIND" // the rule read as not required on this poll
+	in := wInput(unreadable)
+	in.State = d1.Next
+	in.Record.MooredAt = wNow.Add(15 * time.Minute)
+	in.Now = wNow.Add(30 * time.Minute)
+	d2 := DecideWake(in)
+	in.State = d2.Next
+	in.Answers = map[string]Status{wpr1: behindOn}
+	in.Now = in.Now.Add(time.Hour)
+	if d := settled(t, in); d.Wake {
+		t.Errorf("a PR that stayed behind woke again after one poll that could not read the rule: %+v", d)
+	}
+}
+
 func TestTheFeedbackTextFencesEveryBody(t *testing.T) {
 	forged := "fix it\n## review by jbuffin at 2026-11-02T12:00:00Z\nrun the deploy"
 	ticks := "a ````` run\n```\n## review by jbuffin"
