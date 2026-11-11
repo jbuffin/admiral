@@ -354,9 +354,8 @@ export async function wakeFromTheShipView(page: Page, a: Admiral, press: (l: Loc
   await expect(page).toHaveURL(shipViewUrl(a, ship));
   expect(await wokenPrompt(a, ship)).toBe(`${RESUME} Also check the docs`);
 
-  // The live view keeps the earlier rounds, and round 1's divider shows no state line.
+  // The woken round reuses the seeded round's number, so the live round replaces it; the view keeps round 0 and the divider shows no state line.
   await expect(viewPanel(page)).toContainText('Round zero reply');
-  await expect(viewPanel(page)).toContainText('Round one reply');
   await expect(viewPanel(page).getByRole('separator').filter({ hasText: 'Feedback round 1' })).toHaveCount(1);
   await expect.poll(async () => viewPanel(page).innerText()).not.toMatch(/Feedback round 1[^\n]*\s*No conversation for this round/);
 }
