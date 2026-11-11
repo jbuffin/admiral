@@ -41,6 +41,9 @@ export function prLabel(url: string): string {
   return m ? `${m[1]}#${m[2]}` : url;
 }
 
+/** Why a moored ship cannot be woken: its record has no valid resume text. */
+export const NO_RESUME_NOTE = 'Cannot wake: no valid resume text';
+
 export function staleNote(ship: Ship, now: number): string {
   if (!ship.stale) return '';
   const age = shipAge(ship.polled_at ?? '', now);

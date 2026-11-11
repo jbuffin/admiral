@@ -7,6 +7,8 @@ import { ConversationView } from './ConversationView';
 import { Composer, useComposer, type Target } from './Composer';
 import { boatBoxState, chipState, flotilla } from './flotilla';
 import { Icon } from './Icon';
+import { MooredPRs } from './MooredPRs';
+import { NO_RESUME_NOTE } from './moored';
 import { boxState } from './messageBox';
 import { Sheet } from './Sheet';
 import { fleetSearch } from './fleets';
@@ -114,9 +116,9 @@ function TerminalTab({ ship, boat }: { ship: Ship; boat?: CrewBoat }) {
       <div class={linkState === 'reconnecting' ? 'term-body dim' : 'term-body'}>
         <div class="term-host" ref={host} />
       </div>
-      {!open && (boat || ship.status === 'anchored') ? (
+      {!open && (boat || ship.status === 'anchored' || ship.status === 'moored') ? (
         <div class="term-keys">
-          <span class="term-note">{boat ? 'This boat exited. This is its last screen.' : 'The harness exited. This is its last screen.'}</span>
+          <span class="term-note">{boat ? 'This boat exited. This is its last screen.' : ship.status === 'moored' ? "A moored ship has no session until it's woken." : 'The harness exited. This is its last screen.'}</span>
         </div>
       ) : (
         open &&
@@ -249,8 +251,15 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
     if (crew !== null && !boat) setCrew(null);
   }, [crew, boat]);
   const boatHasConversation = boat?.conversation ?? false;
+  const moored = ship.status === 'moored';
   useEffect(() => {
     setConv({ state: 'loading', items: [], more: false });
+    // A moored ship has no session to read a conversation from; its rounds' transcripts come later.
+    if (moored) {
+      setConv({ state: 'none', items: [], more: false });
+      follow.current = undefined;
+      return;
+    }
     if (boatName !== undefined && !boatHasConversation) {
       setConv({ state: 'none', items: [], more: false });
       follow.current = undefined;
@@ -260,11 +269,11 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
     const f = followConversation(ship.session, setConv, { crew: boatName, retryNone: () => boatName === undefined && hasTranscript(latest.current.harness) && latest.current.status !== 'anchored' });
     follow.current = f;
     return f.stop;
-  }, [ship.session, boatName, boatHasConversation]);
+  }, [ship.session, boatName, boatHasConversation, moored]);
 
   const target: Target = boat
     ? { session: ship.session, crew: boat.name, state: boatBoxState(boat), interruptible: boat.status === 'underway', hasConversation: boatHasConversation && conv.state === 'ok', subject: 'This boat' }
-    : { session: ship.session, state: boxState(ship), interruptible: ship.status === 'underway', hasConversation: conv.state === 'ok' || (conv.state === 'none' && hasTranscript(ship.harness)), subject: 'This ship' };
+    : { session: ship.session, state: boxState(ship), interruptible: ship.status === 'underway', hasConversation: conv.state === 'ok' || (conv.state === 'none' && hasTranscript(ship.harness)), subject: 'This ship', wake: moored };
   const box = useComposer(target, conv);
   const Heading = title ? 'h1' : 'h2';
   const anchored = boat ? chipState(boat) !== 'running' : ship.status === 'anchored';
@@ -273,8 +282,26 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
       <div class="ship-view-head">
         <BackLink label="Back" />
         <Heading>{ship.name}</Heading>
-        <StopShip ship={ship} />
+        {moored ? (
+          <button type="button" class="btn primary stop-ship" disabled={ship.no_resume || box.waking} onClick={() => void box.wake()}>
+            Wake
+          </button>
+        ) : (
+          <StopShip ship={ship} />
+        )}
       </div>
+      {moored ? (
+        <div class="moored-info">
+          <p class="line">This ship is moored: its PRs are open and it has no session until it's woken.</p>
+          <MooredPRs ship={ship} now={Date.now()} />
+          {ship.no_resume ? <p class="msg-note">{NO_RESUME_NOTE}</p> : null}
+          {tab !== 'Conversation' && box.error ? (
+            <p class="alert" role="alert">
+              {box.error}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       {ship.crew.length > 0 ? <Flotilla ship={ship} picked={boatName ?? null} pick={setCrew} /> : null}
       <div role="tablist" class="view-tabs" aria-label={`${ship.name} views`}>
         {TABS.map((t) => (
@@ -287,7 +314,13 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
         {tab === 'Conversation' ? (
           <>
             <div class="convo-area">
-              <ConversationView
+              {moored ? (
+                <div class="convo-card">
+                  <p class="convo-card-title">Moored, waiting on review</p>
+                  <p class="line">Send a message or tap Wake to start the next round.</p>
+                </div>
+              ) : (
+                <ConversationView
                 conv={conv}
                 harness={boat ? boat.harness : ship.harness}
                 card={cardFor(ship, boat, conv)}
@@ -299,6 +332,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
                 openTerminal={() => setTab('Terminal')}
                 loadOlder={() => void follow.current?.loadOlder()}
               />
+              )}
             </div>
             <Composer target={target} box={box} />
           </>

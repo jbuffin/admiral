@@ -54,6 +54,8 @@ type Ship struct {
 	// PolledAt is the last poll that answered; Stale says the latest one failed.
 	PolledAt string `json:"polled_at,omitempty"`
 	Stale    bool   `json:"stale,omitempty"`
+	// NoResume is true on a moored ship whose record has no valid resume text, which cannot be woken.
+	NoResume bool `json:"no_resume,omitempty"`
 	// Reason and StopSince are set only while the ship needs you; Reason is `idle`
 	// for a ship no hook has spoken for.
 	Reason    string `json:"reason,omitempty"`

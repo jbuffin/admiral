@@ -1,4 +1,5 @@
 import type { Item, Ship } from './api';
+import { NO_RESUME_NOTE } from './moored';
 
 export interface BoxState {
   enabled: boolean;
@@ -14,6 +15,8 @@ export function boxState(ship: Pick<Ship, 'status' | 'exit_code' | 'exit_signal'
     if (ship.exit_code === null && ship.exit_signal) return { enabled: false, note: `Killed (${ship.exit_signal}), read only` };
     return { enabled: false, note: 'Exited with error, read only' };
   }
+  // Typing at a moored ship's box wakes it, with the text after the resume text; waking needs no GitHub, so a stale poll does not matter.
+  if (ship.status === 'moored') return ship.no_resume ? { enabled: false, note: NO_RESUME_NOTE } : { enabled: true, placeholder: 'Wake the ship with this message' };
   return { enabled: false };
 }
 

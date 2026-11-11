@@ -15,6 +15,8 @@ export interface Target {
   hasConversation: boolean;
   /** Who the box speaks to in a refusal: "This ship" or "This boat". */
   subject: string;
+  /** A moored ship: a message wakes it with the text, there is no conversation for a bubble to wait on. */
+  wake?: boolean;
 }
 
 interface Box {
@@ -22,8 +24,9 @@ interface Box {
   sends: Send[];
   error: string;
   interrupting: boolean;
+  waking: boolean;
 }
-const EMPTY: Box = { text: '', sends: [], error: '', interrupting: false };
+const EMPTY: Box = { text: '', sends: [], error: '', interrupting: false, waking: false };
 const keyOf = (t: Pick<Target, 'session' | 'crew'>) => t.crew ?? '';
 
 /** The box's state. It lives in the ship view, above the tabs and the boat picked, so a draft, a pending message and a late answer survive a switch of either. */
@@ -62,8 +65,24 @@ export function useComposer(target: Target, conv: Conversation) {
   };
 
   const box = boxes[key] ?? EMPTY;
+  // Once the ship is underway the wake is over; a later mooring must not find the box still off.
+  useEffect(() => {
+    if (!target.wake) patch(key, () => ({ waking: false }));
+  }, [target.wake, key]);
+
+  /** Wakes the moored ship. A typed text goes with it and the draft clears; an error brings the draft back, and success leaves the box off until the ships push shows the ship underway. */
+  const wake = async (body?: string) => {
+    const t = target;
+    const k = key;
+    patch(k, () => ({ waking: true, error: '', ...(body === undefined ? {} : { text: '' }) }));
+    const r = await call('POST', `/ships/${encodeURIComponent(t.session)}/wake`, body === undefined ? undefined : { text: body });
+    if (r.ok) return;
+    patch(k, (b) => ({ waking: false, error: r.error, ...(body !== undefined && b.text === '' ? { text: body } : {}) }));
+  };
+
   const send = () => {
-    if (!target.state.enabled || !box.text.trim()) return;
+    if (!target.state.enabled || box.waking || !box.text.trim()) return;
+    if (target.wake) return void wake(box.text);
     const id = nextId.current++;
     const body = box.text;
     const t = target;
@@ -79,14 +98,14 @@ export function useComposer(target: Target, conv: Conversation) {
   };
 
   const bubbles = bubblesShowing(box.sends, conv.items, target.hasConversation);
-  return { text: box.text, setText: (text: string) => patch(key, () => ({ text })), bubbles, error: box.error, interrupting: box.interrupting, send, interrupt };
+  return { waking: box.waking, wake, text: box.text, setText: (text: string) => patch(key, () => ({ text })), bubbles, error: box.error, interrupting: box.interrupting, send, interrupt };
 }
 
 /** The box under the Conversation tab: a message to the ship or the picked boat, a dimmed bubble per message until the conversation shows it, and Interrupt. */
 export function Composer({ target, box }: { target: Target; box: ReturnType<typeof useComposer> }) {
   const field = useRef<HTMLTextAreaElement>(null);
   const { state } = target;
-  const { text, setText, bubbles, error, interrupting, send, interrupt } = box;
+  const { text, setText, bubbles, error, interrupting, send, interrupt, waking } = box;
   return (
     <div class="msg-box">
       {bubbles.map((b) => (
@@ -107,8 +126,8 @@ export function Composer({ target, box }: { target: Target; box: ReturnType<type
           aria-label="Message"
           rows={2}
           value={text}
-          disabled={!state.enabled}
-          placeholder={state.enabled ? `Message the ${target.crew === undefined ? 'ship' : 'boat'}` : ''}
+          disabled={!state.enabled || waking}
+          placeholder={state.enabled ? (state.placeholder ?? `Message the ${target.crew === undefined ? 'ship' : 'boat'}`) : ''}
           onInput={(e) => setText(e.currentTarget.value)}
           onFocus={() => field.current?.scrollIntoView({ block: 'nearest' })}
           onKeyDown={(e) => {
@@ -118,7 +137,7 @@ export function Composer({ target, box }: { target: Target; box: ReturnType<type
           }}
         />
         <div class="msg-actions">
-          <button type="button" class="btn primary" disabled={!state.enabled || !text.trim()} onClick={send}>
+          <button type="button" class="btn primary" disabled={!state.enabled || waking || !text.trim()} onClick={send}>
             Send
           </button>
           {target.interruptible ? (
