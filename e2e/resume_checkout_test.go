@@ -162,6 +162,7 @@ func TestResumeOrderLaunchesInTheBuildShipsCheckout(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"sailed off", "exits right after the answer"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			w, checkout := rcWorld(t, 2)
 			ship, dir := w.rcBuildShip("Build " + rcRemote)
 			switch mode {

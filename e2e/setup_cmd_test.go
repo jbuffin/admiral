@@ -60,6 +60,7 @@ func (w *world) fakeExe2(h string) string { return filepath.Join(fakeDir(w.t), h
 func TestU12_S1_SetupUnattended(t *testing.T) {
 	t.Parallel()
 	t.Run("writes the fleets, detects without reading inside identity directories", func(t *testing.T) {
+		t.Parallel()
 		w := setupWorld(t)
 		wrappers := filepath.Join(w.root, "wrappers")
 		w.writeRaw(filepath.Join(wrappers, "claude-work"), "#!/bin/sh\nexit 0\n", 0o755)
@@ -134,6 +135,7 @@ func TestU12_S1_SetupUnattended(t *testing.T) {
 	})
 
 	t.Run("the walk never suggests ADMIRAL_HOME, an identity directory in use or a dot-directory", func(t *testing.T) {
+		t.Parallel()
 		w := setupWorld(t)
 		ah := filepath.Join(w.userHom, "ah") // Admiral's home inside the home folder, with a checkout below it
 		for _, d := range []string{filepath.Join(ah, "repos", "x"), filepath.Join(w.userHom, "claude-plain", "proj")} {
@@ -159,6 +161,7 @@ func TestU12_S1_SetupUnattended(t *testing.T) {
 	})
 
 	t.Run("a harness installed inside an identity directory on PATH is found, and nothing is listed from inside it", func(t *testing.T) {
+		t.Parallel()
 		w := setupWorld(t)
 		local := filepath.Join(w.userHom, ".claude", "local") // Claude Code's local install
 		w.writeRaw(filepath.Join(local, "claude"), "#!/bin/sh\nexit 0\n", 0o755)
@@ -182,6 +185,7 @@ func TestU12_S1_SetupUnattended(t *testing.T) {
 	})
 
 	t.Run("a second run adds and updates, keeps hand edits and unknown keys, and shows the diff", func(t *testing.T) {
+		t.Parallel()
 		w := setupWorld(t)
 		oldFleet := `"old":{"name":"Old","search_roots":["~/code"],"claude":{"executable":` + quote(w.fakeExe2("claude")) + `,"env":{"CLAUDE_CONFIG_DIR":"~/.claude-old"}}}`
 		w.writeRaw(configPath(w.home), `{
@@ -235,6 +239,7 @@ func TestU12_S1_SetupUnattended(t *testing.T) {
 	})
 
 	t.Run("--dry-run prints the diff and writes nothing", func(t *testing.T) {
+		t.Parallel()
 		w := setupWorld(t)
 		file := w.answers(t, `"zulu":{"name":"Zulu","search_roots":["~/code"],"claude":{"env":{"CLAUDE_CONFIG_DIR":"~/.claude-z"}}}`)
 
@@ -259,6 +264,7 @@ func TestU12_S1_SetupUnattended(t *testing.T) {
 	})
 
 	t.Run("two fleets sharing an identity directory are refused and nothing is written", func(t *testing.T) {
+		t.Parallel()
 		w := setupWorld(t)
 		share := func(a, b string) string {
 			return w.answers(t,
@@ -283,6 +289,7 @@ func TestU12_S1_SetupUnattended(t *testing.T) {
 	})
 
 	t.Run("a fleet sharing an identity directory with one already in the file is refused", func(t *testing.T) {
+		t.Parallel()
 		w := setupWorld(t)
 		existing := `{"version":1,"fleets":{"old":{"name":"Old","search_roots":["~/code"],"claude":{"env":{"CLAUDE_CONFIG_DIR":"~/.claude-old"}}}}}` + "\n"
 		w.writeRaw(configPath(w.home), existing, 0o600)
@@ -296,6 +303,7 @@ func TestU12_S1_SetupUnattended(t *testing.T) {
 	})
 
 	t.Run("answers that don't validate are refused with the path and write nothing", func(t *testing.T) {
+		t.Parallel()
 		w := setupWorld(t)
 		file := w.answers(t, `"zulu":{"name":"Zulu","search_roots":["~/code"],"claud":{}}`)
 

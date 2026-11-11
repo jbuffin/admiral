@@ -125,6 +125,7 @@ func TestHandLaunchHasNoAutopilotVariables(t *testing.T) {
 		}
 	}
 	t.Run("set by the fleet's env", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		env := w.harnessEnv()
 		env["ADMIRAL_AUTOPILOT"], env["ADMIRAL_LOW_STAKES"], env["ADMIRAL_AUTO_MERGE"] = "1", "never", "squash"
@@ -135,6 +136,7 @@ func TestHandLaunchHasNoAutopilotVariables(t *testing.T) {
 		check(t, w)
 	})
 	t.Run("set in Admiral's environment", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		w.extra = []string{"ADMIRAL_AUTOPILOT=1", "ADMIRAL_LOW_STAKES=advisor", "ADMIRAL_AUTO_MERGE=rebase"}
 		w.start()

@@ -384,6 +384,7 @@ func TestHiddenOrdersByShips(t *testing.T) {
 func TestSourceHungRequests(t *testing.T) {
 	t.Parallel()
 	t.Run("a hung request only fails that call", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		w.extra = append(w.extra, "ADMIRAL_CALL_TIMEOUT="+shortCall.String())
 		p := w.newTP("a")
@@ -410,6 +411,7 @@ func TestSourceHungRequests(t *testing.T) {
 		w.mustOK(code, body, "refresh once the plugin answers")
 	})
 	t.Run("a hung initialize is a crash", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		w.extra = append(w.extra, "ADMIRAL_CALL_TIMEOUT="+shortCall.String())
 		p := w.newTP("a")

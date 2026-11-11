@@ -272,6 +272,7 @@ func TestResumeOrderWithoutAUsableTarget(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			w := newWorld(t)
 			w.resumeConfig(map[string][]string{"f": {anchorCue}}, w.ordersSource(), c.resume)
 			w.start()

@@ -532,6 +532,7 @@ func TestEngineSetsAutoMergeFromThePanel(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			w := newWorld(t)
 			w.writeCue("wait go", "exit 0")
 			w.repo("r1", remoteOf("r1"))

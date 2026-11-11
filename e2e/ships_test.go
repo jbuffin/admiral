@@ -150,6 +150,7 @@ const compactWindow = "CLAUDE_CODE_AUTO_COMPACT_WINDOW"
 func TestCommodoreCompactWindow(t *testing.T) {
 	t.Parallel()
 	t.Run("fleet env overrides", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		var cfg map[string]any
 		if err := json.Unmarshal([]byte(w.config()), &cfg); err != nil {
@@ -169,6 +170,7 @@ func TestCommodoreCompactWindow(t *testing.T) {
 		}
 	})
 	t.Run("Admiral's environment does not override", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		w.extra = []string{compactWindow + "=1000000"}
 		w.start()
@@ -598,6 +600,7 @@ func TestBadStateFileIsMovedAside(t *testing.T) {
 	t.Parallel()
 	for name, content := range map[string]string{"corrupt": "{not json", "unknown version": `{"version":2,"positions":{}}`} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			w := newWorld(t)
 			if err := os.MkdirAll(w.home, 0o700); err != nil {
 				t.Fatal(err)

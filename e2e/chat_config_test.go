@@ -54,6 +54,7 @@ func putChat(t *testing.T, in *instance, body map[string]any) {
 func TestChatConfig(t *testing.T) {
 	t.Parallel()
 	t.Run("defaults, save and reset effort", func(t *testing.T) {
+		t.Parallel()
 		home := newHome(t)
 		writeConfig(t, home, `{"version":1,"favorite_skills":["review"],"fleets":{"work":{"name":"Work Fleet","claude":{}}},"sources":{}}`)
 		in := startAdmiral(t, home, "127.0.0.1:0")

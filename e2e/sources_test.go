@@ -103,6 +103,7 @@ func TestFreshInstall(t *testing.T) {
 func TestFreshInstallLeavesWhatItShould(t *testing.T) {
 	t.Parallel()
 	t.Run("an empty sources object gets no source added", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		writeConfig(t, w.home, `{"version":1,"fleets":{},"sources":{}}`)
 		w.start()
@@ -112,6 +113,7 @@ func TestFreshInstallLeavesWhatItShould(t *testing.T) {
 		}
 	})
 	t.Run("an invalid config gets nothing added", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		bad := `{"version":1,"fleets":[]}`
 		writeConfig(t, w.home, bad)
@@ -121,6 +123,7 @@ func TestFreshInstallLeavesWhatItShould(t *testing.T) {
 		}
 	})
 	t.Run("a sources key deleted by hand is not undone until the next start", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		w.startFresh()
 		w.waitUp()
@@ -137,6 +140,7 @@ func TestFreshInstallLeavesWhatItShould(t *testing.T) {
 	})
 	for _, name := range embeddedPlugins {
 		t.Run("an edited "+name+" folder is left alone and a missing one is written again", func(t *testing.T) {
+			t.Parallel()
 			w := newWorld(t)
 			w.startFresh()
 			w.waitUp()
@@ -215,6 +219,7 @@ func testPluginUpgrade(t *testing.T, name string) {
 		"notes.txt":   "a file the newer copy no longer has",
 	}
 	t.Run("an unedited older copy is replaced", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		// Finder leaves a .DS_Store; go:embed never carried one, so it is not an edit.
 		withFinder := map[string]string{".DS_Store": "finder"}
@@ -236,6 +241,7 @@ func testPluginUpgrade(t *testing.T, name string) {
 		}
 	})
 	t.Run("an older copy edited after its stamp is left alone", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		edited := map[string]string{}
 		for k, v := range old {
@@ -275,6 +281,7 @@ func TestLeftoverFreeformFolder(t *testing.T) {
 		}
 	}
 	t.Run("an untouched copy is removed", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		dir := filepath.Join(w.home, "plugins", "freeform")
 		write(t, dir, files, stampOf(files))
@@ -285,6 +292,7 @@ func TestLeftoverFreeformFolder(t *testing.T) {
 		}
 	})
 	t.Run("an edited copy is left alone", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		dir := filepath.Join(w.home, "plugins", "freeform")
 		write(t, dir, files, stampOf(files))
@@ -298,6 +306,7 @@ func TestLeftoverFreeformFolder(t *testing.T) {
 		}
 	})
 	t.Run("a symlink is left alone and its target untouched", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		target := filepath.Join(w.root, "my-freeform")
 		write(t, target, files, stampOf(files)) // would pass the stamp check if followed
@@ -340,6 +349,7 @@ func TestSourcesConfigValidation(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			w := newWorld(t)
 			writeConfig(t, w.home, c.config)
 			w.start()

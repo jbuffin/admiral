@@ -157,6 +157,7 @@ func TestGuardAutoMergeLookupAgainstGitHub(t *testing.T) {
 	}
 	for _, r := range rows {
 		t.Run(r.name, func(t *testing.T) {
+			t.Parallel()
 			w := newWorld(t)
 			g := w.newFakeGH()
 			switch {
