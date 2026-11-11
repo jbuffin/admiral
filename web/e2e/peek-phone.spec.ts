@@ -56,7 +56,7 @@ test('on the phone, a question item opens in Peek and its answers are sent', asy
 
   const posted = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === `/api/v1/inbox/${visitor.session}/q-port/answer`);
   await peek.getByRole('button', { name: 'Send answers' }).tap();
-  expect((await posted).postDataJSON()).toEqual({ answers: { p: { choice: '8080' } }, note: '' });
+  expect((await posted).postDataJSON()).toEqual({ answers: { p: { choice: '8080' } } });
   await expect.poll(() => existsSync(join(admiral.home, 'inbox', visitor.session, 'q-port.answer.json'))).toBe(true);
   await expect(peekOf(page)).toHaveCount(0);
   await expect(page).toHaveURL(/\/app\/inbox(\?|$)/);
