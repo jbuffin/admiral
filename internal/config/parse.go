@@ -54,9 +54,10 @@ type Fleet struct {
 	Ink         string // text color on Color
 	ColorIndex  *int   // position in the default sequence; nil for a custom Color
 	SearchRoots []string
-	Owners      []string  // GitHub orgs and users whose work belongs to the fleet
-	CloneRoot   string    // where the fleet's clones live; empty when unset
-	Harnesses   []Harness // dock order: claude, copilot, codex, as present
+	Owners      []string          // GitHub orgs and users whose work belongs to the fleet
+	CloneRoot   string            // where the fleet's clones live; empty when unset
+	Env         map[string]string // the fleet's own env, ~ expanded; plugin sources and gh calls start with it
+	Harnesses   []Harness         // dock order: claude, copilot, codex, as present
 }
 
 func (c *Config) clone() *Config {
@@ -72,6 +73,7 @@ func (c *Config) clone() *Config {
 	for i, f := range c.Fleets {
 		f.SearchRoots = slices.Clone(f.SearchRoots)
 		f.Owners = slices.Clone(f.Owners)
+		f.Env = maps.Clone(f.Env)
 		f.Harnesses = slices.Clone(f.Harnesses)
 		for j, h := range f.Harnesses {
 			h.Args = slices.Clone(h.Args)
@@ -95,14 +97,18 @@ type Harness struct {
 	Warnings   []string
 }
 
-func (h Harness) Environ() []string {
+func (h Harness) Environ() []string { return overlayEnv(h.Env) }
+
+func (f Fleet) Environ() []string { return overlayEnv(f.Env) }
+
+func overlayEnv(own map[string]string) []string {
 	env := map[string]string{}
 	for _, kv := range os.Environ() {
 		if k, v, ok := strings.Cut(kv, "="); ok {
 			env[k] = v
 		}
 	}
-	for k, v := range h.Env {
+	for k, v := range own {
 		env[k] = v
 	}
 	out := make([]string, 0, len(env))
@@ -321,6 +327,10 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 			}
 		case "clone_root":
 			if f.CloneRoot, err = str(p, m.raw); err != nil {
+				return Fleet{}, err
+			}
+		case "env":
+			if f.Env, err = envMap(p, m.raw); err != nil {
 				return Fleet{}, err
 			}
 		case "claude", "codex", "copilot":

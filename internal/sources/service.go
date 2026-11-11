@@ -49,6 +49,7 @@ type sourceState struct {
 	auth      *Auth
 	caps      []string
 	panels    []Panel
+	warnings  []string
 	hasSchema bool
 }
 
@@ -60,6 +61,7 @@ func (r *runner) snapshot() sourceState {
 		a := *r.auth
 		st.auth = &a
 	}
+	st.warnings = slices.Clone(r.warnings)
 	st.panels = make([]Panel, len(r.panels))
 	for i, p := range r.panels {
 		p.Orders = slices.Clone(p.Orders)
@@ -80,7 +82,9 @@ type SourceView struct {
 	ReadOnly     bool     `json:"read_only"`
 	Error        *string  `json:"error"`
 	Auth         *Auth    `json:"auth"`
-	Panels       []Panel  `json:"panels"`
+	// Warnings are the router's notes for the source's fleet; [] when none.
+	Warnings []string `json:"warnings"`
+	Views    []Panel  `json:"views"`
 }
 
 // View is every source in config order, without the orders that have a ship.
@@ -89,8 +93,14 @@ func (s *Service) View() []SourceView {
 	out := []SourceView{}
 	for _, st := range s.Sup.snapshot() {
 		v := SourceView{Key: st.def.Key, Name: st.def.Name, Plugin: st.def.Plugin, Fleet: st.def.Fleet, Capabilities: st.caps, HasSchema: st.hasSchema,
-			State: st.state, ReadOnly: st.readOnly, Auth: st.auth, Panels: []Panel{}}
-		if m, dir, err := LoadManifest(s.Home, st.def.Plugin); err == nil {
+			State: st.state, ReadOnly: st.readOnly, Auth: st.auth, Views: []Panel{}, Warnings: []string{}}
+		v.Warnings = append(v.Warnings, st.warnings...)
+		if st.def.Plugin == builtinGitHub {
+			if v.Name == "" {
+				v.Name = "GitHub"
+			}
+			v.IconURL = iconURL(builtinGitHub)
+		} else if m, dir, err := LoadManifest(s.Home, st.def.Plugin); err == nil {
 			if v.Name == "" {
 				v.Name = m.Name
 			}
@@ -124,9 +134,9 @@ func (s *Service) View() []SourceView {
 				}
 				p.Autopilot = view
 			}
-			v.Panels = append(v.Panels, p)
+			v.Views = append(v.Views, p)
 		}
-		SortPanels(v.Panels, st.def.PanelOrder)
+		SortPanels(v.Views, st.def.PanelOrder)
 		out = append(out, v)
 	}
 	return out
@@ -224,6 +234,10 @@ func (s *Service) servePlugins(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) serveIcon(w http.ResponseWriter, r *http.Request) {
+	if r.PathValue("name") == builtinGitHub {
+		writeIcon(w, githubIcon, "image/svg+xml")
+		return
+	}
 	m, dir, err := LoadManifest(s.Home, r.PathValue("name"))
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
@@ -243,6 +257,10 @@ func (s *Service) serveIcon(w http.ResponseWriter, r *http.Request) {
 	if strings.EqualFold(filepath.Ext(p), ".svg") {
 		ct = "image/svg+xml"
 	}
+	writeIcon(w, data, ct)
+}
+
+func writeIcon(w http.ResponseWriter, data []byte, ct string) {
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	// An SVG opened on its own must not run script with Admiral's origin.
@@ -285,13 +303,15 @@ func (s *Service) serveAdd(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "plugin is required")
 		return
 	}
-	if _, _, err := LoadManifest(s.Home, *req.Plugin); err != nil {
-		status := http.StatusUnprocessableEntity
-		if errors.Is(err, errNotInstalled) {
-			status = http.StatusNotFound
+	if *req.Plugin != builtinGitHub {
+		if _, _, err := LoadManifest(s.Home, *req.Plugin); err != nil {
+			status := http.StatusUnprocessableEntity
+			if errors.Is(err, errNotInstalled) {
+				status = http.StatusNotFound
+			}
+			writeError(w, status, err.Error())
+			return
 		}
-		writeError(w, status, err.Error())
-		return
 	}
 	def := config.Source{Plugin: *req.Plugin}
 	// A source belongs to one fleet; with none named it takes the first, so the
@@ -320,6 +340,9 @@ func (s *Service) serveAdd(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if def.Plugin == builtinGitHub {
+		def.Settings = withViews(def.Settings)
+	}
 	s.mu.Lock()
 	cfg := s.Config.Current()
 	def.Key = s.newKey(cfg, def.Plugin)
@@ -338,6 +361,18 @@ func (s *Service) serveAdd(w http.ResponseWriter, r *http.Request) {
 	s.Sup.Reconcile()
 	v, _ := s.view(def.Key)
 	writeJSON(w, http.StatusCreated, v)
+}
+
+func withViews(settings json.RawMessage) json.RawMessage {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(settings, &m) != nil || m == nil {
+		m = map[string]json.RawMessage{}
+	}
+	if _, ok := m["views"]; !ok {
+		m["views"] = json.RawMessage("[]")
+	}
+	out, _ := json.Marshal(m)
+	return out
 }
 
 func (s *Service) newKey(cfg *config.Config, plugin string) string {
@@ -399,6 +434,9 @@ func (s *Service) serveSave(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		list[i].Settings = kept
+	}
+	if list[i].Plugin == builtinGitHub {
+		list[i].Settings = withViews(list[i].Settings)
 	}
 	gen := s.Sup.Generation(key)
 	err := s.write(list)
@@ -785,7 +823,7 @@ func (s *Service) serveSchema(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(append(slices.Clone(schema), '\n'))
 }
 
-func (s *Service) mutable(w http.ResponseWriter, key, capability string) (*runner, *proc, bool) {
+func (s *Service) mutable(w http.ResponseWriter, key, capability string) (*runner, conn, bool) {
 	rn, p, fail := s.mutableFor(key, capability)
 	if fail != nil {
 		writeError(w, fail.Status, fail.Msg)
@@ -805,7 +843,7 @@ func (e *RequestError) Error() string { return e.Msg }
 
 func (e *RequestError) AddKind() inbox.AddKind { return e.kind }
 
-func (s *Service) mutableFor(key, capability string) (*runner, *proc, *RequestError) {
+func (s *Service) mutableFor(key, capability string) (*runner, conn, *RequestError) {
 	rn := s.Sup.runner(key)
 	if rn == nil {
 		return nil, nil, &RequestError{Status: http.StatusNotFound, Msg: "source " + key + " not found", kind: inbox.AddRetryable}

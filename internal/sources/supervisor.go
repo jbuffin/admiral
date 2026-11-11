@@ -2,6 +2,8 @@ package sources
 
 import (
 	"context"
+	"encoding/json"
+	"maps"
 	"reflect"
 	"slices"
 	"sync"
@@ -24,7 +26,11 @@ type Supervisor struct {
 	// under the same key waits for the old process.
 	stopping map[string]*runner
 	order    []string
-	wg       sync.WaitGroup
+	// envs is each source's fleet env as its runner started with it, and
+	// routing the fleets' claims as the GitHub sources last saw them.
+	envs    map[string]map[string]string
+	routing string
+	wg      sync.WaitGroup
 }
 
 // Every plugin is stopped before Wait returns.
@@ -34,6 +40,7 @@ func (s *Supervisor) Start(ctx context.Context) {
 	s.runners = map[string]*runner{}
 	s.cancels = map[string]context.CancelFunc{}
 	s.stopping = map[string]*runner{}
+	s.envs = map[string]map[string]string{}
 	s.mu.Unlock()
 	changes, unsubscribe := s.Config.Subscribe()
 	s.Reconcile()
@@ -90,18 +97,22 @@ func (s *Supervisor) reconcile(force string, gen uint64) {
 	for _, def := range cfg.SourceList {
 		wanted[def.Key] = true
 		order = append(order, def.Key)
+		env := fleetEnv(cfg, def.Fleet)
 		r := s.runners[def.Key]
 		if r == nil {
+			s.envs[def.Key] = env
 			s.start(def)
 			dirty = true
 			continue
 		}
+		envChanged := !maps.Equal(s.envs[def.Key], env)
+		s.envs[def.Key] = env
 		r.mu.Lock()
 		old := r.def
 		r.def = def
 		r.mu.Unlock()
 		switch {
-		case !old.SameRun(def):
+		case !old.SameRun(def), envChanged:
 			r.restart()
 			dirty = true
 		case def.Key == force && r.gen.Load() == gen:
@@ -111,11 +122,19 @@ func (s *Supervisor) reconcile(force string, gen uint64) {
 			dirty = true
 		}
 	}
+	routing := routingOf(cfg.Fleets)
+	if s.routing != "" && routing != s.routing {
+		for _, r := range s.runners { // SameRun ignores fleets: a changed claim needs a new search
+			go r.refreshNow()
+		}
+	}
+	s.routing = routing
 	for key, r := range s.runners {
 		if !wanted[key] {
 			s.cancels[key]()
 			s.stopping[key] = r
 			delete(s.runners, key)
+			delete(s.envs, key)
 			delete(s.cancels, key)
 			dirty = true
 		}
@@ -133,7 +152,7 @@ func (s *Supervisor) reconcile(force string, gen uint64) {
 // s.mu must be held.
 func (s *Supervisor) start(def config.Source) {
 	ctx, cancel := context.WithCancel(s.ctx)
-	r := newRunner(ctx, s.Home, def, s.changed, s.stopping[def.Key])
+	r := newRunner(ctx, s.Home, s.Config.Current, def, s.changed, s.stopping[def.Key])
 	s.runners[def.Key], s.cancels[def.Key] = r, cancel
 	s.wg.Add(1)
 	go func() {
@@ -190,4 +209,26 @@ func (s *Supervisor) snapshot() []sourceState {
 		}
 	}
 	return out
+}
+
+// fleetEnv is the env of the fleet a source belongs to.
+func fleetEnv(cfg *config.Config, fleet string) map[string]string {
+	f, _ := cfg.Fleet(fleet)
+	return f.Env
+}
+
+// routingOf is what routing reads from the fleets' config: their search roots
+// and owners, in order.
+func routingOf(fleets []config.Fleet) string {
+	type claim struct {
+		Key    string
+		Roots  []string
+		Owners []string
+	}
+	list := make([]claim, len(fleets))
+	for i, f := range fleets {
+		list[i] = claim{f.Key, f.SearchRoots, f.Owners}
+	}
+	b, _ := json.Marshal(list)
+	return string(b)
 }

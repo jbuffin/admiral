@@ -46,7 +46,14 @@ type reply struct {
 	err    *rpcError
 }
 
-// One JSON-RPC message per line on the plugin's stdin and stdout.
+type conn interface {
+	call(ctx context.Context, method string, params any, timeout time.Duration) (json.RawMessage, error)
+	stop()
+	kill()
+	exited() <-chan struct{}
+	exitReason() string
+}
+
 type proc struct {
 	key    string
 	cmd    *exec.Cmd
@@ -59,11 +66,11 @@ type proc struct {
 	nextID  int64
 	pending map[int64]chan reply
 
-	exited  chan struct{} // closed once the process is gone and its stdout drained
+	gone    chan struct{} // closed once the process is gone and its stdout drained
 	exitErr error
 }
 
-func startProc(key string, m Manifest, dir string, onNote func(string, json.RawMessage)) (*proc, error) {
+func startProc(key string, m Manifest, dir string, env []string, onNote func(string, json.RawMessage)) (*proc, error) {
 	exe, err := resolveCommand(dir, m.Command)
 	if err != nil {
 		return nil, err
@@ -80,6 +87,7 @@ func startProc(key string, m Manifest, dir string, onNote func(string, json.RawM
 	}
 	cmd := exec.Command(exe, m.Args...)
 	cmd.Dir = dir
+	cmd.Env = env
 	cmd.Stdin, cmd.Stdout = inR, outW
 	cmd.Stderr = &linePrefixer{prefix: "source " + key + ": ", out: os.Stderr}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -92,7 +100,7 @@ func startProc(key string, m Manifest, dir string, onNote func(string, json.RawM
 		outR.Close()
 		return nil, fmt.Errorf("start %s: %w", exe, err)
 	}
-	p := &proc{key: key, cmd: cmd, stdin: inW, onNote: onNote, pending: map[int64]chan reply{}, exited: make(chan struct{})}
+	p := &proc{key: key, cmd: cmd, stdin: inW, onNote: onNote, pending: map[int64]chan reply{}, gone: make(chan struct{})}
 	drained := make(chan struct{})
 	go func() {
 		defer close(drained)
@@ -107,7 +115,7 @@ func startProc(key string, m Manifest, dir string, onNote func(string, json.RawM
 		p.exitErr = err
 		p.mu.Unlock()
 		inW.Close()
-		close(p.exited)
+		close(p.gone)
 	}()
 	return p, nil
 }
@@ -127,6 +135,8 @@ func resolveCommand(dir, command string) (string, error) {
 	}
 	return filepath.Abs(exe)
 }
+
+func (p *proc) exited() <-chan struct{} { return p.gone }
 
 func (p *proc) exitReason() string {
 	p.mu.Lock()
@@ -258,7 +268,7 @@ func (p *proc) call(ctx context.Context, method string, params any, timeout time
 	if err := p.write(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params}, timeout); err != nil {
 		forget()
 		select {
-		case <-p.exited:
+		case <-p.gone:
 			return nil, &notSentError{errors.New(p.exitReason())}
 		default:
 		}
@@ -272,7 +282,7 @@ func (p *proc) call(ctx context.Context, method string, params any, timeout time
 			return nil, r.err
 		}
 		return r.result, nil
-	case <-p.exited:
+	case <-p.gone:
 		forget()
 		select { // the answer may have arrived just before the exit
 		case r := <-ch:
@@ -295,7 +305,7 @@ func (p *proc) call(ctx context.Context, method string, params any, timeout time
 func (p *proc) stop() {
 	_ = p.stdin.Close()
 	select {
-	case <-p.exited:
+	case <-p.gone:
 		return
 	case <-time.After(stopGrace):
 	}
@@ -305,7 +315,7 @@ func (p *proc) stop() {
 func (p *proc) kill() {
 	_ = syscall.Kill(-p.cmd.Process.Pid, syscall.SIGKILL)
 	select {
-	case <-p.exited:
+	case <-p.gone:
 	case <-time.After(5 * time.Second):
 	}
 }

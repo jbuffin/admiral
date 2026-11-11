@@ -52,14 +52,14 @@ func NewRouter(fleets []RouteFleet) *Router {
 	}
 	for _, id := range repoOrder {
 		r.repoFor[id] = repoClaims[id][0]
-		r.warn(repoClaims[id], func(self, others string) string {
-			return fmt.Sprintf("%s is checked out in fleets %s and %s; %s takes its items", id, self, others, repoClaims[id][0])
+		r.warn(repoClaims[id], func(fleets string) string {
+			return fmt.Sprintf("%s is checked out in fleets %s; %s takes its items", id, fleets, repoClaims[id][0])
 		})
 	}
 	for _, o := range ownerOrder {
 		r.ownerFor[o] = ownerClaims[o][0]
-		r.warn(ownerClaims[o], func(self, others string) string {
-			return fmt.Sprintf("owner %s is listed by fleets %s and %s; %s takes its items", o, self, others, ownerClaims[o][0])
+		r.warn(ownerClaims[o], func(fleets string) string {
+			return fmt.Sprintf("owner %s is listed by fleets %s; %s takes its items", o, fleets, ownerClaims[o][0])
 		})
 	}
 	return r
@@ -78,14 +78,16 @@ func claim(keys, order []string, name, key string) ([]string, []string) {
 	return append(keys, key), order
 }
 
-// warn adds a warning to each of the claiming fleets when there are two or more.
-func (r *Router) warn(claimants []string, msg func(self, others string) string) {
+// warn adds the same warning to each of the claiming fleets when there are two
+// or more. msg gets their keys as one list: "a and b", "a, b and c".
+func (r *Router) warn(claimants []string, msg func(fleets string) string) {
 	if len(claimants) < 2 {
 		return
 	}
-	for i, self := range claimants {
-		others := append(append([]string{}, claimants[:i]...), claimants[i+1:]...)
-		r.warnings[self] = append(r.warnings[self], msg(self, strings.Join(others, ", ")))
+	last := len(claimants) - 1
+	text := msg(strings.Join(claimants[:last], ", ") + " and " + claimants[last])
+	for _, self := range claimants {
+		r.warnings[self] = append(r.warnings[self], text)
 	}
 }
 
