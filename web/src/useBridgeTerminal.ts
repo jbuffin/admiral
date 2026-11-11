@@ -13,10 +13,13 @@ export interface BridgeTerminalOptions {
   open: boolean;
   gone(): void;
   probe?: () => Promise<Probe>;
+  /** What a signed-out probe does, and the socket's path prefix; the old UI's by default. */
+  signedOut?(): void;
+  wsBase?: string;
 }
 
 /** This browser sizes the pane while it is the active one and follows another's grid otherwise (ADR 0011). */
-export function useBridgeTerminal({ session, crew, open, gone, probe }: BridgeTerminalOptions) {
+export function useBridgeTerminal({ session, crew, open, gone, probe, signedOut, wsBase }: BridgeTerminalOptions) {
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<Term | undefined>(undefined);
   const link = useRef<BridgeLink | undefined>(undefined);
@@ -88,6 +91,8 @@ export function useBridgeTerminal({ session, crew, open, gone, probe }: BridgeTe
         },
         gone: () => goneNow.current(),
         dims: () => t.size(),
+        signedOut,
+        wsBase,
         probe: probe ?? (crew === undefined ? undefined : () => crewProbe(session, crew)),
       }, crew);
       observer = new ResizeObserver(() => (active.current ? claim() : t.follow(t.size().cols, t.size().rows)));

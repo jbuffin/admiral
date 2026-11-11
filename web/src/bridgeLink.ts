@@ -13,6 +13,10 @@ export interface LinkHandlers {
   dims(): { cols: number; rows: number };
   /** A crew link lists the session only while its boat is still in the ship's `crew[]`. */
   probe?: () => Promise<Probe>;
+  /** What a signed-out probe does; the old UI's signal by default. */
+  signedOut?(): void;
+  /** The socket's path prefix, `/ws` by default. */
+  wsBase?: string;
 }
 
 // Input sent while the server is away is dropped; on a drop it retries after 1 s, doubling to 10 s, and rejoins like a new browser.
@@ -38,7 +42,7 @@ export class BridgeLink {
 
   private open() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${location.host}${bridgePath(this.session, this.crew)}`);
+    const ws = new WebSocket(`${proto}://${location.host}${bridgePath(this.session, this.crew, this.h.wsBase)}`);
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
     ws.onopen = () => {
@@ -67,10 +71,10 @@ export class BridgeLink {
     const wait = this.delay;
     this.delay = nextDelay(this.delay);
     this.retry = setTimeout(async () => {
-      if (this.stopped || signedOut.value) return;
+      if (this.stopped || (!this.h.signedOut && signedOut.value)) return;
       const p = await (this.h.probe ?? probeShips)();
       if (this.stopped) return;
-      if (p.kind === 'signed-out') signedOut.value = true;
+      if (p.kind === 'signed-out') this.h.signedOut ? this.h.signedOut() : (signedOut.value = true);
       else if (p.kind === 'down') this.schedule();
       else if (!p.ships.some((s) => s.session === this.session)) this.h.gone();
       else this.open();

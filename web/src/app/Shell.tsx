@@ -13,9 +13,10 @@ import { sourcesForFleet } from './launchForm';
 import { ships, shipsLoaded, sources } from './shipsLink';
 import { StatusGlyph } from './StatusGlyph';
 import { call, type Ship } from './api';
-import { campaignOf, go, loc, surfaceOf, surfacePath } from './router';
+import { campaignOf, go, loc, shipPath, shipSession, surfaceOf, surfacePath } from './router';
 import { CampaignPage, CampaignSidebar, CampaignsList } from './CampaignPage';
 import { followReference } from './campaignsLink';
+import { ShipView } from './ShipView';
 import { emptyLine, MORE, PHONE_TABS, SURFACES, surfaceById, type Surface } from './surfaces';
 
 const PHONE_QUERY = '(max-width: 640px)';
@@ -127,30 +128,62 @@ function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
   const meta = ship.crew_live > 0 ? `${ship.crew_live} crew` : '';
   const moored = ship.status === 'moored';
   const [error, setError] = useState('');
-  return (
-    <li class={moored ? 'ship-row moored' : 'ship-row'}>
-      <span class="ship-bar" style={{ background: bar }} aria-hidden="true" />
-      <Flag harness={ship.harness} size="row" />
-      <div class="ship-main">
-        <span class="ship-name">{ship.name}</span>
-        {ship.order_id ? (
-          <span class="ship-order">
-            <span class="mono">{ship.order_id}</span> {ship.title}
-          </span>
+  const search = fleetSearch.value;
+  if (moored) {
+    return (
+      <li class="ship-row moored">
+        <span class="ship-bar" style={{ background: bar }} aria-hidden="true" />
+        <Flag harness={ship.harness} size="row" />
+        <div class="ship-main">
+          <span class="ship-name">{ship.name}</span>
+          {ship.order_id ? (
+            <span class="ship-order">
+              <span class="mono">{ship.order_id}</span> {ship.title}
+            </span>
+          ) : null}
+          {ship.tail ? <span class="ship-tail">{ship.tail}</span> : null}
+          <MooredPRs ship={ship} now={now} />
+          <MooredActions ship={ship} onError={setError} />
+        </div>
+        <div class="ship-side">
+          {meta ? <span class="ship-meta">{meta}</span> : null}
+          <span class="ship-age">{shipRowAge(ship, now)}</span>
+        </div>
+        {error ? (
+          <p class="alert" role="alert">
+            {error}
+          </p>
         ) : null}
-        {ship.tail ? <span class="ship-tail">{ship.tail}</span> : null}
-        {moored ? <MooredPRs ship={ship} now={now} /> : null}
-        {moored ? <MooredActions ship={ship} onError={setError} /> : null}
-      </div>
-      <div class="ship-side">
-        {meta ? <span class="ship-meta">{meta}</span> : null}
-        <span class="ship-age">{shipRowAge(ship, now)}</span>
-      </div>
-      {error ? (
-        <p class="alert" role="alert">
-          {error}
-        </p>
-      ) : null}
+      </li>
+    );
+  }
+  return (
+    <li class="ship-row">
+      <a
+        class="ship-link"
+        href={shipPath(ship.session) + search}
+        onClick={(e) => {
+          if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+          e.preventDefault();
+          go(shipPath(ship.session), search);
+        }}
+      >
+        <span class="ship-bar" style={{ background: bar }} aria-hidden="true" />
+        <Flag harness={ship.harness} size="row" />
+        <div class="ship-main">
+          <span class="ship-name">{ship.name}</span>
+          {ship.order_id ? (
+            <span class="ship-order">
+              <span class="mono">{ship.order_id}</span> {ship.title}
+            </span>
+          ) : null}
+          {ship.tail ? <span class="ship-tail">{ship.tail}</span> : null}
+        </div>
+        <div class="ship-side">
+          {meta ? <span class="ship-meta">{meta}</span> : null}
+          <span class="ship-age">{shipRowAge(ship, now)}</span>
+        </div>
+      </a>
     </li>
   );
 }
@@ -259,6 +292,8 @@ function ShipsPanel({ surface, title }: { surface: Surface; title: boolean }) {
 }
 
 function Panel({ surface, title, phone }: { surface: Surface; title: boolean; phone?: boolean }) {
+  const session = shipSession(loc.value.path);
+  if (session !== null) return <ShipView session={session} title={title} />;
   if (surface.id === 'ships') return <ShipsPanel surface={surface} title={title} />;
   if (surface.id === 'campaigns') {
     const id = campaignOf(loc.value.path);

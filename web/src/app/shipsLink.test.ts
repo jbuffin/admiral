@@ -45,6 +45,11 @@ const ship = (name: string, status: Ship['status'], tail = ''): Ship => ({
   fleet_color: '',
   launched: '',
   crew_live: 0,
+  dir: '',
+  repo: '',
+  exit_code: null,
+  exit_signal: null,
+  crew: [],
 });
 
 let fetches: string[];

@@ -46,7 +46,56 @@ export interface Ship {
   prs?: MooredPR[];
   url?: string;
   source?: string;
+  dir: string;
+  repo: string;
+  reason?: string;
+  exit_code: number | null;
+  exit_signal: string | null;
+  crew: CrewBoat[];
 }
+
+export interface CrewBoat {
+  name: string;
+  role?: string;
+  conversation: boolean;
+  status: string;
+  exit_code: number | null;
+  exit_signal: string | null;
+}
+
+export interface ToolCall {
+  name: string;
+  summary?: string;
+  output?: string;
+  error?: boolean;
+  done: boolean;
+}
+export interface Question {
+  text: string;
+  options?: { label: string; description?: string }[];
+  answer?: string;
+  pending: boolean;
+}
+export type ItemKind = 'user' | 'assistant' | 'tool_call' | 'question' | 'turn_end' | 'compaction' | 'notice';
+export interface Item {
+  id: string;
+  kind: ItemKind;
+  at?: string;
+  text?: string;
+  meta?: boolean;
+  tool?: ToolCall;
+  question?: Question;
+  durationMs?: number;
+}
+export type ConversationState = 'ok' | 'none' | 'unreadable' | 'gone';
+export interface ConversationPage {
+  state: ConversationState;
+  items: Item[] | null;
+  more: boolean;
+}
+
+export const conversationUrl = (session: string, before?: string) =>
+  `${API}/ships/${encodeURIComponent(session)}/conversation${before === undefined ? '' : `?before=${encodeURIComponent(before)}`}`;
 
 const API = '/api/v1';
 
@@ -238,4 +287,17 @@ export interface DirsAnswer {
   entries: DirEntry[];
   selected: string | null;
   clone: { repo: string; path: string; exists?: boolean } | null;
+}
+
+/** A bridge link's reconnect check, over /api/v1: which ships are listed, or why not. */
+export async function probeShipList(): Promise<{ kind: 'ok'; ships: { session: string }[] } | { kind: 'signed-out' } | { kind: 'down' }> {
+  try {
+    const res = await fetch(`${API}/ships`, { cache: 'no-store' });
+    if (res.status === 401) return { kind: 'signed-out' };
+    if (!res.ok) return { kind: 'down' };
+    const body = (await res.json()) as { ships?: { session: string }[] | null };
+    return { kind: 'ok', ships: body.ships ?? [] };
+  } catch {
+    return { kind: 'down' };
+  }
 }

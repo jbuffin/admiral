@@ -14,6 +14,11 @@ const ship = (name: string, status: ShipStatus, fleet = 'zulu'): Ship => ({
   fleet_color: '',
   launched: '',
   crew_live: 0,
+  dir: '',
+  repo: '',
+  exit_code: null,
+  exit_signal: null,
+  crew: [],
 });
 
 const names = (groups: { ships: Ship[] }[]) => groups.map((g) => g.ships.map((s) => s.name));
