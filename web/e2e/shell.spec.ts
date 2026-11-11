@@ -124,6 +124,16 @@ async function westwindClaude(page: Page, server: string) {
   return { version: claude.version, caps, guard: caps.find((c) => c.id === 'autopilot.guard_hook')! };
 }
 
+// The fleet's judge object as the API serves it, so the page's judge line is checked against it.
+async function westwindJudge(page: Page, server: string) {
+  const res = await page.request.get(server + 'api/v1/harness-capabilities');
+  expect(res.status()).toBe(200);
+  const body = (await res.json()) as { fleets: { key: string; judge: { harness: string | null; reason?: string } }[] };
+  return body.fleets.find((f) => f.key === 'zulu')!.judge;
+}
+// Judge probes that have a mechanism on claude; usage reports has no probe and stays not checked.
+const judgeProbed = (c: Capability) => c.id.startsWith('judge.') && c.id !== 'judge.usage_reports';
+
 const capabilities = (page: Page) => page.getByRole('main').getByRole('region', { name: 'Harness capabilities' });
 const harnessOf = (page: Page, harness: string) => capabilities(page).getByRole('group', { name: harness, exact: true });
 // Each fleet has its own Harness capabilities page in Preferences' nav.
@@ -169,6 +179,11 @@ test('Preferences shows what each harness was probed to do, and Check again re-r
     await expect(rowOf(workClaude, cap.label)).toContainText(/not checked/i);
   }
   await expect(workClaude.getByRole('note')).toHaveCount(0);
+  // No harness is proven for judge calls yet: the line reads off, with the API's reason.
+  const noJudge = await westwindJudge(page, admiral.url);
+  expect(noJudge.harness).toBeNull();
+  await expect(page.getByRole('main')).toContainText('Judge calls: off');
+  await expect(page.getByRole('main')).toContainText(noJudge.reason!);
 
   // Check again runs that harness's probe in that fleet and shows the answer. Here the guard fails, with its reason.
   const post = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/harness-capabilities/check');
@@ -190,13 +205,22 @@ test('Preferences shows what each harness was probed to do, and Check again re-r
   // The other harnesses were not touched.
   await expect(rowOf(workCodex, failed.label)).toContainText(/not checked/i);
 
+  // The same check proved the judge probes on the fake claude, so its rows read passed and the line names the harness and models,
+  // before any reload: the page took the judge object from the check's answer.
+  for (const cap of before.caps.filter(judgeProbed)) {
+    await expect(rowOf(workClaude, cap.label)).toContainText(/passed/i);
+  }
+  await expect(rowOf(workClaude, 'Usage reports')).toContainText(/not checked/i);
+  await expect(page.getByRole('main')).toContainText('Judge calls: Claude (haiku / sonnet)');
+  expect((await westwindJudge(page, admiral.url)).harness).toBe('claude');
+
   // The probe passes this time. The one-line missing-capability component re-runs it too, and the line goes away with the fix.
   claude.probe('pass');
   await missingLine(workClaude, failed.label).getByRole('button', { name: `Check again ${failed.label} on Claude`, exact: true }).tap();
   await expect(rowOf(workClaude, failed.label)).toContainText(/passed/i);
   await expect(workClaude.getByRole('note')).toHaveCount(0);
   expect((await westwindClaude(page, admiral.url)).guard.status).toBe('passed');
-  for (const cap of before.caps.filter((c) => c.id !== failed.id)) {
+  for (const cap of before.caps.filter((c) => c.id !== failed.id && !judgeProbed(c))) {
     await expect(rowOf(workClaude, cap.label)).toContainText(/not checked/i);
   }
   await expect(rowOf(workCodex, failed.label)).toContainText(/not checked/i);
@@ -204,6 +228,19 @@ test('Preferences shows what each harness was probed to do, and Check again re-r
   // A fresh load shows the same: the answer is the server's, not the page's.
   await page.reload();
   await expect(rowOf(harnessOf(page, 'Claude'), failed.label)).toContainText(/passed/i);
+  await expect(page.getByRole('main')).toContainText('Judge calls: Claude (haiku / sonnet)');
+
+  // When the judge probes fail, the line goes off with the reason, and each failed row says what is missing.
+  claude.judge('leak');
+  await harnessOf(page, 'Claude').getByRole('button', { name: 'Check again Claude', exact: true }).tap();
+  for (const cap of before.caps.filter(judgeProbed)) {
+    await expect(rowOf(harnessOf(page, 'Claude'), cap.label)).toContainText(/failed/i);
+  }
+  const off = await westwindJudge(page, admiral.url);
+  expect(off.harness).toBeNull();
+  await expect(page.getByRole('main')).toContainText('Judge calls: off');
+  await expect(page.getByRole('main')).toContainText(off.reason!);
+  await expect(harnessOf(page, 'Claude').getByRole('note')).toHaveCount(before.caps.filter(judgeProbed).length);
 
   expect(watch.paths.some((p) => p === '/api/v1/harness-capabilities')).toBe(true);
   expect(watch.unversioned()).toEqual([]);

@@ -32,10 +32,11 @@ const fakeClaude = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 
 export function probeableClaude(a: Admiral) {
   const probeFile = join(a.home, 'fake-probe');
   const versionFile = join(a.home, 'fake-version');
+  const judgeFile = join(a.home, 'fake-judge');
   const dir = join(a.home, 'fake-bin');
   mkdirSync(dir, { recursive: true });
   const wrapper = join(dir, 'claude');
-  writeFileSync(wrapper, `#!/bin/sh\n[ -f '${probeFile}' ] && export FAKE_PROBE=$(cat '${probeFile}')\nexec '${fakeClaude}' "$@"\n`);
+  writeFileSync(wrapper, `#!/bin/sh\n[ -f '${probeFile}' ] && export FAKE_PROBE=$(cat '${probeFile}')\n[ -f '${judgeFile}' ] && export FAKE_JUDGE=$(cat '${judgeFile}')\nexec '${fakeClaude}' "$@"\n`);
   chmodSync(wrapper, 0o755);
   return {
     dock: {
@@ -44,6 +45,8 @@ export function probeableClaude(a: Admiral) {
     },
     /** What the next probe does: pass, skip-hook, run-anyway, no-tool or different-command (docs/agents/testing.md). */
     probe: (mode: string) => writeFileSync(probeFile, mode),
+    /** What the next judge probes do: `pass` (default) or `leak`, which makes each one fail (docs/agents/testing.md). */
+    judge: (mode: string) => writeFileSync(judgeFile, mode),
     /** What `--version` prints; `FAIL` makes it exit 1. */
     version: (text: string) => writeFileSync(versionFile, text),
   };
