@@ -20,15 +20,15 @@ A pending question wins only while it is the latest of these, so a question an i
 
 Body: `fleet`, `harness`, and either `source` and `order_id` (the server reads the order) or the `repo` and `text` the order would have. Answers `{"entries": [...], "selected": ..., "reason": ..., "clone": ...}`. The entries are the checkouts and search roots of the fleet, which include its `clone_root`.
 
-`clone` is always present. It is `{"repo": "<host/owner/repo>", "path": "<target>"}` when the order's repo (else the first URL in its text) has no checkout in the fleet and gh can clone it, and `null` otherwise. `path` is `<clone_root>/<repo name>`, where `clone_root` defaults to the fleet's first search root. When `clone` is set, `selected` is `null` and `reason` is `"clone"`: launching clones the repo. Otherwise `selected` and `reason` are as before.
+`clone` is always present. It is `{"repo": "<host/owner/repo>", "path": "<target>"}` when the order's repo (else the first URL in its text) has no checkout in the fleet and gh can clone it, and `null` otherwise. `path` is `<clone_root>/<repo name>`, where `clone_root` defaults to the fleet's first search root. The folder name is the repo's name in lower case (`Acme/MyWidget` clones into `mywidget`). When `clone` is set, `selected` is `null` and `reason` is `"clone"`: launching clones the repo. When a file or folder already exists at `path`, `clone` carries `"exists": true`, nothing is preselected as a clone (`selected` and `reason` are as without a hint) and a launch there would be refused with 409, so a client can warn. Otherwise `selected` and `reason` are as before.
 
 ### `POST /api/ships` (alias `POST /api/v1/ships`)
 
-Launches a ship. Body: `fleet`, `harness`, `skill`, `text`, and either `dir` (a checkout or search root of the fleet) or `clone: true` with no `dir`. A launch with `clone: true` derives the repo like the dirs route does, runs `gh repo clone <host/owner/repo> <temporary folder>` in the fleet's environment, moves the result to `<clone_root>/<repo name>` and starts the ship there. The client never sends the target path. Only github.com and the host of a GitHub source the fleet has are cloned. Answers `201 {"ship": ...}`, or `{"error": "..."}` with:
+Launches a ship. Body: `fleet`, `harness`, `skill`, `text`, and either `dir` (a checkout or search root of the fleet) or `clone: true` with no `dir`, and optionally `clone_repo`, the `host/owner/repo` the form showed. A launch with `clone: true` derives the repo like the dirs route does, runs `gh repo clone <host/owner/repo> <temporary folder>` in the fleet's environment, moves the result to `<clone_root>/<repo name>` (lower case) and starts the ship there. The client never sends the target path. Only github.com and the host of a GitHub source the fleet has are cloned. Answers `201 {"ship": ...}`, or `{"error": "..."}` with:
 
 - `400`: `dir` and `clone` were both sent ("send dir or clone, not both"), no repo can be derived, or the repo is not one gh can clone (a host that is not GitHub, a name that starts with `-`, a dot name);
-- `409`: the repo already has a checkout in the fleet (the message names it: launch there with `dir`), or a folder already exists at the target, which is never touched;
-- `502`: gh failed, the message holds its stderr on one line, and nothing is left behind;
+- `409`: the repo already has a checkout in the fleet, a search root that is itself a checkout included (the message names it: launch there with `dir`), a folder already exists at the target, which is never touched, or `clone_repo` is set and differs from the repo the server derives ("the order's repo changed to X; reopen the form");
+- `502`: gh failed, the message holds its stderr on one line with the credentials of any URL in it replaced by `***`, and nothing is left behind;
 - the other launch refusals as before.
 
 ## A ship's conversation

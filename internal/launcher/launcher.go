@@ -23,14 +23,14 @@ type Request struct {
 	Fleet   string `json:"fleet"`
 	Harness string `json:"harness"`
 	Dir     string `json:"dir"`
-	// Clone asks to clone the order's repository into the fleet's clone root and launch there;
-	// it is sent with no Dir.
-	Clone   bool   `json:"clone"`
-	Skill   Skill  `json:"skill"`
-	Source  string `json:"source"`
-	OrderID string `json:"order_id"`
-	Text    string `json:"text"`
-	Note    string `json:"note"` // Just launch only: optional text sent before the order
+	Clone   bool   `json:"clone"` // sent with no Dir: the server clones the order's repo and launches there
+	// CloneRepo is the repo the form showed; a Clone launch whose derived repo differs is refused.
+	CloneRepo string `json:"clone_repo"`
+	Skill     Skill  `json:"skill"`
+	Source    string `json:"source"`
+	OrderID   string `json:"order_id"`
+	Text      string `json:"text"`
+	Note      string `json:"note"` // Just launch only: optional text sent before the order
 	// Title and URL are set by the server from the source's order, never by the client.
 	Title string `json:"-"`
 	URL   string `json:"-"`

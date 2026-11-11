@@ -95,7 +95,7 @@ func RouterFromFleets(fleets []config.Fleet) *Router {
 	rf := make([]RouteFleet, 0, len(fleets))
 	for _, f := range fleets {
 		var repos []string
-		for _, e := range repofinder.List(f.SearchRoots) {
+		for _, e := range repofinder.List(repofinder.FleetRoots(f.SearchRoots, f.CloneRoot)) {
 			if e.Kind == repofinder.KindCheckout {
 				repos = append(repos, e.Remotes...)
 			}

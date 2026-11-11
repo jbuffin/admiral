@@ -166,8 +166,8 @@ func TestCloneLaunchClonesAnUnclonedRepo(t *testing.T) {
 	if c.repo != "github.com/acme/widget" {
 		t.Errorf("gh cloned %q, want github.com/acme/widget", c.repo)
 	}
-	if c.dir == "" || filepath.Dir(c.dir) != clones || c.dir == want {
-		t.Errorf("gh was asked to clone into %q, want a temporary sibling inside %s that is renamed to %s", c.dir, clones, want)
+	if c.dir == "" || filepath.Dir(filepath.Dir(c.dir)) != clones || c.dir == want {
+		t.Errorf("gh was asked to clone into %q, want a child of a temporary folder inside %s that is renamed to %s", c.dir, clones, want)
 	}
 	for k, v := range map[string]string{"GH_PROMPT_DISABLED": "1", "GH_NO_UPDATE_NOTIFIER": "1", "FLEET_MARK": "work-mark"} {
 		if c.call.Env[k] != v {

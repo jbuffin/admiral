@@ -3,14 +3,13 @@ package launcher
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -22,8 +21,7 @@ import (
 
 const cloneTimeout = 10 * time.Minute
 
-// CloneTarget is the repository a launch with no checkout would clone and where it would go,
-// or ok false when the text and repo name nothing gh can clone into this fleet.
+// CloneTarget is where a launch for the hinted repo would clone, ok false when gh cannot clone it here.
 func CloneTarget(cfg *config.Config, fleet config.Fleet, repo, text string) (id, path string, ok bool) {
 	id, ok = repofinder.Hint(repo, text)
 	if !ok {
@@ -41,8 +39,7 @@ func CloneTarget(cfg *config.Config, fleet config.Fleet, repo, text string) (id,
 	return id, filepath.Join(root, name), true
 }
 
-// GitHubHosts are the hosts gh can clone from for a fleet: github.com and the host of each
-// GitHub source the fleet has.
+// GitHubHosts are github.com and the host of each GitHub source the fleet has.
 func GitHubHosts(cfg *config.Config, fleet config.Fleet) []string {
 	hosts := []string{github.DefaultHost}
 	for _, s := range cfg.SourceList {
@@ -61,10 +58,7 @@ func GitHubHosts(cfg *config.Config, fleet config.Fleet) []string {
 	return hosts
 }
 
-// Clone clones the repository a launch names into the fleet's clone root and returns the new
-// checkout, which the launch then starts in. It runs outside the launch lock. gh clones into a
-// sibling of the target that is renamed into place only if the target is still free, so a folder
-// that already exists is never touched and two clones of one repository cannot both win.
+// Clone runs outside the launch lock; the no-replace rename keeps an existing folder untouched and lets one of two racing clones win.
 func (l *Launcher) Clone(ctx context.Context, req Request, repo, text string) (string, error) {
 	cfg := l.Config()
 	fleet, ok := cfg.Fleet(req.Fleet)
@@ -84,8 +78,11 @@ func (l *Launcher) Clone(ctx context.Context, req Request, repo, text string) (s
 	if _, err := repofinder.CloneName(hint, GitHubHosts(cfg, fleet)); err != nil {
 		return "", refuse(http.StatusBadRequest, "%s", err)
 	}
+	if want := strings.ToLower(strings.TrimSpace(req.CloneRepo)); want != "" && want != hint {
+		return "", refuse(http.StatusConflict, "the order's repo changed to %s; reopen the form", hint)
+	}
 	for _, e := range repofinder.List(repofinder.FleetRoots(fleet.SearchRoots, fleet.CloneRoot)) {
-		if e.Kind == repofinder.KindCheckout && slices.Contains(e.Remotes, hint) {
+		if slices.Contains(e.Remotes, hint) {
 			return "", refuse(http.StatusConflict, "%s already has a checkout, %s: launch there", hint, e.Path)
 		}
 	}
@@ -100,16 +97,18 @@ func (l *Launcher) Clone(ctx context.Context, req Request, repo, text string) (s
 	if _, err := os.Lstat(target); err == nil {
 		return "", refuse(http.StatusConflict, "%s already exists, so %s was not cloned there", target, hint)
 	}
-	var salt [6]byte
-	_, _ = rand.Read(salt[:])
-	tmp := filepath.Join(root, ".admiral-clone-"+hex.EncodeToString(salt[:]))
-	if msg := runClone(ctx, fleet, hint, tmp); msg != "" {
-		_ = os.RemoveAll(tmp)
+	// Only a folder Admiral made is ever deleted: gh clones into a child of it.
+	tmp, err := os.MkdirTemp(root, ".admiral-clone-")
+	if err != nil {
+		return "", refuse(http.StatusInternalServerError, "could not create a folder in %s: %v", root, err)
+	}
+	defer os.RemoveAll(tmp)
+	child := filepath.Join(tmp, filepath.Base(target))
+	if msg := runClone(ctx, fleet, hint, child); msg != "" {
 		return "", refuse(http.StatusBadGateway, "%s", msg)
 	}
 	// The rename refuses a target that appeared while gh ran, so nothing is ever overwritten.
-	if err := renameNoReplace(tmp, target); err != nil {
-		_ = os.RemoveAll(tmp)
+	if err := renameNoReplace(child, target); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return "", refuse(http.StatusConflict, "%s already exists, so %s was not cloned there", target, hint)
 		}
@@ -142,8 +141,15 @@ func runClone(ctx context.Context, fleet config.Fleet, id, dir string) string {
 	case tctx.Err() != nil:
 		return "gh took longer than " + cloneTimeout.String() + " to clone " + id
 	}
-	if msg := strings.Join(strings.Fields(errOut.String()), " "); msg != "" {
+	if msg := scrubStderr(errOut.String()); msg != "" {
 		return "gh repo clone " + id + " failed: " + msg
 	}
 	return "gh repo clone " + id + " failed: " + err.Error()
+}
+
+var userinfo = regexp.MustCompile(`://[^\s@]*@`)
+
+// scrubStderr is gh's stderr on one line, with the credentials of any URL in it hidden.
+func scrubStderr(s string) string {
+	return userinfo.ReplaceAllString(strings.Join(strings.Fields(s), " "), "://***@")
 }

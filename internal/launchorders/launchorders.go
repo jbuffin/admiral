@@ -5,6 +5,7 @@ package launchorders
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -84,11 +85,15 @@ func (s *Service) serveDirs(w http.ResponseWriter, r *http.Request) {
 	entries, live := s.list(fleet)
 	selected, reason := s.preselect(&entries, fleet, req, live)
 	// A hinted repo with no checkout is cloned: the clone is the preselection.
-	var clone map[string]string
+	var clone map[string]any
 	if reason != "repo" && reason != "text" {
 		if repo, path, ok := launcher.CloneTarget(cfg, fleet, req.Repo, req.Text); ok {
-			clone = map[string]string{"repo": repo, "path": path}
-			selected, reason = "", "clone"
+			clone = map[string]any{"repo": repo, "path": path}
+			if _, err := os.Lstat(path); err == nil {
+				clone["exists"] = true // the launch would be refused: keep the old preselection
+			} else {
+				selected, reason = "", "clone"
+			}
 		}
 	}
 
@@ -104,7 +109,7 @@ func (s *Service) serveDirs(w http.ResponseWriter, r *http.Request) {
 	var sel, why *string
 	if selected != "" {
 		sel, why = &selected, &reason
-	} else if clone != nil {
+	} else if reason == "clone" {
 		why = &reason
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"entries": out, "selected": sel, "reason": why, "clone": clone})

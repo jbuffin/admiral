@@ -309,7 +309,7 @@ func TestFavoritesNeverReplaceADanglingSymlink(t *testing.T) {
 }
 
 // cloneOf reads the response's clone field: present in every response, null or {repo, path}.
-func cloneOf(t *testing.T, f *fixture, body map[string]string) (clone map[string]string, selected, reason string) {
+func cloneOf(t *testing.T, f *fixture, body map[string]string) (clone map[string]any, selected, reason string) {
 	t.Helper()
 	code, raw := f.do(http.MethodPost, "/api/launch-orders/dirs", body)
 	if code != http.StatusOK {
@@ -407,5 +407,21 @@ func TestDirsHasNoCloneForARepoWithACheckout(t *testing.T) {
 	clone, selected, reason := cloneOf(t, f, map[string]string{"fleet": "work", "harness": "claude"})
 	if clone != nil || selected != z || reason != "last_used" {
 		t.Errorf("no hint: clone %v, selected %q (%s); want clone null and %q (last_used)", clone, selected, reason, z)
+	}
+}
+
+func TestDirsKeepsThePreselectionWhenTheCloneTargetExists(t *testing.T) {
+	f := newFixture(t)
+	z := f.repo("z")
+	f.state.SetLastDir("work", "claude", z)
+	if err := os.Mkdir(filepath.Join(f.work, "widget"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	clone, selected, reason := cloneOf(t, f, map[string]string{"fleet": "work", "harness": "claude", "repo": "https://github.com/acme/widget"})
+	if clone["repo"] != "github.com/acme/widget" || clone["path"] != filepath.Join(f.work, "widget") || clone["exists"] != true {
+		t.Errorf("clone = %v, want repo, path and exists true", clone)
+	}
+	if selected != z || reason != "last_used" {
+		t.Errorf("selected %q (%s), want the old preselection %q (last_used): the clone would be refused", selected, reason, z)
 	}
 }
