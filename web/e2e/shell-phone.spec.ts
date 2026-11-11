@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { HOME, WORK, expectSeededTurn, holds, launchFromTheShell, launchShip, paneSize, rowLink, say, seedFleets, seedTurn, setState, shipViewUrl, viewPanel, viewTab, watchPage, withFakeGh } from './shell';
+import { HOME, WORK, expectSeededTurn, holds, interruptButton, launchFromTheShell, launchShip, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedFleets, seedTurn, sendButton, sentBubble, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh } from './shell';
 
 const tab = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
 
@@ -98,6 +98,26 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   await page.goto(admiral.url + 'app/ships?fleet=zulu');
   await expect(page.getByRole('main')).toContainText(WORK);
   await launchFromTheShell(page, admiral, (l) => l.tap(), { phone: true });
+
+  // On the phone the box sends with its button, Interrupt and Stop ship stay reachable, and Stop ship asks first.
+  const chat = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste', 'reply Aye, rebasing now'] });
+  setState(admiral, chat, 'working');
+  await page.goto(admiral.url + 'app/ships?fleet=zulu');
+  await rowLink(page, chat).tap();
+  await expect(messageBox(page)).toBeEnabled();
+  await messageBox(page).fill('Please rebase onto main');
+  await sendButton(page).tap();
+  await expect(viewPanel(page).getByText('Please rebase onto main', { exact: true })).toHaveCount(1);
+  await expect(sentBubble(page, 'Please rebase onto main')).toHaveCount(0);
+  await expect(viewPanel(page)).toContainText('Aye, rebasing now', { timeout: 15_000 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await interruptButton(page).tap();
+  await expect.poll(() => received(admiral, chat)).toContain('\x1b');
+  await stopShipButton(page).tap();
+  await stopDialog(page).getByRole('button', { name: 'Stop ship' }).tap();
+  await expect(page.getByRole('heading', { name: 'Ships', exact: true })).toBeVisible();
+  await expect(page.getByRole('main').getByRole('listitem').filter({ hasText: chat.name })).toHaveCount(0);
+  await expect.poll(() => outcomeEvents(admiral, chat)).toEqual(['launched', 'ended', 'stopped']);
 
   expect(watch.paths).toContain('/ws/v1');
   expect(watch.unversioned()).toEqual([]);
