@@ -119,16 +119,11 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
     if (e.key !== 'Tab' || !box.current) return;
     const items = [...box.current.querySelectorAll<HTMLElement>('button, input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((i) => !(i as HTMLButtonElement).disabled && i.offsetParent !== null && !(i instanceof HTMLInputElement && i.type === 'radio' && !i.checked));
     if (items.length === 0) return;
-    const first = items[0]!;
-    const last = items[items.length - 1]!;
-    const at = document.activeElement;
-    if (e.shiftKey && (at === first || at === box.current)) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && at === last) {
-      e.preventDefault();
-      first.focus();
-    }
+    // Safari's default Tab order skips buttons and checkboxes and can leave the dialog, so Tab moves focus here, in a ring.
+    e.preventDefault();
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    const step = e.shiftKey ? -1 : 1;
+    items[at < 0 ? (e.shiftKey ? items.length - 1 : 0) : (at + step + items.length) % items.length]!.focus();
   };
 
   const submit = async (e: Event) => {

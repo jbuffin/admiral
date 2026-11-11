@@ -236,17 +236,22 @@ a { color: inherit; text-decoration: none; }
 }
 .launch-form .sheet-title { margin: 4px 0 8px; }
 .launch-order { margin: 0 0 8px; color: var(--color-text2); overflow-wrap: anywhere; }
-.launch-body { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; min-height: 0; padding: 2px 2px 8px; }
+.launch-body { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; overflow-x: hidden; min-height: 0; padding: 2px 2px 8px; }
+.launch-body > * { min-width: 0; max-width: 100%; }
 .launch-form fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .launch-inner { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .launch-form legend, .field > span { display: block; margin-bottom: 4px; font-size: var(--font-size-meta); color: var(--color-text2); }
 .field { display: block; min-width: 0; }
 .field select, .field input, .field textarea {
-  width: 100%; min-height: var(--shape-min-touch-target); padding: 8px 10px; font: inherit; color: var(--color-text);
+  width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; min-height: var(--shape-min-touch-target); padding: 8px 10px; font: inherit; color: var(--color-text);
   background: var(--color-bg); border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md);
 }
 .field textarea { resize: vertical; }
-.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.field select {
+  appearance: none; -webkit-appearance: none; overflow: hidden; padding-right: 30px; text-overflow: ellipsis;
+  background: var(--color-bg) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236B7684' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>") no-repeat right 10px center;
+}
+.pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .docks { display: flex; flex-wrap: wrap; gap: 8px; }
 .dock { display: flex; align-items: center; gap: 8px; min-height: var(--shape-min-touch-target); padding: 0 12px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); }
 .dock.on { background: var(--color-sel); border-color: var(--color-accent); }
@@ -263,5 +268,5 @@ a { color: inherit; text-decoration: none; }
   .launch-form { width: 520px; border-radius: var(--shape-radius-lg); padding-bottom: 16px; }
 }
 @media (max-width: 640px) {
-  .pair { grid-template-columns: 1fr; }
+  .pair { grid-template-columns: minmax(0, 1fr); }
 }

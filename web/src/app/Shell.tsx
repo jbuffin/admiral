@@ -99,20 +99,20 @@ function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
 }
 
 function OrdersList({ fleetKey, onLaunch }: { fleetKey: string; onLaunch: (o: OrderRef) => void }) {
-  const views = sourcesForFleet(sources.value, fleetKey).flatMap((src) => src.views.filter((v) => v.orders.length > 0).map((v) => ({ src, v })));
-  if (views.length === 0) return null;
+  const groups = sourcesForFleet(sources.value, fleetKey)
+    .map((src) => ({ src, orders: src.views.flatMap((v) => v.orders) }))
+    .filter((g) => g.orders.length > 0);
+  if (groups.length === 0) return null;
   return (
     <section class="orders" aria-labelledby="orders-head">
       <h2 id="orders-head" class="group-head">
         Orders
       </h2>
-      {views.map(({ src, v }) => (
-        <div key={`${src.key}/${v.id}`} class="order-view">
-          <h3 class="order-view-head">
-            {v.title} <span class="count">{src.name}</span>
-          </h3>
+      {groups.map(({ src, orders }) => (
+        <div key={src.key} class="order-view">
+          <h3 class="order-view-head">{src.name}</h3>
           <ul class="ship-list">
-            {v.orders.map((o) => (
+            {orders.map((o) => (
               <li key={o.id} class="order-row">
                 <span class="mono order-id">{o.id}</span>
                 <span class="order-title">{o.title}</span>

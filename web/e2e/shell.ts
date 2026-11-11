@@ -116,6 +116,8 @@ export function watchPage(page: Page, server: string) {
   };
 }
 
+const LONG_TITLE = 'Supercalifragilisticexpialidocious_unbroken_title_with_no_spaces_at_all_to_wrap_on_a_narrow_screen_1234567890';
+const LONG_REPO = 'an-extraordinarily-long-repository-name-with-many-hyphens-in-it';
 export const ORDERS = [
   { id: 'ord-login', title: 'Fix the login redirect', text: 'Fix it.' },
   { id: 'ord-billing', title: 'Port the billing export', text: 'Port it.' },
@@ -123,6 +125,9 @@ export const ORDERS = [
   { id: 'ord-api', title: 'Tighten the api limits', text: 'Tighten them.', repo: 'https://github.com/acme/api' },
   { id: 'ord-widget', title: 'Ship the widget fix', text: 'Fix the widget.', repo: 'https://github.com/acme/widget' },
   { id: 'ord-gadget', title: 'Retire the gadget', text: 'Retire it.', repo: 'https://github.com/acme/gadget' },
+  // Long content the launch form must wrap or clip, never pan: a title with no break and a repo whose clone path is long.
+  { id: 'ord-longtitle', title: LONG_TITLE, text: 'Wrap it.' },
+  { id: 'ord-longrepo', title: 'Port the long repo', text: 'Port it.', repo: `https://github.com/acme-corporation-international/${LONG_REPO}` },
 ];
 
 /** Admiral's start environment for a test that launches ships: no ship goes idle or sails off on its own. */
@@ -230,7 +235,11 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   // The form is fixed, so only its own boxes show an overflow: the dialog and the body that scrolls inside it.
   const fits = () =>
     page.evaluate(() =>
-      [document.documentElement, document.querySelector('main')!, document.querySelector('[role="dialog"].launch-form'), document.querySelector('.launch-body')].every((e) => !e || e.scrollWidth <= e.clientWidth),
+      ['html', 'main', '[role="dialog"].launch-form', '.launch-body'].map((sel) => {
+        const e = document.querySelector(sel);
+        if (!e) throw new Error(`fits: ${sel} matches nothing`);
+        return e.scrollWidth <= e.clientWidth;
+      }).every(Boolean),
     );
   const orderLaunch = (title: string) => main.getByRole('button', { name: new RegExp(`^Launch.*${title}`) });
   const submit = form.getByRole('button', { name: 'Launch', exact: true });
@@ -334,6 +343,31 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   const widgetShip = await launched(cloned);
   await expect(main.getByRole('listitem').filter({ hasText: widgetShip.name })).toBeVisible();
   expect(existsSync(widget)).toBe(true);
+
+  // Long content: the form neither pans sideways nor shrinks a select under the touch target.
+  // One Orders heading, and a group heading naming the source alone.
+  const orders = page.getByRole('main').locator('section.orders');
+  await expect(orders.getByRole('heading', { level: 2 })).toHaveText(['Orders']);
+  await expect(orders.getByRole('heading', { level: 3 })).toHaveText(['Orders']);
+
+  for (const title of ['Supercalifragilistic', 'Port the long repo']) {
+    await press(orderLaunch(title));
+    await expect(form).toBeVisible();
+    // The checkout list is in: its longest entry is what can widen the form.
+    await expect(form.getByLabel('Checkout').locator('option')).not.toHaveCount(1);
+    expect(await fits()).toBe(true);
+    for (const name of ['Checkout', 'Skill', 'Model', 'Effort']) {
+      expect((await form.getByLabel(name).boundingBox())!.height, `${name} select height`).toBeGreaterThanOrEqual(44);
+    }
+    // Tab and Shift+Tab ring through the dialog's controls and never reach the page behind it.
+    for (const key of ['Tab', 'Shift+Tab']) {
+      for (let i = 0; i < 30; i++) {
+        await page.keyboard.press(key);
+        expect(await page.evaluate(() => !!document.activeElement?.closest('[role="dialog"].launch-form')), `${key} #${i} stays in the dialog`).toBe(true);
+      }
+    }
+    await cancel();
+  }
 
   // A folder already where the clone would land: the form warns and does not preselect the clone, and choosing it anyway shows the server's refusal.
   await press(orderLaunch('Retire the gadget'));
