@@ -1,6 +1,8 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { HOME, WORK, launchCrew, launchFromTheShell, launchShip, probeableClaude, say, seedFleets, setState, watchPage, withFakeGh } from './shell';
+import { HOME, WORK, expectSeededTurn, launchCrew, launchFromTheShell, launchShip, line, appendLines, probeableClaude, rowLink, say, seedFleets, seedTurn, setState, shipViewUrl, viewPanel, viewTab, watchPage, withFakeGh } from './shell';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const surface = (page: Page, title: string) => page.getByRole('heading', { name: title, exact: true });
 const nav = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
@@ -68,6 +70,69 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await say(admiral, login, 'Rebasing onto main');
   await expect(row(page, login)).toContainText('Rebasing onto main', { timeout: 15_000 });
   await expect(row(page, login)).not.toContainText('Which branch should I rebase onto?');
+
+  // Opening a ship: the view opens on Conversation and shows its turn. Back returns to the list.
+  await seedTurn(admiral, login);
+  await page.evaluate(() => ((window as unknown as { stayed: boolean }).stayed = true));
+  await rowLink(page, login).tap();
+  await expect(page).toHaveURL(shipViewUrl(admiral, login));
+  await expect(page.getByRole('heading', { name: login.name, exact: true })).toBeVisible();
+  await expect(page.getByRole('tab')).toHaveText(['Conversation', 'Terminal', 'Changes', 'PR']);
+  await expect(viewTab(page, 'Conversation')).toHaveAttribute('aria-selected', 'true');
+  await expectSeededTurn(page);
+  await expect(viewPanel(page)).toContainText('Working');
+
+  // A line appended to the transcript shows without a reload.
+  await appendLines(admiral, login, [line.assistant('Appended while the view was open')]);
+  await expect(viewPanel(page)).toContainText('Appended while the view was open', { timeout: 15_000 });
+
+  // PR and Changes are placeholders here.
+  await viewTab(page, 'PR').tap();
+  await expect(viewTab(page, 'PR')).toHaveAttribute('aria-selected', 'true');
+  await expect(viewPanel(page)).toContainText('No pull request yet');
+  await viewTab(page, 'Changes').tap();
+  await expect(viewTab(page, 'Changes')).toHaveAttribute('aria-selected', 'true');
+
+  // Only the Terminal tab joins the bridge, and what is typed there reaches the pane. Leaving it closes the socket.
+  const joined = page.waitForEvent('websocket', (ws) => /\/bridge\//.test(ws.url()));
+  await viewTab(page, 'Terminal').tap();
+  const bridge = await joined;
+  expect(new URL(bridge.url()).pathname).toBe(`/ws/v1/bridge/${encodeURIComponent(login.session)}`);
+  await expect(viewPanel(page).locator('.xterm')).toBeVisible();
+  const recorded = join(admiral.home, 'rec', login.session);
+  await expect.poll(() => existsSync(join(recorded, 'cues-done'))).toBe(true);
+  await viewPanel(page).locator('.xterm').tap();
+  await page.keyboard.type('typed-on-the-bridge');
+  await expect.poll(() => readFileSync(join(recorded, 'stdin'), 'utf8')).toContain('typed-on-the-bridge');
+  await viewTab(page, 'Conversation').tap();
+  await expect.poll(() => bridge.isClosed()).toBe(true);
+
+  // Back to the list, and the view opens on Conversation again from the keyboard: no tab is remembered.
+  await viewTab(page, 'Terminal').tap();
+  await page.goBack();
+  await expect(surface(page, 'Ships')).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/ships\?(.*&)?fleet=zulu/);
+  await rowLink(page, login).focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(shipViewUrl(admiral, login));
+  await expect(viewTab(page, 'Conversation')).toHaveAttribute('aria-selected', 'true');
+  await page.goBack();
+  expect(await page.evaluate(() => (window as unknown as { stayed?: boolean }).stayed)).toBe(true);
+
+  // A Codex ship has no conversation Admiral can read: a card says so and points to the terminal.
+  await rowLink(page, moored).tap();
+  await expect(viewTab(page, 'Conversation')).toHaveAttribute('aria-selected', 'true');
+  await expect(viewPanel(page)).toContainText(/Starting|No conversation/);
+  await expect(viewPanel(page).getByRole('button', { name: 'Open terminal' })).toBeVisible();
+
+  // A ship that leaves the list while its view is open: the view says it is gone and offers Back.
+  const stopped = await fetch(`${admiral.url}api/v1/ships/${encodeURIComponent(moored.session)}/stop`, { method: 'POST' });
+  expect(stopped.status).toBe(200);
+  await expect(page.getByRole('main')).toContainText(/gone|no longer/i);
+  const back = page.getByRole('link', { name: 'Back' }).or(page.getByRole('button', { name: 'Back' }));
+  await back.tap();
+  await expect(surface(page, 'Ships')).toBeVisible();
+  await expect(row(page, moored)).toHaveCount(0);
 
   await switcher(page, WORK).click();
   const menu = page.getByRole('menu');

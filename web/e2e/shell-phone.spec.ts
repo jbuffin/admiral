@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { HOME, WORK, launchFromTheShell, launchShip, say, seedFleets, setState, watchPage, withFakeGh } from './shell';
+import { HOME, WORK, expectSeededTurn, holds, launchFromTheShell, launchShip, paneSize, rowLink, say, seedFleets, seedTurn, setState, shipViewUrl, viewPanel, viewTab, watchPage, withFakeGh } from './shell';
 
 const tab = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
 
@@ -36,6 +36,34 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   await expect(row(moored).locator('img[src="/api/v1/logos/codex"]')).toBeVisible();
   for (const ship of [login, billing, moored]) expect((await row(ship).boundingBox())!.height).toBeGreaterThanOrEqual(44);
   expect(await page.evaluate(() => [document.documentElement, document.querySelector('main')!].every((e) => e.scrollWidth <= e.clientWidth))).toBe(true);
+
+  // Reading a ship on the phone never resizes the Mac's pane: only the Terminal tab joins the bridge.
+  await seedTurn(admiral, login);
+  const bridges = () => watch.paths.filter((p) => /^\/ws\/(v1\/)?bridge\//.test(p));
+  const size = paneSize(admiral, login);
+  expect(size).toMatch(/^\d+x\d+$/);
+  await rowLink(page, login).tap();
+  await expect(page).toHaveURL(shipViewUrl(admiral, login));
+  await expect(viewTab(page, 'Conversation')).toHaveAttribute('aria-selected', 'true');
+  await expectSeededTurn(page);
+  await viewTab(page, 'Changes').tap();
+  await expect(viewTab(page, 'Changes')).toHaveAttribute('aria-selected', 'true');
+  await viewTab(page, 'PR').tap();
+  await expect(viewPanel(page)).toContainText('No pull request yet');
+  await viewTab(page, 'Conversation').tap();
+  await expect(viewPanel(page)).toContainText('Rebase onto main please');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await holds(() => bridges().length === 0 && paneSize(admiral, login) === size, 'no bridge socket opens and the pane keeps its size');
+
+  const joined = page.waitForEvent('websocket', (ws) => /\/bridge\//.test(ws.url()));
+  await viewTab(page, 'Terminal').tap();
+  const bridge = await joined;
+  expect(new URL(bridge.url()).pathname).toBe(`/ws/v1/bridge/${encodeURIComponent(login.session)}`);
+  await expect.poll(() => paneSize(admiral, login)).not.toBe(size);
+  await viewTab(page, 'Conversation').tap();
+  await expect.poll(() => bridge.isClosed()).toBe(true);
+  await page.goBack();
+  await expect(page.getByRole('heading', { name: 'Ships', exact: true })).toBeVisible();
 
   await page.getByRole('banner').getByRole('button', { name: WORK, exact: true }).tap();
   const sheet = page.getByRole('dialog', { name: 'Fleets' });
