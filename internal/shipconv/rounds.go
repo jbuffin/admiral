@@ -92,8 +92,11 @@ func (s *Service) segmentsOf(sh ships.Ship, live bool) []segment {
 		seg := segment{round: liveRound}
 		seg.started, _ = time.Parse(time.RFC3339, sh.Launched)
 		seg.open = func() (*os.File, os.FileInfo, string) {
-			if none {
-				return nil, nil, StateNone
+			if none { // a Claude round's option may not be bound yet right after a wake: a divider and no state
+				if sh.Harness != "claude" {
+					return nil, nil, StateNone
+				}
+				return nil, nil, ""
 			}
 			f, info, _, err := loc.open(true)
 			switch {

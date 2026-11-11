@@ -118,9 +118,9 @@ A moored ship is relaunched under the same name for each feedback round, and eac
 
 When a ship has rounds, the endpoint stitches them oldest first:
 
-- **A moored ship** is served from its history, with state `ok`, where it has no live session and would otherwise be `404`. A moored ship with no history, or whose history cannot be read, answers `none`.
+- **A moored ship** is served from its history, with state `ok`, where it has no live session and would otherwise be `404`. A moored ship whose page would have no items (no history, a history that cannot be read, or only an undivided round 0) answers `none`.
 - **A live ship in round N of 1 or more** serves the recorded rounds, then its live round.
-- **A `round` item opens each round of 1 or more**: `{"id": "r<N>", "kind": "round", "round": N, "at": "<the round's launch time>"}`. It carries `state` when the round cannot be shown: `none` (no transcript recorded, for example a non-Claude round), `gone` (the file is no longer there) or `unreadable` (the file cannot be read or parsed). Such a round shows only its divider, and never fails the page. Round 0 has no divider, so a missing round-0 file shows nothing.
+- **A `round` item opens each round of 1 or more**: `{"id": "r<N>", "kind": "round", "round": N, "at": "<the round's launch time>"}`. It carries `state` when the round cannot be shown: `none` (no transcript recorded, for example a non-Claude round), `gone` (the file is no longer there) or `unreadable` (the file cannot be read or parsed). Such a round shows only its divider, and never fails the page. A live round's divider has no `state` while its transcript is not bound yet (right after a wake) or its file is not there yet. Round 0 has no divider, so a missing round-0 file shows nothing.
 - **Ids:** an item of round N of 1 or more has the id `r<N>:<id>`, on the page and on pushes alike. Round 0 keeps its own ids.
 - **`before`:** an id of the form `r<N>:<id>` for a round N of 1 or more in the history is read in that round, and `r<N>` (the divider) pages from the round before. Any other id is round 0's.
 - **Paging** reads the newest round first and opens an older file only while the page has room, at most 8 files a page; `more` is true while anything older exists, so a page may hold fewer than 200 items.

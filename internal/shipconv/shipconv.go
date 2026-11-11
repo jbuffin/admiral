@@ -326,6 +326,9 @@ func (s *Service) serveConversation(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "before is not the id of an item"})
 			return
 		}
+		if moored && len(stitched.Items) == 0 { // nothing to show: the no-conversation state
+			stitched.State = StateNone
+		}
 		writeJSON(w, http.StatusOK, stitched)
 		return
 	}
