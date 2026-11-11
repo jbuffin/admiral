@@ -10,7 +10,7 @@ import (
 )
 
 func adHocWarning(code, file, field, message string) Diagnostic {
-	return newDiag(layerAdHoc, file, code, field, message)
+	return newDiag(LayerAdHoc, file, code, field, message)
 }
 
 func adHocProblem(dir string) string {
@@ -25,7 +25,7 @@ func adHocProblem(dir string) string {
 	return ""
 }
 
-// namesThisRun reports whether the file's raw text holds this run's ad-hoc-run line. A file that can't be read holds none.
+// A file that can't be read holds no ad-hoc-run line.
 func namesThisRun(path, layerReal, runID string) bool {
 	if !within(realPath(path), layerReal) {
 		return false
@@ -61,7 +61,7 @@ func acceptAdHoc(m Member, standing map[string]*Member) *Diagnostic {
 	return nil
 }
 
-// readAdHoc adds this run's ad hoc members to standing and returns the warnings. Files of other runs are skipped silently.
+// Files of other runs are skipped silently.
 func readAdHoc(dir, runID string, standing map[string]*Member) []Diagnostic {
 	if _, err := os.Lstat(dir); err != nil {
 		return nil
@@ -77,7 +77,7 @@ func readAdHoc(dir, runID string, standing map[string]*Member) []Diagnostic {
 	var warns []Diagnostic
 	for _, name := range names {
 		path, stem, reason := filepath.Join(dir, name), strings.TrimSuffix(name, ".md"), "ad-hoc: true is missing"
-		m, found, refused, merr := readMember(path, layerReal, layerAdHoc, stem)
+		m, found, refused, merr := readMember(path, layerReal, LayerAdHoc, stem)
 		if merr != nil {
 			reason = merr.message
 		}

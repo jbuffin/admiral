@@ -23,7 +23,6 @@ func adHocText(name, role, run string) string {
 	return memberText(name, role, fmt.Sprintf("ad-hoc: true\nad-hoc-run: %q\n", run), "Ad hoc body.")
 }
 
-// layerDir writes files (string or []byte) into a fresh directory named for the layer.
 func layerDir(t *testing.T, name string, files map[string]any) string {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), name)
@@ -243,7 +242,6 @@ func TestAdHocDirectoryReachedThroughACommodoreSymlinkIsRefused(t *testing.T) {
 	wantDiags(t, got, "warnings", []diag{d("ad-hoc", nil, "ad-hoc-dir-refused", nil)})
 }
 
-// notesWorld builds a layer with one implementer and a memory root with fleet and repo notes.
 func notesWorld(t *testing.T) (in Input, memory string) {
 	t.Helper()
 	repo := layerDir(t, "repo", map[string]any{"implementer.md": memberText("implementer", "implementer", "", "Body.")})
@@ -374,4 +372,15 @@ func TestUnreadableMemoryRootAndMemberDirectoryAreWarnings(t *testing.T) {
 			d("memory", "implementer/repos", "memory-unreadable", nil),
 		})
 	})
+}
+
+func TestNoteWithAnUnassignedCodePointIsBad(t *testing.T) {
+	in, memory := notesWorld(t)
+	put(t, filepath.Join(memory, "implementer", "fleet.md"), "- 2026-11-01 (run-a): unassigned \u0378\n")
+	got := resolveJSON(t, in)
+	wantDiags(t, got, "warnings", []diag{d("memory", "implementer/fleet.md", "bad-note", nil)})
+	want := map[string]any{"fleet": []any{}, "repo": []any{repoNote}}
+	if !reflect.DeepEqual(normalize(t, implementerNotes(t, got)), normalize(t, want)) {
+		t.Errorf("notes = %s", pretty(implementerNotes(t, got)))
+	}
 }

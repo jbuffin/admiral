@@ -27,7 +27,7 @@ func badFrontmatter(message string) *memberError {
 	return &memberError{code: "bad-frontmatter", message: message}
 }
 
-// frontmatter holds the parsed fields: a value is nil (key with no value), a bool, a string or a []string.
+// A value is nil (key with no value), a bool, a string or a []string.
 type frontmatter struct {
 	keys   []string
 	values map[string]any

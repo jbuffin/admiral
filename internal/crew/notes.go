@@ -26,7 +26,7 @@ var (
 type memoryProblem struct{ code, message string }
 
 func memoryWarning(code, rel, message string) Diagnostic {
-	return newDiag(layerMemory, rel, code, "", message)
+	return newDiag(LayerMemory, rel, code, "", message)
 }
 
 func (p *memoryProblem) warning(rel string) Diagnostic { return memoryWarning(p.code, rel, p.message) }
@@ -101,8 +101,7 @@ func readNoteFile(path, rel string) ([]string, *memoryProblem) {
 // Characters the engineer can't see when approving a note; other spaces show as spaces and are allowed.
 func hiddenChar(s string) bool {
 	for _, r := range s {
-		if unicode.In(r, unicode.Cc, unicode.Cf, unicode.Cs, unicode.Co, unicode.Zl, unicode.Zp) ||
-			!unicode.In(r, unicode.L, unicode.M, unicode.N, unicode.P, unicode.S, unicode.Z, unicode.C) {
+		if unicode.In(r, unicode.Cc, unicode.Cf, unicode.Cs, unicode.Co, unicode.Cn, unicode.Zl, unicode.Zp) {
 			return true
 		}
 	}
@@ -199,7 +198,7 @@ func segmentsOK(parts ...string) bool {
 	return true
 }
 
-// attachNotes gives every member its notes and returns the memory warnings. A fix checker's files are never opened.
+// A fix checker's files are never opened.
 func attachNotes(members []Member, root, repo string) []Diagnostic {
 	for i := range members {
 		members[i].Notes = Notes{Fleet: []string{}, Repo: []string{}}

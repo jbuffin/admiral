@@ -140,7 +140,7 @@ func reviewFields(fm frontmatter, body, layer string, warn warner) (skills []str
 		warn("bad-based-on", "based-on", "a custom role needs based-on naming one of the roles but fix-checker")
 		refused = true
 	}
-	if fm.get("ad-hoc") == true && layer != layerAdHoc {
+	if fm.get("ad-hoc") == true && layer != LayerAdHoc {
 		warn("misplaced-ad-hoc", "ad-hoc", "ad hoc members live only in ad-hoc/, member refused")
 		refused = true
 	}

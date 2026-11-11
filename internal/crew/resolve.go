@@ -13,25 +13,26 @@ import (
 	"unicode/utf8"
 )
 
+// The layer labels an Input's Layers map is keyed by.
 const (
-	layerBuiltIn    = "built-in"
-	layerFleet      = "fleet"
-	layerUserGlobal = "user-global"
-	layerRepo       = "repo"
-	layerRun        = "run"
-	layerAdHoc      = "ad-hoc"
-	layerMemory     = "memory"
-
-	maxBytes = 65536
+	LayerBuiltIn    = "built-in"
+	LayerFleet      = "fleet"
+	LayerUserGlobal = "user-global"
+	LayerRepo       = "repo"
+	LayerRun        = "run"
+	LayerAdHoc      = "ad-hoc"
+	LayerMemory     = "memory"
 )
 
-var layerOrder = []string{layerBuiltIn, layerFleet, layerUserGlobal, layerRepo, layerRun, layerAdHoc, layerMemory}
+const maxBytes = 65536
+
+var layerOrder = []string{LayerBuiltIn, LayerFleet, LayerUserGlobal, LayerRepo, LayerRun, LayerAdHoc, LayerMemory}
 
 // Input is everything the resolver reads: it touches no environment variable and knows no Admiral path.
 type Input struct {
 	Admiral bool
 	Layers  map[string]string // by layer label; a missing label is an empty layer
-	Run     string            // the run id ad hoc members are filtered by
+	Run     string            // the run id ad hoc members are filtered by; empty skips the ad hoc layer
 	Repo    string            // <owner>/<repo>, for repo notes
 }
 
@@ -100,10 +101,10 @@ func Resolve(in Input) Result {
 	var errs, warns []Diagnostic
 	for _, label := range layerOrder {
 		dir := in.Layers[label]
-		if dir == "" || label == layerMemory || ignoredLayer(label, in.Admiral) {
+		if dir == "" || label == LayerMemory || ignoredLayer(label, in.Admiral) {
 			continue
 		}
-		if label == layerAdHoc {
+		if label == LayerAdHoc {
 			if in.Run != "" {
 				warns = append(warns, readAdHoc(dir, in.Run, standing)...)
 			}
@@ -125,7 +126,7 @@ func Resolve(in Input) Result {
 		return members[i].Name < members[j].Name
 	})
 	if len(errs) == 0 {
-		warns = append(warns, attachNotes(members, in.Layers[layerMemory], in.Repo)...)
+		warns = append(warns, attachNotes(members, in.Layers[LayerMemory], in.Repo)...)
 	}
 	sortDiagnostics(errs)
 	sortDiagnostics(warns)
@@ -137,7 +138,7 @@ func Resolve(in Input) Result {
 }
 
 func ignoredLayer(label string, admiral bool) bool {
-	return (admiral && label == layerUserGlobal) || (!admiral && label == layerFleet)
+	return (admiral && label == LayerUserGlobal) || (!admiral && label == LayerFleet)
 }
 
 func readLayer(label, dir string, standing map[string]*Member) (errs, warns []Diagnostic) {
