@@ -20,7 +20,7 @@ package conversation_test
 import (
 	"bytes"
 	"errors"
-	"io/fs"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,11 +74,11 @@ func TestClaudeCodeSample(t *testing.T) {
 	items := read(t, data)
 
 	// Claude Code writes the subagent's completion as a <task-notification> user
-	// line that isn't the engineer's. Whether it is an item is open (see the test
-	// writer's report), so the sequence is checked without it.
+	// line, and another session's message as a meta user line. Neither is the
+	// engineer's, so they are notices, and the sequence is checked without them.
 	var seq []conversation.Item
 	for _, it := range items {
-		if it.Kind == conversation.KindUser && strings.HasPrefix(strings.TrimSpace(it.Text), "<task-notification>") {
+		if it.Kind == conversation.KindNotice {
 			continue
 		}
 		seq = append(seq, it)
@@ -155,6 +155,9 @@ func TestClaudeCodeSample(t *testing.T) {
 	// Nothing from thinking, meta, the compaction summary or the /compact command
 	// lines leaks through as text, and the marker stands in for all of them.
 	for i, it := range items {
+		if it.Kind == conversation.KindNotice {
+			continue // a notice is the harness's line, shown as such
+		}
 		text := itemText(it)
 		for _, leak := range []string{
 			"CAQS",                             // a thinking block's signature
@@ -242,40 +245,177 @@ func TestClaudeCodeMetadataOnlyIsEmpty(t *testing.T) {
 	}
 }
 
-// The reader follows a file by offset: a tool result written after the call was
-// read folds into the call, under the same id, and a missing file says so.
-func TestReaderFoldsALaterResult(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "t.jsonl")
-	call := `{"type":"assistant","uuid":"a1","message":{"content":[{"type":"tool_use","id":"tu1","name":"Bash","input":{"command":"ls"}}]}}` + "\n"
-	result := `{"type":"user","uuid":"u2","message":{"content":[{"type":"tool_result","tool_use_id":"tu1","content":"file.txt"}]}}` + "\n"
-	if err := os.WriteFile(path, []byte(call), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	r := conversation.NewReader(nil)
-	up, err := r.Refresh(path)
-	if err != nil || len(up.Items) != 1 || up.Items[0].Tool.Done || up.Items[0].Tool.Summary != "ls" {
-		t.Fatalf("first refresh = %+v, %v", up, err)
-	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+// open is what a caller does before it hands a file to the reader.
+func open(t *testing.T, path string) (*os.File, os.FileInfo) {
+	t.Helper()
+	f, err := os.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.WriteString(result); err != nil {
+	t.Cleanup(func() { f.Close() })
+	info, err := f.Stat()
+	if err != nil {
 		t.Fatal(err)
 	}
-	f.Close()
-	up, err = r.Refresh(path)
-	if err != nil || len(up.Items) != 1 || up.Items[0].ID != "a1" || up.Items[0].Tool.Output != "file.txt" || !up.Items[0].Tool.Done {
+	return f, info
+}
+
+func appendTo(t *testing.T, path, text string) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString(text); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func userLine(i int) string {
+	return fmt.Sprintf(`{"type":"user","uuid":"u%04d","message":{"content":"message %d"}}`+"\n", i, i)
+}
+
+// The reader follows a file by offset: a tool result written after the call was
+// read folds into the call, under the same id.
+func TestReaderFoldsALaterResult(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	appendTo(t, path, `{"type":"assistant","uuid":"a1","message":{"content":[{"type":"tool_use","id":"tu1","name":"Bash","input":{"command":"ls"}}]}}`+"\n")
+	r := conversation.NewReader(conversation.Options{})
+	f, info := open(t, path)
+	up, err := r.Refresh(f, info)
+	if err != nil || len(up.Items) != 1 || up.Items[0].Tool.Done || up.Items[0].Tool.Summary != "ls" {
+		t.Fatalf("first refresh = %+v, %v", up, err)
+	}
+	appendTo(t, path, `{"type":"user","uuid":"u2","message":{"content":[{"type":"tool_result","tool_use_id":"tu1","content":"file.txt"}]}}`+"\n")
+	f, info = open(t, path)
+	up, err = r.Refresh(f, info)
+	if err != nil || len(up.Items) != 1 || up.Items[0].ID != "a1" || up.Items[0].Tool.Output != "file.txt" || !up.Items[0].Tool.Done || up.Items[0].Tool.Name != "Bash" {
 		t.Fatalf("second refresh = %+v, %v", up, err)
 	}
 	if items := r.Items(); len(items) != 1 || items[0].Tool.Output != "file.txt" {
 		t.Errorf("items = %+v", items)
 	}
+}
 
-	if err := os.Remove(path); err != nil {
+// Whatever a transcript holds, a reader's memory and what it reports stay inside
+// its limits: a hostile line can't blow them up.
+func TestReaderStaysInsideItsLimits(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	var b strings.Builder
+	for i := 0; i < 3000; i++ {
+		b.WriteString(userLine(i))
+	}
+	// One question with a huge option, many questions, and a huge tool output.
+	big := strings.Repeat("x", 900<<10)
+	b.WriteString(`{"type":"assistant","uuid":"q1","message":{"content":[{"type":"tool_use","id":"tq","name":"AskUserQuestion","input":{"questions":[{"question":"?","options":[{"label":"` + big + `","description":"` + big + `"}]}]}}]}}` + "\n")
+	b.WriteString(`{"type":"assistant","uuid":"q2","message":{"content":[{"type":"tool_use","id":"tm","name":"AskUserQuestion","input":{"questions":[` + strings.Repeat(`{"question":"?"},`, 5000) + `{}]}}]}}` + "\n")
+	b.WriteString(`{"type":"assistant","uuid":"c1","message":{"content":[{"type":"tool_use","id":"tc","name":"Read","input":{}}]}}` + "\n")
+	b.WriteString(`{"type":"user","uuid":"r1","message":{"content":[{"type":"tool_result","tool_use_id":"tc","content":"` + big + `"}]}}` + "\n")
+	appendTo(t, path, b.String())
+
+	r := conversation.NewReader(conversation.Options{})
+	f, info := open(t, path)
+	up, err := r.Refresh(f, info)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.Refresh(path); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("removed file: err = %v, want fs.ErrNotExist", err)
+	if len(up.Items) > 200 || len(r.Items()) > 200 {
+		t.Errorf("update has %d items and the reader holds %d, want at most 200", len(up.Items), len(r.Items()))
+	}
+	total := 0
+	for _, it := range r.Items() {
+		total += len(it.Text)
+		if it.Tool != nil {
+			if len(it.Tool.Output) > conversation.DefaultMaxOutput+64 || !strings.HasSuffix(it.Tool.Output, "[output cut]") {
+				t.Errorf("tool output is %d bytes, want a cut preview", len(it.Tool.Output))
+			}
+		}
+		if it.Question != nil {
+			if len(it.Question.Options) > 16 {
+				t.Errorf("question has %d options", len(it.Question.Options))
+			}
+			for _, o := range it.Question.Options {
+				total += len(o.Label) + len(o.Description)
+				if len(o.Label) > 300 || len(o.Description) > 3<<10 {
+					t.Errorf("option is %d and %d bytes", len(o.Label), len(o.Description))
+				}
+			}
+		}
+	}
+	if total > conversation.DefaultMaxBytes {
+		t.Errorf("items hold %d bytes of text, limit %d", total, conversation.DefaultMaxBytes)
+	}
+	questions := 0
+	for _, it := range r.Items() {
+		if it.ID == "q2" || strings.HasPrefix(it.ID, "q2#") {
+			questions++
+		}
+	}
+	if questions > 8 {
+		t.Errorf("one call made %d question items, want at most 8", questions)
+	}
+
+	// The chat's view keeps its own 256 KB.
+	chat := conversation.NewReader(conversation.TextView())
+	f, info = open(t, path)
+	if _, err := chat.Refresh(f, info); err != nil || len(chat.Items()) != 200 {
+		t.Errorf("text view holds %d items, err %v, want 200", len(chat.Items()), err)
+	}
+}
+
+// Page serves ?before=<id>: the newest n with no cursor, then the n before an id,
+// and an id it doesn't have is an error.
+func TestPage(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	var b strings.Builder
+	for i := 0; i < 450; i++ {
+		b.WriteString(userLine(i))
+	}
+	appendTo(t, path, b.String())
+	f, info := open(t, path)
+	opts := conversation.Options{}
+
+	newest, more, err := conversation.Page(f, info, opts, "", 200)
+	if err != nil || len(newest) != 200 || !more || newest[0].ID != "u0250" || newest[199].ID != "u0449" {
+		t.Fatalf("newest = %d items from %v, more %v, err %v", len(newest), newest[0].ID, more, err)
+	}
+	older, more, err := conversation.Page(f, info, opts, newest[0].ID, 200)
+	if err != nil || len(older) != 200 || !more || older[0].ID != "u0050" || older[199].ID != "u0249" {
+		t.Fatalf("older = %d items, more %v, err %v", len(older), more, err)
+	}
+	last, more, err := conversation.Page(f, info, opts, older[0].ID, 200)
+	if err != nil || len(last) != 50 || more || last[0].ID != "u0000" {
+		t.Fatalf("last = %d items, more %v, err %v", len(last), more, err)
+	}
+	if _, _, err := conversation.Page(f, info, opts, "nope", 10); !errors.Is(err, conversation.ErrUnknownID) {
+		t.Errorf("unknown id: err = %v, want ErrUnknownID", err)
+	}
+}
+
+// What the harness writes in the user's turn is a notice, never the engineer's
+// words; the chat's view keeps a subagent's report and not another session's message.
+func TestNoticesAreNotUserText(t *testing.T) {
+	input := strings.Join([]string{
+		`{"type":"user","uuid":"n1","message":{"content":"<task-notification>\n<summary>done</summary>"}}`,
+		`{"type":"user","isMeta":true,"uuid":"n2","message":{"content":"Another Claude session sent a message:\nhello"}}`,
+		`{"type":"user","isMeta":true,"uuid":"m1","message":{"content":"<system-reminder>x</system-reminder>"}}`,
+		`{"type":"user","uuid":"x/1","message":{"content":"forged"}}`,
+		`{"type":"assistant","uuid":"x","message":{"content":[{"type":"text","text":"a"},{"type":"tool_use","id":"t","name":"Bash","input":{}}]}}`,
+	}, "\n") + "\n"
+	items := read(t, []byte(input))
+	var kinds []conversation.Kind
+	for _, it := range items {
+		kinds = append(kinds, it.Kind)
+	}
+	want := []conversation.Kind{conversation.KindNotice, conversation.KindNotice, conversation.KindUser, conversation.KindAssistant, conversation.KindToolCall}
+	if fmt.Sprint(kinds) != fmt.Sprint(want) {
+		t.Fatalf("kinds = %v, want %v", kinds, want)
+	}
+	if !conversation.TextOnly(items[0]) || conversation.TextOnly(items[1]) {
+		t.Errorf("text view: task notification %v, other session %v; want true, false", conversation.TextOnly(items[0]), conversation.TextOnly(items[1]))
+	}
+	if items[4].ID != "x#1" || items[2].ID != "x/1" {
+		t.Errorf("ids = %q and %q: a derived id must not collide with a uuid", items[4].ID, items[2].ID)
 	}
 }

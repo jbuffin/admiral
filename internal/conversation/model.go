@@ -16,6 +16,10 @@ import (
 // file with nothing in it yet is an empty conversation, not an error.
 var ErrUnreadable = errors.New("conversation: nothing in the file can be read")
 
+// ErrUnknownID means a page was asked for before an id that is not in the part of
+// the file Page reads: the caller answers 400.
+var ErrUnknownID = errors.New("conversation: no such item id")
+
 // Kind is what an item is.
 type Kind string
 
@@ -26,6 +30,7 @@ const (
 	KindQuestion   Kind = "question"   // a question put to the engineer, with its options
 	KindTurnEnd    Kind = "turn_end"   // a turn boundary, with how long the turn took
 	KindCompaction Kind = "compaction" // the harness compacted the conversation here
+	KindNotice     Kind = "notice"     // a line the harness wrote in the user's turn: a subagent's report, another session's message
 )
 
 // Item is one thing in a conversation. ID is stable across reads of the same
@@ -35,7 +40,8 @@ type Item struct {
 	ID       string        `json:"id"`
 	Kind     Kind          `json:"kind"`
 	At       string        `json:"at,omitempty"`   // the harness's timestamp, as written
-	Text     string        `json:"text,omitempty"` // user and assistant text
+	Text     string        `json:"text,omitempty"` // user, assistant and notice text
+	Meta     bool          `json:"meta,omitempty"` // a notice the chat's text view does not show
 	Tool     *ToolCall     `json:"tool,omitempty"`
 	Question *Question     `json:"question,omitempty"`
 	Duration time.Duration `json:"-"` // a turn end's "worked for N"
@@ -74,5 +80,9 @@ type Option struct {
 	Description string `json:"description,omitempty"`
 }
 
-// TextOnly keeps the user's and the assistant's text: the chat's view.
-func TextOnly(it Item) bool { return it.Kind == KindUser || it.Kind == KindAssistant }
+// TextOnly keeps the user's and the assistant's text, and the harness notices the
+// chat shows today (a subagent's report): the chat's view. Ship views may drop
+// KindNotice.
+func TextOnly(it Item) bool {
+	return it.Kind == KindUser || it.Kind == KindAssistant || (it.Kind == KindNotice && !it.Meta)
+}
