@@ -16,6 +16,7 @@ import (
 	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/launcher"
+	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
@@ -45,6 +46,9 @@ type Ship struct {
 	ExitCode   *int            `json:"exit_code"`
 	ExitSignal *string         `json:"exit_signal"`
 	Position   *state.Position `json:"position"`
+	// PRs and MooredAt are set only on a moored ship.
+	PRs      []string `json:"prs,omitempty"`
+	MooredAt string   `json:"moored_at,omitempty"`
 	// Reason and StopSince are set only while the ship needs you; Reason is `idle`
 	// for a ship no hook has spoken for.
 	Reason    string `json:"reason,omitempty"`
@@ -76,6 +80,11 @@ type Service struct {
 	// release, or why the first is not ready (busy, missing or pending). Nil
 	// when there are no resources to hold.
 	Reserve func(names []string) (release func(), name, why string)
+	// GitHub is the client of the fleet's built-in GitHub source; nil when the
+	// fleet has none, and the ship then sails off.
+	GitHub func(fleet string) moor.GitHub
+	// CaptureResume keeps the answered items' resume text before a report is deleted.
+	CaptureResume func(session string)
 
 	// admitMu is held from an autopilot launch's cap check until its ship is launched,
 	// so two cannot both see the last free slot. Interactive launches never take it.
@@ -92,6 +101,12 @@ type Service struct {
 	// listing keeps an order hidden from the end of its launch until the host
 	// lists its ship.
 	listing map[OrderKey]unlisted
+	// settling holds the exit-0 ships whose PRs are being checked, by session.
+	settling map[string]bool
+
+	mooredMu     sync.Mutex
+	moored       []moor.Record // read from $ADMIRAL_HOME/moored on first use
+	mooredLoaded bool
 }
 
 type unlisted struct {
@@ -162,12 +177,14 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 
 func (s *Service) List() []Ship {
 	out := []Ship{}
+	live := map[string]bool{}
 	for _, sess := range s.Host.Sessions() {
+		live[sess.Name] = true
 		if sess.IsShip() {
 			out = append(out, s.ship(sess))
 		}
 	}
-	return out
+	return append(out, s.mooredShips(live)...)
 }
 
 func (s *Service) message() any {
@@ -206,7 +223,7 @@ func (s *Service) Run(ctx context.Context) {
 		// An exit-0 ship from before a restart is not shown sailing off again.
 		for _, sess := range s.Host.Sessions() {
 			if sess.IsShip() && exitedCleanly(sess) {
-				_ = s.killShip(ctx, sess.Name, true)
+				s.settle(ctx, sess)
 			}
 		}
 		_ = s.Host.Sync(ctx)
@@ -286,7 +303,7 @@ func (s *Service) bell(ctx context.Context, session string) {
 }
 
 func (s *Service) sailOff(ctx context.Context, since map[string]time.Time) {
-	now, killed := time.Now(), false
+	now := time.Now()
 	live := map[string]bool{}
 	for _, sess := range s.Host.Sessions() {
 		if !sess.IsShip() || !exitedCleanly(sess) {
@@ -297,16 +314,13 @@ func (s *Service) sailOff(ctx context.Context, since map[string]time.Time) {
 			since[sess.Name] = now
 		}
 		if now.Sub(since[sess.Name]) >= SailOffDelay {
-			killed = s.killShip(ctx, sess.Name, true) == nil || killed
+			s.settle(ctx, sess)
 		}
 	}
 	for name := range since {
 		if !live[name] {
 			delete(since, name)
 		}
-	}
-	if killed {
-		_ = s.Host.Sync(ctx)
 	}
 }
 
