@@ -14,6 +14,12 @@ const GLYPHS: Record<VisibleStatus, preact.ComponentChildren> = {
       <path d="M8 1.5a6.5 6.5 0 0 1 0 13z" fill="currentColor" />
     </>
   ),
+  moored: (
+    <g fill="none" stroke="currentColor">
+      <circle cx="8" cy="8" r="6.5" stroke-width="1.6" />
+      <path d="M8 5v3.2l2 1.4" stroke-width="1.5" stroke-linecap="round" />
+    </g>
+  ),
   anchored: (
     <g fill="none" stroke="currentColor">
       <circle cx="8" cy="8" r="6.5" stroke-width="1.6" />

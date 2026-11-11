@@ -10,10 +10,11 @@ export interface ShipGroup {
 export const GROUP_TITLES: Record<VisibleStatus, string> = {
   needs_you: 'Needs you',
   underway: 'Underway',
+  moored: 'Moored',
   anchored: 'Anchored',
 };
 
-const ORDER: VisibleStatus[] = ['needs_you', 'underway', 'anchored'];
+const ORDER: VisibleStatus[] = ['needs_you', 'underway', 'moored', 'anchored'];
 
 export function groupShips(ships: Ship[], fleetKey: string): ShipGroup[] {
   const mine = ships.filter((s) => s.fleet === fleetKey);
@@ -30,3 +31,6 @@ export function shipAge(launched: string, now: number): string {
   if (min < 24 * 60) return `${Math.floor(min / 60)}h`;
   return `${Math.floor(min / 1440)}d`;
 }
+
+/** A moored ship has no launch time on the wire; it has waited since it moored. */
+export const shipRowAge = (ship: Ship, now: number): string => shipAge(ship.status === 'moored' ? (ship.moored_at ?? '') : ship.launched, now);

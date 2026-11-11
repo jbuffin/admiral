@@ -41,7 +41,7 @@ The e2e harness shortens Admiral's production delays through environment variabl
 
 A test sets its own value through `world.extra`.
 
-Tests sit at two seams. `e2e/` (Go) starts `bin/admiral` and drives it over HTTP and WebSocket. Its packaging checks (the release tarball, the install script, the formula and the service) carry the `packaging` build tag: `make e2e` leaves them out and the release runs them (see [releasing](releasing.md)). `web/e2e/` (Playwright, WebKit, touch) loads the new shell at `/app/` in two projects: `ipad-landscape` (1194x834) runs every spec but the `*-phone.spec.ts` ones, and `phone` (402x874) runs only those. Vitest covers the new shell's pure UI state logic only; the frozen old UI has no tests.
+Tests sit at two seams. `e2e/` (Go) starts `bin/admiral` and drives it over HTTP and WebSocket. Its packaging checks (the release tarball, the install script, the formula and the service) carry the `packaging` build tag: `make e2e` leaves them out and the release runs them (see [releasing](releasing.md)). `web/e2e/` (Playwright, WebKit, touch) loads the new shell at `/app/` in two projects: `ipad-landscape` (1194x834) runs every spec but the `*-phone.spec.ts` ones, and `phone` (402x874) runs only those. Vitest covers the new shell's pure UI state logic only; the frozen old UI has one vitest, `web/src/ships.test.ts`, which checks that its ship feed drops a moored ship.
 
 `internal/crew/testdata/crew-resolution/` is a byte-exact copy of the shared fixtures in `jbuffin/skills` (symlinks kept; `SOURCE` names the commit). Re-sync it with `internal/crew/testdata/sync.sh <skills checkout>`.
 
