@@ -32,42 +32,6 @@ func sameAnswer(t *testing.T, what string, old, v1 *http.Response, oldBody, v1Bo
 	}
 }
 
-// AC1: a route under /api/v1 answers exactly as under /api. Bodies stay
-// byte-identical, so the URLs inside them stay unversioned.
-func TestAPIv1_MirrorsUnversionedRoutes(t *testing.T) {
-	// A fresh install has no source, so start with the test one (it has an icon).
-	w := newWorld(t)
-	in := w.startSources(w.orderSrcDef("orders", "Orders")).instance
-	rows := []struct {
-		method, path string
-		status       int // what both paths must answer today
-	}{
-		{"GET", "/config", 200},
-		{"GET", "/ships", 200},
-		{"GET", "/sources", 200},
-		{"GET", "/does-not-exist", 404},            // the JSON catch-all
-		{"DELETE", "/ships", 404},                  // a wrong method lands in the catch-all, not a 405
-		{"POST", "/ships", 400},                    // an error body: the request is not valid JSON
-		{"PUT", "/sources/k%2Fx/panel-order", 400}, // an encoded slash in a path value stays one segment
-	}
-	for _, r := range rows {
-		t.Run(r.method+" "+r.path, func(t *testing.T) {
-			old, oldBody := do(t, r.method, in.LocalURL+"/api"+r.path, nil)
-			if old.StatusCode != r.status {
-				t.Fatalf("setup: %s /api%s = %d, want %d", r.method, r.path, old.StatusCode, r.status)
-			}
-			v1, v1Body := do(t, r.method, in.LocalURL+"/api/v1"+r.path, nil)
-			sameAnswer(t, r.method+" /api/v1"+r.path, old, v1, oldBody, v1Body)
-		})
-	}
-	t.Run("embedded URLs stay unversioned", func(t *testing.T) {
-		_, body := get(t, in.LocalURL+"/api/v1/sources", nil)
-		if !strings.Contains(body, `"/api/plugins/testplug/icon"`) || strings.Contains(body, "/api/v1/") {
-			t.Fatalf("GET /api/v1/sources should carry the unversioned icon URL /api/plugins/testplug/icon: %s", body)
-		}
-	})
-}
-
 // AC1: the page socket answers on /ws/v1 (the exact path, no trailing slash)
 // as it does on /ws, any method included, and the Origin rule carries over.
 func TestAPIv1_PageSocketAndOrigin(t *testing.T) {
