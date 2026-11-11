@@ -5,6 +5,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"mime"
 	"net/http"
@@ -54,6 +55,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", s.serveWS)
 	mux.HandleFunc("GET /api/config", s.serveConfig)
+	mux.HandleFunc("PUT /api/fleets/{key}", s.serveFleetSave)
 	mux.HandleFunc("GET /api/version", s.serveVersion)
 	mux.HandleFunc("GET /api/logos/{harness}", serveLogo)
 	for _, m := range s.Modules {
@@ -177,6 +179,44 @@ func (s *Server) serveConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(s.Config.View())
+}
+
+// serveFleetSave takes the fields in the body and ignores every other key, so docks, env and name stay as stored.
+func (s *Server) serveFleetSave(w http.ResponseWriter, r *http.Request) {
+	if s.Config == nil {
+		http.NotFound(w, r)
+		return
+	}
+	var req struct {
+		SearchRoots *[]string `json:"search_roots"`
+		Owners      *[]string `json:"owners"`
+		CloneRoot   *string   `json:"clone_root"`
+		Color       *string   `json:"color"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
+		return
+	}
+	err := s.Config.SetFleetFields(r.PathValue("key"), config.FleetFields{
+		SearchRoots: req.SearchRoots, Owners: req.Owners, CloneRoot: req.CloneRoot, Color: req.Color})
+	switch {
+	case errors.Is(err, config.ErrNoFleet):
+		writeJSONError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, config.ErrConflict):
+		writeJSONError(w, http.StatusConflict, err.Error())
+	case err != nil:
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(s.Config.View())
+	}
+}
+
+func writeJSONError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
 // Only the harness names Admiral knows are looked up, so the path never takes

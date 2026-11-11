@@ -15,8 +15,8 @@ import (
 	"github.com/jbuffin/admiral/internal/server"
 )
 
-// Tab-indented with an unknown key, so any rewrite of what the route should
-// not touch shows as different bytes.
+// Holds an unknown key, so a rewrite that drops what the route should not
+// touch shows as a different document. Every Admiral write re-indents the file.
 const fleetsFixture = `{
 	"version": 1,
 	"x_note": "kept",
@@ -198,8 +198,8 @@ func TestFleetSave_LeavesDocksEnvNameAndTheRestOfTheFileAlone(t *testing.T) {
 	if g, e := mustJSON(got), mustJSON(exp); g != e {
 		t.Errorf("config.json after the save:\n%s\nwant only work's search_roots and clone_root changed:\n%s", g, e)
 	}
-	if !strings.Contains(f.file(), "\t\t\"home\": {") || !strings.Contains(f.file(), `"x_note": "kept"`) {
-		t.Errorf("other fleets and keys must keep their bytes:\n%s", f.file())
+	if !strings.Contains(f.file(), `"x_note": "kept"`) {
+		t.Errorf("unknown keys must survive the save:\n%s", f.file())
 	}
 	w := f.fleet("work")
 	if w.Name != "Work" || len(w.Docks) != 1 || w.Docks[0].Executable != "/bin/echo" {

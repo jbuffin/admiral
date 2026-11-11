@@ -401,6 +401,19 @@ func (s *Service) serveSave(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "source "+key+" not found")
 		return
 	}
+	if req.Fleet != nil && *req.Fleet != list[i].Fleet {
+		if _, ok := cfg.Fleet(*req.Fleet); !ok {
+			s.mu.Unlock()
+			writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("fleet %q is not a fleet in the config", *req.Fleet))
+			return
+		}
+		if list[i].Plugin == builtinGitHub {
+			s.mu.Unlock()
+			writeError(w, http.StatusUnprocessableEntity, "a GitHub source stays with its fleet: add a GitHub source to the other fleet instead")
+			return
+		}
+		list[i].Fleet = *req.Fleet
+	}
 	if req.Name != nil {
 		list[i].Name = strings.TrimSpace(*req.Name)
 	}

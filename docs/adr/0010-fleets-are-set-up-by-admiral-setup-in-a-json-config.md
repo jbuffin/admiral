@@ -1,6 +1,6 @@
 # 10. Fleets are set up by `admiral setup` in a JSON config
 
-Status: accepted, amended below (sources belong to a fleet, fleets gain `owners` and `clone_root`, and the config migrates itself at startup)
+Status: accepted, amended below (sources belong to a fleet, fleets gain `owners` and `clone_root`, the config migrates itself at startup, and the HTTP API may edit four fleet fields)
 
 ## Context
 
@@ -47,3 +47,11 @@ From [Grilling: how does the redesign roll out, and how do today's sources migra
 - **Other plugin sources** go to the default fleet and can be moved in Settings.
 - **Freeform.** The text of pending orders goes into the migration's Inbox item, and then they are removed. Nothing becomes a launch or a commitment on its own.
 - **`state.json`.** Ship positions and paused autopilot panels are deleted with the old UI, or with the server change that retires them. Each fleet's last-used directories and the kept inbox records stay.
+
+## Amendment (2026-11-11)
+
+From [Grilling: settings for fleets and their order sources](https://github.com/jbuffin/admiral/issues/271):
+
+- **The setup terminal is no longer the only way to edit a fleet.** The HTTP API, and so the UI, may edit a fleet's `search_roots`, `owners`, `clone_root` and `color` (`PUT /api/fleets/{key}`). This supersedes the Decision bullet "Fleets are never edited in the UI except through the setup terminal" and the rejected "settings screen" option, for those four fields only.
+- **Docks and env stay in the setup terminal.** Executables, args and env, and the fleet's name and key, are not writable over HTTP, so a LAN browser still cannot change what runs.
+- **A built-in GitHub source stays with its fleet.** Other plugin sources can be moved to another fleet (`PUT /api/sources/{key}` with `fleet`); a GitHub source is refused, and the engineer adds one to the other fleet instead.

@@ -107,6 +107,91 @@ func SetFleets(dir string, fleets json.RawMessage) error {
 	return replaceFile(path, out)
 }
 
+// FleetFields are the fleet settings the HTTP API may change. A nil field is left as stored.
+// Docks and env stay with the setup terminal, so a browser on the LAN cannot change what runs.
+type FleetFields struct {
+	SearchRoots *[]string
+	Owners      *[]string
+	CloneRoot   *string
+	Color       *string
+}
+
+var (
+	ErrNoFleet = errors.New("no such fleet")
+	// ErrConflict: the file cannot be edited now, or changed under the write.
+	ErrConflict = errors.New("config.json cannot be edited now")
+)
+
+// EditFleet rewrites only the named fleet's editable fields; any other error is a value Parse refused.
+// An empty color or clone_root removes the key, so the fleet falls back to its default.
+func EditFleet(dir, key string, f FleetFields) error {
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	path := filepath.Join(dir, FileName)
+	data, err := ReadConfig(dir)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrConflict, err)
+	}
+	if _, err := Parse(data); err != nil {
+		return fmt.Errorf("%w: %s is invalid, fix it first: %w", ErrConflict, path, err)
+	}
+	top, err := ParseObject(data)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrConflict, err)
+	}
+	fleets := NewObject()
+	if raw, ok := top.Get("fleets"); ok {
+		if fleets, err = ParseObject(raw); err != nil {
+			return fmt.Errorf("%w: %w", ErrConflict, err)
+		}
+	}
+	raw, ok := fleets.Get(key)
+	if !ok {
+		return fmt.Errorf("%w %q", ErrNoFleet, key)
+	}
+	fleet, err := ParseObject(raw)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrConflict, err)
+	}
+	if f.SearchRoots != nil {
+		fleet.SetValue("search_roots", nonNil(*f.SearchRoots))
+	}
+	if f.Owners != nil {
+		fleet.SetValue("owners", nonNil(*f.Owners))
+	}
+	setOrDrop := func(k string, v *string) {
+		switch {
+		case v == nil:
+		case *v == "":
+			fleet.Delete(k)
+		default:
+			fleet.SetValue(k, *v)
+		}
+	}
+	setOrDrop("clone_root", f.CloneRoot)
+	setOrDrop("color", f.Color)
+	fleets.Set(key, fleet.JSON())
+	_, out, err := renderKey(path, "fleets", fleets.JSON())
+	if err != nil {
+		return err
+	}
+	if _, err := Parse(out); err != nil {
+		return err
+	}
+	// A CLI write is another process and takes no lock here.
+	if now, err := readConfig(path); err != nil || !bytes.Equal(now, data) {
+		return fmt.Errorf("%w: config.json changed while saving; try again", ErrConflict)
+	}
+	return replaceFile(path, out)
+}
+
+func nonNil(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
 // PreviewFleets indents both the way Admiral writes, so a diff shows only what changed.
 func PreviewFleets(dir string, fleets json.RawMessage) (before, after []byte, err error) {
 	writeMu.Lock()
