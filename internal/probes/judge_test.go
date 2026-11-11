@@ -404,3 +404,14 @@ func TestTheFakeHarnessAnswersJudgeProbesAndLeavesHeadlessRunsAlone(t *testing.T
 		}
 	}
 }
+
+func TestEveryJudgeProbeSchemaGetsPastTheRunnersSupportedSubset(t *testing.T) {
+	for _, name := range allHarnesses {
+		j := newJRig(t, name, "pass")
+		for _, id := range judgeIDs {
+			if o := j.run(t, id); strings.Contains(o.Detail, "don't support") {
+				t.Errorf("%s %s: the runner refused the probe's schema: %s", name, id, o.Detail)
+			}
+		}
+	}
+}
