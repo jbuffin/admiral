@@ -53,6 +53,7 @@ type Ship struct {
 	Crew      []CrewBoat             `json:"crew"`
 	Subagents []sessionhost.Subagent `json:"subagents"`
 	CrewLive  int                    `json:"crew_live"`
+	Tail      string                 `json:"tail"`
 }
 
 type Orders interface {
@@ -68,6 +69,7 @@ type Service struct {
 	Orders   Orders
 	// OnChange must not block.
 	OnChange func()
+	Tail     func(session string) string
 	Outcomes *outcomes.Writer
 	// Reserve takes a unit of each named resource, or none: it returns the
 	// release, or why the first is not ready (busy, missing or pending). Nil
