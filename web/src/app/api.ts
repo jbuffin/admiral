@@ -101,3 +101,49 @@ export async function saveFleet(key: string, body: Partial<Pick<Fleet, 'search_r
   return r.ok ? { ok: true, data: fleetsOf(r.data) } : r;
 }
 export const startSetup = () => call<unknown>('POST', '/setup');
+
+export type CapabilityStatus = 'passed' | 'failed' | 'not_checked';
+export interface Capability {
+  id: string;
+  label: string;
+  status: CapabilityStatus;
+  checked_at: string | null;
+  detail: string;
+}
+export interface Feature {
+  id: string;
+  label: string;
+  capabilities: Capability[];
+}
+export interface HarnessCapabilities {
+  harness: string;
+  version: string;
+  detected_at: string | null;
+  features: Feature[];
+}
+export interface FleetCapabilities {
+  key: string;
+  name: string;
+  harnesses: HarnessCapabilities[];
+}
+
+export async function fetchCapabilities(): Promise<FleetCapabilities[]> {
+  const res = await fetch(`${API}/harness-capabilities`);
+  if (!res.ok) throw new Error(`harness-capabilities: ${res.status}`);
+  const body = (await res.json()) as { fleets?: FleetCapabilities[] | null };
+  return (body.fleets ?? []).map((f) => ({ ...f, harnesses: f.harnesses ?? [] }));
+}
+
+/** Runs the probes and waits for them, which can take tens of seconds. */
+export async function checkHarness(fleet: string, harness: string): Promise<HarnessCapabilities> {
+  const res = await fetch(`${API}/harness-capabilities/check`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fleet, harness }),
+  }).catch(() => {
+    throw new Error("Couldn't reach Admiral. Try again.");
+  });
+  const body = (await res.json().catch(() => ({}))) as HarnessCapabilities & { error?: string };
+  if (!res.ok) throw new Error(body.error || `check: ${res.status}`);
+  return body;
+}

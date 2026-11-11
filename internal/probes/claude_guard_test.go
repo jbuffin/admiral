@@ -43,6 +43,7 @@ different-command) : >"$seen"; : >"$sentinel"; echo done ;;
 different-command-failed) : >"$seen"; echo "it failed" ;;
 ran-anyway) : >"$seen"; : >"$denied"; : >"$sentinel"; echo done ;;
 error) echo "boom: not logged in" >&2; exit 3 ;;
+error-stdout) echo "Not logged in · Please run /login"; exit 1 ;;
 hang) sleep 30 ;;
 esac
 exit 0
@@ -113,8 +114,9 @@ func TestGuardProbeFailuresEachSayWhy(t *testing.T) {
 		"different-command":     "different command",
 		"ran-anyway":            "after the guard hook denied it",
 		"error":                 "claude failed: boom: not logged in",
+		"error-stdout":          "claude failed: Not logged in",
 	}
-	for _, mode := range []string{"skip-hook-says-denied", "no-tool", "different-command", "ran-anyway", "error"} {
+	for _, mode := range []string{"skip-hook-says-denied", "no-tool", "different-command", "ran-anyway", "error", "error-stdout"} {
 		t.Run(mode, func(t *testing.T) {
 			g := runGuard(t, mode, 0, nil)
 			l := g.guard(t)

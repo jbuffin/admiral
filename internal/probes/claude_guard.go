@@ -106,7 +106,11 @@ func runClaudeGuard(ctx context.Context, t Target) Outcome {
 		// The guard saw a Bash call that is neither the probe's command nor on disk.
 		return Outcome{Detail: "the model called Bash with a different command than the one asked for"}
 	case runErr != nil:
+		// Claude prints some failures (not logged in) on stdout and leaves stderr empty.
 		msg := firstLine(stderr.String())
+		if msg == "" {
+			msg = firstLine(stdout.String())
+		}
 		if msg == "" {
 			msg = runErr.Error()
 		}
@@ -147,5 +151,5 @@ func firstLine(s string) string {
 			return fmt.Sprintf("%.120s", l)
 		}
 	}
-	return "nothing"
+	return ""
 }
