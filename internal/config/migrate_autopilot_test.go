@@ -6,8 +6,7 @@ import (
 	"testing"
 )
 
-// #261: the engine's config keys migrate away. Each old autopilot part alone
-// is enough to need a migration, whatever else the file holds.
+// Each old autopilot part alone is enough to need a migration, whatever else the file holds.
 func TestNeedsMigrationForTheEnginesConfigKeys(t *testing.T) {
 	const fleets = `"fleets":{"work":{"name":"Work","claude":{}}}`
 	const entry = `{"enabled":true,"fleet":"work","harness":"claude","skill":{"kind":"none"}}`

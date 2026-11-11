@@ -63,6 +63,13 @@ func TestMigrateGivesEverySourceTheFirstFleetAndDropsFreeform(t *testing.T) {
 		t.Errorf("the backup is not the old file byte for byte:\n%s", got)
 	}
 
+	if _, err := config.ReadConfig(dir); err != nil {
+		t.Errorf("the migrated file does not load: %v", err)
+	}
+	if bk, _ := filepath.Glob(filepath.Join(dir, "config.json.pre-*")); len(bk) != 1 {
+		t.Errorf("backups = %v, want exactly one", bk)
+	}
+
 	cfg := decode(t, filepath.Join(dir, "config.json"))
 	var sources map[string]map[string]any
 	if err := json.Unmarshal(cfg["sources"], &sources); err != nil {
@@ -71,8 +78,8 @@ func TestMigrateGivesEverySourceTheFirstFleetAndDropsFreeform(t *testing.T) {
 	if len(sources) != 3 || sources["tracker"]["fleet"] != "zulu" || sources["github"]["fleet"] != "zulu" || sources["github-alpha"]["fleet"] != "alpha" {
 		t.Errorf("sources = %v, want tracker and github on zulu, github-alpha on alpha, notes gone", sources)
 	}
-	if strings.Contains(string(cfg["autopilot"]), "resume_source") || !strings.Contains(string(cfg["autopilot"]), "max_ships") {
-		t.Errorf("autopilot = %s, want resume_source cleared and max_ships kept", cfg["autopilot"])
+	if cfg["autopilot"] != nil || string(cfg["max_ships"]) != "2" {
+		t.Errorf("autopilot = %s, max_ships = %s, want the object gone and max_ships 2", cfg["autopilot"], cfg["max_ships"])
 	}
 	for _, k := range []string{"x_future", "favorite_skills", "fleets"} {
 		if cfg[k] == nil {

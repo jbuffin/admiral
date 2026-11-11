@@ -57,3 +57,21 @@ func TestLaunchAPIRefusesWhatAutopilotModeMayNotClaim(t *testing.T) {
 		t.Errorf("a failed launch left %d unit(s) held, want none", held)
 	}
 }
+
+// The cap counts every ship underway or needing you, however it was launched; it
+// refuses an autopilot launch and never an interactive one.
+func TestAutopilotLaunchOverTheCapIsRefusedButAHandLaunchIsNot(t *testing.T) {
+	s := &Service{
+		Host:     sessionhost.New("tmux", t.TempDir()+"/tmux.sock"), // never run: not ready
+		Launcher: &launcher.Launcher{Config: func() *config.Config { return &config.Config{MaxShips: 1} }},
+	}
+	s.holdUnlisted(OrderKey{"s", "o1"}, "ship-1", "p", nil)
+	base := `"fleet":"work","harness":"claude","dir":"` + t.TempDir() + `","skill":{"kind":"none"}`
+
+	if rec := launchPost(t, s, `{`+base+`,"autopilot":true}`); rec.Code != http.StatusConflict {
+		t.Errorf("an autopilot launch over the cap = %d %s, want 409", rec.Code, rec.Body)
+	}
+	if rec := launchPost(t, s, `{`+base+`}`); rec.Code == http.StatusConflict {
+		t.Errorf("an interactive launch over the cap = %d %s, want it never refused by the cap", rec.Code, rec.Body)
+	}
+}

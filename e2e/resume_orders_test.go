@@ -8,11 +8,7 @@ import (
 	"testing"
 )
 
-// Resume of a live ship (ADR 0016): once every item id in a ship's report
-// `inbox` has an answer, Admiral types the report's `resume` text at the prompt
-// of a ship still afloat. The real binary and a ship that sits underway.
-// Admiral adds no order for it: resume orders and `autopilot.resume_source` are
-// gone (#261).
+// A ship afloat has its resume text typed at its prompt once its items are answered.
 
 // resumeConfig writes the config: one claude fleet per cue key, no sources.
 func (w *world) resumeConfig(cues map[string][]string) {
@@ -69,6 +65,7 @@ func (w *world) answerQuestion(session, id string) {
 // ship's prompt when its turn has ended, never while it is busy, and adds no
 // order, so no second ship launches in its checkout.
 func TestResumeOfALiveShipIsTypedAtItsPromptOnceItStops(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.resumeConfig(map[string][]string{"f": {"record", "hook working", "wait go", "event Stop {}"}})
 	w.start()

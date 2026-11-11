@@ -90,34 +90,10 @@ func TestAutopilotLaunchNamesResources(t *testing.T) {
 	}
 }
 
-// The cap counts every ship underway or needing you; it refuses an autopilot
-// launch and never an interactive one.
-func TestAutopilotLaunchOverTheCapIsRefused(t *testing.T) {
-	t.Parallel()
-	w := autopilotWorld(t, 1)
-	// The ship that fills the cap is a hand launch: every ship counts, not only
-	// autopilot ones.
-	first := w.launch(w.dockLaunch("claude", "cap1", "go"))
-	w.waitShipCount(10*time.Second, "the first ship underway", func(s shipJSON) bool { return s.Session == first.Session && live(s) }, 1)
-
-	before := w.sessions()
-	code, body := w.post(w.autopilotLaunch("claude", "cap2", nil))
-	if code != http.StatusConflict {
-		t.Errorf("an autopilot launch over the cap = %d %s, want 409", code, body)
-	}
-	if after := w.sessions(); !reflect.DeepEqual(before, after) {
-		t.Errorf("a refused launch changed the sessions: before %v, after %v", before, after)
-	}
-
-	hand := w.launch(w.dockLaunch("claude", "cap-hand", "go"))
-	if hand.Session == "" || hand.Session == first.Session {
-		t.Errorf("an interactive launch over the cap gave %+v, want a new ship", hand)
-	}
-}
-
 // With one slot free, two autopilot launches posted together give exactly one
 // ship and one 409: the cap check and the launch are one step.
 func TestConcurrentAutopilotLaunchesOverOneFreeSlot(t *testing.T) {
+	t.Parallel()
 	w := autopilotWorld(t, 1)
 	codes := make(chan int, 2)
 	start := make(chan struct{})
@@ -143,10 +119,10 @@ func TestConcurrentAutopilotLaunchesOverOneFreeSlot(t *testing.T) {
 	}
 }
 
-// AC 8, hand half: Admiral owns ADMIRAL_AUTOPILOT, ADMIRAL_LOW_STAKES and
-// ADMIRAL_AUTO_MERGE (#120), so a launch by hand never has them, whether the fleet's env or Admiral's own
-// environment (an Admiral running inside an autopilot ship) sets them.
+// Admiral owns ADMIRAL_AUTOPILOT, ADMIRAL_LOW_STAKES and ADMIRAL_AUTO_MERGE: a hand
+// launch never has them, whether the fleet's env or Admiral's own environment sets them.
 func TestHandLaunchHasNoAutopilotVariables(t *testing.T) {
+	t.Parallel()
 	vars := []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE"}
 	check := func(t *testing.T, w *world) {
 		t.Helper()
@@ -179,6 +155,7 @@ func TestHandLaunchHasNoAutopilotVariables(t *testing.T) {
 // Two launches of one order that overlap: the order is hidden only once its
 // ship exists, so the refusal must hold the order while a launch runs.
 func TestConcurrentLaunchesOfOneOrder(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	p := w.newTP("a")
 	p.mainOrders(ord("o1", "First"))
