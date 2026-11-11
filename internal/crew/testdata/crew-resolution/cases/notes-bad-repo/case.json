@@ -1,0 +1,5 @@
+{
+  "admiral": true,
+  "description": "A repo whose name has a character outside [A-Za-z0-9_.-] loads no repo notes and gives one bad-repo warning; the fleet notes still load.",
+  "repo": "acme/app!"
+}

@@ -1,0 +1,1 @@
+- 2026-11-02 (run-a): The app needs Node 22.

@@ -1,0 +1,19 @@
+{
+  "errors": [
+    {
+      "code": "bad-frontmatter",
+      "field": null,
+      "file": "broken.md",
+      "layer": "repo"
+    }
+  ],
+  "exit": 1,
+  "warnings": [
+    {
+      "code": "unknown-field",
+      "field": "colour",
+      "file": "quirky.md",
+      "layer": "repo"
+    }
+  ]
+}

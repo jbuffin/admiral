@@ -1,0 +1,4 @@
+{
+  "admiral": false,
+  "description": "Warnings sort by layer, then file in byte order ('a-b.md' before 'a.md'), then code, then field with null first."
+}

@@ -1,0 +1,2 @@
+# Exact bytes matter here: size-limit-ok is exactly 65536 bytes, so never convert line endings.
+* -text

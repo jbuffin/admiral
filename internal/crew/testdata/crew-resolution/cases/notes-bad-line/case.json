@@ -1,0 +1,5 @@
+{
+  "admiral": true,
+  "description": "A '- ' line that isn't '- YYYY-MM-DD (<run>): <fact>' (an impossible date, no run, a run with a space, no date, an empty fact, a fact that starts with a space, plain text, year 0000, an invisible character such as a tag, bidi override or zero-width space) is skipped with one bad-note warning each. Lines that don't start with '- ' are ignored silently.",
+  "repo": "acme/app"
+}

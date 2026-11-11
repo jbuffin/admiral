@@ -1,0 +1,18 @@
+{
+  "errors": [
+    {
+      "code": "bad-name",
+      "field": "name",
+      "file": "upper.md",
+      "layer": "repo"
+    },
+    {
+      "code": "bad-name",
+      "field": "name",
+      "file": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.md",
+      "layer": "repo"
+    }
+  ],
+  "exit": 1,
+  "warnings": []
+}

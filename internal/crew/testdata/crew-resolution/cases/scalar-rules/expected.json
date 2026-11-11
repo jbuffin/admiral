@@ -1,0 +1,105 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "block-skills.md",
+      "harness": null,
+      "instructions": "",
+      "layer": "repo",
+      "model": null,
+      "name": "block-skills",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Block.",
+      "role": "scribe",
+      "skills": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ]
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "body-trimming.md",
+      "harness": null,
+      "instructions": "First line.\n\n  Indented line.",
+      "layer": "repo",
+      "model": null,
+      "name": "body-trimming",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Trim.",
+      "role": "scribe",
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "flow-skills.md",
+      "harness": "copilot",
+      "instructions": "",
+      "layer": "repo",
+      "model": null,
+      "name": "flow-skills",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Flow.",
+      "role": "scribe",
+      "skills": [
+        "review",
+        "tdd",
+        "plain"
+      ]
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "plain-colon-hash.md",
+      "harness": null,
+      "instructions": "",
+      "layer": "repo",
+      "model": null,
+      "name": "plain-colon-hash",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Use when a: b # c",
+      "role": "scribe",
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "quoted-escapes.md",
+      "harness": null,
+      "instructions": "",
+      "layer": "repo",
+      "model": null,
+      "name": "quoted-escapes",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "say \"hi\" and \\ done",
+      "role": "scribe",
+      "skills": []
+    }
+  ],
+  "warnings": []
+}

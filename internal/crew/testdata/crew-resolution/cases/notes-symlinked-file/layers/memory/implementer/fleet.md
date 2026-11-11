@@ -1,0 +1,1 @@
+- 2026-11-01 (run-a): A regular file beside the symlink loads.

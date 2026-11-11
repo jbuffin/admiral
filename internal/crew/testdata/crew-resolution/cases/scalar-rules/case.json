@@ -1,0 +1,4 @@
+{
+  "admiral": false,
+  "description": "Frontmatter scalar rules: plain values keep ' #' and ': ', quoted escapes, '/' and '$' stripped from skills, flow and block lists, body trimming."
+}

@@ -1,0 +1,49 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "implementer.md",
+      "harness": null,
+      "instructions": "Implement.",
+      "layer": "built-in",
+      "model": null,
+      "name": "implementer",
+      "notes": {
+        "fleet": [
+          "2026-11-01 (run-a): Run the tests with `make test`.",
+          "2026-11-03 (run-b): The CI image has no network."
+        ],
+        "repo": [
+          "2026-11-02 (run-a): The app needs Node 22."
+        ]
+      },
+      "pick-me-when": "Default implementer.",
+      "role": "implementer",
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "reviewer.md",
+      "harness": null,
+      "instructions": "Review.",
+      "layer": "built-in",
+      "model": null,
+      "name": "reviewer",
+      "notes": {
+        "fleet": [
+          "2026-11-04 (run-c): Reviewers check the changeset."
+        ],
+        "repo": []
+      },
+      "pick-me-when": "Default reviewer.",
+      "role": "reviewer",
+      "skills": []
+    }
+  ],
+  "warnings": []
+}

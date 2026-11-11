@@ -1,0 +1,24 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "nbsp.md",
+      "harness": null,
+      "instructions": "\u00a0\n\ntext",
+      "layer": "repo",
+      "model": null,
+      "name": "nbsp",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "\u00a0",
+      "role": "scribe",
+      "skills": []
+    }
+  ],
+  "warnings": []
+}

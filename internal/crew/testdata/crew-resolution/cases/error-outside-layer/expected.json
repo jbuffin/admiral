@@ -1,0 +1,12 @@
+{
+  "errors": [
+    {
+      "code": "outside-layer",
+      "field": null,
+      "file": "escape.md",
+      "layer": "repo"
+    }
+  ],
+  "exit": 1,
+  "warnings": []
+}

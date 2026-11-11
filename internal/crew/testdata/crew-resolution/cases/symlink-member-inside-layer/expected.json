@@ -1,0 +1,24 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "linked.md",
+      "harness": null,
+      "instructions": "Real file inside a subdirectory of the layer.",
+      "layer": "repo",
+      "model": null,
+      "name": "linked",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Linked.",
+      "role": "scribe",
+      "skills": []
+    }
+  ],
+  "warnings": []
+}

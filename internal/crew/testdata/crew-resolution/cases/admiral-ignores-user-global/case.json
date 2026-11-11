@@ -1,0 +1,4 @@
+{
+  "admiral": true,
+  "description": "Inside Admiral the user-global layer is ignored: its members never resolve and even a broken file there reports nothing."
+}

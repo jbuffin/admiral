@@ -1,0 +1,5 @@
+{
+  "admiral": false,
+  "description": "A note file that is a symlink is skipped with one memory-refused warning, even when its target holds valid notes. Its sibling files load.",
+  "repo": "acme/app"
+}

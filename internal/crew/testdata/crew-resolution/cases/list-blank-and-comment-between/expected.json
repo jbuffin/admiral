@@ -1,0 +1,27 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "lister.md",
+      "harness": null,
+      "instructions": "",
+      "layer": "repo",
+      "model": null,
+      "name": "lister",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick.",
+      "role": "scribe",
+      "skills": [
+        "alpha",
+        "beta"
+      ]
+    }
+  ],
+  "warnings": []
+}

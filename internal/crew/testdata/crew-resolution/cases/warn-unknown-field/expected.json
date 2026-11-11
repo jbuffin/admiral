@@ -1,0 +1,37 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "tweaky.md",
+      "harness": null,
+      "instructions": "Body.",
+      "layer": "repo",
+      "model": null,
+      "name": "tweaky",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick.",
+      "role": "scribe",
+      "skills": []
+    }
+  ],
+  "warnings": [
+    {
+      "code": "unknown-field",
+      "field": "alpha",
+      "file": "tweaky.md",
+      "layer": "repo"
+    },
+    {
+      "code": "unknown-field",
+      "field": "zeta",
+      "file": "tweaky.md",
+      "layer": "repo"
+    }
+  ]
+}

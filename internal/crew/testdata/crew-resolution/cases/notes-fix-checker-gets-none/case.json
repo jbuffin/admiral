@@ -1,0 +1,5 @@
+{
+  "admiral": true,
+  "description": "A member whose role is fix-checker gets no notes, whatever its name, and its memory files are never opened: its symlinked repo file gives no memory-refused warning.",
+  "repo": "acme/app"
+}

@@ -1,0 +1,5 @@
+{
+  "admiral": false,
+  "description": "Files that name another run (the id is compared as an exact string) are skipped with no warning.",
+  "run": "run-1"
+}

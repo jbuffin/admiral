@@ -1,0 +1,66 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "picky.md",
+      "harness": null,
+      "instructions": "",
+      "layer": "repo",
+      "model": null,
+      "name": "picky",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick.",
+      "role": "scribe",
+      "skills": [
+        "tdd",
+        "review",
+        "ok.v1:2",
+        "9lives"
+      ]
+    }
+  ],
+  "warnings": [
+    {
+      "code": "bad-skill",
+      "field": "skills",
+      "file": "picky.md",
+      "layer": "repo"
+    },
+    {
+      "code": "bad-skill",
+      "field": "skills",
+      "file": "picky.md",
+      "layer": "repo"
+    },
+    {
+      "code": "bad-skill",
+      "field": "skills",
+      "file": "picky.md",
+      "layer": "repo"
+    },
+    {
+      "code": "bad-skill",
+      "field": "skills",
+      "file": "picky.md",
+      "layer": "repo"
+    },
+    {
+      "code": "bad-skill",
+      "field": "skills",
+      "file": "picky.md",
+      "layer": "repo"
+    },
+    {
+      "code": "bad-skill",
+      "field": "skills",
+      "file": "picky.md",
+      "layer": "repo"
+    }
+  ]
+}

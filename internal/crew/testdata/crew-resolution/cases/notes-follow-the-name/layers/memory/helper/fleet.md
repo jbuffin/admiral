@@ -1,0 +1,1 @@
+- 2026-11-03 (run-a): The helper reads docs/ first.

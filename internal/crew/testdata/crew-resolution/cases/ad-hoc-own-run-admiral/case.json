@@ -1,0 +1,5 @@
+{
+  "admiral": true,
+  "description": "Inside Admiral the ad hoc directory is read after the fleet and repo layers; its member is listed with layer ad-hoc.",
+  "run": "run-1"
+}

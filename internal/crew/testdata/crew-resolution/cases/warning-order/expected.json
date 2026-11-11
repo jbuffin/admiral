@@ -1,0 +1,151 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "fix-checker.md",
+      "harness": null,
+      "instructions": "",
+      "layer": "built-in",
+      "model": null,
+      "name": "fix-checker",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Fix.",
+      "role": "fix-checker",
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "a.md",
+      "harness": null,
+      "instructions": "",
+      "layer": "user-global",
+      "model": null,
+      "name": "a",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "A.",
+      "role": "scribe",
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "a-b.md",
+      "harness": null,
+      "instructions": "",
+      "layer": "user-global",
+      "model": null,
+      "name": "a-b",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "AB.",
+      "role": "scribe",
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "early.md",
+      "harness": null,
+      "instructions": "",
+      "layer": "run",
+      "model": null,
+      "name": "early",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "E.",
+      "role": "scribe",
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "z-late.md",
+      "harness": null,
+      "instructions": "",
+      "layer": "built-in",
+      "model": null,
+      "name": "z-late",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Late.",
+      "role": "scribe",
+      "skills": []
+    }
+  ],
+  "warnings": [
+    {
+      "code": "bad-skill",
+      "field": "skills",
+      "file": "fix-checker.md",
+      "layer": "built-in"
+    },
+    {
+      "code": "fix-checker-instructions",
+      "field": null,
+      "file": "fix-checker.md",
+      "layer": "built-in"
+    },
+    {
+      "code": "fix-checker-skills",
+      "field": "skills",
+      "file": "fix-checker.md",
+      "layer": "built-in"
+    },
+    {
+      "code": "unknown-field",
+      "field": "aa",
+      "file": "fix-checker.md",
+      "layer": "built-in"
+    },
+    {
+      "code": "unknown-field",
+      "field": "zz",
+      "file": "fix-checker.md",
+      "layer": "built-in"
+    },
+    {
+      "code": "unknown-field",
+      "field": "q",
+      "file": "z-late.md",
+      "layer": "built-in"
+    },
+    {
+      "code": "unknown-field",
+      "field": "q",
+      "file": "a-b.md",
+      "layer": "user-global"
+    },
+    {
+      "code": "unknown-field",
+      "field": "q",
+      "file": "a.md",
+      "layer": "user-global"
+    },
+    {
+      "code": "unknown-field",
+      "field": "q",
+      "file": "early.md",
+      "layer": "run"
+    }
+  ]
+}

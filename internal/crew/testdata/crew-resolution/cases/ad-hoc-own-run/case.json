@@ -1,0 +1,5 @@
+{
+  "admiral": false,
+  "description": "A member in the ad hoc directory that names this run, with ad-hoc: true, is accepted with layer ad-hoc.",
+  "run": "run-1"
+}

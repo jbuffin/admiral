@@ -1,0 +1,4 @@
+{
+  "admiral": false,
+  "description": "Only ASCII space and tab are blank: a no-break space is content in a value and in the body, and a line of spaces and tabs is blank."
+}

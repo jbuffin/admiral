@@ -1,0 +1,4 @@
+{
+  "admiral": true,
+  "description": "With no repo, only the fleet notes load: no repo file is read, and no warning."
+}

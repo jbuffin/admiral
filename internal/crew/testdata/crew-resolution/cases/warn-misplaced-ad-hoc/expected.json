@@ -1,0 +1,49 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "implementer.md",
+      "harness": null,
+      "instructions": "Follow the implementer fallback.",
+      "layer": "built-in",
+      "model": null,
+      "name": "implementer",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Plain default for implementer.",
+      "role": "implementer",
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "fine.md",
+      "harness": null,
+      "instructions": "Fine.",
+      "layer": "repo",
+      "model": null,
+      "name": "fine",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Fine.",
+      "role": "scribe",
+      "skills": []
+    }
+  ],
+  "warnings": [
+    {
+      "code": "misplaced-ad-hoc",
+      "field": "ad-hoc",
+      "file": "implementer.md",
+      "layer": "repo"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "admiral": true,
+  "description": "Every layer inside Admiral overrides the one before it; the run layer's member is the one that resolves."
+}

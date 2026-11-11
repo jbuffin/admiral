@@ -1,0 +1,4 @@
+{
+  "admiral": false,
+  "description": "Outside Admiral the fleet layer is ignored: its members never resolve and even a broken file there reports nothing."
+}

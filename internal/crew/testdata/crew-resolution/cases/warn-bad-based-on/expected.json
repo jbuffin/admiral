@@ -1,0 +1,43 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": "scribe",
+      "file": "good-custom.md",
+      "harness": null,
+      "instructions": "Fine.",
+      "layer": "repo",
+      "model": null,
+      "name": "good-custom",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick.",
+      "role": "release-notes",
+      "skills": []
+    }
+  ],
+  "warnings": [
+    {
+      "code": "bad-based-on",
+      "field": "based-on",
+      "file": "custom-badbase.md",
+      "layer": "repo"
+    },
+    {
+      "code": "bad-based-on",
+      "field": "based-on",
+      "file": "custom-nobase.md",
+      "layer": "repo"
+    },
+    {
+      "code": "bad-based-on",
+      "field": "based-on",
+      "file": "reviewer.md",
+      "layer": "repo"
+    }
+  ]
+}

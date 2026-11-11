@@ -1,0 +1,4 @@
+{
+  "admiral": false,
+  "description": "Only the built-in layer: its members resolve, sorted by role then name; other layers are absent."
+}

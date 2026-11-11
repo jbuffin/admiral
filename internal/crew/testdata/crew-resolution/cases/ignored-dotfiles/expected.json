@@ -1,0 +1,24 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "real.md",
+      "harness": null,
+      "instructions": "",
+      "layer": "repo",
+      "model": null,
+      "name": "real",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick.",
+      "role": "scribe",
+      "skills": []
+    }
+  ],
+  "warnings": []
+}

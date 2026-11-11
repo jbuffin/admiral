@@ -1,0 +1,24 @@
+{
+  "errors": [
+    {
+      "code": "missing-field",
+      "field": "name",
+      "file": "multi.md",
+      "layer": "repo"
+    },
+    {
+      "code": "bad-name",
+      "field": "name",
+      "file": "name-then-harness.md",
+      "layer": "repo"
+    },
+    {
+      "code": "bad-field",
+      "field": "role",
+      "file": "role-then-harness.md",
+      "layer": "repo"
+    }
+  ],
+  "exit": 1,
+  "warnings": []
+}

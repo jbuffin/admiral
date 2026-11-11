@@ -1,0 +1,4 @@
+{
+  "admiral": false,
+  "description": "A skill failing the name rule after one leading '/' or '$' is dropped with one warning each; kept skills keep file order and drop duplicates."
+}
