@@ -22,6 +22,35 @@ export interface LaunchFormState {
   resources: string[];
   source?: string;
   orderId?: string;
+  crew?: string[];
+}
+
+export interface CrewMemberView {
+  name: string;
+  role: string;
+  layer: string;
+  harness: string | null;
+  'pick-me-when'?: string;
+}
+export interface CrewOption extends CrewMemberView {
+  hint: string | null;
+}
+export interface CrewAnswer {
+  members: CrewMemberView[];
+  warnings: { message: string }[];
+  errors: { layer: string; file: string | null; message: string }[];
+}
+
+/** The members a pin control offers: one locked to another harness can be pinned and says where it runs. */
+export function crewOptions(members: CrewMemberView[], harness: string): CrewOption[] {
+  return members.map((m) => ({ ...m, hint: m.harness !== null && m.harness !== harness ? `runs on ${m.harness}` : null }));
+}
+
+/** Pins or unpins a member; pinning replaces any other pinned member of the same role. */
+export function togglePin(pinned: string[], members: CrewMemberView[], name: string): string[] {
+  if (pinned.includes(name)) return pinned.filter((n) => n !== name);
+  const role = members.find((m) => m.name === name)?.role;
+  return [...pinned.filter((n) => members.find((m) => m.name === n)?.role !== role), name];
 }
 
 // Copilot offers none: it picks its own effort.
@@ -54,6 +83,7 @@ export function launchBody(form: LaunchFormState): Record<string, unknown> {
     ...(form.effort && { effort: form.effort }),
     ...(form.source && { source: form.source }),
     ...(form.orderId && { order_id: form.orderId }),
+    ...(form.skill.kind === 'commodore' && form.crew?.length && { crew: form.crew }),
   };
 }
 

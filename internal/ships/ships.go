@@ -352,6 +352,11 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
 		return
 	}
+	// These need no disk, so a bad request leaves no clone.
+	if lerr := launcher.CheckPins(req.Skill.Kind, req.Crew); lerr != nil {
+		writeError(w, lerr.Status, lerr.Msg)
+		return
+	}
 	if req.Clone {
 		if req.Dir != "" {
 			writeError(w, http.StatusBadRequest, "send dir or clone, not both")

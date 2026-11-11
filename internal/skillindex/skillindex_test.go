@@ -220,3 +220,50 @@ func TestFindCommodore(t *testing.T) {
 		})
 	}
 }
+
+// The directory is the one FindCommodore's pick lives in, so the built-in crew layer is the Commodore the ship runs.
+func TestCommodoreDirIsTheDirectoryOfTheCommodoreItPicks(t *testing.T) {
+	jb := func(d *ids, skill string) {
+		d.plugin("jb@mk", "jb", filepath.Join(d.claude, "plugins", "cache", "mk", "jb"), nil, skill)
+		d.enable("jb@mk", true)
+	}
+	for _, c := range []struct {
+		name, harness string
+		setup         func(d *ids, proj string)
+		want          func(d *ids, proj string) string // "" for not found
+	}{
+		{"absent", "claude", func(*ids, string) {}, func(*ids, string) string { return "" }},
+		{"a claude plugin's skill folder", "claude", func(d *ids, _ string) { jb(d, "engineering/commodore") },
+			func(d *ids, _ string) string {
+				return filepath.Join(d.claude, "plugins", "cache", "mk", "jb", "skills", "engineering", "commodore")
+			}},
+		{"plain beats a plugin", "claude", func(d *ids, _ string) {
+			writeSkill(t, filepath.Join(d.claude, "skills"), "commodore")
+			jb(d, "commodore")
+		}, func(d *ids, _ string) string { return filepath.Join(d.claude, "skills", "commodore") }},
+		{"the project's own when the user has none", "claude", func(d *ids, proj string) {
+			writeSkill(t, filepath.Join(proj, ".claude", "skills"), "commodore")
+		}, func(d *ids, proj string) string { return filepath.Join(proj, ".claude", "skills", "commodore") }},
+		{"a project cannot replace the user's Commodore", "claude", func(d *ids, proj string) {
+			writeSkill(t, filepath.Join(proj, ".claude", "skills"), "commodore")
+			writeSkill(t, filepath.Join(d.claude, "skills"), "commodore")
+		}, func(d *ids, _ string) string { return filepath.Join(d.claude, "skills", "commodore") }},
+		{"a project that turns off the user's plugin gets none", "claude", func(d *ids, proj string) {
+			writeSkill(t, filepath.Join(proj, ".claude", "skills"), "commodore")
+			jb(d, "commodore")
+			writeJSON(t, filepath.Join(proj, ".claude", "settings.json"), map[string]any{"enabledPlugins": map[string]bool{"jb@mk": false}})
+		}, func(*ids, string) string { return "" }},
+		{"codex", "codex", func(d *ids, _ string) { writeSkill(t, filepath.Join(d.codex, "skills"), "commodore") },
+			func(d *ids, _ string) string { return filepath.Join(d.codex, "skills", "commodore") }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			d := newIDs(t)
+			proj := d.project("proj")
+			c.setup(d, proj)
+			got, ok := skillindex.CommodoreDir(c.harness, d.environ(), proj)
+			if want := c.want(d, proj); got != want || ok != (want != "") {
+				t.Errorf("CommodoreDir = %q, %v, want %q", got, ok, want)
+			}
+		})
+	}
+}

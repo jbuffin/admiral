@@ -13,11 +13,14 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
+// skill is an invocation name and the folder holding its SKILL.md.
+type skill struct{ name, dir string }
+
 func Installed(harness string, environ []string, dir string) []string {
 	user, project := locations(harness, environ, dir)
 	set := map[string]bool{}
-	for _, n := range append(user, project...) {
-		set[n] = true
+	for _, sk := range append(user, project...) {
+		set[sk.name] = true
 	}
 	out := make([]string, 0, len(set))
 	for n := range set {
@@ -30,36 +33,47 @@ func Installed(harness string, environ []string, dir string) []string {
 // The user's own locations come before the project's, so a cloned repository
 // cannot shadow the Commodore skill (ADR 0010).
 func FindCommodore(harness string, environ []string, dir string) (string, bool) {
+	sk, ok := findCommodore(harness, environ, dir)
+	return sk.name, ok
+}
+
+// CommodoreDir is the directory of the Commodore skill FindCommodore picks, the one holding its SKILL.md.
+func CommodoreDir(harness string, environ []string, dir string) (string, bool) {
+	sk, ok := findCommodore(harness, environ, dir)
+	return sk.dir, ok
+}
+
+func findCommodore(harness string, environ []string, dir string) (skill, bool) {
 	user, project := locations(harness, environ, dir)
-	if n, ok := pickCommodore(user); ok {
-		return n, true
+	if sk, ok := pickCommodore(user); ok {
+		return sk, true
 	}
 	if harness == "claude" {
 		// A project that turns off the user's Commodore plugin does not get to
 		// put its own in its place.
 		env := envMap(environ)
 		if _, ok := pickCommodore(claudePlugins(env, config.IdentityDir(harness, env), dir, false)); ok {
-			return "", false
+			return skill{}, false
 		}
 	}
 	return pickCommodore(project)
 }
 
-func pickCommodore(names []string) (string, bool) {
-	best := ""
-	for _, n := range names {
-		plugin, skill, namespaced := strings.Cut(n, ":")
+func pickCommodore(skills []skill) (skill, bool) {
+	var best skill
+	for _, sk := range skills {
+		plugin, name, namespaced := strings.Cut(sk.name, ":")
 		switch {
-		case n == "commodore":
-			return n, true
-		case namespaced && skill == "commodore" && (best == "" || plugin < strings.TrimSuffix(best, ":commodore")):
-			best = n
+		case sk.name == "commodore":
+			return sk, true
+		case namespaced && name == "commodore" && (best.name == "" || plugin < strings.TrimSuffix(best.name, ":commodore")):
+			best = sk
 		}
 	}
-	return best, best != ""
+	return best, best.name != ""
 }
 
-func locations(harness string, environ []string, dir string) (user, project []string) {
+func locations(harness string, environ []string, dir string) (user, project []skill) {
 	env := envMap(environ)
 	home := env["HOME"]
 	if home == "" {
@@ -69,17 +83,25 @@ func locations(harness string, environ []string, dir string) (user, project []st
 	switch harness {
 	case "claude":
 		user = append(scanDir(filepath.Join(identity, "skills"), true), claudePlugins(env, identity, dir, true)...)
-		project = scanDir(filepath.Join(dir, ".claude", "skills"), true)
+		project = projectSkills(dir, ".claude", true)
 	case "codex":
 		user = append(scanDir(filepath.Join(home, ".agents", "skills"), false), scanDir(filepath.Join(identity, "skills"), false)...)
-		project = scanDir(filepath.Join(dir, ".agents", "skills"), false)
+		project = projectSkills(dir, ".agents", false)
 	case "copilot":
 		user = append(scanDir(filepath.Join(identity, "skills"), false), scanDir(filepath.Join(home, ".agents", "skills"), false)...)
 		for _, d := range []string{".github", ".agents", ".claude"} {
-			project = append(project, scanDir(filepath.Join(dir, d, "skills"), false)...)
+			project = append(project, projectSkills(dir, d, false)...)
 		}
 	}
 	return user, project
+}
+
+// projectSkills reads nothing for an empty dir, which would otherwise mean the working directory.
+func projectSkills(dir, parent string, plugins bool) []skill {
+	if dir == "" {
+		return nil
+	}
+	return scanDir(filepath.Join(dir, parent, "skills"), plugins)
 }
 
 func envMap(environ []string) map[string]string {
@@ -107,12 +129,12 @@ func validName(n string) bool {
 }
 
 // A folder holding .claude-plugin/plugin.json is a skills-directory plugin.
-func scanDir(dir string, plugins bool) []string {
+func scanDir(dir string, plugins bool) []skill {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
 	}
-	var out []string
+	var out []skill
 	for _, e := range ents {
 		p := filepath.Join(dir, e.Name())
 		if !isDir(p) {
@@ -121,7 +143,7 @@ func scanDir(dir string, plugins bool) []string {
 		switch {
 		case isFile(filepath.Join(p, "SKILL.md")):
 			if validName(e.Name()) {
-				out = append(out, e.Name())
+				out = append(out, skill{e.Name(), p})
 			}
 		case plugins && isFile(filepath.Join(p, ".claude-plugin", "plugin.json")):
 			out = append(out, pluginSkills(p, "")...)
@@ -156,7 +178,7 @@ func readManifest(root string) (manifest, bool) {
 }
 
 // "." in a manifest's paths is the plugin root holding one SKILL.md.
-func pluginSkills(root, fallbackName string) []string {
+func pluginSkills(root, fallbackName string) []skill {
 	m, ok := readManifest(root)
 	if !ok {
 		return nil
@@ -164,7 +186,7 @@ func pluginSkills(root, fallbackName string) []string {
 	return namespaced(root, m, fallbackName)
 }
 
-func namespaced(root string, m manifest, fallbackName string) []string {
+func namespaced(root string, m manifest, fallbackName string) []skill {
 	name := m.Name
 	if name == "" {
 		name = fallbackName
@@ -172,14 +194,14 @@ func namespaced(root string, m manifest, fallbackName string) []string {
 	if !validName(name) {
 		return nil
 	}
-	var out []string
-	found := func(skill string) {
-		if validName(skill) {
-			out = append(out, name+":"+skill)
+	var out []skill
+	found := func(skillName, dir string) {
+		if validName(skillName) {
+			out = append(out, skill{name + ":" + skillName, dir})
 		}
 	}
 	for _, s := range findSkills(filepath.Join(root, "skills")) {
-		found(s)
+		found(s.name, s.dir)
 	}
 	var declared []string
 	if json.Unmarshal(m.Skills, &declared) != nil {
@@ -192,12 +214,12 @@ func namespaced(root string, m manifest, fallbackName string) []string {
 		p := filepath.Join(root, filepath.Clean("/"+d)) // never above the plugin
 		if filepath.Clean("/"+d) == "/" {
 			if isFile(filepath.Join(root, "SKILL.md")) {
-				found(name)
+				found(name, root)
 			}
 			continue
 		}
 		for _, s := range findSkills(p) {
-			found(s)
+			found(s.name, s.dir)
 		}
 	}
 	return out
@@ -206,8 +228,8 @@ func namespaced(root string, m manifest, fallbackName string) []string {
 const maxDepth = 4
 
 // A skill's own folder is not searched further.
-func findSkills(dir string) []string {
-	var out []string
+func findSkills(dir string) []skill {
+	var out []skill
 	var walk func(d string, depth int)
 	walk = func(d string, depth int) {
 		ents, err := os.ReadDir(d)
@@ -220,7 +242,7 @@ func findSkills(dir string) []string {
 				continue
 			}
 			if isFile(filepath.Join(p, "SKILL.md")) {
-				out = append(out, e.Name())
+				out = append(out, skill{e.Name(), p})
 			} else if depth < maxDepth {
 				walk(p, depth+1)
 			}
@@ -233,7 +255,7 @@ func findSkills(dir string) []string {
 // claudePlugins lists the skills of the installed, enabled plugins, as
 // https://code.claude.com/docs/en/plugins-reference lays them out. Plugins
 // synced from claude.ai are left out: they are not on disk.
-func claudePlugins(env map[string]string, identity, dir string, projectSettings bool) []string {
+func claudePlugins(env map[string]string, identity, dir string, projectSettings bool) []skill {
 	root := filepath.Join(identity, "plugins")
 	if v := env["CLAUDE_CODE_PLUGIN_CACHE_DIR"]; v != "" {
 		root = v
@@ -251,7 +273,7 @@ func claudePlugins(env map[string]string, identity, dir string, projectSettings 
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	var out []string
+	var out []skill
 	for _, key := range keys {
 		for _, in := range installs(installed.Plugins[key]) {
 			if in.InstallPath == "" || (in.Scope != "" && in.Scope != "user" && in.ProjectPath != dir) {
@@ -300,7 +322,7 @@ func installs(raw json.RawMessage) []install {
 func enabledPlugins(identity, dir string, projectSettings bool) map[string]bool {
 	out := map[string]bool{}
 	files := []string{filepath.Join(identity, "settings.json")}
-	if projectSettings {
+	if projectSettings && dir != "" {
 		files = append(files, filepath.Join(dir, ".claude", "settings.json"), filepath.Join(dir, ".claude", "settings.local.json"))
 	}
 	for _, f := range files {

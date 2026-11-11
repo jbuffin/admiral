@@ -34,6 +34,8 @@ type Request struct {
 	Note      string `json:"note"` // Just launch only: optional text sent before the order
 	Model     string `json:"model"`
 	Effort    string `json:"effort"`
+	// Crew names the members the launch pins; only a Commodore launch may carry any.
+	Crew []string `json:"crew"`
 	// Title and URL are set by the server from the source's order, never by the client.
 	Title string `json:"-"`
 	URL   string `json:"-"`
@@ -106,6 +108,9 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	if err != nil {
 		return nil, err
 	}
+	if lerr := CheckPins(req.Skill.Kind, req.Crew); lerr != nil {
+		return nil, lerr
+	}
 	mflags, merr := modelFlags(req.Harness, req.Model, req.Effort)
 	if merr != nil {
 		return nil, merr
@@ -145,6 +150,16 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 			return nil, refuse(http.StatusBadRequest, "Commodore not found for %s in fleet %s", req.Harness, fleet.Name)
 		}
 		skill = name
+	}
+	var pins []pinnedFile
+	if len(req.Crew) > 0 {
+		home, err := filepath.Abs(l.Home)
+		if err != nil {
+			return nil, refuse(http.StatusInternalServerError, "could not resolve %s: %v", l.Home, err)
+		}
+		if pins, err = resolvePins(req, dock, home, fleet.Key); err != nil {
+			return nil, err
+		}
 	}
 	// opts was built before the directory was cleaned and Commodore resolved.
 	for i := range opts {
@@ -194,9 +209,16 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	if err := l.shipContract(env, session, fleet.Key); err != nil {
 		return nil, err
 	}
+	var runCrew string
+	if len(pins) > 0 {
+		home, _ := filepath.Abs(l.Home)
+		if runCrew, err = writeRunCrew(home, session, pins); err != nil {
+			return nil, err
+		}
+	}
 
-	// Admiral owns these names (ADMIRAL_PORT is the chat's alone): a hand launch has none of them, and an autopilot
-	// launch has ADMIRAL_AUTOPILOT and ADMIRAL_LOW_STAKES=advisor, even if
+	// Admiral owns these names (ADMIRAL_PORT is the chat's alone): a hand launch has none of them, an autopilot
+	// launch has ADMIRAL_AUTOPILOT and ADMIRAL_LOW_STAKES=advisor, and a launch with pins has ADMIRAL_RUN_CREW, even if
 	// the fleet's env or Admiral's own environment (which the tmux server
 	// inherits) sets them.
 	var unset []string
@@ -205,7 +227,10 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		ours["ADMIRAL_AUTOPILOT"] = "1"
 		ours["ADMIRAL_LOW_STAKES"] = "advisor"
 	}
-	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR"} {
+	if runCrew != "" {
+		ours["ADMIRAL_RUN_CREW"] = runCrew
+	}
+	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR", "ADMIRAL_RUN_CREW"} {
 		if v, ok := ours[k]; ok {
 			env[k] = v
 			continue
@@ -223,6 +248,10 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	}
 
 	if err := l.createSession(session, req.Dir, opts, paneOpts, env, unset, argv, true); err != nil {
+		if runCrew != "" {
+			home, _ := filepath.Abs(l.Home)
+			_ = removeRunCrew(home, session)
+		}
 		return nil, err
 	}
 	out := &Launched{Session: session, Options: map[string]string{}}
@@ -371,7 +400,7 @@ func ShipFiles(home, session string) (report, inbox string, ok bool) {
 	return filepath.Join(home, "reports", session+".json"), filepath.Join(home, "inbox", session), true
 }
 
-// RemoveShipFiles deletes a ship's report and inbox. The deletes go through a
+// RemoveShipFiles deletes a ship's report, inbox and run layer. The deletes go through a
 // root on home, so none leaves it, and each is skipped unless reports/ or
 // inbox/ is a real directory and not a link.
 func RemoveShipFiles(home, session string) {
@@ -390,6 +419,7 @@ func RemoveShipFiles(home, session string) {
 	if rel, err := filepath.Rel(home, inbox); err == nil && realDir(root, filepath.Dir(rel)) {
 		_ = root.RemoveAll(rel)
 	}
+	_ = removeRunCrew(home, session)
 }
 
 // A link would send a delete under it somewhere else.
@@ -413,6 +443,9 @@ func (l *Launcher) shipContract(env map[string]string, session, fleetKey string)
 	if err != nil {
 		return err
 	}
+	if err := removeRunCrew(home, session); err != nil {
+		return refuse(http.StatusInternalServerError, "could not clear the run layer of %s: %v", session, err)
+	}
 	for _, p := range []string{report, inbox} {
 		if err := os.RemoveAll(p); err != nil {
 			return refuse(http.StatusInternalServerError, "could not clear %s: %v", p, err)
@@ -430,8 +463,7 @@ func (l *Launcher) shipContract(env map[string]string, session, fleetKey string)
 	return nil
 }
 
-// The fleet's crew directory outlives its ships. Each level is checked with Lstat and made
-// one at a time, because MkdirAll would follow a link that stays inside home.
+// The fleet's crew directory outlives its ships.
 func fleetCrewDir(home, fleetKey string) (string, error) {
 	dir := home
 	for _, part := range []string{"fleets", fleetKey, "crew"} {

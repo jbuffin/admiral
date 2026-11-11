@@ -4,11 +4,14 @@ import { Flag } from './Flag';
 import {
   bareSkillName,
   CLAUDE_MODELS,
+  type CrewAnswer,
+  crewOptions,
   defaultSkill,
   effortsFor,
   launchBody,
   type SkillChoice,
   type SkillsAnswer,
+  togglePin,
 } from './launchForm';
 import { resources } from './shipsLink';
 
@@ -38,6 +41,9 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
   const [custom, setCustom] = useState('');
   const [models, setModels] = useState<Record<string, string>>({});
   const [effort, setEffort] = useState('');
+  const [crewAnswer, setCrewAnswer] = useState<CrewAnswer | null>(null);
+  const [crewFailed, setCrewFailed] = useState(false);
+  const [pinned, setPinned] = useState<string[]>([]);
   const [held, setHeld] = useState<string[]>([]);
   const [autopilot, setAutopilot] = useState(false);
   const [error, setError] = useState('');
@@ -96,6 +102,23 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
     };
   }, [dirForSkills, harness]);
 
+  // A clone launch has no repo yet, so it offers the built-in and fleet members only.
+  const crewDir = dir && dir !== CLONE ? dir : '';
+  const pinning = skill === 'commodore';
+  useEffect(() => {
+    if (!pinning) return;
+    let live = true;
+    const q = new URLSearchParams({ fleet: fleet.key, harness, ...(crewDir && { dir: crewDir }) });
+    void call<CrewAnswer>('GET', `/launch-orders/crew?${q}`).then((r) => {
+      if (!live) return;
+      setCrewFailed(!r.ok);
+      setCrewAnswer(r.ok ? r.data : null);
+    });
+    return () => {
+      live = false;
+    };
+  }, [pinning, harness, crewDir]);
+
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
     box.current?.focus();
@@ -106,6 +129,8 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
   const model = models[harness] ?? '';
   const clone = dirs?.clone ?? null;
   const cloning = dir === CLONE && !!clone;
+  const crewOffered = crewOptions(crewAnswer?.members ?? [], harness);
+  const crew = pinned.filter((n) => crewOffered.some((o) => o.name === n));
   const favorites = (skills?.skills ?? []).filter((s) => s.favorite);
 
   const chosen = (): SkillChoice | string => {
@@ -146,6 +171,7 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
       resources: held,
       source: order?.source,
       orderId: order?.id,
+      crew,
     }));
     setBusy(false);
     if (!r.ok) return setError(r.error);
@@ -230,6 +256,23 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
               <span>Skill name</span>
               <input type="text" autocomplete="off" autocapitalize="off" spellcheck={false} value={custom} onInput={(e) => setCustom((e.target as HTMLInputElement).value)} />
             </label>
+          ) : null}
+
+          {pinning && crewFailed ? <p class="note warn">Couldn't load crew members</p> : null}
+          {pinning && crewAnswer && crewAnswer.errors.length > 0 ? (
+            <p class="note warn">{`Crew members can't be pinned: ${crewAnswer.errors.map((e) => `${e.layer}${e.file ? `/${e.file}` : ''}: ${e.message}`).join('; ')}`}</p>
+          ) : null}
+          {pinning && crewOffered.length > 0 ? (
+            <fieldset class="checks">
+              <legend>Crew</legend>
+              {crewOffered.map((m) => (
+                <label key={m.name} class="check">
+                  <input type="checkbox" checked={crew.includes(m.name)} onChange={() => setPinned(togglePin(crew, crewOffered, m.name))} />
+                  {m.name}
+                  <span class="meta">{m.hint ? `${m.role}, ${m.layer}, ${m.hint}` : `${m.role}, ${m.layer}`}</span>
+                </label>
+              ))}
+            </fieldset>
           ) : null}
 
           <div class="pair">

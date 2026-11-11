@@ -57,7 +57,7 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	(&launchorders.Service{Config: f.cfg, State: f.state, Ships: func() []ships.Ship { return f.ships }}).Routes(mux)
+	(&launchorders.Service{Home: f.home, Config: f.cfg, State: f.state, Ships: func() []ships.Ship { return f.ships }}).Routes(mux)
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
 	return f

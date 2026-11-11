@@ -294,7 +294,7 @@ func serve(args []string) error {
 	shipService.Tail = tails.Tail
 	s := &server.Server{Version: version, Commit: commit, UI: web.UI(), Messages: convService.Messages(), Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService,
-			&launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}, bridgeService, resourceService, lockRoute, chatService, convService,
+			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}, bridgeService, resourceService, lockRoute, chatService, convService,
 			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}},
 		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat", "conversation"}}
 	bg, stopBackground := context.WithCancel(context.Background())
