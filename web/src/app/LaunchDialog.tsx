@@ -117,7 +117,7 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
   const keys = (e: KeyboardEvent) => {
     if (e.key === 'Escape') return onClose();
     if (e.key !== 'Tab' || !box.current) return;
-    const items = [...box.current.querySelectorAll<HTMLElement>('button, input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((i) => !(i as HTMLButtonElement).disabled && i.offsetParent !== null);
+    const items = [...box.current.querySelectorAll<HTMLElement>('button, input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((i) => !(i as HTMLButtonElement).disabled && i.offsetParent !== null && !(i instanceof HTMLInputElement && i.type === 'radio' && !i.checked));
     if (items.length === 0) return;
     const first = items[0]!;
     const last = items[items.length - 1]!;
