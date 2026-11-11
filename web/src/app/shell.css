@@ -435,7 +435,7 @@ button.pill { cursor: pointer; min-height: 32px; }
 .chip.error .chip-state { color: var(--color-err); }
 .changes { display: flex; flex-direction: column; gap: 12px; min-width: 0; overflow-y: auto; overflow-x: hidden; }
 .change-files { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
-.change-file { display: flex; align-items: baseline; gap: 10px; min-width: 0; font-size: var(--font-size-meta); }
+.change-file { display: flex; align-items: baseline; gap: 10px; min-width: 0; padding: 0 10px; font-size: var(--font-size-meta); }
 .change-path { flex: 1; min-width: 0; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--font-size-mono); }
 .change-status { color: var(--color-muted); }
 .change-add { color: var(--color-ok); font-family: var(--font-mono); }

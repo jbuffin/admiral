@@ -239,3 +239,23 @@ func TestComputeNearTheDeadlineReturnsWhatItHas(t *testing.T) {
 		t.Fatalf("Compute = %+v, %v, want ok, truncated, the untracked file still listed", r, err)
 	}
 }
+
+func TestComputeDiffHeadersIgnoreTheCheckoutsPrefixConfigAndKeepNonASCIIPaths(t *testing.T) {
+	d := repo(t)
+	run(t, d, "config", "diff.noprefix", "true")
+	run(t, d, "config", "diff.mnemonicPrefix", "true")
+	write(t, d, "café.txt", "tracked later\n")
+	write(t, d, "edit.txt", "keep\nnew\nmore\n")
+	r, err := Compute(context.Background(), d)
+	if err != nil || r.State != StateOK {
+		t.Fatalf("Compute = %+v, %v", r, err)
+	}
+	for _, h := range []string{"diff --git a/edit.txt b/edit.txt", "--- a/edit.txt", "+++ b/edit.txt", "diff --git a/café.txt b/café.txt", "+++ b/café.txt"} {
+		if !strings.Contains(r.Diff, h) {
+			t.Errorf("diff lacks %q:\n%s", h, r.Diff)
+		}
+	}
+	if byPath(r)["café.txt"].Status != "untracked" {
+		t.Errorf("files = %+v", r.Files)
+	}
+}

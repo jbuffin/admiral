@@ -72,4 +72,45 @@ describe('splitDiff', () => {
   it('reads an empty diff as no files', () => {
     expect(splitDiff('')).toEqual([]);
   });
+
+  it('keeps a no-newline marker as a line of its hunk', () => {
+    const diff = ['diff --git a/n.txt b/n.txt', '--- a/n.txt', '+++ b/n.txt', '@@ -1 +1 @@', '-old', '\\ No newline at end of file', '+new', '\\ No newline at end of file', ''].join('\n');
+    expect(splitDiff(diff)).toEqual([{ path: 'n.txt', hunks: [{ header: '@@ -1 +1 @@', lines: ['-old', '\\ No newline at end of file', '+new', '\\ No newline at end of file'] }] }]);
+  });
+
+  it('names a renamed file with edits by its new path and keeps its hunk', () => {
+    const diff = ['diff --git a/old.txt b/new.txt', 'similarity index 80%', 'rename from old.txt', 'rename to new.txt', 'index 1111111..2222222 100644', '--- a/old.txt', '+++ b/new.txt', '@@ -1,2 +1,2 @@', ' keep', '-was', '+now', ''].join('\n');
+    expect(splitDiff(diff)).toEqual([{ path: 'new.txt', hunks: [{ header: '@@ -1,2 +1,2 @@', lines: [' keep', '-was', '+now'] }] }]);
+  });
+
+  it('keeps the spaces of a path', () => {
+    const diff = ['diff --git a/my notes/a b.txt b/my notes/a b.txt', '--- a/my notes/a b.txt\t', '+++ b/my notes/a b.txt\t', '@@ -1 +1 @@', '-x', '+y', ''].join('\n');
+    expect(splitDiff(diff).map((f) => f.path)).toEqual(['my notes/a b.txt']);
+  });
+
+  it('unquotes a path that git quoted', () => {
+    const diff = [
+      'diff --git "a/tab\\there.txt" "b/tab\\there.txt"',
+      '--- "a/tab\\there.txt"',
+      '+++ "b/tab\\there.txt"',
+      '@@ -1 +1 @@',
+      '-x',
+      '+y',
+      'diff --git "a/caf\\303\\251 \\"q\\".txt" "b/caf\\303\\251 \\"q\\".txt"',
+      'new file mode 100644',
+      'Binary files /dev/null and "b/caf\\303\\251 \\"q\\".txt" differ',
+      'diff --git "a/old\\\\x.txt" "b/new\\nline.txt"',
+      'rename from "old\\\\x.txt"',
+      'rename to "new\\nline.txt"',
+      '',
+    ].join('\n');
+    expect(splitDiff(diff).map((f) => f.path)).toEqual(['tab\there.txt', 'café "q".txt', 'new\nline.txt']);
+  });
+
+  it('gives a type change its two sections under the same path', () => {
+    const diff = ['diff --git a/l b/l', 'deleted file mode 120000', '--- a/l', '+++ /dev/null', '@@ -1 +0,0 @@', '-target', '\\ No newline at end of file', 'diff --git a/l b/l', 'new file mode 100644', '--- /dev/null', '+++ b/l', '@@ -0,0 +1 @@', '+text', ''].join('\n');
+    const files = splitDiff(diff);
+    expect(files.map((f) => f.path)).toEqual(['l', 'l']);
+    expect(files.map((f) => f.hunks[0].lines[0])).toEqual(['-target', '+text']);
+  });
 });

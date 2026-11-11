@@ -9,15 +9,41 @@ export interface DiffFile {
 
 const HEADER = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/;
 
+const ESCAPES: Record<string, number> = { a: 7, b: 8, f: 12, n: 10, r: 13, t: 9, v: 11, '\\': 92, '"': 34 };
+
+// Git quotes a path holding a tab, newline, quote or backslash (and, with core.quotePath on, any non-ASCII byte) in C style.
+function unquote(p: string): string {
+  if (p.length < 2 || p[0] !== '"' || p[p.length - 1] !== '"') return p;
+  const bytes: number[] = [];
+  const body = p.slice(1, -1);
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] !== '\\') {
+      bytes.push(...new TextEncoder().encode(body[i]!));
+      continue;
+    }
+    const oct = /^[0-7]{3}/.exec(body.slice(i + 1));
+    if (oct) {
+      bytes.push(parseInt(oct[0], 8));
+      i += 3;
+    } else {
+      bytes.push(ESCAPES[body[i + 1]!] ?? body.charCodeAt(i + 1));
+      i++;
+    }
+  }
+  return new TextDecoder().decode(new Uint8Array(bytes));
+}
+
 // `diff --git a/P b/P`: a path with no rename and no ---/+++ lines (binary, mode change) only appears here.
 function pathFromGitLine(rest: string): string {
+  const quoted = /(?:^| )("b\/(?:[^"\\]|\\.)*")$/.exec(rest);
+  if (quoted) return unquote(quoted[1]!).slice(2);
   const same = (rest.length - 5) / 2;
   if (rest.startsWith('a/') && Number.isInteger(same) && rest.slice(same + 2, same + 5) === ' b/' && rest.slice(2, same + 2) === rest.slice(same + 5)) return rest.slice(2, same + 2);
   const at = rest.lastIndexOf(' b/');
   return at < 0 ? rest : rest.slice(at + 3);
 }
 
-const unprefix = (p: string) => p.replace(/\t.*$/, '').replace(/^[ab]\//, '');
+const unprefix = (p: string) => (p.startsWith('"') ? unquote(p) : p.replace(/\t.*$/, '')).replace(/^[ab]\//, '');
 
 /** Splits a unified diff into its files and their hunks. A hunk's own line counts say where it ends, so a removed line reading `--- x` stays in it. */
 export function splitDiff(diff: string): DiffFile[] {
@@ -50,7 +76,7 @@ export function splitDiff(diff: string): DiffFile[] {
     } else if (!file) {
       continue;
     } else if (line.startsWith('rename to ')) {
-      file.path = line.slice(10);
+      file.path = unquote(line.slice(10));
       named = true;
     } else if (!hunk && line.startsWith('+++ ') && !named) {
       if (line !== '+++ /dev/null') file.path = unprefix(line.slice(4));
