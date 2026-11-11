@@ -17,7 +17,7 @@ type Live struct {
 
 // NewLive follows one thread; anything the server says about another is not this conversation.
 func NewLive(o Options, thread string) *Live {
-	l := &Live{h: newHeld(o, true), dec: &liveDecoder{thread: thread, asked: map[string][]string{}}}
+	l := &Live{h: newHeld(o, true), dec: newLiveDecoder(thread)}
 	l.h.dec = l.dec
 	return l
 }
@@ -29,6 +29,9 @@ func (l *Live) Apply(frame []byte) []Item {
 }
 
 func (l *Live) Items() []Item { return append([]Item(nil), l.h.items...) }
+
+// Approving is whether the server is waiting on an approval, whatever it is for.
+func (l *Live) Approving() bool { return len(l.dec.approvals) > 0 }
 
 // Pending is the questions the server is waiting on, oldest first.
 func (l *Live) Pending() []Item {
@@ -42,11 +45,27 @@ func (l *Live) Pending() []Item {
 }
 
 type liveDecoder struct {
-	thread string
-	asked  map[string][]string // request id -> the ids of the question items it made, until it is settled
+	thread    string
+	asked     map[string][]string  // request id -> the ids of the question items it made, until it is settled
+	approvals map[string]*approval // request id -> an approval the server waits on, until it is settled
+	marked    map[string]bool      // item ids shown as awaiting approval
 }
 
-func (d *liveDecoder) reset() { d.asked = map[string][]string{} }
+// approval is a server request for a yes or no. Only a plain command or file change, alone, is one a card answers.
+type approval struct {
+	item, input, summary string
+	plain                bool
+}
+
+func newLiveDecoder(thread string) *liveDecoder {
+	d := &liveDecoder{thread: thread}
+	d.reset()
+	return d
+}
+
+func (d *liveDecoder) reset() {
+	d.asked, d.approvals, d.marked = map[string][]string{}, map[string]*approval{}, map[string]bool{}
+}
 
 type liveFrame struct {
 	ID     json.RawMessage `json:"id"`
@@ -81,12 +100,23 @@ type liveTurn struct {
 }
 
 type liveParams struct {
-	ThreadID  string          `json:"threadId"`
+	ThreadID string `json:"threadId"`
+	Thread   struct {
+		ID        string          `json:"id"`
+		Ephemeral bool            `json:"ephemeral"`
+		Source    json.RawMessage `json:"source"`
+	} `json:"thread"`
 	Item      liveThreadItem  `json:"item"`
 	Turn      liveTurn        `json:"turn"`
 	RequestID json.RawMessage `json:"requestId"`
 	ItemID    string          `json:"itemId"`
-	Questions []struct {
+	Kind      json.RawMessage `json:"kind"`
+	Command   *string         `json:"command"`
+	Cwd       *string         `json:"cwd"`
+	// approvalId is set for a subcommand of a script and grantRoot for write access to a root: their menus differ.
+	ApprovalID *string `json:"approvalId"`
+	GrantRoot  *string `json:"grantRoot"`
+	Questions  []struct {
 		Question string `json:"question"`
 		IsSecret bool   `json:"isSecret"`
 		Options  []struct {
@@ -137,7 +167,7 @@ func (d *liveDecoder) line(raw []byte) (out []emission, ok bool) {
 		}
 	case "turn/completed":
 		if p.ThreadID == d.thread {
-			out = append(d.settleAll(), turnEnd(p.Turn))
+			out = append(append(d.settleAll(), d.unapproveAll()...), turnEnd(p.Turn))
 		}
 	case "item/tool/requestUserInput":
 		if p.ThreadID == d.thread {
@@ -145,7 +175,11 @@ func (d *liveDecoder) line(raw []byte) (out []emission, ok bool) {
 		}
 	case "serverRequest/resolved":
 		if p.ThreadID == d.thread {
-			out = d.settle(string(p.RequestID))
+			out = append(d.settle(string(p.RequestID)), d.unapprove(string(p.RequestID))...)
+		}
+	default:
+		if p.ThreadID == d.thread && strings.HasSuffix(strings.ToLower(f.Method), "requestapproval") {
+			out = d.approve(string(f.ID), f.Method, p)
 		}
 	}
 	return out, true
@@ -164,6 +198,7 @@ func (d *liveDecoder) item(it liveThreadItem, finished bool) []emission {
 	if it.ID == "" {
 		return nil
 	}
+	delete(d.marked, it.ID) // a whole item replaces the one held, mark and all
 	switch it.Type {
 	case "userMessage":
 		var parts []string
@@ -181,7 +216,7 @@ func (d *liveDecoder) item(it liveThreadItem, finished bool) []emission {
 			return one(Item{Kind: KindAssistant, Text: cutTo(text, maxText, "…")})
 		}
 	case "commandExecution":
-		call := &ToolCall{Name: "Bash", Summary: cutTo(firstLine(it.Command), 200, "…"), Input: cutTo(it.Command, maxToolInput, "\n… cut"),
+		call := &ToolCall{Live: true, Name: "Bash", Summary: cutTo(firstLine(it.Command), 200, "…"), Input: cutTo(it.Command, maxToolInput, "\n… cut"),
 			Done: it.Status != "" && it.Status != "inProgress"}
 		if it.Output != nil {
 			call.Output = cutTo(strings.TrimSpace(*it.Output), DefaultMaxOutput, "… [output cut]")
@@ -196,7 +231,7 @@ func (d *liveDecoder) item(it liveThreadItem, finished bool) []emission {
 		if len(paths) > 0 {
 			first = paths[0]
 		}
-		return one(Item{Kind: KindToolCall, Tool: &ToolCall{Name: "apply_patch", Summary: cutTo(first, 200, "…"),
+		return one(Item{Kind: KindToolCall, Tool: &ToolCall{Live: true, Name: "apply_patch", Summary: cutTo(first, 200, "…"),
 			Input: cutTo(strings.Join(paths, "\n"), maxToolInput, "\n… cut"), Done: it.Status != "" && it.Status != "inProgress"}})
 	case "contextCompaction":
 		return one(Item{Kind: KindCompaction})
@@ -262,4 +297,67 @@ func millis(ms int64) string {
 		return ""
 	}
 	return time.UnixMilli(ms).UTC().Format("2006-01-02T15:04:05.000Z")
+}
+
+// approve records a request for approval and shows the call it names as the one awaiting it. Two waiting at once,
+// or one for something other than a plain command or file change, name no call: the terminal shows which is which.
+func (d *liveDecoder) approve(request, method string, p liveParams) []emission {
+	if len(d.approvals) >= maxPending {
+		return nil
+	}
+	a := &approval{item: p.ItemID}
+	switch method {
+	case "item/commandExecution/requestApproval":
+		kind := strings.Trim(string(p.Kind), `"`)
+		a.plain = p.ItemID != "" && (kind == "" || kind == "null" || kind == "command") && (p.ApprovalID == nil || *p.ApprovalID == "")
+		if p.Command != nil {
+			a.input = cutTo(*p.Command, maxToolInput, "\n… cut")
+		}
+		if p.Cwd != nil && *p.Cwd != "" {
+			a.summary = "in " + cutTo(*p.Cwd, 200, "…")
+		}
+	case "item/fileChange/requestApproval":
+		a.plain = p.ItemID != "" && (p.GrantRoot == nil || *p.GrantRoot == "")
+	}
+	d.approvals[request] = a
+	return d.marks()
+}
+
+func (d *liveDecoder) unapprove(request string) []emission {
+	if _, ok := d.approvals[request]; !ok {
+		return nil
+	}
+	delete(d.approvals, request)
+	return d.marks()
+}
+
+// unapproveAll is for a turn that ended: whatever it asked is no longer waiting, answered or not.
+func (d *liveDecoder) unapproveAll() []emission {
+	d.approvals = map[string]*approval{}
+	return d.marks()
+}
+
+// marks brings the shown marks to what the waiting approvals say: exactly one, and a plain one, marks its call.
+func (d *liveDecoder) marks() []emission {
+	want := ""
+	var a *approval
+	if len(d.approvals) == 1 {
+		for _, only := range d.approvals {
+			if only.plain {
+				want, a = only.item, only
+			}
+		}
+	}
+	var out []emission
+	for id := range d.marked {
+		if id != want {
+			delete(d.marked, id)
+			out = append(out, emission{Update: true, Item: Item{ID: id, Tool: &ToolCall{Live: true}}})
+		}
+	}
+	if want != "" && !d.marked[want] {
+		d.marked[want] = true
+		out = append(out, emission{Update: true, Item: Item{ID: want, Tool: &ToolCall{Live: true, Approving: true, Input: a.input, Summary: a.summary}}})
+	}
+	return out
 }

@@ -338,6 +338,7 @@ func serve(args []string) error {
 	tails := convService.Tails()
 	shipService.Tail = tails.Tail
 	shipService.Questions = convService.PendingQuestions
+	shipService.Approving = convService.ApprovalPending
 	s := &server.Server{Version: version, Commit: commit, UI: web.UI(), Messages: convService.Messages(), Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService,
 			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: campaignService}, campaignService, bridgeService, resourceService, lockRoute, chatService, convService, &shipdiff.Service{Ships: shipService},

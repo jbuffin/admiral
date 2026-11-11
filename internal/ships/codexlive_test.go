@@ -104,6 +104,21 @@ func TestCodexQuestionIsAnsweredOnlyWhileBellMeetsTheObserversPendingQuestion(t 
 		})
 	}
 
+	t.Run("a bell while an approval waits too sends nothing: the menu on screen may be the approval's", func(t *testing.T) {
+		s, _ := tailService(t)
+		typed := codexAsking(t, s, "codex", "bell")
+		s.Questions = func(session, crew string) []conversation.Item {
+			return []conversation.Item{liveQuestion("call_q1#0", 2, false)}
+		}
+		s.Approving = func(session, crew string) bool { return true }
+		if code, why := answerWhy(s, body); code != http.StatusConflict || !strings.Contains(why, "approval") {
+			t.Errorf("POST answer = %d %s, want 409 naming the approval", code, why)
+		}
+		if got := typed(); strings.Contains(got, "2") {
+			t.Errorf("pane shows %q, want nothing typed", got)
+		}
+	})
+
 	t.Run("a Codex pane that is not on the bell takes no question answer", func(t *testing.T) {
 		s, _ := tailService(t)
 		typed := codexAsking(t, s, "codex", "question")

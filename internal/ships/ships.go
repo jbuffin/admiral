@@ -88,6 +88,8 @@ type Service struct {
 	Tail func(session string) string
 	// Questions gives the pending questions of a ship's conversation, or of a crew boat's when crew is set, oldest first.
 	Questions func(session, crew string) []conversation.Item
+	// Approving is whether a Codex ship's app-server is waiting on an approval: a bell then may be for it, not for a question.
+	Approving func(session, crew string) bool
 	Outcomes  *outcomes.Writer
 	// Reserve takes a unit of each named resource, or none: it returns the
 	// release, or why the first is not ready (busy, missing or pending). Nil

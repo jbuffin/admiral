@@ -243,6 +243,17 @@ func (s *Service) livePending(session string) ([]conversation.Item, bool) {
 	return nil, false
 }
 
+// ApprovalPending is whether the app-server of a Codex ship waits on an approval.
+func (s *Service) ApprovalPending(session, crew string) bool {
+	if crew != "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	o := s.liveObserver(session)
+	return o != nil && o.live.Approving()
+}
+
 // serveLive pages the server's conversation the way the rollout's is paged.
 func (s *Service) serveLive(w http.ResponseWriter, all []conversation.Item, before string) {
 	end := len(all)

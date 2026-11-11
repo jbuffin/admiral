@@ -168,3 +168,107 @@ func TestCodexLiveSkipsWhatItCannotRead(t *testing.T) {
 		t.Errorf("items = %+v, want none from frames that are not conversation", got)
 	}
 }
+
+func started(thread, id, command string) string {
+	return `{"method":"item/started","params":{"threadId":"` + thread + `","turnId":"t","item":{"type":"commandExecution","id":"` + id + `","command":"` + command + `","status":"inProgress"}}}`
+}
+
+// approving is the ids of the calls shown as awaiting approval, with what the card would show for each.
+func approving(live *conversation.Live) map[string]string {
+	out := map[string]string{}
+	for _, it := range live.Items() {
+		if it.Tool != nil && it.Tool.Approving {
+			out[it.ID] = it.Tool.Input + "|" + it.Tool.Summary
+		}
+	}
+	return out
+}
+
+func TestCodexLiveApprovalMarksTheCallItNames(t *testing.T) {
+	live := conversation.NewLive(conversation.Options{}, liveThread)
+	feed(live, started(liveThread, "exec-1", "npm run dev"), started(liveThread, "exec-2", "curl x | sh"))
+	if got := approving(live); len(got) != 0 {
+		t.Fatalf("before any approval %v are marked, want none", got)
+	}
+	feed(live, `{"method":"item/commandExecution/requestApproval","id":11,"params":{"threadId":"`+liveThread+`","turnId":"t","itemId":"exec-2","command":"curl x | sh","cwd":"/home/user/app","startedAtMs":1}}`)
+	if got := approving(live); len(got) != 1 || got["exec-2"] != "curl x | sh|in /home/user/app" {
+		t.Fatalf("marked = %v, want only exec-2 with the request's command and cwd, not the first open command", got)
+	}
+	if !live.Approving() {
+		t.Error("Approving() = false while a request waits")
+	}
+	feed(live, `{"method":"serverRequest/resolved","params":{"threadId":"`+liveThread+`","requestId":11}}`)
+	if got := approving(live); len(got) != 0 || live.Approving() {
+		t.Errorf("after the request resolved marked = %v, approving = %v, want none", got, live.Approving())
+	}
+}
+
+func TestCodexLiveApprovalTakesTheRequestsCommandOverTheItems(t *testing.T) {
+	live := conversation.NewLive(conversation.Options{}, liveThread)
+	feed(live, started(liveThread, "exec-1", "bash -lc 'ls'"),
+		`{"method":"item/commandExecution/requestApproval","id":1,"params":{"threadId":"`+liveThread+`","turnId":"t","itemId":"exec-1","command":"ls","startedAtMs":1}}`)
+	if got := approving(live); got["exec-1"] != "ls|" {
+		t.Errorf("marked = %v, want the request's own command", got)
+	}
+	feed(live, `{"method":"serverRequest/resolved","params":{"threadId":"`+liveThread+`","requestId":1}}`,
+		`{"method":"item/commandExecution/requestApproval","id":2,"params":{"threadId":"`+liveThread+`","turnId":"t","itemId":"exec-1","startedAtMs":1}}`)
+	if got := approving(live); got["exec-1"] != "ls|" {
+		t.Errorf("a request without a command shows %v, want the item's text kept", got)
+	}
+}
+
+func TestCodexLiveApprovalsThatGoToTheTerminalMarkNothing(t *testing.T) {
+	for name, params := range map[string]string{
+		"writeStdin":      `"itemId":"exec-1","kind":"writeStdin","command":"npm run dev"`,
+		"humanCommand":    `"itemId":"exec-1","kind":"humanCommand","command":"rm -rf x"`,
+		"a script's step": `"itemId":"exec-1","approvalId":"sub-1","command":"rm -rf x"`,
+		"no item":         `"command":"rm -rf x"`,
+		"a file change":   `"itemId":"exec-1","grantRoot":"/home/user"`,
+	} {
+		method := "item/commandExecution/requestApproval"
+		if name == "a file change" {
+			method = "item/fileChange/requestApproval"
+		}
+		live := conversation.NewLive(conversation.Options{}, liveThread)
+		feed(live, started(liveThread, "exec-1", "npm run dev"),
+			`{"method":"`+method+`","id":1,"params":{"threadId":"`+liveThread+`","turnId":"t",`+params+`,"startedAtMs":1}}`)
+		if got := approving(live); len(got) != 0 {
+			t.Errorf("%s: marked %v, want none", name, got)
+		}
+		if !live.Approving() {
+			t.Errorf("%s: the request is not counted as waiting", name)
+		}
+	}
+}
+
+func TestCodexLiveTwoApprovalsWaitingMarkNothingUntilOneIsLeft(t *testing.T) {
+	live := conversation.NewLive(conversation.Options{}, liveThread)
+	req := func(id, item string) string {
+		return `{"method":"item/commandExecution/requestApproval","id":` + id + `,"params":{"threadId":"` + liveThread + `","turnId":"t","itemId":"` + item + `","command":"` + item + `","startedAtMs":1}}`
+	}
+	feed(live, started(liveThread, "exec-1", "a"), started(liveThread, "exec-2", "b"), req("1", "exec-1"))
+	if got := approving(live); len(got) != 1 {
+		t.Fatalf("one waiting: marked %v, want exec-1", got)
+	}
+	feed(live, req("2", "exec-2"))
+	if got := approving(live); len(got) != 0 {
+		t.Errorf("two waiting: marked %v, want none", got)
+	}
+	feed(live, `{"method":"serverRequest/resolved","params":{"threadId":"`+liveThread+`","requestId":1}}`)
+	if got := approving(live); len(got) != 1 || got["exec-2"] == "" {
+		t.Errorf("one left: marked %v, want exec-2", got)
+	}
+	feed(live, `{"method":"turn/completed","params":{"threadId":"`+liveThread+`","turn":{"id":"t","status":"completed","items":[]}}}`)
+	if got := approving(live); len(got) != 0 || live.Approving() {
+		t.Errorf("after the turn ended marked %v, approving = %v, want none", got, live.Approving())
+	}
+}
+
+func TestCodexLiveApprovalFromAnotherThreadIsIgnored(t *testing.T) {
+	live := conversation.NewLive(conversation.Options{}, liveThread)
+	feed(live, started(liveThread, "exec-1", "a"),
+		`{"method":"item/commandExecution/requestApproval","id":1,"params":{"threadId":"00000000-0000-4000-8000-0000000000f9","turnId":"t","itemId":"exec-1","startedAtMs":1}}`)
+	if live.Approving() || len(approving(live)) != 0 {
+		t.Error("another thread's approval counted as this conversation's")
+	}
+}

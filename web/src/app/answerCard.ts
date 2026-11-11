@@ -61,7 +61,14 @@ export function answerCard({ harness, status, reason, conv }: { harness: string;
     // An orphan call from an earlier turn is not what the pane asks about.
     const turnStart = currentTurnStart(conv.items);
     const callNames = harness === 'codex' ? CODEX_CARD_CALLS[tool] : [tool];
-    const call = conv.items.slice(turnStart).find((i) => i.kind === 'tool_call' && i.tool !== undefined && callNames.includes(i.tool.name) && !i.tool.done);
+    const turn = conv.items.slice(turnStart);
+    if (harness === 'codex' && conv.items.some((i) => i.tool?.live)) {
+      // The server names the call it waits on; none named (several waiting, a stdin write, a grant) is the terminal's.
+      const named = turn.find((i) => i.kind === 'tool_call' && i.tool?.approving && !i.tool.done);
+      if (!named?.tool || !callNames.includes(named.tool.name)) return { kind: 'terminal' };
+      return { kind: 'permission', tool, reason: r, call: named };
+    }
+    const call = turn.find((i) => i.kind === 'tool_call' && i.tool !== undefined && callNames.includes(i.tool.name) && !i.tool.done);
     return { kind: 'permission', tool, reason: r, call };
   }
   return { kind: 'terminal' };

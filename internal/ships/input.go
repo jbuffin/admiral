@@ -287,6 +287,9 @@ func (s *Service) answerKeys(ctx context.Context, t target, session string, req 
 	if !asking {
 		return "", t.what + " is no longer asking that"
 	}
+	if t.harness == "codex" && s.Approving != nil && s.Approving(session, t.crew) {
+		return "", "an approval is waiting too: answer in the terminal"
+	}
 	var qs []conversation.Item
 	if s.Questions != nil {
 		qs = s.Questions(session, t.crew)

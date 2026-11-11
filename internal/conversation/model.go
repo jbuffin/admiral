@@ -60,6 +60,10 @@ type ToolCall struct {
 	Output string `json:"output,omitempty"`
 	Error  bool   `json:"error,omitempty"`
 	Done   bool   `json:"done"`
+	// Live is set on a call the app-server told of; only those carry Approving.
+	Live bool `json:"live,omitempty"`
+	// Approving marks the one call an approval the server is waiting on names, so a card shows what allowing approves.
+	Approving bool `json:"approving,omitempty"`
 }
 
 type Question struct {

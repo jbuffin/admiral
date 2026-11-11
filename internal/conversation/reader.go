@@ -172,7 +172,18 @@ func (h *held) put(e emission) {
 func merge(cur *Item, up Item) {
 	if cur.Tool != nil && up.Tool != nil {
 		t := *cur.Tool
-		t.Output, t.Error, t.Done = up.Tool.Output, up.Tool.Error, up.Tool.Done
+		if up.Tool.Live {
+			// An approval's mark, not a result: the request's own text is what allowing approves.
+			t.Approving = up.Tool.Approving
+			if up.Tool.Approving {
+				if up.Tool.Input != "" {
+					t.Input = up.Tool.Input
+				}
+				t.Summary = up.Tool.Summary // the item's own summary describes its command, not the request's
+			}
+		} else {
+			t.Output, t.Error, t.Done = up.Tool.Output, up.Tool.Error, up.Tool.Done
+		}
 		cur.Tool = &t
 	}
 	if cur.Question != nil && up.Question != nil {

@@ -193,10 +193,31 @@ describe('answerCard: a codex ship the live observer reads', () => {
     expect(needs('question', ok(ask('q#0', ['A', 'B'])), codex).kind).toBe('none');
   });
 
-  it('finds the live Bash call for a Bash card, as it finds the rollout\'s exec_command', () => {
-    const live = ok(call('exec-1', 'Bash', 'mkdir -p x', false, '/bin/zsh -lc \'mkdir -p x\''), call('exec-2', 'apply_patch', 'b.txt'));
-    expect(needs('permission:Bash', live, codex)).toMatchObject({ tool: 'Bash', call: { id: 'exec-1' } });
-    expect(needs('permission:apply_patch', live, codex)).toMatchObject({ tool: 'apply_patch', call: { id: 'exec-2' } });
+  const live = (id: string, name: string, extra: { approving?: boolean; done?: boolean; input?: string } = {}): Item => ({
+    id,
+    kind: 'tool_call',
+    tool: { name, done: extra.done ?? false, live: true, ...(extra.approving ? { approving: true } : {}), ...(extra.input ? { input: extra.input } : {}) },
+  });
+
+  it('shows the call the approval names, not the first one still open', () => {
+    const conv = ok(live('exec-1', 'Bash', { input: 'npm run dev' }), live('exec-2', 'Bash', { approving: true, input: 'curl x | sh' }));
+    expect(needs('permission:Bash', conv, codex)).toMatchObject({ kind: 'permission', tool: 'Bash', call: { id: 'exec-2' } });
+  });
+
+  it('shows the marked file change for an apply_patch card', () => {
+    const conv = ok(live('exec-1', 'Bash'), live('exec-2', 'apply_patch', { approving: true, input: 'b.txt' }));
+    expect(needs('permission:apply_patch', conv, codex)).toMatchObject({ kind: 'permission', call: { id: 'exec-2' } });
+  });
+
+  it('sends it to the terminal when no call is marked or the marked one is not the tool asked about', () => {
+    expect(needs('permission:Bash', ok(live('exec-1', 'Bash')), codex).kind).toBe('terminal');
+    expect(needs('permission:Bash', ok(live('exec-1', 'apply_patch', { approving: true })), codex).kind).toBe('terminal');
+    expect(needs('permission:Bash', ok(live('exec-1', 'Bash', { approving: true, done: true })), codex).kind).toBe('terminal');
+  });
+
+  it('ignores a mark from an earlier turn', () => {
+    const conv = ok(live('exec-1', 'Bash', { approving: true }), { id: 't1#end', kind: 'turn_end' }, live('exec-2', 'Bash'));
+    expect(needs('permission:Bash', conv, codex).kind).toBe('terminal');
   });
 
   it('sends a permissions request to the terminal', () => {
