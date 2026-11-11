@@ -207,6 +207,9 @@ func TestTreeRequest(t *testing.T) {
 				if strings.Contains(strings.ToLower(q), "mutation") {
 					t.Errorf("call %d sends a mutation: %s", i, q)
 				}
+				if strings.Contains(strings.Join(argv, "\x00"), "\x00q=") && !strings.Contains(q, "authorAssociation") {
+					t.Errorf("call %d searches without asking for authorAssociation, so no Part of hit would be trusted", i)
+				}
 				if strings.Contains(q, "acme") || strings.Contains(q, "campaign") {
 					t.Errorf("call %d splices the repo into the query text: %s", i, q)
 				}
@@ -540,11 +543,15 @@ func TestTreeDescendsIntoAPartOfChildWithSubIssues(t *testing.T) {
 func TestTreeMarksSubIssuesItCouldNotRead(t *testing.T) {
 	sub := withSubs(issueJSON("acme/campaign", 2, "OPEN", "", noBlockers), 3)
 	g := newTreeGH(t, map[string]string{
-		"acme_campaign_1.json": issueAnswer(withSubs(issueJSON("acme/campaign", 1, "OPEN", "", noBlockers), 1, sub)),
+		"acme_campaign_1.json": issueAnswer(withSubs(issueJSON("acme/campaign", 1, "OPEN", "", noBlockers), 2, sub, `null`)),
 		"acme_campaign_2.json": issueAnswer(sub),
 		"search.json":          searchAnswer(),
 	})
-	n := find(treeOf(t, g), 2)
+	tree := treeOf(t, g)
+	if tree.Unreadable != 1 {
+		t.Errorf("root = %+v, want the one sub-issue GitHub returned as null counted unreadable", tree)
+	}
+	n := find(tree, 2)
 	if n == nil || !n.Parent || n.Unreadable != 3 || len(n.Children) != 0 {
 		t.Errorf("#2 = %+v, want a parent with 3 unreadable children", n)
 	}
