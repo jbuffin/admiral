@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -62,6 +63,7 @@ func appendTo(t *testing.T, path, s string) {
 // fixture is a service whose ships are "claude" ships anchored at transcripts under a temporary config dir.
 type fixture struct {
 	t       *testing.T
+	mu      sync.Mutex // the service reads the maps from its poller
 	cfg     string
 	svc     *Service
 	options map[string]string
@@ -80,10 +82,14 @@ func newFixture(t *testing.T) *fixture {
 	f := &fixture{t: t, cfg: cfg, options: map[string]string{}, harness: map[string]string{}}
 	f.svc = &Service{
 		ship: func(session string) (ships.Ship, bool) {
+			f.mu.Lock()
+			defer f.mu.Unlock()
 			h, ok := f.harness[session]
 			return ships.Ship{Session: session, Harness: h, Launched: "L1"}, ok
 		},
 		option: func(sh ships.Ship) (string, string, bool) {
+			f.mu.Lock()
+			defer f.mu.Unlock()
 			raw, ok := f.options[sh.Session]
 			return raw, cfg, ok
 		},
@@ -95,6 +101,8 @@ func (f *fixture) path(dir string) string { return filepath.Join(f.cfg, "project
 
 // ship adds a claude ship whose option records path as written by its launch.
 func (f *fixture) ship(name, path string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.harness[name] = "claude"
 	f.options[name] = "1700000000000000000 launch " + path
 }
@@ -290,6 +298,24 @@ func (s *socket) quiet(what string) {
 	}
 }
 
+// probe appends to path until a push for ship arrives: the open is handled some time after it is sent, and what is
+// appended before it is read as already there.
+func (s *socket) probe(path, ship string) {
+	s.t.Helper()
+	for i, end := 1000, time.Now().Add(10*time.Second); time.Now().Before(end); i++ {
+		appendTo(s.t, path, line(i))
+		select {
+		case m := <-s.in:
+			if m["ship"] != ship {
+				s.t.Fatalf("pushed for %v, want %v", m["ship"], ship)
+			}
+			return
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+	s.t.Fatalf("within 10s: no push for %s", ship)
+}
+
 func serve(t *testing.T, f *fixture) string {
 	t.Helper()
 	srv := httptest.NewServer((&server.Server{Hub: server.NewHub(), Messages: f.svc.Messages(), Modules: []server.Module{f.svc}}).Handler())
@@ -324,18 +350,15 @@ func TestConversationSocket_DeliversAppendsToSubscribersOnly(t *testing.T) {
 	other.quiet("a client that never opened the ship")
 
 	// Messages from one client are handled in order, so a push for "t" shows the close of "s" was handled.
-	f.ship("t", f.path("zz2"))
 	if err := os.MkdirAll(filepath.Join(f.cfg, "projects", "zz2"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	appendTo(t, f.path("zz2"), line(1))
+	f.ship("t", f.path("zz2"))
 	sub.send("conversation_close", "s")
 	sub.send("conversation_open", "t")
+	sub.probe(f.path("zz2"), "t")
 	appendTo(t, f.path("zz"), lines(5, 5))
-	appendTo(t, f.path("zz2"), line(2))
-	if m := sub.next("an append to t"); m["ship"] != "t" {
-		t.Errorf("pushed for %v, want t", m["ship"])
-	}
 	sub.quiet("a closed subscription")
 }
 
@@ -368,14 +391,8 @@ func TestConversationSocket_AClientHoldsSixteenShipsOpen(t *testing.T) {
 		c.send("conversation_open", fmt.Sprintf("ship%02d", i))
 	}
 	// Opens are handled in order, so a push for the last ship shows all seventeen were.
+	c.probe(f.path("d17"), "ship17")
 	appendTo(t, f.path("d01"), line(101))
-	appendTo(t, f.path("d17"), line(117))
-	if m := c.next("an append to the last ship"); m["ship"] != "ship17" {
-		t.Errorf("first push was for %v, want ship17", m["ship"])
-	}
 	c.quiet("an append to the first ship, which the seventeenth open closed")
-	appendTo(t, f.path("d02"), line(102))
-	if m := c.next("an append to the second ship"); m["ship"] != "ship02" {
-		t.Errorf("push was for %v, want ship02", m["ship"])
-	}
+	c.probe(f.path("d02"), "ship02")
 }

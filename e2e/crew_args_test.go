@@ -43,7 +43,7 @@ func TestCrew_LaunchArgsAndRole(t *testing.T) {
 		cl := w.record(sess + "/crew/cl")
 		want := []string{"--fa-claude", "--settings", filepath.Join(w.home, "harness", "claude-settings.json"),
 			"--model", "opus", "--advisor", "opus", "--", "do it"}
-		if !reflect.DeepEqual(cl.argvBase(), want) {
+		if !reflect.DeepEqual(cl.argv, want) {
 			t.Errorf("claude argv = %q, want %q", cl.argv, want)
 		}
 

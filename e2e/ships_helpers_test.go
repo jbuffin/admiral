@@ -467,8 +467,7 @@ type record struct {
 	dir     string
 }
 
-// argvBase is the argv without the `--session-id <uuid>` pair Admiral adds to a
-// Claude Code ship (#264), for the tests that pin the rest of the command line.
+// argvBase is the argv without the `--session-id <uuid>` pair Admiral adds to a Claude Code ship.
 func (r record) argvBase() []string {
 	var out []string
 	for i := 0; i < len(r.argv); i++ {
