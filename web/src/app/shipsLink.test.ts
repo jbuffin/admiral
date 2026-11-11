@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Ship } from './api';
-import { ships, shipsLink, watchShips } from './shipsLink';
+import { inboxItems, ships, shipsLink, watchShips } from './shipsLink';
 
 class FakeSocket extends EventTarget {
   static all: FakeSocket[] = [];
@@ -102,6 +102,18 @@ describe('watchShips', () => {
     last().open();
     last().send({ type: 'ships', ships: [ship('a', 'underway')] });
     last().send({ type: 'inbox', items: [] });
+    expect(ships.value.map((s) => s.name)).toEqual(['a']);
+  });
+
+  it('keeps the items of each inbox message, replacing the last, and leaves the ships alone', () => {
+    stop = watchShips();
+    last().open();
+    expect(inboxItems.value).toEqual([]);
+    last().send({ type: 'ships', ships: [ship('a', 'underway')] });
+    last().send({ type: 'inbox', items: [{ id: 'q-1', session: 's-a' }, { id: 'r-1', session: 's-a' }] });
+    expect(inboxItems.value.map((i) => i.id)).toEqual(['q-1', 'r-1']);
+    last().send({ type: 'inbox', items: [{ id: 'r-1', session: 's-a' }] });
+    expect(inboxItems.value.map((i) => i.id)).toEqual(['r-1']);
     expect(ships.value.map((s) => s.name)).toEqual(['a']);
   });
 

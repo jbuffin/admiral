@@ -18,6 +18,7 @@ type inboxItem struct {
 	Session  string `json:"session"`
 	Name     string `json:"name"`
 	Harness  string `json:"harness"`
+	Fleet    string `json:"fleet"`
 	OrderURL string `json:"order_url"`
 }
 

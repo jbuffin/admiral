@@ -717,8 +717,8 @@ func TestInboxKeepsUnansweredFilesAfterSailOff(t *testing.T) {
 		t.Helper()
 		items := w.in.waitInbox(t, "q-1", "r-1")
 		for _, it := range items {
-			if it.Session != ship.Session || it.Name != ship.Name || it.Harness != "claude" {
-				t.Errorf("%s: item %+v, want ship %s, name %q and harness claude served from the kept record", when, it, ship.Session, ship.Name)
+			if it.Session != ship.Session || it.Name != ship.Name || it.Harness != "claude" || it.Fleet != ship.Fleet || it.Fleet != "f" {
+				t.Errorf("%s: item %+v, want ship %s, name %q, harness claude and fleet f served from the kept record", when, it, ship.Session, ship.Name)
 			}
 		}
 		if !exists(inboxPath) || !exists(reportPath) {
