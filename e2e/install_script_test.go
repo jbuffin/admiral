@@ -29,7 +29,7 @@ func (r installRun) run(t *testing.T) (stdout, stderr string, code int) {
 }
 
 // systemPath is a PATH of the macOS system tools (symlinked from /bin and
-// /usr/bin) without python3, python or tmux, plus any extra directories first.
+// /usr/bin) without tmux, plus any extra directories first.
 func systemPath(t *testing.T, extra ...string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -71,7 +71,6 @@ func fakeDeps(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	writeExec(t, filepath.Join(dir, "tmux"), "#!/bin/sh\nexit 0\n")
-	writeExec(t, filepath.Join(dir, "python3"), "#!/bin/sh\nexit 0\n")
 	return dir
 }
 
@@ -98,7 +97,7 @@ func TestPackagingS3_InstallsFromATarball(t *testing.T) {
 		t.Fatalf("installed binary --version: exit %d, %q", vcode, v)
 	}
 	if strings.Contains(out+errOut, "brew install") || strings.Contains(strings.ToLower(out+errOut), "warning") {
-		t.Errorf("install with tmux, python3 and PREFIX/bin on PATH should be quiet, got:\n%s%s", out, errOut)
+		t.Errorf("install with tmux and PREFIX/bin on PATH should be quiet, got:\n%s%s", out, errOut)
 	}
 	if ents, _ := os.ReadDir(home); len(ents) > 0 {
 		t.Errorf("install.sh wrote into HOME: %v", ents)
@@ -140,7 +139,7 @@ func TestPackagingS3_WarnsAboutMissingDependenciesAndPath(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(prefix, "bin", "admiral")); err != nil {
 		t.Errorf("binary not installed: %v", err)
 	}
-	for _, want := range []string{"tmux", "python3", "brew install tmux python@3.15", filepath.Join(prefix, "bin"), "PATH"} {
+	for _, want := range []string{"tmux", "brew install tmux", filepath.Join(prefix, "bin"), "PATH"} {
 		if !strings.Contains(errOut, want) {
 			t.Errorf("stderr lacks %q:\n%s", want, errOut)
 		}

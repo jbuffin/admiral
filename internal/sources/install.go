@@ -10,8 +10,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"github.com/jbuffin/admiral/plugins"
 )
 
 // StampFile tells an untouched copy of a plugin from one the engineer edited.
@@ -33,19 +31,6 @@ func Stamp(files map[string][]byte) string {
 		h.Write([]byte{0})
 	}
 	return hex.EncodeToString(h.Sum(nil))
-}
-
-func embedded(name string) (map[string][]byte, error) {
-	files := map[string][]byte{}
-	err := fs.WalkDir(plugins.Shipped, name, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		data, err := fs.ReadFile(plugins.Shipped, p)
-		files[p[len(name)+1:]] = data
-		return err
-	})
-	return files, err
 }
 
 func diskFiles(dir string) (map[string][]byte, error) {
@@ -76,16 +61,7 @@ func diskFiles(dir string) (map[string][]byte, error) {
 	return files, err
 }
 
-// A plugin that fails does not stop the others.
-func InstallPlugins(home string) error {
-	var errs []error
-	for _, name := range plugins.Names {
-		errs = append(errs, installPlugin(home, name))
-	}
-	return errors.Join(errs...)
-}
-
-var retired = []string{"freeform"}
+var retired = []string{"freeform", "github"}
 
 // An edited copy or a symlink stays, and a symlink's target is never touched.
 func RemoveRetired(home string) error {
@@ -126,51 +102,4 @@ func untouched(dir string) (string, bool) {
 		return "", false
 	}
 	return string(have), true
-}
-
-// An edited folder, or one without a stamp, is left alone.
-func installPlugin(home, name string) error {
-	files, err := embedded(name)
-	if err != nil {
-		return err
-	}
-	want := Stamp(files)
-	dir := filepath.Join(pluginsDir(home), name)
-
-	if _, err := os.Lstat(dir); err == nil {
-		stamp, ok := untouched(dir)
-		if !ok || stamp == want {
-			return nil // edited by hand, not readable, or already current
-		}
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-
-	if err := os.MkdirAll(pluginsDir(home), 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.MkdirTemp(pluginsDir(home), "."+name+"-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tmp)
-	for name, data := range files {
-		p := filepath.Join(tmp, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(p, data, 0o644); err != nil {
-			return err
-		}
-	}
-	if err := os.WriteFile(filepath.Join(tmp, StampFile), []byte(want), 0o644); err != nil {
-		return err
-	}
-	if err := os.RemoveAll(dir); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, dir); err != nil {
-		return fmt.Errorf("install %s: %w", name, err)
-	}
-	return nil
 }

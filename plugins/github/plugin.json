@@ -1,7 +1,0 @@
-{
-  "name": "github",
-  "description": "Issues and pull requests from GitHub searches, through the gh CLI.",
-  "command": "python3",
-  "args": ["plugin.py"],
-  "icon": "icon.svg"
-}

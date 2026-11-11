@@ -30,7 +30,6 @@ func TestPackagingS2_FormulaParsesAndDeclaresItsDependencies(t *testing.T) {
 	f := string(b)
 	for _, want := range []string{
 		`depends_on "tmux"`,
-		`depends_on "python@3.15"`,
 		`depends_on arch: :arm64`,
 		`depends_on :macos`,
 		`launchctl kickstart -k gui/`,
@@ -45,7 +44,7 @@ func TestPackagingS2_FormulaParsesAndDeclaresItsDependencies(t *testing.T) {
 	if !regexp.MustCompile(`(?s)test do.*admiral.*--version.*end`).MatchString(f) {
 		t.Errorf("formula has no test block running admiral --version")
 	}
-	if strings.Contains(f, `"python@3"`) {
-		t.Errorf("python@3 is an alias that brew audit --strict rejects: use python@3.15")
+	if strings.Contains(f, "python") {
+		t.Errorf("the formula depends on python: no plugin Admiral ships needs it")
 	}
 }

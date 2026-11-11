@@ -204,9 +204,6 @@ func serve(args []string) error {
 	if err := sources.RemoveRetired(dir); err != nil {
 		fmt.Fprintln(os.Stderr, "admiral: could not remove a retired plugin:", err)
 	}
-	if err := sources.InstallPlugins(dir); err != nil {
-		fmt.Fprintln(os.Stderr, "admiral: could not install the bundled plugins:", err)
-	}
 	supervisor := &sources.Supervisor{Home: dir, Config: cfg}
 	sourceService := &sources.Service{Home: dir, Config: cfg, Sup: supervisor, Hub: hub, Ships: shipService.List, State: st}
 	apStore, err := autopilot.OpenStore(dir)

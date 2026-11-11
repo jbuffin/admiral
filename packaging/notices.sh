@@ -60,7 +60,7 @@ for f in web/public/licenses/OFL-*.txt; do
 done
 
 echo
-echo "== Primer Octicons (the GitHub plugin's icon) =="
+echo "== Primer Octicons (the GitHub source's icon) =="
 echo
-echo "-- plugins/github/LICENSE-octicons"
-cat plugins/github/LICENSE-octicons
+echo "-- internal/sources/LICENSE-octicons"
+cat internal/sources/LICENSE-octicons

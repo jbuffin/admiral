@@ -10,12 +10,10 @@ class Admiral < Formula
 
   depends_on arch: :arm64
   depends_on :macos
-  depends_on "python@3.15"
   depends_on "tmux"
 
   def install
     bin.install "admiral"
-    (pkgshare/"plugins").install "plugins/github"
     prefix.install "LICENSE", "THIRD_PARTY_NOTICES"
   end
 
