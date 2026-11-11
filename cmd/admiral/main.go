@@ -205,6 +205,9 @@ func serve(args []string) error {
 		Tmux: tmuxPath, Socket: sock, Home: dir, Port: port, Config: cfg.Current,
 		Kept: func(session string) bool { _, ok := st.KeptInbox(session); return ok }}}
 
+	if err := sources.RemoveRetired(dir); err != nil {
+		fmt.Fprintln(os.Stderr, "admiral: could not remove a retired plugin:", err)
+	}
 	if err := sources.InstallPlugins(dir); err != nil {
 		fmt.Fprintln(os.Stderr, "admiral: could not install the bundled plugins:", err)
 	}

@@ -2,7 +2,7 @@
 
 An order source is a program that gives Admiral a list of orders to launch ships from. You can write one in any language. Admiral starts it as a subprocess and talks to it in JSON-RPC 2.0, one message per line, on its stdin and stdout.
 
-The freeform plugin in [`plugins/freeform/`](../plugins/freeform/) is the reference. It is a single Python file with no dependencies, and every example below is something it does. Read it next to this page. The GitHub plugin in [`plugins/github/`](../plugins/github/) is the second example, for sources with sign-in, settings lists and refresh; see [Worked example: GitHub](#worked-example-github). (ADR 0006 explains why plugins are subprocesses.)
+The [example plugin](#try-it) at the end of this page is the reference. It is a single Python file with no dependencies, shown here and not shipped with Admiral. The GitHub plugin in [`plugins/github/`](../plugins/github/) is the second example, for sources with sign-in, settings lists and refresh; see [Worked example: GitHub](#worked-example-github). (ADR 0006 explains why plugins are subprocesses.)
 
 ## What you ship
 
@@ -10,7 +10,7 @@ A folder in `$ADMIRAL_HOME/plugins/<name>/` holding a `plugin.json`:
 
 ```json
 {
-  "name": "freeform",
+  "name": "notes",
   "description": "A list of orders you type yourself.",
   "command": "python3",
   "args": ["plugin.py"],
@@ -28,7 +28,7 @@ A folder in `$ADMIRAL_HOME/plugins/<name>/` holding a `plugin.json`:
 
 `GET /api/plugins` lists every folder: `[{name, description, icon_url, valid, error}]`. A broken manifest shows `valid: false` and an `error` saying why.
 
-An engineer installs a plugin by copying its folder into `plugins/`. Admiral writes the two plugins it ships, freeform and GitHub, on a fresh install, but adds no source: a source is added to a fleet from the sidebar, and a source in `config.json` names its fleet with `fleet`. It also keeps a `.admiral-stamp` file there, the SHA-256 of the folder's files, so it can replace the folder with a newer copy when you have not edited it. If you edit one of them, Admiral leaves your copy alone.
+An engineer installs a plugin by copying its folder into `plugins/`. Admiral writes the plugin it ships, GitHub, on a fresh install, but adds no source: a source is added to a fleet from the sidebar, and a source in `config.json` names its fleet with `fleet`. It also keeps a `.admiral-stamp` file there, the SHA-256 of the folder's files, so it can replace the folder with a newer copy when you have not edited it. If you edit one of them, Admiral leaves your copy alone.
 
 ## Sources and settings
 
@@ -93,7 +93,7 @@ Requests are `{"jsonrpc":"2.0","id":1,"method":"…","params":{…}}`. Answer ea
 | `labels` | Optional. An array of label-name strings (`["bug", "ready-for-agent"]`), in the order you want them shown. Admiral shows them as chips on the order and its filter matches them. A plugin that leaves it out gets no chips. |
 | `repo` | Optional git remote of the repository the order belongs to (`https://github.com/acme/widgets` or `git@github.com:acme/widgets.git`). Admiral uses it to preselect a checkout. |
 
-Admiral hides an order while a ship launched from it exists, whatever that ship's status, and shows it again once the ship is gone, if you still list it. A plugin that wants a launched order to disappear for good deletes it when it hears `orders.launched`, as freeform does.
+Admiral hides an order while a ship launched from it exists, whatever that ship's status, and shows it again once the ship is gone, if you still list it. A plugin that wants a launched order to disappear for good deletes it when it hears `orders.launched`, as the example plugin in [Try it](#try-it) does.
 
 If you can't list a panel, say so with an `error` instead of a list. Its message (cut to one line of at most 300 characters; "This panel's orders couldn't be listed." if it is empty) is shown on that panel. The panel keeps the orders it had, the other panels and the source's state don't change, and the message stays until your next successful `orders.list` for that panel. A source in `error` shows its own error instead. A timeout or an invalid list isn't an error answer: Admiral logs it and shows nothing.
 
@@ -184,7 +184,7 @@ If the process exits before it answers `panels.list`, the source has no panels t
 
 ## Worked example: GitHub
 
-[`plugins/github/plugin.py`](../plugins/github/plugin.py) lists the issues and pull requests that GitHub searches find. Each panel is one saved search, each result is an order whose `text` is its URL, and all GitHub access goes through the `gh` CLI. It covers what freeform doesn't.
+[`plugins/github/plugin.py`](../plugins/github/plugin.py) lists the issues and pull requests that GitHub searches find. Each panel is one saved search, each result is an order whose `text` is its URL, and all GitHub access goes through the `gh` CLI. It covers what the example plugin doesn't.
 
 **A list in the settings, with defaults.** `panels` is an array of `{title, query}` objects, and `hotLabels` an array of strings. Admiral renders both as rows. The form ignores `default`, so the plugin applies its defaults itself, states them in each `description`, and skips what it can't use: a panel with no title or no query, a non-integer `refreshMinutes`.
 
@@ -253,13 +253,54 @@ return entry["orders"]
 
 ## Try it
 
-Run the reference plugin by hand and type a request:
+This example plugin keeps a list of orders in memory. It declares the protocol capabilities `add` and `remove`, so the view shows the add field and the remove button. Make the folder `$ADMIRAL_HOME/plugins/notes/` and save the manifest and the script in it:
+
+```json
+{ "name": "notes", "description": "A list of orders you type yourself.", "command": "python3", "args": ["plugin.py"] }
+```
+
+```python
+#!/usr/bin/env python3
+import json
+import secrets
+import sys
+
+orders = []  # a real plugin keeps these in its data directory
+
+
+def handle(method, params):
+    if method == "initialize":
+        return {"protocolVersion": 1, "capabilities": ["add", "remove"],
+                "settingsSchema": {"type": "object", "properties": {}, "additionalProperties": False}}
+    if method == "panels.list":
+        return [{"id": "orders", "title": "Orders"}]
+    if method == "orders.list":
+        return [{"id": o["id"], "title": o["text"].strip().splitlines()[0], "text": o["text"]} for o in orders]
+    if method == "orders.add":
+        orders.append({"id": secrets.token_hex(6), "text": params["text"]})
+        return {"id": orders[-1]["id"]}
+    if method == "orders.remove" or method == "orders.launched":
+        orders[:] = [o for o in orders if o["id"] != params["id"]]
+        return {}
+    return {}
+
+
+for line in sys.stdin:
+    msg = json.loads(line)
+    if "id" in msg:
+        result = handle(msg["method"], msg.get("params") or {})
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}), flush=True)
+        if msg["method"] in ("orders.add", "orders.remove"):
+            print(json.dumps({"jsonrpc": "2.0", "method": "orders.changed", "params": {"panel": "orders"}}), flush=True)
+```
+
+Run it by hand and type a request:
 
 ```console
-$ python3 plugins/freeform/plugin.py
-{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"settings":{},"dataDir":"/tmp/freeform-data"}}
+$ python3 plugins/notes/plugin.py
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"settings":{},"dataDir":"/tmp/notes-data"}}
 {"jsonrpc":"2.0","id":2,"method":"orders.add","params":{"panel":"orders","text":"Fix the flaky test"}}
 {"jsonrpc":"2.0","id":3,"method":"orders.list","params":{"panel":"orders"}}
 ```
 
-Copy the folder to `$ADMIRAL_HOME/plugins/<name>/`, rename it in `plugin.json`, and add a source for it to `config.json` or from Admiral's Add source dialog.
+To use it in Admiral, add a source for it to `config.json` (with its `fleet`) or from Admiral's Add source dialog.

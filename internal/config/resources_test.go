@@ -29,7 +29,7 @@ func resConfig(panelRes, resources string) string {
 		extra = `,"resources":` + panelRes
 	}
 	c := `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},` +
-		`"sources":{"s":{"plugin":"freeform","fleet":"work","autopilot":{"p":` + apEntry(`"enabled":true`+extra) + `}}}`
+		`"sources":{"s":{"plugin":"testplug","fleet":"work","autopilot":{"p":` + apEntry(`"enabled":true`+extra) + `}}}`
 	if resources != "" {
 		c += `,"resources":` + resources
 	}
@@ -130,7 +130,7 @@ func TestSetSourcesChecksPanelResourcesAgainstTheFile(t *testing.T) {
 	good := `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},"resources":{"phone":{"capacity":2}}}`
 	p := writeFile(t, dir, good)
 	panel := func(res string) json.RawMessage {
-		return json.RawMessage(`{"s":{"plugin":"freeform","fleet":"work","autopilot":{"p":` + apEntry(`"resources":`+res) + `}}}`)
+		return json.RawMessage(`{"s":{"plugin":"testplug","fleet":"work","autopilot":{"p":` + apEntry(`"resources":`+res) + `}}}`)
 	}
 
 	if err := config.SetSources(dir, panel(`["nope"]`)); err == nil {
@@ -179,7 +179,7 @@ func TestManagerSetSourcesChecksPanelResourcesAgainstTheFile(t *testing.T) {
 	}
 	t.Cleanup(m.Close)
 	panel := func(res string) json.RawMessage {
-		return json.RawMessage(`{"s":{"plugin":"freeform","fleet":"work","autopilot":{"p":` + apEntry(`"resources":`+res) + `}}}`)
+		return json.RawMessage(`{"s":{"plugin":"testplug","fleet":"work","autopilot":{"p":` + apEntry(`"resources":`+res) + `}}}`)
 	}
 
 	if err := m.SetSources(panel(`["nope"]`)); err == nil {

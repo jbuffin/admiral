@@ -13,7 +13,7 @@ describe('filter by a pasted web address', () => {
     expect(filtered('https://github.com/o/r/pull/70')).toEqual([]);
   });
 
-  it('matches a web address anywhere in a freeform order', () => {
+  it('matches a web address anywhere in a multi-line order', () => {
     expect(filtered('https://github.com/o/r/issues/12')).toEqual(['a1']);
   });
 

@@ -71,9 +71,9 @@ func TestShipKeepsItsOrdersURL(t *testing.T) {
 	if code != http.StatusCreated {
 		t.Fatalf("POST /api/ships with no order = %d, want 201: %s", code, body)
 	}
-	freeform := decodeShip(t, body)
+	noOrder := decodeShip(t, body)
 	cases = append(cases, struct{ name, order, want string }{"no order but a url in the request", "", ""})
-	ships[""] = freeform
+	ships[""] = noOrder
 
 	check := func(when string) {
 		t.Helper()

@@ -75,7 +75,6 @@ release:
 	rm -rf $(DIST)/$(RELEASE_NAME) $(DIST)/$(RELEASE_NAME).tar.gz $(DIST)/$(RELEASE_NAME).tar.gz.sha256
 	mkdir -p $(DIST)/$(RELEASE_NAME)/plugins
 	cp $(BIN) $(DIST)/$(RELEASE_NAME)/admiral
-	cp -R plugins/freeform $(DIST)/$(RELEASE_NAME)/plugins/freeform
 	cp -R plugins/github $(DIST)/$(RELEASE_NAME)/plugins/github
 	cp LICENSE $(DIST)/$(RELEASE_NAME)/LICENSE
 	sh packaging/notices.sh > $(DIST)/$(RELEASE_NAME)/THIRD_PARTY_NOTICES

@@ -16,8 +16,8 @@ import (
 	"time"
 )
 
-// Order sources (u7): config validation, the fresh install, the real freeform
-// plugin and the plugins API, observed over HTTP, the WebSocket and the files
+// Order sources (u7): config validation, the fresh install, the test plugin as an
+// order source and the plugins API, observed over HTTP, the WebSocket and the files
 // in $ADMIRAL_HOME. The misbehaving plugin scenarios are in
 // sources_plugin_test.go.
 
@@ -92,6 +92,9 @@ func TestFreshInstall(t *testing.T) {
 		if err := json.Unmarshal([]byte(raw), &man); err != nil || man.Name != name || man.Command == "" {
 			t.Fatalf("plugins/%s/plugin.json must be a manifest named %s with a command, got %q (%v)", name, name, raw, err)
 		}
+	}
+	if _, err := os.Lstat(filepath.Join(w.home, "plugins", "freeform")); err == nil {
+		t.Errorf("a fresh install wrote plugins/freeform: freeform is no longer embedded")
 	}
 	if got := w.configSources(); len(got) != 0 {
 		t.Errorf("config.json sources = %v, want none on a fresh install", got)
@@ -171,7 +174,7 @@ func TestFreshInstallLeavesWhatItShould(t *testing.T) {
 }
 
 // embeddedPlugins are the plugins Admiral ships inside the binary and installs.
-var embeddedPlugins = []string{"freeform", "github"}
+var embeddedPlugins = []string{"github"}
 
 // stampOf is the hash Admiral keeps in plugins/<name>/.admiral-stamp: SHA-256
 // over the files sorted by path, each as path, a zero byte, content, a zero byte.
@@ -190,7 +193,7 @@ func stampOf(files map[string]string) string {
 
 // S1: a newer embedded copy replaces a plugin folder that still matches its
 // stamp, and leaves one that was edited after the stamp was written. Both
-// plugins Admiral ships, freeform and github, follow the rule.
+// plugins Admiral ships follow the rule.
 func TestPluginUpgrade(t *testing.T) {
 	for _, name := range embeddedPlugins {
 		t.Run(name, func(t *testing.T) { testPluginUpgrade(t, name) })
@@ -254,9 +257,79 @@ func testPluginUpgrade(t *testing.T, name string) {
 	})
 }
 
+// Freeform used to ship. A start removes its folder under plugins/ only
+// when it is still Admiral's own copy (it matches its stamp); an edited copy
+// and a symlink are the engineer's and stay.
+func TestLeftoverFreeformFolder(t *testing.T) {
+	files := map[string]string{
+		"plugin.json": `{"name":"freeform","description":"an earlier copy","command":"python3","args":["plugin.py"]}`,
+		"plugin.py":   "# an earlier copy\n",
+	}
+	write := func(t *testing.T, dir string, files map[string]string, stamp string) {
+		t.Helper()
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for n, c := range files {
+			if err := os.WriteFile(filepath.Join(dir, n), []byte(c), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.WriteFile(filepath.Join(dir, ".admiral-stamp"), []byte(stamp), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Run("an untouched copy is removed", func(t *testing.T) {
+		w := newWorld(t)
+		dir := filepath.Join(w.home, "plugins", "freeform")
+		write(t, dir, files, stampOf(files))
+		w.startFresh()
+		w.waitUp()
+		if _, err := os.Lstat(dir); err == nil {
+			t.Errorf("plugins/freeform is still there after a start: an untouched copy of a plugin that is gone must be removed")
+		}
+	})
+	t.Run("an edited copy is left alone", func(t *testing.T) {
+		w := newWorld(t)
+		dir := filepath.Join(w.home, "plugins", "freeform")
+		write(t, dir, files, stampOf(files))
+		if err := os.WriteFile(filepath.Join(dir, "plugin.py"), []byte("# edited by the engineer\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		w.startFresh()
+		w.waitUp()
+		if got := w.readFile(filepath.Join(dir, "plugin.py")); got != "# edited by the engineer\n" {
+			t.Errorf("an edited plugins/freeform was changed: plugin.py = %q", got)
+		}
+	})
+	t.Run("a symlink is left alone and its target untouched", func(t *testing.T) {
+		w := newWorld(t)
+		target := filepath.Join(w.root, "my-freeform")
+		write(t, target, files, stampOf(files)) // would pass the stamp check if followed
+		if err := os.MkdirAll(filepath.Join(w.home, "plugins"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		link := filepath.Join(w.home, "plugins", "freeform")
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatal(err)
+		}
+		w.startFresh()
+		w.waitUp()
+		if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+			t.Errorf("the plugins/freeform symlink was removed or replaced: %v", err)
+		}
+		if got := w.readFile(filepath.Join(target, "plugin.py")); got != files["plugin.py"] {
+			t.Errorf("the symlink's target was changed: plugin.py = %q", got)
+		}
+		if _, err := os.Stat(filepath.Join(target, ".admiral-stamp")); err != nil {
+			t.Errorf("the symlink's target lost its stamp: %v", err)
+		}
+	})
+}
+
 // Sources in config.json are validated by the config parser: an invalid file
-// keeps the banner, with the path of the fault. The sources are not freeform
-// and name a fleet: the startup migration would otherwise rewrite the file.
+// keeps the banner, with the path of the fault. The sources name a fleet: the startup
+// migration would otherwise rewrite the file.
 func TestSourcesConfigValidation(t *testing.T) {
 	cases := []struct{ name, config, want string }{
 		{"sources null", `{"version":1,"fleets":{"f":{"name":"F"}},"sources":null}`, "sources"},
@@ -289,26 +362,26 @@ func TestSourcesConfigValidation(t *testing.T) {
 	}
 }
 
-// S2: add, edit and remove multi-line orders in the freeform list, through the
-// source API, and see them survive a restart.
-func TestFreeformOrders(t *testing.T) {
+// S2: order text validation and the add, edit and remove flow: multi-line orders
+// through the source API, control characters and the size cap refused.
+func TestOrderTextValidationAndEditFlow(t *testing.T) {
 	w := newWorld(t)
-	w.startWithFreeform()
-	w.waitSource("freeform", 10*time.Second, "state ok", isOK)
-	panel := w.panelID("freeform")
+	w.startSources(w.orderSrcDef("orders", "Orders"))
+	w.waitSource("orders", 10*time.Second, "state ok", isOK)
+	panel := w.panelID("orders")
 	ws := w.ws()
 	waitSourcesMsg(t, ws, 5*time.Second, "the orders source on connect", func(l []sourceJSON) bool {
-		_, ok := find(l, "freeform")
+		_, ok := find(l, "orders")
 		return ok
 	})
-	store := filepath.Join(w.dataDir("freeform"), "orders.json")
+	store := filepath.Join(w.dataDir("orders"), "stored.json")
 
 	text := "\n\n  Fix the flaky test  \nsecond line\n\tindented"
-	code, body := w.srcReq(http.MethodPost, "/freeform/orders", map[string]any{"panel": panel, "text": text})
-	w.mustOK(code, body, "POST /api/sources/freeform/orders")
+	code, body := w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": panel, "text": text})
+	w.mustOK(code, body, "POST /api/sources/orders/orders")
 	var first orderJSON
 	waitSourcesMsg(t, ws, 5*time.Second, "the new order pushed to the client", func(l []sourceJSON) bool {
-		s, _ := find(l, "freeform")
+		s, _ := find(l, "orders")
 		for _, p := range s.Panels {
 			if len(p.Orders) == 1 {
 				first = p.Orders[0]
@@ -321,88 +394,86 @@ func TestFreeformOrders(t *testing.T) {
 		t.Errorf("order = %+v, want title %q (first non-empty line, trimmed) and the whole text %q", first, "Fix the flaky test", text)
 	}
 	if got := w.readFile(store); !strings.Contains(got, "Fix the flaky test") {
-		t.Errorf("data/freeform/orders.json = %q, want it to hold the order", got)
+		t.Errorf("data/orders/stored.json = %q, want it to hold the order", got)
 	}
 
-	code, body = w.srcReq(http.MethodPut, "/freeform/orders/"+first.ID, map[string]any{"text": "Rewrite the parser\nwith care"})
-	w.mustOK(code, body, "PUT /api/sources/freeform/orders/<id>")
-	w.waitSource("freeform", 5*time.Second, "the edited order", func(s sourceJSON) bool {
+	code, body = w.srcReq(http.MethodPut, "/orders/orders/"+first.ID, map[string]any{"text": "Rewrite the parser\nwith care"})
+	w.mustOK(code, body, "PUT /api/sources/orders/orders/<id>")
+	w.waitSource("orders", 5*time.Second, "the edited order", func(s sourceJSON) bool {
 		o, ok := s.order(first.ID)
 		return ok && o.Title == "Rewrite the parser" && o.Text == "Rewrite the parser\nwith care"
 	})
 	if got := w.readFile(store); strings.Contains(got, "flaky") || !strings.Contains(got, "Rewrite the parser") {
-		t.Errorf("data/freeform/orders.json = %q, want the edit and not the old text", got)
+		t.Errorf("data/orders/stored.json = %q, want the edit and not the old text", got)
 	}
 
 	// limits: empty after trimming and over 12,000 bytes are refused with a message;
 	// exactly 12,000 bytes is fine.
 	for name, bad := range map[string]string{"blank": " \n\t ", "too long": strings.Repeat("a", 12001)} {
-		code, body = w.srcReq(http.MethodPost, "/freeform/orders", map[string]any{"panel": panel, "text": bad})
+		code, body = w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": panel, "text": bad})
 		if code/100 != 4 || strings.TrimSpace(body) == "" {
 			t.Errorf("POST of a %s order = %d %q, want 4xx with a message", name, code, body)
 		}
-		code, body = w.srcReq(http.MethodPut, "/freeform/orders/"+first.ID, map[string]any{"text": bad})
+		code, body = w.srcReq(http.MethodPut, "/orders/orders/"+first.ID, map[string]any{"text": bad})
 		if code/100 != 4 || strings.TrimSpace(body) == "" {
 			t.Errorf("PUT of a %s text = %d %q, want 4xx with a message", name, code, body)
 		}
 	}
 	// pasted terminal output must not get in and freeze the panel
-	code, body = w.srcReq(http.MethodPost, "/freeform/orders", map[string]any{"panel": panel, "text": "red \x1b[31mtext\x1b[0m"})
+	code, body = w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": panel, "text": "red \x1b[31mtext\x1b[0m"})
 	if code/100 != 4 || !strings.Contains(body, "control character") {
 		t.Errorf("POST of an order with an escape code = %d %q, want 4xx saying control characters are refused", code, body)
 	}
-	code, body = w.srcReq(http.MethodPut, "/freeform/orders/"+first.ID, map[string]any{"text": "x\x07y"})
+	code, body = w.srcReq(http.MethodPut, "/orders/orders/"+first.ID, map[string]any{"text": "x\x07y"})
 	if code/100 != 4 {
 		t.Errorf("PUT of a text with a bell = %d %q, want 4xx", code, body)
 	}
-	code, body = w.srcReq(http.MethodPost, "/freeform/orders", map[string]any{"panel": panel, "text": "crlf\r\ntext\tis fine"})
+	code, body = w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": panel, "text": "crlf\r\ntext\tis fine"})
 	w.mustOK(code, body, "POST of CRLF text")
 	crlfID := decodeID(body)
 	// the remove route looks the id up in the source's last list, which the add only asks to refresh
-	w.waitSource("freeform", 5*time.Second, "the CRLF order", func(s sourceJSON) bool { return s.hasOrder(crlfID) })
-	code, body = w.srcReq(http.MethodDelete, "/freeform/orders/"+crlfID, nil)
+	w.waitSource("orders", 5*time.Second, "the CRLF order", func(s sourceJSON) bool { return s.hasOrder(crlfID) })
+	code, body = w.srcReq(http.MethodDelete, "/orders/orders/"+crlfID, nil)
 	w.mustOK(code, body, "DELETE of the CRLF order")
-	code, body = w.srcReq(http.MethodPost, "/freeform/orders", map[string]any{"panel": panel, "text": strings.Repeat("b", 12000)})
+	code, body = w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": panel, "text": strings.Repeat("b", 12000)})
 	w.mustOK(code, body, "POST of exactly 12,000 bytes")
-	s := w.waitSource("freeform", 5*time.Second, "two orders", func(s sourceJSON) bool { return len(s.orderIDs()) == 2 && !s.hasOrder(crlfID) })
+	s := w.waitSource("orders", 5*time.Second, "two orders", func(s sourceJSON) bool { return len(s.orderIDs()) == 2 && !s.hasOrder(crlfID) })
 	if o, _ := s.order(first.ID); o.Title != "Rewrite the parser" {
 		t.Errorf("a refused edit changed the order: %+v", o)
 	}
 
-	// A restart is not tried here: the startup migration removes every freeform
-	// source (u3 removes the plugin and this test).
-	s = w.waitSource("freeform", 5*time.Second, "two orders", func(s sourceJSON) bool { return len(s.orderIDs()) == 2 })
+	s = w.waitSource("orders", 5*time.Second, "two orders", func(s sourceJSON) bool { return len(s.orderIDs()) == 2 })
 
-	code, body = w.srcReq(http.MethodDelete, "/freeform/orders/"+first.ID, nil)
-	w.mustOK(code, body, "DELETE /api/sources/freeform/orders/<id>")
-	w.waitSource("freeform", 5*time.Second, "the order removed", func(s sourceJSON) bool { return !s.hasOrder(first.ID) && len(s.orderIDs()) == 1 })
+	code, body = w.srcReq(http.MethodDelete, "/orders/orders/"+first.ID, nil)
+	w.mustOK(code, body, "DELETE /api/sources/orders/orders/<id>")
+	w.waitSource("orders", 5*time.Second, "the order removed", func(s sourceJSON) bool { return !s.hasOrder(first.ID) && len(s.orderIDs()) == 1 })
 	if got := w.readFile(store); strings.Contains(got, "Rewrite the parser") {
-		t.Errorf("data/freeform/orders.json still holds the removed order: %q", got)
+		t.Errorf("data/orders/stored.json still holds the removed order: %q", got)
 	}
 }
 
-// S3: a launch from a freeform order carries the full text and the plugin
-// deletes the order afterwards.
-func TestFreeformLaunch(t *testing.T) {
+// S3: a launch from an order carries the order's own text, not the client's,
+// and the source drops the order afterwards.
+func TestLaunchTakesTheOrdersTextNotTheClients(t *testing.T) {
 	w := newWorld(t)
-	w.startWithFreeform()
-	w.waitSource("freeform", 10*time.Second, "state ok", isOK)
-	panel := w.panelID("freeform")
+	w.startSources(w.orderSrcDef("orders", "Orders"))
+	w.waitSource("orders", 10*time.Second, "state ok", isOK)
+	panel := w.panelID("orders")
 	text := "Fix the flaky test\n\n\tsee the CI log\nthen rerun it"
-	code, body := w.srcReq(http.MethodPost, "/freeform/orders", map[string]any{"panel": panel, "text": text})
+	code, body := w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": panel, "text": text})
 	w.mustOK(code, body, "add order")
-	s := w.waitSource("freeform", 5*time.Second, "the order", func(s sourceJSON) bool { return len(s.orderIDs()) == 1 })
+	s := w.waitSource("orders", 5*time.Second, "the order", func(s sourceJSON) bool { return len(s.orderIDs()) == 1 })
 	id := s.orderIDs()[0]
 
 	// the client's own text is ignored when a source names the order
 	code, body = send(t, http.MethodPost, w.in.LocalURL+"/api/ships", map[string]any{
 		"fleet": "sail", "harness": "claude", "dir": w.checkout("proj"), "skill": noSkill,
-		"source": "freeform", "order_id": id, "text": "NOT THE ORDER"})
+		"source": "orders", "order_id": id, "text": "NOT THE ORDER"})
 	if code != http.StatusCreated {
 		t.Fatalf("POST /api/ships = %d, want 201: %s", code, body)
 	}
 	ship := decodeShip(t, body)
-	if ship.Source != "freeform" || ship.OrderID != id {
+	if ship.Source != "orders" || ship.OrderID != id {
 		t.Errorf("ship source/order = %q/%q, want orders/%s", ship.Source, ship.OrderID, id)
 	}
 	if got := promptOf(t, w, w.record(ship.Session)); got != text {
@@ -410,9 +481,9 @@ func TestFreeformLaunch(t *testing.T) {
 	}
 	// the fake exits 0 and the ship sails off; the order must not come back
 	w.in.waitShipsList(t, 10*time.Second, "the ship gone", func(l []shipJSON) bool { return len(l) == 0 })
-	w.waitSource("freeform", 5*time.Second, "no orders left", func(s sourceJSON) bool { return len(s.orderIDs()) == 0 })
-	if got := w.readFile(filepath.Join(w.dataDir("freeform"), "orders.json")); strings.Contains(got, "Fix the flaky test") {
-		t.Errorf("orders.json still holds the launched order: %q", got)
+	w.waitSource("orders", 5*time.Second, "no orders left", func(s sourceJSON) bool { return len(s.orderIDs()) == 0 })
+	if got := w.readFile(filepath.Join(w.dataDir("orders"), "stored.json")); strings.Contains(got, "Fix the flaky test") {
+		t.Errorf("stored.json still holds the launched order: %q", got)
 	}
 }
 

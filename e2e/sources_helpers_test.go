@@ -21,7 +21,7 @@ import (
 	"github.com/coder/websocket"
 )
 
-// Helpers for the u7 scenarios (order sources, plugins, the freeform plugin).
+// Helpers for the u7 scenarios (order sources, plugins).
 // The misbehaving plugin is e2e/testplugin/plugin.py: a test copies it into
 // $ADMIRAL_HOME/plugins/<name>/ and steers it through the flag directory it
 // names in the source's settings (see the plugin's docstring).
@@ -577,18 +577,6 @@ func (w *world) startFresh() *fleetInst {
 	w.t.Helper()
 	w.in = launchAdmiral(w.t, w.home, "127.0.0.1:"+freePort(w.t), w.baseEnv())
 	return w.in
-}
-
-// startWithFreeform starts Admiral on the default fleets and adds a freeform
-// source (key "freeform") through the API: a freeform source in config.json at
-// startup is migrated away. The source is gone after the next start.
-func (w *world) startWithFreeform() {
-	w.t.Helper()
-	writeConfig(w.t, w.home, w.fleetsConfig())
-	w.startFresh()
-	w.waitUp()
-	code, body := w.srcReq(http.MethodPost, "", map[string]any{"plugin": "freeform", "fleet": testFleet})
-	w.mustOK(code, body, "add the freeform source")
 }
 
 // launchFrom posts a launch that names a source and an order and carries no

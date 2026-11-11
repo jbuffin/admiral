@@ -90,6 +90,56 @@ func InstallPlugins(home string) error {
 	return errors.Join(errs...)
 }
 
+// retired lists plugins Admiral used to ship. A start removes their folder from
+// plugins/ when it is still Admiral's untouched copy.
+var retired = []string{"freeform"}
+
+// RemoveRetired deletes the retired plugins' folders. Only a real directory
+// whose stamp matches its files goes; an edited copy or a symlink stays, with
+// one log line, and a symlink's target is never touched.
+func RemoveRetired(home string) error {
+	var errs []error
+	for _, name := range retired {
+		dir := filepath.Join(pluginsDir(home), name)
+		info, err := os.Lstat(dir)
+		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				errs = append(errs, err)
+			}
+			continue
+		}
+		if !info.IsDir() {
+			fmt.Fprintf(os.Stderr, "admiral: plugins/%s is a retired plugin, but not a plain folder; left alone\n", name)
+			continue
+		}
+		if _, ok := untouched(dir); !ok {
+			fmt.Fprintf(os.Stderr, "admiral: plugins/%s is a retired plugin, but you edited it; left alone\n", name)
+			continue
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "admiral: removed the retired plugin plugins/%s\n", name)
+	}
+	return errors.Join(errs...)
+}
+
+// untouched reports whether dir is still Admiral's own copy of a plugin: its
+// stamp file matches the files on disk. It returns that stamp. An edited
+// folder, one without a stamp, or one that can't be read is not untouched.
+func untouched(dir string) (string, bool) {
+	have, err := os.ReadFile(filepath.Join(dir, StampFile))
+	if err != nil {
+		return "", false
+	}
+	onDisk, err := diskFiles(dir)
+	if err != nil || Stamp(onDisk) != string(have) {
+		return "", false
+	}
+	return string(have), true
+}
+
 // installPlugin writes the embedded plugin to plugins/<name>/ when the folder
 // is missing, and replaces it with a newer embedded copy when the folder still
 // matches its stamp. An edited folder, or one without a stamp, is left alone.
@@ -102,13 +152,9 @@ func installPlugin(home, name string) error {
 	dir := filepath.Join(pluginsDir(home), name)
 
 	if _, err := os.Lstat(dir); err == nil {
-		have, err := os.ReadFile(filepath.Join(dir, StampFile))
-		if err != nil || string(have) == want {
-			return nil
-		}
-		onDisk, err := diskFiles(dir)
-		if err != nil || Stamp(onDisk) != string(have) {
-			return nil // edited by hand, or not readable: not ours to replace
+		stamp, ok := untouched(dir)
+		if !ok || stamp == want {
+			return nil // edited by hand, not readable, or already current
 		}
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
