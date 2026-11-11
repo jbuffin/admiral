@@ -30,6 +30,7 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
-    "preact": "^11.0.1"
+    "preact": "^11.0.1",
+    "uqr": "0.1.3"
   }
 }

@@ -464,3 +464,15 @@ button.pill { cursor: pointer; min-height: 32px; }
 .convo-card { max-width: 100%; box-sizing: border-box; min-width: 0; }
 .moored-info { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-bottom: 8px; }
 .moored-info .line { margin: 0; }
+.h2 { margin: 22px 0 8px; font-size: var(--font-size-title); font-weight: 600; }
+.pairing-box { display: flex; align-items: center; flex-wrap: wrap; gap: 20px; padding: 16px; }
+.qr { flex: none; width: 200px; height: 200px; border-radius: var(--shape-radius-sm); }
+.pairing-text { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 8px; }
+.pair-url { font-family: var(--font-mono); font-size: var(--font-size-mono); color: var(--color-muted); overflow-wrap: anywhere; }
+.pair-code { font-family: var(--font-mono); font-size: 28px; letter-spacing: 0.08em; font-weight: 600; }
+.devices { list-style: none; margin: 0 0 14px; padding: 0; }
+.device.set { align-items: flex-start; }
+.device .t input { align-self: flex-start; min-width: 220px; }
+.device .btn, .pairing-box .btn, .confirm .btn, .prefs-page > .btn { min-height: var(--shape-min-touch-target); }
+.prefs-page > .confirm { margin-top: 14px; }
+.prefs-page > .btn { margin-top: 4px; }

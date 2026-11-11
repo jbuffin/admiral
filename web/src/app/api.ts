@@ -330,3 +330,25 @@ export async function probeShipList(crew?: string): Promise<{ kind: 'ok'; ships:
     return { kind: 'down' };
   }
 }
+export interface Device {
+  id: string;
+  name: string;
+  login: string;
+  pairedAt: string;
+  lastSeen: string | null;
+  current?: boolean;
+}
+export interface PairingCode {
+  code: string;
+  url: string;
+  expires: string;
+}
+
+export async function fetchDevices(): Promise<Result<Device[]>> {
+  const r = await call<{ devices?: Device[] | null }>('GET', '/devices');
+  return r.ok ? { ok: true, data: r.data.devices ?? [] } : r;
+}
+export const mintPairingCode = () => call<PairingCode>('POST', '/pairing-codes');
+export const renameDevice = (id: string, name: string) => call<unknown>('PATCH', `/devices/${encodeURIComponent(id)}`, { name });
+export const revokeDevice = (id: string) => call<unknown>('DELETE', `/devices/${encodeURIComponent(id)}`);
+export const revokeAllDevices = () => call<unknown>('DELETE', '/devices');

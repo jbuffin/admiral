@@ -1,11 +1,12 @@
 import { useEffect } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch, fleets, loaded } from './fleets';
-import { capabilitiesPath, fleetPath, go, loc, preferencesFleet, preferencesPage, sourcesPath, type PreferencesPage } from './router';
+import { capabilitiesPath, fleetPath, go, loc, preferencesFleet, preferencesPage, remotePath, sourcesPath, type PreferencesPage } from './router';
+import { RemoteAccess } from './RemoteAccessPage';
 import { FleetPage } from './FleetPage';
 import { HarnessCapabilities } from './HarnessCapabilities';
 import { OrderSources } from './OrderSources';
 
-const TITLES: Record<PreferencesPage, string> = { fleet: 'Fleet', sources: 'Order sources', capabilities: 'Harness capabilities' };
+const TITLES: Record<PreferencesPage, string> = { fleet: 'Fleet', sources: 'Order sources', capabilities: 'Harness capabilities', remote: 'Remote access' };
 
 function NavLink({ path, current, children }: { path: string; current: boolean; children: string }) {
   const search = fleetSearch.value;
@@ -28,6 +29,14 @@ function NavLink({ path, current, children }: { path: string; current: boolean; 
 function PreferencesNav({ current, page }: { current: string; page: PreferencesPage }) {
   return (
     <nav class="prefs-nav" aria-label="Preferences">
+      <div role="group" aria-labelledby="prefs-admiral">
+        <div class="sec" id="prefs-admiral">
+          Admiral · all fleets
+        </div>
+        <NavLink path={remotePath} current={page === 'remote'}>
+          Remote access
+        </NavLink>
+      </div>
       {fleets.value.map((f) => (
         <div key={f.key} role="group" aria-labelledby={`prefs-${f.key}`}>
           <div class="sec" id={`prefs-${f.key}`}>
@@ -56,16 +65,24 @@ export function Preferences({ phone }: { phone: boolean }) {
   const fallback = activeFleet.value;
 
   // Bare /app/preferences, and a path naming no fleet, open the active fleet's sources.
+  // With no fleet to open, they open Remote access, which needs none.
   useEffect(() => {
-    if (loaded.value && !fleet && fallback) go(sourcesPath(fallback.key), fleetSearch.value, true);
-  }, [loaded.value, fleet, fallback]);
+    if (!loaded.value || fleet || page === 'remote') return;
+    go(fallback ? sourcesPath(fallback.key) : remotePath, fleetSearch.value, true);
+  }, [loaded.value, fleet, fallback, page]);
 
   const Title = phone ? 'h2' : 'h1';
   return (
     <main class="panel prefs">
-      {fleets.value.length > 0 ? <PreferencesNav current={fleet?.key ?? ''} page={page} /> : null}
+      <PreferencesNav current={fleet?.key ?? ''} page={page} />
       <div class="prefs-page">
-        {fleet ? (
+        {page === 'remote' ? (
+          <>
+            <Title>{TITLES.remote}</Title>
+            <p class="fleet-label">All fleets</p>
+            <RemoteAccess />
+          </>
+        ) : fleet ? (
           <>
             <Title>{TITLES[page]}</Title>
             <p class="fleet-label">
@@ -74,8 +91,6 @@ export function Preferences({ phone }: { phone: boolean }) {
             </p>
             {page === 'fleet' ? <FleetPage key={fleet.key} fleet={fleet} /> : page === 'capabilities' ? <HarnessCapabilities key={fleet.key} fleet={fleet} /> : <OrderSources key={fleet.key} fleet={fleet} />}
           </>
-        ) : loaded.value && !fallback ? (
-          <p class="line">Set up a fleet and its settings will appear here.</p>
         ) : null}
       </div>
     </main>

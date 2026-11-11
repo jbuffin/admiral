@@ -13,7 +13,9 @@ export function surfaceOf(path: string): Surface | undefined {
   if (s?.id === 'ships' && sub.length === 1 && sub[0] !== '') return s;
   // Preferences alone has pages below it: /app/preferences/<fleet key>/<page>.
   // Campaigns has the Campaign page below it: /app/campaigns/<id>.
-  const below = (s?.id === 'preferences' && sub.length === 2 && (PREFERENCES_PAGES as readonly string[]).includes(sub[1])) || (s?.id === 'campaigns' && sub.length === 1);
+  const below =
+    (s?.id === 'preferences' && sub.length === 2 && (PREFERENCES_PAGES as readonly string[]).includes(sub[1]) && (sub[1] !== 'remote' || sub[0] === 'admiral')) ||
+    (s?.id === 'campaigns' && sub.length === 1);
   if (s && sub.length > 0 && !below) return undefined;
   return s;
 }
@@ -31,7 +33,15 @@ export function shipSession(path: string): string | null {
   }
 }
 
-const PREFERENCES_PAGES = ['fleet', 'sources', 'capabilities'] as const;
+const PREFERENCES_PAGES = ['fleet', 'sources', 'capabilities', 'remote'] as const;
+
+// A fleet key can't be `admiral` on the remote page: that segment is reserved for the global pages.
+const isRemote = (path: string) => {
+  const [id, key, page] = segments(path);
+  return id === 'preferences' && key === 'admiral' && page === 'remote';
+};
+
+export const remotePath = '/app/preferences/admiral/remote';
 export type PreferencesPage = (typeof PREFERENCES_PAGES)[number];
 
 export const sourcesPath = (fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/sources`;
@@ -43,7 +53,7 @@ export const capabilitiesPath = (fleetKey: string) => `/app/preferences/${encode
 /** The fleet key a Preferences path names, if any. */
 export function preferencesFleet(path: string): string | null {
   const [id, key] = segments(path);
-  if (id !== 'preferences' || !key) return null;
+  if (id !== 'preferences' || !key || isRemote(path)) return null;
   try {
     return decodeURIComponent(key);
   } catch {
@@ -53,8 +63,9 @@ export function preferencesFleet(path: string): string | null {
 
 /** The page below a fleet's Preferences group; sources when the path names none. */
 export function preferencesPage(path: string): PreferencesPage {
+  if (isRemote(path)) return 'remote';
   const page = segments(path)[2];
-  return (PREFERENCES_PAGES as readonly string[]).includes(page) ? (page as PreferencesPage) : 'sources';
+  return (PREFERENCES_PAGES as readonly string[]).includes(page) && page !== 'remote' ? (page as PreferencesPage) : 'sources';
 }
 
 export const campaignPath = (id: string) => `/app/campaigns/${encodeURIComponent(id)}`;
