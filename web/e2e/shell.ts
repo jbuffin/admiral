@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Locator, type Page, expect } from '@playwright/test';
@@ -157,13 +157,14 @@ async function listShips(a: Admiral): Promise<ShipJSON[]> {
   return ((await res.json()) as { ships: ShipJSON[] }).ships;
 }
 
-/** The cue makes the harness exit (0 sails off, 3 anchors); without one it idles. */
+/** The cue makes the harness exit (0 sails off, 3 anchors); `cues` are cue lines the harness runs instead; without either it idles. */
 export async function launchShip(
   a: Admiral,
-  req: { fleet: 'zulu' | 'alpha'; harness: Harness; order?: string; exit?: 0 | 3; cue?: string },
+  req: { fleet: 'zulu' | 'alpha'; harness: Harness; order?: string; exit?: 0 | 3; cue?: string; cues?: string[] },
 ): Promise<LaunchedShip> {
   const cue = join(a.home, 'cue');
   if (req.cue !== undefined) writeFileSync(cue, req.cue);
+  else if (req.cues) writeFileSync(cue, req.cues.join('\n') + '\n');
   else if (req.exit === undefined) rmSync(cue, { force: true });
   else writeFileSync(cue, `exit ${req.exit}\n`);
   const body = {
@@ -189,6 +190,8 @@ export async function launchShip(
     const want = req.exit === 0 ? 'sailing_off' : 'anchored';
     await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status).toBe(want);
   }
+  // The harness reads its cue file once, so the file stays until it is ready for input.
+  if (req.cues) await expect.poll(() => existsSync(join(a.home, 'rec', ship.session, 'cues-done'))).toBe(true);
   if (req.cue === undefined) rmSync(cue, { force: true });
   return ship;
 }
@@ -640,4 +643,29 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await expect(form.getByRole('alert')).toContainText('gadget');
   await expect(form).toBeVisible();
   await cancel();
+}
+
+export const messageBox = (page: Page) => viewPanel(page).getByRole('textbox', { name: 'Message' });
+export const sendButton = (page: Page) => viewPanel(page).getByRole('button', { name: 'Send', exact: true });
+export const interruptButton = (page: Page) => page.getByRole('button', { name: 'Interrupt', exact: true });
+export const stopShipButton = (page: Page) => page.getByRole('button', { name: 'Stop ship', exact: true });
+/** The dimmed bubble that shows a message from the moment it is sent until the conversation shows it. */
+export const sentBubble = (page: Page, text: string) => viewPanel(page).getByRole('status').filter({ hasText: text });
+export const stopDialog = (page: Page) => page.getByRole('dialog', { name: 'Stop ship' });
+
+/** What the fake harness's pane received, without the bracketed-paste markers a paste wraps around the text. */
+export const received = (a: Admiral, ship: LaunchedShip) => readFileSync(join(a.home, 'rec', ship.session, 'stdin'), 'utf8').replaceAll('\x1b[200~', '').replaceAll('\x1b[201~', '');
+
+/** The events the ship's outcome log holds, in order (the log is `$ADMIRAL_HOME/outcomes/<YYYY-MM>.jsonl`). */
+export function outcomeEvents(a: Admiral, ship: LaunchedShip): string[] {
+  const dir = join(a.home, 'outcomes');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.jsonl'))
+    .sort()
+    .flatMap((f) => readFileSync(join(dir, f), 'utf8').split('\n'))
+    .filter(Boolean)
+    .map((l) => JSON.parse(l) as { ship: string; event: string })
+    .filter((r) => r.ship === ship.session)
+    .map((r) => r.event);
 }

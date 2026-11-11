@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { HOME, WORK, expectSeededTurn, launchCrew, launchFromTheShell, launchShip, line, appendLines, probeableClaude, rowLink, say, seedFleets, seedTurn, setState, shipViewUrl, viewPanel, viewTab, watchPage, withFakeGh } from './shell';
+import { HOME, WORK, expectSeededTurn, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, rowLink, say, seedFleets, seedTurn, sendButton, sentBubble, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh } from './shell';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -128,6 +128,11 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await expect(viewPanel(page)).toContainText(/Starting|No conversation/);
   await expect(viewPanel(page).getByRole('button', { name: 'Open terminal' })).toBeVisible();
 
+  // An anchored ship exited with an error: its box is read only and says so.
+  await expect(messageBox(page)).toBeDisabled();
+  await expect(viewPanel(page)).toContainText('Exited with error, read only');
+  await expect(interruptButton(page)).toHaveCount(0);
+
   // A ship that leaves the list while its view is open: the view says it is gone and offers Back.
   const stopped = await fetch(`${admiral.url}api/v1/ships/${encodeURIComponent(moored.session)}/stop`, { method: 'POST' });
   expect(stopped.status).toBe(200);
@@ -167,6 +172,53 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await page.goto(admiral.url + 'app/ships?fleet=zulu');
   await expect(switcher(page, WORK)).toBeVisible();
   await launchFromTheShell(page, admiral, (l) => l.click(), { phone: false });
+
+  // Talking to a ship: the box sends, the message shows dimmed until the conversation has it, Interrupt presses Esc and Stop ship ends the ship.
+  const chat = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste', 'reply Aye, rebasing now'] });
+  setState(admiral, chat, 'needs_you');
+  await page.goto(admiral.url + 'app/ships?fleet=zulu');
+  await rowLink(page, chat).tap();
+  await expect(messageBox(page)).toBeEnabled();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  await page.route('**/api/v1/ships/*/messages', async (route) => {
+    await gate;
+    await route.continue();
+  });
+  await messageBox(page).fill('Please rebase onto main');
+  await sendButton(page).tap();
+  await expect(sentBubble(page, 'Please rebase onto main')).toBeVisible();
+  release();
+  await expect(sentBubble(page, 'Please rebase onto main')).toHaveCount(0);
+  await expect(viewPanel(page).getByText('Please rebase onto main', { exact: true })).toHaveCount(1);
+  await expect(viewPanel(page)).toContainText('Aye, rebasing now', { timeout: 15_000 });
+  expect(received(admiral, chat)).toContain('Please rebase onto main');
+  await page.unroute('**/api/v1/ships/*/messages');
+
+  // A hardware keyboard sends with Enter.
+  await messageBox(page).fill('And run the tests');
+  await messageBox(page).press('Enter');
+  await expect(viewPanel(page).getByText('And run the tests', { exact: true })).toHaveCount(1);
+  await expect(messageBox(page)).toHaveValue('');
+
+  setState(admiral, chat, 'working');
+  await expect(interruptButton(page)).toBeVisible();
+  expect(received(admiral, chat)).not.toContain('\x1b');
+  await interruptButton(page).tap();
+  await expect.poll(() => received(admiral, chat)).toContain('\x1b');
+
+  const nativeDialogs: string[] = [];
+  page.on('dialog', (d) => {
+    nativeDialogs.push(d.message());
+    void d.dismiss();
+  });
+  await stopShipButton(page).tap();
+  await expect(stopDialog(page)).toBeVisible();
+  await stopDialog(page).getByRole('button', { name: 'Stop ship' }).tap();
+  await expect(surface(page, 'Ships')).toBeVisible();
+  await expect(row(page, chat)).toHaveCount(0);
+  expect(nativeDialogs).toEqual([]);
+  await expect.poll(() => outcomeEvents(admiral, chat)).toEqual(['launched', 'ended', 'stopped']);
 
   expect(watch.paths.some((p) => p.startsWith('/api/v1/config'))).toBe(true);
   expect(watch.paths).toContain('/ws/v1');
