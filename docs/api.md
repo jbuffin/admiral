@@ -10,6 +10,8 @@ The HTTP and WebSocket shapes a client reads. Every route is also served under `
 
 A moored ship has `status` `moored` and no tmux session: it is listed from its record in `$ADMIRAL_HOME/moored/`, with `prs`, `moored_at` (RFC 3339), `polled_at` and `stale`, which no other ship carries. `prs` is a list of `{url, state, review, checks, mergeable, conflicts}`: `state` is `OPEN`, `MERGED` or `CLOSED` (a PR GitHub answers NOT_FOUND for counts as `CLOSED`; a NOT_FOUND on its repository says nothing about it, so its ship stays moored and `stale`); `review` is GitHub's `reviewDecision` (`APPROVED`, `CHANGES_REQUESTED`, `REVIEW_REQUIRED`, or `""` for none); `checks` is the status check rollup (`SUCCESS`, `FAILURE`, `ERROR`, `PENDING`, `EXPECTED`, or `""`); `mergeable` is `MERGEABLE`, `CONFLICTING` or `UNKNOWN`; `conflicts` is true only for an `OPEN` PR that is `CONFLICTING`. Every key is always served: before the first poll answers a PR has its `url`, `state` `OPEN`, empty chips and `conflicts` false. `polled_at` (RFC 3339) is the last poll that answered, absent before one has. `stale` is omitted while false and true when the latest poll failed to reach GitHub: the chips are the last known ones, and a failed poll never ends mooring. Its `session` is its slug, `dir` its checkout, `crew` and `subagents` empty and `launched` empty.
 
+Each boat in a ship's `crew` also carries `role` and `conversation` (see "A crew boat's conversation").
+
 `tail` is always present, a string of one line and at most 200 characters, `""` when nothing is readable. It comes from the ship's conversation, never from the terminal. Of the conversation's pending questions, tool calls and assistant items, the latest one decides:
 
 - a pending question: its text;
@@ -181,6 +183,40 @@ Body `{"child_url", "harness", "dir" | "clone": true, "clone_repo", "start_anywa
 What the launcher puts in the prompt: the `skill` runs with the text as its argument (`/skill text`, `$skill text` on Codex). The text is the child's `skill.args` when set (`<map URL> <ticket URL>` for `/wayfinder`), else the ticket URL; a child with no skill gets its title and URL.
 
 A campaign ends when the parent and every issue under it, nested parents included, are closed, and none has sub-issues that could not be read; or when it is unfollowed. It is reread when a child's ship anchors or sails off, when its page is opened, and every five minutes.
+
+## A crew boat's conversation
+
+Each boat in a ship's `crew` list carries `role` (the `--role` it was launched with, left out when none) and `conversation` (always present: `true` only for a Claude Code boat with a recorded transcript). The recorded transcript path itself is not on the API.
+
+### `GET /api/v1/ships/<ship>/crew/<name>/conversation[?before=<id>]`
+
+The same body, states and paging as a ship's conversation. The file is the transcript path the boat's hooks recorded (ADR 0021), read fresh from its pane on each request. A Codex or Copilot boat, and a Claude boat with no path recorded yet, read `none`. An anchored (exited) boat stays readable until it is closed. An unknown ship or boat is `404`, and so is a boat that was closed.
+
+A boat has no `--session-id` of ours to check the path against, and a boat writes the path itself, so the only limit is the one every transcript read has (ADR 0019): the file must be a regular file under the boat's fleet's `<config dir>/projects/` with no symlink on the way, else `unreadable`. A boat may therefore show any transcript in its fleet's `projects/`, including another session's. Binding a boat to its own session is follow-up issue #357.
+
+### WebSocket
+
+The ship's messages take an optional `crew` field naming the boat: `{"type": "conversation_open", "ship": "<ship>", "crew": "<name>"}` and `conversation_close` the same way. The server echoes `crew` on `conversation_opened` and on every `conversation` push for that boat; the ship's own messages have no `crew`. A boat counts toward the 16 open conversations, and its subscription ends with `conversation_close`, when the connection closes, or when the boat's window closes or the ship is dismissed.
+
+## A ship's changes
+
+`GET /api/version` lists the `changes` capability when the server has it.
+
+### `GET /api/v1/ships/<ship>/changes`
+
+```json
+{"state": "ok", "files": [{"path": "a.go", "status": "modified", "added": 3, "removed": 1}], "diff": "diff --git ...", "truncated": false}
+```
+
+Read-only: the ship's checkout (its `dir`) against its merge-base with the base branch, committed, staged, unstaged and untracked work together.
+
+- The base branch is the repo's `origin/HEAD` branch, else `main` (`refs/heads/main`, then `origin/main`). With neither, the base is `HEAD`, so only uncommitted work shows.
+- `state` is `ok`, or `none` (with `files: []` and `diff: ""`) when `dir` is not a git checkout, is gone, or has no commit yet.
+- `status` is `added`, `modified`, `deleted`, `renamed` (`path` is the new name), `copied`, `typechange`, `unmerged` or `untracked`. `added` and `removed` count lines, `0` for a binary file.
+- `diff` is the unified diff of the tracked files, then one for each untracked file as a new file. It is cut at a line end after 2 MiB, and the list stops at 2000 files; `truncated` is `true` when either happened.
+- An unknown ship is `404`. A git failure or a timeout (10 s a call, 20 s in all) is `500`.
+
+The checkout's `.git/config`, `.git/info/attributes` and `.gitattributes` are written by the ship, so git runs with `--no-ext-diff --no-textconv`, `core.fsmonitor` and hooks off, every `filter.*` and `diff.*` program named in the repo config blanked, no optional locks and a fixed environment (no global or system config), and no user-controlled value reaches it as an option.
 
 ## Harness capabilities
 

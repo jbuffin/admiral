@@ -47,6 +47,7 @@ type Service struct {
 	// Tests replace these two lookups, which need a live tmux.
 	ship   func(session string) (ships.Ship, bool)
 	option func(sh ships.Ship) (raw, startCmd, configDir string, ok bool)
+	crew   func(sh ships.Ship, name string) (sessionhost.Crew, string, bool) // the boat and its fleet's Claude config dir
 
 	mu      sync.Mutex
 	seen    map[string]string // session -> option value a file was seen for: tells gone from none
@@ -58,6 +59,7 @@ type Service struct {
 
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/ships/{session}/conversation", s.serveConversation)
+	mux.HandleFunc("GET /api/ships/{session}/crew/{name}/conversation", s.serveConversation)
 }
 
 func (s *Service) Connected(*server.Client) {}
@@ -70,11 +72,21 @@ func (s *Service) Messages() map[string]server.MessageHandler {
 }
 
 type where struct {
-	ship      ships.Ship
-	raw       string // the option's value
-	path      string
-	id        string // the session id
-	configDir string
+	ship         ships.Ship
+	crew         string // the boat's name, empty for the ship
+	boatLaunched string
+	raw          string // the option's value
+	path         string
+	id           string // the session id
+	configDir    string
+}
+
+// key names a ship's conversation, or a crew boat's, in the maps below.
+func key(session, crew string) string {
+	if crew == "" {
+		return session
+	}
+	return session + "/crew/" + crew
 }
 
 func (s *Service) shipOf(session string, sync bool) (ships.Ship, bool) {
@@ -117,27 +129,80 @@ func (s *Service) optionOf(sh ships.Ship) (raw, startCmd, configDir string, ok b
 	if err != nil {
 		return "", "", "", false
 	}
-	f, found := s.Config().Fleet(sh.Fleet)
+	dir, found := s.claudeConfigDir(sh)
 	if !found {
 		return "", "", "", false
+	}
+	return raw, startCmd, dir, true
+}
+
+func (s *Service) claudeConfigDir(sh ships.Ship) (string, bool) {
+	f, found := s.Config().Fleet(sh.Fleet)
+	if !found {
+		return "", false
 	}
 	var env map[string]string
 	if d, has := f.Harness("claude"); has {
 		env = d.Env
 	}
-	return raw, startCmd, config.IdentityDir("claude", env), true
+	return config.IdentityDir("claude", env), true
+}
+
+// crewOf finds a boat of the ship by name.
+func (s *Service) crewOf(sh ships.Ship, name string) (sessionhost.Crew, string, bool) {
+	if s.crew != nil {
+		return s.crew(sh, name)
+	}
+	find := func() (sessionhost.Crew, bool) {
+		boats, _ := s.Ships.Crew(sh.Session)
+		for _, b := range boats {
+			if b.Name == name {
+				return b, true
+			}
+		}
+		return sessionhost.Crew{}, false
+	}
+	b, ok := find()
+	if !ok {
+		// A boat just launched may not be listed yet.
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_ = s.Ships.Host.Sync(ctx)
+		cancel()
+		if b, ok = find(); !ok {
+			return sessionhost.Crew{}, "", false
+		}
+	}
+	// The polled row can trail the pane by a poll, so read the recorded path itself.
+	if b.PaneID != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if raw, err := sessionhost.NewServer(s.Tmux, s.Socket).ReadPaneOption(ctx, b.PaneID, "crew-transcript"); err == nil {
+			b.Transcript = ""
+			if sessionhost.ValidCrewTranscriptPath(raw) {
+				b.Transcript = raw
+			}
+		}
+	}
+	dir, _ := s.claudeConfigDir(sh)
+	return b, dir, true
 }
 
 var startedWith = regexp.MustCompile(`--session-id["']?\s+["']?([0-9a-f-]{36})`)
 
 // locate finds the ship and its transcript. ok is false for an unknown ship;
 // none is true when the ship has no conversation of ours to read.
-func (s *Service) locate(session string) (w where, ok, none bool) {
+func (s *Service) locate(session string) (w where, ok, none bool) { return s.locateBoat(session, "") }
+
+// locateBoat is locate for a crew boat of the ship, or for the ship itself when crew is empty.
+func (s *Service) locateBoat(session, crew string) (w where, ok, none bool) {
 	sh, ok := s.shipOf(session, true)
 	if !ok {
 		return where{}, false, false
 	}
 	w.ship = sh
+	if crew != "" {
+		return s.locateCrew(w, crew)
+	}
 	if sh.Harness != "claude" {
 		return w, true, true
 	}
@@ -159,6 +224,22 @@ func (s *Service) locate(session string) (w where, ok, none bool) {
 	return w, true, false
 }
 
+// locateCrew has no start command to bind the boat's path to, since the path comes from a hook payload
+// the boat controls; transcriptfs confines it to the fleet's projects dir and nothing more.
+func (s *Service) locateCrew(w where, name string) (where, bool, bool) {
+	boat, configDir, ok := s.crewOf(w.ship, name)
+	if !ok {
+		return where{}, false, false
+	}
+	w.crew, w.boatLaunched = name, boat.Launched
+	if boat.Harness != "claude" || configDir == "" || !sessionhost.ValidCrewTranscriptPath(boat.Transcript) {
+		return w, true, true
+	}
+	id, _ := transcriptfs.SessionID(boat.Transcript)
+	w.raw, w.path, w.id, w.configDir = boat.Transcript, boat.Transcript, id, configDir
+	return w, true, false
+}
+
 // open tries the recorded path, then (find) any project dir holding the session id.
 // A missing file is fs.ErrNotExist; a refused one is transcriptfs.ErrRefused.
 func (w where) open(find bool) (*os.File, os.FileInfo, string, error) {
@@ -167,6 +248,9 @@ func (w where) open(find bool) (*os.File, os.FileInfo, string, error) {
 		return f, info, w.path, nil
 	}
 	if !errors.Is(err, fs.ErrNotExist) || !find {
+		return nil, nil, "", err
+	}
+	if w.id == "" {
 		return nil, nil, "", err
 	}
 	p, err := transcriptfs.Find(w.configDir, w.id)
@@ -184,10 +268,11 @@ type Page struct {
 }
 
 func (s *Service) serveConversation(w http.ResponseWriter, r *http.Request) {
-	session := r.PathValue("session")
-	loc, ok, none := s.locate(session)
+	session, crew := r.PathValue("session"), r.PathValue("name")
+	k := key(session, crew)
+	loc, ok, none := s.locateBoat(session, crew)
 	if !ok {
-		s.forget(session)
+		s.forget(k)
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return
 	}
@@ -208,7 +293,7 @@ func (s *Service) serveConversation(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		s.mu.Lock()
-		was := s.seen[session] == loc.raw
+		was := s.seen[k] == loc.raw
 		s.mu.Unlock()
 		if was {
 			page.State = StateGone
@@ -221,7 +306,7 @@ func (s *Service) serveConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer f.Close()
-	s.markSeen(session, loc.raw)
+	s.markSeen(k, loc.raw)
 	items, more, err := conversation.Page(f, info, conversation.Options{}, before, pageSize)
 	switch {
 	case errors.Is(err, conversation.ErrUnknownID):
@@ -263,6 +348,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 type watch struct {
 	session  string
+	crew     string
 	launched string // tells a reused ship name from the ship that was watched
 	loc      where
 	reader   *conversation.Reader
@@ -274,25 +360,27 @@ type watch struct {
 func (s *Service) handleOpen(ctx context.Context, c *server.Client, raw json.RawMessage) {
 	var m struct {
 		Ship string `json:"ship"`
+		Crew string `json:"crew"`
 	}
 	if json.Unmarshal(raw, &m) != nil || m.Ship == "" {
 		return
 	}
+	k := key(m.Ship, m.Crew)
 	s.mu.Lock()
 	for _, have := range s.clients[c] {
-		if have == m.Ship {
-			s.ackLocked(c, m.Ship)
+		if have == k {
+			s.ackLocked(c, m.Ship, m.Crew)
 			s.mu.Unlock()
 			return
 		}
 	}
 	s.mu.Unlock()
 
-	loc, ok, none := s.locate(m.Ship)
+	loc, ok, none := s.locateBoat(m.Ship, m.Crew)
 	if !ok || none {
-		return // an unknown ship, or one with no conversation, is ignored
+		return // an unknown ship or boat, or one with no conversation, is ignored
 	}
-	w := &watch{session: m.Ship, launched: loc.ship.Launched, loc: loc, reader: conversation.NewReader(conversation.Options{}),
+	w := &watch{session: m.Ship, crew: m.Crew, launched: loc.ship.Launched + "|" + loc.boatLaunched, loc: loc, reader: conversation.NewReader(conversation.Options{}),
 		subs: map[*server.Client]struct{}{}}
 	// Prime the reader: what is already there is not sent (the client reads the
 	// page), and a tool result that arrives later still finds its call.
@@ -300,7 +388,7 @@ func (s *Service) handleOpen(ctx context.Context, c *server.Client, raw json.Raw
 		_, _ = w.reader.Refresh(f, info)
 		f.Close()
 		w.path = p
-		s.markSeen(m.Ship, loc.raw)
+		s.markSeen(k, loc.raw)
 	}
 
 	s.mu.Lock()
@@ -309,18 +397,18 @@ func (s *Service) handleOpen(ctx context.Context, c *server.Client, raw json.Raw
 		s.clients, s.watches, s.outbox = map[*server.Client][]string{}, map[string]*watch{}, map[*server.Client]chan map[string]any{}
 	}
 	for _, have := range s.clients[c] {
-		if have == m.Ship {
-			s.ackLocked(c, m.Ship)
+		if have == k {
+			s.ackLocked(c, m.Ship, m.Crew)
 			return
 		}
 	}
-	if cur, has := s.watches[m.Ship]; has && cur.launched == w.launched {
+	if cur, has := s.watches[k]; has && cur.launched == w.launched {
 		w = cur
 	} else {
-		s.watches[m.Ship] = w
+		s.watches[k] = w
 	}
 	w.subs[c] = struct{}{}
-	s.clients[c] = append(s.clients[c], m.Ship)
+	s.clients[c] = append(s.clients[c], k)
 	for len(s.clients[c]) > MaxOpen {
 		s.unsubscribeLocked(c, s.clients[c][0])
 	}
@@ -339,7 +427,7 @@ func (s *Service) handleOpen(ctx context.Context, c *server.Client, raw json.Raw
 			}
 		}()
 	}
-	s.ackLocked(c, m.Ship)
+	s.ackLocked(c, m.Ship, m.Crew)
 	if !s.running {
 		s.running = true
 		go s.run()
@@ -347,8 +435,16 @@ func (s *Service) handleOpen(ctx context.Context, c *server.Client, raw json.Raw
 }
 
 // ackLocked tells the client its open is in effect: items appended from now on are pushed, so it may read the page.
-func (s *Service) ackLocked(c *server.Client, ship string) {
-	s.enqueueLocked(c, map[string]any{"type": "conversation_opened", "ship": ship})
+func (s *Service) ackLocked(c *server.Client, ship, crew string) {
+	s.enqueueLocked(c, tagged(map[string]any{"type": "conversation_opened", "ship": ship}, crew))
+}
+
+// tagged adds the boat's name to a message about a crew boat's conversation.
+func tagged(msg map[string]any, crew string) map[string]any {
+	if crew != "" {
+		msg["crew"] = crew
+	}
+	return msg
 }
 
 // enqueueLocked drops the message when the client's queue is full: its writes are stalled and the hub will close it.
@@ -362,16 +458,17 @@ func (s *Service) enqueueLocked(c *server.Client, msg map[string]any) {
 func (s *Service) handleClose(_ context.Context, c *server.Client, raw json.RawMessage) {
 	var m struct {
 		Ship string `json:"ship"`
+		Crew string `json:"crew"`
 	}
 	if json.Unmarshal(raw, &m) != nil {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.unsubscribeLocked(c, m.Ship)
+	s.unsubscribeLocked(c, key(m.Ship, m.Crew))
 }
 
-func (s *Service) unsubscribeLocked(c *server.Client, session string) {
+func (s *Service) unsubscribeLocked(c *server.Client, session string) { // session is a key
 	list := s.clients[c]
 	for i, have := range list {
 		if have == session {
@@ -423,7 +520,7 @@ func (s *Service) run() {
 }
 
 func (s *Service) poll(w *watch) {
-	if sh, ok := s.shipOf(w.session, false); !ok || sh.Launched != w.launched {
+	if !s.alive(w) {
 		s.endWatch(w)
 		return
 	}
@@ -449,12 +546,12 @@ func (s *Service) poll(w *watch) {
 		return
 	}
 	defer f.Close()
-	s.markSeen(w.session, w.loc.raw)
+	s.markSeen(w.key(), w.loc.raw)
 	up, _ := w.reader.Refresh(f, info)
 	if len(up.Items) == 0 {
 		return
 	}
-	msg := map[string]any{"type": "conversation", "ship": w.session, "items": up.Items}
+	msg := tagged(map[string]any{"type": "conversation", "ship": w.session, "items": up.Items}, w.crew)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for c := range w.subs {
@@ -465,11 +562,26 @@ func (s *Service) poll(w *watch) {
 func (s *Service) endWatch(w *watch) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.watches[w.session] != w {
+	if s.watches[w.key()] != w {
 		return
 	}
 	for c := range w.subs {
-		s.unsubscribeLocked(c, w.session)
+		s.unsubscribeLocked(c, w.key())
 	}
-	delete(s.watches, w.session)
+	delete(s.watches, w.key())
+}
+
+func (w *watch) key() string { return key(w.session, w.crew) }
+
+// alive is false once the ship, or the boat's window, is gone or replaced under the same name.
+func (s *Service) alive(w *watch) bool {
+	sh, ok := s.shipOf(w.session, false)
+	if !ok || sh.Launched != w.loc.ship.Launched {
+		return false
+	}
+	if w.crew == "" {
+		return true
+	}
+	boat, _, ok := s.crewOf(sh, w.crew)
+	return ok && boat.Launched == w.loc.boatLaunched
 }
