@@ -943,3 +943,33 @@ export function seedInboxItem(a: Admiral, session: string, item: { id: string; k
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${item.id}.json`), JSON.stringify({ version: 1, created: new Date().toISOString(), ...item }));
 }
+
+/** Scripts the fake gh: a REST call with this method and endpoint (no leading slash) gets this status and body. */
+export function rest(a: Admiral, key: string, method: string, endpoint: string, status: number, body: unknown = {}, stderr = '') {
+  const dir = join(a.home, 'fakegh', 'rest');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${key}.endpoint`), endpoint);
+  writeFileSync(join(dir, `${key}.method`), method);
+  writeFileSync(join(dir, `${key}.status`), String(status));
+  writeFileSync(join(dir, `${key}.json`), JSON.stringify(body));
+  if (stderr) writeFileSync(join(dir, `${key}.stderr`), stderr);
+}
+
+/** Every REST call the fake gh was run for, as "METHOD endpoint", sorted. */
+export function restCalls(a: Admiral): string[] {
+  const dir = join(a.home, 'fakegh', 'calls');
+  if (!existsSync(dir)) return [];
+  const read = (d: string, f: string) => (existsSync(join(dir, d, f)) ? readFileSync(join(dir, d, f), 'utf8').trim() : '');
+  return readdirSync(dir)
+    .filter((d) => read(d, 'endpoint') !== '')
+    .map((d) => `${read(d, 'method')} ${read(d, 'endpoint')}`)
+    .sort();
+}
+
+/** A review item's target: PR 12 of acme/widgets and its pending review 123, with the fake gh answering Submit and Discard. */
+export function seedReviewTarget(a: Admiral) {
+  rest(a, 'review-get', 'GET', 'repos/acme/widgets/pulls/12/reviews/123', 200, { state: 'PENDING' });
+  rest(a, 'review-events', 'POST', 'repos/acme/widgets/pulls/12/reviews/123/events', 200, { state: 'COMMENTED' });
+  rest(a, 'review-delete', 'DELETE', 'repos/acme/widgets/pulls/12/reviews/123', 200, {});
+  return { pr_url: 'https://github.com/acme/widgets/pull/12', review_id: 123 };
+}
