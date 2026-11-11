@@ -16,6 +16,7 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/conversation"
 	"github.com/jbuffin/admiral/internal/launcher"
+	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/state"
 )
@@ -80,7 +81,7 @@ func newAnswerPane(t *testing.T, harness string, questions []conversation.Item) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &Service{Host: h, State: st,
+	s := &Service{Host: h, State: st, Hub: server.NewHub(),
 		Launcher:  &launcher.Launcher{Home: dir, Tmux: tmux, Socket: sock, Config: func() *config.Config { return &config.Config{} }},
 		Questions: func(string, string) []conversation.Item { return questions }}
 	mux := http.NewServeMux()

@@ -1,6 +1,7 @@
 package conversation
 
 import (
+	"cmp"
 	"encoding/json"
 	"sort"
 	"strings"
@@ -196,12 +197,24 @@ func copilotQuestion(args json.RawMessage) (Question, bool) {
 		Choices         []string `json:"choices"`
 		RequestedSchema struct {
 			Properties map[string]struct {
-				Enum []string `json:"enum"`
+				Enum  []string `json:"enum"`
+				OneOf []struct {
+					Const string `json:"const"`
+					Title string `json:"title"`
+				} `json:"oneOf"`
 			} `json:"properties"`
 		} `json:"requestedSchema"`
 	}
 	if json.Unmarshal(args, &in) != nil {
-		return Question{}, false
+		// The schema arrives string-encoded in some calls.
+		var enc struct {
+			Message         string `json:"message"`
+			RequestedSchema string `json:"requestedSchema"`
+		}
+		if json.Unmarshal(args, &enc) != nil || json.Unmarshal([]byte(enc.RequestedSchema), &in.RequestedSchema) != nil {
+			return Question{}, false
+		}
+		in.Message = enc.Message
 	}
 	text := in.Message
 	if text == "" {
@@ -216,6 +229,9 @@ func copilotQuestion(args json.RawMessage) (Question, bool) {
 	if len(in.RequestedSchema.Properties) == 1 {
 		for _, p := range in.RequestedSchema.Properties {
 			labels = p.Enum
+			for _, o := range p.OneOf {
+				labels = append(labels, cmp.Or(o.Title, o.Const))
+			}
 		}
 	}
 	for _, label := range labels {

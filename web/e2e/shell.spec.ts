@@ -556,10 +556,12 @@ function box(b: { width: number; height: number } | null) {
   return b;
 }
 
-test('a Copilot ship shows its conversation in the Conversation tab, and a line it records shows live', async ({ page, admiral }) => {
+test('a Copilot ship shows its conversation in the Conversation tab, shows a line it records live, and answers its question card in place', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
   await admiral.start({ env: withFakeGh(admiral) });
-  const pilot = await launchShip(admiral, { fleet: 'alpha', harness: 'copilot', cue: 'events Copilot reads events.jsonl\nwait more\nevents Appended while the view was open\n' });
+  const hook = (event: string, extra: object) => `copilothook ${event} ${JSON.stringify({ sessionId: 'x', cwd: '.', hook_event_name: event, ...extra })}`;
+  const hooks = [hook('preToolUse', { toolName: 'ask_user', toolCallId: 'fake-ask-call', toolArgs: {} }), hook('notification', { notification_type: 'elicitation_dialog', title: 'Input needed', message: 'Information requested' })].join('\n');
+  const pilot = await launchShip(admiral, { fleet: 'alpha', harness: 'copilot', cue: `events Copilot reads events.jsonl\nwait more\nevents Appended while the view was open\nask Which colour?|Red|Green|Blue\n${hooks}\n` });
   await page.goto(admiral.url + 'app/ships?fleet=alpha');
   await rowLink(page, pilot).tap();
   await expect(viewTab(page, 'Conversation')).toHaveAttribute('aria-selected', 'true');
@@ -569,4 +571,10 @@ test('a Copilot ship shows its conversation in the Conversation tab, and a line 
 
   writeFileSync(join(admiral.home, 'rec', pilot.session, 'more'), '');
   await expect(viewPanel(page)).toContainText('Appended while the view was open', { timeout: 15_000 });
+
+  const choice = (name: string) => viewPanel(page).getByRole('button', { name, exact: true });
+  await expect(choice('Blue')).toBeVisible({ timeout: 15_000 });
+  await choice('Green').tap();
+  await expect.poll(() => received(admiral, pilot)).toBe('\x1b[B\r');
+  await expect(choice('Green')).toHaveCount(0);
 });

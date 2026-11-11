@@ -29,10 +29,20 @@ function questionCard(reason: string, conv: Conversation): AnswerCard {
   return { kind: 'question', reason, item: newest.id, text: q.text, options, descriptions: (q.options ?? []).map((o) => o.description ?? '') };
 }
 
+// Copilot's reasons carry no tool name, so the card previews the one call still open in the current turn.
+function copilotCard(r: string, conv: Conversation): AnswerCard {
+  if (r === 'question' || r === 'notification:elicitation_dialog') return questionCard(r, conv);
+  if (r !== 'notification:permission_prompt') return { kind: 'terminal' };
+  const open = conv.items.slice(currentTurnStart(conv.items)).filter((i) => i.kind === 'tool_call' && !i.tool?.done);
+  const call = open.length === 1 ? open[0] : undefined;
+  return { kind: 'permission', tool: call?.tool?.name ?? '', reason: r, call };
+}
+
 /** What the Conversation tab shows for a ship or boat that may be asking: a card to answer in place, a pointer to the terminal, or nothing. */
 export function answerCard({ harness, status, reason, conv }: { harness: string; status: string; reason?: string; conv: Conversation }): AnswerCard {
-  if (harness !== 'claude' || status !== 'needs_you' || reason === 'crew') return { kind: 'none' };
+  if ((harness !== 'claude' && harness !== 'copilot') || status !== 'needs_you' || reason === 'crew') return { kind: 'none' };
   const r = reason ?? '';
+  if (harness === 'copilot') return copilotCard(r, conv);
   if (r === 'question' || r === 'permission:AskUserQuestion') return questionCard(r, conv);
   if (r.startsWith('permission:')) {
     const tool = r.slice('permission:'.length);

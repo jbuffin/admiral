@@ -1,7 +1,10 @@
 // Package keymap holds the keys that answer a harness's permission and question menus.
 package keymap
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 // Map gives the raw bytes a pane's TUI takes as an answer; ok is false for an answer the menu has no key for.
 type Map struct {
@@ -23,10 +26,13 @@ func (m Map) Question(option int) (keys string, ok bool) {
 
 // For is false for a harness whose menus have no recorded keys.
 func For(harness string) (Map, bool) {
-	if harness != "claude" {
-		return Map{}, false
+	switch harness {
+	case "claude":
+		return claude, true
+	case "copilot":
+		return copilot, true
 	}
-	return claude, true
+	return Map{}, false
 }
 
 // Allow once is item 1. Deny is Esc, the menu's own cancel: unlike item keys it does nothing at an idle prompt,
@@ -34,4 +40,11 @@ func For(harness string) (Map, bool) {
 var claude = Map{
 	permission: map[string]string{"allow": "1", "deny": "\x1b"},
 	question:   strconv.Itoa,
+}
+
+// Copilot's menus: digit 1 allows once (2 saves an approval, so it is never sent) and Esc rejects. Its question form
+// ignores digits and takes Down to the item, then Enter; the form's own Other item comes after the listed options.
+var copilot = Map{
+	permission: map[string]string{"allow": "1", "deny": "\x1b"},
+	question:   func(option int) string { return strings.Repeat("\x1b[B", option-1) + "\r" },
 }
