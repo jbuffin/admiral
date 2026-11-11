@@ -26,6 +26,7 @@ import (
 	"github.com/jbuffin/admiral/internal/launchorders"
 	"github.com/jbuffin/admiral/internal/lockroute"
 	"github.com/jbuffin/admiral/internal/outcomes"
+	"github.com/jbuffin/admiral/internal/probes"
 	"github.com/jbuffin/admiral/internal/resources"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
@@ -286,6 +287,9 @@ func serve(args []string) error {
 			&launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}, bridgeService, resourceService, lockRoute, chatService, convService},
 		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat", "conversation"}}
 	bg, stopBackground := context.WithCancel(context.Background())
+	probeRunner := probes.NewDefault(dir)
+	// In the background: a harness that hangs on --version must not delay the server.
+	probeRunner.Refresh(bg, cfg.Current().Fleets)
 	var background sync.WaitGroup
 	supervisor.Start(bg)
 	// The ships' run stops first and the log closes next, while the host is
@@ -322,6 +326,8 @@ func serve(args []string) error {
 		<-shipsDone
 		outcomeLog.Close()
 		stopBackground()
+		probeRunner.Close()
+		probeRunner.Wait()
 		background.Wait()
 		supervisor.Wait()
 		_ = st.Flush()

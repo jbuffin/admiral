@@ -25,9 +25,11 @@ type file struct {
 }
 
 type harnessRecord struct {
-	Version    string                   `json:"version,omitempty"`
-	DetectedAt time.Time                `json:"detected_at,omitzero"`
-	Versions   map[string]map[ID]Result `json:"versions,omitempty"`
+	Version    string    `json:"version,omitempty"`
+	DetectedAt time.Time `json:"detected_at,omitzero"`
+	// VersionError is why the last detection failed; "" after a successful one.
+	VersionError string                   `json:"version_error,omitempty"`
+	Versions     map[string]map[ID]Result `json:"versions,omitempty"`
 	// ProbedVersion is the version of the most recent Record, so a caller can tell when
 	// the detected version has moved on from the one the results describe.
 	ProbedVersion string    `json:"probed_version,omitempty"`
@@ -134,7 +136,15 @@ func (s *Store) write(f *file) error {
 func (s *Store) RecordVersion(fleet, harness, version string, at time.Time) error {
 	return s.update(func(f *file) {
 		r := s.record(f, fleet, harness)
-		r.Version, r.DetectedAt = version, at
+		r.Version, r.DetectedAt, r.VersionError = version, at, ""
+	})
+}
+
+// RecordVersionFailure clears the version, so its passes stop counting, and keeps why.
+func (s *Store) RecordVersionFailure(fleet, harness, reason string, at time.Time) error {
+	return s.update(func(f *file) {
+		r := s.record(f, fleet, harness)
+		r.Version, r.DetectedAt, r.VersionError = "", at, oneLine(reason)
 	})
 }
 
@@ -235,9 +245,10 @@ type CapabilityState struct {
 // Snapshot is one consistent read of a fleet's harness: the detected version and the
 // state of every table capability against it.
 type Snapshot struct {
-	Version    string // "" when none was detected
-	DetectedAt time.Time
-	States     map[ID]CapabilityState
+	Version      string // "" when none was detected
+	DetectedAt   time.Time
+	VersionError string // why detection failed, when the version is ""
+	States       map[ID]CapabilityState
 }
 
 // Snapshot reads the file once. On a corrupt or unreadable file every capability is
@@ -249,7 +260,7 @@ func (s *Store) Snapshot(fleet, harness string) (Snapshot, error) {
 	if err != nil || rec == nil {
 		rec = &harnessRecord{}
 	}
-	snap.Version, snap.DetectedAt = rec.Version, rec.DetectedAt
+	snap.Version, snap.DetectedAt, snap.VersionError = rec.Version, rec.DetectedAt, rec.VersionError
 	for _, feat := range Table() {
 		for _, c := range feat.Capabilities {
 			st := CapabilityState{Status: NotChecked}

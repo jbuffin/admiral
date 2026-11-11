@@ -68,7 +68,10 @@ func setup(args []string, std IO) error {
 	}
 	if len(s.touched) == 0 {
 		fmt.Fprintln(std.Out, "No changes.")
-		return nil
+		if *dry {
+			return nil
+		}
+		return probeFleets(dir, std)
 	}
 
 	for {
@@ -77,7 +80,10 @@ func setup(args []string, std IO) error {
 			return err
 		}
 		if !printDiff(std.Out, p.before, p.after) {
-			return nil
+			if *dry {
+				return nil
+			}
+			return probeFleets(dir, std)
 		}
 		if *dry {
 			fmt.Fprintln(std.Out, "Dry run: nothing was changed.")
@@ -107,7 +113,7 @@ func setup(args []string, std IO) error {
 			return err
 		}
 		fmt.Fprintf(std.Out, "Saved %s\n", filepath.Join(dir, config.FileName))
-		return nil
+		return probeFleets(dir, std)
 	}
 }
 
