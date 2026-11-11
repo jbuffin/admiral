@@ -1,4 +1,3 @@
-// Shared setup for the new shell's specs (shell.spec.ts, shell-phone.spec.ts).
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
@@ -15,10 +14,7 @@ function dock(a: Admiral, fleet: string, harness: Harness) {
   return { executable: a.fakeHarness(harness), env: { [identityVar[harness]]: `${a.home}/identity/${fleet}-${harness}` } };
 }
 
-/**
- * Two fleets, first one `zulu` (Westwind: claude + codex docks), then `alpha` (Homeport: codex + copilot).
- * Only claude.svg is installed under the home's logos, so the codex and copilot flags show their placeholders.
- */
+/** Two fleets, first `zulu` (Westwind: claude and codex docks), then `alpha` (Homeport: codex and copilot), and a logo for each harness. */
 export function seedFleets(a: Admiral) {
   a.writeConfig({
     version: 1,
@@ -28,18 +24,29 @@ export function seedFleets(a: Admiral) {
     },
   });
   mkdirSync(join(a.home, 'logos'), { recursive: true });
-  writeFileSync(
-    join(a.home, 'logos', 'claude.svg'),
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#D97757"/></svg>',
-  );
+  for (const h of Object.keys(identityVar)) {
+    writeFileSync(join(a.home, 'logos', `${h}.svg`), '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>');
+  }
 }
 
-/** Every URL path the page requests, so a test can check that none went to an unversioned API. */
-export function watchRequests(page: Page) {
+/** What the page asks for and what it logs: Admiral serves everything itself, over /api/v1, without errors. */
+export function watchPage(page: Page, server: string) {
+  const host = new URL(server).host;
   const paths: string[] = [];
-  page.on('request', (r) => paths.push(new URL(r.url()).pathname));
+  const foreign: string[] = [];
+  const errors: string[] = [];
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('request', (r) => {
+    const u = new URL(r.url());
+    if (['data:', 'blob:', 'about:'].includes(u.protocol)) return;
+    if (u.host !== host) foreign.push(r.url());
+    paths.push(u.pathname);
+  });
   return {
     paths,
+    foreign,
+    errors,
     unversioned: () => paths.filter((p) => /^\/(api|ws)(\/|$)/.test(p) && !/^\/(api|ws)\/v1(\/|$)/.test(p)),
   };
 }
