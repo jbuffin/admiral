@@ -229,7 +229,7 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Choice == "deny" {
-		// The pane sits at its prompt after a deny and no hook says so.
+		// The pane sits at its prompt after a deny; Claude's hooks don't say so, and Codex's Interrupt hook says it only after a flush, so write it now.
 		if err := s.Host.SetPaneNeedsYou(ctx, t.pane, "stop"); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -271,6 +271,9 @@ func (s *Service) answerKeys(ctx context.Context, t target, session string, req 
 		}
 		if !strings.HasPrefix(reason, "permission:") && !(t.harness == "copilot" && reason == "notification:permission_prompt") {
 			return "", t.what + " is no longer asking that"
+		}
+		if !m.CardTool(strings.TrimPrefix(reason, "permission:")) {
+			return "", "that menu has no recorded keys: answer in the terminal"
 		}
 		keys, _ = m.Permission(req.Choice)
 		return keys, ""

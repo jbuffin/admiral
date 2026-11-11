@@ -180,6 +180,15 @@ func TestShipAnswer_CodexPermissionCardSendsCodexKeysOnlyWhileTheReasonMatches(t
 	}
 	w.holdStdin(ship.Session, "", "")
 
+	w.hookAt(pane, "PermissionRequest", `{"hook_event_name":"PermissionRequest","tool_name":"mcp__x__y"}`)
+	w.waitShip(ship.Session, "needs_you for an unrecorded menu", func(s apiShip) bool { return s.Reason == "permission:mcp__x__y" })
+	if code := answer("permission:mcp__x__y", "allow"); code != http.StatusConflict {
+		t.Errorf("answer to a Codex tool with no recorded menu = %d, want 409", code)
+	}
+	w.holdStdin(ship.Session, "", "")
+	w.hookAt(pane, "PermissionRequest", hookPerm)
+	w.waitShip(ship.Session, "needs_you for Bash", func(s apiShip) bool { return s.Reason == "permission:Bash" })
+
 	if code := answer("permission:Bash", "allow"); !succeeded(code) {
 		t.Fatalf("answer allow to a Codex ship = %d, want 200 or 204", code)
 	}

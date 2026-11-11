@@ -10,6 +10,9 @@ export type AnswerCard =
 const SUBAGENT_TOOLS = new Set(['task', 'Task', 'Agent']);
 const HAS_KEY_MAP = new Set(['claude', 'copilot', 'codex']);
 
+// Codex's other approval menus are unrecorded, so they go to the terminal.
+const CODEX_CARD_TOOLS = new Set(['Bash', 'apply_patch']);
+
 const NO_CARD_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode']);
 
 // One AskUserQuestion call with several questions becomes items whose ids share the part before '#'.
@@ -52,7 +55,7 @@ export function answerCard({ harness, status, reason, conv }: { harness: string;
   if (r === 'question' || r === 'permission:AskUserQuestion') return questionCard(r, conv);
   if (r.startsWith('permission:')) {
     const tool = r.slice('permission:'.length);
-    if (tool === '' || NO_CARD_TOOLS.has(tool)) return { kind: 'terminal' };
+    if (tool === '' || NO_CARD_TOOLS.has(tool) || (harness === 'codex' && !CODEX_CARD_TOOLS.has(tool))) return { kind: 'terminal' };
     // An orphan call from an earlier turn is not what the pane asks about.
     const turnStart = currentTurnStart(conv.items);
     const call = conv.items.slice(turnStart).find((i) => i.kind === 'tool_call' && i.tool?.name === tool && !i.tool.done);

@@ -10,7 +10,12 @@ import (
 type Map struct {
 	permission map[string]string
 	question   func(option int) string
+	// tools limits the permission card to the tools whose menus are recorded; nil allows any.
+	tools map[string]bool
 }
+
+// CardTool is false for a tool whose approval menu has no recorded keys, so it is answered in the terminal.
+func (m Map) CardTool(tool string) bool { return m.tools == nil || m.tools[tool] }
 
 func (m Map) Permission(choice string) (keys string, ok bool) {
 	keys, ok = m.permission[choice]
@@ -57,4 +62,6 @@ var copilot = Map{
 var codex = Map{
 	permission: map[string]string{"allow": "1", "deny": "\x1b"},
 	question:   strconv.Itoa,
+	// Only the command and patch menus were recorded; other approvals (permissions, MCP tools) have other menus.
+	tools: map[string]bool{"Bash": true, "apply_patch": true},
 }

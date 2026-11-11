@@ -18,7 +18,7 @@ func TestHookState(t *testing.T) {
 		{"PreToolUse of another tool", "PreToolUse", `{"tool_name":"Bash"}`, "working"},
 		{"UserPromptSubmit", "UserPromptSubmit", `{"prompt":"go"}`, "working"},
 		{"PostToolUse whose tool_response is a string", "PostToolUse", `{"tool_name":"Read","tool_response":"file text"}`, "working"},
-		{"codex Interrupt", "Interrupt", `{"turn_id":"01a15222-ed87"}`, "working"},
+		{"codex Interrupt", "Interrupt", `{"turn_id":"01a15222-ed87"}`, "needs_you"},
 		{"permission_prompt", "Notification", `{"notification_type":"permission_prompt"}`, "needs_you"},
 		{"copilot agentStop of the lead", "agentStop", `{"stopReason":"end_turn"}`, "needs_you"},
 		{"copilot userPromptSubmitted of a subagent", "userPromptSubmitted", `{"prompt":"go","agentId":"788718ef"}`, ""},

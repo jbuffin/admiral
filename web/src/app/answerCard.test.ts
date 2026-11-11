@@ -155,6 +155,10 @@ describe('answerCard: a codex ship', () => {
     expect(needs(`permission:${tool}`, ok(), { harness: 'codex' })).toEqual({ kind: 'permission', tool, reason: `permission:${tool}`, call: undefined });
   });
 
+  it('sends a tool whose menu is unrecorded to the terminal', () => {
+    expect(needs('permission:mcp__x__y', ok(), { harness: 'codex' }).kind).toBe('terminal');
+  });
+
   it('sends a reason with no card to the terminal', () => {
     expect(needs('stop', ok(), { harness: 'codex' }).kind).toBe('terminal');
   });

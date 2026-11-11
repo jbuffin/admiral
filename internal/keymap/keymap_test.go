@@ -141,13 +141,23 @@ func TestCodexKeyMapPicksTheRecordedMenusItems(t *testing.T) {
 	for file, want := range map[string]string{
 		"after-permission-1.txt":   "You approved codex to run touch made.txt this time",
 		"after-permission-esc.txt": "You canceled the request to run touch made.txt",
-		"after-write-esc.txt":      "Conversation interrupted",
 		"after-question-2.txt":     "answer: Green",
 	} {
 		b, err := os.ReadFile(filepath.Join("testdata", "codex", file))
 		if err != nil || !strings.Contains(string(b), want) {
 			t.Errorf("%s does not show %q (read error: %v)", file, want, err)
 		}
+	}
+}
+
+// The patch menu's cancel is the second interruption in this recording; the first is the command menu's.
+func TestCodexPatchCancelInterruptsTheTurn(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("testdata", "codex", "after-write-esc.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(b), "Conversation interrupted"); n != 2 {
+		t.Errorf("the pane after the patch menu's Esc shows %d interruptions, want 2 (the command menu's and the patch menu's)", n)
 	}
 }
 
