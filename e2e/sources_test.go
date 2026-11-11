@@ -505,21 +505,3 @@ func TestPluginsAPI(t *testing.T) {
 		}
 	}
 }
-
-func holdsAny(t *testing.T, dir string, secrets ...string) string {
-	t.Helper()
-	var found string
-	_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || found != "" {
-			return nil
-		}
-		b, _ := os.ReadFile(p)
-		for _, s := range secrets {
-			if strings.Contains(string(b), s) {
-				found = p
-			}
-		}
-		return nil
-	})
-	return found
-}
