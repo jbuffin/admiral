@@ -87,7 +87,11 @@ func TestTheNextPollAfterTheRoundDoesNotWakeTheShipOnTheSameReview(t *testing.T)
 	r := newWakeRig(t, 3)
 	g := r.polling()
 	g.set(wakePR, aliceReview())
-	r.mooredResume(t, 0, "/commodore resume run-7", 30*time.Minute)
+	first := r.mooredResume(t, 0, "/commodore resume run-7", 30*time.Minute)
+	// The cursor sits at the old mooring, before the review: only the round's saved state keeps the review from waking the next one.
+	if err := moor.WriteWake(r.home, "Saltpaw", moor.WakeState{PRs: map[string]moor.PRWake{wakePR: {Cursor: moor.Cursor{At: first}}}}); err != nil {
+		t.Fatal(err)
+	}
 	r.s.PollMoored(context.Background())
 	r.started(t, 1)
 	r.kill(t, "saltpaw")
@@ -238,5 +242,68 @@ func TestAHandWakeWritesTheRoundStartAndTheBoundaryCursorAndKeepsTheRest(t *test
 	}
 	if !st.Seen["conflict"].Equal(seen) || st.Snapshot.Head != "abc123" {
 		t.Errorf("state = %+v, want the first-seen times and snapshot as they were", st)
+	}
+}
+
+func TestAFailedHandWakeLaunchPutsTheWakeStateBack(t *testing.T) {
+	r := newWakeRig(t, 0)
+	r.mooredResume(t, 0, "/commodore resume run-7", 30*time.Minute)
+	seen := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
+	if err := moor.WriteWake(r.home, "Saltpaw", moor.WakeState{PRs: map[string]moor.PRWake{wakePR: {Seen: map[string]time.Time{"conflict": seen}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(r.home, "fleets"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, lerr := r.s.Wake(context.Background(), "saltpaw", ""); lerr == nil {
+		t.Fatal("the wake launched, want it refused")
+	}
+
+	st := r.state(t).PRs[wakePR]
+	if !st.Seen["conflict"].Equal(seen) || !st.Cursor.At.IsZero() || !st.RoundStart.IsZero() {
+		t.Errorf("wake state = %+v after the failed hand wake, want the state from before", st)
+	}
+}
+
+func TestAFailedLaunchWithNoEarlierWakeStateLeavesNoWakeStateFile(t *testing.T) {
+	r := newWakeRig(t, 3)
+	g := r.polling()
+	g.set(wakePR, aliceReview())
+	r.mooredResume(t, 0, "/commodore resume run-7", 30*time.Minute)
+	if err := os.WriteFile(filepath.Join(r.home, "fleets"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	r.s.PollMoored(context.Background())
+
+	if _, err := os.Stat(filepath.Join(r.home, "moored", "wake", "Saltpaw.json")); err == nil {
+		t.Errorf("a wake state file is left after a failed launch that had none before: %+v", r.state(t))
+	}
+}
+
+func TestARoundIsRefusedWhenTheWakeStateChangedSinceItWasDecided(t *testing.T) {
+	r := newWakeRig(t, 3)
+	r.mooredResume(t, 0, "/commodore resume run-7", 30*time.Minute)
+	decidedFrom := moor.WakeState{}
+	other := moor.WakeState{PRs: map[string]moor.PRWake{wakePR: {Seen: map[string]time.Time{"conflict": time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)}}}}
+	if err := moor.WriteWake(r.home, "Saltpaw", other); err != nil {
+		t.Fatal(err)
+	}
+	next := moor.WakeState{PRs: map[string]moor.PRWake{wakePR: {Cursor: moor.Cursor{At: time.Now().UTC()}}}}
+
+	_, lerr := r.s.feedbackRound("saltpaw", wakePR, "text", &decidedFrom, next)
+
+	if lerr == nil || lerr.Wait != WaitInFlight {
+		t.Fatalf("round = %v, want a refusal that waits for the current wake", lerr)
+	}
+	if got := r.state(t); !sameWake(got, other) {
+		t.Errorf("wake state = %+v, want the one on disk left alone", got)
+	}
+	if !r.stillMoored(t) {
+		t.Error("the refused round took the ship off its mooring")
+	}
+	if _, err := os.Stat(filepath.Join(r.checkout, ".admiral")); err == nil {
+		t.Error("a refused round wrote under .admiral")
 	}
 }

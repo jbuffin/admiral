@@ -129,7 +129,8 @@ func TestAReviewWakesAMooredShipOnItsOwnOnceAndOnlyOnce(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(w.rec, ship.Session)); err != nil {
 		t.Fatal(err)
 	}
-	g.prEvents(mooredPR, "reviewer-1", "please rename the helper", mooredAt.Add(time.Second))
+	reviewAt := mooredAt.Add(time.Second)
+	g.prEvents(mooredPR, "reviewer-1", "please rename the helper", reviewAt)
 
 	log := w.waitEvent(ship.Session, "woken", 1)
 	if e := lastOf(log, "woken"); e["by"] != "feedback" || e["round"] != float64(1) {
@@ -145,6 +146,20 @@ func TestAReviewWakesAMooredShipOnItsOwnOnceAndOnlyOnce(t *testing.T) {
 	}
 	if got := w.readFile(filepath.Join(w.work, "widgets", ".admiral", "untrusted", "feedback-1.md")); !strings.Contains(got, "please rename the helper") {
 		t.Errorf("feedback-1.md = %q, want the review's body", got)
+	}
+
+	var wake struct {
+		PRs map[string]struct {
+			Cursor struct {
+				At time.Time `json:"at"`
+			} `json:"cursor"`
+		} `json:"prs"`
+	}
+	if err := json.Unmarshal([]byte(w.readFile(filepath.Join(w.home, "moored", "wake", ship.Name+".json"))), &wake); err != nil {
+		t.Fatal(err)
+	}
+	if at := wake.PRs[mooredPR].Cursor.At; at.Before(reviewAt) {
+		t.Errorf("wake state cursor = %v after the round, want it at or after the review's %v", at, reviewAt)
 	}
 
 	w.exitWith(byName(w.in.ships(t))[ship.Name], wakeReport())

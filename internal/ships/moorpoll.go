@@ -150,18 +150,15 @@ func (s *Service) decide(ctx context.Context, r moor.Record, answers map[string]
 		s.saveNext(r, state, d.Next)
 		return
 	}
-	if _, lerr := s.FeedbackRound(ctx, r.Session, d.PR, d.Feedback, d.Next); lerr != nil {
+	if _, lerr := s.feedbackRound(r.Session, d.PR, d.Feedback, &state, d.Next); lerr != nil {
 		s.setWaiting(r, waitingText(lerr))
 	}
 }
 
 // waitingText is what a moored ship shows for a refused round: the refusal's own wait text when a later poll can clear it, else the refusal.
 func waitingText(lerr *launcher.Error) string {
-	switch {
-	case lerr.Wait != "":
+	if lerr.Wait != "" {
 		return lerr.Wait
-	case lerr.Status == http.StatusServiceUnavailable:
-		return WaitHost
 	}
 	return "Can't wake: " + lerr.Msg
 }
@@ -314,13 +311,11 @@ func (s *Service) endMoored(session, reason string) (bool, error) {
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: its moored record cannot be removed: %v\n", rec.Name, err)
 		return false, err
 	}
-	if err := moor.RemoveWake(s.Launcher.Home, rec.Name); err != nil {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake state cannot be removed: %v\n", rec.Name, err)
-	}
 	prs := s.prsOf(rec)
 	s.moored = append(s.moored[:idx:idx], s.moored[idx+1:]...)
 	delete(s.mooredPolls, session)
 	s.mooredMu.Unlock()
+	s.removeWake(rec.Name) // after the record leaves the cache, so a saveNext that has not written yet sees it gone
 	final := make([]map[string]string, 0, len(prs))
 	for _, p := range prs {
 		final = append(final, map[string]string{"url": p.URL, "state": p.State})

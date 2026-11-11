@@ -113,9 +113,7 @@ func (s *Service) endMooring(sess sessionhost.Session) {
 	if name == "" {
 		return
 	}
-	if err := moor.RemoveWake(s.Launcher.Home, name); err != nil {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake state cannot be removed: %v\n", name, err)
-	}
+	s.removeWake(name)
 }
 
 // endRound logs how a woken ship's round ended, once per round; a ship that was never woken has no round.
