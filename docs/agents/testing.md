@@ -34,6 +34,7 @@ Every Go e2e test owns its home, tmux socket and port, so the tests run in paral
 
 The e2e harness shortens Admiral's production delays through environment variables that take a Go duration (`internal/delay`):
 
+- `ADMIRAL_WAKE_DEBOUNCE` (10 min): how long the newest waking event must have waited before a moored ship wakes. The e2e sets it small and writes the review's `submittedAt` just after the ship moors (`fakeGH.prEvents`).
 - `ADMIRAL_SAIL_OFF_DELAY` (3 s): every Admiral in the suite runs with `sailOff` (1 s).
 - `ADMIRAL_NO_HOOK_WAIT` (10 s): set only by the tests of the no-hook rule.
 - `ADMIRAL_CALL_TIMEOUT` (10 s, a plugin's time to answer): set only by the tests of a hung plugin.

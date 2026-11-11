@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/jbuffin/admiral/internal/delay"
 )
 
 // Actor is who wrote something on GitHub. Type is GraphQL's __typename: User, Bot or Team; empty for a deleted account.
@@ -113,7 +115,7 @@ type Decision struct {
 }
 
 // WakeDebounce is how long the newest waking event must have waited before a ship wakes.
-var WakeDebounce = 10 * time.Minute
+var WakeDebounce = delay.From("ADMIRAL_WAKE_DEBOUNCE", 10*time.Minute)
 
 type tier int
 

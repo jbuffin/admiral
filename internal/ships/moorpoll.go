@@ -2,6 +2,7 @@ package ships
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/delay"
+	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/outcomes"
 )
@@ -22,6 +24,8 @@ type polled struct {
 	status map[string]moor.Status // a URL left out is NOT_FOUND
 	at     time.Time              // the last poll that answered
 	stale  bool                   // the latest poll failed
+	// waiting is why a due feedback round has not started; a new answer replaces the whole value, so it clears
+	waiting string
 }
 
 func (s *Service) kickChan() chan struct{} {
@@ -116,12 +120,89 @@ func (s *Service) PollMoored(ctx context.Context) {
 			}
 			if reason, ended := moor.EndReason(prs); ended {
 				_, _ = s.endMoored(r.Session, reason)
+				continue
 			}
+			s.decide(ctx, r, st)
 		}
 	}
 	if changed {
 		s.broadcast()
 	}
+}
+
+// decide reads a ship's wake state and the answered PRs, and either wakes the ship for a feedback round or
+// saves what the poll first saw. A refusal that clears later leaves the state alone, so the next poll decides the same way.
+func (s *Service) decide(ctx context.Context, r moor.Record, answers map[string]moor.Status) {
+	if ctx.Err() != nil || !moor.ValidResume(r.Resume) {
+		return
+	}
+	var reviewers []string
+	if f, ok := s.Launcher.Config().Fleet(r.Fleet); ok {
+		reviewers = f.WakeReviewers
+	}
+	state, err := moor.ReadWake(s.Launcher.Home, r.Name)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake state cannot be read: %v\n", r.Name, err)
+		return
+	}
+	d := moor.DecideWake(moor.WakeInput{Record: r, State: state, Answers: answers, Reviewers: reviewers, Now: time.Now().UTC()})
+	if !d.Wake {
+		s.saveNext(r, state, d.Next)
+		return
+	}
+	if _, lerr := s.FeedbackRound(ctx, r.Session, d.PR, d.Feedback, d.Next); lerr != nil {
+		s.setWaiting(r, waitingText(lerr))
+	}
+}
+
+// waitingText is what a moored ship shows for a refused round: the refusal's own wait text when a later poll can clear it, else the refusal.
+func waitingText(lerr *launcher.Error) string {
+	switch {
+	case lerr.Wait != "":
+		return lerr.Wait
+	case lerr.Status == http.StatusServiceUnavailable:
+		return WaitHost
+	}
+	return "Can't wake: " + lerr.Msg
+}
+
+func (s *Service) setWaiting(r moor.Record, text string) {
+	s.mooredMu.Lock()
+	defer s.mooredMu.Unlock()
+	if !s.stillMoored(r) {
+		return
+	}
+	p := s.polls()[r.Session]
+	p.waiting = text
+	s.polls()[r.Session] = p
+}
+
+// saveNext keeps a first-seen time the decision found. It skips a ship whose wake has committed or whose record
+// has gone, and one whose state changed since the decision read it.
+func (s *Service) saveNext(r moor.Record, was, next moor.WakeState) {
+	if sameWake(was, next) {
+		return
+	}
+	s.wakeMu.Lock()
+	defer s.wakeMu.Unlock()
+	s.mooredMu.Lock()
+	skip := s.committed[r.Session] || !s.stillMoored(r)
+	s.mooredMu.Unlock()
+	if skip {
+		return
+	}
+	if now, err := moor.ReadWake(s.Launcher.Home, r.Name); err != nil || !sameWake(now, was) {
+		return
+	}
+	if err := moor.WriteWake(s.Launcher.Home, r.Name, next); err != nil {
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake state cannot be saved: %v\n", r.Name, err)
+	}
+}
+
+func sameWake(a, b moor.WakeState) bool {
+	x, _ := json.Marshal(a)
+	y, _ := json.Marshal(b)
+	return string(x) == string(y)
 }
 
 // markStale keeps the ship's last chips and marks its poll stale, unless the ship has ended or been moored again.
