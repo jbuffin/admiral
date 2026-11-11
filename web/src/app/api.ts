@@ -60,6 +60,8 @@ export interface CrewBoat {
   name: string;
   role?: string;
   conversation: boolean;
+  harness: string;
+  reason?: string;
   status: string;
   exit_code: number | null;
   exit_signal: string | null;
@@ -68,6 +70,7 @@ export interface CrewBoat {
 export interface ToolCall {
   name: string;
   summary?: string;
+  input?: string;
   output?: string;
   error?: boolean;
   done: boolean;
@@ -77,6 +80,7 @@ export interface Question {
   options?: { label: string; description?: string }[];
   answer?: string;
   pending: boolean;
+  multiSelect?: boolean;
 }
 export type ItemKind = 'user' | 'assistant' | 'tool_call' | 'question' | 'turn_end' | 'compaction' | 'notice';
 export interface Item {

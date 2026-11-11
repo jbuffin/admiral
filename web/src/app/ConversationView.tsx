@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
-import type { Item } from './api';
+import { call as post, shipUrl, type Item } from './api';
+import type { AnswerCard } from './answerCard';
 import { Icon } from './Icon';
 import type { Conversation } from './conversation';
 import { renderMarkdown } from './markdown';
@@ -83,7 +84,69 @@ function Card({ title, children }: { title: string; children?: preact.ComponentC
   );
 }
 
-export function ConversationView({ conv, harness, anchored = false, working, noneTitle, openTerminal, loadOlder }: { conv: Conversation; harness: string; anchored?: boolean; working: boolean; noneTitle?: string; openTerminal: () => void; loadOlder: () => void }) {
+const cardKey = (c: AnswerCard) => (c.kind === 'permission' ? `p:${c.reason}:${c.call?.id ?? ''}` : c.kind === 'question' ? `q:${c.reason}:${c.item}` : c.kind);
+
+function AnswerCardView({ card, session, crew, openTerminal }: { card: AnswerCard; session: string; crew?: string; openTerminal: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [gone, setGone] = useState<string | null>(null);
+  // Set before the first re-render, so a double tap sends once.
+  const sending = useRef(false);
+  const key = cardKey(card);
+  // A refused card must not hide the next prompt, which can share its key.
+  useEffect(() => {
+    sending.current = false;
+    setBusy(false);
+    setGone(null);
+  }, [key]);
+  if (card.kind === 'none' || gone === key) return null;
+  if (card.kind === 'terminal')
+    return (
+      <Card title="Answer this in the terminal">
+        <button type="button" class="btn" onClick={openTerminal}>
+          Open terminal
+        </button>
+      </Card>
+    );
+  const send = async (body: object) => {
+    if (sending.current) return;
+    sending.current = true;
+    setBusy(true);
+    const res = await post('POST', `${shipUrl(session, crew)}/answer`, body);
+    if (!res.ok) setGone(key);
+  };
+  if (card.kind === 'permission') {
+    const tool = card.call?.tool;
+    const input = tool?.input;
+    return (
+      <Card title={`${card.tool} needs your permission`}>
+        {input ? <pre class="approve-input">{input}</pre> : null}
+        {tool && (input ? tool.summary && tool.summary !== input : true) ? <p class="muted approve-note">{tool.summary ?? tool.name}</p> : null}
+        <div class="card-actions">
+          <button type="button" class="btn" disabled={busy} onClick={() => void send({ card: 'permission', reason: card.reason, choice: 'allow' })}>
+            Allow once
+          </button>
+          <button type="button" class="btn" disabled={busy} onClick={() => void send({ card: 'permission', reason: card.reason, choice: 'deny' })}>
+            Deny
+          </button>
+        </div>
+      </Card>
+    );
+  }
+  return (
+    <Card title={card.text}>
+      <div class="card-actions">
+        {card.options.map((label, i) => (
+          <button key={i} type="button" class="btn card-option" disabled={busy} onClick={() => void send({ card: 'question', reason: card.reason, item: card.item, option: i + 1 })}>
+            <span>{label}</span>
+            {card.descriptions[i] ? <span class="muted card-option-note">{card.descriptions[i]}</span> : null}
+          </button>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function ConversationBody({ conv, harness, anchored = false, working, noneTitle, openTerminal, loadOlder }: { conv: Conversation; harness: string; anchored?: boolean; working: boolean; noneTitle?: string; openTerminal: () => void; loadOlder: () => void }) {
   const now = useTick(15_000);
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -144,5 +207,18 @@ export function ConversationView({ conv, harness, anchored = false, working, non
       )}
       {working ? <p class="working">{workingLabel(conv.items, now)}</p> : null}
     </div>
+  );
+}
+
+/** The conversation with the card that answers its prompt in place, always in the same position below it. */
+export function ConversationView(props: { conv: Conversation; harness: string; anchored?: boolean; working: boolean; noneTitle?: string; card: AnswerCard; session: string; crew?: string; openTerminal: () => void; loadOlder: () => void }) {
+  const { card, session, crew, openTerminal } = props;
+  // A state that has its own Open terminal card needs no second one; a permission card needs no transcript.
+  const shown: AnswerCard = card.kind === 'terminal' && props.conv.state !== 'ok' ? { kind: 'none' } : card;
+  return (
+    <>
+      <ConversationBody conv={props.conv} harness={props.harness} anchored={props.anchored} working={props.working} noneTitle={props.noneTitle} openTerminal={openTerminal} loadOlder={props.loadOlder} />
+      <AnswerCardView card={shown} session={session} crew={crew} openTerminal={openTerminal} />
+    </>
   );
 }

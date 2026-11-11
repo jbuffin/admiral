@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CrewBoat } from './api';
 import { boatBoxState, boatRoutes, chipLabel, chipState, flotilla } from './flotilla';
 
-const boat = (b: Partial<CrewBoat> & { name: string }): CrewBoat => ({ conversation: false, status: 'working', exit_code: null, exit_signal: null, ...b });
+const boat = (b: Partial<CrewBoat> & { name: string }): CrewBoat => ({ conversation: false, harness: 'claude', status: 'working', exit_code: null, exit_signal: null, ...b });
 
 describe('chipLabel', () => {
   it('shows the role, and Teammate for a boat with none', () => {

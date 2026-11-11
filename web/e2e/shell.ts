@@ -331,6 +331,13 @@ export function setState(a: Admiral, ship: LaunchedShip, state: 'needs_you' | 'w
   expect(r.status, r.stderr).toBe(0);
 }
 
+/** What a harness hook records beside the state: why the pane needs you (`permission:Bash`, `question`, `stop`…). With `boat`, on that crew boat's pane. */
+export function setReason(a: Admiral, ship: LaunchedShip, reason: string, boat?: string) {
+  const target = boat === undefined ? ship.session : boatPane(a, ship, boat);
+  const r = tmux(a, 'set', '-p', '-t', target, '@admiral-reason', reason);
+  expect(r.status, r.stderr).toBe(0);
+}
+
 type TranscriptLine = Record<string, unknown>;
 
 const stamp = () => ({ uuid: `l-${Date.now()}-${Math.random().toString(36).slice(2)}`, timestamp: new Date().toISOString() });
@@ -349,6 +356,11 @@ export const line = {
     ...stamp(),
     message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: output }] },
   }),
+  /** An AskUserQuestion call with no result yet: a pending question item per entry of `questions`. */
+  ask: (id: string, questions: { question: string; options: string[]; multiSelect?: boolean }[]): TranscriptLine =>
+    line.toolUse(id, 'AskUserQuestion', {
+      questions: questions.map((q) => ({ question: q.question, header: 'Q', multiSelect: q.multiSelect ?? false, options: q.options.map((label) => ({ label, description: '' })) })),
+    }),
   turnEnd: (durationMs: number): TranscriptLine => ({ type: 'system', subtype: 'turn_duration', durationMs, ...stamp() }),
   compaction: (): TranscriptLine => ({ type: 'system', subtype: 'compact_boundary', ...stamp() }),
 };
