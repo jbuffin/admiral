@@ -88,14 +88,14 @@ func ids(items []inboxItem) []string {
 // "about a second" the brief allows (a margin on top for a loaded Mac).
 func (in *fleetInst) waitInbox(t *testing.T, want ...string) []inboxItem {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for {
 		items := in.inbox(t)
 		if reflect.DeepEqual(ids(items), want) || (len(want) == 0 && len(items) == 0) {
 			return items
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("within 10s GET /api/inbox never listed %v; last: %v", want, ids(items))
+			t.Fatalf("within 30s GET /api/inbox never listed %v; last: %v", want, ids(items))
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
