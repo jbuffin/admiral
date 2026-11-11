@@ -403,6 +403,14 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
     void load();
   }, [shipsKey]);
 
+  const fleet = fleets.value.find((f) => f.key === campaign?.fleet);
+  const canStart = !!fleet && fleet.docks.length > 0;
+  const sliceCtx = { ended: !!campaign?.ended, canStart };
+  const checked = keepSelectable(selected, children, sliceCtx, ships.value);
+  useEffect(() => {
+    if (checked.length !== selected.length) setSelected(checked);
+  }, [checked.join(',')]);
+
   if (!campaign) {
     return (
       <main class="panel">
@@ -411,16 +419,12 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
     );
   }
 
-  const fleet = fleets.value.find((f) => f.key === campaign.fleet);
   const groups = campaign.root ? groupChildren(campaign.root) : [];
   const { closed, total } = campaign.progress;
   const shipName = (n: CampaignNode) => shipOfChild(n, ships.value)?.name;
   const unreadable = hasUnreadable(campaign.root);
   const kind = kindLabel(campaign.root?.labels);
   const picked = children.find((c) => c.url === pickedUrl) ?? null;
-  const canStart = !!fleet && fleet.docks.length > 0;
-  const sliceCtx = { ended: campaign.ended, canStart };
-  const checked = keepSelectable(selected, children, sliceCtx, ships.value);
   const toggle = (url: string) => setSelected(checked.includes(url) ? checked.filter((u) => u !== url) : [...checked, url]);
 
   const unfollow = async () => {
