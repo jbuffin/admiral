@@ -380,7 +380,7 @@ func TestRetroWaitsForItsRecordAndWritesItAgain(t *testing.T) {
 	}
 }
 
-// Errors of the add (D-no-resume-source is in the off table above).
+// Errors of the add. A missing resume source is in the off table above.
 func TestRetroAddFailures(t *testing.T) {
 	t.Run("retryable is tried on every pass and logged once per message", func(t *testing.T) {
 		r := newRetroRig(t, 2)

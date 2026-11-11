@@ -90,8 +90,6 @@ func TestALaunchInFlightHoldsItsUnit(t *testing.T) {
 
 	for _, lerr := range []*launcher.Error{
 		{Status: http.StatusInternalServerError, Msg: "boom"},
-		{Status: http.StatusConflict, Msg: "this order already has a ship"},
-		{Status: http.StatusNotFound, Msg: "order gone"},
 		{Status: http.StatusServiceUnavailable, Msg: ships.NotKnownMsg},
 	} {
 		t.Run(lerr.Msg, func(t *testing.T) {

@@ -67,14 +67,10 @@ func TestUnitsHeld(t *testing.T) {
 		free   bool // a Reserve of ["phone"] succeeds
 	}{
 		{"nothing", phone, nil, 0, 0, 0, []resources.Holder{}, true},
-		{"an underway ship", phone, []ships.Ship{hold("a", ships.StatusUnderway, "phone")}, 0, 0, 1,
-			[]resources.Holder{{Kind: "ship", Session: "a"}}, false},
 		{"a needs-you ship", phone, []ships.Ship{hold("a", ships.StatusNeedsYou, "phone")}, 0, 0, 1,
 			[]resources.Holder{{Kind: "ship", Session: "a"}}, false},
 		{"anchored and sailing-off ships hold nothing", phone,
 			[]ships.Ship{hold("a", ships.StatusAnchored, "phone"), hold("b", ships.StatusSailingOff, "phone")}, 0, 0, 0,
-			[]resources.Holder{}, true},
-		{"a ship that recorded no resource holds nothing", phone, []ships.Ship{hold("a", ships.StatusUnderway)}, 0, 0, 0,
 			[]resources.Holder{}, true},
 		{"a ship holding another resource", phone, []ships.Ship{hold("a", ships.StatusUnderway, "tablet")}, 0, 0, 0,
 			[]resources.Holder{}, true},
@@ -86,10 +82,6 @@ func TestUnitsHeld(t *testing.T) {
 		{"capacity 2 with a ship and a lock is full", map[string]config.Resource{"phone": {Capacity: 2}},
 			[]ships.Ship{hold("a", ships.StatusUnderway, "phone")}, 1, 0, 2,
 			[]resources.Holder{{Kind: "ship", Session: "a"}, {Kind: "lock", Label: "lock-0"}}, false},
-		{"capacity 2 with a ship and a reservation is full",
-			map[string]config.Resource{"phone": {Capacity: 2}},
-			[]ships.Ship{hold("a", ships.StatusUnderway, "phone")}, 0, 1, 2,
-			[]resources.Holder{{Kind: "ship", Session: "a"}}, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

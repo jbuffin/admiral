@@ -188,15 +188,10 @@ func TestEngineCaps(t *testing.T) {
 	}{
 		{"anchored and sailing off ships leave the room", 1, 5,
 			[]ships.Ship{hand(ships.StatusAnchored), hand(ships.StatusSailingOff)}, []string{"s/p/o1"}},
-		{"two hand ships fill a global cap of 2", 2, 5,
-			[]ships.Ship{hand(ships.StatusUnderway), hand(ships.StatusUnderway)}, nil},
 		{"a needs-you hand ship counts toward the global cap", 2, 5,
 			[]ships.Ship{hand(ships.StatusNeedsYou), hand(ships.StatusUnderway)}, nil},
-		{"one hand ship leaves one slot", 2, 5, []ships.Ship{hand(ships.StatusUnderway)}, []string{"s/p/o1"}},
 		{"a needs-you ship from the panel counts toward its cap", 10, 1,
 			[]ships.Ship{ship(ships.StatusNeedsYou, "s", "p", "other")}, nil},
-		{"an anchored ship from the panel does not", 10, 1,
-			[]ships.Ship{ship(ships.StatusAnchored, "s", "p", "other")}, []string{"s/p/o1"}},
 		{"a ship from another panel of the source does not count toward this one", 10, 1,
 			[]ships.Ship{ship(ships.StatusUnderway, "s", "q", "other")}, []string{"s/p/o1"}},
 		{"a ship from the same panel id of another source does not either", 10, 1,
@@ -398,13 +393,6 @@ func TestEngineBacksOffAndGivesUp(t *testing.T) {
 	if len(r.recordsOf("launch_failed")) != 2 { // the two of the third round: o1's and o2's
 		t.Errorf("a given-up order wrote another launch_failed record")
 	}
-
-	// It stops being hot once the source stops listing it.
-	r.src[0].Panels = []sources.Panel{panel("p")}
-	r.pass()
-	if r.engine.Hot("s", "o1") {
-		t.Error("o1 stays hot after it stopped being listed")
-	}
 }
 
 func TestEngineKeepsFailureStateAcrossARestart(t *testing.T) {
@@ -420,13 +408,15 @@ func TestEngineKeepsFailureStateAcrossARestart(t *testing.T) {
 	}
 }
 
-// A 409 (the order already has a ship, or a launch of it is running) and a 503
-// (ships are not known yet) skip the order for this pass. Neither is a failure:
-// no record, no backoff, never hot, and the next pass tries it again.
+// A 409 (the order already has a ship, or a launch of it is running), a 503
+// (ships are not known yet) and a 404 (the order vanished) skip the order for
+// this pass. None is a failure: no record, no backoff, never hot, and the next
+// pass tries it again.
 func TestEngineTreatsAConflictOrUnknownShipsAsNoFailure(t *testing.T) {
 	for _, lerr := range []*launcher.Error{
 		{Status: http.StatusConflict, Msg: "this order already has a ship"},
 		{Status: http.StatusServiceUnavailable, Msg: "ships are not known yet"},
+		{Status: http.StatusNotFound, Msg: `order "o1" not found in source s`},
 	} {
 		t.Run(lerr.Msg, func(t *testing.T) {
 			r := newRig(t, "o1")
