@@ -268,8 +268,13 @@ func (c *Client) binary() (string, error) {
 	if c.Gh != "" {
 		return c.Gh, nil
 	}
-	for i := len(c.env) - 1; i >= 0; i-- {
-		path, ok := strings.CutPrefix(c.env[i], "PATH=")
+	return FindGh(c.env)
+}
+
+// FindGh finds gh on the PATH in env, which a fleet may set, else on Admiral's own.
+func FindGh(env []string) (string, error) {
+	for i := len(env) - 1; i >= 0; i-- {
+		path, ok := strings.CutPrefix(env[i], "PATH=")
 		if !ok {
 			continue
 		}

@@ -112,3 +112,46 @@ func TestContainsAnswersTheCleanedPath(t *testing.T) {
 		t.Errorf("Contains(%q) = %q, %v; want %q, true", a+"/", dir, ok, a)
 	}
 }
+
+func TestCloneName(t *testing.T) {
+	hosts := []string{"github.com", "ghe.example.com"}
+	name, err := repofinder.CloneName("github.com/acme/widget", hosts)
+	if err != nil || name != "widget" {
+		t.Errorf("CloneName(github.com/acme/widget) = %q, %v; want widget, nil", name, err)
+	}
+	if name, err := repofinder.CloneName("ghe.example.com/acme/widget.v2", hosts); err != nil || name != "widget.v2" {
+		t.Errorf("CloneName on a configured GitHub host = %q, %v; want widget.v2, nil", name, err)
+	}
+	for _, id := range []string{
+		"github.com/../x",
+		"github.com/acme/..",
+		"github.com/./x",
+		"github.com/acme/.",
+		"github.com/-o/x",
+		"github.com/acme/-x",
+		"github.com/acme/wid get",
+		"github.com/acme/a/b",
+		"github.com/acme/",
+		"gitlab.com/acme/widget",
+		"-host.com/acme/widget",
+		"",
+	} {
+		if name, err := repofinder.CloneName(id, hosts); err == nil {
+			t.Errorf("CloneName(%q) = %q, nil; want an error", id, name)
+		}
+	}
+}
+
+func TestCloneRoot(t *testing.T) {
+	roots := []string{"/srv/first", "/srv/second"}
+	for _, c := range []struct{ name, cloneRoot, want string }{
+		{"unset: the first search root", "", "/srv/first"},
+		{"an absolute path is kept", "/srv/clones", "/srv/clones"},
+		{"~/ is the home directory", "~/code/clones", "/home/me/code/clones"},
+		{"a trailing slash is cleaned", "/srv/clones/", "/srv/clones"},
+	} {
+		if got := repofinder.CloneRoot(c.cloneRoot, roots, "/home/me"); got != c.want {
+			t.Errorf("%s: CloneRoot(%q) = %q, want %q", c.name, c.cloneRoot, got, c.want)
+		}
+	}
+}

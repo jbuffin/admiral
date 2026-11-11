@@ -142,6 +142,19 @@ func TestRouterFromFleets(t *testing.T) {
 	}
 }
 
+func TestRouterFromFleetsCountsTheCloneRootAsARoot(t *testing.T) {
+	tmp := t.TempDir()
+	clones := filepath.Join(tmp, "elsewhere")
+	mkCheckout(t, filepath.Join(clones, "widget"), "https://github.com/acme/widget.git")
+	r := RouterFromFleets([]config.Fleet{
+		{Key: "a", SearchRoots: []string{filepath.Join(tmp, "a")}, Owners: []string{"acme"}},
+		{Key: "b", SearchRoots: []string{filepath.Join(tmp, "b")}, CloneRoot: clones},
+	})
+	if got := r.Route("github.com", "acme/widget"); got != "b" {
+		t.Errorf("Route(acme/widget) = %q, want b: its checkout is under b's clone_root", got)
+	}
+}
+
 func TestRouteWarningWithThreeClaimants(t *testing.T) {
 	r := NewRouter([]RouteFleet{
 		{Key: "a", Repos: []string{"github.com/acme/widgets"}},

@@ -23,11 +23,14 @@ type Request struct {
 	Fleet   string `json:"fleet"`
 	Harness string `json:"harness"`
 	Dir     string `json:"dir"`
-	Skill   Skill  `json:"skill"`
-	Source  string `json:"source"`
-	OrderID string `json:"order_id"`
-	Text    string `json:"text"`
-	Note    string `json:"note"` // Just launch only: optional text sent before the order
+	Clone   bool   `json:"clone"` // sent with no Dir: the server clones the order's repo and launches there
+	// CloneRepo is the repo the form showed; a Clone launch whose derived repo differs is refused.
+	CloneRepo string `json:"clone_repo"`
+	Skill     Skill  `json:"skill"`
+	Source    string `json:"source"`
+	OrderID   string `json:"order_id"`
+	Text      string `json:"text"`
+	Note      string `json:"note"` // Just launch only: optional text sent before the order
 	// Title and URL are set by the server from the source's order, never by the client.
 	Title string `json:"-"`
 	URL   string `json:"-"`
@@ -126,7 +129,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	}
 	// The list is read again: a checkout can vanish, or be named in a request that never
 	// came from the list.
-	dir, listed := repofinder.Contains(repofinder.List(fleet.SearchRoots), req.Dir)
+	dir, listed := repofinder.Contains(repofinder.List(repofinder.FleetRoots(fleet.SearchRoots, fleet.CloneRoot)), req.Dir)
 	if !listed {
 		return nil, refuse(http.StatusBadRequest, "directory %s is not a checkout or search root of fleet %s", req.Dir, fleet.Name)
 	}

@@ -5,6 +5,7 @@ package launchorders
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -83,6 +84,18 @@ func (s *Service) serveDirs(w http.ResponseWriter, r *http.Request) {
 	}
 	entries, live := s.list(fleet)
 	selected, reason := s.preselect(&entries, fleet, req, live)
+	// A hinted repo with no checkout is cloned: the clone is the preselection.
+	var clone map[string]any
+	if reason != "repo" && reason != "text" {
+		if repo, path, ok := launcher.CloneTarget(cfg, fleet, req.Repo, req.Text); ok {
+			clone = map[string]any{"repo": repo, "path": path}
+			if _, err := os.Lstat(path); err == nil {
+				clone["exists"] = true // the launch would be refused: keep the old preselection
+			} else {
+				selected, reason = "", "clone"
+			}
+		}
+	}
 
 	out := make([]dirEntry, len(entries))
 	for i, e := range entries {
@@ -96,12 +109,14 @@ func (s *Service) serveDirs(w http.ResponseWriter, r *http.Request) {
 	var sel, why *string
 	if selected != "" {
 		sel, why = &selected, &reason
+	} else if reason == "clone" {
+		why = &reason
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"entries": out, "selected": sel, "reason": why})
+	writeJSON(w, http.StatusOK, map[string]any{"entries": out, "selected": sel, "reason": why, "clone": clone})
 }
 
 func (s *Service) list(fleet config.Fleet) ([]repofinder.Entry, []ships.Ship) {
-	entries := repofinder.List(fleet.SearchRoots)
+	entries := repofinder.List(repofinder.FleetRoots(fleet.SearchRoots, fleet.CloneRoot))
 	live := s.Ships()
 	checkouts := slices.IndexFunc(entries, func(e repofinder.Entry) bool { return e.Kind != repofinder.KindCheckout })
 	if checkouts < 0 {
@@ -133,7 +148,7 @@ func (s *Service) Dir(fleet config.Fleet, harness string, o sources.Order) (stri
 }
 
 func (s *Service) Checkout(fleet config.Fleet, dir string) bool {
-	return slices.ContainsFunc(repofinder.List(fleet.SearchRoots), func(e repofinder.Entry) bool {
+	return slices.ContainsFunc(repofinder.List(repofinder.FleetRoots(fleet.SearchRoots, fleet.CloneRoot)), func(e repofinder.Entry) bool {
 		return e.Path == dir && e.Kind == repofinder.KindCheckout
 	})
 }
@@ -262,7 +277,7 @@ func (s *Service) serveSkills(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Project skill folders are read only inside a listed directory.
-	dir, listed := repofinder.Contains(repofinder.List(fleet.SearchRoots), q.Get("dir"))
+	dir, listed := repofinder.Contains(repofinder.List(repofinder.FleetRoots(fleet.SearchRoots, fleet.CloneRoot)), q.Get("dir"))
 	if !listed {
 		writeError(w, http.StatusBadRequest, "directory "+q.Get("dir")+" is not a checkout or search root of fleet "+fleet.Name)
 		return

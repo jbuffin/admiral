@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -42,6 +43,7 @@ func newFixture(t *testing.T) *fixture {
 	cfg := `{"version":1,"fleets":{
 	  "work":{"name":"Work","search_roots":[` + quote(f.work) + `],"claude":{},"codex":{}},
 	  "home":{"name":"Home","search_roots":[` + quote(f.work) + `],"claude":{}},
+	  "cloner":{"name":"Cloner","search_roots":[` + quote(f.work) + `],"clone_root":` + quote(filepath.Join(root, "clones")) + `,"claude":{}},
 	  "nosearch":{"name":"No Search","claude":{}}}}`
 	if err := os.WriteFile(filepath.Join(f.home, config.FileName), []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
@@ -303,5 +305,123 @@ func TestFavoritesNeverReplaceADanglingSymlink(t *testing.T) {
 	}
 	if fi, err := os.Lstat(path); err != nil || fi.Mode()&os.ModeSymlink == 0 {
 		t.Errorf("config.json must still be the symlink (err %v)", err)
+	}
+}
+
+// cloneOf reads the response's clone field: present in every response, null or {repo, path}.
+func cloneOf(t *testing.T, f *fixture, body map[string]string) (clone map[string]any, selected, reason string) {
+	t.Helper()
+	code, raw := f.do(http.MethodPost, "/api/launch-orders/dirs", body)
+	if code != http.StatusOK {
+		t.Fatalf("dirs = %d: %s", code, raw)
+	}
+	var r map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		t.Fatal(err)
+	}
+	c, ok := r["clone"]
+	if !ok {
+		t.Fatalf("the dirs response has no clone field: %s", raw)
+	}
+	if string(c) != "null" {
+		if err := json.Unmarshal(c, &clone); err != nil {
+			t.Fatalf("clone = %s, want null or {repo, path}: %v", c, err)
+		}
+	}
+	var sel, why *string
+	_ = json.Unmarshal(r["selected"], &sel)
+	_ = json.Unmarshal(r["reason"], &why)
+	if sel != nil {
+		selected = *sel
+	}
+	if why != nil {
+		reason = *why
+	}
+	return clone, selected, reason
+}
+
+func TestDirsTellsAnUnclonedRepoWillBeCloned(t *testing.T) {
+	f := newFixture(t)
+	last := f.repo("last", "https://github.com/acme/last")
+	f.state.SetLastDir("work", "claude", last)
+	f.state.SetLastDir("cloner", "claude", last)
+	other := f.repo("kept", "https://github.com/acme/kept")
+	clones := filepath.Join(filepath.Dir(f.work), "clones")
+
+	cases := []struct {
+		name  string
+		fleet string
+		body  map[string]string
+		repo  string
+		path  string
+	}{
+		{"an order's repo, clone_root unset: the first search root", "work",
+			map[string]string{"repo": "https://github.com/acme/widget"}, "github.com/acme/widget", filepath.Join(f.work, "widget")},
+		{"freeform text with a URL", "work",
+			map[string]string{"text": "look at https://github.com/acme/widget/issues/7"}, "github.com/acme/widget", filepath.Join(f.work, "widget")},
+		{"clone_root set, outside every search root", "cloner",
+			map[string]string{"repo": "git@github.com:acme/widget.git"}, "github.com/acme/widget", filepath.Join(clones, "widget")},
+	}
+	for _, c := range cases {
+		body := map[string]string{"fleet": c.fleet, "harness": "claude"}
+		for k, v := range c.body {
+			body[k] = v
+		}
+		clone, selected, reason := cloneOf(t, f, body)
+		if clone["repo"] != c.repo || clone["path"] != c.path {
+			t.Errorf("%s: clone = %v, want repo %q and path %q", c.name, clone, c.repo, c.path)
+		}
+		if selected != "" || reason != "clone" {
+			t.Errorf("%s: selected %q (%s), want no selected checkout and reason clone: the clone is the preselection, not the dock's last directory", c.name, selected, reason)
+		}
+	}
+	// The existing checkouts stay in the list.
+	code, raw := f.do(http.MethodPost, "/api/launch-orders/dirs", map[string]string{"fleet": "work", "harness": "claude", "repo": "https://github.com/acme/widget"})
+	if code != http.StatusOK {
+		t.Fatalf("dirs = %d: %s", code, raw)
+	}
+	var r dirsResp
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.paths(); !slices.Contains(got, last) || !slices.Contains(got, other) {
+		t.Errorf("entries = %v, want the existing checkouts %s and %s kept", got, last, other)
+	}
+}
+
+func TestDirsHasNoCloneForARepoWithACheckout(t *testing.T) {
+	f := newFixture(t)
+	x := f.repo("x", "https://github.com/acme/x")
+	z := f.repo("z")
+	f.state.SetLastDir("work", "claude", z)
+	for name, body := range map[string]map[string]string{
+		"an order's repo": {"fleet": "work", "harness": "claude", "repo": "https://github.com/acme/x"},
+		"freeform text":   {"fleet": "work", "harness": "claude", "text": "see https://github.com/acme/x/pull/2"},
+	} {
+		clone, selected, reason := cloneOf(t, f, body)
+		if clone != nil || selected != x || reason == "" {
+			t.Errorf("%s: clone %v, selected %q (%s); want clone null and %q selected", name, clone, selected, reason, x)
+		}
+	}
+	// No hint at all: nothing to clone, and the dock's last directory is preselected as before.
+	clone, selected, reason := cloneOf(t, f, map[string]string{"fleet": "work", "harness": "claude"})
+	if clone != nil || selected != z || reason != "last_used" {
+		t.Errorf("no hint: clone %v, selected %q (%s); want clone null and %q (last_used)", clone, selected, reason, z)
+	}
+}
+
+func TestDirsKeepsThePreselectionWhenTheCloneTargetExists(t *testing.T) {
+	f := newFixture(t)
+	z := f.repo("z")
+	f.state.SetLastDir("work", "claude", z)
+	if err := os.Mkdir(filepath.Join(f.work, "widget"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	clone, selected, reason := cloneOf(t, f, map[string]string{"fleet": "work", "harness": "claude", "repo": "https://github.com/acme/widget"})
+	if clone["repo"] != "github.com/acme/widget" || clone["path"] != filepath.Join(f.work, "widget") || clone["exists"] != true {
+		t.Errorf("clone = %v, want repo, path and exists true", clone)
+	}
+	if selected != z || reason != "last_used" {
+		t.Errorf("selected %q (%s), want the old preselection %q (last_used): the clone would be refused", selected, reason, z)
 	}
 }

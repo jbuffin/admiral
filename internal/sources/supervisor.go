@@ -217,13 +217,14 @@ func fleetEnv(cfg *config.Config, fleet string) map[string]string {
 
 func routingOf(fleets []config.Fleet) string {
 	type claim struct {
-		Key    string
-		Roots  []string
-		Owners []string
+		Key       string
+		Roots     []string
+		CloneRoot string
+		Owners    []string
 	}
 	list := make([]claim, len(fleets))
 	for i, f := range fleets {
-		list[i] = claim{f.Key, f.SearchRoots, f.Owners}
+		list[i] = claim{f.Key, f.SearchRoots, f.CloneRoot, f.Owners}
 	}
 	b, _ := json.Marshal(list)
 	return string(b)
