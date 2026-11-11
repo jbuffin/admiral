@@ -83,13 +83,15 @@ export function watchPage(page: Page, server: string) {
   const paths: string[] = [];
   const foreign: string[] = [];
   const errors: string[] = [];
-  // The browser logs a refused launch as a console error; the form showing that refusal is the journey's own check.
+  // The browser logs each refused launch as a console error, in either order against its response: the form showing the refusal is the journey's own check.
+  const failedLoads: string[] = [];
   let refusedLaunches = 0;
-  page.on('response', (r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ships' && r.status() >= 400 && refusedLaunches++);
+  page.on('response', (r) => {
+    if (r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ships' && r.status() >= 400) refusedLaunches++;
+  });
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
-    if (/^Failed to load resource: .* status of 4\d\d/.test(m.text()) && refusedLaunches > 0) return void refusedLaunches--;
-    errors.push(m.text());
+    (/^Failed to load resource: .* status of 4\d\d/.test(m.text()) ? failedLoads : errors).push(m.text());
   });
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('request', (r) => {
@@ -107,7 +109,9 @@ export function watchPage(page: Page, server: string) {
   return {
     paths,
     foreign,
-    errors,
+    get errors() {
+      return [...errors, ...failedLoads.slice(refusedLaunches)];
+    },
     unversioned: () => paths.filter((p) => /^\/(api|ws)(\/|$)/.test(p) && !/^\/(api|ws)\/v1(\/|$)/.test(p)),
   };
 }
