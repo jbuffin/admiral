@@ -67,6 +67,7 @@ type fixture struct {
 	cfg     string
 	svc     *Service
 	options map[string]string
+	starts  map[string]string // the command each ship's pane started with
 	harness map[string]string
 }
 
@@ -79,7 +80,7 @@ func newFixture(t *testing.T) *fixture {
 	if err := os.MkdirAll(filepath.Join(cfg, "projects", "zz"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	f := &fixture{t: t, cfg: cfg, options: map[string]string{}, harness: map[string]string{}}
+	f := &fixture{t: t, cfg: cfg, options: map[string]string{}, starts: map[string]string{}, harness: map[string]string{}}
 	f.svc = &Service{
 		ship: func(session string) (ships.Ship, bool) {
 			f.mu.Lock()
@@ -87,11 +88,11 @@ func newFixture(t *testing.T) *fixture {
 			h, ok := f.harness[session]
 			return ships.Ship{Session: session, Harness: h, Launched: "L1"}, ok
 		},
-		option: func(sh ships.Ship) (string, string, bool) {
+		option: func(sh ships.Ship) (string, string, string, bool) {
 			f.mu.Lock()
 			defer f.mu.Unlock()
 			raw, ok := f.options[sh.Session]
-			return raw, cfg, ok
+			return raw, f.starts[sh.Session], cfg, ok
 		},
 	}
 	return f
@@ -105,6 +106,7 @@ func (f *fixture) ship(name, path string) {
 	defer f.mu.Unlock()
 	f.harness[name] = "claude"
 	f.options[name] = "1700000000000000000 launch " + path
+	f.starts[name] = "'/bin/claude' '--session-id' '" + sid + "' '--settings' 's.json' '--' 'go'"
 }
 
 func (f *fixture) get(name, query string) (int, pageJSON, string) {
@@ -159,9 +161,29 @@ func TestConversationEndpoint_States(t *testing.T) {
 	}
 	f.wantState("fresh", "gone") // it was read before
 
-	other := "/x"
-	f.ship("badpath", other)
+	f.ship("badpath", "/x")
 	f.wantState("badpath", "none")
+
+	f.ship("steered", f.path("zz"))
+	f.starts["steered"] = "claude --session-id 11111111-2222-4333-8444-555555555555 -- go"
+	f.wantState("steered", "none") // the option names another session than the launch gave the harness
+
+	f.ship("resumed", f.path("zz"))
+	f.starts["resumed"] = "claude --resume " + sid
+	f.wantState("resumed", "none") // the launch named no session of ours
+}
+
+func TestConversationEndpoint_AStrayEntryInProjectsIsNotARefusal(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	if err := os.WriteFile(filepath.Join(f.cfg, "projects", ".DS_Store"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(f.cfg, filepath.Join(f.cfg, "projects", "elsewhere")); err != nil {
+		t.Fatal(err)
+	}
+	f.ship("fresh", f.path("computed"))
+	f.wantState("fresh", "none")
 }
 
 func TestConversationEndpoint_RefusesWhatIsNotARegularFile(t *testing.T) {
@@ -242,6 +264,7 @@ type socket struct {
 	t    *testing.T
 	c    *websocket.Conn
 	in   chan map[string]any
+	acks chan string
 	done context.CancelFunc
 }
 
@@ -253,7 +276,7 @@ func dial(t *testing.T, base string) *socket {
 		cancel()
 		t.Fatal(err)
 	}
-	s := &socket{t: t, c: c, in: make(chan map[string]any, 64), done: cancel}
+	s := &socket{t: t, c: c, in: make(chan map[string]any, 64), acks: make(chan string, 64), done: cancel}
 	go func() {
 		for {
 			_, data, err := c.Read(ctx)
@@ -261,8 +284,14 @@ func dial(t *testing.T, base string) *socket {
 				return
 			}
 			var m map[string]any
-			if json.Unmarshal(data, &m) == nil && m["type"] == "conversation" {
+			if json.Unmarshal(data, &m) != nil {
+				continue
+			}
+			switch m["type"] {
+			case "conversation":
 				s.in <- m
+			case "conversation_opened":
+				s.acks <- m["ship"].(string)
 			}
 		}
 	}()
@@ -298,22 +327,19 @@ func (s *socket) quiet(what string) {
 	}
 }
 
-// probe appends to path until a push for ship arrives: the open is handled some time after it is sent, and what is
-// appended before it is read as already there.
-func (s *socket) probe(path, ship string) {
+// opened waits for the ack of ship's open, which comes once what is already in the file is not pushed.
+func (s *socket) opened(ship string) {
 	s.t.Helper()
-	for i, end := 1000, time.Now().Add(10*time.Second); time.Now().Before(end); i++ {
-		appendTo(s.t, path, line(i))
+	for {
 		select {
-		case m := <-s.in:
-			if m["ship"] != ship {
-				s.t.Fatalf("pushed for %v, want %v", m["ship"], ship)
+		case got := <-s.acks:
+			if got == ship {
+				return
 			}
-			return
-		case <-time.After(300 * time.Millisecond):
+		case <-time.After(10 * time.Second):
+			s.t.Fatalf("within 10s: no conversation_opened for %s", ship)
 		}
 	}
-	s.t.Fatalf("within 10s: no push for %s", ship)
 }
 
 func serve(t *testing.T, f *fixture) string {
@@ -341,7 +367,7 @@ func TestConversationSocket_DeliversAppendsToSubscribersOnly(t *testing.T) {
 	sub, other := dial(t, base), dial(t, base)
 
 	sub.send("conversation_open", "s")
-	sub.quiet("opening a ship sent what was already there")
+	sub.opened("s")
 	appendTo(t, f.path("zz"), lines(4, 4))
 	m := sub.next("the appended item")
 	if got := texts(m); len(got) != 1 || got[0] != "message 004" || m["ship"] != "s" {
@@ -349,7 +375,7 @@ func TestConversationSocket_DeliversAppendsToSubscribersOnly(t *testing.T) {
 	}
 	other.quiet("a client that never opened the ship")
 
-	// Messages from one client are handled in order, so a push for "t" shows the close of "s" was handled.
+	// Messages from one client are handled in order, so the ack of "t" shows the close of "s" was handled.
 	if err := os.MkdirAll(filepath.Join(f.cfg, "projects", "zz2"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -357,9 +383,24 @@ func TestConversationSocket_DeliversAppendsToSubscribersOnly(t *testing.T) {
 	f.ship("t", f.path("zz2"))
 	sub.send("conversation_close", "s")
 	sub.send("conversation_open", "t")
-	sub.probe(f.path("zz2"), "t")
+	sub.opened("t")
 	appendTo(t, f.path("zz"), lines(5, 5))
 	sub.quiet("a closed subscription")
+}
+
+func TestConversationSocket_AnAppendToADismissedShipIsNotPushed(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	appendTo(t, f.path("zz"), line(1))
+	f.ship("s", f.path("zz"))
+	sub := dial(t, serve(t, f))
+	sub.send("conversation_open", "s")
+	sub.opened("s")
+	f.mu.Lock()
+	delete(f.harness, "s")
+	f.mu.Unlock()
+	appendTo(t, f.path("zz"), line(2))
+	sub.quiet("a ship that was dismissed")
 }
 
 func TestConversationSocket_IgnoresShipsWithNoConversation(t *testing.T) {
@@ -390,9 +431,12 @@ func TestConversationSocket_AClientHoldsSixteenShipsOpen(t *testing.T) {
 	for i := 1; i <= MaxOpen+1; i++ {
 		c.send("conversation_open", fmt.Sprintf("ship%02d", i))
 	}
-	// Opens are handled in order, so a push for the last ship shows all seventeen were.
-	c.probe(f.path("d17"), "ship17")
+	// Opens are handled in order, so the ack of the last shows all seventeen were.
+	c.opened("ship17")
 	appendTo(t, f.path("d01"), line(101))
 	c.quiet("an append to the first ship, which the seventeenth open closed")
-	c.probe(f.path("d02"), "ship02")
+	appendTo(t, f.path("d02"), line(102))
+	if m := c.next("an append to the second ship"); m["ship"] != "ship02" {
+		t.Errorf("push was for %v, want ship02", m["ship"])
+	}
 }

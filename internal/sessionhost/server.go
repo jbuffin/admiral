@@ -401,6 +401,15 @@ func (s Server) ReadPaneOption(ctx context.Context, pane, name string) (string, 
 	return strings.TrimSuffix(out, "\n"), nil
 }
 
+// ReadPaneStartCommand is the command the pane was started with; unlike a pane option, the pane cannot rewrite it.
+func (s Server) ReadPaneStartCommand(ctx context.Context, pane string) (string, error) {
+	out, err := s.run(call{ctx: ctx, utf8After: true, args: []string{"display-message", "-p", "-t", pane, "#{pane_start_command}"}})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(out, "\n"), nil
+}
+
 type WindowSize struct {
 	ID         string // @N
 	Cols, Rows int

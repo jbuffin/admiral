@@ -467,17 +467,13 @@ type record struct {
 	dir     string
 }
 
-// argvBase is the argv without the `--session-id <uuid>` pair Admiral adds to a Claude Code ship.
-func (r record) argvBase() []string {
-	var out []string
-	for i := 0; i < len(r.argv); i++ {
-		if r.argv[i] == "--session-id" && i+1 < len(r.argv) {
-			i++
-			continue
-		}
-		out = append(out, r.argv[i])
+// claudeArgvBase is a Claude Code ship's argv without the `--session-id <uuid>` Admiral puts right after the fleet's own
+// args. The pair is stripped only there and only for a uuid, so one after `--` or one that is not a uuid still fails the exact match.
+func (r record) claudeArgvBase() []string {
+	if len(r.argv) > 2 && r.argv[1] == "--session-id" && uuidRe.MatchString(r.argv[2]) {
+		return append([]string{r.argv[0]}, r.argv[3:]...)
 	}
-	return out
+	return r.argv
 }
 
 func (w *world) waitFile(session, file string) string {

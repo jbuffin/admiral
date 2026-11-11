@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -45,11 +46,12 @@ type Service struct {
 
 	// Tests replace these two lookups, which need a live tmux.
 	ship   func(session string) (ships.Ship, bool)
-	option func(sh ships.Ship) (raw, configDir string, ok bool)
+	option func(sh ships.Ship) (raw, startCmd, configDir string, ok bool)
 
 	mu      sync.Mutex
 	seen    map[string]string // session -> option value a file was seen for: tells gone from none
 	clients map[*server.Client][]string
+	outbox  map[*server.Client]chan map[string]any // one sender per client, so a stalled one holds up no other
 	watches map[string]*watch
 	running bool
 }
@@ -90,8 +92,8 @@ func (s *Service) shipOf(session string, sync bool) (ships.Ship, bool) {
 	return sh, ok
 }
 
-// optionOf reads the ship's @admiral-transcript and the Claude config dir of its fleet.
-func (s *Service) optionOf(sh ships.Ship) (raw, configDir string, ok bool) {
+// optionOf reads the ship's @admiral-transcript, the command its pane started with and the Claude config dir of its fleet.
+func (s *Service) optionOf(sh ships.Ship) (raw, startCmd, configDir string, ok bool) {
 	if s.option != nil {
 		return s.option(sh)
 	}
@@ -102,24 +104,31 @@ func (s *Service) optionOf(sh ships.Ship) (raw, configDir string, ok bool) {
 		}
 	}
 	if pane == "" {
-		return "", "", false
+		return "", "", "", false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	raw, err := sessionhost.NewServer(s.Tmux, s.Socket).ReadPaneOption(ctx, pane, "transcript")
+	host := sessionhost.NewServer(s.Tmux, s.Socket)
+	raw, err := host.ReadPaneOption(ctx, pane, "transcript")
 	if err != nil {
-		return "", "", false
+		return "", "", "", false
+	}
+	startCmd, err = host.ReadPaneStartCommand(ctx, pane)
+	if err != nil {
+		return "", "", "", false
 	}
 	f, found := s.Config().Fleet(sh.Fleet)
 	if !found {
-		return "", "", false
+		return "", "", "", false
 	}
 	var env map[string]string
 	if d, has := f.Harness("claude"); has {
 		env = d.Env
 	}
-	return raw, config.IdentityDir("claude", env), true
+	return raw, startCmd, config.IdentityDir("claude", env), true
 }
+
+var startedWith = regexp.MustCompile(`--session-id["']?\s+["']?([0-9a-f-]{36})`)
 
 // locate finds the ship and its transcript. ok is false for an unknown ship;
 // none is true when the ship has no conversation of ours to read.
@@ -132,7 +141,7 @@ func (s *Service) locate(session string) (w where, ok, none bool) {
 	if sh.Harness != "claude" {
 		return w, true, true
 	}
-	raw, configDir, has := s.optionOf(sh)
+	raw, startCmd, configDir, has := s.optionOf(sh)
 	if !has {
 		return w, true, true
 	}
@@ -142,7 +151,8 @@ func (s *Service) locate(session string) (w where, ok, none bool) {
 		return w, true, true
 	}
 	id, valid := transcriptfs.SessionID(parts[2])
-	if !valid {
+	// The option is writable from the pane and the start command is not, so the id the launch gave the harness decides.
+	if m := startedWith.FindStringSubmatch(startCmd); !valid || m == nil || m[1] != id {
 		return w, true, true
 	}
 	w.raw, w.path, w.id, w.configDir = raw, parts[2], id, configDir
@@ -271,6 +281,7 @@ func (s *Service) handleOpen(ctx context.Context, c *server.Client, raw json.Raw
 	s.mu.Lock()
 	for _, have := range s.clients[c] {
 		if have == m.Ship {
+			s.ackLocked(c, m.Ship)
 			s.mu.Unlock()
 			return
 		}
@@ -295,14 +306,14 @@ func (s *Service) handleOpen(ctx context.Context, c *server.Client, raw json.Raw
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.clients == nil {
-		s.clients, s.watches = map[*server.Client][]string{}, map[string]*watch{}
+		s.clients, s.watches, s.outbox = map[*server.Client][]string{}, map[string]*watch{}, map[*server.Client]chan map[string]any{}
 	}
 	for _, have := range s.clients[c] {
 		if have == m.Ship {
+			s.ackLocked(c, m.Ship)
 			return
 		}
 	}
-	first := len(s.clients[c]) == 0
 	if cur, has := s.watches[m.Ship]; has && cur.launched == w.launched {
 		w = cur
 	} else {
@@ -313,12 +324,38 @@ func (s *Service) handleOpen(ctx context.Context, c *server.Client, raw json.Raw
 	for len(s.clients[c]) > MaxOpen {
 		s.unsubscribeLocked(c, s.clients[c][0])
 	}
-	if first {
-		go func() { <-ctx.Done(); s.dropClient(c) }()
+	if _, has := s.outbox[c]; !has {
+		q := make(chan map[string]any, 64)
+		s.outbox[c] = q
+		go func() {
+			for {
+				select {
+				case msg := <-q:
+					_ = c.Send(msg)
+				case <-ctx.Done():
+					s.dropClient(c)
+					return
+				}
+			}
+		}()
 	}
+	s.ackLocked(c, m.Ship)
 	if !s.running {
 		s.running = true
 		go s.run()
+	}
+}
+
+// ackLocked tells the client its open is in effect: items appended from now on are pushed, so it may read the page.
+func (s *Service) ackLocked(c *server.Client, ship string) {
+	s.enqueueLocked(c, map[string]any{"type": "conversation_opened", "ship": ship})
+}
+
+// enqueueLocked drops the message when the client's queue is full: its writes are stalled and the hub will close it.
+func (s *Service) enqueueLocked(c *server.Client, msg map[string]any) {
+	select {
+	case s.outbox[c] <- msg:
+	default:
 	}
 }
 
@@ -358,6 +395,7 @@ func (s *Service) unsubscribeLocked(c *server.Client, session string) {
 func (s *Service) dropClient(c *server.Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	delete(s.outbox, c)
 	for _, session := range append([]string(nil), s.clients[c]...) {
 		s.unsubscribeLocked(c, session)
 	}
@@ -416,15 +454,11 @@ func (s *Service) poll(w *watch) {
 	if len(up.Items) == 0 {
 		return
 	}
-	s.mu.Lock()
-	subs := make([]*server.Client, 0, len(w.subs))
-	for c := range w.subs {
-		subs = append(subs, c)
-	}
-	s.mu.Unlock()
 	msg := map[string]any{"type": "conversation", "ship": w.session, "items": up.Items}
-	for _, c := range subs {
-		_ = c.Send(msg)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for c := range w.subs {
+		s.enqueueLocked(c, msg)
 	}
 }
 

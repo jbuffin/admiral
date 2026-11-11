@@ -52,7 +52,7 @@ func Resolve(configDir, p string) (root, rel string, err error) {
 	return root, filepath.Join(parts...), nil
 }
 
-// Open goes through os.Root so a link swapped in after the checks is not followed; O_NONBLOCK keeps a swapped-in FIFO from blocking.
+// Open goes through os.Root, so a link swapped in after the checks can only lead to another file under the root; O_NONBLOCK keeps a swapped-in FIFO from blocking.
 func Open(configDir, p string) (*os.File, os.FileInfo, error) {
 	root, rel, err := Resolve(configDir, p)
 	if err != nil {
@@ -87,7 +87,7 @@ func SessionID(p string) (string, bool) {
 	return id, filepath.Ext(name) == ".jsonl" && sessionFile.MatchString(id)
 }
 
-// Find searches projects/*/ for a session stored under a directory name other than the computed one. A symlinked entry is ErrRefused.
+// Find searches the directories in projects/ for a session stored under a name other than the computed one. ErrRefused means the entry holding the file was refused.
 func Find(configDir, id string) (string, error) {
 	if !sessionFile.MatchString(id) {
 		return "", ErrRefused
@@ -102,6 +102,9 @@ func Find(configDir, id string) (string, error) {
 	}
 	var refused bool
 	for _, e := range entries {
+		if !e.IsDir() { // DirEntry does not follow links, so a symlinked directory is skipped too
+			continue
+		}
 		p := filepath.Join(root, e.Name(), id+".jsonl")
 		if _, _, err := Resolve(configDir, p); err == nil {
 			return p, nil

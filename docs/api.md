@@ -12,7 +12,7 @@ The launcher starts a Claude Code ship with `--session-id <uuid>` and sets the p
 
 A dock whose args, or an order whose extra args, already choose a session (`--session-id`, `--resume`, `-r`, `--continue`, `-c`) launches as before with no `--session-id` of ours and no option. That ship's state is `none`.
 
-The option's text is untrusted: anything running in the ship can write it. The server uses only its session id, and reads the file only if it is a regular file under the harness's own `<config dir>/projects/` with no symlink on the way (ADR 0019). A file or directory that is a symlink is `unreadable`, never `ok`.
+The option's text is untrusted: anything running in the ship can write it. The session id in the option must equal the `--session-id` in the command the pane was started with (tmux keeps that, and a process in the ship cannot rewrite it); on a mismatch, or when the start command has no `--session-id`, the state is `none`. The server takes the file from the option's path, else from the `projects/*/<uuid>.jsonl` lookup above, and reads it only if it is a regular file under the harness's own `<config dir>/projects/` with no symlink on the way (ADR 0019). A file or directory that is a symlink is `unreadable`, never `ok`.
 
 ### `GET /api/v1/ships/<ship>/conversation[?before=<id>]`
 
@@ -41,7 +41,7 @@ A client sends:
 {"type": "conversation_close", "ship": "<ship>"}
 ```
 
-The server answers an open with nothing: the client reads the page over HTTP first. From then on, items that are new or changed in the file go to the clients that opened the ship, and to no other:
+The server answers an open with `{"type": "conversation_opened", "ship": "<ship>"}` once the subscription is in effect. A client sends `conversation_open`, waits for `conversation_opened`, then reads the page over HTTP, so no append falls between the page and the pushes. From then on, items that are new or changed in the file go to the clients that opened the ship, and to no other:
 
 ```json
 {"type": "conversation", "ship": "<ship>", "items": [ ... ]}

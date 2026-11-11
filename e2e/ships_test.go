@@ -27,10 +27,11 @@ var codexHooks = []string{"Interrupt", "PermissionRequest", "PostToolUse", "Stop
 // Admiral-owned part of the command line around it.
 func promptOf(t *testing.T, w *world, r record) string {
 	t.Helper()
-	argv := r.argvBase()
+	argv := r.argv
 	last := argv[len(argv)-1]
 	switch r.harness {
 	case "claude":
+		argv = r.claudeArgvBase()
 		want := []string{"--fa-claude", "--settings", filepath.Join(w.home, "harness", "claude-settings.json"), "--"}
 		if got := argv[:len(argv)-1]; !reflect.DeepEqual(got, want) {
 			t.Fatalf("claude argv before the prompt = %q, want %q", got, want)
