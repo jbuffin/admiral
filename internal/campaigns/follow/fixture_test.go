@@ -248,6 +248,7 @@ func newRig(t *testing.T, root iss) *rig {
 	}
 	r.mux = http.NewServeMux()
 	r.svc.Routes(r.mux)
+	t.Cleanup(r.svc.Close) // a read on its own goroutine must end before the TempDirs go
 	return r
 }
 

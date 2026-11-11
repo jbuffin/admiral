@@ -4,13 +4,16 @@ package follow
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/campaigns"
 	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/launcher"
+	"github.com/jbuffin/admiral/internal/repofinder"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/ships"
 )
@@ -18,45 +21,12 @@ import (
 // SourceKey is the order source key campaign ships carry.
 const SourceKey = "campaign"
 
-// Followed is one followed campaign as stored.
-type Followed struct {
-	ID         string
-	URL        string // the parent's issue URL
-	Fleet      string
-	WorkRepo   string // host/owner/repo, or empty
-	Overrides  map[string]campaigns.Override
-	FollowedAt time.Time
-	EndedAt    time.Time // zero while the campaign is followed
-	Tree       *github.TreeNode
-	ReadAt     time.Time
-	ReadError  string
-}
-
-func (f Followed) Ended() bool { return !f.EndedAt.IsZero() }
-
-// Store is the file of followed campaigns, campaigns.json under the home.
-type Store struct{}
-
-var errStub = errors.New("not implemented")
-
-func OpenStore(home string) (*Store, error) { return &Store{}, nil }
-
-// Follow adds f, or returns the campaign already followed for the same issue with created false.
-func (s *Store) Follow(f Followed) (got Followed, created bool, err error) {
-	return Followed{}, false, errStub
-}
-func (s *Store) Get(id string) (Followed, bool) { return Followed{}, false }
-
-// List returns every campaign, active and ended, in the order they were followed.
-func (s *Store) List() []Followed                                            { return nil }
-func (s *Store) End(id string, at time.Time) error                           { return nil }
-func (s *Store) SetOverride(id, childURL string, o campaigns.Override) error { return nil }
-func (s *Store) SetWorkRepo(id, repo string) error                           { return nil }
-
-// SetRead records a read; a nil tree keeps the last good one.
-func (s *Store) SetRead(id string, tree *github.TreeNode, at time.Time, readErr string) error {
-	return nil
-}
+const (
+	readTimeout  = 60 * time.Second // one tree read, so a refresh can't run forever
+	pageFloor    = 30 * time.Second // opening a page rereads no more often than this
+	launchFresh  = time.Minute      // a launch rereads first when the read is older than this
+	tickInterval = 5 * time.Minute  // each active campaign is reread this often
+)
 
 // Service follows campaigns and launches their children.
 type Service struct {
@@ -74,21 +44,380 @@ type Service struct {
 	// Next answers every order that is not a campaign's.
 	Next ships.Orders
 	Now  func() time.Time
+
+	once   sync.Once
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+
+	mu    sync.Mutex
+	reads map[string]*reader
+	tried map[string]time.Time // the last attempt at a read, good or not, for the floors
+	prev  map[string]shipSeen  // the ships as ShipsChanged last saw them; nil before the first call
 }
 
-func (s *Service) Routes(mux *http.ServeMux)  {}
-func (s *Service) Connected(c *server.Client) {}
+type shipSeen struct{ status, key string }
+
+// reader serialises the reads of one campaign.
+type reader struct {
+	mu    sync.Mutex
+	dirty bool // a forced reread asked for while one ran
+}
+
+func (s *Service) background() context.Context {
+	s.once.Do(func() { s.ctx, s.cancel = context.WithCancel(context.Background()) })
+	return s.ctx
+}
+
+// Close stops the reads under way and waits for them.
+func (s *Service) Close() {
+	s.background()
+	s.cancel()
+	s.wg.Wait()
+}
+
+func (s *Service) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
+}
+
+func (s *Service) reader(id string) *reader {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.reads == nil {
+		s.reads = map[string]*reader{}
+	}
+	if s.reads[id] == nil {
+		s.reads[id] = &reader{}
+	}
+	return s.reads[id]
+}
+
+func (s *Service) lastTried(f Followed) time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if t := s.tried[f.ID]; t.After(f.ReadAt) {
+		return t
+	}
+	return f.ReadAt
+}
+
+// startReread reads the campaign's tree on its own goroutine unless a read is under way; again asks the running
+// read to be followed by another, for a change it may have missed.
+func (s *Service) startReread(id string, again bool) {
+	r := s.reader(id)
+	if !r.mu.TryLock() {
+		if again {
+			s.mu.Lock()
+			r.dirty = true
+			s.mu.Unlock()
+		}
+		return
+	}
+	ctx := s.background()
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		for ctx.Err() == nil {
+			_ = s.read(ctx, id)
+			s.mu.Lock()
+			more := r.dirty
+			r.dirty = false
+			s.mu.Unlock()
+			if !more {
+				break
+			}
+		}
+		r.mu.Unlock()
+	}()
+}
+
+// rereadIfOlder reads now, waiting for a read under way, when the last good read is older than age.
+func (s *Service) rereadIfOlder(ctx context.Context, id string, age time.Duration) error {
+	r := s.reader(id)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	f, ok := s.Store.Get(id)
+	if !ok || f.Ended() || (!f.ReadAt.IsZero() && s.now().Sub(f.ReadAt) <= age) {
+		return nil
+	}
+	return s.read(ctx, id)
+}
+
+// read rereads one campaign's tree and stores the result: a failed read keeps the last good tree and records why.
+func (s *Service) read(ctx context.Context, id string) error {
+	f, ok := s.Store.Get(id)
+	if !ok || f.Ended() {
+		return nil
+	}
+	s.mu.Lock()
+	if s.tried == nil {
+		s.tried = map[string]time.Time{}
+	}
+	s.tried[id] = s.now()
+	s.mu.Unlock()
+	tree, err := s.readTree(ctx, f.Fleet, f.URL)
+	if err != nil {
+		_ = s.Store.SetRead(id, nil, s.now(), err.Error())
+		return err
+	}
+	if err := s.Store.SetRead(id, tree, s.now(), ""); err != nil {
+		return err
+	}
+	if allClosed(tree) {
+		_ = s.Store.End(id, s.now())
+	}
+	return nil
+}
+
+// readTree reads the tree under the issue at url with the fleet's GitHub client for the issue's host.
+func (s *Service) readTree(ctx context.Context, fleet, url string) (*github.TreeNode, error) {
+	ref, err := campaigns.ParseIssueRef(url)
+	if err != nil {
+		return nil, err
+	}
+	host := hostOf(ref)
+	client, ok := s.Clients(fleet, host)
+	if !ok {
+		return nil, fmt.Errorf("fleet %s has no GitHub source for %s", fleet, host)
+	}
+	if !strings.EqualFold(client.Host(), host) {
+		return nil, fmt.Errorf("the GitHub source of fleet %s reads %s, not %s", fleet, client.Host(), host)
+	}
+	ctx, cancel := context.WithTimeout(ctx, readTimeout)
+	defer cancel()
+	token, err := client.Token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.Tree(ctx, token, ref.Owner, ref.Repo, ref.Number)
+}
+
+// hostOf is the issue's host; owner/repo#n names none and means github.com.
+func hostOf(ref campaigns.IssueRef) string {
+	if ref.Host == "" {
+		return github.DefaultHost
+	}
+	return strings.ToLower(ref.Host)
+}
+
+// allClosed is true when the parent and every issue under it, nested parents too, is closed.
+func allClosed(n *github.TreeNode) bool {
+	if n == nil || !n.Closed || n.Unreadable > 0 {
+		return false
+	}
+	for _, c := range n.Children {
+		if !allClosed(c) {
+			return false
+		}
+	}
+	return true
+}
 
 // Tick is the periodic pass: it rereads each active campaign last read five minutes ago or more.
-func (s *Service) Tick() {}
+func (s *Service) Tick() {
+	for _, f := range s.Store.List() {
+		if !f.Ended() && s.now().Sub(s.lastTried(f)) >= tickInterval {
+			s.startReread(f.ID, false)
+		}
+	}
+}
 
-// ShipsChanged is the ships' OnChange hook; it never blocks.
-func (s *Service) ShipsChanged() {}
+// Run ticks until ctx is done.
+func (s *Service) Run(ctx context.Context) {
+	s.Tick()
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-t.C:
+			s.Tick()
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (s *Service) Connected(c *server.Client) {}
+
+// ShipsChanged is the ships' OnChange hook; it never blocks. A child's ship that anchored, is sailing off or
+// is gone rereads the campaign holding the child.
+func (s *Service) ShipsChanged() {
+	if s.Ships == nil {
+		return
+	}
+	cur := map[string]shipSeen{}
+	for _, sh := range s.Ships() {
+		if k, ok := ships.ClaimKey(sh.URL); ok {
+			id := sh.Session
+			if id == "" {
+				id = sh.Name
+			}
+			cur[id] = shipSeen{sh.Status, k}
+		}
+	}
+	s.mu.Lock()
+	prev := s.prev
+	s.prev = cur
+	s.mu.Unlock()
+	if prev == nil {
+		return
+	}
+	left := map[string]bool{}
+	for id, was := range prev {
+		now, present := cur[id]
+		if !present || (leaving(now.status) && !leaving(was.status)) {
+			left[was.key] = true
+		}
+	}
+	if len(left) == 0 {
+		return
+	}
+	for _, f := range s.Store.List() {
+		if !f.Ended() && hasChild(f.Tree, left) {
+			s.startReread(f.ID, true)
+		}
+	}
+}
+
+func leaving(status string) bool {
+	return status == ships.StatusAnchored || status == ships.StatusSailingOff
+}
+
+func hasChild(n *github.TreeNode, keys map[string]bool) bool {
+	if n == nil {
+		return false
+	}
+	if k, ok := ships.ClaimKey(n.URL); ok && keys[k] {
+		return true
+	}
+	for _, c := range n.Children {
+		if hasChild(c, keys) {
+			return true
+		}
+	}
+	return false
+}
+
+// view folds the campaign's tree with the live claims and the stored overrides.
+func (s *Service) view(f Followed) campaigns.Campaign {
+	claims := map[string]string{}
+	if s.Claims != nil {
+		held := s.Claims()
+		var walk func(n *github.TreeNode)
+		walk = func(n *github.TreeNode) {
+			if k, ok := ships.ClaimKey(n.URL); ok && held[k] != "" {
+				claims[n.URL] = held[k]
+			}
+			for _, c := range n.Children {
+				walk(c)
+			}
+		}
+		if f.Tree != nil {
+			walk(f.Tree)
+		}
+	}
+	return campaigns.Build(campaigns.Input{Tree: f.Tree, Claims: claims, Overrides: f.Overrides})
+}
+
+func find(n *campaigns.Node, url string) *campaigns.Node {
+	if n == nil {
+		return nil
+	}
+	if sameIssue(n.URL, url) {
+		return n
+	}
+	for _, c := range n.Children {
+		if got := find(c, url); got != nil {
+			return got
+		}
+	}
+	return nil
+}
+
+// childOf finds the active campaign holding the child at url, with its node.
+func (s *Service) childOf(url string) (Followed, *campaigns.Node, bool) {
+	for _, f := range s.Store.List() {
+		if f.Ended() {
+			continue
+		}
+		if n := find(s.view(f).Root, url); n != nil {
+			return f, n, true
+		}
+	}
+	return Followed{}, nil, false
+}
+
+func orderError(status int, msg string) *launcher.Error {
+	return &launcher.Error{Status: status, Msg: msg}
+}
 
 // Order answers for a campaign child (source SourceKey, id the child's issue URL) and hands the rest to Next.
 func (s *Service) Order(source, id string) (text, title, repo, url, panel string, err *launcher.Error) {
-	return "", "", "", "", "", &launcher.Error{Status: http.StatusNotImplemented, Msg: "not implemented"}
+	if source != SourceKey {
+		if s.Next == nil {
+			return "", "", "", "", "", orderError(http.StatusNotFound, "unknown order source "+source)
+		}
+		return s.Next.Order(source, id)
+	}
+	f, n, ok := s.childOf(id)
+	if !ok {
+		return "", "", "", "", "", orderError(http.StatusNotFound, "no followed campaign has that child")
+	}
+	if n.Parent {
+		return "", "", "", "", "", orderError(http.StatusBadRequest, "that issue is a parent; launch one of its children")
+	}
+	return launchText(n), n.Title, s.repoFor(f, n), n.URL, f.ID, nil
+}
+
+// launchText is what the launcher puts after the skill: the wayfinder map and ticket, or the ticket URL;
+// with no skill the title and URL, so the ship knows what it was handed.
+func launchText(n *campaigns.Node) string {
+	switch {
+	case n.Skill.Args != "":
+		return n.Skill.Args
+	case n.Skill.Kind == "none":
+		return n.Title + " " + n.URL
+	}
+	return n.URL
+}
+
+// repoFor is the repo a child's launch preselects or clones: the work repo for a child filed in the parent's
+// repo, else the child's own.
+func (s *Service) repoFor(f Followed, n *campaigns.Node) string {
+	if ref, err := campaigns.ParseIssueRef(f.URL); err == nil {
+		if f.WorkRepo != "" && f.Tree != nil && strings.EqualFold(n.Repo, f.Tree.Repo) {
+			return repoURL(f.WorkRepo)
+		}
+		return "https://" + hostOf(ref) + "/" + n.Repo
+	}
+	return ""
+}
+
+// repoURL gives a stored work repo in the https form repofinder reads; host/owner/repo gets its scheme.
+func repoURL(s string) string {
+	if strings.Contains(s, "://") || strings.Contains(s, "@") {
+		return s
+	}
+	return "https://" + s
+}
+
+func validRepo(s string) bool {
+	_, ok := repofinder.Identity(repoURL(s))
+	return ok
 }
 
 // Launched triggers a reread of the child's campaign.
-func (s *Service) Launched(source, id string) {}
+func (s *Service) Launched(source, id string) {
+	if source != SourceKey {
+		if s.Next != nil {
+			s.Next.Launched(source, id)
+		}
+		return
+	}
+	if f, _, ok := s.childOf(id); ok {
+		s.startReread(f.ID, true)
+	}
+}

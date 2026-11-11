@@ -92,7 +92,7 @@ func TestCampaignFollowJourney(t *testing.T) {
 	g.cannTree(20, campNode(20, campNode(21), campNode(22)))
 	g.cannTree(21, campNode(21))
 	g.cannTree(22, campNode(22))
-	g.search("partof", "Part of #20")
+	g.search("partof", "Part of") // the tree read runs two Part of searches, with and without the repo
 	g.write("search/partof.json", `{"data":{"search":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}`)
 	g.search("assigned", "assignee:@me", ghNode("github.com", "acme/widgets", 21, false, "Issue 21"))
 	w.writeCue("wait go", "exit 0")

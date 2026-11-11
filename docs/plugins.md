@@ -91,6 +91,7 @@ Requests are `{"jsonrpc":"2.0","id":1,"method":"…","params":{…}}`. Answer ea
 | `url` | Optional link to the order. |
 | `hot` | Optional. Marks an order that needs attention. |
 | `labels` | Optional. An array of label-name strings (`["bug", "ready-for-agent"]`), in the order you want them shown. Admiral shows them as chips on the order and its filter matches them. A plugin that leaves it out gets no chips. |
+| `sub_issues` | Optional. A positive integer: how many sub-issues the order's issue has. Admiral offers Follow on an order that has it. Only the built-in GitHub source sends it today; a plugin's value is read the same way, and `0`, a negative or a non-integer is dropped. |
 | `repo` | Optional git remote of the repository the order belongs to (`https://github.com/acme/widgets` or `git@github.com:acme/widgets.git`). Admiral uses it to preselect a checkout. |
 
 Admiral hides an order while a ship launched from it exists, whatever that ship's status, and shows it again once the ship is gone, if you still list it. A plugin that wants a launched order to disappear for good deletes it when it hears `orders.launched`, as the example plugin in [Try it](#try-it) does.

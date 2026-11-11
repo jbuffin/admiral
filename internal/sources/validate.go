@@ -134,6 +134,8 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 		Hot    *bool    `json:"hot"`
 		Repo   *string  `json:"repo"`
 		Labels []string `json:"labels"`
+		// Sub-issues is the count a GitHub issue has, read by the built-in source only.
+		SubIssues *int `json:"sub_issues"`
 	}
 	if err := decodeInto(raw, &items); err != nil {
 		return nil, fmt.Errorf("orders.list: %w", err)
@@ -187,6 +189,9 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 			}
 		}
 		o.Hot = it.Hot != nil && *it.Hot
+		if it.SubIssues != nil && *it.SubIssues > 0 {
+			o.SubIssues = *it.SubIssues
+		}
 		out = append(out, o)
 	}
 	return out, nil

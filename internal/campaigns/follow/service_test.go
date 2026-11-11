@@ -149,7 +149,7 @@ func TestOrderAnswersACampaignChildAndPassesOthersOn(t *testing.T) {
 	}{
 		{24, rootURL + " " + issURL(24), "Issue 24", issURL(24), "https://github.com/acme/work"},
 		{27, issURL(27), "Issue 27", issURL(27), "https://github.com/acme/work"},
-		{28, "Issue 28 https://github.com/acme/other/issues/28", "Issue 28", "https://github.com/acme/other/issues/28", "https://github.com/acme/work"},
+		{28, "Issue 28 https://github.com/acme/other/issues/28", "Issue 28", "https://github.com/acme/other/issues/28", "https://github.com/acme/other"},
 	}
 	for _, tc := range cases {
 		text, title, repo, url, panel, err := r.svc.Order(SourceKey, tc.url)
