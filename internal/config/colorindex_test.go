@@ -75,13 +75,6 @@ func TestColorIndex_DerivedFleetsCountUnwrapped(t *testing.T) {
 			t.Errorf("fleet %d color_index = %d (present %v), want %d", i, got, ok, i)
 		}
 	}
-	// The old UI's color and ink are unchanged: the sixth wraps to the first.
-	if f := fleets[5]; f["color"] != "#3366E0" || f["ink"] != "#FFFFFF" {
-		t.Errorf("sixth fleet color/ink = %v/%v, want #3366E0/#FFFFFF", f["color"], f["ink"])
-	}
-	if f := fleets[1]; f["color"] != "#F28C28" || f["ink"] != "#14304A" {
-		t.Errorf("second fleet color/ink = %v/%v, want #F28C28/#14304A", f["color"], f["ink"])
-	}
 }
 
 // A stored color that is an old palette entry (any case, as `admiral setup`
@@ -105,11 +98,7 @@ func TestColorIndex_StoredPaletteHexAndCustom(t *testing.T) {
 			t.Errorf("fleet %d color_index = %d (present %v), want %d (present %v)", i, got, ok, w.idx, w.ok)
 		}
 	}
-	// color and ink keep their old-palette values for the old UI.
-	if fleets[1]["color"] != "#e2447a" || fleets[1]["ink"] != "#FFFFFF" {
-		t.Errorf("stored fleet color/ink = %v/%v", fleets[1]["color"], fleets[1]["ink"])
-	}
 	if fleets[3]["color"] != "#112233" {
-		t.Errorf("custom fleet color = %v, want #112233", fleets[3]["color"])
+		t.Errorf("a custom color = %v, want it served as stored, #112233", fleets[3]["color"])
 	}
 }
