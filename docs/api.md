@@ -105,6 +105,8 @@ Fleets and harnesses follow the config's order; features follow the table (judge
 
 `judge` is the fleet's judge harness, from `judge.Choose` on the stored probes: the first of claude, codex and copilot that proved no tools and no network, with its Lookout and strong models and whether it proved a JSON schema flag and a per-call cap. A fleet with no such harness has `{"harness":null,"reason":"..."}`, the reason naming each harness and what it lacks, and runs no judge calls.
 
+`autopilot.advisor` is never stored. Every harness of a fleet reads `passed` when the fleet has a judge harness and `failed`, with the `judge.reason`, when it has none, so it follows the other harnesses' probes. Autopilot on a harness is refused until it passes.
+
 ### `POST /api/harness-capabilities/check`
 
 Body `{"fleet":"work","harness":"claude"}`. Runs the probes for that harness and waits (up to eight minutes: the guard run and up to four judge calls of up to 90 seconds each). It answers 200 with the harness object above plus `"fleet"` and the fleet's `"judge"` object, which the check may just have changed. 400 for a bad body, 404 for an unknown fleet or a harness the fleet has no dock for, 502 with `{"error":...}` when the harness's `--version` fails.

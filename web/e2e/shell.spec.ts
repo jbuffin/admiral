@@ -171,14 +171,21 @@ test('Preferences shows what each harness was probed to do, and Check again re-r
   await expect(workClaude.locator('img[src="/api/v1/logos/claude"]')).toBeVisible();
   await expect(workClaude.locator('img[src="/api/v1/logos/claude"]')).toBeVisible();
 
-  // Nothing has been probed yet: every capability is not checked, and no row claims a failure.
+  // Nothing has been probed yet: every capability is not checked, except the advisor, which follows the
+  // fleet's judge harness and so already reads failed with the reason there is none.
   const before = await westwindClaude(page, admiral.url);
   expect(before.caps.length).toBeGreaterThan(1);
   for (const cap of before.caps) {
+    if (cap.id === 'autopilot.advisor') {
+      expect(cap.status).toBe('failed');
+      expect(cap.detail).not.toBe('');
+      await expect(rowOf(workClaude, cap.label)).toContainText(/failed/i);
+      continue;
+    }
     expect(cap.status).toBe('not_checked');
     await expect(rowOf(workClaude, cap.label)).toContainText(/not checked/i);
   }
-  await expect(workClaude.getByRole('note')).toHaveCount(0);
+  await expect(workClaude.getByRole('note')).toHaveCount(1);
   // No harness is proven for judge calls yet: the line reads off, with the API's reason.
   const noJudge = await westwindJudge(page, admiral.url);
   expect(noJudge.harness).toBeNull();

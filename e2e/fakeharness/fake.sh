@@ -24,6 +24,11 @@
 #                  makes it leak what each probe watches for: it creates the files and reads
 #                  the file the prompt names (and answers with its contents), fetches the URL
 #                  the prompt names, answers a plain "hello" instead of JSON and ignores the cap.
+#                  The advise call (`admiral advise`) is the call whose --json-schema holds
+#                  "stakes", or whose prompt opens "You are the advisor": it answers {"stakes":
+#                  "low","reason":"stays on the ship's branch"}. $FAKE_JUDGE=advise-high answers
+#                  high, advise-invalid answers a stakes value that is neither, and fail exits
+#                  1 with "boom" on stderr for any judge call.
 #
 # Otherwise it runs inside a ship's tmux pane (so TMUX and TMUX_PANE are set by tmux, and
 # plain `tmux` talks to the ship's own server). It needs two variables from the
@@ -144,12 +149,22 @@ if [ -n "$judge" ]; then
   out=""
   budget=""
   schema=""
+  advise=""
   prev=""
   for a in "$@"; do
     [ "$prev" = "-o" ] && out=$a
-    case "$a" in --max-budget-usd=*) budget=${a#*=} ;; --json-schema=*) schema=1 ;; esac
+    case "$a" in
+    --max-budget-usd=*) budget=${a#*=} ;;
+    --json-schema=*) schema=1 ;;
+    esac
+    case "$a" in --json-schema=*stakes*) advise=1 ;; esac
     prev=$a
   done
+  case "$jprompt" in "You are the advisor"*) advise=1 ;; esac
+  if [ "$FAKE_JUDGE" = fail ]; then
+    echo boom >&2
+    exit 1
+  fi
   text=ok
   body=""
   if [ "$FAKE_JUDGE" = leak ]; then
@@ -163,6 +178,13 @@ if [ -n "$judge" ]; then
   elif [ -n "$budget" ] && awk -v b="$budget" 'BEGIN{exit !(b+0 < 0.001)}'; then
     echo '{"type":"result","subtype":"error_max_budget_usd","is_error":true,"errors":["Reached maximum budget"],"total_cost_usd":0.0001}'
     exit 1
+  fi
+  if [ -z "$body" ] && [ -n "$advise" ]; then
+    case "$FAKE_JUDGE" in
+    advise-high) body='{"stakes":"high","reason":"it posts outside the ship"}' ;;
+    advise-invalid) body='{"stakes":"maybe","reason":"unsure"}' ;;
+    *) body='{"stakes":"low","reason":"stays on the ship'"'"'s branch"}' ;;
+    esac
   fi
   [ -z "$body" ] && body="{\"reply\":\"$text\"}"
   if [ "$(basename "$0")" = claude ]; then

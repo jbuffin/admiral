@@ -79,7 +79,7 @@ type Launcher struct {
 	Kept func(session string) bool
 	// AutopilotGate decides whether a crew launch may carry autopilot mode. It lives
 	// outside this package because the Inbox it writes to imports the launcher.
-	AutopilotGate func(fleetKey, fleetName, harness string) error
+	AutopilotGate func(fleet config.Fleet, harness string) error
 
 	mu sync.Mutex // one launch at a time, so two don't pick one name
 }
