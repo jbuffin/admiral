@@ -363,6 +363,8 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   expect(runCrew, 'the pinned ship knows its run layer').toBeTruthy();
   expect(readFileSync(join(runCrew!, 'scout.md'), 'utf8')).toBe(scout);
   setState(a, pinnedShip, 'working');
+  // Later steps start from Just launch, as before.
+  rmSync(commodoreDir, { recursive: true, force: true });
 
   // An uncloned repo: the form says where it will clone before launch, and launching sends clone with no dir.
   const dirsAnswer = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/v1/launch-orders/dirs');

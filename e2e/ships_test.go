@@ -151,6 +151,12 @@ func TestLaunchCommandLine(t *testing.T) {
 			}
 			scout := member(filepath.Join(w.userHom, "."+harness, "skills", "commodore", "crew"), "scout", "scribe")
 			mate := member(crewDir, "mate", "reviewer")
+			plain := w.order("work", harness, "pin-plain-"+harness, noSkill, "no skill")
+			plain["crew"] = []string{"scout"}
+			code, body := w.post(plain)
+			if code != http.StatusBadRequest || !strings.Contains(body, "Commodore") {
+				t.Errorf("pins on a launch without Commodore = %d %s, want a 400 naming Commodore", code, body)
+			}
 			pinned := w.order("work", harness, "pin-"+harness, commodore, "do the pinned thing")
 			pinned["crew"] = []string{"scout", "mate"}
 			pr := w.record(w.launch(pinned).Session)
@@ -165,12 +171,6 @@ func TestLaunchCommandLine(t *testing.T) {
 			}
 			if _, set := r.env["ADMIRAL_RUN_CREW"]; set {
 				t.Errorf("the ship launched without pins has ADMIRAL_RUN_CREW = %q", r.env["ADMIRAL_RUN_CREW"])
-			}
-			plain := w.order("work", harness, "pin-plain-"+harness, noSkill, "no skill")
-			plain["crew"] = []string{"scout"}
-			code, body := w.post(plain)
-			if code != http.StatusBadRequest || !strings.Contains(body, "Commodore") {
-				t.Errorf("pins on a launch without Commodore = %d %s, want a 400 naming Commodore", code, body)
 			}
 		})
 	}

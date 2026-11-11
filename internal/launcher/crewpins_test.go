@@ -140,12 +140,22 @@ func TestPinRefusalsComeBeforeAnySession(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, []string{"scout"}, "role is required"},
+		{"two rejected files, both named", func(t *testing.T, p *pinRig) {
+			member(t, p.builtIn(), "scout", "scribe", "", "x")
+			mustMkdir(t, p.fleet())
+			for _, name := range []string{"one", "two"} {
+				broken := "---\nname: " + name + "\npick-me-when: Pick.\n---\n\nNo role.\n"
+				if err := os.WriteFile(filepath.Join(p.fleet(), name+".md"), []byte(broken), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}, []string{"scout"}, "one.md"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			p := newPinRig(t, nil)
 			c.setup(t, p)
 			_, err := p.launchPinned(c.crew)
-			if le, ok := err.(*Error); !ok || le.Status != http.StatusBadRequest || !strings.Contains(le.Msg, c.msg) {
+			if le, ok := err.(*Error); !ok || le.Status != http.StatusBadRequest || !strings.Contains(le.Msg, c.msg) || (c.name == "two rejected files, both named" && !strings.Contains(le.Msg, "two.md")) {
 				t.Fatalf("Launch = %v, want a 400 naming %q", err, c.msg)
 			}
 			rows, err := p.l.server().SessionRows()
@@ -162,11 +172,11 @@ func TestACommodoreWithNoCrewDirectoryHasAnEmptyBuiltInLayer(t *testing.T) {
 		t.Fatal(err)
 	}
 	member(t, p.fleet(), "mate", "reviewer", "", "Fleet mate.")
-	if _, env := p.mustLaunchPinned(t, []string{"mate"}); fileNames(t, p.runLayer(t, env))[0] != "mate.md" {
-		t.Errorf("the run layer is %q, want the fleet's mate", env["ADMIRAL_RUN_CREW"])
-	}
 	if _, err := p.launchPinned([]string{"scout"}); err == nil {
 		t.Errorf("pinning a built-in member without a built-in layer launched a ship, want a 400")
+	}
+	if _, env := p.mustLaunchPinned(t, []string{"mate"}); fileNames(t, p.runLayer(t, env))[0] != "mate.md" {
+		t.Errorf("the run layer is missing the fleet's mate")
 	}
 }
 
