@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -191,19 +192,58 @@ func wsSend(t *testing.T, c *websocket.Conn, v map[string]any) {
 	}
 }
 
-// nextConv reads until a `conversation` message for ship arrives, within d. ok is
-// false when none did.
+// convReaders holds one background reader per connection. A timed-out Read
+// closes a coder/websocket connection, so the helper never gives Read a deadline:
+// a goroutine reads for the connection's life and nextConv waits on its channel.
+var (
+	convReadersMu sync.Mutex
+	convReaders   = map[*websocket.Conn]chan convMsg{}
+)
+
+func convChan(c *websocket.Conn) chan convMsg {
+	convReadersMu.Lock()
+	defer convReadersMu.Unlock()
+	ch, ok := convReaders[c]
+	if !ok {
+		ch = make(chan convMsg, 1024)
+		convReaders[c] = ch
+		go func() {
+			defer close(ch)
+			for {
+				_, data, err := c.Read(context.Background())
+				if err != nil {
+					return
+				}
+				var m convMsg
+				if json.Unmarshal(data, &m) == nil && m.Type == "conversation" {
+					select {
+					case ch <- m:
+					default:
+					}
+				}
+			}
+		}()
+	}
+	return ch
+}
+
+// nextConv waits for a `conversation` message for ship, within d. ok is false
+// when none arrived.
 func nextConv(c *websocket.Conn, d time.Duration, ship string) (convMsg, bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), d)
-	defer cancel()
+	ch := convChan(c)
+	timer := time.NewTimer(d)
+	defer timer.Stop()
 	for {
-		_, data, err := c.Read(ctx)
-		if err != nil {
+		select {
+		case m, ok := <-ch:
+			if !ok {
+				return convMsg{}, false
+			}
+			if m.Ship == ship {
+				return m, true
+			}
+		case <-timer.C:
 			return convMsg{}, false
-		}
-		var m convMsg
-		if json.Unmarshal(data, &m) == nil && m.Type == "conversation" && m.Ship == ship {
-			return m, true
 		}
 	}
 }
