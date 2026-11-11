@@ -6,7 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -722,6 +724,11 @@ func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 	if err := s.killShip(ctx, session, false); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if name := sess.Options["name"]; name != "" { // an anchored woken ship's mooring will not come back
+		if err := moor.RemoveWake(s.Launcher.Home, name); err != nil {
+			fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake state cannot be removed: %v\n", name, err)
+		}
 	}
 	_ = s.Host.Sync(ctx)
 	s.keep()

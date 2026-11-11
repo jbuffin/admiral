@@ -149,3 +149,33 @@ func TestANextWriteIsSkippedForAShipWhoseWakeHasCommitted(t *testing.T) {
 		t.Errorf("the poll wrote the wake state of a ship whose wake had committed: %+v", f.wakeState(t, "Nelson"))
 	}
 }
+
+func TestTwoPollsWithNothingNewWriteTheWakeStateAtMostOnce(t *testing.T) {
+	g := &pollGitHub{}
+	g.set(prSeven, moor.Status{State: "OPEN", Head: "h1", Contexts: []moor.CheckContext{{Name: "ci", Kind: "CheckRun", State: "SUCCESS"}}})
+	f := mooredService(t, map[string]*pollGitHub{"work": g})
+	f.moorAged(t, "Nelson", "work", prSeven)
+	if err := moor.WriteWake(f.home, "Nelson", moor.WakeState{PRs: map[string]moor.PRWake{
+		prSeven: {Snapshot: moor.Snapshot{Head: "h1", Failing: []string{"ci"}}}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	f.s.PollMoored(context.Background())
+	if got := f.wakeState(t, "Nelson").PRs[prSeven].Snapshot.Failing; len(got) != 0 {
+		t.Fatalf("snapshot failing = %v after the check passed, want it cleared", got)
+	}
+	first, err := os.Stat(wakeFile(f, "Nelson"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	f.s.PollMoored(context.Background())
+
+	second, err := os.Stat(wakeFile(f, "Nelson"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !second.ModTime().Equal(first.ModTime()) {
+		t.Error("the second poll rewrote the wake state with nothing new")
+	}
+}
