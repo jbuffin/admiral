@@ -2,16 +2,11 @@ package config
 
 // View never carries env or args, which may hold secrets.
 type View struct {
-	Type           string        `json:"type"`
-	Fleets         []FleetView   `json:"fleets"`
-	FavoriteSkills []string      `json:"favorite_skills"`
-	Autopilot      AutopilotView `json:"autopilot"`
-	Chat           ChatView      `json:"chat"`
-	Error          *ErrorView    `json:"error"` // the banner; null when the file is fine
-}
-
-type AutopilotView struct {
-	MaxShips int `json:"max_ships"`
+	Type           string      `json:"type"`
+	Fleets         []FleetView `json:"fleets"`
+	FavoriteSkills []string    `json:"favorite_skills"`
+	Chat           ChatView    `json:"chat"`
+	Error          *ErrorView  `json:"error"` // the banner; null when the file is fine
 }
 
 // ChatView has its defaults filled in; Effort is empty for the harness default.
@@ -54,8 +49,7 @@ func (m *Manager) View() View {
 
 func (m *Manager) viewLocked() View {
 	v := View{Type: "config", Fleets: []FleetView{}, FavoriteSkills: m.cur.FavoriteSkills,
-		Autopilot: AutopilotView{MaxShips: m.cur.AutopilotMaxShips},
-		Chat:      ChatView{m.cur.Chat.Fleet, m.cur.Chat.Model, m.cur.Chat.Effort}}
+		Chat: ChatView{m.cur.Chat.Fleet, m.cur.Chat.Model, m.cur.Chat.Effort}}
 	for _, f := range m.cur.Fleets {
 		fv := FleetView{Key: f.Key, Name: f.Name, Color: f.Color, Ink: f.Ink, ColorIndex: f.ColorIndex,
 			SearchRoots: f.SearchRoots, CanLaunch: f.CanLaunch(), Docks: []DockView{}}

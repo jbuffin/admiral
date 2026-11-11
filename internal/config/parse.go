@@ -24,10 +24,9 @@ type Config struct {
 	FavoriteSkills []string
 	Sources        json.RawMessage // as in the file; nil when there is no sources key
 	SourceList     []Source        // Sources, in panel order
-	// AutopilotMaxShips counts every ship underway or needing you, hand launches included.
-	AutopilotMaxShips int
-	ResumeSource      *ResumeSource
-	Resources         map[string]Resource
+	// MaxShips counts every ship underway or needing you, hand launches included.
+	MaxShips  int
+	Resources map[string]Resource
 	// Chat is resolved: Fleet is never a missing fleet, and Model is never empty.
 	Chat Chat
 }
@@ -132,7 +131,7 @@ func Parse(data []byte) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg := &Config{FavoriteSkills: []string{}, AutopilotMaxShips: DefaultAutopilotMaxShips}
+	cfg := &Config{FavoriteSkills: []string{}, MaxShips: DefaultMaxShips}
 	var fleetsRaw json.RawMessage
 	haveVersion := false
 	var chat Chat
@@ -152,12 +151,10 @@ func Parse(data []byte) (*Config, error) {
 			if len(cfg.FavoriteSkills) > MaxFavoriteSkills {
 				return nil, fmt.Errorf("favorite_skills: at most %d allowed, got %d", MaxFavoriteSkills, len(cfg.FavoriteSkills))
 			}
-		case "autopilot":
-			var ap Autopilot
-			if ap, err = parseAutopilot(m.raw); err != nil {
+		case "max_ships":
+			if cfg.MaxShips, err = positiveInt("max_ships", m.raw); err != nil {
 				return nil, err
 			}
-			cfg.AutopilotMaxShips, cfg.ResumeSource = ap.MaxShips, ap.Resume
 		case "chat":
 			if chat, err = parseChat(m.raw); err != nil {
 				return nil, err
@@ -183,12 +180,6 @@ func Parse(data []byte) (*Config, error) {
 		}
 	}
 	if err := checkSourceFleets(cfg); err != nil {
-		return nil, err
-	}
-	if err := checkAutopilotFleets(cfg); err != nil {
-		return nil, err
-	}
-	if err := checkPanelResources(cfg); err != nil {
 		return nil, err
 	}
 	cfg.Chat = resolveChat(chat, cfg.Fleets)

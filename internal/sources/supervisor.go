@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"maps"
-	"reflect"
 	"slices"
 	"sync"
 
@@ -118,7 +117,7 @@ func (s *Supervisor) reconcile(force string, gen uint64) {
 		case def.Key == force && r.gen.Load() == gen:
 			r.restart()
 			dirty = true
-		case old.Name != def.Name, !slices.Equal(old.PanelOrder, def.PanelOrder), !reflect.DeepEqual(old.Autopilot, def.Autopilot):
+		case old.Name != def.Name, !slices.Equal(old.PanelOrder, def.PanelOrder):
 			dirty = true
 		}
 	}

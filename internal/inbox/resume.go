@@ -20,25 +20,19 @@ import (
 	"github.com/jbuffin/admiral/internal/state"
 )
 
-// A resume order's text is copied into Admiral's state first, so it outlives the
-// report's deletion and a restart, and is never added twice.
+// Resume text (ADR 0016, ADR 0034): once every item a ship's report lists in `inbox`
+// is answered, the report's `resume` text is typed at the prompt of the ship while it
+// is afloat. The text is copied into Admiral's state first, so it outlives the report's
+// deletion and a restart, and is never typed twice. A ship that is gone, or text that
+// can't be typed, finishes the entry with nothing typed.
 
 // maxReport caps the read because a ship wrote the report.
 const maxReport = 1 << 20
 
 const resumeRetry = 15 * time.Second
 
-const addTimeout = 10 * time.Second
-
-type AddKind int
-
-const (
-	AddFinal AddKind = iota
-	AddRetryable
-	// AddUncertain: the order may have landed; it is never sent again.
-	AddUncertain
-)
-
+// readReport is the report of session as the ship wrote it, nil when it is
+// missing or unusable.
 func (s *Service) readReport(session string) []byte { return readReportFile(s.Home, session) }
 
 func readReportFile(home, session string) []byte {
@@ -67,29 +61,13 @@ func readReportFile(home, session string) []byte {
 	return b
 }
 
-// Origin is where a resume order of the ship's report launches, under that
-// panel's autopilot entry.
-type Origin struct {
-	Dir, Source, Panel string
-}
-
 // CaptureResume does no network I/O. Whatever deletes a report calls it first.
 func (s *Service) CaptureResume(session string) {
-	var from Origin
-	if s.Origin != nil {
-		from, _ = s.Origin(session)
-	}
-	s.CaptureResumeFrom(session, from)
-}
-
-// CaptureResumeFrom is for a caller whose session may be gone by now; with no
-// directory it asks s.Origin.
-func (s *Service) CaptureResumeFrom(session string, from Origin) {
 	if s.Kept == nil || !validSession(session) {
 		return
 	}
-	if from.Dir == "" && s.Origin != nil {
-		from, _ = s.Origin(session)
+	if s.Afloat == nil || !s.Afloat(session) {
+		return // a ship that is gone has nothing to read its answers
 	}
 	b := s.readReport(session)
 	if b == nil {
@@ -115,24 +93,15 @@ func (s *Service) CaptureResumeFrom(session string, from Origin) {
 			return // a removed item never resumes its ship
 		}
 	}
-	// A ship still afloat has the text typed at its prompt when it stops, and
-	// needs no resume_source; one that has ended gets an order.
-	afloat := s.Afloat != nil && s.Afloat(session)
-	if !afloat && (s.ResumeTarget == nil || s.ResumeTarget() == nil) {
-		s.noTarget.Do(func() {
-			fmt.Fprintln(os.Stderr, "admiral: autopilot.resume_source is not set in the config, so resume orders are not added")
-		})
-		return
-	}
-	// The key is the order itself, not the report: a ship that rewrites its report
-	// without changing the order adds nothing new.
+	// The key is the text itself, not the report: a ship that rewrites its report
+	// without changing them adds nothing new.
 	ids := slices.Clone(r.Inbox)
 	slices.Sort(ids)
 	sum := sha256.Sum256([]byte(r.Resume + "\x00" + strings.Join(ids, "\x00")))
-	fresh, err := s.Kept.QueueResume(session+":"+hex.EncodeToString(sum[:8]), session, r.Resume, from.Dir, from.Source, from.Panel)
+	fresh, err := s.Kept.QueueResume(session+":"+hex.EncodeToString(sum[:8]), session, r.Resume)
 	switch {
 	case err != nil:
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume order cannot be kept: %v\n", session, err)
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume text cannot be kept: %v\n", session, err)
 	case fresh:
 		s.kickResume()
 	}
@@ -185,8 +154,9 @@ func (s *Service) kickResume() {
 // KickResume never blocks.
 func (s *Service) KickResume() { s.kickResume() }
 
-// addResumes makes plugin calls: never under answerMu. An uncertain add counts as
-// done, because a second order can launch a second ship.
+// addResumes makes no plugin calls but never runs under answerMu. A text whose ship is
+// gone, or that can't be typed, is finished with one stderr line and kept, so it is
+// never tried twice.
 func (s *Service) addResumes(session string) (left bool) {
 	if s.Kept == nil {
 		return false
@@ -210,83 +180,23 @@ func (s *Service) addResumes(session string) (left bool) {
 			left = true
 			continue
 		}
-		if s.AddOrder == nil || s.ResumeTarget == nil {
-			continue
-		}
-		t := s.ResumeTarget()
-		if t == nil {
-			continue // nothing to try until the config names a target
-		}
-		release := func(string) {}
-		if s.ResumeAdd != nil {
-			release = s.ResumeAdd(t.Source, t.Panel, Origin{Dir: r.Dir, Source: r.OriginSource, Panel: r.OriginPanel})
-		}
-		// Released once, whichever way the add ends, a panic included.
-		released := false
-		recorded := func(id string) {
-			if !released {
-				released = true
-				release(id)
-			}
-		}
-		defer recorded("")
-		ctx, cancel := context.WithTimeout(context.Background(), addTimeout)
-		id, err := s.AddOrder(ctx, t.Source, t.Panel, r.Text)
-		cancel()
-		who := r.Session
-		var fail interface{ AddKind() AddKind }
-		uncertain := false
-		if err != nil {
-			kind := AddFinal
-			if errors.As(err, &fail) {
-				kind = fail.AddKind()
-			}
-			switch kind {
-			case AddRetryable:
-				recorded("")
-				left = true
-				if s.lastErr[key] != err.Error() {
-					fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume order is not added yet: %v\n", who, err)
-					if s.lastErr == nil {
-						s.lastErr = map[string]string{}
-					}
-					s.lastErr[key] = err.Error()
-				}
-				continue
-			case AddUncertain:
-				uncertain = true
-				fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume order may not have landed, and is not sent again: %v\n", who, err)
-				fmt.Fprintf(os.Stderr, "admiral: ship %s: if it did, it is an ordinary order: the add gave no id, so its checkout is not recorded\n", who)
-			default:
-				fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume order is dropped: %v\n", who, err)
-			}
-		}
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume text is not typed: the ship is not afloat or the text cannot be typed at a prompt\n", r.Session)
 		delete(s.lastErr, key)
-		recorded(id) // the order is in the state's hands now: "" when the add gave no id
 		if ferr := s.Kept.FinishResume(key); ferr != nil {
-			fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume order cannot be marked done: %v\n", who, ferr)
-		}
-		if (err == nil || uncertain) && s.Outcomes != nil {
-			fields := map[string]any{"source": t.Source, "panel": t.Panel}
-			if uncertain {
-				fields["uncertain"] = true
-			} else {
-				fields["order"] = id
-			}
-			s.Outcomes.Enqueue(outcomes.Record{Ship: who, Event: "resumed", Fields: fields}, nil)
+			fmt.Fprintf(os.Stderr, "admiral: ship %s: its resume text cannot be marked done: %v\n", r.Session, ferr)
 		}
 	}
 	return left
 }
 
 const (
-	liveGone  = iota // no ship afloat: the order goes to the resume panel
+	liveGone  = iota // no ship afloat, or text that can't be typed: finished
 	liveWait         // the ship is afloat but not at its prompt: try again when it stops
 	liveTyped        // the text went in at the ship's prompt: done
 )
 
-// typeResume types at the afloat ship's prompt, so no second ship is launched in
-// its checkout. Under resumeMu.
+// typeResume types at the afloat ship's prompt, so the ship that asked reads its
+// answers. Under resumeMu.
 func (s *Service) typeResume(key string, r state.Resume) int {
 	if s.TypeResume == nil || !typable(r.Text) {
 		return liveGone

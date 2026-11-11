@@ -509,7 +509,7 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
                 <input type="checkbox" checked={autopilot} onChange={(e) => setAutopilot((e.target as HTMLInputElement).checked)} />
                 <span class="choice-text">
                   <span class="choice-title">Autopilot</span>
-                  <span class="choice-desc">Run under the guard: it never merges or submits a review. Counts against the autopilot cap.</span>
+                  <span class="choice-desc">Run under the guard: it never merges or submits a review. Counts against max_ships.</span>
                 </span>
               </label>
               {error && <p role="alert">{error}</p>}

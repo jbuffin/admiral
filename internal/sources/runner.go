@@ -171,9 +171,6 @@ func (r *runner) session() (ranFor time.Duration, restarted bool, err error) {
 
 	r.mu.Lock()
 	r.state, r.errMsg, r.auth, r.ready = StateStarting, "", nil, false
-	for i := range r.panels {
-		r.panels[i].Listed = false
-	}
 	r.sid++
 	sid := r.sid
 	def := r.def
@@ -338,7 +335,6 @@ func (r *runner) mergePanels(fresh []Panel) {
 			if old.ID == pn.ID {
 				fresh[i].Orders = old.Orders
 				fresh[i].Error = old.Error
-				fresh[i].Listed = old.Listed
 			}
 		}
 	}
@@ -369,7 +365,6 @@ func (r *runner) pullOrders(ctx context.Context, p conn, panel string) {
 		if r.panels[i].ID == panel {
 			r.panels[i].Orders = orders
 			r.panels[i].Error = ""
-			r.panels[i].Listed = true
 		}
 	}
 	r.mu.Unlock()

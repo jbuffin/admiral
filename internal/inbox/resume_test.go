@@ -1,27 +1,19 @@
 package inbox
 
 import (
-	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/state"
 )
 
-type addFailure struct{ kind AddKind }
-
-func (e addFailure) Error() string    { return "add failed" }
-func (e addFailure) AddKind() AddKind { return e.kind }
-
 // resumeFixture is a home with one ship whose report lists q-1, answered.
 type resumeFixture struct {
-	t     *testing.T
-	s     *Service
-	calls int
-	err   error
+	t      *testing.T
+	s      *Service
+	afloat bool
+	typed  []string
 }
 
 func newResumeFixture(t *testing.T) *resumeFixture {
@@ -33,10 +25,13 @@ func newResumeFixture(t *testing.T) *resumeFixture {
 	}
 	f := &resumeFixture{t: t}
 	f.s = &Service{Home: home, Kept: st,
-		ResumeTarget: func() *config.ResumeSource { return &config.ResumeSource{Source: "orders", Panel: "orders"} },
-		AddOrder: func(context.Context, string, string, string) (string, error) {
-			f.calls++
-			return "o-1", f.err
+		Afloat: func(string) bool { return f.afloat },
+		TypeResume: func(_, text string) (bool, bool, error) {
+			if !f.afloat {
+				return false, false, nil
+			}
+			f.typed = append(f.typed, text)
+			return true, true, nil
 		}}
 	return f
 }
@@ -61,77 +56,56 @@ func (f *resumeFixture) ship(resume, note string) {
 
 func (f *resumeFixture) pending() int { return len(f.s.Kept.PendingResumes()) }
 
-func TestAddResumesByHowTheAddFailed(t *testing.T) {
+// A ship afloat has its text typed once; one that is gone, or text that can't
+// be typed, finishes the entry with nothing typed and nothing added.
+func TestResumeTextIsTypedOnceOrFinished(t *testing.T) {
 	cases := []struct {
-		name        string
-		err         error
-		wantPending int
-		wantLeft    bool
+		name      string
+		afloat    bool
+		resume    string
+		wantTyped int
 	}{
-		{"it worked", nil, 0, false},
-		{"the source refused the text", errors.New("An order cannot be empty"), 0, false},
-		{"the source is not running yet", addFailure{AddRetryable}, 1, true},
-		{"the plugin may have added it", addFailure{AddUncertain}, 0, false},
+		{"afloat", true, "Finish it", 1},
+		{"the ship is gone", false, "Finish it", 0},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			f := newResumeFixture(t)
-			f.ship("Finish https://github.com/acme/widgets/pull/1", "x")
+			f.afloat = c.afloat
+			f.ship(c.resume, "x")
 			f.s.CaptureResume("s1")
-			f.err = c.err
-			if left := f.s.addResumes(""); left != c.wantLeft {
-				t.Errorf("left = %v, want %v", left, c.wantLeft)
-			}
-			if got := f.pending(); got != c.wantPending {
-				t.Errorf("pending = %d, want %d", got, c.wantPending)
-			}
-			before := f.calls
 			f.s.addResumes("")
-			if again := f.calls - before; (c.wantPending == 0) != (again == 0) {
-				t.Errorf("a second pass sent %d more, with %d pending", again, c.wantPending)
+			f.s.addResumes("")
+			if len(f.typed) != c.wantTyped {
+				t.Errorf("typed %d times, want %d", len(f.typed), c.wantTyped)
+			}
+			if got := f.pending(); got != 0 {
+				t.Errorf("pending = %d, want 0", got)
 			}
 		})
 	}
 }
 
-// One order per resume text and set of items: a rewritten report adds none, and a
-// session name drawn again (its report gone in between) adds its own.
-func TestResumeOnceAndReuse(t *testing.T) {
-	f := newResumeFixture(t)
-	f.ship("Finish it", "first")
-	f.s.captureAll()
-	f.s.addResumes("")
-	f.write("reports/s1.json", `{"resume":"Finish it","why":"a rewrite","inbox":["q-1"]}`)
-	f.s.captureAll()
-	f.s.addResumes("")
-	if f.calls != 1 {
-		t.Fatalf("%d orders added for a rewritten report, want 1", f.calls)
-	}
-
-	for _, p := range []string{"reports/s1.json", "inbox/s1"} {
-		if err := os.RemoveAll(filepath.Join(f.s.Home, p)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	f.s.captureAll() // the report is gone: the done marker goes
-	f.ship("Finish it", "reused name")
-	f.s.captureAll()
-	f.s.addResumes("")
-	if f.calls != 2 {
-		t.Errorf("%d orders after the name was drawn again, want 2", f.calls)
-	}
-}
-
-func TestAddResumesOnlyForTheSession(t *testing.T) {
-	f := newResumeFixture(t)
-	f.ship("Finish it", "x")
-	f.s.CaptureResume("s1")
-	f.s.addResumes("other")
-	if f.calls != 0 {
-		t.Errorf("%d orders added for another ship's answer, want none", f.calls)
-	}
-	f.s.addResumes("s1")
-	if f.calls != 1 {
-		t.Errorf("%d orders added for s1, want 1", f.calls)
+// A pending text for a ship that is gone, or text with a control character,
+// is finished on the first pass and never typed.
+func TestPendingResumeOfAGoneShipOrUntypableTextFinishes(t *testing.T) {
+	for _, c := range []struct {
+		name, text string
+		afloat     bool
+	}{{"gone", "Finish it", false}, {"untypable", "Finish\x1b it", true}} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newResumeFixture(t)
+			f.afloat = c.afloat
+			if _, err := f.s.Kept.QueueResume("s1:k", "s1", c.text); err != nil {
+				t.Fatal(err)
+			}
+			f.s.addResumes("")
+			if f.pending() != 0 || len(f.typed) != 0 {
+				t.Errorf("pending %d typed %v, want finished and nothing typed", f.pending(), f.typed)
+			}
+			if fresh, _ := f.s.Kept.QueueResume("s1:k", "s1", c.text); fresh {
+				t.Error("the finished entry was queued again")
+			}
+		})
 	}
 }
