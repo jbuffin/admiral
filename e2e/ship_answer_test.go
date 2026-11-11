@@ -12,7 +12,7 @@ import (
 	"github.com/jbuffin/admiral/internal/keymap"
 )
 
-// answerWorld starts a Claude ship "alpha" whose pane records its raw input, a Codex ship, and a fleet whose Claude config dir the test can write transcripts into.
+// answerWorld starts a Claude ship "alpha" whose pane records its raw input, a Codex ship, a Copilot ship, and a fleet whose Claude config dir the test can write transcripts into.
 func answerWorld(t *testing.T) (w *world, cfgDir string) {
 	t.Helper()
 	w = newWorld(t)
@@ -24,8 +24,9 @@ func answerWorld(t *testing.T) (w *world, cfgDir string) {
 	env["CLAUDE_CONFIG_DIR"] = cfgDir
 	cfg, err := json.Marshal(map[string]any{"version": 1, "fleets": map[string]any{
 		"work": map[string]any{"name": "Work", "search_roots": []string{w.work},
-			"claude": map[string]any{"executable": w.fakeExe("claude"), "env": env},
-			"codex":  map[string]any{"executable": w.fakeExe("codex"), "env": env}},
+			"claude":  map[string]any{"executable": w.fakeExe("claude"), "env": env},
+			"codex":   map[string]any{"executable": w.fakeExe("codex"), "env": env},
+			"copilot": map[string]any{"executable": w.fakeExe("copilot"), "env": env}},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -41,6 +42,15 @@ func claudeKeys(t *testing.T) keymap.Map {
 	m, ok := keymap.For("claude")
 	if !ok {
 		t.Fatal("keymap.For(claude) has no key map")
+	}
+	return m
+}
+
+func codexKeys(t *testing.T) keymap.Map {
+	t.Helper()
+	m, ok := keymap.For("codex")
+	if !ok {
+		t.Fatal("keymap.For(codex) has no key map")
 	}
 	return m
 }
@@ -148,10 +158,46 @@ func TestShipAnswer_PermissionCardSendsTheKeyMapsKeysOnlyWhileTheReasonMatches(t
 	})
 }
 
-func TestShipAnswer_AShipOnAnotherHarnessIsRefusedWith409(t *testing.T) {
+func TestShipAnswer_CodexPermissionCardSendsCodexKeysOnlyWhileTheReasonMatches(t *testing.T) {
 	t.Parallel()
 	w, _ := answerWorld(t)
+	keys := codexKeys(t)
+	allow, deny := mustKeys(t)(keys.Permission("allow")), mustKeys(t)(keys.Permission("deny"))
 	ship := w.launch(w.order("work", "codex", "beta", noSkill, "go"))
+	w.waitFile(ship.Session, "recorded")
+	pane := shipPaneOf(w, ship.Session)
+	w.waitPaneWorking(pane)
+	answer := func(reason, choice string) int {
+		code, _ := send(t, http.MethodPost, w.shipURL(ship.Session, "/answer"), answerReq("permission", reason, map[string]any{"choice": choice}))
+		return code
+	}
+
+	w.hookAt(pane, "PermissionRequest", hookPerm)
+	w.waitShip(ship.Session, "needs_you", func(s apiShip) bool { return s.Status == "needs_you" && s.Reason == "permission:Bash" })
+
+	if code := answer("permission:apply_patch", "allow"); code != http.StatusConflict {
+		t.Errorf("answer to a Codex ship with a stale reason = %d, want 409", code)
+	}
+	w.holdStdin(ship.Session, "", "")
+
+	if code := answer("permission:Bash", "allow"); !succeeded(code) {
+		t.Fatalf("answer allow to a Codex ship = %d, want 200 or 204", code)
+	}
+	w.waitStdinOf(ship.Session, "", allow)
+	w.waitShip(ship.Session, "underway after the answer", func(s apiShip) bool { return s.Status == "underway" })
+
+	w.hookAt(pane, "PermissionRequest", hookPerm)
+	w.waitShip(ship.Session, "needs_you again", func(s apiShip) bool { return s.Reason == "permission:Bash" })
+	if code := answer("permission:Bash", "deny"); !succeeded(code) {
+		t.Fatalf("answer deny to a Codex ship = %d, want 200 or 204", code)
+	}
+	w.waitStdinOf(ship.Session, "", allow+deny)
+}
+
+func TestShipAnswer_AShipOnAHarnessWithoutAKeyMapIsRefusedWith409(t *testing.T) {
+	t.Parallel()
+	w, _ := answerWorld(t)
+	ship := w.launch(w.order("work", "copilot", "gamma", noSkill, "go"))
 	w.waitFile(ship.Session, "recorded")
 	pane := shipPaneOf(w, ship.Session)
 	w.waitPaneWorking(pane)
@@ -160,7 +206,7 @@ func TestShipAnswer_AShipOnAnotherHarnessIsRefusedWith409(t *testing.T) {
 
 	code, _ := send(t, http.MethodPost, w.shipURL(ship.Session, "/answer"), answerReq("permission", "permission:Bash", map[string]any{"choice": "allow"}))
 	if code != http.StatusConflict {
-		t.Errorf("answer to a Codex ship = %d, want 409", code)
+		t.Errorf("answer to a Copilot ship = %d, want 409", code)
 	}
 	w.holdStdin(ship.Session, "", "")
 }

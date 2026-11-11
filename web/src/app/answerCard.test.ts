@@ -91,10 +91,9 @@ describe('answerCard: none', () => {
     expect(needs('crew', conv).kind).toBe('none');
   });
 
-  it('shows nothing for a codex harness', () => {
-    expect(needs('permission:Bash', conv, { harness: 'codex' }).kind).toBe('none');
+  it('shows no question card for a codex harness yet', () => {
     expect(needs('question', conv, { harness: 'codex' }).kind).toBe('none');
-    expect(needs('notification:permission_prompt', conv, { harness: 'codex' }).kind).toBe('none');
+    expect(needs('notification:permission_prompt', conv, { harness: 'codex' }).kind).toBe('terminal');
   });
 
   it('shows nothing for a Copilot ship that is not needing you', () => {
@@ -151,13 +150,24 @@ describe('answerCard: Copilot', () => {
   });
 });
 
+describe('answerCard: a codex ship', () => {
+  it.each(['Bash', 'apply_patch'])('gets a permission card for %s, with no conversation to read', (tool) => {
+    expect(needs(`permission:${tool}`, ok(), { harness: 'codex' })).toEqual({ kind: 'permission', tool, reason: `permission:${tool}`, call: undefined });
+  });
+
+  it('sends a reason with no card to the terminal', () => {
+    expect(needs('stop', ok(), { harness: 'codex' }).kind).toBe('terminal');
+  });
+});
+
 describe('cardFor', () => {
   const boat = (harness: string): CrewBoat => ({ name: 'mate', conversation: true, harness, status: 'needs_you', reason: 'permission:Bash', exit_code: null, exit_signal: null });
   const ship = { harness: 'claude', status: 'working', reason: 'crew', crew: [] } as unknown as Ship;
 
-  it('gives a Claude boat its own card and a boat of another harness none', () => {
+  it('gives a Claude or Codex boat its own card and a boat with no key map none', () => {
     expect(cardFor(ship, boat('claude'), ok()).kind).toBe('permission');
-    expect(cardFor(ship, boat('codex'), ok()).kind).toBe('none');
+    expect(cardFor(ship, boat('codex'), ok()).kind).toBe('permission');
     expect(cardFor(ship, { ...boat('copilot'), reason: 'notification:permission_prompt' }, ok()).kind).toBe('permission');
+    expect(cardFor(ship, boat('gemini'), ok()).kind).toBe('none');
   });
 });
