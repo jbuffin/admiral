@@ -37,8 +37,11 @@ export interface Ship {
   order_id: string;
   title: string;
   tail: string;
+  fleet_name?: string;
   fleet_color: string;
   launched: string;
+  // When a needs-you ship started waiting; omitted otherwise.
+  stop_since?: string;
   crew_live: number;
   // Set on a moored ship; `stale` is omitted while false.
   moored_at?: string;
@@ -66,6 +69,8 @@ export interface CrewBoat {
   harness: string;
   reason?: string;
   status: string;
+  launched?: string;
+  last_activity?: string;
   exit_code: number | null;
   exit_signal: string | null;
 }

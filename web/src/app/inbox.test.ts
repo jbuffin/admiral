@@ -182,7 +182,7 @@ describe('createInboxQueue', () => {
   it('folds a ship stop when the ship turns to needs_you for its crew', () => {
     const q = createInboxQueue();
     q.sync({ items: [], ships: [ship('a', 'alpha', 'needs_you', { stop_since: at(1) })] }, T0);
-    q.sync({ items: [], ships: [ship('a', 'alpha', 'needs_you', { reason: 'crew', crew: [crew('Mate', 'needs_you')] })] }, T0 + 1000);
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'needs_you', { reason: 'crew', crew: [crew('Mate', 'needs_you', { launched: at(2) })] })] }, T0 + 1000);
     expect(q.entries().map((e) => [e.key, e.folded])).toEqual([
       ['stop:a', 'Back underway'],
       ['stop:a/Mate', null],
