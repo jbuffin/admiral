@@ -149,3 +149,40 @@ func TestAutopilotGate_ACrewLaunchFollowsTheFleetsGuard(t *testing.T) {
 		t.Errorf("the refused crew launch left %d notices, want 1", len(n))
 	}
 }
+
+func TestAutopilotGate_AProvenGuardWithNoJudgeHarnessIsRefusedForTheAdvisor(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	w.seedGuard("work", "claude", true) // no judge probes seeded
+	w.writeCue("wait go", "exit 0")
+	w.start()
+
+	req := w.autopilotLaunch("claude", "no-advisor", nil)
+	req["fleet"] = "work"
+	code, body := w.post(req)
+	if code != http.StatusBadRequest {
+		t.Fatalf("autopilot launch with no judge harness = %d, want 400: %s", code, body)
+	}
+	if low := strings.ToLower(body); !strings.Contains(low, "claude") || !strings.Contains(low, "advisor not proven") {
+		t.Errorf("the 400 body %q must name the harness and say the advisor is not proven", body)
+	}
+	for _, s := range w.in.ships(t) {
+		if s.Name == "no-advisor" {
+			t.Errorf("the refused launch created ship %q", s.Name)
+		}
+	}
+	const title = "Couldn't launch unattended on Claude: advisor not proven"
+	deadline := time.Now().Add(10 * time.Second)
+	var found []noticeItem
+	for time.Now().Before(deadline) && len(found) == 0 {
+		for _, n := range w.in.notices(t) {
+			if n.Title == title {
+				found = append(found, n)
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if len(found) != 1 || !strings.Contains(found[0].Notice.Body, "Work") {
+		t.Errorf("notices titled %q = %+v, want one that names the fleet Work", title, found)
+	}
+}

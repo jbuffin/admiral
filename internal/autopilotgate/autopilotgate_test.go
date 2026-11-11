@@ -11,7 +11,37 @@ import (
 
 	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/capabilities"
+	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/judge"
 )
+
+// flt is a fleet with no harnesses: enough for a guard refusal, which looks no further.
+func flt(key, name string) config.Fleet { return config.Fleet{Key: key, Name: name} }
+
+// claudeFleet has a claude dock whose executable exists.
+func claudeFleet(t *testing.T, key, name string) config.Fleet {
+	t.Helper()
+	exe := filepath.Join(t.TempDir(), "claude")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return config.Fleet{Key: key, Name: name, Harnesses: []config.Harness{{Name: "claude", Executable: exe, Found: true}}}
+}
+
+// proveJudge records claude's no-tools and no-network passes for the fleet at the detected version.
+func proveJudge(t *testing.T, home, fleet string) {
+	t.Helper()
+	s := capabilities.Open(home)
+	now := time.Now()
+	if err := s.RecordVersion(fleet, "claude", "2.1.300", now); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []capabilities.ID{capabilities.JudgeNoTools, capabilities.JudgeNoNetwork} {
+		if err := s.Record(fleet, "claude", "2.1.300", id, capabilities.Result{Passed: true, At: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
 
 // seed records the guard result of a harness version and makes that version the detected one.
 func seed(t *testing.T, home, fleet, harness, version string, guard *bool) {
@@ -117,7 +147,8 @@ func TestProvenIsFalseWhenAFailedVersionCheckClearedTheVersion(t *testing.T) {
 func TestCheckLetsAProvenHarnessThroughWithoutANotice(t *testing.T) {
 	home := t.TempDir()
 	seed(t, home, "work", "claude", "2.1.300", yes())
-	if err := autopilotgate.Check(home, "work", "Work", "claude"); err != nil {
+	proveJudge(t, home, "work")
+	if err := autopilotgate.Check(home, claudeFleet(t, "work", "Work"), "claude"); err != nil {
 		t.Fatalf("Check on a proven harness = %v, want nil", err)
 	}
 	if n := notices(t, home); len(n) != 0 {
@@ -128,7 +159,7 @@ func TestCheckLetsAProvenHarnessThroughWithoutANotice(t *testing.T) {
 func TestCheckRefusesAnUnprovenHarnessWithOneNoticeNamingHarnessAndGuard(t *testing.T) {
 	home := t.TempDir()
 	seed(t, home, "work", "codex", "0.9.0", nil)
-	err := autopilotgate.Check(home, "work", "Work", "codex")
+	err := autopilotgate.Check(home, flt("work", "Work"), "codex")
 	var refusal *autopilotgate.Refusal
 	if !errors.As(err, &refusal) {
 		t.Fatalf("Check = %v, want a *Refusal", err)
@@ -154,7 +185,7 @@ func TestCheckRefusesAnUnprovenHarnessWithOneNoticeNamingHarnessAndGuard(t *test
 func TestCheckDoesNotStackNoticesWhileOneIsOpen(t *testing.T) {
 	home := t.TempDir()
 	for range 3 {
-		if autopilotgate.Check(home, "work", "Work", "codex") == nil {
+		if autopilotgate.Check(home, flt("work", "Work"), "codex") == nil {
 			t.Fatal("an unproven harness was let through")
 		}
 	}
@@ -167,7 +198,7 @@ func TestCheckDoesNotStackNoticesWhileOneIsOpen(t *testing.T) {
 	if err := os.Remove(n[0].File); err != nil {
 		t.Fatal(err)
 	}
-	autopilotgate.Check(home, "work", "Work", "codex")
+	autopilotgate.Check(home, flt("work", "Work"), "codex")
 	if got := len(notices(t, home)); got != 1 {
 		t.Errorf("after a dismissal the next refusal left %d notices, want 1", got)
 	}
@@ -175,9 +206,9 @@ func TestCheckDoesNotStackNoticesWhileOneIsOpen(t *testing.T) {
 
 func TestCheckKeepsOneNoticePerFleetAndHarness(t *testing.T) {
 	home := t.TempDir()
-	autopilotgate.Check(home, "work", "Work", "codex")
-	autopilotgate.Check(home, "home", "Home", "codex")
-	autopilotgate.Check(home, "work", "Work", "copilot")
+	autopilotgate.Check(home, flt("work", "Work"), "codex")
+	autopilotgate.Check(home, flt("home", "Home"), "codex")
+	autopilotgate.Check(home, flt("work", "Work"), "copilot")
 	n := notices(t, home)
 	if len(n) != 3 {
 		t.Fatalf("three different fleet and harness pairs left %d notices, want 3: %+v", len(n), n)
@@ -202,7 +233,7 @@ func TestAPassedGuardRecordedForAHarnessWithNoProbeInCodeStillRefuses(t *testing
 		if autopilotgate.Proven(home, "work", h) {
 			t.Errorf("a stored pass proved %s, which has no registered guard probe", h)
 		}
-		if autopilotgate.Check(home, "work", "Work", h) == nil {
+		if autopilotgate.Check(home, flt("work", "Work"), h) == nil {
 			t.Errorf("Check let %s through on a stored pass", h)
 		}
 	}
@@ -211,9 +242,9 @@ func TestAPassedGuardRecordedForAHarnessWithNoProbeInCodeStillRefuses(t *testing
 // Two fleets can share a display name: each gets its own notice, and a repeat dedupes.
 func TestCheckKeepsFleetsThatShareANameApart(t *testing.T) {
 	home := t.TempDir()
-	autopilotgate.Check(home, "work", "Work", "codex")
-	autopilotgate.Check(home, "work-2", "Work", "codex")
-	autopilotgate.Check(home, "work-2", "Work", "codex")
+	autopilotgate.Check(home, flt("work", "Work"), "codex")
+	autopilotgate.Check(home, flt("work-2", "Work"), "codex")
+	autopilotgate.Check(home, flt("work-2", "Work"), "codex")
 	n := notices(t, home)
 	if len(n) != 2 {
 		t.Fatalf("got %d notices, want one per fleet key: %+v", len(n), n)
@@ -225,8 +256,83 @@ func TestCheckKeepsFleetsThatShareANameApart(t *testing.T) {
 
 func TestCheckHandlesAMultibyteHarnessName(t *testing.T) {
 	home := t.TempDir()
-	autopilotgate.Check(home, "work", "Work", "émacs")
+	autopilotgate.Check(home, flt("work", "Work"), "émacs")
 	if n := notices(t, home); len(n) != 1 || !strings.Contains(n[0].Title, "Émacs") {
 		t.Errorf("notices = %+v, want one titled with Émacs", n)
+	}
+}
+
+func TestAdvisorIsProvenWhenTheFleetHasAJudgeHarness(t *testing.T) {
+	home := t.TempDir()
+	proveJudge(t, home, "work")
+	if ok, why := autopilotgate.Advisor(claudeFleet(t, "work", "Work"), capabilities.Open(home)); !ok || why != "" {
+		t.Errorf("Advisor = %v, %q, want proven with no reason", ok, why)
+	}
+}
+
+func TestAdvisorIsRefusedWithTheJudgeHarnessReasonWhenThereIsNone(t *testing.T) {
+	home := t.TempDir()
+	fleet := claudeFleet(t, "work", "Work")
+	ok, why := autopilotgate.Advisor(fleet, capabilities.Open(home))
+	_, err := judge.Choose(fleet, capabilities.Open(home))
+	var none *judge.NoJudgeHarness
+	if !errors.As(err, &none) {
+		t.Fatalf("Choose = %v, want NoJudgeHarness", err)
+	}
+	if ok || why != none.Reason || why == "" {
+		t.Errorf("Advisor = %v, %q, want refused with %q", ok, why, none.Reason)
+	}
+}
+
+func TestCheckRefusesAProvenGuardWithNoJudgeHarnessAndPostsOneAdvisorNotice(t *testing.T) {
+	home := t.TempDir()
+	seed(t, home, "work", "claude", "2.1.300", yes())
+	fleet := claudeFleet(t, "work", "Work")
+	err := autopilotgate.Check(home, fleet, "claude")
+	var refusal *autopilotgate.AdvisorRefusal
+	if !errors.As(err, &refusal) {
+		t.Fatalf("Check = %v, want an *AdvisorRefusal", err)
+	}
+	if refusal.Fleet != "work" || refusal.Harness != "claude" || refusal.Reason == "" {
+		t.Errorf("refusal = %+v, want fleet work, harness claude and a reason", refusal)
+	}
+	if msg := strings.ToLower(err.Error()); !strings.Contains(msg, "advisor") || !strings.Contains(msg, "claude") {
+		t.Errorf("error %q must name the harness and the advisor", err)
+	}
+	n := notices(t, home)
+	if len(n) != 1 {
+		t.Fatalf("got %d notices, want 1: %+v", len(n), n)
+	}
+	if n[0].Title != "Couldn't launch unattended on Claude: advisor not proven" {
+		t.Errorf("notice title = %q", n[0].Title)
+	}
+	for _, want := range []string{"Work", "work", refusal.Reason} {
+		if !strings.Contains(n[0].Body, want) {
+			t.Errorf("notice body %q lacks %q: it names the fleet by name and key and gives the reason", n[0].Body, want)
+		}
+	}
+
+	for range 2 {
+		if autopilotgate.Check(home, fleet, "claude") == nil {
+			t.Fatal("a harness with no judge harness was let through")
+		}
+	}
+	if got := len(notices(t, home)); got != 1 {
+		t.Errorf("three advisor refusals left %d notices, want 1", got)
+	}
+}
+
+// The guard comes first: its refusal and notice are what they were.
+func TestCheckStillRefusesTheGuardFirstWhenTheAdvisorIsMissingToo(t *testing.T) {
+	home := t.TempDir()
+	seed(t, home, "work", "claude", "2.1.300", nil)
+	err := autopilotgate.Check(home, claudeFleet(t, "work", "Work"), "claude")
+	var refusal *autopilotgate.Refusal
+	if !errors.As(err, &refusal) {
+		t.Fatalf("Check = %v, want the guard's *Refusal", err)
+	}
+	n := notices(t, home)
+	if len(n) != 1 || n[0].Title != "Couldn't launch unattended on Claude: guard not proven" {
+		t.Errorf("notices = %+v, want only the guard's notice", n)
 	}
 }

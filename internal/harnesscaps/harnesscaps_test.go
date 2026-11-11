@@ -143,8 +143,13 @@ func TestListShowsPassedFailedAndNotCheckedPerFleetAndHarness(t *testing.T) {
 		g.CheckedAt == nil || !strings.HasPrefix(*g.CheckedAt, "2026-11-11T09:00:00") {
 		t.Errorf("work claude guard = %+v, want passed, its detail, label and the time checked", g)
 	}
-	if a := claude.status(t, "autopilot.advisor"); a.Status != "not_checked" || a.CheckedAt != nil {
-		t.Errorf("work claude advisor = %+v, want not_checked with no time", a)
+	_, noJudge := judge.Choose(config.Fleet{Key: "work", Harnesses: []config.Harness{dock("claude", "x"), dock("codex", "x")}}, store)
+	var none *judge.NoJudgeHarness
+	if !errors.As(noJudge, &none) {
+		t.Fatalf("Choose = %v, want NoJudgeHarness", noJudge)
+	}
+	if a := claude.status(t, "autopilot.advisor"); a.Status != "failed" || a.Detail != none.Reason || a.CheckedAt != nil {
+		t.Errorf("work claude advisor = %+v, want failed with the reason %q and no time: it follows the fleet's judge harness live", a, none.Reason)
 	}
 	if f := got.Fleets[1].Harnesses[0].status(t, "autopilot.guard_hook"); f.Status != "failed" || f.Detail != "the hook never ran" {
 		t.Errorf("home claude guard = %+v, want failed with its detail", f)
@@ -343,5 +348,68 @@ func TestCheckAnswersWithTheJudgeHarnessItJustProved(t *testing.T) {
 	j := rawJudge(t, rec.Body.Bytes())
 	if string(j["harness"]) != `"claude"` || string(j["lookout_model"]) != `"haiku"` || string(j["json_schema"]) != "false" {
 		t.Errorf("check answer judge = %v, want claude chosen now the check proved no tools and no network", j)
+	}
+}
+
+func TestAdvisorFollowsTheFleetsJudgeHarnessOnEveryHarness(t *testing.T) {
+	home := t.TempDir()
+	store := capabilities.Open(home)
+	prove(t, store, "full", "claude", "2.1.300", capabilities.JudgeNoTools, capabilities.JudgeNoNetwork)
+	prove(t, store, "full", "codex", "0.167.1")
+	prove(t, store, "none", "claude", "2.1.300", capabilities.JudgeNoTools)
+	fleets := []config.Fleet{
+		fleet("full", "Full", dock("claude", script(t, "2.1.300")), dock("codex", script(t, "0.167.1"))),
+		fleet("none", "None", dock("claude", script(t, "2.1.300"))),
+	}
+	s := service(t, home, fleets...)
+	rec := do(t, s, "GET", "/api/harness-capabilities", "")
+	var got struct {
+		Fleets []fleetJSON `json:"fleets"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || len(got.Fleets) != 2 {
+		t.Fatalf("GET = %d %s (%v)", rec.Code, rec.Body, err)
+	}
+	for _, h := range got.Fleets[0].Harnesses {
+		if a := h.status(t, "autopilot.advisor"); a.Status != "passed" {
+			t.Errorf("full %s advisor = %+v, want passed: the fleet's claude is its judge harness", h.Harness, a)
+		}
+	}
+	_, why := judge.Choose(fleets[1], store)
+	var none *judge.NoJudgeHarness
+	if !errors.As(why, &none) {
+		t.Fatalf("Choose = %v, want NoJudgeHarness", why)
+	}
+	if a := got.Fleets[1].Harnesses[0].status(t, "autopilot.advisor"); a.Status != "failed" || a.Detail != none.Reason {
+		t.Errorf("none claude advisor = %+v, want failed with the reason %q", a, none.Reason)
+	}
+}
+
+func TestCheckAnswersWithTheAdvisorTheJudgeHarnessItJustProvedGives(t *testing.T) {
+	home := t.TempDir()
+	proves := func(id capabilities.ID) probes.Probe {
+		return probes.Probe{Harness: "claude", Capability: id,
+			Run: func(context.Context, probes.Target) probes.Outcome {
+				return probes.Outcome{Passed: true, Detail: "fake"}
+			}}
+	}
+	s := service(t, home, fleet("work", "Work", dock("claude", script(t, "2.1.300 (test)"))))
+	s.Runner = probes.New(home, proves(capabilities.JudgeNoTools), proves(capabilities.JudgeNoNetwork))
+
+	rec := do(t, s, "POST", "/api/harness-capabilities/check", `{"fleet":"work","harness":"claude"}`)
+	var got harnessJSON
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("POST check = %d %s (%v)", rec.Code, rec.Body, err)
+	}
+	if a := got.status(t, "autopilot.advisor"); a.Status != "passed" {
+		t.Errorf("check answer advisor = %+v, want passed now the check proved the judge harness", a)
+	}
+
+	empty := service(t, t.TempDir(), fleet("work", "Work", dock("claude", script(t, "2.1.300 (test)"))))
+	rec = do(t, empty, "POST", "/api/harness-capabilities/check", `{"fleet":"work","harness":"claude"}`)
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("POST check = %d %s (%v)", rec.Code, rec.Body, err)
+	}
+	if a := got.status(t, "autopilot.advisor"); a.Status != "failed" || a.Detail == "" {
+		t.Errorf("check answer advisor with no judge proof = %+v, want failed with the reason", a)
 	}
 }

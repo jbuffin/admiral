@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -180,5 +181,34 @@ func TestConcurrentLaunchesOfOneOrder(t *testing.T) {
 	}
 	if got[http.StatusCreated] != 1 || got[http.StatusConflict] != n-1 {
 		t.Errorf("%d overlapping launches of one order gave statuses %v, want one 201 and %d 409", n, got, n-1)
+	}
+}
+
+func TestAutopilotShipGetsItsAdvisorFromTheJudgeHarness(t *testing.T) {
+	t.Parallel()
+	w := autopilotWorld(t, 0)
+	ship := w.launch(w.autopilotLaunch("claude", "advised", nil))
+	report := w.record(ship.Session).env["ADMIRAL_REPORT"]
+
+	question := `{"question":"Rebase onto main?","options":["yes","no"],"recommendation":"yes"}`
+	r := w.admiralWith(cliOpts{stdin: question, env: []string{"ADMIRAL_SHIP=" + ship.Session, "ADMIRAL_REPORT=" + report}}, "advise")
+	w.expectExit(r, 0, "admiral advise from the autopilot ship")
+	var got struct {
+		Stakes string `json:"stakes"`
+		Reason string `json:"reason"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(r.stdout)), &got); err != nil || strings.Count(r.stdout, "\n") != 1 {
+		t.Fatalf("stdout = %q, want one JSON line (%v)", r.stdout, err)
+	}
+	if got.Stakes != "low" || got.Reason == "" {
+		t.Errorf("answer = %+v, want the fake judge's low answer with a reason", got)
+	}
+
+	rec := lastOf(w.waitEvent(ship.Session, "advised", 1), "advised")
+	if rec["stakes"] != "low" || rec["harness"] != "claude" {
+		t.Errorf("advised line = %v, want stakes low on claude", rec)
+	}
+	if raw, _ := json.Marshal(rec); strings.Contains(string(raw), "Rebase") {
+		t.Errorf("the advised line holds the question: %s", raw)
 	}
 }
