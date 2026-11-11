@@ -150,6 +150,12 @@ fi
 # record nor run cues, or the ship would run them twice. By default it exits 1 at once, so the
 # wrapper falls back to the plain TUI. FAKE_APP_SERVER=listen (a fleet env value) listens on the
 # --listen unix socket instead, until it is killed, for the journey that wants the live path.
+# The wrapper asks codex --help whether --no-daemon exists; answer without recording.
+if [ "$(basename "$0")" = codex ] && [ "$1" = --help ] && [ $# -eq 1 ]; then
+  echo "Usage: codex [OPTIONS]"
+  echo "      --no-daemon  Do not use the shared daemon"
+  exit 0
+fi
 if [ "$(basename "$0")" = codex ] && [ "$1" = app-server ]; then
   if [ "$FAKE_APP_SERVER" = listen ]; then
     path=""
