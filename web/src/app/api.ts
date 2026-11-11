@@ -44,6 +44,8 @@ export interface Ship {
   polled_at?: string;
   stale?: boolean;
   prs?: MooredPR[];
+  url?: string;
+  source?: string;
 }
 
 const API = '/api/v1';
@@ -207,6 +209,8 @@ export interface Order {
   title: string;
   text?: string;
   repo?: string;
+  url?: string;
+  sub_issues?: number;
 }
 export interface OrderView {
   id: string;

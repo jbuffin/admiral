@@ -41,6 +41,13 @@ export function preferencesPage(path: string): PreferencesPage {
   return (PREFERENCES_PAGES as readonly string[]).includes(page) ? (page as PreferencesPage) : 'sources';
 }
 
+export const campaignPath = (_id: string) => '';
+
+/** The campaign id a Campaign page path names, if any. */
+export function campaignOf(_path: string): string | null {
+  return null;
+}
+
 function sync() {
   loc.value = { path: location.pathname, search: location.search };
 }

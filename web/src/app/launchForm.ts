@@ -106,6 +106,28 @@ export function launchBody(form: LaunchFormState): Record<string, unknown> {
   };
 }
 
+export interface CampaignLaunchState {
+  campaignId: string;
+  childUrl: string;
+  harness: string;
+  dir: string;
+  clone: boolean;
+  cloneRepo?: string;
+  startAnyway: boolean;
+  model: string;
+  effort: string;
+}
+
+/** The order the dirs call names for a campaign child: source `campaign`, id `<campaign id>/<child URL>`. */
+export function campaignOrder(_campaignId: string, _childUrl: string): { source: string; id: string } {
+  return { source: '', id: '' };
+}
+
+/** The route and body of a campaign child's launch; the server picks skill, text and autopilot. */
+export function campaignLaunch(_form: CampaignLaunchState): { path: string; body: Record<string, unknown> } {
+  return { path: '', body: {} };
+}
+
 export function effortsFor(harness: string): string[] {
   return EFFORTS[harness] ?? [];
 }
