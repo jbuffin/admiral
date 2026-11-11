@@ -8,6 +8,8 @@ export type AnswerCard =
   | { kind: 'question'; reason: string; item: string; text: string; options: string[]; descriptions: string[] };
 
 const SUBAGENT_TOOLS = new Set(['task', 'Task', 'Agent']);
+const HAS_KEY_MAP = new Set(['claude', 'copilot', 'codex']);
+
 const NO_CARD_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode']);
 
 // One AskUserQuestion call with several questions becomes items whose ids share the part before '#'.
@@ -43,9 +45,10 @@ function copilotCard(r: string, conv: Conversation): AnswerCard {
 
 /** What the Conversation tab shows for a ship or boat that may be asking: a card to answer in place, a pointer to the terminal, or nothing. */
 export function answerCard({ harness, status, reason, conv }: { harness: string; status: string; reason?: string; conv: Conversation }): AnswerCard {
-  if ((harness !== 'claude' && harness !== 'copilot') || status !== 'needs_you' || reason === 'crew') return { kind: 'none' };
+  if (!HAS_KEY_MAP.has(harness) || status !== 'needs_you' || reason === 'crew') return { kind: 'none' };
   const r = reason ?? '';
   if (harness === 'copilot') return copilotCard(r, conv);
+  if (harness === 'codex' && r === 'question') return { kind: 'none' };
   if (r === 'question' || r === 'permission:AskUserQuestion') return questionCard(r, conv);
   if (r.startsWith('permission:')) {
     const tool = r.slice('permission:'.length);

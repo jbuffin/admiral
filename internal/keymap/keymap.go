@@ -31,6 +31,8 @@ func For(harness string) (Map, bool) {
 		return claude, true
 	case "copilot":
 		return copilot, true
+	case "codex":
+		return codex, true
 	}
 	return Map{}, false
 }
@@ -47,4 +49,12 @@ var claude = Map{
 var copilot = Map{
 	permission: map[string]string{"allow": "1", "deny": "\x1b"},
 	question:   func(option int) string { return strings.Repeat("\x1b[B", option-1) + "\r" },
+}
+
+// Codex's menus take the digit at once, and "Yes, proceed" is item 1 on the command and the patch menu. Deny is Esc,
+// the menu's own cancel: Codex ends the turn on it, and at an idle prompt one Esc only hints "esc again to edit previous
+// message" and submits nothing.
+var codex = Map{
+	permission: map[string]string{"allow": "1", "deny": "\x1b"},
+	question:   strconv.Itoa,
 }
