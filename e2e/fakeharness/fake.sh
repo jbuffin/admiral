@@ -16,7 +16,7 @@
 #                  (asks the hooks about, and runs, the command with "&& true" added) or
 #                  no-tool (never calls the tool).
 #
-#   judge call     claude with --tools, `codex exec`, or copilot with piped stdin and no -p:
+#   judge call     claude with `--tools ""`, `codex exec`, or copilot with piped stdin and no -p:
 #                  a judge probe or call. It reads the prompt from stdin, answers {"reply":
 #                  "ok"} in the harness's real shape (claude's structured_output, codex's -o
 #                  file, copilot's stdout) and leaves headless-runs alone. A claude call under
@@ -128,7 +128,14 @@ done
 # A judge call, which also carries -p on claude and so comes before the guard run below.
 judge=""
 case "$(basename "$0")" in
-claude) for a in "$@"; do [ "$a" = "--tools" ] && judge=1; done ;;
+claude)
+  # Only the empty tool list: the chat session passes --tools with a list.
+  tp=""
+  for a in "$@"; do
+    [ "$tp" = "--tools" ] && [ -z "$a" ] && judge=1
+    tp=$a
+  done
+  ;;
 codex) [ "$1" = exec ] && judge=1 ;;
 copilot) [ -z "$headless" ] && [ ! -t 0 ] && judge=1 ;;
 esac
