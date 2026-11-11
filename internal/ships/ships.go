@@ -352,6 +352,30 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
 		return
 	}
+	if req.Clone {
+		if req.Dir != "" {
+			writeError(w, http.StatusBadRequest, "send dir or clone, not both")
+			return
+		}
+		repo, text := "", req.Text
+		if req.Source != "" {
+			var lerr *launcher.Error
+			if text, _, repo, _, _, lerr = s.Orders.Order(req.Source, req.OrderID); lerr != nil {
+				writeError(w, lerr.Status, lerr.Msg)
+				return
+			}
+		}
+		dir, err := s.Launcher.Clone(r.Context(), req, repo, text)
+		if err != nil {
+			le, ok := err.(*launcher.Error)
+			if !ok {
+				le = &launcher.Error{Status: http.StatusInternalServerError, Msg: err.Error()}
+			}
+			writeError(w, le.Status, le.Msg)
+			return
+		}
+		req.Dir = dir
+	}
 	if req.Autopilot {
 		s.admitMu.Lock()
 		defer s.admitMu.Unlock()

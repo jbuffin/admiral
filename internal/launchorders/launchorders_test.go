@@ -43,6 +43,7 @@ func newFixture(t *testing.T) *fixture {
 	cfg := `{"version":1,"fleets":{
 	  "work":{"name":"Work","search_roots":[` + quote(f.work) + `],"claude":{},"codex":{}},
 	  "home":{"name":"Home","search_roots":[` + quote(f.work) + `],"claude":{}},
+	  "cloner":{"name":"Cloner","search_roots":[` + quote(f.work) + `],"clone_root":` + quote(filepath.Join(root, "clones")) + `,"claude":{}},
 	  "nosearch":{"name":"No Search","claude":{}}}}`
 	if err := os.WriteFile(filepath.Join(f.home, config.FileName), []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
@@ -331,7 +332,10 @@ func cloneOf(t *testing.T, f *fixture, body map[string]string) (clone map[string
 	_ = json.Unmarshal(r["selected"], &sel)
 	_ = json.Unmarshal(r["reason"], &why)
 	if sel != nil {
-		selected, reason = *sel, *why
+		selected = *sel
+	}
+	if why != nil {
+		reason = *why
 	}
 	return clone, selected, reason
 }
@@ -367,8 +371,8 @@ func TestDirsTellsAnUnclonedRepoWillBeCloned(t *testing.T) {
 		if clone["repo"] != c.repo || clone["path"] != c.path {
 			t.Errorf("%s: clone = %v, want repo %q and path %q", c.name, clone, c.repo, c.path)
 		}
-		if selected == last || reason == "last_used" {
-			t.Errorf("%s: selected %q (%s): the dock's last directory is the wrong repo, the clone is the preselection", c.name, selected, reason)
+		if selected != "" || reason != "clone" {
+			t.Errorf("%s: selected %q (%s), want no selected checkout and reason clone: the clone is the preselection, not the dock's last directory", c.name, selected, reason)
 		}
 	}
 	// The existing checkouts stay in the list.

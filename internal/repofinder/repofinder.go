@@ -3,9 +3,11 @@
 package repofinder
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -226,9 +228,68 @@ func URLs(text string) []string {
 }
 
 // CloneName is the folder name a clone of identity id gets, or an error when gh must not be
-// asked to clone it. Stub: the tests define the behavior.
-func CloneName(id string, hosts []string) (string, error) { return "", nil }
+// asked to clone it: id is host/owner/repo, the host one of hosts, no segment starts with "-"
+// (gh would read it as a flag) and the folder name is no dot path.
+func CloneName(id string, hosts []string) (string, error) {
+	segs := strings.Split(id, "/")
+	if len(segs) != 3 {
+		return "", fmt.Errorf("%q is not host/owner/repo", id)
+	}
+	host, owner, repo := segs[0], segs[1], segs[2]
+	if !hostRe.MatchString(host) || !nameRe.MatchString(owner) || !nameRe.MatchString(repo) {
+		return "", fmt.Errorf("%q is not host/owner/repo", id)
+	}
+	if !slices.Contains(hosts, strings.ToLower(host)) {
+		return "", fmt.Errorf("%s is not a GitHub host, so %s cannot be cloned", host, id)
+	}
+	for _, seg := range segs {
+		if strings.HasPrefix(seg, "-") || seg == "." || seg == ".." {
+			return "", fmt.Errorf("%q is not a repository name gh can clone", id)
+		}
+	}
+	// A folder that starts with a dot is never listed as a checkout.
+	if strings.HasPrefix(repo, ".") {
+		return "", fmt.Errorf("a repository named %q would clone into a hidden folder", repo)
+	}
+	return repo, nil
+}
 
 // CloneRoot is where a fleet's clones go: its clone_root with a leading ~ expanded against home,
-// or its first search root when none is set. Stub: the tests define the behavior.
-func CloneRoot(cloneRoot string, searchRoots []string, home string) string { return "" }
+// or its first search root when none is set. It is empty when there is no absolute place.
+func CloneRoot(cloneRoot string, searchRoots []string, home string) string {
+	root := strings.TrimSpace(cloneRoot)
+	switch {
+	case root == "" && len(searchRoots) > 0:
+		root = searchRoots[0]
+	case root == "~":
+		root = home
+	case strings.HasPrefix(root, "~/"):
+		root = filepath.Join(home, root[2:])
+	}
+	if !filepath.IsAbs(root) {
+		return ""
+	}
+	return filepath.Clean(root)
+}
+
+// FleetRoots are the places a fleet's projects and checkouts are found: its search roots and
+// its clone root, so a clone is always a project of the fleet wherever clone_root points.
+func FleetRoots(searchRoots []string, cloneRoot string) []string {
+	home, _ := os.UserHomeDir()
+	roots := slices.Clone(searchRoots)
+	if c := CloneRoot(cloneRoot, nil, home); c != "" && !slices.ContainsFunc(roots, func(r string) bool { return filepath.Clean(r) == c }) {
+		roots = append(roots, c)
+	}
+	return roots
+}
+
+// Hint is the repository a launch is for: the order's repo, else the first URL in its text.
+func Hint(repo, text string) (string, bool) {
+	if id, ok := Identity(repo); ok {
+		return id, true
+	}
+	if urls := URLs(text); len(urls) > 0 {
+		return urls[0], true
+	}
+	return "", false
+}
