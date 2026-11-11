@@ -170,7 +170,7 @@ func (l *Launcher) StartChat() error {
 	if l.BeforeChat != nil {
 		l.BeforeChat()
 	}
-	if err := l.createSession(session, dir, opts, env, names, argv, false); err != nil {
+	if err := l.createSession(session, dir, opts, nil, env, names, argv, false); err != nil {
 		return err
 	}
 	return nil
