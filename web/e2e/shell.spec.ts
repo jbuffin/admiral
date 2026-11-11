@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { HOME, WORK, expectSeededTurn, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, rowLink, say, seedFleets, seedTurn, sendButton, sentBubble, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh } from './shell';
+import { HOME, WORK, boatOf, boatReceived, boatSays, changeFile, changesOf, chip, diffOf, expectSeededTurn, flotilla, gitCheckout, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh } from './shell';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -26,7 +26,7 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   const visitor = await launchShip(admiral, { fleet: 'alpha', harness: 'codex' });
   setState(admiral, visitor, 'working');
   // After the last cue is cleared, so the idling crew boat cannot read an exit cue.
-  launchCrew(admiral, billing, 'mate');
+  await launchCrew(admiral, billing, 'mate');
 
   await page.goto(admiral.url + 'app/');
   await expect(page).toHaveURL(/\/app\/inbox(\?|$)/);
@@ -86,12 +86,14 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await appendLines(admiral, login, [line.assistant('Appended while the view was open')]);
   await expect(viewPanel(page)).toContainText('Appended while the view was open', { timeout: 15_000 });
 
-  // PR and Changes are placeholders here.
+  // PR is a placeholder here. login works in proj, which has no commit: there is nothing to compare, and reading Changes never joins the bridge.
   await viewTab(page, 'PR').tap();
   await expect(viewTab(page, 'PR')).toHaveAttribute('aria-selected', 'true');
   await expect(viewPanel(page)).toContainText('No pull request yet');
   await viewTab(page, 'Changes').tap();
   await expect(viewTab(page, 'Changes')).toHaveAttribute('aria-selected', 'true');
+  await expect(viewPanel(page)).toContainText('No git history to compare');
+  expect(watch.paths.filter((p) => /^\/ws\/(v1\/)?bridge\//.test(p))).toEqual([]);
 
   // Only the Terminal tab joins the bridge, and what is typed there reaches the pane. Leaving it closes the socket.
   const joined = page.waitForEvent('websocket', (ws) => /\/bridge\//.test(ws.url()));
@@ -239,6 +241,105 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await expect(row(page, chat)).toHaveCount(0);
   expect(nativeDialogs).toEqual([]);
   await expect.poll(() => outcomeEvents(admiral, chat)).toEqual(['launched', 'ended', 'stopped']);
+
+  // Changes: a ship in a checkout lists the branch's commit, the uncommitted edit and the untracked file, each with its diff.
+  const repo = gitCheckout(admiral, 'repo');
+  const dev = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', dir: repo, cues: ['bracketedpaste'] });
+  setState(admiral, dev, 'working');
+  await expect.poll(async () => (await changesOf(admiral, dev)).files.map((f) => `${f.path} ${f.status}`).sort()).toEqual(['a.txt modified', 'b.txt added', 'c.txt untracked']);
+  await page.goto(admiral.url + 'app/ships?fleet=zulu');
+  await rowLink(page, dev).tap();
+  await viewTab(page, 'Changes').tap();
+  await expect(viewTab(page, 'Changes')).toHaveAttribute('aria-selected', 'true');
+  await expect(viewPanel(page).getByRole('list')).toBeVisible();
+  await expect(changeFile(page, 'a.txt')).toContainText('modified');
+  await expect(changeFile(page, 'a.txt')).toContainText('+2');
+  await expect(changeFile(page, 'a.txt')).toContainText(/[−-]1/);
+  await expect(changeFile(page, 'b.txt')).toContainText('added');
+  await expect(changeFile(page, 'c.txt')).toContainText('untracked');
+  await expect(diffOf(page, 'a.txt')).toContainText('TWO');
+  await expect(diffOf(page, 'b.txt')).toContainText('new two');
+  await expect(diffOf(page, 'c.txt')).toContainText('loose');
+  await expect(viewPanel(page)).not.toContainText(/No changes|No git history/);
+  expect(watch.paths.filter((p) => /^\/ws\/(v1\/)?bridge\//.test(p))).toEqual([]);
+
+  // The flotilla: a chip for the ship and one per boat, by role (Teammate when it has none). A picked boat takes the conversation,
+  // the terminal, the message box and Interrupt; Changes and Stop ship stay the ship's.
+  const lead = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
+  setState(admiral, lead, 'working');
+  await say(admiral, lead, 'The ship is waiting on its crew');
+  await launchCrew(admiral, lead, 'rev', 'reviewer', ['bracketedpaste', 'record', 'wait done', 'exit 0']);
+  await launchCrew(admiral, lead, 'mate');
+  await seedBoatTranscript(admiral, lead, 'rev', [line.user('Review the parser'), line.assistant('Boat found two parser bugs')]);
+  setBoatState(admiral, lead, 'rev', 'working');
+  await page.goto(admiral.url + 'app/ships?fleet=zulu');
+  await rowLink(page, lead).tap();
+  await expect(chip(page, new RegExp(lead.name))).toBeChecked();
+  await expect(chip(page, /reviewer/)).toBeVisible();
+  await expect(chip(page, /Teammate/)).toBeVisible();
+  await expect(flotilla(page).getByRole('radio')).toHaveCount(3);
+  await expect(viewPanel(page)).toContainText('The ship is waiting on its crew');
+
+  await chip(page, /reviewer/).tap();
+  await expect(chip(page, /reviewer/)).toBeChecked();
+  await expect(viewPanel(page)).toContainText('Boat found two parser bugs');
+  await expect(viewPanel(page)).not.toContainText('The ship is waiting on its crew');
+  // The boat's subscription pushes a line appended to its transcript.
+  boatSays(admiral, lead, 'rev', [line.assistant('Appended to the boat while the view was open')]);
+  await expect(viewPanel(page)).toContainText('Appended to the boat while the view was open', { timeout: 15_000 });
+
+  // A message from the box reaches the boat's pane and not the ship's.
+  await messageBox(page).fill('Check the lexer too');
+  await sendButton(page).tap();
+  await expect(sentBubble(page, 'Check the lexer too')).toBeVisible();
+  await expect.poll(() => boatReceived(admiral, lead, 'rev')).toContain('Check the lexer too');
+  expect(received(admiral, lead)).not.toContain('Check the lexer too');
+  boatSays(admiral, lead, 'rev', [line.user('Check the lexer too')]);
+  await expect(sentBubble(page, 'Check the lexer too')).toHaveCount(0, { timeout: 15_000 });
+  await expect(viewPanel(page).getByText('Check the lexer too', { exact: true })).toHaveCount(1);
+
+  // Interrupt presses Esc in the boat's pane.
+  await interruptButton(page).tap();
+  await expect.poll(() => boatReceived(admiral, lead, 'rev')).toContain('\x1b');
+  expect(received(admiral, lead)).not.toContain('\x1b');
+
+  // Changes stay the ship's, and so does Stop ship.
+  await viewTab(page, 'Changes').tap();
+  await expect(viewPanel(page)).toContainText('No git history to compare');
+  await viewTab(page, 'Conversation').tap();
+  await stopShipButton(page).tap();
+  await expect(stopDialog(page)).toContainText(lead.name);
+  await stopDialog(page).getByRole('button', { name: 'Cancel' }).tap();
+  await expect(stopDialog(page)).toBeHidden();
+
+  // The terminal is the boat's pane, over the versioned bridge path.
+  const boatBridge = page.waitForEvent('websocket', (ws) => /\/bridge\//.test(ws.url()));
+  await viewTab(page, 'Terminal').tap();
+  expect(new URL((await boatBridge).url()).pathname).toBe(`/ws/v1/bridge/${encodeURIComponent(lead.session)}/crew/rev`);
+  await viewTab(page, 'Conversation').tap();
+
+  // A boat with no transcript says so and points to its terminal.
+  await chip(page, /Teammate/).tap();
+  await expect(chip(page, /Teammate/)).toBeChecked();
+  await expect(viewPanel(page)).toContainText(/No conversation/);
+  await expect(viewPanel(page)).not.toContainText('Boat found two parser bugs');
+  await viewPanel(page).getByRole('button', { name: 'Open terminal' }).tap();
+  await expect(viewTab(page, 'Terminal')).toHaveAttribute('aria-selected', 'true');
+  await viewTab(page, 'Conversation').tap();
+
+  // A boat that exits 0 anchors: its chip stays, reads as finished and not as an error, and its box is read only.
+  await chip(page, /reviewer/).tap();
+  releaseBoat(admiral, lead, 'rev');
+  await expect.poll(async () => (await boatOf(admiral, lead, 'rev'))?.status).toBe('anchored');
+  expect((await boatOf(admiral, lead, 'rev'))?.exit_code).toBe(0);
+  await expect(chip(page, /reviewer/)).toBeVisible();
+  await expect(chip(page, /reviewer/)).toContainText(/finished/i);
+  await expect(chip(page, /reviewer/)).not.toContainText(/error/i);
+  await expect(chip(page, /Teammate/)).not.toContainText(/finished|error/i);
+  await expect(messageBox(page)).toBeDisabled();
+  await expect(viewPanel(page)).not.toContainText('Exited with error');
+  await expect(interruptButton(page)).toHaveCount(0);
+  await expect(viewPanel(page)).toContainText('Boat found two parser bugs');
 
   expect(watch.paths.some((p) => p.startsWith('/api/v1/config'))).toBe(true);
   expect(watch.paths).toContain('/ws/v1');
