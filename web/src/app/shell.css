@@ -394,6 +394,7 @@ button.pill { cursor: pointer; min-height: 32px; }
 .md a { color: var(--color-accent); text-decoration: underline; }
 .compaction { display: flex; align-items: center; gap: 10px; color: var(--color-muted); font-size: var(--font-size-meta); }
 .compaction::before, .compaction::after { content: ''; flex: 1; border-top: 1px solid var(--color-line2); }
+.round-note { margin: 0; text-align: center; font-size: var(--font-size-meta); }
 .tools-folded, .tool-call { display: flex; flex-direction: column; gap: 4px; }
 .fold-head, .tool-head { display: flex; align-items: center; gap: 8px; min-height: var(--shape-min-touch-target); padding: 0 8px; border-radius: var(--shape-radius-md); color: var(--color-text2); font-size: var(--font-size-meta); }
 @media (hover: hover) {

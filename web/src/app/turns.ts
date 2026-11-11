@@ -1,4 +1,5 @@
 import type { Item } from './api';
+import { when } from './when';
 
 const VERBS: Record<string, [one: string, many: string]> = {
   Read: ['read 1 file', 'read {n} files'],
@@ -61,7 +62,7 @@ export function blocksOf(items: Item[]): Block[] {
       if (group) group.durationMs = item.durationMs ?? 0;
       group = null;
     } else {
-      if (item.kind === 'user' || item.kind === 'compaction') group = null;
+      if (item.kind === 'user' || item.kind === 'compaction' || item.kind === 'round') group = null;
       blocks.push({ kind: 'item', item });
     }
   }
@@ -69,11 +70,19 @@ export function blocksOf(items: Item[]): Block[] {
 }
 
 /** The divider's text: the round, then its time when the server recorded one. */
-export function roundLabel(_item: Item): string {
-  return '';
+export function roundLabel(item: Item): string {
+  const label = `Feedback round ${item.round ?? ''}`.trim();
+  const time = when(item.at);
+  return time ? `${label} · ${time}` : label;
 }
 
+const ROUND_NOTES: Record<NonNullable<Item['state']>, string> = {
+  none: 'No conversation for this round',
+  gone: 'Conversation no longer available',
+  unreadable: "Admiral can't read this conversation",
+};
+
 /** The muted line under a divider whose round has no conversation to show. */
-export function roundNote(_state?: Item['state']): string | undefined {
-  return undefined;
+export function roundNote(state?: Item['state']): string | undefined {
+  return state ? ROUND_NOTES[state] : undefined;
 }

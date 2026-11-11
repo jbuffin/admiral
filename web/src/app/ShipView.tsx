@@ -265,19 +265,13 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
   const moored = ship.status === 'moored';
   useEffect(() => {
     setConv({ state: 'loading', items: [], more: false });
-    // A moored ship has no session to read a conversation from; its rounds' transcripts come later.
-    if (moored) {
-      setConv({ state: 'none', items: [], more: false });
-      follow.current = undefined;
-      return;
-    }
     if (boatName !== undefined && !boatHasConversation) {
       setConv({ state: 'none', items: [], more: false });
       follow.current = undefined;
       return;
     }
     // Only a running Claude or Copilot ship has a transcript still to come; a boat is followed once its transcript is recorded.
-    const f = followConversation(ship.session, setConv, { crew: boatName, retryNone: () => boatName === undefined && hasTranscript(latest.current.harness) && latest.current.status !== 'anchored' });
+    const f = followConversation(ship.session, setConv, { crew: boatName, retryNone: () => boatName === undefined && hasTranscript(latest.current.harness) && latest.current.status !== 'anchored' && latest.current.status !== 'moored' });
     follow.current = f;
     return f.stop;
   }, [ship.session, boatName, boatHasConversation, moored]);
@@ -287,6 +281,12 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
     : { session: ship.session, state: boxState(ship), interruptible: ship.status === 'underway', hasConversation: conv.state === 'ok' || (conv.state === 'none' && hasTranscript(ship.harness)), subject: 'This ship', wake: moored, mooredAt: ship.moored_at };
   const box = useComposer(target, conv);
   const Heading = title ? 'h1' : 'h2';
+  const mooredCard = (
+    <div class="convo-card">
+      <p class="convo-card-title">Moored, waiting on review</p>
+      <p class="line">Send a message or tap Wake to start the next round.</p>
+    </div>
+  );
   const anchored = boat ? chipState(boat) !== 'running' : ship.status === 'anchored';
   return (
     <section class="ship-view">
@@ -325,11 +325,8 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
         {tab === 'Conversation' ? (
           <>
             <div class="convo-area">
-              {moored ? (
-                <div class="convo-card">
-                  <p class="convo-card-title">Moored, waiting on review</p>
-                  <p class="line">Send a message or tap Wake to start the next round.</p>
-                </div>
+              {moored && !(conv.state === 'ok' && conv.items.length > 0) ? (
+                mooredCard
               ) : (
                 <ConversationView
                 conv={conv}
@@ -340,6 +337,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
                 anchored={anchored}
                 working={boat ? boat.status === 'underway' : ship.status === 'underway'}
                 noneTitle={boat ? 'No conversation for this boat' : undefined}
+                footer={moored ? mooredCard : undefined}
                 openTerminal={() => setTab('Terminal')}
                 loadOlder={() => void follow.current?.loadOlder()}
               />
