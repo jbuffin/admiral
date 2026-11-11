@@ -170,6 +170,40 @@ describe('answerCard: a codex ship', () => {
   });
 });
 
+describe('answerCard: a codex ship the live observer reads', () => {
+  const codex = { harness: 'codex' };
+
+  it('gets a question card when the bell meets one pending single-choice question', () => {
+    expect(needs('bell', ok(ask('call_q1#0', ['Red', 'Blue'])), codex)).toMatchObject({ kind: 'question', reason: 'bell', item: 'call_q1#0', options: ['Red', 'Blue'] });
+  });
+
+  it('shows no card for a bell alone, and none for a question that is no longer pending', () => {
+    expect(needs('bell', ok(), codex).kind).toBe('terminal');
+    expect(needs('bell', ok(ask('call_q1#0', ['Red', 'Blue'], { pending: false })), codex).kind).toBe('terminal');
+  });
+
+  it('sends a question with several parts, many options, none or several choices to the terminal', () => {
+    expect(needs('bell', ok(ask('call_q1#0', ['A', 'B']), ask('call_q1#1', ['C', 'D'])), codex).kind).toBe('terminal');
+    expect(needs('bell', ok(ask('call_q1#0', [])), codex).kind).toBe('terminal');
+    expect(needs('bell', ok(ask('call_q1#0', ['A', 'B'], { multiSelect: true })), codex).kind).toBe('terminal');
+  });
+
+  it('keeps a Claude bell and a Codex question reason as they were', () => {
+    expect(needs('bell', ok(ask('q#0', ['A', 'B']))).kind).toBe('terminal');
+    expect(needs('question', ok(ask('q#0', ['A', 'B'])), codex).kind).toBe('none');
+  });
+
+  it('finds the live Bash call for a Bash card, as it finds the rollout\'s exec_command', () => {
+    const live = ok(call('exec-1', 'Bash', 'mkdir -p x', false, '/bin/zsh -lc \'mkdir -p x\''), call('exec-2', 'apply_patch', 'b.txt'));
+    expect(needs('permission:Bash', live, codex)).toMatchObject({ tool: 'Bash', call: { id: 'exec-1' } });
+    expect(needs('permission:apply_patch', live, codex)).toMatchObject({ tool: 'apply_patch', call: { id: 'exec-2' } });
+  });
+
+  it('sends a permissions request to the terminal', () => {
+    expect(needs('permission:request_permissions', ok(), codex).kind).toBe('terminal');
+  });
+});
+
 describe('cardFor', () => {
   const boat = (harness: string): CrewBoat => ({ name: 'mate', conversation: true, harness, status: 'needs_you', reason: 'permission:Bash', exit_code: null, exit_signal: null });
   const ship = { harness: 'claude', status: 'working', reason: 'crew', crew: [] } as unknown as Ship;

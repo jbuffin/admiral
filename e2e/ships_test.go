@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -797,4 +798,16 @@ func TestCodexShipRunsOnItsOwnAppServer(t *testing.T) {
 		t.Fatalf("the ship's app-server does not accept connections: %v", err)
 	}
 	_ = c.Close()
+
+	// A server that refuses the handshake (--listen does not speak WebSocket) leaves the rollout as the conversation.
+	rollout := filepath.Join(w.userHom, ".codex", "sessions", "2026", "11", "11", "rollout-2026-11-11T15-22-11-0f8fad5b-d9cb-469f-a165-70867728950e.jsonl")
+	appendLines(t, rollout,
+		`{"timestamp":"2026-11-11T20:20:00.000Z","ordinal":0,"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"from the rollout"}]}}`,
+		`{"timestamp":"2026-11-11T20:20:00.000Z","ordinal":1,"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","id":"um-1","content":[{"type":"text","text":"from the rollout","text_elements":[]}]}}}`)
+	w.mustTmux("set-option", "-p", "-t", ship.Session, "@admiral-transcript", "1700000000000000000 launch "+rollout)
+	holdFor(t, "the rollout's conversation while the app-server refuses the handshake", func() bool {
+		_, body := send(t, http.MethodGet, w.in.LocalURL+"/api/v1/ships/"+url.PathEscape(ship.Session)+"/conversation", nil)
+		var p convPage
+		return json.Unmarshal([]byte(body), &p) == nil && p.State == "ok" && len(p.Items) == 1 && p.Items[0].Text == "from the rollout"
+	})
 }
