@@ -1,112 +1,38 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
-	"net/url"
-	"os"
-	"os/exec"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/jbuffin/admiral/internal/launcher"
 	"mvdan.cc/sh/v3/syntax"
 )
 
-// Writes to the gate rules are refused because the ship's token could undo the
-// check. The guard is best effort: it reads only the text of a Bash call.
+// The merge half of the guard (#120, #261). An autopilot ship merges nothing: the
+// guard refuses every gh pr merge that can merge, a change of a pull request's
+// base, and a write to the rules that gate a merge. It is best effort: it reads
+// the text of a Bash call and nothing else (see "Known gaps" in
+// docs/agents/codebase.md).
 
-// Confirmation waits until the whole line has been read, so a refusal that needs
-// no network never reaches GitHub, and steering anywhere on the line counts.
+// guardState is what the walk over one command line builds up: whether a cd
+// moved the shell, whether a startup file could run, and the standard input the
+// line shows.
 type guardState struct {
-	steered bool
 	moved   bool // a cd, pushd or popd: relative files are not read
 	startup bool // BASH_ENV, ENV or ZDOTDIR set on the line: a shell runs a startup file
-	lookups [][]string
+	// stdin is the text on the standard input of the call being checked, when
+	// the line shows it literally (stdinOK); feeders holds the literal output of
+	// the statement on the left of each pipe.
 	stdin   string
 	stdinOK bool
 	feeders map[*syntax.Stmt]string
 }
 
-var steerNames = []string{"GH_REPO", "GH_HOST", "GH_CONFIG_DIR", "GIT_DIR", "GIT_WORK_TREE", "GH_TOKEN", "GITHUB_TOKEN"}
-
-func steersGh(word string) bool {
-	for _, v := range steerNames {
-		if strings.HasPrefix(word, v+"=") {
-			return true
-		}
-	}
-	return false
-}
-
-// The lookup runs in the payload's cwd and environment, so a wrapper (env, sudo,
-// xargs…) that changes either could point gh at another pull request.
-func steersWrapper(word string) bool {
-	switch {
-	case steersGh(word), word == "-u", word == "-i", word == "--ignore-environment",
-		strings.HasPrefix(word, "-C"), strings.HasPrefix(word, "-D"),
-		strings.HasPrefix(word, "--chdir"), strings.HasPrefix(word, "--unset"):
-		return true
-	}
-	return false
-}
-
-var steeringBuiltins = []string{"read", "mapfile", "readarray", "getopts", "printf", ":", "declare", "typeset", "local", "export", "readonly"}
-
-// allexport steers too, since it exports any assignment.
-func steersBuiltin(word string, args []string, src string) bool {
-	if word == "set" {
-		return slices.ContainsFunc(args, func(a string) bool {
-			return a == "allexport" || shortFlagHas(a, "a")
-		})
-	}
-	return slices.Contains(steeringBuiltins, word) && slices.ContainsFunc(steerNames, func(n string) bool { return strings.Contains(src, n) })
-}
-
-// gh reads the repository and pull request from git's branch, remotes and config.
-func gitSteers(args []string) bool {
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		switch {
-		case a == "-C" || a == "-c" || a == "--git-dir" || a == "--work-tree" || a == "--namespace":
-			i++
-		case strings.HasPrefix(a, "-"):
-		default:
-			return slices.Contains([]string{"checkout", "switch", "remote", "config", "worktree"}, a)
-		}
-	}
-	return false
-}
-
-// ghSubcommand drops a -R given before the subcommand words (`gh pr -R o/r merge`).
-func ghGlobalRepo(args []string) (repo string) {
-	words := 0
-	for i := 0; i < len(args) && words < 2; i++ {
-		a := args[i]
-		switch {
-		case a == "-R" || a == "--repo":
-			if i+1 < len(args) {
-				i++
-				repo = args[i]
-			}
-		case strings.HasPrefix(a, "--repo="):
-			repo = a[len("--repo="):]
-		case strings.HasPrefix(a, "-R") && len(a) > 2:
-			repo = a[2:]
-		case a == "--hostname":
-			i++
-		case !strings.HasPrefix(a, "-"):
-			words++
-		}
-	}
-	return repo
-}
-
-// The ship's settings use the same matcher, so a tool that reaches the guard is one this matches.
+// mcpMergeTool matches the MCP tools whose name has merge or enqueue in it: the
+// matcher in the ship's settings, so a tool that reaches the guard is one this
+// matches.
 var mcpMergeTool = regexp.MustCompile(launcher.MergeToolMatcher)
 
 func mcpMerges(tool string) bool {
@@ -152,11 +78,9 @@ func mergeTextRule(text string) string {
 	return ""
 }
 
-// gh takes the repository and host from a full URL and nothing else (cli/cli
-// pkg/cmd/pr/shared/finder.go), so the PR the lookup resolves is the PR gh merges.
-var prURL = regexp.MustCompile(`^https://[A-Za-z0-9.-]+/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/pull/[0-9]+$`)
-
-// prEditRetargets counts a flag or value it cannot read as setting the base.
+// prEditRetargets says whether gh pr edit sets the base (-B, --base), or has a
+// flag or value it cannot read. It follows pflag over the flags that take a value
+// (-F -R -a -b -i -l -m -p -r -t and their long forms), which may start with a dash.
 func prEditRetargets(args []string) bool {
 	long := []string{"body", "body-file", "title", "add-assignee", "remove-assignee", "add-label", "remove-label",
 		"add-project", "remove-project", "add-reviewer", "remove-reviewer", "milestone", "repo"}
@@ -204,13 +128,15 @@ func prEditRetargets(args []string) bool {
 	return false
 }
 
-// prMerge follows flags as pflag does, since a value may start with a dash.
-func (g guardCheck) prMerge(args []string, repo string) string {
-	var pr []string // positional words
-	auto, disable, admin := false, false, false
-	var methods []string
+// prMerge is the rule for gh pr merge, given the arguments after `merge`. An
+// autopilot ship merges nothing, so every form that can merge is refused, --auto
+// included. Only --disable-auto alone is allowed: it removes a merge and adds
+// none. Its flags are followed as pflag does: -b, -F, -R, -t and -A (and their
+// long forms) take a value, which may start with a dash, a short cluster ends at
+// a value-taking flag, and -- ends the flags.
+func (g guardCheck) prMerge(args []string) string {
+	disable, admin := false, false
 	unsure := false // a flag the guard cannot read, or a value that could split into flags
-	repoGiven := repo != ""
 	value := func(i *int, attached string) string {
 		if attached == "" && *i+1 < len(args) {
 			*i++
@@ -227,23 +153,15 @@ func (g guardCheck) prMerge(args []string, repo string) string {
 		a := args[i]
 		switch {
 		case a == "--":
-			pr = append(pr, args[i+1:]...)
 			i = len(args)
 		case strings.HasPrefix(a, "--"):
 			name, val, has := strings.Cut(a[2:], "=")
 			switch name {
-			case "auto":
-				auto = boolean(has, val)
 			case "disable-auto":
 				disable = boolean(has, val)
 			case "admin":
 				admin = boolean(has, val)
-			case "squash", "merge", "rebase":
-				if boolean(has, val) {
-					methods = append(methods, name)
-				}
 			case "repo":
-				repoGiven = true
 				if !has {
 					value(&i, "")
 				}
@@ -259,16 +177,9 @@ func (g guardCheck) prMerge(args []string, repo string) string {
 		cluster:
 			for j := 1; j < len(a) && a[j] != '='; j++ {
 				switch {
-				case a[j] == 's':
-					methods = append(methods, "squash")
-				case a[j] == 'm':
-					methods = append(methods, "merge")
-				case a[j] == 'r':
-					methods = append(methods, "rebase")
 				case a[j] == placeholder[0]:
 					unsure = true
 				case a[j] == 'R':
-					repoGiven = true
 					value(&i, a[j+1:])
 					break cluster
 				case strings.IndexByte("bFtA", a[j]) >= 0:
@@ -276,44 +187,12 @@ func (g guardCheck) prMerge(args []string, repo string) string {
 					break cluster
 				}
 			}
-		default:
-			pr = append(pr, a)
 		}
 	}
-	switch {
-	case disable && !admin:
-		return ""
-	case admin || !auto || unsure:
-		return ruleGhPrMerge
-	}
-	want := os.Getenv("ADMIRAL_AUTO_MERGE")
-	if want != "squash" && want != "merge" && want != "rebase" || len(methods) != 1 || methods[0] != want {
-		return ruleAutoMergeMethod
-	}
-	// With one full URL and no repository beside it, the lookup resolves the same
-	// pull request gh merges.
-	if repoGiven || len(pr) != 1 || !prURL.MatchString(pr[0]) {
-		return ruleAutoMergeSteered
-	}
-	g.st.lookups = append(g.st.lookups, []string{pr[0]})
-	return ""
-}
-
-func (g guardCheck) confirmMerges() string {
-	if len(g.st.lookups) == 0 {
+	if disable && !admin && !unsure {
 		return ""
 	}
-	if g.st.steered {
-		return ruleAutoMergeSteered
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), lookupTimeout)
-	defer cancel()
-	for _, pr := range g.st.lookups {
-		if ok, err := approvalLookup(ctx, g.cwd, pr); err != nil || !ok {
-			return ruleAutoMergeUnconfirmed
-		}
-	}
-	return ""
+	return ruleGhPrMerge
 }
 
 // gh sends an implicit POST when it is given fields or an --input and no method.
@@ -551,131 +430,4 @@ func (g guardCheck) graphqlMutates(p apiArgs, line *lineText) string {
 		return ruleGraphqlMerge
 	}
 	return ""
-}
-
-// The hook times out at 10 s, and a hook that times out must not be what refuses.
-const lookupTimeout = 7 * time.Second
-
-// approvalLookup is a variable so tests run without GitHub.
-var approvalLookup = ghApprovalLookup
-
-type rulesetRule struct {
-	Type       string `json:"type"`
-	Parameters struct {
-		Count        int  `json:"required_approving_review_count"`
-		DismissStale bool `json:"dismiss_stale_reviews_on_push"`
-		LastPush     bool `json:"require_last_push_approval"`
-	} `json:"parameters"`
-	SourceType string `json:"ruleset_source_type"`
-	Source     string `json:"ruleset_source"`
-	ID         int    `json:"ruleset_id"`
-}
-
-// A stale approval or a bypass would let the ship's own push merge unreviewed, so
-// only a fresh, unbypassable approving-review rule confirms.
-func ghApprovalLookup(ctx context.Context, cwd string, pr []string) (bool, error) {
-	run := func(args ...string) ([]byte, error) {
-		cmd := exec.CommandContext(ctx, "gh", args...)
-		cmd.Dir = cwd
-		cmd.WaitDelay = 500 * time.Millisecond
-		return cmd.Output()
-	}
-	out, err := run(append(append([]string{"pr", "view"}, pr...), "--json", "url,baseRefName")...)
-	if err != nil {
-		return false, err
-	}
-	var view struct {
-		URL         string `json:"url"`
-		BaseRefName string `json:"baseRefName"`
-	}
-	if err := json.Unmarshal(out, &view); err != nil {
-		return false, err
-	}
-	u, err := url.Parse(view.URL)
-	if err != nil || view.BaseRefName == "" {
-		return false, errors.New("gh pr view gave no base branch")
-	}
-	path := strings.Split(strings.Trim(u.Path, "/"), "/")
-	if len(path) < 2 || path[0] == "" || path[1] == "" {
-		return false, errors.New("gh pr view gave no repository")
-	}
-	get := func(endpoint string) ([]byte, error) {
-		args := []string{"api", "-X", "GET"}
-		if u.Host != "" && u.Host != "github.com" {
-			args = append(args, "--hostname", u.Host)
-		}
-		return run(append(args, endpoint)...)
-	}
-	repo := "repos/" + url.PathEscape(path[0]) + "/" + url.PathEscape(path[1])
-	segs := strings.Split(view.BaseRefName, "/")
-	for i, s := range segs {
-		segs[i] = url.PathEscape(s)
-	}
-	base := strings.Join(segs, "/")
-
-	if out, err := get(repo + "/rules/branches/" + base); err == nil {
-		var rules []rulesetRule
-		if json.Unmarshal(out, &rules) == nil {
-			for _, r := range rules {
-				if r.Type != "pull_request" || r.Parameters.Count < 1 || !r.Parameters.DismissStale && !r.Parameters.LastPush {
-					continue
-				}
-				if never, err := rulesetUnbypassable(get, repo, r); err == nil && never {
-					return true, nil
-				}
-			}
-		}
-	}
-	out, err = get(repo + "/branches/" + base + "/protection")
-	if err != nil {
-		return false, err
-	}
-	var prot struct {
-		Reviews struct {
-			Count        int  `json:"required_approving_review_count"`
-			DismissStale bool `json:"dismiss_stale_reviews"`
-			LastPush     bool `json:"require_last_push_approval"`
-			Bypass       struct {
-				Users []json.RawMessage `json:"users"`
-				Teams []json.RawMessage `json:"teams"`
-				Apps  []json.RawMessage `json:"apps"`
-			} `json:"bypass_pull_request_allowances"`
-		} `json:"required_pull_request_reviews"`
-		EnforceAdmins struct {
-			Enabled bool `json:"enabled"`
-		} `json:"enforce_admins"`
-	}
-	if err := json.Unmarshal(out, &prot); err != nil {
-		return false, err
-	}
-	r := prot.Reviews
-	return r.Count >= 1 && (r.DismissStale || r.LastPush) && prot.EnforceAdmins.Enabled &&
-		len(r.Bypass.Users)+len(r.Bypass.Teams)+len(r.Bypass.Apps) == 0, nil
-}
-
-func rulesetUnbypassable(get func(string) ([]byte, error), repo string, r rulesetRule) (bool, error) {
-	var endpoint string
-	switch r.SourceType {
-	case "Repository":
-		endpoint = repo + "/rulesets/" + strconv.Itoa(r.ID)
-	case "Organization":
-		endpoint = "orgs/" + url.PathEscape(r.Source) + "/rulesets/" + strconv.Itoa(r.ID)
-	default:
-		return false, errors.New("unknown ruleset source")
-	}
-	if r.ID == 0 {
-		return false, errors.New("rule has no ruleset id")
-	}
-	out, err := get(endpoint)
-	if err != nil {
-		return false, err
-	}
-	var rs struct {
-		Enforcement          string `json:"enforcement"`
-		CurrentUserCanBypass string `json:"current_user_can_bypass"`
-	}
-	if err := json.Unmarshal(out, &rs); err != nil {
-		return false, err
-	}
-	return rs.Enforcement == "active" && rs.CurrentUserCanBypass == "never", nil
 }

@@ -115,8 +115,8 @@ func rcExpectOrigin(t *testing.T, w *world, ship shipJSON, checkout string) {
 	if !slices.Contains(r.argv, "--origin-arg") || slices.Contains(r.argv, "--resume-arg") {
 		t.Errorf("argv = %q, want the build panel's --origin-arg and not the resume panel's --resume-arg", r.argv)
 	}
-	if r.env["ADMIRAL_LOW_STAKES"] != "never" || r.env["ADMIRAL_AUTOPILOT"] != "1" {
-		t.Errorf("env ADMIRAL_LOW_STAKES=%q ADMIRAL_AUTOPILOT=%q, want never and 1 (the build panel's entry)", r.env["ADMIRAL_LOW_STAKES"], r.env["ADMIRAL_AUTOPILOT"])
+	if r.env["ADMIRAL_LOW_STAKES"] != "advisor" || r.env["ADMIRAL_AUTOPILOT"] != "1" {
+		t.Errorf("env ADMIRAL_LOW_STAKES=%q ADMIRAL_AUTOPILOT=%q, want advisor and 1", r.env["ADMIRAL_LOW_STAKES"], r.env["ADMIRAL_AUTOPILOT"])
 	}
 	// The resume text starts with the skill; the build panel's Commodore skill
 	// must not be put in front of it again.

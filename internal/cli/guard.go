@@ -20,9 +20,10 @@ import (
 // The reasons name no command, so a refusal never repeats text the ship wrote.
 const guardReason = "Autopilot ships leave reviews PENDING. The engineer submits them from the inbox."
 
-const mergeReason = "Autopilot ships merge only with gh pr merge --auto, using the panel's merge method, " +
-	"on a pull request whose base branch requires an approving review. Any other merge, " +
-	"and any change to those branch rules, is for the engineer."
+// mergeReason is what the agent reads when the guard refuses a merge, or a write
+// to the rules that gate one.
+const mergeReason = "Autopilot ships never merge a pull request, and never change its base or the rules " +
+	"that gate a merge. Merging is for the engineer."
 
 const opaqueReason = "Autopilot ships run only commands the guard can read: no scripts run from a file or a pipe, " +
 	"no aliases, no gh extensions, and no reading the GitHub token."
@@ -35,16 +36,13 @@ const (
 	ruleMcpReview     = "mcp_review"
 	ruleUnparsed      = "unparsed"
 
-	ruleGhPrMerge            = "gh_pr_merge"
-	ruleGhAPIMerge           = "gh_api_merge"
-	ruleGraphqlMerge         = "graphql_merge"
-	ruleGhAPIGateWrite       = "gh_api_gate_write"
-	ruleGraphqlGateWrite     = "graphql_gate_write"
-	ruleMcpMerge             = "mcp_merge"
-	ruleAutoMergeMethod      = "auto_merge_method"
-	ruleAutoMergeSteered     = "auto_merge_steered"
-	ruleAutoMergeUnconfirmed = "auto_merge_unconfirmed"
-	rulePrBaseChange         = "pr_base_change"
+	ruleGhPrMerge        = "gh_pr_merge"
+	ruleGhAPIMerge       = "gh_api_merge"
+	ruleGraphqlMerge     = "graphql_merge"
+	ruleGhAPIGateWrite   = "gh_api_gate_write"
+	ruleGraphqlGateWrite = "graphql_gate_write"
+	ruleMcpMerge         = "mcp_merge"
+	rulePrBaseChange     = "pr_base_change"
 
 	ruleShellScript = "shell_script"
 	ruleShellAlias  = "shell_alias"
@@ -129,7 +127,7 @@ func guardDecision(raw []byte) (tool, rule string) {
 		if rule := g.command(*in.Command, 0); rule != "" {
 			return p.ToolName, rule
 		}
-		return p.ToolName, g.confirmMerges()
+		return p.ToolName, ""
 	case mcpMerges(p.ToolName):
 		return p.ToolName, ruleMcpMerge
 	case strings.Contains(p.ToolName, "pull_request_review"):
@@ -210,7 +208,7 @@ func (g guardCheck) gh(args []string, line *lineText) string {
 			return ruleGhPrReview
 		}
 	case len(sub) >= 2 && sub[0] == "pr" && sub[1] == "merge":
-		return g.prMerge(sub[2:], ghGlobalRepo(args))
+		return g.prMerge(sub[2:])
 	case len(sub) >= 2 && sub[0] == "pr" && sub[1] == "edit":
 		if prEditRetargets(sub[2:]) {
 			return rulePrBaseChange
@@ -223,8 +221,6 @@ func (g guardCheck) gh(args []string, line *lineText) string {
 		return ruleGhExtension
 	case len(sub) >= 1 && !ghCommands[sub[0]]:
 		return ruleGhUnknown
-	case len(sub) >= 2 && (sub[0] == "pr" && sub[1] == "checkout" || sub[0] == "repo" && sub[1] == "set-default"):
-		g.st.steered = true
 	case len(sub) >= 1 && sub[0] == "api":
 		return g.api(sub[1:], line)
 	}

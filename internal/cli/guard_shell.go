@@ -108,15 +108,8 @@ func (g guardCheck) command(text string, depth int) string {
 			case *syntax.CallExpr:
 				g.st.stdin, g.st.stdinOK = g.stdinOf(s)
 				rule = g.call(cmd, s.Redirs, line, depth)
-			case *syntax.ForClause:
-				if it, ok := cmd.Loop.(*syntax.WordIter); ok && slices.Contains(steerNames, it.Name.Value) {
-					g.st.steered = true
-				}
 			case *syntax.DeclClause:
 				for _, a := range cmd.Args {
-					if a.Name != nil && steersGh(a.Name.Value+"=") {
-						g.st.steered = true
-					}
 					if a.Name != nil && slices.Contains(startupNames, a.Name.Value) {
 						g.st.startup = true
 					}
@@ -234,9 +227,6 @@ func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *li
 		if slices.Contains(aliasTables, a.Name.Value) {
 			return ruleShellAlias
 		}
-		if steersGh(a.Name.Value + "=") {
-			g.st.steered = true
-		}
 		if slices.Contains(startupNames, a.Name.Value) {
 			g.st.startup = true
 		}
@@ -268,9 +258,6 @@ func (g guardCheck) callWords(c *syntax.CallExpr, words []string, redirs []*synt
 					return r
 				}
 			}
-			if slices.ContainsFunc(words[1:len(words)-len(args)], steersWrapper) {
-				g.st.steered = true
-			}
 			if slices.ContainsFunc(words[1:len(words)-len(args)], startupAssign) {
 				g.st.startup = true
 			}
@@ -279,7 +266,6 @@ func (g guardCheck) callWords(c *syntax.CallExpr, words []string, redirs []*synt
 			}
 			if w == "xargs" {
 				viaXargs = true // it adds the words it reads from stdin
-				g.st.steered = true
 			}
 			if w == "env" && len(args) == 0 {
 				return ruleTokenRead // a bare env prints the environment, token included
@@ -287,12 +273,8 @@ func (g guardCheck) callWords(c *syntax.CallExpr, words []string, redirs []*synt
 			words = args
 			continue
 		}
-		if steersBuiltin(w, args, line.text[min(int(c.Pos().Offset()), len(line.text)):min(int(c.End().Offset()), len(line.text))]) {
-			g.st.steered = true
-		}
 		switch {
 		case w == "cd" || w == "pushd" || w == "popd":
-			g.st.steered = true
 			g.st.moved = true
 		case w == "find":
 			return g.findExec(c, args, redirs, line, depth)
@@ -304,9 +286,6 @@ func (g guardCheck) callWords(c *syntax.CallExpr, words []string, redirs []*synt
 			}
 			return g.scriptFile(args[0], line, depth)
 		case w == "git":
-			if gitSteers(args) {
-				g.st.steered = true
-			}
 			if gitCredential(args) {
 				return ruleTokenRead
 			}

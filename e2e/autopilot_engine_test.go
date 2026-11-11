@@ -169,8 +169,8 @@ func TestEngineCapOneLaunchesOneShipAtATime(t *testing.T) {
 	})
 
 	r := w.record(first.Session)
-	if r.env["ADMIRAL_AUTOPILOT"] != "1" || r.env["ADMIRAL_LOW_STAKES"] != "never" {
-		t.Errorf("ship env ADMIRAL_AUTOPILOT=%q ADMIRAL_LOW_STAKES=%q, want 1 and never", r.env["ADMIRAL_AUTOPILOT"], r.env["ADMIRAL_LOW_STAKES"])
+	if r.env["ADMIRAL_AUTOPILOT"] != "1" || r.env["ADMIRAL_LOW_STAKES"] != "advisor" {
+		t.Errorf("ship env ADMIRAL_AUTOPILOT=%q ADMIRAL_LOW_STAKES=%q, want 1 and advisor", r.env["ADMIRAL_AUTOPILOT"], r.env["ADMIRAL_LOW_STAKES"])
 	}
 	fleetArg, panelArg := slices.Index(r.argv, "--fa-claude"), slices.Index(r.argv, "--panel-arg")
 	if fleetArg < 0 || panelArg < fleetArg {
@@ -507,53 +507,4 @@ func TestEngineShowsAGivenUpOrderAsHot(t *testing.T) {
 		return len(s.Views) == 1 && len(s.Views[0].Orders) == 1 && s.Views[0].Orders[0].Hot
 	})
 	holdThat(t, "autopilot launched an order it gave up on", func() bool { return len(w.in.ships(t)) == 0 })
-}
-
-// A panel entry's method reaches the ship as ADMIRAL_AUTO_MERGE, and an
-// autopilot launch whose entry has none has the variable unset, whatever the
-// fleet's env or Admiral's environment says. Admiral owns the variable, as it
-// does ADMIRAL_AUTOPILOT.
-func TestEngineSetsAutoMergeFromThePanel(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name  string
-		entry map[string]any
-		want  string // "" is unset
-	}{
-		{"a method", map[string]any{"auto_merge": "rebase"}, "rebase"},
-		{"off", nil, ""},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			t.Parallel()
-			w := newWorld(t)
-			w.writeCue("wait go", "exit 0")
-			w.repo("r1", remoteOf("r1"))
-			p := w.newTP("a")
-			p.mainOrders(apOrder("o1", remoteOf("r1")))
-			w.installPlugin("testplug", "testplug")
-			w.extra = append(w.extra, "ADMIRAL_AUTO_MERGE=from-admiral-env")
-			w.writeAutopilotConfig(map[string]any{"a": tpAutopilot(p, "main", apEntry(true, 1, c.entry))}, 0)
-			// The fleet's env sets it too.
-			var cfg map[string]any
-			if err := json.Unmarshal([]byte(w.readFile(filepath.Join(w.home, "config.json"))), &cfg); err != nil {
-				t.Fatal(err)
-			}
-			env := cfg["fleets"].(map[string]any)["work"].(map[string]any)["claude"].(map[string]any)["env"].(map[string]any)
-			env["ADMIRAL_AUTO_MERGE"] = "from-fleet-env"
-			b, _ := json.Marshal(cfg)
-			writeConfig(t, w.home, string(b))
-			w.start()
-
-			ship := w.waitShipCount(15*time.Second, "o1's ship", fromOrder("o1"), 1)[0]
-			r := w.record(ship.Session)
-			if r.env["ADMIRAL_AUTOPILOT"] != "1" {
-				t.Fatalf("ship env ADMIRAL_AUTOPILOT = %q, want 1", r.env["ADMIRAL_AUTOPILOT"])
-			}
-			got, set := r.env["ADMIRAL_AUTO_MERGE"]
-			if c.want == "" && set || c.want != "" && got != c.want {
-				t.Errorf("ship env ADMIRAL_AUTO_MERGE = %q (set %v), want %q (unset when empty)", got, set, c.want)
-			}
-		})
-	}
 }
