@@ -159,3 +159,18 @@ export async function checkHarness(fleet: string, harness: string): Promise<Harn
   if (!res.ok) throw new Error(body.error || `check: ${res.status}`);
   return body;
 }
+
+export const shipsSocketUrl = () => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/v1`;
+
+export type ShipsProbe = 'ok' | 'signed-out' | 'down';
+
+// A failed WebSocket handshake doesn't say why, so a reconnect asks over HTTP first: 401 is a changed token.
+export async function probeShips(): Promise<ShipsProbe> {
+  try {
+    const res = await fetch(`${API}/ships`, { cache: 'no-store' });
+    if (res.status === 401) return 'signed-out';
+    return res.ok ? 'ok' : 'down';
+  } catch {
+    return 'down';
+  }
+}

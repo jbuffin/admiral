@@ -6,6 +6,10 @@ import { FleetSwitcher } from './FleetSwitcher';
 import { Icon } from './Icon';
 import { Preferences } from './Preferences';
 import { Sheet } from './Sheet';
+import { GROUP_TITLES, groupShips } from './shipList';
+import { ships } from './shipsLink';
+import { StatusGlyph } from './StatusGlyph';
+import type { Ship } from './api';
 import { go, loc, surfaceOf, surfacePath } from './router';
 import { MORE, PHONE_TABS, SURFACES, surfaceById, type Surface } from './surfaces';
 
@@ -42,20 +46,6 @@ function Link({ surface, class: cls, onNavigate, children }: { surface: Surface;
   );
 }
 
-function Docks() {
-  const fleet = activeFleet.value;
-  return fleet && fleet.docks.length > 0 ? (
-    <ul class="docks">
-      {fleet.docks.map((d) => (
-        <li key={d.harness}>
-          <Flag harness={d.harness} size="header" />
-          <span>{d.harness[0].toUpperCase() + d.harness.slice(1)}</span>
-        </li>
-      ))}
-    </ul>
-  ) : null;
-}
-
 function EmptyState({ surface, title }: { surface: Surface; title: boolean }) {
   const fleet = activeFleet.value;
   return (
@@ -68,10 +58,58 @@ function EmptyState({ surface, title }: { surface: Surface; title: boolean }) {
           {fleet.name}
         </p>
       ) : null}
-      {surface.id === 'ships' ? <Docks /> : null}
     </main>
   );
 }
+
+function ShipRow({ ship }: { ship: Ship }) {
+  return (
+    <li class="ship-row">
+      <Flag harness={ship.harness} size="row" />
+      <div class="ship-main">
+        <span class="ship-name">{ship.name}</span>
+        {ship.order_id ? (
+          <span class="ship-order">
+            <span class="mono">{ship.order_id}</span> {ship.title}
+          </span>
+        ) : null}
+        {ship.tail ? <span class="ship-tail">{ship.tail}</span> : null}
+      </div>
+    </li>
+  );
+}
+
+function ShipsPanel({ surface, title }: { surface: Surface; title: boolean }) {
+  const fleet = activeFleet.value;
+  const groups = fleet ? groupShips(ships.value, fleet.key) : [];
+  if (groups.length === 0) return <EmptyState surface={surface} title={title} />;
+  return (
+    <main class="panel">
+      {title ? <h1>{surface.title}</h1> : null}
+      <p class="fleet-label">
+        <span class="dot" style={{ background: fleetPaint(fleet!).fill }} aria-hidden="true" />
+        {fleet!.name}
+      </p>
+      {groups.map((g) => (
+        <section key={g.status} class="ship-group" aria-labelledby={`group-${g.status}`}>
+          <h2 id={`group-${g.status}`} class={`group-head group-${g.status}`}>
+            <StatusGlyph status={g.status} />
+            {GROUP_TITLES[g.status]}
+            <span class="count">{g.ships.length}</span>
+          </h2>
+          <ul class="ship-list">
+            {g.ships.map((s) => (
+              <ShipRow key={s.session} ship={s} />
+            ))}
+          </ul>
+        </section>
+      ))}
+    </main>
+  );
+}
+
+const Panel = ({ surface, title }: { surface: Surface; title: boolean }) =>
+  surface.id === 'ships' ? <ShipsPanel surface={surface} title={title} /> : <EmptyState surface={surface} title={title} />;
 
 function MoreSheet({ onClose }: { onClose: () => void }) {
   return (
@@ -99,7 +137,7 @@ function PhoneShell({ surface }: { surface: Surface }) {
         <FleetSwitcher sheet />
         <h1>{surface.title}</h1>
       </header>
-      {surface.id === 'preferences' ? <Preferences phone /> : <EmptyState surface={surface} title={false} />}
+      {surface.id === 'preferences' ? <Preferences phone /> : <Panel surface={surface} title={false} />}
       <nav class="tabbar" aria-label="Main">
         {PHONE_TABS.map((id) => (
           <Link key={id} surface={surfaceById(id)} class="tab">
@@ -132,7 +170,7 @@ export function Shell() {
           </Link>
         ))}
       </nav>
-      {surface.id === 'preferences' ? <Preferences phone={false} /> : <EmptyState surface={surface} title />}
+      {surface.id === 'preferences' ? <Preferences phone={false} /> : <Panel surface={surface} title />}
     </div>
   );
 }
