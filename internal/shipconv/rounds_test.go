@@ -250,6 +250,49 @@ func TestAMooredShipOfAnotherHarnessAnswersOkWithItsDividersOnly(t *testing.T) {
 	if code != 200 || p.State != "ok" || !reflect.DeepEqual(ids(p), []string{"r1"}) || p.Items[0].State != "none" {
 		t.Errorf("GET = %d %s, want ok with the one divider r1 in state none", code, body)
 	}
+	if want := r1.Started.Format(time.RFC3339Nano); p.Items[0].At != want {
+		t.Errorf("divider r1 at = %q, want the round's started %q", p.Items[0].At, want)
+	}
+}
+
+func TestAMooredShipWithNothingToShowAnswersNone(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	r := withRounds(f)
+	r.moored("m", "claude")
+	r0 := r.round(0)
+	r0.Transcript = ""
+	r.moored("c", "codex", r0)
+
+	for _, session := range []string{"m", "c"} {
+		code, p, body := r.get(session, "")
+		if code != 200 || p.State != "none" || len(p.Items) != 0 {
+			t.Errorf("GET %s = %d %s, want 200 none with no items (no history, or only an undivided round 0)", session, code, body)
+		}
+	}
+}
+
+func TestALiveRoundWhoseOptionIsNotBoundYetHasADividerWithNoState(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	r := withRounds(f)
+	r.hist["live-name"] = []moor.Round{r.round(0, "zero a")}
+	f.ship("live", f.path("zz"))
+	f.mu.Lock()
+	f.options["live"] = ""
+	r.live["live"] = 1
+	f.mu.Unlock()
+	f.svc.ship = func(session string) (ships.Ship, bool) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		h, ok := f.harness[session]
+		return ships.Ship{Session: session, Name: session + "-name", Harness: h, Launched: "L1", Fleet: "work"}, ok
+	}
+
+	_, p, body := r.get("live", "")
+	if !reflect.DeepEqual(ids(p), []string{"u-001", "r1"}) || p.Items[1].State != "" {
+		t.Errorf("GET = %s, want the divider r1 with no state", body)
+	}
 }
 
 func TestAMooredShipAcksAnOpenAndWatchesNothing(t *testing.T) {
