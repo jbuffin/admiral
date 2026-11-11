@@ -514,6 +514,7 @@ func TestADecisionSurvivesARestart(t *testing.T) {
 	}
 
 	in.Now = wNow.Add(wDebounce)
+	in.State = first.Next
 	memory := DecideWake(in) // the same process, no restart
 	in.State = loaded
 	disk := DecideWake(in) // after the restart

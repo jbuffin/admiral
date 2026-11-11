@@ -55,7 +55,7 @@ func (m *Manager) viewLocked() View {
 		Chat: ChatView{m.cur.Chat.Fleet, m.cur.Chat.Model, m.cur.Chat.Effort}}
 	for _, f := range m.cur.Fleets {
 		fv := FleetView{Key: f.Key, Name: f.Name, Color: f.Color, Ink: f.Ink, ColorIndex: f.ColorIndex,
-			SearchRoots: f.SearchRoots, Owners: nonNil(f.Owners), CloneRoot: f.CloneRoot,
+			SearchRoots: f.SearchRoots, Owners: nonNil(f.Owners), WakeReviewers: nonNil(f.WakeReviewers), CloneRoot: f.CloneRoot,
 			CanLaunch: f.CanLaunch(), Docks: []DockView{}}
 		for _, h := range f.Harnesses {
 			warnings := h.Warnings

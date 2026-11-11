@@ -13,6 +13,7 @@ export function saveBody(shown: FleetFields, edited: FleetFields): Partial<Fleet
   const body: Partial<FleetFields> = {};
   if (!sameList(shown.search_roots, edited.search_roots)) body.search_roots = edited.search_roots;
   if (!sameList(shown.owners, edited.owners)) body.owners = edited.owners;
+  if (!sameList(shown.wake_reviewers, edited.wake_reviewers)) body.wake_reviewers = edited.wake_reviewers;
   if (shown.clone_root !== edited.clone_root) body.clone_root = edited.clone_root;
   if (shown.color !== edited.color) body.color = edited.color;
   return body;
@@ -27,9 +28,9 @@ export interface ErrorTarget {
 export function errorTarget(message: string, fleetKey: string): ErrorTarget | null {
   const prefix = `fleets.${fleetKey}.`;
   if (!message.startsWith(prefix)) return null;
-  const m = /^(search_roots|owners)\[(\d+)\]|^(clone_root|color)\b/.exec(message.slice(prefix.length));
+  const m = /^(search_roots|owners|wake_reviewers)\[(\d+)\]|^(clone_root|color)\b/.exec(message.slice(prefix.length));
   if (!m) return null;
-  return m[1] ? { field: m[1] as 'search_roots' | 'owners', index: Number(m[2]) } : { field: m[3] as 'clone_root' | 'color' };
+  return m[1] ? { field: m[1] as 'search_roots' | 'owners' | 'wake_reviewers', index: Number(m[2]) } : { field: m[3] as 'clone_root' | 'color' };
 }
 
 /** The server's message without its `fleets.<key>.<field>[i]: ` path, for showing beside the field it names. */

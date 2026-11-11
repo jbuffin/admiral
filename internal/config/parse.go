@@ -73,6 +73,7 @@ func (c *Config) clone() *Config {
 	for i, f := range c.Fleets {
 		f.SearchRoots = slices.Clone(f.SearchRoots)
 		f.Owners = slices.Clone(f.Owners)
+		f.WakeReviewers = slices.Clone(f.WakeReviewers)
 		f.Env = maps.Clone(f.Env)
 		f.Harnesses = slices.Clone(f.Harnesses)
 		for j, h := range f.Harnesses {
@@ -123,7 +124,9 @@ var dockOrder = []string{"claude", "copilot", "codex"}
 
 var (
 	fleetKeyRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-	colorRe    = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
+	// A GitHub login: 1 to 39 letters, digits and single hyphens, none at either end; an app's [bot] suffix is allowed.
+	loginRe = regexp.MustCompile(`^[A-Za-z0-9](?:-?[A-Za-z0-9]){0,38}(?:\[bot\])?$`)
+	colorRe = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 )
 
 // Parse errors name the path of the bad value, without the file name.
@@ -315,6 +318,15 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 			for i, o := range f.Owners {
 				if strings.TrimSpace(o) == "" {
 					return Fleet{}, fmt.Errorf("%s[%d]: must not be empty", p, i)
+				}
+			}
+		case "wake_reviewers":
+			if f.WakeReviewers, err = stringList(p, m.raw); err != nil {
+				return Fleet{}, err
+			}
+			for i, l := range f.WakeReviewers {
+				if !loginRe.MatchString(l) {
+					return Fleet{}, fmt.Errorf("%s[%d]: must be a GitHub login, got %q", p, i, l)
 				}
 			}
 		case "clone_root":

@@ -160,6 +160,9 @@ func EditFleet(dir, key string, f FleetFields) error {
 	if f.Owners != nil {
 		fleet.SetValue("owners", nonNil(*f.Owners))
 	}
+	if f.WakeReviewers != nil {
+		fleet.SetValue("wake_reviewers", nonNil(*f.WakeReviewers))
+	}
 	setOrDrop := func(k string, v *string) {
 		switch {
 		case v == nil:
