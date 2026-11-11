@@ -31,6 +31,8 @@ type Request struct {
 	OrderID   string `json:"order_id"`
 	Text      string `json:"text"`
 	Note      string `json:"note"` // Just launch only: optional text sent before the order
+	Model     string `json:"model"`
+	Effort    string `json:"effort"`
 	// Title and URL are set by the server from the source's order, never by the client.
 	Title string `json:"-"`
 	URL   string `json:"-"`
