@@ -85,3 +85,10 @@ func TestBundleRunsTheGuard(t *testing.T) {
 		t.Error("PreToolUse lost the working hook")
 	}
 }
+
+func TestCodexBundleRegistersSessionStartSoTheRolloutIsRecorded(t *testing.T) {
+	flags := strings.Join(codexFlags(), " ")
+	if !strings.Contains(flags, "hooks.SessionStart=") || !strings.Contains(flags, "admiral hook SessionStart") {
+		t.Errorf("codex flags = %s, want a SessionStart hook that runs admiral hook SessionStart", flags)
+	}
+}

@@ -65,6 +65,7 @@ type fixture struct {
 	t       *testing.T
 	mu      sync.Mutex // the service reads the maps from its poller
 	cfg     string
+	codex   string // the fleet's Codex home: a separate tree, so a Codex path under projects/ is another harness's
 	svc     *Service
 	options map[string]string
 	starts  map[string]string // the command each ship's pane started with
@@ -80,7 +81,14 @@ func newFixture(t *testing.T) *fixture {
 	if err := os.MkdirAll(filepath.Join(cfg, "projects", "zz"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	f := &fixture{t: t, cfg: cfg, options: map[string]string{}, starts: map[string]string{}, harness: map[string]string{}}
+	codex, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(codex, "sessions", "2026", "11", "11"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f := &fixture{t: t, cfg: cfg, codex: codex, options: map[string]string{}, starts: map[string]string{}, harness: map[string]string{}}
 	f.svc = &Service{
 		owns: func(ships.Ship, int) bool { return true }, // the fakes listen in this process, not under a pane
 		ship: func(session string) (ships.Ship, bool) {
@@ -93,10 +101,18 @@ func newFixture(t *testing.T) *fixture {
 			f.mu.Lock()
 			defer f.mu.Unlock()
 			raw, ok := f.options[sh.Session]
-			return raw, f.starts[sh.Session], cfg, ok
+			return raw, f.starts[sh.Session], f.homeOf(f.harness[sh.Session]), ok
 		},
 	}
 	return f
+}
+
+// homeOf is the home the seams return for a harness: Claude's config dir or Codex's home, as production derives them.
+func (f *fixture) homeOf(harness string) string {
+	if harness == "codex" {
+		return f.codex
+	}
+	return f.cfg
 }
 
 func (f *fixture) path(dir string) string { return filepath.Join(f.cfg, "projects", dir, sid+".jsonl") }
@@ -137,9 +153,9 @@ func TestConversationEndpoint_States(t *testing.T) {
 		t.Errorf("an unknown ship = %d %s, want 404", code, body)
 	}
 
-	f.harness["codex-ship"] = "codex"
-	f.options["codex-ship"] = "1700000000000000000 launch " + f.path("zz")
-	f.wantState("codex-ship", "none")
+	f.harness["copilot-ship"] = "copilot"
+	f.options["copilot-ship"] = "1700000000000000000 launch " + f.path("zz")
+	f.wantState("copilot-ship", "none") // no adapter for this harness
 
 	f.harness["bare"] = "claude"
 	f.options["bare"] = ""
@@ -407,11 +423,11 @@ func TestConversationSocket_AnAppendToADismissedShipIsNotPushed(t *testing.T) {
 func TestConversationSocket_IgnoresShipsWithNoConversation(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	f.harness["codex-ship"] = "codex"
-	f.options["codex-ship"] = ""
+	f.harness["copilot-ship"] = "copilot"
+	f.options["copilot-ship"] = ""
 	base := serve(t, f)
 	c := dial(t, base)
-	c.send("conversation_open", "codex-ship")
+	c.send("conversation_open", "copilot-ship")
 	c.send("conversation_open", "unknown")
 	c.quiet("an open for a ship with no conversation")
 }
