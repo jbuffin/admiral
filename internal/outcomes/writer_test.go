@@ -267,7 +267,8 @@ func TestWriterDropsOnOverflowAndLogsOncePerFill(t *testing.T) {
 		t.Errorf("5 dropped records logged %d lines (%q), want one", n, sink.lines)
 	}
 	close(release)
-	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+	// Draining 1025 appends can take seconds on a loaded machine.
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(10 * time.Millisecond) {
 		if len(readLines(t, filepath.Join(dir, "2026-01.jsonl"))) == 1+1024 {
 			break
 		}
