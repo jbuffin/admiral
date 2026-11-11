@@ -51,13 +51,45 @@ func (w *world) wake(session, text string) shipJSON {
 	return decodeShip(w.t, body)
 }
 
+// seedRound writes the transcript the fake harness does not, at the session id the launch passed it.
+func seedRound(t *testing.T, cfgDir string, r record, text string) {
+	t.Helper()
+	for i, a := range r.argv {
+		if a == "--session-id" && i+1 < len(r.argv) {
+			appendLines(t, filepath.Join(cfgDir, "projects", "zz", r.argv[i+1]+".jsonl"), userLine("u-1", text, nil))
+			return
+		}
+	}
+	t.Fatalf("argv %q has no --session-id", r.argv)
+}
+
 func TestWakingAMooredShipByHandRelaunchesItUnderTheSameName(t *testing.T) {
 	t.Parallel()
 	w, g := mooring(t, "exit 0")
 	g.prState(mooredPR, "OPEN")
+	cfgDir := filepath.Join(w.root, "claude-cfg")
+	if err := os.MkdirAll(filepath.Join(cfgDir, "projects", "zz"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Commodore is looked for under the identity dir once the fleet names one.
+	skill := filepath.Join(cfgDir, "skills", "commodore")
+	if err := os.MkdirAll(skill, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte("---\nname: commodore\ndescription: a fake skill\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var fleets map[string]any
+	if err := json.Unmarshal([]byte(w.readFile(configPath(w.home))), &fleets); err != nil {
+		t.Fatal(err)
+	}
+	fleets["fleets"].(map[string]any)["f"].(map[string]any)["claude"].(map[string]any)["env"].(map[string]any)["CLAUDE_CONFIG_DIR"] = cfgDir
+	b, _ := json.Marshal(fleets)
+	writeConfig(t, w.home, string(b))
 	w.start()
 
 	ship := w.launch(w.order("f", "claude", "widgets", commodore, "do it"))
+	seedRound(t, cfgDir, w.record(ship.Session), "round zero")
 	w.exitWith(ship, wakeReport())
 	w.in.waitShipsList(t, 20*time.Second, "the ship moored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "moored" })
 
@@ -81,8 +113,38 @@ func TestWakingAMooredShipByHandRelaunchesItUnderTheSameName(t *testing.T) {
 		t.Errorf("woken event = %v, want by hand, round 1", e)
 	}
 
+	seedRound(t, cfgDir, r, "round one")
 	w.exitWith(woken, wakeReport())
 	w.in.waitShipsList(t, 20*time.Second, "the ship moored again", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "moored" })
+	var code int
+	var body string
+	var got []string
+	var divider string
+	for end := time.Now().Add(20 * time.Second); ; time.Sleep(200 * time.Millisecond) {
+		code, body = send(t, http.MethodGet, w.in.LocalURL+"/api/ships/"+ship.Session+"/conversation", nil)
+		var page struct {
+			State string `json:"state"`
+			Items []struct {
+				ID   string `json:"id"`
+				Kind string `json:"kind"`
+			} `json:"items"`
+		}
+		got, divider = nil, ""
+		if code == http.StatusOK && json.Unmarshal([]byte(body), &page) == nil && page.State == "ok" {
+			for _, it := range page.Items {
+				got = append(got, it.ID)
+				if it.Kind == "round" {
+					divider = it.ID
+				}
+			}
+			if reflect.DeepEqual(got, []string{"u-1", "r1", "r1:u-1"}) && divider == "r1" {
+				break
+			}
+		}
+		if time.Now().After(end) {
+			t.Fatalf("GET conversation of the moored ship = %d %s, want ok with ids [u-1 r1 r1:u-1] and r1 a round divider", code, body)
+		}
+	}
 	var rec map[string]any
 	if err := json.Unmarshal([]byte(w.readFile(w.mooredFile(ship.Name))), &rec); err != nil {
 		t.Fatal(err)

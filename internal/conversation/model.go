@@ -26,6 +26,7 @@ const (
 	KindTurnEnd    Kind = "turn_end"
 	KindCompaction Kind = "compaction"
 	KindNotice     Kind = "notice" // a line the harness wrote in the user's turn, not the engineer
+	KindRound      Kind = "round"  // the divider that opens a feedback round of a moored ship
 )
 
 // Item is one thing in a conversation. ID is stable across reads and is the paging
@@ -38,7 +39,9 @@ type Item struct {
 	Meta     bool          `json:"meta,omitempty"` // a notice the chat's text view does not show
 	Tool     *ToolCall     `json:"tool,omitempty"`
 	Question *Question     `json:"question,omitempty"`
-	Duration time.Duration `json:"-"` // of a turn end; served as durationMs
+	Round    int           `json:"round,omitempty"` // of a round divider
+	State    string        `json:"state,omitempty"` // of a round divider whose round cannot be shown: none, gone or unreadable
+	Duration time.Duration `json:"-"`               // of a turn end; served as durationMs
 }
 
 func (it Item) MarshalJSON() ([]byte, error) {

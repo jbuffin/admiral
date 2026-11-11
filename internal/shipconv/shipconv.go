@@ -15,6 +15,7 @@ import (
 
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/conversation"
+	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
@@ -48,6 +49,12 @@ type Service struct {
 	option func(sh ships.Ship) (raw, startCmd, configDir string, ok bool)
 	owns   func(sh ships.Ship, port int) bool                                // whether the ship's own Copilot listens on port
 	crew   func(sh ships.Ship, name string) (sessionhost.Crew, string, bool) // the boat and its fleet's config dir for the boat's harness
+
+	// Tests replace these lookups of a ship's rounds.
+	moored    func(session string) (ships.Ship, bool)   // a ship with no live session but a moored record
+	rounds    func(sh ships.Ship) ([]moor.Round, error) // the ship's recorded rounds
+	fleetDir  func(fleet string) (string, bool)         // a fleet's Claude config dir
+	liveRound func(sh ships.Ship) int                   // the round a live ship is in
 
 	mu      sync.Mutex
 	seen    map[string]string // session -> option value a file was seen for: tells gone from none
