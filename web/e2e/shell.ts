@@ -9,10 +9,12 @@ import type { Admiral } from './fixtures';
 export const WORK = 'Westwind';
 export const HOME = 'Homeport';
 
+const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'admiral');
+
 const identityVar = { claude: 'CLAUDE_CONFIG_DIR', codex: 'CODEX_HOME', copilot: 'COPILOT_HOME' } as const;
 type Harness = keyof typeof identityVar;
 
-/** A dock whose harness idles in its tmux pane, so a ship launched from it stays afloat; the one that only exits is for fleets that never launch. */
+/** Live docks idle in their pane so a launched ship stays afloat. */
 function dock(a: Admiral, fleet: string, harness: Harness, live: boolean) {
   const env = { [identityVar[harness]]: `${a.home}/identity/${fleet}-${harness}` };
   if (!live) return { executable: a.fakeHarness(harness), env };
@@ -47,10 +49,7 @@ export function probeableClaude(a: Admiral) {
   };
 }
 
-/**
- * Two fleets, first `zulu` (Westwind: claude and codex docks), then `alpha` (Homeport: codex and copilot), and a logo for each harness.
- * With `live`, ships can launch from the docks, and zulu has an orders source holding the orders in `ORDERS`. `claude` replaces Westwind's claude dock.
- */
+/** Zulu (Westwind) comes first, alpha (Homeport) second; `live` makes the docks launchable and gives zulu the orders; `claude` replaces zulu's claude dock. */
 export function seedFleets(a: Admiral, opts: { live?: boolean; claude?: { executable: string; env: Record<string, string> } } = {}) {
   const live = !!opts.live;
   const config: Record<string, unknown> = {
@@ -121,10 +120,7 @@ async function listShips(a: Admiral): Promise<ShipJSON[]> {
   return ((await res.json()) as { ships: ShipJSON[] }).ships;
 }
 
-/**
- * Launches a ship from a live dock in `proj` and waits for it to take the status its cue makes it reach: the harness
- * exits with the cue's code (`exit 0` sails off, `exit 3` anchors), or idles when there is no cue.
- */
+/** The cue makes the harness exit (0 sails off, 3 anchors); without one it idles. */
 export async function launchShip(
   a: Admiral,
   req: { fleet: 'zulu' | 'alpha'; harness: Harness; order?: string; exit?: 0 | 3 },
@@ -157,6 +153,13 @@ export async function launchShip(
   }
   rmSync(cue, { force: true });
   return ship;
+}
+
+/** Launches an idling crew boat for the ship, which counts in its `crew_live`. */
+export function launchCrew(a: Admiral, ship: LaunchedShip, name: string) {
+  const env = { ...process.env, ADMIRAL_HOME: a.home, ADMIRAL_SHIP: ship.session, FAKE_RECORD_DIR: join(a.home, 'rec'), FAKE_CUE: join(a.home, 'cue') };
+  const r = spawnSync(BIN, ['crew', 'launch', '--name', name, '--harness', 'claude', '--dir', join(a.home, 'proj'), '--', 'go'], { env, encoding: 'utf8' });
+  expect(r.status, r.stderr).toBe(0);
 }
 
 const tmux = (a: Admiral, ...args: string[]) => spawnSync('tmux', ['-S', join(a.home, 'tmux.sock'), ...args], { encoding: 'utf8' });

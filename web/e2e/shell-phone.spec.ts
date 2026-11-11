@@ -14,8 +14,8 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   await say(admiral, login, 'Which branch should I rebase onto?');
   const billing = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-billing' });
   setState(admiral, billing, 'working');
-  // Waits for the harness to start, so the next launch's exit cue cannot reach it.
-  await say(admiral, billing, 'Reading billing/export.go');
+  // A tail near the 200-character cap, to guard the no-scroll check below.
+  await say(admiral, billing, 'Reading billing/export.go '.repeat(7).trim());
   const moored = await launchShip(admiral, { fleet: 'zulu', harness: 'codex', exit: 3 });
 
   await page.goto(admiral.url + 'app/');
@@ -35,7 +35,7 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   await expect(row(login).locator('img[src="/api/v1/logos/claude"]')).toBeVisible();
   await expect(row(moored).locator('img[src="/api/v1/logos/codex"]')).toBeVisible();
   for (const ship of [login, billing, moored]) expect((await row(ship).boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => [document.documentElement, document.querySelector('main')!].every((e) => e.scrollWidth <= e.clientWidth))).toBe(true);
 
   await page.getByRole('banner').getByRole('button', { name: WORK, exact: true }).tap();
   const sheet = page.getByRole('dialog', { name: 'Fleets' });

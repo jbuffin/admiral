@@ -6,8 +6,8 @@ import { FleetSwitcher } from './FleetSwitcher';
 import { Icon } from './Icon';
 import { Preferences } from './Preferences';
 import { Sheet } from './Sheet';
-import { GROUP_TITLES, groupShips } from './shipList';
-import { ships } from './shipsLink';
+import { GROUP_TITLES, groupShips, shipAge } from './shipList';
+import { ships, shipsLoaded } from './shipsLink';
 import { StatusGlyph } from './StatusGlyph';
 import type { Ship } from './api';
 import { go, loc, surfaceOf, surfacePath } from './router';
@@ -62,9 +62,23 @@ function EmptyState({ surface, title }: { surface: Surface; title: boolean }) {
   );
 }
 
-function ShipRow({ ship }: { ship: Ship }) {
+const HEX = /^#[0-9a-f]{3,8}$/i;
+
+// Ages count from the launch time, so they refresh on a timer rather than on a ships message.
+function useNow() {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  return now;
+}
+
+function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
+  const meta = ship.crew_live > 0 ? `${ship.crew_live} crew` : '';
   return (
     <li class="ship-row">
+      <span class="ship-bar" style={{ background: HEX.test(ship.fleet_color) ? ship.fleet_color : bar }} aria-hidden="true" />
       <Flag harness={ship.harness} size="row" />
       <div class="ship-main">
         <span class="ship-name">{ship.name}</span>
@@ -75,31 +89,38 @@ function ShipRow({ ship }: { ship: Ship }) {
         ) : null}
         {ship.tail ? <span class="ship-tail">{ship.tail}</span> : null}
       </div>
+      <div class="ship-side">
+        {meta ? <span class="ship-meta">{meta}</span> : null}
+        <span class="ship-age">{shipAge(ship.launched, now)}</span>
+      </div>
     </li>
   );
 }
 
 function ShipsPanel({ surface, title }: { surface: Surface; title: boolean }) {
+  const now = useNow();
   const fleet = activeFleet.value;
   const groups = fleet ? groupShips(ships.value, fleet.key) : [];
-  if (groups.length === 0) return <EmptyState surface={surface} title={title} />;
+  if (shipsLoaded.value && groups.length === 0) return <EmptyState surface={surface} title={title} />;
   return (
     <main class="panel">
       {title ? <h1>{surface.title}</h1> : null}
-      <p class="fleet-label">
-        <span class="dot" style={{ background: fleetPaint(fleet!).fill }} aria-hidden="true" />
-        {fleet!.name}
-      </p>
+      {fleet ? (
+        <p class="fleet-label">
+          <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
+          {fleet.name}
+        </p>
+      ) : null}
       {groups.map((g) => (
         <section key={g.status} class="ship-group" aria-labelledby={`group-${g.status}`}>
           <h2 id={`group-${g.status}`} class={`group-head group-${g.status}`}>
             <StatusGlyph status={g.status} />
-            {GROUP_TITLES[g.status]}
+            {GROUP_TITLES[g.status]}{' '}
             <span class="count">{g.ships.length}</span>
           </h2>
           <ul class="ship-list">
             {g.ships.map((s) => (
-              <ShipRow key={s.session} ship={s} />
+              <ShipRow key={s.session} ship={s} bar={fleetPaint(fleet!).fill} now={now} />
             ))}
           </ul>
         </section>

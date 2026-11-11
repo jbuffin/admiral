@@ -28,6 +28,9 @@ export interface Ship {
   order_id: string;
   title: string;
   tail: string;
+  fleet_color: string;
+  launched: string;
+  crew_live: number;
 }
 
 const API = '/api/v1';

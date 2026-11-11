@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { HOME, LIVE_ENV, WORK, launchShip, probeableClaude, say, seedFleets, setState, watchPage } from './shell';
+import { HOME, LIVE_ENV, WORK, launchCrew, launchShip, probeableClaude, say, seedFleets, setState, watchPage } from './shell';
 
 const surface = (page: Page, title: string) => page.getByRole('heading', { name: title, exact: true });
 const nav = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
@@ -23,6 +23,8 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   const sailed = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', exit: 0 });
   const visitor = await launchShip(admiral, { fleet: 'alpha', harness: 'codex' });
   setState(admiral, visitor, 'working');
+  // After the last cue is cleared, so the idling crew boat cannot read an exit cue.
+  launchCrew(admiral, billing, 'mate');
 
   await page.goto(admiral.url + 'app/');
   await expect(page).toHaveURL(/\/app\/inbox(\?|$)/);
@@ -54,6 +56,9 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await expect(row(page, billing)).toContainText('Reading billing/export.go');
   await expect(row(page, moored).locator('img[src="/api/v1/logos/codex"]')).toBeVisible();
   await expect(row(page, moored)).not.toContainText(/undefined|null|Reading|Which branch/);
+  await expect(row(page, billing)).toContainText('1 crew');
+  await expect(row(page, billing).locator('.ship-age')).toHaveText(/^(now|\d+m)$/);
+  await expect(row(page, login)).not.toContainText('crew');
   expect((await row(page, login).boundingBox())!.height).toBeGreaterThanOrEqual(44);
 
   // Server-side changes reach the open page: a ship moves group when its status changes and its tail updates.
