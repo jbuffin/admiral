@@ -82,4 +82,26 @@ test.describe('the new shell on the phone: sheet backdrops', () => {
     await expect(fleets).toBeHidden();
     await expect(page).toHaveURL(/\/app\/crew/);
   });
+
+  test('a sheet covers the tab bar, and a backdrop tap above it in the Chat column goes nowhere', async ({ page, admiral }) => {
+    seedFleets(admiral);
+    await admiral.start();
+    await page.goto(admiral.url + 'app/crew');
+    const chat = (await page.getByRole('link', { name: 'Chat', exact: true }).boundingBox())!;
+    const x = chat.x + chat.width / 2;
+    const more = page.getByRole('dialog', { name: 'More' });
+
+    await page.getByRole('button', { name: 'More', exact: true }).tap();
+    await expect(more).toBeVisible();
+    // The tabs sit under the sheet, not the backdrop, so no backdrop tap can reach one. If a layout
+    // change ever uncovers them, this fails: then tap the backdrop over the Chat tab itself.
+    const covered = await page.evaluate(([px, py]) => !!document.elementFromPoint(px, py)?.closest('[role="dialog"]'), [x, chat.y + chat.height / 2]);
+    expect(covered).toBe(true);
+
+    const top = (await more.boundingBox())!.y;
+    await page.touchscreen.tap(x, top - 20);
+    await expect(more).toBeHidden();
+    await expect(page.getByRole('dialog', { name: 'Fleets' })).toBeHidden();
+    await expect(page).toHaveURL(/\/app\/crew/);
+  });
 });
