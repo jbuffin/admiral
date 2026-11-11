@@ -20,7 +20,7 @@ type treeGH struct {
 const treeGHScript = `#!/bin/sh
 d="$FAKEGH_TREE"
 mkdir -p "$d/calls"
-n=$(ls "$d/calls" | wc -l | tr -d ' ')
+n=$(ls "$d/calls" | grep -c argv)
 printf '%s\0' "$@" > "$d/calls/$n.argv"
 printf '%s\n' "$GH_TOKEN" > "$d/calls/$n.token"
 owner= repo= number= after= q=
@@ -318,5 +318,64 @@ func TestTreeErrors(t *testing.T) {
 				t.Errorf("error shows the token: %q", err)
 			}
 		})
+	}
+}
+
+func issueJSON(repo string, n int, state, body string, extra string) string {
+	return fmt.Sprintf(`{"__typename":"Issue","number":%d,"title":"Issue %d","url":"https://github.com/%s/issues/%d","state":"%s","body":%q,`+
+		`"repository":{"nameWithOwner":"%s"},"labels":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}},"assignees":{"nodes":[]},`+
+		`%s"subIssues":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}`, n, n, repo, n, state, body, repo, extra)
+}
+
+const noBlockers = `"blockedBy":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}},`
+
+func issueAnswer(inner string) string {
+	return `{"data":{"repository":{"issueOrPullRequest":` + inner + `}}}`
+}
+
+func searchAnswer(nodes ...string) string {
+	return `{"data":{"search":{"nodes":[` + strings.Join(nodes, ",") + `],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}`
+}
+
+func TestTreeLooksUpABodyBlockerOutsideTheTree(t *testing.T) {
+	root := issueJSON("acme/campaign", 1, "OPEN", "", noBlockers)
+	g := newTreeGH(t, map[string]string{
+		"acme_campaign_1.json": issueAnswer(root),
+		"search.json":          searchAnswer(issueJSON("acme/campaign", 60, "OPEN", "Part of #1\n\nBlocked by: acme/other#90, #1", noBlockers)),
+		"acme_other_90.json":   issueAnswer(issueJSON("acme/other", 90, "OPEN", "", noBlockers)),
+	})
+	tree, err := g.client("github.com").Tree(context.Background(), "fake-token-work-2", "acme", "campaign", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := find(tree, 60)
+	if n == nil || len(n.BlockedBy) != 2 {
+		t.Fatalf("child 60 = %+v, want two blockers", n)
+	}
+	if b := n.BlockedBy[0]; b.URL != "https://github.com/acme/other/issues/90" || b.Closed || b.Title != "Issue 90" {
+		t.Errorf("outside blocker = %+v, want the open issue acme/other#90 read from GitHub", b)
+	}
+	if b := n.BlockedBy[1]; b.URL != "https://github.com/acme/campaign/issues/1" {
+		t.Errorf("in-tree blocker = %+v", b)
+	}
+}
+
+func TestTreeReadsEveryPageOfBlockers(t *testing.T) {
+	blocker := func(n int) string {
+		return fmt.Sprintf(`{"url":"https://github.com/acme/other/issues/%d","title":"B%d","state":"OPEN"}`, n, n)
+	}
+	child := issueJSON("acme/campaign", 2, "OPEN", "", `"blockedBy":{"nodes":[`+blocker(91)+`],"pageInfo":{"hasNextPage":true,"endCursor":"B1"}},`)
+	root := strings.Replace(issueJSON("acme/campaign", 1, "OPEN", "", noBlockers), `"subIssues":{"totalCount":0,"nodes":[]`, `"subIssues":{"totalCount":1,"nodes":[`+child+`]`, 1)
+	g := newTreeGH(t, map[string]string{
+		"acme_campaign_1.json":    issueAnswer(root),
+		"acme_campaign_2_B1.json": issueAnswer(`{"blockedBy":{"nodes":[` + blocker(92) + `],"pageInfo":{"hasNextPage":false,"endCursor":null}}}`),
+		"search.json":             searchAnswer(),
+	})
+	tree, err := g.client("github.com").Tree(context.Background(), "fake-token-work-2", "acme", "campaign", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := find(tree, 2); n == nil || len(n.BlockedBy) != 2 || n.BlockedBy[1].Title != "B92" {
+		t.Errorf("child 2 = %+v, want both pages of blockers", n)
 	}
 }
