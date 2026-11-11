@@ -178,10 +178,12 @@ type SessionSpec struct {
 	Name    string
 	Dir     string
 	Options [][2]string
-	Env     map[string]string
-	Unset   []string
-	Argv    []string
-	Anchor  bool
+	// PaneOptions are set before the harness replaces the placeholder, so its first hook finds them.
+	PaneOptions [][2]string
+	Env         map[string]string
+	Unset       []string
+	Argv        []string
+	Anchor      bool
 }
 
 // An environment variable too long for tmux is a *LimitError, and nothing is created.
@@ -196,6 +198,9 @@ func (s Server) StartSession(spec SessionSpec) error {
 	}
 	for _, o := range spec.Options {
 		cmds = append(cmds, []string{"set-option", "-t", target, Prefix + o[0], o[1]})
+	}
+	for _, o := range spec.PaneOptions {
+		cmds = append(cmds, []string{"set-option", "-p", "-t", pane, Prefix + o[0], o[1]})
 	}
 	for _, k := range spec.Unset {
 		// -r, not -u: -u would fall back to the server's own environment.
@@ -385,6 +390,24 @@ func (s Server) ReadChatOptions(ctx context.Context, pane string) (ChatOptions, 
 		return ChatOptions{}, fmt.Errorf("unexpected options %q", out)
 	}
 	return ChatOptions{Model: f[0], Effort: f[1], Fleet: f[2], Transcript: f[3]}, nil
+}
+
+// The value is untrusted: anything running in the pane can write it.
+func (s Server) ReadPaneOption(ctx context.Context, pane, name string) (string, error) {
+	out, err := s.run(call{ctx: ctx, utf8After: true, args: []string{"display-message", "-p", "-t", pane, "#{" + Prefix + name + "}"}})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(out, "\n"), nil
+}
+
+// ReadPaneStartCommand is the command the pane was started with; unlike a pane option, `set-option` cannot change it.
+func (s Server) ReadPaneStartCommand(ctx context.Context, pane string) (string, error) {
+	out, err := s.run(call{ctx: ctx, utf8After: true, args: []string{"display-message", "-p", "-t", pane, "#{pane_start_command}"}})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(out, "\n"), nil
 }
 
 type WindowSize struct {

@@ -162,6 +162,8 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 
 	argv := append([]string{exe}, dock.Args...)
 	argv = append(argv, req.ExtraArgs...)
+	sessionFlags, paneOpts := conversationAnchor(req, dock, time.Now())
+	argv = append(argv, sessionFlags...)
 	prompt := promptFor(req.Harness, skill, req.Skill.Kind, req.Note, req.Text)
 	flags, known := l.hookFlags(req.Harness)
 	if !known {
@@ -222,7 +224,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		}
 	}
 
-	if err := l.create(session, req.Dir, opts, env, unset, argv); err != nil {
+	if err := l.createSession(session, req.Dir, opts, paneOpts, env, unset, argv, true); err != nil {
 		return nil, err
 	}
 	out := &Launched{Session: session, Options: map[string]string{}}
@@ -446,13 +448,8 @@ func taken(shipNames, sessions map[string]bool, kept func(session string) bool) 
 	}
 }
 
-func (l *Launcher) create(session, dir string, opts [][2]string, env map[string]string, unset, argv []string) error {
-	return l.createSession(session, dir, opts, env, unset, argv, true)
-}
-
-// A ship is anchored: its pane stays after the harness exits. The chat's session ends with Claude.
-func (l *Launcher) createSession(session, dir string, opts [][2]string, env map[string]string, unset, argv []string, anchor bool) error {
-	err := l.server().StartSession(sessionhost.SessionSpec{Name: session, Dir: dir, Options: opts, Env: env, Unset: unset, Argv: argv, Anchor: anchor})
+func (l *Launcher) createSession(session, dir string, opts, paneOpts [][2]string, env map[string]string, unset, argv []string, anchor bool) error {
+	err := l.server().StartSession(sessionhost.SessionSpec{Name: session, Dir: dir, Options: opts, PaneOptions: paneOpts, Env: env, Unset: unset, Argv: argv, Anchor: anchor})
 	var limit *sessionhost.LimitError
 	if errors.As(err, &limit) {
 		return refuse(http.StatusBadRequest, "%s", limit.Msg)

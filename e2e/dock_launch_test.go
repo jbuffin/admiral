@@ -94,7 +94,7 @@ func TestDockLaunchWithoutText(t *testing.T) {
 				switch harness {
 				case "claude":
 					want := []string{"--fa-claude", "--settings", filepath.Join(w.home, "harness", "claude-settings.json")}
-					if !reflect.DeepEqual(r.argv, want) {
+					if !reflect.DeepEqual(r.claudeArgvBase(), want) {
 						t.Errorf("claude argv = %q, want exactly %q", r.argv, want)
 					}
 				case "copilot":

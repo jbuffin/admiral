@@ -30,6 +30,7 @@ import (
 	"github.com/jbuffin/admiral/internal/resources"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
+	"github.com/jbuffin/admiral/internal/shipconv"
 	"github.com/jbuffin/admiral/internal/ships"
 	"github.com/jbuffin/admiral/internal/sources"
 	"github.com/jbuffin/admiral/internal/state"
@@ -336,10 +337,11 @@ func serve(args []string) error {
 
 	chatService := &chat.Service{Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Home: absDir}
 	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
-	s := &server.Server{Version: version, Commit: commit, UI: web.UI(), Messages: map[string]server.MessageHandler{}, Config: cfg,
+	convService := &shipconv.Service{Ships: shipService, Config: cfg.Current, Tmux: tmuxPath, Socket: sock}
+	s := &server.Server{Version: version, Commit: commit, UI: web.UI(), Messages: convService.Messages(), Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService,
-			&launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}, bridgeService, resourceService, lockRoute, chatService},
-		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat"}}
+			&launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}, bridgeService, resourceService, lockRoute, chatService, convService},
+		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat", "conversation"}}
 	bg, stopBackground := context.WithCancel(context.Background())
 	var background sync.WaitGroup
 	supervisor.Start(bg)
