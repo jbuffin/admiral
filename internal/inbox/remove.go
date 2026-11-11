@@ -24,6 +24,9 @@ func (s *Service) RemoveItem(session, id string) (ReviewResult, error) {
 	if it.Kind == KindNotice {
 		return ReviewResult{Forgotten: true}, s.dismissNotice(session, id)
 	}
+	if it.Kind == KindWakeProposal {
+		return ReviewResult{Forgotten: true}, s.DismissProposal(id)
+	}
 	err = s.Answer(session, id, it.Kind, func(Item) (any, []outcomes.Record, error) {
 		file := struct {
 			Version  int    `json:"version"`

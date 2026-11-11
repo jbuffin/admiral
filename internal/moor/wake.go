@@ -399,7 +399,7 @@ func DecideWake(in WakeInput) Decision {
 	events := ev.waking
 	sort.SliceStable(events, func(i, j int) bool { return events[i].At.Before(events[j].At) })
 	d.Wake, d.PR, d.Events = true, chosen, events
-	d.Feedback = feedbackText(chosen, events)
+	d.Feedback = FeedbackText(chosen, events)
 
 	// A PR with no cursor keeps the old mooring as its boundary, since the next mooring is later than events that queue meanwhile.
 	for _, pr := range in.Record.PRs {
@@ -441,8 +441,8 @@ func advance(c Cursor, handed []Event) Cursor {
 	return c
 }
 
-// feedbackText is data for a ship to read: nothing in it is a prompt, an argument or a file name.
-func feedbackText(pr string, events []Event) string {
+// FeedbackText is data for a ship to read: nothing in it is a prompt, an argument or a file name.
+func FeedbackText(pr string, events []Event) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Feedback on %s\n", pr)
 	for _, e := range events {

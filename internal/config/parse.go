@@ -129,6 +129,11 @@ var (
 	colorRe = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 )
 
+// ValidLogin is whether l has the shape of a GitHub login, an app's [bot] suffix included.
+func ValidLogin(l string) bool {
+	return loginRe.MatchString(l) && len(strings.TrimSuffix(l, "[bot]")) <= 39
+}
+
 // Parse errors name the path of the bad value, without the file name.
 func Parse(data []byte) (*Config, error) {
 	top, err := members("", data)
@@ -325,7 +330,7 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 				return Fleet{}, err
 			}
 			for i, l := range f.WakeReviewers {
-				if !loginRe.MatchString(l) || len(strings.TrimSuffix(l, "[bot]")) > 39 {
+				if !ValidLogin(l) {
 					return Fleet{}, fmt.Errorf("%s[%d]: must be a GitHub login, got %q", p, i, l)
 				}
 			}

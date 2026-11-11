@@ -82,7 +82,9 @@ func (s *Service) writeAnswered(session, id, kind string, build func(Item) (file
 	}
 	if s.Outcomes != nil {
 		for _, r := range recs {
-			r.Ship = session
+			if r.Ship == "" {
+				r.Ship = session
+			}
 			s.Outcomes.Enqueue(r, nil)
 		}
 	}

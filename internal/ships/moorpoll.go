@@ -145,7 +145,9 @@ func (s *Service) decide(ctx context.Context, r moor.Record, answers map[string]
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake state cannot be read: %v\n", r.Name, err)
 		return
 	}
-	d := moor.DecideWake(moor.WakeInput{Record: r, State: state, Answers: answers, Reviewers: reviewers, Now: time.Now().UTC()})
+	now := time.Now().UTC()
+	d := moor.DecideWake(moor.WakeInput{Record: r, State: state, Answers: answers, Reviewers: reviewers, Now: now})
+	d.Next = s.propose(r, d, now)
 	if !d.Wake {
 		s.saveNext(r, state, d.Next)
 		return
