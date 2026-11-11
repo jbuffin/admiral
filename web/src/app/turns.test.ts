@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Item } from './api';
-import { blocksOf, capOutput, roundLabel, roundNote, toolRowLabel, workingLabel } from './turns';
+import { blocksOf, capOutput, roundLabel, roundNote, toolRowLabel, workingLabel, lastTurn } from './turns';
 
 const times = (name: string, n: number) => Array<string>(n).fill(name);
 
@@ -102,5 +102,27 @@ describe('roundNote', () => {
       "Admiral can't read this conversation",
       undefined,
     ]);
+  });
+});
+
+describe('lastTurn', () => {
+  const mk = (id: string, kind: Item['kind']): Item => ({ id, kind });
+  const ids = (items: Item[]) => items.map((i) => i.id);
+
+  it('keeps the items from the last user message on', () => {
+    const items = [mk('u1', 'user'), mk('a1', 'assistant'), mk('e1', 'turn_end'), mk('u2', 'user'), mk('a2', 'assistant'), mk('q', 'question')];
+    expect(ids(lastTurn(items))).toEqual(['u2', 'a2', 'q']);
+  });
+
+  it('keeps everything when no user message has been sent', () => {
+    expect(ids(lastTurn([mk('a1', 'assistant'), mk('t1', 'tool_call')]))).toEqual(['a1', 't1']);
+  });
+
+  it('is empty for an empty conversation', () => {
+    expect(lastTurn([])).toEqual([]);
+  });
+
+  it('is just the message when the ship has not answered it yet', () => {
+    expect(ids(lastTurn([mk('a0', 'assistant'), mk('u', 'user')]))).toEqual(['u']);
   });
 });

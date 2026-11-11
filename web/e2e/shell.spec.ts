@@ -634,7 +634,8 @@ test('the Inbox lists a question item and a needs-you stop from two fleets, each
   await expect(entry(login.name)).toHaveCount(0, { timeout: 15_000 });
   await expect(entry(visitor.name)).toHaveCount(1);
 
-  // A ship-backed row opens the ship.
+  // A ship-backed row opens Peek on its item.
   await entry(visitor.name).getByRole('link').tap();
-  await expect(page).toHaveURL(new RegExp(`/app/ships/${encodeURIComponent(visitor.session)}`));
+  await expect(page).toHaveURL(new RegExp(`/app/inbox/${encodeURIComponent(visitor.session)}/item/q-port`));
+  await expect(page.getByRole('region', { name: 'Peek' })).toBeVisible();
 });

@@ -15,7 +15,7 @@ const page = vi.hoisted(() => {
   return l;
 });
 
-import { campaignOf, campaignPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf } from './router';
+import { campaignOf, campaignPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath } from './router';
 
 describe('campaign paths', () => {
   it('round-trips an id through its page path', () => {
@@ -30,7 +30,6 @@ describe('campaign paths', () => {
   it('is the Campaigns surface, and no surface below it deeper than the id', () => {
     expect(surfaceOf('/app/campaigns/3f9c0a41b7d2e8a5')?.id).toBe('campaigns');
     expect(surfaceOf('/app/campaigns/3f9c0a41b7d2e8a5/extra')).toBeUndefined();
-    expect(surfaceOf('/app/inbox/3f9c0a41b7d2e8a5')).toBeUndefined();
   });
 });
 
@@ -100,5 +99,51 @@ describe('Remote access route', () => {
     expect(preferencesPage('/app/preferences/admiral/sources')).toBe('sources');
     expect(surfaceOf('/app/preferences/admiral/bogus')).toBeUndefined();
     expect(surfaceOf('/app/preferences/zulu/remote')).toBeUndefined();
+  });
+});
+
+describe('the Peek route', () => {
+  it('names a ship stop, a crew boat stop and a file item, each a path under the Inbox', () => {
+    expect(peekPath({ session: 's-abc' })).toBe('/app/inbox/s-abc');
+    expect(peekPath({ session: 's-abc', crew: 'scout' })).toBe('/app/inbox/s-abc/crew/scout');
+    expect(peekPath({ session: 's-abc', item: 'q-port' })).toBe('/app/inbox/s-abc/item/q-port');
+    for (const p of ['/app/inbox/s-abc', '/app/inbox/s-abc/crew/scout', '/app/inbox/s-abc/item/q-port']) expect(surfaceOf(p)?.id).toBe('inbox');
+    expect(peekOf('/app/inbox/s-abc')).toEqual({ session: 's-abc' });
+    expect(peekOf('/app/inbox/s-abc/crew/scout')).toEqual({ session: 's-abc', crew: 'scout' });
+    expect(peekOf('/app/inbox/s-abc/item/q-port')).toEqual({ session: 's-abc', item: 'q-port' });
+    expect(peekOf('/app/inbox/s-abc/item/q-port/')).toEqual({ session: 's-abc', item: 'q-port' });
+  });
+
+  it('round-trips segments that need escaping', () => {
+    const target = { session: 'a b/c', item: 'q 1/2' };
+    expect(peekPath(target)).toBe('/app/inbox/a%20b%2Fc/item/q%201%2F2');
+    expect(peekOf(peekPath(target))).toEqual(target);
+  });
+
+  it('names no Peek on the list, another surface or a path it does not know', () => {
+    expect(peekOf('/app/inbox')).toBeNull();
+    expect(peekOf('/app/ships/s-abc')).toBeNull();
+    expect(peekOf('/app/inbox/s-abc/%E0%A4%A')).toBeNull();
+    for (const p of ['/app/inbox/s-abc/crew', '/app/inbox/s-abc/item', '/app/inbox/s-abc/other/x', '/app/inbox/s-abc/item/q/extra', '/app/inbox/s-abc/crew/scout/extra']) {
+      expect(peekOf(p), p).toBeNull();
+      expect(surfaceOf(p), p).toBeUndefined();
+    }
+  });
+
+  it('survives a reload on a Peek path, and an unknown path under the Inbox lands on the list', async () => {
+    vi.resetModules();
+    const open = async (pathname: string) => {
+      vi.stubGlobal('location', { pathname, search: '?fleet=alpha' });
+      const replaceState = vi.fn();
+      vi.stubGlobal('history', { replaceState, pushState: vi.fn() });
+      vi.stubGlobal('addEventListener', vi.fn());
+      const { startRouter } = await import('./router');
+      startRouter();
+      return replaceState;
+    };
+    expect(await open('/app/inbox/s-abc/item/q-port')).not.toHaveBeenCalled();
+    vi.resetModules();
+    expect(await open('/app/inbox/s-abc/nowhere/x')).toHaveBeenCalledWith(null, '', '/app/inbox?fleet=alpha');
+    vi.stubGlobal('location', page);
   });
 });
