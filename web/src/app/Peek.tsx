@@ -49,8 +49,14 @@ function ShipTurn({ ship, boat, fleetKey, item, children }: { ship: Ship; boat?:
   );
 }
 
-function ItemForm({ entry, fold }: { entry: Entry; fold: (text: string) => void }) {
-  const questions = entry.item?.question?.questions ?? [];
+export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => void }) {
+  const ship = ships.value.find((s) => s.session === entry.session);
+  const boat = entry.crew ? ship?.crew.find((b) => b.name === entry.crew!.name) : undefined;
+  const fleetKey = entry.fleet?.key ?? ship?.fleet;
+  const item = entry.type === 'item';
+  const title = entry.item?.title;
+  const question = entry.item?.kind === 'question';
+  // The draft lives here, above the ship's arrival, so it survives ShipTurn replacing the bare form.
   const [draft, setDraft] = useState<Draft>(blankDraft);
   const [locked, setLocked] = useState(false);
   const send = async (body: AnswerBody) => {
@@ -60,20 +66,13 @@ function ItemForm({ entry, fold }: { entry: Entry; fold: (text: string) => void 
     if (r.status === 409) setLocked(true);
     setDraft((d) => ({ ...d, sending: false, error: r.error }));
   };
-  return (
+  const form = question ? (
     <div class="peek-form">
-      <PeekQuestions questions={questions} draft={draft} edit={(fn) => setDraft(fn)} onSend={(b) => void send(b)} locked={locked} />
+      <PeekQuestions questions={entry.item?.question?.questions ?? []} draft={draft} edit={(fn) => setDraft(fn)} onSend={(b) => void send(b)} locked={locked} />
     </div>
-  );
-}
-
-export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => void }) {
-  const ship = ships.value.find((s) => s.session === entry.session);
-  const boat = entry.crew ? ship?.crew.find((b) => b.name === entry.crew!.name) : undefined;
-  const fleetKey = entry.fleet?.key ?? ship?.fleet;
-  const item = entry.type === 'item';
-  const title = entry.item?.title;
-  const form = item ? <ItemForm key={entry.key} entry={entry} fold={fold} /> : null;
+  ) : item && entry.item?.kind !== 'notice' ? (
+    <p class="line">Answered from the bridge for now.</p>
+  ) : null;
   return (
     <section class="peek" role="region" aria-label="Peek">
       <div class="peek-head">

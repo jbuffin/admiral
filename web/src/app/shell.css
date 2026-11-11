@@ -523,7 +523,7 @@ button.pill { cursor: pointer; min-height: 32px; }
 .inbox-option-label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 600; overflow-wrap: anywhere; }
 .inbox-option-desc { font-size: var(--font-size-meta); color: var(--color-muted); overflow-wrap: anywhere; }
 .inbox-recommended { padding: 1px 6px; border-radius: var(--shape-radius-sm); background: var(--color-sel); color: var(--color-text2); font-size: var(--font-size-meta); font-weight: 500; }
-.inbox-input, .inbox-note { display: block; width: 100%; box-sizing: border-box; padding: 8px 12px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); background: var(--color-panel); color: var(--color-text); font: inherit; font-size: 16px; }
+.inbox-input, .inbox-note { display: block; min-height: var(--shape-min-touch-target, 44px); width: 100%; box-sizing: border-box; padding: 8px 12px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); background: var(--color-panel); color: var(--color-text); font: inherit; font-size: 16px; }
 .inbox-note { resize: vertical; }
 .inbox-error { margin: 0; color: var(--color-err); overflow-wrap: anywhere; }
 .inbox-send-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }

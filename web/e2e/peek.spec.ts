@@ -64,9 +64,20 @@ test('Peek answers a question item: choices and a note go to the answer route, t
       ],
     },
   });
+  seedInboxItem(admiral, visitor.session, { id: 'r-diff', kind: 'review', title: 'Review the visitor diff', review: {} });
   await page.goto(admiral.url + 'app/inbox?fleet=alpha');
-  const row = page.getByRole('main').getByRole('listitem').filter({ hasText: visitor.name });
-  await expect(row).toContainText('Which port should the visitor use?', { timeout: 15_000 });
+  const row = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Which port should the visitor use?' });
+  await expect(row).toContainText(visitor.name, { timeout: 15_000 });
+
+  // A review item has no form yet: its Peek says it is answered from the bridge.
+  const reviewRow = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Review the visitor diff' });
+  await expect(reviewRow).toBeVisible({ timeout: 15_000 });
+  await reviewRow.getByRole('link').tap();
+  await expect(peekOf(page)).toContainText('Answered from the bridge for now');
+  await expect(peekOf(page).getByRole('button', { name: 'Send answers' })).toHaveCount(0);
+  await peekOf(page).getByRole('link', { name: 'Back' }).tap();
+  await expect(peekOf(page)).toHaveCount(0);
+
   await row.getByRole('link').tap();
   await expect(page).toHaveURL(new RegExp(`/app/inbox/${encodeURIComponent(visitor.session)}/item/q-port`));
 
@@ -96,8 +107,10 @@ test('Peek answers a question item: choices and a note go to the answer route, t
   expect(readFileSync(answerFile, 'utf8')).toContain('8080');
   await expect(peekOf(page)).toHaveCount(0);
   await expect(page).toHaveURL(/\/app\/inbox(\?|$)/);
-  await expect(row).toContainText('Answered');
-  await expect(row).toHaveCount(0, { timeout: 15_000 });
+  // The fold keeps only the ship and the confirmation, so the row is found by the confirmation.
+  const folded = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Answered' });
+  await expect(folded).toContainText(visitor.name);
+  await expect(folded).toHaveCount(0, { timeout: 15_000 });
 });
 
 test('a refused question item answer shows the error: 409 locks Send, 400 keeps the form editable', async ({ page, admiral }) => {

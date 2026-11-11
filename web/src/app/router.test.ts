@@ -115,8 +115,8 @@ describe('the Peek route', () => {
   });
 
   it('round-trips segments that need escaping', () => {
-    const target = { session: 'a b/c', item: 'q 1/2' };
-    expect(peekPath(target)).toBe('/app/inbox/a%20b%2Fc/item/q%201%2F2');
+    const target = { session: 'a b', item: 'q 1/2' };
+    expect(peekPath(target)).toBe('/app/inbox/a%20b/item/q%201%2F2');
     expect(peekOf(peekPath(target))).toEqual(target);
   });
 
@@ -128,6 +128,12 @@ describe('the Peek route', () => {
       expect(peekOf(p), p).toBeNull();
       expect(surfaceOf(p), p).toBeUndefined();
     }
+  });
+
+  it('names no Peek for a session or crew name holding a slash, which would share a queue key with another path', () => {
+    expect(peekOf('/app/inbox/a%2Fb')).toBeNull();
+    expect(peekOf('/app/inbox/a%2Fb/crew/c')).toBeNull();
+    expect(peekOf('/app/inbox/a/crew/b%2Fc')).toBeNull();
   });
 
   it('survives a reload on a Peek path, and an unknown path under the Inbox lands on the list', async () => {

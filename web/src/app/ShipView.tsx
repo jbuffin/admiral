@@ -282,6 +282,14 @@ const openTab = (): Tab => (new URLSearchParams(loc.value.search).get('tab') ===
 function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
   const [tab, setTab] = useState<Tab>(openTab);
   const [crew, setCrew] = useState<string | null>(null);
+  // Read once at mount; dropping it keeps a remount from reopening Terminal.
+  useEffect(() => {
+    const q = new URLSearchParams(loc.value.search);
+    if (!q.has('tab')) return;
+    q.delete('tab');
+    const rest = q.toString();
+    go(loc.value.path, rest ? `?${rest}` : '', true);
+  }, []);
   // A boat that left the ship's list hands the view back to the ship.
   const boat = crew === null ? undefined : ship.crew.find((b) => b.name === crew);
   const boatName = boat?.name;
@@ -370,7 +378,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
   );
 }
 
-/** One ship: Conversation, Terminal, Changes and PR. The view opens on Conversation every time. */
+/** One ship: Conversation, Terminal, Changes and PR. The view opens on Conversation, or on Terminal when the URL says `?tab=terminal`. */
 export function ShipView({ session, title }: { session: string; title: boolean }) {
   const ship = ships.value.find((s) => s.session === session);
   if (!ship) {

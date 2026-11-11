@@ -50,9 +50,14 @@ export function peekOf(path: string): PeekTarget | null {
   const [id, session, kind, name, ...rest] = segments(path);
   if (id !== 'inbox' || !session || rest.length > 0) return null;
   try {
-    if (kind === undefined) return { session: decodeURIComponent(session) };
+    const decoded = decodeURIComponent(session);
+    // A slash would let two paths map to one queue key.
+    if (decoded.includes('/')) return null;
+    if (kind === undefined) return { session: decoded };
     if (!name || (kind !== 'crew' && kind !== 'item')) return null;
-    return { session: decodeURIComponent(session), [kind]: decodeURIComponent(name) };
+    const n = decodeURIComponent(name);
+    if (kind === 'crew' && n.includes('/')) return null;
+    return { session: decoded, [kind]: n };
   } catch {
     return null;
   }
