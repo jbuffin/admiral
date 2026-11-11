@@ -312,6 +312,8 @@ type shipJSON struct {
 	Launched   string   `json:"launched"`
 	Status     string   `json:"status"`
 	Position   *shipPos `json:"position"`
+	PRs        []string `json:"prs"`
+	MooredAt   string   `json:"moored_at"`
 }
 
 func send(t *testing.T, method, url string, body any) (int, string) {

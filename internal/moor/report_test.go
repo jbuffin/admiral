@@ -1,0 +1,54 @@
+package moor
+
+import (
+	"reflect"
+	"strings"
+	"testing"
+)
+
+func TestParseReportReadsVersionsOneAndTwo(t *testing.T) {
+	const pr = "https://github.com/acme/widgets/pull/12"
+	for name, c := range map[string]struct {
+		raw        string
+		wantPRs    []string
+		wantResume string
+	}{
+		"v1 lists PR URL strings": {
+			`{"version":1,"result":"done","why":"x","prs":["` + pr + `"],"resume":"/commodore resume run-1"}`,
+			[]string{pr}, "/commodore resume run-1"},
+		"v2 lists PR objects": {
+			`{"version":2,"result":"done","why":"x","prs":[{"url":"` + pr + `","closes":["acme/widgets#3"]}],"resume":"/commodore resume run-2"}`,
+			[]string{pr}, "/commodore resume run-2"},
+		"another version": {
+			`{"version":3,"result":"done","why":"x","prs":[{"url":"` + pr + `","closes":[]}],"resume":"/commodore resume run-3"}`,
+			nil, ""},
+		"no version":   {`{"result":"done","why":"x","prs":["` + pr + `"]}`, nil, ""},
+		"invalid JSON": {`{"version":1,"prs":["` + pr + `"`, nil, ""},
+		"a prs entry that is not a PR URL voids the list": {
+			`{"version":1,"result":"done","why":"x","prs":["` + pr + `","https://github.com/acme/widgets/issues/12"],"resume":"/commodore resume run-1"}`,
+			nil, ""},
+		"a v2 entry with no url voids the list": {
+			`{"version":2,"result":"done","why":"x","prs":[{"url":"` + pr + `","closes":[]},{"closes":[]}]}`,
+			nil, ""},
+		"no prs":         {`{"version":1,"result":"done","why":"x"}`, nil, ""},
+		"missing report": {``, nil, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := ParseReport([]byte(c.raw))
+			if !reflect.DeepEqual(got.PRs, c.wantPRs) && !(len(got.PRs) == 0 && len(c.wantPRs) == 0) {
+				t.Errorf("PRs = %v, want %v", got.PRs, c.wantPRs)
+			}
+			if got.Resume != c.wantResume {
+				t.Errorf("Resume = %q, want %q", got.Resume, c.wantResume)
+			}
+		})
+	}
+}
+
+// The reader caps a report at 1 MiB; a parser handed more still reads no PRs.
+func TestParseReportIgnoresAnOversizedReport(t *testing.T) {
+	raw := `{"version":1,"result":"done","why":"` + strings.Repeat("x", 1<<20) + `","prs":["https://github.com/acme/widgets/pull/1"]}`
+	if got := ParseReport([]byte(raw)); len(got.PRs) != 0 {
+		t.Errorf("an oversized report gave PRs %v, want none", got.PRs)
+	}
+}

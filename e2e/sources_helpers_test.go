@@ -775,3 +775,15 @@ func (p viewJSON) errText() string {
 	}
 	return *p.Error
 }
+
+// prState canns the state (OPEN, CLOSED or MERGED) `gh pr view URL --json state` answers for a pull request.
+func (g *fakeGH) prState(url, state string) {
+	g.t.Helper()
+	if err := os.MkdirAll(filepath.Join(g.dir, "pr_state"), 0o755); err != nil {
+		g.t.Fatal(err)
+	}
+	g.write("pr_state/"+strings.NewReplacer("/", "_", ":", "_").Replace(url), state+"\n")
+}
+
+// prFail makes every pull request lookup fail with this stderr.
+func (g *fakeGH) prFail(stderr string) { g.t.Helper(); g.write("pr_state.fail", stderr+"\n") }
