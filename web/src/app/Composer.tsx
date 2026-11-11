@@ -1,69 +1,91 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { call, type Ship } from './api';
+import { call } from './api';
 import type { Conversation } from './conversation';
-import { boxState, bubblesShowing, snapshotOf, type Send } from './messageBox';
+import { boatRoutes } from './flotilla';
+import { bubblesShowing, snapshotOf, type BoxState, type Send } from './messageBox';
 
-const shipPath = (session: string) => `/ships/${encodeURIComponent(session)}`;
+/** What the box talks to: the ship, or one of its boats when `crew` is set. */
+export interface Target {
+  session: string;
+  crew?: string;
+  state: BoxState;
+  /** Whether Interrupt shows: the ship is underway, or the boat is working. */
+  interruptible: boolean;
+  /** Whether a transcript is there or still to come, so a sent bubble waits for the record and not just the answer. */
+  hasConversation: boolean;
+  /** Who the box speaks to in a refusal: "This ship" or "This boat". */
+  subject: string;
+}
 
-/** The box's state. It lives in the ship view, above the tabs, so a draft, a pending message and a late answer survive a tab switch. */
-export function useComposer(ship: Ship, conv: Conversation) {
-  const [text, setText] = useState('');
-  const [sends, setSends] = useState<Send[]>([]);
-  const [error, setError] = useState('');
-  const [interrupting, setInterrupting] = useState(false);
-  const latest = useRef(conv);
-  latest.current = conv;
+interface Box {
+  text: string;
+  sends: Send[];
+  error: string;
+  interrupting: boolean;
+}
+const EMPTY: Box = { text: '', sends: [], error: '', interrupting: false };
+const keyOf = (t: Pick<Target, 'session' | 'crew'>) => t.crew ?? '';
+
+/** The box's state. It lives in the ship view, above the tabs and the boat picked, so a draft, a pending message and a late answer survive a switch of either. */
+export function useComposer(target: Target, conv: Conversation) {
+  const [boxes, setBoxes] = useState<Record<string, Box>>({});
+  const latest = useRef({ conv, key: keyOf(target) });
+  latest.current = { conv, key: keyOf(target) };
   const nextId = useRef(0);
-  // Sends go one after another, so the harness hears them in the order they were typed.
-  const queue = useRef<Promise<void>>(Promise.resolve());
+  // Sends to one target go one after another, so its harness hears them in the order they were typed.
+  const queues = useRef<Record<string, Promise<void>>>({});
   const waiting = useRef<(() => void)[]>([]);
-  const session = ship.session;
+  const key = keyOf(target);
 
   useEffect(() => {
     if (conv.state !== 'loading') waiting.current.splice(0).forEach((go) => go());
-  }, [conv.state]);
+  }, [conv.state, key]);
 
-  const change = (id: number, patch: Partial<Send>) => setSends((all) => all.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+  const patch = (k: string, fn: (b: Box) => Partial<Box>) => setBoxes((all) => ({ ...all, [k]: { ...(all[k] ?? EMPTY), ...fn(all[k] ?? EMPTY) } }));
+  const change = (k: string, id: number, p: Partial<Send>) => patch(k, (b) => ({ sends: b.sends.map((s) => (s.id === id ? { ...s, ...p } : s)) }));
 
-  const run = async (id: number, body: string) => {
+  const run = async (t: Target, id: number, body: string) => {
+    const k = keyOf(t);
+    const here = () => latest.current.key === k;
     // A send before the first page waits for it, or the message could be in the page and never look new.
-    if (latest.current.state === 'loading') await new Promise<void>((go) => waiting.current.push(go));
-    change(id, { snapshot: snapshotOf(latest.current.state === 'ok' ? latest.current.items : []) });
-    const r = await call('POST', `${shipPath(session)}/messages`, { text: body });
-    if (r.ok) return change(id, { answered: true });
-    setSends((all) => all.filter((s) => s.id !== id));
+    while (here() && latest.current.conv.state === 'loading') await new Promise<void>((go) => waiting.current.push(go));
+    // The view moved to another boat meanwhile: what this one holds is unknown, so any user line there counts as the reply.
+    change(k, id, { snapshot: here() ? snapshotOf(latest.current.conv.state === 'ok' ? latest.current.conv.items : []) : { ids: [] } });
+    const r = await call('POST', boatRoutes(t.session, t.crew).messages, { text: body });
+    if (r.ok) return change(k, id, { answered: true });
     // Whatever was typed meanwhile stays; the refused text only comes back to an empty box.
-    setText((now) => (now === '' ? body : now));
-    setError(r.status === 409 ? 'This ship is not taking messages.' : r.error);
+    patch(k, (b) => ({
+      sends: b.sends.filter((s) => s.id !== id),
+      text: b.text === '' ? body : b.text,
+      error: r.status === 409 ? `${t.subject} is not taking messages.` : r.error,
+    }));
   };
 
+  const box = boxes[key] ?? EMPTY;
   const send = () => {
-    if (!boxState(ship).enabled || !text.trim()) return;
+    if (!target.state.enabled || !box.text.trim()) return;
     const id = nextId.current++;
-    const body = text;
-    setError('');
-    setText('');
-    setSends((all) => [...all, { id, text: body, snapshot: null, answered: false }]);
-    queue.current = queue.current.then(() => run(id, body));
+    const body = box.text;
+    const t = target;
+    patch(key, (b) => ({ error: '', text: '', sends: [...b.sends, { id, text: body, snapshot: null, answered: false }] }));
+    queues.current[key] = (queues.current[key] ?? Promise.resolve()).then(() => run(t, id, body));
   };
 
   const interrupt = async () => {
-    setInterrupting(true);
-    setError('');
-    const r = await call('POST', `${shipPath(session)}/interrupt`);
-    setInterrupting(false);
-    if (!r.ok) setError(r.error);
+    const t = target;
+    patch(key, () => ({ interrupting: true, error: '' }));
+    const r = await call('POST', boatRoutes(t.session, t.crew).interrupt);
+    patch(key, () => ({ interrupting: false, error: r.ok ? '' : r.error }));
   };
 
-  // A Claude ship has a transcript to come even before its first line, so its bubbles wait for the record, not the answer.
-  const bubbles = bubblesShowing(sends, conv.items, conv.state === 'ok' || (conv.state === 'none' && ship.harness === 'claude'));
-  return { text, setText, bubbles, error, interrupting, send, interrupt };
+  const bubbles = bubblesShowing(box.sends, conv.items, target.hasConversation);
+  return { text: box.text, setText: (text: string) => patch(key, () => ({ text })), bubbles, error: box.error, interrupting: box.interrupting, send, interrupt };
 }
 
-/** The box under the Conversation tab: a message to the ship, a dimmed bubble per message until the conversation shows it, and Interrupt. */
-export function Composer({ ship, box }: { ship: Ship; box: ReturnType<typeof useComposer> }) {
+/** The box under the Conversation tab: a message to the ship or the picked boat, a dimmed bubble per message until the conversation shows it, and Interrupt. */
+export function Composer({ target, box }: { target: Target; box: ReturnType<typeof useComposer> }) {
   const field = useRef<HTMLTextAreaElement>(null);
-  const state = boxState(ship);
+  const { state } = target;
   const { text, setText, bubbles, error, interrupting, send, interrupt } = box;
   return (
     <div class="msg-box">
@@ -86,7 +108,7 @@ export function Composer({ ship, box }: { ship: Ship; box: ReturnType<typeof use
           rows={2}
           value={text}
           disabled={!state.enabled}
-          placeholder={state.enabled ? 'Message the ship' : ''}
+          placeholder={state.enabled ? `Message the ${target.crew === undefined ? 'ship' : 'boat'}` : ''}
           onInput={(e) => setText(e.currentTarget.value)}
           onFocus={() => field.current?.scrollIntoView({ block: 'nearest' })}
           onKeyDown={(e) => {
@@ -99,7 +121,7 @@ export function Composer({ ship, box }: { ship: Ship; box: ReturnType<typeof use
           <button type="button" class="btn primary" disabled={!state.enabled || !text.trim()} onClick={send}>
             Send
           </button>
-          {ship.status === 'underway' ? (
+          {target.interruptible ? (
             <button type="button" class="btn" disabled={interrupting} onClick={() => void interrupt()}>
               Interrupt
             </button>

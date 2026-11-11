@@ -83,7 +83,7 @@ function Card({ title, children }: { title: string; children?: preact.ComponentC
   );
 }
 
-export function ConversationView({ conv, harness, anchored = false, working, openTerminal, loadOlder }: { conv: Conversation; harness: string; anchored?: boolean; working: boolean; openTerminal: () => void; loadOlder: () => void }) {
+export function ConversationView({ conv, harness, anchored = false, working, noneTitle, openTerminal, loadOlder }: { conv: Conversation; harness: string; anchored?: boolean; working: boolean; noneTitle?: string; openTerminal: () => void; loadOlder: () => void }) {
   const now = useTick(15_000);
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -101,7 +101,9 @@ export function ConversationView({ conv, harness, anchored = false, working, ope
     </button>
   );
   if (conv.state === 'none')
-    return harness !== 'claude' ? (
+    return noneTitle ? (
+      <Card title={noneTitle}>{terminal}</Card>
+    ) : harness !== 'claude' ? (
       <Card title="No conversation for this harness">{terminal}</Card>
     ) : anchored ? (
       <Card title="No conversation recorded">{terminal}</Card>

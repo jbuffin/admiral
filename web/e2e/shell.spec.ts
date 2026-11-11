@@ -243,6 +243,7 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await expect.poll(() => outcomeEvents(admiral, chat)).toEqual(['launched', 'ended', 'stopped']);
 
   // Changes: a ship in a checkout lists the branch's commit, the uncommitted edit and the untracked file, each with its diff.
+  const bridgesBefore = watch.paths.filter((p) => /^\/ws\/(v1\/)?bridge\//.test(p)).length;
   const repo = gitCheckout(admiral, 'repo');
   const dev = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', dir: repo, cues: ['bracketedpaste'] });
   setState(admiral, dev, 'working');
@@ -261,7 +262,7 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await expect(diffOf(page, 'b.txt')).toContainText('new two');
   await expect(diffOf(page, 'c.txt')).toContainText('loose');
   await expect(viewPanel(page)).not.toContainText(/No changes|No git history/);
-  expect(watch.paths.filter((p) => /^\/ws\/(v1\/)?bridge\//.test(p))).toEqual([]);
+  expect(watch.paths.filter((p) => /^\/ws\/(v1\/)?bridge\//.test(p))).toHaveLength(bridgesBefore);
 
   // The flotilla: a chip for the ship and one per boat, by role (Teammate when it has none). A picked boat takes the conversation,
   // the terminal, the message box and Interrupt; Changes and Stop ship stay the ship's.

@@ -94,10 +94,26 @@ export interface ConversationPage {
   more: boolean;
 }
 
-export const conversationUrl = (session: string, before?: string) =>
-  `${API}/ships/${encodeURIComponent(session)}/conversation${before === undefined ? '' : `?before=${encodeURIComponent(before)}`}`;
-
 const API = '/api/v1';
+
+/** A ship's URL, or its crew boat's when one is named. */
+export const shipUrl = (session: string, crew?: string) => `${API}/ships/${encodeURIComponent(session)}${crew === undefined ? '' : `/crew/${encodeURIComponent(crew)}`}`;
+
+export const conversationUrl = (session: string, before?: string, crew?: string) =>
+  `${shipUrl(session, crew)}/conversation${before === undefined ? '' : `?before=${encodeURIComponent(before)}`}`;
+
+export interface ChangedFile {
+  path: string;
+  status: string;
+  added: number;
+  removed: number;
+}
+export interface Changes {
+  state: 'ok' | 'none';
+  files: ChangedFile[];
+  diff: string;
+  truncated: boolean;
+}
 
 const fleetsOf = (body: { fleets?: Fleet[] | null }): Fleet[] =>
   (body.fleets ?? []).map((f) => ({
@@ -119,7 +135,7 @@ export type Result<T> = { ok: true; data: T } | { ok: false; error: string; stat
 
 export async function call<T>(method: string, path: string, body?: unknown): Promise<Result<T>> {
   try {
-    const res = await fetch(API + path, {
+    const res = await fetch(path.startsWith(`${API}/`) ? path : API + path, {
       method,
       headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -289,14 +305,15 @@ export interface DirsAnswer {
   clone: { repo: string; path: string; exists?: boolean } | null;
 }
 
-/** A bridge link's reconnect check, over /api/v1: which ships are listed, or why not. */
-export async function probeShipList(): Promise<{ kind: 'ok'; ships: { session: string }[] } | { kind: 'signed-out' } | { kind: 'down' }> {
+/** A bridge link's reconnect check, over /api/v1: which ships are listed, or why not. A crew link lists its ship only while the boat is in its crew. */
+export async function probeShipList(crew?: string): Promise<{ kind: 'ok'; ships: { session: string }[] } | { kind: 'signed-out' } | { kind: 'down' }> {
   try {
     const res = await fetch(`${API}/ships`, { cache: 'no-store' });
     if (res.status === 401) return { kind: 'signed-out' };
     if (!res.ok) return { kind: 'down' };
-    const body = (await res.json()) as { ships?: { session: string }[] | null };
-    return { kind: 'ok', ships: body.ships ?? [] };
+    const body = (await res.json()) as { ships?: { session: string; crew?: { name: string }[] | null }[] | null };
+    const listed = (body.ships ?? []).filter((s) => crew === undefined || (s.crew ?? []).some((c) => c.name === crew));
+    return { kind: 'ok', ships: listed.map((s) => ({ session: s.session })) };
   } catch {
     return { kind: 'down' };
   }

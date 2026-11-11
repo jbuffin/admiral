@@ -67,6 +67,7 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   await expect(page.getByRole('heading', { name: 'Ships', exact: true })).toBeVisible();
 
   // Changes in a checkout: the files and their diffs fit the screen, and a long line scrolls inside its diff, not the page. Reading them opens no bridge.
+  const bridgesBefore = bridges().length;
   const dev = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', dir: gitCheckout(admiral, 'repo') });
   await expect.poll(async () => (await changesOf(admiral, dev)).files.map((f) => `${f.path} ${f.status}`).sort()).toEqual(['a.txt modified', 'b.txt added', 'c.txt untracked']);
   await rowLink(page, dev).tap();
@@ -77,7 +78,7 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   await expect(diffOf(page, 'a.txt')).toContainText('TWO');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   expect(await diffOf(page, 'a.txt').evaluate((el) => [el, ...el.querySelectorAll('*')].some((e) => e.scrollWidth > e.clientWidth))).toBe(true);
-  await holds(() => bridges().length === 0, 'reading Changes opens no bridge socket');
+  await holds(() => bridges().length === bridgesBefore, 'reading Changes opens no bridge socket');
   expect(watch.unversioned()).toEqual([]);
   await page.goBack();
   await expect(page.getByRole('heading', { name: 'Ships', exact: true })).toBeVisible();

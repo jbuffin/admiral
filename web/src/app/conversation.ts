@@ -25,11 +25,11 @@ function merge(have: Item[], incoming: Item[]): Item[] {
   return next;
 }
 
-/** Follows one ship's conversation over the ships socket: subscribe, read the page, then take the pushes. */
+/** Follows one ship's conversation, or its crew boat's when one is named, over the ships socket: subscribe, read the page, then take the pushes. */
 export function followConversation(
   session: string,
   onChange: (c: Conversation) => void,
-  { retryNone = true }: { retryNone?: boolean | (() => boolean) } = {},
+  { retryNone = true, crew }: { retryNone?: boolean | (() => boolean); crew?: string } = {},
 ): { loadOlder(): Promise<void>; stop(): void } {
   let c: Conversation = { state: 'loading', items: [], more: false };
   let stopped = false;
@@ -49,7 +49,7 @@ export function followConversation(
     const n = ++reads;
     let page: ConversationPage;
     try {
-      const res = await fetch(conversationUrl(session));
+      const res = await fetch(conversationUrl(session, undefined, crew));
       if (res.status === 404) return stopped || n !== reads ? undefined : set({ state: 'gone', items: [], more: false });
       if (!res.ok) return;
       page = await res.json();
@@ -73,13 +73,13 @@ export function followConversation(
     if (stopped) return;
     acked = false;
     clearTimeout(wait);
-    if (sendShips({ type: 'conversation_open', ship: session })) wait = setTimeout(() => void read(), ACK_WAIT_MS);
+    if (sendShips({ type: 'conversation_open', ship: session, ...(crew === undefined ? {} : { crew }) })) wait = setTimeout(() => void read(), ACK_WAIT_MS);
     else retry();
   };
 
   const offMessage = onShipsMessage((m) => {
-    // A crew boat's conversation shares the ship's id and is not this ship's.
-    if (m.ship !== session || m.crew) return;
+    // A crew boat's conversation shares the ship's id, so the boat named must match too.
+    if (m.ship !== session || (m.crew || undefined) !== crew) return;
     if (m.type === 'conversation_opened') {
       acked = true;
       clearTimeout(wait);
@@ -97,7 +97,7 @@ export function followConversation(
       if (!first || !c.more) return;
       let page: ConversationPage;
       try {
-        const res = await fetch(conversationUrl(session, first.id));
+        const res = await fetch(conversationUrl(session, first.id, crew));
         if (!res.ok) return;
         page = (await res.json()) as ConversationPage;
       } catch {
@@ -116,7 +116,7 @@ export function followConversation(
       clearTimeout(wait);
       offMessage();
       offOpen();
-      sendShips({ type: 'conversation_close', ship: session });
+      sendShips({ type: 'conversation_close', ship: session, ...(crew === undefined ? {} : { crew }) });
     },
   };
 }
