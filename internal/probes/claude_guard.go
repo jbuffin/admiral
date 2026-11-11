@@ -16,13 +16,6 @@ import (
 	"github.com/jbuffin/admiral/internal/launcher"
 )
 
-// scrubbed are the variables that would tie the probe to a real ship or pane: the guard
-// would record an outcome against the ship, and the bundle's hook would mark the pane.
-var scrubbed = []string{"ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_INBOX", "ADMIRAL_LOW_STAKES",
-	"ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT", "TMUX", "TMUX_PANE",
-	// Claude Code refuses to start inside another Claude Code session when it sees these.
-	"CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION"}
-
 // ClaudeGuard is the probe for autopilot.guard_hook on Claude Code. It proves two things
 // Admiral observes itself: the guard hook got the model's tool call (its denial record for
 // this run's nonce), and the harness then did not run the call (no sentinel file). Nothing
@@ -128,7 +121,7 @@ func probeEnv(base []string, bin, dir, nonce string) []string {
 			env[k] = v
 		}
 	}
-	for _, k := range scrubbed {
+	for _, k := range capabilities.ScrubbedEnv {
 		delete(env, k)
 	}
 	path := bin
