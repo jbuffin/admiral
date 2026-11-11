@@ -20,4 +20,4 @@ export async function fetchFleets(): Promise<Fleet[]> {
   return (body.fleets ?? []).map((f) => ({ ...f, docks: f.docks ?? [] }));
 }
 
-export const logoUrl = (harness: string) => `${API}/logos/${harness}`;
+export const logoUrl = (harness: string) => `${API}/logos/${encodeURIComponent(harness)}`;

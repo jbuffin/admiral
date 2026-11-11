@@ -1,5 +1,5 @@
 // The active-fleet state: the fleet list from /api/v1/config and which fleet is active.
-import { computed, signal } from '@preact/signals';
+import { computed, effect, signal } from '@preact/signals';
 import { fetchFleets, type Fleet } from './api';
 import { go, loc } from './router';
 import { FLEET_COUNT } from './shell-tokens';
@@ -39,7 +39,11 @@ export const activeFleet = computed(() =>
 );
 
 /** The query that keeps the active fleet across navigation. */
-export const fleetSearch = computed(() => (activeFleet.value ? `?fleet=${encodeURIComponent(activeFleet.value.key)}` : ''));
+export const fleetSearch = computed(() => {
+  // Until a fleet resolves (config loading or failed), the URL's own ?fleet= passes through.
+  const key = activeFleet.value?.key ?? new URLSearchParams(loc.value.search).get('fleet');
+  return key ? `?fleet=${encodeURIComponent(key)}` : '';
+});
 
 export function chooseFleet(key: string) {
   store.set(key);
@@ -56,6 +60,14 @@ export async function loadFleets() {
 }
 
 export function watchFleets() {
+  // An unknown ?fleet= falls back to the resolved fleet; show that key in the URL without a new history entry.
+  effect(() => {
+    const active = activeFleet.value;
+    const urlKey = new URLSearchParams(loc.value.search).get('fleet');
+    if (loaded.value && active && urlKey !== null && urlKey !== active.key) {
+      go(loc.value.path, `?fleet=${encodeURIComponent(active.key)}`, true);
+    }
+  });
   void loadFleets();
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') void loadFleets();
@@ -65,6 +77,6 @@ export function watchFleets() {
 /** Fill and the ink on it. An indexed fleet takes the redesign's pair; a custom hex keeps its own. */
 export function fleetPaint(f: Fleet): { fill: string; ink: string } {
   if (f.color_index == null) return { fill: f.color, ink: f.ink };
-  const n = f.color_index % FLEET_COUNT;
+  const n = ((f.color_index % FLEET_COUNT) + FLEET_COUNT) % FLEET_COUNT;
   return { fill: `var(--fleet-${n})`, ink: `var(--fleet-${n}-ink)` };
 }

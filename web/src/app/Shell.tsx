@@ -1,9 +1,10 @@
 import type { ComponentChildren } from 'preact';
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { activeFleet, fleetPaint, fleetSearch } from './fleets';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { activeFleet, fleetPaint, fleetSearch, loaded } from './fleets';
 import { Flag } from './Flag';
 import { FleetSwitcher } from './FleetSwitcher';
 import { Icon } from './Icon';
+import { Sheet } from './Sheet';
 import { go, loc, surfaceOf, surfacePath } from './router';
 import { MORE, PHONE_TABS, SURFACES, surfaceById, type Surface } from './surfaces';
 
@@ -40,14 +41,14 @@ function Link({ surface, class: cls, onNavigate, children }: { surface: Surface;
   );
 }
 
-function Ships() {
+function Docks() {
   const fleet = activeFleet.value;
   return fleet && fleet.docks.length > 0 ? (
     <ul class="docks">
       {fleet.docks.map((d) => (
         <li key={d.harness}>
           <Flag harness={d.harness} size="header" />
-          <span>{d.harness}</span>
+          <span>{d.harness[0].toUpperCase() + d.harness.slice(1)}</span>
         </li>
       ))}
     </ul>
@@ -59,43 +60,28 @@ function EmptyState({ surface, title }: { surface: Surface; title: boolean }) {
   return (
     <main class="panel">
       {title ? <h1>{surface.title}</h1> : null}
-      <p class="line">{surface.line}</p>
+      <p class="line">{surface.scoped && loaded.value && !fleet ? `Set up a fleet and its ${surface.title.toLowerCase()} will appear here.` : surface.line}</p>
       {surface.scoped && fleet ? (
         <p class="fleet-label">
           <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
           {fleet.name}
         </p>
       ) : null}
-      {surface.id === 'ships' ? <Ships /> : null}
+      {surface.id === 'ships' ? <Docks /> : null}
     </main>
   );
 }
 
 function MoreSheet({ onClose }: { onClose: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    ref.current?.querySelector<HTMLElement>('a')?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    const onDown = (e: Event) => !ref.current?.contains(e.target as Node) && onClose();
-    document.addEventListener('keydown', onKey);
-    document.addEventListener('pointerdown', onDown);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.removeEventListener('pointerdown', onDown);
-    };
-  }, []);
   return (
-    <div class="backdrop">
-      <div ref={ref} class="sheet" role="dialog" aria-modal="true" aria-label="More">
-        <h2 class="sheet-title">More</h2>
-        {MORE.map((id) => (
-          <Link key={id} surface={surfaceById(id)} class="menu-item" onNavigate={onClose}>
-            <Icon name={id} />
-            {surfaceById(id).title}
-          </Link>
-        ))}
-      </div>
-    </div>
+    <Sheet label="More" onClose={onClose}>
+      {MORE.map((id) => (
+        <Link key={id} surface={surfaceById(id)} class="menu-item" onNavigate={onClose}>
+          <Icon name={id} />
+          {surfaceById(id).title}
+        </Link>
+      ))}
+    </Sheet>
   );
 }
 

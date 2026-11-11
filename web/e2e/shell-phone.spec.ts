@@ -56,3 +56,30 @@ test.describe('the new shell on the phone', () => {
     await expect(page.getByRole('main')).toContainText(WORK);
   });
 });
+
+test.describe('the new shell on the phone: sheet backdrops', () => {
+  // A tap on the dimmed area closes the sheet and must not reach what sits under it.
+  test('tapping a sheet backdrop over the fleet trigger only closes the sheet', async ({ page, admiral }) => {
+    seedFleets(admiral);
+    await admiral.start();
+    await page.goto(admiral.url + 'app/crew');
+    const trigger = page.getByRole('banner').locator('[aria-haspopup="dialog"]');
+    const box = (await trigger.boundingBox())!;
+    const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const fleets = page.getByRole('dialog', { name: 'Fleets' });
+    const more = page.getByRole('dialog', { name: 'More' });
+
+    await page.getByRole('button', { name: 'More', exact: true }).tap();
+    await expect(more).toBeVisible();
+    await page.touchscreen.tap(at.x, at.y);
+    await expect(more).toBeHidden();
+    await expect(fleets).toBeHidden();
+    await expect(page).toHaveURL(/\/app\/crew/);
+
+    await trigger.tap();
+    await expect(fleets).toBeVisible();
+    await page.touchscreen.tap(at.x, at.y);
+    await expect(fleets).toBeHidden();
+    await expect(page).toHaveURL(/\/app\/crew/);
+  });
+});

@@ -79,4 +79,5 @@ a { color: inherit; text-decoration: none; }
   display: flex; padding: 6px calc(8px + env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left));
 }
 .tab { flex: 1; flex-direction: column; justify-content: center; gap: 2px; min-height: var(--shape-min-touch-target); font-size: var(--font-size-meta); text-align: center; }
-.tab[aria-current='page'] { color: var(--color-accent); }
+.tab[aria-current='page'] { color: var(--color-text); font-weight: 600; }
+.tab[aria-current='page'] svg { color: var(--color-accent); }

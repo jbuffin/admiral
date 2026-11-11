@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { activeFleet, chooseFleet, fleetPaint, fleets, loaded } from './fleets';
 import type { Fleet } from './api';
 import { Icon } from './Icon';
+import { Sheet, useListKeys } from './Sheet';
 
 const LINE = 'The inbox and shared resources span fleets.';
 
@@ -24,29 +25,17 @@ export function FleetSwitcher({ sheet }: { sheet: boolean }) {
     if (refocus) trigger.current?.focus();
   };
 
+  useListKeys(panel, open && !sheet, () => close());
   useLayoutEffect(() => {
-    if (!open) return;
-    const items = () => [...(panel.current?.querySelectorAll<HTMLElement>('[role="menuitemradio"]') ?? [])];
-    (items().find((i) => i.getAttribute('aria-checked') === 'true') ?? items()[0])?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') return close();
-      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-      e.preventDefault();
-      const list = items();
-      const i = list.indexOf(document.activeElement as HTMLElement);
-      list[(i + (e.key === 'ArrowDown' ? 1 : list.length - 1)) % list.length]?.focus();
-    };
+    if (!open || sheet) return;
+    // The desktop menu has no backdrop: a tap anywhere else closes it.
     const onDown = (e: Event) => {
       const t = e.target as Node;
       if (!panel.current?.contains(t) && !trigger.current?.contains(t)) close(false);
     };
-    document.addEventListener('keydown', onKey);
     document.addEventListener('pointerdown', onDown);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.removeEventListener('pointerdown', onDown);
-    };
-  }, [open]);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [open, sheet]);
 
   const pick = (key: string) => {
     chooseFleet(key);
@@ -92,12 +81,9 @@ export function FleetSwitcher({ sheet }: { sheet: boolean }) {
         </div>
       ) : null}
       {open && sheet ? (
-        <div class="backdrop">
-          <div ref={panel} class="sheet" role="dialog" aria-modal="true" aria-label="Fleets">
-            <h2 class="sheet-title">Fleets</h2>
-            {items}
-          </div>
-        </div>
+        <Sheet label="Fleets" onClose={() => close()}>
+          {items}
+        </Sheet>
       ) : null}
     </div>
   );

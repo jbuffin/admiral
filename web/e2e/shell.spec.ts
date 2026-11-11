@@ -24,9 +24,7 @@ test.describe('the new shell at /app/', () => {
     await expect(page).toHaveURL(/\/app\/inbox(\?|$)/);
     await expect(surface(page, 'Inbox')).toBeVisible();
     for (const s of surfaces) await expect(nav(page, s)).toBeVisible();
-    expect(await page.getByRole('navigation').getByRole('link').allInnerTexts().then((t) => t.map((x) => x.trim()))).toEqual(
-      expect.arrayContaining(surfaces),
-    );
+    await expect(page.getByRole('navigation').getByRole('link')).toHaveText(surfaces);
 
     // The first fleet is active; the menu lists both, with the active one checked.
     await expect(switcher(page)).toContainText(WORK);
@@ -44,15 +42,16 @@ test.describe('the new shell at /app/', () => {
     await expect(page).toHaveURL(/\/app\/ships/);
     const main = page.getByRole('main');
     await expect(main).toContainText(WORK);
-    await expect(main).toContainText('Cx'); // codex has no logo installed: placeholder letters
-    await expect(main).not.toContainText('Co');
+    const letters = main.locator('.flag-letters');
+    await expect(letters.filter({ hasText: 'Cx' })).toBeVisible(); // codex has no logo installed: placeholder letters
+    await expect(letters.filter({ hasText: 'Co' })).toHaveCount(0);
 
     // Switching fleets rescopes Ships without leaving it, and puts the key in the URL.
     await chooseFleet(page, HOME);
     await expect(page).toHaveURL(/\/app\/ships\?(.*&)?fleet=alpha/);
     await expect(main).toContainText(HOME);
     await expect(main).not.toContainText(WORK);
-    await expect(main).toContainText('Co'); // copilot's placeholder
+    await expect(letters.filter({ hasText: 'Co' })).toBeVisible(); // copilot's placeholder
     await expect(switcher(page)).toContainText(HOME);
 
     // ?fleet= survives navigation.
@@ -75,7 +74,7 @@ test.describe('the new shell at /app/', () => {
     await expect(page.getByRole('main').locator('img[src="/api/v1/logos/claude"]')).toBeVisible();
     // Never inlined: the logo's markup is not in the DOM.
     await expect(page.getByRole('main').locator('svg rect[fill="#D97757"]')).toHaveCount(0);
-    await expect(page.getByRole('main')).toContainText('Cx');
+    await expect(page.getByRole('main').locator('.flag-letters').filter({ hasText: 'Cx' })).toBeVisible();
   });
 
   test('links are client-side, Back and Forward work, and deep links load the surface', async ({ page, admiral }) => {

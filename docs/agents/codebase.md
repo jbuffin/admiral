@@ -61,6 +61,7 @@ The shell's modules are in `web/src/app/`: `api.ts` (the only place that builds 
 - Routes: `/app/inbox`, `/app/ships`, `/app/chat`, `/app/campaigns`, `/app/routines`, `/app/crew`, `/app/preferences`. `/app`, `/app/` and unknown paths redirect to `/app/inbox` with `replaceState`, keeping the query.
 - Active fleet: `?fleet=<key>`, kept across navigation. Without it, the last choice (`localStorage` key `admiral.app.fleet`), then the first fleet; an unknown key falls back the same way. Inbox and Preferences name no fleet.
 - Phone (up to 640px wide): a header with the fleet switcher (a sheet) and the surface title, and a bottom tab bar of Inbox, Chat, Ships and More. More opens a sheet with Campaigns, Routines, Crew and Preferences. Wider screens, iPad portrait included, show the 248px sidebar.
+- The fleet list comes from `GET /api/v1/config`; the shell makes no unversioned `/api` or `/ws` request.
 - Harness flags load `/api/v1/logos/<harness>` as an `<img>` and show the placeholder letters when it 404s. Logos are never inlined.
 
 ## Idle memory
