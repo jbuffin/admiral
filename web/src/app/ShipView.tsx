@@ -8,6 +8,7 @@ import { ships, shipsLink, shipsLoaded } from './shipsLink';
 import { SURFACES } from './surfaces';
 import { useBridgeTerminal } from '../useBridgeTerminal';
 import { atSea } from '../crew';
+import { KEYS, touchKeyboard } from '../keys';
 
 const TABS = ['Conversation', 'Terminal', 'Changes', 'PR'] as const;
 type Tab = (typeof TABS)[number];
@@ -32,23 +33,54 @@ function BackLink({ label }: { label: string }) {
 }
 
 function TerminalTab({ ship }: { ship: Ship }) {
-  const { host } = useBridgeTerminal({
+  const open = atSea(ship);
+  const { host, link, linkState, activity } = useBridgeTerminal({
     session: ship.session,
-    open: atSea(ship),
+    open,
     gone: () => {},
     wsBase: '/ws/v1',
     probe: probeShipList,
     signedOut: () => (shipsLink.value = 'signed-out'),
   });
-  return <div class="term-host" ref={host} />;
+  const canType = open && linkState === 'open';
+  const input = (data: string) => {
+    activity.current();
+    link.current?.send({ type: 'input', data });
+  };
+  return (
+    <>
+      <div class={linkState === 'reconnecting' ? 'term-body dim' : 'term-body'}>
+        <div class="term-host" ref={host} />
+      </div>
+      {ship.status === 'anchored' ? (
+        <div class="term-keys">
+          <span class="term-note">The harness exited. This is its last screen.</span>
+        </div>
+      ) : (
+        open &&
+        touchKeyboard() && (
+          <div class="term-keys">
+            {KEYS.map(([name, label, bytes]) => (
+              <button key={name} type="button" class="term-key" aria-label={`Send ${name}`} disabled={!canType} onClick={() => input(bytes)}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )
+      )}
+    </>
+  );
 }
 
 function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
   const [tab, setTab] = useState<Tab>('Conversation');
   const [conv, setConv] = useState<Conversation>({ state: 'loading', items: [], more: false });
   const follow = useRef<ReturnType<typeof followConversation> | undefined>(undefined);
+  const latest = useRef(ship);
+  latest.current = ship;
   useEffect(() => {
-    const f = followConversation(ship.session, setConv, { retryNone: ship.harness === 'claude' });
+    // Only a running Claude ship has a transcript still to come.
+    const f = followConversation(ship.session, setConv, { retryNone: () => latest.current.harness === 'claude' && latest.current.status !== 'anchored' });
     follow.current = f;
     return f.stop;
   }, [ship.session]);
@@ -69,7 +101,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
       </div>
       <div role="tabpanel" id="view-panel" aria-labelledby={`tab-${tab}`} class={`view-panel${tab === 'Terminal' ? ' terminal' : ''}`}>
         {tab === 'Conversation' ? (
-          <ConversationView conv={conv} harness={ship.harness} working={ship.status === 'underway'} openTerminal={() => setTab('Terminal')} loadOlder={() => void follow.current?.loadOlder()} />
+          <ConversationView conv={conv} harness={ship.harness} anchored={ship.status === 'anchored'} working={ship.status === 'underway'} openTerminal={() => setTab('Terminal')} loadOlder={() => void follow.current?.loadOlder()} />
         ) : tab === 'Terminal' ? (
           <TerminalTab ship={ship} />
         ) : tab === 'Changes' ? (

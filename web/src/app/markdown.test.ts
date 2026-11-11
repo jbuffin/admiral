@@ -38,6 +38,17 @@ describe('renderMarkdown', () => {
     expect(html).toContain('click');
   });
 
+  it.each(['data:text/html,<b>x</b>', 'vbscript:msgbox(1)', 'JaVaScRiPt:alert(1)', '&#106;avascript:alert(1)', '&#x6A;avascript:alert(1)'])('gives a %s link no href', (url) => {
+    expect(renderMarkdown(`[click](${url})`)).not.toContain('href');
+  });
+
+  it('keeps a * in a link target literal', () => {
+    const html = renderMarkdown('[a](https://x.test/*one*/two) and *soft* and [b](https://x.test/**k**)');
+    expect(html).toContain('href="https://x.test/*one*/two"');
+    expect(html).toContain('href="https://x.test/**k**"');
+    expect(html).toContain('<em>soft</em>');
+  });
+
   it('keeps a quote in a link target inside its attribute', () => {
     const html = renderMarkdown('[x](https://a.test/"onmouseover="alert(1))');
     expect(html).not.toMatch(/<a [^>]*\sonmouseover=/);

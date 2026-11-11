@@ -6,17 +6,24 @@ const safeUrl = (url: string) => /^(https?:|mailto:|\/|#)/i.test(url.trim());
 
 function inline(src: string): string {
   const codes: string[] = [];
-  let s = src.replace(/`([^`\n]+)`/g, (_, c: string) => {
+  const links: string[] = [];
+  // The stash markers are control characters, so the text must not carry any.
+  let s = src.replace(/[\u0000-\u0002]/g, '').replace(/`([^`\n]+)`/g, (_, c: string) => {
     codes.push(`<code>${escape(c)}</code>`);
     return `\u0000${codes.length - 1}\u0000`;
   });
   s = escape(s);
   s = s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_, text: string, url: string) => {
     const raw = url.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-    return safeUrl(raw) ? `<a href="${escape(raw)}" target="_blank" rel="noopener noreferrer">${text}</a>` : text;
+    if (!safeUrl(raw)) return text;
+    links.push(`<a href="${escape(raw)}" target="_blank" rel="noopener noreferrer">`);
+    return `\u0001${links.length - 1}\u0001${text}\u0002`;
   });
   s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>').replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
-  return s.replace(/\u0000(\d+)\u0000/g, (_, i: string) => codes[Number(i)]);
+  return s
+    .replace(/\u0001(\d+)\u0001/g, (_, i: string) => links[Number(i)])
+    .replace(/\u0002/g, '</a>')
+    .replace(/\u0000(\d+)\u0000/g, (_, i: string) => codes[Number(i)]);
 }
 
 const BULLET = /^\s*[-*+]\s+(.*)$/;

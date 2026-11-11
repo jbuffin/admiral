@@ -142,6 +142,53 @@ describe('followConversation', () => {
     expect(sock().sent.filter((m) => (m as { type: string }).type === 'conversation_open')).toHaveLength(1);
   });
 
+  it('keeps the page first, with its more flag, when a push lands before the page does', async () => {
+    pages[PAGE] = { state: 'ok', items: [item('a1', 'one'), item('a2', 'two')], more: true };
+    const { last } = follow();
+    sock().receive({ type: 'conversation', ship: 's-a', items: [item('a3', 'three'), { ...item('a2', 'two'), text: 'two, newer' }] });
+    sock().receive({ type: 'conversation_opened', ship: 's-a' });
+    await flush();
+    expect(last().items.map((i) => [i.id, i.text])).toEqual([['a1', 'one'], ['a2', 'two, newer'], ['a3', 'three']]);
+    expect(last().more).toBe(true);
+  });
+
+  it('ignores a push that carries a crew boat', async () => {
+    pages[PAGE] = { state: 'ok', items: [item('a1', 'one')], more: false };
+    const { last } = follow();
+    sock().receive({ type: 'conversation_opened', ship: 's-a' });
+    await flush();
+    sock().receive({ type: 'conversation', ship: 's-a', crew: 'boat-1', items: [item('c1', 'boat')] });
+    expect(last().items.map((i) => i.id)).toEqual(['a1']);
+  });
+
+  it('does not throw when older items fail to load', async () => {
+    pages[PAGE] = { state: 'ok', items: [item('a1', 'one')], more: true };
+    const { f, last } = follow();
+    sock().receive({ type: 'conversation_opened', ship: 's-a' });
+    await flush();
+    vi.stubGlobal('fetch', async () => {
+      throw new TypeError('offline');
+    });
+    await expect(f.loadOlder()).resolves.toBeUndefined();
+    expect(last().more).toBe(true);
+  });
+
+  it('stops asking about a ship with nothing recorded once the ask says no', async () => {
+    pages[PAGE] = { state: 'none', items: [], more: false };
+    let ask = true;
+    stop.push(watchShips());
+    sock().open();
+    stop.push(followConversation('s-a', () => {}, { retryNone: () => ask }).stop);
+    await vi.advanceTimersByTimeAsync(5_000);
+    const opens = () => sock().sent.filter((m) => (m as { type: string }).type === 'conversation_open').length;
+    expect(opens()).toBeGreaterThan(1);
+    ask = false;
+    await vi.advanceTimersByTimeAsync(5_000);
+    const settled = opens();
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(opens()).toBe(settled);
+  });
+
   it('closes the subscription when stopped', async () => {
     const { f } = follow();
     f.stop();

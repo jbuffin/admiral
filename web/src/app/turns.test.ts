@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Item } from './api';
-import { blocksOf, toolRowLabel, workingLabel } from './turns';
+import { blocksOf, capOutput, toolRowLabel, workingLabel } from './turns';
 
 const times = (name: string, n: number) => Array<string>(n).fill(name);
 
@@ -55,5 +55,23 @@ describe('blocksOf', () => {
 
   it('starts a new group after a compaction', () => {
     expect(shape([call('t1'), mk('c', 'compaction'), call('t2'), mk('e', 'turn_end', { durationMs: 1 })])).toEqual(['t1', 'c', 't2@1']);
+  });
+});
+
+describe('capOutput', () => {
+  const lines = (n: number) => Array.from({ length: n }, (_, i) => `l${i}`).join('\n');
+
+  it('leaves output of 200 lines whole', () => {
+    expect(capOutput(lines(200), false)).toEqual({ text: lines(200) });
+  });
+
+  it('cuts longer output to its first 200 lines and says how many there are', () => {
+    const r = capOutput(lines(500), false);
+    expect(r.total).toBe(500);
+    expect(r.text.split('\n')).toHaveLength(200);
+  });
+
+  it('shows everything once asked', () => {
+    expect(capOutput(lines(500), true)).toEqual({ text: lines(500) });
   });
 });

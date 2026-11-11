@@ -8,11 +8,20 @@ export const sources = signal<Source[]>([]);
 export const resources = signal<Resource[]>([]);
 export const shipsLink = signal<'connecting' | 'open' | 'reconnecting' | 'signed-out'>('connecting');
 
-type Listener = (msg: { type: string; ship?: string; items?: unknown[] }) => void;
+type Listener = (msg: { type: string; ship?: string; crew?: string; items?: unknown[] }) => void;
 const listeners = new Set<Listener>();
 const openers = new Set<() => void>();
 let current: WebSocket | undefined;
 const OPEN = 1; // WebSocket.OPEN
+
+// A throwing listener must not stop the ships list from updating.
+const guard = (fn: () => void) => {
+  try {
+    fn();
+  } catch (e) {
+    console.error(e);
+  }
+};
 
 /** Hears every message on the ships socket that the list itself does not own. */
 export function onShipsMessage(fn: Listener): () => void {
@@ -50,11 +59,11 @@ export function watchShips(): () => void {
     s.onopen = () => {
       shipsLink.value = 'open';
       delay = RETRY_FIRST_MS;
-      openers.forEach((fn) => fn());
+      openers.forEach(guard);
     };
     s.onmessage = (e) => {
       const msg = JSON.parse(e.data);
-      listeners.forEach((fn) => fn(msg));
+      listeners.forEach((fn) => guard(() => fn(msg)));
       if (msg.type === 'ships') {
         ships.value = msg.ships ?? [];
         shipsLoaded.value = true;

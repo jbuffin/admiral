@@ -36,6 +36,15 @@ export function workingLabel(items: { kind: string; at?: string }[], now: number
   return `Working · ${Math.max(0, Math.floor((now - start) / 60_000))}m`;
 }
 
+const OUTPUT_LINES = 200;
+
+/** A tool's output cut to its first lines; `total` is set only while lines are hidden. */
+export function capOutput(text: string, all: boolean): { text: string; total?: number } {
+  const lines = text.split('\n');
+  if (all || lines.length <= OUTPUT_LINES) return { text };
+  return { text: lines.slice(0, OUTPUT_LINES).join('\n'), total: lines.length };
+}
+
 export type Block =
   | { kind: 'item'; item: Item }
   | { kind: 'tools'; calls: Item[]; durationMs?: number };
