@@ -18,7 +18,8 @@ type GitHub interface {
 	// is one GitHub could not confirm.
 	OpenPRs(ctx context.Context, urls []string) (map[string]bool, error)
 	// PullRequests asks for every URL in one call. A URL GitHub answers NOT_FOUND
-	// for is left out; an error is a failed call, not an answer.
+	// for is left out; an error is a failed call, not an answer, except an *Unanswered
+	// beside a good answer for the PRs not named in it.
 	PullRequests(ctx context.Context, urls []string) (map[string]Status, error)
 }
 

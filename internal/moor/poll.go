@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Status is what one poll learned about a pull request; a PR GitHub answered
@@ -70,3 +71,9 @@ func Remove(home, name string) error {
 	}
 	return nil
 }
+
+// Unanswered is the error of a poll that answered for some PRs but not these: GitHub could not look in
+// their repository, which is not the same as a PR gone. The answer beside it is good.
+type Unanswered struct{ URLs []string }
+
+func (e *Unanswered) Error() string { return "GitHub could not look up " + strings.Join(e.URLs, ", ") }

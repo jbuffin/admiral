@@ -97,6 +97,7 @@ func (s *Service) setMoored(rec moor.Record) {
 	s.mooredMu.Lock()
 	defer s.mooredMu.Unlock()
 	s.loadMoored()
+	delete(s.mooredPolls, rec.Session) // a poll answered for an earlier ship of this session says nothing of this one
 	for i, r := range s.moored {
 		if r.Session == rec.Session {
 			s.moored[i] = rec

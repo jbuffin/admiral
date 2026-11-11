@@ -686,11 +686,7 @@ func (s *Service) serveInputSeen(w http.ResponseWriter, r *http.Request) {
 func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
 	if _, ok := s.mooredRecord(session); ok {
-		if !s.endMoored(session, "dismissed") {
-			writeError(w, http.StatusNotFound, "ship "+session+" not found")
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"dismissed": session})
+		s.endByRequest(w, session, "dismissed", "dismissed")
 		return
 	}
 	// Not the request's context: a client that hangs up must not abandon the write.
