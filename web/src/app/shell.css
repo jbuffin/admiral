@@ -154,3 +154,19 @@ a { color: inherit; text-decoration: none; }
 .move { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .confirm { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .add { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 14px 16px; }
+
+.row-field .note { flex-basis: 100%; margin: 0; }
+.color-control { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+.set input[type='color'] { width: 56px; min-height: var(--shape-button-height); padding: 2px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-sm); background: var(--color-panel); }
+@media (pointer: coarse) { .set input[type='color'] { min-height: var(--shape-min-touch-target); } }
+.section-title { margin: 24px 0 6px; font-size: var(--font-size-title); }
+.docks.box { padding: 6px 16px; gap: 0; }
+.docks .dock { padding: 10px 0; border-top: 1px solid var(--color-line); }
+.docks .dock:first-child { border-top: 0; }
+.dock-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dock-name { font-weight: 500; }
+.rows .legend { font-weight: 500; }
+.list-field .row-field { align-self: stretch; }
+.swatch { flex: none; width: 28px; height: 28px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-sm); }
+.swatch-default { background: repeating-linear-gradient(45deg, var(--color-line) 0 4px, transparent 4px 8px); }
+.box > .rows:first-child { border-top: 0; }

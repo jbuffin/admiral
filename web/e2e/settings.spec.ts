@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test, type Admiral } from './fixtures';
@@ -241,4 +242,120 @@ test('a GitHub source keeps its host, account and custom views, names its fleet 
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
   expect(watch.errors).toEqual([]);
+});
+
+const zulu = (a: Admiral) => JSON.parse(readFileSync(join(a.home, 'config.json'), 'utf8')).fleets.zulu as Record<string, unknown>;
+const viewOf = async (a: Admiral, key: string) =>
+  ((await (await fetch(`${a.url}api/v1/config`)).json()) as { fleets: { key: string; search_roots: string[] }[] }).fleets.find((f) => f.key === key);
+
+test('a fleet page edits search roots, owners, clone root and colour, keeping what the person did not touch, and shows docks read-only', async ({ page, admiral }) => {
+  // The file stores zulu's search root as ~/…, the view shows it expanded.
+  const stored = '~/admiral-u3-roots';
+  const shownRoot = join(homedir(), 'admiral-u3-roots');
+  seedWith(admiral, {}, { zulu: stored, alpha: admiral.home });
+  await admiral.start();
+  const watch = watchPage(page, admiral.url);
+  await expect.poll(async () => (await viewOf(admiral, 'zulu'))?.search_roots).toEqual([shownRoot]);
+
+  // The switcher's "<fleet> fleet settings" item opens the page; the nav's Fleet link, reload and Back return to it.
+  await page.goto(admiral.url + 'app/ships');
+  await page.getByRole('navigation').getByRole('button', { name: WORK, exact: true }).click();
+  await page.getByRole('menu').getByRole('menuitem', { name: `${WORK} fleet settings` }).click();
+  await expect(page).toHaveURL(/\/app\/preferences\/zulu\/fleet/);
+  await expect(page.getByRole('heading', { name: 'Fleet', exact: true })).toBeVisible();
+  const group = prefsNav(page).getByRole('group', { name: `${WORK} fleet` });
+  await expect(group.getByRole('link')).toHaveText(['Fleet', 'Order sources']);
+  await expect(group.getByRole('link', { name: 'Fleet', exact: true })).toHaveAttribute('aria-current', 'page');
+  await group.getByRole('link', { name: 'Order sources' }).click();
+  await expect(page).toHaveURL(/\/app\/preferences\/zulu\/sources/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/app\/preferences\/zulu\/fleet/);
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Fleet', exact: true })).toBeVisible();
+
+  const roots = page.getByRole('group', { name: 'Search roots' });
+  const owners = page.getByRole('group', { name: 'Owners' });
+  const cloneRoot = page.getByRole('textbox', { name: 'Clone root' });
+  const save = page.getByRole('button', { name: 'Save', exact: true });
+  const put = () => page.waitForRequest((r) => r.method() === 'PUT' && new URL(r.url()).pathname === '/api/v1/fleets/zulu');
+  await expect(roots.getByRole('textbox', { name: 'Search root 1' })).toHaveValue(shownRoot);
+
+  // Add an owner and an absolute clone root: only those two fields are sent, and the stored ~/ root stays.
+  const clones = join(admiral.home, 'clones');
+  await owners.getByRole('button', { name: 'Add owner' }).click();
+  await owners.getByRole('textbox', { name: 'Owner 1' }).fill('acme');
+  await cloneRoot.fill(clones);
+  let sent = put();
+  await save.click();
+  expect((await sent).postDataJSON()).toEqual({ owners: ['acme'], clone_root: clones });
+  await expect.poll(() => zulu(admiral).owners).toEqual(['acme']);
+  expect(zulu(admiral)).toMatchObject({ clone_root: clones, search_roots: [stored] });
+  await page.reload();
+  await expect(owners.getByRole('textbox', { name: 'Owner 1' })).toHaveValue('acme');
+  await expect(cloneRoot).toHaveValue(clones);
+
+  // Changing a list sends it whole, as shown.
+  const second = join(admiral.home, 'second');
+  await roots.getByRole('button', { name: 'Add search root' }).click();
+  await roots.getByRole('textbox', { name: 'Search root 2' }).fill(second);
+  sent = put();
+  await save.click();
+  expect((await sent).postDataJSON()).toEqual({ search_roots: [shownRoot, second] });
+  await expect.poll(() => zulu(admiral).search_roots).toEqual([shownRoot, second]);
+
+  // Typing the ~/ form back is a list change too; after it, a colour-only save leaves that stored form alone.
+  await roots.getByRole('textbox', { name: 'Search root 1' }).fill(stored);
+  await roots.getByRole('button', { name: 'Remove search root 2' }).click();
+  await save.click();
+  await expect.poll(() => zulu(admiral).search_roots).toEqual([stored]);
+  await page.reload();
+  sent = put();
+  await page.getByLabel('Color', { exact: true }).fill('#1a2b3c');
+  await save.click();
+  expect((await sent).postDataJSON()).toEqual({ color: '#1a2b3c' });
+  await expect.poll(() => zulu(admiral).color).toBe('#1a2b3c');
+  await expect(page.getByRole('img', { name: 'Fleet colour' })).toHaveCSS('background-color', 'rgb(26, 43, 60)');
+  expect(zulu(admiral).search_roots).toEqual([stored]);
+
+  // "Use default" sends an empty colour and the file drops the key.
+  await page.reload();
+  sent = put();
+  await page.getByRole('button', { name: 'Use default' }).click();
+  await expect(page.getByRole('img', { name: 'Default colour' })).toBeVisible();
+  await save.click();
+  expect((await sent).postDataJSON()).toEqual({ color: '' });
+  await expect.poll(() => 'color' in zulu(admiral)).toBe(false);
+
+  // A clone root the server refuses shows its message at the field, and the file keeps the old value.
+  await cloneRoot.fill('relative/x');
+  await save.click();
+  await expect(cloneRoot).toHaveAccessibleDescription(/must be an absolute path or start with ~\//);
+  expect(zulu(admiral).clone_root).toBe(clones);
+
+  // Taking away every search root says the fleet then can't launch, before anything is saved.
+  await page.reload();
+  await roots.getByRole('button', { name: 'Remove search root 1' }).click();
+  await expect(page.getByRole('status').filter({ hasText: /launch/i })).toBeVisible();
+  expect(zulu(admiral).search_roots).toEqual([stored]);
+
+  // Docks: one row per harness, no field to edit, no env, and the way to change them.
+  const docks = page.getByRole('list', { name: 'Docks' });
+  await expect(docks.getByRole('listitem')).toHaveCount(2);
+  await expect(docks).toContainText('claude');
+  await expect(docks).toContainText('codex');
+  await expect(docks.getByRole('textbox')).toHaveCount(0);
+  await expect(page.getByRole('main')).toContainText('admiral setup');
+  await expect(page.getByRole('main')).not.toContainText('CLAUDE_CONFIG_DIR');
+  await expect(page.getByRole('main')).not.toContainText('identity/');
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+
+  // "New fleet…" starts setup and sends the person to the old dashboard; setup is left running.
+  await page.goto(admiral.url + 'app/ships');
+  await page.getByRole('navigation').getByRole('button', { name: WORK, exact: true }).click();
+  await page.getByRole('menu').getByRole('menuitem', { name: 'New fleet…' }).click();
+  await expect(page).toHaveURL(admiral.url);
+  const setup = (await (await fetch(`${admiral.url}api/v1/setup`)).json()) as { running: boolean };
+  expect(setup.running).toBe(true);
 });

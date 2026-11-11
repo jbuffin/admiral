@@ -1,10 +1,28 @@
 import { useEffect } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch, fleets, loaded } from './fleets';
-import { go, loc, preferencesFleet, sourcesPath } from './router';
+import { fleetPath, go, loc, preferencesFleet, preferencesPage, sourcesPath } from './router';
+import { FleetPage } from './FleetPage';
 import { OrderSources } from './OrderSources';
 
-function PreferencesNav({ current }: { current: string }) {
+function NavLink({ path, current, children }: { path: string; current: boolean; children: string }) {
   const search = fleetSearch.value;
+  return (
+    <a
+      class="nav-link"
+      href={path + search}
+      aria-current={current ? 'page' : undefined}
+      onClick={(e) => {
+        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        go(path, search);
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
+function PreferencesNav({ current, page }: { current: string; page: 'fleet' | 'sources' }) {
   return (
     <nav class="prefs-nav" aria-label="Preferences">
       {fleets.value.map((f) => (
@@ -13,18 +31,12 @@ function PreferencesNav({ current }: { current: string }) {
             <span class="dot" style={{ background: fleetPaint(f).fill }} aria-hidden="true" />
             {f.name} fleet
           </div>
-          <a
-            class="nav-link"
-            href={sourcesPath(f.key) + search}
-            aria-current={f.key === current ? 'page' : undefined}
-            onClick={(e) => {
-              if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-              e.preventDefault();
-              go(sourcesPath(f.key), search);
-            }}
-          >
+          <NavLink path={fleetPath(f.key)} current={f.key === current && page === 'fleet'}>
+            Fleet
+          </NavLink>
+          <NavLink path={sourcesPath(f.key)} current={f.key === current && page === 'sources'}>
             Order sources
-          </a>
+          </NavLink>
         </div>
       ))}
     </nav>
@@ -34,6 +46,7 @@ function PreferencesNav({ current }: { current: string }) {
 export function Preferences({ phone }: { phone: boolean }) {
   const key = preferencesFleet(loc.value.path);
   const fleet = fleets.value.find((f) => f.key === key);
+  const page = preferencesPage(loc.value.path);
   const fallback = activeFleet.value;
 
   // Bare /app/preferences, and a path naming no fleet, open the active fleet's sources.
@@ -44,16 +57,16 @@ export function Preferences({ phone }: { phone: boolean }) {
   const Title = phone ? 'h2' : 'h1';
   return (
     <main class="panel prefs">
-      {fleets.value.length > 0 ? <PreferencesNav current={fleet?.key ?? ''} /> : null}
+      {fleets.value.length > 0 ? <PreferencesNav current={fleet?.key ?? ''} page={page} /> : null}
       <div class="prefs-page">
         {fleet ? (
           <>
-            <Title>Order sources</Title>
+            <Title>{page === 'fleet' ? 'Fleet' : 'Order sources'}</Title>
             <p class="fleet-label">
               <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
               {fleet.name} fleet
             </p>
-            <OrderSources key={fleet.key} fleet={fleet} />
+            {page === 'fleet' ? <FleetPage key={fleet.key} fleet={fleet} /> : <OrderSources key={fleet.key} fleet={fleet} />}
           </>
         ) : loaded.value && !fallback ? (
           <p class="line">Set up a fleet and its settings will appear here.</p>

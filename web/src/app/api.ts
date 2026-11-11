@@ -1,6 +1,9 @@
 // The only place the shell builds /api/v1 URLs.
 export interface Dock {
   harness: string;
+  executable: string;
+  executable_found: boolean;
+  warnings: string[];
 }
 export interface Fleet {
   key: string;
@@ -8,21 +11,32 @@ export interface Fleet {
   color: string;
   ink: string;
   color_index?: number;
+  search_roots: string[];
+  owners: string[];
+  clone_root: string;
+  can_launch: boolean;
   docks: Dock[];
 }
 
 const API = '/api/v1';
 
+const fleetsOf = (body: { fleets?: Fleet[] | null }): Fleet[] =>
+  (body.fleets ?? []).map((f) => ({
+    ...f,
+    search_roots: f.search_roots ?? [],
+    owners: f.owners ?? [],
+    docks: (f.docks ?? []).map((d) => ({ ...d, warnings: d.warnings ?? [] })),
+  }));
+
 export async function fetchFleets(): Promise<Fleet[]> {
   const res = await fetch(`${API}/config`);
   if (!res.ok) throw new Error(`config: ${res.status}`);
-  const body = (await res.json()) as { fleets?: Fleet[] | null };
-  return (body.fleets ?? []).map((f) => ({ ...f, docks: f.docks ?? [] }));
+  return fleetsOf(await res.json());
 }
 
 export const logoUrl = (harness: string) => `${API}/logos/${encodeURIComponent(harness)}`;
 
-export type Result<T> = { ok: true; data: T } | { ok: false; error: string };
+export type Result<T> = { ok: true; data: T } | { ok: false; error: string; status?: number };
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<Result<T>> {
   try {
@@ -38,7 +52,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<Re
     } catch {
       /* not JSON: the status speaks */
     }
-    if (!res.ok) return { ok: false, error: (data as { error?: string } | null)?.error ?? `${method} ${path}: ${res.status}` };
+    if (!res.ok) return { ok: false, status: res.status, error: (data as { error?: string } | null)?.error ?? `${method} ${path}: ${res.status}` };
     return { ok: true, data: data as T };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'The request failed.' };
@@ -80,3 +94,10 @@ export const saveSource = (key: string, body: { name?: string; fleet?: string; s
 export const restartSource = (key: string) => call<unknown>('POST', `${src(key)}/restart`);
 export const removeSource = (key: string) => call<unknown>('DELETE', src(key));
 export const addSource = (plugin: string, fleet: string) => call<Source>('POST', '/sources', { plugin, fleet });
+
+/** Saves the fleet fields in the body; the server answers the new config view. */
+export async function saveFleet(key: string, body: Partial<Pick<Fleet, 'search_roots' | 'owners' | 'clone_root' | 'color'>>): Promise<Result<Fleet[]>> {
+  const r = await call<{ fleets?: Fleet[] | null }>('PUT', `/fleets/${encodeURIComponent(key)}`, body);
+  return r.ok ? { ok: true, data: fleetsOf(r.data) } : r;
+}
+export const startSetup = () => call<unknown>('POST', '/setup');
