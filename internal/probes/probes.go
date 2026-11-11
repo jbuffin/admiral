@@ -111,7 +111,21 @@ func New(home string, ps ...Probe) *Runner {
 func (r *Runner) Close() { r.stop() }
 
 // NewDefault returns a runner with every built-in probe.
-func NewDefault(home string) *Runner { return New(home, ClaudeGuard()) }
+func NewDefault(home string) *Runner { return New(home, defaultProbes()...) }
+
+func defaultProbes() []Probe { return []Probe{ClaudeGuard()} }
+
+// GuardHarnesses lists the harnesses with a registered guard probe: a stored pass for
+// any other harness proves nothing.
+func GuardHarnesses() []string {
+	var out []string
+	for _, p := range defaultProbes() {
+		if p.Capability == capabilities.AutopilotGuard {
+			out = append(out, p.Harness)
+		}
+	}
+	return out
+}
 
 // Run detects the harness version, records it, runs the harness's probes and stores
 // their results under that version. Concurrent runs for one fleet and harness share one.

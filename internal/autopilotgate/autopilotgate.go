@@ -4,10 +4,13 @@ package autopilotgate
 
 import (
 	"fmt"
+	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jbuffin/admiral/internal/capabilities"
 	"github.com/jbuffin/admiral/internal/inbox"
+	"github.com/jbuffin/admiral/internal/probes"
 )
 
 // Refusal is the error Check returns for a harness whose guard is not proven.
@@ -24,6 +27,10 @@ func (e *Refusal) Error() string {
 // last harness version detected there. It reads the store fresh each time, and an
 // unreadable or corrupt store is not proven.
 func Proven(home, fleetKey, harness string) bool {
+	// The store may only narrow what the code allows.
+	if !slices.Contains(probes.GuardHarnesses(), harness) {
+		return false
+	}
 	return capabilities.Open(home).Proven(fleetKey, harness, capabilities.AutopilotGuard)
 }
 
@@ -34,7 +41,7 @@ func Check(home, fleetKey, fleetName, harness string) error {
 		return nil
 	}
 	title := fmt.Sprintf("Couldn't launch unattended on %s: guard not proven", titleCase(harness))
-	body := fmt.Sprintf("Fleet %s: the guard probe has not passed for %s, so autopilot is not allowed there. Run the capability check for it, then launch again.", fleetName, harness)
+	body := fmt.Sprintf("Fleet %s (%s): the guard probe has not passed for %s, so autopilot is not allowed there. Run the capability check for it, then launch again.", fleetName, fleetKey, harness)
 	if !noticeOpen(home, title, body) {
 		// The refusal stands whether or not the notice lands.
 		_, _ = inbox.WriteNotice(home, title, body)
@@ -59,5 +66,6 @@ func titleCase(s string) string {
 	if s == "" {
 		return s
 	}
-	return strings.ToUpper(s[:1]) + s[1:]
+	r, n := utf8.DecodeRuneInString(s)
+	return strings.ToUpper(string(r)) + s[n:]
 }

@@ -210,3 +210,12 @@ func TestCheckRefusesWhatItCannotRun(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckFailureBodyHasNoAbsolutePath(t *testing.T) {
+	exe := script(t, "FAIL")
+	s := service(t, t.TempDir(), fleet("broken", "Broken", dock("claude", exe)))
+	rec := do(t, s, "POST", "/api/harness-capabilities/check", `{"fleet":"broken","harness":"claude"}`)
+	if rec.Code != http.StatusBadGateway || strings.Contains(rec.Body.String(), filepath.Dir(exe)) {
+		t.Errorf("POST check = %d %s, want 502 without the executable's directory", rec.Code, rec.Body)
+	}
+}

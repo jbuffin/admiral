@@ -397,11 +397,14 @@ func (s *Service) admit(req launcher.Request) (release func(), lerr *launcher.Er
 	release = func() {}
 	cfg := s.Launcher.Config()
 	if req.Autopilot {
-		name := req.Fleet
-		if fleet, ok := cfg.Fleet(req.Fleet); ok {
-			name = fleet.Name
+		fleet, ok := cfg.Fleet(req.Fleet)
+		if !ok {
+			return release, &launcher.Error{Status: http.StatusNotFound, Msg: "fleet " + strconv.Quote(req.Fleet) + " not found"}
 		}
-		if err := autopilotgate.Check(s.Launcher.Home, req.Fleet, name, req.Harness); err != nil {
+		if _, ok := fleet.Harness(req.Harness); !ok {
+			return release, &launcher.Error{Status: http.StatusNotFound, Msg: "fleet " + fleet.Name + " has no " + req.Harness + " dock"}
+		}
+		if err := autopilotgate.Check(s.Launcher.Home, fleet.Key, fleet.Name, req.Harness); err != nil {
 			return release, &launcher.Error{Status: http.StatusBadRequest, Msg: err.Error()}
 		}
 	}

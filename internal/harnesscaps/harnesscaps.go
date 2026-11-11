@@ -5,7 +5,9 @@ package harnesscaps
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/capabilities"
@@ -132,15 +134,21 @@ func (s *Service) check(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "fleet "+fleet.Name+" has no "+req.Harness+" dock")
 		return
 	}
-	// The runner detaches its flight from this request, so a closed tab stores nothing.
+	// The run is detached from this request: a closed tab neither cancels it nor records a failure.
 	if _, err := s.Runner.Run(r.Context(), fleet, req.Harness); err != nil {
 		if errors.Is(err, r.Context().Err()) && r.Context().Err() != nil {
 			return
 		}
-		writeError(w, http.StatusBadGateway, err.Error())
+		log.Printf("harness capabilities check of %s in %s failed: %v", req.Harness, fleet.Key, err)
+		writeError(w, http.StatusBadGateway, "the check of "+req.Harness+" in fleet "+fleet.Name+" failed: "+scrubPaths(err.Error()))
 		return
 	}
 	h := s.harness(capabilities.Open(s.Home), fleet.Key, req.Harness)
 	h.Fleet = fleet.Key
 	writeJSON(w, http.StatusOK, h)
 }
+
+var absPath = regexp.MustCompile(`/[^\s:"']+`)
+
+// scrubPaths keeps the server's directory layout out of an error a client reads.
+func scrubPaths(msg string) string { return absPath.ReplaceAllString(msg, "<path>") }

@@ -192,3 +192,41 @@ func TestCheckKeepsOneNoticePerFleetAndHarness(t *testing.T) {
 		t.Errorf("the two Codex notices must tell the fleets apart, bodies = %q", codexBodies)
 	}
 }
+
+// The store may only narrow what the code allows: a stored pass for a harness with no
+// guard probe in code still refuses.
+func TestAPassedGuardRecordedForAHarnessWithNoProbeInCodeStillRefuses(t *testing.T) {
+	home := t.TempDir()
+	for _, h := range []string{"codex", "copilot"} {
+		seed(t, home, "work", h, "1.0.0", yes())
+		if autopilotgate.Proven(home, "work", h) {
+			t.Errorf("a stored pass proved %s, which has no registered guard probe", h)
+		}
+		if autopilotgate.Check(home, "work", "Work", h) == nil {
+			t.Errorf("Check let %s through on a stored pass", h)
+		}
+	}
+}
+
+// Two fleets can share a display name: each gets its own notice, and a repeat dedupes.
+func TestCheckKeepsFleetsThatShareANameApart(t *testing.T) {
+	home := t.TempDir()
+	autopilotgate.Check(home, "work", "Work", "codex")
+	autopilotgate.Check(home, "work-2", "Work", "codex")
+	autopilotgate.Check(home, "work-2", "Work", "codex")
+	n := notices(t, home)
+	if len(n) != 2 {
+		t.Fatalf("got %d notices, want one per fleet key: %+v", len(n), n)
+	}
+	if !strings.Contains(n[0].Body+n[1].Body, "work-2") {
+		t.Errorf("bodies %q and %q must name the fleet by key", n[0].Body, n[1].Body)
+	}
+}
+
+func TestCheckHandlesAMultibyteHarnessName(t *testing.T) {
+	home := t.TempDir()
+	autopilotgate.Check(home, "work", "Work", "émacs")
+	if n := notices(t, home); len(n) != 1 || !strings.Contains(n[0].Title, "Émacs") {
+		t.Errorf("notices = %+v, want one titled with Émacs", n)
+	}
+}
