@@ -325,6 +325,11 @@ button.pill { cursor: pointer; min-height: 32px; }
 .camp-group .group-head { display: flex; align-items: center; gap: 8px; }
 .ti { display: grid; grid-template-columns: 34px 70px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; min-height: 48px; padding: 8px 6px; border: 0; border-bottom: 1px solid var(--color-line); background: transparent; color: var(--color-text); font: inherit; text-align: left; cursor: pointer; }
 .ti:hover { background: var(--color-hover); }
+.ti-pickable { display: flex; align-items: center; }
+.ti-pickable .ti { flex: 1; min-width: 0; width: auto; }
+.ti-pick { display: flex; align-items: center; justify-content: center; flex: none; width: var(--shape-min-touch-target); min-height: var(--shape-min-touch-target); border-bottom: 1px solid var(--color-line); }
+.ti-pick input { width: 20px; height: 20px; }
+.slice-bar { display: flex; align-items: center; gap: 10px; padding: 10px 6px; }
 .ti-type { font-size: 11px; padding: 2px 6px; border: 1px solid var(--color-line); border-radius: 6px; text-align: center; color: var(--color-text2); }
 .ti-main { display: flex; flex-direction: column; min-width: 0; }
 .ti-title { overflow-wrap: anywhere; }

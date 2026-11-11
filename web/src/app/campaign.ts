@@ -184,14 +184,14 @@ export function campaignMeta(c: { number: number; progress: { closed: number; to
 
 /** The ship a child's campaign launch started, if one is afloat. */
 export function shipOfChild(child: { url: string }, ships: Ship[]): Ship | undefined {
-  return ships.find((s) => s.source === 'campaign' && s.url === child.url);
+  return ships.find((s) => s.source === 'campaign' && (s.url === child.url || !!s.issues?.includes(child.url)));
 }
 
 /** Changes whenever a ship of one of these children appears, goes or changes status. */
 export function childShipsKey(children: { url: string }[], ships: Ship[]): string {
   const urls = new Set(children.map((c) => c.url));
   return ships
-    .filter((s) => s.source === 'campaign' && s.url && urls.has(s.url))
+    .filter((s) => s.source === 'campaign' && ((!!s.url && urls.has(s.url)) || !!s.issues?.some((u) => urls.has(u))))
     .map((s) => `${s.session}:${s.status}`)
     .sort()
     .join(',');
@@ -219,11 +219,11 @@ export interface SliceContext {
 }
 
 /** Whether a child can join a slice: ready, Without you, Commodore, no ship, on a live campaign the page can start. */
-export function canJoinSlice(_child: CampaignNode, _ctx: SliceContext, _ships: Ship[]): boolean {
-  return false;
+export function canJoinSlice(child: CampaignNode, ctx: SliceContext, ships: Ship[]): boolean {
+  return child.status === 'ready' && child.mode === 'without-you' && child.skill?.kind === 'commodore' && !ctx.ended && ctx.canStart && !shipOfChild(child, ships);
 }
 
 /** The selected URLs that still qualify, in the order the rows show. */
-export function keepSelectable(selected: string[], _rows: CampaignNode[], _ctx: SliceContext, _ships: Ship[]): string[] {
-  return selected;
+export function keepSelectable(selected: string[], rows: CampaignNode[], ctx: SliceContext, ships: Ship[]): string[] {
+  return rows.filter((r) => selected.includes(r.url) && canJoinSlice(r, ctx, ships)).map((r) => r.url);
 }

@@ -127,7 +127,10 @@ export function campaignOrder(campaignId: string, childUrl: string): { source: s
 
 /** The order the dirs call names for a slice: source `campaign`, the compact id the server answers. */
 export function sliceOrder(campaignId: string, urls: string[]): { source: string; id: string } {
-  return campaignOrder(campaignId, urls[0] ?? '');
+  const first = urls[0] ?? '';
+  const prefix = first.slice(0, first.lastIndexOf('/') + 1);
+  const rest = urls.slice(1).map((u) => (u.startsWith(prefix) && /^\d+$/.test(u.slice(prefix.length)) ? u.slice(prefix.length) : u));
+  return campaignOrder(campaignId, [first, ...rest].join(','));
 }
 
 /** The route and body of a campaign child's launch; the server picks skill, text and autopilot. */
@@ -135,7 +138,7 @@ export function campaignLaunch(form: CampaignLaunchState): { path: string; body:
   return {
     path: `/campaigns/${form.campaignId}/launch`,
     body: {
-      child_url: form.childUrl,
+      ...(form.issues ? { issues: form.issues } : { child_url: form.childUrl }),
       harness: form.harness,
       ...(form.clone ? { clone: true, ...(form.cloneRepo && { clone_repo: form.cloneRepo }) } : { dir: form.dir }),
       ...(form.startAnyway && { start_anyway: true }),

@@ -6,6 +6,7 @@ import {
   bareSkillName,
   campaignLaunch,
   campaignOrder,
+  sliceOrder,
   CLAUDE_MODELS,
   type CrewAnswer,
   crewOptions,
@@ -30,6 +31,8 @@ export interface OrderRef {
 export interface CampaignChildRef {
   campaignId: string;
   url: string;
+  /** A slice's children in row order, `url` the first; `title` then names the slice. */
+  issues?: string[];
   title: string;
   mode: Mode;
   skill?: SkillView;
@@ -44,7 +47,7 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const toValue = (c: SkillChoice) => (c.kind === 'skill' ? `skill:${c.name}` : c.kind);
 
 export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched }: { fleet: Fleet; order?: OrderRef; campaign?: CampaignChildRef; onClose: () => void; onLaunched?: () => void }) {
-  const order: OrderRef | undefined = campaign ? { ...campaignOrder(campaign.campaignId, campaign.url), title: campaign.title, text: '' } : given;
+  const order: OrderRef | undefined = campaign ? { ...(campaign.issues ? sliceOrder(campaign.campaignId, campaign.issues) : campaignOrder(campaign.campaignId, campaign.url)), title: campaign.title, text: '' } : given;
   const [harness, setHarness] = useState(fleet.docks[0]?.harness ?? '');
   const [dirs, setDirs] = useState<DirsAnswer | null>(null);
   const [dir, setDir] = useState(NONE);
@@ -195,7 +198,7 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
     setError('');
     const effortNow = efforts.includes(effort) ? effort : '';
     const sent = campaign
-      ? campaignLaunch({ campaignId: campaign.campaignId, childUrl: campaign.url, harness, dir: cloning ? '' : dir, clone: cloning, cloneRepo: cloning ? clone!.repo : undefined, startAnyway: campaign.startAnyway, model, effort: effortNow })
+      ? campaignLaunch({ campaignId: campaign.campaignId, ...(campaign.issues ? { issues: campaign.issues } : { childUrl: campaign.url }), harness, dir: cloning ? '' : dir, clone: cloning, cloneRepo: cloning ? clone!.repo : undefined, startAnyway: campaign.startAnyway, model, effort: effortNow })
       : { path: '/ships', body: launchBody({
       fleet: fleet.key,
       harness,
