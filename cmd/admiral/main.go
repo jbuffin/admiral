@@ -288,6 +288,8 @@ func serve(args []string) error {
 	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
 	convService := &shipconv.Service{Ships: shipService, Config: cfg.Current, Tmux: tmuxPath, Socket: sock}
 	probeRunner := probes.NewDefault(dir)
+	tails := convService.Tails()
+	shipService.Tail = tails.Tail
 	s := &server.Server{Version: version, Commit: commit, UI: web.UI(), Messages: convService.Messages(), Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService,
 			&launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}, bridgeService, resourceService, lockRoute, chatService, convService,
@@ -319,7 +321,7 @@ func serve(args []string) error {
 			}
 		}
 	}()
-	runs := []func(context.Context){s.WatchConfig, sourceService.Run, bridgeService.Run, resourceSet.Run, inboxService.Run, chatService.Run}
+	runs := []func(context.Context){s.WatchConfig, sourceService.Run, bridgeService.Run, resourceSet.Run, inboxService.Run, chatService.Run, tails.Run}
 	if tmuxPath != "" {
 		runs = append(runs, host.Run)
 	}
