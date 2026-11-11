@@ -11,20 +11,14 @@ import (
 	"github.com/jbuffin/admiral/internal/ships"
 )
 
-// SetupCommand is what the setup terminal runs: the admiral binary with
-// `setup`, in Admiral's home.
 type SetupCommand struct {
 	Exe  string
 	Home string
 }
 
-// ownSessions are the sessions the bridge watches that are not ships, and the
-// name each shows under.
 var ownSessions = map[string]string{sessionhost.SetupName: "Setup", sessionhost.ChatName: "Chat session"}
 
-// standIn stands in for a ship when the bridge watches `_setup` or `_chat`:
-// underway while the session exists, gone when it ends. Neither reaches the ships
-// list.
+// standIn is underway while the session exists and gone when it ends; it never reaches the ships list.
 func (s *Service) standIn(session string) (ships.Ship, bool) {
 	name, own := ownSessions[session]
 	if s.Host == nil || !own {
@@ -38,10 +32,8 @@ func (s *Service) standIn(session string) (ships.Ship, bool) {
 	return ships.Ship{}, false
 }
 
-// setupSession is the setup terminal's stand-in.
 func (s *Service) setupSession() (ships.Ship, bool) { return s.standIn(sessionhost.SetupName) }
 
-// get is the ship for a session, or the stand-in of the setup terminal or the chat.
 func (s *Service) get(session string) (ships.Ship, bool) {
 	if _, own := ownSessions[session]; own {
 		return s.standIn(session)
@@ -49,8 +41,7 @@ func (s *Service) get(session string) (ships.Ship, bool) {
 	return s.Ships.Get(session)
 }
 
-// inputSeen is Ships.InputSeen; the setup terminal and the chat have no needs-you
-// state a keystroke could clear.
+// The setup terminal and the chat have no needs-you state a keystroke could clear.
 func (s *Service) inputSeen(session string) (ships.Ship, error) {
 	if _, own := ownSessions[session]; own {
 		if sh, ok := s.standIn(session); ok {
@@ -61,8 +52,6 @@ func (s *Service) inputSeen(session string) (ships.Ship, error) {
 	return s.Ships.InputSeen(session)
 }
 
-// server is Admiral's tmux as the setup terminal has always run it: no -u, and
-// TMUX and TMUX_PANE left in the environment.
 func (s *Service) server() sessionhost.Server {
 	return sessionhost.NewServer(s.Tmux, s.Socket).WithoutUTF8().KeepingTMUXEnv()
 }
@@ -74,15 +63,13 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// serveSetupStatus says whether the setup terminal's session exists. A page
-// that lost its connection asks this to learn that setup finished meanwhile.
+// A page that lost its connection asks this to learn that setup finished meanwhile.
 func (s *Service) serveSetupStatus(w http.ResponseWriter, r *http.Request) {
 	_, running := s.setupSession()
 	writeJSON(w, http.StatusOK, map[string]bool{"running": running})
 }
 
-// serveSetupStart starts `admiral setup` in the `_setup` session, or leaves the
-// one that is running alone, so every browser that asks joins the same one.
+// Every browser that asks joins the one running session.
 func (s *Service) serveSetupStart(w http.ResponseWriter, r *http.Request) {
 	if s.Setup == nil || s.Tmux == "" {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "the setup terminal needs tmux"})

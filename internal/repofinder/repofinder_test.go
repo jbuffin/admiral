@@ -22,7 +22,6 @@ func git(t *testing.T, dir string, args ...string) {
 	}
 }
 
-// checkout makes a git checkout at root/rel with these remotes.
 func checkout(t *testing.T, root, rel string, remotes ...string) string {
 	t.Helper()
 	d := filepath.Join(root, rel)

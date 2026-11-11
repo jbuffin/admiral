@@ -12,16 +12,11 @@ import (
 	"time"
 )
 
-// `admiral hook <event>` as a harness runs it: the built binary with a stdin
-// payload and a recording tmux first on PATH. Which state each event writes is
-// a unit test in internal/cli.
-
 const (
 	claudeStopSubagent = `{"hook_event_name":"Stop","stop_hook_active":false,"last_assistant_message":"The Explore agent is still running","background_tasks":[{"id":"a0f790cb4a518e0f9","type":"subagent","status":"running","description":"Read notes.txt first line","agent_type":"Explore"}],"session_crons":[]}`
 	claudeStopNone     = `{"hook_event_name":"Stop","last_assistant_message":"alpha","background_tasks":[],"session_crons":[]}`
 )
 
-// A5: nothing the harness sends can make `admiral hook` fail, block or write.
 func TestHookNeverFails(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -49,7 +44,7 @@ func TestHookNeverFails(t *testing.T) {
 	})
 }
 
-// A11: `hook` is internal, so no help text names it.
+// `hook` is internal, so no help text names it.
 func TestHookIsNotListed(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -116,10 +111,8 @@ func (w *world) runHook(event, payload, pane string) hookResult {
 	return res
 }
 
-// withoutActivityStamp checks, then drops, the `set -p -t <pane> @admiral-activity
-// <RFC 3339>` that opens every hook call (the crew boat's last_activity), in the
-// same call as any state write, so the table above stays about the state and
-// reason a hook writes.
+// withoutActivityStamp checks, then drops, the @admiral-activity stamp that opens
+// every hook call, so the table above stays about the state and reason a hook writes.
 func withoutActivityStamp(t *testing.T, calls [][]string, pane string) [][]string {
 	t.Helper()
 	var out [][]string

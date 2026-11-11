@@ -2140,7 +2140,7 @@ body.dragging * {
   100% { transform: translate(-300px, -24px) scale(0.85); opacity: 0; }
 }
 
-/* The bridge (prototype:337-410): the flotilla on the left, the terminal on the right, over open water. */
+/* The bridge: the flotilla on the left, the terminal on the right, over open water. */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -2625,7 +2625,7 @@ body.dragging * {
   color: var(--color-text-muted);
 }
 
-/* The Needs You inbox (#116): the header button, the wide layout's drawer and the narrow layout's sheet. */
+/* The Needs You inbox: the header button, the wide layout's drawer and the narrow layout's sheet. */
 
 .pill-face.needs.idle {
   border: 2px solid var(--color-navy-border);
@@ -3189,7 +3189,7 @@ body.dragging * {
   }
 }
 
-/* Review and findings items (#116). Item text is untrusted: it is only ever rendered as text. */
+/* Review and findings items. Item text is untrusted: it is only ever rendered as text. */
 .inbox-summary,
 .inbox-ask {
   display: flex;
@@ -3380,7 +3380,7 @@ body.dragging * {
   outline-offset: 2px;
 }
 
-/* The app Settings modal (#119): General and Chat. */
+/* The app Settings modal: General and Chat. */
 .modal.app-settings {
   max-width: min(560px, 100vw - 32px);
   max-height: calc(100dvh - 32px);
@@ -3573,7 +3573,7 @@ body.dragging * {
   font-size: 17px;
 }
 
-/* The phone shell (#119): header, one tab body, the tab bar. Keyed off the root `phone` class (sizeClass.ts). */
+/* The phone shell: header, one tab body, the tab bar. Keyed off the root `phone` class (sizeClass.ts). */
 :root.phone .header-row {
   flex-wrap: nowrap;
   justify-content: flex-start;
@@ -4028,7 +4028,7 @@ body.dragging * {
   z-index: 2;
 }
 
-/* The phone's dock sheet (prototype :933-960): the inbox sheet, as a bottom sheet over a dimmed backdrop. */
+/* The phone's dock sheet: the inbox sheet, as a bottom sheet over a dimmed backdrop. */
 .dock-sheet-wrap {
   position: fixed;
   inset: 0;
@@ -4187,7 +4187,7 @@ body.dragging * {
   box-shadow: 0 0 0 4px #ffc23d, 0 3px 0 var(--color-ink);
 }
 
-/* Launch orders on a phone (prototype :2423-2425): a top-aligned card between 12px gutters, whose body scrolls. */
+/* Launch orders on a phone: a top-aligned card between 12px gutters, whose body scrolls. */
 :root.phone .modal.launch {
   width: calc(100% - 24px);
   max-width: 540px;
@@ -4196,7 +4196,7 @@ body.dragging * {
 }
 
 
-/* The AdmiralBot chat (#119): the phone's Chat tab, the middle size's sheet and the wide size's floating panel. */
+/* The AdmiralBot chat: the phone's Chat tab, the middle size's sheet and the wide size's floating panel. */
 .chat {
   display: flex;
   flex-direction: column;
@@ -4714,7 +4714,7 @@ body.dragging * {
   }
 }
 
-/* The autopilot settings form (#181) reuses the app Settings modal's shell. */
+/* The autopilot settings form reuses the app Settings modal's shell. */
 .ap-panel {
   display: block;
   font-family: var(--font-body);

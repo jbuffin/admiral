@@ -31,11 +31,9 @@ const COMMODORE_DESC = 'Launch a task force: plans the mission, assembles teamma
 const MAX_ROWS = 6;
 
 const titleOf = (text: string) => text.split('\n')[0];
-// A typed name loses one leading slash or dollar sign.
 const bare = (typed: string) => typed.trim().replace(/^[/$]/, '');
 
-// The skills of this directory that are favorites. The favorites themselves are
-// the server's list, pushed in the config message, not what the GET returned.
+// The favorites are the server's list from the config push, not what the GET returned.
 const favoritesOf = (d: SkillsData, names: string[]) => d.skills.filter((s) => names.includes(s.name));
 
 function defaultChoice(d: SkillsData, names: string[]): Choice {
@@ -44,7 +42,6 @@ function defaultChoice(d: SkillsData, names: string[]): Choice {
   return fav ? `skill:${fav.name}` : 'none';
 }
 
-// Keeps the choice unless the skill it names is gone from this directory.
 function keep(prev: Choice | null, d: SkillsData, names: string[]): Choice {
   if (prev === 'none' || prev === 'custom') return prev;
   if (prev === 'commodore' && d.commodore.found) return prev;
@@ -155,7 +152,6 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
     };
   }, []);
 
-  // The skills depend on the directory, so they are read again when it changes.
   useEffect(() => {
     // The old directory's skills are not the new one's: nothing to offer until they arrive.
     // The choice stays, and keep() applies it to the new skills.
@@ -185,7 +181,6 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
     setStarring(false);
   }, [favNames.join('\n')]);
 
-  // An opened list is brought into view inside the scrolling body.
   useEffect(() => {
     if (listOpen) document.getElementById('launch-skills')?.scrollIntoView({ block: 'nearest' });
   }, [listOpen]);
@@ -193,7 +188,6 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
     if (dirOpen) document.getElementById('launch-dirs')?.scrollIntoView({ block: 'nearest' });
   }, [dirOpen]);
 
-  // A press outside a list closes it.
   useEffect(() => {
     const away = (e: PointerEvent) => {
       const t = e.target as Node;
@@ -271,7 +265,6 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
     forgetOpener();
     announceLaunch({ fleet: fleet.key, harness, source, order_id: order?.id ?? '', session: r.data.ship.session });
     if (phone.value) {
-      // The new ship's row shows for a moment on the Ships tab, as the prototype does (:1489-1494).
       const session = r.data.ship.session;
       phoneTab.value = 'ships';
       newShip.value = session;

@@ -5,15 +5,12 @@ import '@xterm/xterm/css/xterm.css';
 import { joinSequence, type JoinMsg } from './bridgeReplay';
 import { NEWLINE } from './keys';
 
-// xterm.js with the fit addon and WebGL where the browser has it. This module is loaded when the
-// first bridge opens, so the dashboard doesn't carry the terminal until then (story 103).
+// Loaded when the first bridge opens, so the dashboard doesn't carry the terminal until then.
 
 export interface Term {
-  /** Draws what a joining browser is sent, replacing everything. */
   join(j: JoinMsg): void;
   write(bytes: Uint8Array): void;
   onData(fn: (data: string) => void): void;
-  /** Whether keys typed into the terminal are accepted. */
   setStdin(on: boolean): void;
   /** Fits the terminal to its box and returns the grid, for the browser that sizes the pane. */
   fit(): { cols: number; rows: number } | undefined;
@@ -21,7 +18,6 @@ export interface Term {
   follow(cols: number, rows: number): void;
   size(): { cols: number; rows: number };
   focus(): void;
-  /** The active buffer as text, scrollback and screen, trailing blanks trimmed. */
   text(): string;
   dispose(): void;
 }
@@ -119,8 +115,7 @@ export async function createTerminal(host: HTMLElement): Promise<Term> {
 }
 
 // xterm.js 6 scrolls on wheel events only, so a swipe on iPad does nothing. A one-finger drag is
-// turned into wheel events, which xterm.js handles as it does a trackpad: scrollback, or arrows and
-// mouse reports when the app has the alternate screen or mouse mode.
+// turned into wheel events, which xterm.js handles as it does a trackpad.
 function swipeToScroll(box: HTMLElement) {
   let last: { id: number; y: number } | undefined;
   box.addEventListener(

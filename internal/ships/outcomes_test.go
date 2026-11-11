@@ -19,8 +19,8 @@ func events(recs []outcomes.Record) []string {
 
 func TestReasonOf(t *testing.T) {
 	for _, c := range []struct{ state, reason, want string }{
-		{"", "", "idle"},                      // no hook has spoken: the 10 s rule
-		{"needs_you", "question", "question"}, //
+		{"", "", "idle"}, // no hook has spoken: the 10 s rule
+		{"needs_you", "question", "question"},
 		{"needs_you", "", "unknown"},          // the state without its reason
 		{"needs_you", "has space", "unknown"}, // a planted reason
 		{"needs_you", "permission:Bash", "permission:Bash"},
@@ -32,8 +32,6 @@ func TestReasonOf(t *testing.T) {
 	}
 }
 
-// Stops are counted and timed, a reason that changes inside one stop is not a
-// second stop, and a stop the pane's death ends has no underway.
 func TestAdvanceFollowsStops(t *testing.T) {
 	t0 := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
 	at := func(s int) time.Time { return t0.Add(time.Duration(s) * time.Second) }

@@ -1,8 +1,8 @@
 import type { WireCrew, WireShip } from './ships';
 
-// Crew boats on the bridge (#154). Pure, so the tests need no browser.
+// Pure, so the tests need no browser.
 
-// The flotilla row's second line for a crew boat. The wire has no role (#157), so every boat is a Teammate.
+// The wire has no role, so every boat is a Teammate.
 export function crewRowText(c: WireCrew): string {
   if (c.status === 'needs_you') return 'Teammate · needs you';
   if (c.status === 'idle') return 'Teammate · idle';
@@ -10,7 +10,6 @@ export function crewRowText(c: WireCrew): string {
   return 'Teammate · working';
 }
 
-// The bridge socket of a ship, or of one of its crew boats (docs/bridge-protocol.md).
 export function bridgePath(session: string, crew?: string): string {
   const ship = `/ws/bridge/${encodeURIComponent(session)}`;
   return crew === undefined ? ship : `${ship}/crew/${encodeURIComponent(crew)}`;
@@ -20,7 +19,6 @@ export function findCrew(list: { session: string; crew: WireCrew[] }[], session:
   return list.find((s) => s.session === session)?.crew?.find((c) => c.name === crew);
 }
 
-// Whether a ship or crew boat is at sea: underway, or asking for you. Its terminal takes keys.
 export const atSea = (s: Pick<WireShip, 'status'>) => s.status === 'underway' || s.status === 'needs_you';
 
 // Whether the boarded terminal takes keys. A crew boat has its own status: a live one, idle too, of an anchored ship still does.

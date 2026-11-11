@@ -3,7 +3,7 @@ export type SurfaceId = 'inbox' | 'ships' | 'chat' | 'campaigns' | 'routines' | 
 export interface Surface {
   id: SurfaceId;
   title: string;
-  /** Names the active fleet. The inbox spans every fleet; Preferences is global for now. */
+  /** Names the active fleet. The inbox spans every fleet; Preferences is global. */
   scoped: boolean;
   line: string;
 }

@@ -5,18 +5,8 @@ import (
 	"strings"
 )
 
-// askForm turns the line form of a question into the JSON `chat ask` reads. Claude
-// Code's command parser refuses a heredoc whose body has a { and a ", so under
-// dontAsk a JSON body never matches the allow rule; this form has neither.
-//
-//	title: Where should this order go?
-//	question: panel | Which panel?
-//	multi: false
-//	option: Freeform | your own list
-//	option: Work queue
-//
-// A body that starts with { is JSON and passes through. The result is checked
-// where JSON is, so nothing here validates ids, counts or lengths.
+// Claude Code's command parser refuses a heredoc whose body has a { and a ", so
+// under dontAsk a JSON body never matches the allow rule; this line form has neither.
 func askForm(b []byte) ([]byte, error) {
 	if t := strings.TrimSpace(string(b)); t == "" || t[0] == '{' {
 		return b, nil

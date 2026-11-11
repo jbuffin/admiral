@@ -9,8 +9,6 @@ import (
 	"github.com/jbuffin/admiral/internal/sources"
 )
 
-// The sources view shows an order as hot, so the engine says when that changes:
-// on the third failure, and when the order stops being listed.
 func TestEngineSaysWhenAnOrderTurnsHotAndCools(t *testing.T) {
 	r := newRig(t, "o1")
 	r.failWith = &launcher.Error{Status: http.StatusInternalServerError, Msg: "boom"}

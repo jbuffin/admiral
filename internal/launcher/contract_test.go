@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-// A ship name is reused, so a ship never inherits the report or inbox of an
-// earlier ship of that name, and the contract's variables beat the fleet's.
 func TestShipContractClearsWhatANameLeft(t *testing.T) {
 	home := t.TempDir()
 	stale := map[string]string{
@@ -39,7 +37,6 @@ func TestShipContractClearsWhatANameLeft(t *testing.T) {
 	}
 }
 
-// A name whose inbox is kept is never drawn, so no launch clears it.
 func TestPickNameSkipsAKeptInbox(t *testing.T) {
 	keptAll := func(session string) bool { return session != Slug(names[7]) }
 	for range 20 {

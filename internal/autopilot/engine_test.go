@@ -15,11 +15,6 @@ import (
 	"github.com/jbuffin/admiral/internal/sources"
 )
 
-// The engine's passes (#114): which orders it launches under the two caps, the
-// launched set, the failure backoff and the skipped record. A pass is called
-// by hand, with a fake clock and fakes for the listings, the ships, the
-// directory and the launch, so none of this needs tmux.
-
 type rig struct {
 	t        *testing.T
 	home     string
@@ -34,10 +29,9 @@ type rig struct {
 	records  []outcomes.Record
 	engine   *Engine
 
-	// The retro seams (#117); retro_test.go drives them.
-	lines    []outcomes.Line   // the outcome log the engine counts from
-	logs     []string          // what the engine logged
-	adds     []addCall         // every AddOrder call
+	lines    []outcomes.Line
+	logs     []string
+	adds     []addCall
 	addErr   func(n int) error // the error of the nth AddOrder call (1-based), nil for success
 	hold     bool              // Record keeps its writes until confirm
 	held     []heldWrite
@@ -174,9 +168,8 @@ func ship(status, source, panel, order string) ships.Ship {
 	return ships.Ship{Session: "x-" + order + status, Source: source, Panel: panel, OrderID: order, Status: status}
 }
 
-// AC 2, 3 and 9: a ship counts toward the caps while it is underway or needs
-// you, whoever launched it; an anchored or sailing-off one does not. The panel
-// cap counts only the ships launched from that panel.
+// A ship counts toward the caps while it is underway or needs you, whoever
+// launched it; the panel cap counts only the ships launched from that panel.
 func TestEngineCaps(t *testing.T) {
 	hand := func(status string) ships.Ship { return ship(status, "", "", "") }
 	tests := []struct {
@@ -212,8 +205,6 @@ func TestEngineCaps(t *testing.T) {
 	}
 }
 
-// The panel gets a new ship only after the first is off the caps (AC 1, as the
-// engine sees it).
 func TestEngineLaunchesTheNextOrderWhenTheShipLeaves(t *testing.T) {
 	r := newRig(t, "o1", "o2", "o3")
 	r.cfg.SourceList[0].Autopilot["p"] = entry(1)
@@ -223,9 +214,8 @@ func TestEngineLaunchesTheNextOrderWhenTheShipLeaves(t *testing.T) {
 	want(t, "once o1 anchored", r.pass(), []string{"s/p/o2"})
 }
 
-// Eligible panels are the enabled, unpaused ones, taken in sidebar order: the
-// sources in config order, then each source's panel_order. The listings come
-// in another order on purpose.
+// Sidebar order is the sources in config order, then each source's
+// panel_order. The listings come in another order on purpose.
 func TestEngineSidebarOrderAndEligibility(t *testing.T) {
 	r := newRig(t)
 	r.cfg.SourceList = []config.Source{
@@ -245,8 +235,6 @@ func TestEngineSidebarOrderAndEligibility(t *testing.T) {
 	want(t, "sidebar order", r.pass(), []string{"b/p2/b2", "b/p1/b1", "a/p1/a1"})
 }
 
-// A skipped order (no checkout) and a backed-off one let the pass move on to the
-// panel's next order.
 func TestEngineMovesPastAnOrderItCannotLaunch(t *testing.T) {
 	r := newRig(t, "o1", "o2", "o3")
 	delete(r.dirs, "o1")
@@ -254,8 +242,6 @@ func TestEngineMovesPastAnOrderItCannotLaunch(t *testing.T) {
 	want(t, "o1 has no checkout", r.pass(), []string{"s/p/o2"})
 }
 
-// The launch is an ordinary Request built from the panel's entry, carrying the
-// panel (a ship records it in @admiral-panel).
 func TestEngineRequestComesFromThePanelEntry(t *testing.T) {
 	r := newRig(t, "o1")
 	r.cfg.SourceList[0].Autopilot["p"] = config.PanelAutopilot{Enabled: true, Fleet: "work", Harness: "claude",
@@ -272,9 +258,8 @@ func TestEngineRequestComesFromThePanelEntry(t *testing.T) {
 	}
 }
 
-// AC 4: an order that was launched and has gone isn't launched again while it is
-// still listed, even though its ship's hiding is over. It is dropped from the
-// launched set once the source lists it no more, so it can launch when it returns.
+// The order is dropped from the launched set once the source stops listing it,
+// so it can launch when it returns.
 func TestEngineLaunchesAnOrderOnceWhileItStaysListed(t *testing.T) {
 	r := newRig(t, "o1")
 	want(t, "first pass", r.pass(), []string{"s/p/o1"})
@@ -287,8 +272,7 @@ func TestEngineLaunchesAnOrderOnceWhileItStaysListed(t *testing.T) {
 	want(t, "order back", r.pass(), []string{"s/p/o1"})
 }
 
-// The set is pruned from the raw listing, and only for a source that has listed:
-// at start-up the runners have no panels yet, and pruning then would wipe it.
+// At start-up the runners have no panels yet, and pruning then would wipe the set.
 func TestEngineDoesNotPruneFromASourceThatHasNotListed(t *testing.T) {
 	r := newRig(t, "o1")
 	r.pass()
@@ -309,29 +293,25 @@ func TestEngineLaunchedSetSurvivesARestart(t *testing.T) {
 	want(t, "after the restart", r.pass(), []string{"s/p/o2"})
 }
 
-// A source in error or restarting still offers its last-known orders.
 func TestEngineLaunchesFromASourceThatIsDown(t *testing.T) {
 	r := newRig(t, "o1")
 	r.src[0].Listed = false
 	want(t, "source down", r.pass(), []string{"s/p/o1"})
 }
 
-// An order that a ship of any status holds is not visible, so it is not launched.
 func TestEngineSkipsAnOrderAShipHolds(t *testing.T) {
 	r := newRig(t, "o1", "o2")
 	r.setShips(ship(ships.StatusAnchored, "s", "", "o1")) // launched by hand, now anchored
 	want(t, "o1 held", r.pass(), []string{"s/p/o2"})
 }
 
-// A launch by hand of an order from an autopilot panel joins the launched set.
 func TestEngineDoesNotRelaunchAnOrderLaunchedByHand(t *testing.T) {
 	r := newRig(t, "o1", "o2")
 	r.engine.Launched("s", "o1") // the hand launch; its ship is gone by the pass
 	want(t, "after a hand launch", r.pass(), []string{"s/p/o2"})
 }
 
-// The third failed launch stops the engine trying that order and marks it hot;
-// before it, the order waits 10 minutes, then an hour (#114 "Failures").
+// The order waits 10 minutes, then an hour; the third failure marks it hot.
 func TestEngineBacksOffAndGivesUp(t *testing.T) {
 	r := newRig(t, "o1", "o2")
 	r.cfg.SourceList[0].Autopilot["p"] = entry(1)
@@ -408,10 +388,8 @@ func TestEngineKeepsFailureStateAcrossARestart(t *testing.T) {
 	}
 }
 
-// A 409 (the order already has a ship, or a launch of it is running), a 503
-// (ships are not known yet) and a 404 (the order vanished) skip the order for
-// this pass. None is a failure: no record, no backoff, never hot, and the next
-// pass tries it again.
+// A 409, a 503 for unknown ships and a 404 for a vanished order skip the order
+// for this pass only: no record, no backoff, never hot.
 func TestEngineTreatsAConflictOrUnknownShipsAsNoFailure(t *testing.T) {
 	for _, lerr := range []*launcher.Error{
 		{Status: http.StatusConflict, Msg: "this order already has a ship"},
@@ -435,8 +413,7 @@ func TestEngineTreatsAConflictOrUnknownShipsAsNoFailure(t *testing.T) {
 	}
 }
 
-// AC 7: no matching checkout is one skipped record per order until the order
-// stops being listed, and no launch.
+// No matching checkout is one skipped record per order until it stops being listed.
 func TestEngineRecordsASkippedOrderOnce(t *testing.T) {
 	r := newRig(t, "o1")
 	delete(r.dirs, "o1")
@@ -470,7 +447,6 @@ func TestEngineRecordsASkippedOrderOnce(t *testing.T) {
 	want(t, "checkout found", r.pass(), []string{"s/p/o1"})
 }
 
-// A paused panel launches nothing, and a resumed one does.
 func TestEnginePausedPanelLaunchesNothing(t *testing.T) {
 	r := newRig(t, "o1")
 	r.paused[[2]string{"s", "p"}] = true

@@ -8,16 +8,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// isTerminal is true for a terminal, not for /dev/null or a pipe (both of which
-// a launchd job and the tests have).
+// isTerminal is false for /dev/null and pipes, which launchd jobs and tests have.
 func isTerminal(f *os.File) bool {
 	_, err := unix.IoctlGetTermios(int(f.Fd()), getTermios)
 	return err == nil
 }
 
-// OfferSetup is story 12: starting Admiral on a terminal with no fleets offers
-// to run setup first. Without a terminal (launchd) it does nothing, and Admiral
-// just starts. It reports whether setup ran.
+// OfferSetup does nothing without a terminal (launchd), so Admiral just starts.
 func OfferSetup(std IO) (bool, error) {
 	in, ok := std.In.(*os.File)
 	if !ok || !isTerminal(in) {

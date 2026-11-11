@@ -4,7 +4,6 @@ export type ConnectionState = 'connecting' | 'open' | 'closed';
 
 export const connectionState = signal<ConnectionState>('connecting');
 
-// True from the moment the page's socket drops until it is back: the header's "Reconnecting…".
 export const offline = signal(false);
 
 // A 401 on reconnect: the token changed. Everything stops retrying and says so.
@@ -13,7 +12,6 @@ export const signedOut = signal(false);
 type Handler = (msg: any) => void;
 const handlers = new Map<string, Set<Handler>>();
 
-// Calls fn for every message of this type; returns the unsubscribe.
 export function onMessage(type: string, fn: Handler): () => void {
   let set = handlers.get(type);
   if (!set) handlers.set(type, (set = new Set()));
@@ -21,7 +19,6 @@ export function onMessage(type: string, fn: Handler): () => void {
   return () => set.delete(fn);
 }
 
-// Retries wait 1 s, doubling to 10 s, until something connects.
 export const RETRY_FIRST_MS = 1000;
 export const RETRY_MAX_MS = 10000;
 export const nextDelay = (ms: number) => Math.min(ms * 2, RETRY_MAX_MS);
@@ -60,7 +57,6 @@ function open(): void {
     const msg = JSON.parse(e.data);
     handlers.get(msg.type)?.forEach((fn) => fn(msg));
   };
-  // The socket is reopened when it drops.
   socket.onclose = () => {
     connectionState.value = 'closed';
     offline.value = true;

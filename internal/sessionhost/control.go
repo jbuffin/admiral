@@ -25,10 +25,8 @@ type reply struct {
 	err   error
 }
 
-// parser turns control-mode output into replies, in command order, and calls
-// notify for each notification line. With onReply set, replies are handed to it
-// on the parser's own goroutine instead of the channel, so a reply and the
-// notifications around it are seen in the order tmux sent them.
+// With onReply set, replies go to it on the parser's goroutine instead of the channel, so a
+// reply and the notifications around it are seen in the order tmux sent them.
 type parser struct {
 	replies chan reply
 	onReply func(reply)
@@ -43,7 +41,6 @@ func (p *parser) deliver(r reply) {
 	p.replies <- r
 }
 
-// run reads r until it ends.
 func (p *parser) run(r io.Reader) error {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64*1024), 16*1024*1024)

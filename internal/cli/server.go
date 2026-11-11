@@ -12,8 +12,7 @@ import (
 	"time"
 )
 
-// defaultPort is where a command looks for the server when it has no --port:
-// ADMIRAL_PORT, which Admiral sets in the chat's environment, else 7420.
+// defaultPort reads ADMIRAL_PORT, which Admiral sets in the chat's environment.
 func defaultPort() string {
 	if p := os.Getenv("ADMIRAL_PORT"); p != "" {
 		if _, err := parsePort(p); err == nil {
@@ -23,9 +22,8 @@ func defaultPort() string {
 	return DefaultPort
 }
 
-// parsePort accepts only a decimal port from 1 to 65535. A port is joined into a
-// URL, and the commands AdmiralBot runs take it from a model: `1@evil.example` must
-// never name another host.
+// parsePort accepts only a decimal port: it is joined into a URL and AdmiralBot's
+// commands take it from a model, so `1@evil.example` must never name another host.
 func parsePort(s string) (int, error) {
 	for _, r := range s {
 		if r < '0' || r > '9' {
@@ -39,7 +37,6 @@ func parsePort(s string) (int, error) {
 	return p, nil
 }
 
-// loopbackURL is the base URL of the server on a validated port, on loopback.
 func loopbackURL(port string) (string, error) {
 	p, err := parsePort(port)
 	if err != nil {
@@ -49,9 +46,7 @@ func loopbackURL(port string) (string, error) {
 	return u.String(), nil
 }
 
-// serverFor finds the server on port when it serves this home (see probe), and
-// returns its base URL and its ships. Another Admiral holding the port, or none,
-// is an error saying so.
+// serverFor fails when another Admiral's server holds the port.
 func serverFor(port, dir string) (string, shipsBody, error) {
 	base, err := loopbackURL(port)
 	if err != nil {
@@ -64,7 +59,6 @@ func serverFor(port, dir string) (string, shipsBody, error) {
 	return base, body, nil
 }
 
-// getJSON reads a path of the server, which must answer 200.
 func getJSON(base, path string) ([]byte, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(base + path)
@@ -82,7 +76,6 @@ func getJSON(base, path string) ([]byte, error) {
 	return b, nil
 }
 
-// errorText is the `error` field of an error body, else the body.
 func errorText(b []byte) string {
 	var m struct {
 		Error string `json:"error"`

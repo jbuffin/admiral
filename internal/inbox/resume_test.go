@@ -61,8 +61,6 @@ func (f *resumeFixture) ship(resume, note string) {
 
 func (f *resumeFixture) pending() int { return len(f.s.Kept.PendingResumes()) }
 
-// What a failed add does: a final refusal is dropped, a failure that changed
-// nothing is tried again, and one that may have landed is never sent twice.
 func TestAddResumesByHowTheAddFailed(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -124,7 +122,6 @@ func TestResumeOnceAndReuse(t *testing.T) {
 	}
 }
 
-// Only the answered ship's resume order is tried on its answer.
 func TestAddResumesOnlyForTheSession(t *testing.T) {
 	f := newResumeFixture(t)
 	f.ship("Finish it", "x")

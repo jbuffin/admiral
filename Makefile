@@ -1,4 +1,4 @@
-.PHONY: build test test-short lint lint-docs check e2e e2e-critical release
+.PHONY: build test test-short lint lint-docs lint-comments check e2e e2e-critical release
 
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shell git diff --quiet HEAD 2>/dev/null || echo -dirty)
 BIN ?= bin/admiral
@@ -21,10 +21,13 @@ test-short:
 # suite runs on the Mac before a push and in the release (see AGENTS.md).
 check: build lint test-short
 
-lint: lint-docs
+lint: lint-docs lint-comments
 	go vet ./...
 	go vet -tags packaging ./e2e/
 	npm --prefix web run typecheck
+
+lint-comments:
+	sh scripts/lint-comments.sh
 
 # Every tracked Markdown file: markdownlint, then relative links and anchors.
 # External URLs are never fetched.

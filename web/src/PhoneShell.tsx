@@ -12,8 +12,7 @@ import { board, boarded, ships, type WireCrew, type WireShip } from './ships';
 import { age, crewRowText } from './crew';
 import { askingCount, asksYou, shipStatusLine, sortShips } from './shipList';
 
-// The phone's shell: a tab bar under one tab body (prototype :2210-2262). Opening or closing a bridge never
-// writes the tab, so Back lands on the tab the bridge was opened from.
+// Opening or closing a bridge never writes the tab, so Back lands on the tab the bridge was opened from.
 
 export { phoneTab };
 
@@ -109,7 +108,7 @@ function Row({ ship }: { ship: WireShip }) {
   );
 }
 
-// A crew boat under its ship, indented. The wire has no role (#157), so every boat is a Teammate.
+// The wire has no role, so every boat is a Teammate.
 function CrewRow({ ship, boat }: { ship: WireShip; boat: WireCrew }) {
   const asking = boat.status === 'needs_you';
   const anchored = boat.status === 'anchored';

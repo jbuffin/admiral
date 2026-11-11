@@ -1,5 +1,4 @@
-// What a joining browser is sent (internal/bridge) and the escape sequences that put xterm.js in
-// the same state: scrollback, screen, cursor and modes, so typing works at once.
+// What a joining browser is sent (internal/bridge), and the escape sequences that put xterm.js in the same state.
 
 export interface JoinMsg {
   type: 'join';
@@ -14,9 +13,8 @@ export interface JoinMsg {
 const ESC = '\x1b';
 const lines = (s: string) => s.split('\n').join('\r\n');
 
-// The terminal is reset before this is written. History goes in first and is pushed up out of the
-// visible rows, then the screen is drawn from the top (in the alternate buffer when the pane is in
-// it, which has no history), then the cursor and the modes.
+// History goes in first and is pushed up out of the visible rows, then the screen (in the alternate buffer when the pane
+// is in it, which has no history), then the cursor and the modes.
 export function joinSequence(j: JoinMsg): string {
   let out = '';
   if (j.scrollback && !j.modes.alternate) out += `${ESC}[0m${lines(j.scrollback)}${'\r\n'.repeat(j.size.rows)}`;

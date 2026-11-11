@@ -1,5 +1,4 @@
-// Package server is Admiral's HTTP and WebSocket surface: the embedded UI at
-// /, JSON under /api/, one WebSocket at /ws. Access control is in
+// Package server is Admiral's HTTP and WebSocket surface. Access control is in
 // internal/auth and wraps the handler returned here.
 package server
 
@@ -26,19 +25,14 @@ func init() {
 	_ = mime.AddExtensionType(".woff2", "font/woff2")
 }
 
-// MessageHandler handles one WebSocket message type. Later units register
-// theirs in Server.Messages.
 type MessageHandler func(ctx context.Context, c *Client, raw json.RawMessage)
 
-// Module is a part of the server that serves its own routes and sends its own
-// state to each client that connects.
 type Module interface {
 	Routes(mux *http.ServeMux)
-	// Connected runs for a new client after it has registered with the hub.
+	// Connected runs after the client has registered with the hub.
 	Connected(c *Client)
 }
 
-// Server holds what the handlers share.
 type Server struct {
 	Version  string
 	Commit   string
@@ -47,18 +41,15 @@ type Server struct {
 	Config   *config.Manager
 	Hub      *Hub
 	Modules  []Module
-	// Capabilities names the server features this build serves, for
-	// GET /api/version. Entries are only ever added within v1. They are not
-	// harness capabilities.
+	// Capabilities entries are only ever added within v1; they are not harness
+	// capabilities.
 	Capabilities []string
 }
 
-// APIVersions are the API versions this build serves.
 var APIVersions = []int{1}
 
-// Handler returns the routes, without access control. /api/v1/... and
-// /ws/v1/... answer as /api/... and /ws/... do: the prefix is stripped before
-// routing, so every current and future route has a v1 path.
+// Handler has no access control. The v1 prefix is stripped before routing, so
+// every current and future route has a v1 path.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", s.serveWS)
@@ -77,7 +68,6 @@ func (s *Server) Handler() http.Handler {
 	return stripV1(mux)
 }
 
-// stripV1 serves /api/v1/x as /api/x and /ws/v1/x (or /ws/v1) as /ws/x.
 func stripV1(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for _, root := range []string{"/api", "/ws"} {
@@ -157,14 +147,12 @@ func (s *Server) serveWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// sendConfig pushes the config unless the client already has exactly this.
 func (s *Server) sendConfig(c *Client) {
 	if s.Config != nil {
 		_ = c.SendOnce("config", func() any { return s.Config.View() })
 	}
 }
 
-// WatchConfig pushes every config change to all clients until ctx ends.
 func (s *Server) WatchConfig(ctx context.Context) {
 	if s.Config == nil {
 		return
@@ -191,9 +179,8 @@ func (s *Server) serveConfig(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(s.Config.View())
 }
 
-// serveLogo serves $ADMIRAL_HOME/logos/<harness>.svg, a logo the engineer put
-// there for their own build. Only the harness names Admiral knows are looked
-// up, so the path never takes anything the request wrote.
+// Only the harness names Admiral knows are looked up, so the path never takes
+// anything the request wrote.
 func serveLogo(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("harness")
 	if !slices.Contains(config.Harnesses(), name) {

@@ -14,15 +14,6 @@ import (
 	"github.com/coder/websocket"
 )
 
-// The chat session (#119, u4): the real binary with the fake claude as the chat
-// fleet's Claude dock. A test gets the fake to fire hooks (`event <Event> <json>`
-// cues, held by `wait <name>` files the test creates) and writes the transcript
-// JSONL itself, under the dock's CLAUDE_CONFIG_DIR. The routes and fields are
-// the unit brief's: POST /api/chat/start, GET /api/chat/session
-// ({running, state, messages, error}), POST /api/chat/messages {text},
-// POST /api/chat/new, the `chat` WebSocket message (the same fields beside
-// "type") and /ws/bridge/_chat.
-
 const chatSessionName = "_chat"
 
 type chatMsg struct {
@@ -98,7 +89,6 @@ func (c *chatWorld) stdin() string {
 	return string(data)
 }
 
-// waitStdin waits until what the fake read from the terminal equals want.
 func (c *chatWorld) waitStdin(want string) {
 	c.t.Helper()
 	var got string
@@ -132,7 +122,6 @@ func (c *chatWorld) waitStdinOneOf(wants ...string) {
 	}
 }
 
-// waitEvents waits until the fake has run n hook cues.
 func (c *chatWorld) waitEvents(n int) {
 	c.t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -202,7 +191,6 @@ func fetchChat(t *testing.T, base string) chatSession {
 	return s
 }
 
-// waitSession polls GET /api/chat/session until pred holds.
 func (c *chatWorld) waitSession(d time.Duration, what string, pred func(chatSession) bool) chatSession {
 	c.t.Helper()
 	deadline := time.Now().Add(d)
@@ -254,7 +242,6 @@ func messagesAre(want ...string) func(chatSession) bool {
 	return func(s chatSession) bool { return sameStrings(texts(s.Messages), want) }
 }
 
-// waitChatWS reads WebSocket messages until a `chat` message satisfies pred.
 func waitChatWS(t *testing.T, c *websocket.Conn, d time.Duration, what string, pred func(chatSession) bool) chatSession {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), d)
@@ -276,7 +263,7 @@ func waitChatWS(t *testing.T, c *websocket.Conn, d time.Duration, what string, p
 	}
 }
 
-// ---- transcript lines (invented text; the shapes are Claude Code's) ----
+// Transcript lines: invented text in Claude Code's shapes.
 
 func jsonLine(v map[string]any) string {
 	b, err := json.Marshal(v)
@@ -324,11 +311,8 @@ func sessionStartCue(path, source string) string {
 	return `event SessionStart ` + jsonLine(map[string]any{"transcript_path": path, "source": source})
 }
 
-// ---- tests ----
-
-// Scenarios 1, 2 and 7: the chat starts on demand, is never a ship, launches
-// with the contract the brief names, and its terminal is reachable through the
-// bridge only while it runs.
+// The chat starts on demand, is never a ship, launches with its contract, and
+// its terminal is reachable through the bridge only while it runs.
 func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
 	t.Parallel()
 	c := newChatWorld(t, false)
@@ -425,7 +409,7 @@ func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
 			t.Errorf("env PATH = %q, want $ADMIRAL_HOME/bin first", r.env["PATH"])
 		}
 		for k := range r.env {
-			// ADMIRAL_PORT is the chat's own since ADR 0020: the port Admiral listens on.
+			// ADMIRAL_PORT is the chat's own (ADR 0020): the port Admiral listens on.
 			if strings.HasPrefix(k, "ADMIRAL_") && k != "ADMIRAL_HOME" && !(k == "ADMIRAL_PORT" && r.env[k] == w.in.Port) {
 				t.Errorf("env has %s=%q; the tmux server's global environment must not reach the chat", k, r.env[k])
 			}
@@ -490,8 +474,6 @@ func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
 	})
 }
 
-// Scenarios 3, 4, 5, 6 and 9: the conversation, the state, send, New chat and a
-// restart of Admiral.
 func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 	t.Parallel()
 	// The cue file names the transcripts, so it is written once the config dir exists.
@@ -647,9 +629,8 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 	})
 }
 
-// Scenario 5, the restart half, and the inferred /clear behaviours: a clear on
-// the same path serves only later lines, and New chat with a changed model
-// restarts the session with the new argv (and no --effort when it is empty).
+// A clear on the same path serves only later lines, and New chat with a changed
+// model restarts the session with the new argv (and no --effort when it is empty).
 func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 	t.Parallel()
 	c := newChatWorld(t, false)
@@ -698,7 +679,7 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 }
 
 // The transcript path comes from a pane option anything in the chat can write,
-// so it is read defensively (the brief's item 4). A config directory that is
+// so it is read defensively. A config directory that is
 // itself a symlink must not hide a real transcript.
 func TestChatSession_OnlyARealTranscriptUnderProjectsIsRead(t *testing.T) {
 	t.Parallel()
@@ -750,7 +731,6 @@ func TestChatSession_OnlyARealTranscriptUnderProjectsIsRead(t *testing.T) {
 	c.waitSession(10*time.Second, "the transcript named through the config dir's link", messagesAre("user: Read through the link"))
 }
 
-// C22: over a LAN address the chat's routes need the token, as the others do.
 func TestChatSession_NeedsTheTokenOverTheLAN(t *testing.T) {
 	t.Parallel()
 	c := newChatWorld(t, false)

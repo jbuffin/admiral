@@ -21,20 +21,16 @@ import (
 	"github.com/jbuffin/admiral/internal/state"
 )
 
-// tallyOptions are the session options that hold a tally.
 var tallyOptions = []string{sessionhost.OptNeedsCount, sessionhost.OptNeedsSecs, sessionhost.OptStopSince}
 
-// maxReport is the most of a ship's report file that Admiral reads. The ship
-// writes the file, so a larger one counts as invalid.
+// The ship writes the report, so a larger one counts as invalid.
 const maxReport = 1 << 20
 
-// reasonPattern is what a reason must match to reach the log: any process in a
-// pane can set @admiral-reason.
+// Any process in a pane can set @admiral-reason, so it must match this to reach the log.
 var reasonPattern = sessionhost.SafeToken
 
-// tally is what the log needs to know of a ship between two passes. Count,
-// Seconds and Since live in the ship's tmux session options, so a restart of
-// Admiral keeps them (see options).
+// tally's Count, Seconds and Since live in tmux session options, so a restart of
+// Admiral keeps them.
 type tally struct {
 	Status  string
 	Count   int       // needs_you records written
@@ -42,7 +38,7 @@ type tally struct {
 	Since   time.Time // when the open stop began; zero when none
 }
 
-// options is the part of the tally kept in tmux; an empty value is unset.
+// An empty option value is unset.
 func (t tally) options() map[string]string {
 	o := map[string]string{}
 	for _, n := range tallyOptions {
@@ -60,10 +56,8 @@ func (t tally) options() map[string]string {
 	return o
 }
 
-// baseline is the tally of a ship that was already there when Admiral looked:
-// what tmux holds, with the current status as the starting point, so an open
-// stop gets no second needs_you. A stop that ended while Admiral was stopped
-// still has its Since, and the first advance closes it.
+// baseline starts from the current status, so an open stop gets no second
+// needs_you; a stop that ended while Admiral was down is closed by the first advance.
 func baseline(sess sessionhost.Session, now time.Time) tally {
 	t := tally{Status: status(sess, now)}
 	t.Count, _ = strconv.Atoi(sess.Options[sessionhost.OptNeedsCount])
@@ -83,9 +77,6 @@ func baseline(sess sessionhost.Session, now time.Time) tally {
 	return t
 }
 
-// reasonOf is the reason to log for a ship that needs you: its pane's reason if
-// it is well formed, unknown if it is missing or not, idle for a ship no hook
-// has spoken for.
 func reasonOf(sess sessionhost.Session) string {
 	switch {
 	case sess.State == "":
@@ -96,9 +87,8 @@ func reasonOf(sess sessionhost.Session) string {
 	return "unknown"
 }
 
-// advance is the records, without a ship, that a move to status st at time at
-// writes, and the tally after it. A stop is one stop whatever its reason does;
-// a stop that the pane's death ends gets no underway.
+// advance: a stop is one stop whatever its reason does, and one the pane's death
+// ends gets no underway.
 func advance(t tally, st, reason string, at time.Time) (tally, []outcomes.Record) {
 	var recs []outcomes.Record
 	was, is := t.Status == StatusNeedsYou, st == StatusNeedsYou
@@ -122,11 +112,8 @@ func advance(t tally, st, reason string, at time.Time) (tally, []outcomes.Record
 	return t, recs
 }
 
-// seconds rounds to a tenth.
 func seconds(s float64) float64 { return math.Round(s*10) / 10 }
 
-// track is what Run remembers of a ship it has written `launched` for, or found
-// there at start.
 type track struct {
 	tally
 	saved map[string]string // the options last written to tmux
@@ -134,11 +121,8 @@ type track struct {
 	seen  bool              // the host has listed the session; a launch is tracked before it does
 }
 
-// endState says whether `ended` reached the log, whether its write failed (so
-// Dismiss queues it again), and whether the ship's files wait for it to.
 type endState struct{ written, failed, clean bool }
 
-// ending is a ship whose pane died and whose `ended` is to be queued.
 type ending struct {
 	sess  sessionhost.Session
 	tally tally
@@ -146,7 +130,6 @@ type ending struct {
 	owner *track
 }
 
-// baselineAll starts tracking every ship that is not tracked yet, as found.
 func (s *Service) baselineAll() {
 	now := time.Now()
 	s.mu.Lock()
@@ -166,17 +149,14 @@ func (s *Service) baselineAll() {
 	}
 }
 
-// record queues r; a service without a log drops it. onDone is Enqueue's.
 func (s *Service) record(r outcomes.Record, onDone func(err error)) {
 	if s.Outcomes != nil {
 		s.Outcomes.Enqueue(r, onDone)
 	}
 }
 
-// observe compares each tracked ship with the last pass and writes what changed:
-// needs_you and underway from the status, ended for a pane that died. It forgets
-// ships that are gone, unless the host has lost tmux and knows of none. One pass
-// at a time, so Dismiss's `ended` is queued before its `dismissed`.
+// observe keeps gone ships while the host has lost tmux. One pass at a time, so
+// Dismiss's `ended` is queued before its `dismissed`.
 func (s *Service) observe(ctx context.Context) {
 	s.pass.Lock()
 	defer s.pass.Unlock()
@@ -238,10 +218,8 @@ func (s *Service) observe(ctx context.Context) {
 	}
 }
 
-// queueEnded queues the `ended` record of a ship whose pane died. Once it is
-// written, the ship is marked in tmux so no later start writes it again, and
-// the files of a ship that was killed meanwhile go. A write that fails sets
-// end.failed, which is what lets Dismiss queue the record again.
+// queueEnded marks the ship in tmux once `ended` is written, so no later start
+// writes it again. A failed write sets end.failed, which lets Dismiss queue it again.
 func (s *Service) queueEnded(e ending) {
 	sess, t, end, owner := e.sess, e.tally, e.end, e.owner
 	name := sess.Name
@@ -274,7 +252,7 @@ func (s *Service) queueEnded(e ending) {
 		clean := end.clean
 		s.mu.Unlock()
 		// A killed ship's session is usually gone by now. Without the marker the
-		// next start writes `ended` a second time (ADR 0012).
+		// next start writes `ended` a second time.
 		if merr != nil && !killed && !sessionhost.IsNoSession(merr) {
 			fmt.Fprintf(os.Stderr, "admiral: ship %s: its ended marker cannot be set: %v\n", name, merr)
 		}
@@ -284,8 +262,7 @@ func (s *Service) queueEnded(e ending) {
 	})
 }
 
-// retryEnded queues `ended` again for a ship whose first write failed, and
-// does nothing while that write is still pending.
+// retryEnded does nothing while the first write is still pending.
 func (s *Service) retryEnded(sess sessionhost.Session) {
 	s.mu.Lock()
 	tr := s.tracks[sess.Name]
@@ -299,14 +276,8 @@ func (s *Service) retryEnded(sess sessionhost.Session) {
 	s.queueEnded(e)
 }
 
-// killShip ends a ship's session, as Admiral does whether or not the log works,
-// and removes its report and inbox once its `ended` is in the log: now if it is,
-// or when the writer gets there. A ship killed while its `ended` fails keeps its
-// files. A ship Admiral has no `ended` for is not cleaned unless tmux held the
-// ended marker. Dismiss must run observe first, so that tr.end exists to be set.
-// With keepInbox, a ship with an item still unanswered keeps its files and
-// leaves a record in the state, which the answer that clears the last item
-// removes (ADR 0016); Dismiss never keeps.
+// killShip kills whether or not the log works, but removes the files only once
+// `ended` is in the log. Dismiss must run observe first, so that tr.end exists to be set.
 func (s *Service) killShip(ctx context.Context, name string, keepInbox bool) error {
 	marked := false
 	sess, found := s.find(name)
@@ -337,10 +308,8 @@ func (s *Service) killShip(ctx context.Context, name string, keepInbox bool) err
 	return nil
 }
 
-// keepInbox records the ship, before its session goes, when its inbox holds an
-// item it still waits for (inbox.Waiting), and says whether it did. The inbox is looked at again
-// once the record is down: an answer that landed in between has found no record
-// to clear.
+// keepInbox looks at the inbox again once the record is down: an answer that
+// landed in between has found no record to clear.
 func (s *Service) keepInbox(sess sessionhost.Session) bool {
 	home, _, _, ok := s.shipFiles(sess.Name)
 	if !ok || !inbox.Waiting(home, sess.Name) {
@@ -360,11 +329,8 @@ func (s *Service) keepInbox(sess sessionhost.Session) bool {
 	return true
 }
 
-// signalName is a signal as the UI and the log show it: upper case, no SIG.
 func signalName(sig string) string { return strings.TrimPrefix(strings.ToUpper(sig), "SIG") }
 
-// shipFiles is $ADMIRAL_HOME, made absolute, and the ship's report path and
-// inbox directory; ok is false for a session name that has none.
 func (s *Service) shipFiles(session string) (home, report, inbox string, ok bool) {
 	home, err := filepath.Abs(s.Launcher.Home)
 	if err != nil {
@@ -374,14 +340,8 @@ func (s *Service) shipFiles(session string) (home, report, inbox string, ok bool
 	return home, report, inbox, ok
 }
 
-// removeShipFiles deletes the ship's report and inbox, unless a launch is under
-// way (it may be reusing the name before Admiral can tell), a newer ship's track
-// holds the name (owner is the dying ship's, nil if it had none), a ship with
-// that name is running again, or reports/ or inbox/ is not a real directory. The
-// deletes go through a root on $ADMIRAL_HOME, so none leaves the home; a link
-// swapped in inside the home can still send one elsewhere within it. The checks
-// and the deletes share one hold of s.mu, so a launch that counts itself after
-// the checks waits for the deletes; one that counted before them keeps the files.
+// removeShipFiles skips while a launch is under way, since it may be reusing the
+// name. The checks and deletes share one hold of s.mu, so a later launch waits.
 func (s *Service) removeShipFiles(session string, owner *track, from inbox.Origin) {
 	home, _, _, ok := s.shipFiles(session)
 	if !ok {
@@ -404,8 +364,6 @@ func (s *Service) removeShipFiles(session string, owner *track, from inbox.Origi
 	launcher.RemoveShipFiles(home, session)
 }
 
-// readReport is the ship's report as the JSON it holds: nil when the file is
-// missing, or too large or not JSON, which is logged.
 func (s *Service) readReport(session string) json.RawMessage {
 	_, path, _, ok := s.shipFiles(session)
 	if !ok {

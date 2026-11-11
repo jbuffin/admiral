@@ -12,8 +12,8 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// apConfig is a config with a claude fleet "work", a codex-only fleet "cod"
-// and one source whose autopilot object is sourceAP (top is the top-level one).
+// apConfig has a claude fleet "work", a codex-only fleet "cod" and one source
+// whose autopilot object is sourceAP (top is the top-level one).
 func apConfig(top, sourceAP string) string {
 	c := `{"version":1,"fleets":{"work":{"name":"Work","claude":{}},"cod":{"name":"Cod","codex":{}}}`
 	if top != "" {
@@ -96,8 +96,6 @@ func TestAutopilotParseErrors(t *testing.T) {
 	}
 }
 
-// A panel's auto_merge (#120) is the merge method its autopilot ships may enable
-// auto-merge with. Absent is off; anything but the three methods is an error.
 func TestAutopilotAutoMerge(t *testing.T) {
 	for _, m := range []string{"squash", "merge", "rebase"} {
 		cfg, err := config.Parse([]byte(apConfig(``, `{"p":`+apEntry(`"auto_merge":"`+m+`"`)+`}`)))
@@ -125,8 +123,7 @@ func TestAutopilotAutoMerge(t *testing.T) {
 	}
 }
 
-// retro_every (#117): a whole number of runs, 5 when the entry says none, and
-// 0 to turn retros off (the one value max_ships' positive-integer rule refuses).
+// retro_every allows 0, the one value max_ships' positive-integer rule refuses.
 func TestAutopilotRetroEvery(t *testing.T) {
 	for _, c := range []struct {
 		name, extra string
@@ -149,9 +146,7 @@ func TestAutopilotRetroEvery(t *testing.T) {
 	}
 }
 
-// The five UI writes rebuild the whole sources object through SourcesJSON. The
-// autopilot object must come back as the engineer wrote it: no defaults added,
-// key order kept.
+// The UI writes rebuild the whole sources object through SourcesJSON.
 func TestSourcesJSONKeepsAutopilotAsRead(t *testing.T) {
 	ap := `{ "prs": {"skill": {"kind":"none"}, "harness":"claude", "fleet":"work"} }`
 	cfg, err := config.Parse([]byte(apConfig(``, ap)))
@@ -175,8 +170,6 @@ func TestSourcesJSONKeepsAutopilotAsRead(t *testing.T) {
 	}
 }
 
-// SetSources promises a bad write never leaves the file invalid, so it must
-// run the fleet cross-check that parsing the sources alone can't.
 func TestSetSourcesRefusesAnAutopilotFleetThatIsGone(t *testing.T) {
 	dir := t.TempDir()
 	good := `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}}}`
@@ -197,9 +190,7 @@ func TestSetSourcesRefusesAnAutopilotFleetThatIsGone(t *testing.T) {
 	}
 }
 
-// autopilot.resume_source (#116 u5) names the source and panel that get a ship's
-// resume order. Parse checks only the shape; whether the source and panel exist
-// is checked when an order is added, so a source can still be deleted.
+// Parse checks only the shape, so a named source can still be deleted.
 func TestAutopilotResumeSourceShape(t *testing.T) {
 	good := []string{
 		`{"max_ships":2,"resume_source":{"source":"not-a-source-yet","panel":"nowhere"}}`,

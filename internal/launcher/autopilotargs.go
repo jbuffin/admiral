@@ -5,7 +5,6 @@ import (
 	"strings"
 )
 
-// arity is how many values a flag takes from the --args after it.
 type arity int
 
 const (
@@ -14,11 +13,8 @@ const (
 	arityAny               // zero or more, the same way
 )
 
-// flagRule is one flag on a harness's autopilot allowlist. names holds every
-// spelling; a single-dash name also takes its value joined (-cKEY=V, -c=KEY=V),
-// and a double-dash name takes it after "=". valueFits, when set, vets each
-// value against the dock's args. dockUnset refuses the flag when the dock's args
-// already set it, for a flag whose repeat may replace the dock's value.
+// A single-dash name also takes its value joined (-cKEY=V, -c=KEY=V), a double-dash one after
+// "=". dockUnset is for a flag whose repeat may replace the dock's value.
 type flagRule struct {
 	names     []string
 	arity     arity
@@ -26,19 +22,12 @@ type flagRule struct {
 	dockUnset bool
 }
 
-// AutopilotHarnesses are the harnesses `admiral guard` covers, the only ones a
-// caller with ADMIRAL_AUTOPILOT=1 may launch as crew. Each needs a table in
-// autopilotRules. Adding codex or copilot here is not enough: settle the copilot
-// flags noted below, and check the table against the harness's own parser.
+// AutopilotHarnesses are the harnesses `admiral guard` covers. Adding codex or copilot here is
+// not enough: settle the copilot flags noted below, and check the table against its parser.
 var AutopilotHarnesses = []string{"claude"}
 
-// autopilotRules is each harness's allowlist (#175): the flags a caller with
-// ADMIRAL_AUTOPILOT=1 may pass. Claude's flags select a model or effort, deny
-// tools, or keep the dock's permission mode or stricter. Codex's and copilot's
-// are unreachable until AutopilotHarnesses names them. Copilot's --add-dir (file
-// access) and --available-tools (an allowlist of tools, which a crew list may
-// widen past a dock's) are the engineer's decision but can loosen the dock, so
-// settle them before copilot is covered.
+// Codex's and copilot's are unreachable until AutopilotHarnesses names them. Copilot's --add-dir
+// and --available-tools can loosen the dock, so settle them before copilot is covered.
 var autopilotRules = map[string][]flagRule{
 	"claude": {
 		{names: []string{"--model"}, arity: arityOne, valueFits: notDashLed},
@@ -65,23 +54,19 @@ var autopilotRules = map[string][]flagRule{
 	},
 }
 
-// notDashLed reports whether a value is safe to hand a claude flag that takes
-// the next arg whatever it is: one that starts with "-" would read as a flag if
-// claude's parsing ever changed.
+// A value that starts with "-" would read as a flag if claude's parsing ever changed.
 func notDashLed(value string, _ []string) bool {
 	return !strings.HasPrefix(value, "-")
 }
 
-// modeRank orders claude's permission modes from strictest to loosest. default
-// and manual are one rank: manual is default's current spelling.
+// manual is default's current spelling.
 var modeRank = map[string]int{"plan": 0, "dontAsk": 1, "default": 2, "manual": 2, "acceptEdits": 3, "auto": 4, "bypassPermissions": 5}
 
 // strictestRank is plan's: what a dock with a mode this table doesn't know allows.
 const strictestRank = 0
 
-// noLooserMode reports whether a crew --permission-mode is no looser than the
-// dock's. A dock with no mode runs as default. Claude 2.1.310 doesn't take
-// default as a value, so a crew boat can't say it; it is only the baseline.
+// A dock with no mode runs as default. Claude 2.1.310 doesn't take default as a value, so a
+// crew boat can't say it; it is only the baseline.
 func noLooserMode(mode string, dock []string) bool {
 	rank, known := modeRank[mode]
 	if !known || mode == "default" {
@@ -97,7 +82,6 @@ func noLooserMode(mode string, dock []string) bool {
 	return rank <= base
 }
 
-// dockMode is the last --permission-mode in the dock's args, or "".
 func dockMode(dock []string) string {
 	mode := ""
 	for i, a := range dock {
@@ -111,11 +95,7 @@ func dockMode(dock []string) string {
 	return mode
 }
 
-// AutopilotArgs vets the values of `admiral crew launch --arg` against the
-// per-harness allowlist for a caller with ADMIRAL_AUTOPILOT=1 (#175): the
-// autopilot args allowlist. dockArgs are the dock's own args for the harness; a
-// --permission-mode may be no looser than the dock's. The error names the first
-// value that doesn't fit.
+// AutopilotArgs vets `admiral crew launch --arg` for a caller with ADMIRAL_AUTOPILOT=1.
 func AutopilotArgs(harness string, dockArgs []string, args []string) error {
 	rules, ok := autopilotRules[harness]
 	if !ok {
@@ -164,8 +144,6 @@ func AutopilotArgs(harness string, dockArgs []string, args []string) error {
 	return nil
 }
 
-// matchRule finds the rule arg names. For a flag with its value joined it
-// returns the value and joined; a bare flag returns joined false.
 func matchRule(rules []flagRule, arg string) (r *flagRule, value string, joined bool) {
 	for i := range rules {
 		for _, n := range rules[i].names {
@@ -186,7 +164,6 @@ func refuseArg(arg, why string) error {
 	return fmt.Errorf("--arg %s is refused: %s", arg, why)
 }
 
-// dockSets reports whether the dock's args set one of the flags, in either spelling.
 func dockSets(dock, names []string) bool {
 	for _, a := range dock {
 		for _, n := range names {

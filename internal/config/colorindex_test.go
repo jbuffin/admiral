@@ -9,8 +9,6 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// fleetViews opens a config holding these fleets (key, color or "") and
-// returns what the UI receives for them, as raw JSON objects keyed by fleet key.
 func fleetViews(t *testing.T, fleets [][2]string) []map[string]any {
 	t.Helper()
 	dir := t.TempDir()
@@ -51,7 +49,6 @@ func fleetViews(t *testing.T, fleets [][2]string) []map[string]any {
 	return v.Fleets
 }
 
-// colorIndex returns the fleet's color_index, and whether the field is there.
 func colorIndex(t *testing.T, f map[string]any) (int, bool) {
 	t.Helper()
 	v, ok := f["color_index"]
@@ -65,8 +62,7 @@ func colorIndex(t *testing.T, f map[string]any) (int, bool) {
 	return int(n), true
 }
 
-// Fleets without a color count through the old palette; the index is the raw
-// counter, not wrapped (the client wraps it by the redesign sequence's length).
+// The client wraps the index by the redesign sequence's length.
 func TestColorIndex_DerivedFleetsCountUnwrapped(t *testing.T) {
 	fleets := fleetViews(t, [][2]string{{"a", ""}, {"b", ""}, {"c", ""}, {"d", ""}, {"e", ""}, {"f", ""}})
 	for i, f := range fleets {
@@ -77,8 +73,6 @@ func TestColorIndex_DerivedFleetsCountUnwrapped(t *testing.T) {
 	}
 }
 
-// A stored color that is an old palette entry (any case, as `admiral setup`
-// writes the default hex) takes that entry's position; a custom hex has none.
 // Neither kind advances the counter of the fleets that have no color.
 func TestColorIndex_StoredPaletteHexAndCustom(t *testing.T) {
 	fleets := fleetViews(t, [][2]string{

@@ -7,8 +7,6 @@ import (
 	"testing"
 )
 
-// The bundle registers the subagent events for each harness, each running
-// `admiral hook <event>` (ADR 0014).
 func TestBundleRegistersSubagentEvents(t *testing.T) {
 	asJSON := func(v any) string {
 		raw, err := json.Marshal(v)
@@ -35,8 +33,6 @@ func TestBundleRegistersSubagentEvents(t *testing.T) {
 	}
 }
 
-// Claude's PreToolUse runs the guard for Bash, GitHub's MCP review tools and
-// its merge tools, with a timeout that blocks, beside the working hook.
 func TestBundleRunsTheGuard(t *testing.T) {
 	raw, _ := json.Marshal(claudeSettings())
 	var settings struct {

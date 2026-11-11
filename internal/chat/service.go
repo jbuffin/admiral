@@ -22,24 +22,17 @@ import (
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
-// NotStarted is the error the session carries until the first SessionStart has
-// recorded a transcript. On a first start in a new folder Claude may be on its
-// folder-trust dialog, where a pasted message would land (ADR 0019).
+// NotStarted holds until the first SessionStart: Claude may be on its folder-trust dialog,
+// where a pasted message would land.
 const NotStarted = "Open the terminal to finish starting the chat"
 
-// Unreadable is the error when the recorded transcript is one Admiral refuses to
-// read, so the engineer knows why the chat is blank.
 const Unreadable = "Admiral can't read this chat's transcript"
 
-// maxSend is the longest message a send takes.
 const maxSend = 16 << 10
 
-// optionEvery is how often the chat's options are read from tmux at most.
 const optionEvery = 200 * time.Millisecond
 
-// Snapshot is what GET /api/chat/session and the `chat` WebSocket message carry.
-// The wire message adds "type". Questions are the chat questions (ADR 0020): the
-// newest 20, oldest first, served whether or not the chat is running.
+// Questions are served whether or not the chat is running.
 type Snapshot struct {
 	Running   bool       `json:"running"`
 	State     string     `json:"state"` // idle, working or waiting; "" while not running
@@ -48,13 +41,11 @@ type Snapshot struct {
 	Error     string     `json:"error,omitempty"`
 }
 
-// wire is the WebSocket form of a Snapshot.
 type wire struct {
 	Type string `json:"type"`
 	Snapshot
 }
 
-// Service is the chat session's server module.
 type Service struct {
 	Host     *sessionhost.Host
 	Hub      *server.Hub
@@ -72,15 +63,14 @@ type Service struct {
 	ticket   uint64 // numbers the option reads, so a late one can't undo a newer
 	startErr string // why the last start was refused, until a start works
 
-	cmu sync.Mutex // the question cache; the directory is read under it, never under mu
-	qs  []Question // the questions as last read
-	qAt time.Time
-	// What each question and answer file read as, by id, while its time and size hold.
+	cmu      sync.Mutex // the question cache; the directory is read under it, never under mu
+	qs       []Question // the questions as last read
+	qAt      time.Time
 	qItems   map[string]cachedQuestion
 	qAnswers map[string]cachedAnswer
 }
 
-// state is the chat as last read. It is cleared when the pane changes.
+// state is cleared when the pane changes.
 type state struct {
 	pane    string // the pane id of the `_chat` session read last
 	opts    chatOptions
@@ -95,13 +85,11 @@ type state struct {
 	optSeq  uint64 // the ticket of the option read applied last
 }
 
-// chatOptions are the options one tmux read returns.
 type chatOptions struct {
 	model, effort, fleet string
 	transcript           string // "<unix ns> <source> <path>", "" before the first SessionStart
 }
 
-// Routes registers the chat API.
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/chat/session", s.serveSession)
 	mux.HandleFunc("POST /api/chat/start", s.serveStart)
@@ -110,15 +98,12 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/chat/questions/{id}/answer", s.serveAnswer)
 }
 
-// Connected sends a new client the chat.
 func (s *Service) Connected(c *server.Client) {
 	m := wire{Type: "chat", Snapshot: s.currentFresh()}
 	_ = c.SendOnce("chat", func() any { return m })
 }
 
-// Run follows the session until ctx ends: on every event of the host about it,
-// and on a short tick for what the host doesn't see (the chat's options and its
-// transcript), it pushes the chat when it changed.
+// Run also ticks, for what the host doesn't see: the chat's options and its transcript.
 func (s *Service) Run(ctx context.Context) {
 	if s.Host == nil {
 		return
@@ -151,20 +136,17 @@ func (s *Service) broadcast() {
 
 func (s *Service) message() wire { return wire{Type: "chat", Snapshot: s.current()} }
 
-// currentFresh is current with the questions read from their directory now: a
-// request, and a new connection, must not see a stale list.
+// A request, and a new connection, must not see a stale question list.
 func (s *Service) currentFresh() Snapshot {
 	snap, _ := s.refreshQ(false, true)
 	return snap
 }
 
-// current reads the chat and returns it.
 func (s *Service) current() Snapshot {
 	snap, _ := s.refresh(false)
 	return snap
 }
 
-// session is the `_chat` session as the host last read it.
 func (s *Service) session() (sessionhost.Session, bool) {
 	if s.Host == nil {
 		return sessionhost.Session{}, false
@@ -177,15 +159,9 @@ func (s *Service) session() (sessionhost.Session, bool) {
 	return sessionhost.Session{}, false
 }
 
-// refresh reads the session from the host, its options from tmux and its
-// transcript, and returns the snapshot. force reads the options even if they were
-// read a moment ago, and then a failed read is an error (the snapshot is still
-// returned). The tmux call runs outside the lock, so a stuck tmux holds up only
-// the caller that made it.
+// The tmux call runs outside the lock, so a stuck tmux holds up only the caller that made it.
 func (s *Service) refresh(force bool) (Snapshot, error) { return s.refreshQ(force, force) }
 
-// refreshQ is refresh, and fresh reads the questions directory even if it was read a
-// moment ago.
 func (s *Service) refreshQ(force, fresh bool) (Snapshot, error) {
 	qs := s.questions(fresh)
 	sess, running := s.session()
@@ -242,8 +218,6 @@ func (s *Service) refreshQ(force, fresh bool) (Snapshot, error) {
 	return snap, nil
 }
 
-// mapState turns the hook's ship vocabulary into the chat's: working is working;
-// needs you with the reason stop is idle; any other needs you is waiting.
 func mapState(state, reason string) string {
 	switch {
 	case state == "working":
@@ -254,9 +228,7 @@ func mapState(state, reason string) string {
 	return "idle"
 }
 
-// transcriptChangedLocked acts on a new value of the transcript option: a new
-// path starts a new conversation read from its start; the same path with source
-// "clear" empties it and serves only what is written after.
+// The same path with source "clear" empties the conversation and serves only what is written after.
 func (s *Service) transcriptChangedLocked(raw string) {
 	st := &s.st
 	first := st.optRaw == ""
@@ -276,7 +248,6 @@ func (s *Service) transcriptChangedLocked(raw string) {
 	}
 }
 
-// parseTranscriptOption splits "<unix ns> <source> <path>".
 func parseTranscriptOption(raw string) (stamp, source, path string, ok bool) {
 	parts := strings.SplitN(raw, " ", 3)
 	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
@@ -285,8 +256,6 @@ func parseTranscriptOption(raw string) (stamp, source, path string, ok bool) {
 	return parts[0], parts[1], parts[2], true
 }
 
-// configDir is the Claude config directory the running chat uses: that of the
-// dock of the fleet it started with.
 func (s *Service) configDir() string {
 	cfg := s.Config()
 	// The fleet the session started with. The option can be written from inside the
@@ -302,7 +271,6 @@ func (s *Service) configDir() string {
 	return config.IdentityDir("claude", env)
 }
 
-// openLocked opens the transcript at the recorded path if it may be read.
 func (s *Service) openLocked() (string, os.FileInfo, *os.File, error) {
 	st := &s.st
 	if st.path == "" {
@@ -333,7 +301,6 @@ func (s *Service) openLocked() (string, os.FileInfo, *os.File, error) {
 	return "", nil, nil, err
 }
 
-// followLocked reads what the transcript has gained.
 func (s *Service) followLocked() {
 	st := &s.st
 	if st.fol == nil {
@@ -349,7 +316,6 @@ func (s *Service) followLocked() {
 	st.fol.read(f, info, s.add, func() { st.msgs, st.bytes = nil, 0 })
 }
 
-// add keeps a message, and only the last maxMessages of them within maxBytes.
 func (s *Service) add(m Message) {
 	st := &s.st
 	st.msgs = append(st.msgs, m)
@@ -360,7 +326,6 @@ func (s *Service) add(m Message) {
 	}
 }
 
-// readOptions reads the chat's options off its pane in one tmux call.
 func (s *Service) readOptions(pane string) (chatOptions, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -371,8 +336,6 @@ func (s *Service) readOptions(pane string) (chatOptions, error) {
 	return chatOptions{model: o.Model, effort: o.Effort, fleet: o.Fleet, transcript: o.Transcript}, nil
 }
 
-// server is Admiral's tmux as the chat has always run it: no -u, TMUX and
-// TMUX_PANE dropped, a failure that carries stderr.
 func (s *Service) server() sessionhost.Server {
 	return sessionhost.NewServer(s.Tmux, s.Socket).WithoutUTF8().StderrErrors()
 }
@@ -392,8 +355,7 @@ func (s *Service) serveSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.currentFresh())
 }
 
-// sync makes the host read the sessions now, so what a start or restart did is
-// known before the answer.
+// sync makes what a start or restart did known before the answer.
 func (s *Service) sync() {
 	if s.Host == nil {
 		return
@@ -403,14 +365,12 @@ func (s *Service) sync() {
 	_ = s.Host.Sync(ctx)
 }
 
-// exists says whether the `_chat` session is in tmux.
 func (s *Service) exists() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	return s.server().HasSession(ctx, sessionhost.ChatName)
 }
 
-// start makes the session if there is none.
 func (s *Service) start() *launcher.Error {
 	if s.Launcher == nil || s.Tmux == "" {
 		return &launcher.Error{Status: http.StatusServiceUnavailable, Msg: "the chat needs tmux"}
@@ -438,7 +398,6 @@ func (s *Service) start() *launcher.Error {
 	return nil
 }
 
-// serveStart starts the chat session, or leaves the running one alone.
 func (s *Service) serveStart(w http.ResponseWriter, r *http.Request) {
 	s.op.Lock()
 	defer s.op.Unlock()
@@ -451,9 +410,7 @@ func (s *Service) serveStart(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"running": true})
 }
 
-// clean is a message ready to paste: line ends as LF, control characters
-// (an escape among them, which could end the bracketed paste early) dropped,
-// except LF and tab.
+// An escape could end the bracketed paste early.
 func clean(text string) string {
 	text = strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(text)
 	text = strings.Map(func(r rune) rune {
@@ -468,7 +425,6 @@ func clean(text string) string {
 	return strings.TrimSpace(text)
 }
 
-// serveSend pastes a message into the chat and presses Enter.
 func (s *Service) serveSend(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Text string `json:"text"`
@@ -500,8 +456,6 @@ func (s *Service) serveSend(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"sent": true})
 }
 
-// ready is the chat's pane when a message can go in: it runs, and a SessionStart
-// has recorded its transcript.
 func (s *Service) ready() (pane string, status int, msg string) {
 	snap, err := s.refresh(true)
 	switch {
@@ -518,9 +472,7 @@ func (s *Service) ready() (pane string, status int, msg string) {
 	return s.st.pane, 0, ""
 }
 
-// paste puts text into the pane as one bracketed paste, then Enter. The text goes
-// to tmux on stdin through a buffer of its own, never on a command line or through
-// a shell. -r keeps LF as LF; tmux's own sanitising stays on.
+// The text goes to tmux on stdin, never on a command line or through a shell.
 func (s *Service) paste(pane, text string) error {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -540,8 +492,7 @@ func (s *Service) paste(pane, text string) error {
 	return srv.SendEnter(ctx, pane)
 }
 
-// serveNew resets the conversation: /clear when the running session matches the
-// config, else a new session. Every browser's conversation empties at once.
+// serveNew sends /clear when the running session matches the config, else starts a new session.
 func (s *Service) serveNew(w http.ResponseWriter, r *http.Request) {
 	s.op.Lock()
 	defer s.op.Unlock()
@@ -604,8 +555,6 @@ func (s *Service) serveNew(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"running": true})
 }
 
-// clearLocked empties the conversation and keeps the transcript followed from
-// its current end, so nothing already written comes back.
 func (s *Service) clearLocked() {
 	st := &s.st
 	st.msgs, st.bytes = nil, 0

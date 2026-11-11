@@ -12,23 +12,17 @@ import (
 )
 
 var (
-	// ErrInvalid says config.json doesn't load, so a write is refused.
-	ErrInvalid = errors.New("config.json is invalid")
-	// ErrChanged says the panel's entry in the file isn't the one the caller read.
-	ErrChanged = errors.New("the config changed; reopen")
-	// ErrNoSource says the file has no such source.
+	ErrInvalid  = errors.New("config.json is invalid")
+	ErrChanged  = errors.New("the config changed; reopen")
 	ErrNoSource = errors.New("no such source")
 )
 
-// invalidError is a load error that also matches ErrInvalid.
 type invalidError struct{ err error }
 
 func (e invalidError) Error() string        { return e.err.Error() }
 func (e invalidError) Is(target error) bool { return target == ErrInvalid }
 func (e invalidError) Unwrap() error        { return e.err }
 
-// entryVersion is the opaque version of a panel's entry: a hash of its compacted
-// JSON, a fixed value when there is none.
 func entryVersion(raw json.RawMessage) string {
 	if raw == nil {
 		return "none"
@@ -47,8 +41,6 @@ func sameJSON(a, b json.RawMessage) bool {
 	return json.Unmarshal(a, &x) == nil && json.Unmarshal(b, &y) == nil && reflect.DeepEqual(x, y)
 }
 
-// panelEntry finds one panel's entry in the file's bytes: the sources, the
-// source and its autopilot object on the way. A missing entry is nil.
 func panelEntry(data []byte, source, panel string) (sources, src, ap *Object, entry json.RawMessage, err error) {
 	top, err := ParseObject(data)
 	if err != nil {
@@ -78,9 +70,7 @@ func panelEntry(data []byte, source, panel string) (sources, src, ap *Object, en
 	return sources, src, ap, entry, nil
 }
 
-// ReadPanelAutopilot is one panel's autopilot entry as the file holds it (nil when
-// there is none) and its version, read from the file and not from the loaded
-// config. A file that doesn't load is ErrInvalid.
+// ReadPanelAutopilot reads the file, not the loaded config.
 func ReadPanelAutopilot(dir, source, panel string) (json.RawMessage, string, error) {
 	writeMu.Lock()
 	defer writeMu.Unlock()
@@ -96,12 +86,8 @@ func ReadPanelAutopilot(dir, source, panel string) (json.RawMessage, string, err
 	return entry, entryVersion(entry), err
 }
 
-// SetPanelAutopilot sets one panel's autopilot entry in dir/config.json, or
-// removes it when entry is nil, and says whether it wrote. It refuses with
-// ErrChanged when the file's entry isn't the one version names, and writes
-// nothing when the entry already equals the file's. The result must load; check
-// then sees the entry the file held and the config about to be written, before
-// the file is replaced. Every other key and entry stays as it is.
+// SetPanelAutopilot removes the entry when it is nil. check runs on the old entry
+// and the config about to be written, before the file is replaced.
 func SetPanelAutopilot(dir, source, panel string, entry json.RawMessage, version string, check func(old json.RawMessage, cfg *Config) error) (bool, error) {
 	writeMu.Lock()
 	defer writeMu.Unlock()
@@ -153,12 +139,11 @@ func SetPanelAutopilot(dir, source, panel string, entry json.RawMessage, version
 	return true, replaceFile(path, out)
 }
 
-// ReadPanelAutopilot reads one panel's entry from the file; see the package function.
 func (m *Manager) ReadPanelAutopilot(source, panel string) (json.RawMessage, string, error) {
 	return ReadPanelAutopilot(filepath.Dir(m.path), source, panel)
 }
 
-// SetPanelAutopilot writes one panel's entry and reloads before it returns.
+// SetPanelAutopilot reloads before it returns.
 func (m *Manager) SetPanelAutopilot(source, panel string, entry json.RawMessage, version string, check func(old json.RawMessage, cfg *Config) error) (bool, error) {
 	wrote, err := SetPanelAutopilot(filepath.Dir(m.path), source, panel, entry, version, check)
 	if wrote {

@@ -8,12 +8,10 @@ import (
 	"github.com/jbuffin/admiral/internal/server"
 )
 
-// DefaultPort is the port the server listens on unless told otherwise; the
-// commands that talk to a running server look there.
 const DefaultPort = "7420"
 
-// Token is `admiral token rotate [--port <n>]` (story 8). A running server
-// watches the token file, so it signs every non-local device out at once.
+// Token relies on the running server watching the token file to sign every
+// non-local device out at once.
 func Token(args []string, std IO) error {
 	if len(args) == 0 || args[0] != "rotate" {
 		return usagef("usage: admiral token rotate [--port <n>]")
@@ -45,7 +43,6 @@ func Token(args []string, std IO) error {
 	return nil
 }
 
-// serves says whether the server on the port is this home's.
 func serves(port, dir string) bool {
 	_, ok := probe(port, dir)
 	return ok

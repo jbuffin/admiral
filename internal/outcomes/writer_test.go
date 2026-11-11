@@ -12,7 +12,6 @@ import (
 	"time"
 )
 
-// logSink collects what a writer logs.
 type logSink struct {
 	mu    sync.Mutex
 	lines []string
@@ -64,10 +63,6 @@ func fixedClock(ts ...string) func() time.Time {
 	}
 }
 
-// Records come out one JSON object per line, in the order they were queued,
-// with v, ts, ship and event first-class and the event's fields flattened in.
-// The directory is created, and what a file already holds is kept, also when a
-// second writer appends to it.
 func TestWriterAppendsInOrderToTheMonthsFile(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "outcomes")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -123,7 +118,6 @@ func TestWriterAppendsInOrderToTheMonthsFile(t *testing.T) {
 	}
 }
 
-// The file is the month of the record's ts in UTC, and ts is written in UTC.
 func TestWriterNamesTheFileByTheUTCMonth(t *testing.T) {
 	dir := t.TempDir()
 	w := New(dir, (&logSink{}).logf)
@@ -145,8 +139,6 @@ func TestWriterNamesTheFileByTheUTCMonth(t *testing.T) {
 	}
 }
 
-// A failed write is logged once, calls nothing and drops the record; every
-// later record tries again, and a failure after a success is logged again.
 func TestWriterLogsAFailureOnceAndRetriesLater(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "outcomes")
@@ -224,8 +216,6 @@ func TestWriterLogsAFailureOnceAndRetriesLater(t *testing.T) {
 	}
 }
 
-// A stuck writer never blocks Enqueue. A full queue (1024) drops the record and
-// logs once until it drains, and logs again at the next overflow.
 func TestWriterDropsOnOverflowAndLogsOncePerFill(t *testing.T) {
 	dir := t.TempDir()
 	var sink logSink
@@ -290,7 +280,6 @@ func TestWriterDropsOnOverflowAndLogsOncePerFill(t *testing.T) {
 	}
 }
 
-// A record that comes after Close is dropped, and the first one is logged.
 func TestWriterLogsARecordAfterCloseOnce(t *testing.T) {
 	var sink logSink
 	w := New(t.TempDir(), sink.logf)

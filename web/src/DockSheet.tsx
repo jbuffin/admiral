@@ -9,7 +9,6 @@ import { isWebUrl } from './sources';
 
 const FOCUSABLE = 'button:not([disabled]), a[href], input, textarea, [tabindex]:not([tabindex="-1"])';
 
-// The phone's dock sheet (prototype :933-960): a tap on an order lists every dock to launch it on.
 // It is not `selected`, so the marinas stay unarmed and show their resting status.
 export function DockSheet() {
   const ref = useRef<HTMLDivElement>(null);
@@ -24,9 +23,8 @@ export function DockSheet() {
       forgetOpener();
     }
   }, [phone.value]);
-  // Escape closes the sheet wherever focus is (the order's button, say, if a browser leaves it there).
-  // It swallows every other Escape handler, so it relies on the sheet being the only thing open: it is
-  // removed as soon as a dock is picked, before Launch orders (a native dialog) opens.
+  // Escape closes the sheet wherever focus is. It swallows every other Escape handler, so the sheet must be the
+  // only thing open: it is removed as soon as a dock is picked, before Launch orders opens.
   useLayoutEffect(() => {
     if (!open) return;
     const esc = (e: KeyboardEvent) => {

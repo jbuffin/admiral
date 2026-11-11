@@ -11,10 +11,6 @@ import (
 	"github.com/coder/websocket"
 )
 
-// Issue #257: every /api/… route also answers under /api/v1/…, the sockets
-// under /ws/v1/…, GET /api/version names the build, and the bridge `join`
-// carries an optional "api" version (missing means 1).
-
 // sameAnswer requires two responses to agree on status, the headers that
 // matter and the body.
 func sameAnswer(t *testing.T, what string, old, v1 *http.Response, oldBody, v1Body string) {
@@ -32,7 +28,7 @@ func sameAnswer(t *testing.T, what string, old, v1 *http.Response, oldBody, v1Bo
 	}
 }
 
-// AC1: the page socket answers on /ws/v1 (the exact path, no trailing slash)
+// The page socket answers on /ws/v1 (the exact path, no trailing slash)
 // as it does on /ws, any method included, and the Origin rule carries over.
 func TestAPIv1_PageSocketAndOrigin(t *testing.T) {
 	t.Parallel()
@@ -83,7 +79,7 @@ func TestAPIv1_PageSocketAndOrigin(t *testing.T) {
 
 var semver = regexp.MustCompile(`^v?\d+\.\d+\.\d+`)
 
-// AC2: GET /api/version names the build, the API versions and the server
+// GET /api/version names the build, the API versions and the server
 // features, and is never cached.
 func TestAPIVersion_NamesBuildAndFeatures(t *testing.T) {
 	t.Parallel()
@@ -136,7 +132,7 @@ func TestAPIVersion_NamesBuildAndFeatures(t *testing.T) {
 	}
 }
 
-// AC2 and AC1: over the LAN address, /api/version and /api/v1/… need exactly
+// Over the LAN address, /api/version and /api/v1/… need exactly
 // the access /api/… needs.
 func TestAPIv1_AccessParityOverTheLAN(t *testing.T) {
 	t.Parallel()
@@ -165,9 +161,7 @@ func TestAPIv1_AccessParityOverTheLAN(t *testing.T) {
 	}
 }
 
-// ---- the bridge socket (needs tmux and a live ship) ----
-
-// AC1 and AC3: a bridge socket joined on /ws/v1/bridge/<session> gets the join reply
+// A bridge socket joined on /ws/v1/bridge/<session> gets the join reply
 // with "api":1 and with no api; an unsupported or wrong-typed api gets an
 // error frame and a 1008 close, on either path and on every join.
 func TestBridgeJoin_APIVersion(t *testing.T) {

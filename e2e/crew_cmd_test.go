@@ -12,15 +12,9 @@ import (
 	"time"
 )
 
-// `admiral crew` (#152, spec #72 stories 2-10, 16 and 20): teammates in their
-// own windows of the ship's tmux session. The seam is the built binary on a
-// private tmux socket with the fake harness; every call runs with
-// ADMIRAL_SHIP set to the ship's session, as a skill inside the ship would, and
-// the ship's own ADMIRAL_REPORT and ADMIRAL_INBOX are dropped by baseEnv.
-//
-// The ship and every crew boat on one harness share FAKE_CUE, so the cue is
-// `hook working` for all of them and a crew boat is anchored by killing its
-// process (remain-on-exit keeps the dead pane).
+// The ship and every crew boat on one harness share FAKE_CUE (`hook working`),
+// so a crew boat is anchored by killing its process (remain-on-exit keeps the
+// dead pane).
 
 type crewRow struct {
 	Name, Harness, Dir, State, Launched string
@@ -62,7 +56,6 @@ func crewList(w *world, ship string) map[string]crewRow {
 	return rows
 }
 
-// waitCrewState polls crew list until the boat has the state.
 func waitCrewState(w *world, ship, name, state string) {
 	w.t.Helper()
 	deadline := time.Now().Add(10 * time.Second)

@@ -1,8 +1,4 @@
-// Package state holds what Admiral remembers besides config and tmux
-// (ADR 0012): where each ship sits on the water, the last directory
-// launched into at each dock, when each directory was last launched into, and the
-// resume orders that wait to be added (ADR 0016).
-// It lives in $ADMIRAL_HOME/state.json.
+// Package state holds what Admiral remembers besides config and tmux, in $ADMIRAL_HOME/state.json.
 package state
 
 import (
@@ -15,16 +11,13 @@ import (
 	"time"
 )
 
-// FileName is the state file inside $ADMIRAL_HOME.
 const FileName = "state.json"
 
-// Version is the file format this Admiral reads.
 const Version = 1
 
-// settle is how long after the last change the file is written.
 const settle = time.Second
 
-// Position is a ship's place as fractions 0–1 of the open water.
+// Position is in fractions 0–1 of the open water.
 type Position struct {
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
@@ -36,19 +29,14 @@ type file struct {
 	LastDirs  map[string]string    `json:"last_dirs"`              // by DockKey
 	DirsUsed  map[string]time.Time `json:"dirs_used"`              // by directory
 	Kept      map[string]KeptShip  `json:"kept_inboxes,omitempty"` // by tmux session
-	// Paused holds the autopilot panels the engineer paused, by source key and
-	// panel id. Optional, so Version stays 1.
+	// Optional, so Version stays 1.
 	Paused map[string]map[string]bool `json:"paused,omitempty"`
-	// Resumes holds the resume orders of ADR 0016, by session and report hash.
 	// Optional, so Version stays 1.
 	Resumes map[string]Resume `json:"resume_orders,omitempty"`
 }
 
-// Resume is one report's resume order. Until it is added Text holds the order,
-// so it outlives the report's deletion and a restart; once it is added (or
-// refused for good) Done is set and Text is dropped, and the entry stays so the
-// same report never adds it twice. Dir and the origin are where the ship ran and
-// the autopilot panel it counted against (#120); they go with Text.
+// Text outlives the report's deletion and a restart. Once added (or refused for good) Done is
+// set and Text dropped, and the entry stays so the same report never adds it twice.
 type Resume struct {
 	Session      string `json:"session"`
 	Text         string `json:"text,omitempty"`
@@ -58,25 +46,22 @@ type Resume struct {
 	Done         bool   `json:"done,omitempty"`
 }
 
-// KeptShip is what Admiral remembers of a ship that sailed off with an item
-// still unanswered in its inbox (ADR 0016): enough to name it in the inbox and
-// to find its dock for gh once the tmux session is gone.
+// KeptShip is a ship that sailed off with an unanswered inbox item: enough to name it in the
+// inbox and find its dock for gh once the tmux session is gone.
 type KeptShip struct {
 	Name       string `json:"name"`
 	Fleet      string `json:"fleet"`
 	FleetName  string `json:"fleet_name,omitempty"`
 	FleetColor string `json:"fleet_color,omitempty"`
 	Harness    string `json:"harness"`
-	// Dir and the origin panel are for the resume order of its report (#120).
+	// Dir and the origin panel are for the resume order of its report.
 	Dir          string `json:"dir,omitempty"`
 	OriginSource string `json:"origin_source,omitempty"`
 	OriginPanel  string `json:"origin_panel,omitempty"`
 }
 
-// DockKey keys a dock's last directory.
 func DockKey(fleet, harness string) string { return fleet + "/" + harness }
 
-// Store is the in-memory state, written to disk shortly after it settles.
 type Store struct {
 	path string
 
@@ -87,8 +72,7 @@ type Store struct {
 	flushMu sync.Mutex // one write at a time, so an older snapshot never lands last
 }
 
-// Open reads dir/state.json. A file that is corrupt or has another version is
-// moved to state.json.bad and the store starts empty.
+// A file that is corrupt or has another version is moved to state.json.bad and the store starts empty.
 func Open(dir string) (*Store, error) {
 	s := &Store{path: filepath.Join(dir, FileName), data: file{Version: Version,
 		Positions: map[string]Position{}, LastDirs: map[string]string{}, DirsUsed: map[string]time.Time{}}}
@@ -127,8 +111,7 @@ func Open(dir string) (*Store, error) {
 	return s, nil
 }
 
-// KeepInbox records a sailed-off ship whose inbox is kept, and writes the file
-// now: a lost record would let a new launch reuse the name and clear the inbox.
+// KeepInbox writes the file now: a lost record would let a new launch reuse the name and clear the inbox.
 func (s *Store) KeepInbox(session string, k KeptShip) error {
 	s.mu.Lock()
 	if s.data.Kept == nil {
@@ -139,7 +122,6 @@ func (s *Store) KeepInbox(session string, k KeptShip) error {
 	return s.Flush()
 }
 
-// KeptInbox is the record of a ship whose inbox is kept.
 func (s *Store) KeptInbox(session string) (KeptShip, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -147,7 +129,6 @@ func (s *Store) KeptInbox(session string) (KeptShip, bool) {
 	return k, ok
 }
 
-// KeptInboxes is the sessions that have a record.
 func (s *Store) KeptInboxes() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -158,7 +139,6 @@ func (s *Store) KeptInboxes() []string {
 	return out
 }
 
-// DropInbox forgets the record, once the ship's files are gone.
 func (s *Store) DropInbox(session string) error {
 	s.mu.Lock()
 	_, ok := s.data.Kept[session]
@@ -170,9 +150,8 @@ func (s *Store) DropInbox(session string) error {
 	return s.Flush()
 }
 
-// QueueResume records the resume order of a report, unless the key is known
-// already (pending or done), and writes the file now: the report may be deleted
-// right after. It says whether the order is new.
+// QueueResume ignores a known key, pending or done, and writes the file now: the report may be
+// deleted right after.
 func (s *Store) QueueResume(key, session, text, dir, originSource, originPanel string) (bool, error) {
 	s.mu.Lock()
 	if r, seen := s.data.Resumes[key]; seen {
@@ -196,7 +175,6 @@ func (s *Store) QueueResume(key, session, text, dir, originSource, originPanel s
 	return true, s.Flush()
 }
 
-// PendingResumes is the resume orders not added yet, by key.
 func (s *Store) PendingResumes() map[string]Resume {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -209,7 +187,6 @@ func (s *Store) PendingResumes() map[string]Resume {
 	return out
 }
 
-// FinishResume marks a resume order added, or dropped for good, and drops its text.
 func (s *Store) FinishResume(key string) error {
 	s.mu.Lock()
 	r, ok := s.data.Resumes[key]
@@ -223,8 +200,7 @@ func (s *Store) FinishResume(key string) error {
 	return s.Flush()
 }
 
-// KeepResumes drops the done entries of sessions that have no report any more,
-// so a session name that is drawn again starts clean. Pending ones stay.
+// KeepResumes drops done entries of sessions with no report, so a name drawn again starts clean.
 func (s *Store) KeepResumes(withReport map[string]bool) {
 	s.mu.Lock()
 	changed := false
@@ -254,7 +230,6 @@ func (s *Store) SetPosition(session string, p Position) {
 	s.changed()
 }
 
-// Keep drops the positions of sessions that no longer exist.
 func (s *Store) Keep(sessions map[string]bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -281,22 +256,19 @@ func (s *Store) SetLastDir(fleet, harness, dir string) {
 	s.changed()
 }
 
-// DirUsed is when dir was last launched into, or zero if never.
 func (s *Store) DirUsed(dir string) time.Time {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.data.DirsUsed[dir]
 }
 
-// Paused says the engineer paused autopilot on the panel.
 func (s *Store) Paused(source, panel string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.data.Paused[source][panel]
 }
 
-// SetPaused pauses or resumes autopilot on the panel. A pause outlives a
-// removed source, and applies to one added again under the same key.
+// A pause outlives a removed source, and applies to one added again under the same key.
 func (s *Store) SetPaused(source, panel string, paused bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -317,7 +289,7 @@ func (s *Store) SetPaused(source, panel string, paused bool) {
 	s.changed()
 }
 
-// changed schedules a write; every change pushes it back, so a burst makes one.
+// Every change pushes the write back, so a burst makes one.
 func (s *Store) changed() {
 	if s.timer == nil {
 		s.timer = time.AfterFunc(settle, func() { _ = s.Flush() })
@@ -326,7 +298,6 @@ func (s *Store) changed() {
 	s.timer.Reset(settle)
 }
 
-// Flush writes the file now, atomically.
 func (s *Store) Flush() error {
 	s.flushMu.Lock()
 	defer s.flushMu.Unlock()

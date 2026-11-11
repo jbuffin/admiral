@@ -11,13 +11,11 @@ import (
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
-// ReasonCrew is the reason of a ship that needs you only because one of its
-// crew boats does (the wire status, see wireStatus).
+// ReasonCrew: the ship needs you only because one of its crew boats does.
 const ReasonCrew = "crew"
 
-// CrewBoat is one crew boat (a teammate) of a ship as sent to the UI. Status is
-// the value `admiral crew list --json` calls state. Reason is set only while
-// needs_you, LastActivity only after the boat's first hook.
+// CrewBoat's Status is what `admiral crew list --json` calls state. Reason is set
+// only while needs_you, LastActivity only after the boat's first hook.
 type CrewBoat struct {
 	Name         string `json:"name"`
 	Harness      string `json:"harness"`
@@ -31,7 +29,7 @@ type CrewBoat struct {
 	ExitSignal *string `json:"exit_signal,omitempty"`
 }
 
-// crewBoats is the wire form of a session's crew, never nil.
+// crewBoats never returns nil.
 func crewBoats(l []sessionhost.Crew) []CrewBoat {
 	out := make([]CrewBoat, 0, len(l))
 	for _, c := range l {
@@ -45,9 +43,7 @@ func crewBoats(l []sessionhost.Crew) []CrewBoat {
 	return out
 }
 
-// CrewExit is how an anchored crew boat ended: a signal, else the exit code. A
-// crew boat anchors whatever its exit code, so 0 is reported too. Both are nil
-// while it lives.
+// CrewExit reports 0 too: a crew boat anchors whatever its exit code.
 func CrewExit(c sessionhost.Crew) (code *int, sig *string) {
 	if c.State != sessionhost.CrewAnchored {
 		return nil, nil
@@ -60,7 +56,6 @@ func CrewExit(c sessionhost.Crew) (code *int, sig *string) {
 	return &n, nil
 }
 
-// crewLive counts the crew boats with a live pane: underway, idle or needs you.
 func crewLive(crew []CrewBoat) int {
 	n := 0
 	for _, b := range crew {
@@ -71,13 +66,9 @@ func crewLive(crew []CrewBoat) int {
 	return n
 }
 
-// wireStatus is the status, reason and stop time the UI gets for a ship: its own
-// status, except that an underway ship with a crew boat that needs you is
-// needs_you with reason "crew", since the inbox is built from the ship's status.
-// since is the earliest, over the needing boats, of the boat's last_activity or
-// else its launch time, as those strings stand; never the clock, which would
-// restart the inbox entry's age on every push. ok says the crew changed the
-// status; otherwise the caller keeps the ship's own.
+// wireStatus makes an underway ship with a needing crew boat needs_you, since the
+// inbox is built from the ship's status. since never uses the clock, which would
+// restart the inbox entry's age on every push.
 func wireStatus(own string, crew []CrewBoat) (status, reason, since string, ok bool) {
 	if own != StatusUnderway {
 		return own, "", "", false
@@ -102,9 +93,8 @@ func wireStatus(own string, crew []CrewBoat) (status, reason, since string, ok b
 	return StatusNeedsYou, ReasonCrew, since, true
 }
 
-// crewSignature is what a push must follow: each crew boat, its status and
-// reason, and the subagent ids. last_activity stays out, since every hook
-// restamps it; it rides along on the next push.
+// crewSignature leaves last_activity out, since every hook restamps it; it rides
+// along on the next push.
 func crewSignature(sh Ship) string {
 	var b strings.Builder
 	for _, c := range sh.Crew {
@@ -117,8 +107,6 @@ func crewSignature(sh Ship) string {
 	return b.String()
 }
 
-// Crew is the crew boats of a ship as tmux has them, with their pane and window
-// ids, for the bridge. ok is false when the session is not a ship.
 func (s *Service) Crew(session string) ([]sessionhost.Crew, bool) {
 	sess, ok := s.find(session)
 	if !ok {
@@ -127,10 +115,7 @@ func (s *Service) Crew(session string) ([]sessionhost.Crew, bool) {
 	return sess.Crew, true
 }
 
-// CrewInputSeen records that a browser sent input to the crew boat in a window:
-// it clears that boat's needs you, by pane id, and returns the boat as it is
-// now. ErrNotFound when the boat is gone, ErrExited when it is anchored. The
-// ship's own status doesn't matter: an anchored ship keeps its live crew.
+// CrewInputSeen ignores the ship's own status: an anchored ship keeps its live crew.
 func (s *Service) CrewInputSeen(session, windowID string) (sessionhost.Crew, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -163,8 +148,7 @@ func (s *Service) CrewInputSeen(session, windowID string) (sessionhost.Crew, err
 	return c, nil
 }
 
-// serveCrewClose kills one crew boat's window, live or anchored, as
-// `admiral crew close` does; the UI decides when to offer it.
+// serveCrewClose closes live or anchored boats; the UI decides when to offer it.
 func (s *Service) serveCrewClose(w http.ResponseWriter, r *http.Request) {
 	session, name := r.PathValue("session"), r.PathValue("name")
 	// Not the request's context: a client that hangs up must not abandon the write.

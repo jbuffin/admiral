@@ -14,10 +14,6 @@ import (
 	"github.com/coder/websocket"
 )
 
-// Config scenarios (u2): the real binary with a temporary ADMIRAL_HOME and a
-// hand-written config.json, observed over GET /api/config and the WebSocket
-// `config` message.
-
 type cfgDock struct {
 	Harness         string   `json:"harness"`
 	Executable      string   `json:"executable"`
@@ -112,8 +108,8 @@ func fetchConfig(t *testing.T, in *instance) (cfgBody, string) {
 	return b, body
 }
 
-// waitAPI polls GET /api/config until pred holds (the spec says a hand edit
-// shows within about a second).
+// waitAPI polls GET /api/config until pred holds (a hand edit shows within
+// about a second).
 func waitAPI(t *testing.T, in *instance, what string, pred func(cfgBody) bool) cfgBody {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -138,7 +134,6 @@ func dialWS(t *testing.T, in *instance) *websocket.Conn {
 	return c
 }
 
-// waitWS reads messages until a `config` message satisfies pred, within d.
 func waitWS(t *testing.T, c *websocket.Conn, d time.Duration, what string, pred func(cfgBody) bool) (cfgBody, string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), d)
@@ -165,7 +160,7 @@ func fleetKeys(keys ...string) func(cfgBody) bool {
 	return func(b cfgBody) bool { return reflect.DeepEqual(b.keys(), keys) }
 }
 
-// S2: a hand edit, an editor-style replace and a delete + recreate each reach
+// A hand edit, an editor-style replace and a delete + recreate each reach
 // a connected client within ~2 s, with no restart; deleting the file keeps the
 // last good fleets and sets the error.
 func TestConfigS2_LiveReload(t *testing.T) {
@@ -202,7 +197,7 @@ func TestConfigS2_LiveReload(t *testing.T) {
 	}
 }
 
-// S2 (symlink): a config.json that is a symlink follows edits to its target,
+// A config.json that is a symlink follows edits to its target,
 // including a rename-over in the target's directory and the target being
 // deleted and recreated.
 func TestConfigS2_SymlinkedConfigFollowsTarget(t *testing.T) {

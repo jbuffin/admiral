@@ -95,7 +95,7 @@ func handlersOf(t *testing.T, dir string) (lines [][3]string, stderrs []string) 
 	return lines, stderrs
 }
 
-// AC4: on an autopilot ship the stub Claude's PreToolUse for Bash calls the
+// On an autopilot ship the stub Claude's PreToolUse for Bash calls the
 // guard, which exits 2 with the reason and leaves a guard_denied line for the
 // ship; the working hook beside it still runs and exits 0.
 func TestShipGuardRefusesOnAnAutopilotShip(t *testing.T) {

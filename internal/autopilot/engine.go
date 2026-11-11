@@ -1,7 +1,5 @@
-// Package autopilot launches the orders of panels the engineer has put on
-// autopilot (#114). A pass looks at the ships and the listings and launches
-// what the caps leave room for. It reads the outcome log for one purpose only:
-// counting runs toward retro orders (#117, ADR 0017).
+// Package autopilot launches the orders of panels on autopilot. It reads the
+// outcome log for one purpose only: counting runs toward retro orders.
 package autopilot
 
 import (
@@ -24,59 +22,42 @@ import (
 // the third gives up.
 var backoff = []time.Duration{10 * time.Minute, time.Hour}
 
-// Source is one order source as a pass sees it.
 type Source struct {
 	Key string
-	// Listed says the source's runner is ok and every panel has had a successful
-	// orders.list since the source started. Only then does the raw listing say
-	// which orders are gone.
+	// Listed says every panel has listed successfully since the source started;
+	// only then does a missing order mean it is gone.
 	Listed bool
 	// Panels is the raw listing: the orders a ship hides are still in it.
 	Panels []sources.Panel
 }
 
-// Engine is autopilot. The func fields are its seams, in the idiom of
-// sources.Service.
 type Engine struct {
 	Config  func() *config.Config
 	Ships   func() []ships.Ship
 	Sources func() []Source // in any order; the engine applies the sidebar's
 	Paused  func(source, panel string) bool
-	// Dir is the checkout to launch the order in, or "" and why not.
-	Dir func(fleet config.Fleet, harness string, o sources.Order) (dir, reason string)
-	// Checkout says dir is still a checkout of the fleet, for a resume order's
-	// recorded directory (#120).
+	Dir     func(fleet config.Fleet, harness string, o sources.Order) (dir, reason string)
+	// Checkout says a resume order's recorded dir is still a checkout of the fleet.
 	Checkout func(fleet config.Fleet, dir string) bool
-	// Launch is ships.Service.LaunchOrder.
-	Launch func(launcher.Request) (ships.Ship, *launcher.Error)
-	// Record writes a record to the outcome log (outcomes.Writer.Enqueue). done,
-	// when not nil, gets the error of a failed or dropped write, or nil once the
-	// line is in the log.
+	Launch   func(launcher.Request) (ships.Ship, *launcher.Error)
+	// done, when not nil, gets the error of a failed or dropped write, or nil once
+	// the line is in the log.
 	Record func(r outcomes.Record, done func(error))
-	// Log is the outcome log, outcomes.Read of the home's outcomes directory; nil
-	// turns retro orders off.
+	// Log nil turns retro orders off.
 	Log func() []outcomes.Line
-	// Known says the ship list can be trusted (sessionhost.Host.Known). While it
-	// is not, the list is empty and the retro step adds nothing; nil means always.
+	// While Known is false the ship list is empty and the retro step adds nothing; nil means always known.
 	Known func() bool
-	// AddOrder adds an order to a panel (sources.Service.AddOrder); nil turns
-	// retro orders off. An error that implements AddKind() inbox.AddKind says
-	// whether to try again; one that doesn't is final.
+	// AddOrder nil turns retro orders off. An error that implements
+	// AddKind() inbox.AddKind says whether to retry; one that doesn't is final.
 	AddOrder func(ctx context.Context, source, panel, text string) (id string, err error)
 	Now      func() time.Time
 	Store    *Store
-	// OnHot runs when an order becomes hot or stops being; nil does nothing. The
-	// sources view shows the mark, so the caller pushes it. It must not block.
-	OnHot func()
-	// Resources gates the launches of panels that name resources (#118); nil
-	// gates nothing.
+	// OnHot runs when an order becomes hot or stops being. It must not block.
+	OnHot     func()
 	Resources *resources.Set
-	// OnWait runs when a panel starts or stops waiting for resources, or the
-	// resources it waits for change; nil does nothing. The sources view shows
-	// it, so the caller pushes it. It must not block.
+	// OnWait runs when a panel's resource wait starts, stops or changes. It must not block.
 	OnWait func()
-	// Logf takes one line; nil logs nothing.
-	Logf func(format string, args ...any)
+	Logf   func(format string, args ...any)
 
 	pass    sync.Mutex // one pass at a time; also keeps two retro adds for a panel apart
 	mu      sync.Mutex // guards skipped
@@ -96,7 +77,7 @@ func (e *Engine) logf(format string, args ...any) {
 	}
 }
 
-// Poke asks Run for a pass. It never blocks.
+// Poke never blocks.
 func (e *Engine) Poke() {
 	e.pokeMu.Do(func() { e.poke = make(chan struct{}, 1) })
 	select {
@@ -105,7 +86,6 @@ func (e *Engine) Poke() {
 	}
 }
 
-// Run makes a pass after every poke and once a minute, until ctx ends.
 func (e *Engine) Run(ctx context.Context) {
 	e.Poke()
 	tick := time.NewTicker(time.Minute)
@@ -126,20 +106,16 @@ func (e *Engine) Hot(source, orderID string) bool {
 	return e.Store.failureOf(source, orderID).GaveUp
 }
 
-// Launched adds an order launched by hand to the launched set, so autopilot
-// does not run it again while it stays listed.
+// Launched records an order launched by hand, so autopilot does not run it
+// again while it stays listed.
 func (e *Engine) Launched(source, orderID string) {
 	if err := e.Store.markLaunched(source, orderID); err != nil {
 		e.logf("autopilot: could not save %s: %v", FileName, err)
 	}
 }
 
-// BeginResume is called before a resume order is added to the panel, and the
-// func it returns after, with the id the add gave ("" if none). In between,
-// Pass holds off on the panel's orders that have no record, for the new order
-// may show in a listing before it is recorded. The record says the order
-// launches in dir, under the entry of the panel the ship that wrote the report
-// counted against (originSource and originPanel, "" for none).
+// BeginResume is called before a resume order is added, and its func after. In
+// between, Pass holds off on the panel's unrecorded orders: the new one may list before it is recorded.
 func (e *Engine) BeginResume(source, panel, dir, originSource, originPanel string) (done func(orderID string)) {
 	key := [2]string{source, panel}
 	e.mu.Lock()
@@ -169,9 +145,8 @@ func (e *Engine) addingTo(source, panel string) bool {
 	return e.adding[[2]string{source, panel}] > 0
 }
 
-// origin is the entry a resume order launches under: that of the panel the ship
-// that wrote the report counted against. It is nil when the ship was not
-// launched by autopilot, or its panel has no entry in the config any more.
+// origin is the entry of the panel the reporting ship counted against; a
+// resume order launches under it.
 type origin struct {
 	source, panel string
 	entry         config.PanelAutopilot
@@ -191,8 +166,6 @@ func originOf(cfg *config.Config, r Resume) *origin {
 	return nil
 }
 
-// Pass makes one pass: for each eligible panel in sidebar order, it launches
-// the panel's visible orders that autopilot has not launched, until a cap is full.
 func (e *Engine) Pass() {
 	e.pass.Lock()
 	defer e.pass.Unlock()
@@ -245,9 +218,8 @@ func (e *Engine) Pass() {
 				if total >= cfg.AutopilotMaxShips {
 					return
 				}
-				// A resume order runs under the entry of the panel its ship came
-				// from (#120), but with the skill of this panel's: its text starts
-				// with the skill already.
+				// A resume order runs under its origin panel's entry but this panel's
+				// skill: its text starts with the skill already.
 				entry, cell := panelEntry, panelCell
 				// Read before the record: the add writes it before it releases the
 				// hold, so no hold and then no record means it is unrecorded.
@@ -332,7 +304,6 @@ func (e *Engine) Pass() {
 	}
 }
 
-// forget drops what a source that has listed no longer lists.
 func (e *Engine) forget(src Source) {
 	if !src.Listed {
 		return
@@ -389,8 +360,6 @@ func (e *Engine) skip(source, panel string, o sources.Order, reason string) {
 		"source": source, "panel": panel, "order_id": o.ID, "title": launcher.CleanTitle(o.Title), "reason": reason}}, nil)
 }
 
-// failed counts a failed launch: it backs the order off, and the third gives up
-// on it.
 func (e *Engine) failed(source, panel string, o sources.Order, lerr *launcher.Error, now time.Time) {
 	f := e.Store.failureOf(source, o.ID)
 	f.Attempts++
@@ -412,7 +381,6 @@ func (e *Engine) failed(source, panel string, o sources.Order, lerr *launcher.Er
 	}
 }
 
-// wait is an order waiting for resources.
 type wait struct {
 	panel    string
 	names    []string
@@ -428,8 +396,6 @@ func (e *Engine) waitPanel(k pair) string {
 	return ""
 }
 
-// WaitingFor is the resources the panel's waiting order waits for, sorted; empty
-// when the panel isn't waiting.
 func (e *Engine) WaitingFor(source, panel string) []string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -444,9 +410,8 @@ func (e *Engine) waitingFor(source, panel string) []string {
 	return slices.Clone(e.waits[pair{source, id}].names)
 }
 
-// startWait notes that the order waits for these resources. It writes the
-// order's resource_wait record the first time every check has finished once, so
-// at most one per wait however its busy and missing resources change.
+// startWait writes resource_wait once every check has finished once, so at most
+// one per wait however its busy and missing resources change.
 func (e *Engine) startWait(source, panel string, o sources.Order, waits []resources.Wait) {
 	names, pending := make([]string, len(waits)), false
 	for i, w := range waits {
@@ -480,7 +445,6 @@ func (e *Engine) startWait(source, panel string, o sources.Order, waits []resour
 	}
 }
 
-// endWait notes that the order doesn't wait any more.
 func (e *Engine) endWait(source, panel, orderID string) {
 	key := pair{source, orderID}
 	e.mu.Lock()
@@ -500,7 +464,6 @@ func (e *Engine) endWait(source, panel, orderID string) {
 	}
 }
 
-// endPanelWaits ends every wait of a panel autopilot has stopped looking at.
 func (e *Engine) endPanelWaits(source, panel string) {
 	e.mu.Lock()
 	var ids []string

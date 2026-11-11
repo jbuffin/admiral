@@ -5,7 +5,7 @@ import { shouldChime } from './crewSea';
 import { connectionState, onMessage } from './connection';
 import { FOOTPRINT, INSET, KEEP_OUT, REACH, placeShip, type PlacedShip } from './placement';
 
-// A teammate's crew boat on the `ships` message (internal/ships/crew.go). A live boat has no exit_code or exit_signal.
+// A live boat has no exit_code or exit_signal.
 export interface WireCrew {
   name: string;
   harness: HarnessName;
@@ -18,14 +18,13 @@ export interface WireCrew {
   exit_signal?: string;
 }
 
-// A subagent: a bot on its ship's deck, with no terminal (internal/sessionhost/subagents.go). `start` is RFC 3339.
+// `start` is RFC 3339.
 export interface WireSubagent {
   id: string;
   type: string;
   start: string;
 }
 
-// What the `ships` message carries (internal/ships).
 export interface WireShip {
   session: string;
   name: string;
@@ -72,18 +71,15 @@ function hash(s: string): number {
   return h >>> 0;
 }
 export const botFor = (session: string) => BOTS[hash(session) % BOTS.length];
-// A ship's bob starts at its own point in the cycle.
 export const bobDelay = (session: string) => `-${((hash(session) % 32) / 10).toFixed(1)}s`;
 
 export { atSea } from './crew';
 
 const launchedAt = (s: WireShip) => Date.parse(s.launched) || 0;
 
-// What the bridge shows, if open: a ship's terminal, or one of its crew boats'.
 export const boarded = signal<{ session: string; crew?: string } | null>(null);
 
-// Boarding opens the bridge over open water. A test page that asked is told too: `<session>` for a ship,
-// `<session>/<crew>` for a crew boat.
+// A test page that asked is told too: `<session>` for a ship, `<session>/<crew>` for a crew boat.
 export function board(session: string, crew?: string): void {
   window.__admiral?.boarded.push(crew ? `${session}/${crew}` : session);
   boarded.value = crew === undefined ? { session } : { session, crew };
@@ -103,7 +99,7 @@ export const arrivals = signal<ReadonlySet<string>>(new Set());
 // Sailing-off ships stay on screen until their animation ends, even when the server has dropped them.
 export const leaving = signal<ReadonlyMap<string, WireShip>>(new Map());
 const sailedOff = new Set<string>();
-const SAIL_OFF_MS = 2300; // the animation takes 2 s; the brief allows 2.5 s
+const SAIL_OFF_MS = 2300; // the animation takes 2 s
 const SAIL_IN_MS = 2400;
 
 let baseline = true; // the next `ships` message is the first of this connection: nothing sails in or chimes
@@ -113,9 +109,8 @@ effect(() => {
   if (connectionState.value !== 'open') baseline = true;
 });
 
-// u9 tells the launching browser a ship has sailed, possibly before the `ships` push.
-// A session known already is not announced (a reconnect baseline would sail it in again); an
-// entry the pushes never claim is dropped after a while.
+// The launch can announce a ship before the `ships` push. A known session is not announced (a reconnect baseline
+// would sail it in again); an entry the pushes never claim is dropped after a while.
 const ANNOUNCED_MS = 10_000;
 const announced = new Map<string, number>();
 window.addEventListener('admiral:launched', (e) => {
@@ -177,15 +172,11 @@ onMessage('ships', (msg: { ships: WireShip[] }) => {
   shipsLoaded.value = true;
 });
 
-// What is on the water: the server's ships, minus sailing-off ones whose animation has ended, plus
-// sailing-off ships the server has already dropped.
 export const visible = computed(() => {
   const here = new Set(ships.value.map((s) => s.session));
   const sailing = [...leaving.value.values()].filter((l) => !here.has(l.session));
   return [...ships.value.filter((s) => s.status !== 'sailing_off' || leaving.value.has(s.session)), ...sailing];
 });
-
-// ---- placement ----
 
 // Spots this browser has worked out and sent, until the server's push carries them.
 const local = signal<ReadonlyMap<string, Spot>>(new Map());

@@ -23,22 +23,17 @@ import (
 	"github.com/jbuffin/admiral/internal/state"
 )
 
-// Service is the sources' HTTP and WebSocket surface. Its GET handlers never
-// change anything.
+// Service's GET handlers never change anything.
 type Service struct {
 	Home   string
 	Config *config.Manager
 	Sup    *Supervisor
 	Ships  func() []ships.Ship
 	Hub    *server.Hub
-	// State keeps which panels the engineer paused.
-	State *state.Store
+	State  *state.Store
 	// Hot says autopilot gave up on an order; nil says none.
-	Hot func(source, orderID string) bool
-	// WaitingFor says which resources a panel's waiting order waits for; nil
-	// says none.
+	Hot        func(source, orderID string) bool
 	WaitingFor func(source, panel string) []string
-	// OnLaunched runs when an order has been launched, by hand or by autopilot.
 	OnLaunched func(source, orderID string)
 
 	mu     sync.Mutex // one config read-modify-write at a time
@@ -46,7 +41,6 @@ type Service struct {
 	pokeMu sync.Once
 }
 
-// sourceState is a runner's state, copied.
 type sourceState struct {
 	def       config.Source
 	state     string
@@ -74,7 +68,6 @@ func (r *runner) snapshot() sourceState {
 	return st
 }
 
-// SourceView is one source as the UI receives it.
 type SourceView struct {
 	Key          string   `json:"key"`
 	Name         string   `json:"name"`
@@ -158,7 +151,6 @@ func (s *Service) message() any {
 	return map[string]any{"type": "sources", "sources": s.View()}
 }
 
-// Notify asks Run to push the sources to every client.
 func (s *Service) Notify() {
 	s.pokeMu.Do(func() { s.poke = make(chan struct{}, 1) })
 	select {
@@ -167,7 +159,6 @@ func (s *Service) Notify() {
 	}
 }
 
-// Run pushes the sources to every client after each change until ctx ends.
 func (s *Service) Run(ctx context.Context) {
 	s.Notify()
 	for {
@@ -180,10 +171,8 @@ func (s *Service) Run(ctx context.Context) {
 	}
 }
 
-// Connected sends a new client the sources.
 func (s *Service) Connected(c *server.Client) { _ = c.SendOnce("sources", s.message) }
 
-// Routes registers the sources and plugins API.
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/sources", s.serveList)
 	mux.HandleFunc("POST /api/sources", s.serveAdd)
@@ -262,7 +251,6 @@ func (s *Service) serveIcon(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
-// view finds one source in the current list.
 func (s *Service) view(key string) (SourceView, bool) {
 	for _, v := range s.View() {
 		if v.Key == key {
@@ -272,7 +260,6 @@ func (s *Service) view(key string) (SourceView, bool) {
 	return SourceView{}, false
 }
 
-// settingsObject checks that raw is a JSON object and returns it compacted.
 func settingsObject(raw json.RawMessage) (json.RawMessage, error) {
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &m); err != nil || m == nil {
@@ -308,7 +295,7 @@ func (s *Service) serveAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	def := config.Source{Plugin: *req.Plugin}
 	// A source belongs to one fleet; with none named it takes the first, so the
-	// add form needs no fleet picker yet.
+	// add form needs no fleet picker.
 	cur := s.Config.Current()
 	if len(cur.Fleets) == 0 {
 		writeError(w, http.StatusConflict, "add a fleet first: a source belongs to a fleet (admiral setup)")
@@ -353,8 +340,6 @@ func (s *Service) serveAdd(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, v)
 }
 
-// newKey makes a key from the plugin's name that no source and no data
-// directory uses.
 func (s *Service) newKey(cfg *config.Config, plugin string) string {
 	for n := 1; ; n++ {
 		key := plugin
@@ -451,13 +436,10 @@ func decodeValue(raw json.RawMessage) any {
 	return v
 }
 
-// maskSecrets replaces the stored strings and numbers in v with the marker,
-// except those the schema sc declares as plain values: reached only through
-// "properties" and a single "items" schema, of type string, number or integer,
-// and not "format": "password". Anything the walk cannot follow with certainty
-// (no schema, "$ref", combinators, "additionalProperties", keys the schema
-// does not list) is masked, so a schema Admiral cannot read never lets a
-// secret out. Empty strings, booleans and nulls hold no secret and stay.
+// maskSecrets replaces the stored strings and numbers in v with the marker
+// unless the schema plainly declares them public. Anything the walk cannot
+// follow with certainty is masked, so a schema Admiral cannot read never lets
+// a secret out.
 func maskSecrets(v any, sc map[string]any) any {
 	switch t := v.(type) {
 	case string:
@@ -489,9 +471,8 @@ func maskSecrets(v any, sc map[string]any) any {
 	return v
 }
 
-// schemaKeywords are the only keywords a schema node may use and still be
-// followed. A node with any other keyword (prefixItems, dependentSchemas,
-// $ref, oneOf…) and everything under it is masked.
+// A schema node with a keyword outside schemaKeywords is masked, with
+// everything under it.
 var schemaKeywords = map[string]bool{
 	"type": true, "properties": true, "items": true, "required": true, "title": true, "description": true,
 	"format": true, "enum": true, "const": true, "default": true, "examples": true, "minimum": true,
@@ -502,7 +483,6 @@ var schemaKeywords = map[string]bool{
 	"readOnly": true, "deprecated": true,
 }
 
-// followable says the schema node uses only keywords maskSecrets understands.
 func followable(sc map[string]any) bool {
 	if sc == nil {
 		return false
@@ -520,7 +500,6 @@ func followable(sc map[string]any) bool {
 	return true
 }
 
-// publicScalars reports whether the list holds only strings, numbers, booleans and nulls.
 func publicScalars(list []any) bool {
 	for _, e := range list {
 		switch e.(type) {
@@ -532,10 +511,6 @@ func publicScalars(list []any) bool {
 	return len(list) > 0
 }
 
-// declaredPlain says the schema node makes a string (or, with number set, a
-// number) public: it declares that type, or a type list of scalars, or an
-// enum or const of scalars with no type; and it is not marked a secret
-// ("format": "password" in any case, or "writeOnly": true).
 func declaredPlain(sc map[string]any, number bool) bool {
 	if !followable(sc) {
 		return false
@@ -617,7 +592,6 @@ func restoreSecrets(in, old any) (any, error) {
 	return in, nil
 }
 
-// keepSecrets is restoreSecrets over raw JSON settings.
 func keepSecrets(stored, incoming json.RawMessage) (json.RawMessage, error) {
 	v, err := restoreSecrets(decodeValue(incoming), decodeValue(stored))
 	if err != nil {
@@ -626,8 +600,6 @@ func keepSecrets(stored, incoming json.RawMessage) (json.RawMessage, error) {
 	return json.Marshal(v)
 }
 
-// serveSettings is the name and settings the form starts from, with each
-// stored secret hidden behind the marker.
 func (s *Service) serveSettings(w http.ResponseWriter, r *http.Request) {
 	key := r.PathValue("key")
 	def, ok := s.Config.Current().Source(key)
@@ -671,8 +643,8 @@ func (s *Service) serveDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": key})
 }
 
-// serveSourceOrder rearranges the sources. The request names every source
-// once, so a list sent before another browser added or removed one is refused.
+// The request names every source once, so a list sent before another browser
+// added or removed one is refused.
 func (s *Service) serveSourceOrder(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Sources []string `json:"sources"`
@@ -705,7 +677,6 @@ func (s *Service) serveSourceOrder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string][]string{"sources": req.Sources})
 }
 
-// servePanelOrder keeps the order of one source's panels.
 func (s *Service) servePanelOrder(w http.ResponseWriter, r *http.Request) {
 	key := r.PathValue("key")
 	var req struct {
@@ -739,8 +710,7 @@ func (s *Service) servePanelOrder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string][]string{"panels": req.Panels})
 }
 
-// servePause pauses or resumes autopilot on one panel. Pausing stops new
-// launches and leaves the running ships alone.
+// Pausing stops new launches and leaves the running ships alone.
 func (s *Service) servePause(w http.ResponseWriter, r *http.Request) {
 	key, panel := r.PathValue("key"), r.PathValue("panel")
 	var req struct {
@@ -767,17 +737,14 @@ func (s *Service) servePause(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"paused": *req.Paused})
 }
 
-// Listing is one source's raw listing, for autopilot: the orders a ship hides
-// are still in it. Listed says the source is ok and every panel has had a
-// successful orders.list since the source started, so a missing order is
-// really gone.
+// Listed says every panel has had a successful orders.list since the source
+// started, so a missing order is really gone.
 type Listing struct {
 	Key    string
 	Listed bool
 	Panels []Panel
 }
 
-// Listings is every source's raw listing, in config order.
 func (s *Service) Listings() []Listing {
 	var out []Listing
 	for _, st := range s.Sup.snapshot() {
@@ -818,8 +785,6 @@ func (s *Service) serveSchema(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(append(slices.Clone(schema), '\n'))
 }
 
-// mutable finds the source and its process for an operation that needs the
-// capability cap; it answers the request itself when it cannot.
 func (s *Service) mutable(w http.ResponseWriter, key, capability string) (*runner, *proc, bool) {
 	rn, p, fail := s.mutableFor(key, capability)
 	if fail != nil {
@@ -829,25 +794,17 @@ func (s *Service) mutable(w http.ResponseWriter, key, capability string) (*runne
 	return rn, p, true
 }
 
-// RequestError is why an operation on a source's orders was refused, as the
-// status the HTTP route answers with and the message it carries.
 type RequestError struct {
 	Status int
 	Msg    string
-	// kind is what a caller that repeats the request needs to know; the zero
-	// value is a final refusal.
+	// The zero kind is a final refusal.
 	kind inbox.AddKind
 }
 
 func (e *RequestError) Error() string { return e.Msg }
 
-// AddKind says whether the request may be sent again: it changed nothing and may
-// work later (a source that is missing or not running, a panel not there yet, a
-// plugin that refused), it may have been done (it was sent and the outcome is
-// unknown), or it was refused for good.
 func (e *RequestError) AddKind() inbox.AddKind { return e.kind }
 
-// mutableFor is mutable for a caller that has no response to write.
 func (s *Service) mutableFor(key, capability string) (*runner, *proc, *RequestError) {
 	rn := s.Sup.runner(key)
 	if rn == nil {
@@ -868,7 +825,6 @@ func (s *Service) mutableFor(key, capability string) (*runner, *proc, *RequestEr
 	return rn, p, nil
 }
 
-// callFailure is a failed request to a plugin, as the route answers it.
 func callFailure(err error) *RequestError {
 	var rpc *rpcError
 	var unsent *notSentError
@@ -883,7 +839,6 @@ func callFailure(err error) *RequestError {
 	return &RequestError{Status: http.StatusBadGateway, Msg: err.Error(), kind: inbox.AddUncertain}
 }
 
-// callError answers a failed request to a plugin.
 func callError(w http.ResponseWriter, err error) {
 	f := callFailure(err)
 	writeError(w, f.Status, f.Msg)
@@ -913,7 +868,6 @@ func (s *Service) serveRefresh(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"refreshing": rn.key})
 }
 
-// checkText is the rule for the text of a new or edited order.
 func checkText(text string) string {
 	switch {
 	case strings.TrimSpace(text) == "":
@@ -964,8 +918,6 @@ func (s *Service) serveAddOrder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]string{"id": id})
 }
 
-// AddOrder adds an order to a panel of a source, as the add route does, and
-// returns its id. The source must run and be able to add; a refusal says why.
 func (s *Service) AddOrder(ctx context.Context, key, panel, text string) (string, *RequestError) {
 	rn, p, fail := s.mutableFor(key, "add")
 	if fail != nil {
@@ -1042,11 +994,8 @@ func (s *Service) serveRemoveOrder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"removed": id})
 }
 
-// Order is what a launch needs from an order: the text to send, the title the
-// ship shows, the repo to look for, the order's web URL and the id of the first
-// panel that lists it. A launch from a
-// source that is down still works, from the last list Admiral saw. The order is
-// looked up whether or not a ship hides it.
+// A source that is down still serves its last list, and an order a ship hides
+// is still found.
 func (s *Service) Order(source, id string) (text, title, repo, url, panel string, err *launcher.Error) {
 	rn := s.Sup.runner(source)
 	if rn == nil {
@@ -1067,7 +1016,6 @@ func (s *Service) Order(source, id string) (text, title, repo, url, panel string
 	return "", "", "", "", "", &launcher.Error{Status: http.StatusNotFound, Msg: "order " + strconv.Quote(id) + " not found in source " + source}
 }
 
-// Launched tells the source its order was launched.
 func (s *Service) Launched(source, id string) {
 	if s.OnLaunched != nil {
 		s.OnLaunched(source, id)

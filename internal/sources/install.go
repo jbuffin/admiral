@@ -14,15 +14,11 @@ import (
 	"github.com/jbuffin/admiral/plugins"
 )
 
-// StampFile sits in a plugin folder Admiral wrote. It holds the hex SHA-256 of
-// the folder's files as written, so a later start can tell an untouched copy
-// from one the engineer edited.
+// StampFile tells an untouched copy of a plugin from one the engineer edited.
 const StampFile = ".admiral-stamp"
 
-// Stamp is the hash a folder's files carry in StampFile: SHA-256 over every
-// file but the stamp and those go:embed skips (names starting with . or _),
-// sorted by slash-separated path relative to the folder,
-// each as path, a zero byte, content, a zero byte.
+// Stamp is SHA-256 over every file but the stamp and those go:embed skips,
+// sorted by slash path, each as path, a zero byte, content, a zero byte.
 func Stamp(files map[string][]byte) string {
 	names := make([]string, 0, len(files))
 	for n := range files {
@@ -80,8 +76,7 @@ func diskFiles(dir string) (map[string][]byte, error) {
 	return files, err
 }
 
-// InstallPlugins installs every plugin Admiral ships. A plugin that fails does
-// not stop the others; the errors come back joined.
+// A plugin that fails does not stop the others.
 func InstallPlugins(home string) error {
 	var errs []error
 	for _, name := range plugins.Names {
@@ -90,13 +85,9 @@ func InstallPlugins(home string) error {
 	return errors.Join(errs...)
 }
 
-// retired lists plugins Admiral used to ship. A start removes their folder from
-// plugins/ when it is still Admiral's untouched copy.
 var retired = []string{"freeform"}
 
-// RemoveRetired deletes the retired plugins' folders. Only a real directory
-// whose stamp matches its files goes; an edited copy or a symlink stays, with
-// one log line, and a symlink's target is never touched.
+// An edited copy or a symlink stays, and a symlink's target is never touched.
 func RemoveRetired(home string) error {
 	var errs []error
 	for _, name := range retired {
@@ -125,9 +116,6 @@ func RemoveRetired(home string) error {
 	return errors.Join(errs...)
 }
 
-// untouched reports whether dir is still Admiral's own copy of a plugin: its
-// stamp file matches the files on disk. It returns that stamp. An edited
-// folder, one without a stamp, or one that can't be read is not untouched.
 func untouched(dir string) (string, bool) {
 	have, err := os.ReadFile(filepath.Join(dir, StampFile))
 	if err != nil {
@@ -140,9 +128,7 @@ func untouched(dir string) (string, bool) {
 	return string(have), true
 }
 
-// installPlugin writes the embedded plugin to plugins/<name>/ when the folder
-// is missing, and replaces it with a newer embedded copy when the folder still
-// matches its stamp. An edited folder, or one without a stamp, is left alone.
+// An edited folder, or one without a stamp, is left alone.
 func installPlugin(home, name string) error {
 	files, err := embedded(name)
 	if err != nil {

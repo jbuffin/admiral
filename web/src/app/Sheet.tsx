@@ -3,10 +3,6 @@ import { useLayoutEffect, useRef } from 'preact/hooks';
 
 const ITEMS = '[role="menuitemradio"], a';
 
-/**
- * Keyboard handling shared by the desktop menu and the phone sheets: focus the checked (else first)
- * item when it opens, arrows move between items, Escape closes.
- */
 export function useListKeys(ref: RefObject<HTMLElement | null>, active: boolean, onEscape: () => void) {
   useLayoutEffect(() => {
     if (!active) return;
@@ -25,10 +21,7 @@ export function useListKeys(ref: RefObject<HTMLElement | null>, active: boolean,
   }, [active]);
 }
 
-/**
- * A bottom sheet over a dimmed backdrop. Only a click on the backdrop itself closes it: closing on
- * pointerdown would unmount the backdrop first and let the click land on what sits underneath.
- */
+/** Only a click on the backdrop itself closes it: closing on pointerdown would let the click land underneath. */
 export function Sheet({ label, onClose, children }: { label: string; onClose: () => void; children: ComponentChildren }) {
   const ref = useRef<HTMLDivElement>(null);
   useListKeys(ref, true, onClose);

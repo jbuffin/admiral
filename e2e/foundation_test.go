@@ -14,7 +14,7 @@ const unauthorizedPage = "Open the URL Admiral printed"
 
 var tokenFormat = regexp.MustCompile(`^[A-Za-z0-9_-]{22,}$`) // >= 128 bits, URL-safe
 
-// S1: the binary starts, prints both URLs with the real port, and serves the
+// The binary starts, prints both URLs with the real port, and serves the
 // embedded UI with its assets.
 func TestS1_StartsPrintsURLsAndServesUI(t *testing.T) {
 	t.Parallel()
@@ -77,7 +77,7 @@ func TestS1_StartsPrintsURLsAndServesUI(t *testing.T) {
 	}
 }
 
-// S2: non-local requests need the token; ?token= sets the cookie and redirects.
+// Non-local requests need the token; ?token= sets the cookie and redirects.
 func TestS2_NonLocalNeedsToken(t *testing.T) {
 	t.Parallel()
 	in := startLAN(t)
@@ -140,7 +140,7 @@ func TestS2_NonLocalNeedsToken(t *testing.T) {
 	})
 }
 
-// S3: local requests need no token.
+// Local requests need no token.
 func TestS3_LocalNeedsNoToken(t *testing.T) {
 	t.Parallel()
 	in := startAdmiral(t, newHome(t), "127.0.0.1:0")
@@ -152,7 +152,7 @@ func TestS3_LocalNeedsNoToken(t *testing.T) {
 	}
 }
 
-// S4: the token survives a restart. The file half needs no LAN address.
+// The token survives a restart. The file half needs no LAN address.
 func TestS4_TokenFileSurvivesRestart(t *testing.T) {
 	t.Parallel()
 	in := startAdmiral(t, newHome(t), "127.0.0.1:"+freePort(t))
@@ -173,7 +173,7 @@ func TestS4_TokenFileSurvivesRestart(t *testing.T) {
 	}
 }
 
-// S4: over the LAN address, the old cookie keeps working after a restart.
+// Over the LAN address, the old cookie keeps working after a restart.
 func TestS4_CookieSurvivesRestart(t *testing.T) {
 	t.Parallel()
 	in := startLAN(t)
@@ -191,7 +191,7 @@ func TestS4_CookieSurvivesRestart(t *testing.T) {
 	}
 }
 
-// S5: the WebSocket at /ws follows the same access rules plus the Origin and
+// The WebSocket at /ws follows the same access rules plus the Origin and
 // Host hardening.
 func TestS5_WebSocketAccess(t *testing.T) {
 	t.Parallel()
@@ -260,7 +260,7 @@ func TestS5_WebSocketAccess(t *testing.T) {
 	})
 }
 
-// S6: two instances side by side keep separate tokens.
+// Two instances side by side keep separate tokens.
 func TestS6_TwoInstancesSideBySide(t *testing.T) {
 	t.Parallel()
 	a := startAdmiral(t, newHome(t), "127.0.0.1:0")

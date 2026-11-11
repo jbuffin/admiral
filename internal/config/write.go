@@ -12,10 +12,8 @@ import (
 	"sync"
 )
 
-// writeMu serializes read-modify-write cycles inside this process.
 var writeMu sync.Mutex
 
-// SetFavoriteSkills replaces favorite_skills in dir/config.json.
 func SetFavoriteSkills(dir string, skills []string) error {
 	if len(skills) > MaxFavoriteSkills {
 		return fmt.Errorf("favorite_skills: at most %d allowed, got %d", MaxFavoriteSkills, len(skills))
@@ -30,10 +28,8 @@ func SetFavoriteSkills(dir string, skills []string) error {
 	return setKey(dir, "favorite_skills", raw)
 }
 
-// SetChat replaces chat in dir/config.json. Fleet and model are always written;
-// effort only when set, so the harness default leaves no field. It refuses a
-// model or effort outside the lists and a fleet the file doesn't hold: Parse
-// would replace each with a default, and a write must not do that silently.
+// SetChat refuses values Parse would replace with a default: a write must not
+// do that silently.
 func SetChat(dir string, c Chat) error {
 	if !slices.Contains(ChatModels, c.Model) {
 		return fmt.Errorf("chat.model %q is not one of %v", c.Model, ChatModels)
@@ -66,7 +62,6 @@ func SetChat(dir string, c Chat) error {
 	return replaceFile(path, out)
 }
 
-// SetSources replaces sources in dir/config.json.
 func SetSources(dir string, sources json.RawMessage) error {
 	if !json.Valid(sources) {
 		return fmt.Errorf("sources: not valid JSON")
@@ -85,9 +80,7 @@ func SetSources(dir string, sources json.RawMessage) error {
 	return replaceFile(path, out)
 }
 
-// setKey replaces one top-level key, keeping every other key, value and the
-// fleets' order, and writes the file atomically. A file that doesn't validate
-// is left alone; a missing one is created.
+// setKey leaves a file that doesn't validate alone.
 func setKey(dir, key string, value json.RawMessage) error {
 	writeMu.Lock()
 	defer writeMu.Unlock()
@@ -99,8 +92,7 @@ func setKey(dir, key string, value json.RawMessage) error {
 	return replaceFile(path, out)
 }
 
-// SetFleets replaces fleets in dir/config.json. The result must load, which
-// setKey alone does not check (it validates only what it read).
+// SetFleets checks the result loads; setKey validates only what it read.
 func SetFleets(dir string, fleets json.RawMessage) error {
 	writeMu.Lock()
 	defer writeMu.Unlock()
@@ -115,9 +107,7 @@ func SetFleets(dir string, fleets json.RawMessage) error {
 	return replaceFile(path, out)
 }
 
-// PreviewFleets is the config.json before and after SetFleets, both indented
-// the way Admiral writes it, so a diff shows only what changed. A missing file
-// is the empty config.
+// PreviewFleets indents both the way Admiral writes, so a diff shows only what changed.
 func PreviewFleets(dir string, fleets json.RawMessage) (before, after []byte, err error) {
 	writeMu.Lock()
 	defer writeMu.Unlock()
@@ -131,8 +121,6 @@ func PreviewFleets(dir string, fleets json.RawMessage) (before, after []byte, er
 	return before, after, nil
 }
 
-// Fleets is the fleets object of dir/config.json in file order; empty when
-// there is no file. A file that doesn't validate is an error.
 func Fleets(dir string) (*Object, error) {
 	data, err := ReadConfig(dir)
 	if err != nil {
@@ -152,8 +140,7 @@ func Fleets(dir string) (*Object, error) {
 	return ParseObject(raw)
 }
 
-// WriteFile replaces dir/config.json with data, which must load. The text is
-// saved as it is, so a hand edit keeps its layout.
+// WriteFile saves the text as it is, so a hand edit keeps its layout.
 func WriteFile(dir string, data []byte) error {
 	if _, err := Parse(data); err != nil {
 		return err
@@ -163,10 +150,7 @@ func WriteFile(dir string, data []byte) error {
 	return replaceFile(filepath.Join(dir, FileName), data)
 }
 
-// ReadConfig is dir/config.json, or the empty config when there is no file yet.
-// A dangling symlink is an error: writing would replace the link.
-// A file Admiral would migrate at startup is refused, for the commands that
-// read it: they never migrate.
+// ReadConfig refuses a file Admiral would migrate at startup: commands never migrate.
 func ReadConfig(dir string) ([]byte, error) {
 	data, err := readConfig(filepath.Join(dir, FileName))
 	if err == nil && NeedsMigration(data) {
@@ -187,7 +171,6 @@ func readConfig(path string) ([]byte, error) {
 	return data, err
 }
 
-// renderKey returns the file as it is (indented) and with key replaced.
 func renderKey(path, key string, value json.RawMessage) (before, after []byte, err error) {
 	data, err := readConfig(path)
 	if err != nil {
@@ -241,9 +224,8 @@ func indent(raw []byte) ([]byte, error) {
 	return pretty.Bytes(), nil
 }
 
-// replaceFile writes a temp file beside path and renames it over, so a reader
-// sees the old file or the new one. A symlinked path keeps its link: the
-// target is replaced.
+// replaceFile renames over path, so a reader sees the old file or the new one.
+// A symlinked path keeps its link: the target is replaced.
 func replaceFile(path string, data []byte) error {
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
 		path = resolved

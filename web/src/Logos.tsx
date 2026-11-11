@@ -2,9 +2,7 @@ import { harnesses, logoId } from './harnesses';
 import { parseLogoSvg } from './logoSvg';
 import type { HarnessName } from './config';
 
-// Official logo files, when the engineer has put them in web/logos/official/
-// (gitignored; see docs/personal-builds.md). Each is named for its harness and carries its
-// own field, because the vendors' usage rules set the field.
+// Official logos (gitignored; see docs/personal-builds.md) carry their own field, because the vendors' usage rules set it.
 const official = import.meta.glob('/logos/official/*.svg', { query: '?raw', import: 'default', eager: true }) as Record<
   string,
   string
@@ -14,8 +12,6 @@ const officialSymbol = (h: HarnessName) => parseLogoSvg(official[`/logos/officia
 const isOfficial = (h: HarnessName) => officialSymbol(h) !== undefined;
 
 // The flag draws a logo by id, so swapping logos changes only these symbols.
-// The placeholders are the lettered set and carry their own field. An official
-// symbol is only the mark; the flag draws its field behind it.
 function Symbol({ harness }: { harness: HarnessName }) {
   const o = officialSymbol(harness);
   if (o) {
@@ -42,8 +38,6 @@ function Symbol({ harness }: { harness: HarnessName }) {
   );
 }
 
-// The flag sizes: the pier's flag in its own 40×28 box, the flag at a ship's masthead in the
-// ship's 100×96 box, and a crew boat's in its 64×56 box.
 const flags = {
   pier: { x: 2, y: 3, width: 36, height: 22, stroke: 2.6 },
   sea: { x: 51, y: 2, width: 29, height: 15, stroke: 2 },
@@ -52,11 +46,9 @@ const flags = {
 };
 type FlagKind = keyof typeof flags;
 
-// The swallow-tail pennant, with its notch 77% of the way across.
 const pennant = ({ x, y, width, height }: (typeof flags)[FlagKind]) =>
   `M${x} ${y}H${x + width}L${x + width * 0.77} ${y + height / 2}L${x + width} ${y + height}H${x}Z`;
 
-// A harness this build doesn't know: a plain "?" flag.
 const UNKNOWN = 'logo-unknown';
 
 export function LogoSprite() {
@@ -82,9 +74,6 @@ export function LogoSprite() {
   );
 }
 
-// A pennant carrying the harness logo, clipped to the flag shape and outlined.
-// Behind an official logo it draws the harness's field over the whole pennant
-// and sets the mark whole, centered in the solid part with a little clear space.
 export function LogoFlag({ harness, kind }: { harness: string; kind: FlagKind }) {
   const f = flags[kind];
   const known = Object.hasOwn(harnesses, harness) ? (harness as HarnessName) : undefined;

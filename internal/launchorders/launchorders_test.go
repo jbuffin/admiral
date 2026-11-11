@@ -30,8 +30,6 @@ type fixture struct {
 	srv   *httptest.Server
 }
 
-// newFixture serves the launch orders API for fleets work (claude, codex) and
-// home (claude), both searching work, and nosearch, which has no search roots.
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	root, _ := filepath.EvalSymlinks(t.TempDir())
@@ -86,7 +84,6 @@ func (f *fixture) repo(rel string, remotes ...string) string {
 	return d
 }
 
-// launched records a ship in dir as the ships service would list it.
 func (f *fixture) launched(fleet, harness, dir string, at time.Time) {
 	f.state.SetLastDir(fleet, harness, dir)
 	f.ships = append(f.ships, ships.Ship{Fleet: fleet, Harness: harness, Dir: dir, Status: ships.StatusUnderway, Launched: at.UTC().Format(time.RFC3339)})

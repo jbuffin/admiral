@@ -23,10 +23,8 @@ const (
 	inkDark  = "#14304A"
 )
 
-// assignColors gives a fleet without a color the next one in the sequence,
-// counting only such fleets, and picks the ink for every fleet. It also sets
-// ColorIndex: the raw counter for a derived color (not wrapped), the palette
-// position for a stored palette color, nil for a custom one.
+// assignColors counts only fleets without a color. ColorIndex is the unwrapped
+// counter for a derived color, the palette position for a stored one, nil for custom.
 func assignColors(fleets []Fleet) {
 	next := 0
 	for i := range fleets {
@@ -44,8 +42,6 @@ func assignColors(fleets []Fleet) {
 	}
 }
 
-// paletteIndex is the position of a color in the default sequence, or nil for a
-// custom color.
 func paletteIndex(color string) *int {
 	for i, p := range palette {
 		if strings.EqualFold(p.color, color) {
@@ -68,7 +64,7 @@ func inkFor(color string) string {
 	return inkDark
 }
 
-// luminance is the WCAG relative luminance of a #RRGGBB color.
+// luminance is WCAG relative luminance.
 func luminance(hex string) float64 {
 	v, _ := strconv.ParseUint(strings.TrimPrefix(hex, "#"), 16, 32)
 	lin := func(c uint64) float64 {
@@ -111,9 +107,7 @@ func expandEnvValue(key, v string) string {
 	return strings.Join(parts, string(os.PathListSeparator))
 }
 
-// resolveExecutable finds exe without running it. An absolute path must be an
-// executable file; a bare name is looked up on the fleet's PATH if it sets one,
-// else on Admiral's.
+// resolveExecutable looks a bare name up on the fleet's PATH if it sets one, else on Admiral's.
 func resolveExecutable(exe string, env map[string]string) (string, bool) {
 	if filepath.IsAbs(exe) {
 		return exe, isExecutable(exe)
@@ -147,11 +141,8 @@ var identityVars = map[string]struct{ env, dir string }{
 	"copilot": {"COPILOT_HOME", "~/.copilot"},
 }
 
-// IdentityDir is the directory a harness keeps its sign-in in when launched
-// with env (a fleet's env): the harness's variable there, else in Admiral's
-// own environment, else the harness default; ~ expanded (from env's HOME when
-// it has one) and cleaned. The
-// setup and fleet commands reuse it to refuse a shared identity.
+// IdentityDir takes the harness's variable from env, else from Admiral's own
+// environment, else the default; ~ expands from env's HOME when it has one.
 func IdentityDir(harness string, env map[string]string) string {
 	v := identityVars[harness]
 	dir, ok := env[v.env]
@@ -168,8 +159,7 @@ func IdentityDir(harness string, env map[string]string) string {
 	return filepath.Clean(expandHome(dir))
 }
 
-// markSharedIdentities warns on both docks when two fleets run the same
-// harness against the same identity directory. It loads anyway (story 26).
+// markSharedIdentities only warns: the config loads anyway.
 func markSharedIdentities(fleets []Fleet) {
 	for i := range fleets {
 		for j := range fleets {
@@ -198,7 +188,6 @@ func (h Harness) Resolve() (string, bool) {
 	return resolveExecutable(h.Executable, h.Env)
 }
 
-// Fleet returns the fleet with this key.
 func (c *Config) Fleet(key string) (Fleet, bool) {
 	for _, f := range c.Fleets {
 		if f.Key == key {
@@ -208,7 +197,6 @@ func (c *Config) Fleet(key string) (Fleet, bool) {
 	return Fleet{}, false
 }
 
-// Harness returns the fleet's dock for this harness.
 func (f Fleet) Harness(name string) (Harness, bool) {
 	for _, h := range f.Harnesses {
 		if h.Name == name {
@@ -218,15 +206,12 @@ func (f Fleet) Harness(name string) (Harness, bool) {
 	return Harness{}, false
 }
 
-// IdentityVar is the environment variable a harness reads its identity
-// directory from, and the directory it uses without it.
 func IdentityVar(harness string) (variable, defaultDir string, ok bool) {
 	v, ok := identityVars[harness]
 	return v.env, v.dir, ok
 }
 
-// PaletteColor is the n-th color of the default sequence, wrapping around.
 func PaletteColor(n int) string { return palette[n%len(palette)].color }
 
-// Harnesses are the harness names a fleet may hold, in dock order.
+// Harnesses is in dock order.
 func Harnesses() []string { return append([]string(nil), dockOrder...) }

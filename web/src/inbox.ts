@@ -1,12 +1,9 @@
 import type { WireCrew, WireShip } from './ships';
 
-// The Needs You inbox queue (#116): one list, oldest first, of the served inbox items and the ships and
-// crew boats that need you (needs-you stops). It is pure: time comes in as `now` and nothing here sets a
-// timer or reads a signal, so it never imports ships.ts at runtime. inboxState.ts wires it to the signals
-// and the clock.
+// The Needs You inbox queue. It is pure: time comes in as `now` and nothing here sets a timer or reads a
+// signal, so it never imports ships.ts at runtime. inboxState.ts wires it to the signals and the clock.
 
-// An item file as the server serves it (internal/inbox): the file's fields, plus the ship's session and,
-// when the ship is known, its name and harness. Item files are written by ships and are untrusted.
+// The server's item file (internal/inbox). Item files are written by ships and are untrusted.
 export interface InboxItem {
   version: number;
   id: string;
@@ -163,7 +160,6 @@ export function createQueue() {
       served = merge();
     },
 
-    // Removes the entries whose hold has run out. True when anything went.
     tick(now: number): boolean {
       const due = [...held].filter(([, h]) => h.until <= now);
       if (due.length === 0) return false;
@@ -201,7 +197,6 @@ export function createQueue() {
 
 export type Queue = ReturnType<typeof createQueue>;
 
-// What a ship's reason code says in plain words. The code itself is shown beside it.
 export function reasonWords(code: string): string {
   if (code.startsWith('permission:')) {
     const tool = code.slice('permission:'.length);
@@ -214,7 +209,6 @@ export function reasonWords(code: string): string {
   );
 }
 
-// How long ago: "under a minute", "12 min", "2 h 15 min".
 export function waited(sinceIso: string, nowMs: number): string {
   const ms = nowMs - Date.parse(sinceIso);
   if (!(ms >= 60_000)) return 'under a minute';
@@ -233,8 +227,7 @@ export function safeHref(url: string | undefined): string | undefined {
   }
 }
 
-// A PR address from an item file: only https addresses count. `label` is "owner/repo#n" for a github.com PR
-// and the address itself otherwise; `files` is the PR's changed-files page.
+// A PR address from an item file: only https addresses count.
 export function prLink(url: string | undefined): { href: string; host: string; label: string; files: string } | undefined {
   if (!url) return undefined;
   try {

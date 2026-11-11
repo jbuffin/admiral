@@ -18,7 +18,6 @@ import (
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
-// Exit codes of `admiral crew` besides 0, 1 and 2 (#72 stories 4 and 8).
 const (
 	crewExitTaken    = 5 // the crew name is in use in this ship
 	crewExitAnchored = 4 // send to a crew boat whose process ended
@@ -28,9 +27,7 @@ const (
 // which drops an Enter that arrives with the paste (research: crew-boats).
 const codexEnterPause = 300 * time.Millisecond
 
-// Crew is `admiral crew launch|send|list|close` (#152, ADR 0014): teammates in
-// their own windows of the ship's tmux session. It talks to tmux on
-// $ADMIRAL_HOME/tmux.sock directly and needs no server.
+// Crew talks to tmux on $ADMIRAL_HOME/tmux.sock directly and needs no server.
 func Crew(args []string, std IO) error {
 	if len(args) == 0 {
 		return usagef("%s", Usage("crew"))
@@ -48,8 +45,6 @@ func Crew(args []string, std IO) error {
 	return usagef("%s", Usage("crew"))
 }
 
-// crewShip is what a crew command works on: the ship's session and the tmux it
-// runs on.
 type crewShip struct {
 	session string
 	tmux    string
@@ -57,9 +52,8 @@ type crewShip struct {
 	l       *launcher.Launcher
 }
 
-// crewTarget finds the ship: --ship (a session or display name), or the
-// ADMIRAL_SHIP of the ship the command runs in. The home is ADMIRAL_HOME, or
-// the one ADMIRAL_REPORT lies in, as the guard finds it.
+// crewTarget finds the home as the guard does: ADMIRAL_HOME, or the one
+// ADMIRAL_REPORT lies in.
 func crewTarget(ship string) (*crewShip, error) {
 	env := os.Getenv("ADMIRAL_SHIP")
 	if ship == "" && env == "" {
@@ -131,7 +125,6 @@ func (c *crewShip) find(name string) (sessionhost.Crew, error) {
 }
 
 func crewLaunch(args []string, std IO) error {
-	// Everything after the first -- is the prompt, untouched.
 	var prompt []string
 	var hasPrompt bool
 	for i, a := range args {
@@ -168,8 +161,7 @@ func crewLaunch(args []string, std IO) error {
 	return err
 }
 
-// parseInterleaved parses flags that may come after the positional arguments
-// (`crew send <name> --ship x`), and returns the positionals.
+// parseInterleaved accepts flags after the positionals (`crew send <name> --ship x`).
 func parseInterleaved(fs *flag.FlagSet, args []string) ([]string, error) {
 	var rest []string
 	for len(args) > 0 {
@@ -224,13 +216,10 @@ func crewSend(args []string, std IO) error {
 	return c.submit(boat, text)
 }
 
-// submit is the harness's submit: a bracketed paste of the text, then Enter,
-// with a pause before it for Codex.
 func (c *crewShip) submit(boat sessionhost.Crew, text string) error {
 	buf := fmt.Sprintf("admiral-crew-%d", os.Getpid())
 	ctx := context.Background()
 	srv := sessionhost.NewServer(c.tmux, c.sock)
-	// load-buffer has always run with no -u; the rest with it.
 	if err := srv.WithoutUTF8().LoadBuffer(ctx, buf, text); err != nil {
 		return fmt.Errorf("tmux could not load the text: %s", sessionhost.Output(err))
 	}

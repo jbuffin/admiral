@@ -14,13 +14,8 @@ import (
 	"testing"
 )
 
-// The boundary guard: no package outside sessionhost runs tmux or builds tmux
-// arguments (admiral#256, ADR 0002). It parses Go source and never runs tmux,
-// so it runs under `go test -short` in make check.
-//
-// Holes it leaves open, by design (each would need type information or flow
-// analysis): os/exec imported under another name, an exec.Cmd{Path: ...} literal,
-// and a program variable with no "tmux" in its name.
+// Holes left open, since each would need type information: os/exec imported under another
+// name, an exec.Cmd{Path: ...} literal, and a program variable with no "tmux" in its name.
 
 var tmuxCommands = map[string]bool{}
 
@@ -45,7 +40,6 @@ var tmuxAliases = map[string]bool{
 
 var tmuxFlags = map[string]bool{"-t": true, "-p": true, "-g": true, "-w": true, "-u": true, "-S": true}
 
-// execProgramArg maps pkg.Func to the index of its program argument.
 var execProgramArg = map[string]int{
 	"exec.Command":        0,
 	"exec.CommandContext": 1,
@@ -90,8 +84,7 @@ func callName(c *ast.CallExpr) string {
 	return pkg.Name + "." + sel.Sel.Name
 }
 
-// scanFile returns one reason per source line that holds a tmux call or
-// tmux arguments. Comments are not parsed, so they never count.
+// Comments are not parsed, so they never count.
 func scanFile(path string) (map[int]string, error) {
 	fset := token.NewFileSet()
 	f, err := goparser.ParseFile(fset, path, nil, 0)
@@ -157,8 +150,6 @@ func scanFile(path string) (map[int]string, error) {
 	return found, nil
 }
 
-// scanTmuxViolations walks the Go source under root and lists each violation
-// as "path:line: reason", sorted.
 func scanTmuxViolations(t *testing.T, root string) []string {
 	t.Helper()
 	var out []string

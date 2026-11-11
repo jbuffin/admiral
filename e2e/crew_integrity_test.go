@@ -7,12 +7,10 @@ import (
 	"time"
 )
 
-// What a crew boat can make of its own option text (#152 u4 security round 1).
 // A boat writes its own window's @admiral-crew-name, and tmux prints option
 // values raw, so the names Admiral reads back are not the names it launched.
-// The seam is the built binary on a private tmux socket with the fake harness.
 
-// forgedRow is a list-panes row (33 fields, see sessionhost.format) that names
+// forgedRow is a list-panes row (see sessionhost.format) that names
 // session and the crew boat evil on pane, as an agent would plant it in its own
 // option text.
 func forgedRow(session, pane string) string {

@@ -8,10 +8,8 @@ import (
 	"testing"
 )
 
-// The `chat` config key (#119, u1): the real binary with a temporary
-// ADMIRAL_HOME, read through GET /api/config and written through
-// PUT /api/chat, with config.json read back from disk. The disk is compared as
-// parsed JSON, not bytes, because the writer re-indents the file.
+// The disk is compared as parsed JSON, not bytes, because the writer re-indents
+// the file.
 
 type chatKey struct {
 	Fleet  string `json:"fleet"`

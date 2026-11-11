@@ -1,7 +1,5 @@
-// Package ships is the ships of every fleet as the UI sees them (ADR 0012). Admiral
-// keeps no ship table: every ship is read from tmux's session options each
-// time, plus the position stored in state.json. This package serves them over
-// HTTP and the WebSocket and launches new ones.
+// Package ships keeps no ship table: every ship is read from tmux's session
+// options each time, plus the position stored in state.json.
 package ships
 
 import (
@@ -24,8 +22,7 @@ import (
 	"github.com/jbuffin/admiral/internal/state"
 )
 
-// Ship is one ship as sent to the UI. ExitCode and ExitSignal are set only on
-// an anchored ship.
+// Ship's ExitCode and ExitSignal are set only on an anchored ship.
 type Ship struct {
 	Session    string  `json:"session"`
 	Name       string  `json:"name"`
@@ -38,12 +35,10 @@ type Ship struct {
 	Skill      *string `json:"skill"`
 	Source     string  `json:"source"`
 	Panel      string  `json:"panel"`
-	// Resources are the locked resources recorded at launch (#118); a ship
-	// holds them while it is underway or needs you.
+	// A ship holds its Resources while it is underway or needs you.
 	Resources []string `json:"-"`
-	// OriginSource and OriginPanel are the autopilot panel the ship counts
-	// against, when it is not the one it was launched in (#120); empty for a
-	// ship autopilot did not launch.
+	// OriginSource and OriginPanel are set only when the autopilot panel the ship
+	// counts against is not the one it was launched in.
 	OriginSource string          `json:"-"`
 	OriginPanel  string          `json:"-"`
 	Title        string          `json:"title"`
@@ -54,68 +49,50 @@ type Ship struct {
 	ExitCode     *int            `json:"exit_code"`
 	ExitSignal   *string         `json:"exit_signal"`
 	Position     *state.Position `json:"position"`
-	// Reason and StopSince are set only while the ship needs you: the validated
-	// reason code (`idle` for a ship no hook has spoken for) and when the stop began.
+	// Reason and StopSince are set only while the ship needs you; Reason is `idle`
+	// for a ship no hook has spoken for.
 	Reason    string `json:"reason,omitempty"`
 	StopSince string `json:"stop_since,omitempty"`
-	// Crew is the ship's crew boats (teammates), by name; Subagents its running
-	// subagents (marks); CrewLive how many crew boats have a live pane. Always
-	// present, empty lists as [].
+	// Crew and Subagents are always present, empty lists as [].
 	Crew      []CrewBoat             `json:"crew"`
 	Subagents []sessionhost.Subagent `json:"subagents"`
 	CrewLive  int                    `json:"crew_live"`
 }
 
-// Origin is where the ship ran, for a resume order of its report: its checkout
-// and the autopilot panel it counts against.
 func (sh Ship) Origin() inbox.Origin {
 	return inbox.Origin{Dir: sh.Dir, Source: sh.OriginSource, Panel: sh.OriginPanel}
 }
 
-// Orders is where a launch finds its order: the order sources.
 type Orders interface {
-	// Order is the text to launch with, the order's title, its repo, its web
-	// URL and the id of the panel it is in. It refuses with a launcher.Error
-	// when the source or the order is unknown.
 	Order(source, id string) (text, title, repo, url, panel string, err *launcher.Error)
-	// Launched tells the source its order was launched.
 	Launched(source, id string)
 }
 
-// Service ties the session host, the launcher and the state together.
 type Service struct {
 	Host     *sessionhost.Host
 	Launcher *launcher.Launcher
 	State    *state.Store
 	Hub      *server.Hub
 	Orders   Orders
-	// OnChange runs after every push of the ships. It must not block.
+	// OnChange must not block.
 	OnChange func()
-	// Outcomes is the outcome log; nil keeps none.
 	Outcomes *outcomes.Writer
-	// BeforeRemoveFiles runs with a ship's session just before its report and
-	// inbox are deleted, to keep what Admiral still needs from them. It must not block.
-	// The inbox.Origin built from the ship's tmux options goes along, for a
-	// session that may be gone by then.
+	// BeforeRemoveFiles gets the Origin built from tmux options, since the
+	// session may be gone by then. It must not block.
 	BeforeRemoveFiles func(session string, from inbox.Origin)
 
 	pass   sync.Mutex        // one observe at a time
 	mu     sync.Mutex        // guards tracks and what they point to
 	tracks map[string]*track // the ships the log follows, by session
-	// launching counts the launches under way: a name is not known before
-	// Launch returns, so removeShipFiles skips the delete, and keeps the files,
-	// until none is.
-	launching int
-	// launchingOrders holds the orders with a launch under way, so a second
-	// launch of one is refused.
+	// launching: a name is not known before Launch returns, so removeShipFiles
+	// keeps the files while any launch is under way.
+	launching       int
 	launchingOrders map[OrderKey]bool
-	// listing holds the orders of launched ships the host has not listed yet,
-	// so the hiding that ends with the launch does not end before the ship is
-	// in the list.
+	// listing keeps an order hidden from the end of its launch until the host
+	// lists its ship.
 	listing map[OrderKey]unlisted
 }
 
-// unlisted is a launched ship the host has not listed yet.
 type unlisted struct {
 	session                   string
 	panel                     string
@@ -124,12 +101,9 @@ type unlisted struct {
 	originSource, originPanel string
 }
 
-// listedWithin is how long a launched ship may stay unlisted before its order
-// stops being held; a ship killed before the host saw it must not hold one for good.
+// listedWithin: a ship killed before the host saw it must not hold its order for good.
 const listedWithin = 30 * time.Second
 
-// NotKnownMsg is the 503 a launch from a source gets while the ship list says
-// nothing about which orders hold a ship.
 const NotKnownMsg = "ships are not known yet"
 
 func (s *Service) ship(sess sessionhost.Session) Ship {
@@ -156,8 +130,7 @@ func (s *Service) ship(sess sessionhost.Session) Ship {
 	return sh
 }
 
-// FromSession is a ship as read from its tmux session, without a position. The
-// CLI uses it to list ships when the server is not running.
+// FromSession has no position; the CLI uses it when the server is not running.
 func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	o, session := sess.Options, sess.Name
 	sh := Ship{Session: session, Name: o["name"], Fleet: o["fleet"], FleetName: o["fleet-name"],
@@ -185,7 +158,6 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	return sh
 }
 
-// List is every ship in tmux right now.
 func (s *Service) List() []Ship {
 	out := []Ship{}
 	for _, sess := range s.Host.Sessions() {
@@ -207,10 +179,8 @@ func (s *Service) broadcast() {
 	}
 }
 
-// Connected sends a new client the ships.
 func (s *Service) Connected(c *server.Client) { _ = c.SendOnce("ships", s.message) }
 
-// Routes registers the ships API.
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/ships", s.serveList)
 	mux.HandleFunc("POST /api/ships", s.serveLaunch)
@@ -220,13 +190,9 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/close", s.serveCrewClose)
 }
 
-// tick is how often Run looks for changes that no tmux event announces: the
-// 10 s without a hook and the end of the sail-off.
+// tick catches changes no tmux event announces: NoHookWait and the end of the sail-off.
 const tick = 500 * time.Millisecond
 
-// Run pushes the ships to every client whenever tmux or the state changes, and
-// drops stored positions of ships that are gone. It also turns a Codex bell
-// into needs you and kills the session of a ship that has sailed off.
 func (s *Service) Run(ctx context.Context) {
 	events, cancel := s.Host.Subscribe()
 	defer cancel()
@@ -293,13 +259,10 @@ func (s *Service) Run(ctx context.Context) {
 	}
 }
 
-// prunes says whether an event can leave a stored position without a ship.
 func prunes(ev sessionhost.Event) bool {
 	return ev.Kind == sessionhost.SessionRemoved || ev.Kind == sessionhost.Resumed
 }
 
-// signature is the statuses of the ships and their crew boats and subagents, to
-// tell when a clock or a hook moved one.
 func (s *Service) signature() string {
 	var b strings.Builder
 	for _, sh := range s.List() {
@@ -308,9 +271,8 @@ func (s *Service) signature() string {
 	return b.String()
 }
 
-// bell makes a Codex ship that rang its bell need you. Codex has no waiting
-// hook; other harnesses' bells are ignored. The state and its reason, bell, go
-// into the pane so they have one source of truth and survive a restart.
+// bell exists because Codex has no waiting hook. The state goes into the pane so
+// it has one source of truth and survives a restart.
 func (s *Service) bell(ctx context.Context, session string) {
 	sess, ok := s.find(session)
 	if !ok || sess.Options["harness"] != "codex" || sess.PaneDead || sess.State == "needs_you" {
@@ -321,8 +283,6 @@ func (s *Service) bell(ctx context.Context, session string) {
 	}
 }
 
-// sailOff kills the session of every ship that exited 0 once it has been shown
-// sailing_off for SailOffDelay.
 func (s *Service) sailOff(ctx context.Context, since map[string]time.Time) {
 	now, killed := time.Now(), false
 	live := map[string]bool{}
@@ -348,7 +308,6 @@ func (s *Service) sailOff(ctx context.Context, since map[string]time.Time) {
 	}
 }
 
-// find is the ship's session as last read.
 func (s *Service) find(session string) (sessionhost.Session, bool) {
 	for _, sess := range s.Host.Sessions() {
 		if sess.Name == session && sess.IsShip() {
@@ -399,11 +358,8 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"ship": got})
 }
 
-// LaunchOrder launches a ship and does the bookkeeping, for a hand launch and
-// for autopilot alike so the refusal rules cannot drift. An order from a source
-// is launched with the source's text, whatever the request holds; one that
-// already has a ship, or whose launch is still running, is refused with 409;
-// while the ships are not known, with 503.
+// LaunchOrder serves hand launches and autopilot alike, so the refusal rules
+// cannot drift. A source's order launches with the source's text, whatever the request holds.
 func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	var panel string
 	key := OrderKey{req.Source, req.OrderID}
@@ -456,8 +412,6 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	return s.ship(sess), nil
 }
 
-// holdUnlisted keeps the order's key refused until the host lists the ship, for
-// when the sync after a launch failed.
 func (s *Service) holdUnlisted(key OrderKey, session, panel string, resources []string, originSource, originPanel string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -467,9 +421,8 @@ func (s *Service) holdUnlisted(key OrderKey, session, panel string, resources []
 	s.listing[key] = unlisted{session, panel, time.Now(), resources, originSource, originPanel}
 }
 
-// Pending is the ships launched but not yet in the host's list, as underway
-// ships, so a count of running ships includes them. They are held for at most
-// listedWithin.
+// Pending reports unlisted launches as underway, so a count of running ships
+// includes them.
 func (s *Service) Pending() []Ship {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -484,8 +437,6 @@ func (s *Service) Pending() []Ship {
 	return out
 }
 
-// lockOrder takes the order's key for the length of a launch; false when
-// another launch of it holds the key.
 func (s *Service) lockOrder(key OrderKey) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -536,7 +487,6 @@ func (s *Service) servePosition(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"position": p})
 }
 
-// Get is one ship as the UI sees it.
 func (s *Service) Get(session string) (Ship, bool) {
 	sess, ok := s.find(session)
 	if !ok {
@@ -545,12 +495,9 @@ func (s *Service) Get(session string) (Ship, bool) {
 	return s.ship(sess), true
 }
 
-// ErrExited is InputSeen's answer for a ship that has exited.
 var ErrExited = errors.New("ship has exited")
 
-// InputSeen records that a browser sent input to a ship: it clears needs you,
-// in Admiral's view, until the next waiting hook. It returns the ship as it is
-// now, and ErrExited for an anchored or sailing-off ship.
+// InputSeen clears needs you in Admiral's view only, until the next waiting hook.
 func (s *Service) InputSeen(session string) (Ship, error) {
 	// Not a request's context: a client that hangs up must not abandon the write.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -573,10 +520,8 @@ func (s *Service) InputSeen(session string) (Ship, error) {
 	return s.ship(sess), nil
 }
 
-// ErrNotFound is InputSeen's answer for a session that is not a ship.
 var ErrNotFound = errors.New("ship not found")
 
-// serveInputSeen is called when a browser sends input to a ship.
 func (s *Service) serveInputSeen(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
 	sh, err := s.InputSeen(session)
@@ -592,7 +537,7 @@ func (s *Service) serveInputSeen(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// serveDismiss ends an anchored ship. A live ship cannot be ended from the UI.
+// A live ship cannot be ended from the UI.
 func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
 	// Not the request's context: a client that hangs up must not abandon the write.
@@ -620,8 +565,7 @@ func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"dismissed": session})
 }
 
-// launched writes the `launched` record of a ship just created and starts
-// following it: no other record of a ship comes before this one.
+// No other record of a ship comes before `launched`.
 func (s *Service) launched(req launcher.Request, got *launcher.Launched, panel string) {
 	o := got.Options
 	s.record(outcomes.Record{Ship: got.Session, Event: "launched", Fields: map[string]any{
@@ -637,8 +581,6 @@ func (s *Service) launched(req launcher.Request, got *launcher.Launched, panel s
 	s.tracks[got.Session] = &track{tally: tally{Status: StatusUnderway}, saved: map[string]string{}}
 }
 
-// launchDone ends the launch serveLaunch counted, once the launch has failed or
-// its ship is in the host's list.
 func (s *Service) launchDone() {
 	s.mu.Lock()
 	s.launching--

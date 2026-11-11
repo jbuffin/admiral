@@ -14,11 +14,6 @@ import (
 	"time"
 )
 
-// Ship scenarios (u4): the real binary, a temporary ADMIRAL_HOME with its own
-// tmux socket, and the fake harnesses in e2e/fakeharness. Launches go through
-// POST /api/ships; ships are observed over GET /api/ships, the WebSocket
-// `ships` message, tmux itself and what the fake harness recorded.
-
 // hookCmd is the one command text every hook runs: `admiral hook <event>` with
 // the harness's own event name, found by bare name on the ship's PATH.
 var hookCmd = regexp.MustCompile(`^admiral hook ([A-Za-z]+)$`)
@@ -26,7 +21,6 @@ var hookCmd = regexp.MustCompile(`^admiral hook ([A-Za-z]+)$`)
 var allOptions = []string{"@admiral-name", "@admiral-fleet", "@admiral-fleet-name", "@admiral-fleet-color",
 	"@admiral-harness", "@admiral-dir", "@admiral-skill", "@admiral-source", "@admiral-order", "@admiral-launched"}
 
-// codexHooks are the events Codex gets a hook for; each runs `admiral hook <event>`.
 var codexHooks = []string{"Interrupt", "PermissionRequest", "PostToolUse", "Stop", "SubagentStart", "SubagentStop", "UserPromptSubmit"}
 
 // promptOf extracts the prompt argument from a harness's argv and checks the
@@ -58,7 +52,6 @@ func promptOf(t *testing.T, w *world, r record) string {
 	}
 }
 
-// S1: the command line, working directory and environment per harness.
 func TestLaunchCommandLine(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -117,12 +110,10 @@ func TestLaunchCommandLine(t *testing.T) {
 			if r.env["ADMIRAL_BASE"] != "base" || r.env["ADMIRAL_OVER"] != "fleet" {
 				t.Errorf("env: Admiral's variable = %q (want base), fleet's override = %q (want fleet)", r.env["ADMIRAL_BASE"], r.env["ADMIRAL_OVER"])
 			}
-			// #139: only a Commodore ship on claude gets the default compact window.
 			if got, ok := r.env[compactWindow]; ok != (harness == "claude") || (ok && got != "200000") {
 				t.Errorf("%s = %q (set %v), want 200000 on claude, unset on codex and copilot (ran %s)", compactWindow, got, ok, harness)
 			}
-			// #112: the ship's own session, report file and inbox, set before the
-			// harness runs and winning over the fleet's same-named variables.
+			// Set before the harness runs, winning over the fleet's same-named variables.
 			if r.env["ADMIRAL_SHIP"] != ship.Session {
 				t.Errorf("ADMIRAL_SHIP = %q, want the session %s", r.env["ADMIRAL_SHIP"], ship.Session)
 			}
@@ -145,8 +136,7 @@ func TestLaunchCommandLine(t *testing.T) {
 
 const compactWindow = "CLAUDE_CODE_AUTO_COMPACT_WINDOW"
 
-// #139: Commodore ships on claude get a 200k autocompact window unless the
-// fleet's own env sets it; Admiral's own environment doesn't count as the fleet's.
+// Admiral's own environment doesn't count as the fleet's.
 func TestCommodoreCompactWindow(t *testing.T) {
 	t.Parallel()
 	t.Run("fleet env overrides", func(t *testing.T) {
@@ -205,15 +195,12 @@ func showOption(t *testing.T, w *world, session string, args ...string) string {
 	return w.mustTmux(append([]string{"show-options", "-t", session}, args...)...)
 }
 
-// S3: session options, remain-on-exit, history-limit, options-before-hooks and
-// the hook bundle.
 func TestSessionOptionsAndHookBundle(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
 	writeConfig(t, w.home, w.config())
 	w.addOrdersSource()
 	w.start()
-	// An order from a source: the test source that stores orders.
 	w.waitSource("orders", 10*time.Second, "state ok", isOK)
 	code, body := w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": w.panelID("orders"), "text": "go"})
 	w.mustOK(code, body, "add an order")
@@ -308,7 +295,6 @@ func readJSONFile(t *testing.T, p string) any {
 	return v
 }
 
-// leaves calls f for every string in v.
 func leaves(v any, f func(string)) {
 	switch x := v.(type) {
 	case string:
@@ -324,7 +310,6 @@ func leaves(v any, f func(string)) {
 	}
 }
 
-// commandsUnder returns the hook commands found under every map key named event.
 func commandsUnder(v any, event string) []string {
 	found := map[string]bool{}
 	var walk func(any)
@@ -356,8 +341,6 @@ func commandsUnder(v any, event string) []string {
 	return out
 }
 
-// requireExactHookCommands is A8: every hook command is `admiral hook <event>`,
-// with no tmux call and no path to the binary.
 func requireExactHookCommands(t *testing.T, doc any) {
 	t.Helper()
 	count := 0
@@ -424,7 +407,6 @@ func checkCopilotBundle(t *testing.T, docs []any) {
 	}
 }
 
-// S6: a restart rebuilds every ship from tmux, and config changes don't disturb them.
 func TestRestartRebuildsShips(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -436,7 +418,6 @@ func TestRestartRebuildsShips(t *testing.T) {
 		t.Fatalf("ships before restart = %+v", before)
 	}
 
-	// The hook bundle is rewritten at every start.
 	bundle := filepath.Join(w.home, "harness", "claude-settings.json")
 	if err := os.WriteFile(bundle, []byte("garbage"), 0o600); err != nil {
 		t.Fatal(err)
@@ -456,7 +437,6 @@ func TestRestartRebuildsShips(t *testing.T) {
 	}
 	readJSONFile(t, bundle)
 
-	// Story 31: running ships keep their settings when config changes.
 	writeConfig(t, w.home, strings.NewReplacer(`"#336699"`, `"#00ff00"`).Replace(w.config()))
 	waitAPI(t, w.in.instance, "work's new color", func(c cfgBody) bool { return c.fleet("work").Color == "#00ff00" })
 	if got := byName(w.in.ships(t))[a.Name].FleetColor; got != "#336699" {
@@ -481,8 +461,6 @@ func TestRestartRebuildsShips(t *testing.T) {
 	}
 }
 
-// Watching: changes made in tmux itself reach Admiral within about a second,
-// and the hidden internal session and foreign sessions are never ships.
 func TestTmuxChangesReachAdmiral(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -519,7 +497,6 @@ func TestTmuxChangesReachAdmiral(t *testing.T) {
 	})
 }
 
-// S7: positions and the dock's last directory.
 func TestStateFile(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -563,7 +540,6 @@ func TestStateFile(t *testing.T) {
 		t.Errorf("state.json last_dirs = %v, want work/claude → %s and work/codex → %s", dirs, a.Dir, b.Dir)
 	}
 
-	// Positions survive a restart; a gone session's position does not come back.
 	w.in.Stop()
 	w.mustTmux("kill-session", "-t", b.Session)
 	w.restart()
@@ -612,7 +588,6 @@ func TestBadStateFileIsMovedAside(t *testing.T) {
 			if data, err := os.ReadFile(filepath.Join(w.home, "state.json.bad")); err != nil || string(data) != content {
 				t.Errorf("state.json.bad = %q (%v), want the old file's content %q", data, err, content)
 			}
-			// Admiral works with defaults.
 			s := w.launch(w.order("work", "claude", "bad", commodore, "x"))
 			if len(w.in.ships(t)) != 1 || s.Position != nil {
 				t.Errorf("Admiral did not start with default state")
@@ -621,7 +596,7 @@ func TestBadStateFileIsMovedAside(t *testing.T) {
 	}
 }
 
-// S8: isolation, and a ship's hooks reach Admiral's socket whatever TMUX says.
+// Isolation, and a ship's hooks reach Admiral's socket whatever TMUX says.
 func TestIsolationAndTmuxEnvironment(t *testing.T) {
 	t.Parallel()
 	one, two := newWorld(t), newWorld(t)
@@ -658,15 +633,12 @@ func TestIsolationAndTmuxEnvironment(t *testing.T) {
 	// environment holds, so this proves the ship's values are right, not that
 	// Admiral strips the bogus ones.)
 
-	// Nothing reached the default server of TMUX_TMPDIR.
 	out, err := exec.Command("tmux", "-S", one.defaultSocket(), "list-sessions").CombinedOutput()
 	if err == nil {
 		t.Errorf("a default tmux server is running with sessions:\n%s", out)
 	}
 }
 
-// A session made by hand on Admiral's socket whose option holds a forged
-// control-mode end of reply must not make ships vanish or lose their positions.
 func TestMalformedSessionDoesNotHideShips(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -681,7 +653,6 @@ func TestMalformedSessionDoesNotHideShips(t *testing.T) {
 	w.mustTmux("new-session", "-d", "-s", "hand", "sleep", "3600")
 	w.mustTmux("set-option", "-t", "hand:", "@admiral-name", "Hand")
 	w.mustTmux("set-option", "-t", "hand:", "@admiral-order", "x\n%end 1 2 1\n%begin 1 2 1\nrow")
-	// And the same on a ship that is already known: it keeps its last read.
 	w.mustTmux("set-option", "-t", a.Session+":", "@admiral-order", "y\n%end 1 2 1\nz")
 	holdThat(t, "a known ship with a malformed option was dropped", func() bool {
 		_, ok := byName(w.in.ships(t))[a.Name]
@@ -698,12 +669,10 @@ func TestMalformedSessionDoesNotHideShips(t *testing.T) {
 	waitStateFile(t, filepath.Join(w.home, "state.json"), func(s string) bool {
 		return strings.Contains(s, a.Session) && strings.Contains(s, b.Session)
 	})
-	// A command still gets its own reply: a launch works and lists.
 	w.launch(w.order("work", "claude", "mf-c", commodore, "x"))
 }
 
-// When tmux dies and comes back, the positions of ships that are gone are
-// dropped, so a new ship that draws a freed name does not inherit one.
+// A new ship that draws a freed name must not inherit a gone ship's position.
 func TestPositionsDroppedAfterTmuxRestarts(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -731,8 +700,6 @@ func TestPositionsDroppedAfterTmuxRestarts(t *testing.T) {
 	}
 }
 
-// A ship whose option holds a newline cannot be read, but it is alive: its
-// stored position survives an Admiral restart, and it is back when repaired.
 func TestUnreadableShipKeepsItsPositionAcrossRestart(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

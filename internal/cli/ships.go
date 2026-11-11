@@ -20,9 +20,7 @@ type shipsBody struct {
 	Home  string       `json:"home"`
 }
 
-// probe asks the server on port for its ships, and returns them only when it
-// serves this home (its `home` field is home.ID of dir): another Admiral may hold
-// the port.
+// probe checks the server's `home` field because another Admiral may hold the port.
 func probe(port, dir string) (shipsBody, bool) {
 	base, err := loopbackURL(port)
 	if err != nil {
@@ -39,9 +37,8 @@ func probe(port, dir string) (shipsBody, bool) {
 	return body, ok
 }
 
-// readShips is the ships as the running server sees them (so the status
-// matches the dashboard), or, with the server down, as read from tmux
-// directly. running says which.
+// readShips prefers the running server so the status matches the dashboard, and
+// falls back to tmux with the server down.
 func readShips(port, dir string) (list []ships.Ship, running bool, err error) {
 	if body, ok := probe(port, dir); ok {
 		return body.Ships, true, nil
@@ -63,7 +60,6 @@ func shipsFromTmux(dir string) ([]ships.Ship, error) {
 	return list, nil
 }
 
-// shipSessions are the ships' sessions as tmux has them, with their crew boats.
 func shipSessions(dir string) ([]sessionhost.Session, error) {
 	tmux, err := sessionhost.FindTmux()
 	if err != nil {
@@ -82,8 +78,8 @@ func shipSessions(dir string) ([]sessionhost.Session, error) {
 	return out, nil
 }
 
-// row prints one line of the table. The fields come from option text an agent
-// can write, so none reaches the terminal with a control character in it.
+// The fields come from option text an agent can write, so none reaches the
+// terminal with a control character in it.
 func row(out io.Writer, fields ...string) {
 	for i, f := range fields {
 		fields[i] = printable(f)
@@ -91,8 +87,6 @@ func row(out io.Writer, fields ...string) {
 	fmt.Fprintln(out, strings.Join(fields, "\t"))
 }
 
-// printable turns the control characters (below 0x20, and 0x7f to 0x9f) into
-// spaces.
 func printable(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
@@ -104,7 +98,6 @@ func printable(s string) string {
 
 func statusText(s ships.Ship) string { return exitText(s.Status, s.ExitCode, s.ExitSignal) }
 
-// exitText is a status, with how it ended when it is anchored.
 func exitText(status string, code *int, signal *string) string {
 	switch {
 	case status != ships.StatusAnchored:
@@ -117,8 +110,6 @@ func exitText(status string, code *int, signal *string) string {
 	return status
 }
 
-// Ships is `admiral ships [--port <n>] [--names]` (story 125): a tab-separated
-// table, or just the display names for shell completion.
 func Ships(args []string, std IO) error {
 	fs := newFlags("ships")
 	port := fs.String("port", defaultPort(), "the port Admiral listens on")
@@ -151,8 +142,7 @@ func Ships(args []string, std IO) error {
 	fmt.Fprintln(std.Out, "NAME\tSESSION\tFLEET\tHARNESS\tSTATUS\tREPO")
 	for _, s := range list {
 		row(std.Out, s.Name, s.Session, s.Fleet, s.Harness, statusText(s), s.Repo)
-		// One line per crew boat (teammates; subagents have no window), under the
-		// ship's, in the same six columns with SESSION and FLEET empty.
+		// Only teammates are crew boats here; subagents have no window.
 		crew := append([]ships.CrewBoat(nil), s.Crew...)
 		sort.Slice(crew, func(i, j int) bool { return crew[i].Name < crew[j].Name })
 		for _, c := range crew {
@@ -166,15 +156,8 @@ func Ships(args []string, std IO) error {
 	return nil
 }
 
-// Attach is `admiral attach <ship> [<crew>]` (story 125, ADR 0012, #72 story 18):
-// the ship's tmux session in this terminal, on its own window, or on a crew
-// boat's window. The ship is found from tmux, so it works without the server.
-// The pane keeps the size the bridge gave it (ignore-size) and an anchored ship
-// or crew boat is read-only.
-//
-// The whole argument list is tried as a ship first (Saltpaw II, with or without
-// quotes); failing that the last argument is the crew boat's name, which holds
-// no space, and the rest is the ship's.
+// Attach tries the whole argument list as a ship first (Saltpaw II, unquoted);
+// failing that the last argument is the crew boat's name, which holds no space.
 func Attach(args []string, std IO) error {
 	if len(args) == 0 {
 		return usagef("usage: admiral attach <ship> [<crew>]")
@@ -248,7 +231,6 @@ func Attach(args []string, std IO) error {
 	return sessionhost.ExecAttach(tmux, sock, where, readOnly)
 }
 
-// Completion is `admiral completion zsh|bash`: scripts that complete ship names.
 func Completion(args []string, std IO) error {
 	if len(args) != 1 {
 		return usagef("usage: admiral completion zsh|bash")

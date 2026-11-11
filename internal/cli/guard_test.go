@@ -28,7 +28,6 @@ const (
 	gqlSubmitInputBody    = `{"query":"mutation($e: PullRequestReviewEvent!) { submitPullRequestReview(input: {event: $e}) { clientMutationId } }","variables":{"e":"APPROVE"}}`
 )
 
-// bashInput is a Bash tool call's tool_input.
 func bashInput(cmd string) map[string]any { return map[string]any{"command": cmd} }
 
 type guardTestCase struct {
@@ -39,8 +38,7 @@ type guardTestCase struct {
 	want  string            // the rule of a refusal, or wantAllowed
 }
 
-// runGuardTest runs Guard on a payload with ADMIRAL_AUTOPILOT set to autopilot (unset
-// when empty) and no home to record in. It returns Guard's error and stderr.
+// runGuardTest unsets ADMIRAL_AUTOPILOT when autopilot is empty.
 func runGuardTest(t *testing.T, payload, autopilot string) (error, string, string) {
 	t.Helper()
 	t.Setenv("ADMIRAL_AUTOPILOT", autopilot)
@@ -175,9 +173,7 @@ func guardTestCases() []guardTestCase {
 		b("api --input - with an expansion in a here-string", `gh api repos/o/r/pulls/1/reviews --input - <<< "{\"event\":\"$E\"}"`, wantRuleGhApiEvent),
 		review("a quoted heredoc keeps its backslashes", "bash <<'EOF'\necho \\'; gh pr review 1 -a; echo \\'\nEOF"),
 
-		// Content set elsewhere on the line: where the guard has no text for what it
-		// judges (a program, script, file or query that is only an expansion, or a
-		// shell reading a file or pipe), the whole line is read for long spellings only.
+		// Content set elsewhere on the line: the whole line is read for long spellings only.
 		b("a program set in a variable", `CMD='gh pr review 1 --approve'; $CMD`, wantRuleUnparsed),
 		b("bash -c of a variable", `C='gh pr review 1 --approve'; bash -c "$C"`, wantRuleUnparsed),
 		b("a script written to a file, then run", "cat > /tmp/r.sh <<'EOF'\ngh pr review 1 --approve\nEOF\nbash /tmp/r.sh", "shell_script"),
@@ -238,7 +234,6 @@ func TestGuardRules(t *testing.T) {
 	}
 }
 
-// A ship launched by hand is unaffected: only the exact value 1 turns the guard on.
 func TestGuardIsOffOutsideAutopilot(t *testing.T) {
 	deny := guardTestCase{tool: "Bash", input: bashInput("gh pr review 12 --approve")}
 	for _, v := range []string{"", "true", "11"} {
@@ -256,7 +251,6 @@ func TestGuardIsOffOutsideAutopilot(t *testing.T) {
 	})
 }
 
-// A payload that is not a JSON object fails closed on an autopilot ship.
 func TestGuardRefusesAPayloadItCannotRead(t *testing.T) {
 	for _, p := range []string{`not json`, `null`, `{"tool_name":"Bash","tool_input":{"command":7}}`} {
 		err, _, _ := runGuardTest(t, p, "1")
@@ -267,8 +261,6 @@ func TestGuardRefusesAPayloadItCannotRead(t *testing.T) {
 	}
 }
 
-// The refusal carries the reason the agent reads, exactly, on stderr and in
-// the error; an allowed call writes nothing.
 func TestGuardReason(t *testing.T) {
 	deny := guardTestCase{tool: "Bash", input: bashInput("gh pr review 12 --approve")}
 	err, out, errb := runGuardTest(t, deny.payload(t), "1")
@@ -292,9 +284,8 @@ func TestGuardReason(t *testing.T) {
 	}
 }
 
-// A line of nested substitutions with a submit after it is decided in well under
-// a second, inside Claude Code's hook timeout: the text rule runs once on the
-// line, not once per level.
+// The text rule must run once on the line, not once per level, to stay inside
+// Claude Code's hook timeout.
 func TestGuardDecidesNestedSubstitutionsFast(t *testing.T) {
 	const n = 40000
 	cmd := "echo " + strings.Repeat("$(", n) + "true" + strings.Repeat(")", n) + "; gh api repos/o/r/pulls/1/reviews/2/events --input ev.json"
@@ -303,8 +294,6 @@ func TestGuardDecidesNestedSubstitutionsFast(t *testing.T) {
 	err, _, _ := runGuardTest(t, deny.payload(t), "1")
 	took := time.Since(start)
 	var denied *GuardDenied
-	// Each level is a command held in an expansion, which is refused as soon as it is
-	// reached (shell_script); the submit after it would be refused too.
 	if !errors.As(err, &denied) {
 		t.Errorf("Guard = %v, want a *GuardDenied", err)
 	}

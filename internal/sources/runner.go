@@ -16,7 +16,6 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// A source's state on the wire.
 const (
 	StateStarting     = "starting"
 	StateOK           = "ok"
@@ -36,7 +35,6 @@ const (
 
 var knownCapabilities = []string{"add", "edit", "remove", "refresh"}
 
-// runner keeps one source's process running and holds what it last showed.
 type runner struct {
 	home string
 	key  string
@@ -64,7 +62,6 @@ type runner struct {
 	pulls    pulls
 }
 
-// pulls is the lists Admiral still has to ask the plugin for.
 type pulls struct {
 	panels bool
 	all    bool
@@ -87,7 +84,6 @@ func (r *runner) logf(format string, a ...any) {
 	log.Printf("source %s: %s", r.key, fmt.Sprintf(format, a...))
 }
 
-// restart asks for a restart now, cutting any backoff short.
 func (r *runner) restart() {
 	r.gen.Add(1)
 	select {
@@ -147,8 +143,7 @@ func (r *runner) loop() {
 	}
 }
 
-// fail records a crash: the source is read-only with its last orders until it
-// runs again.
+// The source stays read-only with its last orders until it runs again.
 func (r *runner) fail(err error) {
 	r.mu.Lock()
 	r.state, r.readOnly, r.ready = StateError, true, false
@@ -158,9 +153,6 @@ func (r *runner) fail(err error) {
 	r.notify()
 }
 
-// session runs the plugin once, from start to the end of the process. It
-// reports how long the plugin ran after it was ready and whether a restart
-// request, not a failure, ended it.
 func (r *runner) session() (ranFor time.Duration, restarted bool, err error) {
 	ctx, cancel := context.WithCancel(r.ctx)
 	defer cancel()
@@ -303,16 +295,13 @@ func parseInitialize(raw json.RawMessage) ([]string, json.RawMessage, error) {
 	return caps, schema, nil
 }
 
-// maxSchema is the largest settingsSchema Admiral passes on, in bytes.
 const maxSchema = 256 << 10
 
-// incompatibleError is a plugin that speaks another protocol version.
 type incompatibleError struct{ msg string }
 
 func (e *incompatibleError) Error() string { return e.msg }
 
-// mergePanels takes a new panel list and keeps the orders and the error of
-// panels that stay. r.mu must be held.
+// r.mu must be held.
 func (r *runner) mergePanels(fresh []Panel) {
 	for i, pn := range fresh {
 		for _, old := range r.panels {
@@ -326,9 +315,8 @@ func (r *runner) mergePanels(fresh []Panel) {
 	r.panels = fresh
 }
 
-// pullOrders asks for one panel's orders. An error answer from the plugin is
-// logged and shown on the panel until its next good list. Any other bad or
-// missing answer is logged and the panel keeps what it had.
+// An error answer shows on the panel until its next good list; any other bad
+// answer leaves the panel as it was.
 func (r *runner) pullOrders(ctx context.Context, p *proc, panel string) {
 	res, err := p.call(ctx, "orders.list", map[string]any{"panel": panel}, callTimeout)
 	if err != nil {
@@ -360,7 +348,6 @@ func (r *runner) pullOrders(ctx context.Context, p *proc, panel string) {
 	r.notify()
 }
 
-// setPanelError shows a message on one panel and tells the watchers.
 func (r *runner) setPanelError(panel, msg string) {
 	r.mu.Lock()
 	for i := range r.panels {
@@ -372,7 +359,6 @@ func (r *runner) setPanelError(panel, msg string) {
 	r.notify()
 }
 
-// pullPanels asks for the panels again and then for each one's orders.
 func (r *runner) pullPanels(ctx context.Context, p *proc) {
 	res, err := p.call(ctx, "panels.list", map[string]any{}, callTimeout)
 	if err != nil {
@@ -396,7 +382,7 @@ func (r *runner) pullPanels(ctx context.Context, p *proc) {
 	}
 }
 
-// wantPull records lists to pull and wakes the session. panel "" means all.
+// panel "" means every panel.
 func (r *runner) wantPull(panelList bool, panel string) {
 	r.mu.Lock()
 	switch {
@@ -440,7 +426,6 @@ func (r *runner) processPulls(ctx context.Context, p *proc) {
 	}
 }
 
-// note handles a notification from the plugin's process number sid.
 func (r *runner) note(sid int, method string, params json.RawMessage) {
 	r.mu.Lock()
 	current := sid == r.sid
@@ -487,15 +472,13 @@ func (r *runner) note(sid int, method string, params json.RawMessage) {
 	}
 }
 
-// live is the plugin process when it can take requests.
 func (r *runner) live() (*proc, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.p, r.ready && r.p != nil
 }
 
-// launched tells the plugin an order was launched, now if it runs and after its
-// next start if not.
+// Delivered now if the plugin runs, else after its next start.
 func (r *runner) launched(id string) {
 	r.mu.Lock()
 	if r.ready && r.p != nil {

@@ -66,7 +66,6 @@ func jsonEqual(t *testing.T, a, b json.RawMessage) bool {
 	return reflect.DeepEqual(x, y)
 }
 
-// fleetKeyOrder returns the keys of the "fleets" object in file order.
 func fleetKeyOrder(t *testing.T, path string) []string {
 	t.Helper()
 	fleets := decode(t, path)["fleets"]
@@ -89,8 +88,6 @@ func fleetKeyOrder(t *testing.T, path string) []string {
 	return keys
 }
 
-// S9: replacing favorite_skills keeps the unknown top-level key, sources and
-// the fleets (content and order), and leaves no temp file behind.
 func TestS9_SetFavoriteSkillsKeepsEverythingElse(t *testing.T) {
 	dir := t.TempDir()
 	path := writeFile(t, dir, richConfig)
@@ -121,7 +118,6 @@ func TestS9_SetFavoriteSkillsKeepsEverythingElse(t *testing.T) {
 	}
 }
 
-// S9 (sources half): SetSources replaces sources only.
 func TestS9_SetSourcesKeepsEverythingElse(t *testing.T) {
 	dir := t.TempDir()
 	path := writeFile(t, dir, richConfig)
@@ -146,7 +142,6 @@ func TestS9_SetSourcesKeepsEverythingElse(t *testing.T) {
 	}
 }
 
-// S9: six favorites are refused and the file is untouched.
 func TestS9_SixFavoritesRefused(t *testing.T) {
 	dir := t.TempDir()
 	path := writeFile(t, dir, richConfig)
@@ -164,7 +159,6 @@ func TestS9_SixFavoritesRefused(t *testing.T) {
 	}
 }
 
-// S9: no write while the file on disk is invalid, for either key.
 func TestS9_WriteRefusedWhileFileInvalid(t *testing.T) {
 	invalid := `{"version":1,"fleets":{"work":{"name":"Work","claude":{"evn":{}}}}}`
 	dir := t.TempDir()
@@ -182,7 +176,6 @@ func TestS9_WriteRefusedWhileFileInvalid(t *testing.T) {
 	}
 }
 
-// S9: with no file on disk the write creates one with version 1 and empty fleets.
 func TestS9_WriteCreatesFileWhenMissing(t *testing.T) {
 	dir := t.TempDir()
 	if err := config.SetSources(dir, json.RawMessage(`{}`)); err != nil {

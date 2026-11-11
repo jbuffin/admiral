@@ -5,23 +5,18 @@ import (
 	"time"
 )
 
-// SubagentsOption is the pane option `admiral hook` keeps the subagents of a
-// ship's harness in: a JSON array of Subagent (ADR 0014).
 const SubagentsOption = Prefix + "subagents"
 
-// MaxSubagents caps the list, so a runaway harness can't grow the option.
+// MaxSubagents keeps a runaway harness from growing the option.
 const MaxSubagents = 64
 
-// Subagent is one running subagent of a ship: the harness's id for it, its
-// type, and when its start hook ran (RFC 3339).
 type Subagent struct {
 	ID    string `json:"id"`
 	Type  string `json:"type"`
 	Start string `json:"start"`
 }
 
-// EncodeSubagents is the value of SubagentsOption: a JSON array, or "" for an
-// empty list, which `admiral hook` unsets the option for.
+// EncodeSubagents gives "" for an empty list, which `admiral hook` unsets the option for.
 func EncodeSubagents(l []Subagent) string {
 	if len(l) == 0 {
 		return ""
@@ -33,12 +28,7 @@ func EncodeSubagents(l []Subagent) string {
 	return string(raw)
 }
 
-// DecodeSubagents reads the option's value. An unset or unreadable value is no
-// subagents. Every entry is re-checked, whatever wrote it: an id that is not a
-// safe token, a start that is not RFC 3339, or an id seen before drops the entry
-// (the first one wins), and a type that is not a safe token reads as "". A
-// reader treats the list of a dead pane as empty: the harness is gone, so its
-// subagents are too.
+// DecodeSubagents re-checks every entry, whatever wrote it, since any process in the pane can set the option.
 func DecodeSubagents(s string) []Subagent {
 	var l []Subagent
 	if s == "" || json.Unmarshal([]byte(s), &l) != nil {

@@ -15,8 +15,6 @@ import (
 	"testing"
 )
 
-// `admiral --version` works on the ordinary build too: a stamp or "dev", the
-// commit, exit 0, nothing else on stdout.
 func TestPackagingVersionFlag(t *testing.T) {
 	out, errOut, code := run(t, runOpts{env: hermeticEnv(t)}, binaryPath(t), "--version")
 	if code != 0 {
@@ -27,8 +25,6 @@ func TestPackagingVersionFlag(t *testing.T) {
 	}
 }
 
-// S1: make release builds the tarball and its checksum; the tarball holds the
-// signed arm64 binary, the notices and both plugins Admiral ships.
 func TestPackagingS1_ReleaseTarball(t *testing.T) {
 	r := theRelease(t)
 
@@ -67,7 +63,6 @@ func TestPackagingS1_ReleaseTarball(t *testing.T) {
 		}
 	}
 
-	// install.sh sits next to the tarball, ready to upload with it.
 	script, _ := os.ReadFile(filepath.Join(repoRoot, "packaging", "install.sh"))
 	if got, err := os.ReadFile(filepath.Join(r.dir, "install.sh")); err != nil || string(got) != string(script) {
 		t.Errorf("DIST/install.sh is not a copy of packaging/install.sh (%v)", err)
@@ -90,8 +85,6 @@ func TestPackagingS1_ReleaseTarball(t *testing.T) {
 	}
 }
 
-// S1: the stamped version and commit, the signature and the architecture, on
-// the binary in the tarball and the one `make release` left at BIN.
 func TestPackagingS1_BinaryIsStampedSignedAndArm64(t *testing.T) {
 	r := theRelease(t)
 	head, _, _ := run(t, runOpts{dir: repoRoot}, "git", "rev-parse", "HEAD")
@@ -127,8 +120,6 @@ func TestPackagingS1_BinaryIsStampedSignedAndArm64(t *testing.T) {
 	}
 }
 
-// S1 + story 129: a shared build carries the lettered placeholders, and the
-// notices cover every runtime dependency and font.
 func TestPackagingS1_SharedBuildHasPlaceholdersAndNotices(t *testing.T) {
 	r := theRelease(t)
 
@@ -199,7 +190,6 @@ func TestPackagingS1_SharedBuildHasPlaceholdersAndNotices(t *testing.T) {
 			t.Errorf("THIRD_PARTY_NOTICES does not mention %q", w)
 		}
 	}
-	// Every entry (a "-- " header) has licence text under it.
 	for _, sec := range strings.Split("\n"+string(notices), "\n-- ")[1:] {
 		header, body, _ := strings.Cut(sec, "\n")
 		if i := strings.Index(body, "\n== "); i >= 0 {
@@ -211,8 +201,7 @@ func TestPackagingS1_SharedBuildHasPlaceholdersAndNotices(t *testing.T) {
 	}
 }
 
-// S1: official logos in the folder make make release fail, naming it, before it
-// writes anything. A symlinked file and a folder that is a symlink count too.
+// A symlinked file and a folder that is a symlink count as logos too.
 func TestPackagingS1_OfficialLogosRefuseTheRelease(t *testing.T) {
 	refused := func(t *testing.T, extra ...string) {
 		t.Helper()
@@ -231,7 +220,6 @@ func TestPackagingS1_OfficialLogosRefuseTheRelease(t *testing.T) {
 			t.Errorf("make release wrote %v despite refusing", m)
 		}
 	}
-	// A folder with logos in it, and the same logos behind symlinks.
 	withLogo := func(t *testing.T) string {
 		d := filepath.Join(t.TempDir(), "official")
 		if err := os.MkdirAll(d, 0o755); err != nil {

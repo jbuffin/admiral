@@ -33,9 +33,8 @@ func TestParseCrewReadsTranscript(t *testing.T) {
 	}
 }
 
-// A crew path is quoted inside a nested tmux command and shown to drivers, so
-// it refuses what the chat's rule allows: quoting characters and characters
-// that hide what the path says.
+// A crew path is quoted inside a nested tmux command and shown to drivers, so it refuses
+// more than the chat's rule.
 func TestValidCrewTranscriptPath(t *testing.T) {
 	for _, c := range []struct {
 		in   string

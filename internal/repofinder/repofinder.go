@@ -1,6 +1,5 @@
-// Package repofinder lists the directories a ship can be launched into
-// (ADR 0009): the git checkouts up to two levels below a fleet's search roots,
-// then the search roots themselves, and matches them to an order by git remote.
+// Package repofinder lists the git checkouts up to two levels below a fleet's
+// search roots, then the roots, and matches them to an order by remote (ADR 0009).
 package repofinder
 
 import (
@@ -10,13 +9,11 @@ import (
 	"strings"
 )
 
-// Entry kinds.
 const (
 	KindCheckout   = "checkout"
 	KindSearchRoot = "search_root"
 )
 
-// Entry is one directory a ship can be launched into.
 type Entry struct {
 	Path    string   `json:"path"`
 	Name    string   `json:"name"`
@@ -24,8 +21,7 @@ type Entry struct {
 	Remotes []string `json:"remotes"` // normalized, see Identity
 }
 
-// List reads the checkouts below roots, then the roots. It reads the disk on
-// every call and runs no git.
+// List reads the disk on every call and runs no git.
 func List(roots []string) []Entry {
 	out := []Entry{}
 	seen := map[string]bool{}
@@ -61,7 +57,6 @@ func List(roots []string) []Entry {
 	return out
 }
 
-// Contains reports whether dir, cleaned, is one of the entries' paths.
 func Contains(entries []Entry, dir string) (string, bool) {
 	dir = filepath.Clean(dir)
 	for _, e := range entries {
@@ -77,8 +72,6 @@ func isDir(p string) bool {
 	return err == nil && st.IsDir()
 }
 
-// subdirs are the directories directly in dir, in name order, without the
-// hidden ones.
 func subdirs(dir string) []string {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
@@ -96,16 +89,13 @@ func subdirs(dir string) []string {
 	return out
 }
 
-// isCheckout is true for a directory holding a .git directory or file (a
-// worktree's is a file).
 func isCheckout(dir string) bool {
 	_, err := os.Lstat(filepath.Join(dir, ".git"))
 	return err == nil
 }
 
-// Remotes are the normalized identities of the checkout's remotes, read from
-// its git config. A worktree's .git file leads to its gitdir and from there,
-// through commondir, to the main checkout's config.
+// A worktree's .git file leads through its gitdir and commondir to the main
+// checkout's config.
 func Remotes(dir string) []string {
 	cfg := configPath(dir)
 	if cfg == "" {
@@ -175,10 +165,8 @@ var (
 
 var scpLike = regexp.MustCompile(`^(?:[^@/\s]+@)?([^:/\s]+):([^/].*)$`)
 
-// Identity normalizes a remote URL to lowercase host/owner/repo: ssh
-// (git@host:o/r.git, ssh://), https and git URLs, with or without .git or a
-// trailing slash, credentials and port dropped. Only the first two path
-// segments count, so a link to an issue or a pull request names its repository.
+// Only the first two path segments count, so a link to an issue or a pull
+// request names its repository.
 func Identity(raw string) (string, bool) {
 	raw = strings.TrimSpace(raw)
 	var host, path string
@@ -226,7 +214,6 @@ func Identity(raw string) (string, bool) {
 
 var urlLike = regexp.MustCompile("[A-Za-z][A-Za-z0-9+.-]*://[^\\s<>\"'`]+|[\\w.-]+@[\\w.-]+:[\\w./~-]+")
 
-// URLs are the repository identities of the URLs in text, in order.
 func URLs(text string) []string {
 	var out []string
 	for _, u := range urlLike.FindAllString(text, -1) {

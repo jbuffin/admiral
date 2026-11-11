@@ -9,17 +9,8 @@ import (
 	"time"
 )
 
-// The bridge on a crew boat's pane (#152 "Bridge", spec #72 stories 15 and 18):
-// GET /ws/bridge/<session>/crew/<name> speaks the ship bridge's protocol for the
-// crew boat's pane and window, and the ship's bridge keeps to the ship's own
-// pane and window once the session has crew windows. The seam is the built
-// binary on a private tmux socket with the fake harness.
-//
-// Every ship and crew boat runs the one fleet cue (`hook working`, `wait go`,
-// `exit 1`), so a test releases the ship alone or one crew boat alone with
-// releaseGo, and a released one anchors with exit 1. A pane's own output comes
-// from writing to its terminal (paneWriteID), and input shows up as the
-// terminal's echo, since the fake is parked in a cue and not reading stdin.
+// Input shows up as the terminal's echo, since the fake is parked in a cue and
+// not reading stdin.
 
 // winOf is the window id (@N) of a pane.
 func (w *world) winOf(pane string) string {
@@ -33,7 +24,6 @@ func (w *world) winSize(win string) string {
 	return strings.TrimSpace(w.mustTmux("display", "-p", "-t", win, "#{window_width}x#{window_height}"))
 }
 
-// waitWinSize waits for a window to reach a size.
 func (w *world) waitWinSize(win, want string) {
 	w.t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -61,7 +51,6 @@ func (w *world) expectWinSizes(why string, want map[string]string) {
 	}
 }
 
-// paneWriteID writes to a pane's terminal by pane id.
 func (w *world) paneWriteID(pane, data string) {
 	w.t.Helper()
 	tty := strings.TrimSpace(w.mustTmux("display-message", "-p", "-t", pane, "#{pane_tty}"))
@@ -103,7 +92,6 @@ func (w *world) waitOpt(pane, name, want string) {
 	}
 }
 
-// dialCrew joins the bridge on a crew boat, failing the test if it is refused.
 func (w *world) dialCrew(t *testing.T, session, crew string, cols, rows int) (*bridgeClient, joinMsg) {
 	t.Helper()
 	return w.joinBridge(t, session+"/crew/"+crew, cols, rows)
@@ -147,7 +135,7 @@ func TestCrewBridge(t *testing.T) {
 	})
 
 	t.Run("a resize on the ship's bridge leaves the crew windows' sizes alone", func(t *testing.T) {
-		// Broken today: refresh-client -C sizes the whole client, and every window
+		// refresh-client -C sizes the whole client, and every window
 		// of the session follows it. This needs no crew bridge, so it stands alone.
 		w := w.at(t)
 		cur := map[string]string{aWin: w.winSize(aWin), bWin: w.winSize(bWin)}
@@ -238,8 +226,8 @@ func TestCrewBridge(t *testing.T) {
 		scout.waitSize(5*time.Second, 0, 100, 30)
 		w.expectWinSizes("a resize on scout's bridge", map[string]string{shipWin: cur[shipWin], bWin: cur[bWin]})
 
-		// The ship's bridge sizes only the ship's window: this is broken today,
-		// where refresh-client -C sizes every window of the session.
+		// The ship's bridge sizes only the ship's window, though refresh-client -C
+		// sizes every window of the session.
 		sb, _ := w.joinBridge(t, ship.Session, 114, 37)
 		sb.active()
 		w.waitWinSize(shipWin, "114x37")

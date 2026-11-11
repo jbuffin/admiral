@@ -10,7 +10,6 @@ import (
 	"strings"
 )
 
-// Source is one order source: a plugin and the settings it runs with.
 type Source struct {
 	Key      string
 	Plugin   string
@@ -20,10 +19,8 @@ type Source struct {
 	// PanelOrder lists panel IDs in the order the sidebar shows them; panels
 	// it does not name follow in the plugin's order.
 	PanelOrder []string
-	// Autopilot holds the per-panel autopilot entries by panel id.
-	Autopilot map[string]PanelAutopilot
-	// autopilotRaw is the autopilot object as read, compacted. SourcesJSON
-	// writes it back as it is, so a UI save adds no defaults to the file.
+	Autopilot  map[string]PanelAutopilot
+	// SourcesJSON writes autopilotRaw back as read, so a UI save adds no defaults to the file.
 	autopilotRaw json.RawMessage
 }
 
@@ -43,10 +40,9 @@ func (s Source) clone() Source {
 	return s
 }
 
-// NameRe is what source keys and plugin names may hold. Both end up in paths.
+// NameRe covers source keys and plugin names: both end up in paths.
 var NameRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
-// Source returns the source with this key.
 func (c *Config) Source(key string) (Source, bool) {
 	for _, s := range c.SourceList {
 		if s.Key == key {
@@ -56,8 +52,7 @@ func (c *Config) Source(key string) (Source, bool) {
 	return Source{}, false
 }
 
-// SameRun reports whether two definitions start the same process: the same
-// plugin with the same settings, whatever the key order of the settings.
+// SameRun ignores the key order of the settings.
 func (s Source) SameRun(o Source) bool {
 	if s.Plugin != o.Plugin {
 		return false
@@ -147,7 +142,6 @@ func parseSource(path, key string, raw json.RawMessage) (Source, error) {
 	return s, nil
 }
 
-// SourcesJSON is the `sources` object for these definitions, in order.
 func SourcesJSON(list []Source) (json.RawMessage, error) {
 	var b strings.Builder
 	b.WriteByte('{')
@@ -187,7 +181,7 @@ func SourcesJSON(list []Source) (json.RawMessage, error) {
 	return json.RawMessage(b.String()), nil
 }
 
-// checkSourceFleets runs after the fleets are parsed: every source names one.
+// checkSourceFleets runs after the fleets are parsed.
 func checkSourceFleets(cfg *Config) error {
 	for _, s := range cfg.SourceList {
 		if _, ok := cfg.Fleet(s.Fleet); !ok {

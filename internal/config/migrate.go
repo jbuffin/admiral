@@ -11,30 +11,23 @@ import (
 	"strings"
 )
 
-// ErrNeedsMigration is what a command that isn't the server answers for a
-// config.json Admiral would migrate at startup. Commands never migrate.
+// ErrNeedsMigration: only the server migrates; commands never do.
 var ErrNeedsMigration = errors.New("config.json is from an older Admiral: start Admiral once (`admiral`) to migrate it")
 
-// maxOrdersFile caps how much of a freeform source's orders.json the migration
-// reads.
 const maxOrdersFile = 4 << 20
 
-// Moved is a source that kept its place and gained a fleet.
 type Moved struct {
 	Key, Name, Fleet, FleetName string
-	GitHub                      bool // the GitHub source, which takes the default fleet for now
+	GitHub                      bool // the GitHub source takes the default fleet
 }
 
-// Dropped is a source the migration removed from config.json.
 type Dropped struct {
-	Key, Name string
-	Freeform  bool
-	Orders    []string // the pending orders' text, freeform sources only
-	// OrdersUnreadable is set when a freeform source's orders couldn't be read.
+	Key, Name        string
+	Freeform         bool
+	Orders           []string // the pending orders' text, freeform sources only
 	OrdersUnreadable bool
 }
 
-// Migration says what Migrate changed.
 type Migration struct {
 	Backup        string // file name of the backup, beside config.json
 	Moved         []Moved
@@ -42,7 +35,6 @@ type Migration struct {
 	ClearedResume string // the resume source it cleared; empty when none
 }
 
-// migrationPlan is the new file and what it does, before any disk write.
 type migrationPlan struct {
 	out     []byte
 	moved   []Moved
@@ -50,14 +42,12 @@ type migrationPlan struct {
 	cleared string
 }
 
-// NeedsMigration reports whether Migrate would change this file.
 func NeedsMigration(data []byte) bool {
 	return planMigration(data) != nil
 }
 
-// planMigration works out the migrated file. It returns nil when nothing needs
-// migrating, and also when the file wouldn't parse once its fleet-less and
-// freeform sources are dealt with: that is another error, for the banner.
+// planMigration also returns nil when the file wouldn't parse once migrated:
+// that is another error, for the banner.
 func planMigration(data []byte) *migrationPlan {
 	top, err := ParseObject(data)
 	if err != nil {
@@ -149,7 +139,6 @@ func stringOf(o *Object, key string) string {
 	return s
 }
 
-// nameOf is the display name of a source or fleet object, or the key.
 func nameOf(raw json.RawMessage, key string) string {
 	if o, err := ParseObject(raw); err == nil {
 		if n := stringOf(o, "name"); n != "" {
@@ -159,11 +148,8 @@ func nameOf(raw json.RawMessage, key string) string {
 	return key
 }
 
-// Migrate brings dir/config.json up to this Admiral's format (#259): every
-// source gets a fleet and freeform sources go. It changes nothing when the
-// file needs nothing, or has another error, so the second start is a no-op.
-// The old file is kept beside it as config.json.pre-<version> first; an
-// existing backup stays as it is. It returns nil when it changed nothing.
+// Migrate changes nothing when the file has another error, so the second start
+// is a no-op. An existing config.json.pre-<version> backup stays as it is.
 func Migrate(dir, version string) (*Migration, error) {
 	writeMu.Lock()
 	defer writeMu.Unlock()
@@ -194,7 +180,6 @@ func Migrate(dir, version string) (*Migration, error) {
 	return &Migration{Backup: backup, Moved: p.moved, Removed: p.removed, ClearedResume: p.cleared}, nil
 }
 
-// writeNew creates the file with data, or leaves an existing one alone.
 func writeNew(path string, data []byte) error {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if errors.Is(err, fs.ErrExist) {
@@ -214,10 +199,7 @@ func writeNew(path string, data []byte) error {
 	return f.Close()
 }
 
-// pendingOrders reads the text of a freeform source's orders. Every order in
-// the file is pending. The migration runs before the config is parsed, so the
-// key is checked here; a link out of the home, a file over the cap and a file
-// that isn't a list count as unreadable. A missing file is no orders.
+// pendingOrders checks the key itself: the migration runs before the config is parsed.
 func pendingOrders(dir, key string) (texts []string, unreadable bool) {
 	if !NameRe.MatchString(key) {
 		return nil, true
@@ -258,8 +240,7 @@ func pendingOrders(dir, key string) (texts []string, unreadable bool) {
 	return texts, false
 }
 
-// Notice is the title and plain-text body of the Inbox notice that tells the
-// engineer what the migration did. It never quotes a source's settings.
+// Notice never quotes a source's settings.
 func (m *Migration) Notice() (title, body string) {
 	var b strings.Builder
 	title = "Admiral updated your config"

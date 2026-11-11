@@ -10,10 +10,6 @@ function Dot({ fleet }: { fleet: Fleet }) {
   return <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />;
 }
 
-/**
- * The fleet switcher: a menu under the trigger in the sidebar, a bottom sheet on the phone.
- * Both list the fleets as menuitemradio items.
- */
 export function FleetSwitcher({ sheet }: { sheet: boolean }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);

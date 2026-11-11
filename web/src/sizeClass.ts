@@ -1,8 +1,7 @@
 import { computed, effect, signal } from '@preact/signals';
 
-// The size class, decided in one place (designs/README.md "Size classes"; the prototype's phoneQuery() and
-// wideQuery()). A phone is narrow or short, which catches a phone turned sideways; wide is the iPad
-// landscape and desktop layout, with the inbox as a drawer. Everything else is the middle class.
+// A phone is narrow or short, which catches a phone turned sideways; wide is the iPad landscape and desktop
+// layout. Everything else is the middle class.
 const PHONE = '(max-width: 760px), (max-height: 499px)';
 const WIDE = '(min-width: 1024px) and (orientation: landscape)';
 

@@ -5,8 +5,6 @@ import (
 	"testing"
 )
 
-// RefuseHookArgs vets the values of `crew launch --arg` (#175): anything that
-// overrides or disables Admiral's hooks is refused, and the error names the value.
 func TestRefuseHookArgs(t *testing.T) {
 	refused := []struct {
 		harness string

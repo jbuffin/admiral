@@ -18,15 +18,13 @@ import (
 	"github.com/jbuffin/admiral/internal/server"
 )
 
-// ServiceLabel names the per-user LaunchAgent (ADR 0005).
 const ServiceLabel = "dev.jasonbuffin.admiral"
 
 // fallbackPath is what ships inherit when the login shell's PATH can't be read;
 // launchd's own is only /usr/bin:/bin:/usr/sbin:/sbin (ADR 0010).
 const fallbackPath = "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-// Service is `admiral service install | uninstall | status` (story 3). It runs
-// launchctl from PATH, so tests can put a fake first.
+// Service runs launchctl from PATH, so tests can put a fake first.
 func Service(args []string, std IO) error {
 	if len(args) != 1 {
 		return usagef("%s", Usage("service"))
@@ -157,8 +155,8 @@ func printTokenURL(std IO, dir string) error {
 	return nil
 }
 
-// stableProgramPath is the path the plist runs. A Homebrew Cellar path is
-// deleted by brew cleanup, so a Homebrew install gets the prefix's bin/admiral.
+// A Homebrew Cellar path is deleted by brew cleanup, so a Homebrew install gets
+// the prefix's bin/admiral.
 func stableProgramPath() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -190,8 +188,7 @@ func stableProgramPath() (string, error) {
 	return exe, nil
 }
 
-// loginShellPath is the PATH of the engineer's login shell, which ships
-// inherit; launchd's own PATH finds almost nothing.
+// Ships inherit the login shell's PATH; launchd's own finds almost nothing.
 func loginShellPath() string {
 	shell := os.Getenv("SHELL")
 	if shell == "" {

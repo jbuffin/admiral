@@ -20,41 +20,27 @@ import (
 	"github.com/jbuffin/admiral/internal/state"
 )
 
-// Resume orders (ADR 0016): once every item a ship's report lists in `inbox` has
-// an answer, the report's `resume` text becomes an order in the panel that
-// autopilot.resume_source names. The text is copied into Admiral's own state
-// first, so it outlives the report's deletion and a restart, and it stays there
-// until an add succeeds, the source refuses the text for good, or an add is
-// uncertain (the plugin may have added it): never twice.
+// A resume order's text is copied into Admiral's state first, so it outlives the
+// report's deletion and a restart, and is never added twice.
 
-// maxReport is the most of a report that is read; a ship wrote it.
+// maxReport caps the read because a ship wrote the report.
 const maxReport = 1 << 20
 
-// resumeRetry is how long a resume order that could not be added waits before
-// the next try, when nothing else prompts one.
 const resumeRetry = 15 * time.Second
 
-// addTimeout bounds one add.
 const addTimeout = 10 * time.Second
 
-// AddKind is what a failed add says about trying again.
 type AddKind int
 
 const (
-	// AddFinal: the source refused the order for good; it is dropped.
 	AddFinal AddKind = iota
-	// AddRetryable: nothing was changed and the add may work later.
 	AddRetryable
-	// AddUncertain: the order was sent and may have landed; it is never sent again.
+	// AddUncertain: the order may have landed; it is never sent again.
 	AddUncertain
 )
 
-// readReport is the report of session as the ship wrote it, nil when it is
-// missing or unusable.
 func (s *Service) readReport(session string) []byte { return readReportFile(s.Home, session) }
 
-// readReportFile is the report of session under home as the ship wrote it, nil
-// when it is missing or unusable.
 func readReportFile(home, session string) []byte {
 	root, err := os.OpenRoot(home)
 	if err != nil {
@@ -81,16 +67,13 @@ func readReportFile(home, session string) []byte {
 	return b
 }
 
-// Origin is where a ship ran: its checkout, and the autopilot panel it counted
-// against, if autopilot launched it (#120). A resume order of its report
-// launches in that checkout, under that panel's entry.
+// Origin is where a resume order of the ship's report launches, under that
+// panel's autopilot entry.
 type Origin struct {
 	Dir, Source, Panel string
 }
 
-// CaptureResume copies the resume text of session's report into the state when
-// every item the report lists is answered, and says nothing otherwise. It does
-// no network I/O. Whatever deletes a report calls it first.
+// CaptureResume does no network I/O. Whatever deletes a report calls it first.
 func (s *Service) CaptureResume(session string) {
 	var from Origin
 	if s.Origin != nil {
@@ -99,8 +82,8 @@ func (s *Service) CaptureResume(session string) {
 	s.CaptureResumeFrom(session, from)
 }
 
-// CaptureResumeFrom is CaptureResume for a caller that has the ship's origin
-// from a session that may be gone by now; with no directory it asks s.Origin.
+// CaptureResumeFrom is for a caller whose session may be gone by now; with no
+// directory it asks s.Origin.
 func (s *Service) CaptureResumeFrom(session string, from Origin) {
 	if s.Kept == nil || !validSession(session) {
 		return
@@ -142,7 +125,7 @@ func (s *Service) CaptureResumeFrom(session string, from Origin) {
 		return
 	}
 	// The key is the order itself, not the report: a ship that rewrites its report
-	// without changing them adds nothing new.
+	// without changing the order adds nothing new.
 	ids := slices.Clone(r.Inbox)
 	slices.Sort(ids)
 	sum := sha256.Sum256([]byte(r.Resume + "\x00" + strings.Join(ids, "\x00")))
@@ -155,8 +138,6 @@ func (s *Service) CaptureResumeFrom(session string, from Origin) {
 	}
 }
 
-// captureAll runs CaptureResume for every report, and forgets the finished
-// resume orders of sessions whose report is gone.
 func (s *Service) captureAll() {
 	if s.Kept == nil {
 		return
@@ -201,16 +182,11 @@ func (s *Service) kickResume() {
 	}
 }
 
-// KickResume asks for the resume orders that wait to be tried again, for a
-// change in a source or the config. It never blocks.
+// KickResume never blocks.
 func (s *Service) KickResume() { s.kickResume() }
 
-// addResumes tries the resume orders that wait, one at a time (only session's
-// when it is not empty), and says whether any is left to try again. It makes
-// plugin calls: never under answerMu. A failure that changed nothing and may pass
-// is tried again later; one that is final is dropped; one that may have added the
-// order is counted as done and recorded as uncertain, because a second order can
-// launch a second ship.
+// addResumes makes plugin calls: never under answerMu. An uncertain add counts as
+// done, because a second order can launch a second ship.
 func (s *Service) addResumes(session string) (left bool) {
 	if s.Kept == nil {
 		return false
@@ -303,16 +279,14 @@ func (s *Service) addResumes(session string) (left bool) {
 	return left
 }
 
-// What typeResume did with a resume order.
 const (
 	liveGone  = iota // no ship afloat: the order goes to the resume panel
 	liveWait         // the ship is afloat but not at its prompt: try again when it stops
 	liveTyped        // the text went in at the ship's prompt: done
 )
 
-// typeResume types a resume order's text at the prompt of its ship while the
-// ship is still afloat, so the ship that asked reads its answers and no second
-// ship is launched in its checkout. Under resumeMu.
+// typeResume types at the afloat ship's prompt, so no second ship is launched in
+// its checkout. Under resumeMu.
 func (s *Service) typeResume(key string, r state.Resume) int {
 	if s.TypeResume == nil || !typable(r.Text) {
 		return liveGone
@@ -341,16 +315,12 @@ func (s *Service) typeResume(key string, r state.Resume) int {
 	return liveGone
 }
 
-// typable is whether text can go in at a prompt: no control character but
-// newline and tab.
 func typable(text string) bool {
 	return strings.TrimSpace(text) != "" && !strings.ContainsFunc(text, func(r rune) bool {
 		return (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f
 	})
 }
 
-// resumeLoop adds the resume orders that wait, when prompted and while one is
-// left to try again.
 func (s *Service) resumeLoop(ctx context.Context) {
 	s.kickResume()
 	s.mu.Lock()

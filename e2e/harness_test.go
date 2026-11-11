@@ -1,5 +1,5 @@
-// Package e2e drives the real bin/admiral binary over HTTP and WebSocket
-// (seam 1). Every instance gets a temporary ADMIRAL_HOME and its own port.
+// Package e2e drives the real bin/admiral binary over HTTP and WebSocket.
+// Every instance gets a temporary ADMIRAL_HOME and its own port.
 package e2e
 
 import (
@@ -29,10 +29,9 @@ var (
 	lanLine   = regexp.MustCompile(`^On other devices: http://([0-9.]+):(\d+)/\?token=([A-Za-z0-9_-]+)$`)
 )
 
-// instance is one running admiral process.
 type instance struct {
 	Home      string // ADMIRAL_HOME
-	listen    string // the --listen value
+	listen    string
 	Port      string
 	LocalURL  string // first printed line's URL
 	LANLine   string // second printed line, verbatim
@@ -101,8 +100,6 @@ func freePort(t *testing.T) string {
 // of the server's 500 ms polls. Anything that does happen is polled for instead.
 const hold = 1500 * time.Millisecond
 
-// holdThat polls check for the length of hold and fails the test with msg the
-// first time it does not hold.
 func holdThat(t *testing.T, msg string, check func() bool) {
 	t.Helper()
 	end := time.Now().Add(hold)
@@ -169,8 +166,6 @@ func hermeticEnv(t *testing.T) []string {
 	return append(env, fastDelays...)
 }
 
-// startAdmiral starts bin/admiral --listen <listen> with the given home. It
-// waits up to 10 s for the two printed lines and stops the process on cleanup.
 func startAdmiral(t *testing.T, home, listen string) *instance {
 	t.Helper()
 	expectNoMigration(t, home)
@@ -238,7 +233,7 @@ func startAdmiral(t *testing.T, home, listen string) *instance {
 	return in
 }
 
-// Stop ends the process with SIGTERM, then SIGKILL after 5 s. Safe to repeat.
+// Stop is safe to repeat.
 func (in *instance) Stop() {
 	select {
 	case <-in.done:
@@ -322,7 +317,6 @@ func client() *http.Client {
 	}
 }
 
-// get issues a GET with optional extra headers and a Host override.
 func get(t *testing.T, rawURL string, hdr map[string]string) (*http.Response, string) {
 	t.Helper()
 	return do(t, http.MethodGet, rawURL, hdr)
@@ -357,7 +351,6 @@ func wsDial(t *testing.T, base, query string, hdr http.Header, host string) (*we
 	return wsDialAt(t, base, "/ws", query, hdr, host)
 }
 
-// wsDialAt is wsDial on another path, such as the versioned /ws/v1.
 func wsDialAt(t *testing.T, base, path, query string, hdr http.Header, host string) (*websocket.Conn, *http.Response, error) {
 	t.Helper()
 	u, err := url.Parse(base)
@@ -388,7 +381,6 @@ func killTmux(sock string) {
 	}
 }
 
-// readJSON reads one text message from c and unmarshals it.
 func readJSON(t *testing.T, c *websocket.Conn, v any) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

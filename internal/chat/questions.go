@@ -16,28 +16,20 @@ import (
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
-// Chat questions (ADR 0020): AdmiralBot asks with `admiral chat ask`, which writes
-// $ADMIRAL_HOME/chat/questions/<id>.json and waits for <id>.answer.json. They are
-// read the way ADR 0016 reads a ship's inbox directory, and never reach the inbox.
+// Chat questions are read the way a ship's inbox directory is, and never reach the inbox.
 
-// Session is what a chat question carries as its `session`, so its key can't
-// collide with a ship's.
+// Session keeps a chat question's key from colliding with a ship's.
 const Session = sessionhost.ChatName
 
-// maxQuestions is how many chat questions are served: the newest.
 const maxQuestions = 20
 
-// questionEvery is how often the questions directory is read at most.
 const questionEvery = 100 * time.Millisecond
 
-// Question is a chat question as served: the inbox's question item, with the
-// answer file's content or null.
 type Question struct {
 	Item   inbox.Item
 	Answer json.RawMessage
 }
 
-// MarshalJSON is the inbox's item with `session` set to "_chat" and `answer` added.
 func (q Question) MarshalJSON() ([]byte, error) {
 	b, err := q.Item.MarshalJSON()
 	if err != nil {
@@ -54,8 +46,7 @@ func (q Question) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m)
 }
 
-// openQuestions opens chat/questions under the home through a root. Neither
-// directory may be a link.
+// Neither directory may be a link.
 func (s *Service) openQuestions() (*os.Root, error) {
 	root, err := os.OpenRoot(s.Home)
 	if err != nil {
@@ -70,7 +61,6 @@ func (s *Service) openQuestions() (*os.Root, error) {
 	return subDir(chat, "questions")
 }
 
-// subDir opens name under root when it is a directory itself and not a link.
 func subDir(root *os.Root, name string) (*os.Root, error) {
 	fi, err := root.Lstat(name)
 	if err != nil {
@@ -82,31 +72,25 @@ func subDir(root *os.Root, name string) (*os.Root, error) {
 	return root.OpenRoot(name)
 }
 
-// fileKey says whether a cached read is still of the file as it is.
 type fileKey struct {
 	mod  time.Time
 	size int64
 }
 
-// cachedQuestion is what one question file read as: no item for a file that is
-// not a valid question, and so never read again until it changes.
+// An invalid question file has no item, and is not read again until it changes.
 type cachedQuestion struct {
 	key  fileKey
 	item *inbox.Item
 }
 
-// cachedAnswer is what one answer file read as; nil answer is no answer.
 type cachedAnswer struct {
 	key    fileKey
 	exists bool
 	answer json.RawMessage
 }
 
-// scanQuestions reads the questions directory: the newest valid question items,
-// each with its answer if one is there, oldest first. A file that fails is skipped
-// and never hides another. Ids start with a time, so the names are read newest
-// first until maxQuestions valid ones are found, and a file whose modification time
-// and size haven't changed is not read again. The caller holds cmu.
+// Ids start with a time, so names are read newest first until maxQuestions valid ones are
+// found. A file that fails is skipped and never hides another. The caller holds cmu.
 func (s *Service) scanQuestions() []Question {
 	out := []Question{}
 	dir, err := s.openQuestions()
@@ -163,7 +147,6 @@ func (s *Service) scanQuestions() []Question {
 	return out
 }
 
-// questionItem is the valid question item in dir/<id>.json, or nil.
 func (s *Service) questionItem(dir *os.Root, id string) *inbox.Item {
 	fi, err := dir.Lstat(id + ".json")
 	if err != nil {
@@ -181,7 +164,6 @@ func (s *Service) questionItem(dir *os.Root, id string) *inbox.Item {
 	return c.item
 }
 
-// answerOf is the answer to question id as served, or nil.
 func (s *Service) answerOf(dir *os.Root, id string) json.RawMessage {
 	fi, err := dir.Lstat(inbox.AnswerName(id))
 	if err != nil {
@@ -197,8 +179,7 @@ func (s *Service) answerOf(dir *os.Root, id string) json.RawMessage {
 	return c.answer
 }
 
-// answerFile is the part of an answer file that reaches a browser: the envelope and
-// each question's choice and text, nothing else a writer put there.
+// answerFile is all of an answer file that reaches a browser.
 type answerFile struct {
 	Version  int                             `json:"version"`
 	ID       string                          `json:"id"`
@@ -208,10 +189,8 @@ type answerFile struct {
 	Note     string                          `json:"note,omitempty"`
 }
 
-// readAnswer is the answer file as served, or nil when there is none that can be
-// trusted: a link, a file that is not regular, one over 1 MiB, not an answer, or
-// one whose choices are not a label or a list of labels. Only the fields of
-// answerFile are kept.
+// readAnswer refuses a link, a file that is not regular, one over 1 MiB, or choices that are
+// not a label or a list of labels.
 func readAnswer(dir *os.Root, id string) json.RawMessage {
 	name := inbox.AnswerName(id)
 	fi, err := dir.Lstat(name)
@@ -249,8 +228,7 @@ func readAnswer(dir *os.Root, id string) json.RawMessage {
 	return out
 }
 
-// questions is the served questions, read again when the last read is older than
-// questionEvery or fresh says so. The directory is read under cmu, not under mu.
+// The directory is read under cmu, not under mu.
 func (s *Service) questions(fresh bool) []Question {
 	s.cmu.Lock()
 	defer s.cmu.Unlock()
@@ -260,7 +238,6 @@ func (s *Service) questions(fresh bool) []Question {
 	return append([]Question{}, s.qs...)
 }
 
-// unanswered says whether any question is still waiting for its answer.
 func unanswered(qs []Question) bool {
 	for _, q := range qs {
 		if len(q.Answer) == 0 {
@@ -270,9 +247,7 @@ func unanswered(qs []Question) bool {
 	return false
 }
 
-// WithdrawQuestions removes every file in chat/questions, answered or not: New
-// chat, and a fresh session after the old one ended. A waiting `admiral chat ask`
-// sees its question gone and exits 4.
+// A waiting `admiral chat ask` sees its question gone and exits 4.
 func (s *Service) WithdrawQuestions() {
 	s.qmu.Lock()
 	defer s.qmu.Unlock()
@@ -285,7 +260,6 @@ func (s *Service) WithdrawQuestions() {
 	s.cmu.Unlock()
 }
 
-// removeAll removes what chat/questions holds now.
 func (s *Service) removeAll() {
 	dir, err := s.openQuestions()
 	if err != nil {
@@ -303,8 +277,7 @@ func (s *Service) removeAll() {
 	}
 }
 
-// serveAnswer writes the engineer's answer to a chat question. It writes no
-// outcome record and adds no resume order: the chat is not a ship.
+// serveAnswer writes no outcome record and adds no resume order: the chat is not a ship.
 func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req inbox.QuestionRequest

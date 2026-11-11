@@ -11,24 +11,6 @@ import (
 	"testing"
 )
 
-// ---- `admiral service`, as these tests assume it ----
-//
-// install    writes $HOME/Library/LaunchAgents/dev.jasonbuffin.admiral.plist
-//            and $ADMIRAL_HOME/logs/, runs `launchctl bootout` and then
-//            `launchctl bootstrap gui/<uid> <plist>`, and prints the server's
-//            "On other devices: http://<ip>:7420/?token=<token>" line. A
-//            bootout that fails (the job isn't loaded) is not an error; a
-//            failing bootstrap is: exit 1 with launchctl's stderr shown.
-// uninstall  `launchctl bootout`, then removes the plist.
-// status     first stdout line "Service: not installed" (no plist),
-//            "Service: installed, not loaded" or "Service: installed, loaded"
-//            (the exit code of `launchctl print gui/<uid>/<label>`: 0 loaded;
-//            its output is never read), then, when installed, the token line, or
-//            "No token yet; Admiral creates it the first time it starts." when
-//            there is no token (status never creates one).
-//
-// launchctl and the login shell are fakes: nothing here loads a job.
-
 const fallbackPath = "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 type svc struct {
@@ -85,7 +67,6 @@ func (s *svc) plistPath() string {
 	return filepath.Join(s.home, "Library", "LaunchAgents", serviceLabel+".plist")
 }
 
-// calls reads the fake launchctl's log.
 func (s *svc) calls() [][]string {
 	b, _ := os.ReadFile(s.record)
 	var out [][]string
@@ -144,8 +125,6 @@ func (s *svc) wantBootoutThenBootstrap(calls [][]string) {
 	}
 }
 
-// S4: install writes a valid plist with every key the spec lists, creates the
-// log folder, boots out then bootstraps, and prints the token URL.
 func TestServiceS4_InstallWritesThePlistAndBootstraps(t *testing.T) {
 	s := newSvc(t)
 	s.bootoutExit = "113" // not loaded yet: install carries on
@@ -209,8 +188,6 @@ func TestServiceS4_InstallWritesThePlistAndBootstraps(t *testing.T) {
 	}
 }
 
-// S4: a login shell that fails falls back to the fixed PATH; with no
-// ADMIRAL_HOME the plist has none and logs under ~/.admiral.
 func TestServiceS4_FallbackPathAndDefaultHome(t *testing.T) {
 	s := newSvc(t)
 	s.ah = ""
@@ -231,8 +208,6 @@ func TestServiceS4_FallbackPathAndDefaultHome(t *testing.T) {
 	}
 }
 
-// S4: a second install replaces the first, a failing bootstrap is an error,
-// and uninstall boots out and removes the plist.
 func TestServiceS4_ReinstallBootstrapFailureAndUninstall(t *testing.T) {
 	s := newSvc(t)
 	for i := 1; i <= 2; i++ {
@@ -264,7 +239,7 @@ func TestServiceS4_ReinstallBootstrapFailureAndUninstall(t *testing.T) {
 	}
 }
 
-// S4: under Homebrew the plist points at the stable prefix path, never the
+// Under Homebrew the plist points at the stable prefix path, never the
 // Cellar path that brew cleanup deletes.
 func TestServiceS4_HomebrewInstallUsesTheStablePath(t *testing.T) {
 	s := newSvc(t)
@@ -310,8 +285,6 @@ func mustMkdir(t *testing.T, d string) string {
 	return d
 }
 
-// S4: status reports from the plist and launchctl print's exit code, never its
-// output.
 func TestServiceS4_StatusUsesTheExitCodeNotTheOutput(t *testing.T) {
 	s := newSvc(t)
 	first := func() string {

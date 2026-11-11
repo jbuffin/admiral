@@ -7,7 +7,7 @@ import (
 	"github.com/jbuffin/admiral/internal/outcomes"
 )
 
-// logb builds a log, one minute apart, in the order the calls are made.
+// logb stamps its lines one minute apart, in call order.
 type logb struct {
 	t   *testing.T
 	n   int

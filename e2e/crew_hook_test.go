@@ -11,12 +11,8 @@ import (
 	"time"
 )
 
-// Crew-aware `admiral hook` (#152 AC3, spec #72 story 12 and 21-23): a lead's
-// Stop leaves @admiral-state alone while a crew boat works, and sets needs_you
-// once none does; @admiral-subagents follows SubagentStart and SubagentStop. The
-// seam is the built binary on a private tmux socket, run as the harness's hook
-// would: TMUX names the socket (the hook runs bare tmux) and TMUX_PANE the pane.
-// No cue runs, so the test makes each pane working itself.
+// TMUX names the socket (the hook runs bare tmux) and TMUX_PANE the pane. No
+// cue runs, so the test makes each pane working itself.
 
 func TestCrewHook_LeadWaitsForWorkingCrew(t *testing.T) {
 	t.Parallel()
@@ -62,7 +58,7 @@ func TestCrewHook_LeadWaitsForWorkingCrew(t *testing.T) {
 	hook(shipPane, "Stop", stop)
 	wantState(shipPane, "the lead's Stop while scout works", "working", "")
 
-	// Scout's own Stop is idle (#189): it waits for its lead, so the ship stays
+	// Scout's own Stop is idle: it waits for its lead, so the ship stays
 	// underway and the idle boat holds no lead's Stop. A permission prompt on a
 	// crew boat still flags the ship.
 	const monitorArmed = `{"hook_event_name":"PostToolUse","tool_name":"Monitor","tool_input":{"command":"watch.sh"},"tool_response":{"taskId":"bwatch01","timeoutMs":1800000,"persistent":false}}`
@@ -150,11 +146,9 @@ func TestCrewHook_LeadWaitsForWorkingCrew(t *testing.T) {
 	wantState(shipPane, "the ship after SubagentStop", "needs_you", "stop")
 }
 
-// A Stop that waits on a Monitor (#110): Commodore's coordinator ends its turn
-// to wait for its watchdog's events, so a Stop leaves @admiral-state alone while
-// a Monitor the session armed still runs. A Monitor reports as a "shell" task,
-// so only the id its PostToolUse gave (kept in @admiral-monitors) tells it from
-// a background Bash, which still doesn't hold the ship.
+// Commodore's coordinator ends its turn to wait for its watchdog's events. A
+// Monitor reports as a "shell" task, so only the id its PostToolUse gave (kept
+// in @admiral-monitors) tells it from a background Bash, which doesn't hold the ship.
 func TestHook_StopWaitsForMonitor(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

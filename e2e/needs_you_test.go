@@ -14,13 +14,10 @@ import (
 	"github.com/coder/websocket"
 )
 
-// Needs you, anchoring and Dismiss (u5): the real binary, fake harnesses with
-// cues, observed over GET /api/ships, the WebSocket `ships` message, tmux and
-// state.json. FAKE_CUE is one file per fleet, so a test that needs different
-// cues for different ships gives each its own fleet (cueFleets).
+// FAKE_CUE is one file per fleet, so a test that needs different cues for
+// different ships gives each its own fleet (cueFleets).
 
-// u5Ship is a ship with the fields u5 adds to the wire. The raw fields keep
-// "null" apart from "missing".
+// The raw fields keep "null" apart from "missing".
 type u5Ship struct {
 	shipJSON
 	ExitCode   json.RawMessage `json:"exit_code"`
@@ -52,8 +49,7 @@ func (in *fleetInst) u5Ship(t *testing.T, session string) (u5Ship, bool) {
 	return u5Ship{}, false
 }
 
-// cueFleets writes a config with one fleet per key (all three harnesses), each
-// with its own cue file. A nil value means the fleet has no cue file at all.
+// A nil value means the fleet has no cue file at all.
 func (w *world) cueFleets(cues map[string][]string) {
 	w.t.Helper()
 	fleets := map[string]any{}
@@ -86,7 +82,6 @@ func statusOf(list []shipJSON, session string) string {
 	return ""
 }
 
-// waitStatus reads the WebSocket until the ship has the status.
 func waitStatus(t *testing.T, c *websocket.Conn, d time.Duration, session, status string) {
 	t.Helper()
 	waitShipsMsg(t, c, d, "ship "+session+" with status "+status, func(l []shipJSON) bool {
@@ -110,7 +105,6 @@ func (w *world) paneState(session string) string {
 	return out
 }
 
-// paneReason is @admiral-reason on the ship's pane, "" when unset.
 func (w *world) paneReason(session string) string {
 	w.t.Helper()
 	out, err := w.tmux("show-options", "-t", session, "-p", "-qv", "@admiral-reason")
@@ -120,7 +114,6 @@ func (w *world) paneReason(session string) string {
 	return out
 }
 
-// waitPaneReason waits for @admiral-reason on the pane to be want.
 func (w *world) waitPaneReason(session, want string) {
 	w.t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -163,8 +156,6 @@ func (w *world) launchIn(fleet, harness, repo string) shipJSON {
 	return w.launch(w.order(fleet, harness, repo, noSkill, "x"))
 }
 
-// S1: each harness's waiting hook makes the ship needs_you within 2 s, and its
-// working hook makes it underway again.
 func TestHooksSetNeedsYouAndUnderway(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -198,8 +189,6 @@ func (w *world) attachControlClient(session string) {
 	w.t.Cleanup(func() { _ = stdin.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() })
 }
 
-// S2: a bell in a Codex window is needs you and is written to the pane; other
-// harnesses' bells are ignored; a control client doesn't hide the bell.
 func TestCodexBellNeedsYou(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -241,8 +230,6 @@ func TestCodexBellNeedsYou(t *testing.T) {
 // noHookWait stands in for NoHookWait (10 s in production).
 const noHookWait = 4 * time.Second
 
-// S3: no hook within NoHookWait of launch is needs you; a hook before that
-// keeps the ship underway. After a restart the wait counts from launch.
 func TestNoFirstHook(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -262,7 +249,6 @@ func TestNoFirstHook(t *testing.T) {
 		t.Errorf("a ship that fired working at 1s has status %q past %s, want underway", got, noHookWait)
 	}
 
-	// A keystroke clears it, and it stays cleared.
 	if code := w.inputSeen(quiet.Session); code/100 != 2 {
 		t.Fatalf("input-seen = %d, want 2xx", code)
 	}
@@ -284,8 +270,6 @@ func TestNoFirstHookAfterRestart(t *testing.T) {
 	w.in.waitStatusList(t, 15*time.Second, s.Session, "needs_you")
 }
 
-// S4: a keystroke from the bridge clears needs you at once, until the next
-// waiting hook.
 func TestInputSeenClearsNeedsYou(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -308,7 +292,6 @@ func TestInputSeenClearsNeedsYou(t *testing.T) {
 	if got := w.paneState(s.Session); got != "working" {
 		t.Errorf("after input-seen @admiral-state = %q, want working", got)
 	}
-	// Further keystrokes change nothing.
 	if code := w.inputSeen(s.Session); code/100 != 2 {
 		t.Errorf("input-seen on an underway ship = %d, want 2xx", code)
 	}
@@ -321,7 +304,6 @@ func TestInputSeenClearsNeedsYou(t *testing.T) {
 	waitStatus(t, ws, 2*time.Second, s.Session, "needs_you")
 }
 
-// S5: exit 0 sails off and the ship goes; a failure or a signal anchors.
 func TestExitSailsOffOrAnchors(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -401,7 +383,6 @@ func TestExitSailsOffOrAnchors(t *testing.T) {
 	}
 }
 
-// S6: Dismiss ends an anchored ship and nothing else.
 func TestDismiss(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -436,7 +417,6 @@ func TestDismiss(t *testing.T) {
 	waitStateFile(t, statePath, func(s string) bool { return !strings.Contains(s, d.Session) })
 }
 
-// S7: a restart brings back anchored and needs_you ships as they were.
 func TestRestartKeepsAnchoredAndNeedsYou(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -481,8 +461,6 @@ func TestRestartKeepsAnchoredAndNeedsYou(t *testing.T) {
 	}
 }
 
-// Story 122 / item 8: an exit-0 ship whose session was not killed before the
-// restart is killed on start.
 func TestRestartKillsShipThatSailedOff(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

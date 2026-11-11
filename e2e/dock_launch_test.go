@@ -9,11 +9,6 @@ import (
 	"testing"
 )
 
-// Launching a ship from a dock without an order (#102): the launch request
-// names no source and no order_id, and its skill kind is none. The prompt is
-// the trimmed text; empty text means no prompt argument at all.
-
-// dockLaunch builds a request that names no order.
 func (w *world) dockLaunch(harness, repo, text string) map[string]any {
 	return map[string]any{"fleet": "work", "harness": harness, "dir": w.checkout(repo), "skill": noSkill, "text": text}
 }
@@ -48,7 +43,7 @@ func (w *world) shipWithTitle(session string) withTitle {
 	return withTitle{}
 }
 
-// A3: the text is the prompt as one argument, trimmed, unguarded; the title is its first line.
+// The text is the prompt as one argument, trimmed, unguarded; the title is its first line.
 func TestDockLaunchPrompt(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -83,7 +78,7 @@ func TestDockLaunchPrompt(t *testing.T) {
 	}
 }
 
-// A4: empty or whitespace-only text starts the harness with no prompt argument.
+// Empty or whitespace-only text starts the harness with no prompt argument.
 func TestDockLaunchWithoutText(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -123,7 +118,7 @@ func TestDockLaunchWithoutText(t *testing.T) {
 	}
 }
 
-// A5: a launch with no order that names a skill is refused, and nothing starts.
+// A launch with no order that names a skill is refused, and nothing starts.
 func TestDockLaunchRefusesASkill(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -145,7 +140,7 @@ func TestDockLaunchRefusesASkill(t *testing.T) {
 	}
 }
 
-// A6: a dock launch makes its directory the dock's last one, with or without text.
+// A dock launch makes its directory the dock's last one, with or without text.
 func TestDockLaunchRemembersTheDirectory(t *testing.T) {
 	t.Parallel()
 	d := newDataWorld(t)

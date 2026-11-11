@@ -6,9 +6,7 @@ import { closeSetup, probeSetup, SETUP_SESSION, setupOpen } from './setup';
 import { useBridgePlacement } from './useBridgePlacement';
 import { useBridgeTerminal } from './useBridgeTerminal';
 
-// The setup terminal: `admiral setup` in a bridge-style terminal over open water. It is not a ship, so
-// there is no flotilla, no flag and no status pill; the keys and full view are the bridge's. The bar
-// keeps its note on every device, and its keys on touch screens only.
+// The bar keeps its note on every device, and its keys on touch screens only.
 export function SetupTerminal() {
   return setupOpen.value ? <SetupView /> : null;
 }

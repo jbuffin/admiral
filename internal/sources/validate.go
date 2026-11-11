@@ -9,7 +9,7 @@ import (
 	"github.com/jbuffin/admiral/internal/repofinder"
 )
 
-// What Admiral accepts from a plugin. Everything a plugin sends is untrusted.
+// Everything a plugin sends is untrusted.
 const (
 	MaxOrders    = 5000
 	MaxOrderText = 12000 // bytes
@@ -17,46 +17,37 @@ const (
 	maxMessage   = 2000 // runes of an auth message
 )
 
-// Order is one order as the UI receives it.
 type Order struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
-	Text  string `json:"text"`
-	URL   string `json:"url"`
-	Hot   bool   `json:"hot"`
-	Repo  string `json:"repo"`
-	// Labels are the label names a plugin sent, empty ones dropped; omitted when none.
+	ID     string   `json:"id"`
+	Title  string   `json:"title"`
+	Text   string   `json:"text"`
+	URL    string   `json:"url"`
+	Hot    bool     `json:"hot"`
+	Repo   string   `json:"repo"`
 	Labels []string `json:"labels,omitempty"`
 }
 
-// Panel is one list of orders in a source.
 type Panel struct {
 	ID     string  `json:"id"`
 	Title  string  `json:"title"`
 	Orders []Order `json:"orders"`
-	// Error is the plugin's last orders.list refusal for this panel. Admiral
-	// sets it, never the plugin.
+	// Admiral sets Error, never the plugin.
 	Error string `json:"error,omitempty"`
-	// Autopilot is the engineer's autopilot entry for the panel, or nil when it
-	// has none. Admiral sets it, never the plugin.
+	// Admiral sets Autopilot, never the plugin.
 	Autopilot *AutopilotView `json:"autopilot"`
-	// Listed says the panel has had a successful orders.list since the source
-	// last started. Autopilot prunes only what listed panels no longer hold.
+	// Autopilot prunes only what listed panels no longer hold.
 	Listed bool `json:"-"`
 }
 
-// AutopilotView is a panel's autopilot entry as the UI receives it.
 type AutopilotView struct {
 	Enabled  bool `json:"enabled"`
 	Paused   bool `json:"paused"`
 	MaxShips int  `json:"max_ships"`
-	// Resources are the locked resources the entry names, and WaitingFor those
-	// its waiting order waits for (#118); both are [] when there are none.
+	// Both are [] when there are none.
 	Resources  []string `json:"resources"`
 	WaitingFor []string `json:"waiting_for"`
 }
 
-// Auth is what a plugin asks the engineer to do to sign in.
 type Auth struct {
 	Message string `json:"message"`
 	URL     string `json:"url"`
@@ -67,20 +58,15 @@ func isControl(r rune) bool { return r < 0x20 || r == 0x7f }
 
 func hasControl(s string) bool { return strings.IndexFunc(s, isControl) >= 0 }
 
-// hasTextControl reports a control character an order's text may not hold:
-// line breaks, tabs and the CR of pasted CRLF text are fine.
+// Line breaks, tabs and the CR of pasted CRLF text are allowed.
 func hasTextControl(s string) bool {
 	return strings.IndexFunc(s, func(r rune) bool { return isControl(r) && r != '\n' && r != '\t' && r != '\r' }) >= 0
 }
 
-// maxErrorRunes caps a plugin's error text wherever Admiral shows or logs it.
 const maxErrorRunes = 300
 
-// cleanMsg makes text from a plugin fit to show: one line, capped.
 func cleanMsg(s string) string { return truncate(oneLine(s), maxErrorRunes) }
 
-// oneLine makes a title a single trimmed line: its first non-blank line, with
-// any other control character turned into a space.
 func oneLine(s string) string {
 	for _, line := range strings.Split(strings.ReplaceAll(s, "\r", "\n"), "\n") {
 		line = strings.Map(func(r rune) rune {
@@ -96,7 +82,6 @@ func oneLine(s string) string {
 	return ""
 }
 
-// safeURL keeps an http or https URL and drops anything else.
 func safeURL(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || hasControl(raw) || strings.ContainsAny(raw, " \\") {
@@ -116,7 +101,6 @@ func decodeInto(raw json.RawMessage, v any) error {
 	return nil
 }
 
-// parsePanels checks a panels.list answer.
 func parsePanels(raw json.RawMessage) ([]Panel, error) {
 	var items []struct {
 		ID    *string `json:"id"`
@@ -150,8 +134,8 @@ func parsePanels(raw json.RawMessage) ([]Panel, error) {
 	return out, nil
 }
 
-// parseOrders checks an orders.list answer. One bad order makes the whole list
-// a protocol error, so a plugin cannot get half a list shown.
+// One bad order makes the whole list a protocol error, so a plugin cannot get
+// half a list shown.
 func parseOrders(raw json.RawMessage) ([]Order, error) {
 	var items []struct {
 		ID     *string  `json:"id"`
@@ -219,7 +203,6 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 	return out, nil
 }
 
-// parseAuth checks the params of auth.required.
 func parseAuth(raw json.RawMessage) (*Auth, error) {
 	var p struct {
 		Message *string `json:"message"`

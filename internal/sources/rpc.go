@@ -23,12 +23,10 @@ import (
 
 const (
 	// maxLine is the longest line a plugin may send; a longer one is dropped.
-	maxLine = 16 << 20
-	// stopGrace is how long a plugin gets to exit after its stdin closes.
+	maxLine   = 16 << 20
 	stopGrace = time.Second
 )
 
-// callTimeout is how long a request waits for its answer.
 var callTimeout = delay.From("ADMIRAL_CALL_TIMEOUT", 10*time.Second)
 
 var (
@@ -36,7 +34,6 @@ var (
 	errNotRunning = errors.New("the order source is not running")
 )
 
-// rpcError is a JSON-RPC error a plugin answered with.
 type rpcError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
@@ -49,15 +46,14 @@ type reply struct {
 	err    *rpcError
 }
 
-// proc is one running plugin and the JSON-RPC conversation with it: one
-// message per line on its stdin and stdout.
+// One JSON-RPC message per line on the plugin's stdin and stdout.
 type proc struct {
 	key    string
 	cmd    *exec.Cmd
 	stdin  *os.File
 	onNote func(method string, params json.RawMessage)
 
-	wmu sync.Mutex // one writer at a time
+	wmu sync.Mutex
 
 	mu      sync.Mutex
 	nextID  int64
@@ -67,8 +63,6 @@ type proc struct {
 	exitErr error
 }
 
-// startProc runs the plugin's command in its folder. Its stderr goes to
-// Admiral's log; onNote receives the notifications it sends.
 func startProc(key string, m Manifest, dir string, onNote func(string, json.RawMessage)) (*proc, error) {
 	exe, err := resolveCommand(dir, m.Command)
 	if err != nil {
@@ -134,7 +128,6 @@ func resolveCommand(dir, command string) (string, error) {
 	return filepath.Abs(exe)
 }
 
-// exitReason says why the process is gone.
 func (p *proc) exitReason() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -148,8 +141,7 @@ func (p *proc) logf(format string, a ...any) {
 	log.Printf("source %s: %s", p.key, fmt.Sprintf(format, a...))
 }
 
-// read handles what the plugin writes until its stdout closes. Anything wrong
-// with one line drops that line and goes on.
+// Anything wrong with one line drops that line and goes on.
 func (p *proc) read(f *os.File) {
 	br := bufio.NewReaderSize(f, 64<<10)
 	for {
@@ -169,8 +161,7 @@ func (p *proc) read(f *os.File) {
 	}
 }
 
-// readLine reads one line of at most maxLine bytes. A longer line is read to
-// its end and reported as tooLong without being kept.
+// A longer line is read to its end and reported as tooLong without being kept.
 func readLine(br *bufio.Reader) (line []byte, tooLong bool, err error) {
 	for {
 		chunk, e := br.ReadSlice('\n')
@@ -245,15 +236,13 @@ func (p *proc) write(v any, timeout time.Duration) error {
 	return err
 }
 
-// notSentError is a call whose request line never went out, so the plugin did
-// nothing: a caller that must not repeat a request may repeat this one.
+// The plugin did nothing, so a caller that must not repeat a request may
+// repeat this one.
 type notSentError struct{ err error }
 
 func (e *notSentError) Error() string { return e.err.Error() }
 func (e *notSentError) Unwrap() error { return e.err }
 
-// call sends a request and waits for its answer. It fails after timeout, when
-// ctx ends and when the process exits.
 func (p *proc) call(ctx context.Context, method string, params any, timeout time.Duration) (json.RawMessage, error) {
 	ch := make(chan reply, 1)
 	p.mu.Lock()
@@ -303,8 +292,6 @@ func (p *proc) call(ctx context.Context, method string, params any, timeout time
 	}
 }
 
-// stop closes the plugin's stdin, gives it a moment to exit, then kills its
-// process group.
 func (p *proc) stop() {
 	_ = p.stdin.Close()
 	select {
@@ -315,7 +302,6 @@ func (p *proc) stop() {
 	p.kill()
 }
 
-// kill ends the plugin and everything it started, and waits for the exit.
 func (p *proc) kill() {
 	_ = syscall.Kill(-p.cmd.Process.Pid, syscall.SIGKILL)
 	select {
@@ -324,7 +310,6 @@ func (p *proc) kill() {
 	}
 }
 
-// linePrefixer writes whole lines to out, each starting with prefix.
 type linePrefixer struct {
 	prefix string
 	out    io.Writer

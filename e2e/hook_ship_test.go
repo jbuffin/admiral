@@ -9,11 +9,6 @@ import (
 	"time"
 )
 
-// A6 and A7 (#69): a ship's hook command comes from the bundle, finds
-// `admiral` through $ADMIRAL_HOME/bin on the ship's PATH, and its write lands
-// on the ship's own pane by id. The fake Claude runs the bundle's command for
-// each `event` cue with the cue's payload on stdin.
-
 func TestShipHookRunsBundleCommand(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -34,7 +29,6 @@ func TestShipHookRunsBundleCommand(t *testing.T) {
 	)
 	w.start()
 
-	// A7: the link and the PATH.
 	want, err := filepath.EvalSymlinks(binaryPath(t))
 	if err != nil {
 		t.Fatal(err)
@@ -102,10 +96,8 @@ func TestShipHookRunsBundleCommand(t *testing.T) {
 	}
 }
 
-// #113: the hook leaves @admiral-reason beside @admiral-state, in real tmux. A
-// permission prompt makes Claude fire PermissionRequest and Notification in no
-// fixed order, and the permission reason survives either; the next working
-// event clears it; nothing of the payload but the tool name is stored.
+// Claude fires PermissionRequest and Notification in no fixed order for one
+// permission prompt; the permission reason must survive either.
 func TestShipHookReason(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

@@ -10,9 +10,6 @@ import (
 	"time"
 )
 
-// u12 S1: admiral setup, unattended. The CLI surface is documented at the top
-// of cli_helpers_test.go.
-
 // setupWorld is a world whose HOME holds what a real one does: identity
 // directories the process may not open, a git checkout inside one (which must
 // never be suggested), and some that must be.
@@ -107,7 +104,6 @@ func TestU12_S1_SetupUnattended(t *testing.T) {
 			t.Fatalf("alpha claude args = %v", ac.Args)
 		}
 
-		// What it found, by name only.
 		out := r.stdout
 		if !strings.Contains(strings.Join(linesWith(out, "Harness claude: "), "\n"), w.fakeExe2("claude")) {
 			t.Errorf("no `Harness claude: %s` line in:\n%s", w.fakeExe2("claude"), out)
@@ -333,9 +329,8 @@ func TestU12_ExitCodes(t *testing.T) {
 	}
 }
 
-// Story 12: `admiral` on a terminal with no fleets offers setup. A terminal is
-// a tmux pane; without one (launchd, the other e2e tests) the server just
-// starts, which every other test already relies on.
+// A terminal is a tmux pane; without one (launchd, the other e2e tests) the server
+// just starts.
 func TestU12_NoFleetsOffersSetupOnATerminal(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

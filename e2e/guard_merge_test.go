@@ -9,11 +9,8 @@ import (
 	"time"
 )
 
-// `admiral guard pretooluse` and `gh pr merge --auto` (#120): the built binary
-// with the fake gh. The rules are tested in internal/cli with the lookup
-// replaced; here the lookup is real, so what is tested is how it asks GitHub and
-// how it reads the answer: gh pr view for the PR, then the branch's rules, then
-// its classic protection, each as a GET.
+// The rules are tested in internal/cli with the lookup replaced; here the lookup
+// is real, so what is tested is how it asks GitHub and how it reads the answer.
 
 // requireMergeRefusal wants exit 2 and a reason that is about merging: not the
 // review reason, and not empty.
@@ -61,7 +58,6 @@ const (
 	mergeCmd      = "gh pr merge " + prURL + " --auto --squash"
 )
 
-// hasCall says whether one recorded call holds every one of the parts.
 func hasCall(calls []string, parts ...string) bool {
 	for _, c := range calls {
 		all := true
@@ -98,7 +94,7 @@ func protectionJSON(count string, dismiss, enforceAdmins bool, bypass string) st
 		`,"bypass_pull_request_allowances":` + bypass + `}}`
 }
 
-// The lookup proves GitHub is the gate (D8, D9): the rules of the base branch
+// The lookup proves GitHub is the gate: the rules of the base branch
 // first, one pull_request rule with an approving review that goes stale on a push
 // (or needs the last push approved) in a ruleset the token's user can never
 // bypass; then classic protection with the same, enforced on admins; anything

@@ -8,9 +8,6 @@ import (
 	"github.com/jbuffin/admiral/internal/sources"
 )
 
-// Resume orders (#120): the in-flight hold on a panel's unrecorded orders, and
-// the record's life. The launch itself is covered end to end.
-
 func TestPassHoldsUnrecordedOrdersWhileAResumeIsBeingAdded(t *testing.T) {
 	r := newRig(t, "o1")
 	done := r.engine.BeginResume("s", "p", "/w/o1", "", "")
@@ -49,8 +46,7 @@ func TestResumeRecordLaunchesInItsDirAndSurvivesUntilTheOrderLeavesTheListing(t 
 	want(t, "the order back", r.pass(), []string{"s/p/o1"})
 	wantDir("the order back", "/w/o1")
 
-	// An order that was never listed does not lose its record to a listing taken
-	// before the add's refresh.
+	// A listing taken before the add's refresh must not drop the record.
 	r.engine.BeginResume("s", "p", "/w/x", "", "")("o2")
 	r.pass()
 	r.src[0].Panels = []sources.Panel{panel("p", "o1", "o2")}
@@ -58,8 +54,6 @@ func TestResumeRecordLaunchesInItsDirAndSurvivesUntilTheOrderLeavesTheListing(t 
 	wantDir("o2 listed", "/w/x")
 }
 
-// The add writes the record before it releases the hold, so a pass that meets
-// no hold has the record too: it never takes a recorded order for an ordinary one.
 func TestPassTreatsAnOrderRecordedDuringThePassAsAResumeOrder(t *testing.T) {
 	r := newRig(t, "o1")
 	r.dirs = map[string]string{} // an ordinary order would be skipped: no repository in its text

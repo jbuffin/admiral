@@ -11,27 +11,22 @@ import (
 
 var assignment = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
 
-// placeholder stands in a word for each expansion in it ($VAR, $(…), $((…)),
-// <(…)): the word keeps its literal parts, and hasPlaceholder says it is not
-// exact.
+// placeholder stands in a word for each expansion in it ($VAR, $(…), <(…)).
 const placeholder = "\x00"
 
-// splitMark follows a placeholder that came from an expansion outside quotes: the
-// shell splits its value into words, so it could be several arguments.
+// splitMark follows an unquoted expansion: the shell splits its value into words,
+// so it could be several arguments.
 const splitMark = "\x01"
 
-// marker takes the place of a placeholder in a script that is parsed again. It is
-// a plain word, so it survives quoting that would turn `$_` into text; wordText
-// maps it back.
+// marker is a plain word, so in a script parsed again it survives quoting that
+// would turn `$_` into text.
 const marker = "__admiral_x__"
 
 func hasPlaceholder(s string) bool { return strings.Contains(s, placeholder) }
 func hasSplit(s string) bool       { return strings.Contains(s, splitMark) }
 
-// lineText is a command line and what the text rule says of parts of it. The rule
-// runs on the smallest text a fallback is about, and never twice on the same
-// text: a call that sits inside a span already checked is skipped, because that
-// span holds all its words.
+// The text rule never runs twice on the same text: a call inside a span already
+// checked is skipped, because that span holds all its words.
 type lineText struct {
 	text                   string
 	stmtFrom, stmtTo       int // the top-level statement being walked
@@ -47,15 +42,13 @@ func (l *lineText) enter(s *syntax.Stmt) {
 	l.stmtDone = false
 }
 
-// offsets is where a node sits in the text.
 func (l *lineText) offsets(n syntax.Node) (from, to int) {
 	to = min(int(n.End().Offset()), len(l.text))
 	return min(int(n.Pos().Offset()), to), to
 }
 
-// wholeRule is the long-spelling text rule (review and merge) on the whole line, for a judgment with
-// no text of its own: the program, script, file or query was set on another part
-// of the line (a variable, a file written earlier). Short flags are not matched here.
+// wholeRule is for a program, script, file or query set on another part of the
+// line. Short flags are not matched here.
 func (l *lineText) wholeRule() string {
 	if !l.wholeDone {
 		if reviewEventText(l.text) {
@@ -68,13 +61,10 @@ func (l *lineText) wholeRule() string {
 	return l.whole
 }
 
-// onlyExpansion says whether a word or script is nothing but expansions and
-// whitespace, so its content is set elsewhere on the line.
 func onlyExpansion(s string) bool { return strings.Trim(s, placeholder+splitMark+" \t\r\n") == "" }
 
-// stmt is the text rule on the top-level statement being walked: where a shell
-// reads its script from a pipe or a file, the script is not in the call itself.
-// A statement that has none of it falls back to the whole line.
+// stmt: where a shell reads its script from a pipe or a file, the script is not
+// in the call itself.
 func (l *lineText) stmt() string {
 	if !l.stmtDone {
 		l.stmtRule, l.stmtDone = textRule(l.text[l.stmtFrom:l.stmtTo]), true
@@ -85,7 +75,6 @@ func (l *lineText) stmt() string {
 	return l.wholeRule()
 }
 
-// span is the text rule on one call, for a program the guard cannot name.
 func (l *lineText) span(n syntax.Node) string {
 	from, to := l.offsets(n)
 	if from >= l.coveredFrom && to <= l.coveredTo {
@@ -95,16 +84,10 @@ func (l *lineText) span(n syntax.Node) string {
 	return textRule(l.text[from:to])
 }
 
-// maxShellDepth is how deep a script inside a script (sh -c, eval, a heredoc
-// fed to a shell) is followed. Real command lines nest two or three deep, and
-// a cap keeps a crafted one from costing more than a refusal.
+// Real command lines nest two or three deep; a cap keeps a crafted one from
+// costing more than a refusal.
 const maxShellDepth = 8
 
-// command is the rule that refuses a shell command line, or "". It parses the
-// line and looks at every simple command in it, wherever it sits (lists,
-// pipelines, loops, functions, substitutions). When the line does not parse as
-// bash, it still looks at the statements that did, then at what zsh makes of
-// it, and then applies the text rule.
 func (g guardCheck) command(text string, depth int) string {
 	if depth > maxShellDepth {
 		return ruleUnparsed
@@ -167,17 +150,12 @@ func (g guardCheck) command(text string, depth int) string {
 	return rule
 }
 
-// tokenExpansion is an expansion of a token variable in text the guard could not
-// parse: $NAME or ${NAME…}.
 var tokenExpansion = regexp.MustCompile(`\$\{?(?:GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN)\b`)
 
-// shortFlag is a short flag word whose letters include a or r (-a, -r, -ab),
-// which in a line about a review is --approve or --request-changes.
+// In a line about a review, -a or -r in a short cluster is --approve or
+// --request-changes.
 var shortFlag = regexp.MustCompile(`(?:^|[^\w-])-[A-Za-z]*[ar][A-Za-z]*(?:=\S*)?(?:[^\w-]|$)`)
 
-// textRule is the fallback for a command the guard cannot read: it refuses text
-// that mentions a review and an event that submits one, in a long or short
-// spelling, and text that mentions a merge or a write to the gate (mergeTextRule).
 func textRule(text string) string {
 	if r := mergeTextRule(text); r != "" {
 		return r
@@ -191,8 +169,6 @@ func textRule(text string) string {
 	return ""
 }
 
-// reviewEventText says whether text mentions a review and an event that submits
-// one, in a long spelling.
 func reviewEventText(text string) bool {
 	t := strings.ToLower(text)
 	if !strings.Contains(t, "review") {
@@ -206,10 +182,8 @@ func reviewEventText(text string) bool {
 	return false
 }
 
-// wrapper is a command that runs the command after its flags: short lists the
-// letters of the flags that take a value, long their long names, positionals the
-// words (a duration) that come before the command, and script the flag whose
-// value is itself a command line.
+// wrapper's short and long are the flags that take a value; script is the flag
+// whose value is itself a command line (env -S).
 type wrapper struct {
 	short       string
 	long        []string
@@ -241,16 +215,13 @@ var wrappers = map[string]wrapper{
 	"noglob": {}, "nocorrect": {}, "builtin": {}, "-": {}, "repeat": {positionals: 1},
 }
 
-// joinedWrappers run the words after their flags as one command line (sh -c "$*").
+// joinedWrappers run the words after their flags as one command line, like sh -c "$*".
 var joinedWrappers = []string{"watch"}
 
-// shells run a script given with -c, or read one from stdin.
 var shells = []string{"sh", "bash", "zsh", "dash", "ksh", "fish"}
 
-// call is the rule for one simple command: gh after assignments and wrappers, a
-// shell given a script, or eval. A program word with an expansion is gh when
-// what follows looks like `pr … review` or `api`, and is otherwise unknown,
-// which gets the text rule on the call.
+// call treats a program word with an expansion as gh when what follows looks like
+// `pr … review` or `api`.
 func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *lineText, depth int) string {
 	words := make([]string, len(c.Args))
 	for i, w := range c.Args {
@@ -273,8 +244,6 @@ func (g guardCheck) call(c *syntax.CallExpr, redirs []*syntax.Redirect, line *li
 	return g.callWords(c, words, redirs, line, depth)
 }
 
-// callWords is call for the words of a command, after its assignments: gh behind
-// wrappers, a shell, eval, and the rest.
 func (g guardCheck) callWords(c *syntax.CallExpr, words []string, redirs []*syntax.Redirect, line *lineText, depth int) string {
 	viaXargs := false
 	for len(words) > 0 {
@@ -377,16 +346,13 @@ func (g guardCheck) callWords(c *syntax.CallExpr, words []string, redirs []*synt
 	return ""
 }
 
-// startupNames are the variables that make a shell run a file when it starts.
 var startupNames = []string{"BASH_ENV", "ENV", "ZDOTDIR"}
 
-// startupAssign says whether a word is an assignment of one of startupNames.
 func startupAssign(word string) bool {
 	return slices.ContainsFunc(startupNames, func(n string) bool { return strings.HasPrefix(word, n+"=") })
 }
 
-// gitShellAlias says whether a git call defines an alias that runs a shell
-// (a value starting with !): git -c alias.x=!…, or git config alias.x '!…'.
+// A git alias whose value starts with ! runs a shell the guard cannot see.
 func gitShellAlias(args []string) bool {
 	for i, a := range args {
 		switch {
@@ -401,8 +367,6 @@ func gitShellAlias(args []string) bool {
 	return false
 }
 
-// findExec is the rule for find: each command after -exec, -execdir, -ok or -okdir,
-// up to its ; or +, is checked as a call of its own.
 func (g guardCheck) findExec(c *syntax.CallExpr, args []string, redirs []*syntax.Redirect, line *lineText, depth int) string {
 	for i := 0; i < len(args); i++ {
 		if !slices.Contains([]string{"-exec", "-execdir", "-ok", "-okdir"}, args[i]) {
@@ -420,11 +384,9 @@ func (g guardCheck) findExec(c *syntax.CallExpr, args []string, redirs []*syntax
 	return ""
 }
 
-// tokenNames are the variables gh takes a token from.
 var tokenNames = []string{"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"}
 
-// gitCredential says whether a git command is `git credential`, which prints the
-// stored credentials.
+// `git credential` prints the stored credentials.
 func gitCredential(args []string) bool {
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
@@ -438,22 +400,16 @@ func gitCredential(args []string) bool {
 	return false
 }
 
-// keychainSecret says whether a security call prints a password: find-generic- or
-// find-internet-password with -w or -g.
 func keychainSecret(args []string) bool {
 	return len(args) > 0 && (args[0] == "find-generic-password" || args[0] == "find-internet-password") &&
 		slices.ContainsFunc(args[1:], func(a string) bool { return shortFlagHas(a, "wg") })
 }
 
-// shortFlagHas says whether a short flag cluster (-ab) holds one of the letters.
 func shortFlagHas(a, letters string) bool {
 	return len(a) > 1 && a[0] == '-' && a[1] != '-' && strings.ContainsAny(a[1:], letters)
 }
 
-// scriptFile is the rule for a script file a shell, source or . is given: the
-// file is read as the guard reads any file named on a command (a regular file of
-// at most 1 MiB, from the call's cwd) and checked as a command line of its own.
-// A file it cannot read, or that does not parse, is refused.
+// scriptFile refuses a file it cannot read or that does not parse.
 func (g guardCheck) scriptFile(name string, line *lineText, depth int) string {
 	if hasPlaceholder(name) {
 		return ruleShellScript
@@ -465,7 +421,6 @@ func (g guardCheck) scriptFile(name string, line *lineText, depth int) string {
 	return g.command(text, depth+1)
 }
 
-// parses says whether text is a script, in bash or in zsh.
 func parses(text string) bool {
 	for _, lang := range []syntax.LangVariant{syntax.LangBash, syntax.LangZsh} {
 		if _, err := syntax.NewParser(syntax.Variant(lang)).Parse(strings.NewReader(text), ""); err == nil {
@@ -475,10 +430,6 @@ func parses(text string) bool {
 	return false
 }
 
-// stdinOf is the text on the standard input of a statement when the line shows it
-// literally: a heredoc or here-string with no expansion, a file redirected in, or
-// the literal output of the echo, printf or cat before a pipe. Anything else is
-// not shown.
 func (g guardCheck) stdinOf(s *syntax.Stmt) (string, bool) {
 	// A shell may read several redirects of fd 0 (zsh's MULTIOS reads them all, bash
 	// the last), so more than one source, or a duplicated descriptor, is not shown.
@@ -524,9 +475,7 @@ func (g guardCheck) stdinOf(s *syntax.Stmt) (string, bool) {
 	return t, ok
 }
 
-// literalOutput is the text a statement prints when it is echo or printf with
-// literal words and no escapes (a shell may read the escapes differently from the
-// guard), or cat of a literal heredoc or here-string.
+// literalOutput refuses escapes: a shell may read them differently from the guard.
 func literalOutput(x *syntax.Stmt) (string, bool) {
 	c, ok := x.Cmd.(*syntax.CallExpr)
 	if !ok || len(c.Args) == 0 {
@@ -561,12 +510,10 @@ func literalOutput(x *syntax.Stmt) (string, bool) {
 	return "", false
 }
 
-// aliasTables are the shell variables that define names for commands: zsh's
-// aliases, functions and commands, and bash's BASH_ALIASES and BASH_CMDS.
+// Writing one of aliasTables renames a command.
 var aliasTables = []string{"aliases", "galiases", "saliases", "functions", "commands", "BASH_ALIASES", "BASH_CMDS"}
 
-// hashRenames says whether a hash call binds a name to a path (bash's -p, zsh's
-// name=path), which runs another program under that name.
+// A hash that binds a name to a path runs another program under that name.
 func hashRenames(args []string) bool {
 	return slices.ContainsFunc(args, func(a string) bool {
 		return strings.Contains(a, "=") || len(a) > 1 && a[0] == '-' && a[1] != '-' && strings.Contains(a, "p")
@@ -575,10 +522,8 @@ func hashRenames(args []string) bool {
 
 var markWords = strings.NewReplacer(placeholder+splitMark, marker, placeholder, marker)
 
-// script is the rule for a script a shell or eval is given. Its expansions are
-// words the shell would have put there, so it is parsed with a marker for each,
-// which keeps its meaning whatever quotes surround it; a script that is nothing
-// but an expansion is unknown, which gets the text rule on the call.
+// script parses with a marker for each expansion, which keeps its meaning
+// whatever quotes surround it.
 func (g guardCheck) script(c *syntax.CallExpr, text string, line *lineText, depth int) string {
 	if onlyExpansion(text) {
 		if r := line.span(c); r != "" {
@@ -592,10 +537,6 @@ func (g guardCheck) script(c *syntax.CallExpr, text string, line *lineText, dept
 	return g.command(markWords.Replace(text), depth+1)
 }
 
-// skipWrapperFlags drops a wrapper's flags (read letter by letter, a letter that
-// takes a value taking the rest of its cluster or the next word), the
-// assignments after them and the positionals it expects, and returns the command
-// that follows. It also returns the command line a script flag held (env -S).
 func skipWrapperFlags(spec wrapper, args []string) (rest []string, script string) {
 	value := func(inline string) string {
 		if inline != "" {
@@ -649,11 +590,6 @@ func skipWrapperFlags(spec wrapper, args []string) (rest []string, script string
 	return args, script
 }
 
-// shell is the rule for a shell. Its options are skipped, with the values of
-// -o, -O (and +o, +O) and --rcfile; once an option cluster held c, the script
-// is the first word after them. Without -c the script is a heredoc or
-// here-string on the command, or else unknown (a pipe, a file), which gets the
-// text rule on the statement.
 func (g guardCheck) shell(c *syntax.CallExpr, args []string, redirs []*syntax.Redirect, line *lineText, depth int) string {
 	if g.st.startup {
 		return ruleShellScript // BASH_ENV, ENV or ZDOTDIR makes the shell run a file first
@@ -723,13 +659,10 @@ func (g guardCheck) shell(c *syntax.CallExpr, args []string, redirs []*syntax.Re
 	return ruleShellScript
 }
 
-// wordText is the text of a word with its quoting resolved and a placeholder for
-// each expansion in it, followed by a split mark when the expansion is unquoted.
 func wordText(w *syntax.Word) string { return textOf(w, false, false) }
 
-// heredocText is the body of a heredoc as the shell reads it: an unquoted
-// delimiter makes the body a double-quoted string, and a quoted one (`'EOF'`,
-// `"EOF"`, `\EOF`) leaves every character, backslashes too, as it stands.
+// An unquoted heredoc delimiter makes the body a double-quoted string; a quoted
+// one (`'EOF'`, `"EOF"`, `\EOF`) leaves every character as it stands.
 func heredocText(r *syntax.Redirect) string {
 	raw := false
 	for _, p := range r.Word.Parts {
@@ -740,9 +673,7 @@ func heredocText(r *syntax.Redirect) string {
 	return textOf(r.Hdoc, true, raw)
 }
 
-// textOf is wordText for a word read inside double quotes (quoted) or with no
-// escapes resolved (raw). A marker from an earlier parse of the same script
-// goes back to a placeholder.
+// A marker from an earlier parse of the same script goes back to a placeholder.
 func textOf(w *syntax.Word, quoted, raw bool) string {
 	var b strings.Builder
 	var add func(parts []syntax.WordPart, quoted bool)
@@ -772,9 +703,7 @@ func textOf(w *syntax.Word, quoted, raw bool) string {
 	return b.String()
 }
 
-// unescape resolves the backslashes of a literal: any escape outside quotes, and
-// \" \\ \$ \` inside double quotes. A backslash before a newline is a line
-// continuation.
+// Inside double quotes only \" \\ \$ \` are escapes.
 func unescape(s string, quoted bool) string {
 	if !strings.Contains(s, `\`) {
 		return s

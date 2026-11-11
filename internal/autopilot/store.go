@@ -10,15 +10,12 @@ import (
 	"time"
 )
 
-// FileName is the autopilot file inside $ADMIRAL_HOME.
 const FileName = "autopilot.json"
 
-// Version is the file format this Admiral reads.
 const Version = 1
 
 type pair struct{ Source, OrderID string }
 
-// failure is what the engine remembers of an order whose launch failed.
 type failure struct {
 	Attempts  int       `json:"attempts"`
 	NextRetry time.Time `json:"next_retry"`
@@ -35,16 +32,14 @@ type fileFailure struct {
 	failure
 }
 
-// Resume is where a resume order launches (#120): the checkout of the ship that
-// wrote the report, and the autopilot panel that ship counted against ("" for a
-// ship autopilot did not launch).
+// Resume is where a resume order launches: the reporting ship's checkout and the
+// autopilot panel it counted against ("" for a ship autopilot did not launch).
 type Resume struct {
 	Dir          string `json:"dir"`
 	OriginSource string `json:"origin_source,omitempty"`
 	OriginPanel  string `json:"origin_panel,omitempty"`
-	// Seen says a pass has met the order in its source's listing. The add only
-	// asks the source to refresh, so until then the order missing from a listing
-	// proves nothing, and the record is not pruned.
+	// Until Seen, the order missing from a listing proves nothing: the add only
+	// asks the source to refresh.
 	Seen bool `json:"seen,omitempty"`
 }
 
@@ -61,9 +56,8 @@ type file struct {
 	Resumes []fileResume `json:"resumes,omitempty"`
 }
 
-// Store is the launched set and the failure state, in $ADMIRAL_HOME/autopilot.json.
-// A change is written at once: the file is small and changes only when an order
-// launches, fails or leaves its listing.
+// Store writes each change at once: the file is small and changes only when an
+// order launches, fails or leaves its listing.
 type Store struct {
 	path string
 
@@ -116,7 +110,6 @@ func (s *Store) resumeOf(source, id string) (Resume, bool) {
 	return r, ok
 }
 
-// addResume records where the resume order launches.
 func (s *Store) addResume(source, id string, r Resume) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -130,7 +123,6 @@ func (s *Store) failureOf(source, id string) failure {
 	return s.failures[pair{source, id}]
 }
 
-// markLaunched adds the order to the launched set and forgets its failures.
 func (s *Store) markLaunched(source, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -150,9 +142,8 @@ func (s *Store) setFailure(source, id string, f failure) error {
 	return s.save()
 }
 
-// prune drops what the source no longer lists: listed holds its order ids. It
-// says whether it dropped an order autopilot had given up on. A resume record
-// is dropped once its order has been listed and is not any more.
+// prune reports whether it dropped an order autopilot had given up on. A resume
+// record is dropped only once its order has been listed and is not any more.
 func (s *Store) prune(source string, listed map[string]bool) (cooled bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -188,7 +179,7 @@ func (s *Store) prune(source string, listed map[string]bool) (cooled bool, err e
 	return cooled, s.save()
 }
 
-// save writes the file atomically. s.mu must be held.
+// save needs s.mu held.
 func (s *Store) save() error {
 	f := file{Version: Version, Launched: []fileOrder{}, Failures: []fileFailure{}}
 	for p, r := range s.resumes {

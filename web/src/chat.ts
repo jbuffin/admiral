@@ -9,9 +9,7 @@ import { type AnswerBody, type Draft, blankDraft } from './questions';
 import { phone, wide } from './sizeClass';
 import { api } from './sources';
 
-// The AdmiralBot chat (#119): the conversation the server tails from Claude's transcript, the questions
-// AdmiralBot asked, and what the engineer has entered. The `chat` message and GET /api/chat/session share
-// one shape; everything on screen is read from it.
+// The `chat` message and GET /api/chat/session share one shape; everything on screen is read from it.
 
 export const CHAT_SESSION = '_chat';
 export const CHAT_FAB_ID = 'chat-fab';
@@ -48,8 +46,6 @@ export interface ChatSession {
 
 export const session = signal<ChatSession | null>(null);
 
-// ---- what has been seen, for the dot ----
-
 // Message and question ids this page has shown or been told about. The first snapshot of the page's life
 // is seen; later ones set the dot for an assistant message or a question that is new while the chat is hidden.
 const seen = new Set<string>();
@@ -57,7 +53,6 @@ let seeded = false;
 export const chatUnread = signal(false);
 export const chatOpen = signal(false);
 export const chatView = signal<'chat' | 'terminal'>('chat');
-// The chat shows: the phone's tab, or the panel or sheet.
 const showing = () => (phone.peek() ? phoneTab.peek() === 'chat' : chatOpen.peek());
 
 function applySnapshot(msg: Partial<ChatSession>): void {
@@ -88,8 +83,6 @@ onMessage('chat', applySnapshot);
 effect(() => {
   if (phone.value ? phoneTab.value === 'chat' : chatOpen.value) chatUnread.value = false;
 });
-
-// ---- where it opens ----
 
 let opener: HTMLElement | null = null;
 const entryId = () => (wide.peek() ? CHAT_FAB_ID : CHAT_BUTTON_ID);
@@ -122,9 +115,8 @@ effect(() => {
   if (chatOpen.value && !wide.value && !phone.value && inboxOpen.value) inboxOpen.value = false;
 });
 
-// Escape closes one layer per press: a dialog, a menu or an armed order first (each handles its own Escape, and the
-// panel is non-modal, so they can be open over it), then the New chat bar, then the panel or sheet. A phone's
-// Chat tab is a tab, not a layer, so Escape only dismisses its bar there.
+// Escape closes one layer per press. Dialogs, menus and an armed order handle their own Escape first, since the panel is
+// non-modal; a phone's Chat tab is a tab, not a layer, so Escape only dismisses its bar there.
 export const confirmNew = signal(false);
 window.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || e.defaultPrevented) return;
@@ -136,8 +128,6 @@ window.addEventListener('keydown', (e) => {
   if (confirmNew.peek()) confirmNew.value = false;
   else if (!phone.peek()) closeChat();
 });
-
-// ---- the keyboard ----
 
 // The on-screen keyboard shrinks the visual viewport, not the layout one: the panel and the sheet size to what shows.
 export const viewport = signal({ top: 0, height: 0, keyboard: false, client: 0 });
@@ -151,10 +141,7 @@ if (typeof window !== 'undefined' && window.visualViewport) {
   vv.addEventListener('scroll', update);
   update();
 }
-// A phone's tab bar steps aside while the box has focus.
 export const boxFocused = signal(false);
-
-// ---- starting, sending, New chat ----
 
 // startChat has been asked at least once: before that the page knows nothing a notice could say.
 export const asked = signal(false);
@@ -203,8 +190,6 @@ export async function newChat(): Promise<void> {
   qdrafts.value = {};
 }
 
-// ---- questions ----
-
 // Kept here, not in the inbox's store: that one drops every key that is not a live inbox item.
 const qdrafts = signal<Record<string, Draft>>({});
 export const qdraftOf = (id: string): Draft => qdrafts.value[id] ?? blankDraft();
@@ -221,7 +206,7 @@ async function reread(): Promise<void> {
   }
 }
 
-/** Sends an answer. The card folds when the served snapshot carries the answer, never before. */
+/** The card folds when the served snapshot carries the answer, never before. */
 export async function answerQuestion(id: string, body: AnswerBody): Promise<void> {
   if (qdraftOf(id).sending) return;
   editQDraft(id, (d) => ({ ...d, sending: true, error: '' }));
@@ -232,9 +217,6 @@ export async function answerQuestion(id: string, body: AnswerBody): Promise<void
   editQDraft(id, (d) => ({ ...d, sending: false, error: r.ok || folded ? '' : r.error }));
 }
 
-// ---- the terminal ----
-
-/** The reconnect check of the chat's terminal: is `_chat` still running? Same shape as the ships probe. */
 export async function probeChat(): Promise<Probe> {
   try {
     const res = await fetch('/api/chat/session', { cache: 'no-store' });
@@ -247,14 +229,11 @@ export async function probeChat(): Promise<Probe> {
   }
 }
 
-// ---- the thread ----
-
 export type ThreadItem =
   | { kind: 'me' | 'bot'; id: string; text: string; at: string }
   | { kind: 'card'; id: string; q: ChatQuestion }
   | { kind: 'fold'; id: string; q: ChatQuestion };
 
-/** The messages and the questions in the order they happened. */
 export const thread = computed<ThreadItem[]>(() => {
   const s = session.value;
   if (!s) return [];

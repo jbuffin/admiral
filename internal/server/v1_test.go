@@ -9,8 +9,6 @@ import (
 	"github.com/jbuffin/admiral/internal/server"
 )
 
-// echo is a module whose route answers with the path it was routed on and its
-// path value, so a test sees what a handler behind /api/v1 receives.
 type echo struct{}
 
 func (echo) Routes(mux *http.ServeMux) {
@@ -33,8 +31,6 @@ func do(t *testing.T, h http.Handler, method, target string) (int, http.Header, 
 	return res.StatusCode, res.Header, string(b)
 }
 
-// Every route under /api answers the same under /api/v1, and the handler sees
-// the unversioned path, so URLs it builds stay unversioned.
 func TestAPIv1MirrorsTheUnversionedRoutes(t *testing.T) {
 	h := (&server.Server{Modules: []server.Module{echo{}}}).Handler()
 	for _, c := range []struct {

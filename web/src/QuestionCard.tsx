@@ -1,8 +1,7 @@
 import type { InboxQuestion } from './inbox';
 import { type AnswerBody, type Draft, answerBody, answeredQuestion, choose, chooseOther, pickOf, setOtherText } from './questions';
 
-// The question card of the inbox and of the chat. It owns no state: the caller holds the draft and says how
-// to edit it and what to do with the answer.
+// It owns no state: the caller holds the draft and says how to edit it and what to do with the answer.
 
 function Option({
   role,

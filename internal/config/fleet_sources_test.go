@@ -9,9 +9,6 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// #259 u2: a source names the fleet it belongs to, and a fleet that a source
-// names cannot go. A fleet may carry owners and a clone_root.
-
 const twoFleets = `"fleets":{
   "zulu":{"name":"Zulu","search_roots":["/srv/z"],"claude":{}},
   "alpha":{"name":"Alpha","search_roots":["/srv/a"],"codex":{}}}`

@@ -7,36 +7,24 @@ import (
 	"path/filepath"
 )
 
-// The hook bundle (ADR 0013, 0007): every hook runs one command that records
-// the ship's state in a pane option, which Admiral watches. It is rewritten at
-// every start and shared by all fleets.
+// The hook bundle is rewritten at every start and shared by all fleets.
 
-// hookCommand is the same for every harness: `admiral hook` works the state out
-// from the event and the payload, and finds the binary through the ship's PATH
-// ($ADMIRAL_HOME/bin).
+// The binary is found through the ship's PATH ($ADMIRAL_HOME/bin).
 func hookCommand(event string) string { return "admiral hook " + event }
 
-// MergeToolMatcher is the PreToolUse matcher for MCP tools that could merge or
-// enqueue a pull request: any mcp__ tool with merge or enqueue in its name, in
-// any case. It spells the case out because a matcher is a JavaScript regular
-// expression, which has no (?i). `admiral guard pretooluse` refuses every tool
-// this matches, bar the read-only ones, so the two agree by construction.
+// MergeToolMatcher spells the case out: a matcher is a JavaScript regular expression,
+// which has no (?i).
 const MergeToolMatcher = "^mcp__.*([Mm][Ee][Rr][Gg][Ee]|[Ee][Nn][Qq][Uu][Ee][Uu][Ee])"
 
-// guardGroup runs the review guard (#115) on the tool calls its matcher names. The
-// guard acts only on an autopilot ship, so every ship's settings can carry it.
-// Claude Code lets a call through when a PreToolUse command hook times out or
-// fails, so the handler has a short timeout and onFailure "block" (Claude Code
-// 2.1.295 and later) turns both into a refusal.
+// Claude Code lets a call through when a PreToolUse hook times out or fails, so onFailure
+// "block" (Claude Code 2.1.295 and later) turns both into a refusal.
 func guardGroup(matcher string) map[string]any {
 	return map[string]any{"matcher": matcher,
 		"hooks": []any{map[string]any{"type": "command", "command": "admiral guard pretooluse", "timeout": 10, "onFailure": "block"}}}
 }
 
-// Claude Code: settings file passed with --settings.
-// Format: https://code.claude.com/docs/en/hooks (event → matcher groups → handlers).
-// Matching hooks of one event run in parallel, so the working PreToolUse hook
-// matches every tool except AskUserQuestion, whose hook says needs_you.
+// Format: https://code.claude.com/docs/en/hooks. Matching hooks of one event run in
+// parallel, so the working PreToolUse hook skips AskUserQuestion, whose hook says needs_you.
 func claudeSettings() any {
 	group := func(matcher, event string) map[string]any {
 		g := map[string]any{"hooks": []any{map[string]any{"type": "command", "command": hookCommand(event)}}}
@@ -63,19 +51,12 @@ func claudeSettings() any {
 	}}
 }
 
-// ChatAllow is what the chat's Claude may run without a prompt (ADR 0020), and
-// nothing else: the chat runs under --permission-mode dontAsk.
+// ChatAllow is all the chat may run: it runs under --permission-mode dontAsk.
 var ChatAllow = []any{"Bash(admiral ships *)", "Bash(admiral outcomes *)", "Bash(admiral inbox *)",
 	"Bash(admiral orders *)", "Bash(admiral chat ask *)", "Skill(admiralbot)"}
 
-// claudeChatSettings is the chat session's bundle (ADR 0019, 0020). It registers only
-// what the chat needs: SessionStart (the transcript's path), the events that set
-// working, idle and waiting, and nothing else. Not idle_prompt, which fires after
-// a minute of quiet and would turn every idle chat into waiting; not
-// SubagentStart/SubagentStop or the guards, which would write crew and guard
-// facts on the chat's pane. SessionStart has no matcher, since Claude Code would
-// match it against the source. PostToolUse takes the chat out of waiting once the
-// engineer has answered in the terminal.
+// No idle_prompt: it fires after a minute of quiet and would turn every idle chat into
+// waiting. SessionStart has no matcher, since Claude Code would match it against the source.
 func claudeChatSettings() any {
 	group := func(matcher, event string) map[string]any {
 		g := map[string]any{"hooks": []any{map[string]any{"type": "command", "command": hookCommand(event)}}}
@@ -98,14 +79,9 @@ func claudeChatSettings() any {
 	}}
 }
 
-// Copilot: a plugin folder with a manifest and hooks.json.
-// hooks.json: https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-hooks-reference
-// (version 1, camelCase events, `bash` command, regex `matcher` on the tool
-// name or notification type). The plugin layout is the legacy one of
-// https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference:
-// plugin.json at the plugin root (only `name` is required) and hooks.json
-// beside it. That page does not say what --plugin-dir expects, so loading a
-// plugin from a directory is unconfirmed against a real Copilot.
+// https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-hooks-reference and
+// https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference
+// don't say what --plugin-dir expects, so loading a plugin from a directory is unconfirmed.
 func copilotHooks() any {
 	entry := func(matcher, event string) map[string]any {
 		e := map[string]any{"type": "command", "bash": hookCommand(event)}
@@ -125,11 +101,8 @@ func copilotHooks() any {
 	}}
 }
 
-// Codex takes its hooks as -c flags, one per event, in the TOML of
-// https://learn.chatgpt.com/docs/hooks ([[hooks.Event]] with a nested
-// [[hooks.Event.hooks]] of type "command"), written inline. That page does not
-// say how -c maps onto hook tables; the inline form below is the same value as
-// the config.toml tables.
+// https://learn.chatgpt.com/docs/hooks does not say how -c maps onto hook tables; the
+// inline form is the same value as the config.toml tables.
 var codexEvents = []string{"PermissionRequest", "Stop", "UserPromptSubmit", "PostToolUse", "Interrupt", "SubagentStart", "SubagentStop"}
 
 func codexFlags() []string {
@@ -140,9 +113,7 @@ func codexFlags() []string {
 	return append(out, "-c", `tui.notification_method="bel"`)
 }
 
-// LinkBinary points dir/bin/admiral at the running binary, which hooks reach
-// through the ship's PATH. The link is replaced at every start, so it follows
-// a rebuilt or moved binary.
+// The link is replaced at every start, so it follows a rebuilt or moved binary.
 func LinkBinary(dir, exe string) error {
 	bin := filepath.Join(dir, "bin")
 	if err := os.MkdirAll(bin, 0o700); err != nil {
@@ -157,8 +128,6 @@ func LinkBinary(dir, exe string) error {
 	return os.Rename(tmp, link)
 }
 
-// WriteBundle rewrites the Claude Code settings file and the Copilot plugin
-// folder under dir/harness.
 func WriteBundle(dir string) error {
 	root := filepath.Join(dir, "harness")
 	files := map[string]any{

@@ -10,8 +10,6 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// The launch reads the fleet's list again, so a directory that never came from
-// it, or left it, is refused before anything is created.
 func TestLaunchRefusesADirectoryNotInTheFleetsList(t *testing.T) {
 	root, _ := filepath.EvalSymlinks(t.TempDir())
 	work := filepath.Join(root, "work")

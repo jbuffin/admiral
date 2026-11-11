@@ -5,8 +5,6 @@ import (
 	"testing"
 )
 
-// Every name is drawn once before any repeats, a repeat gets the lowest free
-// numeral from II, and each session is the name's slug.
 func TestShipNamesAreDistinctThenNumbered(t *testing.T) {
 	used := map[string]bool{}
 	sessions := map[string]bool{}

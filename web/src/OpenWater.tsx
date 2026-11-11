@@ -15,11 +15,9 @@ const RAFT_SPOTS = [
   [-72, 40],
 ];
 const BOAT_H = 33;
-// Presses that start on these act on their own tap; they never drag or board the ship. (A press on the deck button
-// may drag the ship; a tap there shows the tip and never boards.)
+// Presses that start on these act on their own tap; they never drag or board the ship.
 const OWN_TAPS = '.crew-boat, .crew-more';
 
-// The ship whose subagents the deck tip lists, for a moment.
 const tip = signal<string | null>(null);
 let tipTimer: ReturnType<typeof setTimeout> | undefined;
 function showTip(session: string): void {
@@ -43,14 +41,12 @@ function statusWords(s: WireShip): string {
 
 const exitWords = (s: WireShip) => (s.exit_signal ? `killed (${s.exit_signal})` : `exited ${s.exit_code ?? '?'}`);
 
-// The plaque's second line: the repo, then the skill; an anchored ship says how it ended.
 function detail(s: WireShip): string {
   const tail = s.status === 'anchored' ? exitWords(s) : s.skill;
   return [s.repo, tail].filter(Boolean).join(' · ');
 }
 
-// A press that stays under the threshold is a tap and boards the ship; one that moves is a drag
-// and moves it (Pointer Events, so touch and mouse). The spot is a fraction of open water.
+// A press that stays under the threshold is a tap and boards the ship; one that moves drags it.
 function press(e: PointerEvent, s: WireShip): void {
   if (e.button !== 0 || !e.isPrimary || (e.target as Element).closest(OWN_TAPS)) return;
   const el = e.currentTarget as HTMLElement;
@@ -105,7 +101,6 @@ function press(e: PointerEvent, s: WireShip): void {
 
 function ShipView({ s }: { s: WireShip }) {
   const spot = spotOf(s);
-  // A harness this build doesn't know gets a plain label and an empty flag.
   const label = (harnesses as Partial<typeof harnesses>)[s.harness]?.label ?? s.harness;
   const needsYou = s.status === 'needs_you';
   const state = { underway: 'underway', needs_you: 'needs-you', anchored: 'anchored', sailing_off: 'sailing-off' }[s.status] as
@@ -117,7 +112,6 @@ function ShipView({ s }: { s: WireShip }) {
   const cls = ['ship-slot', arrivals.value.has(s.session) && 'sail-in', s.status === 'sailing_off' && 'sail-off', lifted && 'lifted', tip.value === s.session && 'tipped']
     .filter(Boolean)
     .join(' ');
-  // The slot waits for a spot before it shows.
   if (!spot) return null;
   const crew = s.crew ?? [];
   const subs = s.subagents ?? [];
@@ -204,7 +198,6 @@ function ShipView({ s }: { s: WireShip }) {
   );
 }
 
-// Ships float over all of open water; their spots are fractions of it.
 export function Ships() {
   return (
     <div class="ships">

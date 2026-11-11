@@ -1,6 +1,5 @@
-// Package outcomes is the append-only history of ships that have started,
-// needed the engineer, and ended. Admiral writes it and reads it back for one
-// purpose only: autopilot counts runs toward retro orders (ADR 0017).
+// Package outcomes is the append-only history of ships. Admiral reads it back
+// for one purpose only: autopilot counts runs toward retro orders.
 package outcomes
 
 import (
@@ -13,13 +12,10 @@ import (
 	"time"
 )
 
-// ErrDropped is what Enqueue passes to onDone for a record it dropped.
 var ErrDropped = errors.New("outcome log: the record was dropped")
 
-// queueSize is how many records wait for the writer before new ones are dropped.
 const queueSize = 1024
 
-// Record is one line of the log: the common fields plus the event's own.
 type Record struct {
 	Ship   string
 	Event  string
@@ -31,10 +27,7 @@ type item struct {
 	onDone func(err error)
 }
 
-// Writer appends records to $ADMIRAL_HOME/outcomes/<YYYY-MM>.jsonl from one
-// goroutine, in the order they were enqueued.
 type Writer struct {
-	// Now stamps each record when it is written.
 	Now func() time.Time
 
 	dir  string
@@ -51,19 +44,14 @@ type Writer struct {
 	lateLogged  bool // a record that came after Close has been logged
 }
 
-// New starts a writer for the outcomes directory dir. logf takes the one line
-// a failure or an overflow is logged with.
 func New(dir string, logf func(format string, args ...any)) *Writer {
 	w := &Writer{Now: time.Now, dir: dir, logf: logf, queue: make(chan item, queueSize), done: make(chan struct{})}
 	go w.run()
 	return w
 }
 
-// Enqueue queues r and never blocks. onDone, when not nil, runs after r was
-// tried, with the error of a failed write: on the writer goroutine, or for a
-// dropped record on the caller's, with ErrDropped. A record that finds the queue
-// full is dropped, and the first drop is logged; so is the first one that comes
-// after Close.
+// Enqueue never blocks. onDone runs on the writer goroutine, or for a dropped
+// record on the caller's, with ErrDropped.
 func (w *Writer) Enqueue(r Record, onDone func(err error)) {
 	w.mu.Lock()
 	if w.closed {
@@ -94,7 +82,6 @@ func drop(onDone func(err error)) {
 	}
 }
 
-// Close writes what is queued and stops the writer.
 func (w *Writer) Close() {
 	w.mu.Lock()
 	if !w.closed {
@@ -119,9 +106,8 @@ func (w *Writer) run() {
 	}
 }
 
-// write appends one line, opening the file each time so a directory that was
-// missing or unwritable is tried again by the next record. The first failure
-// after a success is logged.
+// write opens the file each time, so a directory that was missing or unwritable
+// is tried again by the next record.
 func (w *Writer) write(r Record) error {
 	err := w.append(r)
 	switch {

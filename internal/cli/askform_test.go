@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// The line form turns into the JSON question, and a JSON body passes through.
 func TestAskFormLinesAndJSON(t *testing.T) {
 	got, err := askForm([]byte("title: Where?\n\nquestion: panel | Which panel?\nmulti: true\noption: Freeform | your own list\noption: Work queue\nquestion: b | Sure?\noption: Yes\n"))
 	if err != nil {

@@ -59,7 +59,6 @@ function About() {
   );
 }
 
-// The banner slot sits under the header's row: the connection banner above the config error.
 function Banners() {
   const error = config.value?.error;
   return (
@@ -81,8 +80,6 @@ function Banners() {
   );
 }
 
-// One chip per resource: lit when its check passes (or it has none), muted while the first check runs,
-// and in the banner's attention colors when the check fails. The units and holders are in its label.
 function ResourceChips() {
   const shipName = (session: string) => ships.value.find((s) => s.session === session)?.name ?? session;
   return (
@@ -148,7 +145,6 @@ function SeaPills() {
   );
 }
 
-// The phone header (prototype :147-161): the mark, the name, how many are at sea and Settings, where Sound lives.
 function PhoneHeader() {
   return (
     <header class="app-header phone-header">

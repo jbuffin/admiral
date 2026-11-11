@@ -9,7 +9,6 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// Fleet is `admiral fleet list | add | edit | check` (stories 22, 23).
 func Fleet(args []string, std IO) error {
 	if len(args) == 0 {
 		return usagef("usage: admiral fleet list | add <key> | edit <key> | check [<key>]")
@@ -55,7 +54,7 @@ func fleetList(std IO) error {
 	return tw.Flush()
 }
 
-// fleetCheck resolves each executable (PATH, file mode) and never runs it.
+// fleetCheck never runs an executable, only resolves it.
 func fleetCheck(args []string, std IO) error {
 	fs := newFlags("fleet check")
 	if err := parseFlags(fs, args); err != nil {
@@ -93,10 +92,8 @@ func fleetCheck(args []string, std IO) error {
 	return nil
 }
 
-// fleetChange is add (create) and edit. The key comes first, then flags; every
-// flag may repeat. A harness named by --executable, --arg or --env needs no
-// --harness. On edit, the --arg values given for a harness replace its
-// arguments; --env sets one variable and --unset-env removes one.
+// fleetChange: on edit, the --arg values given for a harness replace all its
+// arguments, while --env and --unset-env touch one variable each.
 func fleetChange(args []string, std IO, create bool) error {
 	verb := "edit"
 	if create {

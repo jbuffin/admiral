@@ -11,12 +11,8 @@ import (
 
 var errClosed = fmt.Errorf("control connection closed")
 
-// Client is a control-mode client of its own, attached to one session, for the
-// bridge (ADR 0011). Unlike the Host's connection it never waits for a reply:
-// each command carries a callback, and callbacks and notifications all run on
-// one goroutine in the order tmux sent them. So a callback that ends a join
-// snapshot and the %output lines after it can be told apart exactly. Neither
-// may block.
+// Client's callbacks and notifications run on one goroutine in the order tmux sent them, so a
+// callback that ends a join snapshot and the %output after it are told apart. Neither may block.
 type Client struct {
 	cmd *exec.Cmd
 
@@ -28,9 +24,7 @@ type Client struct {
 	done chan struct{}
 }
 
-// Attach starts `tmux -C attach-session -t target` on sock. notify gets every
-// notification line (%output and the like). target must be an exact one
-// ("=name:"), because tmux resolves a bare name to any session it prefixes.
+// target must be exact ("=name:"): tmux resolves a bare name to any session it prefixes.
 func Attach(tmux, sock, target string, notify func(line string)) (*Client, error) {
 	cmd := exec.Command(tmux, "-f", "/dev/null", "-S", sock, "-u", "-C", "attach-session", "-t", target)
 	for _, kv := range os.Environ() {
@@ -72,7 +66,6 @@ func (c *Client) reply(r reply) {
 	}
 }
 
-// fail ends every command still waiting.
 func (c *Client) fail() {
 	c.mu.Lock()
 	c.closed = true
@@ -84,10 +77,8 @@ func (c *Client) fail() {
 	}
 }
 
-// Do sends the commands in one write, so no other command comes between them,
-// and calls done with their replies once the last one has arrived: on the
-// reader goroutine, or at once with every error set if the client is closed.
-// errs[i] is tmux's refusal of command i, if any.
+// Do sends the commands in one write, so no other command comes between them. done runs
+// on the reader goroutine, or at once with every error set if the client is closed.
 func (c *Client) Do(lines []string, done func(out [][]string, errs []error)) {
 	out := make([][]string, len(lines))
 	errs := make([]error, len(lines))
@@ -126,5 +117,4 @@ func (c *Client) Close() {
 	c.mu.Unlock()
 }
 
-// Done is closed after the client's process has ended.
 func (c *Client) Done() <-chan struct{} { return c.done }

@@ -62,7 +62,6 @@ export interface PluginInfo {
 // the two states apart.
 export const sources = signal<Source[] | null>(null);
 export const sourcesLoaded = computed(() => sources.value !== null);
-// Whether some panel runs autopilot, paused or not: the header then shows the ship cap.
 export const anyAutopilot = computed(() => !!sources.value?.some((s) => s.panels.some((p) => p.autopilot?.enabled)));
 
 onMessage('sources', (msg) => (sources.value = msg.sources));
@@ -70,22 +69,17 @@ onMessage('sources', (msg) => (sources.value = msg.sources));
 // The filter text is not stored: a reload starts with every order visible.
 export const filter = signal('');
 
-// Whether the source declares the capability, and whether the control may be
-// used now: a read-only source keeps its last orders but refuses commands.
+// A read-only source keeps its last orders but refuses commands.
 export const declares = (s: Source, capability: string) => s.capabilities.includes(capability);
 export const can = (s: Source, capability: string) => declares(s, capability) && !s.read_only;
 export const isWebUrl = (u?: string) => !!u && /^https?:\/\//i.test(u);
 
-// A web address reduced to what tells two pages apart: no scheme, www.,
-// query, fragment or trailing slash.
 const bareUrl = (u: string) =>
   u.toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/[?#].*$/, '').replace(/[.,;:!]+$/, '').replace(/\/+$/, '');
 
-// Every web address an order carries: its link and any in its text.
 const urlsOf = (o: Order) =>
   [o.url, ...(`${o.title} ${o.text ?? ''}`.match(/https?:\/\/[^\s<>"')\]]+/gi) ?? [])].filter(isWebUrl).map((u) => bareUrl(u!));
 
-// One address names the other's page or a page under it, segment by segment.
 const sameOrUnder = (a: string, b: string) => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
 
 // A pasted web address matches an order that carries it, a page under it, or
@@ -99,8 +93,6 @@ export const matches = (o: Order, q: string) => {
   return `${o.id} ${o.title}`.toLowerCase().includes(q) || !!o.labels?.some((l) => l.toLowerCase().includes(q));
 };
 
-// A panel as the sidebar shows it: its title, its orders after the filter, and
-// the colour that tells its source apart.
 export interface PanelView {
   key: string;
   source: Source;
@@ -136,7 +128,6 @@ export const panelViews = computed<PanelView[]>(() => {
   );
 });
 
-// A request to the server: the data on success, the server's message on refusal.
 export async function api<T = unknown>(
   method: string,
   path: string,
@@ -187,9 +178,7 @@ export function setPanelCollapsed(k: string, on: boolean): void {
   write(panelKey(k), on);
 }
 
-// Too narrow for the panel beside the sea (styles.css), the panel is a drawer over
-// the sea. It starts closed, so it does not hide the ships until it is opened, and
-// it has its own memory: '0' is closed and '1' is open.
+// The drawer starts closed, so it does not hide the ships until opened; '0' is closed and '1' is open.
 const narrowQuery = typeof matchMedia === 'function' ? matchMedia('(max-width: 1000px)') : null;
 const narrow = signal(narrowQuery?.matches ?? false);
 narrowQuery?.addEventListener('change', (e) => (narrow.value = e.matches));

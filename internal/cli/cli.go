@@ -1,9 +1,5 @@
-// Package cli holds Admiral's command-line commands other than the server:
-// setup, fleet, config, token, ships, attach, outcomes, inbox, orders, chat, lock and completion (ADR 0010, 0012, 0015).
-//
-// Exit codes: 0 ok, 1 error, 2 usage. A command returns a *UsageError for the
-// last; main maps it. An *ExitError carries its own code (lock's 75 and 127,
-// and the command's own status).
+// Package cli holds Admiral's command-line commands other than the server.
+// Exit codes: 0 ok, 1 error, 2 usage (*UsageError); an *ExitError carries its own.
 package cli
 
 import (
@@ -17,17 +13,16 @@ import (
 	"github.com/jbuffin/admiral/internal/home"
 )
 
-// UsageError is a mistake in how a command was called.
 type UsageError struct{ Msg string }
 
 func (e *UsageError) Error() string { return e.Msg }
 
-// HelpError is a request for a command's usage: main prints it and exits 0.
+// HelpError makes main print the command's usage and exit 0.
 type HelpError struct{ Command string }
 
 func (e *HelpError) Error() string { return Usage(e.Command) }
 
-// IsHelp says whether an argument asks for usage. It is never a ship name or a value.
+// IsHelp's arguments are never a ship name or a value.
 func IsHelp(arg string) bool { return arg == "-h" || arg == "--help" || arg == "-help" }
 
 var usages = map[string]string{
@@ -47,7 +42,7 @@ var usages = map[string]string{
 	"chat":       "usage: admiral chat ask [--timeout <dur>] [--wait <id>]   (a question as JSON on stdin: {title, questions})",
 }
 
-// Usage is the usage text of a command ("fleet add" has its command's).
+// Usage of a subcommand ("fleet add") is its command's.
 func Usage(command string) string {
 	first, _, _ := strings.Cut(command, " ")
 	if u, ok := usages[first]; ok {
@@ -58,19 +53,15 @@ func Usage(command string) string {
 
 func usagef(format string, a ...any) error { return &UsageError{fmt.Sprintf(format, a...)} }
 
-// IO is where a command reads and writes; tests and the setup terminal use the
-// process's own.
 type IO struct {
 	In  io.Reader
 	Out io.Writer
 	Err io.Writer
 }
 
-// Std is the process's standard streams.
 func Std() IO { return IO{os.Stdin, os.Stdout, os.Stderr} }
 
-// newFlags is a flag set whose errors come back as usage errors and whose
-// usage text stays off the terminal.
+// newFlags keeps flag's own usage text off the terminal.
 func newFlags(name string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -92,7 +83,6 @@ func parseFlags(fs *flag.FlagSet, args []string) error {
 	return nil
 }
 
-// list is a flag that may repeat.
 type list []string
 
 func (l *list) String() string     { return strings.Join(*l, ",") }

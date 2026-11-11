@@ -14,13 +14,11 @@ import (
 	"syscall"
 )
 
-// Exit codes of `admiral lock` besides 0, 1 and 2.
 const (
 	lockExitBusy       = 75  // EX_TEMPFAIL: no unit was free and --wait was not given
 	lockExitNotStarted = 127 // the command could not be started
 )
 
-// ExitError ends the process with Code, after main prints Msg when it is set.
 type ExitError struct {
 	Code int
 	Msg  string
@@ -33,12 +31,9 @@ func (e *ExitError) Error() string {
 	return e.Msg
 }
 
-// Lock is `admiral lock [--port <n>] [--wait] <resource> -- <command…>` (#118):
-// it holds one unit of the resource while the command runs, and exits with the
-// command's status. The hold is an open request to the running server, so a
-// killed `admiral lock` frees the unit.
+// Lock's hold is an open request to the running server, so a killed `admiral
+// lock` frees the unit.
 func Lock(args []string, std IO) error {
-	// Everything after the first -- is the command's, untouched.
 	var command []string
 	for i, a := range args {
 		if a == "--" {
@@ -58,7 +53,6 @@ func Lock(args []string, std IO) error {
 	if fs.NArg() == 0 {
 		return usagef("%s", Usage("lock"))
 	}
-	// Flags may follow the resource too.
 	resource := fs.Arg(0)
 	if err := parseFlags(fs, fs.Args()[1:]); err != nil {
 		return err
@@ -109,9 +103,8 @@ func Lock(args []string, std IO) error {
 
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = std.In, std.Out, std.Err
-	// From here SIGTERM goes on to the command. The terminal delivers SIGINT, SIGHUP
-	// and SIGQUIT to the command itself (the same foreground group), so they are
-	// caught only to be ignored: passing them on would deliver them twice.
+	// The terminal already delivers SIGINT, SIGHUP and SIGQUIT to the command (same
+	// foreground group), so only SIGTERM is passed on; the rest would arrive twice.
 	sigs := make(chan os.Signal, 4)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
 	defer signal.Stop(sigs)

@@ -13,10 +13,8 @@ import (
 	"github.com/coder/websocket"
 )
 
-// u12 S3: admiral token rotate. A loopback peer needs no token, so the
-// signed-out half runs from the Mac's LAN address and skips locally when it
-// doesn't answer (it must run on CI).
-
+// A loopback peer needs no token, so the signed-out half runs from the Mac's LAN
+// address and skips locally when it doesn't answer (it must run on CI).
 func TestU12_S3_TokenRotateSignsEveryDeviceOut(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

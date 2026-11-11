@@ -13,8 +13,7 @@ import (
 	"github.com/jbuffin/admiral/internal/server"
 )
 
-// maxQueued is how much a browser may fall behind before it is dropped; it
-// reconnects and joins again.
+// A browser that falls this far behind is dropped; it reconnects and joins again.
 const maxQueued = 16 << 20
 
 type frame struct {
@@ -22,10 +21,7 @@ type frame struct {
 	data   []byte
 }
 
-// browser is one WebSocket on a bridge, a ship's or a crew boat's. Everything
-// bound for it goes through an in-order queue that a writer goroutine drains, so
-// the control client's reader never waits on a slow browser. Output bytes that
-// arrive while a frame is still queued are merged into it.
+// A writer goroutine drains the queue, so the control client's reader never waits on a slow browser.
 type browser struct {
 	conn *websocket.Conn
 
@@ -69,7 +65,6 @@ func (b *browser) push(f frame) {
 	}
 }
 
-// send queues a JSON text message.
 func (b *browser) send(v any) {
 	data, err := json.Marshal(v)
 	if err == nil {
@@ -77,7 +72,6 @@ func (b *browser) send(v any) {
 	}
 }
 
-// output queues the pane's output, if the browser is streaming.
 func (b *browser) output(p []byte) {
 	b.mu.Lock()
 	on := b.streaming
@@ -87,8 +81,7 @@ func (b *browser) output(p []byte) {
 	}
 }
 
-// joinWith queues the join payload and starts the stream behind it. It runs on
-// the control client's reader, so no output slips between the two.
+// joinWith runs on the control client's reader, so no output slips between the payload and the stream.
 func (b *browser) joinWith(j joinMsg) {
 	b.mu.Lock()
 	if b.hidden || b.closed {
@@ -123,7 +116,6 @@ func (b *browser) setDims(cols, rows int) {
 	b.mu.Unlock()
 }
 
-// setHidden stops or resumes the stream; a hidden browser gets nothing.
 func (b *browser) setHidden(hidden bool) {
 	b.mu.Lock()
 	b.hidden = hidden
@@ -135,7 +127,6 @@ func (b *browser) setHidden(hidden bool) {
 	b.mu.Unlock()
 }
 
-// kill closes the connection; the handler's read loop then ends.
 func (b *browser) kill() {
 	b.mu.Lock()
 	b.closed = true
@@ -143,8 +134,7 @@ func (b *browser) kill() {
 	_ = b.conn.CloseNow()
 }
 
-// end closes the connection with a close frame, for a session that has ended: the page then
-// sees a normal close, not a failed connection it would log as an error.
+// With a close frame the page sees a normal close, not a failed connection it would log as an error.
 func (b *browser) end() {
 	b.mu.Lock()
 	b.closed = true
@@ -152,7 +142,6 @@ func (b *browser) end() {
 	go func() { _ = b.conn.Close(websocket.StatusGoingAway, "the session has ended") }()
 }
 
-// write drains the queue until the browser is closed.
 func (b *browser) write(ctx context.Context) {
 	for {
 		b.mu.Lock()
@@ -187,22 +176,19 @@ func (b *browser) write(ctx context.Context) {
 	}
 }
 
-// in is a message from the browser.
 type in struct {
 	Type    string `json:"type"`
 	Cols    int    `json:"cols"`
 	Rows    int    `json:"rows"`
 	Visible bool   `json:"visible"`
 	Data    string `json:"data"`
-	// API is the API version a join asks for; missing means 1.
+	// Missing means 1.
 	API json.RawMessage `json:"api"`
 }
 
-// maxCloseReason is how many bytes a WebSocket close reason may hold (125 for the
-// frame's payload less the 2-byte code).
+// 125 for the frame's payload less the 2-byte code.
 const maxCloseReason = 123
 
-// cutAtRune shortens s to at most n bytes without splitting a rune.
 func cutAtRune(s string, n int) string {
 	if len(s) <= n {
 		return s
@@ -213,8 +199,7 @@ func cutAtRune(s string, n int) string {
 	return s[:n]
 }
 
-// supportedAPI reports whether a join's api field names a version this
-// server serves. Missing or null means 1; a string or a float is unsupported.
+// Missing or null means 1; a string or a float is unsupported.
 func supportedAPI(raw json.RawMessage) bool {
 	if len(raw) == 0 || string(raw) == "null" {
 		return true
@@ -243,8 +228,7 @@ func (s *Service) serve(rw http.ResponseWriter, r *http.Request) {
 	s.serveBridge(rw, r, session, target{})
 }
 
-// serveCrew is the bridge on a crew boat: its pane and window, found by name at
-// the handshake. The name never reaches tmux; the boat's ids do.
+// The crew name never reaches tmux; the boat's ids do.
 func (s *Service) serveCrew(rw http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
 	c, ok := s.crewBoat(session, r.PathValue("name"))

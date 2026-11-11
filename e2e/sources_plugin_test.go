@@ -12,11 +12,6 @@ import (
 	"time"
 )
 
-// Order sources (u7): the supervision and protocol scenarios, driven with the
-// test plugin in e2e/testplugin (a source of the plugin "testplug").
-
-// The handshake Admiral sends, what the plugin may do, and the rules that a
-// GET never touches a plugin and Admiral pulls on refresh.
 func TestSourceHandshakeAndRefresh(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -73,14 +68,12 @@ func TestSourceHandshakeAndRefresh(t *testing.T) {
 		t.Errorf("GET schema = %d %s, want the plugin's settingsSchema", code, body)
 	}
 
-	// refresh: the plugin is told, and Admiral pulls the lists again
 	p.mainOrders(ord("o1", "First"), ord("o3", "Third"))
 	code, body := w.srcReq(http.MethodPost, "/a/refresh", map[string]any{"panel": "main"})
 	w.mustOK(code, body, "POST refresh")
 	p.waitCall(2*time.Second, "orders.refresh", func(c rpcCall) bool { return c.Params["panel"] == "main" })
 	w.waitSource("a", 5*time.Second, "the refreshed orders", func(s sourceJSON) bool { return reflect.DeepEqual(s.orderIDs(), []string{"o1", "o3"}) })
 
-	// the source declares only refresh: add, edit and remove are refused
 	w.wantConflict(w.srcReq(http.MethodPost, "/a/orders", map[string]any{"panel": "main", "text": "x"}))
 	w.wantConflict(w.srcReq(http.MethodPut, "/a/orders/o1", map[string]any{"text": "x"}))
 	w.wantConflict(w.srcReq(http.MethodDelete, "/a/orders/o1", nil))
@@ -88,13 +81,11 @@ func TestSourceHandshakeAndRefresh(t *testing.T) {
 		t.Errorf("a refused mutation still reached the plugin (%d calls)", n)
 	}
 
-	// plugins stop when Admiral shuts down
 	pid := p.pid()
 	w.in.Stop()
 	p.waitDead(5*time.Second, pid, "after Admiral shut down")
 }
 
-// A plugin answering another protocolVersion puts its source in error.
 func TestSourceProtocolVersionMismatch(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -109,8 +100,7 @@ func TestSourceProtocolVersionMismatch(t *testing.T) {
 	p.waitStarts(3*time.Second, 2)
 }
 
-// A panels.list that hangs after the source is up is a crash, like a hung
-// initialize: the process is killed and started again.
+// A panels.list that hangs after start-up is a crash, like a hung initialize.
 func TestSourceHungPanelsList(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -132,7 +122,6 @@ func TestSourceHungPanelsList(t *testing.T) {
 	w.waitSource("a", 5*time.Second, "state ok again", isOK)
 }
 
-// What a plugin sends is untrusted: urls, repos, ids, titles and sizes.
 func TestSourceUntrustedOrders(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -193,8 +182,6 @@ func TestSourceUntrustedOrders(t *testing.T) {
 	}
 }
 
-// auth.required shows on the source with its message, a safe url and the code;
-// auth.ok clears it.
 func TestSourceAuth(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -227,8 +214,6 @@ func TestSourceAuth(t *testing.T) {
 	}
 }
 
-// S4: a crash keeps the last orders, goes read-only, refuses mutations, backs
-// off with growing gaps and restarts at once on request.
 func TestSourceCrashRecovery(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -238,7 +223,6 @@ func TestSourceCrashRecovery(t *testing.T) {
 	w.startSources(tpSource("a", p, caps))
 	w.waitSource("a", 10*time.Second, "both orders", func(s sourceJSON) bool { return isOK(s) && len(s.orderIDs()) == 2 })
 
-	// with every capability a mutation is allowed (and reaches the plugin)
 	code, body := w.srcReq(http.MethodPost, "/a/orders", map[string]any{"panel": "main", "text": "new order"})
 	w.mustOK(code, body, "add on a healthy source")
 	p.waitCall(2*time.Second, "orders.add", func(c rpcCall) bool { return c.Params["panel"] == "main" && c.Params["text"] == "new order" })
@@ -263,8 +247,6 @@ func TestSourceCrashRecovery(t *testing.T) {
 	w.wantConflict(w.srcReq(http.MethodDelete, "/a/orders/o1", nil))
 	w.wantConflict(w.srcReq(http.MethodPost, "/a/refresh", map[string]any{}))
 
-	// restarts with backoff: initialize arrives at least three more times,
-	// each gap longer than the one before (1 s, 2 s, 4 s…)
 	starts := p.waitStarts(15*time.Second, 4)
 	n := len(starts)
 	g1, g2 := starts[n-2]-starts[n-3], starts[n-1]-starts[n-2]
@@ -272,13 +254,11 @@ func TestSourceCrashRecovery(t *testing.T) {
 		t.Errorf("gaps between restarts = %.2fs then %.2fs, want growing gaps of about 1 s doubling", g1, g2)
 	}
 
-	// settings save works while crashed, and restarts the source
 	before := len(p.starts())
 	code, body = w.srcReq(http.MethodPut, "/a", map[string]any{"name": "Renamed", "settings": p.settings(caps)})
 	w.mustOK(code, body, "settings save on a crashed source")
 	p.waitStarts(3*time.Second, before+1)
 
-	// Restart now: the cause is gone and the source is back without waiting out the backoff
 	p.clear("crash-on-initialize")
 	code, body = w.srcReq(http.MethodPost, "/a/restart", nil)
 	w.mustOK(code, body, "POST restart")
@@ -289,7 +269,6 @@ func TestSourceCrashRecovery(t *testing.T) {
 	code, body = w.srcReq(http.MethodPost, "/a/refresh", map[string]any{})
 	w.mustOK(code, body, "refresh after the restart")
 
-	// delete works on a crashed source and its process is gone
 	p.put("crash-on-initialize", "")
 	p.do("crash", "")
 	w.waitSource("a", 10*time.Second, "state error", func(s sourceJSON) bool { return s.State == "error" })
@@ -303,7 +282,6 @@ func TestSourceCrashRecovery(t *testing.T) {
 	holdThat(t, "a deleted source was started again", func() bool { return len(p.starts()) == stopped })
 }
 
-// A crash before panels.list still shows the source's error and Restart.
 func TestSourceCrashBeforePanels(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -324,8 +302,7 @@ func TestSourceCrashBeforePanels(t *testing.T) {
 	}
 }
 
-// S4: a launch from a crashed (read-only) source works; its orders.launched is
-// delivered after the source next initializes.
+// orders.launched for a launch from a crashed source waits until it next initializes.
 func TestLaunchFromCrashedSource(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -351,8 +328,6 @@ func TestLaunchFromCrashedSource(t *testing.T) {
 	w.mustTmux("kill-session", "-t", ship.Session)
 }
 
-// S4: a ship hides its order while it exists, anchored or underway, and the
-// order shows again once the ship is gone; orders.launched tells the plugin.
 func TestHiddenOrdersByShips(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -368,7 +343,6 @@ func TestHiddenOrdersByShips(t *testing.T) {
 	p.waitCall(3*time.Second, "orders.launched", func(c rpcCall) bool { return c.Params["id"] == "o1" })
 	p.waitCall(3*time.Second, "orders.launched", func(c rpcCall) bool { return c.Params["id"] == "o2" })
 
-	// the order already has a ship: a second launch is refused
 	if code, body := w.launchFrom("stay", "a", "o1"); code != http.StatusConflict || !strings.Contains(body, "already has a ship") {
 		t.Errorf("a second launch of o1 = %d %s, want 409 saying the order already has a ship", code, body)
 	}
@@ -379,8 +353,6 @@ func TestHiddenOrdersByShips(t *testing.T) {
 	w.waitSource("a", 10*time.Second, "o2 shown again once its ship is gone", func(s sourceJSON) bool { return s.hasOrder("o2") })
 }
 
-// S4: a request that gets no answer fails after the call timeout; a hung
-// initialize counts as a crash.
 func TestSourceHungRequests(t *testing.T) {
 	t.Parallel()
 	t.Run("a hung request only fails that call", func(t *testing.T) {
@@ -429,7 +401,6 @@ func TestSourceHungRequests(t *testing.T) {
 	})
 }
 
-// A slow initialize shows the source as starting until it answers.
 func TestSourceSlowInitialize(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -440,8 +411,6 @@ func TestSourceSlowInitialize(t *testing.T) {
 	w.waitSource("a", 8*time.Second, "state ok", isOK)
 }
 
-// A garbage line or an oversized line is a protocol error, and Admiral keeps
-// running.
 func TestSourceProtocolErrors(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -470,9 +439,6 @@ func TestSourceProtocolErrors(t *testing.T) {
 	}
 }
 
-// S5: two sources of one plugin run side by side with their own data dirs;
-// saving one's settings restarts only it; hand edits and the API start and
-// stop sources; a removed source keeps its data dir and its key is not reused.
 func TestTwoSourcesOfOnePlugin(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -499,7 +465,6 @@ func TestTwoSourcesOfOnePlugin(t *testing.T) {
 		t.Errorf("dataDirs = %q, %q, want data/a and data/b", a.read("datadir"), b.read("datadir"))
 	}
 
-	// saving A's settings restarts only A
 	code, body := w.srcReq(http.MethodPut, "/a", map[string]any{"settings": a.settings(map[string]any{"title": "Alpha 2"})})
 	w.mustOK(code, body, "PUT settings of a")
 	a.waitStarts(5*time.Second, 2)
@@ -512,7 +477,6 @@ func TestTwoSourcesOfOnePlugin(t *testing.T) {
 		t.Errorf("config.json source a title = %v, want Alpha 2 (saved through the config writer)", got)
 	}
 
-	// a hand edit adds c, then removes b
 	defA.Settings = a.settings(map[string]any{"title": "Alpha 2"})
 	defC := tpSource("c", c, nil)
 	replaceConfig(t, w.home, w.srcConfig(defA, defB, defC))
@@ -528,7 +492,6 @@ func TestTwoSourcesOfOnePlugin(t *testing.T) {
 		t.Errorf("data/b was removed with its source: %v", err)
 	}
 
-	// the API: add generates a unique key and never reuses a data dir
 	body1 := map[string]any{"plugin": "testplug", "name": "New", "settings": d.settings(nil)}
 	code, raw := w.srcReq(http.MethodPost, "", body1)
 	w.mustOK(code, raw, "POST /api/sources")
@@ -555,15 +518,12 @@ func TestTwoSourcesOfOnePlugin(t *testing.T) {
 		t.Errorf("second generated key = %v, want a key that is neither %q nor b (their data dirs exist)", again, added[0])
 	}
 
-	// deleting a drops its panels from the clients
 	ws := w.ws()
 	code, raw = w.srcReq(http.MethodDelete, "/a", nil)
 	w.mustOK(code, raw, "DELETE a")
 	waitSourcesMsg(t, ws, 5*time.Second, "a gone", func(l []sourceJSON) bool { _, ok := find(l, "a"); return !ok })
 }
 
-// S6: orders.changed and panels.changed reach a connected client with no
-// refresh call.
 func TestSourcePushNotifications(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -594,8 +554,6 @@ func TestSourcePushNotifications(t *testing.T) {
 	}
 }
 
-// Launch orders asks the server for directories with a source and an order:
-// the server looks the order's repo up itself (story 60).
 func TestLaunchOrdersDirsFromSource(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -620,8 +578,6 @@ func TestLaunchOrdersDirsFromSource(t *testing.T) {
 	}
 }
 
-// Story 17 (issue #65): an orders.list error shows on its panel, which keeps
-// its last orders. The next successful orders.list clears it.
 func TestSourceOrdersListErrorShowsOnPanel(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

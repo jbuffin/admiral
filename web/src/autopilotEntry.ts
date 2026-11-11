@@ -1,6 +1,5 @@
-// The entry a save of the autopilot settings form sends (#181). The form holds a Draft; buildEntry turns it
-// into the entry for config.json. A key the engineer didn't touch goes back as stored, so an untouched save
-// equals the stored entry and the server skips the write.
+// A key the engineer didn't touch goes back as stored, so an untouched save equals the stored entry and the
+// server skips the write.
 
 export type EntryKey = 'enabled' | 'fleet' | 'skill' | 'args' | 'max_ships' | 'low_stakes' | 'retro_every' | 'auto_merge' | 'resources';
 
@@ -23,7 +22,7 @@ export interface Draft {
 
 type Entry = Record<string, any>;
 
-// What the parser reads from a key the entry lacks (internal/config/autopilot.go).
+// What the parser reads from a key the entry lacks (internal/config).
 const defaults: Pick<Draft, 'enabled' | 'max_ships' | 'low_stakes' | 'retro_every' | 'args' | 'resources'> = {
   enabled: false,
   max_ships: 1,

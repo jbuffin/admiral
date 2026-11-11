@@ -13,11 +13,9 @@ import (
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
-// ErrCrewNameTaken is a crew name another crew boat of the ship already holds.
 var ErrCrewNameTaken = errors.New("crew name taken")
 
-// CrewRequest is a teammate to launch in a ship's session. Harness is the
-// ship's own when empty.
+// Harness is the ship's own when empty.
 type CrewRequest struct {
 	Session string
 	Name    string
@@ -31,16 +29,11 @@ type CrewRequest struct {
 	Autopilot bool
 }
 
-// shipEnvNames are the ship's own variables; a teammate gets none of them (a
-// teammate writes neither the ship's report nor its inbox, and crew of crew is
-// out of scope).
+// A teammate writes neither the ship's report nor its inbox, so it gets none of these.
 var shipEnvNames = []string{"ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_INBOX"}
 
-// LaunchCrew starts a teammate in a new window of the ship's session (ADR 0014).
-// The ship stays the current and first window. The window is made on a
-// placeholder, given its options, then respawned as the harness, so the harness's
-// first hook finds the options there. It is not Launch: it never touches the
-// ship's report or inbox, and the directory is any existing one.
+// LaunchCrew keeps the ship as the current and first window. Unlike Launch, it never touches
+// the ship's report or inbox, and the directory is any existing one.
 func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	if l.Tmux == "" {
 		return errors.New("tmux not found on PATH, so crew cannot be launched")
@@ -171,9 +164,6 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 		Role: req.Role, Env: env, Command: command, ClientPath: clientPath})
 }
 
-// CloseCrew kills one crew boat's window by its tmux window id, and with it the
-// teammate's process; ctx bounds the kill. `admiral crew close` and the server's
-// close route both end here.
 func (l *Launcher) CloseCrew(ctx context.Context, windowID string) error {
 	return l.server().KillWindow(ctx, windowID)
 }

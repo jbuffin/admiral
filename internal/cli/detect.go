@@ -22,13 +22,8 @@ var skipped = map[string]bool{
 	"Music": true, "Pictures": true, "Public": true, "node_modules": true,
 }
 
-// Detection is what setup finds on this Mac. It lists only the names in ~ for
-// identity directories (story 14). The walk and the wrapper scan skip every
-// dot-directory, every identity directory in use, wherever it is, and every
-// detected one, so they
-// never list what is inside one. Looking for a harness by name only stats
-// <dir>/<name>, so that still covers the PATH entries inside an identity
-// directory (Claude Code's local install puts claude in ~/.claude/local).
+// Detection never lists what is inside an identity directory. Looking for a
+// harness by name only stats <dir>/<name>, so it still finds ~/.claude/local/claude.
 type Detection struct {
 	Home string
 	Dirs []string // where executables are looked for: PATH, then the probes
@@ -41,9 +36,6 @@ type Detection struct {
 
 var harnessNames = []string{"claude", "codex", "copilot"}
 
-// Detect looks at pathEnv (and the probe directories) and at the names in
-// userHome. admiralHome and the identity directories in skip are never walked,
-// and no PATH entry inside one is listed for wrappers.
 func Detect(userHome, pathEnv, admiralHome string, skip []string) Detection {
 	d := Detection{Home: userHome, Harness: map[string]string{}}
 	// The names first, so the scan below skips the detected identity directories too.
@@ -130,8 +122,7 @@ func (d Detection) hasIdentity(dir string) bool {
 	return false
 }
 
-// Lookup finds an executable name in the detection's directories. The path is
-// the directory entry that matched; a symlink is not followed.
+// Lookup does not follow a symlink.
 func (d Detection) Lookup(name string) (string, bool) {
 	for _, dir := range d.Dirs {
 		if p := filepath.Join(dir, name); executable(p) {
@@ -146,10 +137,7 @@ func executable(p string) bool {
 	return err == nil && st.Mode().IsRegular() && st.Mode().Perm()&0o111 != 0
 }
 
-// suggestRoots lists the folders under home, at most maxRootDepth deep, that
-// hold a git checkout. It skips every dot-directory (so ~/.claude*, ~/.codex*
-// and ~/.copilot* are never entered), the folders in skipped, admiralHome and
-// whatever skip says.
+// suggestRoots skips every dot-directory, so identity directories are never entered.
 func suggestRoots(userHome, admiralHome string, skip func(string) bool) []string {
 	var out []string
 	var walk func(dir string, depth int)
@@ -184,7 +172,6 @@ func suggestRoots(userHome, admiralHome string, skip func(string) bool) []string
 	return out
 }
 
-// Report prints what was found, one line each.
 func (d Detection) Report(w io.Writer) {
 	for _, h := range harnessNames {
 		if p, ok := d.Harness[h]; ok {
@@ -204,7 +191,6 @@ func (d Detection) Report(w io.Writer) {
 	}
 }
 
-// WrappersOf are the detected wrappers named <harness>-something.
 func (d Detection) WrappersOf(harness string) []string {
 	var out []string
 	for _, w := range d.Wrappers {
@@ -215,7 +201,6 @@ func (d Detection) WrappersOf(harness string) []string {
 	return out
 }
 
-// WrapperFor is the wrapper made for a fleet: <harness>-<key>.
 func (d Detection) WrapperFor(harness, key string) (string, bool) {
 	for _, w := range d.WrappersOf(harness) {
 		if filepath.Base(w) == harness+"-"+key {

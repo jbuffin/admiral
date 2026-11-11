@@ -17,17 +17,8 @@ import (
 	"github.com/coder/websocket"
 )
 
-// Crew boats and subagents in the ships API, the inbox, closing a crew boat,
-// ending with the ship and restart (#152 AC5, AC6, AC7, spec #72 stories 15-17
-// and 20). The seam is the built binary on a private tmux socket with the fake
-// harness; the checks read GET /api/ships and the `ships` WebSocket message as
-// raw JSON, since shipJSON has no crew fields.
-//
-// Every ship and crew boat of a fleet runs the fleet's one cue. The two fleets
-// here park each process on `wait go` after `hook working`, so a test releases
-// the ship alone (create <record dir>/<session>/go) or one crew boat alone
-// (<record dir>/<session>/crew/<name>/go), and the exit code is the fleet's:
-// "zero" sails off when released, "one" anchors.
+// Each fleet's cue parks every process on `wait go`; once released, a "zero"
+// fleet's process sails off and a "one" fleet's anchors.
 
 type apiCrew struct {
 	Name         string  `json:"name"`
@@ -97,7 +88,6 @@ func fetchShips(t *testing.T, in *fleetInst) []apiShip {
 	return parseShips(t, body)
 }
 
-// waitShip polls GET /api/ships until the ship satisfies pred.
 func (w *world) waitShip(session, what string, pred func(apiShip) bool) apiShip {
 	w.t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -172,8 +162,6 @@ func wsShip(t *testing.T, c *websocket.Conn, d time.Duration, session, what stri
 func rawIs(s apiShip, key, want string) bool {
 	return strings.TrimSpace(string(s.raw[key])) == want
 }
-
-// ---- fixtures ----
 
 func newCrewAPIWorld(t *testing.T) *world {
 	t.Helper()
@@ -293,8 +281,6 @@ func crewIs(name, status string) func(apiShip) bool {
 	}
 }
 
-// ---- AC6: the shape on the wire ----
-
 func TestCrewAPI_Shape(t *testing.T) {
 	t.Parallel()
 	w := newCrewAPIWorld(t)
@@ -379,8 +365,6 @@ func TestCrewAPI_Shape(t *testing.T) {
 	})
 }
 
-// ---- the reader rules for @admiral-subagents ----
-
 func TestCrewAPI_SubagentReaderRules(t *testing.T) {
 	t.Parallel()
 	w := newCrewAPIWorld(t)
@@ -416,8 +400,6 @@ func TestCrewAPI_SubagentReaderRules(t *testing.T) {
 		t.Errorf("the dead pane's @admiral-subagents was cleared; the test needs it set (%s)", dead.rawAll)
 	}
 }
-
-// ---- AC-inbox: a crew boat needing you ----
 
 func TestCrewAPI_InboxCountsCrew(t *testing.T) {
 	t.Parallel()
@@ -502,8 +484,6 @@ func TestCrewAPI_InboxCountsCrew(t *testing.T) {
 	}
 }
 
-// ---- closing one crew boat ----
-
 func TestCrewAPI_CloseRoute(t *testing.T) {
 	t.Parallel()
 	w := newCrewAPIWorld(t)
@@ -567,8 +547,6 @@ func TestCrewAPI_CloseRoute(t *testing.T) {
 	}
 }
 
-// ---- AC5: ending with the ship ----
-
 func TestCrewAPI_Ending(t *testing.T) {
 	t.Parallel()
 	w := newCrewAPIWorld(t)
@@ -621,8 +599,6 @@ func TestCrewAPI_Ending(t *testing.T) {
 		waitDead(t, "crew boat b after Dismiss", b.pid)
 	})
 }
-
-// ---- AC7: restart ----
 
 func TestCrewAPI_RestartKeepsCrew(t *testing.T) {
 	t.Parallel()

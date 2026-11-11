@@ -1,8 +1,6 @@
 package config
 
-// View is what the UI receives: the body of GET /api/config and of the
-// WebSocket `config` message. It never carries env or args, which may hold
-// secrets.
+// View never carries env or args, which may hold secrets.
 type View struct {
 	Type           string        `json:"type"`
 	Fleets         []FleetView   `json:"fleets"`
@@ -12,14 +10,11 @@ type View struct {
 	Error          *ErrorView    `json:"error"` // the banner; null when the file is fine
 }
 
-// AutopilotView is the top-level autopilot setting: the most ships underway or
-// needing you across Admiral, hand launches included, before autopilot stops launching.
 type AutopilotView struct {
 	MaxShips int `json:"max_ships"`
 }
 
-// ChatView is the chat settings with their defaults filled in. Effort is empty
-// for the harness default.
+// ChatView has its defaults filled in; Effort is empty for the harness default.
 type ChatView struct {
 	Fleet  string `json:"fleet"`
 	Model  string `json:"model"`
@@ -51,7 +46,6 @@ type ErrorView struct {
 	Message string `json:"message"`
 }
 
-// View reports the current state.
 func (m *Manager) View() View {
 	m.mu.Lock()
 	defer m.mu.Unlock()

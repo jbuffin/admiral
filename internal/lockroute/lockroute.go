@@ -1,5 +1,4 @@
-// Package lockroute serves POST /api/resources/{name}/lock, through which
-// `admiral lock` holds one unit of a resource (#118). It is loopback only.
+// Package lockroute serves the route `admiral lock` holds a resource unit through. It is loopback only.
 package lockroute
 
 import (
@@ -17,30 +16,24 @@ import (
 	"github.com/jbuffin/admiral/internal/server"
 )
 
-// retryEvery is how often a waiting request tries again besides Changed: a ship
-// that was only pending frees its unit when it expires, with no wake.
+// A ship that was only pending frees its unit when it expires, with no Changed wake.
 const retryEvery = 15 * time.Second
 
-// maxLabel is the longest holder label, in characters.
 const maxLabel = 64
 
-// Route is the lock route. The request is the lock: the unit is held while the
-// response stays open, and released when the client goes away or Stopping closes.
+// The request is the lock: the unit is held while the response stays open.
 type Route struct {
 	Set *resources.Set
-	// Stopping closes when the server shuts down, so a held lock doesn't hold up
-	// the shutdown.
+	// Stopping closes on shutdown, so a held lock doesn't hold it up.
 	Stopping <-chan struct{}
 	// OnTake runs after a unit was taken; a release announces itself.
 	OnTake func()
 }
 
-// Routes registers the route.
 func (rt *Route) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/resources/{name}/lock", rt.serve)
 }
 
-// Connected sends a new client nothing: the lock is not a WebSocket message.
 func (rt *Route) Connected(*server.Client) {}
 
 var _ server.Module = (*Route)(nil)
@@ -104,7 +97,6 @@ func (rt *Route) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// CleanLabel keeps the printable characters of a holder label, at most 64.
 func CleanLabel(s string) string {
 	var b strings.Builder
 	n := 0
