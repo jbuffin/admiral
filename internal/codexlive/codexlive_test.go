@@ -95,16 +95,20 @@ func (f *fakeServer) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		switch m.Method {
 		case "initialize":
-			reply(`{"userAgent":"codex/0.0.0"}`)
+			reply(`{"userAgent":"codex/0.0.0","codexHome":"/home/user/.codex","platformFamily":"unix","platformOs":"macos"}`)
 		case "thread/loaded/list":
 			b, _ := json.Marshal(loaded)
-			reply(`{"data":` + string(b) + `}`)
+			reply(`{"data":` + string(b) + `,"nextCursor":null}`)
 		case "thread/resume":
 			if rerr {
 				c.Write(ctx, websocket.MessageText, []byte(`{"id":`+string(*m.ID)+`,"error":{"code":-32600,"message":"no rollout found"}}`))
 				continue
 			}
-			reply(`{"thread":{"id":` + string(m.Params[len(`{"threadId":`):len(m.Params)-1]) + `,"turns":[]}}`)
+			var p struct {
+				ThreadID string `json:"threadId"`
+			}
+			json.Unmarshal(m.Params, &p)
+			reply(`{"thread":{"id":"` + p.ThreadID + `","turns":[]}}`)
 			for _, p := range push {
 				c.Write(ctx, websocket.MessageText, []byte(p))
 			}
@@ -120,9 +124,14 @@ func (f *fakeServer) seen() (methods []string, accepted int) {
 
 func (f *fakeServer) cfg() codexlive.Config {
 	return codexlive.Config{
-		Socket: f.sock, StartCmd: "codex --remote unix://" + f.sock + " --socket " + f.sock,
+		Socket: f.sock, StartCmd: startCmd(f.sock),
 		DaemonDir: f.dir, Timeout: 500 * time.Millisecond,
 	}
+}
+
+// startCmd is a pane's start command as the launcher writes it: every argument single-quoted.
+func startCmd(sock string) string {
+	return "'/bin/admiral' 'codex-pane' '--socket' '" + sock + "' '--' '/bin/codex' '--fa-codex'"
 }
 
 func connect(t *testing.T, cfg codexlive.Config) (*codexlive.Conn, error) {
@@ -277,7 +286,7 @@ func TestAServerThatDoesNotSpeakWebSocketFailsWithinTheTimeout(t *testing.T) {
 	}()
 	resolved, _ := filepath.EvalSymlinks(short)
 	start := time.Now()
-	_, err = connect(t, codexlive.Config{Socket: sock, StartCmd: "codex --socket " + sock, DaemonDir: resolved, Timeout: 500 * time.Millisecond})
+	_, err = connect(t, codexlive.Config{Socket: sock, StartCmd: startCmd(sock), DaemonDir: resolved, Timeout: 500 * time.Millisecond})
 	if err == nil {
 		t.Fatal("connect succeeded, want an error")
 	}
@@ -321,12 +330,12 @@ func TestOnlyASocketInTheDaemonDirectoryIsDialed(t *testing.T) {
 		"a socket in the directory": {func() codexlive.Config { return f.cfg() }, true},
 		"a symlink to it inside the directory": {func() codexlive.Config {
 			c := f.cfg()
-			c.Socket, c.StartCmd = link, "codex --socket "+link
+			c.Socket, c.StartCmd = link, startCmd(link)
 			return c
 		}, true},
 		"a symlink from outside the directory whose target is inside": {func() codexlive.Config {
 			c := f.cfg()
-			c.Socket, c.StartCmd = outside, "codex --socket "+outside
+			c.Socket, c.StartCmd = outside, startCmd(outside)
 			return c
 		}, true},
 		"a socket outside the directory": {func() codexlive.Config {
@@ -336,22 +345,22 @@ func TestOnlyASocketInTheDaemonDirectoryIsDialed(t *testing.T) {
 		}, false},
 		"a regular file": {func() codexlive.Config {
 			c := f.cfg()
-			c.Socket, c.StartCmd = notSocket, "codex --socket "+notSocket
+			c.Socket, c.StartCmd = notSocket, startCmd(notSocket)
 			return c
 		}, false},
 		"a path that is not there": {func() codexlive.Config {
 			c := f.cfg()
-			c.Socket, c.StartCmd = filepath.Join(f.dir, "gone.sock"), "codex --socket "+filepath.Join(f.dir, "gone.sock")
+			c.Socket, c.StartCmd = filepath.Join(f.dir, "gone.sock"), startCmd(filepath.Join(f.dir, "gone.sock"))
 			return c
 		}, false},
 		"an option the start command does not carry": {func() codexlive.Config {
 			c := f.cfg()
-			c.StartCmd = "codex --socket " + filepath.Join(f.dir, "other.sock")
+			c.StartCmd = startCmd(filepath.Join(f.dir, "other.sock"))
 			return c
 		}, false},
 		"a start command with no --socket": {func() codexlive.Config {
 			c := f.cfg()
-			c.StartCmd = "codex"
+			c.StartCmd = "'/bin/codex' '--fa-codex'"
 			return c
 		}, false},
 	} {

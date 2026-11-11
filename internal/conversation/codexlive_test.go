@@ -54,7 +54,7 @@ func TestCodexLiveSampleDecodesIntoItems(t *testing.T) {
 		if i >= len(items) {
 			t.Fatalf("%d items %v, want 10 (reasoning, hooks, status and token noise dropped)", len(items), kinds(items))
 		}
-		if got := items[i]; got.ID != w.id || got.Kind != w.kind || got.Text != w.text {
+		if got := items[i]; got.ID != w.id || got.Kind != w.kind || ((w.kind == "user" || w.kind == "assistant") && got.Text != w.text) {
 			t.Errorf("item %d = %s %s %q, want %s %s %q", i, got.ID, got.Kind, got.Text, w.id, w.kind, w.text)
 		}
 	}

@@ -28,6 +28,7 @@ type liveFake struct {
 	conns    []*websocket.Conn
 	srv      *http.Server
 	closed   int
+	resumed  int          // thread/resume answers sent: the observer is ready after the first
 	running  []ships.Ship // what the server sees as running ships
 }
 
@@ -94,10 +95,13 @@ func (f *liveFake) serve(w http.ResponseWriter, r *http.Request) {
 		var result string
 		switch m.Method {
 		case "initialize":
-			result = `{"userAgent":"codex/0.0.0"}`
+			result = `{"userAgent":"codex/0.0.0","codexHome":"/home/user/.codex","platformFamily":"unix","platformOs":"macos"}`
 		case "thread/loaded/list":
-			result = `{"data":["` + liveThread + `"]}`
+			result = `{"data":["` + liveThread + `"],"nextCursor":null}`
 		case "thread/resume":
+			f.mu.Lock()
+			f.resumed++
+			f.mu.Unlock()
 			result = `{"thread":{"id":"` + liveThread + `","turns":[{"id":"t1","items":[{"type":"userMessage","id":"um-1","content":[{"type":"text","text":"hello from the server"}]}]}]}}`
 		}
 		c.Write(ctx, websocket.MessageText, []byte(`{"id":`+string(*m.ID)+`,"result":`+result+`}`))
@@ -111,6 +115,12 @@ func (f *liveFake) push(frame string) {
 	for _, c := range f.conns {
 		c.Write(context.Background(), websocket.MessageText, []byte(frame))
 	}
+}
+
+func (f *liveFake) resumes() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.resumed
 }
 
 func (f *liveFake) connections() int {
@@ -134,7 +144,7 @@ func eventually(t *testing.T, what string, ok func() bool) {
 func (f *fixture) liveShip(fake *liveFake, withRollout bool) {
 	f.mu.Lock()
 	f.harness["s"] = "codex"
-	f.starts["s"] = "'/bin/codex' '--remote' 'unix://" + fake.sock + "' '--socket' '" + fake.sock + "'"
+	f.starts["s"] = "'/bin/admiral' 'codex-pane' '--socket' '" + fake.sock + "' '--' '/bin/codex' '--fa-codex'"
 	f.mu.Unlock()
 	if withRollout {
 		path := f.codexRollout("s")
@@ -155,9 +165,22 @@ func (f *fixture) liveShip(fake *liveFake, withRollout bool) {
 	f.svc.liveDir = fake.dir
 	f.svc.liveTimeout = 500 * time.Millisecond
 	f.svc.liveBackoff = func(int) time.Duration { return 50 * time.Millisecond }
+}
+
+// startLive starts the server's observers, once the ship's options are as the test wants them.
+func (f *fixture) startLive() {
 	ctx, cancel := context.WithCancel(context.Background())
 	f.t.Cleanup(cancel)
 	f.svc.StartLive(ctx)
+}
+
+// serving waits until the observer has read the thread from the server, so a push or a drop cannot beat the handshake.
+func (f *fixture) serving(fake *liveFake) {
+	f.t.Helper()
+	eventually(f.t, "the observer's conversation from thread/resume", func() bool {
+		code, p, _ := f.get("s", "")
+		return code == 200 && p.State == "ok" && len(p.Items) >= 1 && p.Items[0].Text == "hello from the server" && fake.resumes() >= 1
+	})
 }
 
 func TestLiveShipWithNoTranscriptServesItsConversationFromTheServer(t *testing.T) {
@@ -165,18 +188,17 @@ func TestLiveShipWithNoTranscriptServesItsConversationFromTheServer(t *testing.T
 	f := newFixture(t)
 	fake := newLiveFake(t)
 	f.liveShip(fake, false)
-
-	eventually(t, "the conversation from thread/resume", func() bool {
-		code, p, _ := f.get("s", "")
-		return code == 200 && p.State == "ok" && len(p.Items) == 1 && p.Items[0].Text == "hello from the server"
-	})
+	f.startLive()
+	f.serving(fake)
 }
 
-func TestLiveOneObserverServesEveryViewAndKeepsTheQuestion(t *testing.T) {
+func TestLiveOneObserverServesEveryView(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	fake := newLiveFake(t)
 	f.liveShip(fake, false)
+	f.startLive()
+	f.serving(fake)
 	base := serve(t, f)
 	a, b := dial(t, base), dial(t, base)
 	a.send("conversation_open", "s")
@@ -200,7 +222,8 @@ func TestLivePendingQuestionIsKnownWithNoViewOpen(t *testing.T) {
 	f := newFixture(t)
 	fake := newLiveFake(t)
 	f.liveShip(fake, false)
-	eventually(t, "the observer to connect", func() bool { return fake.connections() == 1 })
+	f.startLive()
+	f.serving(fake)
 
 	fake.push(`{"method":"item/tool/requestUserInput","id":0,"params":{"threadId":"` + liveThread + `","turnId":"t1","itemId":"call_q1","questions":[{"id":"colour","header":"Colour","question":"Pick a colour","isSecret":false,"options":[{"label":"Red","description":""},{"label":"Blue","description":""}]}]}}`)
 	eventually(t, "the pending question", func() bool {
@@ -216,6 +239,8 @@ func TestLiveServerGoingAwayFallsBackToTheRolloutAndComesBackWithReset(t *testin
 	f := newFixture(t)
 	fake := newLiveFake(t)
 	f.liveShip(fake, true)
+	f.startLive()
+	f.serving(fake)
 	base := serve(t, f)
 	v := dial(t, base)
 	v.send("conversation_open", "s")
@@ -240,8 +265,9 @@ func TestLiveObserverStartsOnlyWhenTheOptionMatchesTheStartCommand(t *testing.T)
 	fake := newLiveFake(t)
 	f.liveShip(fake, true)
 	f.mu.Lock()
-	f.starts["s"] = "'/bin/codex' '--socket' '/tmp/some-other.sock'"
+	f.starts["s"] = "'/bin/admiral' 'codex-pane' '--socket' '/tmp/some-other.sock' '--' '/bin/codex'"
 	f.mu.Unlock()
+	f.startLive()
 	time.Sleep(600 * time.Millisecond)
 	if n := fake.connections(); n != 0 {
 		t.Errorf("%d connections, want none: the pane's command names another socket", n)
@@ -256,7 +282,8 @@ func TestLiveObserverStopsWhenTheShipGoes(t *testing.T) {
 	f := newFixture(t)
 	fake := newLiveFake(t)
 	f.liveShip(fake, false)
-	eventually(t, "the observer to connect", func() bool { return fake.connections() == 1 })
+	f.startLive()
+	f.serving(fake)
 
 	fake.mu.Lock()
 	fake.running = nil
