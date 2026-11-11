@@ -18,6 +18,18 @@ export interface Fleet {
   docks: Dock[];
 }
 
+export type ShipStatus = 'needs_you' | 'underway' | 'anchored' | 'sailing_off';
+export interface Ship {
+  session: string;
+  name: string;
+  fleet: string;
+  harness: string;
+  status: ShipStatus;
+  order_id: string;
+  title: string;
+  tail: string;
+}
+
 const API = '/api/v1';
 
 const fleetsOf = (body: { fleets?: Fleet[] | null }): Fleet[] =>

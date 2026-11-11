@@ -1,15 +1,28 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { HOME, WORK, probeableClaude, seedFleets, watchPage } from './shell';
+import { HOME, LIVE_ENV, WORK, launchShip, probeableClaude, say, seedFleets, setState, watchPage } from './shell';
 
 const surface = (page: Page, title: string) => page.getByRole('heading', { name: title, exact: true });
 const nav = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
+const group = (page: Page, title: string) => page.getByRole('main').getByRole('region', { name: new RegExp(`^${title}`) });
+const row = (page: Page, ship: { name: string }) => page.getByRole('main').getByRole('listitem').filter({ hasText: ship.name });
 const switcher = (page: Page, fleet: string) => page.getByRole('navigation').getByRole('button', { name: fleet, exact: true });
 
-test('the shell navigates its surfaces and scopes them to the chosen fleet', { tag: '@critical' }, async ({ page, admiral }) => {
-  seedFleets(admiral);
-  await admiral.start();
+test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and scopes them to that fleet', { tag: '@critical' }, async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  await admiral.start({ env: LIVE_ENV });
   const watch = watchPage(page, admiral.url);
+
+  const login = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-login' });
+  setState(admiral, login, 'needs_you');
+  await say(admiral, login, 'Which branch should I rebase onto?');
+  const billing = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-billing' });
+  setState(admiral, billing, 'working');
+  await say(admiral, billing, 'Reading billing/export.go');
+  const moored = await launchShip(admiral, { fleet: 'zulu', harness: 'codex', exit: 3 });
+  const sailed = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', exit: 0 });
+  const visitor = await launchShip(admiral, { fleet: 'alpha', harness: 'codex' });
+  setState(admiral, visitor, 'working');
 
   await page.goto(admiral.url + 'app/');
   await expect(page).toHaveURL(/\/app\/inbox(\?|$)/);
@@ -23,6 +36,34 @@ test('the shell navigates its surfaces and scopes them to the chosen fleet', { t
   await expect(page.getByRole('main')).toContainText(WORK);
   expect((await logo).status()).toBe(200);
 
+  // The fleet's ships, grouped Needs you, Underway, Anchored; a ship sailing off and another fleet's ship are not listed.
+  const main = page.getByRole('main');
+  await expect(main.getByRole('heading', { level: 2 })).toHaveText([/^Needs you\s*1$/, /^Underway\s*1$/, /^Anchored\s*1$/]);
+  await expect(group(page, 'Needs you').getByRole('listitem')).toHaveCount(1);
+  await expect(group(page, 'Needs you')).toContainText(login.name);
+  await expect(group(page, 'Underway')).toContainText(billing.name);
+  await expect(group(page, 'Anchored')).toContainText(moored.name);
+  await expect(main).not.toContainText(sailed.name);
+  await expect(main).not.toContainText(visitor.name);
+
+  // A row carries its harness logo, its order and its conversation tail; a ship with no conversation has no tail.
+  await expect(row(page, login)).toContainText('ord-login');
+  await expect(row(page, login)).toContainText('Fix the login redirect');
+  await expect(row(page, login)).toContainText('Which branch should I rebase onto?');
+  await expect(row(page, login).locator('img[src="/api/v1/logos/claude"]')).toBeVisible();
+  await expect(row(page, billing)).toContainText('Reading billing/export.go');
+  await expect(row(page, moored).locator('img[src="/api/v1/logos/codex"]')).toBeVisible();
+  await expect(row(page, moored)).not.toContainText(/undefined|null|Reading|Which branch/);
+  expect((await row(page, login).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+
+  // Server-side changes reach the open page: a ship moves group when its status changes and its tail updates.
+  setState(admiral, login, 'working');
+  await expect(group(page, 'Underway')).toContainText(login.name);
+  await expect(main.getByRole('heading', { level: 2 })).toHaveText([/^Underway\s*2$/, /^Anchored\s*1$/]);
+  await say(admiral, login, 'Rebasing onto main');
+  await expect(row(page, login)).toContainText('Rebasing onto main', { timeout: 15_000 });
+  await expect(row(page, login)).not.toContainText('Which branch should I rebase onto?');
+
   await switcher(page, WORK).click();
   const menu = page.getByRole('menu');
   await expect(menu.getByRole('menuitemradio', { name: WORK })).toHaveAttribute('aria-checked', 'true');
@@ -30,6 +71,8 @@ test('the shell navigates its surfaces and scopes them to the chosen fleet', { t
   await expect(page).toHaveURL(/\/app\/ships\?(.*&)?fleet=alpha/);
   await expect(page.getByRole('main')).toContainText(HOME);
   await expect(page.getByRole('main')).not.toContainText(WORK);
+  await expect(group(page, 'Underway')).toContainText(visitor.name);
+  for (const other of [login, billing, moored]) await expect(row(page, other)).toHaveCount(0);
 
   // Links navigate in the page and keep the fleet; Back and Forward walk the history.
   await page.evaluate(() => ((window as unknown as { noReload: boolean }).noReload = true));
@@ -48,6 +91,7 @@ test('the shell navigates its surfaces and scopes them to the chosen fleet', { t
   await expect(page).toHaveURL(/\/app\/ships\?(.*&)?fleet=alpha/);
 
   expect(watch.paths.some((p) => p.startsWith('/api/v1/config'))).toBe(true);
+  expect(watch.paths).toContain('/ws/v1');
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
   expect(watch.errors).toEqual([]);
@@ -84,7 +128,7 @@ const missingLine = (harness: ReturnType<typeof harnessOf>, label: string) => ha
 test('Preferences shows what each harness was probed to do, and Check again re-runs a failed probe', async ({ page, admiral }) => {
   const claude = probeableClaude(admiral);
   claude.probe('skip-hook');
-  seedFleets(admiral, claude.dock);
+  seedFleets(admiral, { claude: claude.dock });
   await admiral.start();
   const watch = watchPage(page, admiral.url);
 
@@ -159,7 +203,7 @@ test('Preferences shows what each harness was probed to do, and Check again re-r
 
 test('Check again shows that it is working, and says so when the harness cannot be probed', async ({ page, admiral }) => {
   const claude = probeableClaude(admiral);
-  seedFleets(admiral, claude.dock);
+  seedFleets(admiral, { claude: claude.dock });
   await admiral.start();
 
   await page.goto(admiral.url + 'app/preferences/zulu/capabilities');
