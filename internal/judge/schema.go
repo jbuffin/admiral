@@ -38,6 +38,27 @@ func checkSupported(schema map[string]any, root bool) error {
 			return fmt.Errorf("the call's schema uses a type that judge calls don't support")
 		}
 	}
+	if v, has := schema["enum"]; has {
+		if _, ok := v.([]any); !ok {
+			return fmt.Errorf("the call's schema uses an enum that is not an array, which judge calls don't support")
+		}
+	}
+	if v, has := schema["required"]; has {
+		list, ok := v.([]any)
+		for _, e := range list {
+			if _, isStr := e.(string); !isStr {
+				ok = false
+			}
+		}
+		if !ok {
+			return fmt.Errorf("the call's schema uses a required that is not a list of names, which judge calls don't support")
+		}
+	}
+	if v, has := schema["maxLength"]; has {
+		if n, ok := v.(float64); !ok || n < 0 {
+			return fmt.Errorf("the call's schema uses a maxLength that is not a non-negative number, which judge calls don't support")
+		}
+	}
 	if props, has := schema["properties"]; has {
 		m, ok := props.(map[string]any)
 		if !ok {

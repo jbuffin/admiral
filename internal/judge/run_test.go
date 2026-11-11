@@ -327,6 +327,16 @@ func TestAHarnessThatWritesMoreThanAMebibyteGivesABadReply(t *testing.T) {
 	}
 }
 
+func TestACodexReplyFileOverAMebibyteGivesABadReplyWhileStdoutIsSmall(t *testing.T) {
+	r := newRig(t, "codex", basic...)
+	r.setEnv("FAKE_OUT_ONLY", "1")
+	r.reply(`{"severity":"low","summary":"` + strings.Repeat("x", 2<<20) + `"}`)
+	f := failure(t, func() error { _, err := r.run(judge.Strong, "hello", []byte(schema), 0); return err }())
+	if f.Kind != judge.KindBadReply {
+		t.Errorf("failure = %+v, want bad reply", f)
+	}
+}
+
 func contains(list []string, s string) bool {
 	for _, v := range list {
 		if v == s {

@@ -263,7 +263,9 @@ func readCapped(path string) ([]byte, bool) {
 // plugin, browser, computer, sub-agent or hook; --sandbox read-only covers only the shell.
 var codexToolFeatures = []string{"shell_tool", "unified_exec", "unified_exec_tty", "apps", "plugins", "remote_plugin",
 	"browser_use", "browser_use_external", "browser_use_full_cdp_access", "in_app_browser", "computer_use",
-	"multi_agent", "hooks", "image_generation", "view_image", "tool_suggest", "skill_search"}
+	"multi_agent", "hooks", "image_generation", "view_image", "tool_suggest", "skill_search", "sleep_tool",
+	"code_mode_host", "in_app_local_automation", "skill_mcp_dependency_install", "plugin_discovery_prefetch",
+	"plugin_sharing", "goals"}
 
 type claudeResult struct {
 	Subtype    string   `json:"subtype"`

@@ -33,7 +33,7 @@ for a in "$@"; do
 done
 [ "$FAKE_MODE" = hang ] && { sleep 30; exit 0; }
 if [ -n "$FAKE_REPLY" ]; then
-  cat "$FAKE_REPLY"
+  [ -z "$FAKE_OUT_ONLY" ] && cat "$FAKE_REPLY"
   [ -n "$out" ] && cp "$FAKE_REPLY" "$out"
 fi
 [ "$FAKE_MODE" = exit ] && { echo "boom: not logged in" >&2; exit 3; }
