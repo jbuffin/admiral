@@ -27,14 +27,20 @@ Before writing code, read in this order:
 
 Touch must work on iPad Safari. Use the harnesses' official logos on flags; never redraw them.
 
-Test only what is likely to break: state logic, protocol handling, and the drag and bridge flows. Don't test markup, styling or one-line glue code, and don't write a test for every small scenario. Prefer a few end-to-end checks over many unit tests. This applies to the server as well as the UI.
+### Tests
+
+A test checks a behavior a person or caller can see: an API response, what the page shows, a ship's status, a file written. Refactoring the code under it leaves it green. Test each behavior once, at the lowest layer that sees it, and read the layer table in [`docs/agents/testing.md`](docs/agents/testing.md) before adding a test. An E2E test is a journey a real person takes through the new shell at `/app/`. Extend an existing journey before adding one.
+
+### Comments
+
+Match the comment density of the code around it; most functions need none. A comment says why, in one line: a hidden constraint, an invariant, a workaround with its link, or behavior that would surprise a reader. Names and code say what. Issue numbers, history and review notes go in the commit or PR, where they don't rot.
 
 ### More docs
 
 Read these when the task touches the area:
 
 - [`docs/agents/codebase.md`](docs/agents/codebase.md): the package map, API routes, ship statuses, idle memory figures, the setup terminal and the chat session. Read it before changing the server, the launcher, ships, the setup terminal or the chat session.
-- [`docs/agents/testing.md`](docs/agents/testing.md): the test seams, `$ADMIRAL_HOME` isolation, the fake harness cue language and the LAN-address skips. Read it before writing or changing a test.
+- [`docs/agents/testing.md`](docs/agents/testing.md): what to test and at which layer, the test seams, `$ADMIRAL_HOME` isolation, the fake harness cue language and the LAN-address skips. Read it before writing or changing a test.
 - [`docs/bridge-protocol.md`](docs/bridge-protocol.md): the bridge WebSocket messages. Read it before changing the bridge or `web/src/bridgeLink.ts`.
 - [`docs/cli.md`](docs/cli.md): every `admiral` command and the setup answers file. Read it before changing `internal/cli/`.
 - [`docs/agents/releasing.md`](docs/agents/releasing.md): the Release workflow, its one-time setup and the manual fallback. Read it before cutting a release or changing `release.yml`.
