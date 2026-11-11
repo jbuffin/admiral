@@ -107,7 +107,7 @@ func TestAReviewWakesAMooredShipOnItsOwnOnceAndOnlyOnce(t *testing.T) {
 	t.Parallel()
 	w, g := mooring(t, "exit 0")
 	g.prState(mooredPR, "OPEN")
-	w.seedGuard("f", "claude", true)
+	w.proveGuard("f")
 	var cfg map[string]any
 	if err := json.Unmarshal([]byte(w.readFile(configPath(w.home))), &cfg); err != nil {
 		t.Fatal(err)
