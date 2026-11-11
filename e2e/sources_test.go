@@ -44,8 +44,7 @@ func (w *world) panelID(key string) string {
 	return s.Views[0].ID
 }
 
-// waitUp waits until the server answers its plugins list: it has started and
-// written the plugin folders.
+// waitUp waits until the server answers its plugins list: it has started.
 func (w *world) waitUp() {
 	w.t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -67,16 +66,6 @@ func TestFreshInstall(t *testing.T) {
 	w.startFresh()
 	w.waitUp()
 
-	for _, name := range embeddedPlugins {
-		var man struct {
-			Name    string `json:"name"`
-			Command string `json:"command"`
-		}
-		raw := w.readFile(filepath.Join(w.home, "plugins", name, "plugin.json"))
-		if err := json.Unmarshal([]byte(raw), &man); err != nil || man.Name != name || man.Command == "" {
-			t.Fatalf("plugins/%s/plugin.json must be a manifest named %s with a command, got %q (%v)", name, name, raw, err)
-		}
-	}
 	if _, err := os.Lstat(filepath.Join(w.home, "plugins", "freeform")); err == nil {
 		t.Errorf("a fresh install wrote plugins/freeform: freeform is no longer embedded")
 	}
@@ -129,41 +118,7 @@ func TestFreshInstallLeavesWhatItShould(t *testing.T) {
 			t.Errorf("a start added a source to a file without sources: %s", got)
 		}
 	})
-	for _, name := range embeddedPlugins {
-		t.Run("an edited "+name+" folder is left alone and a missing one is written again", func(t *testing.T) {
-			t.Parallel()
-			w := newWorld(t)
-			w.startFresh()
-			w.waitUp()
-			manifest := filepath.Join(w.home, "plugins", name, "plugin.json")
-			var m map[string]any
-			if err := json.Unmarshal([]byte(w.readFile(manifest)), &m); err != nil {
-				t.Fatal(err)
-			}
-			m["description"] = "edited by the engineer"
-			writeJSON(t, manifest, m)
-			w.in.Stop()
-			w.startFresh()
-			w.waitUp()
-			if got := w.readFile(manifest); !strings.Contains(got, "edited by the engineer") {
-				t.Errorf("an edited %s folder was overwritten: %s", name, got)
-			}
-			w.in.Stop()
-			if err := os.RemoveAll(filepath.Join(w.home, "plugins", name)); err != nil {
-				t.Fatal(err)
-			}
-			w.startFresh()
-			w.waitUp()
-			if got := w.readFile(manifest); got == "" || strings.Contains(got, "edited by the engineer") {
-				t.Errorf("a missing %s folder was not written again: %q", name, got)
-			}
-		})
-	}
 }
-
-// embeddedPlugins are the plugins Admiral ships inside the binary and installs:
-// none since GitHub became built in (#260).
-var embeddedPlugins = []string{}
 
 // stampOf is the hash Admiral keeps in plugins/<name>/.admiral-stamp: SHA-256
 // over the files sorted by path, each as path, a zero byte, content, a zero byte.
@@ -178,72 +133,6 @@ func stampOf(files map[string]string) string {
 		h.Write([]byte(n + "\x00" + files[n] + "\x00"))
 	}
 	return hex.EncodeToString(h.Sum(nil))
-}
-
-func TestPluginUpgrade(t *testing.T) {
-	t.Parallel()
-	for _, name := range embeddedPlugins {
-		t.Run(name, func(t *testing.T) { testPluginUpgrade(t, name) })
-	}
-}
-
-func testPluginUpgrade(t *testing.T, name string) {
-	writeOld := func(t *testing.T, w *world, stampedAs map[string]string, onDisk map[string]string) {
-		dir := filepath.Join(w.home, "plugins", name)
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		for name, content := range onDisk {
-			if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-		if err := os.WriteFile(filepath.Join(dir, ".admiral-stamp"), []byte(stampOf(stampedAs)), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	old := map[string]string{
-		"plugin.json": `{"name":"` + name + `","description":"an older copy","command":"python3","args":["plugin.py"]}`,
-		"plugin.py":   "# an older copy\n",
-		"notes.txt":   "a file the newer copy no longer has",
-	}
-	t.Run("an unedited older copy is replaced", func(t *testing.T) {
-		t.Parallel()
-		w := newWorld(t)
-		// Finder leaves a .DS_Store; go:embed never carried one, so it is not an edit.
-		withFinder := map[string]string{".DS_Store": "finder"}
-		for k, v := range old {
-			withFinder[k] = v
-		}
-		writeOld(t, w, old, withFinder)
-		w.startFresh()
-		w.waitUp()
-		dir := filepath.Join(w.home, "plugins", name)
-		if got := w.readFile(filepath.Join(dir, "plugin.json")); strings.Contains(got, "an older copy") {
-			t.Errorf("an unedited older "+name+" folder was not replaced: %s", got)
-		}
-		if _, err := os.Stat(filepath.Join(dir, "notes.txt")); err == nil {
-			t.Errorf("a file of the older copy is still in the folder")
-		}
-		if got := w.readFile(filepath.Join(dir, ".admiral-stamp")); got == stampOf(old) || len(got) != 64 {
-			t.Errorf("the stamp is %q, want the hash of the newer copy", got)
-		}
-	})
-	t.Run("an older copy edited after its stamp is left alone", func(t *testing.T) {
-		t.Parallel()
-		w := newWorld(t)
-		edited := map[string]string{}
-		for k, v := range old {
-			edited[k] = v
-		}
-		edited["plugin.py"] = "# edited by the engineer\n"
-		writeOld(t, w, old, edited)
-		w.startFresh()
-		dir := filepath.Join(w.home, "plugins", name)
-		if got := w.readFile(filepath.Join(dir, "plugin.py")); got != edited["plugin.py"] {
-			t.Errorf("an edited "+name+" folder was replaced: plugin.py = %q", got)
-		}
-	})
 }
 
 // Admiral does not ship freeform. A start removes its folder only while it still
