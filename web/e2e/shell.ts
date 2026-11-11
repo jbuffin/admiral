@@ -331,6 +331,39 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await expect(form.getByRole('alert')).toContainText('guard probe has not passed');
   await cancel();
 
+  // Pinned crew: the playwright server has no Commodore, so the claude dock's identity gets one with a built-in member.
+  const commodoreDir = join(a.home, 'identity', 'zulu-claude', 'skills', 'commodore');
+  mkdirSync(join(commodoreDir, 'crew'), { recursive: true });
+  writeFileSync(join(commodoreDir, 'SKILL.md'), '---\nname: commodore\ndescription: a fake skill\n---\n');
+  const scout = '---\nname: scout\nrole: scribe\npick-me-when: Pick scout.\n---\n\nWork as scout.\n';
+  writeFileSync(join(commodoreDir, 'crew', 'scout.md'), scout);
+  await press(main.getByRole('button', { name: 'Launch', exact: true }));
+  await expect(form).toBeVisible();
+  await form.getByLabel('Checkout').selectOption(proj);
+  await form.getByLabel('Skill').selectOption({ label: 'Commodore' });
+  const crewGroup = form.getByRole('group', { name: /crew/i });
+  await crewGroup.getByRole('checkbox', { name: /scout/ }).check();
+  // Just launch takes no pins, so the control goes away and nothing is sent for them.
+  await form.getByLabel('Skill').selectOption({ label: 'Just launch' });
+  await expect(crewGroup).toBeHidden();
+  await form.getByLabel('Skill').selectOption({ label: 'Commodore' });
+  await crewGroup.getByRole('checkbox', { name: /scout/ }).check();
+  await form.getByLabel('Text').fill('with a pinned scout');
+  const pinned = await send();
+  expect(pinned.body).toMatchObject({ skill: { kind: 'commodore' }, crew: ['scout'] });
+  const pinnedShip = await launched(pinned);
+  await expect(form).toBeHidden();
+  await expect(main.getByRole('listitem').filter({ hasText: pinnedShip.name })).toBeVisible();
+  const recorded = join(a.home, 'rec', pinnedShip.session);
+  await expect.poll(() => existsSync(join(recorded, 'recorded'))).toBe(true);
+  const runCrew = readFileSync(join(recorded, 'env'), 'utf8')
+    .split('\n')
+    .find((l) => l.startsWith('ADMIRAL_RUN_CREW='))
+    ?.slice('ADMIRAL_RUN_CREW='.length);
+  expect(runCrew, 'the pinned ship knows its run layer').toBeTruthy();
+  expect(readFileSync(join(runCrew!, 'scout.md'), 'utf8')).toBe(scout);
+  setState(a, pinnedShip, 'working');
+
   // An uncloned repo: the form says where it will clone before launch, and launching sends clone with no dir.
   const dirsAnswer = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/v1/launch-orders/dirs');
   await press(orderLaunch('Ship the widget fix'));

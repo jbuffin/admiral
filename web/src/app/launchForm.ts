@@ -22,6 +22,22 @@ export interface LaunchFormState {
   resources: string[];
   source?: string;
   orderId?: string;
+  crew?: string[];
+}
+
+export interface CrewMemberView {
+  name: string;
+  role: string;
+  layer: string;
+  harness: string | null;
+}
+export interface CrewOption extends CrewMemberView {
+  disabled: boolean;
+}
+
+/** The members a pin control offers: those locked to another harness are shown but cannot be pinned. */
+export function crewOptions(members: CrewMemberView[], harness: string): CrewOption[] {
+  return [];
 }
 
 // Copilot offers none: it picks its own effort.

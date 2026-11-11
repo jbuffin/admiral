@@ -34,6 +34,8 @@ type Request struct {
 	Note      string `json:"note"` // Just launch only: optional text sent before the order
 	Model     string `json:"model"`
 	Effort    string `json:"effort"`
+	// Crew names the members the launch pins; only a Commodore launch may carry any.
+	Crew []string `json:"crew"`
 	// Title and URL are set by the server from the source's order, never by the client.
 	Title string `json:"-"`
 	URL   string `json:"-"`

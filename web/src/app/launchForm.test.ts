@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultSkill, effortsFor, type LaunchFormState, launchBody, sourcesForFleet } from './launchForm';
+import { type CrewMemberView, crewOptions, defaultSkill, effortsFor, type LaunchFormState, launchBody, sourcesForFleet } from './launchForm';
 
 describe('sourcesForFleet', () => {
   it('keeps the sources of the active fleet only', () => {
@@ -76,5 +76,47 @@ describe('effortsFor', () => {
     expect(effortsFor('claude')).toEqual(['low', 'medium', 'high', 'max']);
     expect(effortsFor('codex')).toEqual(['low', 'medium', 'high']);
     expect(effortsFor('copilot')).toEqual([]);
+  });
+});
+
+describe('pinned crew members', () => {
+  const form: LaunchFormState = {
+    fleet: 'work',
+    harness: 'claude',
+    dir: '/code/api',
+    clone: false,
+    skill: { kind: 'commodore' },
+    text: 'go',
+    model: '',
+    effort: '',
+    autopilot: false,
+    resources: [],
+  };
+
+  it('are sent with a Commodore launch', () => {
+    expect(launchBody({ ...form, crew: ['scout', 'mate'] })).toMatchObject({ crew: ['scout', 'mate'] });
+  });
+  it('are left out when none are pinned', () => {
+    expect(launchBody({ ...form, crew: [] })).not.toHaveProperty('crew');
+    expect(launchBody(form)).not.toHaveProperty('crew');
+  });
+  it('are left out of a launch that is not Commodore', () => {
+    expect(launchBody({ ...form, skill: { kind: 'none' }, crew: ['scout'] })).not.toHaveProperty('crew');
+    expect(launchBody({ ...form, skill: { kind: 'skill', name: 'grill' }, crew: ['scout'] })).not.toHaveProperty('crew');
+  });
+
+  const members: CrewMemberView[] = [
+    { name: 'scout', role: 'scribe', layer: 'built-in', harness: null },
+    { name: 'coder', role: 'implementer', layer: 'fleet', harness: 'codex' },
+  ];
+  it('cannot be pinned when the member is locked to another harness', () => {
+    expect(crewOptions(members, 'claude').map((o) => [o.name, o.disabled])).toEqual([
+      ['scout', false],
+      ['coder', true],
+    ]);
+    expect(crewOptions(members, 'codex').map((o) => [o.name, o.disabled])).toEqual([
+      ['scout', false],
+      ['coder', false],
+    ]);
   });
 });

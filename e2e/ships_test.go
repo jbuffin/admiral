@@ -139,6 +139,39 @@ func TestLaunchCommandLine(t *testing.T) {
 			if last := parts[len(parts)-1]; last != filepath.Dir(tmuxPath) {
 				t.Errorf("PATH must end with the tmux directory %s, got last element %q", filepath.Dir(tmuxPath), last)
 			}
+
+			// Pinned members: a built-in one and a fleet one become the ship's run layer, and only Commodore launches take pins.
+			member := func(dir, name, role string) string {
+				text := "---\nname: " + name + "\nrole: " + role + "\npick-me-when: Pick " + name + ".\n---\n\nWork as " + name + ".\n"
+				w.mkdir(dir)
+				if err := os.WriteFile(filepath.Join(dir, name+".md"), []byte(text), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				return text
+			}
+			scout := member(filepath.Join(w.userHom, "."+harness, "skills", "commodore", "crew"), "scout", "scribe")
+			mate := member(crewDir, "mate", "reviewer")
+			pinned := w.order("work", harness, "pin-"+harness, commodore, "do the pinned thing")
+			pinned["crew"] = []string{"scout", "mate"}
+			pr := w.record(w.launch(pinned).Session)
+			run := pr.env["ADMIRAL_RUN_CREW"]
+			if !filepath.IsAbs(run) || !strings.HasPrefix(run, w.home+string(os.PathSeparator)) {
+				t.Fatalf("ADMIRAL_RUN_CREW = %q, want a directory under Admiral's home %s", run, w.home)
+			}
+			for name, want := range map[string]string{"scout.md": scout, "mate.md": mate} {
+				if got, err := os.ReadFile(filepath.Join(run, name)); err != nil || string(got) != want {
+					t.Errorf("run layer %s reads %q (%v), want the pinned member's file %q", name, got, err, want)
+				}
+			}
+			if _, set := r.env["ADMIRAL_RUN_CREW"]; set {
+				t.Errorf("the ship launched without pins has ADMIRAL_RUN_CREW = %q", r.env["ADMIRAL_RUN_CREW"])
+			}
+			plain := w.order("work", harness, "pin-plain-"+harness, noSkill, "no skill")
+			plain["crew"] = []string{"scout"}
+			code, body := w.post(plain)
+			if code != http.StatusBadRequest || !strings.Contains(body, "Commodore") {
+				t.Errorf("pins on a launch without Commodore = %d %s, want a 400 naming Commodore", code, body)
+			}
 		})
 	}
 }

@@ -45,6 +45,11 @@ func FindCommodore(harness string, environ []string, dir string) (string, bool) 
 	return pickCommodore(project)
 }
 
+// CommodoreDir is the directory of the Commodore skill FindCommodore picks, the one holding its SKILL.md.
+func CommodoreDir(harness string, environ []string, dir string) (string, bool) {
+	return "", false
+}
+
 func pickCommodore(names []string) (string, bool) {
 	best := ""
 	for _, n := range names {
