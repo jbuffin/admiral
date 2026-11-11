@@ -124,7 +124,7 @@ var dockOrder = []string{"claude", "copilot", "codex"}
 
 var (
 	fleetKeyRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-	// A GitHub login: 1 to 39 letters, digits and single hyphens, none at either end; an app's [bot] suffix is allowed.
+	// A GitHub login: letters, digits and single hyphens, none at either end; an app's [bot] suffix is allowed. The regexp cannot count the hyphens, so the 39-character bound is checked beside it.
 	loginRe = regexp.MustCompile(`^[A-Za-z0-9](?:-?[A-Za-z0-9]){0,38}(?:\[bot\])?$`)
 	colorRe = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 )
@@ -325,7 +325,7 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 				return Fleet{}, err
 			}
 			for i, l := range f.WakeReviewers {
-				if !loginRe.MatchString(l) {
+				if !loginRe.MatchString(l) || len(strings.TrimSuffix(l, "[bot]")) > 39 {
 					return Fleet{}, fmt.Errorf("%s[%d]: must be a GitHub login, got %q", p, i, l)
 				}
 			}

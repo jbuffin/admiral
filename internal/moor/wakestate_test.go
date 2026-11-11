@@ -152,3 +152,24 @@ func TestRemoveWakeDeletesTheStateAndIsFineWithoutOne(t *testing.T) {
 		t.Errorf("the state is still there: %v", err)
 	}
 }
+
+func TestRemoveWakeRefusesASymlinkedDirectory(t *testing.T) {
+	home := t.TempDir()
+	elsewhere := t.TempDir()
+	keep := filepath.Join(elsewhere, "Nelson.json")
+	if err := os.WriteFile(keep, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, "moored"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, filepath.Join(home, "moored", "wake")); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveWake(home, "Nelson"); err == nil {
+		t.Error("RemoveWake through a symlinked wake directory succeeded")
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Errorf("a file behind the symlinked directory was removed: %v", err)
+	}
+}

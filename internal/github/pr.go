@@ -67,7 +67,7 @@ const (
 	maxReviews        = 20
 	maxThreads        = 20
 	maxThreadComments = 10
-	maxComments       = 30
+	maxComments       = 20
 	maxRequests       = 20
 	maxContexts       = 50
 	maxBody           = 4096

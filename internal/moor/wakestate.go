@@ -97,6 +97,9 @@ func RemoveWake(home, name string) error {
 	if err := checkName(name); err != nil {
 		return err
 	}
+	if err := refuseLink(wakeDir(home)); err != nil {
+		return err
+	}
 	if err := os.Remove(filepath.Join(wakeDir(home), name+".json")); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}

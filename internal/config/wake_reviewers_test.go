@@ -19,6 +19,8 @@ func TestWakeReviewersParseAndValidate(t *testing.T) {
 		{"logins and a bot", `["alice","Bob-2","dependabot[bot]","a"]`, []string{"alice", "Bob-2", "dependabot[bot]", "a"}, ""},
 		{"39 characters", `["` + strings.Repeat("a", 39) + `"]`, []string{strings.Repeat("a", 39)}, ""},
 		{"40 characters", `["` + strings.Repeat("a", 40) + `"]`, nil, "fleets.work.wake_reviewers[0]"},
+		{"41 characters with hyphens", `["a` + strings.Repeat("-a", 20) + `"]`, nil, "fleets.work.wake_reviewers[0]"},
+		{"39 characters with hyphens and a bot suffix", `["` + strings.Repeat("a-", 19) + `a[bot]"]`, []string{strings.Repeat("a-", 19) + "a[bot]"}, ""},
 		{"empty", `["alice",""]`, nil, "fleets.work.wake_reviewers[1]"},
 		{"leading hyphen", `["-alice"]`, nil, "fleets.work.wake_reviewers[0]"},
 		{"trailing hyphen", `["alice-"]`, nil, "fleets.work.wake_reviewers[0]"},

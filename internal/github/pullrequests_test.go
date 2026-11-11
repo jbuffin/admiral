@@ -138,7 +138,7 @@ const eventsA = `{
   "reviews": {"nodes": [
     {"id": "R1", "author": {"__typename": "User", "login": "alice"}, "state": "CHANGES_REQUESTED",
      "submittedAt": "2026-11-02T12:10:00Z", "body": "rename it", "url": "https://github.com/acme/widgets/pull/7#pullrequestreview-1", "comments": {"totalCount": 2}},
-    {"id": "R2", "author": {"__typename": "Bot", "login": "coderabbitai[bot]"}, "state": "COMMENTED",
+    {"id": "R2", "author": {"__typename": "Bot", "login": "coderabbitai"}, "state": "COMMENTED",
      "submittedAt": "2026-11-02T12:11:00Z", "body": "", "url": "https://github.com/acme/widgets/pull/7#pullrequestreview-2", "comments": {"totalCount": 0}}
   ]},
   "reviewThreads": {"nodes": [
@@ -198,7 +198,7 @@ func TestPullRequestsReadsTheEventsOfEachPR(t *testing.T) {
 		!st.Reviews[0].SubmittedAt.Equal(time.Date(2026, 11, 2, 12, 10, 0, 0, time.UTC)) {
 		t.Errorf("Reviews[0] = %+v", st.Reviews)
 	}
-	if len(st.Reviews) == 2 && st.Reviews[1].Author != (moor.Actor{Type: "Bot", Login: "coderabbitai[bot]"}) {
+	if len(st.Reviews) == 2 && st.Reviews[1].Author != (moor.Actor{Type: "Bot", Login: "coderabbitai"}) {
 		t.Errorf("a bot review's author = %+v", st.Reviews[1].Author)
 	}
 	if len(st.ThreadComments) != 1 || st.ThreadComments[0].ID != "T1" || st.ThreadComments[0].Body != "here too" ||

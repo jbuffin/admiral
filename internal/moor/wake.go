@@ -2,6 +2,7 @@ package moor
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -83,7 +84,8 @@ type PRWake struct {
 	Cursor     Cursor               `json:"cursor"`
 	RoundStart time.Time            `json:"round_start"`
 	Snapshot   Snapshot             `json:"snapshot"`
-	Seen       map[string]time.Time `json:"seen,omitempty"` // condition event ID to the first poll that saw it
+	Seen       map[string]time.Time `json:"seen,omitempty"`    // condition event ID to the first poll that saw it
+	Dropped    []string             `json:"dropped,omitempty"` // the viewer's own events a round's window dropped, still newer than Cursor, so a later window never hands them
 }
 
 // WakeState is a ship's memory between rounds, kept per PR URL.
@@ -106,7 +108,7 @@ type Decision struct {
 	PR       string
 	Events   []Event // the waking events handed to the round
 	Feedback string
-	T3       []Event
+	T3       []Event // every T3 event newer than the cursor, so it repeats from poll to poll until a later waking event passes it; its consumer dedupes by ID
 	Next     WakeState
 }
 
@@ -133,10 +135,8 @@ func tierOf(a Actor, kind EventKind, viewer string, allow []string, requested []
 	if isViewer(a, viewer) {
 		return tierWaking
 	}
-	for _, l := range allow {
-		if strings.EqualFold(l, a.Login) {
-			return tierWaking
-		}
+	if allowed(a, allow) {
+		return tierWaking
 	}
 	if a.Type == "Bot" {
 		if kind == EventPRComment {
@@ -150,6 +150,19 @@ func tierOf(a Actor, kind EventKind, viewer string, allow []string, requested []
 		}
 	}
 	return tierThree
+}
+
+// allowed matches the fleet's wake_reviewers. GraphQL gives a Bot's login without "[bot]", so "foo[bot]" matches the Bot foo and a bare "foo" matches only a User.
+func allowed(a Actor, allow []string) bool {
+	isBot := a.Type == "Bot"
+	login := strings.TrimSuffix(a.Login, "[bot]")
+	for _, l := range allow {
+		name, bot := strings.CutSuffix(l, "[bot]")
+		if bot == isBot && strings.EqualFold(name, login) {
+			return true
+		}
+	}
+	return false
 }
 
 func newerThan(c Cursor, at time.Time, id string) bool {
@@ -189,11 +202,12 @@ func ownCI(c CheckContext) bool {
 }
 
 type prEvents struct {
-	waking []Event
-	t3     []Event
-	cond   []Event // every condition event not in the snapshot, waking
-	seen   map[string]time.Time
-	failed []string // the repo's own failing checks on Head
+	waking  []Event
+	t3      []Event
+	cond    []Event // every condition event not in the snapshot, waking
+	seen    map[string]time.Time
+	failed  []string // the repo's own failing checks on Head
+	dropped []string // the viewer's own fresh events, dropped as the ship's replies
 }
 
 func windowDropped(ps PRWake, at time.Time, moored time.Time) bool {
@@ -213,7 +227,8 @@ func collect(pr string, rec Record, ps PRWake, st Status, allow []string, now ti
 		if !fresh(e.At, e.ID) {
 			return
 		}
-		if isViewer(e.Author, st.Viewer) && windowDropped(ps, e.At, rec.MooredAt) {
+		if isViewer(e.Author, st.Viewer) && (windowDropped(ps, e.At, rec.MooredAt) || contains(ps.Dropped, e.ID)) {
+			out.dropped = append(out.dropped, e.ID)
 			return
 		}
 		switch tierOf(e.Author, e.Kind, st.Viewer, allow, st.Requested) {
@@ -270,6 +285,35 @@ func collect(pr string, rec Record, ps PRWake, st Status, allow []string, now ti
 	return out
 }
 
+func contains(ids []string, id string) bool {
+	for _, h := range ids {
+		if h == id {
+			return true
+		}
+	}
+	return false
+}
+
+// resolved clears what a poll sees gone from the snapshot, so the condition coming back is new.
+func resolved(s Snapshot, st Status, failed []string) Snapshot {
+	if s.Head == st.Head {
+		var still []string
+		for _, n := range s.Failing {
+			if contains(failed, n) {
+				still = append(still, n)
+			}
+		}
+		s.Failing = still
+	}
+	if st.Mergeable == "MERGEABLE" {
+		s.Conflicting = false
+	}
+	if st.MergeState != "" && st.MergeState != "UNKNOWN" && !behind(st) {
+		s.Behind = false
+	}
+	return s
+}
+
 func behind(st Status) bool { return st.MergeState == "BEHIND" && st.StrictBase }
 
 func cloneState(s WakeState) WakeState {
@@ -316,9 +360,10 @@ func DecideWake(in WakeInput) Decision {
 		if chosen == "" && len(ev.waking) > 0 {
 			chosen = pr
 		}
-		if len(ps.Seen) > 0 || len(ev.seen) > 0 {
+		if cleared := resolved(ps.Snapshot, st, ev.failed); len(ps.Seen) > 0 || len(ev.seen) > 0 || !reflect.DeepEqual(cleared, ps.Snapshot) {
 			ps = next.PRs[pr]
 			ps.Seen = ev.seen
+			ps.Snapshot = cleared
 			if next.PRs == nil {
 				next.PRs = map[string]PRWake{}
 			}
@@ -349,6 +394,7 @@ func DecideWake(in WakeInput) Decision {
 			ps.Cursor = Cursor{At: in.Record.MooredAt}
 		}
 		ps.RoundStart = in.Now
+		ps.Dropped = found[pr].dropped
 		if pr == chosen {
 			ps.Cursor = advance(ps.Cursor, events)
 			st := in.Answers[pr]
@@ -386,14 +432,31 @@ func feedbackText(pr string, events []Event) string {
 		}
 		fmt.Fprintf(&b, " at %s\n", e.At.UTC().Format(time.RFC3339))
 		if e.Name != "" {
-			fmt.Fprintf(&b, "Check: %s\n", e.Name)
+			fmt.Fprintf(&b, "Check: %s\n", strings.NewReplacer("\n", " ", "\r", " ").Replace(e.Name))
 		}
 		if e.URL != "" {
 			fmt.Fprintf(&b, "URL: %s\n", e.URL)
 		}
 		if e.Body != "" {
-			fmt.Fprintf(&b, "\n%s\n", e.Body)
+			fence := fenceFor(e.Body)
+			fmt.Fprintf(&b, "\n%s\n%s\n%s\n", fence, e.Body, fence)
 		}
 	}
 	return b.String()
+}
+
+// fenceFor is a backtick fence longer than any run of backticks in body, so the body cannot close it or write a header outside it.
+func fenceFor(body string) string {
+	longest, run := 2, 0
+	for _, r := range body {
+		if r == '`' {
+			run++
+			if run > longest {
+				longest = run
+			}
+		} else {
+			run = 0
+		}
+	}
+	return strings.Repeat("`", longest+1)
 }
