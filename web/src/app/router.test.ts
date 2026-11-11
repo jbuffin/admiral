@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // router.ts reads the page's location when it loads.
 const page = vi.hoisted(() => {
@@ -48,5 +48,42 @@ describe('the router', () => {
     page.pathname = '/app/nowhere';
     startRouter();
     expect(page.pathname).toBe('/app/inbox');
+  });
+});
+
+describe('the ship route', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubGlobal('location', { pathname: '/app/ships', search: '' });
+  });
+  afterEach(() => {
+    vi.stubGlobal('location', page);
+  });
+
+  it('is a ship under Ships, and a path with more below it is still unknown', async () => {
+    const { surfaceOf, shipSession } = await import('./router');
+    expect(surfaceOf('/app/ships/s-abc')?.id).toBe('ships');
+    expect(shipSession('/app/ships/s-abc')).toBe('s-abc');
+    expect(shipSession('/app/ships')).toBeNull();
+    expect(shipSession('/app/inbox')).toBeNull();
+    expect(surfaceOf('/app/ships/s-abc/more')).toBeUndefined();
+  });
+
+  it('carries a session whose name needs escaping', async () => {
+    const { shipPath, shipSession } = await import('./router');
+    const path = shipPath('a b/c');
+    expect(path).toBe('/app/ships/a%20b%2Fc');
+    expect(shipSession(path)).toBe('a b/c');
+  });
+
+  it('survives a reload and keeps ?fleet=', async () => {
+    vi.stubGlobal('location', { pathname: '/app/ships/s-abc', search: '?fleet=alpha' });
+    const replaceState = vi.fn();
+    vi.stubGlobal('history', { replaceState, pushState: vi.fn() });
+    vi.stubGlobal('addEventListener', vi.fn());
+    const { startRouter, loc } = await import('./router');
+    startRouter();
+    expect(replaceState).not.toHaveBeenCalled();
+    expect(loc.value).toEqual({ path: '/app/ships/s-abc', search: '?fleet=alpha' });
   });
 });

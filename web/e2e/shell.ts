@@ -319,8 +319,30 @@ export function setState(a: Admiral, ship: LaunchedShip, state: 'needs_you' | 'w
   expect(r.status, r.stderr).toBe(0);
 }
 
-/** Appends an assistant message to a Claude ship's transcript, which becomes the ship's conversation tail. */
-export async function say(a: Admiral, ship: LaunchedShip, text: string, fleet: 'zulu' | 'alpha' = 'zulu') {
+type TranscriptLine = Record<string, unknown>;
+
+const stamp = () => ({ uuid: `l-${Date.now()}-${Math.random().toString(36).slice(2)}`, timestamp: new Date().toISOString() });
+
+/** Transcript lines in the shapes Claude Code writes and the conversation adapter reads. */
+export const line = {
+  assistant: (text: string): TranscriptLine => ({ type: 'assistant', ...stamp(), message: { role: 'assistant', id: `msg_${Date.now()}`, content: [{ type: 'text', text }] } }),
+  user: (text: string): TranscriptLine => ({ type: 'user', ...stamp(), message: { role: 'user', content: text } }),
+  toolUse: (id: string, name: string, input: Record<string, unknown>): TranscriptLine => ({
+    type: 'assistant',
+    ...stamp(),
+    message: { role: 'assistant', id: `msg_${Date.now()}`, content: [{ type: 'tool_use', id, name, input }] },
+  }),
+  toolResult: (id: string, output: string): TranscriptLine => ({
+    type: 'user',
+    ...stamp(),
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: output }] },
+  }),
+  turnEnd: (durationMs: number): TranscriptLine => ({ type: 'system', subtype: 'turn_duration', durationMs, ...stamp() }),
+  compaction: (): TranscriptLine => ({ type: 'system', subtype: 'compact_boundary', ...stamp() }),
+};
+
+/** Appends lines to a Claude ship's transcript, which becomes the ship's conversation and its tail. */
+export async function appendLines(a: Admiral, ship: LaunchedShip, lines: TranscriptLine[], fleet: 'zulu' | 'alpha' = 'zulu') {
   const argv = join(a.home, 'rec', ship.session, 'argv');
   await expect.poll(() => existsSync(join(a.home, 'rec', ship.session, 'recorded'))).toBe(true);
   const args = readFileSync(argv, 'utf8').split('\0');
@@ -329,13 +351,71 @@ export async function say(a: Admiral, ship: LaunchedShip, text: string, fleet: '
   await expect.poll(() => tmux(a, 'show-options', '-pv', '-t', ship.session, '@admiral-transcript').stdout.trim()).not.toBe('');
   const dir = join(a.home, 'identity', `${fleet}-claude`, 'projects', 'zz');
   mkdirSync(dir, { recursive: true });
-  const line = {
-    type: 'assistant',
-    uuid: `a-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    timestamp: new Date().toISOString(),
-    message: { role: 'assistant', id: `msg_${Date.now()}`, content: [{ type: 'text', text }] },
-  };
-  appendFileSync(join(dir, `${id}.jsonl`), JSON.stringify(line) + '\n');
+  appendFileSync(join(dir, `${id}.jsonl`), lines.map((l) => JSON.stringify(l) + '\n').join(''));
+}
+
+/** Appends an assistant message to a Claude ship's transcript, which becomes the ship's conversation tail. */
+export const say = (a: Admiral, ship: LaunchedShip, text: string, fleet: 'zulu' | 'alpha' = 'zulu') => appendLines(a, ship, [line.assistant(text)], fleet);
+
+/** What the raw HTML in the reply must show as text: an image that runs a script when it fails to load, and a script tag. */
+export const HOSTILE = '<img src=x onerror="window.__xss=1"> <script>window.__xss=1</script>';
+
+/**
+ * A finished turn: a user message, Markdown with a heading, a list and hostile HTML, two reads and two commands,
+ * a six-minute turn end and a compaction.
+ */
+export function seedTurn(a: Admiral, ship: LaunchedShip) {
+  return appendLines(a, ship, [
+    line.user('Rebase onto main please'),
+    line.assistant('## Plan\n\n- rebase the branch\n- run the tests'),
+    line.toolUse('t1', 'Read', { file_path: '/src/a.go' }),
+    line.toolResult('t1', 'contents of a'),
+    line.toolUse('t2', 'Read', { file_path: '/src/b.go' }),
+    line.toolResult('t2', 'contents of b'),
+    line.toolUse('t3', 'Bash', { command: 'git rebase main' }),
+    line.toolResult('t3', 'rebased cleanly'),
+    line.toolUse('t4', 'Bash', { command: 'go test ./...' }),
+    line.toolResult('t4', 'all green'),
+    line.assistant(`Done. ${HOSTILE}`),
+    line.turnEnd(360_000),
+    line.compaction(),
+  ]);
+}
+
+/** The pane's size as tmux has it, `<cols>x<rows>`. */
+export const paneSize = (a: Admiral, ship: LaunchedShip) => tmux(a, 'display', '-p', '-t', ship.session, '#{window_width}x#{window_height}').stdout.trim();
+
+/** Asserts that `ok` stays true for `ms`: the way to show that something does not happen. */
+export async function holds(ok: () => boolean, what: string, ms = 1500) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    expect(ok(), what).toBe(true);
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
+/** The ship view's tabs, and the link that opens the view from the ship's row. */
+export const viewTab = (page: Page, name: 'Conversation' | 'Terminal' | 'Changes' | 'PR') => page.getByRole('tab', { name, exact: true });
+export const rowLink = (page: Page, ship: LaunchedShip) =>
+  page.getByRole('main').getByRole('listitem').filter({ hasText: ship.name }).getByRole('link', { name: new RegExp(ship.name) });
+export const viewPanel = (page: Page) => page.getByRole('tabpanel');
+export const shipViewUrl = (a: Admiral, ship: LaunchedShip) => new RegExp(`/app/ships/${encodeURIComponent(ship.session)}\\?(.*&)?fleet=zulu`);
+
+/** What the view shows of seedTurn's turn: both ends of it as text, Markdown rendered, hostile HTML inert, tool calls folded. */
+export async function expectSeededTurn(page: Page) {
+  const panel = viewPanel(page);
+  await expect(panel).toContainText('Rebase onto main please');
+  await expect(panel.getByRole('heading', { name: 'Plan' })).toBeVisible();
+  await expect(panel.getByRole('listitem').filter({ hasText: 'rebase the branch' })).toBeVisible();
+  await expect(panel.getByText('<img src=x onerror="window.__xss=1">')).toBeVisible();
+  await expect(panel.locator('img[src="x"], script')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { __xss?: number }).__xss)).toBeUndefined();
+  const folded = panel.getByRole('button', { name: /^Worked for 6m · read 2 files, ran 2 commands/ });
+  await expect(folded).toBeVisible();
+  await expect(panel).not.toContainText('rebased cleanly');
+  await folded.click();
+  await expect(panel).toContainText('rebased cleanly');
+  await expect(panel.getByRole('separator')).toHaveCount(1);
 }
 
 type Post = Record<string, unknown>;
