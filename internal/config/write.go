@@ -110,10 +110,11 @@ func SetFleets(dir string, fleets json.RawMessage) error {
 // FleetFields are the fleet settings the HTTP API may change. A nil field is left as stored.
 // Docks and env stay with the setup terminal, so a browser on the LAN cannot change what runs.
 type FleetFields struct {
-	SearchRoots *[]string
-	Owners      *[]string
-	CloneRoot   *string
-	Color       *string
+	SearchRoots   *[]string
+	Owners        *[]string
+	WakeReviewers *[]string
+	CloneRoot     *string
+	Color         *string
 }
 
 var (

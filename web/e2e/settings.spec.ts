@@ -294,6 +294,17 @@ test('a fleet page edits search roots, owners, clone root and colour, keeping wh
   await expect(owners.getByRole('textbox', { name: 'Owner 1' })).toHaveValue('acme');
   await expect(cloneRoot).toHaveValue(clones);
 
+  // Reviewers who can wake a ship: a list saved alone, and still there after a reload.
+  const reviewers = page.getByRole('group', { name: 'Reviewers who can wake a ship' });
+  await reviewers.getByRole('button', { name: 'Add reviewer' }).click();
+  await reviewers.getByRole('textbox', { name: 'Reviewer 1' }).fill('Alice-Dev');
+  sent = put();
+  await save.click();
+  expect((await sent).postDataJSON()).toEqual({ wake_reviewers: ['Alice-Dev'] });
+  await expect.poll(() => zulu(admiral).wake_reviewers).toEqual(['Alice-Dev']);
+  await page.reload();
+  await expect(reviewers.getByRole('textbox', { name: 'Reviewer 1' })).toHaveValue('Alice-Dev');
+
   // Changing a list sends it whole, as shown.
   const second = join(admiral.home, 'second');
   await roots.getByRole('button', { name: 'Add search root' }).click();

@@ -4,7 +4,7 @@ import { Flag } from './Flag';
 import { fleetPaint, fleets, loadFleets } from './fleets';
 import { errorTarget, fieldMessage, saveBody, type FleetFields } from './fleetSettings';
 
-const fieldsOf = (f: Fleet): FleetFields => ({ search_roots: f.search_roots, owners: f.owners, clone_root: f.clone_root, color: f.color });
+const fieldsOf = (f: Fleet): FleetFields => ({ search_roots: f.search_roots, owners: f.owners, wake_reviewers: f.wake_reviewers, clone_root: f.clone_root, color: f.color });
 
 function ListField({ id, legend, item, add, values, errors, disabled, onChange }: {
   id: string;

@@ -14,6 +14,16 @@ type Status struct {
 	Review    string // reviewDecision; empty when none
 	Checks    string // statusCheckRollup state; empty when none
 	Mergeable string // MERGEABLE, CONFLICTING or UNKNOWN
+
+	Viewer         string // the login the fleet's gh runs as
+	Head           string // the head commit's SHA
+	MergeState     string // mergeStateStatus
+	StrictBase     bool   // the base readably requires branches to be up to date
+	Reviews        []Review
+	ThreadComments []Comment
+	Comments       []Comment
+	Requested      []Actor // pending review requests and everyone ever requested
+	Contexts       []CheckContext
 }
 
 // PR is a moored ship's pull request as the ships API serves it.

@@ -56,6 +56,12 @@
 #       pr_review/KEY     reviewDecision (none: null)
 #       pr_checks/KEY     statusCheckRollup.state (none: null)
 #       pr_mergeable/KEY  mergeable (none: UNKNOWN)
+#       pr_events/KEY     a JSON object whose members are added to the PR's node
+#                         as GitHub would return them (headRefOid, mergeStateStatus,
+#                         baseRef, reviews, reviewThreads, comments, reviewRequests,
+#                         timelineItems, commits). The query's own fields are not
+#                         checked: what the file holds is what the client reads.
+#     $FAKEGH_DIR/viewer holds the login of data.viewer (none: fake-viewer).
 #       pr_notfound/KEY   any content: NOT_FOUND for this PR even with a state
 #       repo_notfound/OWNER_NAME  any content: the repository itself is NOT_FOUND
 #                         (the alias is null, the error's path is just the alias)
@@ -293,12 +299,19 @@ api)
 				[ -s "$FAKEGH_DIR/pr_review/$key" ] && rv="\"$(cat "$FAKEGH_DIR/pr_review/$key")\""
 				[ -s "$FAKEGH_DIR/pr_checks/$key" ] && ck="{\"state\":\"$(cat "$FAKEGH_DIR/pr_checks/$key")\"}"
 				[ -s "$FAKEGH_DIR/pr_mergeable/$key" ] && mg="\"$(cat "$FAKEGH_DIR/pr_mergeable/$key")\""
-				node="{\"state\":\"$st\",\"reviewDecision\":$rv,\"mergeable\":$mg,\"statusCheckRollup\":$ck}"
+				extra=
+				if [ -s "$FAKEGH_DIR/pr_events/$key" ]; then
+					extra=",$(tr -d '\n' <"$FAKEGH_DIR/pr_events/$key" | sed -E 's/^[[:space:]]*\{//; s/\}[[:space:]]*$//')"
+				fi
+				node="{\"state\":\"$st\",\"reviewDecision\":$rv,\"mergeable\":$mg,\"statusCheckRollup\":$ck$extra}"
 			fi
 			data="$data${data:+,}\"$alias\":{\"pullRequest\":$node}"
 		done <<EOF2
 $entries
 EOF2
+		viewer=fake-viewer
+		[ -s "$FAKEGH_DIR/viewer" ] && viewer=$(cat "$FAKEGH_DIR/viewer")
+		data="$data${data:+,}\"viewer\":{\"login\":\"$viewer\"}"
 		if [ "$missing" = 1 ]; then
 			printf '{"data":{%s},"errors":[%s]}\n' "$data" "$errs"
 			echo "gh: Could not resolve to a PullRequest" >&2

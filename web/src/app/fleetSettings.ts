@@ -1,6 +1,7 @@
 export interface FleetFields {
   search_roots: string[];
   owners: string[];
+  wake_reviewers: string[];
   clone_root: string;
   color: string;
 }

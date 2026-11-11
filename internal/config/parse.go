@@ -47,16 +47,17 @@ var (
 )
 
 type Fleet struct {
-	Key         string
-	Name        string
-	Color       string // resolved: explicit, else the next in the default sequence
-	Ink         string // text color on Color
-	ColorIndex  *int   // position in the default sequence; nil for a custom Color
-	SearchRoots []string
-	Owners      []string          // GitHub orgs and users whose work belongs to the fleet
-	CloneRoot   string            // where the fleet's clones live; empty when unset
-	Env         map[string]string // the fleet's own env, ~ expanded; plugin sources and gh calls start with it
-	Harnesses   []Harness         // dock order: claude, copilot, codex, as present
+	Key           string
+	Name          string
+	Color         string // resolved: explicit, else the next in the default sequence
+	Ink           string // text color on Color
+	ColorIndex    *int   // position in the default sequence; nil for a custom Color
+	SearchRoots   []string
+	Owners        []string          // GitHub orgs and users whose work belongs to the fleet
+	WakeReviewers []string          // GitHub logins whose feedback wakes a moored ship
+	CloneRoot     string            // where the fleet's clones live; empty when unset
+	Env           map[string]string // the fleet's own env, ~ expanded; plugin sources and gh calls start with it
+	Harnesses     []Harness         // dock order: claude, copilot, codex, as present
 }
 
 func (c *Config) clone() *Config {

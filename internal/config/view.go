@@ -23,12 +23,13 @@ type FleetView struct {
 	Ink   string `json:"ink"`
 	// ColorIndex places the fleet in a color sequence; the client wraps it.
 	// Absent for a custom color.
-	ColorIndex  *int       `json:"color_index,omitempty"`
-	SearchRoots []string   `json:"search_roots"`
-	Owners      []string   `json:"owners"`
-	CloneRoot   string     `json:"clone_root"` // expanded like SearchRoots; empty when unset
-	CanLaunch   bool       `json:"can_launch"`
-	Docks       []DockView `json:"docks"`
+	ColorIndex    *int       `json:"color_index,omitempty"`
+	SearchRoots   []string   `json:"search_roots"`
+	Owners        []string   `json:"owners"`
+	WakeReviewers []string   `json:"wake_reviewers"`
+	CloneRoot     string     `json:"clone_root"` // expanded like SearchRoots; empty when unset
+	CanLaunch     bool       `json:"can_launch"`
+	Docks         []DockView `json:"docks"`
 }
 
 type DockView struct {
