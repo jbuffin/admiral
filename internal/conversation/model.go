@@ -1,7 +1,5 @@
-// Package conversation is Admiral's one model of a ship's conversation and the
-// adapters that fill it from a harness's own record (ADR 0030). The model is
-// what the conversation API serves and what the chat's text view is cut from.
-// An adapter reads the harness's file; it never writes to it.
+// Package conversation is Admiral's model of a ship's conversation and the
+// adapters that fill it from a harness's own record, which they only read.
 package conversation
 
 import (
@@ -10,44 +8,39 @@ import (
 	"time"
 )
 
-// ErrUnreadable means a file has content and none of it parses: the caller shows
-// "can't read this conversation". A file that is not there reports an error
-// satisfying errors.Is(err, fs.ErrNotExist) instead ("no longer available"), and a
-// file with nothing in it yet is an empty conversation, not an error.
+// ErrUnreadable means a file has content and none of it parses; a file with only
+// metadata lines is an empty conversation, not this.
 var ErrUnreadable = errors.New("conversation: nothing in the file can be read")
 
-// ErrUnknownID means a page was asked for before an id that is not in the part of
-// the file Page reads: the caller answers 400.
+// ErrUnknownID means Page was asked for items before an id it does not hold.
 var ErrUnknownID = errors.New("conversation: no such item id")
 
 // Kind is what an item is.
 type Kind string
 
 const (
-	KindUser       Kind = "user"       // a message the engineer sent
-	KindAssistant  Kind = "assistant"  // the assistant's text
-	KindToolCall   Kind = "tool_call"  // a tool call with its output folded in; a subagent run is one
-	KindQuestion   Kind = "question"   // a question put to the engineer, with its options
-	KindTurnEnd    Kind = "turn_end"   // a turn boundary, with how long the turn took
-	KindCompaction Kind = "compaction" // the harness compacted the conversation here
-	KindNotice     Kind = "notice"     // a line the harness wrote in the user's turn: a subagent's report, another session's message
+	KindUser       Kind = "user"
+	KindAssistant  Kind = "assistant"
+	KindToolCall   Kind = "tool_call" // with its output folded in; a subagent run is one
+	KindQuestion   Kind = "question"
+	KindTurnEnd    Kind = "turn_end"
+	KindCompaction Kind = "compaction"
+	KindNotice     Kind = "notice" // a line the harness wrote in the user's turn, not the engineer
 )
 
-// Item is one thing in a conversation. ID is stable across reads of the same
-// file and doubles as the paging cursor (?before=<id>). A tool call or question
-// can be re-emitted under the same ID once its result arrives.
+// Item is one thing in a conversation. ID is stable across reads and is the paging
+// cursor; a tool call or question keeps its ID when its result arrives.
 type Item struct {
 	ID       string        `json:"id"`
 	Kind     Kind          `json:"kind"`
-	At       string        `json:"at,omitempty"`   // the harness's timestamp, as written
-	Text     string        `json:"text,omitempty"` // user, assistant and notice text
+	At       string        `json:"at,omitempty"`
+	Text     string        `json:"text,omitempty"`
 	Meta     bool          `json:"meta,omitempty"` // a notice the chat's text view does not show
 	Tool     *ToolCall     `json:"tool,omitempty"`
 	Question *Question     `json:"question,omitempty"`
-	Duration time.Duration `json:"-"` // a turn end's "worked for N"
+	Duration time.Duration `json:"-"` // of a turn end; served as durationMs
 }
 
-// MarshalJSON serves Duration as milliseconds.
 func (it Item) MarshalJSON() ([]byte, error) {
 	type plain Item
 	return json.Marshal(struct {
@@ -56,17 +49,14 @@ func (it Item) MarshalJSON() ([]byte, error) {
 	}{plain(it), it.Duration.Milliseconds()})
 }
 
-// ToolCall is a call and what came back from it.
 type ToolCall struct {
 	Name    string `json:"name"`
-	Summary string `json:"summary,omitempty"` // a short line on what it was asked to do
+	Summary string `json:"summary,omitempty"`
 	Output  string `json:"output,omitempty"`
 	Error   bool   `json:"error,omitempty"`
-	Done    bool   `json:"done"` // the output has arrived
+	Done    bool   `json:"done"`
 }
 
-// Question is a question put to the engineer. Pending until the harness records
-// the answer.
 type Question struct {
 	Text    string   `json:"text"`
 	Options []Option `json:"options,omitempty"`
@@ -74,15 +64,12 @@ type Question struct {
 	Pending bool     `json:"pending"`
 }
 
-// Option is one answer a question offers.
 type Option struct {
 	Label       string `json:"label"`
 	Description string `json:"description,omitempty"`
 }
 
-// TextOnly keeps the user's and the assistant's text, and the harness notices the
-// chat shows today (a subagent's report): the chat's view. Ship views may drop
-// KindNotice.
+// TextOnly is the chat's view: user and assistant text and the notices it shows.
 func TextOnly(it Item) bool {
 	return it.Kind == KindUser || it.Kind == KindAssistant || (it.Kind == KindNotice && !it.Meta)
 }

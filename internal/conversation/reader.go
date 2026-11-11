@@ -6,42 +6,32 @@ import (
 	"os"
 )
 
-// The safety limits of reading a transcript. The first six are the chat's own at
-// main, so the chat reads through here and looks the same.
+// The safety limits of reading a transcript; the chat's own, so it looks the same read through here.
 const (
-	maxLine    = 1 << 20   // a transcript line over this is skipped
-	maxItems   = 200       // what is kept: the last this many items
-	chatBytes  = 256 << 10 // and about this much text, for the chat's text view
-	tailStart  = 8 << 20   // a first read of a larger file starts this far from its end
-	readBudget = 16 << 20  // bytes read in one refresh; the rest waits for the next
-	readChunk  = 256 << 10 // how much one read takes
+	maxLine    = 1 << 20 // a line over this is skipped
+	maxItems   = 200     // the last this many items are kept
+	chatBytes  = 256 << 10
+	tailStart  = 8 << 20  // a first read of a larger file starts this far from its end
+	readBudget = 16 << 20 // bytes read in one refresh; the rest waits for the next
+	readChunk  = 256 << 10
 
-	// DefaultMaxBytes is what a reader that keeps tool calls and questions holds.
 	DefaultMaxBytes = 4 << 20
-	// ChatMaxBytes is what the chat's text view holds, as at main.
-	ChatMaxBytes = chatBytes
+	ChatMaxBytes    = chatBytes
 )
 
-// Options are the limits of a Reader and of Page. The zero value is the view a
-// ship's conversation needs: every kind of item, the last 200 of them within
-// DefaultMaxBytes, tool output cut to DefaultMaxOutput. The chat's view is
-// TextView.
+// Options are the limits of a Reader and of Page. The zero value is the ship's view: every kind of item.
 type Options struct {
-	// Keep says which items to keep; nil keeps all. It runs before the count and
-	// byte limits, so a text-only reader still holds its last MaxItems messages.
+	// Keep runs before the count and byte limits, so a text-only reader still holds its last MaxItems messages.
 	Keep func(Item) bool
-	// MaxItems is how many items are held, the last ones. Zero means 200.
+	// MaxItems zero means 200.
 	MaxItems int
-	// MaxBytes is about how many bytes of text, tool output and question text are
-	// held, the last ones. Zero means DefaultMaxBytes.
+	// MaxBytes bounds the text, tool output and question text held; zero means DefaultMaxBytes.
 	MaxBytes int
-	// MaxOutput is how long a tool call's output is kept before it is cut to a
-	// preview with a marker. Zero means DefaultMaxOutput.
+	// MaxOutput zero means DefaultMaxOutput.
 	MaxOutput int
 }
 
-// TextView is the chat's view: user and assistant text and notices, the last 200
-// within 256 KB, the limits the chat has at main.
+// TextView is the chat's view: user and assistant text and notices, the last 200 within 256 KB.
 func TextView() Options { return Options{Keep: TextOnly, MaxBytes: ChatMaxBytes} }
 
 func (o Options) items() int {
@@ -58,11 +48,10 @@ func (o Options) bytes() int {
 	return o.MaxBytes
 }
 
-// splitter cuts a stream into whole lines and hands each to fn. A line over
-// maxLine is dropped without being held.
+// splitter hands whole lines to fn and drops a line over maxLine without holding it.
 type splitter struct {
-	pending []byte // the start of a line that has no newline yet
-	skip    bool   // dropping the rest of an over-long line
+	pending []byte
+	skip    bool // dropping the rest of an over-long line
 }
 
 func (s *splitter) feed(data []byte, fn func(line []byte)) {
@@ -95,9 +84,7 @@ func (s *splitter) feed(data []byte, fn func(line []byte)) {
 	}
 }
 
-// held is the items kept so far. Items are numbered as they arrive; the front is
-// number base, and byID gives an item's number, so an update finds its item and a
-// trim from the front costs nothing per lookup.
+// held numbers items as they arrive so a trim from the front keeps byID valid: the front is number base.
 type held struct {
 	opts    Options
 	trim    bool
@@ -108,8 +95,8 @@ type held struct {
 	bytes   int
 	touched map[string]struct{} // ids new or updated since the caller last took them
 
-	sawContent bool // a line with something on it
-	sawObject  bool // a line that is a JSON object
+	sawContent bool
+	sawObject  bool
 }
 
 func newHeld(o Options, trim bool) *held {
@@ -143,9 +130,7 @@ func (h *held) line(raw []byte) {
 	}
 }
 
-// put adds an item, or merges an update into the item it fills in. An update of an
-// item that is no longer held is dropped. When trimming, only the last MaxItems
-// within MaxBytes are kept.
+// put drops an update of an item no longer held.
 func (h *held) put(e emission) {
 	n, have := h.byID[e.Item.ID]
 	switch {
@@ -178,7 +163,6 @@ func (h *held) put(e emission) {
 	}
 }
 
-// merge puts what a result carries into the item it answers.
 func merge(cur *Item, up Item) {
 	if cur.Tool != nil && up.Tool != nil {
 		t := *cur.Tool
@@ -192,7 +176,6 @@ func merge(cur *Item, up Item) {
 	}
 }
 
-// size is what an item holds that the byte limit bounds: all its text.
 func size(it Item) int {
 	n := len(it.Text)
 	if it.Tool != nil {
@@ -207,8 +190,7 @@ func size(it Item) int {
 	return n
 }
 
-// changed is the held items that are new or updated since the last call, oldest
-// first. It is bounded by what is held, whatever the refresh read.
+// changed is bounded by what is held, whatever the refresh read.
 func (h *held) changed() []Item {
 	var out []Item
 	if len(h.touched) > 0 {
@@ -229,14 +211,12 @@ func (h *held) result() error {
 	return nil
 }
 
-// readClaudeCode reads a whole stream with no limits on what it holds: for the
-// tests, which read a recorded sample. A real file goes through Reader or Page.
+// readClaudeCode holds everything it reads, so only the tests use it.
 func readClaudeCode(r io.Reader) ([]Item, error) {
 	h := decode(r, Options{}, false)
 	return h.items, h.result()
 }
 
-// decode feeds a stream to a decoder. It holds every item, with no trimming.
 func decode(r io.Reader, o Options, skipFirst bool) *held {
 	h := newHeld(o, false)
 	s := splitter{skip: skipFirst}
@@ -254,52 +234,40 @@ func decode(r io.Reader, o Options, skipFirst bool) *held {
 	return h
 }
 
-// Reader follows a Claude Code transcript file as it grows and keeps the tail of
-// its conversation within its Options. The caller opens the file (ADR 0019: its
-// path checks, its os.Root, O_NONBLOCK) and hands the open file over; Reader never
-// opens a path. It is not safe for concurrent use.
+// Reader follows a transcript as it grows and keeps its tail within its Options. The
+// caller opens the file, so the path checks stay with it; Reader never opens a path.
+// It is not safe for concurrent use.
 type Reader struct {
 	h      *held
-	info   os.FileInfo // of the file read last, to tell a replaced file
+	info   os.FileInfo // to tell a replaced file
 	offset int64
 	split  splitter
 }
 
-// Update is what one Refresh found.
 type Update struct {
-	// Items are the held items new or filled in since the last Refresh, oldest
-	// first: never more than the reader holds.
+	// Items are the held items new or filled in since the last Refresh, oldest first.
 	Items []Item
 	// Reset means the file was replaced or truncated: drop everything held before Items.
 	Reset bool
 }
 
-// NewReader follows a transcript with the limits in o.
 func NewReader(o Options) *Reader { return &Reader{h: newHeld(o, true)} }
 
-// ToEnd makes the reader serve only what is written after size.
 func (r *Reader) ToEnd(size int64) {
 	r.offset, r.split = size, splitter{}
 }
 
-// Clear empties what the reader holds and moves it to size, the file's current
-// size: the chat's /clear. What is written after that is served.
+// Clear is the chat's /clear: it drops what is held and serves only what is written after size.
 func (r *Reader) Clear(size int64) {
 	r.h.reset()
 	r.ToEnd(size)
 }
 
-// Items is the conversation held: the last items of the file, oldest first.
 func (r *Reader) Items() []Item { return append([]Item(nil), r.h.items...) }
 
-// Refresh reads what has been added to f, the file the caller opened, and info,
-// its FileInfo. ErrUnreadable means the file has content and nothing in it
-// parses; an empty file or one of only metadata lines is an empty conversation.
-// Whether the file is missing is the caller's to tell, from its open. A file
-// larger than tailStart is read from tailStart before its end on the first
-// refresh, and no more than readBudget bytes are read in one refresh; the rest
-// waits for the next. A file smaller than the offset, or a different one,
-// starts over and the Update says Reset.
+// Refresh reads what was added to f since the last call. A file larger than tailStart
+// is read from tailStart before its end the first time, and at most readBudget bytes
+// are read per call. A file that shrank or was replaced starts over and says Reset.
 func (r *Reader) Refresh(f *os.File, info os.FileInfo) (Update, error) {
 	var up Update
 	if r.info != nil && (!os.SameFile(r.info, info) || info.Size() < r.offset) {
@@ -328,15 +296,9 @@ func (r *Reader) Refresh(f *os.File, info os.FileInfo) (Update, error) {
 	return up, r.h.result()
 }
 
-// Page is up to n items before the item with id before, oldest first, for
-// ?before=<id>; with before empty it is the n newest. more says there are items
-// older than the first one returned within what Page reads. It reads the same
-// window a Reader's first refresh does, from tailStart before the end of the
-// file (the whole file when smaller) for at most readBudget bytes, and holds none
-// of it afterwards. So paging reaches back that far and no further: an id older
-// than the window is ErrUnknownID, like one that never existed. Items are decoded
-// as for a Reader with Options o, without trimming, so ids and contents match
-// what a Reader serves. f and info are as for Refresh; the caller opened f.
+// Page is up to n items before the item with id before, oldest first; with before
+// empty it is the n newest. It reads the window a Reader's first refresh does, so an id
+// older than that is ErrUnknownID, like one that never existed.
 func Page(f *os.File, info os.FileInfo, o Options, before string, n int) (items []Item, more bool, err error) {
 	size := info.Size()
 	var start int64
