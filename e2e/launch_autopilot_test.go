@@ -14,6 +14,7 @@ import (
 func autopilotWorld(t *testing.T, maxShips int) *world {
 	t.Helper()
 	w := newWorld(t)
+	w.proveGuard()
 	w.writeCue("wait go", "exit 0") // the ship stays underway
 	var cfg map[string]any
 	if err := json.Unmarshal([]byte(w.config()), &cfg); err != nil {
