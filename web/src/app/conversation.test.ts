@@ -132,6 +132,16 @@ describe('followConversation', () => {
     expect(fetches.filter((u) => u === PAGE).length).toBe(before + 1);
   });
 
+  it('reads a ship with nothing recorded once when it is told not to ask again', async () => {
+    pages[PAGE] = { state: 'none', items: [], more: false };
+    stop.push(watchShips());
+    sock().open();
+    stop.push(followConversation('s-a', () => {}, { retryNone: false }).stop);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(fetches.filter((u) => u === PAGE)).toHaveLength(1);
+    expect(sock().sent.filter((m) => (m as { type: string }).type === 'conversation_open')).toHaveLength(1);
+  });
+
   it('closes the subscription when stopped', async () => {
     const { f } = follow();
     f.stop();

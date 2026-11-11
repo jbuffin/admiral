@@ -1,33 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { Item } from './api';
+import { Icon } from './Icon';
 import type { Conversation } from './conversation';
 import { renderMarkdown } from './markdown';
-import { toolRowLabel, workingLabel } from './turns';
+import { blocksOf, toolRowLabel, workingLabel } from './turns';
 
 const OUTPUT_LINES = 200;
-
-type Block =
-  | { kind: 'item'; item: Item }
-  | { kind: 'tools'; calls: Item[]; durationMs?: number };
-
-// A finished turn's tool calls fold into one row where its first call was; a turn still running lists each call.
-export function blocksOf(items: Item[]): Block[] {
-  const blocks: Block[] = [];
-  let group: Extract<Block, { kind: 'tools' }> | null = null;
-  for (const item of items) {
-    if (item.kind === 'tool_call') {
-      if (!group) blocks.push((group = { kind: 'tools', calls: [] }));
-      group.calls.push(item);
-    } else if (item.kind === 'turn_end') {
-      if (group) group.durationMs = item.durationMs ?? 0;
-      group = null;
-    } else {
-      if (item.kind === 'user' || item.kind === 'compaction') group = null;
-      blocks.push({ kind: 'item', item });
-    }
-  }
-  return blocks;
-}
 
 function Output({ text, error }: { text: string; error?: boolean }) {
   const [all, setAll] = useState(false);
@@ -66,7 +44,9 @@ function FoldedTools({ calls, durationMs }: { calls: Item[]; durationMs: number 
   return (
     <div class="tools-folded">
       <button type="button" class="fold-head" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span class="fold-chevron" aria-hidden="true">{open ? '▾' : '▸'}</span>
+        <span class={`fold-chevron${open ? ' open' : ''}`}>
+          <Icon name="chevron" size={14} />
+        </span>
         {toolRowLabel(durationMs, calls.map((c) => c.tool?.name ?? ''))}
       </button>
       {open ? calls.map((c) => <ToolCall key={c.id} item={c} open />) : null}

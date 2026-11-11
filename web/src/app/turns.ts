@@ -1,3 +1,5 @@
+import type { Item } from './api';
+
 const VERBS: Record<string, [one: string, many: string]> = {
   Read: ['read 1 file', 'read {n} files'],
   Bash: ['ran a command', 'ran {n} commands'],
@@ -32,4 +34,27 @@ export function workingLabel(items: { kind: string; at?: string }[], now: number
   const start = last?.at ? Date.parse(last.at) : NaN;
   if (Number.isNaN(start)) return 'Working';
   return `Working · ${Math.max(0, Math.floor((now - start) / 60_000))}m`;
+}
+
+export type Block =
+  | { kind: 'item'; item: Item }
+  | { kind: 'tools'; calls: Item[]; durationMs?: number };
+
+// A finished turn's tool calls fold into one row where its first call was; a turn still running lists each call.
+export function blocksOf(items: Item[]): Block[] {
+  const blocks: Block[] = [];
+  let group: Extract<Block, { kind: 'tools' }> | null = null;
+  for (const item of items) {
+    if (item.kind === 'tool_call') {
+      if (!group) blocks.push((group = { kind: 'tools', calls: [] }));
+      group.calls.push(item);
+    } else if (item.kind === 'turn_end') {
+      if (group) group.durationMs = item.durationMs ?? 0;
+      group = null;
+    } else {
+      if (item.kind === 'user' || item.kind === 'compaction') group = null;
+      blocks.push({ kind: 'item', item });
+    }
+  }
+  return blocks;
 }

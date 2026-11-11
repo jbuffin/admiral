@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { toolRowLabel, workingLabel } from './turns';
+import type { Item } from './api';
+import { blocksOf, toolRowLabel, workingLabel } from './turns';
 
 const times = (name: string, n: number) => Array<string>(n).fill(name);
 
@@ -32,5 +33,27 @@ describe('workingLabel', () => {
 
   it('counts on as the clock moves', () => {
     expect(workingLabel(items, at('2026-05-01T10:12:10Z'))).toBe('Working · 7m');
+  });
+});
+
+describe('blocksOf', () => {
+  const mk = (id: string, kind: Item['kind'], extra: Partial<Item> = {}): Item => ({ id, kind, ...extra });
+  const call = (id: string) => mk(id, 'tool_call', { tool: { name: 'Read', done: true } });
+  const shape = (items: Item[]) => blocksOf(items).map((b) => (b.kind === 'item' ? b.item.id : `${b.calls.map((c) => c.id).join('+')}${b.durationMs === undefined ? '' : `@${b.durationMs}`}`));
+
+  it('folds a finished turn into one row where its first call was', () => {
+    expect(shape([mk('u', 'user'), mk('a1', 'assistant'), call('t1'), call('t2'), mk('a2', 'assistant'), mk('e', 'turn_end', { durationMs: 5 })])).toEqual(['u', 'a1', 't1+t2@5', 'a2']);
+  });
+
+  it('leaves the calls of a turn that is still running unfolded', () => {
+    expect(shape([mk('u', 'user'), call('t1')])).toEqual(['u', 't1']);
+  });
+
+  it('does not fold calls a new message cut off before a turn end', () => {
+    expect(shape([call('t1'), mk('u', 'user'), call('t2'), mk('e', 'turn_end', { durationMs: 7 })])).toEqual(['t1', 'u', 't2@7']);
+  });
+
+  it('starts a new group after a compaction', () => {
+    expect(shape([call('t1'), mk('c', 'compaction'), call('t2'), mk('e', 'turn_end', { durationMs: 1 })])).toEqual(['t1', 'c', 't2@1']);
   });
 });
