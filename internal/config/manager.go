@@ -95,6 +95,15 @@ func (m *Manager) SetSources(sources json.RawMessage) error {
 	return nil
 }
 
+// SetFleetFields reloads before it returns, so the next View already carries the change.
+func (m *Manager) SetFleetFields(key string, f FleetFields) error {
+	if err := EditFleet(filepath.Dir(m.path), key, f); err != nil {
+		return err
+	}
+	m.reload()
+	return nil
+}
+
 // Subscribe fires after every reload, whether or not anything changed.
 // Notifications coalesce; call View or Current for the state.
 func (m *Manager) Subscribe() (<-chan struct{}, func()) {

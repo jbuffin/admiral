@@ -320,6 +320,10 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 			if f.CloneRoot, err = str(p, m.raw); err != nil {
 				return Fleet{}, err
 			}
+			if !strings.HasPrefix(f.CloneRoot, "~/") && !filepath.IsAbs(f.CloneRoot) {
+				return Fleet{}, fmt.Errorf("%s: must be an absolute path or start with ~/, got %q", p, f.CloneRoot)
+			}
+			f.CloneRoot = filepath.Clean(expandHome(f.CloneRoot))
 		case "env":
 			if f.Env, err = envMap(p, m.raw); err != nil {
 				return Fleet{}, err
