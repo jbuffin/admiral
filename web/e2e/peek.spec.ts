@@ -130,7 +130,9 @@ test('a refused question item answer shows the error: 409 locks Send, 400 keeps 
   await send.tap();
   await expect(peek.getByRole('alert')).toContainText('already answered');
   await expect(send).toBeDisabled();
-  expect(existsSync(join(admiral.home, 'inbox', visitor.session, 'q-port.answer.json'))).toBe(false);
+  const file = JSON.parse(readFileSync(join(admiral.home, 'inbox', visitor.session, 'q-port.answer.json'), 'utf8'));
+  expect(file.removed).toBe(true);
+  expect(file.answers).toBeUndefined();
 });
 
 test('Back leaves Peek for the list, and Open bridge opens the ship on its Conversation tab in the ship’s own fleet', async ({ page, admiral }) => {
@@ -318,7 +320,9 @@ test('Remove from inbox asks first, then drops a question item without answering
   await expect(peekOf(page)).toHaveCount(0);
   await expect(itemRow(page, 'Removed from the inbox')).toContainText(visitor.name);
   await expect(itemRow(page, visitor.name)).toHaveCount(0, { timeout: 15_000 });
-  expect(existsSync(join(admiral.home, 'inbox', visitor.session, 'q-port.answer.json'))).toBe(false);
+  const file = JSON.parse(readFileSync(join(admiral.home, 'inbox', visitor.session, 'q-port.answer.json'), 'utf8'));
+  expect(file.removed).toBe(true);
+  expect(file.answers).toBeUndefined();
 });
 
 test('a review on a ship that is gone shows its own actions and says the ship is gone, never a dead bridge line', async ({ page, admiral }) => {

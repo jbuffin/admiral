@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { call, type CrewBoat, type Ship } from './api';
 import { cardFor } from './answerCard';
 import { Composer, useComposer } from './Composer';
@@ -6,16 +6,23 @@ import { ConversationView } from './ConversationView';
 import { fleetSearch } from './fleets';
 import type { Entry } from './inbox';
 import { rowShip, rowVerb } from './inboxRow';
+import { discardFold, lockedBy, submitFold } from './itemActions';
+import { blankReview, FindingsBody, Failure, RemoveRow, ReviewBody, type ReviewUi, useActing } from './PeekItem';
 import { PeekQuestions } from './PeekQuestions';
+import { EVENTS } from './PeekItem';
+import type { KeyAct } from './peekKeys';
 import { bridgeSearch } from './peekLink';
 import { go, shipPath, surfacePath } from './router';
 import { targetFor, useShipConversation } from './ShipView';
 import { lastTurn } from './turns';
 import { ships } from './shipsLink';
 import { SURFACES } from './surfaces';
-import { type AnswerBody, blankDraft, foldText, type Draft } from '../questions';
+import { type AnswerBody, answeredQuestion, blankDraft, choose, foldText, pickOf, type Draft } from '../questions';
 
 const inboxSurface = SURFACES.find((s) => s.id === 'inbox')!;
+/** The open Peek's answer to a key the Inbox heard; the Inbox owns the listener. */
+export const peekKeys: { current: ((a: KeyAct) => void) | null } = { current: null };
+
 const toList = () => go(surfacePath(inboxSurface), fleetSearch.value);
 
 /** The ship's last turn with its card and message box; a file item's form sits between the turn and the box. */
@@ -58,21 +65,57 @@ export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => vo
   const question = entry.item?.kind === 'question';
   // The draft lives here, above the ship's arrival, so it survives ShipTurn replacing the bare form.
   const [draft, setDraft] = useState<Draft>(blankDraft);
-  const [locked, setLocked] = useState(false);
+  const [questionLocked, setQuestionLocked] = useState(false);
+  const [review, setReview] = useState<ReviewUi>(blankReview);
+  const [removing, setRemoving] = useState(false);
+  const acting = useActing(entry, fold, lockedBy);
   const send = async (body: AnswerBody) => {
     setDraft((d) => ({ ...d, sending: true, error: '' }));
     const r = await call('POST', `/inbox/${encodeURIComponent(entry.session)}/${encodeURIComponent(entry.id!)}/answer`, body);
     if (r.ok) return fold(foldText(body));
-    if (r.status === 409) setLocked(true);
+    if (lockedBy(r.status, r.error)) setQuestionLocked(true);
     setDraft((d) => ({ ...d, sending: false, error: r.error }));
   };
-  const form = question ? (
+  const kind = entry.item?.kind;
+  const removable = item && kind !== 'notice';
+  const mine = (a: KeyAct) => {
+    if (a.kind === 'remove' && removable && !acting.busy) {
+      acting.clear();
+      setRemoving(true);
+    } else if (a.kind === 'pick' && question) {
+      const qs = entry.item?.question?.questions ?? [];
+      const q = qs.find((x) => !answeredQuestion(pickOf(draft, x)));
+      const o = q?.options[a.n - 1];
+      if (q && o) setDraft((d) => choose(d, q, o.label));
+    } else if (a.kind === 'pick' && kind === 'review' && review.step !== 'discard' && !acting.busy && !acting.locked && EVENTS[a.n - 1]) {
+      acting.clear();
+      setRemoving(false);
+      setReview((r) => ({ ...r, step: 'confirm', event: EVENTS[a.n - 1][0] }));
+    }
+  };
+  peekKeys.current = mine;
+  // A newer Peek has already taken the slot when this one unmounts.
+  useEffect(() => () => void (peekKeys.current === mine && (peekKeys.current = null)), []);
+  const form = !item ? null : (
     <div class="peek-form">
-      <PeekQuestions questions={entry.item?.question?.questions ?? []} draft={draft} edit={(fn) => setDraft(fn)} onSend={(b) => void send(b)} locked={locked} />
+      {question ? (
+        <PeekQuestions questions={entry.item?.question?.questions ?? []} draft={draft} edit={(fn) => setDraft(fn)} onSend={(b) => void send(b)} locked={questionLocked} />
+      ) : kind === 'review' ? (
+        <ReviewBody
+          entry={entry}
+          ui={review}
+          set={(p) => setReview((r) => ({ ...r, ...p }))}
+          acting={acting}
+          submit={() => void acting.run('submit', { event: review.event, edited: review.edited }, (d) => submitFold(d, review.event))}
+          discard={() => void acting.run('discard', {}, discardFold)}
+        />
+      ) : kind === 'findings' ? (
+        <FindingsBody entry={entry} acting={acting} />
+      ) : null}
+      {removable ? <RemoveRow entry={entry} confirm={removing} setConfirm={setRemoving} acting={{ ...acting, locked: false }} /> : null}
+      {kind === 'review' || kind === 'findings' || removing ? <Failure message={acting.error} /> : null}
     </div>
-  ) : item && entry.item?.kind !== 'notice' ? (
-    <p class="line">Answered from the bridge for now.</p>
-  ) : null;
+  );
   return (
     <section class="peek" role="region" aria-label="Peek">
       <div class="peek-head">
@@ -114,7 +157,10 @@ export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => vo
             {form}
           </ShipTurn>
         ) : (
-          form ?? <p class="line">This ship is gone.</p>
+          <>
+            {form}
+            <p class="line">This ship is gone.</p>
+          </>
         )}
       </div>
     </section>
