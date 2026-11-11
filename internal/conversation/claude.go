@@ -225,8 +225,9 @@ func (d *claudeDecoder) assistant(l claudeLine, b *lineItems) {
 func askedQuestions(input json.RawMessage) []Question {
 	var in struct {
 		Questions []struct {
-			Question string `json:"question"`
-			Options  []struct {
+			Question    string `json:"question"`
+			MultiSelect bool   `json:"multiSelect"`
+			Options     []struct {
 				Label       string `json:"label"`
 				Description string `json:"description"`
 			} `json:"options"`
@@ -240,7 +241,7 @@ func askedQuestions(input json.RawMessage) []Question {
 		if len(qs) == maxQuestions {
 			break
 		}
-		out := Question{Text: cutTo(q.Question, maxQuestionLen, "…")}
+		out := Question{Text: cutTo(q.Question, maxQuestionLen, "…"), MultiSelect: q.MultiSelect}
 		for _, o := range q.Options {
 			if len(out.Options) == maxOptions {
 				break

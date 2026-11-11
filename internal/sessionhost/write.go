@@ -31,6 +31,11 @@ func (h *Host) SetPaneWorking(ctx context.Context, paneID string) error {
 	return h.setPaneAt(ctx, paneID, "working", "")
 }
 
+// SetPaneNeedsYou names the pane by its id, like SetPaneWorking.
+func (h *Host) SetPaneNeedsYou(ctx context.Context, paneID, reason string) error {
+	return h.setPaneAt(ctx, paneID, "needs_you", reason)
+}
+
 func (h *Host) setPaneAt(ctx context.Context, pane, state, reason string) error {
 	target := tmuxQuote(pane)
 	setReason := "set-option -p -u -t " + target + " " + ReasonOption

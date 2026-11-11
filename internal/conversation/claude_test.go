@@ -2,6 +2,7 @@ package conversation_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -380,5 +381,25 @@ func TestSecondItemOfALineGetsASuffixedID(t *testing.T) {
 	}
 	if fmt.Sprint(ids) != "[0a1b 0a1b#1 2c3d]" {
 		t.Errorf("ids = %v, want [0a1b 0a1b#1 2c3d]", ids)
+	}
+}
+
+func TestMultiSelectQuestionIsMarkedInItsJSON(t *testing.T) {
+	r := refresh(t, conversation.Options{},
+		`{"type":"assistant","uuid":"m1","message":{"content":[{"type":"tool_use","id":"tm1","name":"AskUserQuestion","input":{"questions":[{"question":"Which?","multiSelect":true,"options":[{"label":"A"},{"label":"B"}]}]}}]}}`+"\n")
+	raw, err := json.Marshal(r.Items()[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Question struct {
+			MultiSelect bool `json:"multiSelect"`
+		} `json:"question"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Question.MultiSelect {
+		t.Errorf("a multiSelect question serves as %s, want question.multiSelect true", raw)
 	}
 }
