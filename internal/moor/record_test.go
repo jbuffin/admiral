@@ -52,3 +52,21 @@ func TestListIsEmptyBeforeAnyShipMoors(t *testing.T) {
 		t.Errorf("List = %v, %v, want none and no error", got, err)
 	}
 }
+
+func TestWriteKeepsASliceShipsIssues(t *testing.T) {
+	home := t.TempDir()
+	issues := []string{"https://github.com/acme/widgets/issues/21", "https://github.com/acme/widgets/issues/29"}
+	if err := Write(home, Record{Name: "Slice", Session: "slice", URL: issues[0], Issues: issues}); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(home, "moored", "Slice.json"))
+	var raw map[string]any
+	_ = json.Unmarshal(b, &raw)
+	if got, _ := raw["issues"].([]any); len(got) != 2 {
+		t.Errorf("the record has issues %v, want both URLs: %s", raw["issues"], b)
+	}
+	got, err := List(home)
+	if err != nil || len(got) != 1 || !reflect.DeepEqual(got[0].Issues, issues) {
+		t.Errorf("List = %+v, %v, want the issues back in order", got, err)
+	}
+}

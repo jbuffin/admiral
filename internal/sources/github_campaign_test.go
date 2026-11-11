@@ -70,3 +70,19 @@ func TestParseOrdersDropsASubIssueCountThatIsNotAPositiveInteger(t *testing.T) {
 		}
 	}
 }
+
+func TestViewHidesTheOrdersOfEveryIssueASliceShipHolds(t *testing.T) {
+	g := newFakeGH(t)
+	g.token("", "fake-token-default-1")
+	g.writeIssues([2]int{12, 0}, [2]int{13, 0}, [2]int{14, 0})
+	f := newServiceFixture(t, ghConfig(campaignFleet, campaignSource))
+	f.Svc.Ships = func() []ships.Ship {
+		return []ships.Ship{{Name: "slice", Status: ships.StatusUnderway, URL: "https://github.com/acme/widgets/issues/12",
+			Issues: []string{"https://github.com/acme/widgets/issues/12", "https://github.com/acme/widgets/issues/13"}}}
+	}
+	f.startSources()
+	src := f.waitView("gha", "the bugs", func(s SourceView) bool { return len(s.orders("bugs")) > 0 })
+	if got := src.orders("bugs"); len(got) != 1 || got[0] != "acme/widgets#14" {
+		t.Errorf("bugs view = %v, want only acme/widgets#14: a slice ship holds #12 and #13", got)
+	}
+}

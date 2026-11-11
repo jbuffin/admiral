@@ -316,6 +316,11 @@ func TestAChildShipAnchoringOrLeavingRereadsTheCampaign(t *testing.T) {
 	child := func(status string) ships.Ship {
 		return ships.Ship{Name: "calm-otter", Status: status, URL: issURL(21), Source: SourceKey}
 	}
+	// its first issue is elsewhere: only a later one is a child of the campaign
+	slice := func(status string) ships.Ship {
+		other := "https://github.com/other/repo/issues/1"
+		return ships.Ship{Name: "slice", Status: status, URL: other, Issues: []string{other, issURL(21)}}
+	}
 	for _, tc := range []struct {
 		name         string
 		before       []ships.Ship
@@ -325,6 +330,8 @@ func TestAChildShipAnchoringOrLeavingRereadsTheCampaign(t *testing.T) {
 		{"child ship anchors", []ships.Ship{child("underway")}, []ships.Ship{child("anchored")}, true},
 		{"child ship is gone", []ships.Ship{child("underway")}, nil, true},
 		{"child ship needs you", []ships.Ship{child("underway")}, []ships.Ship{child("needs_you")}, false},
+		{"slice ship anchors", []ships.Ship{slice("underway")}, []ships.Ship{slice("anchored")}, true},
+		{"slice ship is gone", []ships.Ship{slice("underway")}, nil, true},
 		{"unrelated ship anchors", []ships.Ship{{Name: "x", Status: "underway", URL: "https://github.com/other/repo/issues/1"}}, []ships.Ship{{Name: "x", Status: "anchored", URL: "https://github.com/other/repo/issues/1"}}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -637,5 +644,28 @@ func TestLastTriedSurvivesARestart(t *testing.T) {
 	got, _ := openStore(t, home).Get(f.ID)
 	if !got.TriedAt.Equal(at) || got.ReadError == "" {
 		t.Errorf("after a restart tried %v error %q, want the failed attempt's time %v", got.TriedAt, got.ReadError, at)
+	}
+}
+
+func TestASliceShipShowsOnEveryChildItHoldsUntilItIsGone(t *testing.T) {
+	r := newRig(t, iss{num: 20, labels: []string{"wayfinder:map"}, kids: []iss{
+		{num: 21, labels: []string{"ready-for-agent"}},
+		{num: 29, labels: []string{"ready-for-agent"}},
+	}})
+	r.svc.Claims = func() map[string]string { return ships.ClaimsOf(r.svc.Ships()) }
+	c := r.follow(rootURL)
+	r.setShips(ships.Ship{Name: "slice", Status: ships.StatusUnderway, URL: issURL(21), Issues: []string{issURL(21), issURL(29)}})
+	got := r.get(c.ID)
+	for _, num := range []int{21, 29} {
+		if n := got.Root.find(num); n == nil || n.Status != "underway" || n.Ship != "slice" {
+			t.Errorf("child %d = %+v, want underway with ship slice", num, n)
+		}
+	}
+	r.setShips()
+	got = r.get(c.ID)
+	for _, num := range []int{21, 29} {
+		if n := got.Root.find(num); n == nil || n.Status != "ready" {
+			t.Errorf("child %d = %+v, want ready again once the slice ship is gone", num, n)
+		}
 	}
 }

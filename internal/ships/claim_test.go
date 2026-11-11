@@ -2,8 +2,10 @@ package ships
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/launcher"
@@ -110,5 +112,95 @@ func TestPostShipsRefusesTheCampaignSource(t *testing.T) {
 	rec := launchPost(t, s, `{"fleet":"work","harness":"claude","source":"campaign","order_id":"https://github.com/acme/widgets/issues/21","dir":"/x"}`)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("POST /api/ships from source campaign = %d %s, want 400: a campaign child launches through its campaign", rec.Code, rec.Body)
+	}
+}
+
+const sliceA, sliceB = "https://github.com/acme/widgets/issues/21", "https://github.com/acme/widgets/issues/29"
+
+func TestClaimsOfHoldsEveryIssueOfASliceShip(t *testing.T) {
+	list := []Ship{{Name: "slice", Status: StatusUnderway, URL: sliceA, Issues: []string{sliceA, "https://GitHub.com/acme/widgets/issues/29/"}}}
+	got := ClaimsOf(list)
+	for _, u := range []string{sliceA, sliceB} {
+		if k, _ := ClaimKey(u); got[k] != "slice" {
+			t.Errorf("claims[%s] = %q, want the slice ship (claims %v)", u, got[k], got)
+		}
+	}
+}
+
+func TestClaimsHoldEveryIssueOfAPendingSliceLaunch(t *testing.T) {
+	home := t.TempDir()
+	s := &Service{Host: sessionhost.New("tmux", home+"/tmux.sock"), Launcher: &launcher.Launcher{Home: home, Config: func() *config.Config { return &config.Config{} }}}
+	key := OrderKey{"campaign", "c1/" + sliceA}
+	s.holdUnlisted(key, "ship-9", "c1", nil)
+	s.listing[key] = unlisted{session: "ship-9", panel: "c1", at: s.listing[key].at, url: sliceA, issues: []string{sliceA, sliceB}}
+	if p := s.Pending(); len(p) != 1 || len(p[0].Issues) != 2 {
+		t.Errorf("Pending = %+v, want one ship carrying both issues", p)
+	}
+	got := s.Claims()
+	for _, u := range []string{sliceA, sliceB} {
+		if k, _ := ClaimKey(u); got[k] == "" {
+			t.Errorf("Claims = %v, want %s held by the pending slice launch", got, u)
+		}
+	}
+}
+
+func TestLockIssuesTakesEveryIssueOfASliceOrNone(t *testing.T) {
+	s := &Service{}
+	const free = "https://github.com/acme/widgets/issues/30"
+	if holder, ok := s.lockIssues([]string{sliceA, sliceB}, "slice launch"); !ok {
+		t.Fatalf("lockIssues on free issues refused, held by %q", holder)
+	}
+	for _, u := range []string{sliceA, sliceB} {
+		if holder, ok := s.lockIssue(u, "single launch"); ok || holder != "slice launch" {
+			t.Errorf("lockIssue(%s) = %q, %v, want a refusal naming the slice launch", u, holder, ok)
+		}
+	}
+	if holder, ok := s.lockIssues([]string{free, sliceB}, "overlap"); ok || holder != "slice launch" {
+		t.Errorf("an overlapping slice got %q, %v, want a refusal naming the holder", holder, ok)
+	}
+	if _, ok := s.lockIssue(free, "single launch"); !ok {
+		t.Errorf("the refused slice left %s locked", free)
+	}
+	s.unlockIssues([]string{sliceA, sliceB})
+	for _, u := range []string{sliceA, sliceB} {
+		if holder, ok := s.lockIssue(u, "again"); !ok {
+			t.Errorf("lockIssue(%s) refused after the slice launch finished, held by %q", u, holder)
+		}
+	}
+}
+
+func TestFromSessionReadsASliceShipsIssues(t *testing.T) {
+	opts := map[string]string{"name": "Slice", "url": sliceA, "issues": sliceA + "," + sliceB}
+	sh := FromSession(sessionhost.Session{Name: "slice", Options: opts}, time.Now())
+	if len(sh.Issues) != 2 || sh.Issues[0] != sliceA || sh.Issues[1] != sliceB || sh.URL != sliceA {
+		t.Errorf("ship url=%q issues=%v, want url the first issue and both issues in order", sh.URL, sh.Issues)
+	}
+}
+
+func TestAShipSerialisesItsIssuesForClients(t *testing.T) {
+	b, err := json.Marshal(Ship{URL: sliceA, Issues: []string{sliceA, sliceB}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		URL    string   `json:"url"`
+		Issues []string `json:"issues"`
+	}
+	if err := json.Unmarshal(b, &got); err != nil || got.URL != sliceA || len(got.Issues) != 2 || got.Issues[1] != sliceB {
+		t.Errorf("ship JSON = %s, want url %s and issues [%s %s]", b, sliceA, sliceA, sliceB)
+	}
+}
+
+func TestLaunchedOutcomeNamesEveryChildOfASlice(t *testing.T) {
+	f := mooredService(t, nil)
+	req := launcher.Request{Harness: "claude", Skill: launcher.Skill{Kind: "commodore"}, URL: sliceA, Issues: []string{sliceA, sliceB}}
+	f.s.launched(req, &launcher.Launched{Session: "slice", Options: map[string]string{"url": sliceA}}, "")
+	evs := f.events(t, "slice", "launched")
+	if len(evs) != 1 {
+		t.Fatalf("launched events = %v, want one", evs)
+	}
+	urls, _ := evs[0]["order_urls"].([]any)
+	if len(urls) != 2 || urls[0] != sliceA || urls[1] != sliceB {
+		t.Errorf("order_urls = %v, want both children in order", evs[0]["order_urls"])
 	}
 }

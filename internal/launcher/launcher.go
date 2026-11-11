@@ -42,7 +42,9 @@ type Request struct {
 	// Title and URL are set by the server from the source's order, never by the client.
 	Title string `json:"-"`
 	URL   string `json:"-"`
-	Panel string `json:"-"`
+	// Issues is every issue of a slice launch, set by the server; URL is the first.
+	Issues []string `json:"-"`
+	Panel  string   `json:"-"`
 	// Autopilot runs the ship under the guard with ADMIRAL_LOW_STAKES=advisor, counted against the global cap.
 	Autopilot bool     `json:"autopilot"`
 	ExtraArgs []string `json:"-"`
