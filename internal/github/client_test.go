@@ -331,7 +331,7 @@ func TestViewsDefaultsAndSlugs(t *testing.T) {
 		}
 	}
 
-	s := settings(t, `{"panels":[
+	s := settings(t, `{"views":[
 		{"title":" Bugs! ","query":" q1 "},
 		{"title":"bugs","query":"q2"},
 		{"title":"  ","query":"dropped"},
@@ -348,7 +348,7 @@ func TestViewsDefaultsAndSlugs(t *testing.T) {
 }
 
 func TestCustomReplacesDefaultByID(t *testing.T) {
-	s := settings(t, `{"panels":[
+	s := settings(t, `{"views":[
 		{"title":"My PRs","query":"is:pr author:@me label:mine"},
 		{"title":"Assigned to me","query":"is:open assignee:@me label:x"},
 		{"title":"assigned to me","query":"second"}]}`)

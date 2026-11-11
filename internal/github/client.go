@@ -1,7 +1,14 @@
 package github
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os/exec"
+	"regexp"
+	"strings"
 	"time"
 )
 
@@ -10,6 +17,26 @@ const DefaultHost = "github.com"
 
 // MaxItems caps one search's answer.
 const MaxItems = 50
+
+// ghTimeout is the default limit for one gh call; Admiral gives a request 10 seconds.
+const ghTimeout = 8 * time.Second
+
+const itemFields = "number title url repository { nameWithOwner url } labels(first: 100) { nodes { name } }"
+
+// searchQuery is GitHub's advanced search, the one github.com uses: it knows
+// qualifiers such as is:blocked, and it reads AND, OR and parentheses.
+var searchQuery = fmt.Sprintf("query($q: String!) { search(query: $q, type: ISSUE_ADVANCED, first: %d) { nodes { "+
+	"... on Issue { %s } ... on PullRequest { %s } } } }", MaxItems, itemFields, itemFields)
+
+// unreachable lists what gh prints when the network, not GitHub, failed. It
+// prints the first for a DNS error and the rest raw from Go's transport.
+var unreachable = []string{"error connecting to", "dial tcp", "i/o timeout", "TLS handshake", "x509:",
+	"connection refused", "connection reset", "no route to host", "network is unreachable", "proxyconnect"}
+
+var hasSort = regexp.MustCompile(`(?i)(^|\s)-?sort:`)
+
+// defaultHotLabels mark an item hot when a fleet names none.
+var defaultHotLabels = []string{"priority: high", "P0", "P1", "urgent"}
 
 // Item is one issue or pull request a search found.
 type Item struct {
@@ -44,17 +71,191 @@ type Client struct {
 // NewClient returns a client. env is the base environment for every gh call
 // (os.Environ() or a fleet's); hotLabels are matched case-insensitively.
 func NewClient(host, account string, hotLabels, env []string) *Client {
-	return &Client{host: host, account: account, hotLabels: hotLabels, env: env}
+	lower := make([]string, len(hotLabels))
+	for i, l := range hotLabels {
+		lower[i] = strings.ToLower(l)
+	}
+	return &Client{host: host, account: account, hotLabels: lower, env: env}
 }
 
 // Host is the GitHub host, for Route(host, nameWithOwner).
-func (c *Client) Host() string { return "" }
+func (c *Client) Host() string { return c.host }
 
 // Token runs `gh auth token`. Errors: *SignInError when gh is missing or
 // signed out; "Couldn't reach <host>" (not a *SignInError) on a timeout.
-func (c *Client) Token(ctx context.Context) (string, error) { return "", nil }
+func (c *Client) Token(ctx context.Context) (string, error) {
+	args := []string{"auth", "token", "-h", c.host}
+	if c.account != "" {
+		args = append(args, "-u", c.account)
+	}
+	out, _, err := c.gh(ctx, args, "")
+	var token string
+	switch {
+	case errors.Is(err, exec.ErrNotFound):
+		return "", &SignInError{"Install the GitHub CLI (brew install gh), then run gh auth login"}
+	case errors.Is(err, context.DeadlineExceeded): // a locked keychain, say: not a sign-out
+		return "", c.unreachableErr()
+	case err == nil:
+		token = strings.TrimSpace(out)
+	}
+	if token == "" {
+		return "", &SignInError{"Run gh auth login -h " + c.host}
+	}
+	return token, nil
+}
 
 // Search runs one GitHub search with token and returns at most MaxItems items.
+// Its errors read as the message to show, with the token redacted.
 func (c *Client) Search(ctx context.Context, token, query string) ([]Item, error) {
-	return nil, nil
+	if !hasSort.MatchString(query) {
+		query += " sort:updated-desc"
+	}
+	out, stderr, err := c.gh(ctx, []string{"api", "graphql", "--hostname", c.host, "-f", "query=" + searchQuery, "-f", "q=" + query}, token)
+	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, c.unreachableErr()
+	}
+	if err != nil {
+		msg := redact(strings.TrimSpace(stderr), token)
+		for _, m := range unreachable {
+			if strings.Contains(msg, m) {
+				return nil, c.unreachableErr()
+			}
+		}
+		if msg = strings.TrimPrefix(msg, "gh: "); msg == "" {
+			msg = "gh exited"
+			if ee := (*exec.ExitError)(nil); errors.As(err, &ee) {
+				msg = fmt.Sprintf("gh exited with status %d", ee.ExitCode())
+			}
+		}
+		return nil, fmt.Errorf("Search failed: %s", msg)
+	}
+	var body any
+	if json.Unmarshal([]byte(out), &body) != nil {
+		return nil, errors.New("Search failed: GitHub's answer was not JSON")
+	}
+	obj, _ := body.(map[string]any)
+	if obj == nil {
+		return nil, errNotUnderstood
+	}
+	if errs, _ := obj["errors"].([]any); len(errs) > 0 {
+		first, _ := errs[0].(map[string]any)
+		msg, _ := first["message"].(string)
+		if msg == "" {
+			msg = "unknown error"
+		}
+		return nil, fmt.Errorf("Search failed: %s", redact(msg, token))
+	}
+	data, _ := obj["data"].(map[string]any)
+	search, _ := data["search"].(map[string]any)
+	nodes, ok := search["nodes"].([]any)
+	if !ok {
+		return nil, errNotUnderstood
+	}
+	var items []Item
+	for _, n := range nodes {
+		if it, ok := c.item(n); ok {
+			items = append(items, it)
+		}
+	}
+	if len(items) > MaxItems {
+		items = items[:MaxItems]
+	}
+	return items, nil
+}
+
+var errNotUnderstood = errors.New("Search failed: GitHub's answer was not understood")
+
+func (c *Client) unreachableErr() error { return fmt.Errorf("Couldn't reach %s", c.host) }
+
+// redact hides token in text that may reach the screen.
+func redact(text, token string) string {
+	if token == "" {
+		return text
+	}
+	return strings.ReplaceAll(text, token, "***")
+}
+
+// item reads one search node. A node of another type has none of the fields
+// and is skipped.
+func (c *Client) item(raw any) (Item, bool) {
+	var n struct {
+		Number     *int    `json:"number"`
+		Title      *string `json:"title"`
+		URL        *string `json:"url"`
+		Repository *struct {
+			NameWithOwner *string `json:"nameWithOwner"`
+			URL           *string `json:"url"`
+		} `json:"repository"`
+		Labels *struct {
+			Nodes *[]struct {
+				Name *string `json:"name"`
+			} `json:"nodes"`
+		} `json:"labels"`
+	}
+	b, _ := json.Marshal(raw)
+	if json.Unmarshal(b, &n) != nil || n.Number == nil || n.Title == nil || n.URL == nil ||
+		n.Repository == nil || n.Repository.NameWithOwner == nil || n.Repository.URL == nil ||
+		n.Labels == nil || n.Labels.Nodes == nil {
+		return Item{}, false
+	}
+	it := Item{ID: fmt.Sprintf("%s#%d", *n.Repository.NameWithOwner, *n.Number), Title: *n.Title,
+		Text: *n.URL, URL: *n.URL, RepoURL: *n.Repository.URL, Repo: *n.Repository.NameWithOwner,
+		Labels: []string{}}
+	for _, l := range *n.Labels.Nodes {
+		if l.Name == nil {
+			return Item{}, false
+		}
+		it.Labels = append(it.Labels, *l.Name)
+		for _, h := range c.hotLabels {
+			if strings.EqualFold(*l.Name, h) {
+				it.Hot = true
+			}
+		}
+	}
+	return it, true
+}
+
+// gh runs the gh CLI with the client's environment: no inherited GH_TOKEN,
+// token as GH_TOKEN when given, no update check, no prompts, stdin closed. It
+// returns stdout and stderr; a failed run returns an error (exec.ErrNotFound
+// when gh is missing, context.DeadlineExceeded on a timeout).
+func (c *Client) gh(ctx context.Context, args []string, token string) (stdout, stderr string, err error) {
+	timeout := c.Timeout
+	if timeout == 0 {
+		timeout = ghTimeout
+	}
+	tctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	bin := c.Gh
+	if bin == "" {
+		bin = "gh"
+	}
+	cmd := exec.CommandContext(tctx, bin, args...)
+	cmd.Env = c.environ(token)
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	cmd.WaitDelay = time.Second
+	err = cmd.Run()
+	if err != nil && tctx.Err() == context.DeadlineExceeded {
+		err = context.DeadlineExceeded
+	}
+	return out.String(), errOut.String(), err
+}
+
+// environ is the base environment without GH_TOKEN and the update-notifier and
+// prompt settings, which it sets itself.
+func (c *Client) environ(token string) []string {
+	env := make([]string, 0, len(c.env)+3)
+	for _, kv := range c.env {
+		switch name, _, _ := strings.Cut(kv, "="); name {
+		case "GH_TOKEN", "GH_NO_UPDATE_NOTIFIER", "GH_PROMPT_DISABLED":
+		default:
+			env = append(env, kv)
+		}
+	}
+	env = append(env, "GH_NO_UPDATE_NOTIFIER=1", "GH_PROMPT_DISABLED=1")
+	if token != "" {
+		env = append(env, "GH_TOKEN="+token)
+	}
+	return env
 }
