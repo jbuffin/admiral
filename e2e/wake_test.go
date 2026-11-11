@@ -240,4 +240,14 @@ func TestAReviewWakesAMooredShipOnItsOwnOnceAndOnlyOnce(t *testing.T) {
 	if code, _ := send(t, http.MethodPost, launch, map[string]any{}); code != http.StatusConflict {
 		t.Errorf("a second Launch = %d, want 409", code)
 	}
+	w.kickMoored()
+	holdThat(t, "the ship was woken again after the proposal's Launch", func() bool {
+		n := 0
+		for _, m := range w.shipLog(ship.Session) {
+			if m["event"] == "woken" {
+				n++
+			}
+		}
+		return n == 2
+	})
 }

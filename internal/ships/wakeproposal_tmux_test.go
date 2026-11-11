@@ -13,6 +13,7 @@ import (
 
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/moor"
+	"github.com/jbuffin/admiral/internal/server"
 )
 
 // A stranger's feedback on a moored ship's PR becomes an Inbox proposal, never a wake by itself.
@@ -238,9 +239,8 @@ func TestAStrangerAndAWakeReviewerOnOnePollWakeForTheReviewerAndProposeTheStrang
 	if !strings.Contains(string(b), "rename the helper") || strings.Contains(string(b), "STRANGER") {
 		t.Errorf("feedback-1.md = %q, want the reviewer's feedback and none of the stranger's", b)
 	}
-	// The round's cursor passed the older comment, so only the newer one is still open to a proposal.
-	if ids := eventIDs(only(t, proposals(t, r.home))); !slices.Contains(ids, "C2") {
-		t.Errorf("proposal events = %v, want the comment newer than the review", ids)
+	if ids := eventIDs(only(t, proposals(t, r.home))); !slices.Equal(ids, []string{"C1", "C2"}) {
+		t.Errorf("proposal events = %v, want both comments: a waking PR proposes everything the cursor passes", ids)
 	}
 	if got := r.state(t).PRs[wakePR].Proposed; len(got) != 1 || got[0].ID != "C2" {
 		t.Errorf("Proposed = %+v, want only the newer comment: the older is behind the cursor", got)
@@ -347,5 +347,140 @@ func TestWhenAMooringEndsItsProposalsAndTheirAnswersGoAndNoOthers(t *testing.T) 
 		if _, err := os.Stat(filepath.Join(dir, kept)); err != nil {
 			t.Errorf("%s was removed, want only the ended ship's proposals swept", kept)
 		}
+	}
+}
+
+func TestARefusedRoundStillRecordsItsProposalsSoALaterPollProposesOnlyWhatIsNew(t *testing.T) {
+	r := newWakeRig(t, 1)
+	g := r.polling()
+	alice := aliceReview()
+	c1 := strangerComment("C1", "stranger-1", "first", 30*time.Minute)
+	g.set(wakePR, openWith(alice.Reviews, c1))
+	r.mooredResume(t, 0, "/commodore resume run-7", time.Hour)
+	r.s.holdUnlisted(OrderKey{"s", "other"}, "ship-1", "p", nil)
+
+	r.s.PollMoored(context.Background())
+	if got := r.waiting(); got != "Waiting for room under the cap" {
+		t.Fatalf("waiting = %q, want the cap's line", got)
+	}
+	st := r.state(t).PRs[wakePR]
+	if len(st.Proposed) != 1 || st.Proposed[0].ID != "C1" || !st.Cursor.At.IsZero() && !st.Cursor.At.Before(alice.Reviews[0].SubmittedAt) {
+		t.Errorf("wake state = %+v, want C1 recorded and the cursor not advanced", st)
+	}
+
+	g.set(wakePR, openWith(alice.Reviews, c1, strangerComment("C2", "stranger-1", "second", 20*time.Minute)))
+	r.s.PollMoored(context.Background())
+
+	got := proposals(t, r.home)
+	if len(got) != 2 {
+		t.Fatalf("proposals = %d, want two", len(got))
+	}
+	seen := map[string]bool{}
+	for _, p := range got {
+		for _, id := range eventIDs(p) {
+			if seen[id] {
+				t.Errorf("event %s is in two proposals", id)
+			}
+			seen[id] = true
+		}
+	}
+	if got := r.logged(t, "woken"); len(got) != 0 {
+		t.Errorf("woken events = %v, want none at the cap", got)
+	}
+}
+
+func TestAProposalThatCannotBeWrittenHoldsTheWakeBackAndTheNextPollProposesThenWakes(t *testing.T) {
+	r := newWakeRig(t, 3)
+	g := r.polling()
+	alice := aliceReview()
+	g.set(wakePR, openWith(alice.Reviews, strangerComment("C1", "stranger-1", "first", 30*time.Minute)))
+	r.mooredResume(t, 0, "/commodore resume run-7", time.Hour)
+	dir := filepath.Join(r.home, "inbox", inbox.AdmiralSession)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	if f, err := os.Create(filepath.Join(dir, "probe")); err == nil {
+		f.Close()
+		t.Skip("the directory is writable despite its mode (running as root?)")
+	}
+
+	r.s.PollMoored(context.Background())
+
+	if !r.stillMoored(t) {
+		t.Fatal("the ship woke although the stranger's comment could not be proposed")
+	}
+	if got := r.logged(t, "woken"); len(got) != 0 {
+		t.Errorf("woken events = %v, want none", got)
+	}
+	if st := r.state(t); len(st.PRs[wakePR].Proposed) != 0 || !st.PRs[wakePR].Cursor.At.IsZero() {
+		t.Errorf("wake state = %+v, want it unchanged", st)
+	}
+
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	r.s.PollMoored(context.Background())
+
+	if ids := eventIDs(only(t, proposals(t, r.home))); !slices.Equal(ids, []string{"C1"}) {
+		t.Errorf("proposal events = %v, want C1", ids)
+	}
+	r.started(t, 1)
+}
+
+func TestAfterADismissTheSameEventsNeverComeBack(t *testing.T) {
+	r := newWakeRig(t, 3)
+	g := r.polling()
+	g.set(wakePR, openWith(nil, strangerComment("C1", "stranger-1", "first", 40*time.Minute)))
+	r.mooredResume(t, 0, "/commodore resume run-7", time.Hour)
+	r.s.PollMoored(context.Background())
+	p := only(t, proposals(t, r.home))
+	svc := &inbox.Service{Home: r.home, Hub: server.NewHub()}
+	if err := svc.DismissProposal(p.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	r.s.PollMoored(context.Background())
+	r.s.PollMoored(context.Background())
+
+	got := proposals(t, r.home)
+	if len(got) != 1 {
+		t.Errorf("proposals = %d, want the dismissed one only", len(got))
+	}
+	if _, err := os.Stat(filepath.Join(r.home, "inbox", inbox.AdmiralSession, p.ID+".answer.json")); err != nil {
+		t.Errorf("the dismissed proposal has no answer: %v", err)
+	}
+	if len(r.logged(t, "woken")) != 0 {
+		t.Error("a dismissed proposal woke the ship")
+	}
+}
+
+func TestLaunchRefusesAProposalThePollNeverMadeForThisShip(t *testing.T) {
+	r := newWakeRig(t, 3)
+	g := r.polling()
+	g.set(wakePR, openWith(nil, strangerComment("C1", "stranger-1", "first", 40*time.Minute)))
+	r.mooredResume(t, 0, "/commodore resume run-7", time.Hour)
+	r.s.PollMoored(context.Background())
+	good := only(t, proposals(t, r.home)).Proposal
+
+	otherShip := good
+	otherShip.Ship = "Other"
+	badLogin := good
+	badLogin.Login = "x\ny"
+	forgedEvent := good
+	forgedEvent.Events = []inbox.WakeProposalEvent{{ID: "C9", Kind: good.Events[0].Kind, At: time.Now().Add(time.Hour).UTC(), Body: "forged"}}
+	for name, p := range map[string]inbox.WakeProposal{"another ship": otherShip, "a login that is not one": badLogin, "an event the poll never recorded": forgedEvent} {
+		if _, lerr := r.s.LaunchProposal(context.Background(), p); lerr == nil || lerr.Status != 404 {
+			t.Errorf("%s: LaunchProposal = %v, want 404", name, lerr)
+		}
+	}
+	if !r.stillMoored(t) {
+		t.Fatal("a forged proposal woke the ship")
+	}
+	if _, lerr := r.s.LaunchProposal(context.Background(), good); lerr != nil {
+		t.Errorf("the real proposal = %v, want it started", lerr)
 	}
 }

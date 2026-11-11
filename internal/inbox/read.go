@@ -16,6 +16,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/jbuffin/admiral/internal/config"
 )
 
 // A ship writes the item file, so a larger one is skipped.
@@ -132,7 +134,7 @@ func parseItem(b []byte, session, id string) (Item, error) {
 			return Item{}, errSkip
 		}
 	case KindWakeProposal: // only Admiral's own inbox holds proposals
-		if p, ok := it.WakeProposal(); session != AdmiralSession || !ok || p.Session == "" || p.PR == "" || len(p.Events) == 0 {
+		if p, ok := it.WakeProposal(); session != AdmiralSession || !ok || p.Session == "" || p.PR == "" || len(p.Events) == 0 || !(p.Login == "ghost" || config.ValidLogin(p.Login)) {
 			return Item{}, errSkip
 		}
 	default:

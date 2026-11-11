@@ -147,13 +147,19 @@ func (s *Service) decide(ctx context.Context, r moor.Record, answers map[string]
 	}
 	now := time.Now().UTC()
 	d := moor.DecideWake(moor.WakeInput{Record: r, State: state, Answers: answers, Reviewers: reviewers, Now: now})
-	d.Next = s.propose(r, d, now)
+	next, batches, ok := s.propose(r, state, d, now)
+	if !ok {
+		return
+	}
+	d.Next = next
 	if !d.Wake {
 		s.saveNext(r, state, d.Next)
 		return
 	}
 	if _, lerr := s.feedbackRound(r.Session, d.PR, d.Feedback, &state, d.Next); lerr != nil {
 		s.setWaiting(r, waitingText(lerr))
+		// The round did not start, so its cursor stays; the proposals it made are recorded so the next poll does not make them again.
+		s.saveNext(r, state, withProposed(state, batches))
 	}
 }
 

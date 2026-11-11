@@ -93,3 +93,8 @@ func ProposalID(ship, pr, login string, eventIDs []string) string {
 	sum := sha256.Sum256([]byte(strings.Join(append([]string{ship, pr, login}, ids...), "\x00")))
 	return "wake-" + hex.EncodeToString(sum[:])[:20]
 }
+
+// Proposed is whether the poll proposed the event: its ID is recorded, or the cursor has passed it and the record went with the pruning.
+func (p PRWake) WasProposed(id string, at time.Time) bool {
+	return recorded(p.Proposed, id) || !newerThan(p.Cursor, at, id)
+}
