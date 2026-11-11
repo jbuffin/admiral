@@ -58,5 +58,18 @@ func TestMooringAgainKeepsTheRoundAndTheResourcesInTheRecord(t *testing.T) {
 	if len(recs) != 1 || recs[0].Round != 2 || len(recs[0].Resources) != 1 || recs[0].Resources[0] != "phone" {
 		t.Fatalf("records = %+v, want one with Round 2 and Resources [phone]", recs)
 	}
-	waitUntil(t, "the moored event", func() bool { return len(f.events(t, "saltpaw", "moored")) > 0 })
+	if got := f.events(t, "saltpaw", "round"); len(got) != 1 || got[0]["round"] != float64(2) || got[0]["end"] != "moored" {
+		t.Errorf("round events = %v, want one for round 2 ending moored", got)
+	}
+}
+
+func TestWakeOfAShipTheEngineerDismissedAnswers404(t *testing.T) {
+	f := mooredService(t, nil)
+	session := f.moor(t, "Saltpaw", "work", "https://github.com/acme/widgets/pull/7")
+	if rec := f.post("/api/ships/" + session + "/dismiss"); rec.Code != http.StatusOK {
+		t.Fatalf("dismiss = %d %s", rec.Code, rec.Body)
+	}
+	if rec := f.wake(session, `{}`); rec.Code != http.StatusNotFound {
+		t.Errorf("wake of a dismissed ship = %d %s, want 404", rec.Code, rec.Body)
+	}
 }

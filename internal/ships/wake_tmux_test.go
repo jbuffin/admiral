@@ -2,7 +2,9 @@ package ships
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,6 +32,9 @@ type wakeRig struct {
 	rec      string
 	mu       sync.Mutex
 	hold     chan struct{} // while non-nil, Reserve blocks on it
+	entered  chan struct{} // Reserve closes it the first time it is called
+	once     sync.Once
+	ctx      context.Context
 }
 
 func newWakeRig(t *testing.T, maxShips int) *wakeRig {
@@ -57,7 +62,8 @@ case "$1" in --version) echo "2.1.300 (Claude Code)"; exit 0;; esac
 n=1; while [ -e "` + rec + `/argv-$n" ]; do n=$((n+1)); done
 env > "` + rec + `/env-$n"
 printf '%s\0' "$@" > "` + rec + `/argv-$n"
-sleep 300
+while [ ! -e "` + rec + `/exit" ]; do sleep 0.1; done
+exit "$(cat "` + rec + `/exit")"
 `
 	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -90,11 +96,12 @@ sleep 300
 	}
 	w := outcomes.New(filepath.Join(home, "outcomes"), t.Logf)
 	t.Cleanup(w.Close)
-	r := &wakeRig{home: home, checkout: checkout, rec: rec}
+	r := &wakeRig{home: home, checkout: checkout, rec: rec, entered: make(chan struct{}), ctx: ctx}
 	r.s = &Service{Host: h, State: st, Hub: server.NewHub(), Outcomes: w,
 		Launcher: &launcher.Launcher{Home: home, Tmux: tmux, Socket: sock, Config: func() *config.Config { return cfg }},
 		Orders:   stubOrder{},
 		Reserve: func(names []string) (func(), string, string) {
+			r.once.Do(func() { close(r.entered) })
 			r.mu.Lock()
 			hold := r.hold
 			r.mu.Unlock()
@@ -305,7 +312,11 @@ func TestASecondWakeWhileOneIsInProgressAnswers409(t *testing.T) {
 	r.mu.Unlock()
 	first := make(chan *launcher.Error, 1)
 	go func() { _, lerr := r.s.Wake(context.Background(), "saltpaw", ""); first <- lerr }()
-	time.Sleep(300 * time.Millisecond) // the first wake is parked inside Reserve
+	select {
+	case <-r.entered: // the first wake is parked inside Reserve
+	case <-time.After(3 * time.Second):
+		t.Fatal("the first wake never reached Reserve")
+	}
 	_, lerr := r.s.Wake(context.Background(), "saltpaw", "")
 	close(hold)
 	if lerr == nil || lerr.Status != http.StatusConflict || !strings.Contains(lerr.Msg, "wake") {
@@ -313,5 +324,67 @@ func TestASecondWakeWhileOneIsInProgressAnswers409(t *testing.T) {
 	}
 	if err := <-first; err != nil {
 		t.Errorf("first Wake = %v", err)
+	}
+}
+
+// exit lets the woken harness end with the status; the Service's own loop then observes it.
+func (r *wakeRig) exit(t *testing.T, status string) {
+	t.Helper()
+	go r.s.Run(r.ctx)
+	if err := os.WriteFile(filepath.Join(r.rec, "exit"), []byte(status), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A woken ship that ends without moored PRs sails off or anchors like any other, and the round it ran says which.
+func TestAWokenShipThatEndsWithNoPRLeavesNoRecordAndLogsHowTheRoundEnded(t *testing.T) {
+	for _, c := range []struct{ name, status, end string }{
+		{"a clean exit with nothing open sails off", "0", "sailed"},
+		{"a failed exit anchors", "1", "anchored"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newWakeRig(t, 0)
+			r.moored(t, 0)
+			if _, lerr := r.s.Wake(context.Background(), "saltpaw", ""); lerr != nil {
+				t.Fatal(lerr)
+			}
+			_, env := r.started(t, 1)
+			if c.status == "0" {
+				for _, l := range strings.Split(env, "\n") {
+					if v, ok := strings.CutPrefix(l, "ADMIRAL_REPORT="); ok {
+						if err := os.WriteFile(v, []byte(`{"version":2,"result":"done","why":"nothing to do","prs":[]}`), 0o600); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+			}
+			r.exit(t, c.status)
+			waitUntil(t, "the round event", func() bool { return len(r.logged(t, "round")) > 0 })
+			got := r.logged(t, "round")
+			if got[0]["round"] != float64(1) || got[0]["end"] != c.end {
+				t.Errorf("round events = %v, want round 1 ending %s", got, c.end)
+			}
+			if recs, _ := moor.List(r.home); len(recs) != 0 {
+				t.Errorf("moored records = %+v, want none", recs)
+			}
+		})
+	}
+}
+
+// The wake answers with the same Ship JSON a launch does, wrapped as {"ship": ...}.
+func TestTheWakeRouteAnswersWithTheShip(t *testing.T) {
+	r := newWakeRig(t, 0)
+	r.moored(t, 0)
+	mux := http.NewServeMux()
+	r.s.Routes(mux)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/ships/saltpaw/wake", strings.NewReader(`{"text":"go on"}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+	var body struct {
+		Ship Ship `json:"ship"`
+	}
+	if rec.Code < 200 || rec.Code > 299 || json.Unmarshal(rec.Body.Bytes(), &body) != nil || body.Ship.Session != "saltpaw" {
+		t.Errorf("wake route = %d %s, want 2xx with a ship wrapper naming saltpaw", rec.Code, rec.Body)
 	}
 }
