@@ -100,3 +100,10 @@ func mustRead(t *testing.T, path string) []byte {
 	}
 	return b
 }
+
+func TestSourceKeyCampaignIsReservedForCampaignShips(t *testing.T) {
+	_, err := config.Parse(withSources(`{"campaign":{"plugin":"jira","fleet":"alpha"}}`))
+	if err == nil || !strings.Contains(err.Error(), "campaign") {
+		t.Fatalf("Parse accepted a source keyed campaign: err = %v, want one naming the reserved key", err)
+	}
+}

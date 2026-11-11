@@ -39,7 +39,7 @@ func TestPendingListsAnUnlistedShipUntilItExpires(t *testing.T) {
 	if len(got) != 1 || got[0].Source != "s" || got[0].OrderID != "o1" || got[0].Panel != "p" || got[0].Status != StatusUnderway {
 		t.Fatalf("Pending = %+v, want one underway ship of s/p/o1", got)
 	}
-	s.listing[OrderKey{"s", "o1"}] = unlisted{"ship-1", "p", time.Now().Add(-listedWithin), nil}
+	s.listing[OrderKey{"s", "o1"}] = unlisted{session: "ship-1", panel: "p", at: time.Now().Add(-listedWithin)}
 	if got := s.Pending(); len(got) != 0 {
 		t.Errorf("Pending after the hold expired = %+v, want none", got)
 	}

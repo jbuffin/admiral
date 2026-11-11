@@ -25,6 +25,8 @@ type Order struct {
 	Hot    bool     `json:"hot"`
 	Repo   string   `json:"repo"`
 	Labels []string `json:"labels,omitempty"`
+	// SubIssues is the count of sub-issues an issue has; 0 when none or unknown.
+	SubIssues int `json:"sub_issues,omitempty"`
 }
 
 type Panel struct {

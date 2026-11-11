@@ -121,6 +121,7 @@ type unlisted struct {
 	panel     string
 	at        time.Time
 	resources []string
+	url       string
 }
 
 // listedWithin: a ship killed before the host saw it must not hold its order for good.
@@ -564,7 +565,7 @@ func (s *Service) holdUnlisted(key OrderKey, session, panel string, resources []
 	if s.listing == nil {
 		s.listing = map[OrderKey]unlisted{}
 	}
-	s.listing[key] = unlisted{session, panel, time.Now(), resources}
+	s.listing[key] = unlisted{session: session, panel: panel, at: time.Now(), resources: resources}
 }
 
 // Pending reports unlisted launches as underway, so a count of running ships
