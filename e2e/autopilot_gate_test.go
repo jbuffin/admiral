@@ -11,16 +11,27 @@ import (
 
 const refusalTitle = "Couldn't launch unattended on Claude: guard not proven"
 
-// gateNotices are the Inbox notices about a refused unattended launch.
-func gateNotices(t *testing.T, in *fleetInst) []noticeItem {
+// gateNotices lists the Inbox notices about a refused unattended launch once the
+// Inbox has had time to show want of them: the Inbox follows the disk through a
+// watcher, so a read right after a refusal can come early. It then reads again
+// after a pause, so a duplicate that is still on its way is not missed.
+func gateNotices(t *testing.T, in *fleetInst, want int) []noticeItem {
 	t.Helper()
-	var out []noticeItem
-	for _, n := range in.notices(t) {
-		if strings.Contains(n.Title, "guard not proven") {
-			out = append(out, n)
+	list := func() []noticeItem {
+		var out []noticeItem
+		for _, n := range in.notices(t) {
+			if strings.Contains(n.Title, "guard not proven") {
+				out = append(out, n)
+			}
 		}
+		return out
 	}
-	return out
+	deadline := time.Now().Add(10 * time.Second)
+	for want > 0 && len(list()) < want && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	time.Sleep(500 * time.Millisecond)
+	return list()
 }
 
 func (w *world) expectRefused(fleet string) {
@@ -52,7 +63,7 @@ func TestAutopilotGate_ProvenGuardLaunchesAndOthersAreRefused(t *testing.T) {
 	w.launch(w.autopilotLaunch("claude", "ok", nil))
 	w.expectRefused("home")
 	w.expectRefused("claudeonly") // never probed
-	if n := gateNotices(t, w.in); len(n) != 2 {
+	if n := gateNotices(t, w.in, 2); len(n) != 2 {
 		t.Errorf("two fleets refused left %d notices, want 2: %+v", len(n), n)
 	}
 }
@@ -68,7 +79,7 @@ func TestAutopilotGate_RefusalWritesOneNoticeThatComesBackAfterADismissal(t *tes
 	w.start()
 
 	w.expectRefused("home")
-	n := gateNotices(t, w.in)
+	n := gateNotices(t, w.in, 1)
 	if len(n) != 1 {
 		t.Fatalf("one refusal left %d notices, want 1", len(n))
 	}
@@ -77,7 +88,7 @@ func TestAutopilotGate_RefusalWritesOneNoticeThatComesBackAfterADismissal(t *tes
 	}
 
 	w.expectRefused("home")
-	if got := len(gateNotices(t, w.in)); got != 1 {
+	if got := len(gateNotices(t, w.in, 1)); got != 1 {
 		t.Errorf("a second refusal left %d notices, want 1", got)
 	}
 
@@ -85,8 +96,11 @@ func TestAutopilotGate_RefusalWritesOneNoticeThatComesBackAfterADismissal(t *tes
 	if code/100 != 2 {
 		t.Fatalf("dismissing the notice = %d: %s", code, body)
 	}
+	if left := gateNotices(t, w.in, 0); len(left) != 0 {
+		t.Fatalf("the dismissed notice is still listed: %+v", left)
+	}
 	w.expectRefused("home")
-	if got := len(gateNotices(t, w.in)); got != 1 {
+	if got := len(gateNotices(t, w.in, 1)); got != 1 {
 		t.Errorf("a refusal after the dismissal left %d notices, want 1", got)
 	}
 }
@@ -97,7 +111,7 @@ func TestAutopilotGate_AHandLaunchNeedsNoProof(t *testing.T) {
 	w.writeCue("wait go", "exit 0")
 	w.start()
 	w.launch(w.dockLaunch("claude", "hand", "go"))
-	if n := gateNotices(t, w.in); len(n) != 0 {
+	if n := gateNotices(t, w.in, 0); len(n) != 0 {
 		t.Errorf("a hand launch wrote %d refusal notices", len(n))
 	}
 }
@@ -131,7 +145,7 @@ func TestAutopilotGate_ACrewLaunchFollowsTheFleetsGuard(t *testing.T) {
 			t.Errorf("the refused crew launch left a window %q", p.crew)
 		}
 	}
-	if n := gateNotices(t, w.in); len(n) != 1 {
+	if n := gateNotices(t, w.in, 1); len(n) != 1 {
 		t.Errorf("the refused crew launch left %d notices, want 1", len(n))
 	}
 }
