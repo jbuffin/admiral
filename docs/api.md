@@ -105,7 +105,7 @@ Fleets and harnesses follow the config's order; features follow the table (judge
 
 `judge` is the fleet's judge harness, from `judge.Choose` on the stored probes: the first of claude, codex and copilot that proved no tools and no network, with its Lookout and strong models and whether it proved a JSON schema flag and a per-call cap. A fleet with no such harness has `{"harness":null,"reason":"..."}`, the reason naming each harness and what it lacks, and runs no judge calls.
 
-`autopilot.advisor` is never stored. Every harness of a fleet reads `passed` when the fleet has a judge harness and `failed`, with the `judge.reason`, when it has none, so it follows the other harnesses' probes. Autopilot on a harness is refused until it passes.
+`autopilot.advisor` is never stored. Every harness of a fleet reads `not_checked` until some harness of the fleet has a stored judge result, then `passed` (naming the judge harness) when the fleet has a judge harness and `failed`, with the `judge.reason`, when it has none, so it follows the other harnesses' probes. The gate refuses in every state but `passed`. Autopilot on a harness is refused until it passes.
 
 ### `POST /api/harness-capabilities/check`
 

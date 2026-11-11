@@ -294,7 +294,7 @@ func TestCheckRefusesAProvenGuardWithNoJudgeHarnessAndPostsOneAdvisorNotice(t *t
 		t.Fatalf("Check = %v, want an *AdvisorRefusal", err)
 	}
 	if refusal.Fleet != "harbor-3" || refusal.Harness != "claude" || refusal.Reason == "" {
-		t.Errorf("refusal = %+v, want fleet work, harness claude and a reason", refusal)
+		t.Errorf("refusal = %+v, want fleet harbor-3, harness claude and a reason", refusal)
 	}
 	if msg := strings.ToLower(err.Error()); !strings.Contains(msg, "advisor") || !strings.Contains(msg, "claude") {
 		t.Errorf("error %q must name the harness and the advisor", err)

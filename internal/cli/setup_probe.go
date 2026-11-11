@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/capabilities"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/probes"
@@ -31,9 +32,13 @@ func probeFleets(dir string, std IO) error {
 			}
 			fmt.Fprintf(std.Out, "  version %s\n", rep.Version)
 			for _, l := range rep.Lines {
+				if l.ID == capabilities.AutopilotAdvisor {
+					continue // printed once per fleet below, as the API and the gate compute it
+				}
 				fmt.Fprintf(std.Out, "  %s: %s\n", l.Label, probeText(l))
 			}
 		}
+		printAdvisor(std, fleet, capabilities.Open(dir))
 	}
 	return nil
 }
@@ -50,4 +55,11 @@ func probeText(l probes.Line) string {
 		return word
 	}
 	return word + ": " + l.Detail
+}
+
+// printAdvisor reads the advisor as the API and the gate do, so it runs after every
+// harness of the fleet is probed.
+func printAdvisor(std IO, fleet config.Fleet, store *capabilities.Store) {
+	status, detail := autopilotgate.AdvisorStatus(fleet, store)
+	fmt.Fprintf(std.Out, "\nAdvisor in fleet %s: %s\n", fleet.Name, probeText(probes.Line{Status: status, Detail: detail}))
 }

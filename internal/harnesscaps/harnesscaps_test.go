@@ -148,8 +148,9 @@ func TestListShowsPassedFailedAndNotCheckedPerFleetAndHarness(t *testing.T) {
 	if !errors.As(noJudge, &none) {
 		t.Fatalf("Choose = %v, want NoJudgeHarness", noJudge)
 	}
-	if a := claude.status(t, "autopilot.advisor"); a.Status != "failed" || a.Detail != none.Reason {
-		t.Errorf("work claude advisor = %+v, want failed with the reason %q: it follows the fleet's judge harness live", a, none.Reason)
+	_ = none
+	if a := claude.status(t, "autopilot.advisor"); a.Status != "not_checked" || a.Detail != "" {
+		t.Errorf("work claude advisor = %+v, want not_checked: no harness of the fleet has a judge result", a)
 	}
 	if f := got.Fleets[1].Harnesses[0].status(t, "autopilot.guard_hook"); f.Status != "failed" || f.Detail != "the hook never ran" {
 		t.Errorf("home claude guard = %+v, want failed with its detail", f)
@@ -358,6 +359,7 @@ func TestAdvisorFollowsTheFleetsJudgeHarnessOnEveryHarness(t *testing.T) {
 	prove(t, store, "full", "codex", "0.167.1")
 	prove(t, store, "none", "claude", "2.1.300", capabilities.JudgeNoTools)
 	fleets := []config.Fleet{
+		fleet("idle", "Idle", dock("claude", script(t, "2.1.300"))),
 		fleet("full", "Full", dock("claude", script(t, "2.1.300")), dock("codex", script(t, "0.167.1"))),
 		fleet("none", "None", dock("claude", script(t, "2.1.300"))),
 	}
@@ -366,15 +368,19 @@ func TestAdvisorFollowsTheFleetsJudgeHarnessOnEveryHarness(t *testing.T) {
 	var got struct {
 		Fleets []fleetJSON `json:"fleets"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || len(got.Fleets) != 2 {
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || len(got.Fleets) != 3 {
 		t.Fatalf("GET = %d %s (%v)", rec.Code, rec.Body, err)
 	}
+	if a := got.Fleets[0].Harnesses[0].status(t, "autopilot.advisor"); a.Status != "not_checked" {
+		t.Errorf("idle claude advisor = %+v, want not_checked: no harness has a judge result yet", a)
+	}
+	got.Fleets = got.Fleets[1:]
 	for _, h := range got.Fleets[0].Harnesses {
-		if a := h.status(t, "autopilot.advisor"); a.Status != "passed" {
+		if a := h.status(t, "autopilot.advisor"); a.Status != "passed" || !strings.Contains(a.Detail, "claude") {
 			t.Errorf("full %s advisor = %+v, want passed: the fleet's claude is its judge harness", h.Harness, a)
 		}
 	}
-	_, why := judge.Choose(fleets[1], store)
+	_, why := judge.Choose(fleets[2], store)
 	var none *judge.NoJudgeHarness
 	if !errors.As(why, &none) {
 		t.Fatalf("Choose = %v, want NoJudgeHarness", why)
@@ -409,7 +415,7 @@ func TestCheckAnswersWithTheAdvisorTheJudgeHarnessItJustProvedGives(t *testing.T
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || rec.Code != http.StatusOK {
 		t.Fatalf("POST check = %d %s (%v)", rec.Code, rec.Body, err)
 	}
-	if a := got.status(t, "autopilot.advisor"); a.Status != "failed" || a.Detail == "" {
-		t.Errorf("check answer advisor with no judge proof = %+v, want failed with the reason", a)
+	if a := got.status(t, "autopilot.advisor"); a.Status != "not_checked" {
+		t.Errorf("check answer advisor with no judge result = %+v, want not_checked", a)
 	}
 }

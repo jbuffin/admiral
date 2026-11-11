@@ -114,11 +114,8 @@ func (s *Service) harness(store *capabilities.Store, fleet config.Fleet, name st
 			switch {
 			case c.ID == capabilities.AutopilotAdvisor:
 				// Never stored: it follows the fleet's judge harness, which other harnesses' results move.
-				if ok, reason := autopilotgate.Advisor(fleet, store); ok {
-					cj.Status, cj.Detail = string(capabilities.Passed), "the fleet has a judge harness"
-				} else {
-					cj.Status, cj.Detail = string(capabilities.Failed), reason
-				}
+				status, detail := autopilotgate.AdvisorStatus(fleet, store)
+				cj.Status, cj.Detail = string(status), detail
 			case st.Result != nil:
 				cj.Detail = st.Result.Detail
 				if !st.Result.At.IsZero() {

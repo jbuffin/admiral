@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/jbuffin/admiral/internal/capabilities"
 	"github.com/jbuffin/admiral/internal/config"
@@ -165,6 +166,10 @@ func TestAdviseRefusesBadInputAsAUsageErrorAndMakesNoCall(t *testing.T) {
 		{"one option", `{"question":"Merge?","options":["yes"],"recommendation":"yes"}`},
 		{"a recommendation that is not an option", `{"question":"Merge?","options":["yes","no"],"recommendation":"maybe"}`},
 		{"over the size limit", big},
+		{"data after the object", validAdvice + ` {"x":1}`},
+		{"an unknown field", `{"question":"Merge?","options":["yes","no"],"recommendation":"yes","extra":1}`},
+		{"an empty option", `{"question":"Merge?","options":["yes",""],"recommendation":"yes"}`},
+		{"a repeated option", `{"question":"Merge?","options":["yes","yes"],"recommendation":"yes"}`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -219,7 +224,7 @@ func TestAdviseAnswersNullCostWhenTheHarnessReportsNone(t *testing.T) {
 }
 
 func TestAdviseStripsControlCharactersFromTheModelsReason(t *testing.T) {
-	reason, _ := json.Marshal("ok\x1b[31m\nred\a" + strings.Repeat("é", 250))
+	reason, _ := json.Marshal("ok\x1b[31m\nred\a\u200b\u202e\ufeff" + strings.Repeat("é", 250))
 	r := newAdviseRig(t, "low", judgePasses, map[string]string{"ADVISE_REASON": string(reason)})
 	err, out, _ := r.advise(t, validAdvice)
 	if err != nil {
@@ -227,7 +232,7 @@ func TestAdviseStripsControlCharactersFromTheModelsReason(t *testing.T) {
 	}
 	a := oneLine(t, out)
 	for _, c := range a.Reason {
-		if c < 0x20 || c == 0x7f {
+		if c < 0x20 || c == 0x7f || unicode.Is(unicode.Cf, c) {
 			t.Errorf("reason %q holds control character %U", a.Reason, c)
 		}
 	}

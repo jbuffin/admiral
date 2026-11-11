@@ -64,6 +64,26 @@ func Advisor(fleet config.Fleet, store *capabilities.Store) (ok bool, reason str
 	return false, err.Error()
 }
 
+// AdvisorStatus is the Advisor row's state: not checked until some harness of the fleet
+// has a stored judge result, then passed (naming the judge harness) or failed with the
+// reason. The gate refuses in every state but passed.
+func AdvisorStatus(fleet config.Fleet, store *capabilities.Store) (capabilities.Status, string) {
+	choice, err := judge.Choose(fleet, store)
+	if err == nil {
+		return capabilities.Passed, "the fleet's judge harness is " + choice.Name
+	}
+	for _, h := range fleet.Harnesses {
+		snap, _ := store.Snapshot(fleet.Key, h.Name)
+		for _, id := range []capabilities.ID{capabilities.JudgeNoTools, capabilities.JudgeNoNetwork} {
+			if snap.States[id].Result != nil {
+				_, reason := Advisor(fleet, store)
+				return capabilities.Failed, reason
+			}
+		}
+	}
+	return capabilities.NotChecked, ""
+}
+
 // Check returns nil when the guard is Proven and the fleet has an advisor. Otherwise it
 // returns a *Refusal (guard first) or an *AdvisorRefusal and posts one Inbox notice,
 // unless an open one already says the same.
