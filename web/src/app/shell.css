@@ -393,3 +393,5 @@ button.pill { cursor: pointer; min-height: 32px; }
 .tool-output.error pre { color: var(--color-err); }
 .tool-empty { margin: 0 0 4px 16px; }
 .working { margin: 0; color: var(--color-run); font-size: var(--font-size-meta); font-weight: 600; }
+.fold-chevron { display: inline-flex; transform: rotate(-90deg); }
+.fold-chevron.open { transform: none; }

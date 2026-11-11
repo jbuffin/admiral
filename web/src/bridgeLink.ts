@@ -74,7 +74,10 @@ export class BridgeLink {
       if (this.stopped || (!this.h.signedOut && signedOut.value)) return;
       const p = await (this.h.probe ?? probeShips)();
       if (this.stopped) return;
-      if (p.kind === 'signed-out') this.h.signedOut ? this.h.signedOut() : (signedOut.value = true);
+      if (p.kind === 'signed-out') {
+        if (this.h.signedOut) this.h.signedOut();
+        else signedOut.value = true;
+      }
       else if (p.kind === 'down') this.schedule();
       else if (!p.ships.some((s) => s.session === this.session)) this.h.gone();
       else this.open();

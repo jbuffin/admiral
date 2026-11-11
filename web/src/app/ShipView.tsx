@@ -48,7 +48,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
   const [conv, setConv] = useState<Conversation>({ state: 'loading', items: [], more: false });
   const follow = useRef<ReturnType<typeof followConversation> | undefined>(undefined);
   useEffect(() => {
-    const f = followConversation(ship.session, setConv);
+    const f = followConversation(ship.session, setConv, { retryNone: ship.harness === 'claude' });
     follow.current = f;
     return f.stop;
   }, [ship.session]);

@@ -9,7 +9,7 @@ export interface Conversation {
 
 // The server never answers an open for a ship with nothing recorded, so the page is read anyway after this wait.
 const ACK_WAIT_MS = 1500;
-// A ship whose transcript has not appeared is asked about again until it does.
+// A ship whose transcript has not appeared is asked about again until it does; a harness with no adapter is not.
 const RETRY_MS = 3000;
 
 function merge(have: Item[], incoming: Item[]): Item[] {
@@ -26,7 +26,7 @@ function merge(have: Item[], incoming: Item[]): Item[] {
 }
 
 /** Follows one ship's conversation over the ships socket: subscribe, read the page, then take the pushes. */
-export function followConversation(session: string, onChange: (c: Conversation) => void): { loadOlder(): Promise<void>; stop(): void } {
+export function followConversation(session: string, onChange: (c: Conversation) => void, { retryNone = true }: { retryNone?: boolean } = {}): { loadOlder(): Promise<void>; stop(): void } {
   let c: Conversation = { state: 'loading', items: [], more: false };
   let stopped = false;
   let acked = false;
@@ -53,7 +53,7 @@ export function followConversation(session: string, onChange: (c: Conversation) 
     const items = page.items ?? [];
     if (page.state !== 'ok') set({ state: page.state, items: [], more: false });
     else set({ state: 'ok', items: merge(c.items, items), more: c.items.length > 0 ? c.more : page.more });
-    if (page.state === 'none' || (page.state === 'ok' && !acked)) retry();
+    if ((page.state === 'none' && retryNone) || (page.state === 'ok' && !acked)) retry();
   };
 
   const retry = () => {
