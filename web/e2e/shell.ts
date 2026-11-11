@@ -90,11 +90,14 @@ export function watchPage(page: Page, server: string) {
   const failedLoads: string[] = [];
   let refusedLaunches = 0;
   page.on('response', (r) => {
-    if (r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ships' && r.status() >= 400) refusedLaunches++;
+    const path = new URL(r.url()).pathname;
+    // A refused ending shows its reason on the row; the browser logs it as a console error all the same.
+    const refused = path === '/api/v1/ships' || /^\/api\/v1\/ships\/[^/]+\/(dismiss|unfollow)$/.test(path);
+    if (r.request().method() === 'POST' && refused && r.status() >= 400) refusedLaunches++;
   });
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
-    (/^Failed to load resource: .* status of 4\d\d/.test(m.text()) ? failedLoads : errors).push(m.text());
+    (/^Failed to load resource: .* status of [45]\d\d/.test(m.text()) ? failedLoads : errors).push(m.text());
   });
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('request', (r) => {
@@ -251,6 +254,8 @@ export async function mooredFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await page.goto(a.url + 'app/ships?fleet=zulu');
   await expect(main.locator('.ship-group').getByRole('heading', { level: 2 })).toHaveText([/^Moored\s*2$/]);
   await expect.poll(() => kicks.length).toBe(1);
+  await page.waitForTimeout(500); // a doubled POST would land by now
+  expect(kicks).toHaveLength(1);
 
   // Each row: its PR as a link opening in a new tab, the chips from the poll, and how long it has waited.
   const link = rowOf(first).getByRole('link', { name: 'api#7' });
@@ -272,6 +277,18 @@ export async function mooredFromTheShell(page: Page, a: Admiral, press: (l: Loca
   expect(refresh.status).toBe(202);
   await expect(rowOf(first)).toContainText('Checks pending');
   await expect(rowOf(first)).not.toContainText('Checks passing');
+
+  // A record that cannot be removed leaves the ship in place with the reason on its row, and no path in it.
+  const moored = join(a.home, 'moored');
+  chmodSync(moored, 0o500);
+  try {
+    await press(rowOf(first).getByRole('button', { name: 'Dismiss' }));
+    await expect(rowOf(first).getByRole('alert')).toContainText('its moored record cannot be removed');
+    await expect(rowOf(first).getByRole('alert')).not.toContainText(a.home);
+    await expect(rowOf(first)).toBeVisible();
+  } finally {
+    chmodSync(moored, 0o700);
+  }
 
   // Don't follow reviews takes the ship out of the list.
   const unfollowed = page.waitForResponse((r) => new URL(r.url()).pathname === `/api/v1/ships/${first.session}/unfollow`);

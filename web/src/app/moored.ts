@@ -44,5 +44,6 @@ export function prLabel(url: string): string {
 export function staleNote(ship: Ship, now: number): string {
   if (!ship.stale) return '';
   const age = shipAge(ship.polled_at ?? '', now);
-  return age ? `last checked ${age}` : '';
+  if (!age) return 'Poll failed';
+  return `Poll failed · last checked ${age === 'now' ? 'under a minute' : age} ago`;
 }

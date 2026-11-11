@@ -242,12 +242,12 @@ func (s *Service) endMoored(session, reason string) (bool, error) {
 	return true, nil
 }
 
-// endByRequest ends a moored ship for a request and answers it: 404 for an ending that lost the race, 500 with the cause for a record that stays.
+// endByRequest ends a moored ship for a request and answers it: 404 for an ending that lost the race, 500 for a record that stays (the cause is in the log, not the answer, since it names a path).
 func (s *Service) endByRequest(w http.ResponseWriter, session, reason, key string) {
 	ended, err := s.endMoored(session, reason)
 	switch {
 	case err != nil:
-		writeError(w, http.StatusInternalServerError, "ship "+session+" cannot be ended: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "ship "+session+" cannot be ended: its moored record cannot be removed")
 	case !ended:
 		writeError(w, http.StatusNotFound, "ship "+session+" not found")
 	default:

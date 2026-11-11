@@ -573,8 +573,8 @@ func TestAMooredRecordThatCannotBeRemovedAnswers500AndStaysMoored(t *testing.T) 
 		t.Skip("a read-only directory does not stop this user")
 	}
 	for _, path := range []string{"dismiss", "unfollow"} {
-		if rec := f.post("/api/ships/" + session + "/" + path); rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "permission") {
-			t.Errorf("%s with a record that stays = %d %s, want 500 with the cause", path, rec.Code, rec.Body)
+		if rec := f.post("/api/ships/" + session + "/" + path); rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "its moored record cannot be removed") || strings.Contains(rec.Body.String(), f.home) {
+			t.Errorf("%s with a record that stays = %d %s, want 500 without the path", path, rec.Code, rec.Body)
 		}
 	}
 	if sh, ok := f.ship(t, "Nelson"); !ok || sh.Status != StatusMoored {
