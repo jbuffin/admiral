@@ -130,9 +130,7 @@ test('a refused question item answer shows the error: 409 locks Send, 400 keeps 
   await send.tap();
   await expect(peek.getByRole('alert')).toContainText('already answered');
   await expect(send).toBeDisabled();
-  const file = JSON.parse(readFileSync(join(admiral.home, 'inbox', visitor.session, 'q-port.answer.json'), 'utf8'));
-  expect(file.removed).toBe(true);
-  expect(file.answers).toBeUndefined();
+  expect(existsSync(join(admiral.home, 'inbox', visitor.session, 'q-port.answer.json'))).toBe(false);
 });
 
 test('Back leaves Peek for the list, and Open bridge opens the ship on its Conversation tab in the ship’s own fleet', async ({ page, admiral }) => {

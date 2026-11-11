@@ -87,7 +87,7 @@ export function ReviewBody({ entry, ui, set, acting, submit, discard }: { entry:
         <PrLine pr={pr} />
         <span class="inbox-hint">Pending review #{String(r?.review_id ?? '')}, not yet submitted</span>
       </div>
-      {ui.step === 'idle' && (
+      {(ui.step === 'idle' || acting.locked) && (
         <div class="inbox-send-row">
           <button type="button" class="btn primary" disabled={off} onClick={() => go('choose')}>
             Submit
