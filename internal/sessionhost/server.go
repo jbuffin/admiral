@@ -412,6 +412,15 @@ func (s Server) ReadPaneStartCommand(ctx context.Context, pane string) (string, 
 	return strings.TrimSuffix(out, "\n"), nil
 }
 
+// ReadPanePID is the process id of the pane's first process.
+func (s Server) ReadPanePID(ctx context.Context, pane string) (int, error) {
+	out, err := s.run(call{ctx: ctx, utf8After: true, args: []string{"display-message", "-p", "-t", pane, "#{pane_pid}"}})
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(out))
+}
+
 type WindowSize struct {
 	ID         string // @N
 	Cols, Rows int

@@ -33,6 +33,8 @@ type copilotData struct {
 	AgentTaskID      string          `json:"agentTaskId"`
 	ParentToolCallID string          `json:"parentToolCallId"`
 	ToolCallID       string          `json:"toolCallId"`
+	MessageID        string          `json:"messageId"`
+	DeltaContent     string          `json:"deltaContent"`
 	ToolName         string          `json:"toolName"`
 	Arguments        json.RawMessage `json:"arguments"`
 	ToolRequests     []struct{}      `json:"toolRequests"`
@@ -82,6 +84,9 @@ func (d *copilotDecoder) line(raw []byte) ([]emission, bool) {
 	at, _ := time.Parse(time.RFC3339Nano, l.Timestamp)
 	item := func(it Item) []emission {
 		it.ID, it.At = l.ID, l.Timestamp
+		if it.Kind == KindAssistant && data.MessageID != "" {
+			it.ID = data.MessageID // the server's deltas carry only this id, so live text and the file's item are one item
+		}
 		return []emission{{Item: it}}
 	}
 	switch l.Type {

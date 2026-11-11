@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -47,6 +46,7 @@ type Service struct {
 	// Tests replace these two lookups, which need a live tmux.
 	ship   func(session string) (ships.Ship, bool)
 	option func(sh ships.Ship) (raw, startCmd, configDir string, ok bool)
+	owns   func(sh ships.Ship, port int) bool                                // whether the ship's own Copilot listens on port
 	crew   func(sh ships.Ship, name string) (sessionhost.Crew, string, bool) // the boat and its fleet's config dir for the boat's harness
 
 	mu      sync.Mutex
@@ -80,6 +80,7 @@ type where struct {
 	id           string // the session id
 	configDir    string
 	harness      string
+	port         int // of the ship's --ui-server, zero when it has none
 }
 
 // key names a ship's conversation, or a crew boat's, in the maps below.
@@ -188,8 +189,6 @@ func (s *Service) crewOf(sh ships.Ship, name string) (sessionhost.Crew, string, 
 	return b, dir, true
 }
 
-var startedWith = regexp.MustCompile(`--session-id["']?\s+["']?([0-9a-f-]{36})`)
-
 // locate finds the ship and its transcript. ok is false for an unknown ship;
 // none is true when the ship has no conversation of ours to read.
 func (s *Service) locate(session string) (w where, ok, none bool) { return s.locateBoat(session, "") }
@@ -218,8 +217,11 @@ func (s *Service) locateBoat(session, crew string) (w where, ok, none bool) {
 	}
 	id, valid := transcriptfs.SessionIDFor(sh.Harness, parts[2])
 	// The option is writable from the pane and the start command is not, so the id the launch gave the harness decides.
-	if m := startedWith.FindStringSubmatch(startCmd); !valid || m == nil || m[1] != id {
+	if started := startedSession(startCmd); !valid || started == "" || started != id {
 		return w, true, true
+	}
+	if sh.Harness == "copilot" {
+		w.port, _ = uiServerPort(startCmd)
 	}
 	w.raw, w.path, w.id, w.configDir = raw, parts[2], id, configDir
 	return w, true, false
@@ -352,7 +354,10 @@ type watch struct {
 	crew     string
 	launched string // tells a reused ship name from the ship that was watched
 	loc      where
+	svc      *Service
 	reader   *conversation.Reader
+	server   *conversation.ServerReader // the live items of a ship with a --ui-server
+	stop     context.CancelFunc
 	path     string // where the file was found
 	lastFind time.Time
 	subs     map[*server.Client]struct{}
@@ -381,7 +386,7 @@ func (s *Service) handleOpen(ctx context.Context, c *server.Client, raw json.Raw
 	if !ok || none {
 		return // an unknown ship or boat, or one with no conversation, is ignored
 	}
-	w := &watch{session: m.Ship, crew: m.Crew, launched: loc.ship.Launched + "|" + loc.boatLaunched, loc: loc, reader: conversation.NewReader(conversation.Options{Harness: loc.harness}),
+	w := &watch{session: m.Ship, crew: m.Crew, launched: loc.ship.Launched + "|" + loc.boatLaunched, loc: loc, svc: s, reader: conversation.NewReader(conversation.Options{Harness: loc.harness}),
 		subs: map[*server.Client]struct{}{}}
 	// Prime the reader: what is already there is not sent (the client reads the
 	// page), and a tool result that arrives later still finds its call.
@@ -406,7 +411,16 @@ func (s *Service) handleOpen(ctx context.Context, c *server.Client, raw json.Raw
 	if cur, has := s.watches[k]; has && cur.launched == w.launched {
 		w = cur
 	} else {
+		if has {
+			cur.close()
+		}
 		s.watches[k] = w
+		if loc.port > 0 && m.Crew == "" {
+			var obs context.Context
+			w.server = conversation.NewServerReader(conversation.Options{Harness: "copilot"})
+			obs, w.stop = context.WithCancel(context.Background())
+			go s.observe(obs, w, loc.port)
+		}
 	}
 	w.subs[c] = struct{}{}
 	s.clients[c] = append(s.clients[c], k)
@@ -485,6 +499,7 @@ func (s *Service) unsubscribeLocked(c *server.Client, session string) { // sessi
 	if w := s.watches[session]; w != nil {
 		delete(w.subs, c)
 		if len(w.subs) == 0 {
+			w.close()
 			delete(s.watches, session)
 		}
 	}
@@ -525,6 +540,23 @@ func (s *Service) poll(w *watch) {
 		s.endWatch(w)
 		return
 	}
+	items := w.fileItems()
+	if w.server != nil {
+		items = mergeLive(w.server.Changed(), items)
+	}
+	if len(items) == 0 {
+		return
+	}
+	msg := tagged(map[string]any{"type": "conversation", "ship": w.session, "items": items}, w.crew)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for c := range w.subs {
+		s.enqueueLocked(c, msg)
+	}
+}
+
+// fileItems is what the file gained since the last poll.
+func (w *watch) fileItems() []conversation.Item {
 	var (
 		f    *os.File
 		info os.FileInfo
@@ -544,20 +576,28 @@ func (s *Service) poll(w *watch) {
 		}
 	}
 	if err != nil || f == nil {
-		return
+		return nil
 	}
 	defer f.Close()
-	s.markSeen(w.key(), w.loc.raw)
+	w.svc.markSeen(w.key(), w.loc.raw)
 	up, _ := w.reader.Refresh(f, info)
-	if len(up.Items) == 0 {
-		return
+	return up.Items
+}
+
+// mergeLive puts the file's items over the live ones with the same id, so the finished reply replaces the
+// text shown while it ran. Order is the live items', then the file's new ones.
+func mergeLive(live, file []conversation.Item) []conversation.Item {
+	at := map[string]int{}
+	out := make([]conversation.Item, 0, len(live)+len(file))
+	for _, it := range append(live, file...) {
+		if i, dup := at[it.ID]; dup {
+			out[i] = it
+			continue
+		}
+		at[it.ID] = len(out)
+		out = append(out, it)
 	}
-	msg := tagged(map[string]any{"type": "conversation", "ship": w.session, "items": up.Items}, w.crew)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for c := range w.subs {
-		s.enqueueLocked(c, msg)
-	}
+	return out
 }
 
 func (s *Service) endWatch(w *watch) {
@@ -569,7 +609,15 @@ func (s *Service) endWatch(w *watch) {
 	for c := range w.subs {
 		s.unsubscribeLocked(c, w.key())
 	}
+	w.close()
 	delete(s.watches, w.key())
+}
+
+// close ends the watch's observer, which detaches from the server.
+func (w *watch) close() {
+	if w.stop != nil {
+		w.stop()
+	}
 }
 
 func (w *watch) key() string { return key(w.session, w.crew) }

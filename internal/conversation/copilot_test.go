@@ -47,7 +47,7 @@ func cl(typ, ts, data string) string {
 
 func copilotTurn(prompt, reply string) string {
 	return cl("user.message", "01.000", fmt.Sprintf(`{"content":%q,"interactionId":"x"}`, prompt)) +
-		cl("assistant.message", "02.000", fmt.Sprintf(`{"messageId":"m1","content":%q,"toolRequests":[],"turnId":"0"}`, reply)) +
+		cl("assistant.message", "02.000", fmt.Sprintf(`{"messageId":"m-%s","content":%q,"toolRequests":[],"turnId":"0"}`, prompt, reply)) +
 		cl("assistant.turn_end", "03.000", `{"turnId":"0"}`)
 }
 
