@@ -107,7 +107,7 @@ test('a plugin source keeps its stored secrets through a save and moves to anoth
   await moved.getByRole('button', { name: 'Restart', exact: true }).click();
   await expect.poll(() => admiral.flags('orders').starts()).toBeGreaterThan(starts);
   await expect(moved.getByRole('button', { name: 'Restart', exact: true })).toBeEnabled();
-  await expect(moved).toContainText('ok');
+  await expect(moved).toContainText(/plugin · ok/);
 
   // Add source offers the test plugin and not GitHub, and adds to this page's fleet.
   await page.getByRole('button', { name: 'Add source', exact: true }).click();
@@ -196,13 +196,14 @@ test('a GitHub source keeps its host, account and custom views, names its fleet 
   await custom2.getByLabel('Query').fill('is:open label:bug');
   await expect(custom2.getByRole('status')).toHaveCount(0);
 
-  await form.getByLabel('Host').fill('github.com');
+  await form.getByLabel('Host').fill('ghe.example.test');
   await form.getByLabel('Account').fill('default');
   await custom1.getByLabel('Title').fill('Newbies');
   await form.getByRole('button', { name: 'Save' }).click();
   await expect
     .poll(() => config(admiral).sources.gz.settings)
     .toMatchObject({
+      host: 'ghe.example.test',
       account: 'default',
       views: [
         { title: 'Newbies', query: 'is:open label:newbie' },
@@ -213,6 +214,7 @@ test('a GitHub source keeps its host, account and custom views, names its fleet 
   await page.reload();
   await expect(source(page, 'GitHub').getByRole('form', { name: 'Settings' }).getByLabel('Account')).toHaveValue('default');
   const again = source(page, 'GitHub').getByRole('form', { name: 'Settings' });
+  await expect(again.getByLabel('Host')).toHaveValue('ghe.example.test');
   await expect(again.getByRole('group', { name: 'Custom view 2' }).getByLabel('Title')).toHaveValue('Bugs');
 
   // Delete a custom view.

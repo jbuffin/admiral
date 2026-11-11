@@ -15,7 +15,7 @@ function Badge({ source }: { source: Source }) {
   );
 }
 
-function SourceCard({ source, version, reload, bump, restart }: { source: Source; version: number; reload: () => Promise<void>; bump: () => void; restart: (key: string) => Promise<void> }) {
+function SourceCard({ source, version, reload, bump, restart }: { source: Source; version: number; reload: () => Promise<void>; bump: (key: string) => void; restart: (key: string) => Promise<{ ok: boolean; error?: string }> }) {
   const github = source.plugin === 'github';
   const fleet = fleets.value.find((f) => f.key === source.fleet);
   const others = fleets.value.filter((f) => f.key !== source.fleet);
@@ -57,7 +57,7 @@ function SourceCard({ source, version, reload, bump, restart }: { source: Source
           {w}
         </p>
       ))}
-      <SettingsForm source={source} version={version} onSaved={() => (bump(), void reload())} />
+      <SettingsForm source={source} version={version} onSaved={() => (bump(source.key), void reload())} />
       <div class="source-actions">
         {!github && others.length > 0 ? (
           <div class="move">
@@ -78,7 +78,7 @@ function SourceCard({ source, version, reload, bump, restart }: { source: Source
             </button>
           </div>
         ) : null}
-        <button type="button" class="btn" disabled={busy !== ''} onClick={() => run('restart', async () => (await restart(source.key), { ok: true }))}>
+        <button type="button" class="btn" disabled={busy !== ''} onClick={() => run('restart', () => restart(source.key))}>
           {busy === 'restart' ? 'Restarting…' : 'Restart'}
         </button>
         {confirming ? (
@@ -173,7 +173,8 @@ function AddSource({ fleet, onAdded }: { fleet: Fleet; onAdded: () => Promise<vo
 export function OrderSources({ fleet }: { fleet: Fleet }) {
   const [sources, setSources] = useState<Source[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [version, setVersion] = useState(0);
+  const [versions, setVersions] = useState<Record<string, number>>({});
+  const bump = (key: string) => setVersions((v) => ({ ...v, [key]: (v[key] ?? 0) + 1 }));
   const alive = useRef(true);
   useEffect(() => () => void (alive.current = false), []);
 
@@ -197,16 +198,21 @@ export function OrderSources({ fleet }: { fleet: Fleet }) {
   // Restart answers at once; the state it moves through is only seen by asking again, until two reads in a row are settled.
   const restart = async (key: string) => {
     const r = await restartSource(key);
-    if (!r.ok) return void setError(r.error);
+    if (!r.ok) return r;
+    // A read taken before the runner has stopped still says "ok": count settled reads only once the state has moved, or after a few reads without a move.
     let settled = 0;
+    let moved = false;
     for (let i = 0; i < 40 && settled < 2 && alive.current; i++) {
       await wait(500);
       const s = await fetchSources();
       if (!s.ok || !alive.current) continue;
       setSources(s.data);
-      settled = s.data.find((x) => x.key === key)?.state === 'starting' ? 0 : settled + 1;
+      const state = s.data.find((x) => x.key === key)?.state;
+      moved ||= state !== 'ok';
+      settled = state === 'starting' ? 0 : moved || i >= 5 ? settled + 1 : 0;
     }
-    setVersion((v) => v + 1);
+    bump(key);
+    return { ok: true };
   };
 
   const mine = sources?.filter((s) => s.fleet === fleet.key);
@@ -219,7 +225,7 @@ export function OrderSources({ fleet }: { fleet: Fleet }) {
       ) : null}
       {mine?.length === 0 ? <p class="line">{fleet.name} has no order sources.</p> : null}
       {mine?.map((s) => (
-        <SourceCard key={s.key} source={s} version={version} reload={reload} bump={() => setVersion((v) => v + 1)} restart={restart} />
+        <SourceCard key={s.key} source={s} version={versions[s.key] ?? 0} reload={reload} bump={bump} restart={restart} />
       ))}
       <AddSource fleet={fleet} onAdded={reload} />
     </>

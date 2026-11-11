@@ -202,7 +202,7 @@ export function SettingsForm({ source, version, onSaved }: { source: Source; ver
               const { kind, stored: kept } = kinds[k];
               const id = fid(k);
               const value = edited(k);
-              if (github && k === 'views') {
+              if (github && k === 'views' && kind === 'objects') {
                 const rows = (Array.isArray(value) ? value : []).filter(isRow);
                 return <ViewsEditor key={k} rows={rows} onRows={(r) => touch(k, r)} />;
               }
@@ -280,7 +280,7 @@ export function SettingsForm({ source, version, onSaved }: { source: Source; ver
               return (
                 <Field key={k} id={id} label={label} hint={p.description}>
                   <div class="control">
-                    <textarea id={id} rows={3} spellcheck={false} value={text} onInput={(e) => touch(k, (e.target as HTMLTextAreaElement).value)} />
+                    <textarea id={id} rows={Math.min(12, Math.max(3, text.split('\n').length))} spellcheck={false} value={text} onInput={(e) => touch(k, (e.target as HTMLTextAreaElement).value)} />
                     {text.includes(UNCHANGED) ? <small>{UNCHANGED} keeps a stored value.</small> : null}
                   </div>
                 </Field>

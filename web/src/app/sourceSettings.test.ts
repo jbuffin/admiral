@@ -53,6 +53,15 @@ describe('fieldKinds', () => {
   });
 });
 
+describe('a GitHub-shaped views list', () => {
+  const gh = { properties: { views: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, query: { type: 'string' } } } } } };
+
+  it('is rows when plain and a JSON field when a stored view holds the marker', () => {
+    expect(fieldKinds(gh, { views: [{ title: 'a', query: 'b' }] }).views.kind).toBe('objects');
+    expect(fieldKinds(gh, { views: [{ title: 'a', query: 'b', extra: UNCHANGED }] }).views.kind).toBe('json');
+  });
+});
+
 describe('buildSettings', () => {
   it('sends the marker for a kept secret nobody typed into', () => {
     const s = ok(buildSettings(schema, { label: 'a', token: UNCHANGED }, { label: 'b' }));
