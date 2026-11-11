@@ -1,23 +1,26 @@
 import { useState } from 'preact/hooks';
 import { saveFleet, type Fleet } from './api';
 import { Flag } from './Flag';
-import { fleets, loadFleets } from './fleets';
-import { errorTarget, saveBody, type FleetFields } from './fleetSettings';
+import { fleetPaint, fleets, loadFleets } from './fleets';
+import { errorTarget, fieldMessage, saveBody, type FleetFields } from './fleetSettings';
 
 const fieldsOf = (f: Fleet): FleetFields => ({ search_roots: f.search_roots, owners: f.owners, clone_root: f.clone_root, color: f.color });
 
-function ListField({ id, legend, item, add, values, errors, onChange }: {
+function ListField({ id, legend, item, add, values, errors, disabled, onChange }: {
   id: string;
   legend: string;
   item: string;
   add: string;
   values: string[];
   errors: Map<number, string>;
+  disabled: boolean;
   onChange: (next: string[]) => void;
 }) {
   return (
-    <fieldset class="rows">
-      <legend>{legend}</legend>
+    <div class="rows list-field" role="group" aria-labelledby={`${id}-legend`}>
+      <span class="legend" id={`${id}-legend`}>
+        {legend}
+      </span>
       {values.map((v, i) => {
         const err = errors.get(i);
         return (
@@ -26,11 +29,12 @@ function ListField({ id, legend, item, add, values, errors, onChange }: {
               type="text"
               aria-label={`${item} ${i + 1}`}
               value={v}
+              disabled={disabled}
               aria-invalid={err ? true : undefined}
               aria-describedby={err ? `${id}-${i}-err` : undefined}
               onInput={(e) => onChange(values.map((x, j) => (j === i ? (e.target as HTMLInputElement).value : x)))}
             />
-            <button type="button" class="btn" aria-label={`Remove ${item.toLowerCase()} ${i + 1}`} onClick={() => onChange(values.filter((_, j) => j !== i))}>
+            <button type="button" class="btn" disabled={disabled} aria-label={`Remove ${item.toLowerCase()} ${i + 1}`} onClick={() => onChange(values.filter((_, j) => j !== i))}>
               Remove
             </button>
             {err ? (
@@ -41,10 +45,10 @@ function ListField({ id, legend, item, add, values, errors, onChange }: {
           </div>
         );
       })}
-      <button type="button" class="btn" onClick={() => onChange([...values, ''])}>
+      <button type="button" class="btn" disabled={disabled} onClick={() => onChange([...values, ''])}>
         {add}
       </button>
-    </fieldset>
+    </div>
   );
 }
 
@@ -56,10 +60,15 @@ export function FleetPage({ fleet }: { fleet: Fleet }) {
 
   const body = saveBody(shown, edited);
   const target = error ? errorTarget(error.message, fleet.key) : null;
-  const listErrors = (field: 'search_roots' | 'owners') => new Map(target?.field === field && target.index !== undefined && error ? [[target.index, error.message]] : []);
-  const fieldError = (field: 'clone_root' | 'color') => (target?.field === field && error ? error.message : null);
+  const listErrors = (field: 'search_roots' | 'owners') =>
+    new Map(target?.field === field && target.index !== undefined && error ? [[target.index, fieldMessage(error.message, fleet.key)]] : []);
+  const fieldError = (field: 'clone_root' | 'color') => (target?.field === field && error ? fieldMessage(error.message, fleet.key) : null);
   const topError = error && !target ? error : null;
-  const set = (patch: Partial<FleetFields>) => setEdited({ ...edited, ...patch });
+  const set = (patch: Partial<FleetFields>) => {
+    // An error names a field (and a list slot); once that field changes it no longer points at what it said.
+    if (target && target.field in patch) setError(null);
+    setEdited({ ...edited, ...patch });
+  };
 
   const reset = (f: Fleet) => {
     const next = fieldsOf(f);
@@ -105,7 +114,7 @@ export function FleetPage({ fleet }: { fleet: Fleet }) {
         </p>
       ) : null}
       <div class="box">
-        <ListField id="roots" legend="Search roots" item="Search root" add="Add search root" values={edited.search_roots} errors={listErrors('search_roots')} onChange={(v) => set({ search_roots: v })} />
+        <ListField id="roots" legend="Search roots" item="Search root" add="Add search root" values={edited.search_roots} errors={listErrors('search_roots')} disabled={busy} onChange={(v) => set({ search_roots: v })} />
         {!edited.search_roots.some((r) => r.trim()) ? (
           <div class="set">
             <p class="note warning" role="status">
@@ -113,7 +122,7 @@ export function FleetPage({ fleet }: { fleet: Fleet }) {
             </p>
           </div>
         ) : null}
-        <ListField id="owners" legend="Owners" item="Owner" add="Add owner" values={edited.owners} errors={listErrors('owners')} onChange={(v) => set({ owners: v })} />
+        <ListField id="owners" legend="Owners" item="Owner" add="Add owner" values={edited.owners} errors={listErrors('owners')} disabled={busy} onChange={(v) => set({ owners: v })} />
         <div class="set">
           <div class="t">
             <label for="clone-root">Clone root</label>
@@ -124,6 +133,7 @@ export function FleetPage({ fleet }: { fleet: Fleet }) {
               id="clone-root"
               type="text"
               value={edited.clone_root}
+              disabled={busy}
               aria-invalid={cloneError ? true : undefined}
               aria-describedby={cloneError ? 'clone-root-err' : undefined}
               onInput={(e) => set({ clone_root: (e.target as HTMLInputElement).value })}
@@ -141,8 +151,14 @@ export function FleetPage({ fleet }: { fleet: Fleet }) {
             <span>{edited.color === '' ? 'Saving gives this fleet its default colour.' : 'Pick a colour for this fleet.'}</span>
           </div>
           <div class="control color-control">
-            <input id="fleet-color" type="color" value={edited.color || shown.color} aria-describedby={colorError ? 'fleet-color-err' : undefined} onInput={(e) => set({ color: (e.target as HTMLInputElement).value })} />
-            <button type="button" class="btn" onClick={() => set({ color: '' })}>
+            <span
+              class={edited.color === '' ? 'swatch swatch-default' : 'swatch'}
+              role="img"
+              aria-label={edited.color === '' ? 'Default colour' : 'Fleet colour'}
+              style={edited.color === '' ? undefined : { background: edited.color === shown.color ? fleetPaint(fleet).fill : edited.color }}
+            />
+            <input id="fleet-color" type="color" value={edited.color || shown.color} disabled={busy} aria-describedby={colorError ? 'fleet-color-err' : undefined} onInput={(e) => set({ color: (e.target as HTMLInputElement).value })} />
+            <button type="button" class="btn" disabled={busy} onClick={() => set({ color: '' })}>
               Use default
             </button>
             {colorError ? (

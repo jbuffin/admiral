@@ -17,9 +17,11 @@ export function FleetSwitcher({ sheet }: { sheet: boolean }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const active = activeFleet.value;
+  const [setup, setSetup] = useState<{ error?: string; started?: boolean } | null>(null);
 
   const close = (refocus = true) => {
     setOpen(false);
+    setSetup(null);
     if (refocus) trigger.current?.focus();
   };
 
@@ -40,8 +42,6 @@ export function FleetSwitcher({ sheet }: { sheet: boolean }) {
     close();
   };
 
-  const [setup, setSetup] = useState<{ error?: string; started?: boolean } | null>(null);
-
   const openSettings = () => {
     if (!active) return;
     close(false);
@@ -50,6 +50,7 @@ export function FleetSwitcher({ sheet }: { sheet: boolean }) {
 
   // The new shell has no terminal: setup runs detached and the old dashboard joins it.
   const newFleet = async () => {
+    setSetup(null);
     const r = await startSetup();
     if (!r.ok) return setSetup({ error: r.error });
     setSetup({ started: true });

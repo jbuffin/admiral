@@ -30,3 +30,9 @@ export function errorTarget(message: string, fleetKey: string): ErrorTarget | nu
   if (!m) return null;
   return m[1] ? { field: m[1] as 'search_roots' | 'owners', index: Number(m[2]) } : { field: m[3] as 'clone_root' | 'color' };
 }
+
+/** The server's message without its `fleets.<key>.<field>[i]: ` path, for showing beside the field it names. */
+export function fieldMessage(message: string, fleetKey: string): string {
+  const prefix = `fleets.${fleetKey}.`;
+  return message.startsWith(prefix) ? message.replace(/^[^:]*:\s*/, '') : message;
+}

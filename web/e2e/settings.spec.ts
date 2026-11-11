@@ -314,12 +314,14 @@ test('a fleet page edits search roots, owners, clone root and colour, keeping wh
   await save.click();
   expect((await sent).postDataJSON()).toEqual({ color: '#1a2b3c' });
   await expect.poll(() => zulu(admiral).color).toBe('#1a2b3c');
+  await expect(page.getByRole('img', { name: 'Fleet colour' })).toHaveCSS('background-color', 'rgb(26, 43, 60)');
   expect(zulu(admiral).search_roots).toEqual([stored]);
 
   // "Use default" sends an empty colour and the file drops the key.
   await page.reload();
   sent = put();
   await page.getByRole('button', { name: 'Use default' }).click();
+  await expect(page.getByRole('img', { name: 'Default colour' })).toBeVisible();
   await save.click();
   expect((await sent).postDataJSON()).toEqual({ color: '' });
   await expect.poll(() => 'color' in zulu(admiral)).toBe(false);

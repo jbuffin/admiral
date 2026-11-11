@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { errorTarget, saveBody } from './fleetSettings';
+import { errorTarget, fieldMessage, saveBody } from './fleetSettings';
 
 const shown = {
   search_roots: ['/Users/jo/code', '/Users/jo/work'],
@@ -56,5 +56,17 @@ describe('errorTarget', () => {
   it('sends an error that names another fleet or no field to the page top', () => {
     expect(errorTarget('fleets.work.clone_root: must be an absolute path', 'home')).toBeNull();
     expect(errorTarget('malformed JSON body', 'home')).toBeNull();
+  });
+});
+
+describe('fieldMessage', () => {
+  it('drops the path the field already shows', () => {
+    expect(fieldMessage('fleets.home.clone_root: must be an absolute path or start with ~/, got "x"', 'home')).toBe('must be an absolute path or start with ~/, got "x"');
+    expect(fieldMessage('fleets.home.owners[0]: must not be empty', 'home')).toBe('must not be empty');
+  });
+
+  it('keeps a message that names no field of this fleet whole', () => {
+    expect(fieldMessage('fleets.work.clone_root: must be absolute', 'home')).toBe('fleets.work.clone_root: must be absolute');
+    expect(fieldMessage('malformed JSON body', 'home')).toBe('malformed JSON body');
   });
 });
