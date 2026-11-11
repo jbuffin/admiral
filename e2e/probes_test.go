@@ -84,8 +84,8 @@ func TestProbe_SetupProvesTheGuardOnAFreshHome(t *testing.T) {
 	if l := lineFor(r.stdout, "Pre-tool guard hook"); !strings.Contains(l, "passed") {
 		t.Errorf("setup output has no passed line for the guard hook (got %q):\n%s", l, r.stdout)
 	}
-	if l := lineFor(r.stdout, "Advisor"); !strings.Contains(strings.ToLower(l), "not checked") {
-		t.Errorf("the advisor has no probe and should read not checked (got %q)", l)
+	if l := lineFor(r.stdout, "Advisor"); !strings.Contains(l, "passed: the fleet's judge harness is claude") || strings.Count(r.stdout, "Advisor") != 1 {
+		t.Errorf("the advisor should print once, passed on the judge harness the probes proved (got %q):\n%s", l, r.stdout)
 	}
 	if s := pw.storeText(); !strings.Contains(s, "2.1.300 (fake)") || !strings.Contains(s, "autopilot.guard_hook") {
 		t.Errorf("capabilities.json lacks the version or the guard result:\n%s", s)
