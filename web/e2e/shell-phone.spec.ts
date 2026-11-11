@@ -14,6 +14,8 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   await say(admiral, login, 'Which branch should I rebase onto?');
   const billing = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-billing' });
   setState(admiral, billing, 'working');
+  // Waits for the harness to start, so the next launch's exit cue cannot reach it.
+  await say(admiral, billing, 'Reading billing/export.go');
   const moored = await launchShip(admiral, { fleet: 'zulu', harness: 'codex', exit: 3 });
 
   await page.goto(admiral.url + 'app/');
