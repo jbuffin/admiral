@@ -95,7 +95,7 @@ Requests are `{"jsonrpc":"2.0","id":1,"method":"…","params":{…}}`. Answer ea
 
 Admiral hides an order while a ship launched from it exists, whatever that ship's status, and shows it again once the ship is gone, if you still list it. A plugin that wants a launched order to disappear for good deletes it when it hears `orders.launched`, as the example plugin in [Try it](#try-it) does.
 
-If you can't list a panel, say so with an `error` instead of a list. Its message (cut to one line of at most 300 characters; "This panel's orders couldn't be listed." if it is empty) is shown on that panel. The panel keeps the orders it had, the other panels and the source's state don't change, and the message stays until your next successful `orders.list` for that panel. A source in `error` shows its own error instead. A timeout or an invalid list isn't an error answer: Admiral logs it and shows nothing.
+If you can't list a panel, say so with an `error` instead of a list. Its message (cut to one line of at most 300 characters; "This view's orders couldn't be listed." if it is empty) is shown on that panel. The panel keeps the orders it had, the other panels and the source's state don't change, and the message stays until your next successful `orders.list` for that panel. A source in `error` shows its own error instead. A timeout or an invalid list isn't an error answer: Admiral logs it and shows nothing.
 
 **`orders.refresh`**: re-read your upstream. `panel` may be left out for all panels. When you have new data, send `orders.changed`. Only sent to sources with the `refresh` capability.
 

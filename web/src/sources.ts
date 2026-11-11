@@ -47,6 +47,7 @@ export interface Source {
   error: string | null;
   auth: Auth | null;
   views: Panel[];
+  warnings: string[];
   settings?: Record<string, unknown>;
 }
 

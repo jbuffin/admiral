@@ -725,7 +725,7 @@ func (s *Service) servePanelOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	for i, id := range req.Panels {
 		if id == "" || hasControl(id) || slices.Contains(req.Panels[:i], id) {
-			writeError(w, http.StatusBadRequest, "panels must be distinct panel IDs")
+			writeError(w, http.StatusBadRequest, "panels must be distinct view IDs")
 			return
 		}
 	}
@@ -767,7 +767,7 @@ func (s *Service) servePause(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, ok := def.Autopilot[panel]; !ok {
-		writeError(w, http.StatusNotFound, "panel "+strconv.Quote(panel)+" of source "+key+" has no autopilot entry")
+		writeError(w, http.StatusNotFound, "view "+strconv.Quote(panel)+" of source "+key+" has no autopilot entry")
 		return
 	}
 	s.State.SetPaused(key, panel, *req.Paused)
@@ -966,7 +966,7 @@ func (s *Service) AddOrder(ctx context.Context, key, panel, text string) (string
 	}
 	id, found := panelOf(rn, panel, "")
 	if !found {
-		return "", &RequestError{Status: http.StatusNotFound, Msg: "panel " + strconv.Quote(panel) + " not found", kind: inbox.AddRetryable}
+		return "", &RequestError{Status: http.StatusNotFound, Msg: "view " + strconv.Quote(panel) + " not found", kind: inbox.AddRetryable}
 	}
 	panel = id
 	res, err := p.call(ctx, "orders.add", map[string]any{"panel": panel, "text": text}, callTimeout)

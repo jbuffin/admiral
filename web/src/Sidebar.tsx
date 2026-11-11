@@ -153,6 +153,11 @@ function SourceRow({ source }: { source: Source }) {
         </Menu>
       </div>
       {refusal && <p role="alert">{refusal}</p>}
+      {(source.warnings ?? []).map((w) => (
+        <p key={w} role="status">
+          {w}
+        </p>
+      ))}
       {confirming.value === source.key && <ConfirmRemove source={source} />}
       {noPanels && source.state === 'auth_required' && source.auth && <SignInCard auth={source.auth} />}
       {noPanels && source.state === 'error' && <SourceProblem sourceKey={source.key} message={source.error} />}

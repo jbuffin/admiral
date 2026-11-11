@@ -175,8 +175,8 @@ export function AutopilotSettings({
           <>
         <div class="app-set-row">
           <span class="app-set-text">
-            <strong>Launch this panel's orders</strong>
-            <small>{draft.enabled ? 'In list order, while the caps have room. Pause in the panel header stops it for a while.' : 'Off. The settings stay in config.json and nothing launches.'}</small>
+            <strong>Launch this view's orders</strong>
+            <small>{draft.enabled ? 'In list order, while the caps have room. Pause in the view header stops it for a while.' : 'Off. The settings stay in config.json and nothing launches.'}</small>
           </span>
           <button type="button" role="switch" aria-checked={draft.enabled} aria-label="Autopilot" class={draft.enabled ? 'press ap-switch on' : 'press ap-switch'} disabled={ro} onClick={() => edit('enabled', { enabled: !draft.enabled })}>
             <span aria-hidden="true" />
@@ -288,7 +288,7 @@ export function AutopilotSettings({
                 if (/^\d+$/.test(t) && Number(t) >= 1) edit('max_ships', { max_ships: Number(t) });
               }}
             />
-            <small>This panel's cap. The global cap is {loaded.max_ships}, set in config.json.</small>
+            <small>This view's cap. The global cap is {loaded.max_ships}, set in config.json.</small>
           </div>
           <div class="app-set-field">
             <label for="ap-retro">Retro every</label>
@@ -311,7 +311,7 @@ export function AutopilotSettings({
         {!loaded.resume_source && (
           <div role="note" class="ap-note">
             <span>
-              <b>autopilot.resume_source</b> isn't set in config.json, so this panel queues no resume or retro orders. Set it by hand to turn them on.
+              <b>autopilot.resume_source</b> isn't set in config.json, so this view queues no resume or retro orders. Set it by hand to turn them on.
             </span>
           </div>
         )}
