@@ -95,7 +95,7 @@ function StopShip({ ship }: { ship: Ship }) {
   );
 }
 
-function TerminalTab({ ship, boat }: { ship: Ship; boat?: CrewBoat }) {
+function SessionTerminal({ ship, boat }: { ship: Ship; boat?: CrewBoat }) {
   const open = boat ? boat.status !== 'anchored' : atSea(ship);
   const { host, link, linkState, activity } = useBridgeTerminal({
     session: ship.session,
@@ -116,9 +116,9 @@ function TerminalTab({ ship, boat }: { ship: Ship; boat?: CrewBoat }) {
       <div class={linkState === 'reconnecting' ? 'term-body dim' : 'term-body'}>
         <div class="term-host" ref={host} />
       </div>
-      {!open && (boat || ship.status === 'anchored' || ship.status === 'moored') ? (
+      {!open && (boat || ship.status === 'anchored') ? (
         <div class="term-keys">
-          <span class="term-note">{boat ? 'This boat exited. This is its last screen.' : ship.status === 'moored' ? "A moored ship has no session until it's woken." : 'The harness exited. This is its last screen.'}</span>
+          <span class="term-note">{boat ? 'This boat exited. This is its last screen.' : 'The harness exited. This is its last screen.'}</span>
         </div>
       ) : (
         open &&
@@ -134,6 +134,17 @@ function TerminalTab({ ship, boat }: { ship: Ship; boat?: CrewBoat }) {
       )}
     </>
   );
+}
+
+// A moored ship has no session, so there is no bridge to join.
+function TerminalTab({ ship, boat }: { ship: Ship; boat?: CrewBoat }) {
+  if (ship.status === 'moored')
+    return (
+      <div class="term-keys">
+        <span class="term-note">A moored ship has no session until it's woken.</span>
+      </div>
+    );
+  return <SessionTerminal ship={ship} boat={boat} />;
 }
 
 type Load = { state: 'loading' } | { state: 'error'; error: string } | { state: 'done'; changes: Changes };
