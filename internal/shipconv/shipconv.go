@@ -1,4 +1,4 @@
-// Package shipconv serves a Claude Code ship's conversation over HTTP and WebSocket (docs/api.md).
+// Package shipconv serves a Claude Code or Copilot ship's conversation over HTTP and WebSocket (docs/api.md).
 package shipconv
 
 import (
@@ -47,7 +47,7 @@ type Service struct {
 	// Tests replace these two lookups, which need a live tmux.
 	ship   func(session string) (ships.Ship, bool)
 	option func(sh ships.Ship) (raw, startCmd, configDir string, ok bool)
-	crew   func(sh ships.Ship, name string) (sessionhost.Crew, string, bool) // the boat and its fleet's Claude config dir
+	crew   func(sh ships.Ship, name string) (sessionhost.Crew, string, bool) // the boat and its fleet's config dir for the boat's harness
 
 	mu      sync.Mutex
 	seen    map[string]string // session -> option value a file was seen for: tells gone from none
@@ -79,6 +79,7 @@ type where struct {
 	path         string
 	id           string // the session id
 	configDir    string
+	harness      string
 }
 
 // key names a ship's conversation, or a crew boat's, in the maps below.
@@ -104,7 +105,7 @@ func (s *Service) shipOf(session string, sync bool) (ships.Ship, bool) {
 	return sh, ok
 }
 
-// optionOf reads the ship's @admiral-transcript, the command its pane started with and the Claude config dir of its fleet.
+// optionOf reads the ship's @admiral-transcript, the command its pane started with and the harness's config dir in its fleet.
 func (s *Service) optionOf(sh ships.Ship) (raw, startCmd, configDir string, ok bool) {
 	if s.option != nil {
 		return s.option(sh)
@@ -129,24 +130,27 @@ func (s *Service) optionOf(sh ships.Ship) (raw, startCmd, configDir string, ok b
 	if err != nil {
 		return "", "", "", false
 	}
-	dir, found := s.claudeConfigDir(sh)
+	dir, found := s.configDir(sh, sh.Harness)
 	if !found {
 		return "", "", "", false
 	}
 	return raw, startCmd, dir, true
 }
 
-func (s *Service) claudeConfigDir(sh ships.Ship) (string, bool) {
+func (s *Service) configDir(sh ships.Ship, harness string) (string, bool) {
 	f, found := s.Config().Fleet(sh.Fleet)
 	if !found {
 		return "", false
 	}
 	var env map[string]string
-	if d, has := f.Harness("claude"); has {
+	if d, has := f.Harness(harness); has {
 		env = d.Env
 	}
-	return config.IdentityDir("claude", env), true
+	return config.IdentityDir(harness, env), true
 }
+
+// hasConversation is whether Admiral reads a harness's own record.
+func hasConversation(harness string) bool { return harness == "claude" || harness == "copilot" }
 
 // crewOf finds a boat of the ship by name.
 func (s *Service) crewOf(sh ships.Ship, name string) (sessionhost.Crew, string, bool) {
@@ -183,7 +187,7 @@ func (s *Service) crewOf(sh ships.Ship, name string) (sessionhost.Crew, string, 
 			}
 		}
 	}
-	dir, _ := s.claudeConfigDir(sh)
+	dir, _ := s.configDir(sh, b.Harness)
 	return b, dir, true
 }
 
@@ -199,11 +203,11 @@ func (s *Service) locateBoat(session, crew string) (w where, ok, none bool) {
 	if !ok {
 		return where{}, false, false
 	}
-	w.ship = sh
+	w.ship, w.harness = sh, sh.Harness
 	if crew != "" {
 		return s.locateCrew(w, crew)
 	}
-	if sh.Harness != "claude" {
+	if !hasConversation(sh.Harness) {
 		return w, true, true
 	}
 	raw, startCmd, configDir, has := s.optionOf(sh)
@@ -215,7 +219,7 @@ func (s *Service) locateBoat(session, crew string) (w where, ok, none bool) {
 	if len(parts) != 3 || parts[1] != "launch" || !sessionhost.ValidTranscriptPath(parts[2]) {
 		return w, true, true
 	}
-	id, valid := transcriptfs.SessionID(parts[2])
+	id, valid := transcriptfs.SessionIDFor(sh.Harness, parts[2])
 	// The option is writable from the pane and the start command is not, so the id the launch gave the harness decides.
 	if m := startedWith.FindStringSubmatch(startCmd); !valid || m == nil || m[1] != id {
 		return w, true, true
@@ -231,11 +235,11 @@ func (s *Service) locateCrew(w where, name string) (where, bool, bool) {
 	if !ok {
 		return where{}, false, false
 	}
-	w.crew, w.boatLaunched = name, boat.Launched
-	if boat.Harness != "claude" || configDir == "" || !sessionhost.ValidCrewTranscriptPath(boat.Transcript) {
+	w.crew, w.boatLaunched, w.harness = name, boat.Launched, boat.Harness
+	if !hasConversation(boat.Harness) || configDir == "" || !sessionhost.ValidCrewTranscriptPath(boat.Transcript) {
 		return w, true, true
 	}
-	id, _ := transcriptfs.SessionID(boat.Transcript)
+	id, _ := transcriptfs.SessionIDFor(boat.Harness, boat.Transcript)
 	w.raw, w.path, w.id, w.configDir = boat.Transcript, boat.Transcript, id, configDir
 	return w, true, false
 }
@@ -243,14 +247,14 @@ func (s *Service) locateCrew(w where, name string) (where, bool, bool) {
 // open tries the recorded path, then (find) any project dir holding the session id.
 // A missing file is fs.ErrNotExist; a refused one is transcriptfs.ErrRefused.
 func (w where) open(find bool) (*os.File, os.FileInfo, string, error) {
-	f, info, err := transcriptfs.Open(w.configDir, w.path)
+	f, info, err := transcriptfs.OpenFor(w.harness, w.configDir, w.path)
 	if err == nil {
 		return f, info, w.path, nil
 	}
 	if !errors.Is(err, fs.ErrNotExist) || !find {
 		return nil, nil, "", err
 	}
-	if w.id == "" {
+	if w.id == "" || w.harness == "copilot" { // Copilot's path is fixed by its session id
 		return nil, nil, "", err
 	}
 	p, err := transcriptfs.Find(w.configDir, w.id)
@@ -307,7 +311,7 @@ func (s *Service) serveConversation(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 	s.markSeen(k, loc.raw)
-	items, more, err := conversation.Page(f, info, conversation.Options{}, before, pageSize)
+	items, more, err := conversation.Page(f, info, conversation.Options{Harness: loc.harness}, before, pageSize)
 	switch {
 	case errors.Is(err, conversation.ErrUnknownID):
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "before is not the id of an item"})
@@ -380,7 +384,7 @@ func (s *Service) handleOpen(ctx context.Context, c *server.Client, raw json.Raw
 	if !ok || none {
 		return // an unknown ship or boat, or one with no conversation, is ignored
 	}
-	w := &watch{session: m.Ship, crew: m.Crew, launched: loc.ship.Launched + "|" + loc.boatLaunched, loc: loc, reader: conversation.NewReader(conversation.Options{}),
+	w := &watch{session: m.Ship, crew: m.Crew, launched: loc.ship.Launched + "|" + loc.boatLaunched, loc: loc, reader: conversation.NewReader(conversation.Options{Harness: loc.harness}),
 		subs: map[*server.Client]struct{}{}}
 	// Prime the reader: what is already there is not sent (the client reads the
 	// page), and a tool result that arrives later still finds its call.
@@ -530,7 +534,7 @@ func (s *Service) poll(w *watch) {
 		err  error
 	)
 	if w.path != "" {
-		f, info, err = transcriptfs.Open(w.loc.configDir, w.path)
+		f, info, err = transcriptfs.OpenFor(w.loc.harness, w.loc.configDir, w.path)
 	}
 	if f == nil {
 		find := time.Since(w.lastFind) >= findEvery
@@ -597,7 +601,7 @@ func (s *Service) PendingQuestions(session, crew string) []conversation.Item {
 		return nil
 	}
 	defer f.Close()
-	items, _, err := conversation.Page(f, info, conversation.Options{}, "", pageSize)
+	items, _, err := conversation.Page(f, info, conversation.Options{Harness: loc.harness}, "", pageSize)
 	if err != nil {
 		return nil
 	}

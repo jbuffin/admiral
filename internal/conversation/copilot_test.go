@@ -152,7 +152,7 @@ func TestCopilotModelLinesNeverDoubleText(t *testing.T) {
 
 func TestCopilotEngineerTypedUserLinesOnly(t *testing.T) {
 	data := cl("user.message", "00.500", `{"content":"","transformedContent":"<memories>m</memories>","source":"memory","agentTaskId":"a1"}`) +
-		cl("user.message", "00.700",`{"content":"background result","source":"agent","agentTaskId":"a2"}`) +
+		cl("user.message", "00.700", `{"content":"background result","source":"agent","agentTaskId":"a2"}`) +
 		copilotTurn("typed", "ok")
 	items := readCop(t, data)
 	if fmt.Sprint(kinds(items)) != "[user assistant turn_end]" || items[0].Text != "typed" {

@@ -20,7 +20,7 @@ Each boat in a ship's `crew` also carries `role` and `conversation` (see "A crew
 - a tool call: its summary line, or its name when it has none;
 - assistant text: its first non-empty line.
 
-A pending question wins only while it is the latest of these, so a question an interrupted turn left pending does not pin the tail. Answered questions and every other item (user, turn end, compaction, notice) are skipped. Only Claude ships have a conversation adapter: a Codex or Copilot ship, a ship with no transcript yet and one whose transcript cannot be read have `tail: ""`.
+A pending question wins only while it is the latest of these, so a question an interrupted turn left pending does not pin the tail. Answered questions and every other item (user, turn end, compaction, notice) are skipped. Only Claude Code and Copilot ships have a conversation adapter: a Codex ship, a ship with no transcript yet and one whose transcript cannot be read have `tail: ""`.
 
 ### `POST /api/moored/refresh` (alias `POST /api/v1/moored/refresh`)
 
@@ -195,9 +195,9 @@ Each boat in a ship's `crew` list carries `role` (the `--role` it was launched w
 
 ### `GET /api/v1/ships/<ship>/crew/<name>/conversation[?before=<id>]`
 
-The same body, states and paging as a ship's conversation. The file is the transcript path the boat's hooks recorded (ADR 0021), read fresh from its pane on each request. A Codex or Copilot boat, and a Claude boat with no path recorded yet, read `none`. An anchored (exited) boat stays readable until it is closed. An unknown ship or boat is `404`, and so is a boat that was closed.
+The same body, states and paging as a ship's conversation. The file is the transcript path the boat's hooks recorded (ADR 0021), read fresh from its pane on each request. A Codex boat, and a Claude Code or Copilot boat with no path recorded yet (a Copilot boat's is recorded at its first `agentStop`), read `none`. An anchored (exited) boat stays readable until it is closed. An unknown ship or boat is `404`, and so is a boat that was closed.
 
-A boat has no `--session-id` of ours to check the path against, and a boat writes the path itself, so the only limit is the one every transcript read has (ADR 0019): the file must be a regular file under the boat's fleet's `<config dir>/projects/` with no symlink on the way, else `unreadable`. A boat may therefore show any transcript in its fleet's `projects/`, including another session's. Binding a boat to its own session is follow-up issue #357.
+A boat has no `--session-id` of ours to check the path against, and a boat writes the path itself, so the only limit is the one every transcript read has (ADR 0019): the file must be a regular file under the boat's fleet's `<config dir>/projects/` (Copilot: `<copilot home>/session-state/<id>/events.jsonl`) with no symlink on the way, else `unreadable`. A boat may therefore show any transcript in its fleet's `projects/` or `session-state/`, including another session's. Binding a boat to its own session is follow-up issue #357.
 
 ### WebSocket
 

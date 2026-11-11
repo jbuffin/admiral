@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { HOME, WORK, boatOf, boatReceived, boatSays, changeFile, changesOf, chip, diffOf, expectSeededTurn, flotilla, gitCheckout, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh } from './shell';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const surface = (page: Page, title: string) => page.getByRole('heading', { name: title, exact: true });
@@ -555,3 +555,18 @@ function box(b: { width: number; height: number } | null) {
   if (!b) throw new Error('the element has no box');
   return b;
 }
+
+test('a Copilot ship shows its conversation in the Conversation tab, and a line it records shows live', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  const pilot = await launchShip(admiral, { fleet: 'alpha', harness: 'copilot', cue: 'events Copilot reads events.jsonl\nwait more\nevents Appended while the view was open\n' });
+  await page.goto(admiral.url + 'app/ships?fleet=alpha');
+  await rowLink(page, pilot).tap();
+  await expect(viewTab(page, 'Conversation')).toHaveAttribute('aria-selected', 'true');
+  await expect(viewPanel(page)).toContainText('Question 1');
+  await expect(viewPanel(page)).toContainText('Copilot reads events.jsonl');
+  await expect(viewPanel(page)).not.toContainText('No conversation for this harness');
+
+  writeFileSync(join(admiral.home, 'rec', pilot.session, 'more'), '');
+  await expect(viewPanel(page)).toContainText('Appended while the view was open', { timeout: 15_000 });
+});

@@ -90,7 +90,7 @@ func (s *splitter) feed(data []byte, fn func(line []byte)) {
 type held struct {
 	opts    Options
 	trim    bool
-	dec     *claudeDecoder
+	dec     decoder
 	items   []Item
 	base    int
 	byID    map[string]int
@@ -108,7 +108,7 @@ func newHeld(o Options, trim bool) *held {
 }
 
 func (h *held) reset() {
-	h.dec = newClaudeDecoder(h.opts.MaxOutput)
+	h.dec = newDecoder(h.opts)
 	h.items, h.base, h.bytes = nil, 0, 0
 	h.byID, h.touched = map[string]int{}, map[string]struct{}{}
 	h.sawContent, h.sawObject = false, false
@@ -219,8 +219,11 @@ func readClaudeCode(r io.Reader) ([]Item, error) {
 	return h.items, h.result()
 }
 
-// readCopilot is a stub for the red tests: the events.jsonl adapter fills it in.
-func readCopilot(r io.Reader) ([]Item, error) { return nil, nil }
+// readCopilot holds everything it reads, so only the tests use it.
+func readCopilot(r io.Reader) ([]Item, error) {
+	h := decode(r, Options{Harness: "copilot"}, false)
+	return h.items, h.result()
+}
 
 func decode(r io.Reader, o Options, skipFirst bool) *held {
 	h := newHeld(o, false)

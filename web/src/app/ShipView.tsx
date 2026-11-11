@@ -17,6 +17,9 @@ import { useBridgeTerminal } from '../useBridgeTerminal';
 import { atSea } from '../crew';
 import { KEYS, touchKeyboard } from '../keys';
 
+// Harnesses whose own record Admiral reads, so a ship's conversation is still to come while it runs.
+const hasTranscript = (harness: string) => harness === 'claude' || harness === 'copilot';
+
 const TABS = ['Conversation', 'Terminal', 'Changes', 'PR'] as const;
 type Tab = (typeof TABS)[number];
 
@@ -253,15 +256,15 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
       follow.current = undefined;
       return;
     }
-    // Only a running Claude ship has a transcript still to come; a boat is followed once its transcript is recorded.
-    const f = followConversation(ship.session, setConv, { crew: boatName, retryNone: () => boatName === undefined && latest.current.harness === 'claude' && latest.current.status !== 'anchored' });
+    // Only a running Claude or Copilot ship has a transcript still to come; a boat is followed once its transcript is recorded.
+    const f = followConversation(ship.session, setConv, { crew: boatName, retryNone: () => boatName === undefined && hasTranscript(latest.current.harness) && latest.current.status !== 'anchored' });
     follow.current = f;
     return f.stop;
   }, [ship.session, boatName, boatHasConversation]);
 
   const target: Target = boat
     ? { session: ship.session, crew: boat.name, state: boatBoxState(boat), interruptible: boat.status === 'underway', hasConversation: boatHasConversation && conv.state === 'ok', subject: 'This boat' }
-    : { session: ship.session, state: boxState(ship), interruptible: ship.status === 'underway', hasConversation: conv.state === 'ok' || (conv.state === 'none' && ship.harness === 'claude'), subject: 'This ship' };
+    : { session: ship.session, state: boxState(ship), interruptible: ship.status === 'underway', hasConversation: conv.state === 'ok' || (conv.state === 'none' && hasTranscript(ship.harness)), subject: 'This ship' };
   const box = useComposer(target, conv);
   const Heading = title ? 'h1' : 'h2';
   const anchored = boat ? chipState(boat) !== 'running' : ship.status === 'anchored';

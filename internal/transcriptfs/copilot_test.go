@@ -32,7 +32,7 @@ func copilotHome(t *testing.T) (home, events string) {
 func TestCopilotEventsFileIsOpenedAndItsSessionIDIsTheDirectory(t *testing.T) {
 	home, events := copilotHome(t)
 
-	f, info, err := transcriptfs.Open(home, events)
+	f, info, err := transcriptfs.OpenFor("copilot", home, events)
 	if err != nil {
 		t.Fatalf("Open(%s) = %v", events, err)
 	}
@@ -40,10 +40,10 @@ func TestCopilotEventsFileIsOpenedAndItsSessionIDIsTheDirectory(t *testing.T) {
 	if !info.Mode().IsRegular() {
 		t.Errorf("not regular: %v", info.Mode())
 	}
-	if id, ok := transcriptfs.SessionID(events); !ok || id != copilotID {
+	if id, ok := transcriptfs.SessionIDFor("copilot", events); !ok || id != copilotID {
 		t.Errorf("SessionID = %q, %v", id, ok)
 	}
-	if _, ok := transcriptfs.SessionID(filepath.Join(home, "session-state", "not-a-uuid", "events.jsonl")); ok {
+	if _, ok := transcriptfs.SessionIDFor("copilot", filepath.Join(home, "session-state", "not-a-uuid", "events.jsonl")); ok {
 		t.Error("a directory that is not a uuid gave a session id")
 	}
 }
@@ -58,7 +58,7 @@ func TestCopilotSessionStateMayBeALinkLikeProjects(t *testing.T) {
 	if err := os.Symlink(moved, real); err != nil {
 		t.Fatal(err)
 	}
-	f, _, err := transcriptfs.Open(home, events)
+	f, _, err := transcriptfs.OpenFor("copilot", home, events)
 	if err != nil {
 		t.Fatalf("a linked session-state/ was refused: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestCopilotSessionStateMayBeALinkLikeProjects(t *testing.T) {
 func TestCopilotRefusals(t *testing.T) {
 	home, events := copilotHome(t)
 	// The control: the layout is accepted, so each refusal below is about its own change.
-	if f, _, err := transcriptfs.Open(home, events); err != nil {
+	if f, _, err := transcriptfs.OpenFor("copilot", home, events); err != nil {
 		t.Fatalf("the untouched layout was refused: %v", err)
 	} else {
 		f.Close()
@@ -90,21 +90,21 @@ func TestCopilotRefusals(t *testing.T) {
 	t.Run("outside session-state", func(t *testing.T) {
 		p := filepath.Join(home, "config.json")
 		write(p)
-		if _, _, err := transcriptfs.Open(home, p); !errors.Is(err, transcriptfs.ErrRefused) {
+		if _, _, err := transcriptfs.OpenFor("copilot", home, p); !errors.Is(err, transcriptfs.ErrRefused) {
 			t.Errorf("err = %v", err)
 		}
 	})
 	t.Run("another file in the session directory", func(t *testing.T) {
 		p := filepath.Join(dir, "workspace.yaml")
 		write(p)
-		if _, _, err := transcriptfs.Open(home, p); !errors.Is(err, transcriptfs.ErrRefused) {
+		if _, _, err := transcriptfs.OpenFor("copilot", home, p); !errors.Is(err, transcriptfs.ErrRefused) {
 			t.Errorf("err = %v", err)
 		}
 	})
 	t.Run("directory that is not a uuid", func(t *testing.T) {
 		p := filepath.Join(state, "sneaky", "events.jsonl")
 		write(p)
-		if _, _, err := transcriptfs.Open(home, p); !errors.Is(err, transcriptfs.ErrRefused) {
+		if _, _, err := transcriptfs.OpenFor("copilot", home, p); !errors.Is(err, transcriptfs.ErrRefused) {
 			t.Errorf("err = %v", err)
 		}
 	})
@@ -119,7 +119,7 @@ func TestCopilotRefusals(t *testing.T) {
 		if err := os.Symlink(target, p); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err := transcriptfs.Open(home, p); !errors.Is(err, transcriptfs.ErrRefused) {
+		if _, _, err := transcriptfs.OpenFor("copilot", home, p); !errors.Is(err, transcriptfs.ErrRefused) {
 			t.Errorf("err = %v", err)
 		}
 	})
@@ -129,7 +129,7 @@ func TestCopilotRefusals(t *testing.T) {
 		if err := os.Symlink(other, filepath.Join(state, id)); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err := transcriptfs.Open(home, filepath.Join(state, id, "events.jsonl")); !errors.Is(err, transcriptfs.ErrRefused) {
+		if _, _, err := transcriptfs.OpenFor("copilot", home, filepath.Join(state, id, "events.jsonl")); !errors.Is(err, transcriptfs.ErrRefused) {
 			t.Errorf("err = %v", err)
 		}
 	})
@@ -142,7 +142,7 @@ func TestCopilotRefusals(t *testing.T) {
 		if err := syscall.Mkfifo(p, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err := transcriptfs.Open(home, p); !errors.Is(err, transcriptfs.ErrRefused) {
+		if _, _, err := transcriptfs.OpenFor("copilot", home, p); !errors.Is(err, transcriptfs.ErrRefused) {
 			t.Errorf("err = %v", err)
 		}
 	})
