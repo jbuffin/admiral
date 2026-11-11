@@ -1,4 +1,4 @@
-import type { ComponentChildren } from 'preact';
+import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch, loaded } from './fleets';
 import { Flag } from './Flag';
@@ -13,7 +13,9 @@ import { sourcesForFleet } from './launchForm';
 import { ships, shipsLoaded, sources } from './shipsLink';
 import { StatusGlyph } from './StatusGlyph';
 import { call, type Ship } from './api';
-import { go, loc, surfaceOf, surfacePath } from './router';
+import { campaignOf, go, loc, surfaceOf, surfacePath } from './router';
+import { CampaignPage, CampaignSidebar, CampaignsList } from './CampaignPage';
+import { followReference } from './campaignsLink';
 import { emptyLine, MORE, PHONE_TABS, SURFACES, surfaceById, type Surface } from './surfaces';
 
 const PHONE_QUERY = '(max-width: 640px)';
@@ -154,6 +156,7 @@ function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
 }
 
 function OrdersList({ fleetKey, onLaunch }: { fleetKey: string; onLaunch: (o: OrderRef) => void }) {
+  const [followError, setFollowError] = useState('');
   const groups = sourcesForFleet(sources.value, fleetKey)
     .map((src) => ({ src, orders: src.views.flatMap((v) => v.orders) }))
     .filter((g) => g.orders.length > 0);
@@ -163,6 +166,11 @@ function OrdersList({ fleetKey, onLaunch }: { fleetKey: string; onLaunch: (o: Or
       <h2 id="orders-head" class="group-head">
         Orders
       </h2>
+      {followError ? (
+        <p class="alert" role="alert">
+          {followError}
+        </p>
+      ) : null}
       {groups.map(({ src, orders }) => (
         <div key={src.key} class="order-view">
           <h3 class="order-view-head">{src.name}</h3>
@@ -174,6 +182,11 @@ function OrdersList({ fleetKey, onLaunch }: { fleetKey: string; onLaunch: (o: Or
                 <button type="button" class="btn" aria-label={`Launch ${o.title}`} onClick={() => onLaunch({ source: src.key, id: o.id, title: o.title, text: o.text || o.title })}>
                   Launch
                 </button>
+                {o.url && (o.sub_issues ?? 0) > 0 ? (
+                  <button type="button" class="btn" aria-label={`Follow ${o.title}`} onClick={async () => setFollowError((await followReference(o.url!)) ?? '')}>
+                    Follow
+                  </button>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -245,8 +258,14 @@ function ShipsPanel({ surface, title }: { surface: Surface; title: boolean }) {
   );
 }
 
-const Panel = ({ surface, title }: { surface: Surface; title: boolean }) =>
-  surface.id === 'ships' ? <ShipsPanel surface={surface} title={title} /> : <EmptyState surface={surface} title={title} />;
+function Panel({ surface, title, phone }: { surface: Surface; title: boolean; phone?: boolean }) {
+  if (surface.id === 'ships') return <ShipsPanel surface={surface} title={title} />;
+  if (surface.id === 'campaigns') {
+    const id = campaignOf(loc.value.path);
+    return id ? <CampaignPage key={id} id={id} title={title} /> : <CampaignsList phone={!!phone} title={title} />;
+  }
+  return <EmptyState surface={surface} title={title} />;
+}
 
 function MoreSheet({ onClose }: { onClose: () => void }) {
   return (
@@ -274,7 +293,7 @@ function PhoneShell({ surface }: { surface: Surface }) {
         <FleetSwitcher sheet />
         <h1>{surface.title}</h1>
       </header>
-      {surface.id === 'preferences' ? <Preferences phone /> : <Panel surface={surface} title={false} />}
+      {surface.id === 'preferences' ? <Preferences phone /> : <Panel surface={surface} title={false} phone />}
       <nav class="tabbar" aria-label="Main">
         {PHONE_TABS.map((id) => (
           <Link key={id} surface={surfaceById(id)} class="tab">
@@ -301,10 +320,13 @@ export function Shell() {
       <nav class="side" aria-label="Main">
         <FleetSwitcher sheet={false} />
         {SURFACES.map((s) => (
-          <Link key={s.id} surface={s} class="nav-link">
-            <Icon name={s.id} />
-            {s.title}
-          </Link>
+          <Fragment key={s.id}>
+            <Link surface={s} class="nav-link">
+              <Icon name={s.id} />
+              {s.title}
+            </Link>
+            {s.id === 'campaigns' ? <CampaignSidebar /> : null}
+          </Fragment>
         ))}
       </nav>
       {surface.id === 'preferences' ? <Preferences phone={false} /> : <Panel surface={surface} title />}

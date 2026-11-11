@@ -11,7 +11,9 @@ export function surfaceOf(path: string): Surface | undefined {
   const [id, ...sub] = segments(path);
   const s = SURFACES.find((x) => x.id === id);
   // Preferences alone has pages below it: /app/preferences/<fleet key>/<page>.
-  if (s && sub.length > 0 && !(s.id === 'preferences' && sub.length === 2 && (PREFERENCES_PAGES as readonly string[]).includes(sub[1]))) return undefined;
+  // Campaigns has the Campaign page below it: /app/campaigns/<id>.
+  const below = (s?.id === 'preferences' && sub.length === 2 && (PREFERENCES_PAGES as readonly string[]).includes(sub[1])) || (s?.id === 'campaigns' && sub.length === 1);
+  if (s && sub.length > 0 && !below) return undefined;
   return s;
 }
 
@@ -39,6 +41,19 @@ export function preferencesFleet(path: string): string | null {
 export function preferencesPage(path: string): PreferencesPage {
   const page = segments(path)[2];
   return (PREFERENCES_PAGES as readonly string[]).includes(page) ? (page as PreferencesPage) : 'sources';
+}
+
+export const campaignPath = (id: string) => `/app/campaigns/${encodeURIComponent(id)}`;
+
+/** The campaign id a Campaign page path names, if any. */
+export function campaignOf(path: string): string | null {
+  const [id, key, ...rest] = segments(path);
+  if (id !== 'campaigns' || !key || rest.length > 0) return null;
+  try {
+    return decodeURIComponent(key);
+  } catch {
+    return null;
+  }
 }
 
 function sync() {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type CrewMemberView, crewOptions, defaultSkill, effortsFor, type LaunchFormState, launchBody, memberRun, sourcesForFleet, togglePin } from './launchForm';
+import { campaignLaunch, campaignOrder, type CampaignLaunchState, type CrewMemberView, crewOptions, defaultSkill, effortsFor, type LaunchFormState, launchBody, memberRun, sourcesForFleet, togglePin } from './launchForm';
 
 describe('sourcesForFleet', () => {
   it('keeps the sources of the active fleet only', () => {
@@ -68,6 +68,47 @@ describe('launchBody', () => {
   });
   it('sends no clone when a checkout is chosen', () => {
     expect(launchBody(form).clone).not.toBe(true);
+  });
+});
+
+describe('campaignOrder', () => {
+  it('names the child by its campaign and URL, for the checkout preselect', () => {
+    expect(campaignOrder('3f9c0a41b7d2e8a5', 'https://github.com/acme/widgets/issues/21')).toEqual({
+      source: 'campaign',
+      id: '3f9c0a41b7d2e8a5/https://github.com/acme/widgets/issues/21',
+    });
+  });
+});
+
+describe('campaignLaunch', () => {
+  const form: CampaignLaunchState = {
+    campaignId: '3f9c0a41b7d2e8a5',
+    childUrl: 'https://github.com/acme/widgets/issues/21',
+    harness: 'claude',
+    dir: '/code/widgets',
+    clone: false,
+    startAnyway: false,
+    model: '',
+    effort: '',
+  };
+
+  it('posts to the campaign\'s launch route with the child, the harness and the checkout', () => {
+    const { path, body } = campaignLaunch({ ...form, model: 'opus', effort: 'high' });
+    expect(path).toBe('/campaigns/3f9c0a41b7d2e8a5/launch');
+    expect(body).toEqual({ child_url: form.childUrl, harness: 'claude', dir: '/code/widgets', model: 'opus', effort: 'high' });
+  });
+  it('sends no skill, text, autopilot, resources or order: the server picks them', () => {
+    const { body } = campaignLaunch(form);
+    for (const field of ['skill', 'text', 'autopilot', 'resources', 'fleet', 'source', 'order_id']) expect(body).not.toHaveProperty(field);
+  });
+  it('sends clone and the repo shown for it, and no dir, when the clone is chosen', () => {
+    const { body } = campaignLaunch({ ...form, clone: true, cloneRepo: 'github.com/acme/widgets' });
+    expect(body).toMatchObject({ clone: true, clone_repo: 'github.com/acme/widgets' });
+    expect(body).not.toHaveProperty('dir');
+  });
+  it('sends start_anyway only when it is chosen', () => {
+    expect(campaignLaunch(form).body).not.toHaveProperty('start_anyway', true);
+    expect(campaignLaunch({ ...form, startAnyway: true }).body).toMatchObject({ start_anyway: true });
   });
 });
 

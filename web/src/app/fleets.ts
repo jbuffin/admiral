@@ -43,6 +43,9 @@ export const fleetSearch = computed(() => {
   return key ? `?fleet=${encodeURIComponent(key)}` : '';
 });
 
+/** Remembers a fleet as the last one chosen, for a reload without ?fleet=. */
+export const rememberFleet = (key: string) => store.set(key);
+
 export function chooseFleet(key: string) {
   store.set(key);
   go(loc.value.path, `?fleet=${encodeURIComponent(key)}`);
