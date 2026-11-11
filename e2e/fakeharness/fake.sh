@@ -25,7 +25,7 @@
 #                  the file the prompt names (and answers with its contents), fetches the URL
 #                  the prompt names, answers a plain "hello" instead of JSON and ignores the cap.
 #                  The advise call (`admiral advise`) is the call whose --json-schema holds
-#                  "stakes", or whose prompt opens "You are the advisor": it answers {"stakes":
+#                  "stakes", or whose prompt holds "You are the advisor": it answers {"stakes":
 #                  "low","reason":"stays on the ship's branch"}. $FAKE_JUDGE=advise-high answers
 #                  high, advise-invalid answers a stakes value that is neither, and fail exits
 #                  1 with "boom" on stderr for any judge call.
@@ -160,7 +160,7 @@ if [ -n "$judge" ]; then
     case "$a" in --json-schema=*stakes*) advise=1 ;; esac
     prev=$a
   done
-  case "$jprompt" in "You are the advisor"*) advise=1 ;; esac
+  case "$jprompt" in *"You are the advisor"*) advise=1 ;; esac
   if [ "$FAKE_JUDGE" = fail ]; then
     echo boom >&2
     exit 1

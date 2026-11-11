@@ -93,7 +93,7 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	}
 	if req.Autopilot {
 		if err := l.autopilotGate(fleet, req.Harness); err != nil {
-			return fmt.Errorf("a caller with ADMIRAL_AUTOPILOT=1 can launch only on a harness whose guard probe passed: %w", err)
+			return fmt.Errorf("a caller with ADMIRAL_AUTOPILOT=1 can launch only on a harness whose guard and advisor are proven: %w", err)
 		}
 		if err := AutopilotArgs(req.Harness, dock.Args, req.Args); err != nil {
 			return err

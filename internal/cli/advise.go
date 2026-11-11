@@ -52,7 +52,6 @@ var shipFleet = func(dir, ship string) (config.Fleet, bool) {
 
 const adviseSchema = `{"type":"object","properties":{"stakes":{"type":"string","enum":["low","high"]},"reason":{"type":"string","maxLength":300}},"required":["stakes","reason"],"additionalProperties":false}`
 
-// The stakes definition is the engineer's to review.
 const advisePrompt = `You are the advisor for an autonomous coding agent that has reached a decision and wants to know whether it may take its own recommended option or must ask its engineer.
 
 Decide the stakes of the decision below.
@@ -112,10 +111,10 @@ func Advise(args []string, std IO) error {
 	if report := os.Getenv("ADMIRAL_REPORT"); report != "" {
 		dir = filepath.Dir(filepath.Dir(report))
 	}
+	// A crew boat has no ADMIRAL_SHIP, so it always lands here.
 	if ship == "" || dir == "" || dir == "." {
 		return advised{stakes: "high", reason: "not run from a ship"}.print(std, "", "")
 	}
-	// A crew boat has no ADMIRAL_SHIP, so it reads as high here.
 	fleet, ok := shipFleet(dir, ship)
 	if !ok {
 		return advised{stakes: "high", failure: "no fleet", reason: "the ship's fleet could not be found"}.print(std, dir, ship)
