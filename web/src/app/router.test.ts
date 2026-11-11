@@ -15,7 +15,7 @@ const page = vi.hoisted(() => {
   return l;
 });
 
-import { campaignOf, campaignPath, loc, startRouter, surfaceOf } from './router';
+import { campaignOf, campaignPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf } from './router';
 
 describe('campaign paths', () => {
   it('round-trips an id through its page path', () => {
@@ -85,5 +85,20 @@ describe('the ship route', () => {
     startRouter();
     expect(replaceState).not.toHaveBeenCalled();
     expect(loc.value).toEqual({ path: '/app/ships/s-abc', search: '?fleet=alpha' });
+  });
+});
+
+describe('Remote access route', () => {
+  it('is its own Preferences surface under the reserved admiral segment, and a fleet named remote or admiral keeps its pages', () => {
+    expect(surfaceOf('/app/preferences/admiral/remote')?.id).toBe('preferences');
+    expect(preferencesFleet('/app/preferences/admiral/remote')).toBeNull();
+    expect(preferencesPage('/app/preferences/admiral/remote')).toBe('remote');
+
+    expect(preferencesFleet('/app/preferences/remote/fleet')).toBe('remote');
+    expect(preferencesPage('/app/preferences/remote/fleet')).toBe('fleet');
+    expect(preferencesFleet('/app/preferences/admiral/sources')).toBe('admiral');
+    expect(preferencesPage('/app/preferences/admiral/sources')).toBe('sources');
+    expect(surfaceOf('/app/preferences/admiral/bogus')).toBeUndefined();
+    expect(surfaceOf('/app/preferences/zulu/remote')).toBeUndefined();
   });
 });

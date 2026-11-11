@@ -159,3 +159,14 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   expect(watch.foreign).toEqual([]);
   expect(watch.errors).toEqual([]);
 });
+
+test('on the phone, Remote access opens from More through Preferences', async ({ page, admiral }) => {
+  seedFleets(admiral);
+  await admiral.start();
+  await page.goto(admiral.url + 'app/inbox');
+  await page.getByRole('button', { name: 'More', exact: true }).tap();
+  await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Preferences', exact: true }).tap();
+  await page.getByRole('navigation', { name: 'Preferences' }).getByRole('link', { name: 'Remote access' }).tap();
+  await expect(page).toHaveURL(/\/app\/preferences\/admiral\/remote/);
+  await expect(page.getByRole('heading', { name: 'Remote access', exact: true })).toBeVisible();
+});
