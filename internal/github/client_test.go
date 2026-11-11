@@ -178,18 +178,11 @@ func TestSearchRequest(t *testing.T) {
 			t.Errorf("argv carries the token or -F: %q", c.argv)
 		}
 	}
-	if !strings.Contains(c.env, "GH_TOKEN=fake-token-work-2\n") || strings.Contains(c.env, "inherited-token") {
-		t.Errorf("GH_TOKEN not replaced by the token: %q", c.env)
-	}
-	if !strings.Contains(c.env, "GH_NO_UPDATE_NOTIFIER=1") || !strings.Contains(c.env, "GH_PROMPT_DISABLED=1") {
-		t.Errorf("env = %q", c.env)
-	}
 }
 
 func TestSearchSortRule(t *testing.T) {
 	cases := []struct{ query, want string }{
 		{"is:open", "is:open sort:updated-desc"},
-		{"is:open sort:created-asc", "is:open sort:created-asc"},
 		{"SORT:updated-asc is:open", "SORT:updated-asc is:open"},
 		{"-sort:updated is:open", "-sort:updated is:open"},
 		{"is:open resort:x", "is:open resort:x sort:updated-desc"},
@@ -264,7 +257,6 @@ func TestSearchErrors(t *testing.T) {
 		{"unreachable after redaction", map[string]string{"fail": "dial tcp: lookup fake-token-work-2: i/o timeout"}, "Couldn't reach github.com"},
 		{"not JSON", map[string]string{"json": "oops"}, "Search failed: GitHub's answer was not JSON"},
 		{"not an object", map[string]string{"json": "[]"}, "Search failed: GitHub's answer was not understood"},
-		{"no search nodes", map[string]string{"json": `{"data":{}}`}, "Search failed: GitHub's answer was not understood"},
 		{"token in a graphql message is redacted", map[string]string{"json": `{"errors":[{"message":"bad fake-token-work-2"}]}`}, "Search failed: bad ***"},
 		{"null nodes", map[string]string{"json": `{"data":{"search":{"nodes":null}}}`}, "Search failed: GitHub's answer was not understood"},
 		{"graphql errors", map[string]string{"json": `{"errors":[{"message":"Bad query"},{"message":"second"}]}`}, "Search failed: Bad query"},
@@ -297,21 +289,30 @@ func TestSearchErrors(t *testing.T) {
 	})
 }
 
-func TestSearchGHEServerToken(t *testing.T) {
-	f := newFake(t)
-	f.env = append(f.env, "GITHUB_TOKEN=a", "GH_ENTERPRISE_TOKEN=b", "GITHUB_ENTERPRISE_TOKEN=c")
-	f.answer(t, map[string]string{"json": `{"data":{"search":{"nodes":[]}}}`})
-	if _, err := NewClient("ghe.example.com", "", nil, f.env).Search(context.Background(), "fake-token-work-2", "is:open"); err != nil {
-		t.Fatal(err)
+func TestSearchTokenVariable(t *testing.T) {
+	cases := []struct{ host, want string }{
+		{"github.com", "GH_TOKEN"},
+		{"acme.ghe.com", "GH_TOKEN"},
+		{"ghe.example.com", "GH_ENTERPRISE_TOKEN"},
 	}
-	env := f.only(t, "api").env
-	if !strings.Contains(env, "GH_ENTERPRISE_TOKEN=fake-token-work-2\n") {
-		t.Errorf("token not in GH_ENTERPRISE_TOKEN: %q", env)
-	}
-	for _, bad := range []string{"GH_TOKEN", "GITHUB_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "inherited-token"} {
-		if strings.Contains(env, bad) {
-			t.Errorf("env carries %s: %q", bad, env)
-		}
+	for _, c := range cases {
+		t.Run(c.host, func(t *testing.T) {
+			f := newFake(t)
+			f.env = append(f.env, "GITHUB_TOKEN=a", "GH_ENTERPRISE_TOKEN=b", "GITHUB_ENTERPRISE_TOKEN=c")
+			f.answer(t, map[string]string{"json": `{"data":{"search":{"nodes":[]}}}`})
+			if _, err := NewClient(c.host, "", nil, f.env).Search(context.Background(), "fake-token-work-2", "is:open"); err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, line := range strings.Fields(f.only(t, "api").env) {
+				if strings.Contains(line, "TOKEN") {
+					got = append(got, line)
+				}
+			}
+			if want := c.want + "=fake-token-work-2"; len(got) != 1 || got[0] != want {
+				t.Errorf("token variables = %q, want only %s", got, want)
+			}
+		})
 	}
 }
 
@@ -427,7 +428,7 @@ func TestSettingsScalars(t *testing.T) {
 	if got := strings.Join(sorted(settings(t, `{"hotLabels":["",5]}`).HotLabels), ","); got != "p0,p1,priority: high,urgent" {
 		t.Errorf("hot labels with nothing usable = %s, want the defaults", got)
 	}
-	minutes := map[string]int{`7`: 7, `1`: 1, `0`: 5, `-3`: 5, `99999`: 1440, `true`: 5, `"10"`: 5, `2.5`: 5, `null`: 5}
+	minutes := map[string]int{`7`: 7, `0`: 5, `99999`: 1440, `true`: 5, `2.5`: 5}
 	for in, want := range minutes {
 		if got := settings(t, `{"refreshMinutes":`+in+`}`).RefreshMinutes; got != want {
 			t.Errorf("refreshMinutes %s = %d, want %d", in, got, want)

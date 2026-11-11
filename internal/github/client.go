@@ -234,11 +234,8 @@ func (c *Client) tokenVar() string {
 	return "GH_ENTERPRISE_TOKEN"
 }
 
-// gh runs the gh CLI with the client's environment: no inherited token
-// variables, token in the variable tokenVar names when given, no update
-// check, no prompts, stdin closed. It returns stdout and stderr; a failed run
-// returns an error: exec.ErrNotFound when gh is missing, errTimeout on the
-// client's own timeout, and the caller's ctx.Err() when ctx is done.
+// gh runs the gh CLI and returns its output; a failed run is exec.ErrNotFound,
+// errTimeout on the client's own timeout, or the caller's ctx.Err().
 func (c *Client) gh(ctx context.Context, args []string, tokenVar, token string) (stdout, stderr string, err error) {
 	timeout := c.Timeout
 	if timeout == 0 {
@@ -266,8 +263,7 @@ func (c *Client) gh(ctx context.Context, args []string, tokenVar, token string) 
 	return out.String(), errOut.String(), err
 }
 
-// binary finds gh: Gh when set, else on the PATH of the client's environment
-// (a fleet's may set one), else on Admiral's.
+// binary finds gh on the client's own PATH first, since a fleet's env may set one.
 func (c *Client) binary() (string, error) {
 	if c.Gh != "" {
 		return c.Gh, nil
@@ -291,9 +287,7 @@ func (c *Client) binary() (string, error) {
 	return exec.LookPath("gh")
 }
 
-// environ is the base environment without any GitHub token variable, which
-// could override the fleet's account, and without the update-notifier and
-// prompt settings, which it sets itself.
+// environ drops every inherited GitHub token variable, which could override the fleet's account.
 func (c *Client) environ(tokenVar, token string) []string {
 	env := make([]string, 0, len(c.env)+3)
 	for _, kv := range c.env {
