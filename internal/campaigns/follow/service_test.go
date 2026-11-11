@@ -682,6 +682,7 @@ func TestLaunchASliceStartsOneCommodoreShipHoldingEveryChildAndNamingThemInItsTe
 	r := newRig(t, sliceTree())
 	c := r.follow(rootURL)
 	body := sliceBody(32, 31)
+	body["issues"] = []string{"https://github.com/ACME/widgets/issues/32/", issURL(31)} // spelled differently, launched as the canonical URLs
 	body["autopilot"] = true
 	if code, msg := r.launch(c.ID, body); code != http.StatusCreated {
 		t.Fatalf("slice launch = %d %s, want 201", code, msg)
@@ -699,6 +700,9 @@ func TestLaunchASliceStartsOneCommodoreShipHoldingEveryChildAndNamingThemInItsTe
 	}
 	if want := issURL(32) + "\n" + issURL(31); strings.TrimSpace(q.Text) != want {
 		t.Errorf("Text = %q, want every child URL one per line: %q", q.Text, want)
+	}
+	if want := SliceOrderID(c.ID, []string{issURL(32), issURL(31)}); q.OrderID != want {
+		t.Errorf("OrderID = %q, want the canonical launch's %q", q.OrderID, want)
 	}
 	text, title, repo, url, panel, err := r.svc.Order(SourceKey, q.OrderID)
 	if err != nil || text != q.Text || title == "" || url != issURL(32) || repo != "https://github.com/acme/widgets" || panel != c.ID {
