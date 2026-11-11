@@ -210,6 +210,10 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	argv = append(argv, req.ExtraArgs...)
 	sessionFlags, paneOpts := conversationAnchor(req, dock, time.Now())
 	argv = append(argv, sessionFlags...)
+	if len(sessionFlags) > 0 && req.Harness == "copilot" {
+		// Only a session Admiral named is observed, so the server rides with the session id.
+		argv = append(argv, uiServerLaunchFlags(req, dock, exe)...)
+	}
 	prompt := promptFor(req.Harness, skill, req.Skill.Kind, req.Note, req.Text)
 	if memberPrompt != nil {
 		prompt = *memberPrompt

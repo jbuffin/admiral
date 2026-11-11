@@ -124,6 +124,10 @@ func (h *held) line(raw []byte) {
 		return
 	}
 	h.sawObject = true
+	h.emit(out)
+}
+
+func (h *held) emit(out []emission) {
 	for _, e := range out {
 		if !e.Update && h.opts.Keep != nil && !h.opts.Keep(e.Item) {
 			continue
