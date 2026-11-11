@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -54,6 +55,13 @@ func oneLine(s string) string {
 			break
 		}
 	}
+	line = strings.Map(func(r rune) rune {
+		// Control and bidi characters would repaint or reorder the row.
+		if unicode.IsControl(r) || (r >= 0x202A && r <= 0x202E) || (r >= 0x2066 && r <= 0x2069) {
+			return -1
+		}
+		return r
+	}, line)
 	if utf8.RuneCountInString(line) > tailMax {
 		line = string([]rune(line)[:tailMax])
 	}

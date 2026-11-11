@@ -84,6 +84,8 @@ One fleet, one source, no ships, on an M-series Mac (macOS 27, Go 1.26, tmux 3.7
 | a Python plugin process (`python3 plugin.py`, measured with the former freeform plugin, a minimal one) | about 19 MB |
 | Admiral's tmux server and its control client | about 4 MB and 5 MB |
 
+Each Claude ship has a transcript follower (`shipconv.Tails`): one small `conversation.Reader`, polled every 250 ms with a stat that skips the read when the file is unchanged. A ship with no readable transcript is looked up again every 2 s, backing off to a minute.
+
 Each ship adds its harness, and a pane in tmux.
 
 ## The setup terminal

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/ships"
 )
@@ -26,7 +27,7 @@ func tailsOf(f *fixture) *Tails {
 			}
 			return out
 		},
-		locate: f.svc.locate,
+		locate: f.svc.locate, open: openAt,
 	}
 }
 
@@ -92,5 +93,113 @@ func TestTailsOfAShipWithNoTranscriptYetStayBlank(t *testing.T) {
 	tails := tailsOf(f)
 	if tails.Poll() || tails.Tail("alpha") != "" {
 		t.Errorf("tail = %q, want blank", tails.Tail("alpha"))
+	}
+}
+
+func TestTailsMoveOffAQuestionOnceItIsAnswered(t *testing.T) {
+	f := newFixture(t)
+	path := f.path("zz")
+	appendTo(t, path, assistantLine(1, "Earlier.")+
+		`{"type":"assistant","uuid":"q1","message":{"content":[{"type":"tool_use","id":"tq","name":"AskUserQuestion","input":{"questions":[{"question":"Which database?","options":[{"label":"pg"}]}]}}]}}`+"\n")
+	f.ship("alpha", path)
+	tails := tailsOf(f)
+	tails.Poll()
+	if got := tails.Tail("alpha"); got != "Which database?" {
+		t.Fatalf("tail = %q, want the pending question", got)
+	}
+	appendTo(t, path, `{"type":"user","uuid":"r1","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tq","content":"pg"}]}}`+"\n")
+	tails.Poll()
+	if got := tails.Tail("alpha"); got != "Earlier." {
+		t.Errorf("tail after the answer = %q, want %q", got, "Earlier.")
+	}
+}
+
+func TestTailsStartOverWhenAShipIsRelaunched(t *testing.T) {
+	f := newFixture(t)
+	path := f.path("zz")
+	appendTo(t, path, assistantLine(1, "Old run."))
+	f.ship("alpha", path)
+	launched := "L1"
+	tails := tailsOf(f)
+	list := tails.list
+	tails.list = func() []ships.Ship {
+		out := list()
+		for i := range out {
+			out[i].Launched = launched
+		}
+		return out
+	}
+	tails.Poll()
+	if tails.Tail("alpha") != "Old run." {
+		t.Fatalf("tail = %q", tails.Tail("alpha"))
+	}
+	launched = "L2"
+	f.mu.Lock()
+	f.harness["alpha"] = "codex" // the new launch has nothing readable
+	f.mu.Unlock()
+	tails.Poll()
+	if tails.Tail("alpha") != "" || len(tails.follows) != 0 {
+		t.Errorf("tail = %q with %d follows, want both reset", tails.Tail("alpha"), len(tails.follows))
+	}
+}
+
+func TestTailsLookForAMissingFileOnlyOncePerFindInterval(t *testing.T) {
+	f := newFixture(t)
+	path := f.path("zz")
+	appendTo(t, path, assistantLine(1, "Hello."))
+	f.ship("alpha", path)
+	tails := tailsOf(f)
+	tails.Poll()
+	if tails.Tail("alpha") != "Hello." {
+		t.Fatal("tail not read")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	finds := 0
+	tails.open = func(w where, p string, find bool) (*os.File, os.FileInfo, string, error) {
+		if find {
+			finds++
+		}
+		return openAt(w, p, find)
+	}
+	for range 20 {
+		tails.Poll()
+	}
+	if finds > 1 {
+		t.Errorf("%d searches of the project dirs in a burst of polls, want at most 1", finds)
+	}
+	if tails.Tail("alpha") != "" {
+		t.Errorf("tail = %q after the transcript vanished, want blank", tails.Tail("alpha"))
+	}
+}
+
+func TestTailsLookUpAShipWithNoConversationLessAndLess(t *testing.T) {
+	f := newFixture(t)
+	f.mu.Lock()
+	f.harness["alpha"] = "claude" // no option recorded: locate says none
+	f.mu.Unlock()
+	tails := tailsOf(f)
+	looks := 0
+	locate := tails.locate
+	tails.locate = func(s string) (where, bool, bool) { looks++; return locate(s) }
+	tails.Poll()
+	if looks != 1 {
+		t.Fatalf("%d lookups on the first poll, want 1", looks)
+	}
+	fl := tails.follows["alpha"]
+	for i := 0; i < 4; i++ {
+		fl.lastTry = time.Time{} // the wait is over
+		tails.Poll()
+	}
+	if fl.retry < 16*retryEvery/2 && fl.retry != maxRetry {
+		t.Errorf("retry after 5 lookups = %v, want it backed off", fl.retry)
+	}
+	before := looks
+	for range 10 {
+		tails.Poll()
+	}
+	if looks != before {
+		t.Errorf("%d lookups inside the backoff, want none", looks-before)
 	}
 }

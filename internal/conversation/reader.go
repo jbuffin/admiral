@@ -263,6 +263,9 @@ func (r *Reader) Clear(size int64) {
 	r.ToEnd(size)
 }
 
+// Offset is how far into the file the Reader has read.
+func (r *Reader) Offset() int64 { return r.offset }
+
 func (r *Reader) Items() []Item { return append([]Item(nil), r.h.items...) }
 
 // Refresh reads what was added to f since the last call. A file larger than tailStart

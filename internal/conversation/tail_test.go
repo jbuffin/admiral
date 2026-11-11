@@ -39,6 +39,7 @@ func TestTail(t *testing.T) {
 		{"other kinds are skipped", []conversation.Item{tool("Bash", "make check"), user, end, compaction, notice}, "make check"},
 		{"nothing readable is blank", []conversation.Item{user, end, compaction, notice}, ""},
 		{"no items is blank", nil, ""},
+		{"control and bidi characters are stripped", []conversation.Item{asst("a\x1b[31mb\u202ec\u2066d\u0085e\tf")}, "a[31mbcdef"},
 	}
 	for _, c := range cases {
 		if got := conversation.Tail(c.items); got != c.want {

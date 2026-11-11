@@ -12,7 +12,10 @@ import (
 )
 
 // retryEvery spaces the look for a transcript a ship does not have yet; each look reads tmux.
-const retryEvery = 2 * time.Second
+const (
+	retryEvery = 2 * time.Second
+	maxRetry   = time.Minute
+)
 
 // follow is one Claude ship's transcript, read only when its size or mtime changes.
 type follow struct {
@@ -20,6 +23,8 @@ type follow struct {
 	loc      where
 	located  bool
 	lastTry  time.Time
+	retry    time.Duration // the wait before the next look for the transcript
+	lastFind time.Time
 	path     string
 	reader   *conversation.Reader
 	size     int64
@@ -32,6 +37,7 @@ type follow struct {
 type Tails struct {
 	list   func() []ships.Ship
 	locate func(session string) (w where, ok, none bool)
+	open   func(w where, path string, find bool) (*os.File, os.FileInfo, string, error)
 
 	mu      sync.Mutex
 	follows map[string]*follow
@@ -41,7 +47,7 @@ type Tails struct {
 
 // Tails returns the follower of the service's ships; run it with Run and read it with Tail.
 func (s *Service) Tails() *Tails {
-	return &Tails{list: s.Ships.List, locate: s.locate}
+	return &Tails{list: s.Ships.List, locate: s.locate, open: openAt}
 }
 
 // Tail is the ship's last known tail, "" when nothing is readable.
@@ -110,43 +116,62 @@ func (t *Tails) Poll() bool {
 // step reads what the transcript gained, if anything. ok is false when the tail is unchanged.
 func (t *Tails) step(f *follow, session string) (tail string, ok bool) {
 	if !f.located {
-		if time.Since(f.lastTry) < retryEvery {
+		if f.retry == 0 {
+			f.retry = retryEvery
+		}
+		if time.Since(f.lastTry) < f.retry {
 			return "", false
 		}
 		f.lastTry = time.Now()
 		w, found, none := t.locate(session)
-		if !found || none {
+		switch {
+		case none: // the ship has no conversation of ours; asking again rarely helps
+			f.retry = min(f.retry*2, maxRetry)
+			return "", false
+		case !found:
 			return "", false
 		}
 		f.loc, f.located = w, true
-		f.reader = conversation.NewReader(conversation.Options{Keep: conversation.TailItem, MaxItems: 50})
+		f.reader = conversation.NewReader(conversation.Options{Keep: conversation.TailItem, MaxItems: 50, MaxOutput: 1, MaxBytes: 64 << 10})
 	}
-	var (
-		file *os.File
-		info os.FileInfo
-		err  error
-	)
-	if f.path != "" {
-		file, info, err = transcriptfs.Open(f.loc.configDir, f.path)
-	}
-	if file == nil {
-		var p string
-		if file, info, p, err = f.loc.open(true); err == nil {
-			f.path = p
+	if f.path != "" && !f.mtime.IsZero() {
+		if fi, err := os.Lstat(f.path); err == nil && fi.Size() == f.size && fi.ModTime().Equal(f.mtime) {
+			return "", false
 		}
 	}
+	find := time.Since(f.lastFind) >= findEvery
+	if find {
+		f.lastFind = time.Now()
+	}
+	file, info, p, err := t.open(f.loc, f.path, find)
 	if err != nil || file == nil {
-		return "", false
+		if f.tail == "" {
+			return "", false
+		}
+		f.tail, f.size, f.mtime = "", 0, time.Time{}
+		return "", true
 	}
 	defer file.Close()
-	if info.Size() == f.size && info.ModTime().Equal(f.mtime) && !f.mtime.IsZero() {
-		return "", false
-	}
-	f.size, f.mtime = info.Size(), info.ModTime()
+	f.path = p
 	t.mu.Lock()
 	t.reads++
 	t.mu.Unlock()
-	_, _ = f.reader.Refresh(file, info)
-	f.tail = conversation.Tail(f.reader.Items())
-	return f.tail, true
+	if _, err := f.reader.Refresh(file, info); err != nil {
+		return "", false
+	}
+	f.size, f.mtime = f.reader.Offset(), info.ModTime()
+	tail = conversation.Tail(f.reader.Items())
+	changed := tail != f.tail
+	f.tail = tail
+	return tail, changed
+}
+
+// openAt tries the recorded path, and only when find is set the other project dirs.
+func openAt(w where, path string, find bool) (*os.File, os.FileInfo, string, error) {
+	if path != "" {
+		if f, info, err := transcriptfs.Open(w.configDir, path); err == nil {
+			return f, info, path, nil
+		}
+	}
+	return w.open(find)
 }
