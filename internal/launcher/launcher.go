@@ -141,6 +141,11 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 			return nil, refuse(http.StatusBadRequest, "%s contains a control character", o[0])
 		}
 	}
+	for _, u := range req.Issues {
+		if strings.Contains(u, ",") {
+			return nil, refuse(http.StatusBadRequest, "issues contains a comma")
+		}
+	}
 	st, serr := os.Stat(req.Dir)
 	switch {
 	case req.Dir == "" || serr != nil:
