@@ -148,7 +148,6 @@ func TestListShowsPassedFailedAndNotCheckedPerFleetAndHarness(t *testing.T) {
 	if !errors.As(noJudge, &none) {
 		t.Fatalf("Choose = %v, want NoJudgeHarness", noJudge)
 	}
-	_ = none
 	if a := claude.status(t, "autopilot.advisor"); a.Status != "not_checked" || a.Detail != "" {
 		t.Errorf("work claude advisor = %+v, want not_checked: no harness of the fleet has a judge result", a)
 	}
