@@ -176,7 +176,7 @@ A smaller boat rafted beside a ship: a teammate the ship's skill started with `a
 _Avoid_: child, worker, sub-ship
 
 **Crew member**:
-A named, reusable teammate definition in a fleet or repo: its role, skills, instructions, model, optional harness lock, and when to pick it. A crew boat is a crew member at work, and a ship can also be launched as one. The engineer adds a crew member to a ship with **Add crew**, which asks the ship's lead to bring the member on.
+A named, reusable teammate definition in a fleet or repo: its role, skills, instructions, model, optional harness lock, and when to pick it. A fleet's own crew members live in its crew directory, `$ADMIRAL_HOME/fleets/<fleet key>/crew/`, which every ship of the fleet sees as `ADMIRAL_CREW_DIR`. A crew boat is a crew member at work, and a ship can also be launched as one. The engineer adds a crew member to a ship with **Add crew**, which asks the ship's lead to bring the member on.
 _Avoid_: agent, persona, crew type
 
 **Subagent**:

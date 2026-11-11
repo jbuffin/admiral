@@ -126,6 +126,8 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	for _, k := range append([]string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR"}, shipEnvNames...) {
 		delete(env, k)
 	}
+	// The ship's session holds the fleet's crew directory, which the boat keeps.
+	delete(env, "ADMIRAL_CREW_DIR")
 	delete(env, "PATH")
 	clientPath := l.shipEnv(dock)["PATH"]
 	// What the session holds that this boat must not have: the ship's own
@@ -134,7 +136,7 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	clear := append([]string(nil), shipEnvNames...)
 	if shipDock, ok := fleet.Harness(shipHarness); ok {
 		for k := range shipDock.Env {
-			if _, set := dock.Env[k]; !set && k != "PATH" && !slices.Contains(clear, k) {
+			if _, set := dock.Env[k]; !set && k != "PATH" && k != "ADMIRAL_CREW_DIR" && !slices.Contains(clear, k) {
 				clear = append(clear, k)
 			}
 		}

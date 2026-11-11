@@ -154,6 +154,10 @@ func TestCrew_LaunchSendListCloseAndRestart(t *testing.T) {
 				t.Errorf("scout has %s=%q; a teammate gets none of the ship's contract", k, v)
 			}
 		}
+		crewDir := filepath.Join(w.home, "fleets", "work", "crew")
+		if scout.env["ADMIRAL_CREW_DIR"] != crewDir {
+			t.Errorf("scout ADMIRAL_CREW_DIR = %q, want the ship's fleet crew directory %s", scout.env["ADMIRAL_CREW_DIR"], crewDir)
+		}
 		if _, ok := scout.env["FAKE_CALLER_ONLY"]; ok {
 			t.Errorf("scout has FAKE_CALLER_ONLY: a teammate must not inherit the caller's environment")
 		}
@@ -169,6 +173,9 @@ func TestCrew_LaunchSendListCloseAndRestart(t *testing.T) {
 
 		mate := w.record(sess + "/crew/mate")
 		w.waitFile(sess+"/crew/mate", "cues-done")
+		if mate.env["ADMIRAL_CREW_DIR"] != crewDir {
+			t.Errorf("mate ADMIRAL_CREW_DIR = %q, want the ship's fleet crew directory %s", mate.env["ADMIRAL_CREW_DIR"], crewDir)
+		}
 		if _, ok := mate.env["FAKE_CALLER_ONLY"]; ok {
 			t.Errorf("mate has FAKE_CALLER_ONLY: a teammate must not inherit the caller's environment")
 		}
