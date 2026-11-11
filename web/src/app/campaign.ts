@@ -156,7 +156,7 @@ export function pasteHint(text: string): string | null {
   return null;
 }
 
-/** The sidebar's second line: "Map #230 · 6 of 13". */
+/** The sidebar's second line: map number and progress. */
 export function campaignMeta(c: { number: number; progress: { closed: number; total: number } }): string {
   return `Map #${c.number} · ${c.progress.closed} of ${c.progress.total}`;
 }

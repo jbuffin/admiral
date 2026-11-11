@@ -93,6 +93,7 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   await expect(main.getByRole('heading', { name: T.annex })).toBeVisible();
   expect(await ships()).toBe(before);
 
+  expect(watch.errors).toEqual([]);
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
 });

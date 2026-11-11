@@ -92,7 +92,7 @@ export function watchPage(page: Page, server: string) {
   page.on('response', (r) => {
     const path = new URL(r.url()).pathname;
     // A refused ending shows its reason on the row; the browser logs it as a console error all the same.
-    const refused = path === '/api/v1/ships' || /^\/api\/v1\/ships\/[^/]+\/(dismiss|unfollow)$/.test(path);
+    const refused = /^\/api\/v1\/(ships|campaigns\/[^/]+\/launch)$/.test(path) || /^\/api\/v1\/ships\/[^/]+\/(dismiss|unfollow)$/.test(path);
     if (r.request().method() === 'POST' && refused && r.status() >= 400) refusedLaunches++;
   });
   page.on('console', (m) => {
