@@ -16,6 +16,15 @@
 #                  (asks the hooks about, and runs, the command with "&& true" added) or
 #                  no-tool (never calls the tool).
 #
+#   judge call     claude with --tools, `codex exec`, or copilot with piped stdin and no -p:
+#                  a judge probe or call. It reads the prompt from stdin, answers {"reply":
+#                  "ok"} in the harness's real shape (claude's structured_output, codex's -o
+#                  file, copilot's stdout) and leaves headless-runs alone. A claude call under
+#                  --max-budget-usd below 0.001 reports error_max_budget_usd. $FAKE_JUDGE=leak
+#                  makes it leak what each probe watches for: it creates the files and reads
+#                  the file the prompt names (and answers with its contents), fetches the URL
+#                  the prompt names, answers a plain "hello" instead of JSON and ignores the cap.
+#
 # Otherwise it runs inside a ship's tmux pane (so TMUX and TMUX_PANE are set by tmux, and
 # plain `tmux` talks to the ship's own server). It needs two variables from the
 # fleet's `env` in config.json:
@@ -116,6 +125,52 @@ for a in "$@"; do
   fi
   prev=$a
 done
+# A judge call, which also carries -p on claude and so comes before the guard run below.
+judge=""
+case "$(basename "$0")" in
+claude) for a in "$@"; do [ "$a" = "--tools" ] && judge=1; done ;;
+codex) [ "$1" = exec ] && judge=1 ;;
+copilot) [ -z "$headless" ] && [ ! -t 0 ] && judge=1 ;;
+esac
+if [ -n "$judge" ]; then
+  jprompt=$(cat)
+  out=""
+  budget=""
+  schema=""
+  prev=""
+  for a in "$@"; do
+    [ "$prev" = "-o" ] && out=$a
+    case "$a" in --max-budget-usd=*) budget=${a#*=} ;; --json-schema=*) schema=1 ;; esac
+    prev=$a
+  done
+  text=ok
+  body=""
+  if [ "$FAKE_JUDGE" = leak ]; then
+    urls=$(printf '%s' "$jprompt" | grep -o 'http://[^ ]*' | sed "s/[.,;)\"']*\$//")
+    rest=$(printf '%s' "$jprompt" | sed 's#https\{0,1\}://[^ ]*##g')
+    for p in $(printf '%s' "$rest" | grep -o '/[A-Za-z0-9_.-]*/[A-Za-z0-9_./-]*' | sed 's/[.]*$//'); do
+      if [ -f "$p" ]; then text=$(cat "$p"); else touch "$p" 2>/dev/null; fi
+    done
+    for u in $urls; do curl -s -m 5 "$u" >/dev/null 2>&1; done
+    body=hello
+  elif [ -n "$budget" ] && awk -v b="$budget" 'BEGIN{exit !(b+0 < 0.001)}'; then
+    echo '{"type":"result","subtype":"error_max_budget_usd","is_error":true,"errors":["Reached maximum budget"],"total_cost_usd":0.0001}'
+    exit 1
+  fi
+  [ -z "$body" ] && body="{\"reply\":\"$text\"}"
+  if [ "$(basename "$0")" = claude ]; then
+    if [ -n "$schema" ] && [ "$body" != hello ]; then
+      printf '{"type":"result","subtype":"success","is_error":false,"result":"","structured_output":%s,"total_cost_usd":0.0001}\n' "$body"
+    else
+      esc=$(printf '%s' "$body" | sed 's/"/\\"/g')
+      printf '{"type":"result","subtype":"success","is_error":false,"result":"%s","total_cost_usd":0.0001}\n' "$esc"
+    fi
+    exit 0
+  fi
+  [ -n "$out" ] && printf '%s' "$body" >"$out"
+  printf '%s' "$body"
+  exit 0
+fi
 if [ -n "$headless" ]; then
   mkdir -p "$FAKE_RECORD_DIR"
   echo "$(basename "$0")" >>"$FAKE_RECORD_DIR/headless-runs"

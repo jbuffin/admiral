@@ -1,7 +1,7 @@
 import { useEffect } from 'preact/hooks';
 import { Flag } from './Flag';
 import { MissingCapability, harnessName } from './MissingCapability';
-import type { Capability, Fleet, HarnessCapabilities as Harness } from './api';
+import type { Capability, Fleet, HarnessCapabilities as Harness, JudgeHarness } from './api';
 import { capabilitiesFailed, capabilitiesLoaded, capabilities, checkErrors, checkKey, checking, loadCapabilities, recheck } from './capabilities';
 
 const STATUS: Record<Capability['status'], string> = { passed: 'passed', failed: 'failed', not_checked: 'not checked' };
@@ -44,6 +44,18 @@ function HarnessBox({ fleet, h }: { fleet: string; h: Harness }) {
   );
 }
 
+/** Judge calls stay visible when off, greyed out with the reason. */
+function JudgeLine({ judge }: { judge: JudgeHarness }) {
+  if (judge.harness) {
+    return <p class="line">Judge calls: {harnessName(judge.harness)} ({judge.lookout_model} / {judge.strong_model})</p>;
+  }
+  return (
+    <p class="line muted">
+      Judge calls: off{judge.reason ? `. ${judge.reason}` : ''}
+    </p>
+  );
+}
+
 /** A fleet's harnesses and what each was probed to do. */
 export function HarnessCapabilities({ fleet }: { fleet: Fleet }) {
   useEffect(() => {
@@ -52,13 +64,15 @@ export function HarnessCapabilities({ fleet }: { fleet: Fleet }) {
     document.addEventListener('visibilitychange', on);
     return () => document.removeEventListener('visibilitychange', on);
   }, []);
-  const harnesses = capabilities.value.find((f) => f.key === fleet.key)?.harnesses ?? [];
+  const current = capabilities.value.find((f) => f.key === fleet.key);
+  const harnesses = current?.harnesses ?? [];
   return (
     <section class="caps" aria-label="Harness capabilities">
       <p class="line">What each harness was probed to do in this fleet. Features that need a capability stay off until it passes.</p>
       {capabilitiesFailed.value ? <p class="alert" role="alert">Couldn't reach Admiral. Try again.</p> : null}
       {!capabilitiesLoaded.value ? <p class="line">Loading…</p> : null}
       {capabilitiesLoaded.value && !capabilitiesFailed.value && harnesses.length === 0 ? <p class="line">No harnesses set up in this fleet.</p> : null}
+      {current?.judge ? <JudgeLine judge={current.judge} /> : null}
       {harnesses.map((h) => (
         <HarnessBox key={h.harness} fleet={fleet.key} h={h} />
       ))}

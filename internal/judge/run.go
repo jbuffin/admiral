@@ -48,6 +48,9 @@ type Reply struct {
 	Fields map[string]any
 	Cost   Cost
 	Budget Budget
+	// Structured is true when claude returned the fields as structured_output, so its
+	// schema flag was enforced, rather than text parsed from the result.
+	Structured bool
 }
 
 type FailureKind string
@@ -216,6 +219,7 @@ func Run(ctx context.Context, c Choice, call Call) (Reply, error) {
 		}
 	}
 
+	wasStructured := structured != nil
 	if structured == nil {
 		if err := json.Unmarshal([]byte(stripFence(text)), &structured); err != nil {
 			return Reply{}, &Failure{Kind: KindBadReply, Detail: "the reply is not JSON: " + firstLine(err.Error()), Cost: cost}
@@ -228,7 +232,7 @@ func Run(ctx context.Context, c Choice, call Call) (Reply, error) {
 	if err := validate(schema, fields, "reply"); err != nil {
 		return Reply{}, &Failure{Kind: KindBadReply, Detail: err.Error(), Cost: cost}
 	}
-	return Reply{Fields: fields, Cost: cost, Budget: budget}, nil
+	return Reply{Fields: fields, Cost: cost, Budget: budget, Structured: wasStructured}, nil
 }
 
 const maxOutput = 1 << 20

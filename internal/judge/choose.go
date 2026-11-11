@@ -3,6 +3,7 @@
 package judge
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/jbuffin/admiral/internal/capabilities"
@@ -28,6 +29,27 @@ type Choice struct {
 	Env        []string
 	JSONSchema bool // the harness enforces a schema itself
 	CallCap    bool // the harness enforces a per-call USD cap
+}
+
+// Models returns a harness's Lookout and strong model; ok is false for a harness with no judge calls.
+func Models(name string) (lookout, strong string, ok bool) {
+	pair, ok := models[name]
+	return pair[0], pair[1], ok
+}
+
+// For builds the Choice for one named harness with every mechanism it has switched on,
+// whether or not it is proven yet: a probe runs the call a real judge call would.
+func For(fleet config.Fleet, name string) (Choice, error) {
+	h, ok := fleet.Harness(name)
+	if !ok {
+		return Choice{}, fmt.Errorf("the fleet has no %s harness", name)
+	}
+	exe, found := h.Resolve()
+	if !found {
+		return Choice{}, fmt.Errorf("%s was not found", name)
+	}
+	return Choice{Name: name, Exe: exe, Env: h.Environ(),
+		JSONSchema: name == "claude" || name == "codex", CallCap: name == "claude"}, nil
 }
 
 // NoJudgeHarness is the outcome for a fleet that has no harness proven safe for judge calls.

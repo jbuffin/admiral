@@ -92,7 +92,9 @@ What each fleet's harnesses were probed to do (ADR 0035). These are not the serv
 ### `GET /api/harness-capabilities`
 
 ```json
-{"fleets":[{"key":"work","name":"Work","harnesses":[
+{"fleets":[{"key":"work","name":"Work",
+ "judge":{"harness":"claude","lookout_model":"haiku","strong_model":"sonnet","json_schema":true,"call_cap":true},
+ "harnesses":[
   {"harness":"claude","version":"2.1.300","detected_at":"2026-11-11T09:00:00Z",
    "features":[{"id":"autopilot","label":"Autopilot","capabilities":[
      {"id":"autopilot.guard_hook","label":"Pre-tool guard hook",
@@ -101,6 +103,8 @@ What each fleet's harnesses were probed to do (ADR 0035). These are not the serv
 
 Fleets and harnesses follow the config's order; features follow the table (judge, bot, restricted, autopilot). `status` is `passed`, `failed` or `not_checked`, against the last detected `version`. `version` is `""` when none was detected, and the guard's `detail` then says why. `checked_at` and `detected_at` are `null` when there is no time.
 
+`judge` is the fleet's judge harness, from `judge.Choose` on the stored probes: the first of claude, codex and copilot that proved no tools and no network, with its Lookout and strong models and whether it proved a JSON schema flag and a per-call cap. A fleet with no such harness has `{"harness":null,"reason":"..."}`, the reason naming each harness and what it lacks, and runs no judge calls.
+
 ### `POST /api/harness-capabilities/check`
 
-Body `{"fleet":"work","harness":"claude"}`. Runs the probes for that harness and waits (up to two minutes). It answers 200 with the harness object above plus `"fleet"`. 400 for a bad body, 404 for an unknown fleet or a harness the fleet has no dock for, 502 with `{"error":...}` when the harness's `--version` fails.
+Body `{"fleet":"work","harness":"claude"}`. Runs the probes for that harness and waits (up to eight minutes: the guard run and up to four judge calls of up to 90 seconds each). It answers 200 with the harness object above plus `"fleet"` and the fleet's `"judge"` object, which the check may just have changed. 400 for a bad body, 404 for an unknown fleet or a harness the fleet has no dock for, 502 with `{"error":...}` when the harness's `--version` fails.

@@ -1,5 +1,5 @@
 import { signal } from '@preact/signals';
-import { checkHarness, fetchCapabilities, type FleetCapabilities, type HarnessCapabilities } from './api';
+import { checkHarness, fetchCapabilities, type CheckAnswer, type FleetCapabilities } from './api';
 
 export const capabilities = signal<FleetCapabilities[]>([]);
 export const capabilitiesLoaded = signal(false);
@@ -40,10 +40,10 @@ export async function recheck(fleet: string, harness: string) {
   set(checking, key, true);
   set(checkErrors, key, null);
   try {
-    const answer: HarnessCapabilities = await checkHarness(fleet, harness);
+    const { judge, ...answer }: CheckAnswer = await checkHarness(fleet, harness);
     epoch++;
     capabilities.value = capabilities.value.map((f) =>
-      f.key === fleet ? { ...f, harnesses: f.harnesses.map((h) => (h.harness === harness ? { ...h, ...answer } : h)) } : f,
+      f.key === fleet ? { ...f, judge: judge ?? f.judge, harnesses: f.harnesses.map((h) => (h.harness === harness ? { ...h, ...answer } : h)) } : f,
     );
   } catch (e) {
     set(checkErrors, key, e instanceof Error ? e.message : 'The check could not run.');

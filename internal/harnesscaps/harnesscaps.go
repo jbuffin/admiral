@@ -12,6 +12,7 @@ import (
 
 	"github.com/jbuffin/admiral/internal/capabilities"
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/judge"
 	"github.com/jbuffin/admiral/internal/probes"
 	"github.com/jbuffin/admiral/internal/server"
 )
@@ -57,6 +58,35 @@ type fleetJSON struct {
 	Key       string        `json:"key"`
 	Name      string        `json:"name"`
 	Harnesses []harnessJSON `json:"harnesses"`
+	Judge     judgeJSON     `json:"judge"`
+}
+
+// judgeJSON is the fleet's judge harness, or why it has none.
+type judgeJSON struct {
+	Harness      *string `json:"harness"`
+	Reason       string  `json:"reason,omitempty"`
+	LookoutModel string  `json:"lookout_model,omitempty"`
+	StrongModel  string  `json:"strong_model,omitempty"`
+	JSONSchema   *bool   `json:"json_schema,omitempty"`
+	CallCap      *bool   `json:"call_cap,omitempty"`
+}
+
+func judgeOf(store *capabilities.Store, f config.Fleet) judgeJSON {
+	c, err := judge.Choose(f, store)
+	if err != nil {
+		var none *judge.NoJudgeHarness
+		if errors.As(err, &none) {
+			return judgeJSON{Reason: none.Reason}
+		}
+		return judgeJSON{Reason: err.Error()}
+	}
+	lookout, strong, _ := judge.Models(c.Name)
+	return judgeJSON{Harness: &c.Name, LookoutModel: lookout, StrongModel: strong, JSONSchema: &c.JSONSchema, CallCap: &c.CallCap}
+}
+
+type checkJSON struct {
+	harnessJSON
+	Judge judgeJSON `json:"judge"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -103,7 +133,7 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) {
 	store := capabilities.Open(s.Home)
 	out := []fleetJSON{}
 	for _, f := range s.Config().Fleets {
-		fj := fleetJSON{Key: f.Key, Name: f.Name, Harnesses: []harnessJSON{}}
+		fj := fleetJSON{Key: f.Key, Name: f.Name, Harnesses: []harnessJSON{}, Judge: judgeOf(store, f)}
 		for _, h := range f.Harnesses {
 			fj.Harnesses = append(fj.Harnesses, s.harness(store, f.Key, h.Name))
 		}
@@ -143,9 +173,10 @@ func (s *Service) check(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "the check of "+req.Harness+" in fleet "+fleet.Name+" failed: "+scrubPaths(err.Error()))
 		return
 	}
-	h := s.harness(capabilities.Open(s.Home), fleet.Key, req.Harness)
+	store := capabilities.Open(s.Home)
+	h := s.harness(store, fleet.Key, req.Harness)
 	h.Fleet = fleet.Key
-	writeJSON(w, http.StatusOK, h)
+	writeJSON(w, http.StatusOK, checkJSON{harnessJSON: h, Judge: judgeOf(store, fleet)})
 }
 
 var absPath = regexp.MustCompile(`/[^\s:"']+`)

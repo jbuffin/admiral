@@ -136,11 +136,22 @@ export interface HarnessCapabilities {
   detected_at: string | null;
   features: Feature[];
 }
+/** The fleet's judge harness with its models, or `harness: null` and why there is none. */
+export interface JudgeHarness {
+  harness: string | null;
+  reason?: string;
+  lookout_model?: string;
+  strong_model?: string;
+  json_schema?: boolean;
+  call_cap?: boolean;
+}
 export interface FleetCapabilities {
   key: string;
   name: string;
   harnesses: HarnessCapabilities[];
+  judge?: JudgeHarness;
 }
+export type CheckAnswer = HarnessCapabilities & { judge?: JudgeHarness };
 
 export async function fetchCapabilities(): Promise<FleetCapabilities[]> {
   const res = await fetch(`${API}/harness-capabilities`);
@@ -150,7 +161,7 @@ export async function fetchCapabilities(): Promise<FleetCapabilities[]> {
 }
 
 /** Runs the probes and waits for them, which can take tens of seconds. */
-export async function checkHarness(fleet: string, harness: string): Promise<HarnessCapabilities> {
+export async function checkHarness(fleet: string, harness: string): Promise<CheckAnswer> {
   const res = await fetch(`${API}/harness-capabilities/check`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -158,7 +169,7 @@ export async function checkHarness(fleet: string, harness: string): Promise<Harn
   }).catch(() => {
     throw new Error("Couldn't reach Admiral. Try again.");
   });
-  const body = (await res.json().catch(() => ({}))) as HarnessCapabilities & { error?: string };
+  const body = (await res.json().catch(() => ({}))) as CheckAnswer & { error?: string };
   if (!res.ok) throw new Error(body.error || `check: ${res.status}`);
   return body;
 }
