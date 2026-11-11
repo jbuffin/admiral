@@ -18,6 +18,7 @@ import (
 
 // AC 6: harness other than claude fails validation and the last good config stays.
 func TestAutopilotCodexEntryKeepsLastGoodConfig(t *testing.T) {
+	t.Parallel()
 	home := newHome(t)
 	// A source needs a plugin that loads; the test plugin is the one tests have.
 	w := &world{t: t, root: t.TempDir(), home: home}
@@ -59,6 +60,7 @@ func TestAutopilotCodexEntryKeepsLastGoodConfig(t *testing.T) {
 // The sources writes rebuild every source from its parsed form, so a save of
 // one source, and the delete of another, must not rewrite an autopilot object.
 func TestSourceWritesKeepTheAutopilotObject(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	a, b := w.newTP("a"), w.newTP("b")
 	ap := `{ "prs": {"skill": {"kind":"none"}, "harness":"claude", "fleet":"stay"} }`
@@ -110,6 +112,7 @@ func TestSourceWritesKeepTheAutopilotObject(t *testing.T) {
 // ADMIRAL_AUTO_MERGE (#120), so a launch by hand never has them, whether the fleet's env or Admiral's own
 // environment (an Admiral running inside an autopilot ship) sets them.
 func TestHandLaunchHasNoAutopilotVariables(t *testing.T) {
+	t.Parallel()
 	vars := []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE"}
 	check := func(t *testing.T, w *world) {
 		t.Helper()
@@ -122,6 +125,7 @@ func TestHandLaunchHasNoAutopilotVariables(t *testing.T) {
 		}
 	}
 	t.Run("set by the fleet's env", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		env := w.harnessEnv()
 		env["ADMIRAL_AUTOPILOT"], env["ADMIRAL_LOW_STAKES"], env["ADMIRAL_AUTO_MERGE"] = "1", "never", "squash"
@@ -132,6 +136,7 @@ func TestHandLaunchHasNoAutopilotVariables(t *testing.T) {
 		check(t, w)
 	})
 	t.Run("set in Admiral's environment", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		w.extra = []string{"ADMIRAL_AUTOPILOT=1", "ADMIRAL_LOW_STAKES=advisor", "ADMIRAL_AUTO_MERGE=rebase"}
 		w.start()
@@ -142,6 +147,7 @@ func TestHandLaunchHasNoAutopilotVariables(t *testing.T) {
 // Two launches of one order that overlap: the order is hidden only once its
 // ship exists, so the refusal must hold the order while a launch runs.
 func TestConcurrentLaunchesOfOneOrder(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	p := w.newTP("a")
 	p.mainOrders(ord("o1", "First"))

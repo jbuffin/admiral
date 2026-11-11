@@ -65,6 +65,7 @@ func waitEvents(w *world, session string, n int) {
 // the same cue and gets the same payloads) records nothing, and a boat that was
 // never given a path reads null.
 func TestCrewTranscript_ClaudeRecordsAndReplaces(t *testing.T) {
+	t.Parallel()
 	const one, two = "/tmp/admiral u3/one.jsonl", "/tmp/admiral u3/two.jsonl"
 	w := newWorld(t)
 	w.writeCue(
@@ -110,6 +111,7 @@ func TestCrewTranscript_ClaudeRecordsAndReplaces(t *testing.T) {
 // Every harness's rows, run as the harness's hook would (`admiral hook <Event>`
 // on the crew boat's pane), and a value written straight to the option.
 func TestCrewTranscript_HooksPerHarnessAndReadBack(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.start()
 	ship := w.launch(w.order("work", "claude", "alpha", noSkill, "go"))

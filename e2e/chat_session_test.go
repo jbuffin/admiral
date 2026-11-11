@@ -330,6 +330,7 @@ func sessionStartCue(path, source string) string {
 // with the contract the brief names, and its terminal is reachable through the
 // bridge only while it runs.
 func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
+	t.Parallel()
 	c := newChatWorld(t, false)
 	w := c.world
 	w.start()
@@ -492,6 +493,7 @@ func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
 // Scenarios 3, 4, 5, 6 and 9: the conversation, the state, send, New chat and a
 // restart of Admiral.
 func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
+	t.Parallel()
 	// The cue file names the transcripts, so it is written once the config dir exists.
 	c := newChatWorld(t, false)
 	tp1 := filepath.Join(c.cfgDir, "projects", "p", "first.jsonl")
@@ -649,6 +651,7 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 // the same path serves only later lines, and New chat with a changed model
 // restarts the session with the new argv (and no --effort when it is empty).
 func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
+	t.Parallel()
 	c := newChatWorld(t, false)
 	w := c.world
 	tpA := filepath.Join(c.cfgDir, "projects", "p", "a.jsonl")
@@ -698,6 +701,7 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 // so it is read defensively (the brief's item 4). A config directory that is
 // itself a symlink must not hide a real transcript.
 func TestChatSession_OnlyARealTranscriptUnderProjectsIsRead(t *testing.T) {
+	t.Parallel()
 	c := newChatWorld(t, true)
 	w := c.world
 	real := filepath.Join(c.cfgDir, "projects", "p", "real.jsonl")
@@ -748,6 +752,7 @@ func TestChatSession_OnlyARealTranscriptUnderProjectsIsRead(t *testing.T) {
 
 // C22: over a LAN address the chat's routes need the token, as the others do.
 func TestChatSession_NeedsTheTokenOverTheLAN(t *testing.T) {
+	t.Parallel()
 	c := newChatWorld(t, false)
 	in := c.world.startLAN(t)
 	c.start()

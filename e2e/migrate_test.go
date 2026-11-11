@@ -105,6 +105,7 @@ func (w *world) oldConfig() string {
 }
 
 func TestMigrateAtStartupPostsOneNotice(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.newFakeGH()
 	writeConfig(t, w.home, w.oldConfig())

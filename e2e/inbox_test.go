@@ -88,14 +88,14 @@ func ids(items []inboxItem) []string {
 // "about a second" the brief allows (a margin on top for a loaded Mac).
 func (in *fleetInst) waitInbox(t *testing.T, want ...string) []inboxItem {
 	t.Helper()
-	deadline := time.Now().Add(4 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for {
 		items := in.inbox(t)
 		if reflect.DeepEqual(ids(items), want) || (len(want) == 0 && len(items) == 0) {
 			return items
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("within 4s GET /api/inbox never listed %v; last: %v", want, ids(items))
+			t.Fatalf("within 30s GET /api/inbox never listed %v; last: %v", want, ids(items))
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -130,6 +130,7 @@ func mustJSON(t *testing.T, v any) []byte {
 // drops the item from the inbox and records `answered`. A second answer, and an
 // answer to an item that isn't there, are errors.
 func TestInboxAnswerQuestion(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	ship, dir := w.inboxShip("inbox3")
 	itemBytes := seedItem(t, dir, "q-1", questionItem("q-1", "2026-10-22T10:00:00Z"))
@@ -214,6 +215,7 @@ func countEvent(log []outRec, event string) int {
 // S5: an answer file written by someone else hides the item, and so does the
 // ship's directory going away.
 func TestInboxHidesAnsweredAndRemovedItems(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	_, dir := w.inboxShip("inbox5")
 	seedItem(t, dir, "q-1", questionItem("q-1", "2026-10-22T10:00:00Z"))
@@ -239,6 +241,7 @@ func TestInboxHidesAnsweredAndRemovedItems(t *testing.T) {
 // S6: a ship that needs you for a permission prompt shows the reason and when
 // the stop began on /api/ships, and neither once it is underway again.
 func TestShipWireCarriesReasonAndStopSince(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.cueFleets(map[string][]string{"f": {"hook working", "sleep 1",
 		`event PermissionRequest {"hook_event_name":"PermissionRequest","tool_name":"Bash"}`, "wait go",

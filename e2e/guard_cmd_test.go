@@ -99,6 +99,7 @@ func handlersOf(t *testing.T, dir string) (lines [][3]string, stderrs []string) 
 // guard, which exits 2 with the reason and leaves a guard_denied line for the
 // ship; the working hook beside it still runs and exits 0.
 func TestShipGuardRefusesOnAnAutopilotShip(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.writeCue(guardShipCue)
 	w.repo("r1", remoteOf("r1"))
@@ -161,6 +162,7 @@ func TestShipGuardRefusesOnAnAutopilotShip(t *testing.T) {
 // The same cue on a ship launched by hand: the guard runs and lets it through,
 // and nothing is recorded.
 func TestShipGuardLeavesAHandLaunchedShipAlone(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.writeCue(guardShipCue)
 	w.start()

@@ -188,6 +188,7 @@ func (w *world) startPhone() {
 // waits for and one resource_wait record is written; the launch follows soon
 // after the lock ends.
 func TestLockBlocksAnAutopilotLaunchUntilItEnds(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.writeCue("wait go", "exit 0")
 	w.repo("r1", remoteOf("r1"))
@@ -236,6 +237,7 @@ func TestLockBlocksAnAutopilotLaunchUntilItEnds(t *testing.T) {
 // --wait it runs its command once the first lock ends. Flags work before or
 // after the resource.
 func TestLockBusyExits75AndWaitRunsAfterTheFirstEnds(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.startPhone()
 	first := w.holds()
@@ -248,16 +250,9 @@ func TestLockBusyExits75AndWaitRunsAfterTheFirstEnds(t *testing.T) {
 
 	ran := filepath.Join(w.root, "second-ran")
 	second := w.startLock(`touch `+ran+`; true`, "--wait")
-	time.Sleep(time.Second)
-	if second.exited() {
-		t.Fatalf("a --wait lock exited while the unit was held: stderr %q", second.err.String())
-	}
-	if _, err := os.Stat(ran); err == nil {
-		t.Fatalf("the --wait lock ran its command while the first lock held the unit")
-	}
-	if first.exited() {
-		t.Fatalf("the first lock ended early: %q", first.err.String())
-	}
+	holdThat(t, "a --wait lock ran or exited while the first lock held the unit, or the first ended early", func() bool {
+		return !second.exited() && !exists(ran) && !first.exited()
+	})
 
 	first.release()
 	w.waitExit(first, "first")
@@ -289,6 +284,7 @@ func TestLockBusyExits75AndWaitRunsAfterTheFirstEnds(t *testing.T) {
 // A --wait lock waits behind an autopilot ship that holds the unit and takes it
 // once the ship's session is gone: main.go wakes the Set when a ship changes.
 func TestLockWaitsBehindAShipUntilItEnds(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.writeCue("wait go", "exit 0")
 	w.repo("r1", remoteOf("r1"))
@@ -303,10 +299,9 @@ func TestLockWaitsBehindAShipUntilItEnds(t *testing.T) {
 	})
 
 	l := w.startLock("", "--wait")
-	time.Sleep(time.Second)
-	if _, err := os.Stat(filepath.Join(l.dir, "started")); err == nil || l.exited() {
-		t.Fatalf("a --wait lock ran while a ship held the only unit; stderr %q", l.err.String())
-	}
+	holdThat(t, "a --wait lock ran while a ship held the only unit", func() bool {
+		return !exists(filepath.Join(l.dir, "started")) && !l.exited()
+	})
 	w.mustTmux("kill-session", "-t", ship.Session)
 	deadline := time.Now().Add(10 * time.Second)
 	for _, err := os.Stat(filepath.Join(l.dir, "started")); err != nil; _, err = os.Stat(filepath.Join(l.dir, "started")) {
@@ -324,6 +319,7 @@ func TestLockWaitsBehindAShipUntilItEnds(t *testing.T) {
 // A killed `admiral lock` (SIGKILL, no chance to clean up) frees the unit: the
 // dropped connection releases it.
 func TestLockKilledReleasesTheUnit(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.startPhone()
 	l := w.holds()
@@ -338,6 +334,7 @@ func TestLockKilledReleasesTheUnit(t *testing.T) {
 // When Admiral stops under a running `admiral lock`, the lock says so on stderr
 // and leaves the command running; the lock's exit status is the command's.
 func TestLockLostWhenTheServerStops(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.startPhone()
 	l := w.holds()
@@ -362,6 +359,7 @@ func TestLockLostWhenTheServerStops(t *testing.T) {
 // The route answers 403 to a peer that is not loopback, token or not. It skips
 // when the Mac's LAN address does not answer (docs/agents/testing.md).
 func TestLockRouteRefusesANonLoopbackPeer(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.writeLockConfig(nil)
 	in := startAdmiral(t, w.home, "0.0.0.0:"+freePort(t))

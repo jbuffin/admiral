@@ -73,6 +73,7 @@ func (w *world) waitUp() {
 // S1: a fresh install adds no source. The plugins are written and listed, and
 // the engineer adds a source to a fleet.
 func TestFreshInstall(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.startFresh()
 	w.waitUp()
@@ -100,7 +101,9 @@ func TestFreshInstall(t *testing.T) {
 
 // S1: when sources are left alone, and what a restart does to the plugin folder.
 func TestFreshInstallLeavesWhatItShould(t *testing.T) {
+	t.Parallel()
 	t.Run("an empty sources object gets no source added", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		writeConfig(t, w.home, `{"version":1,"fleets":{},"sources":{}}`)
 		w.start()
@@ -110,6 +113,7 @@ func TestFreshInstallLeavesWhatItShould(t *testing.T) {
 		}
 	})
 	t.Run("an invalid config gets nothing added", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		bad := `{"version":1,"fleets":[]}`
 		writeConfig(t, w.home, bad)
@@ -119,15 +123,13 @@ func TestFreshInstallLeavesWhatItShould(t *testing.T) {
 		}
 	})
 	t.Run("a sources key deleted by hand is not undone until the next start", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		w.startFresh()
 		w.waitUp()
 		replaceConfig(t, w.home, `{"version":1,"fleets":{}}`)
 		w.waitSources(10*time.Second, "no sources after the hand edit", func(l []sourceJSON) bool { return len(l) == 0 })
-		time.Sleep(1500 * time.Millisecond)
-		if got := w.readFile(configPath(w.home)); strings.Contains(got, "sources") {
-			t.Errorf("a reload re-added sources: %s", got)
-		}
+		holdThat(t, "a reload re-added sources", func() bool { return !strings.Contains(w.readFile(configPath(w.home)), "sources") })
 		w.in.Stop()
 		w.startFresh()
 		w.waitUp()
@@ -138,6 +140,7 @@ func TestFreshInstallLeavesWhatItShould(t *testing.T) {
 	})
 	for _, name := range embeddedPlugins {
 		t.Run("an edited "+name+" folder is left alone and a missing one is written again", func(t *testing.T) {
+			t.Parallel()
 			w := newWorld(t)
 			w.startFresh()
 			w.waitUp()
@@ -189,6 +192,7 @@ func stampOf(files map[string]string) string {
 // stamp, and leaves one that was edited after the stamp was written. Both
 // plugins Admiral ships follow the rule.
 func TestPluginUpgrade(t *testing.T) {
+	t.Parallel()
 	for _, name := range embeddedPlugins {
 		t.Run(name, func(t *testing.T) { testPluginUpgrade(t, name) })
 	}
@@ -215,6 +219,7 @@ func testPluginUpgrade(t *testing.T, name string) {
 		"notes.txt":   "a file the newer copy no longer has",
 	}
 	t.Run("an unedited older copy is replaced", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		// Finder leaves a .DS_Store; go:embed never carried one, so it is not an edit.
 		withFinder := map[string]string{".DS_Store": "finder"}
@@ -236,6 +241,7 @@ func testPluginUpgrade(t *testing.T, name string) {
 		}
 	})
 	t.Run("an older copy edited after its stamp is left alone", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		edited := map[string]string{}
 		for k, v := range old {
@@ -255,6 +261,7 @@ func testPluginUpgrade(t *testing.T, name string) {
 // when it is still Admiral's own copy (it matches its stamp); an edited copy
 // and a symlink are the engineer's and stay.
 func TestLeftoverFreeformFolder(t *testing.T) {
+	t.Parallel()
 	files := map[string]string{
 		"plugin.json": `{"name":"freeform","description":"an earlier copy","command":"python3","args":["plugin.py"]}`,
 		"plugin.py":   "# an earlier copy\n",
@@ -274,6 +281,7 @@ func TestLeftoverFreeformFolder(t *testing.T) {
 		}
 	}
 	t.Run("an untouched copy is removed", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		dir := filepath.Join(w.home, "plugins", "freeform")
 		write(t, dir, files, stampOf(files))
@@ -284,6 +292,7 @@ func TestLeftoverFreeformFolder(t *testing.T) {
 		}
 	})
 	t.Run("an edited copy is left alone", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		dir := filepath.Join(w.home, "plugins", "freeform")
 		write(t, dir, files, stampOf(files))
@@ -297,6 +306,7 @@ func TestLeftoverFreeformFolder(t *testing.T) {
 		}
 	})
 	t.Run("a symlink is left alone and its target untouched", func(t *testing.T) {
+		t.Parallel()
 		w := newWorld(t)
 		target := filepath.Join(w.root, "my-freeform")
 		write(t, target, files, stampOf(files)) // would pass the stamp check if followed
@@ -325,6 +335,7 @@ func TestLeftoverFreeformFolder(t *testing.T) {
 // keeps the banner, with the path of the fault. The sources name a fleet: the startup
 // migration would otherwise rewrite the file.
 func TestSourcesConfigValidation(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ name, config, want string }{
 		{"sources null", `{"version":1,"fleets":{"f":{"name":"F"}},"sources":null}`, "sources"},
 		{"sources an array", `{"version":1,"fleets":{"f":{"name":"F"}},"sources":[]}`, "sources"},
@@ -338,6 +349,7 @@ func TestSourcesConfigValidation(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			w := newWorld(t)
 			writeConfig(t, w.home, c.config)
 			w.start()
@@ -359,6 +371,7 @@ func TestSourcesConfigValidation(t *testing.T) {
 // S2: order text validation and the add, edit and remove flow: multi-line orders
 // through the source API, control characters and the size cap refused.
 func TestOrderTextValidationAndEditFlow(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.startSources(w.orderSrcDef("orders", "Orders"))
 	w.waitSource("orders", 10*time.Second, "state ok", isOK)
@@ -449,6 +462,7 @@ func TestOrderTextValidationAndEditFlow(t *testing.T) {
 // S3: a launch from an order carries the order's own text, not the client's,
 // and the source drops the order afterwards.
 func TestLaunchTakesTheOrdersTextNotTheClients(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.startSources(w.orderSrcDef("orders", "Orders"))
 	w.waitSource("orders", 10*time.Second, "state ok", isOK)
@@ -484,6 +498,7 @@ func TestLaunchTakesTheOrdersTextNotTheClients(t *testing.T) {
 // Plugins on disk: the list, the icon and its path-traversal guard, and a
 // manifest whose name differs from its folder.
 func TestPluginsAPI(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.installPlugin("testplug", "testplug")
 	w.installPlugin("mismatch", "other")
@@ -543,6 +558,7 @@ func holdsAny(t *testing.T, dir string, secrets ...string) string {
 // on PATH: panels and plugin-side defaults, settings, orders, the token, signing
 // in, a failing search, a refresh and a missing gh.
 func TestGitHubPlugin(t *testing.T) {
+	t.Parallel()
 	const (
 		defaultToken = "fake-token-default-1"
 		workToken    = "fake-token-work-2"

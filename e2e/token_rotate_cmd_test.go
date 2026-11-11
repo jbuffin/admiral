@@ -18,6 +18,7 @@ import (
 // doesn't answer (it must run on CI).
 
 func TestU12_S3_TokenRotateSignsEveryDeviceOut(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	in := w.startLAN(t)
 	old := in.Token
@@ -120,6 +121,7 @@ func TestU12_S3_TokenRotateSignsEveryDeviceOut(t *testing.T) {
 }
 
 func TestU12_S3_TokenRotateWithoutAServer(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	tokenFile := filepath.Join(w.home, "token")
 	w.writeRaw(tokenFile, "oldoldoldoldoldoldoldold\n", 0o600)

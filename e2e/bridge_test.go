@@ -54,6 +54,7 @@ func liveFleet(t *testing.T, cues ...string) *world {
 // S1: a joining browser gets the screen and the last 2,000 lines with colours,
 // then the live stream.
 func TestBridgeS1_JoinGetsScreenAndScrollbackThenStreams(t *testing.T) {
+	t.Parallel()
 	w := liveFleet(t, "lines 3000")
 	w.start()
 	s := w.launchIn("f", "claude", "b1")
@@ -107,6 +108,7 @@ func TestBridgeS1_JoinGetsScreenAndScrollbackThenStreams(t *testing.T) {
 // S1: a pane with no history joins with an empty scrollback, so its first line
 // is not sent twice (tmux clamps the history range to the screen's first line).
 func TestBridgeS1_JoinWithoutHistoryRepeatsNothing(t *testing.T) {
+	t.Parallel()
 	w := liveFleet(t, "lines 2")
 	w.start()
 	s := w.launchIn("f", "claude", "b1short")
@@ -127,6 +129,7 @@ func TestBridgeS1_JoinWithoutHistoryRepeatsNothing(t *testing.T) {
 // pane; input from either reaches the pane and clears needs-you; a hidden
 // browser stops receiving and catches up on return.
 func TestBridgeS2_TwoBrowsers(t *testing.T) {
+	t.Parallel()
 	w := liveFleet(t, "hook needs_you")
 	w.start()
 	s := w.launchIn("f", "claude", "b2")
@@ -202,6 +205,7 @@ func TestBridgeS2_TwoBrowsers(t *testing.T) {
 // is refused; access follows u1's rules; a pane in the alternate screen joins
 // with its modes.
 func TestBridgeS3_ControlClientDetachesAfterTheLastBrowserLeaves(t *testing.T) {
+	t.Parallel()
 	w := liveFleet(t)
 	w.extra = append(w.extra, "ADMIRAL_BRIDGE_IDLE=2s")
 	w.start()
@@ -243,6 +247,7 @@ func TestBridgeS3_ControlClientDetachesAfterTheLastBrowserLeaves(t *testing.T) {
 }
 
 func TestBridgeS3_OnlyCurrentShipsAreWatchable(t *testing.T) {
+	t.Parallel()
 	w := liveFleet(t)
 	w.start()
 	s := w.launchIn("f", "claude", "b3stale")
@@ -279,6 +284,7 @@ func TestBridgeS3_OnlyCurrentShipsAreWatchable(t *testing.T) {
 }
 
 func TestBridgeS3_AccessFollowsTheToken(t *testing.T) {
+	t.Parallel()
 	w := liveFleet(t)
 	in := w.startLAN(t)
 	s := w.launchIn("f", "claude", "b3auth")
@@ -317,6 +323,7 @@ func TestBridgeS3_AccessFollowsTheToken(t *testing.T) {
 }
 
 func TestBridgeS3_AlternateScreenJoinRestoresCursorAndModes(t *testing.T) {
+	t.Parallel()
 	w := liveFleet(t, "lines 50", "altscreen")
 	w.start()
 	s := w.launchIn("f", "claude", "b3alt")
@@ -344,6 +351,7 @@ func TestBridgeS3_AlternateScreenJoinRestoresCursorAndModes(t *testing.T) {
 
 // S4: the ship's exit reaches an open bridge; an anchored ship is read-only.
 func TestBridgeS4_ExitReachesTheBridge(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.cueFleets(map[string][]string{
 		"zero":  {"hook working", "wait go", "exit 0"},
@@ -428,6 +436,7 @@ func (in *fleetInst) titleOf(t *testing.T, session string) (string, bool) {
 // The order's first line rides the ship as `title` (the eleventh session
 // option @admiral-title), survives a restart, and is empty without a source.
 func TestBridgeTitleIsTheOrdersFirstLineAndSurvivesARestart(t *testing.T) {
+	t.Parallel()
 	w := liveFleet(t)
 	w.addOrdersSource()
 	w.start()

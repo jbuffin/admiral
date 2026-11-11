@@ -112,6 +112,7 @@ func (w *world) paneOf(session, crew string) crewPane {
 }
 
 func TestCrew_LaunchSendListCloseAndRestart(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.writeCue("hook working")
 	w.start()

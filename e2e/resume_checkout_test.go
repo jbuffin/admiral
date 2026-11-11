@@ -159,8 +159,10 @@ func rcExpectOrigin(t *testing.T, w *world, ship shipJSON, checkout string) {
 // ship sailed off before the last answer or right after it. (A ship still
 // afloat gets no order: its resume text is typed at its prompt.)
 func TestResumeOrderLaunchesInTheBuildShipsCheckout(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"sailed off", "exits right after the answer"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			w, checkout := rcWorld(t, 2)
 			ship, dir := w.rcBuildShip("Build " + rcRemote)
 			switch mode {
@@ -179,6 +181,7 @@ func TestResumeOrderLaunchesInTheBuildShipsCheckout(t *testing.T) {
 // A hand-launched ship has no build panel behind it: its resume order still
 // launches in its checkout, under the resume panel's own entry.
 func TestResumeOrderOfAHandLaunchedShipRunsUnderTheResumePanel(t *testing.T) {
+	t.Parallel()
 	w, checkout := rcWorld(t, 2)
 	ship := w.launch(map[string]any{"fleet": "buildf", "harness": "claude", "dir": checkout, "skill": noSkill, "order_id": "hand", "text": "x"})
 	w.rcReport(ship)
@@ -198,6 +201,7 @@ func TestResumeOrderOfAHandLaunchedShipRunsUnderTheResumePanel(t *testing.T) {
 // The record outlives Admiral: a restart between the add and the launch (the
 // resume panel's autopilot is paused) still launches in the right place.
 func TestResumeOrderKeepsItsCheckoutAcrossARestart(t *testing.T) {
+	t.Parallel()
 	w, checkout := rcWorld(t, 2)
 	w.setPaused("orders", "orders", true)
 	ship, _ := w.rcBuildShip("Build " + rcRemote)
@@ -222,6 +226,7 @@ func TestResumeOrderKeepsItsCheckoutAcrossARestart(t *testing.T) {
 // C2: the checkout the ship ran in is gone. The order is skipped with a
 // reason that says so, nothing launches, and the order stays listed.
 func TestResumeOrderWhoseCheckoutIsGoneIsSkipped(t *testing.T) {
+	t.Parallel()
 	w, checkout := rcWorld(t, 2)
 	ship, _ := w.rcBuildShip("Build " + rcRemote)
 	w.sailOff(ship.Session)
@@ -247,6 +252,7 @@ func TestResumeOrderWhoseCheckoutIsGoneIsSkipped(t *testing.T) {
 // panel is full the order waits, with no skipped record, and the resume
 // panel's other orders still launch. It launches once the panel has room.
 func TestResumeOrderWaitsWhileTheBuildPanelIsFull(t *testing.T) {
+	t.Parallel()
 	w, checkout := rcWorld(t, 1)
 	first, _ := w.rcBuildShip("Build " + rcRemote)
 	w.rcAddOrder("builds", "Build again "+rcRemote) // waits: the panel's one slot is taken

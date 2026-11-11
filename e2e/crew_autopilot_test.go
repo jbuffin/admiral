@@ -13,6 +13,7 @@ import (
 // flags, and only claude launches. The seam is the built binary.
 
 func TestCrew_LaunchUnderAutopilot(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.writeCue("hook working")
 	w.start()

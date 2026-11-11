@@ -16,6 +16,7 @@ import (
 // Discard fails against gh, and Remove from inbox then clears the item without
 // touching gh again. It is allowed on a review that never failed, too.
 func TestInboxReviewForget(t *testing.T) {
+	t.Parallel()
 	w, g := reviewWorld(t)
 	ship, dir := w.ghShip("f", "forget1")
 	seedItem(t, dir, "r-1", reviewAt("r-1", "2026-10-22T10:00:00Z", prURL, 123))
@@ -62,6 +63,7 @@ func TestInboxReviewForget(t *testing.T) {
 // that answered 404. A pull request lookup that failed another way shows gh's
 // own message.
 func TestInboxReviewAccessMessageOnlyForA404(t *testing.T) {
+	t.Parallel()
 	w, g := reviewWorld(t)
 	ship, dir := w.ghShip("f", "forget3")
 	seedItem(t, dir, "hidden", reviewAt("hidden", "2026-10-22T10:00:00Z", "https://github.com/acme/widgets/pull/13", 300))

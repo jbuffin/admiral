@@ -112,6 +112,7 @@ func (w *world) baseEnv() []string {
 	}
 	env = append(env, "ADMIRAL_HOME="+w.home, "HOME="+w.userHom, "XDG_CONFIG_HOME="+filepath.Join(w.userHom, "xdg"), "TMUX_TMPDIR="+w.tmuxTmp,
 		"ADMIRAL_BASE=base", "ADMIRAL_OVER=base")
+	env = append(env, fastDelays...)
 	return append(env, w.extra...)
 }
 

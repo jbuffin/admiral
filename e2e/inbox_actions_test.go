@@ -237,6 +237,7 @@ func (w *world) noAnswerOrOutcome(session, dir string, ids []string, events ...s
 // review_submitted and the item leaves. A body GitHub holds empty falls back to
 // the item's summary. A second Submit is refused and gh is not run again.
 func TestInboxReviewSubmit(t *testing.T) {
+	t.Parallel()
 	w, g := reviewWorld(t)
 	ship, dir := w.ghShip("f", "rev1")
 	seedItem(t, dir, "r-1", reviewAt("r-1", "2026-10-22T10:00:00Z", prURL, 123))
@@ -321,6 +322,7 @@ func TestInboxReviewSubmit(t *testing.T) {
 // S3: Discard deletes the pending review through gh, writes the answer without
 // an event and logs review_discarded.
 func TestInboxReviewDiscard(t *testing.T) {
+	t.Parallel()
 	w, g := reviewWorld(t)
 	ship, dir := w.ghShip("f", "rev3")
 	seedItem(t, dir, "r-1", reviewAt("r-1", "2026-10-22T10:00:00Z", prURL, 123))
@@ -348,6 +350,7 @@ func TestInboxReviewDiscard(t *testing.T) {
 // written, nothing is recorded, the item stays, and gh is not retried. 422 "Can
 // not approve your own pull request" is such a failure, and a huge stderr is cut.
 func TestInboxReviewGhFailureKeepsTheItem(t *testing.T) {
+	t.Parallel()
 	w, g := reviewWorld(t)
 	ship, dir := w.ghShip("f", "rev4")
 	seedItem(t, dir, "r-1", reviewAt("r-1", "2026-10-22T10:00:00Z", prURL, 123))
@@ -386,6 +389,7 @@ func TestInboxReviewGhFailureKeepsTheItem(t *testing.T) {
 // S4: with no gh on PATH there is an error that names gh, and the same
 // no-answer, no-outcome, item-stays result.
 func TestInboxReviewMissingGh(t *testing.T) {
+	t.Parallel()
 	for _, d := range []string{"/usr/bin", "/bin"} {
 		if exists(filepath.Join(d, "gh")) {
 			t.Skipf("a gh at %s/gh would stay on the trimmed PATH", d)
@@ -424,6 +428,7 @@ func TestInboxReviewMissingGh(t *testing.T) {
 // delete, so it answers the item as discarded (invalid_target), which is the
 // item's way out of the inbox.
 func TestInboxReviewRefusesBadTargets(t *testing.T) {
+	t.Parallel()
 	w, g := reviewWorld(t)
 	ship, dir := w.ghShip("f", "rev5")
 	g.rest("any", "GET", ghReviews, 200, map[string]any{"body": "x"}, "")
@@ -511,6 +516,7 @@ func TestInboxReviewRefusesBadTargets(t *testing.T) {
 // fleet g's token. A session with no ship runs gh in the server's own
 // environment.
 func TestInboxReviewHostAndFleetEnvironment(t *testing.T) {
+	t.Parallel()
 	w, g := reviewWorld(t)
 	ship, dir := w.ghShip("g", "rev6")
 	ghe := "https://ghe.example.com/acme/widgets/pull/7"
@@ -551,6 +557,7 @@ func TestInboxReviewHostAndFleetEnvironment(t *testing.T) {
 // an error. The answer is {action: gone}, review_discarded is recorded with
 // external: true, and the item leaves. Any other failure stays an error.
 func TestInboxReviewGone(t *testing.T) {
+	t.Parallel()
 	w, g := reviewWorld(t)
 	ship, dir := w.ghShip("f", "rev8")
 	for i, id := range []string{"gone-get", "gone-del", "gone-422", "own-422", "gone-state", "own-del"} {
@@ -642,6 +649,7 @@ func TestInboxReviewGone(t *testing.T) {
 // the three, a proposal on a card that is not edited, a bad proposal kind or an
 // edited card with none is refused and changes nothing.
 func TestInboxFindingsSend(t *testing.T) {
+	t.Parallel()
 	w, g := reviewWorld(t)
 	ship, dir := w.ghShip("f", "fin6")
 	seedItem(t, dir, "f-1", findingsCards("r1", "r2", "r3"))
@@ -740,6 +748,7 @@ func TestInboxFindingsSend(t *testing.T) {
 // sailed from. The files go, and the item with them, when the last item is
 // answered.
 func TestInboxKeepsUnansweredFilesAfterSailOff(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	g := w.newFakeGH()
 	w.ghFleets(map[string][]string{"f": {"hook working", "wait go", "exit 0"}})
@@ -763,7 +772,7 @@ func TestInboxKeepsUnansweredFilesAfterSailOff(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	time.Sleep(2 * time.Second) // the cleanup, if it were to run, has had its pass
+	waitKept(t, w.home, ship.Session)
 
 	served := func(when string) {
 		t.Helper()
@@ -780,14 +789,12 @@ func TestInboxKeepsUnansweredFilesAfterSailOff(t *testing.T) {
 	served("after sail-off")
 	w.restart()
 	served("after a restart")
-	time.Sleep(2 * time.Second)
-	served("after a restart and a pass")
 
 	body := map[string]any{"answers": map[string]any{"1": map[string]any{"choice": "Alpha"}, "2": map[string]any{"choice": []string{"X"}}}}
 	if code, resp := w.in.act(t, ship.Session, "q-1", "answer", body); !ok2xx(code) {
 		t.Fatalf("answering the question = %d: %s", code, resp)
 	}
-	time.Sleep(1500 * time.Millisecond)
+	w.in.waitInbox(t, "r-1")
 	if !exists(inboxPath) || !exists(reportPath) {
 		t.Fatalf("the files were removed with the review still unanswered")
 	}
@@ -826,6 +833,17 @@ func kept(t *testing.T, home, session string) bool {
 	return ok
 }
 
+// waitKept waits for state.json to hold a kept inbox record for the session:
+// the sail-off pass has decided to keep its files.
+func waitKept(t *testing.T, home, session string) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); !kept(t, home, session); time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("within 10s state.json never kept the inbox of %s", session)
+		}
+	}
+}
+
 // refused is a request the server turns down as invalid: not a missing route
 // (404), not a failure of gh.
 func refused(code int) bool {
@@ -836,6 +854,7 @@ func refused(code int) bool {
 // in `inbox`: one answered in its terminal and listed nowhere holds nothing.
 // Remove from inbox clears a kept item, and the files go with the last one.
 func TestInboxKeepsOnlyWhatTheReportListsAfterSailOff(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.ghFleets(map[string][]string{"f": {"hook working", "wait go", "exit 0"}})
 	w.start()
@@ -857,8 +876,8 @@ func TestInboxKeepsOnlyWhatTheReportListsAfterSailOff(t *testing.T) {
 	w.waitEvent(done.Session, "ended", 1)
 	w.waitEvent(wait.Session, "ended", 1)
 	waitGone(t, 15*time.Second, doneInbox, doneReport)
-	time.Sleep(2 * time.Second) // the cleanup, if it were to run, has had its pass
-	if !exists(waitInbox) || !exists(waitReport) || !kept(t, w.home, wait.Session) {
+	waitKept(t, w.home, wait.Session)
+	if !exists(waitInbox) || !exists(waitReport) {
 		t.Fatalf("the ship whose report lists q-3 lost its kept inbox")
 	}
 	if kept(t, w.home, done.Session) {

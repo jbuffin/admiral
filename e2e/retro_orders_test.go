@@ -66,6 +66,7 @@ func (w *world) oneRun(name string, seen map[string]bool) string {
 // AC1 and AC3: one run, a restart, and a second run add exactly one retro order
 // that starts at the first run; a third run adds nothing more.
 func TestRetroOrderAfterNRunsAcrossARestart(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.writeCue("wait go", "exit 0")
 	for _, n := range []string{"r1", "r2", "r3"} {

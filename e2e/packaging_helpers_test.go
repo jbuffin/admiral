@@ -66,6 +66,7 @@ var repoRoot = func() string {
 }()
 
 type release struct {
+	root     string // the temp dir holding everything below; removed after the run
 	err      string // non-empty when make release failed: every dependent test fails with it
 	dir      string // DIST
 	bin      string // the built binary (BIN)
@@ -81,6 +82,14 @@ var (
 	relOnce sync.Once
 	rel     release
 )
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if rel.root != "" {
+		_ = os.RemoveAll(rel.root)
+	}
+	os.Exit(code)
+}
 
 func officialLogoFiles() []string {
 	ents, _ := os.ReadDir(filepath.Join(repoRoot, "web", "logos", "official"))
@@ -107,6 +116,7 @@ func theRelease(t *testing.T) release {
 			rel.err = err.Error()
 			return
 		}
+		rel.root = tmp
 		rel.dir = filepath.Join(tmp, "dist")
 		rel.bin = filepath.Join(tmp, "admiral")
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)

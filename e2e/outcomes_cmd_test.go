@@ -43,6 +43,7 @@ func seedOutcomes(w *world) {
 func outLines(ls ...string) string { return strings.Join(ls, "\n") + "\n" }
 
 func TestOutcomesCommand(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	seedOutcomes(w)
 
@@ -89,6 +90,7 @@ func TestOutcomesCommand(t *testing.T) {
 	}
 
 	t.Run("no log yet", func(t *testing.T) {
+		t.Parallel()
 		empty := newWorld(t)
 		r := empty.admiral("outcomes")
 		empty.expectExit(r, 0, "outcomes with no log")

@@ -222,6 +222,7 @@ func (w *world) stderrLines(substr string) int {
 // stop answered, a clean exit. Four lines in order, the report in `ended`, and
 // the report file and inbox gone once the ship has sailed off.
 func TestOutcomeLogOfAnOrderShip(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	p := w.newTP("a")
 	p.mainOrders(map[string]any{"id": "o1", "title": "Order one", "text": "do it", "url": "https://example.com/issues/1"})
@@ -302,6 +303,7 @@ func TestOutcomeLogOfAnOrderShip(t *testing.T) {
 // for the first two. The files stay while the ship is anchored and go with
 // Dismiss, after `ended`, and `dismissed` follows `ended`.
 func TestOutcomeReportInvalidMissingAndDismiss(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.outFleets(map[string][]string{"f": {"hook working", "wait go", "exit 3"}})
 	w.start()
@@ -363,9 +365,11 @@ func TestOutcomeReportInvalidMissingAndDismiss(t *testing.T) {
 // is stopped gets `ended` on the next start, once, charged only for the time it
 // ran, and stamped with the time it was written.
 func TestOutcomeRestartAddsNoLaunchedAndEndsADeadShip(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.outFleets(map[string][]string{"f": {"hook working"}})
 	w.start()
+	launchedAt := time.Now()
 	ship := w.launchIn("f", "claude", "restart")
 	w.waitFile(ship.Session, "cues-done")
 	log := w.waitEvent(ship.Session, "launched", 1)
@@ -375,14 +379,15 @@ func TestOutcomeRestartAddsNoLaunchedAndEndsADeadShip(t *testing.T) {
 
 	w.restart()
 	w.in.waitStatusList(t, 10*time.Second, ship.Session, "underway")
-	time.Sleep(2 * time.Second)
-	if got := eventsOf(w.shipLog(ship.Session)); !reflect.DeepEqual(got, []string{"launched"}) {
-		t.Fatalf("after a restart the ship's records are %v, want only the one launched", got)
-	}
+	holdThat(t, "after a restart the ship has a second launched", func() bool {
+		return reflect.DeepEqual(eventsOf(w.shipLog(ship.Session)), []string{"launched"})
+	})
 
 	w.in.Stop()
 	w.killPane(ship.Session)
-	time.Sleep(4 * time.Second) // Admiral's downtime must not count as the ship's run
+	ran := time.Since(launchedAt)
+	const downtime = 2500 * time.Millisecond // must not count as the ship's run
+	time.Sleep(downtime)
 	restartedAt := time.Now()
 	w.restart()
 	log = w.waitEvent(ship.Session, "ended", 1)
@@ -390,8 +395,9 @@ func TestOutcomeRestartAddsNoLaunchedAndEndsADeadShip(t *testing.T) {
 	if !isNull(e, "exit_code") || e["signal"] != "KILL" || !isNull(e, "report") {
 		t.Errorf("ended = %v, want exit_code null, signal KILL, report null", e)
 	}
-	if d := num(t, e, "duration_s"); d >= 4 {
-		t.Errorf("duration_s = %v: the ship ran for about a second before it was killed, 4 s before Admiral came back", d)
+	// launched is stamped to the second, so the run can read up to a second long.
+	if d := num(t, e, "duration_s"); d > ran.Seconds()+1.25 {
+		t.Errorf("duration_s = %v: the ship ran for %s before it was killed, %s before Admiral came back", d, ran, downtime)
 	}
 	if ts, err := time.Parse(time.RFC3339, e["ts"].(string)); err != nil || ts.Before(restartedAt.Add(-time.Second)) {
 		t.Errorf("ended ts = %v, want the time it was written, after %s", e["ts"], restartedAt)
@@ -402,15 +408,15 @@ func TestOutcomeRestartAddsNoLaunchedAndEndsADeadShip(t *testing.T) {
 
 	w.restart()
 	w.in.waitStatusList(t, 10*time.Second, ship.Session, "anchored")
-	time.Sleep(2 * time.Second)
-	if got := eventsOf(w.shipLog(ship.Session)); !reflect.DeepEqual(got, []string{"launched", "ended"}) {
-		t.Errorf("after another restart the records are %v, want ended to stay single", got)
-	}
+	holdThat(t, "after another restart the ship has a second ended", func() bool {
+		return reflect.DeepEqual(eventsOf(w.shipLog(ship.Session)), []string{"launched", "ended"})
+	})
 }
 
 // A ship that exited 0 while Admiral was stopped gets `ended` before the start-up
 // kill, and then its files go.
 func TestOutcomeRestartEndsAShipThatSailedOff(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.outFleets(map[string][]string{"f": {"hook working", "wait go", "exit 0"}})
 	w.start()
@@ -444,6 +450,7 @@ func TestOutcomeRestartEndsAShipThatSailedOff(t *testing.T) {
 // keeps the report and inbox of a ship whose `ended` it could not write. A ship
 // whose `ended` failed gets it again when it is dismissed, before `dismissed`.
 func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.outFleets(map[string][]string{"f": {"hook working", "sleep 1", "hook needs_you"}, "z": {"hook working", "wait go", "exit 0"},
 		"y": {"hook working", "wait go", "exit 3"}})
@@ -457,13 +464,17 @@ func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 	b := w.launchIn("f", "claude", "unw2")
 	w.in.waitStatusList(t, 10*time.Second, a.Session, "needs_you")
 	w.in.waitStatusList(t, 10*time.Second, b.Session, "needs_you")
-	time.Sleep(1 * time.Second)
 	if code, _ := send(t, http.MethodGet, w.in.LocalURL+"/api/ships", nil); code != 200 || !w.hasSession(b.Session) {
 		t.Errorf("with an unwritable log GET /api/ships = %d, ship b present: %v", code, w.hasSession(b.Session))
 	}
-	if got := w.stderrLines("outcome log:"); got != 1 {
-		t.Errorf("Admiral logged %d lines about the outcome log across four failed records, want 1; stderr: %s", got, w.in.stderrBuf.String())
+	for deadline := time.Now().Add(5 * time.Second); w.stderrLines("outcome log:") == 0; time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("Admiral logged nothing about the unwritable outcome log; stderr: %s", w.in.stderrBuf.String())
+		}
 	}
+	holdThat(t, "Admiral logged more than one line about the outcome log across four failed records", func() bool {
+		return w.stderrLines("outcome log:") == 1
+	})
 
 	z := w.launchIn("z", "claude", "unw-sail")
 	reportPath, inboxPath := w.seedShipFiles(w.record(z.Session), `{"status":"done"}`)
@@ -484,7 +495,7 @@ func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 	_, yInbox := shipPaths(w.record(y.Session))
 	w.touch(y.Session, "go")
 	w.in.waitStatusList(t, 10*time.Second, y.Session, "anchored")
-	time.Sleep(time.Second) // its `ended` has been tried, and failed, by now
+	time.Sleep(300 * time.Millisecond) // the writer has tried its queued `ended`, and failed
 
 	if err := os.Remove(blocker); err != nil {
 		t.Fatal(err)

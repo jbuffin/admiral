@@ -17,16 +17,19 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/jbuffin/admiral/internal/delay"
 )
 
 const (
 	// maxLine is the longest line a plugin may send; a longer one is dropped.
 	maxLine = 16 << 20
-	// callTimeout is how long a request waits for its answer.
-	callTimeout = 10 * time.Second
 	// stopGrace is how long a plugin gets to exit after its stdin closes.
 	stopGrace = time.Second
 )
+
+// callTimeout is how long a request waits for its answer.
+var callTimeout = delay.From("ADMIRAL_CALL_TIMEOUT", 10*time.Second)
 
 var (
 	errTimeout    = errors.New("the order source did not answer in time")

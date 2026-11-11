@@ -30,6 +30,7 @@ func cmdWorld(t *testing.T) (*world, string) {
 }
 
 func TestU12_S2_FleetList(t *testing.T) {
+	t.Parallel()
 	w, _ := cmdWorld(t)
 	r := w.admiral("fleet", "list")
 	w.expectExit(r, 0, "fleet list")
@@ -52,6 +53,7 @@ func TestU12_S2_FleetList(t *testing.T) {
 }
 
 func TestU12_S2_FleetAddAndEditKeepWhatTheyDoNotTouch(t *testing.T) {
+	t.Parallel()
 	w, original := cmdWorld(t)
 	before := w.readConfig()
 	unchanged := func(c savedConfig, what string) {
@@ -134,6 +136,7 @@ func TestU12_S2_FleetAddAndEditKeepWhatTheyDoNotTouch(t *testing.T) {
 }
 
 func TestU12_S2_FleetCheckResolvesAndNeverRuns(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	marker := filepath.Join(w.root, "ran")
 	w.writeRaw(filepath.Join(w.root, "bin3", "claude"), "#!/bin/sh\ntouch "+marker+"\n", 0o755)
@@ -173,6 +176,7 @@ func TestU12_S2_FleetCheckResolvesAndNeverRuns(t *testing.T) {
 }
 
 func TestU12_S2_ConfigShowValidateEdit(t *testing.T) {
+	t.Parallel()
 	w, original := cmdWorld(t)
 
 	r := w.admiral("config", "show")

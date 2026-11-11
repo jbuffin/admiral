@@ -46,6 +46,7 @@ func (w *world) waitingFor(source, panel string) []string {
 }
 
 func TestTwoPanelsNeedingOneResourceLaunchOneShipAndTheOtherWaits(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.writeCue("wait go", "exit 0")
 	w.repo("r1", remoteOf("r1"))

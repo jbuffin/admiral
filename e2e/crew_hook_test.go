@@ -19,6 +19,7 @@ import (
 // No cue runs, so the test makes each pane working itself.
 
 func TestCrewHook_LeadWaitsForWorkingCrew(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.start()
 	ship := w.launch(w.order("work", "claude", "alpha", noSkill, "go"))
@@ -155,6 +156,7 @@ func TestCrewHook_LeadWaitsForWorkingCrew(t *testing.T) {
 // so only the id its PostToolUse gave (kept in @admiral-monitors) tells it from
 // a background Bash, which still doesn't hold the ship.
 func TestHook_StopWaitsForMonitor(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.start()
 	ship := w.launch(w.order("work", "claude", "alpha", noSkill, "go"))

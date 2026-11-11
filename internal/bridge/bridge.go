@@ -15,12 +15,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/delay"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
@@ -63,10 +63,7 @@ type Service struct {
 
 // New prepares the service. tmux is the binary; sock is Admiral's socket.
 func New(tmux, sock string, sh Ships) *Service {
-	idle := DefaultIdle
-	if d, err := time.ParseDuration(os.Getenv("ADMIRAL_BRIDGE_IDLE")); err == nil && d > 0 {
-		idle = d
-	}
+	idle := delay.From("ADMIRAL_BRIDGE_IDLE", DefaultIdle)
 	return &Service{Tmux: tmux, Socket: sock, Ships: sh, Idle: idle, conns: map[string]*conn{}}
 }
 
