@@ -752,6 +752,8 @@ func TestLaunchASliceRefusesWhatIsNotASlice(t *testing.T) {
 	both["child_url"] = issURL(31)
 	trailing := sliceBody(31, 32)
 	trailing["issues"] = []string{issURL(31), issURL(32) + "/", issURL(31) + "/"}
+	otherRepo := sliceBody(31)
+	otherRepo["issues"] = []string{issURL(31), "https://github.com/acme/other/issues/39"}
 	anyway := sliceBody(31, 36)
 	anyway["start_anyway"] = true
 	for _, tc := range []struct {
@@ -774,7 +776,7 @@ func TestLaunchASliceRefusesWhatIsNotASlice(t *testing.T) {
 		{"start_anyway does not apply to a slice", anyway, 0, issURL(36)},
 		{"a With you child", sliceBody(31, 37), 0, issURL(37)},
 		{"a child on another skill", sliceBody(31, 38), 0, issURL(38)},
-		{"children of two repos", sliceBody(31, 39), 400, ""},
+		{"children of two repos", otherRepo, 400, ""},
 	} {
 		code, msg := r.launch(c.ID, tc.body)
 		if (tc.code != 0 && code != tc.code) || (tc.code == 0 && (code < 400 || code > 499)) || !strings.Contains(msg, tc.wantText) || strings.TrimSpace(msg) == "" {

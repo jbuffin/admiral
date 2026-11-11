@@ -66,8 +66,9 @@ func TestLaunchOrderRefusesSeveralIssuesWithoutASource(t *testing.T) {
 	}
 }
 
-// Needs a real host: LaunchOrder of an order waits for the first read of the ships.
-func TestLaunchOrderRefusesASliceOverlappingAShipsClaim(t *testing.T) {
+// sliceService is a service on a real host: LaunchOrder of an order waits for the first read of the ships.
+func sliceService(t *testing.T) *mooredFixture {
+	t.Helper()
 	if testing.Short() {
 		t.Skip("needs tmux: skipped under -short")
 	}
@@ -89,13 +90,18 @@ func TestLaunchOrderRefusesASliceOverlappingAShipsClaim(t *testing.T) {
 	f.s.Host = sessionhost.New(tmux, sock)
 	f.s.Orders = sliceOrders{}
 	ctx, stop := context.WithCancel(context.Background())
-	defer stop()
+	t.Cleanup(stop)
 	go f.s.Host.Run(ctx)
 	select {
 	case <-f.s.Host.Ready():
 	case <-time.After(10 * time.Second):
 		t.Fatal("the host never read the sessions")
 	}
+	return f
+}
+
+func TestLaunchOrderRefusesASliceOverlappingAShipsClaim(t *testing.T) {
+	f := sliceService(t)
 	if err := moor.Write(f.home, moor.Record{Name: "Slice", Session: "slice", Fleet: "work", URL: sliceB, Issues: []string{sliceB}}); err != nil {
 		t.Fatal(err)
 	}
@@ -106,5 +112,31 @@ func TestLaunchOrderRefusesASliceOverlappingAShipsClaim(t *testing.T) {
 	}
 	if holder, ok := f.s.lockIssue(free, "next"); !ok {
 		t.Errorf("an issue the refused launch would have taken is still locked by %q", holder)
+	}
+}
+
+// A slice launched again under the order id its moored ship holds is refused by the order's hold,
+// which names the ship the way the issue check does.
+func TestLaunchOrderNamesTheShipHoldingASlicesOrder(t *testing.T) {
+	f := sliceService(t)
+	if err := moor.Write(f.home, moor.Record{Name: "Slice", Session: "slice", Fleet: "work", Source: "campaign", OrderID: "c/slice", URL: sliceA, Issues: []string{sliceA, sliceB}}); err != nil {
+		t.Fatal(err)
+	}
+	_, lerr := f.s.LaunchOrder(launcher.Request{Source: "campaign", OrderID: "c/slice", Issues: []string{sliceA, sliceB}})
+	if lerr == nil || lerr.Status != http.StatusConflict || !strings.Contains(lerr.Msg, "(Slice)") {
+		t.Fatalf("LaunchOrder of a slice whose order has a ship = %v, want a 409 naming Slice", lerr)
+	}
+}
+
+func TestLaunchOrderNamesALaunchInFlightForARacingSlice(t *testing.T) {
+	f := sliceService(t)
+	key := OrderKey{"campaign", "c/slice"}
+	if !f.s.lockOrder(key) {
+		t.Fatal("the order was already locked")
+	}
+	defer f.s.unlockOrder(key)
+	_, lerr := f.s.LaunchOrder(launcher.Request{Source: "campaign", OrderID: "c/slice", Issues: []string{sliceA, sliceB}})
+	if lerr == nil || lerr.Status != http.StatusConflict || !strings.Contains(lerr.Msg, "a launch in flight") {
+		t.Fatalf("LaunchOrder of a slice racing its twin = %v, want a 409 naming a launch in flight", lerr)
 	}
 }

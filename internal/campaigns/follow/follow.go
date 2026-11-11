@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -417,9 +418,49 @@ func find(n *campaigns.Node, url string) *campaigns.Node {
 // same child in two campaigns is two orders.
 func OrderID(campaignID, childURL string) string { return campaignID + "/" + childURL }
 
-// childOf finds the child an order id names in its campaign.
-func (s *Service) childOf(orderID string) (Followed, *campaigns.Node, *launcher.Error) {
-	id, url, ok := strings.Cut(orderID, "/")
+// SliceOrderID is the order id of a slice: the campaign's id, a slash and the children's URLs in launch order,
+// comma-separated; a child in the first one's repo is written as its issue number alone.
+func SliceOrderID(campaignID string, urls []string) string {
+	first := urls[0]
+	prefix := first[:strings.LastIndex(first, "/")+1]
+	parts := []string{first}
+	for _, u := range urls[1:] {
+		if rest, ok := strings.CutPrefix(u, prefix); ok && isDigits(rest) {
+			u = rest
+		}
+		parts = append(parts, u)
+	}
+	return campaignID + "/" + strings.Join(parts, ",")
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// sliceURLs recovers the children's URLs from the part of a slice order id after the campaign's id.
+func sliceURLs(rest string) []string {
+	parts := strings.Split(rest, ",")
+	first := parts[0]
+	prefix := first[:strings.LastIndex(first, "/")+1]
+	for i := 1; i < len(parts); i++ {
+		if isDigits(parts[i]) {
+			parts[i] = prefix + parts[i]
+		}
+	}
+	return parts
+}
+
+// childrenOf finds the children an order id names in its campaign: one for a child's id, two or more for a slice's.
+func (s *Service) childrenOf(orderID string) (Followed, []*campaigns.Node, *launcher.Error) {
+	id, rest, ok := strings.Cut(orderID, "/")
 	if !ok {
 		return Followed{}, nil, orderError(http.StatusNotFound, "a campaign order id is <campaign id>/<child URL>")
 	}
@@ -430,11 +471,33 @@ func (s *Service) childOf(orderID string) (Followed, *campaigns.Node, *launcher.
 	if f.Ended() {
 		return Followed{}, nil, orderError(http.StatusConflict, "this campaign has ended")
 	}
-	n := find(s.view(f).Root, url)
-	if n == nil {
-		return Followed{}, nil, orderError(http.StatusNotFound, "that issue is not in this campaign")
+	urls := []string{rest}
+	if strings.Contains(rest, ",") {
+		urls = sliceURLs(rest)
 	}
-	return f, n, nil
+	root := s.view(f).Root
+	nodes := make([]*campaigns.Node, 0, len(urls))
+	for _, u := range urls {
+		n := find(root, u)
+		if n == nil {
+			return Followed{}, nil, orderError(http.StatusNotFound, "that issue is not in this campaign")
+		}
+		nodes = append(nodes, n)
+	}
+	return f, nodes, nil
+}
+
+// sliceText names every child URL, one per line, and nothing GitHub holds.
+func sliceText(nodes []*campaigns.Node) string {
+	urls := make([]string, 0, len(nodes))
+	for _, n := range nodes {
+		urls = append(urls, n.URL)
+	}
+	return strings.Join(urls, "\n")
+}
+
+func sliceTitle(nodes []*campaigns.Node) string {
+	return nodes[0].Title + " +" + strconv.Itoa(len(nodes)-1)
 }
 
 func orderError(status int, msg string) *launcher.Error {
@@ -449,12 +512,18 @@ func (s *Service) Order(source, id string) (text, title, repo, url, panel string
 		}
 		return s.Next.Order(source, id)
 	}
-	f, n, lerr := s.childOf(id)
+	f, nodes, lerr := s.childrenOf(id)
 	if lerr != nil {
 		return "", "", "", "", "", lerr
 	}
-	if n.Parent {
-		return "", "", "", "", "", orderError(http.StatusBadRequest, "that issue is a parent; launch one of its children")
+	for _, n := range nodes {
+		if n.Parent {
+			return "", "", "", "", "", orderError(http.StatusBadRequest, "that issue is a parent; launch one of its children")
+		}
+	}
+	n := nodes[0]
+	if len(nodes) > 1 {
+		return sliceText(nodes), sliceTitle(nodes), s.repoFor(f, n), n.URL, f.ID, nil
 	}
 	return launchText(n), n.Title, s.repoFor(f, n), n.URL, f.ID, nil
 }
@@ -504,7 +573,7 @@ func (s *Service) Launched(source, id string) {
 		}
 		return
 	}
-	if f, _, lerr := s.childOf(id); lerr == nil {
+	if f, _, lerr := s.childrenOf(id); lerr == nil {
 		s.startReread(f.ID, true)
 	}
 }

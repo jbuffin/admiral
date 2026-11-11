@@ -475,11 +475,11 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 			return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: NotKnownMsg}
 		}
 		if !s.lockOrder(key) {
-			return Ship{}, &launcher.Error{Status: http.StatusConflict, Msg: "this order already has a ship"}
+			return Ship{}, s.orderRefused(req.Issues)
 		}
 		defer s.unlockOrder(key)
 		if HiddenOrders(s.List())[key] {
-			return Ship{}, &launcher.Error{Status: http.StatusConflict, Msg: "this order already has a ship"}
+			return Ship{}, s.orderRefused(req.Issues)
 		}
 		var lerr *launcher.Error
 		if req.Text, req.Title, _, req.URL, panel, lerr = s.Orders.Order(req.Source, req.OrderID); lerr != nil {
@@ -537,6 +537,20 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	}
 	s.broadcast()
 	return s.ship(sess), nil
+}
+
+// orderRefused is the 409 for an order that already has a ship; a slice's refusal names the ship holding its issues.
+func (s *Service) orderRefused(issues []string) *launcher.Error {
+	if len(issues) == 0 {
+		return &launcher.Error{Status: http.StatusConflict, Msg: "this order already has a ship"}
+	}
+	claims := ClaimsOf(append(s.List(), s.Pending()...))
+	for _, u := range issues {
+		if holder := claims[claimKeyOf(u)]; holder != "" {
+			return issueHeld(holder)
+		}
+	}
+	return issueHeld("a launch in flight")
 }
 
 func (s *Service) holdUnlisted(key OrderKey, session, panel string, resources []string) {
