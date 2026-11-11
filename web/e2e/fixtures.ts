@@ -18,6 +18,8 @@ import { fileURLToPath } from 'node:url';
 
 const bin = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'admiral');
 
+const fakeGhDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'e2e', 'testdata', 'fakegh');
+
 const testPlugin = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'e2e', 'testplugin', 'plugin.py');
 
 // The test writes what the plugin should list or do here, and reads what it logged.
@@ -49,6 +51,8 @@ export interface Admiral {
   /** The test-only orders source as a config `sources` entry; `extra` sits beside its settings. */
   ordersSource(key?: string, name?: string, extra?: Record<string, unknown>): Record<string, unknown>;
   flags(label: string): Flags;
+  /** The fake `gh` (e2e/testdata/fakegh) for the built-in GitHub source: pass `env` to `start`; `token` signs an account in ('' is the host's active one). */
+  fakeGh(): { dir: string; env: Record<string, string>; token(user: string, value: string): void };
   /** `lan` listens on 0.0.0.0 and fills `lanUrl` and `token`; `env` wins over the server's environment. */
   start(opts?: { lan?: boolean; env?: Record<string, string> }): Promise<void>;
   /** With `start({ lan: true })`: the Mac's non-loopback address (http://<ip>:<port>/) and the token the server printed. */
@@ -129,6 +133,16 @@ class Instance implements Admiral {
       put: (name, content = '') => write(name, content),
       remove: (name) => rmSync(join(dir, name), { force: true }),
       starts: () => (existsSync(join(dir, 'starts')) ? readFileSync(join(dir, 'starts'), 'utf8').split('\n').filter(Boolean).length : 0),
+    };
+  }
+
+  fakeGh() {
+    const dir = join(this.home, 'fakegh');
+    for (const d of ['calls', 'search', 'rest']) mkdirSync(join(dir, d), { recursive: true });
+    return {
+      dir,
+      env: { FAKEGH_DIR: dir, PATH: `${fakeGhDir}:${process.env.PATH ?? ''}` },
+      token: (user: string, value: string) => writeFileSync(join(dir, user === '' ? 'token' : `token-${user}`), value + '\n'),
     };
   }
 
