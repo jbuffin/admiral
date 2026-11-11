@@ -17,6 +17,9 @@ type GitHub interface {
 	// OpenPRs maps each URL GitHub knows to whether it is open; a URL left out
 	// is one GitHub could not confirm.
 	OpenPRs(ctx context.Context, urls []string) (map[string]bool, error)
+	// PullRequests asks for every URL in one call. A URL GitHub answers NOT_FOUND
+	// for is left out; an error is a failed call, not an answer.
+	PullRequests(ctx context.Context, urls []string) (map[string]Status, error)
 }
 
 // Check is what counting a ship's PRs needs.

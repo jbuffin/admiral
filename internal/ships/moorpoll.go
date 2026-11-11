@@ -1,0 +1,221 @@
+package ships
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"os"
+	"time"
+
+	"github.com/jbuffin/admiral/internal/delay"
+	"github.com/jbuffin/admiral/internal/moor"
+	"github.com/jbuffin/admiral/internal/outcomes"
+)
+
+// MoorPoll is how often every moored ship's PRs are polled.
+var MoorPoll = delay.From("ADMIRAL_MOOR_POLL", 2*time.Minute)
+
+// polled is what the last answered poll said about one moored ship's PRs.
+type polled struct {
+	status map[string]moor.Status // a URL left out is NOT_FOUND
+	at     time.Time              // the last poll that answered
+	stale  bool                   // the latest poll failed
+}
+
+func (s *Service) kickChan() chan struct{} {
+	s.mooredMu.Lock()
+	defer s.mooredMu.Unlock()
+	if s.moorKick == nil {
+		s.moorKick = make(chan struct{}, 1)
+	}
+	return s.moorKick
+}
+
+// RefreshMoored asks the poller for a poll now; a kick during a poll coalesces with the next.
+func (s *Service) RefreshMoored() {
+	select {
+	case s.kickChan() <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Service) RunMoored(ctx context.Context) {
+	kick := s.kickChan()
+	tick := time.NewTicker(MoorPoll)
+	defer tick.Stop()
+	for {
+		s.PollMoored(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		case <-kick:
+		}
+	}
+}
+
+// PollMoored runs one pass: one batched query per fleet's client for every moored ship's PRs.
+func (s *Service) PollMoored(ctx context.Context) {
+	s.pollMu.Lock()
+	defer s.pollMu.Unlock()
+	if s.GitHub == nil {
+		return
+	}
+	s.mooredMu.Lock()
+	s.loadMoored()
+	recs := append([]moor.Record(nil), s.moored...)
+	s.mooredMu.Unlock()
+	byFleet := map[string][]moor.Record{}
+	var fleets []string
+	for _, r := range recs {
+		if _, ok := byFleet[r.Fleet]; !ok {
+			fleets = append(fleets, r.Fleet)
+		}
+		byFleet[r.Fleet] = append(byFleet[r.Fleet], r)
+	}
+	changed := false
+	for _, fleet := range fleets {
+		gh := s.GitHub(fleet)
+		if gh == nil || ctx.Err() != nil {
+			continue
+		}
+		var urls []string
+		seen := map[string]bool{}
+		for _, r := range byFleet[fleet] {
+			for _, u := range r.PRs {
+				if !seen[u] {
+					seen[u] = true
+					urls = append(urls, u)
+				}
+			}
+		}
+		answer, err := gh.PullRequests(ctx, urls)
+		if ctx.Err() != nil {
+			return
+		}
+		changed = true
+		for _, r := range byFleet[fleet] {
+			if err != nil {
+				s.markStale(r.Session)
+				continue
+			}
+			st := map[string]moor.Status{}
+			for _, u := range r.PRs {
+				if v, ok := answer[u]; ok {
+					st[u] = v
+				}
+			}
+			s.mooredMu.Lock()
+			s.polls()[r.Session] = polled{status: st, at: time.Now().UTC().Truncate(time.Second)}
+			prs := s.prsOf(r)
+			s.mooredMu.Unlock()
+			if reason, ended := moor.EndReason(prs); ended {
+				s.endMoored(r.Session, reason)
+			}
+		}
+	}
+	if changed {
+		s.broadcast()
+	}
+}
+
+func (s *Service) markStale(session string) {
+	s.mooredMu.Lock()
+	defer s.mooredMu.Unlock()
+	p := s.polls()[session]
+	p.stale = true
+	s.polls()[session] = p
+}
+
+// polls is the poll state by session; the caller holds mooredMu.
+func (s *Service) polls() map[string]polled {
+	if s.mooredPolls == nil {
+		s.mooredPolls = map[string]polled{}
+	}
+	return s.mooredPolls
+}
+
+// prsOf is the record's PRs as last polled, each OPEN until a poll answers; the caller holds mooredMu.
+func (s *Service) prsOf(r moor.Record) []moor.PR {
+	p, ok := s.mooredPolls[r.Session]
+	out := make([]moor.PR, 0, len(r.PRs))
+	for _, u := range r.PRs {
+		if !ok || p.status == nil {
+			out = append(out, moor.PR{URL: u, State: "OPEN"})
+			continue
+		}
+		st, found := p.status[u]
+		out = append(out, moor.View(u, st, found))
+	}
+	return out
+}
+
+// mooredRecord finds a moored ship's record by session.
+func (s *Service) mooredRecord(session string) (moor.Record, bool) {
+	s.mooredMu.Lock()
+	defer s.mooredMu.Unlock()
+	s.loadMoored()
+	for _, r := range s.moored {
+		if r.Session == session {
+			return r, true
+		}
+	}
+	return moor.Record{}, false
+}
+
+// endMoored sails a moored ship off. Whoever takes the ship out of the cache writes the event and removes the
+// record; an ending that lost the race reports false.
+func (s *Service) endMoored(session, reason string) bool {
+	s.mooredMu.Lock()
+	s.loadMoored()
+	idx := -1
+	for i, r := range s.moored {
+		if r.Session == session {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		s.mooredMu.Unlock()
+		return false
+	}
+	rec := s.moored[idx]
+	if err := moor.Remove(s.Launcher.Home, rec.Name); err != nil { // kept, so the next poll ends it
+		s.mooredMu.Unlock()
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: its moored record cannot be removed: %v\n", rec.Name, err)
+		return false
+	}
+	prs := s.prsOf(rec)
+	s.moored = append(s.moored[:idx:idx], s.moored[idx+1:]...)
+	delete(s.mooredPolls, session)
+	s.mooredMu.Unlock()
+	final := make([]map[string]string, 0, len(prs))
+	for _, p := range prs {
+		final = append(final, map[string]string{"url": p.URL, "state": p.State})
+	}
+	s.record(outcomes.Record{Ship: session, Event: "unmoored", Fields: map[string]any{"reason": reason, "prs": final}}, nil)
+	s.broadcast()
+	return true
+}
+
+func (s *Service) serveMooredRefresh(w http.ResponseWriter, r *http.Request) {
+	s.RefreshMoored()
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (s *Service) serveUnfollow(w http.ResponseWriter, r *http.Request) {
+	session := r.PathValue("session")
+	if _, ok := s.mooredRecord(session); ok {
+		if !s.endMoored(session, "unfollowed") {
+			writeError(w, http.StatusNotFound, "ship "+session+" not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"unfollowed": session})
+		return
+	}
+	sess, ok := s.find(session)
+	if !ok {
+		writeError(w, http.StatusNotFound, "ship "+session+" not found")
+		return
+	}
+	writeError(w, http.StatusConflict, "ship "+session+" is "+status(sess, time.Now())+", and only a moored ship can stop following reviews")
+}

@@ -19,6 +19,10 @@ type fakeGitHub struct {
 
 func (f *fakeGitHub) Host() string { return f.host }
 
+func (f *fakeGitHub) PullRequests(context.Context, []string) (map[string]Status, error) {
+	return nil, nil
+}
+
 func (f *fakeGitHub) OpenPRs(_ context.Context, urls []string) (map[string]bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

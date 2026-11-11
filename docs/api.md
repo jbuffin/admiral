@@ -8,7 +8,7 @@ The HTTP and WebSocket shapes a client reads. Every route is also served under `
 
 `{"ships": [...], "home": "..."}`: the ships, and the id of the home they belong to. Each ship is also in the WebSocket `{"type":"ships","ships":[...]}` message, which is sent on connect and again whenever any ship's fields change, its `tail` included.
 
-A moored ship has `status` `moored` and no tmux session: it is listed from its record in `$ADMIRAL_HOME/moored/`, with `prs` (the PR URLs it follows) and `moored_at` (RFC 3339), which no other ship carries. Its `session` is its slug, `dir` its checkout, `crew` and `subagents` empty and `launched` empty.
+A moored ship has `status` `moored` and no tmux session: it is listed from its record in `$ADMIRAL_HOME/moored/`, with `prs`, `moored_at` (RFC 3339), `polled_at` and `stale`, which no other ship carries. `prs` is a list of `{url, state, review, checks, mergeable, conflicts}`: `state` is `OPEN`, `MERGED` or `CLOSED` (a PR GitHub no longer finds counts as `CLOSED`); `review` is GitHub's `reviewDecision` (`APPROVED`, `CHANGES_REQUESTED`, `REVIEW_REQUIRED`, or `""` for none); `checks` is the status check rollup (`SUCCESS`, `FAILURE`, `ERROR`, `PENDING`, `EXPECTED`, or `""`); `mergeable` is `MERGEABLE`, `CONFLICTING` or `UNKNOWN`; `conflicts` is true only for an `OPEN` PR that is `CONFLICTING`. Before the first poll answers a PR has only its `url` and `state` `OPEN`. `polled_at` (RFC 3339) is the last poll that answered, absent before one has. `stale` is true when the latest poll failed to reach GitHub: the chips are the last known ones, and a failed poll never ends mooring. Its `session` is its slug, `dir` its checkout, `crew` and `subagents` empty and `launched` empty.
 
 `tail` is always present, a string of one line and at most 200 characters, `""` when nothing is readable. It comes from the ship's conversation, never from the terminal. Of the conversation's pending questions, tool calls and assistant items, the latest one decides:
 
@@ -17,6 +17,14 @@ A moored ship has `status` `moored` and no tmux session: it is listed from its r
 - assistant text: its first non-empty line.
 
 A pending question wins only while it is the latest of these, so a question an interrupted turn left pending does not pin the tail. Answered questions and every other item (user, turn end, compaction, notice) are skipped. Only Claude ships have a conversation adapter: a Codex or Copilot ship, a ship with no transcript yet and one whose transcript cannot be read have `tail: ""`.
+
+### `POST /api/moored/refresh` (alias `POST /api/v1/moored/refresh`)
+
+Asks the poller to poll every moored ship's PRs now and answers `202` at once. A kick during a poll joins the next one, so polls never overlap. Admiral also polls every 2 minutes (`ADMIRAL_MOOR_POLL`).
+
+### `POST /api/ships/<session>/dismiss` and `/unfollow`
+
+Dismiss ends an anchored ship or a moored one. A moored ship's record goes, its name is free and one `unmoored` outcome with reason `dismissed` is written; the answer is `200 {"dismissed": "<session>"}`. `unfollow` (Don't follow reviews) ends a moored ship the same way with reason `unfollowed` and answers `200 {"unfollowed": "<session>"}`. An unknown ship, or one already ended, is `404`; a live ship that is not moored gets the `409` Dismiss gives a ship that is not anchored.
 
 ### `POST /api/launch-orders/dirs` (alias `POST /api/v1/launch-orders/dirs`)
 

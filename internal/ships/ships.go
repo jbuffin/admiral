@@ -47,8 +47,11 @@ type Ship struct {
 	ExitSignal *string         `json:"exit_signal"`
 	Position   *state.Position `json:"position"`
 	// PRs and MooredAt are set only on a moored ship.
-	PRs      []string `json:"prs,omitempty"`
-	MooredAt string   `json:"moored_at,omitempty"`
+	PRs      []moor.PR `json:"prs,omitempty"`
+	MooredAt string    `json:"moored_at,omitempty"`
+	// PolledAt is the last poll that answered; Stale says the latest one failed.
+	PolledAt string `json:"polled_at,omitempty"`
+	Stale    bool   `json:"stale,omitempty"`
 	// Reason and StopSince are set only while the ship needs you; Reason is `idle`
 	// for a ship no hook has spoken for.
 	Reason    string `json:"reason,omitempty"`
@@ -108,6 +111,9 @@ type Service struct {
 	mooredMu     sync.Mutex
 	moored       []moor.Record // read from $ADMIRAL_HOME/moored on first use
 	mooredLoaded bool
+	mooredPolls  map[string]polled // by session
+	moorKick     chan struct{}
+	pollMu       sync.Mutex // one poll at a time
 }
 
 type unlisted struct {
@@ -207,6 +213,8 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/ships/{session}/position", s.servePosition)
 	mux.HandleFunc("POST /api/ships/{session}/input-seen", s.serveInputSeen)
 	mux.HandleFunc("POST /api/ships/{session}/dismiss", s.serveDismiss)
+	mux.HandleFunc("POST /api/ships/{session}/unfollow", s.serveUnfollow)
+	mux.HandleFunc("POST /api/moored/refresh", s.serveMooredRefresh)
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/close", s.serveCrewClose)
 }
 
@@ -674,9 +682,17 @@ func (s *Service) serveInputSeen(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// A live ship cannot be ended from the UI.
+// A live ship cannot be ended from the UI; a moored one can.
 func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
+	if _, ok := s.mooredRecord(session); ok {
+		if !s.endMoored(session, "dismissed") {
+			writeError(w, http.StatusNotFound, "ship "+session+" not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"dismissed": session})
+		return
+	}
 	// Not the request's context: a client that hangs up must not abandon the write.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
