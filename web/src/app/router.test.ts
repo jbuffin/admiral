@@ -30,7 +30,7 @@ describe('campaign paths', () => {
   it('is the Campaigns surface, and no surface below it deeper than the id', () => {
     expect(surfaceOf('/app/campaigns/3f9c0a41b7d2e8a5')?.id).toBe('campaigns');
     expect(surfaceOf('/app/campaigns/3f9c0a41b7d2e8a5/extra')).toBeUndefined();
-    expect(surfaceOf('/app/ships/3f9c0a41b7d2e8a5')).toBeUndefined();
+    expect(surfaceOf('/app/inbox/3f9c0a41b7d2e8a5')).toBeUndefined();
   });
 });
 

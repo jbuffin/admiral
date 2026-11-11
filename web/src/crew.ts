@@ -10,8 +10,8 @@ export function crewRowText(c: WireCrew): string {
   return 'Teammate · working';
 }
 
-export function bridgePath(session: string, crew?: string): string {
-  const ship = `/ws/bridge/${encodeURIComponent(session)}`;
+export function bridgePath(session: string, crew?: string, base = '/ws'): string {
+  const ship = `${base}/bridge/${encodeURIComponent(session)}`;
   return crew === undefined ? ship : `${ship}/crew/${encodeURIComponent(crew)}`;
 }
 
@@ -19,7 +19,7 @@ export function findCrew(list: { session: string; crew: WireCrew[] }[], session:
   return list.find((s) => s.session === session)?.crew?.find((c) => c.name === crew);
 }
 
-export const atSea = (s: Pick<WireShip, 'status'>) => s.status === 'underway' || s.status === 'needs_you';
+export const atSea = (s: { status: string }) => s.status === 'underway' || s.status === 'needs_you';
 
 // Whether the boarded terminal takes keys. A crew boat has its own status: a live one, idle too, of an anchored ship still does.
 export function takesInput(ship: Pick<WireShip, 'status'>, crew?: Pick<WireCrew, 'status'>): boolean {

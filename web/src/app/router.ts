@@ -10,11 +10,25 @@ const segments = (path: string) => path.replace(/^\/app\/?/, '').replace(/\/$/, 
 export function surfaceOf(path: string): Surface | undefined {
   const [id, ...sub] = segments(path);
   const s = SURFACES.find((x) => x.id === id);
+  if (s?.id === 'ships' && sub.length === 1 && sub[0] !== '') return s;
   // Preferences alone has pages below it: /app/preferences/<fleet key>/<page>.
   // Campaigns has the Campaign page below it: /app/campaigns/<id>.
   const below = (s?.id === 'preferences' && sub.length === 2 && (PREFERENCES_PAGES as readonly string[]).includes(sub[1])) || (s?.id === 'campaigns' && sub.length === 1);
   if (s && sub.length > 0 && !below) return undefined;
   return s;
+}
+
+export const shipPath = (session: string) => `/app/ships/${encodeURIComponent(session)}`;
+
+/** The session a ship view's path names, if any. */
+export function shipSession(path: string): string | null {
+  const [id, key, ...rest] = segments(path);
+  if (id !== 'ships' || !key || rest.length > 0) return null;
+  try {
+    return decodeURIComponent(key);
+  } catch {
+    return null;
+  }
 }
 
 const PREFERENCES_PAGES = ['fleet', 'sources', 'capabilities'] as const;
