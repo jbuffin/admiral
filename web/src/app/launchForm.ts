@@ -119,13 +119,23 @@ export interface CampaignLaunchState {
 }
 
 /** The order the dirs call names for a campaign child: source `campaign`, id `<campaign id>/<child URL>`. */
-export function campaignOrder(_campaignId: string, _childUrl: string): { source: string; id: string } {
-  return { source: '', id: '' };
+export function campaignOrder(campaignId: string, childUrl: string): { source: string; id: string } {
+  return { source: 'campaign', id: `${campaignId}/${childUrl}` };
 }
 
 /** The route and body of a campaign child's launch; the server picks skill, text and autopilot. */
-export function campaignLaunch(_form: CampaignLaunchState): { path: string; body: Record<string, unknown> } {
-  return { path: '', body: {} };
+export function campaignLaunch(form: CampaignLaunchState): { path: string; body: Record<string, unknown> } {
+  return {
+    path: `/campaigns/${form.campaignId}/launch`,
+    body: {
+      child_url: form.childUrl,
+      harness: form.harness,
+      ...(form.clone ? { clone: true, ...(form.cloneRepo && { clone_repo: form.cloneRepo }) } : { dir: form.dir }),
+      ...(form.startAnyway && { start_anyway: true }),
+      ...(form.model && { model: form.model }),
+      ...(form.effort && { effort: form.effort }),
+    },
+  };
 }
 
 export function effortsFor(harness: string): string[] {

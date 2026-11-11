@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, type DirsAnswer, type Fleet } from './api';
 import { Flag } from './Flag';
+import { modeLabel, skillLabel, type Mode, type SkillView } from './campaign';
 import {
   bareSkillName,
+  campaignLaunch,
+  campaignOrder,
   CLAUDE_MODELS,
   type CrewAnswer,
   crewOptions,
@@ -23,6 +26,16 @@ export interface OrderRef {
   text: string;
 }
 
+/** A campaign child launched by hand: the server picks its skill, text and autopilot. */
+export interface CampaignChildRef {
+  campaignId: string;
+  url: string;
+  title: string;
+  mode: Mode;
+  skill?: SkillView;
+  startAnyway: boolean;
+}
+
 const CLONE = 'clone';
 const NONE = '';
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -30,7 +43,8 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 // Skill select values: 'commodore', 'none', 'custom' or `skill:<favorite>`.
 const toValue = (c: SkillChoice) => (c.kind === 'skill' ? `skill:${c.name}` : c.kind);
 
-export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: OrderRef; onClose: () => void }) {
+export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched }: { fleet: Fleet; order?: OrderRef; campaign?: CampaignChildRef; onClose: () => void; onLaunched?: () => void }) {
+  const order: OrderRef | undefined = campaign ? { ...campaignOrder(campaign.campaignId, campaign.url), title: campaign.title, text: '' } : given;
   const [harness, setHarness] = useState(fleet.docks[0]?.harness ?? '');
   const [dirs, setDirs] = useState<DirsAnswer | null>(null);
   const [dir, setDir] = useState(NONE);
@@ -87,7 +101,7 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
 
   const dirForSkills = dir && dir !== CLONE ? dir : (dirs?.entries[0]?.path ?? '');
   useEffect(() => {
-    if (!dirForSkills) return;
+    if (!dirForSkills || campaign) return;
     let live = true;
     const q = new URLSearchParams({ fleet: fleet.key, harness, dir: dirForSkills });
     void call<SkillsAnswer>('GET', `/launch-orders/skills?${q}`).then((r) => {
@@ -175,11 +189,14 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
 
   const submit = async (e: Event) => {
     e.preventDefault();
-    const s = chosen();
+    const s = campaign ? { kind: 'none' as const } : chosen();
     if (typeof s === 'string') return setError(s);
     setBusy(true);
     setError('');
-    const r = await call('POST', '/ships', launchBody({
+    const effortNow = efforts.includes(effort) ? effort : '';
+    const sent = campaign
+      ? campaignLaunch({ campaignId: campaign.campaignId, childUrl: campaign.url, harness, dir: cloning ? '' : dir, clone: cloning, cloneRepo: cloning ? clone!.repo : undefined, startAnyway: campaign.startAnyway, model, effort: effortNow })
+      : { path: '/ships', body: launchBody({
       fleet: fleet.key,
       harness,
       dir: cloning ? '' : dir,
@@ -188,7 +205,7 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
       skill: s,
       text,
       model,
-      effort: efforts.includes(effort) ? effort : '',
+      effort: effortNow,
       autopilot,
       resources: held,
       source: order?.source,
@@ -196,9 +213,11 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
       crew,
       member: as ? member : undefined,
       memberHarness: as?.harness,
-    }));
+    }) };
+    const r = await call('POST', sent.path, sent.body);
     setBusy(false);
     if (!r.ok) return setError(r.error);
+    onLaunched?.();
     onClose();
   };
 
@@ -220,6 +239,7 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
             ))}
           </fieldset>
 
+          {campaign ? null : (
           <label class="field">
             <span>Text</span>
             <textarea
@@ -230,6 +250,7 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
               onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
             />
           </label>
+          )}
 
           <label class="field">
             <span>Checkout</span>
@@ -254,6 +275,11 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
           {clone?.exists ? <p class="note warn">{`A folder already exists at ${clone.path}, so cloning there will be refused.`}</p> : null}
           {(dirs?.entries.find((d) => d.path === dir)?.ships_here ?? 0) > 0 ? <p class="note warn">Another ship already runs here.</p> : null}
 
+          {campaign ? (
+            <p class="note">
+              {modeLabel(campaign.mode)} · {skillLabel(campaign.skill)}
+            </p>
+          ) : (
           <label class="field">
             <span>Skill</span>
             <select
@@ -275,7 +301,8 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
               <option value="none">Just launch</option>
             </select>
           </label>
-          {skill === 'custom' ? (
+          )}
+          {!campaign && skill === 'custom' ? (
             <label class="field">
               <span>Skill name</span>
               <input type="text" autocomplete="off" autocapitalize="off" spellcheck={false} value={custom} onInput={(e) => setCustom((e.target as HTMLInputElement).value)} />
@@ -358,7 +385,7 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
           </div>
           )}
 
-          {resources.value.length > 0 ? (
+          {!campaign && resources.value.length > 0 ? (
             <fieldset class="checks">
               <legend>Resources</legend>
               {resources.value.map((r) => (
@@ -375,12 +402,14 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
             </fieldset>
           ) : null}
 
+          {campaign ? null : (
           <label class="check">
             <input type="checkbox" checked={autopilot} onChange={(e) => setAutopilot((e.target as HTMLInputElement).checked)} />
             <span>
               Autopilot <span class="meta">runs under the guard and counts against max_ships</span>
             </span>
           </label>
+          )}
           {error ? <p role="alert" class="launch-error">{error}</p> : null}
         </div>
         <div class="launch-foot">

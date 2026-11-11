@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Ship } from './api';
-import { blockerLine, campaignMeta, childShipsKey, groupChildren, modeLabel, nextPoll, pasteHint, shipOfChild, statusLabel, type CampaignNode } from './campaign';
+import { blockerLine, campaignMeta, childShipsKey, groupChildren, kindLabel, modeLabel, nextPoll, pasteHint, shipOfChild, skillLabel, statusLabel, typeLabel, type CampaignNode } from './campaign';
 
 const url = (n: number) => `https://github.com/acme/widgets/issues/${n}`;
 const child = (n: number, status: CampaignNode['status'], mode: CampaignNode['mode'] = 'with-you', extra: Partial<CampaignNode> = {}): CampaignNode => ({
@@ -144,5 +144,22 @@ describe('nextPoll', () => {
   });
   it('polls every 60 seconds when no read is in progress', () => {
     expect(nextPoll({ reading: false, fastForMs: 0 })).toBe(60_000);
+  });
+});
+
+describe('type and kind', () => {
+  it('reads a child\'s type from its wayfinder label, Task when it has none', () => {
+    expect(typeLabel(['wayfinder:grilling'])).toBe('Grilling');
+    expect(typeLabel(['ready-for-agent'])).toBe('Task');
+    expect(typeLabel(undefined)).toBe('Task');
+  });
+  it('calls a campaign with a wayfinder label a Wayfinder map', () => {
+    expect(kindLabel(['wayfinder:map'])).toBe('Wayfinder map');
+    expect(kindLabel([])).toBe('Campaign');
+  });
+  it('words a skill', () => {
+    expect(skillLabel({ kind: 'commodore', name: '', args: '' })).toBe('Commodore');
+    expect(skillLabel({ kind: 'skill', name: 'wayfinder', args: 'a b' })).toBe('/wayfinder a b');
+    expect(skillLabel({ kind: 'none', name: '', args: '' })).toBe('Just launch');
   });
 });
