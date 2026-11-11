@@ -302,7 +302,7 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await expect(form).toBeVisible();
   await form.getByRole('checkbox', { name: 'db' }).uncheck();
 
-  // Autopilot: the server refuses it on a dock that is not Claude, and at the cap of three ships.
+  // Autopilot: the server refuses it on a dock whose guard probe has not passed, and the form shows why. The cap's 409 is pinned in the Go e2e.
   await form.getByRole('radio', { name: /codex/i }).check();
   await form.getByRole('checkbox', { name: /autopilot/i }).check();
   const notClaude = await send();
@@ -311,11 +311,12 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   const notClaudeMsg = ((await notClaude.res.json()) as { error: string }).error;
   await expect(form.getByRole('alert')).toContainText(notClaudeMsg);
   await form.getByRole('radio', { name: /claude/i }).check();
-  const capped = await send();
-  expect(capped.body).toMatchObject({ harness: 'claude', autopilot: true });
-  expect(capped.res.status()).toBe(409);
-  await expect(form.getByRole('alert')).toContainText(((await capped.res.json()) as { error: string }).error);
-  await expect(form.getByRole('alert')).toContainText('cap');
+  const unproven = await send();
+  expect(unproven.body).toMatchObject({ harness: 'claude', autopilot: true });
+  expect(unproven.res.status()).toBe(400);
+  const unprovenMsg = ((await unproven.res.json()) as { error: string }).error;
+  await expect(form.getByRole('alert')).toContainText(unprovenMsg);
+  await expect(form.getByRole('alert')).toContainText('guard probe has not passed');
   await cancel();
 
   // An uncloned repo: the form says where it will clone before launch, and launching sends clone with no dir.
