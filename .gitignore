@@ -10,3 +10,4 @@ web/logos/official
 web/logos/official/
 dist/
 web/src/app/shell-tokens.css
+web/src/app/shell-tokens.ts
