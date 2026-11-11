@@ -214,7 +214,7 @@ func TestProbe_ANewHarnessVersionReprobesAtServerStartInTheBackground(t *testing
 	if pw.headlessRuns() != 2 {
 		t.Fatalf("headless runs = %d after the version moved, want a second probe", pw.headlessRuns())
 	}
-	for end := time.Now().Add(10 * time.Second); time.Now().Before(end) && !strings.Contains(pw.storeText(), "2.1.400"); {
+	for end := time.Now().Add(10 * time.Second); time.Now().Before(end) && !strings.Contains(pw.storeText(), `"2.1.400 (fake)": {`); {
 		time.Sleep(100 * time.Millisecond)
 	}
 	if s := pw.storeText(); !strings.Contains(s, `"2.1.400 (fake)": {`) {
