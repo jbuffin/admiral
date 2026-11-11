@@ -71,7 +71,7 @@ func (s *Service) autopilotSettingsOf(key, panel string) (autopilotSettings, err
 func (s *Service) panelParams(w http.ResponseWriter, r *http.Request) (key, panel string, ok bool) {
 	key, panel = r.PathValue("key"), r.PathValue("panel")
 	if panel == "" || hasControl(panel) {
-		writeError(w, http.StatusBadRequest, "panel must be a panel ID")
+		writeError(w, http.StatusBadRequest, "panel must be a view ID")
 		return "", "", false
 	}
 	if _, found := s.Config.Current().Source(key); !found {

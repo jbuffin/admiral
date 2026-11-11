@@ -353,7 +353,7 @@ func (r *runner) pullOrders(ctx context.Context, p conn, panel string) {
 		if errors.As(err, &rpc) {
 			msg := rpc.Error()
 			if msg == "" {
-				msg = "This panel's orders couldn't be listed."
+				msg = "This view's orders couldn't be listed."
 			}
 			r.setPanelError(panel, msg)
 		}
