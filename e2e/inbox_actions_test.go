@@ -698,7 +698,14 @@ func TestInboxKeepsUnansweredFilesAfterSailOff(t *testing.T) {
 	reportPath, inboxPath := w.seedShipFiles(rec, `{"status":"done"}`)
 	seedItem(t, inboxPath, "q-1", questionItem("q-1", "2026-10-22T10:00:00Z"))
 	seedItem(t, inboxPath, "r-1", reviewAt("r-1", "2026-10-22T10:05:00Z", prURL, 123))
-	w.in.waitInbox(t, "q-1", "r-1")
+	if ship.FleetName == "" || ship.FleetColor == "" {
+		t.Fatalf("the live ship %+v has no fleet name or color, so the tags below would prove nothing", ship)
+	}
+	for _, it := range w.in.waitInbox(t, "q-1", "r-1") {
+		if it.Fleet != ship.Fleet || it.FleetName != ship.FleetName || it.FleetColor != ship.FleetColor {
+			t.Errorf("live: item %+v, want fleet %s, %q and %s from the live ship", it, ship.Fleet, ship.FleetName, ship.FleetColor)
+		}
+	}
 	g.rest("get", "GET", ghReviews, 200, map[string]any{"body": "fine"}, "")
 	g.rest("post", "POST", ghReviews+"/events", 200, map[string]any{}, "")
 
@@ -717,8 +724,9 @@ func TestInboxKeepsUnansweredFilesAfterSailOff(t *testing.T) {
 		t.Helper()
 		items := w.in.waitInbox(t, "q-1", "r-1")
 		for _, it := range items {
-			if it.Session != ship.Session || it.Name != ship.Name || it.Harness != "claude" || it.Fleet != ship.Fleet || it.Fleet != "f" {
-				t.Errorf("%s: item %+v, want ship %s, name %q, harness claude and fleet f served from the kept record", when, it, ship.Session, ship.Name)
+			if it.Session != ship.Session || it.Name != ship.Name || it.Harness != "claude" || it.Fleet != ship.Fleet || it.Fleet != "f" ||
+				it.FleetName != ship.FleetName || it.FleetColor != ship.FleetColor {
+				t.Errorf("%s: item %+v, want ship %s, name %q, harness claude and fleet f (%q, %s) served from the kept record", when, it, ship.Session, ship.Name, ship.FleetName, ship.FleetColor)
 			}
 		}
 		if !exists(inboxPath) || !exists(reportPath) {
