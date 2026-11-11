@@ -285,6 +285,21 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await expect(chip(page, /reviewer/)).toBeChecked();
   await expect(viewPanel(page)).toContainText('Boat found two parser bugs');
   await expect(viewPanel(page)).not.toContainText('The ship is waiting on its crew');
+
+  // A draft belongs to the chip it was typed under: the boat's stays with the boat and the ship's with the ship.
+  await expect(messageBox(page)).toHaveValue('');
+  await messageBox(page).fill('A draft for the boat');
+  await chip(page, new RegExp(lead.name)).tap();
+  await expect(messageBox(page)).toHaveValue('');
+  await messageBox(page).fill('A draft for the ship');
+  await chip(page, /reviewer/).tap();
+  await expect(messageBox(page)).toHaveValue('A draft for the boat');
+  await chip(page, new RegExp(lead.name)).tap();
+  await expect(messageBox(page)).toHaveValue('A draft for the ship');
+  await messageBox(page).fill('');
+  await chip(page, /reviewer/).tap();
+  await expect(messageBox(page)).toHaveValue('A draft for the boat');
+
   // The boat's subscription pushes a line appended to its transcript.
   boatSays(admiral, lead, 'rev', [line.assistant('Appended to the boat while the view was open')]);
   await expect(viewPanel(page)).toContainText('Appended to the boat while the view was open', { timeout: 15_000 });

@@ -176,9 +176,11 @@ function ChangesTab({ ship }: { ship: Ship }) {
         ))}
       </ul>
       {changes.truncated ? <p class="msg-note">The diff was cut: it is too large to show in full.</p> : null}
-      {diffs.map((d) => (
-        <section key={d.path} class="diff" aria-label={`Diff of ${d.path}`}>
-          <h3 class="diff-path">{d.path}</h3>
+      {diffs.map((d, n) => (
+        <section key={`${d.path}\0${n}`} class="diff" aria-labelledby={`diff-path-${n}`}>
+          <h3 class="diff-path" id={`diff-path-${n}`}>
+            {d.path}
+          </h3>
           <pre class="diff-body">
             {d.hunks.length === 0 ? <span class="diff-note">No text changes</span> : null}
             {d.hunks.map((h, i) => (
@@ -201,6 +203,11 @@ function ChangesTab({ ship }: { ship: Ship }) {
 /** One chip for the ship and one per boat. A boat's chip stays after it exits and says how it ended. */
 function Flotilla({ ship, picked, pick }: { ship: Ship; picked: string | null; pick: (crew: string | null) => void }) {
   const chips = flotilla(ship);
+  const group = useRef<HTMLDivElement>(null);
+  // The picked chip's "finished" or "error" word must not sit cut off at the row's edge.
+  useEffect(() => {
+    group.current?.querySelector<HTMLElement>('[aria-checked=true]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [picked]);
   const move = (e: KeyboardEvent, i: number) => {
     const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
     if (!step) return;
@@ -210,7 +217,7 @@ function Flotilla({ ship, picked, pick }: { ship: Ship; picked: string | null; p
     (e.currentTarget as HTMLElement).parentElement?.querySelectorAll<HTMLElement>('[role=radio]')[chips.indexOf(next)]?.focus();
   };
   return (
-    <div role="radiogroup" aria-label="Flotilla" class="flotilla">
+    <div role="radiogroup" aria-label="Flotilla" class="flotilla" ref={group}>
       {chips.map((c, i) => (
         <button key={c.crew ?? ''} type="button" role="radio" aria-checked={c.crew === picked} tabIndex={c.crew === picked ? 0 : -1} class={`chip ${c.state}`} onClick={() => pick(c.crew)} onKeyDown={(e) => move(e, i)}>
           <Icon name={c.crew === null ? 'ships' : 'crew'} size={16} />
@@ -233,6 +240,10 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
   // A boat that left the ship's list hands the view back to the ship.
   const boat = crew === null ? undefined : ship.crew.find((b) => b.name === crew);
   const boatName = boat?.name;
+  // Forget a boat that left the crew, so a later boat of the same name does not take the view back.
+  useEffect(() => {
+    if (crew !== null && !boat) setCrew(null);
+  }, [crew, boat]);
   const boatHasConversation = boat?.conversation ?? false;
   useEffect(() => {
     setConv({ state: 'loading', items: [], more: false });

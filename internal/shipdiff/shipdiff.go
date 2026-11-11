@@ -187,7 +187,7 @@ func newGit(ctx context.Context, dir string) (*git, error) {
 		"GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_PAGER=cat", "LC_ALL=C",
 	}}
 	g.neutral = []string{"-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "core.pager=cat",
-		"-c", "core.alternateRefsCommand=", "-c", "diff.external=", "-c", "diff.ignoreSubmodules=all"}
+		"-c", "core.alternateRefsCommand=", "-c", "diff.external=", "-c", "diff.ignoreSubmodules=all", "-c", "core.quotePath=false"}
 	// No scope flag: it would turn includes off, and a driver can come from an included file or config.worktree.
 	keys, err := g.list(ctx, "config", "--name-only", "-z", "--get-regexp", `^(filter|diff)\..*\.`)
 	var exit *exec.ExitError
@@ -213,7 +213,8 @@ func newGit(ctx context.Context, dir string) (*git, error) {
 	return g, nil
 }
 
-var safeDiffFlags = []string{"--no-ext-diff", "--no-textconv", "--ignore-submodules=all", "--no-color"}
+// The prefixes are explicit so diff.noprefix and diff.mnemonicPrefix in the checkout's config cannot change the path headers the client reads.
+var safeDiffFlags = []string{"--no-ext-diff", "--no-textconv", "--ignore-submodules=all", "--no-color", "--src-prefix=a/", "--dst-prefix=b/"}
 
 func (g *git) cmd(ctx context.Context, args ...string) *exec.Cmd {
 	full := append([]string{"--no-pager"}, g.neutral...)
