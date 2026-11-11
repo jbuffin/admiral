@@ -31,10 +31,16 @@ func crewConvSetup(t *testing.T) *crewConvWorld {
 	}
 	env := w.harnessEnv()
 	env["CLAUDE_CONFIG_DIR"] = cfgDir
+	codexHome := filepath.Join(w.root, "codexhome")
+	if err := os.MkdirAll(filepath.Join(codexHome, "sessions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	codexEnv := w.harnessEnv()
+	codexEnv["CODEX_HOME"] = codexHome
 	cfg, err := json.Marshal(map[string]any{"version": 1, "fleets": map[string]any{
 		"work": map[string]any{"name": "Work", "search_roots": []string{w.work},
 			"claude": map[string]any{"executable": w.fakeExe("claude"), "env": env},
-			"codex":  map[string]any{"executable": w.fakeExe("codex"), "env": env}},
+			"codex":  map[string]any{"executable": w.fakeExe("codex"), "env": codexEnv}},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -282,7 +288,7 @@ func TestCrewConversation_CodexBoatOutsideSessionsIsNeverRead(t *testing.T) {
 	c.setTranscript("cx", path)
 	holdThat(t, "a Codex boat read a file outside the Codex home's sessions/", func() bool {
 		code, p := c.page("cx")
-		return code == http.StatusOK && p.State != "ok" && len(p.Items) == 0
+		return code == http.StatusOK && p.State == "unreadable" && len(p.Items) == 0
 	})
 }
 

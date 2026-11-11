@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 // codexRollout is where Codex would write the rollout called name, under the fixture's Codex home.
@@ -191,16 +192,28 @@ func TestCodexConversationSocket_SwitchesToTheNewRolloutWhenTheOptionChanges(t *
 
 	f.setOption("s", "clear", second)
 	var seen []string
+	reset := false
 	for len(seen) == 0 || seen[len(seen)-1] != "after the clear" {
-		seen = append(seen, texts(sub.next("the new rollout's items"))...)
+		m := sub.next("the new rollout's items")
+		if m["reset"] == true {
+			reset = true
+		}
+		seen = append(seen, texts(m)...)
 		if len(seen) > 5 {
 			t.Fatalf("pushes after the switch = %v, want the new rollout's item", seen)
 		}
 	}
+	if !reset {
+		t.Error("the push after the option changed lacks reset: true, so the client keeps the old rollout's items")
+	}
 	appendTo(t, first, codexLines(4, 4))
 	appendTo(t, second, codexLine(8, "still new"))
-	if got := texts(sub.next("an append to the new rollout")); len(got) != 1 || got[0] != "still new" {
+	m := sub.next("an append to the new rollout")
+	if got := texts(m); len(got) != 1 || got[0] != "still new" {
 		t.Errorf("pushed %v, want [still new]: the old rollout is no longer followed", got)
+	}
+	if m["reset"] == true {
+		t.Error("an ordinary append carries reset: true")
 	}
 }
 
@@ -303,4 +316,30 @@ func TestCodexConversationEndpoint_ASymlinkedSessionsRootIsFine(t *testing.T) {
 	appendTo(t, f.codexRollout("a"), codexLines(1, 1))
 	f.codexShip("s", "startup", f.codexRollout("a"))
 	f.wantState("s", "ok")
+}
+
+// SessionStart fires again on /new, resume and fork, and records the new rollout.
+func TestTailsFollowTheNewRolloutWhenACodexShipRecordsOne(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	first, second := f.codexRollout("first"), f.codexRollout("second")
+	appendTo(t, first, codexAssistantLine(1, "Old thought."))
+	appendTo(t, second, codexAssistantLine(1, "New thought."))
+	f.codexShip("alpha", "startup", first)
+	tails := tailsOf(f)
+	tails.Poll()
+	if tails.Tail("alpha") != "Old thought." {
+		t.Fatalf("tail = %q, want the first rollout's", tails.Tail("alpha"))
+	}
+
+	f.setOption("alpha", "clear", second)
+	tails.follows["alpha"].lastTry = time.Time{} // the wait between looks is over
+	if !tails.Poll() || tails.Tail("alpha") != "New thought." {
+		t.Fatalf("tail after the switch = %q, want the new rollout's", tails.Tail("alpha"))
+	}
+	appendTo(t, first, codexAssistantLine(2, "Ignored."))
+	appendTo(t, second, codexAssistantLine(2, "Newer thought."))
+	if !tails.Poll() || tails.Tail("alpha") != "Newer thought." {
+		t.Errorf("tail after an append = %q, want the new rollout's", tails.Tail("alpha"))
+	}
 }

@@ -155,6 +155,12 @@ describe('answerCard: a codex ship', () => {
     expect(needs(`permission:${tool}`, ok(), { harness: 'codex' })).toEqual({ kind: 'permission', tool, reason: `permission:${tool}`, call: undefined });
   });
 
+  it('finds the current turn\'s unfinished exec_command call for a Bash card, and apply_patch for its own', () => {
+    const conv = ok(call('c1', 'exec_command', 'ls', true), call('c2', 'exec_command', 'rm -rf build', false, 'rm -rf build'), call('c3', 'apply_patch', 'Update a.go'));
+    expect(needs('permission:Bash', conv, { harness: 'codex' })).toMatchObject({ tool: 'Bash', call: { id: 'c2' } });
+    expect(needs('permission:apply_patch', conv, { harness: 'codex' })).toMatchObject({ tool: 'apply_patch', call: { id: 'c3' } });
+  });
+
   it('sends a tool whose menu is unrecorded to the terminal', () => {
     expect(needs('permission:mcp__x__y', ok(), { harness: 'codex' }).kind).toBe('terminal');
   });

@@ -145,7 +145,7 @@ The server answers an open with `{"type": "conversation_opened", "ship": "<ship>
 {"type": "conversation", "ship": "<ship>", "items": [ ... ]}
 ```
 
-- `reset: true` is added when a Codex ship's recorded rollout changed: `items` are the new file's, and the client drops what it holds.
+- `reset: true` is added when the transcript was truncated or replaced, or when a Codex ship's recorded rollout changed to another file: `items` are what the file now holds, and the client drops what it holds.
 
 - A changed item is sent again under the same `id` (a tool call whose output came later); the client replaces its copy.
 - A message holds at most 200 items.

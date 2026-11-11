@@ -163,22 +163,30 @@ var (
 )
 
 // describeCodexCall names the tool the model reached through Codex's exec script or function call, and gives
-// the short summary and what allowing it approves: a command in full, or the files a patch touches.
+// the short summary and what allowing it approves: a command in full, or the files a patch touches. What it
+// approves comes only from the call it names, so a script with several tool calls approves nothing.
 func describeCodexCall(name, input string) (tool, summary, approves string) {
 	tool = name
-	if m := innerCall.FindStringSubmatch(input); name == "exec" && m != nil {
-		tool = m[1]
-	}
-	if m := innerCmd.FindStringSubmatch(input); m != nil {
-		var cmd string
-		if json.Unmarshal([]byte(m[1]), &cmd) == nil {
-			return tool, firstLine(cmd), cmd
+	if name == "exec" {
+		calls := innerCall.FindAllStringSubmatchIndex(input, -1)
+		if len(calls) == 0 {
+			return tool, firstLine(input), ""
+		}
+		tool = input[calls[0][2]:calls[0][3]]
+		if len(calls) > 1 {
+			return tool, firstLine(input), ""
+		}
+		input = callArgument(input[calls[0][1]:])
+		if m := innerCmd.FindStringSubmatch(input); m != nil {
+			var cmd string
+			if json.Unmarshal([]byte(m[1]), &cmd) == nil {
+				return tool, firstLine(cmd), cmd
+			}
 		}
 	}
 	var args struct {
-		Cmd     string   `json:"cmd"`
-		Command any      `json:"command"`
-		Paths   []string `json:"paths"`
+		Cmd     string `json:"cmd"`
+		Command any    `json:"command"`
 	}
 	if json.Unmarshal([]byte(input), &args) == nil {
 		switch c := args.Command.(type) {
@@ -205,6 +213,29 @@ func describeCodexCall(name, input string) (tool, summary, approves string) {
 		return tool, strings.TrimSpace(files[0][1]) + " " + strings.Join(paths, ", "), strings.Join(paths, "\n")
 	}
 	return tool, firstLine(input), ""
+}
+
+// callArgument is the text up to the parenthesis that closes a call whose "(" was just read, skipping JS string
+// literals, so a comment or later statement in the script is not part of the call.
+func callArgument(s string) string {
+	depth := 1
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; c {
+		case '"', '\'', '`':
+			for i++; i < len(s) && s[i] != c; i++ {
+				if s[i] == '\\' {
+					i++
+				}
+			}
+		case '(':
+			depth++
+		case ')':
+			if depth--; depth == 0 {
+				return s[:i]
+			}
+		}
+	}
+	return s
 }
 
 // unescape reads a JS string literal's \n so a patch inside an exec script can be scanned line by line.
