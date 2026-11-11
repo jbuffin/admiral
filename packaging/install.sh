@@ -67,8 +67,7 @@ main() {
 	esac
 	missing=
 	command -v tmux >/dev/null 2>&1 || missing="$missing tmux"
-	command -v python3 >/dev/null 2>&1 || missing="$missing python3"
-	[ -z "$missing" ] || warn "missing:$missing. Admiral needs them; run: brew install tmux python@3.15"
+	[ -z "$missing" ] || warn "missing:$missing. Admiral needs it; run: brew install tmux"
 
 	echo "Next: admiral setup, then admiral service install to start it at login."
 }

@@ -38,14 +38,14 @@ func TestPackagingS1_ReleaseTarball(t *testing.T) {
 	}
 
 	entries := tarEntries(t, r.tarball)
-	for _, name := range []string{"admiral", "LICENSE", "THIRD_PARTY_NOTICES", "plugins/github/plugin.json"} {
+	for _, name := range []string{"admiral", "LICENSE", "THIRD_PARTY_NOTICES"} {
 		if entries[r.topDir+"/"+name] == nil {
 			t.Errorf("tarball has no %s/%s; entries: %v", r.topDir, name, keys(entries))
 		}
 	}
 	for name := range entries {
-		if strings.Contains(name, "plugins/freeform") {
-			t.Errorf("tarball still ships %s: freeform is gone", name)
+		if strings.Contains(name, "/plugins/") {
+			t.Errorf("tarball still ships %s: no plugin ships with Admiral", name)
 		}
 	}
 	if h := entries[r.topDir+"/admiral"]; h != nil && h.Mode&0o111 != 0o111 {
@@ -66,22 +66,6 @@ func TestPackagingS1_ReleaseTarball(t *testing.T) {
 	script, _ := os.ReadFile(filepath.Join(repoRoot, "packaging", "install.sh"))
 	if got, err := os.ReadFile(filepath.Join(r.dir, "install.sh")); err != nil || string(got) != string(script) {
 		t.Errorf("DIST/install.sh is not a copy of packaging/install.sh (%v)", err)
-	}
-
-	// The reference copies match the repo's plugins (the source of the embedded copies).
-	for _, plugin := range []string{"github"} {
-		srcDir := filepath.Join(repoRoot, "plugins", plugin)
-		srcs, err := os.ReadDir(srcDir)
-		if err != nil || len(srcs) == 0 {
-			t.Fatalf("plugins/%s/ is missing from the repo: %v", plugin, err)
-		}
-		for _, e := range srcs {
-			src, _ := os.ReadFile(filepath.Join(srcDir, e.Name()))
-			got, err := os.ReadFile(filepath.Join(r.extract, r.topDir, "plugins", plugin, e.Name()))
-			if err != nil || string(got) != string(src) {
-				t.Errorf("tarball copy of plugins/%s/%s differs from the repo's (%v)", plugin, e.Name(), err)
-			}
-		}
 	}
 }
 

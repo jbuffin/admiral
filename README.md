@@ -14,7 +14,7 @@ A visual dashboard for launching and watching coding-agent sessions (Claude Code
 
 - An Apple silicon Mac.
 - At least one supported harness, installed and signed in: Claude Code, Codex CLI or GitHub Copilot CLI. `admiral setup` looks for them.
-- `tmux` and `python3` (for the order sources). Homebrew installs both.
+- `tmux`. Homebrew installs it.
 - Optional: the [Commodore](https://github.com/jbuffin/skills) skill, the default choice when you launch an order. Install it with the skills it needs using `npx skills add jbuffin/skills`, or in Claude Code as the `jasonbuffin@jbuffinskills` plugin. Without it, Commodore shows as "Commodore not found" and you launch with another skill or none.
 
 ## Install
@@ -25,7 +25,7 @@ A visual dashboard for launching and watching coding-agent sessions (Claude Code
 brew install jbuffin/admiral/admiral
 ```
 
-**curl script** (installs to `~/.local/bin`, no `sudo`; it warns when `tmux` or `python3` is missing but doesn't install them: `brew install tmux python@3.15`):
+**curl script** (installs to `~/.local/bin`, no `sudo`; it warns when `tmux` is missing but doesn't install it: `brew install tmux`):
 
 ```sh
 curl --proto '=https' --tlsv1.2 -fsSL https://github.com/jbuffin/admiral/releases/latest/download/install.sh | sh

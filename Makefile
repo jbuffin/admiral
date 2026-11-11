@@ -81,9 +81,7 @@ release:
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT)" -o $(BIN) ./cmd/admiral
 	codesign -v $(BIN)
 	rm -rf $(DIST)/$(RELEASE_NAME) $(DIST)/$(RELEASE_NAME).tar.gz $(DIST)/$(RELEASE_NAME).tar.gz.sha256
-	mkdir -p $(DIST)/$(RELEASE_NAME)/plugins
 	cp $(BIN) $(DIST)/$(RELEASE_NAME)/admiral
-	cp -R plugins/github $(DIST)/$(RELEASE_NAME)/plugins/github
 	cp LICENSE $(DIST)/$(RELEASE_NAME)/LICENSE
 	sh packaging/notices.sh > $(DIST)/$(RELEASE_NAME)/THIRD_PARTY_NOTICES
 	COPYFILE_DISABLE=1 tar --uid 0 --gid 0 --uname "" --gname "" -czf $(DIST)/$(RELEASE_NAME).tar.gz -C $(DIST) $(RELEASE_NAME)
