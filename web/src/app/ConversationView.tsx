@@ -3,20 +3,17 @@ import type { Item } from './api';
 import { Icon } from './Icon';
 import type { Conversation } from './conversation';
 import { renderMarkdown } from './markdown';
-import { blocksOf, toolRowLabel, workingLabel } from './turns';
-
-const OUTPUT_LINES = 200;
+import { blocksOf, capOutput, toolRowLabel, workingLabel } from './turns';
 
 function Output({ text, error }: { text: string; error?: boolean }) {
   const [all, setAll] = useState(false);
-  const lines = text.split('\n');
-  const capped = !all && lines.length > OUTPUT_LINES;
+  const shown = capOutput(text, all);
   return (
     <div class={`tool-output${error ? ' error' : ''}`}>
-      <pre>{capped ? lines.slice(0, OUTPUT_LINES).join('\n') : text}</pre>
-      {capped ? (
+      <pre>{shown.text}</pre>
+      {shown.total !== undefined ? (
         <button type="button" class="btn" onClick={() => setAll(true)}>
-          Show all {lines.length} lines
+          Show all {shown.total} lines
         </button>
       ) : null}
     </div>
@@ -86,7 +83,7 @@ function Card({ title, children }: { title: string; children?: preact.ComponentC
   );
 }
 
-export function ConversationView({ conv, harness, working, openTerminal, loadOlder }: { conv: Conversation; harness: string; working: boolean; openTerminal: () => void; loadOlder: () => void }) {
+export function ConversationView({ conv, harness, anchored = false, working, openTerminal, loadOlder }: { conv: Conversation; harness: string; anchored?: boolean; working: boolean; openTerminal: () => void; loadOlder: () => void }) {
   const now = useTick(15_000);
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -104,7 +101,13 @@ export function ConversationView({ conv, harness, working, openTerminal, loadOld
     </button>
   );
   if (conv.state === 'none')
-    return harness === 'claude' ? <Card title="Starting…">{terminal}</Card> : <Card title="No conversation for this harness">{terminal}</Card>;
+    return harness !== 'claude' ? (
+      <Card title="No conversation for this harness">{terminal}</Card>
+    ) : anchored ? (
+      <Card title="No conversation recorded">{terminal}</Card>
+    ) : (
+      <Card title="Starting…">{terminal}</Card>
+    );
   if (conv.state === 'unreadable') return <Card title="Admiral can't read this conversation">{terminal}</Card>;
   if (conv.state === 'gone') return <Card title="Conversation no longer available" />;
 

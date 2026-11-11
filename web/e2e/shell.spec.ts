@@ -104,6 +104,9 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await viewPanel(page).locator('.xterm').tap();
   await page.keyboard.type('typed-on-the-bridge');
   await expect.poll(() => readFileSync(join(recorded, 'stdin'), 'utf8')).toContain('typed-on-the-bridge');
+  // A touch keyboard has no Esc, so the key bar sends it.
+  await viewPanel(page).getByRole('button', { name: 'Send Esc' }).tap();
+  await expect.poll(() => readFileSync(join(recorded, 'stdin'), 'utf8')).toContain('\x1b');
   await viewTab(page, 'Conversation').tap();
   await expect.poll(() => bridge.isClosed()).toBe(true);
 

@@ -26,9 +26,16 @@ function merge(have: Item[], incoming: Item[]): Item[] {
 }
 
 /** Follows one ship's conversation over the ships socket: subscribe, read the page, then take the pushes. */
-export function followConversation(session: string, onChange: (c: Conversation) => void, { retryNone = true }: { retryNone?: boolean } = {}): { loadOlder(): Promise<void>; stop(): void } {
+export function followConversation(
+  session: string,
+  onChange: (c: Conversation) => void,
+  { retryNone = true }: { retryNone?: boolean | (() => boolean) } = {},
+): { loadOlder(): Promise<void>; stop(): void } {
   let c: Conversation = { state: 'loading', items: [], more: false };
   let stopped = false;
+  // Once an older page is held, the page read no longer decides whether there is more.
+  let olderLoaded = false;
+  const wantsNone = () => (typeof retryNone === 'function' ? retryNone() : retryNone);
   let acked = false;
   let wait: ReturnType<typeof setTimeout> | undefined;
   // A reply to an older read must not overwrite a newer one.
@@ -52,8 +59,9 @@ export function followConversation(session: string, onChange: (c: Conversation) 
     if (stopped || n !== reads) return;
     const items = page.items ?? [];
     if (page.state !== 'ok') set({ state: page.state, items: [], more: false });
-    else set({ state: 'ok', items: merge(c.items, items), more: c.items.length > 0 ? c.more : page.more });
-    if ((page.state === 'none' && retryNone) || (page.state === 'ok' && !acked)) retry();
+    // The page is the base; what a push already delivered replaces it by id, and the rest follows in order.
+    else set({ state: 'ok', items: olderLoaded ? merge(c.items, items) : merge(items, c.items), more: olderLoaded ? c.more : page.more });
+    if ((page.state === 'none' && wantsNone()) || (page.state === 'ok' && !acked)) retry();
   };
 
   const retry = () => {
@@ -70,7 +78,8 @@ export function followConversation(session: string, onChange: (c: Conversation) 
   };
 
   const offMessage = onShipsMessage((m) => {
-    if (m.ship !== session) return;
+    // A crew boat's conversation shares the ship's id and is not this ship's.
+    if (m.ship !== session || m.crew) return;
     if (m.type === 'conversation_opened') {
       acked = true;
       clearTimeout(wait);
@@ -86,11 +95,19 @@ export function followConversation(session: string, onChange: (c: Conversation) 
     async loadOlder() {
       const first = c.items[0];
       if (!first || !c.more) return;
-      const res = await fetch(conversationUrl(session, first.id));
-      if (!res.ok || stopped) return;
-      const page = (await res.json()) as ConversationPage;
+      let page: ConversationPage;
+      try {
+        const res = await fetch(conversationUrl(session, first.id));
+        if (!res.ok) return;
+        page = (await res.json()) as ConversationPage;
+      } catch {
+        // The button stays, so another tap tries again.
+        return;
+      }
+      if (stopped) return;
       const older = page.items ?? [];
       const have = new Set(c.items.map((i) => i.id));
+      olderLoaded = true;
       set({ ...c, items: [...older.filter((i) => !have.has(i.id)), ...c.items], more: page.more });
     },
     stop() {
