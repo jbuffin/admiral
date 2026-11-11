@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/jbuffin/admiral/internal/conversation"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/autopilotgate"
+	"github.com/jbuffin/admiral/internal/conversation"
 	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/moor"
@@ -71,11 +71,13 @@ type Orders interface {
 }
 
 type Service struct {
-	Host     *sessionhost.Host
-	Launcher *launcher.Launcher
-	State    *state.Store
-	Hub      *server.Hub
-	Orders   Orders
+	// answering holds one mutex per pane id, taken for the whole of an answer.
+	answering sync.Map
+	Host      *sessionhost.Host
+	Launcher  *launcher.Launcher
+	State     *state.Store
+	Hub       *server.Hub
+	Orders    Orders
 	// OnChange must not block.
 	OnChange func()
 	// Tail gives a ship's conversation tail from a cache; it must not block.

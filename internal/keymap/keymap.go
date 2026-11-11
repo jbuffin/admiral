@@ -29,8 +29,9 @@ func For(harness string) (Map, bool) {
 	return claude, true
 }
 
-// Allow once is item 1. Deny is Up then Enter: Up from the first item wraps to "No", the last, whatever the menu's length.
+// Allow once is item 1. Deny is Esc, the menu's own cancel: unlike item keys it does nothing at an idle prompt,
+// where Up and Enter would resubmit the last prompt.
 var claude = Map{
-	permission: map[string]string{"allow": "1", "deny": "\x1b[A\r"},
+	permission: map[string]string{"allow": "1", "deny": "\x1b"},
 	question:   strconv.Itoa,
 }

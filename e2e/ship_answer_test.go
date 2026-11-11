@@ -96,6 +96,38 @@ func TestShipAnswer_PermissionCardSendsTheKeyMapsKeysOnlyWhileTheReasonMatches(t
 			t.Fatalf("answer deny = %d, want 200 or 204", code)
 		}
 		w.waitStdinOf(ship.Session, "", allow+deny)
+		w.waitShip(ship.Session, "needs_you stop after the deny", func(s apiShip) bool { return s.Status == "needs_you" && s.Reason == "stop" })
+		if code := answer("/answer", answerReq("permission", "permission:Bash", map[string]any{"choice": "deny"})); code != http.StatusConflict {
+			t.Errorf("a second deny of the same card = %d, want 409", code)
+		}
+		w.holdStdin(ship.Session, "", allow+deny)
+	})
+
+	t.Run("an answer sent just after the hook moved on is refused", func(t *testing.T) {
+		w.hookAt(shipPane, "PermissionRequest", hookPerm)
+		w.waitShip(ship.Session, "needs_you again", func(s apiShip) bool { return s.Reason == "permission:Bash" })
+		w.hookAt(shipPane, "PostToolUse", `{"hook_event_name":"PostToolUse","tool_name":"Bash"}`)
+		if code := answer("/answer", answerReq("permission", "permission:Bash", map[string]any{"choice": "allow"})); code != http.StatusConflict {
+			t.Errorf("answer right after the card was answered elsewhere = %d, want 409", code)
+		}
+		w.holdStdin(ship.Session, "", allow+deny)
+	})
+
+	t.Run("two answers at once send once", func(t *testing.T) {
+		w.hookAt(shipPane, "PermissionRequest", hookPerm)
+		w.waitShip(ship.Session, "needs_you again", func(s apiShip) bool { return s.Reason == "permission:Bash" })
+		codes := make(chan int, 2)
+		for range 2 {
+			go func() {
+				codes <- answer("/answer", answerReq("permission", "permission:Bash", map[string]any{"choice": "allow"}))
+			}()
+		}
+		a, b := <-codes, <-codes
+		if !(succeeded(a) && b == http.StatusConflict) && !(succeeded(b) && a == http.StatusConflict) {
+			t.Errorf("two answers at once = %d and %d, want one success and one 409", a, b)
+		}
+		w.waitStdinOf(ship.Session, "", allow+deny+allow)
+		w.holdStdin(ship.Session, "", allow+deny+allow)
 	})
 
 	t.Run("a crew boat's card answers that boat only", func(t *testing.T) {
@@ -112,7 +144,7 @@ func TestShipAnswer_PermissionCardSendsTheKeyMapsKeysOnlyWhileTheReasonMatches(t
 			c, _ := crewOf(s, "scout")
 			return c.Status == "underway"
 		})
-		w.holdStdin(ship.Session, "", allow+deny)
+		w.holdStdin(ship.Session, "", allow+deny+allow)
 	})
 }
 
@@ -145,9 +177,10 @@ func TestShipAnswer_QuestionCardSendsTheOptionNumberOnlyForTheNewestSingleChoice
 	id := sessionIDOf(t, w.record(ship.Session).argv)
 	transcript := filepath.Join(cfgDir, "projects", "zz", id+".jsonl")
 	var last string
-	ask := func(uuid, call string, multi bool) string {
+	ask := func(uuid, call string, multi bool, questions int) string {
 		m, _ := json.Marshal(multi)
-		appendLines(t, transcript, `{"type":"assistant","uuid":"`+uuid+`","message":{"content":[{"type":"tool_use","id":"`+call+`","name":"AskUserQuestion","input":{"questions":[{"question":"Which?","multiSelect":`+string(m)+`,"options":[{"label":"A","description":"a"},{"label":"B","description":"b"}]}]}}]}}`)
+		one := `{"question":"Which?","multiSelect":` + string(m) + `,"options":[{"label":"A","description":"a"},{"label":"B","description":"b"}]}`
+		appendLines(t, transcript, `{"type":"assistant","uuid":"`+uuid+`","message":{"content":[{"type":"tool_use","id":"`+call+`","name":"AskUserQuestion","input":{"questions":[`+strings.TrimSuffix(strings.Repeat(one+",", questions), ",")+`]}}]}}`)
 		var item string
 		holdFor(t, "the question "+uuid+" in the conversation", func() bool {
 			item = newestPendingQuestion(t, w, ship.Session)
@@ -160,36 +193,66 @@ func TestShipAnswer_QuestionCardSendsTheOptionNumberOnlyForTheNewestSingleChoice
 		code, _ := send(t, http.MethodPost, w.shipURL(ship.Session, "/answer"), body)
 		return code
 	}
-	question := func(item string, option int) map[string]any {
-		return answerReq("question", "question", map[string]any{"item": item, "option": option})
+	question := func(reason, item string, option int) map[string]any {
+		return answerReq("question", reason, map[string]any{"item": item, "option": option})
+	}
+	// Claude Code fires PermissionRequest for AskUserQuestion after PreToolUse, which overwrites the reason.
+	askInPane := func(want string) {
+		w.hookAt(pane, "PreToolUse", `{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion"}`)
+		w.hookAt(pane, "PermissionRequest", `{"hook_event_name":"PermissionRequest","tool_name":"AskUserQuestion"}`)
+		w.waitShip(ship.Session, "needs_you for the question", func(s apiShip) bool { return s.Status == "needs_you" && s.Reason == want })
+	}
+	const qReason = "permission:AskUserQuestion"
+
+	item := ask("q1", "tq1", false, 1)
+	askInPane(qReason)
+
+	if code := answer(answerReq("permission", qReason, map[string]any{"choice": "allow"})); code != http.StatusConflict {
+		t.Errorf("a permission answer to a question menu = %d, want 409", code)
+	}
+	if code := answer(question("question", item, 2)); code != http.StatusConflict {
+		t.Errorf("a question answer naming the reason the hook overwrote = %d, want 409", code)
 	}
 
-	item := ask("q1", "tq1", false)
-	w.hookAt(pane, "PreToolUse", `{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion"}`)
-	w.waitShip(ship.Session, "needs_you for the question", func(s apiShip) bool { return s.Status == "needs_you" && s.Reason == "question" })
-
-	if code := answer(question("not-the-pending-item", 2)); code != http.StatusConflict {
+	if code := answer(question(qReason, "not-the-pending-item", 2)); code != http.StatusConflict {
 		t.Errorf("answer naming another item = %d, want 409", code)
 	}
-	if code := answer(question(item, 3)); code != http.StatusConflict {
+	if code := answer(question(qReason, item, 3)); code != http.StatusConflict {
 		t.Errorf("answer with option 3 of 2 = %d, want 409", code)
 	}
 	w.holdStdin(ship.Session, "", "")
 
-	if code := answer(question(item, 2)); !succeeded(code) {
+	if code := answer(question(qReason, item, 2)); !succeeded(code) {
 		t.Fatalf("answer with option 2 = %d, want 200 or 204", code)
 	}
 	w.waitStdinOf(ship.Session, "", second)
 	w.waitShip(ship.Session, "underway after the answer", func(s apiShip) bool { return s.Status == "underway" })
 
 	// A multi-select question is answered in the terminal.
-	multi := ask("q2", "tq2", true)
-	w.hookAt(pane, "PreToolUse", `{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion"}`)
-	w.waitShip(ship.Session, "needs_you for the multi-select", func(s apiShip) bool { return s.Status == "needs_you" && s.Reason == "question" })
-	if code := answer(question(multi, 1)); code != http.StatusConflict {
+	multi := ask("q2", "tq2", true, 1)
+	askInPane("permission:AskUserQuestion")
+	if code := answer(question(qReason, multi, 1)); code != http.StatusConflict {
 		t.Errorf("answer to a multi-select question = %d, want 409", code)
 	}
 	w.holdStdin(ship.Session, "", second)
+
+	// A call with several questions shows the first one; the newest item is the last.
+	several := ask("q3", "tq3", false, 2)
+	askInPane("permission:AskUserQuestion")
+	if code := answer(question(qReason, several, 1)); code != http.StatusConflict {
+		t.Errorf("answer to the last of several questions in one call = %d, want 409", code)
+	}
+	w.holdStdin(ship.Session, "", second)
+
+	// Before PermissionRequest lands, the reason is still the plain `question`.
+	first := mustKeys(t)(keys.Question(1))
+	plain := ask("q4", "tq4", false, 1)
+	w.hookAt(pane, "PreToolUse", `{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion"}`)
+	w.waitShip(ship.Session, "needs_you for the plain question", func(s apiShip) bool { return s.Status == "needs_you" && s.Reason == "question" })
+	if code := answer(question("question", plain, 1)); !succeeded(code) {
+		t.Fatalf("answer with the plain question reason = %d, want 200 or 204", code)
+	}
+	w.waitStdinOf(ship.Session, "", second+first)
 }
 
 func mustKeys(t *testing.T) func(string, bool) string {

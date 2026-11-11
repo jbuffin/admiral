@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/conversation"
@@ -212,18 +213,30 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	keys, why := s.answerKeys(t, session, req)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	// One answer at a time per pane, from the gate to the state change: a second tap must see what the first did.
+	mu, _ := s.answering.LoadOrStore(t.pane, new(sync.Mutex))
+	mu.(*sync.Mutex).Lock()
+	defer mu.(*sync.Mutex).Unlock()
+	keys, why := s.answerKeys(ctx, t, session, req)
 	if why != "" {
 		writeError(w, http.StatusConflict, why)
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	if err := s.tmux().SendLiteral(ctx, t.pane, keys); err != nil {
 		writeError(w, http.StatusBadGateway, "could not send the answer: "+err.Error())
 		return
 	}
-	if err := t.clearSeen(); err != nil && !errors.Is(err, ErrExited) && !errors.Is(err, ErrNotFound) {
+	if req.Choice == "deny" {
+		// Claude sits at its prompt after a deny and no hook says so.
+		if err := s.Host.SetPaneNeedsYou(ctx, t.pane, "stop"); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		_ = s.Host.Sync(ctx)
+		s.broadcast()
+	} else if err := t.clearSeen(); err != nil && !errors.Is(err, ErrExited) && !errors.Is(err, ErrNotFound) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -231,38 +244,54 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 }
 
 // answerKeys gives the keys that answer, or why the pane cannot take the answer now.
-func (s *Service) answerKeys(t target, session string, req answerRequest) (keys, why string) {
+func (s *Service) answerKeys(ctx context.Context, t target, session string, req answerRequest) (keys, why string) {
 	m, ok := keymap.For(t.harness)
 	switch {
 	case t.exited:
 		return "", t.what + " has exited"
 	case !ok:
 		return "", t.what + " is not a Claude Code pane: answer in its terminal"
-	case !t.needsYou || t.reason != req.Reason:
+	}
+	// The poll cache can trail a hook by half a second, so the pane's own options decide.
+	state, err := s.tmux().ReadPaneOption(ctx, t.pane, "state")
+	if err != nil {
+		return "", t.what + " could not be read: " + err.Error()
+	}
+	reason, err := s.tmux().ReadPaneOption(ctx, t.pane, "reason")
+	if err != nil {
+		return "", t.what + " could not be read: " + err.Error()
+	}
+	if state != "needs_you" || reason != req.Reason {
 		return "", t.what + " is no longer asking that"
 	}
 	if req.Card == "permission" {
-		if !strings.HasPrefix(req.Reason, "permission:") {
+		switch reason {
+		case "permission:AskUserQuestion", "permission:ExitPlanMode":
+			return "", "that menu is not a yes or no: answer in the terminal"
+		}
+		if !strings.HasPrefix(reason, "permission:") {
 			return "", t.what + " is no longer asking that"
 		}
 		keys, _ = m.Permission(req.Choice)
 		return keys, ""
 	}
-	if req.Reason != "question" {
+	// PermissionRequest fires for AskUserQuestion too and overwrites the question's reason.
+	if reason != "question" && reason != "permission:AskUserQuestion" {
 		return "", t.what + " is no longer asking that"
 	}
-	var newest *conversation.Item
+	var qs []conversation.Item
 	if s.Questions != nil {
-		qs := s.Questions(session, t.crew)
-		for i := range qs {
-			if q := qs[i]; q.Question != nil && q.Question.Pending {
-				newest = &qs[i]
-			}
-		}
+		qs = s.Questions(session, t.crew)
 	}
-	switch q := newest; {
-	case q == nil || q.ID != req.Item:
+	if len(qs) == 0 {
 		return "", "that question is not the one the pane is asking"
+	}
+	q := qs[len(qs)-1]
+	switch {
+	case q.ID != req.Item:
+		return "", "that question is not the one the pane is asking"
+	case len(qs) > 1 && callOf(qs[len(qs)-2].ID) == callOf(q.ID):
+		return "", "the call holds several questions: answer in the terminal"
 	case q.Question.MultiSelect:
 		return "", "a multi-select question is answered in the terminal"
 	case req.Option > len(q.Question.Options):
@@ -274,3 +303,6 @@ func (s *Service) answerKeys(t target, session string, req answerRequest) (keys,
 	}
 	return keys, ""
 }
+
+// callOf is the id of the transcript line an item came from: items of one line share it before the `#`.
+func callOf(id string) string { return strings.SplitN(id, "#", 2)[0] }
