@@ -97,6 +97,14 @@
 #                  it the recorder starts only after the cues end, as below.
 #   wait <name>    block until the file <FAKE_RECORD_DIR>/<tmux session>/<name> exists,
 #                  so a test decides when the next cue (an exit, say) runs
+#   reply <text>   Claude only, needs jq, and the last cue (it never ends): creates `cues-done`,
+#                  puts the terminal in raw mode and answers every message it is pasted. A
+#                  message is the bytes up to the first CR, with LFs kept and the bracketed-paste
+#                  markers and any bare ESC removed. Per message it appends two lines to the
+#                  transcript $CLAUDE_CONFIG_DIR/projects/zz/<id>.jsonl, <id> being the
+#                  --session-id in its argv: a user line holding the message and an assistant
+#                  line holding <text>. Put `bracketedpaste` before it, or tmux pastes without
+#                  brackets. Every byte it reads is appended to `stdin` as well.
 #
 # With no cue file, or once the cues run out, it puts the terminal in raw mode
 # (stty raw -echo: no echo, no line editing, ^C and CR arrive as bytes, and no
@@ -311,6 +319,34 @@ if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 			;;
 		wait)
 			while [ ! -e "$d/$arg" ]; do sleep 0.1; done
+			;;
+		reply)
+			sid=""
+			prev=""
+			for a in "$@"; do
+				[ "$prev" = "--session-id" ] && sid=$a
+				prev=$a
+			done
+			mkdir -p "$CLAUDE_CONFIG_DIR/projects/zz"
+			cat >"$d/.append" <<'EOF3'
+jq -cn --rawfile t "$FAKE_MSG" --arg r "$FAKE_REPLY" --arg n "$1" '
+  {uuid: ("fake-user-" + $n), type: "user", timestamp: (now | todate), message: {role: "user", content: $t}},
+  {uuid: ("fake-reply-" + $n), type: "assistant", timestamp: (now | todate), message: {role: "assistant", content: [{type: "text", text: $r}]}}' >>"$FAKE_TRANSCRIPT"
+EOF3
+			stty raw -echo <&3 2>/dev/null
+			: >"$d/cues-done"
+			export FAKE_REPLY=$arg FAKE_TRANSCRIPT="$CLAUDE_CONFIG_DIR/projects/zz/$sid.jsonl" FAKE_MSG="$d/.msg" FAKE_APPEND="$d/.append"
+			# awk splits at CR, the byte Enter sends in raw mode; the message goes to a file so jq reads it verbatim.
+			cat -u <&3 | tee -a "$d/stdin" | awk 'BEGIN { RS = "\r" }
+				{
+					gsub(/\033\[20[01]~/, ""); gsub(/\033/, "")
+					if ($0 == "") next
+					n++
+					printf "%s", $0 > ENVIRON["FAKE_MSG"]
+					close(ENVIRON["FAKE_MSG"])
+					system("sh \"$FAKE_APPEND\" " n)
+				}'
+			exit
 			;;
 		exit)
 			: >"$d/cues-done"

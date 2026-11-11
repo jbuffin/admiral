@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { probeShipList, type Ship } from './api';
+import { call, probeShipList, type Ship } from './api';
 import { followConversation, type Conversation } from './conversation';
 import { ConversationView } from './ConversationView';
+import { Composer } from './Composer';
+import { Sheet } from './Sheet';
 import { fleetSearch } from './fleets';
 import { go, surfacePath } from './router';
 import { ships, shipsLink, shipsLoaded } from './shipsLink';
@@ -29,6 +31,50 @@ function BackLink({ label }: { label: string }) {
     >
       {label}
     </a>
+  );
+}
+
+function StopShip({ ship }: { ship: Ship }) {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const cancel = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (asking) cancel.current?.focus();
+  }, [asking]);
+  const stop = async () => {
+    setBusy(true);
+    setError('');
+    const r = await call('POST', `/ships/${encodeURIComponent(ship.session)}/stop`);
+    setBusy(false);
+    if (!r.ok) return setError(r.error);
+    setAsking(false);
+    back();
+  };
+  return (
+    <>
+      <button type="button" class="btn danger stop-ship" onClick={() => setAsking(true)}>
+        Stop ship
+      </button>
+      {asking ? (
+        <Sheet label="Stop ship" kind="launch-backdrop stop-sheet" onClose={() => !busy && setAsking(false)}>
+          <p class="line">Stop {ship.name}? Its harness and crew end now.</p>
+          {error ? (
+            <p class="launch-error" role="alert">
+              {error}
+            </p>
+          ) : null}
+          <div class="launch-foot">
+            <button type="button" ref={cancel} class="btn" disabled={busy} onClick={() => setAsking(false)}>
+              Cancel
+            </button>
+            <button type="button" class="btn danger" disabled={busy} onClick={() => void stop()}>
+              Stop ship
+            </button>
+          </div>
+        </Sheet>
+      ) : null}
+    </>
   );
 }
 
@@ -91,6 +137,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
       <div class="ship-view-head">
         <BackLink label="Back" />
         <Heading>{ship.name}</Heading>
+        <StopShip ship={ship} />
       </div>
       <div role="tablist" class="view-tabs" aria-label={`${ship.name} views`}>
         {TABS.map((t) => (
@@ -101,7 +148,10 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
       </div>
       <div role="tabpanel" id="view-panel" aria-labelledby={`tab-${tab}`} class={`view-panel${tab === 'Terminal' ? ' terminal' : ''}`}>
         {tab === 'Conversation' ? (
-          <ConversationView conv={conv} harness={ship.harness} anchored={ship.status === 'anchored'} working={ship.status === 'underway'} openTerminal={() => setTab('Terminal')} loadOlder={() => void follow.current?.loadOlder()} />
+          <>
+            <ConversationView conv={conv} harness={ship.harness} anchored={ship.status === 'anchored'} working={ship.status === 'underway'} openTerminal={() => setTab('Terminal')} loadOlder={() => void follow.current?.loadOlder()} />
+            <Composer ship={ship} conv={conv} />
+          </>
         ) : tab === 'Terminal' ? (
           <TerminalTab ship={ship} />
         ) : tab === 'Changes' ? (
