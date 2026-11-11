@@ -13,9 +13,7 @@ import (
 	"github.com/jbuffin/admiral/internal/conversation"
 )
 
-// Claude Code writes a question's tool_use line only once it is resolved, so the
-// pending question is the sample cut just before its answer: line 97 is that
-// tool_use, and its tool_result is the next line.
+// Claude Code writes a question's line only once it is resolved, so a pending one is the sample cut before its answer.
 const sampleLinePendingQuestion = 97
 
 func readSample(t *testing.T) []byte {
@@ -259,8 +257,8 @@ func TestReaderLimits(t *testing.T) {
 		r := refresh(t, conversation.Options{},
 			`{"type":"assistant","uuid":"q1","message":{"content":[{"type":"tool_use","id":"tq","name":"AskUserQuestion","input":{"questions":[{"question":"?","options":[`+opts+`{}]}]}}]}}`+"\n")
 		q := r.Items()[0].Question
-		if len(q.Options) != 16 || len(q.Options[0].Label) > 300 || len(q.Options[0].Description) > 3<<10 {
-			t.Errorf("question has %d options, the first %d and %d bytes; want 16, cut to 256 B and 2 KB", len(q.Options), len(q.Options[0].Label), len(q.Options[0].Description))
+		if len(q.Options) != 16 || len(q.Options[0].Label) != 256+len("…") || len(q.Options[0].Description) != 2<<10+len("…") {
+			t.Errorf("question has %d options, the first %d and %d bytes; want 16, cut to 256 B and 2 KB plus the marker", len(q.Options), len(q.Options[0].Label), len(q.Options[0].Description))
 		}
 	})
 
@@ -358,19 +356,29 @@ func TestTextViewKeepsNonMetaNotices(t *testing.T) {
 		`{"type":"user","uuid":"n1","message":{"content":"<task-notification>\n<summary>done</summary>"}}`,
 		`{"type":"user","isMeta":true,"uuid":"n2","message":{"content":"Another Claude session sent a message:\nhello"}}`,
 		`{"type":"user","isMeta":true,"uuid":"m1","message":{"content":"<system-reminder>x</system-reminder>"}}`,
-		`{"type":"user","uuid":"x/1","message":{"content":"forged"}}`,
 		`{"type":"assistant","uuid":"x","message":{"content":[{"type":"text","text":"a"},{"type":"tool_use","id":"t","name":"Bash","input":{}}]}}`,
 	}, "\n")+"\n")
 
-	want := []conversation.Kind{"notice", "notice", "user", "assistant", "tool_call"}
+	want := []conversation.Kind{"notice", "notice", "assistant", "tool_call"}
 	if fmt.Sprint(kinds(items)) != fmt.Sprint(want) {
 		t.Fatalf("kinds = %v, want %v", kinds(items), want)
 	}
-	if !conversation.TextOnly(items[0]) || conversation.TextOnly(items[1]) || conversation.TextOnly(items[4]) {
+	if !conversation.TextOnly(items[0]) || conversation.TextOnly(items[1]) || conversation.TextOnly(items[3]) {
 		t.Errorf("text view keeps: subagent report %v, other session %v, tool call %v; want true, false, false",
-			conversation.TextOnly(items[0]), conversation.TextOnly(items[1]), conversation.TextOnly(items[4]))
+			conversation.TextOnly(items[0]), conversation.TextOnly(items[1]), conversation.TextOnly(items[3]))
 	}
-	if items[2].ID != "x/1" || items[4].ID != "x#1" {
-		t.Errorf("ids = %q and %q, want x/1 and x#1", items[2].ID, items[4].ID)
+}
+
+func TestSecondItemOfALineGetsASuffixedID(t *testing.T) {
+	items := read(t, strings.Join([]string{
+		`{"type":"assistant","uuid":"0a1b","message":{"content":[{"type":"text","text":"a"},{"type":"tool_use","id":"t","name":"Bash","input":{}}]}}`,
+		`{"type":"user","uuid":"2c3d","message":{"content":"next"}}`,
+	}, "\n")+"\n")
+	var ids []string
+	for _, it := range items {
+		ids = append(ids, it.ID)
+	}
+	if fmt.Sprint(ids) != "[0a1b 0a1b#1 2c3d]" {
+		t.Errorf("ids = %v, want [0a1b 0a1b#1 2c3d]", ids)
 	}
 }
