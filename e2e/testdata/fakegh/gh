@@ -4,7 +4,9 @@
 #
 # It records every call in $FAKEGH_DIR/calls/<call>/:
 #   argv         the arguments, each followed by a NUL byte
-#   env          GH_TOKEN, GH_NO_UPDATE_NOTIFIER and GH_PROMPT_DISABLED as
+#   env          GH_TOKEN, GITHUB_TOKEN, GH_ENTERPRISE_TOKEN,
+#                GITHUB_ENTERPRISE_TOKEN, GH_NO_UPDATE_NOTIFIER and
+#                GH_PROMPT_DISABLED as
 #                NAME=value lines; a variable that was not set has no line
 #
 # It answers five kinds of call and nothing else (anything else exits 2):
@@ -60,6 +62,9 @@ call_dir=$(mktemp -d "$FAKEGH_DIR/calls/call.XXXXXX" 2>/dev/null) || {
 for a in "$@"; do printf '%s\0' "$a"; done > "$call_dir/argv"
 {
 	[ -n "${GH_TOKEN+x}" ] && printf 'GH_TOKEN=%s\n' "$GH_TOKEN"
+	[ -n "${GITHUB_TOKEN+x}" ] && printf 'GITHUB_TOKEN=%s\n' "$GITHUB_TOKEN"
+	[ -n "${GH_ENTERPRISE_TOKEN+x}" ] && printf 'GH_ENTERPRISE_TOKEN=%s\n' "$GH_ENTERPRISE_TOKEN"
+	[ -n "${GITHUB_ENTERPRISE_TOKEN+x}" ] && printf 'GITHUB_ENTERPRISE_TOKEN=%s\n' "$GITHUB_ENTERPRISE_TOKEN"
 	[ -n "${GH_NO_UPDATE_NOTIFIER+x}" ] && printf 'GH_NO_UPDATE_NOTIFIER=%s\n' "$GH_NO_UPDATE_NOTIFIER"
 	[ -n "${GH_PROMPT_DISABLED+x}" ] && printf 'GH_PROMPT_DISABLED=%s\n' "$GH_PROMPT_DISABLED"
 	true

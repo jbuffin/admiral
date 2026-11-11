@@ -1,6 +1,7 @@
 package github
 
 import (
+	"encoding/json"
 	"math"
 	"regexp"
 	"strconv"
@@ -115,11 +116,19 @@ func readHotLabels(v any) []string {
 }
 
 // readMinutes takes a whole number of 1 or more, clamped to a day. JSON
-// numbers arrive as float64.
+// numbers arrive as float64 or json.Number.
 func readMinutes(v any) int {
 	f, ok := v.(float64)
+	if n, isNum := v.(json.Number); isNum { // the server decodes with UseNumber
+		f, ok = parseNumber(n)
+	}
 	if !ok || f < 1 || f != math.Trunc(f) {
 		return defaultRefreshMinutes
 	}
 	return int(math.Min(f, maxRefreshMinutes))
+}
+
+func parseNumber(n json.Number) (float64, bool) {
+	f, err := strconv.ParseFloat(string(n), 64)
+	return f, err == nil
 }

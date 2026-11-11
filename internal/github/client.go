@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -88,12 +90,14 @@ func (c *Client) Token(ctx context.Context) (string, error) {
 	if c.account != "" {
 		args = append(args, "-u", c.account)
 	}
-	out, _, err := c.gh(ctx, args, "")
+	out, _, err := c.gh(ctx, args, "", "")
 	var token string
 	switch {
 	case errors.Is(err, exec.ErrNotFound):
 		return "", &SignInError{"Install the GitHub CLI (brew install gh), then run gh auth login"}
-	case errors.Is(err, context.DeadlineExceeded): // a locked keychain, say: not a sign-out
+	case ctx.Err() != nil: // the caller gave up: neither a sign-out nor a failure
+		return "", ctx.Err()
+	case errors.Is(err, errTimeout): // a locked keychain, say: not a sign-out
 		return "", c.unreachableErr()
 	case err == nil:
 		token = strings.TrimSpace(out)
@@ -110,8 +114,11 @@ func (c *Client) Search(ctx context.Context, token, query string) ([]Item, error
 	if !hasSort.MatchString(query) {
 		query += " sort:updated-desc"
 	}
-	out, stderr, err := c.gh(ctx, []string{"api", "graphql", "--hostname", c.host, "-f", "query=" + searchQuery, "-f", "q=" + query}, token)
-	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, context.DeadlineExceeded) {
+	out, stderr, err := c.gh(ctx, []string{"api", "graphql", "--hostname", c.host, "-f", "query=" + searchQuery, "-f", "q=" + query}, c.tokenVar(), token)
+	if err != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, errTimeout) {
 		return nil, c.unreachableErr()
 	}
 	if err != nil {
@@ -215,47 +222,91 @@ func (c *Client) item(raw any) (Item, bool) {
 	return it, true
 }
 
-// gh runs the gh CLI with the client's environment: no inherited GH_TOKEN,
-// token as GH_TOKEN when given, no update check, no prompts, stdin closed. It
-// returns stdout and stderr; a failed run returns an error (exec.ErrNotFound
-// when gh is missing, context.DeadlineExceeded on a timeout).
-func (c *Client) gh(ctx context.Context, args []string, token string) (stdout, stderr string, err error) {
+// errTimeout means a gh call ran past the client's own limit.
+var errTimeout = errors.New("gh timed out")
+
+// tokenVar is the variable gh reads the token from on this host: GH_TOKEN for
+// github.com and GHE Cloud, GH_ENTERPRISE_TOKEN for a GHE Server.
+func (c *Client) tokenVar() string {
+	if c.host == DefaultHost || strings.HasSuffix(c.host, ".ghe.com") {
+		return "GH_TOKEN"
+	}
+	return "GH_ENTERPRISE_TOKEN"
+}
+
+// gh runs the gh CLI with the client's environment: no inherited token
+// variables, token in the variable tokenVar names when given, no update
+// check, no prompts, stdin closed. It returns stdout and stderr; a failed run
+// returns an error: exec.ErrNotFound when gh is missing, errTimeout on the
+// client's own timeout, and the caller's ctx.Err() when ctx is done.
+func (c *Client) gh(ctx context.Context, args []string, tokenVar, token string) (stdout, stderr string, err error) {
 	timeout := c.Timeout
 	if timeout == 0 {
 		timeout = ghTimeout
 	}
+	bin, err := c.binary()
+	if err != nil {
+		return "", "", err
+	}
 	tctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	bin := c.Gh
-	if bin == "" {
-		bin = "gh"
-	}
 	cmd := exec.CommandContext(tctx, bin, args...)
-	cmd.Env = c.environ(token)
+	cmd.Env = c.environ(tokenVar, token)
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	cmd.WaitDelay = time.Second
 	err = cmd.Run()
-	if err != nil && tctx.Err() == context.DeadlineExceeded {
-		err = context.DeadlineExceeded
+	if err != nil {
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		} else if tctx.Err() != nil {
+			err = errTimeout
+		}
 	}
 	return out.String(), errOut.String(), err
 }
 
-// environ is the base environment without GH_TOKEN and the update-notifier and
+// binary finds gh: Gh when set, else on the PATH of the client's environment
+// (a fleet's may set one), else on Admiral's.
+func (c *Client) binary() (string, error) {
+	if c.Gh != "" {
+		return c.Gh, nil
+	}
+	for i := len(c.env) - 1; i >= 0; i-- {
+		path, ok := strings.CutPrefix(c.env[i], "PATH=")
+		if !ok {
+			continue
+		}
+		for _, dir := range filepath.SplitList(path) {
+			if dir == "" {
+				continue
+			}
+			p := filepath.Join(dir, "gh")
+			if info, err := os.Stat(p); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+				return p, nil
+			}
+		}
+		break
+	}
+	return exec.LookPath("gh")
+}
+
+// environ is the base environment without any GitHub token variable, which
+// could override the fleet's account, and without the update-notifier and
 // prompt settings, which it sets itself.
-func (c *Client) environ(token string) []string {
+func (c *Client) environ(tokenVar, token string) []string {
 	env := make([]string, 0, len(c.env)+3)
 	for _, kv := range c.env {
 		switch name, _, _ := strings.Cut(kv, "="); name {
-		case "GH_TOKEN", "GH_NO_UPDATE_NOTIFIER", "GH_PROMPT_DISABLED":
+		case "GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN",
+			"GH_NO_UPDATE_NOTIFIER", "GH_PROMPT_DISABLED":
 		default:
 			env = append(env, kv)
 		}
 	}
 	env = append(env, "GH_NO_UPDATE_NOTIFIER=1", "GH_PROMPT_DISABLED=1")
 	if token != "" {
-		env = append(env, "GH_TOKEN="+token)
+		env = append(env, tokenVar+"="+token)
 	}
 	return env
 }

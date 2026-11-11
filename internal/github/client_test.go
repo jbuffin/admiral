@@ -162,12 +162,12 @@ func hangingGH(t *testing.T) string {
 func TestSearchRequest(t *testing.T) {
 	f := newFake(t)
 	f.answer(t, map[string]string{"json": `{"data":{"search":{"nodes":[]}}}`})
-	cl := NewClient("ghe.example.com", "", nil, f.env)
+	cl := NewClient("acme.ghe.com", "", nil, f.env)
 	if _, err := cl.Search(context.Background(), "fake-token-work-2", "is:open assignee:@me"); err != nil {
 		t.Fatal(err)
 	}
 	c := f.only(t, "api")
-	if got := strings.Join(c.argv[:4], " "); got != "api graphql --hostname ghe.example.com" {
+	if got := strings.Join(c.argv[:4], " "); got != "api graphql --hostname acme.ghe.com" {
 		t.Errorf("argv starts %q", got)
 	}
 	if c.argv[4] != "-f" || !strings.HasPrefix(c.argv[5], "query=") || c.argv[6] != "-f" || c.argv[7] != "q=is:open assignee:@me sort:updated-desc" {
@@ -265,6 +265,8 @@ func TestSearchErrors(t *testing.T) {
 		{"not JSON", map[string]string{"json": "oops"}, "Search failed: GitHub's answer was not JSON"},
 		{"not an object", map[string]string{"json": "[]"}, "Search failed: GitHub's answer was not understood"},
 		{"no search nodes", map[string]string{"json": `{"data":{}}`}, "Search failed: GitHub's answer was not understood"},
+		{"token in a graphql message is redacted", map[string]string{"json": `{"errors":[{"message":"bad fake-token-work-2"}]}`}, "Search failed: bad ***"},
+		{"null nodes", map[string]string{"json": `{"data":{"search":{"nodes":null}}}`}, "Search failed: GitHub's answer was not understood"},
 		{"graphql errors", map[string]string{"json": `{"errors":[{"message":"Bad query"},{"message":"second"}]}`}, "Search failed: Bad query"},
 	}
 	for _, c := range cases {
@@ -293,6 +295,50 @@ func TestSearchErrors(t *testing.T) {
 			t.Fatalf("err = %v, want Couldn't reach github.com", err)
 		}
 	})
+}
+
+func TestSearchGHEServerToken(t *testing.T) {
+	f := newFake(t)
+	f.env = append(f.env, "GITHUB_TOKEN=a", "GH_ENTERPRISE_TOKEN=b", "GITHUB_ENTERPRISE_TOKEN=c")
+	f.answer(t, map[string]string{"json": `{"data":{"search":{"nodes":[]}}}`})
+	if _, err := NewClient("ghe.example.com", "", nil, f.env).Search(context.Background(), "fake-token-work-2", "is:open"); err != nil {
+		t.Fatal(err)
+	}
+	env := f.only(t, "api").env
+	if !strings.Contains(env, "GH_ENTERPRISE_TOKEN=fake-token-work-2\n") {
+		t.Errorf("token not in GH_ENTERPRISE_TOKEN: %q", env)
+	}
+	for _, bad := range []string{"GH_TOKEN", "GITHUB_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "inherited-token"} {
+		if strings.Contains(env, bad) {
+			t.Errorf("env carries %s: %q", bad, env)
+		}
+	}
+}
+
+func TestCancelledContext(t *testing.T) {
+	hangingGH(t)
+	cl := NewClient("github.com", "", nil, os.Environ())
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(200*time.Millisecond, cancel)
+	if _, err := cl.Token(ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf("Token err = %v, want context.Canceled", err)
+	}
+	ctx, cancel = context.WithCancel(context.Background())
+	time.AfterFunc(200*time.Millisecond, cancel)
+	if _, err := cl.Search(ctx, "fake-token-work-2", "is:open"); !errors.Is(err, context.Canceled) {
+		t.Errorf("Search err = %v, want context.Canceled", err)
+	}
+}
+
+func TestGhFoundOnEnvPath(t *testing.T) {
+	f := newFake(t)
+	f.write(t, "token", "fake-token-work-2\n")
+	bin, _ := filepath.Abs("../../e2e/testdata/fakegh")
+	t.Setenv("PATH", t.TempDir()) // Admiral's PATH has no gh; the fleet's does
+	env := append(f.env, "PATH="+bin+":/usr/bin:/bin")
+	if got, err := NewClient("github.com", "", nil, env).Token(context.Background()); err != nil || got != "fake-token-work-2" {
+		t.Fatalf("Token() = %q, %v", got, err)
+	}
 }
 
 func TestHostAccessor(t *testing.T) {
@@ -385,6 +431,16 @@ func TestSettingsScalars(t *testing.T) {
 	for in, want := range minutes {
 		if got := settings(t, `{"refreshMinutes":`+in+`}`).RefreshMinutes; got != want {
 			t.Errorf("refreshMinutes %s = %d, want %d", in, got, want)
+		}
+		// the server decodes with UseNumber
+		dec := json.NewDecoder(strings.NewReader(`{"refreshMinutes":` + in + `}`))
+		dec.UseNumber()
+		var m map[string]any
+		if err := dec.Decode(&m); err != nil {
+			t.Fatal(err)
+		}
+		if got := ParseSettings(m).RefreshMinutes; got != want {
+			t.Errorf("json.Number refreshMinutes %s = %d, want %d", in, got, want)
 		}
 	}
 }
