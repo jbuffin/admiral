@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jbuffin/admiral/internal/campaigns"
+	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/launcher"
 )
 
@@ -127,6 +128,11 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 	var req launcher.Request
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
+		return
+	}
+	// a campaign's skill, text and refusals are set by its own route, not the client's
+	if req.Source == config.ReservedSourceKey {
+		writeError(w, http.StatusBadRequest, "launch a campaign's child through its campaign")
 		return
 	}
 	got, lerr := s.Launch(r.Context(), req)

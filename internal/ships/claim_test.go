@@ -104,3 +104,11 @@ func TestLaunchKeepsTheCloneAndSourceRefusalsOfThePostRoute(t *testing.T) {
 		t.Errorf("Launch of an order before the host is ready = %v, want a 503", lerr)
 	}
 }
+
+func TestPostShipsRefusesTheCampaignSource(t *testing.T) {
+	s := &Service{}
+	rec := launchPost(t, s, `{"fleet":"work","harness":"claude","source":"campaign","order_id":"https://github.com/acme/widgets/issues/21","dir":"/x"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("POST /api/ships from source campaign = %d %s, want 400: a campaign child launches through its campaign", rec.Code, rec.Body)
+	}
+}

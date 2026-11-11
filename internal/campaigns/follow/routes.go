@@ -175,6 +175,10 @@ func (s *Service) serveFollow(w http.ResponseWriter, r *http.Request) {
 	status := http.StatusOK
 	if created {
 		status = http.StatusCreated
+		if allClosed(tree) {
+			_ = s.Store.End(got.ID, s.now())
+			got, _ = s.Store.Get(got.ID)
+		}
 	}
 	writeJSON(w, status, s.json(got))
 }
