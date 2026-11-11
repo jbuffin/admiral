@@ -126,7 +126,7 @@ func (r *wakeRig) moored(t *testing.T, round int) {
 	err := moor.Write(r.home, moor.Record{Name: "Saltpaw", Session: "saltpaw", Fleet: "work", Harness: "claude", Model: "opus",
 		Skill: moor.Skill{Kind: "skill", Name: "review"}, Checkout: r.checkout, Source: "s", OrderID: "o1", Panel: "p",
 		URL: "https://github.com/acme/widgets/issues/3", Title: "Fix it", PRs: []string{wakePR}, Resources: []string{"phone"},
-		Resume: "resume run-7", Round: round, MooredAt: time.Now().UTC().Truncate(time.Second)})
+		Resume: "/commodore resume run-7", Round: round, MooredAt: time.Now().UTC().Truncate(time.Second)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,8 +192,8 @@ func TestAHandWakeLaunchesTheSameShipWithTheResumePromptAndNoAutopilot(t *testin
 		t.Errorf("woken ship = %q named %q, want saltpaw named Saltpaw", ship.Session, ship.Name)
 	}
 	argv, env := r.started(t, 1)
-	if got := prompt(argv); got != "/review resume run-7 also check the docs" {
-		t.Errorf("prompt = %q, want the skill, the resume text, then the engineer's text", got)
+	if got := prompt(argv); got != "/commodore resume run-7 also check the docs" {
+		t.Errorf("prompt = %q, want the resume text verbatim, then the engineer's text, with the record's skill not prefixed again", got)
 	}
 	if strings.Contains(strings.Join(argv, " ")+env, "ORDER-TEXT-MARKER") {
 		t.Error("the order's text reached argv or env, want the resume prompt instead")
@@ -225,8 +225,8 @@ func TestAHandWakeWithNoTextPromptsWithTheResumeTextAlone(t *testing.T) {
 		t.Fatal(lerr)
 	}
 	argv, _ := r.started(t, 1)
-	if got := prompt(argv); got != "/review resume run-7" {
-		t.Errorf("prompt = %q, want /review resume run-7", got)
+	if got := prompt(argv); got != "/commodore resume run-7" {
+		t.Errorf("prompt = %q, want the resume text alone", got)
 	}
 }
 
@@ -250,8 +250,8 @@ func TestAFeedbackRoundIsAutopilotAndTheFeedbackReachesTheShipOnlyAsAFile(t *tes
 		t.Fatalf("FeedbackRound = %v", lerr)
 	}
 	argv, env := r.started(t, 1)
-	if got := prompt(argv); got != "/review resume run-7 feedback round 2 on "+wakePR {
-		t.Errorf("prompt = %q, want the resume text then feedback round 2 on the PR", got)
+	if got := prompt(argv); got != "/commodore resume run-7 feedback round 2 on "+wakePR {
+		t.Errorf("prompt = %q, want the resume text verbatim then feedback round 2 on the PR", got)
 	}
 	if !strings.Contains(env, "ADMIRAL_AUTOPILOT=1") {
 		t.Error("env has no ADMIRAL_AUTOPILOT=1, want a feedback round to run as autopilot")
@@ -384,7 +384,7 @@ func TestTheWakeRouteAnswersWithTheShip(t *testing.T) {
 	var body struct {
 		Ship Ship `json:"ship"`
 	}
-	if rec.Code < 200 || rec.Code > 299 || json.Unmarshal(rec.Body.Bytes(), &body) != nil || body.Ship.Session != "saltpaw" {
-		t.Errorf("wake route = %d %s, want 2xx with a ship wrapper naming saltpaw", rec.Code, rec.Body)
+	if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &body) != nil || body.Ship.Session != "saltpaw" {
+		t.Errorf("wake route = %d %s, want 201 with a ship wrapper naming saltpaw", rec.Code, rec.Body)
 	}
 }

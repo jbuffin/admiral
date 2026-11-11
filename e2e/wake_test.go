@@ -9,10 +9,10 @@ import (
 	"time"
 )
 
-// wakeReport is a done report whose resume text carries no skill mark: the launcher adds the mark.
+// wakeReport is a done report whose resume text carries its own invocation, as the report schema requires.
 func wakeReport() string {
 	b, _ := json.Marshal(map[string]any{"version": 2, "result": "done", "why": "PR opened",
-		"prs": []map[string]any{{"url": mooredPR, "closes": []string{}}}, "resume": "resume run-7"})
+		"prs": []map[string]any{{"url": mooredPR, "closes": []string{}}}, "resume": "/commodore resume run-7"})
 	return string(b)
 }
 
@@ -24,8 +24,8 @@ func (w *world) wake(session, text string) shipJSON {
 		w.t.Fatal(err)
 	}
 	code, body := send(w.t, http.MethodPost, w.in.LocalURL+"/api/ships/"+session+"/wake", map[string]any{"text": text})
-	if code < 200 || code > 299 {
-		w.t.Fatalf("POST /api/ships/%s/wake = %d, want 2xx: %s", session, code, body)
+	if code != http.StatusCreated {
+		w.t.Fatalf("POST /api/ships/%s/wake = %d, want 201: %s", session, code, body)
 	}
 	return decodeShip(w.t, body)
 }
@@ -46,7 +46,7 @@ func TestWakingAMooredShipByHandRelaunchesItUnderTheSameName(t *testing.T) {
 	}
 	r := w.record(ship.Session)
 	if got := promptOf(t, w, r); got != "/commodore resume run-7 also check the docs" {
-		t.Errorf("prompt = %q, want the skill, the resume text and the engineer's text", got)
+		t.Errorf("prompt = %q, want the resume text verbatim and the engineer's text", got)
 	}
 	w.in.waitShipsList(t, 20*time.Second, "the ship underway under its own name", func(l []shipJSON) bool {
 		s := byName(l)[ship.Name]
@@ -75,7 +75,7 @@ func TestWakingAMooredShipByHandRelaunchesItUnderTheSameName(t *testing.T) {
 
 	w.wake(ship.Session, "")
 	if got := promptOf(t, w, w.record(ship.Session)); got != "/commodore resume run-7" {
-		t.Errorf("second wake prompt = %q, want the skill and the resume text alone", got)
+		t.Errorf("second wake prompt = %q, want the resume text alone", got)
 	}
 	if e := lastOf(w.waitEvent(ship.Session, "woken", 2), "woken"); e["round"] != float64(2) {
 		t.Errorf("second woken event = %v, want round 2", e)
