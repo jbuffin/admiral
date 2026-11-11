@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { fetchDevices, mintPairingCode, renameDevice, revokeAllDevices, revokeDevice, type Device, type PairingCode, type Result } from './api';
 import { qrMatrix } from './qr';
 import { expiryState, formatCode, signedOutLine, thisDeviceMark } from './remoteAccess';
@@ -137,6 +137,8 @@ function DeviceRow({ device, reload, onResult }: { device: Device; reload: () =>
 
 export function RemoteAccess() {
   const [devices, setDevices] = useState<Device[] | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  // An action's error stays until the person acts again, so a poll can't clear it.
   const [error, setError] = useState<string | null>(null);
   const [signedOut, setSignedOut] = useState<string | null>(null);
   const [confirmAll, setConfirmAll] = useState(false);
@@ -146,20 +148,24 @@ export function RemoteAccess() {
     const line = signedOutLine(r);
     if (line) setSignedOut(line);
   };
+  const latest = useRef(0);
   const reload = async () => {
+    const seq = ++latest.current;
     const r = await fetchDevices();
+    if (seq !== latest.current) return;
     onResult(r);
     if (r.ok) {
       setDevices(r.data);
-      setError(null);
-    } else setError(r.error);
+      setListError(null);
+    } else setListError(r.error);
   };
   // A device that redeems the code on screen shows up without a reload.
   useEffect(() => {
     void reload();
+    if (signedOut) return;
     const t = setInterval(() => void reload(), 2000);
     return () => clearInterval(t);
-  }, []);
+  }, [signedOut]);
 
   if (signedOut)
     return (
@@ -169,6 +175,7 @@ export function RemoteAccess() {
     );
 
   const signOutAll = async () => {
+    setError(null);
     const r = await revokeAllDevices();
     onResult(r);
     setConfirmAll(false);
@@ -183,9 +190,9 @@ export function RemoteAccess() {
       <h2 class="h2" id="devices-title">
         Devices
       </h2>
-      {error ? (
+      {listError || error ? (
         <p class="note error-text" role="alert">
-          {error}
+          {error ?? listError}
         </p>
       ) : null}
       {devices && devices.length === 0 ? <p class="line">No paired devices yet.</p> : null}
@@ -212,7 +219,7 @@ export function RemoteAccess() {
           </button>
         </div>
       ) : (
-        <button type="button" class="btn danger" onClick={() => (setNote(''), setConfirmAll(true))}>
+        <button type="button" class="btn danger" onClick={() => (setNote(''), setError(null), setConfirmAll(true))}>
           Sign out all devices
         </button>
       )}

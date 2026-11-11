@@ -443,3 +443,18 @@ test('Remote access shows a pairing code, lists the devices that redeem it, rena
   expect(watch.foreign).toEqual([]);
   expect(watch.errors).toEqual([]);
 });
+
+test('a failed Sign out all keeps its error through the next device refresh', async ({ page, admiral }) => {
+  await admiral.start();
+  await page.route('**/api/v1/devices', async (route) => {
+    if (route.request().method() === 'DELETE') await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'the store is read-only' }) });
+    else await route.fallback();
+  });
+  await page.goto(admiral.url + 'app/preferences/admiral/remote');
+  await page.getByRole('button', { name: 'Sign out all devices', exact: true }).click();
+  await page.getByRole('group', { name: 'Sign out all devices' }).getByRole('button', { name: 'Sign out all', exact: true }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'the store is read-only' })).toBeVisible();
+  await page.waitForResponse((r) => r.url().endsWith('/api/v1/devices') && r.request().method() === 'GET' && r.ok());
+  await page.waitForResponse((r) => r.url().endsWith('/api/v1/devices') && r.request().method() === 'GET' && r.ok());
+  await expect(page.getByRole('alert').filter({ hasText: 'the store is read-only' })).toBeVisible();
+});

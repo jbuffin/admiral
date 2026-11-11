@@ -29,8 +29,8 @@ function NavLink({ path, current, children }: { path: string; current: boolean; 
 function PreferencesNav({ current, page }: { current: string; page: PreferencesPage }) {
   return (
     <nav class="prefs-nav" aria-label="Preferences">
-      <div role="group" aria-labelledby="prefs-admiral">
-        <div class="sec" id="prefs-admiral">
+      <div role="group" aria-labelledby="admiral-global-prefs">
+        <div class="sec" id="admiral-global-prefs">
           Admiral · all fleets
         </div>
         <NavLink path={remotePath} current={page === 'remote'}>
@@ -63,8 +63,7 @@ export function Preferences({ phone }: { phone: boolean }) {
   const fleet = fleets.value.find((f) => f.key === key);
   const page = preferencesPage(loc.value.path);
 
-  // Bare /app/preferences, and a path naming no fleet, open the active fleet's sources.
-  // With no fleet to open, they open Remote access, which needs none. The signals are read here, at run time, so a render that saw the config half-loaded can't send the page the wrong way.
+  // Bare and unknown paths open the active fleet's sources, else Remote access; signals are read at run time because a render can see the config half-loaded.
   useEffect(() => {
     const open = activeFleet.value;
     if (!loaded.value || page === 'remote' || fleets.value.some((f) => f.key === key)) return;
