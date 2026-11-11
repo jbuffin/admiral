@@ -38,10 +38,17 @@ type Record struct {
 
 func dir(home string) string { return filepath.Join(home, "moored") }
 
+func checkName(name string) error {
+	if name == "" || strings.ContainsAny(name, `/\`) || name == "." || name == ".." {
+		return errors.New("moor: " + name + " is not a name a record can have")
+	}
+	return nil
+}
+
 // Write replaces the ship's record. The name is a ship name, never a path.
 func Write(home string, r Record) error {
-	if r.Name == "" || strings.ContainsAny(r.Name, `/\`) || r.Name == "." || r.Name == ".." {
-		return errors.New("moor: " + r.Name + " is not a name a record can have")
+	if err := checkName(r.Name); err != nil {
+		return err
 	}
 	if err := os.MkdirAll(dir(home), 0o700); err != nil {
 		return err

@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/state"
 )
@@ -63,7 +65,8 @@ func tailService(t *testing.T) (*Service, func(string)) {
 		t.Fatal(err)
 	}
 	s := &Service{Host: h, State: st,
-		Tail: func(session string) string { mu.Lock(); defer mu.Unlock(); return tails[session] }}
+		Launcher: &launcher.Launcher{Home: dir, Config: func() *config.Config { return &config.Config{} }},
+		Tail:     func(session string) string { mu.Lock(); defer mu.Unlock(); return tails[session] }}
 	return s, func(v string) { mu.Lock(); defer mu.Unlock(); tails["alpha"] = v }
 }
 

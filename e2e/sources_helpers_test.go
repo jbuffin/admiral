@@ -784,6 +784,3 @@ func (g *fakeGH) prState(url, state string) {
 	}
 	g.write("pr_state/"+strings.NewReplacer("/", "_", ":", "_").Replace(url), state+"\n")
 }
-
-// prFail makes every pull request lookup fail with this stderr.
-func (g *fakeGH) prFail(stderr string) { g.t.Helper(); g.write("pr_state.fail", stderr+"\n") }

@@ -124,17 +124,25 @@ func (s *Service) mooredShips(live map[string]bool) []Ship {
 	s.mooredMu.Lock()
 	s.loadMoored()
 	recs := append([]moor.Record(nil), s.moored...)
+	prs := make([][]moor.PR, len(recs))
+	polls := make([]polled, len(recs))
+	for i, r := range recs {
+		prs[i], polls[i] = s.prsOf(r), s.mooredPolls[r.Session]
+	}
 	s.mooredMu.Unlock()
 	var out []Ship
 	cfg := s.Launcher.Config()
-	for _, r := range recs {
+	for i, r := range recs {
 		if live[r.Session] {
 			continue
 		}
 		sh := Ship{Session: r.Session, Name: r.Name, Fleet: r.Fleet, Harness: r.Harness, Dir: r.Checkout,
 			Repo: filepath.Base(r.Checkout), Status: StatusMoored,
-			Source: r.Source, Panel: r.Panel, OrderID: r.OrderID, URL: r.URL, Title: r.Title, PRs: r.PRs, MooredAt: r.MooredAt.UTC().Format(time.RFC3339),
+			Source: r.Source, Panel: r.Panel, OrderID: r.OrderID, URL: r.URL, Title: r.Title, PRs: prs[i], MooredAt: r.MooredAt.UTC().Format(time.RFC3339), Stale: polls[i].stale,
 			Crew: []CrewBoat{}, Subagents: []sessionhost.Subagent{}}
+		if !polls[i].at.IsZero() {
+			sh.PolledAt = polls[i].at.Format(time.RFC3339)
+		}
 		if f, ok := cfg.Fleet(r.Fleet); ok {
 			sh.FleetName, sh.FleetColor = f.Name, f.Color
 		}

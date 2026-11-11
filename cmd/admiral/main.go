@@ -314,7 +314,14 @@ func serve(args []string) error {
 	// still up, so a written `ended` can still set its marker.
 	shipsCtx, stopShips := context.WithCancel(bg)
 	shipsDone := make(chan struct{})
-	go func() { defer close(shipsDone); shipService.Run(shipsCtx) }()
+	go func() {
+		defer close(shipsDone)
+		var run sync.WaitGroup
+		run.Add(1)
+		go func() { defer run.Done(); shipService.RunMoored(shipsCtx) }()
+		shipService.Run(shipsCtx)
+		run.Wait()
+	}()
 	configChanges, unsubscribe := cfg.Subscribe()
 	go func() {
 		defer unsubscribe()
