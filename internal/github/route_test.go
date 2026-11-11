@@ -142,8 +142,6 @@ func TestRouterFromFleets(t *testing.T) {
 	}
 }
 
-// Three fleets claiming one repo: each warning lists the claimants as one plain
-// list, not "in fleets b and a, c".
 func TestRouteWarningWithThreeClaimants(t *testing.T) {
 	r := NewRouter([]RouteFleet{
 		{Key: "a", Repos: []string{"github.com/acme/widgets"}},

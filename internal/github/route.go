@@ -78,8 +78,6 @@ func claim(keys, order []string, name, key string) ([]string, []string) {
 	return append(keys, key), order
 }
 
-// warn adds the same warning to each of the claiming fleets when there are two
-// or more. msg gets their keys as one list: "a and b", "a, b and c".
 func (r *Router) warn(claimants []string, msg func(fleets string) string) {
 	if len(claimants) < 2 {
 		return

@@ -15,18 +15,16 @@ import (
 	"github.com/jbuffin/admiral/internal/github"
 )
 
-// builtinGitHub is the plugin name of the GitHub source, which runs in Admiral
-// itself and has no plugin folder.
+// The GitHub source runs inside Admiral, so it has no plugin folder.
 const builtinGitHub = "github"
 
 const builtinGitHubDescription = "Issues and pull requests from GitHub searches, through the gh CLI."
 
-// githubIcon is the Octicons mark (see LICENSE-octicons).
+// The Octicons mark; its licence is LICENSE-octicons.
 //
 //go:embed github-icon.svg
 var githubIcon []byte
 
-// githubSchema is the settings form of the GitHub source.
 var githubSchema = json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -55,33 +53,28 @@ var githubSchema = json.RawMessage(`{
   "additionalProperties": false
 }`)
 
-// RPC error codes the built-in source answers with, as the plugin did.
 const (
 	codeInvalidParams  = -32602
 	codeMethodNotFound = -32601
 	codeSourceError    = -32000
 )
 
-// openArgs is what opening a source's connection needs.
 type openArgs struct {
-	key    string
-	def    config.Source
-	cfg    func() *config.Config // the current config
-	onNote func(method string, params json.RawMessage)
-	logf   func(format string, a ...any)
-	// setWarnings shows the router's warnings for the source's fleet.
+	key         string
+	def         config.Source
+	cfg         func() *config.Config // the current config
+	onNote      func(method string, params json.RawMessage)
+	logf        func(format string, a ...any)
 	setWarnings func([]string)
 }
 
-// ghView is what one view last showed: its orders, and the error that came
-// with the last search if it failed (the orders are then the last good ones).
+// A failed view keeps its last good orders next to the error.
 type ghView struct {
 	orders []map[string]any
 	err    string
 }
 
-// githubConn is the GitHub source as a conn: it answers the plugin protocol in
-// memory, so a runner drives it as it drives a plugin.
+// githubConn answers the plugin protocol in memory, so a runner drives it like a plugin.
 type githubConn struct {
 	openArgs
 	fleet string
@@ -129,8 +122,7 @@ func (g *githubConn) stop() {
 
 func (g *githubConn) kill() { g.stop() }
 
-// call answers one request. A view's last search error comes back as an
-// *rpcError, as a plugin's would.
+// A view's search error comes back as an *rpcError, as a plugin's would.
 func (g *githubConn) call(ctx context.Context, method string, params any, _ time.Duration) (json.RawMessage, error) {
 	select {
 	case <-g.gone:
@@ -210,7 +202,6 @@ func (g *githubConn) notify(method string, params any) {
 	g.onNote(method, raw)
 }
 
-// work searches at start, on orders.refresh and every refreshMinutes.
 func (g *githubConn) work() {
 	g.mu.Lock()
 	every := time.Duration(g.settings.RefreshMinutes) * time.Minute
@@ -229,8 +220,7 @@ func (g *githubConn) work() {
 	}
 }
 
-// cycle runs one refresh. A panic in it is logged and shown as the source's
-// error on every view, so it cannot take Admiral down; the next cycle tries again.
+// A panic in a refresh must not take Admiral down: it shows as an error on every view.
 func (g *githubConn) cycle() {
 	defer func() {
 		if p := recover(); p != nil {
@@ -250,9 +240,7 @@ func (g *githubConn) cycle() {
 	g.refresh()
 }
 
-// refresh searches every view and, once all are done, tells the runner if any
-// changed, so one cycle shows as one snapshot. It keeps only the items whose repo routes to this source's fleet, with a
-// router built now: a new clone changes no config.
+// The router is built each cycle because a new clone changes no config; orders.changed goes out once, after every view.
 func (g *githubConn) refresh() {
 	g.mu.Lock()
 	client, views := g.client, g.settings.Views
@@ -315,8 +303,6 @@ func (g *githubConn) refresh() {
 	}
 }
 
-// store keeps a view's result (its last orders when there are none) and says
-// whether the view changed.
 func (g *githubConn) store(id string, orders []map[string]any, errMsg string) bool {
 	g.mu.Lock()
 	old := g.views[id]

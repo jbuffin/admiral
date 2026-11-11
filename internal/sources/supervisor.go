@@ -211,14 +211,11 @@ func (s *Supervisor) snapshot() []sourceState {
 	return out
 }
 
-// fleetEnv is the env of the fleet a source belongs to.
 func fleetEnv(cfg *config.Config, fleet string) map[string]string {
 	f, _ := cfg.Fleet(fleet)
 	return f.Env
 }
 
-// routingOf is what routing reads from the fleets' config: their search roots
-// and owners, in order.
 func routingOf(fleets []config.Fleet) string {
 	type claim struct {
 		Key    string

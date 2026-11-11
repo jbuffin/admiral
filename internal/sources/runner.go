@@ -263,8 +263,6 @@ func (r *runner) session() (ranFor time.Duration, restarted bool, err error) {
 	}
 }
 
-// open starts the source's connection: the GitHub source in Admiral, or a
-// plugin's process, with the environment of the source's fleet.
 func (r *runner) open(sid int, def config.Source, onNote func(string, json.RawMessage)) (conn, error) {
 	if def.Plugin == builtinGitHub {
 		return openGitHub(openArgs{key: r.key, def: def, cfg: r.cfg, onNote: onNote, logf: r.logf,
@@ -281,9 +279,7 @@ func (r *runner) open(sid int, def config.Source, onNote func(string, json.RawMe
 	return startProc(r.key, m, dir, env, onNote)
 }
 
-// setWarnings shows warnings on the source and tells the watchers if they
-// changed. A stopped process's late cycle (sid is not current) is ignored, as
-// its notifications are.
+// A stopped session's late cycle must not overwrite the current one's warnings.
 func (r *runner) setWarnings(sid int, w []string) {
 	r.mu.Lock()
 	if sid != r.sid {
@@ -531,7 +527,6 @@ func (r *runner) deliverLaunched(p conn, id string) {
 	}
 }
 
-// refreshNow asks a running built-in GitHub source to search again.
 func (r *runner) refreshNow() {
 	r.mu.Lock()
 	builtin := r.def.Plugin == builtinGitHub
