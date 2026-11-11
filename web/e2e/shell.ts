@@ -366,6 +366,34 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   // Later steps start from Just launch, as before.
   rmSync(commodoreDir, { recursive: true, force: true });
 
+  // Launch as a member: Just launch offers the fleet's members, and a member locked to codex runs there with its instructions and notes.
+  const zuluCrew = join(a.home, 'fleets', 'zulu', 'crew');
+  mkdirSync(join(zuluCrew, 'memory', 'ada'), { recursive: true });
+  writeFileSync(join(zuluCrew, 'ada.md'), '---\nname: ada\nrole: implementer\nharness: codex\npick-me-when: Pick ada.\n---\n\nWork as ada.\n');
+  writeFileSync(join(zuluCrew, 'memory', 'ada', 'fleet.md'), '- 2026-01-02 (run-1): ada knows the fleet\n');
+  await press(main.getByRole('button', { name: 'Launch', exact: true }));
+  await expect(form).toBeVisible();
+  await form.getByLabel('Checkout').selectOption(proj);
+  await form.getByLabel('Skill').selectOption({ label: 'Just launch' });
+  const launchAs = form.getByLabel('Launch as');
+  await expect(launchAs).toHaveValue('');
+  await launchAs.selectOption({ value: 'ada' });
+  await expect(form).toContainText('runs on codex');
+  await form.getByLabel('Text').fill('as ada');
+  const asMember = await send();
+  expect(asMember.body).toMatchObject({ skill: { kind: 'none' }, member: 'ada', harness: 'codex' });
+  expect(asMember.body).not.toHaveProperty('crew');
+  const memberShip = await launched(asMember);
+  await expect(form).toBeHidden();
+  const memberRec = join(a.home, 'rec', memberShip.session);
+  await expect.poll(() => existsSync(join(memberRec, 'recorded'))).toBe(true);
+  const memberArgv = readFileSync(join(memberRec, 'argv'), 'utf8');
+  expect(memberArgv).toContain('Work as ada.');
+  expect(memberArgv).toContain('ada knows the fleet');
+  expect(memberArgv).toContain('as ada');
+  setState(a, memberShip, 'working');
+  rmSync(zuluCrew, { recursive: true, force: true });
+
   // An uncloned repo: the form says where it will clone before launch, and launching sends clone with no dir.
   const dirsAnswer = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/v1/launch-orders/dirs');
   await press(orderLaunch('Ship the widget fix'));

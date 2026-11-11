@@ -9,6 +9,7 @@ import {
   defaultSkill,
   effortsFor,
   launchBody,
+  memberRun,
   type SkillChoice,
   type SkillsAnswer,
   togglePin,
@@ -44,6 +45,9 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
   const [crewAnswer, setCrewAnswer] = useState<CrewAnswer | null>(null);
   const [crewFailed, setCrewFailed] = useState(false);
   const [pinned, setPinned] = useState<string[]>([]);
+  const [membersAnswer, setMembersAnswer] = useState<CrewAnswer | null>(null);
+  const [membersFailed, setMembersFailed] = useState(false);
+  const [member, setMember] = useState('');
   const [held, setHeld] = useState<string[]>([]);
   const [autopilot, setAutopilot] = useState(false);
   const [error, setError] = useState('');
@@ -119,6 +123,22 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
     };
   }, [pinning, harness, crewDir]);
 
+  // Launch as lists the members of a Just launch, with its own fetch.
+  const launchingAs = skill === 'none';
+  useEffect(() => {
+    if (!launchingAs) return;
+    let live = true;
+    const q = new URLSearchParams({ fleet: fleet.key, harness, ...(crewDir && { dir: crewDir }) });
+    void call<CrewAnswer>('GET', `/launch-orders/crew?${q}`).then((r) => {
+      if (!live) return;
+      setMembersFailed(!r.ok);
+      setMembersAnswer(r.ok ? r.data : null);
+    });
+    return () => {
+      live = false;
+    };
+  }, [launchingAs, harness, crewDir]);
+
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
     box.current?.focus();
@@ -131,6 +151,8 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
   const cloning = dir === CLONE && !!clone;
   const crewOffered = crewOptions(crewAnswer?.members ?? [], harness);
   const crew = pinned.filter((n) => crewOffered.some((o) => o.name === n));
+  const memberViews = membersAnswer?.members ?? [];
+  const as = launchingAs ? memberRun(memberViews, harness, member) : null;
   const favorites = (skills?.skills ?? []).filter((s) => s.favorite);
 
   const chosen = (): SkillChoice | string => {
@@ -172,6 +194,8 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
       source: order?.source,
       orderId: order?.id,
       crew,
+      member: as ? member : undefined,
+      memberHarness: as?.harness,
     }));
     setBusy(false);
     if (!r.ok) return setError(r.error);
@@ -258,6 +282,22 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
             </label>
           ) : null}
 
+          {launchingAs && membersFailed ? <p class="note warn">Couldn't load crew members</p> : null}
+          {launchingAs && memberViews.length > 0 ? (
+            <label class="field">
+              <span>Launch as</span>
+              <select value={as ? member : ''} onChange={(e) => setMember((e.target as HTMLSelectElement).value)}>
+                <option value="">None</option>
+                {memberViews.map((m) => (
+                  <option key={m.name} value={m.name}>
+                    {`${m.name} (${m.role}, ${m.layer})`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {as?.hint ? <p class="note">{as.hint}</p> : null}
+
           {pinning && crewFailed ? <p class="note warn">Couldn't load crew members</p> : null}
           {pinning && crewAnswer && crewAnswer.errors.length > 0 ? (
             <p class="note warn">{`Crew members can't be pinned: ${crewAnswer.errors.map((e) => `${e.layer}${e.file ? `/${e.file}` : ''}: ${e.message}`).join('; ')}`}</p>
@@ -275,6 +315,9 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
             </fieldset>
           ) : null}
 
+          {as && as.harness !== harness ? (
+            <p class="note">{`Model and effort are the ${as.harness} default; the member sets its own model.`}</p>
+          ) : (
           <div class="pair">
             <label class="field">
               <span>Model</span>
@@ -313,6 +356,7 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
               </label>
             ) : null}
           </div>
+          )}
 
           {resources.value.length > 0 ? (
             <fieldset class="checks">

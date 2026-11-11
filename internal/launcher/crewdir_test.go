@@ -20,11 +20,12 @@ type crewDirRig struct {
 	rec  string
 }
 
-// writeRecorder makes a harness that writes its environment to $REC_FILE, then stays up.
+// writeRecorder makes a harness that writes its arguments to $REC_FILE.argv (NUL after each) and its
+// environment to $REC_FILE, then stays up.
 func writeRecorder(t *testing.T) string {
 	t.Helper()
 	exe := filepath.Join(t.TempDir(), "recorder")
-	script := "#!/bin/sh\nenv > \"$REC_FILE.tmp\" && mv \"$REC_FILE.tmp\" \"$REC_FILE\"\nexec sleep 300\n"
+	script := "#!/bin/sh\nprintf '%s\\0' \"$@\" > \"$REC_FILE.argv\"\nenv > \"$REC_FILE.tmp\" && mv \"$REC_FILE.tmp\" \"$REC_FILE\"\nexec sleep 300\n"
 	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}

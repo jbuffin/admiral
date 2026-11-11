@@ -62,15 +62,7 @@ func resolvePins(req Request, dock config.Harness, home, fleetKey string) ([]pin
 	in := CrewLayers(home, fleetKey, req.Harness, dock.Environ(), req.Dir)
 	res := crew.Resolve(in)
 	if res.Exit != 0 {
-		var msgs []string
-		for _, d := range res.Errors {
-			where := d.Layer
-			if d.File != nil {
-				where += "/" + *d.File
-			}
-			msgs = append(msgs, where+": "+d.Message)
-		}
-		return nil, refuse(http.StatusBadRequest, "crew members can't be resolved: %s", strings.Join(msgs, "; "))
+		return nil, resolveRefusal(res)
 	}
 	byName := map[string]crew.Member{}
 	for _, m := range res.Members {

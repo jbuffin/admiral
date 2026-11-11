@@ -379,6 +379,64 @@ func TestCrew_LaunchSendListCloseAndRestart(t *testing.T) {
 			t.Errorf("panes after closing the crew = %+v, want only the ship's window 0", ps)
 		}
 	})
+
+	t.Run("launch as a member runs its harness with its instructions and notes", func(t *testing.T) {
+		w := w.sub(t)
+		fleetCrew := filepath.Join(w.home, "fleets", "work", "crew")
+		notes := filepath.Join(fleetCrew, "memory", "ada")
+		if err := os.MkdirAll(notes, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		file := "---\nname: ada\nrole: implementer\nharness: codex\npick-me-when: Pick for the e2e.\n---\n\nWork as ada.\n"
+		if err := os.WriteFile(filepath.Join(fleetCrew, "ada.md"), []byte(file), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(notes, "fleet.md"), []byte("- 2026-01-02 (run-1): ada knows the fleet\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		r := crewCall(w, sess, "", "launch", "--member", "ada", "--dir", other, "--", "do the job")
+		w.expectExit(r, 0, "crew launch --member ada, with no --name, --role or --harness")
+		boat := w.record(sess + "/crew/ada")
+		if boat.harness != "codex" {
+			t.Errorf("ada ran as %q, want codex, the member's lock", boat.harness)
+		}
+		if len(boat.argv) == 0 {
+			t.Fatalf("ada argv is empty")
+		}
+		prompt := boat.argv[len(boat.argv)-1]
+		for _, want := range []string{"Work as ada.", "## Crew notes", "- 2026-01-02 (run-1): ada knows the fleet", "do the job"} {
+			if !strings.Contains(prompt, want) {
+				t.Errorf("ada's prompt lacks %q:\n%s", want, prompt)
+			}
+		}
+		if i, j := strings.Index(prompt, "Work as ada."), strings.Index(prompt, "do the job"); i < 0 || j < i {
+			t.Errorf("ada's prompt = %q, want the instructions before the caller's prompt", prompt)
+		}
+		row := crewList(w, sess)["ada"]
+		if row.raw["role"] != "implementer" {
+			t.Errorf("ada's row = %v, want the member's name and its role implementer", row.raw)
+		}
+
+		r = crewCall(w, sess, "", "launch", "--member", "ada", "--name", "ada2", "--harness", "claude", "--dir", other, "--", "again")
+		w.expectExit(r, 1, "crew launch --member with a harness other than the lock")
+		if !strings.Contains(r.stderr, "codex") {
+			t.Errorf("stderr = %q, want it to name the lock codex", r.stderr)
+		}
+		if _, ok := crewList(w, sess)["ada2"]; ok {
+			t.Errorf("ada2 was launched despite the refusal")
+		}
+
+		auto := w.admiralWith(cliOpts{env: []string{"ADMIRAL_SHIP=" + sess, "ADMIRAL_AUTOPILOT=1"}}, "crew", "launch", "--member", "ada", "--name", "ada3", "--dir", other, "--", "unattended")
+		w.expectExit(auto, 1, "an autopilot ship launching a member locked to a harness whose guard is unproven")
+		if !strings.Contains(auto.stderr, "guard") {
+			t.Errorf("autopilot refusal stderr = %q, want it to name the guard gate", auto.stderr)
+		}
+		if _, ok := crewList(w, sess)["ada3"]; ok {
+			t.Errorf("ada3 was launched without a proven guard")
+		}
+		w.expectExit(crewCall(w, sess, "", "close", "ada"), 0, "close ada")
+	})
 }
 
 func rowsView(rows map[string]crewRow) map[string][6]string {

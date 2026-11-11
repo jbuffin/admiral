@@ -138,11 +138,12 @@ func crewLaunch(args []string, std IO) error {
 		}
 	}
 	fs := newFlags("crew launch")
-	name := fs.String("name", "", "the crew boat's name")
+	name := fs.String("name", "", "the crew boat's name (default: the member's)")
 	dir := fs.String("dir", "", "the directory it works in")
 	harness := fs.String("harness", "", "the harness (default: the ship's)")
 	ship := fs.String("ship", "", "the ship (default: the one this runs in)")
-	role := fs.String("role", "", "the crew boat's role, lowercase letters, digits and -")
+	role := fs.String("role", "", "the crew boat's role, lowercase letters, digits and - (default: the member's)")
+	member := fs.String("member", "", "launch as this crew member: its harness, model, instructions and notes")
 	var extra list
 	fs.Var(&extra, "arg", "an argument for the harness, repeatable")
 	if err := parseFlags(fs, args); err != nil {
@@ -151,6 +152,9 @@ func crewLaunch(args []string, std IO) error {
 	if *role != "" && !sessionhost.CrewName.MatchString(*role) {
 		return usagef("crew launch: --role %q must be lowercase letters, digits and -", *role)
 	}
+	if *name == "" {
+		*name = *member
+	}
 	if fs.NArg() > 0 || *name == "" || *dir == "" || !hasPrompt || len(prompt) == 0 {
 		return usagef("%s", Usage("crew"))
 	}
@@ -158,7 +162,8 @@ func crewLaunch(args []string, std IO) error {
 	if err != nil {
 		return err
 	}
-	err = c.l.LaunchCrew(launcher.CrewRequest{Session: c.session, Name: *name, Harness: *harness, Dir: *dir, Prompt: strings.Join(prompt, " "), Args: extra, Role: *role, Autopilot: os.Getenv("ADMIRAL_AUTOPILOT") == "1"})
+	c.l.Warn = func(msg string) { fmt.Fprintln(std.Err, "warning: "+msg) }
+	err = c.l.LaunchCrew(launcher.CrewRequest{Session: c.session, Name: *name, Harness: *harness, Dir: *dir, Prompt: strings.Join(prompt, " "), Args: extra, Role: *role, Member: *member, Autopilot: os.Getenv("ADMIRAL_AUTOPILOT") == "1"})
 	if errors.Is(err, launcher.ErrCrewNameTaken) {
 		return &ExitError{Code: crewExitTaken, Msg: err.Error()}
 	}
