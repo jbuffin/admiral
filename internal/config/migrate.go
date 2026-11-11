@@ -18,7 +18,6 @@ const maxOrdersFile = 4 << 20
 
 type Moved struct {
 	Key, Name, Fleet, FleetName string
-	GitHub                      bool // the GitHub source takes the default fleet
 }
 
 type Dropped struct {
@@ -33,6 +32,8 @@ type Migration struct {
 	Moved         []Moved
 	Removed       []Dropped
 	ClearedResume string // the resume source it cleared; empty when none
+	GitHub        bool   // an old GitHub plugin source became built in, on every fleet
+	GitHubCustom  bool   // and it had custom views, which the default views now sit beside
 }
 
 type migrationPlan struct {
@@ -40,6 +41,8 @@ type migrationPlan struct {
 	moved   []Moved
 	removed []Dropped
 	cleared string
+	github  bool
+	custom  bool
 }
 
 func NeedsMigration(data []byte) bool {
@@ -91,10 +94,11 @@ func planMigration(data []byte) *migrationPlan {
 		default:
 			src.SetValue("fleet", defKey)
 			sources.Set(key, src.JSON())
-			p.moved = append(p.moved, Moved{Key: key, Name: nameOf(raw, key), Fleet: defKey, FleetName: defName, GitHub: plugin == "github"})
+			p.moved = append(p.moved, Moved{Key: key, Name: nameOf(raw, key), Fleet: defKey, FleetName: defName})
 		}
 	}
-	if len(p.moved) == 0 && len(p.removed) == 0 {
+	p.github, p.custom = migrateGitHub(top, sources)
+	if len(p.moved) == 0 && len(p.removed) == 0 && !p.github {
 		return nil
 	}
 	top.Set("sources", sources.JSON())
@@ -127,6 +131,105 @@ func planMigration(data []byte) *migrationPlan {
 	}
 	p.out = out
 	return p
+}
+
+// githubCarried are the settings a fleet's new GitHub source copies from the
+// old plugin source.
+var githubCarried = []string{"views", "host", "account", "hotLabels", "refreshMinutes"}
+
+// migrateGitHub turns the old Python plugin's GitHub sources, those with no
+// `views` setting, into built-in ones (#260): `panels` becomes `views`, and
+// every fleet left without a GitHub source gets one copied from the first old
+// source in the file. Autopilot stays on the source that had it. It reports
+// whether it changed anything and whether the old source had custom views.
+// Once every GitHub source has `views` it finds nothing, so a source the
+// engineer deletes later stays deleted.
+func migrateGitHub(top, sources *Object) (changed, custom bool) {
+	var template *Object
+	covered := map[string]bool{}
+	for _, key := range sources.Keys() {
+		raw, _ := sources.Get(key)
+		src, err := ParseObject(raw)
+		if err != nil || stringOf(src, "plugin") != "github" {
+			continue
+		}
+		covered[stringOf(src, "fleet")] = true
+		settings := NewObject()
+		if rs, ok := src.Get("settings"); ok {
+			if settings, err = ParseObject(rs); err != nil {
+				continue
+			}
+		}
+		if _, ok := settings.Get("views"); ok {
+			continue
+		}
+		views := json.RawMessage("[]")
+		if rp, ok := settings.Get("panels"); ok {
+			var list []json.RawMessage
+			if json.Unmarshal(rp, &list) == nil {
+				views = rp
+				custom = custom || len(list) > 0
+			}
+			settings.Delete("panels")
+		}
+		settings.Set("views", views)
+		src.Set("settings", settings.JSON())
+		sources.Set(key, src.JSON())
+		changed = true
+		if template == nil {
+			template = src
+		}
+	}
+	if template == nil {
+		return false, false
+	}
+	rawFleets, ok := top.Get("fleets")
+	if !ok {
+		return changed, custom
+	}
+	fleets, err := ParseObject(rawFleets)
+	if err != nil {
+		return changed, custom
+	}
+	settings, _ := ParseObject(mustRaw(template, "settings"))
+	for _, fleet := range fleets.Keys() {
+		if covered[fleet] {
+			continue
+		}
+		key := "github-" + fleet
+		for n := 2; ; n++ {
+			if _, taken := sources.Get(key); !taken {
+				break
+			}
+			key = fmt.Sprintf("github-%s-%d", fleet, n)
+		}
+		carried := NewObject()
+		for _, k := range githubCarried {
+			if v, ok := settings.Get(k); ok {
+				carried.Set(k, v)
+			}
+		}
+		src := NewObject()
+		src.SetValue("plugin", "github")
+		if raw, ok := template.Get("name"); ok {
+			src.Set("name", raw)
+		}
+		src.SetValue("fleet", fleet)
+		src.Set("settings", carried.JSON())
+		if raw, ok := template.Get("panel_order"); ok {
+			src.Set("panel_order", raw)
+		}
+		sources.Set(key, src.JSON())
+	}
+	return changed, custom
+}
+
+// mustRaw is the raw value of key in o, or an empty object.
+func mustRaw(o *Object, key string) json.RawMessage {
+	if raw, ok := o.Get(key); ok {
+		return raw
+	}
+	return json.RawMessage("{}")
 }
 
 func stringOf(o *Object, key string) string {
@@ -177,7 +280,7 @@ func Migrate(dir, version string) (*Migration, error) {
 	if err := replaceFile(path, p.out); err != nil {
 		return nil, err
 	}
-	return &Migration{Backup: backup, Moved: p.moved, Removed: p.removed, ClearedResume: p.cleared}, nil
+	return &Migration{Backup: backup, Moved: p.moved, Removed: p.removed, ClearedResume: p.cleared, GitHub: p.github, GitHubCustom: p.custom}, nil
 }
 
 func writeNew(path string, data []byte) error {
@@ -244,12 +347,13 @@ func pendingOrders(dir, key string) (texts []string, unreadable bool) {
 func (m *Migration) Notice() (title, body string) {
 	var b strings.Builder
 	title = "Admiral updated your config"
-	fmt.Fprintf(&b, "Admiral moved your sources into fleets. The old file is saved as %s beside config.json.\n", m.Backup)
+	if len(m.Moved) == 0 && len(m.Removed) == 0 {
+		fmt.Fprintf(&b, "Admiral updated your GitHub source. The old file is saved as %s beside config.json.\n", m.Backup)
+	} else {
+		fmt.Fprintf(&b, "Admiral moved your sources into fleets. The old file is saved as %s beside config.json.\n", m.Backup)
+	}
 	for _, s := range m.Moved {
 		fmt.Fprintf(&b, "\n- Source %s (%s) now belongs to fleet %s (%s).", s.Name, s.Key, s.FleetName, s.Fleet)
-		if s.GitHub {
-			b.WriteString(" The GitHub source went to the default fleet for now.")
-		}
 	}
 	for _, s := range m.Removed {
 		if !s.Freeform {
@@ -268,6 +372,12 @@ func (m *Migration) Notice() (title, body string) {
 				fmt.Fprintf(&b, "\n  * %s", strings.ReplaceAll(o, "\n", "\n    "))
 			}
 			b.WriteString("\n  An order may already have a ship if its launch was never acknowledged.")
+		}
+	}
+	if m.GitHub {
+		b.WriteString("\n- GitHub is now built in and runs on every fleet.")
+		if m.GitHubCustom {
+			b.WriteString(" Your custom views were copied to each one. The three default views (Assigned to me, Review requested, My PRs) now show beside them.")
 		}
 	}
 	if m.ClearedResume != "" {
