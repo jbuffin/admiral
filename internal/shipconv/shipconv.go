@@ -64,7 +64,9 @@ type Service struct {
 	liveDir     string
 	liveTimeout time.Duration
 	liveBackoff func(failures int) time.Duration
-	observers   map[string]*observer
+	// liveReadEvery is how often a running Codex ship's pane options are read again when its panes have not changed.
+	liveReadEvery time.Duration
+	observers     map[string]*observer
 
 	mu      sync.Mutex
 	seen    map[string]string // session -> option value a file was seen for: tells gone from none
@@ -646,6 +648,7 @@ func (s *Service) poll(w *watch) {
 		s.endWatch(w)
 		return
 	}
+	fell := false // the observer was serving and is not now
 	if w.crew == "" {
 		s.mu.Lock()
 		up, was := s.liveObserver(w.session) != nil, w.wasLive
@@ -657,6 +660,7 @@ func (s *Service) poll(w *watch) {
 			return // the observer pushes; one source per view between resets
 		}
 		if was {
+			fell = true
 			w.reset, w.path = true, ""
 			w.reader = conversation.NewReader(conversation.Options{Harness: w.loc.harness})
 		}
@@ -664,6 +668,10 @@ func (s *Service) poll(w *watch) {
 	items, reset := w.fileItems()
 	if w.server != nil {
 		items = mergeLive(w.server.Changed(), items)
+	}
+	if fell && !reset && len(items) == 0 {
+		// Nothing to fall back to: the view must not keep the dead server's items, a pending question among them.
+		reset, items, w.reset = true, []conversation.Item{}, false
 	}
 	if len(items) == 0 && !reset {
 		return
@@ -674,6 +682,9 @@ func (s *Service) poll(w *watch) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if w.crew == "" && s.liveObserver(w.session) != nil {
+		return // the observer came back while the file was read: its reset is the view's, and this one would land after it
+	}
 	for c := range w.subs {
 		s.enqueueLocked(c, msg)
 	}

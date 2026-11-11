@@ -2,7 +2,10 @@ package shipconv
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/codexlive"
@@ -18,8 +21,17 @@ const reconcileEvery = 500 * time.Millisecond
 type observer struct {
 	session, launched string
 	sock, startCmd    string
+	rollout           string // the recorded rollout this observer picked its thread by; a new one means the TUI moved on
+	prefer            string // the thread the server last told of, kept across reconnects; only observe reads it
 	cancel            context.CancelFunc
 	live              *conversation.Live // set while connected; guarded by Service.mu
+}
+
+// liveRead is what the panes said about a ship at, so the tmux reads are not repeated every tick.
+type liveRead struct {
+	sock, startCmd, rollout string
+	at                      time.Time
+	panes                   string
 }
 
 func (s *Service) runningCodex() []ships.Ship {
@@ -68,8 +80,9 @@ func (s *Service) StartLive(ctx context.Context) {
 	go func() {
 		t := time.NewTicker(reconcileEvery)
 		defer t.Stop()
+		reads := map[string]liveRead{}
 		for {
-			s.reconcile(ctx)
+			s.reconcile(ctx, reads)
 			select {
 			case <-ctx.Done():
 				s.mu.Lock()
@@ -85,10 +98,40 @@ func (s *Service) StartLive(ctx context.Context) {
 	}()
 }
 
-func (s *Service) reconcile(ctx context.Context) {
+// paneSig changes when a running Codex ship gains, loses or replaces a pane, which is when its options are read again.
+func (s *Service) paneSig(want map[string]ships.Ship) string {
+	var parts []string
+	for k, sh := range want {
+		parts = append(parts, k+"|"+sh.Launched)
+	}
+	if s.liveSocket == nil && s.Ships != nil && s.Ships.Host != nil {
+		for _, sess := range s.Ships.Host.Sessions() {
+			if _, ok := want[sess.Name]; ok {
+				parts = append(parts, sess.Name+"="+sess.PaneID)
+			}
+		}
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, ",")
+}
+
+func (s *Service) readEvery() time.Duration {
+	if s.liveReadEvery > 0 {
+		return s.liveReadEvery
+	}
+	return 5 * time.Second
+}
+
+func (s *Service) reconcile(ctx context.Context, reads map[string]liveRead) {
 	want := map[string]ships.Ship{}
 	for _, sh := range s.runningCodex() {
 		want[sh.Session] = sh
+	}
+	sig := s.paneSig(want)
+	for k := range reads {
+		if _, ok := want[k]; !ok {
+			delete(reads, k)
+		}
 	}
 	s.mu.Lock()
 	if s.observers == nil {
@@ -106,9 +149,17 @@ func (s *Service) reconcile(ctx context.Context) {
 	}
 	s.mu.Unlock()
 	for k, sh := range want {
-		sock, cmd := s.socketOf(sh)
+		r, known := reads[k]
+		if !known || r.panes != sig || time.Since(r.at) >= s.readEvery() {
+			r = liveRead{panes: sig, at: time.Now()}
+			r.sock, r.startCmd = s.socketOf(sh)
+			if loc, ok, none := s.locateBoat(sh.Session, ""); ok && !none {
+				r.rollout = loc.path
+			}
+			reads[k] = r
+		}
 		if o := have[k]; o != nil {
-			if o.sock == sock && o.startCmd == cmd {
+			if o.sock == r.sock && o.startCmd == r.startCmd && o.rollout == r.rollout {
 				continue
 			}
 			s.mu.Lock()
@@ -116,11 +167,11 @@ func (s *Service) reconcile(ctx context.Context) {
 			delete(s.observers, k)
 			s.mu.Unlock()
 		}
-		if sock == "" {
+		if r.sock == "" {
 			continue
 		}
 		octx, cancel := context.WithCancel(ctx)
-		o := &observer{session: sh.Session, launched: sh.Launched, sock: sock, startCmd: cmd, cancel: cancel}
+		o := &observer{session: sh.Session, launched: sh.Launched, sock: r.sock, startCmd: r.startCmd, rollout: r.rollout, cancel: cancel}
 		s.mu.Lock()
 		s.observers[k] = o
 		s.mu.Unlock()
@@ -150,17 +201,21 @@ func (s *Service) backoff(failures int) time.Duration {
 	return min(d, 30*time.Second)
 }
 
-// observe connects, serves the connection until it drops, and tries again with a growing pause.
+// observeLive connects, serves the connection until it drops, and tries again with a growing pause. A thread the server
+// told of is attached to at once.
 func (s *Service) observeLive(ctx context.Context, o *observer) {
 	for failures := 0; ctx.Err() == nil; failures++ {
-		rollout := ""
-		if loc, ok, none := s.locateBoat(o.session, ""); ok && !none {
-			rollout = loc.path
-		}
-		conn, err := codexlive.Connect(ctx, codexlive.Config{Socket: o.sock, StartCmd: o.startCmd, DaemonDir: s.dir(), Rollout: rollout, Timeout: s.timeout()})
+		conn, err := codexlive.Connect(ctx, codexlive.Config{Socket: o.sock, StartCmd: o.startCmd, DaemonDir: s.dir(), Rollout: o.rollout, Prefer: o.prefer, Timeout: s.timeout()})
 		if err == nil {
 			failures = 0
-			s.serveObserved(ctx, o, conn)
+			if s.serveObserved(ctx, o, conn) {
+				failures = -1 // the loop adds one: no pause
+				continue
+			}
+		} else {
+			s.mu.Lock()
+			o.live = nil // a switch kept the old thread's items only until the new one answered
+			s.mu.Unlock()
 		}
 		select {
 		case <-ctx.Done():
@@ -169,19 +224,46 @@ func (s *Service) observeLive(ctx context.Context, o *observer) {
 	}
 }
 
-func (s *Service) serveObserved(ctx context.Context, o *observer, conn *codexlive.Conn) {
+// moved is the thread a thread/started frame says the TUI has started, resumed or forked, when it is not the one attached to.
+func moved(frame []byte, current string) string {
+	var f struct {
+		Method string `json:"method"`
+		Params struct {
+			Thread struct {
+				ID        string          `json:"id"`
+				Ephemeral bool            `json:"ephemeral"`
+				Source    json.RawMessage `json:"source"`
+			} `json:"thread"`
+		} `json:"params"`
+	}
+	if json.Unmarshal(frame, &f) != nil || f.Method != "thread/started" {
+		return ""
+	}
+	t := f.Params.Thread
+	// A sub-agent's thread runs beside the TUI's, which stays where it was.
+	if t.ID == "" || t.ID == current || t.Ephemeral || strings.Contains(string(t.Source), "subAgent") {
+		return ""
+	}
+	return t.ID
+}
+
+// serveObserved serves one connection; it reports whether it ended to follow the TUI to another thread.
+func (s *Service) serveObserved(ctx context.Context, o *observer, conn *codexlive.Conn) (switched bool) {
 	defer conn.Close()
 	live := conversation.NewLive(conversation.Options{}, conn.Thread)
 	live.Apply(conn.Resume)
 	s.mu.Lock()
 	o.live = live
-	// A view that was on the rollout starts over from the server's history.
+	// A view that was on the rollout, or on another thread, starts over from the server's history.
 	s.sendLocked(o.session, map[string]any{"items": live.Items(), "reset": true})
 	if w := s.watches[o.session]; w != nil {
 		w.wasLive = true
 	}
 	s.mu.Unlock()
 	defer func() {
+		if switched {
+			return // the next connection replaces it without a gap the rollout could fill
+		}
 		s.mu.Lock()
 		o.live = nil
 		s.mu.Unlock()
@@ -189,7 +271,11 @@ func (s *Service) serveObserved(ctx context.Context, o *observer, conn *codexliv
 	for {
 		frame, err := conn.Next(ctx)
 		if err != nil {
-			return
+			return false
+		}
+		if id := moved(frame, conn.Thread); id != "" {
+			o.prefer = id
+			return true
 		}
 		s.mu.Lock()
 		if items := live.Apply(frame); len(items) > 0 {

@@ -41,6 +41,8 @@ type Config struct {
 	DaemonDir string
 	// Rollout is the ship's recorded rollout, if any; its file name carries the thread id.
 	Rollout string
+	// Prefer is a thread the server has told of that the TUI has moved to; it wins over the rollout's when it is loaded.
+	Prefer string
 	// Timeout bounds the connect and the handshake together.
 	Timeout time.Duration
 }
@@ -107,7 +109,7 @@ func (c *Conn) handshake(ctx context.Context, cfg Config) error {
 	if err != nil {
 		return err
 	}
-	thread, err := c.choose(ctx, loaded, cfg.Rollout)
+	thread, err := c.choose(ctx, loaded, cfg.Rollout, cfg.Prefer)
 	if err != nil {
 		return err
 	}
@@ -155,9 +157,9 @@ func (c *Conn) loaded(ctx context.Context) ([]string, error) {
 
 var rolloutThread = regexp.MustCompile(`([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$`)
 
-// choose picks the thread the TUI shows: the rollout's, when it is loaded; the only one loaded; else the most
+// choose picks the thread the TUI shows: the one the server last told of, the rollout's, when it is loaded; the only one loaded; else the most
 // recently updated of those loaded. Never one the server has not loaded, which resuming would start.
-func (c *Conn) choose(ctx context.Context, loaded []string, rollout string) (string, error) {
+func (c *Conn) choose(ctx context.Context, loaded []string, rollout, prefer string) (string, error) {
 	has := func(id string) bool {
 		for _, l := range loaded {
 			if l == id {
@@ -165,6 +167,9 @@ func (c *Conn) choose(ctx context.Context, loaded []string, rollout string) (str
 			}
 		}
 		return false
+	}
+	if prefer != "" && has(prefer) {
+		return prefer, nil
 	}
 	if m := rolloutThread.FindStringSubmatch(filepath.Base(rollout)); m != nil && has(m[1]) {
 		return m[1], nil
