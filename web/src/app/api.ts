@@ -53,7 +53,7 @@ export const logoUrl = (harness: string) => `${API}/logos/${encodeURIComponent(h
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string; status?: number };
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<Result<T>> {
+export async function call<T>(method: string, path: string, body?: unknown): Promise<Result<T>> {
   try {
     const res = await fetch(API + path, {
       method,
@@ -210,22 +210,4 @@ export interface DirsAnswer {
   entries: DirEntry[];
   selected: string | null;
   clone: { repo: string; path: string; exists?: boolean } | null;
-}
-
-export type Answer<T> = { ok: true; data: T } | { ok: false; error: string };
-
-/** A refusal's message is the server's own, shown as it came. */
-export async function call<T>(method: string, path: string, body?: unknown): Promise<Answer<T>> {
-  try {
-    const res = await fetch(`${API}${path}`, {
-      method,
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    const data = await res.json().catch(() => null);
-    if (res.ok) return { ok: true, data: data as T };
-    return { ok: false, error: data?.error ?? `The server answered ${res.status}` };
-  } catch {
-    return { ok: false, error: 'Could not reach Admiral' };
-  }
 }
