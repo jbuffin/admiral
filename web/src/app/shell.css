@@ -476,3 +476,16 @@ button.pill { cursor: pointer; min-height: 32px; }
 .device .btn, .pairing-box .btn, .confirm .btn, .prefs-page > .btn { min-height: var(--shape-min-touch-target); }
 .prefs-page > .confirm { margin-top: 14px; }
 .prefs-page > .btn { margin-top: 4px; }
+
+/* Inbox */
+.inbox-row { position: relative; }
+.inbox-link { width: 100%; text-align: left; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; }
+.inbox-who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-verb { color: var(--color-text2); }
+.inbox-title { color: var(--color-text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-fleet { display: inline-flex; align-items: center; gap: 6px; font-size: var(--font-size-meta); color: var(--color-muted); }
+.inbox-age { flex: none; align-self: flex-start; padding-top: 4px; font-size: var(--font-size-meta); color: var(--color-muted); }
+.inbox-body { margin: 0 0 8px 15px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-text2); }
+.inbox-folded { display: flex; align-items: center; gap: 8px; min-height: var(--shape-min-touch-target); color: var(--color-muted); animation: inbox-fold 0.25s ease-out; }
+.inbox-confirm { flex: 1; }
+@keyframes inbox-fold { from { opacity: 1; } to { opacity: 0.7; } }

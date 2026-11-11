@@ -51,8 +51,8 @@ describe('rowVerb', () => {
   });
 
   it('words a stop by its reason', () => {
-    expect(rowVerb(stopEntry('permission:Bash'))).toBe('Wants to run Bash');
-    expect(rowVerb(stopEntry('stop'))).toBe('Finished and is waiting');
+    expect(rowVerb(stopEntry('permission:Bash'))).toBe('wants to run Bash');
+    expect(rowVerb(stopEntry('stop'))).toBe('finished and is waiting');
   });
 });
 
@@ -82,12 +82,12 @@ describe('fleetLabel', () => {
     const e = itemEntry({}, { fleet: { key: 'a', name: 'Stale', color: '#feed00' } });
     expect(fleetLabel(e, fleets)).toEqual({ name: 'Stale', fill: 'var(--fleet-2)' });
     const b = itemEntry({}, { fleet: { key: 'b', name: 'Bravo', color: '#feed00' } });
-    expect(fleetLabel(b, fleets).fill).toBe('#123456');
+    expect(fleetLabel(b, fleets)!.fill).toBe('#123456');
   });
 
   it('takes the name from the fleets signal when the entry has none', () => {
     const e = itemEntry({}, { fleet: { key: 'a', name: '', color: '#feed00' } });
-    expect(fleetLabel(e, fleets).name).toBe('Alpha');
+    expect(fleetLabel(e, fleets)!.name).toBe('Alpha');
   });
 
   it('falls back to the key and the entry\'s own color for a fleet no longer configured', () => {
