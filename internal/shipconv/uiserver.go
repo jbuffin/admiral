@@ -128,7 +128,8 @@ func (s *Service) observe(ctx context.Context, w *watch, port int) {
 	for ctx.Err() == nil {
 		if s.ownsPort(w.loc.ship, port) {
 			began := time.Now()
-			_ = conversation.ObserveUIServer(ctx, port, w.loc.id, w.server)
+			// The listener is checked again after connect, before the session id goes out.
+			_ = conversation.ObserveUIServerChecked(ctx, port, w.loc.id, w.server, func() bool { return s.ownsPort(w.loc.ship, port) })
 			if time.Since(began) > 10*time.Second {
 				wait = first
 			}
@@ -162,11 +163,15 @@ func (s *Service) ownsPort(sh ships.Ship, port int) bool {
 	return ok && listenerBelongsTo(port, pid)
 }
 
+const probeWait = 5 * time.Second
+
 // listenerBelongsTo is true when every process listening on the port is the pane's process or one of its
 // descendants. A foreign server on a taken port would answer session.resume for a session it does not own,
 // so the observer attaches only to its own. Unknown counts as no.
 func listenerBelongsTo(port, panePID int) bool {
-	out, err := exec.Command("lsof", "-nP", "-iTCP:"+strconv.Itoa(port), "-sTCP:LISTEN", "-t").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), probeWait)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "lsof", "-nP", "-iTCP:"+strconv.Itoa(port), "-sTCP:LISTEN", "-t").Output()
 	if err != nil {
 		return false
 	}
@@ -177,7 +182,7 @@ func listenerBelongsTo(port, panePID int) bool {
 		}
 	}
 	return descendsFrom(pids, panePID, func(pid int) (int, bool) {
-		out, err := exec.Command("ps", "-o", "ppid=", "-p", strconv.Itoa(pid)).Output()
+		out, err := exec.CommandContext(ctx, "ps", "-o", "ppid=", "-p", strconv.Itoa(pid)).Output()
 		n, perr := strconv.Atoi(strings.TrimSpace(string(out)))
 		return n, err == nil && perr == nil
 	})

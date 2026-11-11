@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/jbuffin/admiral/internal/conversation"
@@ -141,5 +142,58 @@ func TestServerStreamIgnoresWhatIsNotAnEvent(t *testing.T) {
 	r.Feed(b)
 	if items := r.Items(); len(items) != 1 || items[0].ID != "u1" || items[0].Text != "hi" {
 		t.Errorf("a user.message event gave %+v", items)
+	}
+}
+
+func deltaMsg(t *testing.T, ev map[string]any, data map[string]any) []byte {
+	t.Helper()
+	ev["type"], ev["data"] = "assistant.message_delta", data
+	ev["id"], ev["timestamp"] = "e1", "2026-11-11T21:00:00.000Z"
+	b, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "session.event", "params": map[string]any{"sessionId": "s", "event": ev}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func TestServerStreamSubagentTextMakesNoItem(t *testing.T) {
+	r := conversation.NewServerReader(conversation.Options{Harness: "copilot"})
+	r.Feed(deltaMsg(t, map[string]any{}, map[string]any{"messageId": "m1", "deltaContent": "inner", "parentToolCallId": "call-1"}))
+	r.Feed(deltaMsg(t, map[string]any{"agentId": "sub-1"}, map[string]any{"messageId": "m2", "deltaContent": "inner"}))
+	if n := len(r.Items()); n != 0 {
+		t.Errorf("a subagent's deltas gave %d items", n)
+	}
+	r.Feed(deltaMsg(t, map[string]any{}, map[string]any{"messageId": "m3", "deltaContent": "outer"}))
+	if items := r.Items(); len(items) != 1 || items[0].Text != "outer" {
+		t.Errorf("a top-level delta gave %+v", items)
+	}
+}
+
+func TestServerStreamStopsHoldingARunawayReply(t *testing.T) {
+	r := conversation.NewServerReader(conversation.Options{Harness: "copilot"})
+	chunk := strings.Repeat("x", 1<<16)
+	for range 16 {
+		r.Feed(deltaMsg(t, map[string]any{}, map[string]any{"messageId": "big", "deltaContent": chunk}))
+	}
+	before := r.Items()
+	r.Feed(deltaMsg(t, map[string]any{}, map[string]any{"messageId": "big", "deltaContent": "more"}))
+	after := r.Items()
+	if len(before) != 1 || len(after) != 1 || before[0].Text != after[0].Text {
+		t.Errorf("a reply over the cap kept changing: %d then %d items", len(before), len(after))
+	}
+}
+
+func TestServerStreamDropsTextAnInterruptedTurnLeft(t *testing.T) {
+	r := conversation.NewServerReader(conversation.Options{Harness: "copilot"})
+	r.Feed(deltaMsg(t, map[string]any{}, map[string]any{"messageId": "m1", "deltaContent": "half"}))
+	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "session.event", "params": map[string]any{"sessionId": "s",
+		"event": map[string]any{"type": "abort", "id": "a1", "timestamp": "2026-11-11T21:00:01.000Z", "data": map[string]any{"reason": "user"}}}})
+	r.Feed(b)
+	// A later delta under the same id starts a new text, not "half" plus more.
+	r.Feed(deltaMsg(t, map[string]any{}, map[string]any{"messageId": "m1", "deltaContent": "new"}))
+	for _, it := range r.Items() {
+		if it.ID == "m1" && it.Text != "new" {
+			t.Errorf("the reply after an abort reads %q, want the new text alone", it.Text)
+		}
 	}
 }

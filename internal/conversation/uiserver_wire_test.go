@@ -252,3 +252,45 @@ func TestObserverGivesUpWithAnErrorSoTheFileIsServed(t *testing.T) {
 		}
 	})
 }
+
+func TestObserverEndsAConnectionWhoseHeaderNeverEnds(t *testing.T) {
+	p := listen(t)
+	r := conversation.NewServerReader(conversation.Options{Harness: "copilot"})
+	done := make(chan error, 1)
+	go func() { done <- conversation.ObserveUIServer(context.Background(), p.port(), wireSession, r) }()
+	if !p.accept() {
+		t.Fatal("the observer never connected")
+	}
+	go func() { fmt.Fprintf(p.conn, "X-Pad: %s\r\n", strings.Repeat("a", 4096)) }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Error("an endless header line ended the observer with no error")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the observer kept reading an oversized header")
+	}
+}
+
+func TestObserverSendsNoSessionIdWhenTheListenerIsNotChecked(t *testing.T) {
+	p := listen(t)
+	r := conversation.NewServerReader(conversation.Options{Harness: "copilot"})
+	done := make(chan error, 1)
+	go func() {
+		done <- conversation.ObserveUIServerChecked(context.Background(), p.port(), wireSession, r, func() bool { return false })
+	}()
+	if !p.accept() {
+		t.Fatal("the observer never connected")
+	}
+	m := p.read(3 * time.Second)
+	if m == nil || m["method"] != "connect" {
+		t.Fatalf("observer sent %v, want connect", m)
+	}
+	fmt.Fprintf(p.conn, "Content-Length: %d\r\n\r\n%s", len(`{"jsonrpc":"2.0","id":1,"result":{}}`), `{"jsonrpc":"2.0","id":1,"result":{}}`)
+	if err := <-done; err == nil {
+		t.Error("the observer went on after the listener check failed")
+	}
+	if m := p.read(time.Second); m != nil {
+		t.Errorf("observer sent %v after a failed check, want nothing", m)
+	}
+}

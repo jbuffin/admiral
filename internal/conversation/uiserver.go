@@ -21,12 +21,17 @@ type ServerReader struct {
 	mu   sync.Mutex
 	h    *held
 	dec  *copilotDecoder
-	live map[string]string // messageId -> the reply's text so far
+	live map[string]*liveText // messageId -> the reply's text so far
+}
+
+type liveText struct {
+	b    strings.Builder
+	full bool // over the cap: the file has the whole reply, so no more is held
 }
 
 func NewServerReader(o Options) *ServerReader {
 	o.Harness = "copilot"
-	return &ServerReader{h: newHeld(o, true), dec: newCopilotDecoder(o.MaxOutput), live: map[string]string{}}
+	return &ServerReader{h: newHeld(o, true), dec: newCopilotDecoder(o.MaxOutput), live: map[string]*liveText{}}
 }
 
 // Feed takes one JSON-RPC message from the server. Anything that is not a session event is ignored.
@@ -41,6 +46,7 @@ func (r *ServerReader) feed(session string, msg []byte) {
 			Event     struct {
 				Type      string          `json:"type"`
 				ID        string          `json:"id"`
+				AgentID   string          `json:"agentId"`
 				Timestamp string          `json:"timestamp"`
 				Data      json.RawMessage `json:"data"`
 			} `json:"event"`
@@ -55,24 +61,38 @@ func (r *ServerReader) feed(session string, msg []byte) {
 	ev := m.Params.Event
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if ev.Type == "assistant.message_delta" {
+	switch ev.Type {
+	case "assistant.message_delta":
 		var d copilotData
-		if json.Unmarshal(ev.Data, &d) == nil && d.MessageID != "" && d.DeltaContent != "" {
-			r.live[d.MessageID] += d.DeltaContent
-			if len(r.live[d.MessageID]) > maxText*2 {
-				return // the file has the whole reply; a runaway one is not held
-			}
-			if text := strings.TrimSpace(r.live[d.MessageID]); text != "" {
-				r.h.emit([]emission{{Item: Item{ID: d.MessageID, Kind: KindAssistant, At: ev.Timestamp, Text: cutTo(text, maxText, "…")}}})
-			}
+		// A subagent's text folds into its parent's tool call, as in the file.
+		if json.Unmarshal(ev.Data, &d) != nil || ev.AgentID != "" || d.ParentToolCallID != "" || d.MessageID == "" || d.DeltaContent == "" {
+			return
+		}
+		lt := r.live[d.MessageID]
+		if lt == nil {
+			lt = &liveText{}
+			r.live[d.MessageID] = lt
+		}
+		if lt.full {
+			return
+		}
+		if lt.b.Len()+len(d.DeltaContent) > maxText*2 {
+			lt.full = true
+			return
+		}
+		lt.b.WriteString(d.DeltaContent)
+		if text := strings.TrimSpace(lt.b.String()); text != "" {
+			r.h.emit([]emission{{Item: Item{ID: d.MessageID, Kind: KindAssistant, At: ev.Timestamp, Text: cutTo(text, maxText, "…")}}})
 		}
 		return
-	}
-	if ev.Type == "assistant.message" {
+	case "assistant.message":
 		var d copilotData
 		if json.Unmarshal(ev.Data, &d) == nil {
 			delete(r.live, d.MessageID)
 		}
+	case "assistant.turn_end", "abort", "session.error":
+		// Text that never got its final message is not held; the tab keeps what it showed.
+		clear(r.live)
 	}
 	line, err := json.Marshal(copilotLine{Type: ev.Type, ID: ev.ID, Timestamp: ev.Timestamp, Data: ev.Data})
 	if err != nil {
@@ -98,14 +118,22 @@ func (r *ServerReader) Changed() []Item {
 }
 
 const (
-	handshakeWait = 5 * time.Second
-	maxFrame      = 8 << 20
+	handshakeWait  = 5 * time.Second
+	maxFrame       = 8 << 20
+	maxHeaderLine  = 1 << 10
+	maxHeaderBlock = 8 << 10
 )
 
 // ObserveUIServer reads the events of one session from the Copilot --ui-server on loopback port into r, until
 // the server goes away (an error) or ctx ends (nil). It is read-only: it sends connect, session.resume without
 // a resume event, and session.detach, and nothing in reply to what the server sends. It has no code that answers.
 func ObserveUIServer(ctx context.Context, port int, sessionID string, r *ServerReader) error {
+	return ObserveUIServerChecked(ctx, port, sessionID, r, nil)
+}
+
+// ObserveUIServerChecked is ObserveUIServer with verify run once connect has succeeded and before the session id
+// is sent. If it says no, the connection is dropped and the error is returned.
+func ObserveUIServerChecked(ctx context.Context, port int, sessionID string, r *ServerReader, verify func() bool) error {
 	d := net.Dialer{Timeout: handshakeWait}
 	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 	if err != nil {
@@ -118,6 +146,9 @@ func ObserveUIServer(ctx context.Context, port int, sessionID string, r *ServerR
 	// The server accepts connect with no token and ignores a wrong one, so none is sent.
 	if err := call(conn, br, 1, "connect", map[string]any{}, sessionID, r); err != nil {
 		return fmt.Errorf("connect: %w", err)
+	}
+	if verify != nil && !verify() {
+		return errors.New("the listener is not the ship's own")
 	}
 	// disableResume keeps the server from recording a resume of a session the engineer is in.
 	if err := call(conn, br, 2, "session.resume", map[string]any{"sessionId": sessionID, "disableResume": true}, sessionID, r); err != nil {
@@ -187,10 +218,14 @@ func writeFrame(w io.Writer, v any) error {
 
 func readFrame(br *bufio.Reader) ([]byte, error) {
 	n := -1
+	block := 0
 	for {
-		line, err := br.ReadString('\n')
+		line, err := readHeaderLine(br)
 		if err != nil {
 			return nil, err
+		}
+		if block += len(line); block > maxHeaderBlock {
+			return nil, errors.New("frame header too long")
 		}
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -209,4 +244,21 @@ func readFrame(br *bufio.Reader) ([]byte, error) {
 	body := make([]byte, n)
 	_, err := io.ReadFull(br, body)
 	return body, err
+}
+
+// readHeaderLine reads one header line, refusing one that runs past maxHeaderLine.
+func readHeaderLine(br *bufio.Reader) (string, error) {
+	var line []byte
+	for {
+		b, err := br.ReadByte()
+		if err != nil {
+			return "", err
+		}
+		if b == '\n' {
+			return string(line), nil
+		}
+		if line = append(line, b); len(line) > maxHeaderLine {
+			return "", errors.New("frame header line too long")
+		}
+	}
 }

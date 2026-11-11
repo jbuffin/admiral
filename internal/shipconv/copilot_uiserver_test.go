@@ -330,3 +330,41 @@ func TestCopilotUIServerOfAnotherProcessIsNeverDialed(t *testing.T) {
 		t.Errorf("pushed %v, want the file's reply", got)
 	}
 }
+
+func TestCopilotUIServerObserverDetachesAndClosesWhenTheWatchEnds(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		end  func(f *fixture, sub *socket)
+	}{
+		{"conversation_close", func(_ *fixture, sub *socket) { sub.send("conversation_close", "pilot") }},
+		{"the ship is gone", func(f *fixture, _ *socket) {
+			f.mu.Lock()
+			delete(f.harness, "pilot")
+			f.mu.Unlock()
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFixture(t)
+			path := f.seedCopilot()
+			srv := newFakeUIServer(t)
+			f.uiServerShip("pilot", path, srv.port())
+			sub := dial(t, serve(t, f))
+
+			sub.send("conversation_open", "pilot")
+			peer, ok := srv.accepted(5 * time.Second)
+			if !ok {
+				t.Fatal("opening the ship's conversation never dialed its --ui-server")
+			}
+			peer.attach()
+			sub.opened("pilot")
+
+			c.end(f, sub)
+			if m := peer.read(); m == nil || m["method"] != "session.detach" {
+				t.Fatalf("observer sent %v, want session.detach", m)
+			}
+			if m := peer.read(); m != nil {
+				t.Errorf("observer sent %v after detaching, want the connection closed", m)
+			}
+		})
+	}
+}
