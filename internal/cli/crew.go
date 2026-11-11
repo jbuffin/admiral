@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/launcher"
@@ -96,7 +97,10 @@ func crewTarget(ship string) (*crewShip, error) {
 			return nil, fmt.Errorf("an autopilot ship cannot reach crew of another ship (--ship %s is not this ship)", ship)
 		}
 	}
-	l := &launcher.Launcher{Tmux: tmux, Socket: sock, Home: dir}
+	l := &launcher.Launcher{Tmux: tmux, Socket: sock, Home: dir,
+		AutopilotGate: func(fleetKey, fleetName, harness string) error {
+			return autopilotgate.Check(dir, fleetKey, fleetName, harness)
+		}}
 	if l.Config, err = crewConfig(); err != nil {
 		return nil, err
 	}

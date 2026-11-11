@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/auth"
+	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/bridge"
 	"github.com/jbuffin/admiral/internal/chat"
 	"github.com/jbuffin/admiral/internal/cli"
@@ -201,7 +202,10 @@ func serve(args []string) error {
 	})
 	shipService := &ships.Service{Host: host, State: st, Hub: hub, Outcomes: outcomeLog, Launcher: &launcher.Launcher{
 		Tmux: tmuxPath, Socket: sock, Home: dir, Port: port, Config: cfg.Current,
-		Kept: func(session string) bool { _, ok := st.KeptInbox(session); return ok }}}
+		Kept: func(session string) bool { _, ok := st.KeptInbox(session); return ok },
+		AutopilotGate: func(fleetKey, fleetName, harness string) error {
+			return autopilotgate.Check(dir, fleetKey, fleetName, harness)
+		}}}
 
 	if err := sources.RemoveRetired(dir); err != nil {
 		fmt.Fprintln(os.Stderr, "admiral: could not remove a retired plugin:", err)
