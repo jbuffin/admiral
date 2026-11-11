@@ -117,7 +117,9 @@ func TestAutopilotLaunchRefusesAnUnguardedHarness(t *testing.T) {
 // launch and never an interactive one.
 func TestAutopilotLaunchOverTheCapIsRefused(t *testing.T) {
 	w := autopilotWorld(t, 1)
-	first := w.launch(w.autopilotLaunch("claude", "cap1", nil))
+	// The ship that fills the cap is a hand launch: every ship counts, not only
+	// autopilot ones.
+	first := w.launch(w.dockLaunch("claude", "cap1", "go"))
 	w.waitShipCount(10*time.Second, "the first ship underway", func(s shipJSON) bool { return s.Session == first.Session && live(s) }, 1)
 
 	before := w.sessions()
