@@ -134,4 +134,3 @@ AdmiralBot (ADR 0018, 0019) is one Claude Code session in the tmux session `_cha
 - **The ship's own replies** share the viewer's login, so a viewer event created between a round's start and the ship's re-mooring is dropped.
 - **Debounce and queueing.** A ship wakes when the newest waking event is at least 10 minutes old. One PR per round: the lowest layer of the record's `prs` with waking events; the others stay queued behind their cursors. A PR with no cursor (the first mooring) treats events before `moored_at` as history.
 - **The wake state** is `<home>/moored/wake/<name>.json` (`moor.ReadWake`, `WriteWake`, `RemoveWake`): per PR URL, a cursor, the last round's start, a snapshot of the conditions at that start and the first-seen times of conditions. It sits in a subdirectory so `moor.List` skips it, survives a wake's `dropMoored`, and is removed with the record when the mooring ends for good (Dismiss, merged or closed PRs).
-
