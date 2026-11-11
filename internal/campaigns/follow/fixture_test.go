@@ -407,3 +407,22 @@ func holds(t *testing.T, what string, bad func() bool) {
 }
 
 func writeFile(path, body string) error { return os.WriteFile(path, []byte(body), 0o644) }
+
+// sliceTree is the campaign the slice launch tests follow: 31, 32 and 33 are ready Without you on Commodore, 34 is
+// blocked by 31, 35 done, 36 assigned with no ship, 37 With you, 38 a wayfinder task, 39 ready in another repo and
+// 40 a nested parent holding 41.
+func sliceTree() iss {
+	ready := []string{"ready-for-agent"}
+	return iss{num: 20, labels: []string{"wayfinder:map"}, kids: []iss{
+		{num: 31, labels: ready},
+		{num: 32, labels: ready},
+		{num: 33, labels: ready},
+		{num: 34, labels: ready, blockedBy: []int{31}},
+		{num: 35, labels: ready, closed: true},
+		{num: 36, labels: ready, assignees: []string{"sam"}},
+		{num: 37, labels: []string{"ready-for-human"}},
+		{num: 38, labels: []string{"wayfinder:task"}},
+		{num: 39, labels: ready, repo: "acme/other"},
+		{num: 40, kids: []iss{{num: 41, labels: ready}}},
+	}}
+}

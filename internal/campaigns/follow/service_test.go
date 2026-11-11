@@ -669,3 +669,141 @@ func TestASliceShipShowsOnEveryChildItHoldsUntilItIsGone(t *testing.T) {
 		}
 	}
 }
+
+func sliceBody(issues ...int) map[string]any {
+	urls := make([]string, 0, len(issues))
+	for _, n := range issues {
+		urls = append(urls, issURL(n))
+	}
+	return map[string]any{"issues": urls, "harness": "claude", "dir": "/work/x"}
+}
+
+func TestLaunchASliceStartsOneCommodoreShipHoldingEveryChildAndNamingThemInItsText(t *testing.T) {
+	r := newRig(t, sliceTree())
+	c := r.follow(rootURL)
+	body := sliceBody(32, 31)
+	body["autopilot"] = true
+	if code, msg := r.launch(c.ID, body); code != http.StatusCreated {
+		t.Fatalf("slice launch = %d %s, want 201", code, msg)
+	}
+	got := r.launches()
+	if len(got) != 1 {
+		t.Fatalf("Launch called %d times, want once for the whole slice", len(got))
+	}
+	q := got[0]
+	if q.Source != SourceKey || q.Fleet != "work" || q.Skill.Kind != "commodore" || q.Autopilot {
+		t.Errorf("request = %+v, want source campaign, fleet work, Commodore, autopilot off", q)
+	}
+	if want := []string{issURL(32), issURL(31)}; strings.Join(q.Issues, " ") != strings.Join(want, " ") {
+		t.Errorf("Issues = %v, want the children in the order given %v", q.Issues, want)
+	}
+	if want := issURL(32) + "\n" + issURL(31); strings.TrimSpace(q.Text) != want {
+		t.Errorf("Text = %q, want every child URL one per line: %q", q.Text, want)
+	}
+	text, title, repo, url, panel, err := r.svc.Order(SourceKey, q.OrderID)
+	if err != nil || text != q.Text || title == "" || url != issURL(32) || repo != "https://github.com/acme/widgets" || panel != c.ID {
+		t.Errorf("Order(slice) = text %q title %q repo %q url %q panel %q err %v, want the slice's text, a title, the first child's URL, the repo and the campaign", text, title, repo, url, panel, err)
+	}
+	before := r.gh.rootReads()
+	r.svc.Launched(SourceKey, q.OrderID)
+	eventually(t, "a reread after the slice launched", func() bool { return r.gh.rootReads() > before })
+
+	r.mu.Lock()
+	r.claims[issURL(31)], r.claims[issURL(32)] = "calm-otter", "calm-otter"
+	r.mu.Unlock()
+	view := r.get(c.ID)
+	for _, n := range []int{31, 32} {
+		if ch := view.Root.find(n); ch.Status != "underway" || ch.Ship != "calm-otter" {
+			t.Errorf("child %d = %s on %q, want underway with the slice's ship", n, ch.Status, ch.Ship)
+		}
+	}
+}
+
+func TestLaunchASliceClonesTheRepoOfItsChildren(t *testing.T) {
+	r := newRig(t, sliceTree())
+	c := r.follow(rootURL)
+	body := sliceBody(31, 32)
+	delete(body, "dir")
+	body["clone"] = true
+	if code, msg := r.launch(c.ID, body); code != http.StatusCreated {
+		t.Fatalf("slice launch = %d %s, want 201", code, msg)
+	}
+	if got := r.launches(); len(got) != 1 || !got[0].Clone || got[0].CloneRepo != "github.com/acme/widgets" {
+		t.Errorf("launches = %+v, want one cloning github.com/acme/widgets", got)
+	}
+}
+
+func TestLaunchASliceAcceptsAChildOverriddenToCommodoreWithoutYou(t *testing.T) {
+	r := newRig(t, sliceTree())
+	c := r.follow(rootURL)
+	r.do("PUT", "/api/campaigns/"+c.ID+"/override", map[string]any{"child_url": issURL(37), "mode": "without-you", "skill": map[string]string{"kind": "commodore"}})
+	if code, msg := r.launch(c.ID, sliceBody(31, 37)); code != http.StatusCreated {
+		t.Errorf("slice with an overridden child = %d %s, want 201", code, msg)
+	}
+}
+
+func TestLaunchASliceRefusesWhatIsNotASlice(t *testing.T) {
+	r := newRig(t, sliceTree())
+	c := r.follow(rootURL)
+	r.mu.Lock()
+	r.claims[issURL(33)] = "bold-heron"
+	r.mu.Unlock()
+	both := sliceBody(31, 32)
+	both["child_url"] = issURL(31)
+	trailing := sliceBody(31, 32)
+	trailing["issues"] = []string{issURL(31), issURL(32) + "/", issURL(31) + "/"}
+	anyway := sliceBody(31, 36)
+	anyway["start_anyway"] = true
+	for _, tc := range []struct {
+		name     string
+		body     map[string]any
+		code     int // 0 for any 4xx
+		wantText string
+	}{
+		{"one issue", sliceBody(31), 400, ""},
+		{"no issue", map[string]any{"issues": []string{}, "harness": "claude", "dir": "/work/x"}, 400, ""},
+		{"a URL twice", sliceBody(31, 32, 31), 400, ""},
+		{"a URL twice once normalised", trailing, 400, ""},
+		{"child_url and issues together", both, 400, ""},
+		{"not in the campaign", sliceBody(31, 99), 404, ""},
+		{"a parent", sliceBody(31, 40), 400, ""},
+		{"a done child", sliceBody(31, 35), 409, issURL(35)},
+		{"an underway child", sliceBody(31, 33), 409, "bold-heron"},
+		{"a blocked child", sliceBody(32, 34), 409, issURL(31)},
+		{"a claimed child with no ship", sliceBody(31, 36), 0, issURL(36)},
+		{"start_anyway does not apply to a slice", anyway, 0, issURL(36)},
+		{"a With you child", sliceBody(31, 37), 0, issURL(37)},
+		{"a child on another skill", sliceBody(31, 38), 0, issURL(38)},
+		{"children of two repos", sliceBody(31, 39), 400, ""},
+	} {
+		code, msg := r.launch(c.ID, tc.body)
+		if (tc.code != 0 && code != tc.code) || (tc.code == 0 && (code < 400 || code > 499)) || !strings.Contains(msg, tc.wantText) || strings.TrimSpace(msg) == "" {
+			t.Errorf("%s: launch = %d %s, want %d naming %q", tc.name, code, msg, tc.code, tc.wantText)
+		}
+	}
+	if got := r.launches(); len(got) != 0 {
+		t.Errorf("a refused slice still reached Launch: %v", got)
+	}
+}
+
+func TestLaunchASliceAlreadyHeldByAShipIsRefusedNamingTheShip(t *testing.T) {
+	r := newRig(t, sliceTree())
+	c := r.follow(rootURL)
+	if code, msg := r.launch(c.ID, sliceBody(31, 32)); code != http.StatusCreated {
+		t.Fatalf("first slice launch = %d %s, want 201", code, msg)
+	}
+	r.mu.Lock()
+	r.claims[issURL(31)], r.claims[issURL(32)] = "calm-otter", "calm-otter"
+	r.mu.Unlock()
+	for _, tc := range []struct {
+		name  string
+		issue []int
+	}{{"the same set in reverse", []int{32, 31}}, {"one of them with a third child", []int{32, 33}}} {
+		if code, msg := r.launch(c.ID, sliceBody(tc.issue...)); code != http.StatusConflict || !strings.Contains(msg, "calm-otter") {
+			t.Errorf("%s: launch = %d %s, want 409 naming calm-otter", tc.name, code, msg)
+		}
+	}
+	if got := r.launches(); len(got) != 1 {
+		t.Errorf("Launch called %d times, want only the first slice", len(got))
+	}
+}
