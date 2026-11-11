@@ -1,5 +1,4 @@
-// Runs the admiral binary for Playwright's webServer and, once it has stopped,
-// ends the tmux server it started (that server outlives Admiral).
+// Runs admiral for Playwright's webServer, then kills the tmux server it started, which outlives Admiral.
 // Usage: node serve-e2e.mjs <admiral> <listen>
 import { spawn, spawnSync } from 'node:child_process';
 import { join } from 'node:path';

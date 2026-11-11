@@ -1,4 +1,3 @@
-// Command admiral runs the Admiral server.
 package main
 
 import (
@@ -71,8 +70,6 @@ func main() {
 	}
 }
 
-// run dispatches on the first argument; subcommands slot in before the
-// default, which starts the server.
 func run(args []string) error {
 	if len(args) == 1 && args[0] == "--version" {
 		fmt.Printf("admiral %s (%s)\n", version, commit)
@@ -149,9 +146,8 @@ func serve(args []string) error {
 		return fmt.Errorf("config migration: %w", err)
 	}
 	if migration != nil {
-		// Posted after the rewrite: a crash between the two loses the notice but
-		// never duplicates it, and the backup and data/<key>/orders.json still
-		// hold the order texts.
+		// Posted after the rewrite: a crash between the two loses the notice but never
+		// duplicates it, and the backup still holds the order texts.
 		title, body := migration.Notice()
 		if _, err := inbox.WriteNotice(dir, title, body); err != nil {
 			fmt.Fprintln(os.Stderr, "admiral: could not post the migration notice:", err)
@@ -303,7 +299,6 @@ func serve(args []string) error {
 		}
 		return dock.Environ(), ""
 	}}
-	// Resume orders: the report's text goes to the panel autopilot.resume_source names.
 	inboxService.ResumeTarget = func() *config.ResumeSource { return cfg.Current().ResumeSource }
 	inboxService.AddOrder = func(ctx context.Context, source, panel, text string) (string, error) {
 		id, fail := sourceService.AddOrder(ctx, source, panel, text)
@@ -312,7 +307,6 @@ func serve(args []string) error {
 		}
 		return id, nil
 	}
-	// A resume order launches where the ship that wrote the report ran (#120).
 	inboxService.Origin = func(session string) (inbox.Origin, bool) {
 		if sh, ok := shipService.Get(session); ok {
 			return sh.Origin(), true
@@ -368,7 +362,7 @@ func serve(args []string) error {
 			select {
 			case <-configChanges:
 				sourceService.Notify() // an autopilot-only edit does not restart a source
-				resourceSet.Refresh()  // the resources' checks run at once
+				resourceSet.Refresh()
 				resourceSet.Wake()
 				resourceService.Broadcast()
 				engine.Poke()

@@ -75,8 +75,6 @@ func fakeDeps(t *testing.T) string {
 	return dir
 }
 
-// S3: the tarball installs into PREFIX/bin, the installed binary runs, nothing
-// is written outside PREFIX, and with tmux and python3 on PATH it stays quiet.
 func TestPackagingS3_InstallsFromATarball(t *testing.T) {
 	rel := theRelease(t)
 	script, err := os.ReadFile(filepath.Join(repoRoot, "packaging", "install.sh"))
@@ -107,7 +105,6 @@ func TestPackagingS3_InstallsFromATarball(t *testing.T) {
 	}
 }
 
-// S3: a tampered tarball is refused before anything is extracted.
 func TestPackagingS3_RefusesATamperedTarball(t *testing.T) {
 	rel := theRelease(t)
 	tarball := copyRelease(t, rel)
@@ -132,8 +129,6 @@ func TestPackagingS3_RefusesATamperedTarball(t *testing.T) {
 	}
 }
 
-// S3: missing tmux and python3 are warned about, with the command to run; a
-// PREFIX/bin off PATH is warned about; the install still succeeds.
 func TestPackagingS3_WarnsAboutMissingDependenciesAndPath(t *testing.T) {
 	rel := theRelease(t)
 	prefix := filepath.Join(t.TempDir(), "prefix")
@@ -152,7 +147,7 @@ func TestPackagingS3_WarnsAboutMissingDependenciesAndPath(t *testing.T) {
 	}
 }
 
-// S3: arm64 is decided by sysctl, not uname: Rosetta says x86_64 and installs;
+// arm64 is decided by sysctl, not uname: Rosetta says x86_64 and installs;
 // an Intel Mac is refused.
 func TestPackagingS3_ChecksArm64WithSysctl(t *testing.T) {
 	rel := theRelease(t)

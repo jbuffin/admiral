@@ -11,10 +11,6 @@ import (
 	"time"
 )
 
-// The autopilot engine (#114, u2): the real binary, the fake harness, and
-// orders from the test plugin. A ship's cue is
-// `wait go`, then `exit 0`: touching "go" in its recording directory sails it off.
-//
 // Each test that holds ("nothing launches") first sees something launch or
 // record, so a missing engine fails it.
 
@@ -143,9 +139,7 @@ func (w *world) setPaused(source, panel string, paused bool) {
 	w.mustOK(code, body, "PUT the autopilot pause")
 }
 
-// AC 1, 8 (autopilot half) and the panel option: cap 1 and three test-source
-// orders give one ship, and the next launches only once it has sailed off. The
-// restart keeps the cap: the running ship fills the panel's cap by its
+// The restart keeps the cap: the running ship fills the panel's cap by its
 // @admiral-panel option.
 func TestEngineCapOneLaunchesOneShipAtATime(t *testing.T) {
 	t.Parallel()
@@ -200,7 +194,7 @@ func TestEngineCapOneLaunchesOneShipAtATime(t *testing.T) {
 	w.waitShipCount(15*time.Second, "the next order's ship", func(s shipJSON) bool { return s.Session != first.Session && live(s) }, 1)
 }
 
-// AC 2: two ships launched by hand fill a global cap of 2, so nothing launches;
+// Two ships launched by hand fill a global cap of 2, so nothing launches;
 // when one leaves, the panel launches its order.
 func TestEngineGlobalCapCountsHandLaunchedShips(t *testing.T) {
 	t.Parallel()
@@ -242,7 +236,7 @@ func TestEngineGlobalCapCountsHandLaunchedShips(t *testing.T) {
 
 // A launch by hand of an order from an autopilot panel joins the launched set,
 // and an order that was launched and has gone is not launched again while it is
-// still listed (AC 4); once it stops being listed and returns, it can be.
+// still listed; once it stops being listed and returns, it can be.
 func TestEngineLaunchesEachOrderOncePerListing(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -289,7 +283,7 @@ func TestEngineLaunchesEachOrderOncePerListing(t *testing.T) {
 	}
 }
 
-// AC 5, server half: pausing stops new launches and leaves running ships alone,
+// Pausing stops new launches and leaves running ships alone,
 // the panel's view says so, and the pause outlives a restart.
 func TestEnginePauseSurvivesARestart(t *testing.T) {
 	t.Parallel()
@@ -355,7 +349,7 @@ func TestEnginePauseRouteRefusesUnknownPanels(t *testing.T) {
 	}
 }
 
-// AC 7: an order with no matching checkout gets a skipped record and no ship,
+// An order with no matching checkout gets a skipped record and no ship,
 // and stays visible. The dock has a last directory from a hand launch: autopilot
 // never falls back to it. The next order, with a checkout, still launches, and
 // `admiral outcomes` prints the skipped line (which has no ship).
@@ -496,7 +490,6 @@ func TestEngineKeepsTheLaunchedSetWhenAPanelFailsToList(t *testing.T) {
 	})
 }
 
-// An order autopilot gave up on shows as hot in the sources view and is not launched.
 func TestEngineShowsAGivenUpOrderAsHot(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -516,10 +509,10 @@ func TestEngineShowsAGivenUpOrderAsHot(t *testing.T) {
 	holdThat(t, "autopilot launched an order it gave up on", func() bool { return len(w.in.ships(t)) == 0 })
 }
 
-// #120, the launch half of auto_merge: a panel entry's method reaches the ship
-// as ADMIRAL_AUTO_MERGE, and an autopilot launch whose entry has none has the
-// variable unset, whatever the fleet's env or Admiral's environment says. Admiral
-// owns the variable, as it does ADMIRAL_AUTOPILOT.
+// A panel entry's method reaches the ship as ADMIRAL_AUTO_MERGE, and an
+// autopilot launch whose entry has none has the variable unset, whatever the
+// fleet's env or Admiral's environment says. Admiral owns the variable, as it
+// does ADMIRAL_AUTOPILOT.
 func TestEngineSetsAutoMergeFromThePanel(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

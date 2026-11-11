@@ -1,7 +1,6 @@
 import type { InboxQuestion } from './inbox';
 
-// What the engineer has entered on a question card, and the answer it sends. The inbox and the chat each
-// keep their own drafts; these helpers are pure, so both build the same body.
+// These helpers are pure, so the inbox and the chat build the same body.
 
 export interface Pick {
   sel: string[];
@@ -38,7 +37,6 @@ export interface AnswerBody {
   note?: string;
 }
 
-/** The body of an answer POST, the same for the inbox and the chat. */
 export function answerBody(questions: InboxQuestion[], d: Draft): AnswerBody {
   const answers: AnswerBody['answers'] = {};
   for (const q of questions) {
@@ -52,7 +50,6 @@ export function answerBody(questions: InboxQuestion[], d: Draft): AnswerBody {
   return { answers, ...(note && { note }) };
 }
 
-/** "Answered: Freeform" for a served answer: the chosen labels and the Other text, then a note flag. */
 export function foldText(answer: { answers?: AnswerBody['answers']; note?: string }): string {
   const labels = Object.values(answer.answers ?? {}).flatMap((a) => [...(Array.isArray(a.choice) ? a.choice : a.choice ? [a.choice] : []), ...(a.other ? [a.other] : [])]);
   return `Answered: ${labels.join(', ')}${answer.note ? ' (with a note)' : ''}`;

@@ -55,8 +55,6 @@ func (d *dataWorld) dockEnv(harness string, args ...string) map[string]any {
 	return dock
 }
 
-// start writes fleets work and home (all docks, search root w.work) and
-// nosearch (none), then starts Admiral.
 func (d *dataWorld) start() *fleetInst {
 	d.t.Helper()
 	fleets := map[string]any{
@@ -75,8 +73,6 @@ func (d *dataWorld) start() *fleetInst {
 	writeConfig(d.t, d.home, string(b))
 	return d.world.start()
 }
-
-// ---- git checkouts ----
 
 func (w *world) git(dir string, args ...string) string {
 	w.t.Helper()
@@ -129,8 +125,6 @@ func writeJSON(t *testing.T, path string, v any) {
 		t.Fatal(err)
 	}
 }
-
-// ---- the launch-orders API ----
 
 type dirsResp struct {
 	Selected *string `json:"selected"`

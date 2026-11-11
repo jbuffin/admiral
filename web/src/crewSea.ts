@@ -1,7 +1,7 @@
 import { age } from './crew';
 import type { WireCrew, WireShip, WireSubagent } from './ships';
 
-// Crew boats and subagents on the sea (#154). Pure, so the tests need no browser.
+// Pure, so the tests need no browser.
 
 export const crewAsks = (c: Pick<WireCrew, 'status'>) => c.status === 'needs_you';
 
@@ -14,7 +14,6 @@ export function plaqueNeeds(crew: WireCrew[]): string | null {
 
 export const RAFT_MAX = 3; // tokens.json size.crewRaft.max
 
-// The first three boats raft beside the ship; the rest are counted in a pill.
 export function raft(crew: WireCrew[]): { shown: WireCrew[]; hidden: WireCrew[]; pill: { text: string; name: string } | null } {
   const shown = crew.slice(0, RAFT_MAX);
   const hidden = crew.slice(RAFT_MAX);
@@ -24,7 +23,6 @@ export function raft(crew: WireCrew[]): { shown: WireCrew[]; hidden: WireCrew[];
   return { shown, hidden, pill };
 }
 
-// Whether this `ships` message plays the chime: a ship turns needs_you, or a crew boat is needs_you that was not.
 // One answer per message, however many turned. A ship that is new in `now` never chimes, nor do its boats.
 export function shouldChime(before: WireShip[], now: WireShip[], first: boolean): boolean {
   if (first) return false;

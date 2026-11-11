@@ -1,13 +1,8 @@
 import { useEffect } from 'preact/hooks';
 import type { RefObject } from 'preact';
 
-// The bridge covers open water but is bounded by the screen, not by the page: at narrow widths the
-// harbor stacks and the page grows, and the terminal must not grow with it. With the soft keyboard up
-// the visual viewport is shorter than the layout one, so the bottom edge follows what is visible and
-// the prompt and key bar stay reachable.
-// The bridge and the setup terminal are placed the same way; `present` is whether the overlay has
-// its content (a ship that is gone renders nothing). In full view the overlay covers the header and
-// the orders panel too, so only its bottom edge follows the keyboard.
+// Bounded by the screen, not the page, which grows at narrow widths; with the soft keyboard up the bottom edge follows
+// the visual viewport so the prompt and key bar stay reachable.
 export function useBridgePlacement(root: RefObject<HTMLDivElement | null>, present: boolean, full = false): void {
   useEffect(() => {
     const el = root.current;

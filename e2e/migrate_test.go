@@ -9,9 +9,6 @@ import (
 	"time"
 )
 
-// The migration's rules are unit tests in internal/config; this is the startup
-// wiring: the server migrates before it loads and tells the engineer once.
-
 type noticeItem struct {
 	ID      string `json:"id"`
 	Kind    string `json:"kind"`
@@ -23,7 +20,6 @@ type noticeItem struct {
 	} `json:"notice"`
 }
 
-// notices are the notice items GET /api/inbox lists.
 func (in *fleetInst) notices(t *testing.T) []noticeItem {
 	t.Helper()
 	code, body := send(t, http.MethodGet, in.LocalURL+"/api/inbox", nil)
@@ -45,7 +41,6 @@ func (in *fleetInst) notices(t *testing.T) []noticeItem {
 	return out
 }
 
-// waitNotice waits for the notice the migration posts at startup.
 func (in *fleetInst) waitNotice(t *testing.T) noticeItem {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -60,7 +55,6 @@ func (in *fleetInst) waitNotice(t *testing.T) noticeItem {
 	}
 }
 
-// backups are the config.json.pre-<version> files beside config.json.
 func (w *world) backups() []string {
 	w.t.Helper()
 	m, err := filepath.Glob(filepath.Join(w.home, "config.json.pre-*"))
@@ -79,10 +73,7 @@ func (w *world) seedFleetsOf(first, second string) string {
 	return one(first, "Zulu") + ",\n    " + one(second, "Alpha")
 }
 
-// oldConfig is a config from before fleets owned sources: two fleets, zulu
-// first, an unknown top-level key, a test source (with a secret setting), a
-// github source and a freeform source with no `fleet`, and a resume source
-// that names the freeform one.
+// oldConfig is a config from before fleets owned sources.
 func (w *world) oldConfig() string {
 	w.t.Helper()
 	d := w.orderSrcDef("tracker", "Tracker")

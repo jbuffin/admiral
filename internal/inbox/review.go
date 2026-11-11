@@ -15,7 +15,7 @@ import (
 	"github.com/jbuffin/admiral/internal/outcomes"
 )
 
-// ghTimeout bounds one gh call. A call is never retried.
+// A gh call is never retried.
 const ghTimeout = 30 * time.Second
 
 // Caps on what is read from gh: its stderr reaches the UI, so it is short.
@@ -24,22 +24,19 @@ const (
 	ghStdoutCap = 1 << 20
 )
 
-// What a review action did, as the answer file and the response say it.
 const (
 	ActionSubmitted = "submitted"
 	ActionDiscarded = "discarded"
 	ActionGone      = "gone" // GitHub no longer had a pending review to act on
 )
 
-// ErrBusy is an action on an item that another action is still running on.
 var ErrBusy = errors.New("another action on this item is still running")
 
-// GhError is a failed gh call. Msg is what the engineer sees. A review that GitHub
-// reports gone is not an error to the caller: see gone.
+// GhError's Msg is what the engineer sees. A review GitHub reports gone is not
+// an error to the caller.
 type GhError struct {
-	Msg string
-	// Missing is a gh that is not on PATH.
-	Missing bool
+	Msg     string
+	Missing bool   // gh is not on PATH
 	status  int    // the HTTP status gh printed, 0 if none
 	detail  string // GitHub's message and errors, for gone
 }
@@ -54,19 +51,16 @@ func (e *GhError) gone() bool {
 
 var httpStatus = regexp.MustCompile(`\(HTTP (\d{3})\)`)
 
-// target is the review a review item names.
 type target struct {
 	host, owner, repo, pr, reviewID string
 }
 
-// prURL is https://<host>/<owner>/<repo>/pull/<n> and nothing more: no user
-// info, port, query, fragment, escape or further path.
+// prURL allows no user info, port, query, fragment, escape or further path.
 var prURL = regexp.MustCompile(`^https://([A-Za-z0-9.-]+)/([A-Za-z0-9-]+)/([A-Za-z0-9._-]+)/pull/([1-9][0-9]{0,8})$`)
 
 var reviewIDPattern = regexp.MustCompile(`^[1-9][0-9]{0,17}$`)
 
-// targetOf reads the review of a review item. Only these parts of the item's
-// text ever reach gh, and only as a path.
+// Only these parts of the item's text ever reach gh, and only as a path.
 func targetOf(it Item) (target, string, error) {
 	var r struct {
 		PRURL    string          `json:"pr_url"`
@@ -93,8 +87,6 @@ func (t target) endpoint() string {
 	return "repos/" + t.owner + "/" + t.repo + "/pulls/" + t.pr + "/reviews/" + t.reviewID
 }
 
-// ghRun runs gh for one review action: the binary found on Admiral's PATH, the
-// environment of the ship's dock, and the host of the PR.
 type ghRun struct {
 	bin  string
 	env  []string
@@ -102,8 +94,7 @@ type ghRun struct {
 	note string // appended to a failure: where gh ran
 }
 
-// ghFor finds gh and the environment for session's ship. A ship Admiral has no
-// dock for runs gh in Admiral's own environment, and an error says why.
+// A ship Admiral has no dock for runs gh in Admiral's own environment.
 func (s *Service) ghFor(session, host string) (*ghRun, error) {
 	bin, err := exec.LookPath("gh")
 	if err != nil {
@@ -125,8 +116,7 @@ func (s *Service) ghFor(session, host string) (*ghRun, error) {
 	return g, nil
 }
 
-// call runs `gh api` for method and endpoint, with body as JSON on stdin when it
-// is not nil, and returns gh's stdout. The item's text is only ever in the body.
+// The item's text only ever reaches gh in the body, never in args.
 func (g *ghRun) call(method, endpoint string, body any) ([]byte, *GhError) {
 	// Always the PR's host: without it a GH_HOST in the environment would take the call elsewhere.
 	args := []string{"api", "--method", method, "--hostname", g.host}
@@ -185,7 +175,6 @@ func (g *ghRun) call(method, endpoint string, body any) ([]byte, *GhError) {
 	return nil, e
 }
 
-// githubTexts is the message and the error texts of GitHub's JSON error body.
 func githubTexts(body []byte) []string {
 	var j struct {
 		Message string            `json:"message"`
@@ -215,7 +204,6 @@ func githubTexts(body []byte) []string {
 	return texts
 }
 
-// capped keeps the first max bytes written and drops the rest.
 type capped struct {
 	buf bytes.Buffer
 	max int
@@ -228,8 +216,6 @@ func (c *capped) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// SubmitRequest is the body of the submit route: the review event, and whether
-// the engineer opened Edit on GitHub first.
 type SubmitRequest struct {
 	Event  string `json:"event"`
 	Edited bool   `json:"edited"`
@@ -237,20 +223,16 @@ type SubmitRequest struct {
 
 var reviewEvents = map[string]bool{"COMMENT": true, "APPROVE": true, "REQUEST_CHANGES": true}
 
-// ReviewResult is what a review action did. InvalidTarget is a Discard that ran
-// nothing, because the item names no review GitHub could have: nothing changed
-// on GitHub. Forgotten is a review removed from the inbox without gh, for the
-// same reason.
+// InvalidTarget and Forgotten mean gh never ran: the item names no review GitHub
+// could have, so nothing changed there.
 type ReviewResult struct {
 	Action        string
 	InvalidTarget bool
 	Forgotten     bool
 }
 
-// SubmitReview submits the pending review of a review item as the engineer, with
-// the body it has on GitHub now (the engineer may have edited it there), or the
-// item's summary when that is empty. It returns what happened: ActionSubmitted,
-// or ActionGone when GitHub no longer has a pending review.
+// SubmitReview uses the body the review has on GitHub now, since the engineer
+// may have edited it there, or the item's summary when that is empty.
 func (s *Service) SubmitReview(session, id string, req SubmitRequest) (ReviewResult, error) {
 	if !reviewEvents[req.Event] {
 		return ReviewResult{}, invalid("event must be COMMENT, APPROVE or REQUEST_CHANGES")
@@ -258,25 +240,20 @@ func (s *Service) SubmitReview(session, id string, req SubmitRequest) (ReviewRes
 	return s.reviewAction(session, id, false, false, req.Event, req.Edited)
 }
 
-// DiscardReview deletes the pending review of a review item. It returns
-// ActionDiscarded, or ActionGone when GitHub no longer has a pending review. A
-// review whose target is invalid has nothing to delete: it is discarded without
-// gh, so that an item no other action can answer still has a way out.
+// DiscardReview of an invalid target runs no gh, so an item no other action can
+// answer still has a way out.
 func (s *Service) DiscardReview(session, id string) (ReviewResult, error) {
 	return s.reviewAction(session, id, true, false, "", false)
 }
 
-// ForgetReview removes a review item from the inbox without running gh, for a
-// review no action can clear any more (a deleted repository, lost access, a
-// revoked token, a host that is gone). Nothing changes on GitHub. It is allowed
-// on any review item; Submit stays strict.
+// ForgetReview is for a review no action can clear any more (a deleted repository,
+// lost access, a gone host). It runs no gh; Submit stays strict.
 func (s *Service) ForgetReview(session, id string) (ReviewResult, error) {
 	return s.reviewAction(session, id, true, true, "", false)
 }
 
-// reviewAction runs gh for a review item and writes the answer. gh runs outside
-// answerMu; only the answer is written under it, and an item has one action at a
-// time, so a double tap runs gh once.
+// reviewAction runs gh outside answerMu, and an item has one action at a time,
+// so a double tap runs gh once.
 func (s *Service) reviewAction(session, id string, discard, forget bool, event string, edited bool) (ReviewResult, error) {
 	it, err := s.open(session, id)
 	if err != nil {

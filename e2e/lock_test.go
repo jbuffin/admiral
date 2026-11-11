@@ -13,9 +13,8 @@ import (
 	"time"
 )
 
-// `admiral lock` (#118, u2): the real binary, a capacity-1 resource called
-// "phone", and lock holders that stay alive until a "release" file appears, so no
-// test races a timer. The resource has no check: a lock does not need one.
+// Lock holders stay alive until a "release" file appears, so no test races a
+// timer. The resource has no check: a lock does not need one.
 
 const lockExitBusy = 75
 
@@ -28,8 +27,6 @@ type lockRes struct {
 	} `json:"holders"`
 }
 
-// writeLockConfig writes the default fleets, the capacity-1 resource "phone" and
-// the given sources.
 func (w *world) writeLockConfig(sources map[string]any) {
 	w.t.Helper()
 	var cfg map[string]any
@@ -79,7 +76,6 @@ func (w *world) waitLock(what string, pred func(lockRes) bool) lockRes {
 	}
 }
 
-// lockProc is a running `admiral lock`.
 type lockProc struct {
 	cmd         *exec.Cmd
 	stdout, err *syncBuffer
@@ -154,7 +150,6 @@ func (w *world) lockCmd(args ...string) cliResult {
 	return w.admiral(append([]string{"lock", "--port", w.in.Port}, args...)...)
 }
 
-// holds starts a plain lock and waits until the server shows it holding phone.
 func (w *world) holds(flags ...string) *lockProc {
 	w.t.Helper()
 	l := w.startLock("", flags...)
@@ -179,14 +174,11 @@ func (w *world) startPhone() {
 	w.t.Helper()
 	w.writeLockConfig(nil)
 	w.start()
-	if r := w.lockState(); r.InUse != 0 { // u1: the resource is served, free
+	if r := w.lockState(); r.InUse != 0 { // the resource is served, free
 		w.t.Fatalf("phone starts in use: %+v", r)
 	}
 }
 
-// AC 3 and 5: a lock holds back an autopilot launch, the panel says what it
-// waits for and one resource_wait record is written; the launch follows soon
-// after the lock ends.
 func TestLockBlocksAnAutopilotLaunchUntilItEnds(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -233,9 +225,6 @@ func TestLockBlocksAnAutopilotLaunchUntilItEnds(t *testing.T) {
 	w.waitShipCount(10*time.Second, "o1's ship after the lock ended", fromOrder("o1"), 1)
 }
 
-// Without --wait a second lock exits 75 at once with a one-line message; with
-// --wait it runs its command once the first lock ends. Flags work before or
-// after the resource.
 func TestLockBusyExits75AndWaitRunsAfterTheFirstEnds(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -256,7 +245,6 @@ func TestLockBusyExits75AndWaitRunsAfterTheFirstEnds(t *testing.T) {
 
 	first.release()
 	w.waitExit(first, "first")
-	// The second command starts, and holds until released.
 	deadline := time.Now().Add(10 * time.Second)
 	for _, err := os.Stat(ran); err != nil; _, err = os.Stat(ran) {
 		if time.Now().After(deadline) {
@@ -269,7 +257,7 @@ func TestLockBusyExits75AndWaitRunsAfterTheFirstEnds(t *testing.T) {
 		t.Errorf("the --wait lock exited %d, want 0", code)
 	}
 
-	// The issue's order: `admiral lock <resource> [--wait] -- <command…>`.
+	// The documented order: `admiral lock <resource> [--wait] -- <command…>`.
 	r = w.admiral("lock", "phone", "--wait", "--port", w.in.Port, "--", "true")
 	w.expectExit(r, 0, "flags after the resource")
 
@@ -316,8 +304,6 @@ func TestLockWaitsBehindAShipUntilItEnds(t *testing.T) {
 	}
 }
 
-// A killed `admiral lock` (SIGKILL, no chance to clean up) frees the unit: the
-// dropped connection releases it.
 func TestLockKilledReleasesTheUnit(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -331,8 +317,6 @@ func TestLockKilledReleasesTheUnit(t *testing.T) {
 	w.expectExit(w.lockCmd("phone", "--", "true"), 0, "a lock after the holder was killed")
 }
 
-// When Admiral stops under a running `admiral lock`, the lock says so on stderr
-// and leaves the command running; the lock's exit status is the command's.
 func TestLockLostWhenTheServerStops(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -356,8 +340,7 @@ func TestLockLostWhenTheServerStops(t *testing.T) {
 	}
 }
 
-// The route answers 403 to a peer that is not loopback, token or not. It skips
-// when the Mac's LAN address does not answer (docs/agents/testing.md).
+// Skips when the Mac's LAN address does not answer (docs/agents/testing.md).
 func TestLockRouteRefusesANonLoopbackPeer(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

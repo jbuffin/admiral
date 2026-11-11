@@ -14,31 +14,11 @@ import (
 	"time"
 )
 
-// The Needs You inbox, server side (#116 u2): the engineer's actions on a
-// review and on finding cards. The real binary, the fake gh on PATH
-// (testdata/fakegh/gh) and a ship that sits underway.
-//
-// Wire shape under test, next to u1's /answer route:
-//
-//	POST /api/inbox/<session>/<id>/submit   {"event":"APPROVE","edited":false}  a review item
-//	POST /api/inbox/<session>/<id>/discard  {}                                  a review item
-//	POST /api/inbox/<session>/<id>/findings {"cards":[{"id":"r1","decision":"approved"},
-//	    {"id":"r2","decision":"edited","proposal":{"kind":"diff","content":"..."}}]}
-//
-// A 2xx is success. A failure is a non-2xx with {"error": "..."} that carries
-// gh's message. Answer files and outcome fields follow ADR 0016 and #116:
-// review_submitted {item, kind, review_event, edited} (a log line's own `event` is the record name), review_discarded {item, kind}
-// (plus external:true when the review was already gone), and
-// card_approved/card_edited/card_rejected {item, kind, card}.
-
 const (
 	ghReviews = "repos/acme/widgets/pulls/12/reviews/123"
 	prURL     = "https://github.com/acme/widgets/pull/12"
 )
 
-// ---- the fake gh, seen from a test ----
-
-// restCall is one REST call the fake gh recorded.
 type restCall struct {
 	Method, Endpoint, Host string
 	Argv                   []string
@@ -115,7 +95,6 @@ func (g *fakeGH) restCalls() []restCall {
 	return out
 }
 
-// callsTo is the REST calls with this method and endpoint.
 func (g *fakeGH) callsTo(method, endpoint string) []restCall {
 	var out []restCall
 	for _, c := range g.restCalls() {
@@ -126,11 +105,7 @@ func (g *fakeGH) callsTo(method, endpoint string) []restCall {
 	return out
 }
 
-// ---- the world ----
-
-// ghFleets writes a config with one claude fleet per key, each with its cue
-// lines and its own GH_TOKEN, "fake-token-<key>" (a fleet's env is what gh runs
-// with, #116 u2).
+// Each fleet gets its own GH_TOKEN, "fake-token-<key>": a fleet's env is what gh runs with.
 func (w *world) ghFleets(cues map[string][]string) {
 	w.t.Helper()
 	fleets := map[string]any{}
@@ -152,8 +127,6 @@ func (w *world) ghFleets(cues map[string][]string) {
 	writeConfig(w.t, w.home, string(b))
 }
 
-// reviewWorld is a world with the fake gh, a fleet f whose ships sit underway
-// and fleet g likewise, started.
 func reviewWorld(t *testing.T) (*world, *fakeGH) {
 	t.Helper()
 	w := newWorld(t)
@@ -163,7 +136,6 @@ func reviewWorld(t *testing.T) (*world, *fakeGH) {
 	return w, g
 }
 
-// ghShip launches a ship in the fleet and returns it with its inbox directory.
 func (w *world) ghShip(fleet, repo string) (shipJSON, string) {
 	w.t.Helper()
 	ship := w.launchIn(fleet, "claude", repo)
@@ -232,10 +204,6 @@ func (w *world) noAnswerOrOutcome(session, dir string, ids []string, events ...s
 	}
 }
 
-// S1 and S2: Submit reads the review's current body from GitHub, sends it with
-// the event as the engineer (the fleet's environment), writes the answer, logs
-// review_submitted and the item leaves. A body GitHub holds empty falls back to
-// the item's summary. A second Submit is refused and gh is not run again.
 func TestInboxReviewSubmit(t *testing.T) {
 	t.Parallel()
 	w, g := reviewWorld(t)
@@ -295,7 +263,7 @@ func TestInboxReviewSubmit(t *testing.T) {
 		t.Errorf("gh posted the events %d times, want 1", n)
 	}
 
-	// S2: REQUEST_CHANGES with an empty body on GitHub sends the item's summary.
+	// REQUEST_CHANGES with an empty body on GitHub sends the item's summary.
 	if code, resp := w.in.act(t, ship.Session, "r-2", "submit", map[string]any{"event": "REQUEST_CHANGES", "edited": false}); !ok2xx(code) {
 		t.Fatalf("submit REQUEST_CHANGES = %d, want 2xx: %s", code, resp)
 	}
@@ -319,8 +287,6 @@ func TestInboxReviewSubmit(t *testing.T) {
 	w.in.waitInbox(t)
 }
 
-// S3: Discard deletes the pending review through gh, writes the answer without
-// an event and logs review_discarded.
 func TestInboxReviewDiscard(t *testing.T) {
 	t.Parallel()
 	w, g := reviewWorld(t)
@@ -346,9 +312,6 @@ func TestInboxReviewDiscard(t *testing.T) {
 	w.in.waitInbox(t)
 }
 
-// S4: when gh fails, the engineer gets an error with gh's message, no answer is
-// written, nothing is recorded, the item stays, and gh is not retried. 422 "Can
-// not approve your own pull request" is such a failure, and a huge stderr is cut.
 func TestInboxReviewGhFailureKeepsTheItem(t *testing.T) {
 	t.Parallel()
 	w, g := reviewWorld(t)
@@ -371,7 +334,6 @@ func TestInboxReviewGhFailureKeepsTheItem(t *testing.T) {
 		t.Errorf("gh posted %d times, want 1 (no retries)", n)
 	}
 
-	// Discard failing the same way, and a huge stderr.
 	huge := "gh: Server Error (HTTP 500)\n" + strings.Repeat("x", 300_000)
 	g.rest("del2", "DELETE", "repos/acme/widgets/pulls/12/reviews/124", 500, map[string]any{"message": "Server Error"}, huge)
 	code, resp = w.in.act(t, ship.Session, "r-2", "discard", nil)
@@ -386,8 +348,6 @@ func TestInboxReviewGhFailureKeepsTheItem(t *testing.T) {
 	w.in.waitInbox(t, "r-1", "r-2")
 }
 
-// S4: with no gh on PATH there is an error that names gh, and the same
-// no-answer, no-outcome, item-stays result.
 func TestInboxReviewMissingGh(t *testing.T) {
 	t.Parallel()
 	for _, d := range []string{"/usr/bin", "/bin"} {
@@ -422,11 +382,8 @@ func TestInboxReviewMissingGh(t *testing.T) {
 	w.in.waitInbox(t, "r-1")
 }
 
-// S5: a pr_url or review_id that does not have the form
-// https://<host>/<owner>/<repo>/pull/<n> with an integer review id is refused
-// without running gh. Submit refuses it. Discard has nothing on GitHub to
-// delete, so it answers the item as discarded (invalid_target), which is the
-// item's way out of the inbox.
+// Discard has nothing on GitHub to delete for a bad target, so it answers the
+// item as discarded (invalid_target): that is the item's way out of the inbox.
 func TestInboxReviewRefusesBadTargets(t *testing.T) {
 	t.Parallel()
 	w, g := reviewWorld(t)
@@ -473,7 +430,6 @@ func TestInboxReviewRefusesBadTargets(t *testing.T) {
 			t.Errorf("submit with %s = %d, want 400 or 422: %s", c.name, code, resp)
 		}
 	}
-	// An event Admiral does not know is refused too, on a good target.
 	seedItem(t, dir, "ok-1", reviewAt("ok-1", "2026-10-22T10:00:00Z", prURL, 123))
 	w.in.waitInbox(t, append(all, "ok-1")...)
 	for _, ev := range []string{"PENDING", "approve", "", "DISMISS"} {
@@ -483,7 +439,6 @@ func TestInboxReviewRefusesBadTargets(t *testing.T) {
 	}
 	w.noAnswerOrOutcome(ship.Session, dir, append(all, "ok-1"), "review_submitted", "review_discarded")
 
-	// Discard answers each of them as discarded, without gh.
 	before := time.Now()
 	for i, c := range cases {
 		id := "b-" + fmt.Sprintf("%02d", i)
@@ -511,10 +466,6 @@ func TestInboxReviewRefusesBadTargets(t *testing.T) {
 	w.in.waitInbox(t, "ok-1")
 }
 
-// The host comes from the pr_url and the environment from the ship's fleet:
-// a GitHub Enterprise PR gets --hostname, and a ship of fleet g runs gh with
-// fleet g's token. A session with no ship runs gh in the server's own
-// environment.
 func TestInboxReviewHostAndFleetEnvironment(t *testing.T) {
 	t.Parallel()
 	w, g := reviewWorld(t)
@@ -553,9 +504,7 @@ func TestInboxReviewHostAndFleetEnvironment(t *testing.T) {
 	}
 }
 
-// S8: GitHub saying the review is gone (404) or no longer pending (422) is not
-// an error. The answer is {action: gone}, review_discarded is recorded with
-// external: true, and the item leaves. Any other failure stays an error.
+// GitHub saying the review is gone (404) or no longer pending (422) is not an error.
 func TestInboxReviewGone(t *testing.T) {
 	t.Parallel()
 	w, g := reviewWorld(t)
@@ -587,7 +536,6 @@ func TestInboxReviewGone(t *testing.T) {
 	g.rest("pr14", "GET", "repos/acme/widgets/pulls/14", 500, map[string]any{"message": "Server Error"}, "gh: Server Error (HTTP 500)\n")
 	// The review was submitted on GitHub already: its state says so, and no POST follows.
 	g.rest("g4", "GET", ep(204), 200, map[string]any{"state": "APPROVED", "body": "b"}, "")
-	// A Discard 422 that is not about the review being pending stays an error.
 	g.rest("d5", "DELETE", ep(205), 422, json.RawMessage(`{"message":"Validation Failed","errors":["Something else"],`+doc+`}`), "gh: Validation Failed (HTTP 422)\n")
 
 	before := time.Now()
@@ -643,11 +591,6 @@ func TestInboxReviewGone(t *testing.T) {
 	}
 }
 
-// S6: Send writes the findings answer (the proposal only on the edited card),
-// logs one outcome per card, posts nothing to GitHub and the item leaves. A
-// request with a card missing, unknown or twice, a decision that is not one of
-// the three, a proposal on a card that is not edited, a bad proposal kind or an
-// edited card with none is refused and changes nothing.
 func TestInboxFindingsSend(t *testing.T) {
 	t.Parallel()
 	w, g := reviewWorld(t)
@@ -742,11 +685,7 @@ func TestInboxFindingsSend(t *testing.T) {
 	w.in.waitInbox(t, "q-1")
 }
 
-// S7: a ship that exits 0 with an unanswered item keeps its inbox and report.
-// After sail-off its items are still served with the ship's name and harness,
-// and still after a restart; gh runs in the environment of the fleet the ship
-// sailed from. The files go, and the item with them, when the last item is
-// answered.
+// gh runs in the environment of the fleet the ship sailed from, even after sail-off.
 func TestInboxKeepsUnansweredFilesAfterSailOff(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -816,7 +755,6 @@ func TestInboxKeepsUnansweredFilesAfterSailOff(t *testing.T) {
 	}
 }
 
-// kept is whether state.json holds a kept inbox record for the session.
 func kept(t *testing.T, home, session string) bool {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(home, "state.json"))
@@ -833,8 +771,6 @@ func kept(t *testing.T, home, session string) bool {
 	return ok
 }
 
-// waitKept waits for state.json to hold a kept inbox record for the session:
-// the sail-off pass has decided to keep its files.
 func waitKept(t *testing.T, home, session string) {
 	t.Helper()
 	for deadline := time.Now().Add(10 * time.Second); !kept(t, home, session); time.Sleep(50 * time.Millisecond) {
@@ -850,9 +786,6 @@ func refused(code int) bool {
 	return code == http.StatusBadRequest || code == http.StatusUnprocessableEntity
 }
 
-// A sailed-off ship keeps its inbox only for the items its report still lists
-// in `inbox`: one answered in its terminal and listed nowhere holds nothing.
-// Remove from inbox clears a kept item, and the files go with the last one.
 func TestInboxKeepsOnlyWhatTheReportListsAfterSailOff(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

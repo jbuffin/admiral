@@ -1,23 +1,6 @@
-// Package sessionhost is Admiral's one connection to its own tmux server
-// (ADR 0002, 0003, 0012): a control-mode client on $ADMIRAL_HOME/tmux.sock that
-// lists the sessions, reads their @admiral-* options and reports what changes.
-//
-// Watching: tmux 3.7c sends control-mode notifications for new and closed
-// sessions but none when an option changes on another session, when a pane
-// dies or on a bell. So the host re-reads everything with one `list-panes -a`
-// command about every half second, and at once on a %sessions-changed
-// notification, and turns the difference into events. A subscription format
-// (`refresh-client -B`) would report at most once a second; the poll is one
-// cheap command whose reply is a few hundred bytes. Pane death (exit status
-// or signal) is read from pane_dead*. A bell is the one thing the poll can't
-// see: window_bell_flag stays set after the first bell, and stays 0 while a
-// control client is attached to the ship (the bridge, later), so the host
-// installs a global `alert-bell` hook that stamps the ringing pane's @admiral-bell
-// option with a new value on every bell, and the poll reports a change of it.
-//
-// The host never launches anything: the launcher runs the tmux binary with an
-// argument list, because control mode is line-based and can't carry a
-// multi-line prompt.
+// Package sessionhost is Admiral's one control-mode connection to its own tmux server.
+// tmux sends no notification when an option changes or a pane dies, so the host polls
+// list-panes; window_bell_flag is unreliable, so an alert-bell hook stamps @admiral-bell.
 package sessionhost
 
 import (
@@ -42,34 +25,25 @@ import (
 // slugs to it, and it is never reported.
 const Internal = "_admiral"
 
-// SetupName is the session that runs `admiral setup` for the browser. It is
-// not a ship.
+// SetupName is the session that runs `admiral setup` for the browser; not a ship.
 const SetupName = "_setup"
 
-// ChatName is the session that runs the AdmiralBot chat (ADR 0018, 0019). It is
-// not a ship.
+// ChatName is the session that runs the AdmiralBot chat; not a ship.
 const ChatName = "_chat"
 
 // SetupTerminalEnv is set in the setup session, so `admiral setup` holds an error on screen.
 const SetupTerminalEnv = "ADMIRAL_SETUP_TERMINAL"
 
-// Prefix is the start of every option Admiral owns.
 const Prefix = "@admiral-"
 
-// PollInterval is how often the sessions are re-read.
 const PollInterval = 500 * time.Millisecond
 
 const sep = "\x1f"
 
-// format is what one `list-panes` row holds, after the nonce (see rowFormat).
-// Every free text in it (the session name and each @admiral-* option) goes
-// through unprintable as a second layer: tmux prints option values raw, so a
-// newline or a \x1f an agent put in its own pane's option could end its row
-// early and forge another. tmux copies a value that is not valid UTF-8 through
-// raw, whatever the substitution says, so the nonce is what holds.
+// tmux prints option values raw, so an agent's newline could forge a row; unprintable is a
+// second layer, since tmux copies invalid UTF-8 through raw and only the nonce holds then.
 var format = unprintable(rawFormat)
 
-// newNonce is 16 random hex characters, fresh for every read.
 func newNonce() string {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -78,15 +52,9 @@ func newNonce() string {
 	return hex.EncodeToString(b[:])
 }
 
-// rowFormat is the format of one read: the read's nonce is the first field of
-// every row. Option text is written before the read and can't know it, so a row
-// it forges has no nonce, and ownRows drops it.
+// Option text is written before the read and can't know its nonce, so a forged row has none.
 func rowFormat(nonce string) string { return nonce + sep + format }
 
-// ownRows keeps the rows that start with the read's nonce, without it. A row
-// broken by its own option text keeps its nonce and loses the field count,
-// where parseRows holds its ship unreadable; the lines after a raw newline
-// don't start with the nonce and are dropped before anything counts fields.
 func ownRows(rows []string, nonce string) []string {
 	own := make([]string, 0, len(rows))
 	for _, r := range rows {
@@ -97,15 +65,11 @@ func ownRows(rows []string, nonce string) []string {
 	return own
 }
 
-// ctrl matches the ASCII control characters, the newline and the field
-// separator among them. The class is spelled with a range of literal bytes: the
-// colon in [[:cntrl:]] ends a tmux format modifier.
+// A range of literal bytes: the colon in [[:cntrl:]] would end a tmux format modifier.
 const ctrl = "[\x01-\x1f\x7f]"
 
 var freeText = regexp.MustCompile(`#\{(session_name|@[a-z-]+)\}`)
 
-// unprintable wraps each free text of a format in a substitution that turns a
-// control character into a space.
 func unprintable(f string) string {
 	return freeText.ReplaceAllString(f, "#{s/"+ctrl+"/ /:$1}")
 }
@@ -122,8 +86,7 @@ const rawFormat = "#{session_name}" + sep + "#{pane_dead}" + sep + "#{pane_dead_
 	CrewNameFormat + sep + "#{pane_id}" + sep + "#{window_id}" + sep + "#{" + ActivityOption + "}" + sep +
 	"#{@admiral-role}" + sep + "#{" + CrewTranscriptOption + "}" + sep + "#{" + SubagentsOption + "}"
 
-// The session options Admiral keeps for the outcome log (ADR 0012): the marker
-// of a ship whose `ended` was written, and the running needs-you tally.
+// Outcome-log bookkeeping: the marker of a ship whose `ended` was written, and the needs-you tally.
 const (
 	OptEnded      = "ended"
 	OptNeedsCount = "needs-count"
@@ -131,29 +94,15 @@ const (
 	OptStopSince  = "stop-since"
 )
 
-// fixedFields is how many fields of a row come before the options.
 const fixedFields = 8
 
-// tailFields is how many fields of a row come after the options: the crew name
-// (a window option; set only on a crew boat's window), the pane id, the window
-// id, the pane's last hook time, the window's @admiral-role, the pane's
-// @admiral-crew-transcript and the pane's @admiral-subagents. The subagents come
-// last and outside optionNames (a change of them is no OptionChanged), after the
-// fields parseCrew reads by position.
-// tmux prints option values raw. The reader guards against a control character
-// in one (see format): the nonce that starts every row of a read drops the lines
-// a raw newline leaves, so none is parsed as a row; the substitution turns
-// control characters into spaces, but tmux skips it for a value that is not
-// valid UTF-8. A row that a value still breaks has the wrong length, and its
-// ship is unreadable. `admiral hook` writes JSON, which escapes both.
+// The subagents field comes last, after the fields parseCrew reads by position.
 const tailFields = 7
 
-// optionNames are the session options in the order format lists them. The last
-// four are Admiral's outcome bookkeeping (ended marker, needs-you tally).
+// optionNames are in the order format lists them.
 var optionNames = []string{"name", "fleet", "fleet-name", "fleet-color", "harness", "dir",
 	"skill", "source", "order", "launched", "title", "url", "panel", "resources", "origin-source", "origin-panel", OptEnded, OptNeedsCount, OptNeedsSecs, OptStopSince}
 
-// Session is one tmux session as last read.
 type Session struct {
 	Name       string
 	Options    map[string]string // without the @admiral- prefix; every name in optionNames is present
@@ -165,21 +114,17 @@ type Session struct {
 	DeadTime   time.Time // when the pane died, at tmux's one-second resolution; zero while it lives
 	BellStamp  string    // changes on every bell
 	PaneID     string    // the ship's own pane, so writes never land on a crew boat's
-	// Crew is the ship's crew boats (teammates), by name; Subagents the running
-	// subagents of the ship's own pane, empty once that pane is dead. Neither is
-	// part of set()'s event diff, and no crew row ever sets another field.
+	// Neither is part of set()'s event diff. Subagents is empty once the ship's pane is dead.
 	Crew      []Crew
 	Subagents []Subagent
 }
 
-// IsShip is true for a session Admiral launched (or that looks like one). The
-// setup and chat sessions never are: the chat's Claude can set options on its
-// own session, and must not make itself a ship by setting @admiral-name.
+// The chat's Claude can set options on its own session and must not make itself a
+// ship by setting @admiral-name.
 func (s Session) IsShip() bool {
 	return s.Name != Internal && s.Name != SetupName && s.Name != ChatName && s.Options["name"] != ""
 }
 
-// EventKind says what changed.
 type EventKind int
 
 const (
@@ -192,7 +137,6 @@ const (
 	Reset   // the connection to tmux was lost: no sessions are known until it is back
 )
 
-// Event is one change seen between two reads.
 type Event struct {
 	Kind    EventKind
 	Session string
@@ -202,7 +146,6 @@ type Event struct {
 	Signal  string // PaneDied: set when a signal killed the pane (Status is then 0)
 }
 
-// Host is the connection and the last read.
 type Host struct {
 	sock string
 	tmux string // the tmux binary
@@ -228,7 +171,6 @@ type Host struct {
 	once   sync.Once
 }
 
-// New prepares a host for the tmux server on sock. tmux is the binary to run.
 func New(tmux, sock string) *Host {
 	env := []string{}
 	for _, kv := range os.Environ() {
@@ -240,7 +182,6 @@ func New(tmux, sock string) *Host {
 		subs: map[chan Event]struct{}{}, wake: make(chan struct{}, 1), ready: make(chan struct{})}
 }
 
-// Socket is the tmux socket path.
 func (h *Host) Socket() string { return h.sock }
 
 // Sessions returns the ships' sessions in a stable order (by name).
@@ -289,12 +230,10 @@ func (h *Host) Subscribe() (<-chan Event, func()) {
 	}
 }
 
-// Ready is closed once the sessions have been read for the first time.
 func (h *Host) Ready() <-chan struct{} { return h.ready }
 
-// Known says the session list can be trusted: a read has succeeded and the
-// connection is not lost. Before that, and while it is lost, the list is empty
-// because nothing is known.
+// Known says a read has succeeded and the connection is not lost; otherwise an
+// empty list means nothing is known.
 func (h *Host) Known() bool {
 	select {
 	case <-h.ready:
@@ -305,7 +244,7 @@ func (h *Host) Known() bool {
 	return !lost
 }
 
-// Sync reads the sessions now and returns when the new state is published.
+// Sync returns once the new read is published.
 func (h *Host) Sync(ctx context.Context) error { return h.poll(ctx) }
 
 // Refresh asks for a read now (after a launch, say) and returns without waiting.
@@ -316,8 +255,7 @@ func (h *Host) Refresh() {
 	}
 }
 
-// Run keeps a control connection up until ctx ends, reconnecting if tmux goes
-// away. If the server is gone there are no ships until it is back.
+// Run reconnects if tmux goes away; while the server is gone there are no ships.
 func (h *Host) Run(ctx context.Context) {
 	for ctx.Err() == nil {
 		err := h.connect(ctx)
@@ -390,9 +328,7 @@ func (h *Host) connect(ctx context.Context) error {
 	return ctx.Err()
 }
 
-// bellHook writes the script the alert-bell hook runs and returns the command
-// that installs the hook. The script stamps the ringing window's pane with the time and its
-// own pid, so two bells in a second differ.
+// The script stamps the ringing pane with the time and its own pid, so two bells in a second differ.
 func (h *Host) bellHook() (string, error) {
 	script := filepath.Join(filepath.Dir(h.sock), "harness", "bell.sh")
 	body := "#!/bin/sh\n" + shQuote(h.tmux) + " -S " + shQuote(h.sock) +
@@ -407,10 +343,9 @@ func (h *Host) bellHook() (string, error) {
 	return "set-hook -g alert-bell " + tmuxQuote(run), nil
 }
 
-// shQuote quotes s for sh.
 func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
-// tmuxQuote quotes s as one tmux argument; # is left for format expansion.
+// # is left for format expansion.
 func tmuxQuote(s string) string {
 	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "$", `\$`).Replace(s) + `"`
 }
@@ -456,17 +391,12 @@ func (s *inflight) take(r reply) {
 	}
 }
 
-// command sends one command line and waits for its reply.
 func (h *Host) command(ctx context.Context, line string) ([]string, error) {
 	return h.commandList(ctx, line)
 }
 
-// commandList sends the commands as one `;`-joined line and waits for the reply
-// to each. tmux runs the list as one unit, so no other client's command lands
-// between them. It returns the last reply's lines, and the error of the command
-// that failed, after which tmux ran no more of the list. A list that gives up
-// (cancelled, or tmux too slow) stays in the queue, and the lists after it read
-// and discard its replies, so no list ever reads another's.
+// tmux runs the `;`-joined list as one unit, so no other client's command lands between them.
+// A list that gives up stays in the queue and later lists discard its replies, so none reads another's.
 func (h *Host) commandList(ctx context.Context, cmds ...string) ([]string, error) {
 	if len(cmds) == 0 {
 		return nil, fmt.Errorf("no commands to send")
@@ -501,16 +431,8 @@ func (h *Host) commandList(ctx context.Context, cmds ...string) ([]string, error
 	return mine.lines, mine.err
 }
 
-// parseRows folds the rows of list-panes (one per pane) into one session each:
-// the first pane that is not a crew boat's stands for the session. A row from a
-// crew boat's window (its window options shadow the ship's) never sets a field of
-// the session, whatever its order or state: it only joins Crew, read by
-// parseCrew's rule. A session with only crew rows is not a session. known holds
-// the session names list-sessions reported. A value holding a newline or the
-// field separator can split a row or forge one, so a session is unreadable, and
-// left out, when a row of it has the wrong number of fields, when its rows
-// disagree on the options, or (for a row that starts with some other name)
-// never: a row whose first field is no known session is dropped as a fragment.
+// A crew boat's row never sets a session field, only joins Crew. An option value can split or
+// forge a row, so a session whose rows have the wrong length or disagree is unreadable.
 func parseRows(rows []string, known map[string]bool) (sessions map[string]Session, unreadable []string) {
 	sessions = map[string]Session{}
 	bad := map[string]bool{}
@@ -651,10 +573,8 @@ func (h *Host) set(next map[string]Session, unreadable []string, ok bool) {
 	}
 }
 
-// ReadOnce (tmux -u, like the control client: without a UTF-8 locale tmux would print the
-// separator as "_" and every row would be unreadable) lists the sessions of the tmux server on sock with one command and
-// no control connection, so it starts nothing. With no server running there
-// are no sessions. Like Sessions, it leaves out the internal session.
+// ReadOnce uses no control connection, so it starts no tmux server. It passes -u because
+// without a UTF-8 locale tmux prints the separator as "_" and every row is unreadable.
 func ReadOnce(tmux, sock string) ([]Session, error) {
 	run := func(args ...string) ([]string, error) {
 		out, err := exec.Command(tmux, append([]string{"-f", "/dev/null", "-S", sock, "-u"}, args...)...).Output()

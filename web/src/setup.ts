@@ -3,14 +3,11 @@ import { applyConfig } from './config';
 import type { Probe } from './connection';
 import { boarded, unboard } from './ships';
 
-// The setup terminal (stories 19-21): `admiral setup` in the tmux session `_setup`, shown with the
-// bridge's terminal. Open from the "Set up a fleet" marina and from the header's fleet count.
 export const SETUP_SESSION = '_setup';
 
 export const setupOpen = signal(false);
 
-// Asks the server to start setup, or to leave the one that is running alone, so every browser
-// that taps joins the same session. Only then does the terminal open and join it.
+// The server leaves a running setup alone, so every browser that taps joins the same session.
 export async function openSetup(): Promise<void> {
   try {
     const res = await fetch('/api/setup', { method: 'POST' });
@@ -43,7 +40,6 @@ async function refreshConfig(): Promise<void> {
   }
 }
 
-/** The reconnect check of the link: is `_setup` still running? Same shape as the ships probe. */
 export async function probeSetup(): Promise<Probe> {
   try {
     const res = await fetch('/api/setup', { cache: 'no-store' });

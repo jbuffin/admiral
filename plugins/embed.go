@@ -1,4 +1,3 @@
-// Package plugins holds the order source plugins that ship inside the binary.
 package plugins
 
 import (
@@ -6,13 +5,11 @@ import (
 	"io/fs"
 )
 
-// Shipped holds every plugin Admiral ships, one folder each: plugins/github/.
-// Admiral writes each to $ADMIRAL_HOME/plugins/<name>/.
+// Admiral writes each folder to $ADMIRAL_HOME/plugins/<name>/.
 //
 //go:embed github
 var Shipped embed.FS
 
-// Names lists the folders of Shipped.
 var Names = folders()
 
 func folders() []string {

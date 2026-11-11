@@ -8,12 +8,6 @@ import (
 	"time"
 )
 
-// A crew boat's transcript path (#175, ADR 0021): `admiral hook` records it in
-// the pane option @admiral-crew-transcript, and `admiral crew list --json` shows
-// it as `transcript`, or null. Crew boats only: a ship's pane never gets it. The
-// chat's @admiral-transcript on SessionStart is covered by internal/cli's
-// TestTranscriptCall and TestChatSession_ConversationSendNewChatAndRestart.
-
 const crewTranscriptOption = "@admiral-crew-transcript"
 
 // transcriptField is the `transcript` of a crew boat's list row; it fails the

@@ -6,8 +6,7 @@ import { Modal } from './Modal';
 import { resources } from './resources';
 import { api, sourcePath } from './sources';
 
-// The per-panel autopilot form (#181). It reads and writes one panel's entry in config.json through the
-// autopilot settings routes; `version` is the entry version those routes use to refuse a stale save.
+// `version` is the entry version the autopilot settings routes use to refuse a stale save.
 
 interface Loaded {
   entry: Record<string, any> | null;

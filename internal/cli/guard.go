@@ -17,23 +17,16 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
-// guardReason is what the agent reads when the guard refuses. It names no
-// command, so a refusal never repeats text the ship wrote.
+// The reasons name no command, so a refusal never repeats text the ship wrote.
 const guardReason = "Autopilot ships leave reviews PENDING. The engineer submits them from the inbox."
 
-// mergeReason is what the agent reads when the guard refuses a merge, or a write
-// to the rules that gate one.
 const mergeReason = "Autopilot ships merge only with gh pr merge --auto, using the panel's merge method, " +
 	"on a pull request whose base branch requires an approving review. Any other merge, " +
 	"and any change to those branch rules, is for the engineer."
 
-// opaqueReason is what the agent reads when the guard refuses what it cannot
-// read: a script it is not shown, an alias or extension that renames a command,
-// or the GitHub token.
 const opaqueReason = "Autopilot ships run only commands the guard can read: no scripts run from a file or a pipe, " +
 	"no aliases, no gh extensions, and no reading the GitHub token."
 
-// The rule codes a refusal carries into its guard_denied outcome line.
 const (
 	ruleGhPrReview    = "gh_pr_review"
 	ruleGhAPIEvent    = "gh_api_review_event"
@@ -62,9 +55,6 @@ const (
 	ruleTokenRead   = "token_read"
 )
 
-// reasonFor is the reason a rule refuses with: the review reason for the review
-// rules and a payload it cannot read, the opaque reason for the rules that keep
-// the guard from being routed around, the merge reason for the rest.
 func reasonFor(rule string) string {
 	switch rule {
 	case ruleGhPrReview, ruleGhAPIEvent, ruleGhAPISubmit, ruleGraphqlReview, ruleMcpReview, ruleUnparsed:
@@ -75,19 +65,14 @@ func reasonFor(rule string) string {
 	return mergeReason
 }
 
-// GuardDenied is a refusal. main exits 2 on it and prints nothing more, because
-// Guard has already written the reason to stderr, which Claude Code feeds back to
-// the agent as it stands.
+// GuardDenied makes main exit 2 and print nothing more: Guard has already written
+// the reason to stderr, which Claude Code feeds back to the agent.
 type GuardDenied struct{ Rule, Reason string }
 
 func (e *GuardDenied) Error() string { return e.Reason }
 
-// Guard is `admiral guard pretooluse`, the PreToolUse hook that keeps an
-// autopilot ship from submitting a pull-request review as APPROVE or
-// REQUEST_CHANGES (#115), and from merging a pull request other than with
-// `gh pr merge --auto` under the rules of guard_merge.go (#120). It is internal
-// like Hook, but unlike Hook it is meant to fail: a refusal exits 2 with the reason on stderr. Outside autopilot
-// (ADMIRAL_AUTOPILOT not exactly 1) it does nothing at all.
+// Guard keeps an autopilot ship from submitting an APPROVE or REQUEST_CHANGES
+// review and from merging other than with `gh pr merge --auto`.
 func Guard(args []string, std IO) error {
 	if len(args) == 0 || args[0] != "pretooluse" || os.Getenv("ADMIRAL_AUTOPILOT") != "1" {
 		return nil
@@ -103,11 +88,8 @@ func Guard(args []string, std IO) error {
 	return &GuardDenied{Rule: rule, Reason: reason}
 }
 
-// recordGuardDenied appends the guard_denied line of the ship named in the
-// environment. The home comes from ADMIRAL_REPORT first, which Admiral sets and a
-// fleet's env cannot override, and never from home.Resolve, which would create
-// ~/.admiral. With no ship or no home, or a failed write, the refusal stands
-// without a record and without a word on stderr.
+// recordGuardDenied trusts ADMIRAL_REPORT first, which a fleet's env cannot
+// override, and never home.Resolve, which would create ~/.admiral.
 func recordGuardDenied(tool, rule string) {
 	ship, dir := os.Getenv("ADMIRAL_SHIP"), os.Getenv("ADMIRAL_HOME")
 	if report := os.Getenv("ADMIRAL_REPORT"); report != "" {
@@ -125,8 +107,7 @@ func recordGuardDenied(tool, rule string) {
 	w.Close()
 }
 
-// guardDecision is the tool name and the rule that refuses the payload, or no
-// rule to allow it. A payload it cannot read is refused as unparsed.
+// guardDecision refuses a payload it cannot read.
 func guardDecision(raw []byte) (tool, rule string) {
 	var p struct {
 		ToolName  string          `json:"tool_name"`
@@ -162,39 +143,27 @@ func guardDecision(raw []byte) (tool, rule string) {
 	return p.ToolName, ""
 }
 
-// reviewEvent says whether v is a review event an autopilot ship may not submit.
 func reviewEvent(v string) bool {
 	return strings.EqualFold(v, "APPROVE") || strings.EqualFold(v, "REQUEST_CHANGES")
 }
 
 var (
-	// eventText is an event position in text a command pipes to gh api: "event"
-	// (with escaped quotes, a jq literal or a here-string around it) then the value.
-	eventText = regexp.MustCompile(`(?i)\bevent\W{0,6}(approve|request_changes)\b`)
-	// eventExpansion is an event position whose value is an expansion, in the text
-	// of a command line (a here-string, a heredoc) or in a script that was parsed again.
+	// \W{0,6} spans escaped quotes, a jq literal or a here-string around "event".
+	eventText      = regexp.MustCompile(`(?i)\bevent\W{0,6}(approve|request_changes)\b`)
 	eventExpansion = regexp.MustCompile("(?i)\\bevent\\W{0,6}(?:\\$|`|" + marker + ")")
-	// gqlSlotExpands is the event or input slot of a mutation holding an expansion.
 	gqlSlotExpands = regexp.MustCompile(`(?i)\b(?:event|input)\W{0,6}` + placeholder)
-	// gqlBound is the event or input slot of a mutation bound to a variable.
-	gqlBound = regexp.MustCompile(`(?i)\b(?:event|input)\s*:\s*[$` + placeholder + `]`)
-	// gqlEvent is an event name anywhere in a mutation: `event : APPROVE`, a
-	// variable's default, or a value the guard cannot pair up with its field.
+	gqlBound       = regexp.MustCompile(`(?i)\b(?:event|input)\s*:\s*[$` + placeholder + `]`)
+	// gqlEvent matches anywhere: a variable's default, or a value the guard cannot
+	// pair up with its field.
 	gqlEvent = regexp.MustCompile(`(?i)\b(approve|request_changes)\b`)
 )
 
-// guardCheck holds what resolving a command needs of the payload: the directory
-// that relative files named on the command line are read from, and the state the
-// walk over the command line builds up (see guard_merge.go).
 type guardCheck struct {
 	cwd string
 	st  *guardState
 }
 
-// ghSubcommand drops the flags that sit before gh's subcommand words (-R and
-// --repo, --hostname with their values, and any other flag) until it reaches
-// `pr review`, `pr merge`, `pr edit` or `api`, after which the arguments are left as they are. gh
-// accepts -R before `review` as well as before `pr`.
+// gh accepts -R before `review` as well as before `pr`.
 func ghSubcommand(args []string) []string {
 	var words []string
 	for i := 0; i < len(args); i++ {
@@ -213,13 +182,10 @@ func ghSubcommand(args []string) []string {
 	return words
 }
 
-// ghPrChecked says whether a word after `gh pr` is one of the subcommands the
-// guard reads the arguments of.
 func ghPrChecked(word string) bool { return word == "review" || word == "merge" || word == "edit" }
 
-// ghCommands are gh's built-in commands. A first word that is none of them is an
-// alias or an extension, which can run anything under another name, so it is
-// refused; so are `alias` and `extension` themselves.
+// Any other first word is an alias or extension, which can run anything under
+// another name, so it is refused.
 var ghCommands = map[string]bool{
 	"accessibility": true, "actions": true, "agent-task": true, "api": true, "attestation": true, "auth": true, "browse": true, "cache": true,
 	"codespace": true, "completion": true, "config": true, "copilot": true, "discussion": true,
@@ -230,10 +196,8 @@ var ghCommands = map[string]bool{
 	"telemetry": true, "variable": true, "version": true, "workflow": true,
 }
 
-// gh is the rule for a gh call: `pr review`, `pr merge`, `pr edit` and `api` are
-// checked, and so are the words that could rename a command; anything else is
-// allowed, because no other gh command can submit a review or merge (`pr ready`
-// only takes a pull request out of draft).
+// No other gh command can submit a review or merge (`pr ready` only takes a pull
+// request out of draft).
 func (g guardCheck) gh(args []string, line *lineText) string {
 	sub := ghSubcommand(args)
 	switch {
@@ -267,13 +231,8 @@ func (g guardCheck) gh(args []string, line *lineText) string {
 	return ""
 }
 
-// prReviewSubmits follows pflag over the arguments of gh pr review: -b, -F and
-// -R (and their long forms) take a value, which may start with a dash, a
-// short cluster ends at a value-taking flag, and -- ends the flags. It reports
-// --approve or --request-changes (-a, -r) in any form. A word the guard cannot
-// read counts too (the PR, a word where a flag could stand, an unquoted flag
-// value that could split into flags), unless a literal --comment or -c is also
-// there: gh takes one event flag, so the others could not submit.
+// prReviewSubmits counts a word it cannot read as submitting, unless a literal
+// --comment or -c is there: gh takes one event flag, so the others could not submit.
 func prReviewSubmits(args []string) bool {
 	unsure, comment := false, false
 	value := func(i *int, attached string) {
@@ -328,7 +287,7 @@ func prReviewSubmits(args []string) bool {
 	return unsure && !comment
 }
 
-// apiField is a -f or -F field of gh api; typed is -F, the one that reads @file.
+// typed is -F, the one that reads @file.
 type apiField struct {
 	key, val string
 	typed    bool
@@ -344,8 +303,7 @@ type apiArgs struct {
 	fieldFlag  bool   // a -f or -F was given, which makes gh send a POST
 }
 
-// parseAPI splits gh api's arguments by pflag's rules; the flags that take a
-// value are those of `gh api --help`, in attached forms too (-XPOST, --method=POST).
+// The flags that take a value are those of `gh api --help`.
 func parseAPI(args []string) (p apiArgs) {
 	long := map[string]string{"method": "", "header": "", "raw-field": "f", "field": "F", "input": "i",
 		"jq": "", "template": "", "preview": "", "hostname": "", "cache": ""}
@@ -404,11 +362,8 @@ func parseAPI(args []string) (p apiArgs) {
 	return p
 }
 
-// endpointSegments is the path of a gh api endpoint, less a host, an /api/v3
-// prefix, a leading slash, and a query string or fragment, percent-decoded, with
-// the empty and "." segments dropped and ".." resolved. A path that cannot be
-// decoded, or that climbs above its root, is one expansion: the guard cannot say
-// where it goes.
+// A path that cannot be decoded, or that climbs above its root, is one expansion:
+// the guard cannot say where it goes.
 func endpointSegments(endpoint string) []string {
 	if i := strings.Index(endpoint, "://"); i >= 0 {
 		endpoint = endpoint[i+3:]
@@ -444,9 +399,8 @@ func endpointSegments(endpoint string) []string {
 	return seg
 }
 
-// routeTails are the readings of a gh api path as repos/<o>/<r>/<tail>: an
-// expansion in the owner position may span owner and repo ($REPO holding o/r), and
-// one first segment may stand for repos/<o>/<r> ($BASE).
+// An expansion in the owner position may span owner and repo ($REPO holding o/r),
+// and one first segment may stand for repos/<o>/<r> ($BASE).
 func routeTails(seg []string) (tails [][]string) {
 	switch {
 	case len(seg) >= 3 && seg[0] == "repos":
@@ -462,11 +416,8 @@ func routeTails(seg []string) (tails [][]string) {
 	return tails
 }
 
-// reviewRoute says which review endpoint the segments of a gh api path name:
-// "reviews" for repos/<o>/<r>/pulls/<n>/reviews, "events" for the submit
-// endpoint under it, "other" for a comments or review path that cannot submit,
-// or "". An expansion matches a segment, but "other" needs its word spelled out,
-// so an expansion cannot stand in for reviews or events there.
+// "other" needs its word spelled out, so an expansion cannot stand in for reviews
+// or events there.
 func reviewRoute(seg []string) string {
 	is := func(s, lit string) bool { return hasPlaceholder(s) || s == lit }
 	for _, t := range routeTails(seg) {
@@ -483,11 +434,6 @@ func reviewRoute(seg []string) string {
 	return ""
 }
 
-// api is the rule for gh api: the review rules, then the merge rules
-// (guard_merge.go). The review rules cover the reviews endpoint with a submitting
-// event, the submit endpoint, or GraphQL with a review mutation. An endpoint with an
-// expansion that matches no route could be either, so an event that submits (or
-// that the guard cannot read) refuses, and so does the text rule on the call.
 func (g guardCheck) api(args []string, line *lineText) string {
 	if g.graphqlUnreadable(args) {
 		return ruleGraphqlMerge
@@ -529,11 +475,8 @@ func (g guardCheck) apiReview(args []string, line *lineText) string {
 	return ""
 }
 
-// readFile reads a file named on a command line, relative to the payload's cwd (a
-// relative path is not read once the line has a cd, pushd or popd, and ~/ is the
-// home directory),
-// at most 1 MiB. Only a regular file is read: a pipe, a device or the guard's
-// own stdin would give the guard nothing to judge.
+// readFile reads only a regular file: a pipe, a device or the guard's own stdin
+// would give the guard nothing to judge.
 func (g guardCheck) readFile(name string) (string, bool) {
 	if name == "/dev/stdin" || strings.HasPrefix(name, "/dev/fd/") {
 		return "", false
@@ -559,8 +502,7 @@ func (g guardCheck) readFile(name string) (string, bool) {
 	return string(b), err == nil && len(b) <= 1<<20
 }
 
-// eventSubmits reports an APPROVE or REQUEST_CHANGES event in a gh api call to
-// the reviews endpoint. A source it cannot read counts as one.
+// eventSubmits counts a source it cannot read as a submitting event.
 func (g guardCheck) eventSubmits(p apiArgs, line *lineText) bool {
 	for _, f := range p.fields {
 		if hasPlaceholder(f.key) {
@@ -593,8 +535,6 @@ func (g guardCheck) eventSubmits(p apiArgs, line *lineText) bool {
 	return !ok || !ok2 || !ok3 || reviewEvent(event)
 }
 
-// anyReviewEvent reports an APPROVE or REQUEST_CHANGES string anywhere in a
-// decoded JSON value.
 func anyReviewEvent(v any) bool {
 	switch v := v.(type) {
 	case string:
@@ -611,14 +551,8 @@ func anyReviewEvent(v any) bool {
 	return false
 }
 
-// graphqlSubmits reports a submitPullRequestReview or addPullRequestReview
-// mutation with an APPROVE or REQUEST_CHANGES event, in its text or in a
-// variable. A source it cannot read counts as one when the mutation is there,
-// and so does a value with an expansion: beside a query that is not exact it
-// could be anything, and beside a mutation it could be the event when the
-// mutation binds its event or input to a variable (a variable that only names
-// the pull request opens a PENDING review). An expansion in the event or input
-// slot of the mutation itself refuses.
+// graphqlSubmits refuses an expanded variable only when the mutation binds its
+// event or input to a variable: one that only names the PR opens a PENDING review.
 func (g guardCheck) graphqlSubmits(p apiArgs, line *lineText, own string) bool {
 	var queries, vars []string
 	unknownVar := false // a variable from stdin or a file that cannot be read
@@ -679,9 +613,7 @@ func (g guardCheck) graphqlSubmits(p apiArgs, line *lineText, own string) bool {
 	return false
 }
 
-// boolFlag reads the value of a boolean flag as gh's pflag does, with
-// strconv.ParseBool: no value is true, and ok is false for one that is not a
-// boolean (an expansion included), which the caller treats as unreadable.
+// boolFlag reads a value as gh's pflag does, so an expansion is not ok.
 func boolFlag(has bool, val string) (on, ok bool) {
 	if !has {
 		return true, true
@@ -690,8 +622,6 @@ func boolFlag(has bool, val string) (on, ok bool) {
 	return on, err == nil
 }
 
-// inputBody is the text of an --input body: a file the guard can read, or stdin
-// when the line shows it literally.
 func (g guardCheck) inputBody(name string) (string, bool) {
 	if name == "-" {
 		return g.st.stdin, g.st.stdinOK
@@ -699,9 +629,8 @@ func (g guardCheck) inputBody(name string) (string, bool) {
 	return g.readFile(name)
 }
 
-// decodeBody reads an --input body as a JSON object. A key is read by its exact
-// name, as GitHub reads it, so a body with two keys that differ only in case is
-// refused (Go's decoder would match either), and so is one that is not an object.
+// decodeBody refuses two keys that differ only in case: GitHub reads the exact
+// name, but Go's decoder would match either.
 func decodeBody(b string) (map[string]json.RawMessage, bool) {
 	var body map[string]json.RawMessage
 	if json.Unmarshal([]byte(b), &body) != nil || body == nil {
@@ -717,8 +646,6 @@ func decodeBody(b string) (map[string]json.RawMessage, bool) {
 	return body, true
 }
 
-// bodyString is a string-valued key of a decoded body; ok is false for a value
-// that is not a string. A missing key is the empty string.
 func bodyString(body map[string]json.RawMessage, key string) (string, bool) {
 	raw, has := body[key]
 	if !has {

@@ -41,7 +41,6 @@ func (r *rig) stamp() time.Time {
 func isRetro(rec outcomes.Record) bool           { return rec.Event == "retro_queued" }
 func (r *rig) retrosRecorded() []outcomes.Record { return r.recordsOf("retro_queued") }
 
-// addOrder is a plugin that adds the order to its listing.
 func (r *rig) addOrder(_ context.Context, source, panelID, text string) (string, error) {
 	r.adds = append(r.adds, addCall{source, panelID, text})
 	if r.addErr != nil {
@@ -60,8 +59,7 @@ func (r *rig) addOrder(_ context.Context, source, panelID, text string) (string,
 	return id, nil
 }
 
-// commit finishes a write: the line reaches the log only when err is nil, the
-// way Writer.Enqueue's onDone gets the error of a failed write.
+// commit lets the line reach the log only when err is nil, as Writer.Enqueue does.
 func (r *rig) commit(w heldWrite, err error) {
 	if err == nil {
 		fields := map[string]any{}
@@ -75,7 +73,6 @@ func (r *rig) commit(w heldWrite, err error) {
 	}
 }
 
-// confirm finishes the oldest held write.
 func (r *rig) confirm(err error) {
 	r.t.Helper()
 	if len(r.held) == 0 {
@@ -86,8 +83,7 @@ func (r *rig) confirm(err error) {
 	r.commit(w, err)
 }
 
-// run puts one finished autopilot run of s/p into the log and returns the ts
-// of its launched record.
+// run returns the ts of the run's launched record.
 func (r *rig) run(ship string) time.Time { return r.runOf("s", "p", ship) }
 
 func (r *rig) runOf(source, panelID, ship string) time.Time {
@@ -100,8 +96,6 @@ func (r *rig) runOf(source, panelID, ship string) time.Time {
 
 func rfc(ts time.Time) string { return ts.UTC().Format(time.RFC3339) }
 
-// newRetroRig is a rig whose panel s/p retros every n runs, with the resume
-// panel rs/orders listed.
 func newRetroRig(t *testing.T, n int) *rig {
 	t.Helper()
 	r := newRig(t)
@@ -146,9 +140,8 @@ func wantTexts(t *testing.T, what string, got []string, want ...string) {
 	}
 }
 
-// AC1 and the record: N counted runs add exactly one order, with the previous
-// retro's ts as --since (the first counted run's launched ts for the first
-// retro), and write a retro_queued record that carries what the order is.
+// --since is the previous retro's ts, or the first counted run's launched ts for
+// the first retro.
 func TestRetroAddsOneOrderForEveryNRuns(t *testing.T) {
 	r := newRetroRig(t, 2)
 	first := r.run("a")
@@ -180,8 +173,6 @@ func TestRetroAddsOneOrderForEveryNRuns(t *testing.T) {
 	wantTexts(t, "two runs after the retro", r.addTexts(), text, "/retro s/p --since "+rfc(r.lines[slices.IndexFunc(r.lines, func(l outcomes.Line) bool { return l.Event == "retro_queued" })].TS))
 }
 
-// The retro step is not part of the launch loop: a pass that returns early with
-// the global cap full still adds the retro.
 func TestRetroIsAddedWhenThePassReturnsEarly(t *testing.T) {
 	r := newRetroRig(t, 1)
 	r.cfg.AutopilotMaxShips = 1
@@ -196,8 +187,7 @@ func TestRetroIsAddedWhenThePassReturnsEarly(t *testing.T) {
 	wantTexts(t, "a full cap", r.addTexts(), "/retro s/p --since "+rfc(first))
 }
 
-// A panel that must add nothing adds nothing, and keeps its count in the log
-// for later. Warnings are once, not once a pass.
+// The count stays in the log for later. Warnings are once, not once a pass.
 func TestRetroAddsNothingWhenItIsOff(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -262,10 +252,8 @@ func TestRetroAddsNothingWhenItIsOff(t *testing.T) {
 	}
 }
 
-// One at a time: while the last retro's order is listed, the source has not
-// listed yet, or a ship of it exists in any status, no second retro is added;
-// once it clears, a count that reached N adds the next. A restart reads the same
-// from the log.
+// A retro stays pending while its order is listed, its source has not listed
+// yet, or a ship of it exists in any status. A restart reads the same from the log.
 func TestRetroOneAtATime(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -337,9 +325,8 @@ func TestRetroOneAtATime(t *testing.T) {
 	}
 }
 
-// The record is the reset: until retro_queued is confirmed written, the panel's
-// retro is pending. A write that failed or was dropped is logged once and
-// written again, and the order is not added again.
+// Until retro_queued is confirmed written the retro is pending; a failed write
+// is retried without adding the order again.
 func TestRetroWaitsForItsRecordAndWritesItAgain(t *testing.T) {
 	r := newRetroRig(t, 2)
 	r.hold = true
@@ -380,7 +367,7 @@ func TestRetroWaitsForItsRecordAndWritesItAgain(t *testing.T) {
 	}
 }
 
-// Errors of the add. A missing resume source is in the off table above.
+// A missing resume source is in the off table above.
 func TestRetroAddFailures(t *testing.T) {
 	t.Run("retryable is tried on every pass and logged once per message", func(t *testing.T) {
 		r := newRetroRig(t, 2)
@@ -447,9 +434,8 @@ func TestRetroAddFailures(t *testing.T) {
 	})
 }
 
-// A ship can append any line to the log (ADR 0015, ADR 0017). Only records for
-// the configured resume target count, and a pending retro is found from every
-// such record, so forged lines cannot stack retros or stop them.
+// A ship can append any line to the log, so forged records must neither stack
+// retros nor stop them.
 func TestRetroIgnoresForgedRecords(t *testing.T) {
 	forged := func(r *rig, panelID string, extra map[string]any) {
 		fields := map[string]any{"source": "s", "panel": panelID, "since": "2026-10-20T00:00:00Z", "text": "/retro",
@@ -497,8 +483,6 @@ func TestRetroIgnoresForgedRecords(t *testing.T) {
 	})
 }
 
-// A write confirmed while the log is being read is not in what the read saw; the
-// panel stays pending on the snapshot taken before it.
 func TestRetroWriteConfirmedDuringTheLogRead(t *testing.T) {
 	r := newRetroRig(t, 2)
 	r.hold = true

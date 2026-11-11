@@ -22,43 +22,28 @@ import (
 // settle lets a ship finish writing before the inbox is read again.
 const settle = 100 * time.Millisecond
 
-// rescanEvery is how often the inbox is read when it cannot be watched.
+// rescanEvery applies only when the inbox cannot be watched.
 const rescanEvery = 30 * time.Second
 
-// Service reads and serves the inbox of $ADMIRAL_HOME.
 type Service struct {
-	// Home is $ADMIRAL_HOME, absolute.
-	Home string
-	Hub  *server.Hub
-	// Ship says whether a session is a ship Admiral knows, and its name and harness.
-	Ship func(session string) (name, harness string, ok bool)
-	// Outcomes is the outcome log; nil keeps none.
+	Home     string // absolute
+	Hub      *server.Hub
+	Ship     func(session string) (name, harness string, ok bool)
 	Outcomes *outcomes.Writer
-	// Dock is the environment of the dock a ship was launched from, for gh. With no
-	// env, why says which of the ship and its dock is unknown.
-	Dock func(session string) (env []string, why string)
-	// Kept holds the records of sailed-off ships whose inbox is kept; nil keeps none.
-	Kept *state.Store
-	// ResumeTarget is autopilot.resume_source; nil when the config names none.
+	// Dock's why says which of the ship and its dock is unknown.
+	Dock         func(session string) (env []string, why string)
+	Kept         *state.Store
 	ResumeTarget func() *config.ResumeSource
-	// AddOrder adds an order to a panel of a source. A failure says through
-	// AddKind() AddKind whether it may pass or the order may have been added; any
-	// other failure is final.
+	// An AddOrder failure says through AddKind() AddKind whether it may pass or the
+	// order may have landed; any other failure is final.
 	AddOrder func(ctx context.Context, source, panel, text string) (id string, err error)
-	// Origin is where a ship ran, live or kept; ok is false for a ship Admiral
-	// does not know.
-	Origin func(session string) (Origin, bool)
-	// ResumeAdd is called before each add to the panel, and its result after, with
-	// the id the add gave ("" when it gave none). Autopilot holds off on the
-	// panel's unrecorded orders in between, and remembers where the order
-	// launches (#120). Nil does nothing.
+	Origin   func(session string) (Origin, bool)
+	// ResumeAdd is called before each add, and its result after; autopilot holds
+	// off on the panel's unrecorded orders in between.
 	ResumeAdd func(source, panel string, from Origin) (done func(orderID string))
-	// Afloat is whether a session is a ship that is underway or needs you. Its
-	// report's resume text is typed at its prompt instead of becoming an order.
+	// An Afloat ship's resume text is typed at its prompt instead of becoming an order.
 	Afloat func(session string) bool
-	// TypeResume types text at a ship's prompt while it waits there because its
-	// turn ended: afloat is whether the ship is underway or needs you, typed
-	// whether the text went in. Nil types nothing.
+	// TypeResume types only while the ship waits at its prompt because its turn ended.
 	TypeResume func(session, text string) (afloat, typed bool, err error)
 
 	answerMu sync.Mutex        // one answer at a time
@@ -76,8 +61,6 @@ type Service struct {
 	watcher  *fsnotify.Watcher
 }
 
-// List is the open items, oldest first, with the name and harness of the ships
-// that are known.
 func (s *Service) List() []Item {
 	s.mu.Lock()
 	items := append([]Item{}, s.items...)
@@ -102,8 +85,7 @@ func (s *Service) List() []Item {
 
 func (s *Service) message() any { return map[string]any{"type": "inbox", "items": s.List()} }
 
-// Notify asks Run to push the items again, for a change in the ships that name
-// them. It never blocks.
+// Notify never blocks.
 func (s *Service) Notify() {
 	s.kickResume()
 	select {
@@ -123,10 +105,8 @@ func (s *Service) notifyChan() chan struct{} {
 
 func (s *Service) broadcast() { s.Hub.BroadcastOnce("inbox", s.message) }
 
-// Connected sends a new client the items.
 func (s *Service) Connected(c *server.Client) { _ = c.SendOnce("inbox", s.message) }
 
-// Routes registers the inbox API.
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/inbox", s.serveList)
 	mux.HandleFunc("POST /api/inbox/{session}/{id}/answer", s.serveAnswer)
@@ -151,7 +131,6 @@ func (s *Service) serveList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": s.List()})
 }
 
-// decode reads the request body, at most max bytes, as a JSON object into v.
 func decode(w http.ResponseWriter, r *http.Request, max int64, v any) bool {
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, max)).Decode(v); err != nil {
 		writeError(w, http.StatusBadRequest, "the request is not a valid JSON object: "+err.Error())
@@ -160,8 +139,8 @@ func decode(w http.ResponseWriter, r *http.Request, max int64, v any) bool {
 	return true
 }
 
-// serveAnswer takes the engineer's answer to a question item. A review is
-// answered by submit or discard, and findings by findings.
+// serveAnswer is for question items only: a review is answered by submit or
+// discard, and findings by findings.
 func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	session, id := r.PathValue("session"), r.PathValue("id")
 	it, err := s.open(session, id)
@@ -178,7 +157,6 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	respond(w, session, id, ReviewResult{}, err)
 }
 
-// serveSubmit submits the pending review of a review item as the engineer.
 func (s *Service) serveSubmit(w http.ResponseWriter, r *http.Request) {
 	session, id := r.PathValue("session"), r.PathValue("id")
 	var req SubmitRequest
@@ -189,8 +167,6 @@ func (s *Service) serveSubmit(w http.ResponseWriter, r *http.Request) {
 	respond(w, session, id, res, err)
 }
 
-// serveDiscard deletes the pending review of a review item, or with
-// {"forget": true} removes the item from the inbox without gh.
 func (s *Service) serveDiscard(w http.ResponseWriter, r *http.Request) {
 	session, id := r.PathValue("session"), r.PathValue("id")
 	var req struct {
@@ -208,7 +184,6 @@ func (s *Service) serveDiscard(w http.ResponseWriter, r *http.Request) {
 	respond(w, session, id, res, err)
 }
 
-// serveFindings takes the engineer's decision on every card of a findings item.
 func (s *Service) serveFindings(w http.ResponseWriter, r *http.Request) {
 	session, id := r.PathValue("session"), r.PathValue("id")
 	var req FindingsRequest
@@ -218,8 +193,6 @@ func (s *Service) serveFindings(w http.ResponseWriter, r *http.Request) {
 	respond(w, session, id, ReviewResult{}, s.AnswerFindings(session, id, req))
 }
 
-// respond answers a request with the item answered, or with the error and the
-// status it calls for. res is what a review did, for the UI to show.
 func respond(w http.ResponseWriter, session, id string, res ReviewResult, err error) {
 	var bad *InvalidError
 	var gh *GhError
@@ -255,8 +228,8 @@ func respond(w http.ResponseWriter, session, id string, res ReviewResult, err er
 	}
 }
 
-// Refresh reads the inbox again and pushes it. The watches are brought up to
-// date first, so a directory that came back cannot hide a file renamed into it.
+// Refresh syncs the watches first, so a directory that came back cannot hide a
+// file renamed into it.
 func (s *Service) Refresh() {
 	s.scanMu.Lock()
 	s.syncWatches()
@@ -269,8 +242,7 @@ func (s *Service) Refresh() {
 	s.broadcast()
 }
 
-// Run watches the inbox until ctx ends: $ADMIRAL_HOME (inbox/ may not exist
-// yet), inbox/ and every ship's directory.
+// Run also watches $ADMIRAL_HOME, since inbox/ may not exist yet.
 func (s *Service) Run(ctx context.Context) {
 	_ = os.MkdirAll(filepath.Join(s.Home, "inbox"), 0o700)
 	var events <-chan fsnotify.Event
@@ -320,9 +292,8 @@ func (s *Service) Run(ctx context.Context) {
 	}
 }
 
-// relevant is whether an event can change what is served: not a chmod, not a
-// dot file (a temp file; the rename that publishes it is its own event), and
-// in $ADMIRAL_HOME only inbox itself.
+// relevant skips dot files: they are temp files, and the rename that publishes
+// one is its own event.
 func (s *Service) relevant(ev fsnotify.Event) bool {
 	base := filepath.Base(ev.Name)
 	if ev.Op == fsnotify.Chmod || (base[0] == '.' && filepath.Dir(ev.Name) != s.Home) {
@@ -331,8 +302,7 @@ func (s *Service) relevant(ev fsnotify.Event) bool {
 	return filepath.Dir(ev.Name) != s.Home || base == "inbox"
 }
 
-// syncWatches watches $ADMIRAL_HOME, inbox/ and each ship directory, drops the
-// watch of one that is gone, and renews one whose directory was replaced.
+// syncWatches renews the watch of a directory that was replaced.
 func (s *Service) syncWatches() {
 	if s.watcher == nil {
 		return

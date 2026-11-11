@@ -1,4 +1,3 @@
-// Client-side routing under /app/ with the History API.
 import { signal } from '@preact/signals';
 import { SURFACES, type Surface } from './surfaces';
 

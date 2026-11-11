@@ -8,8 +8,7 @@ import { Ship } from './Ship';
 import { openSetup } from './setup';
 import { atSea, ships } from './ships';
 
-// The fleets the page has drawn. Once the first marinas are up, a marina for a new fleet (from
-// the setup terminal or a hand edit) sails in (story 20); the ones there on load just appear.
+// Only a fleet added after the first marinas are up sails in; the ones there on load just appear.
 const drawn = { ready: false, keys: new Set<string>() };
 const useArrival = (key: string | null) => {
   const [arriving] = useState(() => key !== null && drawn.ready && !drawn.keys.has(key));
@@ -29,8 +28,7 @@ function dockTops(count: number, height: number): number[] {
   return fractions.map((f) => Math.round(46 + (height - 64) * f - 23) - 8);
 }
 
-// What replaces "All in port" on a dock whose config is wrong. The server's
-// full text goes in the accessible name and title.
+// The server's full text goes in the accessible name and title.
 export function marks(fleet: Fleet, dock: Dock): { short: string; full: string[] } | undefined {
   const full: string[] = [];
   let short = '';
@@ -49,7 +47,6 @@ export function marks(fleet: Fleet, dock: Dock): { short: string; full: string[]
   return short ? { short, full } : undefined;
 }
 
-// The status line of a dock with nothing armed.
 export function restingStatus(fleet: Fleet, dock: Dock): string {
   const mark = marks(fleet, dock);
   if (mark) return mark.short;
@@ -71,7 +68,6 @@ function DockView({ fleet, dock, top, index, height }: { fleet: Fleet; dock: Doc
       class={armed.value ? (hot ? 'dock ready hot' : 'dock ready') : 'dock'}
       data-dock={key}
       onClick={() => {
-        // A tap on a dock launches the selected order, or just the dock when none is selected.
         if (dragging.value) return; // a tap on a dock while another finger is mid-drag
         openLaunch(selected.value, fleet.key, dock.harness);
       }}
@@ -157,8 +153,7 @@ export function Marina({ fleet }: { fleet: Fleet }) {
   );
 }
 
-// With no fleets: one empty marina. Tapping it opens the setup terminal (story 19). The
-// button covers the marina; it is not the marina, which holds a basin and a sign.
+// The button covers the marina; it is not the marina, which holds a basin and a sign.
 export function SetUpMarina() {
   useArrival(null);
   return (

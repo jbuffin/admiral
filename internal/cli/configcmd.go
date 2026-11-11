@@ -9,7 +9,6 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// Config is `admiral config show | validate | edit` (story 23).
 func Config(args []string, std IO) error {
 	if len(args) != 1 {
 		return usagef("usage: admiral config show | validate | edit")
@@ -41,9 +40,8 @@ func Config(args []string, std IO) error {
 	return usagef("unknown command %q: want show, validate or edit", "config "+args[0])
 }
 
-// configEdit opens a copy of config.json in $EDITOR (vi without one) and saves
-// the result only when it loads, so it also works on a file that is invalid
-// now. An edit that doesn't load is kept in the temporary file and named.
+// configEdit saves only an edit that loads, so it also works on a file that is
+// invalid now; an edit that doesn't load is kept in the temporary file.
 func configEdit(dir string, std IO) error {
 	data, err := config.ReadConfig(dir)
 	if err != nil {

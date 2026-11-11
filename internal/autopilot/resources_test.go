@@ -22,8 +22,7 @@ func needs(max int, names ...string) config.PanelAutopilot {
 	return e
 }
 
-// gated gives the rig two panels, p and q, each with one order and each
-// needing the resources; the engine gets a Set over the rig's ships. A launch
+// gated gives the rig panels p and q, each needing the resources. A launch
 // records the request's resources on the ship, the way the launcher does.
 func gated(t *testing.T, defs map[string]config.Resource, names ...string) *rig {
 	t.Helper()
@@ -49,8 +48,6 @@ func gated(t *testing.T, defs map[string]config.Resource, names ...string) *rig 
 
 var phone = map[string]config.Resource{"phone": {Capacity: 1}}
 
-// AC 1: two panels that need the same capacity-1 resource never have two ships
-// underway or needing you.
 func TestTwoPanelsNeedingOneResourceNeverHaveTwoShipsAtOnce(t *testing.T) {
 	r := gated(t, phone, "phone")
 	want(t, "first pass", r.pass(), []string{"s/p/o1"})
@@ -66,9 +63,8 @@ func TestCapacityTwoLetsTwoShipsRun(t *testing.T) {
 	want(t, "capacity 2", r.pass(), []string{"s/p/o1", "s/q/o2"})
 }
 
-// The unit is reserved from the gate until Launch returns: a lock taken while
-// the launch is in flight finds none, and the ship holds it afterwards. A launch
-// that fails, with any error, gives the unit back.
+// The unit is reserved from the gate until Launch returns, then the ship holds
+// it; a launch that fails, with any error, gives it back.
 func TestALaunchInFlightHoldsItsUnit(t *testing.T) {
 	r := gated(t, phone, "phone")
 	launch := r.engine.Launch
@@ -105,7 +101,6 @@ func TestALaunchInFlightHoldsItsUnit(t *testing.T) {
 	}
 }
 
-// A lock holds the unit like a ship: an order waits until it is released.
 func TestALaunchWaitsForALockUntilReleased(t *testing.T) {
 	r := gated(t, phone, "phone")
 	rel, err := r.engine.Resources.Lock("phone", "install")
@@ -117,8 +112,7 @@ func TestALaunchWaitsForALockUntilReleased(t *testing.T) {
 	want(t, "released", r.pass(), []string{"s/p/o1"})
 }
 
-// AC 2: a check that hasn't finished or fails stops launches; once it passes
-// they resume; a failing one stops them again.
+// A check that hasn't finished stops launches like a failing one.
 func TestAFailingCheckStopsLaunchesAndAPassingOneResumesThem(t *testing.T) {
 	flag := filepath.Join(t.TempDir(), "present")
 	r := gated(t, map[string]config.Resource{"phone": {Capacity: 2, Check: []string{"test", "-f", flag}}}, "phone")
@@ -146,7 +140,6 @@ func TestAFailingCheckStopsLaunchesAndAPassingOneResumesThem(t *testing.T) {
 	want(t, "check failing again", r.pass(), nil)
 }
 
-// The launch carries the entry's resources so the ship can record them.
 func TestRequestCarriesThePanelsResources(t *testing.T) {
 	r := gated(t, phone, "phone")
 	r.pass()
@@ -160,9 +153,8 @@ func TestRequestCarriesThePanelsResources(t *testing.T) {
 	}
 }
 
-// A wait is one resource_wait record per order, however many passes it lasts
-// and however its busy or missing resources change; the engine moves on to the
-// next panel when an order waits, and says which resources each panel waits for.
+// A wait is one record however its busy or missing resources change; the engine
+// moves on to the next panel while an order waits.
 func TestOneResourceWaitRecordPerWait(t *testing.T) {
 	flag := filepath.Join(t.TempDir(), "present")
 	defs := map[string]config.Resource{"phone": {Capacity: 1}, "ipad": {Capacity: 1, Check: []string{"test", "-f", flag}}}
@@ -237,8 +229,6 @@ func TestOneResourceWaitRecordPerWait(t *testing.T) {
 	}
 }
 
-// A pass that never reaches the waiting order (a cap returns first) neither
-// ends the wait nor starts a new one.
 func TestACapBetweenPassesDoesNotRestartAWait(t *testing.T) {
 	r := gated(t, phone, "phone")
 	rel, _ := r.engine.Resources.Lock("phone", "install")

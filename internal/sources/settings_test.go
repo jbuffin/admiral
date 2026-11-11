@@ -16,8 +16,6 @@ import (
 	"github.com/jbuffin/admiral/internal/state"
 )
 
-// serviceFixture serves the sources API over a config file with no plugin
-// running: what the routes do with config.json alone.
 type serviceFixture struct {
 	t     *testing.T
 	home  string
@@ -78,7 +76,6 @@ func (f *serviceFixture) file() string {
 	return string(b)
 }
 
-// stored is the source's settings in config.json, compacted.
 func (f *serviceFixture) stored(key string) string {
 	f.t.Helper()
 	var cfg struct {
@@ -98,8 +95,7 @@ const settingsConfig = `{"version":1,"fleets":{"work":{"name":"Work","claude":{}
   "sources":{"pw":{"plugin":"notinstalled","fleet":"work","name":"Passwords",
     "settings":{"url":"https://example.com","token":"s3cret","accounts":["s3cretA","s3cretB"],"auth":{"pin":1234}}}}}`
 
-// With no schema known (the plugin isn't running), every stored value is
-// hidden; saving the marker back, at any depth and inside a list, keeps it.
+// No plugin runs, so no schema is known.
 func TestSettingsHideStoredSecretsAndKeepThemOnSave(t *testing.T) {
 	f := newServiceFixture(t, settingsConfig)
 	code, body := f.do(http.MethodGet, "/pw/settings", nil)
@@ -113,7 +109,6 @@ func TestSettingsHideStoredSecretsAndKeepThemOnSave(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The form sends back what it got, with one list entry and the url changed.
 	back := view.Settings
 	back["url"] = "https://example.com/new"
 	back["accounts"] = []any{unchangedMarker, "n3w"}

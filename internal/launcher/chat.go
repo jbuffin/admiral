@@ -13,19 +13,14 @@ import (
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
-// skillText is the AdmiralBot skill (ADR 0020), written at every chat start.
-//
 //go:embed admiralbot/SKILL.md
 var skillText []byte
 
-// chatPrompt is the paragraph appended to the chat's system prompt.
 const chatPrompt = "You are AdmiralBot, the engineer's assistant in Admiral. Use the admiralbot skill for everything you do. " +
 	"You only add orders: you never launch ships and never change files."
 
-// WriteChatSkill writes the AdmiralBot skill to
-// $ADMIRAL_HOME/chat/.claude/skills/admiralbot/SKILL.md through a root on home:
-// a temp file and a rename, so a link planted at the path is replaced and never
-// followed. A directory on the way that is a link is refused.
+// WriteChatSkill writes a temp file and renames it, so a link planted at the path is replaced
+// and never followed. A directory on the way that is a link is refused.
 func WriteChatSkill(home string) error {
 	root, err := os.OpenRoot(home)
 	if err != nil {
@@ -66,12 +61,8 @@ func WriteChatSkill(home string) error {
 	return err
 }
 
-// ChatDir is the chat session's working directory, $ADMIRAL_HOME/chat: never a
-// fleet's checkout.
 func ChatDir(home string) string { return filepath.Join(home, "chat") }
 
-// ChatDock is the Claude dock the chat runs, from the fleet config.Chat names. A
-// refusal says why there is none.
 func ChatDock(cfg *config.Config) (config.Fleet, config.Harness, *Error) {
 	fleet, ok := cfg.Fleet(cfg.Chat.Fleet)
 	if !ok {
@@ -90,12 +81,8 @@ var chatOwned = []string{"ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_INBOX", "ADM
 
 var chatVar = regexp.MustCompile(`^ADMIRAL_[A-Za-z0-9_]+$`)
 
-// StartChat creates the `_chat` session (ADR 0018, 0019): the chat fleet's
-// Claude executable and env (not its args), then the chat's model and effort, the
-// fence and the chat hook bundle, in $ADMIRAL_HOME/chat. The caller has checked that no `_chat` session exists. The
-// session is made as a ship's is (a placeholder, its options, its environment,
-// then the harness in its place), but with no remain-on-exit, so it ends with
-// Claude, and with none of a ship's variables.
+// The caller has checked that no `_chat` session exists. Unlike a ship's, the session has no
+// remain-on-exit, so it ends with Claude, and none of a ship's variables.
 func (l *Launcher) StartChat() error {
 	if l.Tmux == "" {
 		return refuse(http.StatusServiceUnavailable, "tmux not found on PATH, so the chat cannot run")
@@ -123,21 +110,18 @@ func (l *Launcher) StartChat() error {
 
 	// Each value is its own argument: nothing here goes through a shell.
 	chat := cfg.Chat
-	// The dock's args are a ship's: they commonly widen permissions (--allowedTools,
-	// --add-dir, --plugin-dir, --mcp-config, --resume), so the chat keeps only the
-	// dock's executable and env (ADR 0020).
+	// The dock's args commonly widen permissions (--allowedTools, --add-dir, --mcp-config), so
+	// the chat keeps only the dock's executable and env.
 	argv := []string{exe}
 	argv = append(argv, "--model", chat.Model)
 	if chat.Effort != "" {
 		argv = append(argv, "--effort", chat.Effort)
 	}
-	// The fence (ADR 0020), each flag and value its own element.
 	argv = append(argv, "--permission-mode", "dontAsk", "--setting-sources", "project", "--tools", "Bash,Skill,Read",
 		"--append-system-prompt", chatPrompt, "--settings", claudeChatSettingsPath(l.Home))
 
-	// Admiral's own environment may hold a ship's variables, and the tmux server
-	// may too (one that outlived an earlier Admiral, or started from a ship's
-	// shell): the chat gets none of them, only ADMIRAL_HOME.
+	// Admiral's environment and the tmux server's may hold a ship's variables (a server that
+	// outlived an earlier Admiral, or started from a ship's shell): the chat gets only ADMIRAL_HOME.
 	env := l.shipEnv(dock)
 	unset := map[string]bool{}
 	for _, k := range chatOwned {

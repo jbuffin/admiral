@@ -69,7 +69,6 @@ func TestReadWalksFilesInNameOrderAndSkipsWhatItCannotUse(t *testing.T) {
 	}
 }
 
-// The count needs a few keys of a line; the rest, a report above all, is not held.
 func TestReadKeepsOnlyTheKeysTheCountUses(t *testing.T) {
 	dir := t.TempDir()
 	line := `{"v":1,"ts":"2026-10-01T00:00:00Z","ship":"a","event":"ended","exit_code":0,"report":{"notes":"big"},"order_id":"o1","autopilot":true}`
@@ -82,7 +81,6 @@ func TestReadKeepsOnlyTheKeysTheCountUses(t *testing.T) {
 	}
 }
 
-// A FIFO named like a month file would block the open for good; it is skipped.
 func TestReadSkipsFilesThatAreNotRegular(t *testing.T) {
 	dir := t.TempDir()
 	if err := syscall.Mkfifo(filepath.Join(dir, "2026-11.jsonl"), 0o600); err != nil {

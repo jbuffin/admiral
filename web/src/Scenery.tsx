@@ -1,5 +1,4 @@
-// Open water, land and the marina furniture, as Preact SVG built from the
-// prototype (index.html:190-204, 277-297) and designs/assets.
+// Open water, land and the marina furniture, as Preact SVG built from the prototype and designs/assets.
 
 export function WaterScenery() {
   return (
@@ -106,7 +105,6 @@ interface Rock {
   k: number;
 }
 
-// Rocks along a quadratic curve, the arms of a marina's breakwater.
 function arm(p0: Point, c: Point, p2: Point, seed: number): Rock[] {
   const out: Rock[] = [];
   steps.forEach((t, i) => {
@@ -123,7 +121,6 @@ function arm(p0: Point, c: Point, p2: Point, seed: number): Rock[] {
   return out;
 }
 
-// The breakwater of a marina `height` px tall.
 export function Breakwater({ height }: { height: number }) {
   const reach = Math.round(Math.max(40, (height - 40 - 110) / 2));
   const rocks = arm([24, 40], [-48, 40], [-48, 40 + reach], 0).concat(

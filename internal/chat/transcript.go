@@ -1,6 +1,5 @@
-// Package chat is the AdmiralBot chat session on Admiral's side (ADR 0018,
-// 0019): it starts the `_chat` tmux session, follows the transcript Claude Code
-// writes for it, and serves the conversation, the state and the way to send.
+// Package chat starts the AdmiralBot `_chat` session, follows the transcript Claude Code writes
+// for it, and serves the conversation.
 package chat
 
 import (
@@ -15,7 +14,6 @@ import (
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
-// Message is one turn of text in the conversation.
 type Message struct {
 	ID   string `json:"id"`
 	Role string `json:"role"` // "user" or "assistant"
@@ -32,8 +30,7 @@ const (
 	readBudget  = 16 << 20  // bytes read in one refresh; the rest waits for the next
 )
 
-// transcriptLine is the part of a Claude Code transcript line Admiral reads. The
-// format is undocumented (ADR 0019): anything else in a line is ignored.
+// The transcript format is undocumented: anything else in a line is ignored.
 type transcriptLine struct {
 	Type        string `json:"type"`
 	UUID        string `json:"uuid"`
@@ -48,10 +45,7 @@ type transcriptLine struct {
 	} `json:"message"`
 }
 
-// parseLine is the message a transcript line carries, if it carries one: the
-// text of a user turn or of an assistant turn's text block. Tool use and results,
-// thinking, meta and sidechain lines, compaction summaries, system lines, a line
-// with no uuid and the local-command lines `/clear` leaves are not messages.
+// The local-command lines `/clear` leaves are not messages.
 func parseLine(line []byte) (Message, bool) {
 	var l transcriptLine
 	if json.Unmarshal(line, &l) != nil || l.UUID == "" || l.IsMeta || l.IsSidechain || l.IsCompactSummary || l.IsVisibleInTranscriptOnly {
@@ -81,8 +75,6 @@ func parseLine(line []byte) (Message, bool) {
 	return Message{ID: l.UUID, Role: l.Type, Text: text, At: l.Timestamp}, true
 }
 
-// contentText is a message's text: the content when it is a string, else its
-// text blocks joined by a blank line.
 func contentText(raw json.RawMessage) string {
 	var s string
 	if json.Unmarshal(raw, &s) == nil {
@@ -104,17 +96,11 @@ func contentText(raw json.RawMessage) string {
 	return strings.Join(parts, "\n\n")
 }
 
-// errRefused is a transcript path Admiral will not read; a path that is only not
-// there yet is a plain not-exist error.
+// A path that is only not there yet is a plain not-exist error.
 var errRefused = errors.New("not a regular transcript file under the Claude config directory's projects/")
 
-// resolveTranscript is the transcript at path p, if it may be read. The path comes
-// from a pane option that anything in the chat session can write, so it must be
-// absolute, end in .jsonl and lie under <configDir>/projects/, and neither the
-// file nor a directory between projects/ and it may be a symlink. The config
-// directory itself (a dotfiles ~/.claude, say) and projects/ may be links: the
-// path is matched against the real projects/, found by walking up from the file.
-// It returns the real projects/ and the path below it.
+// Anything in the chat session can write the path, so nothing between projects/ and the file
+// may be a symlink. The config directory (a dotfiles ~/.claude, say) and projects/ may be.
 func resolveTranscript(configDir, p string) (root, rel string, err error) {
 	if !sessionhost.ValidTranscriptPath(p) {
 		return "", "", errRefused
@@ -152,8 +138,7 @@ func resolveTranscript(configDir, p string) (root, rel string, err error) {
 	return root, filepath.Join(parts...), nil
 }
 
-// follower reads a transcript as it grows: from the offset it stopped at, whole
-// lines only. A line over maxLine is dropped without being held.
+// A line over maxLine is dropped without being held.
 type follower struct {
 	info    os.FileInfo // of the file read last, to tell a replaced file
 	offset  int64
@@ -161,14 +146,11 @@ type follower struct {
 	skip    bool   // dropping the rest of an over-long line
 }
 
-// toEnd makes the follower serve only what is written after now.
 func (f *follower) toEnd(size int64) {
 	f.offset, f.pending, f.skip = size, nil, false
 }
 
-// read reads what has been added to file (opened from the path in info) and
-// calls add for each message. A file smaller than the offset, or a different one,
-// starts over, and reset runs first so the caller can drop what it kept.
+// A file smaller than the offset, or a different one, starts over, after reset.
 func (f *follower) read(file *os.File, info os.FileInfo, add func(Message), reset func()) {
 	if f.info != nil && (!os.SameFile(f.info, info) || info.Size() < f.offset) {
 		*f = follower{}
@@ -192,7 +174,6 @@ func (f *follower) read(file *os.File, info os.FileInfo, add func(Message), rese
 	}
 }
 
-// feed splits data into lines and parses each whole one.
 func (f *follower) feed(data []byte, add func(Message)) {
 	for len(data) > 0 {
 		i := bytes.IndexByte(data, '\n')

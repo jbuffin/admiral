@@ -17,18 +17,13 @@ import (
 	"github.com/jbuffin/admiral/internal/ships"
 )
 
-// Retro orders (#117, ADR 0017): once a panel has had retro_every autopilot
-// runs since its last retro, an order `/retro <source>/<panel> --since <ts>` is
-// added to the panel autopilot.resume_source names, and a retro_queued record
-// says so. The runs are counted from the outcome log on every pass, so a restart
-// counts what a live pass does. The record is the reset: until it is confirmed
-// written, the panel's retro is pending.
+// Runs are counted from the outcome log on every pass, so a restart counts what a
+// live pass does. Until its retro_queued record is confirmed written, a retro is pending.
 
-// addTimeout bounds one add.
 const addTimeout = 10 * time.Second
 
-// retroState is what the retro step keeps in memory: nothing the log cannot say
-// again, but for the records in flight and the lines already logged.
+// retroState holds nothing the log cannot say again, but for the records in
+// flight and the lines already logged.
 type retroState struct {
 	mu       sync.Mutex
 	writes   map[Panel]*retroWrite // retro_queued records not confirmed written yet
@@ -38,15 +33,13 @@ type retroState struct {
 	noResume bool                  // the missing resume_source is logged
 }
 
-// retroWrite is a retro_queued record whose add succeeded or may have.
 type retroWrite struct {
 	rec    outcomes.Record
 	failed bool // the write failed or was dropped: write it again on the next pass
 }
 
-// retroStep makes the retro orders due this pass. It runs after the launches and
-// holds no lock across the plugin call; e.pass keeps two passes from adding for
-// the same panel at once.
+// retroStep holds no lock across the plugin call; e.pass keeps two passes from
+// adding for the same panel at once.
 func (e *Engine) retroStep(cfg *config.Config, known bool, list []ships.Ship, srcs map[string]Source) {
 	if e.Log == nil || e.AddOrder == nil {
 		return
@@ -94,7 +87,6 @@ func (e *Engine) retroStep(cfg *config.Config, known bool, list []ships.Ship, sr
 	}
 }
 
-// unwritten is the panels whose retro_queued is not confirmed written.
 func (e *Engine) unwritten() map[Panel]bool {
 	e.retros.mu.Lock()
 	defer e.retros.mu.Unlock()
@@ -105,7 +97,6 @@ func (e *Engine) unwritten() map[Panel]bool {
 	return out
 }
 
-// rewriteRetros writes again the records whose write failed.
 func (e *Engine) rewriteRetros() {
 	s := &e.retros
 	s.mu.Lock()
@@ -153,11 +144,8 @@ func (e *Engine) retroWritten(p Panel, err error) {
 	}
 }
 
-// retroPending says one of the panel's retros is not cleared: its source has not
-// listed, or a retro's order is still listed, or a ship of it exists in any
-// status. Every retro of the panel is checked, not only the last, so a forged
-// record cannot clear the real one. The log, which carries them across a
-// restart, holds only records for the configured resume target (ForTarget).
+// retroPending checks every retro of the panel, not only the last, so a forged
+// record cannot clear the real one.
 func (e *Engine) retroPending(cfg *config.Config, c Count, list []ships.Ship, srcs map[string]Source) bool {
 	target := cfg.ResumeSource
 	if target == nil || len(c.Retros) == 0 {
@@ -184,7 +172,6 @@ func (e *Engine) retroPending(cfg *config.Config, c Count, list []ships.Ship, sr
 	})
 }
 
-// addRetro adds the panel's retro order and queues its record.
 func (e *Engine) addRetro(p Panel, c Count, target *config.ResumeSource) {
 	s := &e.retros
 	if bad := func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }; strings.IndexFunc(p.Source+p.Panel, bad) >= 0 {
@@ -224,10 +211,8 @@ func (e *Engine) addRetro(p Panel, c Count, target *config.ResumeSource) {
 			kind = fail.AddKind()
 		}
 		if kind != inbox.AddUncertain {
-			// Retryable, or final: the retro is tried again on a later pass, and the
-			// refusal is logged once per message. A resume order is dropped on a
-			// final refusal, because its text is kept apart from the log; a retro's
-			// count stays in the log, so trying again costs nothing.
+			// Even a final refusal is retried: unlike a resume order's text, a
+			// retro's count stays in the log, so trying again costs nothing.
 			s.mu.Lock()
 			first := s.addErr[p] != err.Error()
 			if s.addErr == nil {

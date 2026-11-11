@@ -10,9 +10,6 @@ import (
 	"time"
 )
 
-// The inbox's listing and answer rules are unit tests in internal/inbox; these
-// are the journeys through a real ship's inbox directory.
-
 type inboxItem struct {
 	ID       string `json:"id"`
 	Kind     string `json:"kind"`
@@ -84,8 +81,8 @@ func ids(items []inboxItem) []string {
 	return out
 }
 
-// waitInbox polls GET /api/inbox until the item ids are want, within the
-// "about a second" the brief allows (a margin on top for a loaded Mac).
+// waitInbox polls GET /api/inbox until the item ids are want, within about a
+// second (a margin on top for a loaded Mac).
 func (in *fleetInst) waitInbox(t *testing.T, want ...string) []inboxItem {
 	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
@@ -106,8 +103,6 @@ func (in *fleetInst) answer(t *testing.T, session, id string, body any) (int, st
 	return send(t, http.MethodPost, in.LocalURL+"/api/inbox/"+session+"/"+id+"/answer", body)
 }
 
-// inboxShip launches a ship that just sits underway and returns it with its
-// inbox directory.
 func (w *world) inboxShip(repo string) (shipJSON, string) {
 	w.t.Helper()
 	w.cueFleets(map[string][]string{"f": {"hook working"}})
@@ -126,9 +121,6 @@ func mustJSON(t *testing.T, v any) []byte {
 	return b
 }
 
-// S3: answering a question writes the contract's file, leaves the item alone,
-// drops the item from the inbox and records `answered`. A second answer, and an
-// answer to an item that isn't there, are errors.
 func TestInboxAnswerQuestion(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -212,8 +204,6 @@ func countEvent(log []outRec, event string) int {
 	return n
 }
 
-// S5: an answer file written by someone else hides the item, and so does the
-// ship's directory going away.
 func TestInboxHidesAnsweredAndRemovedItems(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -238,8 +228,6 @@ func TestInboxHidesAnsweredAndRemovedItems(t *testing.T) {
 	w.in.waitInbox(t, "q-3")
 }
 
-// S6: a ship that needs you for a permission prompt shows the reason and when
-// the stop began on /api/ships, and neither once it is underway again.
 func TestShipWireCarriesReasonAndStopSince(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

@@ -11,19 +11,6 @@ import (
 	"time"
 )
 
-// Resume orders (#116 u5): once every item id in a ship's report `inbox` has an
-// answer file, Admiral adds the report's `resume` text as an order to the panel
-// that `autopilot.resume_source` names. The real binary, a test source
-// "orders" (panel "orders") and ships that sit underway.
-//
-// Wire shape under test:
-//
-//	config   {"autopilot": {"resume_source": {"source": "orders", "panel": "orders"}}}
-//	report   $ADMIRAL_REPORT = {"version":1,"result":"partial","why":"..","resume":"text","inbox":["q-1","q-2"]}
-//	outcome  one `resumed` record per report, with ship set to the session
-//
-// The order shows in GET /api/sources like any other order.
-
 const (
 	resumeText = "Finish the review of https://github.com/acme/widgets/pull/12 now the questions are answered"
 	sailCue    = "wait go"
@@ -36,8 +23,6 @@ func resumeTarget(source, panel string) map[string]any {
 	return map[string]any{"source": source, "panel": panel}
 }
 
-// resumeConfig writes the config: one claude fleet per cue key, the sources
-// and, unless resume is nil, autopilot.resume_source.
 func (w *world) resumeConfig(cues map[string][]string, sources map[string]any, resume any) {
 	w.t.Helper()
 	fleets := map[string]any{}
@@ -69,8 +54,6 @@ func (w *world) resumeConfig(cues map[string][]string, sources map[string]any, r
 	writeConfig(w.t, w.home, string(b))
 }
 
-// resumeShip launches a ship of fleet f and writes its report with the given
-// resume text and inbox ids, and one question item per id.
 func (w *world) resumeShip(repo, resume string, inbox []string, items ...string) (shipJSON, string, string) {
 	w.t.Helper()
 	ship := w.launchIn("f", "claude", repo)
@@ -113,7 +96,6 @@ func writeAnswerFile(t *testing.T, dir, id string) {
 	}
 }
 
-// orderTexts is the text of every order in the source, in all its panels.
 func (w *world) orderTexts(source string) []string {
 	w.t.Helper()
 	s, ok := find(w.sources(), source)
@@ -136,7 +118,6 @@ func (w *world) waitOrders(source string, want ...string) {
 	})
 }
 
-// holdOrders fails if the source's orders ever differ from want for the hold.
 func (w *world) holdOrders(msg, source string, want ...string) {
 	w.t.Helper()
 	holdThat(w.t, msg, func() bool {
@@ -145,9 +126,6 @@ func (w *world) holdOrders(msg, source string, want ...string) {
 	})
 }
 
-// S1: two items in the report. Answering one adds nothing; answering the second
-// adds one order with the resume text to the configured panel, and a `resumed`
-// outcome is recorded against the ship.
 func TestResumeOrderAddedWhenTheLastItemIsAnswered(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -174,8 +152,7 @@ func TestResumeOrderAddedWhenTheLastItemIsAnswered(t *testing.T) {
 	}
 }
 
-// Answer files that someone else wrote count the same as ones the API wrote:
-// the inbox scan, not only the answer route, starts the check.
+// The inbox scan, not only the answer route, starts the check.
 func TestResumeOrderAddedForAnswerFilesWrittenDirectly(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -191,7 +168,6 @@ func TestResumeOrderAddedForAnswerFilesWrittenDirectly(t *testing.T) {
 	w.waitEvent(ship.Session, "resumed", 1)
 }
 
-// S2: a restart, and an answer written again, add no second order.
 func TestResumeOrderIsAddedOnce(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -215,9 +191,7 @@ func TestResumeOrderIsAddedOnce(t *testing.T) {
 	}
 }
 
-// S3: a report that must add nothing adds nothing, Admiral keeps running, and a
-// report right after them still gets its order, so the silence is not a stalled
-// check.
+// The last report still gets its order, so the silence is not a stalled check.
 func TestResumeOrderAddsNothingForReportsThatCannotResume(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -258,9 +232,6 @@ func TestResumeOrderAddsNothingForReportsThatCannotResume(t *testing.T) {
 	}
 }
 
-// S3, config side: with a panel or source that isn't there, nothing is added
-// and Admiral does not crash. (Without resume_source nothing is added either,
-// but that holds before u5 too, so it has no failing test of its own.)
 func TestResumeOrderWithoutAUsableTarget(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -302,7 +273,6 @@ func sailWorld(t *testing.T, sources func(*world) map[string]any, resume any) *w
 	return w
 }
 
-// sailOff lets the ship exit and waits for its session to go.
 func (w *world) sailOff(session string) {
 	w.t.Helper()
 	w.touch(session, "go")
@@ -316,8 +286,6 @@ func (w *world) sailOff(session string) {
 	}
 }
 
-// S4: a sailed-off ship keeps its report and inbox while an item is unanswered.
-// The last answer adds the order, and then the files go.
 func TestResumeOrderForASailedOffShipsKeptInbox(t *testing.T) {
 	t.Parallel()
 	w := sailWorld(t, (*world).ordersSource, resumeTarget("orders", "orders"))
@@ -359,8 +327,6 @@ func TestResumeOrderForAnAnswerWrittenWhileAdmiralWasDown(t *testing.T) {
 	waitGone(t, 15*time.Second, reportPath, dir)
 }
 
-// A ship that answered everything and then exits: ended deletes its report, and
-// the resume order is added all the same.
 func TestResumeOrderWhenTheShipExitsRightAfterTheLastAnswer(t *testing.T) {
 	t.Parallel()
 	w := sailWorld(t, (*world).ordersSource, resumeTarget("orders", "orders"))
@@ -372,9 +338,8 @@ func TestResumeOrderWhenTheShipExitsRightAfterTheLastAnswer(t *testing.T) {
 	w.waitEvent(ship.Session, "resumed", 1)
 }
 
-// The retry: the engineer's last answer lands while the target is not there.
-// Admiral keeps the text in its own state, through the report's deletion and a
-// restart, and adds the order once, and only once, the target exists.
+// Admiral keeps the resume text in its own state, through the report's deletion
+// and a restart, until the target exists.
 func TestResumeOrderRetriesUntilTheTargetExists(t *testing.T) {
 	t.Parallel()
 	w := sailWorld(t, (*world).ordersSource, resumeTarget("later", "orders"))
@@ -405,11 +370,8 @@ func TestResumeOrderRetriesUntilTheTargetExists(t *testing.T) {
 	}
 }
 
-// A ship still afloat reads its answers itself (ADR 0016): once the last item
-// its report lists is answered, Admiral types the report's resume text at the
-// ship's prompt when its turn has ended, never while it is busy, and adds no
-// order, so no second ship launches in its checkout. The resume panel is set, so
-// the missing order is not for want of a target.
+// A live ship reads its answers itself (ADR 0016), so no order is added. The
+// resume panel is set, so the missing order is not for want of a target.
 func TestResumeOfALiveShipIsTypedAtItsPromptOnceItStops(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

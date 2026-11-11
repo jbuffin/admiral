@@ -8,15 +8,12 @@ import (
 	"sort"
 )
 
-// Resource is a named thing with a capacity that a panel's autopilot entry can
-// need (#118). A ship holds one unit of each resource its entry named until it
-// ends.
+// A ship holds one unit of each Resource its entry named until it ends.
 type Resource struct {
 	Capacity int      // units; 1 or more, 1 when the file sets none
 	Check    []string // argv, run with no shell; exit 0 means present. Nil when none
 }
 
-// resourceNameRe is what a resource name may contain.
 var resourceNameRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
 
 func parseResources(raw json.RawMessage) (map[string]Resource, error) {
@@ -69,8 +66,7 @@ func parseResource(path string, raw json.RawMessage) (Resource, error) {
 	return r, nil
 }
 
-// checkPanelResources runs after the whole file is parsed: every resource an
-// autopilot entry names must be defined at the top level.
+// checkPanelResources runs after the whole file is parsed.
 func checkPanelResources(cfg *Config) error {
 	for _, s := range cfg.SourceList {
 		panels := make([]string, 0, len(s.Autopilot))

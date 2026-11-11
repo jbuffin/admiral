@@ -11,8 +11,6 @@ import (
 	"github.com/jbuffin/admiral/internal/skillindex"
 )
 
-// ids is a fleet's harness environment: its HOME and identity directories,
-// all under one temporary root.
 type ids struct {
 	t                      *testing.T
 	root, home             string
@@ -66,8 +64,6 @@ func writeJSON(t *testing.T, path string, v any) {
 	}
 }
 
-// plugin installs a Claude Code plugin keyed <name>@<marketplace> at path,
-// with skills (nested folders allowed) under its skills/ folder.
 func (d *ids) plugin(key, name, path string, extra map[string]any, skills ...string) {
 	d.t.Helper()
 	m := map[string]any{"name": name}

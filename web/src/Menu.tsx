@@ -16,7 +16,6 @@ if (typeof document !== 'undefined') {
   window.addEventListener('resize', () => (open.value = null));
 }
 
-// Room between the list and its button, and between the list and the screen's edge.
 const GAP = 4;
 const EDGE = 8;
 
@@ -26,7 +25,6 @@ export function Menu({ id, label, disabled, children }: { id: string; label: str
   const isOpen = open.value === id;
   const button = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
-  // Below the button and right-aligned to it, or above it when there's no room below.
   useLayoutEffect(() => {
     const b = button.current?.getBoundingClientRect();
     const l = list.current;

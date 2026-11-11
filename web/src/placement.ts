@@ -1,9 +1,5 @@
-// Collision-free placement of a new ship in open water (u10, ADR 0004).
-//
-// Everything is in fraction space: x and y are fractions 0-1 of open water and
-// mark the top-left of a ship's box (ship plus plaque). The caller passes the
-// footprint of that box and the areas to stay out of, measured against the
-// 1194x834 reference open water, so every browser computes the same spot.
+// Collision-free placement of a new ship in open water (ADR 0004). Everything is in fractions of the 1194x834
+// reference open water, so every browser computes the same spot.
 
 export interface Rect {
   x: number;
@@ -22,13 +18,10 @@ export interface PlacedShip {
 export interface PlaceInput {
   /** Fleet keys in config order: the first fleet's band is the top one. */
   fleets: string[];
-  /** The ships that already have positions. */
   placed: PlacedShip[];
-  /** The ship to place. A fleet missing from `fleets` is a removed fleet. */
+  /** A fleet missing from `fleets` is a removed fleet. */
   ship: { session: string; fleet: string };
-  /** The size of one ship's box. */
   footprint: { w: number; h: number };
-  /** Areas no ship may cover, such as the hint chip. */
   keepOut: Rect[];
   /** How far from the left edge ships start, as a fraction of the width. */
   inset?: number;
@@ -37,19 +30,14 @@ export interface PlaceInput {
 }
 
 const EPS = 1e-6;
-// The first fleet's band starts at 9 % of the height and each band is 23 % tall
-// (the prototype's slots); the last fleet's band starts at 57 %.
 const FIRST = 0.09;
 const LAST = 0.57;
 const BAND = 0.23;
 // Coarse spots first, so ships line up in rows, then every 1 % of the water.
 const FINE = 0.01;
 
-// A ship's box and the land, measured against the narrowest evaluated layout
-// (834x1194 with the orders collapsed to the 76 px rail: main is 758 px wide and
-// the sea ends at about 0.617 of it) and the shortest open water (760 px, the
-// sea's minimum height). The slot is up to 140 px wide and
-// about 137 px tall, so each layout's real box fits inside the nominal one.
+// Measured against the narrowest layout (main 758 px wide, the sea ending at about 0.617 of it) and the shortest
+// open water (760 px), so each layout's real ship box fits inside this nominal one.
 export const FOOTPRINT = { w: 142 / 758, h: 142 / 760 };
 export const INSET = 12 / 758; // ships keep off the orders panel's edge
 // The crew boats raft off a ship's bow (tokens.json size.crewRaft: as far as -72 px), so every new ship keeps
@@ -57,7 +45,7 @@ export const INSET = 12 / 758; // ships keep off the orders panel's edge
 export const REACH_PX = 76;
 export const REACH = REACH_PX / 758;
 export const KEEP_OUT: Rect[] = [
-  { x: 0.01, y: 0.015, w: 0.46, h: 0.065 }, // the hint chip (prototype:208)
+  { x: 0.01, y: 0.015, w: 0.46, h: 0.065 }, // the hint chip
   { x: 0.61, y: 0, w: 0.39, h: 1 }, // the marinas' land
 ];
 
@@ -65,7 +53,6 @@ const overlap = (a: Rect, b: Rect) =>
   Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) - EPS) *
   Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) - EPS);
 
-// Where the top-left of a fleet's ships may start vertically: [from, to].
 function band(fleets: string[], fleet: string, h: number): [number, number] {
   const n = fleets.length;
   const at = (i: number) => (n < 2 ? FIRST : FIRST + (i * (LAST - FIRST)) / (n - 1));

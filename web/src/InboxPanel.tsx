@@ -94,7 +94,6 @@ function Empty() {
 
 function Fold({ text, name }: { text: string; name: string }) {
   const ref = useRef<HTMLDivElement>(null);
-  // After an action the folded line is brought into view in the list.
   useEffect(() => ref.current?.scrollIntoView({ block: 'nearest' }), []);
   return (
     <div class="inbox-fold" role="status" ref={ref}>
@@ -387,8 +386,7 @@ function FindingsBody({ entry }: { entry: Entry }) {
   );
 }
 
-// Any item can leave the inbox unanswered: one the engineer settled in the ship's terminal, or one that no
-// longer matters. A review's draft stays on GitHub.
+// Any item can leave the inbox unanswered; a review's draft stays on GitHub.
 function RemoveRow({ entry }: { entry: Entry }) {
   const ui = removalOf(entry.key);
   const review = entry.item?.kind === 'review';
@@ -502,7 +500,6 @@ function CloseButton() {
   );
 }
 
-// The wide layout: a drawer on the right, beside the bridge.
 function Drawer() {
   const all = inbox.entries();
   const n = inbox.count();
@@ -525,8 +522,6 @@ function Drawer() {
 
 const FOCUSABLE = 'button:not([disabled]), a[href], input, textarea, [tabindex]:not([tabindex="-1"])';
 
-// Everything else: a full-screen modal sheet with one item at a time. On a phone it is the Inbox tab's
-// content instead: the same one-at-a-time layout in place, a region with no Close button.
 function Sheet({ tab = false }: { tab?: boolean }) {
   const root = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);

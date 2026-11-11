@@ -8,13 +8,10 @@ import (
 	"time"
 )
 
-// AdmiralSession is the pseudo-session directory under inbox/ that holds
-// Admiral's own notices, the way `_chat` is the chat's session name.
+// AdmiralSession is a pseudo-session for Admiral's own notices, the way `_chat` is the chat's.
 const AdmiralSession = "_admiral"
 
-// WriteNotice posts a notice to the inbox of home: a read-only item with a
-// title and a plain-text body, which the engineer can only dismiss. The id is
-// returned. A later migration posts its own the same way (the ADR 0010 amendment of 2026-11-10).
+// WriteNotice posts a read-only item the engineer can only dismiss.
 func WriteNotice(home, title, body string) (string, error) {
 	now := time.Now().UTC()
 	id := fmt.Sprintf("notice-%s-%d", now.Format("20060102T150405"), now.UnixNano()%1_000_000)

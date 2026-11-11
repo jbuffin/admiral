@@ -5,14 +5,6 @@ import (
 	"testing"
 )
 
-// `admiral ships` with crew boats and `admiral attach <ship> [<crew>]` (#152
-// "Terminal", spec #72 stories 18 and 19). The seam is the built binary on a
-// private tmux socket with the fake harness. attach runs through the recording
-// fake tmux (installFakeTmux), which logs the argv of the attach call.
-//
-// The cue is the fleet's `hook working`, `wait go`, `exit 1`: releasing one crew
-// boat anchors it with exit 1.
-
 // shipLines are the lines of `admiral ships` after the header, split into
 // fields, in the order printed. A crew line has a two-space indent and empty
 // SESSION and FLEET.

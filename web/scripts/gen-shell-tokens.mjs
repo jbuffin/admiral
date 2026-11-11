@@ -1,10 +1,5 @@
-// Generates src/app/shell-tokens.css (CSS custom properties) from
-// designs/redesign/tokens.json, for the new shell. The old UI's tokens.css
-// comes from gen-tokens.mjs and is not touched.
-//
-// Kept out: every $-key, prose (shape.touchNote), icon, motion, and status
-// labels and icon paths. status.*.color names a color token, so it maps to
-// that token's variable.
+// Generates src/app/shell-tokens.css (CSS custom properties) from designs/redesign/tokens.json.
+// Kept out: every $-key, prose, icon, motion, and status labels and icon paths; status.*.color maps to its color token's variable.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -69,8 +64,7 @@ ${dark.map((l) => `  ${l}`).join('\n')}
 `;
 writeFileSync(join(root, 'src', 'app', 'shell-tokens.css'), css);
 
-// What CSS can't give the shell: the sequence length (to wrap color_index) and the
-// placeholder letters as real text.
+// What CSS can't give the shell: the sequence length and the placeholder letters as text.
 const placeholders = Object.fromEntries(
   Object.entries(tokens.harness)
     .filter(([k, v]) => v && typeof v === 'object' && 'placeholder' in v)

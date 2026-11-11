@@ -15,19 +15,8 @@ import (
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
-// Setup is `admiral setup [--answers <file> --yes] [--dry-run]` (stories 12-18).
-//
-// The answers file is JSON holding the same fleets object as config.json:
-//
-//	{"fleets": {"work": {"name": "Work", "search_roots": ["~/code"],
-//	                     "claude": {"env": {"CLAUDE_CONFIG_DIR": "~/.claude-work"}}}}}
-//
-// Fleets keep the order of the file. A harness executable left out is looked up
-// on PATH and written as the absolute path found; the identity variable is
-// always written (the harness default when the file leaves it out). A fleet
-// already in config.json is updated field by field (env entries are merged) and
-// keeps its place; fleets and top-level keys the answers don't name are left
-// alone.
+// Setup always writes the identity variable, the harness default when the
+// answers leave it out; fleets and keys the answers don't name are left alone.
 func Setup(args []string, std IO) error {
 	err := setup(args, std)
 	if err != nil && os.Getenv(sessionhost.SetupTerminalEnv) != "" {
@@ -122,9 +111,8 @@ func setup(args []string, std IO) error {
 	}
 }
 
-// identityDirsOf are the identity directories in use: those of the fleets in the
-// file and the ones each harness would use from Admiral's own environment. Setup
-// never lists what is inside them.
+// identityDirsOf includes the ones each harness would use from Admiral's own
+// environment. Setup never lists what is inside them.
 func identityDirsOf(dir string) []string {
 	var dirs []string
 	for _, h := range config.Harnesses() {
@@ -155,7 +143,6 @@ func identityInUse(cfg *config.Config) map[string]string {
 	return used
 }
 
-// session is one run of setup: the fleets as they will be written.
 type session struct {
 	io      IO
 	det     Detection
@@ -171,7 +158,6 @@ type answered struct {
 	answers *config.Object
 }
 
-// replan starts again from the file as it is now and applies the same answers.
 func (s *session) replan() error {
 	fleets, err := config.Fleets(s.dir)
 	if err != nil {
@@ -202,7 +188,6 @@ func (s *session) touch(key string) {
 	s.touched = append(s.touched, key)
 }
 
-// fromFile merges the fleets of an answers file.
 func (s *session) fromFile(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -233,7 +218,6 @@ func (s *session) fromFile(path string) error {
 	return nil
 }
 
-// merge applies one fleet's answers to the fleets and remembers them.
 func (s *session) merge(key string, a *config.Object) error {
 	if err := s.apply(key, a); err != nil {
 		return err
@@ -320,15 +304,10 @@ func mustRaw(v any) json.RawMessage {
 	return b
 }
 
-// ---- diff ----
-
-// printDiff prints the lines that differ between two indented documents, "+"
-// for added and "-" for removed. A line that differs only in whitespace is not
-// a change. It reports whether anything differs.
+// printDiff ignores a line that differs only in whitespace.
 func printDiff(w io.Writer, before, after []byte) bool {
 	a, b := splitLines(before), splitLines(after)
 	trim := func(s string) string { return strings.TrimSpace(s) }
-	// Longest common subsequence of the trimmed lines.
 	n, m := len(a), len(b)
 	lcs := make([][]int, n+1)
 	for i := range lcs {
@@ -376,15 +355,11 @@ func splitLines(b []byte) []string {
 	return strings.Split(s, "\n")
 }
 
-// ---- questions ----
-
 var fleetKeyRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 var colorRe = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 
 var errInputEnded = errors.New("input ended before setup was finished")
 
-// prompt asks one question and returns the trimmed answer, def when it is
-// empty. The label is the text the terminal shows.
 func prompt(in *bufio.Reader, w io.Writer, label, def string) (string, error) {
 	if def != "" {
 		fmt.Fprintf(w, "%s [%s]: ", label, def)
@@ -419,7 +394,6 @@ func confirm(in *bufio.Reader, w io.Writer, label string) (bool, error) {
 	}
 }
 
-// ask runs the questions, one fleet after another.
 func (s *session) ask() error {
 	in, w := s.reader(), s.io.Out
 	fmt.Fprintln(w, "\nAdmiral setup. Press Enter to take the answer in [brackets].")
@@ -464,8 +438,8 @@ func (s *session) askKey(in *bufio.Reader) (string, error) {
 	}
 }
 
-// known is what the file already holds for a fleet key: the defaults of a
-// re-run, so that answering every question with Enter changes nothing (story 17).
+// known holds the defaults of a re-run, so answering every question with Enter
+// changes nothing.
 type known struct {
 	name, color string
 	roots       []string
@@ -599,7 +573,6 @@ func (s *session) askFleet(in *bufio.Reader, key string, taken map[string]string
 		}
 		env := config.NewObject()
 		env.SetValue(v, dirAnswer)
-		// Each harness gets its own extra variables (story 15).
 		fmt.Fprintf(w, "Extra variables for %s (NAME=value lines, blank to finish):\n", h)
 		for {
 			line, err := prompt(in, w, "  NAME=value", "")
@@ -663,8 +636,6 @@ func expandTilde(p, userHome string) string {
 	return filepath.Clean(p)
 }
 
-// identityDirsInUse is what the fleets as they stand hold, for the default a new
-// fleet is offered.
 func (s *session) identityDirsInUse() map[string]string {
 	cfg, err := config.Parse([]byte(`{"version":1,"fleets":` + string(s.fleets.JSON()) + `}`))
 	if err != nil {

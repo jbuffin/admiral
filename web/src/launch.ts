@@ -2,7 +2,6 @@ import { computed, effect, signal } from '@preact/signals';
 import type { HarnessName } from './config';
 import { type Order, panelViews } from './sources';
 
-// An order as launch needs it: where it came from and what it says.
 export interface OrderRef {
   source: string;
   // One order can be listed in two panels, which may need different resources.
@@ -15,11 +14,8 @@ export interface Pointer {
   y: number;
 }
 
-// The order under the pointer while it is dragged, and the dock below it.
 export const dragging = signal<(OrderRef & Pointer & { dock: string | null }) | null>(null);
-// The order picked by a tap.
 export const selected = signal<OrderRef | null>(null);
-// The open launch orders: this order for this dock, or the dock alone (a dock launch).
 export const launching = signal<(Partial<OrderRef> & { fleet: string; harness: HarnessName }) | null>(null);
 
 // An order that leaves the sidebar (launched elsewhere, removed, filtered out)
@@ -33,8 +29,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') selected.value = null;
 });
 
-// The phone's dock sheet: the order a tap picked, and the button that opened it. Focus goes back to that
-// button when the sheet or the launch orders it leads to closes without a launch.
+// Focus goes back to the opener when the sheet, or the launch orders it leads to, closes without a launch.
 export const dockSheet = signal<OrderRef | null>(null);
 let opener: HTMLElement | null = null;
 export function openDockSheet(ref: OrderRef, from: HTMLElement): void {
@@ -50,7 +45,6 @@ export function returnFocus(): void {
 export function forgetOpener(): void {
   opener = null;
 }
-// The ship a phone launch just made: the Ships tab highlights its row for a moment and focuses it.
 export const newShip = signal<string | null>(null);
 // The same ship, for focus: the row takes it once when it mounts, however late the ships push brings it,
 // and never again when the Ships tab is reopened.
@@ -76,10 +70,8 @@ export function openLaunch(ref: OrderRef | null, fleet: string, harness: Harness
 
 const DRAG_THRESHOLD = 8;
 
-// Drag is Pointer Events, not HTML5 drag (ADR 0004). A press that stays under
-// the threshold is a tap. A touch that moves mainly sideways picks the order up;
-// one that moves mainly down or up is a scroll and is left alone. A mouse
-// picks it up in any direction.
+// Drag is Pointer Events (ADR 0004). A touch that moves mainly sideways picks the order up; one that moves mainly
+// up or down is a scroll and is left alone.
 export function pressOrder(e: PointerEvent, ref: OrderRef): void {
   if (e.button !== 0 || !e.isPrimary || dragging.value) return;
   if ((e.target as Element).closest('button, a, input, textarea')) return;
@@ -137,8 +129,7 @@ export const departed = signal<{ dock: string; n: number } | null>(null);
 const reducedMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 let departures = 0;
 
-// Told to the ships layer (u10) after the 201 from POST /api/ships: the dock, the
-// order's source and ID, and the new ship's session. The `ships` push can arrive
+// Told to the ships layer after the 201 from POST /api/ships. The `ships` push can arrive
 // before or after this event, so the ships layer must handle either order.
 export interface Launched {
   fleet: string;

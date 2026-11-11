@@ -7,8 +7,7 @@ import (
 	"github.com/jbuffin/admiral/internal/inbox"
 )
 
-// A resume order is sent again only when the plugin cannot have done it: the
-// kind of a failed call decides, so every way a call fails has its kind here.
+// A resume order is sent again only when the plugin cannot have done it.
 func TestCallFailureKind(t *testing.T) {
 	cases := []struct {
 		name string

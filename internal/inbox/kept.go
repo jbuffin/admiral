@@ -2,11 +2,8 @@ package inbox
 
 import "github.com/jbuffin/admiral/internal/launcher"
 
-// release removes the report and inbox of a sailed-off ship whose inbox was
-// kept, once it waits for none of its items (Waiting), and then drops its
-// record. The files go first, so the name cannot be drawn again while they
-// exist. It runs under answerMu, so it makes no plugin call: a resume order is
-// captured here, and added by the resume loop.
+// release removes the files before the record, so the name cannot be drawn
+// again while they exist. It runs under answerMu, so it makes no plugin call.
 func (s *Service) release(session string) {
 	if s.Kept == nil {
 		return
@@ -19,8 +16,6 @@ func (s *Service) release(session string) {
 	_ = s.Kept.DropInbox(session)
 }
 
-// sweepKept releases every kept inbox whose items were all answered while
-// Admiral was not running.
 func (s *Service) sweepKept() {
 	if s.Kept == nil {
 		return

@@ -12,7 +12,6 @@ import (
 	"time"
 )
 
-// The rule codes of the merge refusals, one per kind.
 const (
 	wantRuleGhPrMerge            = "gh_pr_merge"
 	wantRuleGhAPIMerge           = "gh_api_merge"
@@ -32,7 +31,6 @@ const (
 	wantRuleTokenRead            = "token_read"
 )
 
-// fakeLookup replaces approvalLookup for a test and records what it was asked.
 type fakeLookup struct {
 	ok    bool
 	err   error
@@ -51,8 +49,6 @@ func (f *fakeLookup) use(t *testing.T) {
 	}
 }
 
-// runMergeGuard runs Guard on an autopilot ship whose panel merges with method
-// (ADMIRAL_AUTO_MERGE unset when empty), with the lookup answering look.
 func runMergeGuard(t *testing.T, c guardTestCase, method string, look *fakeLookup) *GuardDenied {
 	t.Helper()
 	t.Setenv("ADMIRAL_AUTO_MERGE", method)
@@ -72,9 +68,7 @@ func runMergeGuard(t *testing.T, c guardTestCase, method string, look *fakeLooku
 	return denied
 }
 
-// A command that is refused whatever the panel's method and whatever GitHub
-// says. The lookup says the base requires approval and the method is squash, so
-// only the rule can refuse it.
+// The lookup confirms the base and the method is squash, so only the rule can refuse.
 func TestGuardRefusesMergesOnAnAutopilotShip(t *testing.T) {
 	b := func(name, cmd, want string) guardTestCase {
 		return guardTestCase{name: name, tool: "Bash", input: bashInput(cmd), want: want}
@@ -244,9 +238,6 @@ func TestGuardRefusesMergesOnAnAutopilotShip(t *testing.T) {
 	}
 }
 
-// What a merge, a ready-for-review and a read of the gate are allowed to do on
-// an autopilot ship, with a panel whose method is squash and a lookup that
-// confirms the gate: the rules must not catch them.
 func TestGuardAllowsWhatIsNotAMerge(t *testing.T) {
 	b := func(name, cmd string) guardTestCase {
 		return guardTestCase{name: name, tool: "Bash", input: bashInput(cmd), want: wantAllowed}
@@ -305,7 +296,6 @@ func TestGuardAllowsWhatIsNotAMerge(t *testing.T) {
 	}
 }
 
-// Off the autopilot, none of the merge rules applies.
 func TestGuardMergeRulesAreOffOutsideAutopilot(t *testing.T) {
 	for _, cmd := range []string{`gh pr merge 12 --squash --admin`, `gh api -X PUT repos/o/r/pulls/12/merge`,
 		`gh api -X DELETE repos/o/r/rulesets/5`, `gh pr merge 12 --auto -s`} {
@@ -327,9 +317,6 @@ func TestGuardMergeRulesAreOffOutsideAutopilot(t *testing.T) {
 	}
 }
 
-// gh pr merge --auto is allowed only with the panel's method, one full PR URL
-// and no -R, nothing on the line steering gh elsewhere, and a base branch GitHub
-// confirms keeps fresh approvals no one can bypass.
 func TestGuardAutoMerge(t *testing.T) {
 	type row struct {
 		name, cmd, method string
@@ -357,8 +344,7 @@ func TestGuardAutoMerge(t *testing.T) {
 		{"two methods", `gh pr merge ` + pr + ` --auto --squash --rebase`, "squash", yes, wantRuleAutoMergeMethod},
 		{"the method flag only in a body", `gh pr merge ` + pr + ` --auto -b "-s"`, "squash", yes, wantRuleAutoMergeMethod},
 
-		// Refused: the PR is not one full URL, or something steers gh. The guard
-		// resolves that URL, and gh takes its repository from nothing else.
+		// Refused: the PR is not one full URL, or something steers gh.
 		{"a PR number", `gh pr merge 12 --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
 		{"a URL with -R", `gh pr merge ` + pr + ` --auto -s -R x/y`, "squash", yes, wantRuleAutoMergeSteered},
 		{"a URL and another positional", `gh pr merge ` + pr + ` 13 --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
@@ -416,8 +402,6 @@ func TestGuardAutoMerge(t *testing.T) {
 	}
 }
 
-// The lookup gets the PR's URL as it stands, in the payload's cwd, and a
-// deadline that fits in the hook's 10 s.
 func TestGuardAutoMergeLookupArguments(t *testing.T) {
 	const pr = "https://github.com/o/r/pull/12"
 	t.Setenv("ADMIRAL_AUTO_MERGE", "squash")
@@ -449,8 +433,6 @@ func TestGuardAutoMergeLookupArguments(t *testing.T) {
 	}
 }
 
-// The merge refusals say why in words of their own and keep the review reason
-// for reviews. Neither repeats the command.
 func TestGuardMergeReason(t *testing.T) {
 	c := guardTestCase{tool: "Bash", input: bashInput("gh pr merge 12 --squash --body " + "xyzzy-distinct-text")}
 	look := &fakeLookup{ok: true}
@@ -491,8 +473,7 @@ func TestGuardMergeReason(t *testing.T) {
 	}
 }
 
-// A body given to --input is decoded before it is read, so a \u escape cannot
-// hide a name, an event or a key; given as a here-string, a heredoc or a file.
+// A \u escape in an --input body must not hide a name, an event or a key.
 func TestGuardDecodesInputBodies(t *testing.T) {
 	bodies := []struct {
 		name, route, body, want string
@@ -523,8 +504,6 @@ func TestGuardDecodesInputBodies(t *testing.T) {
 	}
 }
 
-// A script a shell is given is read and checked as a command line of its own
-// one the guard cannot read or parse is refused.
 func TestGuardReadsScriptFiles(t *testing.T) {
 	merge := "set -e\ngh pr merge 5 --admin -s\n"
 	rows := []struct {
@@ -558,11 +537,7 @@ func TestGuardReadsScriptFiles(t *testing.T) {
 	}
 }
 
-// Shapes that could hide a merge, a gate write or a review from the guard: a method
-// held in an expansion, a second input redirect, JSON keys that differ in case,
-// programs that run their arguments, a relative file read after a cd, and the
-// startup files and credential helpers of the shell and git. want is a rule, "*"
-// for any refusal, or wantAllowed.
+// want "*" is any refusal.
 func TestGuardClosesTheLastBypasses(t *testing.T) {
 	const (
 		mergeBody = `{"query":"mutation{mergePullRequest(input:{pullRequestId:\"X\"}){clientMutationId}}","Query":"query{viewer{login}}"}`
@@ -632,7 +607,6 @@ func TestGuardClosesTheLastBypasses(t *testing.T) {
 	}
 }
 
-// An absolute path still reads after a cd, and ~/ is the home directory.
 func TestGuardReadsAbsoluteAndHomePaths(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

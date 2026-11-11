@@ -7,14 +7,9 @@ import (
 	"time"
 )
 
-// "Remove from inbox" (#116 u5): a kept review item that can fail forever (a
-// deleted repo, lost access, a revoked token, a GHE host that's gone) needs a
-// way out. POST /api/inbox/<session>/<id>/discard {"forget": true} writes
-// {action: "discarded"} without running gh, records review_discarded with
-// unreachable: true, and answers "forgotten": true: nothing changed on GitHub.
+// "Remove from inbox" exists because a kept review item can fail forever: a
+// deleted repo, lost access, a revoked token, a GHE host that's gone.
 
-// Discard fails against gh, and Remove from inbox then clears the item without
-// touching gh again. It is allowed on a review that never failed, too.
 func TestInboxReviewForget(t *testing.T) {
 	t.Parallel()
 	w, g := reviewWorld(t)
@@ -59,9 +54,6 @@ func TestInboxReviewForget(t *testing.T) {
 	}
 }
 
-// u2 round-3 LOW 3: the "token may not reach it" message is for a pull request
-// that answered 404. A pull request lookup that failed another way shows gh's
-// own message.
 func TestInboxReviewAccessMessageOnlyForA404(t *testing.T) {
 	t.Parallel()
 	w, g := reviewWorld(t)

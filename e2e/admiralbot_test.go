@@ -14,27 +14,9 @@ import (
 	"github.com/coder/websocket"
 )
 
-// AdmiralBot (#119, u5): the CLI commands the chat's Claude runs (`admiral inbox`,
-// `admiral orders`, `admiral orders add`, `admiral chat ask`), the argv, env and
-// skill file the chat starts with, and chat questions (files under
-// $ADMIRAL_HOME/chat/questions/, served on GET /api/chat/session as `questions`
-// and answered with POST /api/chat/questions/{id}/answer).
-//
-// Wire shapes under test (the unit brief's, checked against #112 and ADR 0016):
-//
-//	chat ask stdin   {"title": "...", "questions": [{"id", "text", "multi", "options": [{"label"}]}]}
-//	                 (#112 names a question's text field `text`; the brief says `question`)
-//	question file    {version 1, id, kind "question", created, title, question: {questions: [...]}}
-//	answer file      {version 1, id, kind "question", answered, answers: {"<qid>": {"choice": ...}}}
-//	session question the inbox's question item + "session": "_chat" + "answer": null | the answer file
-//	exit codes       chat ask: 0 answered, 2 bad input, 3 still waiting, 4 withdrawn;
-//	                 orders add: 0 added, 1 refused, 2 empty text, 5 may have been added
-
-// ---- the world ----
-
 type botOpts struct {
-	chatArgs []string              // the chat dock's args; default a ship's widening ones
-	shipCue  []string              // the cue file of the "ship" fleet
+	chatArgs []string // the chat dock's args; default a ship's widening ones
+	shipCue  []string
 	sources  func(w *world) string // builds the raw `sources` object once the world exists
 }
 
@@ -83,7 +65,6 @@ func newBotWorld(t *testing.T, o botOpts) *chatWorld {
 
 func (w *world) questionsDir() string { return filepath.Join(w.home, "chat", "questions") }
 
-// questionFiles are the names in chat/questions/ (none when it does not exist).
 func (w *world) questionFiles() []string {
 	entries, _ := os.ReadDir(w.questionsDir())
 	names := []string{}
@@ -92,8 +73,6 @@ func (w *world) questionFiles() []string {
 	}
 	return names
 }
-
-// ---- running the CLI ----
 
 // botEnv is the world's environment without ADMIRAL_PORT and ADMIRAL_SHIP, so a
 // command finds a server only through what the test passes.
@@ -118,7 +97,6 @@ type botProc struct {
 	done chan struct{}
 }
 
-// botStart starts bin/admiral in the background with the given stdin.
 func (w *world) botStart(env []string, stdin string, args ...string) *botProc {
 	w.t.Helper()
 	p := &botProc{t: w.t, args: args, done: make(chan struct{})}
@@ -155,7 +133,6 @@ func (p *botProc) result() cliResult {
 	return cliResult{stdout: p.out.String(), stderr: p.err.String(), code: p.cmd.ProcessState.ExitCode()}
 }
 
-// wait returns the finished command, or fails when it runs past d.
 func (p *botProc) wait(d time.Duration) cliResult {
 	p.t.Helper()
 	select {
@@ -167,7 +144,6 @@ func (p *botProc) wait(d time.Duration) cliResult {
 	}
 }
 
-// botCLI runs bin/admiral to its end.
 func (w *world) botCLI(env []string, stdin string, args ...string) cliResult {
 	w.t.Helper()
 	return w.botStart(env, stdin, args...).wait(30 * time.Second)
@@ -183,7 +159,6 @@ func (w *world) expectExitOf(r cliResult, want int, what string) {
 	w.expectExit(r, want, what)
 }
 
-// failIfExited fails with the command's exit code and output when it ended.
 func (p *botProc) failIfExited(what string) {
 	p.t.Helper()
 	if p.exited() {
@@ -192,8 +167,6 @@ func (p *botProc) failIfExited(what string) {
 	}
 }
 
-// ---- the chat questions on the wire ----
-
 type botSession struct {
 	Type      string                       `json:"type"`
 	Running   bool                         `json:"running"`
@@ -201,7 +174,7 @@ type botSession struct {
 	Error     string                       `json:"error"`
 	Questions []map[string]json.RawMessage `json:"questions"`
 	// The `chat` message has the session's shape beside "type"; a nested
-	// {"chat": {...}} is read as well, as chat_session_test.go does.
+	// {"chat": {...}} is read as well.
 	Chat *botSession `json:"chat"`
 }
 
@@ -232,9 +205,8 @@ func fetchBot(t *testing.T, base string) botSession {
 	return s
 }
 
-// waitQuestions polls GET /api/chat/session until pred holds. When p is given
-// and has already ended, it fails with p's exit code and output, so a missing
-// command reads as that and not as a timeout.
+// waitQuestions fails with p's exit code and output once p has ended, so a
+// missing command reads as that and not as a timeout.
 func waitQuestions(t *testing.T, base string, p *botProc, d time.Duration, what string, pred func(botSession) bool) botSession {
 	t.Helper()
 	deadline := time.Now().Add(d)
@@ -257,7 +229,6 @@ func hasQuestions(n int) func(botSession) bool {
 	return func(s botSession) bool { return len(s.Questions) == n }
 }
 
-// waitBotWS reads WebSocket messages until a `chat` message satisfies pred.
 func waitBotWS(t *testing.T, c *websocket.Conn, d time.Duration, what string, pred func(botSession) bool) botSession {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), d)
@@ -282,7 +253,6 @@ func waitBotWS(t *testing.T, c *websocket.Conn, d time.Duration, what string, pr
 	}
 }
 
-// askStdin is a valid question as `admiral chat ask` reads it.
 func askStdin(title string) string {
 	return jsonLine(map[string]any{"title": title, "questions": []any{
 		map[string]any{"id": "1", "text": "Which panel?", "multi": false,
@@ -318,7 +288,6 @@ func errMessage(body string) string {
 	return strings.TrimSpace(body)
 }
 
-// atomicWrite writes a file the way a writer should: a temp file, then a rename.
 func atomicWrite(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -333,10 +302,8 @@ func atomicWrite(t *testing.T, path, content string) {
 	}
 }
 
-// ---- scenario 1: the read commands ----
-
-// Scenario 1 (C13, reads): every command takes its server from ADMIRAL_PORT, so
-// a chat started on a non-default port reaches that Admiral with no --port.
+// Every command takes its server from ADMIRAL_PORT, so a chat started on a
+// non-default port reaches that Admiral with no --port.
 func TestAdmiralBot_ReadCommandsFindTheServerByADMIRAL_PORT(t *testing.T) {
 	t.Parallel()
 	c := newBotWorld(t, botOpts{shipCue: []string{"hook needs_you"}, sources: func(w *world) string {
@@ -443,10 +410,8 @@ func TestAdmiralBot_ReadCommandsFindTheServerByADMIRAL_PORT(t *testing.T) {
 	})
 }
 
-// ---- scenario 2: the write ----
-
-// Scenario 2 (C13, the write): `orders add` posts to the server and prints the
-// new order's id; the cases that must not reach the server don't.
+// `orders add` posts to the server and prints the new order's id; the cases
+// that must not reach the server don't.
 func TestAdmiralBot_OrdersAddIsTheOnlyWrite(t *testing.T) {
 	t.Parallel()
 	var hang *tplug
@@ -523,7 +488,6 @@ func TestAdmiralBot_OrdersAddIsTheOnlyWrite(t *testing.T) {
 	})
 }
 
-// panelOrders are the order ids of the source's first panel.
 func (w *world) panelOrders(key string) []string {
 	w.t.Helper()
 	s, ok := find(w.sources(), key)
@@ -533,11 +497,8 @@ func (w *world) panelOrders(key string) []string {
 	return s.orderIDs()
 }
 
-// ---- scenario 3: the chat session's fence ----
-
-// Scenario 3 (C13): the chat starts with the fence in its argv, ADMIRAL_PORT in
-// its env, the skill on disk and the permissions in its bundle. A ship from the
-// same Admiral gets none of it.
+// The chat starts with the fence in its argv, ADMIRAL_PORT in its env, the
+// skill on disk and the permissions in its bundle. A ship gets none of it.
 func TestAdmiralBot_ChatSessionIsFenced(t *testing.T) {
 	t.Parallel()
 	c := newBotWorld(t, botOpts{})
@@ -689,10 +650,7 @@ func TestAdmiralBot_ChatSessionIsFenced(t *testing.T) {
 	})
 }
 
-// ---- scenarios 4 and 5: chat ask ----
-
-// Scenario 4 (C14): a question goes from `admiral chat ask` through the files
-// and the API to the engineer's answer and back, and the inbox never sees it.
+// The inbox never sees a chat question.
 func TestAdmiralBot_ChatAskRoundTrip(t *testing.T) {
 	t.Parallel()
 	c := newBotWorld(t, botOpts{})
@@ -793,8 +751,8 @@ func TestAdmiralBot_ChatAskRoundTrip(t *testing.T) {
 	})
 }
 
-// Scenario 5, the edges that need no server: bad input, the ship refusal, the
-// timeout and --wait, all through the files alone.
+// The edges that need no server: bad input, the ship refusal, the timeout and
+// --wait, all through the files alone.
 func TestAdmiralBot_ChatAskWorksOnFilesAlone(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -913,8 +871,8 @@ func TestAdmiralBot_ChatAskWorksOnFilesAlone(t *testing.T) {
 	})
 }
 
-// Scenario 5, New chat: it withdraws every question, answered or not, whether the
-// session is reset or ended and started again.
+// New chat withdraws every question, answered or not, whether the session is
+// reset or ended and started again.
 func TestAdmiralBot_NewChatWithdrawsChatQuestions(t *testing.T) {
 	t.Parallel()
 	c := newBotWorld(t, botOpts{})
@@ -956,9 +914,8 @@ func TestAdmiralBot_NewChatWithdrawsChatQuestions(t *testing.T) {
 	}
 }
 
-// Scenario 5, the defensive read: a link, an oversized file and a link or an
-// oversized file standing in for an answer are skipped; a real question is
-// served beside them.
+// A link, an oversized file and a link or an oversized file standing in for an
+// answer are skipped; a real question is served beside them.
 func TestAdmiralBot_ChatQuestionsAreReadDefensively(t *testing.T) {
 	t.Parallel()
 	c := newBotWorld(t, botOpts{})

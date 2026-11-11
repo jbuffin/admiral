@@ -39,9 +39,7 @@ import { foldText } from './questions';
 import { phone, wide } from './sizeClass';
 import { useBridgeTerminal } from './useBridgeTerminal';
 
-// The AdmiralBot chat (#119). One pane, three hosts: the phone's Chat tab, a full-screen sheet at the middle
-// size and a floating panel on wide (designs/prototype/index.html :825-922). Everything the server sends is
-// rendered as text.
+// Everything the server sends is rendered as text.
 
 type Mode = 'tab' | 'sheet' | 'pop';
 
@@ -51,7 +49,6 @@ const entryName = (open: boolean, dot: boolean) => `${open ? 'Close' : 'Open'} t
 
 const chatIcon = <path d="M4 5h16v11H11l-5 4v-4H4z" />;
 
-/** The round button of the wide layout, bottom right of open water. */
 export function ChatFab() {
   const open = chatOpen.value;
   return (
@@ -70,7 +67,6 @@ export function ChatFab() {
   );
 }
 
-/** The middle layout's Chat button, in the header. */
 export function ChatHeaderButton() {
   if (phone.value || wide.value) return null;
   const open = chatOpen.value;
@@ -85,7 +81,6 @@ export function ChatHeaderButton() {
   );
 }
 
-/** The panel (wide) or the sheet (middle), while the chat is open. */
 export function ChatHost() {
   if (phone.value || !chatOpen.value) return null;
   return <ChatPane mode={wide.value ? 'pop' : 'sheet'} />;
@@ -188,7 +183,7 @@ function Conversation({ mode }: { mode: Mode }) {
   const list = useRef<HTMLDivElement>(null);
   const lastId = items.length > 0 ? items[items.length - 1].id : '';
   // After a change the list shows the newest AdmiralBot message, or the open question card, from its top;
-  // after the engineer's own message, or the typing dots, it goes to the bottom (prototype chatScroll).
+  // after the engineer's own message, or the typing dots, it goes to the bottom.
   useLayoutEffect(() => {
     const el = list.current;
     const last = el?.lastElementChild;
@@ -367,7 +362,6 @@ function Box() {
   );
 }
 
-// The chat session's terminal, in the pane's place: the bridge's terminal on `_chat`. The keys are for touch screens.
 function ChatTerminal() {
   const { host, link, linkState, activity } = useBridgeTerminal({ session: CHAT_SESSION, open: true, gone: () => (chatView.value = 'chat'), probe: probeChat });
   const reconnecting = linkState === 'reconnecting';

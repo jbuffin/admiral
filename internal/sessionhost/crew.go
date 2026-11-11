@@ -9,29 +9,23 @@ import (
 	"time"
 )
 
-// CrewName is what a crew boat's name may be (#72 story 3).
 var CrewName = regexp.MustCompile(`^[a-z0-9-]+$`)
 
-// ActivityOption is the pane option `admiral hook` stamps with the time of every
-// hook event (RFC 3339): a crew boat's last_activity.
+// ActivityOption is stamped (RFC 3339) on every hook event: a crew boat's last_activity.
 const ActivityOption = Prefix + "activity"
 
-// CrewTranscriptOption is the pane option `admiral hook` records a crew boat's
-// transcript path in (ADR 0021). Crew boats only, never a ship or the chat.
+// CrewTranscriptOption is set on crew boats only, never a ship or the chat.
 const CrewTranscriptOption = Prefix + "crew-transcript"
 
-// CrewNameFormat is the format that reads a window's @admiral-crew-name: the
-// reader's marker of a crew boat. CrewGateFormat is true exactly when it is
-// non-empty, which the hook uses in tmux's `if -F`. A bare name format is no
-// gate: tmux reads "0", a valid crew name, as false.
+// CrewGateFormat is for `if -F`: a bare name is no gate, since tmux reads "0", a valid
+// crew name, as false.
 const (
 	CrewNameFormat = "#{" + Prefix + "crew-name}"
 	CrewGateFormat = "#{!=:" + CrewNameFormat + ",}"
 )
 
-// The states a crew boat shows (#72 story 9). A crew boat never sails off, and
-// is never "working": underway covers it. Idle is a live boat whose turn ended
-// and that waits for its lead (#189): it holds no lead's Stop and flags no ship.
+// A crew boat is never "working": underway covers it. Idle waits for its lead: it holds no
+// lead's Stop and flags no ship.
 const (
 	CrewAnchored = "anchored"
 	CrewIdle     = "idle"
@@ -39,8 +33,6 @@ const (
 	CrewUnderway = "underway"
 )
 
-// Crew is a teammate Admiral launched with `admiral crew`: a window of the
-// ship's session, recorded in that window's @admiral-* options (ADR 0012, 0014).
 type Crew struct {
 	Session      string
 	Name         string
@@ -58,8 +50,6 @@ type Crew struct {
 	Signal       string // the signal that killed the pane, e.g. "kill"; then there is no exit status
 }
 
-// CrewState maps a crew pane to its state: anchored whenever the pane is dead,
-// whatever the exit code; needs_you or idle when the pane says so; otherwise underway.
 func CrewState(paneDead bool, paneState string) string {
 	switch {
 	case paneDead:
@@ -72,25 +62,19 @@ func CrewState(paneDead bool, paneState string) string {
 	return CrewUnderway
 }
 
-// parseCrew reads the crew boats of the list-panes rows, by session and sorted
-// by name. A boat with several panes is read from its first. It is the one crew
-// rule: parseRows folds its result into each Session, and ReadCrew returns it.
+// parseCrew is the one crew rule: parseRows and ReadCrew both use it.
 func parseCrew(rows []string, known map[string]bool) map[string][]Crew {
 	out, _ := readCrew(rows, known)
 	return out
 }
 
-// crewClashes are the crew names ("session/name") that two windows of one
-// session claim, which parseCrew leaves out.
 func crewClashes(rows []string, known map[string]bool) []string {
 	_, clashes := readCrew(rows, known)
 	return clashes
 }
 
-// readCrew is parseCrew's rule and the names it leaves out. A name is only read
-// when it is a valid crew name, and a name that two windows of one session claim
-// is read for neither: a boat can rewrite its own @admiral-crew-name, and the
-// first window must not win a name from the boat that launched with it.
+// A name two windows of one session claim is read for neither: a boat can rewrite its own
+// @admiral-crew-name, and must not win a name from the boat that launched with it.
 func readCrew(rows []string, known map[string]bool) (map[string][]Crew, []string) {
 	out := map[string][]Crew{}
 	seen := map[string]string{} // session NUL name -> the window that claimed it
@@ -158,9 +142,7 @@ func readCrew(rows []string, known map[string]bool) (map[string][]Crew, []string
 	return out, clashes
 }
 
-// ReadCrew lists the crew boats of one ship's session with one tmux command and
-// no control connection, so it needs no server (like ReadOnce). The server and
-// `admiral crew list` both read crew here, so they compute the same state.
+// The server and `admiral crew list` both read crew here, so they compute the same state.
 func ReadCrew(tmux, sock, session string) ([]Crew, error) {
 	run := func(args ...string) ([]string, error) {
 		out, err := exec.Command(tmux, append([]string{"-f", "/dev/null", "-S", sock, "-u"}, args...)...).Output()
@@ -178,9 +160,8 @@ func ReadCrew(tmux, sock, session string) ([]Crew, error) {
 	return parseCrew(rows, map[string]bool{session: true})[session], nil
 }
 
-// crewBell is the end of the alert-bell script: a Codex crew boat that rang
-// needs you, written on its own pane (the server's bell handling only flags
-// ships, and a crew boat's pane no longer counts as the ship's).
+// The server's bell handling only flags ships, so a Codex crew boat that rang is marked
+// needs you on its own pane here.
 func crewBell(tmux, sock string) string {
 	t := shQuote(tmux) + " -S " + shQuote(sock)
 	return `crew=$(` + t + ` show-options -wqv -t "$2" @admiral-crew-name)` + "\n" +

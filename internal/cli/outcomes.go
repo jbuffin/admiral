@@ -18,7 +18,6 @@ import (
 
 var outcomeFile = regexp.MustCompile(`^(\d{4}-\d{2})\.jsonl$`)
 
-// parseSince reads a date (UTC midnight) or an RFC 3339 time.
 func parseSince(s string) (time.Time, error) {
 	if t, err := time.Parse(time.DateOnly, s); err == nil {
 		return t, nil
@@ -26,11 +25,8 @@ func parseSince(s string) (time.Time, error) {
 	return time.Parse(time.RFC3339, s)
 }
 
-// Outcomes is `admiral outcomes [--since <date>] [--ship <name>]` (ADR 0015):
-// the outcome log's lines as stored, month files ascending, read straight from
-// the files so the server need not run. A line is skipped unless it is a JSON
-// object with a ship and a time (a crash can leave one cut short), and when it
-// is longer than maxOutcomeLine.
+// Outcomes reads the log files directly so the server need not run. It skips a
+// line that is not a JSON object with a ship and a time: a crash can cut one short.
 func Outcomes(args []string, std IO) error {
 	fs := newFlags("outcomes")
 	sinceArg := fs.String("since", "", "only records at or after this date (YYYY-MM-DD, UTC) or RFC 3339 time")
@@ -84,11 +80,9 @@ func Outcomes(args []string, std IO) error {
 	return nil
 }
 
-// shiplessEvents are the events with no ship: autopilot's, about an order or a panel. A
-// --ship filter drops them, since none matches an empty ship.
+// shiplessEvents never match a --ship filter, since none has a ship.
 var shiplessEvents = map[string]bool{"skipped": true, "launch_failed": true, "resource_wait": true, "retro_queued": true}
 
-// printOutcomes streams one file's matching lines to std.Out.
 func printOutcomes(path string, since time.Time, ships map[string]bool, std IO) error {
 	f, err := os.Open(path)
 	if err != nil {

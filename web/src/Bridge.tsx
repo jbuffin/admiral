@@ -35,8 +35,7 @@ const backToShip = () => {
 const CHIP_BG = { underway: 'var(--color-foam)', idle: 'var(--color-foam)', needs_you: 'var(--color-attention-plaque)', anchored: 'var(--color-stone)' };
 const CHIP_STATE = { underway: 'working', idle: 'idle', needs_you: 'needs you', anchored: 'anchored' };
 
-// Copies on a tap. An iPad on the Mac's plain-http LAN address has no navigator.clipboard (it needs a
-// secure origin), so there a hidden text box is copied, still inside the tap.
+// An iPad on the Mac's plain-http LAN address has no navigator.clipboard, so a hidden text box is copied inside the tap.
 function copyText(text: string): boolean {
   if (window.isSecureContext && navigator.clipboard) {
     void navigator.clipboard.writeText(text);
@@ -54,7 +53,6 @@ function copyText(text: string): boolean {
   return ok;
 }
 
-// The command that attaches a real terminal to the ship's tmux session, or to one crew boat's window.
 function AttachChip({ command }: { command: string }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
@@ -73,8 +71,6 @@ function AttachChip({ command }: { command: string }) {
   );
 }
 
-// Full view: the terminal takes the whole screen, over the header and the orders panel. Shared with
-// the setup terminal.
 export function FullViewToggle({ full, set }: { full: boolean; set: (on: boolean) => void }) {
   const label = full ? 'Exit full view' : 'Full view';
   return (
@@ -86,9 +82,7 @@ export function FullViewToggle({ full, set }: { full: boolean; set: (on: boolean
   );
 }
 
-// A tap on the dimmed water around the terminal closes it, as the close button does. The press and the
-// click must both land outside the terminal and the flotilla's content, so a text selection that ends outside
-// keeps it open. Shared with the setup terminal.
+// The press and the click must both land outside, so a text selection that ends outside keeps it open.
 export function useCloseOutside(close: () => void) {
   const pressedOutside = useRef(false);
   const outside = (e: MouseEvent) => !(e.target as Element).closest('.terminal, button, .flotilla-title, .flotilla-subtitle, .fl-sub');
@@ -110,8 +104,7 @@ function BridgeView({ session }: { session: string }) {
   useEffect(() => {
     if (over) close();
   }, [over]);
-  // The boarded crew boat, while the ship still lists it. One that is closed here or elsewhere sends the bridge
-  // back to the ship's terminal.
+  // A crew boat closed here or elsewhere sends the bridge back to the ship's terminal.
   const crewName = boarded.value?.crew;
   const boat = crewName === undefined ? undefined : findCrew(ships.value, session, crewName);
   const crew = boat ? crewName : undefined;
@@ -180,7 +173,6 @@ function BridgeView({ session }: { session: string }) {
     if (r.ok) backToShip();
     else setActionError(r.error);
   };
-  // Closing a crew boat is in ⋯, on the wide head and the phone bar alike.
   const crewMenu = crew && (
     <Menu id={`crew-${session}-${crew}`} label={`More for ${crew}`}>
       <MenuItem onSelect={onCloseCrew} disabled={boat?.status !== 'anchored'}>

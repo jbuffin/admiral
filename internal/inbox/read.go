@@ -1,7 +1,5 @@
-// Package inbox is the Needs You inbox on the server (ADR 0016). Ships write
-// item files under $ADMIRAL_HOME/inbox/<session>/ (#112); Admiral reads them,
-// watches the directories, serves the open ones and writes the engineer's
-// answer next to an item as <id>.answer.json. It never edits an item.
+// Package inbox serves the item files ships write under $ADMIRAL_HOME/inbox/<session>/.
+// Admiral writes answers beside them and never edits an item.
 package inbox
 
 import (
@@ -20,41 +18,32 @@ import (
 	"time"
 )
 
-// maxItem is the most of an item file that Admiral reads. A ship writes the
-// file, so a larger one is skipped.
+// A ship writes the item file, so a larger one is skipped.
 const maxItem = 1 << 20
 
 // idPattern is what an item id must match (Commodore's ID_RE).
 var idPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
-// Item kinds.
 const (
 	KindQuestion = "question"
 	KindReview   = "review"
 	KindFindings = "findings"
-	// KindNotice is a read-only message from Admiral itself, in the AdmiralSession
-	// directory: a title, a plain-text body and nothing to answer, only to dismiss.
+	// KindNotice lives only in the AdmiralSession directory, and can only be dismissed.
 	KindNotice = "notice"
 )
 
-// Item is one item as served: the item file's fields, passed through as the
-// ship wrote them, and the ship's session, name and harness.
 type Item struct {
-	fields map[string]json.RawMessage
-	// Session is the ship's session name, the directory the item is in.
+	fields  map[string]json.RawMessage
 	Session string
-	// Name and Harness are the ship's, when the ship is known.
+	// Name and Harness are set only when the ship is known.
 	Name, Harness string
-	// ID and Kind come from the file; Created is its parsed created time.
-	ID, Kind string
-	Created  time.Time
+	ID, Kind      string
+	Created       time.Time
 }
 
-// Field is a field of the item file as written, nil when it has none.
 func (it Item) Field(name string) json.RawMessage { return it.fields[name] }
 
-// MarshalJSON is the item file's fields with session, name and harness set last,
-// so a file cannot name another ship.
+// MarshalJSON sets session, name and harness last, so a file cannot name another ship.
 func (it Item) MarshalJSON() ([]byte, error) {
 	out := make(map[string]json.RawMessage, len(it.fields)+3)
 	for k, v := range it.fields {
@@ -72,25 +61,20 @@ func (it Item) MarshalJSON() ([]byte, error) {
 	return json.Marshal(out)
 }
 
-// errSkip marks a file that is not an item.
 var errSkip = errors.New("not an item")
 
-// answerName is the file that holds the answer to item id.
 func answerName(id string) string { return id + ".answer.json" }
 
-// validSession is whether name can be a ship's inbox directory.
 func validSession(name string) bool {
 	return name != "" && !strings.HasPrefix(name, ".") && filepath.IsLocal(name) && !strings.ContainsRune(name, filepath.Separator)
 }
 
-// Answered is whether item id in dir already has an answer file, whoever wrote it.
 func Answered(dir *os.Root, id string) bool {
 	_, err := dir.Lstat(answerName(id))
 	return err == nil
 }
 
-// readItem reads and validates dir/<id>.json against #112's item format. It
-// never follows a link and never waits on a pipe.
+// readItem never follows a link and never waits on a pipe.
 func readItem(dir *os.Root, session, id string) (Item, error) {
 	name := id + ".json"
 	fi, err := dir.Lstat(name)
@@ -115,7 +99,6 @@ func readItem(dir *os.Root, session, id string) (Item, error) {
 	return parseItem(b, session, id)
 }
 
-// parseItem validates the file's bytes as item id of session.
 func parseItem(b []byte, session, id string) (Item, error) {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(b, &fields) != nil || fields == nil {
@@ -164,7 +147,6 @@ func isObject(raw json.RawMessage) bool {
 	return len(raw) > 0 && raw[0] == '{'
 }
 
-// listDir is the names in dir.
 func listDir(dir *os.Root) ([]string, error) {
 	f, err := dir.Open(".")
 	if err != nil {
@@ -174,7 +156,6 @@ func listDir(dir *os.Root) ([]string, error) {
 	return f.Readdirnames(-1)
 }
 
-// realDir opens name under root when it is a directory itself and not a link.
 func realDir(root *os.Root, name string) (*os.Root, error) {
 	fi, err := root.Lstat(name)
 	if err != nil {
@@ -186,9 +167,7 @@ func realDir(root *os.Root, name string) (*os.Root, error) {
 	return root.OpenRoot(name)
 }
 
-// openShipDir opens the directory of session's inbox, which must be a directory
-// itself and not a link, through a root on home. The caller closes it. A
-// directory that is not there is ErrNotFound.
+// openShipDir refuses a link. The caller closes the result.
 func openShipDir(home, session string) (*os.Root, error) {
 	if !validSession(session) {
 		return nil, ErrNotFound
@@ -210,11 +189,9 @@ func openShipDir(home, session string) (*os.Root, error) {
 	return dir, nil
 }
 
-// Waiting is whether the inbox of a ship that has sailed off holds an item it
-// still waits for: an unanswered item the ship's report lists in `inbox`. With
-// no report, or a report without an `inbox` list, every unanswered item counts.
-// A ship that took its answer elsewhere (in its terminal) and lists nothing is
-// not kept for an answer it will never read.
+// Waiting counts only the unanswered items the ship's report lists in `inbox`,
+// or every one when there is no such list: a ship that took its answer in its
+// terminal is not kept for an answer it will never read.
 func Waiting(home, session string) bool {
 	dir, err := openShipDir(home, session)
 	if err != nil {
@@ -236,8 +213,7 @@ func Waiting(home, session string) bool {
 	return false
 }
 
-// scan is the open items of every ship directory under home, oldest first. A
-// file that is not a valid item, and an item with an answer, is left out.
+// scan returns open items oldest first.
 func scan(home string) []Item {
 	items := []Item{}
 	root, err := os.OpenRoot(home)
@@ -294,18 +270,13 @@ func scanShip(dir *os.Root, session string) []Item {
 	return items
 }
 
-// ValidID is whether id can name an item file (ADR 0016's id rule).
 func ValidID(id string) bool { return idPattern.MatchString(id) }
 
-// MaxItem is the most of an item or answer file that Admiral reads.
 const MaxItem = maxItem
 
-// AnswerName is the file that holds the answer to item id.
 func AnswerName(id string) string { return answerName(id) }
 
-// ReadItem reads and validates dir/<id>.json as item id of session, never
-// following a link and never waiting on a pipe. A file that is not a valid item
-// is an error.
+// ReadItem never follows a link and never waits on a pipe.
 func ReadItem(dir *os.Root, session, id string) (Item, error) {
 	if !idPattern.MatchString(id) {
 		return Item{}, errSkip
@@ -313,5 +284,4 @@ func ReadItem(dir *os.Root, session, id string) (Item, error) {
 	return readItem(dir, session, id)
 }
 
-// ParseItem validates b as item id of session against #112's item format.
 func ParseItem(b []byte, session, id string) (Item, error) { return parseItem(b, session, id) }

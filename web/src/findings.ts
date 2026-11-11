@@ -1,6 +1,3 @@
-// The decisions on a findings item (#116): what the ship wrote, read defensively, and what the engineer has
-// decided on each finding card. Pure; inboxState.ts keeps one of these per item.
-
 export type Verdict = 'agree' | 'disagree' | 'unclear';
 export type Decision = 'approved' | 'edited' | 'rejected';
 export interface Proposal {

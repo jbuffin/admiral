@@ -7,11 +7,8 @@ import (
 	"unicode"
 )
 
-// subcommands are the names of each harness's subcommands, aliases and hidden
-// commands included, on claude 2.1.310, codex-cli 0.163.0 and GitHub Copilot CLI
-// 1.0.103. The visible ones are from `<harness> --help`; the hidden ones (not in
-// --help) were found in the binaries and each confirmed by `<harness> <name> --help`. A bare --arg that equals one would run that
-// subcommand in place of the session, and with it none of Admiral's hooks.
+// A bare --arg that equals one would run that subcommand in place of the session, with none of
+// Admiral's hooks. As of claude 2.1.310, codex-cli 0.163.0 and Copilot CLI 1.0.103, hidden ones included.
 var subcommands = map[string][]string{
 	"claude": {"agents", "attach", "auth", "auto-mode", "doctor", "gateway", "import", "install", "logs", "mcp",
 		"plugin", "plugins", "purge", "respawn", "rm", "setup-token", "stop", "kill", "ultrareview", "update", "upgrade", "help",
@@ -24,16 +21,9 @@ var subcommands = map[string][]string{
 		"plugin", "mcp", "skill", "instruction", "lsp", "sandbox", "completion"},
 }
 
-// codexHookFeatures are the names codex knows its hooks feature by: `hooks` and
-// the legacy alias `codex_hooks`.
 var codexHookFeatures = []string{"hooks", "codex_hooks"}
 
-// RefuseHookArgs vets the values of `admiral crew launch --arg` for a harness
-// (#175). Admiral's hooks always hold, so a value that overrides or disables
-// them, runs a subcommand or moves the session off this machine is refused, and
-// the error names it. This is where each harness's hook-flag knowledge lives. A
-// bare "--" is refused on every harness: it would end the flags before
-// Admiral's prompt.
+// A bare "--" is refused on every harness: it would end the flags before Admiral's prompt.
 func RefuseHookArgs(harness string, args []string) error {
 	for i, a := range args {
 		if hasControl(a) {
@@ -50,8 +40,6 @@ func RefuseHookArgs(harness string, args []string) error {
 	return nil
 }
 
-// hookArg is what to name in the refusal when arg (followed by next, which a
-// flag may take as its value) is one RefuseHookArgs refuses, else "".
 func hookArg(harness, arg, next string) string {
 	if arg == "--" || slices.Contains(subcommands[harness], arg) {
 		return arg
@@ -99,9 +87,7 @@ func hookArg(harness, arg, next string) string {
 	return ""
 }
 
-// codexConfigRefused reports whether a codex config override "key=value" can
-// switch Admiral's hooks off: the key is the hooks table or below it, the whole
-// features table or the hooks feature, or a profile (which layers a config file).
+// A profile is refused too: it layers a config file.
 func codexConfigRefused(kv string) bool {
 	key, _, _ := strings.Cut(kv, "=")
 	key = configKey(key)
@@ -114,9 +100,8 @@ func codexConfigRefused(kv string) bool {
 	return ok && slices.Contains(codexHookFeatures, feature)
 }
 
-// configKey is a codex config key as codex reads it. Codex trims the key like
-// Rust's str::trim (every Unicode space) and reads quoted TOML segments, so
-// spaces and quotes are dropped everywhere.
+// Codex trims the key like Rust's str::trim (every Unicode space) and reads quoted TOML
+// segments, so spaces and quotes are dropped everywhere.
 func configKey(key string) string {
 	return strings.Map(func(r rune) rune {
 		if unicode.IsSpace(r) || r == '"' || r == '\'' {

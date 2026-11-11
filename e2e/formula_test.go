@@ -11,9 +11,8 @@ import (
 	"testing"
 )
 
-// S2: the formula parses as Ruby and carries what the spec asks of it. brew
-// style and brew audit are not run here (they need a tap and install gems into
-// Homebrew); the engineer runs them once the tap exists.
+// brew style and brew audit are not run here: they need a tap and install gems
+// into Homebrew.
 func TestPackagingS2_FormulaParsesAndDeclaresItsDependencies(t *testing.T) {
 	ruby, err := exec.LookPath("ruby")
 	if err != nil {

@@ -22,7 +22,6 @@ export const chipText = (r: Resource) => `${r.name} ${Math.min(r.in_use, r.capac
 
 const units = (n: number) => `${n} ${n === 1 ? 'unit' : 'units'}`;
 
-// The chip's accessible label and tooltip. `shipName` turns a holder's session into the ship's name.
 // A launch in flight holds a unit with no holder, so the holders listed may be fewer than `in_use`.
 export function chipLabel(r: Resource, shipName: (session: string) => string): string {
   if (r.check === 'missing') return `${r.name}: missing (its check failed)`;
@@ -33,8 +32,7 @@ export function chipLabel(r: Resource, shipName: (session: string) => string): s
   return held.length > 0 ? `${of}, held by ${held.join(', ')}` : of;
 }
 
-// The line Launch orders shows for an order whose panel (autopilot.resources) needs resources: the first one that is
-// missing, or has no free unit. A resource still being checked, or not known, says nothing.
+// A resource still being checked, or not known, says nothing.
 export function launchHint(sources: Source[] | null, sourceKey: string, panelId: string | undefined, all: Resource[]): string | null {
   const needs = sources?.find((s) => s.key === sourceKey)?.panels.find((p) => p.id === panelId)?.autopilot?.resources ?? [];
   for (const name of needs) {

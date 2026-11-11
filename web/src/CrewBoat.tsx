@@ -3,8 +3,7 @@ import type { WireCrew } from './ships';
 
 const SIZE = { sea: [38, 33], flotilla: [52, 46] } as const; // tokens.json size.crewBoat, crewBoatFlotilla
 
-// A teammate's crew boat (designs/assets/crew-boat.svg, anchored: crew-boat-anchored.svg), on the sea and in the
-// flotilla (whose rows wear their own anchored badge, so the ✕ circle is drawn on the sea only). The flag carries the boat's own harness logo, where the asset has a plain pennant.
+// The ✕ circle is drawn on the sea only: flotilla rows wear their own anchored badge.
 export function CrewBoat({ boat, stripe, bot, size }: { boat: WireCrew; stripe: string; bot: string; size: keyof typeof SIZE }) {
   const anchored = boat.status === 'anchored';
   const [width, height] = SIZE[size];

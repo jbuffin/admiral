@@ -8,8 +8,6 @@ import (
 
 func bytesReader(b []byte) io.ReadSeeker { return bytes.NewReader(b) }
 
-// LANIPv4 returns this Mac's primary IPv4 address: the source address of the
-// default route, else the first usable interface address.
 func LANIPv4() (string, bool) {
 	// A UDP "connection" only selects a route; no packet is sent.
 	if c, err := net.Dial("udp4", "192.0.2.1:9"); err == nil {

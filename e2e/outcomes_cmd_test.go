@@ -97,7 +97,6 @@ func TestOutcomesCommand(t *testing.T) {
 		if r.stdout != "" {
 			t.Fatalf("printed %q, want nothing", r.stdout)
 		}
-		// The next call finds a log written since.
 		empty.writeRaw(filepath.Join(empty.home, "outcomes", "2026-09.jsonl"), outLines(oSaltUnderway), 0o600)
 		r = empty.admiral("outcomes")
 		empty.expectExit(r, 0, "outcomes after a record was written")

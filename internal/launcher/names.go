@@ -6,7 +6,6 @@ import (
 	"strings"
 )
 
-// names are the ship names built into the binary. Ships cannot be renamed.
 var names = []string{
 	"Saltpaw", "Morning Tern", "Brass Kettle", "Little Bramble", "Gull Errand", "Tidecaller", "Kelpie",
 	"Sea Biscuit", "Lantern Fish", "Puffin Post", "Otter Bell", "Driftwood Fox", "Marlin Spike", "Barnacle Bear",
@@ -57,9 +56,7 @@ func Slug(name string) string {
 	return strings.Trim(nonSlug.ReplaceAllString(strings.ToLower(name), "-"), "-")
 }
 
-// pickName chooses a name at random from those not in use; when all are, it
-// takes a random one and adds the lowest Roman numeral (from II) that is free.
-// taken says whether a display name is in use.
+// When every name is in use, pickName adds the lowest free Roman numeral (from II) to a random one.
 func pickName(taken func(name string) bool) string {
 	free := func(n string) bool { return !taken(n) }
 	var open []string

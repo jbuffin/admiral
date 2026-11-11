@@ -5,9 +5,6 @@ import (
 	"testing"
 )
 
-// AutopilotArgs is the per-harness allowlist for a caller with ADMIRAL_AUTOPILOT=1
-// (#175): only the engineer's listed flags pass, and --permission-mode only when
-// it is no looser than the dock's.
 func TestAutopilotArgs(t *testing.T) {
 	auto := []string{"--permission-mode", "auto"}
 	plan := []string{"--permission-mode=plan"}

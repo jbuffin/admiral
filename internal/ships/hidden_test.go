@@ -2,8 +2,6 @@ package ships
 
 import "testing"
 
-// S8: an order is hidden while any ship with its source and order id exists,
-// whatever the ship's status.
 func TestHiddenOrders(t *testing.T) {
 	fleet := []Ship{
 		{Session: "a", Source: "todo", OrderID: "1", Status: "underway"},

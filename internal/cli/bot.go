@@ -20,16 +20,12 @@ import (
 	"github.com/jbuffin/admiral/internal/ships"
 )
 
-// The commands AdmiralBot runs (ADR 0020): inbox, orders, orders add and chat ask.
-
-// Exit codes of `orders add` and `chat ask`, beside 0, 1 and 2.
 const (
 	ordersExitMaybeAdded = 5 // the order may have been added: never send it again
 	askExitWaiting       = 3 // chat ask timed out; --wait resumes
 	askExitWithdrawn     = 4 // the question is gone
 )
 
-// age is how long ago t was, to one unit: 42s, 5m, 3h, 2d.
 func age(t time.Time, now time.Time) string {
 	d := now.Sub(t)
 	switch {
@@ -45,9 +41,8 @@ func age(t time.Time, now time.Time) string {
 	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }
 
-// Inbox is `admiral inbox [--port <n>] [--json]`: everything waiting on the
-// engineer, as the glossary's Inbox says: the items GET /api/inbox serves and the
-// ships GET /api/ships marks as needing you.
+// Inbox joins the items GET /api/inbox serves with the ships GET /api/ships marks
+// as needing you, as the glossary's Inbox does.
 func Inbox(args []string, std IO) error {
 	fs := newFlags("inbox")
 	port := fs.String("port", defaultPort(), "the port Admiral listens on")
@@ -133,7 +128,6 @@ func Inbox(args []string, std IO) error {
 	return nil
 }
 
-// sourceView is the part of a source GET /api/sources serves that Orders reads.
 type sourceView struct {
 	Key    string `json:"key"`
 	Panels []struct {
@@ -146,8 +140,6 @@ type sourceView struct {
 	} `json:"panels"`
 }
 
-// Orders is `admiral orders [--port <n>] [--json]` and `admiral orders add`: the
-// sources, their panels and each panel's orders; and the one write AdmiralBot has.
 func Orders(args []string, std IO) error {
 	if len(args) > 0 && args[0] == "add" {
 		return ordersAdd(args[1:], std)
@@ -193,10 +185,8 @@ func Orders(args []string, std IO) error {
 	return nil
 }
 
-// ordersAdd is `admiral orders add --source <key> --panel <id> [--port <n>] [-- <text>]`.
-// The text comes from stdin without `-- <text>`. A 502, a 504, a 2xx with no id and
-// a connection that broke after the request went out may mean the order was added,
-// and ADR 0016 never sends those again: exit 5.
+// ordersAdd: a 502, a 504, a 2xx with no id and a connection that broke after the
+// request went out may mean the order was added, and ADR 0016 never resends those.
 func ordersAdd(args []string, std IO) error {
 	fs := newFlags("orders add")
 	port := fs.String("port", defaultPort(), "the port Admiral listens on")
@@ -256,15 +246,12 @@ func ordersAdd(args []string, std IO) error {
 	return nil
 }
 
-// ---- chat ask ----
-
 // askDefaultTimeout is how long `chat ask` waits, so it returns before the Bash
 // tool's default of two minutes moves it to the background.
 const askDefaultTimeout = 100 * time.Second
 
 const askPoll = 100 * time.Millisecond
 
-// Chat is `admiral chat ask [--timeout <dur>] [--wait <id>]` (ADR 0020).
 func Chat(args []string, std IO) error {
 	if len(args) == 0 || args[0] != "ask" {
 		return usagef("%s", Usage("chat"))
@@ -314,7 +301,7 @@ func Chat(args []string, std IO) error {
 	return waitAnswer(root, id, *timeout, std)
 }
 
-// newQuestionID is a time and a random tail, which matches ADR 0016's id rule.
+// newQuestionID follows ADR 0016's id rule.
 func newQuestionID() (string, error) {
 	var r [4]byte
 	if _, err := rand.Read(r[:]); err != nil {
@@ -323,8 +310,7 @@ func newQuestionID() (string, error) {
 	return time.Now().UTC().Format("20060102T150405") + "-" + hex.EncodeToString(r[:]), nil
 }
 
-// questionsRoot opens chat/questions under root, making the directories. None of
-// them may be a link.
+// questionsRoot refuses a link anywhere on the path.
 func questionsRoot(root *os.Root) (*os.Root, error) {
 	dir := ""
 	for _, part := range []string{"chat", "questions"} {
@@ -344,8 +330,7 @@ func questionsRoot(root *os.Root) (*os.Root, error) {
 	return root.OpenRoot(dir)
 }
 
-// writeQuestion checks the question on stdin and writes it as a question item. A
-// bad question is a usage error and writes nothing.
+// writeQuestion writes nothing for a bad question.
 func writeQuestion(root *os.Root, stdin []byte) (string, error) {
 	if len(stdin) > inbox.MaxItem {
 		return "", usagef("the question is over %d bytes", inbox.MaxItem)
@@ -397,14 +382,13 @@ func writeQuestion(root *os.Root, stdin []byte) (string, error) {
 	return id, nil
 }
 
-// questionExists says whether the question's file is there.
 func questionExists(root *os.Root, id string) bool {
 	_, err := root.Lstat(filepath.Join("chat", "questions", id+".json"))
 	return err == nil
 }
 
-// readAnswerFile is the answer file's bytes when it can be trusted: a regular
-// file, not a link, at most 1 MiB, holding a JSON object.
+// readAnswerFile trusts only a regular file, not a link, at most 1 MiB, holding a
+// JSON object.
 func readAnswerFile(root *os.Root, id string) ([]byte, bool) {
 	name := filepath.Join("chat", "questions", inbox.AnswerName(id))
 	fi, err := root.Lstat(name)
@@ -427,8 +411,7 @@ func readAnswerFile(root *os.Root, id string) ([]byte, bool) {
 	return b, true
 }
 
-// waitAnswer polls for the answer, and prints it. The question's file going away
-// is New chat withdrawing it.
+// The question's file going away is New chat withdrawing it.
 func waitAnswer(root *os.Root, id string, timeout time.Duration, std IO) error {
 	deadline := time.Now().Add(timeout)
 	for {

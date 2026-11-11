@@ -1,6 +1,5 @@
 import { signal } from '@preact/signals';
 
-// The needs-you chime: the prototype's three notes (index.html:853-872), WebAudio, no network.
 // iPad Safari plays nothing until a gesture has started an AudioContext, so the first
 // tap anywhere arms it, and turning sound on is a gesture too.
 
@@ -53,7 +52,6 @@ function play(): void {
   }
 }
 
-// One chime, unless muted or no gesture has armed audio yet.
 export function chime(): void {
   if (!muted.value) play();
 }

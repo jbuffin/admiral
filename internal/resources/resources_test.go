@@ -52,8 +52,6 @@ func (r *rig) state(t *testing.T, name string) resources.State {
 	return resources.State{}
 }
 
-// Units are held by ships that are underway or need you and recorded the
-// resource, by locks, and by reservations; nothing else.
 func TestUnitsHeld(t *testing.T) {
 	phone := map[string]config.Resource{"phone": {Capacity: 1}}
 	tests := []struct {
@@ -118,9 +116,7 @@ func TestUnitsHeld(t *testing.T) {
 	}
 }
 
-// A ship that recorded a resource the config doesn't define holds nothing:
-// there is nothing to count it against. The record survives, so if the config
-// defines the name again the ship holds it again.
+// The record survives, so if the config defines the name again the ship holds it again.
 func TestAShipHoldingAResourceGoneFromTheConfigCountsAgainstNothing(t *testing.T) {
 	r := newRig(t, map[string]config.Resource{"phone": {Capacity: 1}})
 	r.ships = []ships.Ship{hold("a", ships.StatusUnderway, "tablet", "phone")}
@@ -148,7 +144,6 @@ func TestStateIsSortedByName(t *testing.T) {
 	}
 }
 
-// A set of resources is reserved whole or not at all, and says why each isn't ready.
 func TestReserveTakesEveryNameOrNone(t *testing.T) {
 	flag := filepath.Join(t.TempDir(), "present")
 	r := newRig(t, map[string]config.Resource{
@@ -192,8 +187,6 @@ func TestReserveTakesEveryNameOrNone(t *testing.T) {
 	}
 }
 
-// Locks (u2 calls these): non-blocking, don't need the check to pass, release
-// makes the unit free again and announces the change.
 func TestLocks(t *testing.T) {
 	r := newRig(t, map[string]config.Resource{"phone": {Capacity: 1, Check: []string{"false"}}})
 	r.set.CheckNow() // the check fails; a lock doesn't care
@@ -243,8 +236,6 @@ func TestDroppingAReservationAnnouncesTheChange(t *testing.T) {
 	}
 }
 
-// AC 2, the package half: a check's exit code is the state, and a change of
-// state announces itself once.
 func TestCheckStates(t *testing.T) {
 	flag := filepath.Join(t.TempDir(), "present")
 	r := newRig(t, map[string]config.Resource{"phone": {Capacity: 1, Check: []string{"test", "-f", flag}}})
@@ -272,8 +263,6 @@ func TestCheckStates(t *testing.T) {
 	}
 }
 
-// The check is an argv with no shell: a metacharacter is just an argument.
-// A check that can't start is missing.
 func TestCheckRunsWithoutAShell(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "ran")
 	r := newRig(t, map[string]config.Resource{
@@ -291,8 +280,6 @@ func TestCheckRunsWithoutAShell(t *testing.T) {
 	}
 }
 
-// A check that runs past the timeout is missing, within the timeout, and its
-// whole process group is gone: the children of sh -c included.
 func TestCheckTimeoutKillsTheProcessGroup(t *testing.T) {
 	dir := t.TempDir()
 	pids := filepath.Join(dir, "pids")
@@ -327,8 +314,7 @@ func TestCheckTimeoutKillsTheProcessGroup(t *testing.T) {
 	}
 }
 
-// A ship that stops holding a unit wakes a Changed waiter once the caller says
-// the ships changed; this is how a waiting lock learns of a freed unit.
+// This is how a waiting lock learns of a freed unit.
 func TestWakeAnnouncesAShipThatStoppedHoldingAUnit(t *testing.T) {
 	r := newRig(t, map[string]config.Resource{"phone": {Capacity: 1}})
 	r.ships = []ships.Ship{hold("a", ships.StatusUnderway, "phone")}

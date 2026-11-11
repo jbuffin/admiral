@@ -8,9 +8,8 @@ import (
 	"testing"
 )
 
-// `admiral crew launch --arg` and `--role` (#175, unit u1). The seam is the
-// built binary and the fake harness's recorded argv. Every crew boat of one
-// test shares FAKE_CUE, so each boat's argv is read only after its record.
+// Every crew boat of one test shares FAKE_CUE, so each boat's argv is read only
+// after its record.
 
 func TestCrew_LaunchArgsAndRole(t *testing.T) {
 	t.Parallel()

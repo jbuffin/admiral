@@ -12,8 +12,7 @@ import (
 
 const writeTimeout = 5 * time.Second
 
-// Client is one connected WebSocket. Modules push to it through Send and never
-// see the WebSocket library.
+// Modules push to a Client through Send and never see the WebSocket library.
 type Client struct {
 	id   int
 	conn *websocket.Conn
@@ -23,10 +22,8 @@ type Client struct {
 	sent map[string][]byte // last message each key delivered
 }
 
-// ID identifies the client for as long as it is connected.
 func (c *Client) ID() int { return c.id }
 
-// Send writes v as one JSON text message.
 func (c *Client) Send(v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -37,10 +34,8 @@ func (c *Client) Send(v any) error {
 	return c.write(data)
 }
 
-// SendOnce sends what build returns unless this client already has exactly
-// that under key. A message counts as delivered only when its write succeeds,
-// so a failed one is retried by the next call. build runs under the client's
-// lock, so concurrent calls deliver the newest state last.
+// A message counts as delivered only when its write succeeds. build runs under
+// the client's lock, so concurrent calls deliver the newest state last.
 func (c *Client) SendOnce(key string, build func() any) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -64,7 +59,6 @@ func (c *Client) write(data []byte) error {
 	return c.conn.Write(ctx, websocket.MessageText, data)
 }
 
-// Hub tracks the connected clients and pushes to one or all of them.
 type Hub struct {
 	mu      sync.Mutex
 	next    int
@@ -98,14 +92,12 @@ func (h *Hub) snapshot() []*Client {
 	return out
 }
 
-// Len is how many clients are connected.
 func (h *Hub) Len() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return len(h.clients)
 }
 
-// SendTo pushes v to one client; it reports whether that client is connected.
 func (h *Hub) SendTo(id int, v any) bool {
 	h.mu.Lock()
 	c := h.clients[id]
@@ -117,18 +109,15 @@ func (h *Hub) SendTo(id int, v any) bool {
 	return true
 }
 
-// Broadcast pushes v to every client.
 func (h *Hub) Broadcast(v any) {
 	h.each(func(c *Client) { _ = c.Send(v) })
 }
 
-// BroadcastOnce is SendOnce to every client.
 func (h *Hub) BroadcastOnce(key string, build func() any) {
 	h.each(func(c *Client) { _ = c.SendOnce(key, build) })
 }
 
-// each runs f for every client at once, so one slow client doesn't hold up
-// the others, and waits for all of them.
+// Runs f for every client at once, so one slow client doesn't hold up the others.
 func (h *Hub) each(f func(*Client)) {
 	var wg sync.WaitGroup
 	for _, c := range h.snapshot() {

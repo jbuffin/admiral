@@ -11,9 +11,7 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// resConfig is a config with fleet "work", a source "s" whose autopilot entry
-// for panel "p" names `panelRes` (a JSON array, or "" for none), and the given
-// top-level resources object. The resources key comes after sources on purpose.
+// resConfig puts the resources key after sources on purpose.
 func resConfig(panelRes, resources string) string {
 	extra := ""
 	if panelRes != "" {
@@ -79,8 +77,6 @@ func TestResourcesParseErrors(t *testing.T) {
 	}
 }
 
-// AC 4: a panel that names an undefined resource fails validation, and the
-// manager keeps the last good config.
 func TestManagerKeepsTheLastGoodConfigWhenAPanelNamesAnUndefinedResource(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, resConfig(`["phone"]`, `{"phone":{"capacity":2}}`))
@@ -109,7 +105,6 @@ func TestManagerKeepsTheLastGoodConfigWhenAPanelNamesAnUndefinedResource(t *test
 	}
 }
 
-// Admiral's own writes of fleets keep the top-level resources object.
 func TestSetFleetsKeepsTheResourcesObject(t *testing.T) {
 	dir := t.TempDir()
 	p := writeFile(t, dir, resConfig(`["phone"]`, `{"phone":{}}`))
@@ -126,9 +121,7 @@ func TestSetFleetsKeepsTheResourcesObject(t *testing.T) {
 	}
 }
 
-// The Manager's write path (the one the UI uses) accepts a panel that names a
-// resource the file defines, wherever the resources key sits, and refuses one
-// that names an undefined resource.
+// The resources key may sit before or after sources.
 func TestManagerSetSourcesChecksPanelResourcesAgainstTheFile(t *testing.T) {
 	dir := t.TempDir()
 	good := `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},"resources":{"phone":{}}}`

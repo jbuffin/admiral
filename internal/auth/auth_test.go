@@ -12,9 +12,8 @@ import (
 	"github.com/coder/websocket"
 )
 
-// The e2e tests reach non-local peers only through the machine's LAN address,
-// which some machines (and the engineer's Mac) don't answer. This runs the same
-// rules with a forged peer address.
+// The peer address is forged: the e2e tests' LAN address doesn't answer on every
+// machine.
 func TestNonLocalPeer(t *testing.T) {
 	a := New("secret-token", "7420")
 	h := a.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
@@ -108,9 +107,8 @@ func TestLoopbackPeer(t *testing.T) {
 	}
 }
 
-// Rotating the token ends every non-local WebSocket that got in with the old
-// one, and leaves a loopback one alone (story 8). The peer address is forged
-// because the e2e version needs the LAN address to answer.
+// The peer address is forged because the e2e version needs the LAN address to
+// answer.
 func TestSetTokenClosesNonLocalWebSockets(t *testing.T) {
 	a := New("old-token", "7420")
 	echo := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -160,7 +158,6 @@ func TestSetTokenClosesNonLocalWebSockets(t *testing.T) {
 	}
 }
 
-// accepts reports whether a non-local request with this token's cookie gets in.
 func accepts(a *Auth, token string) bool {
 	h := a.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	req := httptest.NewRequest("GET", "/", nil)
@@ -171,7 +168,6 @@ func accepts(a *Auth, token string) bool {
 	return rec.Code == http.StatusOK
 }
 
-// A running server follows the token file, so `admiral token rotate` needs no restart.
 func TestWatchFollowsARotatedTokenFile(t *testing.T) {
 	dir := t.TempDir()
 	old, err := LoadOrCreateToken(dir)

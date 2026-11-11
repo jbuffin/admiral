@@ -43,7 +43,6 @@ func TestPromptForms(t *testing.T) {
 	}
 }
 
-// Launch refuses what it cannot pass through tmux, before anything is created.
 func TestLaunchRefusesWhatTmuxCannotCarry(t *testing.T) {
 	work := t.TempDir()
 	cfg := &config.Config{Fleets: []config.Fleet{{Key: "work", Name: "Work", SearchRoots: []string{work},

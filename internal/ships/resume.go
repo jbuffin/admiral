@@ -10,18 +10,12 @@ import (
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
-// enterPause is how long Codex needs between a paste and the Enter that submits
-// it, as `admiral crew send` waits.
+// enterPause is how long Codex needs between a paste and the Enter that submits it.
 const enterPause = 300 * time.Millisecond
 
-// TypeResume types the resume text of a live ship's report at its prompt (ADR
-// 0016's resume of a live ship): into the ship's own pane, never a crew boat's,
-// and only while it needs you because its turn ended (reason `stop`). afloat is
-// whether the ship is underway or needs you; typed whether the text went in. A
-// ship that is busy, or asks a question or a permission, is afloat and not
-// typed into: the caller tries again when it stops. One line goes in literally,
-// as the chat types /clear, so a slash command runs; more lines go as one
-// bracketed paste. Then Enter.
+// TypeResume types only while the ship needs you because its turn ended (reason
+// `stop`), never into a crew boat. One line goes in literally, so a slash command
+// runs; more lines go as one bracketed paste.
 func (s *Service) TypeResume(session, text string) (afloat, typed bool, err error) {
 	sess, ok := s.find(session)
 	if !ok {

@@ -14,12 +14,8 @@ import (
 	"time"
 )
 
-// The outcome log (rung 1 of autopilot): the real binary, the fake harness, and
-// the lines in $ADMIRAL_HOME/outcomes/<YYYY-MM>.jsonl.
-
 type outRec = map[string]any
 
-// outcomeLog is every record in the log, oldest month first.
 func (w *world) outcomeLog() []outRec {
 	w.t.Helper()
 	files, _ := filepath.Glob(filepath.Join(w.home, "outcomes", "*.jsonl"))
@@ -59,7 +55,6 @@ func eventsOf(log []outRec) []string {
 	return out
 }
 
-// waitShipLog waits for the ship's records to satisfy pred.
 func (w *world) waitShipLog(session string, d time.Duration, what string, pred func([]outRec) bool) []outRec {
 	w.t.Helper()
 	deadline := time.Now().Add(d)
@@ -97,8 +92,6 @@ func lastOf(log []outRec, event string) outRec {
 	return nil
 }
 
-// outFleets writes a config with one claude fleet per key, each with its cue
-// lines, and the given sources.
 func (w *world) outFleets(cues map[string][]string, defs ...srcDef) {
 	w.t.Helper()
 	fleets := map[string]any{}
@@ -131,7 +124,6 @@ func (w *world) touch(session, name string) {
 	}
 }
 
-// shipPaths are the report file and the inbox directory the ship was given.
 func shipPaths(r record) (report, inbox string) {
 	return r.env["ADMIRAL_REPORT"], strings.TrimSuffix(r.env["ADMIRAL_INBOX"], "/")
 }
@@ -170,7 +162,6 @@ func waitGone(t *testing.T, d time.Duration, paths ...string) {
 
 func exists(p string) bool { _, err := os.Lstat(p); return err == nil }
 
-// waitPaneDead waits for the ship's pane to be dead (it stays under remain-on-exit).
 func (w *world) waitPaneDead(session string) {
 	w.t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -218,9 +209,6 @@ func (w *world) stderrLines(substr string) int {
 	return n
 }
 
-// AC1 and the valid half of AC2: an order launched from a source, a permission
-// stop answered, a clean exit. Four lines in order, the report in `ended`, and
-// the report file and inbox gone once the ship has sailed off.
 func TestOutcomeLogOfAnOrderShip(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -298,10 +286,6 @@ func TestOutcomeLogOfAnOrderShip(t *testing.T) {
 	}
 }
 
-// AC2's other half, the report bound, Dismiss and its cleanup: an invalid, an
-// oversized and a missing report each give `report: null`, and a log line only
-// for the first two. The files stay while the ship is anchored and go with
-// Dismiss, after `ended`, and `dismissed` follows `ended`.
 func TestOutcomeReportInvalidMissingAndDismiss(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -345,7 +329,6 @@ func TestOutcomeReportInvalidMissingAndDismiss(t *testing.T) {
 				c.repo, got, lines, w.in.stderrBuf.String())
 		}
 
-		// An anchored ship keeps its files; Dismiss removes them after `ended`.
 		w.in.waitStatusList(t, 5*time.Second, ship.Session, "anchored")
 		if !exists(inboxPath) || (c.content != "" && !exists(reportPath)) {
 			t.Errorf("%s: the report or inbox is gone while the ship is only anchored", c.repo)
@@ -361,9 +344,6 @@ func TestOutcomeReportInvalidMissingAndDismiss(t *testing.T) {
 	}
 }
 
-// AC4: restarting Admiral adds no second `launched`; a ship killed while Admiral
-// is stopped gets `ended` on the next start, once, charged only for the time it
-// ran, and stamped with the time it was written.
 func TestOutcomeRestartAddsNoLaunchedAndEndsADeadShip(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -413,8 +393,7 @@ func TestOutcomeRestartAddsNoLaunchedAndEndsADeadShip(t *testing.T) {
 	})
 }
 
-// A ship that exited 0 while Admiral was stopped gets `ended` before the start-up
-// kill, and then its files go.
+// A ship that exited 0 while Admiral was stopped gets `ended` before the start-up kill.
 func TestOutcomeRestartEndsAShipThatSailedOff(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -444,11 +423,6 @@ func TestOutcomeRestartEndsAShipThatSailedOff(t *testing.T) {
 	}
 }
 
-// AC5: an outcomes directory that can't be written doesn't stop launching, logs
-// one error however many records fail, and the next record after the directory
-// becomes writable is written. Admiral still lets an exit-0 ship sail off, and
-// keeps the report and inbox of a ship whose `ended` it could not write. A ship
-// whose `ended` failed gets it again when it is dismissed, before `dismissed`.
 func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

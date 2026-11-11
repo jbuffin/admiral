@@ -9,40 +9,6 @@ import (
 	"time"
 )
 
-// The bridge (u11, seam 1): the real binary, fake harnesses with cues, a
-// browser played by a WebSocket client, and tmux for what the pane really did.
-//
-// The wire shapes below are what these tests assume. The brief leaves them to
-// the implementer, so follow them or change them here and in the UI together.
-//
-//	GET /ws/bridge/<the ship's tmux session name>   (WebSocket; u1's auth and Origin checks apply)
-//	  A session that is not a current ship (a gone ship, a strict prefix of a
-//	  live one, "_admiral", anything unknown) is refused at the handshake with 404.
-//
-//	browser -> server, JSON text frames
-//	  {"type":"join","cols":C,"rows":R}   first message; the browser's size; it becomes the active browser
-//	  {"type":"resize","cols":C,"rows":R} a new size; makes the browser active (ignored while it is hidden)
-//	  {"type":"active"}                   the browser was opened, tapped, clicked or typed in; makes it active
-//	                                      at the size it last reported (ignored while hidden)
-//	  {"type":"visible","visible":bool}   false: stop streaming to it; true: it rejoins like a joining browser
-//	  {"type":"input","data":"..."}       bytes for the pane, exactly as given (control bytes as JSON escapes)
-//
-//	server -> browser
-//	  JSON text frame {"type":"join", "screen":S, "scrollback":B, "cursor":{"x","y","visible"},
-//	      "modes":{"alternate","application_cursor","bracketed_paste","mouse"}, "size":{"cols","rows"},
-//	      "ship":{"status","exit_code","exit_signal"}}
-//	    S is the visible screen and B the history above it (at most 2,000 lines), both from
-//	    `capture-pane -p -e` (SGR colour codes kept, lines joined by "\n"). Sent once after
-//	    `join`, and again whenever the browser reports visible after being hidden.
-//	  binary frame: the pane's output bytes, decoded from %output (octal escapes undone), streamed after the join
-//	  JSON text frame {"type":"size","cols":C,"rows":R}   the pane's size changed
-//	  JSON text frame {"type":"ship","status":"underway|needs_you|anchored|sailing_off",
-//	      "exit_code":N|null,"exit_signal":"KILL"|null}   the ship's state changed
-//	  JSON text frame {"type":"refused","reason":"anchored"}   input to a ship that is not live
-//
-// The linger before the shared control client detaches is ADMIRAL_BRIDGE_IDLE
-// (a Go duration, default 30s), set by the tests that watch it.
-
 // liveFleet is one fleet whose fake reports working and then waits for input.
 func liveFleet(t *testing.T, cues ...string) *world {
 	t.Helper()
@@ -51,7 +17,7 @@ func liveFleet(t *testing.T, cues ...string) *world {
 	return w
 }
 
-// S1: a joining browser gets the screen and the last 2,000 lines with colours,
+// A joining browser gets the screen and the last 2,000 lines with colours,
 // then the live stream.
 func TestBridgeS1_JoinGetsScreenAndScrollbackThenStreams(t *testing.T) {
 	t.Parallel()
@@ -105,7 +71,7 @@ func TestBridgeS1_JoinGetsScreenAndScrollbackThenStreams(t *testing.T) {
 	}
 }
 
-// S1: a pane with no history joins with an empty scrollback, so its first line
+// A pane with no history joins with an empty scrollback, so its first line
 // is not sent twice (tmux clamps the history range to the screen's first line).
 func TestBridgeS1_JoinWithoutHistoryRepeatsNothing(t *testing.T) {
 	t.Parallel()
@@ -125,7 +91,7 @@ func TestBridgeS1_JoinWithoutHistoryRepeatsNothing(t *testing.T) {
 	}
 }
 
-// S2: two browsers share one control client; the latest active one sizes the
+// Two browsers share one control client; the latest active one sizes the
 // pane; input from either reaches the pane and clears needs-you; a hidden
 // browser stops receiving and catches up on return.
 func TestBridgeS2_TwoBrowsers(t *testing.T) {
@@ -201,9 +167,9 @@ func TestBridgeS2_TwoBrowsers(t *testing.T) {
 	}
 }
 
-// S3: the control client lingers and detaches; a stale or foreign session name
-// is refused; access follows u1's rules; a pane in the alternate screen joins
-// with its modes.
+// The control client lingers and detaches; a stale or foreign session name
+// is refused; access follows the server's auth rules; a pane in the alternate
+// screen joins with its modes.
 func TestBridgeS3_ControlClientDetachesAfterTheLastBrowserLeaves(t *testing.T) {
 	t.Parallel()
 	w := liveFleet(t)
@@ -266,7 +232,7 @@ func TestBridgeS3_OnlyCurrentShipsAreWatchable(t *testing.T) {
 		t.Errorf("the live ship received %s from refused bridges", quote(got))
 	}
 
-	// The case in the brief: the session is gone and a longer name exists.
+	// The session is gone and a longer name exists.
 	// The impostor records what is typed into it.
 	impostor := s.Session + "-ii"
 	rec := w.rec + "/" + impostor + ".stdin"
@@ -349,7 +315,7 @@ func TestBridgeS3_AlternateScreenJoinRestoresCursorAndModes(t *testing.T) {
 	// screen), so it is not pinned here.
 }
 
-// S4: the ship's exit reaches an open bridge; an anchored ship is read-only.
+// The ship's exit reaches an open bridge; an anchored ship is read-only.
 func TestBridgeS4_ExitReachesTheBridge(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -433,8 +399,8 @@ func (in *fleetInst) titleOf(t *testing.T, session string) (string, bool) {
 	return "", false
 }
 
-// The order's first line rides the ship as `title` (the eleventh session
-// option @admiral-title), survives a restart, and is empty without a source.
+// The order's first line rides the ship as `title` (the session option
+// @admiral-title), survives a restart, and is empty without a source.
 func TestBridgeTitleIsTheOrdersFirstLineAndSurvivesARestart(t *testing.T) {
 	t.Parallel()
 	w := liveFleet(t)

@@ -13,83 +13,6 @@ import (
 	"time"
 )
 
-// Helpers for the u12 scenarios (setup, fleet/config commands, token rotate,
-// ships/attach). Every test uses a world: a temporary ADMIRAL_HOME, a temporary
-// HOME, its own TMUX_TMPDIR and fake harnesses first on PATH.
-//
-// ---- The CLI surface these tests assume (u12 may adjust it; tell the tests) ----
-//
-// Exit codes: 0 ok, 1 error (refusal, invalid config, unknown fleet or ship,
-// a missing executable in `fleet check`), 2 usage (unknown command, bad flags,
-// `setup --yes` without `--answers`). Errors go to stderr; everything else to
-// stdout.
-//
-// Stdin: every call here runs with stdin at /dev/null. Only bare `admiral` (the
-// setup offer) and interactive `setup` look at whether stdin is a terminal;
-// `attach` leaves that to tmux and `config edit` to $EDITOR.
-//
-// Finding the running server: `ships` and `token rotate` take `--port <n>`
-// (default 7420, the server's own default). They talk to 127.0.0.1:<n>.
-//
-// admiral setup [--answers <file> --yes] [--dry-run]
-//   The answers file is JSON: {"fleets": { ...the same object as config.json's
-//   fleets, in order... }}. Omitted: an harness executable (resolved on PATH
-//   and written as an absolute path, the PATH entry, symlinks not followed) and
-//   the identity variable (always written: CLAUDE_CONFIG_DIR / CODEX_HOME /
-//   COPILOT_HOME, default ~/.claude, ~/.codex, ~/.copilot).
-//   Re-running only adds or updates: fleets the file already has stay, in their
-//   place; new keys are appended; top-level keys it doesn't know stay.
-//   It prints a detection report (every run, interactive or not), one line each:
-//     Harness <claude|codex|copilot>: <absolute path>
-//     Wrapper: <absolute path>                (claude*, codex*, copilot* on PATH)
-//     Identity directory: <path of a ~/.claude*, ~/.codex*, ~/.copilot* entry>
-//     Suggested search root: <path>           (a folder under ~ holding git checkouts)
-//   and then the change as a diff: lines starting with "+" are added and lines
-//   starting with "-" are removed, each line of the pretty-printed config.json
-//   (a line carrying only whitespace changes isn't a change). --dry-run prints
-//   all that and writes nothing. Without --answers it prompts for each answer
-//   (internal/cli/setup.go).
-//
-// admiral fleet list
-//   One line per fleet in file order; each carries the key, the name and the
-//   harness names.
-// admiral fleet add <key> --name <name> [--color #rrggbb] [--search-root <path>]...
-//   [--harness <h>]... [--executable <h>=<path>]... [--arg <h>=<arg>]...
-//   [--env <h>=<NAME>=<value>]...
-// admiral fleet edit <key> [--name ...] [--color ...] [--search-root <path>]...
-//   [--remove-search-root <path>]... [--executable <h>=<path>]... [--arg <h>=<arg>]...
-//   [--env <h>=<NAME>=<value>]... [--unset-env <h>=<NAME>]...
-//   (key first, then flags; every flag may repeat; a harness named by
-//   --executable/--arg/--env on `add` or `edit` needs no separate --harness
-//   unless it is the only thing to say about it)
-// admiral fleet check [<key>]
-//   One line per harness: <key> <harness> ok <absolute path>, or
-//   <key> <harness> missing <configured executable>. The executable is
-//   resolved (PATH, file mode) and never run. Exit 1 when any is missing.
-// admiral config show      prints config.json byte for byte
-// admiral config validate  exit 0 and nothing on stderr, or exit 1 and the
-//                          error naming the path (fleets.zulu.claud)
-// admiral config edit      copies config.json to a temp file, runs $EDITOR on
-//                          its path, saves only a result that validates
-//
-// admiral token rotate [--port <n>]
-//   Writes a new token to $ADMIRAL_HOME/token (mode 0600) and prints the
-//   server's own second line: "On other devices: http://<ip>:<port>/?token=<new>".
-//
-// admiral ships [--port <n>] [--names]
-//   Tab-separated, first line the header
-//     NAME  SESSION  FLEET  HARNESS  STATUS  REPO
-//   FLEET is the fleet key, STATUS is underway | needs_you | anchored (exit N),
-//   REPO is the base name of the ship's directory. With the server down it
-//   reads tmux directly, says so on a first line containing "not running", and
-//   still prints the table. --names prints display names only, one per line.
-// admiral attach <name|session>
-//   Prints "Ctrl-b d to detach" once, then runs
-//   tmux -S $ADMIRAL_HOME/tmux.sock attach -f ignore-size -t =<session>
-//   (plus -r for an anchored ship). Refuses _admiral and _setup (exit 1).
-// admiral completion zsh|bash
-//   Scripts that complete ship names with `admiral ships --names`.
-
 type cliResult struct {
 	stdout, stderr string
 	code           int
@@ -164,7 +87,6 @@ func (w *world) expectExit(r cliResult, want int, what string) {
 	}
 }
 
-// lines of the output that start with prefix.
 func linesWith(out, prefix string) []string {
 	var got []string
 	for _, l := range strings.Split(out, "\n") {
@@ -174,8 +96,6 @@ func linesWith(out, prefix string) []string {
 	}
 	return got
 }
-
-// ---- files ----
 
 // tilde expands a leading ~ to the world's HOME.
 func (w *world) tilde(p string) string {
@@ -316,12 +236,8 @@ func (c savedConfig) fleetRaw(t *testing.T, key string) string {
 	return compactJSON(t, all[key])
 }
 
-// ---- the fake tmux for `admiral attach` ----
-
-// installFakeTmux writes a tmux that records the argv of any call naming
-// attach and exits 0, and runs the real tmux for everything else (so name
-// resolution still reads the real socket). It returns the directory to put on
-// the attach call's PATH only, and the recording file.
+// installFakeTmux records the argv of any attach call and runs the real tmux
+// for everything else, so name resolution still reads the real socket.
 func (w *world) installFakeTmux() (dir, rec string) {
 	w.t.Helper()
 	real, err := exec.LookPath("tmux")

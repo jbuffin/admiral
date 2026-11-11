@@ -1,6 +1,5 @@
 // Package sources runs Admiral's order sources (ADR 0006): subprocess plugins
-// that speak JSON-RPC over stdin and stdout, the supervisor that keeps them
-// running, and the HTTP and WebSocket surface that shows their orders.
+// that speak JSON-RPC over stdin and stdout.
 package sources
 
 import (
@@ -16,7 +15,6 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// Manifest is a plugin's plugin.json.
 type Manifest struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
@@ -25,14 +23,10 @@ type Manifest struct {
 	Icon        string   `json:"icon"`
 }
 
-// errNotInstalled is returned for a plugin with no folder.
 var errNotInstalled = errors.New("plugin is not installed")
 
-// pluginsDir is $ADMIRAL_HOME/plugins.
 func pluginsDir(home string) string { return filepath.Join(home, "plugins") }
 
-// LoadManifest reads and checks plugins/<name>/plugin.json. It returns the
-// plugin's folder.
 func LoadManifest(home, name string) (Manifest, string, error) {
 	var m Manifest
 	if !config.NameRe.MatchString(name) {
@@ -74,8 +68,7 @@ func validIconName(icon string) bool {
 	return icon == filepath.Base(icon) && !strings.HasPrefix(icon, ".") && (ext == ".svg" || ext == ".png")
 }
 
-// iconPath is the icon file, or "" when the plugin has none, it is missing, or
-// it resolves outside the plugin's folder.
+// An icon that resolves outside the plugin's folder counts as none.
 func iconPath(m Manifest, dir string) string {
 	if m.Icon == "" || !validIconName(m.Icon) {
 		return ""
@@ -94,7 +87,6 @@ func iconPath(m Manifest, dir string) string {
 	return p
 }
 
-// PluginInfo is one installed plugin as GET /api/plugins lists it.
 type PluginInfo struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`

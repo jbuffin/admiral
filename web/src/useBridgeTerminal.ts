@@ -6,23 +6,16 @@ import type { WireShip } from './ships';
 import type { Term } from './terminal';
 
 export interface BridgeTerminalOptions {
-  /** The session the bridge socket joins. */
   session: string;
   /** A crew boat of that ship: the socket joins its terminal instead of the ship's. */
   crew?: string;
   /** Whether keys typed into the terminal are accepted while the bridge is connected. */
   open: boolean;
-  /** The session, or the crew boat, is gone: the caller closes its terminal or returns to the ship. */
   gone(): void;
-  /** What a failed reconnect asks: is the session still there? Ships by default; for a crew boat, is it still in its ship's `crew[]`. */
   probe?: () => Promise<Probe>;
 }
 
-/**
- * xterm.js in `host` joined to a session's bridge: this browser sizes the pane while it is the
- * active one and follows another's grid otherwise (ADR 0011). A ship's bridge (or one of its crew
- * boats') and the setup terminal all run on it; a new session or crew boat reconnects.
- */
+/** This browser sizes the pane while it is the active one and follows another's grid otherwise (ADR 0011). */
 export function useBridgeTerminal({ session, crew, open, gone, probe }: BridgeTerminalOptions) {
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<Term | undefined>(undefined);
@@ -54,7 +47,6 @@ export function useBridgeTerminal({ session, crew, open, gone, probe }: BridgeTe
     focused.current = false;
     let observer: ResizeObserver | undefined;
     const claim = () => {
-      // This browser sets the pane's size from now on.
       active.current = true;
       const d = term.current?.fit();
       if (d) link.current?.send({ type: 'resize', cols: d.cols, rows: d.rows });

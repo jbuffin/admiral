@@ -7,8 +7,6 @@ import (
 	"time"
 )
 
-// urlOf is the `url` the ships API reports for one ship; present is false when
-// the ship has no such field.
 func (in *fleetInst) urlOf(t *testing.T, session string) (string, bool) {
 	t.Helper()
 	code, body := send(t, http.MethodGet, in.LocalURL+"/api/ships", nil)
@@ -36,10 +34,7 @@ func (in *fleetInst) urlOf(t *testing.T, session string) (string, bool) {
 	return "", false
 }
 
-// A ship keeps its order's web URL, across a restart; an order with no url or a
-// non-web one, or a launch with no order, leaves it empty. The URL comes only
-// from the order lookup, never from the launch request. The ship's title is the
-// order's title even when the order's text is only its URL, as GitHub's is.
+// The URL comes only from the order lookup, never from the launch request.
 func TestShipKeepsItsOrdersURL(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

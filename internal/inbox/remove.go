@@ -11,12 +11,8 @@ import (
 	"github.com/jbuffin/admiral/internal/outcomes"
 )
 
-// RemoveItem takes an item out of the inbox without answering it, for one the
-// engineer settled elsewhere (in the ship's terminal) or that no longer
-// matters. A review goes the way of ForgetReview: nothing changes on GitHub. A
-// question or findings item gets an answer file that says "removed": true and
-// records item_removed. A removed item never resumes its ship. A notice has no
-// ship to sweep it, so dismissing one deletes its file.
+// RemoveItem changes nothing on GitHub, and a removed item never resumes its
+// ship. A notice has no ship to sweep it, so removing one deletes its file.
 func (s *Service) RemoveItem(session, id string) (ReviewResult, error) {
 	it, err := s.open(session, id)
 	if err != nil {
@@ -41,7 +37,6 @@ func (s *Service) RemoveItem(session, id string) (ReviewResult, error) {
 	return ReviewResult{Forgotten: true}, err
 }
 
-// dismissNotice deletes a notice's item file.
 func (s *Service) dismissNotice(session, id string) error {
 	s.answerMu.Lock()
 	dir, err := openShipDir(s.Home, session)
@@ -59,14 +54,12 @@ func (s *Service) dismissNotice(session, id string) error {
 	return nil
 }
 
-// serveRemove takes any item out of the inbox (RemoveItem).
 func (s *Service) serveRemove(w http.ResponseWriter, r *http.Request) {
 	session, id := r.PathValue("session"), r.PathValue("id")
 	res, err := s.RemoveItem(session, id)
 	respond(w, session, id, res, err)
 }
 
-// removed is whether the answer to item id in dir says the item was removed.
 func removed(dir *os.Root, id string) bool {
 	f, err := dir.OpenFile(answerName(id), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {

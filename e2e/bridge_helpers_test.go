@@ -17,9 +17,6 @@ import (
 	"github.com/coder/websocket"
 )
 
-// Helpers for the bridge scenarios (u11). The wire shapes they assume are
-// documented at the top of bridge_test.go.
-
 var sgr = regexp.MustCompile(`\x1b\[[0-9;:]*m`)
 
 func stripSGR(s string) string { return sgr.ReplaceAllString(s, "") }
@@ -112,14 +109,12 @@ func (b *bridgeClient) resize(cols, rows int) {
 
 func (b *bridgeClient) close() { _ = b.c.Close(websocket.StatusNormalClosure, "") }
 
-// mark is a position in the frames received so far.
 func (b *bridgeClient) mark() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return len(b.frames)
 }
 
-// output is the binary frames received after the mark, joined.
 func (b *bridgeClient) output(mark int) string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -132,7 +127,6 @@ func (b *bridgeClient) output(mark int) string {
 	return sb.String()
 }
 
-// texts are the JSON messages of one type received after the mark.
 func (b *bridgeClient) texts(mark int, typ string) []json.RawMessage {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -166,7 +160,6 @@ func (b *bridgeClient) waitFor(d time.Duration, what string, pred func() bool) {
 	}
 }
 
-// waitOutput waits until the bytes streamed after the mark contain want.
 func (b *bridgeClient) waitOutput(d time.Duration, mark int, want string) {
 	b.t.Helper()
 	b.waitFor(d, "output containing "+quote(want)+" (got "+quote(b.output(mark))+")", func() bool {
@@ -185,7 +178,6 @@ func (b *bridgeClient) waitJoin(d time.Duration, n int) joinMsg {
 	return j
 }
 
-// waitShip waits for a `ship` message after the mark whose state satisfies pred.
 func (b *bridgeClient) waitShip(d time.Duration, mark int, what string, pred func(shipState) bool) shipState {
 	b.t.Helper()
 	var got shipState
@@ -204,7 +196,6 @@ func (b *bridgeClient) waitShip(d time.Duration, mark int, what string, pred fun
 	return got
 }
 
-// waitSize waits for a `size` message after the mark with the given grid.
 func (b *bridgeClient) waitSize(d time.Duration, mark, cols, rows int) {
 	b.t.Helper()
 	b.waitFor(d, "a `size` message "+itoa(cols)+"x"+itoa(rows), func() bool {
@@ -282,8 +273,6 @@ func (w *world) dialBridgeAt(t *testing.T, prefix, session string) *bridgeClient
 	return b
 }
 
-// waitClosed waits for the server to close the socket and returns the close
-// status and reason.
 func (b *bridgeClient) waitClosed(d time.Duration) (websocket.StatusCode, string) {
 	b.t.Helper()
 	b.waitFor(d, "the server closing the socket", func() bool {
@@ -309,7 +298,6 @@ func (w *world) joinBridge(t *testing.T, session string, cols, rows int) (*bridg
 	return b, b.waitJoin(5*time.Second, 1)
 }
 
-// expectRefused requires the handshake to fail with the status.
 func expectBridgeRefused(t *testing.T, base, session, query string, hdr http.Header, host string, want int) {
 	t.Helper()
 	b, resp, err := bridgeDial(t, base, session, query, hdr, host)
@@ -321,8 +309,6 @@ func expectBridgeRefused(t *testing.T, base, session, query string, hdr http.Hea
 		t.Fatalf("/ws/bridge/%s refusal = %v (err %v), want status %d", session, resp, err, want)
 	}
 }
-
-// ---- tmux and the fake harness, as the test sees the pane ----
 
 func (w *world) target(session string) string { return "=" + session + ":" }
 
@@ -380,7 +366,6 @@ func (w *world) paneWrite(session, data string) {
 	}
 }
 
-// stdinOf is what the fake harness has read from its terminal so far.
 func (w *world) stdinOf(session string) string {
 	data, _ := os.ReadFile(filepath.Join(w.rec, session, "stdin"))
 	return string(data)

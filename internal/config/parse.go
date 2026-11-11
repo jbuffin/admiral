@@ -1,5 +1,4 @@
-// Package config loads, validates, watches and writes $ADMIRAL_HOME/config.json
-// (ADR 0010): the fleets, their harnesses and the few settings the UI writes.
+// Package config loads, validates, watches and writes $ADMIRAL_HOME/config.json.
 package config
 
 import (
@@ -16,51 +15,38 @@ import (
 	"strings"
 )
 
-// Version is the config format this Admiral reads.
 const Version = 1
 
-// MaxFavoriteSkills is how many favorite skills the launch form can hold.
 const MaxFavoriteSkills = 5
 
-// Config is a validated config.json with everything derived from it.
 type Config struct {
 	Fleets         []Fleet // file order is marina order
 	FavoriteSkills []string
 	Sources        json.RawMessage // as in the file; nil when there is no sources key
 	SourceList     []Source        // Sources, in panel order
-	// AutopilotMaxShips is the most ships underway or needing you at once that
-	// autopilot lets stand: it counts every such ship, hand launches included,
-	// and stops launching when they reach it.
+	// AutopilotMaxShips counts every ship underway or needing you, hand launches included.
 	AutopilotMaxShips int
-	// ResumeSource is autopilot.resume_source, nil when the file sets none.
-	ResumeSource *ResumeSource
-	// Resources are the locked resources by name (#118); nil when the file
-	// defines none.
-	Resources map[string]Resource
-	// Chat is the AdmiralBot chat session's settings (#119), resolved: Fleet is
-	// never a missing fleet, and Model is never empty.
+	ResumeSource      *ResumeSource
+	Resources         map[string]Resource
+	// Chat is resolved: Fleet is never a missing fleet, and Model is never empty.
 	Chat Chat
 }
 
-// Chat is the top-level `chat` key. Effort is empty for the harness default,
-// which config.json leaves out.
+// Chat's Effort is empty for the harness default, which config.json leaves out.
 type Chat struct {
 	Fleet  string
 	Model  string
 	Effort string
 }
 
-// DefaultChatModel is the chat's model when config.json sets none.
 const DefaultChatModel = "sonnet"
 
-// ChatModels and ChatEfforts are what chat.model and chat.effort may hold. An
-// empty effort is the harness default.
+// An empty effort is the harness default.
 var (
 	ChatModels  = []string{"sonnet", "opus", "haiku"}
 	ChatEfforts = []string{"", "low", "medium", "high"}
 )
 
-// Fleet is one marina.
 type Fleet struct {
 	Key         string
 	Name        string
@@ -98,11 +84,8 @@ func (c *Config) clone() *Config {
 	return &out
 }
 
-// CanLaunch is false for a fleet with no search roots: its docks show, but
-// nothing can be launched from it.
 func (f Fleet) CanLaunch() bool { return len(f.SearchRoots) > 0 }
 
-// Harness is one dock of a fleet.
 type Harness struct {
 	Name       string // claude, copilot or codex
 	Executable string // the resolved path when Found, else as configured
@@ -112,7 +95,6 @@ type Harness struct {
 	Warnings   []string
 }
 
-// Environ is Admiral's environment overlaid with the fleet's env.
 func (h Harness) Environ() []string {
 	env := map[string]string{}
 	for _, kv := range os.Environ() {
@@ -138,8 +120,7 @@ var (
 	colorRe    = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 )
 
-// Parse validates data and derives the per-dock state. The error names the
-// path of the bad value, without the file name.
+// Parse errors name the path of the bad value, without the file name.
 func Parse(data []byte) (*Config, error) {
 	top, err := members("", data)
 	if err != nil {
@@ -185,7 +166,7 @@ func Parse(data []byte) (*Config, error) {
 				return nil, err
 			}
 		}
-		// Anything else is kept in the file and ignored here (story 33).
+		// Anything else is kept in the file and ignored here.
 	}
 	if !haveVersion {
 		return nil, fmt.Errorf("version: required, must be %d", Version)
@@ -235,10 +216,8 @@ func parseChat(raw json.RawMessage) (Chat, error) {
 	return c, nil
 }
 
-// resolveChat fills the defaults: the first fleet with a Claude dock (else the
-// first fleet) when the named fleet is unset or gone, and sonnet. A missing
-// fleet, or a model or effort outside the lists, never fails the load: the
-// default is used and a warning is logged.
+// resolveChat never fails the load: a bad fleet, model or effort falls back to
+// the default with a warning.
 func resolveChat(c Chat, fleets []Fleet) Chat {
 	if c.Model != "" && !slices.Contains(ChatModels, c.Model) {
 		log.Printf("config: chat.model %q is not one of %v, using %s", c.Model, ChatModels, DefaultChatModel)
@@ -432,7 +411,6 @@ type member struct {
 	raw json.RawMessage
 }
 
-// members decodes a JSON object keeping key order and refusing duplicates.
 func members(path string, raw []byte) ([]member, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	tok, err := dec.Token()

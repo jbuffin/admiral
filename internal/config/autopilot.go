@@ -9,49 +9,38 @@ import (
 	"unicode"
 )
 
-// DefaultAutopilotMaxShips is the top-level cap when the file sets none.
 const DefaultAutopilotMaxShips = 3
 
-// DefaultRetroEvery is how many autopilot runs of a panel pass between retro
-// orders when the entry says none (#117).
 const DefaultRetroEvery = 5
 
-// PanelAutopilot is one panel's autopilot entry: which orders it launches and
-// how (#114). Config can't check that the panel exists; panels come from the
-// running plugin.
+// PanelAutopilot can't be checked against the panel: panels come from the running plugin.
 type PanelAutopilot struct {
 	Enabled   bool
 	Fleet     string
-	Harness   string // claude, for now
+	Harness   string // claude only
 	Skill     Skill
 	Args      []string // extra harness args, after the fleet's own
 	MaxShips  int      // most ships from this panel at once
 	LowStakes string   // advisor or never
 	AutoMerge string   // squash, merge or rebase; empty when the panel does not auto-merge
-	// RetroEvery is how many runs of this panel pass between retro orders; 0
-	// turns them off.
+	// RetroEvery 0 turns retro orders off.
 	RetroEvery int
-	// Resources names the locked resources an order of this panel needs; nil
-	// when none. Each is checked against the top-level resources once the whole
-	// file is parsed.
+	// Resources are checked against the top-level resources once the whole file is parsed.
 	Resources []string
 }
 
-// Skill is what a launch runs, in the kinds the launcher takes.
 type Skill struct {
 	Kind string // commodore, skill or none
 	Name string // for kind skill
 }
 
-// ResumeSource is the panel that gets a ship's resume order (#116): a source
-// and one of its panels. Config checks the shape only; the source and panel are
-// looked up when an order is added, so removing the source stays possible.
+// ResumeSource is checked for shape only; the source and panel are looked up
+// when an order is added, so removing the source stays possible.
 type ResumeSource struct {
 	Source string
 	Panel  string
 }
 
-// Autopilot is the top-level autopilot object.
 type Autopilot struct {
 	MaxShips int
 	// Resume is nil when the file names no resume_source.
@@ -259,8 +248,7 @@ func nonNegativeInt(path string, raw json.RawMessage) (int, error) {
 	return n, nil
 }
 
-// checkAutopilotFleets runs after the fleets are parsed: every entry must name
-// a fleet that has a claude dock.
+// checkAutopilotFleets runs after the fleets are parsed.
 func checkAutopilotFleets(cfg *Config) error {
 	for _, s := range cfg.SourceList {
 		for panel, e := range s.Autopilot {

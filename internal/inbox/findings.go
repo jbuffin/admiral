@@ -8,32 +8,27 @@ import (
 	"github.com/jbuffin/admiral/internal/outcomes"
 )
 
-// Proposal is what a finding card proposes: a diff to apply or a reply to post.
 type Proposal struct {
 	Kind    string `json:"kind"`
 	Content string `json:"content"`
 }
 
-// CardDecision is the engineer's decision on one card. An edited card carries
-// the proposal as the engineer left it; no other card does.
+// Only an edited CardDecision carries the proposal, as the engineer left it.
 type CardDecision struct {
 	ID       string    `json:"id"`
 	Decision string    `json:"decision"`
 	Proposal *Proposal `json:"proposal,omitempty"`
 }
 
-// FindingsRequest is the body of the findings route: a decision for every card.
 type FindingsRequest struct {
 	Cards []CardDecision `json:"cards"`
 }
 
-// cardAnswer is one card's entry in the answer file.
 type cardAnswer struct {
 	Decision string    `json:"decision"`
 	Proposal *Proposal `json:"proposal,omitempty"`
 }
 
-// cardIDs is the ids of the cards of a findings item.
 func cardIDs(it Item) []string {
 	var f struct {
 		Cards []struct {
@@ -48,9 +43,7 @@ func cardIDs(it Item) []string {
 	return ids
 }
 
-// AnswerFindings writes the answer to a findings item and records one outcome
-// per card. Every card needs one decision, and nothing goes to GitHub: the skill
-// that resumes posts what was approved.
+// AnswerFindings sends nothing to GitHub: the skill that resumes posts what was approved.
 func (s *Service) AnswerFindings(session, id string, req FindingsRequest) error {
 	return s.Answer(session, id, KindFindings, func(it Item) (any, []outcomes.Record, error) {
 		want := map[string]bool{}

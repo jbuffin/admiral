@@ -11,27 +11,20 @@ import (
 	"time"
 )
 
-// MaxLine is the longest line the readers use, newline not counted. A report of
-// up to 1 MiB (internal/ships) can grow sixfold when the writer escapes <, > and
-// &, so this leaves room for any `ended` the writer produces; a longer line is
-// skipped, not read.
+// MaxLine leaves room for any `ended`: a 1 MiB report can grow sixfold when the
+// writer escapes <, > and &.
 const MaxLine = 7 << 20
 
 var monthFile = regexp.MustCompile(`^\d{4}-\d{2}\.jsonl$`)
 
-// Line is one line of the log as Read returns it.
 type Line struct {
 	Event, Ship string
 	TS          time.Time // in UTC
-	// Fields holds the keys of the line that counting runs needs, as written:
-	// source, panel, autopilot, order_id, title, resume_source, resume_panel, text
-	// and uncertain. The rest of the line, a report included, is never held.
+	// Fields holds only the keys counting runs needs; a report is never held.
 	Fields map[string]any
 }
 
-// wanted is the shape a line is decoded into. Every key but v is an any, so a
-// forged line of the wrong type reads as a missing key, and the decoder skips
-// what it has no field for.
+// Every key but v is an any, so a forged line of the wrong type reads as a missing key.
 type wanted struct {
 	V            json.RawMessage `json:"v"`
 	TS           any             `json:"ts"`
@@ -48,14 +41,8 @@ type wanted struct {
 	Uncertain    any             `json:"uncertain"`
 }
 
-// Read is the usable lines of every <YYYY-MM>.jsonl file in dir, files in name
-// order and lines in the order they were appended. Position in that order is
-// what "before" and "after" mean; ts is only a time. A line is skipped unless
-// it is a JSON object with a v, an RFC 3339 ts and an event, and so is one
-// longer than MaxLine; a missing dir reads as an empty log. A name that is not a
-// regular file (a FIFO, a device, a link) is skipped, so it cannot hang a read. Events are not
-// checked: a reader ignores the ones it does not know. Everything a ship wrote
-// into a line, a report included, is data (ADR 0015, ADR 0017).
+// Read orders files by name and lines by append; that position is what "before"
+// and "after" mean, never ts. A file that is not regular is skipped, so it cannot hang a read.
 func Read(dir string) []Line {
 	files, err := filepath.Glob(filepath.Join(dir, "*.jsonl"))
 	if err != nil {
@@ -114,9 +101,8 @@ func parseLine(b []byte) (Line, bool) {
 	return Line{Event: event, Ship: ship, TS: t.UTC(), Fields: fields}, true
 }
 
-// ReadLine is the next line without its newline. A line longer than MaxLine
-// comes back empty, as if it were malformed, and the rest of it is discarded
-// unread into memory, so one huge record cannot hide the others.
+// ReadLine returns a line longer than MaxLine empty and discards the rest unread,
+// so one huge record cannot hide the others.
 func ReadLine(r *bufio.Reader) ([]byte, error) {
 	var line []byte
 	tooLong := false

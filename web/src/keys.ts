@@ -1,10 +1,7 @@
-// What the bridge and the setup terminal send for keys a browser can't type itself.
-
 // Shift+Enter in the terminal and the Newline key: ESC CR, Alt+Enter to a TUI, which the harnesses
 // take as a new line in their input. A bare CR would submit.
 export const NEWLINE = '\x1b\r';
 
-// What the key buttons send. The labels and the accessible names are the prototype's, plus Newline.
 export const KEYS = [
   ['Enter', '⏎ Enter', '\r'],
   ['Newline', '⇧⏎ Newline', NEWLINE],

@@ -36,7 +36,6 @@ func get(t *testing.T, h http.Handler, target string) (int, http.Header, string)
 	return res.StatusCode, res.Header, string(b)
 }
 
-// The old UI stays at / and the shell answers under /app/, deep links included.
 func TestShellServedUnderApp_OldUIUnchanged(t *testing.T) {
 	h := uiServer().Handler()
 	cases := []struct {
@@ -121,8 +120,7 @@ func TestLogos_OnlyHarnessNamesAndNothingOutsideTheFolder(t *testing.T) {
 	seedLogos(t)
 	h := uiServer().Handler()
 
-	// Positive control: the same setup serves a real harness, so the 404s
-	// below come from the refusals and not from a missing route.
+	// Positive control: the 404s below come from the refusals, not a missing route.
 	if code, _, _ := get(t, h, "/api/v1/logos/claude"); code != http.StatusOK {
 		t.Fatalf("control GET /api/v1/logos/claude = %d, want 200", code)
 	}
@@ -146,8 +144,7 @@ func TestLogos_OnlyHarnessNamesAndNothingOutsideTheFolder(t *testing.T) {
 		})
 	}
 
-	// A literal .. is cleaned by the mux (a redirect) and must not reach the
-	// home either; the home's own files stay unserved.
+	// A literal .. is cleaned by the mux and must not reach the home either.
 	code, _, body := get(t, h, "/api/v1/logos/../../secret.svg")
 	if code == http.StatusOK || strings.Contains(body, "TOP-SECRET") {
 		t.Fatalf("literal traversal = %d %q, must not serve a file outside logos/", code, body)

@@ -13,14 +13,11 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// FileName is the config file inside $ADMIRAL_HOME.
 const FileName = "config.json"
 
 // reloadDelay lets an editor finish its write-and-rename before we read.
 const reloadDelay = 100 * time.Millisecond
 
-// Manager holds the last good config and the current error, and reloads when
-// the file changes.
 type Manager struct {
 	path    string
 	watcher *fsnotify.Watcher
@@ -35,8 +32,7 @@ type Manager struct {
 	subs    map[chan struct{}]struct{}
 }
 
-// Open loads dir/config.json and starts watching it. An invalid or missing file
-// is not an error here: it shows up in View.
+// Open does not fail on an invalid or missing file: that shows up in View.
 func Open(dir string) (*Manager, error) {
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -55,22 +51,20 @@ func Open(dir string) (*Manager, error) {
 	return m, nil
 }
 
-// Close stops watching.
 func (m *Manager) Close() {
 	_ = m.watcher.Close()
 	<-m.done
 }
 
-// Current is a copy of the last good config; fleets are empty until a file
-// loads. Callers may change it freely.
+// Current is a copy; callers may change it freely.
 func (m *Manager) Current() *Config {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.cur.clone()
 }
 
-// SetFavoriteSkills writes favorite_skills and reloads before it returns, so
-// the next View and the pushed config already carry the change.
+// SetFavoriteSkills reloads before it returns, so the next View and the pushed
+// config already carry the change.
 func (m *Manager) SetFavoriteSkills(skills []string) error {
 	if err := SetFavoriteSkills(filepath.Dir(m.path), skills); err != nil {
 		return err
@@ -79,7 +73,7 @@ func (m *Manager) SetFavoriteSkills(skills []string) error {
 	return nil
 }
 
-// SetChat writes chat and reloads before it returns.
+// SetChat reloads before it returns.
 func (m *Manager) SetChat(c Chat) error {
 	if err := SetChat(filepath.Dir(m.path), c); err != nil {
 		return err
@@ -88,8 +82,8 @@ func (m *Manager) SetChat(c Chat) error {
 	return nil
 }
 
-// SetSources writes sources and reloads before it returns. It refuses a value
-// the parser would refuse, so a bad write never leaves the file invalid.
+// SetSources reloads before it returns, and refuses a value the parser would
+// refuse, so a bad write never leaves the file invalid.
 func (m *Manager) SetSources(sources json.RawMessage) error {
 	if _, err := parseSources(sources); err != nil {
 		return err
@@ -101,8 +95,8 @@ func (m *Manager) SetSources(sources json.RawMessage) error {
 	return nil
 }
 
-// Subscribe returns a channel that receives after every reload, whether or not
-// anything changed. Notifications coalesce; call View or Current for the state.
+// Subscribe fires after every reload, whether or not anything changed.
+// Notifications coalesce; call View or Current for the state.
 func (m *Manager) Subscribe() (<-chan struct{}, func()) {
 	ch := make(chan struct{}, 1)
 	m.mu.Lock()
@@ -143,8 +137,7 @@ func (m *Manager) relevant(name string) bool {
 	return base == FileName || (m.target != "" && base == m.target)
 }
 
-// reload reads the file, keeps the last good config on any failure, and
-// tells subscribers if what the UI sees changed.
+// reload keeps the last good config on any failure.
 func (m *Manager) reload() {
 	data, err := os.ReadFile(m.path)
 	m.syncWatches()
@@ -180,8 +173,7 @@ func (m *Manager) reload() {
 	}
 }
 
-// syncWatches watches the directory holding config.json and, when it is a
-// symlink, the directory of its target, since edits there never touch ours.
+// syncWatches also watches a symlink target's directory, since edits there never touch ours.
 func (m *Manager) syncWatches() {
 	want := map[string]bool{filepath.Dir(m.path): true}
 	target := ""
@@ -205,9 +197,8 @@ func (m *Manager) syncWatches() {
 	}
 }
 
-// resolveLink follows path's symlinks. When the target is gone, so EvalSymlinks
-// fails, it follows the links by hand, so the directory the target will come
-// back in stays watched.
+// resolveLink follows the links by hand when the target is gone, so the
+// directory it will come back in stays watched.
 func resolveLink(path string) string {
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
 		return resolved

@@ -1,4 +1,3 @@
-// Package home resolves Admiral's data directory.
 package home
 
 import (
@@ -9,8 +8,6 @@ import (
 	"path/filepath"
 )
 
-// Resolve returns $ADMIRAL_HOME, or ~/.admiral when it is unset, and creates
-// the directory with mode 0700 if it does not exist.
 func Resolve() (string, error) {
 	dir := os.Getenv("ADMIRAL_HOME")
 	if dir == "" {
@@ -29,8 +26,8 @@ func Resolve() (string, error) {
 	return dir, nil
 }
 
-// ID names a data directory without giving its path away. A server reports it
-// so that a command can tell whether the server on a port serves its directory.
+// ID names a data directory without giving its path away, so a command can tell whether the
+// server on a port serves its directory.
 func ID(dir string) string {
 	// Both sides name the directory their own way (relative, through a symlink).
 	if abs, err := filepath.Abs(dir); err == nil {

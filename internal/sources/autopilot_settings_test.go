@@ -14,10 +14,8 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// apFixture is source "a" with these autopilot entries, in a config file
-// written tab-indented with an unknown top-level key, so any rewrite shows as
-// different bytes. Fleet work's claude dock sets no args; strict's sets
-// --disallowedTools.
+// Tab-indented with an unknown top-level key, so any rewrite shows as different
+// bytes.
 func apFixture(t *testing.T, entries map[string]any) *serviceFixture {
 	t.Helper()
 	cfg := map[string]any{
@@ -153,8 +151,6 @@ func TestAutopilotSettingsRefusalsLeaveTheFileUnchanged(t *testing.T) {
 	f.refused(code, body, http.StatusNotFound, "nope", before, "an unknown source")
 }
 
-// Stored args that already fail (a hand edit) survive a save that keeps the
-// fleet, but not a switch to another fleet.
 func TestAutopilotSettingsKeepStoredFailingArgsOnlyOnTheSameFleet(t *testing.T) {
 	failing := []any{"--dangerously-skip-permissions"}
 	f := apFixture(t, map[string]any{
@@ -204,8 +200,7 @@ func TestAutopilotSettingsUnchangedPutWritesNothing(t *testing.T) {
 	}
 }
 
-// A save or a Remove after a hand edit to the same entry is refused and the
-// hand edit stays; an edit to another panel's entry is no conflict.
+// An edit to another panel's entry is no conflict.
 func TestAutopilotSettingsStaleVersionIsRefused(t *testing.T) {
 	f := apFixture(t, map[string]any{
 		"main":  apEntry(map[string]any{"enabled": false, "max_ships": 1}),
@@ -272,8 +267,6 @@ func TestAutopilotSettingsRefusedWhileTheConfigIsInvalid(t *testing.T) {
 	f.refused(code, body, http.StatusConflict, "Claude Code only", bad, "a DELETE while the config is invalid")
 }
 
-// The settings write reloads the config at once, so a plugin settings save
-// right after it starts from the new entry.
 func TestAutopilotSettingsThenPluginSettingsKeepTheEntry(t *testing.T) {
 	f := apFixture(t, nil)
 	code, body := f.apPut("main", apEntry(map[string]any{"max_ships": 2}), f.apGet("main").Version)

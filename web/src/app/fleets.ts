@@ -1,4 +1,3 @@
-// The active-fleet state: the fleet list from /api/v1/config and which fleet is active.
 import { computed, effect, signal } from '@preact/signals';
 import { fetchFleets, type Fleet } from './api';
 import { go, loc } from './router';
@@ -38,7 +37,6 @@ export const activeFleet = computed(() =>
   resolveFleet(fleets.value, new URLSearchParams(loc.value.search).get('fleet'), store.get()),
 );
 
-/** The query that keeps the active fleet across navigation. */
 export const fleetSearch = computed(() => {
   // Until a fleet resolves (config loading or failed), the URL's own ?fleet= passes through.
   const key = activeFleet.value?.key ?? new URLSearchParams(loc.value.search).get('fleet');

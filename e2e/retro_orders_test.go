@@ -7,19 +7,6 @@ import (
 	"time"
 )
 
-// Retro orders (#117): after `retro_every` finished autopilot runs on a panel,
-// Admiral adds `/retro <source>/<panel> --since <ts>` to the resume panel and
-// writes a ship-less `retro_queued` record. The real binary, a test source
-// "orders" on autopilot with retro_every 2, and a test source "retros" with
-// no autopilot that autopilot.resume_source names.
-//
-// Wire shape under test:
-//
-//	config  sources.orders.autopilot.orders.retro_every = 2
-//	        autopilot.resume_source = {"source": "retros", "panel": "orders"}
-//	order   "/retro orders/orders --since <launched ts of the first counted run>"
-//	outcome retro_queued {source, panel, since, text, resume_source, resume_panel, order_id}
-
 func (w *world) retroConfig() {
 	w.t.Helper()
 	var cfg map[string]any
@@ -39,8 +26,6 @@ func (w *world) retroConfig() {
 	writeConfig(w.t, w.home, string(b))
 }
 
-// oneRun adds an order for the checkout, waits for autopilot's ship, lets it
-// sail off and waits for its ended record. It returns the ship's launched ts.
 // seen holds the sessions of earlier runs, so a ship that is slow to leave the
 // list is not taken for this one.
 func (w *world) oneRun(name string, seen map[string]bool) string {
@@ -63,8 +48,6 @@ func (w *world) oneRun(name string, seen map[string]bool) string {
 	return ""
 }
 
-// AC1 and AC3: one run, a restart, and a second run add exactly one retro order
-// that starts at the first run; a third run adds nothing more.
 func TestRetroOrderAfterNRunsAcrossARestart(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

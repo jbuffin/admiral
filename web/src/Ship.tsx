@@ -10,8 +10,6 @@ export interface ShipProps {
   bobDelay?: string;
   /** Subagents standing on deck: the colors of the bots shown, and the "+N" chip when there are more. */
   deck?: { colors: string[]; more: string };
-  // A ship that needs you shakes and its flag flutters faster; an anchored one is still,
-  // with a red X; a ship sailing off wears a green check.
   state?: 'underway' | 'needs-you' | 'anchored' | 'sailing-off';
 }
 
@@ -94,8 +92,6 @@ function Captain({ bot, stroke, mouth }: { bot: string; stroke: number; mouth?: 
   );
 }
 
-// Tied up at a dock: thicker strokes, no portholes, a plain flag in the
-// harness color with no logo, and the flag stays still.
 function MooredShip({ fleetColor, bot, harness }: Pick<ShipProps, 'fleetColor' | 'bot' | 'harness'>) {
   return (
     <svg width="56" height="54" viewBox="0 0 100 96" fill="none" aria-hidden="true">

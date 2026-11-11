@@ -10,7 +10,6 @@ import { type PanelView, api, can, declares, filter, panelCollapsed, setPanelCol
 
 export const countLabel = (n: number) => `${n} ${n === 1 ? 'order' : 'orders'}`;
 
-// A source's error with its Restart button; shared by panels and source rows.
 export function SourceProblem({ sourceKey, message, extra }: { sourceKey: string; message: string | null; extra?: string }) {
   const [refusal, setRefusal] = useState<string | null>(null);
   useEffect(() => setRefusal(null), [message]); // a refused Restart's message is about the old error
@@ -34,7 +33,6 @@ export function SourceProblem({ sourceKey, message, extra }: { sourceKey: string
   );
 }
 
-// Shows a panel's autopilot is on, or paused. Not drawn for a panel that has none.
 export function AutopilotBadge({ paused }: { paused: boolean }) {
   return (
     <span class={paused ? 'autopilot-badge paused' : 'autopilot-badge'} role="img" aria-label={paused ? 'Autopilot paused' : 'Autopilot on'}>
@@ -63,8 +61,6 @@ const Chevron = ({ open }: { open: boolean }) => (
   </svg>
 );
 
-// The handle that moves a source or a panel within its list, by drag or by the
-// arrow keys.
 export function ReorderGrip({ label, group, itemKey, keys, commit }: { label: string; group: string; itemKey: string; keys: string[]; commit: (keys: string[]) => void }) {
   if (phone.value) return null; // a phone's Orders tab has no dragging
   return (

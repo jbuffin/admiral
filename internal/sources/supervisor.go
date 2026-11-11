@@ -9,13 +9,11 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// Supervisor keeps one runner per source in config.json. It reconciles against
-// every config reload, whoever caused it.
+// Supervisor reconciles against every config reload, whoever caused it.
 type Supervisor struct {
 	Home   string
 	Config *config.Manager
-	// OnChange runs whenever anything a client sees may have changed. It must
-	// not block.
+	// OnChange must not block.
 	OnChange func()
 
 	mu      sync.Mutex
@@ -29,7 +27,6 @@ type Supervisor struct {
 	wg       sync.WaitGroup
 }
 
-// Start runs the first reconcile and then follows the config until ctx ends.
 // Every plugin is stopped before Wait returns.
 func (s *Supervisor) Start(ctx context.Context) {
 	s.mu.Lock()
@@ -55,7 +52,6 @@ func (s *Supervisor) Start(ctx context.Context) {
 	}()
 }
 
-// Wait returns once the supervisor and all its plugins have stopped.
 func (s *Supervisor) Wait() { s.wg.Wait() }
 
 func (s *Supervisor) changed() {
@@ -72,7 +68,6 @@ func (s *Supervisor) Reconcile() { s.reconcile("", 0) }
 // restarted after generation gen (see Generation).
 func (s *Supervisor) ReconcileForce(key string, gen uint64) { s.reconcile(key, gen) }
 
-// Generation is the number of restarts source key has had.
 func (s *Supervisor) Generation(key string) uint64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -135,7 +130,7 @@ func (s *Supervisor) reconcile(force string, gen uint64) {
 	}
 }
 
-// start launches the runner of def. s.mu must be held.
+// s.mu must be held.
 func (s *Supervisor) start(def config.Source) {
 	ctx, cancel := context.WithCancel(s.ctx)
 	r := newRunner(ctx, s.Home, def, s.changed, s.stopping[def.Key])
@@ -165,14 +160,12 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
-// runner is the live runner of a source.
 func (s *Supervisor) runner(key string) *runner {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.runners[key]
 }
 
-// Restart restarts a source at once.
 func (s *Supervisor) Restart(key string) bool {
 	r := s.runner(key)
 	if r == nil {
@@ -182,7 +175,6 @@ func (s *Supervisor) Restart(key string) bool {
 	return true
 }
 
-// snapshot is every source's state in config order.
 func (s *Supervisor) snapshot() []sourceState {
 	s.mu.Lock()
 	order := append([]string(nil), s.order...)

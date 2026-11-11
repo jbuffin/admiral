@@ -11,8 +11,7 @@ import (
 	"time"
 )
 
-// The events u5 depends on, from a real tmux on a private socket: every bell
-// (not just the first), a pane's exit status, and a pane killed by a signal.
+// Every bell counts, not just the first.
 func TestBellsAndPaneDeath(t *testing.T) {
 	tmux := needTmux(t)
 	dir, err := os.MkdirTemp("/tmp", "sh")
@@ -69,7 +68,7 @@ func TestBellsAndPaneDeath(t *testing.T) {
 	}
 }
 
-// needTmux finds tmux. Under -short (PR CI, which has no tmux) the test skips.
+// PR CI runs -short and has no tmux.
 func needTmux(t *testing.T) string {
 	t.Helper()
 	if testing.Short() {
@@ -82,7 +81,6 @@ func needTmux(t *testing.T) string {
 	return tmux
 }
 
-// testHost is a Host connected to a real tmux on a private socket.
 func testHost(t *testing.T) (*Host, context.Context) {
 	t.Helper()
 	tmux := needTmux(t)
@@ -108,9 +106,7 @@ func testHost(t *testing.T) (*Host, context.Context) {
 	return h, ctx
 }
 
-// A command that gives up (here: a context already cancelled) must not leave
-// its reply behind for the next command to read as its own. tmux can answer
-// before the command sees the cancellation, and then it returns its own reply.
+// tmux can answer before the command sees the cancellation, and then it returns its own reply.
 func TestCancelledCommandDoesNotShiftReplies(t *testing.T) {
 	h, ctx := testHost(t)
 	for i := 0; i < 5; i++ {
@@ -139,8 +135,6 @@ func TestCancelledCommandDoesNotShiftReplies(t *testing.T) {
 	}
 }
 
-// Forged and split rows: a session whose rows disagree, or which has a short
-// row, is unreadable; a row that starts with no known session is dropped.
 func TestParseRowsDistrustsForgedRows(t *testing.T) {
 	row := func(name, order string) string {
 		f := make([]string, fixedFields+len(optionNames)+tailFields)
@@ -166,9 +160,7 @@ func TestParseRowsDistrustsForgedRows(t *testing.T) {
 	}
 }
 
-// A crew row never sets a ship field, whatever the order of the rows: the ship's
-// row can come after its crew's, a session with only crew rows is no session, and
-// a crew row's options (which differ from the session's) don't make it unreadable.
+// The ship's row can come after its crew's, and a crew row's options differ from the session's.
 func TestParseRowsFoldsCrewWithoutLeaking(t *testing.T) {
 	row := func(name, crew, state, dead string, opts string) string {
 		f := make([]string, fixedFields+len(optionNames)+tailFields)
@@ -210,10 +202,8 @@ func TestParseRowsFoldsCrewWithoutLeaking(t *testing.T) {
 	}
 }
 
-// tmux stops a command list at its first failing command and answers it with
-// one %error, so the list's replies are fewer than its commands. Neither a list
-// that errored, nor one that was cancelled before its error arrived, may leave a
-// reply count behind that makes the next command wait for one that never comes.
+// tmux stops a command list at its first failing command and answers it with one %error,
+// so the list's replies are fewer than its commands.
 func TestFailedListDoesNotShiftReplies(t *testing.T) {
 	h, ctx := testHost(t)
 	const target = `-t "=nosuchsession:"`
@@ -242,9 +232,6 @@ func TestFailedListDoesNotShiftReplies(t *testing.T) {
 	}
 }
 
-// A ship with a crew window (even the current one) reads as before, its state
-// writes land on its own pane, and a Codex crew boat's bell marks that boat
-// needs_you without flagging the ship.
 func TestShipWithCrewWindow(t *testing.T) {
 	h, ctx := testHost(t)
 	run := func(args ...string) {

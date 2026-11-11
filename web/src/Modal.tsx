@@ -1,7 +1,6 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 
-// A native modal dialog: Escape closes it and the page behind is inert.
 // onCancel runs first on Escape; it can keep the dialog open with preventDefault.
 export function Modal({
   label,

@@ -8,11 +8,6 @@ import (
 	"time"
 )
 
-// Locked resources (#118, u1): the real binary serves GET /api/resources and
-// each panel's resources and waiting_for. Two autopilot panels need a
-// capacity-1 resource: one ship launches, the other panel waits behind it, and
-// launches once the first ship has sailed off.
-
 type resourceJSON struct {
 	Name     string `json:"name"`
 	Capacity int    `json:"capacity"`

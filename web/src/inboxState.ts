@@ -7,9 +7,6 @@ import { ships } from './ships';
 import { wide } from './sizeClass';
 import { api } from './sources';
 
-// The signals behind the Needs You inbox: the served items, the queue (inbox.ts) over them and the
-// ships, the open state and what the engineer has entered on each item.
-
 const items = signal<InboxItem[]>([]);
 onMessage('inbox', (msg: { items: InboxItem[] }) => (items.value = msg.items));
 
@@ -48,7 +45,6 @@ setInterval(() => {
 }, 250);
 
 export const inboxOpen = signal(false);
-// The wide layout's drawer is open: the Orders panel gives way to it and the bridge narrows.
 export const inboxDrawerOpen = computed(() => inboxOpen.value && wide.value);
 export function closeInbox(restoreFocus = true): void {
   inboxOpen.value = false;
@@ -79,15 +75,12 @@ export const inbox = {
   },
 };
 
-// ---- what the engineer has entered on an item ----
-
 const drafts = signal<Record<string, Draft>>({});
 export const draftOf = (key: string): Draft => drafts.value[key] ?? blankDraft();
 export function editDraft(key: string, fn: (d: Draft) => Draft): void {
   drafts.value = { ...drafts.value, [key]: fn(draftOf(key)) };
 }
 
-// Sends a question's answers. On success it folds to "Answered"; a refusal keeps what was entered and says why.
 export async function sendAnswers(entry: Entry): Promise<void> {
   const it = entry.item;
   if (!it?.question) return;
@@ -100,8 +93,6 @@ export async function sendAnswers(entry: Entry): Promise<void> {
   editDraft(entry.key, (x) => ({ ...x, sending: false, error: r.ok ? '' : r.error }));
   refresh();
 }
-
-// ---- review items ----
 
 export type ReviewStep = 'idle' | 'choose' | 'confirm' | 'discard';
 export interface ReviewUi {
@@ -122,7 +113,6 @@ export const markEdited = (key: string) => void opened.add(key);
 
 const itemPath = (it: InboxItem, verb: string) => `/api/inbox/${encodeURIComponent(it.session)}/${encodeURIComponent(it.id)}/${verb}`;
 
-// Runs an action on an item. The badge drops at the tap; a refusal brings it back and keeps what was entered.
 // Every key that holds per-item state, and the one place that clears it.
 function itemStateKeys(): Set<string> {
   return new Set([
@@ -150,6 +140,7 @@ function forgetItemState(key: string): void {
 
 const inflight = new Set<string>();
 
+// The badge drops at the tap; a refusal brings it back and keeps what was entered.
 async function act(
   entry: Entry,
   verb: string,
@@ -196,9 +187,7 @@ export function discardReview(entry: Entry): Promise<void> {
   );
 }
 
-// ---- removing any item ----
-
-// "Remove from inbox" on an item: asked once, then sent. The ship never gets an answer, and it is not resumed.
+// The ship never gets an answer, and it is not resumed.
 export interface RemoveUi {
   confirm: boolean;
   busy: boolean;
@@ -220,8 +209,6 @@ export function removeItem(entry: Entry): Promise<void> {
     (busy, error) => editRemoval(entry.key, { busy, error }),
   );
 }
-
-// ---- findings items ----
 
 const decisions = new Map<string, Decisions>();
 const cardsByItem = new Map<string, FindingCard[]>();
@@ -247,7 +234,6 @@ export function decide(entry: Entry, fn: (d: Decisions) => unknown): void {
   fbump();
 }
 
-// The text being edited on a card, by item key then card id; absent when its textarea is closed.
 const editing = signal<Record<string, Record<string, string>>>({});
 export const editingOf = (key: string, id: string): string | undefined => editing.value[key]?.[id];
 export const isEditing = (key: string): boolean => Object.keys(editing.value[key] ?? {}).length > 0;

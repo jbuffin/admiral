@@ -10,7 +10,6 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// Each refusal names what is wrong, and comes before anything is created.
 func TestLaunchRefusals(t *testing.T) {
 	work := t.TempDir()
 	file := filepath.Join(work, "afile")

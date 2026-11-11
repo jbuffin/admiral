@@ -13,11 +13,7 @@ import (
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
-// Hook is `admiral hook <event>`, the command every harness hook runs (ADR
-// 0013, 0014). It reads the harness's hook JSON on stdin and stamps
-// @admiral-activity on $TMUX_PANE and sets @admiral-state there, with
-// @admiral-reason for needs_you, when the event decides a state. It is
-// internal, so no usage text names it, and it never fails: a harness treats a hook's exit code and output as its own signal.
+// Hook never fails: a harness treats a hook's exit code and output as its own signal.
 func Hook(args []string, std IO) error {
 	pane := os.Getenv("TMUX_PANE")
 	if len(args) == 0 || pane == "" {
@@ -26,8 +22,6 @@ func Hook(args []string, std IO) error {
 	raw, _ := io.ReadAll(io.LimitReader(std.In, 1<<20))
 	var p hookPayload
 	valid := json.Unmarshal(raw, &p) == nil
-	// Every event stamps the pane's last activity, a crew boat's last_activity,
-	// in the same tmux call as the state it may write.
 	now := time.Now().UTC()
 	call := sessionhost.SetPaneCall(pane, sessionhost.ActivityOption, now.Format(time.RFC3339))
 	if valid {
@@ -52,7 +46,6 @@ func Hook(args []string, std IO) error {
 				sessionhost.StateCall(w.flagLead, stopWrite.reason, stopWrite.ifUnset, stopWrite.state),
 				sessionhost.UnsetPaneCall(w.flagLead, crewHeldOption))
 		}
-		// Each of these is nil when its event writes nothing, and Join skips it.
 		call = sessionhost.Join(call, mon,
 			subagentCall(pane, args[0], p, now),
 			transcriptCall(pane, args[0], p, now),
@@ -63,32 +56,26 @@ func Hook(args []string, std IO) error {
 	return nil
 }
 
-// tmuxOut reads from the current tmux server; a failed read takes the caller's
-// failed-read path.
 func tmuxOut(args ...string) (string, error) { return sessionhost.ReadCurrent(args...) }
 
-// hookPayload holds the fields of Claude Code's, Codex's and Copilot's hook
-// JSON that decide a state.
 type hookPayload struct {
-	ToolName          string `json:"tool_name"`         // Claude Code
-	ToolNameCopilot   string `json:"toolName"`          // Copilot
-	NotificationType  string `json:"notification_type"` // Claude Code, Copilot
-	AgentID           string `json:"agentId"`           // Copilot: set inside a subagent
-	AgentTypeCopilot  string `json:"agentType"`         // Copilot
-	SubagentID        string `json:"agent_id"`          // Claude Code, Codex: SubagentStart and SubagentStop
-	SubagentType      string `json:"agent_type"`        // Claude Code, Codex
-	TranscriptPath    string `json:"transcript_path"`   // Claude Code, Codex: any event (null reads ""); the chat's SessionStart and a crew boat's (ADR 0021)
-	TranscriptCopilot string `json:"transcriptPath"`    // Copilot: a lead agentStop's, for a crew boat
-	Source            string `json:"source"`            // Claude Code: SessionStart (startup, resume, clear, compact)
-	// Claude Code's PostToolUse; any JSON, read only for a Monitor (monitorID).
-	ToolResponse json.RawMessage `json:"tool_response"`
-	// Claude Code's Stop; Codex sends none. A nil slice is "absent" and an
-	// empty one is `[]`, which tells Claude's Stop from Codex's.
+	ToolName          string          `json:"tool_name"`         // Claude Code
+	ToolNameCopilot   string          `json:"toolName"`          // Copilot
+	NotificationType  string          `json:"notification_type"` // Claude Code, Copilot
+	AgentID           string          `json:"agentId"`           // Copilot: set inside a subagent
+	AgentTypeCopilot  string          `json:"agentType"`         // Copilot
+	SubagentID        string          `json:"agent_id"`          // Claude Code, Codex: SubagentStart and SubagentStop
+	SubagentType      string          `json:"agent_type"`        // Claude Code, Codex
+	TranscriptPath    string          `json:"transcript_path"`   // Claude Code, Codex: any event (null reads "")
+	TranscriptCopilot string          `json:"transcriptPath"`    // Copilot: a lead agentStop's, for a crew boat
+	Source            string          `json:"source"`            // Claude Code: SessionStart (startup, resume, clear, compact)
+	ToolResponse      json.RawMessage `json:"tool_response"`
+	// A nil slice is "absent" and an empty one is `[]`: Codex's Stop sends none,
+	// which tells it from Claude's.
 	BackgroundTasks []backgroundTask `json:"background_tasks"`
 }
 
-// backgroundTask is one entry of Claude Code's Stop background_tasks. A Monitor
-// is type "shell", like a background Bash: only its id tells them apart.
+// A Monitor is type "shell", like a background Bash: only its id tells them apart.
 type backgroundTask struct {
 	ID        string `json:"id"`
 	Type      string `json:"type"`
@@ -96,11 +83,8 @@ type backgroundTask struct {
 	AgentType string `json:"agent_type"`
 }
 
-// hookWrite is what a hook writes to the pane: the state, and for needs_you the
-// short code @admiral-reason holds with it. ifUnset says the reason must not
-// replace one already set: a notification is Claude's second word on a prompt
-// that PermissionRequest named. crewHeld marks a lead whose Stop waits on its
-// crew, and flagLead is the pane of such a lead that this event must flag.
+// ifUnset keeps a reason already set: a notification is Claude's second word on
+// a prompt that PermissionRequest named.
 type hookWrite struct {
 	state, reason string
 	ifUnset       bool
@@ -108,10 +92,8 @@ type hookWrite struct {
 	flagLead      string
 }
 
-// hookDecision is what an event writes; a zero hookWrite is no state. Claude
-// Code and Codex share event names, so one rule serves both. Only a tool name or
-// notification type is ever kept in a reason, and only as a safe token: nothing
-// else of the payload is stored.
+// hookDecision keeps only a tool name or notification type in a reason, and only
+// as a safe token: nothing else of the payload is stored.
 func hookDecision(event string, p hookPayload) hookWrite {
 	switch event {
 	case "PermissionRequest":
@@ -153,8 +135,6 @@ func hookDecision(event string, p hookPayload) hookWrite {
 	return hookWrite{}
 }
 
-// withToken is prefix:token, or the bare prefix when token isn't short and made
-// of characters tmux and a format leave alone.
 func withToken(prefix, token string) string {
 	if sessionhost.SafeToken.MatchString(token) {
 		return prefix + ":" + token
@@ -162,14 +142,12 @@ func withToken(prefix, token string) string {
 	return prefix
 }
 
-// stopWrite is what a Stop writes when nothing holds the turn open.
 var stopWrite = hookWrite{state: "needs_you", reason: "stop"}
 
-// launchWindow is how long a crew pane with no hook yet counts as working
-// (ADR 0007's no-hook window): `crew launch` writes no state.
+// launchWindow counts a crew pane with no hook yet as working, since `crew
+// launch` writes no state (ADR 0007).
 const launchWindow = 10 * time.Second
 
-// safeID is id when it is a safe token, else "" (drop the entry).
 func safeID(s string) string {
 	if sessionhost.SafeToken.MatchString(s) {
 		return s
@@ -177,11 +155,8 @@ func safeID(s string) string {
 	return ""
 }
 
-// subagentList is @admiral-subagents after an event: the list before it, the
-// harness ("claude", "codex", "copilot", or "" when tmux could not say) and
-// the payload in, the new list out (ADR 0014). Ids and types come from the
-// payload, so an id that is not a safe token is dropped and a type that is not
-// one is stored as "".
+// Ids and types come from the payload, so an id that is not a safe token is
+// dropped and a type that is not one is stored as "".
 func subagentList(event string, p hookPayload, harness string, cur []sessionhost.Subagent, now time.Time) []sessionhost.Subagent {
 	listed := func(id string) int {
 		for i, a := range cur {
@@ -244,14 +219,9 @@ func subagentList(event string, p hookPayload, harness string, cur []sessionhost
 	return cur
 }
 
-// lead says the Copilot payload comes from the lead, not from inside a subagent.
 func (p hookPayload) lead() bool { return p.AgentID == "" }
 
-// subagentCall is the tmux call that writes @admiral-subagents for an event, or
-// nil when it doesn't change. It reads tmux only on the events that can change
-// the list: the harness for a Stop, the current list for all but a Copilot
-// lead's clear-all, which unsets it whatever it holds. A failed read writes
-// nothing.
+// subagentCall writes nothing when a tmux read fails.
 func subagentCall(pane, event string, p hookPayload, now time.Time) []string {
 	var cur []sessionhost.Subagent
 	harness, read := "", true
@@ -286,16 +256,12 @@ func subagentCall(pane, event string, p hookPayload, now time.Time) []string {
 	return sessionhost.SetPaneCall(pane, sessionhost.SubagentsOption, next)
 }
 
-// monitorsOption is the pane option that holds the task ids of the Monitors a
-// Claude session armed and that may still run, space-separated (#110).
 const monitorsOption = sessionhost.MonitorsOption
 
-// maxMonitors caps the list, as sessionhost.MaxSubagents does the subagents.
 const maxMonitors = 64
 
-// monitorID is the task id a PostToolUse of Claude's Monitor reports, or "" for
-// any other event or tool, an id that is not a safe token, and a persistent
-// Monitor: only one with a timeout is sure to wake the session again.
+// monitorID skips a persistent Monitor: only one with a timeout is sure to wake
+// the session again.
 func monitorID(event string, p hookPayload) string {
 	if event != "PostToolUse" || p.ToolName != "Monitor" {
 		return ""
@@ -310,10 +276,8 @@ func monitorID(event string, p hookPayload) string {
 	return safeID(r.TaskID)
 }
 
-// monitorList is @admiral-monitors after an event: a Monitor's PostToolUse adds
-// its id, and a Claude Stop keeps only the ids its background_tasks lists as
-// running. held says the Stop waits on one of them: the session ended its turn
-// to wait for the Monitor's event, which wakes it, not for the engineer.
+// A Stop held by a running Monitor waits for the Monitor's event, which wakes the
+// session, not for the engineer.
 func monitorList(event string, p hookPayload, cur []string) (next []string, held bool) {
 	if id := monitorID(event, p); id != "" {
 		if slices.Contains(cur, id) {
@@ -336,11 +300,7 @@ func monitorList(event string, p hookPayload, cur []string) (next []string, held
 	return next, len(next) > 0
 }
 
-// monitorCall is the tmux call that writes @admiral-monitors for an event, or
-// nil when it doesn't change, and whether a Stop waits on a running Monitor. It
-// reads tmux only for a Monitor's PostToolUse and a Claude Stop with a running
-// task; a Claude Stop with none clears the list unread. A failed read writes
-// nothing and holds nothing.
+// monitorCall writes nothing and holds nothing when the tmux read fails.
 func monitorCall(pane, event string, p hookPayload) (call []string, held bool) {
 	switch {
 	case monitorID(event, p) != "":
@@ -365,12 +325,8 @@ func monitorCall(pane, event string, p hookPayload) (call []string, held bool) {
 	return sessionhost.SetPaneCall(pane, monitorsOption, strings.Join(next, " ")), held
 }
 
-// transcriptCall is the tmux call that records a SessionStart for the chat
-// (ADR 0019): the option holds "<unix nanoseconds> <source> <transcript path>"
-// in one write, so a reader never sees a torn pair, and a second SessionStart on
-// the same path still changes it. Only the chat's bundle registers SessionStart.
-// A path sessionhost.ValidTranscriptPath refuses is not recorded (the .jsonl
-// ending also keeps the argument from ending in the ";" tmux reads as a separator).
+// transcriptCall writes time, source and path in one option so a reader never sees
+// a torn pair; the .jsonl ending keeps it from ending in tmux's ";" separator.
 func transcriptCall(pane, event string, p hookPayload, now time.Time) []string {
 	if event != "SessionStart" {
 		return nil
@@ -386,12 +342,9 @@ func transcriptCall(pane, event string, p hookPayload, now time.Time) []string {
 	return sessionhost.SetPaneCall(pane, sessionhost.TranscriptOption, strconv.FormatInt(now.UnixNano(), 10)+" "+source+" "+path)
 }
 
-// crewHeldOption marks a lead pane whose Stop waits on working crew (#189). Any
-// state the lead writes next clears it. A lead held by a Monitor isn't marked:
-// the Monitor wakes it.
+// A lead held by a Monitor isn't marked crew-held: the Monitor wakes it.
 const crewHeldOption = sessionhost.CrewHeldOption
 
-// crewFacts is what the lead rule needs to know about the pane and its crew.
 type crewFacts struct {
 	ThisIsCrew     bool   // $TMUX_PANE is in a crew window
 	CrewWorking    bool   // some live crew pane of the session, other than this one, is working
@@ -399,11 +352,8 @@ type crewFacts struct {
 	RestingLead    string // for a crew pane: the lead whose Stop waited on the crew, once none works
 }
 
-// leadDecision is hookDecision with the lead rule on top. A crew boat's own
-// Stop is idle: it waits for its lead, not the engineer (ADR 0014). A lead's
-// Stop waits while a crew boat works, and the last boat to go idle then flags
-// that lead, which nothing else would wake. A Stop whose crew read failed keeps
-// the plain rule: a missed chime is worse than an extra one.
+// leadDecision: the last crew boat to go idle flags its lead, which nothing else
+// would wake. A failed crew read keeps the plain rule: a missed chime is worse.
 func leadDecision(event string, p hookPayload, f crewFacts) hookWrite {
 	w := hookDecision(event, p)
 	if w != stopWrite || f.CrewReadFailed {
@@ -418,7 +368,6 @@ func leadDecision(event string, p hookPayload, f crewFacts) hookWrite {
 	return w
 }
 
-// crewPaneFact is one pane of a crew window as the lead rule reads it.
 type crewPaneFact struct {
 	Dead        bool
 	State       string // the pane's own @admiral-state
@@ -426,9 +375,7 @@ type crewPaneFact struct {
 	Launched    string // the window's @admiral-launched, RFC 3339
 }
 
-// crewPaneWorking says whether a crew pane holds its lead's Stop: a live pane
-// whose own state is working, or one with no hook yet inside its launch window.
-// A dead pane keeps its state and never counts.
+// A dead pane keeps its state, so it must never count as working.
 func crewPaneWorking(f crewPaneFact, now time.Time) bool {
 	switch {
 	case f.Dead:
@@ -442,12 +389,8 @@ func crewPaneWorking(f crewPaneFact, now time.Time) bool {
 	return err == nil && now.Sub(t) < launchWindow
 }
 
-// readCrewFacts reads the session of pane with one list-panes call, then the
-// pane's own @admiral-state (show-options -p: the format would fall back to the
-// window's and the session's, which nothing sets, so it agrees with
-// sessionhost.ReadCrew) of each live crew pane until one works. A crew pane reads
-// the other boats only when a lead waits on the crew, and writes its own idle
-// first: of two boats that stop together, the later read sees both idle.
+// readCrewFacts has a crew pane write its own idle before reading the others: of
+// two boats that stop together, the later read sees both idle.
 func readCrewFacts(pane string, now time.Time) crewFacts {
 	const sep = sessionhost.RowSeparator
 	out, err := tmuxOut(sessionhost.SessionPanesCall(pane)...)
@@ -500,17 +443,11 @@ func readCrewFacts(pane string, now time.Time) crewFacts {
 	return f
 }
 
-// paneID is a tmux pane id, the only $TMUX_PANE the nested command takes.
+// paneID is the only $TMUX_PANE form the nested command takes.
 var paneID = regexp.MustCompile(`^%[0-9]+$`)
 
-// crewTranscriptCall is the tmux call that records a crew boat's transcript
-// path in its pane option (#175, ADR 0021), or nil when the payload has none
-// that sessionhost.ValidCrewTranscriptPath accepts. Claude and Codex send
-// transcript_path on any event (Codex may send null); Copilot's transcriptPath
-// counts only on a lead agentStop. The `if -F` runs the write only where the
-// pane's window has @admiral-crew-name, so a ship's pane and the chat never get
-// the option, and the path needs no escaping: the crew check refused every
-// character that would need it.
+// crewTranscriptCall's path needs no escaping: ValidCrewTranscriptPath refused
+// every character that would need it.
 func crewTranscriptCall(pane, event string, p hookPayload) []string {
 	path := p.TranscriptPath
 	if event == "agentStop" && p.lead() && p.TranscriptCopilot != "" {

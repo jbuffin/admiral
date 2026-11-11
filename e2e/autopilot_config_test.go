@@ -11,12 +11,7 @@ import (
 	"time"
 )
 
-// Autopilot config and launch plumbing (#114, u1): the config's last-good rule
-// for an autopilot entry, the sources writes keeping the autopilot object, a
-// hand launch never carrying Admiral's autopilot variables, and one launch at
-// a time per order.
-
-// AC 6: harness other than claude fails validation and the last good config stays.
+// A harness other than claude fails validation and the last good config stays.
 func TestAutopilotCodexEntryKeepsLastGoodConfig(t *testing.T) {
 	t.Parallel()
 	home := newHome(t)
@@ -25,8 +20,6 @@ func TestAutopilotCodexEntryKeepsLastGoodConfig(t *testing.T) {
 	w.installPlugin("testplug", "testplug")
 	def := tpSource("s", w.newTP("s"), nil)
 	def.Fleet = "work"
-	// sources is the source through the shared helper, with the autopilot
-	// entry when one is given.
 	sources := func(autopilot string) string {
 		var m map[string]map[string]any
 		if err := json.Unmarshal([]byte(rawSources(def)), &m); err != nil {
@@ -42,7 +35,6 @@ func TestAutopilotCodexEntryKeepsLastGoodConfig(t *testing.T) {
 		return `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},"sources":` +
 			sources(`{"p":{"fleet":"work","harness":"`+harness+`","skill":{"kind":"none"}}}`) + `}`
 	}
-	// The good config has no autopilot entry, so it loads before and after u1.
 	writeConfig(t, home, `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},"sources":`+sources("")+`}`)
 	in := startAdmiral(t, home, "127.0.0.1:0")
 	waitAPI(t, in, "the good config", func(b cfgBody) bool { return b.Error == nil && reflect.DeepEqual(b.keys(), []string{"work"}) })
@@ -108,8 +100,8 @@ func TestSourceWritesKeepTheAutopilotObject(t *testing.T) {
 	check("deleting another source", "a")
 }
 
-// AC 8, hand half: Admiral owns ADMIRAL_AUTOPILOT, ADMIRAL_LOW_STAKES and
-// ADMIRAL_AUTO_MERGE (#120), so a launch by hand never has them, whether the fleet's env or Admiral's own
+// Admiral owns ADMIRAL_AUTOPILOT, ADMIRAL_LOW_STAKES and ADMIRAL_AUTO_MERGE, so a
+// launch by hand never has them, whether the fleet's env or Admiral's own
 // environment (an Admiral running inside an autopilot ship) sets them.
 func TestHandLaunchHasNoAutopilotVariables(t *testing.T) {
 	t.Parallel()

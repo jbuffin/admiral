@@ -20,8 +20,7 @@ const bin = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 
 
 const testPlugin = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'e2e', 'testplugin', 'plugin.py');
 
-// The control directory of one test-plugin source (see the plugin's docstring):
-// the test writes what the plugin should list or do, and reads what it logged.
+// The test writes what the plugin should list or do here, and reads what it logged.
 export interface Flags {
   /** The directory to put in the source's settings as `flagdir`. */
   dir: string;
@@ -32,50 +31,32 @@ export interface Flags {
   /** A flag file (crash-on-initialize, slow-initialize…) or a do-<command> file. */
   put(name: string, content?: string): void;
   remove(name: string): void;
-  /** How many times the plugin process has been initialized. */
   starts(): number;
 }
 
-// One Admiral per test: its own ADMIRAL_HOME, its own config.json and its own
-// port, so scenarios can each start from a different config.
+// One Admiral per test, so scenarios can each start from a different config.
 export interface Admiral {
-  /** The temp ADMIRAL_HOME. Everything a test writes goes under it. */
   home: string;
   url: string;
   /** Writes config.json atomically (temp file + rename), as an editor would. */
   writeConfig(config: unknown): void;
   /** Writes config.json atomically with this exact text, valid or not. */
   writeConfigText(text: string): void;
-  /** An executable fake harness under home; returns its absolute path. */
   fakeHarness(name: string): string;
   /** A path under home that is not there, for a dock whose executable is missing. */
   missingHarness(name: string): string;
-  /**
-   * Installs the misbehaving test plugin (e2e/testplugin) as plugins/<folder>.
-   */
   installTestPlugin(folder?: string): void;
-  /**
-   * The test-only source that stores orders, as the object a config's `sources` holds under `key`: one
-   * panel "orders" titled "Orders" and the add, edit and remove capabilities. An order added through the
-   * API is kept, listed and dropped once launched, so a test seeds one with `world.seedOrder`. This is
-   * where a test source's config is decided; `extra` is set on the source beside its settings (autopilot).
-   */
+  /** The test-only orders source as a config `sources` entry; `extra` sits beside its settings. */
   ordersSource(key?: string, name?: string, extra?: Record<string, unknown>): Record<string, unknown>;
-  /** A fresh flag directory for one test-plugin source. */
   flags(label: string): Flags;
-  /**
-   * Starts the server on a free port, with whatever config.json holds. `lan` listens on 0.0.0.0 and fills `lanUrl` and `token`.
-   * `env` is added to (and wins over) the server's environment, for a temp HOME and a PATH of fake harnesses.
-   */
+  /** `lan` listens on 0.0.0.0 and fills `lanUrl` and `token`; `env` wins over the server's environment. */
   start(opts?: { lan?: boolean; env?: Record<string, string> }): Promise<void>;
   /** With `start({ lan: true })`: the Mac's non-loopback address (http://<ip>:<port>/) and the token the server printed. */
   lanUrl: string;
   token: string;
   /** Stops the server process only: the home, the ships and their tmux server stay. */
   stopServer(): Promise<void>;
-  /** Starts the server again on the same address and home. */
   resumeServer(): Promise<void>;
-  /** stopServer, then resumeServer. */
   restart(): Promise<void>;
   /** Writes a new token file, as `admiral token rotate` would; the server picks it up on its next start. Returns the token. */
   rotateToken(): string;
@@ -85,7 +66,6 @@ class Instance implements Admiral {
   home = mkdtempSync(join(tmpdir(), 'admiral-ui-'));
   url = '';
   private proc?: ChildProcess;
-  /** Everything every server process of this test printed, for the report. */
   log = '';
   /** Set when a server process exits without stopServer asking it to. */
   died = '';

@@ -7,9 +7,6 @@ import (
 	"testing"
 )
 
-// u12 S2: admiral fleet list | add | edit | check and admiral config show |
-// validate | edit. The CLI surface is documented at the top of cli_helpers_test.go.
-
 // cmdWorld is a world whose config.json holds two fleets and a top-level key
 // Admiral doesn't know.
 func cmdWorld(t *testing.T) (*world, string) {
@@ -120,7 +117,7 @@ func TestU12_S2_FleetAddAndEditKeepWhatTheyDoNotTouch(t *testing.T) {
 	}
 	w.expectExit(w.admiral("fleet", "edit", "nosuch", "--name", "X"), 1, "editing a fleet that isn't there")
 
-	// Story 26: add and edit refuse a shared identity directory.
+	// add and edit refuse a shared identity directory.
 	settled := string(w.configBytes())
 	r = w.admiral("fleet", "add", "charlie", "--name", "Charlie", "--harness", "claude", "--env", "claude=CLAUDE_CONFIG_DIR=~/.claude-z")
 	w.expectExit(r, 1, "fleet add sharing zulu's identity directory")

@@ -1,13 +1,5 @@
-// Package bridge is the terminal a browser opens on a ship or on one of its
-// crew boats (ADR 0011). One tmux control client per watched session feeds every
-// browser watching the ship or any of its crew boats: a joining browser gets the
-// screen and scrollback of its pane, then the live %output stream; keystrokes go
-// back with send-keys; the latest active browser sizes its window.
-//
-// Wire protocol: GET /ws/bridge/<the ship's tmux session name>, or
-// GET /ws/bridge/<session>/crew/<crew name> for a crew boat, a WebSocket. The
-// first message from the browser is {"type":"join","cols":C,"rows":R}. The
-// messages are described in docs/bridge-protocol.md.
+// Package bridge is the terminal a browser opens on a ship or one of its crew boats, over one
+// tmux control client per session. The messages are in docs/bridge-protocol.md.
 package bridge
 
 import (
@@ -26,15 +18,13 @@ import (
 	"github.com/jbuffin/admiral/internal/ships"
 )
 
-// DefaultIdle is how long a session's control client stays attached after the
-// last browser leaves the ship and all its crew boats. ADMIRAL_BRIDGE_IDLE
-// overrides it (a Go duration).
+// DefaultIdle is how long a control client stays attached after the last browser leaves.
+// ADMIRAL_BRIDGE_IDLE overrides it.
 const DefaultIdle = 30 * time.Second
 
 // scrollbackLines is how much history a joining browser gets.
 const scrollbackLines = 2000
 
-// Ships is what the bridge needs of the ships service.
 type Ships interface {
 	Get(session string) (ships.Ship, bool)
 	InputSeen(session string) (ships.Ship, error)
@@ -42,16 +32,14 @@ type Ships interface {
 	CrewInputSeen(session, windowID string) (sessionhost.Crew, error)
 }
 
-// Service serves the bridge WebSocket.
 type Service struct {
 	Tmux   string
 	Socket string
 	Ships  Ships
 	Idle   time.Duration
 
-	// Host and Setup serve the setup terminal (u12): the `_setup` session that
-	// runs `admiral setup`, watched like a ship but never listed as one. Both
-	// are optional.
+	// Host and Setup are optional and serve the setup terminal, watched like a ship but
+	// never listed as one.
 	Host    *sessionhost.Host
 	Setup   *SetupCommand
 	setupMu sync.Mutex
@@ -61,13 +49,11 @@ type Service struct {
 	closing bool
 }
 
-// New prepares the service. tmux is the binary; sock is Admiral's socket.
 func New(tmux, sock string, sh Ships) *Service {
 	idle := delay.From("ADMIRAL_BRIDGE_IDLE", DefaultIdle)
 	return &Service{Tmux: tmux, Socket: sock, Ships: sh, Idle: idle, conns: map[string]*conn{}}
 }
 
-// Routes registers the bridge endpoints.
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ws/bridge/{session}", s.serve)
 	mux.HandleFunc("GET /ws/bridge/{session}/crew/{name}", s.serveCrew)
@@ -75,7 +61,6 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/setup", s.serveSetupStart)
 }
 
-// Connected does nothing: the bridge sends nothing on the main socket.
 func (s *Service) Connected(*server.Client) {}
 
 func (s *Service) allConns() []*conn {
@@ -88,7 +73,6 @@ func (s *Service) allConns() []*conn {
 	return all
 }
 
-// Run keeps the service until ctx ends, then detaches every control client.
 func (s *Service) Run(ctx context.Context) {
 	<-ctx.Done()
 	s.mu.Lock()
@@ -108,8 +92,7 @@ func (s *Service) Run(ctx context.Context) {
 	}
 }
 
-// ShipsChanged tells every open bridge to look at its ship or crew boat again.
-// It never blocks.
+// ShipsChanged never blocks.
 func (s *Service) ShipsChanged() {
 	for _, c := range s.allConns() {
 		for _, w := range c.snapshot() {
@@ -118,9 +101,8 @@ func (s *Service) ShipsChanged() {
 	}
 }
 
-// conn is the one control client of a session, shared by the ship's watch and
-// the watch of each crew boat. A control client receives the %output of every
-// pane of its session, so each watch filters on its own pane.
+// A control client receives the %output of every pane of its session, so each watch filters
+// on its own pane.
 type conn struct {
 	s       *Service
 	session string
@@ -135,8 +117,6 @@ type conn struct {
 	gone    bool
 }
 
-// watch is one pane and the window it sits in, and the browsers watching them:
-// the ship's, or a crew boat's.
 type watch struct {
 	c    *conn
 	key  string // "" for the ship, else the crew boat's window id
@@ -155,8 +135,7 @@ type watch struct {
 
 var errGone = errors.New("the ship's bridge has closed")
 
-// target says which pane a browser asks for. The ship's own pane is looked up
-// in tmux; a crew boat's ids come from the handshake.
+// The ship's own pane is looked up in tmux; a crew boat's ids come from the handshake.
 type target struct {
 	crew      bool
 	pane, win string
@@ -169,9 +148,7 @@ func (t target) key() string {
 	return ""
 }
 
-// enter adds b to the watch of the target, starting the session's control client
-// when b is the first browser on it. Browsers are added before the attach
-// finishes so the linger timer can't detach under them.
+// Browsers are added before the attach finishes so the linger timer can't detach under them.
 func (s *Service) enter(session string, t target, b *browser) (*watch, error) {
 	s.mu.Lock()
 	if s.closing {
@@ -230,12 +207,8 @@ func (s *Service) enter(session string, t target, b *browser) (*watch, error) {
 	return w, nil
 }
 
-// start reads the sizes the session's windows have, attaches the control client
-// and pins every window to its size. Attaching a control client sets each window
-// it holds no size for to the client's own, 80x24 at first, which would shrink
-// the ship's window under a browser that only watches a crew boat. Only exact
-// targets are used from here on: the session by "=name:" and a pane or window by
-// its %N or @N id.
+// Attaching sets each window the client holds no size for to 80x24, which would shrink the
+// ship's window under a browser that only watches a crew boat, so start pins every window.
 func (c *conn) start() {
 	defer close(c.ready)
 	sizes := c.windowSizes()
@@ -262,9 +235,7 @@ func (c *conn) start() {
 	}()
 }
 
-// windowSizes are the commands that pin each window of the session to the size
-// it has now. They are read before the client attaches: afterwards the windows
-// may already have been resized.
+// windowSizes is read before the client attaches: afterwards the windows may already be resized.
 func (c *conn) windowSizes() []string {
 	var cmds []string
 	for _, w := range sessionhost.NewServer(c.s.Tmux, c.s.Socket).KeepingTMUXEnv().StderrErrors().WindowSizes(c.session) {
@@ -285,8 +256,8 @@ func (c *conn) fail(err error) {
 	c.s.mu.Unlock()
 }
 
-// resolve reads the ship's own pane and window: the session's first window, not
-// its current one, which moves when anyone attaches to or selects a crew window.
+// The ship's window is the session's first, not its current one, which moves when anyone
+// selects a crew window.
 func (w *watch) resolve() {
 	defer close(w.ready)
 	got := make(chan error, 1)
@@ -320,7 +291,6 @@ func (w *watch) resolve() {
 	}
 }
 
-// shutdown ends the session's bridge: the client detaches and every browser is closed.
 func (c *conn) shutdown() {
 	c.s.mu.Lock()
 	if c.s.conns[c.session] == c {
@@ -346,7 +316,6 @@ func (c *conn) shutdown() {
 	}
 }
 
-// attached is the control client, nil until it has attached.
 func (c *conn) attached() *sessionhost.Client {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -363,7 +332,6 @@ func (c *conn) snapshot() []*watch {
 	return ws
 }
 
-// endBrowsers closes every browser of the watch.
 func (w *watch) endBrowsers() {
 	w.mu.Lock()
 	bs := make([]*browser, 0, len(w.browsers))
@@ -376,8 +344,6 @@ func (w *watch) endBrowsers() {
 	}
 }
 
-// drop ends the watch of a crew boat that has gone, leaving the session's other
-// watches and its client alone.
 func (w *watch) drop() {
 	c := w.c
 	c.mu.Lock()
@@ -389,8 +355,6 @@ func (w *watch) drop() {
 	w.endBrowsers()
 }
 
-// leave removes b; the last one out of the watch removes it, and the last watch
-// out starts the linger.
 func (w *watch) leave(b *browser) {
 	c := w.c
 	c.mu.Lock()
@@ -405,14 +369,13 @@ func (w *watch) leave(b *browser) {
 	c.mu.Unlock()
 }
 
-// armIdle starts the linger when no watch is left. c.mu must be held.
+// c.mu must be held.
 func (c *conn) armIdle() {
 	if len(c.watches) == 0 && !c.gone && c.linger == nil {
 		c.linger = time.AfterFunc(c.s.Idle, c.idle)
 	}
 }
 
-// idle detaches the client if nobody came back during the linger.
 func (c *conn) idle() {
 	c.s.mu.Lock()
 	c.mu.Lock()
@@ -433,7 +396,6 @@ func (c *conn) idle() {
 	}
 }
 
-// notify handles one control-mode notification, on the client's reader goroutine.
 func (c *conn) notify(line string) {
 	switch {
 	case strings.HasPrefix(line, "%output "):
@@ -486,8 +448,7 @@ func (c *conn) notify(line string) {
 	}
 }
 
-// decodeOutput undoes tmux's escaping of %output: a byte below 0x20 or a
-// backslash is sent as \ooo (octal), everything else as it is.
+// tmux sends a byte below 0x20 or a backslash in %output as \ooo (octal).
 func decodeOutput(s string) []byte {
 	out := make([]byte, 0, len(s))
 	for i := 0; i < len(s); i++ {
@@ -503,13 +464,10 @@ func decodeOutput(s string) []byte {
 
 func isOctal(c byte) bool { return c >= '0' && c <= '7' }
 
-// live is true while the ship's harness is running.
 func live(sh ships.Ship) bool {
 	return sh.Status == ships.StatusUnderway || sh.Status == ships.StatusNeedsYou
 }
 
-// shipMsg is the state of what a browser watches, as it sees it: the ship's, or
-// on a crew boat's bridge the crew boat's.
 type shipMsg struct {
 	Type       string  `json:"type,omitempty"`
 	Status     string  `json:"status"`
@@ -527,7 +485,6 @@ func crewState(c sessionhost.Crew) shipMsg {
 	return m
 }
 
-// crewBoat is the crew boat called name of the ship in session.
 func (s *Service) crewBoat(session, name string) (sessionhost.Crew, bool) {
 	if _, own := ownSessions[session]; own {
 		return sessionhost.Crew{}, false
@@ -541,9 +498,7 @@ func (s *Service) crewBoat(session, name string) (sessionhost.Crew, bool) {
 	return sessionhost.Crew{}, false
 }
 
-// state is the state of what the watch is on, and whether it is live: its harness
-// runs and it takes input and a size. ok is false when it is gone. A crew boat
-// follows its own status and never the ship's: an anchored ship keeps its live
+// A crew boat follows its own status and never the ship's: an anchored ship keeps its live
 // crew boats.
 func (w *watch) state() (st shipMsg, takesInput, ok bool) {
 	if !w.crew {
@@ -559,8 +514,6 @@ func (w *watch) state() (st shipMsg, takesInput, ok bool) {
 	return shipMsg{}, false, false
 }
 
-// gone closes what a missing subject leaves behind: the whole session's bridge
-// when the ship is gone, else the crew boat's watch alone.
 func (w *watch) gone() {
 	if _, ok := w.c.s.get(w.c.session); w.crew && ok {
 		w.drop()
@@ -569,8 +522,6 @@ func (w *watch) gone() {
 	w.c.shutdown()
 }
 
-// shipChanged sends the state to the browsers when it differs from what they
-// last got, and closes them when the ship or crew boat is gone.
 func (w *watch) shipChanged() {
 	st, _, ok := w.state()
 	if !ok {
@@ -595,7 +546,7 @@ func ptrEq[T comparable](a, b *T) bool {
 	return (a == nil && b == nil) || (a != nil && b != nil && *a == *b)
 }
 
-// joined are the browsers that have their join payload. w.mu must be held.
+// w.mu must be held.
 func (w *watch) joined() []*browser {
 	out := make([]*browser, 0, len(w.browsers))
 	for b := range w.browsers {
@@ -612,7 +563,6 @@ type sizeMsg struct {
 	Rows int    `json:"rows"`
 }
 
-// setSize records the pane's size and tells the joined browsers when it changed.
 func (w *watch) setSize(cols, rows int) {
 	w.mu.Lock()
 	if w.size == [2]int{cols, rows} {
@@ -627,13 +577,11 @@ func (w *watch) setSize(cols, rows int) {
 	}
 }
 
-// resizeCmd sizes this watch's window alone: a whole-client size would be
-// followed by every window of the session.
+// A whole-client size would be followed by every window of the session.
 func (w *watch) resizeCmd(cols, rows int) string {
 	return sessionhost.ResizeWindowCmd(w.win, cols, rows)
 }
 
-// refreshSize reads the pane's size, after the commands in before.
 func (w *watch) refreshSize(before []string) {
 	w.mu.Lock()
 	pane := w.pane
@@ -650,7 +598,6 @@ func (w *watch) refreshSize(before []string) {
 	})
 }
 
-// makeActive lets b size the window at the size it last reported.
 func (w *watch) makeActive(b *browser) {
 	cols, rows, hidden := b.dims()
 	_, lv, ok := w.state()
@@ -660,7 +607,6 @@ func (w *watch) makeActive(b *browser) {
 	w.refreshSize([]string{w.resizeCmd(cols, rows)})
 }
 
-// The join payload. S is the visible screen, Scrollback the history above it.
 type joinMsg struct {
 	Type       string `json:"type"`
 	Screen     string `json:"screen"`
@@ -683,9 +629,7 @@ type joinMsg struct {
 	Ship shipMsg `json:"ship"`
 }
 
-// join sends b the screen and scrollback with colours, the cursor and the
-// modes, and from the same point in tmux's stream on, the live output. When
-// size is set b's size is applied first, and b becomes the active browser.
+// join starts the live output from the same point in tmux's stream as the screen it sends.
 func (w *watch) join(b *browser, resize bool) {
 	w.mu.Lock()
 	pane := w.pane
@@ -719,10 +663,8 @@ func (w *watch) join(b *browser, resize bool) {
 		j.Size.Cols, j.Size.Rows = n(7), n(8)
 		history := n(9)
 		j.Screen = strings.Join(out[skip+1], "\n")
-		// A pane in the alternate screen has no scrollback of its own: what tmux
-		// returns for it would be the normal screen's history under a screen the
-		// browser draws in its alternate buffer. With no history tmux clamps the
-		// range to the screen's first line, which would be sent twice.
+		// A pane in the alternate screen has no scrollback of its own: tmux would return the
+		// normal screen's history. With no history tmux clamps to the screen's first line.
 		if !j.Modes.Alternate && history > 0 && errs[skip+2] == nil {
 			j.Scrollback = strings.Join(out[skip+2], "\n")
 		}
@@ -735,9 +677,6 @@ func (w *watch) join(b *browser, resize bool) {
 	})
 }
 
-// inputSeen records the input with the ships service, which clears needs you
-// on the ship's pane, or on the crew boat's. It returns the state to refuse
-// with, and ErrExited or ErrNotFound as the service does.
 func (w *watch) inputSeen() (reason string, err error) {
 	if !w.crew {
 		sh, err := w.c.s.inputSeen(w.c.session)
@@ -747,8 +686,8 @@ func (w *watch) inputSeen() (reason string, err error) {
 	return c.State, err
 }
 
-// input sends keystrokes to the pane. The needs-you state is cleared first so
-// anyone who reads the ship after the keys arrived sees it cleared.
+// The needs-you state is cleared first so anyone who reads the ship after the keys arrived
+// sees it cleared.
 func (w *watch) input(b *browser, data string) {
 	if data == "" {
 		return

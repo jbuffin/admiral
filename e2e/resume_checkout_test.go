@@ -11,24 +11,11 @@ import (
 	"time"
 )
 
-// Resume orders launch where, and as, the ship that wrote the report ran (#120
-// u1). The real binary, the fake harness and two test sources:
-//
-//	builds   panel "orders" on autopilot, fleet buildf, skill Commodore, --origin-arg
-//	orders   panel "orders" on autopilot, fleet resumef, no skill, --resume-arg;
-//	         it is autopilot.resume_source
-//
-// A build ship writes a report with a resume text that holds no repository URL
-// and one inbox item. When the item is answered, the resume order launches in
-// the build ship's checkout, under the builds entry (its fleet, args and low
-// stakes) but with the resume panel's skill, so /commodore is not doubled.
-
 const rcResume = "/commodore resume r"
 
 var rcRemote = remoteOf("widgets")
 
-// rcWorld starts Admiral with the two sources above. originMax is the builds
-// panel's max_ships. The checkout of acme/widgets is returned with the world.
+// originMax is the builds panel's max_ships.
 func rcWorld(t *testing.T, originMax int) (*world, string) {
 	t.Helper()
 	w := newWorld(t)
@@ -73,8 +60,6 @@ func (w *world) rcAddOrder(source, text string) {
 	w.mustOK(code, body, "add an order to "+source)
 }
 
-// rcBuildShip adds a build order and returns the ship autopilot launches for
-// it, after its report (resume text, one inbox item q-1) is written.
 func (w *world) rcBuildShip(text string) (shipJSON, string) {
 	w.t.Helper()
 	w.rcAddOrder("builds", text)
@@ -82,8 +67,6 @@ func (w *world) rcBuildShip(text string) (shipJSON, string) {
 	return ship, w.rcReport(ship)
 }
 
-// rcReport writes the ship's report and the question item q-1, and returns
-// the inbox directory.
 func (w *world) rcReport(ship shipJSON) string {
 	w.t.Helper()
 	w.waitFile(ship.Session, "recorded")
@@ -94,13 +77,11 @@ func (w *world) rcReport(ship shipJSON) string {
 	return dir
 }
 
-// rcResumeShip waits for the ship launched from the resume source.
 func (w *world) rcResumeShip() shipJSON {
 	w.t.Helper()
 	return w.rcShip("the resume order's ship", func(s shipJSON) bool { return s.Source == "orders" && live(s) })
 }
 
-// rcShip waits for a ship that satisfies pred and returns it.
 func (w *world) rcShip(what string, pred func(shipJSON) bool) shipJSON {
 	w.t.Helper()
 	for _, sh := range w.waitShipCount(15*time.Second, what, pred, 1) {
@@ -119,7 +100,6 @@ func (w *world) rcHoldNoResumeShip(msg string) {
 	})
 }
 
-// rcExpectOrigin checks a resume ship launched as the build panel's entry says.
 func rcExpectOrigin(t *testing.T, w *world, ship shipJSON, checkout string) {
 	t.Helper()
 	if ship.Dir != checkout {
@@ -154,10 +134,7 @@ func rcExpectOrigin(t *testing.T, w *world, ship shipJSON, checkout string) {
 	}
 }
 
-// C1: an autopilot build ship's resume order, whose text names no repository,
-// launches in the ship's checkout under the build panel's entry, whether the
-// ship sailed off before the last answer or right after it. (A ship still
-// afloat gets no order: its resume text is typed at its prompt.)
+// A ship still afloat gets no resume order: its resume text is typed at its prompt.
 func TestResumeOrderLaunchesInTheBuildShipsCheckout(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"sailed off", "exits right after the answer"} {
@@ -178,8 +155,6 @@ func TestResumeOrderLaunchesInTheBuildShipsCheckout(t *testing.T) {
 	}
 }
 
-// A hand-launched ship has no build panel behind it: its resume order still
-// launches in its checkout, under the resume panel's own entry.
 func TestResumeOrderOfAHandLaunchedShipRunsUnderTheResumePanel(t *testing.T) {
 	t.Parallel()
 	w, checkout := rcWorld(t, 2)
@@ -198,8 +173,7 @@ func TestResumeOrderOfAHandLaunchedShipRunsUnderTheResumePanel(t *testing.T) {
 	}
 }
 
-// The record outlives Admiral: a restart between the add and the launch (the
-// resume panel's autopilot is paused) still launches in the right place.
+// The resume panel's autopilot is paused, so a restart falls between the add and the launch.
 func TestResumeOrderKeepsItsCheckoutAcrossARestart(t *testing.T) {
 	t.Parallel()
 	w, checkout := rcWorld(t, 2)
@@ -223,8 +197,6 @@ func TestResumeOrderKeepsItsCheckoutAcrossARestart(t *testing.T) {
 	rcExpectOrigin(t, w, w.rcResumeShip(), checkout)
 }
 
-// C2: the checkout the ship ran in is gone. The order is skipped with a
-// reason that says so, nothing launches, and the order stays listed.
 func TestResumeOrderWhoseCheckoutIsGoneIsSkipped(t *testing.T) {
 	t.Parallel()
 	w, checkout := rcWorld(t, 2)
@@ -248,9 +220,6 @@ func TestResumeOrderWhoseCheckoutIsGoneIsSkipped(t *testing.T) {
 	}
 }
 
-// The resume order counts against the build panel's max_ships. While that
-// panel is full the order waits, with no skipped record, and the resume
-// panel's other orders still launch. It launches once the panel has room.
 func TestResumeOrderWaitsWhileTheBuildPanelIsFull(t *testing.T) {
 	t.Parallel()
 	w, checkout := rcWorld(t, 1)

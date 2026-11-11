@@ -18,10 +18,8 @@ import (
 	"github.com/coder/websocket"
 )
 
-// Helpers for the u4 scenarios (ships, launcher, state). A world is one
-// temporary root holding an ADMIRAL_HOME, a TMUX_TMPDIR, a HOME, checkouts and
-// the fake harnesses' recordings. The root is under /tmp and kept short: a
-// unix socket path is limited to 104 bytes on macOS.
+// A world's root is under /tmp and kept short: a unix socket path is limited to
+// 104 bytes on macOS.
 
 type world struct {
 	t       *testing.T
@@ -91,7 +89,6 @@ func (w *world) at(t *testing.T) *world {
 	return &c
 }
 
-// defaultSocket is where the "default" tmux server of this world would live.
 func (w *world) defaultSocket() string {
 	return filepath.Join(w.tmuxTmp, fmt.Sprintf("tmux-%d", os.Getuid()), "default")
 }
@@ -156,7 +153,7 @@ func (w *world) harnessEnv() map[string]string {
 	return map[string]string{
 		"FAKE_RECORD_DIR": w.rec, "FAKE_CUE": w.cue,
 		"FLEET_VAR": "fleet-value", "TILDE_VAR": "~/tilde", "ADMIRAL_OVER": "fleet",
-		// The ship contract (#112) wins over a fleet env of the same name.
+		// The ship contract wins over a fleet env of the same name.
 		"ADMIRAL_SHIP": "fleet", "ADMIRAL_REPORT": "fleet", "ADMIRAL_INBOX": "fleet",
 	}
 }
@@ -191,7 +188,6 @@ func (w *world) config() string {
 	return string(b)
 }
 
-// start writes the default config (when there is none) and starts Admiral.
 func (w *world) start() *fleetInst {
 	w.t.Helper()
 	if _, err := os.Stat(configPath(w.home)); err != nil {
@@ -208,7 +204,6 @@ func (w *world) restart() *fleetInst {
 	return w.in
 }
 
-// launchAdmiral is startAdmiral with an explicit environment.
 func launchAdmiral(t *testing.T, home, listen string, env []string) *fleetInst {
 	t.Helper()
 	expectNoMigration(t, home)
@@ -297,8 +292,6 @@ func (w *world) writeCue(lines ...string) {
 	}
 }
 
-// ---- the ships API ----
-
 type shipPos struct {
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
@@ -365,7 +358,6 @@ func (w *world) post(req map[string]any) (int, string) {
 	return send(w.t, http.MethodPost, w.in.LocalURL+"/api/ships", req)
 }
 
-// launch posts a launch request and requires 201 and a ship in the body.
 func (w *world) launch(req map[string]any) shipJSON {
 	w.t.Helper()
 	code, body := w.post(req)
@@ -426,7 +418,6 @@ func byName(ships []shipJSON) map[string]shipJSON {
 	return m
 }
 
-// waitShipsList polls GET /api/ships until pred holds.
 func (in *fleetInst) waitShipsList(t *testing.T, d time.Duration, what string, pred func([]shipJSON) bool) []shipJSON {
 	t.Helper()
 	deadline := time.Now().Add(d)
@@ -442,7 +433,6 @@ func (in *fleetInst) waitShipsList(t *testing.T, d time.Duration, what string, p
 	}
 }
 
-// waitShipsMsg reads WebSocket messages until a `ships` message satisfies pred.
 func waitShipsMsg(t *testing.T, c *websocket.Conn, d time.Duration, what string, pred func([]shipJSON) bool) []shipJSON {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), d)
@@ -466,8 +456,6 @@ func waitShipsMsg(t *testing.T, c *websocket.Conn, d time.Duration, what string,
 		}
 	}
 }
-
-// ---- what the fake harness recorded ----
 
 type record struct {
 	harness string

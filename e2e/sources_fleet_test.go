@@ -9,10 +9,6 @@ import (
 	"time"
 )
 
-// #259 u2: every source belongs to a fleet. Adding a source over the API names
-// one (the first fleet when the request does not), and a settings save keeps
-// each source's fleet.
-
 // fleetsOnly is a config with fleets zulu then alpha and the given sources.
 func (w *world) fleetsOnly(sources string) string {
 	return `{"version":1,"fleets":{` + w.seedFleetsOf("zulu", "alpha") + `},"sources":` + sources + `}`
@@ -47,7 +43,6 @@ func TestAddSourceTakesAFleet(t *testing.T) {
 		t.Errorf("config.json has fleet %v for %s, want zulu", got, added.Key)
 	}
 
-	// A named fleet is used.
 	code, body = w.addTestSource(map[string]any{"name": "Chosen", "fleet": "alpha"})
 	w.mustOK(code, body, "POST /api/sources with fleet alpha")
 	_ = json.Unmarshal([]byte(body), &added)
@@ -55,7 +50,6 @@ func TestAddSourceTakesAFleet(t *testing.T) {
 		t.Errorf("config.json has fleet %v for %s, want alpha", got, added.Key)
 	}
 
-	// An unknown fleet is refused and nothing is written.
 	before := w.readFile(configPath(w.home))
 	code, body = w.addTestSource(map[string]any{"name": "Lost", "fleet": "ghost"})
 	if code/100 != 4 || !strings.Contains(body, "ghost") {

@@ -20,19 +20,16 @@ import (
 	"github.com/coder/websocket"
 )
 
-// Helpers for the u7 scenarios (order sources, plugins).
-// The misbehaving plugin is e2e/testplugin/plugin.py: a test copies it into
-// $ADMIRAL_HOME/plugins/<name>/ and steers it through the flag directory it
-// names in the source's settings (see the plugin's docstring).
+// The test plugin (e2e/testplugin/plugin.py) is steered through the flag
+// directory its source's settings name; see the plugin's docstring.
 
 type orderJSON struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
-	Text  string `json:"text"`
-	URL   string `json:"url"`
-	Hot   bool   `json:"hot"`
-	Repo  string `json:"repo"`
-	// Labels is absent for an order with none.
+	ID     string   `json:"id"`
+	Title  string   `json:"title"`
+	Text   string   `json:"text"`
+	URL    string   `json:"url"`
+	Hot    bool     `json:"hot"`
+	Repo   string   `json:"repo"`
 	Labels []string `json:"labels,omitempty"`
 }
 
@@ -43,11 +40,9 @@ type panelJSON struct {
 	Error  *string     `json:"error"`
 	// Autopilot is null for a panel with no autopilot entry in config.
 	Autopilot *struct {
-		Enabled  bool `json:"enabled"`
-		Paused   bool `json:"paused"`
-		MaxShips int  `json:"max_ships"`
-		// Resources and WaitingFor are #118's: the entry's locked resources and
-		// those its waiting order waits for.
+		Enabled    bool     `json:"enabled"`
+		Paused     bool     `json:"paused"`
+		MaxShips   int      `json:"max_ships"`
 		Resources  []string `json:"resources"`
 		WaitingFor []string `json:"waiting_for"`
 	} `json:"autopilot"`
@@ -149,7 +144,6 @@ func (w *world) sources() []sourceJSON {
 	return decodeSources(w.t, body)
 }
 
-// waitSource polls GET /api/sources until pred holds for the source key.
 func (w *world) waitSource(key string, d time.Duration, what string, pred func(sourceJSON) bool) sourceJSON {
 	w.t.Helper()
 	deadline := time.Now().Add(d)
@@ -166,7 +160,6 @@ func (w *world) waitSource(key string, d time.Duration, what string, pred func(s
 	}
 }
 
-// waitSources polls until pred holds for the whole list.
 func (w *world) waitSources(d time.Duration, what string, pred func([]sourceJSON) bool) []sourceJSON {
 	w.t.Helper()
 	deadline := time.Now().Add(d)
@@ -189,7 +182,6 @@ func dump(v any) string {
 
 func isOK(s sourceJSON) bool { return s.State == "ok" }
 
-// waitSourcesMsg reads WebSocket messages until a `sources` message satisfies pred.
 func waitSourcesMsg(t *testing.T, c *websocket.Conn, d time.Duration, what string, pred func([]sourceJSON) bool) []sourceJSON {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), d)
@@ -214,10 +206,6 @@ func waitSourcesMsg(t *testing.T, c *websocket.Conn, d time.Duration, what strin
 	}
 }
 
-// ---- plugins on disk ----
-
-// installPlugin copies the test plugin into plugins/<folder> with a manifest
-// named manifestName (the folder name unless a test wants a mismatch).
 func (w *world) installPlugin(folder, manifestName string) string {
 	w.t.Helper()
 	src, err := filepath.Abs(filepath.Join("testplugin", "plugin.py"))
@@ -244,7 +232,6 @@ func (w *world) installPlugin(folder, manifestName string) string {
 	return dir
 }
 
-// tplug is the flag directory of one test-plugin source.
 type tplug struct {
 	t   *testing.T
 	dir string
@@ -259,7 +246,6 @@ func (w *world) newTP(label string) *tplug {
 	return &tplug{t: w.t, dir: d}
 }
 
-// settings is the source's settings: the flag directory plus extras.
 func (p *tplug) settings(extra map[string]any) map[string]any {
 	m := map[string]any{"flagdir": p.dir}
 	for k, v := range extra {
@@ -292,7 +278,6 @@ func (p *tplug) read(name string) string {
 	return strings.TrimSpace(string(b))
 }
 
-// setOrders writes the orders the plugin lists, by panel id.
 func (p *tplug) setOrders(byPanel map[string][]map[string]any) {
 	p.t.Helper()
 	b, err := json.Marshal(byPanel)
@@ -308,10 +293,8 @@ func (p *tplug) mainOrders(orders ...map[string]any) {
 
 func ord(id, title string) map[string]any { return map[string]any{"id": id, "title": title} }
 
-// do asks the plugin to run a command once (do-crash, do-garbage…).
 func (p *tplug) do(cmd, content string) { p.t.Helper(); p.put("do-"+cmd, content) }
 
-// starts are the times the plugin received initialize.
 func (p *tplug) starts() []float64 {
 	var out []float64
 	for _, l := range strings.Split(p.read("starts"), "\n") {
@@ -408,8 +391,6 @@ func (p *tplug) waitDead(d time.Duration, pid int, what string) {
 
 func (p *tplug) alive(pid int) bool { return pid > 0 && syscall.Kill(pid, 0) == nil }
 
-// ---- config with sources ----
-
 type srcDef struct {
 	Key, Plugin, Name string
 	Fleet             string // defaults to testFleet
@@ -448,7 +429,6 @@ func inFleet(fleet string, sources map[string]any) map[string]any {
 	return sources
 }
 
-// rawSources is the `sources` object in the order given.
 func rawSources(defs ...srcDef) string {
 	parts := []string{}
 	for _, d := range defs {
@@ -474,7 +454,6 @@ func (w *world) srcConfig(defs ...srcDef) string {
 	return strings.TrimSuffix(w.fleetsConfig(), "}") + `,"sources":` + rawSources(defs...) + `}`
 }
 
-// fleetsConfig is srcConfig without a `sources` key at all.
 func (w *world) fleetsConfig() string {
 	w.t.Helper()
 	fleets := map[string]any{}
@@ -497,8 +476,6 @@ func (w *world) fleetsConfig() string {
 	return `{"version":1,"fleets":` + string(fb) + `}`
 }
 
-// startSources installs the test plugin as "testplug", writes a config with
-// the sources and starts Admiral.
 func (w *world) startSources(defs ...srcDef) *fleetInst {
 	w.t.Helper()
 	w.installPlugin("testplug", "testplug")
@@ -506,17 +483,12 @@ func (w *world) startSources(defs ...srcDef) *fleetInst {
 	return w.start()
 }
 
-// tpSource is a source of the test plugin steered by p.
 func tpSource(key string, p *tplug, extra map[string]any) srcDef {
 	return srcDef{Key: key, Plugin: "testplug", Name: "Test " + key, Settings: p.settings(extra)}
 }
 
 // orderSrcDef is the test-only source that stores orders, for the tests whose
-// subject is not an order source but that need orders to launch from. It is the
-// one place a test source's config is decided: key `orders` with one panel
-// "orders" titled "Orders" (panels.json in its flag directory), the add, edit
-// and remove capabilities, and storeOrders so that an added order is kept in
-// the source's data directory, listed and dropped once launched.
+// subject is not an order source but that need orders to launch from.
 func (w *world) orderSrcDef(key, name string) srcDef {
 	w.t.Helper()
 	if _, err := os.Stat(filepath.Join(w.home, "plugins", "testplug", "plugin.json")); err != nil {
@@ -529,9 +501,7 @@ func (w *world) orderSrcDef(key, name string) srcDef {
 	return d
 }
 
-// orderSource is orderSrcDef as the map a config's `sources` holds; extra keys
-// (an `autopilot` object) are set on the source beside its settings. It names no
-// fleet: the config that holds it does (inFleet).
+// orderSource names no fleet: the config that holds it does (inFleet).
 func (w *world) orderSource(key, name string, extra map[string]any) map[string]any {
 	w.t.Helper()
 	d := w.orderSrcDef(key, name)
@@ -542,15 +512,11 @@ func (w *world) orderSource(key, name string, extra map[string]any) map[string]a
 	return src
 }
 
-// ordersSource is the one source `orders` of a fresh install, as a test
-// source: the sources of a config that needs only orders.
 func (w *world) ordersSource() map[string]any {
 	return map[string]any{"orders": w.orderSource("orders", "Orders", nil)}
 }
 
-// addOrdersSource adds the test source `orders` to the config on disk, so a
-// test that wrote its fleets first has orders to launch from. Call it before
-// start: a config with a `sources` key at all is never seeded.
+// Call addOrdersSource before start: a config with a `sources` key at all is never seeded.
 func (w *world) addOrdersSource() {
 	w.t.Helper()
 	var cfg map[string]any
@@ -580,7 +546,6 @@ func firstFleet(t *testing.T, cfg map[string]any) string {
 	return keys[0]
 }
 
-// startFresh starts Admiral on an empty ADMIRAL_HOME, as a first run.
 func (w *world) startFresh() *fleetInst {
 	w.t.Helper()
 	w.in = launchAdmiral(w.t, w.home, "127.0.0.1:"+freePort(w.t), w.baseEnv())
@@ -642,8 +607,6 @@ func (w *world) readFile(path string) string {
 	return string(b)
 }
 
-// ---- the fake gh ----
-
 // fakeGH steers testdata/fakegh/gh, which the GitHub plugin finds first on
 // PATH. dir is the folder the fake reads its answers from and records its
 // calls in (see the script's header).
@@ -652,7 +615,6 @@ type fakeGH struct {
 	dir string
 }
 
-// newFakeGH puts the fake gh first on PATH for every Admiral this world starts.
 func (w *world) newFakeGH() *fakeGH {
 	w.t.Helper()
 	bin, err := filepath.Abs(filepath.Join("testdata", "fakegh"))
@@ -697,7 +659,6 @@ func (g *fakeGH) search(key, match string, nodes ...map[string]any) {
 	g.unfail(key)
 }
 
-// fail makes that search exit 1 with stderr on the next calls.
 func (g *fakeGH) fail(key, stderr string) { g.t.Helper(); g.write("search/"+key+".fail", stderr+"\n") }
 
 func (g *fakeGH) unfail(key string) {
@@ -707,7 +668,6 @@ func (g *fakeGH) unfail(key string) {
 	}
 }
 
-// ghNode is an issue or pull request as the GraphQL search returns it.
 func ghNode(host, repo string, n int, pull bool, title string, labels ...string) map[string]any {
 	kind, segment := "Issue", "issues"
 	if pull {
@@ -727,7 +687,6 @@ func ghNode(host, repo string, n int, pull bool, title string, labels ...string)
 	}
 }
 
-// ghCall is one recorded run of the fake gh.
 type ghCall struct {
 	Argv []string
 	Env  map[string]string
@@ -781,7 +740,6 @@ func (g *fakeGH) calls() []ghCall {
 	return out
 }
 
-// searchesWith are the search calls that ran with that GH_TOKEN.
 func (g *fakeGH) searchesWith(token string) []ghCall {
 	var out []ghCall
 	for _, c := range g.calls() {
@@ -792,7 +750,6 @@ func (g *fakeGH) searchesWith(token string) []ghCall {
 	return out
 }
 
-// pythonOnlyPath is a PATH folder holding python3 and tmux and no gh.
 func (w *world) pythonOnlyPath() string {
 	w.t.Helper()
 	dir := filepath.Join(w.root, "nogh-bin")
@@ -811,7 +768,6 @@ func (w *world) pythonOnlyPath() string {
 	return dir
 }
 
-// panel finds a source's panel by title.
 func (s sourceJSON) panel(title string) (panelJSON, bool) {
 	for _, p := range s.Panels {
 		if p.Title == title {

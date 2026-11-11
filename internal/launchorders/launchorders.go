@@ -1,7 +1,5 @@
-// Package launchorders serves what the launch orders dialog needs from the
-// server (stories 70–85): the directories a ship can start in with the
-// pre-selection, the skills a dock can invoke, and the favorite skills. None
-// of the GET handlers changes anything.
+// Package launchorders serves the launch orders dialog. None of its GET handlers
+// changes anything.
 package launchorders
 
 import (
@@ -22,7 +20,6 @@ import (
 	"github.com/jbuffin/admiral/internal/state"
 )
 
-// Service reads the config, the ships and the remembered directories.
 type Service struct {
 	Config *config.Manager
 	State  *state.Store
@@ -30,7 +27,6 @@ type Service struct {
 	Orders ships.Orders
 }
 
-// Routes registers the launch orders API.
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/launch-orders/dirs", s.serveDirs)
 	mux.HandleFunc("GET /api/launch-orders/skills", s.serveSkills)
@@ -57,8 +53,7 @@ type dirsRequest struct {
 	Text string `json:"text"`
 }
 
-// serveDirs answers with the list and the pre-selection. It is a POST only
-// because the order's text can be long.
+// serveDirs is a POST only because the order's text can be long.
 func (s *Service) serveDirs(w http.ResponseWriter, r *http.Request) {
 	var req dirsRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20)).Decode(&req); err != nil {
@@ -105,8 +100,6 @@ func (s *Service) serveDirs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"entries": out, "selected": sel, "reason": why})
 }
 
-// list is the fleet's checkouts and search roots, the checkouts most recently
-// used first and the search roots last, and the ships it was ranked against.
 func (s *Service) list(fleet config.Fleet) ([]repofinder.Entry, []ships.Ship) {
 	entries := repofinder.List(fleet.SearchRoots)
 	live := s.Ships()
@@ -120,10 +113,7 @@ func (s *Service) list(fleet config.Fleet) ([]repofinder.Entry, []ships.Ship) {
 	return entries, live
 }
 
-// Dir is the directory autopilot launches the order in: the one the launch
-// dialog pre-selects for it, when that comes from the order's repo or the
-// repository URLs in its text (ADR 0009 rules 1 and 2). It never falls back to
-// the dock's last directory. It returns "" and why when no checkout matches.
+// Dir never falls back to the dock's last directory (ADR 0009 rules 1 and 2).
 func (s *Service) Dir(fleet config.Fleet, harness string, o sources.Order) (string, string) {
 	if !fleet.CanLaunch() {
 		return "", "fleet " + fleet.Name + " has no search roots"
@@ -142,16 +132,12 @@ func (s *Service) Dir(fleet config.Fleet, harness string, o sources.Order) (stri
 	return dir, ""
 }
 
-// Checkout says dir is a checkout of the fleet, not just one of its search
-// roots.
 func (s *Service) Checkout(fleet config.Fleet, dir string) bool {
 	return slices.ContainsFunc(repofinder.List(fleet.SearchRoots), func(e repofinder.Entry) bool {
 		return e.Path == dir && e.Kind == repofinder.KindCheckout
 	})
 }
 
-// preselect picks the directory (ADR 0009) and floats several matching
-// checkouts to the top of entries, the most recently used first.
 func (s *Service) preselect(entries *[]repofinder.Entry, fleet config.Fleet, req dirsRequest, live []ships.Ship) (string, string) {
 	matching := func(id string) []int {
 		var at []int
@@ -212,7 +198,7 @@ func (s *Service) preselect(entries *[]repofinder.Entry, fleet config.Fleet, req
 	return best, reason
 }
 
-// use says how recently a directory was used; a lower tier is more recent.
+// A lower tier is more recent.
 type use struct {
 	tier int
 	at   time.Time
@@ -230,8 +216,6 @@ func (a use) compare(b use) int {
 	return 0
 }
 
-// lastUsed is the latest launch into dir: the recorded one, or an existing
-// ship's if that is later. It is zero for a directory never launched into.
 func lastUsed(st *state.Store, dir string, live []ships.Ship) time.Time {
 	latest := st.DirUsed(dir)
 	for _, sh := range live {
@@ -242,8 +226,6 @@ func lastUsed(st *state.Store, dir string, live []ships.Ship) time.Time {
 	return latest
 }
 
-// recency ranks a directory: its latest launch, else this dock's last
-// directory, else the fleet's other docks' last directories, else not at all.
 func (s *Service) recency(fleet config.Fleet, harness string, live []ships.Ship) func(string) use {
 	return func(dir string) use {
 		latest := lastUsed(s.State, dir, live)
@@ -262,8 +244,6 @@ func (s *Service) recency(fleet config.Fleet, harness string, live []ships.Ship)
 	}
 }
 
-// serveSkills lists the skills the dock finds in a directory of the fleet's
-// list, with the favorites marked, and which skill is Commodore.
 func (s *Service) serveSkills(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	cfg := s.Config.Current()
@@ -303,8 +283,7 @@ func (s *Service) serveSkills(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"skills": list, "commodore": commodore})
 }
 
-// serveFavorites replaces the favorite skills. The five-star limit is checked
-// here so the refusal can say what to do.
+// The five-star limit is checked here so the refusal can say what to do.
 func (s *Service) serveFavorites(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Skills []string `json:"skills"`
@@ -331,8 +310,7 @@ func (s *Service) serveFavorites(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"favorite_skills": s.Config.Current().FavoriteSkills})
 }
 
-// serveChat replaces the chat settings. An empty fleet falls back to the
-// default, as a missing one does on load.
+// An empty fleet falls back to the default, as a missing one does on load.
 func (s *Service) serveChat(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Fleet  string `json:"fleet"`

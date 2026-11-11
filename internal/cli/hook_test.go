@@ -10,10 +10,7 @@ import (
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
-// The reason hookDecision returns (#113) is the code @admiral-reason holds
-// with needs_you: a short word, plus the tool name or notification type when
-// the payload's is a safe token. Payloads go through encoding/json so the
-// field tags are exercised.
+// Payloads go through encoding/json so the field tags are exercised.
 func TestHookReason(t *testing.T) {
 	long64 := strings.Repeat("a", 64)
 	cases := []struct {
@@ -52,9 +49,8 @@ func TestHookReason(t *testing.T) {
 	}
 }
 
-// @admiral-subagents after an event (ADR 0014, #72 stories 21-23), on the
-// payloads recorded in docs/research/crew-boats.md (trimmed). A list is
-// written "id:type" for a short fixture; the start of a kept entry is t0.
+// Payloads are from docs/research/crew-boats.md, trimmed. A list is written
+// "id:type"; the start of a kept entry is t0.
 func TestHookSubagentList(t *testing.T) {
 	const t0 = "2026-10-24T18:00:00Z"
 	now := time.Date(2026, 10, 24, 18, 30, 0, 0, time.UTC)
@@ -141,8 +137,6 @@ func TestHookSubagentList(t *testing.T) {
 	}
 }
 
-// The lead rule (#72 story 12, #152 AC3): a lead's Stop waits while a crew
-// boat works. The facts come from tmux; the decision is pure.
 func TestHookLeadRule(t *testing.T) {
 	stop := hookWrite{state: "needs_you", reason: "stop"}
 	const (
@@ -187,8 +181,6 @@ func TestHookLeadRule(t *testing.T) {
 	}
 }
 
-// Whether a crew pane holds its lead's Stop: live with its own state working,
-// or live with no hook yet inside the 10 s launch window (ADR 0007).
 func TestHookCrewPaneWorking(t *testing.T) {
 	now := time.Date(2026, 10, 24, 18, 30, 0, 0, time.UTC)
 	ago := func(d time.Duration) string { return now.Add(-d).Format(time.RFC3339) }
@@ -216,8 +208,6 @@ func TestHookCrewPaneWorking(t *testing.T) {
 	}
 }
 
-// SessionStart records the chat's transcript path in one option, and only a path
-// the chat service could read; nothing else of the payload is kept.
 func TestTranscriptCall(t *testing.T) {
 	now := time.Unix(1700000000, 5).UTC()
 	call := func(event, payload string) []string {

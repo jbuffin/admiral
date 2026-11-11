@@ -7,9 +7,6 @@ import (
 	"time"
 )
 
-// u12 S4: admiral ships and admiral attach. The CLI surface is documented at
-// the top of cli_helpers_test.go.
-
 type shipRow struct{ name, session, fleet, harness, status, repo string }
 
 // shipTable parses `admiral ships`: tab-separated, a header line, then rows.
@@ -37,8 +34,6 @@ func shipTable(t *testing.T, out string) map[string]shipRow {
 	return rows
 }
 
-// sail launches a Claude ship in a checkout called repo with the given cues and
-// returns once the fake has run them.
 func sail(t *testing.T, w *world, repo string, cues ...string) shipJSON {
 	t.Helper()
 	w.writeCue(cues...)
@@ -111,14 +106,12 @@ func TestU12_S4_ShipsAndAttach(t *testing.T) {
 			t.Errorf(`"Ctrl-b d to detach" should be printed once, got %d times in:`+"\n%s", n, r.both())
 		}
 
-		// By session name, the anchored ship, read-only.
 		w.expectExit(attach(gone.Session), 0, "attach by session name")
 		calls = attachCalls(w, rec)
 		if len(calls) != 2 || !hasPair(calls[1], "-t", "="+gone.Session+":^") || !has(calls[1], "-r") || !hasPair(calls[1], "-f", "ignore-size") {
 			t.Errorf("anchored attach = %q, want -r, -f ignore-size and -t =%s:^", calls, gone.Session)
 		}
 
-		// Refusals: nothing reaches tmux, and the exit code is 1.
 		for _, name := range []string{"_setup", "_admiral", "no such ship"} {
 			r := attach(name)
 			w.expectExit(r, 1, "attach "+name)

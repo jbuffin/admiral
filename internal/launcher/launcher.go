@@ -1,6 +1,5 @@
-// Package launcher starts a ship (ADR 0013): it checks the order, builds the
-// harness's command line and environment, and creates the tmux session with
-// its @admiral-* options already set.
+// Package launcher starts a ship: it checks the order, builds the harness's command line and
+// environment, and creates the tmux session with its @admiral-* options already set.
 package launcher
 
 import (
@@ -20,7 +19,6 @@ import (
 	"github.com/jbuffin/admiral/internal/skillindex"
 )
 
-// Request is what the UI sends to launch a ship.
 type Request struct {
 	Fleet   string `json:"fleet"`
 	Harness string `json:"harness"`
@@ -30,27 +28,19 @@ type Request struct {
 	OrderID string `json:"order_id"`
 	Text    string `json:"text"`
 	Note    string `json:"note"` // Just launch only: optional text sent before the order
-	// Title and URL are the order's title and web URL, set by the server from
-	// the source's order, never by the client.
+	// Title and URL are set by the server from the source's order, never by the client.
 	Title string `json:"-"`
 	URL   string `json:"-"`
-	// Panel is the panel the order was listed in, set by Admiral.
 	Panel string `json:"-"`
-	// Autopilot, LowStakes and ExtraArgs are set by autopilot, never by the
-	// client: this launch is autopilot's, how it treats a low-stakes decision,
-	// and the panel's args for the harness.
+	// Set by autopilot, never by the client.
 	Autopilot bool     `json:"-"`
 	LowStakes string   `json:"-"`
 	AutoMerge string   `json:"-"` // squash, merge or rebase; the guard allows gh pr merge --auto with it
 	ExtraArgs []string `json:"-"`
-	// Resources are the locked resources the ship holds while it is underway
-	// or needs you (#118), recorded on the session. Set by autopilot only; a
-	// hand launch holds none.
+	// Resources are held while the ship is underway or needs you; a hand launch holds none.
 	Resources []string `json:"-"`
-	// OriginSource and OriginPanel are the autopilot panel whose entry the
-	// launch runs under, and whose max_ships it counts against (#120). Set by
-	// autopilot only: a resume order's ship runs under the resume panel but
-	// counts against the panel of the ship that wrote the report.
+	// OriginSource and OriginPanel are the panel whose max_ships the launch counts against: a
+	// resume order's ship counts against the panel of the ship that wrote the report.
 	OriginSource string `json:"-"`
 	OriginPanel  string `json:"-"`
 }
@@ -61,7 +51,6 @@ type Skill struct {
 	Name string `json:"name"`
 }
 
-// Error is a refusal; Status is the HTTP status to answer with.
 type Error struct {
 	Status int
 	Msg    string
@@ -73,13 +62,11 @@ func refuse(status int, format string, a ...any) *Error {
 	return &Error{status, fmt.Sprintf(format, a...)}
 }
 
-// Launched is a ship just created: its tmux session and the options set on it.
 type Launched struct {
 	Session string
 	Options map[string]string // without the @admiral- prefix
 }
 
-// Launcher creates ships on Admiral's tmux server.
 type Launcher struct {
 	Tmux   string // the tmux binary
 	Socket string
@@ -89,14 +76,13 @@ type Launcher struct {
 	// checks have passed: the chat service withdraws the old chat questions there.
 	BeforeChat func()
 	Config     func() *config.Config
-	// Kept says whether a session's inbox is kept after the ship sailed off
-	// (ADR 0016). Its name is never picked, so the launch cannot clear the inbox.
+	// A kept session's name is never picked, so a launch cannot clear its inbox.
 	Kept func(session string) bool
 
 	mu sync.Mutex // one launch at a time, so two don't pick one name
 }
 
-// Launch checks req and creates the ship. Nothing is created when it refuses.
+// Nothing is created when Launch refuses.
 func (l *Launcher) Launch(req Request) (*Launched, error) {
 	if req.Autopilot && req.LowStakes != "advisor" && req.LowStakes != "never" {
 		return nil, refuse(http.StatusBadRequest, "low_stakes must be advisor or never, got %q", req.LowStakes)
@@ -145,9 +131,8 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	case !st.IsDir():
 		return nil, refuse(http.StatusBadRequest, "%s is not a directory", req.Dir)
 	}
-	// The list is read again here: a checkout can vanish, or be named in a
-	// request that never came from the list (story 84). The cleaned path is
-	// the one used from here on.
+	// The list is read again: a checkout can vanish, or be named in a request that never
+	// came from the list.
 	dir, listed := repofinder.Contains(repofinder.List(fleet.SearchRoots), req.Dir)
 	if !listed {
 		return nil, refuse(http.StatusBadRequest, "directory %s is not a checkout or search root of fleet %s", req.Dir, fleet.Name)
@@ -247,8 +232,6 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	return out, nil
 }
 
-// hookFlags are the flags that wire the harness to Admiral's hooks; known is
-// false for a harness Admiral does not launch.
 func (l *Launcher) hookFlags(harness string) (flags []string, known bool) {
 	switch harness {
 	case "claude":
@@ -277,9 +260,7 @@ func appendPrompt(argv []string, prompt string, dock bool) []string {
 	return argv
 }
 
-// orderTitle is the first line of an order's title, or of a dock launch's
-// text, with control characters dropped; the title never refuses a launch. A
-// launch with an order id but no source has no title.
+// The title never refuses a launch. A launch with an order id but no source has no title.
 func orderTitle(req Request) string {
 	if req.Source == "" && req.OrderID != "" {
 		return ""
@@ -291,8 +272,7 @@ func orderTitle(req Request) string {
 	return CleanTitle(line)
 }
 
-// CleanTitle is the first line of s with control characters dropped, capped at
-// 200 characters: what a title may carry into a tmux option or a log line.
+// CleanTitle is what a title may carry into a tmux option or a log line.
 func CleanTitle(s string) string {
 	first, _, _ := strings.Cut(strings.TrimLeft(s, " \t\r\n"), "\n")
 	first = strings.Map(func(r rune) rune {
@@ -307,7 +287,6 @@ func CleanTitle(s string) string {
 	return strings.TrimSpace(first)
 }
 
-// hasControl reports a character below 0x20 or 0x7f.
 func hasControl(s string) bool {
 	return strings.IndexFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0
 }
@@ -413,17 +392,14 @@ func RemoveShipFiles(home, session string) {
 	}
 }
 
-// realDir is whether name, relative to root, is a directory itself and not a
-// link to one: a link would send a delete under it somewhere else.
+// A link would send a delete under it somewhere else.
 func realDir(root *os.Root, name string) bool {
 	fi, err := root.Lstat(name)
 	return err == nil && fi.IsDir()
 }
 
-// shipContract adds the ship's own variables to env, which win over the fleet's,
-// and prepares what they name before the harness starts: reports/ for
-// ADMIRAL_REPORT, and an empty inbox for ADMIRAL_INBOX. A name can be reused, so
-// any report or inbox left under it by a ship that never sailed off is removed.
+// A name can be reused, so any report or inbox left under it by a ship that never sailed
+// off is removed.
 func (l *Launcher) shipContract(env map[string]string, session string) error {
 	home, err := filepath.Abs(l.Home)
 	if err != nil {
@@ -449,9 +425,8 @@ func (l *Launcher) shipContract(env map[string]string, session string) error {
 	return nil
 }
 
-// pickName takes a name no session or ship uses, asking tmux directly. No
-// tmux server yet means nothing is in use; any other error stops the launch,
-// since a name in use would end with a clash.
+// No tmux server yet means nothing is in use; any other error stops the launch, since a
+// name in use would end with a clash.
 func (l *Launcher) pickName() (string, error) {
 	rows, err := l.server().SessionRows()
 	if err != nil {
@@ -464,24 +439,18 @@ func (l *Launcher) pickName() (string, error) {
 	return pickName(taken(shipNames, sessions, l.Kept)), nil
 }
 
-// taken says whether a ship name is in use: by a ship's name, by a session, or
-// by a kept inbox.
+// A kept inbox takes a name too.
 func taken(shipNames, sessions map[string]bool, kept func(session string) bool) func(name string) bool {
 	return func(n string) bool {
 		return shipNames[n] || sessions[Slug(n)] || (kept != nil && kept(Slug(n)))
 	}
 }
 
-// create makes the session on a placeholder, sets its options, then replaces
-// the placeholder with the harness: new-session starts its command at once, and
-// the harness's first hook must find the options already there.
 func (l *Launcher) create(session, dir string, opts [][2]string, env map[string]string, unset, argv []string) error {
 	return l.createSession(session, dir, opts, env, unset, argv, true)
 }
 
-// createSession is create; anchor says whether the pane stays after its harness
-// exits (a ship is anchored, ADR 0008) and rings the bell flag. The chat's does not,
-// so its session ends with Claude (ADR 0019).
+// A ship is anchored: its pane stays after the harness exits. The chat's session ends with Claude.
 func (l *Launcher) createSession(session, dir string, opts [][2]string, env map[string]string, unset, argv []string, anchor bool) error {
 	err := l.server().StartSession(sessionhost.SessionSpec{Name: session, Dir: dir, Options: opts, Env: env, Unset: unset, Argv: argv, Anchor: anchor})
 	var limit *sessionhost.LimitError
@@ -494,5 +463,4 @@ func (l *Launcher) createSession(session, dir string, opts [][2]string, env map[
 	return nil
 }
 
-// server is Admiral's tmux, for the launches.
 func (l *Launcher) server() sessionhost.Server { return sessionhost.NewServer(l.Tmux, l.Socket) }

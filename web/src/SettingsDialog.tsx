@@ -319,7 +319,6 @@ function Field(props: { id: string; prop: Prop; required: boolean; stored?: bool
       </fieldset>
     );
   }
-  // Anything else is edited as JSON.
   return (
     <label>
       <span>{label}</span>

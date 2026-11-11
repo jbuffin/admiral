@@ -16,11 +16,6 @@ import (
 	"time"
 )
 
-// Order sources (u7): config validation, the fresh install, the test plugin as an
-// order source and the plugins API, observed over HTTP, the WebSocket and the files
-// in $ADMIRAL_HOME. The misbehaving plugin scenarios are in
-// sources_plugin_test.go.
-
 func (w *world) configSources() map[string]map[string]any {
 	w.t.Helper()
 	var cfg struct {
@@ -35,7 +30,6 @@ func (w *world) configSources() map[string]map[string]any {
 	return cfg.Sources
 }
 
-// decodeID is the id in an order-add response.
 func decodeID(body string) string {
 	var r struct {
 		ID string `json:"id"`
@@ -70,8 +64,6 @@ func (w *world) waitUp() {
 	}
 }
 
-// S1: a fresh install adds no source. The plugins are written and listed, and
-// the engineer adds a source to a fleet.
 func TestFreshInstall(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -99,7 +91,6 @@ func TestFreshInstall(t *testing.T) {
 	}
 }
 
-// S1: when sources are left alone, and what a restart does to the plugin folder.
 func TestFreshInstallLeavesWhatItShould(t *testing.T) {
 	t.Parallel()
 	t.Run("an empty sources object gets no source added", func(t *testing.T) {
@@ -170,7 +161,6 @@ func TestFreshInstallLeavesWhatItShould(t *testing.T) {
 	}
 }
 
-// embeddedPlugins are the plugins Admiral ships inside the binary and installs.
 var embeddedPlugins = []string{"github"}
 
 // stampOf is the hash Admiral keeps in plugins/<name>/.admiral-stamp: SHA-256
@@ -188,9 +178,6 @@ func stampOf(files map[string]string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// S1: a newer embedded copy replaces a plugin folder that still matches its
-// stamp, and leaves one that was edited after the stamp was written. Both
-// plugins Admiral ships follow the rule.
 func TestPluginUpgrade(t *testing.T) {
 	t.Parallel()
 	for _, name := range embeddedPlugins {
@@ -257,9 +244,8 @@ func testPluginUpgrade(t *testing.T, name string) {
 	})
 }
 
-// Freeform used to ship. A start removes its folder under plugins/ only
-// when it is still Admiral's own copy (it matches its stamp); an edited copy
-// and a symlink are the engineer's and stay.
+// Admiral does not ship freeform. A start removes its folder only while it still
+// matches its stamp; an edited copy and a symlink are the engineer's and stay.
 func TestLeftoverFreeformFolder(t *testing.T) {
 	t.Parallel()
 	files := map[string]string{
@@ -331,9 +317,7 @@ func TestLeftoverFreeformFolder(t *testing.T) {
 	})
 }
 
-// Sources in config.json are validated by the config parser: an invalid file
-// keeps the banner, with the path of the fault. The sources name a fleet: the startup
-// migration would otherwise rewrite the file.
+// The sources name a fleet: the startup migration would otherwise rewrite the file.
 func TestSourcesConfigValidation(t *testing.T) {
 	t.Parallel()
 	cases := []struct{ name, config, want string }{
@@ -368,8 +352,6 @@ func TestSourcesConfigValidation(t *testing.T) {
 	}
 }
 
-// S2: order text validation and the add, edit and remove flow: multi-line orders
-// through the source API, control characters and the size cap refused.
 func TestOrderTextValidationAndEditFlow(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -414,8 +396,6 @@ func TestOrderTextValidationAndEditFlow(t *testing.T) {
 		t.Errorf("data/orders/stored.json = %q, want the edit and not the old text", got)
 	}
 
-	// limits: empty after trimming and over 12,000 bytes are refused with a message;
-	// exactly 12,000 bytes is fine.
 	for name, bad := range map[string]string{"blank": " \n\t ", "too long": strings.Repeat("a", 12001)} {
 		code, body = w.srcReq(http.MethodPost, "/orders/orders", map[string]any{"panel": panel, "text": bad})
 		if code/100 != 4 || strings.TrimSpace(body) == "" {
@@ -459,8 +439,6 @@ func TestOrderTextValidationAndEditFlow(t *testing.T) {
 	}
 }
 
-// S3: a launch from an order carries the order's own text, not the client's,
-// and the source drops the order afterwards.
 func TestLaunchTakesTheOrdersTextNotTheClients(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -473,7 +451,6 @@ func TestLaunchTakesTheOrdersTextNotTheClients(t *testing.T) {
 	s := w.waitSource("orders", 5*time.Second, "the order", func(s sourceJSON) bool { return len(s.orderIDs()) == 1 })
 	id := s.orderIDs()[0]
 
-	// the client's own text is ignored when a source names the order
 	code, body = send(t, http.MethodPost, w.in.LocalURL+"/api/ships", map[string]any{
 		"fleet": "sail", "harness": "claude", "dir": w.checkout("proj"), "skill": noSkill,
 		"source": "orders", "order_id": id, "text": "NOT THE ORDER"})
@@ -487,7 +464,6 @@ func TestLaunchTakesTheOrdersTextNotTheClients(t *testing.T) {
 	if got := promptOf(t, w, w.record(ship.Session)); got != text {
 		t.Errorf("the harness prompt = %q, want the order's whole text %q", got, text)
 	}
-	// the fake exits 0 and the ship sails off; the order must not come back
 	w.in.waitShipsList(t, 10*time.Second, "the ship gone", func(l []shipJSON) bool { return len(l) == 0 })
 	w.waitSource("orders", 5*time.Second, "no orders left", func(s sourceJSON) bool { return len(s.orderIDs()) == 0 })
 	if got := w.readFile(filepath.Join(w.dataDir("orders"), "stored.json")); strings.Contains(got, "Fix the flaky test") {
@@ -495,8 +471,6 @@ func TestLaunchTakesTheOrdersTextNotTheClients(t *testing.T) {
 	}
 }
 
-// Plugins on disk: the list, the icon and its path-traversal guard, and a
-// manifest whose name differs from its folder.
 func TestPluginsAPI(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -535,7 +509,6 @@ func TestPluginsAPI(t *testing.T) {
 	}
 }
 
-// holdsAny reports whether any file under dir holds one of the strings.
 func holdsAny(t *testing.T, dir string, secrets ...string) string {
 	t.Helper()
 	var found string
@@ -554,9 +527,6 @@ func holdsAny(t *testing.T, dir string, secrets ...string) string {
 	return found
 }
 
-// The GitHub plugin, the real one, through Admiral's API with a fake gh first
-// on PATH: panels and plugin-side defaults, settings, orders, the token, signing
-// in, a failing search, a refresh and a missing gh.
 func TestGitHubPlugin(t *testing.T) {
 	t.Parallel()
 	const (
@@ -605,7 +575,6 @@ func TestGitHubPlugin(t *testing.T) {
 		srcDef{Key: "work", Plugin: "github", Name: "Work", Settings: workSettings}))
 	w.start()
 
-	// default panels and their orders
 	s := w.waitSource("gh", 15*time.Second, "the two default panels with orders", func(s sourceJSON) bool {
 		a, okA := s.panel("Assigned to me")
 		r, okR := s.panel("Review requested")
@@ -631,7 +600,6 @@ func TestGitHubPlugin(t *testing.T) {
 		t.Errorf("Review requested has %d orders starting %q, want the first 50 of the 52 matches", len(review2.Orders), review2.Orders[0].ID)
 	}
 
-	// the calls: a token for the host, then searches that carry it
 	if !slices.ContainsFunc(g.calls(), func(c ghCall) bool { return slices.Equal(c.Argv, []string{"auth", "token", "-h", "github.com"}) }) {
 		t.Errorf("no `gh auth token -h github.com` call (the default host, no account); calls: %+v", g.calls())
 	}
@@ -651,7 +619,6 @@ func TestGitHubPlugin(t *testing.T) {
 		}
 	}
 
-	// the work source: signed out, so the sign-in card, with its panels
 	s = w.waitSource("work", 15*time.Second, "auth_required", func(s sourceJSON) bool { return s.State == "auth_required" })
 	if s.Auth == nil || s.Auth.Message != "Run gh auth login -h "+workHost {
 		t.Errorf("work source auth = %+v, want the message %q", s.Auth, "Run gh auth login -h "+workHost)
@@ -664,7 +631,6 @@ func TestGitHubPlugin(t *testing.T) {
 	if n := len(g.searchesWith(workToken)); n != 0 {
 		t.Errorf("the signed-out work source searched %d times", n)
 	}
-	// ... then sign in, refresh, and the card clears by itself
 	g.token("work", workToken)
 	code, body := w.srcReq(http.MethodPost, "/work/refresh", nil)
 	w.mustOK(code, body, "POST /api/sources/work/refresh")
@@ -691,9 +657,6 @@ func TestGitHubPlugin(t *testing.T) {
 		}
 	}
 
-	// a failing search: its error on its panel, the last orders stay, the other
-	// panel is untouched; a network failure reads differently; a good answer
-	// clears it and a changed result shows up.
 	pollPanel := func(what string, pred func(a, r panelJSON) bool) (panelJSON, panelJSON) {
 		t.Helper()
 		var a, r panelJSON
@@ -759,7 +722,6 @@ func TestGitHubPlugin(t *testing.T) {
 	}
 	noLeak("after the run")
 
-	// gh not installed: both sources ask for it
 	w.in.Stop()
 	w.extra = append(w.extra, "PATH="+w.pythonOnlyPath())
 	w.restart()

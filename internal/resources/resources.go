@@ -1,8 +1,5 @@
-// Package resources tracks the locked resources of #118: how many units of
-// each are held and by whom, whether a set of them is free, and whether each is
-// present. It runs the checks. A ship holds one unit of each resource recorded
-// on it while it is underway or needs you; a lock and a launch in flight hold
-// one too.
+// Package resources tracks locked resources. A ship holds one unit of each
+// resource recorded on it while it is underway or needs you; a lock and a launch in flight hold one too.
 package resources
 
 import (
@@ -19,20 +16,16 @@ import (
 	"github.com/jbuffin/admiral/internal/ships"
 )
 
-// Default check limits (#118): a check must finish in 10 seconds, and every
-// check runs every 15.
 const (
 	DefaultCheckTimeout = 10 * time.Second
 	DefaultCheckEvery   = 15 * time.Second
 )
 
-// Lock refusals.
 var (
 	ErrBusy    = errors.New("no unit of the resource is free")
 	ErrUnknown = errors.New("no such resource")
 )
 
-// Check states.
 const (
 	CheckOK      = "ok"
 	CheckMissing = "missing"
@@ -40,40 +33,32 @@ const (
 	CheckNone    = "none"    // the resource has no check
 )
 
-// Why a resource is not ready.
 const (
 	Busy    = "busy"
 	Missing = "missing"
 	Pending = "pending"
 )
 
-// Options are the seams of a Set, in the idiom of sources.Service.
 type Options struct {
 	Config func() *config.Config
 	// Ships is called under the Set's lock and must not call back into the Set.
-	// It is every ship that may hold a unit: the host's list and the
-	// launched ships it has not listed yet.
-	Ships func() []ships.Ship
-	// CheckTimeout and CheckEvery default to 10 s and 15 s.
+	// It includes launched ships the host has not listed yet.
+	Ships                    func() []ships.Ship
 	CheckTimeout, CheckEvery time.Duration
-	// OnChange runs, outside the Set's lock, when a check state changed, a lock
-	// was released or a reservation dropped. It must not block.
+	// OnChange runs outside the Set's lock. It must not block.
 	OnChange func()
-	// OnDrop, when set, runs in place of OnChange for a dropped reservation.
-	// The engine drops its own reservations inside a pass, so it needs no wake-up
-	// for them.
+	// OnDrop replaces OnChange for a dropped reservation: the engine drops its own
+	// inside a pass, so it needs no wake-up for them.
 	OnDrop func()
 }
 
-// Holder is one thing holding a unit: a ship by session, or a lock by label.
 type Holder struct {
 	Kind    string `json:"kind"` // ship or lock
 	Session string `json:"session,omitempty"`
 	Label   string `json:"label,omitempty"`
 }
 
-// State is one resource as the API shows it. It has no timestamps, so an
-// unchanged state doesn't push again.
+// State has no timestamps, so an unchanged state doesn't push again.
 type State struct {
 	Name     string   `json:"name"`
 	Capacity int      `json:"capacity"`
@@ -82,13 +67,11 @@ type State struct {
 	Check    string   `json:"check"`
 }
 
-// Wait is a resource an order waits for.
 type Wait struct {
 	Name string `json:"name"`
 	Why  string `json:"why"` // busy, missing or pending
 }
 
-// Set is the resources of one Admiral.
 type Set struct {
 	opt Options
 
@@ -108,7 +91,7 @@ type result struct {
 
 type lock struct{ label string }
 
-// New returns a Set. Call Run to keep the checks going.
+// Call Run to keep the checks going.
 func New(opt Options) *Set {
 	if opt.CheckTimeout == 0 {
 		opt.CheckTimeout = DefaultCheckTimeout
@@ -120,7 +103,6 @@ func New(opt Options) *Set {
 		changed: make(chan struct{}), checking: map[string]*sync.Mutex{}, kick: make(chan struct{}, 1)}
 }
 
-// Refresh asks Run to check at once, for when the config's resources change.
 func (s *Set) Refresh() {
 	select {
 	case s.kick <- struct{}{}:
@@ -128,7 +110,6 @@ func (s *Set) Refresh() {
 	}
 }
 
-// Run checks now, on Refresh and every CheckEvery, until ctx ends.
 func (s *Set) Run(ctx context.Context) {
 	tick := time.NewTicker(s.opt.CheckEvery)
 	defer tick.Stop()
@@ -143,11 +124,8 @@ func (s *Set) Run(ctx context.Context) {
 	}
 }
 
-// CheckNow runs every check and returns when all are done.
 func (s *Set) CheckNow() { s.checkAll(true) }
 
-// checkAll starts every resource's check together. A resource whose check is
-// still running is waited for when wait is set, and skipped otherwise.
 func (s *Set) checkAll(wait bool) {
 	var wg sync.WaitGroup
 	for name, def := range s.opt.Config().Resources {
@@ -176,8 +154,7 @@ func (s *Set) checkAll(wait bool) {
 	wg.Wait()
 }
 
-// run is the check: an argv with no shell, no input, its output dropped, in its
-// own process group so a timeout kills the children too. Exit 0 is present.
+// run puts the check in its own process group so a timeout kills the children too.
 func (s *Set) run(argv []string) bool {
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -209,10 +186,8 @@ func (s *Set) record(name string, argv []string, ok bool) {
 	}
 }
 
-// announce wakes Changed's waiters and runs OnChange.
 func (s *Set) announce() { s.announceTo(nil) }
 
-// announceTo wakes Changed's waiters and runs hook, or OnChange when hook is nil.
 func (s *Set) announceTo(hook func()) {
 	s.Wake()
 	if hook == nil {
@@ -223,9 +198,8 @@ func (s *Set) announceTo(hook func()) {
 	}
 }
 
-// Wake closes the channel Changed returned, without running OnChange. The
-// caller tells the Set about changes it can't see itself: a ship that stopped
-// holding a unit, a config whose resources changed.
+// Wake is for changes the Set can't see itself, such as a ship that stopped
+// holding a unit. It does not run OnChange.
 func (s *Set) Wake() {
 	s.mu.Lock()
 	close(s.changed)
@@ -233,15 +207,14 @@ func (s *Set) Wake() {
 	s.mu.Unlock()
 }
 
-// Changed is closed when a lock is released, a reservation drops, a check
-// state changes or the caller wakes the Set. Fetch a fresh one each time.
+// Changed: fetch a fresh channel each time.
 func (s *Set) Changed() <-chan struct{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.changed
 }
 
-// checkState is the resource's check state; the caller holds mu.
+// checkState: the caller holds mu.
 func (s *Set) checkState(name string, def config.Resource) string {
 	if len(def.Check) == 0 {
 		return CheckNone
@@ -256,7 +229,6 @@ func (s *Set) checkState(name string, def config.Resource) string {
 	return CheckMissing
 }
 
-// shipHolders lists, by session, the ships that hold a unit of each resource.
 func (s *Set) shipHolders(defs map[string]config.Resource) map[string][]string {
 	held := map[string][]string{}
 	for _, sh := range s.opt.Ships() {
@@ -275,7 +247,6 @@ func (s *Set) shipHolders(defs map[string]config.Resource) map[string][]string {
 	return held
 }
 
-// State is every resource, sorted by name.
 func (s *Set) State() []State {
 	defs := s.opt.Config().Resources
 	s.mu.Lock()
@@ -297,14 +268,12 @@ func (s *Set) State() []State {
 	return out
 }
 
-// free is whether a unit of the resource is free; the caller holds mu.
+// free: the caller holds mu.
 func (s *Set) free(name string, def config.Resource, held map[string][]string) bool {
 	return len(held[name])+len(s.locks[name])+s.reserved[name] < def.Capacity
 }
 
-// Reserve takes a unit of each name, or none: it returns the release, or the
-// names that are not ready and why. A name is ready when a unit is free and its
-// check is ok or none. The release is idempotent.
+// Reserve takes a unit of each name, or none. The release is idempotent.
 func (s *Set) Reserve(names []string) (release func(), waits []Wait) {
 	defs := s.opt.Config().Resources
 	s.mu.Lock()
@@ -346,9 +315,7 @@ func (s *Set) Reserve(names []string) (release func(), waits []Wait) {
 	}, nil
 }
 
-// Lock takes one unit of the resource for a holder outside the ships, such as
-// `admiral lock`. It doesn't wait, and it ignores the check. The release is
-// idempotent.
+// Lock doesn't wait, and it ignores the check. The release is idempotent.
 func (s *Set) Lock(name, label string) (release func(), err error) {
 	defs := s.opt.Config().Resources
 	s.mu.Lock()

@@ -1,7 +1,5 @@
-// Package auth decides who may reach Admiral (ADR 0001). Peers on loopback are
-// local and need nothing. Everyone else presents the token, as a cookie or,
-// for the WebSocket, as ?token=. Requests that could let a web page on
-// another site drive the Mac are refused first.
+// Package auth decides who may reach Admiral (ADR 0001): loopback peers need
+// nothing, everyone else presents the token.
 package auth
 
 import (
@@ -21,8 +19,6 @@ import (
 
 const cookieMaxAge = 400 * 24 * 60 * 60
 
-// LoadOrCreateToken returns the token in <home>/token, creating it (mode 0600,
-// 256 random bits, URL-safe) when missing, so it survives restarts.
 func LoadOrCreateToken(home string) (string, error) {
 	path := filepath.Join(home, "token")
 	if b, err := os.ReadFile(path); err == nil {
@@ -50,9 +46,7 @@ func newToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
-// RotateToken replaces the token in <home>/token with a new one (mode 0600)
-// and returns it. The file is replaced by a rename, so a reader sees the old
-// token or the new one. A running server notices (Auth.Watch).
+// The file is replaced by a rename, so a reader sees the old token or the new one.
 func RotateToken(home string) (string, error) {
 	token, err := newToken()
 	if err != nil {
@@ -77,7 +71,6 @@ func RotateToken(home string) (string, error) {
 	return token, os.Rename(tmp.Name(), filepath.Join(home, "token"))
 }
 
-// Auth guards one listener.
 type Auth struct {
 	cookie string
 
@@ -86,14 +79,13 @@ type Auth struct {
 	socks map[*socket]struct{}
 }
 
-// socket is a non-local WebSocket request and the token it got in with.
 type socket struct {
 	token  string
 	cancel context.CancelFunc
 }
 
-// New returns the guard for a server on port. The port is in the cookie name
-// so a test instance on the same host never overwrites the real one's cookie.
+// The port is in the cookie name so a test instance on the same host never
+// overwrites the real one's cookie.
 func New(token, port string) *Auth {
 	return &Auth{token: token, cookie: "admiral_token_" + port, socks: map[*socket]struct{}{}}
 }
@@ -108,9 +100,8 @@ func (a *Auth) valid(candidate string) bool {
 	return subtle.ConstantTimeCompare([]byte(candidate), []byte(a.current())) == 1
 }
 
-// SetToken makes token the one that is accepted and ends every non-local
-// WebSocket that got in with another (the dashboard's and the bridge's alike:
-// their handlers read with the request's context, which is cancelled here).
+// The bridge's sockets end too: their handlers read with the request's context,
+// which is cancelled here.
 func (a *Auth) SetToken(token string) {
 	a.mu.Lock()
 	a.token = token
@@ -126,9 +117,8 @@ func (a *Auth) SetToken(token string) {
 	}
 }
 
-// Watch follows <home>/token until ctx ends, so `admiral token rotate` takes
-// effect without a restart (story 8). It watches by polling: the file is a few
-// bytes, and a rename over it is seen the same as a write.
+// Watch polls: the file is a few bytes, and a rename over it is seen the same as
+// a write.
 func (a *Auth) Watch(ctx context.Context, home string) {
 	path := filepath.Join(home, "token")
 	tick := time.NewTicker(200 * time.Millisecond)
@@ -147,7 +137,6 @@ func (a *Auth) Watch(ctx context.Context, home string) {
 	}
 }
 
-// track runs next for a non-local WebSocket, which SetToken can end.
 func (a *Auth) track(w http.ResponseWriter, r *http.Request, next http.Handler, presented string) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
@@ -168,8 +157,6 @@ func (a *Auth) track(w http.ResponseWriter, r *http.Request, next http.Handler, 
 	next.ServeHTTP(w, r.WithContext(ctx))
 }
 
-// Middleware applies the checks in order: Host (loopback peers), Origin
-// (WebSocket and non-GET), then the token (non-local peers).
 func (a *Auth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		isWS := strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
@@ -249,7 +236,6 @@ func unauthorized(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(unauthorizedPage))
 }
 
-// IsLoopbackPeer reports whether the request came from this Mac.
 func IsLoopbackPeer(r *http.Request) bool {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -259,8 +245,7 @@ func IsLoopbackPeer(r *http.Request) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// hostAllowed reports whether a Host header names this Mac. It guards loopback
-// peers against DNS rebinding.
+// hostAllowed guards loopback peers against DNS rebinding.
 func hostAllowed(hostport string) bool {
 	host := hostport
 	if h, _, err := net.SplitHostPort(hostport); err == nil {

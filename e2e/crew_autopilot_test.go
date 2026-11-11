@@ -8,10 +8,6 @@ import (
 	"testing"
 )
 
-// The autopilot args allowlist and harness refusal on `admiral crew launch`
-// (#175, unit u2). A caller with ADMIRAL_AUTOPILOT=1 may pass only the listed
-// flags, and only claude launches. The seam is the built binary.
-
 func TestCrew_LaunchUnderAutopilot(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)

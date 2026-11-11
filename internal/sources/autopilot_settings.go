@@ -10,7 +10,6 @@ import (
 	"github.com/jbuffin/admiral/internal/launcher"
 )
 
-// autopilotSettings is what the autopilot settings routes answer.
 type autopilotSettings struct {
 	Entry        json.RawMessage `json:"entry"`
 	Version      string          `json:"version"`
@@ -20,7 +19,6 @@ type autopilotSettings struct {
 	ConfigError  string          `json:"config_error"`
 }
 
-// storedArgs is the part of an entry the args check reads.
 type storedArgs struct {
 	Fleet string   `json:"fleet"`
 	Args  []string `json:"args"`
@@ -32,8 +30,7 @@ func parseStoredArgs(raw json.RawMessage) storedArgs {
 	return a
 }
 
-// argsError is the allowlist's refusal of args against the claude dock of the
-// fleet cfg names; empty when they pass or the fleet has no such dock.
+// argsError is empty when the args pass or the fleet has no claude dock.
 func argsError(cfg *config.Config, fleet string, args []string) string {
 	f, ok := cfg.Fleet(fleet)
 	if !ok {
@@ -49,7 +46,6 @@ func argsError(cfg *config.Config, fleet string, args []string) string {
 	return ""
 }
 
-// autopilotSettingsOf is the GET shape for the file as it is now.
 func (s *Service) autopilotSettingsOf(key, panel string) (autopilotSettings, error) {
 	cfg := s.Config.Current()
 	out := autopilotSettings{Version: "none", MaxShips: cfg.AutopilotMaxShips, ResumeSource: cfg.ResumeSource != nil}
@@ -72,8 +68,6 @@ func (s *Service) autopilotSettingsOf(key, panel string) (autopilotSettings, err
 	return out, nil
 }
 
-// panelParams reads the route's source and panel, answering the request itself
-// when they don't name a panel of a source.
 func (s *Service) panelParams(w http.ResponseWriter, r *http.Request) (key, panel string, ok bool) {
 	key, panel = r.PathValue("key"), r.PathValue("panel")
 	if panel == "" || hasControl(panel) {
@@ -87,8 +81,7 @@ func (s *Service) panelParams(w http.ResponseWriter, r *http.Request) (key, pane
 	return key, panel, true
 }
 
-// writeAutopilotError answers a refused write: a file that doesn't load or an
-// entry that changed is a conflict, anything else the entry's fault.
+// A file that doesn't load or an entry that changed is a conflict.
 func writeAutopilotError(w http.ResponseWriter, key string, err error) {
 	switch {
 	case errors.Is(err, config.ErrInvalid), errors.Is(err, config.ErrChanged):
@@ -114,9 +107,7 @@ func (s *Service) serveAutopilotSettings(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, v)
 }
 
-// serveSaveAutopilotSettings sets one panel's entry. The args pass the
-// autopilot allowlist against the chosen fleet's claude dock, except stored
-// args that already fail and are saved unchanged with the fleet (ADR 0022).
+// Stored args that already fail may be saved unchanged with the fleet (ADR 0022).
 func (s *Service) serveSaveAutopilotSettings(w http.ResponseWriter, r *http.Request) {
 	key, panel, ok := s.panelParams(w, r)
 	if !ok {
@@ -166,7 +157,6 @@ func (s *Service) serveSaveAutopilotSettings(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, v)
 }
 
-// serveRemoveAutopilot removes one panel's entry and its pause.
 func (s *Service) serveRemoveAutopilot(w http.ResponseWriter, r *http.Request) {
 	key, panel, ok := s.panelParams(w, r)
 	if !ok {
