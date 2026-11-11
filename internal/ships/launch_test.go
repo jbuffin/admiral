@@ -22,17 +22,24 @@ func launchPost(t *testing.T, s *Service, body string) *httptest.ResponseRecorde
 	return rec
 }
 
-// guardedHome is a home where claude's guard probe passed in fleet work, the way the
-// probe runner leaves it.
+// guardedHome is a home where claude's guard probe and its judge probes passed in fleet
+// work, the way the probe runner leaves it, with a claude on PATH for the judge harness.
 func guardedHome(t *testing.T) string {
 	t.Helper()
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	home := t.TempDir()
 	store, now := capabilities.Open(home), time.Now()
 	if err := store.RecordVersion("work", "claude", "2.1.300", now); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Record("work", "claude", "2.1.300", capabilities.AutopilotGuard, capabilities.Result{Passed: true, At: now}); err != nil {
-		t.Fatal(err)
+	for _, id := range []capabilities.ID{capabilities.AutopilotGuard, capabilities.JudgeNoTools, capabilities.JudgeNoNetwork} {
+		if err := store.Record("work", "claude", "2.1.300", id, capabilities.Result{Passed: true, At: now}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return home
 }

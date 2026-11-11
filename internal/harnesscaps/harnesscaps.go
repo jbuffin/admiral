@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/capabilities"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/judge"
@@ -99,8 +100,8 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
-func (s *Service) harness(store *capabilities.Store, fleetKey, name string) harnessJSON {
-	snap, _ := store.Snapshot(fleetKey, name) // an unreadable store reads as nothing checked
+func (s *Service) harness(store *capabilities.Store, fleet config.Fleet, name string) harnessJSON {
+	snap, _ := store.Snapshot(fleet.Key, name) // an unreadable store reads as nothing checked
 	h := harnessJSON{Harness: name, Version: snap.Version}
 	if !snap.DetectedAt.IsZero() {
 		h.DetectedAt = &snap.DetectedAt
@@ -111,6 +112,10 @@ func (s *Service) harness(store *capabilities.Store, fleetKey, name string) harn
 			st := snap.States[c.ID]
 			cj := capabilityJSON{ID: string(c.ID), Label: c.Label, Status: string(st.Status)}
 			switch {
+			case c.ID == capabilities.AutopilotAdvisor:
+				// Never stored: it follows the fleet's judge harness, which other harnesses' results move.
+				status, detail := autopilotgate.AdvisorStatus(fleet, store)
+				cj.Status, cj.Detail = string(status), detail
 			case st.Result != nil:
 				cj.Detail = st.Result.Detail
 				if !st.Result.At.IsZero() {
@@ -135,7 +140,7 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) {
 	for _, f := range s.Config().Fleets {
 		fj := fleetJSON{Key: f.Key, Name: f.Name, Harnesses: []harnessJSON{}, Judge: judgeOf(store, f)}
 		for _, h := range f.Harnesses {
-			fj.Harnesses = append(fj.Harnesses, s.harness(store, f.Key, h.Name))
+			fj.Harnesses = append(fj.Harnesses, s.harness(store, f, h.Name))
 		}
 		out = append(out, fj)
 	}
@@ -174,7 +179,7 @@ func (s *Service) check(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	store := capabilities.Open(s.Home)
-	h := s.harness(store, fleet.Key, req.Harness)
+	h := s.harness(store, fleet, req.Harness)
 	h.Fleet = fleet.Key
 	writeJSON(w, http.StatusOK, checkJSON{harnessJSON: h, Judge: judgeOf(store, fleet)})
 }

@@ -98,8 +98,8 @@ func crewTarget(ship string) (*crewShip, error) {
 		}
 	}
 	l := &launcher.Launcher{Tmux: tmux, Socket: sock, Home: dir,
-		AutopilotGate: func(fleetKey, fleetName, harness string) error {
-			return autopilotgate.Check(dir, fleetKey, fleetName, harness)
+		AutopilotGate: func(fleet config.Fleet, harness string) error {
+			return autopilotgate.Check(dir, fleet, harness)
 		}}
 	if l.Config, err = crewConfig(); err != nil {
 		return nil, err

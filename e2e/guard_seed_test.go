@@ -26,8 +26,24 @@ func (w *world) seedGuard(fleet, harness string, passed bool) {
 	}
 }
 
-// proveGuard seeds a passed guard probe for claude in each named fleet, or in every
-// default fleet when none is named: the state an autopilot launch needs.
+// seedJudge stores passed no-tools, no-network and JSON-schema judge probes (what a real claude proves) for the harness's detected
+// version, which makes it the fleet's judge harness.
+func (w *world) seedJudge(fleet, harness string) {
+	w.t.Helper()
+	store, now := capabilities.Open(w.home), time.Now()
+	if err := store.RecordVersion(fleet, harness, fakeVersion, now); err != nil {
+		w.t.Fatal(err)
+	}
+	for _, id := range []capabilities.ID{capabilities.JudgeNoTools, capabilities.JudgeNoNetwork, capabilities.JudgeJSONSchema} {
+		res := capabilities.Result{Passed: true, At: now, Detail: "seeded by the test"}
+		if err := store.Record(fleet, harness, fakeVersion, id, res); err != nil {
+			w.t.Fatal(err)
+		}
+	}
+}
+
+// proveGuard seeds a passed guard probe and the judge probes for claude in each named
+// fleet, or in every default fleet when none is named: the state an autopilot launch needs.
 func (w *world) proveGuard(fleets ...string) {
 	w.t.Helper()
 	if len(fleets) == 0 {
@@ -35,5 +51,6 @@ func (w *world) proveGuard(fleets ...string) {
 	}
 	for _, f := range fleets {
 		w.seedGuard(f, "claude", true)
+		w.seedJudge(f, "claude")
 	}
 }

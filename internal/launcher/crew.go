@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
@@ -91,8 +92,8 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 		return err
 	}
 	if req.Autopilot {
-		if err := l.autopilotGate(fleet.Key, fleet.Name, req.Harness); err != nil {
-			return fmt.Errorf("a caller with ADMIRAL_AUTOPILOT=1 can launch only on a harness whose guard probe passed: %w", err)
+		if err := l.autopilotGate(fleet, req.Harness); err != nil {
+			return fmt.Errorf("a caller with ADMIRAL_AUTOPILOT=1 can launch only on a harness whose guard and advisor are proven: %w", err)
 		}
 		if err := AutopilotArgs(req.Harness, dock.Args, req.Args); err != nil {
 			return err
@@ -168,9 +169,9 @@ func (l *Launcher) CloseCrew(ctx context.Context, windowID string) error {
 }
 
 // autopilotGate refuses when no gate is set: autopilot is never allowed unchecked.
-func (l *Launcher) autopilotGate(fleetKey, fleetName, harness string) error {
+func (l *Launcher) autopilotGate(fleet config.Fleet, harness string) error {
 	if l.AutopilotGate == nil {
 		return errors.New("no autopilot gate is configured")
 	}
-	return l.AutopilotGate(fleetKey, fleetName, harness)
+	return l.AutopilotGate(fleet, harness)
 }

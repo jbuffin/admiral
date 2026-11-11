@@ -3,13 +3,16 @@
 package autopilotgate
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/jbuffin/admiral/internal/capabilities"
+	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/inbox"
+	"github.com/jbuffin/admiral/internal/judge"
 	"github.com/jbuffin/admiral/internal/probes"
 )
 
@@ -34,19 +37,78 @@ func Proven(home, fleetKey, harness string) bool {
 	return capabilities.Open(home).Proven(fleetKey, harness, capabilities.AutopilotGuard)
 }
 
-// Check returns nil when Proven. Otherwise it returns a *Refusal and posts one Inbox
-// notice, unless an open one already names this fleet and harness.
-func Check(home, fleetKey, fleetName, harness string) error {
-	if Proven(home, fleetKey, harness) {
+// AdvisorRefusal is the error Check returns for a fleet with no judge harness, which
+// every autopilot ship's advisor runs on.
+type AdvisorRefusal struct {
+	Fleet   string // the fleet's key
+	Harness string
+	Reason  string
+}
+
+func (e *AdvisorRefusal) Error() string {
+	return fmt.Sprintf("autopilot is not proven on %s in fleet %s: its advisor is not proven (%s)", e.Harness, e.Fleet, e.Reason)
+}
+
+// Advisor reports whether the fleet has a judge harness to run the advisor on, and why
+// not when it has none. It is computed from the store on every call and never stored: it
+// depends on every harness of the fleet, so a stored row would go stale.
+func Advisor(fleet config.Fleet, store *capabilities.Store) (ok bool, reason string) {
+	_, err := judge.Choose(fleet, store)
+	if err == nil {
+		return true, ""
+	}
+	var none *judge.NoJudgeHarness
+	if errors.As(err, &none) {
+		return false, none.Reason
+	}
+	return false, err.Error()
+}
+
+// AdvisorStatus is the Advisor row's state: not checked until some harness of the fleet
+// has a stored judge result, then passed (naming the judge harness) or failed with the
+// reason. The gate refuses in every state but passed.
+func AdvisorStatus(fleet config.Fleet, store *capabilities.Store) (capabilities.Status, string) {
+	choice, err := judge.Choose(fleet, store)
+	if err == nil {
+		return capabilities.Passed, "the fleet's judge harness is " + choice.Name
+	}
+	for _, h := range fleet.Harnesses {
+		snap, _ := store.Snapshot(fleet.Key, h.Name)
+		for _, id := range []capabilities.ID{capabilities.JudgeNoTools, capabilities.JudgeNoNetwork} {
+			if snap.States[id].Result != nil {
+				_, reason := Advisor(fleet, store)
+				return capabilities.Failed, reason
+			}
+		}
+	}
+	return capabilities.NotChecked, ""
+}
+
+// Check returns nil when the guard is Proven and the fleet has an advisor. Otherwise it
+// returns a *Refusal (guard first) or an *AdvisorRefusal and posts one Inbox notice,
+// unless an open one already says the same.
+func Check(home string, fleet config.Fleet, harness string) error {
+	if !Proven(home, fleet.Key, harness) {
+		title := fmt.Sprintf("Couldn't launch unattended on %s: guard not proven", titleCase(harness))
+		body := fmt.Sprintf("Fleet %s (%s): the guard probe has not passed for %s, so autopilot is not allowed there. Run the capability check for it, then launch again.", fleet.Name, fleet.Key, harness)
+		postOnce(home, title, body)
+		return &Refusal{Fleet: fleet.Key, Harness: harness}
+	}
+	ok, reason := Advisor(fleet, capabilities.Open(home))
+	if ok {
 		return nil
 	}
-	title := fmt.Sprintf("Couldn't launch unattended on %s: guard not proven", titleCase(harness))
-	body := fmt.Sprintf("Fleet %s (%s): the guard probe has not passed for %s, so autopilot is not allowed there. Run the capability check for it, then launch again.", fleetName, fleetKey, harness)
+	title := fmt.Sprintf("Couldn't launch unattended on %s: advisor not proven", titleCase(harness))
+	body := fmt.Sprintf("Fleet %s (%s): no harness in the fleet is proven for judge calls, so the advisor has nothing to run on and autopilot is not allowed. %s. Run the capability check, then launch again.", fleet.Name, fleet.Key, reason)
+	postOnce(home, title, body)
+	return &AdvisorRefusal{Fleet: fleet.Key, Harness: harness, Reason: reason}
+}
+
+func postOnce(home, title, body string) {
 	if !noticeOpen(home, title, body) {
 		// The refusal stands whether or not the notice lands.
 		_, _ = inbox.WriteNotice(home, title, body)
 	}
-	return &Refusal{Fleet: fleetKey, Harness: harness}
 }
 
 func noticeOpen(home, title, body string) bool {

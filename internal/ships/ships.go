@@ -434,7 +434,7 @@ func (s *Service) admit(req launcher.Request) (release func(), lerr *launcher.Er
 		if _, ok := fleet.Harness(req.Harness); !ok {
 			return release, &launcher.Error{Status: http.StatusNotFound, Msg: "fleet " + fleet.Name + " has no " + req.Harness + " dock"}
 		}
-		if err := autopilotgate.Check(s.Launcher.Home, fleet.Key, fleet.Name, req.Harness); err != nil {
+		if err := autopilotgate.Check(s.Launcher.Home, fleet, req.Harness); err != nil {
 			return release, &launcher.Error{Status: http.StatusBadRequest, Msg: err.Error()}
 		}
 	}

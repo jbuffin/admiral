@@ -114,6 +114,8 @@ func run(args []string) error {
 		return cli.Hook(args[1:], std)
 	case "guard":
 		return cli.Guard(args[1:], std)
+	case "advise":
+		return cli.Advise(args[1:], std)
 	case "outcomes":
 		return cli.Outcomes(args[1:], std)
 	case "lock":
@@ -203,8 +205,8 @@ func serve(args []string) error {
 	shipService := &ships.Service{Host: host, State: st, Hub: hub, Outcomes: outcomeLog, Launcher: &launcher.Launcher{
 		Tmux: tmuxPath, Socket: sock, Home: dir, Port: port, Config: cfg.Current,
 		Kept: func(session string) bool { _, ok := st.KeptInbox(session); return ok },
-		AutopilotGate: func(fleetKey, fleetName, harness string) error {
-			return autopilotgate.Check(dir, fleetKey, fleetName, harness)
+		AutopilotGate: func(fleet config.Fleet, harness string) error {
+			return autopilotgate.Check(dir, fleet, harness)
 		}}}
 
 	if err := sources.RemoveRetired(dir); err != nil {
