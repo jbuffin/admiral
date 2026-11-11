@@ -1,11 +1,14 @@
 package harnesscaps_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +16,7 @@ import (
 	"github.com/jbuffin/admiral/internal/capabilities"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/harnesscaps"
+	"github.com/jbuffin/admiral/internal/judge"
 	"github.com/jbuffin/admiral/internal/probes"
 )
 
@@ -217,5 +221,127 @@ func TestCheckFailureBodyHasNoAbsolutePath(t *testing.T) {
 	rec := do(t, s, "POST", "/api/harness-capabilities/check", `{"fleet":"broken","harness":"claude"}`)
 	if rec.Code != http.StatusBadGateway || strings.Contains(rec.Body.String(), filepath.Dir(exe)) {
 		t.Errorf("POST check = %d %s, want 502 without the executable's directory", rec.Code, rec.Body)
+	}
+}
+
+type judgeLine struct {
+	Harness      json.RawMessage `json:"harness"`
+	LookoutModel string          `json:"lookout_model"`
+	StrongModel  string          `json:"strong_model"`
+	JSONSchema   bool            `json:"json_schema"`
+	CallCap      bool            `json:"call_cap"`
+	Reason       string          `json:"reason"`
+}
+
+func rawJudge(t *testing.T, body []byte) map[string]json.RawMessage {
+	t.Helper()
+	var got struct {
+		Judge map[string]json.RawMessage `json:"judge"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil || got.Judge == nil {
+		t.Fatalf("no judge object (%v):\n%s", err, body)
+	}
+	return got.Judge
+}
+
+func prove(t *testing.T, store *capabilities.Store, fleet, harness, version string, ids ...capabilities.ID) {
+	t.Helper()
+	if err := store.RecordVersion(fleet, harness, version, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range ids {
+		if err := store.Record(fleet, harness, version, id, capabilities.Result{Passed: true, At: time.Now(), Detail: "fake"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestListCarriesEachFleetsJudgeHarnessOrTheReasonThereIsNone(t *testing.T) {
+	home := t.TempDir()
+	store := capabilities.Open(home)
+	basic := []capabilities.ID{capabilities.JudgeNoTools, capabilities.JudgeNoNetwork}
+	prove(t, store, "full", "claude", "2.1.300", append(basic, capabilities.JudgeJSONSchema, capabilities.JudgeCallCap)...)
+	prove(t, store, "basic", "codex", "0.167.1", basic...)
+	prove(t, store, "none", "claude", "2.1.300", capabilities.JudgeNoTools)
+	fleets := []config.Fleet{
+		fleet("full", "Full", dock("claude", script(t, "2.1.300"))),
+		fleet("basic", "Basic", dock("codex", script(t, "0.167.1"))),
+		fleet("none", "None", dock("claude", script(t, "2.1.300"))),
+	}
+	s := service(t, home, fleets...)
+	rec := do(t, s, "GET", "/api/harness-capabilities", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET = %d %s", rec.Code, rec.Body)
+	}
+	var got struct {
+		Fleets []struct {
+			Key   string                     `json:"key"`
+			Judge map[string]json.RawMessage `json:"judge"`
+		} `json:"fleets"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || len(got.Fleets) != 3 {
+		t.Fatalf("fleets = %+v (%v)", got.Fleets, err)
+	}
+	read := func(m map[string]json.RawMessage) judgeLine {
+		b, _ := json.Marshal(m)
+		var j judgeLine
+		if err := json.Unmarshal(b, &j); err != nil {
+			t.Fatal(err)
+		}
+		return j
+	}
+	keys := func(m map[string]json.RawMessage) string {
+		var ks []string
+		for k := range m {
+			ks = append(ks, k)
+		}
+		sort.Strings(ks)
+		return strings.Join(ks, ",")
+	}
+
+	full := read(got.Fleets[0].Judge)
+	if string(full.Harness) != `"claude"` || full.LookoutModel != "haiku" || full.StrongModel != "sonnet" || !full.JSONSchema || !full.CallCap {
+		t.Errorf("full judge = %+v, want claude, haiku / sonnet, json_schema and call_cap true", full)
+	}
+	if keys(got.Fleets[0].Judge) != "call_cap,harness,json_schema,lookout_model,strong_model" {
+		t.Errorf("full judge keys = %s", keys(got.Fleets[0].Judge))
+	}
+	basicJ := read(got.Fleets[1].Judge)
+	if string(basicJ.Harness) != `"codex"` || basicJ.LookoutModel != "gpt-6-luna" || basicJ.StrongModel != "gpt-6.1-sol" || basicJ.JSONSchema || basicJ.CallCap {
+		t.Errorf("basic judge = %+v, want codex with its models and both flags false: they are the probed ones", basicJ)
+	}
+
+	off := read(got.Fleets[2].Judge)
+	_, why := judge.Choose(fleets[2], store)
+	var none *judge.NoJudgeHarness
+	if !errors.As(why, &none) {
+		t.Fatalf("Choose = %v, want NoJudgeHarness", why)
+	}
+	if string(off.Harness) != "null" || off.Reason != none.Reason || off.Reason == "" {
+		t.Errorf("none judge = %+v, want harness null and the reason %q", off, none.Reason)
+	}
+	if keys(got.Fleets[2].Judge) != "harness,reason" {
+		t.Errorf("none judge keys = %s, want harness and reason only", keys(got.Fleets[2].Judge))
+	}
+}
+
+func TestCheckAnswersWithTheJudgeHarnessItJustProved(t *testing.T) {
+	home := t.TempDir()
+	proves := func(id capabilities.ID) probes.Probe {
+		return probes.Probe{Harness: "claude", Capability: id,
+			Run: func(context.Context, probes.Target) probes.Outcome {
+				return probes.Outcome{Passed: true, Detail: "fake"}
+			}}
+	}
+	s := service(t, home, fleet("work", "Work", dock("claude", script(t, "2.1.300 (test)"))))
+	s.Runner = probes.New(home, proves(capabilities.JudgeNoTools), proves(capabilities.JudgeNoNetwork))
+
+	rec := do(t, s, "POST", "/api/harness-capabilities/check", `{"fleet":"work","harness":"claude"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST check = %d %s", rec.Code, rec.Body)
+	}
+	j := rawJudge(t, rec.Body.Bytes())
+	if string(j["harness"]) != `"claude"` || string(j["lookout_model"]) != `"haiku"` || string(j["json_schema"]) != "false" {
+		t.Errorf("check answer judge = %v, want claude chosen now the check proved no tools and no network", j)
 	}
 }
