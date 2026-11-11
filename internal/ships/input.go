@@ -278,8 +278,13 @@ func (s *Service) answerKeys(ctx context.Context, t target, session string, req 
 		keys, _ = m.Permission(req.Choice)
 		return keys, ""
 	}
-	// PermissionRequest fires for AskUserQuestion too and overwrites the question's reason.
-	if reason != "question" && reason != "permission:AskUserQuestion" {
+	// PermissionRequest fires for AskUserQuestion too and overwrites the question's reason. Codex rings a bell for a
+	// question, which proves nothing alone: the observer's pending question below is what it asks.
+	asking := reason == "question" || reason == "permission:AskUserQuestion"
+	if t.harness == "codex" {
+		asking = reason == "bell"
+	}
+	if !asking {
 		return "", t.what + " is no longer asking that"
 	}
 	var qs []conversation.Item

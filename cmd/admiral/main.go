@@ -348,6 +348,7 @@ func serve(args []string) error {
 	probeRunner.Refresh(bg, cfg.Current().Fleets)
 	var background sync.WaitGroup
 	supervisor.Start(bg)
+	convService.StartLive(bg)
 	// The ships' run stops first and the log closes next, while the host is
 	// still up, so a written `ended` can still set its marker.
 	shipsCtx, stopShips := context.WithCancel(bg)

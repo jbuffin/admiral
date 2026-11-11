@@ -98,6 +98,18 @@ A Copilot ship launches with `--session-id <uuid>` and records `<copilot home>/s
 
 A Codex ship has no `--session-id` to launch with. Its `SessionStart` hook writes `@admiral-transcript` as `<unix ns> <source> <path>` from the payload's `transcript_path`: the rollout, `<Codex home>/sessions/YYYY/MM/DD/rollout-<timestamp>-<uuid>.jsonl`, where the Codex home is the fleet's `CODEX_HOME`, else Admiral's, else `~/.codex`. A null `transcript_path` records nothing, so the state is `none`. The server takes any source word, since a pane can write the option and nothing binds a Codex ship's path to its launch, and reads the file only if it is a regular file under `<Codex home>/sessions/` with no symlink below it (a symlinked home or `sessions/` is fine). A pane can therefore point the option at another rollout under the same `sessions/`. `SessionStart` fires again on resume, `/new`, fork and compact and records the new path: the server reads the option again about once a second and switches to the new file. A rollout has no pending question. The adapter reads a `compacted` record as a compaction marker, a shape no real rollout has confirmed.
 
+### Live from the app-server (Codex)
+
+A running Codex ship's server (`codex app-server`, see the codebase notes) also tells its conversation, and Admiral keeps one observer per running ship, shared by every view. While the observer is connected it is the only source: `GET` and the WebSocket `conversation` messages carry the server's items, and the rollout is not read. A ship with no rollout yet still has a conversation then.
+
+The observer connects to the pane's `@admiral-codex-socket` only when the pane's start command names the same `--socket`, and only if the socket resolves (symlinks followed) to a socket of this user in `/tmp/codex-daemon-<uid>`. It sends `initialize` (with `experimentalApi`), `initialized`, `thread/loaded/list` and `thread/resume {threadId}`, nothing else, and never answers a request of the server: the TUI answers, and the observer would be deciding for the engineer. Frames are read with no timeout; a connect or a handshake that takes longer than the bound fails.
+
+The thread is the one whose id is in the `@admiral-transcript` rollout's file name when the server has it loaded, else the only one loaded, else the most recently updated of those loaded. The history on attach is the `thread/resume` answer. Items: a user message, a finished agent message, a command as `Bash` with the full command in `input`, a file change as `apply_patch` with its paths one per line in `input`, a compaction, and a turn end. Reasoning and hooks are not shown.
+
+A view that opens while the observer is connected gets no `reset`. When the connection drops, each open view gets `reset: true` with the rollout's items (when the ship has one), and when the observer reconnects, `reset: true` with the server's history. The observer retries with a growing pause. A pane whose option and start command disagree is never dialled and its conversation is the rollout's.
+
+A pending question is a `question` item whose `id` is `<item id>#<index>`. Only a request with one question, with options and not secret, is answerable from the card; Codex rings the bell for it, so the pane's reason is `bell` and the answer route takes `{"card":"question","reason":"bell",...}` only while the observer holds a pending question whose id is the request's `item`. Any other state is a 409.
+
 ### `GET /api/v1/ships/<ship>/conversation[?before=<id>]`
 
 ```json

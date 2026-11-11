@@ -195,6 +195,9 @@ func hasNoDaemon(exe string) bool {
 // keep off the real one.
 var daemonDir = func(uid int) string { return fmt.Sprintf("/tmp/codex-daemon-%d", uid) }
 
+// DaemonDir is the directory Codex keeps its sockets in for this user.
+func DaemonDir() string { return daemonDir(os.Getuid()) }
+
 // removeSocket deletes the listen path. Codex makes it a symlink to a socket in its own
 // private directory (/private/tmp/codex-daemon-<uid>/<hash> on macOS, next to a <hash>.lock),
 // which an unclean exit leaves behind. Those go only when the target's directory is the daemon

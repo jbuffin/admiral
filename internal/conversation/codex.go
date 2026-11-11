@@ -158,7 +158,7 @@ func codexOutput(raw json.RawMessage) string {
 
 var (
 	innerCall   = regexp.MustCompile(`tools\.(\w+)\(`)
-	innerCmd    = regexp.MustCompile(`\bcmd:\s*("(?:[^"\\]|\\.)*")`)
+	innerCmd    = regexp.MustCompile(`^cmd:\s*("(?:[^"\\]|\\.)*")`)
 	patchedFile = regexp.MustCompile(`\*\*\* (Add|Update|Delete) File: ([^\n\\]+)`)
 )
 
@@ -177,11 +177,8 @@ func describeCodexCall(name, input string) (tool, summary, approves string) {
 			return tool, firstLine(input), ""
 		}
 		input = callArgument(input[calls[0][1]:])
-		if m := innerCmd.FindStringSubmatch(input); m != nil {
-			var cmd string
-			if json.Unmarshal([]byte(m[1]), &cmd) == nil {
-				return tool, firstLine(cmd), cmd
-			}
+		if cmd, ok := commandOutsideStrings(input); ok {
+			return tool, firstLine(cmd), cmd
 		}
 	}
 	var args struct {
@@ -213,6 +210,32 @@ func describeCodexCall(name, input string) (tool, summary, approves string) {
 		return tool, strings.TrimSpace(files[0][1]) + " " + strings.Join(paths, ", "), strings.Join(paths, "\n")
 	}
 	return tool, firstLine(input), ""
+}
+
+// commandOutsideStrings finds `cmd: "…"` in a call's argument where it is code, not inside a string literal:
+// a patch's text can quote one, and the patch approves its files.
+func commandOutsideStrings(s string) (string, bool) {
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; c {
+		case '"', '\'', '`':
+			for i++; i < len(s) && s[i] != c; i++ {
+				if s[i] == '\\' {
+					i++
+				}
+			}
+		case 'c':
+			if i > 0 && (s[i-1] == '_' || s[i-1] >= '0' && s[i-1] <= '9' || s[i-1] >= 'a' && s[i-1] <= 'z' || s[i-1] >= 'A' && s[i-1] <= 'Z') {
+				continue
+			}
+			if m := innerCmd.FindStringSubmatch(s[i:]); m != nil {
+				var cmd string
+				if json.Unmarshal([]byte(m[1]), &cmd) == nil {
+					return cmd, true
+				}
+			}
+		}
+	}
+	return "", false
 }
 
 // callArgument is the text up to the parenthesis that closes a call whose "(" was just read, skipping JS string
