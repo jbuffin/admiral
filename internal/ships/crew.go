@@ -22,8 +22,11 @@ type CrewBoat struct {
 	Dir          string `json:"dir"`
 	Status       string `json:"status"`
 	Reason       string `json:"reason,omitempty"`
+	Role         string `json:"role,omitempty"`
 	Launched     string `json:"launched"`
 	LastActivity string `json:"last_activity,omitempty"`
+	// Conversation: a Claude boat with a recorded transcript. The path itself stays off the API.
+	Conversation bool `json:"conversation"`
 	// ExitCode and ExitSignal are set only on an anchored boat (a signal wins).
 	ExitCode   *int    `json:"exit_code,omitempty"`
 	ExitSignal *string `json:"exit_signal,omitempty"`
@@ -33,7 +36,8 @@ type CrewBoat struct {
 func crewBoats(l []sessionhost.Crew) []CrewBoat {
 	out := make([]CrewBoat, 0, len(l))
 	for _, c := range l {
-		b := CrewBoat{Name: c.Name, Harness: c.Harness, Dir: c.Dir, Status: c.State, Reason: c.Reason, Launched: c.Launched}
+		b := CrewBoat{Name: c.Name, Harness: c.Harness, Dir: c.Dir, Status: c.State, Reason: c.Reason, Role: c.Role, Launched: c.Launched,
+			Conversation: c.Harness == "claude" && c.Transcript != ""}
 		b.ExitCode, b.ExitSignal = CrewExit(c)
 		if !c.LastActivity.IsZero() {
 			b.LastActivity = c.LastActivity.UTC().Format(time.RFC3339)

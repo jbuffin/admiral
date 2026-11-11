@@ -36,6 +36,7 @@ import (
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/shipconv"
+	"github.com/jbuffin/admiral/internal/shipdiff"
 	"github.com/jbuffin/admiral/internal/ships"
 	"github.com/jbuffin/admiral/internal/sources"
 	"github.com/jbuffin/admiral/internal/state"
@@ -315,9 +316,9 @@ func serve(args []string) error {
 	shipService.Tail = tails.Tail
 	s := &server.Server{Version: version, Commit: commit, UI: web.UI(), Messages: convService.Messages(), Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService,
-			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: campaignService}, campaignService, bridgeService, resourceService, lockRoute, chatService, convService,
+			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: campaignService}, campaignService, bridgeService, resourceService, lockRoute, chatService, convService, &shipdiff.Service{Ships: shipService},
 			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}},
-		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat", "conversation", "campaigns", "ship-input"}}
+		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat", "conversation", "campaigns", "ship-input", "changes"}}
 	bg, stopBackground := context.WithCancel(context.Background())
 	// In the background: a harness that hangs on --version must not delay the server.
 	probeRunner.Refresh(bg, cfg.Current().Fleets)
