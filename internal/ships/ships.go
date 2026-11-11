@@ -56,6 +56,8 @@ type Ship struct {
 	Stale    bool   `json:"stale,omitempty"`
 	// NoResume is true on a moored ship whose record has no valid resume text, which cannot be woken.
 	NoResume bool `json:"no_resume,omitempty"`
+	// Waiting is why a moored ship's feedback round has not started, while one is due.
+	Waiting string `json:"waiting,omitempty"`
 	// Reason and StopSince are set only while the ship needs you; Reason is `idle`
 	// for a ship no hook has spoken for.
 	Reason    string `json:"reason,omitempty"`

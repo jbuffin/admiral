@@ -113,7 +113,7 @@ type Decision struct {
 }
 
 // WakeDebounce is how long the newest waking event must have waited before a ship wakes.
-const WakeDebounce = 10 * time.Minute
+var WakeDebounce = 10 * time.Minute
 
 type tier int
 

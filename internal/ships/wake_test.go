@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
@@ -42,7 +43,7 @@ func TestAServiceWakeOfAnUnknownShipIs404(t *testing.T) {
 	if _, lerr := f.s.Wake(context.Background(), "no-such-ship", ""); lerr == nil || lerr.Status != http.StatusNotFound {
 		t.Errorf("Wake of an unknown ship = %v, want a 404", lerr)
 	}
-	if _, lerr := f.s.FeedbackRound(context.Background(), "no-such-ship", "https://github.com/acme/widgets/pull/7", "text"); lerr == nil || lerr.Status != http.StatusNotFound {
+	if _, lerr := f.s.FeedbackRound(context.Background(), "no-such-ship", "https://github.com/acme/widgets/pull/7", "text", moor.WakeState{}); lerr == nil || lerr.Status != http.StatusNotFound {
 		t.Errorf("FeedbackRound of an unknown ship = %v, want a 404", lerr)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -100,4 +101,62 @@ func TestWakingAMooredShipByHandRelaunchesItUnderTheSameName(t *testing.T) {
 	if e := lastOf(w.waitEvent(ship.Session, "woken", 2), "woken"); e["round"] != float64(2) {
 		t.Errorf("second woken event = %v, want round 2", e)
 	}
+}
+
+func TestAReviewWakesAMooredShipOnItsOwnOnceAndOnlyOnce(t *testing.T) {
+	t.Parallel()
+	w, g := mooring(t, "exit 0")
+	g.prState(mooredPR, "OPEN")
+	w.seedGuard("f", "claude", true)
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(w.readFile(configPath(w.home))), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	cfg["fleets"].(map[string]any)["f"].(map[string]any)["wake_reviewers"] = []string{"reviewer-1"}
+	b, _ := json.Marshal(cfg)
+	writeConfig(t, w.home, string(b))
+	w.extra = append(w.extra, "ADMIRAL_WAKE_DEBOUNCE=1s", "ADMIRAL_MOOR_POLL=1s")
+	w.start()
+
+	ship := w.launch(w.order("f", "claude", "widgets", commodore, "do it"))
+	w.exitWith(ship, wakeReport())
+	list := w.in.waitShipsList(t, 20*time.Second, "the ship moored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "moored" })
+	mooredAt, err := time.Parse(time.RFC3339, byName(list)[ship.Name].MooredAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The fake harness reuses its recording directory for a session name, so the last start's files would be read as the relaunch's.
+	if err := os.RemoveAll(filepath.Join(w.rec, ship.Session)); err != nil {
+		t.Fatal(err)
+	}
+	g.prEvents(mooredPR, "reviewer-1", "please rename the helper", mooredAt.Add(time.Second))
+
+	log := w.waitEvent(ship.Session, "woken", 1)
+	if e := lastOf(log, "woken"); e["by"] != "feedback" || e["round"] != float64(1) {
+		t.Errorf("woken event = %v, want by feedback, round 1", e)
+	}
+	w.in.waitShipsList(t, 20*time.Second, "the ship underway under its own name", func(l []shipJSON) bool {
+		s := byName(l)[ship.Name]
+		return s.Session == ship.Session && s.Status != "moored"
+	})
+	r := w.record(ship.Session)
+	if got := r.argv[len(r.argv)-1]; got != "/commodore resume run-7 feedback round 1 on "+mooredPR {
+		t.Errorf("prompt = %q, want the resume text and feedback round 1 on the PR", got)
+	}
+	if got := w.readFile(filepath.Join(w.work, "widgets", ".admiral", "untrusted", "feedback-1.md")); !strings.Contains(got, "please rename the helper") {
+		t.Errorf("feedback-1.md = %q, want the review's body", got)
+	}
+
+	w.exitWith(byName(w.in.ships(t))[ship.Name], wakeReport())
+	w.in.waitShipsList(t, 20*time.Second, "the ship moored again", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "moored" })
+	w.kickMoored()
+	holdThat(t, "the ship woke again on the review its first round took", func() bool {
+		n := 0
+		for _, m := range w.shipLog(ship.Session) {
+			if m["event"] == "woken" {
+				n++
+			}
+		}
+		return n == 1 && byName(w.in.ships(t))[ship.Name].Status == "moored"
+	})
 }

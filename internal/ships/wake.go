@@ -31,7 +31,7 @@ func (s *Service) Wake(ctx context.Context, session, text string) (Ship, *launch
 
 // FeedbackRound relaunches a moored ship, unattended, for the feedback on one of its PRs. The text reaches
 // the ship only as a file in its checkout; at the cap or on a harness with no guard it is refused.
-func (s *Service) FeedbackRound(ctx context.Context, session, pr, feedback string) (Ship, *launcher.Error) {
+func (s *Service) FeedbackRound(ctx context.Context, session, pr, feedback string, next moor.WakeState) (Ship, *launcher.Error) {
 	prompt := func(rec moor.Record) string {
 		return rec.Resume + " feedback round " + strconv.Itoa(rec.Round+1) + " on " + pr
 	}
