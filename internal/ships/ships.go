@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/jbuffin/admiral/internal/conversation"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -78,8 +79,10 @@ type Service struct {
 	// OnChange must not block.
 	OnChange func()
 	// Tail gives a ship's conversation tail from a cache; it must not block.
-	Tail     func(session string) string
-	Outcomes *outcomes.Writer
+	Tail func(session string) string
+	// Questions gives the pending questions of a ship's conversation, or of a crew boat's when crew is set, oldest first.
+	Questions func(session, crew string) []conversation.Item
+	Outcomes  *outcomes.Writer
 	// Reserve takes a unit of each named resource, or none: it returns the
 	// release, or why the first is not ready (busy, missing or pending). Nil
 	// when there are no resources to hold.
@@ -226,6 +229,8 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/close", s.serveCrewClose)
 	mux.HandleFunc("POST /api/ships/{session}/messages", s.serveSendInput)
 	mux.HandleFunc("POST /api/ships/{session}/interrupt", s.serveInterrupt)
+	mux.HandleFunc("POST /api/ships/{session}/answer", s.serveAnswer)
+	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/answer", s.serveAnswer)
 	mux.HandleFunc("POST /api/ships/{session}/stop", s.serveStop)
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/messages", s.serveSendInput)
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/interrupt", s.serveInterrupt)

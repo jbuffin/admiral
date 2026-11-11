@@ -60,8 +60,10 @@ type ToolCall struct {
 type Question struct {
 	Text    string   `json:"text"`
 	Options []Option `json:"options,omitempty"`
-	Answer  string   `json:"answer,omitempty"`
-	Pending bool     `json:"pending"`
+	// MultiSelect questions take several answers; only the terminal answers those.
+	MultiSelect bool   `json:"multiSelect,omitempty"`
+	Answer      string `json:"answer,omitempty"`
+	Pending     bool   `json:"pending"`
 }
 
 type Option struct {

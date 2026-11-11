@@ -585,3 +585,27 @@ func (s *Service) alive(w *watch) bool {
 	boat, _, ok := s.crewOf(sh, w.crew)
 	return ok && boat.Launched == w.loc.boatLaunched
 }
+
+// PendingQuestions gives the pending questions of a ship's conversation, or of a crew boat's, oldest first.
+func (s *Service) PendingQuestions(session, crew string) []conversation.Item {
+	loc, ok, none := s.locateBoat(session, crew)
+	if !ok || none {
+		return nil
+	}
+	f, info, _, err := loc.open(true)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	items, _, err := conversation.Page(f, info, conversation.Options{}, "", pageSize)
+	if err != nil {
+		return nil
+	}
+	var out []conversation.Item
+	for _, it := range items {
+		if it.Kind == conversation.KindQuestion && it.Question != nil && it.Question.Pending {
+			out = append(out, it)
+		}
+	}
+	return out
+}
