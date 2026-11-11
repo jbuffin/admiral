@@ -120,6 +120,9 @@ func (s *Service) serveStop(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "ship "+session+" not found")
 		return
 	}
+	s.mu.Lock()
+	tr := s.tracks[session]
+	s.mu.Unlock()
 	switch status(sess, time.Now()) {
 	case StatusAnchored, StatusSailingOff:
 		s.observe(ctx) // the ship's `ended` goes into the log before `stopped`
@@ -133,6 +136,13 @@ func (s *Service) serveStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.Host.Sync(ctx)
+	// killShip ran while the host still listed the ship as live, so it left the files for now.
+	s.mu.Lock()
+	written := tr != nil && tr.end != nil && tr.end.written
+	s.mu.Unlock()
+	if written {
+		s.removeShipFiles(session, tr)
+	}
 	s.keep()
 	s.broadcast()
 	writeJSON(w, http.StatusOK, map[string]any{"stopped": session})
