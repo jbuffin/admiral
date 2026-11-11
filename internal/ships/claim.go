@@ -185,6 +185,23 @@ func splitIssues(s string) []string {
 	return strings.Split(s, ",")
 }
 
+// distinctIssues drops a repeated issue, whatever its spelling, keeping the first.
+func distinctIssues(urls []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, u := range urls {
+		k := claimKeyOf(u)
+		if k == "" {
+			k = u
+		}
+		if !seen[k] {
+			seen[k] = true
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
 // lockIssues takes every issue's in-flight claim or none, and ok is false with the holder when one is taken.
 func (s *Service) lockIssues(urls []string, holder string) (heldBy string, ok bool) {
 	for i, u := range urls {

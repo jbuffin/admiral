@@ -464,6 +464,12 @@ func (s *Service) admit(req launcher.Request) (release func(), lerr *launcher.Er
 func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	var panel string
 	key := OrderKey{req.Source, req.OrderID}
+	if len(req.Issues) > 0 {
+		if req.Source == "" { // the pending listing is keyed by the order, so a launch with no order would hold nothing
+			return Ship{}, &launcher.Error{Status: http.StatusBadRequest, Msg: "a launch of several issues needs its source"}
+		}
+		req.Issues = distinctIssues(req.Issues)
+	}
 	if req.Source != "" {
 		if !s.Host.Known() {
 			return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: NotKnownMsg}
@@ -486,7 +492,7 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	if len(req.Issues) > 0 {
 		req.URL = req.Issues[0]
 	}
-	if req.Source != "" || len(req.Issues) > 0 {
+	if req.Source != "" {
 		issues := req.Issues
 		if len(issues) == 0 {
 			issues = []string{req.URL}
@@ -692,11 +698,15 @@ func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 // No other record of a ship comes before `launched`.
 func (s *Service) launched(req launcher.Request, got *launcher.Launched, panel string) {
 	o := got.Options
-	s.record(outcomes.Record{Ship: got.Session, Event: "launched", Fields: map[string]any{
+	fields := map[string]any{
 		"fleet": o["fleet"], "harness": req.Harness, "skill": map[string]string{"kind": req.Skill.Kind, "name": o["skill"]},
-		"source": req.Source, "panel": panel, "order_id": req.OrderID, "order_url": o["url"], "order_urls": req.Issues, "title": o["title"],
+		"source": req.Source, "panel": panel, "order_id": req.OrderID, "order_url": o["url"], "title": o["title"],
 		"dir": o["dir"], "autopilot": req.Autopilot,
-	}}, nil)
+	}
+	if len(req.Issues) > 0 {
+		fields["order_urls"] = req.Issues
+	}
+	s.record(outcomes.Record{Ship: got.Session, Event: "launched", Fields: fields}, nil)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.tracks == nil {
