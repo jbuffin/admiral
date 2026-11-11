@@ -28,7 +28,7 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
 
   // The same groups and rows as the wide shell, inside the screen's width.
   const main = page.getByRole('main');
-  await expect(main.getByRole('heading', { level: 2 })).toHaveText([/^Needs you\s*1$/, /^Underway\s*1$/, /^Anchored\s*1$/]);
+  await expect(main.locator('.ship-group').getByRole('heading', { level: 2 })).toHaveText([/^Needs you\s*1$/, /^Underway\s*1$/, /^Anchored\s*1$/]);
   const row = (ship: { name: string }) => main.getByRole('listitem').filter({ hasText: ship.name });
   await expect(row(login)).toContainText('Fix the login redirect');
   await expect(row(login)).toContainText('Which branch should I rebase onto?');

@@ -61,8 +61,9 @@ describe('launchBody', () => {
     expect(launchBody({ ...form, source: 'orders', orderId: 'o1' })).toMatchObject({ source: 'orders', order_id: 'o1' });
   });
   it('sends clone: true and no dir when the clone is chosen', () => {
-    const body = launchBody({ ...form, clone: true });
+    const body = launchBody({ ...form, clone: true, cloneRepo: 'github.com/acme/widget' });
     expect(body.clone).toBe(true);
+    expect(body.clone_repo).toBe('github.com/acme/widget');
     expect(body).not.toHaveProperty('dir');
   });
   it('sends no clone when a checkout is chosen', () => {

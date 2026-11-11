@@ -227,7 +227,11 @@ type Post = Record<string, unknown>;
 export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Locator) => Promise<void>, opts: { phone: boolean }) {
   const main = page.getByRole('main');
   const form = page.getByRole('dialog', { name: 'Launch', exact: true });
-  const fits = () => page.evaluate(() => [document.documentElement, document.querySelector('main')!].every((e) => e.scrollWidth <= e.clientWidth));
+  // The form is fixed, so only its own boxes show an overflow: the dialog and the body that scrolls inside it.
+  const fits = () =>
+    page.evaluate(() =>
+      [document.documentElement, document.querySelector('main')!, document.querySelector('[role="dialog"].launch-form'), document.querySelector('.launch-body')].every((e) => !e || e.scrollWidth <= e.clientWidth),
+    );
   const orderLaunch = (title: string) => main.getByRole('button', { name: new RegExp(`^Launch.*${title}`) });
   const submit = form.getByRole('button', { name: 'Launch', exact: true });
   /** Submits the form and answers what the server received and said. */
@@ -315,13 +319,16 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await cancel();
 
   // An uncloned repo: the form says where it will clone before launch, and launching sends clone with no dir.
+  const dirsAnswer = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/v1/launch-orders/dirs');
   await press(orderLaunch('Ship the widget fix'));
+  const shown = ((await (await dirsAnswer).json()) as { clone: { repo: string } }).clone.repo;
   const widget = join(a.home, 'widget');
   await expect(form).toContainText(/Clone .*acme\/widget.* into /);
   await expect(form).toContainText(widget);
   if (opts.phone) expect(await fits()).toBe(true);
   const cloned = await send();
-  expect(cloned.body).toMatchObject({ fleet: 'zulu', source: 'orders', order_id: 'ord-widget', clone: true });
+  expect(cloned.body).toMatchObject({ fleet: 'zulu', source: 'orders', order_id: 'ord-widget', clone: true, clone_repo: shown });
+  expect(shown).toBe('github.com/acme/widget');
   expect(cloned.body).not.toHaveProperty('dir');
   const widgetShip = await launched(cloned);
   await expect(main.getByRole('listitem').filter({ hasText: widgetShip.name })).toBeVisible();

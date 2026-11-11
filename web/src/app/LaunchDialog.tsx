@@ -43,6 +43,9 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const dirsError = useRef('');
+  const skillNow = useRef(skill);
+  skillNow.current = skill;
 
   // The preselection: an order's repo, else a URL in the text, else the dock's last directory; a freeform text is asked again as it changes.
   useEffect(() => {
@@ -51,7 +54,13 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
       async () => {
         const r = await call<DirsAnswer>('POST', '/launch-orders/dirs', order ? { fleet: fleet.key, harness, source: order.source, order_id: order.id } : { fleet: fleet.key, harness, text });
         if (!live) return;
-        if (!r.ok) return setError(r.error);
+        if (!r.ok) {
+          dirsError.current = r.error;
+          return setError(r.error);
+        }
+        const stale = dirsError.current;
+        dirsError.current = '';
+        setError((cur) => (cur === stale ? '' : cur));
         setDirs(r.data);
         if (picked.current) return;
         const clone = r.data.clone;
@@ -74,7 +83,13 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
     void call<SkillsAnswer>('GET', `/launch-orders/skills?${q}`).then((r) => {
       if (!live || !r.ok) return;
       setSkills(r.data);
-      if (!skillPicked.current) setSkill(toValue(defaultSkill(r.data)));
+      // A pick this dock doesn't offer falls back to the default, so the select shows what is sent.
+      const cur = skillNow.current;
+      const offered = cur === 'commodore' ? r.data.commodore.found : !cur.startsWith('skill:') || r.data.skills.some((s) => s.favorite && `skill:${s.name}` === cur);
+      if (!skillPicked.current || !offered) {
+        skillPicked.current = false;
+        setSkill(toValue(defaultSkill(r.data)));
+      }
     });
     return () => {
       live = false;
@@ -97,6 +112,23 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
     if (skill === 'commodore' || skill === 'none') return { kind: skill };
     if (skill === 'custom') return /\s/.test(custom) ? 'Skill names have no spaces.' : bareSkillName(custom) ? { kind: 'skill', name: custom } : 'Type a skill name, or pick another.';
     return { kind: 'skill', name: skill.slice(6) };
+  };
+
+  const keys = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') return onClose();
+    if (e.key !== 'Tab' || !box.current) return;
+    const items = [...box.current.querySelectorAll<HTMLElement>('button, input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((i) => !(i as HTMLButtonElement).disabled && i.offsetParent !== null);
+    if (items.length === 0) return;
+    const first = items[0]!;
+    const last = items[items.length - 1]!;
+    const at = document.activeElement;
+    if (e.shiftKey && (at === first || at === box.current)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && at === last) {
+      e.preventDefault();
+      first.focus();
+    }
   };
 
   const submit = async (e: Event) => {
@@ -127,7 +159,7 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
 
   return (
     <div class="backdrop launch-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={box} class="sheet launch-form" role="dialog" aria-modal="true" aria-label="Launch" tabIndex={-1} onKeyDown={(e) => e.key === 'Escape' && onClose()}>
+      <div ref={box} class="sheet launch-form" role="dialog" aria-modal="true" aria-label="Launch" tabIndex={-1} onKeyDown={keys}>
       <form class="launch-inner" onSubmit={submit}>
         <h2 class="sheet-title">Launch</h2>
         {order ? <p class="launch-order">{order.title}</p> : null}

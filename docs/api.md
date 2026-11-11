@@ -28,10 +28,9 @@ Launches a ship. Body: `fleet`, `harness`, `skill` (`{"kind": "commodore" | "ski
 
 Answers `201 {"ship": ...}`, or `{"error": "..."}` with:
 
-- `400`: a `model` or `effort` the harness does not offer (the message names which), `dir` and `clone` were both sent ("send dir or clone, not both"), no repo can be derived, or the repo is not one gh can clone (a host that is not GitHub, a name that starts with `-`, a dot name);
-- `409`: the repo already has a checkout in the fleet, a search root that is itself a checkout included (the message names it: launch there with `dir`), a folder already exists at the target, which is never touched, or `clone_repo` is set and differs from the repo the server derives ("the order's repo changed to X; reopen the form");
+- `400`: a `model` or `effort` the harness does not offer (the message names which), `autopilot` on a dock whose harness `admiral guard` does not cover (only Claude today), a `resources` name the config does not define, `dir` and `clone` were both sent ("send dir or clone, not both"), no repo can be derived, or the repo is not one gh can clone (a host that is not GitHub, a name that starts with `-`, a dot name);
+- `409`: a resource in `resources` is held by another ship (`resource "db" is ...`), `autopilot` when the underway and needs-you ships are already at `max_ships` (`autopilot is at its cap of N ships`), the repo already has a checkout in the fleet, a search root that is itself a checkout included (the message names it: launch there with `dir`), a folder already exists at the target, which is never touched, or `clone_repo` is set and differs from the repo the server derives ("the order's repo changed to X; reopen the form");
 - `502`: gh failed, the message holds its stderr on one line with the credentials of any URL in it replaced by `***`, and nothing is left behind;
-- the other launch refusals as before.
 
 ## A ship's conversation
 

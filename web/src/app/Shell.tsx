@@ -13,7 +13,7 @@ import { ships, shipsLoaded, sources } from './shipsLink';
 import { StatusGlyph } from './StatusGlyph';
 import type { Ship } from './api';
 import { go, loc, surfaceOf, surfacePath } from './router';
-import { MORE, PHONE_TABS, SURFACES, surfaceById, type Surface } from './surfaces';
+import { emptyLine, MORE, PHONE_TABS, SURFACES, surfaceById, type Surface } from './surfaces';
 
 const PHONE_QUERY = '(max-width: 640px)';
 
@@ -48,18 +48,19 @@ function Link({ surface, class: cls, onNavigate, children }: { surface: Surface;
   );
 }
 
-function EmptyState({ surface, title }: { surface: Surface; title: boolean }) {
+function EmptyState({ surface, title, children }: { surface: Surface; title: boolean; children?: ComponentChildren }) {
   const fleet = activeFleet.value;
   return (
     <main class="panel">
       {title ? <h1>{surface.title}</h1> : null}
-      <p class="line">{surface.scoped && loaded.value && !fleet ? `Set up a fleet and its ${surface.title.toLowerCase()} will appear here.` : surface.line}</p>
+      <p class="line">{emptyLine(surface, loaded.value, !!fleet)}</p>
       {surface.scoped && fleet ? (
         <p class="fleet-label">
           <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
           {fleet.name}
         </p>
       ) : null}
+      {children}
     </main>
   );
 }
@@ -102,14 +103,14 @@ function OrdersList({ fleetKey, onLaunch }: { fleetKey: string; onLaunch: (o: Or
   if (views.length === 0) return null;
   return (
     <section class="orders" aria-labelledby="orders-head">
-      <h3 id="orders-head" class="group-head">
+      <h2 id="orders-head" class="group-head">
         Orders
-      </h3>
+      </h2>
       {views.map(({ src, v }) => (
         <div key={`${src.key}/${v.id}`} class="order-view">
-          <h4 class="order-view-head">
+          <h3 class="order-view-head">
             {v.title} <span class="count">{src.name}</span>
-          </h4>
+          </h3>
           <ul class="ship-list">
             {v.orders.map((o) => (
               <li key={o.id} class="order-row">
@@ -142,18 +143,10 @@ function ShipsPanel({ surface, title }: { surface: Surface; title: boolean }) {
   if (shipsLoaded.value && groups.length === 0) {
     return (
       <>
-        <main class="panel">
-          {title ? <h1>{surface.title}</h1> : null}
-          <p class="line">{surface.line}</p>
-          {fleet ? (
-            <p class="fleet-label">
-              <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
-              {fleet.name}
-            </p>
-          ) : null}
+        <EmptyState surface={surface} title={title}>
           {launch}
           {orders}
-        </main>
+        </EmptyState>
         {form}
       </>
     );
