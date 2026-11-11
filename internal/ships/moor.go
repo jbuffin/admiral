@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/github"
@@ -41,8 +43,8 @@ func (s *Service) settle(ctx context.Context, sess sessionhost.Session) {
 		if ctx.Err() != nil { // Admiral is stopping: the next start checks again
 			return
 		}
-		if len(prs) > 0 {
-			s.moor(ctx, sess, prs)
+		if len(prs) == 0 || !s.moor(ctx, sess, prs) {
+			s.endRound(sess, "sailed")
 		}
 		if err := s.killShip(ctx, sess.Name, true); err == nil {
 			_ = s.Host.Sync(ctx)
@@ -67,30 +69,49 @@ func (s *Service) countedPRs(ctx context.Context, sess sessionhost.Session) []st
 }
 
 // moor writes the record before the session goes, so a crash between leaves the ship in one place or both.
-func (s *Service) moor(ctx context.Context, sess sessionhost.Session, prs []string) {
+// It reports whether the ship has a record.
+func (s *Service) moor(ctx context.Context, sess sessionhost.Session, prs []string) bool {
 	name, o := sess.Name, sess.Options
 	s.mooredMu.Lock()
 	s.loadMoored()
 	for _, r := range s.moored {
 		if r.Session == name { // a kill that failed is retried: the first record and time stand
 			s.mooredMu.Unlock()
-			return
+			return true
 		}
 	}
 	s.mooredMu.Unlock()
 	if s.CaptureResume != nil {
 		s.CaptureResume(name) // before the report goes
 	}
+	round, _ := strconv.Atoi(o["round"])
 	rec := moor.Record{Name: o["name"], Session: name, Fleet: o["fleet"], Harness: o["harness"], Model: o["model"],
 		Skill: moor.Skill{Kind: o["skill-kind"], Name: o["skill"]}, Checkout: o["dir"], PRs: prs,
 		Source: o["source"], Panel: o["panel"], OrderID: o["order"], URL: o["url"], Issues: splitIssues(o["issues"]), Title: o["title"],
-		Resume: s.report(name).Resume, MooredAt: time.Now().UTC().Truncate(time.Second)}
+		Resume: s.report(name).Resume, Round: round, Resources: splitResources(o["resources"]), MooredAt: time.Now().UTC().Truncate(time.Second)}
 	if err := moor.Write(s.Launcher.Home, rec); err != nil {
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: its moored record cannot be written, so it sails off: %v\n", name, err)
-		return
+		return false
 	}
 	s.setMoored(rec)
 	s.record(outcomes.Record{Ship: name, Event: "moored", Fields: map[string]any{"prs": prs}}, nil)
+	s.endRound(sess, "moored")
+	return true
+}
+
+func splitResources(v string) []string {
+	if v == "" {
+		return nil
+	}
+	return strings.Split(v, ",")
+}
+
+// endRound logs how a woken ship's round ended; a ship that was never woken has no round.
+func (s *Service) endRound(sess sessionhost.Session, end string) {
+	round, _ := strconv.Atoi(sess.Options["round"])
+	if round > 0 {
+		s.record(outcomes.Record{Ship: sess.Name, Event: "round", Fields: map[string]any{"round": round, "end": end}}, nil)
+	}
 }
 
 func (s *Service) setMoored(rec moor.Record) {
