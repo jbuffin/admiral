@@ -27,6 +27,24 @@ describe('boxState', () => {
   });
 });
 
+describe('boxState on a moored ship', () => {
+  const moored = (extra: { no_resume?: boolean } = {}) => ({ status: 'moored' as const, exit_code: null, exit_signal: null, ...extra });
+
+  it('takes a message, and says that sending it wakes the ship', () => {
+    expect(boxState(moored())).toEqual({ enabled: true, placeholder: 'Wake the ship with this message' });
+  });
+
+  it('is off with the reason when the ship has no valid resume text', () => {
+    const state = boxState(moored({ no_resume: true }));
+    expect(state.enabled).toBe(false);
+    expect(state.note).toMatch(/resume/i);
+  });
+
+  it('still takes a message from a ship whose poll failed, since waking needs no GitHub', () => {
+    expect(boxState({ ...moored(), stale: true } as Parameters<typeof boxState>[0]).enabled).toBe(true);
+  });
+});
+
 describe('bubblesShowing', () => {
   const send = (id: number, items: Item[] | null, answered = false) => ({ id, text: `m${id}`, snapshot: items && snapshotOf(items), answered });
   const ids = (sends: ReturnType<typeof send>[]) => sends.map((s) => s.id);
