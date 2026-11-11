@@ -68,7 +68,13 @@ type Node struct {
 	Ship       string           // the ship holding the claim, for an underway child
 	Mode       Mode
 	Skill      Skill
-	Children   []*Node
+	Labels     []string
+	// Overridden is set for a child whose campaign override applies; DefaultMode and DefaultSkill are what
+	// ADR 0027's table gives it without one.
+	Overridden   bool
+	DefaultMode  Mode
+	DefaultSkill Skill
+	Children     []*Node
 }
 
 // Progress counts closed children of all launchable children.
@@ -100,7 +106,7 @@ type builder struct {
 
 // fold builds the node for n. above holds the open blockers of its open ancestors, parent is its nearest parent.
 func (b *builder) fold(n *github.TreeNode, above []github.Blocker, parent *github.TreeNode, root bool) *Node {
-	out := &Node{Number: n.Number, Title: n.Title, URL: n.URL, Repo: n.Repo, Closed: n.Closed}
+	out := &Node{Number: n.Number, Title: n.Title, URL: n.URL, Repo: n.Repo, Closed: n.Closed, Labels: append([]string{}, n.Labels...)}
 	if root || n.Parent || len(n.Children) > 0 {
 		out.Parent, out.Unreadable = true, n.Unreadable
 		below := above
@@ -131,6 +137,7 @@ func (b *builder) fold(n *github.TreeNode, above []github.Blocker, parent *githu
 	}
 	b.c.Counts[out.Status]++
 	out.Mode, out.Skill = defaults(n, parent)
+	out.DefaultMode, out.DefaultSkill = out.Mode, out.Skill
 	if o, ok := b.in.Overrides[n.URL]; ok {
 		if o.Mode != "" {
 			out.Mode = o.Mode
@@ -138,6 +145,7 @@ func (b *builder) fold(n *github.TreeNode, above []github.Blocker, parent *githu
 		if o.Skill != nil {
 			out.Skill = *o.Skill
 		}
+		out.Overridden = o.Mode != "" || o.Skill != nil
 	}
 	if out.Status == Ready {
 		b.c.Ready = append(b.c.Ready, out)

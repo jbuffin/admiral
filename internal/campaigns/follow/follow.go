@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/campaigns"
@@ -60,8 +61,9 @@ type shipSeen struct{ status, key string }
 
 // reader serialises the reads of one campaign.
 type reader struct {
-	mu    sync.Mutex
-	dirty bool // a forced reread asked for while one ran
+	active atomic.Int32 // reads under way, for the view
+	mu     sync.Mutex
+	dirty  bool // a forced reread asked for while one ran
 }
 
 func (s *Service) background() context.Context {
@@ -184,6 +186,9 @@ func (s *Service) read(ctx context.Context, id string) error {
 	if !ok || f.Ended() {
 		return nil
 	}
+	r := s.reader(id)
+	r.active.Add(1)
+	defer r.active.Add(-1)
 	s.mu.Lock()
 	if s.tried == nil {
 		s.tried = map[string]time.Time{}

@@ -292,7 +292,8 @@ type node struct {
 	Ship     string `json:"ship"`
 	Mode     string `json:"mode"`
 	Blockers []struct {
-		URL string `json:"url"`
+		URL    string `json:"url"`
+		Capped bool   `json:"capped"`
 	} `json:"blockers"`
 	Skill struct {
 		Kind string `json:"kind"`
@@ -300,6 +301,14 @@ type node struct {
 		Args string `json:"args"`
 	} `json:"skill"`
 	Children []*node `json:"children"`
+
+	Labels       []string `json:"labels"`
+	Overridden   bool     `json:"overridden"`
+	DefaultMode  string   `json:"default_mode"`
+	DefaultSkill struct {
+		Kind string `json:"kind"`
+		Name string `json:"name"`
+	} `json:"default_skill"`
 }
 
 type campaignJSON struct {
@@ -316,6 +325,16 @@ type campaignJSON struct {
 	} `json:"progress"`
 	Counts map[string]int `json:"counts"`
 	Root   *node          `json:"root"`
+
+	Title           string `json:"title"`
+	Number          int    `json:"number"`
+	Repo            string `json:"repo"`
+	FollowedAt      string `json:"followed_at"`
+	EndedAt         string `json:"ended_at"`
+	ReadyWithYou    int    `json:"ready_with_you"`
+	ReadyWithoutYou int    `json:"ready_without_you"`
+	Reading         bool   `json:"reading"`
+	LastTried       string `json:"last_tried"`
 }
 
 func (n *node) find(num int) *node {

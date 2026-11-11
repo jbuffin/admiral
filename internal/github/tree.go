@@ -16,6 +16,7 @@ type Blocker struct {
 	URL    string
 	Title  string
 	Closed bool
+	Capped bool // the stand-in for the Blocked by lines past maxBodyRefs, not an issue
 }
 
 // TreeNode is one issue of a campaign's tree, with its sub-issues in order.
@@ -33,6 +34,9 @@ type TreeNode struct {
 	Parent     bool // GitHub says it has sub-issues, whether or not they could be read
 	Unreadable int  // sub-issues GitHub counts that the read couldn't return
 }
+
+// cappedBlockerTitle is what the stand-in for the Blocked by lines past the cap says.
+const cappedBlockerTitle = "More Blocked by lines than Admiral reads; check the issue"
 
 // maxTreeDepth is GitHub's limit on sub-issue nesting.
 const maxTreeDepth = 8
@@ -420,7 +424,7 @@ func (r *treeReader) bodyBlockers(n *TreeNode, in map[string]*TreeNode) error {
 				continue
 			}
 			if len(named) == maxBodyRefs {
-				n.BlockedBy = append(n.BlockedBy, Blocker{URL: n.URL, Title: "More Blocked by lines than Admiral reads; check the issue"})
+				n.BlockedBy = append(n.BlockedBy, Blocker{URL: n.URL, Title: cappedBlockerTitle, Capped: true})
 				return nil
 			}
 			named[key] = true

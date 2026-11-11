@@ -32,8 +32,9 @@ type skillView struct {
 }
 
 type blockerView struct {
-	URL   string `json:"url"`
-	Title string `json:"title,omitempty"`
+	URL    string `json:"url"`
+	Title  string `json:"title,omitempty"`
+	Capped bool   `json:"capped,omitempty"` // the stand-in for Blocked by lines past the cap, not an issue
 }
 
 type nodeView struct {
@@ -49,7 +50,12 @@ type nodeView struct {
 	Ship       string        `json:"ship"`
 	Mode       string        `json:"mode"`
 	Skill      skillView     `json:"skill"`
+	Labels     []string      `json:"labels"`
 	Children   []nodeView    `json:"children"`
+
+	Overridden   bool       `json:"overridden,omitempty"`
+	DefaultMode  string     `json:"default_mode,omitempty"`
+	DefaultSkill *skillView `json:"default_skill,omitempty"`
 }
 
 type campaignView struct {
@@ -63,6 +69,16 @@ type campaignView struct {
 	Progress progressView   `json:"progress"`
 	Counts   map[string]int `json:"counts"`
 	Root     *nodeView      `json:"root"`
+
+	Title           string `json:"title"`
+	Number          int    `json:"number"`
+	Repo            string `json:"repo"` // of the root issue, https://host/owner/repo
+	FollowedAt      string `json:"followed_at"`
+	EndedAt         string `json:"ended_at,omitempty"`
+	ReadyWithYou    int    `json:"ready_with_you"`
+	ReadyWithoutYou int    `json:"ready_without_you"`
+	Reading         bool   `json:"reading"`
+	LastTried       string `json:"last_tried,omitempty"`
 }
 
 type progressView struct {
@@ -76,10 +92,17 @@ func toNode(n *campaigns.Node) *nodeView {
 	}
 	out := &nodeView{Number: n.Number, Title: n.Title, URL: n.URL, Repo: n.Repo, Closed: n.Closed, Parent: n.Parent,
 		Unreadable: n.Unreadable, Status: string(n.Status), Ship: n.Ship, Mode: string(n.Mode),
-		Skill:    skillView{n.Skill.Kind, n.Skill.Name, n.Skill.Args},
-		Blockers: []blockerView{}, Children: []nodeView{}}
+		Skill:  skillView{n.Skill.Kind, n.Skill.Name, n.Skill.Args},
+		Labels: append([]string{}, n.Labels...), Blockers: []blockerView{}, Children: []nodeView{}}
+	if n.Overridden {
+		out.Overridden = true
+	}
+	if n.DefaultMode != "" {
+		out.DefaultMode = string(n.DefaultMode)
+		out.DefaultSkill = &skillView{n.DefaultSkill.Kind, n.DefaultSkill.Name, n.DefaultSkill.Args}
+	}
 	for _, b := range n.Blockers {
-		out.Blockers = append(out.Blockers, blockerView{URL: b.URL, Title: b.Title})
+		out.Blockers = append(out.Blockers, blockerView{URL: b.URL, Title: b.Title, Capped: b.Capped})
 	}
 	for _, c := range n.Children {
 		out.Children = append(out.Children, *toNode(c))
@@ -93,6 +116,34 @@ func (s *Service) json(f Followed) campaignView {
 		Progress: progressView{v.Progress.Closed, v.Progress.Total}, Counts: map[string]int{}, Root: toNode(v.Root)}
 	if !f.ReadAt.IsZero() {
 		out.LastRead = f.ReadAt.UTC().Format(time.RFC3339)
+	}
+	if t := s.lastTried(f); !t.IsZero() {
+		out.LastTried = t.UTC().Format(time.RFC3339)
+	}
+	out.Reading = s.reader(f.ID).active.Load() > 0
+	out.FollowedAt = f.FollowedAt.UTC().Format(time.RFC3339)
+	if f.Ended() {
+		out.EndedAt = f.EndedAt.UTC().Format(time.RFC3339)
+	}
+	if v.Root != nil {
+		out.Title, out.Number = v.Root.Title, v.Root.Number
+	}
+	if ref, err := campaigns.ParseIssueRef(f.URL); err == nil {
+		if out.Number == 0 {
+			out.Number = ref.Number
+		}
+		repo := ref.Owner + "/" + ref.Repo
+		if v.Root != nil && v.Root.Repo != "" {
+			repo = v.Root.Repo
+		}
+		out.Repo = "https://" + hostOf(ref) + "/" + repo
+	}
+	for _, n := range v.Ready {
+		if n.Mode == campaigns.WithYou {
+			out.ReadyWithYou++
+		} else {
+			out.ReadyWithoutYou++
+		}
 	}
 	for k, n := range v.Counts {
 		out.Counts[string(k)] = n

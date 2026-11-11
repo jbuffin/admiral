@@ -2,6 +2,7 @@ package follow
 
 import (
 	"encoding/json"
+	"github.com/jbuffin/admiral/internal/github"
 	"net/http"
 	"strings"
 	"testing"
@@ -504,4 +505,113 @@ func TestShutdownIsNotRecordedAsAReadError(t *testing.T) {
 	if got := r.get(c.ID).ReadErr; got != "" {
 		t.Errorf("read error after shutdown = %q, want none", got)
 	}
+}
+
+func (r *rig) list(query string) (raw string, got []campaignJSON) {
+	r.t.Helper()
+	code, body := r.do("GET", "/api/campaigns"+query, nil)
+	var out struct {
+		Campaigns []campaignJSON `json:"campaigns"`
+	}
+	if code != http.StatusOK || json.Unmarshal(body, &out) != nil {
+		r.t.Fatalf("GET /api/campaigns = %d %s", code, body)
+	}
+	return string(body), out.Campaigns
+}
+
+func TestTheListNamesEachCampaignWithoutItsTree(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	c := r.follow(rootURL)
+	r.do("POST", "/api/campaigns/"+c.ID+"/unfollow", nil)
+	_, got := r.list("")
+	if len(got) != 1 {
+		t.Fatalf("list = %+v, want one campaign", got)
+	}
+	g := got[0]
+	if g.Title != "Issue 20" || g.Number != 20 || g.Repo != "https://github.com/acme/widgets" || g.FollowedAt == "" || g.EndedAt == "" || g.Root != nil {
+		t.Errorf("list entry = %+v, want title, number, repo, followed_at, ended_at and no tree", g)
+	}
+	r2 := newRig(t, fixtureTree())
+	r2.follow(rootURL)
+	if _, got := r2.list(""); got[0].EndedAt != "" {
+		t.Errorf("ended_at = %q for a followed campaign, want none", got[0].EndedAt)
+	}
+}
+
+func TestReadyChildrenAreCountedByResolvedMode(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	c := r.follow(rootURL)
+	check := func(when string, with, without int) {
+		t.Helper()
+		_, l := r.list("")
+		for _, got := range []campaignJSON{r.get(c.ID), l[0]} {
+			if got.ReadyWithYou != with || got.ReadyWithoutYou != without {
+				t.Errorf("%s: ready with you %d, without %d, want %d and %d", when, got.ReadyWithYou, got.ReadyWithoutYou, with, without)
+			}
+		}
+	}
+	check("by default (28 with you; 21, 24, 27 without)", 1, 3)
+	r.do("PUT", "/api/campaigns/"+c.ID+"/override", map[string]any{"child_url": issURL(21), "mode": "with-you"})
+	check("after 21 is overridden to with you", 2, 2)
+}
+
+func TestNodesCarryLabelsAndTheirOverrideAgainstTheDefault(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	c := r.follow(rootURL)
+	r.do("PUT", "/api/campaigns/"+c.ID+"/override", map[string]any{"child_url": issURL(21), "mode": "with-you", "skill": map[string]string{"kind": "none"}})
+	got := r.get(c.ID)
+	if l := got.Root.Labels; len(l) != 1 || l[0] != "wayfinder:map" {
+		t.Errorf("root labels = %v, want the root's kind", l)
+	}
+	if l := got.Root.find(24).Labels; len(l) != 1 || l[0] != "wayfinder:research" {
+		t.Errorf("child 24 labels = %v", l)
+	}
+	n := got.Root.find(21)
+	if !n.Overridden || n.Mode != "with-you" || n.Skill.Kind != "none" || n.DefaultMode != "without-you" || n.DefaultSkill.Kind != "commodore" {
+		t.Errorf("child 21 = %+v, want overridden to with-you/none over the default without-you/commodore", n)
+	}
+	if n := got.Root.find(24); n.Overridden || n.DefaultMode != "without-you" {
+		t.Errorf("child 24 = overridden %v default %q, want not overridden and its default mode", n.Overridden, n.DefaultMode)
+	}
+}
+
+func TestTheCappedBlockerStandInIsMarked(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	tree := &github.TreeNode{Number: 20, Repo: "acme/widgets", URL: rootURL, Parent: true, Children: []*github.TreeNode{
+		{Number: 21, Repo: "acme/widgets", URL: issURL(21), BlockedBy: []github.Blocker{
+			{URL: issURL(21), Title: "More Blocked by lines than Admiral reads; check the issue", Capped: true},
+			{URL: issURL(22), Title: "Issue 22"}}},
+		{Number: 22, Repo: "acme/widgets", URL: issURL(22)}}}
+	f, _, err := r.svc.Store.Follow(Followed{URL: rootURL, Fleet: "work", FollowedAt: r.clock.Now(), Tree: tree, ReadAt: r.clock.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := r.get(f.ID).Root.find(21)
+	if len(n.Blockers) != 2 || !n.Blockers[0].Capped || n.Blockers[1].Capped {
+		t.Errorf("blockers = %+v, want the stand-in capped and the real blocker not", n.Blockers)
+	}
+}
+
+func TestTheViewSaysWhileAReadIsInFlightAndWhenItLastTried(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	c := r.follow(rootURL)
+	r.gh.delay(100 * time.Millisecond) // a tree read makes several gh calls
+	r.clock.Advance(10 * time.Minute)
+	r.svc.Tick()
+	eventually(t, "reading", func() bool { return r.get(c.ID).Reading })
+	eventually(t, "the read to finish", func() bool { return !r.get(c.ID).Reading })
+	want := r.clock.Now().UTC().Format(time.RFC3339)
+	if got := r.get(c.ID); got.LastTried != want {
+		t.Errorf("last_tried = %q, want %q", got.LastTried, want)
+	}
+	if err := writeFail(r.gh, "acme_widgets_20", "gh: HTTP 502"); err != nil {
+		t.Fatal(err)
+	}
+	r.clock.Advance(10 * time.Minute)
+	r.svc.Tick()
+	want = r.clock.Now().UTC().Format(time.RFC3339)
+	eventually(t, "a failed attempt to show in last_tried", func() bool {
+		g := r.get(c.ID)
+		return g.ReadErr != "" && g.LastTried == want && g.LastRead != want
+	})
 }

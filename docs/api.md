@@ -126,6 +126,15 @@ A campaign is:
 
 `status` of a child is `ready`, `blocked` (`blockers` lists `{"url","title"}` of the open ones), `underway` (`ship` names the ship holding the issue), `claimed-no-ship` (assigned, no ship) or `done`. A nested parent has `"parent": true` and no status. `mode` is `with-you` or `without-you`; `skill` is what the child's ship starts on (`commodore`, `skill` with a `name`, or `none`), `args` the text after the skill name. `unreadable` appears on a node GitHub counts more sub-issues for than were read. `last_read` is when the last good read finished, and `read_error` the last failed read's message, empty after a good one: a failed read keeps the last tree. The list route leaves `root` out.
 
+A campaign also carries:
+
+- `title`, `number` and `repo` (`https://host/owner/repo`) of the root issue, so the list can name it without the tree;
+- `followed_at`, and `ended_at` once it has ended (absent while followed);
+- `ready_with_you` and `ready_without_you`: the launchable `ready` children by their resolved mode;
+- `reading`: `true` while a reread of this campaign is in flight, and `last_tried`, the time of the last attempt, good or bad (absent before any). A failed attempt moves `last_tried` and not `last_read`, so a poller tells a read still under way from one that failed again.
+
+Each node carries `labels` (names, `[]` when none; a parent's too, so the root's kind shows). A child also carries `default_mode` and `default_skill`, what ADR 0027's table gives it with no override, and `overridden: true` (absent otherwise) when the campaign's override changes its mode or skill, so a client can offer Reset. A blocker is `{"url","title","capped"}`; `capped: true` marks the stand-in for the `Blocked by` lines past the cap (its `url` is the issue that carries them, not a blocker), and is absent on a real blocker.
+
 ### `GET /api/campaigns[?ended=true|false]`
 
 `{"campaigns": [...]}`, active and ended in the order they were followed; `ended` filters.
