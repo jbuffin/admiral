@@ -100,7 +100,7 @@ func TestShipInput_SendAndInterruptReachTheShipAndItsBoat(t *testing.T) {
 
 	t.Run("an unknown ship or boat is 404", func(t *testing.T) {
 		w := w.at(t)
-		for _, tail := range []string{"/messages", "/interrupt", "/crew/ghost/messages", "/crew/ghost/interrupt"} {
+		for _, tail := range []string{"/crew/ghost/messages", "/crew/ghost/interrupt"} {
 			body := map[string]any{"text": "hi"}
 			if code, _ := send(t, http.MethodPost, w.shipURL(ship.Session, tail), body); code != http.StatusNotFound {
 				t.Errorf("POST %s on a live ship = %d, want 404", tail, code)
