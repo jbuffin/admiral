@@ -181,6 +181,12 @@ func TestGuardRefusesMergesOnAnAutopilotShip(t *testing.T) {
 		b("gh auth status --show-token", `gh auth status --show-token`, wantRuleTokenRead),
 
 		// Boolean flags are read as gh reads them (strconv.ParseBool).
+		b("--disable-auto with --auto", `gh pr merge 12 --disable-auto --auto`, wantRuleGhPrMerge),
+		b("--disable-auto with --squash", `gh pr merge 12 --disable-auto --squash`, wantRuleGhPrMerge),
+		b("--disable-auto with -m", `gh pr merge 12 -m --disable-auto`, wantRuleGhPrMerge),
+		b("--disable-auto with --rebase and --auto", `gh pr merge 12 --auto --rebase --disable-auto`, wantRuleGhPrMerge),
+		b("--disable-auto with --delete-branch", `gh pr merge 12 --disable-auto --delete-branch`, wantRuleGhPrMerge),
+		b("--disable-auto with -d", `gh pr merge 12 --disable-auto -d`, wantRuleGhPrMerge),
 		b("--disable-auto=0", `gh pr merge 5 -s --disable-auto=0`, wantRuleGhPrMerge),
 		b("--disable-auto=bogus", `gh pr merge 5 -s --disable-auto=bogus`, wantRuleGhPrMerge),
 		b("--admin=1", `gh pr merge https://github.com/o/r/pull/12 --auto -s --admin=1`, wantRuleGhPrMerge),

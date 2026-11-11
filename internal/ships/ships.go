@@ -361,12 +361,38 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	got, lerr := s.LaunchOrder(req)
-	release() // a launched ship is counted from the ship list now
 	if lerr != nil {
+		release()
 		writeError(w, lerr.Status, lerr.Msg)
 		return
 	}
+	s.releaseWhenListed(got.Session, release)
 	writeJSON(w, http.StatusCreated, map[string]any{"ship": got})
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
+// releaseWhenListed keeps the reservation until the host lists the ship, which
+// holds the resources from then on, so a failed sync after the launch doesn't free them early.
+func (s *Service) releaseWhenListed(session string, release func()) {
+	if _, ok := s.find(session); ok {
+		release()
+		return
+	}
+	go func() {
+		defer release()
+		for i := 0; i < 100; i++ {
+			time.Sleep(100 * time.Millisecond)
+			if _, ok := s.find(session); ok {
+				return
+			}
+		}
+	}()
 }
 
 // admit checks what a launch over HTTP may claim and takes its resources. It is
@@ -394,7 +420,7 @@ func (s *Service) admit(req launcher.Request) (release func(), lerr *launcher.Er
 		}
 		if n >= cfg.AutopilotMaxShips {
 			return release, &launcher.Error{Status: http.StatusConflict, Msg: "autopilot is at its cap of " +
-				strconv.Itoa(cfg.AutopilotMaxShips) + " ships"}
+				strconv.Itoa(cfg.AutopilotMaxShips) + plural(cfg.AutopilotMaxShips, " ship", " ships")}
 		}
 	}
 	if len(req.Resources) > 0 && s.Reserve != nil {

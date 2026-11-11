@@ -3,6 +3,7 @@ package e2e
 import (
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -78,6 +79,17 @@ func TestAutopilotLaunchNamesResources(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 
+	// A launch that fails after it reserved the unit (a directory that is not
+	// there) gives it back.
+	bad := w.autopilotLaunch("claude", "res-bad", map[string]any{"resources": []string{"phone"}})
+	bad["dir"] = filepath.Join(w.home, "no-such-dir")
+	if code, body := w.post(bad); code < 400 || code >= 500 {
+		t.Errorf("a launch in a missing directory = %d %s, want a 4xx", code, body)
+	}
+	if got := w.resourceList(); len(got) != 1 || got[0].InUse != 0 {
+		t.Errorf("GET /api/resources after a failed launch = %+v, want phone unused", got)
+	}
+
 	ship := w.launch(w.autopilotLaunch("claude", "res", map[string]any{"resources": []string{"phone"}}))
 	got := w.resourceList()
 	if len(got) != 1 || got[0].Name != "phone" || got[0].InUse != 1 || len(got[0].Holders) != 1 ||
@@ -85,8 +97,17 @@ func TestAutopilotLaunchNamesResources(t *testing.T) {
 		t.Errorf("GET /api/resources = %+v, want phone held by ship %s", got, ship.Session)
 	}
 
+	// The held unit is not free: a second launch naming it is refused.
 	before := w.sessions()
-	code, body := w.post(w.autopilotLaunch("claude", "res-unknown", map[string]any{"resources": []string{"nope"}}))
+	code, body := w.post(w.autopilotLaunch("claude", "res-busy", map[string]any{"resources": []string{"phone"}}))
+	if code != http.StatusConflict {
+		t.Errorf("a launch naming a busy resource = %d %s, want 409", code, body)
+	}
+	if after := w.sessions(); !reflect.DeepEqual(before, after) {
+		t.Errorf("a refused launch changed the sessions: before %v, after %v", before, after)
+	}
+
+	code, body = w.post(w.autopilotLaunch("claude", "res-unknown", map[string]any{"resources": []string{"nope"}}))
 	if code != http.StatusBadRequest {
 		t.Errorf("a launch naming an unknown resource = %d %s, want 400", code, body)
 	}

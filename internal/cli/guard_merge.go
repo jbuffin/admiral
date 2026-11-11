@@ -131,11 +131,12 @@ func prEditRetargets(args []string) bool {
 // prMerge is the rule for gh pr merge, given the arguments after `merge`. An
 // autopilot ship merges nothing, so every form that can merge is refused, --auto
 // included. Only --disable-auto alone is allowed: it removes a merge and adds
-// none. Its flags are followed as pflag does: -b, -F, -R, -t and -A (and their
+// none, so not beside --auto, a method or --delete-branch. Its flags are followed as pflag does: -b, -F, -R, -t and -A (and their
 // long forms) take a value, which may start with a dash, a short cluster ends at
 // a value-taking flag, and -- ends the flags.
 func (g guardCheck) prMerge(args []string) string {
 	disable, admin := false, false
+	other := false  // a flag that merges or deletes a branch beside --disable-auto
 	unsure := false // a flag the guard cannot read, or a value that could split into flags
 	value := func(i *int, attached string) string {
 		if attached == "" && *i+1 < len(args) {
@@ -161,6 +162,8 @@ func (g guardCheck) prMerge(args []string) string {
 				disable = boolean(has, val)
 			case "admin":
 				admin = boolean(has, val)
+			case "auto", "squash", "merge", "rebase", "delete-branch":
+				other = boolean(has, val) || other
 			case "repo":
 				if !has {
 					value(&i, "")
@@ -179,6 +182,8 @@ func (g guardCheck) prMerge(args []string) string {
 				switch {
 				case a[j] == placeholder[0]:
 					unsure = true
+				case strings.IndexByte("smrd", a[j]) >= 0:
+					other = true
 				case a[j] == 'R':
 					value(&i, a[j+1:])
 					break cluster
@@ -189,7 +194,7 @@ func (g guardCheck) prMerge(args []string) string {
 			}
 		}
 	}
-	if disable && !admin && !unsure {
+	if disable && !admin && !other && !unsure {
 		return ""
 	}
 	return ruleGhPrMerge
