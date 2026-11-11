@@ -196,8 +196,20 @@ func TestComputeIgnoresACoreWorktreeOutsideTheDir(t *testing.T) {
 	write(t, other, "secret.txt", "leak\n")
 	run(t, d, "config", "core.worktree", other)
 	r, err := Compute(context.Background(), d)
-	if err != nil || r.State != StateNone || strings.Contains(r.Diff, "leak") {
-		t.Fatalf("Compute = %+v, %v, want state none", r, err)
+	if err != nil || r.State != StateOK || strings.Contains(r.Diff, "leak") || byPath(r)["secret.txt"].Path != "" || byPath(r)["edit.txt"].Status != "modified" {
+		t.Fatalf("Compute = %+v, %v, want the checkout's own changes and nothing from the outside dir", r, err)
+	}
+}
+
+func TestComputeInASubdirectoryShowsTheWholeRepo(t *testing.T) {
+	d := repo(t)
+	sub := filepath.Join(d, "pkg", "inner")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Compute(context.Background(), sub)
+	if err != nil || r.State != StateOK || byPath(r)["edit.txt"].Status != "modified" || byPath(r)["untracked.txt"].Status != "untracked" {
+		t.Fatalf("Compute = %+v, %v, want the repo's changes with repo-relative paths", r, err)
 	}
 }
 

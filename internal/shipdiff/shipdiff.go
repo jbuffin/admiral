@@ -56,26 +56,20 @@ func Compute(ctx context.Context, dir string) (Result, error) {
 	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
 		return none, nil
 	}
+	// The work tree is where the .git entry is, not wherever the ship's core.worktree says.
+	top, ok := workTreeOf(dir)
+	if !ok {
+		return none, nil
+	}
+	dir = top
 	g, err := newGit(ctx, dir)
 	if err != nil {
 		return none, err
 	}
+	g.env = append(g.env, "GIT_WORK_TREE="+dir) // beats core.worktree, which a -c cannot override
 	if _, err := g.list(ctx, "rev-parse", "--is-inside-work-tree"); err != nil {
 		return none, nil
 	}
-	// A core.worktree the ship set can point the diff outside dir.
-	top, err := g.list(ctx, "rev-parse", "--show-toplevel")
-	if err != nil {
-		return none, nil
-	}
-	real, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		return none, nil
-	}
-	if realTop, err := filepath.EvalSymlinks(strings.TrimSpace(string(top))); err != nil || realTop != real {
-		return none, nil
-	}
-	g.neutral = append(g.neutral, "-c", "core.worktree="+real)
 	head, err := g.list(ctx, "rev-parse", "--verify", "-q", "HEAD")
 	if err != nil {
 		return none, nil // no commit yet
@@ -153,6 +147,24 @@ func Compute(ctx context.Context, dir string) (Result, error) {
 	}
 	res.Diff = diff.String()
 	return res, nil
+}
+
+// workTreeOf walks up from dir to the directory holding a .git entry (a directory, or a file in a linked worktree).
+func workTreeOf(dir string) (string, bool) {
+	d, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return "", false
+	}
+	for {
+		if _, err := os.Lstat(filepath.Join(d, ".git")); err == nil {
+			return d, true
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			return "", false
+		}
+		d = parent
+	}
 }
 
 type git struct {
