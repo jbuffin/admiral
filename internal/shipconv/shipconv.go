@@ -284,7 +284,14 @@ type Page struct {
 func (s *Service) serveConversation(w http.ResponseWriter, r *http.Request) {
 	session, crew := r.PathValue("session"), r.PathValue("name")
 	k := key(session, crew)
-	sh, live := s.shipOf(session, true)
+	sh, live := s.shipOf(session, false)
+	moored := false
+	if !live && crew == "" { // a moored ship has no session to sync for
+		sh, moored = s.mooredOf(session)
+	}
+	if !live && !moored {
+		sh, live = s.shipOf(session, true)
+	}
 	var segs []segment
 	var loc where
 	var ok, none bool
@@ -294,11 +301,10 @@ func (s *Service) serveConversation(w http.ResponseWriter, r *http.Request) {
 		if crew == "" {
 			segs = s.segmentsOf(sh, true)
 		}
-	case crew == "":
-		if sh, ok = s.mooredOf(session); ok {
-			segs = s.segmentsOf(sh, false)
-			none = len(segs) == 0
-		}
+	case moored:
+		ok = true
+		segs = s.segmentsOf(sh, false)
+		none = segs == nil
 	}
 	if !ok {
 		s.forget(k)

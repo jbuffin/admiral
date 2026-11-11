@@ -2,6 +2,7 @@ package shipconv
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"regexp"
@@ -11,7 +12,6 @@ import (
 	"github.com/jbuffin/admiral/internal/conversation"
 	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/ships"
-	"github.com/jbuffin/admiral/internal/transcriptfs"
 )
 
 // maxFilesPerPage bounds the transcripts one page opens, so a long history of empty rounds cannot fan out.
@@ -73,7 +73,13 @@ func (s *Service) segmentsOf(sh ships.Ship, live bool) []segment {
 			return nil
 		}
 	}
-	hist, _ := s.roundsOf(sh)
+	hist, err := s.roundsOf(sh)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: its round history cannot be read: %v\n", sh.Name, err)
+	}
+	if !live && len(hist) == 0 {
+		return nil
+	}
 	segs := []segment{}
 	for _, r := range hist {
 		if live && r.Round >= liveRound {
@@ -83,7 +89,8 @@ func (s *Service) segmentsOf(sh ships.Ship, live bool) []segment {
 	}
 	if live {
 		loc, _, none := s.locateShip(sh, "")
-		seg := segment{round: liveRound, started: transcriptfs.LaunchTime(loc.raw)}
+		seg := segment{round: liveRound}
+		seg.started, _ = time.Parse(time.RFC3339, sh.Launched)
 		seg.open = func() (*os.File, os.FileInfo, string) {
 			if none {
 				return nil, nil, StateNone

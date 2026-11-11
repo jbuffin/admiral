@@ -2,9 +2,7 @@ package transcriptfs
 
 import (
 	"regexp"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
@@ -24,14 +22,4 @@ func Bind(raw, startCmd string) (path, id string, ok bool) {
 		return "", "", false
 	}
 	return parts[2], id, true
-}
-
-// LaunchTime is the launch time at the front of a ship's @admiral-transcript value; zero when it has none.
-func LaunchTime(raw string) time.Time {
-	first, _, _ := strings.Cut(raw, " ")
-	ns, err := strconv.ParseInt(first, 10, 64)
-	if err != nil || ns <= 0 {
-		return time.Time{}
-	}
-	return time.Unix(0, ns).UTC()
 }

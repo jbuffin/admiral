@@ -143,3 +143,20 @@ func TestTheRoundsDirectoryIsNotAMooringRecord(t *testing.T) {
 		t.Errorf("Remove took the history with it: %+v; a wake drops the record and the history must outlive it", got)
 	}
 }
+
+func TestARoundOfAnotherSessionReplacesAnOrphanedHistory(t *testing.T) {
+	home := t.TempDir()
+	for _, n := range []int{0, 1} {
+		if err := AppendRound(home, "Nelson", round(n)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fresh := round(0)
+	fresh.SessionID = "1f8fad5b-d9cb-469f-a165-70867728950e"
+	if err := AppendRound(home, "Nelson", fresh); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := ReadRounds(home, "Nelson"); !reflect.DeepEqual(got, []Round{fresh}) {
+		t.Errorf("ReadRounds = %+v, want only the new ship's round 0", got)
+	}
+}

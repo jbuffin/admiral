@@ -17,7 +17,7 @@ type Round struct {
 	SessionID  string    `json:"session_id"`
 	Fleet      string    `json:"fleet"`
 	Transcript string    `json:"transcript"`       // "" for a round with no transcript of ours
-	Started    time.Time `json:"started,omitzero"` // the launch time the pane recorded; zero when it recorded none
+	Started    time.Time `json:"started,omitzero"` // the pane's launch time; zero when it recorded none
 	Ended      time.Time `json:"ended"`
 }
 
@@ -49,15 +49,20 @@ func ReadRounds(home, name string) ([]Round, error) {
 	return rs, nil
 }
 
-// AppendRound adds a round unless the history already holds that round number, and keeps the latest MaxRounds.
+// AppendRound adds a round unless the history already holds that round of that session, and keeps the latest MaxRounds.
+// A held round of another session is an earlier ship's leftover: it and every later round drop, so round 0 starts afresh.
 func AppendRound(home, name string, r Round) error {
 	rs, err := ReadRounds(home, name)
 	if err != nil {
 		return err
 	}
-	for _, have := range rs {
+	for i, have := range rs {
 		if have.Round == r.Round {
-			return nil
+			if have.SessionID == r.SessionID {
+				return nil
+			}
+			rs = rs[:i]
+			break
 		}
 	}
 	rs = append(rs, r)

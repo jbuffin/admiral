@@ -90,9 +90,8 @@ func (s *Service) moor(ctx context.Context, sess sessionhost.Session, prs []stri
 		Skill: moor.Skill{Kind: o["skill-kind"], Name: o["skill"]}, Checkout: o["dir"], PRs: prs,
 		Source: o["source"], Panel: o["panel"], OrderID: o["order"], URL: o["url"], Issues: splitIssues(o["issues"]), Title: o["title"],
 		Resume: s.report(name).Resume, Round: round, Resources: splitResources(o["resources"]), MooredAt: time.Now().UTC().Truncate(time.Second)}
-	if err := s.recordRound(ctx, sess, round, time.Now().UTC()); err != nil {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: its round history cannot be written, so it sails off: %v\n", name, err)
-		return false
+	if err := s.recordRound(ctx, sess, rec, time.Now().UTC()); err != nil {
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: its round history cannot be written, so it keeps no dividers: %v\n", name, err)
 	}
 	if err := moor.Write(s.Launcher.Home, rec); err != nil {
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: its moored record cannot be written, so it sails off: %v\n", name, err)
@@ -106,9 +105,10 @@ func (s *Service) moor(ctx context.Context, sess sessionhost.Session, prs []stri
 
 // recordRound appends the round the pane just finished to the ship's history, before the record goes, under wakeMu so an end cannot leave a file behind.
 // The transcript is kept only when the pane's option binds to its start command; any other round keeps its place with none.
-func (s *Service) recordRound(ctx context.Context, sess sessionhost.Session, round int, ended time.Time) error {
+func (s *Service) recordRound(ctx context.Context, sess sessionhost.Session, rec moor.Record, ended time.Time) error {
 	o := sess.Options
-	r := moor.Round{Round: round, Fleet: o["fleet"], Ended: ended}
+	r := moor.Round{Round: rec.Round, Fleet: rec.Fleet, Ended: ended}
+	r.Started, _ = time.Parse(time.RFC3339, o["launched"])
 	if sess.PaneID != "" && o["harness"] == "claude" {
 		c, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
@@ -118,13 +118,12 @@ func (s *Service) recordRound(ctx context.Context, sess sessionhost.Session, rou
 		if rerr == nil && cerr == nil {
 			if path, id, ok := transcriptfs.Bind(raw, cmd); ok {
 				r.Transcript, r.SessionID = path, id
-				r.Started = transcriptfs.LaunchTime(raw)
 			}
 		}
 	}
 	s.wakeMu.Lock()
 	defer s.wakeMu.Unlock()
-	return moor.AppendRound(s.Launcher.Home, o["name"], r)
+	return moor.AppendRound(s.Launcher.Home, rec.Name, r)
 }
 
 func splitResources(v string) []string {
