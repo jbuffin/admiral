@@ -7,7 +7,9 @@ import { Icon } from './Icon';
 import { Preferences } from './Preferences';
 import { Sheet } from './Sheet';
 import { GROUP_TITLES, groupShips, shipAge } from './shipList';
-import { ships, shipsLoaded } from './shipsLink';
+import { LaunchForm, type OrderRef } from './LaunchDialog';
+import { sourcesForFleet } from './launchForm';
+import { ships, shipsLoaded, sources } from './shipsLink';
 import { StatusGlyph } from './StatusGlyph';
 import type { Ship } from './api';
 import { go, loc, surfaceOf, surfacePath } from './router';
@@ -95,35 +97,98 @@ function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
   );
 }
 
+function OrdersList({ fleetKey, onLaunch }: { fleetKey: string; onLaunch: (o: OrderRef) => void }) {
+  const views = sourcesForFleet(sources.value, fleetKey).flatMap((src) => src.views.filter((v) => v.orders.length > 0).map((v) => ({ src, v })));
+  if (views.length === 0) return null;
+  return (
+    <section class="orders" aria-labelledby="orders-head">
+      <h3 id="orders-head" class="group-head">
+        Orders
+      </h3>
+      {views.map(({ src, v }) => (
+        <div key={`${src.key}/${v.id}`} class="order-view">
+          <h4 class="order-view-head">
+            {v.title} <span class="count">{src.name}</span>
+          </h4>
+          <ul class="ship-list">
+            {v.orders.map((o) => (
+              <li key={o.id} class="order-row">
+                <span class="mono order-id">{o.id}</span>
+                <span class="order-title">{o.title}</span>
+                <button type="button" class="btn" aria-label={`Launch ${o.title}`} onClick={() => onLaunch({ source: src.key, id: o.id, title: o.title, text: o.text || o.title })}>
+                  Launch
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function ShipsPanel({ surface, title }: { surface: Surface; title: boolean }) {
   const now = useNow();
   const fleet = activeFleet.value;
   const groups = fleet ? groupShips(ships.value, fleet.key) : [];
-  if (shipsLoaded.value && groups.length === 0) return <EmptyState surface={surface} title={title} />;
+  const [launching, setLaunching] = useState<{ order?: OrderRef } | null>(null);
+  const launch = fleet && fleet.docks.length > 0 ? (
+    <button type="button" class="btn primary launch-open" onClick={() => setLaunching({})}>
+      Launch
+    </button>
+  ) : null;
+  const form = launching && fleet ? <LaunchForm fleet={fleet} order={launching.order} onClose={() => setLaunching(null)} /> : null;
+  const orders = fleet ? <OrdersList fleetKey={fleet.key} onLaunch={(order) => setLaunching({ order })} /> : null;
+  if (shipsLoaded.value && groups.length === 0) {
+    return (
+      <>
+        <main class="panel">
+          {title ? <h1>{surface.title}</h1> : null}
+          <p class="line">{surface.line}</p>
+          {fleet ? (
+            <p class="fleet-label">
+              <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
+              {fleet.name}
+            </p>
+          ) : null}
+          {launch}
+          {orders}
+        </main>
+        {form}
+      </>
+    );
+  }
   return (
-    <main class="panel">
-      {title ? <h1>{surface.title}</h1> : null}
-      {fleet ? (
-        <p class="fleet-label">
-          <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
-          {fleet.name}
-        </p>
-      ) : null}
-      {groups.map((g) => (
-        <section key={g.status} class="ship-group" aria-labelledby={`group-${g.status}`}>
-          <h2 id={`group-${g.status}`} class={`group-head group-${g.status}`}>
-            <StatusGlyph status={g.status} />
-            {GROUP_TITLES[g.status]}{' '}
-            <span class="count">{g.ships.length}</span>
-          </h2>
-          <ul class="ship-list">
-            {g.ships.map((s) => (
-              <ShipRow key={s.session} ship={s} bar={fleetPaint(fleet!).fill} now={now} />
-            ))}
-          </ul>
-        </section>
-      ))}
-    </main>
+    <>
+      <main class="panel">
+        <div class="panel-head">
+          {title ? <h1>{surface.title}</h1> : null}
+          {launch}
+        </div>
+        {fleet ? (
+          <p class="fleet-label">
+            <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
+            {fleet.name}
+          </p>
+        ) : null}
+        {groups.map((g) => (
+          <section key={g.status} class="ship-group" aria-labelledby={`group-${g.status}`}>
+            <h2 id={`group-${g.status}`} class={`group-head group-${g.status}`}>
+              <StatusGlyph status={g.status} />
+              {GROUP_TITLES[g.status]}{' '}
+              <span class="count">{g.ships.length}</span>
+            </h2>
+            <ul class="ship-list">
+              {g.ships.map((s) => (
+                <ShipRow key={s.session} ship={s} bar={fleetPaint(fleet!).fill} now={now} />
+              ))}
+            </ul>
+          </section>
+        ))}
+        {orders}
+      </main>
+      {form}
+    </>
   );
 }
 

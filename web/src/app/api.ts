@@ -177,3 +177,55 @@ export async function probeShips(): Promise<ShipsProbe> {
     return 'down';
   }
 }
+
+export interface Order {
+  id: string;
+  title: string;
+  text?: string;
+  repo?: string;
+}
+export interface OrderView {
+  id: string;
+  title: string;
+  orders: Order[];
+}
+export interface Source {
+  key: string;
+  name: string;
+  fleet: string;
+  views: OrderView[];
+}
+export interface Resource {
+  name: string;
+  capacity: number;
+  in_use: number;
+}
+export interface DirEntry {
+  path: string;
+  name: string;
+  kind: string;
+  ships_here: number;
+}
+export interface DirsAnswer {
+  entries: DirEntry[];
+  selected: string | null;
+  clone: { repo: string; path: string; exists?: boolean } | null;
+}
+
+export type Answer<T> = { ok: true; data: T } | { ok: false; error: string };
+
+/** A refusal's message is the server's own, shown as it came. */
+export async function call<T>(method: string, path: string, body?: unknown): Promise<Answer<T>> {
+  try {
+    const res = await fetch(`${API}${path}`, {
+      method,
+      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => null);
+    if (res.ok) return { ok: true, data: data as T };
+    return { ok: false, error: data?.error ?? `The server answered ${res.status}` };
+  } catch {
+    return { ok: false, error: 'Could not reach Admiral' };
+  }
+}

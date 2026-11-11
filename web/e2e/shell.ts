@@ -83,7 +83,14 @@ export function watchPage(page: Page, server: string) {
   const paths: string[] = [];
   const foreign: string[] = [];
   const errors: string[] = [];
-  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  // The browser logs a refused launch as a console error; the form showing that refusal is the journey's own check.
+  let refusedLaunches = 0;
+  page.on('response', (r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ships' && r.status() >= 400 && refusedLaunches++);
+  page.on('console', (m) => {
+    if (m.type() !== 'error') return;
+    if (/^Failed to load resource: .* status of 4\d\d/.test(m.text()) && refusedLaunches > 0) return void refusedLaunches--;
+    errors.push(m.text());
+  });
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('request', (r) => {
     const u = new URL(r.url());
@@ -109,9 +116,9 @@ export const ORDERS = [
   { id: 'ord-login', title: 'Fix the login redirect', text: 'Fix it.' },
   { id: 'ord-billing', title: 'Port the billing export', text: 'Port it.' },
   // proj is a checkout of acme/api; widget has no checkout, and gadget's clone target is taken.
-  { id: 'ord-api', title: 'Tighten the api limits', text: 'Tighten them.', repo: 'github.com/acme/api' },
-  { id: 'ord-widget', title: 'Ship the widget fix', text: 'Fix the widget.', repo: 'github.com/acme/widget' },
-  { id: 'ord-gadget', title: 'Retire the gadget', text: 'Retire it.', repo: 'github.com/acme/gadget' },
+  { id: 'ord-api', title: 'Tighten the api limits', text: 'Tighten them.', repo: 'https://github.com/acme/api' },
+  { id: 'ord-widget', title: 'Ship the widget fix', text: 'Fix the widget.', repo: 'https://github.com/acme/widget' },
+  { id: 'ord-gadget', title: 'Retire the gadget', text: 'Retire it.', repo: 'https://github.com/acme/gadget' },
 ];
 
 /** Admiral's start environment for a test that launches ships: no ship goes idle or sails off on its own. */
@@ -316,9 +323,12 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await expect(main.getByRole('listitem').filter({ hasText: widgetShip.name })).toBeVisible();
   expect(existsSync(widget)).toBe(true);
 
-  // A folder already where the clone would land: the server's message shows in the form.
+  // A folder already where the clone would land: the form warns and does not preselect the clone, and choosing it anyway shows the server's refusal.
   await press(orderLaunch('Retire the gadget'));
   await expect(form).toContainText(join(a.home, 'gadget'));
+  await expect(form).toContainText(/already exists.*refused/);
+  await expect(form.getByLabel('Checkout')).not.toHaveValue('clone');
+  await form.getByLabel('Checkout').selectOption('clone');
   const clash = await send();
   expect(clash.res.status()).toBe(409);
   await expect(form.getByRole('alert')).toContainText(((await clash.res.json()) as { error: string }).error);

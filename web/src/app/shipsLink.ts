@@ -1,9 +1,11 @@
 import { signal } from '@preact/signals';
-import { probeShips, shipsSocketUrl, type Ship } from './api';
+import { probeShips, shipsSocketUrl, type Resource, type Ship, type Source } from './api';
 
 export const ships = signal<Ship[]>([]);
 // False until the first ships message, so the empty state doesn't show before the list has arrived.
 export const shipsLoaded = signal(false);
+export const sources = signal<Source[]>([]);
+export const resources = signal<Resource[]>([]);
 export const shipsLink = signal<'connecting' | 'open' | 'reconnecting' | 'signed-out'>('connecting');
 
 const RETRY_FIRST_MS = 1000;
@@ -28,7 +30,8 @@ export function watchShips(): () => void {
       if (msg.type === 'ships') {
         ships.value = msg.ships ?? [];
         shipsLoaded.value = true;
-      }
+      } else if (msg.type === 'sources') sources.value = msg.sources ?? [];
+      else if (msg.type === 'resources') resources.value = msg.resources ?? [];
     };
     s.onclose = () => {
       shipsLink.value = 'reconnecting';
