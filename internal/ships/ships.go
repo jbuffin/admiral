@@ -227,6 +227,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/ships/{session}/input-seen", s.serveInputSeen)
 	mux.HandleFunc("POST /api/ships/{session}/dismiss", s.serveDismiss)
 	mux.HandleFunc("POST /api/ships/{session}/unfollow", s.serveUnfollow)
+	mux.HandleFunc("POST /api/ships/{session}/wake", s.serveWake)
 	mux.HandleFunc("POST /api/moored/refresh", s.serveMooredRefresh)
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/close", s.serveCrewClose)
 	mux.HandleFunc("POST /api/ships/{session}/messages", s.serveSendInput)

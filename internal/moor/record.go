@@ -25,16 +25,18 @@ type Record struct {
 	Skill    Skill  `json:"skill"`
 	Checkout string `json:"checkout"`
 	// The order the ship was launched from, so its order stays hidden while it is moored.
-	Source   string    `json:"source"`
-	Panel    string    `json:"panel"`
-	OrderID  string    `json:"order_id"`
-	URL      string    `json:"url"`
-	Issues   []string  `json:"issues,omitempty"`
-	Title    string    `json:"title"`
-	PRs      []string  `json:"prs"`
-	Resume   string    `json:"resume"`
-	Round    int       `json:"round"`
-	MooredAt time.Time `json:"moored_at"`
+	Source  string   `json:"source"`
+	Panel   string   `json:"panel"`
+	OrderID string   `json:"order_id"`
+	URL     string   `json:"url"`
+	Issues  []string `json:"issues,omitempty"`
+	Title   string   `json:"title"`
+	PRs     []string `json:"prs"`
+	Resume  string   `json:"resume"`
+	Round   int      `json:"round"`
+	// Resources the ship held, so a round holds the same.
+	Resources []string  `json:"resources"`
+	MooredAt  time.Time `json:"moored_at"`
 }
 
 func dir(home string) string { return filepath.Join(home, "moored") }

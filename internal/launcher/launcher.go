@@ -50,6 +50,11 @@ type Request struct {
 	ExtraArgs []string `json:"-"`
 	// Resources are held while the ship is underway or needs you; a hand launch holds none.
 	Resources []string `json:"resources"`
+	// Name and Session relaunch a moored ship under its own identity instead of a picked name; Round is
+	// the feedback round it starts.
+	Name    string `json:"-"`
+	Session string `json:"-"`
+	Round   int    `json:"-"`
 }
 
 // Skill is the order's skill: Commodore, a named one, or none (Just launch).
