@@ -62,8 +62,6 @@ function EmptyState({ surface, title }: { surface: Surface; title: boolean }) {
   );
 }
 
-const HEX = /^#[0-9a-f]{3,8}$/i;
-
 // Ages count from the launch time, so they refresh on a timer rather than on a ships message.
 function useNow() {
   const [now, setNow] = useState(Date.now());
@@ -78,7 +76,7 @@ function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
   const meta = ship.crew_live > 0 ? `${ship.crew_live} crew` : '';
   return (
     <li class="ship-row">
-      <span class="ship-bar" style={{ background: HEX.test(ship.fleet_color) ? ship.fleet_color : bar }} aria-hidden="true" />
+      <span class="ship-bar" style={{ background: bar }} aria-hidden="true" />
       <Flag harness={ship.harness} size="row" />
       <div class="ship-main">
         <span class="ship-name">{ship.name}</span>
