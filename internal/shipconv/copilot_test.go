@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
 )
@@ -172,5 +173,22 @@ func TestCopilotCrewBoatConversation(t *testing.T) {
 	}
 	if code, p := get("new"); code != 200 || p.State != "none" {
 		t.Errorf("a boat before its first agentStop = %d %+v, want 200 none", code, p)
+	}
+}
+
+// A Copilot ship or boat reads the fleet's Copilot home, never its Claude config dir.
+func TestCopilotLooksUpItsOwnConfigDir(t *testing.T) {
+	t.Parallel()
+	svc := &Service{Config: func() *config.Config {
+		return &config.Config{Fleets: []config.Fleet{{Key: "work", Harnesses: []config.Harness{
+			{Name: "claude", Env: map[string]string{"CLAUDE_CONFIG_DIR": "/id/claude"}},
+			{Name: "copilot", Env: map[string]string{"COPILOT_HOME": "/id/copilot"}},
+		}}}}
+	}}
+	sh := ships.Ship{Session: "s", Fleet: "work"}
+	for harness, want := range map[string]string{"claude": "/id/claude", "copilot": "/id/copilot"} {
+		if got, ok := svc.configDir(sh, harness); !ok || got != want {
+			t.Errorf("config dir for %s = %q (found %v), want %q", harness, got, ok, want)
+		}
 	}
 }

@@ -149,9 +149,6 @@ func (s *Service) configDir(sh ships.Ship, harness string) (string, bool) {
 	return config.IdentityDir(harness, env), true
 }
 
-// hasConversation is whether Admiral reads a harness's own record.
-func hasConversation(harness string) bool { return harness == "claude" || harness == "copilot" }
-
 // crewOf finds a boat of the ship by name.
 func (s *Service) crewOf(sh ships.Ship, name string) (sessionhost.Crew, string, bool) {
 	if s.crew != nil {
@@ -207,7 +204,7 @@ func (s *Service) locateBoat(session, crew string) (w where, ok, none bool) {
 	if crew != "" {
 		return s.locateCrew(w, crew)
 	}
-	if !hasConversation(sh.Harness) {
+	if !ships.HasConversation(sh.Harness) {
 		return w, true, true
 	}
 	raw, startCmd, configDir, has := s.optionOf(sh)
@@ -236,7 +233,7 @@ func (s *Service) locateCrew(w where, name string) (where, bool, bool) {
 		return where{}, false, false
 	}
 	w.crew, w.boatLaunched, w.harness = name, boat.Launched, boat.Harness
-	if !hasConversation(boat.Harness) || configDir == "" || !sessionhost.ValidCrewTranscriptPath(boat.Transcript) {
+	if !ships.HasConversation(boat.Harness) || configDir == "" || !sessionhost.ValidCrewTranscriptPath(boat.Transcript) {
 		return w, true, true
 	}
 	id, _ := transcriptfs.SessionIDFor(boat.Harness, boat.Transcript)

@@ -75,7 +75,7 @@ func (t *Tails) Run(ctx context.Context) {
 func (t *Tails) Poll() bool {
 	live := map[string]ships.Ship{}
 	for _, sh := range t.list() {
-		if hasConversation(sh.Harness) {
+		if ships.HasConversation(sh.Harness) {
 			live[sh.Session] = sh
 		}
 	}

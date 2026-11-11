@@ -25,19 +25,22 @@ type CrewBoat struct {
 	Role         string `json:"role,omitempty"`
 	Launched     string `json:"launched"`
 	LastActivity string `json:"last_activity,omitempty"`
-	// Conversation: a Claude boat with a recorded transcript. The path itself stays off the API.
+	// Conversation: a Claude Code or Copilot boat with a recorded transcript. The path itself stays off the API.
 	Conversation bool `json:"conversation"`
 	// ExitCode and ExitSignal are set only on an anchored boat (a signal wins).
 	ExitCode   *int    `json:"exit_code,omitempty"`
 	ExitSignal *string `json:"exit_signal,omitempty"`
 }
 
+// HasConversation is whether Admiral reads a harness's own record.
+func HasConversation(harness string) bool { return harness == "claude" || harness == "copilot" }
+
 // crewBoats never returns nil.
 func crewBoats(l []sessionhost.Crew) []CrewBoat {
 	out := make([]CrewBoat, 0, len(l))
 	for _, c := range l {
 		b := CrewBoat{Name: c.Name, Harness: c.Harness, Dir: c.Dir, Status: c.State, Reason: c.Reason, Role: c.Role, Launched: c.Launched,
-			Conversation: c.Harness == "claude" && c.Transcript != ""}
+			Conversation: HasConversation(c.Harness) && c.Transcript != ""}
 		b.ExitCode, b.ExitSignal = CrewExit(c)
 		if !c.LastActivity.IsZero() {
 			b.LastActivity = c.LastActivity.UTC().Format(time.RFC3339)

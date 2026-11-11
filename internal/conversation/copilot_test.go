@@ -255,3 +255,45 @@ func TestCopilotOneTurnEndPerPromptNotPerModelCall(t *testing.T) {
 		t.Errorf("worked for %v, want 2.5s from the prompt to the last model call", d)
 	}
 }
+
+func TestCopilotFormOfSeveralFieldsHasNoOptions(t *testing.T) {
+	form := func(props string) string {
+		return cl("user.message", "01.000", `{"content":"pick"}`) +
+			cl("tool.execution_start", "02.000", `{"toolCallId":"t1","toolName":"ask_user","arguments":{"message":"Which?","requestedSchema":{"type":"object","properties":`+props+`}},"turnId":"0"}`)
+	}
+	two := form(`{"a":{"type":"string","enum":["a1","a2"]},"b":{"type":"string","enum":["b1","b2","b3"]}}`)
+	for i := 0; i < 20; i++ {
+		items := readCop(t, two)
+		if q := items[1].Question; q == nil || len(q.Options) != 0 {
+			t.Fatalf("read %d: a two-field form has options %+v", i, q)
+		}
+	}
+	one := readCop(t, form(`{"a":{"type":"string","enum":["x","y"]}}`))
+	if q := one[1].Question; len(q.Options) != 2 || q.Options[0].Label != "x" || q.Options[1].Label != "y" {
+		t.Errorf("a one-field enum keeps its options in order, got %+v", q)
+	}
+}
+
+func TestCopilotAbortEndsTheTurnAndSettlesOpenCalls(t *testing.T) {
+	data := cl("user.message", "01.000", `{"content":"run it"}`) +
+		cl("assistant.message", "02.000", `{"messageId":"m1","content":"","toolRequests":[{"toolCallId":"t1"}],"turnId":"0"}`) +
+		cl("tool.execution_start", "03.000", `{"toolCallId":"t1","toolName":"bash","arguments":{"command":"sleep 99"},"turnId":"0"}`) +
+		cl("abort", "05.000", `{"reason":"user initiated"}`)
+	items := readCop(t, data)
+	if got := kinds(items); len(got) != 3 || got[2] != conversation.KindTurnEnd {
+		t.Fatalf("kinds = %v, want user, tool_call, turn_end", got)
+	}
+	if !items[1].Tool.Done || items[2].Duration != 4*time.Second {
+		t.Errorf("open call done = %v, turn took %v, want done and 4s", items[1].Tool.Done, items[2].Duration)
+	}
+}
+
+func TestCopilotFailedToolShowsItsErrorMessage(t *testing.T) {
+	data := cl("user.message", "01.000", `{"content":"run it"}`) +
+		cl("tool.execution_start", "02.000", `{"toolCallId":"t1","toolName":"bash","arguments":{"command":"false"},"turnId":"0"}`) +
+		cl("tool.execution_complete", "03.000", `{"toolCallId":"t1","success":false,"error":{"message":"Command not executed.","code":"denied"}}`)
+	tool := readCop(t, data)[1].Tool
+	if !tool.Error || !tool.Done || tool.Output != "Command not executed." {
+		t.Errorf("failed call = %+v", tool)
+	}
+}

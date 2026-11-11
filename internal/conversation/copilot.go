@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"encoding/json"
+	"sort"
 	"strings"
 	"time"
 )
@@ -38,6 +39,9 @@ type copilotData struct {
 	Result           struct {
 		Content string `json:"content"`
 	} `json:"result"`
+	Error struct {
+		Message string `json:"message"`
+	} `json:"error"`
 }
 
 type copilotCall struct {
@@ -103,6 +107,8 @@ func (d *copilotDecoder) line(raw []byte) ([]emission, bool) {
 		}
 	case "session.shutdown":
 		return d.endTurn(l, at), true
+	case "abort", "session.error":
+		return d.abort(l, at), true
 	case "tool.execution_start":
 		return d.toolStart(l, data, item), true
 	case "tool.execution_complete":
@@ -121,6 +127,23 @@ func (d *copilotDecoder) endTurn(l copilotLine, at time.Time) []emission {
 	}
 	d.turnStart = time.Time{}
 	return []emission{{Item: Item{ID: l.ID, At: l.Timestamp, Kind: KindTurnEnd, Duration: dur}}}
+}
+
+// abort ends the open turn, which Copilot records no turn end for, and settles the calls it left running.
+func (d *copilotDecoder) abort(l copilotLine, at time.Time) []emission {
+	out := d.endTurn(l, at)
+	var open []copilotCall
+	for id, c := range d.calls {
+		if !c.question {
+			open = append(open, c)
+			delete(d.calls, id)
+		}
+	}
+	sort.Slice(open, func(i, j int) bool { return open[i].id < open[j].id })
+	for _, c := range open {
+		out = append(out, emission{Update: true, Item: Item{ID: c.id, Tool: &ToolCall{Done: true}}})
+	}
+	return out
 }
 
 func (d *copilotDecoder) toolStart(l copilotLine, data copilotData, item func(Item) []emission) []emission {
@@ -153,6 +176,9 @@ func (d *copilotDecoder) toolComplete(data copilotData) []emission {
 	}
 	delete(d.calls, data.ToolCallID)
 	out := strings.TrimSpace(data.Result.Content)
+	if out == "" {
+		out = strings.TrimSpace(data.Error.Message)
+	}
 	if c.question {
 		answer := strings.TrimSpace(strings.TrimPrefix(out, "User responded:"))
 		return []emission{{Update: true, Item: Item{ID: c.id, Question: &Question{Answer: cutTo(answer, maxText, "…")}}}}
@@ -186,10 +212,10 @@ func copilotQuestion(args json.RawMessage) (Question, bool) {
 	}
 	q := Question{Text: cutTo(text, maxQuestionLen, "…")}
 	labels := in.Choices
-	for _, p := range in.RequestedSchema.Properties {
-		if len(p.Enum) > 0 {
+	// A form of several fields is not one choice, so it has no options and is answered in the terminal.
+	if len(in.RequestedSchema.Properties) == 1 {
+		for _, p := range in.RequestedSchema.Properties {
 			labels = p.Enum
-			break
 		}
 	}
 	for _, label := range labels {
