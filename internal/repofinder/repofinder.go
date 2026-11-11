@@ -224,3 +224,11 @@ func URLs(text string) []string {
 	}
 	return out
 }
+
+// CloneName is the folder name a clone of identity id gets, or an error when gh must not be
+// asked to clone it. Stub: the tests define the behavior.
+func CloneName(id string, hosts []string) (string, error) { return "", nil }
+
+// CloneRoot is where a fleet's clones go: its clone_root with a leading ~ expanded against home,
+// or its first search root when none is set. Stub: the tests define the behavior.
+func CloneRoot(cloneRoot string, searchRoots []string, home string) string { return "" }

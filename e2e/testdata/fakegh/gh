@@ -11,7 +11,7 @@
 #                fleet's env or in Admiral's own) as
 #                NAME=value lines; a variable that was not set has no line
 #
-# It answers five kinds of call and nothing else (anything else exits 2):
+# It answers six kinds of call and nothing else (anything else exits 2):
 #
 #   gh --version
 #
@@ -26,6 +26,15 @@
 #     prints that file on stderr, or with $FAKEGH_DIR/pr_view.sleep sleeps that
 #     many seconds first (it execs sleep, so a killed gh dies at once). With no
 #     pr_view.json it is not found: stderr says so, exit 1. --json is required.
+#
+#   gh repo clone [--] REPO DIR
+#     REPO is OWNER/REPO (host github.com) or HOST/OWNER/REPO. Makes DIR a git
+#     checkout whose origin is https://HOST/OWNER/REPO.git, so the checkout is
+#     matched to the repo by its remote. It refuses (exit 1, "fatal: destination
+#     path ... already exists") when DIR exists, as git does. Steered by:
+#       repo_clone.sleep   sleep that many seconds before cloning, so two clones overlap
+#       repo_clone.fail    leave a partial DIR (a junk file, as an interrupted
+#                          git does), print the file's content on stderr, exit 1
 #
 #   gh api graphql ...   (the search)
 #     Looks for a canned search in $FAKEGH_DIR/search/: a <key>.match file
@@ -124,6 +133,31 @@ pr)
 	fi
 	echo "fakegh: no canned pr view" >&2
 	exit 1
+	;;
+repo)
+	[ "$2" = clone ] || { echo "fakegh: unsupported: gh $*" >&2; exit 2; }
+	shift 2
+	[ "$1" = -- ] && shift
+	repo=$1 dir=$2
+	[ -n "$repo" ] && [ -n "$dir" ] || { echo "fakegh: gh repo clone needs REPO and DIR" >&2; exit 2; }
+	[ -s "$FAKEGH_DIR/repo_clone.sleep" ] && sleep "$(cat "$FAKEGH_DIR/repo_clone.sleep")"
+	if [ -e "$dir" ]; then
+		echo "fatal: destination path '$dir' already exists and is not an empty directory." >&2
+		exit 1
+	fi
+	if [ -e "$FAKEGH_DIR/repo_clone.fail" ]; then
+		mkdir -p "$dir"
+		echo partial > "$dir/partial"
+		cat "$FAKEGH_DIR/repo_clone.fail" >&2
+		exit 1
+	fi
+	case "$repo" in
+	*/*/*) url="https://$repo.git" ;;
+	*) url="https://github.com/$repo.git" ;;
+	esac
+	mkdir -p "$dir"
+	git -C "$dir" init -q && git -C "$dir" remote add origin "$url" || exit 1
+	exit 0
 	;;
 api)
 	for a in "$@"; do
