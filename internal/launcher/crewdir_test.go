@@ -168,6 +168,9 @@ func TestLaunchRefusesACrewDirPathThatIsALinkOrAFile(t *testing.T) {
 			if le, ok := err.(*Error); !ok || le.Status != http.StatusInternalServerError {
 				t.Fatalf("Launch = %v, want a 500 refusal", err)
 			}
+			if inboxes, _ := os.ReadDir(filepath.Join(r.home, "inbox")); len(inboxes) != 0 {
+				t.Errorf("a refused launch left an inbox behind: %v", inboxes)
+			}
 			if target == "" {
 				return
 			}

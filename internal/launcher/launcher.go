@@ -409,6 +409,10 @@ func (l *Launcher) shipContract(env map[string]string, session, fleetKey string)
 	if !ok {
 		return refuse(http.StatusInternalServerError, "%q is not a name a ship can have", session)
 	}
+	crewDir, err := fleetCrewDir(home, fleetKey)
+	if err != nil {
+		return err
+	}
 	for _, p := range []string{report, inbox} {
 		if err := os.RemoveAll(p); err != nil {
 			return refuse(http.StatusInternalServerError, "could not clear %s: %v", p, err)
@@ -418,10 +422,6 @@ func (l *Launcher) shipContract(env map[string]string, session, fleetKey string)
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return refuse(http.StatusInternalServerError, "could not create %s: %v", d, err)
 		}
-	}
-	crewDir, err := fleetCrewDir(home, fleetKey)
-	if err != nil {
-		return err
 	}
 	env["ADMIRAL_CREW_DIR"] = crewDir
 	env["ADMIRAL_SHIP"] = session
@@ -439,16 +439,31 @@ func fleetCrewDir(home, fleetKey string) (string, error) {
 		fi, err := os.Lstat(dir)
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
-			if err := os.Mkdir(dir, 0o700); err != nil {
+			err := os.Mkdir(dir, 0o700)
+			if errors.Is(err, fs.ErrExist) {
+				// Made by someone else since the Lstat; check what it is.
+				fi, err = os.Lstat(dir)
+				if err == nil && !fi.IsDir() {
+					return "", crewDirNotDir(dir, fi)
+				}
+			}
+			if err != nil {
 				return "", refuse(http.StatusInternalServerError, "could not create %s: %v", dir, err)
 			}
 		case err != nil:
 			return "", refuse(http.StatusInternalServerError, "could not inspect %s: %v", dir, err)
 		case !fi.IsDir():
-			return "", refuse(http.StatusInternalServerError, "%s is not a directory", dir)
+			return "", crewDirNotDir(dir, fi)
 		}
 	}
 	return dir, nil
+}
+
+func crewDirNotDir(dir string, fi fs.FileInfo) error {
+	if fi.Mode()&fs.ModeSymlink != 0 {
+		return refuse(http.StatusInternalServerError, "%s is a link, not a directory", dir)
+	}
+	return refuse(http.StatusInternalServerError, "%s is not a directory", dir)
 }
 
 // No tmux server yet means nothing is in use; any other error stops the launch, since a
