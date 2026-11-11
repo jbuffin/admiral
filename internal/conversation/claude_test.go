@@ -20,7 +20,9 @@ package conversation_test
 import (
 	"bytes"
 	"errors"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -227,5 +229,53 @@ func TestClaudeCodeSkipsWhatItDoesNotKnow(t *testing.T) {
 	_, err := conversation.ReadClaudeCode(strings.NewReader("{not json\nplain words\n"))
 	if !errors.Is(err, conversation.ErrUnreadable) {
 		t.Errorf("a file with nothing parseable: err = %v, want conversation.ErrUnreadable", err)
+	}
+}
+
+// A ship before its first prompt has only metadata lines: that is an empty
+// conversation, not a file that can't be read.
+func TestClaudeCodeMetadataOnlyIsEmpty(t *testing.T) {
+	input := `{"type":"mode","mode":"normal","sessionId":"s"}` + "\n" + `{"type":"permission-mode","permissionMode":"auto"}` + "\n"
+	items, err := conversation.ReadClaudeCode(strings.NewReader(input))
+	if err != nil || len(items) != 0 {
+		t.Errorf("items = %v, err = %v, want an empty conversation", items, err)
+	}
+}
+
+// The reader follows a file by offset: a tool result written after the call was
+// read folds into the call, under the same id, and a missing file says so.
+func TestReaderFoldsALaterResult(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	call := `{"type":"assistant","uuid":"a1","message":{"content":[{"type":"tool_use","id":"tu1","name":"Bash","input":{"command":"ls"}}]}}` + "\n"
+	result := `{"type":"user","uuid":"u2","message":{"content":[{"type":"tool_result","tool_use_id":"tu1","content":"file.txt"}]}}` + "\n"
+	if err := os.WriteFile(path, []byte(call), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := conversation.NewReader(nil)
+	up, err := r.Refresh(path)
+	if err != nil || len(up.Items) != 1 || up.Items[0].Tool.Done || up.Items[0].Tool.Summary != "ls" {
+		t.Fatalf("first refresh = %+v, %v", up, err)
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(result); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	up, err = r.Refresh(path)
+	if err != nil || len(up.Items) != 1 || up.Items[0].ID != "a1" || up.Items[0].Tool.Output != "file.txt" || !up.Items[0].Tool.Done {
+		t.Fatalf("second refresh = %+v, %v", up, err)
+	}
+	if items := r.Items(); len(items) != 1 || items[0].Tool.Output != "file.txt" {
+		t.Errorf("items = %+v", items)
+	}
+
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Refresh(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("removed file: err = %v, want fs.ErrNotExist", err)
 	}
 }
