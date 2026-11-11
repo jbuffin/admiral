@@ -285,7 +285,7 @@ func (s *Service) openLocked() (*os.File, os.FileInfo, error) {
 	return f, info, err
 }
 
-// isStatError is a file that opened but could not be examined, which the chat has always shown as refused.
+// isStatError is a file that opened but could not be examined, which the chat treats as refused.
 func isStatError(err error) bool {
 	var pe *fs.PathError
 	return errors.As(err, &pe) && pe.Op == "stat"
@@ -306,7 +306,7 @@ func (s *Service) followLocked() {
 	if st.cleared {
 		return
 	}
-	// ErrUnreadable (content, but no line that parses) shows an empty chat, as it always has.
+	// ErrUnreadable (content, but no line that parses) shows an empty chat.
 	_, _ = st.rd.Refresh(f, info)
 }
 

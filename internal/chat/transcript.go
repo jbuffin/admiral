@@ -11,7 +11,7 @@ type Message struct {
 	At   string `json:"at"`
 }
 
-// A notice (a subagent's report) is shown as the user's message, as the chat always has.
+// A notice (a subagent's report) is shows as the user's message.
 func messages(items []conversation.Item) []Message {
 	out := make([]Message, 0, len(items))
 	for _, it := range items {
