@@ -516,7 +516,7 @@ func TestSignalWhileWaitingForTheServerCleansUpAndExits(t *testing.T) {
 	for _, sig := range []syscall.Signal{syscall.SIGHUP, syscall.SIGTERM} {
 		t.Run(sig.String(), func(t *testing.T) {
 			r := start(t, setup{server: "never", tui: "exit:0", wait: 20 * time.Second})
-			r.waitFile("server.pid")
+			r.waitFile("server.child.pid")
 			if err := syscall.Kill(r.cmd.Process.Pid, sig); err != nil {
 				t.Fatal(err)
 			}
