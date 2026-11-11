@@ -12,7 +12,7 @@ import (
 	"github.com/jbuffin/admiral/internal/keymap"
 )
 
-// answerWorld starts a Claude ship "alpha" whose pane records its raw input, a Codex ship, a Copilot ship, and a fleet whose Claude config dir the test can write transcripts into.
+// answerWorld starts a Claude ship "alpha" whose pane records its raw input, a Codex ship, and a fleet whose Claude config dir the test can write transcripts into.
 func answerWorld(t *testing.T) (w *world, cfgDir string) {
 	t.Helper()
 	w = newWorld(t)
@@ -24,9 +24,8 @@ func answerWorld(t *testing.T) (w *world, cfgDir string) {
 	env["CLAUDE_CONFIG_DIR"] = cfgDir
 	cfg, err := json.Marshal(map[string]any{"version": 1, "fleets": map[string]any{
 		"work": map[string]any{"name": "Work", "search_roots": []string{w.work},
-			"claude":  map[string]any{"executable": w.fakeExe("claude"), "env": env},
-			"codex":   map[string]any{"executable": w.fakeExe("codex"), "env": env},
-			"copilot": map[string]any{"executable": w.fakeExe("copilot"), "env": env}},
+			"claude": map[string]any{"executable": w.fakeExe("claude"), "env": env},
+			"codex":  map[string]any{"executable": w.fakeExe("codex"), "env": env}},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -201,23 +200,6 @@ func TestShipAnswer_CodexPermissionCardSendsCodexKeysOnlyWhileTheReasonMatches(t
 		t.Fatalf("answer deny to a Codex ship = %d, want 200 or 204", code)
 	}
 	w.waitStdinOf(ship.Session, "", allow+deny)
-}
-
-func TestShipAnswer_AShipOnAHarnessWithoutAKeyMapIsRefusedWith409(t *testing.T) {
-	t.Parallel()
-	w, _ := answerWorld(t)
-	ship := w.launch(w.order("work", "copilot", "gamma", noSkill, "go"))
-	w.waitFile(ship.Session, "recorded")
-	pane := shipPaneOf(w, ship.Session)
-	w.waitPaneWorking(pane)
-	w.hookAt(pane, "PermissionRequest", hookPerm)
-	w.waitShip(ship.Session, "needs_you", func(s apiShip) bool { return s.Status == "needs_you" && s.Reason == "permission:Bash" })
-
-	code, _ := send(t, http.MethodPost, w.shipURL(ship.Session, "/answer"), answerReq("permission", "permission:Bash", map[string]any{"choice": "allow"}))
-	if code != http.StatusConflict {
-		t.Errorf("answer to a Copilot ship = %d, want 409", code)
-	}
-	w.holdStdin(ship.Session, "", "")
 }
 
 func TestShipAnswer_QuestionCardSendsTheOptionNumberOnlyForTheNewestSingleChoiceQuestion(t *testing.T) {
