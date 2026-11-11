@@ -157,8 +157,8 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   await press(pick('Annex pumps'));
   const sliceDirs = page.waitForRequest((r) => new URL(r.url()).pathname === '/api/v1/launch-orders/dirs');
   await press(ready.getByRole('button', { name: 'Launch slice (2)' }));
-  const order = ((await sliceDirs).postDataJSON() as { source: string; id: string });
-  expect(order).toMatchObject({ source: 'campaign', id: `${annexId}/${issueUrl(33)},34` });
+  const order = ((await sliceDirs).postDataJSON() as { source: string; order_id: string });
+  expect(order).toMatchObject({ source: 'campaign', order_id: `${annexId}/${issueUrl(33)},34` });
   await expect(sliceForm.getByLabel('Checkout')).toHaveValue(join(admiral.home, 'widgets'));
   const sliceSent = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === `/api/v1/campaigns/${annexId}/launch`);
   await press(sliceForm.getByRole('button', { name: 'Launch', exact: true }));
