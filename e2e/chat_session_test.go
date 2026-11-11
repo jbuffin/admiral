@@ -639,7 +639,9 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 	w := c.world
 	tpA := filepath.Join(c.cfgDir, "projects", "p", "a.jsonl")
 	tpB := filepath.Join(c.cfgDir, "projects", "p", "b.jsonl")
-	w.writeCue("record", sessionStartCue(tpA, "startup"), "wait go-clear", sessionStartCue(tpA, "clear"))
+	tpC := filepath.Join(c.cfgDir, "projects", "p", "c.jsonl")
+	w.writeCue("record", sessionStartCue(tpA, "startup"), "wait go-clear", sessionStartCue(tpA, "clear"),
+		"wait go-late", sessionStartCue(tpC, "startup"), "wait go-late-clear", sessionStartCue(tpC, "clear"))
 	appendLines(t, tpA,
 		userLine("u-1", "Before the clear", nil),
 		assistantLine("a-1", "msg_1", map[string]any{"type": "text", "text": "Answer before the clear."}),
@@ -654,6 +656,14 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 	c.waitSession(5*time.Second, "an empty conversation", messagesAre())
 	appendLines(t, tpA, userLine("u-2", "After the same-path clear", nil))
 	c.waitSession(10*time.Second, "only the later line", messagesAre("user: After the same-path clear"))
+
+	// A clear before the transcript exists skips nothing: its lines show once it appears.
+	c.touch("go-late")
+	c.waitEvents(3)
+	c.touch("go-late-clear")
+	c.waitEvents(4)
+	appendLines(t, tpC, userLine("u-3", "Written after the clear", nil))
+	c.waitSession(10*time.Second, "the line of a transcript that did not exist at the clear", messagesAre("user: Written after the clear"))
 
 	// Change the model and the effort, then New chat. The new run records into a
 	// fresh _chat directory and fires its own SessionStart.

@@ -3,6 +3,7 @@ package transcriptfs
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -70,7 +71,7 @@ func Open(configDir, p string) (*os.File, os.FileInfo, error) {
 	info, err := f.Stat()
 	if err != nil {
 		f.Close()
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("%w: %v", ErrRefused, err)
 	}
 	if !info.Mode().IsRegular() {
 		f.Close()

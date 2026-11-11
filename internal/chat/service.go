@@ -275,20 +275,11 @@ func (s *Service) openLocked() (*os.File, os.FileInfo, error) {
 		return nil, nil, fs.ErrNotExist
 	}
 	f, info, err := transcriptfs.Open(s.configDir(), st.path)
-	if err != nil && isStatError(err) {
-		err = transcriptfs.ErrRefused
-	}
 	if errors.Is(err, transcriptfs.ErrRefused) && st.refused != st.path {
 		st.refused = st.path
 		log.Printf("admiral: chat: not reading %q: %v", st.path, err)
 	}
 	return f, info, err
-}
-
-// isStatError is a file that opened but could not be examined, which the chat treats as refused.
-func isStatError(err error) bool {
-	var pe *fs.PathError
-	return errors.As(err, &pe) && pe.Op == "stat"
 }
 
 func (s *Service) followLocked() {
@@ -553,7 +544,13 @@ func (s *Service) clearLocked() {
 		return
 	}
 	f, info, err := s.openLocked()
-	if err != nil {
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		// Nothing to skip: the file is read from its start once it appears.
+		st.rd.Clear(0)
+		st.cleared = false
+		return
+	case err != nil:
 		st.cleared = true
 		return
 	}
