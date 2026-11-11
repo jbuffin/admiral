@@ -67,6 +67,9 @@ func TestClaudeCallReturnsValidatedFieldsAndCostUnderTheCap(t *testing.T) {
 	if !has(argv, "--strict-mcp-config") {
 		t.Errorf("argv %q: want --strict-mcp-config", argv)
 	}
+	if v, ok := flag(argv, "--setting-sources"); !ok || v != "" {
+		t.Errorf("argv %q: want --setting-sources with an empty list, so no settings hooks run", argv)
+	}
 	if v, _ := flag(argv, "--output-format"); v != "json" {
 		t.Errorf("argv %q: want --output-format json", argv)
 	}

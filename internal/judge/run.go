@@ -109,7 +109,7 @@ func Run(ctx context.Context, c Choice, call Call) (Reply, error) {
 	outFile := ""
 	switch c.Name {
 	case "claude":
-		args = []string{"-p", "--model", model, "--tools", "", "--strict-mcp-config", "--output-format", "json", "--no-session-persistence"}
+		args = []string{"-p", "--model", model, "--tools", "", "--strict-mcp-config", "--output-format", "json", "--no-session-persistence", "--setting-sources", ""}
 		if c.JSONSchema {
 			args = append(args, "--json-schema="+string(call.Schema))
 		}
