@@ -160,8 +160,6 @@ func waitWS(t *testing.T, c *websocket.Conn, d time.Duration, what string, pred 
 	}
 }
 
-func anyConfig(cfgBody) bool { return true }
-
 func hasErr(b cfgBody) bool { return b.Error != nil }
 func fleetKeys(keys ...string) func(cfgBody) bool {
 	return func(b cfgBody) bool { return reflect.DeepEqual(b.keys(), keys) }

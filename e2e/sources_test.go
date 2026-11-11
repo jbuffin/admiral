@@ -21,12 +21,6 @@ import (
 // in $ADMIRAL_HOME. The misbehaving plugin scenarios are in
 // sources_plugin_test.go.
 
-func sortedCopy(s []string) []string {
-	c := append([]string{}, s...)
-	sort.Strings(c)
-	return c
-}
-
 func (w *world) configSources() map[string]map[string]any {
 	w.t.Helper()
 	var cfg struct {

@@ -74,48 +74,6 @@ func (r hookResult) requireQuiet(t *testing.T) {
 	}
 }
 
-// tmuxSet is one `set` command of a tmux call, flags in any order.
-type tmuxSet struct {
-	name, target, option, value string
-	pane, unset, onlyIfUnset    bool
-	quiet                       bool
-}
-
-func parseTmuxSet(argv []string) tmuxSet {
-	var s tmuxSet
-	if len(argv) == 0 {
-		return s
-	}
-	s.name = argv[0]
-	var rest []string
-	for i := 1; i < len(argv); i++ {
-		switch a := argv[i]; a {
-		case "-p":
-			s.pane = true
-		case "-u":
-			s.unset = true
-		case "-o":
-			s.onlyIfUnset = true
-		case "-q":
-			s.quiet = true
-		case "-t":
-			i++
-			if i < len(argv) {
-				s.target = argv[i]
-			}
-		default:
-			rest = append(rest, a)
-		}
-	}
-	if len(rest) > 0 {
-		s.option = rest[0]
-	}
-	if len(rest) > 1 {
-		s.value = rest[1]
-	}
-	return s
-}
-
 // runHook runs `admiral hook <event>` with the payload on stdin and $TMUX_PANE
 // set to pane (unset when empty), with a recording tmux first on PATH.
 func (w *world) runHook(event, payload, pane string) hookResult {
