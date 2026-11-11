@@ -429,9 +429,9 @@ func (m *Migration) Notice() (title, body string) {
 		}
 	}
 	if len(m.Entries) > 0 {
-		b.WriteString("\nThese panel autopilot entries were removed with the autopilot engine. They can come back as routines once scheduled routines land:")
+		b.WriteString("\nThese view autopilot entries were removed with the autopilot engine. They can come back as routines once scheduled routines land:")
 		for _, e := range m.Entries {
-			fmt.Fprintf(&b, "\n- Source %s (%s), panel %s.", e.Name, e.Key, e.Panel)
+			fmt.Fprintf(&b, "\n- Source %s (%s), view %s.", e.Name, e.Key, e.Panel)
 		}
 	}
 	if m.AutopilotObject {

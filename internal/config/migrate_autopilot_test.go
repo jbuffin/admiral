@@ -15,17 +15,17 @@ func TestNeedsMigrationForTheEnginesConfigKeys(t *testing.T) {
 		want       bool
 	}{
 		{"autopilot.max_ships, sources already in fleets",
-			`{"version":1,` + fleets + `,"sources":{"gh":{"plugin":"github","fleet":"work"}},"autopilot":{"max_ships":4}}`, true},
+			`{"version":1,` + fleets + `,"sources":{"gh":{"plugin":"github","fleet":"work","settings":{"views":[]}}},"autopilot":{"max_ships":4}}`, true},
 		{"autopilot.max_ships and no sources key",
 			`{"version":1,` + fleets + `,"autopilot":{"max_ships":4}}`, true},
 		{"autopilot.resume_source alone",
-			`{"version":1,` + fleets + `,"sources":{"gh":{"plugin":"github","fleet":"work"}},"autopilot":{"resume_source":{"source":"gh","panel":"p"}}}`, true},
+			`{"version":1,` + fleets + `,"sources":{"gh":{"plugin":"github","fleet":"work","settings":{"views":[]}}},"autopilot":{"resume_source":{"source":"gh","panel":"p"}}}`, true},
 		{"a panel entry, sources already in fleets",
-			`{"version":1,` + fleets + `,"sources":{"gh":{"plugin":"github","fleet":"work","autopilot":{"prs":` + entry + `}}}}`, true},
+			`{"version":1,` + fleets + `,"sources":{"gh":{"plugin":"github","fleet":"work","settings":{"views":[]},"autopilot":{"prs":` + entry + `}}}}`, true},
 		{"top-level max_ships and no autopilot anywhere",
-			`{"version":1,` + fleets + `,"max_ships":4,"sources":{"gh":{"plugin":"github","fleet":"work"}}}`, false},
+			`{"version":1,` + fleets + `,"max_ships":4,"sources":{"gh":{"plugin":"github","fleet":"work","settings":{"views":[]}}}}`, false},
 		{"nothing old",
-			`{"version":1,` + fleets + `,"sources":{"gh":{"plugin":"github","fleet":"work"}}}`, false},
+			`{"version":1,` + fleets + `,"sources":{"gh":{"plugin":"github","fleet":"work","settings":{"views":[]}}}}`, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

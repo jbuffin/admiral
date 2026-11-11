@@ -160,12 +160,11 @@ const ghFleets = `"fleets":{
 const oldGitHub = `"github":{"plugin":"github","name":"GitHub","fleet":"a",
   "settings":{"host":"ghe.example.com","account":"work","hotLabels":["p0"],"refreshMinutes":10,
     "panels":[{"title":"Bugs","query":"label:bug"},{"title":"Assigned to me","query":"assignee:@me"}]},
-  "panel_order":["bugs","my-prs"],
-  "autopilot":{"bugs":{"enabled":true,"fleet":"a","harness":"claude","skill":{"kind":"none"}}}}`
+  "panel_order":["bugs","my-prs"]}`
 
 func migrateConfig(sources string) string {
 	return `{"version":1,` + ghFleets + `,"sources":{` + sources + `},
-  "autopilot":{"resume_source":{"source":"github","panel":"bugs"}}}
+  "max_ships":3}
 `
 }
 
@@ -218,7 +217,7 @@ func TestMigrateGitHubPluginSource(t *testing.T) {
 	if m == nil {
 		t.Fatal("Migrate returned nil for a plugin GitHub source that already has a fleet")
 	}
-	srcs, ap := readSources(t, dir)
+	srcs, _ := readSources(t, dir)
 	views := `[{"title":"Bugs","query":"label:bug"},{"title":"Assigned to me","query":"assignee:@me"}]`
 
 	a := srcs["github"]
@@ -233,7 +232,9 @@ func TestMigrateGitHubPluginSource(t *testing.T) {
 	wantJSON(t, "github settings carried over", map[string]any{"host": as["host"], "account": as["account"], "hotLabels": as["hotLabels"], "refreshMinutes": as["refreshMinutes"]},
 		`{"host":"ghe.example.com","account":"work","hotLabels":["p0"],"refreshMinutes":10}`)
 	wantJSON(t, "github panel_order", a["panel_order"], `["bugs","my-prs"]`)
-	wantJSON(t, "github autopilot", a["autopilot"], `{"bugs":{"enabled":true,"fleet":"a","harness":"claude","skill":{"kind":"none"}}}`)
+	if _, has := a["autopilot"]; has {
+		t.Errorf("github has autopilot %v, want none", a["autopilot"])
+	}
 
 	b := srcs["github-b"]
 	if b == nil {
@@ -248,7 +249,6 @@ func TestMigrateGitHubPluginSource(t *testing.T) {
 	if _, has := b["autopilot"]; has {
 		t.Errorf("github-b has autopilot %v: only the fleet that had the plugin keeps it", b["autopilot"])
 	}
-	wantJSON(t, "autopilot.resume_source", ap["resume_source"], `{"source":"github","panel":"bugs"}`)
 
 	// The notice: GitHub only, so it doesn't open with the fleet move.
 	_, body := m.Notice()
@@ -374,5 +374,52 @@ func TestMigrateGitHubKeepsAnOlderBackup(t *testing.T) {
 	}
 	if srcs, _ := readSources(t, dir); srcs["github-b"] == nil {
 		t.Errorf("the step did not run: %v", keysOfSources(srcs))
+	}
+}
+
+// The plugin move and the engine's removal in one file: one backup, one note
+// naming both, no autopilot left on any GitHub source, and a second run leaves
+// the file alone.
+func TestMigrateGitHubPluginAndAutopilotEntriesInOneFile(t *testing.T) {
+	src := strings.Replace(oldGitHub, `"panel_order":["bugs","my-prs"]}`,
+		`"panel_order":["bugs","my-prs"],
+  "autopilot":{"bugs":{"enabled":true,"fleet":"a","harness":"claude","skill":{"kind":"none"}}}}`, 1)
+	cfg := strings.Replace(migrateConfig(src), `"max_ships":3`, `"autopilot":{"max_ships":3,"resume_source":{"source":"github","panel":"bugs"}}`, 1)
+	dir := migrateDir(t, cfg)
+	m, err := config.Migrate(dir, migrateVersion)
+	if err != nil || m == nil {
+		t.Fatalf("Migrate = %+v, %v, want a migration", m, err)
+	}
+	if b, _ := filepath.Glob(filepath.Join(dir, "config.json.pre-*")); len(b) != 1 {
+		t.Errorf("backups = %v, want one", b)
+	}
+	srcs, _ := readSources(t, dir)
+	for key, s := range srcs {
+		if _, has := s["autopilot"]; has {
+			t.Errorf("source %s still has autopilot %v", key, s["autopilot"])
+		}
+	}
+	if srcs["github-b"] == nil {
+		t.Errorf("sources = %v, want github-b", keysOfSources(srcs))
+	}
+	out, _ := os.ReadFile(filepath.Join(dir, "config.json"))
+	var top map[string]any
+	if err := json.Unmarshal(out, &top); err != nil {
+		t.Fatal(err)
+	}
+	if _, has := top["autopilot"]; has || top["max_ships"] != float64(3) {
+		t.Errorf("top = %v, want max_ships 3 and no autopilot", top)
+	}
+	_, body := m.Notice()
+	for _, want := range []string{m.Backup, "GitHub is now built in", "Source GitHub (github)", "view bugs", "max_ships"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("notice lacks %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "moved your sources into fleets") {
+		t.Errorf("the notice claims a fleet move:\n%s", body)
+	}
+	if m2, err := config.Migrate(dir, migrateVersion); err != nil || m2 != nil {
+		t.Fatalf("second Migrate = %+v, %v, want nil, nil", m2, err)
 	}
 }
