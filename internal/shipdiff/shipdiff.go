@@ -8,9 +8,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -23,7 +25,13 @@ const (
 	callTime   = 10 * time.Second
 	totalTime  = 20 * time.Second
 	maxListOut = 4 << 20 // bytes read from a listing
+
+	maxCountRead  = 64 << 20        // bytes read from one untracked file to count its lines
+	deadlineSlack = 3 * time.Second // below this much time left, per-file diffs stop
 )
+
+// maxDiff is MaxDiff, a variable so a test can spend the budget with few files.
+var maxDiff = MaxDiff
 
 type File struct {
 	Path    string `json:"path"`
@@ -55,6 +63,19 @@ func Compute(ctx context.Context, dir string) (Result, error) {
 	if _, err := g.list(ctx, "rev-parse", "--is-inside-work-tree"); err != nil {
 		return none, nil
 	}
+	// A core.worktree the ship set can point the diff outside dir.
+	top, err := g.list(ctx, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return none, nil
+	}
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return none, nil
+	}
+	if realTop, err := filepath.EvalSymlinks(strings.TrimSpace(string(top))); err != nil || realTop != real {
+		return none, nil
+	}
+	g.neutral = append(g.neutral, "-c", "core.worktree="+real)
 	head, err := g.list(ctx, "rev-parse", "--verify", "-q", "HEAD")
 	if err != nil {
 		return none, nil // no commit yet
@@ -67,11 +88,11 @@ func Compute(ctx context.Context, dir string) (Result, error) {
 	}
 
 	res := Result{State: StateOK, Files: []File{}}
-	status, err := g.list(ctx, "diff", "-M", "--name-status", "-z", base)
+	status, err := g.list(ctx, "diff", "-M", "--name-status", "-z", base, "--")
 	if err != nil {
 		return none, err
 	}
-	numstat, err := g.list(ctx, "diff", "-M", "--numstat", "-z", base)
+	numstat, err := g.list(ctx, "diff", "-M", "--numstat", "-z", base, "--")
 	if err != nil {
 		return none, err
 	}
@@ -89,25 +110,37 @@ func Compute(ctx context.Context, dir string) (Result, error) {
 	sort.Strings(paths)
 
 	var diff bytes.Buffer
-	patch, cut, err := g.capped(ctx, MaxDiff, "diff", "-M", base)
+	patch, cut, err := g.capped(ctx, maxDiff, "diff", "-M", base, "--")
 	if err != nil {
 		return none, err
 	}
 	diff.Write(patch)
 	res.Truncated = cut
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return none, nil
+	}
+	defer root.Close()
 	for _, p := range paths {
 		if len(res.Files) >= MaxFiles {
 			res.Truncated = true
 			break
 		}
-		added := g.untrackedLines(ctx, p)
-		res.Files = append(res.Files, File{Path: p, Status: "untracked", Added: added})
-		if diff.Len() >= MaxDiff {
+		res.Files = append(res.Files, File{Path: p, Status: "untracked", Added: countLines(root, p)})
+		if diff.Len() >= maxDiff {
 			res.Truncated = true
 			continue
 		}
-		part, cut, err := g.capped(ctx, MaxDiff-diff.Len(), "diff", "--no-index", "--", os.DevNull, p)
+		if dl, ok := ctx.Deadline(); ok && time.Until(dl) < deadlineSlack {
+			res.Truncated = true
+			continue
+		}
+		part, cut, err := g.capped(ctx, maxDiff-diff.Len(), "diff", "--no-index", "--", os.DevNull, p)
 		if err != nil {
+			if ctx.Err() != nil {
+				res.Truncated = true
+				continue
+			}
 			return none, err
 		}
 		diff.Write(part)
@@ -143,22 +176,26 @@ func newGit(ctx context.Context, dir string) (*git, error) {
 	}}
 	g.neutral = []string{"-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "core.pager=cat",
 		"-c", "core.alternateRefsCommand=", "-c", "diff.external=", "-c", "diff.ignoreSubmodules=all"}
-	if keys, err := g.list(ctx, "config", "--local", "--name-only", "-z", "--get-regexp", `^(filter|diff)\..*\.`); err == nil {
-		seen := map[string]bool{}
-		for _, k := range strings.Split(string(keys), "\x00") {
-			i := strings.LastIndex(k, ".")
-			if i < 0 || seen[k[:i]] {
-				continue
-			}
-			seen[k[:i]] = true
-			prefix := k[:i]
-			vars := []string{"textconv", "command"}
-			if strings.HasPrefix(prefix, "filter.") {
-				vars = []string{"clean", "smudge", "process"}
-			}
-			for _, v := range vars {
-				g.neutral = append(g.neutral, "-c", prefix+"."+v+"=")
-			}
+	// No scope flag: it would turn includes off, and a driver can come from an included file or config.worktree.
+	keys, err := g.list(ctx, "config", "--name-only", "-z", "--get-regexp", `^(filter|diff)\..*\.`)
+	var exit *exec.ExitError
+	if err != nil && !(errors.As(err, &exit) && exit.ExitCode() == 1) {
+		return nil, err // fail closed: an unlisted driver could run
+	}
+	seen := map[string]bool{}
+	for _, k := range strings.Split(string(keys), "\x00") {
+		i := strings.LastIndex(k, ".")
+		if i < 0 || seen[k[:i]] {
+			continue
+		}
+		seen[k[:i]] = true
+		prefix := k[:i]
+		vars := []string{"textconv", "command"}
+		if strings.HasPrefix(prefix, "filter.") {
+			vars = []string{"clean", "smudge", "process"}
+		}
+		for _, v := range vars {
+			g.neutral = append(g.neutral, "-c", prefix+"."+v+"=")
 		}
 	}
 	return g, nil
@@ -208,6 +245,8 @@ func (g *git) capped(ctx context.Context, limit int, args ...string) ([]byte, bo
 		buf = buf[:limit]
 		if i := bytes.LastIndexByte(buf, '\n'); i >= 0 {
 			buf = buf[:i+1]
+		} else {
+			buf = buf[:0]
 		}
 	}
 	err = c.Wait()
@@ -241,16 +280,45 @@ func (g *git) baseRef(ctx context.Context) string {
 	return ""
 }
 
-func (g *git) untrackedLines(ctx context.Context, p string) int {
-	out, err := g.list(ctx, "diff", "--no-index", "--numstat", "--", os.DevNull, p)
+// countLines is what git would count for an untracked file: 0 for a binary or an unreadable one. It never
+// follows a symlink, which counts as the one line of its target.
+func countLines(root *os.Root, p string) int {
+	st, err := root.Lstat(p)
 	if err != nil {
 		return 0
 	}
-	f := strings.SplitN(string(out), "\t", 3)
-	if len(f) < 3 {
+	if st.Mode()&os.ModeSymlink != 0 {
+		return 1
+	}
+	if !st.Mode().IsRegular() {
 		return 0
 	}
-	n, _ := strconv.Atoi(f[0])
+	f, err := root.OpenFile(p, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	buf := make([]byte, 64<<10)
+	n, total, first, last := 0, 0, true, byte('\n')
+	for total < maxCountRead {
+		r, err := f.Read(buf)
+		if r > 0 {
+			chunk := buf[:r]
+			if first && bytes.IndexByte(chunk[:min(r, 8000)], 0) >= 0 {
+				return 0
+			}
+			first = false
+			n += bytes.Count(chunk, []byte{'\n'})
+			last = chunk[r-1]
+			total += r
+		}
+		if err != nil {
+			break
+		}
+	}
+	if total > 0 && last != '\n' {
+		n++
+	}
 	return n
 }
 

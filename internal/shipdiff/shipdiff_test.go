@@ -5,8 +5,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func run(t *testing.T, dir string, args ...string) {
@@ -144,5 +146,84 @@ func TestBaseIsOriginHead(t *testing.T) {
 	r, err := Compute(context.Background(), d)
 	if err != nil || byPath(r)["committed.txt"].Status != "added" {
 		t.Fatalf("Compute = %+v, %v", r, err)
+	}
+}
+
+func trapScript(t *testing.T) (script, marker string) {
+	t.Helper()
+	d := t.TempDir()
+	marker = filepath.Join(d, "MARKER")
+	write(t, d, "trap.sh", "#!/bin/sh\necho ran >> "+marker+"\ncat\n")
+	script = filepath.Join(d, "trap.sh")
+	if err := os.Chmod(script, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return script, marker
+}
+
+func assertNoMarker(t *testing.T, d, marker string) {
+	t.Helper()
+	r, err := Compute(context.Background(), d)
+	if err != nil || r.State != StateOK || !strings.Contains(r.Diff, "+new") {
+		t.Fatalf("Compute = %q, %v, want the diff despite the config", r.Diff, err)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Errorf("a program named by the checkout ran")
+	}
+}
+
+func TestComputeRunsNoFilterFromAnIncludedConfig(t *testing.T) {
+	d := repo(t)
+	script, marker := trapScript(t)
+	write(t, d, "evil.cfg", "[filter \"x\"]\n\tclean = "+script+"\n")
+	run(t, d, "config", "include.path", "../evil.cfg")
+	write(t, d, ".gitattributes", "*.txt filter=x\n")
+	assertNoMarker(t, d, marker)
+}
+
+func TestComputeRunsNoFilterFromWorktreeConfig(t *testing.T) {
+	d := repo(t)
+	script, marker := trapScript(t)
+	run(t, d, "config", "extensions.worktreeConfig", "true")
+	write(t, filepath.Join(d, ".git"), "config.worktree", "[filter \"x\"]\n\tclean = "+script+"\n")
+	write(t, d, ".gitattributes", "*.txt filter=x\n")
+	assertNoMarker(t, d, marker)
+}
+
+func TestComputeIgnoresACoreWorktreeOutsideTheDir(t *testing.T) {
+	d := repo(t)
+	other := t.TempDir()
+	write(t, other, "secret.txt", "leak\n")
+	run(t, d, "config", "core.worktree", other)
+	r, err := Compute(context.Background(), d)
+	if err != nil || r.State != StateNone || strings.Contains(r.Diff, "leak") {
+		t.Fatalf("Compute = %+v, %v, want state none", r, err)
+	}
+}
+
+func TestComputeManyUntrackedFilesTruncateInsteadOfFailing(t *testing.T) {
+	d := repo(t)
+	for i := 0; i < 200; i++ {
+		write(t, d, "u"+strconv.Itoa(1000+i)+".dat", strings.Repeat("x\n", 20))
+	}
+	old := maxDiff
+	maxDiff = 4000
+	t.Cleanup(func() { maxDiff = old })
+	r, err := Compute(context.Background(), d)
+	if err != nil || r.State != StateOK || !r.Truncated || len(r.Diff) > 4000 {
+		t.Fatalf("Compute ok=%v truncated=%v diff=%d err=%v, want ok and truncated", r.State, r.Truncated, len(r.Diff), err)
+	}
+	if got := byPath(r)["u1199.dat"]; got.Status != "untracked" || got.Added != 20 {
+		t.Errorf("u1199.dat = %+v, want listed with 20 lines past the diff budget", got)
+	}
+}
+
+func TestComputeNearTheDeadlineReturnsWhatItHas(t *testing.T) {
+	d := repo(t)
+	ctx, cancel := context.WithTimeout(context.Background(), deadlineSlack-time.Second)
+	defer cancel()
+	r, err := Compute(ctx, d)
+	if err != nil || r.State != StateOK || !r.Truncated || byPath(r)["untracked.txt"].Added != 1 {
+		t.Fatalf("Compute = %+v, %v, want ok, truncated, the untracked file still listed", r, err)
 	}
 }
