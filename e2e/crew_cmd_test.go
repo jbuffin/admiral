@@ -139,8 +139,8 @@ func TestCrew_LaunchSendListCloseAndRestart(t *testing.T) {
 		scout := w.record(sess + "/crew/scout")
 		w.waitFile(sess+"/crew/scout", "cues-done")
 		wantArgv := []string{"--fa-claude", "--settings", filepath.Join(w.home, "harness", "claude-settings.json"), "--", "check the thing"}
-		if !reflect.DeepEqual(scout.argv, wantArgv) {
-			t.Errorf("scout argv = %q, want %q", scout.argv, wantArgv)
+		if !reflect.DeepEqual(scout.argvBase(), wantArgv) {
+			t.Errorf("scout argv = %q, want %q", scout.argvBase(), wantArgv)
 		}
 		if scout.harness != "claude" || scout.cwd != other {
 			t.Errorf("scout ran as %q in %q, want claude in %q", scout.harness, scout.cwd, other)

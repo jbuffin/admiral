@@ -467,6 +467,20 @@ type record struct {
 	dir     string
 }
 
+// argvBase is the argv without the `--session-id <uuid>` pair Admiral adds to a
+// Claude Code ship (#264), for the tests that pin the rest of the command line.
+func (r record) argvBase() []string {
+	var out []string
+	for i := 0; i < len(r.argv); i++ {
+		if r.argv[i] == "--session-id" && i+1 < len(r.argv) {
+			i++
+			continue
+		}
+		out = append(out, r.argv[i])
+	}
+	return out
+}
+
 func (w *world) waitFile(session, file string) string {
 	w.t.Helper()
 	p := filepath.Join(w.rec, session, file)
