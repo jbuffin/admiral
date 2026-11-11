@@ -7,7 +7,6 @@ import { offline, onMessage, signedOut } from './connection';
 import { openSetup } from './setup';
 import { AppSettings, GEAR_ID, openAppSettings } from './AppSettings';
 import { chipLabel, chipText, resources } from './resources';
-import { anyAutopilot } from './sources';
 import { ChatHeaderButton } from './ChatPane';
 import { InboxButton } from './InboxPanel';
 import { atSea, ships, shipsLoaded } from './ships';
@@ -98,7 +97,6 @@ function ResourceChips() {
 }
 
 function AtSea() {
-  const cap = anyAutopilot.value ? config.value?.autopilot?.max_ships : undefined;
   const count = ships.value.filter(atSea).length;
   if (!shipsLoaded.value) return null;
   return (
@@ -107,7 +105,7 @@ function AtSea() {
         <path d="M3 17c2 0 2-1.5 4.5-1.5S9.5 17 12 17s2.5-1.5 4.5-1.5S19 17 21 17" />
         <path d="M6 13l6-9 6 9z" />
       </svg>
-      {cap === undefined ? count : `${count} / ${cap}`} at sea
+      {count} at sea
     </span>
   );
 }

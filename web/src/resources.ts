@@ -1,6 +1,5 @@
 import { signal } from '@preact/signals';
 import { onMessage } from './connection';
-import type { Source } from './sources';
 
 // What the `resources` message carries (internal/resources).
 export type Holder = { kind: 'ship'; session: string } | { kind: 'lock'; label: string };
@@ -31,16 +30,3 @@ export function chipLabel(r: Resource, shipName: (session: string) => string): s
   const of = `${r.name}: ${Math.min(r.in_use, r.capacity)} of ${units(r.capacity)} in use`;
   return held.length > 0 ? `${of}, held by ${held.join(', ')}` : of;
 }
-
-// A resource still being checked, or not known, says nothing.
-export function launchHint(sources: Source[] | null, sourceKey: string, panelId: string | undefined, all: Resource[]): string | null {
-  const needs = sources?.find((s) => s.key === sourceKey)?.views.find((p) => p.id === panelId)?.autopilot?.resources ?? [];
-  for (const name of needs) {
-    const r = all.find((x) => x.name === name);
-    if (!r || r.check === 'pending') continue;
-    if (r.check === 'missing') return `${name} is missing`;
-    if (r.in_use >= r.capacity) return `${name} is in use`;
-  }
-  return null;
-}
-
