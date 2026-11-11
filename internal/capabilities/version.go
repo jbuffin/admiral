@@ -1,6 +1,7 @@
 package capabilities
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -12,7 +13,7 @@ import (
 )
 
 // DetectVersion runs the harness's executable with --version under the fleet's env for
-// that harness and returns the trimmed output. A missing executable, a nonzero exit, a
+// that harness and returns the first non-empty line of its output. A missing executable, a nonzero exit, a
 // timeout or empty output is an error, never an empty version that could match a stored one.
 func DetectVersion(ctx context.Context, fleet config.Fleet, harness string, timeout time.Duration) (string, error) {
 	h, ok := fleet.Harness(harness)
@@ -27,17 +28,36 @@ func DetectVersion(ctx context.Context, fleet config.Fleet, harness string, time
 	defer cancel()
 	cmd := exec.CommandContext(ctx, exe, "--version")
 	cmd.Env = h.Environ()
-	cmd.WaitDelay = time.Second // a grandchild holding the pipe open must not outlive the timeout
-	out, err := cmd.Output()
+	InOwnGroup(cmd)
+	cmd.WaitDelay = time.Second // a descendant holding the pipe open must not outlive the timeout
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
 	if ctx.Err() != nil {
 		return "", fmt.Errorf("%s --version: %w", harness, ctx.Err())
 	}
 	if err != nil {
+		if msg := firstLine(stderr.String()); msg != "" {
+			return "", fmt.Errorf("%s --version: %w: %s", harness, err, msg)
+		}
 		return "", fmt.Errorf("%s --version: %w", harness, err)
 	}
-	v := strings.TrimSpace(string(out))
+	// The first line only, so an update notice after it doesn't change the version key.
+	v := firstLine(stdout.String())
 	if v == "" {
 		return "", errors.New(harness + " --version printed nothing")
 	}
 	return v, nil
+}
+
+func firstLine(s string) string {
+	for _, l := range strings.Split(s, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			if len(l) > 200 {
+				l = l[:200]
+			}
+			return l
+		}
+	}
+	return ""
 }

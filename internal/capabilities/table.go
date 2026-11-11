@@ -66,7 +66,7 @@ func Claims(harness string, id ID) (Claim, bool) {
 }
 
 // ClaimedBy reports whether a harness at the given version claims the capability.
-// The version may carry trailing text ("2.1.295 (Claude Code)").
+// It reads the first X.Y.Z token of the version, which may carry trailing text ("2.1.295 (Claude Code)").
 func ClaimedBy(harness string, id ID, version string) bool {
 	cl, ok := Claims(harness, id)
 	if !ok {

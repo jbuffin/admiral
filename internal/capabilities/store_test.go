@@ -3,6 +3,7 @@ package capabilities
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -321,5 +322,96 @@ func TestUnreadableFileReadsNotCheckedWithTheError(t *testing.T) {
 	}
 	if s.Proven("work", "claude", AutopilotGuard) {
 		t.Error("an unreadable file proved a capability")
+	}
+}
+
+func TestReadErrorLeavesTheFileAlone(t *testing.T) {
+	home := t.TempDir()
+	if err := os.Mkdir(filepath.Join(home, FileName), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := Open(home).RecordVersion("work", "claude", "1", t0); err == nil {
+		t.Error("a write over an unreadable file reported no error")
+	}
+	if _, err := os.Stat(filepath.Join(home, FileName+".bad")); err == nil {
+		t.Error("an unreadable file was moved aside as corrupt")
+	}
+}
+
+func TestLastProbedIsTheVersionOfTheLatestResult(t *testing.T) {
+	s := Open(t.TempDir())
+	if _, _, ok, err := s.LastProbed("work", "claude"); ok || err != nil {
+		t.Fatalf("LastProbed on an empty store = %v, %v", ok, err)
+	}
+	seed(t, s, "work", "claude", "2.1.300", AutopilotGuard, pass("ok"))
+	if err := s.RecordVersion("work", "claude", "2.1.301", t0.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	v, at, ok, err := s.LastProbed("work", "claude")
+	if err != nil || !ok || v != "2.1.300" || !at.Equal(t0) {
+		t.Errorf("LastProbed = %q, %v, %v, %v; want 2.1.300 at t0", v, at, ok, err)
+	}
+}
+
+func TestSnapshotIsOneConsistentRead(t *testing.T) {
+	s := Open(t.TempDir())
+	seed(t, s, "work", "claude", "2.1.300", AutopilotGuard, pass("blocked"))
+	if err := s.Record("work", "claude", "2.1.300", AutopilotAdvisor, fail("none")); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := s.Snapshot("work", "claude")
+	if err != nil || snap.Version != "2.1.300" || !snap.DetectedAt.Equal(t0) {
+		t.Fatalf("Snapshot = %+v, %v", snap, err)
+	}
+	if st := snap.States[AutopilotGuard]; st.Status != Passed || st.Result == nil || st.Result.Detail != "blocked" {
+		t.Errorf("guard = %+v", st)
+	}
+	if st := snap.States[AutopilotAdvisor]; st.Status != Failed {
+		t.Errorf("advisor = %+v", st)
+	}
+	if st := snap.States[JudgeNoTools]; st.Status != NotChecked || st.Result != nil {
+		t.Errorf("judge.no_tools = %+v", st)
+	}
+	if len(snap.States) != 12 {
+		t.Errorf("%d states, want every table capability", len(snap.States))
+	}
+	if err := s.RecordVersion("work", "claude", "2.1.301", t0); err != nil {
+		t.Fatal(err)
+	}
+	if snap, _ := s.Snapshot("work", "claude"); snap.States[AutopilotGuard].Status != NotChecked {
+		t.Error("a snapshot of a new version shows the old version's result")
+	}
+}
+
+func TestSnapshotOnACorruptFileIsAllNotChecked(t *testing.T) {
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, FileName), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := Open(home).Snapshot("work", "claude")
+	if err == nil {
+		t.Error("no error for a corrupt file")
+	}
+	for id, st := range snap.States {
+		if st.Status != NotChecked {
+			t.Errorf("%s = %s", id, st.Status)
+		}
+	}
+}
+
+func TestDetailIsOneLineAndCapped(t *testing.T) {
+	s := Open(t.TempDir())
+	long := strings.Repeat("x", 500)
+	seed(t, s, "work", "claude", "1", AutopilotGuard, pass("line one\nline two\r\n  three"))
+	if err := s.Record("work", "claude", "1", AutopilotArgs, pass(long)); err != nil {
+		t.Fatal(err)
+	}
+	r, _, _ := s.Result("work", "claude", AutopilotGuard)
+	if r.Detail != "line one line two three" {
+		t.Errorf("Detail = %q", r.Detail)
+	}
+	r, _, _ = s.Result("work", "claude", AutopilotArgs)
+	if n := len([]rune(r.Detail)); n > 200 || n < 100 {
+		t.Errorf("capped Detail has %d runes", n)
 	}
 }

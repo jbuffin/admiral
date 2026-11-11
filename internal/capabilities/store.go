@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -27,9 +28,19 @@ type harnessRecord struct {
 	Version    string                   `json:"version,omitempty"`
 	DetectedAt time.Time                `json:"detected_at,omitzero"`
 	Versions   map[string]map[ID]Result `json:"versions,omitempty"`
+	// ProbedVersion is the version of the most recent Record, so a caller can tell when
+	// the detected version has moved on from the one the results describe.
+	ProbedVersion string    `json:"probed_version,omitempty"`
+	ProbedAt      time.Time `json:"probed_at,omitzero"`
 }
 
 func (s *Store) path() string { return filepath.Join(s.home, FileName) }
+
+// corruptError is a file that is there and readable but is not a store.
+type corruptError struct{ err error }
+
+func (e corruptError) Error() string { return e.err.Error() }
+func (e corruptError) Unwrap() error { return e.err }
 
 // load reads the file; a missing file is an empty store, a corrupt or unreadable one is
 // an empty store and an error.
@@ -44,7 +55,7 @@ func (s *Store) load() (*file, error) {
 	}
 	var parsed file
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return f, fmt.Errorf("%s is corrupt: %w", s.path(), err)
+		return f, corruptError{fmt.Errorf("%s is corrupt: %w", s.path(), err)}
 	}
 	if parsed.Fleets != nil {
 		f = &parsed
@@ -81,11 +92,13 @@ func (s *Store) update(change func(*file)) error {
 
 	f, err := s.load()
 	if err != nil {
-		if _, statErr := os.Stat(s.path()); statErr == nil {
-			// The bad file is kept for the engineer; a read error on a directory fails the rename.
-			if err := os.Rename(s.path(), s.path()+".bad"); err != nil {
-				return err
-			}
+		var bad corruptError
+		if !errors.As(err, &bad) {
+			return err // a read error says nothing about the file's content
+		}
+		// The bad file is kept for the engineer.
+		if err := os.Rename(s.path(), s.path()+".bad"); err != nil {
+			return err
 		}
 	}
 	change(f)
@@ -141,6 +154,7 @@ func (s *Store) Version(fleet, harness string) (string, time.Time, error) {
 
 // Record stores a result for the harness version that was probed.
 func (s *Store) Record(fleet, harness, version string, id ID, r Result) error {
+	r.Detail = oneLine(r.Detail)
 	return s.update(func(f *file) {
 		rec := s.record(f, fleet, harness)
 		if rec.Versions == nil {
@@ -150,6 +164,7 @@ func (s *Store) Record(fleet, harness, version string, id ID, r Result) error {
 			rec.Versions[version] = map[ID]Result{}
 		}
 		rec.Versions[version][id] = r
+		rec.ProbedVersion, rec.ProbedAt = version, r.At
 	})
 }
 
@@ -184,4 +199,69 @@ func (s *Store) Status(fleet, harness string, id ID) (Status, error) {
 func (s *Store) Proven(fleet, harness string, id ID) bool {
 	st, err := s.Status(fleet, harness, id)
 	return err == nil && st == Passed
+}
+
+const maxDetail = 200
+
+// oneLine collapses whitespace runs, newlines included, and caps the length.
+func oneLine(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > maxDetail {
+		s = string(r[:maxDetail-1]) + "…"
+	}
+	return s
+}
+
+// LastProbed returns the harness version the most recent result was stored under and
+// when it ran; ok is false when nothing was recorded.
+func (s *Store) LastProbed(fleet, harness string) (version string, at time.Time, ok bool, err error) {
+	f, err := s.load()
+	if err != nil {
+		return "", time.Time{}, false, err
+	}
+	rec := f.Fleets[fleet][harness]
+	if rec == nil || rec.ProbedVersion == "" {
+		return "", time.Time{}, false, nil
+	}
+	return rec.ProbedVersion, rec.ProbedAt, true, nil
+}
+
+// CapabilityState is one capability's status and its result, when there is one.
+type CapabilityState struct {
+	Status Status
+	Result *Result
+}
+
+// Snapshot is one consistent read of a fleet's harness: the detected version and the
+// state of every table capability against it.
+type Snapshot struct {
+	Version    string // "" when none was detected
+	DetectedAt time.Time
+	States     map[ID]CapabilityState
+}
+
+// Snapshot reads the file once. On a corrupt or unreadable file every capability is
+// NotChecked and the error is returned.
+func (s *Store) Snapshot(fleet, harness string) (Snapshot, error) {
+	f, err := s.load()
+	snap := Snapshot{States: map[ID]CapabilityState{}}
+	rec := f.Fleets[fleet][harness]
+	if err != nil || rec == nil {
+		rec = &harnessRecord{}
+	}
+	snap.Version, snap.DetectedAt = rec.Version, rec.DetectedAt
+	for _, feat := range Table() {
+		for _, c := range feat.Capabilities {
+			st := CapabilityState{Status: NotChecked}
+			if r, ok := rec.Versions[rec.Version][c.ID]; ok && rec.Version != "" {
+				st.Result = &r
+				st.Status = Failed
+				if r.Passed {
+					st.Status = Passed
+				}
+			}
+			snap.States[c.ID] = st
+		}
+	}
+	return snap, err
 }

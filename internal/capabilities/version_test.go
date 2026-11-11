@@ -4,6 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -76,5 +79,47 @@ func TestDetectVersionTimeoutIsAnError(t *testing.T) {
 	}
 	if d := time.Since(start); d > 5*time.Second {
 		t.Errorf("took %v; the timeout did not stop the process", d)
+	}
+}
+
+func TestDetectVersionTimeoutKillsDescendants(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "child.pid")
+	f := fakeHarness(t, `sleep 30 &
+echo $! > `+pidFile+`
+wait`, nil)
+	if _, err := DetectVersion(context.Background(), f, "claude", 500*time.Millisecond); err == nil {
+		t.Fatal("want a timeout error")
+	}
+	raw, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for syscall.Kill(pid, 0) == nil {
+		if time.Now().After(deadline) {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+			t.Fatalf("child %d outlived the timeout", pid)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestDetectVersionUsesTheFirstLine(t *testing.T) {
+	f := fakeHarness(t, `printf '\n2.1.300 (Claude Code)\nUpdate available: 2.2.0\n'`, nil)
+	got, err := DetectVersion(context.Background(), f, "claude", 5*time.Second)
+	if err != nil || got != "2.1.300 (Claude Code)" {
+		t.Errorf("DetectVersion = %q, %v", got, err)
+	}
+}
+
+func TestDetectVersionErrorCarriesStderr(t *testing.T) {
+	f := fakeHarness(t, `echo "boom: not logged in" >&2; exit 2`, nil)
+	_, err := DetectVersion(context.Background(), f, "claude", 5*time.Second)
+	if err == nil || !strings.Contains(err.Error(), "boom: not logged in") {
+		t.Errorf("err = %v, want the stderr line", err)
 	}
 }
