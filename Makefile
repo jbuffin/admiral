@@ -23,6 +23,7 @@ check: build lint test-short
 
 lint: lint-docs
 	go vet ./...
+	go vet -tags packaging ./e2e/
 	npm --prefix web run typecheck
 
 # Every tracked Markdown file: markdownlint, then relative links and anchors.
@@ -36,12 +37,12 @@ e2e: build
 	go test -count=1 ./e2e/...
 	npm --prefix web run e2e
 
-# What the macOS workflow and the release run: the Go e2e tests and the
-# @critical browser journeys. The macOS runner's virtual GPU resets under
-# WebKit about 40 times a minute, so the full suite flakes there; it runs
-# locally before a push.
+# What the macOS workflow and the release run: the Go e2e tests, the packaging
+# checks (build tag packaging, which make e2e leaves out) and the @critical
+# browser journeys. The macOS runner's virtual GPU resets under WebKit about 40
+# times a minute, so the full suite flakes there; it runs locally before a push.
 e2e-critical: build
-	go test -count=1 ./e2e/...
+	go test -count=1 -tags packaging ./e2e/...
 	npm --prefix web run e2e -- --grep @critical
 
 # The release: a clean UI build, the darwin/arm64 binary stamped with the

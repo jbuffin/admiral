@@ -1,8 +1,9 @@
 name: macOS
 
 # The full check on macOS: build, lint, every unit test and the e2e suites
-# (Go e2e and the @critical browser flows). It never runs on its own: start it
-# from the Actions tab, or the release calls it before building.
+# (Go e2e with the packaging checks, and the @critical browser flows). It never
+# runs on its own: start it from the Actions tab, or the release calls it
+# before building.
 on:
   workflow_dispatch:
   workflow_call:

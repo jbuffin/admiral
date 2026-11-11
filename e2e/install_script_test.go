@@ -1,3 +1,5 @@
+//go:build packaging
+
 package e2e
 
 import (
