@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { expect, test } from './fixtures';
-import { T, campaignIdOf, followByPaste, githubReady, issueUrl, launchBehindThePage, MAP, seedCampaignFleet } from './campaign';
+import { T, campaignIdOf, followByPaste, githubReady, issueUrl, launchBehindThePage, launchSliceBehindThePage, MAP, seedCampaignFleet } from './campaign';
 import { watchPage, withFakeGh } from './shell';
 
 test('on the iPad, a person follows a campaign by pasting it, sees each child\'s status and mode, launches a ready child, is refused a second launch, unfollows it and finds it under Ended; Follow on an order opens its campaign', async ({ page, admiral }) => {
@@ -124,6 +124,55 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   await expect(page).toHaveURL(/\/app\/campaigns\/[0-9a-f]+/);
   await expect(main.getByRole('heading', { name: T.annex })).toBeVisible();
   expect(await ships()).toBe(before);
+
+  // A slice: children that can join carry a checkbox named by their title; checking one opens nothing.
+  const annexId = campaignIdOf(page);
+  const pick = (title: string) => row(title).getByRole('checkbox', { name: title });
+  const ready = group('Ready, without you');
+  await expect(ready.getByRole('checkbox')).toHaveCount(4);
+  await press(pick('Annex doors'));
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(ready.getByRole('button', { name: /^Launch slice/ })).toHaveCount(0);
+  await press(pick('Annex lights'));
+  await press(ready.getByRole('button', { name: 'Launch slice (2)' }));
+
+  // Someone else launches the same two meanwhile: the form shows the refusal naming that ship.
+  const sliceForm = page.getByRole('dialog', { name: 'Launch', exact: true });
+  await expect(sliceForm).toContainText('Without you');
+  await expect(sliceForm.getByLabel('Skill')).toHaveCount(0);
+  await expect(sliceForm.getByRole('checkbox', { name: /autopilot/i })).toHaveCount(0);
+  const holder2 = await launchSliceBehindThePage(admiral, annexId, [32, 31]);
+  await press(sliceForm.getByRole('button', { name: 'Launch', exact: true }));
+  await expect(sliceForm.getByRole('alert')).toContainText(holder2);
+  await press(sliceForm.getByRole('button', { name: 'Cancel', exact: true }));
+  // Both rows now show that ship and drop out of the selection: no checkbox, no bar.
+  await expect(row('Annex doors')).toContainText(holder2);
+  await expect(row('Annex lights')).toContainText(holder2);
+  await expect(pick('Annex doors')).toHaveCount(0);
+  await expect(pick('Annex lights')).toHaveCount(0);
+  await expect(ready.getByRole('button', { name: /^Launch slice/ })).toHaveCount(0);
+
+  // A pair of the two left launches from the page: one request with both URLs, the dirs call names the slice's order, one ship.
+  await press(pick('Annex vents'));
+  await press(pick('Annex pumps'));
+  const sliceDirs = page.waitForRequest((r) => new URL(r.url()).pathname === '/api/v1/launch-orders/dirs');
+  await press(ready.getByRole('button', { name: 'Launch slice (2)' }));
+  const order = ((await sliceDirs).postDataJSON() as { source: string; id: string });
+  expect(order).toMatchObject({ source: 'campaign', id: `${annexId}/${issueUrl(33)},34` });
+  await expect(sliceForm.getByLabel('Checkout')).toHaveValue(join(admiral.home, 'widgets'));
+  const sliceSent = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === `/api/v1/campaigns/${annexId}/launch`);
+  await press(sliceForm.getByRole('button', { name: 'Launch', exact: true }));
+  const sliceBody = (await sliceSent).postDataJSON() as Record<string, unknown>;
+  expect(sliceBody).toMatchObject({ issues: [issueUrl(33), issueUrl(34)], harness: 'claude' });
+  expect(sliceBody).not.toHaveProperty('child_url');
+  await expect(sliceForm).toBeHidden();
+  const shipsNow = (await (await fetch(`${admiral.url}api/v1/ships`)).json()) as { ships: { name: string; issues?: string[] }[] };
+  const mine = shipsNow.ships.filter((s) => s.issues?.includes(issueUrl(33)));
+  expect(mine).toHaveLength(1);
+  expect(mine[0].issues).toEqual([issueUrl(33), issueUrl(34)]);
+  await expect(row('Annex vents')).toContainText(mine[0].name);
+  await expect(row('Annex pumps')).toContainText(mine[0].name);
+  await expect(ready.getByRole('checkbox')).toHaveCount(0);
 
   expect(watch.errors).toEqual([]);
   expect(watch.unversioned()).toEqual([]);

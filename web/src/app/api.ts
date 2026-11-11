@@ -45,6 +45,8 @@ export interface Ship {
   stale?: boolean;
   prs?: MooredPR[];
   url?: string;
+  // Every issue a slice ship holds, `url` first; a single-issue ship omits it.
+  issues?: string[];
   source?: string;
   dir: string;
   repo: string;

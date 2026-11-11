@@ -212,3 +212,18 @@ export function leaves(root: CampaignNode | undefined): CampaignNode[] {
 
 /** Whether any node in the tree has sub-issues Admiral couldn't read. */
 export const hasUnreadable = (n: CampaignNode | undefined): boolean => !!n && ((n.unreadable ?? 0) > 0 || (n.children ?? []).some(hasUnreadable));
+
+export interface SliceContext {
+  ended: boolean;
+  canStart: boolean;
+}
+
+/** Whether a child can join a slice: ready, Without you, Commodore, no ship, on a live campaign the page can start. */
+export function canJoinSlice(_child: CampaignNode, _ctx: SliceContext, _ships: Ship[]): boolean {
+  return false;
+}
+
+/** The selected URLs that still qualify, in the order the rows show. */
+export function keepSelectable(selected: string[], _rows: CampaignNode[], _ctx: SliceContext, _ships: Ship[]): string[] {
+  return selected;
+}
