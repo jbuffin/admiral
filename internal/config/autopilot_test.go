@@ -12,17 +12,6 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// The interface these tests assume (#114, rung 2 of autopilot):
-//
-//	Config.AutopilotMaxShips int                      // top-level cap, 3 when unset
-//	Source.Autopilot map[string]config.PanelAutopilot // by panel id
-//	config.PanelAutopilot{Enabled bool, Fleet, Harness string, Skill config.Skill,
-//	    Args []string, MaxShips int, LowStakes string}
-//	config.Skill{Kind, Name string}
-//
-// A source's autopilot object is also kept as it was read, so SourcesJSON can
-// write it back untouched.
-
 // apConfig is a config with a claude fleet "work", a codex-only fleet "cod"
 // and one source whose autopilot object is sourceAP (top is the top-level one).
 func apConfig(top, sourceAP string) string {

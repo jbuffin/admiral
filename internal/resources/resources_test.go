@@ -17,33 +17,6 @@ import (
 	"github.com/jbuffin/admiral/internal/ships"
 )
 
-// The interface these tests assume (#118, locked resources). The Set answers
-// which units of each resource are held and by whom, whether a set of resources
-// is free, and each resource's check state; it runs the checks.
-//
-//	resources.New(resources.Options) *resources.Set
-//	Options{Config func() *config.Config; Ships func() []ships.Ship;
-//	        CheckTimeout, CheckEvery time.Duration  // 10s and 15s when zero
-//	        OnChange func()}                          // a check state changed, a lock was
-//	                                                 // released or a reservation dropped
-//	(*Set).Run(ctx context.Context)    // checks now, on config change and every CheckEvery
-//	(*Set).CheckNow()                  // runs every check and returns when all are done
-//	(*Set).State() []resources.State   // sorted by name; State has the API's JSON shape:
-//	  State{Name; Capacity, InUse int; Holders []Holder; Check string} with Check
-//	  "ok"|"missing"|"pending"|"none"; Holder{Kind "ship"|"lock"; Session, Label string}.
-//	  InUse counts reservations too; a reservation has no Holder. Holders list ships
-//	  by session, then locks in the order they were taken.
-//	(*Set).Reserve(names []string) (release func(), waits []resources.Wait)
-//	  all-or-nothing: with every name free and its check "ok" or "none" it reserves a
-//	  unit of each and returns release (idempotent); otherwise it reserves nothing and
-//	  returns, for each name that is not ready, Wait{Name, Why "busy"|"missing"|"pending"}.
-//	(*Set).Lock(name, label string) (release func(), err error)
-//	  non-blocking; err is resources.ErrBusy when no unit is free and
-//	  resources.ErrUnknown when the name isn't defined; the check isn't consulted.
-//	  release is idempotent.
-//	(*Set).Changed() <-chan struct{}   // closed when a lock is released, a reservation
-//	                                   // dropped or a check state changed; fetch a fresh one each time
-
 type rig struct {
 	cfg     *config.Config
 	ships   []ships.Ship

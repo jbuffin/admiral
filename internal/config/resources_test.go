@@ -11,15 +11,6 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// The interface these tests assume (#118, locked resources):
-//
-//	Config.Resources map[string]config.Resource        // by resource name
-//	config.Resource{Capacity int, Check []string}      // Check nil when none
-//	PanelAutopilot.Resources []string                  // nil when the entry names none
-//
-// A panel's names are checked against the top-level resources after the whole
-// file is parsed, so the order of keys in the file doesn't matter.
-
 // resConfig is a config with fleet "work", a source "s" whose autopilot entry
 // for panel "p" names `panelRes` (a JSON array, or "" for none), and the given
 // top-level resources object. The resources key comes after sources on purpose.

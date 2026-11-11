@@ -11,15 +11,6 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// The write API shape these tests assume (the implementer may add to it, but
-// these two functions on an ADMIRAL_HOME directory are the contract):
-//
-//	config.SetFavoriteSkills(dir string, skills []string) error
-//	config.SetSources(dir string, sources json.RawMessage) error
-//
-// Both read $dir/config.json fresh, refuse when it is invalid, replace one
-// top-level key and write the file atomically.
-
 const richConfig = `{
   "version": 1,
   "future_setting": {"a": [1, 2, {"b": null}], "c": "kept"},

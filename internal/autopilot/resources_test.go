@@ -16,17 +16,6 @@ import (
 	"github.com/jbuffin/admiral/internal/sources"
 )
 
-// The gate (#118, locked resources). The interface these tests assume:
-//
-//	Engine.Resources *resources.Set         // nil gates nothing
-//	Engine.OnWait func()                    // a panel started or stopped waiting; nil does nothing
-//	(*Engine).WaitingFor(source, panel string) []string  // the resources its waiting order waits for; empty when it isn't waiting
-//	config.PanelAutopilot.Resources []string; launcher.Request.Resources []string
-//	  (set from the entry on an autopilot launch, nil when the entry names none)
-//
-// Passes are driven by hand as in engine_test.go; checks run through
-// Set.CheckNow, so nothing here waits on a clock.
-
 func needs(max int, names ...string) config.PanelAutopilot {
 	e := entry(max)
 	e.Resources = names
