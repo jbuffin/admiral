@@ -142,7 +142,8 @@ async function openCapabilities(page: Page, fleet: string) {
   await expect(surface(page, 'Harness capabilities')).toBeVisible();
   await expect(page.getByRole('main')).toContainText(`${fleet} fleet`);
 }
-const rowOf = (harness: ReturnType<typeof harnessOf>, label: string) => harness.getByRole('listitem').filter({ hasText: label });
+// A row starts with its label, so another row's reason (the advisor's names no tools) never matches.
+const rowOf = (harness: ReturnType<typeof harnessOf>, label: string) => harness.getByRole('listitem').filter({ hasText: new RegExp('^' + label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) });
 const missingLine = (harness: ReturnType<typeof harnessOf>, label: string) => harness.getByRole('note').filter({ hasText: label });
 
 test('Preferences shows what each harness was probed to do, and Check again re-runs a failed probe', async ({ page, admiral }) => {
@@ -227,7 +228,9 @@ test('Preferences shows what each harness was probed to do, and Check again re-r
   await expect(rowOf(workClaude, failed.label)).toContainText(/passed/i);
   await expect(workClaude.getByRole('note')).toHaveCount(0);
   expect((await westwindClaude(page, admiral.url)).guard.status).toBe('passed');
-  for (const cap of before.caps.filter((c) => c.id !== failed.id && !judgeProbed(c))) {
+  // The advisor follows the judge harness the earlier check proved.
+  await expect(rowOf(workClaude, 'Advisor')).toContainText(/passed/i);
+  for (const cap of before.caps.filter((c) => c.id !== failed.id && c.id !== 'autopilot.advisor' && !judgeProbed(c))) {
     await expect(rowOf(workClaude, cap.label)).toContainText(/not checked/i);
   }
   await expect(rowOf(workCodex, failed.label)).toContainText(/not checked/i);
@@ -247,7 +250,7 @@ test('Preferences shows what each harness was probed to do, and Check again re-r
   expect(off.harness).toBeNull();
   await expect(page.getByRole('main')).toContainText('Judge calls: off');
   await expect(page.getByRole('main')).toContainText(off.reason!);
-  await expect(harnessOf(page, 'Claude').getByRole('note')).toHaveCount(before.caps.filter(judgeProbed).length);
+  await expect(harnessOf(page, 'Claude').getByRole('note')).toHaveCount(before.caps.filter(judgeProbed).length + 1); // the failed advisor too
 
   expect(watch.paths.some((p) => p === '/api/v1/harness-capabilities')).toBe(true);
   expect(watch.unversioned()).toEqual([]);
