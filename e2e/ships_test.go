@@ -125,6 +125,13 @@ func TestLaunchCommandLine(t *testing.T) {
 			if want := filepath.Join(w.home, "inbox", ship.Session) + "/"; r.env["ADMIRAL_INBOX"] != want {
 				t.Errorf("ADMIRAL_INBOX = %q, want %s", r.env["ADMIRAL_INBOX"], want)
 			}
+			crewDir := filepath.Join(w.home, "fleets", "work", "crew")
+			if r.env["ADMIRAL_CREW_DIR"] != crewDir {
+				t.Errorf("ADMIRAL_CREW_DIR = %q, want the fleet's crew directory %s", r.env["ADMIRAL_CREW_DIR"], crewDir)
+			}
+			if st, err := os.Stat(crewDir); err != nil || !st.IsDir() || st.Mode().Perm() != 0o700 {
+				t.Errorf("the fleet's crew directory %s: %v, want a directory with mode 0700", crewDir, err)
+			}
 			if got := strings.TrimSpace(readIf(filepath.Join(r.dir, "dirs"))); got != "inbox=yes reports=yes" {
 				t.Errorf("before the harness ran: %q, want the inbox directory and reports/ to exist", got)
 			}
