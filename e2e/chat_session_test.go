@@ -529,25 +529,27 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 		userLine("u-3b", "COMPACT-NOISE", map[string]any{"isCompactSummary": true, "isVisibleInTranscriptOnly": true}),
 		jsonLine(map[string]any{"type": "assistant", "uuid": "a-4", "isSidechain": true, "message": map[string]any{"role": "assistant", "id": "msg_9", "content": []any{map[string]any{"type": "text", "text": "SIDECHAIN-NOISE"}}}}),
 		jsonLine(map[string]any{"type": "system", "uuid": "s-1", "subtype": "local_command", "content": "SYSTEM-NOISE"}),
+		userLine("u-3c", "<task-notification>Subagent finished</task-notification>", nil),
+		userLine("u-3d", "Another Claude session sent a message: META-SESSION-NOISE", map[string]any{"isMeta": true}),
 		userLine("u-4", []any{map[string]any{"type": "text", "text": "Now list the ships"}}, nil),
 	)
-	first := []string{"user: Please summarise the harbour log", "assistant: The log has three entries.", "user: Now list the ships"}
+	first := []string{"user: Please summarise the harbour log", "assistant: The log has three entries.", "user: <task-notification>Subagent finished</task-notification>", "user: Now list the ships"}
 
 	t.Run("the transcript becomes the conversation", func(t *testing.T) {
 		c := &chatWorld{world: w.at(t), cfgDir: c.cfgDir}
 		c.touch("go-start")
-		got := c.waitSession(10*time.Second, "the first three messages", messagesAre(first...))
+		got := c.waitSession(10*time.Second, "the first four messages", messagesAre(first...))
 		if got.Error != "" || !got.Running {
 			t.Errorf("after SessionStart: %+v, want running with no error", got)
 		}
-		for i, id := range []string{"u-1", "a-3", "u-4"} {
+		for i, id := range []string{"u-1", "a-3", "u-3c", "u-4"} {
 			if m := got.Messages[i]; m.ID != id || !strings.HasPrefix(m.At, "2026-01-02T03:04:0") {
 				t.Errorf("message %d = %+v, want id %s (the line's uuid) and its timestamp as at", i, m, id)
 			}
 		}
 		// Every browser gets the update.
-		waitChatWS(t, ws1, 5*time.Second, "the first three messages", messagesAre(first...))
-		waitChatWS(t, ws2, 5*time.Second, "the first three messages", messagesAre(first...))
+		waitChatWS(t, ws1, 5*time.Second, "the first four messages", messagesAre(first...))
+		waitChatWS(t, ws2, 5*time.Second, "the first four messages", messagesAre(first...))
 
 		// More lines, then a line cut in two: it must be read whole once finished.
 		appendLines(t, tp1,
