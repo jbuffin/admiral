@@ -425,3 +425,26 @@ button.pill { cursor: pointer; min-height: 32px; }
 .msg-input:disabled { opacity: 0.6; }
 .msg-actions { display: flex; flex-direction: column; gap: 6px; }
 .msg.user.sent { opacity: 0.55; }
+
+/* Flotilla chips and the Changes tab. */
+.flotilla { display: flex; gap: 8px; overflow-x: auto; padding: 0 0 10px; }
+.chip { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: var(--shape-min-touch-target); max-width: 100%; padding: 0 12px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); background: var(--color-panel); color: var(--color-text2); }
+.chip[aria-checked='true'] { border-color: var(--color-accent); color: var(--color-text); font-weight: 600; background: var(--color-sel); }
+.chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-name, .chip-state { font-size: var(--font-size-meta); font-weight: 400; color: var(--color-muted); white-space: nowrap; }
+.chip.error .chip-state { color: var(--color-err); }
+.changes { display: flex; flex-direction: column; gap: 12px; min-width: 0; overflow-y: auto; overflow-x: hidden; }
+.change-files { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.change-file { display: flex; align-items: baseline; gap: 10px; min-width: 0; font-size: var(--font-size-meta); }
+.change-path { flex: 1; min-width: 0; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--font-size-mono); }
+.change-status { color: var(--color-muted); }
+.change-add { color: var(--color-ok); font-family: var(--font-mono); }
+.change-del { color: var(--color-err); font-family: var(--font-mono); }
+.diff { min-width: 0; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); overflow: hidden; content-visibility: auto; contain-intrinsic-size: auto 200px; }
+.diff-path { margin: 0; padding: 6px 10px; font: inherit; font-family: var(--font-mono); font-size: var(--font-size-mono); font-weight: 600; background: var(--color-sel); overflow-wrap: anywhere; }
+.diff-body { margin: 0; padding: 6px 0; overflow-x: auto; font-family: var(--font-mono); font-size: var(--font-size-mono); user-select: text; -webkit-user-select: text; }
+.diff-hunk, .diff-line, .diff-head, .diff-note { display: block; width: max-content; min-width: 100%; padding: 0 10px; white-space: pre; }
+.diff-head, .diff-note { color: var(--color-muted); }
+.diff-line.add { background: color-mix(in srgb, var(--color-ok) 18%, transparent); }
+.diff-line.del { background: color-mix(in srgb, var(--color-err) 18%, transparent); }
+.changes-error { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }

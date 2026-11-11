@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { call, probeShipList, type Ship } from './api';
+import { call, probeShipList, type Changes, type CrewBoat, type Ship } from './api';
+import { splitDiff } from './changes';
 import { followConversation, type Conversation } from './conversation';
 import { ConversationView } from './ConversationView';
-import { Composer, useComposer } from './Composer';
+import { Composer, useComposer, type Target } from './Composer';
+import { boatBoxState, chipState, flotilla } from './flotilla';
+import { Icon } from './Icon';
+import { boxState } from './messageBox';
 import { Sheet } from './Sheet';
 import { fleetSearch } from './fleets';
 import { go, surfacePath } from './router';
@@ -85,14 +89,15 @@ function StopShip({ ship }: { ship: Ship }) {
   );
 }
 
-function TerminalTab({ ship }: { ship: Ship }) {
-  const open = atSea(ship);
+function TerminalTab({ ship, boat }: { ship: Ship; boat?: CrewBoat }) {
+  const open = boat ? boat.status !== 'anchored' : atSea(ship);
   const { host, link, linkState, activity } = useBridgeTerminal({
     session: ship.session,
+    crew: boat?.name,
     open,
     gone: () => {},
     wsBase: '/ws/v1',
-    probe: probeShipList,
+    probe: () => probeShipList(boat?.name),
     signedOut: () => (shipsLink.value = 'signed-out'),
   });
   const canType = open && linkState === 'open';
@@ -105,9 +110,9 @@ function TerminalTab({ ship }: { ship: Ship }) {
       <div class={linkState === 'reconnecting' ? 'term-body dim' : 'term-body'}>
         <div class="term-host" ref={host} />
       </div>
-      {ship.status === 'anchored' ? (
+      {!open && (boat || ship.status === 'anchored') ? (
         <div class="term-keys">
-          <span class="term-note">The harness exited. This is its last screen.</span>
+          <span class="term-note">{boat ? 'This boat exited. This is its last screen.' : 'The harness exited. This is its last screen.'}</span>
         </div>
       ) : (
         open &&
@@ -125,21 +130,129 @@ function TerminalTab({ ship }: { ship: Ship }) {
   );
 }
 
+type Load = { state: 'loading' } | { state: 'error'; error: string } | { state: 'done'; changes: Changes };
+
+/** The ship's diff against its base, read each time the tab opens. It never joins the bridge. */
+function ChangesTab({ ship }: { ship: Ship }) {
+  const [load, setLoad] = useState<Load>({ state: 'loading' });
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let live = true;
+    setLoad({ state: 'loading' });
+    void call<Changes>('GET', `/ships/${encodeURIComponent(ship.session)}/changes`).then((r) => {
+      if (live) setLoad(r.ok ? { state: 'done', changes: r.data } : { state: 'error', error: r.error });
+    });
+    return () => {
+      live = false;
+    };
+  }, [ship.session, attempt]);
+
+  if (load.state === 'loading') return <p class="line">Loading…</p>;
+  if (load.state === 'error')
+    return (
+      <div class="changes-error">
+        <p class="alert" role="alert">
+          {load.error}
+        </p>
+        <button type="button" class="btn" onClick={() => setAttempt(attempt + 1)}>
+          Retry
+        </button>
+      </div>
+    );
+  const { changes } = load;
+  if (changes.state === 'none') return <p class="line">No git history to compare</p>;
+  if (changes.files.length === 0) return <p class="line">No changes</p>;
+  const diffs = splitDiff(changes.diff);
+  return (
+    <div class="changes">
+      <ul class="change-files">
+        {changes.files.map((f) => (
+          <li key={f.path} class="change-file">
+            <span class="change-path">{f.path}</span>
+            <span class={`change-status ${f.status}`}>{f.status}</span>
+            <span class="change-add">+{f.added}</span>
+            <span class="change-del">−{f.removed}</span>
+          </li>
+        ))}
+      </ul>
+      {changes.truncated ? <p class="msg-note">The diff was cut: it is too large to show in full.</p> : null}
+      {diffs.map((d) => (
+        <section key={d.path} class="diff" aria-label={`Diff of ${d.path}`}>
+          <h3 class="diff-path">{d.path}</h3>
+          <pre class="diff-body">
+            {d.hunks.length === 0 ? <span class="diff-note">No text changes</span> : null}
+            {d.hunks.map((h, i) => (
+              <span key={i} class="diff-hunk">
+                <span class="diff-head">{h.header}</span>
+                {h.lines.map((l, n) => (
+                  <span key={n} class={l[0] === '+' ? 'diff-line add' : l[0] === '-' ? 'diff-line del' : 'diff-line'}>
+                    {l}
+                  </span>
+                ))}
+              </span>
+            ))}
+          </pre>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+/** One chip for the ship and one per boat. A boat's chip stays after it exits and says how it ended. */
+function Flotilla({ ship, picked, pick }: { ship: Ship; picked: string | null; pick: (crew: string | null) => void }) {
+  const chips = flotilla(ship);
+  const move = (e: KeyboardEvent, i: number) => {
+    const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const next = chips[(i + step + chips.length) % chips.length];
+    pick(next.crew);
+    (e.currentTarget as HTMLElement).parentElement?.querySelectorAll<HTMLElement>('[role=radio]')[chips.indexOf(next)]?.focus();
+  };
+  return (
+    <div role="radiogroup" aria-label="Flotilla" class="flotilla">
+      {chips.map((c, i) => (
+        <button key={c.crew ?? ''} type="button" role="radio" aria-checked={c.crew === picked} tabIndex={c.crew === picked ? 0 : -1} class={`chip ${c.state}`} onClick={() => pick(c.crew)} onKeyDown={(e) => move(e, i)}>
+          <Icon name={c.crew === null ? 'ships' : 'crew'} size={16} />
+          <span class="chip-label">{c.label}</span>
+          {c.crew !== null ? <span class="chip-name">{c.crew}</span> : null}
+          {c.state === 'finished' ? <span class="chip-state">finished</span> : c.state === 'error' ? <span class="chip-state">error</span> : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
   const [tab, setTab] = useState<Tab>('Conversation');
+  const [crew, setCrew] = useState<string | null>(null);
   const [conv, setConv] = useState<Conversation>({ state: 'loading', items: [], more: false });
   const follow = useRef<ReturnType<typeof followConversation> | undefined>(undefined);
   const latest = useRef(ship);
   latest.current = ship;
+  // A boat that left the ship's list hands the view back to the ship.
+  const boat = crew === null ? undefined : ship.crew.find((b) => b.name === crew);
+  const boatName = boat?.name;
+  const boatHasConversation = boat?.conversation ?? false;
   useEffect(() => {
-    // Only a running Claude ship has a transcript still to come.
-    const f = followConversation(ship.session, setConv, { retryNone: () => latest.current.harness === 'claude' && latest.current.status !== 'anchored' });
+    setConv({ state: 'loading', items: [], more: false });
+    if (boatName !== undefined && !boatHasConversation) {
+      setConv({ state: 'none', items: [], more: false });
+      follow.current = undefined;
+      return;
+    }
+    // Only a running Claude ship has a transcript still to come; a boat is followed once its transcript is recorded.
+    const f = followConversation(ship.session, setConv, { crew: boatName, retryNone: () => boatName === undefined && latest.current.harness === 'claude' && latest.current.status !== 'anchored' });
     follow.current = f;
     return f.stop;
-  }, [ship.session]);
+  }, [ship.session, boatName, boatHasConversation]);
 
-  const box = useComposer(ship, conv);
+  const target: Target = boat
+    ? { session: ship.session, crew: boat.name, state: boatBoxState(boat), interruptible: boat.status === 'underway', hasConversation: boatHasConversation && conv.state === 'ok', subject: 'This boat' }
+    : { session: ship.session, state: boxState(ship), interruptible: ship.status === 'underway', hasConversation: conv.state === 'ok' || (conv.state === 'none' && ship.harness === 'claude'), subject: 'This ship' };
+  const box = useComposer(target, conv);
   const Heading = title ? 'h1' : 'h2';
+  const anchored = boat ? chipState(boat) !== 'running' : ship.status === 'anchored';
   return (
     <section class="ship-view">
       <div class="ship-view-head">
@@ -147,6 +260,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
         <Heading>{ship.name}</Heading>
         <StopShip ship={ship} />
       </div>
+      {ship.crew.length > 0 ? <Flotilla ship={ship} picked={boatName ?? null} pick={setCrew} /> : null}
       <div role="tablist" class="view-tabs" aria-label={`${ship.name} views`}>
         {TABS.map((t) => (
           <button key={t} type="button" role="tab" id={`tab-${t}`} aria-selected={tab === t} aria-controls="view-panel" class="view-tab" onClick={() => setTab(t)}>
@@ -158,14 +272,22 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
         {tab === 'Conversation' ? (
           <>
             <div class="convo-area">
-              <ConversationView conv={conv} harness={ship.harness} anchored={ship.status === 'anchored'} working={ship.status === 'underway'} openTerminal={() => setTab('Terminal')} loadOlder={() => void follow.current?.loadOlder()} />
+              <ConversationView
+                conv={conv}
+                harness={boat ? 'claude' : ship.harness}
+                anchored={anchored}
+                working={boat ? boat.status === 'underway' : ship.status === 'underway'}
+                noneTitle={boat ? 'No conversation for this boat' : undefined}
+                openTerminal={() => setTab('Terminal')}
+                loadOlder={() => void follow.current?.loadOlder()}
+              />
             </div>
-            <Composer ship={ship} box={box} />
+            <Composer target={target} box={box} />
           </>
         ) : tab === 'Terminal' ? (
-          <TerminalTab ship={ship} />
+          <TerminalTab ship={ship} boat={boat} />
         ) : tab === 'Changes' ? (
-          <p class="line">Changes arrive in a later update.</p>
+          <ChangesTab ship={ship} />
         ) : (
           <p class="line">No pull request yet</p>
         )}
