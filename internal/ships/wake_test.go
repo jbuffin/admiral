@@ -73,3 +73,25 @@ func TestWakeOfAShipTheEngineerDismissedAnswers404(t *testing.T) {
 		t.Errorf("wake of a dismissed ship = %d %s, want 404", rec.Code, rec.Body)
 	}
 }
+
+// A record a wake could not remove is the earlier round's: the ship's next mooring replaces it.
+func TestMooringAfterAWakeThatLeftItsOldRecordReplacesIt(t *testing.T) {
+	f := mooredService(t, nil)
+	pr := "https://github.com/acme/widgets/pull/7"
+	f.moor(t, "Saltpaw", "work", pr)
+	f.s.moor(context.Background(), sessionhost.Session{Name: "saltpaw", Options: map[string]string{
+		"name": "Saltpaw", "fleet": "work", "harness": "claude", "dir": "/src/widgets", "round": "1"}}, []string{pr})
+	if recs := f.records(t); len(recs) != 1 || recs[0].Round != 1 {
+		t.Errorf("records = %+v, want the one record at round 1", recs)
+	}
+}
+
+func TestARoundsEndIsLoggedOnceHoweverOftenItIsReported(t *testing.T) {
+	f := mooredService(t, nil)
+	sess := sessionhost.Session{Name: "saltpaw", Options: map[string]string{"round": "2"}}
+	f.s.endRound(sess, "sailed")
+	f.s.endRound(sess, "sailed")
+	if got := f.events(t, "saltpaw", "round"); len(got) != 1 {
+		t.Errorf("round events = %v, want one", got)
+	}
+}

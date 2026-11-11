@@ -1,6 +1,7 @@
 package moor
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -51,4 +52,36 @@ func TestParseReportIgnoresAnOversizedReport(t *testing.T) {
 	if got := ParseReport([]byte(raw)); len(got.PRs) != 0 {
 		t.Errorf("an oversized report gave PRs %v, want none", got.PRs)
 	}
+}
+
+func TestOnlyASkillsResumeInvocationIsKeptAsResumeText(t *testing.T) {
+	for resume, want := range map[string]bool{
+		"/commodore resume run-7":          true,
+		"$commodore resume run-7":          true,
+		"/skills:commodore resume r1.2_x":  true,
+		"/commodore resume run-7 and push": false,
+		"/commodore resume run-7\nmore":    false,
+		"/commodore resume run-7\n":        false,
+		"/commodore resume ../x":           false,
+		"/commodore resume a..b":           false,
+		"/commodore resume -x":             false,
+		"/commodore resume":                false,
+		"commodore resume run-7":           false,
+		"/commodore  resume run-7":         false,
+		"/commodore resume run-7\x00":      false,
+		"":                                 false,
+	} {
+		if got := ValidResume(resume); got != want {
+			t.Errorf("ValidResume(%q) = %v, want %v", resume, got, want)
+		}
+		raw := `{"version":2,"prs":[],"resume":` + jsonString(resume) + `}`
+		if got := ParseReport([]byte(raw)).Resume; (got != "") != want {
+			t.Errorf("ParseReport kept resume %q as %q, want kept = %v", resume, got, want)
+		}
+	}
+}
+
+func jsonString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }

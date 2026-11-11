@@ -224,6 +224,10 @@ func (s *Service) endMoored(session, reason string) (bool, error) {
 		return false, nil
 	}
 	rec := s.moored[idx]
+	if s.committed[session] { // a wake is making the session: it wins
+		s.mooredMu.Unlock()
+		return false, nil
+	}
 	if err := moor.Remove(s.Launcher.Home, rec.Name); err != nil { // kept, so the next poll ends it
 		s.mooredMu.Unlock()
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: its moored record cannot be removed: %v\n", rec.Name, err)

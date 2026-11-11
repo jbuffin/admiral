@@ -45,7 +45,19 @@ func WriteFeedback(checkout string, round int, text string) (string, error) {
 		return "", err
 	}
 	rel := filepath.Join(".admiral", "untrusted", "feedback-"+strconv.Itoa(round)+".md")
-	f, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, 0o600)
+	// A fresh file, so a hard link planted at the name is dropped, not written through.
+	switch fi, err := root.Lstat(rel); {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		return "", err
+	case !fi.Mode().IsRegular():
+		return "", fmt.Errorf("moor: %s is not a regular file", filepath.Join(checkout, rel))
+	default:
+		if err := root.Remove(rel); err != nil {
+			return "", err
+		}
+	}
+	f, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return "", err
 	}

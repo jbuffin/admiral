@@ -115,11 +115,14 @@ type Service struct {
 	settleWG sync.WaitGroup
 	// waking holds the moored ships with a wake under way, by session.
 	waking map[string]bool
+	// roundLogged is the rounds whose end is written, by session and round, so a retried end writes none.
+	roundLogged map[string]bool
 
 	mooredMu     sync.Mutex
 	moored       []moor.Record // read from $ADMIRAL_HOME/moored on first use
 	mooredLoaded bool
 	mooredPolls  map[string]polled // by session
+	committed    map[string]bool   // by session: a wake is making the session, so no ending takes the record; under mooredMu
 	moorKick     chan struct{}
 	pollMu       sync.Mutex // one poll at a time
 	// issueLocks holds the GitHub issues (by ClaimKey) with a launch under way, each with who holds it.
@@ -723,7 +726,12 @@ func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 // No other record of a ship comes before `launched`.
 func (s *Service) launched(req launcher.Request, got *launcher.Launched, panel string) {
 	o := got.Options
-	if req.Round > 0 { // a round starts with `woken`, which the wake writes
+	if req.Round > 0 {
+		fields := map[string]any{"round": req.Round, "by": req.By}
+		if req.PR != "" {
+			fields["pr"] = req.PR
+		}
+		s.record(outcomes.Record{Ship: got.Session, Event: "woken", Fields: fields}, nil)
 		s.track(got.Session)
 		return
 	}

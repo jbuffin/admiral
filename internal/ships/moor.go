@@ -74,8 +74,9 @@ func (s *Service) moor(ctx context.Context, sess sessionhost.Session, prs []stri
 	name, o := sess.Name, sess.Options
 	s.mooredMu.Lock()
 	s.loadMoored()
+	round, _ := strconv.Atoi(o["round"])
 	for _, r := range s.moored {
-		if r.Session == name { // a kill that failed is retried: the first record and time stand
+		if r.Session == name && r.Round >= round { // a kill that failed is retried: the first record and time stand
 			s.mooredMu.Unlock()
 			return true
 		}
@@ -84,7 +85,6 @@ func (s *Service) moor(ctx context.Context, sess sessionhost.Session, prs []stri
 	if s.CaptureResume != nil {
 		s.CaptureResume(name) // before the report goes
 	}
-	round, _ := strconv.Atoi(o["round"])
 	rec := moor.Record{Name: o["name"], Session: name, Fleet: o["fleet"], Harness: o["harness"], Model: o["model"],
 		Skill: moor.Skill{Kind: o["skill-kind"], Name: o["skill"]}, Checkout: o["dir"], PRs: prs,
 		Source: o["source"], Panel: o["panel"], OrderID: o["order"], URL: o["url"], Issues: splitIssues(o["issues"]), Title: o["title"],
@@ -106,10 +106,18 @@ func splitResources(v string) []string {
 	return strings.Split(v, ",")
 }
 
-// endRound logs how a woken ship's round ended; a ship that was never woken has no round.
+// endRound logs how a woken ship's round ended, once per round; a ship that was never woken has no round.
 func (s *Service) endRound(sess sessionhost.Session, end string) {
 	round, _ := strconv.Atoi(sess.Options["round"])
-	if round > 0 {
+	key := sess.Name + "/" + sess.Options["round"]
+	s.mu.Lock()
+	logged := s.roundLogged[key]
+	if s.roundLogged == nil {
+		s.roundLogged = map[string]bool{}
+	}
+	s.roundLogged[key] = true
+	s.mu.Unlock()
+	if round > 0 && !logged {
 		s.record(outcomes.Record{Ship: sess.Name, Event: "round", Fields: map[string]any{"round": round, "end": end}}, nil)
 	}
 }

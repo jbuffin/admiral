@@ -58,6 +58,11 @@ type Request struct {
 	Round   int    `json:"-"`
 	// Prompt, when set, is the harness's prompt verbatim: a wake's resume text already carries its skill invocation.
 	Prompt string `json:"-"`
+	// Before runs under the launch lock with the validated checkout, just before the session is made; its error refuses the launch.
+	Before func(dir string) error `json:"-"`
+	// By and PR say what started a round, for the `woken` event.
+	By string `json:"-"`
+	PR string `json:"-"`
 }
 
 // Skill is the order's skill: Commodore, a named one, or none (Just launch).
@@ -253,6 +258,11 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		return nil, err
 	}
 	opts[0][1] = name
+	if req.Before != nil {
+		if err := req.Before(req.Dir); err != nil {
+			return nil, err
+		}
+	}
 	if err := l.shipContract(env, session, fleet.Key); err != nil {
 		return nil, err
 	}

@@ -121,3 +121,23 @@ func mustLink(t *testing.T, target, at string) {
 		t.Fatal(err)
 	}
 }
+
+func TestWriteFeedbackDoesNotWriteThroughAHardLinkPlantedAtTheFile(t *testing.T) {
+	checkout, outside := t.TempDir(), filepath.Join(t.TempDir(), "precious")
+	if err := os.WriteFile(outside, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mustMkdir(t, filepath.Join(checkout, ".admiral", "untrusted"))
+	if err := os.Link(outside, filepath.Join(checkout, ".admiral", "untrusted", "feedback-1.md")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := WriteFeedback(checkout, 1, "text"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(outside); string(b) != "keep" {
+		t.Errorf("the linked file now holds %q, want it untouched", b)
+	}
+	if b, _ := os.ReadFile(filepath.Join(checkout, ".admiral", "untrusted", "feedback-1.md")); string(b) != "text" {
+		t.Errorf("feedback-1.md = %q, want the text", b)
+	}
+}
