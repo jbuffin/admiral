@@ -27,10 +27,13 @@ type ChatView struct {
 }
 
 type FleetView struct {
-	Key         string     `json:"key"`
-	Name        string     `json:"name"`
-	Color       string     `json:"color"`
-	Ink         string     `json:"ink"`
+	Key   string `json:"key"`
+	Name  string `json:"name"`
+	Color string `json:"color"`
+	Ink   string `json:"ink"`
+	// ColorIndex places the fleet in a color sequence; the client wraps it.
+	// Absent for a custom color.
+	ColorIndex  *int       `json:"color_index,omitempty"`
 	SearchRoots []string   `json:"search_roots"`
 	CanLaunch   bool       `json:"can_launch"`
 	Docks       []DockView `json:"docks"`
@@ -60,7 +63,7 @@ func (m *Manager) viewLocked() View {
 		Autopilot: AutopilotView{MaxShips: m.cur.AutopilotMaxShips},
 		Chat:      ChatView{m.cur.Chat.Fleet, m.cur.Chat.Model, m.cur.Chat.Effort}}
 	for _, f := range m.cur.Fleets {
-		fv := FleetView{Key: f.Key, Name: f.Name, Color: f.Color, Ink: f.Ink,
+		fv := FleetView{Key: f.Key, Name: f.Name, Color: f.Color, Ink: f.Ink, ColorIndex: f.ColorIndex,
 			SearchRoots: f.SearchRoots, CanLaunch: f.CanLaunch(), Docks: []DockView{}}
 		for _, h := range f.Harnesses {
 			warnings := h.Warnings

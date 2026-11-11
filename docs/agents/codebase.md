@@ -49,6 +49,12 @@ This file holds the package map, API routes and ship statuses, idle memory figur
 - Bodies stay byte-identical, so a URL inside a body stays unversioned (`icon_url` in `/api/sources` and `/api/plugins` is `/api/plugins/<name>/icon`). Rewriting them is left to #258.
 - The bridge socket's `join` carries an optional `api` version; see `docs/bridge-protocol.md`.
 - v1 changes are additive only. The unversioned paths stay for the old UI until #276.
+- `GET /api/logos/<harness>` (also `/api/v1/logos/<harness>`) serves `$ADMIRAL_HOME/logos/<harness>.svg` as `image/svg+xml`, with `X-Content-Type-Options: nosniff` and a Content-Security-Policy that allows no script. It answers 404 when the file is missing or `<harness>` isn't one `config.Harnesses()` returns (claude, copilot, codex; `unknown` is 404), and never reads outside that folder. It has no `capabilities` entry: clients fall back on the 404.
+- Each fleet in the config view (`GET /api/config` and the WebSocket `config` message) carries an additive `color_index`: the fleet's position in a color sequence. A fleet with no `color` in config gets the raw counter `assignColors` used, not wrapped. A stored `color` that matches an old palette entry (case-insensitive, as `admiral setup` writes the default hex) gets that entry's position. A custom hex has no `color_index`. The client wraps it by the redesign sequence's length. `color` and `ink` stay the old palette's values.
+
+## The new shell at `/app/`
+
+The redesigned UI is a second Vite entry: `web/app/index.html` builds to `dist/app/index.html`, with hashed assets in the shared `dist/assets/`, and its source is `web/src/app/`. `serveUI` serves `app/index.html` for `/app` and any extensionless path under `/app/`; everything else keeps the old fallback to the root `index.html`, so `/` stays the old UI. `vite dev` does the same through the `app-shell-fallback` middleware in `web/vite.config.ts`. `web/scripts/gen-shell-tokens.mjs` writes the gitignored `web/src/app/shell-tokens.css` from `designs/redesign/tokens.json` (`gen-tokens.mjs` and `src/tokens.css` for the old UI are unchanged). `npm run build` and `typecheck` run both.
 
 ## Idle memory
 

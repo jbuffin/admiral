@@ -66,6 +66,7 @@ type Fleet struct {
 	Name        string
 	Color       string // resolved: explicit, else the next in the default sequence
 	Ink         string // text color on Color
+	ColorIndex  *int   // position in the default sequence; nil for a custom Color
 	SearchRoots []string
 	Harnesses   []Harness // dock order: claude, copilot, codex, as present
 }
