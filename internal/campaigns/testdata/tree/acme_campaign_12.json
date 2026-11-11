@@ -1,0 +1,87 @@
+{
+  "data": {
+    "repository": {
+      "issueOrPullRequest": {
+        "__typename": "Issue",
+        "number": 12,
+        "title": "Sub-map: spikes",
+        "url": "https://github.com/acme/campaign/issues/12",
+        "state": "CLOSED",
+        "body": "",
+        "repository": {
+          "nameWithOwner": "acme/campaign"
+        },
+        "labels": {
+          "nodes": [
+            {
+              "name": "wayfinder:map"
+            }
+          ],
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          }
+        },
+        "assignees": {
+          "nodes": []
+        },
+        "blockedBy": {
+          "nodes": [],
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          }
+        },
+        "subIssues": {
+          "totalCount": 1,
+          "nodes": [
+            {
+              "__typename": "Issue",
+              "number": 13,
+              "title": "Triage the flaky test",
+              "url": "https://github.com/acme/campaign/issues/13",
+              "state": "OPEN",
+              "body": "",
+              "repository": {
+                "nameWithOwner": "acme/campaign"
+              },
+              "labels": {
+                "nodes": [
+                  {
+                    "name": "needs-triage"
+                  }
+                ],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "assignees": {
+                "nodes": []
+              },
+              "blockedBy": {
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "subIssues": {
+                "totalCount": 0,
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              }
+            }
+          ],
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          }
+        }
+      }
+    }
+  }
+}

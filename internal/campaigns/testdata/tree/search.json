@@ -1,0 +1,92 @@
+{
+  "data": {
+    "search": {
+      "nodes": [
+        {
+          "__typename": "Issue",
+          "number": 2,
+          "title": "Add retry to the sync job",
+          "url": "https://github.com/acme/campaign/issues/2",
+          "state": "OPEN",
+          "body": "Part of #1",
+          "repository": {
+            "nameWithOwner": "acme/campaign"
+          },
+          "labels": {
+            "nodes": [
+              {
+                "name": "ready-for-agent"
+              }
+            ],
+            "pageInfo": {
+              "hasNextPage": false,
+              "endCursor": null
+            }
+          },
+          "assignees": {
+            "nodes": []
+          },
+          "blockedBy": {
+            "nodes": [],
+            "pageInfo": {
+              "hasNextPage": false,
+              "endCursor": null
+            }
+          },
+          "subIssues": {
+            "totalCount": 0,
+            "nodes": [],
+            "pageInfo": {
+              "hasNextPage": false,
+              "endCursor": null
+            }
+          }
+        },
+        {
+          "__typename": "Issue",
+          "number": 52,
+          "title": "Rollout checklist",
+          "url": "https://github.com/acme/campaign/issues/52",
+          "state": "OPEN",
+          "body": "Part of #10",
+          "repository": {
+            "nameWithOwner": "acme/campaign"
+          },
+          "labels": {
+            "nodes": [
+              {
+                "name": "ready-for-agent"
+              }
+            ],
+            "pageInfo": {
+              "hasNextPage": false,
+              "endCursor": null
+            }
+          },
+          "assignees": {
+            "nodes": []
+          },
+          "blockedBy": {
+            "nodes": [],
+            "pageInfo": {
+              "hasNextPage": false,
+              "endCursor": null
+            }
+          },
+          "subIssues": {
+            "totalCount": 0,
+            "nodes": [],
+            "pageInfo": {
+              "hasNextPage": false,
+              "endCursor": null
+            }
+          }
+        }
+      ],
+      "pageInfo": {
+        "hasNextPage": true,
+        "endCursor": "S1"
+      }
+    }
+  }
+}
