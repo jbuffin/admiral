@@ -118,23 +118,20 @@ func TestDockLaunchWithoutText(t *testing.T) {
 	}
 }
 
-// A launch with no order that names a skill is refused, and nothing starts.
-func TestDockLaunchRefusesASkill(t *testing.T) {
+// A launch with no order may name a skill: the ship starts with it and the text as its argument.
+func TestDockLaunchMayNameASkill(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
 	w.writeCue("exit 3")
 	w.start()
-	w.launch(w.dockLaunch("claude", "dr-ok", "control")) // the endpoint works, so a refusal isn't a missing route
 	for name, skill := range map[string]map[string]any{"commodore": commodore, "named skill": customSkill("foo")} {
 		t.Run(name, func(t *testing.T) {
 			w := w.at(t)
 			req := w.dockLaunch("claude", "dr-"+name, "hello")
 			req["skill"] = skill
-			before := w.sessions()
 			code, body := w.post(req)
-			requireRefusal(t, code, body)
-			if after := w.sessions(); !reflect.DeepEqual(before, after) {
-				t.Errorf("a refused launch changed the sessions: before %v, after %v", before, after)
+			if code != http.StatusCreated {
+				t.Fatalf("status = %d, want 201: %s", code, body)
 			}
 		})
 	}
