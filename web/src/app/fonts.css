@@ -1,5 +1,12 @@
-/* Latin WOFF2 subset from @fontsource, bundled so the UI never asks another host. Licence: public/licenses/.
-   Inter is not bundled yet (the registry refused @fontsource-variable/inter), so --font-body falls back to system-ui. */
+/* Latin WOFF2 subsets from @fontsource, bundled so the UI never asks another host. Licences: public/licenses/. */
+/* Inter is the variable font: one file covers every weight the tokens use. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('../../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2') format('woff2-variations');
+}
 @font-face {
   font-family: 'JetBrains Mono';
   font-style: normal;

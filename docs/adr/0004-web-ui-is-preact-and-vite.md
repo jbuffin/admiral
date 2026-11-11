@@ -36,3 +36,9 @@ The UI is mostly live state the server pushes: ships changing state, needing you
 - The prototype guides design only. Where its structure is awkward for a real app, the app is built differently.
 
 Amended 2026-10-18 (MVP build, [spec #45](https://github.com/jbuffin/admiral/issues/45)): order cards use `touch-action: pan-y`, not `none`, per story 65.
+
+Amended 2026-11-10 (new shell, [#258](https://github.com/jbuffin/admiral/issues/258)): the redesigned shell at `/app/` departs from three decisions above, which still hold for the old UI at `/` until the new shell replaces it.
+
+- **Logos load at runtime.** The new shell doesn't use the `<symbol>` set. Each flag is an `<img>` from `/api/v1/logos/<harness>`, which serves `$ADMIRAL_HOME/logos/<harness>.svg`. When that answers 404, the flag shows a lettered tile. The official logos come from the engineer's own machine and never ship in a build, so a shared build needs no permission from Anthropic or GitHub ([#11](https://github.com/jbuffin/admiral/issues/11)). Swapping in the official logos means adding files there, not changing the symbol set.
+- **Its CSS custom properties are generated from `designs/redesign/tokens.json`**, not `designs/tokens.json`.
+- **Its fonts are Inter and JetBrains Mono**, bundled the same way as WOFF2 subsets with their OFL licences. Bricolage Grotesque and Archivo are for the old UI only.
