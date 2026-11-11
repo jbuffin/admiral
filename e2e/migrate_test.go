@@ -3,6 +3,7 @@ package e2e
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -100,11 +101,29 @@ func TestMigrateAtStartupPostsOneNotice(t *testing.T) {
 	w := newWorld(t)
 	w.newFakeGH()
 	writeConfig(t, w.home, w.oldConfig())
+	plugin := map[string]string{"plugin.json": `{"name":"github","command":"python3"}`}
+	pluginDir := filepath.Join(w.home, "plugins", "github")
+	if err := os.MkdirAll(pluginDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pluginDir, "plugin.json"), []byte(plugin["plugin.json"]), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pluginDir, ".admiral-stamp"), []byte(stampOf(plugin)), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	w.start()
 
 	notice := w.in.waitNotice(t)
-	if notice.Session != "_admiral" || !strings.Contains(notice.Notice.Body, "tracker") {
-		t.Errorf("notice = %+v, want one from Admiral naming the moved source", notice)
+	if notice.Session != "_admiral" || !strings.Contains(notice.Notice.Body, "tracker") || !strings.Contains(notice.Notice.Body, "built in") {
+		t.Errorf("notice = %+v, want one from Admiral naming the moved source and saying GitHub is built in", notice)
+	}
+	srcs := w.configSources()
+	if srcs["github"]["fleet"] != "zulu" || srcs["github-alpha"]["fleet"] != "alpha" {
+		t.Errorf("GitHub sources = %v, want github on zulu and github-alpha on alpha", srcs)
+	}
+	if _, err := os.Lstat(pluginDir); err == nil {
+		t.Errorf("the retired plugins/github folder is still there after the start")
 	}
 	backups := w.backups()
 	if len(backups) != 1 {

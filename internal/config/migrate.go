@@ -137,13 +137,9 @@ func planMigration(data []byte) *migrationPlan {
 // old plugin source.
 var githubCarried = []string{"views", "host", "account", "hotLabels", "refreshMinutes"}
 
-// migrateGitHub turns the old Python plugin's GitHub sources, those with no
-// `views` setting, into built-in ones (#260): `panels` becomes `views`, and
-// every fleet left without a GitHub source gets one copied from the first old
-// source in the file. Autopilot stays on the source that had it. It reports
-// whether it changed anything and whether the old source had custom views.
-// Once every GitHub source has `views` it finds nothing, so a source the
-// engineer deletes later stays deleted.
+// migrateGitHub makes the plugin's GitHub sources (no `views`) built-in ones and
+// gives each fleet without one a copy; with every source on `views` it finds
+// nothing, so a source the engineer deletes later stays deleted.
 func migrateGitHub(top, sources *Object) (changed, custom bool) {
 	var template *Object
 	covered := map[string]bool{}

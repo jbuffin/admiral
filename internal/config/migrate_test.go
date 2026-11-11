@@ -68,8 +68,8 @@ func TestMigrateGivesEverySourceTheFirstFleetAndDropsFreeform(t *testing.T) {
 	if err := json.Unmarshal(cfg["sources"], &sources); err != nil {
 		t.Fatal(err)
 	}
-	if len(sources) != 2 || sources["tracker"]["fleet"] != "zulu" || sources["github"]["fleet"] != "zulu" {
-		t.Errorf("sources = %v, want tracker and github on zulu, notes gone", sources)
+	if len(sources) != 3 || sources["tracker"]["fleet"] != "zulu" || sources["github"]["fleet"] != "zulu" || sources["github-alpha"]["fleet"] != "alpha" {
+		t.Errorf("sources = %v, want tracker and github on zulu, github-alpha on alpha, notes gone", sources)
 	}
 	if strings.Contains(string(cfg["autopilot"]), "resume_source") || !strings.Contains(string(cfg["autopilot"]), "max_ships") {
 		t.Errorf("autopilot = %s, want resume_source cleared and max_ships kept", cfg["autopilot"])
@@ -143,16 +143,13 @@ func TestReadConfigRefusesAnUnmigratedConfig(t *testing.T) {
 	}
 }
 
-// #260 u4: the startup migration gives every fleet a built-in GitHub source
-// with the custom views of the old Python plugin source (its `panels`).
-
 const migrateVersion = "9.9.9-test"
 
 const ghFleets = `"fleets":{
   "a":{"name":"Alpha","search_roots":["/srv/a"],"claude":{}},
   "b":{"name":"Bravo","search_roots":["/srv/b"],"claude":{}}}`
 
-// oldGitHub is the plugin source of fleet a, as #259's migration leaves it.
+// oldGitHub is a plugin source that already has a fleet but no views.
 const oldGitHub = `"github":{"plugin":"github","name":"GitHub","fleet":"a",
   "settings":{"host":"ghe.example.com","account":"work","hotLabels":["p0"],"refreshMinutes":10,
     "panels":[{"title":"Bugs","query":"label:bug"},{"title":"Assigned to me","query":"assignee:@me"}]},
@@ -212,7 +209,7 @@ func TestMigrateGitHubPluginSource(t *testing.T) {
 		t.Fatalf("Migrate: %v", err)
 	}
 	if m == nil {
-		t.Fatal("Migrate returned nil for a config whose GitHub source is the old plugin's: post-#259 files already have fleets and must still migrate")
+		t.Fatal("Migrate returned nil for a plugin GitHub source that already has a fleet")
 	}
 	srcs, ap := readSources(t, dir)
 	views := `[{"title":"Bugs","query":"label:bug"},{"title":"Assigned to me","query":"assignee:@me"}]`
@@ -354,8 +351,7 @@ func TestMigrateLeavesBuiltInAndOtherConfigs(t *testing.T) {
 	}
 }
 
-// When a backup for this version exists, the step still runs and the older
-// backup stays.
+// A backup already there is the older, truer copy.
 func TestMigrateGitHubKeepsAnOlderBackup(t *testing.T) {
 	dir := migrateDir(t, migrateConfig(oldGitHub))
 	backup := filepath.Join(dir, "config.json.pre-"+migrateVersion)
