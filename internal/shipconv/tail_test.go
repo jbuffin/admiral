@@ -55,15 +55,15 @@ func TestTailsFollowAClaudeTranscriptAndReadItOnlyWhenItChanges(t *testing.T) {
 func TestTailsLeaveOtherHarnessesBlankWithoutReadingAnything(t *testing.T) {
 	f := newFixture(t)
 	f.mu.Lock()
-	f.harness["copilot-ship"] = "copilot"
+	f.harness["gemini-ship"] = "gemini"
 	f.mu.Unlock()
 	tails := tailsOf(f)
 	tails.locate = func(string) (where, bool, bool) {
 		t.Error("a non-Claude ship's transcript was looked up")
 		return where{}, false, true
 	}
-	if tails.Poll() || tails.Tail("copilot-ship") != "" {
-		t.Errorf("tail = %q, want blank", tails.Tail("copilot-ship"))
+	if tails.Poll() || tails.Tail("gemini-ship") != "" {
+		t.Errorf("tail = %q, want blank", tails.Tail("gemini-ship"))
 	}
 	if len(tails.follows) != 0 {
 		t.Errorf("%d ships followed, want none", len(tails.follows))
@@ -135,7 +135,7 @@ func TestTailsStartOverWhenAShipIsRelaunched(t *testing.T) {
 	}
 	launched = "L2"
 	f.mu.Lock()
-	f.harness["alpha"] = "copilot" // the new launch has nothing readable
+	f.harness["alpha"] = "gemini" // the new launch has nothing readable
 	f.mu.Unlock()
 	tails.Poll()
 	if tails.Tail("alpha") != "" || len(tails.follows) != 0 {
