@@ -2,8 +2,6 @@ package chat
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,8 +26,6 @@ import (
 const NotStarted = "Open the terminal to finish starting the chat"
 
 const Unreadable = "Admiral can't read this chat's transcript"
-
-const maxSend = 16 << 10
 
 const optionEvery = 200 * time.Millisecond
 
@@ -393,21 +389,6 @@ func (s *Service) serveStart(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"running": true})
 }
 
-// An escape could end the bracketed paste early.
-func clean(text string) string {
-	text = strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(text)
-	text = strings.Map(func(r rune) rune {
-		if r == '\n' || r == '\t' {
-			return r
-		}
-		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
-			return -1
-		}
-		return r
-	}, text)
-	return strings.TrimSpace(text)
-}
-
 func (s *Service) serveSend(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Text string `json:"text"`
@@ -416,13 +397,13 @@ func (s *Service) serveSend(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
 		return
 	}
-	text := clean(req.Text)
+	text := sessionhost.CleanMessage(req.Text)
 	switch {
 	case text == "":
 		writeError(w, http.StatusBadRequest, "the message is empty")
 		return
-	case len(text) > maxSend:
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("the message is %d bytes; at most %d", len(text), maxSend))
+	case len(text) > sessionhost.MaxPaste:
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("the message is %d bytes; at most %d", len(text), sessionhost.MaxPaste))
 		return
 	}
 	s.op.Lock()
@@ -432,7 +413,7 @@ func (s *Service) serveSend(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, msg)
 		return
 	}
-	if err := s.paste(pane, text); err != nil {
+	if err := s.pasteMessage(pane, text); err != nil {
 		writeError(w, http.StatusBadGateway, "could not send the message: "+err.Error())
 		return
 	}
@@ -455,24 +436,10 @@ func (s *Service) ready() (pane string, status int, msg string) {
 	return s.st.pane, 0, ""
 }
 
-// The text goes to tmux on stdin, never on a command line or through a shell.
-func (s *Service) paste(pane, text string) error {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return err
-	}
-	buf := "admiral-chat-" + hex.EncodeToString(b[:])
+func (s *Service) pasteMessage(pane, text string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	srv := s.server()
-	if err := srv.LoadBuffer(ctx, buf, text); err != nil {
-		return err
-	}
-	if err := srv.PasteBuffer(ctx, pane, buf, true); err != nil {
-		_ = srv.DeleteBuffer(ctx, buf)
-		return err
-	}
-	return srv.SendEnter(ctx, pane)
+	return s.server().PasteMessage(ctx, pane, text)
 }
 
 // serveNew sends /clear when the running session matches the config, else starts a new session.

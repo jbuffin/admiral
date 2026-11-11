@@ -3,6 +3,8 @@ package sessionhost
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -485,4 +487,45 @@ func ExecAttach(tmux, socket, target string, readOnly bool) error {
 		argv = append(argv, "-r")
 	}
 	return syscall.Exec(tmux, append(argv, "-t", target), os.Environ())
+}
+
+// MaxPaste is the longest message, after CleanMessage, that a send route takes.
+const MaxPaste = 16 << 10
+
+// CleanMessage makes text safe to paste: an escape could end the bracketed paste early.
+func CleanMessage(text string) string {
+	text = strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(text)
+	text = strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' {
+			return r
+		}
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
+			return -1
+		}
+		return r
+	}, text)
+	return strings.TrimSpace(text)
+}
+
+// PasteMessage pastes text into the pane as one bracketed paste, then presses Enter.
+// The text goes to tmux on stdin, never on a command line or through a shell.
+func (s Server) PasteMessage(ctx context.Context, pane, text string) error {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return err
+	}
+	buf := "admiral-msg-" + hex.EncodeToString(b[:])
+	if err := s.LoadBuffer(ctx, buf, text); err != nil {
+		return err
+	}
+	if err := s.PasteBuffer(ctx, pane, buf, true); err != nil {
+		_ = s.DeleteBuffer(ctx, buf)
+		return err
+	}
+	return s.SendEnter(ctx, pane)
+}
+
+func (s Server) SendEscape(ctx context.Context, pane string) error {
+	_, err := s.run(call{ctx: ctx, args: []string{"send-keys", "-t", pane, "Escape"}})
+	return err
 }
