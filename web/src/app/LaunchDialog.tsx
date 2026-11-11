@@ -196,7 +196,7 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
               }}
             >
               {dir === NONE ? <option value={NONE}>Choose a checkout</option> : null}
-              {clone ? <option value={CLONE}>{`Clone ${clone.repo} into ${clone.path}${clone.exists ? ' (folder exists)' : ''}`}</option> : null}
+              {clone ? <option value={CLONE}>{`Clone ${clone.repo}${clone.exists ? ' (folder exists)' : ''}`}</option> : null}
               {(dirs?.entries ?? []).map((d) => (
                 <option key={d.path} value={d.path}>
                   {d.name} ({d.kind === 'search_root' ? 'search root' : 'checkout'}
