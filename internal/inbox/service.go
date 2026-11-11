@@ -37,6 +37,8 @@ type Service struct {
 	Afloat func(session string) bool
 	// TypeResume types only while the ship waits at its prompt because its turn ended.
 	TypeResume func(session, text string) (afloat, typed bool, err error)
+	// LaunchProposal starts a feedback round for a wake proposal.
+	LaunchProposal LaunchProposalFunc
 
 	answerMu sync.Mutex        // one answer at a time
 	actMu    sync.Mutex        // guards acting

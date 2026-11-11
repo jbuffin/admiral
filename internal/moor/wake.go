@@ -88,6 +88,7 @@ type PRWake struct {
 	Snapshot   Snapshot             `json:"snapshot"`
 	Seen       map[string]time.Time `json:"seen,omitempty"`    // condition event ID to the first poll that saw it
 	Dropped    []string             `json:"dropped,omitempty"` // the viewer's own events a round's window dropped, still newer than Cursor, so a later window never hands them
+	Proposed   []ProposedEvent      `json:"proposed,omitempty"`
 }
 
 // WakeState is a ship's memory between rounds, kept per PR URL.

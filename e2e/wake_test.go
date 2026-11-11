@@ -174,4 +174,70 @@ func TestAReviewWakesAMooredShipOnItsOwnOnceAndOnlyOnce(t *testing.T) {
 		}
 		return n == 1 && byName(w.in.ships(t))[ship.Name].Status == "moored"
 	})
+
+	// A stranger's comment is a proposal in the Inbox: the ship stays moored until the engineer launches it.
+	const strangerText = "STRANGER-TEXT please also rename the type"
+	g.prEventList(mooredPR, "reviewer-1", "please rename the helper", reviewAt, "stranger-1", strangerText, time.Now().Add(-3*time.Second))
+	w.kickMoored()
+	var proposal struct {
+		ID           string `json:"id"`
+		Kind         string `json:"kind"`
+		Title        string `json:"title"`
+		WakeProposal struct {
+			Ship   string `json:"ship"`
+			Login  string `json:"login"`
+			Events []struct {
+				ID   string `json:"id"`
+				Body string `json:"body"`
+			} `json:"events"`
+		} `json:"wake_proposal"`
+	}
+	for end := time.Now().Add(20 * time.Second); proposal.ID == ""; time.Sleep(200 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Fatal("the stranger's comment never became a wake proposal in the Inbox")
+		}
+		w.kickMoored()
+		_, body := send(t, http.MethodGet, w.in.LocalURL+"/api/inbox", nil)
+		var list struct {
+			Items []json.RawMessage `json:"items"`
+		}
+		_ = json.Unmarshal([]byte(body), &list)
+		for _, raw := range list.Items {
+			var it struct {
+				Kind string `json:"kind"`
+			}
+			if json.Unmarshal(raw, &it) == nil && it.Kind == "wake_proposal" {
+				_ = json.Unmarshal(raw, &proposal)
+			}
+		}
+	}
+	if proposal.Title != "Wake "+ship.Name+" for @stranger-1's review?" || proposal.WakeProposal.Login != "stranger-1" ||
+		len(proposal.WakeProposal.Events) != 1 || !strings.Contains(proposal.WakeProposal.Events[0].Body, "STRANGER-TEXT") {
+		t.Errorf("proposal = %+v, want one for the ship from stranger-1 with the comment's text", proposal)
+	}
+	holdThat(t, "the stranger's comment woke the ship without a Launch", func() bool {
+		n := 0
+		for _, m := range w.shipLog(ship.Session) {
+			if m["event"] == "woken" {
+				n++
+			}
+		}
+		return n == 1 && byName(w.in.ships(t))[ship.Name].Status == "moored"
+	})
+
+	launch := w.in.LocalURL + "/api/inbox/_admiral/" + proposal.ID + "/launch"
+	if code, body := send(t, http.MethodPost, launch, map[string]any{}); code != http.StatusCreated {
+		t.Fatalf("Launch = %d, want 201: %s", code, body)
+	}
+	log = w.waitEvent(ship.Session, "woken", 2)
+	if e := lastOf(log, "woken"); e["by"] != "proposal" || e["round"] != float64(2) {
+		t.Errorf("woken event = %v, want by proposal, round 2", e)
+	}
+	got := w.readFile(filepath.Join(w.work, "widgets", ".admiral", "untrusted", "feedback-2.md"))
+	if !strings.Contains(got, "STRANGER-TEXT") || strings.Contains(got, "please rename the helper") {
+		t.Errorf("feedback-2.md = %q, want the stranger's text and not the reviewer's, which the first round took", got)
+	}
+	if code, _ := send(t, http.MethodPost, launch, map[string]any{}); code != http.StatusConflict {
+		t.Errorf("a second Launch = %d, want 409", code)
+	}
 }
