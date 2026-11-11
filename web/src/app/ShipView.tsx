@@ -204,10 +204,10 @@ function ChangesTab({ ship }: { ship: Ship }) {
 function Flotilla({ ship, picked, pick }: { ship: Ship; picked: string | null; pick: (crew: string | null) => void }) {
   const chips = flotilla(ship);
   const group = useRef<HTMLDivElement>(null);
-  // The picked chip's "finished" or "error" word must not sit cut off at the row's edge.
+  // The picked chip's "finished" or "error" word, which appears after the pick, must not sit cut off at the row's edge.
   useEffect(() => {
     group.current?.querySelector<HTMLElement>('[aria-checked=true]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  }, [picked]);
+  }, [picked, chips.find((c) => c.crew === picked)?.state]);
   const move = (e: KeyboardEvent, i: number) => {
     const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
     if (!step) return;
