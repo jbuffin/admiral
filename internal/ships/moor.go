@@ -13,6 +13,7 @@ import (
 	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/sessionhost"
+	"github.com/jbuffin/admiral/internal/transcriptfs"
 )
 
 const StatusMoored = "moored"
@@ -89,6 +90,10 @@ func (s *Service) moor(ctx context.Context, sess sessionhost.Session, prs []stri
 		Skill: moor.Skill{Kind: o["skill-kind"], Name: o["skill"]}, Checkout: o["dir"], PRs: prs,
 		Source: o["source"], Panel: o["panel"], OrderID: o["order"], URL: o["url"], Issues: splitIssues(o["issues"]), Title: o["title"],
 		Resume: s.report(name).Resume, Round: round, Resources: splitResources(o["resources"]), MooredAt: time.Now().UTC().Truncate(time.Second)}
+	if err := s.recordRound(ctx, sess, round, time.Now().UTC()); err != nil {
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: its round history cannot be written, so it sails off: %v\n", name, err)
+		return false
+	}
 	if err := moor.Write(s.Launcher.Home, rec); err != nil {
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: its moored record cannot be written, so it sails off: %v\n", name, err)
 		return false
@@ -97,6 +102,29 @@ func (s *Service) moor(ctx context.Context, sess sessionhost.Session, prs []stri
 	s.record(outcomes.Record{Ship: name, Event: "moored", Fields: map[string]any{"prs": prs}}, nil)
 	s.endRound(sess, "moored")
 	return true
+}
+
+// recordRound appends the round the pane just finished to the ship's history, before the record goes, under wakeMu so an end cannot leave a file behind.
+// The transcript is kept only when the pane's option binds to its start command; any other round keeps its place with none.
+func (s *Service) recordRound(ctx context.Context, sess sessionhost.Session, round int, ended time.Time) error {
+	o := sess.Options
+	r := moor.Round{Round: round, Fleet: o["fleet"], Ended: ended}
+	if sess.PaneID != "" && o["harness"] == "claude" {
+		c, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		host := sessionhost.NewServer(s.Launcher.Tmux, s.Launcher.Socket)
+		raw, rerr := host.ReadPaneOption(c, sess.PaneID, "transcript")
+		cmd, cerr := host.ReadPaneStartCommand(c, sess.PaneID)
+		if rerr == nil && cerr == nil {
+			if path, id, ok := transcriptfs.Bind(raw, cmd); ok {
+				r.Transcript, r.SessionID = path, id
+				r.Started = transcriptfs.LaunchTime(raw)
+			}
+		}
+	}
+	s.wakeMu.Lock()
+	defer s.wakeMu.Unlock()
+	return moor.AppendRound(s.Launcher.Home, o["name"], r)
 }
 
 func splitResources(v string) []string {
@@ -217,4 +245,36 @@ func (s *Service) mooredShips(live map[string]bool) []Ship {
 		out = append(out, sh)
 	}
 	return out
+}
+
+// Moored is the moored ship with this session when it has no live one; only its identity is filled.
+func (s *Service) Moored(session string) (Ship, bool) {
+	if _, live := s.Get(session); live {
+		return Ship{}, false
+	}
+	s.mooredMu.Lock()
+	defer s.mooredMu.Unlock()
+	s.loadMoored()
+	for _, r := range s.moored {
+		if r.Session == session {
+			return Ship{Session: r.Session, Name: r.Name, Fleet: r.Fleet, Harness: r.Harness, Status: StatusMoored}, true
+		}
+	}
+	return Ship{}, false
+}
+
+// Round is the feedback round a live ship is in; 0 is its first.
+func (s *Service) Round(session string) int {
+	for _, sess := range s.Host.Sessions() {
+		if sess.Name == session {
+			n, _ := strconv.Atoi(sess.Options["round"])
+			return n
+		}
+	}
+	return 0
+}
+
+// Rounds is the history of a ship's earlier rounds, oldest first.
+func (s *Service) Rounds(name string) ([]moor.Round, error) {
+	return moor.ReadRounds(s.Launcher.Home, name)
 }
