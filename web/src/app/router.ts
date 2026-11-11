@@ -10,14 +10,19 @@ const segments = (path: string) => path.replace(/^\/app\/?/, '').replace(/\/$/, 
 export function surfaceOf(path: string): Surface | undefined {
   const [id, ...sub] = segments(path);
   const s = SURFACES.find((x) => x.id === id);
-  // Preferences alone has pages below it: /app/preferences/<fleet key>/sources and /fleet.
-  if (s && sub.length > 0 && !(s.id === 'preferences' && sub.length === 2 && (sub[1] === 'sources' || sub[1] === 'fleet'))) return undefined;
+  // Preferences alone has pages below it: /app/preferences/<fleet key>/<page>.
+  if (s && sub.length > 0 && !(s.id === 'preferences' && sub.length === 2 && (PREFERENCES_PAGES as readonly string[]).includes(sub[1]))) return undefined;
   return s;
 }
+
+const PREFERENCES_PAGES = ['fleet', 'sources', 'capabilities'] as const;
+export type PreferencesPage = (typeof PREFERENCES_PAGES)[number];
 
 export const sourcesPath = (fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/sources`;
 
 export const fleetPath = (fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/fleet`;
+
+export const capabilitiesPath = (fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/capabilities`;
 
 /** The fleet key a Preferences path names, if any. */
 export function preferencesFleet(path: string): string | null {
@@ -30,9 +35,10 @@ export function preferencesFleet(path: string): string | null {
   }
 }
 
-/** The page below a fleet's Preferences group: 'fleet' or 'sources'. */
-export function preferencesPage(path: string): 'fleet' | 'sources' {
-  return segments(path)[2] === 'fleet' ? 'fleet' : 'sources';
+/** The page below a fleet's Preferences group; sources when the path names none. */
+export function preferencesPage(path: string): PreferencesPage {
+  const page = segments(path)[2];
+  return (PREFERENCES_PAGES as readonly string[]).includes(page) ? (page as PreferencesPage) : 'sources';
 }
 
 function sync() {
