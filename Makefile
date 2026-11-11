@@ -37,12 +37,12 @@ e2e: build
 	npm --prefix web run e2e
 
 # What the macOS workflow and the release run: the Go e2e tests and the
-# @critical browser flows on the iPad viewport. The macOS runner's virtual GPU
-# resets under WebKit about 40 times a minute, so the full matrix flakes there
-# (#94); it runs locally before a push.
+# @critical browser journeys. The macOS runner's virtual GPU resets under
+# WebKit about 40 times a minute, so the full suite flakes there; it runs
+# locally before a push.
 e2e-critical: build
 	go test -count=1 ./e2e/...
-	npm --prefix web run e2e -- --project ipad-landscape --grep @critical
+	npm --prefix web run e2e -- --grep @critical
 
 # The release: a clean UI build, the darwin/arm64 binary stamped with the
 # version and commit, and the tarball with its checksum in $(DIST). A shared
