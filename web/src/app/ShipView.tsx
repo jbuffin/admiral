@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, probeShipList, type Changes, type CrewBoat, type Ship } from './api';
 import { splitDiff } from './changes';
 import { followConversation, type Conversation } from './conversation';
+import { answerCard } from './answerCard';
 import { ConversationView } from './ConversationView';
 import { Composer, useComposer, type Target } from './Composer';
 import { boatBoxState, chipState, flotilla } from './flotilla';
@@ -285,7 +286,10 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
             <div class="convo-area">
               <ConversationView
                 conv={conv}
-                harness={boat ? 'claude' : ship.harness}
+                harness={boat ? boat.harness : ship.harness}
+                card={answerCard({ harness: boat ? boat.harness : ship.harness, status: boat ? boat.status : ship.status, reason: boat ? boat.reason : ship.reason, conv })}
+                session={ship.session}
+                crew={boat?.name}
                 anchored={anchored}
                 working={boat ? boat.status === 'underway' : ship.status === 'underway'}
                 noneTitle={boat ? 'No conversation for this boat' : undefined}

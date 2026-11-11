@@ -453,3 +453,5 @@ button.pill { cursor: pointer; min-height: 32px; }
 .diff-line.add { background: color-mix(in srgb, var(--color-ok) 18%, transparent); }
 .diff-line.del { background: color-mix(in srgb, var(--color-err) 18%, transparent); }
 .changes-error { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.card-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.card-actions .btn { min-height: 44px; }
