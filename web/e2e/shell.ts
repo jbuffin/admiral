@@ -254,8 +254,6 @@ export async function mooredFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await page.goto(a.url + 'app/ships?fleet=zulu');
   await expect(main.locator('.ship-group').getByRole('heading', { level: 2 })).toHaveText([/^Moored\s*2$/]);
   await expect.poll(() => kicks.length).toBe(1);
-  await page.waitForTimeout(500); // a doubled POST would land by now
-  expect(kicks).toHaveLength(1);
 
   // Each row: its PR as a link opening in a new tab, the chips from the poll, and how long it has waited.
   const link = rowOf(first).getByRole('link', { name: 'api#7' });
@@ -264,6 +262,7 @@ export async function mooredFromTheShell(page: Page, a: Admiral, press: (l: Loca
   for (const chip of ['Approved', 'Checks passing', 'Mergeable']) await expect(rowOf(first)).toContainText(chip);
   for (const chip of ['Changes requested', 'Checks failing', 'Conflicts']) await expect(rowOf(second)).toContainText(chip);
   await expect(rowOf(first)).not.toContainText('Conflicts');
+  expect(kicks, 'one refresh for opening Ships, not one per render').toHaveLength(1); // the page has settled by now
   await expect(rowOf(first).locator('.ship-age')).toHaveText(/^(now|\d+m)$/);
   await expect(rowOf(first)).not.toContainText(/undefined|null/);
   if (opts.phone) expect(await page.evaluate(() => [document.documentElement, document.querySelector('main')!].every((e) => e.scrollWidth <= e.clientWidth))).toBe(true);
