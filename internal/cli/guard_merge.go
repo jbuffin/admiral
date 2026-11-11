@@ -10,7 +10,7 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
-// The merge half of the guard (#120, #261). An autopilot ship merges nothing: the
+// The merge half of the guard. An autopilot ship merges nothing: the
 // guard refuses every gh pr merge that can merge, a change of a pull request's
 // base, and a write to the rules that gate a merge. It is best effort: it reads
 // the text of a Bash call and nothing else (see "Known gaps" in
@@ -131,8 +131,8 @@ func prEditRetargets(args []string) bool {
 // prMerge is the rule for gh pr merge, given the arguments after `merge`. An
 // autopilot ship merges nothing, so every form that can merge is refused, --auto
 // included. Only --disable-auto alone is allowed: it removes a merge and adds
-// none, so not beside --auto, a method or --delete-branch. Its flags are followed as pflag does: -b, -F, -R, -t and -A (and their
-// long forms) take a value, which may start with a dash, a short cluster ends at
+// none, so not beside --auto, a method or --delete-branch. Its flags are
+// followed as pflag does: -b, -F, -R, -t and -A (and their long forms) take a value, which may start with a dash, a short cluster ends at
 // a value-taking flag, and -- ends the flags.
 func (g guardCheck) prMerge(args []string) string {
 	disable, admin := false, false
