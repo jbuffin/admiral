@@ -427,7 +427,7 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
           Campaigns
         </a>
         <span class="mono muted">
-          {campaign.repo}#{campaign.number}
+          {campaign.repo.replace(/^https?:\/\//, '')}#{campaign.number}
         </span>
         {fleet ? (
           <span class="pill">

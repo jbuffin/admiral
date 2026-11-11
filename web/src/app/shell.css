@@ -298,12 +298,13 @@ a { color: inherit; text-decoration: none; }
 .camp-row { display: grid; grid-template-columns: 15px 1fr auto; grid-template-areas: "ring name ready" ". meta meta"; column-gap: 8px; align-items: center; min-height: 44px; padding: 6px; border-radius: 8px; color: var(--color-text); text-decoration: none; }
 .camp-row:hover, .camp-row[aria-current='page'] { background: var(--color-sel); }
 .camp-row .ring { grid-area: ring; }
+.camp-card .ring { grid-area: ring; }
 .camp-name { grid-area: name; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-body); }
 .camp-meta { grid-area: meta; font-size: var(--font-size-meta); color: var(--color-muted); }
 .camp-ready { grid-area: ready; min-width: 18px; padding: 0 6px; border-radius: 9px; background: var(--color-needs-bg); color: var(--color-needs); font-size: 11px; text-align: center; }
 .camp-ended { align-self: flex-start; min-height: 36px; padding: 0 6px; border: 0; background: transparent; color: var(--color-muted); font: inherit; font-size: var(--font-size-meta); cursor: pointer; }
 .camp-tabs { display: flex; gap: 8px; margin: 0 0 12px; }
-.camp-card { display: grid; grid-template-columns: 15px 1fr auto; column-gap: 10px; align-items: center; min-height: 48px; padding: 8px 10px; border-bottom: 1px solid var(--color-line); color: var(--color-text); text-decoration: none; }
+.camp-card { display: grid; grid-template-columns: 15px 1fr; grid-template-areas: "ring name" ". meta"; column-gap: 10px; align-items: center; min-height: 48px; padding: 8px 10px; border-bottom: 1px solid var(--color-line); color: var(--color-text); text-decoration: none; }
 .camp-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 14px; }
 .camp-bar .btn { margin-left: auto; }
 .camp-bar .btn ~ .btn, .camp-bar .pill ~ .btn { margin-left: 0; }
@@ -336,3 +337,8 @@ button.pill { cursor: pointer; min-height: 32px; }
   .ti { grid-template-columns: 34px minmax(0, 1fr) auto; }
   .ti-type { display: none; }
 }
+@media (max-width: 640px) {
+  .camp-group .group-head { flex-wrap: wrap; }
+  .group-note { margin-left: 0; flex-basis: 100%; }
+}
+.camp-page .mono, .detail .mono { font-family: var(--font-mono); font-size: var(--font-size-mono); }
