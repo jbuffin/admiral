@@ -115,6 +115,9 @@
 #   ask <message>|<option>|...
 #                  Copilot only, needs jq: appends a pending ask_user call to events.jsonl, one
 #                  single-choice property in the oneOf shape Copilot records.
+#   prompted <text>
+#                  Copilot only, needs jq: appends one user.message line holding <text>, the echo of a message
+#                  sent to the pane.
 #   copilothook <event> <json>
 #                  Copilot only, needs jq: runs the commands of the plugin's hooks.json (the
 #                  --plugin-dir in argv) for <event>, <json> on stdin, as Copilot's hook stdin reads
@@ -380,6 +383,21 @@ if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 			     data: {toolCallId: "fake-ask-call", toolName: "ask_user", turnId: "0",
 			            arguments: {message: $p[0], requestedSchema: {type: "object", required: ["answer"],
 			              properties: {answer: {type: "string", title: "Answer", oneOf: ($p[1:] | map({const: ascii_downcase, title: .}))}}}}}}' >>"$COPILOT_HOME/session-state/$sid/events.jsonl"
+			;;
+		prompted)
+			# Copilot only: the echo of a sent message, one user.message line holding <text>.
+			sid=""
+			prev=""
+			for a in "$@"; do
+				[ "$prev" = "--session-id" ] && sid=$a
+				prev=$a
+			done
+			case "$sid" in
+			"" | */*) echo "prompted cue: no usable --session-id in argv" | tee "$d/events-error" >&2; exit 1 ;;
+			esac
+			[ -n "$COPILOT_HOME" ] || { echo "prompted cue: COPILOT_HOME is unset" | tee "$d/events-error" >&2; exit 1; }
+			mkdir -p "$COPILOT_HOME/session-state/$sid"
+			jq -cn --arg t "$arg" '{type: "user.message", id: ("fake-echo-" + ($t | length | tostring)), parentId: null, timestamp: (now | todate), data: {content: $t}}' >>"$COPILOT_HOME/session-state/$sid/events.jsonl"
 			;;
 		copilothook)
 			# Copilot only: run the hook commands of the plugin's hooks.json for <event> <json>, the payload on stdin,

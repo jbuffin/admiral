@@ -131,11 +131,23 @@ describe('answerCard: Copilot', () => {
     expect(copilot('question', conv)).toMatchObject({ kind: 'question', reason: 'question', item: 'new', options: ['Red', 'Green', 'Blue'] });
   });
 
-  it('shows the question card on notification:elicitation_dialog only with a pending single-choice question behind it', () => {
-    expect(copilot('notification:elicitation_dialog', ok(ask('q', ['A', 'B'])))).toMatchObject({ kind: 'question', reason: 'notification:elicitation_dialog', item: 'q' });
-    expect(copilot('notification:elicitation_dialog', ok(ask('q', []))).kind).toBe('terminal');
-    expect(copilot('notification:elicitation_dialog', ok(ask('q', ['A'], { pending: false }))).kind).toBe('terminal');
-    expect(copilot('notification:elicitation_dialog', ok()).kind).toBe('terminal');
+  it('sends notification:elicitation_dialog to the terminal, whatever question is pending', () => {
+    expect(copilot('notification:elicitation_dialog', ok(ask('q', ['A', 'B']))).kind).toBe('terminal');
+  });
+
+  it('ignores a question an earlier turn left pending', () => {
+    const stale = ok(ask('old', ['A', 'B']), { id: 'e', kind: 'turn_end' }, { id: 'u', kind: 'user', text: 'next' });
+    expect(copilot('question', stale).kind).toBe('terminal');
+    expect(copilot('question', ok(ask('old', ['A']), { id: 'e', kind: 'turn_end' }, { id: 'u', kind: 'user', text: 'next' }, ask('new', ['B', 'C']))))
+      .toMatchObject({ kind: 'question', item: 'new' });
+  });
+
+  it('shows no preview when the one open call launches a subagent', () => {
+    for (const name of ['task', 'Task', 'Agent']) {
+      const card = copilot('notification:permission_prompt', ok(call('c1', name, 'Explore the repo')));
+      expect(card.kind).toBe('permission');
+      expect((card as { call?: Item }).call).toBeUndefined();
+    }
   });
 });
 

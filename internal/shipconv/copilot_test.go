@@ -192,3 +192,29 @@ func TestCopilotLooksUpItsOwnConfigDir(t *testing.T) {
 		}
 	}
 }
+
+func copilotAsk(id string) string {
+	return fmt.Sprintf(`{"type":"tool.execution_start","id":"%s","parentId":null,"timestamp":"2026-01-02T03:04:07.000Z","data":{"toolCallId":"c-%s","toolName":"ask_user","arguments":{"message":"Pick","requestedSchema":{"type":"object","properties":{"a":{"type":"string","enum":["x","y"]}}}}}}`+"\n", id, id)
+}
+
+func TestCopilotPendingQuestionsAreTheCurrentTurnsOnly(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	path := f.copilotPath(sid)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f.copilotShip("pilot", path)
+	appendTo(t, path, copilotUser(1)+copilotAsk("old"))
+	if qs := f.svc.PendingQuestions("pilot", ""); len(qs) != 1 || qs[0].ID != "old" {
+		t.Fatalf("pending questions in the turn that asked = %+v, want old", qs)
+	}
+	appendTo(t, path, copilotUser(2))
+	if qs := f.svc.PendingQuestions("pilot", ""); len(qs) != 0 {
+		t.Errorf("a question left pending by an earlier turn = %+v, want none", qs)
+	}
+	appendTo(t, path, copilotAsk("new"))
+	if qs := f.svc.PendingQuestions("pilot", ""); len(qs) != 1 || qs[0].ID != "new" {
+		t.Errorf("pending questions after a new turn's question = %+v, want new", qs)
+	}
+}

@@ -276,7 +276,7 @@ func (s *Service) answerKeys(ctx context.Context, t target, session string, req 
 		return keys, ""
 	}
 	// PermissionRequest fires for AskUserQuestion too and overwrites the question's reason.
-	if reason != "question" && reason != "permission:AskUserQuestion" && !(t.harness == "copilot" && reason == "notification:elicitation_dialog") {
+	if reason != "question" && reason != "permission:AskUserQuestion" {
 		return "", t.what + " is no longer asking that"
 	}
 	var qs []conversation.Item

@@ -200,29 +200,16 @@ func TestCopilotQuestionOptionTwoSendsDownThenEnterForTheNewestPendingQuestion(t
 	}
 }
 
-func TestCopilotElicitationDialogTakesTheQuestionCardOnlyWithASingleChoiceBehindIt(t *testing.T) {
+// ask_user leaves the pane on question, so this reason stands alone only for a dialog that is not ask_user's.
+func TestCopilotElicitationDialogIsAnsweredInTheTerminal(t *testing.T) {
 	const body = `{"card":"question","reason":"notification:elicitation_dialog","item":"q","option":1}`
-	backed := newAnswerPane(t, "copilot", []conversation.Item{askItem("q", true, "Red", "Green")})
-	backed.needsYou("notification:elicitation_dialog")
-	if code, msg := backed.post(body); code != http.StatusOK {
-		t.Errorf("elicitation_dialog with a pending single-choice question = %d %s, want 200", code, msg)
+	p := newAnswerPane(t, "copilot", []conversation.Item{askItem("q", true, "Red", "Green")})
+	p.needsYou("notification:elicitation_dialog")
+	if code, msg := p.post(body); code != http.StatusConflict {
+		t.Errorf("elicitation_dialog with a pending single-choice question = %d %s, want 409", code, msg)
 	}
-	if got := backed.sent("\r"); got != "\r" {
-		t.Errorf("option 1 sent %q, want Enter", got)
-	}
-	for name, qs := range map[string][]conversation.Item{
-		"no question":          nil,
-		"a several-field form": {askItem("q", true)},
-		"an answered question": {askItem("q", false, "Red", "Green")},
-	} {
-		p := newAnswerPane(t, "copilot", qs)
-		p.needsYou("notification:elicitation_dialog")
-		if code, msg := p.post(body); code != http.StatusConflict {
-			t.Errorf("elicitation_dialog with %s = %d %s, want 409", name, code, msg)
-		}
-		if got := p.sent(""); got != "" {
-			t.Errorf("elicitation_dialog with %s sent %q, want nothing", name, got)
-		}
+	if got := p.sent(""); got != "" {
+		t.Errorf("elicitation_dialog sent %q, want nothing", got)
 	}
 }
 
