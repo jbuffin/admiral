@@ -37,7 +37,7 @@ The mode a ship is launched in when nobody is watching: low-stakes calls take th
 _Avoid_: auto-launch, bot
 
 **Resource**:
-A named thing with a capacity, such as a phone for on-device checks, that a launch names as needed: a routine's launch, a commitment or the launch form. A resource has a number of **units** (its `capacity`, 1 by default), and an optional check that tells whether it is present. A ship holds one unit of each resource its launch named while it is underway or needing you; a lock taken by hand holds one too. An unattended launch waits until every resource it names has a free unit and passes its check. A hand launch holds none unless one is named.
+A named thing with a capacity, such as a phone for on-device checks, that a launch names as needed: a routine's launch, a commitment or the launch form. A resource has a number of **units** (its `capacity`, 1 by default), and an optional check that tells whether it is present. A ship holds one unit of each resource its launch named while it is underway or needing you; a lock taken by hand holds one too. A launch that names a resource is refused unless every resource it names has a free unit and passes its check. A hand launch holds none unless one is named.
 _Avoid_: device, lock (a lock is how a person holds a unit, not the resource), blocked
 
 **Routine**:

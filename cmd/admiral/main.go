@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/auth"
-	"github.com/jbuffin/admiral/internal/autopilot"
 	"github.com/jbuffin/admiral/internal/bridge"
 	"github.com/jbuffin/admiral/internal/chat"
 	"github.com/jbuffin/admiral/internal/cli"
@@ -206,58 +205,17 @@ func serve(args []string) error {
 		fmt.Fprintln(os.Stderr, "admiral: could not remove a retired plugin:", err)
 	}
 	supervisor := &sources.Supervisor{Home: dir, Config: cfg}
-	sourceService := &sources.Service{Home: dir, Config: cfg, Sup: supervisor, Hub: hub, Ships: shipService.List, State: st}
-	apStore, err := autopilot.OpenStore(dir)
-	if err != nil {
-		return fmt.Errorf("autopilot: %w", err)
-	}
-	launchService := &launchorders.Service{Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}
+	sourceService := &sources.Service{Home: dir, Config: cfg, Sup: supervisor, Hub: hub, Ships: shipService.List}
+	// The view autopilot engine kept its state here.
+	_ = os.Remove(filepath.Join(dir, "autopilot.json"))
 	// A ship launched but not yet listed by the host counts as running.
 	allShips := func() []ships.Ship { return append(shipService.List(), shipService.Pending()...) }
 	sourceService.Ships = allShips
-	engine := &autopilot.Engine{
-		Config: cfg.Current,
-		Ships:  allShips,
-		Sources: func() []autopilot.Source {
-			var out []autopilot.Source
-			for _, l := range sourceService.Listings() {
-				out = append(out, autopilot.Source{Key: l.Key, Listed: l.Listed, Panels: l.Panels})
-			}
-			return out
-		},
-		Paused:   st.Paused,
-		Dir:      launchService.Dir,
-		Checkout: launchService.Checkout,
-		Launch:   shipService.LaunchOrder,
-		Record:   outcomeLog.Enqueue,
-		Log:      func() []outcomes.Line { return outcomes.Read(filepath.Join(dir, "outcomes")) },
-		AddOrder: func(ctx context.Context, source, panel, text string) (string, error) {
-			id, fail := sourceService.AddOrder(ctx, source, panel, text)
-			if fail != nil { // not `return ...AddOrder(...)`: a nil *RequestError would be a non-nil error
-				return "", fail
-			}
-			return id, nil
-		},
-		Known: host.Known,
-		Now:   time.Now,
-		Store: apStore,
-		OnHot: sourceService.Notify,
-		Logf: func(format string, args ...any) {
-			fmt.Fprintf(os.Stderr, "admiral: "+format+"\n", args...)
-		},
-	}
-	sourceService.Hot = engine.Hot
-	sourceService.WaitingFor = engine.WaitingFor
-	// A check, a lock or a reservation changing frees or fills a unit: autopilot
-	// looks again and the UI is told.
+	// A check, a lock or a reservation changing frees or fills a unit: the UI is told.
 	var resourceService *resources.Service
 	resourceSet := resources.New(resources.Options{Config: cfg.Current, Ships: allShips,
-		OnChange: func() { resourceService.Broadcast(); engine.Poke() },
-		// The engine drops its reservations inside a pass; poking it for each would
-		// make a refused launch (a 503, a 409) start the next pass at once.
-		OnDrop: func() { resourceService.Broadcast() }})
+		OnChange: func() { resourceService.Broadcast() }})
 	resourceService = &resources.Service{Set: resourceSet, Hub: hub}
-	engine.Resources = resourceSet
 	shipService.Reserve = func(names []string) (func(), string, string) {
 		release, waits := resourceSet.Reserve(names)
 		if waits != nil {
@@ -265,9 +223,7 @@ func serve(args []string) error {
 		}
 		return release, "", ""
 	}
-	engine.OnWait = sourceService.Notify
-	sourceService.OnLaunched = engine.Launched
-	supervisor.OnChange = func() { sourceService.Notify(); engine.Poke() }
+	supervisor.OnChange = func() { sourceService.Notify() }
 	stopping := make(chan struct{})
 	lockRoute := &lockroute.Route{Set: resourceSet, Stopping: stopping, OnTake: func() { resourceService.Broadcast() }}
 	bridgeService := bridge.New(tmuxPath, sock, shipService)
@@ -304,24 +260,6 @@ func serve(args []string) error {
 		}
 		return dock.Environ(), ""
 	}}
-	inboxService.ResumeTarget = func() *config.ResumeSource { return cfg.Current().ResumeSource }
-	inboxService.AddOrder = func(ctx context.Context, source, panel, text string) (string, error) {
-		id, fail := sourceService.AddOrder(ctx, source, panel, text)
-		if fail != nil { // not `return ...AddOrder(...)`: a nil *RequestError would be a non-nil error
-			return "", fail
-		}
-		return id, nil
-	}
-	inboxService.Origin = func(session string) (inbox.Origin, bool) {
-		if sh, ok := shipService.Get(session); ok {
-			return sh.Origin(), true
-		}
-		k, ok := st.KeptInbox(session)
-		return inbox.Origin{Dir: k.Dir, Source: k.OriginSource, Panel: k.OriginPanel}, ok
-	}
-	inboxService.ResumeAdd = func(source, panel string, from inbox.Origin) func(string) {
-		return engine.BeginResume(source, panel, from.Dir, from.Source, from.Panel)
-	}
 	// A ship still afloat reads its answers itself: its resume text is typed at
 	// its prompt once its turn has ended, and no order launches a second ship.
 	inboxService.Afloat = func(session string) bool {
@@ -329,7 +267,6 @@ func serve(args []string) error {
 		return ok && (sh.Status == ships.StatusUnderway || sh.Status == ships.StatusNeedsYou)
 	}
 	inboxService.TypeResume = shipService.TypeResume
-	shipService.BeforeRemoveFiles = inboxService.CaptureResumeFrom
 	changed := supervisor.OnChange
 	supervisor.OnChange = func() { changed(); inboxService.KickResume() }
 	shipService.Orders = sourceService
@@ -338,7 +275,6 @@ func serve(args []string) error {
 		bridgeService.ShipsChanged()
 		resourceSet.Wake() // a ship that stopped holding a unit frees it
 		resourceService.Broadcast()
-		engine.Poke()
 		inboxService.Notify()
 	}
 
@@ -357,21 +293,16 @@ func serve(args []string) error {
 	shipsCtx, stopShips := context.WithCancel(bg)
 	shipsDone := make(chan struct{})
 	go func() { defer close(shipsDone); shipService.Run(shipsCtx) }()
-	// Autopilot stops with the ships' run, before the log closes, so a record
-	// it writes at shutdown is kept.
-	engineDone := make(chan struct{})
-	go func() { defer close(engineDone); engine.Run(shipsCtx) }()
 	configChanges, unsubscribe := cfg.Subscribe()
 	go func() {
 		defer unsubscribe()
 		for {
 			select {
 			case <-configChanges:
-				sourceService.Notify() // an autopilot-only edit does not restart a source
+				sourceService.Notify()
 				resourceSet.Refresh()
 				resourceSet.Wake()
 				resourceService.Broadcast()
-				engine.Poke()
 				inboxService.KickResume()
 			case <-shipsCtx.Done():
 				return
@@ -389,7 +320,6 @@ func serve(args []string) error {
 	defer func() {
 		stopShips()
 		<-shipsDone
-		<-engineDone
 		outcomeLog.Close()
 		stopBackground()
 		background.Wait()

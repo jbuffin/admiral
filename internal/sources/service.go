@@ -16,11 +16,9 @@ import (
 	"sync"
 
 	"github.com/jbuffin/admiral/internal/config"
-	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/ships"
-	"github.com/jbuffin/admiral/internal/state"
 )
 
 // Service's GET handlers never change anything.
@@ -30,11 +28,6 @@ type Service struct {
 	Sup    *Supervisor
 	Ships  func() []ships.Ship
 	Hub    *server.Hub
-	State  *state.Store
-	// Hot says autopilot gave up on an order; nil says none.
-	Hot        func(source, orderID string) bool
-	WaitingFor func(source, panel string) []string
-	OnLaunched func(source, orderID string)
 
 	mu     sync.Mutex // one config read-modify-write at a time
 	poke   chan struct{}
@@ -119,21 +112,10 @@ func (s *Service) View() []SourceView {
 			orders := make([]Order, 0, len(p.Orders))
 			for _, o := range p.Orders {
 				if !hidden[ships.OrderKey{Source: st.def.Key, OrderID: o.ID}] {
-					// A plugin's hot mark stays; Admiral's is added to it.
-					o.Hot = o.Hot || (s.Hot != nil && s.Hot(st.def.Key, o.ID))
 					orders = append(orders, o)
 				}
 			}
 			p.Orders = orders
-			p.Autopilot = nil
-			if e, ok := st.def.Autopilot[p.ID]; ok {
-				view := &AutopilotView{Enabled: e.Enabled, Paused: s.State.Paused(st.def.Key, p.ID), MaxShips: e.MaxShips,
-					Resources: append([]string{}, e.Resources...), WaitingFor: []string{}}
-				if s.WaitingFor != nil {
-					view.WaitingFor = append(view.WaitingFor, s.WaitingFor(st.def.Key, p.ID)...)
-				}
-				p.Autopilot = view
-			}
 			v.Views = append(v.Views, p)
 		}
 		SortPanels(v.Views, st.def.PanelOrder)
@@ -188,10 +170,6 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sources", s.serveAdd)
 	mux.HandleFunc("PUT /api/source-order", s.serveSourceOrder)
 	mux.HandleFunc("PUT /api/sources/{key}/panel-order", s.servePanelOrder)
-	mux.HandleFunc("PUT /api/sources/{key}/panels/{panel}/autopilot", s.servePause)
-	mux.HandleFunc("GET /api/sources/{key}/panels/{panel}/autopilot/settings", s.serveAutopilotSettings)
-	mux.HandleFunc("PUT /api/sources/{key}/panels/{panel}/autopilot/settings", s.serveSaveAutopilotSettings)
-	mux.HandleFunc("DELETE /api/sources/{key}/panels/{panel}/autopilot/settings", s.serveRemoveAutopilot)
 	mux.HandleFunc("PUT /api/sources/{key}", s.serveSave)
 	mux.HandleFunc("DELETE /api/sources/{key}", s.serveDelete)
 	mux.HandleFunc("POST /api/sources/{key}/restart", s.serveRestart)
@@ -748,53 +726,6 @@ func (s *Service) servePanelOrder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string][]string{"panels": req.Panels})
 }
 
-// Pausing stops new launches and leaves the running ships alone.
-func (s *Service) servePause(w http.ResponseWriter, r *http.Request) {
-	key, panel := r.PathValue("key"), r.PathValue("panel")
-	var req struct {
-		Paused *bool `json:"paused"`
-	}
-	if !decode(w, r, &req) {
-		return
-	}
-	if req.Paused == nil {
-		writeError(w, http.StatusBadRequest, "paused is required")
-		return
-	}
-	def, ok := s.Config.Current().Source(key)
-	if !ok {
-		writeError(w, http.StatusNotFound, "source "+key+" not found")
-		return
-	}
-	if _, ok := def.Autopilot[panel]; !ok {
-		writeError(w, http.StatusNotFound, "view "+strconv.Quote(panel)+" of source "+key+" has no autopilot entry")
-		return
-	}
-	s.State.SetPaused(key, panel, *req.Paused)
-	s.Sup.changed() // pushes the sources and wakes autopilot
-	writeJSON(w, http.StatusOK, map[string]any{"paused": *req.Paused})
-}
-
-// Listed says every panel has had a successful orders.list since the source
-// started, so a missing order is really gone.
-type Listing struct {
-	Key    string
-	Listed bool
-	Panels []Panel
-}
-
-func (s *Service) Listings() []Listing {
-	var out []Listing
-	for _, st := range s.Sup.snapshot() {
-		listed := st.state == StateOK
-		for _, p := range st.panels {
-			listed = listed && p.Listed
-		}
-		out = append(out, Listing{Key: st.def.Key, Listed: listed, Panels: st.panels})
-	}
-	return out
-}
-
 func (s *Service) serveRestart(w http.ResponseWriter, r *http.Request) {
 	key := r.PathValue("key")
 	if !s.Sup.Restart(key) {
@@ -835,18 +766,14 @@ func (s *Service) mutable(w http.ResponseWriter, key, capability string) (*runne
 type RequestError struct {
 	Status int
 	Msg    string
-	// The zero kind is a final refusal.
-	kind inbox.AddKind
 }
 
 func (e *RequestError) Error() string { return e.Msg }
 
-func (e *RequestError) AddKind() inbox.AddKind { return e.kind }
-
 func (s *Service) mutableFor(key, capability string) (*runner, conn, *RequestError) {
 	rn := s.Sup.runner(key)
 	if rn == nil {
-		return nil, nil, &RequestError{Status: http.StatusNotFound, Msg: "source " + key + " not found", kind: inbox.AddRetryable}
+		return nil, nil, &RequestError{Status: http.StatusNotFound, Msg: "source " + key + " not found"}
 	}
 	rn.mu.Lock()
 	readOnly, state, caps := rn.readOnly, rn.state, rn.caps
@@ -854,11 +781,11 @@ func (s *Service) mutableFor(key, capability string) (*runner, conn, *RequestErr
 	p, live := rn.live()
 	switch {
 	case readOnly:
-		return nil, nil, &RequestError{Status: http.StatusConflict, Msg: "The source is read-only until it runs again", kind: inbox.AddRetryable}
+		return nil, nil, &RequestError{Status: http.StatusConflict, Msg: "The source is read-only until it runs again"}
 	case !live:
-		return nil, nil, &RequestError{Status: http.StatusConflict, Msg: "The source is " + state + ", not running yet", kind: inbox.AddRetryable}
+		return nil, nil, &RequestError{Status: http.StatusConflict, Msg: "The source is " + state + ", not running yet"}
 	case !slices.Contains(caps, capability):
-		return nil, nil, &RequestError{Status: http.StatusConflict, Msg: "The source cannot " + capability + " orders", kind: inbox.AddRetryable}
+		return nil, nil, &RequestError{Status: http.StatusConflict, Msg: "The source cannot " + capability + " orders"}
 	}
 	return rn, p, nil
 }
@@ -868,13 +795,13 @@ func callFailure(err error) *RequestError {
 	var unsent *notSentError
 	switch {
 	case errors.As(err, &rpc):
-		return &RequestError{Status: http.StatusUnprocessableEntity, Msg: rpc.Error(), kind: inbox.AddRetryable} // the plugin refused: nothing changed
+		return &RequestError{Status: http.StatusUnprocessableEntity, Msg: rpc.Error()} // the plugin refused: nothing changed
 	case errors.As(err, &unsent):
-		return &RequestError{Status: http.StatusBadGateway, Msg: err.Error(), kind: inbox.AddRetryable} // the request never went out
+		return &RequestError{Status: http.StatusBadGateway, Msg: err.Error()} // the request never went out
 	case errors.Is(err, errTimeout):
-		return &RequestError{Status: http.StatusGatewayTimeout, Msg: err.Error(), kind: inbox.AddUncertain}
+		return &RequestError{Status: http.StatusGatewayTimeout, Msg: err.Error()}
 	}
-	return &RequestError{Status: http.StatusBadGateway, Msg: err.Error(), kind: inbox.AddUncertain}
+	return &RequestError{Status: http.StatusBadGateway, Msg: err.Error()}
 }
 
 func callError(w http.ResponseWriter, err error) {
@@ -966,7 +893,7 @@ func (s *Service) AddOrder(ctx context.Context, key, panel, text string) (string
 	}
 	id, found := panelOf(rn, panel, "")
 	if !found {
-		return "", &RequestError{Status: http.StatusNotFound, Msg: "view " + strconv.Quote(panel) + " not found", kind: inbox.AddRetryable}
+		return "", &RequestError{Status: http.StatusNotFound, Msg: "view " + strconv.Quote(panel) + " not found"}
 	}
 	panel = id
 	res, err := p.call(ctx, "orders.add", map[string]any{"panel": panel, "text": text}, callTimeout)
@@ -978,7 +905,7 @@ func (s *Service) AddOrder(ctx context.Context, key, panel, text string) (string
 	}
 	if err := json.Unmarshal(res, &added); err != nil || added.ID == "" || hasControl(added.ID) {
 		rn.logf("protocol error: orders.add answered %s", cleanMsg(string(res)))
-		return "", &RequestError{Status: http.StatusBadGateway, Msg: "the order source did not answer with the new order's id", kind: inbox.AddUncertain}
+		return "", &RequestError{Status: http.StatusBadGateway, Msg: "the order source did not answer with the new order's id"}
 	}
 	rn.wantPull(false, panel)
 	return added.ID, nil
@@ -1055,9 +982,6 @@ func (s *Service) Order(source, id string) (text, title, repo, url, panel string
 }
 
 func (s *Service) Launched(source, id string) {
-	if s.OnLaunched != nil {
-		s.OnLaunched(source, id)
-	}
 	if rn := s.Sup.runner(source); rn != nil {
 		rn.launched(id)
 	}

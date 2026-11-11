@@ -73,7 +73,7 @@ func SetSources(dir string, sources json.RawMessage) error {
 	if err != nil {
 		return err
 	}
-	// The whole file, not the sources alone: an autopilot entry names a fleet.
+	// The whole file, not the sources alone: a source names a fleet.
 	if _, err := Parse(out); err != nil {
 		return err
 	}

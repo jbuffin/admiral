@@ -27,20 +27,31 @@ type Dropped struct {
 	OrdersUnreadable bool
 }
 
+// Entry is an enabled panel autopilot entry the migration removed.
+type Entry struct {
+	Key, Name, Panel string // the source's key and name, and the panel id
+}
+
 type Migration struct {
-	Backup        string // file name of the backup, beside config.json
-	Moved         []Moved
-	Removed       []Dropped
-	ClearedResume string // the resume source it cleared; empty when none
-	GitHub        bool   // an old GitHub plugin source became built in, on every fleet
-	GitHubCustom  bool   // and it had custom views, which the default views now sit beside
+	Backup  string // file name of the backup, beside config.json
+	Moved   []Moved
+	Removed []Dropped
+	// Entries are the enabled panel autopilot entries that went with the engine.
+	Entries []Entry
+	// AutopilotObject is set when the top-level autopilot object went (its
+	// max_ships moved to the top level).
+	AutopilotObject bool
+	GitHub          bool // an old GitHub plugin source became built in, on every fleet
+	GitHubCustom    bool // and it had custom views, which the default views now sit beside
 }
 
 type migrationPlan struct {
 	out     []byte
 	moved   []Moved
 	removed []Dropped
-	cleared string
+	entries []Entry
+	object  bool
+	changed bool // a kept source lost its autopilot, whether or not it is listed above
 	github  bool
 	custom  bool
 }
@@ -56,69 +67,74 @@ func planMigration(data []byte) *migrationPlan {
 	if err != nil {
 		return nil
 	}
-	rawSources, ok := top.Get("sources")
-	if !ok {
-		return nil
-	}
-	sources, err := ParseObject(rawSources)
-	if err != nil {
-		return nil
-	}
-	// The default fleet is the first one in the file.
-	defKey, defName := "", ""
-	if rawFleets, ok := top.Get("fleets"); ok {
-		if fleets, err := ParseObject(rawFleets); err == nil && fleets.Len() > 0 {
-			defKey = fleets.Keys()[0]
-			raw, _ := fleets.Get(defKey)
-			defName = nameOf(raw, defKey)
-		}
-	}
-
 	p := &migrationPlan{}
-	for _, key := range sources.Keys() {
-		raw, _ := sources.Get(key)
-		src, err := ParseObject(raw)
+	if rawSources, ok := top.Get("sources"); ok {
+		sources, err := ParseObject(rawSources)
 		if err != nil {
 			return nil
 		}
-		plugin := stringOf(src, "plugin")
-		_, hasFleet := src.Get("fleet")
-		switch {
-		case plugin == "freeform":
-			sources.Delete(key)
-			p.removed = append(p.removed, Dropped{Key: key, Name: nameOf(raw, key), Freeform: true})
-		case hasFleet:
-		case defKey == "":
-			sources.Delete(key)
-			p.removed = append(p.removed, Dropped{Key: key, Name: nameOf(raw, key)})
-		default:
-			src.SetValue("fleet", defKey)
-			sources.Set(key, src.JSON())
-			p.moved = append(p.moved, Moved{Key: key, Name: nameOf(raw, key), Fleet: defKey, FleetName: defName})
+		// The default fleet is the first one in the file.
+		defKey, defName := "", ""
+		if rawFleets, ok := top.Get("fleets"); ok {
+			if fleets, err := ParseObject(rawFleets); err == nil && fleets.Len() > 0 {
+				defKey = fleets.Keys()[0]
+				raw, _ := fleets.Get(defKey)
+				defName = nameOf(raw, defKey)
+			}
 		}
+		for _, key := range sources.Keys() {
+			raw, _ := sources.Get(key)
+			src, err := ParseObject(raw)
+			if err != nil {
+				return nil
+			}
+			plugin := stringOf(src, "plugin")
+			_, hasFleet := src.Get("fleet")
+			changed := false
+			// The panel autopilot entries went with the engine, whether the source stays or not.
+			if ap, ok := src.Get("autopilot"); ok {
+				p.entries = append(p.entries, enabledEntries(key, nameOf(raw, key), ap)...)
+				src.Delete("autopilot")
+				changed = true
+				p.changed = true
+			}
+			switch {
+			case plugin == "freeform":
+				sources.Delete(key)
+				p.removed = append(p.removed, Dropped{Key: key, Name: nameOf(raw, key), Freeform: true})
+				continue
+			case hasFleet:
+			case defKey == "":
+				sources.Delete(key)
+				p.removed = append(p.removed, Dropped{Key: key, Name: nameOf(raw, key)})
+				continue
+			default:
+				src.SetValue("fleet", defKey)
+				changed = true
+				p.moved = append(p.moved, Moved{Key: key, Name: nameOf(raw, key), Fleet: defKey, FleetName: defName})
+			}
+			if changed {
+				sources.Set(key, src.JSON())
+			}
+		}
+		p.github, p.custom = migrateGitHub(top, sources)
+		top.Set("sources", sources.JSON())
 	}
-	p.github, p.custom = migrateGitHub(top, sources)
-	if len(p.moved) == 0 && len(p.removed) == 0 && !p.github {
-		return nil
-	}
-	top.Set("sources", sources.JSON())
+	// The top-level autopilot object: its cap moves up, the rest goes.
 	if raw, ok := top.Get("autopilot"); ok {
+		// One that is not an object has no cap to move: it is dropped.
 		if ap, err := ParseObject(raw); err == nil {
-			if rs, ok := ap.Get("resume_source"); ok {
-				var r struct {
-					Source string `json:"source"`
-				}
-				if json.Unmarshal(rs, &r) == nil {
-					for _, d := range p.removed {
-						if d.Key == r.Source {
-							ap.Delete("resume_source")
-							p.cleared = r.Source
-							top.Set("autopilot", ap.JSON())
-						}
-					}
+			if cap, ok := ap.Get("max_ships"); ok {
+				if _, have := top.Get("max_ships"); !have {
+					top.Set("max_ships", cap)
 				}
 			}
 		}
+		top.Delete("autopilot")
+		p.object = true
+	}
+	if len(p.moved) == 0 && len(p.removed) == 0 && len(p.entries) == 0 && !p.object && !p.changed && !p.github {
+		return nil
 	}
 	out := top.JSON()
 	if strings.IndexByte(string(data), '\n') >= 0 {
@@ -131,6 +147,28 @@ func planMigration(data []byte) *migrationPlan {
 	}
 	p.out = out
 	return p
+}
+
+// enabledEntries lists the enabled entries of a source's autopilot object, in
+// panel order. A disabled entry, or an object that isn't one, lists nothing.
+func enabledEntries(key, name string, raw json.RawMessage) []Entry {
+	panels, err := ParseObject(raw)
+	if err != nil {
+		return nil
+	}
+	var out []Entry
+	for _, panel := range panels.Keys() {
+		v, _ := panels.Get(panel)
+		e, err := ParseObject(v)
+		if err != nil {
+			continue
+		}
+		var on bool
+		if raw, ok := e.Get("enabled"); ok && json.Unmarshal(raw, &on) == nil && on {
+			out = append(out, Entry{Key: key, Name: name, Panel: panel})
+		}
+	}
+	return out
 }
 
 // githubCarried are the settings a fleet's new GitHub source copies from the
@@ -276,7 +314,7 @@ func Migrate(dir, version string) (*Migration, error) {
 	if err := replaceFile(path, p.out); err != nil {
 		return nil, err
 	}
-	return &Migration{Backup: backup, Moved: p.moved, Removed: p.removed, ClearedResume: p.cleared, GitHub: p.github, GitHubCustom: p.custom}, nil
+	return &Migration{Backup: backup, Moved: p.moved, Removed: p.removed, Entries: p.entries, AutopilotObject: p.object, GitHub: p.github, GitHubCustom: p.custom}, nil
 }
 
 func writeNew(path string, data []byte) error {
@@ -342,12 +380,26 @@ func pendingOrders(dir, key string) (texts []string, unreadable bool) {
 // Notice never quotes a source's settings.
 func (m *Migration) Notice() (title, body string) {
 	var b strings.Builder
+	fleets := len(m.Moved)+len(m.Removed) > 0
+	autopilot := len(m.Entries) > 0 || m.AutopilotObject
 	title = "Admiral updated your config"
-	if len(m.Moved) == 0 && len(m.Removed) == 0 {
-		fmt.Fprintf(&b, "Admiral updated your GitHub source. The old file is saved as %s beside config.json.\n", m.Backup)
-	} else {
-		fmt.Fprintf(&b, "Admiral moved your sources into fleets. The old file is saved as %s beside config.json.\n", m.Backup)
+	if !fleets && !m.GitHub {
+		title = "Admiral removed autopilot from your config"
 	}
+	var did []string
+	if fleets {
+		did = append(did, "moved your sources into fleets")
+	}
+	if m.GitHub && !fleets {
+		did = append(did, "updated your GitHub source")
+	}
+	if autopilot {
+		did = append(did, "removed the autopilot engine's settings")
+	}
+	if len(did) == 0 {
+		did = append(did, "updated your config")
+	}
+	fmt.Fprintf(&b, "Admiral %s. The old file is saved as %s beside config.json.\n", strings.Join(did, " and "), m.Backup)
 	for _, s := range m.Moved {
 		fmt.Fprintf(&b, "\n- Source %s (%s) now belongs to fleet %s (%s).", s.Name, s.Key, s.FleetName, s.Fleet)
 	}
@@ -376,8 +428,14 @@ func (m *Migration) Notice() (title, body string) {
 			b.WriteString(" Your custom views were copied to each one. The three default views (Assigned to me, Review requested, My PRs) now show beside them.")
 		}
 	}
-	if m.ClearedResume != "" {
-		fmt.Fprintf(&b, "\n- Autopilot's resume source named %s, which is gone, so it was cleared.", m.ClearedResume)
+	if len(m.Entries) > 0 {
+		b.WriteString("\nThese view autopilot entries were removed with the autopilot engine. They can come back as routines once scheduled routines land:")
+		for _, e := range m.Entries {
+			fmt.Fprintf(&b, "\n- Source %s (%s), view %s.", e.Name, e.Key, e.Panel)
+		}
+	}
+	if m.AutopilotObject {
+		b.WriteString("\nThe autopilot object is gone, with its resume source. Its max_ships, if it had one, is now the top-level max_ships.")
 	}
 	return title, b.String()
 }

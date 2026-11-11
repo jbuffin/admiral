@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
-	"sort"
 )
 
 // A ship holds one unit of each Resource its entry named until it ends.
@@ -64,25 +63,6 @@ func parseResource(path string, raw json.RawMessage) (Resource, error) {
 		}
 	}
 	return r, nil
-}
-
-// checkPanelResources runs after the whole file is parsed.
-func checkPanelResources(cfg *Config) error {
-	for _, s := range cfg.SourceList {
-		panels := make([]string, 0, len(s.Autopilot))
-		for panel := range s.Autopilot {
-			panels = append(panels, panel)
-		}
-		sort.Strings(panels)
-		for _, panel := range panels {
-			for _, name := range s.Autopilot[panel].Resources {
-				if _, ok := cfg.Resources[name]; !ok {
-					return fmt.Errorf("sources.%s.autopilot.%s.resources: no resource %q in resources", s.Key, panel, name)
-				}
-			}
-		}
-	}
-	return nil
 }
 
 func (c *Config) cloneResources() map[string]Resource {

@@ -33,19 +33,6 @@ type Panel struct {
 	Orders []Order `json:"orders"`
 	// Admiral sets Error, never the plugin.
 	Error string `json:"error,omitempty"`
-	// Admiral sets Autopilot, never the plugin.
-	Autopilot *AutopilotView `json:"autopilot"`
-	// Autopilot prunes only what listed panels no longer hold.
-	Listed bool `json:"-"`
-}
-
-type AutopilotView struct {
-	Enabled  bool `json:"enabled"`
-	Paused   bool `json:"paused"`
-	MaxShips int  `json:"max_ships"`
-	// Both are [] when there are none.
-	Resources  []string `json:"resources"`
-	WaitingFor []string `json:"waiting_for"`
 }
 
 type Auth struct {

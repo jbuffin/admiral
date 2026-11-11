@@ -30,20 +30,15 @@ type file struct {
 	DirsUsed  map[string]time.Time `json:"dirs_used"`              // by directory
 	Kept      map[string]KeptShip  `json:"kept_inboxes,omitempty"` // by tmux session
 	// Optional, so Version stays 1.
-	Paused map[string]map[string]bool `json:"paused,omitempty"`
-	// Optional, so Version stays 1.
 	Resumes map[string]Resume `json:"resume_orders,omitempty"`
 }
 
-// Text outlives the report's deletion and a restart. Once added (or refused for good) Done is
-// set and Text dropped, and the entry stays so the same report never adds it twice.
+// Text outlives the report's deletion and a restart. Once typed (or finished for good) Done is
+// set and Text dropped, and the entry stays so the same report never resumes twice.
 type Resume struct {
-	Session      string `json:"session"`
-	Text         string `json:"text,omitempty"`
-	Dir          string `json:"dir,omitempty"`
-	OriginSource string `json:"origin_source,omitempty"`
-	OriginPanel  string `json:"origin_panel,omitempty"`
-	Done         bool   `json:"done,omitempty"`
+	Session string `json:"session"`
+	Text    string `json:"text,omitempty"`
+	Done    bool   `json:"done,omitempty"`
 }
 
 // KeptShip is a ship that sailed off with an unanswered inbox item: enough to name it in the
@@ -54,10 +49,6 @@ type KeptShip struct {
 	FleetName  string `json:"fleet_name,omitempty"`
 	FleetColor string `json:"fleet_color,omitempty"`
 	Harness    string `json:"harness"`
-	// Dir and the origin panel are for the resume order of its report.
-	Dir          string `json:"dir,omitempty"`
-	OriginSource string `json:"origin_source,omitempty"`
-	OriginPanel  string `json:"origin_panel,omitempty"`
 }
 
 func DockKey(fleet, harness string) string { return fleet + "/" + harness }
@@ -98,9 +89,6 @@ func Open(dir string) (*Store, error) {
 	}
 	if f.DirsUsed != nil {
 		s.data.DirsUsed = f.DirsUsed
-	}
-	if f.Paused != nil {
-		s.data.Paused = f.Paused
 	}
 	if f.Kept != nil {
 		s.data.Kept = f.Kept
@@ -152,25 +140,16 @@ func (s *Store) DropInbox(session string) error {
 
 // QueueResume ignores a known key, pending or done, and writes the file now: the report may be
 // deleted right after.
-func (s *Store) QueueResume(key, session, text, dir, originSource, originPanel string) (bool, error) {
+func (s *Store) QueueResume(key, session, text string) (bool, error) {
 	s.mu.Lock()
-	if r, seen := s.data.Resumes[key]; seen {
-		// A capture that came when the ship was already gone knew no directory.
-		fill := !r.Done && r.Dir == "" && dir != ""
-		if fill {
-			r.Dir, r.OriginSource, r.OriginPanel = dir, originSource, originPanel
-			s.data.Resumes[key] = r
-		}
+	if _, seen := s.data.Resumes[key]; seen {
 		s.mu.Unlock()
-		if fill {
-			return false, s.Flush()
-		}
 		return false, nil
 	}
 	if s.data.Resumes == nil {
 		s.data.Resumes = map[string]Resume{}
 	}
-	s.data.Resumes[key] = Resume{Session: session, Text: text, Dir: dir, OriginSource: originSource, OriginPanel: originPanel}
+	s.data.Resumes[key] = Resume{Session: session, Text: text}
 	s.mu.Unlock()
 	return true, s.Flush()
 }
@@ -260,33 +239,6 @@ func (s *Store) DirUsed(dir string) time.Time {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.data.DirsUsed[dir]
-}
-
-func (s *Store) Paused(source, panel string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.data.Paused[source][panel]
-}
-
-// A pause outlives a removed source, and applies to one added again under the same key.
-func (s *Store) SetPaused(source, panel string, paused bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if paused {
-		if s.data.Paused == nil {
-			s.data.Paused = map[string]map[string]bool{}
-		}
-		if s.data.Paused[source] == nil {
-			s.data.Paused[source] = map[string]bool{}
-		}
-		s.data.Paused[source][panel] = true
-	} else {
-		delete(s.data.Paused[source], panel)
-		if len(s.data.Paused[source]) == 0 {
-			delete(s.data.Paused, source)
-		}
-	}
-	s.changed()
 }
 
 // Every change pushes the write back, so a burst makes one.

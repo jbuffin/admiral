@@ -1,5 +1,4 @@
-// Package outcomes is the append-only history of ships. Admiral reads it back
-// for one purpose only: autopilot counts runs toward retro orders.
+// Package outcomes is the append-only history of ships.
 package outcomes
 
 import (

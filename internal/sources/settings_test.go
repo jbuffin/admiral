@@ -43,7 +43,7 @@ func newServiceFixture(t *testing.T, cfg string) *serviceFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &Service{Home: home, Config: m, Sup: &Supervisor{Home: home, Config: m}, State: st, Ships: func() []ships.Ship { return nil }}
+	s := &Service{Home: home, Config: m, Sup: &Supervisor{Home: home, Config: m}, Ships: func() []ships.Ship { return nil }}
 	mux := http.NewServeMux()
 	s.Routes(mux)
 	srv := httptest.NewServer(mux)

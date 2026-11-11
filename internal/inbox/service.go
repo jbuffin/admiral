@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/state"
@@ -31,17 +30,10 @@ type Service struct {
 	Ship     func(session string) (name, harness string, ok bool)
 	Outcomes *outcomes.Writer
 	// Dock's why says which of the ship and its dock is unknown.
-	Dock         func(session string) (env []string, why string)
-	Kept         *state.Store
-	ResumeTarget func() *config.ResumeSource
-	// An AddOrder failure says through AddKind() AddKind whether it may pass or the
-	// order may have landed; any other failure is final.
-	AddOrder func(ctx context.Context, source, panel, text string) (id string, err error)
-	Origin   func(session string) (Origin, bool)
-	// ResumeAdd is called before each add, and its result after; autopilot holds
-	// off on the panel's unrecorded orders in between.
-	ResumeAdd func(source, panel string, from Origin) (done func(orderID string))
-	// An Afloat ship's resume text is typed at its prompt instead of becoming an order.
+	Dock func(session string) (env []string, why string)
+	Kept *state.Store
+	// Afloat is whether a session is a ship that is underway or needs you; a ship
+	// that is not afloat has no resume.
 	Afloat func(session string) bool
 	// TypeResume types only while the ship waits at its prompt because its turn ended.
 	TypeResume func(session, text string) (afloat, typed bool, err error)
@@ -49,12 +41,11 @@ type Service struct {
 	answerMu sync.Mutex        // one answer at a time
 	actMu    sync.Mutex        // guards acting
 	acting   map[string]bool   // the items a gh action is running on
-	resumeMu sync.Mutex        // one pass over the resume orders at a time
-	lastErr  map[string]string // the last failure logged for a resume order; under resumeMu
-	noTarget sync.Once
-	resume   chan struct{} // resume orders may be ready; buffered; under mu
-	scanMu   sync.Mutex    // one refresh at a time
-	mu       sync.Mutex    // guards items
+	resumeMu sync.Mutex        // one pass over the resume texts at a time
+	lastErr  map[string]string // the last failure logged for a resume text; under resumeMu
+	resume   chan struct{}     // resume texts may be ready; buffered; under mu
+	scanMu   sync.Mutex        // one refresh at a time
+	mu       sync.Mutex        // guards items
 	items    []Item
 	notify   chan struct{} // a ship changed; buffered, so Notify never blocks
 	watched  map[string]os.FileInfo

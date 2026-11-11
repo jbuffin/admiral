@@ -179,20 +179,13 @@ func (w *world) startPhone() {
 	}
 }
 
-func TestLockBlocksAnAutopilotLaunchUntilItEnds(t *testing.T) {
+// A lock holds back a launch that names its resource (409, no ship); the same
+// launch goes through once the lock ends.
+func TestLockBlocksALaunchNamingItUntilItEnds(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
 	w.writeCue("wait go", "exit 0")
-	w.repo("r1", remoteOf("r1"))
-	p := w.newTP("a")
-	p.mainOrders()
-	w.installPlugin("testplug", "testplug")
-	w.writeLockConfig(map[string]any{"a": tpAutopilot(p, "main", apEntry(true, 1, map[string]any{"resources": []string{"phone"}}))})
-	w.start()
-	w.waitSource("a", 10*time.Second, "state ok", isOK)
-	if got := w.resourceList(); len(got) != 1 || got[0].Name != "phone" || got[0].InUse != 0 {
-		t.Fatalf("GET /api/resources = %+v, want phone free", got)
-	}
+	w.startPhone()
 
 	l := w.startLock("")
 	held := w.waitHeld(l)
@@ -201,18 +194,15 @@ func TestLockBlocksAnAutopilotLaunchUntilItEnds(t *testing.T) {
 		t.Errorf("phone holders = %+v, want one lock labelled `admiral lock (pid %d): sh`", held.Holders, l.cmd.Process.Pid)
 	}
 
-	p.mainOrders(apOrder("o1", remoteOf("r1")))
-	p.do("orders-changed", "")
-	w.waitSource("a", 5*time.Second, "o1", func(s sourceJSON) bool { return s.hasOrder("o1") })
-	w.waitSource("a", 10*time.Second, "the panel waiting for phone", func(sourceJSON) bool {
-		return strings.Join(w.waitingFor("a", "main"), ",") == "phone"
-	})
-	w.waitOutcome("resource_wait", 1)
-	holdThat(t, "an autopilot ship launched while a lock held the only unit, or the lock ended", func() bool {
-		return len(w.in.ships(t)) == 0 && !l.exited()
-	})
-	if n := len(w.outcomesOf("resource_wait")); n != 1 {
-		t.Errorf("resource_wait records = %d, want one for the order", n)
+	req := w.autopilotLaunch("claude", "lockedlaunch", map[string]any{"resources": []string{"phone"}})
+	if code, body := w.post(req); code != http.StatusConflict {
+		t.Errorf("a launch naming a resource a lock holds = %d %s, want 409", code, body)
+	}
+	if n := len(w.in.ships(t)); n != 0 {
+		t.Errorf("ships = %d after the refused launch, want none", n)
+	}
+	if l.exited() {
+		t.Fatalf("the lock ended while the launch was refused: %q", l.err.String())
 	}
 
 	l.release()
@@ -222,7 +212,11 @@ func TestLockBlocksAnAutopilotLaunchUntilItEnds(t *testing.T) {
 	if strings.Contains(l.err.String(), "lost the lock") {
 		t.Errorf("a command that ended first still got the lost-lock line: %q", l.err.String())
 	}
-	w.waitShipCount(10*time.Second, "o1's ship after the lock ended", fromOrder("o1"), 1)
+	w.waitLock("free", func(r lockRes) bool { return r.InUse == 0 })
+	w.launch(req)
+	w.waitLock("held by the ship", func(r lockRes) bool {
+		return r.InUse == 1 && len(r.Holders) == 1 && r.Holders[0].Kind == "ship"
+	})
 }
 
 func TestLockBusyExits75AndWaitRunsAfterTheFirstEnds(t *testing.T) {
@@ -269,19 +263,14 @@ func TestLockBusyExits75AndWaitRunsAfterTheFirstEnds(t *testing.T) {
 	}
 }
 
-// A --wait lock waits behind an autopilot ship that holds the unit and takes it
-// once the ship's session is gone: main.go wakes the Set when a ship changes.
+// A --wait lock waits behind a ship that holds the unit and takes it once the
+// ship's session is gone: main.go wakes the Set when a ship changes.
 func TestLockWaitsBehindAShipUntilItEnds(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
 	w.writeCue("wait go", "exit 0")
-	w.repo("r1", remoteOf("r1"))
-	p := w.newTP("a")
-	p.mainOrders(apOrder("o1", remoteOf("r1")))
-	w.installPlugin("testplug", "testplug")
-	w.writeLockConfig(map[string]any{"a": tpAutopilot(p, "main", apEntry(true, 1, map[string]any{"resources": []string{"phone"}}))})
-	w.start()
-	ship := w.waitShipCount(10*time.Second, "o1's ship", fromOrder("o1"), 1)[0]
+	w.startPhone()
+	ship := w.launch(w.autopilotLaunch("claude", "lockship", map[string]any{"resources": []string{"phone"}}))
 	w.waitLock("held by the ship", func(r lockRes) bool {
 		return r.InUse == 1 && len(r.Holders) == 1 && r.Holders[0].Kind == "ship"
 	})

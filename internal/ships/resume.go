@@ -19,7 +19,9 @@ const enterPause = 300 * time.Millisecond
 func (s *Service) TypeResume(session, text string) (afloat, typed bool, err error) {
 	sess, ok := s.find(session)
 	if !ok {
-		return false, false, nil
+		// Before the host's first snapshot every ship is missing: wait, so a
+		// restart does not finish a text for a ship that is still afloat.
+		return !s.Host.Known(), false, nil
 	}
 	sh := s.ship(sess)
 	if sh.Status != StatusUnderway && sh.Status != StatusNeedsYou {

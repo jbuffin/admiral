@@ -6,19 +6,14 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// resConfig puts the resources key after sources on purpose.
-func resConfig(panelRes, resources string) string {
-	extra := ""
-	if panelRes != "" {
-		extra = `,"resources":` + panelRes
-	}
-	c := `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},` +
-		`"sources":{"s":{"plugin":"testplug","fleet":"work","autopilot":{"p":` + apEntry(`"enabled":true`+extra) + `}}}`
+// resConfig is a config with fleet "work" and the given top-level resources
+// object ("" for none).
+func resConfig(resources string) string {
+	c := `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}}`
 	if resources != "" {
 		c += `,"resources":` + resources
 	}
@@ -26,7 +21,7 @@ func resConfig(panelRes, resources string) string {
 }
 
 func TestResourcesParse(t *testing.T) {
-	cfg, err := config.Parse([]byte(resConfig(`["phone","ipad"]`, `{
+	cfg, err := config.Parse([]byte(resConfig(`{
 		"phone": {"capacity": 1, "check": ["sh", "-c", "adb devices | grep -q X"]},
 		"ipad": {},
 		"farm": {"capacity": 250}}`)))
@@ -41,12 +36,8 @@ func TestResourcesParse(t *testing.T) {
 	if !reflect.DeepEqual(cfg.Resources, want) {
 		t.Errorf("Resources = %+v, want %+v", cfg.Resources, want)
 	}
-	src, _ := cfg.Source("s")
-	if got := src.Autopilot["p"].Resources; !reflect.DeepEqual(got, []string{"phone", "ipad"}) {
-		t.Errorf("panel resources = %v, want [phone ipad]", got)
-	}
 
-	cfg, err = config.Parse([]byte(resConfig(``, ``)))
+	cfg, err = config.Parse([]byte(resConfig(``)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,12 +48,11 @@ func TestResourcesParse(t *testing.T) {
 
 func TestResourcesParseErrors(t *testing.T) {
 	cases := []struct{ name, config, want string }{
-		{"panel names an undefined resource", resConfig(`["phone"]`, `{"ipad":{}}`), "sources.s.autopilot.p.resources"},
-		{"capacity 0", resConfig(``, `{"phone":{"capacity":0}}`), "resources.phone.capacity"},
-		{"check empty", resConfig(``, `{"phone":{"check":[]}}`), "resources.phone.check"},
-		{"check has an empty string", resConfig(``, `{"phone":{"check":["sh",""]}}`), "resources.phone.check"},
-		{"unknown key", resConfig(``, `{"phone":{"colour":"red"}}`), "resources.phone.colour"},
-		{"name with a space", resConfig(``, `{"my phone":{}}`), "resources.my phone"},
+		{"capacity 0", resConfig(`{"phone":{"capacity":0}}`), "resources.phone.capacity"},
+		{"check empty", resConfig(`{"phone":{"check":[]}}`), "resources.phone.check"},
+		{"check has an empty string", resConfig(`{"phone":{"check":["sh",""]}}`), "resources.phone.check"},
+		{"unknown key", resConfig(`{"phone":{"colour":"red"}}`), "resources.phone.colour"},
+		{"name with a space", resConfig(`{"my phone":{}}`), "resources.my phone"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -77,37 +67,10 @@ func TestResourcesParseErrors(t *testing.T) {
 	}
 }
 
-func TestManagerKeepsTheLastGoodConfigWhenAPanelNamesAnUndefinedResource(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, resConfig(`["phone"]`, `{"phone":{"capacity":2}}`))
-	m, err := config.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(m.Close)
-	if got := m.Current().Resources["phone"].Capacity; got != 2 {
-		t.Fatalf("capacity after the first load = %d, want 2", got)
-	}
-
-	writeFile(t, dir, resConfig(`["phone","tablet"]`, `{"phone":{"capacity":3}}`))
-	deadline := time.Now().Add(5 * time.Second)
-	for m.View().Error == nil {
-		if time.Now().After(deadline) {
-			t.Fatal("the bad file never showed as an error")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if msg := m.View().Error.Message; !strings.Contains(msg, "tablet") {
-		t.Errorf("error = %q, want it to name tablet", msg)
-	}
-	if got := m.Current().Resources["phone"].Capacity; got != 2 {
-		t.Errorf("capacity after the bad file = %d, want the last good 2", got)
-	}
-}
-
+// Admiral's own writes of fleets keep the top-level resources object.
 func TestSetFleetsKeepsTheResourcesObject(t *testing.T) {
 	dir := t.TempDir()
-	p := writeFile(t, dir, resConfig(`["phone"]`, `{"phone":{}}`))
+	p := writeFile(t, dir, resConfig(`{"phone":{}}`))
 	if err := config.SetFleets(dir, json.RawMessage(`{"work":{"name":"Work 2","claude":{}}}`)); err != nil {
 		t.Fatal(err)
 	}
@@ -118,34 +81,5 @@ func TestSetFleetsKeepsTheResourcesObject(t *testing.T) {
 	}
 	if _, ok := cfg.Resources["phone"]; !ok {
 		t.Errorf("SetFleets dropped the resources object:\n%s", b)
-	}
-}
-
-// The resources key may sit before or after sources.
-func TestManagerSetSourcesChecksPanelResourcesAgainstTheFile(t *testing.T) {
-	dir := t.TempDir()
-	good := `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},"resources":{"phone":{}}}`
-	p := writeFile(t, dir, good)
-	m, err := config.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(m.Close)
-	panel := func(res string) json.RawMessage {
-		return json.RawMessage(`{"s":{"plugin":"testplug","fleet":"work","autopilot":{"p":` + apEntry(`"resources":`+res) + `}}}`)
-	}
-
-	if err := m.SetSources(panel(`["nope"]`)); err == nil {
-		t.Fatal("SetSources accepted a panel naming an undefined resource")
-	}
-	if b, _ := os.ReadFile(p); string(b) != good {
-		t.Errorf("a refused write changed config.json:\n%s", b)
-	}
-	if err := m.SetSources(panel(`["phone"]`)); err != nil {
-		t.Fatalf("SetSources with a defined resource: %v", err)
-	}
-	src, _ := m.Current().Source("s")
-	if got := src.Autopilot["p"].Resources; !reflect.DeepEqual(got, []string{"phone"}) {
-		t.Errorf("panel resources after the write = %v, want [phone]", got)
 	}
 }

@@ -37,10 +37,6 @@ type Request struct {
 	ExtraArgs []string `json:"-"`
 	// Resources are held while the ship is underway or needs you; a hand launch holds none.
 	Resources []string `json:"resources"`
-	// OriginSource and OriginPanel are the panel whose max_ships the launch counts against: a
-	// resume order's ship counts against the panel of the ship that wrote the report.
-	OriginSource string `json:"-"`
-	OriginPanel  string `json:"-"`
 }
 
 // Skill is the order's skill: Commodore, a named one, or none (Just launch).
@@ -112,8 +108,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	// The name and the time are ours.
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
-		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")},
-		{"origin-source", req.OriginSource}, {"origin-panel", req.OriginPanel}}
+		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
 			return nil, refuse(http.StatusBadRequest, "%s contains a control character", o[0])

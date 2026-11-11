@@ -47,9 +47,6 @@ type Options struct {
 	CheckTimeout, CheckEvery time.Duration
 	// OnChange runs outside the Set's lock. It must not block.
 	OnChange func()
-	// OnDrop replaces OnChange for a dropped reservation: the engine drops its own
-	// inside a pass, so it needs no wake-up for them.
-	OnDrop func()
 }
 
 type Holder struct {
@@ -186,15 +183,11 @@ func (s *Set) record(name string, argv []string, ok bool) {
 	}
 }
 
-func (s *Set) announce() { s.announceTo(nil) }
-
-func (s *Set) announceTo(hook func()) {
+// announce wakes Changed's waiters and runs OnChange.
+func (s *Set) announce() {
 	s.Wake()
-	if hook == nil {
-		hook = s.opt.OnChange
-	}
-	if hook != nil {
-		hook()
+	if s.opt.OnChange != nil {
+		s.opt.OnChange()
 	}
 }
 
@@ -310,7 +303,7 @@ func (s *Set) Reserve(names []string) (release func(), waits []Wait) {
 				s.reserved[name]--
 			}
 			s.mu.Unlock()
-			s.announceTo(s.opt.OnDrop)
+			s.announce()
 		})
 	}, nil
 }
