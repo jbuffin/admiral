@@ -66,7 +66,8 @@ const prFields = "state reviewDecision mergeable statusCheckRollup { state }"
 // PullRequests asks for every URL's state and chips in one aliased query. gh exits 1
 // when some PR is unknown yet still prints the others under data, so data counts
 // whatever the exit code. A URL GitHub answers NOT_FOUND for is left out; no data
-// is a failed call.
+// is a failed call, and a repository GitHub cannot find leaves its PRs unanswered: a *moor.Unanswered
+// beside the answer for the rest.
 func (c *Client) PullRequests(ctx context.Context, urls []string) (map[string]moor.Status, error) {
 	var q strings.Builder
 	q.WriteString("query {")
@@ -97,6 +98,7 @@ func (c *Client) PullRequests(ctx context.Context, urls []string) (map[string]mo
 		Data   map[string]*struct{ PullRequest *prNode } `json:"data"`
 		Errors []struct {
 			Type string `json:"type"`
+			Path []any  `json:"path"`
 		} `json:"errors"`
 	}
 	if json.Unmarshal([]byte(stdout), &body) != nil || body.Data == nil {
@@ -109,9 +111,17 @@ func (c *Client) PullRequests(ctx context.Context, urls []string) (map[string]mo
 		}
 		return nil, fmt.Errorf("pull request lookup failed: %s", msg)
 	}
+	// A NOT_FOUND ending at pullRequest is a PR GitHub does not have; one on the repository itself says
+	// nothing about its PRs (a token that cannot see it, say), so they stay unanswered.
+	var unanswered []string
 	for _, e := range body.Errors {
 		if e.Type != "NOT_FOUND" {
 			return nil, fmt.Errorf("pull request lookup failed: GitHub answered %s", e.Type)
+		}
+		if len(e.Path) == 1 {
+			if alias, _ := e.Path[0].(string); aliases[alias] != "" {
+				unanswered = append(unanswered, aliases[alias])
+			}
 		}
 	}
 	for alias, u := range aliases {
@@ -123,6 +133,9 @@ func (c *Client) PullRequests(ctx context.Context, urls []string) (map[string]mo
 			}
 			out[u] = st
 		}
+	}
+	if len(unanswered) > 0 {
+		return out, &moor.Unanswered{URLs: unanswered}
 	}
 	return out, nil
 }

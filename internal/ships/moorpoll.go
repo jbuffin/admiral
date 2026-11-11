@@ -2,9 +2,11 @@ package ships
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/delay"
@@ -63,7 +65,7 @@ func (s *Service) PollMoored(ctx context.Context) {
 	}
 	s.mooredMu.Lock()
 	s.loadMoored()
-	recs := append([]moor.Record(nil), s.moored...)
+	recs := s.notLive(s.moored)
 	s.mooredMu.Unlock()
 	byFleet := map[string][]moor.Record{}
 	var fleets []string
@@ -93,10 +95,13 @@ func (s *Service) PollMoored(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		// Some of the PRs unanswered: the ships holding one are stale, the others are answered.
+		var unanswered *moor.Unanswered
+		partial := errors.As(err, &unanswered)
 		changed = true
 		for _, r := range byFleet[fleet] {
-			if err != nil {
-				s.markStale(r.Session)
+			if err != nil && (!partial || slices.ContainsFunc(r.PRs, func(u string) bool { return slices.Contains(unanswered.URLs, u) })) {
+				s.markStale(r)
 				continue
 			}
 			st := map[string]moor.Status{}
@@ -105,12 +110,12 @@ func (s *Service) PollMoored(ctx context.Context) {
 					st[u] = v
 				}
 			}
-			s.mooredMu.Lock()
-			s.polls()[r.Session] = polled{status: st, at: time.Now().UTC().Truncate(time.Second)}
-			prs := s.prsOf(r)
-			s.mooredMu.Unlock()
+			prs, ok := s.storePoll(r, polled{status: st, at: time.Now().UTC().Truncate(time.Second)})
+			if !ok {
+				continue
+			}
 			if reason, ended := moor.EndReason(prs); ended {
-				s.endMoored(r.Session, reason)
+				_, _ = s.endMoored(r.Session, reason)
 			}
 		}
 	}
@@ -119,12 +124,52 @@ func (s *Service) PollMoored(ctx context.Context) {
 	}
 }
 
-func (s *Service) markStale(session string) {
+// markStale keeps the ship's last chips and marks its poll stale, unless the ship has ended or been moored again.
+func (s *Service) markStale(r moor.Record) {
 	s.mooredMu.Lock()
 	defer s.mooredMu.Unlock()
-	p := s.polls()[session]
+	if !s.stillMoored(r) {
+		return
+	}
+	p := s.polls()[r.Session]
 	p.stale = true
-	s.polls()[session] = p
+	s.polls()[r.Session] = p
+}
+
+// storePoll keeps an answer only for the record that was asked about: a poll can answer after its ship ended.
+func (s *Service) storePoll(r moor.Record, p polled) ([]moor.PR, bool) {
+	s.mooredMu.Lock()
+	defer s.mooredMu.Unlock()
+	if !s.stillMoored(r) {
+		return nil, false
+	}
+	s.polls()[r.Session] = p
+	return s.prsOf(r), true
+}
+
+// stillMoored: the record is in the cache and is the one r read, by session and moored time; the caller holds mooredMu.
+func (s *Service) stillMoored(r moor.Record) bool {
+	for _, c := range s.moored {
+		if c.Session == r.Session {
+			return c.MooredAt.Equal(r.MooredAt)
+		}
+	}
+	return false
+}
+
+// notLive is the records whose ship has no live session, the ones mooredShips lists.
+func (s *Service) notLive(recs []moor.Record) []moor.Record {
+	live := map[string]bool{}
+	for _, sess := range s.Host.Sessions() {
+		live[sess.Name] = true
+	}
+	var out []moor.Record
+	for _, r := range recs {
+		if !live[r.Session] {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // polls is the poll state by session; the caller holds mooredMu.
@@ -150,12 +195,12 @@ func (s *Service) prsOf(r moor.Record) []moor.PR {
 	return out
 }
 
-// mooredRecord finds a moored ship's record by session.
+// mooredRecord finds a moored ship's record by session; a record whose session is still live is not moored yet.
 func (s *Service) mooredRecord(session string) (moor.Record, bool) {
 	s.mooredMu.Lock()
 	defer s.mooredMu.Unlock()
 	s.loadMoored()
-	for _, r := range s.moored {
+	for _, r := range s.notLive(s.moored) {
 		if r.Session == session {
 			return r, true
 		}
@@ -164,8 +209,8 @@ func (s *Service) mooredRecord(session string) (moor.Record, bool) {
 }
 
 // endMoored sails a moored ship off. Whoever takes the ship out of the cache writes the event and removes the
-// record; an ending that lost the race reports false.
-func (s *Service) endMoored(session, reason string) bool {
+// record; an ending that lost the race reports false, and one whose record cannot be removed an error.
+func (s *Service) endMoored(session, reason string) (bool, error) {
 	s.mooredMu.Lock()
 	s.loadMoored()
 	idx := -1
@@ -176,13 +221,13 @@ func (s *Service) endMoored(session, reason string) bool {
 	}
 	if idx < 0 {
 		s.mooredMu.Unlock()
-		return false
+		return false, nil
 	}
 	rec := s.moored[idx]
 	if err := moor.Remove(s.Launcher.Home, rec.Name); err != nil { // kept, so the next poll ends it
 		s.mooredMu.Unlock()
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: its moored record cannot be removed: %v\n", rec.Name, err)
-		return false
+		return false, err
 	}
 	prs := s.prsOf(rec)
 	s.moored = append(s.moored[:idx:idx], s.moored[idx+1:]...)
@@ -194,7 +239,20 @@ func (s *Service) endMoored(session, reason string) bool {
 	}
 	s.record(outcomes.Record{Ship: session, Event: "unmoored", Fields: map[string]any{"reason": reason, "prs": final}}, nil)
 	s.broadcast()
-	return true
+	return true, nil
+}
+
+// endByRequest ends a moored ship for a request and answers it: 404 for an ending that lost the race, 500 with the cause for a record that stays.
+func (s *Service) endByRequest(w http.ResponseWriter, session, reason, key string) {
+	ended, err := s.endMoored(session, reason)
+	switch {
+	case err != nil:
+		writeError(w, http.StatusInternalServerError, "ship "+session+" cannot be ended: "+err.Error())
+	case !ended:
+		writeError(w, http.StatusNotFound, "ship "+session+" not found")
+	default:
+		writeJSON(w, http.StatusOK, map[string]any{key: session})
+	}
 }
 
 func (s *Service) serveMooredRefresh(w http.ResponseWriter, r *http.Request) {
@@ -205,11 +263,7 @@ func (s *Service) serveMooredRefresh(w http.ResponseWriter, r *http.Request) {
 func (s *Service) serveUnfollow(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
 	if _, ok := s.mooredRecord(session); ok {
-		if !s.endMoored(session, "unfollowed") {
-			writeError(w, http.StatusNotFound, "ship "+session+" not found")
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"unfollowed": session})
+		s.endByRequest(w, session, "unfollowed", "unfollowed")
 		return
 	}
 	sess, ok := s.find(session)

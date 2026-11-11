@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -96,5 +97,21 @@ func TestPullRequestsAllNotFoundIsAnAnswerNotAFailure(t *testing.T) {
 	got, err := cl.PullRequests(context.Background(), []string{prA, prB})
 	if err != nil || len(got) != 0 {
 		t.Errorf("PullRequests = %v, %v; want an empty answer: GitHub reached, nothing found", got, err)
+	}
+}
+
+// A NOT_FOUND on the repository says nothing about its PRs: they are unanswered, not closed.
+func TestPullRequestsLeavesAMissingRepositoryUnansweredBesideTheRest(t *testing.T) {
+	cl, f := prClient(t)
+	f.pr(t, prA, "OPEN", "", "", "MERGEABLE")
+	f.write(t, "repo_notfound/globex_app", "x")
+
+	got, err := cl.PullRequests(context.Background(), []string{prA, prC})
+	var un *moor.Unanswered
+	if !errors.As(err, &un) || len(un.URLs) != 1 || un.URLs[0] != prC {
+		t.Fatalf("error = %v, want unanswered for %s", err, prC)
+	}
+	if got[prA].State != "OPEN" {
+		t.Errorf("the PR in the repository that exists = %+v, want its answer", got[prA])
 	}
 }

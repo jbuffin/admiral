@@ -57,6 +57,8 @@
 #       pr_checks/KEY     statusCheckRollup.state (none: null)
 #       pr_mergeable/KEY  mergeable (none: UNKNOWN)
 #       pr_notfound/KEY   any content: NOT_FOUND for this PR even with a state
+#       repo_notfound/OWNER_NAME  any content: the repository itself is NOT_FOUND
+#                         (the alias is null, the error's path is just the alias)
 #     With a NOT_FOUND PR the answer is gh's partial one: the other PRs still
 #     under data, the missing one a null pullRequest, an errors entry of type
 #     NOT_FOUND, "gh: Could not resolve ..." on stderr, exit 1. With
@@ -275,6 +277,12 @@ api)
 		while read -r alias owner name num; do
 			[ -n "$alias" ] || continue
 			key=$(printf '%s' "https://$bhost/$owner/$name/pull/$num" | tr '/:' '__')
+			if [ -e "$FAKEGH_DIR/repo_notfound/${owner}_$name" ]; then
+				missing=1
+				errs="$errs${errs:+,}{\"type\":\"NOT_FOUND\",\"path\":[\"$alias\"],\"message\":\"Could not resolve to a Repository with the name '$owner/$name'.\"}"
+				data="$data${data:+,}\"$alias\":null"
+				continue
+			fi
 			if [ -e "$FAKEGH_DIR/pr_notfound/$key" ] || [ ! -s "$FAKEGH_DIR/pr_state/$key" ]; then
 				node='null'
 				missing=1

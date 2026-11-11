@@ -34,6 +34,7 @@ type pollGitHub struct {
 	mu     sync.Mutex
 	status map[string]moor.Status // a URL left out is NOT_FOUND
 	err    error                  // a transport failure
+	un     []string               // PRs the answer leaves unanswered, with an *moor.Unanswered
 	block  chan struct{}          // when set, a call waits for it to close
 	calls  [][]string
 	active int
@@ -67,6 +68,9 @@ func (g *pollGitHub) PullRequests(_ context.Context, urls []string) (map[string]
 		if st, ok := g.status[u]; ok {
 			out[u] = st
 		}
+	}
+	if len(g.un) > 0 {
+		return out, &moor.Unanswered{URLs: g.un}
 	}
 	return out, nil
 }
@@ -510,5 +514,102 @@ func TestTwoEndingsOfOneShipWriteOneEventAndRemoveTheRecordOnce(t *testing.T) {
 	}
 	if _, ok := f.ship(t, "Nelson"); ok {
 		t.Errorf("the ship is still listed")
+	}
+}
+
+func TestAnUnansweredPRKeepsItsShipMooredAndStaleWhileTheFleetsOthersAreAnswered(t *testing.T) {
+	g := &pollGitHub{un: []string{prSeven}}
+	g.set(prNine, moor.Status{State: "MERGED"})
+	f := mooredService(t, map[string]*pollGitHub{"work": g})
+	f.moor(t, "Nelson", "work", prSeven)
+	f.moor(t, "Hood", "work", prNine)
+
+	f.s.PollMoored(context.Background())
+
+	sh, ok := f.ship(t, "Nelson")
+	if !ok || sh.Status != StatusMoored || !sh.Stale || sh.PRs[0].State != "OPEN" {
+		t.Errorf("the ship with an unanswered PR = %+v, want moored, stale and its PR still OPEN", sh)
+	}
+	if _, ok := f.ship(t, "Hood"); ok {
+		t.Errorf("the ship whose PR was answered merged is still listed")
+	}
+}
+
+func TestAPollThatAnswersAfterItsShipEndedSaysNothingOfTheNextShipOfTheSession(t *testing.T) {
+	g := &pollGitHub{block: make(chan struct{})}
+	g.set(prSeven, moor.Status{State: "MERGED"})
+	f := mooredService(t, map[string]*pollGitHub{"work": g})
+	session := f.moor(t, "Nelson", "work", prSeven)
+	f.s.List() // loads the records
+
+	polled := make(chan struct{})
+	go func() { f.s.PollMoored(context.Background()); close(polled) }()
+	waitUntil(t, "the poll is asking", func() bool { g.mu.Lock(); defer g.mu.Unlock(); return g.active == 1 })
+	if rec := f.post("/api/ships/" + session + "/dismiss"); rec.Code != http.StatusOK {
+		t.Fatalf("Dismiss = %d", rec.Code)
+	}
+	f.s.setMoored(moor.Record{Name: "Nelson", Session: session, Fleet: "work", PRs: []string{prSeven}, MooredAt: time.Now().Add(time.Minute).UTC().Truncate(time.Second)})
+	close(g.block)
+	<-polled
+
+	sh, ok := f.ship(t, "Nelson")
+	if !ok || sh.Status != StatusMoored || sh.PRs[0].State != "OPEN" || sh.PolledAt != "" {
+		t.Errorf("the next ship of the session = %+v, want moored with its PR OPEN and no poll", sh)
+	}
+}
+
+func TestAMooredRecordThatCannotBeRemovedAnswers500AndStaysMoored(t *testing.T) {
+	g := &pollGitHub{}
+	g.set(prSeven, moor.Status{State: "OPEN"})
+	f := mooredService(t, map[string]*pollGitHub{"work": g})
+	session := f.moor(t, "Nelson", "work", prSeven)
+	f.s.List()
+	dir := filepath.Join(f.home, "moored")
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	if os.Remove(filepath.Join(dir, "no-such")) == nil || os.Geteuid() == 0 {
+		t.Skip("a read-only directory does not stop this user")
+	}
+	for _, path := range []string{"dismiss", "unfollow"} {
+		if rec := f.post("/api/ships/" + session + "/" + path); rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "permission") {
+			t.Errorf("%s with a record that stays = %d %s, want 500 with the cause", path, rec.Code, rec.Body)
+		}
+	}
+	if sh, ok := f.ship(t, "Nelson"); !ok || sh.Status != StatusMoored {
+		t.Errorf("the ship = %+v, want it kept for the next poll", sh)
+	}
+}
+
+// u1 writes the record before it kills the session, so for a moment a record's session is still live.
+func TestARecordWhoseSessionIsStillLiveIsNotMoored(t *testing.T) {
+	s, _ := tailService(t)
+	home := t.TempDir()
+	cfg := &config.Config{Fleets: []config.Fleet{{Key: "work", Name: "Work"}}}
+	s.Launcher = &launcher.Launcher{Home: home, Config: func() *config.Config { return cfg }}
+	g := &pollGitHub{}
+	g.set(prSeven, moor.Status{State: "MERGED"})
+	s.GitHub = func(string) moor.GitHub { return g }
+	s.Hub, s.Outcomes = server.NewHub(), nil
+	if err := moor.Write(home, moor.Record{Name: "alpha", Session: "alpha", Fleet: "work", PRs: []string{prSeven}, MooredAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	s.Routes(mux)
+
+	s.PollMoored(context.Background())
+	for _, path := range []string{"dismiss", "unfollow"} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest("POST", "/api/ships/alpha/"+path, nil))
+		if rec.Code != http.StatusConflict {
+			t.Errorf("%s on a live ship with a record = %d, want the 409 a live ship gets", path, rec.Code)
+		}
+	}
+	if n := len(g.callLog()); n != 0 {
+		t.Errorf("the poll asked GitHub %d times about a ship that is not moored", n)
+	}
+	if recs, _ := moor.List(home); len(recs) != 1 {
+		t.Errorf("records = %v, want the record kept", recs)
 	}
 }
