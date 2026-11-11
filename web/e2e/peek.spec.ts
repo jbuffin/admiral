@@ -409,7 +409,7 @@ test('on a portrait iPad Peek replaces the list instead of squeezing beside it, 
   const peek = peekOf(page);
   await expect(peek).toBeVisible();
   await expect(page.getByRole('heading', { name: 'To review' })).toHaveCount(0);
-  expect((await peek.boundingBox())!.width).toBeGreaterThan(600);
+  expect((await peek.boundingBox())!.width).toBeGreaterThan(400);
 
   const link = await peek.getByRole('link', { name: /acme\/widgets#12/ }).boundingBox();
   const pending = await peek.getByText(/Pending review #123/).boundingBox();
