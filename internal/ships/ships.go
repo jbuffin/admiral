@@ -219,6 +219,11 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/ships/{session}/unfollow", s.serveUnfollow)
 	mux.HandleFunc("POST /api/moored/refresh", s.serveMooredRefresh)
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/close", s.serveCrewClose)
+	mux.HandleFunc("POST /api/ships/{session}/messages", s.serveSendInput)
+	mux.HandleFunc("POST /api/ships/{session}/interrupt", s.serveInterrupt)
+	mux.HandleFunc("POST /api/ships/{session}/stop", s.serveStop)
+	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/messages", s.serveSendInput)
+	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/interrupt", s.serveInterrupt)
 }
 
 // tick catches changes no tmux event announces: NoHookWait and the end of the sail-off.
@@ -635,7 +640,7 @@ func (s *Service) serveInputSeen(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// A live ship cannot be ended from the UI; a moored one can.
+// Dismiss ends an anchored or moored ship; a live one is ended by Stop.
 func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
 	if _, ok := s.mooredRecord(session); ok {

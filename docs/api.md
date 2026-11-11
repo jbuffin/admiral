@@ -57,6 +57,16 @@ A refusal for pins is a `400` before any session exists. One that comes after a 
 
 Query: `fleet`, `harness` and optionally `dir` (a checkout or search root of the fleet, checked as `POST /api/ships` checks it; without it the repo layer is left out, as for a launch that has not cloned yet). Answers `{"members": [...], "warnings": [...], "errors": [...]}`: each member is `{"name", "role", "pick-me-when", "layer", "harness"}` (`layer` is `built-in`, `fleet` or `repo`; `harness` is the lock, or `null`), `warnings` and `errors` are the resolver's diagnostics. When `errors` is not empty, `members` is empty and a launch that pins would be refused. A harness with no installed Commodore has an empty built-in layer, not an error. `404`: the fleet is not found; `400`: no such dock or `dir` is not in the fleet; `409`: the fleet has no search roots.
 
+## Sending to a ship
+
+`GET /api/version` lists the `ship-input` capability when the server has these routes. They are unversioned in the code; `/api/v1/...` reaches them too.
+
+- `POST /api/ships/<session>/messages` with `{"text": "..."}` pastes the text into the ship's pane as one bracketed paste and presses Enter, then clears needs you as `input-seen` does. The text is cleaned first: CRLF and lone CR become LF, control characters other than LF and tab are removed, and the edges are trimmed. Response `{"sent": true}`.
+- `POST /api/ships/<session>/crew/<name>/messages`: the same for a crew boat, which clears the boat's needs you.
+- `POST /api/ships/<session>/interrupt` and `.../crew/<name>/interrupt` press Escape in the pane. They don't clear needs you. Response `{"interrupted": true}`.
+- `POST /api/ships/<session>/stop` ends a ship, live or anchored, and its crew boats with it. A live ship's tmux session is killed and the outcome log gets `ended` (signal `KILL`, no exit code) then `stopped`; an anchored ship gets the `ended` it already has, then `stopped`. The ship leaves the list. Response `{"stopped": "<session>"}`.
+- `400`: the message is invalid JSON, empty after cleaning, or over 16 KiB; the body is capped at 1 MiB. `404`: unknown ship or boat. `409`: the ship or boat is anchored or sailing off (send and interrupt). `502`: tmux refused the keys.
+
 ## A ship's conversation
 
 The conversation of a Claude Code ship, read from the harness's own transcript file. `GET /api/version` lists the `conversation` capability when the server has it.

@@ -179,6 +179,10 @@ _Avoid_: child, worker, sub-ship
 A named, reusable teammate definition in a fleet or repo: its role, skills, instructions, model, optional harness lock, and when to pick it. A fleet's own crew members live in its crew directory, `$ADMIRAL_HOME/fleets/<fleet key>/crew/`, which every ship of the fleet sees as `ADMIRAL_CREW_DIR`. A crew boat is a crew member at work, and a ship can also be launched as one. The engineer adds a crew member to a ship with **Add crew**, which asks the ship's lead to bring the member on.
 _Avoid_: agent, persona, crew type
 
+**Stop ship**:
+The engineer ends a ship that is still running, from its conversation. Admiral kills the ship's session, crew boats included, and records `ended` with a `KILL` signal, then `stopped`. The ship leaves open water as after a dismissal.
+_Avoid_: kill, abort
+
 **Subagent**:
 A helper the harness runs inside a session, drawn as a small bot on its ship's deck. It has no terminal of its own, so it cannot be boarded; tapping the deck crew shows each subagent's type.
 _Avoid_: crew boat (for a subagent), mark
