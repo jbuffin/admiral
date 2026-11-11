@@ -319,7 +319,7 @@ func TestAdmiralBot_ReadCommandsFindTheServerByADMIRAL_PORT(t *testing.T) {
 		t.Fatalf("the test needs a non-default port")
 	}
 	w.waitSource("a", 10*time.Second, "both panels, main with its order", func(s sourceJSON) bool {
-		return s.State == "ok" && len(s.Panels) == 2 && s.Panels[0].hasOrder("o1")
+		return s.State == "ok" && len(s.Views) == 2 && s.Views[0].hasOrder("o1")
 	})
 	ship := w.launchIn("ship", "claude", "repo1")
 	w.in.waitStatusList(t, 10*time.Second, ship.Session, "needs_you")
@@ -341,7 +341,7 @@ func TestAdmiralBot_ReadCommandsFindTheServerByADMIRAL_PORT(t *testing.T) {
 			t.Errorf("orders --json differs from GET /api/sources\ncli: %s\napi: %s", r.stdout, body)
 		}
 		s, ok := find(decodeSources(t, r.stdout), "a")
-		if !ok || len(s.Panels) != 2 {
+		if !ok || len(s.Views) != 2 {
 			t.Errorf("orders --json lists %s, want source a with both panels", dump(decodeSources(t, r.stdout)))
 		}
 	})

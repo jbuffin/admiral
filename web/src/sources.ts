@@ -46,7 +46,7 @@ export interface Source {
   read_only: boolean;
   error: string | null;
   auth: Auth | null;
-  panels: Panel[];
+  views: Panel[];
   settings?: Record<string, unknown>;
 }
 
@@ -62,7 +62,7 @@ export interface PluginInfo {
 // the two states apart.
 export const sources = signal<Source[] | null>(null);
 export const sourcesLoaded = computed(() => sources.value !== null);
-export const anyAutopilot = computed(() => !!sources.value?.some((s) => s.panels.some((p) => p.autopilot?.enabled)));
+export const anyAutopilot = computed(() => !!sources.value?.some((s) => s.views.some((p) => p.autopilot?.enabled)));
 
 onMessage('sources', (msg) => (sources.value = msg.sources));
 
@@ -117,7 +117,7 @@ export const panelViews = computed<PanelView[]>(() => {
   const list = sources.value ?? [];
   const q = filter.value.trim().toLowerCase();
   return list.flatMap((s) =>
-    s.panels.map((panel) => ({
+    s.views.map((panel) => ({
       key: `${s.key}/${panel.id}`,
       source: s,
       panel,

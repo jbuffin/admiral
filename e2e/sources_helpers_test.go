@@ -33,7 +33,7 @@ type orderJSON struct {
 	Labels []string `json:"labels,omitempty"`
 }
 
-type panelJSON struct {
+type viewJSON struct {
 	ID     string      `json:"id"`
 	Title  string      `json:"title"`
 	Orders []orderJSON `json:"orders"`
@@ -55,25 +55,25 @@ type authJSON struct {
 }
 
 type sourceJSON struct {
-	Key          string      `json:"key"`
-	Name         string      `json:"name"`
-	Plugin       string      `json:"plugin"`
-	IconURL      string      `json:"icon_url"`
-	Capabilities []string    `json:"capabilities"`
-	State        string      `json:"state"`
-	ReadOnly     bool        `json:"read_only"`
-	Error        *string     `json:"error"`
-	Auth         *authJSON   `json:"auth"`
-	Panels       []panelJSON `json:"panels"`
+	Key          string     `json:"key"`
+	Name         string     `json:"name"`
+	Plugin       string     `json:"plugin"`
+	IconURL      string     `json:"icon_url"`
+	Capabilities []string   `json:"capabilities"`
+	State        string     `json:"state"`
+	ReadOnly     bool       `json:"read_only"`
+	Error        *string    `json:"error"`
+	Auth         *authJSON  `json:"auth"`
+	Views        []viewJSON `json:"views"`
 }
 
-func (p panelJSON) orderIDs() []string { return sourceJSON{Panels: []panelJSON{p}}.orderIDs() }
+func (p viewJSON) orderIDs() []string { return sourceJSON{Views: []viewJSON{p}}.orderIDs() }
 
-func (p panelJSON) hasOrder(id string) bool { return sourceJSON{Panels: []panelJSON{p}}.hasOrder(id) }
+func (p viewJSON) hasOrder(id string) bool { return sourceJSON{Views: []viewJSON{p}}.hasOrder(id) }
 
 func (s sourceJSON) orderIDs() []string {
 	ids := []string{}
-	for _, p := range s.Panels {
+	for _, p := range s.Views {
 		for _, o := range p.Orders {
 			ids = append(ids, o.ID)
 		}
@@ -82,7 +82,7 @@ func (s sourceJSON) orderIDs() []string {
 }
 
 func (s sourceJSON) order(id string) (orderJSON, bool) {
-	for _, p := range s.Panels {
+	for _, p := range s.Views {
 		for _, o := range p.Orders {
 			if o.ID == id {
 				return o, true
@@ -768,16 +768,16 @@ func (w *world) pythonOnlyPath() string {
 	return dir
 }
 
-func (s sourceJSON) panel(title string) (panelJSON, bool) {
-	for _, p := range s.Panels {
+func (s sourceJSON) view(title string) (viewJSON, bool) {
+	for _, p := range s.Views {
 		if p.Title == title {
 			return p, true
 		}
 	}
-	return panelJSON{}, false
+	return viewJSON{}, false
 }
 
-func (p panelJSON) errText() string {
+func (p viewJSON) errText() string {
 	if p.Error == nil {
 		return ""
 	}

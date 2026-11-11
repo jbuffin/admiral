@@ -117,7 +117,7 @@ const confirming = signal<string | null>(null);
 
 function SourceRow({ source }: { source: Source }) {
   const [refusal, setRefusal] = useState<string | null>(null);
-  const noPanels = source.panels.length === 0;
+  const noPanels = source.views.length === 0;
   return (
     <div class="source">
       <div class="source-row">

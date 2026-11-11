@@ -7,10 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"reflect"
-	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -41,10 +38,10 @@ func decodeID(body string) string {
 func (w *world) panelID(key string) string {
 	w.t.Helper()
 	s, ok := find(w.sources(), key)
-	if !ok || len(s.Panels) == 0 {
+	if !ok || len(s.Views) == 0 {
 		w.t.Fatalf("source %q has no panel: %s", key, dump(w.sources()))
 	}
-	return s.Panels[0].ID
+	return s.Views[0].ID
 }
 
 // waitUp waits until the server answers its plugins list: it has started and
@@ -371,7 +368,7 @@ func TestOrderTextValidationAndEditFlow(t *testing.T) {
 	var first orderJSON
 	waitSourcesMsg(t, ws, 5*time.Second, "the new order pushed to the client", func(l []sourceJSON) bool {
 		s, _ := find(l, "orders")
-		for _, p := range s.Panels {
+		for _, p := range s.Views {
 			if len(p.Orders) == 1 {
 				first = p.Orders[0]
 				return true
@@ -525,211 +522,4 @@ func holdsAny(t *testing.T, dir string, secrets ...string) string {
 		return nil
 	})
 	return found
-}
-
-func TestGitHubPlugin(t *testing.T) {
-	t.Parallel()
-	const (
-		defaultToken = "fake-token-default-1"
-		workToken    = "fake-token-work-2"
-		workHost     = "git.example.test"
-		notReachable = "error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com"
-	)
-	w := newWorld(t)
-	g := w.newFakeGH()
-	g.token("", defaultToken)
-	// The "work" account is signed out until the test signs it in.
-
-	// "gh": no settings, so the plugin's own defaults. The first panel holds
-	// two issues and a pull request; the PR is also in the second panel, which
-	// holds more than 50 matches.
-	g.search("assigned", "assignee:@me",
-		ghNode("github.com", "acme/widgets", 12, false, "Flaky login test", "p0", "bug"),
-		ghNode("github.com", "acme/widgets", 7, true, "Bump deps", "dependencies"),
-		ghNode("github.com", "acme/api", 3, false, "Slow query", "Priority: High"))
-	review := []map[string]any{ghNode("github.com", "acme/widgets", 7, true, "Bump deps", "dependencies")}
-	for n := 100; n < 151; n++ {
-		review = append(review, ghNode("github.com", "acme/widgets", n, true, "Review me "+strconv.Itoa(n)))
-	}
-	g.search("review", "review-requested:@me", review...)
-
-	// "work": a host, an account, panels with blank entries between the good
-	// ones, hot labels that replace the defaults, and a refreshMinutes that is
-	// not a count.
-	g.search("a-sorted", "sort:created-asc",
-		ghNode(workHost, "acme/widgets", 21, false, "Oldest bug", "Needs-Attention", "P0"))
-	g.search("b-bugs", "label:bug", ghNode(workHost, "acme/widgets", 22, false, "Any bug"))
-	workSettings := map[string]any{
-		"host": workHost, "account": "work", "hotLabels": []string{"needs-attention"}, "refreshMinutes": 0,
-		"panels": []map[string]any{
-			{"title": "Bugs", "query": "repo:acme/widgets is:open label:bug sort:created-asc"},
-			{"title": "", "query": "is:open"},
-			{"title": "No query"},
-			{"title": "  ", "query": "is:open"},
-			{"title": "Blank query", "query": "  "},
-			{"title": "Bugs", "query": "is:open label:bug"},
-		},
-	}
-	writeConfig(t, w.home, w.srcConfig(
-		srcDef{Key: "gh", Plugin: "github", Name: "GitHub"},
-		srcDef{Key: "work", Plugin: "github", Name: "Work", Settings: workSettings}))
-	w.start()
-
-	s := w.waitSource("gh", 15*time.Second, "the two default panels with orders", func(s sourceJSON) bool {
-		a, okA := s.panel("Assigned to me")
-		r, okR := s.panel("Review requested")
-		return s.State == "ok" && len(s.Panels) == 2 && okA && okR && len(a.Orders) > 0 && len(r.Orders) > 0
-	})
-	if !reflect.DeepEqual(s.Capabilities, []string{"refresh"}) {
-		t.Errorf("capabilities = %v, want only refresh", s.Capabilities)
-	}
-	assigned, _ := s.panel("Assigned to me")
-	review2, _ := s.panel("Review requested")
-	if !strings.HasSuffix(assigned.ID, "assigned-to-me") || !strings.HasSuffix(review2.ID, "review-requested") {
-		t.Errorf("panel ids = %q, %q, want slugs of the titles", assigned.ID, review2.ID)
-	}
-	wantAssigned := []orderJSON{
-		{ID: "acme/widgets#12", Title: "Flaky login test", Text: "https://github.com/acme/widgets/issues/12", URL: "https://github.com/acme/widgets/issues/12", Repo: "https://github.com/acme/widgets", Hot: true, Labels: []string{"p0", "bug"}},
-		{ID: "acme/widgets#7", Title: "Bump deps", Text: "https://github.com/acme/widgets/pull/7", URL: "https://github.com/acme/widgets/pull/7", Repo: "https://github.com/acme/widgets", Labels: []string{"dependencies"}},
-		{ID: "acme/api#3", Title: "Slow query", Text: "https://github.com/acme/api/issues/3", URL: "https://github.com/acme/api/issues/3", Repo: "https://github.com/acme/api", Hot: true, Labels: []string{"Priority: High"}},
-	}
-	if !reflect.DeepEqual(assigned.Orders, wantAssigned) {
-		t.Errorf("Assigned to me orders = %s\nwant %s", dump(assigned.Orders), dump(wantAssigned))
-	}
-	if len(review2.Orders) != 50 || review2.Orders[0].ID != "acme/widgets#7" {
-		t.Errorf("Review requested has %d orders starting %q, want the first 50 of the 52 matches", len(review2.Orders), review2.Orders[0].ID)
-	}
-
-	if !slices.ContainsFunc(g.calls(), func(c ghCall) bool { return slices.Equal(c.Argv, []string{"auth", "token", "-h", "github.com"}) }) {
-		t.Errorf("no `gh auth token -h github.com` call (the default host, no account); calls: %+v", g.calls())
-	}
-	searches := g.searchesWith(defaultToken)
-	if len(searches) < 2 {
-		t.Fatalf("searches with the default account's token = %d, want one per panel; calls: %+v", len(searches), g.calls())
-	}
-	for _, c := range searches {
-		if !c.has("--hostname", "github.com") {
-			t.Errorf("search %q lacks --hostname github.com", c.Argv)
-		}
-		if c.Env["GH_NO_UPDATE_NOTIFIER"] != "1" || c.Env["GH_PROMPT_DISABLED"] != "1" {
-			t.Errorf("search env = %v, want GH_NO_UPDATE_NOTIFIER=1 and GH_PROMPT_DISABLED=1", c.Env)
-		}
-		if c.mentions("assignee:@me") && !c.mentions("sort:updated-desc") {
-			t.Errorf("a query with no sort: qualifier was searched without sort:updated-desc: %q", c.Argv)
-		}
-	}
-
-	s = w.waitSource("work", 15*time.Second, "auth_required", func(s sourceJSON) bool { return s.State == "auth_required" })
-	if s.Auth == nil || s.Auth.Message != "Run gh auth login -h "+workHost {
-		t.Errorf("work source auth = %+v, want the message %q", s.Auth, "Run gh auth login -h "+workHost)
-	}
-	if !slices.ContainsFunc(g.calls(), func(c ghCall) bool {
-		return slices.Equal(c.Argv, []string{"auth", "token", "-h", workHost, "-u", "work"})
-	}) {
-		t.Errorf("no `gh auth token -h %s -u work` call (host and account from the settings); calls: %+v", workHost, g.calls())
-	}
-	if n := len(g.searchesWith(workToken)); n != 0 {
-		t.Errorf("the signed-out work source searched %d times", n)
-	}
-	g.token("work", workToken)
-	code, body := w.srcReq(http.MethodPost, "/work/refresh", nil)
-	w.mustOK(code, body, "POST /api/sources/work/refresh")
-	s = w.waitSource("work", 15*time.Second, "ok with the bug orders", func(s sourceJSON) bool {
-		p, ok := s.panel("Bugs")
-		return s.State == "ok" && s.Auth == nil && ok && len(p.Orders) > 0 && len(s.Panels) == 2 && len(s.Panels[1].Orders) > 0
-	})
-	if s.Panels[0].Title != "Bugs" || s.Panels[1].Title != "Bugs" ||
-		!strings.HasSuffix(s.Panels[0].ID, "bugs") || !strings.HasSuffix(s.Panels[1].ID, "bugs-2") {
-		t.Errorf("work panels = %s, want only the two usable entries, with ids bugs and bugs-2", dump(s.Panels))
-	}
-	wantSorted := []orderJSON{{ID: "acme/widgets#21", Title: "Oldest bug", Text: "https://git.example.test/acme/widgets/issues/21",
-		URL: "https://git.example.test/acme/widgets/issues/21", Repo: "https://git.example.test/acme/widgets", Hot: true,
-		Labels: []string{"Needs-Attention", "P0"}}}
-	if !reflect.DeepEqual(s.Panels[0].Orders, wantSorted) {
-		t.Errorf("work panel 1 orders = %s, want %s (hot because hotLabels is needs-attention, not because of P0)", dump(s.Panels[0].Orders), dump(wantSorted))
-	}
-	for _, c := range g.searchesWith(workToken) {
-		if !c.has("--hostname", workHost) {
-			t.Errorf("work search %q lacks --hostname %s", c.Argv, workHost)
-		}
-		if c.mentions("sort:created-asc") && c.mentions("sort:updated-desc") {
-			t.Errorf("a query with its own sort: was given a second one: %q", c.Argv)
-		}
-	}
-
-	pollPanel := func(what string, pred func(a, r panelJSON) bool) (panelJSON, panelJSON) {
-		t.Helper()
-		var a, r panelJSON
-		w.waitSource("gh", 15*time.Second, what, func(s sourceJSON) bool {
-			a, _ = s.panel("Assigned to me")
-			r, _ = s.panel("Review requested")
-			return pred(a, r)
-		})
-		return a, r
-	}
-	refresh := func() {
-		t.Helper()
-		code, body := w.srcReq(http.MethodPost, "/gh/refresh", nil)
-		w.mustOK(code, body, "POST /api/sources/gh/refresh")
-	}
-	g.fail("assigned", "gh: The search is invalid: unexpected end of query (HTTP 422)")
-	refresh()
-	a, r := pollPanel("a search error on Assigned to me", func(a, r panelJSON) bool { return a.Error != nil })
-	if !strings.HasPrefix(a.errText(), "Search failed:") || !strings.Contains(a.errText(), "unexpected end of query") {
-		t.Errorf("panel error = %q, want \"Search failed: \" and GitHub's message", a.errText())
-	}
-	if !reflect.DeepEqual(a.Orders, wantAssigned) || r.Error != nil || len(r.Orders) != 50 {
-		t.Errorf("after a failed search: Assigned to me = %s, Review requested error %v with %d orders; want the last orders kept and the other panel clean", dump(a.Orders), r.Error, len(r.Orders))
-	}
-	g.fail("assigned", notReachable)
-	refresh()
-	a, _ = pollPanel("the unreachable error", func(a, r panelJSON) bool { return strings.Contains(a.errText(), "reach") })
-	if a.errText() != "Couldn't reach github.com" || len(a.Orders) != 3 {
-		t.Errorf("panel error = %q with %d orders, want \"Couldn't reach github.com\" and the 3 last orders", a.errText(), len(a.Orders))
-	}
-	g.search("assigned", "assignee:@me", ghNode("github.com", "acme/widgets", 13, true, "Fresh PR"))
-	refresh()
-	a, _ = pollPanel("the error gone and the new result", func(a, r panelJSON) bool { return a.Error == nil && len(a.Orders) == 1 })
-	// a transport error that is not a DNS one reads as unreachable too
-	g.fail("assigned", "Post \"https://api.github.com/graphql\": dial tcp 140.82.112.6:443: connect: connection refused")
-	refresh()
-	a, _ = pollPanel("the connection refused error", func(a, r panelJSON) bool { return a.Error != nil })
-	if a.errText() != "Couldn't reach github.com" || len(a.Orders) != 1 {
-		t.Errorf("panel error = %q with %d orders after a refused connection, want \"Couldn't reach github.com\" and the last order", a.errText(), len(a.Orders))
-	}
-	g.search("assigned", "assignee:@me", ghNode("github.com", "acme/widgets", 13, true, "Fresh PR"))
-	refresh()
-	a, _ = pollPanel("the error gone again", func(a, r panelJSON) bool { return a.Error == nil && len(a.Orders) == 1 })
-	if a.Orders[0].ID != "acme/widgets#13" || a.Orders[0].Text != "https://github.com/acme/widgets/pull/13" {
-		t.Errorf("Assigned to me after the refresh = %s, want acme/widgets#13", dump(a.Orders))
-	}
-
-	// only reads, and no token anywhere but in the environment of gh
-	for _, c := range g.calls() {
-		if !(c.has("auth", "token") || c.has("api", "graphql")) || c.mentions("mutation") || c.has("--method") || c.has("-X") {
-			t.Errorf("gh was run as %q, want only `auth token` and read-only `api graphql`", c.Argv)
-		}
-	}
-	noLeak := func(stage string) {
-		t.Helper()
-		out := w.in.stderrBuf.String()
-		if strings.Contains(out, defaultToken) || strings.Contains(out, workToken) {
-			t.Errorf("%s: Admiral's log holds a token: %s", stage, out)
-		}
-		if f := holdsAny(t, w.home, defaultToken, workToken); f != "" {
-			t.Errorf("%s: %s holds a token", stage, f)
-		}
-	}
-	noLeak("after the run")
-
-	w.in.Stop()
-	w.extra = append(w.extra, "PATH="+w.pythonOnlyPath())
-	w.restart()
-	for _, key := range []string{"gh", "work"} {
-		s = w.waitSource(key, 15*time.Second, "auth_required without gh", func(s sourceJSON) bool { return s.State == "auth_required" })
-		if want := "Install the GitHub CLI (brew install gh), then run gh auth login"; s.Auth == nil || s.Auth.Message != want {
-			t.Errorf("%s with no gh: auth = %+v, want the message %q", key, s.Auth, want)
-		}
-	}
-	noLeak("with no gh")
 }

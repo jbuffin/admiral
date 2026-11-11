@@ -86,7 +86,7 @@ export function ReorderGrip({ label, group, itemKey, keys, commit }: { label: st
 export function PanelSection({ view }: { view: PanelView }) {
   const { source, panel, orders } = view;
   const group = `panels:${source.key}`;
-  const panelIds = source.panels.map((p) => p.id);
+  const panelIds = source.views.map((p) => p.id);
   const lifted = reordering.value?.group === group && reordering.value.key === panel.id;
   const open = !panelCollapsed(view.key);
   const [refusal, setRefusal] = useState<string | null>(null);
