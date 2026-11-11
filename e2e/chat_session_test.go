@@ -529,25 +529,27 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 		userLine("u-3b", "COMPACT-NOISE", map[string]any{"isCompactSummary": true, "isVisibleInTranscriptOnly": true}),
 		jsonLine(map[string]any{"type": "assistant", "uuid": "a-4", "isSidechain": true, "message": map[string]any{"role": "assistant", "id": "msg_9", "content": []any{map[string]any{"type": "text", "text": "SIDECHAIN-NOISE"}}}}),
 		jsonLine(map[string]any{"type": "system", "uuid": "s-1", "subtype": "local_command", "content": "SYSTEM-NOISE"}),
+		userLine("u-3c", "<task-notification>Subagent finished</task-notification>", nil),
+		userLine("u-3d", "Another Claude session sent a message: META-SESSION-NOISE", map[string]any{"isMeta": true}),
 		userLine("u-4", []any{map[string]any{"type": "text", "text": "Now list the ships"}}, nil),
 	)
-	first := []string{"user: Please summarise the harbour log", "assistant: The log has three entries.", "user: Now list the ships"}
+	first := []string{"user: Please summarise the harbour log", "assistant: The log has three entries.", "user: <task-notification>Subagent finished</task-notification>", "user: Now list the ships"}
 
 	t.Run("the transcript becomes the conversation", func(t *testing.T) {
 		c := &chatWorld{world: w.at(t), cfgDir: c.cfgDir}
 		c.touch("go-start")
-		got := c.waitSession(10*time.Second, "the first three messages", messagesAre(first...))
+		got := c.waitSession(10*time.Second, "the first four messages", messagesAre(first...))
 		if got.Error != "" || !got.Running {
 			t.Errorf("after SessionStart: %+v, want running with no error", got)
 		}
-		for i, id := range []string{"u-1", "a-3", "u-4"} {
+		for i, id := range []string{"u-1", "a-3", "u-3c", "u-4"} {
 			if m := got.Messages[i]; m.ID != id || !strings.HasPrefix(m.At, "2026-01-02T03:04:0") {
 				t.Errorf("message %d = %+v, want id %s (the line's uuid) and its timestamp as at", i, m, id)
 			}
 		}
 		// Every browser gets the update.
-		waitChatWS(t, ws1, 5*time.Second, "the first three messages", messagesAre(first...))
-		waitChatWS(t, ws2, 5*time.Second, "the first three messages", messagesAre(first...))
+		waitChatWS(t, ws1, 5*time.Second, "the first four messages", messagesAre(first...))
+		waitChatWS(t, ws2, 5*time.Second, "the first four messages", messagesAre(first...))
 
 		// More lines, then a line cut in two: it must be read whole once finished.
 		appendLines(t, tp1,
@@ -637,7 +639,9 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 	w := c.world
 	tpA := filepath.Join(c.cfgDir, "projects", "p", "a.jsonl")
 	tpB := filepath.Join(c.cfgDir, "projects", "p", "b.jsonl")
-	w.writeCue("record", sessionStartCue(tpA, "startup"), "wait go-clear", sessionStartCue(tpA, "clear"))
+	tpC := filepath.Join(c.cfgDir, "projects", "p", "c.jsonl")
+	w.writeCue("record", sessionStartCue(tpA, "startup"), "wait go-clear", sessionStartCue(tpA, "clear"),
+		"wait go-late", sessionStartCue(tpC, "startup"), "wait go-late-clear", sessionStartCue(tpC, "clear"))
 	appendLines(t, tpA,
 		userLine("u-1", "Before the clear", nil),
 		assistantLine("a-1", "msg_1", map[string]any{"type": "text", "text": "Answer before the clear."}),
@@ -652,6 +656,14 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 	c.waitSession(5*time.Second, "an empty conversation", messagesAre())
 	appendLines(t, tpA, userLine("u-2", "After the same-path clear", nil))
 	c.waitSession(10*time.Second, "only the later line", messagesAre("user: After the same-path clear"))
+
+	// A clear before the transcript exists skips nothing: its lines show once it appears.
+	c.touch("go-late")
+	c.waitEvents(3)
+	c.touch("go-late-clear")
+	c.waitEvents(4)
+	appendLines(t, tpC, userLine("u-3", "Written after the clear", nil))
+	c.waitSession(10*time.Second, "the line of a transcript that did not exist at the clear", messagesAre("user: Written after the clear"))
 
 	// Change the model and the effort, then New chat. The new run records into a
 	// fresh _chat directory and fires its own SessionStart.

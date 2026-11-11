@@ -13,13 +13,14 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/conversation"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
+	"github.com/jbuffin/admiral/internal/transcriptfs"
 )
 
 // NotStarted holds until the first SessionStart: Claude may be on its folder-trust dialog,
@@ -77,9 +78,8 @@ type state struct {
 	readAt  time.Time
 	optRaw  string // the transcript option's value acted on last
 	path    string // the transcript path in it
-	fol     *follower
-	msgs    []Message
-	bytes   int
+	rd      *conversation.Reader
+	cleared bool   // a clear could not find the file's end: serve nothing until one does
 	refused string // a path already logged as refused
 	unread  bool   // the recorded path is one Admiral refuses to read
 	optSeq  uint64 // the ticket of the option read applied last
@@ -202,7 +202,7 @@ func (s *Service) refreshQ(force, fresh bool) (Snapshot, error) {
 	}
 	s.followLocked()
 
-	snap := Snapshot{Running: true, State: mapState(sess.State, sess.Reason), Messages: append([]Message{}, st.msgs...), Questions: qs}
+	snap := Snapshot{Running: true, State: mapState(sess.State, sess.Reason), Messages: st.served(), Questions: qs}
 	if unanswered(qs) {
 		snap.State = "waiting"
 	}
@@ -235,14 +235,12 @@ func (s *Service) transcriptChangedLocked(raw string) {
 	st.optRaw = raw
 	_, source, path, ok := parseTranscriptOption(raw)
 	if !ok {
-		st.path, st.fol, st.unread = "", nil, false
-		st.msgs, st.bytes = nil, 0
+		st.path, st.rd, st.unread, st.cleared = "", nil, false, false
 		return
 	}
 	switch {
-	case path != st.path || st.fol == nil:
-		st.path, st.fol, st.unread = path, &follower{}, false
-		st.msgs, st.bytes = nil, 0
+	case path != st.path || st.rd == nil:
+		st.path, st.rd, st.unread, st.cleared = path, conversation.NewReader(conversation.TextView()), false, false
 	case source == "clear" && !first:
 		s.clearLocked()
 	}
@@ -271,59 +269,44 @@ func (s *Service) configDir() string {
 	return config.IdentityDir("claude", env)
 }
 
-func (s *Service) openLocked() (string, os.FileInfo, *os.File, error) {
+func (s *Service) openLocked() (*os.File, os.FileInfo, error) {
 	st := &s.st
 	if st.path == "" {
-		return "", nil, nil, fs.ErrNotExist
+		return nil, nil, fs.ErrNotExist
 	}
-	root, rel, err := resolveTranscript(s.configDir(), st.path)
-	if err == nil {
-		var r *os.Root
-		if r, err = os.OpenRoot(root); err == nil {
-			defer r.Close()
-			var f *os.File
-			// O_NONBLOCK: a FIFO swapped in after the checks must not block the open.
-			// A regular file reads the same either way.
-			if f, err = r.OpenFile(rel, os.O_RDONLY|syscall.O_NONBLOCK, 0); err == nil {
-				var info os.FileInfo
-				if info, err = f.Stat(); err == nil && info.Mode().IsRegular() {
-					return rel, info, f, nil
-				}
-				f.Close()
-				err = errRefused
-			}
-		}
-	}
-	if errors.Is(err, errRefused) && st.refused != st.path {
+	f, info, err := transcriptfs.Open(s.configDir(), st.path)
+	if errors.Is(err, transcriptfs.ErrRefused) && st.refused != st.path {
 		st.refused = st.path
 		log.Printf("admiral: chat: not reading %q: %v", st.path, err)
 	}
-	return "", nil, nil, err
+	return f, info, err
 }
 
 func (s *Service) followLocked() {
 	st := &s.st
-	if st.fol == nil {
+	if st.rd == nil {
 		return
 	}
-	_, info, f, err := s.openLocked()
+	f, info, err := s.openLocked()
 	if err != nil {
-		st.unread = errors.Is(err, errRefused)
+		st.unread = errors.Is(err, transcriptfs.ErrRefused)
 		return
 	}
 	defer f.Close()
 	st.unread = false
-	st.fol.read(f, info, s.add, func() { st.msgs, st.bytes = nil, 0 })
+	if st.cleared {
+		return
+	}
+	// ErrUnreadable (content, but no line that parses) shows an empty chat.
+	_, _ = st.rd.Refresh(f, info)
 }
 
-func (s *Service) add(m Message) {
-	st := &s.st
-	st.msgs = append(st.msgs, m)
-	st.bytes += len(m.Text)
-	for len(st.msgs) > 1 && (len(st.msgs) > maxMessages || st.bytes > maxBytes) {
-		st.bytes -= len(st.msgs[0].Text)
-		st.msgs = st.msgs[1:]
+// served is nothing after a clear whose file could not be opened.
+func (st *state) served() []Message {
+	if st.rd == nil || st.cleared {
+		return []Message{}
 	}
+	return messages(st.rd.Items())
 }
 
 func (s *Service) readOptions(pane string) (chatOptions, error) {
@@ -557,12 +540,21 @@ func (s *Service) serveNew(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) clearLocked() {
 	st := &s.st
-	st.msgs, st.bytes = nil, 0
-	if st.fol == nil {
+	if st.rd == nil {
 		return
 	}
-	if _, info, f, err := s.openLocked(); err == nil {
-		f.Close()
-		st.fol.toEnd(info.Size())
+	f, info, err := s.openLocked()
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		// Nothing to skip: the file is read from its start once it appears.
+		st.rd.Clear(0)
+		st.cleared = false
+		return
+	case err != nil:
+		st.cleared = true
+		return
 	}
+	f.Close()
+	st.rd.Clear(info.Size())
+	st.cleared = false
 }
