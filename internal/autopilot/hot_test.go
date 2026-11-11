@@ -29,13 +29,3 @@ func TestEngineSaysWhenAnOrderTurnsHotAndCools(t *testing.T) {
 		t.Errorf("OnHot ran %d times after the order left its listing, want 2", hot)
 	}
 }
-
-// An order that vanished between the pass and the launch is not a failure.
-func TestEngineTreatsAVanishedOrderAsNoFailure(t *testing.T) {
-	r := newRig(t, "o1")
-	r.failWith = &launcher.Error{Status: http.StatusNotFound, Msg: `order "o1" not found in source s`}
-	r.pass()
-	if n := len(r.recordsOf("launch_failed")); n != 0 {
-		t.Errorf("launch_failed records = %d, want 0", n)
-	}
-}

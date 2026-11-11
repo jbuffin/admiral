@@ -7,21 +7,6 @@ import (
 	"github.com/jbuffin/admiral/internal/outcomes"
 )
 
-// Counting runs from the outcome log (#117, ADR 0017). The interface these tests
-// assume:
-//
-//	type Panel struct{ Source, Panel string }
-//	type Count struct {
-//	    Runs  int       // counted runs since the panel's last retro_queued
-//	    Since time.Time // that retro_queued's ts; with none, the first counted run's launched ts
-//	}
-//	func CountRuns(log []outcomes.Line) map[Panel]Count
-//
-// A counted run is an `ended` joined to the latest earlier `launched` of the
-// same ship, at most once per `launched`, where the `launched` is an autopilot
-// one for the panel. "Earlier" is position in the log, never ts. Count may
-// hold more fields; a panel with no counted run may be absent or zero.
-
 // logb builds a log, one minute apart, in the order the calls are made.
 type logb struct {
 	t   *testing.T

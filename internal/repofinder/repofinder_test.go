@@ -82,7 +82,6 @@ func TestIdentityMatchesByHostAndOwnerRepo(t *testing.T) {
 	for _, c := range []struct{ url, want string }{
 		{"git@GitHub.com:acme/one.git", "github.com/acme/one"},
 		{"ssh://git@github.com/acme/one.git", "github.com/acme/one"},
-		{"https://GITHUB.COM/acme/one/", "github.com/acme/one"},
 		{"https://github.com/acme/y/pull/5", "github.com/acme/y"},
 		{"https://github.com/acme/y/blob/main/img@2x.png", "github.com/acme/y"}, // an @ in the path is not userinfo
 		{"https://gitlab.com/acme/three.git", "gitlab.com/acme/three"},

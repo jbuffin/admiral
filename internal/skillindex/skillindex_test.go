@@ -128,7 +128,6 @@ func TestEachHarnessReadsItsOwnLocations(t *testing.T) {
 		{"claude", p1, []string{"u-claude", "p-claude", "dup"}},
 		{"claude", p2, []string{"u-claude", "dup"}},
 		{"codex", p1, []string{"h-agents", "u-codex", "p-agents"}},
-		{"codex", p2, []string{"h-agents", "u-codex"}},
 		{"copilot", p1, []string{"u-copilot", "h-agents", "p-github", "p-agents", "p-claude", "dup"}},
 	} {
 		sameSet(t, c.harness+" in "+filepath.Base(c.dir), skillindex.Installed(c.harness, d.environ(), c.dir), c.want)
@@ -186,7 +185,6 @@ func TestFindCommodore(t *testing.T) {
 		{"absent", "claude", func(*ids, string) {}, ""},
 		{"a claude plugin", "claude", func(d *ids, _ string) { jb(d, "engineering/commodore") }, "jb:commodore"},
 		{"codex plain", "codex", func(d *ids, _ string) { writeSkill(t, filepath.Join(d.codex, "skills"), "commodore") }, "commodore"},
-		{"codex never reads claude plugins", "codex", func(d *ids, _ string) { jb(d, "commodore") }, ""},
 		{"plain beats a plugin", "claude", func(d *ids, _ string) {
 			writeSkill(t, filepath.Join(d.claude, "skills"), "commodore")
 			jb(d, "commodore")

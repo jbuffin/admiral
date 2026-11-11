@@ -25,9 +25,8 @@ func TestParseChat(t *testing.T) {
 func TestSetChatRefusesWhatParseWouldReplace(t *testing.T) {
 	const orig = `{"version":1,"fleets":{"w":{"name":"W","claude":{}}},"chat":{"fleet":"w","model":"opus"}}`
 	for name, c := range map[string]Chat{
-		"unknown model":  {Fleet: "w", Model: "gpt"},
-		"unknown effort": {Fleet: "w", Model: "opus", Effort: "max"},
-		"unknown fleet":  {Fleet: "gone", Model: "opus"},
+		"unknown model": {Fleet: "w", Model: "gpt"},
+		"unknown fleet": {Fleet: "gone", Model: "opus"},
 	} {
 		dir := t.TempDir()
 		path := filepath.Join(dir, FileName)

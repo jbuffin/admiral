@@ -9,21 +9,6 @@ import (
 	"time"
 )
 
-// The reader autopilot counts retros with (ADR 0017). The interface these tests
-// assume:
-//
-//	type Line struct {
-//	    Event, Ship string
-//	    TS          time.Time      // the line's ts, whatever offset it was written with
-//	    Fields      map[string]any // every other key of the line
-//	}
-//	func Read(dir string) []Line   // dir is the outcomes directory
-//
-// Read returns the lines of every *.jsonl file in file-name order, each file in
-// line order. A line that is not a JSON object with a v, an RFC 3339 ts and an
-// event is skipped; so is a missing directory. Event names are not checked:
-// the counter ignores the ones it does not know.
-
 func TestReadWalksFilesInNameOrderAndSkipsWhatItCannotUse(t *testing.T) {
 	dir := t.TempDir()
 	write := func(name string, lines ...string) {

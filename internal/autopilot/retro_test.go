@@ -17,25 +17,6 @@ import (
 	"github.com/jbuffin/admiral/internal/sources"
 )
 
-// Retro orders (#117): every pass counts the autopilot runs in the outcome log
-// and adds a /retro order to the resume panel. The interface these tests
-// assume on Engine, beside the existing seams:
-//
-//	Record   func(outcomes.Record, func(error)) // was func(outcomes.Record); the func is Writer.Enqueue's onDone, nil for a record nobody waits for
-//	Log      func() []outcomes.Line              // the outcome log, outcomes.Read of the home's outcomes directory
-//	AddOrder func(ctx context.Context, source, panel, text string) (id string, err error)
-//
-// A retro_queued record has exactly the fields source, panel, since (an RFC 3339
-// UTC string), text, resume_source, resume_panel and order_id; an uncertain one
-// has uncertain: true and no order_id. No other key, and no uncertain: false.
-// outcomes.ErrDropped is what Enqueue passes to onDone for a record the full
-// queue dropped; the engine treats it like a failed write.
-//
-// An AddOrder error may implement `AddKind() inbox.AddKind` (as
-// sources.RequestError does); one that doesn't is final. The resume panel comes
-// from Config().ResumeSource. config.PanelAutopilot.RetroEvery is the N: 0
-// (the zero value) means off, so every other rig in this package stays retro-free.
-
 type addCall struct{ source, panel, text string }
 
 type heldWrite struct {
@@ -399,7 +380,7 @@ func TestRetroWaitsForItsRecordAndWritesItAgain(t *testing.T) {
 	}
 }
 
-// Errors of the add (D-no-resume-source is in the off table above).
+// Errors of the add. A missing resume source is in the off table above.
 func TestRetroAddFailures(t *testing.T) {
 	t.Run("retryable is tried on every pass and logged once per message", func(t *testing.T) {
 		r := newRetroRig(t, 2)

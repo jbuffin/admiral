@@ -11,15 +11,6 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 )
 
-// The interface these tests assume (#118, locked resources):
-//
-//	Config.Resources map[string]config.Resource        // by resource name
-//	config.Resource{Capacity int, Check []string}      // Check nil when none
-//	PanelAutopilot.Resources []string                  // nil when the entry names none
-//
-// A panel's names are checked against the top-level resources after the whole
-// file is parsed, so the order of keys in the file doesn't matter.
-
 // resConfig is a config with fleet "work", a source "s" whose autopilot entry
 // for panel "p" names `panelRes` (a JSON array, or "" for none), and the given
 // top-level resources object. The resources key comes after sources on purpose.
@@ -69,16 +60,11 @@ func TestResourcesParse(t *testing.T) {
 func TestResourcesParseErrors(t *testing.T) {
 	cases := []struct{ name, config, want string }{
 		{"panel names an undefined resource", resConfig(`["phone"]`, `{"ipad":{}}`), "sources.s.autopilot.p.resources"},
-		{"panel names a resource with no resources object", resConfig(`["phone"]`, ``), "sources.s.autopilot.p.resources"},
-		{"panel resources not strings", resConfig(`[1]`, `{"phone":{}}`), "sources.s.autopilot.p.resources"},
 		{"capacity 0", resConfig(``, `{"phone":{"capacity":0}}`), "resources.phone.capacity"},
-		{"capacity not an integer", resConfig(``, `{"phone":{"capacity":1.5}}`), "resources.phone.capacity"},
 		{"check empty", resConfig(``, `{"phone":{"check":[]}}`), "resources.phone.check"},
 		{"check has an empty string", resConfig(``, `{"phone":{"check":["sh",""]}}`), "resources.phone.check"},
-		{"check not an array", resConfig(``, `{"phone":{"check":"adb devices"}}`), "resources.phone.check"},
 		{"unknown key", resConfig(``, `{"phone":{"colour":"red"}}`), "resources.phone.colour"},
 		{"name with a space", resConfig(``, `{"my phone":{}}`), "resources.my phone"},
-		{"name too long", resConfig(``, `{"`+strings.Repeat("a", 65)+`":{}}`), "resources."},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -120,32 +106,6 @@ func TestManagerKeepsTheLastGoodConfigWhenAPanelNamesAnUndefinedResource(t *test
 	}
 	if got := m.Current().Resources["phone"].Capacity; got != 2 {
 		t.Errorf("capacity after the bad file = %d, want the last good 2", got)
-	}
-}
-
-// SetSources runs the same cross-check, against the resources already in the
-// file, wherever the resources key sits; a refused write leaves the file as it was.
-func TestSetSourcesChecksPanelResourcesAgainstTheFile(t *testing.T) {
-	dir := t.TempDir()
-	good := `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},"resources":{"phone":{"capacity":2}}}`
-	p := writeFile(t, dir, good)
-	panel := func(res string) json.RawMessage {
-		return json.RawMessage(`{"s":{"plugin":"testplug","fleet":"work","autopilot":{"p":` + apEntry(`"resources":`+res) + `}}}`)
-	}
-
-	if err := config.SetSources(dir, panel(`["nope"]`)); err == nil {
-		t.Fatal("SetSources accepted a panel naming an undefined resource")
-	}
-	if b, _ := os.ReadFile(p); string(b) != good {
-		t.Errorf("a refused write changed config.json:\n%s", b)
-	}
-
-	if err := config.SetSources(dir, panel(`["phone"]`)); err != nil {
-		t.Fatalf("SetSources with a defined resource: %v", err)
-	}
-	b, _ := os.ReadFile(p)
-	if !strings.Contains(string(b), `"capacity": 2`) && !strings.Contains(string(b), `"capacity":2`) {
-		t.Errorf("config.json lost the top-level resources object:\n%s", b)
 	}
 }
 

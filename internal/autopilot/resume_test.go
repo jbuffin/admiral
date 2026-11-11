@@ -1,10 +1,11 @@
 package autopilot
 
 import (
-	"github.com/jbuffin/admiral/internal/ships"
 	"testing"
 
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/ships"
+	"github.com/jbuffin/admiral/internal/sources"
 )
 
 // Resume orders (#120): the in-flight hold on a panel's unrecorded orders, and
@@ -23,32 +24,38 @@ func TestPassHoldsUnrecordedOrdersWhileAResumeIsBeingAdded(t *testing.T) {
 
 func TestResumeRecordLaunchesInItsDirAndSurvivesUntilTheOrderLeavesTheListing(t *testing.T) {
 	r := newRig(t, "o1")
-	r.engine.Checkout = func(_ config.Fleet, dir string) bool { return dir == "/w/ship" }
+	checkout := func(_ config.Fleet, dir string) bool { return dir == "/w/ship" || dir == "/w/x" }
+	r.engine.Checkout = checkout
 	r.engine.BeginResume("s", "p", "/w/ship", "", "")("o1")
-	want(t, "a recorded dir that is a checkout", r.pass(), []string{"s/p/o1"})
-	if got := r.launches[0].Dir; got != "/w/ship" {
-		t.Errorf("dir = %q, want the recorded one", got)
+	wantDir := func(what, dir string) {
+		t.Helper()
+		if n := len(r.launches); n == 0 || r.launches[n-1].Dir != dir {
+			t.Errorf("%s: launches %+v, want the last in %s", what, r.launches, dir)
+		}
 	}
 
-	// The record outlives a restart, and is dropped only once the order has been
-	// listed and is not any more.
+	// The record outlives a restart.
 	r.engine = r.newEngine()
-	if _, ok := r.engine.Store.resumeOf("s", "o1"); !ok {
-		t.Fatal("the record did not survive a restart")
-	}
+	r.engine.Checkout = checkout
+	want(t, "after a restart", r.pass(), []string{"s/p/o1"})
+	wantDir("after a restart", "/w/ship")
+
+	// It is dropped once the order has been listed and is not any more: back
+	// in the listing, the order is an ordinary one.
+	r.setShips()
 	r.src[0].Panels[0].Orders = nil
 	r.pass()
-	if _, ok := r.engine.Store.resumeOf("s", "o1"); ok {
-		t.Error("the record stayed after its order left the listing")
-	}
+	r.src[0].Panels = []sources.Panel{panel("p", "o1")}
+	want(t, "the order back", r.pass(), []string{"s/p/o1"})
+	wantDir("the order back", "/w/o1")
 
 	// An order that was never listed does not lose its record to a listing taken
 	// before the add's refresh.
 	r.engine.BeginResume("s", "p", "/w/x", "", "")("o2")
 	r.pass()
-	if _, ok := r.engine.Store.resumeOf("s", "o2"); !ok {
-		t.Error("the record of an order not listed yet was pruned")
-	}
+	r.src[0].Panels = []sources.Panel{panel("p", "o1", "o2")}
+	want(t, "o2 listed", r.pass(), []string{"s/p/o2"})
+	wantDir("o2 listed", "/w/x")
 }
 
 // The add writes the record before it releases the hold, so a pass that meets

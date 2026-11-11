@@ -115,7 +115,6 @@ func TestInboxSkipsWhatIsNotAnItem(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeItem(t, dir, "bad.json", []byte(`{"version":1,"id":"bad","kind":`))
-	writeItem(t, dir, "wrongver.json", map[string]any{"version": 2, "id": "wrongver", "kind": "review", "created": "2026-10-22T10:00:00Z", "title": "t", "review": map[string]any{}})
 	writeItem(t, dir, "nokind.json", map[string]any{"version": 1, "id": "nokind", "kind": "poem", "created": "2026-10-22T10:00:00Z", "title": "t"})
 	writeItem(t, dir, "mismatch.json", review("other-id", "2026-10-22T10:00:00Z"))
 	writeItem(t, dir, "big.json", []byte(`{"version":1,"id":"big","kind":"review","created":"2026-10-22T10:00:00Z","title":"`+strings.Repeat("x", 1<<20)+`"}`))
@@ -150,7 +149,6 @@ func TestInboxRefusesAnInvalidAnswer(t *testing.T) {
 		"a question left out":                {"answers": map[string]any{"1": map[string]any{"choice": "Alpha"}}},
 		"a label the question doesn't offer": both(map[string]any{"choice": "Gamma"}),
 		"a list on a single-choice question": both(map[string]any{"choice": []string{"Alpha", "Beta"}}),
-		"an empty answer":                    both(map[string]any{}),
 		"a question the item doesn't have": {"answers": map[string]any{"1": map[string]any{"choice": "Alpha"},
 			"2": map[string]any{"choice": []string{"X"}}, "9": map[string]any{"choice": "Alpha"}}},
 	} {

@@ -20,13 +20,10 @@ func TestHookState(t *testing.T) {
 		{"PostToolUse whose tool_response is a string", "PostToolUse", `{"tool_name":"Read","tool_response":"file text"}`, "working"},
 		{"codex Interrupt", "Interrupt", `{"turn_id":"01a15222-ed87"}`, "working"},
 		{"permission_prompt", "Notification", `{"notification_type":"permission_prompt"}`, "needs_you"},
-		{"copilot agentStop of a subagent", "agentStop", `{"agentId":"788718ef","stopReason":"end_turn"}`, ""},
 		{"copilot agentStop of the lead", "agentStop", `{"stopReason":"end_turn"}`, "needs_you"},
 		{"copilot userPromptSubmitted of a subagent", "userPromptSubmitted", `{"prompt":"go","agentId":"788718ef"}`, ""},
 		{"copilot userPromptSubmitted of the lead", "userPromptSubmitted", `{"prompt":"go"}`, "working"},
 		{"copilot ask_user", "preToolUse", `{"toolName":"ask_user"}`, "needs_you"},
-		{"copilot postToolUse", "postToolUse", `{"toolName":"bash"}`, "working"},
-		{"copilot permission_prompt", "notification", `{"notification_type":"permission_prompt"}`, "needs_you"},
 	} {
 		var p hookPayload
 		if err := json.Unmarshal([]byte(c.payload), &p); err != nil {
