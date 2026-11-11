@@ -95,14 +95,12 @@ export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => vo
       setReview((r) => ({ ...r, step: 'confirm', event: EVENTS[a.n - 1][0] }));
     }
   };
-  // The slot calls the latest render's handler, so it is claimed once per Peek.
+  // One stable handler per Peek that calls the latest render's, claimed at render so a key right after navigation finds it.
   const latest = useRef(mine);
   latest.current = mine;
-  useEffect(() => {
-    const slot = (a: KeyAct) => latest.current(a);
-    peekKeys.current = slot;
-    return () => void (peekKeys.current === slot && (peekKeys.current = null));
-  }, []);
+  const slot = useRef((a: KeyAct) => latest.current(a)).current;
+  peekKeys.current = slot;
+  useEffect(() => () => void (peekKeys.current === slot && (peekKeys.current = null)), []);
   const form = !item ? null : (
     <div class="peek-form">
       {question ? (
