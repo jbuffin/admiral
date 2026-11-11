@@ -108,7 +108,9 @@ export function launchBody(form: LaunchFormState): Record<string, unknown> {
 
 export interface CampaignLaunchState {
   campaignId: string;
-  childUrl: string;
+  childUrl?: string;
+  /** The URLs of a slice, in row order; set instead of childUrl. */
+  issues?: string[];
   harness: string;
   dir: string;
   clone: boolean;
@@ -121,6 +123,11 @@ export interface CampaignLaunchState {
 /** The order the dirs call names for a campaign child: source `campaign`, id `<campaign id>/<child URL>`. */
 export function campaignOrder(campaignId: string, childUrl: string): { source: string; id: string } {
   return { source: 'campaign', id: `${campaignId}/${childUrl}` };
+}
+
+/** The order the dirs call names for a slice: source `campaign`, the compact id the server answers. */
+export function sliceOrder(campaignId: string, urls: string[]): { source: string; id: string } {
+  return campaignOrder(campaignId, urls[0] ?? '');
 }
 
 /** The route and body of a campaign child's launch; the server picks skill, text and autopilot. */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Ship } from './api';
-import { blockerLine, campaignMeta, childShipsKey, groupChildren, kindLabel, modeLabel, nextPoll, pasteHint, overrideBody, safeHref, shipOfChild, skillLabel, statusLabel, typeLabel, type CampaignNode } from './campaign';
+import { blockerLine, campaignMeta, canJoinSlice, keepSelectable, childShipsKey, groupChildren, kindLabel, modeLabel, nextPoll, pasteHint, overrideBody, safeHref, shipOfChild, skillLabel, statusLabel, typeLabel, type CampaignNode } from './campaign';
 
 const url = (n: number) => `https://github.com/acme/widgets/issues/${n}`;
 const child = (n: number, status: CampaignNode['status'], mode: CampaignNode['mode'] = 'with-you', extra: Partial<CampaignNode> = {}): CampaignNode => ({
@@ -130,12 +130,65 @@ describe('matching ships to children', () => {
     expect(shipOfChild({ url: url(21) }, ships)).toBe(mine);
     expect(shipOfChild({ url: url(22) }, ships)).toBeUndefined();
   });
+  it('finds the ship that holds the child among its issues, whatever its first issue', () => {
+    const slice = ship('Slice', 'underway', { url: url(31), issues: [url(31), url(32)] });
+    expect(shipOfChild({ url: url(32) }, [slice])).toBe(slice);
+    expect(shipOfChild({ url: url(33) }, [slice])).toBeUndefined();
+  });
+  it('keys a slice ship under each of its children', () => {
+    const slice = ship('Slice', 'underway', { url: url(31), issues: [url(31), url(32)] });
+    const before = childShipsKey([{ url: url(32) }], [slice]);
+    expect(before).not.toBe(childShipsKey([{ url: url(32) }], []));
+    expect(childShipsKey([{ url: url(32) }], [{ ...slice, status: 'needs_you' }])).not.toBe(before);
+  });
   it('keys the ships of the children, so a change in one is a change and an unrelated ship is not', () => {
     const children = [{ url: url(21) }, { url: url(22) }];
     const before = childShipsKey(children, [ship('Quiet Heron', 'underway')]);
     expect(childShipsKey(children, [ship('Quiet Heron', 'needs_you')])).not.toBe(before);
     expect(childShipsKey(children, [])).not.toBe(before);
     expect(childShipsKey(children, [ship('Quiet Heron', 'underway'), ship('Stranger', 'underway', { url: url(99) })])).toBe(before);
+  });
+});
+
+describe('launching a slice', () => {
+  const ctx = { ended: false, canStart: true };
+  const cmd = (n: number, extra: Partial<CampaignNode> = {}) => child(n, 'ready', 'without-you', { skill: { kind: 'commodore', name: '', args: '' }, ...extra });
+  const held = (n: number): Ship => ({ session: `s${n}`, name: `S${n}`, fleet: 'zulu', harness: 'claude', status: 'underway', order_id: '', title: '', tail: '', fleet_color: '', launched: '', crew_live: 0, source: 'campaign', url: url(n) });
+
+  it('admits a ready Without-you Commodore child with no ship', () => {
+    expect(canJoinSlice(cmd(31), ctx, [])).toBe(true);
+  });
+  it.each([
+    ['with you', cmd(31, { mode: 'with-you' })],
+    ['on another skill', cmd(31, { skill: { kind: 'skill', name: 'wayfinder', args: '' } })],
+    ['with no skill', cmd(31, { skill: { kind: 'none', name: '', args: '' } })],
+    ['underway', cmd(31, { status: 'underway' })],
+    ['blocked', cmd(31, { status: 'blocked' })],
+    ['claimed with no ship', cmd(31, { status: 'claimed-no-ship' })],
+    ['done', cmd(31, { status: 'done' })],
+  ])('refuses a child %s', (_, c) => {
+    expect(canJoinSlice(c, ctx, [])).toBe(false);
+  });
+  it('refuses a child a ship holds, as a single launch or in a slice', () => {
+    expect(canJoinSlice(cmd(31), ctx, [held(31)])).toBe(false);
+    expect(canJoinSlice(cmd(32), ctx, [{ ...held(31), issues: [url(31), url(32)] }])).toBe(false);
+  });
+  it('refuses on an ended campaign and where the page cannot start a ship', () => {
+    expect(canJoinSlice(cmd(31), { ...ctx, ended: true }, [])).toBe(false);
+    expect(canJoinSlice(cmd(31), { ...ctx, canStart: false }, [])).toBe(false);
+  });
+
+  const rows = [cmd(31), cmd(32), cmd(33)];
+  it('keeps the selection in the order the rows show, whatever the order it was checked in', () => {
+    expect(keepSelectable([url(33), url(31)], rows, ctx, [])).toEqual([url(31), url(33)]);
+  });
+  it('drops a child that stops qualifying on a reload', () => {
+    const reloaded = [cmd(31), cmd(32, { status: 'underway' }), cmd(33, { status: 'blocked' })];
+    expect(keepSelectable([url(31), url(32), url(33)], reloaded, ctx, [])).toEqual([url(31)]);
+    expect(keepSelectable([url(31), url(32)], rows, ctx, [held(32)])).toEqual([url(31)]);
+  });
+  it('drops a child that is no longer in the tree', () => {
+    expect(keepSelectable([url(31), url(99)], rows, ctx, [])).toEqual([url(31)]);
   });
 });
 

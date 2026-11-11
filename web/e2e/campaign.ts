@@ -62,6 +62,13 @@ export function fakeGhTrees(a: Admiral) {
 
 export const MAP = 20;
 export const ANNEX = 30;
+/** The annex's children, all `ready-for-agent`: Ready, Without you and Commodore. */
+export const ANNEX_KIDS: [number, string][] = [
+  [31, 'Annex doors'],
+  [32, 'Annex lights'],
+  [33, 'Annex vents'],
+  [34, 'Annex pumps'],
+];
 export const T = {
   map: 'Moonbase map',
   grill: 'Grill the landing',
@@ -77,7 +84,7 @@ export const T = {
 /**
  * Westwind with a built-in GitHub source (no views) and the Orders test source, a checkout of acme/widgets, and canned
  * trees: the map (ready with you 21 and 23, ready without you 22, blocked 24, claimed with no ship 25, done 26) and an
- * annex of two plain ready children that an order offers to follow.
+ * annex of four plain ready children that an order offers to follow.
  */
 export function seedCampaignFleet(a: Admiral) {
   seedFleets(a, { live: true });
@@ -105,7 +112,7 @@ export function seedCampaignFleet(a: Admiral) {
       ],
     }),
   );
-  gh.campaign(issueNode(ANNEX, T.annex, { kids: [issueNode(31, 'Annex doors', { labels: ['ready-for-agent'] }), issueNode(32, 'Annex lights', { labels: ['ready-for-agent'] })] }));
+  gh.campaign(issueNode(ANNEX, T.annex, { kids: ANNEX_KIDS.map(([n, title]) => issueNode(n, title, { labels: ['ready-for-agent'] })) }));
 
   // Orders the Ships screen offers Follow on: one with sub-issues, one without.
   a.flags('orders').orders({
@@ -144,6 +151,17 @@ export async function launchBehindThePage(a: Admiral, campaign: string, child: n
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ child_url: issueUrl(child), harness: 'claude', dir: join(a.home, 'widgets') }),
+  });
+  expect(res.status).toBe(201);
+  return ((await res.json()) as { ship: { name: string } }).ship.name;
+}
+
+/** Launches a slice of the campaign's children through the API, as a second window would, and answers the ship's name. */
+export async function launchSliceBehindThePage(a: Admiral, campaign: string, children: number[]): Promise<string> {
+  const res = await fetch(`${a.url}api/v1/campaigns/${campaign}/launch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ issues: children.map(issueUrl), harness: 'claude', dir: join(a.home, 'widgets') }),
   });
   expect(res.status).toBe(201);
   return ((await res.json()) as { ship: { name: string } }).ship.name;

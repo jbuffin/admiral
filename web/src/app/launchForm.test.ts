@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { campaignLaunch, campaignOrder, type CampaignLaunchState, type CrewMemberView, crewOptions, defaultSkill, effortsFor, type LaunchFormState, launchBody, memberRun, sourcesForFleet, togglePin } from './launchForm';
+import { campaignLaunch, campaignOrder, type CampaignLaunchState, sliceOrder, type CrewMemberView, crewOptions, defaultSkill, effortsFor, type LaunchFormState, launchBody, memberRun, sourcesForFleet, togglePin } from './launchForm';
 
 describe('sourcesForFleet', () => {
   it('keeps the sources of the active fleet only', () => {
@@ -80,6 +80,17 @@ describe('campaignOrder', () => {
   });
 });
 
+describe('sliceOrder', () => {
+  const u = (n: number) => `https://github.com/acme/widgets/issues/${n}`;
+  it('names the first child in full and the others of its repo by number, in launch order', () => {
+    expect(sliceOrder('c0ffee', [u(31), u(32), u(34)])).toEqual({ source: 'campaign', id: 'c0ffee/https://github.com/acme/widgets/issues/31,32,34' });
+  });
+  it('writes a child of another repo in full', () => {
+    const other = 'https://github.com/acme/gadgets/issues/7';
+    expect(sliceOrder('c0ffee', [u(31), other, u(32)]).id).toBe(`c0ffee/${u(31)},${other},32`);
+  });
+});
+
 describe('campaignLaunch', () => {
   const form: CampaignLaunchState = {
     campaignId: '3f9c0a41b7d2e8a5',
@@ -105,6 +116,13 @@ describe('campaignLaunch', () => {
     const { body } = campaignLaunch({ ...form, clone: true, cloneRepo: 'github.com/acme/widgets' });
     expect(body).toMatchObject({ clone: true, clone_repo: 'github.com/acme/widgets' });
     expect(body).not.toHaveProperty('dir');
+  });
+  it('sends a slice\'s issues in the order given and no child_url', () => {
+    const issues = [form.childUrl!, 'https://github.com/acme/widgets/issues/22'];
+    const { path, body } = campaignLaunch({ ...form, childUrl: undefined, issues, model: 'opus' });
+    expect(path).toBe('/campaigns/3f9c0a41b7d2e8a5/launch');
+    expect(body).toEqual({ issues, harness: 'claude', dir: '/code/widgets', model: 'opus' });
+    expect(body).not.toHaveProperty('child_url');
   });
   it('sends start_anyway only when it is chosen', () => {
     expect(campaignLaunch(form).body).not.toHaveProperty('start_anyway', true);
