@@ -26,6 +26,7 @@ type Followed struct {
 	EndedAt    time.Time // zero while the campaign is followed
 	Tree       *github.TreeNode
 	ReadAt     time.Time // of the last good read
+	TriedAt    time.Time // of the last attempt, good or bad
 	ReadError  string    // of the last failed read, empty after a good one
 }
 
@@ -219,6 +220,7 @@ func (s *Store) SetRead(id string, tree *github.TreeNode, at time.Time, readErr 
 		if tree != nil {
 			f.Tree, f.ReadAt = tree, at
 		}
+		f.TriedAt = at
 		f.ReadError = readErr
 	})
 }

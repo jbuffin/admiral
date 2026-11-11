@@ -105,10 +105,14 @@ func (s *Service) reader(id string) *reader {
 func (s *Service) lastTried(f Followed) time.Time {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if t := s.tried[f.ID]; t.After(f.ReadAt) {
+	last := f.ReadAt
+	if f.TriedAt.After(last) {
+		last = f.TriedAt
+	}
+	if t := s.tried[f.ID]; t.After(last) {
 		return t
 	}
-	return f.ReadAt
+	return last
 }
 
 // startReread reads the campaign's tree on its own goroutine unless a read is under way; again asks the running
@@ -125,8 +129,10 @@ func (s *Service) startReread(id string, again bool) {
 	}
 	ctx := s.background()
 	s.wg.Add(1)
+	r.active.Add(1) // before the goroutine runs, so the answer to the request that started it says reading
 	go func() {
 		defer s.wg.Done()
+		defer r.active.Add(-1)
 		for {
 			for ctx.Err() == nil {
 				_ = s.read(ctx, id)

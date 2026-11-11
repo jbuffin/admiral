@@ -615,3 +615,27 @@ func TestTheViewSaysWhileAReadIsInFlightAndWhenItLastTried(t *testing.T) {
 		return g.ReadErr != "" && g.LastTried == want && g.LastRead != want
 	})
 }
+
+func TestTheGetThatStartsARereadAnswersReading(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	c := r.follow(rootURL)
+	r.gh.delay(100 * time.Millisecond)
+	r.clock.Advance(time.Minute)
+	if got := r.get(c.ID); !got.Reading {
+		t.Errorf("the page open that started a reread answered reading %v, want true", got.Reading)
+	}
+}
+
+func TestLastTriedSurvivesARestart(t *testing.T) {
+	home := t.TempDir()
+	s := openStore(t, home)
+	f := followed(t, s)
+	at := time.Unix(5000, 0).UTC()
+	if err := s.SetRead(f.ID, nil, at, "gh: HTTP 502"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := openStore(t, home).Get(f.ID)
+	if !got.TriedAt.Equal(at) || got.ReadError == "" {
+		t.Errorf("after a restart tried %v error %q, want the failed attempt's time %v", got.TriedAt, got.ReadError, at)
+	}
+}
