@@ -8,6 +8,8 @@ The HTTP and WebSocket shapes a client reads. Every route is also served under `
 
 `{"ships": [...], "home": "..."}`: the ships, and the id of the home they belong to. Each ship is also in the WebSocket `{"type":"ships","ships":[...]}` message, which is sent on connect and again whenever any ship's fields change, its `tail` included.
 
+A moored ship has `status` `moored` and no tmux session: it is listed from its record in `$ADMIRAL_HOME/moored/`, with `prs` (the PR URLs it follows) and `moored_at` (RFC 3339), which no other ship carries. Its `session` is its slug, `dir` its checkout, `crew` and `subagents` empty and `launched` empty.
+
 `tail` is always present, a string of one line and at most 200 characters, `""` when nothing is readable. It comes from the ship's conversation, never from the terminal. Of the conversation's pending questions, tool calls and assistant items, the latest one decides:
 
 - a pending question: its text;

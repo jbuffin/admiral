@@ -80,7 +80,7 @@ const rawFormat = "#{session_name}" + sep + "#{pane_dead}" + sep + "#{pane_dead_
 	"#{@admiral-fleet-color}" + sep + "#{@admiral-harness}" + sep + "#{@admiral-dir}" + sep +
 	"#{@admiral-skill}" + sep + "#{@admiral-source}" + sep + "#{@admiral-order}" + sep +
 	"#{@admiral-launched}" + sep + "#{@admiral-title}" + sep + "#{@admiral-url}" + sep + "#{@admiral-panel}" + sep + "#{@admiral-resources}" + sep +
-	"#{@admiral-origin-source}" + sep + "#{@admiral-origin-panel}" + sep +
+	"#{@admiral-origin-source}" + sep + "#{@admiral-origin-panel}" + sep + "#{@admiral-model}" + sep + "#{@admiral-skill-kind}" + sep +
 	"#{@admiral-" + OptEnded + "}" + sep + "#{@admiral-" + OptNeedsCount + "}" + sep +
 	"#{@admiral-" + OptNeedsSecs + "}" + sep + "#{@admiral-" + OptStopSince + "}" + sep +
 	CrewNameFormat + sep + "#{pane_id}" + sep + "#{window_id}" + sep + "#{" + ActivityOption + "}" + sep +
@@ -101,7 +101,7 @@ const tailFields = 7
 
 // optionNames are in the order format lists them.
 var optionNames = []string{"name", "fleet", "fleet-name", "fleet-color", "harness", "dir",
-	"skill", "source", "order", "launched", "title", "url", "panel", "resources", "origin-source", "origin-panel", OptEnded, OptNeedsCount, OptNeedsSecs, OptStopSince}
+	"skill", "source", "order", "launched", "title", "url", "panel", "resources", "origin-source", "origin-panel", "model", "skill-kind", OptEnded, OptNeedsCount, OptNeedsSecs, OptStopSince}
 
 type Session struct {
 	Name       string

@@ -15,6 +15,7 @@ import (
 	"unicode"
 
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/repofinder"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/skillindex"
@@ -131,7 +132,8 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	// The name and the time are ours.
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
-		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")}}
+		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")},
+		{"model", req.Model}, {"skill-kind", req.Skill.Kind}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
 			return nil, refuse(http.StatusBadRequest, "%s contains a control character", o[0])
@@ -533,10 +535,14 @@ func (l *Launcher) pickName() (string, error) {
 	for _, r := range rows {
 		sessions[r[0]], shipNames[r[1]] = true, true
 	}
+	moored, _ := moor.List(l.Home)
+	for _, r := range moored {
+		shipNames[r.Name], sessions[r.Session] = true, true
+	}
 	return pickName(taken(shipNames, sessions, l.Kept)), nil
 }
 
-// A kept inbox takes a name too.
+// A kept inbox takes a name too, and so does a moored ship's record.
 func taken(shipNames, sessions map[string]bool, kept func(session string) bool) func(name string) bool {
 	return func(n string) bool {
 		return shipNames[n] || sessions[Slug(n)] || (kept != nil && kept(Slug(n)))

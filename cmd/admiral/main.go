@@ -27,6 +27,7 @@ import (
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/launchorders"
 	"github.com/jbuffin/admiral/internal/lockroute"
+	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/probes"
 	"github.com/jbuffin/admiral/internal/resources"
@@ -275,6 +276,13 @@ func serve(args []string) error {
 		return ok && (sh.Status == ships.StatusUnderway || sh.Status == ships.StatusNeedsYou)
 	}
 	inboxService.TypeResume = shipService.TypeResume
+	shipService.CaptureResume = inboxService.CaptureResume
+	shipService.GitHub = func(fleet string) moor.GitHub {
+		if c := sources.FleetGitHub(cfg.Current(), fleet); c != nil {
+			return c
+		}
+		return nil
+	}
 	changed := supervisor.OnChange
 	supervisor.OnChange = func() { changed(); inboxService.KickResume() }
 	shipService.Orders = sourceService

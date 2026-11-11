@@ -173,17 +173,38 @@ func (g *githubConn) refreshNow() {
 	}
 }
 
+// githubSettings reads a source's settings; anything but an object reads as none.
+func githubSettings(raw json.RawMessage) github.Settings {
+	var m map[string]any
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	_ = dec.Decode(&m)
+	return github.ParseSettings(m)
+}
+
+// FleetGitHub is the client of the fleet's built-in GitHub source, the first when
+// there are several, built as that source builds it; nil when the fleet has none.
+func FleetGitHub(cfg *config.Config, fleet string) *github.Client {
+	f, ok := cfg.Fleet(fleet)
+	if !ok {
+		return nil
+	}
+	for _, def := range cfg.SourceList {
+		if def.Fleet == fleet && def.Plugin == builtinGitHub {
+			s := githubSettings(def.Settings)
+			return github.NewClient(s.Host, s.Account, s.HotLabels, f.Environ())
+		}
+	}
+	return nil
+}
+
 func (g *githubConn) initialize(params any) (json.RawMessage, error) {
 	var p struct {
 		Settings json.RawMessage `json:"settings"`
 	}
 	b, _ := json.Marshal(params)
 	_ = json.Unmarshal(b, &p)
-	var m map[string]any
-	dec := json.NewDecoder(bytes.NewReader(p.Settings))
-	dec.UseNumber()
-	_ = dec.Decode(&m) // anything but an object reads as no settings
-	s := github.ParseSettings(m)
+	s := githubSettings(p.Settings)
 	g.mu.Lock()
 	g.settings = s
 	g.client = github.NewClient(s.Host, s.Account, s.HotLabels, g.env)
