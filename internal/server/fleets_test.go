@@ -131,11 +131,7 @@ func (f *fleetFixture) fleet(key string) (out struct {
 	return
 }
 
-// Route under test: PUT /api/fleets/{key}, registered in Server.Handler beside
-// GET /api/config (so it also answers under /api/v1). The body is
-// {"search_roots": [...], "owners": [...], "clone_root": "...", "color": "#RRGGBB"};
-// all four are sent. It answers 200 once the file is written and the Manager has
-// reloaded. Other keys in the body (name, docks, env) are ignored.
+// Sends all four fields; the route answers only after the Manager has reloaded.
 func TestFleetSave_EachFieldShowsInTheConfigViewRightAway(t *testing.T) {
 	f := newFleetFixture(t, fleetsFixture)
 	code, body := f.do(http.MethodPut, "/api/fleets/work", map[string]any{
@@ -283,5 +279,65 @@ func TestConfigView_FleetsCarryOwnersAndTheStoredCloneRoot(t *testing.T) {
 	code, body := f.do(http.MethodGet, "/api/config", nil)
 	if code != http.StatusOK || !strings.Contains(body, `"owners":[]`) {
 		t.Errorf("a fleet with no owners must show owners as [] not null: %s", body)
+	}
+}
+
+func TestFleetSave_AnEmptyColorAndCloneRootRemoveTheKeys(t *testing.T) {
+	f := newFleetFixture(t, fleetsFixture)
+	code, body := f.do(http.MethodPut, "/api/fleets/work", map[string]any{"color": "", "clone_root": ""})
+	if code != http.StatusOK {
+		t.Fatalf("PUT = %d %s, want 200", code, body)
+	}
+	var cfg struct {
+		Fleets map[string]map[string]json.RawMessage `json:"fleets"`
+	}
+	if err := json.Unmarshal([]byte(f.file()), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"color", "clone_root"} {
+		if _, ok := cfg.Fleets["work"][k]; ok {
+			t.Errorf("%s is still in config.json after saving it empty", k)
+		}
+	}
+	w := f.fleet("work")
+	if w.CloneRoot == nil || *w.CloneRoot != "" {
+		t.Errorf("clone_root = %v, want \"\"", w.CloneRoot)
+	}
+	if w.Color == "" || w.Color == "#112233" {
+		t.Errorf("color = %q, want the automatic color", w.Color)
+	}
+}
+
+func TestFleetSave_AFieldLeftOutStaysAsStored(t *testing.T) {
+	f := newFleetFixture(t, fleetsFixture)
+	if code, body := f.do(http.MethodPut, "/api/fleets/work", map[string]any{"owners": []string{"x"}}); code != http.StatusOK {
+		t.Fatalf("PUT = %d %s, want 200", code, body)
+	}
+	var cfg struct {
+		Fleets map[string]struct {
+			SearchRoots []string `json:"search_roots"`
+			Owners      []string `json:"owners"`
+			Color       string   `json:"color"`
+			CloneRoot   string   `json:"clone_root"`
+		} `json:"fleets"`
+	}
+	if err := json.Unmarshal([]byte(f.file()), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	w := cfg.Fleets["work"]
+	if strings.Join(w.Owners, ",") != "x" || strings.Join(w.SearchRoots, ",") != "/srv/work" ||
+		w.Color != "#112233" || w.CloneRoot != "/srv/work/clones" {
+		t.Errorf("work in config.json = %+v, want only owners changed", w)
+	}
+}
+
+func TestFleetSave_ARelativeCloneRootAnswers400(t *testing.T) {
+	f := newFleetFixture(t, fleetsFixture)
+	code, body := f.do(http.MethodPut, "/api/fleets/work", map[string]any{"clone_root": "clones"})
+	if code != http.StatusBadRequest || !strings.Contains(body, "clone_root") {
+		t.Errorf("PUT a relative clone_root = %d %s, want 400 naming clone_root", code, body)
+	}
+	if f.file() != fleetsFixture {
+		t.Error("a refused save changed config.json")
 	}
 }

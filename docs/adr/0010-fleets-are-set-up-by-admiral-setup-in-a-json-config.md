@@ -53,5 +53,8 @@ From [Grilling: how does the redesign roll out, and how do today's sources migra
 From [Grilling: settings for fleets and their order sources](https://github.com/jbuffin/admiral/issues/271):
 
 - **The setup terminal is no longer the only way to edit a fleet.** The HTTP API, and so the UI, may edit a fleet's `search_roots`, `owners`, `clone_root` and `color` (`PUT /api/fleets/{key}`). This supersedes the Decision bullet "Fleets are never edited in the UI except through the setup terminal" and the rejected "settings screen" option, for those four fields only.
-- **Docks and env stay in the setup terminal.** Executables, args and env, and the fleet's name and key, are not writable over HTTP, so a LAN browser still cannot change what runs.
+- **Docks and env stay in the setup terminal.** Executables, args and env, and the fleet's name and key, are not writable through the settings API; changing them still goes through the setup terminal (or `admiral fleet`).
 - **A built-in GitHub source stays with its fleet.** Other plugin sources can be moved to another fleet (`PUT /api/sources/{key}` with `fleet`); a GitHub source is refused, and the engineer adds one to the other fleet instead.
+- **The UI writes three parts of the file**, not two: `favorite_skills`, `sources`, and now the four fleet fields above.
+- **`clone_root` must be an absolute path or start with `~/`**, like a search root; nothing read it before, so no stored config breaks.
+- **Moving a plugin source** leaves its autopilot entries' own `fleet` as they are.

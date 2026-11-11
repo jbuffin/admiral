@@ -173,7 +173,8 @@ func EditFleet(dir, key string, f FleetFields) error {
 	fleets.Set(key, fleet.JSON())
 	_, out, err := renderKey(path, "fleets", fleets.JSON())
 	if err != nil {
-		return err
+		// renderKey reads the file again: an error from it means the file changed under us.
+		return fmt.Errorf("%w: %w", ErrConflict, err)
 	}
 	if _, err := Parse(out); err != nil {
 		return err
