@@ -52,8 +52,10 @@ type Service struct {
 
 	mu    sync.Mutex
 	reads map[string]*reader
-	tried map[string]time.Time // the last attempt at a read, good or not, for the floors
-	prev  map[string]shipSeen  // the ships as ShipsChanged last saw them; nil before the first call
+	tried map[string]time.Time    // the last attempt at a read, good or not, for the floors
+	snaps [](map[string]shipSeen) // ship snapshots ShipsChanged took, for the worker to diff in order
+	poke  chan struct{}
+	prev  map[string]shipSeen // the worker's last snapshot; nil before the first
 }
 
 type shipSeen struct{ status, key string }
@@ -65,7 +67,12 @@ type reader struct {
 }
 
 func (s *Service) background() context.Context {
-	s.once.Do(func() { s.ctx, s.cancel = context.WithCancel(context.Background()) })
+	s.once.Do(func() {
+		s.ctx, s.cancel = context.WithCancel(context.Background())
+		s.poke = make(chan struct{}, 1)
+		s.wg.Add(1)
+		go s.watchShips(s.ctx)
+	})
 	return s.ctx
 }
 
@@ -120,27 +127,39 @@ func (s *Service) startReread(id string, again bool) {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		for ctx.Err() == nil {
-			_ = s.read(ctx, id)
-			s.mu.Lock()
-			more := r.dirty
-			r.dirty = false
-			s.mu.Unlock()
-			if !more {
-				break
+		for {
+			for ctx.Err() == nil {
+				_ = s.read(ctx, id)
+				if !s.takeDirty(r) {
+					break
+				}
+			}
+			r.mu.Unlock()
+			// a request that came after the last check but before the unlock would be lost
+			if ctx.Err() != nil || !s.takeDirty(r) || !r.mu.TryLock() {
+				return
 			}
 		}
-		r.mu.Unlock()
 	}()
 }
 
-// rereadIfOlder reads now, waiting for a read under way, when the last good read is older than age.
+func (s *Service) takeDirty(r *reader) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	was := r.dirty
+	r.dirty = false
+	return was
+}
+
+// rereadIfOlder reads now, waiting for a read under way, when the last good read is older than age or a
+// forced reread is waiting.
 func (s *Service) rereadIfOlder(ctx context.Context, id string, age time.Duration) error {
 	r := s.reader(id)
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	forced := s.takeDirty(r)
 	f, ok := s.Store.Get(id)
-	if !ok || f.Ended() || (!f.ReadAt.IsZero() && s.now().Sub(f.ReadAt) <= age) {
+	if !ok || f.Ended() || (!forced && !f.ReadAt.IsZero() && s.now().Sub(f.ReadAt) <= age) {
 		return nil
 	}
 	return s.read(ctx, id)
@@ -160,6 +179,9 @@ func (s *Service) read(ctx context.Context, id string) error {
 	s.mu.Unlock()
 	tree, err := s.readTree(ctx, f.Fleet, f.URL)
 	if err != nil {
+		if ctx.Err() != nil {
+			return err // shutting down or the caller left: not a failed read
+		}
 		_ = s.Store.SetRead(id, nil, s.now(), err.Error())
 		return err
 	}
@@ -242,8 +264,8 @@ func (s *Service) Run(ctx context.Context) {
 
 func (s *Service) Connected(c *server.Client) {}
 
-// ShipsChanged is the ships' OnChange hook; it never blocks. A child's ship that anchored, is sailing off or
-// is gone rereads the campaign holding the child.
+// ShipsChanged is the ships' OnChange hook. It only takes a snapshot and pokes the worker, so it never waits on
+// the store.
 func (s *Service) ShipsChanged() {
 	if s.Ships == nil {
 		return
@@ -258,26 +280,49 @@ func (s *Service) ShipsChanged() {
 			cur[id] = shipSeen{sh.Status, k}
 		}
 	}
+	s.background()
 	s.mu.Lock()
-	prev := s.prev
-	s.prev = cur
+	s.snaps = append(s.snaps, cur)
 	s.mu.Unlock()
-	if prev == nil {
-		return
+	select {
+	case s.poke <- struct{}{}:
+	default:
 	}
-	left := map[string]bool{}
-	for id, was := range prev {
-		now, present := cur[id]
-		if !present || (leaving(now.status) && !leaving(was.status)) {
-			left[was.key] = true
+}
+
+// watchShips diffs each snapshot with the one before: a child's ship that anchored, is sailing off or is gone
+// rereads the campaign holding the child.
+func (s *Service) watchShips(ctx context.Context) {
+	defer s.wg.Done()
+	for {
+		select {
+		case <-s.poke:
+		case <-ctx.Done():
+			return
 		}
-	}
-	if len(left) == 0 {
-		return
-	}
-	for _, f := range s.Store.List() {
-		if !f.Ended() && hasChild(f.Tree, left) {
-			s.startReread(f.ID, true)
+		s.mu.Lock()
+		snaps := s.snaps
+		s.snaps = nil
+		s.mu.Unlock()
+		left := map[string]bool{}
+		for _, cur := range snaps {
+			if s.prev != nil {
+				for id, was := range s.prev {
+					now, present := cur[id]
+					if !present || (leaving(now.status) && !leaving(was.status)) {
+						left[was.key] = true
+					}
+				}
+			}
+			s.prev = cur
+		}
+		if len(left) == 0 {
+			continue
+		}
+		for _, f := range s.Store.List() {
+			if !f.Ended() && hasChild(f.Tree, left) {
+				s.startReread(f.ID, true)
+			}
 		}
 	}
 }
@@ -337,24 +382,35 @@ func find(n *campaigns.Node, url string) *campaigns.Node {
 	return nil
 }
 
-// childOf finds the active campaign holding the child at url, with its node.
-func (s *Service) childOf(url string) (Followed, *campaigns.Node, bool) {
-	for _, f := range s.Store.List() {
-		if f.Ended() {
-			continue
-		}
-		if n := find(s.view(f).Root, url); n != nil {
-			return f, n, true
-		}
+// OrderID is the order id of a campaign child: the campaign's id, a slash and the child's issue URL, so the
+// same child in two campaigns is two orders.
+func OrderID(campaignID, childURL string) string { return campaignID + "/" + childURL }
+
+// childOf finds the child an order id names in its campaign.
+func (s *Service) childOf(orderID string) (Followed, *campaigns.Node, *launcher.Error) {
+	id, url, ok := strings.Cut(orderID, "/")
+	if !ok {
+		return Followed{}, nil, orderError(http.StatusNotFound, "a campaign order id is <campaign id>/<child URL>")
 	}
-	return Followed{}, nil, false
+	f, ok := s.Store.Get(id)
+	if !ok {
+		return Followed{}, nil, orderError(http.StatusNotFound, "no such campaign")
+	}
+	if f.Ended() {
+		return Followed{}, nil, orderError(http.StatusConflict, "this campaign has ended")
+	}
+	n := find(s.view(f).Root, url)
+	if n == nil {
+		return Followed{}, nil, orderError(http.StatusNotFound, "that issue is not in this campaign")
+	}
+	return f, n, nil
 }
 
 func orderError(status int, msg string) *launcher.Error {
 	return &launcher.Error{Status: status, Msg: msg}
 }
 
-// Order answers for a campaign child (source SourceKey, id the child's issue URL) and hands the rest to Next.
+// Order answers for a campaign child (source SourceKey, id from OrderID) and hands the rest to Next.
 func (s *Service) Order(source, id string) (text, title, repo, url, panel string, err *launcher.Error) {
 	if source != SourceKey {
 		if s.Next == nil {
@@ -362,9 +418,9 @@ func (s *Service) Order(source, id string) (text, title, repo, url, panel string
 		}
 		return s.Next.Order(source, id)
 	}
-	f, n, ok := s.childOf(id)
-	if !ok {
-		return "", "", "", "", "", orderError(http.StatusNotFound, "no followed campaign has that child")
+	f, n, lerr := s.childOf(id)
+	if lerr != nil {
+		return "", "", "", "", "", lerr
 	}
 	if n.Parent {
 		return "", "", "", "", "", orderError(http.StatusBadRequest, "that issue is a parent; launch one of its children")
@@ -417,7 +473,7 @@ func (s *Service) Launched(source, id string) {
 		}
 		return
 	}
-	if f, _, ok := s.childOf(id); ok {
+	if f, _, lerr := s.childOf(id); lerr == nil {
 		s.startReread(f.ID, true)
 	}
 }

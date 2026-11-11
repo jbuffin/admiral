@@ -118,3 +118,21 @@ func TestStoreRefusesWhatIsNotFollowed(t *testing.T) {
 		t.Error("SetWorkRepo of an unknown campaign succeeded")
 	}
 }
+
+func TestStoreMovesAnUnreadableFileAsideAndStartsEmpty(t *testing.T) {
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "campaigns.json"), []byte(`{"Campaigns": [`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := openStore(t, home)
+	if got := s.List(); len(got) != 0 {
+		t.Errorf("List = %v, want none from an unreadable file", got)
+	}
+	if _, err := os.Stat(filepath.Join(home, "campaigns.json.bad")); err != nil {
+		t.Errorf("the unreadable file was not kept as campaigns.json.bad: %v", err)
+	}
+	followed(t, s)
+	if got := openStore(t, home).List(); len(got) != 1 {
+		t.Errorf("after a restart List = %d campaigns, want the one followed after the reset", len(got))
+	}
+}

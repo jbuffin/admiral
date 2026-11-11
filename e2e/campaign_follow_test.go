@@ -121,8 +121,14 @@ func TestCampaignFollowJourney(t *testing.T) {
 		t.Fatalf("launch of child 21 = %d, want 201: %s", code, body)
 	}
 	ship := decodeShip(t, body)
-	if st, held := w.campaign(c.ID).status(21); st != "underway" && held != ship.Name {
-		t.Logf("campaign view of 21 right after launch: %s held by %q", st, held)
+	var st, held string
+	for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+		if st, held = w.campaign(c.ID).status(21); st == "underway" && held == ship.Name {
+			break
+		}
+	}
+	if st != "underway" || held != ship.Name {
+		t.Fatalf("campaign view of 21 after launch = %s held by %q, want underway held by %s", st, held, ship.Name)
 	}
 
 	code, body = w.campaignLaunch(c.ID, 21)

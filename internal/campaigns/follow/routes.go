@@ -11,6 +11,7 @@ import (
 
 	"github.com/jbuffin/admiral/internal/campaigns"
 	"github.com/jbuffin/admiral/internal/launcher"
+	"github.com/jbuffin/admiral/internal/repofinder"
 )
 
 // Routes registers the campaign routes.
@@ -272,6 +273,10 @@ func (s *Service) serveWorkRepo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Give the work repo as host/owner/repo or its URL")
 		return
 	}
+	if repo != "" {
+		id, _ := repofinder.Identity(repoURL(repo))
+		repo = "https://" + id // no userinfo or query: only the identity is kept and shown
+	}
 	if err := s.Store.SetWorkRepo(f.ID, repo); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -290,6 +295,7 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		Harness     string `json:"harness"`
 		Dir         string `json:"dir"`
 		Clone       bool   `json:"clone"`
+		CloneRepo   string `json:"clone_repo"` // the repo the form showed, as for POST /api/ships
 		StartAnyway bool   `json:"start_anyway"`
 		Model       string `json:"model"`
 		Effort      string `json:"effort"`
@@ -302,7 +308,7 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	got, lerr := s.launch(r.Context(), f, body.ChildURL, body.StartAnyway, launcher.Request{
-		Fleet: f.Fleet, Harness: body.Harness, Dir: body.Dir, Clone: body.Clone, Model: body.Model, Effort: body.Effort})
+		Fleet: f.Fleet, Harness: body.Harness, Dir: body.Dir, Clone: body.Clone, CloneRepo: body.CloneRepo, Model: body.Model, Effort: body.Effort})
 	if lerr != nil {
 		writeError(w, lerr.Status, lerr.Msg)
 		return
@@ -334,12 +340,13 @@ func (s *Service) launch(ctx context.Context, f Followed, childURL string, start
 	case n.Status == campaigns.ClaimedNoShip && !startAnyway:
 		return nil, orderError(http.StatusConflict, "that issue is assigned to someone and has no ship; send start_anyway to launch it")
 	}
-	req.Source, req.OrderID = SourceKey, n.URL
+	req.Source, req.OrderID = SourceKey, OrderID(f.ID, n.URL)
 	req.Skill = launcher.Skill{Kind: n.Skill.Kind, Name: n.Skill.Name}
 	req.Text = launchText(n)
 	req.Autopilot = false
-	if req.Clone {
-		req.CloneRepo = s.repoFor(f, n)
+	// the launcher compares clone_repo with the repo's host/owner/repo identity
+	if req.Clone && req.CloneRepo == "" {
+		req.CloneRepo, _ = repofinder.Identity(s.repoFor(f, n))
 	}
 	got, lerr := s.Launch(ctx, req)
 	if lerr != nil {

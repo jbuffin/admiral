@@ -148,11 +148,11 @@ Body `{"child_url", "mode", "skill": {"kind","name","args"}}`; an empty `mode` a
 
 ### `PUT /api/campaigns/<id>/work-repo`
 
-Body `{"repo": "host/owner/repo"}` or its URL; `""` clears it. The work repo is the checkout a launch preselects, or the repo it clones, for children filed in the campaign's own repo; a child in another repo keeps its own. `400` for a value that is not a repo. Answers the campaign.
+Body `{"repo": "host/owner/repo"}` or its URL; `""` clears it. It is stored and answered as `https://host/owner/repo`, with any userinfo or query dropped. The work repo is the checkout a launch preselects, or the repo it clones, for children filed in the campaign's own repo; a child in another repo keeps its own. `400` for a value that is not a repo. Answers the campaign.
 
 ### `POST /api/campaigns/<id>/launch`
 
-Body `{"child_url", "harness", "dir" | "clone": true, "start_anyway", "model", "effort"}`. It launches through the same path as `POST /api/ships`, so its refusals are the same, with the source `campaign` and the child's issue URL as `order_id`. The server sets the ship's title, `url`, text and skill; the skill is the child's resolved one, `autopilot` is always off, and any such field in the body is ignored. A launch rereads the tree first when the last read is over a minute old. Answers `201 {"ship": ...}`, or:
+Body `{"child_url", "harness", "dir" | "clone": true, "clone_repo", "start_anyway", "model", "effort"}`; `clone_repo` is the `host/owner/repo` the form showed, as for `POST /api/ships`, and when it is omitted the server uses the work repo (or the child's own repo) it would show. It launches through the same path as `POST /api/ships`, so its refusals are the same, with the source `campaign` and `<campaign id>/<child issue URL>` as `order_id`, so a child in two followed campaigns is two orders, each answered with its own campaign's skill, text, repo and panel (the campaign id). The claim is still by the child's issue URL alone: one ship holds the child in every campaign. The server sets the ship's title, `url`, text and skill; the skill is the child's resolved one, `autopilot` is always off, and any such field in the body is ignored. A launch rereads the tree first when the last read is over a minute old. Answers `201 {"ship": ...}`, or:
 
 - `404`: the issue is not in the campaign;
 - `400`: it is a nested parent;

@@ -83,6 +83,14 @@ func safeURL(raw string) string {
 	return raw
 }
 
+func positiveInt(raw json.RawMessage) int {
+	var n int
+	if json.Unmarshal(raw, &n) != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
 func decodeInto(raw json.RawMessage, v any) error {
 	if err := json.Unmarshal(raw, v); err != nil {
 		return fmt.Errorf("unexpected shape: %v", err)
@@ -135,7 +143,7 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 		Repo   *string  `json:"repo"`
 		Labels []string `json:"labels"`
 		// Sub-issues is the count a GitHub issue has, read by the built-in source only.
-		SubIssues *int `json:"sub_issues"`
+		SubIssues json.RawMessage `json:"sub_issues"` // anything but a positive integer is dropped
 	}
 	if err := decodeInto(raw, &items); err != nil {
 		return nil, fmt.Errorf("orders.list: %w", err)
@@ -189,8 +197,8 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 			}
 		}
 		o.Hot = it.Hot != nil && *it.Hot
-		if it.SubIssues != nil && *it.SubIssues > 0 {
-			o.SubIssues = *it.SubIssues
+		if n := positiveInt(it.SubIssues); n > 0 {
+			o.SubIssues = n
 		}
 		out = append(out, o)
 	}

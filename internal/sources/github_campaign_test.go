@@ -55,3 +55,18 @@ func TestViewHidesAnOrderWhoseIssueAShipHolds(t *testing.T) {
 		t.Errorf("bugs view = %v, want only acme/widgets#13: a ship holds the issue of #12", got)
 	}
 }
+
+func TestParseOrdersDropsASubIssueCountThatIsNotAPositiveInteger(t *testing.T) {
+	raw := `[{"id":"a","title":"A","text":"a","sub_issues":"3"},{"id":"b","title":"B","text":"b","sub_issues":2.5},` +
+		`{"id":"c","title":"C","text":"c","sub_issues":-1},{"id":"d","title":"D","text":"d","sub_issues":4}]`
+	got, err := parseOrders([]byte(raw))
+	if err != nil {
+		t.Fatalf("parseOrders: %v; a bad sub_issues must not fail the list", err)
+	}
+	want := []int{0, 0, 0, 4}
+	for i, o := range got {
+		if o.SubIssues != want[i] {
+			t.Errorf("order %s sub-issues = %d, want %d", o.ID, o.SubIssues, want[i])
+		}
+	}
+}

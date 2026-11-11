@@ -152,7 +152,7 @@ func TestOrderAnswersACampaignChildAndPassesOthersOn(t *testing.T) {
 		{28, "Issue 28 https://github.com/acme/other/issues/28", "Issue 28", "https://github.com/acme/other/issues/28", "https://github.com/acme/other"},
 	}
 	for _, tc := range cases {
-		text, title, repo, url, panel, err := r.svc.Order(SourceKey, tc.url)
+		text, title, repo, url, panel, err := r.svc.Order(SourceKey, OrderID(c.ID, tc.url))
 		if err != nil || text != tc.text || title != tc.title || url != tc.url || repo != tc.repo || panel != c.ID {
 			t.Errorf("Order(campaign, %d) = text %q title %q repo %q url %q panel %q err %v\nwant text %q title %q repo %q url %q panel %q",
 				tc.child, text, title, repo, url, panel, err, tc.text, tc.title, tc.repo, tc.url, c.ID)
@@ -175,7 +175,7 @@ func TestOrderPrefersTheWorkRepoThenTheChildsOwn(t *testing.T) {
 	r := newRig(t, fixtureTree())
 	c := r.follow(rootURL)
 	r.do("PUT", "/api/campaigns/"+c.ID+"/work-repo", map[string]string{"repo": "https://github.com/acme/work"})
-	_, _, repo, _, _, err := r.svc.Order(SourceKey, issURL(21))
+	_, _, repo, _, _, err := r.svc.Order(SourceKey, OrderID(c.ID, issURL(21)))
 	if err != nil || repo != "https://github.com/acme/work" {
 		t.Errorf("repo = %q err %v, want the work repo first", repo, err)
 	}
@@ -183,9 +183,9 @@ func TestOrderPrefersTheWorkRepoThenTheChildsOwn(t *testing.T) {
 
 func TestLaunchedAnOrderRereadsTheCampaign(t *testing.T) {
 	r := newRig(t, fixtureTree())
-	r.follow(rootURL)
+	c := r.follow(rootURL)
 	before := r.gh.rootReads()
-	r.svc.Launched(SourceKey, issURL(21))
+	r.svc.Launched(SourceKey, OrderID(c.ID, issURL(21)))
 	eventually(t, "a reread after Launched", func() bool { return r.gh.rootReads() > before })
 }
 
@@ -201,8 +201,8 @@ func TestLaunchHandsTheLauncherAClaimedSourceOrderWithAutopilotOff(t *testing.T)
 		t.Fatalf("Launch called %d times, want once", len(got))
 	}
 	q := got[0]
-	if q.Source != SourceKey || q.OrderID != issURL(21) || q.Fleet != "work" || q.Harness != "claude" {
-		t.Errorf("request = %+v, want source campaign, order id the child URL, fleet work, harness claude", q)
+	if q.Source != SourceKey || q.OrderID != OrderID(c.ID, issURL(21)) || q.Fleet != "work" || q.Harness != "claude" {
+		t.Errorf("request = %+v, want source campaign, order id campaign/child URL, fleet work, harness claude", q)
 	}
 	if q.Skill.Kind != "commodore" || q.Autopilot {
 		t.Errorf("skill %+v autopilot %v, want commodore with Autopilot false even though the body asked for it", q.Skill, q.Autopilot)
@@ -429,4 +429,79 @@ func closeAll(i iss, root, leaves bool) iss {
 
 func writeFail(g *fakeGH, key, msg string) error {
 	return writeFile(g.dir+"/resp/"+key+".fail", msg)
+}
+
+func TestCloneLaunchCarriesTheRepoInTheLaunchersIdentityForm(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	c := r.follow(rootURL)
+	r.do("PUT", "/api/campaigns/"+c.ID+"/work-repo", map[string]string{"repo": "https://github.com/Acme/Work"})
+	if code, body := r.launch(c.ID, map[string]any{"child_url": issURL(21), "harness": "claude", "clone": true}); code != http.StatusCreated {
+		t.Fatalf("clone launch = %d %s, want 201", code, body)
+	}
+	if code, body := r.launch(c.ID, map[string]any{"child_url": issURL(24), "harness": "claude", "clone": true, "clone_repo": "github.com/acme/shown"}); code != http.StatusCreated {
+		t.Fatalf("clone launch with clone_repo = %d %s, want 201", code, body)
+	}
+	got := r.launches()
+	if len(got) != 2 || !got[0].Clone || got[0].CloneRepo != "github.com/acme/work" || got[1].CloneRepo != "github.com/acme/shown" {
+		t.Errorf("launches = %+v, want clone with host/owner/repo %q, and the form's clone_repo passed through", got, "github.com/acme/work")
+	}
+}
+
+func TestTheWorkRepoIsKeptAsItsIdentityWithoutUserinfo(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	c := r.follow(rootURL)
+	code, body := r.do("PUT", "/api/campaigns/"+c.ID+"/work-repo", map[string]string{"repo": "https://user:fake-secret-1@github.com/acme/work?x=1"})
+	if code != http.StatusOK || strings.Contains(string(body), "fake-secret-1") {
+		t.Fatalf("work-repo = %d %s, want 200 with no userinfo in the answer", code, body)
+	}
+	if got := r.get(c.ID).WorkRepo; got != "https://github.com/acme/work" {
+		t.Errorf("work repo = %q, want https://github.com/acme/work", got)
+	}
+}
+
+func TestTheSameChildInTwoCampaignsLaunchesWithEachCampaignsOwnChoices(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	a := r.follow(rootURL)
+	other := iss{num: 30, labels: []string{"wayfinder:map"}, kids: []iss{{num: 21, labels: []string{"ready-for-agent"}}}}
+	r.gh.set(other)
+	b := r.follow(issURL(30))
+	r.do("PUT", "/api/campaigns/"+a.ID+"/work-repo", map[string]string{"repo": "https://github.com/acme/worka"})
+	r.do("PUT", "/api/campaigns/"+b.ID+"/work-repo", map[string]string{"repo": "https://github.com/acme/workb"})
+	r.do("PUT", "/api/campaigns/"+b.ID+"/override", map[string]any{"child_url": issURL(21), "mode": "with-you", "skill": map[string]string{"kind": "none"}})
+
+	for id, want := range map[string]struct{ kind, repo string }{a.ID: {"commodore", "https://github.com/acme/worka"}, b.ID: {"none", "https://github.com/acme/workb"}} {
+		text, _, repo, _, panel, err := r.svc.Order(SourceKey, OrderID(id, issURL(21)))
+		if err != nil || repo != want.repo || panel != id {
+			t.Errorf("Order in campaign %s = repo %q panel %q err %v, want repo %q and its own panel", id, repo, panel, err, want.repo)
+		}
+		if (want.kind == "none") != strings.HasPrefix(text, "Issue 21 ") {
+			t.Errorf("Order in campaign %s text = %q, want the title and URL only when the campaign's override has no skill", id, text)
+		}
+	}
+	if code, body := r.launch(a.ID, map[string]any{"child_url": issURL(21), "harness": "claude", "dir": "/work/x"}); code != http.StatusCreated {
+		t.Fatalf("launch from A = %d %s", code, body)
+	}
+	r.mu.Lock()
+	r.claims[issURL(21)] = "calm-otter" // the ship the first launch made
+	r.mu.Unlock()
+	if code, body := r.launch(b.ID, map[string]any{"child_url": issURL(21), "harness": "claude", "dir": "/work/x"}); code != http.StatusConflict || !strings.Contains(body, "calm-otter") {
+		t.Errorf("launch from B while a ship holds the child = %d %s, want 409 naming the ship", code, body)
+	}
+	got := r.launches()
+	if len(got) != 1 || got[0].OrderID != OrderID(a.ID, issURL(21)) {
+		t.Errorf("launches = %+v, want only A's, with A's campaign in the order id", got)
+	}
+}
+
+func TestShutdownIsNotRecordedAsAReadError(t *testing.T) {
+	r := newRig(t, fixtureTree())
+	c := r.follow(rootURL)
+	r.gh.delay(2 * time.Second)
+	r.clock.Advance(10 * time.Minute)
+	r.svc.Tick()
+	time.Sleep(200 * time.Millisecond)
+	r.svc.Close()
+	if got := r.get(c.ID).ReadErr; got != "" {
+		t.Errorf("read error after shutdown = %q, want none", got)
+	}
 }

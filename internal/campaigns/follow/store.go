@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -54,8 +53,12 @@ func OpenStore(home string) (*Store, error) {
 		return nil, err
 	}
 	var file struct{ Campaigns []Followed }
-	if err := json.Unmarshal(b, &file); err != nil {
-		return nil, fmt.Errorf("%s: %w", s.path, err)
+	if json.Unmarshal(b, &file) != nil {
+		// as state.json: a file that can't be read is kept aside and Admiral starts with no campaigns
+		if err := os.Rename(s.path, s.path+".bad"); err != nil {
+			return nil, err
+		}
+		return s, nil
 	}
 	s.list = file.Campaigns
 	return s, nil
@@ -75,6 +78,9 @@ func (s *Store) save() error {
 		return err
 	}
 	_, werr := tmp.Write(b)
+	if werr == nil {
+		werr = tmp.Sync()
+	}
 	if cerr := tmp.Close(); werr == nil {
 		werr = cerr
 	}
