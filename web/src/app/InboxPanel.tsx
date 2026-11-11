@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { fleets, fleetSearch } from './fleets';
 import { createInboxQueue, type Entry } from './inbox';
+import { Peek } from './Peek';
+import { peekKey } from './peekLink';
 import { entryAge, fleetLabel, rowShip, rowVerb } from './inboxRow';
-import { go, shipPath } from './router';
-import { inboxItems, ships } from './shipsLink';
+import { go, loc, peekOf, peekPath, surfacePath } from './router';
+import { inboxItems, inboxLoaded, ships, shipsLoaded } from './shipsLink';
 import { emptyLine, type Surface } from './surfaces';
 
 const ANSWER = new Set(['question', 'stop']);
 
-function Row({ e, now, phone }: { e: Entry; now: number; phone: boolean }) {
+function Row({ e, now, phone, selected }: { e: Entry; now: number; phone: boolean; selected: boolean }) {
   const [open, setOpen] = useState(false);
   const fleet = fleetLabel(e, fleets.value);
   const notice = e.item?.kind === 'notice';
@@ -16,6 +18,7 @@ function Row({ e, now, phone }: { e: Entry; now: number; phone: boolean }) {
   const title = e.item?.title ?? (e.crew ? '' : ship?.title ?? '');
   const age = entryAge(e, now);
   const search = fleetSearch.value;
+  const href = peekPath({ session: e.session, ...(e.type === 'item' ? { item: e.id } : e.crew ? { crew: e.crew.name } : {}) });
   const body = (
     <>
       {fleet && phone ? <span class="ship-bar" style={{ background: fleet.fill }} aria-hidden="true" /> : null}
@@ -44,7 +47,7 @@ function Row({ e, now, phone }: { e: Entry; now: number; phone: boolean }) {
     );
   }
   return (
-    <li class="ship-row inbox-row">
+    <li class={`ship-row inbox-row${selected ? ' selected' : ''}`}>
       {notice ? (
         <>
           <button type="button" class="ship-link inbox-link" aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -55,11 +58,12 @@ function Row({ e, now, phone }: { e: Entry; now: number; phone: boolean }) {
       ) : (
         <a
           class="ship-link inbox-link"
-          href={shipPath(e.session) + search}
+          href={href + search}
+          aria-current={selected ? 'true' : undefined}
           onClick={(ev) => {
             if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
             ev.preventDefault();
-            go(shipPath(e.session), search);
+            go(href, search);
           }}
         >
           {body}
@@ -100,6 +104,27 @@ export function InboxPanel({ surface, title, phone }: { surface: Surface; title:
     { id: 'review', title: 'To review', rows: entries.filter((e) => !ANSWER.has(e.type === 'stop' ? 'stop' : e.item!.kind)) },
   ].filter((g) => g.rows.length > 0);
 
+  const peek = peekOf(loc.value.path);
+  const key = peek ? peekKey(peek) : '';
+  const open = peek ? entries.find((e) => e.key === key) : undefined;
+  const ready = peek ? (peek.item !== undefined ? inboxLoaded.value : shipsLoaded.value) : false;
+  const search = fleetSearch.value;
+  // The entry as last seen: an answer's push can reach the page before its response, and the fold still needs the entry.
+  const seen = useRef<Entry | undefined>(undefined);
+  if (open) seen.current = open;
+  const known = seen.current?.key === key ? seen.current : undefined;
+  // Peek closes as soon as its entry folds or leaves the queue, and the list shows the fold. A path whose entry never arrived stays open.
+  const closing = peek !== null && ready && (open ? open.folded !== null : known !== undefined);
+  useEffect(() => {
+    if (closing) go(surfacePath(surface), search, true);
+  }, [closing]);
+
+  const fold = (text: string) => {
+    queue.fold(key, text, Date.now(), known);
+    setRev((n) => n + 1);
+  };
+  const detail = open && !closing ? <Peek key={open.key} entry={open} fold={fold} /> : null;
+
   if (entries.length === 0) {
     return (
       <main class="panel">
@@ -108,8 +133,9 @@ export function InboxPanel({ surface, title, phone }: { surface: Surface; title:
       </main>
     );
   }
-  return (
-    <main class="panel">
+  if (phone && detail) return <main class="panel peek-panel">{detail}</main>;
+  const list = (
+    <main class={phone ? 'panel' : 'panel inbox-list'}>
       {title ? <h1>{surface.title}</h1> : null}
       {phone ? null : <p class="line">Oldest first</p>}
       {groups.map((g) => (
@@ -119,12 +145,19 @@ export function InboxPanel({ surface, title, phone }: { surface: Surface; title:
           </h2>
           <ul class="ship-list">
             {g.rows.map((e) => (
-              <Row key={e.key} e={e} now={now} phone={phone} />
+              <Row key={e.key} e={e} now={now} phone={phone} selected={open?.key === e.key && !closing} />
             ))}
           </ul>
         </section>
       ))}
       {phone ? <p class="line">Every fleet, oldest first.</p> : null}
     </main>
+  );
+  if (phone) return list;
+  return (
+    <div class="inbox-split">
+      {list}
+      <div class="panel peek-panel">{detail}</div>
+    </div>
   );
 }

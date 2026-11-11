@@ -125,4 +125,9 @@ describe('lastTurn', () => {
   it('is just the message when the ship has not answered it yet', () => {
     expect(ids(lastTurn([mk('a0', 'assistant'), mk('u', 'user')]))).toEqual(['u']);
   });
+
+  it('does not start at a meta user item, which the chat does not show', () => {
+    const items = [mk('u1', 'user'), mk('a1', 'assistant'), { ...mk('m', 'user'), meta: true }, mk('a2', 'assistant')];
+    expect(ids(lastTurn(items))).toEqual(['u1', 'a1', 'm', 'a2']);
+  });
 });

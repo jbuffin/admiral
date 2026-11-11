@@ -7,6 +7,8 @@ export const ships = signal<Ship[]>([]);
 export const shipsLoaded = signal(false);
 // The items of the latest inbox message; each message replaces the last.
 export const inboxItems = signal<InboxItem[]>([]);
+// False until the first inbox message, so a Peek on a file item does not close before its item has arrived.
+export const inboxLoaded = signal(false);
 export const sources = signal<Source[]>([]);
 export const resources = signal<Resource[]>([]);
 export const shipsLink = signal<'connecting' | 'open' | 'reconnecting' | 'signed-out'>('connecting');
@@ -70,7 +72,10 @@ export function watchShips(): () => void {
       if (msg.type === 'ships') {
         ships.value = msg.ships ?? [];
         shipsLoaded.value = true;
-      } else if (msg.type === 'inbox') inboxItems.value = msg.items ?? [];
+      } else if (msg.type === 'inbox') {
+        inboxItems.value = msg.items ?? [];
+        inboxLoaded.value = true;
+      }
       else if (msg.type === 'sources') sources.value = msg.sources ?? [];
       else if (msg.type === 'resources') resources.value = msg.resources ?? [];
     };
