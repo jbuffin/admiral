@@ -5,10 +5,9 @@ import { announceLaunch, dragging, forgetOpener, launching, newShip, returnFocus
 import { LogoFlag } from './Logos';
 import { Modal } from './Modal';
 import { phoneTab } from './PhoneShell';
-import { launchHint, resources } from './resources';
 import { ships } from './ships';
 import { phone } from './sizeClass';
-import { api, isWebUrl, sources } from './sources';
+import { api, isWebUrl } from './sources';
 
 interface DirEntry {
   path: string;
@@ -100,7 +99,7 @@ function Star({ on, name, onToggle }: { on: boolean; name: string; onToggle: () 
 }
 
 function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
-  const { source = '', panel, order, harness } = launching.value!;
+  const { source = '', order, harness } = launching.value!;
   const h = harnesses[harness];
   const close = () => {
     launching.value = null;
@@ -132,7 +131,6 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
   const skillBox = useRef<HTMLDivElement>(null);
   const asked = useRef(0);
   const favNames = config.value?.favorite_skills ?? [];
-  const hint = order ? launchHint(sources.value, source, panel, resources.value) : null;
 
   useEffect(() => {
     let live = true;
@@ -330,7 +328,6 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
               <span class="launch-order-title">{titleOf(order.title)}</span>
             </div>
           )}
-          {hint && <p class="launch-warn">{hint}</p>}
 
           {dirsError ? (
             <p class="launch-note">{dirsError}</p>

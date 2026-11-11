@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
-import { AutopilotSettings } from './AutopilotSettings';
+import { useEffect, useState } from 'preact/hooks';
 import { touchKeyboard } from './keys';
 import { OrderItem } from './OrderItem';
 import { gripKey, pressGrip, reordering, savePanelOrder } from './reorder';
@@ -30,16 +29,6 @@ export function SourceProblem({ sourceKey, message, extra }: { sourceKey: string
         </button>
       )}
     </div>
-  );
-}
-
-export function AutopilotBadge({ paused }: { paused: boolean }) {
-  return (
-    <span class={paused ? 'autopilot-badge paused' : 'autopilot-badge'} role="img" aria-label={paused ? 'Autopilot paused' : 'Autopilot on'}>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        {paused ? <path d="M9 5v14M15 5v14" /> : <path d="M12 3l9 18-9-4-9 4z" />}
-      </svg>
-    </span>
   );
 }
 
@@ -90,10 +79,7 @@ export function PanelSection({ view }: { view: PanelView }) {
   const lifted = reordering.value?.group === group && reordering.value.key === panel.id;
   const open = !panelCollapsed(view.key);
   const [refusal, setRefusal] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const gear = useRef<HTMLButtonElement>(null);
   const total = orders.length;
-  const autopilot = panel.autopilot;
   return (
     <section class={lifted ? 'panel lifted' : 'panel'} id={`panel-${view.key}`} aria-label={view.title} data-reorder={group} data-key={panel.id}>
       <div class="panel-head">
@@ -109,37 +95,6 @@ export function PanelSection({ view }: { view: PanelView }) {
           {total}
         </span>
         <div class="panel-actions">
-          {autopilot?.enabled && (
-            <>
-              <AutopilotBadge paused={autopilot.paused} />
-              <button
-                type="button"
-                class="icon-button press"
-                aria-label={autopilot.paused ? 'Resume autopilot' : 'Pause autopilot'}
-                onClick={async () => {
-                  const r = await api('PUT', sourcePath(source.key, `/panels/${encodeURIComponent(panel.id)}/autopilot`), { paused: !autopilot.paused });
-                  setRefusal(r.ok ? null : r.error);
-                }}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">
-                  {autopilot.paused ? <path d="M7 4l13 8-13 8z" /> : <path d="M7 4h3v16H7zM14 4h3v16h-3z" />}
-                </svg>
-              </button>
-            </>
-          )}
-          <button
-            ref={gear}
-            type="button"
-            class="icon-button press"
-            aria-label={`Autopilot settings for ${view.title}`}
-            aria-haspopup="dialog"
-            onClick={() => setSettingsOpen(true)}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1" />
-            </svg>
-          </button>
           {declares(source, 'refresh') && (
             <button
               type="button"
@@ -158,19 +113,6 @@ export function PanelSection({ view }: { view: PanelView }) {
           )}
         </div>
       </div>
-      {settingsOpen && (
-        <AutopilotSettings
-          sourceKey={source.key}
-          panelId={panel.id}
-          panelTitle={view.title}
-          hadAutopilot={!!autopilot}
-          onClose={() => {
-            setSettingsOpen(false);
-            setTimeout(() => gear.current?.focus(), 0); // a tap leaves WebKit's focus on <body>, so the dialog's own restore has nothing to return to
-          }}
-        />
-      )}
-      {autopilot && autopilot.waiting_for.length > 0 && <p class="panel-waiting">waiting for {autopilot.waiting_for.join(', ')}</p>}
       {open && (
         <div class="panel-body">
           {source.state === 'auth_required' && source.auth && <SignInCard auth={source.auth} />}

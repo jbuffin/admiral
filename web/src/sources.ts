@@ -11,20 +11,11 @@ export interface Order {
   labels?: string[];
 }
 
-export interface PanelAutopilot {
-  enabled: boolean;
-  paused: boolean;
-  max_ships: number;
-  resources: string[];
-  waiting_for: string[];
-}
-
 export interface Panel {
   id: string;
   title: string;
   orders: Order[];
   error?: string | null;
-  autopilot?: PanelAutopilot | null;
 }
 
 export interface Auth {
@@ -63,7 +54,6 @@ export interface PluginInfo {
 // the two states apart.
 export const sources = signal<Source[] | null>(null);
 export const sourcesLoaded = computed(() => sources.value !== null);
-export const anyAutopilot = computed(() => !!sources.value?.some((s) => s.views.some((p) => p.autopilot?.enabled)));
 
 onMessage('sources', (msg) => (sources.value = msg.sources));
 
