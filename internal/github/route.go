@@ -46,7 +46,7 @@ func NewRouter(fleets []RouteFleet) *Router {
 			repoClaims[id], repoOrder = claim(repoClaims[id], repoOrder, id, f.Key)
 		}
 		for _, o := range f.Owners {
-			o = strings.ToLower(o)
+			o = strings.ToLower(strings.TrimSpace(o))
 			ownerClaims[o], ownerOrder = claim(ownerClaims[o], ownerOrder, o, f.Key)
 		}
 	}
