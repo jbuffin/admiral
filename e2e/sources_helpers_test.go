@@ -378,9 +378,18 @@ func (p *tplug) waitCall(d time.Duration, method string, pred func(rpcCall) bool
 	}
 }
 
+// pid waits for the plugin to write its pid, which it does just after it
+// records its start.
 func (p *tplug) pid() int {
-	n, _ := strconv.Atoi(p.read("pid"))
-	return n
+	p.t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if n, _ := strconv.Atoi(p.read("pid")); n > 0 {
+			return n
+		}
+		if time.Now().After(deadline) {
+			p.t.Fatalf("within 5s the plugin wrote no pid")
+		}
+	}
 }
 
 func (p *tplug) waitDead(d time.Duration, pid int, what string) {
