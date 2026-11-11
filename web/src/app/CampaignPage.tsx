@@ -4,9 +4,11 @@ import { call } from './api';
 import {
   blockerLine,
   campaignMeta,
+  canJoinSlice,
   childShipsKey,
   groupChildren,
   hasUnreadable,
+  keepSelectable,
   overrideBody,
   safeHref,
   kindLabel,
@@ -353,7 +355,8 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [missing, setMissing] = useState('');
   const [pickedUrl, setPickedUrl] = useState('');
-  const [launching, setLaunching] = useState<{ node: CampaignNode; anyway: boolean } | null>(null);
+  const [launching, setLaunching] = useState<{ node: CampaignNode; anyway: boolean; slice?: CampaignNode[] } | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
   const [refreshFailed, setRefreshFailed] = useState(false);
   const [unfollowError, setUnfollowError] = useState('');
   const fastSince = useRef<number | null>(null);
@@ -416,6 +419,9 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
   const kind = kindLabel(campaign.root?.labels);
   const picked = children.find((c) => c.url === pickedUrl) ?? null;
   const canStart = !!fleet && fleet.docks.length > 0;
+  const sliceCtx = { ended: campaign.ended, canStart };
+  const checked = keepSelectable(selected, children, sliceCtx, ships.value);
+  const toggle = (url: string) => setSelected(checked.includes(url) ? checked.filter((u) => u !== url) : [...checked, url]);
 
   const unfollow = async () => {
     setUnfollowError('');
@@ -492,9 +498,15 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
           <ul class="ti-list">
             {g.rows.map((r) => {
               const ship = shipName(r.node);
+              const joinable = canJoinSlice(r.node, sliceCtx, ships.value);
               const blockers = (r.node.blockers ?? []).map((b) => b.title || b.url);
               return (
-                <li key={r.node.url}>
+                <li key={r.node.url} class={joinable ? 'ti-pickable' : undefined}>
+                  {joinable ? (
+                    <label class="ti-pick">
+                      <input type="checkbox" aria-label={r.node.title} checked={checked.includes(r.node.url)} onChange={() => toggle(r.node.url)} />
+                    </label>
+                  ) : null}
                   <button type="button" class="ti" onClick={() => setPickedUrl(r.node.url)}>
                     <span class="mono ti-num">#{r.node.number}</span>
                     <span class="ti-type">{typeLabel(r.node.labels)}</span>
@@ -514,6 +526,16 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
               );
             })}
           </ul>
+          {g.key === 'ready-without-you' && checked.length >= 2 ? (
+            <div class="slice-bar">
+              <button type="button" class="btn primary" onClick={() => setLaunching({ node: children.find((c) => c.url === checked[0])!, anyway: false, slice: checked.map((u) => children.find((c) => c.url === u)!) })}>
+                Launch slice ({checked.length})
+              </button>
+              <button type="button" class="btn quiet" onClick={() => setSelected([])}>
+                Clear
+              </button>
+            </div>
+          ) : null}
         </section>
       ))}
       {picked ? (
@@ -535,9 +557,12 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
       {launching && fleet && fleet.docks.length > 0 ? (
         <LaunchForm
           fleet={fleet}
-          campaign={{ campaignId: campaign.id, url: launching.node.url, title: launching.node.title, mode: launching.node.mode ?? 'with-you', skill: launching.node.skill, startAnyway: launching.anyway }}
+          campaign={{ campaignId: campaign.id, url: launching.node.url, ...(launching.slice && { issues: launching.slice.map((c) => c.url) }), title: launching.slice ? `${launching.slice.length} children: ${launching.node.title}` : launching.node.title, mode: launching.node.mode ?? 'with-you', skill: launching.node.skill, startAnyway: launching.anyway }}
           onClose={() => setLaunching(null)}
-          onLaunched={() => void load()}
+          onLaunched={() => {
+            setSelected([]);
+            void load();
+          }}
         />
       ) : null}
     </main>

@@ -118,7 +118,7 @@ export function seedCampaignFleet(a: Admiral) {
   a.flags('orders').orders({
     orders: [
       ...ORDERS,
-      { id: 'ord-annex', title: T.annex, text: 'Follow it.', url: issueUrl(ANNEX), sub_issues: 2 },
+      { id: 'ord-annex', title: T.annex, text: 'Follow it.', url: issueUrl(ANNEX), sub_issues: ANNEX_KIDS.length },
       { id: 'ord-hangar', title: T.hangar, text: 'Paint it.', url: issueUrl(99) },
     ],
   });
