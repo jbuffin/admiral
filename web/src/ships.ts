@@ -140,10 +140,11 @@ function arrive(session: string): void {
   }, SAIL_IN_MS);
 }
 
-onMessage('ships', (msg: { ships: WireShip[] }) => {
+onMessage('ships', (msg: { ships: (Omit<WireShip, 'status'> & { status: WireShip['status'] | 'moored' })[] }) => {
+  // This UI has no place for a moored ship: nothing to board, no state to draw.
+  const now = msg.ships.filter((s): s is WireShip => s.status !== 'moored');
   const before = new Map(ships.value.map((s) => [s.session, s]));
   const first = baseline;
-  const now = msg.ships;
   for (const [session, at] of announced) if (Date.now() - at > ANNOUNCED_MS) announced.delete(session);
   for (const s of now) {
     const was = before.get(s.session);

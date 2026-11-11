@@ -18,7 +18,15 @@ export interface Fleet {
   docks: Dock[];
 }
 
-export type ShipStatus = 'needs_you' | 'underway' | 'anchored' | 'sailing_off';
+export type ShipStatus = 'needs_you' | 'underway' | 'moored' | 'anchored' | 'sailing_off';
+export interface MooredPR {
+  url: string;
+  state: string;
+  review: string;
+  checks: string;
+  mergeable: string;
+  conflicts: boolean;
+}
 export interface Ship {
   session: string;
   name: string;
@@ -31,6 +39,11 @@ export interface Ship {
   fleet_color: string;
   launched: string;
   crew_live: number;
+  // Set on a moored ship; `stale` is omitted while false.
+  moored_at?: string;
+  polled_at?: string;
+  stale?: boolean;
+  prs?: MooredPR[];
 }
 
 const API = '/api/v1';

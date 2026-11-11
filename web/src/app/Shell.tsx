@@ -6,12 +6,13 @@ import { FleetSwitcher } from './FleetSwitcher';
 import { Icon } from './Icon';
 import { Preferences } from './Preferences';
 import { Sheet } from './Sheet';
-import { GROUP_TITLES, groupShips, shipAge } from './shipList';
+import { GROUP_TITLES, groupShips, shipRowAge } from './shipList';
+import { prChips, prLabel, staleNote } from './moored';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
 import { ships, shipsLoaded, sources } from './shipsLink';
 import { StatusGlyph } from './StatusGlyph';
-import type { Ship } from './api';
+import { call, type Ship } from './api';
 import { go, loc, surfaceOf, surfacePath } from './router';
 import { emptyLine, MORE, PHONE_TABS, SURFACES, surfaceById, type Surface } from './surfaces';
 
@@ -75,10 +76,54 @@ function useNow() {
   return now;
 }
 
+function MooredPRs({ ship, now }: { ship: Ship; now: number }) {
+  const note = staleNote(ship, now);
+  return (
+    <>
+      {(ship.prs ?? []).map((pr) => (
+        <span key={pr.url} class="ship-pr">
+          <a class="pr-link" href={pr.url} target="_blank" rel="noreferrer">
+            {prLabel(pr.url)}
+          </a>
+          {prChips(pr).map((c) => (
+            <span key={c.text} class={`chip chip-${c.tone}`}>
+              {c.text}
+            </span>
+          ))}
+        </span>
+      ))}
+      {note ? <span class="ship-tail">{note}</span> : null}
+    </>
+  );
+}
+
+function MooredActions({ ship, onError }: { ship: Ship; onError: (e: string) => void }) {
+  const [busy, setBusy] = useState('');
+  const act = async (route: string) => {
+    setBusy(route);
+    onError('');
+    const res = await call('POST', `/ships/${encodeURIComponent(ship.session)}/${route}`);
+    if (!res.ok) onError(res.error);
+    setBusy('');
+  };
+  return (
+    <div class="ship-actions">
+      <button type="button" class="btn" disabled={busy !== ''} onClick={() => act('dismiss')}>
+        Dismiss
+      </button>
+      <button type="button" class="btn" disabled={busy !== ''} onClick={() => act('unfollow')}>
+        Don't follow reviews
+      </button>
+    </div>
+  );
+}
+
 function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
   const meta = ship.crew_live > 0 ? `${ship.crew_live} crew` : '';
+  const moored = ship.status === 'moored';
+  const [error, setError] = useState('');
   return (
-    <li class="ship-row">
+    <li class={moored ? 'ship-row moored' : 'ship-row'}>
       <span class="ship-bar" style={{ background: bar }} aria-hidden="true" />
       <Flag harness={ship.harness} size="row" />
       <div class="ship-main">
@@ -89,11 +134,18 @@ function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
           </span>
         ) : null}
         {ship.tail ? <span class="ship-tail">{ship.tail}</span> : null}
+        {moored ? <MooredPRs ship={ship} now={now} /> : null}
+        {moored ? <MooredActions ship={ship} onError={setError} /> : null}
       </div>
       <div class="ship-side">
         {meta ? <span class="ship-meta">{meta}</span> : null}
-        <span class="ship-age">{shipAge(ship.launched, now)}</span>
+        <span class="ship-age">{shipRowAge(ship, now)}</span>
       </div>
+      {error ? (
+        <p class="alert" role="alert">
+          {error}
+        </p>
+      ) : null}
     </li>
   );
 }
@@ -132,6 +184,11 @@ function ShipsPanel({ surface, title }: { surface: Surface; title: boolean }) {
   const now = useNow();
   const fleet = activeFleet.value;
   const groups = fleet ? groupShips(ships.value, fleet.key) : [];
+  const fleetKey = fleet?.key;
+  // Fire and forget: the poller pushes the new chips over the ships socket.
+  useEffect(() => {
+    if (fleetKey) void call('POST', '/moored/refresh');
+  }, [fleetKey]);
   const [launching, setLaunching] = useState<{ order?: OrderRef } | null>(null);
   const launch = fleet && fleet.docks.length > 0 ? (
     <button type="button" class="btn primary launch-open" onClick={() => setLaunching({})}>
