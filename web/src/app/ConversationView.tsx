@@ -263,7 +263,7 @@ export function ConversationView({
   }, [count, working, conv.state]);
 
   if (conv.state === "loading") return <p class="line">Loading…</p>;
-  // A permission card needs no transcript; the other states keep their own Open terminal card.
+  // A card needs no transcript, so it shows whatever the conversation's state.
   const answer = (
     <AnswerCardView
       card={card}
@@ -281,7 +281,7 @@ export function ConversationView({
   if (conv.state === "none")
     return (
       <>
-        {lead}
+        {answer}
         {noneTitle ? (
           <Card title={noneTitle}>{terminal}</Card>
         ) : harness !== "claude" ? (
@@ -296,7 +296,7 @@ export function ConversationView({
   if (conv.state === "unreadable")
     return (
       <>
-        {lead}
+        {answer}
         <Card title="Admiral can't read this conversation">{terminal}</Card>
       </>
     );
