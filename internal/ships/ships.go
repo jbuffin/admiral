@@ -53,6 +53,7 @@ type Ship struct {
 	Crew      []CrewBoat             `json:"crew"`
 	Subagents []sessionhost.Subagent `json:"subagents"`
 	CrewLive  int                    `json:"crew_live"`
+	Tail      string                 `json:"tail"`
 }
 
 type Orders interface {
@@ -68,6 +69,8 @@ type Service struct {
 	Orders   Orders
 	// OnChange must not block.
 	OnChange func()
+	// Tail gives a ship's conversation tail from a cache; it must not block.
+	Tail     func(session string) string
 	Outcomes *outcomes.Writer
 	// Reserve takes a unit of each named resource, or none: it returns the
 	// release, or why the first is not ready (busy, missing or pending). Nil
@@ -123,6 +126,9 @@ func (s *Service) ship(sess sessionhost.Session) Ship {
 	}
 	if p, ok := s.State.Position(sess.Name); ok {
 		sh.Position = &p
+	}
+	if s.Tail != nil {
+		sh.Tail = s.Tail(sess.Name)
 	}
 	return sh
 }
@@ -262,7 +268,7 @@ func prunes(ev sessionhost.Event) bool {
 func (s *Service) signature() string {
 	var b strings.Builder
 	for _, sh := range s.List() {
-		b.WriteString(sh.Session + "=" + sh.Status + ":" + sh.Reason + crewSignature(sh) + ";")
+		b.WriteString(sh.Session + "=" + sh.Status + ":" + sh.Reason + crewSignature(sh) + "|" + sh.Tail + ";")
 	}
 	return b.String()
 }
