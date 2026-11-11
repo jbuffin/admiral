@@ -5,9 +5,27 @@ export const loc = signal({ path: location.pathname, search: location.search });
 
 export const surfacePath = (s: Surface) => `/app/${s.id}`;
 
+const segments = (path: string) => path.replace(/^\/app\/?/, '').replace(/\/$/, '').split('/');
+
 export function surfaceOf(path: string): Surface | undefined {
-  const id = path.replace(/^\/app\/?/, '').replace(/\/$/, '');
-  return SURFACES.find((s) => s.id === id);
+  const [id, ...sub] = segments(path);
+  const s = SURFACES.find((x) => x.id === id);
+  // Preferences alone has pages below it: /app/preferences/<fleet key>/sources.
+  if (s && sub.length > 0 && !(s.id === 'preferences' && sub.length === 2 && sub[1] === 'sources')) return undefined;
+  return s;
+}
+
+export const sourcesPath = (fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/sources`;
+
+/** The fleet key a Preferences path names, if any. */
+export function preferencesFleet(path: string): string | null {
+  const [id, key] = segments(path);
+  if (id !== 'preferences' || !key) return null;
+  try {
+    return decodeURIComponent(key);
+  } catch {
+    return null;
+  }
 }
 
 function sync() {
