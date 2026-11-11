@@ -29,7 +29,9 @@ func (s *Service) settle(ctx context.Context, sess sessionhost.Session) {
 	}
 	s.settling[sess.Name] = true
 	s.mu.Unlock()
+	s.settleWG.Add(1)
 	go func() {
+		defer s.settleWG.Done()
 		defer func() {
 			s.mu.Lock()
 			delete(s.settling, sess.Name)
@@ -67,11 +69,21 @@ func (s *Service) countedPRs(ctx context.Context, sess sessionhost.Session) []st
 // moor writes the record before the session goes, so a crash between leaves the ship in one place or both.
 func (s *Service) moor(ctx context.Context, sess sessionhost.Session, prs []string) {
 	name, o := sess.Name, sess.Options
+	s.mooredMu.Lock()
+	s.loadMoored()
+	for _, r := range s.moored {
+		if r.Session == name { // a kill that failed is retried: the first record and time stand
+			s.mooredMu.Unlock()
+			return
+		}
+	}
+	s.mooredMu.Unlock()
 	if s.CaptureResume != nil {
 		s.CaptureResume(name) // before the report goes
 	}
 	rec := moor.Record{Name: o["name"], Session: name, Fleet: o["fleet"], Harness: o["harness"], Model: o["model"],
 		Skill: moor.Skill{Kind: o["skill-kind"], Name: o["skill"]}, Checkout: o["dir"], PRs: prs,
+		Source: o["source"], Panel: o["panel"], OrderID: o["order"], URL: o["url"], Title: o["title"],
 		Resume: s.report(name).Resume, MooredAt: time.Now().UTC().Truncate(time.Second)}
 	if err := moor.Write(s.Launcher.Home, rec); err != nil {
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: its moored record cannot be written, so it sails off: %v\n", name, err)
@@ -120,7 +132,8 @@ func (s *Service) mooredShips(live map[string]bool) []Ship {
 			continue
 		}
 		sh := Ship{Session: r.Session, Name: r.Name, Fleet: r.Fleet, Harness: r.Harness, Dir: r.Checkout,
-			Repo: filepath.Base(r.Checkout), Status: StatusMoored, PRs: r.PRs, MooredAt: r.MooredAt.UTC().Format(time.RFC3339),
+			Repo: filepath.Base(r.Checkout), Status: StatusMoored,
+			Source: r.Source, Panel: r.Panel, OrderID: r.OrderID, URL: r.URL, Title: r.Title, PRs: r.PRs, MooredAt: r.MooredAt.UTC().Format(time.RFC3339),
 			Crew: []CrewBoat{}, Subagents: []sessionhost.Subagent{}}
 		if f, ok := cfg.Fleet(r.Fleet); ok {
 			sh.FleetName, sh.FleetColor = f.Name, f.Color
