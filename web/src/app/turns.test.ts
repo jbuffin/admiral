@@ -18,6 +18,12 @@ describe('toolRowLabel', () => {
   });
 });
 
+describe('toolRowLabel for Copilot', () => {
+  it('folds its lowercase tool names with the same verbs as Claude', () => {
+    expect(toolRowLabel(360_000, [...times('view', 2), ...times('bash', 2), 'edit', 'create'])).toBe('Worked for 6m · read 2 files, ran 2 commands, edited 2 files');
+  });
+});
+
 describe('workingLabel', () => {
   const at = (iso: string) => Date.parse(iso);
   const items = [

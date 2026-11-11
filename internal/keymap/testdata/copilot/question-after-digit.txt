@@ -1,0 +1,9 @@
+ Which colour do you like best? Choose one of the three options below.
+ Colour:
+ Pick your favourite colour.
+ ❯ Red
+   Green
+   Blue
+   Other (type your answer)
+ ↑/↓ select · enter accept · ctrl+d decline · esc cancel
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

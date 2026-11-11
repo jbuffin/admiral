@@ -1,0 +1,4 @@
+ $ Shell Create empty file named z in the scratch directory No Content
+   touch /tmp/work/z
+ ❯
+ ← open sidebar · Interactive · Manual Approval · / commands · ? help · tab next tab
