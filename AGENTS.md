@@ -34,6 +34,7 @@ A test checks a behavior a person or caller can see: an API response, what the p
 ### Comments
 
 Match the comment density of the code around it; most functions need none. A comment says why, in one line: a hidden constraint, an invariant, a workaround with its link, or behavior that would surprise a reader. Names and code say what. Issue numbers, history and review notes go in the commit or PR, where they don't rot.
+`make check` fails on an issue number (`#` and digits) in a Go or TypeScript comment.
 
 ### More docs
 
