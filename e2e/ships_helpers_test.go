@@ -30,6 +30,7 @@ type world struct {
 	work    string // the search root; checkouts are directories in it
 	rec     string // FAKE_RECORD_DIR
 	cue     string // FAKE_CUE
+	server  string // FAKE_APP_SERVER for the docks' env, when set
 	extra   []string
 	in      *fleetInst
 }
@@ -150,12 +151,16 @@ func (w *world) sessions() []string {
 func (w *world) fakeExe(harness string) string { return filepath.Join(fakeDir(w.t), harness) }
 
 func (w *world) harnessEnv() map[string]string {
-	return map[string]string{
+	env := map[string]string{
 		"FAKE_RECORD_DIR": w.rec, "FAKE_CUE": w.cue,
 		"FLEET_VAR": "fleet-value", "TILDE_VAR": "~/tilde", "ADMIRAL_OVER": "fleet",
 		// The ship contract wins over a fleet env of the same name.
 		"ADMIRAL_SHIP": "fleet", "ADMIRAL_REPORT": "fleet", "ADMIRAL_INBOX": "fleet", "ADMIRAL_CREW_DIR": "fleet",
 	}
+	if w.server != "" {
+		env["FAKE_APP_SERVER"] = w.server
+	}
+	return env
 }
 
 func (w *world) dock(harness string, args ...string) map[string]any {
@@ -485,6 +490,19 @@ type record struct {
 func (r record) sessionArgvBase() []string {
 	if len(r.argv) > 2 && r.argv[1] == "--session-id" && uuidRe.MatchString(r.argv[2]) {
 		return append([]string{r.argv[0]}, r.argv[3:]...)
+	}
+	return r.argv
+}
+
+// codexTUIArgv is a Codex ship's argv past what `admiral codex-pane` puts first: `--remote
+// unix://<socket>` when its server came up, `--no-daemon` when it fell back to the plain TUI
+// (the fake's app-server exits at once unless FAKE_APP_SERVER=listen).
+func (r record) codexTUIArgv() []string {
+	if len(r.argv) > 2 && r.argv[0] == "--remote" && strings.HasPrefix(r.argv[1], "unix:///tmp/admiral-") {
+		return r.argv[2:]
+	}
+	if len(r.argv) > 1 && r.argv[0] == "--no-daemon" {
+		return r.argv[1:]
 	}
 	return r.argv
 }

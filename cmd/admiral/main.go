@@ -132,6 +132,8 @@ func run(args []string) error {
 		return cli.Devices(args[1:], std)
 	case "chat":
 		return cli.Chat(args[1:], std)
+	case "codex-pane":
+		return cli.CodexPane(args[1:], std)
 	}
 	return &cli.UsageError{Msg: fmt.Sprintf("unknown command %q", args[0])}
 }

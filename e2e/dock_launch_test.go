@@ -117,6 +117,9 @@ func TestDockLaunchWithoutText(t *testing.T) {
 						t.Errorf("@admiral-transcript = %q, want \"<unix ns> launch <copilot home>/session-state/%s/events.jsonl\"", opt, r.argv[2])
 					}
 				default:
+					if tui := r.codexTUIArgv(); len(tui) < 1 || tui[0] != "--fa-codex" {
+						t.Errorf("codex argv must start with the dock's args after the wrapper's flag: %q", r.argv)
+					}
 					if slices.Contains(r.argv, "--") {
 						t.Errorf("codex argv has a -- with no prompt: %q", r.argv)
 					}

@@ -593,3 +593,33 @@ func TestSocketPathIsPerLaunchAndShortEnoughForAnyUID(t *testing.T) {
 		t.Errorf("20 launches got %d distinct paths", len(seen))
 	}
 }
+
+// Codex 0.167.1 makes the listen path a symlink to a socket under /tmp/codex-daemon-<uid>/.
+func TestUncleanServerExitLeavesNeitherTheLinkNorItsTarget(t *testing.T) {
+	root := shortTemp(t)
+	daemonDir = func(int) string { return root }
+	t.Cleanup(func() { daemonDir = func(uid int) string { return fmt.Sprintf("/tmp/codex-daemon-%d", uid) } })
+	outside := filepath.Join(shortTemp(t), "x.sock")
+	for name, target := range map[string]string{"inside": filepath.Join(root, "h.sock"), "outside": outside} {
+		t.Run(name, func(t *testing.T) {
+			l, err := net.Listen("unix", target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			l.(*net.UnixListener).SetUnlinkOnClose(false)
+			defer l.Close()
+			link := filepath.Join(shortTemp(t), "s.sock")
+			if err := os.Symlink(target, link); err != nil {
+				t.Fatal(err)
+			}
+			removeSocket(Options{Socket: link, Owner: os.Getuid()})
+			if _, err := os.Lstat(link); err == nil {
+				t.Error("the link is still there")
+			}
+			_, err = os.Lstat(target)
+			if gone := err != nil; gone != (name == "inside") {
+				t.Errorf("target gone = %v: only a socket under the daemon directory may be removed", gone)
+			}
+		})
+	}
+}

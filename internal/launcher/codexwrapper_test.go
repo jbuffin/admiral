@@ -27,6 +27,18 @@ func installFakeWrapper(t *testing.T, home string) string {
 	return out
 }
 
+// installPassThroughWrapper stands in for `admiral codex-pane --socket S -- <exe> <args…>` by
+// running <exe> <args…>, so a test that reads the harness's own argv still sees it.
+func installPassThroughWrapper(t *testing.T, home string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(home, "bin"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "bin", "admiral"), []byte("#!/bin/sh\nshift 4\nexec \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func readNul(t *testing.T, path string) []string {
 	t.Helper()
 	for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {

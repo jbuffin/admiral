@@ -71,6 +71,7 @@ func newCrewDirRig(t *testing.T, fleetEnv map[string]string) *crewDirRig {
 	cfg := &config.Config{Fleets: []config.Fleet{{Key: "work", Name: "Work", SearchRoots: []string{r.work},
 		Harnesses: []config.Harness{dock("claude", nil), dock("codex", nil), dock("copilot", nil)}}}}
 	r.l = &Launcher{Tmux: tmux, Socket: sock, Home: r.home, Config: func() *config.Config { return cfg }}
+	installPassThroughWrapper(t, r.home)
 	return r
 }
 

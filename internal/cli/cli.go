@@ -41,6 +41,7 @@ var usages = map[string]string{
 	"advise":     "usage: admiral advise   (a decision as JSON on stdin: {question, options, recommendation}; prints {stakes, reason, cost})",
 	"pair":       "usage: admiral pair [--port <n>] [--json]   (mints a single-use pairing code for a new device)",
 	"devices":    "usage: admiral devices [--port <n>] [--json]\n       admiral devices rename <name-or-id> <new-name> [--port <n>]\n       admiral devices revoke <name-or-id> | --all [--port <n>]",
+	"codex-pane": "usage: admiral codex-pane --socket <path> -- <codex> [args…]   (run by a Codex ship's pane: a per-ship app-server, then the TUI on it)",
 	"chat":       "usage: admiral chat ask [--timeout <dur>] [--wait <id>]   (a question as JSON on stdin: {title, questions})",
 }
 

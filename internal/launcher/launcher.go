@@ -5,6 +5,7 @@ package launcher
 import (
 	"errors"
 	"fmt"
+	"github.com/jbuffin/admiral/internal/codexpane"
 	"io/fs"
 	"net/http"
 	"os"
@@ -218,6 +219,13 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		return nil, refuse(http.StatusBadRequest, "%s executable %s not found for fleet %s", req.Harness, dock.Executable, fleet.Name)
 	}
 
+	if req.Harness == "codex" {
+		// The dock's args go to the TUI behind `--remote`, so a --remote or an app-server of
+		// the engineer's would break the pane wrapper.
+		if err := RefuseHookArgs("codex", dock.Args); err != nil {
+			return nil, refuse(http.StatusBadRequest, "the %s dock of fleet %s: %v", req.Harness, fleet.Name, err)
+		}
+	}
 	argv := append([]string{exe}, dock.Args...)
 	argv = append(argv, mflags...)
 	// The member rule, not modelFlags' list, has judged a member's model.
@@ -247,6 +255,14 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		}
 	} else {
 		argv = appendPrompt(argv, prompt, req.dockLaunch())
+	}
+	if req.Harness == "codex" {
+		sock, err := codexpane.SocketPath(os.Getuid())
+		if err != nil {
+			return nil, refuse(http.StatusInternalServerError, "could not name the Codex socket: %v", err)
+		}
+		argv = append([]string{filepath.Join(l.Home, "bin", "admiral"), "codex-pane", "--socket", sock, "--"}, argv...)
+		paneOpts = append(paneOpts, [2]string{"codex-socket", sock})
 	}
 	env := l.shipEnv(dock)
 	if n := sessionhost.CommandSize(argv); n > sessionhost.MaxMessage {
