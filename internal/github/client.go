@@ -28,7 +28,7 @@ const itemFields = "number title url repository { nameWithOwner url } labels(fir
 // searchQuery is GitHub's advanced search, the one github.com uses: it knows
 // qualifiers such as is:blocked, and it reads AND, OR and parentheses.
 var searchQuery = fmt.Sprintf("query($q: String!) { search(query: $q, type: ISSUE_ADVANCED, first: %d) { nodes { "+
-	"... on Issue { %s } ... on PullRequest { %s } } } }", MaxItems, itemFields, itemFields)
+	"... on Issue { %s subIssuesSummary { total } } ... on PullRequest { %s } } } }", MaxItems, itemFields, itemFields)
 
 // unreachable lists what gh prints when the network, not GitHub, failed. It
 // prints the first for a DNS error and the rest raw from Go's transport.
@@ -50,6 +50,8 @@ type Item struct {
 	Repo    string // the repo's nameWithOwner, for Route(host, Repo)
 	Labels  []string
 	Hot     bool
+	// SubIssues is how many sub-issues an issue has; 0 for a pull request.
+	SubIssues int
 }
 
 // SignInError means gh is missing or signed out, as opposed to a search that failed.
@@ -198,6 +200,9 @@ func (c *Client) item(raw any) (Item, bool) {
 				Name *string `json:"name"`
 			} `json:"nodes"`
 		} `json:"labels"`
+		SubIssuesSummary *struct {
+			Total int `json:"total"`
+		} `json:"subIssuesSummary"`
 	}
 	b, _ := json.Marshal(raw)
 	if json.Unmarshal(b, &n) != nil || n.Number == nil || n.Title == nil || n.URL == nil ||
@@ -208,6 +213,9 @@ func (c *Client) item(raw any) (Item, bool) {
 	it := Item{ID: fmt.Sprintf("%s#%d", *n.Repository.NameWithOwner, *n.Number), Title: *n.Title,
 		Text: *n.URL, URL: *n.URL, RepoURL: *n.Repository.URL, Repo: *n.Repository.NameWithOwner,
 		Labels: []string{}}
+	if n.SubIssuesSummary != nil {
+		it.SubIssues = n.SubIssuesSummary.Total
+	}
 	for _, l := range *n.Labels.Nodes {
 		if l.Name == nil {
 			return Item{}, false

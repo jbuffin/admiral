@@ -18,9 +18,11 @@ import (
 	"github.com/jbuffin/admiral/internal/auth"
 	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/bridge"
+	"github.com/jbuffin/admiral/internal/campaigns/follow"
 	"github.com/jbuffin/admiral/internal/chat"
 	"github.com/jbuffin/admiral/internal/cli"
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/harnesscaps"
 	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/inbox"
@@ -285,8 +287,19 @@ func serve(args []string) error {
 	}
 	changed := supervisor.OnChange
 	supervisor.OnChange = func() { changed(); inboxService.KickResume() }
-	shipService.Orders = sourceService
+	followStore, err := follow.OpenStore(dir)
+	if err != nil {
+		return fmt.Errorf("campaigns: %w", err)
+	}
+	// Campaign children answer their own orders; every other order goes to the sources.
+	campaignService := &follow.Service{Store: followStore, Next: sourceService,
+		Route:   func(host, nwo string) string { return github.RouterFromFleets(cfg.Current().Fleets).Route(host, nwo) },
+		Clients: supervisor.GitHubClient, Ships: allShips,
+		Claims: shipService.Claims, Launch: shipService.Launch}
+	defer campaignService.Close()
+	shipService.Orders = campaignService
 	shipService.OnChange = func() {
+		campaignService.ShipsChanged()
 		sourceService.Notify()
 		bridgeService.ShipsChanged()
 		resourceSet.Wake() // a ship that stopped holding a unit frees it
@@ -302,9 +315,9 @@ func serve(args []string) error {
 	shipService.Tail = tails.Tail
 	s := &server.Server{Version: version, Commit: commit, UI: web.UI(), Messages: convService.Messages(), Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService,
-			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: sourceService}, bridgeService, resourceService, lockRoute, chatService, convService,
+			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: campaignService}, campaignService, bridgeService, resourceService, lockRoute, chatService, convService,
 			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}},
-		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat", "conversation"}}
+		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat", "conversation", "campaigns"}}
 	bg, stopBackground := context.WithCancel(context.Background())
 	// In the background: a harness that hangs on --version must not delay the server.
 	probeRunner.Refresh(bg, cfg.Current().Fleets)
@@ -338,7 +351,7 @@ func serve(args []string) error {
 			}
 		}
 	}()
-	runs := []func(context.Context){s.WatchConfig, sourceService.Run, bridgeService.Run, resourceSet.Run, inboxService.Run, chatService.Run, tails.Run}
+	runs := []func(context.Context){s.WatchConfig, sourceService.Run, campaignService.Run, bridgeService.Run, resourceSet.Run, inboxService.Run, chatService.Run, tails.Run}
 	if tmuxPath != "" {
 		runs = append(runs, host.Run)
 	}

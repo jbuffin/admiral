@@ -114,6 +114,8 @@ type Service struct {
 	mooredPolls  map[string]polled // by session
 	moorKick     chan struct{}
 	pollMu       sync.Mutex // one poll at a time
+	// issueLocks holds the GitHub issues (by ClaimKey) with a launch under way, each with who holds it.
+	issueLocks map[string]string
 }
 
 type unlisted struct {
@@ -121,6 +123,7 @@ type unlisted struct {
 	panel     string
 	at        time.Time
 	resources []string
+	url       string
 }
 
 // listedWithin: a ship killed before the host saw it must not hold its order for good.
@@ -370,64 +373,6 @@ func (s *Service) serveList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ships": s.List(), "home": home.ID(s.Launcher.Home)})
 }
 
-func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
-	var req launcher.Request
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
-		return
-	}
-	// These need no disk, so a bad request leaves no clone.
-	if lerr := launcher.CheckMember(req.Skill.Kind, req.Member); lerr != nil {
-		writeError(w, lerr.Status, lerr.Msg)
-		return
-	}
-	if lerr := launcher.CheckPins(req.Skill.Kind, req.Crew); lerr != nil {
-		writeError(w, lerr.Status, lerr.Msg)
-		return
-	}
-	if req.Clone {
-		if req.Dir != "" {
-			writeError(w, http.StatusBadRequest, "send dir or clone, not both")
-			return
-		}
-		repo, text := "", req.Text
-		if req.Source != "" {
-			var lerr *launcher.Error
-			if text, _, repo, _, _, lerr = s.Orders.Order(req.Source, req.OrderID); lerr != nil {
-				writeError(w, lerr.Status, lerr.Msg)
-				return
-			}
-		}
-		dir, err := s.Launcher.Clone(r.Context(), req, repo, text)
-		if err != nil {
-			le, ok := err.(*launcher.Error)
-			if !ok {
-				le = &launcher.Error{Status: http.StatusInternalServerError, Msg: err.Error()}
-			}
-			writeError(w, le.Status, le.Msg)
-			return
-		}
-		req.Dir = dir
-	}
-	if req.Autopilot {
-		s.admitMu.Lock()
-		defer s.admitMu.Unlock()
-	}
-	release, lerr := s.admit(req)
-	if lerr != nil {
-		writeError(w, lerr.Status, lerr.Msg)
-		return
-	}
-	got, lerr := s.LaunchOrder(req)
-	if lerr != nil {
-		release()
-		writeError(w, lerr.Status, lerr.Msg)
-		return
-	}
-	s.releaseWhenListed(got.Session, release)
-	writeJSON(w, http.StatusCreated, map[string]any{"ship": got})
-}
-
 func plural(n int, one, many string) string {
 	if n == 1 {
 		return one
@@ -527,6 +472,13 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 		if req.Panel == "" {
 			req.Panel = panel
 		}
+		if holder, ok := s.lockIssue(req.URL, "a launch in flight"); !ok {
+			return Ship{}, issueHeld(holder)
+		}
+		defer s.unlockIssue(req.URL)
+		if holder := ClaimsOf(append(s.List(), s.Pending()...))[claimKeyOf(req.URL)]; holder != "" {
+			return Ship{}, issueHeld(holder)
+		}
 	}
 	s.mu.Lock()
 	s.launching++
@@ -553,6 +505,7 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 		sess = now
 	} else if req.Source != "" {
 		s.holdUnlisted(key, got.Session, req.Panel, req.Resources)
+		s.setUnlistedURL(key, req.URL)
 	}
 	s.broadcast()
 	return s.ship(sess), nil
@@ -564,7 +517,7 @@ func (s *Service) holdUnlisted(key OrderKey, session, panel string, resources []
 	if s.listing == nil {
 		s.listing = map[OrderKey]unlisted{}
 	}
-	s.listing[key] = unlisted{session, panel, time.Now(), resources}
+	s.listing[key] = unlisted{session: session, panel: panel, at: time.Now(), resources: resources}
 }
 
 // Pending reports unlisted launches as underway, so a count of running ships
@@ -577,7 +530,7 @@ func (s *Service) Pending() []Ship {
 		if _, listed := s.find(u.session); listed || time.Since(u.at) >= listedWithin {
 			continue
 		}
-		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: key.OrderID, Panel: u.panel, Resources: u.resources, Status: StatusUnderway})
+		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: key.OrderID, Panel: u.panel, Resources: u.resources, URL: u.url, Status: StatusUnderway})
 	}
 	return out
 }

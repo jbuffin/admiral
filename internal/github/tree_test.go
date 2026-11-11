@@ -449,14 +449,20 @@ func TestTreeCapsBodyBlockersAndFailsClosed(t *testing.T) {
 	if got := g.calls(t, "query="+blockerQuery); got > maxBodyRefs {
 		t.Errorf("%d blocker lookups for one body, want at most %d", got, maxBodyRefs)
 	}
-	open := 0
+	open, capped := 0, 0
 	for _, b := range n.BlockedBy {
 		if !b.Closed {
 			open++
 		}
+		if b.Capped {
+			capped++
+			if b.Title != cappedBlockerTitle {
+				t.Errorf("the capped stand-in says %q, want %q", b.Title, cappedBlockerTitle)
+			}
+		}
 	}
-	if open == 0 {
-		t.Errorf("refs past the cap must leave an open blocker, got %+v", n.BlockedBy)
+	if open == 0 || capped != 1 {
+		t.Errorf("refs past the cap must leave one open, capped stand-in blocker, got %+v", n.BlockedBy)
 	}
 }
 

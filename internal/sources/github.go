@@ -8,11 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/github"
+	"github.com/jbuffin/admiral/internal/ships"
 )
 
 // The GitHub source runs inside Admiral, so it has no plugin folder.
@@ -318,7 +320,7 @@ func (g *githubConn) refresh() {
 				continue
 			}
 			orders = append(orders, map[string]any{"id": it.ID, "title": it.Title, "text": it.Text, "url": it.URL,
-				"repo": it.RepoURL, "hot": it.Hot, "labels": it.Labels})
+				"repo": it.RepoURL, "hot": it.Hot, "labels": it.Labels, "sub_issues": it.SubIssues})
 		}
 		changed = g.store(v.ID, orders, "") || changed
 	}
@@ -334,4 +336,35 @@ func (g *githubConn) store(id string, orders []map[string]any, errMsg string) bo
 	g.views[id] = next
 	g.mu.Unlock()
 	return !reflect.DeepEqual(old, next)
+}
+
+func claimKey(url string) string { k, _ := ships.ClaimKey(url); return k }
+
+// GitHubClient is the client of the first built-in GitHub source of a fleet, in config order, whose host is host
+// (compared ignoring case). It reads the client now, so a settings change is seen.
+func (s *Supervisor) GitHubClient(fleet, host string) (*github.Client, bool) {
+	s.mu.Lock()
+	var runners []*runner
+	for _, k := range s.order {
+		if r := s.runners[k]; r != nil {
+			runners = append(runners, r)
+		}
+	}
+	s.mu.Unlock()
+	for _, r := range runners {
+		r.mu.Lock()
+		def, p := r.def, r.p
+		r.mu.Unlock()
+		g, ok := p.(*githubConn)
+		if !ok || def.Plugin != builtinGitHub || def.Fleet != fleet {
+			continue
+		}
+		g.mu.Lock()
+		c := g.client
+		g.mu.Unlock()
+		if c != nil && strings.EqualFold(c.Host(), host) {
+			return c, true
+		}
+	}
+	return nil, false
 }

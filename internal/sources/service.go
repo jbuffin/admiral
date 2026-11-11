@@ -82,7 +82,9 @@ type SourceView struct {
 
 // View is every source in config order, without the orders that have a ship.
 func (s *Service) View() []SourceView {
-	hidden := ships.HiddenOrders(s.Ships())
+	list := s.Ships()
+	hidden := ships.HiddenOrders(list)
+	held := ships.ClaimsOf(list) // an issue a ship holds is hidden whichever source launched it
 	out := []SourceView{}
 	for _, st := range s.Sup.snapshot() {
 		v := SourceView{Key: st.def.Key, Name: st.def.Name, Plugin: st.def.Plugin, Fleet: st.def.Fleet, Capabilities: st.caps, HasSchema: st.hasSchema,
@@ -111,7 +113,7 @@ func (s *Service) View() []SourceView {
 		for _, p := range st.panels {
 			orders := make([]Order, 0, len(p.Orders))
 			for _, o := range p.Orders {
-				if !hidden[ships.OrderKey{Source: st.def.Key, OrderID: o.ID}] {
+				if !hidden[ships.OrderKey{Source: st.def.Key, OrderID: o.ID}] && !(held[claimKey(o.URL)] != "") {
 					orders = append(orders, o)
 				}
 			}

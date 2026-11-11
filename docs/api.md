@@ -38,9 +38,9 @@ Launches a ship. Body: `fleet`, `harness`, `skill` (`{"kind": "commodore" | "ski
 
 Answers `201 {"ship": ...}`, or `{"error": "..."}` with:
 
-- `400`: a `crew` that pins on a launch whose skill is not Commodore, a name that is not a lowercase slug of at most 64 characters or is given twice (checked before any clone), a name no layer resolves, or a resolver error in any file of the layers, even an unpinned one (the message lists them); a `model` or `effort` the harness does not offer (the message names which), `autopilot` on a dock whose harness `admiral guard` does not cover (only Claude today) or whose guard probe has not passed in the fleet (the Inbox gets a notice, and a Check again in Preferences runs the probe), a `resources` name the config does not define, `dir` and `clone` were both sent ("send dir or clone, not both"), no repo can be derived, or the repo is not one gh can clone (a host that is not GitHub, a name that starts with `-`, a dot name);
+- `400`: a `crew` that pins on a launch whose skill is not Commodore, a name that is not a lowercase slug of at most 64 characters or is given twice (checked before any clone), a name no layer resolves, or a resolver error in any file of the layers, even an unpinned one (the message lists them); a `model` or `effort` the harness does not offer (the message names which), `autopilot` on a dock whose harness `admiral guard` does not cover (only Claude today) or whose guard probe has not passed in the fleet (the Inbox gets a notice, and a Check again in Preferences runs the probe), a `resources` name the config does not define, `dir` and `clone` were both sent ("send dir or clone, not both"), no repo can be derived, or the repo is not one gh can clone (a host that is not GitHub, a name that starts with `-`, a dot name), or `source` is `campaign`, whose launches go through `POST /api/campaigns/<id>/launch`;
 - `409`: a resource in `resources` is held by another ship (`resource "db" is ...`), `autopilot` when the underway and needs-you ships are already at `max_ships` (`autopilot is at its cap of N ships`), the repo already has a checkout in the fleet, a search root that is itself a checkout included (the message names it: launch there with `dir`), a folder already exists at the target, which is never touched, or `clone_repo` is set and differs from the repo the server derives ("the order's repo changed to X; reopen the form");
-- `404`: the fleet is not found; `400`: the fleet has no such dock or no search roots, `dir` is missing, not a directory or not a checkout or search root of the fleet, a skill kind is unknown or a skill name is empty or holds whitespace, Commodore or the dock's executable is not found, or the command line is too long for tmux; `409`: the order already has a ship; `503`: tmux is not on PATH;
+- `404`: the fleet is not found; `400`: the fleet has no such dock or no search roots, `dir` is missing, not a directory or not a checkout or search root of the fleet, a skill kind is unknown or a skill name is empty or holds whitespace, Commodore or the dock's executable is not found, or the command line is too long for tmux; `409`: the order already has a ship, or its URL names a GitHub issue that any ship holds, listed in any status or still launching (`this issue already has a ship (<name>)`; the ship leaves the claim when it is dismissed or sails off); `503`: tmux is not on PATH;
 - `502`: gh failed, the message holds its stderr on one line with the credentials of any URL in it replaced by `***`, and nothing is left behind;
 
 ### Launching as a crew member on `POST /api/ships`
@@ -108,6 +108,69 @@ The server answers an open with `{"type": "conversation_opened", "ship": "<ship>
 - A client holds at most 16 ships open. A 17th open closes the oldest.
 - A subscription ends on `conversation_close`, when the connection closes, or when the ship is dismissed.
 - The server follows the file by offset, about four times a second while any client has the ship open.
+
+## Campaigns
+
+A campaign is a GitHub issue with sub-issues, followed. Admiral reads the tree through the fleet's GitHub source and never writes to GitHub (ADR 0027). All routes are also served under `/api/v1/`. Errors are `{"error": "..."}`.
+
+A campaign is:
+
+```json
+{"id":"3f9c0a41b7d2e8a5","url":"https://github.com/acme/widgets/issues/20","fleet":"work",
+ "work_repo":"","ended":false,"last_read":"2026-11-11T09:00:00Z","read_error":"",
+ "progress":{"closed":1,"total":4},"counts":{"ready":2,"blocked":1,"done":1},
+ "root":{"number":20,"title":"...","url":"...","repo":"acme/widgets","closed":false,"parent":true,
+  "status":"","blockers":[],"ship":"","mode":"","skill":{"kind":"","name":"","args":""},
+  "children":[{"number":21,"status":"ready","mode":"with-you","skill":{"kind":"none","name":"","args":""},"...":"..."}]}}
+```
+
+`status` of a child is `ready`, `blocked` (`blockers` lists `{"url","title"}` of the open ones), `underway` (`ship` names the ship holding the issue), `claimed-no-ship` (assigned, no ship) or `done`. A nested parent has `"parent": true` and no status. `mode` is `with-you` or `without-you`; `skill` is what the child's ship starts on (`commodore`, `skill` with a `name`, or `none`), `args` the text after the skill name. `unreadable` appears on a node GitHub counts more sub-issues for than were read. `last_read` is when the last good read finished, and `read_error` the last failed read's message, empty after a good one: a failed read keeps the last tree. The list route leaves `root` out.
+
+A campaign also carries:
+
+- `title`, `number` and `repo` (`https://host/owner/repo`) of the root issue, so the list can name it without the tree;
+- `followed_at`, and `ended_at` once it has ended (absent while followed);
+- `ready_with_you` and `ready_without_you`: the launchable `ready` children by their resolved mode;
+- `reading`: `true` while a reread of this campaign is in flight, and `last_tried`, the time of the last attempt, good or bad, kept across restarts (absent before any). A failed attempt moves `last_tried` and not `last_read`, so a poller tells a read still under way from one that failed again.
+
+Each node carries `labels` (names, `[]` when none; a parent's too, so the root's kind shows). A child also carries `default_mode` and `default_skill`, what ADR 0027's table gives it with no override, and `overridden: true` (absent otherwise) when the campaign has an override setting its mode or skill (even to the default), so a client can offer Reset. A blocker is `{"url","title","capped"}`; `capped: true` marks the stand-in for the `Blocked by` lines past the cap (its `url` is the issue that carries them, not a blocker; a blocker GitHub could not be read for, past the lookup cap, is not marked), and is absent on a real blocker.
+
+### `GET /api/campaigns[?ended=true|false]`
+
+`{"campaigns": [...]}`, active and ended in the order they were followed; `ended` filters.
+
+### `POST /api/campaigns`
+
+Body `{"reference": "<issue URL or owner/repo#n>"}`. `owner/repo#n` means github.com. Reads the tree, stores the campaign and launches nothing. `201` with the campaign; `200` with the campaign already followed for that issue, ended included. `400` for a reference that is not an issue (the message says what to paste); `422` when no fleet owns the repo, the fleet has no GitHub source for the issue's host (a host is compared ignoring case and must be the source's own), or the read failed.
+
+### `GET /api/campaigns/<id>`
+
+The campaign with its tree. Opening it rereads in the background when the last attempt is 30 seconds old or more (never for an ended campaign). `404` for an unknown id.
+
+### `POST /api/campaigns/<id>/unfollow`
+
+Ends the campaign at once; it stays readable and is listed with `ended: true`. Answers the campaign.
+
+### `PUT /api/campaigns/<id>/override`
+
+Body `{"child_url", "mode", "skill": {"kind","name","args"}}`; an empty `mode` and no `skill` clear the override. `404` when the issue is not in the campaign, `400` for a parent, a mode or a skill kind that does not exist. Answers the campaign.
+
+### `PUT /api/campaigns/<id>/work-repo`
+
+Body `{"repo": "host/owner/repo"}` or its URL; `""` clears it. It is stored and answered as `https://host/owner/repo`, with any userinfo or query dropped. The work repo is the checkout a launch preselects, or the repo it clones, for children filed in the campaign's own repo; a child in another repo keeps its own. `400` for a value that is not a repo. Answers the campaign.
+
+### `POST /api/campaigns/<id>/launch`
+
+Body `{"child_url", "harness", "dir" | "clone": true, "clone_repo", "start_anyway", "model", "effort"}`; `clone_repo` is the `host/owner/repo` the form showed, as for `POST /api/ships`, and when it is omitted the server uses the work repo (or the child's own repo) it would show. It launches through the same path as `POST /api/ships`, so its refusals are the same, with the source `campaign` and `<campaign id>/<child issue URL>` as `order_id`, so a child in two followed campaigns is two orders, each answered with its own campaign's skill, text, repo and panel (the campaign id). The claim is still by the child's issue URL alone: one ship holds the child in every campaign. The server sets the ship's title, `url`, text and skill; the skill is the child's resolved one, `autopilot` is always off, and any such field in the body is ignored. A launch rereads the tree first when the last read is over a minute old. Answers `201 {"ship": ...}`, or:
+
+- `404`: the issue is not in the campaign;
+- `400`: it is a nested parent;
+- `409`: the child is done, a ship holds it (the message names the ship), it is blocked (the message lists the blockers' URLs), it is assigned with no ship and `start_anyway` is not true, the campaign has ended, or any `POST /api/ships` conflict;
+- the launcher's own statuses otherwise.
+
+What the launcher puts in the prompt: the `skill` runs with the text as its argument (`/skill text`, `$skill text` on Codex). The text is the child's `skill.args` when set (`<map URL> <ticket URL>` for `/wayfinder`), else the ticket URL; a child with no skill gets its title and URL.
+
+A campaign ends when the parent and every issue under it, nested parents included, are closed, and none has sub-issues that could not be read; or when it is unfollowed. It is reread when a child's ship anchors or sails off, when its page is opened, and every five minutes.
 
 ## Harness capabilities
 

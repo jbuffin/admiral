@@ -50,6 +50,9 @@ func (s Source) SameRun(o Source) bool {
 	return reflect.DeepEqual(a, b)
 }
 
+// ReservedSourceKey is the order source key of a ship launched from a campaign.
+const ReservedSourceKey = "campaign"
+
 func parseSources(raw json.RawMessage) ([]Source, error) {
 	ms, err := members("sources", raw)
 	if err != nil {
@@ -60,6 +63,9 @@ func parseSources(raw json.RawMessage) ([]Source, error) {
 		path := "sources." + m.key
 		if !NameRe.MatchString(m.key) {
 			return nil, fmt.Errorf("%s: source keys may hold only letters, digits, - and _", path)
+		}
+		if m.key == ReservedSourceKey {
+			return nil, fmt.Errorf("%s: %q is the source key campaign ships carry; choose another key", path, m.key)
 		}
 		s, err := parseSource(path, m.key, m.raw)
 		if err != nil {
