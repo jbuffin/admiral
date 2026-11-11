@@ -539,3 +539,4 @@ button.pill { cursor: pointer; min-height: 32px; }
 .inbox-hint { font-size: var(--font-size-meta); color: var(--color-muted); }
 .inbox-pr a { overflow-wrap: anywhere; }
 @media (pointer: coarse) { .inbox-pr a { display: inline-block; min-height: var(--shape-min-touch-target); line-height: var(--shape-min-touch-target); } }
+.inbox-prrow, .inbox-pr { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }

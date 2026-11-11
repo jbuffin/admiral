@@ -14,6 +14,20 @@ import { emptyLine, type Surface } from './surfaces';
 
 const ANSWER = new Set(['question', 'stop']);
 
+// Below this width (a portrait iPad) the shell's sidebar, the list and a usable Peek no longer fit side by side.
+const STACKED_QUERY = '(max-width: 1099px)';
+
+function useStacked(phone: boolean) {
+  const mq = matchMedia(STACKED_QUERY);
+  const [narrow, setNarrow] = useState(mq.matches);
+  useEffect(() => {
+    const on = () => setNarrow(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return phone || narrow;
+}
+
 function Row({ e, now, phone, selected, fold }: { e: Entry; now: number; phone: boolean; selected: boolean; fold: (text: string) => void }) {
   const [open, setOpen] = useState(false);
   const [dismissing, setDismissing] = useState(false);
@@ -102,6 +116,7 @@ function Row({ e, now, phone, selected, fold }: { e: Entry; now: number; phone: 
 }
 
 export function InboxPanel({ surface, title, phone }: { surface: Surface; title: boolean; phone: boolean }) {
+  const stacked = useStacked(phone);
   const queue = useRef(createInboxQueue()).current;
   const synced = useRef<unknown[]>([]);
   const [, setRev] = useState(0);
@@ -194,7 +209,7 @@ export function InboxPanel({ surface, title, phone }: { surface: Surface; title:
       </main>
     );
   }
-  if (phone && detail) return <main class="panel peek-panel">{detail}</main>;
+  if (stacked && detail) return <main class="panel peek-panel">{detail}</main>;
   const list = (
     <main class={phone ? 'panel' : 'panel inbox-list'}>
       {title ? <h1>{surface.title}</h1> : null}
@@ -214,7 +229,7 @@ export function InboxPanel({ surface, title, phone }: { surface: Surface; title:
       {phone ? <p class="line">Every fleet, oldest first.</p> : <p class="key-hint">{KEY_HINT}</p>}
     </main>
   );
-  if (phone) return list;
+  if (stacked) return list;
   return (
     <div class="inbox-split">
       {list}

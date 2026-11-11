@@ -400,3 +400,20 @@ test('1 to 3 on a review Peek pick the event and stop at the confirm: nothing is
   await expect(peek.getByRole('button', { name: 'Submit REQUEST_CHANGES' })).toBeVisible();
   expect(restCalls(admiral)).toEqual([]);
 });
+
+test('on a portrait iPad Peek replaces the list instead of squeezing beside it, and the PR link has its own space', async ({ page, admiral }) => {
+  await page.setViewportSize({ width: 834, height: 1194 });
+  await visitorWithReview(admiral);
+  await page.goto(admiral.url + 'app/inbox?fleet=alpha');
+  await itemRow(page, 'Review the visitor diff').getByRole('link').tap();
+  const peek = peekOf(page);
+  await expect(peek).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'To review' })).toHaveCount(0);
+  expect((await peek.boundingBox())!.width).toBeGreaterThan(600);
+
+  const link = await peek.getByRole('link', { name: /acme\/widgets#12/ }).boundingBox();
+  const pending = await peek.getByText(/Pending review #123/).boundingBox();
+  expect(link!.y + link!.height <= pending!.y || link!.x + link!.width < pending!.x).toBe(true);
+  await peek.getByRole('link', { name: 'Back' }).tap();
+  await expect(page.getByRole('heading', { name: 'To review' })).toBeVisible();
+});
