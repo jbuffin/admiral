@@ -47,8 +47,8 @@ import (
 //   and then the change as a diff: lines starting with "+" are added and lines
 //   starting with "-" are removed, each line of the pretty-printed config.json
 //   (a line carrying only whitespace changes isn't a change). --dry-run prints
-//   all that and writes nothing. Interactive (no --answers) prompts are listed
-//   in web/e2e/setup.spec.ts.
+//   all that and writes nothing. Without --answers it prompts for each answer
+//   (internal/cli/setup.go).
 //
 // admiral fleet list
 //   One line per fleet in file order; each carries the key, the name and the

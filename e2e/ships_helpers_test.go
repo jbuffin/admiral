@@ -182,11 +182,6 @@ func (w *world) config() string {
 			"claude": w.dock("claude")},
 		"nosearch": map[string]any{"name": "No Search", "search_roots": []string{},
 			"claude": w.dock("claude")},
-		"broken": map[string]any{"name": "Broken", "search_roots": []string{w.work},
-			"claude": map[string]any{"executable": "/nonexistent/dir/claude"}},
-		"vanish": map[string]any{"name": "Vanish", "search_roots": []string{w.work},
-			"claude": map[string]any{"executable": filepath.Join(w.root, "vanish-claude"),
-				"env": w.harnessEnv()}},
 	}
 	b, err := json.Marshal(map[string]any{"version": 1, "fleets": fleets})
 	if err != nil {
