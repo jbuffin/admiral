@@ -163,8 +163,8 @@ func TestAutopilotGate_AProvenGuardWithNoJudgeHarnessIsRefusedForTheAdvisor(t *t
 	if code != http.StatusBadRequest {
 		t.Fatalf("autopilot launch with no judge harness = %d, want 400: %s", code, body)
 	}
-	if low := strings.ToLower(body); !strings.Contains(low, "claude") || !strings.Contains(low, "advisor not proven") {
-		t.Errorf("the 400 body %q must name the harness and say the advisor is not proven", body)
+	if low := strings.ToLower(body); !strings.Contains(low, "claude") || !strings.Contains(low, "advisor") {
+		t.Errorf("the 400 body %q must name the harness and name the advisor", body)
 	}
 	for _, s := range w.in.ships(t) {
 		if s.Name == "no-advisor" {

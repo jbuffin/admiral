@@ -26,7 +26,7 @@ func (w *world) seedGuard(fleet, harness string, passed bool) {
 	}
 }
 
-// seedJudge stores passed no-tools and no-network judge probes for the harness's detected
+// seedJudge stores passed no-tools, no-network and JSON-schema judge probes (what a real claude proves) for the harness's detected
 // version, which makes it the fleet's judge harness.
 func (w *world) seedJudge(fleet, harness string) {
 	w.t.Helper()
@@ -34,7 +34,7 @@ func (w *world) seedJudge(fleet, harness string) {
 	if err := store.RecordVersion(fleet, harness, fakeVersion, now); err != nil {
 		w.t.Fatal(err)
 	}
-	for _, id := range []capabilities.ID{capabilities.JudgeNoTools, capabilities.JudgeNoNetwork} {
+	for _, id := range []capabilities.ID{capabilities.JudgeNoTools, capabilities.JudgeNoNetwork, capabilities.JudgeJSONSchema} {
 		res := capabilities.Result{Passed: true, At: now, Detail: "seeded by the test"}
 		if err := store.Record(fleet, harness, fakeVersion, id, res); err != nil {
 			w.t.Fatal(err)

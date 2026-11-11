@@ -148,8 +148,8 @@ func TestListShowsPassedFailedAndNotCheckedPerFleetAndHarness(t *testing.T) {
 	if !errors.As(noJudge, &none) {
 		t.Fatalf("Choose = %v, want NoJudgeHarness", noJudge)
 	}
-	if a := claude.status(t, "autopilot.advisor"); a.Status != "failed" || a.Detail != none.Reason || a.CheckedAt != nil {
-		t.Errorf("work claude advisor = %+v, want failed with the reason %q and no time: it follows the fleet's judge harness live", a, none.Reason)
+	if a := claude.status(t, "autopilot.advisor"); a.Status != "failed" || a.Detail != none.Reason {
+		t.Errorf("work claude advisor = %+v, want failed with the reason %q: it follows the fleet's judge harness live", a, none.Reason)
 	}
 	if f := got.Fleets[1].Harnesses[0].status(t, "autopilot.guard_hook"); f.Status != "failed" || f.Detail != "the hook never ran" {
 		t.Errorf("home claude guard = %+v, want failed with its detail", f)

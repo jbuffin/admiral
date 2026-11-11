@@ -164,7 +164,7 @@ func TestCheckRefusesAnUnprovenHarnessWithOneNoticeNamingHarnessAndGuard(t *test
 	if !errors.As(err, &refusal) {
 		t.Fatalf("Check = %v, want a *Refusal", err)
 	}
-	if refusal.Fleet != "work" || refusal.Harness != "codex" {
+	if refusal.Fleet != "harbor-3" || refusal.Harness != "codex" {
 		t.Errorf("refusal = %+v, want fleet work and harness codex", refusal)
 	}
 	if msg := strings.ToLower(err.Error()); !strings.Contains(msg, "codex") || !strings.Contains(msg, "guard") {
@@ -286,8 +286,8 @@ func TestAdvisorIsRefusedWithTheJudgeHarnessReasonWhenThereIsNone(t *testing.T) 
 
 func TestCheckRefusesAProvenGuardWithNoJudgeHarnessAndPostsOneAdvisorNotice(t *testing.T) {
 	home := t.TempDir()
-	seed(t, home, "work", "claude", "2.1.300", yes())
-	fleet := claudeFleet(t, "work", "Work")
+	seed(t, home, "harbor-3", "claude", "2.1.300", yes())
+	fleet := claudeFleet(t, "harbor-3", "Work")
 	err := autopilotgate.Check(home, fleet, "claude")
 	var refusal *autopilotgate.AdvisorRefusal
 	if !errors.As(err, &refusal) {
@@ -306,7 +306,7 @@ func TestCheckRefusesAProvenGuardWithNoJudgeHarnessAndPostsOneAdvisorNotice(t *t
 	if n[0].Title != "Couldn't launch unattended on Claude: advisor not proven" {
 		t.Errorf("notice title = %q", n[0].Title)
 	}
-	for _, want := range []string{"Work", "work", refusal.Reason} {
+	for _, want := range []string{"Work", "harbor-3", refusal.Reason} {
 		if !strings.Contains(n[0].Body, want) {
 			t.Errorf("notice body %q lacks %q: it names the fleet by name and key and gives the reason", n[0].Body, want)
 		}

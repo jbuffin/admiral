@@ -23,6 +23,7 @@ mkdir -p "$ADVISE_LOG"
 printf '%s\0' "$@" >"$ADVISE_LOG/argv-$$"
 cat >"$ADVISE_LOG/prompt-$$"
 case "$ADVISE_MODE" in
+hang) sleep 30; exit 0 ;;
 error) echo "boom $ADVISE_MARKER" >&2; exit 1 ;;
 budget) echo '{"type":"result","subtype":"error_max_budget_usd","is_error":true,"errors":["Reached maximum budget"],"total_cost_usd":0.0123}'; exit 1 ;;
 garbage) echo '{"type":"result","subtype":"success","is_error":false,"result":"hello '"$ADVISE_MARKER"'"}'; exit 0 ;;
@@ -242,6 +243,7 @@ func TestAdviseAnswersHighWithFixedTextWhenTheCallFails(t *testing.T) {
 		env        map[string]string
 	}{
 		{"the harness errors", "error", nil},
+		{"the harness does not answer in time", "hang", nil},
 		{"the reply is not JSON", "garbage", nil},
 		{"the call's budget is spent", "budget", nil},
 		{"the reply has no stakes", "missing", nil},
@@ -250,6 +252,11 @@ func TestAdviseAnswersHighWithFixedTextWhenTheCallFails(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			r := newAdviseRig(t, c.mode, judgePasses, c.env)
+			if c.mode == "hang" {
+				old := adviseTimeout
+				adviseTimeout = time.Second
+				t.Cleanup(func() { adviseTimeout = old })
+			}
 			err, out, errb := r.advise(t, validAdvice)
 			if err != nil {
 				t.Fatalf("Advise = %v, want exit 0", err)
@@ -258,7 +265,7 @@ func TestAdviseAnswersHighWithFixedTextWhenTheCallFails(t *testing.T) {
 			if a.Stakes != "high" || a.Reason == "" {
 				t.Errorf("answer = %+v, want high with a reason", a)
 			}
-			if strings.Contains(out+errb, adviseMarker) || strings.Contains(out+errb, "boom") {
+			if strings.Contains(out+errb, adviseMarker) || strings.Contains(out+errb, "boom") || strings.Contains(out, "ship's branch") {
 				t.Errorf("harness text reached the output:\nstdout %q\nstderr %q", out, errb)
 			}
 			if !r.ran() {
