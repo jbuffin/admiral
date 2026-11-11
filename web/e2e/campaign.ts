@@ -69,6 +69,12 @@ export const ANNEX_KIDS: [number, string][] = [
   [33, 'Annex vents'],
   [34, 'Annex pumps'],
 ];
+/** The annex's canned tree; `closed` is the child GitHub now shows closed. */
+const annexTree = (closed?: number) => issueNode(ANNEX, T.annex, { kids: ANNEX_KIDS.map(([n, title]) => issueNode(n, title, { labels: ['ready-for-agent'], closed: n === closed })) });
+
+/** GitHub closes an annex child: the next read of the campaign shows it done. */
+export const closeAnnexChild = (a: Admiral, n: number) => fakeGhTrees(a).campaign(annexTree(n));
+
 export const T = {
   map: 'Moonbase map',
   grill: 'Grill the landing',
@@ -116,7 +122,7 @@ export function seedCampaignFleet(a: Admiral) {
       ],
     }),
   );
-  gh.campaign(issueNode(ANNEX, T.annex, { kids: ANNEX_KIDS.map(([n, title]) => issueNode(n, title, { labels: ['ready-for-agent'] })) }));
+  gh.campaign(annexTree());
 
   // Orders the Ships screen offers Follow on: one with sub-issues, one without.
   a.flags('orders').orders({

@@ -564,7 +564,7 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
           campaign={{ campaignId: campaign.id, url: launching.node.url, ...(launching.slice && { issues: launching.slice.map((c) => c.url) }), title: launching.slice ? `${launching.slice.length} children: ${launching.node.title}` : launching.node.title, mode: launching.node.mode ?? 'with-you', skill: launching.node.skill, startAnyway: launching.anyway }}
           onClose={() => setLaunching(null)}
           onLaunched={() => {
-            setSelected([]);
+            if (launching.slice) setSelected([]);
             void load();
           }}
         />

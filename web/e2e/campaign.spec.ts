@@ -1,11 +1,12 @@
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from './fixtures';
-import { T, campaignIdOf, followByPaste, githubReady, issueUrl, launchBehindThePage, launchSliceBehindThePage, MAP, seedCampaignFleet } from './campaign';
+import { T, campaignIdOf, closeAnnexChild, followByPaste, githubReady, issueUrl, launchBehindThePage, launchSliceBehindThePage, MAP, seedCampaignFleet } from './campaign';
 import { watchPage, withFakeGh } from './shell';
 
 test('on the iPad, a person follows a campaign by pasting it, sees each child\'s status and mode, launches a ready child, is refused a second launch, unfollows it and finds it under Ended; Follow on an order opens its campaign', async ({ page, admiral }) => {
   seedCampaignFleet(admiral);
-  await admiral.start({ env: withFakeGh(admiral) });
+  await admiral.start({ env: { ...withFakeGh(admiral), ADMIRAL_SAIL_OFF_DELAY: '1s' } });
   await githubReady(admiral);
   const watch = watchPage(page, admiral.url);
   const press = (l: { click(): Promise<void> }) => l.click();
@@ -138,7 +139,7 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
 
   // Someone else launches the same two meanwhile: the form shows the refusal naming that ship.
   const sliceForm = page.getByRole('dialog', { name: 'Launch', exact: true });
-  await expect(sliceForm).toContainText('Without you');
+  await expect(sliceForm).toContainText('Without you · Commodore');
   await expect(sliceForm.getByLabel('Skill')).toHaveCount(0);
   await expect(sliceForm.getByRole('checkbox', { name: /autopilot/i })).toHaveCount(0);
   const holder2 = await launchSliceBehindThePage(admiral, annexId, [32, 31]);
@@ -155,6 +156,8 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   // A pair of the two left launches from the page: one request with both URLs, the dirs call names the slice's order, one ship.
   await press(pick('Annex vents'));
   await press(pick('Annex pumps'));
+  // The next harness started waits for `go`, then exits clean: its ship sails off after the 1 s delay.
+  writeFileSync(join(admiral.home, 'cue'), 'wait go\nexit 0\n');
   const sliceDirs = page.waitForRequest((r) => new URL(r.url()).pathname === '/api/v1/launch-orders/dirs');
   await press(ready.getByRole('button', { name: 'Launch slice (2)' }));
   const order = ((await sliceDirs).postDataJSON() as { source: string; order_id: string });
@@ -166,13 +169,25 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   expect(sliceBody).toMatchObject({ issues: [issueUrl(33), issueUrl(34)], harness: 'claude' });
   expect(sliceBody).not.toHaveProperty('child_url');
   await expect(sliceForm).toBeHidden();
-  const shipsNow = (await (await fetch(`${admiral.url}api/v1/ships`)).json()) as { ships: { name: string; issues?: string[] }[] };
-  const mine = shipsNow.ships.filter((s) => s.issues?.includes(issueUrl(33)));
-  expect(mine).toHaveLength(1);
+  type Listed = { session: string; name: string; issues?: string[] };
+  const sliceShips = async () => ((await (await fetch(`${admiral.url}api/v1/ships`)).json()) as { ships: Listed[] }).ships.filter((s) => s.issues?.includes(issueUrl(33)));
+  await expect.poll(async () => (await sliceShips()).length).toBe(1);
+  const mine = await sliceShips();
   expect(mine[0].issues).toEqual([issueUrl(33), issueUrl(34)]);
   await expect(row('Annex vents')).toContainText(mine[0].name);
   await expect(row('Annex pumps')).toContainText(mine[0].name);
   await expect(ready.getByRole('checkbox')).toHaveCount(0);
+
+  // GitHub closes one child and the ship sails off: the closed child is done, the other is Ready again with its checkbox.
+  closeAnnexChild(admiral, 34);
+  const rec = join(admiral.home, 'rec', mine[0].session);
+  await expect.poll(() => existsSync(join(rec, 'env'))).toBe(true);
+  writeFileSync(join(rec, 'go'), '');
+  await expect(group('Done').getByRole('listitem').filter({ hasText: 'Annex pumps' })).toContainText('closed');
+  await expect(ready.getByRole('listitem').filter({ hasText: 'Annex vents' })).toContainText('Start');
+  await expect(row('Annex vents')).not.toContainText(mine[0].name);
+  await expect(pick('Annex vents')).toBeVisible();
+  expect((await sliceShips()).length).toBe(0);
 
   expect(watch.errors).toEqual([]);
   expect(watch.unversioned()).toEqual([]);
