@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -76,6 +77,9 @@ func Run(ctx context.Context, c Choice, call Call) (Reply, error) {
 	if err := json.Unmarshal(call.Schema, &schema); err != nil {
 		return Reply{}, &Failure{Kind: KindError, Detail: "the call's schema is not JSON: " + err.Error()}
 	}
+	if err := checkSupported(schema, true); err != nil {
+		return Reply{}, &Failure{Kind: KindError, Detail: err.Error()}
+	}
 	root, err := os.MkdirTemp("", "admiral-judge-")
 	if err != nil {
 		return Reply{}, &Failure{Kind: KindError, Detail: "could not make a temporary directory: " + err.Error()}
@@ -119,6 +123,10 @@ func Run(ctx context.Context, c Choice, call Call) (Reply, error) {
 	case "codex":
 		outFile = filepath.Join(root, "reply.txt")
 		args = []string{"exec", "-m", model, "--sandbox", "read-only", "--ephemeral", "--skip-git-repo-check", "--ignore-user-config", "-o", outFile}
+		for _, f := range codexToolFeatures {
+			args = append(args, "--disable", f)
+		}
+		args = append(args, "-c", `web_search="disabled"`)
 		if c.JSONSchema {
 			file := filepath.Join(root, "schema.json")
 			if err := os.WriteFile(file, call.Schema, 0o600); err != nil {
@@ -127,7 +135,8 @@ func Run(ctx context.Context, c Choice, call Call) (Reply, error) {
 			args = append(args, "--output-schema", file)
 		}
 	default:
-		// Bare --available-tools lists no tools; piped stdin without -p runs headless.
+		// A bare --available-tools does not consume the next flag; whether it leaves no tools is
+		// the probe's question. Piped stdin without -p runs headless.
 		args = []string{"--model", model, "--silent", "--available-tools", "--disable-builtin-mcps", "--no-custom-instructions"}
 	}
 
@@ -143,8 +152,8 @@ func Run(ctx context.Context, c Choice, call Call) (Reply, error) {
 	cmd.Stdin = strings.NewReader(prompt)
 	capabilities.InOwnGroup(cmd)
 	cmd.WaitDelay = time.Second // a descendant holding the pipe open must not outlive the timeout
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	stdout, stderr := &cappedBuffer{}, &cappedBuffer{}
+	cmd.Stdout, cmd.Stderr = stdout, stderr
 	runErr := cmd.Run()
 
 	if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
@@ -157,6 +166,9 @@ func Run(ctx context.Context, c Choice, call Call) (Reply, error) {
 	var text string
 	var structured any
 	cost := Cost{}
+	if stdout.over || stderr.over {
+		return Reply{}, &Failure{Kind: KindBadReply, Detail: "the harness wrote more than 1 MiB"}
+	}
 	if c.Name == "claude" {
 		var res claudeResult
 		if json.Unmarshal(stdout.Bytes(), &res) == nil {
@@ -166,12 +178,20 @@ func Run(ctx context.Context, c Choice, call Call) (Reply, error) {
 			switch {
 			case res.Subtype == "error_max_budget_usd":
 				return Reply{}, &Failure{Kind: KindBudgetSpent, Detail: "claude reached the call's budget", Cost: cost}
+			case res.Subtype == "error_max_structured_output_retries":
+				return Reply{}, &Failure{Kind: KindBadReply, Detail: "claude could not make its reply fit the schema", Cost: cost}
 			case res.IsError || runErr != nil:
 				msg := firstLine(strings.Join(res.Errors, " "))
-				if msg == "" {
+				if msg == "" && res.Subtype != "success" {
 					msg = firstLine(res.Subtype)
 				}
-				return Reply{}, &Failure{Kind: KindError, Detail: orElse(msg, "claude failed"), Cost: cost}
+				if msg == "" {
+					msg = firstLine(stderr.String())
+				}
+				if msg == "" && runErr != nil {
+					msg = runErr.Error()
+				}
+				return Reply{}, &Failure{Kind: KindError, Detail: orElse(msg, "claude reported an error"), Cost: cost}
 			}
 			text, structured = res.Result, res.Structured
 		}
@@ -185,8 +205,14 @@ func Run(ctx context.Context, c Choice, call Call) (Reply, error) {
 	}
 	if c.Name != "claude" {
 		text = stdout.String()
-		if b, err := os.ReadFile(outFile); outFile != "" && err == nil && len(bytes.TrimSpace(b)) > 0 {
-			text = string(b)
+		if outFile != "" {
+			b, tooBig := readCapped(outFile)
+			if tooBig {
+				return Reply{}, &Failure{Kind: KindBadReply, Detail: "the harness wrote more than 1 MiB"}
+			}
+			if len(bytes.TrimSpace(b)) > 0 {
+				text = string(b)
+			}
 		}
 	}
 
@@ -204,6 +230,40 @@ func Run(ctx context.Context, c Choice, call Call) (Reply, error) {
 	}
 	return Reply{Fields: fields, Cost: cost, Budget: budget}, nil
 }
+
+const maxOutput = 1 << 20
+
+// cappedBuffer keeps the first maxOutput bytes and notes that more came.
+type cappedBuffer struct {
+	bytes.Buffer
+	over bool
+}
+
+func (b *cappedBuffer) Write(p []byte) (int, error) {
+	if room := maxOutput - b.Len(); len(p) > room {
+		b.Buffer.Write(p[:room])
+		b.over = true
+	} else {
+		b.Buffer.Write(p)
+	}
+	return len(p), nil
+}
+
+func readCapped(path string) ([]byte, bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, false
+	}
+	defer f.Close()
+	b, _ := io.ReadAll(io.LimitReader(f, maxOutput+1))
+	return b[:min(len(b), maxOutput)], len(b) > maxOutput
+}
+
+// codexToolFeatures are the features of codex 0.167 that hand the model a tool, connector,
+// plugin, browser, computer, sub-agent or hook; --sandbox read-only covers only the shell.
+var codexToolFeatures = []string{"shell_tool", "unified_exec", "unified_exec_tty", "apps", "plugins", "remote_plugin",
+	"browser_use", "browser_use_external", "browser_use_full_cdp_access", "in_app_browser", "computer_use",
+	"multi_agent", "hooks", "image_generation", "view_image", "tool_suggest", "skill_search"}
 
 type claudeResult struct {
 	Subtype    string   `json:"subtype"`

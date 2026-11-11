@@ -169,6 +169,14 @@ func TestCodexCallKeepsToolsAndTheSandboxOffAndTakesTheSchemaAsAFile(t *testing.
 			t.Errorf("argv %q: want %s", argv, f)
 		}
 	}
+	for _, f := range []string{"shell_tool", "unified_exec", "apps", "plugins", "browser_use", "in_app_browser", "computer_use", "multi_agent", "hooks"} {
+		if !hasPair(argv, "--disable", f) {
+			t.Errorf("argv %q: want --disable %s", argv, f)
+		}
+	}
+	if !hasPair(argv, "-c", `web_search="disabled"`) {
+		t.Errorf("argv %q: want -c web_search=\"disabled\" as one element", argv)
+	}
 	if _, ok := flag(argv, "--output-schema"); !ok {
 		t.Fatalf("argv %q: want --output-schema while the schema is proven", argv)
 	}
@@ -219,6 +227,11 @@ func TestTheHarnessEnvironmentLosesShipAndPaneVariablesAndKeepsTheFleets(t *test
 			t.Fatalf("capabilities.ScrubbedEnv = %q, want it to hold %s", capabilities.ScrubbedEnv, k)
 		}
 	}
+	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR", "ADMIRAL_SETUP_TERMINAL", "TMUX_TMPDIR", "ADMIRAL_HOME"} {
+		if !contains(capabilities.ScrubbedEnv, k) {
+			t.Fatalf("capabilities.ScrubbedEnv = %q, want it to hold %s", capabilities.ScrubbedEnv, k)
+		}
+	}
 	for _, k := range capabilities.ScrubbedEnv {
 		t.Setenv(k, "leaked")
 	}
@@ -233,6 +246,84 @@ func TestTheHarnessEnvironmentLosesShipAndPaneVariablesAndKeepsTheFleets(t *test
 	}
 	if env["FAKE_MODE"] != "ok" {
 		t.Error("the fleet's own env did not reach the harness")
+	}
+}
+
+func hasPair(argv []string, name, value string) bool {
+	for i := 0; i+1 < len(argv); i++ {
+		if argv[i] == name && argv[i+1] == value {
+			return true
+		}
+	}
+	return false
+}
+
+func TestASchemaTheValidatorDoesNotCheckIsRefusedBeforeAnyHarnessCall(t *testing.T) {
+	cases := map[string]string{
+		"unknown type":         `{"type":"object","properties":{"a":{"type":"null"}}}`,
+		"type as array":        `{"type":"object","properties":{"a":{"type":["string","null"]}}}`,
+		"minimum":              `{"type":"object","properties":{"a":{"type":"number","minimum":0}}}`,
+		"const":                `{"type":"object","properties":{"a":{"const":"high"}}}`,
+		"nil schema":           `null`,
+		"root not an object":   `{"type":"string"}`,
+		"unsupported in items": `{"type":"object","properties":{"a":{"type":"array","items":{"type":"string","pattern":"x"}}}}`,
+	}
+	for name, sch := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t, "claude", full...)
+			r.reply(claudeStructured(`{"a":7}`, 0.002))
+			_, err := r.run(judge.Strong, "hello", []byte(sch), 0.25)
+			f := failure(t, err)
+			if f.Kind != judge.KindError || f.Cost.Reported {
+				t.Errorf("failure = %+v, want error with no cost", f)
+			}
+			if _, statErr := os.Stat(r.log + "/argv"); statErr == nil {
+				t.Error("the harness was called")
+			}
+		})
+	}
+}
+
+func TestAnAnnotatedSchemaStillRuns(t *testing.T) {
+	r := newRig(t, "claude", basic...)
+	r.reply(claudeResult(`{"a":"x"}`, 0.002))
+	sch := `{"$schema":"http://json-schema.org/draft-07/schema#","title":"t","description":"d","type":"object","properties":{"a":{"type":"string","description":"d"}}}`
+	r.mustRun(judge.Strong, "hello", []byte(sch), 0)
+}
+
+func TestClaudeRetriesExhaustedOnTheSchemaIsABadReplyThatKeepsTheCost(t *testing.T) {
+	r := newRig(t, "claude", full...)
+	r.reply(`{"type":"result","subtype":"error_max_structured_output_retries","is_error":true,"total_cost_usd":0.03}`)
+	f := failure(t, func() error { _, err := r.run(judge.Strong, "hello", []byte(schema), 0.25); return err }())
+	if f.Kind != judge.KindBadReply || !f.Cost.Reported || f.Cost.USD != 0.03 {
+		t.Errorf("failure = %+v, want bad reply with cost 0.03", f)
+	}
+}
+
+func TestAClaudeErrorWithNoErrorsNeverReadsSuccess(t *testing.T) {
+	r := newRig(t, "claude", full...)
+	r.reply(`{"type":"result","subtype":"success","is_error":true}`)
+	f := failure(t, func() error { _, err := r.run(judge.Strong, "hello", []byte(schema), 0.25); return err }())
+	if f.Kind != judge.KindError || strings.Contains(f.Detail, "success") {
+		t.Errorf("failure = %+v, want an error whose detail is not %q", f, "success")
+	}
+	r.setEnv("FAKE_MODE", "exit")
+	f = failure(t, func() error { _, err := r.run(judge.Strong, "hello", []byte(schema), 0.25); return err }())
+	if !strings.Contains(f.Detail, "boom") {
+		t.Errorf("detail = %q, want the first line of stderr", f.Detail)
+	}
+}
+
+func TestAHarnessThatWritesMoreThanAMebibyteGivesABadReply(t *testing.T) {
+	for _, name := range []string{"claude", "codex"} {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t, name, basic...)
+			r.reply(`{"severity":"low","summary":"` + strings.Repeat("x", 2<<20) + `"}`)
+			f := failure(t, func() error { _, err := r.run(judge.Strong, "hello", []byte(schema), 0); return err }())
+			if f.Kind != judge.KindBadReply {
+				t.Errorf("failure = %+v, want bad reply", f)
+			}
+		})
 	}
 }
 

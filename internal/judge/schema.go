@@ -8,6 +8,71 @@ import (
 	"unicode/utf8"
 )
 
+var supportedKeywords = map[string]bool{"type": true, "properties": true, "required": true, "additionalProperties": true,
+	"enum": true, "maxLength": true, "items": true, "description": true, "title": true, "$schema": true}
+
+var supportedTypes = map[string]bool{"object": true, "string": true, "number": true, "integer": true, "boolean": true, "array": true}
+
+// checkSupported refuses a schema that uses anything validate does not check, so an
+// unchecked constraint can never pass a reply as valid.
+func checkSupported(schema map[string]any, root bool) error {
+	if schema == nil {
+		return fmt.Errorf("the call's schema is empty")
+	}
+	if root && schema["type"] != "object" {
+		return fmt.Errorf("the call's schema root is not an object schema")
+	}
+	keys := make([]string, 0, len(schema))
+	for k := range schema {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if !supportedKeywords[k] {
+			return fmt.Errorf("the call's schema uses %s, which judge calls don't support", k)
+		}
+	}
+	if t, has := schema["type"]; has {
+		name, isStr := t.(string)
+		if !isStr || !supportedTypes[name] {
+			return fmt.Errorf("the call's schema uses a type that judge calls don't support")
+		}
+	}
+	if props, has := schema["properties"]; has {
+		m, ok := props.(map[string]any)
+		if !ok {
+			return fmt.Errorf("the call's schema uses properties that is not an object, which judge calls don't support")
+		}
+		names := make([]string, 0, len(m))
+		for k := range m {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		for _, k := range names {
+			sub, ok := m[k].(map[string]any)
+			if !ok {
+				return fmt.Errorf("the call's schema uses a property schema that is not an object, which judge calls don't support")
+			}
+			if err := checkSupported(sub, false); err != nil {
+				return err
+			}
+		}
+	}
+	if items, has := schema["items"]; has {
+		sub, ok := items.(map[string]any)
+		if !ok {
+			return fmt.Errorf("the call's schema uses items that is not one schema, which judge calls don't support")
+		}
+		if err := checkSupported(sub, false); err != nil {
+			return err
+		}
+	}
+	if ap, has := schema["additionalProperties"]; has && ap != false {
+		return fmt.Errorf("the call's schema uses additionalProperties other than false, which judge calls don't support")
+	}
+	return nil
+}
+
 // validate checks v against the subset of JSON Schema the judge calls use: type,
 // properties, required, additionalProperties false, enum, maxLength and items.
 func validate(schema map[string]any, v any, path string) error {

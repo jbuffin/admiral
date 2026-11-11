@@ -18,6 +18,7 @@ func InOwnGroup(cmd *exec.Cmd) {
 // pane: the guard would record an outcome against the ship, and the bundle's hook would
 // mark the pane.
 var ScrubbedEnv = []string{"ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_INBOX", "ADMIRAL_LOW_STAKES",
-	"ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT", "TMUX", "TMUX_PANE",
+	"ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT", "ADMIRAL_AUTOPILOT", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR",
+	"ADMIRAL_SETUP_TERMINAL", "ADMIRAL_HOME", "TMUX", "TMUX_PANE", "TMUX_TMPDIR",
 	// Claude Code refuses to start inside another Claude Code session when it sees these.
 	"CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION"}
