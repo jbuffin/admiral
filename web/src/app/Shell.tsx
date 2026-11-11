@@ -7,11 +7,13 @@ import { Icon } from './Icon';
 import { Preferences } from './Preferences';
 import { Sheet } from './Sheet';
 import { GROUP_TITLES, groupShips, shipAge } from './shipList';
-import { ships, shipsLoaded } from './shipsLink';
+import { LaunchForm, type OrderRef } from './LaunchDialog';
+import { sourcesForFleet } from './launchForm';
+import { ships, shipsLoaded, sources } from './shipsLink';
 import { StatusGlyph } from './StatusGlyph';
 import type { Ship } from './api';
 import { go, loc, surfaceOf, surfacePath } from './router';
-import { MORE, PHONE_TABS, SURFACES, surfaceById, type Surface } from './surfaces';
+import { emptyLine, MORE, PHONE_TABS, SURFACES, surfaceById, type Surface } from './surfaces';
 
 const PHONE_QUERY = '(max-width: 640px)';
 
@@ -46,18 +48,19 @@ function Link({ surface, class: cls, onNavigate, children }: { surface: Surface;
   );
 }
 
-function EmptyState({ surface, title }: { surface: Surface; title: boolean }) {
+function EmptyState({ surface, title, children }: { surface: Surface; title: boolean; children?: ComponentChildren }) {
   const fleet = activeFleet.value;
   return (
     <main class="panel">
       {title ? <h1>{surface.title}</h1> : null}
-      <p class="line">{surface.scoped && loaded.value && !fleet ? `Set up a fleet and its ${surface.title.toLowerCase()} will appear here.` : surface.line}</p>
+      <p class="line">{emptyLine(surface, loaded.value, !!fleet)}</p>
       {surface.scoped && fleet ? (
         <p class="fleet-label">
           <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
           {fleet.name}
         </p>
       ) : null}
+      {children}
     </main>
   );
 }
@@ -95,35 +98,90 @@ function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
   );
 }
 
+function OrdersList({ fleetKey, onLaunch }: { fleetKey: string; onLaunch: (o: OrderRef) => void }) {
+  const groups = sourcesForFleet(sources.value, fleetKey)
+    .map((src) => ({ src, orders: src.views.flatMap((v) => v.orders) }))
+    .filter((g) => g.orders.length > 0);
+  if (groups.length === 0) return null;
+  return (
+    <section class="orders" aria-labelledby="orders-head">
+      <h2 id="orders-head" class="group-head">
+        Orders
+      </h2>
+      {groups.map(({ src, orders }) => (
+        <div key={src.key} class="order-view">
+          <h3 class="order-view-head">{src.name}</h3>
+          <ul class="ship-list">
+            {orders.map((o) => (
+              <li key={o.id} class="order-row">
+                <span class="mono order-id">{o.id}</span>
+                <span class="order-title">{o.title}</span>
+                <button type="button" class="btn" aria-label={`Launch ${o.title}`} onClick={() => onLaunch({ source: src.key, id: o.id, title: o.title, text: o.text || o.title })}>
+                  Launch
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function ShipsPanel({ surface, title }: { surface: Surface; title: boolean }) {
   const now = useNow();
   const fleet = activeFleet.value;
   const groups = fleet ? groupShips(ships.value, fleet.key) : [];
-  if (shipsLoaded.value && groups.length === 0) return <EmptyState surface={surface} title={title} />;
+  const [launching, setLaunching] = useState<{ order?: OrderRef } | null>(null);
+  const launch = fleet && fleet.docks.length > 0 ? (
+    <button type="button" class="btn primary launch-open" onClick={() => setLaunching({})}>
+      Launch
+    </button>
+  ) : null;
+  const form = launching && fleet ? <LaunchForm fleet={fleet} order={launching.order} onClose={() => setLaunching(null)} /> : null;
+  const orders = fleet ? <OrdersList fleetKey={fleet.key} onLaunch={(order) => setLaunching({ order })} /> : null;
+  if (shipsLoaded.value && groups.length === 0) {
+    return (
+      <>
+        <EmptyState surface={surface} title={title}>
+          {launch}
+          {orders}
+        </EmptyState>
+        {form}
+      </>
+    );
+  }
   return (
-    <main class="panel">
-      {title ? <h1>{surface.title}</h1> : null}
-      {fleet ? (
-        <p class="fleet-label">
-          <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
-          {fleet.name}
-        </p>
-      ) : null}
-      {groups.map((g) => (
-        <section key={g.status} class="ship-group" aria-labelledby={`group-${g.status}`}>
-          <h2 id={`group-${g.status}`} class={`group-head group-${g.status}`}>
-            <StatusGlyph status={g.status} />
-            {GROUP_TITLES[g.status]}{' '}
-            <span class="count">{g.ships.length}</span>
-          </h2>
-          <ul class="ship-list">
-            {g.ships.map((s) => (
-              <ShipRow key={s.session} ship={s} bar={fleetPaint(fleet!).fill} now={now} />
-            ))}
-          </ul>
-        </section>
-      ))}
-    </main>
+    <>
+      <main class="panel">
+        <div class="panel-head">
+          {title ? <h1>{surface.title}</h1> : null}
+          {launch}
+        </div>
+        {fleet ? (
+          <p class="fleet-label">
+            <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
+            {fleet.name}
+          </p>
+        ) : null}
+        {groups.map((g) => (
+          <section key={g.status} class="ship-group" aria-labelledby={`group-${g.status}`}>
+            <h2 id={`group-${g.status}`} class={`group-head group-${g.status}`}>
+              <StatusGlyph status={g.status} />
+              {GROUP_TITLES[g.status]}{' '}
+              <span class="count">{g.ships.length}</span>
+            </h2>
+            <ul class="ship-list">
+              {g.ships.map((s) => (
+                <ShipRow key={s.session} ship={s} bar={fleetPaint(fleet!).fill} now={now} />
+              ))}
+            </ul>
+          </section>
+        ))}
+        {orders}
+      </main>
+      {form}
+    </>
   );
 }
 

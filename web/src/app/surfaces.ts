@@ -22,3 +22,8 @@ export const SURFACES: Surface[] = [
 export const PHONE_TABS: SurfaceId[] = ['inbox', 'chat', 'ships'];
 export const MORE: SurfaceId[] = ['campaigns', 'routines', 'crew', 'preferences'];
 export const surfaceById = (id: SurfaceId) => SURFACES.find((s) => s.id === id)!;
+
+/** The empty state's line: a scoped surface with no fleet asks for one, else the surface's own line. */
+export function emptyLine(surface: Surface, loaded: boolean, hasFleet: boolean): string {
+  return surface.scoped && loaded && !hasFleet ? `Set up a fleet and its ${surface.title.toLowerCase()} will appear here.` : surface.line;
+}

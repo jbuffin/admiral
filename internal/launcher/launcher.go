@@ -31,6 +31,8 @@ type Request struct {
 	OrderID   string `json:"order_id"`
 	Text      string `json:"text"`
 	Note      string `json:"note"` // Just launch only: optional text sent before the order
+	Model     string `json:"model"`
+	Effort    string `json:"effort"`
 	// Title and URL are set by the server from the source's order, never by the client.
 	Title string `json:"-"`
 	URL   string `json:"-"`
@@ -103,10 +105,11 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	if err != nil {
 		return nil, err
 	}
+	mflags, merr := modelFlags(req.Harness, req.Model, req.Effort)
+	if merr != nil {
+		return nil, merr
+	}
 	if req.dockLaunch() {
-		if req.Skill.Kind != "none" {
-			return nil, refuse(http.StatusBadRequest, "a launch with no order cannot name a skill")
-		}
 		req.Text, req.Note = strings.TrimSpace(req.Text), ""
 	}
 	// The options are tmux's record of the ship, read back over the control
@@ -157,6 +160,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	}
 
 	argv := append([]string{exe}, dock.Args...)
+	argv = append(argv, mflags...)
 	argv = append(argv, req.ExtraArgs...)
 	sessionFlags, paneOpts := conversationAnchor(req, dock, time.Now())
 	argv = append(argv, sessionFlags...)

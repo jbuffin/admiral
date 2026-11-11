@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { HOME, LIVE_ENV, WORK, launchCrew, launchShip, probeableClaude, say, seedFleets, setState, watchPage } from './shell';
+import { HOME, WORK, launchCrew, launchFromTheShell, launchShip, probeableClaude, say, seedFleets, setState, watchPage, withFakeGh } from './shell';
 
 const surface = (page: Page, title: string) => page.getByRole('heading', { name: title, exact: true });
 const nav = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
@@ -10,7 +10,7 @@ const switcher = (page: Page, fleet: string) => page.getByRole('navigation').get
 
 test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and scopes them to that fleet', { tag: '@critical' }, async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
-  await admiral.start({ env: LIVE_ENV });
+  await admiral.start({ env: withFakeGh(admiral) });
   const watch = watchPage(page, admiral.url);
 
   const login = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-login' });
@@ -40,7 +40,7 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
 
   // The fleet's ships, grouped Needs you, Underway, Anchored; a ship sailing off and another fleet's ship are not listed.
   const main = page.getByRole('main');
-  await expect(main.getByRole('heading', { level: 2 })).toHaveText([/^Needs you\s*1$/, /^Underway\s*1$/, /^Anchored\s*1$/]);
+  await expect(main.locator('.ship-group').getByRole('heading', { level: 2 })).toHaveText([/^Needs you\s*1$/, /^Underway\s*1$/, /^Anchored\s*1$/]);
   await expect(group(page, 'Needs you').getByRole('listitem')).toHaveCount(1);
   await expect(group(page, 'Needs you')).toContainText(login.name);
   await expect(group(page, 'Underway')).toContainText(billing.name);
@@ -64,7 +64,7 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   // Server-side changes reach the open page: a ship moves group when its status changes and its tail updates.
   setState(admiral, login, 'working');
   await expect(group(page, 'Underway')).toContainText(login.name);
-  await expect(main.getByRole('heading', { level: 2 })).toHaveText([/^Underway\s*2$/, /^Anchored\s*1$/]);
+  await expect(main.locator('.ship-group').getByRole('heading', { level: 2 })).toHaveText([/^Underway\s*2$/, /^Anchored\s*1$/]);
   await say(admiral, login, 'Rebasing onto main');
   await expect(row(page, login)).toContainText('Rebasing onto main', { timeout: 15_000 });
   await expect(row(page, login)).not.toContainText('Which branch should I rebase onto?');
@@ -94,6 +94,11 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await page.goto(admiral.url + 'app/ships?fleet=nope');
   await expect(switcher(page, HOME)).toBeVisible();
   await expect(page).toHaveURL(/\/app\/ships\?(.*&)?fleet=alpha/);
+
+  // Back in Westwind, ships launch from its orders and from the header, and show in the list.
+  await page.goto(admiral.url + 'app/ships?fleet=zulu');
+  await expect(switcher(page, WORK)).toBeVisible();
+  await launchFromTheShell(page, admiral, (l) => l.click(), { phone: false });
 
   expect(watch.paths.some((p) => p.startsWith('/api/v1/config'))).toBe(true);
   expect(watch.paths).toContain('/ws/v1');

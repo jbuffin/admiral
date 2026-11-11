@@ -1,12 +1,12 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { HOME, LIVE_ENV, WORK, launchShip, say, seedFleets, setState, watchPage } from './shell';
+import { HOME, WORK, launchFromTheShell, launchShip, say, seedFleets, setState, watchPage, withFakeGh } from './shell';
 
 const tab = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
 
 test('on the phone, the tab bar and More reach every surface, the Ships tab lists the fleet\'s ships and the Fleets sheet switches fleets', { tag: '@critical' }, async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
-  await admiral.start({ env: LIVE_ENV });
+  await admiral.start({ env: withFakeGh(admiral) });
   const watch = watchPage(page, admiral.url);
 
   const login = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-login' });
@@ -28,7 +28,7 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
 
   // The same groups and rows as the wide shell, inside the screen's width.
   const main = page.getByRole('main');
-  await expect(main.getByRole('heading', { level: 2 })).toHaveText([/^Needs you\s*1$/, /^Underway\s*1$/, /^Anchored\s*1$/]);
+  await expect(main.locator('.ship-group').getByRole('heading', { level: 2 })).toHaveText([/^Needs you\s*1$/, /^Underway\s*1$/, /^Anchored\s*1$/]);
   const row = (ship: { name: string }) => main.getByRole('listitem').filter({ hasText: ship.name });
   await expect(row(login)).toContainText('Fix the login redirect');
   await expect(row(login)).toContainText('Which branch should I rebase onto?');
@@ -65,6 +65,11 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   const prefsPage = await page.getByRole('heading', { name: 'Order sources', exact: true }).boundingBox();
   expect(prefsNav!.y + prefsNav!.height).toBeLessThanOrEqual(prefsPage!.y);
   expect(prefsPage!.x).toBeLessThan(prefsNav!.x + prefsNav!.width);
+
+  // Back in Westwind, the launch form is usable at the phone's width.
+  await page.goto(admiral.url + 'app/ships?fleet=zulu');
+  await expect(page.getByRole('main')).toContainText(WORK);
+  await launchFromTheShell(page, admiral, (l) => l.tap(), { phone: true });
 
   expect(watch.paths).toContain('/ws/v1');
   expect(watch.unversioned()).toEqual([]);

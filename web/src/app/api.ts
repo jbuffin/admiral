@@ -53,7 +53,7 @@ export const logoUrl = (harness: string) => `${API}/logos/${encodeURIComponent(h
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string; status?: number };
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<Result<T>> {
+export async function call<T>(method: string, path: string, body?: unknown): Promise<Result<T>> {
   try {
     const res = await fetch(API + path, {
       method,
@@ -176,4 +176,38 @@ export async function probeShips(): Promise<ShipsProbe> {
   } catch {
     return 'down';
   }
+}
+
+export interface Order {
+  id: string;
+  title: string;
+  text?: string;
+  repo?: string;
+}
+export interface OrderView {
+  id: string;
+  title: string;
+  orders: Order[];
+}
+export interface Source {
+  key: string;
+  name: string;
+  fleet: string;
+  views: OrderView[];
+}
+export interface Resource {
+  name: string;
+  capacity: number;
+  in_use: number;
+}
+export interface DirEntry {
+  path: string;
+  name: string;
+  kind: string;
+  ships_here: number;
+}
+export interface DirsAnswer {
+  entries: DirEntry[];
+  selected: string | null;
+  clone: { repo: string; path: string; exists?: boolean } | null;
 }
