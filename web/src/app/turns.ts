@@ -67,3 +67,13 @@ export function blocksOf(items: Item[]): Block[] {
   }
   return blocks;
 }
+
+/** The divider's text: the round, then its time when the server recorded one. */
+export function roundLabel(_item: Item): string {
+  return '';
+}
+
+/** The muted line under a divider whose round has no conversation to show. */
+export function roundNote(_state?: Item['state']): string | undefined {
+  return undefined;
+}

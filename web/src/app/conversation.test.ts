@@ -152,6 +152,17 @@ describe('followConversation', () => {
     expect(last().more).toBe(true);
   });
 
+  it("replaces a held round divider with the page's, so a state it carried does not stick", async () => {
+    const divider = (state?: string) => ({ id: 'r1', kind: 'round', round: 1, at: '2026-05-01T10:00:00Z', ...(state ? { state } : {}) });
+    pages[PAGE] = { state: 'ok', items: [item('a1', 'one'), divider(), item('r1:a2', 'two')], more: false };
+    const { last } = follow();
+    sock().receive({ type: 'conversation', ship: 's-a', items: [divider('none')] });
+    sock().receive({ type: 'conversation_opened', ship: 's-a' });
+    await flush();
+    expect(last().items.map((i) => i.id)).toEqual(['a1', 'r1', 'r1:a2']);
+    expect(last().items.find((i) => i.id === 'r1')).not.toHaveProperty('state');
+  });
+
   it('ignores a push that carries a crew boat', async () => {
     pages[PAGE] = { state: 'ok', items: [item('a1', 'one')], more: false };
     const { last } = follow();
