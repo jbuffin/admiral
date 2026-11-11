@@ -453,3 +453,30 @@ func TestLiveServerGoingAwayWithNoRolloutEmptiesTheView(t *testing.T) {
 		t.Errorf("fallback = %v, want reset: true with no items", m)
 	}
 }
+
+func TestLiveQuestionPendingOnTheServerTellsTheShipItAsksAndSettles(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	fake := newLiveFake(t)
+	f.liveShip(fake, false)
+	var mu sync.Mutex
+	var told []bool
+	f.svc.Asking = func(session string, asking bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		told = append(told, asking)
+	}
+	f.startLive()
+	f.serving(fake)
+	got := func() []bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]bool(nil), told...)
+	}
+
+	// The TUI rings no bell for this question: the pending request is all there is.
+	fake.push(`{"method":"item/tool/requestUserInput","id":0,"params":{"threadId":"` + liveThread + `","turnId":"t1","itemId":"call_q1","questions":[{"id":"colour","header":"Colour","question":"Pick a colour","isSecret":false,"options":[{"label":"Red","description":""},{"label":"Blue","description":""}]}]}}`)
+	eventually(t, "the ship to be told it asks", func() bool { g := got(); return len(g) == 1 && g[0] })
+	fake.push(`{"method":"serverRequest/resolved","params":{"threadId":"` + liveThread + `","requestId":0}}`)
+	eventually(t, "the ship to be told it does not", func() bool { g := got(); return len(g) == 2 && !g[1] })
+}

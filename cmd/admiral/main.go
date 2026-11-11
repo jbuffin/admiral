@@ -329,7 +329,7 @@ func serve(args []string) error {
 
 	chatService := &chat.Service{Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Home: absDir}
 	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
-	convService := &shipconv.Service{Ships: shipService, Config: cfg.Current, Tmux: tmuxPath, Socket: sock}
+	convService := &shipconv.Service{Ships: shipService, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Asking: shipService.Asking}
 	probeRunner := probes.NewDefault(dir)
 	guard, err := auth.New(dir, port, auth.WithBaseURL(func() string { return pairingBase(port) }))
 	if err != nil {

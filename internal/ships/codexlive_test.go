@@ -147,3 +147,43 @@ func TestCodexQuestionIsAnsweredOnlyWhileBellMeetsTheObserversPendingQuestion(t 
 		}
 	})
 }
+
+func TestCodexQuestionSignalPutsTheShipAtNeedsYouWithTheBellsReason(t *testing.T) {
+	paneOf := func(s *Service) (state, reason string) {
+		sess, _ := s.find("alpha")
+		return sess.State, sess.Reason
+	}
+	set := func(t *testing.T, s *Service, harness, state, reason string) {
+		codexAsking(t, s, harness, "bell")
+		ctx := context.Background()
+		var err error
+		if state == "working" {
+			err = s.Host.SetWorking(ctx, "alpha")
+		} else {
+			err = s.Host.SetNeedsYou(ctx, "alpha", reason)
+		}
+		if err != nil || s.Host.Sync(ctx) != nil {
+			t.Fatal("set the pane", err)
+		}
+	}
+	for name, c := range map[string]struct {
+		harness, state, reason string
+		asking                 bool
+		wantState, wantReason  string
+	}{
+		"a question starts on a working Codex pane":            {"codex", "working", "", true, "needs_you", "bell"},
+		"a question ends on the observer's own mark":           {"codex", "needs_you", "bell", false, "working", ""},
+		"a question ends and a permission waits: left alone":   {"codex", "needs_you", "permission:Bash", false, "needs_you", "permission:Bash"},
+		"a question starts and a permission waits: left alone": {"codex", "needs_you", "permission:Bash", true, "needs_you", "permission:Bash"},
+		"a Claude pane is never written":                       {"claude", "working", "", true, "working", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, _ := tailService(t)
+			set(t, s, c.harness, c.state, c.reason)
+			s.Asking("alpha", c.asking)
+			if st, rs := paneOf(s); st != c.wantState || rs != c.wantReason {
+				t.Errorf("pane = %s/%q, want %s/%q", st, rs, c.wantState, c.wantReason)
+			}
+		})
+	}
+}

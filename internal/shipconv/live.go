@@ -23,6 +23,7 @@ type observer struct {
 	sock, startCmd    string
 	rollout           string // the recorded rollout this observer picked its thread by; a new one means the TUI moved on
 	prefer            string // the thread the server last told of, kept across reconnects; only observe reads it
+	asking            bool   // the pane was told a question waits; only the observer's goroutine touches it
 	cancel            context.CancelFunc
 	live              *conversation.Live // set while connected; guarded by Service.mu
 }
@@ -268,6 +269,7 @@ func (s *Service) serveObserved(ctx context.Context, o *observer, conn *codexliv
 		o.live = nil
 		s.mu.Unlock()
 	}()
+	s.signal(o, live)
 	for {
 		frame, err := conn.Next(ctx)
 		if err != nil {
@@ -275,6 +277,7 @@ func (s *Service) serveObserved(ctx context.Context, o *observer, conn *codexliv
 		}
 		if id := moved(frame, conn.Thread); id != "" {
 			o.prefer = id
+			s.signal(o, live) // the thread it leaves asks nothing now
 			return true
 		}
 		s.mu.Lock()
@@ -282,6 +285,21 @@ func (s *Service) serveObserved(ctx context.Context, o *observer, conn *codexliv
 			s.sendLocked(o.session, map[string]any{"items": items})
 		}
 		s.mu.Unlock()
+		s.signal(o, live)
+	}
+}
+
+// signal tells the ship when a question starts or stops waiting on the server. Codex's TUI rings no bell for a
+// question in a pane it thinks is focused, and no hook fires for one, so the pending request is the signal. A drop
+// leaves the pane as it is.
+func (s *Service) signal(o *observer, live *conversation.Live) {
+	asking := len(live.Pending()) > 0
+	if asking == o.asking {
+		return
+	}
+	o.asking = asking
+	if s.Asking != nil {
+		s.Asking(o.session, asking)
 	}
 }
 

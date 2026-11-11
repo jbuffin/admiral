@@ -51,6 +51,9 @@ type Service struct {
 	owns   func(sh ships.Ship, port int) bool                                // whether the ship's own Copilot listens on port
 	crew   func(sh ships.Ship, name string) (sessionhost.Crew, string, bool) // the boat and its fleet's config dir for the boat's harness
 
+	// Asking is told when a Codex ship's server starts or stops waiting on a question the observer holds.
+	Asking func(session string, asking bool)
+
 	// Tests replace these lookups of a ship's rounds.
 	moored    func(session string) (ships.Ship, bool)   // a ship with no live session but a moored record
 	rounds    func(sh ships.Ship) ([]moor.Round, error) // the ship's recorded rounds
