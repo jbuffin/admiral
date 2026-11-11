@@ -140,19 +140,35 @@ func TestCodexCrewBoatKeepsItsOwnArgv(t *testing.T) {
 	}
 }
 
-func TestCodexDockArgsThatWouldBreakTheServerAreRefusedBeforeLaunch(t *testing.T) {
-	for _, arg := range []string{"--remote", "--remote=unix:///x", "app-server"} {
-		t.Run(arg, func(t *testing.T) {
+func TestCodexDockArgsThatWouldBreakTheWrapperAreRefusedBeforeLaunch(t *testing.T) {
+	for _, args := range [][]string{
+		{"--remote", "unix:///x"}, {"--remote=unix:///x"}, {"app-server"}, {"exec"}, {"--"},
+		{"-c", "hooks.Stop=[]"}, {"--config", "hooks.x=1"}, {"--config=hooks.x=1"}, {"-chooks.x=1"}, {"--disable", "hooks"}, {"-c", "features.codex_hooks=false"}, {"-c", ` "hooks" . x=1`},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			l, work, _ := recordingLauncher(t, "codex")
 			installFakeWrapper(t, l.Home)
-			l.Config().Fleets[0].Harnesses[0].Args = []string{"--model", "x", arg}
+			l.Config().Fleets[0].Harnesses[0].Args = append([]string{"--model", "x"}, args...)
 			_, err := l.Launch(Request{Fleet: "work", Harness: "codex", Dir: work, Skill: Skill{Kind: "none"}})
 			le, ok := err.(*Error)
-			if !ok || le.Status != 400 || !strings.Contains(le.Msg, arg) {
-				t.Fatalf("Launch = %v, want a 400 refusal naming %q", err, arg)
+			if !ok || le.Status != 400 || !strings.Contains(le.Msg, "the codex dock of fleet") || !strings.Contains(le.Msg, "in its args, which Admiral refuses because") || strings.Contains(le.Msg, "--arg") {
+				t.Fatalf("Launch = %v, want a 400 worded for the dock", err)
 			}
 			if rows, _ := l.server().SessionRows(); len(rows) != 0 {
 				t.Errorf("a refused launch left sessions behind: %v", rows)
+			}
+		})
+	}
+}
+
+func TestCodexDockProfilesAndFeaturesStillLaunch(t *testing.T) {
+	for _, args := range [][]string{{"-p", "work"}, {"--profile=work"}, {"-c", "profile=work"}, {"-c", "features.web_search=true"}, {"--enable", "x"}, {"--disable", "web_search"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			l, work, _ := recordingLauncher(t, "codex")
+			installFakeWrapper(t, l.Home)
+			l.Config().Fleets[0].Harnesses[0].Args = args
+			if _, err := l.Launch(Request{Fleet: "work", Harness: "codex", Dir: work, Skill: Skill{Kind: "none"}}); err != nil {
+				t.Fatalf("Launch = %v, want the dock's args let through", err)
 			}
 		})
 	}

@@ -5,7 +5,6 @@ package launcher
 import (
 	"errors"
 	"fmt"
-	"github.com/jbuffin/admiral/internal/codexpane"
 	"io/fs"
 	"net/http"
 	"os"
@@ -16,6 +15,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/jbuffin/admiral/internal/codexpane"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/repofinder"
@@ -220,10 +220,8 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	}
 
 	if req.Harness == "codex" {
-		// The dock's args go to the TUI behind `--remote`, so a --remote or an app-server of
-		// the engineer's would break the pane wrapper.
-		if err := RefuseHookArgs("codex", dock.Args); err != nil {
-			return nil, refuse(http.StatusBadRequest, "the %s dock of fleet %s: %v", req.Harness, fleet.Name, err)
+		if bad, why := codexDockArgRefused(dock.Args); bad != "" {
+			return nil, refuse(http.StatusBadRequest, "the %s dock of fleet %s has %q in its args, which Admiral refuses because %s", req.Harness, fleet.Name, bad, why)
 		}
 	}
 	argv := append([]string{exe}, dock.Args...)

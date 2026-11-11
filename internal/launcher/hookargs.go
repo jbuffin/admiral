@@ -110,3 +110,49 @@ func configKey(key string) string {
 		return r
 	}, key)
 }
+
+// codexDockArgRefused judges a Codex dock's args for the pane wrapper: only what breaks the
+// wrapper or Admiral's hooks. Profiles and features stay allowed, unlike RefuseHookArgs.
+func codexDockArgRefused(args []string) (arg, why string) {
+	for i, a := range args {
+		next := ""
+		if i+1 < len(args) {
+			next = args[i+1]
+		}
+		switch {
+		case a == "--remote" || strings.HasPrefix(a, "--remote="):
+			return a, "the ship's TUI is attached to its own app-server"
+		case a == "--":
+			return a, "it would end the flags before Admiral's prompt"
+		case slices.Contains(subcommands["codex"], a):
+			return a, "it would run a subcommand in place of the session"
+		case a == "--disable" && slices.Contains(codexHookFeatures, next):
+			return a + " " + next, "it would switch Admiral's hooks off"
+		case strings.HasPrefix(a, "--disable=") && slices.Contains(codexHookFeatures, strings.TrimPrefix(a, "--disable=")):
+			return a, "it would switch Admiral's hooks off"
+		case a == "-c" || a == "--config":
+			if codexHooksKey(next) {
+				return a + " " + next, "it would override Admiral's hooks"
+			}
+		case strings.HasPrefix(a, "--config="):
+			if codexHooksKey(strings.TrimPrefix(a, "--config=")) {
+				return a, "it would override Admiral's hooks"
+			}
+		case strings.HasPrefix(a, "-c") && !strings.HasPrefix(a, "--"):
+			if codexHooksKey(strings.TrimPrefix(strings.TrimPrefix(a, "-c"), "=")) {
+				return a, "it would override Admiral's hooks"
+			}
+		}
+	}
+	return "", ""
+}
+
+func codexHooksKey(kv string) bool {
+	key, _, _ := strings.Cut(kv, "=")
+	key = configKey(key)
+	if key == "hooks" || strings.HasPrefix(key, "hooks.") {
+		return true
+	}
+	feature, ok := strings.CutPrefix(key, "features.")
+	return ok && slices.Contains(codexHookFeatures, feature)
+}

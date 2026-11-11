@@ -3,6 +3,8 @@
 package codexpane
 
 import (
+	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -53,6 +55,10 @@ func EnsureSocketDir(dir string, owner int) error {
 	if err != nil {
 		return err
 	}
+	return checkDir(dir, fi, owner)
+}
+
+func checkDir(dir string, fi os.FileInfo, owner int) error {
 	if fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
 		return fmt.Errorf("%s is not a plain directory", dir)
 	}
@@ -65,17 +71,40 @@ func EnsureSocketDir(dir string, owner int) error {
 	return nil
 }
 
-// serverHookFlags are the `-c hooks.*` pairs among the ship's args, before any "--": the server runs
-// the hooks, and it takes none of the dock's other flags.
-func serverHookFlags(args []string) []string {
+// serverFlags are the config and feature flags among the ship's args, before any "--": tools
+// and the model run in the server, so it gets the dock's overrides and Admiral's hooks and
+// effort as well as the TUI. The TUI-only `tui.*` overrides, `-m` and the rest stay on the TUI.
+func serverFlags(args []string) []string {
 	var out []string
-	for i := 0; i+1 < len(args); i++ {
-		if args[i] == "--" {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
 			break
 		}
-		if args[i] == "-c" && strings.HasPrefix(args[i+1], "hooks.") {
-			out = append(out, "-c", args[i+1])
-			i++
+		flag, val, joined := a, "", false
+		if k, v, ok := strings.Cut(a, "="); ok && strings.HasPrefix(a, "--") {
+			flag, val, joined = k, v, true
+		}
+		switch {
+		case flag == "-c" || flag == "--config" || flag == "--enable" || flag == "--disable":
+			if !joined {
+				if i+1 >= len(args) {
+					return out
+				}
+				i++
+				val = args[i]
+			}
+			if flag == "-c" || flag == "--config" {
+				if strings.HasPrefix(strings.TrimSpace(val), "tui.") {
+					continue
+				}
+			}
+			out = append(out, flag, val)
+		case strings.HasPrefix(a, "-c") && !strings.HasPrefix(a, "--") && len(a) > 2:
+			val = strings.TrimPrefix(a[2:], "=")
+			if !strings.HasPrefix(strings.TrimSpace(val), "tui.") {
+				out = append(out, "-c", val)
+			}
 		}
 	}
 	return out
@@ -94,12 +123,18 @@ func Run(o Options) int {
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGHUP, syscall.SIGTERM)
 	defer signal.Stop(sigs)
 
-	srv, ok, sig := startServer(o, wait, sigs)
+	srv, why, sig := startServer(o, wait, sigs)
 	if sig != 0 {
 		return 128 + int(sig)
 	}
-	if !ok {
-		return runTUI(o, append([]string{"--no-daemon"}, o.Args...), sigs)
+	if srv == nil {
+		fmt.Fprintf(os.Stderr, "admiral: running Codex without its own app-server: %s\n", why)
+		args := o.Args
+		// A Codex with no app-server predates --no-daemon and would reject it.
+		if hasNoDaemon(o.Exe) {
+			args = append([]string{"--no-daemon"}, args...)
+		}
+		return runTUI(o, args, sigs)
 	}
 	defer srv.stop(o)
 	return runTUI(o, append([]string{"--remote", "unix://" + o.Socket}, o.Args...), sigs)
@@ -110,61 +145,110 @@ type server struct {
 	exited chan struct{}
 }
 
-// stop ends the server and everything it started, and leaves no socket behind.
+// stop ends the server and everything it started, and leaves no socket behind. A server that
+// has already exited was reaped, so its pid may be anyone's now: no group is signalled then.
 func (s *server) stop(o Options) {
-	if s != nil {
-		if s.cmd.Process != nil {
-			pgid := s.cmd.Process.Pid
+	if s != nil && s.cmd.Process != nil {
+		pgid := s.cmd.Process.Pid
+		if !closed(s.exited) {
 			_ = syscall.Kill(-pgid, syscall.SIGTERM)
 			select {
 			case <-s.exited:
 			case <-time.After(time.Second):
 			}
-			_ = syscall.Kill(-pgid, syscall.SIGKILL)
-			select {
-			case <-s.exited:
-			case <-time.After(time.Second):
+			if !closed(s.exited) {
+				_ = syscall.Kill(-pgid, syscall.SIGKILL)
+				select {
+				case <-s.exited:
+				case <-time.After(time.Second):
+				}
 			}
 		}
 	}
 	removeSocket(o)
 }
 
+func closed(c <-chan struct{}) bool {
+	select {
+	case <-c:
+		return true
+	default:
+		return false
+	}
+}
+
+// hasNoDaemon asks the exe's --help, briefly; any doubt reads as no.
+func hasNoDaemon(exe string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	var out bytes.Buffer
+	cmd := exec.CommandContext(ctx, exe, "--help")
+	cmd.Stdout = &out
+	cmd.WaitDelay = 500 * time.Millisecond
+	if err := cmd.Run(); err != nil {
+		return false
+	}
+	return bytes.Contains(out.Bytes(), []byte("--no-daemon"))
+}
+
 // daemonDir is where Codex puts the real socket behind the listen path; a var so tests can
 // keep off the real one.
 var daemonDir = func(uid int) string { return fmt.Sprintf("/tmp/codex-daemon-%d", uid) }
 
-// removeSocket deletes the listen path. Codex makes it a symlink to a socket under
-// /tmp/codex-daemon-<uid>/, which an unclean exit leaves behind.
+// removeSocket deletes the listen path. Codex makes it a symlink to a socket in its own
+// private directory (/private/tmp/codex-daemon-<uid>/<hash> on macOS, next to a <hash>.lock),
+// which an unclean exit leaves behind. Those go only when the target's directory is the daemon
+// directory, which must be ours and private.
 func removeSocket(o Options) {
-	if target, err := os.Readlink(o.Socket); err == nil {
-		if !filepath.IsAbs(target) {
-			target = filepath.Join(filepath.Dir(o.Socket), target)
+	defer func() { _ = os.Remove(o.Socket) }()
+	target, err := os.Readlink(o.Socket)
+	if err != nil {
+		return
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(o.Socket), target)
+	}
+	root := daemonDir(o.Owner)
+	fi, err := os.Lstat(root)
+	if err != nil || checkDir(root, fi, o.Owner) != nil {
+		return
+	}
+	real, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return
+	}
+	dir, err := filepath.EvalSymlinks(filepath.Dir(filepath.Clean(target)))
+	if err != nil || dir != real {
+		return
+	}
+	name := filepath.Base(target)
+	for _, p := range []struct {
+		path string
+		mode os.FileMode
+	}{{filepath.Join(real, name), os.ModeSocket}, {filepath.Join(real, name+".lock"), 0}} {
+		fi, err := os.Lstat(p.path)
+		if err != nil || fi.Mode()&os.ModeType != p.mode {
+			continue
 		}
-		target = filepath.Clean(target)
-		root := daemonDir(o.Owner) + "/"
-		if fi, err := os.Lstat(target); err == nil && strings.HasPrefix(target, root) && fi.Mode()&os.ModeSocket != 0 {
-			if st, ok := fi.Sys().(*syscall.Stat_t); ok && int(st.Uid) == o.Owner {
-				_ = os.Remove(target)
-			}
+		if st, ok := fi.Sys().(*syscall.Stat_t); ok && int(st.Uid) == o.Owner {
+			_ = os.Remove(p.path)
 		}
 	}
-	_ = os.Remove(o.Socket)
 }
 
 // startServer returns a server only once its socket accepts a connection. A signal that ends
 // the wrapper comes back as sig, with the server already stopped.
-func startServer(o Options, wait time.Duration, sigs <-chan os.Signal) (srv *server, ok bool, sig syscall.Signal) {
+func startServer(o Options, wait time.Duration, sigs <-chan os.Signal) (srv *server, why string, sig syscall.Signal) {
 	if err := EnsureSocketDir(filepath.Dir(o.Socket), o.Owner); err != nil {
-		return nil, false, 0
+		return nil, err.Error(), 0
 	}
 	_ = os.Remove(o.Socket) // a stale file would make the listen fail
-	args := append([]string{"app-server", "--listen", "unix://" + o.Socket}, serverHookFlags(o.Args)...)
+	args := append([]string{"app-server", "--listen", "unix://" + o.Socket}, serverFlags(o.Args)...)
 	cmd := exec.Command(o.Exe, args...)
 	// stdin and stdout are /dev/null (nil): the server must not draw on or read the TUI's terminal.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
-		return nil, false, 0
+		return nil, err.Error(), 0
 	}
 	s := &server{cmd: cmd, exited: make(chan struct{})}
 	go func() { _ = cmd.Wait(); close(s.exited) }()
@@ -175,19 +259,19 @@ func startServer(o Options, wait time.Duration, sigs <-chan os.Signal) (srv *ser
 	for {
 		if c, err := net.DialTimeout("unix", o.Socket, 200*time.Millisecond); err == nil {
 			_ = c.Close()
-			return s, true, 0
+			return s, "", 0
 		}
 		select {
 		case <-s.exited:
 			s.stop(o)
-			return nil, false, 0
+			return nil, "app-server exited before it listened", 0
 		case <-deadline:
 			s.stop(o)
-			return nil, false, 0
+			return nil, fmt.Sprintf("app-server did not listen within %v", wait), 0
 		case got := <-sigs:
 			if got == syscall.SIGHUP || got == syscall.SIGTERM {
 				s.stop(o)
-				return nil, false, got.(syscall.Signal)
+				return nil, "", got.(syscall.Signal)
 			}
 		case <-tick.C:
 		}

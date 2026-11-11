@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -58,6 +59,17 @@ func nul(args []string) string {
 func runFake() int {
 	dir := os.Getenv("FAKE_DIR")
 	args := os.Args[1:]
+	if len(args) == 1 && args[0] == "--help" {
+		fmt.Println("Usage: codex [OPTIONS]")
+		if os.Getenv("FAKE_NO_DAEMON") == "1" {
+			fmt.Println("      --no-daemon  Do not use the shared daemon")
+		}
+		return 0
+	}
+	if len(args) > 0 && args[0] == "--no-daemon" && os.Getenv("FAKE_NO_DAEMON") != "1" {
+		fmt.Fprintln(os.Stderr, "error: unexpected argument '--no-daemon' found")
+		return 2
+	}
 	if len(args) > 0 && args[0] == "app-server" {
 		return fakeServer(dir, args)
 	}
@@ -129,6 +141,8 @@ func fakeTUI(dir string, args []string) int {
 		n, _ := strconv.Atoi(strings.TrimPrefix(mode, "exit:"))
 		return n
 	case mode == "hold":
+		// A real TUI handles Ctrl-C itself (raw mode); the fake just survives it.
+		signal.Notify(make(chan os.Signal, 8), syscall.SIGINT, syscall.SIGQUIT)
 		waitForFile(filepath.Join(dir, "tui-release"), 30*time.Second)
 	case mode == "echo-stdin":
 		waitForFile(filepath.Join(dir, "server.stdin-eof"), 5*time.Second)
@@ -170,6 +184,7 @@ type setup struct {
 	wait        time.Duration
 	socketDir   string // a name under the temp dir; "d" when empty
 	stdin       bool   // give the wrapper a pipe for stdin, held open
+	noDaemon    bool   // the fake codex lists --no-daemon in --help, as 0.167.1 does
 }
 
 type rig struct {
@@ -231,6 +246,9 @@ func start(t *testing.T, s setup) *rig {
 		"CODEXPANE_ROLE=wrapper", "CODEXPANE_SOCKET="+r.socket, "CODEXPANE_EXE="+shim,
 		"CODEXPANE_WAIT_MS="+strconv.Itoa(int(wait.Milliseconds())),
 		"FAKE_DIR="+r.dir, "FAKE_SERVER="+s.server, "FAKE_TUI="+s.tui)
+	if s.noDaemon {
+		env = append(env, "FAKE_NO_DAEMON=1")
+	}
 	r.cmd = exec.Command(os.Args[0], shipArgs...)
 	r.cmd.Env = env
 	r.cmd.Stdout, r.cmd.Stderr = r.out, r.errb
@@ -370,12 +388,23 @@ func TestTUIRunsRemoteBehindTheServerThatCameUp(t *testing.T) {
 	}
 }
 
-func TestServerGetsTheHookFlagsAndNoDockArgs(t *testing.T) {
+func TestServerGetsTheConfigFlagsAndNothingElse(t *testing.T) {
 	r := start(t, setup{tui: "exit:0"})
 	r.exit()
-	want := append([]string{"app-server", "--listen", "unix://" + r.socket}, hookFlags...)
+	// -m and the prompt stay on the TUI; tools and the model run in the server, so it gets every
+	// -c except the TUI's own.
+	want := append([]string{"app-server", "--listen", "unix://" + r.socket, "-c", `model_reasoning_effort="high"`}, hookFlags...)
 	if got := r.argv("server.argv"); !reflect.DeepEqual(got, want) {
 		t.Errorf("the server ran with %q, want %q", got, want)
+	}
+}
+
+func TestServerFlagsPicksConfigAndFeatureFlagsBeforeDashDash(t *testing.T) {
+	got := serverFlags([]string{"-m", "x", "-c", "a=1", "--config=b=2", "-cc=3", "-c=d=4", "--enable", "f", "--disable=g",
+		"-c", "tui.x=1", "--sandbox", "read-only", "--", "-c", "hooks.x=1"})
+	want := []string{"-c", "a=1", "--config", "b=2", "-c", "c=3", "-c", "d=4", "--enable", "f", "--disable", "g"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("serverFlags = %q, want %q", got, want)
 	}
 }
 
@@ -392,8 +421,19 @@ func TestServerThatNeverComesUpFallsBackToPlainCodex(t *testing.T) {
 	if code := r.exit(); code != 3 {
 		t.Errorf("the wrapper exited %d, want the plain run's 3", code)
 	}
-	expectPlain(t, r)
+	expectPlain(t, r, false)
 	r.expectNothingLeft()
+	if !strings.Contains(r.errb.String(), "did not listen") {
+		t.Errorf("stderr = %q, want a line saying why the ship fell back", r.errb.String())
+	}
+}
+
+func TestFallbackKeepsTheHookEnvironmentOnACodexThatHasNoDaemonFlag(t *testing.T) {
+	r := start(t, setup{server: "never", tui: "exit:3", wait: 300 * time.Millisecond, noDaemon: true})
+	if code := r.exit(); code != 3 {
+		t.Errorf("the wrapper exited %d, want the plain run's 3", code)
+	}
+	expectPlain(t, r, true)
 }
 
 func TestServerThatExitsEarlyFallsBackAtOnce(t *testing.T) {
@@ -405,19 +445,24 @@ func TestServerThatExitsEarlyFallsBackAtOnce(t *testing.T) {
 	if took := time.Since(started); took > 6*time.Second {
 		t.Errorf("fell back after %v: it waited out the timeout on a server that had already exited", took)
 	}
-	expectPlain(t, r)
+	expectPlain(t, r, false)
+	if !strings.Contains(r.errb.String(), "exited before it listened") {
+		t.Errorf("stderr = %q, want a line saying why the ship fell back", r.errb.String())
+	}
 	r.expectNoSocket()
 }
 
-// expectPlain: the exe ran with the ship's args and no --remote. A leading --no-daemon is allowed.
-func expectPlain(t *testing.T, r *rig) {
+// expectPlain: the exe ran with the ship's args and no --remote, and with --no-daemon first
+// only when the exe advertises it (an older Codex rejects it).
+func expectPlain(t *testing.T, r *rig, noDaemon bool) {
 	t.Helper()
 	got := r.argv("tui.argv")
-	if len(got) > 0 && got[0] == "--no-daemon" {
-		got = got[1:]
+	want := shipArgs
+	if noDaemon {
+		want = append([]string{"--no-daemon"}, shipArgs...)
 	}
-	if !reflect.DeepEqual(got, shipArgs) {
-		t.Errorf("the fallback ran with %q, want the ship's args %q", got, shipArgs)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("the fallback ran with %q, want %q", got, want)
 	}
 }
 
@@ -437,28 +482,71 @@ func TestPaneKilledOrTerminatedStopsTheServer(t *testing.T) {
 func TestCtrlCAndQuitDoNotEndTheShip(t *testing.T) {
 	r := start(t, setup{tui: "hold"})
 	r.waitFile("tui.started")
+	// A real Ctrl-C goes to the pane's foreground group; the server, in its own, is out of reach.
 	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGQUIT} {
-		if err := syscall.Kill(r.cmd.Process.Pid, sig); err != nil {
+		if err := syscall.Kill(-r.cmd.Process.Pid, sig); err != nil {
 			t.Fatal(err)
 		}
 	}
-	time.Sleep(500 * time.Millisecond)
-	if r.exited() {
-		t.Fatal("the wrapper exited on SIGINT or SIGQUIT")
-	}
-	for _, f := range []string{"server.pid", "server.child.pid", "tui.pid"} {
-		if !alive(r.pid(f)) {
-			t.Errorf("%s (pid %d) died", f, r.pid(f))
+	holds := func() bool {
+		if r.exited() {
+			return false
 		}
+		for _, f := range []string{"server.pid", "server.child.pid", "tui.pid"} {
+			if !alive(r.pid(f)) {
+				return false
+			}
+		}
+		_, err := os.Lstat(r.socket)
+		return err == nil
 	}
-	if _, err := os.Lstat(r.socket); err != nil {
-		t.Errorf("the socket is gone: %v", err)
+	for end := time.Now().Add(400 * time.Millisecond); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+		if !holds() {
+			t.Fatal("the ship or the server ended on SIGINT or SIGQUIT")
+		}
 	}
 	writeFile(r.dir, "tui-release", "")
 	if code := r.exit(); code != 0 {
 		t.Errorf("the wrapper exited %d, want the TUI's 0", code)
 	}
 	r.expectNothingLeft()
+}
+
+func TestSignalWhileWaitingForTheServerCleansUpAndExits(t *testing.T) {
+	for _, sig := range []syscall.Signal{syscall.SIGHUP, syscall.SIGTERM} {
+		t.Run(sig.String(), func(t *testing.T) {
+			r := start(t, setup{server: "never", tui: "exit:0", wait: 20 * time.Second})
+			r.waitFile("server.pid")
+			if err := syscall.Kill(r.cmd.Process.Pid, sig); err != nil {
+				t.Fatal(err)
+			}
+			if code := r.exit(); code != 128+int(sig) {
+				t.Errorf("the wrapper exited %d, want %d", code, 128+int(sig))
+			}
+			if _, ok := r.read("tui.started"); ok {
+				t.Error("the TUI ran after the wrapper was told to end")
+			}
+			r.expectNothingLeft()
+		})
+	}
+}
+
+// A server reaped before stop began may have left its pid to someone else's group.
+func TestStopSignalsNoGroupOfAServerAlreadyReaped(t *testing.T) {
+	bystander := exec.Command("sleep", "30")
+	bystander.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := bystander.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = bystander.Process.Kill(); _ = bystander.Wait() })
+	exited := make(chan struct{})
+	close(exited)
+	s := &server{cmd: &exec.Cmd{Process: bystander.Process}, exited: exited}
+	s.stop(Options{Socket: filepath.Join(shortTemp(t), "s.sock"), Owner: os.Getuid()})
+	time.Sleep(100 * time.Millisecond)
+	if !alive(bystander.Process.Pid) {
+		t.Error("stop killed a process group of a server that had already exited")
+	}
 }
 
 func TestServerStaysOffTheTerminal(t *testing.T) {
@@ -468,7 +556,7 @@ func TestServerStaysOffTheTerminal(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.exit()
-	if got, _ := r.read("server.stdin-eof"); got != "" || r.pid("server.pid") == 0 {
+	if _, ok := r.read("server.stdin-eof"); !ok || r.pid("server.pid") == 0 {
 		t.Fatal("the server's stdin did not end at once while the wrapper's stayed open")
 	}
 	if got, _ := r.read("tui.stdin"); got != "typed" {
@@ -506,7 +594,10 @@ func TestUnsafeSocketDirFallsBackToPlainCodex(t *testing.T) {
 	if code := r.exit(); code != 5 {
 		t.Errorf("the wrapper exited %d, want the plain run's 5", code)
 	}
-	expectPlain(t, r)
+	expectPlain(t, r, false)
+	if !strings.Contains(r.errb.String(), "not a plain directory") {
+		t.Errorf("stderr = %q, want a line saying why the ship fell back", r.errb.String())
+	}
 	if _, ok := r.read("server.argv"); ok {
 		t.Error("a server was started with its socket in a linked directory")
 	}
@@ -594,32 +685,88 @@ func TestSocketPathIsPerLaunchAndShortEnoughForAnyUID(t *testing.T) {
 	}
 }
 
-// Codex 0.167.1 makes the listen path a symlink to a socket under /tmp/codex-daemon-<uid>/.
+// Codex 0.167.1 makes the listen path a symlink to a socket in its daemon directory, next to a
+// .lock file; on macOS the directory is reached through /tmp, itself a symlink.
 func TestUncleanServerExitLeavesNeitherTheLinkNorItsTarget(t *testing.T) {
-	root := shortTemp(t)
+	base := shortTemp(t)
+	realRoot := filepath.Join(base, "real")
+	if err := os.Mkdir(realRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realRoot, filepath.Join(base, "prefix")); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(base, "prefix", "daemon")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	realDaemon := filepath.Join(realRoot, "daemon")
 	daemonDir = func(int) string { return root }
 	t.Cleanup(func() { daemonDir = func(uid int) string { return fmt.Sprintf("/tmp/codex-daemon-%d", uid) } })
-	outside := filepath.Join(shortTemp(t), "x.sock")
-	for name, target := range map[string]string{"inside": filepath.Join(root, "h.sock"), "outside": outside} {
-		t.Run(name, func(t *testing.T) {
-			l, err := net.Listen("unix", target)
+	other := filepath.Join(shortTemp(t), "x.sock")
+	nested := filepath.Join(realDaemon, "sub")
+	if err := os.Mkdir(nested, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name, target string // target as the link's value
+		lock, gone   bool
+	}{
+		{"through the symlinked prefix", filepath.Join(realDaemon, "h1"), true, true},
+		{"through the daemon path as given", filepath.Join(root, "h2"), true, true},
+		{"elsewhere", other, false, false},
+		{"a subdirectory of the daemon directory", filepath.Join(nested, "h3"), false, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			l, err := net.Listen("unix", c.target)
 			if err != nil {
 				t.Fatal(err)
 			}
 			l.(*net.UnixListener).SetUnlinkOnClose(false)
 			defer l.Close()
+			lock := c.target + ".lock"
+			if err := os.WriteFile(lock, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
 			link := filepath.Join(shortTemp(t), "s.sock")
-			if err := os.Symlink(target, link); err != nil {
+			if err := os.Symlink(c.target, link); err != nil {
 				t.Fatal(err)
 			}
 			removeSocket(Options{Socket: link, Owner: os.Getuid()})
 			if _, err := os.Lstat(link); err == nil {
 				t.Error("the link is still there")
 			}
-			_, err = os.Lstat(target)
-			if gone := err != nil; gone != (name == "inside") {
-				t.Errorf("target gone = %v: only a socket under the daemon directory may be removed", gone)
+			for _, f := range []string{c.target, lock} {
+				_, err := os.Lstat(f)
+				if gone := err != nil; gone != c.gone {
+					t.Errorf("%s gone = %v, want %v", filepath.Base(f), gone, c.gone)
+				}
 			}
 		})
+	}
+}
+
+func TestDaemonDirThatIsOpenToOthersIsLeftAlone(t *testing.T) {
+	root := shortTemp(t)
+	if err := os.Chmod(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	daemonDir = func(int) string { return root }
+	t.Cleanup(func() { daemonDir = func(uid int) string { return fmt.Sprintf("/tmp/codex-daemon-%d", uid) } })
+	target := filepath.Join(root, "h")
+	l, err := net.Listen("unix", target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.(*net.UnixListener).SetUnlinkOnClose(false)
+	defer l.Close()
+	link := filepath.Join(shortTemp(t), "s.sock")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	removeSocket(Options{Socket: link, Owner: os.Getuid()})
+	if _, err := os.Lstat(target); err != nil {
+		t.Error("removed a socket from a daemon directory that group and others can write")
 	}
 }

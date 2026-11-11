@@ -777,6 +777,11 @@ func TestCodexShipRunsOnItsOwnAppServer(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
 	w.server = "listen"
+	// The wrapper waits 5 s for the fake server's socket; python3 must not spend them on a
+	// cold start (the Xcode shim's first run, a loaded machine).
+	if out, err := exec.Command("python3", "-c", "import os, socket").CombinedOutput(); err != nil {
+		t.Skipf("python3 is not usable: %v %s", err, out)
+	}
 	w.start()
 	ship := w.launch(w.order("work", "codex", "cl-codex", commodore, "do the thing"))
 	r := w.record(ship.Session)
