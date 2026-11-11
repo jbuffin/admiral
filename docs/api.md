@@ -53,3 +53,23 @@ The server answers an open with `{"type": "conversation_opened", "ship": "<ship>
 - A client holds at most 16 ships open. A 17th open closes the oldest.
 - A subscription ends on `conversation_close`, when the connection closes, or when the ship is dismissed.
 - The server follows the file by offset, about four times a second while any client has the ship open.
+
+## Harness capabilities
+
+What each fleet's harnesses were probed to do (ADR 0035). These are not the server `capabilities` that `GET /api/version` lists. Both routes are also served under `/api/v1/`.
+
+### `GET /api/harness-capabilities`
+
+```json
+{"fleets":[{"key":"work","name":"Work","harnesses":[
+  {"harness":"claude","version":"2.1.300","detected_at":"2026-11-11T09:00:00Z",
+   "features":[{"id":"autopilot","label":"Autopilot","capabilities":[
+     {"id":"autopilot.guard_hook","label":"Pre-tool guard hook",
+      "status":"passed","checked_at":"2026-11-11T09:00:05Z","detail":"..."}]}]}]}]}
+```
+
+Fleets and harnesses follow the config's order; features follow the table (judge, bot, restricted, autopilot). `status` is `passed`, `failed` or `not_checked`, against the last detected `version`. `version` is `""` when none was detected, and the guard's `detail` then says why. `checked_at` and `detected_at` are `null` when there is no time.
+
+### `POST /api/harness-capabilities/check`
+
+Body `{"fleet":"work","harness":"claude"}`. Runs the probes for that harness and waits (up to two minutes). It answers 200 with the harness object above plus `"fleet"`. 400 for a bad body, 404 for an unknown fleet or a harness the fleet has no dock for, 502 with `{"error":...}` when the harness's `--version` fails.
