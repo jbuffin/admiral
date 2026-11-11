@@ -57,4 +57,3 @@ From [Grilling: settings for fleets and their order sources](https://github.com/
 - **A built-in GitHub source stays with its fleet.** Other plugin sources can be moved to another fleet (`PUT /api/sources/{key}` with `fleet`); a GitHub source is refused, and the engineer adds one to the other fleet instead.
 - **The UI writes three parts of the file**, not two: `favorite_skills`, `sources`, and now the four fleet fields above.
 - **`clone_root` must be an absolute path or start with `~/`**, like a search root; nothing read it before, so no stored config breaks.
-- **Moving a plugin source** leaves its autopilot entries' own `fleet` as they are.
