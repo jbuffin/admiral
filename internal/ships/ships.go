@@ -115,8 +115,8 @@ type Service struct {
 	settleWG sync.WaitGroup
 	// waking holds the moored ships with a wake under way, by session.
 	waking map[string]bool
-	// roundLogged is the rounds whose end is written, by session and round, so a retried end writes none.
-	roundLogged map[string]bool
+	// roundLogged is each session's last round whose end is written, by launch and round, so a retried end writes none.
+	roundLogged map[string]string
 
 	mooredMu     sync.Mutex
 	moored       []moor.Record // read from $ADMIRAL_HOME/moored on first use

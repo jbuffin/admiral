@@ -109,15 +109,19 @@ func splitResources(v string) []string {
 // endRound logs how a woken ship's round ended, once per round; a ship that was never woken has no round.
 func (s *Service) endRound(sess sessionhost.Session, end string) {
 	round, _ := strconv.Atoi(sess.Options["round"])
-	key := sess.Name + "/" + sess.Options["round"]
-	s.mu.Lock()
-	logged := s.roundLogged[key]
-	if s.roundLogged == nil {
-		s.roundLogged = map[string]bool{}
+	if round == 0 {
+		return
 	}
-	s.roundLogged[key] = true
+	// The launch time and pane tell this ship from a later one under the same name, so the name's one entry is replaced.
+	id := fmt.Sprintf("%s/%s/%d", sess.Options["launched"], sess.PaneID, round)
+	s.mu.Lock()
+	logged := s.roundLogged[sess.Name] == id
+	if s.roundLogged == nil {
+		s.roundLogged = map[string]string{}
+	}
+	s.roundLogged[sess.Name] = id
 	s.mu.Unlock()
-	if round > 0 && !logged {
+	if !logged {
 		s.record(outcomes.Record{Ship: sess.Name, Event: "round", Fields: map[string]any{"round": round, "end": end}}, nil)
 	}
 }

@@ -95,3 +95,24 @@ func TestARoundsEndIsLoggedOnceHoweverOftenItIsReported(t *testing.T) {
 		t.Errorf("round events = %v, want one", got)
 	}
 }
+
+func TestANewShipUnderAReusedNameLogsItsOwnRoundEvents(t *testing.T) {
+	f := mooredService(t, nil)
+	ship := func(launched string) sessionhost.Session {
+		return sessionhost.Session{Name: "saltpaw", Options: map[string]string{"round": "1", "launched": launched}}
+	}
+	f.s.endRound(ship("2026-01-01T00:00:00Z"), "moored")
+	f.s.endRound(ship("2026-01-01T00:00:00Z"), "sailed") // the same ship's retried end
+	f.s.endRound(ship("2026-01-02T00:00:00Z"), "moored") // a later ship that took the name
+	if got := f.events(t, "saltpaw", "round"); len(got) != 2 {
+		t.Errorf("round events = %v, want one per ship", got)
+	}
+}
+
+func TestAShipThatWasNeverWokenLeavesNoRoundEntry(t *testing.T) {
+	f := mooredService(t, nil)
+	f.s.endRound(sessionhost.Session{Name: "saltpaw", Options: map[string]string{"launched": "2026-01-01T00:00:00Z"}}, "moored")
+	if n := len(f.s.roundLogged); n != 0 {
+		t.Errorf("roundLogged = %v, want none for a ship with no round", f.s.roundLogged)
+	}
+}
