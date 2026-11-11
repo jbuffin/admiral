@@ -5,6 +5,7 @@ package launcher
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -247,6 +248,10 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	}
 
 	if err := l.createSession(session, req.Dir, opts, paneOpts, env, unset, argv, true); err != nil {
+		if runCrew != "" {
+			home, _ := filepath.Abs(l.Home)
+			_ = removeRunCrew(home, session)
+		}
 		return nil, err
 	}
 	out := &Launched{Session: session, Options: map[string]string{}}

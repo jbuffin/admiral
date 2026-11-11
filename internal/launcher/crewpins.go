@@ -82,10 +82,7 @@ func resolvePins(req Request, dock config.Harness, home, fleetKey string) ([]pin
 		if !ok {
 			return nil, refuse(http.StatusBadRequest, "crew member %q not found in the built-in, fleet or repo layer", name)
 		}
-		if m.Harness != nil && *m.Harness != req.Harness {
-			return nil, refuse(http.StatusBadRequest, "crew member %q is locked to %s, not %s", name, *m.Harness, req.Harness)
-		}
-		data, err := crew.ReadFile(in.Layers[m.Layer], m.File)
+		data, err := crew.ReadFile(in.Layers[m.Layer], m)
 		if err != nil {
 			return nil, refuse(http.StatusBadRequest, "crew member %q can't be read: %v", name, err)
 		}

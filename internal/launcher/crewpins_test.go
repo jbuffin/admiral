@@ -108,6 +108,18 @@ func TestPinnedMembersBecomeTheShipsRunLayer(t *testing.T) {
 	}
 }
 
+func TestAMemberLockedToAnotherHarnessCanBePinned(t *testing.T) {
+	p := newPinRig(t, nil)
+	coder := member(t, p.fleet(), "coder", "implementer", "harness: codex\n", "Runs on codex.")
+
+	_, env := p.mustLaunchPinned(t, []string{"coder"})
+
+	run := p.runLayer(t, env)
+	if got, err := os.ReadFile(filepath.Join(run, "coder.md")); err != nil || string(got) != string(coder) {
+		t.Errorf("run layer coder.md reads %q (%v), want the member's file byte for byte: %q", got, err, coder)
+	}
+}
+
 func TestNoPinsLeaveNoRunLayer(t *testing.T) {
 	p := newPinRig(t, map[string]string{"ADMIRAL_RUN_CREW": "/fleet/says/otherwise"})
 	member(t, p.builtIn(), "scout", "scribe", "", "Built-in scout.")
@@ -129,9 +141,6 @@ func TestPinRefusalsComeBeforeAnySession(t *testing.T) {
 		{"a name no layer resolves", func(t *testing.T, p *pinRig) {
 			member(t, p.builtIn(), "scout", "scribe", "", "x")
 		}, []string{"ghost"}, "ghost"},
-		{"a member locked to another harness", func(t *testing.T, p *pinRig) {
-			member(t, p.fleet(), "coder", "implementer", "harness: codex\n", "x")
-		}, []string{"coder"}, "codex"},
 		{"an unpinned file the resolver rejects", func(t *testing.T, p *pinRig) {
 			member(t, p.builtIn(), "scout", "scribe", "", "x")
 			mustMkdir(t, p.fleet())

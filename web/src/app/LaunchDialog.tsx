@@ -42,6 +42,7 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
   const [models, setModels] = useState<Record<string, string>>({});
   const [effort, setEffort] = useState('');
   const [crewAnswer, setCrewAnswer] = useState<CrewAnswer | null>(null);
+  const [crewFailed, setCrewFailed] = useState(false);
   const [pinned, setPinned] = useState<string[]>([]);
   const [held, setHeld] = useState<string[]>([]);
   const [autopilot, setAutopilot] = useState(false);
@@ -109,7 +110,9 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
     let live = true;
     const q = new URLSearchParams({ fleet: fleet.key, harness, ...(crewDir && { dir: crewDir }) });
     void call<CrewAnswer>('GET', `/launch-orders/crew?${q}`).then((r) => {
-      if (live) setCrewAnswer(r.ok ? r.data : null);
+      if (!live) return;
+      setCrewFailed(!r.ok);
+      setCrewAnswer(r.ok ? r.data : null);
     });
     return () => {
       live = false;
@@ -127,7 +130,7 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
   const clone = dirs?.clone ?? null;
   const cloning = dir === CLONE && !!clone;
   const crewOffered = crewOptions(crewAnswer?.members ?? [], harness);
-  const crew = pinned.filter((n) => crewOffered.some((o) => o.name === n && !o.disabled));
+  const crew = pinned.filter((n) => crewOffered.some((o) => o.name === n));
   const favorites = (skills?.skills ?? []).filter((s) => s.favorite);
 
   const chosen = (): SkillChoice | string => {
@@ -255,6 +258,7 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
             </label>
           ) : null}
 
+          {pinning && crewFailed ? <p class="note warn">Couldn't load crew members</p> : null}
           {pinning && crewAnswer && crewAnswer.errors.length > 0 ? (
             <p class="note warn">{`Crew members can't be pinned: ${crewAnswer.errors.map((e) => `${e.layer}${e.file ? `/${e.file}` : ''}: ${e.message}`).join('; ')}`}</p>
           ) : null}
@@ -263,9 +267,9 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
               <legend>Crew</legend>
               {crewOffered.map((m) => (
                 <label key={m.name} class="check">
-                  <input type="checkbox" disabled={m.disabled} checked={crew.includes(m.name)} onChange={() => setPinned(togglePin(crew, crewOffered, m.name))} />
+                  <input type="checkbox" checked={crew.includes(m.name)} onChange={() => setPinned(togglePin(crew, crewOffered, m.name))} />
                   {m.name}
-                  <span class="meta">{m.disabled ? `${m.role}, locked to ${m.harness}` : `${m.role}, ${m.layer}`}</span>
+                  <span class="meta">{m.hint ? `${m.role}, ${m.layer}, ${m.hint}` : `${m.role}, ${m.layer}`}</span>
                 </label>
               ))}
             </fieldset>

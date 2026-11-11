@@ -33,7 +33,7 @@ export interface CrewMemberView {
   'pick-me-when'?: string;
 }
 export interface CrewOption extends CrewMemberView {
-  disabled: boolean;
+  hint: string | null;
 }
 export interface CrewAnswer {
   members: CrewMemberView[];
@@ -41,9 +41,9 @@ export interface CrewAnswer {
   errors: { layer: string; file: string | null; message: string }[];
 }
 
-/** The members a pin control offers: those locked to another harness are shown but cannot be pinned. */
+/** The members a pin control offers: one locked to another harness can be pinned and says where it runs. */
 export function crewOptions(members: CrewMemberView[], harness: string): CrewOption[] {
-  return members.map((m) => ({ ...m, disabled: m.harness !== null && m.harness !== harness }));
+  return members.map((m) => ({ ...m, hint: m.harness !== null && m.harness !== harness ? `runs on ${m.harness}` : null }));
 }
 
 /** Pins or unpins a member; pinning replaces any other pinned member of the same role. */

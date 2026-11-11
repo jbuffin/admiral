@@ -109,14 +109,14 @@ describe('pinned crew members', () => {
     { name: 'scout', role: 'scribe', layer: 'built-in', harness: null },
     { name: 'coder', role: 'implementer', layer: 'fleet', harness: 'codex' },
   ];
-  it('cannot be pinned when the member is locked to another harness', () => {
-    expect(crewOptions(members, 'claude').map((o) => [o.name, o.disabled])).toEqual([
-      ['scout', false],
-      ['coder', true],
+  it('can be pinned when the member is locked to another harness, with a hint where it runs', () => {
+    expect(crewOptions(members, 'claude').map((o) => [o.name, o.hint])).toEqual([
+      ['scout', null],
+      ['coder', 'runs on codex'],
     ]);
-    expect(crewOptions(members, 'codex').map((o) => [o.name, o.disabled])).toEqual([
-      ['scout', false],
-      ['coder', false],
+    expect(crewOptions(members, 'codex').map((o) => [o.name, o.hint])).toEqual([
+      ['scout', null],
+      ['coder', null],
     ]);
   });
 });
