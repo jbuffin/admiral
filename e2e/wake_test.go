@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -16,8 +17,24 @@ func wakeReport() string {
 	return string(b)
 }
 
-// lastArg is the prompt: the mooring fleet's claude dock has no args, so promptOf's check of them does not fit.
-func lastArg(r record) string { return r.argv[len(r.argv)-1] }
+// promptWithHooks is the prompt, after checking the Admiral-owned flags before it: the mooring fleet's claude dock has no args,
+// so promptOf's check of them does not fit.
+func promptWithHooks(t *testing.T, w *world, r record) string {
+	t.Helper()
+	var rest []string
+	for i := 0; i < len(r.argv); i++ {
+		if r.argv[i] == "--session-id" && i+1 < len(r.argv) {
+			i++
+			continue
+		}
+		rest = append(rest, r.argv[i])
+	}
+	want := []string{"--settings", filepath.Join(w.home, "harness", "claude-settings.json"), "--"}
+	if len(rest) == 0 || !reflect.DeepEqual(rest[:len(rest)-1], want) {
+		t.Fatalf("claude argv before the prompt = %q, want %q", rest, want)
+	}
+	return rest[len(rest)-1]
+}
 
 // wake posts a hand wake and returns the ship it answers with.
 func (w *world) wake(session, text string) shipJSON {
@@ -48,7 +65,7 @@ func TestWakingAMooredShipByHandRelaunchesItUnderTheSameName(t *testing.T) {
 		t.Errorf("woken ship = %s (%s), want %s (%s)", woken.Name, woken.Session, ship.Name, ship.Session)
 	}
 	r := w.record(ship.Session)
-	if got := lastArg(r); got != "/commodore resume run-7 also check the docs" {
+	if got := promptWithHooks(t, w, r); got != "/commodore resume run-7 also check the docs" {
 		t.Errorf("prompt = %q, want the resume text verbatim and the engineer's text", got)
 	}
 	w.in.waitShipsList(t, 20*time.Second, "the ship underway under its own name", func(l []shipJSON) bool {
@@ -77,7 +94,7 @@ func TestWakingAMooredShipByHandRelaunchesItUnderTheSameName(t *testing.T) {
 	}
 
 	w.wake(ship.Session, "")
-	if got := lastArg(w.record(ship.Session)); got != "/commodore resume run-7" {
+	if got := promptWithHooks(t, w, w.record(ship.Session)); got != "/commodore resume run-7" {
 		t.Errorf("second wake prompt = %q, want the resume text alone", got)
 	}
 	if e := lastOf(w.waitEvent(ship.Session, "woken", 2), "woken"); e["round"] != float64(2) {
