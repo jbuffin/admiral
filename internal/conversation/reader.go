@@ -29,6 +29,8 @@ type Options struct {
 	MaxBytes int
 	// MaxOutput zero means DefaultMaxOutput.
 	MaxOutput int
+	// Harness picks the decoder: "copilot" reads events.jsonl, anything else Claude Code's transcript.
+	Harness string
 }
 
 // TextView is the chat's view: user and assistant text and notices, the last 200 within 256 KB.
@@ -216,6 +218,9 @@ func readClaudeCode(r io.Reader) ([]Item, error) {
 	h := decode(r, Options{}, false)
 	return h.items, h.result()
 }
+
+// readCopilot is a stub for the red tests: the events.jsonl adapter fills it in.
+func readCopilot(r io.Reader) ([]Item, error) { return nil, nil }
 
 func decode(r io.Reader, o Options, skipFirst bool) *held {
 	h := newHeld(o, false)
