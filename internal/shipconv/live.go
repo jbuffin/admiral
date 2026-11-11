@@ -28,7 +28,7 @@ func (s *Service) runningCodex() []ships.Ship {
 	}
 	var out []ships.Ship
 	for _, sh := range s.Ships.List() {
-		if sh.Harness == "codex" && (sh.Status == ships.StatusUnderway || sh.Status == ships.StatusNeedsYou || sh.Status == ships.StatusAnchored) {
+		if sh.Harness == "codex" && (sh.Status == ships.StatusUnderway || sh.Status == ships.StatusNeedsYou) {
 			out = append(out, sh)
 		}
 	}
