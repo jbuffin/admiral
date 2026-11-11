@@ -47,8 +47,6 @@ a { color: inherit; text-decoration: none; }
 .menu-item[aria-checked='true'] { background: var(--color-sel); color: var(--color-text); }
 .menu-note { margin: 6px 10px 4px; font-size: var(--font-size-meta); color: var(--color-muted); }
 
-.docks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.docks li { display: flex; align-items: center; gap: 10px; }
 .flag {
   display: inline-flex; align-items: center; justify-content: center; flex: none; overflow: hidden;
   border: 1px solid var(--harness-tile-border);
@@ -190,3 +188,27 @@ a { color: inherit; text-decoration: none; }
   font-size: var(--font-size-meta); color: var(--color-text2);
 }
 .alert { margin: 8px 0 0; padding: 6px 10px; border-radius: var(--shape-radius-md); border: 1px solid var(--color-err); color: var(--color-err); overflow-wrap: anywhere; }
+
+/* Ships list: status groups of rows. */
+.ship-group { margin: 0 0 18px; }
+.group-head {
+  display: flex; align-items: center; gap: 8px; margin: 0; padding: 6px 0;
+  font-family: var(--font-body); font-size: var(--font-size-meta); font-weight: 500; color: var(--color-text2);
+}
+.group-needs_you .glyph { color: var(--status-needs); }
+.group-underway .glyph { color: var(--status-run); }
+.group-anchored .glyph { color: var(--status-anchored); }
+.count { color: var(--color-muted); }
+.ship-list { list-style: none; margin: 0; padding: 0; }
+.ship-row {
+  display: flex; align-items: center; gap: 12px; min-height: var(--shape-min-touch-target); padding: 6px 0;
+  border-bottom: 1px solid var(--color-line);
+}
+.ship-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.ship-bar { flex: none; width: 3px; height: 18px; border-radius: 2px; }
+.ship-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ship-side { flex: none; display: flex; flex-direction: column; align-items: flex-end; max-width: 30%; font-size: var(--font-size-meta); color: var(--color-muted); }
+.ship-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.ship-order, .ship-tail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-meta); color: var(--color-muted); }
+.ship-tail, .ship-order .mono { font-family: var(--font-mono); font-size: var(--font-size-mono); }
+.ship-order .mono { color: var(--color-muted); }
