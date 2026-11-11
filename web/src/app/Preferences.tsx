@@ -62,14 +62,14 @@ export function Preferences({ phone }: { phone: boolean }) {
   const key = preferencesFleet(loc.value.path);
   const fleet = fleets.value.find((f) => f.key === key);
   const page = preferencesPage(loc.value.path);
-  const fallback = activeFleet.value;
 
   // Bare /app/preferences, and a path naming no fleet, open the active fleet's sources.
-  // With no fleet to open, they open Remote access, which needs none.
+  // With no fleet to open, they open Remote access, which needs none. The signals are read here, at run time, so a render that saw the config half-loaded can't send the page the wrong way.
   useEffect(() => {
-    if (!loaded.value || fleet || page === 'remote') return;
-    go(fallback ? sourcesPath(fallback.key) : remotePath, fleetSearch.value, true);
-  }, [loaded.value, fleet, fallback, page]);
+    const open = activeFleet.value;
+    if (!loaded.value || page === 'remote' || fleets.value.some((f) => f.key === key)) return;
+    go(open ? sourcesPath(open.key) : remotePath, fleetSearch.value, true);
+  }, [loaded.value, fleets.value, key, page]);
 
   const Title = phone ? 'h2' : 'h1';
   return (

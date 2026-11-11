@@ -56,8 +56,8 @@ function Pairing({ onResult }: { onResult: (r: Result<unknown>) => void }) {
           <>
             <Qr url={code.url} />
             <div class="pairing-text">
-              <code class="pair-url">{code.url}</code>
-              <code class="pair-code">{formatCode(code.code)}</code>
+              <code class="pair-url">{code.url}</code>{' '}
+              <code class="pair-code">{formatCode(code.code)}</code>{' '}
               <span class="note">Expires in {state.remaining}. The code works one time.</span>
             </div>
           </>
@@ -154,7 +154,12 @@ export function RemoteAccess() {
       setError(null);
     } else setError(r.error);
   };
-  useEffect(() => void reload(), []);
+  // A device that redeems the code on screen shows up without a reload.
+  useEffect(() => {
+    void reload();
+    const t = setInterval(() => void reload(), 2000);
+    return () => clearInterval(t);
+  }, []);
 
   if (signedOut)
     return (
