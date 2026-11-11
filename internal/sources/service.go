@@ -19,7 +19,6 @@ import (
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/ships"
-	"github.com/jbuffin/admiral/internal/state"
 )
 
 // Service's GET handlers never change anything.
@@ -29,7 +28,6 @@ type Service struct {
 	Sup    *Supervisor
 	Ships  func() []ships.Ship
 	Hub    *server.Hub
-	State  *state.Store
 
 	mu     sync.Mutex // one config read-modify-write at a time
 	poke   chan struct{}

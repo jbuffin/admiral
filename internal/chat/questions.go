@@ -277,7 +277,7 @@ func (s *Service) removeAll() {
 	}
 }
 
-// serveAnswer writes no outcome record and adds no resume order: the chat is not a ship.
+// serveAnswer writes no outcome record and queues no resume text: the chat is not a ship.
 func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req inbox.QuestionRequest

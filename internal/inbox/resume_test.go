@@ -109,3 +109,19 @@ func TestPendingResumeOfAGoneShipOrUntypableTextFinishes(t *testing.T) {
 		})
 	}
 }
+
+// Before the host's first snapshot no ship is found: the typer says so by
+// reporting the ship afloat but not typed, and the entry stays pending.
+func TestPendingResumeWaitsWhileShipsAreNotKnown(t *testing.T) {
+	f := newResumeFixture(t)
+	f.s.TypeResume = func(string, string) (bool, bool, error) { return true, false, nil }
+	if _, err := f.s.Kept.QueueResume("s1:k", "s1", "Finish it"); err != nil {
+		t.Fatal(err)
+	}
+	if left := f.s.addResumes(""); !left {
+		t.Error("addResumes reported nothing left to try again")
+	}
+	if f.pending() != 1 {
+		t.Errorf("pending = %d, want the entry kept", f.pending())
+	}
+}

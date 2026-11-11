@@ -205,7 +205,7 @@ func serve(args []string) error {
 		fmt.Fprintln(os.Stderr, "admiral: could not remove a retired plugin:", err)
 	}
 	supervisor := &sources.Supervisor{Home: dir, Config: cfg}
-	sourceService := &sources.Service{Home: dir, Config: cfg, Sup: supervisor, Hub: hub, Ships: shipService.List, State: st}
+	sourceService := &sources.Service{Home: dir, Config: cfg, Sup: supervisor, Hub: hub, Ships: shipService.List}
 	// The view autopilot engine kept its state here; it is gone (#261).
 	_ = os.Remove(filepath.Join(dir, "autopilot.json"))
 	// A ship launched but not yet listed by the host counts as running.

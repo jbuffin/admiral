@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 // #261: the engine's config keys migrate away. Each old autopilot part alone
 // is enough to need a migration, whatever else the file holds.
@@ -30,5 +34,53 @@ func TestNeedsMigrationForTheEnginesConfigKeys(t *testing.T) {
 				t.Errorf("NeedsMigration = %v, want %v for %s", got, c.want, c.file)
 			}
 		})
+	}
+}
+
+func planOut(t *testing.T, file string) (map[string]json.RawMessage, *migrationPlan) {
+	t.Helper()
+	p := planMigration([]byte(file))
+	if p == nil {
+		t.Fatalf("planMigration = nil for %s", file)
+	}
+	var out map[string]json.RawMessage
+	if err := json.Unmarshal(p.out, &out); err != nil {
+		t.Fatal(err)
+	}
+	return out, p
+}
+
+// An existing top-level max_ships wins over autopilot.max_ships, and the
+// autopilot object goes either way.
+func TestMigrationKeepsAnExistingTopLevelMaxShips(t *testing.T) {
+	out, _ := planOut(t, `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},"max_ships":5,"autopilot":{"max_ships":2}}`)
+	if string(out["max_ships"]) != "5" {
+		t.Errorf("max_ships = %s, want 5", out["max_ships"])
+	}
+	if _, ok := out["autopilot"]; ok {
+		t.Error("the autopilot object is still there")
+	}
+}
+
+// An autopilot value that is not an object is dropped, and does not stop the
+// fleet migration.
+func TestMigrationDropsANonObjectAutopilot(t *testing.T) {
+	out, _ := planOut(t, `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},"sources":{"gh":{"plugin":"github"}},"autopilot":null}`)
+	if _, ok := out["autopilot"]; ok {
+		t.Error("the autopilot value is still there")
+	}
+	if !strings.Contains(string(out["sources"]), `"fleet"`) {
+		t.Errorf("sources = %s, want gh moved to a fleet", out["sources"])
+	}
+}
+
+// The enabled entries of a source the migration removes are listed too.
+func TestMigrationListsEnabledEntriesOfADroppedSource(t *testing.T) {
+	const entry = `{"enabled":true,"fleet":"work","harness":"claude","skill":{"kind":"none"}}`
+	_, p := planOut(t, `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},"sources":{"notes":{"plugin":"freeform","name":"Notes","autopilot":{"orders":`+entry+`}}}}`)
+	m := &Migration{Removed: p.removed, Entries: p.entries}
+	_, body := m.Notice()
+	if !strings.Contains(body, "Notes") || !strings.Contains(body, "orders") {
+		t.Errorf("notice body lacks the dropped source's enabled entry:\n%s", body)
 	}
 }
