@@ -101,6 +101,7 @@ func handlersOf(t *testing.T, dir string) (lines [][3]string, stderrs []string) 
 func TestShipGuardRefusesOnAnAutopilotShip(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
+	w.proveGuard()
 	w.writeCue(guardShipCue)
 	w.start()
 	ship := w.launch(w.autopilotLaunch("claude", "guardap", nil))

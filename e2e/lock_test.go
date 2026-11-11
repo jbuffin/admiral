@@ -184,6 +184,7 @@ func (w *world) startPhone() {
 func TestLockBlocksALaunchNamingItUntilItEnds(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
+	w.proveGuard()
 	w.writeCue("wait go", "exit 0")
 	w.startPhone()
 
@@ -268,6 +269,7 @@ func TestLockBusyExits75AndWaitRunsAfterTheFirstEnds(t *testing.T) {
 func TestLockWaitsBehindAShipUntilItEnds(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
+	w.proveGuard()
 	w.writeCue("wait go", "exit 0")
 	w.startPhone()
 	ship := w.launch(w.autopilotLaunch("claude", "lockship", map[string]any{"resources": []string{"phone"}}))

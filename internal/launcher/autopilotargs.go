@@ -22,11 +22,7 @@ type flagRule struct {
 	dockUnset bool
 }
 
-// AutopilotHarnesses are the harnesses `admiral guard` covers. Adding codex or copilot here is
-// not enough: settle the copilot flags noted below, and check the table against its parser.
-var AutopilotHarnesses = []string{"claude"}
-
-// Codex's and copilot's are unreachable until AutopilotHarnesses names them. Copilot's --add-dir
+// Codex's and copilot's are unreachable until a guard probe passes for them. Copilot's --add-dir
 // and --available-tools can loosen the dock, so settle them before copilot is covered.
 var autopilotRules = map[string][]flagRule{
 	"claude": {

@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
-	"strings"
 
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
@@ -24,8 +23,8 @@ type CrewRequest struct {
 	Prompt  string
 	Args    []string // pass-through harness args (--arg), after the hook flags and before the prompt
 	Role    string   // optional @admiral-role; the caller has checked its shape
-	// Autopilot is a caller with ADMIRAL_AUTOPILOT=1: only claude launches, and
-	// Args must fit the autopilot args allowlist.
+	// Autopilot is a caller with ADMIRAL_AUTOPILOT=1: only a harness whose guard probe
+	// passed in the fleet launches, and Args must fit the autopilot args allowlist.
 	Autopilot bool
 }
 
@@ -92,8 +91,8 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 		return err
 	}
 	if req.Autopilot {
-		if !slices.Contains(AutopilotHarnesses, req.Harness) {
-			return fmt.Errorf("a caller with ADMIRAL_AUTOPILOT=1 can launch only %s crew: `admiral guard` doesn't cover %s", strings.Join(AutopilotHarnesses, ", "), req.Harness)
+		if err := l.autopilotGate(fleet.Key, fleet.Name, req.Harness); err != nil {
+			return fmt.Errorf("a caller with ADMIRAL_AUTOPILOT=1 can launch only on a harness whose guard probe passed: %w", err)
 		}
 		if err := AutopilotArgs(req.Harness, dock.Args, req.Args); err != nil {
 			return err
@@ -166,4 +165,12 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 
 func (l *Launcher) CloseCrew(ctx context.Context, windowID string) error {
 	return l.server().KillWindow(ctx, windowID)
+}
+
+// autopilotGate refuses when no gate is set: autopilot is never allowed unchecked.
+func (l *Launcher) autopilotGate(fleetKey, fleetName, harness string) error {
+	if l.AutopilotGate == nil {
+		return errors.New("no autopilot gate is configured")
+	}
+	return l.AutopilotGate(fleetKey, fleetName, harness)
 }

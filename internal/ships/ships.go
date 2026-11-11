@@ -8,12 +8,12 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/outcomes"
@@ -397,9 +397,15 @@ func (s *Service) admit(req launcher.Request) (release func(), lerr *launcher.Er
 	release = func() {}
 	cfg := s.Launcher.Config()
 	if req.Autopilot {
-		if !slices.Contains(launcher.AutopilotHarnesses, req.Harness) {
-			return release, &launcher.Error{Status: http.StatusBadRequest, Msg: "autopilot mode runs only " +
-				strings.Join(launcher.AutopilotHarnesses, ", ") + ", the harnesses `admiral guard` covers, not " + req.Harness}
+		fleet, ok := cfg.Fleet(req.Fleet)
+		if !ok {
+			return release, &launcher.Error{Status: http.StatusNotFound, Msg: "fleet " + strconv.Quote(req.Fleet) + " not found"}
+		}
+		if _, ok := fleet.Harness(req.Harness); !ok {
+			return release, &launcher.Error{Status: http.StatusNotFound, Msg: "fleet " + fleet.Name + " has no " + req.Harness + " dock"}
+		}
+		if err := autopilotgate.Check(s.Launcher.Home, fleet.Key, fleet.Name, req.Harness); err != nil {
+			return release, &launcher.Error{Status: http.StatusBadRequest, Msg: err.Error()}
 		}
 	}
 	for _, name := range req.Resources {

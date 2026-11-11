@@ -107,6 +107,7 @@ func (w *world) paneOf(session, crew string) crewPane {
 func TestCrew_LaunchSendListCloseAndRestart(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
+	w.proveGuard()
 	w.writeCue("hook working")
 	w.start()
 	ship := w.launch(w.order("work", "claude", "alpha", noSkill, "go"))

@@ -44,3 +44,23 @@ func WriteNotice(home, title, body string) (string, error) {
 	}
 	return id, os.Rename(tmp.Name(), filepath.Join(dir, id+".json"))
 }
+
+// OpenNotices lists the notices not yet dismissed, oldest first.
+func OpenNotices(home string) []Item {
+	var out []Item
+	for _, it := range scan(home) {
+		if it.Session == AdmiralSession && it.Kind == KindNotice {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+// NoticeBody is the body of a notice item.
+func (it Item) NoticeBody() string {
+	var n struct {
+		Body string `json:"body"`
+	}
+	_ = json.Unmarshal(it.fields[KindNotice], &n)
+	return n.Body
+}
