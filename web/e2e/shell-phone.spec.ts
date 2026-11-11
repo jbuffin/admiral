@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { HOME, WORK, expectSeededTurn, holds, interruptButton, launchFromTheShell, launchShip, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedFleets, seedTurn, sendButton, sentBubble, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh } from './shell';
+import { HOME, WORK, boatReceived, changeFile, changesOf, chip, diffOf, expectSeededTurn, gitCheckout, holds, interruptButton, launchCrew, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh } from './shell';
 
 const tab = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
 
@@ -48,6 +48,7 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   await expectSeededTurn(page);
   await viewTab(page, 'Changes').tap();
   await expect(viewTab(page, 'Changes')).toHaveAttribute('aria-selected', 'true');
+  await expect(viewPanel(page)).toContainText('No git history to compare');
   await viewTab(page, 'PR').tap();
   await expect(viewPanel(page)).toContainText('No pull request yet');
   await viewTab(page, 'Conversation').tap();
@@ -62,6 +63,22 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   await expect.poll(() => paneSize(admiral, login)).not.toBe(size);
   await viewTab(page, 'Conversation').tap();
   await expect.poll(() => bridge.isClosed()).toBe(true);
+  await page.goBack();
+  await expect(page.getByRole('heading', { name: 'Ships', exact: true })).toBeVisible();
+
+  // Changes in a checkout: the files and their diffs fit the screen, and a long line scrolls inside its diff, not the page. Reading them opens no bridge.
+  const dev = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', dir: gitCheckout(admiral, 'repo') });
+  await expect.poll(async () => (await changesOf(admiral, dev)).files.map((f) => `${f.path} ${f.status}`).sort()).toEqual(['a.txt modified', 'b.txt added', 'c.txt untracked']);
+  await rowLink(page, dev).tap();
+  await viewTab(page, 'Changes').tap();
+  await expect(changeFile(page, 'a.txt')).toContainText('modified');
+  await expect(changeFile(page, 'b.txt')).toContainText('added');
+  await expect(changeFile(page, 'c.txt')).toContainText('untracked');
+  await expect(diffOf(page, 'a.txt')).toContainText('TWO');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  expect(await diffOf(page, 'a.txt').evaluate((el) => [el, ...el.querySelectorAll('*')].some((e) => e.scrollWidth > e.clientWidth))).toBe(true);
+  await holds(() => bridges().length === 0, 'reading Changes opens no bridge socket');
+  expect(watch.unversioned()).toEqual([]);
   await page.goBack();
   await expect(page.getByRole('heading', { name: 'Ships', exact: true })).toBeVisible();
 
@@ -111,6 +128,23 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   await expect(sentBubble(page, 'Please rebase onto main')).toHaveCount(0);
   await expect(viewPanel(page)).toContainText('Aye, rebasing now', { timeout: 15_000 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+  // The flotilla fits the phone, and a picked boat takes the conversation and the box.
+  await launchCrew(admiral, chat, 'rev', 'reviewer');
+  await seedBoatTranscript(admiral, chat, 'rev', [line.user('Review the parser'), line.assistant('Boat found two parser bugs')]);
+  await expect(chip(page, /reviewer/)).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  expect((await chip(page, /reviewer/).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await chip(page, /reviewer/).tap();
+  await expect(chip(page, /reviewer/)).toBeChecked();
+  await expect(viewPanel(page)).toContainText('Boat found two parser bugs');
+  await expect(viewPanel(page)).not.toContainText('Aye, rebasing now');
+  await messageBox(page).fill('Check the lexer too');
+  await sendButton(page).tap();
+  await expect.poll(() => boatReceived(admiral, chat, 'rev')).toContain('Check the lexer too');
+  expect(received(admiral, chat)).not.toContain('Check the lexer too');
+  await chip(page, new RegExp(chat.name)).tap();
+  await expect(viewPanel(page)).toContainText('Aye, rebasing now');
   await interruptButton(page).tap();
   await expect.poll(() => received(admiral, chat)).toContain('\x1b');
   await stopShipButton(page).tap();

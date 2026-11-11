@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Locator, type Page, expect } from '@playwright/test';
@@ -160,7 +160,7 @@ async function listShips(a: Admiral): Promise<ShipJSON[]> {
 /** The cue makes the harness exit (0 sails off, 3 anchors); `cues` are cue lines the harness runs instead; without either it idles. */
 export async function launchShip(
   a: Admiral,
-  req: { fleet: 'zulu' | 'alpha'; harness: Harness; order?: string; exit?: 0 | 3; cue?: string; cues?: string[] },
+  req: { fleet: 'zulu' | 'alpha'; harness: Harness; order?: string; exit?: 0 | 3; cue?: string; cues?: string[]; dir?: string },
 ): Promise<LaunchedShip> {
   const cue = join(a.home, 'cue');
   if (req.cue !== undefined) writeFileSync(cue, req.cue);
@@ -170,7 +170,7 @@ export async function launchShip(
   const body = {
     fleet: req.fleet,
     harness: req.harness,
-    dir: join(a.home, 'proj'),
+    dir: req.dir ?? join(a.home, 'proj'),
     skill: { kind: 'none' },
     ...(req.order ? { source: 'orders', order_id: req.order } : { text: 'Go.' }),
   };
@@ -307,11 +307,20 @@ export async function mooredFromTheShell(page: Page, a: Admiral, press: (l: Loca
   expect((await listShips(a)).filter((s) => s.status === 'moored')).toEqual([]);
 }
 
-/** Launches an idling crew boat for the ship, which counts in its `crew_live`. */
-export function launchCrew(a: Admiral, ship: LaunchedShip, name: string) {
-  const env = { ...process.env, ADMIRAL_HOME: a.home, ADMIRAL_SHIP: ship.session, FAKE_RECORD_DIR: join(a.home, 'rec'), FAKE_CUE: join(a.home, 'cue') };
-  const r = spawnSync(BIN, ['crew', 'launch', '--name', name, '--harness', 'claude', '--dir', join(a.home, 'proj'), '--', 'go'], { env, encoding: 'utf8' });
+/**
+ * Launches a crew boat for the ship, which counts in its `crew_live`. `role` is the boat's `--role`. With no cues it idles;
+ * `cues` are the boat's cue lines, which share the ship's cue file, so launch it after the ship's own cues are read.
+ */
+export async function launchCrew(a: Admiral, ship: LaunchedShip, name: string, role?: string, cues?: string[]) {
+  const cue = join(a.home, 'cue');
+  if (cues) writeFileSync(cue, cues.join('\n') + '\n');
+  const env = { ...process.env, ADMIRAL_HOME: a.home, ADMIRAL_SHIP: ship.session, FAKE_RECORD_DIR: join(a.home, 'rec'), FAKE_CUE: cue };
+  const args = ['crew', 'launch', '--name', name, ...(role ? ['--role', role] : []), '--harness', 'claude', '--dir', join(a.home, 'proj'), '--', 'go'];
+  const r = spawnSync(BIN, args, { env, encoding: 'utf8' });
   expect(r.status, r.stderr).toBe(0);
+  // The harness reads its cue file once, so the file stays until it is ready.
+  if (cues) await expect.poll(() => existsSync(join(a.home, 'rec', ship.session, 'crew', name, cues.includes('record') ? 'recording' : 'cues-done'))).toBe(true);
+  rmSync(cue, { force: true });
 }
 
 const tmux = (a: Admiral, ...args: string[]) => spawnSync('tmux', ['-S', join(a.home, 'tmux.sock'), ...args], { encoding: 'utf8' });
@@ -670,4 +679,104 @@ export function outcomeEvents(a: Admiral, ship: LaunchedShip): string[] {
     .map((r) => r.event)
     // The log also notes each status change the server happened to see, which depends on how long a journey takes.
     .filter((e) => ['launched', 'ended', 'stopped'].includes(e));
+}
+
+const GIT = ['-c', 'user.name=Admiral Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false'];
+const LONG_LINE = 'a-very-long-line-in-the-working-copy-that-no-phone-screen-can-show-without-scrolling-sideways-' + 'x'.repeat(200);
+
+/**
+ * A checkout (not `proj`, which has no commit) on a branch with its own commit, an uncommitted edit and an untracked file:
+ * `a.txt` is modified (+2 −1, one line very long), `b.txt` is added on the branch and `c.txt` is untracked.
+ * `clean` leaves it with the branch's commit only.
+ */
+export function gitCheckout(a: Admiral, name: string, opts: { clean?: boolean } = {}): string {
+  const dir = join(a.home, name);
+  mkdirSync(dir, { recursive: true });
+  const git = (...args: string[]) => {
+    const r = spawnSync('git', [...GIT, ...args], { cwd: dir, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' } });
+    expect(r.status, `git ${args.join(' ')}: ${r.stderr}`).toBe(0);
+  };
+  git('init', '-q', '-b', 'main');
+  writeFileSync(join(dir, 'a.txt'), 'one\ntwo\nthree\n');
+  git('add', '.');
+  git('commit', '-q', '-m', 'first');
+  git('checkout', '-q', '-b', 'feature');
+  writeFileSync(join(dir, 'b.txt'), 'new one\nnew two\n');
+  git('add', '.');
+  git('commit', '-q', '-m', 'second');
+  if (!opts.clean) {
+    writeFileSync(join(dir, 'a.txt'), `one\nTWO\nthree\n${LONG_LINE}\n`);
+    writeFileSync(join(dir, 'c.txt'), 'loose\n');
+  }
+  return dir;
+}
+
+/** What GET /api/v1/ships/<ship>/changes answers. */
+export async function changesOf(a: Admiral, ship: LaunchedShip): Promise<{ state: string; files: { path: string; status: string }[] }> {
+  const res = await fetch(`${a.url}api/v1/ships/${encodeURIComponent(ship.session)}/changes`);
+  return (await res.json()) as { state: string; files: { path: string; status: string }[] };
+}
+
+/** The Changes tab: the file list, one entry per file, and the diff of a file as a region named for its path. */
+export const changeFile = (page: Page, path: string) => viewPanel(page).getByRole('listitem').filter({ hasText: path });
+export const diffOf = (page: Page, path: string) => viewPanel(page).getByRole('region', { name: new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) });
+
+/** The flotilla: one radio for the ship and one per crew boat, named by the ship's name, or the boat's role (Teammate when none) and name. */
+export const flotilla = (page: Page) => page.getByRole('main').getByRole('radiogroup');
+export const chip = (page: Page, name: string | RegExp) => flotilla(page).getByRole('radio', { name });
+
+const boatDir = (a: Admiral, ship: LaunchedShip, name: string) => join(a.home, 'rec', ship.session, 'crew', name);
+
+/** What the boat's pane received, without the bracketed-paste markers a paste wraps around the text. */
+export const boatReceived = (a: Admiral, ship: LaunchedShip, name: string) => {
+  const f = join(boatDir(a, ship, name), 'stdin');
+  return existsSync(f) ? readFileSync(f, 'utf8').replaceAll('\x1b[200~', '').replaceAll('\x1b[201~', '') : '';
+};
+
+/** Lets a boat whose cues hold `wait done` go on to its next cue. */
+export const releaseBoat = (a: Admiral, ship: LaunchedShip, name: string) => writeFileSync(join(boatDir(a, ship, name), 'done'), '');
+
+type BoatJSON = { name: string; status: string; conversation: boolean; role?: string; exit_code: number | null };
+
+/** The boat's row on the ships API. */
+export async function boatOf(a: Admiral, ship: LaunchedShip, name: string): Promise<BoatJSON | undefined> {
+  const res = await fetch(`${a.url}api/v1/ships`);
+  const list = ((await res.json()) as { ships: (LaunchedShip & { crew: BoatJSON[] })[] }).ships;
+  return list.find((s) => s.session === ship.session)?.crew.find((c) => c.name === name);
+}
+
+function boatTranscript(a: Admiral, ship: LaunchedShip, name: string): string {
+  // The server refuses a transcript with a symlink on its path, and the temp dir on a Mac is one.
+  const dir = join(realpathSync(a.home), 'identity', 'zulu-claude', 'projects', 'zz');
+  mkdirSync(dir, { recursive: true });
+  return join(dir, `boat-${ship.session.replace(/\W/g, '-')}-${name}.jsonl`);
+}
+
+function boatPane(a: Admiral, ship: LaunchedShip, name: string): string {
+  const panes = tmux(a, 'list-panes', '-s', '-t', ship.session, '-F', '#{pane_id} #{@admiral-crew-name}').stdout.split('\n');
+  const pane = panes.find((p) => p.endsWith(` ${name}`))?.split(' ')[0];
+  expect(pane, `no pane for boat ${name} in ${panes.join(', ')}`).toBeTruthy();
+  return pane!;
+}
+
+/**
+ * Gives the Claude boat a transcript, the way its hooks would record one: a regular file under the fleet's `projects/`,
+ * named on the boat's pane. Waits for the ships API to show the boat's `conversation: true`.
+ */
+export async function seedBoatTranscript(a: Admiral, ship: LaunchedShip, name: string, lines: TranscriptLine[]) {
+  const file = boatTranscript(a, ship, name);
+  writeFileSync(file, lines.map((l) => JSON.stringify(l) + '\n').join(''));
+  const r = tmux(a, 'set', '-p', '-t', boatPane(a, ship, name), '@admiral-crew-transcript', file);
+  expect(r.status, r.stderr).toBe(0);
+  await expect.poll(async () => (await boatOf(a, ship, name))?.conversation).toBe(true);
+}
+
+/** Appends lines to the boat's transcript, which becomes its conversation tail. */
+export const boatSays = (a: Admiral, ship: LaunchedShip, name: string, lines: TranscriptLine[]) =>
+  appendFileSync(boatTranscript(a, ship, name), lines.map((l) => JSON.stringify(l) + '\n').join(''));
+
+/** What a harness hook does to a boat: puts it `working` or `needs_you`. */
+export function setBoatState(a: Admiral, ship: LaunchedShip, name: string, state: 'needs_you' | 'working') {
+  const r = tmux(a, 'set', '-p', '-t', boatPane(a, ship, name), '@admiral-state', state);
+  expect(r.status, r.stderr).toBe(0);
 }
