@@ -315,6 +315,9 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
             </fieldset>
           ) : null}
 
+          {as && as.harness !== harness ? (
+            <p class="note">{`Model and effort are the ${as.harness} default; the member sets its own model.`}</p>
+          ) : (
           <div class="pair">
             <label class="field">
               <span>Model</span>
@@ -353,6 +356,7 @@ export function LaunchForm({ fleet, order, onClose }: { fleet: Fleet; order?: Or
               </label>
             ) : null}
           </div>
+          )}
 
           {resources.value.length > 0 ? (
             <fieldset class="checks">

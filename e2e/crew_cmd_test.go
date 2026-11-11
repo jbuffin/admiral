@@ -429,6 +429,9 @@ func TestCrew_LaunchSendListCloseAndRestart(t *testing.T) {
 
 		auto := w.admiralWith(cliOpts{env: []string{"ADMIRAL_SHIP=" + sess, "ADMIRAL_AUTOPILOT=1"}}, "crew", "launch", "--member", "ada", "--name", "ada3", "--dir", other, "--", "unattended")
 		w.expectExit(auto, 1, "an autopilot ship launching a member locked to a harness whose guard is unproven")
+		if !strings.Contains(auto.stderr, "guard") {
+			t.Errorf("autopilot refusal stderr = %q, want it to name the guard gate", auto.stderr)
+		}
 		if _, ok := crewList(w, sess)["ada3"]; ok {
 			t.Errorf("ada3 was launched without a proven guard")
 		}

@@ -85,8 +85,12 @@ func (l *Launcher) resolveMember(ask memberAsk) (*memberLaunch, *Error) {
 	if ask.RunDir != "" {
 		in.Layers[crew.LayerRun] = ask.RunDir
 	}
-	slug, _ := originSlug(ask.Dir)
+	slug, hasOrigin := originSlug(ask.Dir)
 	in.Repo = slug
+	if hasOrigin && slug == "" {
+		// Not an owner/name, so the resolver says no repo notes load.
+		in.Repo = "?"
+	}
 	res := crew.Resolve(in)
 	if res.Exit != 0 {
 		return nil, resolveRefusal(res)
@@ -99,7 +103,9 @@ func (l *Launcher) resolveMember(ask memberAsk) (*memberLaunch, *Error) {
 	out := &memberLaunch{Name: m.Name, Role: m.Role, Harness: start}
 	warn := func(format string, a ...any) { out.Warnings = append(out.Warnings, fmt.Sprintf(format, a...)) }
 	for _, d := range res.Warnings {
-		if d.File != nil && ((d.Layer == m.Layer && *d.File == m.File) || (d.Layer == crew.LayerMemory && (*d.File == m.Name || strings.HasPrefix(*d.File, m.Name+"/")))) {
+		if d.File == nil && d.Layer == crew.LayerMemory {
+			warn("%s: %s", d.Layer, d.Message)
+		} else if d.File != nil && ((d.Layer == m.Layer && *d.File == m.File) || (d.Layer == crew.LayerMemory && (*d.File == m.Name || strings.HasPrefix(*d.File, m.Name+"/")))) {
 			warn("%s/%s: %s", d.Layer, *d.File, d.Message)
 		}
 	}
@@ -175,7 +181,7 @@ func resolveRefusal(res crew.Result) *Error {
 func SetsModel(args []string) bool {
 	for i, a := range args {
 		switch {
-		case a == "-m" || a == "--model" || strings.HasPrefix(a, "--model="):
+		case a == "-m" || a == "--model" || strings.HasPrefix(a, "--model=") || (strings.HasPrefix(a, "-m") && !strings.HasPrefix(a, "--")):
 			return true
 		case a == "-c" && i+1 < len(args) && strings.HasPrefix(args[i+1], "model="):
 			return true
@@ -206,5 +212,7 @@ func originSlug(dir string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	return crew.OriginSlug(strings.TrimSpace(string(out)))
+	url := strings.TrimSpace(string(out))
+	slug, _ := crew.OriginSlug(url)
+	return slug, url != ""
 }

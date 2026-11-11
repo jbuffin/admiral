@@ -53,7 +53,8 @@ export function crewOptions(members: CrewMemberView[], harness: string): CrewOpt
 export function memberRun(members: CrewMemberView[], harness: string, name: string): { harness: string; hint: string | null } | null {
   const m = members.find((x) => x.name === name);
   if (!m) return null;
-  const on = m.harness ?? harness;
+  // A fix checker's harness is ignored, so it runs where the form says.
+  const on = m.role === 'fix-checker' ? harness : (m.harness ?? harness);
   return { harness: on, hint: on !== harness ? `runs on ${on}` : null };
 }
 
@@ -83,17 +84,21 @@ export function defaultSkill(answer: SkillsAnswer): SkillChoice {
 
 export function launchBody(form: LaunchFormState): Record<string, unknown> {
   const member = form.skill.kind === 'none' && form.member ? form.member : '';
+  const harness = member && form.memberHarness ? form.memberHarness : form.harness;
+  // The model and effort the form holds belong to the dock it chose, not to a member's lock.
+  const moved = harness !== form.harness;
+  const effort = moved && !effortsFor(harness).includes(form.effort) ? '' : form.effort;
   return {
     fleet: form.fleet,
     // The member's lock goes in the body only; the form keeps the dock it chose.
-    harness: member && form.memberHarness ? form.memberHarness : form.harness,
+    harness,
     skill: form.skill,
     text: form.text,
     autopilot: form.autopilot,
     resources: form.resources,
     ...(form.clone ? { clone: true, ...(form.cloneRepo && { clone_repo: form.cloneRepo }) } : { dir: form.dir }),
-    ...(form.model && { model: form.model }),
-    ...(form.effort && { effort: form.effort }),
+    ...(form.model && !moved && { model: form.model }),
+    ...(effort && { effort }),
     ...(form.source && { source: form.source }),
     ...(form.orderId && { order_id: form.orderId }),
     ...(form.skill.kind === 'commodore' && form.crew?.length && { crew: form.crew }),

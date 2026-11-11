@@ -173,4 +173,22 @@ describe('launching as a member', () => {
     expect(memberRun(members, 'claude', 'scout')).toEqual({ harness: 'claude', hint: null });
     expect(memberRun(members, 'claude', 'ghost')).toBeNull();
   });
+  it('keeps the form harness and no hint for a fix checker, whatever its lock', () => {
+    const checker: CrewMemberView[] = [{ name: 'check', role: 'fix-checker', layer: 'fleet', harness: 'codex' }];
+    expect(memberRun(checker, 'claude', 'check')).toEqual({ harness: 'claude', hint: null });
+  });
+  it('drops the dock harness model and an effort the lock does not offer', () => {
+    const base = { ...form, skill: { kind: 'none' } as const, model: 'opus', effort: 'max' };
+    const moved = launchBody({ ...base, member: 'coder', memberHarness: 'codex' });
+    expect(moved).toMatchObject({ harness: 'codex' });
+    expect(moved).not.toHaveProperty('model');
+    expect(moved).not.toHaveProperty('effort');
+    expect(launchBody({ ...base, effort: 'high', member: 'coder', memberHarness: 'codex' })).toMatchObject({ effort: 'high' });
+    expect(launchBody({ ...base, effort: 'high', member: 'coder', memberHarness: 'copilot' })).not.toHaveProperty('effort');
+  });
+  it('keeps the model and effort of a member that does not move the harness', () => {
+    const base = { ...form, skill: { kind: 'none' } as const, model: 'opus', effort: 'max' };
+    expect(launchBody({ ...base, member: 'scout', memberHarness: null })).toMatchObject({ model: 'opus', effort: 'max' });
+    expect(launchBody({ ...base, member: 'scout', memberHarness: 'claude' })).toMatchObject({ model: 'opus', effort: 'max' });
+  });
 });

@@ -146,6 +146,51 @@ func TestAMembersEffortIsCheckedOnItsHarness(t *testing.T) {
 	}
 }
 
+func TestAShipsMemberModelComesAfterTheDockArgsAndBeforeTheExtraArgs(t *testing.T) {
+	p := newPinRig(t, nil)
+	member(t, p.fleet(), "coder", "implementer", "harness: codex\nmodel: acme/gpt-5.2\n", "Work as coder.")
+	p.l.Config().Fleets[0].Harnesses[1].Args = []string{"--search"}
+	r := p.asMember("coder", "codex")
+	r.ExtraArgs = []string{"--oss"}
+	if _, err := p.l.Launch(r); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	argv := p.argv(t, "codex")
+	dock, model, extra := slices.Index(argv, "--search"), slices.Index(argv, "-m"), slices.Index(argv, "--oss")
+	if dock < 0 || model < 0 || extra < 0 || dock > model || model > extra {
+		t.Errorf("argv = %q, want the dock's args, then the member's model, then the extra args", argv)
+	}
+}
+
+func TestAMemberLaunchWarnsWhenTheOriginIsNotAGitHubRepo(t *testing.T) {
+	p := newPinRig(t, nil)
+	p.gitOrigin(t, "https://gitlab.com/o/r")
+	member(t, p.fleet(), "mate", "reviewer", "", "Review it.")
+	p.note(t, "mate", "fleet.md", "2026-01-02 (run-1): fleet fact")
+	var warned []string
+	p.l.Warn = func(m string) { warned = append(warned, m) }
+
+	if _, err := p.l.Launch(p.asMember("mate", "claude")); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	if len(warned) != 1 || !strings.Contains(warned[0], "no repo notes load") {
+		t.Errorf("warnings = %q, want one saying no repo notes load", warned)
+	}
+}
+
+func TestSetsModelSeesEveryForm(t *testing.T) {
+	for _, a := range [][]string{{"-m", "x"}, {"-mx"}, {"--model", "x"}, {"--model=x"}, {"-c", "model=x"}} {
+		if !SetsModel(a) {
+			t.Errorf("SetsModel(%q) = false, want true", a)
+		}
+	}
+	for _, a := range [][]string{nil, {"--search"}, {"--oss"}, {"-c", "other=x"}} {
+		if SetsModel(a) {
+			t.Errorf("SetsModel(%q) = true, want false", a)
+		}
+	}
+}
+
 func TestAMemberModelThatBreaksTheLaunchRuleIsDropped(t *testing.T) {
 	p := newPinRig(t, nil)
 	member(t, p.fleet(), "coder", "implementer", "harness: codex\nmodel: "+strings.Repeat("a", 129)+"\n", "Work as coder.")
@@ -221,6 +266,13 @@ func TestMemberLaunchRefusals(t *testing.T) {
 		}, func(p *pinRig) Request {
 			r := p.asMember("coder", "codex")
 			r.Model = "gpt-5"
+			return r
+		}, "model"},
+		{"extra args that already set a model", func(t *testing.T, p *pinRig) {
+			member(t, p.fleet(), "coder", "implementer", "harness: codex\nmodel: acme/gpt-5.2\n", "x")
+		}, func(p *pinRig) Request {
+			r := p.asMember("coder", "codex")
+			r.ExtraArgs = []string{"-m", "x"}
 			return r
 		}, "model"},
 		{"a dock whose args already set a model", func(t *testing.T, p *pinRig) {
