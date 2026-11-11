@@ -127,6 +127,9 @@ func TestMigrateAtStartupPostsOneNotice(t *testing.T) {
 	if got := w.readFile(configPath(w.home)); got != cfgBefore {
 		t.Errorf("a restart rewrote config.json:\n%s", got)
 	}
+	// A second migration would post before the server listens, so once the
+	// inbox lists the first notice it lists every one.
+	w.in.waitNotice(t)
 	if n := w.in.notices(t); len(n) != 1 || n[0].ID != notice.ID {
 		t.Errorf("after a restart the notices are %+v, want only the first one", n)
 	}
