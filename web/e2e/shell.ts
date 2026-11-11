@@ -300,6 +300,11 @@ export async function wakeFromTheShipView(page: Page, a: Admiral, press: (l: Loc
   await viewTab(page, 'Terminal').click();
   await expect(viewPanel(page)).toContainText(/woken/i);
   await expect(page.getByRole('alert')).toHaveCount(0);
+  await viewTab(page, 'Changes').click();
+  await expect(viewPanel(page).getByText('Loading…')).toHaveCount(0);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await viewTab(page, 'PR').click();
+  await expect(viewPanel(page)).toContainText('api#7');
   await viewTab(page, 'Conversation').click();
 
   await expect(messageBox(page)).toBeEnabled();

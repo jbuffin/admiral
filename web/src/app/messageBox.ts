@@ -20,6 +20,11 @@ export function boxState(ship: Pick<Ship, 'status' | 'exit_code' | 'exit_signal'
   return { enabled: false };
 }
 
+/** A refused wake from the box: the typed text comes back to an empty box (whatever was typed meanwhile stays) and the route's message shows. */
+export function wakeRefused(box: { text: string }, typed: string | undefined, error: string) {
+  return { waking: false, error, ...(typed !== undefined && box.text === '' ? { text: typed } : {}) };
+}
+
 /** What the conversation held when a message was sent: its item ids, and the last one. */
 export interface Snapshot {
   ids: string[];

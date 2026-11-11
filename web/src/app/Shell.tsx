@@ -7,7 +7,7 @@ import { Icon } from './Icon';
 import { Preferences } from './Preferences';
 import { Sheet } from './Sheet';
 import { GROUP_TITLES, groupShips, shipRowAge } from './shipList';
-import { NO_RESUME_NOTE } from './moored';
+import { rowButtons } from './moored';
 import { MooredPRs } from './MooredPRs';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
@@ -92,15 +92,16 @@ function MooredActions({ ship, onError }: { ship: Ship; onError: (e: string) => 
       setBusy('');
     }
   };
+  const off = rowButtons(ship, busy !== '');
   return (
     <div class="ship-actions">
-      <button type="button" class="btn" disabled={busy !== '' || ship.no_resume} onClick={() => act('wake')}>
+      <button type="button" class="btn" disabled={off.wake} onClick={() => act('wake')}>
         Wake
       </button>
-      <button type="button" class="btn" disabled={busy !== ''} onClick={() => act('dismiss')}>
+      <button type="button" class="btn" disabled={off.others} onClick={() => act('dismiss')}>
         Dismiss
       </button>
-      <button type="button" class="btn" disabled={busy !== ''} onClick={() => act('unfollow')}>
+      <button type="button" class="btn" disabled={off.others} onClick={() => act('unfollow')}>
         Don't follow reviews
       </button>
     </div>
@@ -135,7 +136,7 @@ function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
             </span>
           ) : null}
           {ship.tail ? <span class="ship-tail">{ship.tail}</span> : null}
-          {ship.no_resume ? <span class="ship-tail">{NO_RESUME_NOTE}</span> : null}
+          {rowButtons(ship, false).note ? <span class="ship-tail">{rowButtons(ship, false).note}</span> : null}
           <MooredPRs ship={ship} now={now} />
           <MooredActions ship={ship} onError={setError} />
         </div>

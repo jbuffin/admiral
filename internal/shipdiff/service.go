@@ -17,12 +17,12 @@ func (s *Service) Routes(mux *http.ServeMux) {
 }
 
 func (s *Service) serveChanges(w http.ResponseWriter, r *http.Request) {
-	sh, ok := s.Ships.Get(r.PathValue("session"))
+	dir, ok := s.Ships.Checkout(r.PathValue("session"))
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return
 	}
-	res, err := Compute(r.Context(), sh.Dir)
+	res, err := Compute(r.Context(), dir)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not read the changes"})
 		return

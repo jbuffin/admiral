@@ -220,7 +220,7 @@ The ship's messages take an optional `crew` field naming the boat: `{"type": "co
 {"state": "ok", "files": [{"path": "a.go", "status": "modified", "added": 3, "removed": 1}], "diff": "diff --git ...", "truncated": false}
 ```
 
-Read-only: the ship's checkout (its `dir`) against its merge-base with the base branch, committed, staged, unstaged and untracked work together.
+Read-only: the ship's checkout (its `dir`; a moored ship's recorded checkout) against its merge-base with the base branch, committed, staged, unstaged and untracked work together.
 
 - The base branch is the repo's `origin/HEAD` branch, else `main` (`refs/heads/main`, then `origin/main`). With none of these, or when `git merge-base` fails (unrelated history, a shallow clone), the base is `HEAD`, so only uncommitted work shows.
 - `state` is `ok`, or `none` (with `files: []` and `diff: ""`) when no `.git` is found at `dir` or above it, `dir` is gone, or the repo has no commit yet. A ship in a subdirectory gets the whole repo's changes, with repo-relative paths. The work tree is the directory holding `.git`, whatever `core.worktree` says.

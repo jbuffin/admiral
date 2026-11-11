@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { call } from './api';
 import type { Conversation } from './conversation';
 import { boatRoutes } from './flotilla';
-import { bubblesShowing, snapshotOf, type BoxState, type Send } from './messageBox';
+import { bubblesShowing, snapshotOf, wakeRefused, type BoxState, type Send } from './messageBox';
 
 /** What the box talks to: the ship, or one of its boats when `crew` is set. */
 export interface Target {
@@ -17,6 +17,8 @@ export interface Target {
   subject: string;
   /** A moored ship: a message wakes it with the text, there is no conversation for a bubble to wait on. */
   wake?: boolean;
+  /** When the ship moored: a change means it woke and moored again, so the wake that was out is over. */
+  mooredAt?: string;
 }
 
 interface Box {
@@ -65,10 +67,10 @@ export function useComposer(target: Target, conv: Conversation) {
   };
 
   const box = boxes[key] ?? EMPTY;
-  // Once the ship is underway the wake is over; a later mooring must not find the box still off.
+  // Once the ship is underway the wake is over, and so when it has moored again between two pushes.
   useEffect(() => {
-    if (!target.wake) patch(key, () => ({ waking: false }));
-  }, [target.wake, key]);
+    patch(key, () => ({ waking: false }));
+  }, [target.wake, target.mooredAt, key]);
 
   /** Wakes the moored ship. A typed text goes with it and the draft clears; an error brings the draft back, and success leaves the box off until the ships push shows the ship underway. */
   const wake = async (body?: string) => {
@@ -77,7 +79,7 @@ export function useComposer(target: Target, conv: Conversation) {
     patch(k, () => ({ waking: true, error: '', ...(body === undefined ? {} : { text: '' }) }));
     const r = await call('POST', `/ships/${encodeURIComponent(t.session)}/wake`, body === undefined ? undefined : { text: body });
     if (r.ok) return;
-    patch(k, (b) => ({ waking: false, error: r.error, ...(body !== undefined && b.text === '' ? { text: body } : {}) }));
+    patch(k, (b) => wakeRefused(b, body, r.error));
   };
 
   const send = () => {

@@ -284,7 +284,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
 
   const target: Target = boat
     ? { session: ship.session, crew: boat.name, state: boatBoxState(boat), interruptible: boat.status === 'underway', hasConversation: boatHasConversation && conv.state === 'ok', subject: 'This boat' }
-    : { session: ship.session, state: boxState(ship), interruptible: ship.status === 'underway', hasConversation: conv.state === 'ok' || (conv.state === 'none' && hasTranscript(ship.harness)), subject: 'This ship', wake: moored };
+    : { session: ship.session, state: boxState(ship), interruptible: ship.status === 'underway', hasConversation: conv.state === 'ok' || (conv.state === 'none' && hasTranscript(ship.harness)), subject: 'This ship', wake: moored, mooredAt: ship.moored_at };
   const box = useComposer(target, conv);
   const Heading = title ? 'h1' : 'h2';
   const anchored = boat ? chipState(boat) !== 'running' : ship.status === 'anchored';
@@ -352,7 +352,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
         ) : tab === 'Changes' ? (
           <ChangesTab ship={ship} />
         ) : (
-          <p class="line">No pull request yet</p>
+          moored ? <MooredPRs ship={ship} now={Date.now()} /> : <p class="line">No pull request yet</p>
         )}
       </div>
     </section>

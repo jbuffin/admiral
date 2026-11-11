@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Item } from './api';
-import { boxState, bubblesShowing, snapshotOf } from './messageBox';
+import { boxState, bubblesShowing, snapshotOf, wakeRefused } from './messageBox';
 
 const exit = (status: 'needs_you' | 'underway' | 'anchored' | 'sailing_off', exit_code: number | null = null, exit_signal: string | null = null) => ({ status, exit_code, exit_signal });
 const user = (id: string, text: string): Item => ({ id, kind: 'user', text });
@@ -81,5 +81,17 @@ describe('bubblesShowing', () => {
 
   it('goes on the answer when the ship has no conversation', () => {
     expect(ids(bubblesShowing([send(1, null), send(2, null, true)], [], false))).toEqual([1]);
+  });
+});
+
+describe('wakeRefused', () => {
+  it('brings the typed text back to an empty box with the route message and turns the box on', () => {
+    expect(wakeRefused({ text: '' }, 'check the docs', 'ship is not moored')).toEqual({ waking: false, error: 'ship is not moored', text: 'check the docs' });
+  });
+  it('keeps whatever was typed meanwhile', () => {
+    expect(wakeRefused({ text: 'newer' }, 'older', 'no')).toEqual({ waking: false, error: 'no' });
+  });
+  it('has no text to restore for a Wake with none', () => {
+    expect(wakeRefused({ text: '' }, undefined, 'no')).toEqual({ waking: false, error: 'no' });
   });
 });

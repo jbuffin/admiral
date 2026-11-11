@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MooredPR, Ship } from './api';
-import { prChips, prLabel, staleNote } from './moored';
+import { NO_RESUME_NOTE, prChips, prLabel, rowButtons, staleNote } from './moored';
 import { GROUP_TITLES, groupShips, shipAge, shipRowAge } from './shipList';
 
 const pr = (over: Partial<MooredPR> = {}): MooredPR => ({
@@ -128,5 +128,21 @@ describe('staleNote', () => {
 
   it('just says the poll failed when no poll ever answered', () => {
     expect(staleNote(ship({ stale: true, polled_at: '' }), now)).toBe('Poll failed');
+  });
+});
+
+describe('rowButtons', () => {
+  it('leaves every button on for a ship that can be woken', () => {
+    expect(rowButtons({}, false)).toEqual({ wake: false, others: false, note: '' });
+  });
+  it('turns every button off while a call is out, and back on once an error ends it', () => {
+    expect(rowButtons({}, true)).toEqual({ wake: true, others: true, note: '' });
+    expect(rowButtons({}, false).wake).toBe(false);
+  });
+  it('turns Wake off with the reason for a ship with no valid resume text, and leaves the others on', () => {
+    expect(rowButtons({ no_resume: true }, false)).toEqual({ wake: true, others: false, note: NO_RESUME_NOTE });
+  });
+  it('does not look at a stale poll, since waking needs no GitHub', () => {
+    expect(rowButtons({ stale: true } as Parameters<typeof rowButtons>[0], false).wake).toBe(false);
   });
 });
