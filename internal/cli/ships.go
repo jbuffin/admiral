@@ -251,7 +251,7 @@ const zshCompletion = `#compdef admiral
 # Put this on your fpath, or run: source <(admiral completion zsh)
 _admiral() {
   local -a commands ship_names
-  commands=(setup fleet config token ships attach completion)
+  commands=(setup fleet config ships attach completion)
   if (( CURRENT == 2 )); then
     compadd -a commands
   elif [[ ${words[2]} == attach ]]; then
@@ -266,7 +266,7 @@ const bashCompletion = `# Run: source <(admiral completion bash)
 _admiral() {
   local cur=${COMP_WORDS[COMP_CWORD]}
   if [ "$COMP_CWORD" -eq 1 ]; then
-    COMPREPLY=($(compgen -W "setup fleet config token ships attach completion" -- "$cur"))
+    COMPREPLY=($(compgen -W "setup fleet config ships attach completion" -- "$cur"))
   elif [ "${COMP_WORDS[1]}" = attach ]; then
     local IFS=$'\n' name
     COMPREPLY=()

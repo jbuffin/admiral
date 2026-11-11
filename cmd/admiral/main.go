@@ -102,8 +102,6 @@ func run(args []string) error {
 		return cli.Fleet(args[1:], std)
 	case "config":
 		return cli.Config(args[1:], std)
-	case "token":
-		return cli.Token(args[1:], std)
 	case "ships":
 		return cli.Ships(args[1:], std)
 	case "attach":
@@ -134,6 +132,18 @@ func run(args []string) error {
 	return &cli.UsageError{Msg: fmt.Sprintf("unknown command %q", args[0])}
 }
 
+// guardRoutes puts the device API on the server's mux.
+type guardRoutes struct{ *auth.Auth }
+
+func (guardRoutes) Connected(*server.Client) {}
+
+func pairingBase(port string) string {
+	if ip, ok := server.LANIPv4(); ok {
+		return "http://" + net.JoinHostPort(ip, port)
+	}
+	return "http://127.0.0.1:" + port
+}
+
 func serve(args []string) error {
 	fs := flag.NewFlagSet("admiral", flag.ContinueOnError)
 	listen := fs.String("listen", "0.0.0.0:7420", "address to listen on, host:port")
@@ -144,10 +154,6 @@ func serve(args []string) error {
 	dir, err := home.Resolve()
 	if err != nil {
 		return err
-	}
-	token, err := auth.LoadOrCreateToken(dir)
-	if err != nil {
-		return fmt.Errorf("token: %w", err)
 	}
 	// Before the first load, so it sees the migrated file.
 	migration, err := config.Migrate(dir, version)
@@ -319,13 +325,17 @@ func serve(args []string) error {
 	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
 	convService := &shipconv.Service{Ships: shipService, Config: cfg.Current, Tmux: tmuxPath, Socket: sock}
 	probeRunner := probes.NewDefault(dir)
+	guard, err := auth.New(dir, port, auth.WithBaseURL(func() string { return pairingBase(port) }))
+	if err != nil {
+		return fmt.Errorf("devices: %w", err)
+	}
 	tails := convService.Tails()
 	shipService.Tail = tails.Tail
 	shipService.Questions = convService.PendingQuestions
 	s := &server.Server{Version: version, Commit: commit, UI: web.UI(), Messages: convService.Messages(), Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService,
 			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: campaignService}, campaignService, bridgeService, resourceService, lockRoute, chatService, convService, &shipdiff.Service{Ships: shipService},
-			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}},
+			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}, guardRoutes{guard}},
 		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat", "conversation", "campaigns", "ship-input", "changes"}}
 	bg, stopBackground := context.WithCancel(context.Background())
 	// In the background: a harness that hangs on --version must not delay the server.
@@ -379,9 +389,6 @@ func serve(args []string) error {
 		supervisor.Wait()
 		_ = st.Flush()
 	}()
-	guard := auth.New(token, port)
-	background.Add(1)
-	go func() { defer background.Done(); guard.Watch(bg, dir) }()
 	srv := &http.Server{Handler: guard.Middleware(s.Handler())}
 	srv.RegisterOnShutdown(func() { close(stopping) }) // a held lock would hold up the shutdown
 
@@ -392,7 +399,8 @@ func serve(args []string) error {
 	case bindHost != "" && bindHost != "0.0.0.0" && bindHost != "::":
 		fmt.Printf("On other devices: not reachable, Admiral listens only on %s (http://127.0.0.1:%s/)\n", bindHost, port)
 	case hasIP:
-		fmt.Printf("On other devices: http://%s:%s/?token=%s\n", ip, port, token)
+		fmt.Printf("On other devices: http://%s:%s/\n", ip, port)
+		fmt.Println("To pair a device, run: admiral pair")
 	default:
 		fmt.Printf("On other devices: no network address found; this Mac is reachable only at http://127.0.0.1:%s/\n", port)
 	}

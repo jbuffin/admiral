@@ -709,7 +709,7 @@ func TestSharedTokenFileIsRetired(t *testing.T) {
 	}
 }
 
-// The peer address is forged, as in the old shared-token test: the LAN address doesn't answer on every machine.
+// The peer address is forged: the LAN address doesn't answer on every machine.
 func TestRevokeClosesThatDevicesWebSockets(t *testing.T) {
 	g := newRig(t)
 	doomed, kept := g.pairLAN(), g.pairLAN()
@@ -774,5 +774,41 @@ func TestRevokeClosesThatDevicesWebSockets(t *testing.T) {
 	defer stopAll()
 	if _, _, err := b.Read(allCtx); err == nil || allCtx.Err() != nil {
 		t.Fatalf("revoke all should close every socket, got %v", err)
+	}
+}
+
+func TestRevokeAnswers500AndKeepsTheDeviceWhenTheStoreCannotBeWritten(t *testing.T) {
+	g := newRig(t)
+	tok := g.pairLAN()
+	g.pairLAN()
+	if err := os.Chmod(g.home, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(g.home, 0o700) })
+	if _, err := os.Create(filepath.Join(g.home, "probe")); err == nil {
+		t.Skip("the directory is writable despite 0500 (running as root?)")
+	}
+	var id string
+	var list struct{ Devices []struct{ ID string } }
+	if err := json.Unmarshal(g.local("GET", "/api/devices", "").Body.Bytes(), &list); err != nil || len(list.Devices) != 2 {
+		t.Fatalf("list: %v %+v", err, list)
+	}
+	id = list.Devices[0].ID
+	if c := g.local("DELETE", "/api/devices/"+id, "").Code; c != 500 {
+		t.Errorf("revoke with an unwritable store: %d, want 500", c)
+	}
+	if c := g.local("PATCH", "/api/devices/"+id, `{"name":"x"}`).Code; c != 500 {
+		t.Errorf("rename with an unwritable store: %d, want 500", c)
+	}
+	if c := g.local("DELETE", "/api/devices", "").Code; c != 500 {
+		t.Errorf("revoke all with an unwritable store: %d, want 500", c)
+	}
+	list.Devices = nil
+	_ = json.Unmarshal(g.local("GET", "/api/devices", "").Body.Bytes(), &list)
+	if len(list.Devices) != 2 {
+		t.Errorf("devices after failed revokes: %d, want 2", len(list.Devices))
+	}
+	if g.lanStatus(tok) != 200 {
+		t.Error("a device still listed must still authenticate")
 	}
 }

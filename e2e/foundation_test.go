@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"os"
@@ -10,9 +11,7 @@ import (
 	"testing"
 )
 
-const unauthorizedPage = "Open the URL Admiral printed"
-
-var tokenFormat = regexp.MustCompile(`^[A-Za-z0-9_-]{22,}$`) // >= 128 bits, URL-safe
+const unauthorizedPage = "This device isn't paired with Admiral"
 
 // The binary starts, prints both URLs with the real port, and serves the
 // embedded UI with its assets.
@@ -32,17 +31,8 @@ func TestS1_StartsPrintsURLsAndServesUI(t *testing.T) {
 	if err != nil || fi.Mode().Perm() != 0o700 {
 		t.Fatalf("ADMIRAL_HOME must be created with mode 0700, got %v (%v)", fi, err)
 	}
-	tokenFile := filepath.Join(home, "token")
-	fi, err = os.Stat(tokenFile)
-	if err != nil || fi.Mode().Perm() != 0o600 {
-		t.Fatalf("$ADMIRAL_HOME/token must exist with mode 0600, got %v (%v)", fi, err)
-	}
-	b, _ := os.ReadFile(tokenFile)
-	if !tokenFormat.MatchString(strings.TrimSpace(string(b))) {
-		t.Fatalf("token %q is not URL-safe with at least 128 bits", b)
-	}
-	if in.LANIP != "" && strings.TrimSpace(string(b)) != in.Token {
-		t.Fatalf("token file %q differs from printed token %q", b, in.Token)
+	if _, err := os.Stat(filepath.Join(home, "token")); err == nil {
+		t.Fatal("the shared token file must not exist")
 	}
 
 	resp, html := get(t, in.LocalURL+"/", nil)
@@ -77,7 +67,7 @@ func TestS1_StartsPrintsURLsAndServesUI(t *testing.T) {
 	}
 }
 
-// Non-local requests need the token; ?token= sets the cookie and redirects.
+// Non-local requests need a device token; pairing by URL sets the cookie and redirects.
 func TestS2_NonLocalNeedsToken(t *testing.T) {
 	t.Parallel()
 	in := startLAN(t)
@@ -107,14 +97,15 @@ func TestS2_NonLocalNeedsToken(t *testing.T) {
 			t.Fatalf("GET /api/anything = %d %s %q, want 401 JSON {\"error\":\"unauthorized\"}", resp.StatusCode, resp.Header.Get("Content-Type"), body)
 		}
 	})
-	t.Run("token sets cookie and redirects", func(t *testing.T) {
-		resp, _ := get(t, base+"/?foo=1&token="+in.Token, nil)
-		if resp.StatusCode != http.StatusFound {
-			t.Fatalf("GET /?token=<right> = %d, want 302", resp.StatusCode)
+	t.Run("pairing sets the cookie and redirects", func(t *testing.T) {
+		var minted struct{ Code string }
+		resp, body := do(t, http.MethodPost, in.LocalURL+"/api/v1/pairing-codes", nil)
+		if err := json.Unmarshal([]byte(body), &minted); err != nil || resp.StatusCode != 200 {
+			t.Fatalf("mint a code: %d %s", resp.StatusCode, body)
 		}
-		loc, err := resp.Request.URL.Parse(resp.Header.Get("Location"))
-		if err != nil || loc.Path != "/" || loc.Query().Has("token") || loc.Query().Get("foo") != "1" {
-			t.Fatalf("Location %q should be the same URL without token", resp.Header.Get("Location"))
+		resp, _ = get(t, base+"/pair?code="+minted.Code, nil)
+		if resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "/" {
+			t.Fatalf("GET /pair?code= = %d to %q, want 302 to /", resp.StatusCode, resp.Header.Get("Location"))
 		}
 		var cookie *http.Cookie
 		for _, c := range resp.Cookies() {
@@ -125,9 +116,9 @@ func TestS2_NonLocalNeedsToken(t *testing.T) {
 		if cookie == nil {
 			t.Fatalf("no %s cookie in %v", in.cookieName(), resp.Header["Set-Cookie"])
 		}
-		if cookie.Value != in.Token || !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode ||
+		if cookie.Value == "" || !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode ||
 			cookie.Path != "/" || cookie.MaxAge != 400*24*3600 {
-			t.Fatalf("cookie = %+v, want token value, HttpOnly, SameSite=Strict, Path=/, Max-Age 400 days", cookie)
+			t.Fatalf("cookie = %+v, want a token, HttpOnly, SameSite=Strict, Path=/, Max-Age 400 days", cookie)
 		}
 		resp, _ = get(t, base+"/", map[string]string{"Cookie": cookie.Name + "=" + cookie.Value})
 		if resp.StatusCode != 200 {
@@ -136,6 +127,10 @@ func TestS2_NonLocalNeedsToken(t *testing.T) {
 		resp, _ = get(t, base+"/api/anything", map[string]string{"Cookie": cookie.Name + "=" + cookie.Value})
 		if resp.StatusCode == 401 {
 			t.Fatalf("cookie alone must also pass /api/*, got 401")
+		}
+		resp, _ = get(t, base+"/pair?code="+minted.Code, nil)
+		if resp.StatusCode == http.StatusFound || len(resp.Cookies()) != 0 {
+			t.Fatalf("a used code = %d with cookies %v, want the entry page and no cookie", resp.StatusCode, resp.Cookies())
 		}
 	})
 }
@@ -152,21 +147,16 @@ func TestS3_LocalNeedsNoToken(t *testing.T) {
 	}
 }
 
-// The token survives a restart. The file half needs no LAN address.
-func TestS4_TokenFileSurvivesRestart(t *testing.T) {
+// The port survives a restart, and no shared token file appears.
+func TestS4_RestartKeepsThePort(t *testing.T) {
 	t.Parallel()
 	in := startAdmiral(t, newHome(t), "127.0.0.1:"+freePort(t))
-	read := func() string {
-		b, err := os.ReadFile(filepath.Join(in.Home, "token"))
-		if err != nil {
-			t.Fatalf("token file: %v", err)
-		}
-		return strings.TrimSpace(string(b))
-	}
-	before := read()
 	again := in.Restart(t)
-	if after := read(); after != before || again.Port != in.Port {
-		t.Fatalf("after restart token/port = %q/%s, want %q/%s", after, again.Port, before, in.Port)
+	if again.Port != in.Port {
+		t.Fatalf("after restart port = %s, want %s", again.Port, in.Port)
+	}
+	if _, err := os.Stat(filepath.Join(in.Home, "token")); err == nil {
+		t.Fatal("the shared token file appeared")
 	}
 	if resp, _ := get(t, again.LocalURL+"/", nil); resp.StatusCode != 200 {
 		t.Fatalf("GET / after restart = %d", resp.StatusCode)
@@ -183,8 +173,8 @@ func TestS4_CookieSurvivesRestart(t *testing.T) {
 	}
 	again := in.Restart(t)
 	requireLAN(t, again)
-	if again.Token != in.Token || again.Port != in.Port {
-		t.Fatalf("after restart token/port = %q/%s, want %q/%s", again.Token, again.Port, in.Token, in.Port)
+	if again.Port != in.Port {
+		t.Fatalf("after restart port = %s, want %s", again.Port, in.Port)
 	}
 	if resp, _ := get(t, again.lanURL()+"/", cookie); resp.StatusCode != 200 {
 		t.Fatalf("old cookie after restart: %d, want 200", resp.StatusCode)
@@ -236,10 +226,11 @@ func TestS5_WebSocketAccess(t *testing.T) {
 		expectRefused(t, in.lanURL(), "", nil, "", 401)
 		expectRefused(t, in.lanURL(), "token=nope", nil, "", 401)
 	})
-	t.Run("non-local with cookie or ?token= connects", func(t *testing.T) {
+	t.Run("non-local with cookie or Bearer connects, ?token= does not", func(t *testing.T) {
 		requireLAN(t, in)
 		expectHello(t, in.lanURL(), "", http.Header{"Cookie": {in.cookieName() + "=" + in.Token}}, "")
-		expectHello(t, in.lanURL(), "token="+url.QueryEscape(in.Token), nil, "")
+		expectHello(t, in.lanURL(), "", http.Header{"Authorization": {"Bearer " + in.Token}}, "")
+		expectRefused(t, in.lanURL(), "token="+url.QueryEscape(in.Token), nil, "", 401)
 	})
 	t.Run("foreign Origin is refused even from a local peer", func(t *testing.T) {
 		expectRefused(t, in.LocalURL, "", http.Header{"Origin": {"http://evil.example"}}, "", 403)
@@ -248,40 +239,32 @@ func TestS5_WebSocketAccess(t *testing.T) {
 			t.Fatalf("POST with foreign Origin = %d, want 403", resp.StatusCode)
 		}
 	})
-	t.Run("local request with unknown Host is refused", func(t *testing.T) {
-		expectRefused(t, in.LocalURL, "", nil, "evil.example:"+in.Port, 403)
-		if resp, _ := get(t, in.LocalURL+"/", map[string]string{"Host": "evil.example:" + in.Port}); resp.StatusCode != 403 {
-			t.Fatalf("GET / with Host evil.example = %d, want 403", resp.StatusCode)
+	t.Run("loopback peer with unknown Host needs a device token", func(t *testing.T) {
+		expectRefused(t, in.LocalURL, "", nil, "evil.example:"+in.Port, 401)
+		if resp, _ := get(t, in.LocalURL+"/", map[string]string{"Host": "evil.example:" + in.Port}); resp.StatusCode != 401 {
+			t.Fatalf("GET / with Host evil.example = %d, want 401", resp.StatusCode)
 		}
 	})
 	t.Run("non-local with unknown Host and valid token is accepted", func(t *testing.T) {
 		requireLAN(t, in)
-		expectHello(t, in.lanURL(), "token="+url.QueryEscape(in.Token), nil, "vpn.example:"+in.Port)
+		expectHello(t, in.lanURL(), "", http.Header{"Authorization": {"Bearer " + in.Token}}, "vpn.example:"+in.Port)
 	})
 }
 
-// Two instances side by side keep separate tokens.
+// Two instances side by side keep separate device lists.
 func TestS6_TwoInstancesSideBySide(t *testing.T) {
 	t.Parallel()
-	a := startAdmiral(t, newHome(t), "127.0.0.1:0")
-	b := startAdmiral(t, newHome(t), "127.0.0.1:0")
+	a := startLAN(t)
+	b := startLAN(t)
 	if a.Port == b.Port {
 		t.Fatalf("both instances report port %s", a.Port)
-	}
-	read := func(in *instance) string {
-		b, err := os.ReadFile(filepath.Join(in.Home, "token"))
-		if err != nil {
-			t.Fatalf("token file: %v", err)
-		}
-		return strings.TrimSpace(string(b))
-	}
-	ta, tb := read(a), read(b)
-	if ta == "" || ta == tb {
-		t.Fatalf("each instance needs its own token file, got %q and %q", ta, tb)
 	}
 	for _, in := range []*instance{a, b} {
 		if resp, _ := get(t, in.LocalURL+"/", nil); resp.StatusCode != 200 {
 			t.Fatalf("instance on %s: GET / = %d", in.Port, resp.StatusCode)
 		}
+	}
+	if resp, _ := get(t, b.lanURL()+"/", map[string]string{"Authorization": "Bearer " + a.Token}); resp.StatusCode != 401 {
+		t.Fatalf("a's device token on b: %d, want 401", resp.StatusCode)
 	}
 }

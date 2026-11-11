@@ -276,3 +276,27 @@ Fleets and harnesses follow the config's order; features follow the table (judge
 ### `POST /api/harness-capabilities/check`
 
 Body `{"fleet":"work","harness":"claude"}`. Runs the probes for that harness and waits (up to eight minutes: the guard run and up to four judge calls of up to 90 seconds each). It answers 200 with the harness object above plus `"fleet"` and the fleet's `"judge"` object, which the check may just have changed. 400 for a bad body, 404 for an unknown fleet or a harness the fleet has no dock for, 502 with `{"error":...}` when the harness's `--version` fails.
+
+## Devices and pairing
+
+A device is a browser or client that holds its own revocable token. A request from this Mac needs no token. Any other request needs the device's token, as `Authorization: Bearer <token>` or the cookie `admiral_token_<port>`; `?token=` is not accepted. The cookie is HttpOnly and SameSite=Strict, so a request that carries it must also pass the Origin check.
+
+### `POST /api/v1/pairing-codes`
+
+Behind the same auth as the other routes. Answers `{"code":"ABCD-EFGH","url":"http://<host>:<port>/pair?code=ABCD-EFGH","expires":"<RFC 3339>"}`. The code lasts 5 minutes and works once, and a new code replaces the live one.
+
+### `POST /api/v1/pair`
+
+Body `{"code","name"?}`. A code is case-insensitive, with or without the hyphen. On success it answers `{"token","device":{"id","name"}}` and sets no cookie, so a client sends the token as a Bearer; `name` defaults to a guess from the browser, such as `Safari on Mac`. A wrong, expired or used code is 400; ten failures in 5 minutes are 429 with `Retry-After`; a request from this Mac is 403. `GET /pair?code=<code>` and the form at `GET /pair` (which posts to `POST /pair`) pair a browser instead: they set the device cookie and redirect to `/`.
+
+### `GET /api/v1/devices`
+
+Answers `{"devices":[{"id","name","login"?,"pairedAt","lastSeen","current"}]}`. `login` is set for a device paired over the tailnet. `current` is true for the device making the request.
+
+### `PATCH /api/v1/devices/<id>`
+
+Body `{"name"}`. Answers `{"id","name"}`; 400 for a missing or empty name, 404 for an unknown id.
+
+### `DELETE /api/v1/devices/<id>` and `DELETE /api/v1/devices`
+
+Revoke one device or all of them; 204, or 404 for an unknown id. The device's token stops working and its open WebSockets close. A save that fails leaves the device in place and answers 500 `{"error"}`, as it does for a rename.

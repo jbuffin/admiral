@@ -11,7 +11,6 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -53,17 +52,15 @@ export interface Admiral {
   flags(label: string): Flags;
   /** The fake `gh` (e2e/testdata/fakegh) for the built-in GitHub source: pass `env` to `start`; `token` signs an account in ('' is the host's active one). */
   fakeGh(): { dir: string; env: Record<string, string>; token(user: string, value: string): void };
-  /** `lan` listens on 0.0.0.0 and fills `lanUrl` and `token`; `env` wins over the server's environment. */
+  /** `lan` listens on 0.0.0.0, pairs a device and fills `lanUrl` and `token`; `env` wins over the server's environment. */
   start(opts?: { lan?: boolean; env?: Record<string, string> }): Promise<void>;
-  /** With `start({ lan: true })`: the Mac's non-loopback address (http://<ip>:<port>/) and the token the server printed. */
+  /** With `start({ lan: true })`: the Mac's non-loopback address (http://<ip>:<port>/) and the token of a device paired from that address. */
   lanUrl: string;
   token: string;
   /** Stops the server process only: the home, the ships and their tmux server stay. */
   stopServer(): Promise<void>;
   resumeServer(): Promise<void>;
   restart(): Promise<void>;
-  /** Writes a new token file, as `admiral token rotate` would; the server picks it up on its next start. Returns the token. */
-  rotateToken(): string;
 }
 
 class Instance implements Admiral {
@@ -156,7 +153,23 @@ class Instance implements Admiral {
     this.lan = !!opts.lan;
     this.extraEnv = opts.env ?? {};
     this.listen = this.lan ? '0.0.0.0:0' : '127.0.0.1:0';
-    return this.resumeServer();
+    return this.resumeServer().then(async () => {
+      if (this.lan) this.token = await this.pairDevice();
+    });
+  }
+
+  // Mints a code over loopback and redeems it from the LAN address, the way a second device does.
+  private async pairDevice() {
+    const minted = await fetch(`${this.url}api/v1/pairing-codes`, { method: 'POST' });
+    if (!minted.ok) throw new Error(`minting a pairing code: ${minted.status}`);
+    const { code } = (await minted.json()) as { code: string };
+    const paired = await fetch(`${this.lanUrl}api/v1/pair`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, name: 'e2e' }),
+    });
+    if (!paired.ok) throw new Error(`redeeming the pairing code: ${paired.status}`);
+    return ((await paired.json()) as { token: string }).token;
   }
 
   resumeServer() {
@@ -189,14 +202,14 @@ class Instance implements Admiral {
         record(b);
         const m = /Admiral is running at (http:\/\/127\.0\.0\.1:(\d+)\/)/.exec(out);
         if (running || !m) return;
-        const other = /On other devices: (http:\/\/[\d.]+:\d+\/)\?token=([\w-]+)/.exec(out);
+        const other = /On other devices: (http:\/\/[\d.]+:\d+\/)/.exec(out);
         if (this.lan && !other) return;
         clearTimeout(timer);
         running = true;
         this.url = m[1];
         // A restart comes back on the same port.
         this.listen = `${this.lan ? '0.0.0.0' : '127.0.0.1'}:${m[2]}`;
-        if (other) [, this.lanUrl, this.token] = other;
+        if (other) this.lanUrl = other[1];
         done();
       });
       proc.stderr!.on('data', record);
@@ -218,12 +231,6 @@ class Instance implements Admiral {
   async restart() {
     await this.stopServer();
     await this.resumeServer();
-  }
-
-  rotateToken() {
-    const token = randomBytes(24).toString('base64url');
-    writeFileSync(join(this.home, 'token'), token + '\n', { mode: 0o600 });
-    return token;
   }
 
   async stop() {
