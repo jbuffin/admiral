@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type CrewMemberView, crewOptions, defaultSkill, effortsFor, type LaunchFormState, launchBody, sourcesForFleet } from './launchForm';
+import { type CrewMemberView, crewOptions, defaultSkill, effortsFor, type LaunchFormState, launchBody, sourcesForFleet, togglePin } from './launchForm';
 
 describe('sourcesForFleet', () => {
   it('keeps the sources of the active fleet only', () => {
@@ -118,5 +118,20 @@ describe('pinned crew members', () => {
       ['scout', false],
       ['coder', false],
     ]);
+  });
+});
+
+describe('togglePin', () => {
+  const members: CrewMemberView[] = [
+    { name: 'scout', role: 'scribe', layer: 'built-in', harness: null },
+    { name: 'quill', role: 'scribe', layer: 'fleet', harness: null },
+    { name: 'mate', role: 'reviewer', layer: 'fleet', harness: null },
+  ];
+  it('pins a member and unpins it again', () => {
+    expect(togglePin([], members, 'scout')).toEqual(['scout']);
+    expect(togglePin(['scout'], members, 'scout')).toEqual([]);
+  });
+  it('keeps at most one member per role', () => {
+    expect(togglePin(['scout', 'mate'], members, 'quill')).toEqual(['mate', 'quill']);
   });
 });

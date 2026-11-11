@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/crew"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/repofinder"
 	"github.com/jbuffin/admiral/internal/server"
@@ -22,6 +24,7 @@ import (
 )
 
 type Service struct {
+	Home   string // $ADMIRAL_HOME, where the fleets' crew directories live
 	Config *config.Manager
 	State  *state.Store
 	Ships  func() []ships.Ship
@@ -31,6 +34,7 @@ type Service struct {
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/launch-orders/dirs", s.serveDirs)
 	mux.HandleFunc("GET /api/launch-orders/skills", s.serveSkills)
+	mux.HandleFunc("GET /api/launch-orders/crew", s.serveCrew)
 	mux.HandleFunc("PUT /api/favorites", s.serveFavorites)
 	mux.HandleFunc("PUT /api/chat", s.serveChat)
 }
@@ -296,6 +300,61 @@ func (s *Service) serveSkills(w http.ResponseWriter, r *http.Request) {
 		commodore = map[string]any{"found": true, "name": n}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"skills": list, "commodore": commodore})
+}
+
+// serveCrew lists the members a launch could pin. Without a dir, the repo layer is left out.
+func (s *Service) serveCrew(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	cfg := s.Config.Current()
+	fleet, ok := cfg.Fleet(q.Get("fleet"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "fleet "+q.Get("fleet")+" not found")
+		return
+	}
+	dock, ok := fleet.Harness(q.Get("harness"))
+	if !ok {
+		writeError(w, http.StatusBadRequest, "fleet "+fleet.Name+" has no "+q.Get("harness")+" dock")
+		return
+	}
+	if !fleet.CanLaunch() {
+		writeError(w, http.StatusConflict, "This fleet has no search roots")
+		return
+	}
+	dir := ""
+	if q.Get("dir") != "" {
+		var listed bool
+		dir, listed = repofinder.Contains(repofinder.List(repofinder.FleetRoots(fleet.SearchRoots, fleet.CloneRoot)), q.Get("dir"))
+		if !listed {
+			writeError(w, http.StatusBadRequest, "directory "+q.Get("dir")+" is not a checkout or search root of fleet "+fleet.Name)
+			return
+		}
+	}
+	home, err := filepath.Abs(s.Home)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	res := crew.Resolve(launcher.CrewLayers(home, fleet.Key, dock.Name, dock.Environ(), dir))
+	type member struct {
+		Name       string  `json:"name"`
+		Role       string  `json:"role"`
+		PickMeWhen string  `json:"pick-me-when"`
+		Layer      string  `json:"layer"`
+		Harness    *string `json:"harness"`
+	}
+	members := []member{}
+	if res.Exit == 0 {
+		for _, m := range res.Members {
+			members = append(members, member{m.Name, m.Role, m.PickMeWhen, m.Layer, m.Harness})
+		}
+	}
+	orEmpty := func(d []crew.Diagnostic) []crew.Diagnostic {
+		if d == nil {
+			return []crew.Diagnostic{}
+		}
+		return d
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"members": members, "warnings": orEmpty(res.Warnings), "errors": orEmpty(res.Errors)})
 }
 
 // The five-star limit is checked here so the refusal can say what to do.
