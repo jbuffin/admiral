@@ -1,14 +1,3 @@
-// Module under test: web/src/app/sourceSettings.ts (pure; no imports from web/src/SettingsDialog.tsx). It exports:
-//   UNCHANGED                     '__admiral_unchanged__'
-//   DEFAULT_VIEWS                 [{ id, title, query }] x3, the GitHub source's defaults
-//   fieldKinds(schema, stored)    key -> { kind, stored }; kind is 'enum' | 'boolean' | 'number' | 'text' | 'strings' | 'objects' | 'json'
-//   jsonText(value)               the text a JSON field starts with ('' when the value is undefined)
-//   buildSettings(schema, stored, edits)
-//                                 -> { ok: true, settings } | { ok: false, error }
-//                                 edits holds only what the person touched: key -> typed value
-//                                 (the text for a 'json' field, the array for 'strings'/'objects', undefined to clear)
-//   parseWholeJson(text)          for a source with no schema -> { ok: true, settings } | { ok: false, error }
-//   replacedDefault(title)        the default view a custom title replaces (by its slug), or null
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_VIEWS, UNCHANGED, buildSettings, fieldKinds, jsonText, parseWholeJson, replacedDefault } from './sourceSettings';
 

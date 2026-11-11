@@ -64,7 +64,7 @@ test('a plugin source keeps its stored secrets through a save and moves to anoth
   await expect(orders).toContainText('plugin');
   const form = orders.getByRole('form', { name: 'Settings' });
   // The kept secret is never drawn: its field is empty and says a value is stored.
-  await expect(form.getByLabel('Token')).toHaveValue('');
+  await expect(form.getByLabel('Token', { exact: true })).toHaveValue('');
   await expect(form).toContainText(/stored/i);
   await expect(form.getByLabel('Label')).toHaveValue('before');
 
@@ -81,18 +81,18 @@ test('a plugin source keeps its stored secrets through a save and moves to anoth
   await expect.poll(() => config(admiral).sources.orders.settings.label).toBe('after');
   expect(config(admiral).sources.orders.settings).toMatchObject(SECRETS);
   await page.reload();
-  await expect(orders.getByRole('form', { name: 'Settings' }).getByLabel('Token')).toHaveValue('');
+  await expect(orders.getByRole('form', { name: 'Settings' }).getByLabel('Token', { exact: true })).toHaveValue('');
   expect(config(admiral).sources.orders.settings).toMatchObject({ label: 'after', ...SECRETS });
 
   // A secret typed over replaces the stored one; the others stay.
-  await form.getByLabel('Token').fill('decoy-secret-9f8e7d');
+  await form.getByLabel('Token', { exact: true }).fill('decoy-secret-9f8e7d');
   await form.getByRole('button', { name: 'Save' }).click();
   await expect.poll(() => config(admiral).sources.orders.settings.token).toBe('decoy-secret-9f8e7d');
   expect(config(admiral).sources.orders.settings).toMatchObject({ tokens: SECRETS.tokens, keys: SECRETS.keys });
 
   // Move it to the other fleet: it leaves this page, lands on that fleet's, and keeps its secrets.
   await orders.getByLabel('Move to fleet').selectOption({ label: HOME });
-  await orders.getByRole('button', { name: 'Move' }).click();
+  await orders.getByRole('button', { name: 'Move', exact: true }).click();
   await expect(source(page, 'Orders')).toHaveCount(0);
   await expect.poll(() => config(admiral).sources.orders.fleet).toBe('alpha');
   expect(config(admiral).sources.orders.settings).toMatchObject({ tokens: SECRETS.tokens, keys: SECRETS.keys });
@@ -100,6 +100,28 @@ test('a plugin source keeps its stored secrets through a save and moves to anoth
   await expect(source(page, 'Orders')).toBeVisible();
   // Looking at another fleet's page leaves the shell's active fleet alone.
   expect(new URL(page.url()).search).not.toContain('fleet=alpha');
+
+  // Restart re-reads the source until its state settles.
+  const moved = source(page, 'Orders');
+  const starts = admiral.flags('orders').starts();
+  await moved.getByRole('button', { name: 'Restart', exact: true }).click();
+  await expect.poll(() => admiral.flags('orders').starts()).toBeGreaterThan(starts);
+  await expect(moved.getByRole('button', { name: 'Restart', exact: true })).toBeEnabled();
+  await expect(moved).toContainText('ok');
+
+  // Add source offers the test plugin and not GitHub, and adds to this page's fleet.
+  await page.getByRole('button', { name: 'Add source', exact: true }).click();
+  const add = page.getByRole('group', { name: 'Add source' });
+  await expect(add.getByLabel('Plugin').locator('option')).toHaveText(['testplug']);
+  await add.getByRole('button', { name: `Add to ${HOME}` }).click();
+  await expect.poll(async () => (await apiSources(admiral)).filter((s) => s.fleet === 'alpha').length).toBe(2);
+  await expect(page.getByRole('region')).toHaveCount(2);
+
+  // Remove asks inside the page, not with a browser dialog, and the source goes away.
+  await moved.getByRole('button', { name: 'Remove', exact: true }).click();
+  await moved.getByRole('group', { name: 'Remove Orders' }).getByRole('button', { name: 'Remove source' }).click();
+  await expect(page.getByRole('region')).toHaveCount(1);
+  await expect.poll(async () => (await apiSources(admiral)).some((s) => s.key === 'orders')).toBe(false);
 
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
@@ -206,6 +228,11 @@ test('a GitHub source keeps its host, account and custom views, names its fleet 
   await expect(other.getByLabel(`${HOME} fleet`).first()).toBeVisible();
   await expect(other.getByRole('status').filter({ hasText: 'acme/widgets' })).toBeVisible();
   await expect(other.getByLabel('Move to fleet')).toHaveCount(0);
+  // Removing a GitHub source asks first and says this shell can't add it back.
+  await other.getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect(other.getByRole('group', { name: 'Remove GitHub' })).toContainText(/can.t add it back/);
+  await other.getByRole('button', { name: 'Cancel' }).click();
+  await expect(other.getByRole('group', { name: 'Remove GitHub' })).toHaveCount(0);
   // Looking at another fleet's page leaves the shell's active fleet alone.
   expect(new URL(page.url()).search).not.toContain('fleet=alpha');
 

@@ -4,6 +4,7 @@ import { activeFleet, fleetPaint, fleetSearch, loaded } from './fleets';
 import { Flag } from './Flag';
 import { FleetSwitcher } from './FleetSwitcher';
 import { Icon } from './Icon';
+import { Preferences } from './Preferences';
 import { Sheet } from './Sheet';
 import { go, loc, surfaceOf, surfacePath } from './router';
 import { MORE, PHONE_TABS, SURFACES, surfaceById, type Surface } from './surfaces';
@@ -98,7 +99,7 @@ function PhoneShell({ surface }: { surface: Surface }) {
         <FleetSwitcher sheet />
         <h1>{surface.title}</h1>
       </header>
-      <EmptyState surface={surface} title={false} />
+      {surface.id === 'preferences' ? <Preferences phone /> : <EmptyState surface={surface} title={false} />}
       <nav class="tabbar" aria-label="Main">
         {PHONE_TABS.map((id) => (
           <Link key={id} surface={surfaceById(id)} class="tab">
@@ -131,7 +132,7 @@ export function Shell() {
           </Link>
         ))}
       </nav>
-      <EmptyState surface={surface} title />
+      {surface.id === 'preferences' ? <Preferences phone={false} /> : <EmptyState surface={surface} title />}
     </div>
   );
 }

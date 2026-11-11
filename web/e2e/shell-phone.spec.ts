@@ -34,6 +34,15 @@ test('on the phone, the tab bar and More reach every surface and the Fleets shee
   await expect(page).toHaveURL(/\/app\/crew\?(.*&)?fleet=alpha/);
   await expect(page.getByRole('heading', { name: 'Crew', exact: true })).toBeVisible();
 
+  // Preferences stacks its nav above the page.
+  await page.getByRole('button', { name: 'More', exact: true }).tap();
+  await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Preferences', exact: true }).tap();
+  await expect(page).toHaveURL(/\/app\/preferences\/alpha\/sources\?(.*&)?fleet=alpha/);
+  const prefsNav = await page.getByRole('navigation', { name: 'Preferences' }).boundingBox();
+  const prefsPage = await page.getByRole('heading', { name: 'Order sources', exact: true }).boundingBox();
+  expect(prefsNav!.y + prefsNav!.height).toBeLessThanOrEqual(prefsPage!.y);
+  expect(prefsPage!.x).toBeLessThan(prefsNav!.x + prefsNav!.width);
+
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
   expect(watch.errors).toEqual([]);

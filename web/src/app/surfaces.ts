@@ -16,7 +16,7 @@ export const SURFACES: Surface[] = [
   { id: 'campaigns', title: 'Campaigns', scoped: true, line: 'Campaigns for this fleet will be planned and followed here.' },
   { id: 'routines', title: 'Routines', scoped: true, line: 'The routines this fleet runs on a schedule will live here.' },
   { id: 'crew', title: 'Crew', scoped: true, line: 'The crew members of this fleet will live here.' },
-  { id: 'preferences', title: 'Preferences', scoped: false, line: 'Settings for Admiral and each fleet will live here.' },
+  { id: 'preferences', title: 'Preferences', scoped: false, line: 'Settings for each fleet.' },
 ];
 
 export const PHONE_TABS: SurfaceId[] = ['inbox', 'chat', 'ships'];
