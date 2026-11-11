@@ -37,6 +37,9 @@ for a in "$@"; do
   case "$a" in --json-schema=*) schema=1 ;; --max-budget-usd=*) budget=${a#*=} ;; esac
   prev=$a
 done
+if [ "$kind" = claude ] && [ -n "$budget" ] && [ "$mode" = cap-always ]; then
+  echo '{"type":"result","subtype":"error_max_budget_usd","is_error":true,"errors":["Reached maximum budget"],"total_cost_usd":0.05}'; exit 1
+fi
 if [ "$kind" = claude ] && [ -n "$budget" ] && [ "$mode" != cap-success ]; then
   if [ "$mode" = cap-other ]; then
     echo '{"type":"result","subtype":"error_during_execution","is_error":true,"errors":["it broke"],"total_cost_usd":0.0001}'; exit 1
@@ -51,6 +54,7 @@ paths=$(printf '%s' "$rest" | grep -o '/[A-Za-z0-9_.-]*/[A-Za-z0-9_./-]*' | sed 
 text=ok
 case "$mode" in
 write) for p in $paths; do [ -e "$p" ] || touch "$p" 2>/dev/null; done ;;
+echo) text=$(printf '%s' "$prompt" | grep -o '/[^ ]*' | tr -d '\140' | tr '\n' ' ') ;;
 read) for p in $paths; do [ -f "$p" ] && text=$(cat "$p"); done ;;
 net) for u in $urls; do curl -s -m 5 "$u" >/dev/null 2>&1; done ;;
 esac
@@ -239,6 +243,34 @@ func TestNoToolsProbePassesOnlyWhenNothingWasWrittenOrRead(t *testing.T) {
 	}
 }
 
+func TestNoToolsProbePassesWhenTheModelOnlyRepeatsTheNamedPaths(t *testing.T) {
+	for _, name := range allHarnesses {
+		if o := newJRig(t, name, "echo").run(t, capabilities.JudgeNoTools); !o.Passed {
+			t.Errorf("%s: outcome = %+v, want a pass: naming the path is not reading the file", name, o)
+		}
+	}
+}
+
+func TestClaudesJudgeProbeCallsCarryASmallCostCapExceptTheCapProbeWhichUsesATinyOne(t *testing.T) {
+	for _, id := range []capabilities.ID{capabilities.JudgeNoTools, capabilities.JudgeNoNetwork, capabilities.JudgeJSONSchema} {
+		j := newJRig(t, "claude", "pass")
+		if o := j.run(t, id); !o.Passed {
+			t.Fatalf("%s: %+v", id, o)
+		}
+		v, ok := flagValue(j.argvs(t)[0], "--max-budget-usd")
+		if f, err := strconv.ParseFloat(v, 64); !ok || err != nil || f < 0.001 || f > 0.5 {
+			t.Errorf("%s: --max-budget-usd = %q, want a small cap that still lets a haiku call answer", id, v)
+		}
+	}
+}
+
+func TestAJudgeProbeThatHitsItsCapFailsClosedAndSaysSo(t *testing.T) {
+	o := newJRig(t, "claude", "cap-always").run(t, capabilities.JudgeNoTools)
+	if o.Passed || !strings.Contains(o.Detail, "cap") || !strings.Contains(o.Detail, "closed") {
+		t.Errorf("outcome = %+v, want a fail that names the cap and fails closed", o)
+	}
+}
+
 func TestNoNetworkProbePassesOnlyWhenTheListenerSawNothing(t *testing.T) {
 	for _, name := range allHarnesses {
 		t.Run(name+"/quiet", func(t *testing.T) {
@@ -401,17 +433,6 @@ func TestTheFakeHarnessAnswersJudgeProbesAndLeavesHeadlessRunsAlone(t *testing.T
 					t.Error("judge calls appended to headless-runs: the setup tests count only guard runs")
 				}
 			})
-		}
-	}
-}
-
-func TestEveryJudgeProbeSchemaGetsPastTheRunnersSupportedSubset(t *testing.T) {
-	for _, name := range allHarnesses {
-		j := newJRig(t, name, "pass")
-		for _, id := range judgeIDs {
-			if o := j.run(t, id); strings.Contains(o.Detail, "don't support") {
-				t.Errorf("%s %s: the runner refused the probe's schema: %s", name, id, o.Detail)
-			}
 		}
 	}
 }

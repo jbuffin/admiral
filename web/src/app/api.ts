@@ -160,7 +160,7 @@ export async function fetchCapabilities(): Promise<FleetCapabilities[]> {
   return (body.fleets ?? []).map((f) => ({ ...f, harnesses: f.harnesses ?? [] }));
 }
 
-/** Runs the probes and waits for them, which can take tens of seconds. */
+/** Runs the probes and waits for them, which can take minutes. */
 export async function checkHarness(fleet: string, harness: string): Promise<CheckAnswer> {
   const res = await fetch(`${API}/harness-capabilities/check`, {
     method: 'POST',
