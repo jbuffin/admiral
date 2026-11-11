@@ -2,7 +2,19 @@
 # Fake coding-agent harness for Admiral's server tests. `claude`, `codex` and
 # `copilot` are symlinks to this script; $0 says which one ran.
 #
-# Run inside a ship's tmux pane (so TMUX and TMUX_PANE are set by tmux, and
+# Two things come before any tmux call and need no pane:
+#
+#   --version      (first argument) prints the content of the file $FAKE_VERSION_FILE if it
+#                  exists, else $FAKE_VERSION, else "2.1.300 (fake)", and exits 0. The
+#                  content FAIL prints "boom" to stderr and exits 1.
+#   -p <prompt>    a headless probe run: appends a line to $FAKE_RECORD_DIR/headless-runs,
+#                  takes the command after the last ": " of the prompt, plays it as a Bash
+#                  call through the --settings file's PreToolUse hooks (needs jq; a handler
+#                  that exits 2 denies) and runs it only when none denied. $FAKE_PROBE is
+#                  pass (default), skip-hook (no hooks, says it was denied), run-anyway
+#                  (runs the command despite a deny) or no-tool (never calls the tool).
+#
+# Otherwise it runs inside a ship's tmux pane (so TMUX and TMUX_PANE are set by tmux, and
 # plain `tmux` talks to the ship's own server). It needs two variables from the
 # fleet's `env` in config.json:
 #
@@ -77,6 +89,65 @@
 # byte it reads to `stdin` in the recording directory, exactly as received. A
 # test sends input only after `cues-done` exists (or `recording`, after a
 # `record` cue, which starts the recorder before the other cues).
+
+# Before anything touches tmux, so the server's version check and a headless probe
+# run never need a pane.
+if [ "$1" = "--version" ]; then
+  v=${FAKE_VERSION:-2.1.300 (fake)}
+  [ -n "$FAKE_VERSION_FILE" ] && [ -f "$FAKE_VERSION_FILE" ] && v=$(cat "$FAKE_VERSION_FILE")
+  if [ "$v" = FAIL ]; then
+    echo boom >&2
+    exit 1
+  fi
+  echo "$v"
+  exit 0
+fi
+settings=""
+prompt=""
+headless=""
+prev=""
+for a in "$@"; do
+  [ "$prev" = "--settings" ] && settings=$a
+  if [ "$prev" = "-p" ]; then
+    headless=1
+    prompt=$a
+  fi
+  prev=$a
+done
+if [ -n "$headless" ]; then
+  mkdir -p "$FAKE_RECORD_DIR"
+  echo "$(basename "$0")" >>"$FAKE_RECORD_DIR/headless-runs"
+  command=${prompt##*: }
+  denied=""
+  case "${FAKE_PROBE:-pass}" in
+  no-tool)
+    echo "I will not run that."
+    exit 0
+    ;;
+  skip-hook)
+    echo "The command was denied by the hook."
+    exit 0
+    ;;
+  esac
+  # The PreToolUse hooks of the --settings file, as Claude runs them for a Bash call:
+  # a handler that exits 2 denies the call.
+  payload=$(jq -cn --arg c "$command" '{tool_name: "Bash", tool_input: {command: $c}, cwd: "."}')
+  cmds=$(jq -r '.hooks.PreToolUse[]? | (.matcher // "") as $m | select($m == "" or ("Bash" | test($m))) | .hooks[]?.command' "$settings")
+  while IFS= read -r handler; do
+    [ -z "$handler" ] && continue
+    printf '%s' "$payload" | sh -c "$handler" >/dev/null 2>&1
+    [ $? -eq 2 ] && denied=1
+  done <<EOF2
+$cmds
+EOF2
+  if [ -n "$denied" ] && [ "$FAKE_PROBE" != run-anyway ]; then
+    echo "The command was blocked by a hook."
+    exit 0
+  fi
+  sh -c "$command"
+  echo done
+  exit 0
+fi
 
 # The first things it does: check the ship's directories exist, and read the
 # session options, so a test can prove Admiral made and set them before the

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/jbuffin/admiral/internal/outcomes"
+	"github.com/jbuffin/admiral/internal/probes"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -76,6 +77,10 @@ func Guard(args []string, std IO) error {
 		return nil
 	}
 	raw, _ := io.ReadAll(io.LimitReader(std.In, 1<<20))
+	if probeCommandCalled(raw) {
+		_, _ = io.WriteString(std.Err, probeReason+"\n")
+		return &GuardDenied{Rule: ruleProbe, Reason: probeReason}
+	}
 	tool, rule := guardDecision(raw)
 	if rule == "" {
 		return nil
@@ -84,6 +89,32 @@ func Guard(args []string, std IO) error {
 	reason := reasonFor(rule)
 	_, _ = io.WriteString(std.Err, reason+"\n")
 	return &GuardDenied{Rule: rule, Reason: reason}
+}
+
+const (
+	ruleProbe   = "capability_probe"
+	probeReason = "Admiral's capability probe blocked this command on purpose."
+)
+
+// probeCommandCalled is the rule only a capability probe turns on: it denies exactly the
+// command the probe asked the model to run, and only while ADMIRAL_PROBE_NONCE names the
+// nonce that command holds. The denial is a file in the probe's directory, never an outcome.
+func probeCommandCalled(raw []byte) bool {
+	nonce, dir := os.Getenv(probes.NonceEnv), os.Getenv(probes.DirEnv)
+	if nonce == "" || dir == "" {
+		return false
+	}
+	var p struct {
+		ToolName  string `json:"tool_name"`
+		ToolInput struct {
+			Command string `json:"command"`
+		} `json:"tool_input"`
+	}
+	if json.Unmarshal(raw, &p) != nil || p.ToolName != "Bash" || strings.TrimSpace(p.ToolInput.Command) != probes.Command(dir, nonce) {
+		return false
+	}
+	_ = os.WriteFile(probes.DeniedPath(dir, nonce), nil, 0o600)
+	return true
 }
 
 // recordGuardDenied trusts ADMIRAL_REPORT first, which a fleet's env cannot

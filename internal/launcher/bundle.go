@@ -152,7 +152,7 @@ func WriteBundle(dir string) error {
 	return nil
 }
 
-func claudeSettingsPath(home string) string {
+func ClaudeSettingsPath(home string) string {
 	return filepath.Join(home, "harness", "claude-settings.json")
 }
 func claudeChatSettingsPath(home string) string {

@@ -224,7 +224,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 func (l *Launcher) hookFlags(harness string) (flags []string, known bool) {
 	switch harness {
 	case "claude":
-		return []string{"--settings", claudeSettingsPath(l.Home)}, true
+		return []string{"--settings", ClaudeSettingsPath(l.Home)}, true
 	case "codex":
 		return codexFlags(), true
 	case "copilot":
