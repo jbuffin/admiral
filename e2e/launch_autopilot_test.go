@@ -10,6 +10,7 @@ import (
 
 // autopilotWorld starts a world whose config adds the top-level resource
 // `phone` (capacity 1, no check) and, when maxShips is not 0, the global cap.
+// The cap is the top-level `max_ships` key.
 func autopilotWorld(t *testing.T, maxShips int) *world {
 	t.Helper()
 	w := newWorld(t)
@@ -20,7 +21,7 @@ func autopilotWorld(t *testing.T, maxShips int) *world {
 	}
 	cfg["resources"] = map[string]any{"phone": map[string]any{"capacity": 1}}
 	if maxShips != 0 {
-		cfg["autopilot"] = map[string]any{"max_ships": maxShips}
+		cfg["max_ships"] = maxShips
 	}
 	b, _ := json.Marshal(cfg)
 	writeConfig(t, w.home, string(b))
@@ -111,5 +112,94 @@ func TestAutopilotLaunchOverTheCapIsRefused(t *testing.T) {
 	hand := w.launch(w.dockLaunch("claude", "cap-hand", "go"))
 	if hand.Session == "" || hand.Session == first.Session {
 		t.Errorf("an interactive launch over the cap gave %+v, want a new ship", hand)
+	}
+}
+
+// With one slot free, two autopilot launches posted together give exactly one
+// ship and one 409: the cap check and the launch are one step.
+func TestConcurrentAutopilotLaunchesOverOneFreeSlot(t *testing.T) {
+	w := autopilotWorld(t, 1)
+	codes := make(chan int, 2)
+	start := make(chan struct{})
+	for _, name := range []string{"race-a", "race-b"} {
+		req := w.autopilotLaunch("claude", name, nil)
+		go func() {
+			<-start
+			code, _ := send(t, http.MethodPost, w.in.LocalURL+"/api/ships", req)
+			codes <- code
+		}()
+	}
+	close(start)
+	got := map[int]int{}
+	for i := 0; i < 2; i++ {
+		got[<-codes]++
+	}
+	if got[http.StatusCreated] != 1 || got[http.StatusConflict] != 1 {
+		t.Errorf("two autopilot launches over one free slot gave statuses %v, want one 201 and one 409", got)
+	}
+	w.waitShipCount(10*time.Second, "exactly one ship", live, 1)
+	if n := len(w.in.ships(t)); n != 1 {
+		t.Errorf("ships = %d, want 1", n)
+	}
+}
+
+// AC 8, hand half: Admiral owns ADMIRAL_AUTOPILOT, ADMIRAL_LOW_STAKES and
+// ADMIRAL_AUTO_MERGE (#120), so a launch by hand never has them, whether the fleet's env or Admiral's own
+// environment (an Admiral running inside an autopilot ship) sets them.
+func TestHandLaunchHasNoAutopilotVariables(t *testing.T) {
+	vars := []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE"}
+	check := func(t *testing.T, w *world) {
+		t.Helper()
+		ship := w.launch(w.order("work", "claude", "hand", noSkill, "x"))
+		r := w.record(ship.Session)
+		for _, v := range vars {
+			if val, ok := r.env[v]; ok {
+				t.Errorf("a ship launched by hand has %s=%q, want it unset", v, val)
+			}
+		}
+	}
+	t.Run("set by the fleet's env", func(t *testing.T) {
+		w := newWorld(t)
+		env := w.harnessEnv()
+		env["ADMIRAL_AUTOPILOT"], env["ADMIRAL_LOW_STAKES"], env["ADMIRAL_AUTO_MERGE"] = "1", "never", "squash"
+		cfg, _ := json.Marshal(map[string]any{"version": 1, "fleets": map[string]any{"work": map[string]any{
+			"name": "Work", "search_roots": []string{w.work}, "claude": map[string]any{"executable": w.fakeExe("claude"), "env": env}}}})
+		writeConfig(t, w.home, string(cfg))
+		w.start()
+		check(t, w)
+	})
+	t.Run("set in Admiral's environment", func(t *testing.T) {
+		w := newWorld(t)
+		w.extra = []string{"ADMIRAL_AUTOPILOT=1", "ADMIRAL_LOW_STAKES=advisor", "ADMIRAL_AUTO_MERGE=rebase"}
+		w.start()
+		check(t, w)
+	})
+}
+
+// Two launches of one order that overlap: the order is hidden only once its
+// ship exists, so the refusal must hold the order while a launch runs.
+func TestConcurrentLaunchesOfOneOrder(t *testing.T) {
+	w := newWorld(t)
+	p := w.newTP("a")
+	p.mainOrders(ord("o1", "First"))
+	w.startSources(tpSource("a", p, nil))
+	w.waitSource("a", 10*time.Second, "an order", func(s sourceJSON) bool { return len(s.orderIDs()) == 1 })
+	dir := w.checkout("proj")
+
+	const n = 4
+	codes := make(chan int, n)
+	for i := 0; i < n; i++ {
+		go func() {
+			code, _ := send(t, http.MethodPost, w.in.LocalURL+"/api/ships", map[string]any{
+				"fleet": "stay", "harness": "claude", "dir": dir, "skill": noSkill, "source": "a", "order_id": "o1"})
+			codes <- code
+		}()
+	}
+	got := map[int]int{}
+	for i := 0; i < n; i++ {
+		got[<-codes]++
+	}
+	if got[http.StatusCreated] != 1 || got[http.StatusConflict] != n-1 {
+		t.Errorf("%d overlapping launches of one order gave statuses %v, want one 201 and %d 409", n, got, n-1)
 	}
 }

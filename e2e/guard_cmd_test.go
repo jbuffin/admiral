@@ -102,13 +102,8 @@ func TestShipGuardRefusesOnAnAutopilotShip(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
 	w.writeCue(guardShipCue)
-	w.repo("r1", remoteOf("r1"))
-	p := w.newTP("a")
-	p.mainOrders(apOrder("o1", remoteOf("r1")))
-	w.installPlugin("testplug", "testplug")
-	w.writeAutopilotConfig(map[string]any{"a": tpAutopilot(p, "main", apEntry(true, 1, nil))}, 0)
 	w.start()
-	ship := w.waitShipCount(15*time.Second, "o1's ship", fromOrder("o1"), 1)[0]
+	ship := w.launch(w.autopilotLaunch("claude", "guardap", nil))
 	r := w.record(ship.Session)
 	if r.env["ADMIRAL_AUTOPILOT"] != "1" {
 		t.Fatalf("ship env ADMIRAL_AUTOPILOT = %q, want 1", r.env["ADMIRAL_AUTOPILOT"])

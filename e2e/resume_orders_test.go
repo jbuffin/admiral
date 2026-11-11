@@ -2,28 +2,20 @@ package e2e
 
 import (
 	"encoding/json"
-	"net/http"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
-	"time"
 )
 
-const (
-	resumeText = "Finish the review of https://github.com/acme/widgets/pull/12 now the questions are answered"
-	sailCue    = "wait go"
-	// anchorCue ends the harness at once and leaves the ship anchored: a ship
-	// still afloat has its resume text typed at its prompt, not an order.
-	anchorCue = "exit 1"
-)
+// Resume of a live ship (ADR 0016): once every item id in a ship's report
+// `inbox` has an answer, Admiral types the report's `resume` text at the prompt
+// of a ship still afloat. The real binary and a ship that sits underway.
+// Admiral adds no order for it: resume orders and `autopilot.resume_source` are
+// gone (#261).
 
-func resumeTarget(source, panel string) map[string]any {
-	return map[string]any{"source": source, "panel": panel}
-}
-
-func (w *world) resumeConfig(cues map[string][]string, sources map[string]any, resume any) {
+// resumeConfig writes the config: one claude fleet per cue key, no sources.
+func (w *world) resumeConfig(cues map[string][]string) {
 	w.t.Helper()
 	fleets := map[string]any{}
 	for key, lines := range cues {
@@ -36,24 +28,15 @@ func (w *world) resumeConfig(cues map[string][]string, sources map[string]any, r
 		fleets[key] = map[string]any{"name": key, "color": "#336699", "search_roots": []string{w.work},
 			"claude": map[string]any{"executable": w.fakeExe("claude"), "env": env}}
 	}
-	// The sources belong to the first fleet.
-	first := ""
-	for key := range cues {
-		if first == "" || key < first {
-			first = key
-		}
-	}
-	cfg := map[string]any{"version": 1, "fleets": fleets, "sources": inFleet(first, sources)}
-	if resume != nil {
-		cfg["autopilot"] = map[string]any{"resume_source": resume}
-	}
-	b, err := json.Marshal(cfg)
+	b, err := json.Marshal(map[string]any{"version": 1, "fleets": fleets})
 	if err != nil {
 		w.t.Fatal(err)
 	}
 	writeConfig(w.t, w.home, string(b))
 }
 
+// resumeShip launches a ship of fleet f and writes its report with the given
+// resume text and inbox ids, and one question item per id.
 func (w *world) resumeShip(repo, resume string, inbox []string, items ...string) (shipJSON, string, string) {
 	w.t.Helper()
 	ship := w.launchIn("f", "claude", repo)
@@ -81,310 +64,21 @@ func (w *world) answerQuestion(session, id string) {
 	}
 }
 
-// writeAnswerFile answers an item the way someone other than Admiral's API
-// would: the file, whole, through a rename.
-func writeAnswerFile(t *testing.T, dir, id string) {
-	t.Helper()
-	b := mustJSON(t, map[string]any{"version": 1, "id": id, "kind": "question",
-		"answered": time.Now().UTC().Format(time.RFC3339), "answers": map[string]any{"1": map[string]any{"choice": "Alpha"}}})
-	tmp := filepath.Join(dir, "."+id+".answer.json.tmp.1")
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(tmp, filepath.Join(dir, id+".answer.json")); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func (w *world) orderTexts(source string) []string {
-	w.t.Helper()
-	s, ok := find(w.sources(), source)
-	if !ok {
-		return nil
-	}
-	out := []string{}
-	for _, p := range s.Views {
-		for _, o := range p.Orders {
-			out = append(out, o.Text)
-		}
-	}
-	return out
-}
-
-func (w *world) waitOrders(source string, want ...string) {
-	w.t.Helper()
-	w.waitSource(source, 15*time.Second, "orders "+strings.Join(want, " | "), func(s sourceJSON) bool {
-		return reflect.DeepEqual(w.orderTexts(source), want)
-	})
-}
-
-func (w *world) holdOrders(msg, source string, want ...string) {
-	w.t.Helper()
-	holdThat(w.t, msg, func() bool {
-		got := w.orderTexts(source)
-		return len(got) == len(want) && (len(want) == 0 || reflect.DeepEqual(got, want))
-	})
-}
-
-func TestResumeOrderAddedWhenTheLastItemIsAnswered(t *testing.T) {
-	t.Parallel()
-	w := newWorld(t)
-	w.resumeConfig(map[string][]string{"f": {anchorCue}}, w.ordersSource(), resumeTarget("orders", "orders"))
-	w.start()
-	w.waitSource("orders", 10*time.Second, "state ok", isOK)
-	ship, _, _ := w.resumeShip("res1", resumeText, []string{"q-1", "q-2"}, "q-1", "q-2")
-
-	w.answerQuestion(ship.Session, "q-1")
-	w.holdOrders("an order was added with an item of the report still unanswered", "orders")
-	if n := len(w.outcomesOf("resumed")); n != 0 {
-		t.Fatalf("%d resumed records with an item unanswered, want none", n)
-	}
-
-	w.answerQuestion(ship.Session, "q-2")
-	w.waitOrders("orders", resumeText)
-	log := w.waitEvent(ship.Session, "resumed", 1)
-	if n := countEvent(log, "resumed"); n != 1 {
-		t.Errorf("%d resumed records for the ship, want 1", n)
-	}
-	// The record carries ship, so `admiral outcomes --ship` lists it.
-	if r := lastOf(log, "resumed"); r["ship"] != ship.Session {
-		t.Errorf("resumed = %v, want ship %s", r, ship.Session)
-	}
-}
-
-// The inbox scan, not only the answer route, starts the check.
-func TestResumeOrderAddedForAnswerFilesWrittenDirectly(t *testing.T) {
-	t.Parallel()
-	w := newWorld(t)
-	w.resumeConfig(map[string][]string{"f": {anchorCue}}, w.ordersSource(), resumeTarget("orders", "orders"))
-	w.start()
-	w.waitSource("orders", 10*time.Second, "state ok", isOK)
-	ship, _, dir := w.resumeShip("res1b", resumeText, []string{"q-1", "q-2"}, "q-1", "q-2")
-
-	writeAnswerFile(t, dir, "q-1")
-	w.holdOrders("an order was added with an item of the report still unanswered", "orders")
-	writeAnswerFile(t, dir, "q-2")
-	w.waitOrders("orders", resumeText)
-	w.waitEvent(ship.Session, "resumed", 1)
-}
-
-func TestResumeOrderIsAddedOnce(t *testing.T) {
-	t.Parallel()
-	w := newWorld(t)
-	w.resumeConfig(map[string][]string{"f": {anchorCue}}, w.ordersSource(), resumeTarget("orders", "orders"))
-	w.start()
-	w.waitSource("orders", 10*time.Second, "state ok", isOK)
-	ship, _, dir := w.resumeShip("res2", resumeText, []string{"q-1", "q-2"}, "q-1", "q-2")
-	w.answerQuestion(ship.Session, "q-1")
-	w.answerQuestion(ship.Session, "q-2")
-	w.waitOrders("orders", resumeText)
-	w.waitEvent(ship.Session, "resumed", 1)
-
-	w.restart()
-	w.waitSource("orders", 10*time.Second, "state ok", isOK)
-	w.holdOrders("a restart added the resume order again", "orders", resumeText)
-
-	writeAnswerFile(t, dir, "q-2") // the same answer, written again
-	w.holdOrders("an answer written again added a second resume order", "orders", resumeText)
-	if n := len(w.outcomesOf("resumed")); n != 1 {
-		t.Errorf("%d resumed records after a restart and a repeated answer, want 1", n)
-	}
-}
-
-// The last report still gets its order, so the silence is not a stalled check.
-func TestResumeOrderAddsNothingForReportsThatCannotResume(t *testing.T) {
-	t.Parallel()
-	w := newWorld(t)
-	w.resumeConfig(map[string][]string{"f": {anchorCue}}, w.ordersSource(), resumeTarget("orders", "orders"))
-	w.start()
-	w.waitSource("orders", 10*time.Second, "state ok", isOK)
-
-	noText, _, _ := w.resumeShip("res3a", "", []string{"q-1"}, "q-1")
-	w.answerQuestion(noText.Session, "q-1")
-
-	emptyInbox, _, _ := w.resumeShip("res3b", resumeText, []string{}, "q-2")
-	w.answerQuestion(emptyInbox.Session, "q-2")
-
-	noFile, _, _ := w.resumeShip("res3c", resumeText, []string{"q-3", "ghost"}, "q-3")
-	w.answerQuestion(noFile.Session, "q-3")
-
-	// A resume the source refuses (a control character) is dropped, not retried.
-	refusedText, _, _ := w.resumeShip("res3d", "bad\u0001text https://github.com/acme/widgets/pull/12", []string{"q-4"}, "q-4")
-	w.answerQuestion(refusedText.Session, "q-4")
-
-	// A removed item was settled elsewhere: the ship is not resumed for it.
-	removed, _, _ := w.resumeShip("res3f", resumeText, []string{"q-6", "q-7"}, "q-6", "q-7")
-	w.answerQuestion(removed.Session, "q-6")
-	if code, resp := w.in.act(t, removed.Session, "q-7", "remove", nil); !ok2xx(code) {
-		t.Fatalf("removing q-7 = %d: %s", code, resp)
-	}
-
-	w.holdOrders("an order was added for a report that cannot resume", "orders")
-	if n := len(w.outcomesOf("resumed")); n != 0 {
-		t.Errorf("%d resumed records, want none", n)
-	}
-
-	control, _, _ := w.resumeShip("res3e", resumeText, []string{"q-5"}, "q-5")
-	w.answerQuestion(control.Session, "q-5")
-	w.waitOrders("orders", resumeText)
-	if got := w.shipLog(control.Session); countEvent(got, "resumed") != 1 {
-		t.Errorf("control ship's records = %v, want one resumed", eventsOf(got))
-	}
-}
-
-func TestResumeOrderWithoutAUsableTarget(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name   string
-		resume any
-	}{
-		{"a panel that does not exist", resumeTarget("orders", "no-such-panel")},
-		{"a source that does not exist", resumeTarget("no-such-source", "orders")},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			t.Parallel()
-			w := newWorld(t)
-			w.resumeConfig(map[string][]string{"f": {anchorCue}}, w.ordersSource(), c.resume)
-			w.start()
-			w.waitSource("orders", 10*time.Second, "state ok", isOK)
-			ship, _, _ := w.resumeShip("res3f", resumeText, []string{"q-1"}, "q-1")
-			w.answerQuestion(ship.Session, "q-1")
-
-			w.holdOrders("an order was added with "+c.name, "orders")
-			if n := len(w.outcomesOf("resumed")); n != 0 {
-				t.Errorf("%d resumed records with %s, want none", n, c.name)
-			}
-			if code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/ships", nil); code != http.StatusOK {
-				t.Errorf("GET /api/ships = %d after the answer, want 200: %s", code, body)
-			}
-		})
-	}
-}
-
-// sailWorld is a world whose ships sit underway until `go` and then exit 0, so
-// they sail off.
-func sailWorld(t *testing.T, sources func(*world) map[string]any, resume any) *world {
-	t.Helper()
-	w := newWorld(t)
-	w.resumeConfig(map[string][]string{"f": {"hook working", sailCue, "exit 0"}}, sources(w), resume)
-	w.start()
-	w.waitSource("orders", 10*time.Second, "state ok", isOK)
-	return w
-}
-
-func (w *world) sailOff(session string) {
-	w.t.Helper()
-	w.touch(session, "go")
-	w.waitEvent(session, "ended", 1)
-	deadline := time.Now().Add(15 * time.Second)
-	for w.hasSession(session) {
-		if time.Now().After(deadline) {
-			w.t.Fatalf("the exit-0 ship's session never went")
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-}
-
-func TestResumeOrderForASailedOffShipsKeptInbox(t *testing.T) {
-	t.Parallel()
-	w := sailWorld(t, (*world).ordersSource, resumeTarget("orders", "orders"))
-	ship, reportPath, dir := w.resumeShip("res4", resumeText, []string{"q-1", "q-2"}, "q-1", "q-2")
-	w.answerQuestion(ship.Session, "q-1")
-	w.sailOff(ship.Session)
-	waitKept(t, w.home, ship.Session)
-	if !exists(reportPath) || !exists(dir) {
-		t.Fatalf("the report or inbox went with q-2 unanswered")
-	}
-	w.holdOrders("an order was added with q-2 unanswered", "orders")
-
-	w.answerQuestion(ship.Session, "q-2")
-	waitGone(t, 15*time.Second, reportPath, dir)
-	// The files are gone, so the order must already be there.
-	if got := w.orderTexts("orders"); !reflect.DeepEqual(got, []string{resumeText}) {
-		t.Errorf("orders when the files went = %v, want the resume order added first", got)
-	}
-	w.waitEvent(ship.Session, "resumed", 1)
-}
-
-// The last item was answered while Admiral was down. Start-up adds the order
-// before its sweep of fully answered kept inboxes deletes the report.
-func TestResumeOrderForAnAnswerWrittenWhileAdmiralWasDown(t *testing.T) {
-	t.Parallel()
-	w := sailWorld(t, (*world).ordersSource, resumeTarget("orders", "orders"))
-	ship, reportPath, dir := w.resumeShip("res4b", resumeText, []string{"q-1", "q-2"}, "q-1", "q-2")
-	w.answerQuestion(ship.Session, "q-1")
-	w.sailOff(ship.Session)
-	waitKept(t, w.home, ship.Session)
-
-	w.in.Stop()
-	writeAnswerFile(t, dir, "q-2")
-	w.restart()
-	w.waitSource("orders", 10*time.Second, "state ok", isOK)
-
-	w.waitOrders("orders", resumeText)
-	w.waitEvent(ship.Session, "resumed", 1)
-	waitGone(t, 15*time.Second, reportPath, dir)
-}
-
-func TestResumeOrderWhenTheShipExitsRightAfterTheLastAnswer(t *testing.T) {
-	t.Parallel()
-	w := sailWorld(t, (*world).ordersSource, resumeTarget("orders", "orders"))
-	ship, _, dir := w.resumeShip("res4c", resumeText, []string{"q-1"}, "q-1")
-	writeAnswerFile(t, dir, "q-1")
-	w.sailOff(ship.Session)
-
-	w.waitOrders("orders", resumeText)
-	w.waitEvent(ship.Session, "resumed", 1)
-}
-
-// Admiral keeps the resume text in its own state, through the report's deletion
-// and a restart, until the target exists.
-func TestResumeOrderRetriesUntilTheTargetExists(t *testing.T) {
-	t.Parallel()
-	w := sailWorld(t, (*world).ordersSource, resumeTarget("later", "orders"))
-	ship, reportPath, dir := w.resumeShip("res5", resumeText, []string{"q-1"}, "q-1")
-	w.sailOff(ship.Session)
-	w.answerQuestion(ship.Session, "q-1") // the last answer: the files go, the target is missing
-	waitGone(t, 15*time.Second, reportPath, dir)
-	w.holdOrders("an order was added to a source that is not there", "orders")
-	if n := len(w.outcomesOf("resumed")); n != 0 {
-		t.Fatalf("%d resumed records before the target existed, want none", n)
-	}
-
-	w.restart()
-	w.waitSource("orders", 10*time.Second, "state ok", isOK)
-	w.holdOrders("a restart added an order to a source that is not there", "orders")
-
-	both := map[string]any{"orders": w.orderSource("orders", "Orders", nil), "later": w.orderSource("later", "Later", nil)}
-	w.resumeConfig(map[string][]string{"f": {"hook working", sailCue, "exit 0"}}, both, resumeTarget("later", "orders"))
-	w.waitOrders("later", resumeText)
-	w.waitEvent(ship.Session, "resumed", 1)
-	w.holdOrders("the resume order was added to the wrong source", "orders")
-
-	w.restart()
-	w.waitSource("later", 10*time.Second, "state ok", isOK)
-	w.holdOrders("a restart added a second resume order", "later", resumeText)
-	if n := len(w.outcomesOf("resumed")); n != 1 {
-		t.Errorf("%d resumed records, want 1", n)
-	}
-}
-
-// A live ship reads its answers itself (ADR 0016), so no order is added. The
-// resume panel is set, so the missing order is not for want of a target.
+// A ship still afloat reads its answers itself (ADR 0016): once the last item
+// its report lists is answered, Admiral types the report's resume text at the
+// ship's prompt when its turn has ended, never while it is busy, and adds no
+// order, so no second ship launches in its checkout.
 func TestResumeOfALiveShipIsTypedAtItsPromptOnceItStops(t *testing.T) {
-	t.Parallel()
 	w := newWorld(t)
-	w.resumeConfig(map[string][]string{"f": {"record", "hook working", "wait go", "event Stop {}"}}, w.ordersSource(), resumeTarget("orders", "orders"))
+	w.resumeConfig(map[string][]string{"f": {"record", "hook working", "wait go", "event Stop {}"}})
 	w.start()
-	w.waitSource("orders", 10*time.Second, "state ok", isOK)
 	const text = "/commodore resume run-1"
 	ship, _, _ := w.resumeShip("live1", text, []string{"q-1"}, "q-1")
 	w.waitFile(ship.Session, "recording")
 
 	w.answerQuestion(ship.Session, "q-1")
 	holdThat(t, "the resume text was typed while the ship was underway", func() bool { return w.stdinOf(ship.Session) == "" })
-	w.holdOrders("an order was added for a ship still afloat", "orders")
+	holdThat(t, "a second ship launched for a ship still afloat", func() bool { return len(w.in.ships(t)) == 1 })
 
 	w.touch(ship.Session, "go") // the turn ends: Stop
 	w.waitStdin(t, ship.Session, text+"\r")
@@ -392,7 +86,7 @@ func TestResumeOfALiveShipIsTypedAtItsPromptOnceItStops(t *testing.T) {
 	if r := lastOf(log, "resumed"); r["live"] != true || r["order"] != nil {
 		t.Errorf("resumed = %v, want live true and no order", r)
 	}
-	w.holdOrders("an order was added after the text was typed", "orders")
+	holdThat(t, "a second ship launched after the text was typed", func() bool { return len(w.in.ships(t)) == 1 })
 	if got := w.stdinOf(ship.Session); got != text+"\r" {
 		t.Errorf("stdin = %q, want the text typed once", got)
 	}
