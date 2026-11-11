@@ -35,10 +35,9 @@ func sameAnswer(t *testing.T, what string, old, v1 *http.Response, oldBody, v1Bo
 // AC1: a route under /api/v1 answers exactly as under /api. Bodies stay
 // byte-identical, so the URLs inside them stay unversioned.
 func TestAPIv1_MirrorsUnversionedRoutes(t *testing.T) {
-	// A fresh install has no source, so add the freeform one (it has an icon).
+	// A fresh install has no source, so start with the test one (it has an icon).
 	w := newWorld(t)
-	w.startWithFreeform()
-	in := w.in
+	in := w.startSources(w.orderSrcDef("orders", "Orders")).instance
 	rows := []struct {
 		method, path string
 		status       int // what both paths must answer today
@@ -63,8 +62,8 @@ func TestAPIv1_MirrorsUnversionedRoutes(t *testing.T) {
 	}
 	t.Run("embedded URLs stay unversioned", func(t *testing.T) {
 		_, body := get(t, in.LocalURL+"/api/v1/sources", nil)
-		if !strings.Contains(body, `"/api/plugins/freeform/icon"`) || strings.Contains(body, "/api/v1/") {
-			t.Fatalf("GET /api/v1/sources should carry the unversioned icon URL /api/plugins/freeform/icon: %s", body)
+		if !strings.Contains(body, `"/api/plugins/testplug/icon"`) || strings.Contains(body, "/api/v1/") {
+			t.Fatalf("GET /api/v1/sources should carry the unversioned icon URL /api/plugins/testplug/icon: %s", body)
 		}
 	})
 }
