@@ -27,7 +27,7 @@ export function Sheet({ label, onClose, wide, children, kind = '' }: { label: st
   useListKeys(ref, true, onClose);
   return (
     <div class={`backdrop ${kind}`} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={ref} class={`sheet${wide ? ' wide' : ''} ${kind}`} role="dialog" aria-modal="true" aria-label={label}>
+      <div ref={ref} class={wide ? 'sheet wide' : 'sheet'} role="dialog" aria-modal="true" aria-label={label}>
         <h2 class="sheet-title">{label}</h2>
         {children}
       </div>

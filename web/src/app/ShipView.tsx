@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, probeShipList, type Ship } from './api';
 import { followConversation, type Conversation } from './conversation';
 import { ConversationView } from './ConversationView';
-import { Composer } from './Composer';
+import { Composer, useComposer } from './Composer';
 import { Sheet } from './Sheet';
 import { fleetSearch } from './fleets';
 import { go, surfacePath } from './router';
@@ -53,11 +53,18 @@ function StopShip({ ship }: { ship: Ship }) {
   };
   return (
     <>
-      <button type="button" class="btn danger stop-ship" onClick={() => setAsking(true)}>
+      <button
+        type="button"
+        class="btn danger stop-ship"
+        onClick={() => {
+          setError('');
+          setAsking(true);
+        }}
+      >
         Stop ship
       </button>
       {asking ? (
-        <Sheet label="Stop ship" kind="launch-backdrop stop-sheet" onClose={() => !busy && setAsking(false)}>
+        <Sheet label="Stop ship" kind="launch-backdrop stop-backdrop" onClose={() => !busy && setAsking(false)}>
           <p class="line">Stop {ship.name}? Its harness and crew end now.</p>
           {error ? (
             <p class="launch-error" role="alert">
@@ -131,6 +138,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
     return f.stop;
   }, [ship.session]);
 
+  const box = useComposer(ship, conv);
   const Heading = title ? 'h1' : 'h2';
   return (
     <section class="ship-view">
@@ -149,8 +157,10 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
       <div role="tabpanel" id="view-panel" aria-labelledby={`tab-${tab}`} class={`view-panel${tab === 'Terminal' ? ' terminal' : ''}`}>
         {tab === 'Conversation' ? (
           <>
-            <ConversationView conv={conv} harness={ship.harness} anchored={ship.status === 'anchored'} working={ship.status === 'underway'} openTerminal={() => setTab('Terminal')} loadOlder={() => void follow.current?.loadOlder()} />
-            <Composer ship={ship} conv={conv} />
+            <div class="convo-area">
+              <ConversationView conv={conv} harness={ship.harness} anchored={ship.status === 'anchored'} working={ship.status === 'underway'} openTerminal={() => setTab('Terminal')} loadOlder={() => void follow.current?.loadOlder()} />
+            </div>
+            <Composer ship={ship} box={box} />
           </>
         ) : tab === 'Terminal' ? (
           <TerminalTab ship={ship} />

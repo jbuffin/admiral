@@ -132,6 +132,10 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await expect(messageBox(page)).toBeDisabled();
   await expect(viewPanel(page)).toContainText('Exited with error, read only');
   await expect(interruptButton(page)).toHaveCount(0);
+  // The box sits at the bottom of the panel however short the conversation is.
+  const panelBox = (await viewPanel(page).boundingBox())!;
+  const inputBox = (await messageBox(page).boundingBox())!;
+  expect(panelBox.y + panelBox.height - (inputBox.y + inputBox.height)).toBeLessThan(40);
 
   // A ship that leaves the list while its view is open: the view says it is gone and offers Back.
   const stopped = await fetch(`${admiral.url}api/v1/ships/${encodeURIComponent(moored.session)}/stop`, { method: 'POST' });
@@ -174,11 +178,16 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await launchFromTheShell(page, admiral, (l) => l.click(), { phone: false });
 
   // Talking to a ship: the box sends, the message shows dimmed until the conversation has it, Interrupt presses Esc and Stop ship ends the ship.
-  const chat = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste', 'reply Aye, rebasing now'] });
+  const chat = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste', 'replydelay 2', 'reply Aye, rebasing now'] });
   setState(admiral, chat, 'needs_you');
   await page.goto(admiral.url + 'app/ships?fleet=zulu');
   await rowLink(page, chat).tap();
   await expect(messageBox(page)).toBeEnabled();
+  // A draft survives a visit to another tab.
+  await messageBox(page).fill('A draft to keep');
+  await viewTab(page, 'Terminal').tap();
+  await viewTab(page, 'Conversation').tap();
+  await expect(messageBox(page)).toHaveValue('A draft to keep');
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
   await page.route('**/api/v1/ships/*/messages', async (route) => {
@@ -188,9 +197,19 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await messageBox(page).fill('Please rebase onto main');
   await sendButton(page).tap();
   await expect(sentBubble(page, 'Please rebase onto main')).toBeVisible();
+  // A second message while the first is in flight gets its own bubble.
+  await messageBox(page).fill('And mind the lockfile');
+  await messageBox(page).press('Enter');
+  await expect(sentBubble(page, 'And mind the lockfile')).toBeVisible();
+  const accepted = page.waitForResponse((r) => r.url().includes('/messages') && r.status() === 200);
   release();
+  await accepted;
+  // The harness records the message two seconds after the server accepted it: the bubble waits for the record, not the 200.
+  await expect(sentBubble(page, 'Please rebase onto main')).toBeVisible();
   await expect(sentBubble(page, 'Please rebase onto main')).toHaveCount(0);
+  await expect(sentBubble(page, 'And mind the lockfile')).toHaveCount(0, { timeout: 15_000 });
   await expect(viewPanel(page).getByText('Please rebase onto main', { exact: true })).toHaveCount(1);
+  await expect(viewPanel(page).getByText('And mind the lockfile', { exact: true })).toHaveCount(1);
   await expect(viewPanel(page)).toContainText('Aye, rebasing now', { timeout: 15_000 });
   expect(received(admiral, chat)).toContain('Please rebase onto main');
   await page.unroute('**/api/v1/ships/*/messages');
@@ -214,6 +233,7 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   });
   await stopShipButton(page).tap();
   await expect(stopDialog(page)).toBeVisible();
+  expect((await stopDialog(page).boundingBox())!.width).toBeLessThanOrEqual(520);
   await stopDialog(page).getByRole('button', { name: 'Stop ship' }).tap();
   await expect(surface(page, 'Ships')).toBeVisible();
   await expect(row(page, chat)).toHaveCount(0);
