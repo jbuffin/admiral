@@ -202,6 +202,8 @@ test('on the phone, the Inbox lists a question item and a needs-you stop from tw
   await expect(entry(login.name)).toContainText(/^.*\b(now|\d+m)\b/);
   await expect(main).not.toContainText('Whatever needs you, from every fleet, will land here.');
   await expect(entry('Heads up')).toBeVisible();
+  await expect(entry('Heads up')).not.toContainText(HOME);
+  await expect(entry('Heads up')).not.toContainText(WORK);
   for (const n of [login.name, visitor.name, 'Heads up']) expect((await entry(n).boundingBox())!.height).toBeGreaterThanOrEqual(44);
   expect(await page.evaluate(() => [document.documentElement, document.querySelector('main')!].every((e) => e.scrollWidth <= e.clientWidth))).toBe(true);
 

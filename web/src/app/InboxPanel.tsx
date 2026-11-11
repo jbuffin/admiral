@@ -38,7 +38,7 @@ function Row({ e, now, phone }: { e: Entry; now: number; phone: boolean }) {
   if (e.folded !== null) {
     return (
       <li class="ship-row inbox-row inbox-folded">
-        <span class="ship-name">{rowShip(e)}</span> <span class="inbox-confirm">{e.folded}</span>
+        <span class="ship-name">{rowShip(e)}</span> <span class="inbox-confirm" role="status">{e.folded}</span>
         {fleet ? <span class="inbox-fleet">{fleet.name}</span> : null}
       </li>
     );
@@ -111,7 +111,7 @@ export function InboxPanel({ surface, title, phone }: { surface: Surface; title:
   return (
     <main class="panel">
       {title ? <h1>{surface.title}</h1> : null}
-      <p class="line">{phone ? 'Every fleet, oldest first.' : 'Oldest first'}</p>
+      {phone ? null : <p class="line">Oldest first</p>}
       {groups.map((g) => (
         <section key={g.id} class="ship-group" aria-labelledby={`inbox-${g.id}`}>
           <h2 id={`inbox-${g.id}`} class="group-head">
@@ -124,6 +124,7 @@ export function InboxPanel({ surface, title, phone }: { surface: Surface; title:
           </ul>
         </section>
       ))}
+      {phone ? <p class="line">Every fleet, oldest first.</p> : null}
     </main>
   );
 }

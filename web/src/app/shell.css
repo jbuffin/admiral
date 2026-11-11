@@ -489,3 +489,4 @@ button.pill { cursor: pointer; min-height: 32px; }
 .inbox-folded { display: flex; align-items: center; gap: 8px; min-height: var(--shape-min-touch-target); color: var(--color-muted); animation: inbox-fold 0.25s ease-out; }
 .inbox-confirm { flex: 1; }
 @keyframes inbox-fold { from { opacity: 1; } to { opacity: 0.7; } }
+.inbox-row .ship-bar { align-self: stretch; height: auto; }

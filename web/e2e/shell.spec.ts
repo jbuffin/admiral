@@ -619,6 +619,8 @@ test('the Inbox lists a question item and a needs-you stop from two fleets, each
   await expect(entry(login.name)).toContainText(/^.*\b(now|\d+m)\b/);
   await expect(main).not.toContainText('Whatever needs you, from every fleet, will land here.');
   await expect(entry('Heads up')).toBeVisible();
+  await expect(entry('Heads up')).not.toContainText(HOME);
+  await expect(entry('Heads up')).not.toContainText(WORK);
   expect((await entry(login.name).boundingBox())!.height).toBeGreaterThanOrEqual(44);
 
   // A notice shows its body as text, and nothing in it runs.
