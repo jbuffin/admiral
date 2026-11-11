@@ -493,55 +493,60 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
         </p>
       ) : null}
       {unreadable ? <p class="note">Some sub-issues couldn't be read, so this list may be short.</p> : null}
-      {groups.map((g) => (
-        <section key={g.key} class="camp-group" aria-labelledby={`cg-${g.key}`}>
-          <h2 id={`cg-${g.key}`} class="group-head">
-            {g.title} <span class="count">{g.rows.length}</span>
-            {g.note ? <span class="group-note">{g.note}</span> : null}
-          </h2>
-          <ul class="ti-list">
-            {g.rows.map((r) => {
-              const ship = shipName(r.node);
-              const joinable = canJoinSlice(r.node, sliceCtx, ships.value);
-              const blockers = (r.node.blockers ?? []).map((b) => b.title || b.url);
-              return (
-                <li key={r.node.url} class={joinable ? 'ti-pickable' : undefined}>
-                  {joinable ? (
-                    <label class="ti-pick">
-                      <input type="checkbox" aria-label={r.node.title} checked={checked.includes(r.node.url)} onChange={() => toggle(r.node.url)} />
-                    </label>
-                  ) : null}
-                  <button type="button" class="ti" onClick={() => setPickedUrl(r.node.url)}>
-                    <span class="mono ti-num">#{r.node.number}</span>
-                    <span class="ti-type">{typeLabel(r.node.labels)}</span>
-                    <span class="ti-main">
-                      <span class="ti-title">
-                        {r.prefix ? <span class="muted">{r.prefix} / </span> : null}
-                        {r.node.title}
+      {groups.map((g) => {
+        const joinable = new Set(g.rows.filter((r) => canJoinSlice(r.node, sliceCtx, ships.value)).map((r) => r.node.url));
+        return (
+          <section key={g.key} class="camp-group" aria-labelledby={`cg-${g.key}`}>
+            <h2 id={`cg-${g.key}`} class="group-head">
+              {g.title} <span class="count">{g.rows.length}</span>
+              {g.note ? <span class="group-note">{g.note}</span> : null}
+            </h2>
+            <ul class="ti-list">
+              {g.rows.map((r) => {
+                const ship = shipName(r.node);
+                const blockers = (r.node.blockers ?? []).map((b) => b.title || b.url);
+                return (
+                  <li key={r.node.url} class={joinable.size > 0 ? 'ti-pickable' : undefined}>
+                    {joinable.has(r.node.url) ? (
+                      <label class="ti-pick">
+                        <input type="checkbox" aria-label={r.node.title} checked={checked.includes(r.node.url)} onChange={() => toggle(r.node.url)} />
+                      </label>
+                    ) : joinable.size > 0 ? (
+                      // An empty cell keeps the group's columns lined up with the rows that have a checkbox.
+                      <span class="ti-pick" aria-hidden="true" />
+                    ) : null}
+                    <button type="button" class="ti" onClick={() => setPickedUrl(r.node.url)}>
+                      <span class="mono ti-num">#{r.node.number}</span>
+                      <span class="ti-type">{typeLabel(r.node.labels)}</span>
+                      <span class="ti-main">
+                        <span class="ti-title">
+                          {r.prefix ? <span class="muted">{r.prefix} / </span> : null}
+                          {r.node.title}
+                        </span>
+                        {blockers.length > 0 ? <span class="ti-sub">Waits on {blockers.join(', ')}</span> : null}
                       </span>
-                      {blockers.length > 0 ? <span class="ti-sub">Waits on {blockers.join(', ')}</span> : null}
-                    </span>
-                    <span class="ti-state">
-                      {stateOf(r, ship, campaign.ended)}
-                      {!['ready', 'underway'].includes(r.node.status ?? '') && r.node.mode ? <span class="ti-mode">{r.node.mode === 'with-you' ? 'with you' : 'without you'}</span> : null}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          {g.key === 'ready-without-you' && checked.length >= 2 ? (
-            <div class="slice-bar">
-              <button type="button" class="btn primary" onClick={() => setLaunching({ node: children.find((c) => c.url === checked[0])!, anyway: false, slice: checked.map((u) => children.find((c) => c.url === u)!) })}>
-                Launch slice ({checked.length})
-              </button>
-              <button type="button" class="btn quiet" onClick={() => setSelected([])}>
-                Clear
-              </button>
-            </div>
-          ) : null}
-        </section>
-      ))}
+                      <span class="ti-state">
+                        {stateOf(r, ship, campaign.ended)}
+                        {!['ready', 'underway'].includes(r.node.status ?? '') && r.node.mode ? <span class="ti-mode">{r.node.mode === 'with-you' ? 'with you' : 'without you'}</span> : null}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            {g.key === 'ready-without-you' && checked.length >= 2 ? (
+              <div class="slice-bar">
+                <button type="button" class="btn primary" onClick={() => setLaunching({ node: children.find((c) => c.url === checked[0])!, anyway: false, slice: checked.map((u) => children.find((c) => c.url === u)!) })}>
+                  Launch slice ({checked.length})
+                </button>
+                <button type="button" class="btn quiet" onClick={() => setSelected([])}>
+                  Clear
+                </button>
+              </div>
+            ) : null}
+          </section>
+        );
+      })}
       {picked ? (
         <Detail
           campaign={campaign}
