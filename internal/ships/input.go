@@ -15,6 +15,7 @@ import (
 // target is one pane a message or an interrupt goes to: the ship's own, or a crew boat's.
 type target struct {
 	pane      string
+	what      string // "ship <name>" or "crew boat <name>", for messages
 	exited    bool
 	clearSeen func() error
 }
@@ -32,12 +33,12 @@ func (s *Service) resolve(w http.ResponseWriter, session, name string) (target, 
 			pane = sessionhost.ShipTarget(session)
 		}
 		st := status(sess, time.Now())
-		return target{pane: pane, exited: st == StatusAnchored || st == StatusSailingOff,
+		return target{pane: pane, what: "ship " + session, exited: st == StatusAnchored || st == StatusSailingOff,
 			clearSeen: func() error { _, err := s.InputSeen(session); return err }}, true
 	}
 	for _, c := range sess.Crew {
 		if c.Name == name {
-			return target{pane: c.PaneID, exited: c.State == sessionhost.CrewAnchored,
+			return target{pane: c.PaneID, what: "crew boat " + name, exited: c.State == sessionhost.CrewAnchored,
 				clearSeen: func() error { _, err := s.CrewInputSeen(session, c.WindowID); return err }}, true
 		}
 	}
@@ -72,7 +73,7 @@ func (s *Service) serveSendInput(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if t.exited {
-		writeError(w, http.StatusConflict, "ship "+session+" has exited")
+		writeError(w, http.StatusConflict, t.what+" has exited")
 		return
 	}
 	// Not the request's context: a client that hangs up must not leave a half-sent message.
@@ -96,7 +97,7 @@ func (s *Service) serveInterrupt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if t.exited {
-		writeError(w, http.StatusConflict, "ship "+session+" has exited")
+		writeError(w, http.StatusConflict, t.what+" has exited")
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

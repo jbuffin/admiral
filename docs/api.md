@@ -65,7 +65,7 @@ Query: `fleet`, `harness` and optionally `dir` (a checkout or search root of the
 - `POST /api/ships/<session>/crew/<name>/messages`: the same for a crew boat, which clears the boat's needs you.
 - `POST /api/ships/<session>/interrupt` and `.../crew/<name>/interrupt` press Escape in the pane. They don't clear needs you. Response `{"interrupted": true}`.
 - `POST /api/ships/<session>/stop` ends a ship, live or anchored, and its crew boats with it. A live ship's tmux session is killed and the outcome log gets `ended` (signal `KILL`, no exit code) then `stopped`; an anchored ship gets the `ended` it already has, then `stopped`. The ship leaves the list. Response `{"stopped": "<session>"}`.
-- `400`: the message is invalid JSON, empty after cleaning, or over 16 KiB; the body is capped at 1 MiB. `404`: unknown ship or boat. `409`: the ship or boat is anchored or sailing off (send and interrupt). `502`: tmux refused the keys.
+- `400`: the message is invalid JSON, empty after cleaning, or over 16 KiB; the body is capped at 1 MiB. `404`: unknown ship or boat. `409`: the ship or boat is anchored or sailing off (send and interrupt). `502`: tmux refused the keys. Stop answers `500` when the session cannot be killed.
 
 ## A ship's conversation
 

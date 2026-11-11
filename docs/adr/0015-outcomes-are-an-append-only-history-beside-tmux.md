@@ -1,6 +1,6 @@
 # 15. Outcomes are an append-only history beside tmux
 
-Status: accepted, amended by [ADR 0029](0029-the-bridge-answers-simple-prompts-by-sending-the-harness-keys.md) (`stopped` joins the event list),  [ADR 0025](0025-outside-events-are-quarantined.md) (`launched` gains a `trigger` field, and a trigger log sits beside the outcome log), [ADR 0028](0028-a-ship-with-an-open-pr-moors-and-relaunches-for-each-feedback-round.md) (outcome events for moored, woken, round and merged), [ADR 0029](0029-the-bridge-answers-simple-prompts-by-sending-the-harness-keys.md) (a `stopped` event when the engineer or AdmiralBot stops a ship) and [ADR 0034](0034-autopilot-is-a-launch-mode-not-a-view-setting.md) (no retro count reads the log back), and on 2026-11-10 (the `usage` event, below)
+Status: accepted, amended by  [ADR 0025](0025-outside-events-are-quarantined.md) (`launched` gains a `trigger` field, and a trigger log sits beside the outcome log), [ADR 0028](0028-a-ship-with-an-open-pr-moors-and-relaunches-for-each-feedback-round.md) (outcome events for moored, woken, round and merged), [ADR 0029](0029-the-bridge-answers-simple-prompts-by-sending-the-harness-keys.md) (a `stopped` event when the engineer or AdmiralBot stops a ship) and [ADR 0034](0034-autopilot-is-a-launch-mode-not-a-view-setting.md) (no retro count reads the log back), and on 2026-11-10 (the `usage` event, below)
 
 ## Context
 
