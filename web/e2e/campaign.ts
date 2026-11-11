@@ -88,6 +88,10 @@ export const T = {
  */
 export function seedCampaignFleet(a: Admiral) {
   seedFleets(a, { live: true });
+  // The server has no Commodore; a slice runs it, so the claude dock's identity gets a fake one.
+  const commodore = join(a.home, 'identity', 'zulu-claude', 'skills', 'commodore');
+  mkdirSync(commodore, { recursive: true });
+  writeFileSync(join(commodore, 'SKILL.md'), '---\nname: commodore\ndescription: a fake skill\n---\n');
   const file = join(a.home, 'config.json');
   const config = JSON.parse(readFileSync(file, 'utf8'));
   config.fleets.zulu.owners = ['acme'];
