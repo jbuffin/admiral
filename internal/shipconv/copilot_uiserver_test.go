@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jbuffin/admiral/internal/ships"
 )
 
 func TestUIServerPortIsReadFromTheStartCommand(t *testing.T) {
@@ -307,5 +309,24 @@ func TestCopilotOnlyAShipStartedWithAUIServerIsObserved(t *testing.T) {
 	}
 	if _, ok := without.accepted(time.Second); ok {
 		t.Error("a ship started without --ui-server was dialed on its --port")
+	}
+}
+
+func TestCopilotUIServerOfAnotherProcessIsNeverDialed(t *testing.T) {
+	f := newFixture(t)
+	f.svc.owns = func(ships.Ship, int) bool { return false }
+	path := f.seedCopilot()
+	srv := newFakeUIServer(t)
+	f.uiServerShip("pilot", path, srv.port())
+	sub := dial(t, serve(t, f))
+
+	sub.send("conversation_open", "pilot")
+	sub.opened("pilot")
+	if _, ok := srv.accepted(time.Second); ok {
+		t.Fatal("the observer dialed a server the ship's pane does not own")
+	}
+	appendTo(t, path, copilotAssistant(2, "From the file."))
+	if got := sub.nextWith("From the file."); len(got) != 1 {
+		t.Errorf("pushed %v, want the file's reply", got)
 	}
 }

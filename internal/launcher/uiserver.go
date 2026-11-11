@@ -45,13 +45,22 @@ type gateKey struct {
 	mod  time.Time
 }
 
+type gateAnswer struct {
+	ok bool
+	at time.Time
+}
+
+// gateTTL bounds a stale answer: Copilot's launcher binary updates the real build in its own cache, so the
+// resolved path, size and mtime do not change when the version does.
+const gateTTL = 30 * time.Minute
+
 var (
 	gateMu    sync.Mutex
-	gateCache = map[gateKey]bool{}
+	gateCache = map[gateKey]gateAnswer{}
 )
 
 // uiServerSupported asks the binary whether it accepts --ui-server, with no model call: --version exits 0 on a
-// build that knows the flag and 1 on one that does not. The answer holds until the binary changes.
+// build that knows the flag and 1 on one that does not. The answer holds until the binary changes or gateTTL passes.
 func uiServerSupported(bin string) bool {
 	resolved, err := filepath.EvalSymlinks(bin)
 	if err != nil {
@@ -64,8 +73,8 @@ func uiServerSupported(bin string) bool {
 	k := gateKey{resolved, st.Size(), st.ModTime()}
 	gateMu.Lock()
 	defer gateMu.Unlock()
-	if ok, asked := gateCache[k]; asked {
-		return ok
+	if a, asked := gateCache[k]; asked && time.Since(a.at) < gateTTL {
+		return a.ok
 	}
 	port, ok := freeLoopbackPort()
 	if !ok {
@@ -74,7 +83,7 @@ func uiServerSupported(bin string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	ok = exec.CommandContext(ctx, resolved, "--ui-server", "--port", strconv.Itoa(port), "--version").Run() == nil
-	gateCache[k] = ok
+	gateCache[k] = gateAnswer{ok, time.Now()}
 	return ok
 }
 
