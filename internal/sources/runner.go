@@ -180,7 +180,7 @@ func (r *runner) session() (ranFor time.Duration, restarted bool, err error) {
 	r.mu.Unlock()
 	r.notify()
 
-	p, err := r.open(def, func(method string, params json.RawMessage) { r.note(sid, method, params) })
+	p, err := r.open(sid, def, func(method string, params json.RawMessage) { r.note(sid, method, params) })
 	if err != nil {
 		return 0, false, err
 	}
@@ -265,9 +265,10 @@ func (r *runner) session() (ranFor time.Duration, restarted bool, err error) {
 
 // open starts the source's connection: the GitHub source in Admiral, or a
 // plugin's process, with the environment of the source's fleet.
-func (r *runner) open(def config.Source, onNote func(string, json.RawMessage)) (conn, error) {
+func (r *runner) open(sid int, def config.Source, onNote func(string, json.RawMessage)) (conn, error) {
 	if def.Plugin == builtinGitHub {
-		return openGitHub(openArgs{key: r.key, def: def, cfg: r.cfg, onNote: onNote, setWarnings: r.setWarnings}), nil
+		return openGitHub(openArgs{key: r.key, def: def, cfg: r.cfg, onNote: onNote, logf: r.logf,
+			setWarnings: func(w []string) { r.setWarnings(sid, w) }}), nil
 	}
 	m, dir, err := LoadManifest(r.home, def.Plugin)
 	if err != nil {
@@ -280,9 +281,15 @@ func (r *runner) open(def config.Source, onNote func(string, json.RawMessage)) (
 	return startProc(r.key, m, dir, env, onNote)
 }
 
-// setWarnings shows warnings on the source and tells the watchers if they changed.
-func (r *runner) setWarnings(w []string) {
+// setWarnings shows warnings on the source and tells the watchers if they
+// changed. A stopped process's late cycle (sid is not current) is ignored, as
+// its notifications are.
+func (r *runner) setWarnings(sid int, w []string) {
 	r.mu.Lock()
+	if sid != r.sid {
+		r.mu.Unlock()
+		return
+	}
 	changed := !slices.Equal(r.warnings, w)
 	r.warnings = slices.Clone(w)
 	r.mu.Unlock()

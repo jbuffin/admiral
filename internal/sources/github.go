@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"sync"
 	"time"
@@ -67,6 +68,7 @@ type openArgs struct {
 	def    config.Source
 	cfg    func() *config.Config // the current config
 	onNote func(method string, params json.RawMessage)
+	logf   func(format string, a ...any)
 	// setWarnings shows the router's warnings for the source's fleet.
 	setWarnings func([]string)
 }
@@ -214,7 +216,7 @@ func (g *githubConn) work() {
 	every := time.Duration(g.settings.RefreshMinutes) * time.Minute
 	g.mu.Unlock()
 	for {
-		g.refresh()
+		g.cycle()
 		timer := time.NewTimer(every)
 		select {
 		case <-timer.C:
@@ -225,6 +227,27 @@ func (g *githubConn) work() {
 			return
 		}
 	}
+}
+
+// cycle runs one refresh. A panic in it is logged and shown as the source's
+// error on every view, so it cannot take Admiral down; the next cycle tries again.
+func (g *githubConn) cycle() {
+	defer func() {
+		if p := recover(); p != nil {
+			g.logf("the refresh panicked: %v", p)
+			g.mu.Lock()
+			views := g.settings.Views
+			g.mu.Unlock()
+			changed := false
+			for _, v := range views {
+				changed = g.store(v.ID, nil, fmt.Sprintf("Refresh failed: %v", p)) || changed
+			}
+			if changed {
+				g.notify("orders.changed", nil)
+			}
+		}
+	}()
+	g.refresh()
 }
 
 // refresh searches every view and, once all are done, tells the runner if any

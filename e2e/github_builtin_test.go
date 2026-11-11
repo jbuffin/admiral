@@ -33,6 +33,7 @@ type ghSrcJSON struct {
 	Capabilities []string        `json:"capabilities"`
 	State        string          `json:"state"`
 	Error        *string         `json:"error"`
+	Auth         *authJSON       `json:"auth"`
 	Views        []ghViewJSON    `json:"views"`
 	Warnings     json.RawMessage `json:"warnings"`
 }
@@ -302,6 +303,94 @@ func TestGitHubBuiltin(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); err == nil {
 		t.Errorf("a plugin ran for the added source")
+	}
+
+	// Signed out, signed in, a failing search and its recovery, on a source
+	// whose account has no token yet. Each step waits for the API to show it.
+	const newToken = "fake-token-new-3"
+	graphqlCalls := func() int {
+		n := 0
+		for _, c := range g.calls() {
+			if c.has("api", "graphql") {
+				n++
+			}
+		}
+		return n
+	}
+	// The earlier sources' first searches may still be running: wait for quiet.
+	before := graphqlCalls()
+	for quiet := 0; quiet < 6; {
+		time.Sleep(100 * time.Millisecond)
+		if n := graphqlCalls(); n != before {
+			before, quiet = n, 0
+		} else {
+			quiet++
+		}
+	}
+	code, body = w.srcReq(http.MethodPost, "", map[string]any{"plugin": "github", "name": "GitHub Four", "fleet": "alpha",
+		"settings": map[string]any{"account": "newbie", "views": []map[string]any{
+			{"title": "Bugs", "query": "is:open label:bug"}, {"title": "Other", "query": "is:open label:other"}}}})
+	w.mustOK(code, body, "POST /api/sources for a signed-out github source")
+	var four struct {
+		Key string `json:"key"`
+	}
+	if err := json.Unmarshal([]byte(body), &four); err != nil || four.Key == "" {
+		t.Fatalf("POST answered %s, want the new source's key", body)
+	}
+	refresh := func() {
+		t.Helper()
+		code, body := w.srcReq(http.MethodPost, "/"+four.Key+"/refresh", map[string]any{})
+		w.mustOK(code, body, "POST refresh")
+	}
+	out := w.waitGH(four.Key, 20*time.Second, "the sign-in card", func(s ghSrcJSON) bool {
+		return s.State == "auth_required" && s.Auth != nil && s.Auth.Message != ""
+	})
+	time.Sleep(300 * time.Millisecond)
+	if n := graphqlCalls(); n != before {
+		t.Errorf("%d searches ran while signed out (%s), want none", n-before, out.Auth.Message)
+	}
+
+	g.search("other", "label:other", ghNode("github.com", "acme/widgets", 21, false, "Other item"))
+	g.token("newbie", newToken)
+	refresh()
+	four2 := w.waitGH(four.Key, 20*time.Second, "the card gone and the items", func(s ghSrcJSON) bool {
+		return s.State == "ok" && s.Auth == nil && len(s.viewOrders("bugs")) > 0 && len(s.viewOrders("other")) > 0
+	})
+	if got := four2.viewOrders("other"); !reflect.DeepEqual(got, []string{"acme/widgets#21"}) {
+		t.Errorf("view other = %v, want [acme/widgets#21]", got)
+	}
+
+	g.fail("other", "boom: search failed")
+	refresh()
+	failed := w.waitGH(four.Key, 20*time.Second, "an error on the Other view alone", func(s ghSrcJSON) bool {
+		v, _ := s.view("other")
+		return v.Error != nil
+	})
+	if v, _ := failed.view("bugs"); v.Error != nil || len(v.Orders) == 0 {
+		t.Errorf("view bugs = %+v, want no error and its orders while Other fails", v)
+	}
+	if got := failed.viewOrders("other"); !reflect.DeepEqual(got, []string{"acme/widgets#21"}) {
+		t.Errorf("failed view other kept %v, want its last orders [acme/widgets#21]", got)
+	}
+
+	g.unfail("other")
+	refresh()
+	w.waitGH(four.Key, 20*time.Second, "the error cleared", func(s ghSrcJSON) bool {
+		v, _ := s.view("other")
+		return v.Error == nil && len(v.Orders) == 1 && s.State == "ok"
+	})
+
+	// The token is never written under the home, nor logged.
+	_ = filepath.WalkDir(w.home, func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && !strings.HasSuffix(p, "tmux.sock") {
+			if b, _ := os.ReadFile(p); strings.Contains(string(b), newToken) {
+				t.Errorf("%s holds the token", p)
+			}
+		}
+		return nil
+	})
+	if strings.Contains(w.in.stderrBuf.String(), newToken) {
+		t.Errorf("Admiral's log holds the token")
 	}
 }
 
