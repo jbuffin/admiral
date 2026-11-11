@@ -34,12 +34,14 @@ done
 printf '%s' "$prompt" >"$log/prompt"
 sentinel=$ADMIRAL_PROBE_DIR/ran-$ADMIRAL_PROBE_NONCE
 denied=$ADMIRAL_PROBE_DIR/denied-$ADMIRAL_PROBE_NONCE
+seen=$ADMIRAL_PROBE_DIR/seen-$ADMIRAL_PROBE_NONCE
 case "$PROBE_FAKE_MODE" in
-pass) : >"$denied"; echo "The command was blocked by a hook." ;;
-skip-hook-says-denied) echo "The command was denied by the hook." ;;
+pass) : >"$seen"; : >"$denied"; echo "The command was blocked by a hook." ;;
+skip-hook-says-denied) : >"$sentinel"; echo "The command was denied by the hook." ;;
 no-tool) echo "I will not run that." ;;
-hook-skipped-call-ran) : >"$sentinel"; echo done ;;
-ran-anyway) : >"$denied"; : >"$sentinel"; echo done ;;
+different-command) : >"$seen"; : >"$sentinel"; echo done ;;
+different-command-failed) : >"$seen"; echo "it failed" ;;
+ran-anyway) : >"$seen"; : >"$denied"; : >"$sentinel"; echo done ;;
 error) echo "boom: not logged in" >&2; exit 3 ;;
 hang) sleep 30 ;;
 esac
@@ -105,7 +107,14 @@ func TestGuardProbePassesOnlyWithTheDenialRecordAndNoSentinel(t *testing.T) {
 
 func TestGuardProbeFailuresEachSayWhy(t *testing.T) {
 	details := map[string]string{}
-	for _, mode := range []string{"skip-hook-says-denied", "no-tool", "hook-skipped-call-ran", "ran-anyway", "error"} {
+	want := map[string]string{
+		"skip-hook-says-denied": "without running the guard hook",
+		"no-tool":               "never called the Bash tool",
+		"different-command":     "different command",
+		"ran-anyway":            "after the guard hook denied it",
+		"error":                 "claude failed: boom: not logged in",
+	}
+	for _, mode := range []string{"skip-hook-says-denied", "no-tool", "different-command", "ran-anyway", "error"} {
 		t.Run(mode, func(t *testing.T) {
 			g := runGuard(t, mode, 0, nil)
 			l := g.guard(t)
@@ -117,6 +126,9 @@ func TestGuardProbeFailuresEachSayWhy(t *testing.T) {
 			}
 			if st, _ := capabilities.Open(g.home).Status("work", "claude", capabilities.AutopilotGuard); st != capabilities.Failed {
 				t.Errorf("stored status = %v, want failed", st)
+			}
+			if !strings.Contains(l.Detail, want[mode]) {
+				t.Errorf("detail = %q, want it to say %q", l.Detail, want[mode])
 			}
 			details[mode] = l.Detail
 		})
@@ -188,7 +200,8 @@ func TestGuardProbeRunsTheHarnessHeadlessOnTheCheapestModelWithBashAllowed(t *te
 
 func TestGuardProbeEnvIsScrubbedAndAutopilotIsOurs(t *testing.T) {
 	for k, v := range map[string]string{"ADMIRAL_SHIP": "ghost", "ADMIRAL_REPORT": "/nowhere/reports/ghost.json",
-		"ADMIRAL_INBOX": "/nowhere/inbox", "TMUX": "/nowhere/sock,1,0", "TMUX_PANE": "%9"} {
+		"ADMIRAL_INBOX": "/nowhere/inbox", "TMUX": "/nowhere/sock,1,0", "TMUX_PANE": "%9",
+		"CLAUDECODE": "1", "CLAUDE_CODE_CHILD_SESSION": "1"} {
 		t.Setenv(k, v)
 	}
 	g := runGuard(t, "pass", 0, nil)
@@ -199,7 +212,7 @@ func TestGuardProbeEnvIsScrubbedAndAutopilotIsOurs(t *testing.T) {
 			env[k] = v
 		}
 	}
-	for _, k := range []string{"ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_INBOX", "TMUX", "TMUX_PANE"} {
+	for _, k := range []string{"ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_INBOX", "TMUX", "TMUX_PANE", "CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION"} {
 		if v, set := env[k]; set {
 			t.Errorf("%s=%q reaches the probe's harness: it would record an outcome against a real ship or mark the engineer's pane", k, v)
 		}
@@ -281,5 +294,33 @@ func TestGuardProbeDoesNotRunForOtherHarnesses(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(logDir, "argv")); err == nil {
 		t.Error("the Claude probe ran the codex executable")
+	}
+}
+
+func TestGuardProbeFailsNamingAFleetArgThatWouldDisableTheHook(t *testing.T) {
+	exe := filepath.Join(t.TempDir(), "claude")
+	if err := os.WriteFile(exe, []byte(guardHarness), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	log := t.TempDir()
+	fleet := config.Fleet{Key: "work", Harnesses: []config.Harness{{Name: "claude", Executable: exe, Found: true,
+		Args: []string{"--bare"}, Env: map[string]string{"PROBE_FAKE_LOG": log, "PROBE_FAKE_MODE": "pass"}}}}
+	rep, err := probes.New(home(t), probes.ClaudeGuard()).Run(context.Background(), fleet, "claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := line(t, rep, capabilities.AutopilotGuard)
+	if l.Status != capabilities.Failed || !strings.Contains(l.Detail, "--bare") {
+		t.Errorf("line = %+v, want failed naming --bare, never passed", l)
+	}
+	if _, err := os.Stat(filepath.Join(log, "argv")); err == nil {
+		t.Error("claude was run although the fleet's args disable the hook")
+	}
+}
+
+func TestGuardProbeSeenWithoutSentinelOrDenialIsADifferentCommand(t *testing.T) {
+	l := runGuard(t, "different-command-failed", 0, nil).guard(t)
+	if l.Status != capabilities.Failed || !strings.Contains(l.Detail, "different command") {
+		t.Errorf("line = %+v, want failed as a different command", l)
 	}
 }

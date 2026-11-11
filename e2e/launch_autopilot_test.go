@@ -119,11 +119,11 @@ func TestConcurrentAutopilotLaunchesOverOneFreeSlot(t *testing.T) {
 	}
 }
 
-// Admiral owns ADMIRAL_AUTOPILOT, ADMIRAL_LOW_STAKES and ADMIRAL_AUTO_MERGE: a hand
+// Admiral owns ADMIRAL_AUTOPILOT, ADMIRAL_LOW_STAKES, ADMIRAL_AUTO_MERGE and the capability probe's two: a hand
 // launch never has them, whether the fleet's env or Admiral's own environment sets them.
 func TestHandLaunchHasNoAutopilotVariables(t *testing.T) {
 	t.Parallel()
-	vars := []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE"}
+	vars := []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR"}
 	check := func(t *testing.T, w *world) {
 		t.Helper()
 		ship := w.launch(w.order("work", "claude", "hand", noSkill, "x"))
@@ -138,6 +138,7 @@ func TestHandLaunchHasNoAutopilotVariables(t *testing.T) {
 		w := newWorld(t)
 		env := w.harnessEnv()
 		env["ADMIRAL_AUTOPILOT"], env["ADMIRAL_LOW_STAKES"], env["ADMIRAL_AUTO_MERGE"] = "1", "never", "squash"
+		env["ADMIRAL_PROBE_NONCE"], env["ADMIRAL_PROBE_DIR"] = "0123456789abcdef", "/tmp"
 		cfg, _ := json.Marshal(map[string]any{"version": 1, "fleets": map[string]any{"work": map[string]any{
 			"name": "Work", "search_roots": []string{w.work}, "claude": map[string]any{"executable": w.fakeExe("claude"), "env": env}}}})
 		writeConfig(t, w.home, string(cfg))
@@ -146,7 +147,7 @@ func TestHandLaunchHasNoAutopilotVariables(t *testing.T) {
 	})
 	t.Run("set in Admiral's environment", func(t *testing.T) {
 		w := newWorld(t)
-		w.extra = []string{"ADMIRAL_AUTOPILOT=1", "ADMIRAL_LOW_STAKES=advisor", "ADMIRAL_AUTO_MERGE=rebase"}
+		w.extra = []string{"ADMIRAL_AUTOPILOT=1", "ADMIRAL_LOW_STAKES=advisor", "ADMIRAL_AUTO_MERGE=rebase", "ADMIRAL_PROBE_NONCE=0123456789abcdef", "ADMIRAL_PROBE_DIR=/tmp"}
 		w.start()
 		check(t, w)
 	})

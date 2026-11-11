@@ -96,12 +96,13 @@ const (
 	probeReason = "Admiral's capability probe blocked this command on purpose."
 )
 
-// probeCommandCalled is the rule only a capability probe turns on: it denies exactly the
-// command the probe asked the model to run, and only while ADMIRAL_PROBE_NONCE names the
-// nonce that command holds. The denial is a file in the probe's directory, never an outcome.
+// probeCommandCalled is the rule only a capability probe turns on. While the probe's two
+// variables are valid it notes every Bash call it is asked about, and denies exactly the
+// command the probe asked the model to run. Both are files in the probe's directory, never
+// an outcome.
 func probeCommandCalled(raw []byte) bool {
 	nonce, dir := os.Getenv(probes.NonceEnv), os.Getenv(probes.DirEnv)
-	if nonce == "" || dir == "" {
+	if !probes.ValidEnv(dir, nonce) {
 		return false
 	}
 	var p struct {
@@ -110,7 +111,11 @@ func probeCommandCalled(raw []byte) bool {
 			Command string `json:"command"`
 		} `json:"tool_input"`
 	}
-	if json.Unmarshal(raw, &p) != nil || p.ToolName != "Bash" || strings.TrimSpace(p.ToolInput.Command) != probes.Command(dir, nonce) {
+	if json.Unmarshal(raw, &p) != nil || p.ToolName != "Bash" {
+		return false
+	}
+	_ = os.WriteFile(probes.SeenPath(dir, nonce), nil, 0o600)
+	if strings.TrimSpace(p.ToolInput.Command) != probes.Command(dir, nonce) {
 		return false
 	}
 	_ = os.WriteFile(probes.DeniedPath(dir, nonce), nil, 0o600)

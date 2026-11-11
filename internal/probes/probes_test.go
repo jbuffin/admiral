@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -273,5 +274,162 @@ func TestRefreshClearsTheRecordedVersionWhenDetectionFails(t *testing.T) {
 	}
 	if st.Proven("work", "claude", capabilities.JudgeNoTools) {
 		t.Error("a capability stays proven although the harness's version is unknown")
+	}
+}
+
+func TestAFailedVersionCheckKeepsItsReasonInTheStore(t *testing.T) {
+	h := home(t)
+	r := probes.New(h, pass("x"))
+	if _, err := r.Run(context.Background(), fleetOf(versionScript(t), "FAIL"), "claude"); err == nil {
+		t.Fatal("Run succeeded although --version failed")
+	}
+	snap, _ := capabilities.Open(h).Snapshot("work", "claude")
+	if snap.Version != "" || !strings.Contains(snap.VersionError, "boom") {
+		t.Errorf("snapshot = %+v, want no version and a reason that holds the harness's stderr", snap)
+	}
+	r2 := probes.New(h, pass("x"))
+	r2.Refresh(context.Background(), []config.Fleet{fleetOf(versionScript(t), "FAIL")})
+	r2.Wait()
+	if snap, _ = capabilities.Open(h).Snapshot("work", "claude"); !strings.Contains(snap.VersionError, "boom") {
+		t.Errorf("Refresh kept no reason: %+v", snap)
+	}
+}
+
+// blocking is a probe that signals it started, then waits for its context or for release.
+func blocking(started chan<- struct{}, release <-chan struct{}) probes.Probe {
+	return probes.Probe{Harness: "claude", Capability: capabilities.JudgeNoTools,
+		Run: func(ctx context.Context, _ probes.Target) probes.Outcome {
+			started <- struct{}{}
+			select {
+			case <-release:
+				return probes.Outcome{Passed: true, Detail: "finished"}
+			case <-ctx.Done():
+				return probes.Outcome{Detail: "stopped"}
+			}
+		}}
+}
+
+func TestACallerGoingAwayCancelsNothingForTheRun(t *testing.T) {
+	h := home(t)
+	started, release := make(chan struct{}, 1), make(chan struct{})
+	r := probes.New(h, blocking(started, release))
+	fleet := fleetOf(versionScript(t), "9.1.0")
+	first, cancel := context.WithCancel(context.Background())
+	firstErr := make(chan error, 1)
+	go func() { _, err := r.Run(first, fleet, "claude"); firstErr <- err }()
+	<-started
+	joined := make(chan probes.Report, 1)
+	go func() { rep, _ := r.Run(context.Background(), fleet, "claude"); joined <- rep }()
+	time.Sleep(200 * time.Millisecond)
+	cancel() // the first caller (a closed tab) leaves; the joiner still wants the result
+	time.Sleep(200 * time.Millisecond)
+	close(release)
+	select {
+	case rep := <-joined:
+		if l := line(t, rep, capabilities.JudgeNoTools); l.Status != capabilities.Passed {
+			t.Errorf("joiner's line = %+v, want the run to finish and pass", l)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the joiner never got a result")
+	}
+	<-firstErr
+	if !capabilities.Open(h).Proven("work", "claude", capabilities.JudgeNoTools) {
+		t.Error("the result of the run the first caller left was not stored")
+	}
+}
+
+func TestCloseStopsARunQuicklyAndStoresNothingAndKeepsTheVersion(t *testing.T) {
+	h := home(t)
+	st := capabilities.Open(h)
+	if err := st.RecordVersion("work", "claude", "9.0.0", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	started, release := make(chan struct{}, 1), make(chan struct{})
+	defer close(release)
+	r := probes.New(h, blocking(started, release))
+	errc := make(chan error, 1)
+	go func() {
+		_, err := r.Run(context.Background(), fleetOf(versionScript(t), "9.1.0"), "claude")
+		errc <- err
+	}()
+	<-started
+	r.Close()
+	select {
+	case err := <-errc:
+		if err == nil {
+			t.Error("a stopped run returned no error")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not stop the run")
+	}
+	if st.Proven("work", "claude", capabilities.JudgeNoTools) {
+		t.Error("a stopped run stored a result")
+	}
+	if _, _, ok, _ := st.LastProbed("work", "claude"); ok {
+		t.Error("a stopped run stored a result for the new version")
+	}
+}
+
+func TestCloseDuringVersionDetectionLeavesTheRecordedVersionAlone(t *testing.T) {
+	h := home(t)
+	st := capabilities.Open(h)
+	if err := st.RecordVersion("work", "claude", "9.0.0", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(t.TempDir(), "claude")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\nsleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := probes.New(h, pass("x"))
+	r.Refresh(context.Background(), []config.Fleet{fleetOf(exe, "")})
+	time.Sleep(300 * time.Millisecond)
+	r.Close()
+	done := make(chan struct{})
+	go func() { r.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not stop the version detection")
+	}
+	if v, _, _ := st.Version("work", "claude"); v != "9.0.0" {
+		t.Errorf("version = %q after a shutdown, want the recorded 9.0.0 untouched", v)
+	}
+}
+
+func TestARunsOwnTimeLimitStillCountsAsAFailure(t *testing.T) {
+	h := home(t)
+	started, release := make(chan struct{}, 1), make(chan struct{})
+	defer close(release)
+	r := probes.New(h, blocking(started, release))
+	r.Timeout = time.Second
+	rep, err := r.Run(context.Background(), fleetOf(versionScript(t), "9.1.0"), "claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l := line(t, rep, capabilities.JudgeNoTools); l.Status != capabilities.Failed {
+		t.Errorf("line = %+v, want failed when the run's own time limit ends it", l)
+	}
+}
+
+func TestAPanickingProbeDoesNotHangTheNextRun(t *testing.T) {
+	boom := probes.Probe{Harness: "claude", Capability: capabilities.JudgeNoTools,
+		Run: func(context.Context, probes.Target) probes.Outcome { panic("boom") }}
+	r := probes.New(home(t), boom)
+	fleet := fleetOf(versionScript(t), "9.1.0")
+	func() {
+		defer func() { _ = recover() }()
+		_, _ = r.Run(context.Background(), fleet, "claude")
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	r2done := make(chan struct{})
+	go func() {
+		defer func() { _ = recover(); close(r2done) }()
+		_, _ = r.Run(ctx, fleet, "claude")
+	}()
+	select {
+	case <-r2done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a later run hangs on the flight the panic left behind")
 	}
 }

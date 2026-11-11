@@ -194,7 +194,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		ours["ADMIRAL_AUTOPILOT"] = "1"
 		ours["ADMIRAL_LOW_STAKES"] = "advisor"
 	}
-	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT"} {
+	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR"} {
 		if v, ok := ours[k]; ok {
 			env[k] = v
 			continue

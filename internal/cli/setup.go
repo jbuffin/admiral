@@ -68,6 +68,9 @@ func setup(args []string, std IO) error {
 	}
 	if len(s.touched) == 0 {
 		fmt.Fprintln(std.Out, "No changes.")
+		if *dry {
+			return nil
+		}
 		return probeFleets(dir, std)
 	}
 
@@ -77,6 +80,9 @@ func setup(args []string, std IO) error {
 			return err
 		}
 		if !printDiff(std.Out, p.before, p.after) {
+			if *dry {
+				return nil
+			}
 			return probeFleets(dir, std)
 		}
 		if *dry {

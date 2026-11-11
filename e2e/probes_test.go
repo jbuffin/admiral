@@ -104,7 +104,7 @@ func TestProbe_EachWayTheGuardCanFailPrintsFailedWithItsOwnReason(t *testing.T) 
 	t.Parallel()
 	var mu sync.Mutex
 	seen := map[string]string{}
-	for _, mode := range []string{"skip-hook", "run-anyway", "no-tool"} {
+	for _, mode := range []string{"skip-hook", "run-anyway", "no-tool", "different-command"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
 			pw := newProbeWorld(t)
@@ -169,6 +169,16 @@ func TestProbe_DryRunAndDecliningRunNoProbe(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(pw.home, "capabilities.json")); err == nil {
 		t.Error("capabilities.json was written without the engineer's go-ahead")
+	}
+	// Once the config holds the answers, a dry run finds nothing to change and still probes nothing.
+	pw.setup()
+	before := pw.headlessRuns()
+	r := pw.admiralWith(cliOpts{env: pw.env()}, "setup", "--answers", pw.file, "--dry-run")
+	if !strings.Contains(r.stdout, "No changes") {
+		t.Fatalf("the dry run changed something:\n%s", r.stdout)
+	}
+	if got := pw.headlessRuns(); got != before {
+		t.Errorf("a dry run with nothing to change ran %d probes", got-before)
 	}
 }
 

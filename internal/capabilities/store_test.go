@@ -415,3 +415,24 @@ func TestDetailIsOneLineAndCapped(t *testing.T) {
 		t.Errorf("capped Detail has %d runes", n)
 	}
 }
+
+func TestFailedDetectionKeepsItsReasonUntilTheNextDetection(t *testing.T) {
+	s := Open(t.TempDir())
+	seed(t, s, "work", "claude", "2.1.300", AutopilotGuard, pass("ok"))
+	if err := s.RecordVersionFailure("work", "claude", "claude failed:\nboom", t0); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := s.Snapshot("work", "claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.Version != "" || snap.VersionError != "claude failed: boom" || snap.States[AutopilotGuard].Status != NotChecked {
+		t.Fatalf("after a failed detection: %+v", snap)
+	}
+	if err := s.RecordVersion("work", "claude", "2.1.301", t0); err != nil {
+		t.Fatal(err)
+	}
+	if snap, _ = s.Snapshot("work", "claude"); snap.VersionError != "" {
+		t.Fatalf("reason survived a good detection: %q", snap.VersionError)
+	}
+}

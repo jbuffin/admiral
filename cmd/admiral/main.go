@@ -326,6 +326,7 @@ func serve(args []string) error {
 		<-shipsDone
 		outcomeLog.Close()
 		stopBackground()
+		probeRunner.Close()
 		probeRunner.Wait()
 		background.Wait()
 		supervisor.Wait()

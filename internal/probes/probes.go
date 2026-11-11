@@ -3,8 +3,10 @@ package probes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 
@@ -21,6 +23,16 @@ const (
 
 func SentinelPath(dir, nonce string) string { return filepath.Join(dir, "ran-"+nonce) }
 func DeniedPath(dir, nonce string) string   { return filepath.Join(dir, "denied-"+nonce) }
+
+// SeenPath is written by the guard for every Bash call it is asked about while the probe's
+// env is live, so the probe can tell a hook that never ran from a model that ran something else.
+func SeenPath(dir, nonce string) string { return filepath.Join(dir, "seen-"+nonce) }
+
+var nonceFormat = regexp.MustCompile(`^[0-9a-f]{16}$`)
+
+// ValidEnv is what the guard requires of the probe's two variables before it acts on them,
+// so a stray value can never name a file outside the probe's directory.
+func ValidEnv(dir, nonce string) bool { return nonceFormat.MatchString(nonce) && filepath.IsAbs(dir) }
 
 // Command is the harmless command the model is asked to run.
 func Command(dir, nonce string) string { return "touch " + SentinelPath(dir, nonce) }
@@ -74,6 +86,8 @@ type Runner struct {
 	probes []Probe
 	store  *capabilities.Store
 	bg     sync.WaitGroup
+	life   context.Context
+	stop   context.CancelFunc
 
 	mu      sync.Mutex
 	running map[string]*flight
@@ -88,16 +102,25 @@ type flight struct {
 
 // New returns a runner with exactly the given probes registered.
 func New(home string, ps ...Probe) *Runner {
+	life, stop := context.WithCancel(context.Background())
 	return &Runner{Timeout: defaultTimeout, home: home, probes: ps, store: capabilities.Open(home),
-		running: map[string]*flight{}}
+		life: life, stop: stop, running: map[string]*flight{}}
 }
+
+// Close stops every run in progress; a stopped run stores nothing and leaves the version alone.
+func (r *Runner) Close() { r.stop() }
 
 // NewDefault returns a runner with every built-in probe.
 func NewDefault(home string) *Runner { return New(home, ClaudeGuard()) }
 
 // Run detects the harness version, records it, runs the harness's probes and stores
 // their results under that version. Concurrent runs for one fleet and harness share one.
+// The run does not end when ctx does: only Close, or the run's own time limit, ends it.
 func (r *Runner) Run(ctx context.Context, fleet config.Fleet, harness string) (Report, error) {
+	return r.runShared(ctx, fleet, harness, "")
+}
+
+func (r *Runner) runShared(ctx context.Context, fleet config.Fleet, harness, known string) (Report, error) {
 	key := fleet.Key + "\x00" + harness
 	r.mu.Lock()
 	if f, ok := r.running[key]; ok {
@@ -113,22 +136,34 @@ func (r *Runner) Run(ctx context.Context, fleet config.Fleet, harness string) (R
 	r.running[key] = f
 	r.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(ctx, r.Timeout)
+	// Deferred, so a probe that panics still frees the callers waiting on it.
+	defer func() {
+		r.mu.Lock()
+		delete(r.running, key)
+		r.mu.Unlock()
+		close(f.done)
+	}()
+	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), r.Timeout)
 	defer cancel()
-	f.rep, f.err = r.run(ctx, fleet, harness)
-	r.mu.Lock()
-	delete(r.running, key)
-	r.mu.Unlock()
-	close(f.done)
+	defer context.AfterFunc(r.life, cancel)()
+	f.rep, f.err = r.run(runCtx, fleet, harness, known)
 	return f.rep, f.err
 }
 
-func (r *Runner) run(ctx context.Context, fleet config.Fleet, harness string) (Report, error) {
-	version, err := capabilities.DetectVersion(ctx, fleet, harness, versionTimeout)
-	if err != nil {
-		// Fail closed: the old version's passes stop counting.
-		_ = r.store.RecordVersion(fleet.Key, harness, "", time.Now())
-		return Report{}, err
+// cancelled is a run ended from outside, which says nothing about the harness.
+func cancelled(ctx context.Context) bool { return errors.Is(ctx.Err(), context.Canceled) }
+
+func (r *Runner) run(ctx context.Context, fleet config.Fleet, harness, version string) (Report, error) {
+	if version == "" {
+		var err error
+		if version, err = capabilities.DetectVersion(ctx, fleet, harness, versionTimeout); err != nil {
+			if cancelled(ctx) {
+				return Report{}, ctx.Err()
+			}
+			// Fail closed: the old version's passes stop counting.
+			_ = r.store.RecordVersionFailure(fleet.Key, harness, err.Error(), time.Now())
+			return Report{}, err
+		}
 	}
 	if err := r.store.RecordVersion(fleet.Key, harness, version, time.Now()); err != nil {
 		return Report{}, err
@@ -145,6 +180,9 @@ func (r *Runner) run(ctx context.Context, fleet config.Fleet, harness string) (R
 			continue
 		}
 		out := p.Run(ctx, target)
+		if cancelled(ctx) {
+			return Report{}, ctx.Err()
+		}
 		res := capabilities.Result{Passed: out.Passed, At: time.Now(), Detail: out.Detail}
 		if err := r.store.Record(fleet.Key, harness, version, p.Capability, res); err != nil {
 			return Report{}, err
@@ -185,9 +223,14 @@ func (r *Runner) Refresh(ctx context.Context, fleets []config.Fleet) {
 }
 
 func (r *Runner) refresh(ctx context.Context, fleet config.Fleet, harness string) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	defer context.AfterFunc(r.life, cancel)()
 	version, err := capabilities.DetectVersion(ctx, fleet, harness, versionTimeout)
 	if err != nil {
-		_ = r.store.RecordVersion(fleet.Key, harness, "", time.Now())
+		if !cancelled(ctx) {
+			_ = r.store.RecordVersionFailure(fleet.Key, harness, err.Error(), time.Now())
+		}
 		return
 	}
 	if err := r.store.RecordVersion(fleet.Key, harness, version, time.Now()); err != nil {
@@ -195,7 +238,7 @@ func (r *Runner) refresh(ctx context.Context, fleet config.Fleet, harness string
 	}
 	// A harness never probed is left for setup or Check again.
 	if probed, _, ok, err := r.store.LastProbed(fleet.Key, harness); err == nil && ok && probed != version {
-		_, _ = r.Run(ctx, fleet, harness)
+		_, _ = r.runShared(ctx, fleet, harness, version)
 	}
 }
 

@@ -11,8 +11,10 @@
 #                  takes the command after the last ": " of the prompt, plays it as a Bash
 #                  call through the --settings file's PreToolUse hooks (needs jq; a handler
 #                  that exits 2 denies) and runs it only when none denied. $FAKE_PROBE is
-#                  pass (default), skip-hook (no hooks, says it was denied), run-anyway
-#                  (runs the command despite a deny) or no-tool (never calls the tool).
+#                  pass (default), skip-hook (runs no hooks, runs the command and says it was
+#                  denied), run-anyway (runs the command despite a deny), different-command
+#                  (asks the hooks about, and runs, the command with "&& true" added) or
+#                  no-tool (never calls the tool).
 #
 # Otherwise it runs inside a ship's tmux pane (so TMUX and TMUX_PANE are set by tmux, and
 # plain `tmux` talks to the ship's own server). It needs two variables from the
@@ -125,8 +127,12 @@ if [ -n "$headless" ]; then
     exit 0
     ;;
   skip-hook)
+    sh -c "$command"
     echo "The command was denied by the hook."
     exit 0
+    ;;
+  different-command)
+    command="$command && true"
     ;;
   esac
   # The PreToolUse hooks of the --settings file, as Claude runs them for a Bash call:

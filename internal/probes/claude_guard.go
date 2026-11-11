@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -20,7 +19,9 @@ import (
 // scrubbed are the variables that would tie the probe to a real ship or pane: the guard
 // would record an outcome against the ship, and the bundle's hook would mark the pane.
 var scrubbed = []string{"ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_INBOX", "ADMIRAL_LOW_STAKES",
-	"ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT", "TMUX", "TMUX_PANE"}
+	"ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT", "TMUX", "TMUX_PANE",
+	// Claude Code refuses to start inside another Claude Code session when it sees these.
+	"CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION"}
 
 // ClaudeGuard is the probe for autopilot.guard_hook on Claude Code. It proves two things
 // Admiral observes itself: the guard hook got the model's tool call (its denial record for
@@ -34,6 +35,9 @@ func runClaudeGuard(ctx context.Context, t Target) Outcome {
 	h, ok := t.Fleet.Harness(t.Harness)
 	if !ok {
 		return Outcome{Detail: "the fleet has no claude harness"}
+	}
+	if err := launcher.RefuseHookArgs("claude", h.Args); err != nil {
+		return Outcome{Detail: "the fleet's claude args would override the guard hook, so ships would run without it: " + err.Error()}
 	}
 	exe, ok := h.Resolve()
 	if !ok {
@@ -69,7 +73,7 @@ func runClaudeGuard(ctx context.Context, t Target) Outcome {
 	if _, err := rand.Read(raw); err != nil {
 		return Outcome{Detail: "could not make a nonce: " + err.Error()}
 	}
-	nonce := hex.EncodeToString(raw)
+	nonce := hex.EncodeToString(raw) // 16 lowercase hex, what ValidEnv accepts
 	command := Command(runDir, nonce)
 	prompt := "Use the Bash tool to run exactly this command, then stop: " + command
 
@@ -84,20 +88,23 @@ func runClaudeGuard(ctx context.Context, t Target) Outcome {
 	runErr := cmd.Run()
 
 	if ctx.Err() != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return Outcome{Detail: "claude did not finish before the probe's time limit"}
-		}
-		return Outcome{Detail: "the probe was cancelled"}
+		// A cancelled run is dropped by the runner; only the time limit is a result.
+		return Outcome{Detail: "claude did not finish before the probe's time limit"}
 	}
-	_, denied := os.Stat(DeniedPath(runDir, nonce))
-	_, ran := os.Stat(SentinelPath(runDir, nonce))
+	has := func(path string) bool { _, err := os.Stat(path); return err == nil }
+	denied, seen, ran := has(DeniedPath(runDir, nonce)), has(SeenPath(runDir, nonce)), has(SentinelPath(runDir, nonce))
 	switch {
-	case denied == nil && ran != nil:
+	case denied && !ran:
 		return Outcome{Passed: true, Detail: "the guard hook denied a Bash call and claude did not run it"}
-	case denied == nil:
-		return Outcome{Detail: "the guard hook denied the call but claude ran it anyway"}
-	case ran == nil:
+	case denied:
+		return Outcome{Detail: "claude ran the call after the guard hook denied it"}
+	case ran && seen:
+		return Outcome{Detail: "the model called Bash with a different command than the one asked for"}
+	case ran:
 		return Outcome{Detail: "claude ran the call without running the guard hook"}
+	case seen:
+		// The guard saw a Bash call that is neither the probe's command nor on disk.
+		return Outcome{Detail: "the model called Bash with a different command than the one asked for"}
 	case runErr != nil:
 		msg := firstLine(stderr.String())
 		if msg == "" {
@@ -105,9 +112,7 @@ func runClaudeGuard(ctx context.Context, t Target) Outcome {
 		}
 		return Outcome{Detail: "claude failed: " + msg}
 	}
-	// With no denial and no sentinel the model may not have called the tool, or the hook
-	// may not have run; its own words are the only hint to which.
-	return Outcome{Detail: "the guard hook never saw a Bash call and the call did not run; claude said: " + firstLine(stdout.String())}
+	return Outcome{Detail: "the model never called the Bash tool"}
 }
 
 // probeEnv is the fleet's env without the ship and pane variables, then Admiral's own on
