@@ -119,18 +119,18 @@ func (w *world) waitOutcome(event string, n int) []outRec {
 	}
 }
 
-func (w *world) autopilotView(source, panel string) (panelJSON, bool) {
+func (w *world) autopilotView(source, panel string) (viewJSON, bool) {
 	w.t.Helper()
 	s, ok := find(w.sources(), source)
 	if !ok {
-		return panelJSON{}, false
+		return viewJSON{}, false
 	}
-	for _, p := range s.Panels {
+	for _, p := range s.Views {
 		if p.ID == panel {
 			return p, true
 		}
 	}
-	return panelJSON{}, false
+	return viewJSON{}, false
 }
 
 func (w *world) setPaused(source, panel string, paused bool) {
@@ -480,7 +480,7 @@ func TestEngineKeepsTheLaunchedSetWhenAPanelFailsToList(t *testing.T) {
 	p.put("fail-orders.list-main", "listing failed")
 	w.restart()
 	w.waitSource("a", 10*time.Second, "ok with a panel that failed to list", func(s sourceJSON) bool {
-		return s.State == "ok" && len(s.Panels) == 1 && s.Panels[0].Error != nil
+		return s.State == "ok" && len(s.Views) == 1 && s.Views[0].Error != nil
 	})
 	p.clear("fail-orders.list-main")
 	p.do("orders-changed", "")
@@ -504,7 +504,7 @@ func TestEngineShowsAGivenUpOrderAsHot(t *testing.T) {
 	}
 	w.start()
 	w.waitSource("a", 10*time.Second, "o1 shown as hot", func(s sourceJSON) bool {
-		return len(s.Panels) == 1 && len(s.Panels[0].Orders) == 1 && s.Panels[0].Orders[0].Hot
+		return len(s.Views) == 1 && len(s.Views[0].Orders) == 1 && s.Views[0].Orders[0].Hot
 	})
 	holdThat(t, "autopilot launched an order it gave up on", func() bool { return len(w.in.ships(t)) == 0 })
 }

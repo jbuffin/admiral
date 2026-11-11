@@ -22,6 +22,7 @@ type serviceFixture struct {
 	cfg   *config.Manager
 	srv   *httptest.Server
 	State *state.Store
+	Svc   *Service
 }
 
 func newServiceFixture(t *testing.T, cfg string) *serviceFixture {
@@ -47,7 +48,7 @@ func newServiceFixture(t *testing.T, cfg string) *serviceFixture {
 	s.Routes(mux)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	return &serviceFixture{t: t, home: home, cfg: m, srv: srv, State: st}
+	return &serviceFixture{t: t, home: home, cfg: m, srv: srv, State: st, Svc: s}
 }
 
 func (f *serviceFixture) do(method, path string, body any) (int, string) {

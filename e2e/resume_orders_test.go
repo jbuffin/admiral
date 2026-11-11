@@ -103,7 +103,7 @@ func (w *world) orderTexts(source string) []string {
 		return nil
 	}
 	out := []string{}
-	for _, p := range s.Panels {
+	for _, p := range s.Views {
 		for _, o := range p.Orders {
 			out = append(out, o.Text)
 		}

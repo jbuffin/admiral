@@ -129,15 +129,15 @@ func Inbox(args []string, std IO) error {
 }
 
 type sourceView struct {
-	Key    string `json:"key"`
-	Panels []struct {
+	Key   string `json:"key"`
+	Views []struct {
 		ID     string `json:"id"`
 		Title  string `json:"title"`
 		Orders []struct {
 			ID    string `json:"id"`
 			Title string `json:"title"`
 		} `json:"orders"`
-	} `json:"panels"`
+	} `json:"views"`
 }
 
 func Orders(args []string, std IO) error {
@@ -175,7 +175,7 @@ func Orders(args []string, std IO) error {
 		return fmt.Errorf("GET /api/sources: %w", err)
 	}
 	for _, s := range sources {
-		for _, p := range s.Panels {
+		for _, p := range s.Views {
 			row(std.Out, s.Key, p.ID, p.Title)
 			for _, o := range p.Orders {
 				row(std.Out, "  "+o.ID, o.Title)

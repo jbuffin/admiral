@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -110,8 +111,15 @@ func ListPlugins(home string) []PluginInfo {
 			names = append(names, e.Name())
 		}
 	}
+	if !slices.Contains(names, builtinGitHub) {
+		names = append(names, builtinGitHub)
+	}
 	sort.Strings(names)
 	for _, name := range names {
+		if name == builtinGitHub { // built in: it runs whatever a folder of that name holds
+			out = append(out, PluginInfo{Name: name, Description: builtinGitHubDescription, IconURL: iconURL(name), Valid: true})
+			continue
+		}
 		m, dir, err := LoadManifest(home, name)
 		if err != nil {
 			out = append(out, PluginInfo{Name: name, Error: err.Error()})

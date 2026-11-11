@@ -84,7 +84,7 @@ export function saveSourceOrder(keys: string[], fail: (m: string) => void): Prom
 
 export function savePanelOrder(source: string, ids: string[], fail: (m: string) => void): Promise<void> {
   const next = (sources.value ?? []).map((s) =>
-    s.key === source ? { ...s, panels: ids.map((id) => s.panels.find((p) => p.id === id)!).filter(Boolean) } : s,
+    s.key === source ? { ...s, views: ids.map((id) => s.views.find((p) => p.id === id)!).filter(Boolean) } : s,
   );
   return save(next, 'PUT', sourcePath(source, '/panel-order'), { panels: ids }, fail);
 }

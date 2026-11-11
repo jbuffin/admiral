@@ -141,3 +141,18 @@ func TestRouterFromFleets(t *testing.T) {
 		}
 	}
 }
+
+func TestRouteWarningWithThreeClaimants(t *testing.T) {
+	r := NewRouter([]RouteFleet{
+		{Key: "a", Repos: []string{"github.com/acme/widgets"}},
+		{Key: "b", Repos: []string{"github.com/acme/widgets"}},
+		{Key: "c", Repos: []string{"github.com/acme/widgets"}},
+	})
+	const want = "github.com/acme/widgets is checked out in fleets a, b and c; a takes its items"
+	for _, k := range []string{"a", "b", "c"} {
+		ws := r.Warnings(k)
+		if len(ws) != 1 || ws[0] != want {
+			t.Errorf("fleet %s warnings = %q, want [%q]", k, ws, want)
+		}
+	}
+}

@@ -34,7 +34,7 @@ export function chipLabel(r: Resource, shipName: (session: string) => string): s
 
 // A resource still being checked, or not known, says nothing.
 export function launchHint(sources: Source[] | null, sourceKey: string, panelId: string | undefined, all: Resource[]): string | null {
-  const needs = sources?.find((s) => s.key === sourceKey)?.panels.find((p) => p.id === panelId)?.autopilot?.resources ?? [];
+  const needs = sources?.find((s) => s.key === sourceKey)?.views.find((p) => p.id === panelId)?.autopilot?.resources ?? [];
   for (const name of needs) {
     const r = all.find((x) => x.name === name);
     if (!r || r.check === 'pending') continue;

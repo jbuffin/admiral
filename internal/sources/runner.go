@@ -38,6 +38,7 @@ var knownCapabilities = []string{"add", "edit", "remove", "refresh"}
 type runner struct {
 	home string
 	key  string
+	cfg  func() *config.Config
 	ctx  context.Context
 	done chan struct{}
 
@@ -49,7 +50,7 @@ type runner struct {
 	mu       sync.Mutex
 	def      config.Source
 	sid      int // the current process; a notification from an older one is ignored
-	p        *proc
+	p        conn
 	ready    bool // initialized and listed: requests may be sent
 	state    string
 	readOnly bool
@@ -58,6 +59,7 @@ type runner struct {
 	caps     []string
 	schema   json.RawMessage
 	panels   []Panel
+	warnings []string // the router's, for a built-in GitHub source
 	queue    []string // orders.launched not yet delivered
 	pulls    pulls
 }
@@ -68,8 +70,8 @@ type pulls struct {
 	one    map[string]bool
 }
 
-func newRunner(ctx context.Context, home string, def config.Source, notify func(), prev *runner) *runner {
-	r := &runner{home: home, key: def.Key, ctx: ctx, def: def, notify: notify, done: make(chan struct{}),
+func newRunner(ctx context.Context, home string, cfg func() *config.Config, def config.Source, notify func(), prev *runner) *runner {
+	r := &runner{home: home, key: def.Key, cfg: cfg, ctx: ctx, def: def, notify: notify, done: make(chan struct{}),
 		restartCh: make(chan struct{}, 1), wake: make(chan struct{}, 1), state: StateStarting, caps: []string{}}
 	go func() {
 		if prev != nil {
@@ -178,16 +180,13 @@ func (r *runner) session() (ranFor time.Duration, restarted bool, err error) {
 	r.mu.Unlock()
 	r.notify()
 
-	m, dir, err := LoadManifest(r.home, def.Plugin)
+	p, err := r.open(sid, def, func(method string, params json.RawMessage) { r.note(sid, method, params) })
 	if err != nil {
 		return 0, false, err
 	}
 	dataDir := filepath.Join(r.home, "data", r.key)
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
-		return 0, false, err
-	}
-	p, err := startProc(r.key, m, dir, func(method string, params json.RawMessage) { r.note(sid, method, params) })
-	if err != nil {
+		p.kill()
 		return 0, false, err
 	}
 	r.mu.Lock()
@@ -232,7 +231,7 @@ func (r *runner) session() (ranFor time.Duration, restarted bool, err error) {
 		r.pullOrders(ctx, p, pn.ID)
 	}
 	select {
-	case <-p.exited:
+	case <-p.exited():
 		return fatal(errors.New(p.exitReason()))
 	default:
 	}
@@ -254,13 +253,44 @@ func (r *runner) session() (ranFor time.Duration, restarted bool, err error) {
 
 	for {
 		select {
-		case <-p.exited:
+		case <-p.exited():
 			return time.Since(readyAt), false, errors.New(p.exitReason())
 		case <-ctx.Done():
 			return time.Since(readyAt), false, nil
 		case <-r.wake:
 			r.processPulls(ctx, p)
 		}
+	}
+}
+
+func (r *runner) open(sid int, def config.Source, onNote func(string, json.RawMessage)) (conn, error) {
+	if def.Plugin == builtinGitHub {
+		return openGitHub(openArgs{key: r.key, def: def, cfg: r.cfg, onNote: onNote, logf: r.logf,
+			setWarnings: func(w []string) { r.setWarnings(sid, w) }}), nil
+	}
+	m, dir, err := LoadManifest(r.home, def.Plugin)
+	if err != nil {
+		return nil, err
+	}
+	env := config.Fleet{}.Environ()
+	if f, ok := r.cfg().Fleet(def.Fleet); ok {
+		env = f.Environ()
+	}
+	return startProc(r.key, m, dir, env, onNote)
+}
+
+// A stopped session's late cycle must not overwrite the current one's warnings.
+func (r *runner) setWarnings(sid int, w []string) {
+	r.mu.Lock()
+	if sid != r.sid {
+		r.mu.Unlock()
+		return
+	}
+	changed := !slices.Equal(r.warnings, w)
+	r.warnings = slices.Clone(w)
+	r.mu.Unlock()
+	if changed {
+		r.notify()
 	}
 }
 
@@ -315,9 +345,7 @@ func (r *runner) mergePanels(fresh []Panel) {
 	r.panels = fresh
 }
 
-// An error answer shows on the panel until its next good list; any other bad
-// answer leaves the panel as it was.
-func (r *runner) pullOrders(ctx context.Context, p *proc, panel string) {
+func (r *runner) pullOrders(ctx context.Context, p conn, panel string) {
 	res, err := p.call(ctx, "orders.list", map[string]any{"panel": panel}, callTimeout)
 	if err != nil {
 		r.logf("orders.list for panel %q failed: %v", panel, err)
@@ -359,7 +387,7 @@ func (r *runner) setPanelError(panel, msg string) {
 	r.notify()
 }
 
-func (r *runner) pullPanels(ctx context.Context, p *proc) {
+func (r *runner) pullPanels(ctx context.Context, p conn) {
 	res, err := p.call(ctx, "panels.list", map[string]any{}, callTimeout)
 	if err != nil {
 		r.logf("panels.list failed: %v", err)
@@ -403,7 +431,7 @@ func (r *runner) wantPull(panelList bool, panel string) {
 	}
 }
 
-func (r *runner) processPulls(ctx context.Context, p *proc) {
+func (r *runner) processPulls(ctx context.Context, p conn) {
 	r.mu.Lock()
 	todo := r.pulls
 	r.pulls = pulls{}
@@ -472,7 +500,7 @@ func (r *runner) note(sid int, method string, params json.RawMessage) {
 	}
 }
 
-func (r *runner) live() (*proc, bool) {
+func (r *runner) live() (conn, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.p, r.ready && r.p != nil
@@ -493,8 +521,20 @@ func (r *runner) launched(id string) {
 	r.mu.Unlock()
 }
 
-func (r *runner) deliverLaunched(p *proc, id string) {
+func (r *runner) deliverLaunched(p conn, id string) {
 	if _, err := p.call(r.ctx, "orders.launched", map[string]any{"id": id}, callTimeout); err != nil && r.ctx.Err() == nil {
 		r.logf("orders.launched for %q failed: %v", id, err)
+	}
+}
+
+func (r *runner) refreshNow() {
+	r.mu.Lock()
+	builtin := r.def.Plugin == builtinGitHub
+	r.mu.Unlock()
+	if !builtin {
+		return
+	}
+	if p, ok := r.live(); ok {
+		_, _ = p.call(r.ctx, "orders.refresh", map[string]any{}, callTimeout)
 	}
 }

@@ -26,8 +26,8 @@ func TestSourceHandshakeAndRefresh(t *testing.T) {
 	if !reflect.DeepEqual(s.Capabilities, []string{"refresh"}) {
 		t.Errorf("capabilities = %v, want [refresh]", s.Capabilities)
 	}
-	if len(s.Panels) != 1 || s.Panels[0].ID != "main" || s.Panels[0].Title != "Things" || !reflect.DeepEqual(s.orderIDs(), []string{"o1", "o2"}) {
-		t.Errorf("panels = %s, want panel main %q holding o1, o2", dump(s.Panels), "Things")
+	if len(s.Views) != 1 || s.Views[0].ID != "main" || s.Views[0].Title != "Things" || !reflect.DeepEqual(s.orderIDs(), []string{"o1", "o2"}) {
+		t.Errorf("panels = %s, want panel main %q holding o1, o2", dump(s.Views), "Things")
 	}
 
 	inits := p.callsOf("initialize")
@@ -164,7 +164,7 @@ func TestSourceUntrustedOrders(t *testing.T) {
 	push(ord("ok", "Plain"), ord("ctl\x01id", "Bad id"))
 	time.Sleep(200 * time.Millisecond)
 	if s, _ := find(w.sources(), "a"); s.hasOrder("ctl\x01id") {
-		t.Errorf("an order id with a control character was accepted: %s", dump(s.Panels))
+		t.Errorf("an order id with a control character was accepted: %s", dump(s.Views))
 	}
 	push(map[string]any{"id": "big", "title": "Big", "text": strings.Repeat("a", 12001)})
 	time.Sleep(200 * time.Millisecond)
@@ -290,14 +290,14 @@ func TestSourceCrashBeforePanels(t *testing.T) {
 	p.put("crash-on-panels", "")
 	w.startSources(tpSource("a", p, nil))
 	s := w.waitSource("a", 10*time.Second, "state error", func(s sourceJSON) bool { return s.State == "error" })
-	if s.Name != "Test a" || s.Plugin != "testplug" || s.errText() == "" || !s.ReadOnly || len(s.Panels) != 0 {
+	if s.Name != "Test a" || s.Plugin != "testplug" || s.errText() == "" || !s.ReadOnly || len(s.Views) != 0 {
 		t.Errorf("source = %s, want its name, plugin and an error with no panels yet", dump(s))
 	}
 	p.clear("crash-on-panels")
 	code, body := w.srcReq(http.MethodPost, "/a/restart", nil)
 	w.mustOK(code, body, "POST restart")
 	s = w.waitSource("a", 4*time.Second, "state ok", isOK)
-	if len(s.Panels) != 1 || !s.hasOrder("o1") {
+	if len(s.Views) != 1 || !s.hasOrder("o1") {
 		t.Errorf("restarted source = %s, want its panel and order", dump(s))
 	}
 }
@@ -458,7 +458,7 @@ func TestTwoSourcesOfOnePlugin(t *testing.T) {
 		t.Errorf("source order = %v, want config order [a b]", keysOf(list))
 	}
 	sa, sb := list[0], list[1]
-	if sa.Panels[0].Title != "Alpha" || sb.Panels[0].Title != "Beta" || !sa.hasOrder("a1") || sa.hasOrder("b1") || !sb.hasOrder("b1") {
+	if sa.Views[0].Title != "Alpha" || sb.Views[0].Title != "Beta" || !sa.hasOrder("a1") || sa.hasOrder("b1") || !sb.hasOrder("b1") {
 		t.Errorf("panels are not separate: %s", dump(list))
 	}
 	if a.read("datadir") != w.dataDir("a") || b.read("datadir") != w.dataDir("b") {
@@ -468,7 +468,7 @@ func TestTwoSourcesOfOnePlugin(t *testing.T) {
 	code, body := w.srcReq(http.MethodPut, "/a", map[string]any{"settings": a.settings(map[string]any{"title": "Alpha 2"})})
 	w.mustOK(code, body, "PUT settings of a")
 	a.waitStarts(5*time.Second, 2)
-	w.waitSource("a", 5*time.Second, "the new title", func(s sourceJSON) bool { return isOK(s) && len(s.Panels) == 1 && s.Panels[0].Title == "Alpha 2" })
+	w.waitSource("a", 5*time.Second, "the new title", func(s sourceJSON) bool { return isOK(s) && len(s.Views) == 1 && s.Views[0].Title == "Alpha 2" })
 	time.Sleep(500 * time.Millisecond)
 	if len(b.starts()) != 1 {
 		t.Errorf("saving a's settings restarted b (%d starts)", len(b.starts()))
@@ -547,7 +547,7 @@ func TestSourcePushNotifications(t *testing.T) {
 	p.do("panels-changed", "")
 	waitSourcesMsg(t, ws, 5*time.Second, "two panels", func(l []sourceJSON) bool {
 		s, _ := find(l, "a")
-		return len(s.Panels) == 2 && s.Panels[1].Title == "Extra"
+		return len(s.Views) == 2 && s.Views[1].Title == "Extra"
 	})
 	if n := len(p.callsOf("orders.refresh")); n != 0 {
 		t.Errorf("the plugin received %d orders.refresh calls, want none: Admiral pulls on a notification, it does not ask for a refresh", n)
@@ -589,7 +589,7 @@ func TestSourceOrdersListErrorShowsOnPanel(t *testing.T) {
 	})
 	w.startSources(tpSource("a", p, nil))
 	w.waitSource("a", 10*time.Second, "both panels' orders", func(s sourceJSON) bool {
-		return len(s.Panels) == 2 && len(s.Panels[0].Orders) == 1 && len(s.Panels[1].Orders) == 1
+		return len(s.Views) == 2 && len(s.Views[0].Orders) == 1 && len(s.Views[1].Orders) == 1
 	})
 
 	p.put("fail-orders.list-one", "Search failed: bad query")
@@ -599,16 +599,16 @@ func TestSourceOrdersListErrorShowsOnPanel(t *testing.T) {
 	})
 	p.do("orders-changed", "")
 	s := w.waitSource("a", 5*time.Second, "panel one's error and panel two's new orders", func(s sourceJSON) bool {
-		return len(s.Panels) == 2 && s.Panels[0].Error != nil && s.Panels[1].hasOrder("t2")
+		return len(s.Views) == 2 && s.Views[0].Error != nil && s.Views[1].hasOrder("t2")
 	})
-	if got := *s.Panels[0].Error; got != "Search failed: bad query" {
+	if got := *s.Views[0].Error; got != "Search failed: bad query" {
 		t.Errorf("panel one's error = %q, want the plugin's message", got)
 	}
-	if ids := s.Panels[0].orderIDs(); !reflect.DeepEqual(ids, []string{"o1"}) {
+	if ids := s.Views[0].orderIDs(); !reflect.DeepEqual(ids, []string{"o1"}) {
 		t.Errorf("panel one's orders = %v, want its last orders [o1]", ids)
 	}
-	if s.Panels[1].Error != nil {
-		t.Errorf("panel two's error = %q, want none", *s.Panels[1].Error)
+	if s.Views[1].Error != nil {
+		t.Errorf("panel two's error = %q, want none", *s.Views[1].Error)
 	}
 	if s.State != "ok" || s.Error != nil {
 		t.Errorf("source state = %q, error = %v: a panel's error must not touch the source", s.State, s.Error)
@@ -617,9 +617,9 @@ func TestSourceOrdersListErrorShowsOnPanel(t *testing.T) {
 	p.clear("fail-orders.list-one")
 	p.do("orders-changed", `{"panel":"one"}`)
 	s = w.waitSource("a", 5*time.Second, "panel one's error cleared", func(s sourceJSON) bool {
-		return len(s.Panels) == 2 && s.Panels[0].Error == nil && s.Panels[0].hasOrder("o2")
+		return len(s.Views) == 2 && s.Views[0].Error == nil && s.Views[0].hasOrder("o2")
 	})
-	if ids := s.Panels[0].orderIDs(); !reflect.DeepEqual(ids, []string{"o2"}) {
+	if ids := s.Views[0].orderIDs(); !reflect.DeepEqual(ids, []string{"o2"}) {
 		t.Errorf("panel one's orders = %v, want [o2]", ids)
 	}
 }
