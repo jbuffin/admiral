@@ -25,6 +25,8 @@ Files the plugin writes in flagdir:
   pid       its process id
   cwd       its working directory
   datadir   the dataDir initialize handed it (it also writes dataDir/marker)
+  env       FLEET_MARK, ADMIRAL_BASE and ADMIRAL_OVER as NAME=value lines, one
+            for each that was set in its environment, written at initialize
 
 With storeOrders the stored orders live in dataDir/stored.json, kept apart
 from the orders.json the test owns.
@@ -208,6 +210,10 @@ def handle(msg):
             f.write(os.getcwd())
         with open(path("datadir"), "w") as f:
             f.write(str(params.get("dataDir")))
+        with open(path("env"), "w") as f:
+            for name in ("FLEET_MARK", "ADMIRAL_BASE", "ADMIRAL_OVER"):
+                if name in os.environ:
+                    f.write(name + "=" + os.environ[name] + "\n")
         try:
             with open(os.path.join(params["dataDir"], "marker"), "w") as f:
                 f.write(flagdir)
