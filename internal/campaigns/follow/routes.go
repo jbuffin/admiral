@@ -467,7 +467,11 @@ func (s *Service) launchSlice(ctx context.Context, f Followed, issues []string, 
 		}
 		nodes = append(nodes, n)
 	}
-	req.Source, req.OrderID, req.Issues = SourceKey, SliceOrderID(f.ID, issues), issues
+	urls := make([]string, 0, len(nodes))
+	for _, n := range nodes {
+		urls = append(urls, n.URL)
+	}
+	req.Source, req.OrderID, req.Issues = SourceKey, SliceOrderID(f.ID, urls), urls
 	req.Skill = launcher.Skill{Kind: "commodore", Name: nodes[0].Skill.Name}
 	req.Text = sliceText(nodes)
 	req.Autopilot = false
