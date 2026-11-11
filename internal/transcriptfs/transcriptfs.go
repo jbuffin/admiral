@@ -1,8 +1,4 @@
-// Package transcriptfs is how Admiral gets at a harness's transcript file (ADR
-// 0019): the path checks and the open, shared by the chat and by a ship's
-// conversation. A transcript path comes from a pane option that anything in the
-// pane can write, so it is read only if it is a regular file under the harness's
-// own <config dir>/projects/ with no symlink on the way.
+// Package transcriptfs opens a harness's transcript file. The path comes from a pane option anything in the pane can write, so only a regular file under <config dir>/projects/ with no symlink on the way is read.
 package transcriptfs
 
 import (
@@ -15,16 +11,10 @@ import (
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
-// ErrRefused is a path Admiral will not read. A path that is only not there is
-// a plain not-exist error instead.
+// ErrRefused is a path Admiral will not read; one that is merely missing is a not-exist error.
 var ErrRefused = errors.New("not a regular transcript file under the Claude config directory's projects/")
 
-// Resolve is the transcript at path p, if it may be read: absolute, ending in
-// .jsonl, under <configDir>/projects/, and neither the file nor a directory
-// between projects/ and it is a symlink. The config directory itself (a
-// dotfiles ~/.claude, say) and projects/ may be links: the path is matched
-// against the real projects/, found by walking up from the file. It returns the
-// real projects/ and the path below it.
+// Resolve returns the real projects/ and the path below it. The config dir and projects/ may be links (a dotfiles ~/.claude); nothing below them may.
 func Resolve(configDir, p string) (root, rel string, err error) {
 	if !sessionhost.ValidTranscriptPath(p) {
 		return "", "", ErrRefused
@@ -62,10 +52,7 @@ func Resolve(configDir, p string) (root, rel string, err error) {
 	return root, filepath.Join(parts...), nil
 }
 
-// Open resolves p (see Resolve) and opens it for reading through os.Root, so a
-// link swapped in after the checks is not followed. O_NONBLOCK keeps a FIFO
-// swapped in after them from blocking the open; a regular file reads the same
-// either way. The caller closes the file.
+// Open goes through os.Root so a link swapped in after the checks is not followed; O_NONBLOCK keeps a swapped-in FIFO from blocking.
 func Open(configDir, p string) (*os.File, os.FileInfo, error) {
 	root, rel, err := Resolve(configDir, p)
 	if err != nil {
@@ -94,20 +81,13 @@ func Open(configDir, p string) (*os.File, os.FileInfo, error) {
 
 var sessionFile = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
-// SessionID is the session id in a transcript path (its file name without
-// .jsonl), if it is a UUID.
 func SessionID(p string) (string, bool) {
 	name := filepath.Base(p)
 	id := name[:max(0, len(name)-len(".jsonl"))]
 	return id, filepath.Ext(name) == ".jsonl" && sessionFile.MatchString(id)
 }
 
-// Find looks for session id's transcript under <configDir>/projects/*/, for
-// when Claude Code stored it under a directory name other than the computed one
-// (it may shorten a long one). It lists the real projects/ and tries each entry
-// through Resolve, so one that is a symlink, or a file reached through one, is
-// ErrRefused. It returns the first path that opens or is refused; a missing id
-// is a not-exist error.
+// Find searches projects/*/ for a session stored under a directory name other than the computed one. A symlinked entry is ErrRefused.
 func Find(configDir, id string) (string, error) {
 	if !sessionFile.MatchString(id) {
 		return "", ErrRefused

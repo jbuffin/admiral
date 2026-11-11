@@ -1,8 +1,4 @@
-// Package shipconv serves a Claude Code ship's conversation (#264, ADR 0030):
-// GET /api/ships/<ship>/conversation, and the `conversation` WebSocket message
-// to the browsers that opened the ship. The file is found from the pane option
-// @admiral-transcript, which the launcher sets before the harness starts; the
-// conversation itself is read by internal/conversation. See docs/api.md.
+// Package shipconv serves a Claude Code ship's conversation over HTTP and WebSocket (docs/api.md).
 package shipconv
 
 import (
@@ -26,17 +22,10 @@ import (
 )
 
 const (
-	// pageSize is how many items a page holds.
-	pageSize = 200
-	// MaxOpen is how many ships one client holds open; opening one more closes
-	// the oldest.
-	MaxOpen = 16
-	// pollEvery is how often the open ships' files are looked at for growth.
+	pageSize  = 200
+	MaxOpen   = 16 // per client; opening one more closes the oldest
 	pollEvery = 250 * time.Millisecond
-	// findEvery is how often a file that is not where it was computed is looked
-	// for under the other project directories.
-	findEvery = time.Second
-	// maxBefore bounds a ?before= id.
+	findEvery = time.Second // how often to search the other project dirs for a moved file
 	maxBefore = 256
 )
 
@@ -48,29 +37,29 @@ const (
 	StateGone       = "gone"
 )
 
-// Service serves the conversations of the ships Ships knows.
 type Service struct {
 	Ships  *ships.Service
 	Config func() *config.Config
 	Tmux   string
 	Socket string
 
+	// Tests replace these two lookups, which need a live tmux.
+	ship   func(session string) (ships.Ship, bool)
+	option func(sh ships.Ship) (raw, configDir string, ok bool)
+
 	mu      sync.Mutex
-	seen    map[string]string // session -> the option value a file was seen for, to tell gone from none
+	seen    map[string]string // session -> option value a file was seen for: tells gone from none
 	clients map[*server.Client][]string
 	watches map[string]*watch
 	running bool
 }
 
-// Routes registers the endpoint.
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/ships/{session}/conversation", s.serveConversation)
 }
 
-// Connected sends a new client nothing: a client asks for a ship's conversation.
 func (s *Service) Connected(*server.Client) {}
 
-// Messages are the WebSocket messages a client sends, for Server.Messages.
 func (s *Service) Messages() map[string]server.MessageHandler {
 	return map[string]server.MessageHandler{
 		"conversation_open":  s.handleOpen,
@@ -78,48 +67,76 @@ func (s *Service) Messages() map[string]server.MessageHandler {
 	}
 }
 
-// where is a ship's transcript as far as the pane option and the config say.
 type where struct {
 	ship      ships.Ship
 	raw       string // the option's value
-	path      string // the computed path
+	path      string
 	id        string // the session id
 	configDir string
 }
 
-// locate finds the ship and where its transcript is. ok is false for a ship that
-// is not there; none is true when the ship has no conversation Admiral can read.
-func (s *Service) locate(session string) (w where, ok, none bool) {
+func (s *Service) shipOf(session string, sync bool) (ships.Ship, bool) {
+	if s.ship != nil {
+		return s.ship(session)
+	}
 	sh, ok := s.Ships.Get(session)
-	if !ok {
+	if !ok && sync {
 		// A ship just launched may not be listed yet.
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		_ = s.Ships.Host.Sync(ctx)
 		cancel()
-		if sh, ok = s.Ships.Get(session); !ok {
-			return where{}, false, false
-		}
+		sh, ok = s.Ships.Get(session)
 	}
-	w.ship = sh
-	if sh.Harness != "claude" {
-		return w, true, true
+	return sh, ok
+}
+
+// optionOf reads the ship's @admiral-transcript and the Claude config dir of its fleet.
+func (s *Service) optionOf(sh ships.Ship) (raw, configDir string, ok bool) {
+	if s.option != nil {
+		return s.option(sh)
 	}
 	var pane string
 	for _, sess := range s.Ships.Host.Sessions() {
-		if sess.Name == session {
+		if sess.Name == sh.Session {
 			pane = sess.PaneID
 		}
 	}
 	if pane == "" {
-		return w, true, true
+		return "", "", false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	raw, err := sessionhost.NewServer(s.Tmux, s.Socket).ReadPaneOption(ctx, pane, "transcript")
 	if err != nil {
+		return "", "", false
+	}
+	f, found := s.Config().Fleet(sh.Fleet)
+	if !found {
+		return "", "", false
+	}
+	var env map[string]string
+	if d, has := f.Harness("claude"); has {
+		env = d.Env
+	}
+	return raw, config.IdentityDir("claude", env), true
+}
+
+// locate finds the ship and its transcript. ok is false for an unknown ship;
+// none is true when the ship has no conversation of ours to read.
+func (s *Service) locate(session string) (w where, ok, none bool) {
+	sh, ok := s.shipOf(session, true)
+	if !ok {
+		return where{}, false, false
+	}
+	w.ship = sh
+	if sh.Harness != "claude" {
 		return w, true, true
 	}
-	// "<unix ns> <source> <path>"; ships record "launch".
+	raw, configDir, has := s.optionOf(sh)
+	if !has {
+		return w, true, true
+	}
+	// "<unix ns> <source> <path>"; a ship's is recorded by its launch.
 	parts := strings.SplitN(raw, " ", 3)
 	if len(parts) != 3 || parts[1] != "launch" || !sessionhost.ValidTranscriptPath(parts[2]) {
 		return w, true, true
@@ -128,23 +145,12 @@ func (s *Service) locate(session string) (w where, ok, none bool) {
 	if !valid {
 		return w, true, true
 	}
-	cfg := s.Config()
-	f, found := cfg.Fleet(sh.Fleet)
-	if !found {
-		return w, true, true
-	}
-	var env map[string]string
-	if d, has := f.Harness("claude"); has {
-		env = d.Env
-	}
-	w.raw, w.path, w.id = raw, parts[2], id
-	w.configDir = config.IdentityDir("claude", env)
+	w.raw, w.path, w.id, w.configDir = raw, parts[2], id, configDir
 	return w, true, false
 }
 
-// open opens the ship's transcript: where it was computed, else wherever its
-// session id is under the config dir's projects/. A file that is not there is an
-// fs.ErrNotExist error; one the ADR 0019 checks refuse is transcriptfs.ErrRefused.
+// open tries the recorded path, then (find) any project dir holding the session id.
+// A missing file is fs.ErrNotExist; a refused one is transcriptfs.ErrRefused.
 func (w where) open(find bool) (*os.File, os.FileInfo, string, error) {
 	f, info, err := transcriptfs.Open(w.configDir, w.path)
 	if err == nil {
@@ -161,7 +167,6 @@ func (w where) open(find bool) (*os.File, os.FileInfo, string, error) {
 	return f, info, p, err
 }
 
-// Page is the endpoint's answer.
 type Page struct {
 	State string              `json:"state"`
 	Items []conversation.Item `json:"items"`
@@ -246,12 +251,9 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// ---- the WebSocket ----
-
-// watch follows one ship's file for the clients that opened it.
 type watch struct {
 	session  string
-	launched string // the ship's launch time, to tell a reused name
+	launched string // tells a reused ship name from the ship that was watched
 	loc      where
 	reader   *conversation.Reader
 	path     string // where the file was found
@@ -281,9 +283,8 @@ func (s *Service) handleOpen(ctx context.Context, c *server.Client, raw json.Raw
 	}
 	w := &watch{session: m.Ship, launched: loc.ship.Launched, loc: loc, reader: conversation.NewReader(conversation.Options{}),
 		subs: map[*server.Client]struct{}{}}
-	// Prime the reader, so that what is already there is not sent and a tool
-	// result that arrives later still finds its call. The client reads the page
-	// itself.
+	// Prime the reader: what is already there is not sent (the client reads the
+	// page), and a tool result that arrives later still finds its call.
 	if f, info, p, err := loc.open(true); err == nil {
 		_, _ = w.reader.Refresh(f, info)
 		f.Close()
@@ -333,7 +334,6 @@ func (s *Service) handleClose(_ context.Context, c *server.Client, raw json.RawM
 	s.unsubscribeLocked(c, m.Ship)
 }
 
-// unsubscribeLocked ends c's interest in a ship, and the watch when nobody has any.
 func (s *Service) unsubscribeLocked(c *server.Client, session string) {
 	list := s.clients[c]
 	for i, have := range list {
@@ -363,7 +363,6 @@ func (s *Service) dropClient(c *server.Client) {
 	}
 }
 
-// run polls the open ships' files until none is open.
 func (s *Service) run() {
 	t := time.NewTicker(pollEvery)
 	defer t.Stop()
@@ -385,10 +384,8 @@ func (s *Service) run() {
 	}
 }
 
-// poll sends what the ship's file gained to the clients that opened it. A ship
-// that is gone, or a name reused by a newer ship, ends the watch.
 func (s *Service) poll(w *watch) {
-	if sh, ok := s.Ships.Get(w.session); !ok || sh.Launched != w.launched {
+	if sh, ok := s.shipOf(w.session, false); !ok || sh.Launched != w.launched {
 		s.endWatch(w)
 		return
 	}

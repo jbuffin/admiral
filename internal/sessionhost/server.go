@@ -178,9 +178,7 @@ type SessionSpec struct {
 	Name    string
 	Dir     string
 	Options [][2]string
-	// PaneOptions are @admiral-* options (without the prefix) set on the pane
-	// before the harness replaces the placeholder, so they are there before its
-	// first hook. They survive the respawn.
+	// PaneOptions are set before the harness replaces the placeholder, so its first hook finds them.
 	PaneOptions [][2]string
 	Env         map[string]string
 	Unset       []string
