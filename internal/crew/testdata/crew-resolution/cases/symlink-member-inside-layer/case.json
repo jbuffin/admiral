@@ -1,0 +1,4 @@
+{
+  "admiral": false,
+  "description": "A member symlinked to a regular file inside its own layer directory resolves."
+}

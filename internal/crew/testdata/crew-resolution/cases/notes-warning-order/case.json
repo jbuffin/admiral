@@ -1,0 +1,6 @@
+{
+  "admiral": false,
+  "description": "Memory warnings sort after ad hoc ones, and within memory a warning with no file (bad-repo) comes first.",
+  "repo": "acme/app!",
+  "run": "run-1"
+}

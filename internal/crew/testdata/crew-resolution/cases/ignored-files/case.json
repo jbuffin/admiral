@@ -1,0 +1,4 @@
+{
+  "admiral": true,
+  "description": "Only regular .md files directly in the layer directory are members; subdirectories, other extensions and directories named *.md are not read."
+}

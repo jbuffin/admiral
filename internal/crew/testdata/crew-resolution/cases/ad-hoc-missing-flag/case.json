@@ -1,0 +1,5 @@
+{
+  "admiral": false,
+  "description": "A file whose ad-hoc-run names this run but has no ad-hoc: true is not accepted; it warns ad-hoc-unreadable because it names this run.",
+  "run": "run-1"
+}

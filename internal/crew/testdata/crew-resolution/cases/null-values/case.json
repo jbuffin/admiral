@@ -1,0 +1,4 @@
+{
+  "admiral": false,
+  "description": "Optional keys with an empty value (null) count as absent. Ruling needed: the coordinator's rules only say so for required fields, so a strict reading makes this case an error case."
+}

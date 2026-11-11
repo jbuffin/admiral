@@ -1,0 +1,5 @@
+{
+  "admiral": false,
+  "description": "An ad hoc directory that is a symlink is skipped as a whole with one ad-hoc-dir-refused warning.",
+  "run": "run-1"
+}

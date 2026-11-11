@@ -1,0 +1,4 @@
+{
+  "admiral": false,
+  "description": "A member symlinked to a file outside its layer directory is an outside-layer error."
+}

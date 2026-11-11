@@ -1,0 +1,18 @@
+{
+  "errors": [
+    {
+      "code": "bad-frontmatter",
+      "field": null,
+      "file": "block-bare-dash.md",
+      "layer": "repo"
+    },
+    {
+      "code": "bad-frontmatter",
+      "field": null,
+      "file": "flow-trailing-comma.md",
+      "layer": "repo"
+    }
+  ],
+  "exit": 1,
+  "warnings": []
+}

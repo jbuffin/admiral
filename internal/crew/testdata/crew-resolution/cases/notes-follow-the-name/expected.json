@@ -1,0 +1,48 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "implementer.md",
+      "harness": null,
+      "instructions": "Repo builder.",
+      "layer": "repo",
+      "model": null,
+      "name": "implementer",
+      "notes": {
+        "fleet": [
+          "2026-11-01 (run-a): Builds run under Node 22."
+        ],
+        "repo": [
+          "2026-11-02 (run-a): Lint with `make lint` before the tests."
+        ]
+      },
+      "pick-me-when": "Repo builder.",
+      "role": "implementer",
+      "skills": []
+    },
+    {
+      "ad-hoc": true,
+      "ad-hoc-run": "run-1",
+      "based-on": null,
+      "file": "helper.md",
+      "harness": null,
+      "instructions": "Ad hoc body.",
+      "layer": "ad-hoc",
+      "model": null,
+      "name": "helper",
+      "notes": {
+        "fleet": [
+          "2026-11-03 (run-a): The helper reads docs/ first."
+        ],
+        "repo": []
+      },
+      "pick-me-when": "Pick.",
+      "role": "reviewer",
+      "skills": []
+    }
+  ],
+  "warnings": []
+}

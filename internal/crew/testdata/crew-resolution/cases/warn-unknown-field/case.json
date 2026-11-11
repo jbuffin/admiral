@@ -1,0 +1,4 @@
+{
+  "admiral": false,
+  "description": "Each unknown key warns once and is ignored; the member still resolves."
+}

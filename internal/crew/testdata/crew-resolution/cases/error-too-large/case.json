@@ -1,0 +1,4 @@
+{
+  "admiral": false,
+  "description": "A member file over 65536 bytes is a too-large error and fails the resolution."
+}

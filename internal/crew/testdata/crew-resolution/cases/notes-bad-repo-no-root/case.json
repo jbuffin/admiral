@@ -1,0 +1,5 @@
+{
+  "admiral": true,
+  "description": "A bad repo with no memory root gives no warning: memory warnings, bad-repo included, come only when the root exists.",
+  "repo": "acme/app!"
+}

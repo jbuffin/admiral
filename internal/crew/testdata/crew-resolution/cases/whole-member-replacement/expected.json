@@ -1,0 +1,26 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "implementer.md",
+      "harness": null,
+      "instructions": "New instructions.",
+      "layer": "repo",
+      "model": null,
+      "name": "implementer",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Lean override.",
+      "role": "implementer",
+      "skills": [
+        "gamma"
+      ]
+    }
+  ],
+  "warnings": []
+}

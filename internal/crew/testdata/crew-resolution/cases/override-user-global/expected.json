@@ -1,0 +1,44 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "implementer.md",
+      "harness": null,
+      "instructions": "Build with TDD.",
+      "layer": "user-global",
+      "model": "opus",
+      "name": "implementer",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Test-first builder.",
+      "role": "implementer",
+      "skills": [
+        "tdd"
+      ]
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "reviewer.md",
+      "harness": null,
+      "instructions": "Follow the reviewer fallback.",
+      "layer": "built-in",
+      "model": null,
+      "name": "reviewer",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Plain default for reviewer.",
+      "role": "reviewer",
+      "skills": []
+    }
+  ],
+  "warnings": []
+}

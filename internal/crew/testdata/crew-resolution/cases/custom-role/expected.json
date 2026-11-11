@@ -1,0 +1,44 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": "scribe",
+      "file": "notes-writer.md",
+      "harness": null,
+      "instructions": "Write release notes.",
+      "layer": "repo",
+      "model": null,
+      "name": "notes-writer",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Use for release notes.",
+      "role": "release-notes",
+      "skills": [
+        "writing"
+      ]
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "scribe.md",
+      "harness": null,
+      "instructions": "Follow the scribe fallback.",
+      "layer": "built-in",
+      "model": null,
+      "name": "scribe",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Plain default for scribe.",
+      "role": "scribe",
+      "skills": []
+    }
+  ],
+  "warnings": []
+}

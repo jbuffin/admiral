@@ -1,0 +1,67 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "fix-checker.md",
+      "harness": null,
+      "instructions": "",
+      "layer": "repo",
+      "model": null,
+      "name": "fix-checker",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Fix checker.",
+      "role": "fix-checker",
+      "skills": []
+    },
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "strict-fixer.md",
+      "harness": null,
+      "instructions": "",
+      "layer": "repo",
+      "model": null,
+      "name": "strict-fixer",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Strict.",
+      "role": "fix-checker",
+      "skills": []
+    }
+  ],
+  "warnings": [
+    {
+      "code": "bad-skill",
+      "field": "skills",
+      "file": "fix-checker.md",
+      "layer": "repo"
+    },
+    {
+      "code": "fix-checker-instructions",
+      "field": null,
+      "file": "fix-checker.md",
+      "layer": "repo"
+    },
+    {
+      "code": "fix-checker-skills",
+      "field": "skills",
+      "file": "fix-checker.md",
+      "layer": "repo"
+    },
+    {
+      "code": "bad-skill",
+      "field": "skills",
+      "file": "strict-fixer.md",
+      "layer": "repo"
+    }
+  ]
+}

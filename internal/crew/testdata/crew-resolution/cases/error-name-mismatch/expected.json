@@ -1,0 +1,12 @@
+{
+  "errors": [
+    {
+      "code": "name-mismatch",
+      "field": "name",
+      "file": "alpha.md",
+      "layer": "repo"
+    }
+  ],
+  "exit": 1,
+  "warnings": []
+}

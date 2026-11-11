@@ -1,0 +1,4 @@
+{
+  "admiral": false,
+  "description": "Every structural frontmatter fault is a bad-frontmatter error, one per file."
+}

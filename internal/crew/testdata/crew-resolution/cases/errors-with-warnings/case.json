@@ -1,0 +1,4 @@
+{
+  "admiral": false,
+  "description": "An error fails the whole resolution (no members) but warnings are still reported."
+}

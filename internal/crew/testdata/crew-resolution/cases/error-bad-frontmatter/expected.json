@@ -1,0 +1,30 @@
+{
+  "errors": [
+    {
+      "code": "bad-frontmatter",
+      "field": null,
+      "file": "dup-key.md",
+      "layer": "repo"
+    },
+    {
+      "code": "bad-frontmatter",
+      "field": null,
+      "file": "indented-key.md",
+      "layer": "repo"
+    },
+    {
+      "code": "bad-frontmatter",
+      "field": null,
+      "file": "open-quote.md",
+      "layer": "repo"
+    },
+    {
+      "code": "bad-frontmatter",
+      "field": null,
+      "file": "unclosed.md",
+      "layer": "repo"
+    }
+  ],
+  "exit": 1,
+  "warnings": []
+}

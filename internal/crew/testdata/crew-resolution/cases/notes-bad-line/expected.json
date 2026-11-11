@@ -1,0 +1,95 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "implementer.md",
+      "harness": null,
+      "instructions": "Implement.",
+      "layer": "built-in",
+      "model": null,
+      "name": "implementer",
+      "notes": {
+        "fleet": [
+          "2026-11-01 (run-a): Good first note.",
+          "2026-11-05 (run-b): Good second note.",
+          "2026-11-06 (run-c):  A fact may start with a non-breaking space."
+        ],
+        "repo": []
+      },
+      "pick-me-when": "Default implementer.",
+      "role": "implementer",
+      "skills": []
+    }
+  ],
+  "warnings": [
+    {
+      "code": "bad-note",
+      "field": null,
+      "file": "implementer/fleet.md",
+      "layer": "memory"
+    },
+    {
+      "code": "bad-note",
+      "field": null,
+      "file": "implementer/fleet.md",
+      "layer": "memory"
+    },
+    {
+      "code": "bad-note",
+      "field": null,
+      "file": "implementer/fleet.md",
+      "layer": "memory"
+    },
+    {
+      "code": "bad-note",
+      "field": null,
+      "file": "implementer/fleet.md",
+      "layer": "memory"
+    },
+    {
+      "code": "bad-note",
+      "field": null,
+      "file": "implementer/fleet.md",
+      "layer": "memory"
+    },
+    {
+      "code": "bad-note",
+      "field": null,
+      "file": "implementer/fleet.md",
+      "layer": "memory"
+    },
+    {
+      "code": "bad-note",
+      "field": null,
+      "file": "implementer/fleet.md",
+      "layer": "memory"
+    },
+    {
+      "code": "bad-note",
+      "field": null,
+      "file": "implementer/fleet.md",
+      "layer": "memory"
+    },
+    {
+      "code": "bad-note",
+      "field": null,
+      "file": "implementer/fleet.md",
+      "layer": "memory"
+    },
+    {
+      "code": "bad-note",
+      "field": null,
+      "file": "implementer/fleet.md",
+      "layer": "memory"
+    },
+    {
+      "code": "bad-note",
+      "field": null,
+      "file": "implementer/fleet.md",
+      "layer": "memory"
+    }
+  ]
+}

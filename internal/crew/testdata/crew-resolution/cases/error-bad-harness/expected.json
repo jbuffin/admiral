@@ -1,0 +1,18 @@
+{
+  "errors": [
+    {
+      "code": "bad-harness",
+      "field": "harness",
+      "file": "unknown-harness.md",
+      "layer": "repo"
+    },
+    {
+      "code": "bad-harness",
+      "field": "harness",
+      "file": "wrong-case.md",
+      "layer": "repo"
+    }
+  ],
+  "exit": 1,
+  "warnings": []
+}

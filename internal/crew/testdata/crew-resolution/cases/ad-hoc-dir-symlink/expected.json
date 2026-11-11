@@ -1,0 +1,31 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "implementer.md",
+      "harness": null,
+      "instructions": "Implement.",
+      "layer": "built-in",
+      "model": null,
+      "name": "implementer",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Default implementer.",
+      "role": "implementer",
+      "skills": []
+    }
+  ],
+  "warnings": [
+    {
+      "code": "ad-hoc-dir-refused",
+      "field": null,
+      "file": null,
+      "layer": "ad-hoc"
+    }
+  ]
+}

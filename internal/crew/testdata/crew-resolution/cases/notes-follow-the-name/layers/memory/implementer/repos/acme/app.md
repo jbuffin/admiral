@@ -1,0 +1,1 @@
+- 2026-11-02 (run-a): Lint with `make lint` before the tests.

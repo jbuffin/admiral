@@ -1,0 +1,12 @@
+{
+  "errors": [
+    {
+      "code": "too-large",
+      "field": null,
+      "file": "too-big.md",
+      "layer": "repo"
+    }
+  ],
+  "exit": 1,
+  "warnings": []
+}

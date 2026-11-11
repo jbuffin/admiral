@@ -1,0 +1,4 @@
+{
+  "admiral": false,
+  "description": "A name that isn't a slug (upper case, 65 chars) is a bad-name error."
+}

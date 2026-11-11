@@ -1,0 +1,18 @@
+{
+  "errors": [
+    {
+      "code": "missing-field",
+      "field": "pick-me-when",
+      "file": "quoted-blank.md",
+      "layer": "repo"
+    },
+    {
+      "code": "missing-field",
+      "field": "pick-me-when",
+      "file": "spaces-blank.md",
+      "layer": "repo"
+    }
+  ],
+  "exit": 1,
+  "warnings": []
+}

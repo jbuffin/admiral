@@ -1,0 +1,4 @@
+{
+  "admiral": false,
+  "description": "A file reports at most one error: the first failing check in field order."
+}

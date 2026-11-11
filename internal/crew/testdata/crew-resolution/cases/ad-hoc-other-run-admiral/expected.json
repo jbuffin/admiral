@@ -1,0 +1,42 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "implementer.md",
+      "harness": null,
+      "instructions": "Implement.",
+      "layer": "built-in",
+      "model": null,
+      "name": "implementer",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Default implementer.",
+      "role": "implementer",
+      "skills": []
+    },
+    {
+      "ad-hoc": true,
+      "ad-hoc-run": "run-1",
+      "based-on": null,
+      "file": "mine.md",
+      "harness": null,
+      "instructions": "Ad hoc body.",
+      "layer": "ad-hoc",
+      "model": null,
+      "name": "mine",
+      "notes": {
+        "fleet": [],
+        "repo": []
+      },
+      "pick-me-when": "Pick.",
+      "role": "scribe",
+      "skills": []
+    }
+  ],
+  "warnings": []
+}

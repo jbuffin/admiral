@@ -1,0 +1,99 @@
+{
+  "exit": 0,
+  "members": [
+    {
+      "ad-hoc": false,
+      "ad-hoc-run": null,
+      "based-on": null,
+      "file": "implementer.md",
+      "harness": null,
+      "instructions": "Implement.",
+      "layer": "built-in",
+      "model": null,
+      "name": "implementer",
+      "notes": {
+        "fleet": [
+          "2026-11-01 (run-a): Fleet fact 01.",
+          "2026-11-01 (run-a): Fleet fact 02.",
+          "2026-11-01 (run-a): Fleet fact 03.",
+          "2026-11-01 (run-a): Fleet fact 04.",
+          "2026-11-01 (run-a): Fleet fact 05.",
+          "2026-11-01 (run-a): Fleet fact 06.",
+          "2026-11-01 (run-a): Fleet fact 07.",
+          "2026-11-01 (run-a): Fleet fact 08.",
+          "2026-11-01 (run-a): Fleet fact 09.",
+          "2026-11-01 (run-a): Fleet fact 10.",
+          "2026-11-01 (run-a): Fleet fact 11.",
+          "2026-11-01 (run-a): Fleet fact 12.",
+          "2026-11-01 (run-a): Fleet fact 13.",
+          "2026-11-01 (run-a): Fleet fact 14.",
+          "2026-11-01 (run-a): Fleet fact 15.",
+          "2026-11-01 (run-a): Fleet fact 16.",
+          "2026-11-01 (run-a): Fleet fact 17.",
+          "2026-11-01 (run-a): Fleet fact 18.",
+          "2026-11-01 (run-a): Fleet fact 19.",
+          "2026-11-01 (run-a): Fleet fact 20.",
+          "2026-11-01 (run-a): Fleet fact 21.",
+          "2026-11-01 (run-a): Fleet fact 22.",
+          "2026-11-01 (run-a): Fleet fact 23.",
+          "2026-11-01 (run-a): Fleet fact 24.",
+          "2026-11-01 (run-a): Fleet fact 25.",
+          "2026-11-01 (run-a): Fleet fact 26.",
+          "2026-11-01 (run-a): Fleet fact 27.",
+          "2026-11-01 (run-a): Fleet fact 28.",
+          "2026-11-01 (run-a): Fleet fact 29.",
+          "2026-11-01 (run-a): Fleet fact 30."
+        ],
+        "repo": [
+          "2026-11-01 (run-a): Repo fact 01.",
+          "2026-11-01 (run-a): Repo fact 02.",
+          "2026-11-01 (run-a): Repo fact 03.",
+          "2026-11-01 (run-a): Repo fact 04.",
+          "2026-11-01 (run-a): Repo fact 05.",
+          "2026-11-01 (run-a): Repo fact 06.",
+          "2026-11-01 (run-a): Repo fact 07.",
+          "2026-11-01 (run-a): Repo fact 08.",
+          "2026-11-01 (run-a): Repo fact 09.",
+          "2026-11-01 (run-a): Repo fact 10.",
+          "2026-11-01 (run-a): Repo fact 11.",
+          "2026-11-01 (run-a): Repo fact 12.",
+          "2026-11-01 (run-a): Repo fact 13.",
+          "2026-11-01 (run-a): Repo fact 14.",
+          "2026-11-01 (run-a): Repo fact 15.",
+          "2026-11-01 (run-a): Repo fact 16.",
+          "2026-11-01 (run-a): Repo fact 17.",
+          "2026-11-01 (run-a): Repo fact 18.",
+          "2026-11-01 (run-a): Repo fact 19.",
+          "2026-11-01 (run-a): Repo fact 20.",
+          "2026-11-01 (run-a): Repo fact 21.",
+          "2026-11-01 (run-a): Repo fact 22.",
+          "2026-11-01 (run-a): Repo fact 23.",
+          "2026-11-01 (run-a): Repo fact 24.",
+          "2026-11-01 (run-a): Repo fact 25.",
+          "2026-11-01 (run-a): Repo fact 26.",
+          "2026-11-01 (run-a): Repo fact 27.",
+          "2026-11-01 (run-a): Repo fact 28.",
+          "2026-11-01 (run-a): Repo fact 29.",
+          "2026-11-01 (run-a): Repo fact 30."
+        ]
+      },
+      "pick-me-when": "Default implementer.",
+      "role": "implementer",
+      "skills": []
+    }
+  ],
+  "warnings": [
+    {
+      "code": "notes-over-cap",
+      "field": null,
+      "file": "implementer/fleet.md",
+      "layer": "memory"
+    },
+    {
+      "code": "bad-note",
+      "field": null,
+      "file": "implementer/repos/acme/app.md",
+      "layer": "memory"
+    }
+  ]
+}

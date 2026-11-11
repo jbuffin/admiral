@@ -1,0 +1,5 @@
+{
+  "admiral": true,
+  "description": "Inside Admiral, files that name another run are skipped with no warning.",
+  "run": "run-1"
+}

@@ -1,0 +1,4 @@
+{
+  "admiral": false,
+  "description": "An ad-hoc: true member directly in a layer directory is refused with a warning."
+}

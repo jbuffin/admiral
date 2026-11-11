@@ -1,0 +1,4 @@
+---
+role: Bad
+harness: gemini
+---

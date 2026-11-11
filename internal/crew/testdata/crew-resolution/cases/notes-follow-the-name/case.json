@@ -1,0 +1,6 @@
+{
+  "admiral": false,
+  "description": "Notes follow the member's name: a repo member that replaces a built-in one reads the same notes, and so does an ad hoc member.",
+  "repo": "acme/app",
+  "run": "run-1"
+}

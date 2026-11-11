@@ -1,0 +1,5 @@
+{
+  "admiral": true,
+  "description": "A member's fleet notes and this repo's notes load under notes.fleet and notes.repo. Stray lines are ignored, another repo's file and another member's files are not read for it.",
+  "repo": "acme/app"
+}

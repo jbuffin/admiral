@@ -1,0 +1,5 @@
+{
+  "admiral": true,
+  "description": "A file holds at most 30 notes. 31 valid notes load the first 30 and give one notes-over-cap warning; 30 valid notes and a bad line load all 30 with only a bad-note warning, since bad lines don't count toward the cap.",
+  "repo": "acme/app"
+}

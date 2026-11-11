@@ -1,0 +1,24 @@
+{
+  "errors": [
+    {
+      "code": "bad-field",
+      "field": "ad-hoc",
+      "file": "adhoc-string.md",
+      "layer": "repo"
+    },
+    {
+      "code": "bad-field",
+      "field": "model",
+      "file": "model-list.md",
+      "layer": "repo"
+    },
+    {
+      "code": "bad-field",
+      "field": "role",
+      "file": "role-upper.md",
+      "layer": "repo"
+    }
+  ],
+  "exit": 1,
+  "warnings": []
+}
