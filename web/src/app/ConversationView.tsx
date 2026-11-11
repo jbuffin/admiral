@@ -166,7 +166,7 @@ function ConversationBody({ conv, harness, anchored = false, working, noneTitle,
   if (conv.state === 'none')
     return noneTitle ? (
       <Card title={noneTitle}>{terminal}</Card>
-    ) : harness !== 'claude' ? (
+    ) : harness !== 'claude' && harness !== 'copilot' ? (
       <Card title="No conversation for this harness">{terminal}</Card>
     ) : anchored ? (
       <Card title="No conversation recorded">{terminal}</Card>

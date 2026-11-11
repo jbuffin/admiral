@@ -107,6 +107,11 @@
 #                  brackets. Every byte it reads is appended to `stdin` as well. With no
 #                  --session-id (or one holding "/") or no $CLAUDE_CONFIG_DIR it writes why to
 #                  `reply-error` and stderr and exits 1, before `cues-done`.
+#   events <text>  Copilot only, needs jq: appends a prompt ("Question <n>"), an assistant message
+#                  holding <text> and its turn end to $COPILOT_HOME/session-state/<id>/events.jsonl, in
+#                  the shape Copilot records, <id> being the --session-id in its argv. Unlike
+#                  `reply` it is not the last cue and answers nothing. With no usable --session-id
+#                  or no $COPILOT_HOME it writes why to `events-error` and stderr and exits 1.
 #   replydelay <n> sleep n seconds before each message's lines are appended, so a test sees the
 #                  message sent and not yet recorded. Put it before `reply`.
 #
@@ -325,6 +330,29 @@ if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 			while [ ! -e "$d/$arg" ]; do sleep 0.1; done
 			;;
 		replydelay) FAKE_REPLY_DELAY=$arg ;;
+		events)
+			sid=""
+			prev=""
+			for a in "$@"; do
+				[ "$prev" = "--session-id" ] && sid=$a
+				prev=$a
+			done
+			case "$sid" in
+			"" | */*) echo "events cue: no usable --session-id in argv" | tee "$d/events-error" >&2; exit 1 ;;
+			esac
+			if [ -z "$COPILOT_HOME" ]; then
+				echo "events cue: COPILOT_HOME is unset" | tee "$d/events-error" >&2
+				exit 1
+			fi
+			mkdir -p "$COPILOT_HOME/session-state/$sid"
+			n=$(($(cat "$d/.events-n" 2>/dev/null || echo 0) + 1))
+			echo "$n" >"$d/.events-n"
+			jq -cn --arg t "$arg" --arg n "$n" '
+			  def line($type; $data): {type: $type, id: ("fake-" + $type + "-" + $n), parentId: null, timestamp: (now | todate), data: $data};
+			  line("user.message"; {content: ("Question " + $n)}),
+			  line("assistant.message"; {messageId: ("fake-m-" + $n), content: $t, toolRequests: []}),
+			  line("assistant.turn_end"; {turnId: "0"})' >>"$COPILOT_HOME/session-state/$sid/events.jsonl"
+			;;
 		reply)
 			sid=""
 			bad=""

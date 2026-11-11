@@ -17,7 +17,7 @@ const (
 	maxRetry   = time.Minute
 )
 
-// follow is one Claude ship's transcript, read only when its size or mtime changes.
+// follow is one ship's transcript, read only when its size or mtime changes.
 type follow struct {
 	launched string
 	loc      where
@@ -32,7 +32,7 @@ type follow struct {
 	tail     string
 }
 
-// Tails follows the Claude ships' transcripts and holds each ship's tail. Other harnesses have no
+// Tails follows the Claude Code and Copilot ships' transcripts and holds each ship's tail. Other harnesses have no
 // conversation adapter, so their tail stays blank and nothing is read for them.
 type Tails struct {
 	list   func() []ships.Ship
@@ -71,11 +71,11 @@ func (t *Tails) Run(ctx context.Context) {
 	}
 }
 
-// Poll follows each Claude ship once, forgets the ships that are gone, and reports whether a tail changed.
+// Poll follows each ship once, forgets the ships that are gone, and reports whether a tail changed.
 func (t *Tails) Poll() bool {
 	live := map[string]ships.Ship{}
 	for _, sh := range t.list() {
-		if sh.Harness == "claude" {
+		if ships.HasConversation(sh.Harness) {
 			live[sh.Session] = sh
 		}
 	}
@@ -132,7 +132,7 @@ func (t *Tails) step(f *follow, session string) (tail string, ok bool) {
 			return "", false
 		}
 		f.loc, f.located = w, true
-		f.reader = conversation.NewReader(conversation.Options{Keep: conversation.TailItem, MaxItems: 50, MaxOutput: 1, MaxBytes: 64 << 10})
+		f.reader = conversation.NewReader(conversation.Options{Harness: w.harness, Keep: conversation.TailItem, MaxItems: 50, MaxOutput: 1, MaxBytes: 64 << 10})
 	}
 	if f.path != "" && !f.mtime.IsZero() {
 		if fi, err := os.Lstat(f.path); err == nil && fi.Size() == f.size && fi.ModTime().Equal(f.mtime) {
@@ -169,7 +169,7 @@ func (t *Tails) step(f *follow, session string) (tail string, ok bool) {
 // openAt tries the recorded path, and only when find is set the other project dirs.
 func openAt(w where, path string, find bool) (*os.File, os.FileInfo, string, error) {
 	if path != "" {
-		if f, info, err := transcriptfs.Open(w.configDir, path); err == nil {
+		if f, info, err := transcriptfs.OpenFor(w.harness, w.configDir, path); err == nil {
 			return f, info, path, nil
 		}
 	}

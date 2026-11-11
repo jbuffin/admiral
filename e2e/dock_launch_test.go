@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -94,13 +95,26 @@ func TestDockLaunchWithoutText(t *testing.T) {
 				switch harness {
 				case "claude":
 					want := []string{"--fa-claude", "--settings", filepath.Join(w.home, "harness", "claude-settings.json")}
-					if !reflect.DeepEqual(r.claudeArgvBase(), want) {
+					if !reflect.DeepEqual(r.sessionArgvBase(), want) {
 						t.Errorf("claude argv = %q, want exactly %q", r.argv, want)
 					}
 				case "copilot":
 					want := []string{"--fa-copilot", "--plugin-dir", filepath.Join(w.home, "harness", "copilot")}
-					if !reflect.DeepEqual(r.argv, want) {
+					if !reflect.DeepEqual(r.sessionArgvBase(), want) {
 						t.Errorf("copilot argv = %q, want exactly %q", r.argv, want)
+					}
+					// Admiral names the session, so the transcript is known before the first hook.
+					if len(r.argv) < 3 || r.argv[1] != "--session-id" || !uuidRe.MatchString(r.argv[2]) {
+						t.Fatalf("copilot argv = %q, want --session-id <uuid> after the fleet's own args", r.argv)
+					}
+					var opt string
+					holdFor(t, "@admiral-transcript to be set", func() bool {
+						out, err := w.tmux("show-options", "-pv", "-t", ship.Session, "@admiral-transcript")
+						opt = strings.TrimSpace(out)
+						return err == nil && opt != ""
+					})
+					if f := strings.Fields(opt); len(f) != 3 || f[1] != "launch" || !strings.HasSuffix(f[2], "/session-state/"+r.argv[2]+"/events.jsonl") {
+						t.Errorf("@admiral-transcript = %q, want \"<unix ns> launch <copilot home>/session-state/%s/events.jsonl\"", opt, r.argv[2])
 					}
 				default:
 					if slices.Contains(r.argv, "--") {

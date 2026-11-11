@@ -31,13 +31,14 @@ func promptOf(t *testing.T, w *world, r record) string {
 	last := argv[len(argv)-1]
 	switch r.harness {
 	case "claude":
-		argv = r.claudeArgvBase()
+		argv = r.sessionArgvBase()
 		want := []string{"--fa-claude", "--settings", filepath.Join(w.home, "harness", "claude-settings.json"), "--"}
 		if got := argv[:len(argv)-1]; !reflect.DeepEqual(got, want) {
 			t.Fatalf("claude argv before the prompt = %q, want %q", got, want)
 		}
 		return last
 	case "copilot":
+		argv = r.sessionArgvBase()
 		want := []string{"--fa-copilot", "--plugin-dir", filepath.Join(w.home, "harness", "copilot")}
 		if got := argv[:len(argv)-1]; !reflect.DeepEqual(got, want) {
 			t.Fatalf("copilot argv before the prompt = %q, want %q", got, want)

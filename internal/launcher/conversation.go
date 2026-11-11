@@ -15,13 +15,20 @@ import (
 // A ship launched with one of these has a session Admiral did not name, so it has no conversation.
 var claudeSessionFlags = []string{"--session-id", "--resume", "-r", "--continue", "-c"}
 
-func choosesSession(args []string) bool {
+// Copilot has no -c.
+var copilotSessionFlags = []string{"--session-id", "--resume", "-r", "--continue", "--connect"}
+
+func choosesSession(harness string, args []string) bool {
+	flags := claudeSessionFlags
+	if harness == "copilot" {
+		flags = copilotSessionFlags
+	}
 	for _, a := range args {
 		if a == "--" {
 			return false
 		}
 		name, _, _ := strings.Cut(a, "=")
-		for _, f := range claudeSessionFlags {
+		for _, f := range flags {
 			if name == f {
 				return true
 			}
@@ -50,9 +57,10 @@ func newUUID() (string, error) {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
-// conversationAnchor names a new Claude Code session so the transcript is known before the first hook.
+// conversationAnchor names a new Claude Code or Copilot session so the transcript is known before the first hook.
 func conversationAnchor(req Request, dock config.Harness, now time.Time) (flags []string, pane [][2]string) {
-	if req.Harness != "claude" || choosesSession(dock.Args) || choosesSession(req.ExtraArgs) {
+	if (req.Harness != "claude" && req.Harness != "copilot") ||
+		choosesSession(req.Harness, dock.Args) || choosesSession(req.Harness, req.ExtraArgs) {
 		return nil, nil
 	}
 	id, err := newUUID()
@@ -60,6 +68,9 @@ func conversationAnchor(req Request, dock config.Harness, now time.Time) (flags 
 		return nil, nil
 	}
 	path := filepath.Join(config.IdentityDir("claude", dock.Env), "projects", ProjectSlug(req.Dir), id+".jsonl")
+	if req.Harness == "copilot" {
+		path = filepath.Join(config.IdentityDir("copilot", dock.Env), "session-state", id, "events.jsonl")
+	}
 	if !sessionhost.ValidTranscriptPath(path) {
 		return nil, nil
 	}

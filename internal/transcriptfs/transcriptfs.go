@@ -1,4 +1,4 @@
-// Package transcriptfs opens a harness's transcript file. The path comes from a pane option anything in the pane can write, so only a regular file under <config dir>/projects/ with no symlink on the way is read.
+// Package transcriptfs opens a harness's transcript file. The path comes from a pane option anything in the pane can write, so only a regular file with no symlink on the way is read: under <config dir>/projects/ for Claude Code, and <config dir>/session-state/<id>/events.jsonl for Copilot.
 package transcriptfs
 
 import (
@@ -13,15 +13,28 @@ import (
 )
 
 // ErrRefused is a path Admiral will not read; one that is merely missing is a not-exist error.
-var ErrRefused = errors.New("not a regular transcript file under the Claude config directory's projects/")
+var ErrRefused = errors.New("not a regular transcript file under the harness's config directory")
+
+// rootDir is the directory below the config dir that holds a harness's transcripts; the layout follows the harness, not the path's shape.
+func rootDir(harness string) string {
+	if harness == "copilot" {
+		return "session-state"
+	}
+	return "projects"
+}
 
 // Resolve returns the real projects/ and the path below it. The config dir and projects/ may be links (a dotfiles ~/.claude); nothing below them may.
 func Resolve(configDir, p string) (root, rel string, err error) {
+	return ResolveFor("claude", configDir, p)
+}
+
+// ResolveFor is Resolve for a harness's layout.
+func ResolveFor(harness, configDir, p string) (root, rel string, err error) {
 	if !sessionhost.ValidTranscriptPath(p) {
 		return "", "", ErrRefused
 	}
 	p = filepath.Clean(p)
-	root, err = filepath.EvalSymlinks(filepath.Join(configDir, "projects"))
+	root, err = filepath.EvalSymlinks(filepath.Join(configDir, rootDir(harness)))
 	if err != nil {
 		return "", "", err
 	}
@@ -34,6 +47,9 @@ func Resolve(configDir, p string) (root, rel string, err error) {
 			return "", "", ErrRefused
 		}
 		parts = append([]string{filepath.Base(cur)}, parts...)
+	}
+	if harness == "copilot" && !(len(parts) == 2 && sessionFile.MatchString(parts[0]) && parts[1] == "events.jsonl") {
+		return "", "", ErrRefused
 	}
 	at := root
 	for i, part := range parts {
@@ -55,7 +71,12 @@ func Resolve(configDir, p string) (root, rel string, err error) {
 
 // Open goes through os.Root, so a link swapped in after the checks can only lead to another file under the root; O_NONBLOCK keeps a swapped-in FIFO from blocking.
 func Open(configDir, p string) (*os.File, os.FileInfo, error) {
-	root, rel, err := Resolve(configDir, p)
+	return OpenFor("claude", configDir, p)
+}
+
+// OpenFor is Open for a harness's layout.
+func OpenFor(harness, configDir, p string) (*os.File, os.FileInfo, error) {
+	root, rel, err := ResolveFor(harness, configDir, p)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -83,6 +104,15 @@ func Open(configDir, p string) (*os.File, os.FileInfo, error) {
 var sessionFile = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 func SessionID(p string) (string, bool) {
+	return SessionIDFor("claude", p)
+}
+
+// SessionIDFor is the session id a harness's transcript path names: Copilot's is its directory.
+func SessionIDFor(harness, p string) (string, bool) {
+	if harness == "copilot" {
+		id := filepath.Base(filepath.Dir(p))
+		return id, filepath.Base(p) == "events.jsonl" && sessionFile.MatchString(id)
+	}
 	name := filepath.Base(p)
 	id := name[:max(0, len(name)-len(".jsonl"))]
 	return id, filepath.Ext(name) == ".jsonl" && sessionFile.MatchString(id)

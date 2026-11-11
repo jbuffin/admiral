@@ -1,3 +1,6 @@
 package conversation
 
-var ReadClaudeCode = readClaudeCode
+var (
+	ReadClaudeCode = readClaudeCode
+	ReadCopilot    = readCopilot
+)
