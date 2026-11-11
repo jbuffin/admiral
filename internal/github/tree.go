@@ -327,7 +327,7 @@ var (
 )
 
 // bodyBlockers adds the blockers a child's "Blocked by:" lines name. One outside the tree is read
-// so that an open blocker elsewhere still blocks; one that can't be read is left out.
+// so that an open blocker elsewhere still blocks; one that can't be read counts as open.
 func (r *treeReader) bodyBlockers(n *TreeNode, in map[string]*TreeNode) error {
 	have := map[string]bool{}
 	for _, b := range n.BlockedBy {
@@ -376,6 +376,8 @@ func (r *treeReader) blocker(repo string, number int, in map[string]*TreeNode) (
 		return nil, err
 	case err == nil:
 		n = g.treeNode()
+	default: // unreadable: keep it open, so the child stays blocked and names it
+		n = &TreeNode{Number: number, Repo: repo, URL: fmt.Sprintf("https://%s/%s/issues/%d", r.c.host, repo, number)}
 	}
 	r.looked[key] = n
 	return n, nil

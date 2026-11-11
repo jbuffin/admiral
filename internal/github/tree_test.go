@@ -379,3 +379,19 @@ func TestTreeReadsEveryPageOfBlockers(t *testing.T) {
 		t.Errorf("child 2 = %+v, want both pages of blockers", n)
 	}
 }
+
+func TestTreeKeepsAnUnreadableBodyBlockerOpen(t *testing.T) {
+	g := newTreeGH(t, map[string]string{
+		"acme_campaign_1.json": issueAnswer(issueJSON("acme/campaign", 1, "OPEN", "", noBlockers)),
+		"search.json":          searchAnswer(issueJSON("acme/campaign", 60, "OPEN", "Part of #1\nBlocked by: acme/other#90", noBlockers)),
+		"acme_other_90.fail":   "gh: Could not resolve to a Repository with the name 'acme/other'. (repository)",
+	})
+	tree, err := g.client("github.com").Tree(context.Background(), "fake-token-work-2", "acme", "campaign", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := find(tree, 60)
+	if n == nil || len(n.BlockedBy) != 1 || n.BlockedBy[0].Closed || n.BlockedBy[0].URL != "https://github.com/acme/other/issues/90" {
+		t.Errorf("child 60 = %+v, want an open blocker naming acme/other#90 when it can't be read", n)
+	}
+}
