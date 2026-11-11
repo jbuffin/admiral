@@ -36,7 +36,7 @@ test('on the phone, a person follows a campaign from the Campaigns surface, read
   await form.getByRole('button', { name: 'Launch', exact: true }).tap();
   expect((await sent).status()).toBe(201);
   await expect(form).toBeHidden();
-  await expect(group('Ready, without you').getByRole('listitem').filter({ hasText: T.survey })).toContainText(/Underway|\b[A-Z][a-z]+ [A-Z][a-z]+\b/);
+  await expect(group('Ready, without you').getByRole('listitem').filter({ hasText: T.survey })).toContainText(/Underway · /);
 
   expect(watch.errors).toEqual([]);
   expect(watch.unversioned()).toEqual([]);

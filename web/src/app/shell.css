@@ -342,3 +342,6 @@ button.pill { cursor: pointer; min-height: 32px; }
   .group-note { margin-left: 0; flex-basis: 100%; }
 }
 .camp-page .mono, .detail .mono { font-family: var(--font-mono); font-size: var(--font-size-mono); }
+.btn.quiet { background: transparent; color: var(--color-text2); border-color: transparent; }
+.btn.quiet:hover { background: var(--color-hover); }
+.ti-mode { display: block; font-size: 11px; color: var(--color-muted); }

@@ -7,10 +7,13 @@ import {
   childShipsKey,
   groupChildren,
   hasUnreadable,
+  overrideBody,
+  safeHref,
   kindLabel,
   leaves,
   modeLabel,
   nextPoll,
+  SLOW_POLL_MS,
   pasteHint,
   shipOfChild,
   skillLabel,
@@ -181,7 +184,7 @@ export function CampaignsList({ phone, title }: { phone: boolean; title: boolean
   );
 }
 
-function Detail({ campaign, node, onClose, onLaunch, onSaved }: { campaign: Campaign; node: CampaignNode; onClose: () => void; onLaunch: (anyway: boolean) => void; onSaved: (c: Campaign) => void }) {
+function Detail({ campaign, node, canStart, onClose, onLaunch, onSaved }: { campaign: Campaign; node: CampaignNode; canStart: boolean; onClose: () => void; onLaunch: (anyway: boolean) => void; onSaved: (c: Campaign) => void }) {
   const [mode, setMode] = useState<Mode | ''>(node.mode ?? '');
   const [kind, setKind] = useState(node.skill?.kind || 'none');
   const [name, setName] = useState(node.skill?.name ?? '');
@@ -189,14 +192,14 @@ function Detail({ campaign, node, onClose, onLaunch, onSaved }: { campaign: Camp
   const [error, setError] = useState('');
   const save = async (clear: boolean) => {
     setError('');
-    const body = clear ? { child_url: node.url, mode: '' } : { child_url: node.url, mode, skill: { kind, name: kind === 'skill' ? name : '', args: kind === 'none' ? '' : args } };
+    const body = clear ? { child_url: node.url, mode: '' } : overrideBody(node, mode || 'with-you', { kind, name: kind === 'skill' ? name : '', args: kind === 'none' ? '' : args });
     const r = await call<Campaign>('PUT', `/campaigns/${campaign.id}/override`, body);
     if (!r.ok) return setError(r.error);
     onSaved(r.data);
     onClose();
   };
   const status = node.status ?? 'ready';
-  const canLaunch = !campaign.ended && (status === 'ready' || status === 'claimed-no-ship');
+  const canLaunch = canStart && !campaign.ended && (status === 'ready' || status === 'claimed-no-ship');
   return (
     <Sheet label={node.title} onClose={onClose}>
       <div class="detail">
@@ -204,9 +207,11 @@ function Detail({ campaign, node, onClose, onLaunch, onSaved }: { campaign: Camp
           {node.repo ? `${node.repo}#${node.number}` : `#${node.number}`} · {statusLabel(status)}
           {node.ship ? ` · ${node.ship}` : ''}
         </p>
-        <a href={node.url} target="_blank" rel="noopener noreferrer">
-          Open the issue on GitHub
-        </a>
+        {safeHref(node.url) ? (
+          <a href={safeHref(node.url)!} target="_blank" rel="noopener noreferrer">
+            Open the issue on GitHub
+          </a>
+        ) : null}
         {(node.blockers ?? []).length > 0 ? (
           <div>
             <h3 class="detail-head">Waits on</h3>
@@ -215,12 +220,12 @@ function Detail({ campaign, node, onClose, onLaunch, onSaved }: { campaign: Camp
                 const l = blockerLine(b);
                 return (
                   <li key={b.url + l.text}>
-                    {l.kind === 'link' ? (
-                      <a href={l.url} target="_blank" rel="noopener noreferrer">
+                    {l.kind === 'link' && safeHref(l.url) ? (
+                      <a href={safeHref(l.url)!} target="_blank" rel="noopener noreferrer">
                         {l.text}
                       </a>
                     ) : (
-                      <span class="muted">{l.text}</span>
+                      <span class={l.kind === 'note' ? 'muted' : undefined}>{l.text}</span>
                     )}
                   </li>
                 );
@@ -232,7 +237,7 @@ function Detail({ campaign, node, onClose, onLaunch, onSaved }: { campaign: Camp
           {modeLabel(node.mode ?? 'with-you')} · {skillLabel(node.skill)}
           {node.overridden ? ' · overridden' : ''}
         </p>
-        {!campaign.ended && status !== 'done' ? (
+        {status !== 'done' ? (
           <details class="override">
             <summary>Change mode or skill</summary>
             <label class="field">
@@ -316,7 +321,6 @@ function WorkRepo({ campaign, onSaved }: { campaign: Campaign; onSaved: (c: Camp
     setEditing(false);
     onSaved(r.data);
   };
-  if (campaign.ended) return campaign.work_repo ? <span class="pill mono">{campaign.work_repo.replace(/^https?:\/\//, '')}</span> : null;
   if (!editing)
     return (
       <button type="button" class="pill mono" onClick={() => setEditing(true)}>
@@ -336,7 +340,11 @@ function WorkRepo({ campaign, onSaved }: { campaign: Campaign; onSaved: (c: Camp
       <button type="button" class="btn" onClick={() => void save()}>
         Save
       </button>
-      {error ? <span class="alert">{error}</span> : null}
+      {error ? (
+        <span class="alert" role="alert">
+          {error}
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -344,8 +352,10 @@ function WorkRepo({ campaign, onSaved }: { campaign: Campaign; onSaved: (c: Camp
 export function CampaignPage({ id, title }: { id: string; title: boolean }) {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [missing, setMissing] = useState('');
-  const [picked, setPicked] = useState<CampaignNode | null>(null);
+  const [pickedUrl, setPickedUrl] = useState('');
   const [launching, setLaunching] = useState<{ node: CampaignNode; anyway: boolean } | null>(null);
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  const [unfollowError, setUnfollowError] = useState('');
   const fastSince = useRef<number | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const live = useRef(true);
@@ -353,15 +363,18 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
   const load = async () => {
     const r = await call<Campaign>('GET', `/campaigns/${encodeURIComponent(id)}`);
     if (!live.current) return;
+    clearTimeout(timer.current);
     if (!r.ok) {
       setMissing(r.error);
+      setRefreshFailed(true);
+      timer.current = setTimeout(() => void load(), SLOW_POLL_MS);
     } else {
       setMissing('');
+      setRefreshFailed(false);
       setCampaign(r.data);
       noteCampaign(r.data);
       if (r.data.reading) fastSince.current ??= Date.now();
       else fastSince.current = null;
-      clearTimeout(timer.current);
       timer.current = setTimeout(() => void load(), nextPoll({ reading: r.data.reading, fastForMs: fastSince.current ? Date.now() - fastSince.current : 0 }));
     }
   };
@@ -401,10 +414,14 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
   const shipName = (n: CampaignNode) => shipOfChild(n, ships.value)?.name;
   const unreadable = hasUnreadable(campaign.root);
   const kind = kindLabel(campaign.root?.labels);
+  const picked = children.find((c) => c.url === pickedUrl) ?? null;
+  const canStart = !!fleet && fleet.docks.length > 0;
 
   const unfollow = async () => {
+    setUnfollowError('');
     const r = await call<Campaign>('POST', `/campaigns/${campaign.id}/unfollow`);
-    if (r.ok) {
+    if (!r.ok) setUnfollowError(r.error);
+    else {
       setCampaign({ ...campaign, ...r.data, root: r.data.root ?? campaign.root });
       noteCampaign(r.data);
       void refreshCampaigns();
@@ -438,7 +455,7 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
         {campaign.ended ? <span class="pill ended">Ended</span> : null}
         <WorkRepo campaign={campaign} onSaved={(c) => setCampaign({ ...campaign, ...c, root: c.root ?? campaign.root })} />
         {campaign.ended ? null : (
-          <button type="button" class="btn danger" onClick={() => void unfollow()}>
+          <button type="button" class="btn quiet" onClick={() => void unfollow()}>
             Unfollow
           </button>
         )}
@@ -454,6 +471,12 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
       <p class="meta">
         {campaign.reading ? 'Reading the tree…' : campaign.last_read ? `Last read ${when(campaign.last_read)}` : 'Not read yet'}
       </p>
+      {unfollowError ? (
+        <p class="alert" role="alert">
+          {unfollowError}
+        </p>
+      ) : null}
+      {refreshFailed ? <p class="note">Couldn't refresh; showing the last read.</p> : null}
       {campaign.read_error ? (
         <p class="alert" role="alert">
           The last read failed: {campaign.read_error}
@@ -472,7 +495,7 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
               const blockers = (r.node.blockers ?? []).map((b) => b.title || b.url);
               return (
                 <li key={r.node.url}>
-                  <button type="button" class="ti" onClick={() => setPicked(r.node)}>
+                  <button type="button" class="ti" onClick={() => setPickedUrl(r.node.url)}>
                     <span class="mono ti-num">#{r.node.number}</span>
                     <span class="ti-type">{typeLabel(r.node.labels)}</span>
                     <span class="ti-main">
@@ -482,7 +505,10 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
                       </span>
                       {blockers.length > 0 ? <span class="ti-sub">Waits on {blockers.join(', ')}</span> : null}
                     </span>
-                    <span class="ti-state">{stateOf(r, ship, campaign.ended)}</span>
+                    <span class="ti-state">
+                      {stateOf(r, ship, campaign.ended)}
+                      {!['ready', 'underway'].includes(r.node.status ?? '') && r.node.mode ? <span class="ti-mode">{r.node.mode === 'with-you' ? 'with you' : 'without you'}</span> : null}
+                    </span>
                   </button>
                 </li>
               );
@@ -494,10 +520,11 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
         <Detail
           campaign={campaign}
           node={picked}
-          onClose={() => setPicked(null)}
+          canStart={canStart}
+          onClose={() => setPickedUrl('')}
           onLaunch={(anyway) => {
             setLaunching({ node: picked, anyway });
-            setPicked(null);
+            setPickedUrl('');
           }}
           onSaved={(c) => {
             setCampaign({ ...campaign, ...c, root: c.root ?? campaign.root });

@@ -262,7 +262,7 @@ function Panel({ surface, title, phone }: { surface: Surface; title: boolean; ph
   if (surface.id === 'ships') return <ShipsPanel surface={surface} title={title} />;
   if (surface.id === 'campaigns') {
     const id = campaignOf(loc.value.path);
-    return id ? <CampaignPage id={id} title={title} /> : <CampaignsList phone={!!phone} title={title} />;
+    return id ? <CampaignPage key={id} id={id} title={title} /> : <CampaignsList phone={!!phone} title={title} />;
   }
   return <EmptyState surface={surface} title={title} />;
 }

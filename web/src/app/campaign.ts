@@ -141,6 +141,27 @@ export function typeLabel(labels: string[] | undefined): string {
   return t ? t.charAt(0).toUpperCase() + t.slice(1) : 'Task';
 }
 
+const sameSkill = (a: SkillView | undefined, b: SkillView | undefined) => {
+  const n = (s: SkillView | undefined) => ({ kind: s?.kind || 'none', name: s?.name ?? '', args: s?.args ?? '' });
+  return JSON.stringify(n(a)) === JSON.stringify(n(b));
+};
+
+/** The override to save: only the parts that differ from the child's defaults, so an untouched part keeps following the labels. Neither differing clears it. */
+export function overrideBody(node: CampaignNode, mode: Mode, skill: SkillView): { child_url: string; mode: Mode | ''; skill?: SkillView } {
+  const skillDiffers = !sameSkill(skill, node.default_skill);
+  return { child_url: node.url, mode: mode !== node.default_mode ? mode : '', ...(skillDiffers && { skill }) };
+}
+
+/** A link target safe to put in an href: only http and https pass. */
+export function safeHref(url: string): string | null {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
 export type BlockerLine = { kind: 'link'; text: string; url: string } | { kind: 'note'; text: string };
 
 export function blockerLine(b: Blocker): BlockerLine {

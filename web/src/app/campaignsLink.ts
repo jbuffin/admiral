@@ -1,6 +1,7 @@
 import { effect, signal } from '@preact/signals';
 import { call } from './api';
 import type { Campaign } from './campaign';
+import { rememberFleet } from './fleets';
 import { campaignPath, go } from './router';
 import { ships } from './shipsLink';
 
@@ -27,6 +28,7 @@ export async function followReference(reference: string): Promise<string | null>
   const r = await call<Campaign>('POST', '/campaigns', { reference });
   if (!r.ok) return r.error;
   noteCampaign(r.data);
+  rememberFleet(r.data.fleet);
   go(campaignPath(r.data.id), `?fleet=${encodeURIComponent(r.data.fleet)}`);
   return null;
 }

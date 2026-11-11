@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Ship } from './api';
-import { blockerLine, campaignMeta, childShipsKey, groupChildren, kindLabel, modeLabel, nextPoll, pasteHint, shipOfChild, skillLabel, statusLabel, typeLabel, type CampaignNode } from './campaign';
+import { blockerLine, campaignMeta, childShipsKey, groupChildren, kindLabel, modeLabel, nextPoll, pasteHint, overrideBody, safeHref, shipOfChild, skillLabel, statusLabel, typeLabel, type CampaignNode } from './campaign';
 
 const url = (n: number) => `https://github.com/acme/widgets/issues/${n}`;
 const child = (n: number, status: CampaignNode['status'], mode: CampaignNode['mode'] = 'with-you', extra: Partial<CampaignNode> = {}): CampaignNode => ({
@@ -144,6 +144,29 @@ describe('nextPoll', () => {
   });
   it('polls every 60 seconds when no read is in progress', () => {
     expect(nextPoll({ reading: false, fastForMs: 0 })).toBe(60_000);
+  });
+});
+
+describe('overrideBody', () => {
+  const node = child(21, 'ready', 'with-you', { default_mode: 'without-you', default_skill: { kind: 'commodore', name: '', args: '' } });
+  const same = { kind: 'commodore' as const, name: '', args: '' };
+  it('sends only the mode when the skill is the default', () => {
+    expect(overrideBody(node, 'with-you', same)).toEqual({ child_url: url(21), mode: 'with-you' });
+  });
+  it('sends only the skill when the mode is the default', () => {
+    const skill = { kind: 'skill' as const, name: 'wayfinder', args: '' };
+    expect(overrideBody(node, 'without-you', skill)).toEqual({ child_url: url(21), mode: '', skill });
+  });
+  it('clears the override when nothing differs from the defaults', () => {
+    expect(overrideBody(node, 'without-you', same)).toEqual({ child_url: url(21), mode: '' });
+  });
+});
+
+describe('safeHref', () => {
+  it('passes http and https and nothing else', () => {
+    expect(safeHref('https://github.com/a/b/issues/1')).toBe('https://github.com/a/b/issues/1');
+    expect(safeHref('javascript:alert(1)')).toBeNull();
+    expect(safeHref('not a url')).toBeNull();
   });
 });
 
