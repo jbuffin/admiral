@@ -86,17 +86,20 @@ test('a double tap on Allow once posts one answer', async ({ page, admiral }) =>
   setState(admiral, ship, 'needs_you');
   await open(page, admiral, ship);
   let posts = 0;
+  let answered!: () => void;
+  const done = new Promise<void>((r) => (answered = r));
   await page.route('**/api/v1/ships/*/answer', async (route) => {
     posts++;
     await new Promise((r) => setTimeout(r, 300));
     await route.fulfill({ status: 200, contentType: 'application/json', body: '{"answered":true}' });
+    answered();
   });
   await button(page, 'Allow once').evaluate((el: HTMLElement) => {
     el.click();
     el.click();
   });
   await expect(button(page, 'Allow once')).toBeDisabled();
-  await page.waitForTimeout(600);
+  await done;
   expect(posts).toBe(1);
 });
 
