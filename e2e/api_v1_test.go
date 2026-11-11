@@ -35,6 +35,7 @@ func sameAnswer(t *testing.T, what string, old, v1 *http.Response, oldBody, v1Bo
 // AC1: the page socket answers on /ws/v1 (the exact path, no trailing slash)
 // as it does on /ws, any method included, and the Origin rule carries over.
 func TestAPIv1_PageSocketAndOrigin(t *testing.T) {
+	t.Parallel()
 	in := startAdmiral(t, newHome(t), "127.0.0.1:0")
 
 	t.Run("/ws/v1 sends hello", func(t *testing.T) {
@@ -85,6 +86,7 @@ var semver = regexp.MustCompile(`^v?\d+\.\d+\.\d+`)
 // AC2: GET /api/version names the build, the API versions and the server
 // features, and is never cached.
 func TestAPIVersion_NamesBuildAndFeatures(t *testing.T) {
+	t.Parallel()
 	in := startAdmiral(t, newHome(t), "127.0.0.1:0")
 	resp, body := get(t, in.LocalURL+"/api/version", nil)
 	if resp.StatusCode != 200 {
@@ -137,6 +139,7 @@ func TestAPIVersion_NamesBuildAndFeatures(t *testing.T) {
 // AC2 and AC1: over the LAN address, /api/version and /api/v1/… need exactly
 // the access /api/… needs.
 func TestAPIv1_AccessParityOverTheLAN(t *testing.T) {
+	t.Parallel()
 	in := startLAN(t)
 	base := in.lanURL()
 	cookie := map[string]string{"Cookie": in.cookieName() + "=" + in.Token}
@@ -168,6 +171,7 @@ func TestAPIv1_AccessParityOverTheLAN(t *testing.T) {
 // with "api":1 and with no api; an unsupported or wrong-typed api gets an
 // error frame and a 1008 close, on either path and on every join.
 func TestBridgeJoin_APIVersion(t *testing.T) {
+	t.Parallel()
 	w := liveFleet(t, "lines 3")
 	w.start()
 	s := w.launchIn("f", "claude", "apiv1")

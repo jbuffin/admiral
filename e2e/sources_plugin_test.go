@@ -18,6 +18,7 @@ import (
 // The handshake Admiral sends, what the plugin may do, and the rules that a
 // GET never touches a plugin and Admiral pulls on refresh.
 func TestSourceHandshakeAndRefresh(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	p := w.newTP("a")
 	p.mainOrders(ord("o1", "First"), ord("o2", "Second"))
@@ -95,6 +96,7 @@ func TestSourceHandshakeAndRefresh(t *testing.T) {
 
 // A plugin answering another protocolVersion puts its source in error.
 func TestSourceProtocolVersionMismatch(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	p := w.newTP("a")
 	w.startSources(tpSource("a", p, map[string]any{"protocolVersion": 2}))
@@ -102,11 +104,7 @@ func TestSourceProtocolVersionMismatch(t *testing.T) {
 	if s.errText() == "" {
 		t.Errorf("source = %s, want an error message", dump(s))
 	}
-	// no backoff loop: it stays down until Restart
-	time.Sleep(3 * time.Second)
-	if n := len(p.starts()); n != 1 {
-		t.Errorf("an incompatible plugin was started %d times, want once until Restart", n)
-	}
+	holdThat(t, "an incompatible plugin was started again before Restart", func() bool { return len(p.starts()) == 1 })
 	w.mustOK(w.srcReq(http.MethodPost, "/a/restart", nil))
 	p.waitStarts(3*time.Second, 2)
 }
@@ -114,7 +112,9 @@ func TestSourceProtocolVersionMismatch(t *testing.T) {
 // A panels.list that hangs after the source is up is a crash, like a hung
 // initialize: the process is killed and started again.
 func TestSourceHungPanelsList(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
+	w.extra = append(w.extra, "ADMIRAL_CALL_TIMEOUT="+shortCall.String())
 	p := w.newTP("a")
 	p.mainOrders(ord("o1", "First"))
 	w.startSources(tpSource("a", p, nil))
@@ -134,6 +134,7 @@ func TestSourceHungPanelsList(t *testing.T) {
 
 // What a plugin sends is untrusted: urls, repos, ids, titles and sizes.
 func TestSourceUntrustedOrders(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	p := w.newTP("a")
 	w.startSources(tpSource("a", p, nil))
@@ -195,6 +196,7 @@ func TestSourceUntrustedOrders(t *testing.T) {
 // auth.required shows on the source with its message, a safe url and the code;
 // auth.ok clears it.
 func TestSourceAuth(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	p := w.newTP("a")
 	w.startSources(tpSource("a", p, nil))
@@ -228,6 +230,7 @@ func TestSourceAuth(t *testing.T) {
 // S4: a crash keeps the last orders, goes read-only, refuses mutations, backs
 // off with growing gaps and restarts at once on request.
 func TestSourceCrashRecovery(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	p := w.newTP("a")
 	p.mainOrders(ord("o1", "First"), ord("o2", "Second"))
@@ -296,16 +299,13 @@ func TestSourceCrashRecovery(t *testing.T) {
 	if got := w.configSources(); len(got) != 0 {
 		t.Errorf("config sources after the delete = %v, want none", got)
 	}
-	time.Sleep(1500 * time.Millisecond)
 	stopped := len(p.starts())
-	time.Sleep(2500 * time.Millisecond)
-	if n := len(p.starts()); n != stopped {
-		t.Errorf("a deleted source was started again (%d starts, then %d)", stopped, n)
-	}
+	holdThat(t, "a deleted source was started again", func() bool { return len(p.starts()) == stopped })
 }
 
 // A crash before panels.list still shows the source's error and Restart.
 func TestSourceCrashBeforePanels(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	p := w.newTP("a")
 	p.mainOrders(ord("o1", "First"))
@@ -327,6 +327,7 @@ func TestSourceCrashBeforePanels(t *testing.T) {
 // S4: a launch from a crashed (read-only) source works; its orders.launched is
 // delivered after the source next initializes.
 func TestLaunchFromCrashedSource(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	p := w.newTP("a")
 	p.mainOrders(map[string]any{"id": "o1", "title": "Title one", "text": "The whole\ntext of one"})
@@ -353,6 +354,7 @@ func TestLaunchFromCrashedSource(t *testing.T) {
 // S4: a ship hides its order while it exists, anchored or underway, and the
 // order shows again once the ship is gone; orders.launched tells the plugin.
 func TestHiddenOrdersByShips(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	p := w.newTP("a")
 	p.mainOrders(ord("o1", "First"), ord("o2", "Second"), ord("o3", "Third"))
@@ -377,11 +379,13 @@ func TestHiddenOrdersByShips(t *testing.T) {
 	w.waitSource("a", 10*time.Second, "o2 shown again once its ship is gone", func(s sourceJSON) bool { return s.hasOrder("o2") })
 }
 
-// S4: a request that gets no answer fails after about 10 s; a hung initialize
-// counts as a crash.
+// S4: a request that gets no answer fails after the call timeout; a hung
+// initialize counts as a crash.
 func TestSourceHungRequests(t *testing.T) {
+	t.Parallel()
 	t.Run("a hung request only fails that call", func(t *testing.T) {
 		w := newWorld(t)
+		w.extra = append(w.extra, "ADMIRAL_CALL_TIMEOUT="+shortCall.String())
 		p := w.newTP("a")
 		p.mainOrders(ord("o1", "First"))
 		w.startSources(tpSource("a", p, nil))
@@ -389,13 +393,13 @@ func TestSourceHungRequests(t *testing.T) {
 		pid := p.pid()
 		p.put("hang-orders.refresh", "")
 		began := time.Now()
-		code, body := w.srcReqPatient(http.MethodPost, "/a/refresh", map[string]any{})
+		code, body := w.srcReq(http.MethodPost, "/a/refresh", map[string]any{})
 		took := time.Since(began)
 		if code/100 == 2 || code == http.StatusConflict {
 			t.Errorf("refresh of a hung plugin = %d %s, want a failure that is not 2xx or 409", code, body)
 		}
-		if took < 9*time.Second || took > 16*time.Second {
-			t.Errorf("the hung refresh failed after %s, want about 10 s", took)
+		if took < shortCall-time.Second || took > shortCall+3*time.Second {
+			t.Errorf("the hung refresh failed after %s, want about %s", took, shortCall)
 		}
 		s, _ := find(w.sources(), "a")
 		if s.State != "ok" || s.ReadOnly || !p.alive(pid) {
@@ -407,6 +411,7 @@ func TestSourceHungRequests(t *testing.T) {
 	})
 	t.Run("a hung initialize is a crash", func(t *testing.T) {
 		w := newWorld(t)
+		w.extra = append(w.extra, "ADMIRAL_CALL_TIMEOUT="+shortCall.String())
 		p := w.newTP("a")
 		p.put("hang-initialize", "")
 		w.startSources(tpSource("a", p, nil))
@@ -424,6 +429,7 @@ func TestSourceHungRequests(t *testing.T) {
 
 // A slow initialize shows the source as starting until it answers.
 func TestSourceSlowInitialize(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	p := w.newTP("a")
 	p.put("slow-initialize", "2")
@@ -435,6 +441,7 @@ func TestSourceSlowInitialize(t *testing.T) {
 // A garbage line or an oversized line is a protocol error, and Admiral keeps
 // running.
 func TestSourceProtocolErrors(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	p := w.newTP("a")
 	p.mainOrders(ord("o1", "First"))
@@ -465,6 +472,7 @@ func TestSourceProtocolErrors(t *testing.T) {
 // saving one's settings restarts only it; hand edits and the API start and
 // stop sources; a removed source keeps its data dir and its key is not reused.
 func TestTwoSourcesOfOnePlugin(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	a, b, c, d := w.newTP("a"), w.newTP("b"), w.newTP("c"), w.newTP("d")
 	a.mainOrders(ord("a1", "From A"))
@@ -555,6 +563,7 @@ func TestTwoSourcesOfOnePlugin(t *testing.T) {
 // S6: orders.changed and panels.changed reach a connected client with no
 // refresh call.
 func TestSourcePushNotifications(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	p := w.newTP("a")
 	w.startSources(tpSource("a", p, nil))
@@ -586,6 +595,7 @@ func TestSourcePushNotifications(t *testing.T) {
 // Launch orders asks the server for directories with a source and an order:
 // the server looks the order's repo up itself (story 60).
 func TestLaunchOrdersDirsFromSource(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	p := w.newTP("a")
 	p.mainOrders(map[string]any{"id": "o1", "title": "Widgets", "repo": "https://github.com/acme/widgets"})
@@ -611,6 +621,7 @@ func TestLaunchOrdersDirsFromSource(t *testing.T) {
 // Story 17 (issue #65): an orders.list error shows on its panel, which keeps
 // its last orders. The next successful orders.list clears it.
 func TestSourceOrdersListErrorShowsOnPanel(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	p := w.newTP("a")
 	p.put("panels.json", `[{"id":"one","title":"One"},{"id":"two","title":"Two"}]`)

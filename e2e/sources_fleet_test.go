@@ -27,6 +27,7 @@ func (w *world) addTestSource(req map[string]any) (int, string) {
 }
 
 func TestAddSourceTakesAFleet(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.installPlugin("testplug", "testplug")
 	writeConfig(t, w.home, w.fleetsOnly(`{}`))
@@ -66,6 +67,7 @@ func TestAddSourceTakesAFleet(t *testing.T) {
 }
 
 func TestAddSourceWithNoFleetsIsRefused(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.installPlugin("testplug", "testplug")
 	writeConfig(t, w.home, `{"version":1,"fleets":{},"sources":{}}`)
@@ -85,6 +87,7 @@ func TestAddSourceWithNoFleetsIsRefused(t *testing.T) {
 }
 
 func TestSettingsSaveKeepsEverySourcesFleet(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.installPlugin("testplug", "testplug")
 	a, b := w.newTP("sa"), w.newTP("sb")

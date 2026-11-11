@@ -37,6 +37,7 @@ func (w *world) noForgedBoat(t *testing.T, victim string) {
 }
 
 func TestCrewNamesAreNotForged(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.cueFleets(map[string][]string{"one": {"hook working", "wait go", "exit 1"}})
 	w.start()

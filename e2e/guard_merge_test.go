@@ -104,6 +104,7 @@ func protectionJSON(count string, dismiss, enforceAdmins bool, bypass string) st
 // bypass; then classic protection with the same, enforced on admins; anything
 // else, or any failure, refuses.
 func TestGuardAutoMergeLookupAgainstGitHub(t *testing.T) {
+	t.Parallel()
 	type answer struct {
 		status int
 		body   string
@@ -206,6 +207,7 @@ func TestGuardAutoMergeLookupAgainstGitHub(t *testing.T) {
 // The owner, repo and base come from what gh pr view returns for the URL the
 // command names, and the REST calls carry them in the endpoint.
 func TestGuardAutoMergeLookupUsesTheResolvedPR(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	g := w.newFakeGH()
 	const ghe = "https://ghe.example.com/acme/widgets/pull/12"
@@ -235,6 +237,7 @@ func TestGuardAutoMergeLookupUsesTheResolvedPR(t *testing.T) {
 // rather than waited for: Claude Code would otherwise end the hook with
 // onFailure block only after the full ten seconds, with the gh left running.
 func TestGuardAutoMergeLookupTimesOut(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	g := w.newFakeGH()
 	g.write("pr_view.json", prViewWidgets)

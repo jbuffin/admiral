@@ -23,6 +23,7 @@ const (
 
 // A5: nothing the harness sends can make `admiral hook` fail, block or write.
 func TestHookNeverFails(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	for _, c := range []struct{ name, event, payload, pane string }{
 		{"empty stdin", "Stop", "", "%7"},
@@ -50,6 +51,7 @@ func TestHookNeverFails(t *testing.T) {
 
 // A11: `hook` is internal, so no help text names it.
 func TestHookIsNotListed(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	r := w.admiral("nosuchcommand", "--help")
 	w.expectExit(r, 0, "admiral nosuchcommand --help")

@@ -48,6 +48,7 @@ func sail(t *testing.T, w *world, repo string, cues ...string) shipJSON {
 }
 
 func TestU12_S4_ShipsAndAttach(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.start()
 	live := sail(t, w, "alpha", "hook working")

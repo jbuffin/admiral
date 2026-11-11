@@ -296,6 +296,7 @@ func crewIs(name, status string) func(apiShip) bool {
 // ---- AC6: the shape on the wire ----
 
 func TestCrewAPI_Shape(t *testing.T) {
+	t.Parallel()
 	w := newCrewAPIWorld(t)
 	a, aPane := w.crewShip("zero", "alpha")
 	b, _ := w.crewShip("zero", "beta") // a ship with no crew
@@ -381,6 +382,7 @@ func TestCrewAPI_Shape(t *testing.T) {
 // ---- the reader rules for @admiral-subagents ----
 
 func TestCrewAPI_SubagentReaderRules(t *testing.T) {
+	t.Parallel()
 	w := newCrewAPIWorld(t)
 	s, pane := w.crewShip("zero", "alpha")
 	const t1, t2 = "2026-10-24T10:00:00Z", "2026-10-24T10:05:00Z"
@@ -418,6 +420,7 @@ func TestCrewAPI_SubagentReaderRules(t *testing.T) {
 // ---- AC-inbox: a crew boat needing you ----
 
 func TestCrewAPI_InboxCountsCrew(t *testing.T) {
+	t.Parallel()
 	w := newCrewAPIWorld(t)
 	s, shipPane := w.crewShip("one", "alpha")
 	scout := w.crewBoat(s.Session, "scout", "claude")
@@ -449,11 +452,10 @@ func TestCrewAPI_InboxCountsCrew(t *testing.T) {
 	if st := w.opt(shipPane, "@admiral-state"); st != "working" {
 		t.Errorf("ship pane @admiral-state = %q, want working: the wire status never writes the pane", st)
 	}
-	time.Sleep(1100 * time.Millisecond)
-	again := w.waitShip(s.Session, "the ship still needing you", func(x apiShip) bool { return true })
-	if again.Status != "needs_you" || again.Reason != "crew" || again.StopSince != got.StopSince {
-		t.Errorf("a second later: %s %s since %q, want needs_you crew since %q (never now)", again.Status, again.Reason, again.StopSince, got.StopSince)
-	}
+	holdThat(t, "the ship stopped needing you for its crew, or its stop_since moved (it must never be now)", func() bool {
+		again := w.waitShip(s.Session, "the ship", func(apiShip) bool { return true })
+		return again.Status == "needs_you" && again.Reason == "crew" && again.StopSince == got.StopSince
+	})
 
 	// input-seen on the ship leaves both panes alone.
 	code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/ships/"+s.Session+"/input-seen", nil)
@@ -503,6 +505,7 @@ func TestCrewAPI_InboxCountsCrew(t *testing.T) {
 // ---- closing one crew boat ----
 
 func TestCrewAPI_CloseRoute(t *testing.T) {
+	t.Parallel()
 	w := newCrewAPIWorld(t)
 	s, _ := w.crewShip("zero", "alpha")
 	live := w.crewBoat(s.Session, "live", "claude")
@@ -567,6 +570,7 @@ func TestCrewAPI_CloseRoute(t *testing.T) {
 // ---- AC5: ending with the ship ----
 
 func TestCrewAPI_Ending(t *testing.T) {
+	t.Parallel()
 	w := newCrewAPIWorld(t)
 
 	t.Run("a crew boat that exits alone anchors and never ends the ship", func(t *testing.T) {
@@ -578,7 +582,7 @@ func TestCrewAPI_Ending(t *testing.T) {
 
 		w.releaseGo(s.Session, "a") // exit 0, alone
 		w.waitShip(s.Session, "a anchored on the wire", crewIs("a", "anchored"))
-		time.Sleep(4 * time.Second) // longer than SailOffDelay (3 s)
+		time.Sleep(sailOff + 500*time.Millisecond)
 		now := w.waitShip(s.Session, "the ship", func(apiShip) bool { return true })
 		if now.Status != "underway" || !w.hasSession(s.Session) {
 			t.Errorf("after a crew boat exited 0 the ship is %q (session alive: %v), want underway and alive", now.Status, w.hasSession(s.Session))
@@ -621,6 +625,7 @@ func TestCrewAPI_Ending(t *testing.T) {
 // ---- AC7: restart ----
 
 func TestCrewAPI_RestartKeepsCrew(t *testing.T) {
+	t.Parallel()
 	w := newCrewAPIWorld(t)
 	s, shipPane := w.crewShip("zero", "alpha")
 	scout := w.crewBoat(s.Session, "scout", "claude")

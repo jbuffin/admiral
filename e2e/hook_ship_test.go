@@ -15,6 +15,7 @@ import (
 // each `event` cue with the cue's payload on stdin.
 
 func TestShipHookRunsBundleCommand(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	// A stale link from an earlier build: every start must point it at the running binary.
 	if err := os.MkdirAll(filepath.Join(w.home, "bin"), 0o700); err != nil {
@@ -106,6 +107,7 @@ func TestShipHookRunsBundleCommand(t *testing.T) {
 // fixed order, and the permission reason survives either; the next working
 // event clears it; nothing of the payload but the tool name is stored.
 func TestShipHookReason(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	const secret = "Drop the production database?"
 	w.writeCue(

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/delay"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
@@ -16,13 +17,13 @@ const (
 	StatusSailingOff = "sailing_off"
 )
 
-const (
+var (
 	// NoHookWait is how long a launched ship may go without any hook before it
 	// counts as needing you (ADR 0007).
-	NoHookWait = 10 * time.Second
+	NoHookWait = delay.From("ADMIRAL_NO_HOOK_WAIT", 10*time.Second)
 	// SailOffDelay is how long an exit-0 ship shows sailing_off before its
 	// session is killed.
-	SailOffDelay = 3 * time.Second
+	SailOffDelay = delay.From("ADMIRAL_SAIL_OFF_DELAY", 3*time.Second)
 )
 
 // exitedCleanly is true for a ship whose process ended with status 0.

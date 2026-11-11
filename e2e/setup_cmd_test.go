@@ -58,6 +58,7 @@ func (w *world) answers(t *testing.T, fleets ...string) string {
 func (w *world) fakeExe2(h string) string { return filepath.Join(fakeDir(w.t), h) }
 
 func TestU12_S1_SetupUnattended(t *testing.T) {
+	t.Parallel()
 	t.Run("writes the fleets, detects without reading inside identity directories", func(t *testing.T) {
 		w := setupWorld(t)
 		wrappers := filepath.Join(w.root, "wrappers")
@@ -309,6 +310,7 @@ func TestU12_S1_SetupUnattended(t *testing.T) {
 
 // Exit codes: 0 ok, 1 error, 2 usage.
 func TestU12_ExitCodes(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.expectExit(w.admiral("nosuchcommand"), 2, "an unknown command")
 	w.expectExit(w.admiral("setup", "--yes"), 2, "--yes without --answers")
@@ -327,6 +329,7 @@ func TestU12_ExitCodes(t *testing.T) {
 // a tmux pane; without one (launchd, the other e2e tests) the server just
 // starts, which every other test already relies on.
 func TestU12_NoFleetsOffersSetupOnATerminal(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	sock := filepath.Join(w.root, "p")
 	tmux := func(args ...string) string {

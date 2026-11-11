@@ -41,6 +41,7 @@ func (in *fleetInst) urlOf(t *testing.T, session string) (string, bool) {
 // from the order lookup, never from the launch request. The ship's title is the
 // order's title even when the order's text is only its URL, as GitHub's is.
 func TestShipKeepsItsOrdersURL(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	p := w.newTP("a")
 	p.mainOrders(

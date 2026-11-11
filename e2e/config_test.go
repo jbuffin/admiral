@@ -169,6 +169,7 @@ func fleetKeys(keys ...string) func(cfgBody) bool {
 // a connected client within ~2 s, with no restart; deleting the file keeps the
 // last good fleets and sets the error.
 func TestConfigS2_LiveReload(t *testing.T) {
+	t.Parallel()
 	home := newHome(t)
 	writeConfig(t, home, withVersion(`"one":{"name":"One"}`))
 	in := startAdmiral(t, home, "127.0.0.1:0")
@@ -205,6 +206,7 @@ func TestConfigS2_LiveReload(t *testing.T) {
 // including a rename-over in the target's directory and the target being
 // deleted and recreated.
 func TestConfigS2_SymlinkedConfigFollowsTarget(t *testing.T) {
+	t.Parallel()
 	home := newHome(t)
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		t.Fatal(err)

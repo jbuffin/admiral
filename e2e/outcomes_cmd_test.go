@@ -43,6 +43,7 @@ func seedOutcomes(w *world) {
 func outLines(ls ...string) string { return strings.Join(ls, "\n") + "\n" }
 
 func TestOutcomesCommand(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	seedOutcomes(w)
 

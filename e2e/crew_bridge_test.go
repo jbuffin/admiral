@@ -110,6 +110,7 @@ func (w *world) dialCrew(t *testing.T, session, crew string, cols, rows int) (*b
 }
 
 func TestCrewBridge(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.cueFleets(map[string][]string{"one": {"hook working", "wait go", "exit 1"}})
 	w.start()
@@ -379,6 +380,7 @@ func TestCrewBridge(t *testing.T) {
 // client, which detaches after the last browser has left the ship and all its crew
 // boats, and a crew-first attach leaves the ship's window at its size.
 func TestCrewBridgeSharesOneControlClient(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.extra = append(w.extra, "ADMIRAL_BRIDGE_IDLE=1s")
 	w.cueFleets(map[string][]string{"one": {"hook working", "wait go", "exit 1"}})
@@ -408,10 +410,9 @@ func TestCrewBridgeSharesOneControlClient(t *testing.T) {
 		t.Errorf("a ship bridge and a crew bridge open: %d control clients (%v), want 1", len(got), got)
 	}
 	sb.close()
-	time.Sleep(1500 * time.Millisecond)
-	if got := w.controlClients(ship.Session); len(got) != 1 {
-		t.Errorf("the crew bridge is still open: %d control clients, want the shared one", len(got))
-	}
+	holdThat(t, "closing the ship bridge with the crew bridge open did not leave one shared control client", func() bool {
+		return len(w.controlClients(ship.Session)) == 1
+	})
 	scout.close()
 	deadline := time.Now().Add(6 * time.Second)
 	for len(w.controlClients(ship.Session)) != 0 {

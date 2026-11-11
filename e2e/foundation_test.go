@@ -17,6 +17,7 @@ var tokenFormat = regexp.MustCompile(`^[A-Za-z0-9_-]{22,}$`) // >= 128 bits, URL
 // S1: the binary starts, prints both URLs with the real port, and serves the
 // embedded UI with its assets.
 func TestS1_StartsPrintsURLsAndServesUI(t *testing.T) {
+	t.Parallel()
 	home := newHome(t)
 	in := startAdmiral(t, home, "127.0.0.1:0")
 
@@ -78,6 +79,7 @@ func TestS1_StartsPrintsURLsAndServesUI(t *testing.T) {
 
 // S2: non-local requests need the token; ?token= sets the cookie and redirects.
 func TestS2_NonLocalNeedsToken(t *testing.T) {
+	t.Parallel()
 	in := startLAN(t)
 	base := in.lanURL()
 
@@ -140,6 +142,7 @@ func TestS2_NonLocalNeedsToken(t *testing.T) {
 
 // S3: local requests need no token.
 func TestS3_LocalNeedsNoToken(t *testing.T) {
+	t.Parallel()
 	in := startAdmiral(t, newHome(t), "127.0.0.1:0")
 	if resp, _ := get(t, in.LocalURL+"/", nil); resp.StatusCode != 200 {
 		t.Fatalf("local GET / = %d, want 200", resp.StatusCode)
@@ -151,6 +154,7 @@ func TestS3_LocalNeedsNoToken(t *testing.T) {
 
 // S4: the token survives a restart. The file half needs no LAN address.
 func TestS4_TokenFileSurvivesRestart(t *testing.T) {
+	t.Parallel()
 	in := startAdmiral(t, newHome(t), "127.0.0.1:"+freePort(t))
 	read := func() string {
 		b, err := os.ReadFile(filepath.Join(in.Home, "token"))
@@ -171,6 +175,7 @@ func TestS4_TokenFileSurvivesRestart(t *testing.T) {
 
 // S4: over the LAN address, the old cookie keeps working after a restart.
 func TestS4_CookieSurvivesRestart(t *testing.T) {
+	t.Parallel()
 	in := startLAN(t)
 	cookie := map[string]string{"Cookie": in.cookieName() + "=" + in.Token}
 	if resp, _ := get(t, in.lanURL()+"/", cookie); resp.StatusCode != 200 {
@@ -189,6 +194,7 @@ func TestS4_CookieSurvivesRestart(t *testing.T) {
 // S5: the WebSocket at /ws follows the same access rules plus the Origin and
 // Host hardening.
 func TestS5_WebSocketAccess(t *testing.T) {
+	t.Parallel()
 	in := startAdmiral(t, newHome(t), "0.0.0.0:"+freePort(t))
 	type hello struct {
 		Type    string `json:"type"`
@@ -256,6 +262,7 @@ func TestS5_WebSocketAccess(t *testing.T) {
 
 // S6: two instances side by side keep separate tokens.
 func TestS6_TwoInstancesSideBySide(t *testing.T) {
+	t.Parallel()
 	a := startAdmiral(t, newHome(t), "127.0.0.1:0")
 	b := startAdmiral(t, newHome(t), "127.0.0.1:0")
 	if a.Port == b.Port {

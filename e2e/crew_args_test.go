@@ -13,6 +13,7 @@ import (
 // test shares FAKE_CUE, so each boat's argv is read only after its record.
 
 func TestCrew_LaunchArgsAndRole(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.writeCue("hook working")
 	w.start()

@@ -33,8 +33,12 @@ lint-docs:
 	web/node_modules/.bin/markdownlint-cli2 $(DOCS)
 	cd web && node_modules/.bin/remark --frail --quiet --no-stdout --use remark-validate-links $(addprefix ../,$(DOCS))
 
+# The Go e2e tests run in parallel, E2E_PARALLEL at a time (each starts its
+# own Admiral and tmux server; four suit a Mac).
+E2E_PARALLEL ?= 4
+
 e2e: build
-	go test -count=1 ./e2e/...
+	go test -count=1 -parallel $(E2E_PARALLEL) ./e2e/...
 	npm --prefix web run e2e
 
 # What the macOS workflow and the release run: the Go e2e tests, the packaging
@@ -42,7 +46,7 @@ e2e: build
 # browser journeys. The macOS runner's virtual GPU resets under WebKit about 40
 # times a minute, so the full suite flakes there; it runs locally before a push.
 e2e-critical: build
-	go test -count=1 -tags packaging ./e2e/...
+	go test -count=1 -parallel $(E2E_PARALLEL) -tags packaging ./e2e/...
 	npm --prefix web run e2e -- --grep @critical
 
 # The release: a clean UI build, the darwin/arm64 binary stamped with the

@@ -72,16 +72,57 @@ func binaryPath(t *testing.T) string {
 	return p
 }
 
+// Parallel tests each pick a port and listen on it later, so a port is handed
+// out once per run.
+var (
+	portsMu sync.Mutex
+	ports   = map[string]bool{}
+)
+
 func freePort(t *testing.T) string {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	portsMu.Lock()
+	defer portsMu.Unlock()
+	for {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, port, _ := net.SplitHostPort(l.Addr().String())
+		l.Close()
+		if !ports[port] {
+			ports[port] = true
+			return port
+		}
 	}
-	defer l.Close()
-	_, port, _ := net.SplitHostPort(l.Addr().String())
-	return port
 }
+
+// hold is how long a test watches for something that must not happen: three
+// of the server's 500 ms polls. Anything that does happen is polled for instead.
+const hold = 1500 * time.Millisecond
+
+// holdThat polls check for the length of hold and fails the test with msg the
+// first time it does not hold.
+func holdThat(t *testing.T, msg string, check func() bool) {
+	t.Helper()
+	end := time.Now().Add(hold)
+	for time.Now().Before(end) {
+		if !check() {
+			t.Fatalf("%s", msg)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// sailOff is the SailOffDelay every Admiral in the suite runs with (3 s in
+// production). fastDelays carries it; a test sets its own through world.extra.
+const sailOff = time.Second
+
+// shortCall is the plugin call timeout (10 s in production) a test of a hung
+// plugin sets through world.extra.
+const shortCall = 3 * time.Second
+
+var fastDelays = []string{"ADMIRAL_SAIL_OFF_DELAY=" + sailOff.String()}
 
 // newHome returns an ADMIRAL_HOME path that does not exist yet, so tests can
 // see the server create it.
@@ -125,7 +166,7 @@ func hermeticEnv(t *testing.T) []string {
 	if os.Getenv("HOME") == userHome {
 		env = append(env, "HOME="+t.TempDir())
 	}
-	return env
+	return append(env, fastDelays...)
 }
 
 // startAdmiral starts bin/admiral --listen <listen> with the given home. It

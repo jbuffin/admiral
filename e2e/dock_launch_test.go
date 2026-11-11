@@ -50,6 +50,7 @@ func (w *world) shipWithTitle(session string) withTitle {
 
 // A3: the text is the prompt as one argument, trimmed, unguarded; the title is its first line.
 func TestDockLaunchPrompt(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.writeCue("exit 3")
 	w.start()
@@ -84,6 +85,7 @@ func TestDockLaunchPrompt(t *testing.T) {
 
 // A4: empty or whitespace-only text starts the harness with no prompt argument.
 func TestDockLaunchWithoutText(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.writeCue("exit 3")
 	w.start()
@@ -123,6 +125,7 @@ func TestDockLaunchWithoutText(t *testing.T) {
 
 // A5: a launch with no order that names a skill is refused, and nothing starts.
 func TestDockLaunchRefusesASkill(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.writeCue("exit 3")
 	w.start()
@@ -144,6 +147,7 @@ func TestDockLaunchRefusesASkill(t *testing.T) {
 
 // A6: a dock launch makes its directory the dock's last one, with or without text.
 func TestDockLaunchRemembersTheDirectory(t *testing.T) {
+	t.Parallel()
 	d := newDataWorld(t)
 	d.writeCue("exit 3")
 	a := d.checkout("la")

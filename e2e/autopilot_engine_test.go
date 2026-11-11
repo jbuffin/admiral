@@ -16,10 +16,7 @@ import (
 // `wait go`, then `exit 0`: touching "go" in its recording directory sails it off.
 //
 // Each test that holds ("nothing launches") first sees something launch or
-// record, so a missing engine fails it. Holds are short and fixed; the engine
-// wakes on every change, so a launch it was going to make shows within a moment.
-
-const hold = 2500 * time.Millisecond
+// record, so a missing engine fails it.
 
 func apEntry(enabled bool, max int, extra map[string]any) map[string]any {
 	e := map[string]any{"enabled": enabled, "fleet": "work", "harness": "claude", "skill": map[string]any{"kind": "none"},
@@ -87,19 +84,6 @@ func (w *world) waitShipCount(d time.Duration, what string, pred func(shipJSON) 
 	})
 }
 
-// holdThat polls check for the length of hold and fails the test with msg the
-// first time it does not hold.
-func holdThat(t *testing.T, msg string, check func() bool) {
-	t.Helper()
-	end := time.Now().Add(hold)
-	for time.Now().Before(end) {
-		if !check() {
-			t.Fatalf("%s", msg)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-}
-
 // sail lets the ship's harness exit: its recording directory exists once the
 // harness has started.
 func (w *world) sail(session string) {
@@ -164,6 +148,7 @@ func (w *world) setPaused(source, panel string, paused bool) {
 // restart keeps the cap: the running ship fills the panel's cap by its
 // @admiral-panel option.
 func TestEngineCapOneLaunchesOneShipAtATime(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.writeCue("wait go", "exit 0")
 	for _, n := range []string{"r1", "r2", "r3"} {
@@ -218,6 +203,7 @@ func TestEngineCapOneLaunchesOneShipAtATime(t *testing.T) {
 // AC 2: two ships launched by hand fill a global cap of 2, so nothing launches;
 // when one leaves, the panel launches its order.
 func TestEngineGlobalCapCountsHandLaunchedShips(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.writeCue("wait go", "exit 0")
 	w.repo("r1", remoteOf("r1"))
@@ -258,6 +244,7 @@ func TestEngineGlobalCapCountsHandLaunchedShips(t *testing.T) {
 // and an order that was launched and has gone is not launched again while it is
 // still listed (AC 4); once it stops being listed and returns, it can be.
 func TestEngineLaunchesEachOrderOncePerListing(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.writeCue("wait go", "exit 0")
 	w.repo("r1", remoteOf("r1"))
@@ -305,6 +292,7 @@ func TestEngineLaunchesEachOrderOncePerListing(t *testing.T) {
 // AC 5, server half: pausing stops new launches and leaves running ships alone,
 // the panel's view says so, and the pause outlives a restart.
 func TestEnginePauseSurvivesARestart(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.writeCue("wait go", "exit 0")
 	w.repo("r1", remoteOf("r1"))
@@ -349,6 +337,7 @@ func TestEnginePauseSurvivesARestart(t *testing.T) {
 
 // The pause route refuses a panel that is unknown or has no autopilot entry.
 func TestEnginePauseRouteRefusesUnknownPanels(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	p := w.newTP("a")
 	p.mainOrders()
@@ -371,6 +360,7 @@ func TestEnginePauseRouteRefusesUnknownPanels(t *testing.T) {
 // never falls back to it. The next order, with a checkout, still launches, and
 // `admiral outcomes` prints the skipped line (which has no ship).
 func TestEngineSkipsAnOrderWithNoMatchingCheckout(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.writeCue("wait go", "exit 0")
 	w.repo("r2", remoteOf("r2"))
@@ -399,10 +389,7 @@ func TestEngineSkipsAnOrderWithNoMatchingCheckout(t *testing.T) {
 	if s, _ := find(w.sources(), "a"); !s.hasOrder("o1") {
 		t.Errorf("o1 is not visible after it was skipped: %s", dump(s))
 	}
-	time.Sleep(hold)
-	if n := len(w.outcomesOf("skipped")); n != 1 {
-		t.Errorf("skipped records = %d, want one per order", n)
-	}
+	holdThat(t, "o1 was skipped a second time", func() bool { return len(w.outcomesOf("skipped")) == 1 })
 
 	out := w.admiral("outcomes").stdout
 	if !strings.Contains(out, `"event":"skipped"`) {
@@ -416,6 +403,7 @@ func TestEngineSkipsAnOrderWithNoMatchingCheckout(t *testing.T) {
 // A launch that fails writes a launch_failed record, leaves the order visible
 // and backs it off: a second try within the 10 minutes would write a second record.
 func TestEngineLaunchFailureWritesARecordAndBacksOff(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.repo("r1", remoteOf("r1"))
 	if err := os.RemoveAll(filepath.Join(w.userHom, ".claude", "skills", "commodore")); err != nil {
@@ -436,10 +424,7 @@ func TestEngineLaunchFailureWritesARecordAndBacksOff(t *testing.T) {
 	if err != nil || time.Until(next) < 9*time.Minute || time.Until(next) > 11*time.Minute {
 		t.Errorf("next_retry = %v (%v), want about 10 minutes from now", rec["next_retry"], err)
 	}
-	time.Sleep(hold)
-	if n := len(w.outcomesOf("launch_failed")); n != 1 {
-		t.Errorf("launch_failed records = %d, want 1 while backed off", n)
-	}
+	holdThat(t, "a second launch_failed was written while the order was backed off", func() bool { return len(w.outcomesOf("launch_failed")) == 1 })
 	if n := len(w.in.ships(t)); n != 0 {
 		t.Errorf("ships = %d, want none", n)
 	}
@@ -451,6 +436,7 @@ func TestEngineLaunchFailureWritesARecordAndBacksOff(t *testing.T) {
 // With several checkouts of the order's repository, autopilot picks the one the
 // launch dialog pre-selects (ADR 0009), not the first.
 func TestEnginePicksTheDirectoryTheDialogPicks(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.writeCue("wait go", "exit 0")
 	remote := remoteOf("proj")
@@ -484,6 +470,7 @@ func TestEnginePicksTheDirectoryTheDialogPicks(t *testing.T) {
 // not the same as its orders being gone: the launched set keeps the order, so
 // it is not launched again when the panel lists it.
 func TestEngineKeepsTheLaunchedSetWhenAPanelFailsToList(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.writeCue("wait go", "exit 0")
 	w.repo("r1", remoteOf("r1"))
@@ -511,6 +498,7 @@ func TestEngineKeepsTheLaunchedSetWhenAPanelFailsToList(t *testing.T) {
 
 // An order autopilot gave up on shows as hot in the sources view and is not launched.
 func TestEngineShowsAGivenUpOrderAsHot(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.repo("r1", remoteOf("r1"))
 	p := w.newTP("a")
@@ -533,6 +521,7 @@ func TestEngineShowsAGivenUpOrderAsHot(t *testing.T) {
 // variable unset, whatever the fleet's env or Admiral's environment says. Admiral
 // owns the variable, as it does ADMIRAL_AUTOPILOT.
 func TestEngineSetsAutoMergeFromThePanel(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		entry map[string]any

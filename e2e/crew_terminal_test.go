@@ -62,6 +62,7 @@ func crewLinesOf(t *testing.T, out, session string) []string {
 }
 
 func TestCrewTerminal(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.cueFleets(map[string][]string{"one": {"hook working", "wait go", "exit 1"}})
 	w.start()

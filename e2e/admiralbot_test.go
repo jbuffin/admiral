@@ -338,6 +338,7 @@ func atomicWrite(t *testing.T, path, content string) {
 // Scenario 1 (C13, reads): every command takes its server from ADMIRAL_PORT, so
 // a chat started on a non-default port reaches that Admiral with no --port.
 func TestAdmiralBot_ReadCommandsFindTheServerByADMIRAL_PORT(t *testing.T) {
+	t.Parallel()
 	c := newBotWorld(t, botOpts{shipCue: []string{"hook needs_you"}, sources: func(w *world) string {
 		p := w.newTP("a")
 		p.put("panels.json", `[{"id":"main","title":"Main"},{"id":"extra","title":"Extra"}]`)
@@ -447,6 +448,7 @@ func TestAdmiralBot_ReadCommandsFindTheServerByADMIRAL_PORT(t *testing.T) {
 // Scenario 2 (C13, the write): `orders add` posts to the server and prints the
 // new order's id; the cases that must not reach the server don't.
 func TestAdmiralBot_OrdersAddIsTheOnlyWrite(t *testing.T) {
+	t.Parallel()
 	var hang *tplug
 	c := newBotWorld(t, botOpts{sources: func(w *world) string {
 		hang = w.newTP("hang")
@@ -456,6 +458,7 @@ func TestAdmiralBot_OrdersAddIsTheOnlyWrite(t *testing.T) {
 			tpSource("hang", hang, map[string]any{"capabilities": []string{"add", "refresh"}}))
 	}})
 	w := c.world
+	w.extra = append(w.extra, "ADMIRAL_CALL_TIMEOUT="+shortCall.String())
 	w.start()
 	w.waitSource("orders", 10*time.Second, "state ok", isOK)
 	w.waitSource("hang", 10*time.Second, "state ok", isOK)
@@ -536,6 +539,7 @@ func (w *world) panelOrders(key string) []string {
 // its env, the skill on disk and the permissions in its bundle. A ship from the
 // same Admiral gets none of it.
 func TestAdmiralBot_ChatSessionIsFenced(t *testing.T) {
+	t.Parallel()
 	c := newBotWorld(t, botOpts{})
 	w := c.world
 	w.start()
@@ -690,6 +694,7 @@ func TestAdmiralBot_ChatSessionIsFenced(t *testing.T) {
 // Scenario 4 (C14): a question goes from `admiral chat ask` through the files
 // and the API to the engineer's answer and back, and the inbox never sees it.
 func TestAdmiralBot_ChatAskRoundTrip(t *testing.T) {
+	t.Parallel()
 	c := newBotWorld(t, botOpts{})
 	w := c.world
 	w.start()
@@ -732,10 +737,7 @@ func TestAdmiralBot_ChatAskRoundTrip(t *testing.T) {
 			t.Errorf("question file = %s, want version 1, the id and kind question", raw)
 		}
 		waitBotWS(t, ws, 5*time.Second, "the question", func(m botSession) bool { return len(m.Questions) == 1 && m.State == "waiting" })
-		time.Sleep(1500 * time.Millisecond)
-		if got := w.rawInbox(); got != inboxBefore {
-			t.Errorf("GET /api/inbox changed with a chat question open\nbefore: %s\nafter:  %s", inboxBefore, got)
-		}
+		holdThat(t, "GET /api/inbox changed with a chat question open", func() bool { return w.rawInbox() == inboxBefore })
 		if _, err := os.Lstat(filepath.Join(w.home, "inbox", "_chat")); err == nil {
 			t.Errorf("inbox/_chat exists: chat questions never go in the inbox")
 		}
@@ -794,6 +796,7 @@ func TestAdmiralBot_ChatAskRoundTrip(t *testing.T) {
 // Scenario 5, the edges that need no server: bad input, the ship refusal, the
 // timeout and --wait, all through the files alone.
 func TestAdmiralBot_ChatAskWorksOnFilesAlone(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	if err := os.MkdirAll(w.home, 0o700); err != nil {
 		t.Fatal(err)
@@ -913,6 +916,7 @@ func TestAdmiralBot_ChatAskWorksOnFilesAlone(t *testing.T) {
 // Scenario 5, New chat: it withdraws every question, answered or not, whether the
 // session is reset or ended and started again.
 func TestAdmiralBot_NewChatWithdrawsChatQuestions(t *testing.T) {
+	t.Parallel()
 	c := newBotWorld(t, botOpts{})
 	w := c.world
 	// New chat needs the chat's transcript recorded (a SessionStart), or it would
@@ -956,6 +960,7 @@ func TestAdmiralBot_NewChatWithdrawsChatQuestions(t *testing.T) {
 // oversized file standing in for an answer are skipped; a real question is
 // served beside them.
 func TestAdmiralBot_ChatQuestionsAreReadDefensively(t *testing.T) {
+	t.Parallel()
 	c := newBotWorld(t, botOpts{})
 	w := c.world
 	w.start()

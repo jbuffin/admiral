@@ -20,7 +20,7 @@ A test earns its place when it would catch a bug a person could hit:
 - Pick one case per distinct rule. Spelling variants of one flag, every bidi code point, every way to write the same argument: one representative each.
 - Test the inputs real callers send. The boundary validates; test it there, and trust the code behind it.
 - Mock only what Admiral doesn't control: `gh`, the network, the clock. Use the real binary, tmux and the fake harness for the rest.
-- Wait on a condition (a file, an API state, a locator), never on a fixed sleep.
+- Wait on a condition (a file, an API state, a locator), never on a fixed sleep. To show that something does not happen, poll it with `holdThat` for `hold` (`e2e/harness_test.go`) after the test has seen what it starts from.
 - A red test describes the behavior it expects. Once the code exists, the test file carries no header spelling out the interface it assumed.
 - Text, class names, colors, layout and focus order are the designs' job. A Playwright test finds elements by role and accessible name, and asserts what the person sees happen.
 
@@ -29,6 +29,17 @@ Playwright drives the new shell at `/app/` only; the old UI is frozen and has no
 ## How the tests are set up
 
 Admiral keeps its data in `$ADMIRAL_HOME` (default `~/.admiral/`). Every test starts the binary with a fresh temporary one on a free port, so tests never touch yours.
+
+Every Go e2e test owns its home, tmux socket and port, so the tests run in parallel: each top-level test calls `t.Parallel()`, and `make e2e` runs `E2E_PARALLEL` (4) at a time. The packaging tests stay serial, because they run `make release` in the checkout.
+
+The e2e harness shortens Admiral's production delays through environment variables that take a Go duration (`internal/delay`):
+
+- `ADMIRAL_SAIL_OFF_DELAY` (3 s): every Admiral in the suite runs with `sailOff` (1 s).
+- `ADMIRAL_NO_HOOK_WAIT` (10 s): set only by the tests of the no-hook rule.
+- `ADMIRAL_CALL_TIMEOUT` (10 s, a plugin's time to answer): set only by the tests of a hung plugin.
+- `ADMIRAL_BRIDGE_IDLE` (30 s): set only by the tests of the bridge's linger.
+
+A test sets its own value through `world.extra`.
 
 Tests sit at two seams. `e2e/` (Go) starts `bin/admiral` and drives it over HTTP and WebSocket. Its packaging checks (the release tarball, the install script, the formula and the service) carry the `packaging` build tag: `make e2e` leaves them out and the release runs them (see [releasing](releasing.md)). `web/e2e/` (Playwright, WebKit, touch) loads the new shell at `/app/` in two projects: `ipad-landscape` (1194x834) runs every spec but the `*-phone.spec.ts` ones, and `phone` (402x874) runs only those. Vitest covers pure UI state logic only.
 
