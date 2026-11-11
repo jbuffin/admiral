@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -80,6 +81,10 @@ type Service struct {
 	// BeforeRemoveFiles gets the Origin built from tmux options, since the
 	// session may be gone by then. It must not block.
 	BeforeRemoveFiles func(session string, from inbox.Origin)
+	// Reserve takes a unit of each named resource, or none: it returns the
+	// release, or why the first is not ready (busy, missing or pending). Nil
+	// when there are no resources to hold.
+	Reserve func(names []string) (release func(), name, why string)
 
 	pass   sync.Mutex        // one observe at a time
 	mu     sync.Mutex        // guards tracks and what they point to
@@ -350,12 +355,82 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
 		return
 	}
-	got, lerr := s.LaunchOrder(req)
+	release, lerr := s.admit(req)
 	if lerr != nil {
 		writeError(w, lerr.Status, lerr.Msg)
 		return
 	}
+	got, lerr := s.LaunchOrder(req)
+	if lerr != nil {
+		release()
+		writeError(w, lerr.Status, lerr.Msg)
+		return
+	}
+	s.releaseWhenListed(got.Session, release)
 	writeJSON(w, http.StatusCreated, map[string]any{"ship": got})
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
+// releaseWhenListed keeps the reservation until the host lists the ship, which
+// holds the resources from then on, so a failed sync after the launch doesn't free them early.
+func (s *Service) releaseWhenListed(session string, release func()) {
+	if _, ok := s.find(session); ok {
+		release()
+		return
+	}
+	go func() {
+		defer release()
+		for i := 0; i < 100; i++ {
+			time.Sleep(100 * time.Millisecond)
+			if _, ok := s.find(session); ok {
+				return
+			}
+		}
+	}()
+}
+
+// admit checks what a launch over HTTP may claim and takes its resources. It is
+// not part of LaunchOrder: autopilot reserves and counts for itself before it calls that.
+func (s *Service) admit(req launcher.Request) (release func(), lerr *launcher.Error) {
+	release = func() {}
+	cfg := s.Launcher.Config()
+	if req.Autopilot {
+		if !slices.Contains(launcher.AutopilotHarnesses, req.Harness) {
+			return release, &launcher.Error{Status: http.StatusBadRequest, Msg: "autopilot mode runs only " +
+				strings.Join(launcher.AutopilotHarnesses, ", ") + ", the harnesses `admiral guard` covers, not " + req.Harness}
+		}
+	}
+	for _, name := range req.Resources {
+		if _, ok := cfg.Resources[name]; !ok {
+			return release, &launcher.Error{Status: http.StatusBadRequest, Msg: "no resource named " + strconv.Quote(name)}
+		}
+	}
+	if req.Autopilot {
+		n := 0
+		for _, sh := range s.List() {
+			if sh.Status == StatusUnderway || sh.Status == StatusNeedsYou {
+				n++
+			}
+		}
+		if n >= cfg.AutopilotMaxShips {
+			return release, &launcher.Error{Status: http.StatusConflict, Msg: "autopilot is at its cap of " +
+				strconv.Itoa(cfg.AutopilotMaxShips) + plural(cfg.AutopilotMaxShips, " ship", " ships")}
+		}
+	}
+	if len(req.Resources) > 0 && s.Reserve != nil {
+		rel, name, why := s.Reserve(req.Resources)
+		if rel == nil {
+			return release, &launcher.Error{Status: http.StatusConflict, Msg: "resource " + strconv.Quote(name) + " is " + why}
+		}
+		release = rel
+	}
+	return release, nil
 }
 
 // LaunchOrder serves hand launches and autopilot alike, so the refusal rules

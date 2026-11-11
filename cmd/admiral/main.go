@@ -258,6 +258,13 @@ func serve(args []string) error {
 		OnDrop: func() { resourceService.Broadcast() }})
 	resourceService = &resources.Service{Set: resourceSet, Hub: hub}
 	engine.Resources = resourceSet
+	shipService.Reserve = func(names []string) (func(), string, string) {
+		release, waits := resourceSet.Reserve(names)
+		if waits != nil {
+			return nil, waits[0].Name, waits[0].Why
+		}
+		return release, "", ""
+	}
 	engine.OnWait = sourceService.Notify
 	sourceService.OnLaunched = engine.Launched
 	supervisor.OnChange = func() { sourceService.Notify(); engine.Poke() }

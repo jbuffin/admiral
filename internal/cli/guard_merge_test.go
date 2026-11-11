@@ -1,58 +1,31 @@
 package cli
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
-	"time"
 )
 
 const (
-	wantRuleGhPrMerge            = "gh_pr_merge"
-	wantRuleGhAPIMerge           = "gh_api_merge"
-	wantRuleGraphqlMerge         = "graphql_merge"
-	wantRuleGhAPIGate            = "gh_api_gate_write"
-	wantRuleGraphqlGate          = "graphql_gate_write"
-	wantRuleMcpMerge             = "mcp_merge"
-	wantRuleAutoMergeMethod      = "auto_merge_method"
-	wantRuleAutoMergeSteered     = "auto_merge_steered"
-	wantRuleAutoMergeUnconfirmed = "auto_merge_unconfirmed"
-	wantRulePrBaseChange         = "pr_base_change"
-	wantRuleShellScript          = "shell_script"
-	wantRuleShellAlias           = "shell_alias"
-	wantRuleGhAlias              = "gh_alias"
-	wantRuleGhExtension          = "gh_extension"
-	wantRuleGhUnknown            = "gh_unknown"
-	wantRuleTokenRead            = "token_read"
+	wantRuleGhPrMerge    = "gh_pr_merge"
+	wantRuleGhAPIMerge   = "gh_api_merge"
+	wantRuleGraphqlMerge = "graphql_merge"
+	wantRuleGhAPIGate    = "gh_api_gate_write"
+	wantRuleGraphqlGate  = "graphql_gate_write"
+	wantRuleMcpMerge     = "mcp_merge"
+	wantRulePrBaseChange = "pr_base_change"
+	wantRuleShellScript  = "shell_script"
+	wantRuleShellAlias   = "shell_alias"
+	wantRuleGhAlias      = "gh_alias"
+	wantRuleGhExtension  = "gh_extension"
+	wantRuleGhUnknown    = "gh_unknown"
+	wantRuleTokenRead    = "token_read"
 )
 
-type fakeLookup struct {
-	ok    bool
-	err   error
-	calls [][]string
-	cwds  []string
-}
-
-func (f *fakeLookup) use(t *testing.T) {
+func runMergeGuard(t *testing.T, c guardTestCase) *GuardDenied {
 	t.Helper()
-	old := approvalLookup
-	t.Cleanup(func() { approvalLookup = old })
-	approvalLookup = func(ctx context.Context, cwd string, pr []string) (bool, error) {
-		f.calls = append(f.calls, slices.Clone(pr))
-		f.cwds = append(f.cwds, cwd)
-		return f.ok, f.err
-	}
-}
-
-func runMergeGuard(t *testing.T, c guardTestCase, method string, look *fakeLookup) *GuardDenied {
-	t.Helper()
-	t.Setenv("ADMIRAL_AUTO_MERGE", method)
-	look.use(t)
 	payload := c.payload(t)
 	err, out, _ := runGuardTest(t, payload, "1")
 	if out != "" {
@@ -68,7 +41,6 @@ func runMergeGuard(t *testing.T, c guardTestCase, method string, look *fakeLooku
 	return denied
 }
 
-// The lookup confirms the base and the method is squash, so only the rule can refuse.
 func TestGuardRefusesMergesOnAnAutopilotShip(t *testing.T) {
 	b := func(name, cmd, want string) guardTestCase {
 		return guardTestCase{name: name, tool: "Bash", input: bashInput(cmd), want: want}
@@ -87,11 +59,11 @@ func TestGuardRefusesMergesOnAnAutopilotShip(t *testing.T) {
 		return b(name, `gh api graphql -f query='mutation { `+mutation+` }'`, want)
 	}
 	cases := []guardTestCase{
-		// gh pr merge without --auto, or with --admin.
+		// An autopilot ship merges nothing: only --disable-auto alone is allowed.
 		b("direct merge", `gh pr merge 12`, wantRuleGhPrMerge),
+		b("--auto", `gh pr merge 12 --auto`, wantRuleGhPrMerge),
+		b("a merge method", `gh pr merge 12 --squash`, wantRuleGhPrMerge),
 		b("a merge-queue enqueue is a direct merge", `gh pr merge 12 --squash --match-head-commit abc123`, wantRuleGhPrMerge),
-		b("--auto=false is a direct merge", `gh pr merge 12 --auto=false -s`, wantRuleGhPrMerge),
-		b("--admin beside --auto", `gh pr merge 12 --auto --admin -s`, wantRuleGhPrMerge),
 		b("-R between pr and merge", `gh pr -R o/r merge 12 -s`, wantRuleGhPrMerge),
 		b("a program held in a variable", `$GH pr merge 12 --squash`, wantRuleGhPrMerge),
 
@@ -123,9 +95,8 @@ func TestGuardRefusesMergesOnAnAutopilotShip(t *testing.T) {
 		gql("graphql updateBranchProtectionRule", `updateBranchProtectionRule(input: {branchProtectionRuleId: "X", requiredApprovingReviewCount: 0}) { clientMutationId }`, wantRuleGraphqlGate),
 		gql("graphql deleteRepositoryRuleset", `deleteRepositoryRuleset(input: {repositoryRulesetId: "X"}) { clientMutationId }`, wantRuleGraphqlGate),
 
-		// Text the guard cannot read: a merge in it is refused, --auto too.
+		// Text the guard cannot read: a merge in it is refused.
 		b("a merge piped into bash", `echo 'gh pr merge 5 --admin' | bash`, wantRuleGhPrMerge),
-		b("an auto-merge piped into bash", `echo 'gh pr merge 5 --auto -s' | bash`, wantRuleGhPrMerge),
 		b("a merge in a variable, eval", `C="gh pr merge 5 --admin"; eval "$C"`, wantRuleGhPrMerge),
 		b("a gate write in a variable, eval", `X='gh api -X DELETE repos/o/r/rulesets/1'; eval "$X"`, wantRuleGhAPIGate),
 
@@ -180,11 +151,12 @@ func TestGuardRefusesMergesOnAnAutopilotShip(t *testing.T) {
 		b("gh auth git-credential", `gh auth git-credential get`, wantRuleTokenRead),
 		b("gh auth status --show-token", `gh auth status --show-token`, wantRuleTokenRead),
 
-		// Boolean flags are read as gh reads them (strconv.ParseBool).
+		// --disable-auto is allowed only alone; boolean flags are read as gh reads them (strconv.ParseBool).
+		b("--disable-auto with --auto", `gh pr merge 12 --disable-auto --auto`, wantRuleGhPrMerge),
+		b("--disable-auto with a merge method", `gh pr merge 12 --disable-auto --squash`, wantRuleGhPrMerge),
+		b("--disable-auto with --delete-branch", `gh pr merge 12 --disable-auto --delete-branch`, wantRuleGhPrMerge),
+		b("--disable-auto with --admin", `gh pr merge 12 --disable-auto --admin`, wantRuleGhPrMerge),
 		b("--disable-auto=0", `gh pr merge 5 -s --disable-auto=0`, wantRuleGhPrMerge),
-		b("--disable-auto=bogus", `gh pr merge 5 -s --disable-auto=bogus`, wantRuleGhPrMerge),
-		b("--admin=1", `gh pr merge https://github.com/o/r/pull/12 --auto -s --admin=1`, wantRuleGhPrMerge),
-		b("--squash=bogus", `gh pr merge https://github.com/o/r/pull/12 --auto --squash=bogus`, wantRuleGhPrMerge),
 		b("--comment=bogus beside a review", `gh pr review 5 --comment=bogus -b x`, "gh_pr_review"),
 
 		// An expansion in the word after gh pr or gh auth.
@@ -221,18 +193,12 @@ func TestGuardRefusesMergesOnAnAutopilotShip(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			for _, method := range []string{"squash", ""} {
-				look := &fakeLookup{ok: true}
-				denied := runMergeGuard(t, c, method, look)
-				switch {
-				case denied == nil:
-					t.Errorf("Guard allowed it with ADMIRAL_AUTO_MERGE=%q, want a refusal for rule %s", method, c.want)
-				case denied.Rule != c.want:
-					t.Errorf("with ADMIRAL_AUTO_MERGE=%q the rule = %q, want %q", method, denied.Rule, c.want)
-				}
-				if len(look.calls) != 0 {
-					t.Errorf("the lookup ran %d time(s) for a command the rule refuses outright, want 0: it must not reach GitHub", len(look.calls))
-				}
+			denied := runMergeGuard(t, c)
+			switch {
+			case denied == nil:
+				t.Errorf("Guard allowed it, want a refusal for rule %s", c.want)
+			case denied.Rule != c.want:
+				t.Errorf("the rule = %q, want %q", denied.Rule, c.want)
 			}
 		})
 	}
@@ -270,7 +236,6 @@ func TestGuardAllowsWhatIsNotAMerge(t *testing.T) {
 		mcp("mcp get_merge_queue", "mcp__github__get_merge_queue"),
 		b("a literal graphql query on stdin", "gh api graphql -F query=@- <<'EOF'\nquery { viewer { login } }\nEOF"),
 		b("a literal base-free body on stdin", `gh api -X PATCH repos/o/r/pulls/5 --input - <<< '{"title":"x"}'`),
-		b("--disable-auto=1", `gh pr merge 5 --disable-auto=1`),
 		b("a bare mention of the token variable", `grep -rn GITHUB_TOKEN .github`),
 		b("a workflow that names the token in a quoted heredoc", "cat > ci.yml <<'EOF'\nenv:\n  T: ${{ secrets.GITHUB_TOKEN }}\nEOF"),
 		b("security without a password flag", `security find-generic-password -s gh:github.com`),
@@ -278,166 +243,29 @@ func TestGuardAllowsWhatIsNotAMerge(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			look := &fakeLookup{ok: true}
-			if denied := runMergeGuard(t, c, "squash", look); denied != nil {
+			if denied := runMergeGuard(t, c); denied != nil {
 				t.Errorf("Guard refused with rule %s, want it allowed", denied.Rule)
 			}
 		})
-	}
-	// gh pr ready and --disable-auto need no panel method at all.
-	for _, cmd := range []string{`gh pr ready 12`, `gh pr merge 12 --disable-auto`} {
-		look := &fakeLookup{err: errors.New("no network")}
-		if denied := runMergeGuard(t, guardTestCase{tool: "Bash", input: bashInput(cmd)}, "", look); denied != nil {
-			t.Errorf("%q with no ADMIRAL_AUTO_MERGE: refused with rule %s, want it allowed", cmd, denied.Rule)
-		}
-		if len(look.calls) != 0 {
-			t.Errorf("%q asked GitHub, want no lookup", cmd)
-		}
 	}
 }
 
 func TestGuardMergeRulesAreOffOutsideAutopilot(t *testing.T) {
 	for _, cmd := range []string{`gh pr merge 12 --squash --admin`, `gh api -X PUT repos/o/r/pulls/12/merge`,
-		`gh api -X DELETE repos/o/r/rulesets/5`, `gh pr merge 12 --auto -s`} {
-		look := &fakeLookup{err: errors.New("no network")}
-		look.use(t)
+		`gh api -X DELETE repos/o/r/rulesets/5`} {
 		c := guardTestCase{tool: "Bash", input: bashInput(cmd)}
 		if err, out, errb := runGuardTest(t, c.payload(t), ""); err != nil || out != "" || errb != "" {
 			t.Errorf("%q: Guard = %v, stdout %q, stderr %q, want nil and no output", cmd, err, out, errb)
 		}
-		if len(look.calls) != 0 {
-			t.Errorf("%q asked GitHub off the autopilot", cmd)
-		}
 	}
-	look := &fakeLookup{ok: true}
-	look.use(t)
 	c := guardTestCase{tool: "mcp__github__merge_pull_request", input: map[string]any{"pullNumber": 12}}
 	if err, _, _ := runGuardTest(t, c.payload(t), "0"); err != nil {
 		t.Errorf("an MCP merge with ADMIRAL_AUTOPILOT=0: Guard = %v, want nil", err)
 	}
 }
 
-func TestGuardAutoMerge(t *testing.T) {
-	type row struct {
-		name, cmd, method string
-		look              fakeLookup
-		want              string
-	}
-	yes, no := fakeLookup{ok: true}, fakeLookup{}
-	failed := fakeLookup{err: errors.New("gh: HTTP 403")}
-	failedYes := fakeLookup{ok: true, err: errors.New("timed out")}
-	const pr = "https://github.com/o/r/pull/12"
-	rows := []row{
-		// Allowed: the method named is the panel's, one full URL, GitHub confirms.
-		{"squash", `gh pr merge ` + pr + ` --auto --squash`, "squash", yes, wantAllowed},
-		{"a GHE host", `gh pr merge https://ghe.example.com/o/r/pull/12 --auto -s`, "squash", yes, wantAllowed},
-		{"a body that looks like a flag", `gh pr merge ` + pr + ` --auto -s -b "--rebase -m"`, "squash", yes, wantAllowed},
-		{"after ready", `gh pr ready ` + pr + ` && gh pr merge ` + pr + ` --auto -s`, "squash", yes, wantAllowed},
-		{"a git command that does not steer", `git status && gh pr merge ` + pr + ` --auto -s`, "squash", yes, wantAllowed},
-		{"a direct merge after a good auto-merge", `gh pr merge ` + pr + ` --auto -s; gh pr merge 13 --squash`, "squash", yes, wantRuleGhPrMerge},
-
-		// Refused: the method.
-		{"no method in the environment", `gh pr merge ` + pr + ` --auto -s`, "", yes, wantRuleAutoMergeMethod},
-		{"a method of another case", `gh pr merge ` + pr + ` --auto -s`, "SQUASH", yes, wantRuleAutoMergeMethod},
-		{"no method flag", `gh pr merge ` + pr + ` --auto`, "squash", yes, wantRuleAutoMergeMethod},
-		{"another method (long)", `gh pr merge ` + pr + ` --auto --rebase`, "squash", yes, wantRuleAutoMergeMethod},
-		{"two methods", `gh pr merge ` + pr + ` --auto --squash --rebase`, "squash", yes, wantRuleAutoMergeMethod},
-		{"the method flag only in a body", `gh pr merge ` + pr + ` --auto -b "-s"`, "squash", yes, wantRuleAutoMergeMethod},
-
-		// Refused: the PR is not one full URL, or something steers gh.
-		{"a PR number", `gh pr merge 12 --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
-		{"a URL with -R", `gh pr merge ` + pr + ` --auto -s -R x/y`, "squash", yes, wantRuleAutoMergeSteered},
-		{"a URL and another positional", `gh pr merge ` + pr + ` 13 --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
-		{"a URL with a tail", `gh pr merge ` + pr + `/files --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
-		{"an http URL", `gh pr merge http://github.com/o/r/pull/12 --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
-		{"a URL with an expansion", `gh pr merge https://github.com/o/r/pull/$N --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
-		{"arguments held in a variable", `gh pr merge $ARGS --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
-		{"inline GH_REPO", `GH_REPO=x/y gh pr merge ` + pr + ` --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
-		{"inline GH_HOST", `GH_HOST=ghe.example.com gh pr merge ` + pr + ` --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
-		{"GH_REPO exported earlier", `export GH_REPO=x/y; gh pr merge ` + pr + ` --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
-		{"cd first", `cd /other/checkout && gh pr merge ` + pr + ` --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
-		{"git checkout first", `git checkout other && gh pr merge ` + pr + ` --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
-		{"git remote first", `git remote set-url origin https://github.com/x/y && gh pr merge ` + pr + ` --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
-		{"env -C", `env -C /other/checkout gh pr merge ` + pr + ` --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
-		{"env -u GH_REPO", `env -u GH_REPO gh pr merge ` + pr + ` --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
-		{"inline GH_TOKEN", `GH_TOKEN=other gh pr merge ` + pr + ` --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
-		{"inline GIT_DIR", `GIT_DIR=/other/.git gh pr merge ` + pr + ` --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
-		{"xargs adds an argument", `echo 12 | xargs gh pr merge ` + pr + ` --auto -s`, "squash", yes, wantRuleShellScript},
-		// Steering anywhere on the line counts, wherever the shell runs it.
-		{"a later cd", `gh pr merge ` + pr + ` --auto -s && cd /tmp`, "squash", yes, wantRuleAutoMergeSteered},
-		{"a cd after the merge in a function", `f(){ gh pr merge ` + pr + ` --auto -s; }; cd ../other; f`, "squash", yes, wantRuleAutoMergeSteered},
-		{"a cd after the merge in a trap", `trap "gh pr merge ` + pr + ` --auto -s" EXIT; cd ../other`, "squash", yes, wantRuleAutoMergeSteered},
-		// Builtins that assign GH_REPO under allexport.
-		{"set -a and read", `set -a; read GH_REPO <<< a/a; gh pr merge ` + pr + ` --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
-		{"printf -v", `set -a; printf -v GH_REPO a/a; gh pr merge ` + pr + ` --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
-		{"default assignment", `set -a; : ${GH_REPO:=a/a}; gh pr merge ` + pr + ` --auto -s`, "squash", yes, wantRuleAutoMergeSteered},
-		{"for loop variable", `set -a; for GH_REPO in a/a; do gh pr merge ` + pr + ` --auto -s; done`, "squash", yes, wantRuleAutoMergeSteered},
-
-		// Refused: GitHub does not confirm the base.
-		{"the base does not qualify", `gh pr merge ` + pr + ` --auto -s`, "squash", no, wantRuleAutoMergeUnconfirmed},
-		{"the lookup failed", `gh pr merge ` + pr + ` --auto -s`, "squash", failed, wantRuleAutoMergeUnconfirmed},
-		{"the lookup failed after an answer", `gh pr merge ` + pr + ` --auto -s`, "squash", failedYes, wantRuleAutoMergeUnconfirmed},
-	}
-	for _, r := range rows {
-		t.Run(r.name, func(t *testing.T) {
-			look := r.look
-			denied := runMergeGuard(t, guardTestCase{tool: "Bash", input: bashInput(r.cmd)}, r.method, &look)
-			switch {
-			case r.want == wantAllowed && denied != nil:
-				t.Errorf("Guard refused with rule %s, want it allowed", denied.Rule)
-			case r.want != wantAllowed && denied == nil:
-				t.Errorf("Guard allowed it, want a refusal for rule %s", r.want)
-			case r.want != wantAllowed && denied.Rule != r.want:
-				t.Errorf("rule = %q, want %q", denied.Rule, r.want)
-			}
-			if r.want == wantAllowed && (len(look.calls) != 1 || len(look.calls[0]) != 1 || look.calls[0][0] != pr && !strings.Contains(r.cmd, look.calls[0][0])) {
-				t.Errorf("the lookup was given %q, want one call with the merge's own URL", look.calls)
-			}
-			if r.want == wantRuleAutoMergeMethod || r.want == wantRuleAutoMergeSteered {
-				if len(look.calls) != 0 {
-					t.Errorf("the lookup ran for a command refused before it, want none")
-				}
-			}
-		})
-	}
-}
-
-func TestGuardAutoMergeLookupArguments(t *testing.T) {
-	const pr = "https://github.com/o/r/pull/12"
-	t.Setenv("ADMIRAL_AUTO_MERGE", "squash")
-	var calls [][]string
-	var cwd string
-	var deadline time.Time
-	old := approvalLookup
-	t.Cleanup(func() { approvalLookup = old })
-	approvalLookup = func(ctx context.Context, dir string, pr []string) (bool, error) {
-		calls, cwd = append(calls, slices.Clone(pr)), dir
-		deadline, _ = ctx.Deadline()
-		return true, nil
-	}
-	start := time.Now()
-	dir := t.TempDir()
-	payload, _ := json.Marshal(map[string]any{"hook_event_name": "PreToolUse", "tool_name": "Bash",
-		"tool_input": map[string]any{"command": `gh pr merge --auto -s --delete-branch ` + pr}, "cwd": dir})
-	if err, _, _ := runGuardTest(t, string(payload), "1"); err != nil {
-		t.Fatalf("Guard refused: %v, want it allowed", err)
-	}
-	if len(calls) != 1 || !slices.Equal(calls[0], []string{pr}) {
-		t.Errorf("the lookup was given %q, want one call with [%q]", calls, pr)
-	}
-	if cwd != dir {
-		t.Errorf("the lookup ran in %q, want the payload's cwd %q", cwd, dir)
-	}
-	if deadline.IsZero() || deadline.Sub(start) > 8*time.Second {
-		t.Errorf("the lookup's deadline is %v after the start (zero means none), want one inside 8 s: the hook times out at 10 s and a timed-out hook must not be what refuses", deadline.Sub(start))
-	}
-}
-
 func TestGuardMergeReason(t *testing.T) {
 	c := guardTestCase{tool: "Bash", input: bashInput("gh pr merge 12 --squash --body " + "xyzzy-distinct-text")}
-	look := &fakeLookup{ok: true}
-	t.Setenv("ADMIRAL_AUTO_MERGE", "squash")
-	look.use(t)
 	err, out, errb := runGuardTest(t, c.payload(t), "1")
 	var denied *GuardDenied
 	if !errors.As(err, &denied) || denied.Rule != wantRuleGhPrMerge {
@@ -495,7 +323,7 @@ func TestGuardDecodesInputBodies(t *testing.T) {
 		}
 		for form, c := range forms {
 			t.Run(b.name+" "+form, func(t *testing.T) {
-				denied := runMergeGuard(t, c, "squash", &fakeLookup{ok: true})
+				denied := runMergeGuard(t, c)
 				if denied == nil || denied.Rule != c.want {
 					t.Errorf("Guard = %v, want a refusal for rule %s", denied, c.want)
 				}
@@ -526,7 +354,7 @@ func TestGuardReadsScriptFiles(t *testing.T) {
 	}
 	for _, r := range rows {
 		t.Run(r.name, func(t *testing.T) {
-			denied := runMergeGuard(t, guardTestCase{tool: "Bash", input: bashInput(r.cmd), files: r.files}, "squash", &fakeLookup{ok: true})
+			denied := runMergeGuard(t, guardTestCase{tool: "Bash", input: bashInput(r.cmd), files: r.files})
 			switch {
 			case r.want == wantAllowed && denied != nil:
 				t.Errorf("Guard refused with rule %s, want it allowed", denied.Rule)
@@ -594,7 +422,7 @@ func TestGuardClosesTheLastBypasses(t *testing.T) {
 	}
 	for _, r := range rows {
 		t.Run(r.name, func(t *testing.T) {
-			denied := runMergeGuard(t, guardTestCase{tool: "Bash", input: bashInput(r.cmd), files: r.files}, "squash", &fakeLookup{ok: true})
+			denied := runMergeGuard(t, guardTestCase{tool: "Bash", input: bashInput(r.cmd), files: r.files})
 			switch {
 			case r.want == wantAllowed && denied != nil:
 				t.Errorf("Guard refused with rule %s, want it allowed", denied.Rule)
@@ -615,7 +443,7 @@ func TestGuardReadsAbsoluteAndHomePaths(t *testing.T) {
 	}
 	abs := filepath.Join(home, "env.sh")
 	for _, cmd := range []string{`cd sub && source ` + abs, `source ~/env.sh`, `cd sub && . ~/env.sh`} {
-		denied := runMergeGuard(t, guardTestCase{tool: "Bash", input: bashInput(cmd)}, "squash", &fakeLookup{ok: true})
+		denied := runMergeGuard(t, guardTestCase{tool: "Bash", input: bashInput(cmd)})
 		if denied != nil {
 			t.Errorf("%q: refused with rule %s, want it allowed", cmd, denied.Rule)
 		}

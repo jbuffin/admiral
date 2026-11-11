@@ -118,6 +118,7 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
   const [reading, setReading] = useState(!!order); // the skills of this directory are on their way; a dock launch has none
   const [choice, setChoice] = useState<Choice | null>(null);
   const [custom, setCustom] = useState('');
+  const [autopilot, setAutopilot] = useState(false); // run the ship in autopilot mode: under the guard, counted against the cap
   const [note, setNote] = useState(''); // Just launch's optional text before the order; a dock launch's whole prompt
   const [listOpen, setListOpen] = useState(false);
   const [hi, setHi] = useState(0);
@@ -257,6 +258,7 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
       skill,
       source,
       order_id: order?.id ?? '',
+      autopilot,
       ...(!order ? { text: note } : skill.kind === 'none' && note.trim() && { note }),
     });
     setBusy(false);
@@ -506,6 +508,13 @@ function Dialog({ fleet, dock }: { fleet: Fleet; dock: Dock }) {
               </div>
                 </>
               )}
+              <label class={autopilot ? 'choice on' : 'choice'}>
+                <input type="checkbox" checked={autopilot} onChange={(e) => setAutopilot((e.target as HTMLInputElement).checked)} />
+                <span class="choice-text">
+                  <span class="choice-title">Autopilot</span>
+                  <span class="choice-desc">Run under the guard: it never merges or submits a review. Counts against the autopilot cap.</span>
+                </span>
+              </label>
               {error && <p role="alert">{error}</p>}
             </>
           )}

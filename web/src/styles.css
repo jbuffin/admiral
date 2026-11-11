@@ -1699,7 +1699,8 @@ body.dragging * {
   cursor: default;
 }
 
-.choice input[type='radio'] {
+.choice input[type='radio'],
+.choice input[type='checkbox'] {
   width: 20px;
   height: 20px;
   margin: 0;

@@ -32,13 +32,11 @@ type Request struct {
 	Title string `json:"-"`
 	URL   string `json:"-"`
 	Panel string `json:"-"`
-	// Set by autopilot, never by the client.
-	Autopilot bool     `json:"-"`
-	LowStakes string   `json:"-"`
-	AutoMerge string   `json:"-"` // squash, merge or rebase; the guard allows gh pr merge --auto with it
+	// Autopilot runs the ship under the guard with ADMIRAL_LOW_STAKES=advisor, counted against the global cap.
+	Autopilot bool     `json:"autopilot"`
 	ExtraArgs []string `json:"-"`
 	// Resources are held while the ship is underway or needs you; a hand launch holds none.
-	Resources []string `json:"-"`
+	Resources []string `json:"resources"`
 	// OriginSource and OriginPanel are the panel whose max_ships the launch counts against: a
 	// resume order's ship counts against the panel of the ship that wrote the report.
 	OriginSource string `json:"-"`
@@ -84,9 +82,6 @@ type Launcher struct {
 
 // Nothing is created when Launch refuses.
 func (l *Launcher) Launch(req Request) (*Launched, error) {
-	if req.Autopilot && req.LowStakes != "advisor" && req.LowStakes != "never" {
-		return nil, refuse(http.StatusBadRequest, "low_stakes must be advisor or never, got %q", req.LowStakes)
-	}
 	if l.Tmux == "" {
 		return nil, refuse(http.StatusServiceUnavailable, "tmux not found on PATH, so ships cannot be launched")
 	}
@@ -195,17 +190,14 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	}
 
 	// Admiral owns these names (ADMIRAL_PORT is the chat's alone): a hand launch has none of them, and an autopilot
-	// launch has ADMIRAL_AUTO_MERGE only when its panel names a method, even if
+	// launch has ADMIRAL_AUTOPILOT and ADMIRAL_LOW_STAKES=advisor, even if
 	// the fleet's env or Admiral's own environment (which the tmux server
 	// inherits) sets them.
 	var unset []string
 	ours := map[string]string{}
 	if req.Autopilot {
 		ours["ADMIRAL_AUTOPILOT"] = "1"
-		ours["ADMIRAL_LOW_STAKES"] = req.LowStakes
-		if req.AutoMerge != "" {
-			ours["ADMIRAL_AUTO_MERGE"] = req.AutoMerge
-		}
+		ours["ADMIRAL_LOW_STAKES"] = "advisor"
 	}
 	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT"} {
 		if v, ok := ours[k]; ok {
