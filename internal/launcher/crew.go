@@ -74,12 +74,31 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 	if err != nil {
 		return err
 	}
-	if req.Harness == "" {
-		req.Harness = shipHarness
-	}
 	fleet, ok := l.Config().Fleet(fleetKey)
 	if !ok {
 		return fmt.Errorf("fleet %q of the ship not found", fleetKey)
+	}
+	explicit := req.Harness
+	if req.Harness == "" {
+		req.Harness = shipHarness
+	}
+	if req.Member != "" {
+		home, err := filepath.Abs(l.Home)
+		if err != nil {
+			return err
+		}
+		runDir, _ := RunCrewDir(home, req.Session)
+		got, lerr := l.resolveMember(memberAsk{Name: req.Member, Fleet: fleet, Explicit: explicit, Default: shipHarness,
+			Dir: dir, RunDir: runDir, Prompt: req.Prompt, Args: req.Args})
+		if lerr != nil {
+			return lerr
+		}
+		req.Harness, req.Prompt = got.Harness, got.Prompt
+		req.Args = append(req.Args, got.ModelArgs...)
+		if req.Role == "" {
+			req.Role = got.Role
+		}
+		l.warn(got.Warnings)
 	}
 	dock, ok := fleet.Harness(req.Harness)
 	if !ok {

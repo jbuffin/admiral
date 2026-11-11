@@ -85,6 +85,9 @@ type Launcher struct {
 	// AutopilotGate decides whether a crew launch may carry autopilot mode. It lives
 	// outside this package because the Inbox it writes to imports the launcher.
 	AutopilotGate func(fleet config.Fleet, harness string) error
+	// Warn gets what a launch as a crew member left out (a dropped model, ignored skills, a bad note file);
+	// the server log when nil.
+	Warn func(msg string)
 
 	mu sync.Mutex // one launch at a time, so two don't pick one name
 }
@@ -109,6 +112,9 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	skill, err := skillName(req.Skill)
 	if err != nil {
 		return nil, err
+	}
+	if lerr := CheckMember(req.Skill.Kind, req.Member); lerr != nil {
+		return nil, lerr
 	}
 	if lerr := CheckPins(req.Skill.Kind, req.Crew); lerr != nil {
 		return nil, lerr
@@ -163,6 +169,17 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 			return nil, err
 		}
 	}
+	var memberArgs []string
+	var memberPrompt *string
+	if req.Member != "" {
+		got, lerr := l.resolveMember(memberAsk{Name: req.Member, Fleet: fleet, Explicit: req.Harness, Default: req.Harness,
+			Dir: req.Dir, Prompt: promptFor(req.Harness, skill, req.Skill.Kind, req.Note, req.Text), Model: req.Model, Args: req.ExtraArgs})
+		if lerr != nil {
+			return nil, lerr
+		}
+		memberArgs, memberPrompt = got.ModelArgs, &got.Prompt
+		l.warn(got.Warnings)
+	}
 	// opts was built before the directory was cleaned and Commodore resolved.
 	for i := range opts {
 		switch opts[i][0] {
@@ -179,10 +196,15 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 
 	argv := append([]string{exe}, dock.Args...)
 	argv = append(argv, mflags...)
+	// The member rule, not modelFlags' list, has judged a member's model.
+	argv = append(argv, memberArgs...)
 	argv = append(argv, req.ExtraArgs...)
 	sessionFlags, paneOpts := conversationAnchor(req, dock, time.Now())
 	argv = append(argv, sessionFlags...)
 	prompt := promptFor(req.Harness, skill, req.Skill.Kind, req.Note, req.Text)
+	if memberPrompt != nil {
+		prompt = *memberPrompt
+	}
 	flags, known := l.hookFlags(req.Harness)
 	if !known {
 		return nil, refuse(http.StatusBadRequest, "unknown harness %q", req.Harness)

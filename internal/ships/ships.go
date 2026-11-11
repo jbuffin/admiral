@@ -353,6 +353,10 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// These need no disk, so a bad request leaves no clone.
+	if lerr := launcher.CheckMember(req.Skill.Kind, req.Member); lerr != nil {
+		writeError(w, lerr.Status, lerr.Msg)
+		return
+	}
 	if lerr := launcher.CheckPins(req.Skill.Kind, req.Crew); lerr != nil {
 		writeError(w, lerr.Status, lerr.Msg)
 		return

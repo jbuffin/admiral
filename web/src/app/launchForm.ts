@@ -50,8 +50,11 @@ export function crewOptions(members: CrewMemberView[], harness: string): CrewOpt
 }
 
 /** Where a "Launch as" member runs: its lock, else the form's harness, and a hint when that is not the form's. */
-export function memberRun(_members: CrewMemberView[], _harness: string, _name: string): { harness: string; hint: string | null } | null {
-  return null;
+export function memberRun(members: CrewMemberView[], harness: string, name: string): { harness: string; hint: string | null } | null {
+  const m = members.find((x) => x.name === name);
+  if (!m) return null;
+  const on = m.harness ?? harness;
+  return { harness: on, hint: on !== harness ? `runs on ${on}` : null };
 }
 
 /** Pins or unpins a member; pinning replaces any other pinned member of the same role. */
@@ -79,9 +82,11 @@ export function defaultSkill(answer: SkillsAnswer): SkillChoice {
 }
 
 export function launchBody(form: LaunchFormState): Record<string, unknown> {
+  const member = form.skill.kind === 'none' && form.member ? form.member : '';
   return {
     fleet: form.fleet,
-    harness: form.harness,
+    // The member's lock goes in the body only; the form keeps the dock it chose.
+    harness: member && form.memberHarness ? form.memberHarness : form.harness,
     skill: form.skill,
     text: form.text,
     autopilot: form.autopilot,
@@ -92,6 +97,7 @@ export function launchBody(form: LaunchFormState): Record<string, unknown> {
     ...(form.source && { source: form.source }),
     ...(form.orderId && { order_id: form.orderId }),
     ...(form.skill.kind === 'commodore' && form.crew?.length && { crew: form.crew }),
+    ...(member && { member }),
   };
 }
 
