@@ -131,8 +131,16 @@ func TestCrewConversation_RoleAndFlagOnShipsAPI(t *testing.T) {
 	c.setTranscript("cx", "/Users/me/.codex/sessions/2026/10/25/rollout-1.jsonl")
 
 	c.waitShip(c.sess, "crew rows with role", func(s apiShip) bool {
-		var rows []apiCrewRow
-		return json.Unmarshal(s.raw["crew"], &rows) == nil && len(rows) == 4
+		var list []apiCrewRow
+		if json.Unmarshal(s.raw["crew"], &list) != nil || len(list) != 4 {
+			return false
+		}
+		got := map[string]apiCrewRow{}
+		for _, r := range list {
+			got[r.Name] = r
+		}
+		return got["rev"].Role != nil && *got["rev"].Role == "reviewer" &&
+			got["rev"].Conversation && got["plain"].Conversation && !got["cx"].Conversation && !got["fresh"].Conversation
 	})
 	rows := c.crewRows()
 	if r := rows["rev"]; r.Role == nil || *r.Role != "reviewer" {
