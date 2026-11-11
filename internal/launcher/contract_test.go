@@ -21,7 +21,7 @@ func TestShipContractClearsWhatANameLeft(t *testing.T) {
 		}
 	}
 	env := map[string]string{"ADMIRAL_SHIP": "fleet"}
-	if err := (&Launcher{Home: home}).shipContract(env, "dory"); err != nil {
+	if err := (&Launcher{Home: home}).shipContract(env, "dory", "work"); err != nil {
 		t.Fatal(err)
 	}
 	for p := range stale {

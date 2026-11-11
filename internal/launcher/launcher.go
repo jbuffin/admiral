@@ -5,6 +5,7 @@ package launcher
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -190,7 +191,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	}
 	session := Slug(name)
 	opts[0][1] = name
-	if err := l.shipContract(env, session); err != nil {
+	if err := l.shipContract(env, session, fleet.Key); err != nil {
 		return nil, err
 	}
 
@@ -399,7 +400,7 @@ func realDir(root *os.Root, name string) bool {
 
 // A name can be reused, so any report or inbox left under it by a ship that never sailed
 // off is removed.
-func (l *Launcher) shipContract(env map[string]string, session string) error {
+func (l *Launcher) shipContract(env map[string]string, session, fleetKey string) error {
 	home, err := filepath.Abs(l.Home)
 	if err != nil {
 		return refuse(http.StatusInternalServerError, "could not resolve %s: %v", l.Home, err)
@@ -418,10 +419,36 @@ func (l *Launcher) shipContract(env map[string]string, session string) error {
 			return refuse(http.StatusInternalServerError, "could not create %s: %v", d, err)
 		}
 	}
+	crewDir, err := fleetCrewDir(home, fleetKey)
+	if err != nil {
+		return err
+	}
+	env["ADMIRAL_CREW_DIR"] = crewDir
 	env["ADMIRAL_SHIP"] = session
 	env["ADMIRAL_REPORT"] = report
 	env["ADMIRAL_INBOX"] = inbox + string(os.PathSeparator)
 	return nil
+}
+
+// The fleet's crew directory outlives its ships. Each level is checked with Lstat and made
+// one at a time, because MkdirAll would follow a link that stays inside home.
+func fleetCrewDir(home, fleetKey string) (string, error) {
+	dir := home
+	for _, part := range []string{"fleets", fleetKey, "crew"} {
+		dir = filepath.Join(dir, part)
+		fi, err := os.Lstat(dir)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			if err := os.Mkdir(dir, 0o700); err != nil {
+				return "", refuse(http.StatusInternalServerError, "could not create %s: %v", dir, err)
+			}
+		case err != nil:
+			return "", refuse(http.StatusInternalServerError, "could not inspect %s: %v", dir, err)
+		case !fi.IsDir():
+			return "", refuse(http.StatusInternalServerError, "%s is not a directory", dir)
+		}
+	}
+	return dir, nil
 }
 
 // No tmux server yet means nothing is in use; any other error stops the launch, since a
