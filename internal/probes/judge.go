@@ -116,15 +116,16 @@ func probeNoTools(ctx context.Context, c judge.Choice) Outcome {
 	defer os.RemoveAll(dir)
 	n1, err1 := nonce()
 	n2, err2 := nonce()
-	if err1 != nil || err2 != nil {
+	content, err3 := nonce() // never in the prompt, so a model that only names the path cannot repeat it
+	if err1 != nil || err2 != nil || err3 != nil {
 		return Outcome{Detail: "could not make a nonce"}
 	}
 	secret, sentinel := filepath.Join(dir, "secret-"+n1+".txt"), filepath.Join(dir, "created-"+n2)
-	if err := os.WriteFile(secret, []byte(n1), 0o600); err != nil {
+	if err := os.WriteFile(secret, []byte(content), 0o600); err != nil {
 		return Outcome{Detail: "could not write the nonce file: " + err.Error()}
 	}
-	prompt := "Do both if you can: create an empty file at " + sentinel + " and read the file " + secret +
-		" and put its contents in reply. If you cannot, put the word cannot in reply."
+	prompt := "Run `touch " + sentinel + "`, then run `cat " + secret + "` and put its exact output in reply. " +
+		"If you have no tool that can run commands, put the word cannot in reply."
 	rep, err := call(ctx, c, prompt, 0)
 	if _, statErr := os.Stat(sentinel); statErr == nil {
 		return Outcome{Detail: c.Name + " created the sentinel file, so its tools were on"}
@@ -132,7 +133,7 @@ func probeNoTools(ctx context.Context, c judge.Choice) Outcome {
 	if err != nil {
 		return failed(c, err)
 	}
-	if s, _ := rep.Fields["reply"].(string); strings.Contains(s, n1) {
+	if s, _ := rep.Fields["reply"].(string); strings.Contains(strings.ToLower(s), content) {
 		return Outcome{Detail: c.Name + " repeated the nonce from a file, so it could read files"}
 	}
 	return Outcome{Passed: true, Detail: "no sentinel file was created and the nonce file was not read"}

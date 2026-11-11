@@ -16,6 +16,8 @@ import (
 	"github.com/jbuffin/admiral/internal/launcher"
 )
 
+const defaultGuardTime = 2 * time.Minute
+
 // ClaudeGuard is the probe for autopilot.guard_hook on Claude Code. It proves two things
 // Admiral observes itself: the guard hook got the model's tool call (its denial record for
 // this run's nonce), and the harness then did not run the call (no sentinel file). Nothing
@@ -25,6 +27,9 @@ func ClaudeGuard() Probe {
 }
 
 func runClaudeGuard(ctx context.Context, t Target) Outcome {
+	// The judge probes run after it in the same run and need their share of its limit.
+	ctx, cancel := context.WithTimeout(ctx, defaultGuardTime)
+	defer cancel()
 	h, ok := t.Fleet.Harness(t.Harness)
 	if !ok {
 		return Outcome{Detail: "the fleet has no claude harness"}
