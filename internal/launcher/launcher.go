@@ -134,7 +134,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	// The name and the time are ours.
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
-		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")},
+		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")},
 		{"model", req.Model}, {"skill-kind", req.Skill.Kind}}
 	for _, o := range opts {
 		if hasControl(o[1]) {

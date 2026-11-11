@@ -40,7 +40,7 @@ type Ship struct {
 	Resources  []string        `json:"-"`
 	Title      string          `json:"title"`
 	URL        string          `json:"url"`
-	Issues     []string        `json:"-"`
+	Issues     []string        `json:"issues,omitempty"`
 	OrderID    string          `json:"order_id"`
 	Launched   string          `json:"launched"`
 	Status     string          `json:"status"`
@@ -180,6 +180,9 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	}
 	if sk := o["skill"]; sk != "" {
 		sh.Skill = &sk
+	}
+	if is := o["issues"]; is != "" {
+		sh.Issues = strings.Split(is, ",")
 	}
 	if r := o["resources"]; r != "" {
 		sh.Resources = strings.Split(r, ",")
@@ -479,12 +482,24 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 		if req.Panel == "" {
 			req.Panel = panel
 		}
-		if holder, ok := s.lockIssue(req.URL, "a launch in flight"); !ok {
+	}
+	if len(req.Issues) > 0 {
+		req.URL = req.Issues[0]
+	}
+	if req.Source != "" || len(req.Issues) > 0 {
+		issues := req.Issues
+		if len(issues) == 0 {
+			issues = []string{req.URL}
+		}
+		if holder, ok := s.lockIssues(issues, "a launch in flight"); !ok {
 			return Ship{}, issueHeld(holder)
 		}
-		defer s.unlockIssue(req.URL)
-		if holder := ClaimsOf(append(s.List(), s.Pending()...))[claimKeyOf(req.URL)]; holder != "" {
-			return Ship{}, issueHeld(holder)
+		defer s.unlockIssues(issues)
+		claims := ClaimsOf(append(s.List(), s.Pending()...))
+		for _, u := range issues {
+			if holder := claims[claimKeyOf(u)]; holder != "" {
+				return Ship{}, issueHeld(holder)
+			}
 		}
 	}
 	s.mu.Lock()
@@ -512,7 +527,7 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 		sess = now
 	} else if req.Source != "" {
 		s.holdUnlisted(key, got.Session, req.Panel, req.Resources)
-		s.setUnlistedURL(key, req.URL)
+		s.setUnlistedIssues(key, req.URL, req.Issues)
 	}
 	s.broadcast()
 	return s.ship(sess), nil
@@ -537,7 +552,7 @@ func (s *Service) Pending() []Ship {
 		if _, listed := s.find(u.session); listed || time.Since(u.at) >= listedWithin {
 			continue
 		}
-		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: key.OrderID, Panel: u.panel, Resources: u.resources, URL: u.url, Status: StatusUnderway})
+		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: key.OrderID, Panel: u.panel, Resources: u.resources, URL: u.url, Issues: u.issues, Status: StatusUnderway})
 	}
 	return out
 }
@@ -679,7 +694,7 @@ func (s *Service) launched(req launcher.Request, got *launcher.Launched, panel s
 	o := got.Options
 	s.record(outcomes.Record{Ship: got.Session, Event: "launched", Fields: map[string]any{
 		"fleet": o["fleet"], "harness": req.Harness, "skill": map[string]string{"kind": req.Skill.Kind, "name": o["skill"]},
-		"source": req.Source, "panel": panel, "order_id": req.OrderID, "order_url": o["url"], "title": o["title"],
+		"source": req.Source, "panel": panel, "order_id": req.OrderID, "order_url": o["url"], "order_urls": req.Issues, "title": o["title"],
 		"dir": o["dir"], "autopilot": req.Autopilot,
 	}}, nil)
 	s.mu.Lock()

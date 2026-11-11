@@ -57,7 +57,10 @@ type Service struct {
 	poke  chan struct{}
 }
 
-type shipSeen struct{ status, key string }
+type shipSeen struct {
+	status string
+	keys   []string
+}
 
 // reader serialises the reads of one campaign.
 type reader struct {
@@ -304,12 +307,18 @@ func (s *Service) ShipsChanged() {
 func (s *Service) shipsNow() map[string]shipSeen {
 	cur := map[string]shipSeen{}
 	for _, sh := range s.Ships() {
-		if k, ok := ships.ClaimKey(sh.URL); ok {
+		var keys []string
+		for _, u := range sh.IssueURLs() {
+			if k, ok := ships.ClaimKey(u); ok {
+				keys = append(keys, k)
+			}
+		}
+		if len(keys) > 0 {
 			id := sh.Session
 			if id == "" {
 				id = sh.Name
 			}
-			cur[id] = shipSeen{sh.Status, k}
+			cur[id] = shipSeen{sh.Status, keys}
 		}
 	}
 	return cur
@@ -333,7 +342,9 @@ func (s *Service) watchShips(ctx context.Context) {
 		for id, w := range was {
 			now, present := cur[id]
 			if !present || (leaving(now.status) && !leaving(w.status)) {
-				left[w.key] = true
+				for _, k := range w.keys {
+					left[k] = true
+				}
 			}
 		}
 		if len(left) == 0 {

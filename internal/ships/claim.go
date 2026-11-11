@@ -30,8 +30,10 @@ func ClaimKey(url string) (key string, ok bool) {
 func ClaimsOf(list []Ship) map[string]string {
 	out := map[string]string{}
 	for _, sh := range list {
-		if k, ok := ClaimKey(sh.URL); ok {
-			out[k] = cmpName(sh.Name, sh.Session) // a pending launch has a session but no name yet
+		for _, u := range sh.IssueURLs() {
+			if k, ok := ClaimKey(u); ok {
+				out[k] = cmpName(sh.Name, sh.Session) // a pending launch has a session but no name yet
+			}
 		}
 	}
 	return out
@@ -149,11 +151,11 @@ func issueHeld(holder string) *launcher.Error {
 	return &launcher.Error{Status: http.StatusConflict, Msg: "this issue already has a ship (" + holder + ")"}
 }
 
-func (s *Service) setUnlistedURL(key OrderKey, url string) {
+func (s *Service) setUnlistedIssues(key OrderKey, url string, issues []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if u, ok := s.listing[key]; ok {
-		u.url = url
+		u.url, u.issues = url, issues
 		s.listing[key] = u
 	}
 }
@@ -165,6 +167,37 @@ func cmpName(name, session string) string {
 	return session
 }
 
-func (s *Service) lockIssues(urls []string, holder string) (heldBy string, ok bool) { return "", true }
+// IssueURLs is every issue the ship holds: Issues for a slice, else its one URL.
+func (sh Ship) IssueURLs() []string {
+	if len(sh.Issues) > 0 {
+		return sh.Issues
+	}
+	if sh.URL != "" {
+		return []string{sh.URL}
+	}
+	return nil
+}
 
-func (s *Service) unlockIssues(urls []string) {}
+func splitIssues(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, ",")
+}
+
+// lockIssues takes every issue's in-flight claim or none, and ok is false with the holder when one is taken.
+func (s *Service) lockIssues(urls []string, holder string) (heldBy string, ok bool) {
+	for i, u := range urls {
+		if h, ok := s.lockIssue(u, holder); !ok {
+			s.unlockIssues(urls[:i])
+			return h, false
+		}
+	}
+	return "", true
+}
+
+func (s *Service) unlockIssues(urls []string) {
+	for _, u := range urls {
+		s.unlockIssue(u)
+	}
+}

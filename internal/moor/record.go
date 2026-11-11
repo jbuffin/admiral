@@ -29,7 +29,7 @@ type Record struct {
 	Panel    string    `json:"panel"`
 	OrderID  string    `json:"order_id"`
 	URL      string    `json:"url"`
-	Issues   []string  `json:"-"`
+	Issues   []string  `json:"issues,omitempty"`
 	Title    string    `json:"title"`
 	PRs      []string  `json:"prs"`
 	Resume   string    `json:"resume"`
