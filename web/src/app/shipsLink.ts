@@ -8,7 +8,7 @@ export const sources = signal<Source[]>([]);
 export const resources = signal<Resource[]>([]);
 export const shipsLink = signal<'connecting' | 'open' | 'reconnecting' | 'signed-out'>('connecting');
 
-type Listener = (msg: { type: string; ship?: string; crew?: string; items?: unknown[] }) => void;
+type Listener = (msg: { type: string; ship?: string; crew?: string; items?: unknown[]; reset?: boolean }) => void;
 const listeners = new Set<Listener>();
 const openers = new Set<() => void>();
 let current: WebSocket | undefined;

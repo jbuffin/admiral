@@ -13,7 +13,7 @@ import (
 )
 
 // codexOpts selects Codex's rollout decoder; the ship's view otherwise.
-var codexOpts = conversation.Options{Format: conversation.FormatCodex}
+var codexOpts = conversation.Options{Harness: "codex"}
 
 // A compaction is hand-cut: no real rollout with one was recorded, so this line follows the brief's `compacted` type, not a captured file.
 const codexCompactedLine = `{"timestamp":"2026-11-11T20:30:00.000Z","ordinal":99,"type":"compacted","payload":{"message":"summary of the earlier turns"}}` + "\n"

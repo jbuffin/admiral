@@ -1,4 +1,4 @@
-// Package shipconv serves a Claude Code or Copilot ship's conversation over HTTP and WebSocket (docs/api.md).
+// Package shipconv serves a Claude Code, Codex or Copilot ship's conversation over HTTP and WebSocket (docs/api.md).
 package shipconv
 
 import (
@@ -23,11 +23,12 @@ import (
 )
 
 const (
-	pageSize  = 200
-	MaxOpen   = 16 // per client; opening one more closes the oldest
-	pollEvery = 250 * time.Millisecond
-	findEvery = time.Second // how often to search the other project dirs for a moved file
-	maxBefore = 256
+	pageSize      = 200
+	MaxOpen       = 16 // per client; opening one more closes the oldest
+	pollEvery     = 250 * time.Millisecond
+	findEvery     = time.Second // how often to search the other project dirs for a moved file
+	relocateEvery = time.Second // how often a Codex ship's recorded rollout is read again
+	maxBefore     = 256
 )
 
 // The states of the endpoint.
@@ -86,8 +87,8 @@ type where struct {
 	path         string
 	id           string // the session id
 	configDir    string
-	harness      string
-	port         int // of the ship's --ui-server, zero when it has none
+	harness      string // of the ship, or of the boat
+	port         int    // of the ship's --ui-server, zero when it has none
 }
 
 // key names a ship's conversation, or a crew boat's, in the maps below.
@@ -221,9 +222,18 @@ func (s *Service) locateShip(sh ships.Ship, crew string) (w where, ok, none bool
 	if !has {
 		return w, true, true
 	}
-	// "<unix ns> <source> <path>"; a ship's is recorded by its launch.
+	// "<unix ns> <source> <path>"; a Claude ship's is recorded by its launch.
 	parts := strings.SplitN(raw, " ", 3)
-	if len(parts) != 3 || parts[1] != "launch" || !sessionhost.ValidTranscriptPath(parts[2]) {
+	if len(parts) != 3 || !sessionhost.ValidTranscriptPath(parts[2]) {
+		return w, true, true
+	}
+	if sh.Harness == "codex" {
+		// Nothing binds a Codex ship's path to its launch, so any hook-written source is taken; a pane can point it at
+		// another rollout under the same sessions/, the trust locateCrew already accepts.
+		w.raw, w.path, w.configDir = raw, parts[2], configDir
+		return w, true, false
+	}
+	if parts[1] != "launch" {
 		return w, true, true
 	}
 	id, valid := transcriptfs.SessionIDFor(sh.Harness, parts[2])
@@ -239,7 +249,7 @@ func (s *Service) locateShip(sh ships.Ship, crew string) (w where, ok, none bool
 }
 
 // locateCrew has no start command to bind the boat's path to, since the path comes from a hook payload
-// the boat controls; transcriptfs confines it to the fleet's projects dir and nothing more.
+// the boat controls; transcriptfs confines it to the fleet's transcript dir and nothing more.
 func (s *Service) locateCrew(w where, name string) (where, bool, bool) {
 	boat, configDir, ok := s.crewOf(w.ship, name)
 	if !ok {
@@ -249,7 +259,10 @@ func (s *Service) locateCrew(w where, name string) (where, bool, bool) {
 	if !ships.HasConversation(boat.Harness) || configDir == "" || !sessionhost.ValidCrewTranscriptPath(boat.Transcript) {
 		return w, true, true
 	}
-	id, _ := transcriptfs.SessionIDFor(boat.Harness, boat.Transcript)
+	var id string
+	if boat.Harness != "codex" { // a rollout's path names no session to look for elsewhere
+		id, _ = transcriptfs.SessionIDFor(boat.Harness, boat.Transcript)
+	}
 	w.raw, w.path, w.id, w.configDir = boat.Transcript, boat.Transcript, id, configDir
 	return w, true, false
 }
@@ -271,7 +284,7 @@ func (w where) open(find bool) (*os.File, os.FileInfo, string, error) {
 	if err != nil {
 		return nil, nil, "", err
 	}
-	f, info, err = transcriptfs.Open(w.configDir, p)
+	f, info, err = transcriptfs.OpenFor(w.harness, w.configDir, p)
 	return f, info, p, err
 }
 
@@ -405,7 +418,10 @@ type watch struct {
 	stop     context.CancelFunc
 	path     string // where the file was found
 	lastFind time.Time
-	subs     map[*server.Client]struct{}
+	// lastLocate and reset follow a Codex ship's recorded rollout: reset is set when the file switched and the client has not been told.
+	lastLocate time.Time
+	reset      bool
+	subs       map[*server.Client]struct{}
 }
 
 func (s *Service) handleOpen(ctx context.Context, c *server.Client, raw json.RawMessage) {
@@ -611,14 +627,17 @@ func (s *Service) poll(w *watch) {
 		s.endWatch(w)
 		return
 	}
-	items := w.fileItems()
+	items, reset := w.fileItems()
 	if w.server != nil {
 		items = mergeLive(w.server.Changed(), items)
 	}
-	if len(items) == 0 {
+	if len(items) == 0 && !reset {
 		return
 	}
 	msg := tagged(map[string]any{"type": "conversation", "ship": w.session, "items": prefixed(w.round, items)}, w.crew)
+	if reset {
+		msg["reset"] = true
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for c := range w.subs {
@@ -626,8 +645,16 @@ func (s *Service) poll(w *watch) {
 	}
 }
 
-// fileItems is what the file gained since the last poll.
-func (w *watch) fileItems() []conversation.Item {
+// fileItems is what the file gained since the last poll; reset is true when the items replace what the client holds,
+// because the file was truncated or replaced, or a Codex ship recorded another rollout.
+func (w *watch) fileItems() (items []conversation.Item, reset bool) {
+	if w.loc.harness == "codex" && time.Since(w.lastLocate) >= relocateEvery {
+		// A Codex ship's SessionStart fires again on /new, resume and fork, and records a new rollout.
+		w.lastLocate = time.Now()
+		if loc, ok, none := w.svc.locateBoat(w.session, w.crew); ok && !none && loc.path != w.loc.path {
+			w.loc, w.path, w.reader, w.reset = loc, "", conversation.NewReader(conversation.Options{Harness: loc.harness}), true
+		}
+	}
 	var (
 		f    *os.File
 		info os.FileInfo
@@ -647,12 +674,14 @@ func (w *watch) fileItems() []conversation.Item {
 		}
 	}
 	if err != nil || f == nil {
-		return nil
+		return nil, false
 	}
 	defer f.Close()
 	w.svc.markSeen(w.key(), w.loc.raw)
 	up, _ := w.reader.Refresh(f, info)
-	return up.Items
+	reset = w.reset || up.Reset
+	w.reset = false
+	return up.Items, reset
 }
 
 // mergeLive puts the file's items over the live ones with the same id, so the finished reply replaces the

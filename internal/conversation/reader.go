@@ -29,7 +29,7 @@ type Options struct {
 	MaxBytes int
 	// MaxOutput zero means DefaultMaxOutput.
 	MaxOutput int
-	// Harness picks the decoder: "copilot" reads events.jsonl, anything else Claude Code's transcript.
+	// Harness picks the decoder: "copilot" reads events.jsonl, "codex" a rollout, anything else Claude Code's transcript.
 	Harness string
 }
 

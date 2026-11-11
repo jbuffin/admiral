@@ -103,7 +103,7 @@ func copilotHooks() any {
 
 // https://learn.chatgpt.com/docs/hooks does not say how -c maps onto hook tables; the
 // inline form is the same value as the config.toml tables.
-var codexEvents = []string{"PermissionRequest", "Stop", "UserPromptSubmit", "PostToolUse", "Interrupt", "SubagentStart", "SubagentStop"}
+var codexEvents = []string{"SessionStart", "PermissionRequest", "Stop", "UserPromptSubmit", "PostToolUse", "Interrupt", "SubagentStart", "SubagentStop"}
 
 func codexFlags() []string {
 	var out []string

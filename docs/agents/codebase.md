@@ -59,7 +59,7 @@ This file holds the package map, API routes and ship statuses, idle memory figur
   - `resources`: the resource units and their locks.
   - `chat`: the chat session.
   - `ship-input`: send a message to, interrupt and stop a ship, and send to or interrupt a crew boat (`POST /api/ships/<session>/{messages,interrupt,stop}` and `/crew/<name>/{messages,interrupt}`; see `docs/api.md`).
-  - `conversation`: a Claude Code or Copilot ship's conversation (`GET /api/ships/<session>/conversation` and the WebSocket `conversation` messages; see `docs/api.md`). It also covers a crew boat's (`GET /api/ships/{session}/crew/{name}/conversation` and the `crew` field of the WebSocket messages): `internal/shipconv` keys a subscription by session or by `{session}/crew/{name}`, and reads the boat's path fresh from its pane option (`@admiral-crew-transcript`), confined by `transcriptfs` and `ValidCrewTranscriptPath` only.
+  - `conversation`: a Claude Code, Codex or Copilot ship's conversation (`GET /api/ships/<session>/conversation` and the WebSocket `conversation` messages; see `docs/api.md`). It also covers a crew boat's (`GET /api/ships/{session}/crew/{name}/conversation` and the `crew` field of the WebSocket messages): `internal/shipconv` keys a subscription by session or by `{session}/crew/{name}`, and reads the boat's path fresh from its pane option (`@admiral-crew-transcript`), confined by `transcriptfs` and `ValidCrewTranscriptPath` only. A Codex ship or boat is read the same way through the rollout adapter (`internal/conversation/codex.go`, selected by `Options.Format`) with `transcriptfs.OpenIn` on `<Codex home>/sessions/`; the hook's `SessionStart` records the path, and a watch re-reads the option about once a second to follow a new rollout.
   - `changes`: a ship's changes (`GET /api/ships/<session>/changes`, `internal/shipdiff`: a diff of the checkout against its merge-base with `origin/HEAD`'s branch or `main`, with the git safety flags, a size cap and the timeouts; see `docs/api.md`).
 - Bodies stay byte-identical, so a URL inside a body stays unversioned (`icon_url` in `/api/sources` and `/api/plugins` is `/api/plugins/<name>/icon`). Rewriting them is left to #258.
 - The bridge socket's `join` carries an optional `api` version; see `docs/bridge-protocol.md`.
@@ -92,7 +92,7 @@ One fleet, one source, no ships, on an M-series Mac (macOS 27, Go 1.26, tmux 3.7
 | a Python plugin process (`python3 plugin.py`, measured with the former freeform plugin, a minimal one) | about 19 MB |
 | Admiral's tmux server and its control client | about 4 MB and 5 MB |
 
-Each Claude ship has a transcript follower (`shipconv.Tails`): one small `conversation.Reader`, polled every 250 ms with a stat that skips the read when the file is unchanged. A ship with no readable transcript is looked up again every 2 s, backing off to a minute.
+Each Claude or Codex ship has a transcript follower (`shipconv.Tails`): one small `conversation.Reader`, polled every 250 ms with a stat that skips the read when the file is unchanged. A ship with no readable transcript is looked up again every 2 s, backing off to a minute.
 
 Each ship adds its harness, and a pane in tmux.
 
