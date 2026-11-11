@@ -159,10 +159,11 @@ async function listShips(a: Admiral): Promise<ShipJSON[]> {
 /** The cue makes the harness exit (0 sails off, 3 anchors); without one it idles. */
 export async function launchShip(
   a: Admiral,
-  req: { fleet: 'zulu' | 'alpha'; harness: Harness; order?: string; exit?: 0 | 3 },
+  req: { fleet: 'zulu' | 'alpha'; harness: Harness; order?: string; exit?: 0 | 3; cue?: string },
 ): Promise<LaunchedShip> {
   const cue = join(a.home, 'cue');
-  if (req.exit === undefined) rmSync(cue, { force: true });
+  if (req.cue !== undefined) writeFileSync(cue, req.cue);
+  else if (req.exit === undefined) rmSync(cue, { force: true });
   else writeFileSync(cue, `exit ${req.exit}\n`);
   const body = {
     fleet: req.fleet,
@@ -187,8 +188,106 @@ export async function launchShip(
     const want = req.exit === 0 ? 'sailing_off' : 'anchored';
     await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status).toBe(want);
   }
-  rmSync(cue, { force: true });
+  if (req.cue === undefined) rmSync(cue, { force: true });
   return ship;
+}
+
+export const PR_BASE = 'https://github.com/acme/api/pull';
+
+/** What the fake gh's batched poll answers for a PR: any of the words may be '' for none. */
+export function prAnswer(a: Admiral, number: number, p: { state: string; review?: string; checks?: string; mergeable?: string }) {
+  const key = `${PR_BASE}/${number}`.replace(/[/:]/g, '_');
+  for (const [dir, v] of Object.entries({ pr_state: p.state, pr_review: p.review ?? '', pr_checks: p.checks ?? '', pr_mergeable: p.mergeable ?? '' })) {
+    mkdirSync(join(a.home, 'fakegh', dir), { recursive: true });
+    if (v) writeFileSync(join(a.home, 'fakegh', dir, key), v + '\n');
+    else rmSync(join(a.home, 'fakegh', dir, key), { force: true });
+  }
+}
+
+/** The fleet gets a built-in GitHub source, so a clean exit with an open PR moors; call before `start`, after seedFleets. */
+export function addGitHubSource(a: Admiral) {
+  const path = join(a.home, 'config.json');
+  const config = JSON.parse(readFileSync(path, 'utf8'));
+  config.sources = { ...config.sources, gh: { plugin: 'github', fleet: 'zulu', name: 'GitHub', settings: { views: [] } } };
+  a.writeConfig(config);
+  a.fakeGh().token('', 'fake-token-work-1');
+}
+
+/** Start environment for a moored journey: LIVE_ENV's hour-long sail-off delay would also keep the ship from mooring. */
+export const mooringEnv = (a: Admiral) => ({ ...withFakeGh(a), ADMIRAL_SAIL_OFF_DELAY: '200ms' });
+
+/** Launches a ship whose harness waits, then exits 0 with a report naming the PR: Admiral moors it. */
+export async function launchMooredShip(a: Admiral, prNumber: number): Promise<LaunchedShip> {
+  const ship = await launchShip(a, { fleet: 'zulu', harness: 'claude', cue: 'wait go\nexit 0\n' });
+  const rec = join(a.home, 'rec', ship.session);
+  await expect.poll(() => existsSync(join(rec, 'env'))).toBe(true);
+  const report = /^ADMIRAL_REPORT=(.*)$/m.exec(readFileSync(join(rec, 'env'), 'utf8'))?.[1];
+  expect(report, 'the harness env names a report path').toBeTruthy();
+  writeFileSync(report!, JSON.stringify({ version: 2, result: 'done', why: 'PR opened', prs: [{ url: `${PR_BASE}/${prNumber}`, closes: [] }], resume: 'resume it' }));
+  writeFileSync(join(rec, 'go'), '');
+  await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status, { timeout: 30_000 }).toBe('moored');
+  return ship;
+}
+
+/**
+ * Acceptance criterion 3 on the Ships screen of Westwind: the Moored group shows each PR's chips from the batched poll,
+ * a later poll's chips arrive by push, and Don't follow reviews and Dismiss each take a ship out. `press` is the click or tap.
+ */
+export async function mooredFromTheShell(page: Page, a: Admiral, press: (l: Locator) => Promise<void>, opts: { phone: boolean }) {
+  const main = page.getByRole('main');
+  const group = main.getByRole('region', { name: /^Moored/ });
+  const rowOf = (s: LaunchedShip) => group.getByRole('listitem').filter({ hasText: s.name });
+
+  prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+  prAnswer(a, 8, { state: 'OPEN', review: 'CHANGES_REQUESTED', checks: 'FAILURE', mergeable: 'CONFLICTING' });
+  const first = await launchMooredShip(a, 7);
+  const second = await launchMooredShip(a, 8);
+
+  // Opening Ships kicks one poll, fire and forget.
+  const kicks: string[] = [];
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/moored/refresh') kicks.push(r.url());
+  });
+  await page.goto(a.url + 'app/ships?fleet=zulu');
+  await expect(main.locator('.ship-group').getByRole('heading', { level: 2 })).toHaveText([/^Moored\s*2$/]);
+  await expect.poll(() => kicks.length).toBe(1);
+
+  // Each row: its PR as a link opening in a new tab, the chips from the poll, and how long it has waited.
+  const link = rowOf(first).getByRole('link', { name: 'api#7' });
+  await expect(link).toHaveAttribute('href', `${PR_BASE}/7`);
+  await expect(link).toHaveAttribute('target', '_blank');
+  for (const chip of ['Approved', 'Checks passing', 'Mergeable']) await expect(rowOf(first)).toContainText(chip);
+  for (const chip of ['Changes requested', 'Checks failing', 'Conflicts']) await expect(rowOf(second)).toContainText(chip);
+  await expect(rowOf(first)).not.toContainText('Conflicts');
+  await expect(rowOf(first).locator('.ship-age')).toHaveText(/^(now|\d+m)$/);
+  await expect(rowOf(first)).not.toContainText(/undefined|null/);
+  if (opts.phone) expect(await page.evaluate(() => [document.documentElement, document.querySelector('main')!].every((e) => e.scrollWidth <= e.clientWidth))).toBe(true);
+  for (const name of ['Dismiss', "Don't follow reviews"]) {
+    expect((await rowOf(first).getByRole('button', { name }).boundingBox())!.height, `${name} height`).toBeGreaterThanOrEqual(44);
+  }
+
+  // A later poll's chips arrive by push, with no reload.
+  prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'PENDING', mergeable: 'MERGEABLE' });
+  const refresh = await fetch(`${a.url}api/v1/moored/refresh`, { method: 'POST' });
+  expect(refresh.status).toBe(202);
+  await expect(rowOf(first)).toContainText('Checks pending');
+  await expect(rowOf(first)).not.toContainText('Checks passing');
+
+  // Don't follow reviews takes the ship out of the list.
+  const unfollowed = page.waitForResponse((r) => new URL(r.url()).pathname === `/api/v1/ships/${first.session}/unfollow`);
+  await press(rowOf(first).getByRole('button', { name: "Don't follow reviews" }));
+  expect((await unfollowed).status()).toBe(200);
+  await expect(rowOf(first)).toHaveCount(0);
+  await expect(rowOf(second)).toBeVisible();
+
+  // Dismiss takes the other out by keyboard, with no confirm dialog, and the empty group goes with it.
+  const dismissed = page.waitForResponse((r) => new URL(r.url()).pathname === `/api/v1/ships/${second.session}/dismiss`);
+  await rowOf(second).getByRole('button', { name: 'Dismiss' }).focus();
+  await page.keyboard.press('Enter');
+  expect((await dismissed).status()).toBe(200);
+  await expect(rowOf(second)).toHaveCount(0);
+  await expect(group).toHaveCount(0);
+  expect((await listShips(a)).filter((s) => s.status === 'moored')).toEqual([]);
 }
 
 /** Launches an idling crew boat for the ship, which counts in its `crew_live`. */
