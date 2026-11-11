@@ -1,6 +1,32 @@
 # Testing
 
-How Admiral's tests are set up. The rules for what to test are in [`AGENTS.md`](../../AGENTS.md).
+What to test, where each test goes, and how the tests are set up.
+
+## What to test
+
+Each behavior gets one test, at the lowest layer that can see it:
+
+| The behavior | Its layer |
+| --- | --- |
+| Validation, parsing, config shape and migration, state logic, masking secrets | Go unit test in the package |
+| What a route returns for a request | Go `httptest` against the handler |
+| UI state logic (stores, ordering, protocol replay) | Vitest |
+| A journey that crosses browser, server and tmux or a harness | E2E: Go `e2e/` for server and tmux, Playwright for the page |
+
+A test earns its place when it would catch a bug a person could hit:
+
+- Assert outcomes: the response, the page, the ship's status, the file on disk. A test that still passes after the code under it breaks, or fails after a refactor that keeps the behavior, is a change detector; rewrite it or delete it.
+- Take expected values from the spec, the story or a worked example, never by recomputing them the way the code does.
+- Pick one case per distinct rule. Spelling variants of one flag, every bidi code point, every way to write the same argument: one representative each.
+- Test the inputs real callers send. The boundary validates; test it there, and trust the code behind it.
+- Mock only what Admiral doesn't control: `gh`, the network, the clock. Use the real binary, tmux and the fake harness for the rest.
+- Wait on a condition (a file, an API state, a locator), never on a fixed sleep.
+- A red test describes the behavior it expects. Once the code exists, the test file carries no header spelling out the interface it assumed.
+- Text, class names, colors, layout and focus order are the designs' job. A Playwright test finds elements by role and accessible name, and asserts what the person sees happen.
+
+Playwright drives the new shell at `/app/` only; the old UI is frozen and has no browser tests. The journeys are a short list of what a person does with Admiral (set up, launch, board, answer, reconnect). The `@critical` tag marks the ones Admiral cannot ship broken.
+
+## How the tests are set up
 
 Admiral keeps its data in `$ADMIRAL_HOME` (default `~/.admiral/`). Every test starts the binary with a fresh temporary one on a free port, so tests never touch yours.
 
