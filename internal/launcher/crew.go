@@ -24,6 +24,7 @@ type CrewRequest struct {
 	Prompt  string
 	Args    []string // pass-through harness args (--arg), after the hook flags and before the prompt
 	Role    string   // optional @admiral-role; the caller has checked its shape
+	Member  string   // launch as this crew member: its harness lock, model, instructions and notes
 	// Autopilot is a caller with ADMIRAL_AUTOPILOT=1: only a harness whose guard probe
 	// passed in the fleet launches, and Args must fit the autopilot args allowlist.
 	Autopilot bool

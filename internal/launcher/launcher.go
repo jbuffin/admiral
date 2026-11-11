@@ -36,6 +36,8 @@ type Request struct {
 	Effort    string `json:"effort"`
 	// Crew names the members the launch pins; only a Commodore launch may carry any.
 	Crew []string `json:"crew"`
+	// Member launches the ship as this crew member; only a Just launch may carry one.
+	Member string `json:"member"`
 	// Title and URL are set by the server from the source's order, never by the client.
 	Title string `json:"-"`
 	URL   string `json:"-"`

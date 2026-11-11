@@ -143,6 +143,7 @@ func crewLaunch(args []string, std IO) error {
 	harness := fs.String("harness", "", "the harness (default: the ship's)")
 	ship := fs.String("ship", "", "the ship (default: the one this runs in)")
 	role := fs.String("role", "", "the crew boat's role, lowercase letters, digits and -")
+	member := fs.String("member", "", "launch as this crew member")
 	var extra list
 	fs.Var(&extra, "arg", "an argument for the harness, repeatable")
 	if err := parseFlags(fs, args); err != nil {
@@ -158,7 +159,7 @@ func crewLaunch(args []string, std IO) error {
 	if err != nil {
 		return err
 	}
-	err = c.l.LaunchCrew(launcher.CrewRequest{Session: c.session, Name: *name, Harness: *harness, Dir: *dir, Prompt: strings.Join(prompt, " "), Args: extra, Role: *role, Autopilot: os.Getenv("ADMIRAL_AUTOPILOT") == "1"})
+	err = c.l.LaunchCrew(launcher.CrewRequest{Session: c.session, Name: *name, Harness: *harness, Dir: *dir, Prompt: strings.Join(prompt, " "), Args: extra, Role: *role, Member: *member, Autopilot: os.Getenv("ADMIRAL_AUTOPILOT") == "1"})
 	if errors.Is(err, launcher.ErrCrewNameTaken) {
 		return &ExitError{Code: crewExitTaken, Msg: err.Error()}
 	}

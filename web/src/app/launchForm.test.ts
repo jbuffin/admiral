@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type CrewMemberView, crewOptions, defaultSkill, effortsFor, type LaunchFormState, launchBody, sourcesForFleet, togglePin } from './launchForm';
+import { type CrewMemberView, crewOptions, defaultSkill, effortsFor, type LaunchFormState, launchBody, memberRun, sourcesForFleet, togglePin } from './launchForm';
 
 describe('sourcesForFleet', () => {
   it('keeps the sources of the active fleet only', () => {
@@ -133,5 +133,44 @@ describe('togglePin', () => {
   });
   it('keeps at most one member per role', () => {
     expect(togglePin(['scout', 'mate'], members, 'quill')).toEqual(['mate', 'quill']);
+  });
+});
+
+describe('launching as a member', () => {
+  const form: LaunchFormState = {
+    fleet: 'work',
+    harness: 'claude',
+    dir: '/code/api',
+    clone: false,
+    skill: { kind: 'none' },
+    text: 'go',
+    model: '',
+    effort: '',
+    autopilot: false,
+    resources: [],
+  };
+  const members: CrewMemberView[] = [
+    { name: 'scout', role: 'scribe', layer: 'built-in', harness: null },
+    { name: 'coder', role: 'implementer', layer: 'fleet', harness: 'codex' },
+  ];
+
+  it('sends the member, and nothing when none is chosen', () => {
+    expect(launchBody({ ...form, member: 'scout' })).toMatchObject({ member: 'scout', harness: 'claude' });
+    expect(launchBody(form)).not.toHaveProperty('member');
+    expect(launchBody({ ...form, member: '' })).not.toHaveProperty('member');
+  });
+  it('sends the harness the member is locked to', () => {
+    expect(launchBody({ ...form, member: 'coder', memberHarness: 'codex' })).toMatchObject({ member: 'coder', harness: 'codex' });
+  });
+  it('is sent only with Just launch, and never with pinned crew', () => {
+    expect(launchBody({ ...form, skill: { kind: 'commodore' }, member: 'scout' })).not.toHaveProperty('member');
+    expect(launchBody({ ...form, skill: { kind: 'skill', name: 'grill' }, member: 'scout' })).not.toHaveProperty('member');
+    expect(launchBody({ ...form, member: 'scout', crew: ['mate'] })).not.toHaveProperty('crew');
+  });
+  it('runs on the lock, with a hint, or on the form harness without one', () => {
+    expect(memberRun(members, 'claude', 'coder')).toEqual({ harness: 'codex', hint: 'runs on codex' });
+    expect(memberRun(members, 'codex', 'coder')).toEqual({ harness: 'codex', hint: null });
+    expect(memberRun(members, 'claude', 'scout')).toEqual({ harness: 'claude', hint: null });
+    expect(memberRun(members, 'claude', 'ghost')).toBeNull();
   });
 });

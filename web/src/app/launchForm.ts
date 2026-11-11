@@ -23,6 +23,9 @@ export interface LaunchFormState {
   source?: string;
   orderId?: string;
   crew?: string[];
+  // The "Launch as" member and the harness it is locked to, if any.
+  member?: string;
+  memberHarness?: string | null;
 }
 
 export interface CrewMemberView {
@@ -44,6 +47,11 @@ export interface CrewAnswer {
 /** The members a pin control offers: one locked to another harness can be pinned and says where it runs. */
 export function crewOptions(members: CrewMemberView[], harness: string): CrewOption[] {
   return members.map((m) => ({ ...m, hint: m.harness !== null && m.harness !== harness ? `runs on ${m.harness}` : null }));
+}
+
+/** Where a "Launch as" member runs: its lock, else the form's harness, and a hint when that is not the form's. */
+export function memberRun(_members: CrewMemberView[], _harness: string, _name: string): { harness: string; hint: string | null } | null {
+  return null;
 }
 
 /** Pins or unpins a member; pinning replaces any other pinned member of the same role. */
