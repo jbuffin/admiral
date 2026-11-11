@@ -1,0 +1,465 @@
+{
+  "data": {
+    "repository": {
+      "issueOrPullRequest": {
+        "__typename": "Issue",
+        "number": 1,
+        "title": "Ship the importer",
+        "url": "https://github.com/acme/campaign/issues/1",
+        "state": "OPEN",
+        "body": "",
+        "repository": {
+          "nameWithOwner": "acme/campaign"
+        },
+        "labels": {
+          "nodes": [
+            {
+              "name": "wayfinder:map"
+            }
+          ],
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          }
+        },
+        "assignees": {
+          "nodes": []
+        },
+        "blockedBy": {
+          "nodes": [],
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          }
+        },
+        "subIssues": {
+          "totalCount": 10,
+          "nodes": [
+            {
+              "__typename": "Issue",
+              "number": 2,
+              "title": "Add retry to the sync job",
+              "url": "https://github.com/acme/campaign/issues/2",
+              "state": "OPEN",
+              "body": "",
+              "repository": {
+                "nameWithOwner": "acme/campaign"
+              },
+              "labels": {
+                "nodes": [
+                  {
+                    "name": "ready-for-agent"
+                  }
+                ],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "assignees": {
+                "nodes": []
+              },
+              "blockedBy": {
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "subIssues": {
+                "totalCount": 0,
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              }
+            },
+            {
+              "__typename": "Issue",
+              "number": 3,
+              "title": "Pick the queue library",
+              "url": "https://github.com/acme/campaign/issues/3",
+              "state": "CLOSED",
+              "body": "",
+              "repository": {
+                "nameWithOwner": "acme/campaign"
+              },
+              "labels": {
+                "nodes": [
+                  {
+                    "name": "wayfinder:research"
+                  }
+                ],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "assignees": {
+                "nodes": []
+              },
+              "blockedBy": {
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "subIssues": {
+                "totalCount": 0,
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              }
+            },
+            {
+              "__typename": "Issue",
+              "number": 4,
+              "title": "Grill the retry policy",
+              "url": "https://github.com/acme/campaign/issues/4",
+              "state": "OPEN",
+              "body": "",
+              "repository": {
+                "nameWithOwner": "acme/campaign"
+              },
+              "labels": {
+                "nodes": [
+                  {
+                    "name": "wayfinder:grilling"
+                  }
+                ],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "assignees": {
+                "nodes": []
+              },
+              "blockedBy": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/acme/campaign/issues/3",
+                    "title": "Pick the queue library",
+                    "state": "CLOSED"
+                  }
+                ],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "subIssues": {
+                "totalCount": 0,
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              }
+            },
+            {
+              "__typename": "Issue",
+              "number": 5,
+              "title": "Research rate limits",
+              "url": "https://github.com/acme/campaign/issues/5",
+              "state": "OPEN",
+              "body": "",
+              "repository": {
+                "nameWithOwner": "acme/campaign"
+              },
+              "labels": {
+                "nodes": [
+                  {
+                    "name": "wayfinder:research"
+                  }
+                ],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "assignees": {
+                "nodes": []
+              },
+              "blockedBy": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/acme/other/issues/90",
+                    "title": "Vendor quota decision",
+                    "state": "OPEN"
+                  }
+                ],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "subIssues": {
+                "totalCount": 0,
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              }
+            },
+            {
+              "__typename": "Issue",
+              "number": 6,
+              "title": "Wire the dashboard",
+              "url": "https://github.com/acme/campaign/issues/6",
+              "state": "OPEN",
+              "body": "",
+              "repository": {
+                "nameWithOwner": "acme/campaign"
+              },
+              "labels": {
+                "nodes": [
+                  {
+                    "name": "ready-for-agent"
+                  }
+                ],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "assignees": {
+                "nodes": [
+                  {
+                    "login": "octocat"
+                  }
+                ]
+              },
+              "blockedBy": {
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "subIssues": {
+                "totalCount": 0,
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              }
+            },
+            {
+              "__typename": "Issue",
+              "number": 7,
+              "title": "Sub-map: storage",
+              "url": "https://github.com/acme/campaign/issues/7",
+              "state": "OPEN",
+              "body": "",
+              "repository": {
+                "nameWithOwner": "acme/campaign"
+              },
+              "labels": {
+                "nodes": [
+                  {
+                    "name": "wayfinder:map"
+                  }
+                ],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "assignees": {
+                "nodes": []
+              },
+              "blockedBy": {
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "subIssues": {
+                "totalCount": 2,
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              }
+            },
+            {
+              "__typename": "Issue",
+              "number": 40,
+              "title": "Update the shared client",
+              "url": "https://github.com/acme/other/issues/40",
+              "state": "OPEN",
+              "body": "",
+              "repository": {
+                "nameWithOwner": "acme/other"
+              },
+              "labels": {
+                "nodes": [
+                  {
+                    "name": "ready-for-human"
+                  }
+                ],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "assignees": {
+                "nodes": []
+              },
+              "blockedBy": {
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "subIssues": {
+                "totalCount": 0,
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              }
+            },
+            {
+              "__typename": "Issue",
+              "number": 10,
+              "title": "Sub-map: rollout",
+              "url": "https://github.com/acme/campaign/issues/10",
+              "state": "OPEN",
+              "body": "",
+              "repository": {
+                "nameWithOwner": "acme/campaign"
+              },
+              "labels": {
+                "nodes": [
+                  {
+                    "name": "wayfinder:map"
+                  }
+                ],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "assignees": {
+                "nodes": []
+              },
+              "blockedBy": {
+                "nodes": [
+                  {
+                    "url": "https://github.com/acme/campaign/issues/5",
+                    "title": "Research rate limits",
+                    "state": "OPEN"
+                  }
+                ],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "subIssues": {
+                "totalCount": 1,
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              }
+            },
+            {
+              "__typename": "Issue",
+              "number": 12,
+              "title": "Sub-map: spikes",
+              "url": "https://github.com/acme/campaign/issues/12",
+              "state": "CLOSED",
+              "body": "",
+              "repository": {
+                "nameWithOwner": "acme/campaign"
+              },
+              "labels": {
+                "nodes": [
+                  {
+                    "name": "wayfinder:map"
+                  }
+                ],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "assignees": {
+                "nodes": []
+              },
+              "blockedBy": {
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "subIssues": {
+                "totalCount": 1,
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              }
+            },
+            {
+              "__typename": "Issue",
+              "number": 14,
+              "title": "Tidy the readme",
+              "url": "https://github.com/acme/campaign/issues/14",
+              "state": "OPEN",
+              "body": "",
+              "repository": {
+                "nameWithOwner": "acme/campaign"
+              },
+              "labels": {
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "assignees": {
+                "nodes": []
+              },
+              "blockedBy": {
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "subIssues": {
+                "totalCount": 0,
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              }
+            }
+          ],
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          }
+        }
+      }
+    }
+  }
+}

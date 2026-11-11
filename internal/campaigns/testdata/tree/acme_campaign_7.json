@@ -1,0 +1,130 @@
+{
+  "data": {
+    "repository": {
+      "issueOrPullRequest": {
+        "__typename": "Issue",
+        "number": 7,
+        "title": "Sub-map: storage",
+        "url": "https://github.com/acme/campaign/issues/7",
+        "state": "OPEN",
+        "body": "",
+        "repository": {
+          "nameWithOwner": "acme/campaign"
+        },
+        "labels": {
+          "nodes": [
+            {
+              "name": "wayfinder:map"
+            }
+          ],
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          }
+        },
+        "assignees": {
+          "nodes": []
+        },
+        "blockedBy": {
+          "nodes": [],
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          }
+        },
+        "subIssues": {
+          "totalCount": 2,
+          "nodes": [
+            {
+              "__typename": "Issue",
+              "number": 8,
+              "title": "Choose a schema",
+              "url": "https://github.com/acme/campaign/issues/8",
+              "state": "OPEN",
+              "body": "",
+              "repository": {
+                "nameWithOwner": "acme/campaign"
+              },
+              "labels": {
+                "nodes": [
+                  {
+                    "name": "wayfinder:task"
+                  }
+                ],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "assignees": {
+                "nodes": []
+              },
+              "blockedBy": {
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "subIssues": {
+                "totalCount": 0,
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              }
+            },
+            {
+              "__typename": "Issue",
+              "number": 9,
+              "title": "Sign off the schema",
+              "url": "https://github.com/acme/campaign/issues/9",
+              "state": "OPEN",
+              "body": "",
+              "repository": {
+                "nameWithOwner": "acme/campaign"
+              },
+              "labels": {
+                "nodes": [
+                  {
+                    "name": "wayfinder:task"
+                  },
+                  {
+                    "name": "needs-human-action"
+                  }
+                ],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "assignees": {
+                "nodes": []
+              },
+              "blockedBy": {
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "subIssues": {
+                "totalCount": 0,
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              }
+            }
+          ],
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          }
+        }
+      }
+    }
+  }
+}

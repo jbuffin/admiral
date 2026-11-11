@@ -1,0 +1,93 @@
+{
+  "data": {
+    "repository": {
+      "issueOrPullRequest": {
+        "__typename": "Issue",
+        "number": 10,
+        "title": "Sub-map: rollout",
+        "url": "https://github.com/acme/campaign/issues/10",
+        "state": "OPEN",
+        "body": "",
+        "repository": {
+          "nameWithOwner": "acme/campaign"
+        },
+        "labels": {
+          "nodes": [
+            {
+              "name": "wayfinder:map"
+            }
+          ],
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          }
+        },
+        "assignees": {
+          "nodes": []
+        },
+        "blockedBy": {
+          "nodes": [
+            {
+              "url": "https://github.com/acme/campaign/issues/5",
+              "title": "Research rate limits",
+              "state": "OPEN"
+            }
+          ],
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          }
+        },
+        "subIssues": {
+          "totalCount": 1,
+          "nodes": [
+            {
+              "__typename": "Issue",
+              "number": 11,
+              "title": "Roll out to staging",
+              "url": "https://github.com/acme/campaign/issues/11",
+              "state": "OPEN",
+              "body": "",
+              "repository": {
+                "nameWithOwner": "acme/campaign"
+              },
+              "labels": {
+                "nodes": [
+                  {
+                    "name": "ready-for-agent"
+                  }
+                ],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "assignees": {
+                "nodes": []
+              },
+              "blockedBy": {
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              },
+              "subIssues": {
+                "totalCount": 0,
+                "nodes": [],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                }
+              }
+            }
+          ],
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          }
+        }
+      }
+    }
+  }
+}
