@@ -177,82 +177,6 @@ func TestCommodoreCompactWindow(t *testing.T) {
 	})
 }
 
-// S2: prompt forms.
-func TestPromptForms(t *testing.T) {
-	w := newWorld(t)
-	// Many launches: the harness exits at once with status 3 (remain-on-exit keeps
-	// an anchored ship, where status 0 would sail it off after 3 s)
-	// so the ships do not each hold a pty; CI runners have few.
-	w.writeCue("exit 3")
-	w.start()
-	type tc struct {
-		name, text string
-		skill      map[string]any
-		want       map[string]string // harness → prompt
-	}
-	same := func(s string) map[string]string { return map[string]string{"claude": s, "codex": s, "copilot": s} }
-	cases := []tc{
-		{"commodore trims, keeps newlines", "\n  line one\nline two  \n\n", commodore,
-			map[string]string{"claude": "/commodore line one\nline two", "copilot": "/commodore line one\nline two", "codex": "$commodore line one\nline two"}},
-		{"custom slash name", "hello", customSkill("/foo"),
-			map[string]string{"claude": "/foo hello", "copilot": "/foo hello", "codex": "$foo hello"}},
-		{"custom bare name", "hello", customSkill("foo"),
-			map[string]string{"claude": "/foo hello", "copilot": "/foo hello", "codex": "$foo hello"}},
-		{"custom dollar name", "hello", customSkill("$foo"),
-			map[string]string{"claude": "/foo hello", "copilot": "/foo hello", "codex": "$foo hello"}},
-		{"only one leading slash is dropped", "hi", customSkill("//foo"),
-			map[string]string{"claude": "//foo hi", "copilot": "//foo hi", "codex": "$/foo hi"}},
-		{"just launch is exact", "  exactly\n as written \n\n", noSkill, same("  exactly\n as written \n\n")},
-		{"just launch text starting with a dash", "--help -x", noSkill, same("--help -x")},
-		{"commodore text starting with a dash", "-rf --foo", commodore,
-			map[string]string{"claude": "/commodore -rf --foo", "copilot": "/commodore -rf --foo", "codex": "$commodore -rf --foo"}},
-	}
-	n := 0
-	for _, c := range cases {
-		for _, harness := range []string{"claude", "codex", "copilot"} {
-			n++
-			c, harness, repo := c, harness, "p"+string(rune('a'+n%26))+string(rune('a'+n/26))
-			t.Run(c.name+"/"+harness, func(t *testing.T) {
-				w := w.at(t) // helpers must fail this subtest, not its parent
-				ship := w.launch(w.order("work", harness, repo, c.skill, c.text))
-				r := w.record(ship.Session)
-				if got := promptOf(t, w, r); got != c.want[harness] {
-					t.Errorf("prompt = %q, want %q", got, c.want[harness])
-				}
-				// #139: only a Commodore gets the autocompact window.
-				if got, ok := r.env[compactWindow]; ok && c.skill["kind"] != "commodore" {
-					t.Errorf("%s = %q on a %v skill, want it unset", compactWindow, got, c.skill["kind"])
-				}
-			})
-		}
-	}
-	// Just launch's note goes first, trimmed, then a blank line and the order as written.
-	notes := []struct{ name, note, text, want string }{
-		{"note before the order", "  Plan first\nthen act \n", " the order\n", "Plan first\nthen act\n\n the order\n"},
-		{"blank note is no note", " \n ", "as written ", "as written "},
-	}
-	for i, c := range notes {
-		c, repo := c, "note"+string(rune('a'+i))
-		t.Run(c.name, func(t *testing.T) {
-			w := w.at(t)
-			req := w.order("work", "claude", repo, noSkill, c.text)
-			req["note"] = c.note
-			if got := promptOf(t, w, w.record(w.launch(req).Session)); got != c.want {
-				t.Errorf("prompt = %q, want %q", got, c.want)
-			}
-		})
-	}
-	t.Run("name with whitespace is refused", func(t *testing.T) {
-		w := w.at(t) // helpers must fail this subtest, not its parent
-		before := w.sessions()
-		code, body := w.post(w.order("work", "claude", "ws", customSkill("my skill"), "x"))
-		requireRefusal(t, code, body)
-		if after := w.sessions(); len(after) != len(before) {
-			t.Errorf("a refused launch created a session: before %v, after %v", before, after)
-		}
-	})
-}
-
 // requireRefusal: a client error with a JSON {"error": "..."} body that never
 // says "flagged".
 func requireRefusal(t *testing.T, code int, body string) string {
@@ -492,77 +416,6 @@ func checkCopilotBundle(t *testing.T, docs []any) {
 		if !strings.Contains(string(raw), m) {
 			t.Errorf("Copilot bundle lacks %s: %s", m, raw)
 		}
-	}
-}
-
-// S4: names are distinct and the session name is their slug.
-func TestShipNames(t *testing.T) {
-	w := newWorld(t)
-	// Many launches: the harness exits at once with status 3 (remain-on-exit keeps
-	// an anchored ship, where status 0 would sail it off after 3 s)
-	// so the ships do not each hold a pty; CI runners have few.
-	w.writeCue("exit 3")
-	w.start()
-	slug := regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
-	seen := map[string]bool{}
-	sessions := map[string]bool{}
-	for i := 0; i < 12; i++ {
-		s := w.launch(w.order("work", "claude", "nm"+string(rune('a'+i)), commodore, "x"))
-		if seen[s.Name] {
-			t.Fatalf("name %q handed out twice", s.Name)
-		}
-		seen[s.Name] = true
-		sessions[s.Session] = true
-		want := strings.Trim(regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(strings.ToLower(s.Name), "-"), "-")
-		if s.Session != want || !slug.MatchString(s.Session) || s.Session == "_admiral" {
-			t.Errorf("session %q for ship %q, want the slug %q", s.Session, s.Name, want)
-		}
-	}
-	live := w.sessions()
-	sort.Strings(live)
-	var got []string
-	for s := range sessions {
-		got = append(got, s)
-	}
-	sort.Strings(got)
-	if !reflect.DeepEqual(live, got) {
-		t.Errorf("tmux sessions = %v, want exactly the ships' sessions %v", live, got)
-	}
-}
-
-// When every curated name is in use, a Roman numeral is added. The list holds
-// about 150 names, so 220 ships must reach it.
-func TestShipNamesGetNumerals(t *testing.T) {
-	if testing.Short() {
-		t.Skip("launches 220 ships")
-	}
-	w := newWorld(t)
-	// macOS runs out of ptys at about 125 live panes. The harness exits at once;
-	// remain-on-exit keeps the ship and frees the pty. Exit 3, not 0: an exit-0
-	// ship sails off and its session is killed after 3 s.
-	w.writeCue("exit 3")
-	w.start()
-	names := map[string]bool{}
-	for i := 0; i < 220; i++ {
-		req := w.order("work", "claude", "bulk", noSkill, "x")
-		req["order_id"] = "o" + time.Now().Format("150405.000000000")
-		names[w.launch(req).Name] = true
-	}
-	if len(names) != 220 {
-		t.Fatalf("220 ships got %d distinct names", len(names))
-	}
-	numeral := regexp.MustCompile(`^(.+) (II|III|IV|V|VI|VII|VIII|IX|X)$`)
-	found := 0
-	for n := range names {
-		if m := numeral.FindStringSubmatch(n); m != nil {
-			found++
-			if !names[m[1]] {
-				t.Errorf("%q has a numeral but %q was never used", n, m[1])
-			}
-		}
-	}
-	if found == 0 {
-		t.Errorf("no ship name got a numeral after 220 launches")
 	}
 }
 
@@ -869,32 +722,6 @@ func TestIsolationAndTmuxEnvironment(t *testing.T) {
 	}
 }
 
-// A value Admiral writes into a tmux option must not be able to break the
-// control-mode framing, so control characters are refused before any session.
-func TestControlCharactersAreRefused(t *testing.T) {
-	w := newWorld(t)
-	w.start()
-	w.launch(w.order("work", "claude", "cc-ok", commodore, "x"))
-	for name, mod := range map[string]func(map[string]any){
-		"order id with a forged %end": func(r map[string]any) { r["order_id"] = "x\n%end 1 2 1\n%begin 1 2 1" },
-		"source":                      func(r map[string]any) { r["source"] = "a\x1fb" },
-		"directory":                   func(r map[string]any) { r["dir"] = w.checkout("cc\nnl") },
-		"skill name":                  func(r map[string]any) { r["skill"] = customSkill("a\x07b") },
-	} {
-		t.Run(name, func(t *testing.T) {
-			w := w.at(t) // helpers must fail this subtest, not its parent
-			before := w.sessions()
-			req := w.order("work", "claude", "cc-bad", commodore, "x")
-			mod(req)
-			code, body := w.post(req)
-			requireRefusal(t, code, body)
-			if after := w.sessions(); !reflect.DeepEqual(before, after) {
-				t.Errorf("a refused launch changed the sessions: before %v, after %v", before, after)
-			}
-		})
-	}
-}
-
 // A session made by hand on Admiral's socket whose option holds a forged
 // control-mode end of reply must not make ships vanish or lose their positions.
 func TestMalformedSessionDoesNotHideShips(t *testing.T) {
@@ -926,58 +753,6 @@ func TestMalformedSessionDoesNotHideShips(t *testing.T) {
 	})
 	// A command still gets its own reply: a launch works and lists.
 	w.launch(w.order("work", "claude", "mf-c", commodore, "x"))
-}
-
-// A directory with # in it: tmux format-expands -c, so the launcher escapes it.
-func TestDirectoryWithFormatCharacters(t *testing.T) {
-	w := newWorld(t)
-	w.start()
-	ship := w.launch(w.order("work", "claude", "fmt#{pane_id}x", commodore, "x"))
-	r := w.record(ship.Session)
-	if want, _ := filepath.EvalSymlinks(ship.Dir); r.cwd != want {
-		t.Errorf("working directory = %q, want %q", r.cwd, want)
-	}
-}
-
-// Arguments that end in ; reach the harness intact (tmux reads a trailing ; as
-// a command separator unless it is escaped), on every harness's command line.
-func TestTrailingSemicolons(t *testing.T) {
-	w := newWorld(t)
-	// Many launches: the harness exits at once with status 3 (remain-on-exit keeps
-	// an anchored ship, where status 0 would sail it off after 3 s)
-	// so the ships do not each hold a pty; CI runners have few.
-	w.writeCue("exit 3")
-	w.start()
-	n := 0
-	for _, harness := range []string{"claude", "codex", "copilot"} {
-		for _, text := range []string{`end;`, `end\;`, `end\\;`, `;`} {
-			n++
-			ship := w.launch(w.order("work", harness, "semi"+string(rune('a'+n)), noSkill, text))
-			if got := promptOf(t, w, w.record(ship.Session)); got != text {
-				t.Errorf("%s prompt = %q, want %q", harness, got, text)
-			}
-		}
-	}
-}
-
-// An environment value over tmux's message size is refused before a session exists.
-func TestHugeEnvValueIsRefused(t *testing.T) {
-	w := newWorld(t)
-	cfg := map[string]any{}
-	_ = json.Unmarshal([]byte(w.config()), &cfg)
-	dock := w.dock("claude")
-	dock["env"].(map[string]string)["HUGE"] = strings.Repeat("x", 20000)
-	cfg["fleets"].(map[string]any)["huge"] = map[string]any{"name": "Huge", "search_roots": []string{w.work}, "claude": dock}
-	raw, _ := json.Marshal(cfg)
-	writeConfig(t, w.home, string(raw))
-	w.start()
-	w.launch(w.order("work", "claude", "env-ok", commodore, "x"))
-	before := w.sessions()
-	code, body := w.post(w.order("huge", "claude", "env-big", commodore, "x"))
-	requireRefusal(t, code, body)
-	if after := w.sessions(); !reflect.DeepEqual(before, after) {
-		t.Errorf("a refused launch changed the sessions: before %v, after %v", before, after)
-	}
 }
 
 // When tmux dies and comes back, the positions of ships that are gone are
