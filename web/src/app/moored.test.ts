@@ -115,12 +115,13 @@ describe('how long a moored ship has waited', () => {
 
 describe('staleNote', () => {
   const now = Date.parse('2026-11-11T12:00:00Z');
-  it('says when the poll last ran, only while stale', () => {
-    expect(staleNote(ship({ stale: true, polled_at: '2026-11-11T11:20:00Z' }), now)).toBe('last checked 40m');
+  it('says the poll failed and when the last good one ran, only while stale', () => {
+    expect(staleNote(ship({ stale: true, polled_at: '2026-11-11T11:20:00Z' }), now)).toBe('Poll failed · last checked 40m ago');
+    expect(staleNote(ship({ stale: true, polled_at: '2026-11-11T11:59:40Z' }), now)).toBe('Poll failed · last checked under a minute ago');
     expect(staleNote(ship({ stale: false, polled_at: '2026-11-11T11:20:00Z' }), now)).toBe('');
   });
 
-  it('is blank when stale but never polled', () => {
-    expect(staleNote(ship({ stale: true, polled_at: '' }), now)).toBe('');
+  it('just says the poll failed when no poll ever answered', () => {
+    expect(staleNote(ship({ stale: true, polled_at: '' }), now)).toBe('Poll failed');
   });
 });

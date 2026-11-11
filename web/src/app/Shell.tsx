@@ -103,8 +103,11 @@ function MooredActions({ ship, onError }: { ship: Ship; onError: (e: string) => 
     setBusy(route);
     onError('');
     const res = await call('POST', `/ships/${encodeURIComponent(ship.session)}/${route}`);
-    if (!res.ok) onError(res.error);
-    setBusy('');
+    // On success the buttons stay off until the ships push removes the row, so a second tap cannot hit a 404.
+    if (!res.ok) {
+      onError(res.error);
+      setBusy('');
+    }
   };
   return (
     <div class="ship-actions">
