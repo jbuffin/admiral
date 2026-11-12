@@ -662,6 +662,9 @@ test('a ship\'s Bridge shows its tokens and its own money, and the Usage pages k
   reading.rate_limits.five_hour = { used_percentage: 93, resets_at: Math.floor(Date.now() / 1000) + 2 * 3600 };
   reading.rate_limits.seven_day = { used_percentage: 41.2, resets_at: Math.floor(Date.now() / 1000) + 3 * 86400 };
   await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['statusline ' + JSON.stringify(reading)] });
+  // The page reads once on open and then every 30 s, so open it after the server has the reading.
+  const quotaOf = async () => ((await (await fetch(admiral.url + 'api/v1/usage?fleet=zulu')).json()) as { quota: { harness: string; has_data: boolean }[] }).quota.find((q) => q.harness === 'claude');
+  await expect.poll(async () => (await quotaOf())?.has_data, { timeout: 30_000 }).toBe(true);
   await page.goto(admiral.url + 'app/preferences/zulu/usage');
   const claudeQuota = main.getByRole('region', { name: /claude/i });
   await expect(claudeQuota.getByRole('img', { name: /^5-hour window, 93% used, resets in/ })).toBeVisible({ timeout: 30_000 });
