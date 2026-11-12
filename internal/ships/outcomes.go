@@ -233,6 +233,9 @@ func (s *Service) queueEnded(e ending) {
 	if l, err := time.Parse(time.RFC3339, sess.Options["launched"]); err == nil && !sess.DeadTime.IsZero() {
 		duration = max(seconds(sess.DeadTime.Sub(l).Seconds()), 0)
 	}
+	if !exitedCleanly(sess) {
+		s.endRound(sess, "anchored")
+	}
 	s.record(outcomes.Record{Ship: name, Event: "ended", Fields: map[string]any{
 		"exit_code": code, "signal": sig, "duration_s": duration,
 		"needs_you_count": t.Count, "needs_you_s": seconds(t.Seconds), "report": s.readReport(name),

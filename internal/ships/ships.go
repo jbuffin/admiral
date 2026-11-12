@@ -113,11 +113,16 @@ type Service struct {
 	// settling holds the exit-0 ships whose PRs are being checked, by session.
 	settling map[string]bool
 	settleWG sync.WaitGroup
+	// waking holds the moored ships with a wake under way, by session.
+	waking map[string]bool
+	// roundLogged is each session's last round whose end is written, by launch and round, so a retried end writes none.
+	roundLogged map[string]string
 
 	mooredMu     sync.Mutex
 	moored       []moor.Record // read from $ADMIRAL_HOME/moored on first use
 	mooredLoaded bool
 	mooredPolls  map[string]polled // by session
+	committed    map[string]bool   // by session: a wake is making the session, so no ending takes the record; under mooredMu
 	moorKick     chan struct{}
 	pollMu       sync.Mutex // one poll at a time
 	// issueLocks holds the GitHub issues (by ClaimKey) with a launch under way, each with who holds it.
@@ -227,6 +232,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/ships/{session}/input-seen", s.serveInputSeen)
 	mux.HandleFunc("POST /api/ships/{session}/dismiss", s.serveDismiss)
 	mux.HandleFunc("POST /api/ships/{session}/unfollow", s.serveUnfollow)
+	mux.HandleFunc("POST /api/ships/{session}/wake", s.serveWake)
 	mux.HandleFunc("POST /api/moored/refresh", s.serveMooredRefresh)
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/close", s.serveCrewClose)
 	mux.HandleFunc("POST /api/ships/{session}/messages", s.serveSendInput)
@@ -477,7 +483,8 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 		}
 		req.Issues = distinctIssues(req.Issues)
 	}
-	if req.Source != "" {
+	// A wake keeps its moored ship's order and claim; it never re-reads the order or refuses itself.
+	if req.Source != "" && req.Round == 0 {
 		if !s.Host.Known() {
 			return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: NotKnownMsg}
 		}
@@ -510,7 +517,7 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 		defer s.unlockIssues(issues)
 		claims := ClaimsOf(append(s.List(), s.Pending()...))
 		for _, u := range issues {
-			if holder := claims[claimKeyOf(u)]; holder != "" {
+			if holder := claims[claimKeyOf(u)]; holder != "" && !(req.Round > 0 && holder == cmpName(req.Name, req.Session)) { // a wake's own moored record holds the claim
 				return Ship{}, issueHeld(holder)
 			}
 		}
@@ -528,7 +535,7 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	}
 	s.State.SetLastDir(req.Fleet, req.Harness, got.Options["dir"]) // the cleaned path the launch used
 	s.launched(req, got, req.Panel)
-	if req.Source != "" {
+	if req.Source != "" && req.Round == 0 {
 		s.Orders.Launched(req.Source, req.OrderID)
 	}
 	// Not the request's context: a client that hangs up must not abandon the read.
@@ -719,6 +726,15 @@ func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 // No other record of a ship comes before `launched`.
 func (s *Service) launched(req launcher.Request, got *launcher.Launched, panel string) {
 	o := got.Options
+	if req.Round > 0 {
+		fields := map[string]any{"round": req.Round, "by": req.By}
+		if req.PR != "" {
+			fields["pr"] = req.PR
+		}
+		s.record(outcomes.Record{Ship: got.Session, Event: "woken", Fields: fields}, nil)
+		s.track(got.Session)
+		return
+	}
 	fields := map[string]any{
 		"fleet": o["fleet"], "harness": req.Harness, "skill": map[string]string{"kind": req.Skill.Kind, "name": o["skill"]},
 		"source": req.Source, "panel": panel, "order_id": req.OrderID, "order_url": o["url"], "title": o["title"],
@@ -728,12 +744,16 @@ func (s *Service) launched(req launcher.Request, got *launcher.Launched, panel s
 		fields["order_urls"] = req.Issues
 	}
 	s.record(outcomes.Record{Ship: got.Session, Event: "launched", Fields: fields}, nil)
+	s.track(got.Session)
+}
+
+func (s *Service) track(session string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.tracks == nil {
 		s.tracks = map[string]*track{}
 	}
-	s.tracks[got.Session] = &track{tally: tally{Status: StatusUnderway}, saved: map[string]string{}}
+	s.tracks[session] = &track{tally: tally{Status: StatusUnderway}, saved: map[string]string{}}
 }
 
 func (s *Service) launchDone() {

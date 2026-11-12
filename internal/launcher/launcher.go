@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -50,6 +51,18 @@ type Request struct {
 	ExtraArgs []string `json:"-"`
 	// Resources are held while the ship is underway or needs you; a hand launch holds none.
 	Resources []string `json:"resources"`
+	// Name and Session relaunch a moored ship under its own identity instead of a picked name; Round is
+	// the feedback round it starts.
+	Name    string `json:"-"`
+	Session string `json:"-"`
+	Round   int    `json:"-"`
+	// Prompt, when set, is the harness's prompt verbatim: a wake's resume text already carries its skill invocation.
+	Prompt string `json:"-"`
+	// Before runs under the launch lock with the validated checkout, just before the session is made; its error refuses the launch.
+	Before func(dir string) error `json:"-"`
+	// By and PR say what started a round, for the `woken` event.
+	By string `json:"-"`
+	PR string `json:"-"`
 }
 
 // Skill is the order's skill: Commodore, a named one, or none (Just launch).
@@ -135,7 +148,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
 		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")},
-		{"model", req.Model}, {"skill-kind", req.Skill.Kind}}
+		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
 			return nil, refuse(http.StatusBadRequest, "%s contains a control character", o[0])
@@ -218,6 +231,9 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	if memberPrompt != nil {
 		prompt = *memberPrompt
 	}
+	if req.Prompt != "" {
+		prompt = req.Prompt
+	}
 	flags, known := l.hookFlags(req.Harness)
 	if !known {
 		return nil, refuse(http.StatusBadRequest, "unknown harness %q", req.Harness)
@@ -237,12 +253,16 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	name, err := l.pickName()
+	name, session, err := l.nameFor(req)
 	if err != nil {
 		return nil, err
 	}
-	session := Slug(name)
 	opts[0][1] = name
+	if req.Before != nil {
+		if err := req.Before(req.Dir); err != nil {
+			return nil, err
+		}
+	}
 	if err := l.shipContract(env, session, fleet.Key); err != nil {
 		return nil, err
 	}
@@ -296,6 +316,32 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		out.Options[o[0]] = o[1]
 	}
 	return out, nil
+}
+
+func roundOption(round int) string {
+	if round <= 0 {
+		return ""
+	}
+	return strconv.Itoa(round)
+}
+
+// nameFor is the name a launch takes: a relaunch keeps its own and refuses while that session is live;
+// the caller holds l.mu, so no other launch takes the name in between.
+func (l *Launcher) nameFor(req Request) (name, session string, err error) {
+	if req.Session == "" {
+		name, err = l.pickName()
+		return name, Slug(name), err
+	}
+	rows, err := l.server().SessionRows()
+	if err != nil {
+		return "", "", refuse(http.StatusInternalServerError, "tmux could not list its sessions: %s", err)
+	}
+	for _, r := range rows {
+		if r[0] == req.Session {
+			return "", "", refuse(http.StatusConflict, "ship %s is already live", req.Session)
+		}
+	}
+	return req.Name, req.Session, nil
 }
 
 func (l *Launcher) hookFlags(harness string) (flags []string, known bool) {
