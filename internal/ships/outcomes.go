@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/crewapi"
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/outcomes"
@@ -409,6 +410,13 @@ func (s *Service) writeCrewItems(sess sessionhost.Session, report []byte) {
 	run := inbox.CrewRun{
 		Home: s.Launcher.Home, FleetKey: sess.Options["fleet"], Ship: sess.Name, Session: sess.Name,
 		Launched: sess.Options["launched"], RunDate: day.Format("2006-01-02"),
+		BuiltIns: func(key string) []string {
+			f, ok := s.Launcher.Config().Fleet(key)
+			if !ok {
+				return nil
+			}
+			return crewapi.BuiltInNames(f)
+		},
 		Fleets: func(key string) (inbox.FleetInfo, bool) {
 			f, ok := s.Launcher.Config().Fleet(key)
 			return inbox.FleetInfo{Key: f.Key, Name: f.Name, Color: f.Color}, ok

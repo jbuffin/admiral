@@ -75,3 +75,31 @@ func TestApplyNotesDoesNotWriteAFactThatIsAlreadyInTheScope(t *testing.T) {
 		t.Errorf("file = %q, want the one line it had", got)
 	}
 }
+
+func TestApplyNotesPutsBackTheScopesAlreadyWrittenWhenALaterWriteFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	f := newFixture(t)
+	existing := f.repoNotes("bosun", "acme/api", lines(2)...)
+	before := readFile(t, existing)
+	memory := f.memDir()
+	if err := os.Chmod(memory, 0o500); err != nil { // a new member's directory can't be made
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(memory, 0o700) })
+	err := crewapi.ApplyNotes(f.home, "work", []crewapi.NoteWrite{
+		{Member: "bosun", Repo: "acme/api", Line: "- " + note(100)}, // rewrites an existing file
+		{Member: "bosun", Line: "- " + note(101)},                   // creates bosun's fleet file
+		{Member: "newcomer", Line: "- " + note(102)},                // fails
+	})
+	if err == nil {
+		t.Fatal("ApplyNotes succeeded although a write could not be made")
+	}
+	if readFile(t, existing) != before {
+		t.Error("the rewritten scope was not put back")
+	}
+	if _, statErr := os.Stat(filepath.Join(memory, "bosun", "fleet.md")); !os.IsNotExist(statErr) {
+		t.Errorf("the created scope file was not removed: %v", statErr)
+	}
+}

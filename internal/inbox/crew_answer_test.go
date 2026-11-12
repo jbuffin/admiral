@@ -516,3 +516,40 @@ func TestAMemberItemOfAFleetThatIsNoLongerConfiguredRefusesKeepAndDropWithAConfl
 		})
 	}
 }
+
+func TestKeepingAnAdHocItemNamedLikeABuiltInIsRefusedAndWritesNothing(t *testing.T) {
+	r := newCrewRig(t)
+	r.s.BuiltIns = func(string) []string { return []string{"scout"} }
+	r.seedMember([]map[string]any{crewNote("n1", "scout", "fleet", "", "the map lives in docs", nil)})
+	code, body := r.answerMember("crew-member-0123456789abcdef", "keep")
+	if code != 409 {
+		t.Fatalf("answer = %d %v, want 409", code, body)
+	}
+	r.assertUnanswered("crew-member-0123456789abcdef")
+	r.assertNoCrewWritten()
+	if _, err := os.Stat(filepath.Join(crewDirOf(r.home), "scout.md")); !os.IsNotExist(err) {
+		t.Errorf("scout.md was written: %v", err)
+	}
+	if _, err := os.Lstat(r.adHocPath()); err != nil {
+		t.Errorf("the ad hoc file is gone: %v", err)
+	}
+}
+
+func TestRemovingAMemberItemSaysWhetherTheFileWentAndTheRecordsNameTheShip(t *testing.T) {
+	r := newCrewRig(t)
+	r.seedMember(nil)
+	code, body := r.postJSON("/api/inbox/_admiral/crew-member-0123456789abcdef/remove", map[string]any{})
+	if code != 200 || body["file_removed"] != true || body["forgotten"] != true {
+		t.Fatalf("remove = %d %v, want file_removed true", code, body)
+	}
+	for _, x := range r.recs() {
+		if x["event"] == "crew_member_dropped" && x["ship"] != "Saltpaw" {
+			t.Errorf("record ship = %v, want Saltpaw", x["ship"])
+		}
+	}
+	r.s.Fleet = func(string) (inbox.FleetInfo, bool) { return inbox.FleetInfo{}, false }
+	r.seed(crewMemberItem("crew-member-fedcba9876543210", "scout", adHocDefinition, nil))
+	if code, body := r.postJSON("/api/inbox/_admiral/crew-member-fedcba9876543210/remove", map[string]any{}); code != 200 || body["file_removed"] != false {
+		t.Errorf("remove with no fleet = %d %v, want file_removed false", code, body)
+	}
+}

@@ -355,6 +355,13 @@ func serve(args []string) error {
 		f, ok := cfg.Current().Fleet(key)
 		return inbox.FleetInfo{Key: f.Key, Name: f.Name, Color: f.Color}, ok
 	}
+	inboxService.BuiltIns = func(key string) []string {
+		f, ok := cfg.Current().Fleet(key)
+		if !ok {
+			return nil
+		}
+		return crewapi.BuiltInNames(f)
+	}
 	inboxService.Afloat = func(session string) bool {
 		sh, ok := shipService.Get(session)
 		return ok && (sh.Status == ships.StatusUnderway || sh.Status == ships.StatusNeedsYou)

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -63,6 +64,8 @@ type CrewRun struct {
 	Home     string
 	FleetKey string
 	Fleets   func(key string) (FleetInfo, bool)
+	// BuiltIns names the fleet's built-in members; an ad hoc member of one of those names is never kept.
+	BuiltIns func(key string) []string
 	Ship     string
 	Session  string
 	Launched string
@@ -157,6 +160,7 @@ func WriteCrewItems(run CrewRun, report []byte) error {
 	adHocNotes := map[string][]CrewNote{}
 	var adHocOrder []string
 	adHocRole := map[string]string{}
+	castAdHoc := map[string]bool{}
 	addAdHoc := func(member, role string) {
 		if _, ok := adHocRole[member]; !ok {
 			adHocRole[member] = role
@@ -173,6 +177,7 @@ func WriteCrewItems(run CrewRun, report []byte) error {
 			continue
 		}
 		addAdHoc(c.Member, c.Role)
+		castAdHoc[c.Member] = true
 	}
 	for _, raw := range r.Notes {
 		var n reportNote
@@ -192,7 +197,7 @@ func WriteCrewItems(run CrewRun, report []byte) error {
 		if n.Scope == "repo" {
 			c.Repo = *n.Repo
 		}
-		if n.AdHoc {
+		if n.AdHoc || castAdHoc[n.Member] {
 			addAdHoc(n.Member, n.Role)
 			adHocNotes[n.Member] = append(adHocNotes[n.Member], c)
 		} else {
@@ -214,7 +219,15 @@ func WriteCrewItems(run CrewRun, report []byte) error {
 		}
 	}
 	var errs []error
+	var builtIns []string
+	if run.BuiltIns != nil {
+		builtIns = run.BuiltIns(run.FleetKey)
+	}
 	for _, member := range adHocOrder {
+		if slices.Contains(builtIns, member) || fleetMemberExists(run.Home, fleet.Key, member) {
+			skip("%s is already a standing member, so an ad hoc one of that name is dropped", member)
+			continue
+		}
 		def, runID, ok := readAdHocDefinition(run.Home, fleet.Key, member)
 		if !ok {
 			skip("no usable ad hoc file for %s, so its notes are dropped", member)
@@ -233,6 +246,11 @@ func WriteCrewItems(run CrewRun, report []byte) error {
 		}))
 	}
 	return errors.Join(errs...)
+}
+
+func fleetMemberExists(home, fleetKey, member string) bool {
+	_, err := os.Lstat(filepath.Join(home, "fleets", fleetKey, "crew", member+".md"))
+	return err == nil
 }
 
 func repoOK(slug string) bool {
@@ -267,7 +285,7 @@ func readAdHocDefinition(home, fleetKey, member string) (text, runID string, ok 
 	}
 	defer f.Close()
 	b, err := io.ReadAll(io.LimitReader(f, 65536+1))
-	if err != nil || len(b) > 65536 {
+	if err != nil || len(b) > 65536 || !utf8.Valid(b) {
 		return "", "", false
 	}
 	m, ferr := crew.CheckAdHoc(b, member)

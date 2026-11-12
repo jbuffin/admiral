@@ -7,7 +7,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/crew"
+	"github.com/jbuffin/admiral/internal/skillindex"
 )
 
 // ErrReplacesMissing is what a note answers when the line it replaces is not in its scope.
@@ -44,6 +46,8 @@ func factOf(line string) string {
 type scopePlan struct {
 	scope scopeFile
 	lines []string
+	orig  []string // what the file held when it was read, to put back
+	found bool     // the file existed
 }
 
 // planNotes applies writes to the scopes in memory, in order, and refuses the first that doesn't fit.
@@ -59,11 +63,11 @@ func planNotes(crewDir string, writes []NoteWrite) ([]*scopePlan, error) {
 		sf := scopeFile{crewDir, w.Member, w.Repo}
 		at := slices.IndexFunc(plans, func(p *scopePlan) bool { return p.scope == sf })
 		if at < 0 {
-			lines, _, err := sf.read()
+			lines, found, err := sf.read()
 			if err != nil {
 				return nil, err
 			}
-			plans = append(plans, &scopePlan{sf, lines})
+			plans = append(plans, &scopePlan{sf, lines, slices.Clone(lines), found})
 			at = len(plans) - 1
 		}
 		p := plans[at]
@@ -87,9 +91,20 @@ func planNotes(crewDir string, writes []NoteWrite) ([]*scopePlan, error) {
 	return plans, nil
 }
 
+// commitPlans writes each changed scope. When a write fails it puts back, as far as it can, the scopes it already wrote.
 func commitPlans(plans []*scopePlan) error {
-	for _, p := range plans {
+	for i, p := range plans {
+		if p.found && slices.Equal(p.lines, p.orig) {
+			continue
+		}
 		if err := p.scope.write(p.lines); err != nil {
+			for _, done := range plans[:i] {
+				if !done.found {
+					_ = done.scope.remove()
+				} else if !slices.Equal(done.lines, done.orig) {
+					_ = done.scope.write(done.orig)
+				}
+			}
 			return err
 		}
 	}
@@ -155,9 +170,9 @@ func withoutAdHocLines(raw string) string {
 
 // KeepAdHoc makes the ad hoc member a member of the fleet: its file without the ad hoc lines, its notes, and the
 // ad hoc file gone. It acts only on the file whose text is definition, and refuses with a *MemberRefusedError or a
-// *NoteRefusedError, changing nothing, when the file is gone or changed, the fleet has a member of that name, the
+// *NoteRefusedError, changing nothing, when the file is gone or changed, the fleet or builtIns has a member of that name, the
 // result is not a fleet member or a note doesn't fit. removed is false when only the ad hoc file's removal failed.
-func KeepAdHoc(home, key, member, definition string, writes []NoteWrite) (removed bool, err error) {
+func KeepAdHoc(home, key, member, definition string, builtIns []string, writes []NoteWrite) (removed bool, err error) {
 	if !safeKey(key) || !crew.ValidName(member) {
 		return false, errors.New("not a fleet member")
 	}
@@ -173,6 +188,9 @@ func KeepAdHoc(home, key, member, definition string, writes []NoteWrite) (remove
 	}
 	if !found || !ok || string(raw) != definition {
 		return false, &MemberRefusedError{"the ad hoc file is gone or is not the one you were shown"}
+	}
+	if slices.Contains(builtIns, member) {
+		return false, &MemberRefusedError{member + " is a built-in member; an ad hoc member never replaces one"}
 	}
 	exists, err := lstatFile(filepath.Join(crewDir, member+".md"))
 	if err != nil {
@@ -196,7 +214,17 @@ func KeepAdHoc(home, key, member, definition string, writes []NoteWrite) (remove
 		_ = os.Remove(filepath.Join(crewDir, member+".md"))
 		return false, err
 	}
-	return os.Remove(filepath.Join(crewDir, "ad-hoc", member+".md")) == nil, nil
+	return removeAdHoc(crewDir, member), nil
+}
+
+// removeAdHoc removes the ad hoc file through a root on the crew directory, so a link swapped in since the read can't lead out of it.
+func removeAdHoc(crewDir, member string) bool {
+	root, err := os.OpenRoot(crewDir)
+	if err != nil {
+		return false
+	}
+	defer root.Close()
+	return root.Remove("ad-hoc/"+member+".md") == nil
 }
 
 // DropAdHoc removes the member's ad hoc file when its text is still definition, and leaves it otherwise.
@@ -217,5 +245,23 @@ func DropAdHoc(home, key, member, definition string) (removed bool, err error) {
 	if !ok || string(raw) != definition {
 		return false, nil
 	}
-	return os.Remove(filepath.Join(crewDir, "ad-hoc", member+".md")) == nil, nil
+	return removeAdHoc(crewDir, member), nil
+}
+
+// BuiltInNames lists the built-in members of every dock of the fleet.
+func BuiltInNames(fleet config.Fleet) []string {
+	var names []string
+	for _, dock := range fleet.Harnesses {
+		d, ok := skillindex.CommodoreDir(dock.Name, dock.Environ(), "")
+		if !ok {
+			continue
+		}
+		c := fleetCrew{builtInDir: filepath.Join(d, "crew")}
+		for name := range c.builtIns() {
+			if !slices.Contains(names, name) {
+				names = append(names, name)
+			}
+		}
+	}
+	return names
 }

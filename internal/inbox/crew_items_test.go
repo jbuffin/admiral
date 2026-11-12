@@ -351,3 +351,61 @@ func TestTheListTagsCrewItemsWithTheirFleetAndLeavesTheTagsOffForAFleetThatIsGon
 }
 
 var _ = regexp.MustCompile
+
+func TestAnAdHocMemberNamedLikeAStandingMemberGetsNoItem(t *testing.T) {
+	for name, member := range map[string]string{"a built-in": "reviewer", "a fleet member": "scout"} {
+		t.Run(name, func(t *testing.T) {
+			home := t.TempDir()
+			def := strings.ReplaceAll(adHocDefinition, "name: scout", "name: "+member)
+			putAdHoc(t, home, member, def)
+			if member == "scout" {
+				if err := os.WriteFile(filepath.Join(crewDirOf(home), "scout.md"), []byte(strings.Replace(adHocDefinition, "ad-hoc: true\nad-hoc-run: \"run-a\"\n", "", 1)), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			run := crewRun(home)
+			run.BuiltIns = func(string) []string { return []string{"reviewer"} }
+			report := reportOf(map[string]any{
+				"cast":  []any{map[string]any{"member": member, "role": member, "ad_hoc": true}},
+				"notes": []any{noteOf(member, "implementer", "fleet", "", "a fact", nil, true)},
+			})
+			if err := inbox.WriteCrewItems(run, report); err != nil {
+				t.Fatal(err)
+			}
+			if items := crewItems(t, home); len(items["crew_member"]) != 0 || len(items["crew_notes"]) != 0 {
+				t.Errorf("items = %v, want none", items)
+			}
+		})
+	}
+}
+
+func TestANoteOfAnAdHocCastMemberWaitsOnTheMembersItemEvenWithItsFlagOff(t *testing.T) {
+	home := t.TempDir()
+	putAdHoc(t, home, "scout", adHocDefinition)
+	report := reportOf(map[string]any{
+		"cast":  []any{map[string]any{"member": "scout", "role": "scout", "ad_hoc": true}},
+		"notes": []any{noteOf("scout", "scout", "fleet", "", "the map lives in docs", nil, false)},
+	})
+	if err := inbox.WriteCrewItems(crewRun(home), report); err != nil {
+		t.Fatal(err)
+	}
+	items := crewItems(t, home)
+	if len(items["crew_notes"]) != 0 || len(items["crew_member"]) != 1 {
+		t.Fatalf("items = %v, want one crew_member and no crew_notes", items)
+	}
+	if got := texts(notesIn(t, items["crew_member"][0], "crew_member")); !reflect.DeepEqual(got, []string{"the map lives in docs"}) {
+		t.Errorf("member notes = %v", got)
+	}
+}
+
+func TestAnAdHocFileThatIsNotUTF8GetsNoItem(t *testing.T) {
+	home := t.TempDir()
+	putAdHoc(t, home, "scout", adHocDefinition+"\xff\xfe\n")
+	report := reportOf(map[string]any{"cast": []any{map[string]any{"member": "scout", "role": "scout", "ad_hoc": true}}})
+	if err := inbox.WriteCrewItems(crewRun(home), report); err != nil {
+		t.Fatal(err)
+	}
+	if items := crewItems(t, home); len(items["crew_member"]) != 0 {
+		t.Errorf("items = %v, want none", items)
+	}
+}

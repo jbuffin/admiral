@@ -103,4 +103,11 @@ func TestCrewItemsFromAReportAreWrittenToTheFleetOnlyWhenAnswered(t *testing.T) 
 	if exists(filepath.Join(crewDir, "memory", "bosun")) {
 		t.Errorf("bosun's note was written although its item is unanswered")
 	}
+
+	if code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/inbox/_admiral/"+notesID+"/crew-notes", map[string]any{"notes": map[string]any{"n1": map[string]any{"decision": "keep"}}}); code != 200 {
+		t.Fatalf("keep notes = %d: %s", code, body)
+	}
+	if b, _ := os.ReadFile(filepath.Join(crewDir, "memory", "bosun", "fleet.md")); !strings.Contains(string(b), "the build needs make") {
+		t.Errorf("bosun's note was not written after Keep: %q", b)
+	}
 }

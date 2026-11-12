@@ -104,8 +104,8 @@ func writeOf(o CrewObject, n CrewNote) crewapi.NoteWrite {
 	return w
 }
 
-func notesRecord(it Item, n CrewNote, decision string) outcomes.Record {
-	return outcomes.Record{Event: "crew_note_" + crewVerb[decision], Fields: map[string]any{"item": it.ID, "kind": KindCrewNotes, "note": n.ID, "member": n.Member, "scope": n.Scope}}
+func notesRecord(it Item, o CrewObject, n CrewNote, decision string) outcomes.Record {
+	return outcomes.Record{Ship: o.Ship, Event: "crew_note_" + crewVerb[decision], Fields: map[string]any{"item": it.ID, "kind": KindCrewNotes, "note": n.ID, "member": n.Member, "scope": n.Scope}}
 }
 
 // writeRefusal says which proposed note a refused write belongs to.
@@ -159,7 +159,7 @@ func (s *Service) AnswerCrewNotes(id string, req CrewNotesRequest) error {
 			if d.Decision != "drop" {
 				writes, ids = append(writes, writeOf(o, n)), append(ids, n.ID)
 			}
-			recs = append(recs, notesRecord(it, n, d.Decision))
+			recs = append(recs, notesRecord(it, o, n, d.Decision))
 		}
 		fleet, err := s.crewFleet(o)
 		if err != nil {
@@ -207,7 +207,11 @@ func (s *Service) answerCrewMember(id, decision string, needFleet bool) (fileRem
 			for _, n := range o.Notes {
 				writes, ids = append(writes, writeOf(o, n)), append(ids, n.ID)
 			}
-			removed, err := crewapi.KeepAdHoc(s.Home, fleet.Key, o.Member, o.Definition, writes)
+			var builtIns []string
+			if s.BuiltIns != nil {
+				builtIns = s.BuiltIns(fleet.Key)
+			}
+			removed, err := crewapi.KeepAdHoc(s.Home, fleet.Key, o.Member, o.Definition, builtIns, writes)
 			var refused *crewapi.MemberRefusedError
 			switch {
 			case errors.As(err, &refused):
@@ -231,7 +235,7 @@ func (s *Service) answerCrewMember(id, decision string, needFleet bool) (fileRem
 			Decision    string `json:"decision"`
 			FileRemoved bool   `json:"file_removed"`
 		}{1, id, KindCrewMember, time.Now().UTC().Format(time.RFC3339), decision, fileRemoved}
-		return file, []outcomes.Record{{Event: "crew_member_" + crewVerb[decision], Fields: map[string]any{"item": id, "kind": KindCrewMember, "member": o.Member}}}, nil
+		return file, []outcomes.Record{{Ship: o.Ship, Event: "crew_member_" + crewVerb[decision], Fields: map[string]any{"item": id, "kind": KindCrewMember, "member": o.Member}}}, nil
 	})
 	if err == nil {
 		s.Refresh()
@@ -247,7 +251,7 @@ func (s *Service) dropCrewNotes(id string) error {
 		var recs []outcomes.Record
 		for _, n := range o.Notes {
 			answers[n.ID] = crewNoteAnswer{Decision: "drop"}
-			recs = append(recs, notesRecord(it, n, "drop"))
+			recs = append(recs, notesRecord(it, o, n, "drop"))
 		}
 		file := struct {
 			Version  int                       `json:"version"`

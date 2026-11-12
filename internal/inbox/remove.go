@@ -31,8 +31,8 @@ func (s *Service) RemoveItem(session, id string) (ReviewResult, error) {
 		return ReviewResult{Forgotten: true}, s.dropCrewNotes(id)
 	}
 	if it.Kind == KindCrewMember {
-		_, err := s.answerCrewMember(id, "drop", false)
-		return ReviewResult{Forgotten: true}, err
+		gone, err := s.answerCrewMember(id, "drop", false)
+		return ReviewResult{Forgotten: true, FileRemoved: &gone}, err
 	}
 	err = s.Answer(session, id, it.Kind, func(Item) (any, []outcomes.Record, error) {
 		file := struct {

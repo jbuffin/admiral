@@ -34,7 +34,9 @@ type Service struct {
 	Hub  *server.Hub
 	Ship func(session string) (ShipInfo, bool)
 	// Fleet looks a configured fleet up by key; a crew item carries its fleet's tags only while it is configured.
-	Fleet    func(key string) (FleetInfo, bool)
+	Fleet func(key string) (FleetInfo, bool)
+	// BuiltIns names a fleet's built-in crew members; Keep refuses an ad hoc member of one of those names.
+	BuiltIns func(key string) []string
 	Outcomes *outcomes.Writer
 	// Dock's why says which of the ship and its dock is unknown.
 	Dock func(session string) (env []string, why string)
@@ -218,6 +220,9 @@ func respond(w http.ResponseWriter, session, id string, res ReviewResult, err er
 		}
 		if res.Forgotten {
 			out["forgotten"] = true // likewise
+		}
+		if res.FileRemoved != nil {
+			out["file_removed"] = *res.FileRemoved
 		}
 		writeJSON(w, http.StatusOK, out)
 	case errors.Is(err, ErrNotFound):
