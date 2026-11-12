@@ -41,10 +41,21 @@ export function chatSaveBody(shown: ChatSettings, edited: ChatSettings): { chat:
 /** The server's refusal without its `fleets.<key>.chat.<field>: ` path. */
 export const chatErrorMessage = fieldMessage;
 
-export const INSTRUCTIONS_MAX = 0;
+export const INSTRUCTIONS_MAX = 2000;
 
 /** The length the server counts: Unicode code points of the trimmed text. */
-export const instructionsCount = (_text: string): number => 0;
+export const instructionsCount = (text: string): number => [...text.trim()].length;
 
 /** Whether "Save instructions" is enabled: the text differs from what is saved and fits the cap. */
-export const canSaveInstructions = (_saved: string, _edited: string): boolean => false;
+export const canSaveInstructions = (saved: string, edited: string): boolean => saved.trim() !== edited.trim() && instructionsCount(edited) <= INSTRUCTIONS_MAX;
+
+/** How long ago a note was saved; a note lasts days, so the unit grows past minutes. */
+export function noteAge(ts: string, now: number): string {
+  const t = Date.parse(ts);
+  if (Number.isNaN(t)) return '';
+  const m = Math.max(0, Math.floor((now - t) / 60000));
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  if (m < 1440) return `${Math.floor(m / 60)}h ago`;
+  return `${Math.floor(m / 1440)}d ago`;
+}

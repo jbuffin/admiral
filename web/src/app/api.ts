@@ -270,6 +270,26 @@ export async function saveFleet(key: string, body: Partial<Pick<Fleet, 'search_r
   const r = await call<{ fleets?: Fleet[] | null }>('PUT', `/fleets/${encodeURIComponent(key)}`, body);
   return r.ok ? { ok: true, data: fleetsOf(r.data) } : r;
 }
+export interface ChatNote {
+  id: string;
+  kind: string;
+  text: string;
+  ts: string;
+  via?: string;
+}
+export interface Instructions {
+  text: string;
+  max: number;
+}
+const chatPath = (fleet: string, rest: string) => `/chat/${encodeURIComponent(fleet)}/${rest}`;
+export async function getNotes(fleet: string): Promise<Result<ChatNote[]>> {
+  const r = await call<{ notes?: ChatNote[] | null }>('GET', chatPath(fleet, 'notes'));
+  return r.ok ? { ok: true, data: r.data.notes ?? [] } : r;
+}
+export const getInstructions = (fleet: string) => call<Instructions>('GET', chatPath(fleet, 'instructions'));
+export const saveInstructions = (fleet: string, text: string) => call<Instructions>('PUT', chatPath(fleet, 'instructions'), { text });
+export const deleteNote = (fleet: string, id: string) => call<unknown>('DELETE', chatPath(fleet, `notes/${encodeURIComponent(id)}`));
+export const promoteNote = (fleet: string, id: string) => call<Instructions>('POST', chatPath(fleet, `notes/${encodeURIComponent(id)}/promote`));
 export const startSetup = () => call<unknown>('POST', '/setup');
 
 export type CapabilityStatus = 'passed' | 'failed' | 'not_checked';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHAT_THRESHOLDS, INSTRUCTIONS_MAX, canSaveInstructions, instructionsCount, switchHarness, chatErrorMessage, chatSaveBody, effortLabel, modelLabel, thresholdLabel, type ChatSettings } from './chatSettings';
+import { CHAT_THRESHOLDS, INSTRUCTIONS_MAX, canSaveInstructions, instructionsCount, noteAge, switchHarness, chatErrorMessage, chatSaveBody, effortLabel, modelLabel, thresholdLabel, type ChatSettings } from './chatSettings';
 
 const shown: ChatSettings = { harness: 'claude', model: 'sonnet', effort: '', context_threshold: 150000 };
 
@@ -84,5 +84,16 @@ describe('Save instructions', () => {
     expect(canSaveInstructions('', '😀'.repeat(2000))).toBe(true);
     expect(canSaveInstructions('', '😀'.repeat(2001))).toBe(false);
     expect(canSaveInstructions('x', 'x'.repeat(2001))).toBe(false);
+  });
+});
+
+describe('a note\'s age', () => {
+  const now = Date.parse('2026-11-12T12:00:00Z');
+  it('grows from minutes to days and shows none for a time that does not parse', () => {
+    expect(noteAge('2026-11-12T11:59:40Z', now)).toBe('just now');
+    expect(noteAge('2026-11-12T11:15:00Z', now)).toBe('45m ago');
+    expect(noteAge('2026-11-12T07:00:00Z', now)).toBe('5h ago');
+    expect(noteAge('2026-11-09T12:00:00Z', now)).toBe('3d ago');
+    expect(noteAge('soon', now)).toBe('');
   });
 });

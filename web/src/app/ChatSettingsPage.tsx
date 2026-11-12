@@ -1,11 +1,11 @@
 import type { ComponentChildren } from 'preact';
-import { useState } from 'preact/hooks';
-import { saveFleet, type Fleet } from './api';
+import { useEffect, useState } from 'preact/hooks';
+import { deleteNote, getInstructions, getNotes, promoteNote, saveFleet, saveInstructions, type ChatNote, type Fleet } from './api';
 import { checkErrors, checkKey } from './capabilities';
 import { MissingCapability } from './MissingCapability';
 import { Flag } from './Flag';
 import { fleets } from './fleets';
-import { CHAT_THRESHOLDS, chatErrorMessage, chatSaveBody, effortLabel, harnessLabel, modelLabel, switchHarness, thresholdLabel, type ChatSettings } from './chatSettings';
+import { CHAT_THRESHOLDS, INSTRUCTIONS_MAX, canSaveInstructions, chatErrorMessage, chatSaveBody, effortLabel, harnessLabel, instructionsCount, modelLabel, noteAge, switchHarness, thresholdLabel, type ChatSettings } from './chatSettings';
 
 const settingsOf = (f: Fleet): ChatSettings => ({ harness: f.chat.harness, model: f.chat.model, effort: f.chat.effort, context_threshold: f.chat.context_threshold });
 
@@ -40,6 +40,96 @@ function Choice<T extends string | number>({ legend, help, values, value, label,
       </div>
       {notes ? unavailable?.map((v) => notes(v)) : null}
     </div>
+  );
+}
+
+// The engineer's instructions and the notes AdmiralBot saved. Each acts at once and never rides on the settings Save.
+function Knows({ fleet }: { fleet: string }) {
+  const [saved, setSaved] = useState('');
+  const [text, setText] = useState('');
+  const [notes, setNotes] = useState<ChatNote[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = async () => {
+    const [i, n] = await Promise.all([getInstructions(fleet), getNotes(fleet)]);
+    if (i.ok) {
+      setSaved(i.data.text);
+      setText(i.data.text);
+    }
+    if (n.ok) setNotes(n.data);
+    setError(!i.ok ? i.error : !n.ok ? n.error : '');
+  };
+  useEffect(() => {
+    void load();
+  }, [fleet]);
+
+  const act = async (run: () => Promise<{ ok: true } | { ok: false; error: string }>) => {
+    setBusy(true);
+    setError('');
+    const r = await run();
+    if (r.ok) await load();
+    else setError(r.error);
+    setBusy(false);
+  };
+  const count = instructionsCount(text);
+  const now = Date.now();
+  return (
+    <>
+      <h2 class="section-title">What AdmiralBot knows</h2>
+      {error ? (
+        <p class="note error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <div class="box">
+        <div class="set">
+          <div class="t control">
+            <label for="chat-instructions">Instructions</label>
+            <span>Plain words AdmiralBot follows every time. Only you can change them.</span>
+            <textarea id="chat-instructions" rows={6} value={text} disabled={busy} onInput={(e) => setText(e.currentTarget.value)} />
+            <span class={count > INSTRUCTIONS_MAX ? 'note error' : undefined}>
+              {count} / {INSTRUCTIONS_MAX}
+            </span>
+          </div>
+        </div>
+        <div class="set actions">
+          <button type="button" class="btn primary" disabled={busy || !canSaveInstructions(saved, text)} onClick={() => void act(() => saveInstructions(fleet, text))}>
+            Save instructions
+          </button>
+        </div>
+        <div class="set">
+          <div class="t">
+            <span class="label">Notes</span>
+            <span>What AdmiralBot saved when you asked it to remember something.</span>
+          </div>
+        </div>
+        {notes.length === 0 ? (
+          <div class="set">
+            <div class="t">
+              <span>Nothing yet. When you ask AdmiralBot to remember something, it shows here.</span>
+            </div>
+          </div>
+        ) : (
+          <ul class="set-list" aria-label="Notes">
+            {notes.map((n) => (
+              <li key={n.id} class="set">
+                <div class="t">
+                  <span class="label">{n.text}</span>
+                  <span>{noteAge(n.ts, now)}</span>
+                </div>
+                <button type="button" class="btn" disabled={busy} onClick={() => void act(() => promoteNote(fleet, n.id))}>
+                  Move to instructions
+                </button>
+                <button type="button" class="btn" disabled={busy} onClick={() => void act(() => deleteNote(fleet, n.id))}>
+                  Delete
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -134,6 +224,7 @@ export function ChatSettingsPage({ fleet }: { fleet: Fleet }) {
           </button>
         </div>
       </div>
+      <Knows fleet={fleet.key} />
     </>
   );
 }

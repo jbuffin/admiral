@@ -95,7 +95,7 @@ func (l *Ledger) AddNote(fleet, text, via string) (Entry, error) {
 	if len(open) >= MaxNotes {
 		return Entry{}, &RefusedError{fmt.Sprintf("the ledger is full: %d notes are saved. Tell the engineer they can remove notes on Preferences, then save this one again", MaxNotes)}
 	}
-	ev := event{V: version, TS: l.now().UTC(), Event: EventAdded, ID: id, Kind: KindNote, Text: text, Via: via}
+	ev := event{V: version, TS: l.now().UTC().Truncate(time.Second), Event: EventAdded, ID: id, Kind: KindNote, Text: text, Via: via}
 	if err := l.append(fleet, ev); err != nil {
 		return Entry{}, err
 	}
@@ -248,17 +248,164 @@ func newID() (string, error) {
 // MaxInstructionChars caps a fleet's instructions, in code points after trimming.
 const MaxInstructionChars = 2000
 
+const instructionsFile = "instructions.md"
+
 // ErrNotFound is a note id that is unknown or already cancelled.
 var ErrNotFound = errors.New("ledger: no such open note")
 
 // Instructions are the fleet's instructions, "" when it has none.
-func (l *Ledger) Instructions(fleet string) (string, error) { return "", nil }
+func (l *Ledger) Instructions(fleet string) (string, error) {
+	if !chatlog.Valid(fleet) {
+		return "", fmt.Errorf("ledger: %q is not a fleet key", fleet)
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.readInstructions(fleet)
+}
 
 // SetInstructions stores the engineer's instructions trimmed and returns them; empty text removes them.
-func (l *Ledger) SetInstructions(fleet, text string) (string, error) { return "", nil }
+func (l *Ledger) SetInstructions(fleet, text string) (string, error) {
+	if !chatlog.Valid(fleet) {
+		return "", fmt.Errorf("ledger: %q is not a fleet key", fleet)
+	}
+	text = strings.TrimSpace(text)
+	if n := utf8.RuneCountInString(text); n > MaxInstructionChars {
+		return "", &RefusedError{fmt.Sprintf("the instructions are %d characters; at most %d fit, so cut %d characters", n, MaxInstructionChars, n-MaxInstructionChars)}
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.writeInstructions(fleet, text); err != nil {
+		return "", err
+	}
+	return text, nil
+}
 
 // Cancel closes an open note as the engineer, with no via; ErrNotFound when none is open.
-func (l *Ledger) Cancel(fleet, id string) error { return nil }
+func (l *Ledger) Cancel(fleet, id string) error {
+	if !chatlog.Valid(fleet) {
+		return fmt.Errorf("ledger: %q is not a fleet key", fleet)
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if _, err := l.openNote(fleet, id); err != nil {
+		return err
+	}
+	return l.cancel(fleet, id)
+}
 
 // Promote appends the note to the instructions and cancels it under one lock, returning the new instructions.
-func (l *Ledger) Promote(fleet, id string) (string, error) { return "", nil }
+func (l *Ledger) Promote(fleet, id string) (string, error) {
+	if !chatlog.Valid(fleet) {
+		return "", fmt.Errorf("ledger: %q is not a fleet key", fleet)
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	note, err := l.openNote(fleet, id)
+	if err != nil {
+		return "", err
+	}
+	old, err := l.readInstructions(fleet)
+	if err != nil {
+		return "", err
+	}
+	next := note.Text
+	if old != "" {
+		next = old + "\n\n" + note.Text
+	}
+	if n := utf8.RuneCountInString(next); n > MaxInstructionChars {
+		return "", &RefusedError{fmt.Sprintf("the note would put the instructions %d characters over the %d limit; shorten the instructions first", n-MaxInstructionChars, MaxInstructionChars)}
+	}
+	if err := l.writeInstructions(fleet, next); err != nil {
+		return "", err
+	}
+	if err := l.cancel(fleet, id); err != nil {
+		if rerr := l.writeInstructions(fleet, old); rerr != nil {
+			err = errors.Join(err, rerr)
+		}
+		return "", err
+	}
+	return next, nil
+}
+
+func (l *Ledger) openNote(fleet, id string) (Entry, error) {
+	open, err := l.fold(fleet)
+	if err != nil {
+		return Entry{}, err
+	}
+	for _, e := range open {
+		if e.ID == id && e.Kind == KindNote {
+			return e, nil
+		}
+	}
+	return Entry{}, ErrNotFound
+}
+
+func (l *Ledger) cancel(fleet, id string) error {
+	return l.append(fleet, event{V: version, TS: l.now().UTC().Truncate(time.Second), Event: EventCancelled, ID: id})
+}
+
+func (l *Ledger) readInstructions(fleet string) (string, error) {
+	dir, err := l.fleetDir(fleet, false)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	} else if err != nil {
+		return "", err
+	}
+	defer dir.Close()
+	fi, err := dir.Lstat(instructionsFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	} else if err != nil {
+		return "", err
+	}
+	if !fi.Mode().IsRegular() {
+		return "", fmt.Errorf("%s is not a regular file", instructionsFile)
+	}
+	f, err := dir.Open(instructionsFile)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	b, err := io.ReadAll(f)
+	return strings.TrimSpace(string(b)), err
+}
+
+// writeInstructions replaces the file through a temp file renamed into place, so a link planted
+// at the path is replaced and never followed; empty text removes it.
+func (l *Ledger) writeInstructions(fleet, text string) error {
+	if text == "" {
+		dir, err := l.fleetDir(fleet, false)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		} else if err != nil {
+			return err
+		}
+		defer dir.Close()
+		if err := dir.Remove(instructionsFile); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	dir, err := l.fleetDir(fleet, true)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	tmp := instructionsFile + ".tmp"
+	_ = dir.Remove(tmp)
+	f, err := dir.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	_, err = f.WriteString(text)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = dir.Rename(tmp, instructionsFile)
+	}
+	if err != nil {
+		_ = dir.Remove(tmp)
+	}
+	return err
+}
