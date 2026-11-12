@@ -89,13 +89,14 @@ func (r record) figures() usage.Figures {
 }
 
 var (
-	usageMark   = []byte(`"event":"usage"`)
-	advisedMark = []byte(`"event":"advised"`)
+	usageMark    = []byte(`"event":"usage"`)
+	advisedMark  = []byte(`"event":"advised"`)
+	launchedMark = []byte(`"event":"launched"`)
 )
 
-// scan calls fn with every usage and advised record at or after from. It skips other lines before decoding:
-// an `ended` line can be megabytes.
-func (s *Service) scan(from time.Time, fn func(record)) {
+// scan calls fn with every record at or after from whose line holds one of marks. A line is judged on its
+// first chunk, before decoding: an `ended` line can be megabytes.
+func (s *Service) scan(from time.Time, marks [][]byte, fn func(record)) {
 	files, err := outcomes.MonthFiles(filepath.Join(s.Home, "outcomes"))
 	if err != nil {
 		return
@@ -104,11 +105,20 @@ func (s *Service) scan(from time.Time, fn func(record)) {
 		if end := mf.End(); !end.IsZero() && !end.After(from) {
 			continue
 		}
-		scanFile(mf.Path, from, fn)
+		scanFile(mf.Path, from, marks, fn)
 	}
 }
 
-func scanFile(path string, from time.Time, fn func(record)) {
+func hasMark(b []byte, marks [][]byte) bool {
+	for _, m := range marks {
+		if bytes.Contains(b, m) {
+			return true
+		}
+	}
+	return false
+}
+
+func scanFile(path string, from time.Time, marks [][]byte, fn func(record)) {
 	f, err := os.Open(path)
 	if err != nil {
 		return
@@ -116,15 +126,42 @@ func scanFile(path string, from time.Time, fn func(record)) {
 	defer f.Close()
 	r := bufio.NewReaderSize(f, 64<<10)
 	for {
-		line, err := outcomes.ReadLine(r)
-		if len(line) > 0 && (bytes.Contains(line, usageMark) || bytes.Contains(line, advisedMark)) {
+		chunk, err := r.ReadSlice('\n')
+		line := chunk
+		if err == bufio.ErrBufferFull {
+			line, err = longLine(r, chunk, marks)
+		}
+		if len(line) > 0 && hasMark(line, marks) {
 			var rec record
-			if json.Unmarshal(line, &rec) == nil && (rec.Event == "usage" || rec.Event == "advised") && !rec.Ts.Before(from) {
+			if json.Unmarshal(line, &rec) == nil && !rec.Ts.Before(from) {
 				fn(rec)
 			}
 		}
 		if err != nil {
 			return
+		}
+	}
+}
+
+// longLine finishes a line that overran the buffer: it is kept only when its first chunk holds a mark and it
+// fits outcomes.MaxLine, and otherwise read through unbuffered.
+func longLine(r *bufio.Reader, first []byte, marks [][]byte) ([]byte, error) {
+	keep := hasMark(first, marks)
+	var line []byte
+	if keep {
+		line = append(line, first...)
+	}
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if keep {
+			if len(line)+len(chunk) > outcomes.MaxLine+1 {
+				keep, line = false, nil
+			} else {
+				line = append(line, chunk...)
+			}
+		}
+		if err != bufio.ErrBufferFull {
+			return bytes.TrimSuffix(line, []byte("\n")), err
 		}
 	}
 }
@@ -135,6 +172,10 @@ type acc struct {
 	hasTokens bool
 	money     *usage.Money
 	noMoney   bool
+	// Premium requests are summed here, not in money: usage.Money.Add drops them when one side lacks them.
+	premium        float64
+	hasPremium     bool
+	premiumMissing bool
 }
 
 func (a *acc) add(f usage.Figures, hasTokens bool) {
@@ -145,18 +186,26 @@ func (a *acc) add(f usage.Figures, hasTokens bool) {
 }
 
 func (a *acc) addMoney(m *usage.Money) {
-	switch {
-	case m == nil:
+	if m == nil {
 		a.noMoney = true
-	case a.money == nil:
-		c := *m
-		a.money = &c
-	default:
-		if sum, ok := a.money.Add(*m); ok {
-			a.money = &sum
-		} else {
-			a.money.Incomplete = true
-		}
+		return
+	}
+	if p := m.PremiumRequestCost; p != nil {
+		a.premium, a.hasPremium = a.premium+*p, true
+	} else {
+		a.premiumMissing = true
+	}
+	a.sumMoney(*m)
+}
+
+func (a *acc) sumMoney(m usage.Money) {
+	m.PremiumRequestCost = nil
+	if a.money == nil {
+		a.money = &m
+	} else if sum, ok := a.money.Add(m); ok {
+		a.money = &sum
+	} else {
+		a.money.Incomplete = true
 	}
 }
 
@@ -168,8 +217,12 @@ func (a *acc) merge(o *acc) {
 		a.tokens, a.hasTokens = a.tokens.Add(o.tokens), true
 	}
 	if o.money != nil {
-		a.addMoney(o.money)
+		a.sumMoney(*o.money)
 	}
+	if o.hasPremium {
+		a.premium, a.hasPremium = a.premium+o.premium, true
+	}
+	a.premiumMissing = a.premiumMissing || o.premiumMissing
 	a.noMoney = a.noMoney || o.noMoney
 }
 
@@ -203,9 +256,9 @@ func (a *acc) moneyOut() *moneyOut {
 	if a == nil || a.money == nil {
 		return nil
 	}
-	out := &moneyOut{Amount: round(a.money.Amount), Basis: string(a.money.Basis), Incomplete: a.money.Incomplete || a.noMoney}
-	if p := a.money.PremiumRequestCost; p != nil {
-		v := round(*p)
+	out := &moneyOut{Amount: round(a.money.Amount), Basis: string(a.money.Basis), Incomplete: a.money.Incomplete || a.noMoney || (a.hasPremium && a.premiumMissing)}
+	if a.hasPremium {
+		v := round(a.premium)
 		out.PremiumRequests = &v
 	}
 	return out
@@ -351,7 +404,10 @@ func (s *Service) aggregate(want []config.Fleet) []fleetOut {
 		}
 		return sp
 	}
-	s.scan(earliest, func(r record) {
+	s.scan(earliest, [][]byte{usageMark, advisedMark}, func(r record) {
+		if r.Event != "usage" && r.Event != "advised" {
+			return
+		}
 		if r.Harness == "" || buckets[r.Fleet] == nil {
 			return
 		}
@@ -468,8 +524,29 @@ type shipOut struct {
 	At         string     `json:"at,omitempty"`
 }
 
-// serveShip sums every round's record of the ship plus its live figures while it runs. The log has no
-// ship identity beyond the name, so a name reused by a later ship counts the earlier one's records too.
+// firstLaunch is the time of the name's last fresh `launched` record: a woken round writes `woken`, so that
+// record is this ship's own first launch, and a ship of the same name before it is not this one.
+func (s *Service) firstLaunch(name string) time.Time {
+	files, err := outcomes.MonthFiles(filepath.Join(s.Home, "outcomes"))
+	if err != nil {
+		return time.Time{}
+	}
+	for i := len(files) - 1; i >= 0; i-- {
+		var last time.Time
+		scanFile(files[i].Path, time.Time{}, [][]byte{launchedMark}, func(r record) {
+			if r.Event == "launched" && r.Ship == name && !r.Ts.Before(last) {
+				last = r.Ts
+			}
+		})
+		if !last.IsZero() {
+			return last
+		}
+	}
+	return time.Time{}
+}
+
+// serveShip sums the ship's `usage` records from its first launch on, every moored round's included, plus its
+// live figures while it runs. A ship with no `launched` record counts from the start of the log.
 func (s *Service) serveShip(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("session")
 	var ship *ships.Ship
@@ -489,7 +566,7 @@ func (s *Service) serveShip(w http.ResponseWriter, r *http.Request) {
 	var total acc
 	var latest time.Time
 	records := 0
-	s.scan(time.Time{}, func(rec record) {
+	s.scan(s.firstLaunch(name), [][]byte{usageMark}, func(rec record) {
 		if rec.Event != "usage" || rec.Ship != name {
 			return
 		}

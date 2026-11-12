@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -418,6 +419,15 @@ func TestQuotaIsOneEntryPerLoginOfTheFleetsDocks(t *testing.T) {
 		Spend:     &usage.SpendLimit{UsedPercent: 30, UsedUSD: 6, LimitUSD: 20, ResetsAt: reset.Add(48 * time.Hour).Unix(), Period: "monthly"},
 	}, now.Add(-90*time.Second))
 	f := r.fleetUsage("f")
+	for _, path := range []string{"/api/usage", "/api/usage?fleet=f"} {
+		rec := httptest.NewRecorder()
+		r.mux.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		for _, secret := range []string{claudeDir, codexDir, copilotDir, config.IdentityDir("claude", map[string]string{"CLAUDE_CONFIG_DIR": claudeDir}), os.Getenv("HOME")} {
+			if secret != "" && strings.Contains(rec.Body.String(), secret) {
+				t.Errorf("%s leaks %q", path, secret)
+			}
+		}
+	}
 	q := list(t, f["quota"], "quota")
 	if len(q) != 2 {
 		t.Fatalf("quota = %v, want the claude and codex docks only: copilot has no quota, and fleet g's login is not f's", q)
@@ -567,5 +577,67 @@ func TestShipUsage(t *testing.T) {
 
 	if code, _ := r.get("/api/ships/ghost/usage"); code != 404 {
 		t.Errorf("unknown ship = %d, want 404", code)
+	}
+}
+
+func TestShipUsageCountsOnlyThisShipsLifetime(t *testing.T) {
+	r := newRig(t, fleetOf("f"))
+	t0 := now.Add(-72 * time.Hour)
+	t1, t2, t3 := now.Add(-48*time.Hour), now.Add(-24*time.Hour), now.Add(-2*time.Hour)
+	r.seed(
+		at(t0, line(t0, "saltpaw", "launched", map[string]any{"fleet": "f"})),
+		at(t0, usageLine(t0, "saltpaw", "f", "claude", &usage.Figures{Tokens: usage.Tokens{Input: 1000}, Money: est(9)})),
+		at(t1, line(t1, "saltpaw", "ended", map[string]any{})),
+		at(t1, line(t1, "saltpaw", "launched", map[string]any{"fleet": "f"})),
+		at(t1, usageLine(t1, "saltpaw", "f", "claude", &usage.Figures{Tokens: usage.Tokens{Input: 5}, Money: est(0.5)})),
+		at(t2, line(t2, "saltpaw", "woken", map[string]any{"round": 1})),
+		at(t3, usageLine(t3, "saltpaw", "f", "claude", &usage.Figures{Tokens: usage.Tokens{Input: 7}, Money: est(0.25)})),
+	)
+	r.ships = []ships.Ship{{Session: "saltpaw", Fleet: "f", Harness: "claude", Status: "underway"}}
+	_, rec := r.get("/api/ships/saltpaw/usage")
+	if got := obj(t, rec["tokens"], "tokens")["input"]; got != 12.0 {
+		t.Errorf("input = %v, want 12: this ship's two rounds, not the earlier ship of the same name", got)
+	}
+	if m := obj(t, rec["money"], "money"); m["amount"] != 0.75 {
+		t.Errorf("money = %v, want 0.75", m)
+	}
+}
+
+func TestCopilotPremiumRequestsSumTheValuesThatArePresent(t *testing.T) {
+	r := newRig(t, fleetOf("f"))
+	ts := now.Add(-time.Hour)
+	two, one := 2.0, 1.0
+	credits := func(amount float64, p *float64) *usage.Figures {
+		return &usage.Figures{Tokens: usage.Tokens{Input: 1}, Money: &usage.Money{Amount: amount, Basis: usage.BasisCredits, PremiumRequestCost: p}}
+	}
+	r.seed(
+		at(ts, usageLine(ts, "a", "f", "copilot", credits(1, &two))),
+		at(ts, usageLine(ts, "b", "f", "copilot", credits(1, &one))),
+	)
+	m := obj(t, harnessOf(t, r.fleetUsage("f"), "today", "copilot")["money"], "money")
+	if m["premium_requests"] != 3.0 || m["incomplete"] != false {
+		t.Errorf("money = %v, want 3 premium requests, complete", m)
+	}
+	r.seed(at(ts, usageLine(ts, "c", "f", "copilot", credits(1, nil))))
+	m = obj(t, harnessOf(t, r.fleetUsage("f"), "today", "copilot")["money"], "money")
+	if m["premium_requests"] != 3.0 || m["incomplete"] != true || m["amount"] != 3.0 {
+		t.Errorf("money = %v, want the 3 present, amount 3, incomplete", m)
+	}
+}
+
+func TestSkippedHugeLineIsNotBuffered(t *testing.T) {
+	r := newRig(t, fleetOf("f"))
+	ts := now.Add(-time.Hour)
+	big := line(ts, "a", "ended", map[string]any{"report": strings.Repeat("x", 6<<20)})
+	r.seed(at(ts, big), at(ts, usageLine(ts, "a", "f", "claude", in(8))))
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	f := r.fleetUsage("f")
+	runtime.ReadMemStats(&after)
+	if got := inputOf(t, harnessOf(t, f, "today", "claude")); got != 8 {
+		t.Errorf("input = %v, want 8", got)
+	}
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 2<<20 {
+		t.Errorf("a request over a 6 MiB skipped line allocated %d bytes, want far less than the line", alloc)
 	}
 }
