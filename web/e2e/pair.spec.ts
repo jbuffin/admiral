@@ -11,6 +11,8 @@ const mint = async (admiral: Admiral) => ((await (await fetch(`${admiral.url}api
 const pairByTyping = async (page: Page, admiral: Admiral) => {
   await page.getByRole('textbox', { name: /code/i }).fill(await mint(admiral));
   await page.getByRole('button', { name: 'Pair', exact: true }).click();
+  // The shell's Inbox heading is already in the page under the Pair screen: wait for the reload to remove it.
+  await expect(page.getByRole('textbox', { name: /code/i })).toBeHidden();
 };
 
 // The fixture's own device is named e2e; the other one is the page's.
