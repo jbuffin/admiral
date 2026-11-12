@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/crewapi"
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/outcomes"
@@ -236,9 +237,11 @@ func (s *Service) queueEnded(e ending) {
 	if !exitedCleanly(sess) {
 		s.endRound(sess, "anchored")
 	}
+	report := s.readReport(name)
+	s.writeCrewItems(sess, report)
 	s.record(outcomes.Record{Ship: name, Event: "ended", Fields: map[string]any{
 		"exit_code": code, "signal": sig, "duration_s": duration,
-		"needs_you_count": t.Count, "needs_you_s": seconds(t.Seconds), "report": s.readReport(name),
+		"needs_you_count": t.Count, "needs_you_s": seconds(t.Seconds), "report": report,
 	}}, func(err error) {
 		if err != nil {
 			s.mu.Lock()
@@ -393,4 +396,33 @@ func (s *Service) readReport(session string) json.RawMessage {
 		return json.RawMessage(b)
 	}
 	return nil
+}
+
+// writeCrewItems turns the crew proposals of a ship's report into Inbox items. A failure is logged and never holds up the ended record.
+func (s *Service) writeCrewItems(sess sessionhost.Session, report []byte) {
+	if len(report) == 0 || sess.Options["fleet"] == "" {
+		return
+	}
+	day := time.Now().UTC()
+	if !sess.DeadTime.IsZero() {
+		day = sess.DeadTime.UTC()
+	}
+	run := inbox.CrewRun{
+		Home: s.Launcher.Home, FleetKey: sess.Options["fleet"], Ship: sess.Name, Session: sess.Name,
+		Launched: sess.Options["launched"], RunDate: day.Format("2006-01-02"),
+		BuiltIns: func(key string) []string {
+			f, ok := s.Launcher.Config().Fleet(key)
+			if !ok {
+				return nil
+			}
+			return crewapi.BuiltInNames(f)
+		},
+		Fleets: func(key string) (inbox.FleetInfo, bool) {
+			f, ok := s.Launcher.Config().Fleet(key)
+			return inbox.FleetInfo{Key: f.Key, Name: f.Name, Color: f.Color}, ok
+		},
+	}
+	if err := inbox.WriteCrewItems(run, report); err != nil {
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: crew items were not written: %v\n", sess.Name, err)
+	}
 }

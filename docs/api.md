@@ -190,7 +190,7 @@ The server answers an open with `{"type": "conversation_opened", "ship": "<ship>
 
 ## Inbox
 
-The items ships leave for you: a question, a review, findings, and Admiral's own notices. Every route is also served under `/api/v1/`.
+The items ships leave for you: a question, a review, findings, and Admiral's own notices, wake proposals and crew items. Every route is also served under `/api/v1/`.
 
 ### `GET /api/inbox` (alias `GET /api/v1/inbox`)
 
@@ -200,7 +200,9 @@ The items ships leave for you: a question, a review, findings, and Admiral's own
   "question": {"questions": []}}]}
 ```
 
-Oldest `created` first. An item is its file's fields plus `session`, and `name`, `harness`, `fleet`, `fleet_name` and `fleet_color` when the ship is known, live or from the record Admiral kept after it sailed off. Admiral sets those last, so a file cannot name another ship or fleet; they are omitted for an unknown ship and on a notice (session `_admiral`, name `Admiral`). `kind` is `question`, `review`, `findings` or `notice`, and the item holds only that kind's own object (`question`, `review`, `findings` or `notice`). The WebSocket `inbox` message, `{"type": "inbox", "items": [...]}`, carries the same list and is sent to each new connection and on every change.
+Oldest `created` first. An item is its file's fields plus `session`, and `name`, `harness`, `fleet`, `fleet_name` and `fleet_color` when the ship is known, live or from the record Admiral kept after it sailed off. Admiral sets those last, so a file cannot name another ship or fleet; they are omitted for an unknown ship and on a notice (session `_admiral`, name `Admiral`). The two crew kinds are the exception: session `_admiral`, name `Admiral`, and `fleet`, `fleet_name` and `fleet_color` from the object's `fleet` while that fleet is configured (left off otherwise). `kind` is `question`, `review`, `findings`, `notice`, `wake_proposal`, `crew_notes` or `crew_member`, and the item holds only that kind's own object (`question`, `review`, `findings`, `notice`, `wake_proposal`, `crew_notes` or `crew_member`). The WebSocket `inbox` message, `{"type": "inbox", "items": [...]}`, carries the same list and is sent to each new connection and on every change.
+
+A `crew_notes` item holds `crew_notes: {"fleet", "ship", "run_date", "notes": [{"id", "member", "role", "scope", "repo", "note", "replaces"}]}`. A `crew_member` item holds `crew_member: {"fleet", "ship", "run_date", "member", "role", "ad_hoc_run", "definition", "notes": [...]}`, where `definition` is the ad hoc file's text and the notes are that member's. `fleet` is the fleet key the ship was launched in. The answer files are `{"version": 1, "id", "kind", "answered", "notes": {"<note id>": {"decision", "note", "scope", "repo"}}}` for `crew_notes` and `{..., "decision", "file_removed"}` for `crew_member`.
 
 ### Acting on an item
 
@@ -210,7 +212,9 @@ Each route is `POST /api/v1/inbox/<session>/<id>/<action>` and answers `404` for
 - `submit`: a review, `{"event": "COMMENT"|"APPROVE"|"REQUEST_CHANGES", "edited": bool}`, posted to GitHub through `gh`.
 - `discard`: a review, `{}`; deletes the pending review on GitHub. `{"forget": true}` runs no `gh`.
 - `findings`: `{"cards": [{"id", "decision": "approved"|"edited"|"rejected", "proposal": {"kind": "diff"|"reply", "content"}}]}`; every card needs one decision and only an edited card takes a proposal. Nothing is posted to GitHub.
-- `remove`: Remove from inbox, any item; changes nothing on GitHub and never resumes the ship. Answers `200` with `"forgotten": true`. A notice's file is deleted.
+- `crew-notes`: a `crew_notes` item (`POST /api/v1/inbox/_admiral/<id>/crew-notes`), `{"notes": {"<note id>": {"decision": "keep"|"edit"|"drop", "note", "scope", "repo", "replaces"}}}`. Every note needs exactly one decision and an unknown note id is `400`. Only an edit takes `note`, `scope` (`fleet`|`repo`), `repo` and `replaces` (a note line without its dash, or `null` for none); a field left out keeps the proposal's value. A kept or edited note is written to the fleet's crew as `- <run_date> (<ship>): <note>`, and a fact the scope already holds is not written twice. A note that doesn't fit (the scope holds 30 and no `replaces`, or `replaces` matches no line) answers `409` `{"error", "note": "<note id>"}` with nothing written; so does a fleet that is no longer configured. A drop writes nothing.
+- `crew-member`: a `crew_member` item (`POST /api/v1/inbox/_admiral/<id>/crew-member`), `{"decision": "keep"|"drop"}`, answering `{"answered", "file_removed"}`. Keep writes the ad hoc member into the fleet's crew without its `ad-hoc` lines, then its notes, then removes the ad hoc file; it answers `409` with nothing written when the fleet already has that member, the name is a built-in member of one of the fleet's docks (an ad hoc member never replaces a standing one), the ad hoc file is gone or no longer matches the item's `definition`, a note doesn't fit, or the fleet is no longer configured. Drop removes the ad hoc file only if it still matches `definition`.
+- `remove`: Remove from inbox, any item; changes nothing on GitHub and never resumes the ship. Answers `200` with `"forgotten": true`. A notice's file is deleted. On a crew item it counts as Drop: nothing is written to the crew. On a `crew_member` item it also answers `"file_removed"`, whether the ad hoc file went (`false` when the fleet is no longer configured or the file changed or was gone), so a client can tell.
 
 ## Crew
 

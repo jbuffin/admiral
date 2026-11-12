@@ -30,9 +30,13 @@ type ShipInfo struct {
 }
 
 type Service struct {
-	Home     string // absolute
-	Hub      *server.Hub
-	Ship     func(session string) (ShipInfo, bool)
+	Home string // absolute
+	Hub  *server.Hub
+	Ship func(session string) (ShipInfo, bool)
+	// Fleet looks a configured fleet up by key; a crew item carries its fleet's tags only while it is configured.
+	Fleet func(key string) (FleetInfo, bool)
+	// BuiltIns names a fleet's built-in crew members; Keep refuses an ad hoc member of one of those names.
+	BuiltIns func(key string) []string
 	Outcomes *outcomes.Writer
 	// Dock's why says which of the ship and its dock is unknown.
 	Dock func(session string) (env []string, why string)
@@ -66,6 +70,11 @@ func (s *Service) List() []Item {
 	for i := range items {
 		if items[i].Session == AdmiralSession {
 			items[i].Name = "Admiral"
+			if o, ok := items[i].CrewObject(); ok && s.Fleet != nil {
+				if f, ok := s.Fleet(o.Fleet); ok {
+					items[i].Fleet, items[i].FleetName, items[i].FleetColor = f.Key, f.Name, f.Color
+				}
+			}
 		}
 	}
 	if s.Ship != nil {
@@ -113,6 +122,8 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/inbox/{session}/{id}/discard", s.serveDiscard)
 	mux.HandleFunc("POST /api/inbox/{session}/{id}/findings", s.serveFindings)
 	mux.HandleFunc("POST /api/inbox/{session}/{id}/remove", s.serveRemove)
+	mux.HandleFunc("POST /api/inbox/"+AdmiralSession+"/{id}/crew-notes", s.serveCrewNotes)
+	mux.HandleFunc("POST /api/inbox/"+AdmiralSession+"/{id}/crew-member", s.serveCrewMember)
 	mux.HandleFunc("POST /api/inbox/"+AdmiralSession+"/{id}/launch", s.serveLaunchProposal)
 	mux.HandleFunc("POST /api/inbox/"+AdmiralSession+"/{id}/dismiss", s.serveDismissProposal)
 }
@@ -146,7 +157,7 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	session, id := r.PathValue("session"), r.PathValue("id")
 	it, err := s.open(session, id)
 	if err == nil && it.Kind != KindQuestion {
-		err = invalid("item %s is a %s: answer it with %s", id, it.Kind, map[string]string{KindReview: "submit or discard", KindFindings: "findings"}[it.Kind])
+		err = invalid("item %s is a %s: answer it with %s", id, it.Kind, map[string]string{KindReview: "submit or discard", KindFindings: "findings", KindCrewNotes: "crew-notes", KindCrewMember: "crew-member"}[it.Kind])
 	}
 	if err == nil {
 		var req QuestionRequest
@@ -197,6 +208,7 @@ func (s *Service) serveFindings(w http.ResponseWriter, r *http.Request) {
 func respond(w http.ResponseWriter, session, id string, res ReviewResult, err error) {
 	var bad *InvalidError
 	var gh *GhError
+	var crewRefused *crewRefusedError
 	switch {
 	case err == nil:
 		out := map[string]any{"answered": id}
@@ -209,6 +221,9 @@ func respond(w http.ResponseWriter, session, id string, res ReviewResult, err er
 		if res.Forgotten {
 			out["forgotten"] = true // likewise
 		}
+		if res.FileRemoved != nil {
+			out["file_removed"] = *res.FileRemoved
+		}
 		writeJSON(w, http.StatusOK, out)
 	case errors.Is(err, ErrNotFound):
 		writeError(w, http.StatusNotFound, "no item "+id+" in the inbox of "+session)
@@ -218,6 +233,12 @@ func respond(w http.ResponseWriter, session, id string, res ReviewResult, err er
 		writeError(w, http.StatusConflict, err.Error())
 	case errors.As(err, &bad):
 		writeError(w, http.StatusBadRequest, bad.Msg)
+	case errors.As(err, &crewRefused):
+		body := map[string]string{"error": crewRefused.Msg}
+		if crewRefused.Note != "" {
+			body["note"] = crewRefused.Note
+		}
+		writeJSON(w, http.StatusConflict, body)
 	case errors.As(err, &gh):
 		status := http.StatusBadGateway
 		if gh.Missing {

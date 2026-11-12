@@ -229,6 +229,7 @@ type ReviewResult struct {
 	Action        string
 	InvalidTarget bool
 	Forgotten     bool
+	FileRemoved   *bool // a crew_member item's ad hoc file went
 }
 
 // SubmitReview uses the body the review has on GitHub now, since the engineer
@@ -359,5 +360,5 @@ func (s *Service) reviewAction(session, id string, discard, forget bool, event s
 		}
 		return file, []outcomes.Record{rec}, nil
 	})
-	return ReviewResult{action, invalidTarget && action == ActionDiscarded, forget}, err
+	return ReviewResult{Action: action, InvalidTarget: invalidTarget && action == ActionDiscarded, Forgotten: forget}, err
 }
