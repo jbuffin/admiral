@@ -24,6 +24,8 @@ const (
 	// MonitorsOption holds the space-separated task ids of the Monitors a Claude session
 	// armed that may still run.
 	MonitorsOption = Prefix + "monitors"
+	// StatuslineOption holds the compact JSON `admiral statusline` keeps from Claude's status line.
+	StatuslineOption = Prefix + "statusline"
 )
 
 // Join skips an empty call.
@@ -95,6 +97,13 @@ func ReadCurrent(args ...string) (string, error) {
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "tmux", append([]string{"-u"}, args...)...).Output()
 	return strings.TrimRight(string(out), "\n"), err
+}
+
+// WriteCurrentWithin is WriteCurrent with a deadline, for a caller that must not wait on a hung server.
+func WriteCurrentWithin(args []string, d time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	defer cancel()
+	return exec.CommandContext(ctx, "tmux", args...).Run()
 }
 
 func WriteCurrent(args []string) error {

@@ -117,6 +117,8 @@ func run(args []string) error {
 		return cli.Service(args[1:], std)
 	case "hook":
 		return cli.Hook(args[1:], std)
+	case "statusline":
+		return cli.Statusline(args[1:], std)
 	case "guard":
 		return cli.Guard(args[1:], std)
 	case "advise":
