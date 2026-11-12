@@ -12,7 +12,7 @@ var (
 	knownFields   = []string{"name", "role", "pick-me-when", "model", "harness", "ad-hoc", "ad-hoc-run", "based-on", "skills"}
 	slugPattern   = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$`)
 	skillPattern  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]*$`)
-	fixCheckerKey = "fix-checker"
+	fixCheckerKey = FixChecker
 )
 
 func isSlug(v any) bool {

@@ -212,6 +212,37 @@ Each route is `POST /api/v1/inbox/<session>/<id>/<action>` and answers `404` for
 - `findings`: `{"cards": [{"id", "decision": "approved"|"edited"|"rejected", "proposal": {"kind": "diff"|"reply", "content"}}]}`; every card needs one decision and only an edited card takes a proposal. Nothing is posted to GitHub.
 - `remove`: Remove from inbox, any item; changes nothing on GitHub and never resumes the ship. Answers `200` with `"forgotten": true`. A notice's file is deleted.
 
+## Crew
+
+A fleet's Crew page: its built-in and fleet members, their notes, and the edits the page makes. Every route is also served under `/api/v1/`, and `{key}` is a fleet key (an unknown fleet is 404). Only the **built-in** and **fleet** layers are listed; repo-layer and ad hoc members are not. Error bodies are `{"error": "<message>"}`. A 400 that names a member field also carries `"field": "<key>"` (`role`, `based-on`, `skills`, `model`, `harness`, `pick-me-when` or `instructions`). A refusal changes nothing on disk, and no write follows a link: a link anywhere from the crew directory down to the file is refused with 409.
+
+### `GET /api/fleets/{key}/crew[?harness=<dock>]`
+
+`{harness, members, unclaimed, warnings, errors}`. The built-in layer is the Commodore installed for the dock `harness`, which defaults to the fleet's first dock (`""` when it has none, and then the built-in layer is empty); an unknown dock is 400. A missing crew directory reads as empty and a GET never creates it.
+
+A member is `{name, role, based-on, skills, model, harness, pick-me-when, instructions, layer, customized, notes}`. `layer` is `built-in` or `fleet`, the winning layer; `customized` is true for a fleet member with a built-in member of the same name. `notes` is `{fleet: [...], repos: {"<owner>/<repo>": [...]}}`: strings without the leading `- `, only scopes holding a note, the fix checker's always empty. Only the first 30 notes of a scope show, so lines past 30 in an over-full file can't be reached from the page. A link, a non-directory or an `<owner>` or `<repo>.md` name that is no path segment is skipped with a warning.
+
+`unclaimed` is `[{member, notes}]` sorted by name: every `memory/<name>/` holding a note whose name no built-in or fleet member uses. A repo-layer member's notes show here too, and the set can differ by `?harness=` when the docks' Commodore installs differ. A directory name that is not a member name is skipped with a warning. When the resolver reports `errors`, `members` and `unclaimed` are empty.
+
+### Fleet members
+
+Edits touch only `$ADMIRAL_HOME/fleets/<key>/crew/`. A member route keys on whether `<name>.md` exists there, so a PUT can repair a broken file. A name with no fleet file but a built-in member is 409 (customize it first); with neither it is 404; a name that is no member name is 400. Each success is 200 `{"name": "<name>"}`. The built-in layer is the `?harness=` dock's, as in GET.
+
+- `PUT /api/fleets/{key}/crew/members/{name}` with `{role, based-on, skills, model, harness, pick-me-when, instructions}` rewrites the file (Go writes the frontmatter and the instructions as the body). It is 400 with `field` when the resolver would refuse the bytes (a parse or field error, a custom role without a valid `based-on`, a built-in role with `based-on`), when `role` or `based-on` differs from the same-named built-in, when a value is not one line, or when a value would read back differently (a skill name that is not valid, instructions with leading or trailing blank lines, the fix checker's skills and instructions).
+- `POST .../members/{name}/customize` copies the built-in member's file into the fleet layer: 404 with no built-in of that name, 409 when the fleet already has it. Its notes stay with the name.
+- `POST .../members/{name}/rename` with `{to, carry_notes}` renames a fleet member: `to` is a member name that differs from `name` (400) and names no listed member (409). With `carry_notes: true` its `memory/<name>/` moves to `memory/<to>/`, and the whole rename is 409 if `<to>` already has a note. Otherwise the notes stay under the old name, and show in `unclaimed` unless a built-in member of that name claims them.
+- `DELETE .../members/{name}` removes the fleet file. Its notes stay; a customized built-in falls back to the built-in member.
+
+### `POST /api/fleets/{key}/crew/notes`
+
+`{op, member, scope, repo, note, text, to}`: `op` is `edit`, `move` or `delete`; `scope` is `fleet` or `repo` (with `repo` as `<owner>/<repo>`); `note` is the note exactly as GET returned it. `member` need not resolve, so an unclaimed name works. A `member` or `repo` that is not a valid path part is 400. The note is the first line equal to `- <note>` (a trailing `\r` ignored); none is 409, and the page reloads. Every other line of the file is kept byte for byte.
+
+- `edit` replaces the fact and keeps the date and run. `text` is one line of visible text, at most 500 bytes, and the line must pass the resolver's note check (400).
+- `move` takes `to: {scope, repo}`, removes the line and appends it unchanged to the destination, making `memory/<member>/repos/<owner>/` as needed. A destination equal to the source is 400; one that already holds 30 notes is 409.
+- `delete` removes the line. An empty scope is not listed.
+
+The response is 200 with the member's notes after the change, in GET's `notes` shape.
+
 ## Campaigns
 
 A campaign is a GitHub issue with sub-issues, followed. Admiral reads the tree through the fleet's GitHub source and never writes to GitHub (ADR 0027). All routes are also served under `/api/v1/`. Errors are `{"error": "..."}`.

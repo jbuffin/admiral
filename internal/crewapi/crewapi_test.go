@@ -55,12 +55,16 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
+	return newFixtureWith(t, `{"version":1,"fleets":{"work":{"name":"Work","claude":{},"codex":{}}}}`)
+}
+
+func newFixtureWith(t *testing.T, cfg string) *fixture {
+	t.Helper()
 	root, _ := filepath.EvalSymlinks(t.TempDir())
 	f := &fixture{t: t, home: filepath.Join(root, "home")}
 	if err := os.MkdirAll(f.home, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cfg := `{"version":1,"fleets":{"work":{"name":"Work","claude":{},"codex":{}}}}`
 	if err := os.WriteFile(filepath.Join(f.home, config.FileName), []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +310,7 @@ func TestGetRefusals(t *testing.T) {
 	if status, _ := f.do("GET", "/api/fleets/ghost/crew", nil); status != 404 {
 		t.Errorf("unknown fleet: %d, want 404", status)
 	}
-	if status, body := f.get("?harness=copilot"); status != 400 || !strings.Contains(body, `"error"`) {
+	if status, _, body := f.get("?harness=copilot"); status != 400 || !strings.Contains(body, `"error"`) {
 		t.Errorf("unknown harness: %d %s, want 400 with an error", status, body)
 	}
 }
@@ -363,7 +367,7 @@ func TestPutWithABadHarnessIs400NamingTheField(t *testing.T) {
 	body := memberBody("triager", "New pick.")
 	body["harness"] = "emacs"
 	status, out := f.put("bosun", body)
-	if status != 400 || !strings.Contains(out, "harness") {
+	if status != 400 || !strings.Contains(out, `"field":"harness"`) {
 		t.Errorf("%d %s, want 400 naming harness", status, out)
 	}
 	if after := readFile(t, filepath.Join(f.crewDir(), "bosun.md")); after != before {
@@ -382,7 +386,7 @@ func TestPutCannotChangeACustomizedBuiltInsRole(t *testing.T) {
 	before := readFile(t, path)
 
 	status, out := f.put("mate", memberBody("triager", "Now a triager."))
-	if status != 400 || !strings.Contains(out, "role") {
+	if status != 400 || !strings.Contains(out, `"field":"role"`) {
 		t.Errorf("%d %s, want 400 naming role", status, out)
 	}
 	if after := readFile(t, path); after != before {
@@ -396,7 +400,7 @@ func TestPutCustomRoleWithoutBasedOnIs400(t *testing.T) {
 	f.fleetMember("bosun", "triager", "Old pick.", "")
 
 	status, out := f.put("bosun", memberBody("deckhand", "Custom."))
-	if status != 400 || !strings.Contains(out, "based-on") {
+	if status != 400 || !strings.Contains(out, `"field":"based-on"`) {
 		t.Errorf("%d %s, want 400 naming based-on", status, out)
 	}
 }
@@ -761,5 +765,55 @@ func TestNotesMoveRefusesALinkedRepoDirectoryAndWritesNothing(t *testing.T) {
 	}
 	if readFile(t, src) != "- "+note(1)+"\n" {
 		t.Error("the source changed")
+	}
+}
+
+func TestGetDefaultsToTheFleetsFirstDock(t *testing.T) {
+	commodoreAt(t)
+	f := newFixtureWith(t, `{"version":1,"fleets":{"work":{"name":"Work","codex":{}}}}`)
+	if status, got, body := f.get(""); status != 200 || got.Harness != "codex" {
+		t.Errorf("%d %s, want the codex dock", status, body)
+	}
+}
+
+func TestNotesEditAcceptsExactly500BytesOfText(t *testing.T) {
+	commodoreAt(t)
+	f := newFixture(t)
+	f.fleetNotes("bosun", "- "+note(1))
+	if status, out := f.postNotes(map[string]any{"op": "edit", "member": "bosun", "scope": "fleet", "note": note(1), "text": strings.Repeat("a", 500)}); status != 200 {
+		t.Errorf("%d %s, want 200", status, out)
+	}
+}
+
+func TestNotesEditOfTextOver500BytesIs400(t *testing.T) {
+	commodoreAt(t)
+	f := newFixture(t)
+	path := f.fleetNotes("bosun", "- "+note(1))
+	if status, out := f.postNotes(map[string]any{"op": "edit", "member": "bosun", "scope": "fleet", "note": note(1), "text": strings.Repeat("a", 501)}); status != 400 {
+		t.Errorf("%d %s, want 400", status, out)
+	}
+	if readFile(t, path) != "- "+note(1)+"\n" {
+		t.Error("the file changed")
+	}
+}
+
+func TestNotesMoveToTheSameScopeIs400(t *testing.T) {
+	commodoreAt(t)
+	f := newFixture(t)
+	f.fleetNotes("bosun", "- "+note(1))
+	for _, from := range []string{"fleet", "repo"} {
+		f.repoNotes("bosun", "acme/api", "- "+note(1))
+		body := map[string]any{"op": "move", "member": "bosun", "scope": from, "repo": "acme/api", "note": note(1), "to": map[string]any{"scope": from, "repo": "acme/api"}}
+		if status, out := f.postNotes(body); status != 400 {
+			t.Errorf("%s to itself: %d %s, want 400", from, status, out)
+		}
+	}
+}
+
+func TestCustomizeOfAnUnknownNameIs404(t *testing.T) {
+	commodoreAt(t)
+	f := newFixture(t)
+	if status, out := f.do("POST", "/api/fleets/work/crew/members/nobody/customize", nil); status != 404 {
+		t.Errorf("%d %s, want 404", status, out)
 	}
 }
