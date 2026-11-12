@@ -31,3 +31,25 @@ func TestTailnetLoginIsDecodedFromTheEncodedHeader(t *testing.T) {
 		t.Errorf("stored devices = %+v, want one bound to the plain login %q", devices, plain)
 	}
 }
+
+// Tailscale sends an ASCII login as it is, so a login that only looks encoded must not collapse into another one.
+func TestAnEncodedLookingASCIILoginStaysRaw(t *testing.T) {
+	for _, raw := range []string{
+		"=?utf-8?q?bob?=@example.com",
+		"bob=?utf-8?q?=40?=example.com",
+		"=?us-ascii?q?bob=40example.com?=",
+		"=?utf-8?b?Ym9iQGV4YW1wbGUuY29t?=",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			g := newRig(t)
+			g.allow("bob@example.com")
+			if c := g.tailStatus("", raw); c == 200 {
+				t.Errorf("login %q reached the app as an allowed login", raw)
+			}
+			rec, _ := g.redeem(tailReq(raw), g.mint(), "")
+			if rec.Code == 200 {
+				t.Errorf("pairing as %q was accepted", raw)
+			}
+		})
+	}
+}

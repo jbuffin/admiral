@@ -48,8 +48,9 @@ func classify(r *http.Request) route {
 }
 
 // decodeLogin undoes the RFC 2047 encoding tailscale serve gives a login that isn't plain ASCII.
+// It decodes only what Tailscale's encoder would produce, so an ASCII login that merely looks encoded stays as sent.
 func decodeLogin(v string) string {
-	if d, err := new(mime.WordDecoder).DecodeHeader(v); err == nil {
+	if d, err := new(mime.WordDecoder).DecodeHeader(v); err == nil && mime.QEncoding.Encode("utf-8", d) == v {
 		return d
 	}
 	return v
