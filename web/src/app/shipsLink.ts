@@ -2,6 +2,7 @@ import { signal } from '@preact/signals';
 import { probeShips, shipsSocketUrl, type Resource, type Ship, type Source } from './api';
 import { signedOut } from './session';
 import type { InboxItem } from './inbox';
+import { moveTarget } from './remoteTailscale';
 
 export const ships = signal<Ship[]>([]);
 // False until the first ships message, so the empty state doesn't show before the list has arrived.
@@ -77,7 +78,10 @@ export function watchShips(): () => void {
         inboxItems.value = msg.items ?? [];
         inboxLoaded.value = true;
       }
-      else if (msg.type === 'sources') sources.value = msg.sources ?? [];
+      else if (msg.type === 'move') {
+        const to = moveTarget(msg, location.href);
+        if (to) location.assign(to);
+      } else if (msg.type === 'sources') sources.value = msg.sources ?? [];
       else if (msg.type === 'resources') resources.value = msg.resources ?? [];
     };
     s.onclose = () => {

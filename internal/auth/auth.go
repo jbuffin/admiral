@@ -83,6 +83,19 @@ func (a *Auth) EnforceRemote() {
 	}
 }
 
+// PathName is how the request reached Admiral: "local", "lan", "tailnet", or "" for a peer that fits none.
+func PathName(r *http.Request) string {
+	switch classify(r).kind {
+	case pathLocal:
+		return "local"
+	case pathLAN:
+		return "lan"
+	case pathTailnet:
+		return "tailnet"
+	}
+	return ""
+}
+
 // IsLocal reports whether the request comes from this Mac itself: a loopback peer,
 // no proxy headers, and a Host that is one of this machine's own names.
 func IsLocal(r *http.Request) bool { return classify(r).kind == pathLocal }

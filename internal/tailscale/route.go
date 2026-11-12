@@ -23,6 +23,10 @@ type Route struct {
 	Port string
 	// Local reports whether a request comes from this Mac itself; only such a request may run Set up.
 	Local func(*http.Request) bool
+	// ListenErr is why the last move of the listener failed, nil when it didn't or none has happened.
+	ListenErr func() error
+	// Explicit is true when --listen fixed the address, so the mode doesn't move the listener.
+	Explicit bool
 
 	mu        sync.Mutex // one read-modify-write of the remote section at a time
 	setupBusy atomic.Bool
@@ -33,24 +37,70 @@ func (rt *Route) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/remote", rt.serve)
 	mux.HandleFunc("POST /api/remote/logins", rt.logins)
 	mux.HandleFunc("POST /api/remote/setup", rt.setup)
+	mux.HandleFunc("POST /api/remote/off", rt.off)
 }
 
-func (rt *Route) writeView(w http.ResponseWriter, r *http.Request) {
+func (rt *Route) writeView(w http.ResponseWriter, r *http.Request) { rt.writeViewOff(w, r, "") }
+
+// writeViewOff is writeView with serveOff set by the caller, for an answer given after the mode went off.
+func (rt *Route) writeViewOff(w http.ResponseWriter, r *http.Request, serveOff string) {
 	remote := rt.Config().Remote
 	view := struct {
 		Tailscale     bool     `json:"tailscale"`
 		AllowedLogins []string `json:"allowedLogins"`
 		URL           string   `json:"url"`
+		ServeOff      string   `json:"serveOff"`
+		Listen        bool     `json:"listenExplicit"`
 		Checks        []Check  `json:"checks"`
-	}{remote.Tailscale, remote.AllowedLogins, "", []Check{}}
+	}{remote.Tailscale, remote.AllowedLogins, "", serveOff, rt.Explicit, []Check{}}
 	if view.AllowedLogins == nil {
 		view.AllowedLogins = []string{}
 	}
 	if remote.Tailscale {
 		rep := Inspect(r.Context(), rt.Port)
 		view.URL, view.Checks = rep.URL, rep.Checks
+		if rep.HTTPSPort != 0 {
+			view.ServeOff = ServeOffHint(rep.HTTPSPort)
+		}
+	}
+	// A failed move shows with the mode off too: the listener is where it was, not where the mode says.
+	if rt.ListenErr != nil {
+		if err := rt.ListenErr(); err != nil {
+			view.Checks = append(view.Checks, Check{CheckListen, false, err.Error()})
+		}
 	}
 	writeJSON(w, http.StatusOK, view)
+}
+
+// off writes the mode off and nothing else: the logins stay, and serve is left for the person to stop.
+func (rt *Route) off(w http.ResponseWriter, r *http.Request) {
+	if rt.Local == nil || !rt.Local(r) {
+		fail(w, http.StatusForbidden, "Turn off runs on this Mac: open Admiral here")
+		return
+	}
+	var body struct {
+		Confirm bool `json:"confirm"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil || !body.Confirm {
+		fail(w, http.StatusBadRequest, `Turn off needs {"confirm": true}`)
+		return
+	}
+	serveOff := ""
+	if rt.Config().Remote.Tailscale {
+		if rep := Inspect(r.Context(), rt.Port); rep.HTTPSPort != 0 {
+			serveOff = ServeOffHint(rep.HTTPSPort)
+		}
+	}
+	rt.mu.Lock()
+	cur := rt.Config().Remote
+	err := rt.Set(config.Remote{Tailscale: false, AllowedLogins: cur.AllowedLogins})
+	rt.mu.Unlock()
+	if err != nil {
+		log.Printf("remote: saving the mode: %v", err)
+		fail(w, http.StatusInternalServerError, "couldn't save the Tailscale mode")
+		return
+	}
+	rt.writeViewOff(w, r, serveOff)
 }
 
 func (rt *Route) serve(w http.ResponseWriter, r *http.Request) { rt.writeView(w, r) }

@@ -165,13 +165,17 @@ func pairingBase(port string, cfg func() *config.Config) string {
 // listenAddr: an explicit --listen always wins; otherwise Tailscale mode keeps Admiral off the LAN,
 // and so does a config that couldn't be read, since it may have turned the mode on.
 func listenAddr(explicit string, cfg *config.Config, unreadable bool) string {
+	port := "7420"
+	if p := os.Getenv("ADMIRAL_PORT"); p != "" { // a test and advanced setting; --listen sets the whole address
+		port = p
+	}
 	switch {
 	case explicit != "":
 		return explicit
 	case unreadable || cfg.Remote.Tailscale:
-		return "127.0.0.1:7420"
+		return "127.0.0.1:" + port
 	}
-	return "0.0.0.0:7420"
+	return "0.0.0.0:" + port
 }
 
 // resolveListen offers setup when there are no fleets, then picks the address from the config as setup left it.
@@ -232,6 +236,7 @@ func serve(args []string) error {
 		return err
 	}
 	_, port, _ := net.SplitHostPort(ln.Addr().String())
+	lis := newListener(ln, listenOn, *listen != "")
 
 	// Only the mode runs tailscale; a public Admiral is the one check that stops startup.
 	var ts tailscale.Report
@@ -397,10 +402,10 @@ func serve(args []string) error {
 	shipService.Tail = tails.Tail
 	shipService.Questions = convService.PendingQuestions
 	shipService.Approving = convService.ApprovalPending
-	s := &server.Server{Version: version, Commit: commit, UI: web.UI(), Messages: convService.Messages(), Config: cfg,
+	s := &server.Server{Path: auth.PathName, Version: version, Commit: commit, UI: web.UI(), Messages: convService.Messages(), Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService,
 			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: campaignService}, campaignService, bridgeService, resourceService, lockRoute, chatService, convService, &shipdiff.Service{Ships: shipService},
-			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}, guardRoutes{guard}, remoteRoutes{&tailscale.Route{Config: cfg.Current, Set: cfg.SetRemote, Port: port, Local: auth.IsLocal}}},
+			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}, guardRoutes{guard}, remoteRoutes{&tailscale.Route{Config: cfg.Current, Set: cfg.SetRemote, Port: port, Local: auth.IsLocal, ListenErr: lis.Err, Explicit: lis.explicit}}},
 		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat", "conversation", "campaigns", "ship-input", "changes"}}
 	bg, stopBackground := context.WithCancel(context.Background())
 	// In the background: a harness that hangs on --version must not delay the server.
@@ -426,7 +431,7 @@ func serve(args []string) error {
 		for {
 			select {
 			case <-configChanges:
-				guard.EnforceRemote()
+				moveListener(lis, cfg, hub, guard, port)
 				sourceService.Notify()
 				resourceSet.Refresh()
 				resourceSet.Wake()
@@ -458,6 +463,7 @@ func serve(args []string) error {
 	}()
 	srv := &http.Server{Handler: guard.Middleware(s.Handler())}
 	srv.RegisterOnShutdown(func() { close(stopping) }) // a held lock would hold up the shutdown
+	lis.serveWith(srv)
 
 	fmt.Printf("Admiral is running at http://127.0.0.1:%s/\n", port)
 	bindHost, _, _ := net.SplitHostPort(listenOn)
@@ -493,10 +499,38 @@ func serve(args []string) error {
 			_ = srv.Close()
 		}
 	}()
-	err = srv.Serve(ln)
-	if errors.Is(err, http.ErrServerClosed) {
+	lis.start()
+	select {
+	case <-ctx.Done():
 		<-drained
 		return nil
+	case err = <-lis.fatal:
+		return err
 	}
-	return err
+}
+
+// moveListener applies a config change: it moves the listener when the mode changed where Admiral should
+// listen, telling the browsers that move leaves behind first, then cuts the tailnet sockets the change no longer allows.
+func moveListener(lis *listener, cfg *config.Manager, hub *server.Hub, guard *auth.Auth, port string) {
+	want := listenAddr("", cfg.Current(), false)
+	if lis.explicit || cfg.View().Error != nil || want == lis.Addr() {
+		guard.EnforceRemote()
+		return
+	}
+	// The browsers whose path stops working: the LAN ones when the mode turns on, the tailnet ones when it turns off.
+	paths, url := []string{"tailnet"}, ""
+	if cfg.Current().Remote.Tailscale {
+		paths = []string{"lan"}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		url = tailscale.Inspect(ctx, port).URL
+		cancel()
+	} else {
+		url = pairingBase(port, cfg.Current)
+	}
+	hub.SendPaths(paths, map[string]string{"type": "move", "url": url}, 2*time.Second)
+	guard.EnforceRemote()
+	lis.Move(want)
+	if cfg.Current().Remote.Tailscale {
+		lis.DropOffLoopback()
+	}
 }

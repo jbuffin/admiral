@@ -237,3 +237,14 @@ test('on the phone, Remote access shows the Tailscale checks and copies the tail
   await expect(section.getByRole('status').filter({ hasText: /copied/i })).toBeVisible();
   expect(await copied()).toBe(`https://${TS_NAME}/`);
 });
+
+test('on the phone, Turn off Tailscale mode asks first', async ({ page, admiral }) => {
+  const ts = fakeTailscale(admiral);
+  setRemote(admiral, { tailscale: true, allowedLogins: [TS_LOGIN] });
+  await admiral.start({ env: ts.env });
+  ts.serve(new URL(admiral.url).port);
+  await page.goto(admiral.url + 'app/preferences/admiral/remote');
+  const section = page.getByRole('group', { name: 'Tailscale' });
+  await section.getByRole('button', { name: 'Turn off', exact: true }).tap();
+  await expect(page.getByRole('group', { name: 'Turn off Tailscale mode' }).getByRole('button', { name: 'Turn off Tailscale mode' })).toBeVisible();
+});

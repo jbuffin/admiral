@@ -133,6 +133,13 @@ func TestModeOnMovesAdmiralOffTheLAN(t *testing.T) {
 	}
 	lan := dialShips(t, p.lanURL(), r.lanBearer(t, p))
 	local := dialShips(t, p.LocalURL, nil)
+	go func() { // a Ping needs a reader to receive its pong
+		for {
+			if _, _, err := local.Read(context.Background()); err != nil {
+				return
+			}
+		}
+	}()
 
 	r.writeConfig(true)
 
@@ -262,6 +269,10 @@ func TestFailedRebindKeepsTheOldListener(t *testing.T) {
 		lanUnavailable(t, "cannot hold %s: %v", p.LANIP, err)
 	}
 	defer blocker.Close()
+	// macOS lets a wildcard bind overlap that one, so it needs the wildcard address held too; where that fails the first still blocks.
+	if wild, err := net.Listen("tcp", "0.0.0.0:"+p.Port); err == nil {
+		defer wild.Close()
+	}
 
 	r.writeConfig(false)
 
