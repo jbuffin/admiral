@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/campaigns"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/repofinder"
@@ -177,6 +178,9 @@ func (s *Service) serveList(w http.ResponseWriter, r *http.Request) {
 	out := []campaignView{}
 	for _, f := range s.Store.List() {
 		if (filter == "true" && !f.Ended()) || (filter == "false" && f.Ended()) {
+			continue
+		}
+		if fleet, ok := actor.FleetOf(r.Context()); ok && f.Fleet != fleet {
 			continue
 		}
 		c := s.json(f)

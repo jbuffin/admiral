@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -128,8 +129,14 @@ func (s *Service) Launch(ctx context.Context, req launcher.Request) (Ship, *laun
 
 func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 	var req launcher.Request
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20)).Decode(&req); err != nil {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20))
+	if err := dec.Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
+		return
+	}
+	// the actor guard reads this same first value, so anything after it is refused rather than ignored
+	if dec.Decode(&struct{}{}) != io.EOF {
+		writeError(w, http.StatusBadRequest, "request is not valid JSON: data after the request")
 		return
 	}
 	// a campaign's skill, text and refusals are set by its own route, not the client's
@@ -137,6 +144,7 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "launch a campaign's child through its campaign")
 		return
 	}
+	req.Via = viaOf(r)
 	got, lerr := s.Launch(r.Context(), req)
 	if lerr != nil {
 		writeError(w, lerr.Status, lerr.Msg)

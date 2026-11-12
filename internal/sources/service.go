@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/server"
@@ -228,7 +229,21 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 }
 
 func (s *Service) serveList(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.View())
+	view := s.View()
+	if fleet, ok := actor.FleetOf(r.Context()); ok {
+		view = slices.DeleteFunc(view, func(v SourceView) bool { return v.Fleet != fleet })
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+// FleetOf is the fleet a source belongs to, and false for a key that is no source.
+func (s *Service) FleetOf(key string) (string, bool) {
+	for _, st := range s.Sup.snapshot() {
+		if st.def.Key == key {
+			return st.def.Fleet, true
+		}
+	}
+	return "", false
 }
 
 func (s *Service) servePlugins(w http.ResponseWriter, r *http.Request) {

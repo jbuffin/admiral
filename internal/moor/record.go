@@ -34,6 +34,8 @@ type Record struct {
 	PRs     []string `json:"prs"`
 	Resume  string   `json:"resume"`
 	Round   int      `json:"round"`
+	// Via is who launched the ship when it was not the engineer.
+	Via string `json:"via,omitempty"`
 	// Resources the ship held, so a round holds the same.
 	Resources []string  `json:"resources"`
 	MooredAt  time.Time `json:"moored_at"`

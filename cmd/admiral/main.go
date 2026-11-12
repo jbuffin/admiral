@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/actor"
+	"github.com/jbuffin/admiral/internal/actorwire"
 	"github.com/jbuffin/admiral/internal/auth"
 	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/bridge"
@@ -463,7 +465,11 @@ func serve(args []string) error {
 		pushFeed.ShipsChanged()
 	}
 
-	chatService := &chat.Service{Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Home: absDir, Outcomes: outcomeLog}
+	minter, err := actor.NewMinter(absDir)
+	if err != nil {
+		return err
+	}
+	chatService := &chat.Service{Actor: minter, Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Home: absDir, Outcomes: outcomeLog}
 	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
 	chatService.OnQuestions = inboxService.Changed
 	inboxService.ChatQuestions = chatService.WaitingQuestions
@@ -555,7 +561,21 @@ func serve(args []string) error {
 		supervisor.Wait()
 		_ = st.Flush()
 	}()
-	srv := &http.Server{Handler: guard.Middleware(s.Handler())}
+	actorGuard := actorwire.Guard(actorwire.Deps{
+		FleetKeys: func() []string {
+			var keys []string
+			for _, f := range cfg.Current().Fleets {
+				keys = append(keys, f.Key)
+			}
+			return keys
+		},
+		ActorToken: chatService.ActorToken,
+		ShipFleet:  shipService.FleetOf,
+		Inbox:      inboxService.List,
+		Source:     sourceService.FleetOf,
+		Campaign:   followStore.Get,
+	})
+	srv := &http.Server{Handler: guard.Middleware(actorGuard.Middleware(s.Handler()))}
 	srv.RegisterOnShutdown(func() { close(stopping) }) // a held lock would hold up the shutdown
 	lis.serveWith(srv)
 

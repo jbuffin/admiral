@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
@@ -151,7 +152,12 @@ func (l *Launcher) StartChat(key string) error {
 	}
 
 	session := sessionhost.ChatSession(fleet.Key)
-	opts := [][2]string{{sessionhost.ChatModelOpt, chat.Model}, {sessionhost.ChatEffortOpt, chat.Effort}, {sessionhost.ChatFleetOpt, fleet.Key}}
+	nonce, nerr := actor.NewNonce()
+	if nerr != nil {
+		return refuse(http.StatusInternalServerError, "could not make the chat's identity: %v", nerr)
+	}
+	opts := [][2]string{{sessionhost.ChatModelOpt, chat.Model}, {sessionhost.ChatEffortOpt, chat.Effort}, {sessionhost.ChatFleetOpt, fleet.Key},
+		{sessionhost.ChatNonceOpt, nonce}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
 			return refuse(http.StatusBadRequest, "%s contains a control character", o[0])

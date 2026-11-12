@@ -9,12 +9,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
@@ -168,7 +170,11 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 func (s *Service) serveList(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"items": s.List()})
+	items := s.List()
+	if fleet, ok := actor.FleetOf(r.Context()); ok {
+		items = slices.DeleteFunc(items, func(it Item) bool { return it.Fleet != fleet })
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func decode(w http.ResponseWriter, r *http.Request, max int64, v any) bool {
@@ -200,7 +206,11 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 		if !decode(w, r, 256<<10, &req) {
 			return
 		}
-		err = s.AnswerQuestion(session, id, req)
+		via := ""
+		if _, ok := actor.FleetOf(r.Context()); ok {
+			via = actor.Via
+		}
+		err = s.AnswerQuestionVia(session, id, req, via)
 	}
 	respond(w, session, id, ReviewResult{}, err)
 }
