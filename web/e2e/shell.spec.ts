@@ -6,6 +6,10 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const TABLE = ['| Ship | Status |', '|:-----|-------:|', '| Alpha | afloat |', '| Bravo | anchored |'].join('\n');
+const WIDE_TABLE = ['| ' + Array.from({ length: 14 }, (_, i) => `column-number-${i}-with-a-long-heading`).join(' | ') + ' |', '|' + '---|'.repeat(14), '| ' + Array.from({ length: 14 }, (_, i) => `cell-${i}-with-long-unbroken-content`).join(' | ') + ' |'].join('\n');
+const pageFits = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
+
 const surface = (page: Page, title: string) => page.getByRole('heading', { name: title, exact: true });
 const nav = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
 const group = (page: Page, title: string) => page.getByRole('main').getByRole('region', { name: new RegExp(`^${title}`) });
@@ -87,6 +91,16 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   // A line appended to the transcript shows without a reload.
   await appendLines(admiral, login, [line.assistant('Appended while the view was open')]);
   await expect(viewPanel(page)).toContainText('Appended while the view was open', { timeout: 15_000 });
+
+  // A table in a reply shows as a table, and a table wider than the column scrolls inside its own box.
+  await appendLines(admiral, login, [line.assistant(`Fleet status\n\n${TABLE}\n\n${WIDE_TABLE}`)]);
+  const tables = viewPanel(page).locator('table');
+  await expect(tables).toHaveCount(2, { timeout: 15_000 });
+  await expect(tables.first().locator('th')).toHaveText(['Ship', 'Status']);
+  await expect(tables.first().locator('td')).toHaveText(['Alpha', 'afloat', 'Bravo', 'anchored']);
+  const box = tables.nth(1).locator('xpath=..');
+  expect(await box.evaluate((e) => e.scrollWidth > e.clientWidth && ['auto', 'scroll'].includes(getComputedStyle(e).overflowX))).toBe(true);
+  expect(await pageFits(page)).toBe(true);
 
   // PR is a placeholder here. login works in proj, which has no commit: there is nothing to compare, and reading Changes never joins the bridge.
   await viewTab(page, 'PR').tap();
@@ -993,7 +1007,7 @@ test.describe('a shell that does not match the server', () => {
 // The fleets: harbor (Harborlight) and lagoon (Lagoonside) have their own AdmiralBot; alpha (Homeport) has no Claude Code dock.
 test("the Chat surface shows the fleet's AdmiralBot history beside the Inbox rail, starts a new chat that keeps the history, answers a question in place, and shows only the shown fleet's chat", { tag: '@critical' }, async ({ page, admiral }) => {
   seedFleets(admiral, { live: true, chat: true });
-  chatSays(admiral, 'harbor', [line.user('Where are the ships'), line.assistant('Two are **afloat**.'), line.assistant(HOSTILE)]);
+  chatSays(admiral, 'harbor', [line.user('Where are the ships'), line.assistant('Two are **afloat**.'), line.assistant(HOSTILE), line.assistant(`AdmiralBot status\n\n${TABLE}`)]);
   chatSays(admiral, 'lagoon', [line.user('Is the lagoon calm'), line.assistant('Glass flat.')]);
   await admiral.start({ env: withFakeGh(admiral) });
   const watch = watchPage(page, admiral.url);
@@ -1013,6 +1027,8 @@ test("the Chat surface shows the fleet's AdmiralBot history beside the Inbox rai
   await expect(main.locator('strong', { hasText: 'afloat' })).toBeVisible();
   await expect(main).toContainText(HOSTILE);
   expect(await page.evaluate(() => (window as unknown as { __xss?: number }).__xss)).toBeUndefined();
+  await expect(main.locator('table th')).toHaveText(['Ship', 'Status']);
+  expect(await pageFits(page)).toBe(true);
   await expect(main).not.toContainText('Is the lagoon calm');
   // A running chat has Open terminal beside New chat, and no not-started note.
   await expect(main.getByRole('button', { name: 'Open terminal', exact: true })).toHaveCount(1);
