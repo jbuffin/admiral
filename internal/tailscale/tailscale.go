@@ -54,6 +54,8 @@ type Report struct {
 	Login string
 	// Holder is what serves HTTPS port 443 when that isn't Admiral, empty when 443 is free or Admiral's.
 	Holder string
+	// RawTCP is true when a TCP forward reaches Admiral's port, on any port.
+	RawTCP bool
 	// ServeErr is why serve status couldn't be read, empty when it could.
 	ServeErr string
 }
@@ -237,6 +239,7 @@ func Evaluate(statusOut []byte, statusErr error, serveOut []byte, serveErr error
 	}
 
 	f := findAdmiral(&cfg, port)
+	rep.RawTCP = f.rawTCP
 	switch {
 	case f.rawTCP:
 		rep.add(CheckServe, false, fmt.Sprintf("a raw TCP forward to Admiral's port bypasses Admiral's tailnet checks; replace it with: %s", ServeHint(port)))
@@ -448,7 +451,9 @@ func Prepare(ctx context.Context, port string) Preflight {
 		switch c.ID {
 		case CheckServe:
 			p.Serving = c.OK
-			continue
+			if !rep.RawTCP { // a raw TCP forward is a failure setup keeps; a missing proxy is what setup fixes
+				continue
+			}
 		case CheckFunnel:
 			if rep.ServeErr != "" {
 				c.Detail = rep.ServeErr

@@ -255,6 +255,24 @@ func TestSetupRefusesWhenFunnelIsOn(t *testing.T) {
 	s.requireNoConfig()
 }
 
+// A raw TCP forward to Admiral's port, on any port, bypasses Admiral's tailnet checks: setup reports it and changes nothing.
+func TestSetupStopsOnARawTCPForward(t *testing.T) {
+	t.Parallel()
+	s := newSetupRig(t)
+	s.ts.writeServe(map[string]any{"TCP": map[string]any{"8443": map[string]any{"TCPForward": "127.0.0.1:" + adm}}})
+	r := s.run("", "--answers", s.remoteAnswers(tsOn, ""), "--yes")
+	if r.code == 0 {
+		t.Errorf("exit 0 with a raw TCP forward to Admiral:\n%s", r.both())
+	}
+	if lines := setupLines(r.stdout, "failed", "raw tcp forward"); len(lines) == 0 {
+		t.Errorf("want a failed line naming the raw TCP forward:\n%s", r.stdout)
+	}
+	if got := s.serveCalls(); len(got) != 0 {
+		t.Errorf("serve ran beside a raw TCP forward: %q", got)
+	}
+	s.requireNoConfig()
+}
+
 // A handler that already proxies to Admiral's port is left as it is, and the config still gets the mode.
 func TestSetupLeavesAnExistingHandlerAlone(t *testing.T) {
 	t.Parallel()
