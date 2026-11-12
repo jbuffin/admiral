@@ -138,6 +138,9 @@ type mcpTool struct {
 }
 
 func obj(required []string, props map[string]any) map[string]any {
+	if props == nil {
+		props = map[string]any{} // a null properties makes Claude Code drop the tool
+	}
 	s := map[string]any{"type": "object", "properties": props}
 	if len(required) > 0 {
 		s["required"] = required

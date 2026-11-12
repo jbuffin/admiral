@@ -251,6 +251,43 @@ func TestToolsListNamesEveryToolWithAnInputSchemaAndNoMore(t *testing.T) {
 	}
 }
 
+// Claude Code drops a tool whose properties is null, so every schema carries an object there.
+func TestEveryToolSchemaHasObjectPropertiesCoveringItsRequiredNames(t *testing.T) {
+	a := newStandIn(t, nil)
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, rpc(1, "tools/list", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list struct {
+		Tools []struct {
+			Name        string `json:"name"`
+			InputSchema struct {
+				Type       string                     `json:"type"`
+				Properties map[string]json.RawMessage `json:"properties"`
+				Required   []string                   `json:"required"`
+			} `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(replies["1"].Result, &list); err != nil {
+		t.Fatalf("tools/list result = %s", replies["1"].Result)
+	}
+	if len(list.Tools) == 0 {
+		t.Fatal("tools/list returned no tools")
+	}
+	for _, tl := range list.Tools {
+		s := tl.InputSchema
+		if s.Type != "object" || s.Properties == nil {
+			t.Errorf("tool %s: type %q, properties nil=%v; want an object schema with a properties object", tl.Name, s.Type, s.Properties == nil)
+		}
+		for _, r := range s.Required {
+			if _, ok := s.Properties[r]; !ok {
+				t.Errorf("tool %s: required %q is not a property", tl.Name, r)
+			}
+		}
+	}
+}
+
 func TestWithNoTokenTheServerRefusesToStart(t *testing.T) {
 	a := newStandIn(t, nil)
 	a.env(t, "")
