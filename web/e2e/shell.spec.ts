@@ -820,7 +820,7 @@ test.describe('installed app', () => {
     expect(paths.filter((p) => p.startsWith('/api/') || p.startsWith('/ws/'))).toEqual([]);
     expect(paths).not.toContain('/');
 
-    await page.goto(admiral.url);
+    await page.goto(admiral.url + 'classic/');
     await expect(page).toHaveTitle('Admiral');
     await expect(page.locator('#app')).not.toBeEmpty();
     expect(await controlled(page)).toBe(false);

@@ -19,7 +19,7 @@ export default defineConfig({
         server.middlewares.use(async (req, res, next) => {
           const url = req.url ?? '';
           const path = url.split('?')[0];
-          if (req.method === 'GET' && path === '/') {
+          if ((req.method === 'GET' || req.method === 'HEAD') && path === '/') {
             res.statusCode = 302;
             res.setHeader('Location', '/app/' + url.slice(1));
             res.end();
