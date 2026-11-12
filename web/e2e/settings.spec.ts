@@ -4,7 +4,7 @@ import { homedir, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test, type Admiral } from './fixtures';
-import { HOME, TS_LOGIN, TS_NAME, WORK, fakeTailscale, seedFleets, setRemote, stubClipboard, watchPage } from './shell';
+import { HOME, TS_LOGIN, TS_NAME, WORK, fakeTailscale, proveAdmiralBot, seedFleets, setRemote, stubClipboard, watchPage } from './shell';
 
 // The fleets are `zulu` (Westwind) and `alpha` (Homeport); zulu is the active fleet until one is chosen.
 const sourcesPage = (a: Admiral, fleet: string) => `${a.url}app/preferences/${fleet}/sources`;
@@ -609,7 +609,7 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
   const main = page.getByRole('main');
   await expect(main).toContainText("Your chief of staff for the Harborlight fleet. It only sees this fleet's ships, orders, campaigns and logins.");
   await expect(pick('Harness', 'Claude')).toBeChecked();
-  await expect(page.getByRole('radiogroup', { name: 'Harness' }).getByRole('radio')).toHaveCount(1);
+  await expect(page.getByRole('radiogroup', { name: 'Harness' }).getByRole('radio')).toHaveText(['Claude']);
   await expect(page.getByRole('radiogroup', { name: 'Model' }).getByRole('radio')).toHaveText(['Sonnet', 'Opus', 'Haiku']);
   await expect(pick('Model', 'Sonnet')).toBeChecked();
   await expect(page.getByRole('radiogroup', { name: 'Effort' }).getByRole('radio')).toHaveText(['Default', 'Low', 'Medium', 'High']);
@@ -653,7 +653,20 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
   await prefsNav(page).getByRole('group', { name: `${HOME} fleet` }).getByRole('link', { name: 'AdmiralBot', exact: true }).click();
   await expect(page).toHaveURL(/\/app\/preferences\/alpha\/admiralbot/);
   await expect(main).toContainText(/no Claude Code dock/i);
-  await expect(page.getByRole('radiogroup', { name: 'Harness' })).toHaveCount(0);
+  await expect(page.getByRole('radiogroup', { name: 'Harness' }).getByRole('radio')).toHaveText(['Codex', 'Copilot']);
+  await expect(pick('Harness', 'Copilot')).toBeDisabled();
   await expect(page.getByRole('radiogroup', { name: 'Model' })).toBeVisible();
+
+  // A fleet with a Codex dock lists it greyed out with why, until its probes pass; then it is selectable and brings its own models.
+  await page.goto(admiral.url + 'app/preferences/zulu/admiralbot');
+  await expect(page.getByRole('radiogroup', { name: 'Harness' }).getByRole('radio')).toHaveText(['Claude', 'Codex']);
+  await expect(pick('Harness', 'Codex')).toBeDisabled();
+  await expect(main).toContainText(/Codex.*has not been checked/i);
+  await expect(main.getByRole('button', { name: 'Check again Codex', exact: true })).toBeVisible();
+  proveAdmiralBot(admiral, 'zulu', 'codex');
+  await page.reload();
+  await expect(pick('Harness', 'Codex')).toBeEnabled();
+  await pick('Harness', 'Codex').click();
+  await expect(page.getByRole('radiogroup', { name: 'Model' }).getByRole('radio')).not.toContainText(['Sonnet']);
   expect(watch.unversioned()).toEqual([]);
 });

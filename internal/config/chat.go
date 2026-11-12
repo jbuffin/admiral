@@ -38,6 +38,27 @@ var (
 	ChatHarnesses = []string{"claude"}
 )
 
+// ChatProbe reports a capability's status ("passed", "failed" or "not_checked") for a fleet's harness,
+// with the probe's detail; config cannot import capabilities, so the server injects it.
+type ChatProbe func(fleet, harness, capability string) (status, detail string)
+
+// SetChatProbe wires the capability store into the AdmiralBot gate; it survives a reload.
+func (m *Manager) SetChatProbe(p ChatProbe) {}
+
+// ChatModelsFor is the models a harness's AdmiralBot chat may use; the first is its default.
+func ChatModelsFor(harness string) []string { return nil }
+
+// ChatEffortsFor is the efforts a harness's AdmiralBot chat may use; "" is the harness default.
+func ChatEffortsFor(harness string) []string { return nil }
+
+// ChatHarnessOption is a docked candidate harness: whether the fleet's AdmiralBot may run on it, and if not why.
+type ChatHarnessOption struct {
+	Harness    string `json:"harness"`
+	Offered    bool   `json:"offered"`
+	Reason     string `json:"reason"`
+	Capability string `json:"capability"`
+}
+
 func defaultChat() ChatSettings {
 	return ChatSettings{Harness: DefaultChatHarness, Model: DefaultChatModel, ContextThreshold: DefaultChatThreshold}
 }

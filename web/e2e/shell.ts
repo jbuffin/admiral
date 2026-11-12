@@ -1690,3 +1690,21 @@ export async function myPRsMergeFailsOnTheRow(page: Page, a: Admiral) {
   await expect(row.getByRole('button', { name: 'Merge', exact: true })).toBeEnabled();
   expect((await listShips(a)).find((s) => s.session === ship.session)?.status).toBe('moored');
 }
+
+/** Writes passing AdmiralBot probe results for a fleet's harness, as the store keeps them, so the picker offers it. */
+export function proveAdmiralBot(a: Admiral, fleet: string, harness: string): void {
+  const file = join(a.home, 'capabilities.json');
+  const store = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : { fleets: {} };
+  const at = '2026-01-02T03:04:05Z';
+  const pass = { passed: true, at };
+  store.fleets[fleet] ??= {};
+  store.fleets[fleet][harness] = {
+    ...store.fleets[fleet][harness],
+    version: '9.9.9',
+    detected_at: at,
+    versions: { '9.9.9': { 'bot.mcp_fence': pass, 'bot.config_home': pass } },
+    probed_version: '9.9.9',
+    probed_at: at,
+  };
+  writeFileSync(file, JSON.stringify(store));
+}
