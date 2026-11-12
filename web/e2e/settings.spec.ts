@@ -594,7 +594,7 @@ test('Turn off Tailscale mode asks first, keeps the logins and serve, names the 
 });
 
 test("a fleet's AdmiralBot page shows its harness, model, effort and refresh threshold, saves a change that survives a reload, shows a refusal and, for a fleet with no Claude Code dock, why its chat is off", async ({ page, admiral }) => {
-  seedFleets(admiral, { chat: true });
+  seedFleets(admiral, { chat: true, versioned: true });
   await admiral.start();
   const watch = watchPage(page, admiral.url);
   const harbor = () => JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8')).fleets.harbor as { chat?: Record<string, unknown> };
@@ -683,7 +683,8 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
   // Copilot takes no effort: once proven it offers only Default.
   await page.goto(admiral.url + 'app/preferences/alpha/admiralbot');
   await proveAdmiralBot(admiral, 'alpha', 'copilot');
-  await page.reload();
+  await main.getByRole('button', { name: /Check again.*Copilot/ }).click();
+  await expect(pick('Harness', 'Copilot')).toBeEnabled();
   await pick('Harness', 'Copilot').click();
   await expect(page.getByRole('radiogroup', { name: 'Effort' }).getByRole('radio')).toHaveText(['Default']);
   expect(watch.unversioned()).toEqual([]);
