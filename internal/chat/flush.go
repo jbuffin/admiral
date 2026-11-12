@@ -24,8 +24,9 @@ type resetState struct {
 
 // begin starts the clocks over for a session; the caller holds mu.
 func (rs *resetState) begin(pane string, now time.Time) {
-	// A second back, so a status line kept in the same second as the first sight still counts as this session's.
-	rs.pane, rs.lastReset = pane, now.Add(-time.Second)
+	// Seconds back, so a status line written just before the tick first saw the chat (its time is cut to the second)
+	// still counts as this session's.
+	rs.pane, rs.lastReset = pane, now.Add(-3*time.Second)
 	rs.idleSince, rs.holdUntil, rs.turnKey, rs.running = time.Time{}, time.Time{}, "", false
 }
 
@@ -35,7 +36,7 @@ func (rs *resetState) forget(pane string) {
 	rs.begin(pane, time.Time{})
 }
 
-// ResetTick starts the reset each running chat is due; Run calls it on its tick. A reset runs on its own goroutine,
+// ResetTick starts the reset each running chat is due; tickLoop calls it after Tick. A reset runs on its own goroutine,
 // one at a time per fleet, so a slow flush never holds up the tick.
 func (s *Service) ResetTick() {
 	if s.Host == nil {
