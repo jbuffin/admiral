@@ -59,6 +59,7 @@ type Fleet struct {
 	Env           map[string]string // the fleet's own env, ~ expanded; plugin sources and gh calls start with it
 	Harnesses     []Harness         // dock order: claude, copilot, codex, as present
 	Chat          ChatSettings      // resolved: defaults filled in
+	Notify        bool              // pushes and alerts for this fleet; on unless config.json says false
 }
 
 func (c *Config) clone() *Config {
@@ -264,7 +265,7 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 	if err != nil {
 		return Fleet{}, err
 	}
-	f := Fleet{Key: key, SearchRoots: []string{}, Chat: defaultChat()}
+	f := Fleet{Key: key, SearchRoots: []string{}, Chat: defaultChat(), Notify: true}
 	harnesses := map[string]Harness{}
 	haveName := false
 	for _, m := range ms {
@@ -321,6 +322,10 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 			}
 		case "chat":
 			if f.Chat, err = parseFleetChat(p, m.raw, false); err != nil {
+				return Fleet{}, err
+			}
+		case "notify":
+			if f.Notify, err = boolean(p, m.raw); err != nil {
 				return Fleet{}, err
 			}
 		case "claude", "codex", "copilot":
@@ -467,6 +472,14 @@ func str(path string, raw json.RawMessage) (string, error) {
 		return "", fmt.Errorf("%s: must be a string", path)
 	}
 	return s, nil
+}
+
+func boolean(path string, raw json.RawMessage) (bool, error) {
+	var b bool
+	if string(raw) != "true" && string(raw) != "false" || json.Unmarshal(raw, &b) != nil {
+		return false, fmt.Errorf("%s: must be true or false", path)
+	}
+	return b, nil
 }
 
 func stringList(path string, raw json.RawMessage) ([]string, error) {

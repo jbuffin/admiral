@@ -54,6 +54,8 @@ type Service struct {
 	ChatQuestions func() []Item
 	// AnswerChat answers a chat question where the chat keeps it; the inbox has no copy.
 	AnswerChat func(session, id string, req QuestionRequest) error
+	// OnChange runs after every change to the list is sent. It must not block.
+	OnChange func()
 
 	answerMu sync.Mutex        // one answer at a time
 	actMu    sync.Mutex        // guards acting
@@ -126,7 +128,12 @@ func (s *Service) notifyChan() chan struct{} {
 	return s.notify
 }
 
-func (s *Service) broadcast() { s.Hub.BroadcastOnce("inbox", s.message) }
+func (s *Service) broadcast() {
+	s.Hub.BroadcastOnce("inbox", s.message)
+	if s.OnChange != nil {
+		s.OnChange()
+	}
+}
 
 func (s *Service) Connected(c *server.Client) { _ = c.SendOnce("inbox", s.message) }
 

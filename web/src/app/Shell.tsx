@@ -13,6 +13,7 @@ import { MooredActions } from './MooredActions';
 import { MooredPRs } from './MooredPRs';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
+import { watchPresence } from './presence';
 import { ships, shipsLink, shipsLoaded, sources } from './shipsLink';
 import { signedOut } from './session';
 import { Unreachable } from './Unreachable';
@@ -382,6 +383,7 @@ function PhoneShell({ surface }: { surface: Surface }) {
 }
 
 export function Shell() {
+  useEffect(() => watchPresence(), []);
   const phone = usePhone();
   useEffect(() => watchAttention(), []);
   const surface = surfaceOf(loc.value.path) ?? SURFACES[0];

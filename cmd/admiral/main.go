@@ -34,6 +34,7 @@ import (
 	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/probes"
+	"github.com/jbuffin/admiral/internal/push"
 	"github.com/jbuffin/admiral/internal/resources"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
@@ -399,6 +400,17 @@ func serve(args []string) error {
 		Claims: shipService.Claims, Launch: shipService.Launch}
 	defer campaignService.Close()
 	shipService.Orders = campaignService
+	// A sink joins here: NewWatcher takes it after the notify func.
+	pushFeed := &push.Feed{Ships: shipService.List, Items: inboxService.List}
+	pushFeed.Watcher = push.NewWatcher(hub.Watching, func(fleet string) bool {
+		for _, f := range cfg.Current().Fleets {
+			if f.Key == fleet {
+				return f.Notify
+			}
+		}
+		return true
+	})
+	inboxService.OnChange = pushFeed.InboxChanged
 	shipService.OnChange = func() {
 		campaignService.ShipsChanged()
 		sourceService.Notify()
@@ -406,6 +418,7 @@ func serve(args []string) error {
 		resourceSet.Wake() // a ship that stopped holding a unit frees it
 		resourceService.Broadcast()
 		inboxService.Notify()
+		pushFeed.ShipsChanged()
 	}
 
 	chatService := &chat.Service{Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Home: absDir, Outcomes: outcomeLog}
@@ -458,6 +471,7 @@ func serve(args []string) error {
 	probeRunner.Refresh(bg, cfg.Current().Fleets)
 	var background sync.WaitGroup
 	supervisor.Start(bg)
+	go pushFeed.Run(bg)
 	convService.StartLive(bg)
 	// The ships' run stops first and the log closes next, while the host is
 	// still up, so a written `ended` can still set its marker.

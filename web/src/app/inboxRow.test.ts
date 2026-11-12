@@ -8,6 +8,7 @@ const T0 = Date.parse('2026-10-22T10:00:00Z');
 const fleet = (key: string, name: string, extra: Partial<Fleet> = {}): Fleet => ({
   key,
   name,
+  notify: true,
   color: `#${key}`,
   ink: '#000',
   search_roots: [],

@@ -192,10 +192,26 @@ func (s *Server) serveWS(w http.ResponseWriter, r *http.Request) {
 		if json.Unmarshal(data, &msg) != nil {
 			continue
 		}
+		if msg.Type == "presence" {
+			s.handlePresence(c, data)
+			continue
+		}
 		if h := s.Messages[msg.Type]; h != nil {
 			h(ctx, c, data)
 		}
 	}
+}
+
+// handlePresence takes idle_ms rather than a timestamp, so the window's clock cannot skew the answer.
+func (s *Server) handlePresence(c *Client, data []byte) {
+	var p struct {
+		Visible bool `json:"visible"`
+		IdleMS  int  `json:"idle_ms"`
+	}
+	if json.Unmarshal(data, &p) != nil || p.IdleMS < 0 {
+		return
+	}
+	c.setPresence(p.Visible, time.Duration(p.IdleMS)*time.Millisecond, s.Hub.Now())
 }
 
 func (s *Server) sendConfig(c *Client) {
@@ -242,6 +258,7 @@ func (s *Server) serveFleetSave(w http.ResponseWriter, r *http.Request) {
 		WakeReviewers *[]string `json:"wake_reviewers"`
 		CloneRoot     *string   `json:"clone_root"`
 		Color         *string   `json:"color"`
+		Notify        *bool     `json:"notify"`
 		// Each key is checked on save, so a misspelt one is refused.
 		Chat map[string]json.RawMessage `json:"chat"`
 	}
@@ -250,7 +267,7 @@ func (s *Server) serveFleetSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err := s.Config.SetFleetFields(r.PathValue("key"), config.FleetFields{
-		SearchRoots: req.SearchRoots, Owners: req.Owners, WakeReviewers: req.WakeReviewers, CloneRoot: req.CloneRoot, Color: req.Color, Chat: req.Chat})
+		SearchRoots: req.SearchRoots, Owners: req.Owners, WakeReviewers: req.WakeReviewers, CloneRoot: req.CloneRoot, Color: req.Color, Notify: req.Notify, Chat: req.Chat})
 	switch {
 	case errors.Is(err, config.ErrNoFleet):
 		writeJSONError(w, http.StatusNotFound, err.Error())

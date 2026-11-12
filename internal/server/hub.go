@@ -22,6 +22,11 @@ type Client struct {
 
 	mu   sync.Mutex
 	sent map[string][]byte // last message each key delivered
+
+	// presence is the window's last report; it is the zero value until the window reports.
+	presenceMu sync.Mutex
+	visible    bool
+	lastUsed   time.Time
 }
 
 func (c *Client) ID() int { return c.id }
@@ -65,12 +70,42 @@ func (c *Client) write(data []byte) error {
 }
 
 type Hub struct {
+	// Now is the clock for presence; tests replace it.
+	Now func() time.Time
+
 	mu      sync.Mutex
 	next    int
 	clients map[int]*Client
 }
 
-func NewHub() *Hub { return &Hub{clients: map[int]*Client{}} }
+// WatchWindow is how long a window counts as watched after the person last used it.
+const WatchWindow = 2 * time.Minute
+
+// setPresence records a window's report: whether it is visible and how long ago it was last used.
+func (c *Client) setPresence(visible bool, idle time.Duration, now time.Time) {
+	c.presenceMu.Lock()
+	c.visible, c.lastUsed = visible, now.Add(-idle)
+	c.presenceMu.Unlock()
+}
+
+func (c *Client) watching(now time.Time) bool {
+	c.presenceMu.Lock()
+	defer c.presenceMu.Unlock()
+	return c.visible && now.Sub(c.lastUsed) < WatchWindow
+}
+
+// Watching is whether any connected window is visible and was used within WatchWindow.
+func (h *Hub) Watching() bool {
+	now := h.Now()
+	for _, c := range h.snapshot() {
+		if c.watching(now) {
+			return true
+		}
+	}
+	return false
+}
+
+func NewHub() *Hub { return &Hub{Now: time.Now, clients: map[int]*Client{}} }
 
 func (h *Hub) add(ctx context.Context, conn *websocket.Conn, path string) *Client {
 	h.mu.Lock()
