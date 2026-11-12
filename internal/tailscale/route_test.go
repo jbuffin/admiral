@@ -142,3 +142,78 @@ func TestLoginsWriteFailureDoesNotLeakThePath(t *testing.T) {
 		t.Errorf("%d %s, want 500 without the OS error", rec.Code, rec.Body)
 	}
 }
+
+func TestTurnOffNeedsConfirmationAndThisMac(t *testing.T) {
+	dir := fakeOnPath(t)
+	mux, cur := settingsRoute(t, true)
+	for _, body := range []string{`{}`, `{"confirm":false}`, `nope`} {
+		if rec := post(mux, "/api/remote/off", body); rec.Code != http.StatusBadRequest {
+			t.Errorf("Turn off with %s: %d, want 400", body, rec.Code)
+		}
+	}
+	if !cur.Tailscale {
+		t.Error("an unconfirmed Turn off turned the mode off")
+	}
+
+	remoteMux, remoteCur := settingsRoute(t, false)
+	if rec := post(remoteMux, "/api/remote/off", `{"confirm":true}`); rec.Code != http.StatusForbidden {
+		t.Errorf("Turn off from another device: %d, want 403", rec.Code)
+	}
+	if !remoteCur.Tailscale {
+		t.Error("a refused Turn off still turned the mode off")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "calls")); err == nil {
+		t.Error("Turn off ran tailscale")
+	}
+}
+
+// Turn off writes the mode and nothing else: the logins stay and serve is left to the person.
+func TestTurnOffWritesOnlyTheMode(t *testing.T) {
+	dir := fakeOnPath(t)
+	mux, cur := settingsRoute(t, true)
+	rec := post(mux, "/api/remote/off", `{"confirm":true}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Turn off: %d %s", rec.Code, rec.Body)
+	}
+	if cur.Tailscale || !reflect.DeepEqual(cur.AllowedLogins, []string{"alice@example.com", "bob@example.com"}) {
+		t.Errorf("after Turn off: %+v, want the mode off and both logins kept", *cur)
+	}
+	var v struct {
+		Tailscale bool `json:"tailscale"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &v); err != nil || v.Tailscale {
+		t.Errorf("answer %s, want the view with the mode off", rec.Body)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "calls")); strings.Contains(string(b), "serve --") {
+		t.Errorf("Turn off touched serve: %s", b)
+	}
+}
+
+func TestTurnOffWriteFailureDoesNotLeakThePath(t *testing.T) {
+	fakeOnPath(t)
+	mux := http.NewServeMux()
+	(&Route{Port: "7420", Local: func(*http.Request) bool { return true },
+		Config: func() *config.Config { return &config.Config{Remote: config.Remote{Tailscale: true}} },
+		Set:    func(config.Remote) error { return errors.New("write /Users/x/.admiral/config.json: permission denied") }}).Routes(mux)
+	rec := post(mux, "/api/remote/off", `{"confirm":true}`)
+	if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "/Users") {
+		t.Errorf("%d %s, want 500 without the OS error", rec.Code, rec.Body)
+	}
+}
+
+// The view names the command that stops serve on the HTTPS port Admiral is served on: 8443 for a hand-set serve.
+func TestViewNamesTheCommandThatStopsServe(t *testing.T) {
+	dir := fakeOnPath(t)
+	const host = "fake-mac.tailnet-fake.ts.net"
+	put(t, dir, "status.json", `{"BackendState":"Running","Self":{"DNSName":"`+host+`.","UserID":1},"CurrentTailnet":{"MagicDNSEnabled":true},"CertDomains":["`+host+`"],"User":{"1":{"LoginName":"alice@example.com"}}}`)
+	put(t, dir, "serve.json", `{"TCP":{"8443":{"HTTPS":true}},"Web":{"`+host+`:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:7420"}}}}}`)
+	mux, _ := settingsRoute(t, true)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/remote", nil))
+	var v struct {
+		ServeOff string `json:"serveOff"`
+	}
+	if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &v) != nil || v.ServeOff != "tailscale serve --https=8443 off" {
+		t.Errorf("GET /api/remote: %d %s, want serveOff %q", rec.Code, rec.Body, "tailscale serve --https=8443 off")
+	}
+}

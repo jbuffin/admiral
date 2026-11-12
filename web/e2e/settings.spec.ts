@@ -493,6 +493,7 @@ test('Settings shows the Tailscale checks, copies the URL, edits the allowed log
   await expect.poll(async () => (await remote()).tailscale).toBe(true);
   expect(ts.serveCalls()).toEqual([`serve --bg --https=443 http://127.0.0.1:${port}`]);
   expect((await remote()).allowedLogins).toEqual([TS_LOGIN]);
+  await expect(page.getByText(/takes effect the next time it starts/i)).toHaveCount(0);
 
   // The checks are one row each, and the URL copies.
   const url = `https://${TS_NAME}/`;
@@ -530,5 +531,49 @@ test('Settings shows the Tailscale checks, copies the URL, edits the allowed log
 
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+// The move message is pushed through a routed copy of the page's own ships socket; the server's real push is pinned in the Go e2e.
+test('Turn off Tailscale mode asks first, keeps the logins and serve, names the command that stops serve, and a move message sends the page to its address', async ({ page, admiral }) => {
+  const ts = fakeTailscale(admiral);
+  setRemote(admiral, { tailscale: true, allowedLogins: [TS_LOGIN] });
+  await admiral.start({ env: ts.env });
+  ts.serve(new URL(admiral.url).port);
+  const remote = async () =>
+    (await (await fetch(`${admiral.url}api/v1/remote`)).json()) as { tailscale: boolean; allowedLogins: string[] };
+  let pushToPage: ((msg: string) => void) | undefined;
+  await page.routeWebSocket(/\/ws\/v1/, (ws) => {
+    ws.connectToServer();
+    pushToPage = (msg) => ws.send(msg);
+  });
+  const watch = watchPage(page, admiral.url);
+  const section = page.getByRole('group', { name: 'Tailscale' });
+
+  await page.goto(admiral.url + 'app/preferences/admiral/remote');
+  await expect(section.getByRole('list', { name: 'Checks' })).toBeVisible();
+  await expect(page.getByText(/takes effect the next time it starts/i)).toHaveCount(0);
+  await expect(page.getByText(/--listen/)).toBeVisible();
+
+  // Backing out of the confirm changes nothing.
+  await section.getByRole('button', { name: 'Turn off', exact: true }).tap();
+  const confirm = page.getByRole('group', { name: 'Turn off Tailscale mode' });
+  await confirm.getByRole('button', { name: 'Cancel' }).tap();
+  expect((await remote()).tailscale).toBe(true);
+
+  await section.getByRole('button', { name: 'Turn off', exact: true }).tap();
+  await page.getByRole('group', { name: 'Turn off Tailscale mode' }).getByRole('button', { name: 'Turn off Tailscale mode' }).tap();
+  await expect.poll(async () => (await remote()).tailscale).toBe(false);
+  expect((await remote()).allowedLogins).toEqual([TS_LOGIN]);
+  expect(ts.serveCalls()).toEqual([]);
+  await expect(section.getByText(/tailscale mode is off/i)).toBeVisible();
+  await expect(page.getByText('tailscale serve --https=443 off')).toBeVisible();
+  await expect(page.getByRole('button', { name: /tailscale serve/i })).toHaveCount(0);
+
+  // The move message sends this page to the address it carries.
+  await expect.poll(() => pushToPage).toBeDefined();
+  pushToPage!(JSON.stringify({ type: 'move', url: `${admiral.url}app/inbox` }));
+  await expect(page).toHaveURL(/\/app\/inbox/);
+
   expect(watch.errors).toEqual([]);
 });
