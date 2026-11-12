@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/jbuffin/admiral/internal/codexpane"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/repofinder"
@@ -218,6 +219,11 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		return nil, refuse(http.StatusBadRequest, "%s executable %s not found for fleet %s", req.Harness, dock.Executable, fleet.Name)
 	}
 
+	if req.Harness == "codex" {
+		if bad, why := codexDockArgRefused(dock.Args); bad != "" {
+			return nil, refuse(http.StatusBadRequest, "the %s dock of fleet %s has %q in its args, which Admiral refuses because %s", req.Harness, fleet.Name, bad, why)
+		}
+	}
 	argv := append([]string{exe}, dock.Args...)
 	argv = append(argv, mflags...)
 	// The member rule, not modelFlags' list, has judged a member's model.
@@ -247,6 +253,14 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		}
 	} else {
 		argv = appendPrompt(argv, prompt, req.dockLaunch())
+	}
+	if req.Harness == "codex" {
+		sock, err := codexpane.SocketPath(os.Getuid())
+		if err != nil {
+			return nil, refuse(http.StatusInternalServerError, "could not name the Codex socket: %v", err)
+		}
+		argv = append([]string{filepath.Join(l.Home, "bin", "admiral"), "codex-pane", "--socket", sock, "--"}, argv...)
+		paneOpts = append(paneOpts, [2]string{"codex-socket", sock})
 	}
 	env := l.shipEnv(dock)
 	if n := sessionhost.CommandSize(argv); n > sessionhost.MaxMessage {

@@ -146,6 +146,35 @@ if [ "$1" = "--version" ]; then
   echo "$v"
   exit 0
 fi
+# codex as a ship's app-server, started by `admiral codex-pane` in the pane: it must neither
+# record nor run cues, or the ship would run them twice. By default it exits 1 at once, so the
+# wrapper falls back to the plain TUI. FAKE_APP_SERVER=listen (a fleet env value) listens on the
+# --listen unix socket instead, until it is killed, for the journey that wants the live path.
+# The wrapper asks codex --help whether --no-daemon exists; answer without recording.
+if [ "$(basename "$0")" = codex ] && [ "$1" = --help ] && [ $# -eq 1 ]; then
+  echo "Usage: codex [OPTIONS]"
+  echo "      --no-daemon  Do not use the shared daemon"
+  exit 0
+fi
+if [ "$(basename "$0")" = codex ] && [ "$1" = app-server ]; then
+  if [ "$FAKE_APP_SERVER" = listen ]; then
+    path=""
+    prev=""
+    for a in "$@"; do
+      [ "$prev" = "--listen" ] && path=${a#unix://}
+      prev=$a
+    done
+    exec python3 -c 'import os, socket, sys
+p = sys.argv[1]
+s = socket.socket(socket.AF_UNIX)
+s.bind(p)
+s.listen(8)
+while True:
+    s.accept()[0].close()' "$path"
+  fi
+  echo "error: unrecognized subcommand 'app-server'" >&2
+  exit 1
+fi
 settings=""
 prompt=""
 headless=""

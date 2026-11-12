@@ -44,6 +44,7 @@ func recordingLauncher(t *testing.T, harness string) (*Launcher, string, func() 
 	cfg := &config.Config{Fleets: []config.Fleet{{Key: "work", Name: "Work", SearchRoots: []string{work},
 		Harnesses: []config.Harness{{Name: harness, Executable: exe, Found: true}}}}}
 	l := &Launcher{Config: func() *config.Config { return cfg }, Home: t.TempDir(), Tmux: tmux, Socket: sock}
+	installPassThroughWrapper(t, l.Home)
 	return l, work, func() []string {
 		t.Helper()
 		deadline := time.Now().Add(10 * time.Second)

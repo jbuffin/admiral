@@ -2,6 +2,8 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -48,7 +50,7 @@ func promptOf(t *testing.T, w *world, r record) string {
 		}
 		return strings.TrimPrefix(last, "--interactive=")
 	default:
-		if len(r.argv) < 3 || r.argv[0] != "--fa-codex" || r.argv[len(r.argv)-2] != "--" {
+		if tui := r.codexTUIArgv(); len(tui) < 3 || tui[0] != "--fa-codex" || tui[len(tui)-2] != "--" {
 			t.Fatalf("codex argv must be: fleet args, -c flags, --, prompt; got %q", r.argv)
 		}
 		return last
@@ -767,4 +769,32 @@ func TestUnreadableShipKeepsItsPositionAcrossRestart(t *testing.T) {
 	if p := list[0].Position; p == nil || p.X != 0.3 || p.Y != 0.6 {
 		t.Errorf("repaired ship = %+v, want it back at (0.3, 0.6)", list[0])
 	}
+}
+
+// A Codex ship's TUI runs on the app-server the pane wrapper started, on a socket in Admiral's
+// private directory.
+func TestCodexShipRunsOnItsOwnAppServer(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	w.server = "listen"
+	// The wrapper waits 5 s for the fake server's socket; python3 must not spend them on a
+	// cold start (the Xcode shim's first run, a loaded machine).
+	if out, err := exec.Command("python3", "-c", "import os, socket").CombinedOutput(); err != nil {
+		t.Skipf("python3 is not usable: %v %s", err, out)
+	}
+	w.start()
+	ship := w.launch(w.order("work", "codex", "cl-codex", commodore, "do the thing"))
+	r := w.record(ship.Session)
+	if len(r.argv) < 3 || r.argv[0] != "--remote" || r.argv[2] != "--fa-codex" {
+		t.Fatalf("codex argv = %q, want --remote unix://<socket> right after the exe, then the dock's args", r.argv)
+	}
+	sock := strings.TrimPrefix(r.argv[1], "unix://")
+	if want := fmt.Sprintf("/tmp/admiral-%d/", os.Getuid()); !strings.HasPrefix(sock, want) {
+		t.Fatalf("socket %q is not under %s", sock, want)
+	}
+	c, err := net.Dial("unix", sock)
+	if err != nil {
+		t.Fatalf("the ship's app-server does not accept connections: %v", err)
+	}
+	_ = c.Close()
 }
