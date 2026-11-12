@@ -74,7 +74,7 @@ export function Preferences({ phone }: { phone: boolean }) {
   const fleet = fleets.value.find((f) => f.key === key);
   const page = preferencesPage(loc.value.path);
 
-  // Bare and unknown paths open the active fleet's sources, else Remote access; signals are read at run time because a render can see the config half-loaded.
+  // On a phone the bare path is the list; otherwise bare and unknown paths open the active fleet's sources, else Remote access; signals are read at run time because a render can see the config half-loaded.
   useEffect(() => {
     const open = activeFleet.value;
     if (!loaded.value || (phone && preferencesBare(loc.value.path)) || page === 'remote' || page === 'all-usage' || fleets.value.some((f) => f.key === key)) return;
@@ -87,43 +87,43 @@ export function Preferences({ phone }: { phone: boolean }) {
     <main class={`panel prefs${phone ? (list ? ' prefs-list' : ' prefs-open') : ''}`}>
       {!(phone && !list) && <PreferencesNav current={fleet?.key ?? ''} page={page} />}
       {!list && (
-      <div class="prefs-page">
-        {phone && (
-          <a
-            class="back-link"
-            href={preferencesPath + fleetSearch.value}
-            onClick={(e) => {
-              if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-              e.preventDefault();
-              go(preferencesPath, fleetSearch.value);
-            }}
-          >
-            Back to Preferences
-          </a>
-        )}
-        {page === 'remote' ? (
-          <>
-            <Title>{TITLES.remote}</Title>
-            <p class="fleet-label">All fleets</p>
-            <RemoteAccess />
-          </>
-        ) : page === 'all-usage' ? (
-          <>
-            <Title>{TITLES.usage}</Title>
-            <p class="fleet-label">All fleets</p>
-            <AllUsagePage phone={phone} />
-          </>
-        ) : fleet ? (
-          <>
-            <Title>{TITLES[page]}</Title>
-            <p class="fleet-label">
-              <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
-              {fleet.name} fleet
-            </p>
-            {page === 'fleet' ? <FleetPage key={fleet.key} fleet={fleet} /> : page === 'admiralbot' ? <ChatSettingsPage key={fleet.key} fleet={fleet} /> : page === 'usage' ? <FleetUsagePage key={fleet.key} fleetKey={fleet.key} phone={phone} /> : page === 'capabilities' ? <HarnessCapabilities key={fleet.key} fleet={fleet} /> : <OrderSources key={fleet.key} fleet={fleet} />}
-          </>
-        ) : null}
-      </div>
+        <div class="prefs-page">
+          {phone && (
+            <a
+              class="back-link"
+              href={preferencesPath + fleetSearch.value}
+              onClick={(e) => {
+                if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                e.preventDefault();
+                go(preferencesPath, fleetSearch.value);
+              }}
+            >
+              Back to Preferences
+            </a>
+          )}
+          {page === 'remote' ? (
+            <>
+              <Title>{TITLES.remote}</Title>
+              <p class="fleet-label">All fleets</p>
+              <RemoteAccess />
+            </>
+          ) : page === 'all-usage' ? (
+            <>
+              <Title>{TITLES.usage}</Title>
+              <p class="fleet-label">All fleets</p>
+              <AllUsagePage phone={phone} />
+            </>
+          ) : fleet ? (
+            <>
+              <Title>{TITLES[page]}</Title>
+              <p class="fleet-label">
+                <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
+                {fleet.name} fleet
+              </p>
+              {page === 'fleet' ? <FleetPage key={fleet.key} fleet={fleet} /> : page === 'admiralbot' ? <ChatSettingsPage key={fleet.key} fleet={fleet} /> : page === 'usage' ? <FleetUsagePage key={fleet.key} fleetKey={fleet.key} phone={phone} /> : page === 'capabilities' ? <HarnessCapabilities key={fleet.key} fleet={fleet} /> : <OrderSources key={fleet.key} fleet={fleet} />}
+            </>
+          ) : null}
+        </div>
       )}
     </main>
   );
