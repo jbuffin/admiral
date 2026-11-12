@@ -11,7 +11,7 @@ import { rowButtons } from './moored';
 import { MooredPRs } from './MooredPRs';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
-import { ships, shipsLink, shipsLoaded, sources } from './shipsLink';
+import { ships, shipsLoaded, sources } from './shipsLink';
 import { signedOut } from './session';
 import { SIGNED_OUT_LINE } from './remoteAccess';
 import { StatusGlyph } from './StatusGlyph';
@@ -347,7 +347,7 @@ function PhoneShell({ surface }: { surface: Surface }) {
 
 export function Shell() {
   const phone = usePhone();
-  if (signedOut.value || shipsLink.value === 'signed-out')
+  if (signedOut.value)
     return (
       <main class="panel">
         <p class="line" role="status">
