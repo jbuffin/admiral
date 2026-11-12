@@ -2,6 +2,7 @@ package crewapi
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -49,6 +50,26 @@ func (s scopeFile) write(lines []string) error {
 	return writeAtomic(dir, file, []byte(strings.Join(lines, "\n")))
 }
 
+// remove deletes the scope's file, which a delete or a move has left with no notes.
+func (s scopeFile) remove() error {
+	dirs, file := s.location()
+	dir, ok, err := walk(s.crewDir, false, dirs...)
+	if err != nil || !ok {
+		return err
+	}
+	return os.Remove(filepath.Join(dir, file))
+}
+
+// noNotes is true for lines holding nothing but blank lines.
+func noNotes(lines []string) bool {
+	for _, l := range lines {
+		if strings.Trim(l, " \t\r") != "" {
+			return false
+		}
+	}
+	return true
+}
+
 // appended is lines with line added as the last note, after the file's own trailing newline.
 func appended(lines []string, line string) []string {
 	if n := len(lines); n > 0 && lines[n-1] == "" {
@@ -59,10 +80,11 @@ func appended(lines []string, line string) []string {
 
 func (s scopeFile) full(lines []string) bool { return len(crew.ParseNotes(lines)) >= crew.NoteCap }
 
-// AppendNote adds one note ("- YYYY-MM-DD (<run>): <fact>") to a member's scope under a fleet's crew
-// directory; repo is "<owner>/<repo>", or empty for the fleet scope. It makes the directories and the file
-// as needed, refuses a path that holds a link, answers ErrScopeFull at the cap and writes atomically.
-func AppendNote(crewDir, member, repo, line string) error {
+// AppendNote adds one note ("- YYYY-MM-DD (<run>): <fact>") to a member's scope under fleet key's crew
+// directory in the Admiral home; repo is "<owner>/<repo>", or empty for the fleet scope. It makes the
+// directories and the file as needed, refuses a path that holds a link anywhere from the crew directory
+// down, answers ErrScopeFull at the cap and writes atomically.
+func AppendNote(home, key, member, repo, line string) error {
 	if !crew.ValidName(member) || !crew.ValidNote(line) {
 		return errors.New("not a note for a member")
 	}
@@ -71,13 +93,25 @@ func AppendNote(crewDir, member, repo, line string) error {
 	}
 	writeMu.Lock()
 	defer writeMu.Unlock()
-	s := scopeFile{crewDir, member, repo}
-	lines, _, err := s.read()
+	crewDir, found, err := walk(home, false, "fleets", key, "crew")
 	if err != nil {
 		return err
 	}
+	s := scopeFile{crewDir, member, repo}
+	var lines []string
+	if found {
+		if lines, _, err = s.read(); err != nil {
+			return err
+		}
+	}
 	if s.full(lines) {
 		return ErrScopeFull
+	}
+	if !found {
+		if crewDir, _, err = walk(home, true, "fleets", key, "crew"); err != nil {
+			return err
+		}
+		s.crewDir = crewDir
 	}
 	return s.write(appended(lines, line))
 }

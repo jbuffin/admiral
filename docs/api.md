@@ -228,9 +228,9 @@ A member is `{name, role, based-on, skills, model, harness, pick-me-when, instru
 
 Edits touch only `$ADMIRAL_HOME/fleets/<key>/crew/`. A member route keys on whether `<name>.md` exists there, so a PUT can repair a broken file. A name with no fleet file but a built-in member is 409 (customize it first); with neither it is 404; a name that is no member name is 400. Each success is 200 `{"name": "<name>"}`. The built-in layer is the `?harness=` dock's, as in GET.
 
-- `PUT /api/fleets/{key}/crew/members/{name}` with `{role, based-on, skills, model, harness, pick-me-when, instructions}` rewrites the file (Go writes the frontmatter and the instructions as the body). It is 400 with `field` when the resolver would refuse the bytes (a parse or field error, a custom role without a valid `based-on`, a built-in role with `based-on`), when `role` or `based-on` differs from the same-named built-in, when a value is not one line, or when a value would read back differently (a skill name that is not valid, instructions with leading or trailing blank lines, the fix checker's skills and instructions).
+- `PUT /api/fleets/{key}/crew/members/{name}` with `{role, based-on, skills, model, harness, pick-me-when, instructions}` rewrites the file (Go writes the frontmatter and the instructions as the body). It is 400 with `field` when the resolver would refuse the bytes (a parse or field error, a custom role without a valid `based-on`, a built-in role with `based-on`), when `role` or `based-on` differs from the same-named built-in, when a value is not one line, or when a value would read back differently (a skill name that is not valid, the fix checker's skills and instructions). Blank lines around `instructions` are trimmed before the write, as the resolver trims them on read. A file over 65536 bytes is 400 with `field` `instructions`.
 - `POST .../members/{name}/customize` copies the built-in member's file into the fleet layer: 404 with no built-in of that name, 409 when the fleet already has it. Its notes stay with the name.
-- `POST .../members/{name}/rename` with `{to, carry_notes}` renames a fleet member: `to` is a member name that differs from `name` (400) and names no listed member (409). With `carry_notes: true` its `memory/<name>/` moves to `memory/<to>/`, and the whole rename is 409 if `<to>` already has a note. Otherwise the notes stay under the old name, and show in `unclaimed` unless a built-in member of that name claims them.
+- `POST .../members/{name}/rename` with `{to, carry_notes}` renames a fleet member: `to` is a member name that differs from `name` (400) and names no listed member (409). With `carry_notes: true` its `memory/<name>/` moves to `memory/<to>/`, and the whole rename is 409 if `<to>` already has a note. A `memory/<to>/` that holds no note (what a deleted last note leaves) is replaced; the source having no notes still makes a `<to>` with notes 409. Otherwise the notes stay under the old name, and show in `unclaimed` unless a built-in member of that name claims them.
 - `DELETE .../members/{name}` removes the fleet file. Its notes stay; a customized built-in falls back to the built-in member.
 
 ### `POST /api/fleets/{key}/crew/notes`
@@ -239,7 +239,7 @@ Edits touch only `$ADMIRAL_HOME/fleets/<key>/crew/`. A member route keys on whet
 
 - `edit` replaces the fact and keeps the date and run. `text` is one line of visible text, at most 500 bytes, and the line must pass the resolver's note check (400).
 - `move` takes `to: {scope, repo}`, removes the line and appends it unchanged to the destination, making `memory/<member>/repos/<owner>/` as needed. A destination equal to the source is 400; one that already holds 30 notes is 409.
-- `delete` removes the line. An empty scope is not listed.
+- `delete` removes the line, and the file when no note is left (also after a `move` out of it). An empty scope is not listed.
 
 The response is 200 with the member's notes after the change, in GET's `notes` shape.
 

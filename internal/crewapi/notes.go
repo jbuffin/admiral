@@ -141,7 +141,12 @@ func (s *Service) serveNotes(w http.ResponseWriter, r *http.Request) {
 	case "delete":
 		lines = slices.Delete(lines, at, at+1)
 	}
-	if err := src.write(lines); err != nil {
+	if noNotes(lines) {
+		err = src.remove()
+	} else {
+		err = src.write(lines)
+	}
+	if err != nil {
 		refuse(w, err)
 		return
 	}

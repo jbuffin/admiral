@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/jbuffin/admiral/internal/config"
@@ -199,6 +200,9 @@ func unclaimed(memory string, listed map[string]bool, warns *[]crew.Diagnostic) 
 	}
 	for _, e := range entries {
 		name := e.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
 		if !crew.ValidName(name) {
 			*warns = append(*warns, memoryDiag("memory-refused", name, name+" is not a member name, skipped"))
 			continue

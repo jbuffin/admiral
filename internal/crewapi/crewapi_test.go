@@ -3,6 +3,7 @@ package crewapi_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -815,5 +816,186 @@ func TestCustomizeOfAnUnknownNameIs404(t *testing.T) {
 	f := newFixture(t)
 	if status, out := f.do("POST", "/api/fleets/work/crew/members/nobody/customize", nil); status != 404 {
 		t.Errorf("%d %s, want 404", status, out)
+	}
+}
+
+func TestAppendNoteMakesTheCrewDirectoryAndFileWithPrivateModes(t *testing.T) {
+	f := newFixture(t)
+	if err := crewapi.AppendNote(f.home, "work", "bosun", "acme/api", "- "+note(1)); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(f.memDir(), "bosun", "repos", "acme", "api.md")
+	if got := readFile(t, path); got != "- "+note(1)+"\n" {
+		t.Errorf("file = %q", got)
+	}
+	for _, p := range []string{f.crewDir(), filepath.Join(f.memDir(), "bosun", "repos", "acme")} {
+		if fi, _ := os.Stat(p); fi.Mode().Perm() != 0o700 {
+			t.Errorf("%s mode = %v, want 0700", p, fi.Mode().Perm())
+		}
+	}
+	if fi, _ := os.Stat(path); fi.Mode().Perm() != 0o600 {
+		t.Errorf("file mode = %v, want 0600", fi.Mode().Perm())
+	}
+}
+
+func TestAppendNoteToAFullScopeAnswersScopeFullAndChangesNothing(t *testing.T) {
+	f := newFixture(t)
+	path := f.fleetNotes("bosun", lines(30)...)
+	before := readFile(t, path)
+	if err := crewapi.AppendNote(f.home, "work", "bosun", "", "- "+note(99)); !errors.Is(err, crewapi.ErrScopeFull) {
+		t.Errorf("err = %v, want ErrScopeFull", err)
+	}
+	if readFile(t, path) != before {
+		t.Error("the file changed")
+	}
+}
+
+func TestAppendNoteRefusesALinkAnywhereInThePathAndWritesNothing(t *testing.T) {
+	for name, link := range map[string]func(f *fixture) string{
+		"the crew directory": func(f *fixture) string { return f.crewDir() },
+		"the memory root":    func(f *fixture) string { return f.memDir() },
+		"the member's dir":   func(f *fixture) string { return filepath.Join(f.memDir(), "bosun") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			elsewhere := t.TempDir()
+			at := link(f)
+			if err := os.MkdirAll(filepath.Dir(at), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(elsewhere, at); err != nil {
+				t.Fatal(err)
+			}
+			if err := crewapi.AppendNote(f.home, "work", "bosun", "", "- "+note(1)); err == nil {
+				t.Error("no error, want a refusal")
+			}
+			if entries, _ := os.ReadDir(elsewhere); len(entries) != 0 {
+				t.Errorf("wrote through the link: %v", entries)
+			}
+		})
+	}
+}
+
+func TestRenameCarryIntoANameWhoseNotesWereAllDeletedSucceeds(t *testing.T) {
+	commodoreAt(t)
+	f := newFixture(t)
+	f.fleetNotes("old", "- "+note(1))
+	if status, out := f.postNotes(map[string]any{"op": "delete", "member": "old", "scope": "fleet", "note": note(1)}); status != 200 {
+		t.Fatalf("delete: %d %s", status, out)
+	}
+	f.fleetMember("bosun", "triager", "Fleet bosun.", "")
+	f.fleetNotes("bosun", "- "+note(2))
+
+	if status, out := rename(f, "bosun", map[string]any{"to": "old", "carry_notes": true}); status != 200 {
+		t.Fatalf("rename: %d %s", status, out)
+	}
+	if n := f.listed()["old"].Notes; len(n.Fleet) != 1 || n.Fleet[0] != note(2) {
+		t.Errorf("notes = %+v, want bosun's note", n)
+	}
+}
+
+func TestNotesDeleteOfTheLastNoteLeavesNoFileAndNoEmptyScope(t *testing.T) {
+	commodoreAt(t)
+	f := newFixture(t)
+	path := f.fleetNotes("old", "- "+note(1))
+	f.postNotes(map[string]any{"op": "delete", "member": "old", "scope": "fleet", "note": note(1)})
+	if exists(path) {
+		t.Error("the empty file is still there")
+	}
+	if _, got, body := f.get(""); len(got.Unclaimed) != 0 {
+		t.Errorf("%s, want nothing unclaimed", body)
+	}
+}
+
+func TestRenameCarryFromAMemberWithNoNotesIntoANameWithNotesIs409(t *testing.T) {
+	commodoreAt(t)
+	f := newFixture(t)
+	f.fleetMember("bosun", "triager", "Fleet bosun.", "")
+	theirs := f.fleetNotes("old", "- "+note(2))
+	if status, out := rename(f, "bosun", map[string]any{"to": "old", "carry_notes": true}); status != 409 {
+		t.Fatalf("%d %s, want 409", status, out)
+	}
+	if !exists(filepath.Join(f.crewDir(), "bosun.md")) || readFile(t, theirs) != "- "+note(2)+"\n" {
+		t.Error("something changed")
+	}
+}
+
+func TestPutTrimsBlankLinesAroundInstructions(t *testing.T) {
+	commodoreAt(t)
+	f := newFixture(t)
+	f.fleetMember("bosun", "triager", "Fleet bosun.", "")
+	body := memberBody("triager", "New pick.")
+	body["instructions"] = "\n\nTriage fast.\n\n"
+	if status, out := f.put("bosun", body); status != 200 {
+		t.Fatalf("%d %s", status, out)
+	}
+	if got := f.listed()["bosun"].Instructions; got != "Triage fast." {
+		t.Errorf("instructions = %q", got)
+	}
+}
+
+func TestPutOfOversizedInstructionsIs400NamingInstructions(t *testing.T) {
+	commodoreAt(t)
+	f := newFixture(t)
+	f.fleetMember("bosun", "triager", "Fleet bosun.", "")
+	body := memberBody("triager", "New pick.")
+	body["instructions"] = strings.Repeat("a", 70000)
+	status, out := f.put("bosun", body)
+	if status != 400 || !strings.Contains(out, `"field":"instructions"`) {
+		t.Errorf("%d %s, want 400 with field instructions", status, out)
+	}
+}
+
+func TestMemberRoutesRefuseALinkedMemberFile(t *testing.T) {
+	commodoreAt(t)
+	f := newFixture(t)
+	elsewhere := filepath.Join(t.TempDir(), "bosun.md")
+	writeFile(t, elsewhere, memberText("bosun", "triager", "Outside.", ""))
+	if err := os.MkdirAll(f.crewDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, filepath.Join(f.crewDir(), "bosun.md")); err != nil {
+		t.Fatal(err)
+	}
+	before := readFile(t, elsewhere)
+	if status, out := f.put("bosun", memberBody("triager", "New pick.")); status != 409 {
+		t.Errorf("put: %d %s, want 409", status, out)
+	}
+	if status, out := f.do("DELETE", "/api/fleets/work/crew/members/bosun", nil); status != 409 {
+		t.Errorf("delete: %d %s, want 409", status, out)
+	}
+	if readFile(t, elsewhere) != before {
+		t.Error("the link target changed")
+	}
+	if fi, err := os.Lstat(filepath.Join(f.crewDir(), "bosun.md")); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Error("the link is gone")
+	}
+}
+
+func TestCustomizeRefusesALinkedCrewDirectory(t *testing.T) {
+	builtIn := commodoreAt(t)
+	builtInMember(t, builtIn, "mate", "reviewer", "Built-in mate.")
+	f := newFixture(t)
+	elsewhere := t.TempDir()
+	if err := os.MkdirAll(filepath.Dir(f.crewDir()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, f.crewDir()); err != nil {
+		t.Fatal(err)
+	}
+	if status, out := f.do("POST", "/api/fleets/work/crew/members/mate/customize", nil); status != 409 {
+		t.Errorf("%d %s, want 409", status, out)
+	}
+	if entries, _ := os.ReadDir(elsewhere); len(entries) != 0 {
+		t.Errorf("wrote through the link: %v", entries)
+	}
+}
+
+func TestGetSkipsDotfilesInTheMemoryRootWithoutAWarning(t *testing.T) {
+	commodoreAt(t)
+	f := newFixture(t)
+	writeFile(t, filepath.Join(f.memDir(), ".DS_Store"), "x")
+	if _, got, body := f.get(""); len(got.Warnings) != 0 {
+		t.Errorf("%s, want no warning", body)
 	}
 }

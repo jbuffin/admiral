@@ -75,6 +75,19 @@ func (b memberBody) oneLine() string {
 	return ""
 }
 
+// trimBlankLines drops the blank lines around s, as the resolver does when it reads a body.
+func trimBlankLines(s string) string {
+	lines := strings.Split(s, "\n")
+	blank := func(l string) bool { return strings.Trim(l, " \t\r") == "" }
+	for len(lines) > 0 && blank(lines[0]) {
+		lines = lines[1:]
+	}
+	for len(lines) > 0 && blank(lines[len(lines)-1]) {
+		lines = lines[:len(lines)-1]
+	}
+	return strings.Join(lines, "\n")
+}
+
 func sameOptional(a, b *string) bool {
 	if a == nil || b == nil {
 		return a == b
@@ -182,6 +195,7 @@ func (s *Service) servePut(w http.ResponseWriter, r *http.Request) {
 	if body.Skills == nil {
 		body.Skills = []string{}
 	}
+	body.Instructions = trimBlankLines(body.Instructions)
 	writeMu.Lock()
 	defer writeMu.Unlock()
 	dir, ok := s.fleetFile(w, r, c, name)
@@ -351,14 +365,18 @@ func (s *Service) serveRename(w http.ResponseWriter, r *http.Request) {
 	}
 	var from, to string
 	if req.CarryNotes {
-		if from, to, err = carryPaths(dir, name, req.To); err != nil {
+		var memory string
+		if memory, from, err = carryPaths(dir, name, req.To); err != nil {
 			refuse(w, err)
 			return
 		}
-		var ignored []crew.Diagnostic
-		if fleet, repos := crew.MemberNotes(filepath.Dir(to), req.To, &ignored); from != "" && (len(fleet) > 0 || len(repos) > 0) {
-			writeError(w, http.StatusConflict, req.To+" already has notes, which carrying "+name+"'s would mix with; nothing changed")
-			return
+		to = filepath.Join(memory, req.To)
+		if memory != "" {
+			var ignored []crew.Diagnostic
+			if fleet, repos := crew.MemberNotes(memory, req.To, &ignored); len(fleet) > 0 || len(repos) > 0 {
+				writeError(w, http.StatusConflict, req.To+" already has notes, which carrying "+name+"'s would mix with; nothing changed")
+				return
+			}
 		}
 	}
 	if err := writeAtomic(dir, req.To+".md", data); err != nil {
@@ -366,7 +384,12 @@ func (s *Service) serveRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if from != "" {
-		if err := os.Rename(from, to); err != nil {
+		// A directory with no notes in it is in the way of the rename, and has nothing to keep.
+		err := os.RemoveAll(to)
+		if err == nil {
+			err = os.Rename(from, to)
+		}
+		if err != nil {
 			_ = os.Remove(filepath.Join(dir, req.To+".md"))
 			writeError(w, http.StatusConflict, "the notes can't be moved to "+req.To+": "+err.Error())
 			return
@@ -379,9 +402,9 @@ func (s *Service) serveRename(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"name": req.To})
 }
 
-// carryPaths is where the member's memory directory moves from and to; from is empty when it has none.
-// A directory already at the destination is replaced only when it is empty, as rename does.
-func carryPaths(crewDir, name, to string) (from, dest string, err error) {
+// carryPaths is the memory directory and the member's own directory in it, which a carry moves; each is
+// empty when it doesn't exist. A link at either, or at the destination, is refused.
+func carryPaths(crewDir, name, to string) (memory, from string, err error) {
 	memory, found, err := walk(crewDir, false, "memory")
 	if err != nil || !found {
 		return "", "", err
@@ -389,9 +412,9 @@ func carryPaths(crewDir, name, to string) (from, dest string, err error) {
 	if _, _, err := walk(memory, false, to); err != nil {
 		return "", "", err
 	}
-	src, found, err := walk(memory, false, name)
+	from, found, err = walk(memory, false, name)
 	if err != nil || !found {
-		return "", "", err
+		return memory, "", err
 	}
-	return src, filepath.Join(memory, to), nil
+	return memory, from, nil
 }

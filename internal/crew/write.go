@@ -107,7 +107,7 @@ func (e *FieldError) Error() string { return e.Message }
 func CheckFile(raw []byte, stem string) (Member, *FieldError) {
 	var none Member
 	if len(raw) > maxBytes {
-		return none, &FieldError{Message: "file is over 65536 bytes"}
+		return none, &FieldError{Field: "instructions", Message: "file is over 65536 bytes"}
 	}
 	fm, body, perr := parseMember(raw)
 	if perr == nil {
