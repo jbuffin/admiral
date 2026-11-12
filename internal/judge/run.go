@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/capabilities"
+	"github.com/jbuffin/admiral/internal/config"
 )
 
 type CallKind int
@@ -93,13 +94,13 @@ func Run(ctx context.Context, c Choice, call Call) (Reply, error) {
 		return Reply{}, &Failure{Kind: KindError, Detail: "could not make a temporary directory: " + err.Error()}
 	}
 
-	pair, ok := models[c.Name]
+	small, strong, ok := config.ModelPair(c.Name)
 	if !ok {
 		return Reply{}, &Failure{Kind: KindError, Detail: "no judge calls on " + c.Name}
 	}
-	model := pair[1]
+	model := strong
 	if call.Kind == Lookout {
-		model = pair[0]
+		model = small
 	}
 
 	budget := Budget{}

@@ -340,3 +340,22 @@ func TestChatProbeSurvivesAReloadAndAnEditOfTheFile(t *testing.T) {
 		t.Errorf("after the store lost its results: %+v, want off", got)
 	}
 }
+
+func TestChatSaveThatNamesNoHarnessGoesThroughWhenTheStoredHarnessLapsed(t *testing.T) {
+	m, _ := openWithProbes(t, withFleets(chatFleet("w", `{"harness":"codex","model":"gpt-6.1-sol"}`)), probes{})
+	set := func(k, v string) error {
+		return m.SetFleetFields("w", config.FleetFields{Chat: map[string]json.RawMessage{k: json.RawMessage(v)}})
+	}
+	if err := set("context_threshold", `300000`); err != nil {
+		t.Errorf("a threshold on a fleet whose codex is no longer offered: %v", err)
+	}
+	if err := set("model", `"gpt-6-luna"`); err != nil {
+		t.Errorf("a codex model on that fleet: %v", err)
+	}
+	if err := set("model", `"sonnet"`); err == nil {
+		t.Error("a claude model on that fleet was accepted: it is checked against the stored harness")
+	}
+	if err := set("effort", `"max"`); err == nil {
+		t.Error("an effort codex lacks was accepted")
+	}
+}

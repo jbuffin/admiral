@@ -323,7 +323,7 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 				return Fleet{}, err
 			}
 		case "chat":
-			if f.Chat, err = parseFleetChat(p, m.raw, false); err != nil {
+			if f.Chat, err = parseFleetChat(p, m.raw, false, DefaultChatHarness); err != nil {
 				return Fleet{}, err
 			}
 		case "notify":

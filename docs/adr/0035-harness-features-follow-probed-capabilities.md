@@ -36,6 +36,7 @@ Admiral runs ships on Claude Code, Codex CLI and Copilot CLI, but its extras wer
 - It is surprising that Admiral doesn't trust its own table. A capability the table lists still shows as not checked until its probe passes.
 - Amends [ADR 0022](0022-a-ui-save-of-autopilot-args-passes-the-crew-allowlist.md): `AutopilotHarnesses` becomes the harnesses whose guard probe passed.
 - Amends [ADR 0023](0023-admiralbot-is-a-coordinator-fenced-to-an-admiral-mcp-server.md): the AdmiralBot harness is a per-fleet choice among harnesses whose fence is proven.
+- AdmiralBot's Claude stays offered while its `bot.mcp_fence` is not checked, and stops only when that probe has failed: Claude's fence shipped before its probe, so greying it out until the first check would turn off every existing chat. Codex and Copilot need both `bot.mcp_fence` and `bot.config_home` passed. This is the one departure from "a capability counts only after its probe passes".
 - Amends [ADR 0025](0025-outside-events-are-quarantined.md): A3 drops to A1 without a restricted-capable harness, and Admiral picks the judge harness and models. The advisor joins the judge calls.
 - Amends [ADR 0034](0034-autopilot-is-a-launch-mode-not-a-view-setting.md): the advisor is a judge call on the fleet's judge harness.
 - Trying Codex's `workspace-write` diff-only profile for restricted ships is a build task.

@@ -13,15 +13,6 @@ import (
 // order is the judge harness preference; the fleet's own harness order is the dock's.
 var order = []string{"claude", "codex", "copilot"}
 
-// models are each harness's small model for the Lookout and the stronger one for every
-// other call. Codex's pair comes from `codex debug models`, Copilot's from the names
-// `copilot --model` accepted on a real call.
-var models = map[string][2]string{
-	"claude":  {"haiku", "sonnet"},
-	"codex":   {"gpt-6-luna", "gpt-6.1-sol"},
-	"copilot": {"gpt-5.6-luna", "gpt-5.6-sol"},
-}
-
 // Choice is the fleet's judge harness.
 type Choice struct {
 	Name       string
@@ -33,8 +24,7 @@ type Choice struct {
 
 // Models returns a harness's Lookout and strong model; ok is false for a harness with no judge calls.
 func Models(name string) (lookout, strong string, ok bool) {
-	pair, ok := models[name]
-	return pair[0], pair[1], ok
+	return config.ModelPair(name)
 }
 
 // For builds the Choice for one named harness with every mechanism it has switched on,

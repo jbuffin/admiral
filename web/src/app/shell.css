@@ -501,6 +501,7 @@ button.pill { cursor: pointer; min-height: 32px; }
 /* Flotilla chips and the Changes tab. */
 .flotilla { display: flex; gap: 8px; overflow-x: auto; padding: 0 0 10px; }
 .chip { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: var(--shape-min-touch-target); max-width: 100%; padding: 0 12px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); background: var(--color-panel); color: var(--color-text2); }
+.chip:disabled { opacity: 0.55; cursor: default; }
 .chip[aria-checked='true'] { border-color: var(--color-accent); color: var(--color-text); font-weight: 600; background: var(--color-sel); }
 .chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip-name, .chip-state { font-size: var(--font-size-meta); font-weight: 400; color: var(--color-muted); white-space: nowrap; }

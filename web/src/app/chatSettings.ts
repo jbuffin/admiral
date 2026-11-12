@@ -1,3 +1,4 @@
+import type { ChatHarnessOption } from './api';
 import { fieldMessage } from './fleetSettings';
 
 export interface ChatSettings {
@@ -7,10 +8,17 @@ export interface ChatSettings {
   context_threshold: number | 'never';
 }
 
-export const CHAT_MODELS = ['sonnet', 'opus', 'haiku'];
-// '' is the harness's own default.
-export const CHAT_EFFORTS = ['', 'low', 'medium', 'high'];
 export const CHAT_THRESHOLDS: ChatSettings['context_threshold'][] = [100000, 150000, 300000, 'never'];
+
+/** Choosing a harness keeps the model and effort it takes and resets the rest to its defaults (its lists lead with them). */
+export function switchHarness(settings: ChatSettings, option: Pick<ChatHarnessOption, 'harness' | 'models' | 'efforts'>): ChatSettings {
+  return {
+    ...settings,
+    harness: option.harness,
+    model: option.models.includes(settings.model) ? settings.model : (option.models[0] ?? settings.model),
+    effort: option.efforts.includes(settings.effort) ? settings.effort : (option.efforts[0] ?? ''),
+  };
+}
 
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 

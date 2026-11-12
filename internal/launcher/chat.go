@@ -147,6 +147,9 @@ func (l *Launcher) StartChat(key string) error {
 	if rerr != nil {
 		return rerr
 	}
+	if dock.Name != "claude" {
+		return refuse(http.StatusNotImplemented, "the chat cannot launch on %s yet", config.HarnessName(dock.Name))
+	}
 	exe, found := dock.Resolve()
 	if !found {
 		return refuse(http.StatusBadRequest, "claude executable %s not found for fleet %s", dock.Executable, fleet.Name)

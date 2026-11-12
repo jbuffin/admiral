@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -25,8 +26,9 @@ type Manager struct {
 
 	mu      sync.Mutex
 	cur     *Config
-	errMsg  string // empty when the file is fine
-	existed bool   // the file has been seen; a later absence is an error
+	probe   ChatProbe // wired by the server; every reload carries it onto the new config
+	errMsg  string    // empty when the file is fine
+	existed bool      // the file has been seen; a later absence is an error
 	watched map[string]bool
 	target  string // base name of the resolved file, when config.json is a symlink
 	subs    map[chan struct{}]struct{}
@@ -97,10 +99,34 @@ func (m *Manager) SetSources(sources json.RawMessage) error {
 
 // SetFleetFields reloads before it returns, so the next View already carries the change.
 func (m *Manager) SetFleetFields(key string, f FleetFields) error {
+	if raw, ok := f.Chat["harness"]; ok {
+		if err := m.refuseUnofferedHarness(key, raw); err != nil {
+			return err
+		}
+	}
 	if err := EditFleet(filepath.Dir(m.path), key, f); err != nil {
 		return err
 	}
 	m.reload()
+	return nil
+}
+
+// refuseUnofferedHarness is the server holding the line the Preferences picker draws: a harness
+// the capability store has not cleared for the fleet's AdmiralBot cannot be chosen. A save that
+// leaves the harness alone is not checked, so a fleet whose stored harness lapsed can still be edited.
+func (m *Manager) refuseUnofferedHarness(key string, raw json.RawMessage) error {
+	var harness string
+	if json.Unmarshal(raw, &harness) != nil {
+		return nil // the strict parse names the wrong type
+	}
+	cfg := m.Current()
+	f, ok := cfg.Fleet(key)
+	if !ok || !slices.Contains(Harnesses(), harness) {
+		return nil
+	}
+	if o := cfg.chatHarnessOption(f, harness); !o.Offered {
+		return fmt.Errorf("fleets.%s.chat.harness: %s", key, o.Reason)
+	}
 	return nil
 }
 
@@ -168,6 +194,7 @@ func (m *Manager) reload() {
 		if cfg, perr := Parse(data); perr != nil {
 			m.errMsg = perr.Error()
 		} else {
+			cfg.ChatProbe = m.probe
 			m.cur, m.errMsg = cfg, ""
 		}
 	}

@@ -220,18 +220,36 @@ func EditFleet(dir, key string, f FleetFields) error {
 
 // mergeChat refuses what parseFleetChat would replace with a default, then sets only the given
 // keys. An empty effort removes its key, so the fleet falls back to the harness default.
+// Switching harness also checks the model and effort the fleet keeps against the new one.
 func mergeChat(fleet *Object, key string, set map[string]json.RawMessage) error {
 	given := NewObject()
 	for _, k := range slices.Sorted(maps.Keys(set)) {
 		given.Set(k, set[k])
 	}
-	if _, err := parseFleetChat("fleets."+key+".chat", given.JSON(), true); err != nil {
+	path := "fleets." + key + ".chat"
+	stored := json.RawMessage("{}")
+	if raw, ok := fleet.Get("chat"); ok {
+		stored = raw
+	}
+	cur, err := parseFleetChat(path, stored, false, DefaultChatHarness)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrConflict, err)
+	}
+	next, err := parseFleetChat(path, given.JSON(), true, cur.Harness)
+	if err != nil {
 		return err
 	}
+	if _, ok := given.Get("harness"); ok {
+		if _, ok := given.Get("model"); !ok && !slices.Contains(ChatModelsFor(next.Harness), cur.Model) {
+			return fmt.Errorf("%s.model: %q is not one of %v for %s: send a model with the harness", path, cur.Model, ChatModelsFor(next.Harness), next.Harness)
+		}
+		if _, ok := given.Get("effort"); !ok && !slices.Contains(ChatEffortsFor(next.Harness), cur.Effort) {
+			return fmt.Errorf("%s.effort: %q is not one of %q for %s: send an effort with the harness", path, cur.Effort, ChatEffortsFor(next.Harness), next.Harness)
+		}
+	}
 	chat := NewObject()
-	if raw, ok := fleet.Get("chat"); ok {
-		var err error
-		if chat, err = ParseObject(raw); err != nil {
+	if _, ok := fleet.Get("chat"); ok {
+		if chat, err = ParseObject(stored); err != nil {
 			return fmt.Errorf("%w: %w", ErrConflict, err)
 		}
 	}
