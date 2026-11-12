@@ -62,7 +62,12 @@ func TestAlertEventsNameTheEntryATapOpens(t *testing.T) {
 	w.Ships([]ships.Ship{dory(ships.StatusNeedsYou, "question")})
 	w.Ships([]ships.Ship{dory(ships.StatusUnderway, "", ships.CrewBoat{Name: "scout", Status: sessionhost.CrewNeedsYou, Reason: "question"})})
 	w.Ships([]ships.Ship{dory(ships.StatusAnchored, "")})
-	w.Ships([]ships.Ship{func() ships.Ship { s := dory(ships.StatusMoored, ""); s.StackReady = true; return s }()})
+	// A ready stack counts as new only once a poll has answered not ready first.
+	moored := dory(ships.StatusMoored, "")
+	moored.PolledAt = "2026-10-22T10:00:00Z"
+	w.Ships([]ships.Ship{moored})
+	moored.StackReady = true
+	w.Ships([]ships.Ship{moored})
 
 	body, _ := json.Marshal(map[string]any{"version": 1, "id": "q-1", "kind": "question", "created": "2026-10-22T10:00:00Z", "title": "Which port?",
 		"question": map[string]any{"questions": []any{map[string]any{"id": "1", "text": "Pick", "options": []any{map[string]any{"label": "A"}}}}}})

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Ship } from './api';
 import type { InboxItem } from './inbox';
-import { alertDestination, createAlertHandler } from './alerts';
+import { alertDestination, alertSearch, createAlertHandler } from './alerts';
 import { createToasts } from './toasts';
 
 // router.ts reads the page's location when it loads.
@@ -44,6 +44,13 @@ describe('where a tapped toast lands', () => {
   it('opens an anchored ship’s own view, which the Inbox never lists', () => {
     expect(alertDestination({ target: 'ship', session: 's1' }, { ...none, ships: [ship({ status: 'anchored' })] })).toBe('/app/ships/s1');
     expect(alertDestination({ target: 'ship', session: 's1' }, none)).toBe('/app/inbox');
+  });
+});
+
+describe('the fleet a tap carries', () => {
+  it('is the alert’s own fleet, not the one on show', () => {
+    expect(alertSearch({ fleet: 'zulu' })).toBe('?fleet=zulu');
+    expect(alertSearch({})).toBe('');
   });
 });
 

@@ -1,8 +1,7 @@
 import { signal } from '@preact/signals';
 import { useEffect } from 'preact/hooks';
 import { chime, muted } from '../chime';
-import { alertDestination, createAlertHandler, type Alert } from './alerts';
-import { fleetSearch } from './fleets';
+import { alertDestination, alertSearch, createAlertHandler, type Alert } from './alerts';
 import { go } from './router';
 import { inboxItems, onShipsMessage, ships } from './shipsLink';
 import { createToasts, type Toast } from './toasts';
@@ -15,7 +14,7 @@ const handle = createAlertHandler({ toasts: queue, chime, muted: () => muted.val
 function open(t: Toast<Alert>) {
   queue.dismiss(t.id);
   sync();
-  go(alertDestination(t.alert, { ships: ships.value, items: inboxItems.value }), fleetSearch.value);
+  go(alertDestination(t.alert, { ships: ships.value, items: inboxItems.value }), alertSearch(t.alert));
 }
 
 /** Shows the server's alerts as toasts over the shell and chimes for each, and only for an alert. */

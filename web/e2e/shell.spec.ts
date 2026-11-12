@@ -763,12 +763,12 @@ test('a ship that starts waiting on a watched window brings a toast that opens i
   writeFileSync(rec(vague, 'go'), '');
   await expect.poll(() => existsSync(rec(vague, 'cues-done'))).toBe(true);
   await expect(page.getByRole('main').getByRole('listitem').filter({ hasText: vague.name })).toBeVisible({ timeout: 15_000 });
+  await expect(toasts.getByRole('button')).toHaveCount(0);
   const asking = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cue: `wait go\n${permission}\n` });
   await expect.poll(() => existsSync(rec(asking, 'recorded'))).toBe(true);
   writeFileSync(rec(asking, 'go'), '');
   const toast = toasts.getByRole('button', { name: new RegExp(asking.name) });
   await expect(toast).toBeVisible({ timeout: 15_000 });
-  await expect(toasts).not.toContainText(vague.name);
   expect(box(await toast.boundingBox()).height).toBeGreaterThanOrEqual(44);
   expect(box(await toasts.getByRole('button', { name: /dismiss/i }).boundingBox()).height).toBeGreaterThanOrEqual(44);
 

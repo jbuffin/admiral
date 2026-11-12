@@ -1,5 +1,6 @@
 import type { Ship } from './api';
 import type { InboxItem } from './inbox';
+import { bridgeSearch } from './peekLink';
 import { peekPath, shipPath } from './router';
 import type { ToastAlert } from './toasts';
 
@@ -27,6 +28,9 @@ export function alertDestination(alert: Pick<Alert, 'target' | 'session' | 'item
   if (alert.merge) return ship?.status === 'moored' && ship.stack_ready ? peekPath({ session, merge: true }) : INBOX;
   return ship?.status === 'needs_you' ? peekPath({ session }) : INBOX;
 }
+
+/** The query a tap carries: the alert's own fleet, as the Inbox does for a ship's row. */
+export const alertSearch = (alert: Pick<Alert, 'fleet'>) => bridgeSearch(alert.fleet);
 
 /** Handles each message on the socket: an alert chimes (unless muted) and toasts, anything else is left alone. */
 export function createAlertHandler({ toasts, chime, muted }: { toasts: { push: (a: Alert) => unknown }; chime: () => void; muted: () => boolean }) {
