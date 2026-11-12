@@ -196,7 +196,7 @@ The server answers an open with `{"type": "conversation_opened", "ship": "<ship>
 
 ## A fleet's chat
 
-Each fleet whose chat is on (`chat.on` in `GET /api/config`) has its own AdmiralBot: a session of the fleet's chat harness (Claude Code, until Codex and Copilot can run it) named `_chat-<fleet>` that runs in `$ADMIRAL_HOME/chat/<fleet>/`. Every route is also served under `/api/v1/...`. A fleet that doesn't exist is a 404, and one whose chat is off is a 409 whose `error` is the reason (no dock, a key that differs from an earlier fleet's only in case, and so on). The old global `/api/chat/*` routes are gone and answer 404.
+Each fleet whose chat is on (`chat.on` in `GET /api/config`) has its own AdmiralBot: a session of the fleet's chat harness (Claude Code or Codex; Copilot is not launchable yet) named `_chat-<fleet>` that runs in `$ADMIRAL_HOME/chat/<fleet>/`. Every route is also served under `/api/v1/...`. A fleet that doesn't exist is a 404, and one whose chat is off is a 409 whose `error` is the reason (no dock, a key that differs from an earlier fleet's only in case, and so on). The old global `/api/chat/*` routes are gone and answer 404.
 
 In `GET /api/config`, each fleet's `chat` object carries the AdmiralBot settings and what the fleet may choose:
 
@@ -234,7 +234,7 @@ Admiral appends the history to `$ADMIRAL_HOME/chat/<fleet>/conversation.jsonl`, 
 
 ### `POST /api/chat/<fleet>/start`
 
-Starts the fleet's chat session or leaves a running one alone, and answers `{"running":true}`. Admiral doesn't start one at server start. `501` naming the harness when the fleet's chat harness isn't Claude: Codex and Copilot launch no chat yet.
+Starts the fleet's chat session or leaves a running one alone, and answers `{"running":true}`. Admiral doesn't start one at server start. `501` naming the harness when the fleet's chat harness is Copilot, which launches no chat yet.
 
 ### `POST /api/chat/<fleet>/messages`
 
