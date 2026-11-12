@@ -194,7 +194,7 @@ Oldest `created` first. An item is its file's fields plus `session`, and `name`,
 
 ### Acting on an item
 
-Each route is `POST /api/v1/inbox/<session>/<id>/<action>` and answers `404` for an unknown item. An item already answered is `409`.
+Each route is `POST /api/v1/inbox/<session>/<id>/<action>` and answers `404` for an unknown item. An item already answered is `409` and final. A `409` is also returned while another action on the item is running (`another action on this item is still running`); that one can be retried.
 
 - `answer`: a question's answers, `{"answers": {"<question id>": {"choice", "other"}}, "note"}`; `400` for an invalid answer.
 - `submit`: a review, `{"event": "COMMENT"|"APPROVE"|"REQUEST_CHANGES", "edited": bool}`, posted to GitHub through `gh`.

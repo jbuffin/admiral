@@ -529,3 +529,14 @@ button.pill { cursor: pointer; min-height: 32px; }
 .inbox-send-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .inbox-progress { font-size: var(--font-size-meta); color: var(--color-muted); }
 @media (prefers-reduced-motion: reduce) { .inbox-folded { animation: none; } }
+.key-hint { display: none; margin: 12px 0 0; font-size: var(--font-size-meta); color: var(--color-muted); }
+@media (pointer: fine) { .key-hint { display: block; } }
+.inbox-ask { display: flex; flex-direction: column; gap: 8px; }
+.inbox-finding { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); }
+.inbox-quote { margin: 0; padding-left: 10px; border-left: 3px solid var(--color-line2); overflow-wrap: anywhere; }
+.inbox-why, .inbox-summary-text { margin: 0; overflow-wrap: anywhere; }
+.inbox-pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono, monospace); }
+.inbox-hint { font-size: var(--font-size-meta); color: var(--color-muted); }
+.inbox-pr a { overflow-wrap: anywhere; }
+@media (pointer: coarse) { .inbox-pr a { display: inline-block; min-height: var(--shape-min-touch-target); line-height: var(--shape-min-touch-target); } }
+.inbox-prrow, .inbox-pr { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
