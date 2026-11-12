@@ -338,6 +338,7 @@ test("on the phone, a chat held before its first SessionStart opens its terminal
   await back.tap();
   await expect(page).not.toHaveURL(/\/terminal/);
   await expect(main.locator('.xterm')).toHaveCount(0);
+  await expect(main).toContainText('Open the terminal to finish starting the chat');
 
   chatStarts(admiral, 'lagoon');
   await expect(main).not.toContainText('Open the terminal to finish starting the chat');
