@@ -160,12 +160,17 @@ func codexHomeConfigKey(root *os.Root, rel string) string {
 
 // codexChatArgv is the Codex TUI's argv for the chat: the dock's executable only, never its args. It runs without the
 // shared daemon so it cannot join an app-server under the engineer's own config.
-func codexChatArgv(exe string, chat config.ChatSettings, self, home, fleet, port string) []string {
+func codexChatArgv(exe string, noDaemon bool, chat config.ChatSettings, self, home, fleet, port string) []string {
 	serverEnv := map[string]string{"ADMIRAL_ACTOR_TOKEN_FILE": CodexTokenFile(home, fleet), "ADMIRAL_HOME": home, "ADMIRAL_CHAT_FLEET": fleet}
 	if port != "" {
 		serverEnv["ADMIRAL_PORT"] = port
 	}
-	argv := []string{exe, "--no-daemon", "-m", chat.Model}
+	argv := []string{exe}
+	// A Codex that predates --no-daemon would reject it, as codex-pane's fallback checks.
+	if noDaemon {
+		argv = append(argv, "--no-daemon")
+	}
+	argv = append(argv, "-m", chat.Model)
 	if chat.Effort != "" {
 		argv = append(argv, "-c", "model_reasoning_effort="+strconv.Quote(chat.Effort))
 	}

@@ -408,3 +408,13 @@ func TestCodexChatRefusesAHomeConfigThatLoadsCodeOrReroutesTheModel(t *testing.T
 		}
 	}
 }
+
+func TestCodexChatArgvPassesNoDaemonOnlyToACodexThatHasIt(t *testing.T) {
+	chat := config.ChatSettings{Harness: "codex", Model: "gpt-6.1-sol"}
+	if argv := codexChatArgv("codex", true, chat, "admiral", "/h", "work", ""); !slices.Contains(argv, "--no-daemon") {
+		t.Errorf("argv %q lacks --no-daemon", argv)
+	}
+	if argv := codexChatArgv("codex", false, chat, "admiral", "/h", "work", ""); slices.Contains(argv, "--no-daemon") {
+		t.Errorf("argv %q has --no-daemon for a Codex without it", argv)
+	}
+}

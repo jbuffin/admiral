@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jbuffin/admiral/internal/actor"
+	"github.com/jbuffin/admiral/internal/codexpane"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
@@ -225,7 +226,7 @@ func (l *Launcher) StartChat(key string) error {
 			return err
 		}
 		env["CODEX_HOME"] = ChatCodexHome(home, fleet.Key)
-		argv = codexChatArgv(exe, chat, self, home, fleet.Key, env["ADMIRAL_PORT"])
+		argv = codexChatArgv(exe, codexpane.HasNoDaemon(exe), chat, self, home, fleet.Key, env["ADMIRAL_PORT"])
 	} else if err := l.writeChatMCP(home, fleet.Key, nonce, env); err != nil {
 		return err
 	}
