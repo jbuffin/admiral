@@ -457,6 +457,9 @@ func serve(args []string) error {
 	switch {
 	case tsMode && ts.URL != "":
 		fmt.Printf("On other devices: %s\n", ts.URL)
+		if c, bad := ts.Failed(); bad {
+			fmt.Printf("Warning: Tailscale mode has a failed check: %s\n", c.Detail)
+		}
 		fmt.Println("To pair a device, run: admiral pair")
 	case tsMode:
 		c, _ := ts.Failed()

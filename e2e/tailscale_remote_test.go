@@ -366,6 +366,26 @@ func TestTailscaleStartupLineAndPairingBase(t *testing.T) {
 	}
 }
 
+// A failed check is still reported when the ts.net URL is known: a raw TCP forward beside a working serve bypasses the tailnet checks.
+func TestTailscaleStartupWarnsAboutAFailedCheckBesideTheURL(t *testing.T) {
+	t.Parallel()
+	r := newTSRig(t)
+	cfg := r.serve(443, false)
+	cfg["TCP"].(map[string]any)["10000"] = map[string]any{"TCPForward": "127.0.0.1:" + r.port}
+	r.writeServe(cfg)
+	p := r.start(true, false)
+	if line, want := p.otherDevices(t), "On other devices: https://"+tsName+"/"; line != want {
+		t.Errorf("startup line %q, want %q", line, want)
+	}
+	deadline := time.Now().Add(tsStartBound)
+	for !strings.Contains(strings.ToLower(p.out.String()), "raw tcp forward") && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if got := strings.ToLower(p.out.String()); !strings.Contains(got, "warning") || !strings.Contains(got, "raw tcp forward") {
+		t.Errorf("want a warning about the raw TCP forward beside the URL:\n%s", p.out.String())
+	}
+}
+
 // A serve HTTPS port other than 443 is in the startup line.
 func TestTailscaleStartupLineKeepsANon443Port(t *testing.T) {
 	t.Parallel()
