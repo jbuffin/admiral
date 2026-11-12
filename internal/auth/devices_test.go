@@ -860,7 +860,7 @@ func TestOnlyTheInstallFilesAndTheStaticShellAreReachableWithoutAToken(t *testin
 		}
 	}
 	// Nothing else is exempt, and only a GET or HEAD is.
-	for _, p := range []string{"/api/version", "/api/v1/version", "/api/v1/ships", "/ws/v1", "/icons/other.png", "/icons/", "/manifest.webmanifest/x", "/", "/assets/x", "/assets/", "/app/../api/v1/ships", "/app/%2e%2e/api/v1/ships", "/assets/../api/v1/ships", "/assets/..%2fapi/v1/ships"} {
+	for _, p := range []string{"/api/version", "/api/v1/version", "/api/v1/ships", "/ws/v1", "/icons/other.png", "/icons/", "/manifest.webmanifest/x", "/", "/classic/", "/classic", "/assets/x", "/assets/", "/app/../api/v1/ships", "/app/%2e%2e/api/v1/ships", "/assets/../api/v1/ships", "/assets/..%2fapi/v1/ships"} {
 		r := lanReq(nil)
 		r.target = p
 		if rec := g.do(r); rec.Code != 401 {

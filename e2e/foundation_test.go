@@ -35,9 +35,12 @@ func TestS1_StartsPrintsURLsAndServesUI(t *testing.T) {
 		t.Fatal("the shared token file must not exist")
 	}
 
-	resp, html := get(t, in.LocalURL+"/", nil)
+	resp, html := get(t, in.LocalURL+"/app/", nil)
 	if resp.StatusCode != 200 || !strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
-		t.Fatalf("GET / = %d %s, want 200 text/html", resp.StatusCode, resp.Header.Get("Content-Type"))
+		t.Fatalf("GET /app/ = %d %s, want 200 text/html", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	if resp, _ := get(t, in.LocalURL+"/classic/", nil); resp.StatusCode != 200 || !strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+		t.Fatalf("GET /classic/ = %d %s, want 200 text/html", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}
 	assets := regexp.MustCompile(`(?:src|href)="(/[^"]+\.(?:js|css))"`).FindAllStringSubmatch(html, -1)
 	if len(assets) < 2 {
@@ -120,9 +123,13 @@ func TestS2_NonLocalNeedsToken(t *testing.T) {
 			cookie.Path != "/" || cookie.MaxAge != 400*24*3600 {
 			t.Fatalf("cookie = %+v, want a token, HttpOnly, SameSite=Strict, Path=/, Max-Age 400 days", cookie)
 		}
-		resp, _ = get(t, base+"/", map[string]string{"Cookie": cookie.Name + "=" + cookie.Value})
+		resp, _ = get(t, base+"/classic/", map[string]string{"Cookie": cookie.Name + "=" + cookie.Value})
 		if resp.StatusCode != 200 {
-			t.Fatalf("cookie alone: GET / = %d, want 200", resp.StatusCode)
+			t.Fatalf("cookie alone: GET /classic/ = %d, want 200", resp.StatusCode)
+		}
+		resp, _ = get(t, base+"/", map[string]string{"Cookie": cookie.Name + "=" + cookie.Value})
+		if resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "/app/" {
+			t.Fatalf("after pairing, GET / = %d to %q, want 302 to /app/", resp.StatusCode, resp.Header.Get("Location"))
 		}
 		resp, _ = get(t, base+"/api/anything", map[string]string{"Cookie": cookie.Name + "=" + cookie.Value})
 		if resp.StatusCode == 401 {
@@ -139,8 +146,8 @@ func TestS2_NonLocalNeedsToken(t *testing.T) {
 func TestS3_LocalNeedsNoToken(t *testing.T) {
 	t.Parallel()
 	in := startAdmiral(t, newHome(t), "127.0.0.1:0")
-	if resp, _ := get(t, in.LocalURL+"/", nil); resp.StatusCode != 200 {
-		t.Fatalf("local GET / = %d, want 200", resp.StatusCode)
+	if resp, _ := get(t, in.LocalURL+"/classic/", nil); resp.StatusCode != 200 {
+		t.Fatalf("local GET /classic/ = %d, want 200", resp.StatusCode)
 	}
 	if resp, _ := get(t, in.LocalURL+"/api/anything", nil); resp.StatusCode == 401 {
 		t.Fatalf("local /api/anything must not need a token, got 401")
@@ -158,7 +165,7 @@ func TestS4_RestartKeepsThePort(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(in.Home, "token")); err == nil {
 		t.Fatal("the shared token file appeared")
 	}
-	if resp, _ := get(t, again.LocalURL+"/", nil); resp.StatusCode != 200 {
+	if resp, _ := get(t, again.LocalURL+"/classic/", nil); resp.StatusCode != 200 {
 		t.Fatalf("GET / after restart = %d", resp.StatusCode)
 	}
 }
@@ -168,7 +175,7 @@ func TestS4_CookieSurvivesRestart(t *testing.T) {
 	t.Parallel()
 	in := startLAN(t)
 	cookie := map[string]string{"Cookie": in.cookieName() + "=" + in.Token}
-	if resp, _ := get(t, in.lanURL()+"/", cookie); resp.StatusCode != 200 {
+	if resp, _ := get(t, in.lanURL()+"/classic/", cookie); resp.StatusCode != 200 {
 		t.Fatalf("cookie before restart: %d, want 200", resp.StatusCode)
 	}
 	again := in.Restart(t)
@@ -176,7 +183,7 @@ func TestS4_CookieSurvivesRestart(t *testing.T) {
 	if again.Port != in.Port {
 		t.Fatalf("after restart port = %s, want %s", again.Port, in.Port)
 	}
-	if resp, _ := get(t, again.lanURL()+"/", cookie); resp.StatusCode != 200 {
+	if resp, _ := get(t, again.lanURL()+"/classic/", cookie); resp.StatusCode != 200 {
 		t.Fatalf("old cookie after restart: %d, want 200", resp.StatusCode)
 	}
 }
@@ -260,11 +267,11 @@ func TestS6_TwoInstancesSideBySide(t *testing.T) {
 		t.Fatalf("both instances report port %s", a.Port)
 	}
 	for _, in := range []*instance{a, b} {
-		if resp, _ := get(t, in.LocalURL+"/", nil); resp.StatusCode != 200 {
-			t.Fatalf("instance on %s: GET / = %d", in.Port, resp.StatusCode)
+		if resp, _ := get(t, in.LocalURL+"/classic/", nil); resp.StatusCode != 200 {
+			t.Fatalf("instance on %s: GET /classic/ = %d", in.Port, resp.StatusCode)
 		}
 	}
-	if resp, _ := get(t, b.lanURL()+"/", map[string]string{"Authorization": "Bearer " + a.Token}); resp.StatusCode != 401 {
+	if resp, _ := get(t, b.lanURL()+"/classic/", map[string]string{"Authorization": "Bearer " + a.Token}); resp.StatusCode != 401 {
 		t.Fatalf("a's device token on b: %d, want 401", resp.StatusCode)
 	}
 }

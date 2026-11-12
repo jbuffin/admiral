@@ -42,7 +42,8 @@ func TestShellServedUnderApp_OldUIUnchanged(t *testing.T) {
 		path string
 		want string // body, or "" for 404
 	}{
-		{"/", oldIndex},
+		{"/classic", oldIndex},
+		{"/classic/", oldIndex},
 		{"/ships/x", oldIndex}, // the old UI's own client-side route
 		{"/application", oldIndex},
 		{"/app", appIndex},
@@ -64,6 +65,37 @@ func TestShellServedUnderApp_OldUIUnchanged(t *testing.T) {
 				t.Fatalf("GET %s = %d %q, want 200 %q", c.path, code, body, c.want)
 			}
 		})
+	}
+}
+
+func TestRootRedirectsToTheNewShell(t *testing.T) {
+	h := uiServer().Handler()
+	cases := []struct{ method, target, want string }{
+		{http.MethodGet, "/", "/app/"},
+		{http.MethodHead, "/", "/app/"},
+		{http.MethodGet, "/?fleet=x", "/app/?fleet=x"},
+	}
+	for _, c := range cases {
+		t.Run(c.method+" "+c.target, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(c.method, c.target, nil))
+			// A permanent redirect would outlive a rollback in every browser that saw it.
+			if rec.Code != http.StatusFound || rec.Header().Get("Location") != c.want {
+				t.Fatalf("%s %s = %d to %q, want 302 to %q", c.method, c.target, rec.Code, rec.Header().Get("Location"), c.want)
+			}
+		})
+	}
+}
+
+func TestClassicOldUIKeepsItsAbsoluteAssetsAndAPI(t *testing.T) {
+	h := uiServer().Handler()
+	for _, p := range []string{"/classic/", "/classic"} {
+		if code, _, body := get(t, h, p); code != http.StatusOK || body != oldIndex {
+			t.Errorf("GET %s = %d %q, want the old index", p, code, body)
+		}
+	}
+	if code, _, body := get(t, h, "/assets/x.js"); code != http.StatusOK || body != "console.log('x')" {
+		t.Errorf("GET /assets/x.js = %d %q, want the asset the old index references", code, body)
 	}
 }
 
@@ -209,7 +241,7 @@ func TestShellIsStampedWithTheServersBuild(t *testing.T) {
 	if !strings.Contains(deep, `name="admiral-build"`) {
 		t.Errorf("a deep link into the shell = %q, want the build stamp too", deep)
 	}
-	if _, _, old := get(t, h, "/"); strings.Contains(old, "admiral-build") {
+	if _, _, old := get(t, h, "/classic/"); strings.Contains(old, "admiral-build") {
 		t.Errorf("the old UI = %q, want no stamp", old)
 	}
 }

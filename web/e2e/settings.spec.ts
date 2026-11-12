@@ -366,7 +366,7 @@ test('a fleet page edits search roots, owners, clone root and colour, keeping wh
   await page.goto(admiral.url + 'app/ships');
   await page.getByRole('navigation').getByRole('button', { name: WORK, exact: true }).click();
   await page.getByRole('menu').getByRole('menuitem', { name: 'New fleet…' }).click();
-  await expect(page).toHaveURL(admiral.url);
+  await expect(page).toHaveURL(admiral.url + 'classic/');
   const setup = (await (await fetch(`${admiral.url}api/v1/setup`)).json()) as { running: boolean };
   expect(setup.running).toBe(true);
 });
