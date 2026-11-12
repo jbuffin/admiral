@@ -198,7 +198,7 @@ const (
 // typeResume types at the afloat ship's prompt, so the ship that asked reads its
 // answers. Under resumeMu.
 func (s *Service) typeResume(key string, r state.Resume) int {
-	if s.TypeResume == nil || !typable(r.Text) {
+	if s.TypeResume == nil || !Typable(r.Text) {
 		return liveGone
 	}
 	afloat, typed, err := s.TypeResume(r.Session, r.Text)
@@ -225,7 +225,8 @@ func (s *Service) typeResume(key string, r state.Resume) int {
 	return liveGone
 }
 
-func typable(text string) bool {
+// Typable is whether text can be typed at a prompt: not blank, no control character but a newline or tab.
+func Typable(text string) bool {
 	return strings.TrimSpace(text) != "" && !strings.ContainsFunc(text, func(r rune) bool {
 		return (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f
 	})

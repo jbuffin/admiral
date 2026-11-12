@@ -49,6 +49,11 @@ var allowed = []struct {
 	{"POST", []string{"inbox", "*", "*", "answer"}, item},
 	{"POST", []string{"ships", "*", "stop"}, ship},
 	{"POST", []string{"ships", "*", "dismiss"}, ship},
+	{"POST", []string{"ships", "*", "next"}, ship},
+	{"POST", []string{"ships", "*", "wake"}, ship},
+	{"GET", []string{"outcomes"}, plain},
+	{"POST", []string{"chat", "questions"}, plain},
+	{"GET", []string{"chat", "questions", "*", "answer"}, plain},
 }
 
 func (g *Guard) Middleware(next http.Handler) http.Handler {

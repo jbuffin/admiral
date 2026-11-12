@@ -83,6 +83,10 @@ A refusal for pins is a `400` before any session exists. One that comes after a 
 
 Query: `fleet`, `harness` and optionally `dir` (a checkout or search root of the fleet, checked as `POST /api/ships` checks it; without it the repo layer is left out, as for a launch that has not cloned yet). Answers `{"members": [...], "warnings": [...], "errors": [...]}`: each member is `{"name", "role", "pick-me-when", "layer", "harness"}` (`layer` is `built-in`, `fleet` or `repo`; `harness` is the lock, or `null`), `warnings` and `errors` are the resolver's diagnostics. When `errors` is not empty, `members` is empty and a launch that pins would be refused. A harness with no installed Commodore has an empty built-in layer, not an error. `404`: the fleet is not found; `400`: no such dock or `dir` is not in the fleet; `409`: the fleet has no search roots.
 
+### `POST /api/ships/<session>/next` (alias `POST /api/v1/ships/<session>/next`)
+
+Types the next prompt into a ship whose turn has ended, as AdmiralBot's tool `next_prompt` does. Body: `{"text": "..."}`. Answers `200 {"typed": true}` and records a `resumed` outcome with `"live": true`, and `"via":"admiralbot"` for an actor. Errors: `400` for text with a control character, an empty text, one over 16 KiB, and, for an actor, text whose first non-space character is `/` or `!` (AdmiralBot may give a ship a prompt, never a harness command; the engineer's text is unchanged); `404` for an unknown ship; `409` for a ship that is not underway or needing you, one that is mid-turn, and a moored ship (wake it instead).
+
 ## Sending to a ship
 
 `GET /api/version` lists the `ship-input` capability when the server has these routes. They are unversioned in the code; `/api/v1/...` reaches them too.
@@ -238,6 +242,10 @@ Takes the inbox's question answer body and writes the answer file. 404 for an un
 ### WebSocket
 
 `{"type":"chat","fleet":"<fleet>", ...}` carries the fields of the session beside `type`. It is sent on connect, one per fleet whose chat is on, and again within about a second of a change. Messages are coalesced per fleet, so one fleet's update never replaces another's.
+
+### `POST /api/chat/questions` and `GET /api/chat/questions/<id>/answer` (AdmiralBot only)
+
+These two serve AdmiralBot's `ask_question` tool and need an actor token: any other caller is `403`, and nothing is written. The fleet is the token's. `POST` takes `{"title", "questions"}`, checked as the inbox checks a question item, writes the question file and answers `201 {"id"}`; `400` for a bad question. `GET` holds the request for up to `wait` seconds (a non-negative integer, at most 110) and answers `200` with `{"state": "answered", "answer": {...}}`, `{"state": "withdrawn"}` once the question is gone (a New chat), or `{"state": "waiting"}` at the deadline. A bad id or `wait` is `400`. A question of another fleet is never answered.
 
 ## Inbox
 
@@ -548,6 +556,7 @@ Revoke one device or all of them; 204, or 404 for an unknown id. The device's to
 A fleet's chat calls Admiral with its actor token in the `X-Admiral-Actor` header. The token is `HMAC-SHA256(secret, fleet + "\n" + nonce)`: the secret is a random key in `$ADMIRAL_HOME/actor-secret` (mode 0600) and the nonce is minted per chat session and kept in the tmux session option `@admiral-chat-nonce`, so a token survives an Admiral restart while its chat lives and is new with each chat session. The token is never logged and never put in a command line or a file.
 
 - A request with no header is the engineer's own and is unchanged. A valid token on a loopback request makes it AdmiralBot's for that fleet; an unknown or stale token is 401. A request off loopback is refused: 401 without a device cookie (the auth layer answers first), 403 with one.
-- AdmiralBot may call only: `GET /api/ships`, `GET /api/ships/<ship>/conversation`, `GET /api/inbox`, `GET /api/sources`, `GET /api/campaigns`, `GET /api/campaigns/<id>`, `POST /api/ships`, `POST /api/sources/<key>/orders`, `POST /api/inbox/<ship>/<id>/answer`, `POST /api/ships/<ship>/stop` and `POST /api/ships/<ship>/dismiss`, each also under `/api/v1`. Every other route is 403, and a path that needs cleaning or decoding to match is refused.
+- AdmiralBot may call only: `GET /api/ships`, `GET /api/ships/<ship>/conversation`, `GET /api/inbox`, `GET /api/sources`, `GET /api/campaigns`, `GET /api/campaigns/<id>`, `POST /api/ships`, `POST /api/sources/<key>/orders`, `POST /api/inbox/<ship>/<id>/answer`, `POST /api/ships/<ship>/stop`, `POST /api/ships/<ship>/dismiss`, `POST /api/ships/<ship>/next`, `POST /api/ships/<ship>/wake`, `GET /api/outcomes`, `POST /api/chat/questions` and `GET /api/chat/questions/<id>/answer`, each also under `/api/v1`. Every other route is 403, and a path that needs cleaning or decoding to match is refused.
 - The list reads (`ships`, `inbox`, `sources`, `campaigns`) hold only the actor's fleet. Touching another fleet's ship, item, source or campaign, or an item or ship of no known fleet, is 403 naming the fleet; a launch must name the actor's fleet and a source of that fleet. A launch body must be one JSON object: data after it is 400 (for the engineer too), and the guard and the handler read the same value. A chat session's own question is the engineer's to answer, so AdmiralBot's answer to an Inbox item of a chat session is 403.
-- Writes are stamped `"via":"admiralbot"`: the `launched`, `stopped`, `dismissed`, `answered` and `unmoored` outcome records and the launched ship's `via`.
+- `GET /api/outcomes[?ship=<ship>][&limit=<n>]` answers `{"outcomes": [<record>, ...]}`, oldest first, the latest `limit` (default 100, at most 1000; `400` for a bad value) of the month files' records. An actor sees only its fleet's: ship names are reused, so a record's fleet is the `fleet` of the latest `launched` record of its ship before it (read in file order); a record with no such record in the files read takes the fleet of the listed or moored ship that holds the name, unless the files hold a later `launched` record of that name, which hides it; a record of no known fleet is hidden. The fence applies before the limit.
+- Writes are stamped `"via":"admiralbot"`: the `launched`, `stopped`, `dismissed`, `answered`, `resumed`, `woken` and `unmoored` outcome records and the launched ship's `via`.

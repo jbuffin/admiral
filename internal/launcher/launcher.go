@@ -72,6 +72,8 @@ type Request struct {
 	// By and PR say what started a round, for the `woken` event.
 	By string `json:"-"`
 	PR string `json:"-"`
+	// WokenVia stamps the `woken` event with the actor that woke the ship, apart from the ship's own via.
+	WokenVia string `json:"-"`
 	// Via is "admiralbot" when AdmiralBot made the launch, and the ship carries it.
 	Via string `json:"-"`
 }
@@ -93,6 +95,9 @@ type Skill struct {
 	Kind string `json:"kind"` // "commodore", "skill" or "none"
 	Name string `json:"name"`
 }
+
+// AutopilotCapText opens the 409 a launch gets when autopilot is at its cap; the MCP server keys its interactive relaunch on it.
+const AutopilotCapText = "autopilot is at its cap"
 
 type Error struct {
 	Status int

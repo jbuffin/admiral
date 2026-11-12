@@ -2,22 +2,18 @@ package cli
 
 import (
 	"bytes"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/chatlog"
 	"github.com/jbuffin/admiral/internal/inbox"
-	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
 )
 
@@ -289,7 +285,7 @@ func Chat(args []string, std IO) error {
 		if !inbox.ValidID(id) {
 			return usagef("%q is not a question id", id)
 		}
-		if !questionExists(root, fleet, id) {
+		if !inbox.QuestionExists(root, fleet, id) {
 			return &ExitError{askExitWithdrawn, "the question was withdrawn"}
 		}
 	} else {
@@ -300,135 +296,29 @@ func Chat(args []string, std IO) error {
 		if b, err = askForm(b); err != nil {
 			return err
 		}
-		if id, err = writeQuestion(root, fleet, b); err != nil {
+		if id, err = inbox.WriteQuestion(root, fleet, b); err != nil {
+			var qe *inbox.QuestionError
+			if errors.As(err, &qe) {
+				return usagef("%s", qe.Msg)
+			}
 			return err
 		}
 	}
 	return waitAnswer(root, fleet, id, *timeout, std)
 }
 
-// newQuestionID follows ADR 0016's id rule.
-func newQuestionID() (string, error) {
-	var r [4]byte
-	if _, err := rand.Read(r[:]); err != nil {
-		return "", err
-	}
-	return time.Now().UTC().Format("20060102T150405") + "-" + hex.EncodeToString(r[:]), nil
-}
-
-// questionsRoot refuses a link anywhere on the path.
-func questionsRoot(root *os.Root, fleet string) (*os.Root, error) {
-	dir := ""
-	for _, part := range []string{"chat", fleet, "questions"} {
-		dir = filepath.Join(dir, part)
-		fi, err := root.Lstat(dir)
-		switch {
-		case os.IsNotExist(err):
-			if err := root.Mkdir(dir, 0o700); err != nil {
-				return nil, err
-			}
-		case err != nil:
-			return nil, err
-		case !fi.IsDir():
-			return nil, fmt.Errorf("%s is not a directory", dir)
-		}
-	}
-	return root.OpenRoot(dir)
-}
-
-// writeQuestion writes nothing for a bad question.
-func writeQuestion(root *os.Root, fleet string, stdin []byte) (string, error) {
-	if len(stdin) > inbox.MaxItem {
-		return "", usagef("the question is over %d bytes", inbox.MaxItem)
-	}
-	var in struct {
-		Title     string          `json:"title"`
-		Questions json.RawMessage `json:"questions"`
-	}
-	if err := json.Unmarshal(stdin, &in); err != nil {
-		return "", usagef("the question is not valid JSON: %v", err)
-	}
-	id, err := newQuestionID()
-	if err != nil {
-		return "", err
-	}
-	item, err := json.Marshal(map[string]any{"version": 1, "id": id, "kind": inbox.KindQuestion,
-		"created": time.Now().UTC().Format(time.RFC3339), "title": in.Title,
-		"question": map[string]json.RawMessage{"questions": in.Questions}})
-	if err != nil {
-		return "", usagef("the question is not valid: %v", err)
-	}
-	if in.Questions == nil {
-		return "", usagef("the question has no questions")
-	}
-	if _, err := inbox.ParseItem(item, sessionhost.ChatSession(fleet), id); err != nil {
-		return "", usagef("the question is not valid: it needs a title and questions of {id, text, multi, options: [{label}]}, each id once")
-	}
-	dir, err := questionsRoot(root, fleet)
-	if err != nil {
-		return "", err
-	}
-	defer dir.Close()
-	tmp := "." + id + ".json.tmp"
-	f, err := dir.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return "", err
-	}
-	_, err = f.Write(append(item, '\n'))
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err == nil {
-		err = dir.Rename(tmp, id+".json")
-	}
-	if err != nil {
-		_ = dir.Remove(tmp)
-		return "", err
-	}
-	return id, nil
-}
-
-func questionExists(root *os.Root, fleet, id string) bool {
-	_, err := root.Lstat(filepath.Join("chat", fleet, "questions", id+".json"))
-	return err == nil
-}
-
-// readAnswerFile trusts only a regular file, not a link, at most 1 MiB, holding a
-// JSON object.
-func readAnswerFile(root *os.Root, fleet, id string) ([]byte, bool) {
-	name := filepath.Join("chat", fleet, "questions", inbox.AnswerName(id))
-	fi, err := root.Lstat(name)
-	if err != nil || !fi.Mode().IsRegular() {
-		return nil, false
-	}
-	f, err := root.OpenFile(name, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
-	if err != nil {
-		return nil, false
-	}
-	defer f.Close()
-	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
-		return nil, false
-	}
-	b, err := io.ReadAll(io.LimitReader(f, inbox.MaxItem+1))
-	var obj map[string]json.RawMessage
-	if err != nil || len(b) > inbox.MaxItem || json.Unmarshal(b, &obj) != nil || obj == nil {
-		return nil, false
-	}
-	return b, true
-}
-
 // The question's file going away is New chat withdrawing it.
 func waitAnswer(root *os.Root, fleet, id string, timeout time.Duration, std IO) error {
 	deadline := time.Now().Add(timeout)
 	for {
-		if b, ok := readAnswerFile(root, fleet, id); ok {
+		if b, ok := inbox.ReadQuestionAnswer(root, fleet, id); ok {
 			std.Out.Write(b)
 			if !bytes.HasSuffix(b, []byte("\n")) {
 				fmt.Fprintln(std.Out)
 			}
 			return nil
 		}
-		if !questionExists(root, fleet, id) {
+		if !inbox.QuestionExists(root, fleet, id) {
 			return &ExitError{askExitWithdrawn, "the question was withdrawn"}
 		}
 		if !time.Now().Before(deadline) {

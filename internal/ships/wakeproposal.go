@@ -134,5 +134,5 @@ func (s *Service) LaunchProposal(ctx context.Context, p inbox.WakeProposal) (Shi
 		}
 		return undo, nil
 	}
-	return s.wake(p.Session, prompt, "proposal", p.PR, write)
+	return s.wake(p.Session, prompt, "proposal", p.PR, "", write)
 }

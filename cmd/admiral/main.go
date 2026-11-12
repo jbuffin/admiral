@@ -143,6 +143,8 @@ func run(args []string) error {
 		return cli.Devices(args[1:], std)
 	case "chat":
 		return cli.Chat(args[1:], std)
+	case "mcp":
+		return cli.MCP(args[1:], std)
 	case "codex-pane":
 		return cli.CodexPane(args[1:], std)
 	}

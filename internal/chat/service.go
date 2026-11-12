@@ -182,6 +182,8 @@ func (s *Service) route(h func(*fleetChat, http.ResponseWriter, *http.Request)) 
 }
 
 func (s *Service) Routes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/chat/questions", s.serveAsk)
+	mux.HandleFunc("GET /api/chat/questions/{id}/answer", s.serveAskAnswer)
 	mux.HandleFunc("GET /api/chat/{fleet}/session", s.route((*fleetChat).serveSession))
 	mux.HandleFunc("POST /api/chat/{fleet}/start", s.route((*fleetChat).serveStart))
 	mux.HandleFunc("POST /api/chat/{fleet}/messages", s.route((*fleetChat).serveSend))
