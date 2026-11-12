@@ -47,10 +47,13 @@ func (w *world) shipLog(session string) []outRec {
 	return out
 }
 
+// eventsOf lists the lifecycle events; a `usage` record lands after `ended` at no fixed point among later ones, so the tests that look at it read it by name.
 func eventsOf(log []outRec) []string {
 	out := []string{}
 	for _, m := range log {
-		out = append(out, m["event"].(string))
+		if m["event"] != "usage" {
+			out = append(out, m["event"].(string))
+		}
 	}
 	return out
 }
