@@ -877,20 +877,43 @@ func TestAppendNoteRefusesALinkAnywhereInThePathAndWritesNothing(t *testing.T) {
 }
 
 func TestRenameCarryIntoANameWhoseNotesWereAllDeletedSucceeds(t *testing.T) {
+	for name, leave := range map[string]func(f *fixture){
+		"repo note deleted": func(f *fixture) {
+			f.repoNotes("old", "acme/api", "- "+note(1))
+			if status, out := f.postNotes(map[string]any{"op": "delete", "member": "old", "scope": "repo", "repo": "acme/api", "note": note(1)}); status != 200 {
+				f.t.Fatalf("delete: %d %s", status, out)
+			}
+		},
+		"empty file from an older build": func(f *fixture) { writeFile(f.t, filepath.Join(f.memDir(), "old", "fleet.md"), "\n") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			commodoreAt(t)
+			f := newFixture(t)
+			leave(f)
+			f.fleetMember("bosun", "triager", "Fleet bosun.", "")
+			f.fleetNotes("bosun", "- "+note(2))
+			if status, out := rename(f, "bosun", map[string]any{"to": "old", "carry_notes": true}); status != 200 {
+				t.Fatalf("rename: %d %s", status, out)
+			}
+			if n := f.listed()["old"].Notes; len(n.Fleet) != 1 || n.Fleet[0] != note(2) {
+				t.Errorf("notes = %+v, want bosun's note", n)
+			}
+		})
+	}
+}
+
+func TestRenameCarryIntoANameHoldingAMalformedLineIs409AndKeepsIt(t *testing.T) {
 	commodoreAt(t)
 	f := newFixture(t)
-	f.fleetNotes("old", "- "+note(1))
-	if status, out := f.postNotes(map[string]any{"op": "delete", "member": "old", "scope": "fleet", "note": note(1)}); status != 200 {
-		t.Fatalf("delete: %d %s", status, out)
-	}
 	f.fleetMember("bosun", "triager", "Fleet bosun.", "")
 	f.fleetNotes("bosun", "- "+note(2))
-
-	if status, out := rename(f, "bosun", map[string]any{"to": "old", "carry_notes": true}); status != 200 {
-		t.Fatalf("rename: %d %s", status, out)
+	theirs := filepath.Join(f.memDir(), "old", "fleet.md")
+	writeFile(t, theirs, "remember to check the dock\n")
+	if status, out := rename(f, "bosun", map[string]any{"to": "old", "carry_notes": true}); status != 409 {
+		t.Fatalf("%d %s, want 409", status, out)
 	}
-	if n := f.listed()["old"].Notes; len(n.Fleet) != 1 || n.Fleet[0] != note(2) {
-		t.Errorf("notes = %+v, want bosun's note", n)
+	if readFile(t, theirs) != "remember to check the dock\n" || !exists(filepath.Join(f.crewDir(), "bosun.md")) || exists(filepath.Join(f.crewDir(), "old.md")) {
+		t.Error("something changed")
 	}
 }
 

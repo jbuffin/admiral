@@ -384,8 +384,8 @@ func (s *Service) serveRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if from != "" {
-		// A directory with no notes in it is in the way of the rename, and has nothing to keep.
-		err := os.RemoveAll(to)
+		// Only blank files and the directories they leave are cleared out of the way; any other content makes the rename fail.
+		err := pruneBlank(to)
 		if err == nil {
 			err = os.Rename(from, to)
 		}
@@ -400,6 +400,37 @@ func (s *Service) serveRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"name": req.To})
+}
+
+// pruneBlank removes the files under dir that hold nothing but blank lines, then each directory that leaves
+// empty. It looks at links without following them and leaves everything else where it is.
+func pruneBlank(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		path := filepath.Join(dir, e.Name())
+		switch {
+		case e.IsDir():
+			if err := pruneBlank(path); err != nil {
+				return err
+			}
+		case e.Type().IsRegular():
+			if raw, found, err := readRegular(path); err == nil && found && noNotes(strings.Split(string(raw), "\n")) {
+				if err := os.Remove(path); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if err := os.Remove(dir); err != nil && !errors.Is(err, syscall.ENOTEMPTY) {
+		return err
+	}
+	return nil
 }
 
 // carryPaths is the memory directory and the member's own directory in it, which a carry moves; each is
