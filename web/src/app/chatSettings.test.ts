@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHAT_THRESHOLDS, switchHarness, chatErrorMessage, chatSaveBody, effortLabel, thresholdLabel, type ChatSettings } from './chatSettings';
+import { CHAT_THRESHOLDS, switchHarness, chatErrorMessage, chatSaveBody, effortLabel, modelLabel, thresholdLabel, type ChatSettings } from './chatSettings';
 
 const shown: ChatSettings = { harness: 'claude', model: 'sonnet', effort: '', context_threshold: 150000 };
 
@@ -10,6 +10,12 @@ describe('the AdmiralBot choices', () => {
   it('label the harness default as Default and the thresholds as 100K, 150K, 300K and Never', () => {
     expect(['', 'low', 'medium', 'high'].map(effortLabel)).toEqual(['Default', 'Low', 'Medium', 'High']);
     expect(CHAT_THRESHOLDS.map(thresholdLabel)).toEqual(['100K', '150K', '300K', 'Never']);
+  });
+});
+
+describe('the model picker', () => {
+  it('capitalises an alias and shows a harness model id as given', () => {
+    expect(['sonnet', 'gpt-6.1-sol', 'gpt-6-luna'].map(modelLabel)).toEqual(['Sonnet', 'gpt-6.1-sol', 'gpt-6-luna']);
   });
 });
 

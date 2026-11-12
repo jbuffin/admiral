@@ -23,7 +23,8 @@ export function switchHarness(settings: ChatSettings, option: Pick<ChatHarnessOp
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export const harnessLabel = capital;
-export const modelLabel = capital;
+// An alias (sonnet) is capitalised; an id a harness names itself (gpt-6.1-sol) is shown as given.
+export const modelLabel = (m: string) => (/\d/.test(m) ? m : capital(m));
 export const effortLabel = (e: string) => (e === '' ? 'Default' : capital(e));
 export const thresholdLabel = (t: ChatSettings['context_threshold']) => (t === 'never' ? 'Never' : `${t / 1000}K`);
 
