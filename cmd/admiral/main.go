@@ -23,6 +23,7 @@ import (
 	"github.com/jbuffin/admiral/internal/chat"
 	"github.com/jbuffin/admiral/internal/cli"
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/crewapi"
 	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/harnesscaps"
 	"github.com/jbuffin/admiral/internal/home"
@@ -409,7 +410,7 @@ func serve(args []string) error {
 	shipService.Approving = convService.ApprovalPending
 	s := &server.Server{Path: auth.PathName, Version: version, Commit: commit, UI: web.UI(), Messages: convService.Messages(), Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService,
-			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: campaignService}, campaignService, bridgeService, resourceService, lockRoute, chatService, convService, &shipdiff.Service{Ships: shipService},
+			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: campaignService}, &crewapi.Service{Home: absDir, Config: cfg}, campaignService, bridgeService, resourceService, lockRoute, chatService, convService, &shipdiff.Service{Ships: shipService},
 			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}, guardRoutes{guard}, remoteRoutes{&tailscale.Route{Config: cfg.Current, Set: cfg.SetRemote, Port: port, Local: auth.IsLocal, ListenErr: lis.Err, Explicit: lis.explicit}}},
 		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat", "conversation", "campaigns", "ship-input", "changes"}}
 	shipService.MergeGuard = s.MergeGuard
