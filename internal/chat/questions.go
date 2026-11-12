@@ -302,13 +302,22 @@ func (s *Service) WaitingQuestions() []inbox.Item {
 }
 
 // AnswerQuestion is the one way a chat question is answered, from the chat or from the Inbox. A
-// session that is not a configured fleet's chat has no such question.
+// session that is not a configured fleet's chat has no such question, and a fleet whose chat is
+// off is refused as the chat's own route refuses it.
 func (s *Service) AnswerQuestion(session, id string, req inbox.QuestionRequest) error {
 	key, ok := sessionhost.ChatFleetOfSession(session)
-	if _, known := s.Config().Fleet(key); !ok || !known {
+	if !ok {
 		return inbox.ErrNotFound
 	}
-	return s.chat(key).answer(id, req)
+	fc, err := s.chatFor(key)
+	switch {
+	case err == nil:
+		return fc.answer(id, req)
+	case err.Status == http.StatusNotFound:
+		return inbox.ErrNotFound
+	default:
+		return &inbox.RefusedError{Msg: err.Msg}
+	}
 }
 
 // answer writes no outcome record and queues no resume text: the chat is not a ship.

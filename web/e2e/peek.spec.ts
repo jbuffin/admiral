@@ -619,6 +619,8 @@ test("AdmiralBot's waiting question shows in the Inbox as AdmiralBot's, is answe
   await row.getByRole('link').tap();
   const peek = peekOf(page);
   await expect(peek).toContainText('Which panel?');
+  // Withdrawing one chat question is not specified, so Peek offers no Remove.
+  await expect(peek.getByRole('button', { name: 'Remove from inbox' })).toHaveCount(0);
   await peek.getByRole('radio', { name: 'Freeform' }).tap();
   await peek.getByRole('button', { name: 'Send answers' }).tap();
 
@@ -633,7 +635,7 @@ test("AdmiralBot's waiting question shows in the Inbox as AdmiralBot's, is answe
   await expect(page.getByRole('main')).toContainText('You answered: Freeform');
 });
 
-test("a chat question whose chat started anew is refused in Peek with the reason, and leaves the Inbox", async ({ page, admiral }) => {
+test("a chat question withdrawn while its Peek is open stays open on a plain notice, with Send answers off and Back working", async ({ page, admiral }) => {
   seedFleets(admiral, { live: true, chat: true });
   await admiral.start({ env: withFakeGh(admiral) });
   chatAsks(admiral, 'harbor', 'q1', 'Which panel?', ['Freeform', 'Work queue']);
@@ -644,9 +646,33 @@ test("a chat question whose chat started anew is refused in Peek with the reason
   const peek = peekOf(page);
   await peek.getByRole('radio', { name: 'Freeform' }).tap();
 
-  // The question is withdrawn behind Peek's back, as New chat does.
+  // The question is withdrawn behind Peek's back, as New chat does. The Inbox push and a Send both end on this notice.
   rmSync(join(admiral.home, 'chat', 'harbor', 'questions', 'q1.json'));
-  await peek.getByRole('button', { name: 'Send answers' }).tap();
-  await expect(peek.getByRole('alert')).toContainText(/\S/);
+  await expect(peek.getByRole('alert')).toHaveText('AdmiralBot withdrew this question.', { timeout: 15_000 });
+  await expect(peek.getByRole('button', { name: 'Send answers' })).toBeDisabled();
+  await expect(peek).not.toContainText('_chat');
   expect(chatAnswerFile(admiral, 'harbor', 'q1')).toBeUndefined();
+
+  await peek.getByRole('link', { name: 'Back' }).tap();
+  await expect(peekOf(page)).toHaveCount(0);
+  await expect(page).toHaveURL(/\/app\/inbox(\?|$)/);
+});
+
+test("a chat question answered elsewhere while its Peek is open stays open on a plain notice and sends nothing", async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true, chat: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  chatAsks(admiral, 'harbor', 'q1', 'Which panel?', ['Freeform', 'Work queue']);
+  await page.goto(admiral.url + 'app/inbox?fleet=harbor');
+  const row = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Which panel?' });
+  await expect(row).toContainText('AdmiralBot', { timeout: 15_000 });
+  await row.getByRole('link').tap();
+  const peek = peekOf(page);
+  await peek.getByRole('radio', { name: 'Freeform' }).tap();
+
+  // The chat's own card answers it first.
+  const r = await page.request.post(admiral.url + 'api/chat/harbor/questions/q1/answer', { data: { answers: { '1': { choice: 'Work queue' } } } });
+  expect(r.ok()).toBe(true);
+  await expect(peek.getByRole('alert')).toHaveText('This question was already answered.', { timeout: 15_000 });
+  await expect(peek.getByRole('button', { name: 'Send answers' })).toBeDisabled();
+  expect(chatAnswerFile(admiral, 'harbor', 'q1')?.answers['1']?.choice).toBe('Work queue');
 });

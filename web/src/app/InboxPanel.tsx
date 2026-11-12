@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { fleets, fleetSearch } from './fleets';
 import { createInboxQueue, type Entry } from './inbox';
 import { call } from './api';
-import { Peek, peekKeys } from './Peek';
+import { isChatSession, Peek, peekKeys } from './Peek';
 import { REMOVED_FOLD } from './itemActions';
 import { bridgeSearch } from './peekLink';
 import { keyAction, keyHint } from './peekKeys';
@@ -160,7 +160,10 @@ export function usePeekEntry(peek: PeekTarget | null, entries: Entry[], queue: R
   if (open) seen.current = open;
   const known = seen.current?.key === key ? seen.current : undefined;
   // Peek closes as soon as its entry folds or leaves the queue, and the list shows the fold. A path whose entry never arrived stays open.
-  const closing = peek !== null && ready && (open ? open.folded !== null : known !== undefined);
+  // A chat question that leaves stays open on a notice: only the person's own answer closes it.
+  const chat = peek !== null && isChatSession(peek.session);
+  const gone = chat && ready && !open && known !== undefined;
+  const closing = peek !== null && ready && (open ? open.folded !== null : known !== undefined && !chat);
   useEffect(() => {
     if (closing) leave();
   }, [closing]);
@@ -168,7 +171,7 @@ export function usePeekEntry(peek: PeekTarget | null, entries: Entry[], queue: R
     queue.fold(k, text, Date.now(), known?.key === k ? known : undefined);
     rerender();
   };
-  return { open, closing, foldKey };
+  return { open: gone ? known : open, closing, gone, foldKey };
 }
 
 export function InboxPanel({ surface, title, phone }: { surface: Surface; title: boolean; phone: boolean }) {
@@ -182,8 +185,8 @@ export function InboxPanel({ surface, title, phone }: { surface: Surface; title:
 
   const peek = peekOf(loc.value.path);
   const search = fleetSearch.value;
-  const { open, closing, foldKey } = usePeekEntry(peek, entries, queue, rerender, () => go(surfacePath(surface), search, true));
-  const detail = open && !closing ? <Peek key={open.key} entry={open} fold={(text) => foldKey(open.key, text)} /> : null;
+  const { open, closing, gone, foldKey } = usePeekEntry(peek, entries, queue, rerender, () => go(surfacePath(surface), search, true));
+  const detail = open && !closing ? <Peek key={open.key} entry={open} gone={gone} fold={(text) => foldKey(open.key, text)} /> : null;
 
   // Rows that open a Peek, in the order the list shows them.
   const peekable = groups.flatMap((g) => g.rows).filter((e) => e.folded === null && e.item?.kind !== 'notice');

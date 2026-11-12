@@ -95,6 +95,7 @@ type fleetChat struct {
 	qAt      time.Time
 	qItems   map[string]cachedQuestion
 	qAnswers map[string]cachedAnswer
+	qSig     string // the waiting set the Inbox was last told of
 
 	resets resetUsage
 }
@@ -230,8 +231,28 @@ func (s *fleetChat) broadcastIf(send bool) {
 	m := s.message()
 	if send {
 		s.Hub.BroadcastOnce("chat:"+s.key, func() any { return m })
-		s.questionsChanged()
+		if s.questionsMoved() {
+			s.questionsChanged()
+		}
 	}
+}
+
+// questionsMoved reports whether the waiting set differs from the last one it saw: the ids and
+// whether each is answered.
+func (s *fleetChat) questionsMoved() bool {
+	var sig strings.Builder
+	for _, q := range s.questions(false) {
+		sig.WriteString(q.Item.ID)
+		if len(q.Answer) > 0 {
+			sig.WriteString(":answered")
+		}
+		sig.WriteByte(' ')
+	}
+	s.cmu.Lock()
+	defer s.cmu.Unlock()
+	moved := s.qSig != sig.String()
+	s.qSig = sig.String()
+	return moved
 }
 
 func (s *Service) questionsChanged() {

@@ -478,7 +478,7 @@ function Item({ entry }: { entry: Entry }) {
         )}
       </div>
       {entry.type === 'stop' ? <StopBody entry={entry} name={name} shipName={shipName} /> : entry.item?.kind === 'review' ? <ReviewBody entry={entry} /> : entry.item?.kind === 'findings' ? <FindingsBody entry={entry} /> : entry.item?.kind === 'notice' ? <NoticeBody entry={entry} /> : entry.item?.kind === 'question' && <QuestionBody entry={entry} />}
-      {entry.type !== 'stop' && entry.item && entry.item.kind !== 'notice' && <RemoveRow entry={entry} />}
+      {entry.type !== 'stop' && entry.item && entry.item.kind !== 'notice' && !entry.session.startsWith('_chat') && <RemoveRow entry={entry} />}
     </article>
   );
 }

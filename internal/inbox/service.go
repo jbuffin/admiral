@@ -232,7 +232,10 @@ func respond(w http.ResponseWriter, session, id string, res ReviewResult, err er
 	var bad *InvalidError
 	var gh *GhError
 	var crewRefused *crewRefusedError
+	var refused *RefusedError
 	switch {
+	case errors.As(err, &refused):
+		writeError(w, http.StatusConflict, refused.Msg)
 	case err == nil:
 		out := map[string]any{"answered": id}
 		if res.Action != "" {

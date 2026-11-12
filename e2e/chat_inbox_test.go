@@ -84,7 +84,8 @@ func TestChatInbox_ListsAndAnswersAFleetsQuestion(t *testing.T) {
 	t.Parallel()
 	w, chats := newFleetsWorld(t, chatCue,
 		fleetSpec{key: "alpha", model: "opus"},
-		fleetSpec{key: "beta", model: "opus"})
+		fleetSpec{key: "beta", model: "opus"},
+		fleetSpec{key: "nodock", codexOnly: true})
 	a, b := chats["alpha"], chats["beta"]
 	// Two ordinary items around the chat questions in time, from a session that is no ship.
 	seedItem(t, filepath.Join(w.home, "inbox", "shipx"), "0-early", questionItem("0-early", "2020-01-01T00:00:00Z"))
@@ -144,6 +145,28 @@ func TestChatInbox_ListsAndAnswersAFleetsQuestion(t *testing.T) {
 		}
 		if !inboxHas(ida)(chatInboxItems(t, w)) {
 			t.Errorf("alpha's question left the inbox after a refused answer")
+		}
+	})
+
+	t.Run("an answer for a fleet whose chat is off is refused with the reason, as the chat's own route refuses it", func(t *testing.T) {
+		w := w.at(t)
+		dir := filepath.Join(w.home, "chat", "nodock", "questions")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		left := `{"version":1,"id":"left","kind":"question","created":"2020-01-01T00:00:00Z","title":"Left over","question":{"questions":[{"id":"1","text":"Left over","multi":false,"options":[{"label":"Freeform"}]}]}}`
+		if err := os.WriteFile(filepath.Join(dir, "left.json"), []byte(left), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		code, body := w.in.answer(t, chatSessionFor("nodock"), "left", botAnswer("Freeform"))
+		if code != http.StatusConflict || !strings.Contains(errMessage(body), "chat is off") {
+			t.Errorf("answering a chat-off fleet's question = %d %s, want 409 naming that the chat is off", code, body)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "left.answer.json")); err == nil {
+			t.Errorf("an answer file was written for a fleet whose chat is off")
+		}
+		if inboxHas("left")(chatInboxItems(t, w)) {
+			t.Errorf("a chat-off fleet's question is listed in the inbox")
 		}
 	})
 

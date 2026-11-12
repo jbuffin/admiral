@@ -18,11 +18,13 @@ import { bridgeSearch } from './peekLink';
 import { go, shipPath, surfacePath } from './router';
 import { targetFor, useShipConversation } from './ShipView';
 import { lastTurn } from './turns';
-import { ships, shipsLoaded } from './shipsLink';
+import { chats, ships, shipsLoaded } from './shipsLink';
 import { SURFACES } from './surfaces';
 import { type AnswerBody, answeredQuestion, blankDraft, choose, foldText, pickOf, type Draft } from '../questions';
 
-const isChatSession = (session: string) => session.startsWith('_chat');
+export const isChatSession = (session: string) => session.startsWith('_chat');
+const WITHDRAWN = 'AdmiralBot withdrew this question.';
+const ANSWERED = 'This question was already answered.';
 const inboxSurface = SURFACES.find((s) => s.id === 'inbox')!;
 /** The open Peek's answer to a key the Inbox heard; the Inbox owns the listener. */
 export const peekKeys: { current: ((a: KeyAct) => void) | null } = { current: null };
@@ -61,7 +63,7 @@ function ShipTurn({ ship, boat, fleetKey, item, children }: { ship: Ship; boat?:
 }
 
 /** back leaves Peek for the surface that opened it; the Inbox when none is given. */
-export function Peek({ entry, fold, back }: { entry: Entry; fold: (text: string) => void; back?: { href: string; go: () => void } }) {
+export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: (text: string) => void; back?: { href: string; go: () => void }; gone?: boolean }) {
   const ship = ships.value.find((s) => s.session === entry.session);
   const boat = entry.crew ? ship?.crew.find((b) => b.name === entry.crew!.name) : undefined;
   const fleetKey = entry.fleet?.key ?? ship?.fleet;
@@ -79,22 +81,32 @@ export function Peek({ entry, fold, back }: { entry: Entry; fold: (text: string)
   const [member, setMember] = useState<MemberStep>('idle');
   const crew = readCrew(entry);
   const admiral = entry.session === '_admiral';
+  const chat = isChatSession(entry.session);
+  // A chat question's refusal is told plainly: the server's text names its ids and its internal session.
+  const [chatEnd, setChatEnd] = useState<'withdrawn' | 'answered' | null>(null);
+  const answeredHere = entry.fleet?.key ? chats.value[entry.fleet.key]?.questions.some((q) => q.id === entry.id && q.answer) : false;
+  const notice = !chat || !question ? '' : chatEnd === 'answered' || (gone && answeredHere) ? ANSWERED : chatEnd === 'withdrawn' || gone ? WITHDRAWN : '';
   const send = async (body: AnswerBody) => {
     setDraft((d) => ({ ...d, sending: true, error: '' }));
     const r = await call('POST', `/inbox/${encodeURIComponent(entry.session)}/${encodeURIComponent(entry.id!)}/answer`, body);
     if (r.ok) return fold(foldText(body));
+    if (chat && (r.status === 404 || lockedBy(r.status, r.error))) {
+      setChatEnd(r.status === 404 ? 'withdrawn' : 'answered');
+      return setDraft((d) => ({ ...d, sending: false }));
+    }
     if (lockedBy(r.status, r.error)) setQuestionLocked(true);
     setDraft((d) => ({ ...d, sending: false, error: r.error }));
   };
   const kind = entry.item?.kind;
   const crewNoteIds = (kind === 'crew_notes' ? crewNotes.item.notes : crew.notes).map((n) => n.id);
-  const removable = item && kind !== 'notice';
+  // Withdrawing one chat question is not specified, so only a ship's item can leave unanswered.
+  const removable = item && kind !== 'notice' && !chat;
   const mine = (a: KeyAct) => {
     if (a.kind === 'remove' && removable && !acting.busy) {
       acting.clear();
       setRemoving(true);
     } else if (a.kind === 'pick' && question) {
-      if (questionLocked || draft.sending) return;
+      if (questionLocked || notice || draft.sending) return;
       const qs = entry.item?.question?.questions ?? [];
       const q = qs.find((x) => !answeredQuestion(pickOf(draft, x)));
       const o = q?.options[a.n - 1];
@@ -121,7 +133,14 @@ export function Peek({ entry, fold, back }: { entry: Entry; fold: (text: string)
   const form = !item ? null : (
     <div class="peek-form">
       {question ? (
-        <PeekQuestions questions={entry.item?.question?.questions ?? []} draft={draft} edit={(fn) => setDraft(fn)} onSend={(b) => void send(b)} locked={questionLocked} />
+        <>
+          <PeekQuestions questions={entry.item?.question?.questions ?? []} draft={draft} edit={(fn) => setDraft(fn)} onSend={(b) => void send(b)} locked={questionLocked || notice !== ''} />
+          {notice ? (
+            <p class="line" role="alert">
+              {notice}
+            </p>
+          ) : null}
+        </>
       ) : kind === 'review' ? (
         <ReviewBody
           entry={entry}

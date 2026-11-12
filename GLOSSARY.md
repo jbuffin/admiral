@@ -145,7 +145,7 @@ A skill the engineer starred, up to five, shown in launch orders after Commodore
 _Avoid_: configured skill, skill list
 
 **AdmiralBot**:
-A fleet's coordinator, which the engineer talks to in that fleet's chat from any device. It does no work itself: it reads Admiral and acts by launching ships, adding orders, answering inbox items and keeping its ledger, only on the engineer's instruction or a commitment they agreed to, and everything it writes is marked **via AdmiralBot**. Each fleet has its own, with a disposable context refilled from its brief. It is not a ship and takes no part in caps or resources. When it needs the engineer to choose, it asks a **chat question**, which stays in the chat and also shows in the Inbox while it waits.
+A fleet's coordinator, which the engineer talks to in that fleet's chat from any device. It does no work itself: it reads Admiral and acts by launching ships, adding orders, answering inbox items and keeping its ledger, only on the engineer's instruction or a commitment they agreed to, and everything it writes is marked **via AdmiralBot**. Each fleet has its own, with a disposable context refilled from its brief. It is not a ship and takes no part in caps or resources. When it needs the engineer to choose, it asks a **chat question**, which shows in the Inbox as an "AdmiralBot asked" item while it waits and is answered there or in the chat.
 _Avoid_: assistant, chat ship, chat agent, background session, handoff (say "a launch via AdmiralBot")
 
 **Ledger**:
@@ -195,7 +195,7 @@ A ship whose session cannot move until the engineer does: a question, an approva
 _Avoid_: alert, blocked, error
 
 **Inbox**:
-Everything waiting on the engineer in one queue, oldest first. An **item** is a file a ship wrote in its inbox directory (`$ADMIRAL_INBOX`): a question, a pending review or a set of finding cards. A **needs-you stop** is a ship that needs you right now; it shows in the inbox as a live entry and has no file. **AdmiralBot is waiting** is the other live entry: a fleet's open chat question, answered from Peek or in the chat. The inbox spans every fleet. Answering an item writes an answer file beside it, and the item leaves the inbox. **Remove from inbox** takes an item out without answering it, for one the engineer settled in the ship's terminal. Say "finding card" for a card; items and ships are not cards.
+Everything waiting on the engineer in one queue, oldest first. An **item** is a file in an inbox directory: a ship wrote it in its own (`$ADMIRAL_INBOX`), or AdmiralBot wrote a chat question in `chat/<fleet>/questions/`. It is a question, a pending review or a set of finding cards. A **needs-you stop** is a ship that needs you right now; it shows in the inbox as a live entry and has no file. A chat question shows as an "AdmiralBot asked" item, answered from Peek or in the chat, and has no Remove. The inbox spans every fleet. Answering an item writes an answer file beside it, and the item leaves the inbox. **Remove from inbox** takes an item out without answering it, for one the engineer settled in the ship's terminal. Say "finding card" for a card; items and ships are not cards.
 _Avoid_: notifications, tasks, card (for an item)
 
 **Push**:

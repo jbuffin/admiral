@@ -132,11 +132,11 @@ function ChatRail({ fleet }: { fleet: Fleet }) {
   const search = fleetSearch.value;
   const chatHref = `/app/chat`;
   const leave = () => go(chatHref, search, true);
-  const { open, closing, foldKey } = usePeekEntry(peek, entries, queue, rerender, leave);
+  const { open, closing, gone, foldKey } = usePeekEntry(peek, entries, queue, rerender, leave);
   if (open && !closing) {
     return (
       <aside class="chat-rail chat-peek" aria-label="Inbox">
-        <Peek key={open.key} entry={open} fold={(text) => foldKey(open.key, text)} back={{ href: chatHref + search, go: () => go(chatHref, search) }} />
+        <Peek key={open.key} entry={open} gone={gone} fold={(text) => foldKey(open.key, text)} back={{ href: chatHref + search, go: () => go(chatHref, search) }} />
       </aside>
     );
   }
