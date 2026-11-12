@@ -18,7 +18,7 @@ type Report struct {
 }
 
 // A PR URL on any host, since the client's host decides which counts.
-var prURL = regexp.MustCompile(`^https://([^/\s]+)/([^/\s]+)/([^/\s]+)/pull/[0-9]+$`)
+var prURL = regexp.MustCompile(`^https://([^/\s]+)/([^/\s]+)/([^/\s]+)/pull/([0-9]+)$`)
 
 // A resume text is the wake's prompt, so it is only a skill's resume invocation and nothing a ship could append to.
 var resumeText = regexp.MustCompile(`^[/$][A-Za-z0-9][A-Za-z0-9._-]*(:[A-Za-z0-9][A-Za-z0-9._-]*)? resume [A-Za-z0-9][A-Za-z0-9._-]*$`)

@@ -214,8 +214,12 @@ func (s *Service) mooredShips(live map[string]bool) []Ship {
 	recs := append([]moor.Record(nil), s.moored...)
 	prs := make([][]moor.PR, len(recs))
 	polls := make([]polled, len(recs))
+	methods := make([]string, len(recs))
 	for i, r := range recs {
 		prs[i], polls[i] = s.prsOf(r), s.mooredPolls[r.Session]
+		if repo, ok := repoOfPRs(r.PRs); ok {
+			methods[i] = s.mergeMethods[methodKey(r.Fleet, repo)]
+		}
 	}
 	s.mooredMu.Unlock()
 	var out []Ship
@@ -228,6 +232,8 @@ func (s *Service) mooredShips(live map[string]bool) []Ship {
 			Repo: filepath.Base(r.Checkout), Status: StatusMoored,
 			Source: r.Source, Panel: r.Panel, OrderID: r.OrderID, URL: r.URL, Issues: r.Issues, Title: r.Title, PRs: prs[i], MooredAt: r.MooredAt.UTC().Format(time.RFC3339), Stale: polls[i].stale, Waiting: polls[i].waiting, NoResume: !moor.ValidResume(r.Resume),
 			Crew: []CrewBoat{}, Subagents: []sessionhost.Subagent{}}
+		sh.StackReady, sh.ReadyUpTo = moor.StackReady(prs[i])
+		sh.MergeMethod = methods[i]
 		if !polls[i].at.IsZero() {
 			sh.PolledAt = polls[i].at.Format(time.RFC3339)
 		}

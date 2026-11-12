@@ -321,6 +321,10 @@ type shipJSON struct {
 	MooredAt   string   `json:"moored_at"`
 	PolledAt   string   `json:"polled_at"`
 	Stale      bool     `json:"stale"`
+
+	StackReady  bool   `json:"stack_ready"`
+	ReadyUpTo   string `json:"ready_up_to"`
+	MergeMethod string `json:"merge_method"`
 }
 
 type prJSON struct {
@@ -330,6 +334,7 @@ type prJSON struct {
 	Checks    string `json:"checks"`
 	Mergeable string `json:"mergeable"`
 	Conflicts bool   `json:"conflicts"`
+	Ready     bool   `json:"ready"`
 }
 
 func send(t *testing.T, method, url string, body any) (int, string) {

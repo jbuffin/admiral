@@ -54,6 +54,11 @@ type Ship struct {
 	// PolledAt is the last poll that answered; Stale says the latest one failed.
 	PolledAt string `json:"polled_at,omitempty"`
 	Stale    bool   `json:"stale,omitempty"`
+	// StackReady, ReadyUpTo and MergeMethod are set on a moored ship: whether every PR is ready to merge, the
+	// URL of the highest layer up to which every layer is, and the repository's default merge method.
+	StackReady  bool   `json:"stack_ready,omitempty"`
+	ReadyUpTo   string `json:"ready_up_to,omitempty"`
+	MergeMethod string `json:"merge_method,omitempty"`
 	// NoResume is true on a moored ship whose record has no valid resume text, which cannot be woken.
 	NoResume bool `json:"no_resume,omitempty"`
 	// Waiting is why a moored ship's feedback round has not started, while one is due.
@@ -81,7 +86,9 @@ type Service struct {
 	Launcher  *launcher.Launcher
 	State     *state.Store
 	Hub       *server.Hub
-	Orders    Orders
+	// MergeGuard wraps the Merge route with its token check; with none the route refuses everything.
+	MergeGuard func(http.Handler) http.Handler
+	Orders     Orders
 	// OnChange must not block.
 	OnChange func()
 	// Tail gives a ship's conversation tail from a cache; it must not block.
@@ -130,8 +137,10 @@ type Service struct {
 	mooredPolls  map[string]polled // by session
 	committed    map[string]bool   // by session: a wake is making the session, so no ending takes the record; under mooredMu
 	moorKick     chan struct{}
-	pollMu       sync.Mutex // one poll at a time
-	wakeMu       sync.Mutex // every read-modify-write of a ship's wake state; taken after mooredMu is released, never inside it
+	mergeMethods map[string]string // by fleet and repository: its default merge method; under mooredMu
+	merging      map[string]bool   // by session: a merge is under way; under mooredMu
+	pollMu       sync.Mutex        // one poll at a time
+	wakeMu       sync.Mutex        // every read-modify-write of a ship's wake state; taken after mooredMu is released, never inside it
 	// issueLocks holds the GitHub issues (by ClaimKey) with a launch under way, each with who holds it.
 	issueLocks map[string]string
 }
@@ -240,6 +249,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/ships/{session}/dismiss", s.serveDismiss)
 	mux.HandleFunc("POST /api/ships/{session}/unfollow", s.serveUnfollow)
 	mux.HandleFunc("POST /api/ships/{session}/wake", s.serveWake)
+	mux.Handle("POST /api/ships/{session}/merge", s.mergeGuarded(http.HandlerFunc(s.serveMerge)))
 	mux.HandleFunc("POST /api/moored/refresh", s.serveMooredRefresh)
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/close", s.serveCrewClose)
 	mux.HandleFunc("POST /api/ships/{session}/messages", s.serveSendInput)

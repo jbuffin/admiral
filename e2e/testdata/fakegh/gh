@@ -6,12 +6,13 @@
 #   argv         the arguments, each followed by a NUL byte
 #   env          GH_TOKEN, GITHUB_TOKEN, GH_ENTERPRISE_TOKEN,
 #                GITHUB_ENTERPRISE_TOKEN, GH_NO_UPDATE_NOTIFIER,
-#                GH_PROMPT_DISABLED and the marker variables FLEET_MARK,
+#                GH_PROMPT_DISABLED, GH_REPO and the marker variables FLEET_MARK,
 #                ADMIRAL_BASE and ADMIRAL_OVER (a test puts them in a
 #                fleet's env or in Admiral's own) as
 #                NAME=value lines; a variable that was not set has no line
+#   cwd          the working directory the call ran in
 #
-# It answers eight kinds of call and nothing else (anything else exits 2):
+# It answers eleven kinds of call and nothing else (anything else exits 2):
 #
 #   gh --version
 #
@@ -44,6 +45,34 @@
 #       repo_clone.sleep   sleep that many seconds before cloning, so two clones overlap
 #       repo_clone.fail    leave a partial DIR (a junk file, as an interrupted
 #                          git does), print the file's content on stderr, exit 1
+#
+#   gh pr merge URL (--merge|--squash|--rebase) [-d|--delete-branch] [--match-head-commit SHA]
+#     the Merge act's single-pull-request merge. Exactly one method flag is
+#     required and the URL must be https://. Any other flag is refused (exit 2),
+#     --admin and --auto above all: Admiral never bypasses a rule. On success it
+#     writes MERGED into pr_state/KEY of the URL (the poll then sees the merge)
+#     and exits 0. With $FAKEGH_DIR/pr_merge.fail it exits 1 and prints that file
+#     on stderr, merging nothing. With $FAKEGH_DIR/pr_merge.sleep it sleeps that
+#     many seconds first, so a second merge can arrive while this one runs.
+#
+#   gh stack merge TARGET --yes --merge-method (merge|squash|rebase)
+#     the Merge act's stack merge (the gh-stack extension). TARGET is the one
+#     positional argument, however spelled (7, #7 or a pull request URL): the
+#     fake reads the trailing number. --yes and --merge-method are required, so
+#     a call that could stop to ask refuses (exit 2). Steered by
+#     $FAKEGH_DIR/stack_merge/NUMBER, one pull request URL per line: the PRs the
+#     merge lands, each flipped to MERGED as above. No such file is a stack gh
+#     does not know: stderr says so, exit 1. With $FAKEGH_DIR/stack_merge.fail it
+#     exits 1 and prints that file on stderr, merging nothing.
+#
+#   gh api graphql ...   (the repository's default merge method)
+#     Taken when an argument holds `viewerDefaultMergeMethod`, before the other
+#     graphql matches. Prints
+#     {"data":{"repository":{"viewerDefaultMergeMethod":"METHOD"}}} with METHOD
+#     from $FAKEGH_DIR/default_merge_method (MERGE, SQUASH or REBASE; none:
+#     MERGE). With $FAKEGH_DIR/default_merge_method.fail it exits 1 and prints
+#     that file on stderr. Every merge-flavoured call also records $GH_REPO and
+#     the working directory (see env and cwd above).
 #
 #   gh api graphql ...   (the moor poll's batched pull request query)
 #     Taken when an argument holds `pullRequest(number:`, before the search
@@ -106,6 +135,7 @@ call_dir=$(mktemp -d "$FAKEGH_DIR/calls/call.XXXXXX" 2>/dev/null) || {
 	call_dir=$(mktemp -d "$FAKEGH_DIR/calls/call.XXXXXX")
 }
 for a in "$@"; do printf '%s\0' "$a"; done > "$call_dir/argv"
+pwd -P > "$call_dir/cwd"
 {
 	[ -n "${GH_TOKEN+x}" ] && printf 'GH_TOKEN=%s\n' "$GH_TOKEN"
 	[ -n "${GITHUB_TOKEN+x}" ] && printf 'GITHUB_TOKEN=%s\n' "$GITHUB_TOKEN"
@@ -113,6 +143,7 @@ for a in "$@"; do printf '%s\0' "$a"; done > "$call_dir/argv"
 	[ -n "${GITHUB_ENTERPRISE_TOKEN+x}" ] && printf 'GITHUB_ENTERPRISE_TOKEN=%s\n' "$GITHUB_ENTERPRISE_TOKEN"
 	[ -n "${GH_NO_UPDATE_NOTIFIER+x}" ] && printf 'GH_NO_UPDATE_NOTIFIER=%s\n' "$GH_NO_UPDATE_NOTIFIER"
 	[ -n "${GH_PROMPT_DISABLED+x}" ] && printf 'GH_PROMPT_DISABLED=%s\n' "$GH_PROMPT_DISABLED"
+	[ -n "${GH_REPO+x}" ] && printf 'GH_REPO=%s\n' "$GH_REPO"
 	[ -n "${FLEET_MARK+x}" ] && printf 'FLEET_MARK=%s\n' "$FLEET_MARK"
 	[ -n "${ADMIRAL_BASE+x}" ] && printf 'ADMIRAL_BASE=%s\n' "$ADMIRAL_BASE"
 	[ -n "${ADMIRAL_OVER+x}" ] && printf 'ADMIRAL_OVER=%s\n' "$ADMIRAL_OVER"
@@ -145,6 +176,30 @@ auth)
 	exit 1
 	;;
 pr)
+	if [ "$2" = merge ]; then
+		shift 2
+		prurl= method= nmethod=0
+		while [ $# -gt 0 ]; do
+			case "$1" in
+			--merge|--squash|--rebase) method=${1#--}; nmethod=$((nmethod + 1)); shift ;;
+			-d|--delete-branch) shift ;;
+			--match-head-commit) shift 2 ;;
+			https://*) prurl=$1; shift ;;
+			*) echo "fakegh: unsupported argument to gh pr merge: $1" >&2; exit 2 ;;
+			esac
+		done
+		[ -n "$prurl" ] || { echo "fakegh: gh pr merge needs the pull request's URL" >&2; exit 2; }
+		[ "$nmethod" = 1 ] || { echo "fakegh: gh pr merge needs exactly one of --merge, --squash, --rebase" >&2; exit 2; }
+		echo "$method" > "$call_dir/method"
+		[ -s "$FAKEGH_DIR/pr_merge.sleep" ] && sleep "$(cat "$FAKEGH_DIR/pr_merge.sleep")"
+		if [ -e "$FAKEGH_DIR/pr_merge.fail" ]; then
+			cat "$FAKEGH_DIR/pr_merge.fail" >&2
+			exit 1
+		fi
+		mkdir -p "$FAKEGH_DIR/pr_state"
+		echo MERGED > "$FAKEGH_DIR/pr_state/$(printf '%s' "$prurl" | tr '/:' '__')"
+		exit 0
+	fi
 	[ "$2" = view ] || { echo "fakegh: unsupported: gh $*" >&2; exit 2; }
 	shift 2
 	json= prurl=
@@ -182,6 +237,43 @@ pr)
 	fi
 	echo "fakegh: no canned pr view" >&2
 	exit 1
+	;;
+stack)
+	[ "$2" = merge ] || { echo "fakegh: unsupported: gh $*" >&2; exit 2; }
+	shift 2
+	target= yes=0 method=
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--yes|-y) yes=1; shift ;;
+		--merge-method) method=$2; shift 2 ;;
+		--merge-method=*) method=${1#--merge-method=}; shift ;;
+		-*) echo "fakegh: unsupported argument to gh stack merge: $1" >&2; exit 2 ;;
+		*) [ -z "$target" ] || { echo "fakegh: two targets: $target and $1" >&2; exit 2; }
+		   target=$1; shift ;;
+		esac
+	done
+	[ -n "$target" ] || { echo "fakegh: gh stack merge needs a target" >&2; exit 2; }
+	[ "$yes" = 1 ] || { echo "fakegh: gh stack merge without --yes would stop to ask" >&2; exit 2; }
+	case "$method" in
+	merge|squash|rebase) ;;
+	*) echo "fakegh: gh stack merge needs --merge-method merge, squash or rebase" >&2; exit 2 ;;
+	esac
+	echo "$method" > "$call_dir/method"
+	if [ -e "$FAKEGH_DIR/stack_merge.fail" ]; then
+		cat "$FAKEGH_DIR/stack_merge.fail" >&2
+		exit 1
+	fi
+	num=$(printf '%s' "$target" | sed -E 's/.*[^0-9]([0-9]+)$/\1/')
+	if [ ! -s "$FAKEGH_DIR/stack_merge/$num" ]; then
+		echo "fakegh: no stack to merge for $target" >&2
+		exit 1
+	fi
+	mkdir -p "$FAKEGH_DIR/pr_state"
+	while read -r u; do
+		[ -n "$u" ] || continue
+		echo MERGED > "$FAKEGH_DIR/pr_state/$(printf '%s' "$u" | tr '/:' '__')"
+	done < "$FAKEGH_DIR/stack_merge/$num"
+	exit 0
 	;;
 repo)
 	[ "$2" = clone ] || { echo "fakegh: unsupported: gh $*" >&2; exit 2; }
@@ -262,6 +354,20 @@ api)
 		echo "fakegh: no canned REST answer for $method $endpoint" >&2
 		exit 1
 	fi
+	for a in "$@"; do
+		case "$a" in
+		*viewerDefaultMergeMethod*)
+			if [ -e "$FAKEGH_DIR/default_merge_method.fail" ]; then
+				cat "$FAKEGH_DIR/default_merge_method.fail" >&2
+				exit 1
+			fi
+			dm=MERGE
+			[ -s "$FAKEGH_DIR/default_merge_method" ] && dm=$(cat "$FAKEGH_DIR/default_merge_method")
+			printf '{"data":{"repository":{"viewerDefaultMergeMethod":"%s"}}}\n' "$dm"
+			exit 0
+			;;
+		esac
+	done
 	batch=
 	bhost=github.com
 	prev=

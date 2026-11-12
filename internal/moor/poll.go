@@ -34,6 +34,7 @@ type PR struct {
 	Checks    string `json:"checks"`
 	Mergeable string `json:"mergeable"`
 	Conflicts bool   `json:"conflicts"`
+	Ready     bool   `json:"ready"`
 }
 
 // View is the PR to serve. NOT_FOUND counts as closed, and a PR that is not open
@@ -43,7 +44,20 @@ func View(url string, st Status, found bool) PR {
 		return PR{URL: url, State: "CLOSED"}
 	}
 	return PR{URL: url, State: st.State, Review: st.Review, Checks: st.Checks, Mergeable: st.Mergeable,
-		Conflicts: st.State == "OPEN" && st.Mergeable == "CONFLICTING"}
+		Conflicts: st.State == "OPEN" && st.Mergeable == "CONFLICTING", Ready: st.Ready()}
+}
+
+// Ready says the PR is open, approved, green, mergeable and not held back by its base. A repository that
+// requires no review or runs no checks never reads ready. A draft shows as mergeStateStatus DRAFT or BLOCKED.
+func (st Status) Ready() bool {
+	if st.State != "OPEN" || st.Review != "APPROVED" || st.Checks != "SUCCESS" || st.Mergeable != "MERGEABLE" {
+		return false
+	}
+	switch st.MergeState {
+	case "BLOCKED", "BEHIND", "DIRTY", "DRAFT":
+		return false
+	}
+	return true
 }
 
 // EndReason says why a ship whose every PR is merged or closed sails off; ended
@@ -87,3 +101,35 @@ func Remove(home, name string) error {
 type Unanswered struct{ URLs []string }
 
 func (e *Unanswered) Error() string { return "GitHub could not look up " + strings.Join(e.URLs, ", ") }
+
+// StackReady says whether every PR of the stack (lowest layer first) is ready, and the URL of the highest layer
+// up to which every layer is ready; upTo is empty when the lowest layer is not ready.
+func StackReady(prs []PR) (ready bool, upTo string) {
+	ready = len(prs) > 0
+	for _, p := range prs {
+		if !p.Ready {
+			ready = false
+			break
+		}
+		upTo = p.URL
+	}
+	return ready, upTo
+}
+
+// RepoOf is the owner/name of a pull request URL's repository.
+// ParsePR splits a PR URL into its host, nameWithOwner and number.
+func ParsePR(url string) (host, nameWithOwner, number string, ok bool) {
+	m := prURL.FindStringSubmatch(url)
+	if m == nil {
+		return "", "", "", false
+	}
+	return m[1], m[2] + "/" + m[3], m[4], true
+}
+
+func RepoOf(url string) (nameWithOwner string, ok bool) {
+	m := prURL.FindStringSubmatch(url)
+	if m == nil {
+		return "", false
+	}
+	return m[2] + "/" + m[3], true
+}

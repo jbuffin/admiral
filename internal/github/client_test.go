@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jbuffin/admiral/internal/moor"
 )
 
 // fakeGH drives e2e/testdata/fakegh/gh through $FAKEGH_DIR.
@@ -450,4 +452,21 @@ func sorted(in []string) []string {
 	out := append([]string(nil), in...)
 	sort.Strings(out)
 	return out
+}
+
+func TestMergePRThatRunsPastItsLimitIsAnUnknownResult(t *testing.T) {
+	dir := t.TempDir()
+	script := "#!/bin/sh\nif [ \"$1\" = auth ]; then echo fake-token-work-2; exit 0; fi\nexec sleep 5\n"
+	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	old := MergeTimeout
+	MergeTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { MergeTimeout = old })
+	cl := NewClient("github.com", "", nil, os.Environ())
+	err := cl.MergePR(context.Background(), "https://github.com/acme/widgets/pull/7", "squash")
+	if !errors.Is(err, moor.ErrMergeTimeout) {
+		t.Fatalf("MergePR = %v, want moor.ErrMergeTimeout", err)
+	}
 }

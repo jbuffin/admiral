@@ -249,6 +249,10 @@ func (c *Client) gh(ctx context.Context, args []string, tokenVar, token string) 
 	if timeout == 0 {
 		timeout = ghTimeout
 	}
+	return c.ghWithin(ctx, timeout, args, tokenVar, token)
+}
+
+func (c *Client) ghWithin(ctx context.Context, timeout time.Duration, args []string, tokenVar, token string) (stdout, stderr string, err error) {
 	bin, err := c.binary()
 	if err != nil {
 		return "", "", err

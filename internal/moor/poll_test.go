@@ -71,7 +71,7 @@ func TestPRServesItsChipsUnderTheNamesTheAPIDocuments(t *testing.T) {
 	}
 	var m map[string]any
 	_ = json.Unmarshal(b, &m)
-	want := map[string]any{"url": "u", "state": "OPEN", "review": "APPROVED", "checks": "SUCCESS", "mergeable": "MERGEABLE", "conflicts": false}
+	want := map[string]any{"url": "u", "state": "OPEN", "review": "APPROVED", "checks": "SUCCESS", "mergeable": "MERGEABLE", "conflicts": false, "ready": false}
 	if !reflect.DeepEqual(m, want) {
 		t.Errorf("a PR as JSON = %v, want %v", m, want)
 	}
@@ -102,6 +102,68 @@ func TestEndReasonSaysWhyEveryPRIsDone(t *testing.T) {
 			reason, ended := EndReason(c.prs)
 			if reason != c.reason || ended != c.ended {
 				t.Errorf("EndReason = %q, %v; want %q, %v", reason, ended, c.reason, c.ended)
+			}
+		})
+	}
+}
+
+func TestViewReadsAPRReadyOnlyWhenEveryConditionHolds(t *testing.T) {
+	const url = "https://github.com/acme/widgets/pull/7"
+	ready := Status{State: "OPEN", Review: "APPROVED", Checks: "SUCCESS", Mergeable: "MERGEABLE", MergeState: "CLEAN"}
+	if !View(url, ready, true).Ready {
+		t.Fatalf("an open, approved, green, mergeable, clean PR = %+v, want ready", View(url, ready, true))
+	}
+	for name, mod := range map[string]func(*Status){
+		"merged":              func(s *Status) { s.State = "MERGED" },
+		"closed":              func(s *Status) { s.State = "CLOSED" },
+		"no review decision":  func(s *Status) { s.Review = "" },
+		"review required":     func(s *Status) { s.Review = "REVIEW_REQUIRED" },
+		"changes requested":   func(s *Status) { s.Review = "CHANGES_REQUESTED" },
+		"no checks":           func(s *Status) { s.Checks = "" },
+		"checks pending":      func(s *Status) { s.Checks = "PENDING" },
+		"checks failing":      func(s *Status) { s.Checks = "FAILURE" },
+		"mergeable unknown":   func(s *Status) { s.Mergeable = "UNKNOWN" },
+		"conflicting":         func(s *Status) { s.Mergeable = "CONFLICTING" },
+		"merge state blocked": func(s *Status) { s.MergeState = "BLOCKED" },
+		"merge state behind":  func(s *Status) { s.MergeState = "BEHIND" },
+		"merge state dirty":   func(s *Status) { s.MergeState = "DIRTY" },
+		"merge state draft":   func(s *Status) { s.MergeState = "DRAFT" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			st := ready
+			mod(&st)
+			if got := View(url, st, true); got.Ready {
+				t.Errorf("View(%+v) = %+v, want not ready", st, got)
+			}
+		})
+	}
+	if View(url, Status{}, false).Ready {
+		t.Errorf("a PR GitHub answered NOT_FOUND for reads ready")
+	}
+}
+
+func TestStackReadyNamesTheHighestLayerWhoseLowerLayersAreAllReady(t *testing.T) {
+	pr := func(n string, ready bool) PR {
+		return PR{URL: "https://github.com/acme/widgets/pull/" + n, State: "OPEN", Ready: ready}
+	}
+	one, two, three := pr("1", true), pr("2", true), pr("3", true)
+	for name, c := range map[string]struct {
+		prs   []PR
+		ready bool
+		upTo  string
+	}{
+		"every layer ready":       {[]PR{one, two, three}, true, three.URL},
+		"a single ready PR":       {[]PR{one}, true, one.URL},
+		"the top layer not ready": {[]PR{one, two, pr("3", false)}, false, two.URL},
+		"the middle layer not":    {[]PR{one, pr("2", false), three}, false, one.URL},
+		"the lowest layer not":    {[]PR{pr("1", false), two, three}, false, ""},
+		"a single PR not ready":   {[]PR{pr("1", false)}, false, ""},
+		"no PRs":                  {nil, false, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ready, upTo := StackReady(c.prs)
+			if ready != c.ready || upTo != c.upTo {
+				t.Errorf("StackReady = (%v, %q), want (%v, %q)", ready, upTo, c.ready, c.upTo)
 			}
 		})
 	}

@@ -124,6 +124,7 @@ func (s *Service) PollMoored(ctx context.Context) {
 			}
 			s.decide(ctx, r, st)
 		}
+		s.fetchMergeMethods(ctx, fleet, gh, byFleet[fleet])
 	}
 	if changed {
 		s.broadcast()
@@ -363,4 +364,44 @@ func (s *Service) serveUnfollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeError(w, http.StatusConflict, "ship "+session+" is "+status(sess, time.Now())+", and only a moored ship can stop following reviews")
+}
+
+func methodKey(fleet, nameWithOwner string) string { return fleet + "|" + nameWithOwner }
+
+// repoOfPRs is the repository of a record's PRs, the first one's.
+func repoOfPRs(prs []string) (string, bool) {
+	if len(prs) == 0 {
+		return "", false
+	}
+	return moor.RepoOf(prs[0])
+}
+
+// fetchMergeMethods asks GitHub once for each repository's default merge method; a failed ask is tried again by the next poll.
+func (s *Service) fetchMergeMethods(ctx context.Context, fleet string, gh moor.GitHub, recs []moor.Record) {
+	asked := map[string]bool{}
+	for _, r := range recs {
+		repo, ok := repoOfPRs(r.PRs)
+		if !ok || asked[repo] || ctx.Err() != nil {
+			continue
+		}
+		asked[repo] = true
+		s.mooredMu.Lock()
+		_, known := s.mergeMethods[methodKey(fleet, repo)]
+		s.mooredMu.Unlock()
+		if known {
+			continue
+		}
+		if m, err := gh.DefaultMergeMethod(ctx, repo); err == nil {
+			s.setMergeMethod(fleet, repo, m)
+		}
+	}
+}
+
+func (s *Service) setMergeMethod(fleet, repo, method string) {
+	s.mooredMu.Lock()
+	defer s.mooredMu.Unlock()
+	if s.mergeMethods == nil {
+		s.mergeMethods = map[string]string{}
+	}
+	s.mergeMethods[methodKey(fleet, repo)] = method
 }

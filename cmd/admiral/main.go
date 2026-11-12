@@ -412,6 +412,7 @@ func serve(args []string) error {
 			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: campaignService}, campaignService, bridgeService, resourceService, lockRoute, chatService, convService, &shipdiff.Service{Ships: shipService},
 			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}, guardRoutes{guard}, remoteRoutes{&tailscale.Route{Config: cfg.Current, Set: cfg.SetRemote, Port: port, Local: auth.IsLocal, ListenErr: lis.Err, Explicit: lis.explicit}}},
 		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat", "conversation", "campaigns", "ship-input", "changes"}}
+	shipService.MergeGuard = s.MergeGuard
 	bg, stopBackground := context.WithCancel(context.Background())
 	// In the background: a harness that hangs on --version must not delay the server.
 	probeRunner.Refresh(bg, cfg.Current().Fleets)
