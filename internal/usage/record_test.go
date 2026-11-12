@@ -2,7 +2,7 @@ package usage
 
 import (
 	"encoding/json"
-	"strings"
+	"reflect"
 	"testing"
 )
 
@@ -17,14 +17,25 @@ func fieldsJSON(t *testing.T, fields map[string]any) string {
 
 func eq(t *testing.T, got map[string]any, want string) {
 	t.Helper()
-	var w any
+	var w, g any
 	if err := json.Unmarshal([]byte(want), &w); err != nil {
 		t.Fatalf("bad golden %s: %v", want, err)
 	}
-	canon, _ := json.Marshal(w)
-	if g := fieldsJSON(t, got); g != string(canon) {
-		t.Errorf("fields =\n%s\nwant\n%s", g, canon)
+	if err := json.Unmarshal([]byte(fieldsJSON(t, got)), &g); err != nil {
+		t.Fatal(err)
 	}
+	if !reflect.DeepEqual(g, w) {
+		t.Errorf("fields =\n%s\nwant\n%s", fieldsJSON(t, got), want)
+	}
+}
+
+func decoded(t *testing.T, fields map[string]any) map[string]any {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal([]byte(fieldsJSON(t, fields)), &m); err != nil {
+		t.Fatal(err)
+	}
+	return m
 }
 
 func claudeFigs() Figures {
@@ -67,19 +78,17 @@ func TestExitFieldsMarksIncompleteMoney(t *testing.T) {
 	f := claudeFigs()
 	f.Money.Incomplete = true
 	got := ExitFields("work", "claude", 0, &f, nil)
-	if !contains(fieldsJSON(t, got), `"incomplete":true`) {
+	if m, _ := decoded(t, got)["money"].(map[string]any); m["incomplete"] != true {
 		t.Errorf("fields = %s, want incomplete true", fieldsJSON(t, got))
 	}
 }
 
-func contains(s, sub string) bool { return strings.Contains(s, sub) }
-
 func TestExitFieldsRoundOnlyWhenMoored(t *testing.T) {
-	if s := fieldsJSON(t, ExitFields("work", "claude", 0, ptr(claudeFigs()), nil)); contains(s, `"round"`) {
-		t.Errorf("round 0 wrote a round: %s", s)
+	if m := decoded(t, ExitFields("work", "claude", 0, ptr(claudeFigs()), nil)); m["round"] != nil {
+		t.Errorf("round 0 wrote a round: %v", m)
 	}
-	if s := fieldsJSON(t, ExitFields("work", "claude", 3, ptr(claudeFigs()), nil)); !contains(s, `"round":3`) {
-		t.Errorf("round 3 is missing: %s", s)
+	if m := decoded(t, ExitFields("work", "claude", 3, ptr(claudeFigs()), nil)); m["round"] != 3.0 {
+		t.Errorf("round 3 is missing: %v", m)
 	}
 }
 
@@ -129,12 +138,10 @@ func TestExitFieldsCrewOfAnotherBasisAddsTokensNotMoney(t *testing.T) {
 func TestExitFieldsCodexCrewAddsTokensOnly(t *testing.T) {
 	crew := []Boat{{Name: "codey", Harness: "codex", Figures: ptr(codexFigs())}}
 	got := ExitFields("work", "claude", 0, ptr(claudeFigs()), crew)
-	s := fieldsJSON(t, got)
-	if !contains(s, `"tokens":{"input":7611,"output":9,"reasoning":0,"cache_read":24054,"cache_write":18024}`) ||
-		!contains(s, `"money":{"amount":0.00372082,"basis":"estimate","incomplete":false}`) ||
-		!contains(s, `"name":"codey","harness":"codex","tokens":{"input":7609,"output":5,"reasoning":0,"cache_read":12672,"cache_write":0},"money":null`) {
-		t.Errorf("fields = %s", s)
-	}
+	eq(t, got, `{"fleet":"work","harness":"claude",
+		"tokens":{"input":7611,"output":9,"reasoning":0,"cache_read":24054,"cache_write":18024},
+		"money":{"amount":0.00372082,"basis":"estimate","incomplete":false},
+		"crew":[{"name":"codey","harness":"codex","tokens":{"input":7609,"output":5,"reasoning":0,"cache_read":12672,"cache_write":0},"money":null}]}`)
 }
 
 // A Codex ship has no money of its own, so a crew boat's money is not promoted to the ship's.
@@ -156,9 +163,14 @@ func TestExitFieldsShipWithoutMoneyStaysNullWhateverItsCrewSpent(t *testing.T) {
 // Without its own figures the ship's totals are unknown, however much its crew used.
 func TestExitFieldsShipWithoutFiguresIsNullEvenWithCrewFigures(t *testing.T) {
 	crew := []Boat{{Name: "helper", Harness: "claude", Figures: ptr(claudeFigs())}}
-	got := ExitFields("work", "claude", 0, nil, crew)
-	s := fieldsJSON(t, got)
-	if !contains(s, `"tokens":null,"money":null`) || !contains(s, `"name":"helper"`) {
-		t.Errorf("fields = %s, want null totals and the boat still listed", s)
+	m := decoded(t, ExitFields("work", "claude", 0, nil, crew))
+	if v, has := m["tokens"]; !has || v != nil {
+		t.Errorf("tokens = %v, want null", v)
+	}
+	if v, has := m["money"]; !has || v != nil {
+		t.Errorf("money = %v, want null", v)
+	}
+	if boats, _ := m["crew"].([]any); len(boats) != 1 || boats[0].(map[string]any)["name"] != "helper" {
+		t.Errorf("crew = %v, want the boat still listed", m["crew"])
 	}
 }

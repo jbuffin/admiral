@@ -320,14 +320,13 @@ func TestOutcomeLogOfAnOrderShip(t *testing.T) {
 	} {
 		s := w.launch(map[string]any{"fleet": "u", "harness": c.harness, "dir": w.checkout("proj"), "skill": noSkill})
 		w.record(s.Session)
-		w.waitFile(s.Session, "cues-done")
-		w.touch(s.Session, "go")
+		w.touch(s.Session, "go") // the fake's wait cue passes at once; its usage cue runs first
 		w.waitEvent(s.Session, "ended", 1)
+		if exists(filepath.Join(w.rec, s.Session, "usage-error")) {
+			t.Fatalf("the %s fake could not write its usage line: %s", c.harness, w.readFile(filepath.Join(w.rec, s.Session, "usage-error")))
+		}
 		got := lastOf(w.waitEvent(s.Session, "usage", 1), "usage")
 		wantUsage(t, got, "u", c.harness, c.tokens, c.money)
-		if _, err := os.Stat(filepath.Join(w.rec, s.Session, "usage-error")); err == nil {
-			t.Errorf("the %s fake could not write its usage line", c.harness)
-		}
 		w.stayOneUsage(s.Session)
 	}
 }
