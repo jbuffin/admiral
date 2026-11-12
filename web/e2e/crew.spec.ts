@@ -82,8 +82,8 @@ test('on the iPad, a person reads the crew by layer, customizes a built-in, edit
   await skills.fill('review\nwrite-docs');
   await press(form.getByRole('button', { name: 'Save' }));
   await expect(form).toBeHidden();
-  await expect(main).toContainText('review');
-  await expect(main).toContainText('write-docs');
+  await expect(main.getByText('review', { exact: true })).toBeVisible();
+  await expect(main.getByText('write-docs', { exact: true })).toBeVisible();
 
   // Notes under ada: This fleet and one heading per repo. Edit a note inline.
   await expect(scope(/^This fleet\b/)).toContainText('ada reads the grammar first');
@@ -142,6 +142,7 @@ test('on the iPad, a person reads the crew by layer, customizes a built-in, edit
   await press(rename.getByRole('button', { name: 'Rename', exact: true }));
   await expect(rename).toBeHidden();
   await expect(fleet).toContainText('steward');
+  await open(fleet, 'Pick for the galley.', 'steward');
   await expect(main).toContainText('cook salts early');
   await expect(unclaimed).not.toContainText('cook salts early');
   await expect(unclaimed).toContainText('bosun ties a bowline');

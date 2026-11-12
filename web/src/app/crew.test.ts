@@ -47,6 +47,9 @@ describe('memberBody', () => {
     expect(body).toEqual({ role: 'implementer', skills: ['review', 'write-docs'], model: 'opus', harness: 'codex', 'pick-me-when': 'Pick me.', instructions: 'Work.' });
     expect(body).not.toHaveProperty('based-on');
   });
+  it('leaves based-on out for a built-in role even after Custom was picked and dropped', () => {
+    expect(memberBody(form({ role: 'reviewer', customRole: 'cartographer', basedOn: 'scribe' }))).not.toHaveProperty('based-on');
+  });
   it('sends a custom role with the built-in role it is based on', () => {
     const body = memberBody(form({ role: CUSTOM_ROLE, customRole: ' cartographer ', basedOn: 'scribe' }));
     expect(body).toMatchObject({ role: 'cartographer', 'based-on': 'scribe' });
