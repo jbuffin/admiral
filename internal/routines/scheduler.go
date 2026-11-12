@@ -2,6 +2,7 @@ package routines
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -36,10 +37,21 @@ type Chat interface {
 	Send(fleet, text string) error
 }
 
-// Proposer takes a run that needs the engineer's yes; u3 makes it an Inbox proposal.
+// Proposer takes a run that needs the engineer's yes and makes it an Inbox proposal that closes at expires.
 type Proposer interface {
-	Propose(fleet string, r Routine, t Trigger) error
+	Propose(fleet string, r Routine, t Trigger, expires time.Time) error
 }
+
+// Notifier hears each record of a routine whose Notify me is on, for the outcomes that push.
+type Notifier interface {
+	Notify(fleet string, r Routine, t Trigger)
+}
+
+// ErrOff is an Accept for a routine that is switched off; the proposal stays open until it expires.
+var ErrOff = errors.New("the routine is switched off")
+
+// ErrBusy is an Accept that found no room, or a ship still holding the routine's key; the proposal stays open.
+var ErrBusy = errors.New("the run has no room or its last ship is still here")
 
 const (
 	// lateRunWindow is how old a missed run may be and still run once on start.
@@ -62,7 +74,10 @@ type Scheduler struct {
 	Ships    Ships
 	Chat     Chat
 	Proposer Proposer
-	Zone     *time.Location // the zone a When is read in; main passes time.Local
+	Notifier Notifier
+	// HostKnown is false while the ships host cannot list ships; a nil one is always known.
+	HostKnown func() bool
+	Zone      *time.Location // the zone a When is read in; main passes time.Local
 	// Ready, when set, closes once the ships host knows the fleet; Run catches up only after it.
 	Ready <-chan struct{}
 
@@ -74,7 +89,25 @@ type Scheduler struct {
 	last    map[string]time.Time
 	waiting map[string]waitRun
 	watched map[string]watch
-	seeded  bool
+	// proposals is each routine's open proposal, so one nobody answered is recorded expired once.
+	proposals map[string]openProposal
+	// toPropose holds the proposals a tick made; they go to the Proposer after mu is released, because the Inbox
+	// takes its own lock and a launch from the Inbox takes mu.
+	toPropose []proposeJob
+	seeded    bool
+}
+
+type proposeJob struct {
+	fleet string
+	r     Routine
+	t     Trigger
+	until time.Time
+	now   time.Time
+}
+
+type openProposal struct {
+	fleet, trigger string
+	expires        time.Time
 }
 
 // waitRun is a run that found no room and is retried when something changes.
@@ -94,6 +127,7 @@ func (s *Scheduler) init() {
 	s.once.Do(func() {
 		s.wake = make(chan struct{}, 1)
 		s.last, s.waiting, s.watched = map[string]time.Time{}, map[string]waitRun{}, map[string]watch{}
+		s.proposals = map[string]openProposal{}
 	})
 }
 
@@ -223,6 +257,12 @@ func runsBetween(sched Schedule, base, now time.Time) []time.Time {
 // CatchUp handles the runs missed while the server was down: one late run under 12 hours old, `missed` records for the rest.
 func (s *Scheduler) CatchUp(ctx context.Context) error {
 	s.init()
+	err := s.catchUp(ctx)
+	s.handOff()
+	return err
+}
+
+func (s *Scheduler) catchUp(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.Clock.Now()
@@ -261,6 +301,12 @@ func (s *Scheduler) CatchUp(ctx context.Context) error {
 // Tick does everything due at Clock.Now(): routines whose time came, waiting runs, and the breaker's count.
 func (s *Scheduler) Tick(ctx context.Context) error {
 	s.init()
+	err := s.tick(ctx)
+	s.handOff()
+	return err
+}
+
+func (s *Scheduler) tick(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.Clock.Now()
@@ -288,8 +334,13 @@ func (s *Scheduler) Tick(ctx context.Context) error {
 			s.fire(ctx, fr.fleet, r, due, now)
 			continue
 		}
-		if w, ok := s.waiting[r.ID]; ok && retry {
-			s.fire(ctx, fr.fleet, r, w.due, now)
+		if w, ok := s.waiting[r.ID]; ok {
+			switch {
+			case now.Sub(w.due) >= lateRunWindow:
+				s.dropWait(r.ID, "it was 12 hours late")
+			case retry:
+				s.fire(ctx, fr.fleet, r, w.due, now)
+			}
 		}
 	}
 	for id := range s.waiting {
@@ -297,9 +348,23 @@ func (s *Scheduler) Tick(ctx context.Context) error {
 			s.dropWait(id, "the routine was turned off or deleted")
 		}
 	}
+	// after the runs above: an expiry record must not move the baseline a run is counted from
+	s.expireProposals(now)
 	// after the breaker's count above, so a failure counts from the next tick on
 	s.markEnded(now)
 	return nil
+}
+
+// expireProposals records each open proposal whose time has passed, once.
+func (s *Scheduler) expireProposals(now time.Time) {
+	for id, p := range s.proposals {
+		if now.Before(p.expires) || s.proposing(id) {
+			continue
+		}
+		delete(s.proposals, id)
+		s.record(p.fleet, Trigger{Routine: id, Outcome: Skipped, Tier: "T0", At: p.expires,
+			Reason: "proposal expired: nobody answered it before it closed"})
+	}
 }
 
 // dropWait ends a run that was still waiting for room and says so in the log.
@@ -334,6 +399,10 @@ func (s *Scheduler) seedWatch(now time.Time) {
 
 // markEnded turns the record of every watched launch whose ship ended failed into a failed one.
 func (s *Scheduler) markEnded(now time.Time) {
+	// while the host cannot list ships every key looks free, which would drop a real watch
+	if s.HostKnown != nil && !s.HostKnown() {
+		return
+	}
 	for id, w := range s.watched {
 		// session names are reused: only the ship that still holds this routine's key is this launch's
 		held, ok := s.Ships.Holder(routineKey(w.routine))
@@ -351,11 +420,47 @@ func (s *Scheduler) markEnded(now time.Time) {
 		case s.Ships.EndedFailed(w.session):
 			if err := s.Store.MarkFailed(w.fleet, id, "the ship ended failed"); err == nil || err == ErrNotFound {
 				delete(s.watched, id)
+				if err == nil {
+					s.notifyEnded(w, id)
+				}
 			}
 		case now.Sub(w.at) > watchFor:
 			delete(s.watched, id)
 		}
 	}
+}
+
+// notifyEnded tells the engineer a launched ship ended failed, when its routine asks to be heard.
+func (s *Scheduler) notifyEnded(w watch, id string) {
+	list, err := s.Store.List(w.fleet)
+	if err != nil {
+		return
+	}
+	if i := indexOf(list, w.routine); i >= 0 {
+		s.notify(w.fleet, list[i], Trigger{ID: id, Routine: w.routine, Outcome: Failed, Tier: "T0", Ship: w.session,
+			At: s.Clock.Now(), Reason: "the ship ended failed"})
+	}
+}
+
+// notify hands a record to the Notifier when the routine's Notify me is on.
+func (s *Scheduler) notify(fleet string, r Routine, t Trigger) {
+	switch t.Outcome {
+	case Launched, Proposed, Failed, Breaker:
+	default:
+		return
+	}
+	if r.Notify && s.Notifier != nil {
+		s.Notifier.Notify(fleet, r, t)
+	}
+}
+
+// recordFor writes a record of routine r and tells the Notifier about it.
+func (s *Scheduler) recordFor(fleet string, r Routine, rec Trigger) (Trigger, bool) {
+	saved, ok := s.record(fleet, rec)
+	if ok {
+		s.notify(fleet, r, saved)
+	}
+	return saved, ok
 }
 
 // trip sets Before acting to Ask first when the last launches in a row all failed or were undone.
@@ -384,7 +489,7 @@ count:
 	if err != nil {
 		return r
 	}
-	_, _ = s.Store.AppendTrigger(fleet, Trigger{Routine: r.ID, Outcome: Breaker, Tier: "T0", At: now,
+	s.recordFor(fleet, got, Trigger{Routine: r.ID, Outcome: Breaker, Tier: "T0", At: now,
 		Reason: fmt.Sprintf("%d launches in a row failed or were undone", run),
 		Action: "Before acting changed from Act to Ask first"})
 	return got
@@ -399,7 +504,7 @@ func (s *Scheduler) fire(ctx context.Context, fleet string, r Routine, due, now 
 		// a hand-edited or damaged file must not launch: only an explicit Act does
 		delete(s.waiting, r.ID)
 		rec.Outcome, rec.Reason = Failed, "before_acting is not valid"
-		s.record(fleet, rec)
+		s.recordFor(fleet, r, rec)
 		return
 	}
 	l := r.Do.Launch
@@ -419,19 +524,78 @@ func (s *Scheduler) fire(ctx context.Context, fleet string, r Routine, due, now 
 	rec.Action = describe(r)
 	switch Effective(r.Before, holdOn) {
 	case ReportOnly:
+		delete(s.waiting, r.ID)
 		rec.Outcome = Reported
-		s.record(fleet, rec)
+		s.recordFor(fleet, r, rec)
 	case AskFirst:
-		rec.Outcome = Proposed
-		if saved, ok := s.record(fleet, rec); ok && s.Proposer != nil {
-			_ = s.Proposer.Propose(fleet, r, saved)
-		}
+		delete(s.waiting, r.ID)
+		s.propose(fleet, r, rec, now)
 	default: // Act
 		if l == nil {
-			s.prompt(fleet, r, rec)
+			_ = s.prompt(fleet, r, rec)
 		} else {
-			s.launch(ctx, fleet, r, *l, rec, due)
+			_ = s.launch(ctx, fleet, r, *l, rec, due, false)
 		}
+	}
+}
+
+// propose records an Ask first run and queues it for the Proposer, which handOff calls once mu is free.
+func (s *Scheduler) propose(fleet string, r Routine, rec Trigger, now time.Time) {
+	rec.Outcome = Proposed
+	var next time.Time
+	if sched, err := ParseCron(r.When); err == nil {
+		next = sched.Next(now.In(s.zone()))
+	}
+	saved, ok := s.record(fleet, rec)
+	if !ok || s.Proposer == nil {
+		return
+	}
+	s.toPropose = append(s.toPropose, proposeJob{fleet, r, saved, ProposalExpiry(next, now), now})
+}
+
+func (s *Scheduler) proposing(id string) bool {
+	for _, j := range s.toPropose {
+		if j.r.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// handOff gives the queued proposals to the Proposer without holding mu, then closes each routine's previous open one.
+func (s *Scheduler) handOff() {
+	s.mu.Lock()
+	jobs := s.toPropose
+	s.toPropose = nil
+	s.mu.Unlock()
+	for _, j := range jobs {
+		if s.Proposer.Propose(j.fleet, j.r, j.t, j.until) != nil {
+			continue
+		}
+		s.mu.Lock()
+		if prev, ok := s.proposals[j.r.ID]; ok {
+			at := prev.expires
+			if at.After(j.now) {
+				at = j.now
+			}
+			s.record(prev.fleet, Trigger{Routine: j.r.ID, Outcome: Skipped, Tier: "T0", At: at,
+				Reason: "proposal expired: a newer run replaced it"})
+		}
+		s.proposals[j.r.ID] = openProposal{j.fleet, j.t.ID, j.until}
+		s.mu.Unlock()
+		s.notify(j.fleet, j.r, j.t)
+	}
+}
+
+// Dismiss records that the engineer dismissed a routine's open proposal, so its expiry writes nothing.
+func (s *Scheduler) Dismiss(fleet, routineID, triggerID string) {
+	s.init()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if p, ok := s.proposals[routineID]; ok && p.trigger == triggerID {
+		delete(s.proposals, routineID)
+		s.record(fleet, Trigger{Routine: routineID, Outcome: Skipped, Tier: "T0", At: s.Clock.Now(),
+			Reason: "proposal dismissed by the engineer"})
 	}
 }
 
@@ -442,40 +606,40 @@ func (s *Scheduler) record(fleet string, rec Trigger) (Trigger, bool) {
 	return saved, err == nil
 }
 
-func (s *Scheduler) prompt(fleet string, r Routine, rec Trigger) {
+func (s *Scheduler) prompt(fleet string, r Routine, rec Trigger) error {
 	delete(s.waiting, r.ID)
-	if err := s.Chat.Send(fleet, "[Routine: "+r.Name+"] "+r.Do.Prompt); err != nil {
+	err := s.Chat.Send(fleet, "[Routine: "+r.Name+"] "+r.Do.Prompt)
+	if err != nil {
 		rec.Outcome, rec.Reason = Failed, err.Error()
 	} else {
 		rec.Outcome = Launched
 	}
-	s.record(fleet, rec)
+	s.recordFor(fleet, r, rec)
+	return err
 }
 
-func (s *Scheduler) launch(ctx context.Context, fleet string, r Routine, l Launch, rec Trigger, due time.Time) {
-	fail := func(reason string) {
+// launch runs the fire-time gates and starts the ship. A run that finds no room waits, unless it is an accepted proposal: that refuses with ErrBusy.
+func (s *Scheduler) launch(ctx context.Context, fleet string, r Routine, l Launch, rec Trigger, due time.Time, accepted bool) error {
+	fail := func(reason string) error {
 		delete(s.waiting, r.ID)
 		rec.Outcome, rec.Reason = Failed, reason
-		s.record(fleet, rec)
+		s.recordFor(fleet, r, rec)
+		return errors.New(reason)
 	}
 	f, ok := s.Store.Fleets(fleet)
 	if !ok {
-		fail("the fleet is gone")
-		return
+		return fail("the fleet is gone")
 	}
 	// the gates are checked again now: a guard probe or the allowlist may have changed since the routine was saved
 	if err := autopilotgate.Check(s.Store.Home, f, l.Harness); err != nil {
-		fail(err.Error())
-		return
+		return fail(err.Error())
 	}
 	dock, ok := f.Harness(l.Harness)
 	if !ok {
-		fail(fmt.Sprintf("fleet %s has no %s dock", fleet, l.Harness))
-		return
+		return fail(fmt.Sprintf("fleet %s has no %s dock", fleet, l.Harness))
 	}
 	if err := launcher.AutopilotArgs(l.Harness, dock.Args, l.Args); err != nil {
-		fail("args are off the allowlist: " + err.Error())
-		return
+		return fail("args are off the allowlist: " + err.Error())
 	}
 	skill := l.Skill
 	if skill.Kind == "" {
@@ -488,18 +652,20 @@ func (s *Scheduler) launch(ctx context.Context, fleet string, r Routine, l Launc
 		RoutineKey: routineKey(r.ID), TriggerID: id,
 	})
 	switch {
+	case lerr != nil && lerr.Wait != "" && accepted:
+		return ErrBusy
 	case lerr != nil && lerr.Wait != "":
 		s.waiting[r.ID] = waitRun{fleet, due, lerr.Wait}
-		return
+		return nil
 	case lerr != nil:
-		fail(lerr.Msg)
-		return
+		return fail(lerr.Msg)
 	}
 	delete(s.waiting, r.ID)
 	rec.ID, rec.Outcome, rec.Ship = id, Launched, ref.Session
-	if saved, ok := s.record(fleet, rec); ok && ref.Session != "" {
+	if saved, ok := s.recordFor(fleet, r, rec); ok && ref.Session != "" {
 		s.watched[saved.ID] = watch{fleet: fleet, routine: r.ID, session: ref.Session, at: rec.At}
 	}
+	return nil
 }
 
 // describe says what a run would do, for a record's Action.
@@ -512,4 +678,43 @@ func describe(r Routine) string {
 		return fmt.Sprintf("launch %s in %s: %s", l.Harness, l.Dir, text)
 	}
 	return "send AdmiralBot a prompt"
+}
+
+// Accept launches the run a proposal asked for, through the gates of a scheduled launch, and never waits.
+func (s *Scheduler) Accept(ctx context.Context, fleet, routineID, triggerID string) (Trigger, error) {
+	s.init()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	list, err := s.Store.List(fleet)
+	if err != nil {
+		return Trigger{}, err
+	}
+	i := indexOf(list, routineID)
+	if i < 0 {
+		return Trigger{}, ErrNotFound
+	}
+	r := list[i]
+	if !r.Enabled {
+		return Trigger{}, ErrOff
+	}
+	now := s.Clock.Now()
+	rec := Trigger{Routine: r.ID, Tier: "T0", At: now, Via: ViaProposal, Action: describe(r)}
+	if l := r.Do.Launch; l != nil {
+		if _, held := s.Ships.Holder(routineKey(r.ID)); held {
+			return Trigger{}, ErrBusy
+		}
+		if err := s.launch(ctx, fleet, r, *l, rec, now, true); err != nil {
+			return Trigger{}, err
+		}
+	} else if err := s.prompt(fleet, r, rec); err != nil {
+		return Trigger{}, err
+	}
+	if p, ok := s.proposals[r.ID]; ok && p.trigger == triggerID {
+		delete(s.proposals, r.ID)
+	}
+	recs, err := s.Store.Recent(fleet, r.ID, 1)
+	if err != nil || len(recs) == 0 {
+		return Trigger{}, err
+	}
+	return recs[0], nil
 }

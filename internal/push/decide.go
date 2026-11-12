@@ -3,7 +3,8 @@ package push
 
 import (
 	"strings"
-	"unicode"
+
+	"github.com/jbuffin/admiral/internal/textsafe"
 )
 
 // Kind names an event. Only the kinds below ever push or alert; any other kind is counted and never heard.
@@ -114,8 +115,7 @@ func oneLine(s string) string {
 // clean drops control and bidi characters: the payload can show on a lock screen, where a reordering mark could dress one ask as another.
 func clean(s string) string {
 	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) || (r >= '\u200B' && r <= '\u200D') || r == '\uFEFF' || r == '\u2028' || r == '\u2029' || r == '\u200E' || r == '\u200F' ||
-			(r >= '\u202A' && r <= '\u202E') || (r >= '\u2066' && r <= '\u2069') {
+		if textsafe.Hidden(r) {
 			return -1
 		}
 		return r

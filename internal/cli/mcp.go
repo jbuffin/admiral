@@ -183,6 +183,24 @@ func shipPost(rest string, withText bool) func(*mcpClient, json.RawMessage) (str
 	}
 }
 
+// fleetPath is the path of one of this chat's fleet routes; the fleet comes from the chat's environment, never the model.
+func (c *mcpClient) fleetPath(rest string) (string, error) {
+	if c.fleet == "" {
+		return "", errors.New("this chat has no fleet")
+	}
+	return "/api/fleets/" + url.PathEscape(c.fleet) + rest, nil
+}
+
+func fleetGet(rest string) func(*mcpClient, json.RawMessage) (string, error) {
+	return func(c *mcpClient, _ json.RawMessage) (string, error) {
+		path, err := c.fleetPath(rest)
+		if err != nil {
+			return "", err
+		}
+		return c.get(path)
+	}
+}
+
 func plainGet(path string) func(*mcpClient, json.RawMessage) (string, error) {
 	return func(c *mcpClient, _ json.RawMessage) (string, error) { return c.get(path) }
 }
@@ -269,6 +287,42 @@ var mcpTools = []mcpTool{
 		obj([]string{"session"}, map[string]any{"session": str("the moored ship's session name"), "text": str("optional text for the new round")}), shipPost("/wake", true)},
 	{"stop_ship", "Stop a ship.", obj([]string{"session"}, map[string]any{"session": str("the ship's session name")}), shipPost("/stop", false)},
 	{"dismiss_ship", "Dismiss an anchored ship.", obj([]string{"session"}, map[string]any{"session": str("the ship's session name")}), shipPost("/dismiss", false)},
+	{"list_routines", "List this fleet's routines: when each runs, its mode, and whether it is on.", obj(nil, nil), fleetGet("/routines")},
+	{"turn_routine_off", "Turn one of this fleet's routines off. Turning one on, saving, editing or deleting a routine is the engineer's.",
+		obj([]string{"routine"}, map[string]any{"routine": str("the routine's id")}),
+		func(c *mcpClient, raw json.RawMessage) (string, error) {
+			var a struct{ Routine string }
+			if err := json.Unmarshal(raw, &a); err != nil {
+				return "", err
+			}
+			if a.Routine == "" {
+				return "", errors.New("routine is required")
+			}
+			path, err := c.fleetPath("/routines/" + url.PathEscape(a.Routine) + "/off")
+			if err != nil {
+				return "", err
+			}
+			return c.post(path, nil)
+		}},
+	{"hold_fire_on", "Turn Hold fire on, so this fleet's routines propose instead of acting; with all_fleets, every fleet's. Only the engineer turns it off.",
+		obj(nil, map[string]any{"all_fleets": flag01("true to turn Hold fire on for every fleet, not only this one")}),
+		func(c *mcpClient, raw json.RawMessage) (string, error) {
+			var a struct {
+				AllFleets bool `json:"all_fleets"`
+			}
+			if err := json.Unmarshal(raw, &a); err != nil {
+				return "", err
+			}
+			if a.AllFleets {
+				return c.post("/api/hold-fire/on", nil)
+			}
+			path, err := c.fleetPath("/hold-fire/on")
+			if err != nil {
+				return "", err
+			}
+			return c.post(path, nil)
+		}},
+	{"read_hold_fire", "Read whether Hold fire is on for this fleet.", obj(nil, nil), fleetGet("/hold-fire")},
 	{"ask_question", "Ask the engineer a question in the chat and wait for the answer. If it is still unanswered after the wait, the result gives the question's id: call again with wait_id to keep waiting.",
 		obj(nil, map[string]any{
 			"title":        str("the question's title"),

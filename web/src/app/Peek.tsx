@@ -9,7 +9,7 @@ import { rowShip, rowVerb } from './inboxRow';
 import { discardFold, lockedBy, submitFold } from './itemActions';
 import { CrewMemberBody, CrewNotesBody, isCrewKind, type MemberStep, readCrew, useCrewNotes } from './PeekCrew';
 import { crewRemoveFold } from './crewItems';
-import { blankReview, FindingsBody, useFindings, Failure, RemoveRow, ReviewBody, type ReviewUi, useActing } from './PeekItem';
+import { blankReview, FindingsBody, RoutineProposalBody, useFindings, Failure, RemoveRow, ReviewBody, type ReviewUi, useActing } from './PeekItem';
 import { MergeBody } from './PeekMerge';
 import { PeekQuestions } from './PeekQuestions';
 import { EVENTS } from './PeekItem';
@@ -100,7 +100,7 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
   const kind = entry.item?.kind;
   const crewNoteIds = (kind === 'crew_notes' ? crewNotes.item.notes : crew.notes).map((n) => n.id);
   // Withdrawing one chat question is not specified, so only a ship's item can leave unanswered.
-  const removable = item && kind !== 'notice' && !chat;
+  const removable = item && kind !== 'notice' && kind !== 'routine_proposal' && !chat;
   const mine = (a: KeyAct) => {
     if (a.kind === 'remove' && removable && !acting.busy) {
       acting.clear();
@@ -152,6 +152,8 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
         />
       ) : kind === 'findings' ? (
         <FindingsBody entry={entry} acting={acting} state={findings} />
+      ) : kind === 'routine_proposal' ? (
+        <RoutineProposalBody entry={entry} acting={acting} />
       ) : kind === 'crew_notes' ? (
         <CrewNotesBody acting={acting} state={crewNotes} decided={() => setRemoving(false)} />
       ) : kind === 'crew_member' ? (
@@ -166,7 +168,7 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
           fold={kind === 'crew_member' ? (data: { file_removed?: boolean }) => crewRemoveFold(data, crew.member) : undefined}
         />
       ) : null}
-      {kind === 'review' || kind === 'findings' || removing || (isCrewKind(kind) && !noteShown) ? <Failure message={acting.error} /> : null}
+      {kind === 'review' || kind === 'findings' || kind === 'routine_proposal' || removing || (isCrewKind(kind) && !noteShown) ? <Failure message={acting.error} /> : null}
     </div>
   );
   return (

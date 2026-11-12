@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/routines"
 	"github.com/jbuffin/admiral/internal/ships"
@@ -36,10 +37,14 @@ func (r routineShips) EndedFailed(session string) bool {
 	return ok && (sh.ExitCode != nil && *sh.ExitCode != 0 || sh.ExitSignal != nil)
 }
 
-// noProposer drops a proposal: the Inbox side takes it over later, and the `proposed` record already says what happened.
-type noProposer struct{}
+// routineProposer files an Ask first run in the Inbox.
+type routineProposer struct{ inbox *inbox.Service }
 
-func (noProposer) Propose(string, routines.Routine, routines.Trigger) error { return nil }
+func (p routineProposer) Propose(fleet string, r routines.Routine, t routines.Trigger, expires time.Time) error {
+	_, err := p.inbox.PublishRoutineProposal(inbox.RoutineProposal{Fleet: fleet, Routine: r.ID, RoutineName: r.Name,
+		Trigger: t.ID, Action: t.Action, ExpiresAt: expires})
+	return err
+}
 
 // wakeOn calls fn each time the channel a resource set's channel closes, until ctx ends.
 func wakeOn(ctx context.Context, changed func() <-chan struct{}, fn func()) {

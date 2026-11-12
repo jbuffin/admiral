@@ -53,6 +53,10 @@ type Service struct {
 	TypeResume func(session, text string) (afloat, typed bool, err error)
 	// LaunchProposal starts a feedback round for a wake proposal.
 	LaunchProposal LaunchProposalFunc
+	// LaunchRoutine runs a routine proposal.
+	LaunchRoutine LaunchRoutineFunc
+	// DismissRoutine hears that a routine proposal was dismissed, after the item is answered.
+	DismissRoutine func(p RoutineProposal)
 	// ChatQuestions lists the waiting AdmiralBot chat questions, named and tagged with their fleet.
 	ChatQuestions func() []Item
 	// AnswerChat answers a chat question where the chat keeps it; the inbox has no copy.
@@ -80,9 +84,20 @@ func (s *Service) List() []Item {
 	s.mu.Lock()
 	items := append([]Item{}, s.items...)
 	s.mu.Unlock()
+	now := time.Now()
+	items = slices.DeleteFunc(items, func(it Item) bool {
+		p, ok := it.RoutineProposal()
+		return ok && p.expired(now)
+	})
 	for i := range items {
 		if items[i].Session == AdmiralSession {
 			items[i].Name = "Admiral"
+			if p, ok := items[i].RoutineProposal(); ok {
+				items[i].Fleet = p.Fleet
+				if f, ok := s.fleetOf(p.Fleet); ok {
+					items[i].FleetName, items[i].FleetColor = f.Name, f.Color
+				}
+			}
 			if o, ok := items[i].CrewObject(); ok && s.Fleet != nil {
 				if f, ok := s.Fleet(o.Fleet); ok {
 					items[i].Fleet, items[i].FleetName, items[i].FleetColor = f.Key, f.Name, f.Color
@@ -199,7 +214,7 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 	it, err := s.open(session, id)
 	if err == nil && it.Kind != KindQuestion {
-		err = invalid("item %s is a %s: answer it with %s", id, it.Kind, map[string]string{KindReview: "submit or discard", KindFindings: "findings", KindCrewNotes: "crew-notes", KindCrewMember: "crew-member"}[it.Kind])
+		err = invalid("item %s is a %s: answer it with %s", id, it.Kind, map[string]string{KindReview: "submit or discard", KindFindings: "findings", KindCrewNotes: "crew-notes", KindCrewMember: "crew-member", KindRoutineProposal: "launch or dismiss", KindWakeProposal: "launch or dismiss"}[it.Kind])
 	}
 	if err == nil {
 		var req QuestionRequest

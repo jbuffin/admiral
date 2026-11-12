@@ -116,7 +116,11 @@ func (s *Service) serveLaunchProposal(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, 1<<20, &req) {
 		return
 	}
-	ship, err := s.LaunchProposalItem(r.Context(), id, req.Events)
+	launch := func() (any, error) { return s.LaunchProposalItem(r.Context(), id, req.Events) }
+	if s.isRoutineProposal(id) {
+		launch = func() (any, error) { return s.LaunchRoutineItem(r.Context(), id) }
+	}
+	ship, err := launch()
 	if err != nil {
 		respondProposal(w, id, err)
 		return
@@ -130,7 +134,11 @@ func (s *Service) serveDismissProposal(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, 1<<20, &req) {
 		return
 	}
-	if err := s.DismissProposal(id); err != nil {
+	dismiss := s.DismissProposal
+	if s.isRoutineProposal(id) {
+		dismiss = s.DismissRoutineProposal
+	}
+	if err := dismiss(id); err != nil {
 		respondProposal(w, id, err)
 		return
 	}

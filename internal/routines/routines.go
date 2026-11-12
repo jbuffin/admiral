@@ -15,11 +15,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/capabilities"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/launcher"
+	"github.com/jbuffin/admiral/internal/textsafe"
 )
 
 // Mode is a routine's Before acting setting.
@@ -59,13 +61,15 @@ type Do struct {
 }
 
 type Routine struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Enabled   bool      `json:"enabled"`
-	When      string    `json:"when"` // a 5-field cron expression in the server's local time zone
-	Do        Do        `json:"do"`
-	Before    Mode      `json:"before_acting"`
-	Notify    bool      `json:"notify"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
+	When    string `json:"when"` // a 5-field cron expression in the server's local time zone
+	Do      Do     `json:"do"`
+	Before  Mode   `json:"before_acting"`
+	Notify  bool   `json:"notify"`
+	// OffBy says who last turned the routine off when it was not the engineer.
+	OffBy     string    `json:"off_by,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -182,6 +186,9 @@ func (s *Store) validate(f config.Fleet, r Routine) error {
 	if strings.TrimSpace(r.Name) == "" {
 		return invalidf("name is required")
 	}
+	if err := checkName(r.Name); err != nil {
+		return err
+	}
 	sched, err := ParseCron(r.When)
 	if err != nil {
 		return invalidf("when: %v", err)
@@ -205,6 +212,22 @@ func (s *Store) validate(f config.Fleet, r Routine) error {
 		return nil
 	}
 	return s.validateLaunch(f, *r.Do.Launch)
+}
+
+// maxNameRunes caps a name, which AdmiralBot reads through its tools and in the [Routine: <name>] chat prefix.
+const maxNameRunes = 80
+
+// checkName refuses what could pass for the end of the chat prefix or a line of its own.
+func checkName(name string) error {
+	if utf8.RuneCountInString(name) > maxNameRunes {
+		return invalidf("name is longer than %d characters", maxNameRunes)
+	}
+	for _, c := range name {
+		if textsafe.Hidden(c) || c == '[' || c == ']' {
+			return invalidf("name can't hold control or invisible characters or square brackets")
+		}
+	}
+	return nil
 }
 
 func (s *Store) validateLaunch(f config.Fleet, l Launch) error {
@@ -262,7 +285,7 @@ func (s *Store) Create(fleet string, r Routine) (Routine, error) {
 	if err != nil {
 		return Routine{}, err
 	}
-	r.ID, r.CreatedAt, r.UpdatedAt = newID(), s.now(), s.now()
+	r.ID, r.OffBy, r.CreatedAt, r.UpdatedAt = newID(), "", s.now(), s.now()
 	if err := s.save(fleet, append(list, r)); err != nil {
 		return Routine{}, err
 	}
@@ -288,7 +311,7 @@ func (s *Store) Update(fleet, id string, r Routine) (Routine, error) {
 		return Routine{}, err
 	}
 	// only the on and off routes change the switch
-	r.ID, r.Enabled, r.CreatedAt, r.UpdatedAt = id, list[i].Enabled, list[i].CreatedAt, s.now()
+	r.ID, r.Enabled, r.OffBy, r.CreatedAt, r.UpdatedAt = id, list[i].Enabled, list[i].OffBy, list[i].CreatedAt, s.now()
 	list[i] = r
 	if err := s.save(fleet, list); err != nil {
 		return Routine{}, err
@@ -315,6 +338,11 @@ func (s *Store) Delete(fleet, id string) error {
 
 // SetEnabled flips the switch without validating the rest: a routine that was saved can always be turned off.
 func (s *Store) SetEnabled(fleet, id string, on bool) (Routine, error) {
+	return s.SetEnabledBy(fleet, id, on, "")
+}
+
+// SetEnabledBy is SetEnabled that stamps who turned the routine off when it was not the engineer.
+func (s *Store) SetEnabledBy(fleet, id string, on bool, by string) (Routine, error) {
 	if _, err := s.fleet(fleet); err != nil {
 		return Routine{}, err
 	}
@@ -329,10 +357,26 @@ func (s *Store) SetEnabled(fleet, id string, on bool) (Routine, error) {
 		return Routine{}, ErrNotFound
 	}
 	list[i].Enabled, list[i].UpdatedAt = on, s.now()
+	list[i].OffBy = ""
+	if !on && by != Engineer {
+		list[i].OffBy = by
+	}
 	if err := s.save(fleet, list); err != nil {
 		return Routine{}, err
 	}
 	return list[i], nil
+}
+
+// ViaProposal is the Via of a launch that came from an accepted proposal.
+const ViaProposal = "proposal"
+
+// ProposalExpiry is when a proposal made at now closes: at the next run or after 24 hours, whichever comes first.
+func ProposalExpiry(next, now time.Time) time.Time {
+	day := now.Add(24 * time.Hour)
+	if next.IsZero() || next.After(day) {
+		return day
+	}
+	return next
 }
 
 func indexOf(list []Routine, id string) int {
@@ -361,18 +405,20 @@ const (
 
 // Trigger is one trigger-log record.
 type Trigger struct {
-	ID       string    `json:"id"`
-	At       time.Time `json:"at"`
-	Routine  string    `json:"routine"`
-	Outcome  Outcome   `json:"outcome"`
-	Tier     string    `json:"tier"`
-	Event    string    `json:"event,omitempty"`
-	Sender   string    `json:"sender,omitempty"`
-	Rule     string    `json:"rule,omitempty"`
-	Verdict  string    `json:"verdict,omitempty"`
-	Reason   string    `json:"reason,omitempty"`
-	Action   string    `json:"action,omitempty"`
-	Ship     string    `json:"ship,omitempty"`
+	ID      string    `json:"id"`
+	At      time.Time `json:"at"`
+	Routine string    `json:"routine"`
+	Outcome Outcome   `json:"outcome"`
+	Tier    string    `json:"tier"`
+	Event   string    `json:"event,omitempty"`
+	Sender  string    `json:"sender,omitempty"`
+	Rule    string    `json:"rule,omitempty"`
+	Verdict string    `json:"verdict,omitempty"`
+	Reason  string    `json:"reason,omitempty"`
+	Action  string    `json:"action,omitempty"`
+	Ship    string    `json:"ship,omitempty"`
+	// Via marks a launch that came from an accepted proposal.
+	Via      string    `json:"via,omitempty"`
 	Undone   bool      `json:"undone,omitempty"`
 	UndoneAt time.Time `json:"undone_at,omitzero"`
 }

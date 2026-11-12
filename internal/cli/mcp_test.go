@@ -215,8 +215,9 @@ func TestAMalformedLineDoesNotKillTheServer(t *testing.T) {
 // The tools by name, with the route each calls. Anything not in this list is a tool the Never list forbids or one
 // nobody specified: approvals, typing mid-turn, config, sources, settings and Preferences have none.
 var wantTools = []string{
-	"add_order", "answer_item", "ask_question", "dismiss_ship", "launch_ship", "list_campaigns", "list_inbox",
-	"list_ships", "list_sources", "next_prompt", "read_conversation", "read_outcomes", "stop_ship", "wake_ship",
+	"add_order", "answer_item", "ask_question", "dismiss_ship", "hold_fire_on", "launch_ship", "list_campaigns", "list_inbox",
+	"list_routines", "list_ships", "list_sources", "next_prompt", "read_conversation", "read_hold_fire", "read_outcomes",
+	"stop_ship", "turn_routine_off", "wake_ship",
 }
 
 func TestToolsListNamesEveryToolWithAnInputSchemaAndNoMore(t *testing.T) {
@@ -341,6 +342,11 @@ func TestEachToolSendsItsRouteBodyAndTheActorHeader(t *testing.T) {
 		{"dismiss_ship", `{"session":"saltpaw"}`, "POST", "/api/ships/saltpaw/dismiss", "", nil},
 		{"next_prompt", `{"session":"saltpaw","text":"now the docs"}`, "POST", "/api/ships/saltpaw/next", "", map[string]any{"text": "now the docs"}},
 		{"wake_ship", `{"session":"saltpaw","text":"also the docs"}`, "POST", "/api/ships/saltpaw/wake", "", map[string]any{"text": "also the docs"}},
+		{"list_routines", `{}`, "GET", "/api/fleets/work/routines", "", nil},
+		{"turn_routine_off", `{"routine":"r-1"}`, "POST", "/api/fleets/work/routines/r-1/off", "", nil},
+		{"hold_fire_on", `{}`, "POST", "/api/fleets/work/hold-fire/on", "", nil},
+		{"hold_fire_on", `{"all_fleets":true}`, "POST", "/api/hold-fire/on", "", nil},
+		{"read_hold_fire", `{}`, "GET", "/api/fleets/work/hold-fire", "", nil},
 	} {
 		t.Run(c.tool, func(t *testing.T) {
 			a := newStandIn(t, func(mcpReq) (int, string) { return 200, `{"ok":true}` })
