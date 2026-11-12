@@ -455,3 +455,10 @@ func withVia(fields map[string]any, via string) map[string]any {
 	fields["via"] = via
 	return fields
 }
+
+func viaOfCtx(ctx context.Context) string {
+	if _, ok := actor.FleetOf(ctx); ok {
+		return actor.Via
+	}
+	return ""
+}

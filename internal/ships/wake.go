@@ -37,7 +37,7 @@ func (s *Service) Wake(ctx context.Context, session, text string) (Ship, *launch
 		}
 		return rec.Resume
 	}
-	return s.wake(session, prompt, "hand", "", s.handRoundStart)
+	return s.wake(session, prompt, "hand", "", viaOfCtx(ctx), s.handRoundStart)
 }
 
 // FeedbackRound relaunches a moored ship, unattended, for the feedback on one of its PRs. The text reaches
@@ -69,7 +69,7 @@ func (s *Service) feedbackRound(session, pr, feedback string, was *moor.WakeStat
 		}
 		return undo, nil
 	}
-	return s.wake(session, prompt, "feedback", pr, write)
+	return s.wake(session, prompt, "feedback", pr, "", write)
 }
 
 // handRoundStart is the hand wake's hook: it opens the round's window, and gives a PR with no cursor the old
@@ -147,7 +147,7 @@ func (s *Service) removeWake(name string) {
 
 // wake is the one relaunch: a moored ship's session is recreated under its name with its record's fleet,
 // harness, model, skill, checkout and resources, and the record then hands over to tmux.
-func (s *Service) wake(session string, prompt func(moor.Record) string, by, pr string, beforeLaunch func(rec moor.Record, dir string) (undoFunc, error)) (Ship, *launcher.Error) {
+func (s *Service) wake(session string, prompt func(moor.Record) string, by, pr, wokenVia string, beforeLaunch func(rec moor.Record, dir string) (undoFunc, error)) (Ship, *launcher.Error) {
 	if !s.startWaking(session) {
 		return Ship{}, &launcher.Error{Status: http.StatusConflict, Msg: "a wake of ship " + session + " is already in progress", Wait: WaitInFlight}
 	}
@@ -166,7 +166,7 @@ func (s *Service) wake(session string, prompt func(moor.Record) string, by, pr s
 	req := launcher.Request{Fleet: rec.Fleet, Harness: rec.Harness, Dir: rec.Checkout, Model: rec.Model,
 		Skill: launcher.Skill{Kind: rec.Skill.Kind, Name: rec.Skill.Name}, Source: rec.Source, OrderID: rec.OrderID,
 		Title: rec.Title, URL: rec.URL, Issues: rec.Issues, Panel: rec.Panel, Resources: rec.Resources,
-		Name: rec.Name, Session: rec.Session, Round: round, Prompt: prompt(rec), Autopilot: by == "feedback" || by == "proposal", By: by, PR: pr, Via: rec.Via, ChatKey: rec.Chat}
+		Name: rec.Name, Session: rec.Session, Round: round, Prompt: prompt(rec), Autopilot: by == "feedback" || by == "proposal", By: by, PR: pr, WokenVia: wokenVia, Via: rec.Via, ChatKey: rec.Chat}
 	var undo undoFunc
 	// The launcher runs this under its lock, just before it makes the session: a Dismiss or a merged PR that
 	// ended the mooring while this wake waited wins, and from here on an ending loses to the wake.

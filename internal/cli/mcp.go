@@ -1,6 +1,472 @@
 package cli
 
-// MCP runs `admiral mcp`: AdmiralBot's MCP server over stdio.
+import (
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"strings"
+	"sync"
+	"time"
+)
+
+// mcpLatest is the protocol revision the server speaks when the client asks for one it doesn't know.
+const mcpLatest = "2025-06-18"
+
+var mcpRevisions = map[string]bool{"2024-11-05": true, "2025-03-26": true, mcpLatest: true}
+
+// mcpAskWait is how long ask_question waits for an answer before it says so and gives the id back.
+const mcpAskWait = 100
+
+type rpcRequest struct {
+	ID     json.RawMessage `json:"id"`
+	Method string          `json:"method"`
+	Params json.RawMessage `json:"params"`
+}
+
+type rpcError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+type rpcResponse struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id"`
+	Result  any             `json:"result,omitempty"`
+	Error   *rpcError       `json:"error,omitempty"`
+}
+
+// httpError is the Admiral server's refusal, kept with its status so a tool can act on a 409.
+type httpError struct {
+	Status int
+	Msg    string
+}
+
+func (e *httpError) Error() string { return e.Msg }
+
+// mcpClient is a thin client of the Admiral server on loopback, acting as AdmiralBot.
+type mcpClient struct {
+	token, port, fleet string
+
+	mu   sync.Mutex
+	base string // set once the server on the port proved to be this home's
+}
+
+// server finds the server the way the CLI does, and only then lets the token go to it: another Admiral may hold the port.
+func (c *mcpClient) server() (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.base != "" {
+		return c.base, nil
+	}
+	dir, err := admiralHome()
+	if err != nil {
+		return "", err
+	}
+	base, _, err := serverFor(c.port, dir)
+	if err != nil {
+		return "", err
+	}
+	c.base = base
+	return base, nil
+}
+
+// do sends one request with the actor token and returns the body of a 2xx answer.
+func (c *mcpClient) do(method, path string, body any, timeout time.Duration) ([]byte, error) {
+	base, err := c.server()
+	if err != nil {
+		return nil, err
+	}
+	var rd io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		rd = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, base+path, rd)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Admiral-Actor", c.token)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := (&http.Client{Timeout: timeout}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode/100 != 2 {
+		return nil, &httpError{resp.StatusCode, errorText(bytes.TrimSpace(b))}
+	}
+	return b, nil
+}
+
+func (c *mcpClient) get(path string) (string, error) {
+	b, err := c.do("GET", path, nil, 20*time.Second)
+	return strings.TrimSpace(string(b)), err
+}
+
+func (c *mcpClient) post(path string, body any) (string, error) {
+	b, err := c.do("POST", path, body, 20*time.Second)
+	return strings.TrimSpace(string(b)), err
+}
+
+type mcpTool struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	InputSchema map[string]any `json:"inputSchema"`
+	run         func(c *mcpClient, args json.RawMessage) (string, error)
+}
+
+func obj(required []string, props map[string]any) map[string]any {
+	s := map[string]any{"type": "object", "properties": props}
+	if len(required) > 0 {
+		s["required"] = required
+	}
+	return s
+}
+
+func str(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
+
+func num(desc string) map[string]any { return map[string]any{"type": "integer", "description": desc} }
+
+func flag01(desc string) map[string]any {
+	return map[string]any{"type": "boolean", "description": desc}
+}
+
+// sessionPath is the path of a ship route; the session comes from the model, so it is escaped.
+func sessionPath(session, rest string) (string, error) {
+	if session == "" {
+		return "", errors.New("session is required")
+	}
+	return "/api/ships/" + url.PathEscape(session) + rest, nil
+}
+
+// shipPost is a tool that posts to one of a ship's routes.
+func shipPost(rest string, withText bool) func(*mcpClient, json.RawMessage) (string, error) {
+	return func(c *mcpClient, raw json.RawMessage) (string, error) {
+		var a struct{ Session, Text string }
+		if err := json.Unmarshal(raw, &a); err != nil {
+			return "", err
+		}
+		path, err := sessionPath(a.Session, rest)
+		if err != nil {
+			return "", err
+		}
+		var body any
+		if withText {
+			body = map[string]string{"text": a.Text}
+		}
+		return c.post(path, body)
+	}
+}
+
+func plainGet(path string) func(*mcpClient, json.RawMessage) (string, error) {
+	return func(c *mcpClient, _ json.RawMessage) (string, error) { return c.get(path) }
+}
+
+var mcpTools = []mcpTool{
+	{"list_ships", "List the ships of this fleet with their status, what they are working on and what they need.", obj(nil, nil), plainGet("/api/ships")},
+	{"read_conversation", "Read a ship's conversation: what the engineer and the agent said, its tool calls and its pending questions.",
+		obj([]string{"session"}, map[string]any{"session": str("the ship's session name")}),
+		func(c *mcpClient, raw json.RawMessage) (string, error) {
+			var a struct{ Session string }
+			if err := json.Unmarshal(raw, &a); err != nil {
+				return "", err
+			}
+			path, err := sessionPath(a.Session, "/conversation")
+			if err != nil {
+				return "", err
+			}
+			return c.get(path)
+		}},
+	{"read_outcomes", "Read the history of this fleet's ships: launched, stopped, resumed, dismissed and so on, oldest first.",
+		obj(nil, map[string]any{"ship": str("only this ship's records"), "limit": num("how many of the latest records to return")}),
+		func(c *mcpClient, raw json.RawMessage) (string, error) {
+			var a struct {
+				Ship  string
+				Limit int
+			}
+			if err := json.Unmarshal(raw, &a); err != nil {
+				return "", err
+			}
+			q := url.Values{}
+			if a.Ship != "" {
+				q.Set("ship", a.Ship)
+			}
+			if a.Limit > 0 {
+				q.Set("limit", fmt.Sprint(a.Limit))
+			}
+			path := "/api/outcomes"
+			if len(q) > 0 {
+				path += "?" + q.Encode()
+			}
+			return c.get(path)
+		}},
+	{"list_inbox", "List the Inbox: what is waiting for the engineer (questions, proposals, reports).", obj(nil, nil), plainGet("/api/inbox")},
+	{"list_sources", "List the order sources with their panels and orders.", obj(nil, nil), plainGet("/api/sources")},
+	{"list_campaigns", "List the campaigns.", obj(nil, nil), plainGet("/api/campaigns")},
+	{"launch_ship", "Launch a ship, from an order (source and order_id) or freeform text. A Commodore launch runs in autopilot mode unless with_me is true; the result says which mode the ship runs in.",
+		obj([]string{"harness"}, map[string]any{
+			"harness":      str("the harness: claude, codex or copilot"),
+			"dir":          str("a checkout or search root of the fleet"),
+			"clone":        flag01("clone the order's repo instead of naming dir"),
+			"clone_repo":   str("the host/owner/repo the clone is for"),
+			"skill":        str("commodore, none, or a skill's name"),
+			"text":         str("the prompt, for a freeform launch"),
+			"source":       str("an order source's key, for a launch from an order"),
+			"order_id":     str("the order's id"),
+			"crew":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "crew members to pin, on a Commodore launch"},
+			"issues":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "GitHub issue URLs the ship claims"},
+			"chat_message": str("the id of the chat message this launch answers"),
+			"anyway":       flag01("launch again for a chat message that already has a ship"),
+			"with_me":      flag01("true when the engineer said to work on it with them: the ship runs interactive, not in autopilot"),
+		}), launchShip},
+	{"add_order", "Add an order to a source's panel, for a source that supports adding.",
+		obj([]string{"source", "panel", "text"}, map[string]any{"source": str("the order source's key"), "panel": str("the panel's id"), "text": str("the order's text")}),
+		addOrder},
+	{"answer_item", "Answer a question in the Inbox with the engineer's choice.",
+		obj([]string{"session", "id", "answers"}, map[string]any{
+			"session": str("the Inbox item's ship or chat session"), "id": str("the item's id"),
+			"answers": map[string]any{"type": "object", "description": "by question id: {\"selected\": [labels], \"text\": ...}"}}),
+		func(c *mcpClient, raw json.RawMessage) (string, error) {
+			var a struct {
+				Session, ID string
+				Answers     json.RawMessage
+			}
+			if err := json.Unmarshal(raw, &a); err != nil {
+				return "", err
+			}
+			if a.Session == "" || a.ID == "" {
+				return "", errors.New("session and id are required")
+			}
+			return c.post("/api/inbox/"+url.PathEscape(a.Session)+"/"+url.PathEscape(a.ID)+"/answer", map[string]json.RawMessage{"answers": a.Answers})
+		}},
+	{"next_prompt", "Give a ship whose turn has ended its next prompt. Refused while the ship is mid-turn or waiting on something else; a moored ship takes wake_ship.",
+		obj([]string{"session", "text"}, map[string]any{"session": str("the ship's session name"), "text": str("the prompt")}), shipPost("/next", true)},
+	{"wake_ship", "Wake a moored ship, optionally with text after its resume prompt.",
+		obj([]string{"session"}, map[string]any{"session": str("the moored ship's session name"), "text": str("optional text for the new round")}), shipPost("/wake", true)},
+	{"stop_ship", "Stop a ship.", obj([]string{"session"}, map[string]any{"session": str("the ship's session name")}), shipPost("/stop", false)},
+	{"dismiss_ship", "Dismiss an anchored ship.", obj([]string{"session"}, map[string]any{"session": str("the ship's session name")}), shipPost("/dismiss", false)},
+	{"ask_question", "Ask the engineer a question in the chat and wait for the answer. If it is still unanswered after the wait, the result gives the question's id: call again with wait_id to keep waiting.",
+		obj(nil, map[string]any{
+			"title":        str("the question's title"),
+			"questions":    map[string]any{"type": "array", "description": "each {id, text, multi, options: [{label, description}]}", "items": map[string]any{"type": "object"}},
+			"wait_id":      str("the id of a question already asked, to wait on it instead of asking again"),
+			"wait_seconds": num("how long to wait for the answer"),
+		}), askQuestion},
+}
+
+func addOrder(c *mcpClient, raw json.RawMessage) (string, error) {
+	var a struct{ Source, Panel, Text string }
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return "", err
+	}
+	if a.Source == "" || a.Panel == "" || strings.TrimSpace(a.Text) == "" {
+		return "", errors.New("source, panel and text are required")
+	}
+	return c.post("/api/sources/"+url.PathEscape(a.Source)+"/orders", map[string]string{"panel": a.Panel, "text": a.Text})
+}
+
+func launchShip(c *mcpClient, raw json.RawMessage) (string, error) {
+	var a struct {
+		Harness, Dir, Skill, Text, Source, CloneRepo, ChatMessage string
+		OrderID                                                   string `json:"order_id"`
+		Clone, Anyway                                             bool
+		WithMe                                                    bool `json:"with_me"`
+		Crew, Issues                                              []string
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return "", err
+	}
+	kind, name := "none", ""
+	switch a.Skill {
+	case "", "none":
+	case "commodore":
+		kind = "commodore"
+	default:
+		kind, name = "skill", a.Skill
+	}
+	autopilot := kind == "commodore" && !a.WithMe
+	body := map[string]any{
+		"fleet": c.fleet, "harness": a.Harness, "dir": a.Dir, "text": a.Text, "skill": map[string]string{"kind": kind, "name": name},
+		"source": a.Source, "order_id": a.OrderID, "clone": a.Clone, "clone_repo": a.CloneRepo, "crew": a.Crew, "issues": a.Issues,
+		"chat_message": a.ChatMessage, "anyway": a.Anyway, "autopilot": autopilot,
+	}
+	out, err := c.do("POST", "/api/ships", body, 120*time.Second)
+	reason := ""
+	var he *httpError
+	// Autopilot at its cap is the one refusal worked around: a launch on the engineer's current instruction is not blocked by it.
+	if errors.As(err, &he) && autopilot && he.Status == http.StatusConflict && strings.Contains(he.Msg, "autopilot is at its cap") {
+		reason = he.Msg + ", so the ship runs with the engineer instead"
+		body["autopilot"] = false
+		autopilot = false
+		out, err = c.do("POST", "/api/ships", body, 120*time.Second)
+	}
+	if err != nil {
+		return "", err
+	}
+	mode := "interactive"
+	if autopilot {
+		mode = "autopilot"
+	}
+	res := map[string]any{"mode": mode, "launched": json.RawMessage(bytes.TrimSpace(out))}
+	if reason != "" {
+		res["reason"] = reason
+	}
+	b, err := json.Marshal(res)
+	return string(b), err
+}
+
+func askQuestion(c *mcpClient, raw json.RawMessage) (string, error) {
+	var a struct {
+		Title       string
+		Questions   json.RawMessage
+		WaitID      string `json:"wait_id"`
+		WaitSeconds int    `json:"wait_seconds"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return "", err
+	}
+	id := a.WaitID
+	if id == "" {
+		// The fleet comes from the token, so the body names none.
+		out, err := c.post("/api/chat/questions", map[string]json.RawMessage{"title": mustMarshal(a.Title), "questions": a.Questions})
+		if err != nil {
+			return "", err
+		}
+		var made struct{ ID string }
+		if json.Unmarshal([]byte(out), &made) != nil || made.ID == "" {
+			return "", errors.New("the question was sent but the server gave no id")
+		}
+		id = made.ID
+	}
+	wait := a.WaitSeconds
+	if wait <= 0 || wait > mcpAskWait+10 {
+		wait = mcpAskWait
+	}
+	out, err := c.do("GET", "/api/chat/questions/"+url.PathEscape(id)+"/answer?wait="+fmt.Sprint(wait), nil, time.Duration(wait+15)*time.Second)
+	if err != nil {
+		return "", err
+	}
+	var got struct {
+		State  string
+		Answer json.RawMessage
+	}
+	if err := json.Unmarshal(out, &got); err != nil {
+		return "", err
+	}
+	switch got.State {
+	case "answered":
+		return string(got.Answer), nil
+	case "withdrawn":
+		return "The question " + id + " was withdrawn: the engineer started a new chat. Ask again if it still matters.", nil
+	}
+	return "Still waiting for the engineer's answer to question " + id + ". Call ask_question with wait_id " + id + " to keep waiting.", nil
+}
+
+func mustMarshal(v any) json.RawMessage { b, _ := json.Marshal(v); return b }
+
+// MCP serves the Model Context Protocol over stdio as AdmiralBot: JSON-RPC 2.0, one message a line.
 func MCP(args []string, std IO) error {
-	return nil
+	if len(args) > 0 {
+		return usagef("%s", Usage("mcp"))
+	}
+	token := os.Getenv("ADMIRAL_ACTOR_TOKEN")
+	if token == "" {
+		return usagef("admiral mcp is AdmiralBot's tool server: ADMIRAL_ACTOR_TOKEN is not set")
+	}
+	c := &mcpClient{token: token, port: defaultPort(), fleet: os.Getenv("ADMIRAL_CHAT_FLEET")}
+	var out sync.Mutex
+	send := func(r rpcResponse) {
+		r.JSONRPC = "2.0"
+		b, err := json.Marshal(r)
+		if err != nil {
+			return
+		}
+		out.Lock()
+		defer out.Unlock()
+		std.Out.Write(append(b, '\n'))
+	}
+	in := bufio.NewReaderSize(std.In, 64<<10)
+	for {
+		line, err := in.ReadBytes('\n')
+		if line = bytes.TrimSpace(line); len(line) > 0 {
+			serveRPC(c, line, send)
+		}
+		if err != nil {
+			return nil
+		}
+	}
+}
+
+var nullID = json.RawMessage("null")
+
+func serveRPC(c *mcpClient, line []byte, send func(rpcResponse)) {
+	var req rpcRequest
+	if err := json.Unmarshal(line, &req); err != nil || req.Method == "" {
+		send(rpcResponse{ID: nullID, Error: &rpcError{-32700, "the line is not a JSON-RPC request"}})
+		return
+	}
+	if req.ID == nil { // a notification gets no reply
+		return
+	}
+	reply := func(result any) { send(rpcResponse{ID: req.ID, Result: result}) }
+	fail := func(code int, msg string) { send(rpcResponse{ID: req.ID, Error: &rpcError{code, msg}}) }
+	switch req.Method {
+	case "initialize":
+		var p struct {
+			ProtocolVersion string `json:"protocolVersion"`
+		}
+		_ = json.Unmarshal(req.Params, &p)
+		version := mcpLatest
+		if mcpRevisions[p.ProtocolVersion] {
+			version = p.ProtocolVersion
+		}
+		reply(map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}},
+			"serverInfo": map[string]string{"name": "admiral", "version": "1"}})
+	case "ping":
+		reply(map[string]any{})
+	case "tools/list":
+		reply(map[string]any{"tools": mcpTools})
+	case "tools/call":
+		var p struct {
+			Name      string          `json:"name"`
+			Arguments json.RawMessage `json:"arguments"`
+		}
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			fail(-32602, "the call's params are not valid")
+			return
+		}
+		for _, t := range mcpTools {
+			if t.Name != p.Name {
+				continue
+			}
+			args := p.Arguments
+			if len(args) == 0 || string(args) == "null" {
+				args = json.RawMessage("{}")
+			}
+			text, err := t.run(c, args)
+			if err != nil {
+				text = err.Error()
+			}
+			reply(map[string]any{"content": []map[string]string{{"type": "text", "text": text}}, "isError": err != nil})
+			return
+		}
+		fail(-32602, "unknown tool "+p.Name)
+	default:
+		fail(-32601, "method not found: "+req.Method)
+	}
 }

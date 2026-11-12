@@ -887,7 +887,7 @@ func (s *Service) launched(req launcher.Request, got *launcher.Launched, panel s
 		if req.PR != "" {
 			fields["pr"] = req.PR
 		}
-		s.record(outcomes.Record{Ship: got.Session, Event: "woken", Fields: fields}, nil)
+		s.record(outcomes.Record{Ship: got.Session, Event: "woken", Fields: withVia(fields, req.WokenVia)}, nil)
 		s.track(got.Session)
 		return
 	}
