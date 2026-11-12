@@ -388,7 +388,7 @@ button.pill { cursor: pointer; min-height: 32px; }
 .view-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--color-line); }
 .view-tab { min-height: var(--shape-min-touch-target); padding: 0 14px; color: var(--color-text2); border-bottom: 2px solid transparent; }
 .view-tab[aria-selected='true'] { color: var(--color-text); font-weight: 600; border-bottom-color: var(--color-accent); }
-.view-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; padding-top: 12px; }
+.view-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; padding-top: 12px; }
 .view-panel.terminal { padding-top: 0; }
 .term-host { position: relative; flex: 1; min-height: 240px; overflow: hidden; background: var(--color-term); border-radius: var(--shape-radius-md); }
 .term-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
@@ -401,7 +401,7 @@ button.pill { cursor: pointer; min-height: 32px; }
 .term-box .xterm { padding: 8px 12px; }
 .term-box .xterm-viewport { background-color: var(--color-term) !important; }
 
-.convo { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; overflow-y: auto; user-select: text; -webkit-user-select: text; }
+.convo { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; min-width: 0; overflow-y: auto; user-select: text; -webkit-user-select: text; }
 .convo-older { align-self: center; }
 .convo-card { padding: 16px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-lg); display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .convo-card-title { margin: 0; font-weight: 600; }
@@ -423,7 +423,7 @@ button.pill { cursor: pointer; min-height: 32px; }
 .md input[type='checkbox'] { margin: 0 6px 0 0; vertical-align: middle; }
 .md-table { max-width: 100%; margin: 8px 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .md table { border-collapse: collapse; font-size: var(--font-size-meta); }
-.md th, .md td { padding: 5px 10px; border: 1px solid var(--color-line2); vertical-align: top; }
+.md th, .md td { min-width: 6em; overflow-wrap: normal; padding: 5px 10px; border: 1px solid var(--color-line2); vertical-align: top; }
 .md th { background: var(--color-sel); font-weight: 600; }
 /* One palette from color.terminal.*, on --color-term, which is dark in both themes. */
 .md pre .hljs-keyword, .md pre .hljs-selector-tag, .md pre .hljs-built_in, .md pre .hljs-type, .md pre .hljs-section, .md pre .hljs-tag { color: var(--color-terminal-tool); }
@@ -481,7 +481,7 @@ button.pill { cursor: pointer; min-height: 32px; }
 /* Message box: under the conversation, above the on-screen keyboard's scroll. */
 .ship-view-head .stop-ship { margin-left: auto; flex: none; }
 .stop-backdrop .line { margin: 4px 0 8px; }
-.convo-area { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.convo-area { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
 @media (min-width: 641px) {
   .stop-backdrop .sheet { width: 520px; max-width: 100%; padding-bottom: 16px; border-radius: var(--shape-radius-lg); }
 }
