@@ -740,3 +740,32 @@ button.pill { cursor: pointer; min-height: 32px; }
 .toast-name { font-weight: 600; }
 .toast-line { color: var(--color-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .toast-dismiss { min-width: var(--shape-min-touch-target); min-height: var(--shape-min-touch-target); font-size: 20px; }
+
+.stage { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.stage > .panel { flex: 1; min-height: 0; }
+.phone .stage { flex: 1; }
+.holdfire-banner {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;
+  margin: 8px 8px 0 0; padding: 8px 14px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md);
+  background: var(--color-sel); color: var(--color-text);
+}
+.phone .holdfire-banner { margin: 0 8px 8px; }
+.order-view-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.routines-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 12px; }
+.routines-head h1 { margin: 0; }
+.holdfire-toggles, .routine-switches { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; }
+.holdfire-toggle, .routine-switch { display: inline-flex; align-items: center; gap: 10px; min-height: var(--shape-min-touch-target); }
+.routine-form { display: flex; flex-direction: column; gap: 12px; max-width: 640px; }
+.routine-form fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.routine-form legend { padding: 0; margin-bottom: 6px; color: var(--color-text2); font-size: var(--font-size-meta); }
+.seg-opt { display: inline-flex; align-items: center; gap: 8px; min-height: var(--shape-min-touch-target); padding: 0 14px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); }
+.seg-opt.on { background: var(--color-sel); }
+.routine-launch { display: flex; flex-direction: column; gap: 12px; }
+.routine-actions { display: flex; gap: 10px; }
+.routine-list, .run-list { list-style: none; margin: 0; padding: 0; }
+.crew-item.off .crew-name { color: var(--color-muted); }
+.routine-runs { margin-top: 24px; }
+.run-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: var(--shape-min-touch-target); border-bottom: 1px solid var(--color-line); }
+.run-row a { display: inline-flex; align-items: center; min-height: var(--shape-min-touch-target); text-decoration: underline; }
+.run-time { color: var(--color-muted); font-size: var(--font-size-meta); }
+.run-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-muted); }

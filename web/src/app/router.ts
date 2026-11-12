@@ -178,6 +178,8 @@ export const routinePath = (id: string) => `/app/routines/${encodeURIComponent(i
 
 export const routineNewPath = '/app/routines/new';
 
+export const routineCreating = (path: string) => routinePath('new') === path.replace(/\/$/, '');
+
 /** The routine a detail path names, if any; null for the list and for the new-routine path. */
 export function routineOf(path: string): string | null {
   const [id, key, ...rest] = segments(path);

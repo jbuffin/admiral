@@ -12,6 +12,7 @@ import { entryAge, fleetLabel, rowShip, rowVerb } from './inboxRow';
 import { go, loc, peekOf, peekPath, type PeekTarget, shipPath, surfacePath } from './router';
 import { inboxItems, inboxLoaded, ships, shipsLoaded } from './shipsLink';
 import { emptyLine, type Surface } from './surfaces';
+import { noticeEntryLinks } from './routines';
 
 const ANSWER = new Set(['question', 'stop']);
 
@@ -91,6 +92,13 @@ export function Row({ e, now, phone, selected, fold, peekHref }: { e: Entry; now
           {open ? (
             <>
               <p class="inbox-body">{e.item?.notice?.body ?? ''}</p>
+              {noticeEntryLinks(e.item?.notice).map((l) => (
+                <p key={l.path} class="inbox-body">
+                  <a class="btn" href={l.path} onClick={(ev) => { if (ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return; ev.preventDefault(); const [path, q] = l.path.split('?'); go(path, q ? `?${q}` : ''); }}>
+                    {l.label}
+                  </a>
+                </p>
+              ))}
               <div class="inbox-send-row inbox-body">
                 <button type="button" class="btn" disabled={dismissing} onClick={() => void dismiss()}>
                   Dismiss

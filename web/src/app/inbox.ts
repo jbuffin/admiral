@@ -20,7 +20,7 @@ export interface InboxItem {
   question?: { questions: InboxQuestion[] };
   review?: { pr_url?: string; review_id?: number | string; summary?: string };
   findings?: { pr_url?: string; cards?: unknown };
-  notice?: { body?: string };
+  notice?: { body?: string; entries?: { key: string; name: string; panel: string }[] };
   routine_proposal?: { fleet?: string; routine?: string; routine_name?: string; trigger?: string; action?: string; expires_at?: string };
   crew_notes?: unknown;
   crew_member?: unknown;
