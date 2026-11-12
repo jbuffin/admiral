@@ -141,6 +141,6 @@ func (s *session) runServe() error {
 		fmt.Fprintf(s.io.Out, "[failed] %v\n", err)
 		return errTailscaleStopped
 	}
-	s.serve = false
+	s.serve, s.served = false, true
 	return nil
 }

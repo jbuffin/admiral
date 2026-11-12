@@ -4,6 +4,7 @@
 #   <call>.exit, <call>.err   a non-zero exit code and its stderr (<call> is status, serve or servebg)
 #   sleep                     seconds to hang before answering any call (one process, like a real hang)
 #   servebg.sleep             seconds to hang before answering `serve --bg ...` only
+#   servebg.delay             seconds to wait before `serve --bg ...` answers as it would otherwise
 #   servebg.out               printed to stdout first by `serve --bg ...`, before it hangs or exits non-zero
 # Every call appends its argv to $FAKETS_DIR/calls. Any other argv exits 2, so a stray call fails loudly.
 # A successful `serve --bg --https=N http://127.0.0.1:P` makes serve.json proxy that host:N to P, as the real CLI would.
@@ -16,6 +17,7 @@ case "$*" in
 "serve --bg "*)
 	[ -f "$d/servebg.out" ] && cat "$d/servebg.out"
 	if [ -f "$d/servebg.sleep" ]; then exec sleep "$(cat "$d/servebg.sleep")"; fi
+	[ -f "$d/servebg.delay" ] && sleep "$(cat "$d/servebg.delay")"
 	f=servebg ;;
 *) echo "faketailscale: unsupported call: $*" >&2; exit 2 ;;
 esac

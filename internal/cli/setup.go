@@ -102,7 +102,11 @@ func setup(args []string, std IO) error {
 				return err
 			}
 			if !ok {
-				fmt.Fprintln(std.Out, "Nothing changed.")
+				if s.served {
+					fmt.Fprintln(std.Out, "tailscale serve was set up, but config.json was not written, so Tailscale mode stays off.")
+				} else {
+					fmt.Fprintln(std.Out, "Nothing changed.")
+				}
 				return nil
 			}
 		}
@@ -167,6 +171,7 @@ type session struct {
 	touched []string
 	remote  *remoteAsk // nil when the person asked for nothing under remote
 	serve   bool       // serve still has to be set up
+	served  bool       // setup ran tailscale serve
 	log     []answered // what was answered, to plan again on a changed file
 	in      *bufio.Reader
 }

@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 // `admiral setup` turns Tailscale mode on through a fake tailscale CLI: checks, the CT warning, serve, then the config.
@@ -201,6 +202,43 @@ func TestSetupStopsWhenTheCTWarningIsDeclined(t *testing.T) {
 		t.Errorf("serve ran after the warning was declined: %q", got)
 	}
 	s.requireNoConfig()
+}
+
+// Serve runs only after the config write is confirmed: a no there leaves both untouched.
+func TestSetupRunsNoServeWhenTheWriteIsDeclined(t *testing.T) {
+	t.Parallel()
+	s := newSetupRig(t)
+	r := s.run("\ny\ny\nn\n")
+	s.expectExit(r, 0, "interactive setup, no at Write config.json?")
+	if got := s.serveCalls(); len(got) != 0 {
+		t.Errorf("serve ran after the write was declined: %q", got)
+	}
+	s.requireNoConfig()
+}
+
+// When config.json changes while serve is being set up and the replanned write is declined, setup says serve was set up.
+func TestSetupSaysServeRanWhenTheReplannedWriteIsDeclined(t *testing.T) {
+	t.Parallel()
+	s := newSetupRig(t)
+	s.ts.put("servebg.delay", "1")
+	go func() {
+		for i := 0; i < 100; i++ {
+			if len(s.serveCalls()) > 0 {
+				s.writeRaw(filepath.Join(s.home, "config.json"), `{"version":1,"fleets":{},"remote":{"allowedLogins":["other@example.com"]}}`, 0o600)
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}()
+	r := s.run("\ny\ny\ny\nn\n")
+	s.expectExit(r, 0, "setup, then no to the replanned write")
+	if len(s.serveCalls()) != 1 {
+		t.Fatalf("serve calls = %q", s.serveCalls())
+	}
+	out := strings.ToLower(r.stdout)
+	if strings.Contains(out, "nothing changed") || !strings.Contains(out, "serve was set up") {
+		t.Errorf("want a line saying serve was set up and config.json was not written, not Nothing changed:\n%s", r.stdout)
+	}
 }
 
 // A failed check stops setup with what to fix: nothing is written and serve never runs.
