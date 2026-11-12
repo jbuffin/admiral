@@ -43,6 +43,7 @@ export interface Ship {
   moored_at?: string;
   polled_at?: string;
   stale?: boolean;
+  no_resume?: boolean;
   prs?: MooredPR[];
   url?: string;
   // Every issue a slice ship holds, `url` first; a single-issue ship omits it.

@@ -7,7 +7,8 @@ import { Icon } from './Icon';
 import { Preferences } from './Preferences';
 import { Sheet } from './Sheet';
 import { GROUP_TITLES, groupShips, shipRowAge } from './shipList';
-import { prChips, prLabel, staleNote } from './moored';
+import { rowButtons } from './moored';
+import { MooredPRs } from './MooredPRs';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
 import { ships, shipsLoaded, sources } from './shipsLink';
@@ -79,27 +80,6 @@ function useNow() {
   return now;
 }
 
-function MooredPRs({ ship, now }: { ship: Ship; now: number }) {
-  const note = staleNote(ship, now);
-  return (
-    <>
-      {(ship.prs ?? []).map((pr) => (
-        <span key={pr.url} class="ship-pr">
-          <a class="pr-link" href={pr.url} target="_blank" rel="noreferrer">
-            {prLabel(pr.url)}
-          </a>
-          {prChips(pr).map((c) => (
-            <span key={c.text} class={`chip chip-${c.tone}`}>
-              {c.text}
-            </span>
-          ))}
-        </span>
-      ))}
-      {note ? <span class="ship-tail">{note}</span> : null}
-    </>
-  );
-}
-
 function MooredActions({ ship, onError }: { ship: Ship; onError: (e: string) => void }) {
   const [busy, setBusy] = useState('');
   const act = async (route: string) => {
@@ -112,12 +92,16 @@ function MooredActions({ ship, onError }: { ship: Ship; onError: (e: string) => 
       setBusy('');
     }
   };
+  const off = rowButtons(ship, busy !== '');
   return (
     <div class="ship-actions">
-      <button type="button" class="btn" disabled={busy !== ''} onClick={() => act('dismiss')}>
+      <button type="button" class="btn" disabled={off.wake} onClick={() => act('wake')}>
+        Wake
+      </button>
+      <button type="button" class="btn" disabled={off.others} onClick={() => act('dismiss')}>
         Dismiss
       </button>
-      <button type="button" class="btn" disabled={busy !== ''} onClick={() => act('unfollow')}>
+      <button type="button" class="btn" disabled={off.others} onClick={() => act('unfollow')}>
         Don't follow reviews
       </button>
     </div>
@@ -135,13 +119,24 @@ function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
         <span class="ship-bar" style={{ background: bar }} aria-hidden="true" />
         <Flag harness={ship.harness} size="row" />
         <div class="ship-main">
-          <span class="ship-name">{ship.name}</span>
+          <a
+            class="ship-name ship-name-link"
+            href={shipPath(ship.session) + search}
+            onClick={(e) => {
+              if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+              e.preventDefault();
+              go(shipPath(ship.session), search);
+            }}
+          >
+            {ship.name}
+          </a>
           {ship.order_id ? (
             <span class="ship-order">
               <span class="mono">{ship.order_id}</span> {ship.title}
             </span>
           ) : null}
           {ship.tail ? <span class="ship-tail">{ship.tail}</span> : null}
+          {rowButtons(ship, false).note ? <span class="ship-tail">{rowButtons(ship, false).note}</span> : null}
           <MooredPRs ship={ship} now={now} />
           <MooredActions ship={ship} onError={setError} />
         </div>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Item } from './api';
-import { boxState, bubblesShowing, snapshotOf } from './messageBox';
+import { boxState, bubblesShowing, snapshotOf, wakeRefused } from './messageBox';
 
 const exit = (status: 'needs_you' | 'underway' | 'anchored' | 'sailing_off', exit_code: number | null = null, exit_signal: string | null = null) => ({ status, exit_code, exit_signal });
 const user = (id: string, text: string): Item => ({ id, kind: 'user', text });
@@ -24,6 +24,24 @@ describe('boxState', () => {
 
   it('is disabled while the ship sails off', () => {
     expect(boxState(exit('sailing_off', 0)).enabled).toBe(false);
+  });
+});
+
+describe('boxState on a moored ship', () => {
+  const moored = (extra: { no_resume?: boolean } = {}) => ({ status: 'moored' as const, exit_code: null, exit_signal: null, ...extra });
+
+  it('takes a message, and says that sending it wakes the ship', () => {
+    expect(boxState(moored())).toEqual({ enabled: true, placeholder: 'Wake the ship with this message' });
+  });
+
+  it('is off with the reason when the ship has no valid resume text', () => {
+    const state = boxState(moored({ no_resume: true }));
+    expect(state.enabled).toBe(false);
+    expect(state.note).toMatch(/resume/i);
+  });
+
+  it('still takes a message from a ship whose poll failed, since waking needs no GitHub', () => {
+    expect(boxState({ ...moored(), stale: true } as Parameters<typeof boxState>[0]).enabled).toBe(true);
   });
 });
 
@@ -63,5 +81,17 @@ describe('bubblesShowing', () => {
 
   it('goes on the answer when the ship has no conversation', () => {
     expect(ids(bubblesShowing([send(1, null), send(2, null, true)], [], false))).toEqual([1]);
+  });
+});
+
+describe('wakeRefused', () => {
+  it('brings the typed text back to an empty box with the route message and turns the box on', () => {
+    expect(wakeRefused({ text: '' }, 'check the docs', 'ship is not moored')).toEqual({ waking: false, error: 'ship is not moored', text: 'check the docs' });
+  });
+  it('keeps whatever was typed meanwhile', () => {
+    expect(wakeRefused({ text: 'newer' }, 'older', 'no')).toEqual({ waking: false, error: 'no' });
+  });
+  it('has no text to restore for a Wake with none', () => {
+    expect(wakeRefused({ text: '' }, undefined, 'no')).toEqual({ waking: false, error: 'no' });
   });
 });

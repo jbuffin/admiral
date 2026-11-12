@@ -220,17 +220,127 @@ export function addGitHubSource(a: Admiral) {
 /** Start environment for a moored journey: LIVE_ENV's hour-long sail-off delay would also keep the ship from mooring. */
 export const mooringEnv = (a: Admiral) => ({ ...withFakeGh(a), ADMIRAL_SAIL_OFF_DELAY: '200ms' });
 
-/** Launches a ship whose harness waits, then exits 0 with a report naming the PR: Admiral moors it. */
-export async function launchMooredShip(a: Admiral, prNumber: number): Promise<LaunchedShip> {
+/** The resume text a moored ship's report carries unless a test says otherwise: a skill's own resume invocation. */
+export const RESUME = '/commodore resume run-7';
+
+/** Launches a ship whose harness waits, then exits 0 with a report naming the PR: Admiral moors it. `resume` is the report's resume text. */
+export async function launchMooredShip(a: Admiral, prNumber: number, opts: { resume?: string } = {}): Promise<LaunchedShip> {
   const ship = await launchShip(a, { fleet: 'zulu', harness: 'claude', cue: 'wait go\nexit 0\n' });
   const rec = join(a.home, 'rec', ship.session);
   await expect.poll(() => existsSync(join(rec, 'env'))).toBe(true);
   const report = /^ADMIRAL_REPORT=(.*)$/m.exec(readFileSync(join(rec, 'env'), 'utf8'))?.[1];
   expect(report, 'the harness env names a report path').toBeTruthy();
-  writeFileSync(report!, JSON.stringify({ version: 2, result: 'done', why: 'PR opened', prs: [{ url: `${PR_BASE}/${prNumber}`, closes: [] }], resume: 'resume it' }));
+  writeFileSync(report!, JSON.stringify({ version: 2, result: 'done', why: 'PR opened', prs: [{ url: `${PR_BASE}/${prNumber}`, closes: [] }], resume: opts.resume ?? RESUME }));
   writeFileSync(join(rec, 'go'), '');
   await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status, { timeout: 30_000 }).toBe('moored');
   return ship;
+}
+
+/** Readies a moored ship's harness for its wake: the cue that made it exit is gone, and so are the old recordings the fake harness would reuse. */
+export function readyToWake(a: Admiral, ship: LaunchedShip) {
+  rmSync(join(a.home, 'cue'), { force: true });
+  rmSync(join(a.home, 'rec', ship.session), { recursive: true, force: true });
+}
+
+/** The prompt a woken ship's harness started with: its last argument, which the fake harness records once it is up. */
+export async function wokenPrompt(a: Admiral, ship: LaunchedShip): Promise<string> {
+  await expect.poll(() => existsSync(join(a.home, 'rec', ship.session, 'recorded')), { timeout: 30_000 }).toBe(true);
+  return readFileSync(join(a.home, 'rec', ship.session, 'argv'), 'utf8').split('\0').slice(0, -1).pop()!;
+}
+
+/** The ship view's Wake button, and the box's placeholder before and after a wake. */
+export const wakeButton = (page: Page) => page.getByRole('main').getByRole('button', { name: 'Wake', exact: true });
+export const WAKE_PLACEHOLDER = 'Wake the ship with this message';
+
+/**
+ * Wake by hand from the Ships screen: Wake on a moored row starts a round with the resume text alone, the row leaves the Moored group
+ * and the same ship is underway. `press` is the click or tap.
+ */
+export async function wakeFromTheShell(page: Page, a: Admiral, press: (l: Locator) => Promise<void>) {
+  const main = page.getByRole('main');
+  const group = main.getByRole('region', { name: /^Moored/ });
+  const row = group.getByRole('listitem');
+
+  prAnswer(a, 7, { state: 'OPEN' });
+  const ship = await launchMooredShip(a, 7);
+  await page.goto(a.url + 'app/ships?fleet=zulu');
+  const wake = row.filter({ hasText: ship.name }).getByRole('button', { name: 'Wake', exact: true });
+  await expect(wake).toBeEnabled();
+  expect((await wake.boundingBox())!.height, 'Wake height').toBeGreaterThanOrEqual(44);
+  await expect(wake).toHaveText('Wake');
+
+  readyToWake(a, ship);
+  const woke = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === `/api/v1/ships/${ship.session}/wake`);
+  await press(wake);
+  expect((await woke).status()).toBe(201);
+
+  await expect(group).toHaveCount(0);
+  await expect(rowLink(page, ship)).toBeVisible();
+  await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status).toMatch(/^(underway|needs_you)$/);
+  expect(await wokenPrompt(a, ship)).toBe(RESUME);
+}
+
+/**
+ * Wake by hand from the ship view: the moored row opens the view, which says the ship is moored and calm about its tabs; a message
+ * typed at its box and sent wakes it with the text after the resume text, and the view then shows the live ship.
+ */
+export async function wakeFromTheShipView(page: Page, a: Admiral, press: (l: Locator) => Promise<void>) {
+  prAnswer(a, 7, { state: 'OPEN' });
+  const ship = await launchMooredShip(a, 7);
+  await page.goto(a.url + 'app/ships?fleet=zulu');
+  await press(rowLink(page, ship));
+  await expect(page).toHaveURL(shipViewUrl(a, ship));
+
+  const main = page.getByRole('main');
+  await expect(main).toContainText(/moored/i);
+  await expect(main).toContainText('api#7');
+  await expect(wakeButton(page)).toBeEnabled();
+  await expect(viewPanel(page)).toContainText(/moored/i);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await viewTab(page, 'Terminal').click();
+  await expect(viewPanel(page)).toContainText(/woken/i);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await viewTab(page, 'Changes').click();
+  await expect(viewPanel(page).getByText('Loading…')).toHaveCount(0);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await viewTab(page, 'PR').click();
+  await expect(viewPanel(page)).toContainText('api#7');
+  await viewTab(page, 'Conversation').click();
+
+  await expect(messageBox(page)).toBeEnabled();
+  await expect(messageBox(page)).toHaveAttribute('placeholder', WAKE_PLACEHOLDER);
+  await messageBox(page).fill('   ');
+  await expect(sendButton(page)).toBeDisabled();
+
+  readyToWake(a, ship);
+  const woke = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === `/api/v1/ships/${ship.session}/wake`);
+  await messageBox(page).fill('Also check the docs');
+  await press(sendButton(page));
+  expect((await woke).postDataJSON()).toEqual({ text: 'Also check the docs' });
+
+  await expect(wakeButton(page)).toHaveCount(0);
+  await expect(messageBox(page)).toHaveAttribute('placeholder', /^Message the ship/);
+  await expect(messageBox(page)).toHaveValue('');
+  await expect(sentBubble(page, 'Also check the docs')).toHaveCount(0);
+  await expect(page).toHaveURL(shipViewUrl(a, ship));
+  expect(await wokenPrompt(a, ship)).toBe(`${RESUME} Also check the docs`);
+}
+
+/** A moored ship whose report has no valid resume text cannot be woken: Wake and the box are off, with the reason, on the row and in the view. */
+export async function noWakeWithoutResume(page: Page, a: Admiral, press: (l: Locator) => Promise<void>) {
+  prAnswer(a, 9, { state: 'OPEN' });
+  const ship = await launchMooredShip(a, 9, { resume: 'resume it' });
+  await page.goto(a.url + 'app/ships?fleet=zulu');
+  const row = page.getByRole('main').getByRole('region', { name: /^Moored/ }).getByRole('listitem').filter({ hasText: ship.name });
+  await expect(row.getByRole('button', { name: 'Wake', exact: true })).toBeDisabled();
+  await expect(row).toContainText(/resume/i);
+
+  await press(rowLink(page, ship));
+  await expect(page).toHaveURL(shipViewUrl(a, ship));
+  await expect(wakeButton(page)).toBeDisabled();
+  await expect(messageBox(page)).toBeDisabled();
+  await expect(viewPanel(page)).toContainText(/resume/i);
+  await expect(page.getByRole('alert')).toHaveCount(0);
 }
 
 /**

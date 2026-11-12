@@ -153,6 +153,23 @@ func (s *Service) loadMoored() {
 	s.moored = recs
 }
 
+// Checkout is the directory a live ship runs in, or a moored ship's recorded checkout, which is still on disk.
+// Only read-only views of the work (its changes) use it; routes that talk to a session still need a live one.
+func (s *Service) Checkout(session string) (string, bool) {
+	if sh, ok := s.Get(session); ok {
+		return sh.Dir, true
+	}
+	s.mooredMu.Lock()
+	defer s.mooredMu.Unlock()
+	s.loadMoored()
+	for _, r := range s.moored {
+		if r.Session == session {
+			return r.Checkout, true
+		}
+	}
+	return "", false
+}
+
 // mooredShips lists the records whose ship has no live session.
 func (s *Service) mooredShips(live map[string]bool) []Ship {
 	s.mooredMu.Lock()
@@ -172,7 +189,7 @@ func (s *Service) mooredShips(live map[string]bool) []Ship {
 		}
 		sh := Ship{Session: r.Session, Name: r.Name, Fleet: r.Fleet, Harness: r.Harness, Dir: r.Checkout,
 			Repo: filepath.Base(r.Checkout), Status: StatusMoored,
-			Source: r.Source, Panel: r.Panel, OrderID: r.OrderID, URL: r.URL, Issues: r.Issues, Title: r.Title, PRs: prs[i], MooredAt: r.MooredAt.UTC().Format(time.RFC3339), Stale: polls[i].stale,
+			Source: r.Source, Panel: r.Panel, OrderID: r.OrderID, URL: r.URL, Issues: r.Issues, Title: r.Title, PRs: prs[i], MooredAt: r.MooredAt.UTC().Format(time.RFC3339), Stale: polls[i].stale, NoResume: !moor.ValidResume(r.Resume),
 			Crew: []CrewBoat{}, Subagents: []sessionhost.Subagent{}}
 		if !polls[i].at.IsZero() {
 			sh.PolledAt = polls[i].at.Format(time.RFC3339)
