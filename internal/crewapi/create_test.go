@@ -95,10 +95,12 @@ func TestCreateRefusesEachFailedCheckWith400NamingTheFieldAndWritesNothing(t *te
 func TestCreateOfATakenNameIs409OnTheNameFieldAndKeepsTheFile(t *testing.T) {
 	builtIn := commodoreAt(t)
 	builtInMember(t, builtIn, "scout", "scribe", "Built-in scout.")
-	codexHome := t.TempDir()
-	t.Setenv("CODEX_HOME", codexHome)
-	writeFile(t, filepath.Join(codexHome, "skills", "commodore", "SKILL.md"), "---\nname: commodore\n---\n")
-	builtInMember(t, filepath.Join(codexHome, "skills", "commodore", "crew"), "lookout", "reviewer", "Codex built-in lookout.")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
+	codexCommodore := filepath.Join(home, ".agents", "skills", "commodore")
+	writeFile(t, filepath.Join(codexCommodore, "SKILL.md"), "---\nname: commodore\n---\n")
+	builtInMember(t, filepath.Join(codexCommodore, "crew"), "lookout", "reviewer", "Codex built-in lookout.")
 	f := newFixtureWith(t, `{"version":1,"fleets":{"work":{"name":"Work","claude":{},"codex":{}}}}`)
 	f.fleetMember("bosun", "triager", "Fleet bosun.", "")
 	if status, out := f.do("GET", "/api/fleets/work/crew?harness=codex", nil); status != 200 || !strings.Contains(out, `"name":"lookout"`) || !strings.Contains(out, `"layer":"built-in"`) {
