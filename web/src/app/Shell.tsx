@@ -1,3 +1,4 @@
+import { signal } from '@preact/signals';
 import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch, loaded } from './fleets';
@@ -162,9 +163,13 @@ function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
   );
 }
 
+// Outside the row, since the row remounts when its ship leaves the list while the source still lists the PR.
+const mergedOrders = signal<ReadonlySet<string>>(new Set());
+
 function OrderRow({ order: o, source, onLaunch, onFollowError }: { order: Order; source: string; onLaunch: (o: OrderRef) => void; onFollowError: (e: string) => void }) {
   const [error, setError] = useState('');
-  const [merged, setMerged] = useState(false);
+  const mergedKey = `${source}/${o.id}`;
+  const merged = mergedOrders.value.has(mergedKey);
   const ship = o.pr && o.url ? carryingShip(ships.value, o.url) : undefined;
   const step = ship ? nextStep(ship) : undefined;
   const launch = () => onLaunch({ source, id: o.id, title: o.title, text: o.text || o.title });
@@ -210,7 +215,7 @@ function OrderRow({ order: o, source, onLaunch, onFollowError }: { order: Order;
       {merged ? (
         <p class="line">Merged</p>
       ) : ship?.stack_ready ? (
-        <MergeControl ship={ship} onMerged={() => setMerged(true)} onError={setError} />
+        <MergeControl ship={ship} onMerged={() => (mergedOrders.value = new Set(mergedOrders.value).add(mergedKey))} onError={setError} />
       ) : null}
       <Failure message={error} />
     </li>
