@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -159,7 +160,18 @@ func (w *world) launchIn(fleet, harness, repo string) shipJSON {
 func TestHooksSetNeedsYouAndUnderway(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
-	w.cueFleets(map[string][]string{"f": {"hook needs_you", "sleep 3", "hook working"}})
+	const engineerLine = `printf '\033[32mshipshape\033[0m\nsecond line'`
+	w.writeRaw(filepath.Join(w.userHom, ".claude", "settings.json"),
+		`{"statusLine":{"type":"command","command":`+quote(engineerLine)+`}}`, 0o600)
+	raw, err := os.ReadFile("../internal/cli/testdata/claude-statusline.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status bytes.Buffer
+	if err := json.Compact(&status, raw); err != nil {
+		t.Fatal(err)
+	}
+	w.cueFleets(map[string][]string{"f": {"hook needs_you", "sleep 3", "hook working"}, "sl": {"hook working", "statusline " + status.String(), "sleep 3600"}})
 	w.start()
 	ws := dialWS(t, w.in.instance)
 	for _, h := range []string{"claude", "codex", "copilot"} {
@@ -169,6 +181,42 @@ func TestHooksSetNeedsYouAndUnderway(t *testing.T) {
 		waitStatus(t, ws, 5*time.Second, s.Session, "underway")
 		if got := statusOf(w.in.ships(t), s.Session); got != "underway" {
 			t.Errorf("%s ship after its working hook: GET status = %q, want underway", h, got)
+		}
+	}
+
+	// The status line Claude runs is Admiral's wrapper, which passes the engineer's own line through
+	// and keeps the usage fields on the pane.
+	sl := w.launchIn("sl", "claude", "s1status")
+	w.waitFile(sl.Session, "statusline-done")
+	if e := w.readFile(filepath.Join(w.rec, sl.Session, "statusline-error")); e != "" {
+		t.Fatalf("the fake could not run the status line: %s", e)
+	}
+	if got, want := w.readFile(filepath.Join(w.rec, sl.Session, "statusline-stdout")), "\x1b[32mshipshape\x1b[0m\nsecond line"; got != want {
+		t.Errorf("status line output = %q, want the engineer's own line through Admiral's wrapper: %q", got, want)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	var kept string
+	for kept == "" && time.Now().Before(deadline) {
+		kept, _ = w.tmux("show-options", "-t", sl.Session, "-p", "-qv", "@admiral-statusline")
+		time.Sleep(50 * time.Millisecond)
+	}
+	var m struct {
+		SessionID string `json:"session_id"`
+		Cost      struct {
+			Total float64 `json:"total_cost_usd"`
+		} `json:"cost"`
+		RateLimits struct {
+			FiveHour struct {
+				Used float64 `json:"used_percentage"`
+			} `json:"five_hour"`
+		} `json:"rate_limits"`
+	}
+	if err := json.Unmarshal([]byte(kept), &m); err != nil || m.SessionID != "5b1f0c2e-7a44-4a1e-9d0a-1c2d3e4f5a6b" || m.Cost.Total != 1.2345 || m.RateLimits.FiveHour.Used != 23.5 {
+		t.Errorf("@admiral-statusline = %q (%v), want the sample's session, cost and five-hour quota", kept, err)
+	}
+	for _, banned := range []string{"session_name", "fake-prompt-text-xyzzy", "prompt_id"} {
+		if strings.Contains(kept, banned) {
+			t.Errorf("@admiral-statusline holds %q: %s", banned, kept)
 		}
 	}
 }

@@ -92,3 +92,28 @@ func TestCodexBundleRegistersSessionStartSoTheRolloutIsRecorded(t *testing.T) {
 		t.Errorf("codex flags = %s, want a SessionStart hook that runs admiral hook SessionStart", flags)
 	}
 }
+
+func TestBundleSettingsRunTheStatuslineWrapper(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		settings any
+		command  string
+	}{
+		{"ship settings", claudeSettings(), "admiral statusline"},
+		{"chat settings", claudeChatSettings(), "admiral statusline --chat"},
+	} {
+		raw, _ := json.Marshal(c.settings)
+		var s struct {
+			StatusLine struct {
+				Type    string `json:"type"`
+				Command string `json:"command"`
+			} `json:"statusLine"`
+		}
+		if err := json.Unmarshal(raw, &s); err != nil {
+			t.Fatal(err)
+		}
+		if s.StatusLine.Type != "command" || s.StatusLine.Command != c.command {
+			t.Errorf("%s statusLine = %+v, want a command running %q", c.name, s.StatusLine, c.command)
+		}
+	}
+}

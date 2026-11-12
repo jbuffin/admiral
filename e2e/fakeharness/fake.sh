@@ -85,8 +85,15 @@
 #                  is not a fault. `events-done` still gets one line per cue, and
 #                  `event-error` holds only a fault of the fake itself (no settings, no
 #                  command, bad jq).
+#   statusline <json>
+#                  run the `statusLine` command of the `--settings` file (Claude only,
+#                  needs jq) with the payload <json> on its stdin, as Claude does for a
+#                  status line. Its stdout is appended to `statusline-stdout`, its
+#                  stderr to `statusline-stderr`, its exit code to `statusline-exit`, a
+#                  fault of the fake itself to `statusline-error`, and `statusline-done`
+#                  is created after each run.
 #   bell           ring the terminal bell
-#   sleep <n>      sleep n seconds
+#   sleep <n>     sleep n seconds
 #   exit <n>       create `cues-done`, then exit with status n
 #   lines <n>      print n numbered lines, "line 0001" to "line <n>", each in an SGR
 #                  colour (\033[31m..\033[36m, cycling) and reset at the end
@@ -378,6 +385,24 @@ if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 				done <"$d/.cmds"
 			fi
 			echo "$ev" >>"$d/events-done"
+			;;
+		statusline)
+			# Runs the --settings file's statusLine command with the JSON on its stdin, as Claude does.
+			settings=""
+			prev=""
+			for a in "$@"; do
+				[ "$prev" = "--settings" ] && settings=$a
+				prev=$a
+			done
+			command=""
+			[ -n "$settings" ] && command=$(jq -r '.statusLine.command // empty' "$settings" 2>>"$d/statusline-error")
+			if [ -z "$command" ]; then
+				echo "no statusLine command in settings '$settings'" >>"$d/statusline-error"
+			else
+				printf '%s' "$arg" | sh -c "$command" >>"$d/statusline-stdout" 2>>"$d/statusline-stderr"
+				echo "$?" >>"$d/statusline-exit"
+			fi
+			: >"$d/statusline-done"
 			;;
 		bell) printf '\a' ;;
 		sleep) sleep "$arg" ;;
