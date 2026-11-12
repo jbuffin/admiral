@@ -846,10 +846,10 @@ func TestRevokeAnswers500AndKeepsTheDeviceWhenTheStoreCannotBeWritten(t *testing
 // Browsers fetch the manifest link and icons without credentials, so a paired remote browser needs them without a token.
 func TestOnlyTheInstallFilesAndTheStaticShellAreReachableWithoutAToken(t *testing.T) {
 	g := newRig(t)
-	for _, p := range []string{"/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon-maskable-512.png", "/icons/apple-touch-icon.png", "/app/", "/app/ships", "/assets/x.js", "/assets/x.css", "/sw.js", "/"} {
+	for _, p := range []string{"/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon-maskable-512.png", "/icons/apple-touch-icon.png", "/app/", "/app/ships", "/assets/x.js", "/assets/x.css", "/sw.js"} {
 		for _, m := range []string{"GET", "HEAD"} {
 			// The manifest and icons are GET-only.
-			if m == "HEAD" && !strings.HasPrefix(p, "/app") && !strings.HasPrefix(p, "/assets/") && p != "/sw.js" && p != "/" {
+			if m == "HEAD" && !strings.HasPrefix(p, "/app") && !strings.HasPrefix(p, "/assets/") && p != "/sw.js" {
 				continue
 			}
 			r := lanReq(nil)
@@ -860,11 +860,22 @@ func TestOnlyTheInstallFilesAndTheStaticShellAreReachableWithoutAToken(t *testin
 		}
 	}
 	// Nothing else is exempt, and only a GET or HEAD is.
-	for _, p := range []string{"/api/version", "/api/v1/version", "/api/v1/ships", "/ws/v1", "/icons/other.png", "/icons/", "/manifest.webmanifest/x", "/classic/", "/classic", "/assets/x", "/assets/", "/app/../api/v1/ships", "/app/%2e%2e/api/v1/ships", "/assets/../api/v1/ships", "/assets/..%2fapi/v1/ships"} {
+	for _, p := range []string{"/api/version", "/api/v1/version", "/api/v1/ships", "/ws/v1", "/icons/other.png", "/icons/", "/manifest.webmanifest/x", "//", "/.", "/%2F", "/classic/", "/classic", "/assets/x", "/assets/", "/app/../api/v1/ships", "/app/%2e%2e/api/v1/ships", "/assets/../api/v1/ships", "/assets/..%2fapi/v1/ships"} {
 		r := lanReq(nil)
 		r.target = p
 		if rec := g.do(r); rec.Code != 401 {
 			t.Errorf("GET %s with no token: %d, want 401", p, rec.Code)
+		}
+	}
+	// Only exact / and /?x are open: a redirect to the shell with no body, so a new device lands on its pair screen.
+	for _, c := range []struct{ target, want string }{{"/", "/app/"}, {"/?x", "/app/?x"}} {
+		for _, m := range []string{"GET", "HEAD"} {
+			r := lanReq(nil)
+			r.method, r.target = m, c.target
+			rec := g.do(r)
+			if rec.Code != 302 || rec.Header().Get("Location") != c.want || rec.Body.Len() != 0 {
+				t.Errorf("%s %s with no token: %d to %q with body %q, want 302 to %q and no body", m, c.target, rec.Code, rec.Header().Get("Location"), rec.Body, c.want)
+			}
 		}
 	}
 	for _, p := range []string{"/manifest.webmanifest", "/app/", "/assets/x.js", "/sw.js", "/"} {

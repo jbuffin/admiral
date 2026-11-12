@@ -93,9 +93,18 @@ func TestS2_NonLocalNeedsToken(t *testing.T) {
 		if resp.StatusCode != 401 || !strings.Contains(body, unauthorizedPage) {
 			t.Fatalf("wrong token: %d %q, want 401 with %q", resp.StatusCode, body, unauthorizedPage)
 		}
+		// The shell ignores the query's token, so the redirect carrying it opens nothing.
+		resp, body = get(t, base+"/?token=nope", nil)
+		if resp.StatusCode != 302 || resp.Header.Get("Location") != "/app/?token=nope" || body != "" {
+			t.Fatalf("GET /?token=nope = %d to %q with body %q, want 302 to /app/?token=nope and no body", resp.StatusCode, resp.Header.Get("Location"), body)
+		}
 		resp, _ = get(t, base+"/classic/", map[string]string{"Cookie": in.cookieName() + "=nope"})
 		if resp.StatusCode != 401 {
 			t.Fatalf("wrong cookie: %d, want 401", resp.StatusCode)
+		}
+		resp, body = get(t, base+"/", map[string]string{"Cookie": in.cookieName() + "=nope"})
+		if resp.StatusCode != 302 || resp.Header.Get("Location") != "/app/" || body != "" {
+			t.Fatalf("GET / with a wrong cookie = %d to %q with body %q, want 302 to /app/ and no body", resp.StatusCode, resp.Header.Get("Location"), body)
 		}
 	})
 	t.Run("api without token", func(t *testing.T) {
@@ -171,7 +180,7 @@ func TestS4_RestartKeepsThePort(t *testing.T) {
 		t.Fatal("the shared token file appeared")
 	}
 	if resp, _ := get(t, again.LocalURL+"/classic/", nil); resp.StatusCode != 200 {
-		t.Fatalf("GET / after restart = %d", resp.StatusCode)
+		t.Fatalf("GET /classic/ after restart = %d", resp.StatusCode)
 	}
 }
 

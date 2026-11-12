@@ -140,13 +140,10 @@ var installFiles = map[string]bool{
 }
 
 // staticShell reports whether the request fetches a file of the built new shell, which holds no data: the page for
-// any /app/ route, one file under /assets/, and the worker. Exact / is open too: it only redirects to /app/.
+// any /app/ route, one file under /assets/, and the worker.
 func staticShell(r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
-	}
-	if r.URL.Path == "/" {
-		return true
 	}
 	// ServeMux routes on the escaped path, where %2F stays in one segment: only a plain, already-clean path means what it says.
 	p := path.Clean(r.URL.Path)
@@ -181,6 +178,17 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 				return
 			}
 			a.servePair(w, r, rt)
+			return
+		}
+		// Only the exact raw path: a cleaned "//" or "/." must still need a token. The redirect holds no data, so the
+		// middleware answers it itself and nothing reaches the next handler.
+		if (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Path == "/" && r.URL.RawPath == "" {
+			target := "/app/"
+			if r.URL.RawQuery != "" {
+				target += "?" + r.URL.RawQuery
+			}
+			w.Header().Set("Location", target)
+			w.WriteHeader(http.StatusFound)
 			return
 		}
 		if (r.Method == http.MethodGet && installFiles[r.URL.Path]) || staticShell(r) {

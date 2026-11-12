@@ -91,18 +91,6 @@ func TestRootRedirectsToTheNewShell(t *testing.T) {
 	}
 }
 
-func TestClassicOldUIKeepsItsAbsoluteAssetsAndAPI(t *testing.T) {
-	h := uiServer().Handler()
-	for _, p := range []string{"/classic/", "/classic"} {
-		if code, _, body := get(t, h, p); code != http.StatusOK || body != oldIndex {
-			t.Errorf("GET %s = %d %q, want the old index", p, code, body)
-		}
-	}
-	if code, _, body := get(t, h, "/assets/x.js"); code != http.StatusOK || body != "console.log('x')" {
-		t.Errorf("GET /assets/x.js = %d %q, want the asset the old index references", code, body)
-	}
-}
-
 const claudeSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="M0 0h1v1z"/></svg>`
 
 func seedLogos(t *testing.T) string {

@@ -25,7 +25,7 @@ export default defineConfig({
             res.end();
             return;
           }
-          if (req.method === 'GET' && (path === '/classic' || path.startsWith('/classic/')) && !/\.[a-z0-9]+$/i.test(path)) {
+          if ((req.method === 'GET' || req.method === 'HEAD') && (path === '/classic' || path.startsWith('/classic/')) && !/\.[a-z0-9]+$/i.test(path)) {
             const html = readFileSync(resolve(__dirname, 'index.html'), 'utf8');
             res.setHeader('Content-Type', 'text/html');
             res.end(await server.transformIndexHtml('/', html));
