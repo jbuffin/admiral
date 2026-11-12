@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +29,13 @@ import (
 // NotStarted holds until the first SessionStart: Claude may be on its folder-trust dialog,
 // where a pasted message would land.
 const NotStarted = "Open the terminal to finish starting the chat"
+
+// A Codex chat with no transcript yet: SessionStart fires on its first turn, not at start, so a pane showing its composer
+// is ready, and only these two screens need the engineer.
+const (
+	CodexTrustHooks = "Codex is asking you to trust Admiral's hooks: open the terminal and trust them"
+	CodexUntrusted  = "Codex's hooks aren't trusted, so Admiral can't follow this chat: in the terminal type /hooks, press t to trust them, then /new (or end the chat and start a new one)"
+)
 
 const Unreadable = "Admiral can't read this chat's transcript"
 
@@ -166,6 +174,7 @@ type state struct {
 type chatOptions struct {
 	model, effort, fleet string
 	transcript           string // "<unix ns> <source> <path>", "" before the first SessionStart
+	screen               string // a Codex chat's pane text while it has no transcript
 }
 
 // route resolves the path's fleet first, so an unknown fleet or one whose chat is off is refused
@@ -355,7 +364,7 @@ func (s *fleetChat) read(force, fresh bool) (Snapshot, error) {
 	}
 	switch {
 	case st.optRaw == "":
-		snap.Error = NotStarted
+		_, snap.Error = s.notStartedLocked()
 	case st.unread:
 		snap.Error = Unreadable
 	}
@@ -673,9 +682,46 @@ func (s *fleetChat) ready() (pane string, status int, msg string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.st.optRaw == "" {
-		return "", http.StatusConflict, NotStarted
+		if ok, why := s.notStartedLocked(); !ok {
+			return "", http.StatusConflict, why
+		}
 	}
 	return s.st.pane, 0, ""
+}
+
+// notStartedLocked says whether a chat with no transcript can take a message, and what to tell the engineer if not. A
+// Claude chat waits for its SessionStart; a Codex chat is ready once its composer shows with its hooks trusted, because
+// its SessionStart is the first turn's.
+func (s *fleetChat) notStartedLocked() (ready bool, msg string) {
+	if s.harness() != "codex" {
+		return false, NotStarted
+	}
+	screen := s.st.opts.screen
+	switch {
+	case strings.Contains(screen, "Hooks need review"):
+		return false, CodexTrustHooks
+	case strings.Contains(screen, "enter confirm") || strings.Contains(screen, "esc skip") || strings.Contains(screen, "Update available"):
+		return false, NotStarted
+	case !strings.Contains(screen, "Ask Codex") && !strings.Contains(screen, "for shortcuts"):
+		return false, NotStarted
+	case !codexHooksTrusted(s.configDir()):
+		return false, CodexUntrusted
+	}
+	return true, ""
+}
+
+// codexHooksTrusted reads the chat home's config.toml for the trust entry Codex writes when the engineer trusts the
+// SessionStart hook; "Continue without trusting" writes none.
+func codexHooksTrusted(home string) bool {
+	b, err := os.ReadFile(filepath.Join(home, "config.toml"))
+	return err == nil && strings.Contains(string(b), ":session_start:")
+}
+
+func (s *fleetChat) readScreen(pane string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	out, _ := s.server().CapturePane(ctx, pane)
+	return out
 }
 
 func (s *fleetChat) pasteMessage(pane, text string) error {
@@ -709,6 +755,7 @@ func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	opts, pane, noPath := s.st.opts, s.st.pane, s.st.optRaw == ""
 	path, dir, raw := s.st.path, s.configDir(), s.st.optRaw
+	harness := s.harness()
 	s.mu.Unlock()
 	fleet, off, _ := s.Config().ChatFleet(s.key)
 	if off != "" {
@@ -737,7 +784,7 @@ func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadGateway, "could not clear the chat: "+err.Error())
 			return
 		}
-		s.recordReset(path, dir, s.key, raw)
+		s.recordReset(harness, path, dir, s.key, raw)
 		// A reset that failed leaves no marker.
 		s.markReset()
 		s.broadcast()
@@ -751,7 +798,7 @@ func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "could not end the chat: "+err.Error())
 		return
 	}
-	s.recordReset(path, dir, s.key, "")
+	s.recordReset(harness, path, dir, s.key, "")
 	s.markReset()
 	s.mu.Lock()
 	s.st = state{}

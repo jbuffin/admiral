@@ -108,7 +108,7 @@ func TestACodexResetRecordsTheChatHomeRolloutsUsageUnderCodex(t *testing.T) {
 	}
 	rollout := writeAt(t, filepath.Join(home, "sessions", "2026", "11", "12", "rollout-own.jsonl"), b)
 
-	s.chat("b").recordReset(rollout, home, "b", "")
+	s.chat("b").recordReset("codex", rollout, home, "b", "")
 
 	var rec map[string]any
 	deadline := time.Now().Add(5 * time.Second)
@@ -135,5 +135,32 @@ func TestACodexResetRecordsTheChatHomeRolloutsUsageUnderCodex(t *testing.T) {
 	tokens, _ := rec["tokens"].(map[string]any)
 	if tokens["input"] != 7609.0 || tokens["cache_read"] != 12672.0 {
 		t.Errorf("usage tokens = %v, want the rollout's token_count totals (7609 input, 12672 cached)", tokens)
+	}
+}
+
+func TestACodexChatWithNoTranscriptIsReadyOnceItsComposerShowsAndItsHooksAreTrusted(t *testing.T) {
+	s := harnessService(t, codexChatFleets, fakeProbes{})
+	home := codexChatHome(t, s)
+	fc := s.chat("b")
+	cases := []struct {
+		name, screen, config string
+		ready                bool
+		msg                  string
+	}{
+		{"trust dialog", "Hooks need review\n 2. Trust all and continue\nenter confirm · esc skip", "", false, CodexTrustHooks},
+		{"update dialog", "Update available · 0.167.1 → 0.167.2\nenter confirm", "", false, NotStarted},
+		{"still starting", "", "", false, NotStarted},
+		{"continued without trusting", "› Ask Codex to do anything\n← for agents · ? for shortcuts", "", false, CodexUntrusted},
+		{"trusted", "› Ask Codex to do anything\n← for agents · ? for shortcuts", "[hooks.state.\"/x/config.toml:session_start:0:0\"]\ntrusted_hash = \"sha256:1\"\n", true, ""},
+	}
+	for _, c := range cases {
+		writeAt(t, filepath.Join(home, "config.toml"), []byte(c.config))
+		fc.mu.Lock()
+		fc.st.opts.screen = c.screen
+		ready, msg := fc.notStartedLocked()
+		fc.mu.Unlock()
+		if ready != c.ready || msg != c.msg {
+			t.Errorf("%s: ready=%v msg=%q, want ready=%v msg=%q", c.name, ready, msg, c.ready, c.msg)
+		}
 	}
 }

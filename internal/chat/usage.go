@@ -49,13 +49,9 @@ const clearWait = 3 * time.Second
 // caller's goroutine. path is the transcript recorded before the clear or kill, since a clear rewrites it.
 // A /clear passes the transcript option as it stood before, and Claude may write its cost-state while it
 // handles the command: the file is read once the clear's SessionStart changes the option, or after clearWait.
-func (s *fleetChat) recordReset(path, configDir, fleet, clearedFrom string) {
+func (s *fleetChat) recordReset(harness, path, configDir, fleet, clearedFrom string) {
 	if s.Outcomes == nil {
 		return
-	}
-	harness := "claude"
-	if s.Config != nil {
-		harness = s.harness()
 	}
 	go func() {
 		if clearedFrom != "" {

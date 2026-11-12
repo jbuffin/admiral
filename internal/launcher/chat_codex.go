@@ -114,6 +114,9 @@ func prepareCodexChat(home, fleet, nonce, authTarget string) *Error {
 			return refuse(http.StatusInternalServerError, "could not clear the chat's directory: %v", err)
 		}
 	}
+	if key := codexHomeConfigKey(root, filepath.Join(rel, "codex-home", "config.toml")); key != "" {
+		return refuse(http.StatusConflict, "the chat's own Codex config (%s) sets %q, which the chat's fence does not cover: remove it, then start the chat", filepath.Join(ChatCodexHome(home, fleet), "config.toml"), key)
+	}
 	if err := LinkCodexLogin(root, filepath.Join(rel, "codex-home", "auth.json"), authTarget); err != nil {
 		return refuse(http.StatusInternalServerError, "could not link the Codex login: %v", err)
 	}
@@ -125,6 +128,34 @@ func prepareCodexChat(home, fleet, nonce, authTarget string) *Error {
 		return refuse(http.StatusInternalServerError, "could not write the chat's token: %v", err)
 	}
 	return nil
+}
+
+// codexConfigKeysRefused are the config.toml keys that load code or reroute the model, which the fence's -c flags do not name.
+// hooks.state and the keys Codex writes itself are left alone.
+var codexConfigKeysRefused = []string{"mcp_servers", "notify", "model_providers", "profile", "profiles"}
+
+// codexHomeConfigKey is the first refused top-level key the chat home's config.toml holds, or "".
+func codexHomeConfigKey(root *os.Root, rel string) string {
+	b, err := root.ReadFile(rel)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		name, _, isKey := strings.Cut(line, "=")
+		if strings.HasPrefix(line, "[") {
+			name, isKey = strings.Trim(line, "[] \t"), true
+		}
+		if !isKey {
+			continue
+		}
+		first, _, _ := strings.Cut(strings.TrimSpace(name), ".")
+		first = strings.Trim(first, `"' `)
+		if slices.Contains(codexConfigKeysRefused, first) {
+			return first
+		}
+	}
+	return ""
 }
 
 // codexChatArgv is the Codex TUI's argv for the chat: the dock's executable only, never its args. It runs without the

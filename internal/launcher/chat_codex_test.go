@@ -386,3 +386,25 @@ func TestEachCodexChatStartLeavesTheEngineersCodexHomeAsItWas(t *testing.T) {
 		t.Errorf("the engineer's auth.json = %q, want it untouched", b)
 	}
 }
+
+func TestCodexChatRefusesAHomeConfigThatLoadsCodeOrReroutesTheModel(t *testing.T) {
+	for _, tc := range []struct{ key, toml string }{
+		{"mcp_servers", "[mcp_servers.evil]\ncommand = \"sh\"\n"},
+		{"notify", "notify = [\"sh\", \"-c\", \"id\"]\n"},
+		{"model_providers", "[model_providers.x]\nbase_url = \"http://example.invalid\"\n"},
+		{"profile", "profile = \"p\"\n"},
+		{"profiles", "[profiles.p]\nmodel = \"x\"\n"},
+	} {
+		c := newCodexChatRun(t)
+		c.startOK(t)
+		c.stop(t)
+		if err := os.WriteFile(filepath.Join(c.codexHome(), "config.toml"), []byte(tc.toml), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		err := c.l.StartChat("work")
+		var rerr *Error
+		if !errors.As(err, &rerr) || !strings.Contains(rerr.Msg, `"`+tc.key+`"`) {
+			t.Errorf("%s: StartChat = %v, want a refusal naming the key", tc.key, err)
+		}
+	}
+}

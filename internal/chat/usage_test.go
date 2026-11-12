@@ -112,7 +112,7 @@ func TestResetRecordsTheStatusLinesLastCostOfTheSessionThatEnded(t *testing.T) {
 	store.SetFigures(sessionhost.ChatSession("work"), "new-session", usage.Figures{Money: est(0)}, now)
 	s := (&Service{Outcomes: w, LastLive: store.LastLive}).chat("work")
 
-	s.recordReset("", t.TempDir(), "work", "")
+	s.recordReset("claude", "", t.TempDir(), "work", "")
 
 	var money map[string]any
 	deadline := time.Now().Add(5 * time.Second)
@@ -160,11 +160,11 @@ func TestTwoClearsInARowCountThePreClearSessionOnce(t *testing.T) {
 	store.SetFigures(sessionhost.ChatSession("work"), "A", usage.Figures{Tokens: usage.Tokens{Input: 500}, Money: est(3)}, now)
 	s := (&Service{Outcomes: w, LastLive: store.LastLive, ForgetLive: store.Forget}).chat("work")
 
-	s.recordReset("", t.TempDir(), "work", "")
+	s.recordReset("claude", "", t.TempDir(), "work", "")
 	waitUsage(t, dir, 1)
 	store.SetFigures(sessionhost.ChatSession("work"), "A", usage.Figures{Tokens: usage.Tokens{Input: 500}, Money: est(3)}, now) // the pane's last line, read again
 	store.SetFigures(sessionhost.ChatSession("work"), "B", usage.Figures{Money: est(0)}, now.Add(time.Second))
-	s.recordReset("", t.TempDir(), "work", "")
+	s.recordReset("claude", "", t.TempDir(), "work", "")
 	waitUsage(t, dir, 2)
 
 	got := usageMoney(t, dir)
@@ -210,7 +210,7 @@ func TestResetWithNoConfigDirReadsNoTranscript(t *testing.T) {
 	t.Cleanup(w.Close)
 	s := (&Service{Outcomes: w}).chat("work")
 
-	s.recordReset(transcript, "", "work", "")
+	s.recordReset("claude", transcript, "", "work", "")
 
 	deadline := time.Now().Add(5 * time.Second)
 	for len(usageMoney(t, dir)) == 0 && time.Now().Before(deadline) {
