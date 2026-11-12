@@ -227,7 +227,7 @@ func serve(args []string) error {
 		ts = tailscale.Inspect(context.Background(), port)
 		if ts.Funnel {
 			_ = ln.Close()
-			c, _ := ts.Failed()
+			c, _ := ts.Check(tailscale.CheckFunnel)
 			return errors.New(c.Detail)
 		}
 	}

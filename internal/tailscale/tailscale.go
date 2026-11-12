@@ -18,8 +18,8 @@ import (
 	"time"
 )
 
-// Timeout bounds each CLI call: `tailscale serve` has hung for minutes on a tailnet with Serve disabled.
-const Timeout = 4 * time.Second
+// timeout bounds each CLI call: `tailscale serve` has hung for minutes on a tailnet with Serve disabled.
+var timeout = 4 * time.Second
 
 // Check ids, in the order Inspect reports them.
 const (
@@ -40,13 +40,23 @@ type Report struct {
 	Checks []Check
 	// URL is the ts.net address, empty unless serve proxies to Admiral's port and the MagicDNS name is known.
 	URL string
-	// Funnel is true when Funnel is on for a handler that proxies to Admiral's port.
+	// Funnel is true when Funnel is on for a handler or TCP forward that reaches Admiral's port.
 	Funnel bool
 	// Login is this Mac's tailnet login, empty when unknown.
 	Login string
 }
 
 // Failed returns the first failed check, if any.
+// Check returns the check with the id.
+func (r Report) Check(id string) (Check, bool) {
+	for _, c := range r.Checks {
+		if c.ID == id {
+			return c, true
+		}
+	}
+	return Check{}, false
+}
+
 func (r Report) Failed() (Check, bool) {
 	for _, c := range r.Checks {
 		if !c.OK {
@@ -68,7 +78,11 @@ type status struct {
 }
 
 type serveConfig struct {
-	TCP map[string]struct{ HTTPS bool }
+	TCP map[string]struct {
+		HTTPS        bool
+		TCPForward   string
+		TerminateTLS string
+	}
 	Web map[string]struct {
 		Handlers map[string]struct{ Proxy string }
 	}
@@ -77,7 +91,8 @@ type serveConfig struct {
 }
 
 func run(ctx context.Context, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, Timeout)
+	parent := ctx
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "tailscale", args...)
 	var out, errOut bytes.Buffer
@@ -85,8 +100,10 @@ func run(ctx context.Context, args ...string) ([]byte, error) {
 	cmd.WaitDelay = time.Second
 	if err := cmd.Run(); err != nil {
 		switch {
+		case parent.Err() != nil:
+			return nil, fmt.Errorf("tailscale %s was cancelled", strings.Join(args, " "))
 		case ctx.Err() != nil:
-			return nil, fmt.Errorf("tailscale %s timed out after %s", strings.Join(args, " "), Timeout)
+			return nil, fmt.Errorf("tailscale %s timed out after %s", strings.Join(args, " "), timeout)
 		case errors.Is(err, exec.ErrNotFound):
 			return nil, fmt.Errorf("tailscale is not installed or not on PATH")
 		}
@@ -183,27 +200,38 @@ func Evaluate(statusOut []byte, statusErr error, serveOut []byte, serveErr error
 		return rep
 	}
 
-	ports, funnel := proxyPorts(&cfg, port)
-	if len(ports) == 0 {
-		rep.add(CheckServe, false, fmt.Sprintf("tailscale serve does not proxy to Admiral's port; run: tailscale serve --bg --https=443 %s", port))
-	} else {
-		rep.add(CheckServe, true, fmt.Sprintf("tailscale serve proxies HTTPS port %d to Admiral", ports[0]))
-		if name != "" {
-			u := "https://" + name
-			if ports[0] != 443 {
-				u += ":" + strconv.Itoa(ports[0])
-			}
-			rep.URL = u + "/"
-		}
+	f := findAdmiral(&cfg, port)
+	switch {
+	case f.rawTCP:
+		rep.add(CheckServe, false, fmt.Sprintf("a raw TCP forward to Admiral's port bypasses Admiral's tailnet checks; replace it with: %s", ServeHint(port)))
+	case len(f.https) == 0:
+		rep.add(CheckServe, false, fmt.Sprintf("tailscale serve does not proxy to Admiral's port; run: %s", ServeHint(port)))
+	default:
+		rep.add(CheckServe, true, fmt.Sprintf("tailscale serve proxies HTTPS port %d to Admiral", f.https[0]))
 	}
-	rep.Funnel = funnel
-	if funnel {
-		rep.add(CheckFunnel, false, "Funnel is on for Admiral's port, which makes it public; turn it off with: tailscale funnel --https=443 off")
+	if len(f.https) > 0 && name != "" {
+		u := "https://" + name
+		if f.https[0] != 443 {
+			u += ":" + strconv.Itoa(f.https[0])
+		}
+		rep.URL = u + "/"
+	}
+	if len(f.funnel) > 0 {
+		rep.Funnel = true
+		rep.add(CheckFunnel, false, "Funnel is on for Admiral's port, which makes it public; turn it off with: "+strings.Join(f.funnel, "; "))
 	} else {
 		rep.add(CheckFunnel, true, "Funnel is off")
 	}
 	return rep
 }
+
+// ServeArgs is the `tailscale` command line that serves Admiral's port over HTTPS.
+func ServeArgs(port string) []string {
+	return []string{"serve", "--bg", "--https=443", "http://127.0.0.1:" + port}
+}
+
+// ServeHint is ServeArgs as a command to paste.
+func ServeHint(port string) string { return "tailscale " + strings.Join(ServeArgs(port), " ") }
 
 func (r *Report) add(id string, ok bool, detail string) {
 	r.Checks = append(r.Checks, Check{ID: id, OK: ok, Detail: detail})
@@ -219,14 +247,35 @@ func describeState(s string) string {
 	return "not running (" + s + ")"
 }
 
-// proxyPorts returns the HTTPS ports whose handlers proxy to Admiral's loopback port (443 first), and
-// whether Funnel is on for any of them. AllowFunnel is keyed by the same host:port as Web, and a
-// foreground serve carries its own nested config.
-func proxyPorts(cfg *serveConfig, port string) ([]int, bool) {
-	seen := map[int]bool{}
-	funnel := false
-	var walk func(c *serveConfig)
-	walk = func(c *serveConfig) {
+type found struct {
+	https  []int    // HTTPS ports whose handlers proxy to Admiral (443 first)
+	rawTCP bool     // a TCP forward reaches Admiral's port
+	funnel []string // one off-command or instruction per Funnel found, sorted
+}
+
+// findAdmiral looks for what reaches Admiral's loopback port. AllowFunnel is keyed by the same host:port as
+// Web; a TCP forward has no Web entry, so any AllowFunnel key with its port counts. A foreground serve carries
+// its own nested config.
+func findAdmiral(cfg *serveConfig, port string) found {
+	https := map[int]bool{}
+	funnels := map[string]bool{}
+	var f found
+	var walk func(c *serveConfig, foreground bool)
+	walk = func(c *serveConfig, foreground bool) {
+		funnelOn := func(p int) bool {
+			for key, on := range c.AllowFunnel {
+				if _, kp, err := net.SplitHostPort(key); on && err == nil && kp == strconv.Itoa(p) {
+					return true
+				}
+			}
+			return false
+		}
+		addFunnel := func(cmd string) {
+			if foreground {
+				cmd = "stop the foreground tailscale funnel process that serves it"
+			}
+			funnels[cmd] = true
+		}
 		for key, web := range c.Web {
 			proxies := false
 			for _, h := range web.Handlers {
@@ -234,36 +283,51 @@ func proxyPorts(cfg *serveConfig, port string) ([]int, bool) {
 					proxies = true
 				}
 			}
-			if !proxies {
+			_, ps, err := net.SplitHostPort(key)
+			p, perr := strconv.Atoi(ps)
+			if !proxies || err != nil || perr != nil {
 				continue
 			}
-			if _, p, err := net.SplitHostPort(key); err == nil {
-				if n, err := strconv.Atoi(p); err == nil {
-					seen[n] = true
-				}
-			}
+			https[p] = true
 			if c.AllowFunnel[key] {
-				funnel = true
+				addFunnel(fmt.Sprintf("tailscale funnel --https=%d off", p))
+			}
+		}
+		for ps, h := range c.TCP {
+			p, err := strconv.Atoi(ps)
+			if err != nil || h.TCPForward == "" || !forwardsTo(h.TCPForward, port) {
+				continue
+			}
+			f.rawTCP = true
+			if funnelOn(p) {
+				flag := "--tcp"
+				if h.TerminateTLS != "" {
+					flag = "--tls-terminated-tcp"
+				}
+				addFunnel(fmt.Sprintf("tailscale funnel %s=%d off", flag, p))
 			}
 		}
 		for _, fg := range c.Foreground {
 			if fg != nil {
-				walk(fg)
+				walk(fg, true)
 			}
 		}
 	}
-	walk(cfg)
-	out := make([]int, 0, len(seen))
-	for p := range seen {
-		out = append(out, p)
+	walk(cfg, false)
+	for p := range https {
+		f.https = append(f.https, p)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if (out[i] == 443) != (out[j] == 443) {
-			return out[i] == 443
+	sort.Slice(f.https, func(i, j int) bool {
+		if (f.https[i] == 443) != (f.https[j] == 443) {
+			return f.https[i] == 443
 		}
-		return out[i] < out[j]
+		return f.https[i] < f.https[j]
 	})
-	return out, funnel
+	for c := range funnels {
+		f.funnel = append(f.funnel, c)
+	}
+	sort.Strings(f.funnel)
+	return f
 }
 
 // proxiesTo reports whether a serve proxy target is Admiral's port on loopback.
@@ -275,10 +339,15 @@ func proxiesTo(target, port string) bool {
 	if err != nil {
 		return false
 	}
-	switch u.Hostname() {
-	case "127.0.0.1", "localhost", "::1":
-	default:
-		return false
-	}
-	return u.Port() == port
+	return loopback(u.Hostname()) && u.Port() == port
+}
+
+// forwardsTo is proxiesTo for a TCPForward, an IP:port.
+func forwardsTo(forward, port string) bool {
+	h, p, err := net.SplitHostPort(forward)
+	return err == nil && loopback(h) && p == port
+}
+
+func loopback(host string) bool {
+	return host == "127.0.0.1" || host == "localhost" || host == "::1"
 }

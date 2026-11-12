@@ -242,20 +242,37 @@ func (p *tsProc) waitStopped(t *testing.T) {
 	}
 }
 
-// With Funnel on for Admiral's port, in serve or in a foreground serve, Admiral exits non-zero with one line saying how to turn it off.
+// With Funnel on for Admiral's port, in serve, as a TCP forward or in a foreground serve, Admiral exits non-zero
+// with one line saying how to turn it off, even when another check failed too.
 func TestTailscaleFunnelOnStopsStartup(t *testing.T) {
 	t.Parallel()
-	cases := map[string]func(r *tsRig) map[string]any{
-		"serve config": func(r *tsRig) map[string]any { return r.serve(443, true) },
-		"foreground serve": func(r *tsRig) map[string]any {
+	const prefix = "Funnel is on for Admiral's port, which makes it public; turn it off with: "
+	cases := []struct {
+		name  string
+		serve func(r *tsRig) map[string]any
+		down  bool // the status call fails as well
+		want  string
+	}{
+		{"serve config", func(r *tsRig) map[string]any { return r.serve(443, true) }, false, prefix + "tailscale funnel --https=443 off"},
+		{"foreground serve", func(r *tsRig) map[string]any {
 			return map[string]any{"Foreground": map[string]any{"session-1": r.serve(8443, true)}}
-		},
+		}, false, prefix + "stop the foreground tailscale funnel process that serves it"},
+		{"tcp forward", func(r *tsRig) map[string]any {
+			return map[string]any{
+				"TCP":         map[string]any{"10000": map[string]any{"TCPForward": "127.0.0.1:" + r.port}},
+				"AllowFunnel": map[string]any{tsHostPort(10000): true},
+			}
+		}, false, prefix + "tailscale funnel --tcp=10000 off"},
+		{"with the status call failing", func(r *tsRig) map[string]any { return r.serve(443, true) }, true, prefix + "tailscale funnel --https=443 off"},
 	}
-	for name, cfg := range cases {
-		t.Run(name, func(t *testing.T) {
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			r := newTSRig(t)
-			r.writeServe(cfg(r))
+			r.writeServe(c.serve(r))
+			if c.down {
+				r.put("status.exit", "1")
+			}
 			p := r.start(true, false)
 			p.waitStopped(t)
 			if code := p.cmd.ProcessState.ExitCode(); code == 0 {
@@ -268,8 +285,8 @@ func TestTailscaleFunnelOnStopsStartup(t *testing.T) {
 					lines = append(lines, l)
 				}
 			}
-			if len(lines) != 1 || !strings.Contains(strings.ToLower(lines[0]), "off") {
-				t.Errorf("want one line saying Funnel is on and how to turn it off, got %q in:\n%s", lines, out)
+			if want := "admiral: " + c.want; len(lines) != 1 || lines[0] != want {
+				t.Errorf("want the one line %q, got %q in:\n%s", want, lines, out)
 			}
 			if strings.Contains(out, "Admiral is running") {
 				t.Errorf("admiral announced it was running:\n%s", out)
@@ -284,22 +301,19 @@ func TestTailscaleFailedCheckWarnsAndStarts(t *testing.T) {
 	cases := []struct {
 		name    string
 		setup   func(r *tsRig)
-		mention string
+		mention string // the failed check's own text
 		noBin   bool
 	}{
-		{"serve missing", func(r *tsRig) { r.writeServe(map[string]any{}) }, "serve", false},
-		{"tailscaled down", func(r *tsRig) {
-			for _, f := range []string{"status", "serve"} {
-				r.put(f+".exit", "1")
-				r.put(f+".err", "failed to connect to local tailscaled")
-			}
-		}, "tailscale", false},
+		{"serve missing", func(r *tsRig) { r.writeServe(map[string]any{}) }, "tailscale serve does not proxy to Admiral's port", false},
+		{"tcp forward without funnel", func(r *tsRig) {
+			r.writeServe(map[string]any{"TCP": map[string]any{"10000": map[string]any{"TCPForward": "127.0.0.1:" + r.port}}})
+		}, "raw tcp forward", false},
 		{"logged out", func(r *tsRig) {
 			r.writeStatus(tsStatus(func(m map[string]any) { m["BackendState"] = "NeedsLogin" }))
-		}, "tailscale", false},
-		{"unparsable output", func(r *tsRig) { r.put("status.json", "not json") }, "tailscale", false},
-		{"slow CLI", func(r *tsRig) { r.put("sleep", "60") }, "tailscale", false},
-		{"no tailscale binary", func(r *tsRig) {}, "tailscale", true},
+		}, "logged out", false},
+		{"unparsable output", func(r *tsRig) { r.put("status.json", "not json") }, "not json", false},
+		{"slow CLI", func(r *tsRig) { r.put("sleep", "60") }, "timed out", false},
+		{"no tailscale binary", func(r *tsRig) {}, "not installed", true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -309,8 +323,8 @@ func TestTailscaleFailedCheckWarnsAndStarts(t *testing.T) {
 			p := r.start(true, c.noBin)
 			line := p.otherDevices(t)
 			low := strings.ToLower(line)
-			if strings.Contains(low, "https://") || strings.Contains(low, "not reachable") || !strings.Contains(low, c.mention) {
-				t.Errorf("want a warning naming %q and no URL, got %q", c.mention, line)
+			if strings.Contains(low, "https://") || strings.Contains(low, "not reachable") || !strings.Contains(low, strings.ToLower(c.mention)) {
+				t.Errorf("want a warning containing %q and no URL, got %q", c.mention, line)
 			}
 			if p.exited() {
 				t.Errorf("admiral exited:\n%s", p.out.String())
@@ -380,77 +394,17 @@ func TestTailscaleRemoteStatusModeOff(t *testing.T) {
 	}
 }
 
-// The route's checks follow what tailscale reports, live, and its URL is the one rule: a handler proxying to Admiral's port.
-func TestTailscaleRemoteStatusChecks(t *testing.T) {
+// /api/remote and /api/v1/remote answer the same; the checks themselves are pinned in internal/tailscale.
+func TestTailscaleRemoteStatusAlias(t *testing.T) {
 	t.Parallel()
-	healthy := func(r *tsRig) {}
-	cases := []struct {
-		name      string
-		setup     func(r *tsRig) // before Admiral starts
-		flip      func(r *tsRig) // after it started
-		wantFail  int
-		wantURL   string // "" means none; checked only when check is set
-		checkURL  bool
-		wantAtMin bool // wantFail is a minimum
-	}{
-		{name: "everything set up", setup: healthy, wantURL: "https://" + tsName + "/", checkURL: true},
-		{name: "serve missing", setup: func(r *tsRig) { r.writeServe(map[string]any{}) }, wantFail: 1, checkURL: true},
-		{name: "serve proxies to another port", setup: func(r *tsRig) { r.writeServe(proxyTo(443, freePort(r.t), false)) }, wantFail: 1, checkURL: true},
-		{name: "HTTPS off", setup: func(r *tsRig) {
-			r.writeStatus(tsStatus(func(m map[string]any) {
-				m["CertDomains"] = []string{}
-				m["Self"].(map[string]any)["Capabilities"] = []string{}
-			}))
-		}, wantFail: 1},
-		{name: "MagicDNS off", setup: func(r *tsRig) {
-			r.writeStatus(tsStatus(func(m map[string]any) { m["CurrentTailnet"].(map[string]any)["MagicDNSEnabled"] = false }))
-		}, wantFail: 1},
-		{name: "Funnel turned on after startup", setup: healthy, flip: func(r *tsRig) { r.writeServe(r.serve(443, true)) }, wantFail: 1},
-		{name: "Funnel on another HTTPS port only", setup: func(r *tsRig) {
-			s := r.serve(443, false)
-			s["AllowFunnel"] = map[string]any{tsHostPort(8443): true}
-			r.writeServe(s)
-		}, wantURL: "https://" + tsName + "/", checkURL: true},
-		{name: "tailscaled down after startup", setup: healthy, flip: func(r *tsRig) {
-			for _, f := range []string{"status", "serve"} {
-				r.put(f+".exit", "1")
-			}
-		}, wantFail: 1, wantAtMin: true},
-		{name: "slow CLI after startup", setup: healthy, flip: func(r *tsRig) { r.put("sleep", "60") }, wantFail: 1, wantAtMin: true},
+	r := newTSRig(t)
+	p := r.start(true, false)
+	p.otherDevices(t)
+	v1, v := p.remote(t, "/api/v1/remote"), p.remote(t, "/api/remote")
+	if !reflect.DeepEqual(v1, v) {
+		t.Errorf("/api/remote and /api/v1/remote differ: %+v vs %+v", v, v1)
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			t.Parallel()
-			r := newTSRig(t)
-			c.setup(r)
-			p := r.start(true, false)
-			p.otherDevices(t)
-			if c.flip != nil {
-				c.flip(r)
-			}
-			v := p.remote(t, "/api/v1/remote")
-			if !v.Tailscale || !reflect.DeepEqual(v.AllowedLogins, []string{tsLogin}) {
-				t.Errorf("mode and logins = %t %v", v.Tailscale, v.AllowedLogins)
-			}
-			if len(v.Checks) != 4 {
-				t.Fatalf("want 4 checks (Tailscale up, HTTPS and MagicDNS, serve, Funnel off), got %+v", v.Checks)
-			}
-			seen := map[string]bool{}
-			for _, ch := range v.Checks {
-				if ch.ID == "" || seen[ch.ID] || ch.Detail == "" || strings.Contains(ch.Detail, "\n") {
-					t.Errorf("check %+v: want a unique id and a one-line detail", ch)
-				}
-				seen[ch.ID] = true
-			}
-			if f := v.failed(); len(f) != c.wantFail && !(c.wantAtMin && len(f) > c.wantFail) {
-				t.Errorf("failed checks %v, want %d", f, c.wantFail)
-			}
-			if c.checkURL && v.URL != c.wantURL {
-				t.Errorf("url %q, want %q", v.URL, c.wantURL)
-			}
-			if a, b := v, p.remote(t, "/api/remote"); c.flip == nil && !reflect.DeepEqual(a, b) {
-				t.Errorf("/api/remote and /api/v1/remote differ: %+v vs %+v", b, a)
-			}
-		})
+	if !v1.Tailscale || v1.URL != "https://"+tsName+"/" || len(v1.Checks) != 4 || len(v1.failed()) != 0 {
+		t.Errorf("view %+v, want the mode on, the ts.net URL and four ok checks", v1)
 	}
 }
