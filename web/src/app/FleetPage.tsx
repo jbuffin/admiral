@@ -52,6 +52,51 @@ function ListField({ id, legend, item, add, values, errors, disabled, onChange }
   );
 }
 
+// Saves at once and sends only itself, so it never rides on the form's Save.
+function NotifySwitch({ fleet, onReload }: { fleet: Fleet; onReload: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<{ message: string; status?: number } | null>(null);
+  const toggle = async () => {
+    setBusy(true);
+    setError(null);
+    const r = await saveFleet(fleet.key, { notify: !fleet.notify });
+    if (r.ok) fleets.value = r.data;
+    else setError({ message: r.error, status: r.status });
+    setBusy(false);
+  };
+  return (
+    <div class="set">
+      <div class="t">
+        <span id="notify-label" class="label">
+          Notify
+        </span>
+        <span id="notify-hint">Push to your devices when this fleet needs you. Off silences its pushes and alerts; the Inbox still lists everything.</span>
+        {error ? (
+          <p class="note error" role="alert">
+            {error.status === 409 ? 'The config file changed or is invalid, so nothing was saved. ' : ''}
+            {error.message}{' '}
+            {error.status === 409 ? (
+              <button
+                type="button"
+                class="btn"
+                onClick={() => {
+                  setError(null);
+                  void onReload();
+                }}
+              >
+                Reload
+              </button>
+            ) : null}
+          </p>
+        ) : null}
+      </div>
+      <button type="button" class="switch" role="switch" aria-checked={fleet.notify} aria-labelledby="notify-label" aria-describedby="notify-hint" disabled={busy} onClick={() => void toggle()}>
+        <span class="track" aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
 export function FleetPage({ fleet }: { fleet: Fleet }) {
   const [shown, setShown] = useState(() => fieldsOf(fleet));
   const [edited, setEdited] = useState(shown);
@@ -113,6 +158,9 @@ export function FleetPage({ fleet }: { fleet: Fleet }) {
           ) : null}
         </p>
       ) : null}
+      <div class="box notify-box">
+        <NotifySwitch fleet={fleet} onReload={reload} />
+      </div>
       <div class="box">
         <ListField id="roots" legend="Search roots" item="Search root" add="Add search root" values={edited.search_roots} errors={listErrors('search_roots')} disabled={busy} onChange={(v) => set({ search_roots: v })} />
         {!edited.search_roots.some((r) => r.trim()) ? (

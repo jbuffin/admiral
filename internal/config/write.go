@@ -132,6 +132,7 @@ type FleetFields struct {
 	WakeReviewers *[]string
 	CloneRoot     *string
 	Color         *string
+	Notify        *bool
 	// Chat holds the chat settings to change, by key; nil leaves them as stored.
 	Chat map[string]json.RawMessage
 }
@@ -195,6 +196,9 @@ func EditFleet(dir, key string, f FleetFields) error {
 		if err := mergeChat(fleet, key, f.Chat); err != nil {
 			return err
 		}
+	}
+	if f.Notify != nil {
+		fleet.SetValue("notify", *f.Notify)
 	}
 	setOrDrop("clone_root", f.CloneRoot)
 	setOrDrop("color", f.Color)

@@ -307,6 +307,18 @@ test('a fleet page edits search roots, owners, clone root and colour, keeping wh
   await page.reload();
   await expect(reviewers.getByRole('textbox', { name: 'Reviewer 1' })).toHaveValue('Alice-Dev');
 
+  // Notify is on until the person turns it off; the switch saves at once, sends only itself and survives a reload.
+  const notify = page.getByRole('switch', { name: 'Notify' });
+  await expect(notify).toBeChecked();
+  expect(zulu(admiral)).not.toHaveProperty('notify');
+  sent = put();
+  await notify.click();
+  expect((await sent).postDataJSON()).toEqual({ notify: false });
+  await expect.poll(() => zulu(admiral).notify).toBe(false);
+  await page.reload();
+  await expect(page.getByRole('switch', { name: 'Notify' })).not.toBeChecked();
+  expect((await page.getByRole('switch', { name: 'Notify' }).boundingBox())?.height).toBeGreaterThanOrEqual(44);
+
   // Changing a list sends it whole, as shown.
   const second = join(admiral.home, 'second');
   await roots.getByRole('button', { name: 'Add search root' }).click();

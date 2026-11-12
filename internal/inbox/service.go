@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -54,6 +55,10 @@ type Service struct {
 	ChatQuestions func() []Item
 	// AnswerChat answers a chat question where the chat keeps it; the inbox has no copy.
 	AnswerChat func(session, id string, req QuestionRequest) error
+	// OnChange runs after every change to the list is sent. It must not block.
+	OnChange func()
+
+	scanned atomic.Bool
 
 	answerMu sync.Mutex        // one answer at a time
 	actMu    sync.Mutex        // guards acting
@@ -103,6 +108,9 @@ func (s *Service) List() []Item {
 	return items
 }
 
+// Scanned is whether the first scan of the inbox directory has finished.
+func (s *Service) Scanned() bool { return s.scanned.Load() }
+
 // Changed sends the list to every client, for a change the inbox does not watch for itself.
 func (s *Service) Changed() { s.broadcast() }
 
@@ -126,7 +134,12 @@ func (s *Service) notifyChan() chan struct{} {
 	return s.notify
 }
 
-func (s *Service) broadcast() { s.Hub.BroadcastOnce("inbox", s.message) }
+func (s *Service) broadcast() {
+	s.Hub.BroadcastOnce("inbox", s.message)
+	if s.OnChange != nil {
+		s.OnChange()
+	}
+}
 
 func (s *Service) Connected(c *server.Client) { _ = c.SendOnce("inbox", s.message) }
 
@@ -287,6 +300,7 @@ func (s *Service) Refresh() {
 	s.mu.Unlock()
 	s.scanMu.Unlock()
 	s.captureAll() // answers written by someone else count too
+	s.scanned.Store(true)
 	s.broadcast()
 }
 
