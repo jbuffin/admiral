@@ -224,6 +224,18 @@ func (s *Store) validateLaunch(f config.Fleet, l Launch) error {
 	if err := launcher.AutopilotArgs(l.Harness, dock.Args, l.Args); err != nil {
 		return invalidf("args: %v", err)
 	}
+	if l.Skill != (launcher.Skill{}) {
+		if err := launcher.CheckSkill(l.Skill); err != nil {
+			return invalidf("skill: %v", err)
+		}
+	}
+	if s.ResourceKnown != nil {
+		for _, name := range l.Resources {
+			if !s.ResourceKnown(name) {
+				return invalidf("no resource named %q", name)
+			}
+		}
+	}
 	return nil
 }
 
@@ -365,10 +377,11 @@ type Trigger struct {
 	UndoneAt time.Time `json:"undone_at,omitzero"`
 }
 
-// logLine is one line of triggers.jsonl: a record, or a mark that an earlier launch was undone.
+// logLine is one line of triggers.jsonl: a record, or a mark that an earlier launch was undone or its ship ended failed.
 type logLine struct {
 	Trigger
 	UndoOf string `json:"undo_of,omitempty"`
+	FailOf string `json:"fail_of,omitempty"`
 }
 
 func (s *Store) appendLine(fleet string, l logLine) error {
@@ -406,7 +419,7 @@ func (s *Store) readLog(fleet string) ([]logLine, error) {
 	for {
 		line, err := r.ReadBytes('\n')
 		var l logLine
-		if len(line) > 0 && json.Unmarshal(line, &l) == nil && (l.ID != "" || l.UndoOf != "") {
+		if len(line) > 0 && json.Unmarshal(line, &l) == nil && (l.ID != "" || l.UndoOf != "" || l.FailOf != "") {
 			out = append(out, l)
 		}
 		if err == io.EOF {
@@ -462,6 +475,78 @@ func (s *Store) Undo(fleet, id string) error {
 	return ErrNotFound
 }
 
+// MarkFailed appends a mark that the launch record id's ship ended failed; Recent then reads the record as failed.
+func (s *Store) MarkFailed(fleet, id, reason string) error {
+	if _, err := s.fleet(fleet); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	lines, err := s.readLog(fleet)
+	if err != nil {
+		return err
+	}
+	for _, l := range lines {
+		if l.FailOf == id {
+			return nil
+		}
+	}
+	for _, l := range lines {
+		if l.ID == id {
+			if l.Outcome != Launched {
+				return invalidf("only a launch can end failed")
+			}
+			return s.appendLine(fleet, logLine{Trigger: Trigger{At: s.now(), Reason: reason}, FailOf: id})
+		}
+	}
+	return ErrNotFound
+}
+
+// SetBefore changes only Before acting. It skips the save-time checks, as SetEnabled does: the circuit breaker must be able to tighten a routine whose launch no longer passes them.
+func (s *Store) SetBefore(fleet, id string, m Mode) (Routine, error) {
+	if _, err := s.fleet(fleet); err != nil {
+		return Routine{}, err
+	}
+	switch m {
+	case ReportOnly, AskFirst, Act:
+	default:
+		return Routine{}, invalidf("before_acting must be report_only, ask_first or act, not %q", m)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	list, err := s.load(fleet)
+	if err != nil {
+		return Routine{}, err
+	}
+	i := indexOf(list, id)
+	if i < 0 {
+		return Routine{}, ErrNotFound
+	}
+	// UpdatedAt stays: the scheduler counts a routine's next run from its last save, and this change must not move it
+	list[i].Before = m
+	if err := s.save(fleet, list); err != nil {
+		return Routine{}, err
+	}
+	return list[i], nil
+}
+
+// FleetKeys lists the fleets that have routines stored, which the scheduler walks.
+func (s *Store) FleetKeys() []string {
+	entries, err := os.ReadDir(filepath.Join(s.Home, "routines"))
+	if err != nil {
+		return nil
+	}
+	var keys []string
+	for _, e := range entries {
+		if e.IsDir() {
+			if _, err := s.fleet(e.Name()); err == nil {
+				keys = append(keys, e.Name())
+			}
+		}
+	}
+	return keys
+}
+
 // Recent is a routine's records newest first with marks folded in; limit 0 means all.
 func (s *Store) Recent(fleet, routine string, limit int) ([]Trigger, error) {
 	if _, err := s.fleet(fleet); err != nil {
@@ -474,16 +559,23 @@ func (s *Store) Recent(fleet, routine string, limit int) ([]Trigger, error) {
 		return nil, err
 	}
 	undone := map[string]time.Time{}
+	failed := map[string]string{}
 	for _, l := range lines {
 		if l.UndoOf != "" {
 			undone[l.UndoOf] = l.At
+		}
+		if l.FailOf != "" {
+			failed[l.FailOf] = l.Reason
 		}
 	}
 	out := []Trigger{}
 	for i := len(lines) - 1; i >= 0; i-- {
 		l := lines[i]
-		if l.UndoOf != "" || l.Routine != routine {
+		if l.UndoOf != "" || l.FailOf != "" || l.Routine != routine {
 			continue
+		}
+		if reason, ok := failed[l.ID]; ok {
+			l.Outcome, l.Reason = Failed, reason
 		}
 		if at, ok := undone[l.ID]; ok {
 			l.Undone, l.UndoneAt = true, at

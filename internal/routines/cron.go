@@ -132,8 +132,13 @@ func (s Schedule) wallMatches(t time.Time) bool {
 
 // repeated is true in the second pass over a wall-clock time when clocks go back.
 func repeated(t time.Time) bool {
-	p := t.Add(-time.Hour)
-	return p.Hour() == t.Hour() && p.Minute() == t.Minute()
+	// zones turn clocks back by 30 minutes, one hour or two
+	for _, back := range []time.Duration{30 * time.Minute, time.Hour, 2 * time.Hour} {
+		if p := t.Add(-back); p.Hour() == t.Hour() && p.Minute() == t.Minute() {
+			return true
+		}
+	}
+	return false
 }
 
 // afterGap is true when t is the first instant after clocks sprang forward and a wall time the gap skipped matches.

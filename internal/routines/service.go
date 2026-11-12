@@ -14,6 +14,14 @@ import (
 // Service serves the routes.
 type Service struct {
 	Store *Store
+	// OnChange runs after a routine is saved, deleted or switched.
+	OnChange func()
+}
+
+func (s *Service) changed() {
+	if s.OnChange != nil {
+		s.OnChange()
+	}
 }
 
 // Connected sends nothing: the screen asks when it opens.
@@ -94,6 +102,7 @@ func (s *Service) serveCreate(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
+	s.changed()
 	writeJSON(w, http.StatusCreated, got)
 }
 
@@ -107,6 +116,7 @@ func (s *Service) serveUpdate(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
+	s.changed()
 	writeJSON(w, http.StatusOK, got)
 }
 
@@ -115,6 +125,7 @@ func (s *Service) serveDelete(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
+	s.changed()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -125,6 +136,7 @@ func (s *Service) serveEnable(on bool) http.HandlerFunc {
 			fail(w, err)
 			return
 		}
+		s.changed()
 		writeJSON(w, http.StatusOK, got)
 	}
 }

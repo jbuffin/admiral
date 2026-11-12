@@ -38,6 +38,8 @@ type Record struct {
 	Via string `json:"via,omitempty"`
 	// Chat is the ship's chat:<message id> launch key, so a moored ship still holds its message.
 	Chat string `json:"chat,omitempty"`
+	// Routine is the ship's routine:<id> launch key, so a moored ship still holds its routine.
+	Routine string `json:"routine,omitempty"`
 	// Resources the ship held, so a round holds the same.
 	Resources []string  `json:"resources"`
 	MooredAt  time.Time `json:"moored_at"`

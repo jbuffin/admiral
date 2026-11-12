@@ -592,27 +592,44 @@ func (s *fleetChat) serveSend(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
 		return
 	}
-	text := sessionhost.CleanMessage(req.Text)
+	if err := s.send(req.Text); err != nil {
+		writeError(w, err.Status, err.Msg)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"sent": true})
+}
+
+// send pastes a message into the running chat; the error is the HTTP answer the engineer's send gets.
+func (s *fleetChat) send(raw string) *launcher.Error {
+	text := sessionhost.CleanMessage(raw)
 	switch {
 	case text == "":
-		writeError(w, http.StatusBadRequest, "the message is empty")
-		return
+		return &launcher.Error{Status: http.StatusBadRequest, Msg: "the message is empty"}
 	case len(text) > sessionhost.MaxPaste:
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("the message is %d bytes; at most %d", len(text), sessionhost.MaxPaste))
-		return
+		return &launcher.Error{Status: http.StatusBadRequest, Msg: fmt.Sprintf("the message is %d bytes; at most %d", len(text), sessionhost.MaxPaste)}
 	}
 	s.op.Lock()
 	defer s.op.Unlock()
 	pane, status, msg := s.ready()
 	if pane == "" {
-		writeError(w, status, msg)
-		return
+		return &launcher.Error{Status: status, Msg: msg}
 	}
 	if err := s.pasteMessage(pane, text); err != nil {
-		writeError(w, http.StatusBadGateway, "could not send the message: "+err.Error())
-		return
+		return &launcher.Error{Status: http.StatusBadGateway, Msg: "could not send the message: " + err.Error()}
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"sent": true})
+	return nil
+}
+
+// Send pastes a turn into the fleet's running chat, as a routine's prompt does; it errors when the chat is off or not running.
+func (s *Service) Send(fleet, text string) error {
+	fc, lerr := s.chatFor(fleet)
+	if lerr != nil {
+		return errors.New(lerr.Msg)
+	}
+	if lerr := fc.send(text); lerr != nil {
+		return errors.New(lerr.Msg)
+	}
+	return nil
 }
 
 func (s *fleetChat) ready() (pane string, status int, msg string) {

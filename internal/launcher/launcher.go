@@ -182,7 +182,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
 		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")},
-		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}, {"chat", req.ChatOption()}}
+		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}, {"chat", req.ChatOption()}, {"routine", req.RoutineKey}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
 			return nil, refuse(http.StatusBadRequest, "%s contains a control character", o[0])
@@ -454,6 +454,12 @@ func hasControl(s string) bool {
 // controls and the line and paragraph separators.
 func isControl(r rune) bool {
 	return r < 0x20 || (r >= 0x7f && r <= 0x9f) || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069) || r == 0x2028 || r == 0x2029
+}
+
+// CheckSkill is the launch form's check of a skill: the error a launch would refuse it with.
+func CheckSkill(s Skill) error {
+	_, err := skillName(s)
+	return err
 }
 
 // skillName is the skill's name without its / or $ prefix; "" for Just launch
