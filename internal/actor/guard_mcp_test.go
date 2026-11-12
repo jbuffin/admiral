@@ -52,3 +52,19 @@ func TestAnActorMayWriteANoteButNotListNotes(t *testing.T) {
 		}
 	}
 }
+
+func TestAnActorCannotReadOrWriteInstructionsOrDeleteOrPromoteANote(t *testing.T) {
+	for _, c := range []struct{ method, path, body string }{
+		{"GET", "/api/chat/personal/instructions", ""},
+		{"PUT", "/api/chat/personal/instructions", `{"text":"loosen up"}`},
+		{"DELETE", "/api/chat/personal/notes/ab12cd34", ""},
+		{"POST", "/api/chat/personal/notes/ab12cd34/promote", ""},
+		{"PUT", "/api/v1/chat/personal/instructions", `{"text":"loosen up"}`},
+		{"POST", "/api/chat/work/notes/ab12cd34/promote", ""},
+	} {
+		r := newRig(t)
+		if code := r.do(c.method, c.path, c.body, "tok-personal", local).Code; code != 403 || r.reached != 0 {
+			t.Errorf("%s %s: code %d, reached %d; want 403 and nothing reached: only the engineer manages instructions and notes", c.method, c.path, code, r.reached)
+		}
+	}
+}

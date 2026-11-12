@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
@@ -595,7 +595,15 @@ test('Turn off Tailscale mode asks first, keeps the logins and serve, names the 
 
 test("a fleet's AdmiralBot page shows its harness, model, effort and refresh threshold, saves a change that survives a reload, shows a refusal and, for a fleet with no Claude Code dock, why its chat is off", async ({ page, admiral }) => {
   seedFleets(admiral, { chat: true, versioned: true });
+  // Notes AdmiralBot saved earlier, written before the start so the chat is live for them.
+  const ledgerAt = (n: number) => `{"v":1,"ts":"2026-11-1${n}T09:00:00Z","event":"added","id":"n${n}","kind":"note","text":"%s","via":"admiralbot"}\n`;
+  mkdirSync(join(admiral.home, 'chat', 'harbor'), { recursive: true });
+  writeFileSync(
+    join(admiral.home, 'chat', 'harbor', 'ledger.jsonl'),
+    [ledgerAt(1).replace('%s', 'Deploys go out on Tuesdays.'), ledgerAt(2).replace('%s', 'The staging box is flaky.'), ledgerAt(3).replace('%s', 'Stale note to delete.')].join(''),
+  );
   await admiral.start();
+  await expect.poll(async () => ((await (await fetch(`${admiral.url}api/v1/chat/harbor/notes`)).json()) as { notes: unknown[] }).notes.length).toBe(3);
   const watch = watchPage(page, admiral.url);
   const harbor = () => JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8')).fleets.harbor as { chat?: Record<string, unknown> };
   const pick = (g: string, name: string) => page.getByRole('radiogroup', { name: g }).getByRole('radio', { name, exact: true });
@@ -617,8 +625,9 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
   await expect(page.getByRole('radiogroup', { name: 'Refresh context at' }).getByRole('radio')).toHaveText(['100K', '150K', '300K', 'Never']);
   await expect(pick('Refresh context at', '150K')).toBeChecked();
   // What this ticket does not build is not drawn.
-  for (const absent of ['Worker model', 'Also refresh after an idle hour', 'Acting for you', 'What AdmiralBot knows', 'Guardrails']) await expect(main).not.toContainText(absent);
+  for (const absent of ['Worker model', 'Also refresh after an idle hour', 'Acting for you', 'Guardrails']) await expect(main).not.toContainText(absent);
   await expect(main).not.toContainText('ledger');
+  await expect(page.getByRole('heading', { name: 'What AdmiralBot knows', level: 2 })).toBeVisible();
 
   // A change saves through the fleet, and a reload shows it. Only the chat object is sent.
   await pick('Model', 'Opus').click();
@@ -648,6 +657,41 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
   await expect(page.getByRole('alert')).toContainText('"haiku" is refused for this test');
   await expect(pick('Model', 'Haiku')).toBeChecked();
   await page.unroute('**/api/v1/fleets/harbor');
+
+  // What AdmiralBot knows: the instructions are the engineer's, and the notes AdmiralBot saved can be moved into them or deleted.
+  const instructions = page.getByRole('textbox', { name: 'Instructions' });
+  const saveInstructions = page.getByRole('button', { name: 'Save instructions', exact: true });
+  const note = (text: string) => main.getByRole('listitem').filter({ hasText: text });
+  const instructionsFile = () => (existsSync(join(admiral.home, 'chat', 'harbor', 'instructions.md')) ? readFileSync(join(admiral.home, 'chat', 'harbor', 'instructions.md'), 'utf8') : null);
+  await expect(main).toContainText('Plain words AdmiralBot follows every time. Only you can change them.');
+  await expect(instructions).toHaveValue('');
+  await expect(main).toContainText('0 / 2000');
+  await expect(saveInstructions).toBeDisabled();
+  await expect(main.getByRole('listitem').filter({ hasText: /Deploys go out|staging box|Stale note/ })).toHaveText([/Deploys go out on Tuesdays\./, /The staging box is flaky\./, /Stale note to delete\./]);
+  // Move to instructions: the text lands in the textarea, the note leaves the list and the file holds it.
+  await note('Deploys go out').getByRole('button', { name: 'Move to instructions' }).click();
+  await expect(instructions).toHaveValue('Deploys go out on Tuesdays.');
+  await expect(note('Deploys go out').getByRole('button', { name: 'Move to instructions' })).toHaveCount(0);
+  await expect.poll(instructionsFile).toBe('Deploys go out on Tuesdays.');
+  // An edit counts live, over the cap disables Save, and a save writes the file.
+  await instructions.fill('😀'.repeat(2001));
+  await expect(main).toContainText('2001 / 2000');
+  await expect(saveInstructions).toBeDisabled();
+  await instructions.fill('Deploys go out on Tuesdays.\n\nBe terse.');
+  await expect(saveInstructions).toBeEnabled();
+  const saved = page.waitForRequest((r) => r.method() === 'PUT' && new URL(r.url()).pathname === '/api/v1/chat/harbor/instructions');
+  await saveInstructions.click();
+  expect((await saved).postDataJSON()).toEqual({ text: 'Deploys go out on Tuesdays.\n\nBe terse.' });
+  await expect.poll(instructionsFile).toBe('Deploys go out on Tuesdays.\n\nBe terse.');
+  await expect(saveInstructions).toBeDisabled();
+  // Delete drops a note, and the instructions stay.
+  await note('Stale note').getByRole('button', { name: 'Delete' }).click();
+  await expect(note('Stale note')).toHaveCount(0);
+  await expect(note('staging box')).toHaveCount(1);
+  expect(instructionsFile()).toBe('Deploys go out on Tuesdays.\n\nBe terse.');
+  await page.reload();
+  await expect(instructions).toHaveValue('Deploys go out on Tuesdays.\n\nBe terse.');
+  await expect(main.getByRole('listitem').filter({ hasText: /Deploys go out|staging box|Stale note/ })).toHaveText([/The staging box is flaky\./]);
 
   // A fleet with no Claude Code dock: no harness to pick, the reason on top, the settings still editable.
   await prefsNav(page).getByRole('group', { name: `${HOME} fleet` }).getByRole('link', { name: 'AdmiralBot', exact: true }).click();

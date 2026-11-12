@@ -244,3 +244,21 @@ func newID() (string, error) {
 	}
 	return hex.EncodeToString(b), nil
 }
+
+// MaxInstructionChars caps a fleet's instructions, in code points after trimming.
+const MaxInstructionChars = 2000
+
+// ErrNotFound is a note id that is unknown or already cancelled.
+var ErrNotFound = errors.New("ledger: no such open note")
+
+// Instructions are the fleet's instructions, "" when it has none.
+func (l *Ledger) Instructions(fleet string) (string, error) { return "", nil }
+
+// SetInstructions stores the engineer's instructions trimmed and returns them; empty text removes them.
+func (l *Ledger) SetInstructions(fleet, text string) (string, error) { return "", nil }
+
+// Cancel closes an open note as the engineer, with no via; ErrNotFound when none is open.
+func (l *Ledger) Cancel(fleet, id string) error { return nil }
+
+// Promote appends the note to the instructions and cancels it under one lock, returning the new instructions.
+func (l *Ledger) Promote(fleet, id string) (string, error) { return "", nil }

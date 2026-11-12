@@ -40,3 +40,11 @@ export function chatSaveBody(shown: ChatSettings, edited: ChatSettings): { chat:
 
 /** The server's refusal without its `fleets.<key>.chat.<field>: ` path. */
 export const chatErrorMessage = fieldMessage;
+
+export const INSTRUCTIONS_MAX = 0;
+
+/** The length the server counts: Unicode code points of the trimmed text. */
+export const instructionsCount = (_text: string): number => 0;
+
+/** Whether "Save instructions" is enabled: the text differs from what is saved and fits the cap. */
+export const canSaveInstructions = (_saved: string, _edited: string): boolean => false;
