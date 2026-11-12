@@ -1,7 +1,8 @@
 // The attention count over the Inbox queue, and where it shows: title, favicon, app badge.
 import { describe, expect, it } from 'vitest';
 import type { CrewBoat, Ship } from './api';
-import { applyAttention, type AttentionTarget } from './attention';
+import { readFileSync } from 'node:fs';
+import { applyAttention, attentionApplier, DOT_ICON, type AttentionTarget } from './attention';
 import { attentionCount, createInboxQueue, HOLD_MS, sharedInboxQueue, type InboxItem } from './inbox';
 
 const T0 = Date.parse('2026-10-22T10:00:00Z');
@@ -190,5 +191,41 @@ describe('applyAttention', () => {
     const { t } = target(false);
     expect(() => applyAttention(3, t)).not.toThrow();
     expect(t.document.title).toBe('(3) Admiral');
+  });
+});
+
+describe('attentionApplier', () => {
+  it('writes nothing when the count has not changed', () => {
+    const icon = { href: '/favicon.svg' };
+    let titleWrites = 0;
+    let title = 'Admiral';
+    const t: AttentionTarget = {
+      document: {
+        get title() {
+          return title;
+        },
+        set title(v: string) {
+          titleWrites++;
+          title = v;
+        },
+        querySelector: () => icon,
+      },
+      navigator: {},
+    };
+    const apply = attentionApplier(t);
+    apply(2);
+    apply(2);
+    expect(titleWrites).toBe(1);
+    apply(0);
+    expect(titleWrites).toBe(2);
+  });
+});
+
+describe('the dotted favicon', () => {
+  it('is the favicon file plus the dot', () => {
+    const file = readFileSync(new URL('../../public/favicon.svg', import.meta.url), 'utf8').trim();
+    const dotted = decodeURIComponent(DOT_ICON.slice('data:image/svg+xml,'.length));
+    expect(dotted.startsWith(file.slice(0, -'</svg>'.length))).toBe(true);
+    expect(dotted.slice(file.length - '</svg>'.length)).toMatch(/^<circle [^>]*\/><\/svg>$/);
   });
 });
