@@ -301,7 +301,7 @@ export async function checkHarness(fleet: string, harness: string): Promise<Chec
 
 export const shipsSocketUrl = () => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/v1`;
 
-export type ShipsProbe = 'ok' | 'signed-out' | 'down';
+export type ShipsProbe = 'ok' | 'signed-out' | 'down' | 'unreachable';
 
 // A failed WebSocket handshake doesn't say why, so a reconnect asks over HTTP first: 401 is a changed token.
 export async function probeShips(): Promise<ShipsProbe> {
@@ -310,7 +310,8 @@ export async function probeShips(): Promise<ShipsProbe> {
     if (res.status === 401) return 'signed-out';
     return res.ok ? 'ok' : 'down';
   } catch {
-    return 'down';
+    // A rejected fetch is a network failure: no answer at all, unlike a 401 or a 5xx.
+    return 'unreachable';
   }
 }
 

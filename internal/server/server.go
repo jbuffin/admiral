@@ -10,6 +10,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"html"
 	"io/fs"
 	"mime"
 	"net/http"
@@ -29,6 +31,7 @@ import (
 func init() {
 	// Go's built-in table has no woff2.
 	_ = mime.AddExtensionType(".woff2", "font/woff2")
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
 }
 
 type MessageHandler func(ctx context.Context, c *Client, raw json.RawMessage)
@@ -323,6 +326,8 @@ func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
 	}
 	if name == "app/index.html" {
 		meta := `<meta name="admiral-merge-token" content="` + s.token() + `">`
+		// A cached shell compares this stamp with /api/version to notice a server it no longer matches.
+		meta += fmt.Sprintf(`<meta name="admiral-build" content="%s %s">`, html.EscapeString(s.Version), html.EscapeString(s.Commit))
 		data = bytes.Replace(data, []byte("</head>"), []byte(meta+"</head>"), 1)
 	}
 	http.ServeContent(w, r, name, time.Time{}, bytesReader(data))

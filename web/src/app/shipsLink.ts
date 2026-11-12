@@ -13,7 +13,7 @@ export const inboxItems = signal<InboxItem[]>([]);
 export const inboxLoaded = signal(false);
 export const sources = signal<Source[]>([]);
 export const resources = signal<Resource[]>([]);
-export const shipsLink = signal<'connecting' | 'open' | 'reconnecting' | 'signed-out'>('connecting');
+export const shipsLink = signal<'connecting' | 'open' | 'reconnecting' | 'signed-out' | 'unreachable'>('connecting');
 
 type Listener = (msg: { type: string; ship?: string; crew?: string; items?: unknown[]; reset?: boolean }) => void;
 const listeners = new Set<Listener>();
@@ -47,6 +47,13 @@ export function sendShips(msg: object): boolean {
   if (current?.readyState !== OPEN) return false;
   current.send(JSON.stringify(msg));
   return true;
+}
+
+let retryNow: (() => void) | undefined;
+
+/** Probes at once instead of waiting out the backoff; the socket opens when the server answers. */
+export function retryShips() {
+  retryNow?.();
 }
 
 const RETRY_FIRST_MS = 1000;
@@ -93,22 +100,33 @@ export function watchShips(): () => void {
   const schedule = () => {
     const wait = delay;
     delay = Math.min(delay * 2, RETRY_MAX_MS);
-    retry = setTimeout(async () => {
-      const p = await probeShips();
-      if (stopped) return;
-      if (p === 'signed-out') {
-        shipsLink.value = 'signed-out';
-        signedOut.value = true;
-      }
-      else if (p === 'down') schedule();
-      else open();
-    }, wait);
+    retry = setTimeout(probe, wait);
+  };
+
+  const probe = async () => {
+    const p = await probeShips();
+    if (stopped) return;
+    if (p === 'signed-out') {
+      shipsLink.value = 'signed-out';
+      signedOut.value = true;
+    } else if (p === 'unreachable') {
+      shipsLink.value = 'unreachable';
+      schedule();
+    } else if (p === 'down') schedule();
+    else open();
+  };
+
+  retryNow = () => {
+    clearTimeout(retry);
+    delay = RETRY_FIRST_MS;
+    void probe();
   };
 
   shipsLink.value = 'connecting';
   open();
   return () => {
     stopped = true;
+    retryNow = undefined;
     clearTimeout(retry);
     if (socket) {
       if (current === socket) current = undefined;

@@ -13,9 +13,10 @@ import { MooredActions } from './MooredActions';
 import { MooredPRs } from './MooredPRs';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
-import { ships, shipsLoaded, sources } from './shipsLink';
+import { ships, shipsLink, shipsLoaded, sources } from './shipsLink';
 import { signedOut } from './session';
 import { SIGNED_OUT_LINE } from './remoteAccess';
+import { Unreachable } from './Unreachable';
 import { ReadyToMerge, StatusGlyph } from './StatusGlyph';
 import { call, type Order, type Ship } from './api';
 import { CrewPage } from './CrewPage';
@@ -389,6 +390,7 @@ export function Shell() {
       </main>
     );
   const surface = surfaceOf(loc.value.path) ?? SURFACES[0];
+  if (shipsLink.value === 'unreachable') return <Unreachable />;
   if (phone) return <PhoneShell surface={surface} />;
   return (
     <div class="shell">

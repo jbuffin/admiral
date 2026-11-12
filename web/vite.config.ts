@@ -40,7 +40,11 @@ export default defineConfig({
   build: {
     assetsInlineLimit: 0,
     // Two pages: the old UI at / and the new shell, built to dist/app/index.html.
-    rollupOptions: { input: { main: resolve(__dirname, 'index.html'), app: resolve(__dirname, 'app/index.html') } },
+    rollupOptions: {
+      // The worker is built to a fixed /sw.js: a browser finds a new worker by its URL, so it takes no hash.
+      input: { main: resolve(__dirname, 'index.html'), app: resolve(__dirname, 'app/index.html'), sw: resolve(__dirname, 'src/app/sw.ts') },
+      output: { entryFileNames: (chunk) => (chunk.name === 'sw' ? 'sw.js' : 'assets/[name]-[hash].js') },
+    },
   },
   server: {
     proxy: { '/api': { target }, '/ws': { target, ws: true } },
