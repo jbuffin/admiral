@@ -14,6 +14,7 @@ import { MooredPRs } from './MooredPRs';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
 import { watchPresence } from './presence';
+import { ToastRegion } from './ToastRegion';
 import { ships, shipsLink, shipsLoaded, sources } from './shipsLink';
 import { signedOut } from './session';
 import { Unreachable } from './Unreachable';
@@ -392,6 +393,7 @@ export function Shell() {
   return (
     <>
       {phone ? <PhoneShell surface={surface} /> : <DesktopShell surface={surface} />}
+      <ToastRegion />
       {gate === 'unreachable' ? <Unreachable /> : null}
       {gate === 'pair' ? <PairScreen /> : null}
       {shipsLink.value === 'open' ? <InstallSheet /> : null}

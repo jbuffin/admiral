@@ -701,3 +701,11 @@ button.pill { cursor: pointer; min-height: 32px; }
 /* Preferences choices: a wrapping row of chips under the label. */
 .choice-set { flex-direction: column; align-items: stretch; gap: 10px; }
 .choice-group { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.toasts { position: fixed; top: calc(12px + env(safe-area-inset-top)); right: calc(12px + env(safe-area-inset-right)); z-index: 25; display: flex; flex-direction: column; gap: 8px; width: min(360px, calc(100vw - 24px)); pointer-events: none; }
+.toast { pointer-events: auto; display: flex; align-items: stretch; background: var(--color-panel); color: var(--color-text); border: 1px solid var(--color-line2); border-radius: var(--shape-radius-lg); box-shadow: 0 8px 24px var(--color-shadow); }
+.toast button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+.toast-body { flex: 1; min-width: 0; min-height: var(--shape-min-touch-target); display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; text-align: left; }
+.toast-name { font-weight: 600; }
+.toast-line { color: var(--color-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toast-dismiss { min-width: var(--shape-min-touch-target); min-height: var(--shape-min-touch-target); font-size: 20px; }

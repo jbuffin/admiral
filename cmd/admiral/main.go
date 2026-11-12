@@ -409,7 +409,7 @@ func serve(args []string) error {
 			}
 		}
 		return true
-	})
+	}, push.NewAlertSink(push.Async(hub)))
 	inboxService.OnChange = pushFeed.InboxChanged
 	shipService.OnChange = func() {
 		campaignService.ShipsChanged()

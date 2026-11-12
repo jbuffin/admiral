@@ -620,6 +620,8 @@ test('a ship\'s Bridge shows its tokens and its own money, and the Usage pages k
   await expect(usage).toContainText('3 premium requests');
   await expect(usage).not.toContainText('$');
 
+  // A ship page reads its usage on open and again 30 s later, so open this one once its record is there.
+  await expect.poll(async () => ((await (await fetch(`${admiral.url}api/v1/ships/${codex.session}/usage`)).json()) as { source: string }).source).toBe('record');
   await page.goto(admiral.url + 'app/ships?fleet=alpha');
   await rowLink(page, codex).tap();
   await expect(usage).toContainText('360 tokens', { timeout: 15_000 });
@@ -742,6 +744,47 @@ test('the Inbox lists a question item and a needs-you stop from two fleets, each
   await page.getByRole('region', { name: 'Peek' }).getByRole('button', { name: 'Remove', exact: true }).tap();
   await expect(page).toHaveTitle('Admiral', { timeout: 15_000 });
   await expect(icon).toHaveAttribute('href', '/favicon.svg');
+});
+
+test('a ship that starts waiting on a watched window brings a toast that opens its Peek, a vague stop and an old one bring none, and an item\'s markup shows as text', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  await page.goto(admiral.url + 'app/inbox');
+  // The first ships message arrives after the shell has reported its presence on the open socket.
+  await expect(page.getByRole('main')).toContainText('Whatever needs you, from every fleet, will land here.');
+  await page.getByRole('navigation').getByRole('link', { name: 'Ships' }).tap();
+  await page.getByRole('navigation').getByRole('link', { name: 'Inbox' }).tap();
+  const toasts = page.getByRole('status');
+
+  const rec = (ship: { session: string }, file: string) => join(admiral.home, 'rec', ship.session, file);
+  const permission = 'event PermissionRequest {"hook_event_name":"PermissionRequest","tool_name":"Bash"}';
+  // The harness reads its cue file line by line as it runs, so the first ship runs all of its cues before the file changes.
+  // A stop with no hook event says only that the ship needs you, which never pushes.
+  const vague = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cue: 'wait go\nhook needs_you\n' });
+  await expect.poll(() => existsSync(rec(vague, 'recorded'))).toBe(true);
+  writeFileSync(rec(vague, 'go'), '');
+  await expect.poll(() => existsSync(rec(vague, 'cues-done'))).toBe(true);
+  await expect(page.getByRole('main').getByRole('listitem').filter({ hasText: vague.name })).toBeVisible({ timeout: 15_000 });
+  await expect(toasts.getByRole('button')).toHaveCount(0);
+  const asking = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cue: `wait go\n${permission}\n` });
+  await expect.poll(() => existsSync(rec(asking, 'recorded'))).toBe(true);
+  writeFileSync(rec(asking, 'go'), '');
+  const toast = toasts.getByRole('button', { name: new RegExp(asking.name) });
+  await expect(toast).toBeVisible({ timeout: 15_000 });
+  expect(box(await toast.boundingBox()).height).toBeGreaterThanOrEqual(44);
+  expect(box(await toasts.getByRole('button', { name: /dismiss/i }).boundingBox()).height).toBeGreaterThanOrEqual(44);
+
+  await toast.tap();
+  await expect(page).toHaveURL(new RegExp(`/app/inbox/${encodeURIComponent(asking.session)}(\\?|$)`));
+  await expect(page.getByRole('region', { name: 'Peek' })).toBeVisible();
+  await expect(toast).toHaveCount(0);
+
+  // An item's title is text in the toast, and nothing in it runs.
+  seedInboxItem(admiral, asking.session, { id: 'q-x', kind: 'question', title: HOSTILE, question: { questions: [{ id: 'p', text: HOSTILE, options: [{ label: 'a' }] }] } });
+  await expect(toasts).toContainText(HOSTILE, { timeout: 15_000 });
+  expect(await page.evaluate(() => (window as unknown as { __xss?: number }).__xss)).toBeUndefined();
+  await toasts.getByRole('button', { name: /dismiss/i }).tap();
+  await expect(toasts).not.toContainText(HOSTILE);
 });
 
 const cachedPaths = (page: Page) =>

@@ -3,6 +3,7 @@ package push
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"strings"
 	"sync"
 
@@ -74,8 +75,18 @@ func (w *Watcher) Emit(ev Event) {
 		return
 	}
 	for _, s := range w.sinks {
-		s.Deliver(Decided{ev, out})
+		deliver(s, Decided{ev, out})
 	}
+}
+
+// deliver keeps a panicking sink from taking the feed, and so Admiral, down with it.
+func deliver(s Sink, d Decided) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("push: a sink panicked: %v", r)
+		}
+	}()
+	s.Deliver(d)
 }
 
 // asks is whether a needs-you reason is a question or an approval, as the hooks and the bell write it.
