@@ -319,8 +319,12 @@ func (g *githubConn) refresh() {
 			if router.Route(client.Host(), it.Repo) != g.fleet {
 				continue
 			}
-			orders = append(orders, map[string]any{"id": it.ID, "title": it.Title, "text": it.Text, "url": it.URL,
-				"repo": it.RepoURL, "hot": it.Hot, "labels": it.Labels, "sub_issues": it.SubIssues})
+			order := map[string]any{"id": it.ID, "title": it.Title, "text": it.Text, "url": it.URL,
+				"repo": it.RepoURL, "hot": it.Hot, "labels": it.Labels, "sub_issues": it.SubIssues}
+			if p := it.PR; p != nil {
+				order["pr"] = OrderPR{State: p.State, Review: p.Review, Checks: p.Checks, Mergeable: p.Mergeable, Conflicts: p.Conflicts, Ready: p.Ready}
+			}
+			orders = append(orders, order)
 		}
 		changed = g.store(v.ID, orders, "") || changed
 	}

@@ -84,6 +84,7 @@ type SourceView struct {
 func (s *Service) View() []SourceView {
 	list := s.Ships()
 	hidden := ships.HiddenOrders(list)
+	carried := mooredOn(list)
 	held := ships.ClaimsOf(list) // an issue a ship holds is hidden whichever source launched it
 	out := []SourceView{}
 	for _, st := range s.Sup.snapshot() {
@@ -113,7 +114,7 @@ func (s *Service) View() []SourceView {
 		for _, p := range st.panels {
 			orders := make([]Order, 0, len(p.Orders))
 			for _, o := range p.Orders {
-				if !hidden[ships.OrderKey{Source: st.def.Key, OrderID: o.ID}] && !(held[claimKey(o.URL)] != "") {
+				if (!hidden[ships.OrderKey{Source: st.def.Key, OrderID: o.ID}] || carried[ships.OrderKey{Source: st.def.Key, OrderID: o.ID}][prKey(o.URL)]) && !(held[claimKey(o.URL)] != "") {
 					orders = append(orders, o)
 				}
 			}
@@ -125,6 +126,27 @@ func (s *Service) View() []SourceView {
 	}
 	return out
 }
+
+// mooredOn lists, per launched order, the PRs a moored ship carries: its row stays while the ship is moored on it.
+func mooredOn(list []ships.Ship) map[ships.OrderKey]map[string]bool {
+	out := map[ships.OrderKey]map[string]bool{}
+	for _, sh := range list {
+		if sh.Status != ships.StatusMoored || sh.Source == "" || sh.OrderID == "" {
+			continue
+		}
+		k := ships.OrderKey{Source: sh.Source, OrderID: sh.OrderID}
+		if out[k] == nil {
+			out[k] = map[string]bool{}
+		}
+		for _, p := range sh.PRs {
+			out[k][prKey(p.URL)] = true
+		}
+	}
+	return out
+}
+
+// prKey makes two spellings of a PR's URL equal.
+func prKey(u string) string { return strings.ToLower(strings.TrimRight(u, "/")) }
 
 // SortPanels puts the panels that order names first, in its order; the rest
 // keep the plugin's order after them.

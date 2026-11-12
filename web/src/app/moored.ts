@@ -29,7 +29,7 @@ const ENDED: Record<string, Chip> = {
 };
 
 // A value the table doesn't know shows no chip rather than a guess.
-export function prChips(pr: MooredPR): Chip[] {
+export function prChips(pr: Pick<MooredPR, 'state' | 'review' | 'checks' | 'mergeable'>): Chip[] {
   const ended = ENDED[pr.state];
   if (ended) return [ended];
   return [REVIEW[pr.review], CHECKS[pr.checks], MERGE[pr.mergeable]].filter((c): c is Chip => c !== undefined);
@@ -62,12 +62,28 @@ export const mergeHint = (method?: string, stack = false): string => {
   return stack ? [how, 'whole stack'].filter(Boolean).join(' · ') : how;
 };
 
+const prKey = (url: string) => url.replace(/\/+$/, '').toLowerCase();
+
 /** The moored ship whose PRs include the order's URL, comparing case-insensitively and ignoring a trailing slash. */
-export function carryingShip(_ships: Ship[], _orderUrl: string): Ship | undefined {
-  return undefined;
+export function carryingShip(ships: Ship[], orderUrl: string): Ship | undefined {
+  const key = prKey(orderUrl);
+  return ships.find((s) => s.status === 'moored' && (s.prs ?? []).some((p) => prKey(p.url) === key));
 }
 
-/** What a carrying ship does next: `ready` when its whole stack can merge (rendered by ReadyToMerge), else a few words. */
-export function nextStep(_ship: Ship): { ready: boolean; text: string } {
-  return { ready: false, text: '' };
+/** What the first open PR that is not ready waits on: the first of conflicts, failing checks, requested changes, pending checks, a missing review. */
+function prStep(prs: MooredPR[]): string {
+  const layer = prs.find((p) => p.state === 'OPEN' && !p.ready);
+  if (!layer) return '';
+  if (layer.conflicts || layer.mergeable === 'CONFLICTING') return 'Has conflicts';
+  if (layer.checks === 'FAILURE' || layer.checks === 'ERROR') return 'Checks failing';
+  if (layer.review === 'CHANGES_REQUESTED') return 'Changes requested';
+  if (layer.checks === 'PENDING' || layer.checks === 'EXPECTED') return 'Checks pending';
+  if (layer.review === 'REVIEW_REQUIRED' || !layer.review) return 'Waiting on review';
+  return '';
+}
+
+/** What a carrying ship does next: `ready` when its whole stack can merge (rendered by ReadyToMerge), else the ship's own note, else what its PR waits on. */
+export function nextStep(ship: Ship): { ready: boolean; text: string } {
+  if (ship.stack_ready) return { ready: true, text: '' };
+  return { ready: false, text: rowButtons(ship, false).note || prStep(ship.prs ?? []) };
 }

@@ -212,4 +212,25 @@ describe('nextStep', () => {
     expect(nextStep(ship({ prs: [pr({ review: 'APPROVED', checks: 'FAILURE', mergeable: 'MERGEABLE' })] }))).toEqual({ ready: false, text: 'Checks failing' });
     expect(nextStep(ship({ prs: [pr({ review: 'APPROVED', checks: 'SUCCESS', mergeable: 'CONFLICTING', conflicts: true })] }))).toEqual({ ready: false, text: 'Has conflicts' });
   });
+
+  it('names the first thing that applies, in a fixed order', () => {
+    const bad = pr({ mergeable: 'CONFLICTING', conflicts: true, checks: 'FAILURE', review: 'CHANGES_REQUESTED' });
+    const text = (over: Partial<MooredPR>) => nextStep(ship({ prs: [{ ...bad, ...over }] })).text;
+    expect(text({})).toBe('Has conflicts');
+    expect(text({ mergeable: 'MERGEABLE', conflicts: false })).toBe('Checks failing');
+    expect(text({ mergeable: 'MERGEABLE', conflicts: false, checks: 'ERROR' })).toBe('Checks failing');
+    expect(text({ mergeable: 'MERGEABLE', conflicts: false, checks: 'PENDING' })).toBe('Changes requested');
+    expect(text({ mergeable: 'MERGEABLE', conflicts: false, checks: 'PENDING', review: 'APPROVED' })).toBe('Checks pending');
+    expect(text({ mergeable: 'MERGEABLE', conflicts: false, checks: 'EXPECTED', review: 'REVIEW_REQUIRED' })).toBe('Checks pending');
+    expect(text({ mergeable: 'MERGEABLE', conflicts: false, checks: 'SUCCESS', review: '' })).toBe('Waiting on review');
+    expect(text({ mergeable: 'MERGEABLE', conflicts: false, checks: 'SUCCESS', review: 'APPROVED' }), 'nothing to say').toBe('');
+  });
+
+  it('reads the first layer of a stack that is not ready', () => {
+    const ready = pr({ url: 'https://github.com/acme/api/pull/6', ready: true });
+    const failing = pr({ url: 'https://github.com/acme/api/pull/7', checks: 'FAILURE' });
+    const conflicting = pr({ url: 'https://github.com/acme/api/pull/8', conflicts: true, mergeable: 'CONFLICTING' });
+    expect(nextStep(ship({ prs: [ready, failing, conflicting] })).text).toBe('Checks failing');
+    expect(nextStep(ship({ prs: [ready, conflicting, failing] })).text).toBe('Has conflicts');
+  });
 });
