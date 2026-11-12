@@ -1,3 +1,4 @@
+import { signal } from '@preact/signals';
 import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch, loaded } from './fleets';
@@ -7,7 +8,7 @@ import { Icon } from './Icon';
 import { Preferences } from './Preferences';
 import { Sheet } from './Sheet';
 import { GROUP_TITLES, groupShips, shipRowAge } from './shipList';
-import { rowButtons } from './moored';
+import { carryingShip, nextStep, prChips, rowButtons } from './moored';
 import { MooredActions } from './MooredActions';
 import { MooredPRs } from './MooredPRs';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
@@ -16,11 +17,13 @@ import { ships, shipsLoaded, sources } from './shipsLink';
 import { signedOut } from './session';
 import { SIGNED_OUT_LINE } from './remoteAccess';
 import { ReadyToMerge, StatusGlyph } from './StatusGlyph';
-import { call, type Ship } from './api';
+import { call, type Order, type Ship } from './api';
 import { campaignOf, go, loc, shipPath, shipSession, surfaceOf, surfacePath } from './router';
 import { CampaignPage, CampaignSidebar, CampaignsList } from './CampaignPage';
 import { followReference } from './campaignsLink';
 import { InboxPanel } from './InboxPanel';
+import { MergeControl } from './PeekMerge';
+import { Failure } from './PeekItem';
 import { ShipView } from './ShipView';
 import { emptyLine, MORE, PHONE_TABS, SURFACES, surfaceById, type Surface } from './surfaces';
 
@@ -160,6 +163,65 @@ function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
   );
 }
 
+// Outside the row, since the row remounts when its ship leaves the list while the source still lists the PR.
+const mergedOrders = signal<ReadonlySet<string>>(new Set());
+
+function OrderRow({ order: o, source, onLaunch, onFollowError }: { order: Order; source: string; onLaunch: (o: OrderRef) => void; onFollowError: (e: string) => void }) {
+  const [error, setError] = useState('');
+  const mergedKey = `${source}/${o.id}`;
+  const merged = mergedOrders.value.has(mergedKey);
+  const ship = o.pr && o.url ? carryingShip(ships.value, o.url) : undefined;
+  const step = ship ? nextStep(ship) : undefined;
+  const launch = () => onLaunch({ source, id: o.id, title: o.title, text: o.text || o.title });
+  return (
+    <li class="order-row">
+      <span class="mono order-id">{o.id}</span>
+      <span class="order-title">{o.title}</span>
+      {ship || merged ? null : (
+        <button type="button" class="btn" aria-label={o.pr ? undefined : `Launch ${o.title}`} onClick={launch}>
+          {o.pr ? 'Launch Commodore' : 'Launch'}
+        </button>
+      )}
+      {o.url && (o.sub_issues ?? 0) > 0 ? (
+        <button type="button" class="btn" aria-label={`Follow ${o.title}`} onClick={async () => onFollowError((await followReference(o.url!)) ?? '')}>
+          Follow
+        </button>
+      ) : null}
+      {o.pr ? (
+        <div class="order-state">
+          {prChips(o.pr).map((c) => (
+            <span key={c.text} class={`chip chip-${c.tone}`}>
+              {c.text}
+            </span>
+          ))}
+          {ship ? (
+            <>
+              <a
+                class="ship-name-link"
+                href={shipPath(ship.session) + fleetSearch.value}
+                onClick={(e) => {
+                  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                  e.preventDefault();
+                  go(shipPath(ship.session), fleetSearch.value);
+                }}
+              >
+                {ship.name}
+              </a>
+              {step?.ready ? <ReadyToMerge ship={ship} /> : step?.text ? <span class="ship-tail">{step.text}</span> : null}
+            </>
+          ) : null}
+        </div>
+      ) : null}
+      {merged ? (
+        <p class="line">Merged</p>
+      ) : ship?.stack_ready ? (
+        <MergeControl ship={ship} onMerged={() => (mergedOrders.value = new Set(mergedOrders.value).add(mergedKey))} onError={setError} />
+      ) : null}
+      <Failure message={error} />
+    </li>
+  );
+}
+
 function OrdersList({ fleetKey, onLaunch }: { fleetKey: string; onLaunch: (o: OrderRef) => void }) {
   const [followError, setFollowError] = useState('');
   const groups = sourcesForFleet(sources.value, fleetKey)
@@ -181,18 +243,7 @@ function OrdersList({ fleetKey, onLaunch }: { fleetKey: string; onLaunch: (o: Or
           <h3 class="order-view-head">{src.name}</h3>
           <ul class="ship-list">
             {orders.map((o) => (
-              <li key={o.id} class="order-row">
-                <span class="mono order-id">{o.id}</span>
-                <span class="order-title">{o.title}</span>
-                <button type="button" class="btn" aria-label={`Launch ${o.title}`} onClick={() => onLaunch({ source: src.key, id: o.id, title: o.title, text: o.text || o.title })}>
-                  Launch
-                </button>
-                {o.url && (o.sub_issues ?? 0) > 0 ? (
-                  <button type="button" class="btn" aria-label={`Follow ${o.title}`} onClick={async () => setFollowError((await followReference(o.url!)) ?? '')}>
-                    Follow
-                  </button>
-                ) : null}
-              </li>
+              <OrderRow key={o.id} order={o} source={src.key} onLaunch={onLaunch} onFollowError={setFollowError} />
             ))}
           </ul>
         </div>

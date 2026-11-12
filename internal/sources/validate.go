@@ -27,6 +27,18 @@ type Order struct {
 	Labels []string `json:"labels,omitempty"`
 	// SubIssues is the count of sub-issues an issue has; 0 when none or unknown.
 	SubIssues int `json:"sub_issues,omitempty"`
+	// PR is a pull request's state, as a ship's prs[] entry gives it; nil for any other order.
+	PR *OrderPR `json:"pr,omitempty"`
+}
+
+// OrderPR is moor.PR without its url, which is the order's own.
+type OrderPR struct {
+	State     string `json:"state"`
+	Review    string `json:"review"`
+	Checks    string `json:"checks"`
+	Mergeable string `json:"mergeable"`
+	Conflicts bool   `json:"conflicts"`
+	Ready     bool   `json:"ready"`
 }
 
 type Panel struct {
@@ -144,6 +156,7 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 		Labels []string `json:"labels"`
 		// Sub-issues is the count a GitHub issue has, read by the built-in source only.
 		SubIssues json.RawMessage `json:"sub_issues"` // anything but a positive integer is dropped
+		PR        json.RawMessage `json:"pr"`         // anything but a well-formed object is dropped
 	}
 	if err := decodeInto(raw, &items); err != nil {
 		return nil, fmt.Errorf("orders.list: %w", err)
@@ -199,6 +212,10 @@ func parseOrders(raw json.RawMessage) ([]Order, error) {
 		o.Hot = it.Hot != nil && *it.Hot
 		if n := positiveInt(it.SubIssues); n > 0 {
 			o.SubIssues = n
+		}
+		var pr OrderPR
+		if len(it.PR) > 0 && it.PR[0] == '{' && json.Unmarshal(it.PR, &pr) == nil {
+			o.PR = &pr
 		}
 		out = append(out, o)
 	}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MooredPR, Ship } from './api';
-import { mergeHint, NO_RESUME_NOTE, prChips, prLabel, rowButtons, staleNote } from './moored';
+import { carryingShip, mergeHint, nextStep, NO_RESUME_NOTE, prChips, prLabel, rowButtons, staleNote } from './moored';
 import { GROUP_TITLES, groupShips, shipAge, shipRowAge } from './shipList';
 
 const pr = (over: Partial<MooredPR> = {}): MooredPR => ({
@@ -159,5 +159,78 @@ describe('mergeHint', () => {
     expect(mergeHint(undefined), 'nothing until the method is known').toBe('');
     expect(mergeHint('squash', true)).toBe('squash · whole stack');
     expect(mergeHint(undefined, true), 'a stack says so before the method is known').toBe('whole stack');
+  });
+});
+
+describe('carryingShip', () => {
+  const url = 'https://github.com/acme/api/pull/7';
+  const moored = (name: string, ...urls: string[]) => ship({ name, session: `s-${name}`, prs: urls.map((u) => pr({ url: u })) });
+
+  it('finds the moored ship whose PRs include the order URL', () => {
+    const list = [moored('other', 'https://github.com/acme/api/pull/8'), moored('mine', url)];
+    expect(carryingShip(list, url)?.name).toBe('mine');
+  });
+
+  it('ignores case and a trailing slash', () => {
+    const list = [moored('mine', url)];
+    expect(carryingShip(list, 'https://GitHub.com/Acme/API/pull/7')?.name).toBe('mine');
+    expect(carryingShip(list, `${url}/`)?.name).toBe('mine');
+    expect(carryingShip([moored('mine', `${url}/`)], url)?.name).toBe('mine');
+  });
+
+  it('finds the ship for any layer of its stack', () => {
+    const list = [moored('stacker', 'https://github.com/acme/api/pull/6', url)];
+    expect(carryingShip(list, 'https://github.com/acme/api/pull/6')?.name).toBe('stacker');
+    expect(carryingShip(list, url)?.name).toBe('stacker');
+  });
+
+  it('does not count a live ship, even one that lists the PR', () => {
+    const live = ship({ name: 'live', status: 'underway', prs: [pr({ url })] });
+    expect(carryingShip([live], url)).toBeUndefined();
+    expect(carryingShip([live, moored('mine', url)], url)?.name).toBe('mine');
+  });
+
+  it('finds nothing for a PR no ship carries', () => {
+    expect(carryingShip([moored('other', 'https://github.com/acme/api/pull/8'), ship()], url)).toBeUndefined();
+    expect(carryingShip([], url)).toBeUndefined();
+  });
+});
+
+describe('nextStep', () => {
+  it('is ready to merge when the whole stack is, whatever else the ship says', () => {
+    expect(nextStep(ship({ stack_ready: true, waiting: 'Waiting for room under the cap', prs: [pr({ checks: 'FAILURE' })] })).ready).toBe(true);
+  });
+
+  it('gives the server\'s waiting text, then the no-resume note, over what the chips imply', () => {
+    const failing = [pr({ checks: 'FAILURE' })];
+    expect(nextStep(ship({ waiting: 'Waiting for room under the cap', prs: failing }))).toEqual({ ready: false, text: 'Waiting for room under the cap' });
+    expect(nextStep(ship({ no_resume: true, prs: failing }))).toEqual({ ready: false, text: NO_RESUME_NOTE });
+  });
+
+  it('says what the PR itself waits on when the ship says nothing', () => {
+    expect(nextStep(ship({ prs: [pr({ review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE' })] }))).toEqual({ ready: false, text: 'Waiting on review' });
+    expect(nextStep(ship({ prs: [pr({ review: 'APPROVED', checks: 'FAILURE', mergeable: 'MERGEABLE' })] }))).toEqual({ ready: false, text: 'Checks failing' });
+    expect(nextStep(ship({ prs: [pr({ review: 'APPROVED', checks: 'SUCCESS', mergeable: 'CONFLICTING', conflicts: true })] }))).toEqual({ ready: false, text: 'Has conflicts' });
+  });
+
+  it('names the first thing that applies, in a fixed order', () => {
+    const bad = pr({ mergeable: 'CONFLICTING', conflicts: true, checks: 'FAILURE', review: 'CHANGES_REQUESTED' });
+    const text = (over: Partial<MooredPR>) => nextStep(ship({ prs: [{ ...bad, ...over }] })).text;
+    expect(text({})).toBe('Has conflicts');
+    expect(text({ mergeable: 'MERGEABLE', conflicts: false })).toBe('Checks failing');
+    expect(text({ mergeable: 'MERGEABLE', conflicts: false, checks: 'ERROR' })).toBe('Checks failing');
+    expect(text({ mergeable: 'MERGEABLE', conflicts: false, checks: 'PENDING' })).toBe('Changes requested');
+    expect(text({ mergeable: 'MERGEABLE', conflicts: false, checks: 'PENDING', review: 'APPROVED' })).toBe('Checks pending');
+    expect(text({ mergeable: 'MERGEABLE', conflicts: false, checks: 'EXPECTED', review: 'REVIEW_REQUIRED' })).toBe('Checks pending');
+    expect(text({ mergeable: 'MERGEABLE', conflicts: false, checks: 'SUCCESS', review: '' })).toBe('Waiting on review');
+    expect(text({ mergeable: 'MERGEABLE', conflicts: false, checks: 'SUCCESS', review: 'APPROVED' }), 'nothing to say').toBe('');
+  });
+
+  it('reads the first layer of a stack that is not ready', () => {
+    const ready = pr({ url: 'https://github.com/acme/api/pull/6', ready: true });
+    const failing = pr({ url: 'https://github.com/acme/api/pull/7', checks: 'FAILURE' });
+    const conflicting = pr({ url: 'https://github.com/acme/api/pull/8', conflicts: true, mergeable: 'CONFLICTING' });
+    expect(nextStep(ship({ prs: [ready, failing, conflicting] })).text).toBe('Checks failing');
+    expect(nextStep(ship({ prs: [ready, conflicting, failing] })).text).toBe('Has conflicts');
   });
 });

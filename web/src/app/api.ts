@@ -303,6 +303,8 @@ export async function probeShips(): Promise<ShipsProbe> {
 
 export interface Order {
   id: string;
+  // A pull request's state, as a ship's prs[] entry gives it, without the url.
+  pr?: Omit<MooredPR, 'url'>;
   title: string;
   text?: string;
   repo?: string;

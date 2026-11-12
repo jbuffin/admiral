@@ -504,3 +504,100 @@ func TestStackCallsPinTheRepoAndNeutraliseTheCheckoutsGitConfig(t *testing.T) {
 		}
 	}
 }
+
+// prSearchNode is a search node for a pull request with GitHub's state fields; "" is null.
+func prSearchNode(repo string, n int, state, review, checks, mergeable, mergeState string) string {
+	opt := func(v string) string {
+		if v == "" {
+			return "null"
+		}
+		return fmt.Sprintf("%q", v)
+	}
+	rollup := "null"
+	if checks != "" {
+		rollup = fmt.Sprintf(`{"state":%q}`, checks)
+	}
+	return fmt.Sprintf(`{"number":%d,"title":"PR %d","url":"https://github.com/%s/pull/%d","repository":{"nameWithOwner":%q,"url":"https://github.com/%s"},"labels":{"nodes":[]},`+
+		`"state":%q,"reviewDecision":%s,"mergeable":%s,"mergeStateStatus":%s,"statusCheckRollup":%s}`,
+		n, n, repo, n, repo, repo, state, opt(review), opt(mergeable), opt(mergeState), rollup)
+}
+
+func TestSearchGivesAPullRequestTheStateThePollGivesForTheSameAnswer(t *testing.T) {
+	for _, c := range []struct {
+		name                                         string
+		state, review, checks, mergeable, mergeState string
+		ready, conflicts                             bool
+	}{
+		{"ready", "OPEN", "APPROVED", "SUCCESS", "MERGEABLE", "CLEAN", true, false},
+		{"review required", "OPEN", "REVIEW_REQUIRED", "SUCCESS", "MERGEABLE", "BLOCKED", false, false},
+		{"checks failing", "OPEN", "APPROVED", "FAILURE", "MERGEABLE", "UNSTABLE", false, false},
+		{"conflicting", "OPEN", "APPROVED", "SUCCESS", "CONFLICTING", "DIRTY", false, true},
+		{"approved and green but blocked by its base", "OPEN", "APPROVED", "SUCCESS", "MERGEABLE", "BLOCKED", false, false},
+		{"merged", "MERGED", "APPROVED", "SUCCESS", "CONFLICTING", "CLEAN", false, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFake(t)
+			f.write(t, "token", "fake-token-work-2\n")
+			f.answer(t, map[string]string{"json": `{"data":{"search":{"nodes":[` +
+				prSearchNode("acme/widgets", 7, c.state, c.review, c.checks, c.mergeable, c.mergeState) + `]}}}`})
+			cl := NewClient("github.com", "", nil, f.env)
+			items, err := cl.Search(context.Background(), "fake-token-work-2", "is:open is:pr author:@me")
+			if err != nil || len(items) != 1 {
+				t.Fatalf("Search = %+v, %v; want one item", items, err)
+			}
+			if items[0].PR == nil {
+				t.Fatalf("a pull request item has no PR state: %+v", items[0])
+			}
+			if got := *items[0].PR; got.State != c.state || got.Review != c.review || got.Checks != c.checks ||
+				got.Mergeable != c.mergeable || got.Ready != c.ready || got.Conflicts != c.conflicts {
+				t.Errorf("search PR = %+v, want state %s review %q checks %q mergeable %s ready %v conflicts %v",
+					got, c.state, c.review, c.checks, c.mergeable, c.ready, c.conflicts)
+			}
+
+			// The moor poll, given the same GitHub answer, serves the same values.
+			const url = "https://github.com/acme/widgets/pull/7"
+			f.pr(t, url, c.state, c.review, c.checks, c.mergeable)
+			f.prEvents(t, url, `{"mergeStateStatus":"`+c.mergeState+`"}`)
+			polled, err := cl.PullRequests(context.Background(), []string{url})
+			if err != nil {
+				t.Fatalf("PullRequests: %v", err)
+			}
+			got, want := *items[0].PR, moor.View(url, polled[url], true)
+			got.URL = url // the order carries its own url
+			if got != want {
+				t.Errorf("search PR = %+v, the poll's = %+v: they must agree", got, want)
+			}
+		})
+	}
+}
+
+func TestSearchGivesAnIssueNoPRState(t *testing.T) {
+	f := newFake(t)
+	f.answer(t, map[string]string{"json": `{"data":{"search":{"nodes":[` + node("acme/widgets", 7, "bug") + `]}}}`})
+	items, err := NewClient("github.com", "", nil, f.env).Search(context.Background(), "fake-token-work-2", "is:open")
+	if err != nil || len(items) != 1 {
+		t.Fatalf("Search = %+v, %v; want one item", items, err)
+	}
+	if items[0].PR != nil {
+		t.Errorf("an issue carries PR state %+v, want none", *items[0].PR)
+	}
+}
+
+func TestSearchAsksForOnlyThePullRequestFieldsTheChipsRead(t *testing.T) {
+	f := newFake(t)
+	f.answer(t, map[string]string{"json": `{"data":{"search":{"nodes":[]}}}`})
+	if _, err := NewClient("github.com", "", nil, f.env).Search(context.Background(), "fake-token-work-2", "is:open"); err != nil {
+		t.Fatal(err)
+	}
+	q := strings.Join(f.only(t, "api").argv, " ")
+	for _, want := range []string{"reviewDecision", "mergeable", "mergeStateStatus", "statusCheckRollup"} {
+		if !strings.Contains(q, want) {
+			t.Errorf("the search asks for no %s: %s", want, q)
+		}
+	}
+	for _, heavy := range []string{"reviews(", "reviewThreads", "isRequired"} {
+		if strings.Contains(q, heavy) {
+			t.Errorf("the search asks for %s: it would make every search heavy", heavy)
+		}
+	}
+}

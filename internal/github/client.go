@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/jbuffin/admiral/internal/moor"
 )
 
 // DefaultHost is the host a client talks to when its settings name none.
@@ -25,10 +27,13 @@ const ghTimeout = 8 * time.Second
 
 const itemFields = "number title url repository { nameWithOwner url } labels(first: 100) { nodes { name } }"
 
+// prStateFields are the PullRequest fields the chips and ready read, the poll's own and no more, so a search stays light.
+const prStateFields = " state reviewDecision mergeable mergeStateStatus statusCheckRollup { state }"
+
 // searchQuery is GitHub's advanced search, the one github.com uses: it knows
 // qualifiers such as is:blocked, and it reads AND, OR and parentheses.
 var searchQuery = fmt.Sprintf("query($q: String!) { search(query: $q, type: ISSUE_ADVANCED, first: %d) { nodes { "+
-	"... on Issue { %s subIssuesSummary { total } } ... on PullRequest { %s } } } }", MaxItems, itemFields, itemFields)
+	"... on Issue { %s subIssuesSummary { total } } ... on PullRequest { %s%s } } } }", MaxItems, itemFields, itemFields, prStateFields)
 
 // unreachable lists what gh prints when the network, not GitHub, failed. It
 // prints the first for a DNS error and the rest raw from Go's transport.
@@ -52,6 +57,8 @@ type Item struct {
 	Hot     bool
 	// SubIssues is how many sub-issues an issue has; 0 for a pull request.
 	SubIssues int
+	// PR is a pull request's state as the poll would serve it; nil for an issue.
+	PR *moor.PR
 }
 
 // SignInError means gh is missing or signed out, as opposed to a search that failed.
@@ -188,6 +195,7 @@ func redact(text, token string) string {
 // and is skipped.
 func (c *Client) item(raw any) (Item, bool) {
 	var n struct {
+		prNode
 		Number     *int    `json:"number"`
 		Title      *string `json:"title"`
 		URL        *string `json:"url"`
@@ -215,6 +223,10 @@ func (c *Client) item(raw any) (Item, bool) {
 		Labels: []string{}}
 	if n.SubIssuesSummary != nil {
 		it.SubIssues = n.SubIssuesSummary.Total
+	}
+	if n.State != "" { // only the pull request fragment asks for state
+		pr := moor.View(it.URL, n.status(), true)
+		it.PR = &pr
 	}
 	for _, l := range *n.Labels.Nodes {
 		if l.Name == nil {
