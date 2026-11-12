@@ -588,6 +588,39 @@ test('a Copilot ship shows its conversation in the Conversation tab, shows a lin
   await expect(viewPanel(page).getByText('Please rebase onto main')).toHaveCount(1);
 });
 
+test('a ship\'s Bridge shows its tokens and its own money, Claude in est. dollars, Copilot in credits, Codex tokens only', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  const cues = ['usage', 'exit 3'];
+  const claude = await launchShip(admiral, { fleet: 'alpha', harness: 'claude', cues });
+  const copilot = await launchShip(admiral, { fleet: 'alpha', harness: 'copilot', cues });
+  const codex = await launchShip(admiral, { fleet: 'alpha', harness: 'codex', cues });
+  const usage = page.getByLabel('Usage');
+
+  await page.goto(admiral.url + 'app/ships?fleet=alpha');
+  await rowLink(page, claude).tap();
+  await expect(usage).toContainText('150 tokens', { timeout: 15_000 });
+  await expect(usage).toContainText('est. $0.25');
+  await expect(usage).toContainText('from records');
+  await expect(usage).not.toContainText(/credit|premium/i);
+  // The classes open on tap; the cache classes are not in the headline.
+  await expect(usage.getByText('Cache read')).toBeHidden();
+  await usage.getByText('150 tokens').tap();
+  await expect(usage.getByText('Cache read')).toBeVisible();
+  await expect(usage).toContainText('300');
+
+  await page.goto(admiral.url + 'app/ships?fleet=alpha');
+  await rowLink(page, copilot).tap();
+  await expect(usage).toContainText('2.5 credits', { timeout: 15_000 });
+  await expect(usage).toContainText('3 premium requests');
+  await expect(usage).not.toContainText('$');
+
+  await page.goto(admiral.url + 'app/ships?fleet=alpha');
+  await rowLink(page, codex).tap();
+  await expect(usage).toContainText('tokens', { timeout: 15_000 });
+  await expect(usage).not.toContainText(/\$|credit/);
+});
+
 test('the Inbox lists a question item and a needs-you stop from two fleets, each with its fleet, and the stop leaves live once its ship is back underway', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
   await admiral.start({ env: withFakeGh(admiral) });
