@@ -97,7 +97,8 @@
 #                  Claude only: the bundle is the file after `--settings` in its argv
 #                  (needs jq). It runs every handler of every group whose matcher
 #                  matches: the matcher is a regex tested against the payload's
-#                  tool_name (for Notification, notification_type), and a group with
+#                  tool_name (for Notification, notification_type; for PreCompact and
+#                  PostCompact, trigger), and a group with
 #                  no matcher always matches. The match is unanchored, as jq's test()
 #                  is: "Bash" also matches BashOutput, which is looser than Claude.
 #                  Each handler appends "<Event>", its exit code and its command, tab
@@ -575,8 +576,9 @@ if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 			done
 			# The handlers of every group whose matcher matches, run one at a time
 			# in file order. A matcher is tested against tool_name (for Notification,
-			# notification_type); a group with none always matches.
-			subject=$(printf '%s' "$payload" | jq -r --arg e "$ev" 'if $e == "Notification" then .notification_type else .tool_name end // ""' 2>>"$d/event-error")
+			# notification_type; for PreCompact and PostCompact, trigger); a group with
+			# none always matches.
+			subject=$(printf '%s' "$payload" | jq -r --arg e "$ev" 'if $e == "Notification" then .notification_type elif $e == "PreCompact" or $e == "PostCompact" then .trigger else .tool_name end // ""' 2>>"$d/event-error")
 			: >"$d/.cmds"
 			[ -n "$settings" ] && jq -r --arg e "$ev" --arg s "$subject" '.hooks[$e][]? | (.matcher // "") as $m | select($m == "" or ($s | test($m))) | .hooks[]?.command' "$settings" >"$d/.cmds" 2>>"$d/event-error"
 			if [ ! -s "$d/.cmds" ]; then

@@ -49,6 +49,7 @@ type Ship struct {
 type Campaign struct{ Name string }
 
 type Note struct {
+	ID   string
 	Text string
 	Via  string
 	TS   time.Time
@@ -356,3 +357,7 @@ func Render(in Input) string {
 	}
 	return out
 }
+
+// PreCompact is the instruction a PreCompact hook prints so a compaction keeps the instructions and the open notes
+// (ids and texts) verbatim: plain text of at most MaxBytes, "" when there is nothing to keep.
+func PreCompact(instructions string, notes []Note) string { return "" }

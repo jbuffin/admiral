@@ -117,3 +117,41 @@ func TestBundleSettingsRunTheStatuslineWrapper(t *testing.T) {
 		}
 	}
 }
+
+func TestChatBundleCarriesTheBackstopWindowAndAnAutoPreCompactHook(t *testing.T) {
+	raw, err := json.Marshal(claudeChatSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s struct {
+		Window float64 `json:"autoCompactWindow"`
+		Hooks  map[string][]struct {
+			Matcher string `json:"matcher"`
+			Hooks   []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(raw, &s); err != nil {
+		t.Fatal(err)
+	}
+	if s.Window != 300000 {
+		t.Errorf("chat settings autoCompactWindow = %v, want 300000 tokens", s.Window)
+	}
+	groups := s.Hooks["PreCompact"]
+	if len(groups) != 1 || groups[0].Matcher != "auto" || len(groups[0].Hooks) != 1 || groups[0].Hooks[0].Command != "admiral hook PreCompact" {
+		t.Errorf("chat PreCompact hooks = %+v, want one group, matcher auto, running admiral hook PreCompact", groups)
+	}
+}
+
+func TestShipBundleHasNeitherTheWindowNorAPreCompactHook(t *testing.T) {
+	raw, err := json.Marshal(claudeSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"autoCompactWindow", "PreCompact"} {
+		if strings.Contains(string(raw), bad) {
+			t.Errorf("a ship's Claude bundle mentions %s", bad)
+		}
+	}
+}
