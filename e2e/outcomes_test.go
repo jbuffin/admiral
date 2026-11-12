@@ -48,6 +48,16 @@ func (w *world) shipLog(session string) []outRec {
 }
 
 // eventsOf lists the lifecycle events; a `usage` record lands after `ended` at no fixed point among later ones, so the tests that look at it read it by name.
+func usageCount(log []outRec) int {
+	n := 0
+	for _, m := range log {
+		if m["event"] == "usage" {
+			n++
+		}
+	}
+	return n
+}
+
 func eventsOf(log []outRec) []string {
 	out := []string{}
 	for _, m := range log {
@@ -481,7 +491,8 @@ func TestOutcomeRestartAddsNoLaunchedAndEndsADeadShip(t *testing.T) {
 	w.restart()
 	w.in.waitStatusList(t, 10*time.Second, ship.Session, "anchored")
 	holdThat(t, "after another restart the ship has a second ended", func() bool {
-		return reflect.DeepEqual(eventsOf(w.shipLog(ship.Session)), []string{"launched", "ended"})
+		log := w.shipLog(ship.Session)
+		return reflect.DeepEqual(eventsOf(log), []string{"launched", "ended"}) && usageCount(log) == 1
 	})
 }
 
@@ -508,6 +519,9 @@ func TestOutcomeRestartEndsAShipThatSailedOff(t *testing.T) {
 	log := w.shipLog(ship.Session)
 	if got := eventsOf(log); !reflect.DeepEqual(got, []string{"launched", "ended"}) {
 		t.Fatalf("records = %v, want launched, ended", got)
+	}
+	if n := usageCount(log); n != 1 {
+		t.Errorf("the log has %d usage records, want 1", n)
 	}
 	e := log[1]
 	if num(t, e, "exit_code") != 0 || !reflect.DeepEqual(e["report"], map[string]any{"status": "done"}) {
