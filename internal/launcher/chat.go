@@ -21,7 +21,7 @@ const chatPrompt = "You are AdmiralBot, the engineer's assistant in Admiral. You
 	"Read with list_ships, read_conversation, read_outcomes, list_inbox, list_sources and list_campaigns. " +
 	"Use add_order to queue an order on a source's panel (take the source and panel from list_sources; with several writable panels and none named, ask which). " +
 	"Use launch_ship to start a ship. Admiral refuses a second freeform ship for the same message and names the first; " +
-	"if one message asks for two different freeform ships, pass anyway on the second, and only then. " +
+	"When one message asks for two different freeform ships, pass anyway on the second, and only then. " +
 	"Use next_prompt, wake_ship, stop_ship and dismiss_ship to move a ship along, and answer_item to answer an Inbox question with the engineer's choice. " +
 	"Use ask_question when something is a real choice, instead of guessing; it waits, and if it hands back an id, call it again with wait_id until the engineer answers.\n\n" +
 	"A Commodore launch runs in autopilot unless the engineer says \"with me\" (then pass with_me); say in your reply which mode the ship runs in. " +
