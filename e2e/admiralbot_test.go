@@ -658,7 +658,7 @@ func TestAdmiralBot_ChatSessionIsFenced(t *testing.T) {
 	})
 }
 
-// The inbox never sees a chat question.
+// A chat question is served by the chat and listed in the inbox beside a ship's item.
 func TestAdmiralBot_ChatAskRoundTrip(t *testing.T) {
 	t.Parallel()
 	c := newBotWorld(t, botOpts{})
@@ -666,7 +666,6 @@ func TestAdmiralBot_ChatAskRoundTrip(t *testing.T) {
 	w.start()
 	seedItem(t, filepath.Join(w.home, "inbox", "some-ship"), "q-1", questionItem("q-1", "2026-10-22T10:00:00Z"))
 	w.in.waitInbox(t, "q-1")
-	inboxBefore := w.rawInbox()
 	ws := dialWS(t, w.in.instance)
 	c.start()
 
@@ -675,7 +674,7 @@ func TestAdmiralBot_ChatAskRoundTrip(t *testing.T) {
 	q := s.Questions[0]
 	id := qStr(q, "id")
 
-	t.Run("the question is served, and nothing reaches the inbox", func(t *testing.T) {
+	t.Run("the question is served and listed in the inbox", func(t *testing.T) {
 		if qStr(q, "kind") != "question" || qStr(q, "session") != chatSessionName || qStr(q, "title") != "Where does it go?" {
 			t.Errorf("question = %v, want kind question, session %s and the title", q, chatSessionName)
 		}
@@ -703,7 +702,9 @@ func TestAdmiralBot_ChatAskRoundTrip(t *testing.T) {
 			t.Errorf("question file = %s, want version 1, the id and kind question", raw)
 		}
 		waitBotWS(t, ws, 5*time.Second, "the question", func(m botSession) bool { return len(m.Questions) == 1 && m.State == "waiting" })
-		holdThat(t, "GET /api/inbox changed with a chat question open", func() bool { return w.rawInbox() == inboxBefore })
+		if got := w.in.waitInbox(t, "q-1", id); len(got) != 2 || got[1].Session != chatSessionName {
+			t.Errorf("the inbox lists %+v, want the ship's q-1 and the chat question of session %s", got, chatSessionName)
+		}
 		if _, err := os.Lstat(filepath.Join(w.home, "inbox", chatSessionName)); err == nil {
 			t.Errorf("inbox/%s exists: chat questions never go in the inbox", chatSessionName)
 		}
@@ -753,9 +754,7 @@ func TestAdmiralBot_ChatAskRoundTrip(t *testing.T) {
 		if code, body := w.answerChatQuestion(id, botAnswer("Freeform")); code != http.StatusConflict {
 			t.Errorf("a second answer = %d, want 409: %s", code, body)
 		}
-		if got := w.rawInbox(); got != inboxBefore {
-			t.Errorf("GET /api/inbox changed after the answer\nbefore: %s\nafter:  %s", inboxBefore, got)
-		}
+		w.in.waitInbox(t, "q-1")
 	})
 }
 
