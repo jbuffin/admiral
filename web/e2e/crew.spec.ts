@@ -183,7 +183,7 @@ test('on the iPad, a person reads the crew by layer, customizes a built-in, edit
   await press(adding.getByRole('button', { name: 'Save' }));
   await expect(page).toHaveURL(/\/app\/crew\/quartermaster\?(.*&)?fleet=zulu/);
   await expect(row(fleet, 'Pick for stocking the galley.')).toBeVisible();
-  expect(readFileSync(crewFile('quartermaster'), 'utf8')).toContain('pick-me-when: Pick for stocking the galley.');
+  expect(readFileSync(crewFile('quartermaster'), 'utf8')).toContain('pick-me-when: "Pick for stocking the galley."');
 
   // A draft the resolver refuses shows its problem beside the field, and fixing the field there saves it.
   claude.judge('crew-invalid');
@@ -197,7 +197,7 @@ test('on the iPad, a person reads the crew by layer, customizes a built-in, edit
   await basedOn.selectOption('scribe');
   await press(adding.getByRole('button', { name: 'Save' }));
   await expect(page).toHaveURL(/\/app\/crew\/purser\?(.*&)?fleet=zulu/);
-  expect(readFileSync(crewFile('purser'), 'utf8')).toContain('based-on: scribe');
+  expect(readFileSync(crewFile('purser'), 'utf8')).toContain('based-on: "scribe"');
 
   // Discard drops the draft and returns to the description, still filled; nothing is written.
   claude.judge('pass');
@@ -211,7 +211,7 @@ test('on the iPad, a person reads the crew by layer, customizes a built-in, edit
   await expect(describe).toHaveValue('A second quartermaster.');
   await expect(adding).toHaveCount(0);
   expect(readdirSync(join(admiral.home, 'fleets', 'zulu', 'crew')).sort()).toEqual(filesBefore);
-  expect(readFileSync(crewFile('quartermaster'), 'utf8')).toContain('pick-me-when: Pick for stocking the galley.');
+  expect(readFileSync(crewFile('quartermaster'), 'utf8')).toContain('pick-me-when: "Pick for stocking the galley."');
 
   expect(watch.errors).toEqual([]);
   expect(watch.unversioned()).toEqual([]);
