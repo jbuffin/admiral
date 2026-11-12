@@ -88,6 +88,8 @@ type Service struct {
 	Tail func(session string) string
 	// Questions gives the pending questions of a ship's conversation, or of a crew boat's when crew is set, oldest first.
 	Questions func(session, crew string) []conversation.Item
+	// Approving is whether a Codex ship's app-server is waiting on an approval: a bell then may be for it, not for a question.
+	Approving func(session, crew string) bool
 	Outcomes  *outcomes.Writer
 	// Reserve takes a unit of each named resource, or none: it returns the
 	// release, or why the first is not ready (busy, missing or pending). Nil
@@ -340,6 +342,28 @@ func (s *Service) bell(ctx context.Context, session string) {
 	}
 	if err := s.Host.SetNeedsYou(ctx, session, "bell"); err == nil {
 		_ = s.Host.Sync(ctx)
+	}
+}
+
+// Asking puts a Codex ship at needs_you with the bell's reason while its server waits on a question, and back to
+// working once it does not. Only a pane the hooks have not put at needs_you for something else is written, and only
+// the observer's own mark is cleared.
+func (s *Service) Asking(session string, asking bool) {
+	sess, ok := s.find(session)
+	if !ok || sess.Options["harness"] != "codex" || sess.PaneDead {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	switch {
+	case asking && sess.State != "needs_you":
+		if s.Host.SetNeedsYou(ctx, session, "bell") == nil {
+			_ = s.Host.Sync(ctx)
+		}
+	case !asking && sess.State == "needs_you" && sess.Reason == "bell":
+		if s.Host.SetWorking(ctx, session) == nil {
+			_ = s.Host.Sync(ctx)
+		}
 	}
 }
 

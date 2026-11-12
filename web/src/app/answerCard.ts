@@ -11,8 +11,8 @@ const SUBAGENT_TOOLS = new Set(['task', 'Task', 'Agent']);
 const HAS_KEY_MAP = new Set(['claude', 'copilot', 'codex']);
 
 // Codex's other approval menus are unrecorded, so they go to the terminal.
-// The decoder names Codex's calls after the tool inside the exec script, so a Bash card looks for exec_command.
-const CODEX_CARD_CALLS: Record<string, string> = { Bash: 'exec_command', apply_patch: 'apply_patch' };
+// The rollout's decoder names Codex's calls after the tool inside the exec script, so a Bash card looks for exec_command; the live observer names it Bash.
+const CODEX_CARD_CALLS: Record<string, string[]> = { Bash: ['exec_command', 'Bash'], apply_patch: ['apply_patch'] };
 
 const NO_CARD_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode']);
 
@@ -53,14 +53,22 @@ export function answerCard({ harness, status, reason, conv }: { harness: string;
   const r = reason ?? '';
   if (harness === 'copilot') return copilotCard(r, conv);
   if (harness === 'codex' && r === 'question') return { kind: 'none' };
+  if (harness === 'codex' && r === 'bell') return questionCard(r, conv);
   if (r === 'question' || r === 'permission:AskUserQuestion') return questionCard(r, conv);
   if (r.startsWith('permission:')) {
     const tool = r.slice('permission:'.length);
     if (tool === '' || NO_CARD_TOOLS.has(tool) || (harness === 'codex' && !(tool in CODEX_CARD_CALLS))) return { kind: 'terminal' };
     // An orphan call from an earlier turn is not what the pane asks about.
     const turnStart = currentTurnStart(conv.items);
-    const callName = harness === 'codex' ? CODEX_CARD_CALLS[tool] : tool;
-    const call = conv.items.slice(turnStart).find((i) => i.kind === 'tool_call' && i.tool?.name === callName && !i.tool.done);
+    const callNames = harness === 'codex' ? CODEX_CARD_CALLS[tool] : [tool];
+    const turn = conv.items.slice(turnStart);
+    if (harness === 'codex' && conv.items.some((i) => i.tool?.live)) {
+      // The server names the call it waits on; none named (several waiting, a stdin write, a grant) is the terminal's.
+      const named = turn.find((i) => i.kind === 'tool_call' && i.tool?.approving && !i.tool.done);
+      if (!named?.tool || !callNames.includes(named.tool.name)) return { kind: 'terminal' };
+      return { kind: 'permission', tool, reason: r, call: named };
+    }
+    const call = turn.find((i) => i.kind === 'tool_call' && i.tool !== undefined && callNames.includes(i.tool.name) && !i.tool.done);
     return { kind: 'permission', tool, reason: r, call };
   }
   return { kind: 'terminal' };

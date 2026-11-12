@@ -51,11 +51,25 @@ type Service struct {
 	owns   func(sh ships.Ship, port int) bool                                // whether the ship's own Copilot listens on port
 	crew   func(sh ships.Ship, name string) (sessionhost.Crew, string, bool) // the boat and its fleet's config dir for the boat's harness
 
+	// Asking is told when a Codex ship's server starts or stops waiting on a question the observer holds.
+	Asking func(session string, asking bool)
+
 	// Tests replace these lookups of a ship's rounds.
 	moored    func(session string) (ships.Ship, bool)   // a ship with no live session but a moored record
 	rounds    func(sh ships.Ship) ([]moor.Round, error) // the ship's recorded rounds
 	fleetDir  func(fleet string) (string, bool)         // a fleet's Claude config dir
 	liveRound func(sh ships.Ship) int                   // the round a live ship is in
+
+	// Tests replace these for the live observers: the running Codex ships, a ship's pane socket and start command,
+	// Codex's socket directory, and the timings.
+	liveShips   func() []ships.Ship
+	liveSocket  func(ships.Ship) (sock, startCmd string)
+	liveDir     string
+	liveTimeout time.Duration
+	liveBackoff func(failures int) time.Duration
+	// liveReadEvery is how often a running Codex ship's pane options are read again when its panes have not changed.
+	liveReadEvery time.Duration
+	observers     map[string]*observer
 
 	mu      sync.Mutex
 	seen    map[string]string // session -> option value a file was seen for: tells gone from none
@@ -345,6 +359,12 @@ func (s *Service) serveConversation(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, stitched)
 		return
 	}
+	if crew == "" {
+		if all, up := s.liveItems(session); up {
+			s.serveLive(w, all, before)
+			return
+		}
+	}
 	if none {
 		writeJSON(w, http.StatusOK, page)
 		return
@@ -420,7 +440,8 @@ type watch struct {
 	lastFind time.Time
 	// lastLocate and reset follow a Codex ship's recorded rollout: reset is set when the file switched and the client has not been told.
 	lastLocate time.Time
-	reset      bool
+	reset      bool // the file switched and the client has not been told
+	wasLive    bool // the last poll found the app-server observer serving this ship
 	subs       map[*server.Client]struct{}
 }
 
@@ -450,7 +471,7 @@ func (s *Service) handleOpen(ctx context.Context, c *server.Client, raw json.Raw
 			return
 		}
 	}
-	if !ok || none {
+	if !ok || none && (m.Crew != "" || !s.liveUp(m.Ship)) {
 		return // an unknown ship or boat, or one with no conversation, is ignored
 	}
 	w := &watch{session: m.Ship, crew: m.Crew, launched: loc.ship.Launched + "|" + loc.boatLaunched, loc: loc, svc: s, reader: conversation.NewReader(conversation.Options{Harness: loc.harness}),
@@ -493,6 +514,9 @@ func (s *Service) handleOpen(ctx context.Context, c *server.Client, raw json.Raw
 		}
 	}
 	w.subs[c] = struct{}{}
+	if s.liveObserver(m.Ship) != nil && m.Crew == "" {
+		w.wasLive = true // so a drop is noticed even before the next poll
+	}
 	s.clients[c] = append(s.clients[c], k)
 	for len(s.clients[c]) > MaxOpen {
 		s.unsubscribeLocked(c, s.clients[c][0])
@@ -627,9 +651,30 @@ func (s *Service) poll(w *watch) {
 		s.endWatch(w)
 		return
 	}
+	fell := false // the observer was serving and is not now
+	if w.crew == "" {
+		s.mu.Lock()
+		up, was := s.liveObserver(w.session) != nil, w.wasLive
+		if !up {
+			w.wasLive = false
+		}
+		s.mu.Unlock()
+		if up {
+			return // the observer pushes; one source per view between resets
+		}
+		if was {
+			fell = true
+			w.reset, w.path = true, ""
+			w.reader = conversation.NewReader(conversation.Options{Harness: w.loc.harness})
+		}
+	}
 	items, reset := w.fileItems()
 	if w.server != nil {
 		items = mergeLive(w.server.Changed(), items)
+	}
+	if fell && !reset && len(items) == 0 {
+		// Nothing to fall back to: the view must not keep the dead server's items, a pending question among them.
+		reset, items, w.reset = true, []conversation.Item{}, false
 	}
 	if len(items) == 0 && !reset {
 		return
@@ -640,6 +685,9 @@ func (s *Service) poll(w *watch) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if w.crew == "" && s.liveObserver(w.session) != nil {
+		return // the observer came back while the file was read: its reset is the view's, and this one would land after it
+	}
 	for c := range w.subs {
 		s.enqueueLocked(c, msg)
 	}
@@ -738,6 +786,11 @@ func (s *Service) alive(w *watch) bool {
 // PendingQuestions gives the pending questions of the current turn of a ship's conversation, or of a crew boat's,
 // oldest first: a question left pending by an earlier turn is not on the pane any more.
 func (s *Service) PendingQuestions(session, crew string) []conversation.Item {
+	if crew == "" {
+		if q, up := s.livePending(session); up {
+			return q
+		}
+	}
 	loc, ok, none := s.locateBoat(session, crew)
 	if !ok || none {
 		return nil

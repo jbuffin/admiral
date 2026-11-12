@@ -77,6 +77,9 @@ export interface ToolCall {
   output?: string;
   error?: boolean;
   done: boolean;
+  /** Told by the Codex app-server, which also marks the one call an approval it waits on names. */
+  live?: boolean;
+  approving?: boolean;
 }
 export interface Question {
   text: string;

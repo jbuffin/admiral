@@ -329,7 +329,7 @@ func serve(args []string) error {
 
 	chatService := &chat.Service{Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Home: absDir}
 	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
-	convService := &shipconv.Service{Ships: shipService, Config: cfg.Current, Tmux: tmuxPath, Socket: sock}
+	convService := &shipconv.Service{Ships: shipService, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Asking: shipService.Asking}
 	probeRunner := probes.NewDefault(dir)
 	guard, err := auth.New(dir, port, auth.WithBaseURL(func() string { return pairingBase(port) }))
 	if err != nil {
@@ -338,6 +338,7 @@ func serve(args []string) error {
 	tails := convService.Tails()
 	shipService.Tail = tails.Tail
 	shipService.Questions = convService.PendingQuestions
+	shipService.Approving = convService.ApprovalPending
 	s := &server.Server{Version: version, Commit: commit, UI: web.UI(), Messages: convService.Messages(), Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService,
 			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: campaignService}, campaignService, bridgeService, resourceService, lockRoute, chatService, convService, &shipdiff.Service{Ships: shipService},
@@ -348,6 +349,7 @@ func serve(args []string) error {
 	probeRunner.Refresh(bg, cfg.Current().Fleets)
 	var background sync.WaitGroup
 	supervisor.Start(bg)
+	convService.StartLive(bg)
 	// The ships' run stops first and the log closes next, while the host is
 	// still up, so a written `ended` can still set its marker.
 	shipsCtx, stopShips := context.WithCancel(bg)

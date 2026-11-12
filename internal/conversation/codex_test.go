@@ -298,3 +298,22 @@ func TestCodexApprovesOnlyWhatTheNamedCallDoes(t *testing.T) {
 		})
 	}
 }
+
+func TestCodexPatchTextThatQuotesACommandStillApprovesItsFiles(t *testing.T) {
+	const patch = `*** Begin Patch\n*** Update File: /Users/x/.zshrc\n+note cmd: "ls -la"\n*** End Patch`
+	for name, script := range map[string]string{
+		"single-quoted patch": "text(await tools.apply_patch('" + patch + "'));",
+		"backtick patch":      "text(await tools.apply_patch(`" + patch + "`));",
+		"double-quoted patch": `text(await tools.apply_patch("` + strings.ReplaceAll(patch, `"ls -la"`, `\"ls -la\"`) + `"));`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			items := readCodex(t, execLine(t, script))
+			if len(items) != 1 || items[0].Tool == nil {
+				t.Fatalf("items = %+v, want one tool call", items)
+			}
+			if got := items[0].Tool; got.Name != "apply_patch" || got.Input != "/Users/x/.zshrc" {
+				t.Errorf("tool = %q input = %q, want apply_patch and the patch's file, not the quoted command", got.Name, got.Input)
+			}
+		})
+	}
+}

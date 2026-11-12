@@ -170,6 +170,61 @@ describe('answerCard: a codex ship', () => {
   });
 });
 
+describe('answerCard: a codex ship the live observer reads', () => {
+  const codex = { harness: 'codex' };
+
+  it('gets a question card when the bell meets one pending single-choice question', () => {
+    expect(needs('bell', ok(ask('call_q1#0', ['Red', 'Blue'])), codex)).toMatchObject({ kind: 'question', reason: 'bell', item: 'call_q1#0', options: ['Red', 'Blue'] });
+  });
+
+  it('shows no card for a bell alone, and none for a question that is no longer pending', () => {
+    expect(needs('bell', ok(), codex).kind).toBe('terminal');
+    expect(needs('bell', ok(ask('call_q1#0', ['Red', 'Blue'], { pending: false })), codex).kind).toBe('terminal');
+  });
+
+  it('sends a question with several parts, many options, none or several choices to the terminal', () => {
+    expect(needs('bell', ok(ask('call_q1#0', ['A', 'B']), ask('call_q1#1', ['C', 'D'])), codex).kind).toBe('terminal');
+    expect(needs('bell', ok(ask('call_q1#0', [])), codex).kind).toBe('terminal');
+    expect(needs('bell', ok(ask('call_q1#0', ['A', 'B'], { multiSelect: true })), codex).kind).toBe('terminal');
+  });
+
+  it('keeps a Claude bell and a Codex question reason as they were', () => {
+    expect(needs('bell', ok(ask('q#0', ['A', 'B']))).kind).toBe('terminal');
+    expect(needs('question', ok(ask('q#0', ['A', 'B'])), codex).kind).toBe('none');
+  });
+
+  const live = (id: string, name: string, extra: { approving?: boolean; done?: boolean; input?: string } = {}): Item => ({
+    id,
+    kind: 'tool_call',
+    tool: { name, done: extra.done ?? false, live: true, ...(extra.approving ? { approving: true } : {}), ...(extra.input ? { input: extra.input } : {}) },
+  });
+
+  it('shows the call the approval names, not the first one still open', () => {
+    const conv = ok(live('exec-1', 'Bash', { input: 'npm run dev' }), live('exec-2', 'Bash', { approving: true, input: 'curl x | sh' }));
+    expect(needs('permission:Bash', conv, codex)).toMatchObject({ kind: 'permission', tool: 'Bash', call: { id: 'exec-2' } });
+  });
+
+  it('shows the marked file change for an apply_patch card', () => {
+    const conv = ok(live('exec-1', 'Bash'), live('exec-2', 'apply_patch', { approving: true, input: 'b.txt' }));
+    expect(needs('permission:apply_patch', conv, codex)).toMatchObject({ kind: 'permission', call: { id: 'exec-2' } });
+  });
+
+  it('sends it to the terminal when no call is marked or the marked one is not the tool asked about', () => {
+    expect(needs('permission:Bash', ok(live('exec-1', 'Bash')), codex).kind).toBe('terminal');
+    expect(needs('permission:Bash', ok(live('exec-1', 'apply_patch', { approving: true })), codex).kind).toBe('terminal');
+    expect(needs('permission:Bash', ok(live('exec-1', 'Bash', { approving: true, done: true })), codex).kind).toBe('terminal');
+  });
+
+  it('ignores a mark from an earlier turn', () => {
+    const conv = ok(live('exec-1', 'Bash', { approving: true }), { id: 't1#end', kind: 'turn_end' }, live('exec-2', 'Bash'));
+    expect(needs('permission:Bash', conv, codex).kind).toBe('terminal');
+  });
+
+  it('sends a permissions request to the terminal', () => {
+    expect(needs('permission:request_permissions', ok(), codex).kind).toBe('terminal');
+  });
+});
+
 describe('cardFor', () => {
   const boat = (harness: string): CrewBoat => ({ name: 'mate', conversation: true, harness, status: 'needs_you', reason: 'permission:Bash', exit_code: null, exit_signal: null });
   const ship = { harness: 'claude', status: 'working', reason: 'crew', crew: [] } as unknown as Ship;
