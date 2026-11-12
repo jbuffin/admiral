@@ -844,26 +844,90 @@ func TestRevokeAnswers500AndKeepsTheDeviceWhenTheStoreCannotBeWritten(t *testing
 }
 
 // Browsers fetch the manifest link and icons without credentials, so a paired remote browser needs them without a token.
-func TestOnlyTheInstallFilesAreReachableWithoutAToken(t *testing.T) {
+func TestOnlyTheInstallFilesAndTheStaticShellAreReachableWithoutAToken(t *testing.T) {
 	g := newRig(t)
-	for _, p := range []string{"/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon-maskable-512.png", "/icons/apple-touch-icon.png"} {
-		r := lanReq(nil)
-		r.target = p
-		if rec := g.do(r); rec.Code != 200 {
-			t.Errorf("GET %s with no token: %d, want 200", p, rec.Code)
+	for _, p := range []string{"/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon-maskable-512.png", "/icons/apple-touch-icon.png", "/app/", "/app/ships", "/assets/x.js", "/assets/x.css", "/sw.js"} {
+		for _, m := range []string{"GET", "HEAD"} {
+			// The manifest and icons are GET-only.
+			if m == "HEAD" && !strings.HasPrefix(p, "/app") && !strings.HasPrefix(p, "/assets/") && p != "/sw.js" {
+				continue
+			}
+			r := lanReq(nil)
+			r.method, r.target = m, p
+			if rec := g.do(r); rec.Code != 200 {
+				t.Errorf("%s %s with no token: %d, want 200", m, p, rec.Code)
+			}
 		}
 	}
-	// Nothing else is exempt, and only a GET is.
-	for _, p := range []string{"/app/", "/assets/x.js", "/sw.js", "/api/version", "/icons/other.png", "/icons/", "/manifest.webmanifest/x", "/"} {
+	// Nothing else is exempt, and only a GET or HEAD is.
+	for _, p := range []string{"/api/version", "/api/v1/version", "/api/v1/ships", "/ws/v1", "/icons/other.png", "/icons/", "/manifest.webmanifest/x", "/", "/assets/x", "/assets/", "/app/../api/v1/ships", "/app/%2e%2e/api/v1/ships", "/assets/../api/v1/ships", "/assets/..%2fapi/v1/ships"} {
 		r := lanReq(nil)
 		r.target = p
 		if rec := g.do(r); rec.Code != 401 {
 			t.Errorf("GET %s with no token: %d, want 401", p, rec.Code)
 		}
 	}
+	for _, p := range []string{"/manifest.webmanifest", "/app/", "/assets/x.js", "/sw.js"} {
+		r := lanReq(nil)
+		r.method, r.target = "POST", p
+		if rec := g.do(r); rec.Code != 401 {
+			t.Errorf("POST %s with no token: %d, want 401", p, rec.Code)
+		}
+	}
+}
+
+func TestPairWithCookieSignsTheDeviceInWithoutHandingJSTheToken(t *testing.T) {
+	g := newRig(t)
 	r := lanReq(nil)
-	r.method, r.target = "POST", "/manifest.webmanifest"
-	if rec := g.do(r); rec.Code != 401 {
-		t.Errorf("POST /manifest.webmanifest with no token: %d, want 401", rec.Code)
+	r.method, r.target = "POST", "/api/v1/pair"
+	r.hdr = map[string]string{"Content-Type": "application/json"}
+	r.body = `{"code":"` + g.mint() + `","cookie":true}`
+	rec := g.do(r)
+	if rec.Code != 200 {
+		t.Fatalf("pair with cookie: %d %s", rec.Code, rec.Body)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if _, has := out["token"]; has {
+		t.Errorf("the token is in the JSON: %s", rec.Body)
+	}
+	if out["device"] == nil {
+		t.Errorf("no device in the JSON: %s", rec.Body)
+	}
+	cs := rec.Result().Cookies()
+	if len(cs) != 1 || !cs[0].HttpOnly || cs[0].Value == "" {
+		t.Fatalf("want one HttpOnly device cookie, got %v", cs)
+	}
+	next := lanReq(nil)
+	next.target = "/x"
+	next.hdr = map[string]string{"Cookie": cs[0].Name + "=" + cs[0].Value}
+	if got := g.do(next).Code; got != 200 {
+		t.Errorf("the cookie does not sign the device in: %d", got)
+	}
+}
+
+func TestPairWithoutCookieStillReturnsTheTokenAndSetsNone(t *testing.T) {
+	g := newRig(t)
+	rec, out := g.redeem(lanReq(nil), g.mint(), "")
+	if rec.Code != 200 || out.Token == "" {
+		t.Fatalf("pair: %d %s", rec.Code, rec.Body)
+	}
+	if len(rec.Result().Cookies()) != 0 {
+		t.Errorf("a native pair set a cookie: %v", rec.Result().Cookies())
+	}
+}
+
+func TestPairWithCookieRefusesAWrongCodeWithoutACookie(t *testing.T) {
+	g := newRig(t)
+	g.mint()
+	r := lanReq(nil)
+	r.method, r.target = "POST", "/api/v1/pair"
+	r.hdr = map[string]string{"Content-Type": "application/json"}
+	r.body = `{"code":"ZZZZ-ZZZZ","cookie":true}`
+	rec := g.do(r)
+	if rec.Code != 400 || len(rec.Result().Cookies()) != 0 {
+		t.Errorf("wrong code: %d, cookies %v", rec.Code, rec.Result().Cookies())
 	}
 }

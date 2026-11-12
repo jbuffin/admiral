@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
 	"slices"
 	"strings"
 )
@@ -138,6 +139,28 @@ var installFiles = map[string]bool{
 	"/icons/apple-touch-icon.png":  true,
 }
 
+// staticShell reports whether the request fetches a file of the built new shell, which holds no data: the page for
+// any /app/ route, one file under /assets/, and the worker.
+func staticShell(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	// ServeMux routes on the escaped path, where %2F stays in one segment: only a plain, already-clean path means what it says.
+	p := path.Clean(r.URL.Path)
+	if r.URL.RawPath != "" || p != strings.TrimSuffix(r.URL.Path, "/") {
+		return false
+	}
+	switch {
+	case p == "/sw.js", p == "/app":
+		return true
+	case strings.HasPrefix(p, "/app/"):
+		return path.Ext(p) == ""
+	case strings.HasPrefix(p, "/assets/"):
+		return path.Dir(p) == "/assets" && path.Ext(p) != ""
+	}
+	return false
+}
+
 func (a *Auth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		isWS := strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
@@ -157,7 +180,7 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 			a.servePair(w, r, rt)
 			return
 		}
-		if r.Method == http.MethodGet && installFiles[r.URL.Path] {
+		if (r.Method == http.MethodGet && installFiles[r.URL.Path]) || staticShell(r) {
 			next.ServeHTTP(w, r)
 			return
 		}

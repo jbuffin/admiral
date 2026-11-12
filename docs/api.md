@@ -385,6 +385,8 @@ Body `{"fleet":"work","harness":"claude"}`. Runs the probes for that harness and
 
 ## Devices and pairing
 
+The built shell's files (`/app/…` pages, one-segment `/assets/<name>.<ext>` files and `/sw.js`) are served to an unpaired device, so an installed app can load and ask for a code; they hold no data. Everything else, the old UI at `/` included, needs a token.
+
 A device is a browser or client that holds its own revocable token. A request from this Mac needs no token. Any other request needs the device's token, as `Authorization: Bearer <token>` or the cookie `admiral_token_<port>`; `?token=` is not accepted. The cookie is HttpOnly and SameSite=Strict, so a request that carries it must also pass the Origin check.
 
 ### `POST /api/v1/pairing-codes`
@@ -393,7 +395,7 @@ Behind the same auth as the other routes. Answers `{"code":"ABCD-EFGH","url":"ht
 
 ### `POST /api/v1/pair`
 
-Body `{"code","name"?}`. A code is case-insensitive, with or without the hyphen. On success it answers `{"token","device":{"id","name"}}` and sets no cookie, so a client sends the token as a Bearer; `name` defaults to a guess from the browser, such as `Safari on Mac`. A wrong, expired or used code is 400; ten failures in 5 minutes are 429 with `Retry-After`; a request from this Mac is 403. `GET /pair?code=<code>` and the form at `GET /pair` (which posts to `POST /pair`) pair a browser instead: they set the device cookie and redirect to `/`.
+Body `{"code","name"?,"cookie"?}`. A code is case-insensitive, with or without the hyphen. On success it answers `{"token","device":{"id","name"}}` and sets no cookie, so a client sends the token as a Bearer. With `"cookie": true` (the shell's Pair this app screen) it sets the HttpOnly device cookie and leaves `token` out, so the token never reaches a page's script; `name` defaults to a guess from the browser, such as `Safari on Mac`. A wrong, expired or used code is 400; ten failures in 5 minutes are 429 with `Retry-After`; a request from this Mac is 403. `GET /pair?code=<code>` and the form at `GET /pair` (which posts to `POST /pair`) pair a browser instead: they set the device cookie and redirect to `/`.
 
 ### `GET /api/v1/devices`
 

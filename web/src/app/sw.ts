@@ -1,4 +1,4 @@
-import { cacheable, classifyRequest, serverGone } from './swRules';
+import { assetUrls, cacheable, classifyRequest, serverGone } from './swRules';
 
 // Built to a fixed /sw.js and registered with scope /app/, so the old UI is never controlled.
 const CACHE = 'admiral-shell-v1';
@@ -17,7 +17,21 @@ interface WorkerScope {
 }
 const sw = self as unknown as WorkerScope;
 
-sw.addEventListener('install', (e) => e.waitUntil(sw.skipWaiting()));
+// A first visit may be the only one before the device goes offline, so the install itself keeps the shell; a failure leaves the install standing.
+async function precache() {
+  try {
+    const res = await fetch(SHELL, { cache: 'no-store' });
+    if (!cacheable(res.status) || res.redirected) return;
+    const cache = await caches.open(CACHE);
+    const html = await res.clone().text();
+    await cache.put(SHELL, res);
+    await Promise.all(assetUrls(html, sw.location.origin).map((u) => cache.add(u).catch(() => {})));
+  } catch {
+    /* offline or proxied away: the first page load caches what it uses */
+  }
+}
+
+sw.addEventListener('install', (e) => e.waitUntil(precache().then(() => sw.skipWaiting())));
 sw.addEventListener('activate', (e) =>
   e.waitUntil(
     (async () => {

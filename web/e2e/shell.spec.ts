@@ -695,7 +695,12 @@ test.describe('installed app', () => {
 
   test('with the server down, the cached shell says it cannot reach the Mac, and Retry returns to the shell once it answers', { tag: '@critical' }, async ({ page, admiral }) => {
     await admiral.start();
-    await visitTwice(page, admiral.url);
+    // One online load only: the worker caches the shell when it installs, not from a second visit.
+    await page.goto(admiral.url + 'app/');
+    await expect(surface(page, 'Inbox')).toBeVisible();
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await expect.poll(() => cachedPaths(page)).toContain('/app/');
+    expect((await cachedPaths(page)).some((p) => p.startsWith('/assets/'))).toBe(true);
 
     await admiral.stopServer();
     await page.reload();

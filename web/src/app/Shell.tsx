@@ -15,8 +15,10 @@ import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
 import { ships, shipsLink, shipsLoaded, sources } from './shipsLink';
 import { signedOut } from './session';
-import { SIGNED_OUT_LINE } from './remoteAccess';
 import { Unreachable } from './Unreachable';
+import { PairScreen } from './PairScreen';
+import { InstallButton, InstallSheet } from './InstallPrompts';
+import { gateOf } from './pairing';
 import { ReadyToMerge, StatusGlyph } from './StatusGlyph';
 import { call, type Order, type Ship } from './api';
 import { CrewPage } from './CrewPage';
@@ -378,23 +380,16 @@ function PhoneShell({ surface }: { surface: Surface }) {
 
 export function Shell() {
   const phone = usePhone();
-  if (signedOut.value)
-    return (
-      <main class="panel">
-        <p class="line" role="status">
-          {SIGNED_OUT_LINE}
-        </p>
-        <a class="btn" href="/pair">
-          Pair this device
-        </a>
-      </main>
-    );
   const surface = surfaceOf(loc.value.path) ?? SURFACES[0];
+  const gate = signedOut.value ? 'pair' : gateOf(shipsLink.value);
   // An overlay, not a replacement: a blip must not unmount a Launch sheet with typed work in it.
   return (
     <>
       {phone ? <PhoneShell surface={surface} /> : <DesktopShell surface={surface} />}
-      {shipsLink.value === 'unreachable' ? <Unreachable /> : null}
+      {gate === 'unreachable' ? <Unreachable /> : null}
+      {gate === 'pair' ? <PairScreen /> : null}
+      {shipsLink.value === 'open' ? <InstallSheet /> : null}
+      <InstallButton />
     </>
   );
 }
