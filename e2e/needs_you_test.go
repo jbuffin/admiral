@@ -194,6 +194,9 @@ func TestHooksSetNeedsYouAndUnderway(t *testing.T) {
 	if got, want := w.readFile(filepath.Join(w.rec, sl.Session, "statusline-stdout")), "\x1b[32mshipshape\x1b[0m\nsecond line"; got != want {
 		t.Errorf("status line output = %q, want the engineer's own line through Admiral's wrapper: %q", got, want)
 	}
+	if got := strings.TrimSpace(w.readFile(filepath.Join(w.rec, sl.Session, "statusline-exit"))); got != "0" {
+		t.Errorf("the status line exited %q, want 0: Claude shows the output only after exit 0", got)
+	}
 	deadline := time.Now().Add(5 * time.Second)
 	var kept string
 	for kept == "" && time.Now().Before(deadline) {

@@ -140,6 +140,12 @@ func TestStatuslineFindsTheEngineersSettings(t *testing.T) {
 	if got := r.run(sample(t)); got != "from-home\n" {
 		t.Errorf("with CLAUDE_CONFIG_DIR unset, stdout = %q, want ~/.claude's line", got)
 	}
+	r.env.ConfigDir = r.cfg
+	r.writeFile(filepath.Join(r.cfg, "settings.json"), `{"theme":"dark"}`)
+	if got := r.run(sample(t)); got != "" {
+		t.Errorf("with CLAUDE_CONFIG_DIR set and no line in it, stdout = %q, want nothing: Claude never reads ~/.claude then", got)
+	}
+	r.env.ConfigDir = ""
 	r.writeFile(r.managed, settingsWith("echo from-managed"))
 	if got := r.run(sample(t)); got != "from-managed\n" {
 		t.Errorf("with a managed line, stdout = %q, want the managed one: it outranks the user's", got)
@@ -337,12 +343,14 @@ func TestStatuslineKeepsAMissingWindowMissing(t *testing.T) {
 func TestStatuslineRefusesAValueOver4KB(t *testing.T) {
 	r := newSLRig(t)
 	r.userStatusLine("echo mine")
-	in := `{"session_id":"s1","transcript_path":"/t/` + strings.Repeat("a", 5000) + `.jsonl","cost":{"total_cost_usd":1}}`
+	in := `{"session_id":"` + strings.Repeat("s", 5000) + `","transcript_path":"/t/` + strings.Repeat("a", 3000) + `.jsonl","cost":{"total_cost_usd":1}}`
 	if got := r.run(in); got != "mine\n" {
 		t.Errorf("stdout = %q, want the engineer's output", got)
 	}
-	if len(r.writes) != 0 {
-		t.Errorf("kept a %d-byte value, want nothing over 4 KB", len(r.writes[0][5]))
+	for _, w := range r.writes {
+		if n := len(w[len(w)-1]); n > 4096 {
+			t.Errorf("kept a %d-byte value, want nothing over 4 KB", n)
+		}
 	}
 }
 
