@@ -1,15 +1,16 @@
 import { useEffect } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch, fleets, loaded } from './fleets';
 import { InstallPage } from './InstallPrompts';
-import { capabilitiesPath, chatSettingsPath, fleetPath, go, installPath, loc, preferencesBare, preferencesFleet, preferencesPath, preferencesPage, remotePath, sourcesPath, usageAllPath, usagePath, type PreferencesPage } from './router';
+import { capabilitiesPath, chatSettingsPath, fleetPath, go, installPath, loc, notificationsPath, preferencesBare, preferencesFleet, preferencesPath, preferencesPage, remotePath, sourcesPath, usageAllPath, usagePath, type PreferencesPage } from './router';
 import { AllUsagePage, FleetUsagePage } from './UsagePage';
+import { NotificationsPage } from './NotificationsPage';
 import { RemoteAccess } from './RemoteAccessPage';
 import { ChatSettingsPage } from './ChatSettingsPage';
 import { FleetPage } from './FleetPage';
 import { HarnessCapabilities } from './HarnessCapabilities';
 import { OrderSources } from './OrderSources';
 
-const TITLES: Record<PreferencesPage, string> = { fleet: 'Fleet', admiralbot: 'AdmiralBot', sources: 'Order sources', capabilities: 'Harness capabilities', usage: 'Usage', 'all-usage': 'Usage', remote: 'Remote access', install: 'Install app' };
+const TITLES: Record<PreferencesPage, string> = { fleet: 'Fleet', admiralbot: 'AdmiralBot', sources: 'Order sources', capabilities: 'Harness capabilities', usage: 'Usage', 'all-usage': 'Usage', remote: 'Remote access', install: 'Install app', notifications: 'Notifications' };
 
 function NavLink({ path, current, children }: { path: string; current: boolean; children: string }) {
   const search = fleetSearch.value;
@@ -36,6 +37,9 @@ function PreferencesNav({ current, page }: { current: string; page: PreferencesP
         <div class="sec" id="admiral-global-prefs">
           Admiral · all fleets
         </div>
+        <NavLink path={notificationsPath} current={page === 'notifications'}>
+          Notifications
+        </NavLink>
         <NavLink path={remotePath} current={page === 'remote'}>
           Remote access
         </NavLink>
@@ -81,7 +85,7 @@ export function Preferences({ phone }: { phone: boolean }) {
   // On a phone the bare path is the list; otherwise bare and unknown paths open the active fleet's sources, else Remote access; signals are read at run time because a render can see the config half-loaded.
   useEffect(() => {
     const open = activeFleet.value;
-    if (!loaded.value || (phone && preferencesBare(loc.value.path)) || page === 'remote' || page === 'all-usage' || page === 'install' || fleets.value.some((f) => f.key === key)) return;
+    if (!loaded.value || (phone && preferencesBare(loc.value.path)) || page === 'remote' || page === 'all-usage' || page === 'install' || page === 'notifications' || fleets.value.some((f) => f.key === key)) return;
     go(open ? sourcesPath(open.key) : remotePath, fleetSearch.value, true);
   }, [loaded.value, fleets.value, key, page]);
 
@@ -105,7 +109,12 @@ export function Preferences({ phone }: { phone: boolean }) {
               Back to Preferences
             </a>
           )}
-          {page === 'remote' ? (
+          {page === 'notifications' ? (
+            <>
+              <Title>{TITLES.notifications}</Title>
+              <NotificationsPage />
+            </>
+          ) : page === 'remote' ? (
             <>
               <Title>{TITLES.remote}</Title>
               <p class="fleet-label">All fleets</p>

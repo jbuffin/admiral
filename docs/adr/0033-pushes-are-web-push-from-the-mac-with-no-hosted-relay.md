@@ -29,3 +29,5 @@ Today Admiral only chimes in an open browser. Away from the Mac, the engineer ha
 
 - Devices subscribe against Admiral's VAPID key, so the key can't change without every device subscribing again.
 - A device on plain HTTP, with no Tailscale mode, never gets pushes. It still gets the tab-title badge, the chime and toasts.
+
+Amended 2026-11-12 (Web Push build, [#278](https://github.com/jbuffin/admiral/issues/278)): the app icon badge and closing stale notifications run in the page, not the worker. The page sets the badge from the shared Inbox queue and closes each shown notification whose entry is gone when it opens and when its lists change, so the worker only handles `push` and `notificationclick` (and the shell cache).

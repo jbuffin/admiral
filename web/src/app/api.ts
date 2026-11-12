@@ -407,6 +407,7 @@ export interface Device {
   lastSeen: string | null;
   current?: boolean;
   thisMac?: boolean;
+  notifications: boolean;
 }
 export interface PairingCode {
   code: string;
@@ -418,6 +419,17 @@ export async function fetchDevices(): Promise<Result<Device[]>> {
   const r = await call<{ devices?: Device[] | null }>('GET', '/devices');
   return r.ok ? { ok: true, data: r.data.devices ?? [] } : r;
 }
+
+/** The browser's PushSubscription as JSON: what the Mac encrypts to. */
+export interface PushSubscriptionJSON {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
+export const fetchPushKey = () => call<{ key: string }>('GET', '/push/key');
+/** Ok (204) when the server holds this endpoint for this device, a 404 failure when it does not. */
+export const checkPushSubscription = (endpoint: string) => call<null>('GET', `/push/subscription?endpoint=${encodeURIComponent(endpoint)}`);
+export const savePushSubscription = (sub: PushSubscriptionJSON) => call<null>('PUT', '/push/subscription', sub);
+export const dropPushSubscription = (endpoint: string) => call<null>('DELETE', '/push/subscription', { endpoint });
 export const mintPairingCode = () => call<PairingCode>('POST', '/pairing-codes');
 export const renameDevice = (id: string, name: string) => call<unknown>('PATCH', `/devices/${encodeURIComponent(id)}`, { name });
 export const revokeDevice = (id: string) => call<unknown>('DELETE', `/devices/${encodeURIComponent(id)}`);

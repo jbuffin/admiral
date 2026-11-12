@@ -13,6 +13,9 @@ export const shipsLoaded = signal(false);
 export const inboxItems = signal<InboxItem[]>([]);
 // False until the first inbox message, so a Peek on a file item does not close before its item has arrived.
 export const inboxLoaded = signal(false);
+// Unlike the two flags above these reset with each connection: a resumed page holds the lists of before it was suspended until the new snapshots arrive.
+export const shipsFresh = signal(false);
+export const inboxFresh = signal(false);
 export const sources = signal<Source[]>([]);
 export const resources = signal<Resource[]>([]);
 // Each fleet's latest chat message, keyed by fleet; a message replaces only its own fleet's.
@@ -84,6 +87,8 @@ export function watchShips(): () => void {
     current = s;
     s.onopen = () => {
       connecting = false;
+      shipsFresh.value = false;
+      inboxFresh.value = false;
       shipsLink.value = 'open';
       markPaired();
       delay = RETRY_FIRST_MS;
@@ -95,9 +100,11 @@ export function watchShips(): () => void {
       if (msg.type === 'ships') {
         ships.value = msg.ships ?? [];
         shipsLoaded.value = true;
+        shipsFresh.value = true;
       } else if (msg.type === 'inbox') {
         inboxItems.value = msg.items ?? [];
         inboxLoaded.value = true;
+        inboxFresh.value = true;
       }
       else if (msg.type === 'move') {
         const to = moveTarget(msg, location.href);
@@ -110,6 +117,8 @@ export function watchShips(): () => void {
     };
     s.onclose = () => {
       connecting = false;
+      shipsFresh.value = false;
+      inboxFresh.value = false;
       shipsLink.value = 'reconnecting';
       schedule();
     };

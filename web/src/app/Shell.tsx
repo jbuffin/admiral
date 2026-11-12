@@ -30,6 +30,7 @@ import { followReference } from './campaignsLink';
 import { ChatPanel } from './ChatPanel';
 import { InboxPanel } from './InboxPanel';
 import { watchAttention } from './attention';
+import { watchPush } from './pushLink';
 import { MergeControl } from './PeekMerge';
 import { Failure } from './PeekItem';
 import { ShipView } from './ShipView';
@@ -387,6 +388,7 @@ export function Shell() {
   useEffect(() => watchPresence(), []);
   const phone = usePhone();
   useEffect(() => watchAttention(), []);
+  useEffect(() => watchPush(), []);
   const surface = surfaceOf(loc.value.path) ?? SURFACES[0];
   const gate = signedOut.value ? 'pair' : gateOf(shipsLink.value);
   // An overlay, not a replacement: a blip must not unmount a Launch sheet with typed work in it.
