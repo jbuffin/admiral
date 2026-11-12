@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { HOME, WORK, holds, boatOf, boatReceived, boatSays, changeFile, changesOf, chip, diffOf, expectSeededTurn, flotilla, gitCheckout, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatSession } from './shell';
+import { HOME, WORK, holds, boatOf, boatReceived, boatSays, changeFile, changesOf, chip, diffOf, expectSeededTurn, flotilla, gitCheckout, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatSession } from './shell';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1049,6 +1049,19 @@ test("a chat held before its first SessionStart shows the not-started note with 
   await box.fill('Now that it started');
   await main.getByRole('button', { name: 'Send', exact: true }).tap();
   await expect.poll(() => chatReceived(admiral, 'lagoon')).toContain('Now that it started');
+});
+
+test('a chat terminal whose session ends returns to the conversation', async ({ page, admiral }) => {
+  seedFleets(admiral, { chat: true });
+  await admiral.start();
+  const main = page.getByRole('main');
+  await page.goto(admiral.url + 'app/chat?fleet=lagoon');
+  await main.getByRole('button', { name: 'Open terminal', exact: true }).first().tap();
+  await expect(main.locator('.xterm')).toBeVisible();
+  chatEnds(admiral, 'lagoon');
+  await expect(page).not.toHaveURL(/\/terminal/);
+  await expect(main.locator('.xterm')).toHaveCount(0);
+  await expect(main.getByRole('textbox', { name: 'Message AdmiralBot' })).toBeVisible();
 });
 
 test('a fleet whose chat is off has no Open terminal', async ({ page, admiral }) => {

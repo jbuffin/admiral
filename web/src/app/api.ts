@@ -382,6 +382,18 @@ export async function probeShipList(crew?: string): Promise<{ kind: 'ok'; ships:
     return { kind: 'down' };
   }
 }
+/** A chat terminal's reconnect check: the fleet's chat session is listed only while it is running, so a session that ended returns to the conversation. */
+export async function probeChatSession(fleet: string): Promise<{ kind: 'ok'; ships: { session: string }[] } | { kind: 'signed-out' } | { kind: 'down' }> {
+  try {
+    const res = await fetch(`${API}/chat/${encodeURIComponent(fleet)}/session`, { cache: 'no-store' });
+    if (res.status === 401) return { kind: 'signed-out' };
+    if (!res.ok) return { kind: 'down' };
+    const body = (await res.json()) as { running?: boolean };
+    return { kind: 'ok', ships: body.running ? [{ session: `_chat-${fleet}` }] : [] };
+  } catch {
+    return { kind: 'down' };
+  }
+}
 export interface Device {
   id: string;
   name: string;

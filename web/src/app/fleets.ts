@@ -1,6 +1,6 @@
 import { computed, effect, signal } from '@preact/signals';
 import { fetchFleets, type Fleet } from './api';
-import { go, loc } from './router';
+import { chatTerminalOf, go, loc } from './router';
 import { fleetPaint } from './fleetPaint';
 
 export { fleetPaint };
@@ -49,7 +49,8 @@ export const rememberFleet = (key: string) => store.set(key);
 
 export function chooseFleet(key: string) {
   store.set(key);
-  go(loc.value.path, `?fleet=${encodeURIComponent(key)}`);
+  // The terminal path names one fleet's chat session; another fleet opens on its conversation.
+  go(chatTerminalOf(loc.value.path) === null ? loc.value.path : '/app/chat', `?fleet=${encodeURIComponent(key)}`);
 }
 
 export async function loadFleets() {

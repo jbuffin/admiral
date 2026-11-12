@@ -131,6 +131,9 @@ export function chatStarts(a: Admiral, fleet: ChatFleet) {
   writeFileSync(join(chatRecord(a, fleet), 'go-start'), '');
 }
 
+/** Ends the fleet's chat session, as quitting Claude Code in its terminal does. */
+export const chatEnds = (a: Admiral, fleet: ChatFleet) => spawnSync('tmux', ['-S', join(a.home, 'tmux.sock'), 'kill-session', '-t', chatSession(fleet)], { encoding: 'utf8' });
+
 /** What was typed into the fleet's chat pane, as the harness received it. */
 export const chatReceived = (a: Admiral, fleet: ChatFleet) => {
   try {
