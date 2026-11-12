@@ -3,6 +3,13 @@ import { networkInterfaces } from 'node:os';
 import { expect, test, type Admiral } from './fixtures';
 
 const hasLan = Object.values(networkInterfaces()).some((l) => l?.some((i) => i.family === 'IPv4' && !i.internal));
+/** The desktop and iPad sidebar's Preferences, then Install app in the all-fleets group. */
+async function openInstallApp(page: Page) {
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Preferences' }).click();
+  await page.getByRole('navigation', { name: 'Preferences' }).getByRole('group', { name: 'Admiral · all fleets' }).getByRole('link', { name: 'Install app', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Install app', exact: true })).toBeVisible();
+}
+
 const ipadSafari = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
 
 // Minting voids the earlier code, so each pairing mints its own.
@@ -66,7 +73,7 @@ test.describe('pairing an unpaired device', () => {
     await expect(page.getByRole('heading', { name: /Pair this app|signed out/ })).toBeHidden();
   });
 
-  test('iPad Safari gets the Add to Home Screen sheet once after pairing, and the installed app never does', async ({ browser, admiral }) => {
+  test('iPad Safari gets the Add to Home Screen sheet once after pairing and keeps its steps in Install app; the installed app gets neither', async ({ browser, admiral }) => {
     await admiral.start({ lan: true });
     const open = async (standalone: boolean) => {
       const context = await browser.newContext({ userAgent: ipadSafari, hasTouch: true, viewport: { width: 1194, height: 834 } });
@@ -88,6 +95,8 @@ test.describe('pairing an unpaired device', () => {
       await safari.page.reload();
       await expect(safari.page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
       await expect(sheet(safari.page)).toBeHidden();
+      await openInstallApp(safari.page);
+      await expect(safari.page.getByRole('main').getByText('Tap Share, then Add to Home Screen.')).toBeVisible();
     } finally {
       await safari.context.close();
     }
@@ -98,25 +107,33 @@ test.describe('pairing an unpaired device', () => {
       await pairByTyping(installed.page, admiral);
       await expect(installed.page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
       await expect(sheet(installed.page)).toBeHidden();
+      await openInstallApp(installed.page);
+      await expect(installed.page.getByText('Admiral is installed on this device.')).toBeVisible();
     } finally {
       await installed.context.close();
     }
   });
 });
 
-test('where the browser offers an install, an Install button calls prompt() and hides after the choice', async ({ page, admiral }) => {
+test('Preferences → Install app installs where the browser offers it, and nothing floats over the shell', async ({ page, admiral }) => {
   await admiral.start();
   await page.goto(admiral.url + 'app/');
   await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Install', exact: true })).toBeHidden();
 
+  await openInstallApp(page);
+  await expect(page.getByText("This browser isn't offering to install Admiral.")).toBeVisible();
+
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Inbox' }).click();
   await page.evaluate(() => {
     const e = new Event('beforeinstallprompt', { cancelable: true });
     Object.assign(e, { prompt: async () => ((window as unknown as { prompted: boolean }).prompted = true), userChoice: Promise.resolve({ outcome: 'accepted' }) });
     window.dispatchEvent(e);
   });
-  const install = page.getByRole('button', { name: 'Install', exact: true });
-  await install.click();
+  await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Install', exact: true })).toBeHidden();
+
+  await openInstallApp(page);
+  await page.getByRole('main').getByRole('button', { name: 'Install', exact: true }).click();
   expect(await page.evaluate(() => (window as unknown as { prompted?: boolean }).prompted)).toBe(true);
-  await expect(install).toBeHidden();
+  await expect(page.getByText('Admiral is installed on this device.')).toBeVisible();
 });

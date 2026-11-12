@@ -647,8 +647,6 @@ button.pill { cursor: pointer; min-height: 32px; }
 .install-steps { margin: 4px 10px 8px; padding-left: 20px; }
 .install-steps li { margin: 6px 0; }
 .install-why { margin: 0 10px 12px; color: var(--color-text2); }
-.install-btn { position: fixed; right: 16px; bottom: 16px; z-index: 20; min-height: var(--shape-min-touch-target); }
-@media (max-width: 640px) { .install-btn { bottom: 76px; } }
 .usage-period, .usage-card { margin: 0 0 22px; }
 .usage-period h2, .usage-period h3, .usage-quota > h2, .usage-quota > h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-size: var(--font-size-body); }
 .usage-quota { margin-top: 22px; }

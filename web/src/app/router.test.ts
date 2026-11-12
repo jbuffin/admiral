@@ -15,7 +15,7 @@ const page = vi.hoisted(() => {
   return l;
 });
 
-import { usageAllPath, usagePath, campaignOf, campaignPath, crewOf, crewPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath, chatSettingsPath, chatTerminalPath, chatTerminalOf, chatPeekOf } from './router';
+import { installPath, usageAllPath, usagePath, campaignOf, campaignPath, crewOf, crewPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath, chatSettingsPath, chatTerminalPath, chatTerminalOf, chatPeekOf } from './router';
 
 describe('campaign paths', () => {
   it('round-trips an id through its page path', () => {
@@ -117,6 +117,16 @@ describe('Remote access route', () => {
     expect(preferencesPage('/app/preferences/admiral/sources')).toBe('sources');
     expect(surfaceOf('/app/preferences/admiral/bogus')).toBeUndefined();
     expect(surfaceOf('/app/preferences/zulu/remote')).toBeUndefined();
+  });
+});
+
+describe('Install app route', () => {
+  it('lives under the reserved admiral segment, and install under any other key is no page', () => {
+    expect(installPath).toBe('/app/preferences/admiral/install');
+    expect(surfaceOf(installPath)?.id).toBe('preferences');
+    expect(preferencesFleet(installPath)).toBeNull();
+    expect(preferencesPage(installPath)).toBe('install');
+    expect(surfaceOf('/app/preferences/zulu/install')).toBeUndefined();
   });
 });
 

@@ -98,19 +98,20 @@ export function chatTerminalOf(path: string): string | null {
   }
 }
 
-const PREFERENCES_PAGES = ['fleet', 'admiralbot', 'sources', 'capabilities', 'usage', 'all-usage', 'remote'] as const;
+const PREFERENCES_PAGES = ['fleet', 'admiralbot', 'sources', 'capabilities', 'usage', 'all-usage', 'remote', 'install'] as const;
 
-const GLOBAL_PAGES: string[] = ['remote', 'all-usage'];
+const GLOBAL_PAGES: string[] = ['remote', 'all-usage', 'install'];
 
-// The remote and all-usage pages live only under the reserved `admiral` segment; any other page there belongs to a fleet keyed `admiral`.
-const globalPage = (path: string): 'remote' | 'all-usage' | null => {
+// The remote, all-usage and install pages live only under the reserved `admiral` segment; any other page there belongs to a fleet keyed `admiral`.
+const globalPage = (path: string): 'remote' | 'all-usage' | 'install' | null => {
   const [id, key, page] = segments(path);
-  return id === 'preferences' && key === 'admiral' && (page === 'remote' || page === 'all-usage') ? page : null;
+  return id === 'preferences' && key === 'admiral' && GLOBAL_PAGES.includes(page) ? (page as 'remote' | 'all-usage' | 'install') : null;
 };
 
 export const preferencesPath = '/app/preferences';
 export const remotePath = '/app/preferences/admiral/remote';
 export const usageAllPath = '/app/preferences/admiral/all-usage';
+export const installPath = '/app/preferences/admiral/install';
 export type PreferencesPage = (typeof PREFERENCES_PAGES)[number];
 
 export const sourcesPath = (fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/sources`;

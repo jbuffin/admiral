@@ -17,7 +17,7 @@ import { ships, shipsLink, shipsLoaded, sources } from './shipsLink';
 import { signedOut } from './session';
 import { Unreachable } from './Unreachable';
 import { PairScreen } from './PairScreen';
-import { InstallButton, InstallSheet } from './InstallPrompts';
+import { InstallSheet } from './InstallPrompts';
 import { gateOf } from './pairing';
 import { ReadyToMerge, StatusGlyph } from './StatusGlyph';
 import { call, type Order, type Ship } from './api';
@@ -391,7 +391,6 @@ export function Shell() {
       {gate === 'unreachable' ? <Unreachable /> : null}
       {gate === 'pair' ? <PairScreen /> : null}
       {shipsLink.value === 'open' ? <InstallSheet /> : null}
-      <InstallButton />
     </>
   );
 }
