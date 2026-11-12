@@ -44,9 +44,13 @@ type Request struct {
 	// Title and URL are set by the server from the source's order, never by the client.
 	Title string `json:"-"`
 	URL   string `json:"-"`
-	// Issues is every issue of a slice launch, set by the server; URL is the first.
-	Issues []string `json:"-"`
+	// Issues is every issue of a slice launch; URL is the first. A client may name them, never the URL.
+	Issues []string `json:"issues"`
 	Panel  string   `json:"-"`
+	// ChatMessage is the id of the chat message the launch answers; it keys the launch as chat:<id>.
+	ChatMessage string `json:"chat_message"`
+	// Anyway gives a chat launch a fresh key so the same message can launch twice.
+	Anyway bool `json:"anyway"`
 	// Autopilot runs the ship under the guard with ADMIRAL_LOW_STAKES=advisor, counted against the global cap.
 	Autopilot bool     `json:"autopilot"`
 	ExtraArgs []string `json:"-"`

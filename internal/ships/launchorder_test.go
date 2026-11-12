@@ -58,14 +58,6 @@ func (sliceOrders) Order(source, id string) (text, title, repo, url, panel strin
 }
 func (sliceOrders) Launched(source, id string) {}
 
-func TestLaunchOrderRefusesSeveralIssuesWithoutASource(t *testing.T) {
-	s := &Service{}
-	_, lerr := s.LaunchOrder(launcher.Request{Issues: []string{sliceA, sliceB}})
-	if lerr == nil || lerr.Status != http.StatusBadRequest {
-		t.Fatalf("LaunchOrder with issues and no source = %v, want a 400", lerr)
-	}
-}
-
 // sliceService is a service on a real host: LaunchOrder of an order waits for the first read of the ships.
 func sliceService(t *testing.T) *mooredFixture {
 	t.Helper()
