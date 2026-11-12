@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact';
 import { useLayoutEffect, useRef } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch } from './fleets';
 import type { Fleet } from './api';
@@ -51,7 +52,7 @@ function Thread({ items, working, chat }: { items: ThreadItem[]; working: boolea
       {items.length === 0 && !working ? <p class="line">No messages yet.</p> : null}
       {items.map((i) =>
         i.kind === 'reset' ? (
-          <div key={i.id} class="compaction" role="separator">
+          <div key={i.id} class="compaction">
             <span>{resetLabel(i.at)}</span>
           </div>
         ) : i.kind === 'question' ? (
@@ -71,6 +72,7 @@ function Thread({ items, working, chat }: { items: ThreadItem[]; working: boolea
 
 function ChatComposer({ chat }: { chat: Chat }) {
   const { text, setText, send, sending, error } = chat;
+  const field = useRef<HTMLTextAreaElement>(null);
   return (
     <div class="msg-box">
       {error ? (
@@ -84,6 +86,8 @@ function ChatComposer({ chat }: { chat: Chat }) {
           aria-label="Message AdmiralBot"
           placeholder="Ask AdmiralBot"
           rows={2}
+          ref={field}
+          onFocus={() => field.current?.scrollIntoView({ block: 'nearest' })}
           value={text}
           onInput={(e) => setText(e.currentTarget.value)}
           onKeyDown={(e) => {
@@ -102,17 +106,17 @@ function ChatComposer({ chat }: { chat: Chat }) {
   );
 }
 
-function Conversation({ fleet }: { fleet: string }) {
+function Conversation({ fleet, head }: { fleet: string; head: (action: ComponentChildren) => ComponentChildren }) {
   const chat = useChat(fleet);
   const { snap } = chat;
   const items = snap ? threadOf(snap) : [];
   return (
     <>
-      <div class="chat-head-actions">
+      {head(
         <button type="button" class="btn" disabled={chat.resetting} onClick={() => void chat.newChat()}>
           New chat
-        </button>
-      </div>
+        </button>,
+      )}
       {snap?.error ? <p class="msg-note">{snap.error}</p> : null}
       {snap ? <Thread items={items} working={snap.state === 'working'} chat={chat} /> : <p class="line">Loading…</p>}
       <ChatComposer chat={chat} />
@@ -174,14 +178,26 @@ export function ChatPanel({ surface, title, phone }: { surface: Surface; title: 
   const stacked = useStacked(phone);
   if (!fleet) return null;
   const Heading = title ? 'h1' : 'h2';
+  const head = (action: ComponentChildren) => (
+    <div class="chat-head">
+      <Heading class="chat-title">
+        <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
+        <span class="chat-title-text">AdmiralBot · {fleet.name} fleet</span>
+      </Heading>
+      {action}
+    </div>
+  );
   return (
     <main class="panel chat-panel" aria-label={surface.title}>
       <div class="chat-main">
-        <Heading class="chat-title">
-          <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
-          AdmiralBot · {fleet.name} fleet
-        </Heading>
-        {fleet.chat.on ? <Conversation key={fleet.key} fleet={fleet.key} /> : <Off fleet={fleet} />}
+        {fleet.chat.on ? (
+          <Conversation key={fleet.key} fleet={fleet.key} head={head} />
+        ) : (
+          <>
+            {head(null)}
+            <Off fleet={fleet} />
+          </>
+        )}
       </div>
       {stacked ? null : <ChatRail />}
     </main>

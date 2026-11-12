@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call } from './api';
 import type { ChatSnapshot } from './chat';
-import { chats } from './shipsLink';
+import { chats, shipsLink } from './shipsLink';
 import { type AnswerBody, type Draft, blankDraft } from '../questions';
+
+// A failed request with no status never reached Admiral; the browser's own text for it names nothing useful.
+const failure = (r: { error: string; status?: number }) => (r.status === undefined ? "Admiral isn't reachable. Your message is kept." : r.error);
 
 const clean = (s: ChatSnapshot): ChatSnapshot => ({ ...s, messages: s.messages ?? [], questions: s.questions ?? [] });
 
@@ -27,7 +30,7 @@ export function useChat(fleet: string) {
     void (async () => {
       await reread();
       const r = await call('POST', `${base}/start`);
-      if (alive.current && !r.ok) setError(r.error);
+      if (alive.current && !r.ok) setError(failure(r));
       await reread();
     })();
     return () => {
@@ -40,6 +43,10 @@ export function useChat(fleet: string) {
     if (pushed) setSnap(clean(pushed));
   }, [pushed]);
 
+  useEffect(() => {
+    if (shipsLink.value === 'open') setError('');
+  }, [shipsLink.value]);
+
   const send = async () => {
     const typed = text;
     if (!typed.trim() || sending) return;
@@ -47,7 +54,7 @@ export function useChat(fleet: string) {
     setError('');
     const r = await call('POST', `${base}/messages`, { text: typed });
     setSending(false);
-    if (!r.ok) return setError(r.error);
+    if (!r.ok) return setError(failure(r));
     // Keep only what was typed while the request was out, so a second Enter doesn't send the text again.
     setText((now) => (now.startsWith(typed) ? now.slice(typed.length) : now));
   };
@@ -58,7 +65,7 @@ export function useChat(fleet: string) {
     setError('');
     const r = await call('POST', `${base}/new`);
     setResetting(false);
-    if (!r.ok) return setError(r.error);
+    if (!r.ok) return setError(failure(r));
     setText('');
     setDrafts({});
     await reread();
@@ -72,7 +79,7 @@ export function useChat(fleet: string) {
     const r = await call('POST', `${base}/questions/${encodeURIComponent(id)}/answer`, body);
     // A 409 or 404 means the question was answered elsewhere or withdrawn; the snapshot says which, and the socket doesn't push for it.
     if (r.ok || r.status === 409 || r.status === 404) await reread();
-    editDraft(id, (d) => ({ ...d, sending: false, error: r.ok ? '' : r.error }));
+    editDraft(id, (d) => ({ ...d, sending: false, error: r.ok ? '' : failure(r) }));
   };
 
   return { snap, error, text, setText, sending, resetting, drafts, editDraft, send, newChat, answer };

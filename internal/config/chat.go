@@ -45,10 +45,10 @@ func defaultChat() ChatSettings {
 // ChatOffReason is empty when the fleet's chat is on.
 func (f Fleet) ChatOffReason() string {
 	if !slices.Contains(ChatHarnesses, f.Chat.Harness) {
-		return fmt.Sprintf("Admiral cannot yet fence %s, so the chat does not run on it: choose Claude Code", f.Chat.Harness)
+		return fmt.Sprintf("Admiral cannot yet fence %s, so the chat does not run on it: choose Claude Code.", f.Chat.Harness)
 	}
 	if _, ok := f.Harness(f.Chat.Harness); !ok {
-		return "This fleet has no Claude Code dock, so the chat has nowhere to run: add one to the fleet"
+		return "This fleet has no Claude Code dock, so the chat has nowhere to run: add one to the fleet."
 	}
 	return ""
 }
@@ -74,7 +74,7 @@ func (c *Config) ChatOffReason(f Fleet) string {
 			break
 		}
 		if strings.EqualFold(o.Key, f.Key) {
-			return fmt.Sprintf("This fleet's key differs only in case from fleet %s's (%s), and their chats would share one directory on a disk that ignores case: rename one key", o.Name, o.Key)
+			return fmt.Sprintf("This fleet's key differs only in case from fleet %s's (%s), and their chats would share one directory on a disk that ignores case: rename one key.", o.Name, o.Key)
 		}
 	}
 	return f.ChatOffReason()

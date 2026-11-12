@@ -18,14 +18,14 @@ function Choice<T extends string | number>({ legend, help, values, value, label,
 }) {
   const id = `chat-${legend.toLowerCase().replace(/\W+/g, '-')}`;
   return (
-    <div class="set">
+    <div class="set choice-set">
       <div class="t">
         <span id={id}>{legend}</span>
         {help ? <span>{help}</span> : null}
       </div>
-      <div class="control choice-group" role="radiogroup" aria-labelledby={id}>
+      <div class="choice-group" role="radiogroup" aria-labelledby={id}>
         {values.map((v) => (
-          <button key={String(v)} type="button" role="radio" class="choice" aria-checked={v === value} disabled={disabled} onClick={() => onPick(v)}>
+          <button key={String(v)} type="button" role="radio" class="chip" aria-checked={v === value} disabled={disabled} onClick={() => onPick(v)}>
             {flag ? <Flag harness={String(v)} size="row" /> : null}
             {label(v)}
           </button>
@@ -78,7 +78,7 @@ export function ChatSettingsPage({ fleet }: { fleet: Fleet }) {
         <Choice legend="Effort" values={CHAT_EFFORTS} value={edited.effort} label={effortLabel} disabled={busy} onPick={(v) => set({ effort: v })} />
         <Choice
           legend="Refresh context at"
-          help="When AdmiralBot’s context reaches this size, it will start fresh. Your chat history stays."
+          help="How large AdmiralBot's context can grow before a refresh. Your chat history stays."
           values={CHAT_THRESHOLDS}
           value={edited.context_threshold}
           label={thresholdLabel}
