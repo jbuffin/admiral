@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test, type Admiral } from './fixtures';
@@ -369,4 +369,92 @@ test('a fleet page edits search roots, owners, clone root and colour, keeping wh
   await expect(page).toHaveURL(admiral.url);
   const setup = (await (await fetch(`${admiral.url}api/v1/setup`)).json()) as { running: boolean };
   expect(setup.running).toBe(true);
+});
+
+const hasLan = Object.values(networkInterfaces()).some((l) => l?.some((i) => i.family === 'IPv4' && !i.internal));
+const CODE = /\b[A-Z0-9]{4}-[A-Z0-9]{4}\b/;
+
+test('Remote access shows a pairing code, lists the devices that redeem it, renames, revokes one and signs them all out', async ({ page, admiral }) => {
+  test.skip(!hasLan, 'needs a LAN address');
+  // No fleet is configured: pairing doesn't need one.
+  await admiral.start({ lan: true });
+  const watch = watchPage(page, admiral.url);
+  page.on('dialog', (d) => {
+    watch.errors.push(`a browser dialog opened: ${d.message()}`);
+    void d.dismiss();
+  });
+
+  await page.goto(admiral.url + 'app/preferences');
+  await expect(page).toHaveURL(/\/app\/preferences\/admiral\/remote/);
+  await expect(page.getByRole('heading', { name: 'Remote access', exact: true })).toBeVisible();
+  await expect(page.getByRole('main')).toContainText('All fleets');
+  const section = prefsNav(page).getByRole('group', { name: 'Admiral · all fleets' });
+  await expect(section.getByRole('link', { name: 'Remote access' })).toHaveAttribute('aria-current', 'page');
+
+  // The code on screen is the one to redeem; minting another would void it.
+  const pairing = page.getByRole('group', { name: 'Pairing code' });
+  await expect(pairing.getByRole('img', { name: 'Pairing QR code' })).toBeVisible();
+  await expect(pairing).toContainText(CODE);
+  const codeOf = async () => CODE.exec(await pairing.innerText())![0];
+  const first = await codeOf();
+  const pair = async (code: string, name: string) => {
+    const res = await fetch(`${admiral.lanUrl}api/v1/pair`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, name }) });
+    expect(res.status).toBe(200);
+    return ((await res.json()) as { token: string }).token;
+  };
+  const lanStatus = async (token: string) => (await fetch(`${admiral.lanUrl}api/v1/devices`, { headers: { Authorization: `Bearer ${token}` } })).status;
+
+  const kitchen = await pair(first, 'Kitchen iPad');
+  expect(await lanStatus(kitchen)).toBe(200);
+  const devices = page.getByRole('list', { name: 'Devices' });
+  const row = (name: string) => devices.getByRole('listitem', { name, exact: true });
+  await expect(row('Kitchen iPad')).toBeVisible();
+
+  // Rename in place; the server keeps it.
+  await row('Kitchen iPad').getByRole('textbox', { name: 'Device name' }).fill('Hall iPad');
+  await page.keyboard.press('Enter');
+  await expect(row('Hall iPad')).toBeVisible();
+  await expect
+    .poll(async () => ((await (await fetch(`${admiral.url}api/v1/devices`)).json()) as { devices: { name: string }[] }).devices.map((d) => d.name))
+    .toContain('Hall iPad');
+
+  // Revoke asks inside the page; that device's next LAN call is refused.
+  await row('Hall iPad').getByRole('button', { name: 'Revoke' }).click();
+  await page.getByRole('group', { name: 'Revoke Hall iPad' }).getByRole('button', { name: 'Revoke device' }).click();
+  await expect(row('Hall iPad')).toHaveCount(0);
+  await expect.poll(() => lanStatus(kitchen)).toBe(401);
+
+  // New code replaces the one on screen.
+  await page.getByRole('button', { name: 'New code' }).click();
+  await expect.poll(codeOf).not.toBe(first);
+  const den = await pair(await codeOf(), 'Den iPad');
+  await expect(row('Den iPad')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Sign out all devices', exact: true }).click();
+  await page.getByRole('group', { name: 'Sign out all devices' }).getByRole('button', { name: 'Sign out all', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: /signed out/i })).toBeVisible();
+  await expect(page.getByText('No paired devices yet.')).toBeVisible();
+  await expect.poll(() => lanStatus(den)).toBe(401);
+  await expect.poll(() => lanStatus(admiral.token)).toBe(401);
+  // This browser is local, so it stays signed in.
+  await expect(page.getByRole('heading', { name: 'Remote access', exact: true })).toBeVisible();
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('a failed Sign out all keeps its error through the next device refresh', async ({ page, admiral }) => {
+  await admiral.start();
+  await page.route('**/api/v1/devices', async (route) => {
+    if (route.request().method() === 'DELETE') await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'the store is read-only' }) });
+    else await route.fallback();
+  });
+  await page.goto(admiral.url + 'app/preferences/admiral/remote');
+  await page.getByRole('button', { name: 'Sign out all devices', exact: true }).click();
+  await page.getByRole('group', { name: 'Sign out all devices' }).getByRole('button', { name: 'Sign out all', exact: true }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'the store is read-only' })).toBeVisible();
+  await page.waitForResponse((r) => r.url().endsWith('/api/v1/devices') && r.request().method() === 'GET' && r.ok());
+  await page.waitForResponse((r) => r.url().endsWith('/api/v1/devices') && r.request().method() === 'GET' && r.ok());
+  await expect(page.getByRole('alert').filter({ hasText: 'the store is read-only' })).toBeVisible();
 });
