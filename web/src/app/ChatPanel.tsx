@@ -1,11 +1,14 @@
 import type { ComponentChildren } from 'preact';
-import { useLayoutEffect, useRef } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch } from './fleets';
-import type { Fleet } from './api';
-import { resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
+import { probeChatSession, type Fleet } from './api';
+import { shipsLink } from './shipsLink';
+import { useBridgeTerminal } from '../useBridgeTerminal';
+import { KEYS, touchKeyboard } from '../keys';
+import { needsTerminal, resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
 import { Row, useInboxQueue, usePeekEntry, useStacked } from './InboxPanel';
 import { Peek } from './Peek';
-import { go, loc, chatPeekOf, chatPeekPath, chatSettingsPath } from './router';
+import { go, loc, chatPeekOf, chatPeekPath, chatSettingsPath, chatTerminalOf, chatTerminalPath } from './router';
 import { renderMarkdown } from './markdown';
 import { PeekQuestions } from './PeekQuestions';
 import { useChat } from './useChat';
@@ -107,6 +110,54 @@ function ChatComposer({ chat }: { chat: Chat }) {
   );
 }
 
+function OpenTerminal({ fleet }: { fleet: string }) {
+  return (
+    <button type="button" class="btn" onClick={() => go(chatTerminalPath(fleet), fleetSearch.value)}>
+      Open terminal
+    </button>
+  );
+}
+
+/** The fleet's chat session through the bridge, in place of its conversation. */
+function ChatTerminal({ fleet, head }: { fleet: string; head: (action: ComponentChildren) => ComponentChildren }) {
+  const back = () => go('/app/chat', fleetSearch.value);
+  const { host, link, linkState, activity } = useBridgeTerminal({
+    session: `_chat-${fleet}`,
+    open: true,
+    gone: () => go('/app/chat', fleetSearch.value, true),
+    wsBase: '/ws/v1',
+    probe: () => probeChatSession(fleet),
+    signedOut: () => (shipsLink.value = 'signed-out'),
+  });
+  const canType = linkState === 'open';
+  const input = (data: string) => {
+    activity.current();
+    link.current?.send({ type: 'input', data });
+  };
+  return (
+    <>
+      {head(
+        <button type="button" class="btn" onClick={back}>
+          Back to chat
+        </button>,
+      )}
+      <section class={linkState === 'reconnecting' ? 'term-body dim' : 'term-body'}>
+        <div class="term-host" ref={host} />
+      </section>
+      <div class="term-keys">
+        {linkState === 'reconnecting' ? <span class="term-note">Reconnecting…</span> : null}
+        {touchKeyboard()
+          ? KEYS.map(([name, label, bytes]) => (
+              <button key={name} type="button" class="term-key" aria-label={`Send ${name}`} disabled={!canType} onClick={() => input(bytes)}>
+                {label}
+              </button>
+            ))
+          : null}
+      </div>
+    </>
+  );
+}
+
 function Conversation({ fleet, head }: { fleet: string; head: (action: ComponentChildren) => ComponentChildren }) {
   const chat = useChat(fleet);
   const { snap } = chat;
@@ -114,11 +165,18 @@ function Conversation({ fleet, head }: { fleet: string; head: (action: Component
   return (
     <>
       {head(
-        <button type="button" class="btn" disabled={chat.resetting} onClick={() => void chat.newChat()}>
-          New chat
-        </button>,
+        <>
+          {snap?.running ? <OpenTerminal fleet={fleet} /> : null}
+          <button type="button" class="btn" disabled={chat.resetting} onClick={() => void chat.newChat()}>
+            New chat
+          </button>
+        </>,
       )}
-      {snap?.error ? <p class="msg-note">{snap.error}</p> : null}
+      {snap?.error ? (
+        <p class="msg-note">
+          {snap.error} {snap.running && needsTerminal(snap) ? <OpenTerminal fleet={fleet} /> : null}
+        </p>
+      ) : null}
       {snap ? <Thread items={items} working={snap.state === 'working'} chat={chat} /> : <p class="line">Loading…</p>}
       <ChatComposer chat={chat} />
     </>
@@ -188,6 +246,11 @@ function Off({ fleet }: { fleet: Fleet }) {
 export function ChatPanel({ surface, title, phone }: { surface: Surface; title: boolean; phone: boolean }) {
   const fleet = activeFleet.value;
   const stacked = useStacked(phone);
+  const stray = fleet !== null && chatTerminalOf(loc.value.path) !== null && chatTerminalOf(loc.value.path) !== fleet.key;
+  // A terminal path for another fleet shows this fleet's conversation, so the address says so.
+  useEffect(() => {
+    if (stray) go('/app/chat', fleetSearch.value, true);
+  }, [stray]);
   if (!fleet) return null;
   const Heading = title ? 'h1' : 'h2';
   const head = (action: ComponentChildren) => (
@@ -196,13 +259,15 @@ export function ChatPanel({ surface, title, phone }: { surface: Surface; title: 
         <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
         <span class="chat-title-text">AdmiralBot · {fleet.name} fleet</span>
       </Heading>
-      {action}
+      <div class="chat-actions">{action}</div>
     </div>
   );
   return (
     <main class="panel chat-panel" aria-label={surface.title}>
       <div class="chat-main">
-        {fleet.chat.on ? (
+        {fleet.chat.on && chatTerminalOf(loc.value.path) === fleet.key ? (
+          <ChatTerminal key={fleet.key} fleet={fleet.key} head={head} />
+        ) : fleet.chat.on ? (
           <Conversation key={fleet.key} fleet={fleet.key} head={head} />
         ) : (
           <>

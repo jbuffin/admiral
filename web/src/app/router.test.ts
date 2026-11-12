@@ -15,7 +15,7 @@ const page = vi.hoisted(() => {
   return l;
 });
 
-import { usageAllPath, usagePath, campaignOf, campaignPath, crewOf, crewPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath, chatSettingsPath } from './router';
+import { usageAllPath, usagePath, campaignOf, campaignPath, crewOf, crewPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath, chatSettingsPath, chatTerminalPath, chatTerminalOf, chatPeekOf } from './router';
 
 describe('campaign paths', () => {
   it('round-trips an id through its page path', () => {
@@ -203,5 +203,27 @@ describe("a fleet's AdmiralBot page", () => {
   });
   it('is part of Preferences', () => {
     expect(surfaceOf('/app/preferences/harbor/admiralbot')?.id).toBe('preferences');
+  });
+});
+
+describe('chat terminal paths', () => {
+  it('round-trips a fleet key through its terminal path, which belongs to the Chat surface', () => {
+    expect(chatTerminalPath('harbor')).toBe('/app/chat/harbor/terminal');
+    expect(chatTerminalOf('/app/chat/harbor/terminal')).toBe('harbor');
+    expect(surfaceOf('/app/chat/harbor/terminal')?.id).toBe('chat');
+    expect(chatPeekOf('/app/chat/harbor/terminal')).toBeNull();
+  });
+
+  it('encodes a fleet key so a slash or a space survives, and a key named terminal or item stays itself', () => {
+    for (const key of ['a/b', 'my fleet', 'terminal', 'item', '100%']) {
+      expect(chatTerminalOf(chatTerminalPath(key))).toBe(key);
+    }
+  });
+
+  it('names no terminal for other paths', () => {
+    for (const path of ['/app/chat', '/app/chat/harbor', '/app/chat/harbor/terminal/x', '/app/chat//terminal', '/app/inbox/harbor/terminal', '/app/chat/%E0%A4%A/terminal']) {
+      expect(chatTerminalOf(path)).toBeNull();
+    }
+    expect(surfaceOf('/app/chat/harbor/terminal/x')).toBeUndefined();
   });
 });

@@ -668,6 +668,8 @@ button.pill { cursor: pointer; min-height: 32px; }
 .chat-title .dot { flex: none; }
 .chat-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-head .btn { flex: none; }
+.chat-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.msg-note .btn { margin-left: 8px; min-height: var(--shape-min-touch-target); }
 .chat-head .btn, .chat-off .btn { min-height: var(--shape-min-touch-target); }
 .chat-main .convo { flex: 1; min-height: 0; overflow-y: auto; }
 .chat-card { margin: 10px 0; padding: 12px 14px; border: 1px solid var(--color-line); border-radius: var(--shape-radius-lg); }

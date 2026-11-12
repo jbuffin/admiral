@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { HOME, WORK, holds, boatOf, boatReceived, boatSays, changeFile, changesOf, chip, diffOf, expectSeededTurn, flotilla, gitCheckout, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays } from './shell';
+import { HOME, WORK, holds, boatOf, boatReceived, boatSays, changeFile, changesOf, chip, diffOf, expectSeededTurn, flotilla, gitCheckout, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatSession } from './shell';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -888,7 +888,9 @@ test("the Chat surface shows the fleet's AdmiralBot history beside the Inbox rai
   await expect(main).toContainText(HOSTILE);
   expect(await page.evaluate(() => (window as unknown as { __xss?: number }).__xss)).toBeUndefined();
   await expect(main).not.toContainText('Is the lagoon calm');
-  await expect(main.getByRole('button', { name: /open terminal/i })).toHaveCount(0);
+  // A running chat has Open terminal beside New chat, and no not-started note.
+  await expect(main.getByRole('button', { name: 'Open terminal', exact: true })).toHaveCount(1);
+  await expect(main).not.toContainText('Open the terminal to finish starting the chat');
 
   // The Inbox rail sits beside the conversation with the ships' items from every fleet.
   await expect(main.getByText('Inbox · All fleets · oldest first')).toBeVisible();
@@ -985,4 +987,91 @@ test("AdmiralBot's own waiting question is in the chat's rail, opens in Peek bes
   await expect(page.getByRole('heading', { name: 'AdmiralBot · Harborlight fleet' })).toBeVisible();
   await expect(main).toContainText('You answered: Work queue');
   await expect(rail).toHaveCount(0);
+});
+
+const NOT_STARTED = 'Open the terminal to finish starting the chat';
+
+test("a chat held before its first SessionStart shows the not-started note with Open terminal, answers the dialog in the terminal view that survives a reload, and sends once it starts", async ({ page, admiral }) => {
+  seedFleets(admiral, { chat: true, holdChat: 'lagoon' });
+  chatSays(admiral, 'harbor', [line.user('Where are the ships'), line.assistant('Two are **afloat**.')]);
+  await admiral.start();
+  const main = page.getByRole('main');
+  const open = main.getByRole('button', { name: 'Open terminal', exact: true }).first();
+  const rail = main.getByText('Inbox · All fleets · oldest first');
+  // A terminal path for another fleet shows the shown fleet's conversation and says so in the address.
+  await page.goto(admiral.url + 'app/chat/harbor/terminal?fleet=lagoon');
+  await expect(page).toHaveURL(/\/app\/chat\?fleet=lagoon$/);
+  await expect(main).toContainText(NOT_STARTED);
+  await expect(main.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
+
+  // The button beside the note opens it as the header's does.
+  const joined = page.waitForEvent('websocket', (ws) => /\/bridge\//.test(ws.url()));
+  await main.locator('.msg-note').getByRole('button', { name: 'Open terminal', exact: true }).tap();
+  const bridge = await joined;
+  expect(new URL(bridge.url()).pathname).toBe(`/ws/v1/bridge/${encodeURIComponent(chatSession('lagoon'))}`);
+  await expect(page).toHaveURL(/\/app\/chat\/lagoon\/terminal/);
+  await expect(main.locator('.xterm')).toBeVisible();
+  await expect(main.getByRole('button', { name: 'Back to chat', exact: true })).toBeVisible();
+  await expect(main.getByRole('textbox', { name: 'Message AdmiralBot' })).toHaveCount(0);
+  await expect(rail).toBeVisible();
+
+  // What is typed there, and the touch keys, reach the held session: the fake records its stdin.
+  const recorded = join(admiral.home, 'rec', chatSession('lagoon'));
+  await expect.poll(() => existsSync(join(recorded, 'recording'))).toBe(true);
+  await main.locator('.xterm').tap();
+  await page.keyboard.type('trust-this-folder');
+  await expect.poll(() => chatReceived(admiral, 'lagoon')).toContain('trust-this-folder');
+  await main.getByRole('button', { name: 'Send Enter' }).tap();
+  await expect.poll(() => chatReceived(admiral, 'lagoon')).toContain('\r');
+
+  // Reload on the terminal path reopens the terminal; Back to chat returns to the conversation.
+  await page.reload();
+  await expect(main.locator('.xterm')).toBeVisible();
+  await main.getByRole('button', { name: 'Back to chat', exact: true }).tap();
+  await expect(page).not.toHaveURL(/\/terminal/);
+  await expect(main.locator('.xterm')).toHaveCount(0);
+  await expect(main).toContainText(NOT_STARTED);
+
+  // Another fleet's chat shows its conversation, not the terminal.
+  await open.tap();
+  await expect(main.locator('.xterm')).toBeVisible();
+  await switcher(page, 'Lagoonside').click();
+  await page.getByRole('menu').getByRole('menuitemradio', { name: 'Harborlight' }).click();
+  await expect(page.getByRole('heading', { name: 'AdmiralBot · Harborlight fleet' })).toBeVisible();
+  await expect(main).toContainText('Where are the ships');
+  await expect(main.locator('.xterm')).toHaveCount(0);
+  await expect(page).not.toHaveURL(/\/terminal/);
+
+  // The first SessionStart clears the note by itself, and the chat sends.
+  await switcher(page, 'Harborlight').click();
+  await page.getByRole('menu').getByRole('menuitemradio', { name: 'Lagoonside' }).click();
+  await expect(main).toContainText(NOT_STARTED);
+  chatStarts(admiral, 'lagoon');
+  await expect(main).not.toContainText(NOT_STARTED);
+  const box = main.getByRole('textbox', { name: 'Message AdmiralBot' });
+  await box.fill('Now that it started');
+  await main.getByRole('button', { name: 'Send', exact: true }).tap();
+  await expect.poll(() => chatReceived(admiral, 'lagoon')).toContain('Now that it started');
+});
+
+test('a chat terminal whose session ends returns to the conversation', async ({ page, admiral }) => {
+  seedFleets(admiral, { chat: true });
+  await admiral.start();
+  const main = page.getByRole('main');
+  await page.goto(admiral.url + 'app/chat?fleet=lagoon');
+  await main.getByRole('button', { name: 'Open terminal', exact: true }).first().tap();
+  await expect(main.locator('.xterm')).toBeVisible();
+  chatEnds(admiral, 'lagoon');
+  await expect(page).not.toHaveURL(/\/terminal/);
+  await expect(main.locator('.xterm')).toHaveCount(0);
+  await expect(main.getByRole('textbox', { name: 'Message AdmiralBot' })).toBeVisible();
+});
+
+test('a fleet whose chat is off has no Open terminal', async ({ page, admiral }) => {
+  seedFleets(admiral, { chat: true });
+  await admiral.start();
+  const main = page.getByRole('main');
+  await page.goto(admiral.url + 'app/chat?fleet=alpha');
+  await expect(main).toContainText(/no Claude Code dock/i);
+  await expect(main.getByRole('button', { name: 'Open terminal' })).toHaveCount(0);
 });
