@@ -180,6 +180,17 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 			a.servePair(w, r, rt)
 			return
 		}
+		// Only the exact raw path: a cleaned "//" or "/." must still need a token. The redirect holds no data, so the
+		// middleware answers it itself and nothing reaches the next handler.
+		if (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Path == "/" && r.URL.RawPath == "" {
+			target := "/app/"
+			if r.URL.RawQuery != "" {
+				target += "?" + r.URL.RawQuery
+			}
+			w.Header().Set("Location", target)
+			w.WriteHeader(http.StatusFound)
+			return
+		}
 		if (r.Method == http.MethodGet && installFiles[r.URL.Path]) || staticShell(r) {
 			next.ServeHTTP(w, r)
 			return

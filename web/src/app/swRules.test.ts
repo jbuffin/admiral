@@ -22,6 +22,7 @@ describe('classifyRequest', () => {
 
   it('leaves the old UI and everything else alone', () => {
     expect(req('/', { mode: 'navigate' })).toBe('pass');
+    expect(req('/classic/', { mode: 'navigate' })).toBe('pass');
     expect(req('/index.html', { mode: 'navigate' })).toBe('pass');
     expect(req('/pair', { mode: 'navigate' })).toBe('pass');
     expect(req('/app/', { method: 'POST', mode: 'navigate' })).toBe('pass');

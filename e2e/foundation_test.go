@@ -35,9 +35,12 @@ func TestS1_StartsPrintsURLsAndServesUI(t *testing.T) {
 		t.Fatal("the shared token file must not exist")
 	}
 
-	resp, html := get(t, in.LocalURL+"/", nil)
+	resp, html := get(t, in.LocalURL+"/app/", nil)
 	if resp.StatusCode != 200 || !strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
-		t.Fatalf("GET / = %d %s, want 200 text/html", resp.StatusCode, resp.Header.Get("Content-Type"))
+		t.Fatalf("GET /app/ = %d %s, want 200 text/html", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	if resp, _ := get(t, in.LocalURL+"/classic/", nil); resp.StatusCode != 200 || !strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+		t.Fatalf("GET /classic/ = %d %s, want 200 text/html", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}
 	assets := regexp.MustCompile(`(?:src|href)="(/[^"]+\.(?:js|css))"`).FindAllStringSubmatch(html, -1)
 	if len(assets) < 2 {
@@ -74,20 +77,34 @@ func TestS2_NonLocalNeedsToken(t *testing.T) {
 	base := in.lanURL()
 
 	t.Run("no token", func(t *testing.T) {
-		resp, body := get(t, base+"/", nil)
+		resp, body := get(t, base+"/classic/", nil)
 		if resp.StatusCode != 401 || !strings.Contains(resp.Header.Get("Content-Type"), "text/html") ||
 			!strings.Contains(body, unauthorizedPage) {
-			t.Fatalf("GET / = %d %s %q, want 401 text/html containing %q", resp.StatusCode, resp.Header.Get("Content-Type"), body, unauthorizedPage)
+			t.Fatalf("GET /classic/ = %d %s %q, want 401 text/html containing %q", resp.StatusCode, resp.Header.Get("Content-Type"), body, unauthorizedPage)
+		}
+		// The redirect holds no data, so a new device lands on the shell's pair screen.
+		resp, body = get(t, base+"/", nil)
+		if resp.StatusCode != 302 || resp.Header.Get("Location") != "/app/" || body != "" {
+			t.Fatalf("GET / = %d to %q with body %q, want 302 to /app/ and no body", resp.StatusCode, resp.Header.Get("Location"), body)
 		}
 	})
 	t.Run("wrong token", func(t *testing.T) {
-		resp, body := get(t, base+"/?token=nope", nil)
+		resp, body := get(t, base+"/classic/?token=nope", nil)
 		if resp.StatusCode != 401 || !strings.Contains(body, unauthorizedPage) {
 			t.Fatalf("wrong token: %d %q, want 401 with %q", resp.StatusCode, body, unauthorizedPage)
 		}
-		resp, _ = get(t, base+"/", map[string]string{"Cookie": in.cookieName() + "=nope"})
+		// The shell ignores the query's token, so the redirect carrying it opens nothing.
+		resp, body = get(t, base+"/?token=nope", nil)
+		if resp.StatusCode != 302 || resp.Header.Get("Location") != "/app/?token=nope" || body != "" {
+			t.Fatalf("GET /?token=nope = %d to %q with body %q, want 302 to /app/?token=nope and no body", resp.StatusCode, resp.Header.Get("Location"), body)
+		}
+		resp, _ = get(t, base+"/classic/", map[string]string{"Cookie": in.cookieName() + "=nope"})
 		if resp.StatusCode != 401 {
 			t.Fatalf("wrong cookie: %d, want 401", resp.StatusCode)
+		}
+		resp, body = get(t, base+"/", map[string]string{"Cookie": in.cookieName() + "=nope"})
+		if resp.StatusCode != 302 || resp.Header.Get("Location") != "/app/" || body != "" {
+			t.Fatalf("GET / with a wrong cookie = %d to %q with body %q, want 302 to /app/ and no body", resp.StatusCode, resp.Header.Get("Location"), body)
 		}
 	})
 	t.Run("api without token", func(t *testing.T) {
@@ -120,9 +137,13 @@ func TestS2_NonLocalNeedsToken(t *testing.T) {
 			cookie.Path != "/" || cookie.MaxAge != 400*24*3600 {
 			t.Fatalf("cookie = %+v, want a token, HttpOnly, SameSite=Strict, Path=/, Max-Age 400 days", cookie)
 		}
-		resp, _ = get(t, base+"/", map[string]string{"Cookie": cookie.Name + "=" + cookie.Value})
+		resp, _ = get(t, base+"/classic/", map[string]string{"Cookie": cookie.Name + "=" + cookie.Value})
 		if resp.StatusCode != 200 {
-			t.Fatalf("cookie alone: GET / = %d, want 200", resp.StatusCode)
+			t.Fatalf("cookie alone: GET /classic/ = %d, want 200", resp.StatusCode)
+		}
+		resp, _ = get(t, base+"/", map[string]string{"Cookie": cookie.Name + "=" + cookie.Value})
+		if resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "/app/" {
+			t.Fatalf("after pairing, GET / = %d to %q, want 302 to /app/", resp.StatusCode, resp.Header.Get("Location"))
 		}
 		resp, _ = get(t, base+"/api/anything", map[string]string{"Cookie": cookie.Name + "=" + cookie.Value})
 		if resp.StatusCode == 401 {
@@ -139,8 +160,8 @@ func TestS2_NonLocalNeedsToken(t *testing.T) {
 func TestS3_LocalNeedsNoToken(t *testing.T) {
 	t.Parallel()
 	in := startAdmiral(t, newHome(t), "127.0.0.1:0")
-	if resp, _ := get(t, in.LocalURL+"/", nil); resp.StatusCode != 200 {
-		t.Fatalf("local GET / = %d, want 200", resp.StatusCode)
+	if resp, _ := get(t, in.LocalURL+"/classic/", nil); resp.StatusCode != 200 {
+		t.Fatalf("local GET /classic/ = %d, want 200", resp.StatusCode)
 	}
 	if resp, _ := get(t, in.LocalURL+"/api/anything", nil); resp.StatusCode == 401 {
 		t.Fatalf("local /api/anything must not need a token, got 401")
@@ -158,8 +179,8 @@ func TestS4_RestartKeepsThePort(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(in.Home, "token")); err == nil {
 		t.Fatal("the shared token file appeared")
 	}
-	if resp, _ := get(t, again.LocalURL+"/", nil); resp.StatusCode != 200 {
-		t.Fatalf("GET / after restart = %d", resp.StatusCode)
+	if resp, _ := get(t, again.LocalURL+"/classic/", nil); resp.StatusCode != 200 {
+		t.Fatalf("GET /classic/ after restart = %d", resp.StatusCode)
 	}
 }
 
@@ -168,7 +189,7 @@ func TestS4_CookieSurvivesRestart(t *testing.T) {
 	t.Parallel()
 	in := startLAN(t)
 	cookie := map[string]string{"Cookie": in.cookieName() + "=" + in.Token}
-	if resp, _ := get(t, in.lanURL()+"/", cookie); resp.StatusCode != 200 {
+	if resp, _ := get(t, in.lanURL()+"/classic/", cookie); resp.StatusCode != 200 {
 		t.Fatalf("cookie before restart: %d, want 200", resp.StatusCode)
 	}
 	again := in.Restart(t)
@@ -176,7 +197,7 @@ func TestS4_CookieSurvivesRestart(t *testing.T) {
 	if again.Port != in.Port {
 		t.Fatalf("after restart port = %s, want %s", again.Port, in.Port)
 	}
-	if resp, _ := get(t, again.lanURL()+"/", cookie); resp.StatusCode != 200 {
+	if resp, _ := get(t, again.lanURL()+"/classic/", cookie); resp.StatusCode != 200 {
 		t.Fatalf("old cookie after restart: %d, want 200", resp.StatusCode)
 	}
 }
@@ -241,8 +262,8 @@ func TestS5_WebSocketAccess(t *testing.T) {
 	})
 	t.Run("loopback peer with unknown Host needs a device token", func(t *testing.T) {
 		expectRefused(t, in.LocalURL, "", nil, "evil.example:"+in.Port, 401)
-		if resp, _ := get(t, in.LocalURL+"/", map[string]string{"Host": "evil.example:" + in.Port}); resp.StatusCode != 401 {
-			t.Fatalf("GET / with Host evil.example = %d, want 401", resp.StatusCode)
+		if resp, _ := get(t, in.LocalURL+"/classic/", map[string]string{"Host": "evil.example:" + in.Port}); resp.StatusCode != 401 {
+			t.Fatalf("GET /classic/ with Host evil.example = %d, want 401", resp.StatusCode)
 		}
 	})
 	t.Run("non-local with unknown Host and valid token is accepted", func(t *testing.T) {
@@ -260,11 +281,11 @@ func TestS6_TwoInstancesSideBySide(t *testing.T) {
 		t.Fatalf("both instances report port %s", a.Port)
 	}
 	for _, in := range []*instance{a, b} {
-		if resp, _ := get(t, in.LocalURL+"/", nil); resp.StatusCode != 200 {
-			t.Fatalf("instance on %s: GET / = %d", in.Port, resp.StatusCode)
+		if resp, _ := get(t, in.LocalURL+"/classic/", nil); resp.StatusCode != 200 {
+			t.Fatalf("instance on %s: GET /classic/ = %d", in.Port, resp.StatusCode)
 		}
 	}
-	if resp, _ := get(t, b.lanURL()+"/", map[string]string{"Authorization": "Bearer " + a.Token}); resp.StatusCode != 401 {
+	if resp, _ := get(t, b.lanURL()+"/classic/", map[string]string{"Authorization": "Bearer " + a.Token}); resp.StatusCode != 401 {
 		t.Fatalf("a's device token on b: %d, want 401", resp.StatusCode)
 	}
 }

@@ -42,9 +42,11 @@ func TestShellServedUnderApp_OldUIUnchanged(t *testing.T) {
 		path string
 		want string // body, or "" for 404
 	}{
-		{"/", oldIndex},
-		{"/ships/x", oldIndex}, // the old UI's own client-side route
-		{"/application", oldIndex},
+		{"/classic", oldIndex},
+		{"/classic/", oldIndex},
+		{"/classic/x", oldIndex},
+		{"/ships/x", ""}, // an extensionless path outside /app and /classic is no UI route
+		{"/application", ""},
 		{"/app", appIndex},
 		{"/app/", appIndex},
 		{"/app/ships/x", appIndex},
@@ -62,6 +64,28 @@ func TestShellServedUnderApp_OldUIUnchanged(t *testing.T) {
 			}
 			if code != http.StatusOK || body != c.want {
 				t.Fatalf("GET %s = %d %q, want 200 %q", c.path, code, body, c.want)
+			}
+		})
+	}
+}
+
+func TestRootRedirectsToTheNewShell(t *testing.T) {
+	h := uiServer().Handler()
+	cases := []struct{ method, target, want string }{
+		{http.MethodGet, "/", "/app/"},
+		{http.MethodHead, "/", "/app/"},
+		{http.MethodGet, "/?fleet=x", "/app/?fleet=x"},
+	}
+	for _, c := range cases {
+		t.Run(c.method+" "+c.target, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(c.method, c.target, nil))
+			// A permanent redirect would outlive a rollback in every browser that saw it.
+			if rec.Body.Len() != 0 {
+				t.Fatalf("%s %s body = %q, want none", c.method, c.target, rec.Body.String())
+			}
+			if rec.Code != http.StatusFound || rec.Header().Get("Location") != c.want {
+				t.Fatalf("%s %s = %d to %q, want 302 to %q", c.method, c.target, rec.Code, rec.Header().Get("Location"), c.want)
 			}
 		})
 	}
@@ -209,7 +233,7 @@ func TestShellIsStampedWithTheServersBuild(t *testing.T) {
 	if !strings.Contains(deep, `name="admiral-build"`) {
 		t.Errorf("a deep link into the shell = %q, want the build stamp too", deep)
 	}
-	if _, _, old := get(t, h, "/"); strings.Contains(old, "admiral-build") {
+	if _, _, old := get(t, h, "/classic/"); strings.Contains(old, "admiral-build") {
 		t.Errorf("the old UI = %q, want no stamp", old)
 	}
 }
