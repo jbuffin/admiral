@@ -68,27 +68,30 @@ export function peekOf(path: string): PeekTarget | null {
   }
 }
 
-const PREFERENCES_PAGES = ['fleet', 'sources', 'capabilities', 'remote'] as const;
+const PREFERENCES_PAGES = ['fleet', 'sources', 'capabilities', 'usage', 'remote'] as const;
 
-// A fleet key can't be `admiral` on the remote page: that segment is reserved for the global pages.
-const isRemote = (path: string) => {
+// A fleet key can't be `admiral` on the remote or usage page: that segment is reserved for the global pages.
+const globalPage = (path: string): 'remote' | 'usage' | null => {
   const [id, key, page] = segments(path);
-  return id === 'preferences' && key === 'admiral' && page === 'remote';
+  return id === 'preferences' && key === 'admiral' && (page === 'remote' || page === 'usage') ? page : null;
 };
 
 export const remotePath = '/app/preferences/admiral/remote';
+export const usageAllPath = '/app/preferences/admiral/usage';
 export type PreferencesPage = (typeof PREFERENCES_PAGES)[number];
 
 export const sourcesPath = (fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/sources`;
 
 export const fleetPath = (fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/fleet`;
 
-export const capabilitiesPath = (fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/capabilities`;
+export const usagePath = (fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/usage`;
+
+export const capabilitiesPath =(fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/capabilities`;
 
 /** The fleet key a Preferences path names, if any. */
 export function preferencesFleet(path: string): string | null {
   const [id, key] = segments(path);
-  if (id !== 'preferences' || !key || isRemote(path)) return null;
+  if (id !== 'preferences' || !key || globalPage(path)) return null;
   try {
     return decodeURIComponent(key);
   } catch {
@@ -98,7 +101,8 @@ export function preferencesFleet(path: string): string | null {
 
 /** The page below a fleet's Preferences group; sources when the path names none. */
 export function preferencesPage(path: string): PreferencesPage {
-  if (isRemote(path)) return 'remote';
+  const global = globalPage(path);
+  if (global) return global;
   const page = segments(path)[2];
   return (PREFERENCES_PAGES as readonly string[]).includes(page) && page !== 'remote' ? (page as PreferencesPage) : 'sources';
 }

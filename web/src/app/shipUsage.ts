@@ -1,4 +1,4 @@
-import { call } from './api';
+import { call, type Result } from './api';
 import { when } from './when';
 
 export interface ShipUsage {
@@ -13,19 +13,16 @@ export interface ShipUsage {
 
 export const USAGE_POLL_MS = 30_000;
 
-/** Reads a ship's usage now, every USAGE_POLL_MS and when the page turns visible; returns the stop. A 404 clears the figures, any other error keeps them, and a reply older than the one applied is dropped. */
-export function watchUsage(session: string, onUsage: (u: ShipUsage | null) => void): () => void {
+/** Reads `path` now, every USAGE_POLL_MS and when the page turns visible; returns the stop. `apply` says whether a reply counted, and a reply older than the last that counted is dropped. */
+export function watchPath<T>(path: string, apply: (r: Result<T>) => boolean): () => void {
   let live = true;
   let sent = 0;
   let applied = 0;
   const read = () => {
     const mine = ++sent;
-    void call<ShipUsage>('GET', `/ships/${encodeURIComponent(session)}/usage`).then((r) => {
+    void call<T>('GET', path).then((r) => {
       if (!live || mine < applied) return;
-      if (r.ok) onUsage(r.data);
-      else if (r.status === 404) onUsage(null);
-      else return;
-      applied = mine;
+      if (apply(r)) applied = mine;
     });
   };
   const visible = () => {
@@ -39,6 +36,16 @@ export function watchUsage(session: string, onUsage: (u: ShipUsage | null) => vo
     clearInterval(timer);
     document.removeEventListener('visibilitychange', visible);
   };
+}
+
+/** Reads a ship's usage with watchPath. A 404 clears the figures, any other error keeps them. */
+export function watchUsage(session: string, onUsage: (u: ShipUsage | null) => void): () => void {
+  return watchPath<ShipUsage>(`/ships/${encodeURIComponent(session)}/usage`, (r) => {
+    if (r.ok) onUsage(r.data);
+    else if (r.status === 404) onUsage(null);
+    else return false;
+    return true;
+  });
 }
 
 /** A count as `999`, `1.2k`, `15k` or `1.5M`. */
@@ -57,7 +64,10 @@ export interface UsageRow {
   fresh: string;
 }
 
-const age = (s: number) => (s < 60 ? `${Math.floor(s)}s` : s < 3600 ? `${Math.floor(s / 60)}m` : `${Math.floor(s / 3600)}h`);
+/** Money in its own basis: Claude's estimate in dollars, Copilot's credits. */
+export const moneyText = (m: { amount: number; basis: 'estimate' | 'credits' }) => (m.basis === 'estimate' ? `est. $${m.amount.toFixed(2)}` : `${Number(m.amount.toFixed(2))} credits`);
+
+export const ageText = (s: number) => (s < 60 ? `${Math.floor(s)}s` : s < 3600 ? `${Math.floor(s / 60)}m` : `${Math.floor(s / 3600)}h`);
 
 /** The Bridge's usage row, or null when there is nothing to show. Money keeps its own basis; nothing here adds bases together. */
 export function usageRow(u: ShipUsage | null): UsageRow | null {
@@ -66,7 +76,7 @@ export function usageRow(u: ShipUsage | null): UsageRow | null {
   const m = u.money;
   const pr = m?.premium_requests;
   let fresh = 'from records';
-  if (u.source === 'live') fresh = `live, ${age(u.age_seconds ?? 0)} ago`;
+  if (u.source === 'live') fresh = `live, ${ageText(u.age_seconds ?? 0)} ago`;
   else if (when(u.at)) fresh = `from records, ${when(u.at)}`;
   return {
     tokens: t
@@ -83,7 +93,7 @@ export function usageRow(u: ShipUsage | null): UsageRow | null {
       : null,
     money: m
       ? {
-          text: m.basis === 'estimate' ? `est. $${m.amount.toFixed(2)}` : `${Number(m.amount.toFixed(2))} credits`,
+          text: moneyText(m),
           premium: m.basis === 'credits' && pr ? `${pr} premium request${pr === 1 ? '' : 's'}` : '',
           incomplete: m.incomplete,
         }
