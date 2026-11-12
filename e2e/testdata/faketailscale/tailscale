@@ -1,0 +1,19 @@
+#!/bin/sh
+# Fake tailscale CLI. Answers only `status --json` and `serve status --json`, from files in $FAKETS_DIR:
+#   status.json, serve.json   the stdout of each call
+#   <call>.exit, <call>.err   a non-zero exit code and its stderr (<call> is status or serve)
+#   sleep                     seconds to hang before answering any call (one process, like a real hang)
+# Every call appends its argv to $FAKETS_DIR/calls. Any other argv exits 2, so a stray `serve --bg` fails loudly.
+d=${FAKETS_DIR:?FAKETS_DIR is not set}
+echo "$*" >> "$d/calls"
+if [ -f "$d/sleep" ]; then exec sleep "$(cat "$d/sleep")"; fi
+case "$*" in
+"status --json") f=status ;;
+"serve status --json") f=serve ;;
+*) echo "faketailscale: unsupported call: $*" >&2; exit 2 ;;
+esac
+if [ -f "$d/$f.exit" ]; then
+	[ -f "$d/$f.err" ] && cat "$d/$f.err" >&2
+	exit "$(cat "$d/$f.exit")"
+fi
+cat "$d/$f.json"
