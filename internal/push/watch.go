@@ -52,6 +52,8 @@ type Watcher struct {
 	asking     map[string]bool // ship or crew boat -> waiting on a question or approval
 	anchored   map[string]bool
 	ready      map[string]bool
+	polled     map[string]bool // moored ship -> its PRs have been polled since Admiral started
+	fleetOf    map[string]ships.Ship
 	inboxSeen  bool
 	inboxItems map[string]bool
 }
@@ -98,7 +100,8 @@ func askText(reason string) string {
 }
 
 func (w *Watcher) Ships(list []ships.Ship) {
-	asking, anchored, ready := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	asking, anchored, ready, polled := map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}
+	fleetOf := make(map[string]ships.Ship, len(list))
 	var events []Event
 	w.mu.Lock()
 	first := !w.shipsSeen
@@ -109,6 +112,7 @@ func (w *Watcher) Ships(list []ships.Ship) {
 		}
 	}
 	for _, sh := range list {
+		fleetOf[sh.Session] = sh
 		base := Event{Fleet: sh.Fleet, FleetName: sh.FleetName, Name: sh.Name, Target: TargetPeek, Session: sh.Session}
 		switch {
 		case sh.Status == ships.StatusNeedsYou && asks(sh.Reason):
@@ -119,10 +123,17 @@ func (w *Watcher) Ships(list []ships.Ship) {
 			ev := base
 			ev.Kind, ev.Key, ev.Text, ev.Target = Anchored, sh.Session+":anchored", "stopped with an error", TargetShip
 			note(w.anchored, anchored, sh.Session, ev)
-		case sh.Status == ships.StatusMoored && sh.StackReady:
-			ev := base
-			ev.Kind, ev.Key, ev.Text, ev.Merge = ReadyToMerge, sh.Session+":ready", "is ready to merge", true
-			note(w.ready, ready, sh.Session, ev)
+		case sh.Status == ships.StatusMoored && sh.PolledAt != "":
+			// Until a poll has answered, StackReady is false whatever the PRs say, so the first answer only seeds.
+			polled[sh.Session] = true
+			if sh.StackReady {
+				ev := base
+				ev.Kind, ev.Key, ev.Text, ev.Merge = ReadyToMerge, sh.Session+":ready", "is ready to merge", true
+				ready[sh.Session] = true
+				if !first && w.polled[sh.Session] && !w.ready[sh.Session] {
+					events = append(events, ev)
+				}
+			}
 		}
 		for _, b := range sh.Crew {
 			if b.Status != sessionhost.CrewNeedsYou || !asks(b.Reason) {
@@ -133,7 +144,7 @@ func (w *Watcher) Ships(list []ships.Ship) {
 			note(w.asking, asking, sh.Session+"/"+b.Name, ev)
 		}
 	}
-	w.shipsSeen, w.asking, w.anchored, w.ready = true, asking, anchored, ready
+	w.shipsSeen, w.asking, w.anchored, w.ready, w.polled, w.fleetOf = true, asking, anchored, ready, polled, fleetOf
 	w.mu.Unlock()
 	for _, ev := range events {
 		w.Emit(ev)
@@ -151,7 +162,7 @@ func (w *Watcher) Inbox(items []inbox.Item) {
 		if first || w.inboxItems[key] {
 			continue
 		}
-		if ev, ok := itemEvent(it, key); ok {
+		if ev, ok := w.itemEvent(it, key); ok {
 			events = append(events, ev)
 		}
 	}
@@ -162,7 +173,8 @@ func (w *Watcher) Inbox(items []inbox.Item) {
 	}
 }
 
-func itemEvent(it inbox.Item, key string) (Event, bool) {
+// itemEvent is called with w.mu held.
+func (w *Watcher) itemEvent(it inbox.Item, key string) (Event, bool) {
 	var kind Kind
 	switch it.Kind {
 	case inbox.KindQuestion:
@@ -172,6 +184,12 @@ func itemEvent(it inbox.Item, key string) (Event, bool) {
 		}
 	case inbox.KindWakeProposal:
 		kind = WakeProposal
+		// The item sits in the Admiral session with no fleet, so its fleet is the proposal's ship's.
+		if p, ok := it.WakeProposal(); ok {
+			if sh, known := w.fleetOf[p.Session]; known {
+				it.Fleet, it.FleetName = sh.Fleet, sh.FleetName
+			}
+		}
 	case inbox.KindFindings:
 		kind = Findings
 	default:
@@ -194,6 +212,8 @@ type Feed struct {
 	Watcher *Watcher
 	Ships   func() []ships.Ship
 	Items   func() []inbox.Item
+	// InboxReady is whether the inbox has done its first scan; a change before that is not read.
+	InboxReady func() bool
 
 	ship, item chan struct{}
 	once       sync.Once
@@ -210,8 +230,8 @@ func poke(c chan struct{}) {
 	}
 }
 
-// ShipsChanged and InboxChanged are the OnChange hooks. The Inbox list is first read only after its own first
-// change, so a startup scan that has not run yet cannot make everything already waiting look new.
+// ShipsChanged and InboxChanged are the OnChange hooks. The Inbox list is first read only once the inbox has
+// scanned, so a chat question that lands first cannot make everything already waiting look new.
 func (f *Feed) ShipsChanged() { f.init(); poke(f.ship) }
 func (f *Feed) InboxChanged() { f.init(); poke(f.item) }
 
@@ -222,6 +242,9 @@ func (f *Feed) Run(ctx context.Context) {
 		case <-f.ship:
 			f.Watcher.Ships(f.Ships())
 		case <-f.item:
+			if f.InboxReady != nil && !f.InboxReady() {
+				continue
+			}
 			f.Watcher.Inbox(f.Items())
 		case <-ctx.Done():
 			return

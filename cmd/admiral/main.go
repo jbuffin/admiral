@@ -401,7 +401,7 @@ func serve(args []string) error {
 	defer campaignService.Close()
 	shipService.Orders = campaignService
 	// A sink joins here: NewWatcher takes it after the notify func.
-	pushFeed := &push.Feed{Ships: shipService.List, Items: inboxService.List}
+	pushFeed := &push.Feed{Ships: shipService.List, Items: inboxService.List, InboxReady: inboxService.Scanned}
 	pushFeed.Watcher = push.NewWatcher(hub.Watching, func(fleet string) bool {
 		for _, f := range cfg.Current().Fleets {
 			if f.Key == fleet {

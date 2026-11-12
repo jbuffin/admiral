@@ -137,6 +137,13 @@ func TestPresence_AnIdleWindowReportedAtTheStartIsNotWatching(t *testing.T) {
 	r.holdWatching(false)
 }
 
+func TestPresence_AnAbsurdIdleTimeIsIdleNotRecent(t *testing.T) {
+	r := newPresenceRig(t)
+	conn := r.dial()
+	r.say(conn, true, 9_000_000_000_000_000)
+	r.holdWatching(false)
+}
+
 func TestPresence_AClosedSocketStopsCountingAtOnce(t *testing.T) {
 	r := newPresenceRig(t)
 	conn := r.dial()

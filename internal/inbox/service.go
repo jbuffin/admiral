@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -56,6 +57,8 @@ type Service struct {
 	AnswerChat func(session, id string, req QuestionRequest) error
 	// OnChange runs after every change to the list is sent. It must not block.
 	OnChange func()
+
+	scanned atomic.Bool
 
 	answerMu sync.Mutex        // one answer at a time
 	actMu    sync.Mutex        // guards acting
@@ -104,6 +107,9 @@ func (s *Service) List() []Item {
 	}
 	return items
 }
+
+// Scanned is whether the first scan of the inbox directory has finished.
+func (s *Service) Scanned() bool { return s.scanned.Load() }
 
 // Changed sends the list to every client, for a change the inbox does not watch for itself.
 func (s *Service) Changed() { s.broadcast() }
@@ -294,6 +300,7 @@ func (s *Service) Refresh() {
 	s.mu.Unlock()
 	s.scanMu.Unlock()
 	s.captureAll() // answers written by someone else count too
+	s.scanned.Store(true)
 	s.broadcast()
 }
 

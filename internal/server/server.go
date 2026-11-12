@@ -211,7 +211,8 @@ func (s *Server) handlePresence(c *Client, data []byte) {
 	if json.Unmarshal(data, &p) != nil || p.IdleMS < 0 {
 		return
 	}
-	c.setPresence(p.Visible, time.Duration(p.IdleMS)*time.Millisecond, s.Hub.Now())
+	// Anything past the window is idle already; the clamp keeps the Duration from overflowing.
+	c.setPresence(p.Visible, time.Duration(min(p.IdleMS, int(WatchWindow.Milliseconds())+1000))*time.Millisecond, s.Hub.Now())
 }
 
 func (s *Server) sendConfig(c *Client) {

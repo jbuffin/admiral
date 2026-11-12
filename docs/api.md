@@ -515,9 +515,11 @@ Body `{"confirm":true}`; anything else is 400 and nothing runs. Only a request f
 
 Turn off. Body `{"confirm":true}`; anything else is 400. Only a request from this Mac may run it: any other path gets 403 and nothing runs. It writes `remote.tailscale: false` and nothing else: the allowed logins stay and `tailscale serve` is left as it is. Answers 200 with the `GET /api/remote` view after the write, except that `serveOff` is the command read just before the write, so the page can keep showing it. 500 `{"error"}` when the write fails, without the path.
 
-### The move message
+### The presence message
 
 A window tells the server whether anyone is watching it with `{"type":"presence","visible":true,"idle_ms":1500}` on `/ws/v1`: `visible` is whether the page is visible, `idle_ms` how long ago the person last used it (pointer, key or touch). The shell sends it when the socket opens or reopens, when visibility changes, on the first input after 10 s of none, and every 30 s while visible. The server counts a window as watching while it is visible and `idle_ms` plus the time since the report is under 2 minutes; a window that has not reported, or whose socket closed, does not count. While any window watches, an event that would push is an alert for the watched windows instead. A malformed or negative `idle_ms` is ignored.
+
+### The move message
 
 When a config change moves Admiral's listener, a ships-socket client whose path stops working gets `{"type":"move","url":"<address>"}` before it is cut. Mode on: clients that came in over the LAN get the tailnet URL (`GET /api/remote`'s `url`, empty when serve isn't set up). Mode off: clients that came in over the tailnet get the LAN address (`http://<ip>:<port>`). Loopback clients never get it. The server waits up to 2 s for the writes, then cuts the tailnet sockets the change no longer allows, then rebinds; with the mode on, every LAN socket still open is then closed (a client that ignores the message loses its socket). The shell sends the page to `url` when it is an http(s) address other than the page's own; an empty `url` leaves the page where it is. A device that moves to the tailnet pairs again there, since its token and cookie belong to the old origin.
 

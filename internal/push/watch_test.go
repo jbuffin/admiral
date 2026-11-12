@@ -140,7 +140,7 @@ func TestShipThatAnchorsIsOneEventButASailingOffShipIsNot(t *testing.T) {
 func TestMooredShipThatBecomesReadyToMergeIsOneEvent(t *testing.T) {
 	moored := func(ready bool) ships.Ship {
 		s := ship("Dory", ships.StatusMoored, "")
-		s.StackReady = ready
+		s.StackReady, s.PolledAt = ready, "2026-10-22T10:00:00Z"
 		return s
 	}
 	r := newRig(t).started([]ships.Ship{moored(false)}, nil)
@@ -298,8 +298,10 @@ func TestHookPointKindsReachTheSinksThroughEmit(t *testing.T) {
 }
 
 func TestEventsCarryWhereATapLands(t *testing.T) {
-	r := newRig(t).started([]ships.Ship{working("Dory")}, nil)
 	moored := ship("Nemo", ships.StatusMoored, "")
+	moored.PolledAt = "2026-10-22T10:00:00Z"
+	r := newRig(t).started([]ships.Ship{working("Dory"), moored}, nil)
+	r.w.Ships([]ships.Ship{working("Dory"), moored})
 	moored.StackReady = true
 	boat := needsYou("Marlin", ships.ReasonCrew)
 	boat.Crew = []ships.CrewBoat{{Name: "cook", Status: "needs_you", Reason: "question"}}
@@ -321,5 +323,39 @@ func TestEventsCarryWhereATapLands(t *testing.T) {
 	}
 	if p := got[push.InboxQuestion]; p.Session != "s-Dory" || p.Item != "q-1" {
 		t.Errorf("item payload = %+v, want a peek of item q-1", p)
+	}
+}
+
+func TestRestartDoesNotPushReadyToMergeForShipsWhosePollHasNotAnsweredYet(t *testing.T) {
+	unpolled := ship("Dory", ships.StatusMoored, "")
+	polled := unpolled
+	polled.StackReady, polled.PolledAt = true, "2026-10-22T10:00:00Z"
+	r := newRig(t).started([]ships.Ship{unpolled}, nil)
+
+	r.w.Ships([]ships.Ship{polled})
+	if r.count() != 0 {
+		t.Fatalf("the first answered poll of an already ready ship made %d events, want none", r.count())
+	}
+
+	notReady := polled
+	notReady.StackReady = false
+	r.w.Ships([]ships.Ship{notReady})
+	r.w.Ships([]ships.Ship{polled})
+	if got := r.rec.Events(); len(got) != 1 || got[0].Event.Kind != push.ReadyToMerge {
+		t.Errorf("ready turning true after the poll answered made %+v, want one ReadyToMerge", got)
+	}
+}
+
+func TestWakeProposalFollowsItsShipsFleetsNotify(t *testing.T) {
+	dory := ship("Dory", ships.StatusMoored, "")
+	dory.Session, dory.Fleet = "dory", "off"
+	r := newRig(t).started([]ships.Ship{dory}, nil)
+	r.notify["off"] = false
+
+	it := item(t, inbox.AdmiralSession, "wake-1", "wake_proposal", "Feedback on Dory")
+	it.Fleet = ""
+	r.w.Inbox([]inbox.Item{it})
+	if r.count() != 0 {
+		t.Fatalf("a wake proposal for a Notify-off fleet's ship made %d events, want none", r.count())
 	}
 }
