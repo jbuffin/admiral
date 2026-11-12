@@ -45,6 +45,15 @@ func claudeKeys(t *testing.T) keymap.Map {
 	return m
 }
 
+func codexKeys(t *testing.T) keymap.Map {
+	t.Helper()
+	m, ok := keymap.For("codex")
+	if !ok {
+		t.Fatal("keymap.For(codex) has no key map")
+	}
+	return m
+}
+
 func answerReq(card, reason string, more map[string]any) map[string]any {
 	b := map[string]any{"card": card, "reason": reason}
 	for k, v := range more {
@@ -148,21 +157,49 @@ func TestShipAnswer_PermissionCardSendsTheKeyMapsKeysOnlyWhileTheReasonMatches(t
 	})
 }
 
-func TestShipAnswer_AShipOnAnotherHarnessIsRefusedWith409(t *testing.T) {
+func TestShipAnswer_CodexPermissionCardSendsCodexKeysOnlyWhileTheReasonMatches(t *testing.T) {
 	t.Parallel()
 	w, _ := answerWorld(t)
+	keys := codexKeys(t)
+	allow, deny := mustKeys(t)(keys.Permission("allow")), mustKeys(t)(keys.Permission("deny"))
 	ship := w.launch(w.order("work", "codex", "beta", noSkill, "go"))
 	w.waitFile(ship.Session, "recorded")
 	pane := shipPaneOf(w, ship.Session)
 	w.waitPaneWorking(pane)
+	answer := func(reason, choice string) int {
+		code, _ := send(t, http.MethodPost, w.shipURL(ship.Session, "/answer"), answerReq("permission", reason, map[string]any{"choice": choice}))
+		return code
+	}
+
 	w.hookAt(pane, "PermissionRequest", hookPerm)
 	w.waitShip(ship.Session, "needs_you", func(s apiShip) bool { return s.Status == "needs_you" && s.Reason == "permission:Bash" })
 
-	code, _ := send(t, http.MethodPost, w.shipURL(ship.Session, "/answer"), answerReq("permission", "permission:Bash", map[string]any{"choice": "allow"}))
-	if code != http.StatusConflict {
-		t.Errorf("answer to a Codex ship = %d, want 409", code)
+	if code := answer("permission:apply_patch", "allow"); code != http.StatusConflict {
+		t.Errorf("answer to a Codex ship with a stale reason = %d, want 409", code)
 	}
 	w.holdStdin(ship.Session, "", "")
+
+	w.hookAt(pane, "PermissionRequest", `{"hook_event_name":"PermissionRequest","tool_name":"mcp__x__y"}`)
+	w.waitShip(ship.Session, "needs_you for an unrecorded menu", func(s apiShip) bool { return s.Reason == "permission:mcp__x__y" })
+	if code := answer("permission:mcp__x__y", "allow"); code != http.StatusConflict {
+		t.Errorf("answer to a Codex tool with no recorded menu = %d, want 409", code)
+	}
+	w.holdStdin(ship.Session, "", "")
+	w.hookAt(pane, "PermissionRequest", hookPerm)
+	w.waitShip(ship.Session, "needs_you for Bash", func(s apiShip) bool { return s.Reason == "permission:Bash" })
+
+	if code := answer("permission:Bash", "allow"); !succeeded(code) {
+		t.Fatalf("answer allow to a Codex ship = %d, want 200 or 204", code)
+	}
+	w.waitStdinOf(ship.Session, "", allow)
+	w.waitShip(ship.Session, "underway after the answer", func(s apiShip) bool { return s.Status == "underway" })
+
+	w.hookAt(pane, "PermissionRequest", hookPerm)
+	w.waitShip(ship.Session, "needs_you again", func(s apiShip) bool { return s.Reason == "permission:Bash" })
+	if code := answer("permission:Bash", "deny"); !succeeded(code) {
+		t.Fatalf("answer deny to a Codex ship = %d, want 200 or 204", code)
+	}
+	w.waitStdinOf(ship.Session, "", allow+deny)
 }
 
 func TestShipAnswer_QuestionCardSendsTheOptionNumberOnlyForTheNewestSingleChoiceQuestion(t *testing.T) {

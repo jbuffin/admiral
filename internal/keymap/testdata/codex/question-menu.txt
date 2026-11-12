@@ -1,0 +1,40 @@
+
+  >_ OpenAI Codex (v0.167.1)
+     /tmp/repo
+
+
+› Use the request_user_input tool now: ask one single-choice question "Which colour?" with exactly three options: Red,
+  Green, Blue. Do nothing else.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  Question 1/1 (1 unanswered)
+  Which colour?
+
+  › 1. Red (Recommended)  Choose red.
+    2. Green              Choose green.
+    3. Blue               Choose blue.
+    4. None of the above  Optionally, add details in notes (tab)
+
+  tab to add notes | enter to submit answer | esc to interrupt
+

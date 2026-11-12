@@ -10,7 +10,12 @@ import (
 type Map struct {
 	permission map[string]string
 	question   func(option int) string
+	// tools limits the permission card to the tools whose menus are recorded; nil allows any.
+	tools map[string]bool
 }
+
+// CardTool is false for a tool whose approval menu has no recorded keys, so it is answered in the terminal.
+func (m Map) CardTool(tool string) bool { return m.tools == nil || m.tools[tool] }
 
 func (m Map) Permission(choice string) (keys string, ok bool) {
 	keys, ok = m.permission[choice]
@@ -31,6 +36,8 @@ func For(harness string) (Map, bool) {
 		return claude, true
 	case "copilot":
 		return copilot, true
+	case "codex":
+		return codex, true
 	}
 	return Map{}, false
 }
@@ -47,4 +54,14 @@ var claude = Map{
 var copilot = Map{
 	permission: map[string]string{"allow": "1", "deny": "\x1b"},
 	question:   func(option int) string { return strings.Repeat("\x1b[B", option-1) + "\r" },
+}
+
+// Codex's menus take the digit at once, and "Yes, proceed" is item 1 on the command and the patch menu. Deny is Esc,
+// the menu's own cancel: Codex ends the turn on it, and at an idle prompt one Esc only hints "esc again to edit previous
+// message" and submits nothing.
+var codex = Map{
+	permission: map[string]string{"allow": "1", "deny": "\x1b"},
+	question:   strconv.Itoa,
+	// Only the command and patch menus were recorded; other approvals (permissions, MCP tools) have other menus.
+	tools: map[string]bool{"Bash": true, "apply_patch": true},
 }

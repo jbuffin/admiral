@@ -224,11 +224,11 @@ func TestCopilotQuestionFormWithNoOptionsGetsNoKeys(t *testing.T) {
 	}
 }
 
-func TestACodexPaneIsNotCalledAClaudeCodePane(t *testing.T) {
-	p := newAnswerPane(t, "codex", nil)
+func TestAPaneWithNoKeyMapIsNotCalledAClaudeCodePane(t *testing.T) {
+	p := newAnswerPane(t, "gemini", nil)
 	p.needsYou("permission:Bash")
 	code, msg := p.post(`{"card":"permission","reason":"permission:Bash","choice":"allow"}`)
 	if code != http.StatusConflict || strings.Contains(msg, "Claude Code") {
-		t.Errorf("a Codex pane's answer = %d %s, want 409 with a harness-neutral reason", code, msg)
+		t.Errorf("a pane with no key map's answer = %d %s, want 409 with a harness-neutral reason", code, msg)
 	}
 }

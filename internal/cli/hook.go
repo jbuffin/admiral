@@ -103,8 +103,11 @@ func hookDecision(event string, p hookPayload) hookWrite {
 			return hookWrite{state: "needs_you", reason: "question"}
 		}
 		return hookWrite{state: "working"}
-	case "UserPromptSubmit", "PostToolUse", "Interrupt", "postToolUse":
+	case "UserPromptSubmit", "PostToolUse", "postToolUse":
 		return hookWrite{state: "working"}
+	case "Interrupt":
+		// Codex runs this hook as it aborts the turn, so it is idle at its prompt: the same as a Stop, and it covers an Esc typed in the terminal.
+		return stopWrite
 	case "Notification", "notification":
 		if p.NotificationType == "permission_prompt" || p.NotificationType == "elicitation_dialog" {
 			return hookWrite{state: "needs_you", reason: withToken("notification", p.NotificationType), ifUnset: true}

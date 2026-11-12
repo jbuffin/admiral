@@ -29,6 +29,17 @@ test('a permission card shows the tool and its oldest pending call, and Allow on
   await expect.poll(() => received(admiral, ship)).toBe('1');
   await expect(button(page, 'Allow once')).toHaveCount(0);
   await expect(terminalCard(page)).toHaveCount(0);
+
+  // A Codex ship has no conversation to read yet; its permission card still answers with Codex's keys.
+  const codex = await launchShip(admiral, { fleet: 'zulu', harness: 'codex', cues: ['bracketedpaste'] });
+  setReason(admiral, codex, 'permission:apply_patch');
+  setState(admiral, codex, 'needs_you');
+  await open(page, admiral, codex);
+  await expect(button(page, 'Allow once')).toBeVisible();
+  await expect(viewPanel(page).getByText('apply_patch').first()).toBeVisible();
+  await button(page, 'Allow once').tap();
+  await expect.poll(() => received(admiral, codex)).toBe('1');
+  await expect(button(page, 'Allow once')).toHaveCount(0);
 });
 
 test('a question card sends the number of the tapped option', async ({ page, admiral }) => {
