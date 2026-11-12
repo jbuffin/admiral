@@ -39,7 +39,8 @@ func CodexFenceArgs(server string) []string {
 
 // CodexBaseFenceArgs is the fence without a server: what a run in a home of its own takes so that nothing loads.
 func CodexBaseFenceArgs() []string {
-	out := []string{"-c", "features.shell_tool=false", "-c", `web_search="disabled"`,
+	// --strict-config makes Codex refuse a -c key it does not know, which it would otherwise accept and ignore.
+	out := []string{"--strict-config", "-c", "features.shell_tool=false", "-c", `web_search="disabled"`,
 		"-c", `sandbox_mode="read-only"`, "-c", `approval_policy="never"`}
 	for _, f := range codexFenceFeatures {
 		out = append(out, "--disable", f)

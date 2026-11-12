@@ -20,9 +20,9 @@ var (
 	codexEvents = struct {
 		reply        func(text string) string
 		shell        string
-		webSearch    string
-		toolCall     func(server, tool string) string
-		serverLoaded func(name string) string
+		webSearch string
+		subAgent  string
+		toolCall  func(server, tool string) string
 	}{
 		reply: func(text string) string {
 			return `{"type":"item.completed","item":{"type":"agent_message","text":"` + text + `"}}`
@@ -32,7 +32,7 @@ var (
 		toolCall: func(server, tool string) string {
 			return `{"type":"item.completed","item":{"type":"mcp_tool_call","server":"` + server + `","tool":"` + tool + `","status":"completed"}}`
 		},
-		serverLoaded: func(name string) string { return `{"type":"mcp.server.loaded","server":"` + name + `"}` },
+		subAgent: `{"type":"item.completed","item":{"type":"collab_tool_call","tool":"spawn_agent","status":"completed"}}`,
 	}
 	// codexProbeHomeFiles are the files besides the auth.json link a probe may put in its throwaway home.
 	codexProbeHomeFiles = []string{"config.toml"}
@@ -43,6 +43,7 @@ var (
 		"shell-ran":   "shell",
 		"shell-event": "shell",
 		"web-search":  "web search",
+		"sub-agent":   "collab_tool_call",
 		"other-tool":  "other",
 		"no-call":     "never called",
 		"error":       "codex failed: boom: not logged in",
@@ -50,7 +51,6 @@ var (
 	codexHomeFailDetail = map[string]string{
 		"login-failed":  "login",
 		"no-reply":      "no reply",
-		"plugin-loaded": "github",
 		"plugin-cache":  "github",
 	}
 )
@@ -114,14 +114,14 @@ func stageCodex(t *testing.T, log, mode string) {
 		fence = append([]string{e.shell}, fence...)
 	case "web-search":
 		fence = append([]string{e.webSearch}, fence...)
+	case "sub-agent":
+		fence = append([]string{e.subAgent}, fence...)
 	case "other-tool":
 		fence = append([]string{e.toolCall("other", "run")}, fence...)
 	case "no-call":
 		fence = []string{e.reply("done")}
 	case "no-reply":
 		home = nil
-	case "plugin-loaded":
-		home = append([]string{e.serverLoaded("github")}, home...)
 	}
 	for name, lines := range map[string][]string{"events-fence": fence, "events-home": home} {
 		if err := os.WriteFile(filepath.Join(log, name), []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
@@ -230,6 +230,12 @@ func TestCodexFenceProbeRunsExecJSONWithTheChatsFenceAndNotTheDocksArgs(t *testi
 		if cfg[f[0]] != f[1] {
 			t.Errorf("config %s = %q, want %q (argv %q)", f[0], cfg[f[0]], f[1], argv)
 		}
+	}
+	if !slices.Contains(argv, "--strict-config") {
+		t.Errorf("argv = %q lacks --strict-config: Codex would ignore a fence key it does not know", argv)
+	}
+	if p := argv[len(argv)-1]; !strings.Contains(p, "search the web") || !strings.Contains(p, "sub-agent") {
+		t.Errorf("the probe's prompt %q does not ask for a web search and a sub-agent", p)
 	}
 	small, _, _ := config.ModelPair("codex")
 	if i := slices.Index(argv, "-m"); (i < 0 || i+1 >= len(argv) || argv[i+1] != small) && cfg["model"] != small {
