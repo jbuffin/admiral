@@ -39,7 +39,7 @@ func (r routineShips) EndedFailed(session string) bool {
 // noProposer drops a proposal: the Inbox side takes it over later, and the `proposed` record already says what happened.
 type noProposer struct{}
 
-func (noProposer) Propose(string, routines.Routine, routines.Trigger) error { return nil }
+func (noProposer) Propose(string, routines.Routine, routines.Trigger, time.Time) error { return nil }
 
 // wakeOn calls fn each time the channel a resource set's channel closes, until ctx ends.
 func wakeOn(ctx context.Context, changed func() <-chan struct{}, fn func()) {

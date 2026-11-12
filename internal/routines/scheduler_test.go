@@ -160,6 +160,7 @@ type proposal struct {
 	fleet     string
 	routineID string
 	trigger   routines.Trigger
+	expires   time.Time
 }
 
 type fakeProposer struct {
@@ -167,10 +168,10 @@ type fakeProposer struct {
 	got []proposal
 }
 
-func (f *fakeProposer) Propose(fleet string, r routines.Routine, t routines.Trigger) error {
+func (f *fakeProposer) Propose(fleet string, r routines.Routine, t routines.Trigger, expires time.Time) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.got = append(f.got, proposal{fleet, r.ID, t})
+	f.got = append(f.got, proposal{fleet, r.ID, t, expires})
 	return nil
 }
 

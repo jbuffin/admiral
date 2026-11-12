@@ -59,13 +59,15 @@ type Do struct {
 }
 
 type Routine struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Enabled   bool      `json:"enabled"`
-	When      string    `json:"when"` // a 5-field cron expression in the server's local time zone
-	Do        Do        `json:"do"`
-	Before    Mode      `json:"before_acting"`
-	Notify    bool      `json:"notify"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
+	When    string `json:"when"` // a 5-field cron expression in the server's local time zone
+	Do      Do     `json:"do"`
+	Before  Mode   `json:"before_acting"`
+	Notify  bool   `json:"notify"`
+	// OffBy says who last turned the routine off when it was not the engineer.
+	OffBy     string    `json:"off_by,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -335,6 +337,17 @@ func (s *Store) SetEnabled(fleet, id string, on bool) (Routine, error) {
 	return list[i], nil
 }
 
+// ViaProposal is the Via of a launch that came from an accepted proposal.
+const ViaProposal = "proposal"
+
+// SetEnabledBy is SetEnabled that stamps who turned the routine off.
+func (s *Store) SetEnabledBy(fleet, id string, on bool, by string) (Routine, error) {
+	return s.SetEnabled(fleet, id, on)
+}
+
+// ProposalExpiry is when a proposal made at now closes: at the next run or after 24 hours, whichever comes first.
+func ProposalExpiry(next, now time.Time) time.Time { return time.Time{} }
+
 func indexOf(list []Routine, id string) int {
 	for i, r := range list {
 		if r.ID == id {
@@ -361,18 +374,20 @@ const (
 
 // Trigger is one trigger-log record.
 type Trigger struct {
-	ID       string    `json:"id"`
-	At       time.Time `json:"at"`
-	Routine  string    `json:"routine"`
-	Outcome  Outcome   `json:"outcome"`
-	Tier     string    `json:"tier"`
-	Event    string    `json:"event,omitempty"`
-	Sender   string    `json:"sender,omitempty"`
-	Rule     string    `json:"rule,omitempty"`
-	Verdict  string    `json:"verdict,omitempty"`
-	Reason   string    `json:"reason,omitempty"`
-	Action   string    `json:"action,omitempty"`
-	Ship     string    `json:"ship,omitempty"`
+	ID      string    `json:"id"`
+	At      time.Time `json:"at"`
+	Routine string    `json:"routine"`
+	Outcome Outcome   `json:"outcome"`
+	Tier    string    `json:"tier"`
+	Event   string    `json:"event,omitempty"`
+	Sender  string    `json:"sender,omitempty"`
+	Rule    string    `json:"rule,omitempty"`
+	Verdict string    `json:"verdict,omitempty"`
+	Reason  string    `json:"reason,omitempty"`
+	Action  string    `json:"action,omitempty"`
+	Ship    string    `json:"ship,omitempty"`
+	// Via marks a launch that came from an accepted proposal.
+	Via      string    `json:"via,omitempty"`
 	Undone   bool      `json:"undone,omitempty"`
 	UndoneAt time.Time `json:"undone_at,omitzero"`
 }

@@ -2,6 +2,7 @@ package routines
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -36,10 +37,18 @@ type Chat interface {
 	Send(fleet, text string) error
 }
 
-// Proposer takes a run that needs the engineer's yes; u3 makes it an Inbox proposal.
+// Proposer takes a run that needs the engineer's yes and makes it an Inbox proposal that closes at expires.
 type Proposer interface {
-	Propose(fleet string, r Routine, t Trigger) error
+	Propose(fleet string, r Routine, t Trigger, expires time.Time) error
 }
+
+// Notifier hears each record of a routine whose Notify me is on, for the outcomes that push.
+type Notifier interface {
+	Notify(fleet string, r Routine, t Trigger)
+}
+
+// ErrBusy is an Accept that found no room, or a ship still holding the routine's key; the proposal stays open.
+var ErrBusy = errors.New("the run has no room or its last ship is still here")
 
 const (
 	// lateRunWindow is how old a missed run may be and still run once on start.
@@ -62,7 +71,10 @@ type Scheduler struct {
 	Ships    Ships
 	Chat     Chat
 	Proposer Proposer
-	Zone     *time.Location // the zone a When is read in; main passes time.Local
+	Notifier Notifier
+	// HostKnown is false while the ships host cannot list ships; a nil one is always known.
+	HostKnown func() bool
+	Zone      *time.Location // the zone a When is read in; main passes time.Local
 	// Ready, when set, closes once the ships host knows the fleet; Run catches up only after it.
 	Ready <-chan struct{}
 
@@ -424,7 +436,7 @@ func (s *Scheduler) fire(ctx context.Context, fleet string, r Routine, due, now 
 	case AskFirst:
 		rec.Outcome = Proposed
 		if saved, ok := s.record(fleet, rec); ok && s.Proposer != nil {
-			_ = s.Proposer.Propose(fleet, r, saved)
+			_ = s.Proposer.Propose(fleet, r, saved, time.Time{})
 		}
 	default: // Act
 		if l == nil {
@@ -512,4 +524,9 @@ func describe(r Routine) string {
 		return fmt.Sprintf("launch %s in %s: %s", l.Harness, l.Dir, text)
 	}
 	return "send AdmiralBot a prompt"
+}
+
+// Accept launches the run a proposal asked for, through the gates of a scheduled launch, and never waits.
+func (s *Scheduler) Accept(ctx context.Context, fleet, routineID, triggerID string) (Trigger, error) {
+	return Trigger{}, errors.New("not implemented")
 }
