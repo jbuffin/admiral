@@ -40,6 +40,7 @@ import (
 	"github.com/jbuffin/admiral/internal/ships"
 	"github.com/jbuffin/admiral/internal/sources"
 	"github.com/jbuffin/admiral/internal/state"
+	"github.com/jbuffin/admiral/internal/tailscale"
 	"github.com/jbuffin/admiral/web"
 )
 
@@ -138,12 +139,23 @@ func run(args []string) error {
 	return &cli.UsageError{Msg: fmt.Sprintf("unknown command %q", args[0])}
 }
 
+// remoteRoutes puts GET /api/remote on the server's mux.
+type remoteRoutes struct{ *tailscale.Route }
+
+func (remoteRoutes) Connected(*server.Client) {}
+
 // guardRoutes puts the device API on the server's mux.
 type guardRoutes struct{ *auth.Auth }
 
 func (guardRoutes) Connected(*server.Client) {}
 
-func pairingBase(port string) string {
+// pairingBase is read per call: in Tailscale mode it is the ts.net URL when serve has one.
+func pairingBase(port string, cfg func() *config.Config) string {
+	if cfg().Remote.Tailscale {
+		if base := tailscale.Base(context.Background(), port); base != "" {
+			return base
+		}
+	}
 	if ip, ok := server.LANIPv4(); ok {
 		return "http://" + net.JoinHostPort(ip, port)
 	}
@@ -207,6 +219,18 @@ func serve(args []string) error {
 		return err
 	}
 	_, port, _ := net.SplitHostPort(ln.Addr().String())
+
+	// Only the mode runs tailscale; a public Admiral is the one check that stops startup.
+	var ts tailscale.Report
+	tsMode := cfg.Current().Remote.Tailscale
+	if tsMode {
+		ts = tailscale.Inspect(context.Background(), port)
+		if ts.Funnel {
+			_ = ln.Close()
+			c, _ := ts.Check(tailscale.CheckFunnel)
+			return errors.New(c.Detail)
+		}
+	}
 
 	// Without tmux Admiral still serves its config; there are no ships and a
 	// launch is refused.
@@ -348,7 +372,7 @@ func serve(args []string) error {
 	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
 	convService := &shipconv.Service{Ships: shipService, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Asking: shipService.Asking}
 	probeRunner := probes.NewDefault(dir)
-	guard, err := auth.New(dir, port, auth.WithBaseURL(func() string { return pairingBase(port) }),
+	guard, err := auth.New(dir, port, auth.WithBaseURL(func() string { return pairingBase(port, cfg.Current) }),
 		auth.WithRemote(func() (bool, []string) {
 			r := cfg.Current().Remote
 			return r.Tailscale, r.AllowedLogins
@@ -363,7 +387,7 @@ func serve(args []string) error {
 	s := &server.Server{Version: version, Commit: commit, UI: web.UI(), Messages: convService.Messages(), Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService,
 			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: campaignService}, campaignService, bridgeService, resourceService, lockRoute, chatService, convService, &shipdiff.Service{Ships: shipService},
-			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}, guardRoutes{guard}},
+			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}, guardRoutes{guard}, remoteRoutes{&tailscale.Route{Config: cfg.Current, Port: port}}},
 		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat", "conversation", "campaigns", "ship-input", "changes"}}
 	bg, stopBackground := context.WithCancel(context.Background())
 	// In the background: a harness that hangs on --version must not delay the server.
@@ -426,6 +450,12 @@ func serve(args []string) error {
 	bindHost, _, _ := net.SplitHostPort(listenOn)
 	ip, hasIP := server.LANIPv4()
 	switch {
+	case tsMode && ts.URL != "":
+		fmt.Printf("On other devices: %s\n", ts.URL)
+		fmt.Println("To pair a device, run: admiral pair")
+	case tsMode:
+		c, _ := ts.Failed()
+		fmt.Printf("On other devices: Tailscale mode is on, but %s\n", c.Detail)
 	case bindHost != "" && bindHost != "0.0.0.0" && bindHost != "::":
 		fmt.Printf("On other devices: not reachable, Admiral listens only on %s (http://127.0.0.1:%s/)\n", bindHost, port)
 	case hasIP:

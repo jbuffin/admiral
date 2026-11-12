@@ -347,6 +347,10 @@ Answers `{"devices":[{"id","name","login"?,"pairedAt","lastSeen","current"}]}`. 
 
 Body `{"name"}`. Answers `{"id","name"}`; 400 for a missing or empty name, 404 for an unknown id.
 
+### `GET /api/remote` (alias `GET /api/v1/remote`)
+
+Behind the same auth as the other routes. Answers `{"tailscale":bool,"allowedLogins":[…],"url":"","checks":[{"id","ok","detail"}]}`. `tailscale` is the mode and `allowedLogins` the tailnet logins allowed in. With the mode off `url` is empty, `checks` is `[]` and no `tailscale` command runs. With it on, each call runs the tailscale CLI (4 s limit per command) and answers four checks in order: `running` (tailscaled up and logged in), `https-magicdns`, `serve` (an HTTPS handler proxying to Admiral's loopback port; a raw TCP forward to that port fails it, since it bypasses Admiral's tailnet checks) and `funnel-off` (Funnel on for an HTTPS handler or a TCP forward to that port, in serve or a foreground serve; the detail names the command that turns it off). `detail` is one line. `url` is `https://<MagicDNS name>[:<port>]/` when serve has such a handler and the node is logged in, else empty. A check that can't be answered (tailscale missing, down, slow or unparsable) is `ok:false` with the reason.
+
 ### `DELETE /api/v1/devices/<id>` and `DELETE /api/v1/devices`
 
 Revoke one device or all of them; 204, or 404 for an unknown id. The device's token stops working and its open WebSockets close. A save that fails leaves the device in place and answers 500 `{"error"}`, as it does for a rename.

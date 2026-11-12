@@ -14,7 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/server"
+	"github.com/jbuffin/admiral/internal/tailscale"
 )
 
 const ServiceLabel = "dev.jasonbuffin.admiral"
@@ -134,6 +136,13 @@ func serviceStatus(std IO) error {
 }
 
 func printURL(std IO) error {
+	if home, err := admiralHome(); err == nil {
+		if data, err := config.ReadConfig(home); err == nil {
+			if cfg, err := config.Parse(data); err == nil && cfg.Remote.Tailscale {
+				return printTailnetURL(std)
+			}
+		}
+	}
 	if ip, ok := server.LANIPv4(); ok {
 		fmt.Fprintf(std.Out, "On other devices: http://%s/\n", net.JoinHostPort(ip, DefaultPort))
 		fmt.Fprintln(std.Out, "To pair a device, run: admiral pair")
@@ -243,4 +252,17 @@ func writePlist(path string, s plistSpec) error {
 		return err
 	}
 	return os.WriteFile(path, []byte(b.String()), 0o644)
+}
+
+// printTailnetURL is printURL in Tailscale mode: the ts.net URL, or the first failed check.
+func printTailnetURL(std IO) error {
+	rep := tailscale.Inspect(context.Background(), DefaultPort)
+	if rep.URL != "" {
+		fmt.Fprintf(std.Out, "On other devices: %s\n", rep.URL)
+		fmt.Fprintln(std.Out, "To pair a device, run: admiral pair")
+		return nil
+	}
+	c, _ := rep.Failed()
+	fmt.Fprintf(std.Out, "On other devices: Tailscale mode is on, but %s\n", c.Detail)
+	return nil
 }
