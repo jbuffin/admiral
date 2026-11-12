@@ -44,7 +44,7 @@ func (s *Service) settle(ctx context.Context, sess sessionhost.Session) {
 			return
 		}
 		if len(prs) == 0 || !s.moor(ctx, sess, prs) {
-			s.endRound(sess, "sailed")
+			s.endMooring(sess)
 		}
 		if err := s.killShip(ctx, sess.Name, true); err == nil {
 			_ = s.Host.Sync(ctx)
@@ -104,6 +104,18 @@ func splitResources(v string) []string {
 		return nil
 	}
 	return strings.Split(v, ",")
+}
+
+// endMooring ends a woken ship's last round for good: its mooring will not come back, so its wake state goes.
+func (s *Service) endMooring(sess sessionhost.Session) {
+	s.endRound(sess, "sailed")
+	name := sess.Options["name"]
+	if name == "" {
+		return
+	}
+	if err := moor.RemoveWake(s.Launcher.Home, name); err != nil {
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake state cannot be removed: %v\n", name, err)
+	}
 }
 
 // endRound logs how a woken ship's round ended, once per round; a ship that was never woken has no round.

@@ -4,7 +4,7 @@ import { Flag } from './Flag';
 import { fleetPaint, fleets, loadFleets } from './fleets';
 import { errorTarget, fieldMessage, saveBody, type FleetFields } from './fleetSettings';
 
-const fieldsOf = (f: Fleet): FleetFields => ({ search_roots: f.search_roots, owners: f.owners, clone_root: f.clone_root, color: f.color });
+const fieldsOf = (f: Fleet): FleetFields => ({ search_roots: f.search_roots, owners: f.owners, wake_reviewers: f.wake_reviewers, clone_root: f.clone_root, color: f.color });
 
 function ListField({ id, legend, item, add, values, errors, disabled, onChange }: {
   id: string;
@@ -60,7 +60,7 @@ export function FleetPage({ fleet }: { fleet: Fleet }) {
 
   const body = saveBody(shown, edited);
   const target = error ? errorTarget(error.message, fleet.key) : null;
-  const listErrors = (field: 'search_roots' | 'owners') =>
+  const listErrors = (field: 'search_roots' | 'owners' | 'wake_reviewers') =>
     new Map(target?.field === field && target.index !== undefined && error ? [[target.index, fieldMessage(error.message, fleet.key)]] : []);
   const fieldError = (field: 'clone_root' | 'color') => (target?.field === field && error ? fieldMessage(error.message, fleet.key) : null);
   const topError = error && !target ? error : null;
@@ -123,6 +123,7 @@ export function FleetPage({ fleet }: { fleet: Fleet }) {
           </div>
         ) : null}
         <ListField id="owners" legend="Owners" item="Owner" add="Add owner" values={edited.owners} errors={listErrors('owners')} disabled={busy} onChange={(v) => set({ owners: v })} />
+        <ListField id="wake" legend="Reviewers who can wake a ship" item="Reviewer" add="Add reviewer" values={edited.wake_reviewers} errors={listErrors('wake_reviewers')} disabled={busy} onChange={(v) => set({ wake_reviewers: v })} />
         <div class="set">
           <div class="t">
             <label for="clone-root">Clone root</label>

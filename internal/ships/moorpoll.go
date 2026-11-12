@@ -233,6 +233,9 @@ func (s *Service) endMoored(session, reason string) (bool, error) {
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: its moored record cannot be removed: %v\n", rec.Name, err)
 		return false, err
 	}
+	if err := moor.RemoveWake(s.Launcher.Home, rec.Name); err != nil {
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake state cannot be removed: %v\n", rec.Name, err)
+	}
 	prs := s.prsOf(rec)
 	s.moored = append(s.moored[:idx:idx], s.moored[idx+1:]...)
 	delete(s.mooredPolls, session)

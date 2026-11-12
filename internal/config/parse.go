@@ -47,16 +47,17 @@ var (
 )
 
 type Fleet struct {
-	Key         string
-	Name        string
-	Color       string // resolved: explicit, else the next in the default sequence
-	Ink         string // text color on Color
-	ColorIndex  *int   // position in the default sequence; nil for a custom Color
-	SearchRoots []string
-	Owners      []string          // GitHub orgs and users whose work belongs to the fleet
-	CloneRoot   string            // where the fleet's clones live; empty when unset
-	Env         map[string]string // the fleet's own env, ~ expanded; plugin sources and gh calls start with it
-	Harnesses   []Harness         // dock order: claude, copilot, codex, as present
+	Key           string
+	Name          string
+	Color         string // resolved: explicit, else the next in the default sequence
+	Ink           string // text color on Color
+	ColorIndex    *int   // position in the default sequence; nil for a custom Color
+	SearchRoots   []string
+	Owners        []string          // GitHub orgs and users whose work belongs to the fleet
+	WakeReviewers []string          // GitHub logins whose feedback wakes a moored ship
+	CloneRoot     string            // where the fleet's clones live; empty when unset
+	Env           map[string]string // the fleet's own env, ~ expanded; plugin sources and gh calls start with it
+	Harnesses     []Harness         // dock order: claude, copilot, codex, as present
 }
 
 func (c *Config) clone() *Config {
@@ -72,6 +73,7 @@ func (c *Config) clone() *Config {
 	for i, f := range c.Fleets {
 		f.SearchRoots = slices.Clone(f.SearchRoots)
 		f.Owners = slices.Clone(f.Owners)
+		f.WakeReviewers = slices.Clone(f.WakeReviewers)
 		f.Env = maps.Clone(f.Env)
 		f.Harnesses = slices.Clone(f.Harnesses)
 		for j, h := range f.Harnesses {
@@ -122,7 +124,9 @@ var dockOrder = []string{"claude", "copilot", "codex"}
 
 var (
 	fleetKeyRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-	colorRe    = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
+	// A GitHub login: letters, digits and single hyphens, none at either end; an app's [bot] suffix is allowed. The regexp cannot count the hyphens, so the 39-character bound is checked beside it.
+	loginRe = regexp.MustCompile(`^[A-Za-z0-9](?:-?[A-Za-z0-9]){0,38}(?:\[bot\])?$`)
+	colorRe = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 )
 
 // Parse errors name the path of the bad value, without the file name.
@@ -314,6 +318,15 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 			for i, o := range f.Owners {
 				if strings.TrimSpace(o) == "" {
 					return Fleet{}, fmt.Errorf("%s[%d]: must not be empty", p, i)
+				}
+			}
+		case "wake_reviewers":
+			if f.WakeReviewers, err = stringList(p, m.raw); err != nil {
+				return Fleet{}, err
+			}
+			for i, l := range f.WakeReviewers {
+				if !loginRe.MatchString(l) || len(strings.TrimSuffix(l, "[bot]")) > 39 {
+					return Fleet{}, fmt.Errorf("%s[%d]: must be a GitHub login, got %q", p, i, l)
 				}
 			}
 		case "clone_root":

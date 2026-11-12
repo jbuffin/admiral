@@ -4,6 +4,7 @@ import { errorTarget, fieldMessage, saveBody } from './fleetSettings';
 const shown = {
   search_roots: ['/Users/jo/code', '/Users/jo/work'],
   owners: ['acme'],
+  wake_reviewers: ['alice'],
   clone_root: '/Users/jo/clones',
   color: '#1a2b3c',
 };
@@ -28,6 +29,15 @@ describe('saveBody', () => {
     expect(saveBody(shown, { ...shown, owners: ['acme', 'extra'] })).toEqual({ owners: ['acme', 'extra'] });
   });
 
+  it('sends a list with an added wake reviewer whole', () => {
+    expect(saveBody(shown, { ...shown, wake_reviewers: ['alice', 'bob'] })).toEqual({ wake_reviewers: ['alice', 'bob'] });
+  });
+
+  it('sends an empty wake reviewers list when the last one was removed, and nothing when they are unchanged', () => {
+    expect(saveBody(shown, { ...shown, wake_reviewers: [] })).toEqual({ wake_reviewers: [] });
+    expect(saveBody(shown, { ...shown, color: '#445566' })).not.toHaveProperty('wake_reviewers');
+  });
+
   it('sends an empty list when every owner or search root was removed', () => {
     expect(saveBody(shown, { ...shown, owners: [] })).toEqual({ owners: [] });
     expect(saveBody(shown, { ...shown, search_roots: [] })).toEqual({ search_roots: [] });
@@ -46,6 +56,11 @@ describe('errorTarget', () => {
   it('names the list entry a search root error points at', () => {
     expect(errorTarget('fleets.home.search_roots[1]: must be an absolute path or start with ~/, got "x"', 'home')).toEqual({ field: 'search_roots', index: 1 });
     expect(errorTarget('fleets.home.owners[0]: must not be empty', 'home')).toEqual({ field: 'owners', index: 0 });
+  });
+
+  it('names the wake reviewer entry an error points at', () => {
+    expect(errorTarget('fleets.home.wake_reviewers[2]: must be a GitHub login, got "a b"', 'home')).toEqual({ field: 'wake_reviewers', index: 2 });
+    expect(fieldMessage('fleets.home.wake_reviewers[2]: must be a GitHub login, got "a b"', 'home')).toBe('must be a GitHub login, got "a b"');
   });
 
   it('names a single-value field', () => {

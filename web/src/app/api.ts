@@ -13,6 +13,7 @@ export interface Fleet {
   color_index?: number;
   search_roots: string[];
   owners: string[];
+  wake_reviewers: string[];
   clone_root: string;
   can_launch: boolean;
   docks: Dock[];
@@ -127,6 +128,7 @@ const fleetsOf = (body: { fleets?: Fleet[] | null }): Fleet[] =>
     ...f,
     search_roots: f.search_roots ?? [],
     owners: f.owners ?? [],
+    wake_reviewers: f.wake_reviewers ?? [],
     docks: (f.docks ?? []).map((d) => ({ ...d, warnings: d.warnings ?? [] })),
   }));
 
@@ -198,7 +200,7 @@ export const removeSource = (key: string) => call<unknown>('DELETE', src(key));
 export const addSource = (plugin: string, fleet: string) => call<Source>('POST', '/sources', { plugin, fleet });
 
 /** Saves the fleet fields in the body; the server answers the new config view. */
-export async function saveFleet(key: string, body: Partial<Pick<Fleet, 'search_roots' | 'owners' | 'clone_root' | 'color'>>): Promise<Result<Fleet[]>> {
+export async function saveFleet(key: string, body: Partial<Pick<Fleet, 'search_roots' | 'owners' | 'wake_reviewers' | 'clone_root' | 'color'>>): Promise<Result<Fleet[]>> {
   const r = await call<{ fleets?: Fleet[] | null }>('PUT', `/fleets/${encodeURIComponent(key)}`, body);
   return r.ok ? { ok: true, data: fleetsOf(r.data) } : r;
 }
