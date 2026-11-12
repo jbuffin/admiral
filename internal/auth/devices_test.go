@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,12 +34,39 @@ type clock struct{ now time.Time }
 func (c *clock) Now() time.Time          { return c.now }
 func (c *clock) advance(d time.Duration) { c.now = c.now.Add(d) }
 
+// remoteCfg stands in for the live config: auth reads it on every request.
+type remoteCfg struct {
+	mu     sync.Mutex
+	on     bool
+	logins []string
+}
+
+func (c *remoteCfg) get() (bool, []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.on, append([]string(nil), c.logins...)
+}
+
 type rig struct {
-	t    *testing.T
-	home string
-	clk  *clock
-	a    *auth.Auth
-	h    http.Handler
+	t      *testing.T
+	home   string
+	clk    *clock
+	a      *auth.Auth
+	h      http.Handler
+	remote *remoteCfg
+}
+
+// allow turns Tailscale mode on with exactly these logins allowed.
+func (g *rig) allow(logins ...string) {
+	g.remote.mu.Lock()
+	defer g.remote.mu.Unlock()
+	g.remote.on, g.remote.logins = true, logins
+}
+
+func (g *rig) setMode(on bool) {
+	g.remote.mu.Lock()
+	defer g.remote.mu.Unlock()
+	g.remote.on = on
 }
 
 // The next handler answers 200 "next"; the device API is registered the way the server's mux does it, so its paths are the unversioned ones (the server strips /v1 after the guard).
@@ -48,14 +76,15 @@ func newRig(t *testing.T) *rig {
 
 func openRig(t *testing.T, home string, clk *clock) *rig {
 	t.Helper()
-	a, err := auth.New(home, "7420", auth.WithClock(clk.Now), auth.WithBaseURL(func() string { return "http://192.168.1.10:7420" }))
+	rc := &remoteCfg{}
+	a, err := auth.New(home, "7420", auth.WithClock(clk.Now), auth.WithBaseURL(func() string { return "http://192.168.1.10:7420" }), auth.WithRemote(rc.get))
 	if err != nil {
 		t.Fatalf("auth.New: %v", err)
 	}
 	mux := http.NewServeMux()
 	a.Routes(mux)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("next")) })
-	return &rig{t: t, home: home, clk: clk, a: a, h: a.Middleware(mux)}
+	return &rig{t: t, home: home, clk: clk, a: a, h: a.Middleware(mux), remote: rc}
 }
 
 type req struct {
@@ -566,6 +595,7 @@ func hasName(ds []device, name string) bool {
 func TestLoginBinding(t *testing.T) {
 	g := newRig(t)
 	const alice, bob = "alice@example.com", "bob@example.com"
+	g.allow(alice, bob)
 	tail, onLAN := g.pairTail(alice), g.pairLAN()
 
 	if c := g.tailStatus(tail, alice); c != 200 {
