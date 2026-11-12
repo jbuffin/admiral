@@ -105,6 +105,24 @@ func (e *FieldError) Error() string { return e.Message }
 // CheckFile reads raw as the resolver would read the fleet layer's file stem.md: the parser, the field checks
 // and the review that refuses a member. It returns the member as the resolver would list it.
 func CheckFile(raw []byte, stem string) (Member, *FieldError) {
+	return checkMember(raw, stem, LayerFleet)
+}
+
+// CheckAdHoc reads raw as the ad hoc layer's file stem.md. The member must say ad-hoc: true and can't be the fix checker.
+func CheckAdHoc(raw []byte, stem string) (Member, *FieldError) {
+	m, ferr := checkMember(raw, stem, LayerAdHoc)
+	switch {
+	case ferr != nil:
+		return m, ferr
+	case !m.AdHoc:
+		return Member{}, &FieldError{Field: "ad-hoc", Message: "ad-hoc: true is missing"}
+	case m.Role == FixChecker:
+		return Member{}, &FieldError{Field: "role", Message: "an ad hoc member can't be the fix checker"}
+	}
+	return m, nil
+}
+
+func checkMember(raw []byte, stem, layer string) (Member, *FieldError) {
 	var none Member
 	if len(raw) > maxBytes {
 		return none, &FieldError{Field: "instructions", Message: "file is over 65536 bytes"}
@@ -117,7 +135,7 @@ func CheckFile(raw []byte, stem string) (Member, *FieldError) {
 		return none, &FieldError{Field: perr.field, Message: perr.message}
 	}
 	var refusal *FieldError
-	skills, instructions, refused := reviewFields(fm, body, LayerFleet, func(code, field, message string) {
+	skills, instructions, refused := reviewFields(fm, body, layer, func(code, field, message string) {
 		if refusal == nil && slices.Contains([]string{"bad-based-on", "misplaced-ad-hoc"}, code) {
 			refusal = &FieldError{Field: field, Message: message}
 		}
@@ -133,8 +151,10 @@ func CheckFile(raw []byte, stem string) (Member, *FieldError) {
 		Model:        stringOrNil(fm.get("model")),
 		Harness:      stringOrNil(fm.get("harness")),
 		PickMeWhen:   fm.get("pick-me-when").(string),
+		AdHoc:        fm.get("ad-hoc") == true,
+		AdHocRun:     stringOrNil(fm.get("ad-hoc-run")),
 		Instructions: instructions,
-		Layer:        LayerFleet,
+		Layer:        layer,
 		File:         stem + ".md",
 	}, nil
 }

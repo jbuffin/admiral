@@ -168,8 +168,8 @@ func TestTheNotesAnswerWritesKeptAndEditedNotesAndNothingForADrop(t *testing.T) 
 	recs := r.recs()
 	got := map[string]map[string]any{}
 	for _, rec := range recs {
-		if f, ok := rec["fields"].(map[string]any); ok && f["item"] == "crew-notes-0123456789abcdef" {
-			got[f["note"].(string)] = rec
+		if rec["item"] == "crew-notes-0123456789abcdef" {
+			got[rec["note"].(string)] = rec
 		}
 	}
 	for note, want := range map[string]string{"n1": "crew_note_kept", "n2": "crew_note_edited", "n3": "crew_note_dropped"} {
@@ -178,8 +178,7 @@ func TestTheNotesAnswerWritesKeptAndEditedNotesAndNothingForADrop(t *testing.T) 
 			t.Errorf("record for %s = %v, want %s", note, rec, want)
 			continue
 		}
-		f := rec["fields"].(map[string]any)
-		if f["kind"] != "crew_notes" || f["member"] == nil || f["scope"] == nil {
+		if rec["kind"] != "crew_notes" || rec["member"] == nil || rec["scope"] == nil {
 			t.Errorf("record for %s = %v, want kind, member and scope", note, rec)
 		}
 	}
@@ -358,7 +357,7 @@ func TestKeepingAnAdHocMemberWritesItToTheFleetWithoutItsAdHocLinesAndMovesItsNo
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "---\nname: scout\nrole: scout\npick-me-when: a run needs a map of the repo\n---\n\nMap the repo.\n"
+	want := "---\nname: scout\nrole: scout\nbased-on: implementer\npick-me-when: a run needs a map of the repo\n---\n\nMap the repo.\n"
 	if string(raw) != want {
 		t.Errorf("scout.md = %q, want %q", raw, want)
 	}
@@ -378,7 +377,7 @@ func TestKeepingAnAdHocMemberWritesItToTheFleetWithoutItsAdHocLinesAndMovesItsNo
 			rec = x
 		}
 	}
-	if f, _ := rec["fields"].(map[string]any); f["item"] != "crew-member-0123456789abcdef" || f["kind"] != "crew_member" || f["member"] != "scout" {
+	if rec["item"] != "crew-member-0123456789abcdef" || rec["kind"] != "crew_member" || rec["member"] != "scout" {
 		t.Errorf("crew_member_kept = %v", rec)
 	}
 }
@@ -389,7 +388,7 @@ func TestKeepingAnAdHocMemberIsRefusedWith409AndWritesNothingWhenItCannotBeKeptA
 		notes []map[string]any
 	}{
 		"a fleet member of that name exists": {func(r *crewRig) {
-			if err := os.WriteFile(filepath.Join(crewDirOf(r.home), "scout.md"), []byte("---\nname: scout\nrole: scout\npick-me-when: x\n---\n\nHand made.\n"), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(crewDirOf(r.home), "scout.md"), []byte("---\nname: scout\nrole: scout\nbased-on: implementer\npick-me-when: x\n---\n\nHand made.\n"), 0o600); err != nil {
 				r.t.Fatal(err)
 			}
 		}, nil},
@@ -494,5 +493,26 @@ func TestRemovingACrewItemFromTheInboxCountsAsDroppingIt(t *testing.T) {
 	}
 	if seen["crew_note_dropped"] != 3 || seen["crew_member_dropped"] != 1 || seen["item_removed"] != 0 {
 		t.Errorf("records = %v, want 3 crew_note_dropped, 1 crew_member_dropped and no item_removed", seen)
+	}
+}
+
+func TestAMemberItemOfAFleetThatIsNoLongerConfiguredRefusesKeepAndDropWithAConflict(t *testing.T) {
+	for _, decision := range []string{"keep", "drop"} {
+		t.Run(decision, func(t *testing.T) {
+			r := newCrewRig(t)
+			r.seedMember([]map[string]any{crewNote("n1", "scout", "fleet", "", "the map lives in docs", nil)})
+			r.s.Fleet = func(string) (inbox.FleetInfo, bool) { return inbox.FleetInfo{}, false }
+			code, body := r.answerMember("crew-member-0123456789abcdef", decision)
+			if code != 409 {
+				t.Errorf("answer = %d %v, want 409", code, body)
+			}
+			if _, err := os.Stat(r.adHocPath()); err != nil {
+				t.Errorf("the ad hoc file was touched: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(crewDirOf(r.home), "scout.md")); !os.IsNotExist(err) {
+				t.Errorf("a fleet member was written: %v", err)
+			}
+			r.assertUnanswered("crew-member-0123456789abcdef")
+		})
 	}
 }

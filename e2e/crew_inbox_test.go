@@ -11,7 +11,7 @@ import (
 )
 
 func sprintAdHoc(name, run string) string {
-	return "---\nname: " + name + "\nrole: scout\npick-me-when: a run needs a map\nad-hoc: true\nad-hoc-run: \"" + run + "\"\n---\n\nMap it.\n"
+	return "---\nname: " + name + "\nrole: scout\nbased-on: implementer\npick-me-when: a run needs a map\nad-hoc: true\nad-hoc-run: \"" + run + "\"\n---\n\nMap it.\n"
 }
 
 func sleep50() { time.Sleep(50 * time.Millisecond) }
@@ -28,7 +28,6 @@ func TestCrewItemsFromAReportAreWrittenToTheFleetOnlyWhenAnswered(t *testing.T) 
 	if crewDir == "" {
 		t.Fatal("the ship's env has no ADMIRAL_CREW_DIR")
 	}
-	// The run id source is an open question in the u3 report: this test assumes a top-level "run" field in the report.
 	const runID = "e2e-run-1"
 	adHoc := filepath.Join(crewDir, "ad-hoc")
 	if err := os.MkdirAll(adHoc, 0o700); err != nil {
@@ -47,7 +46,6 @@ func TestCrewItemsFromAReportAreWrittenToTheFleetOnlyWhenAnswered(t *testing.T) 
 		return map[string]any{"member": member, "role": "implementer", "scope": scope, "repo": r, "note": text, "replaces": nil, "ad-hoc": adHoc}
 	}
 	report, _ := json.Marshal(map[string]any{"version": 2, "result": "done", "why": "ok",
-		"run":  runID,
 		"cast": []any{map[string]any{"member": "scout", "role": "scout", "ad_hoc": true}, map[string]any{"member": "mapper", "role": "scout", "ad_hoc": true}},
 		"notes": []any{
 			note("bosun", "fleet", "", "the build needs make", false),

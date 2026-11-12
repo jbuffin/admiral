@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	adHocDefinition = "---\nname: scout\nrole: scout\npick-me-when: a run needs a map of the repo\nad-hoc: true\nad-hoc-run: \"run-a\"\n---\n\nMap the repo.\n"
+	adHocDefinition = "---\nname: scout\nrole: scout\nbased-on: implementer\npick-me-when: a run needs a map of the repo\nad-hoc: true\nad-hoc-run: \"run-a\"\n---\n\nMap the repo.\n"
 	longNote        = "x"
 )
 
@@ -39,7 +39,7 @@ func putAdHoc(t *testing.T, home, name, text string) string {
 
 func crewRun(home string) inbox.CrewRun {
 	return inbox.CrewRun{Home: home, FleetKey: "work", Fleets: workFleet, Ship: "Saltpaw", Session: "saltpaw",
-		Launched: "2026-11-10T09:00:00Z", RunID: "run-a", RunDate: "2026-11-10"}
+		Launched: "2026-11-10T09:00:00Z", RunDate: "2026-11-10"}
 }
 
 func reportOf(extra map[string]any) []byte {
@@ -276,15 +276,12 @@ func TestNoItemIsWrittenWhenThereIsNothingToProposeOrNoFleetToProposeTo(t *testi
 	}
 }
 
-func TestAnAdHocMemberThatIsNotThisRunsGetsNoItemAndItsNotesAreDropped(t *testing.T) {
+func TestAnAdHocMemberWithoutAUsableFileGetsNoItemAndItsNotesAreDropped(t *testing.T) {
 	report := reportOf(map[string]any{"notes": []any{
 		noteOf("scout", "scout", "fleet", "", "the map lives in docs", nil, true),
 		noteOf("bosun", "implementer", "fleet", "", "the build needs make", nil, false),
 	}})
 	for name, setup := range map[string]func(t *testing.T, home string){
-		"another run's file": func(t *testing.T, home string) {
-			putAdHoc(t, home, "scout", strings.Replace(adHocDefinition, `"run-a"`, `"run-b"`, 1))
-		},
 		"a symlink": func(t *testing.T, home string) {
 			real := filepath.Join(t.TempDir(), "scout.md")
 			if err := os.WriteFile(real, []byte(adHocDefinition), 0o600); err != nil {

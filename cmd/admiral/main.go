@@ -351,6 +351,10 @@ func serve(args []string) error {
 	}}
 	// A ship still afloat reads its answers itself: its resume text is typed at
 	// its prompt once its turn has ended, and no order launches a second ship.
+	inboxService.Fleet = func(key string) (inbox.FleetInfo, bool) {
+		f, ok := cfg.Current().Fleet(key)
+		return inbox.FleetInfo{Key: f.Key, Name: f.Name, Color: f.Color}, ok
+	}
 	inboxService.Afloat = func(session string) bool {
 		sh, ok := shipService.Get(session)
 		return ok && (sh.Status == ships.StatusUnderway || sh.Status == ships.StatusNeedsYou)

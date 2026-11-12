@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -43,44 +42,11 @@ type LaunchProposalFunc func(ctx context.Context, p WakeProposal) (ship any, sta
 
 // WriteWakeProposal writes the item once: an item or answer already there for id is left as it is.
 func WriteWakeProposal(home, id string, p WakeProposal) error {
-	if !idPattern.MatchString(id) {
-		return fmt.Errorf("inbox: %q is not an item id", id)
-	}
-	dir := filepath.Join(home, "inbox", AdmiralSession)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	if _, err := os.Lstat(filepath.Join(dir, answerName(id))); err == nil {
-		return nil
-	}
-	b, err := json.Marshal(map[string]any{
-		"version":        1,
-		"id":             id,
+	return publishAdmiralItem(home, id, map[string]any{
 		"kind":           KindWakeProposal,
 		"title":          "Wake " + p.Ship + " for @" + p.Login + "'s review?",
-		"created":        time.Now().UTC().Format(time.RFC3339),
 		KindWakeProposal: p,
 	})
-	if err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, ".wake-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	_, err = tmp.Write(b)
-	if cerr := tmp.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		return err
-	}
-	// A link fails when the item exists, so an item is never replaced.
-	if err := os.Link(tmp.Name(), filepath.Join(dir, id+".json")); err != nil && !errors.Is(err, fs.ErrExist) {
-		return err
-	}
-	return nil
 }
 
 // refusedError is the launch hook's refusal, with the status the route answers.
