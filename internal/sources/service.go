@@ -114,7 +114,7 @@ func (s *Service) View() []SourceView {
 		for _, p := range st.panels {
 			orders := make([]Order, 0, len(p.Orders))
 			for _, o := range p.Orders {
-				if (!hidden[ships.OrderKey{Source: st.def.Key, OrderID: o.ID}] || carried[ships.OrderKey{Source: st.def.Key, OrderID: o.ID}][prKey(o.URL)]) && !(held[claimKey(o.URL)] != "") {
+				if (!hidden[ships.OrderKey{Source: st.def.Key, OrderID: o.ID}] || (o.PR != nil && carried[ships.OrderKey{Source: st.def.Key, OrderID: o.ID}][prKey(o.URL)])) && !(held[claimKey(o.URL)] != "") {
 					orders = append(orders, o)
 				}
 			}

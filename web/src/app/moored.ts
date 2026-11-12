@@ -72,6 +72,7 @@ export function carryingShip(ships: Ship[], orderUrl: string): Ship | undefined 
 
 /** What the first open PR that is not ready waits on: the first of conflicts, failing checks, requested changes, pending checks, a missing review. */
 function prStep(prs: MooredPR[]): string {
+  // A merged or closed layer waits on nothing, so it is skipped.
   const layer = prs.find((p) => p.state === 'OPEN' && !p.ready);
   if (!layer) return '';
   if (layer.conflicts || layer.mergeable === 'CONFLICTING') return 'Has conflicts';

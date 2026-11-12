@@ -1486,6 +1486,9 @@ export async function myPRsMergeACarriedPR(page: Page, a: Admiral, opts: { phone
     .poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status ?? 'gone', { timeout: 30_000 })
     .not.toBe('moored');
   expect(mergeCalls(a), 'one merge').toHaveLength(1);
+  // Whether the row stays or the refresh removes it, a merged PR is never offered for launch.
+  await expect(row.getByRole('button', { name: /^Launch|^Merge/ })).toHaveCount(0);
+  if (await row.isVisible()) await expect(row).toContainText('Merged');
 }
 
 /** A PR a ship carries that is not ready: its row has the chips, the ship and a next step that is not Ready to merge, and offers no Merge and no Launch. */

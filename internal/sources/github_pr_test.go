@@ -132,3 +132,25 @@ func TestViewKeepsAnOrderVisibleWhileItsShipIsMooredOnThatPRAndHidesItWhileTheSh
 		})
 	}
 }
+
+func TestViewKeepsHidingAnOrderWithNoPRStateEvenWhileItsShipIsMooredOnItsURL(t *testing.T) {
+	g := newFakeGH(t)
+	g.token("", "fake-token-default-1")
+	const bare = "https://github.com/acme/widgets/pull/21"
+	// A pull request node without the state fields gives an order with no pr.
+	node := fmt.Sprintf(`{"number":21,"title":"Bare PR","url":%q,"repository":{"nameWithOwner":"acme/widgets","url":"https://github.com/acme/widgets"},"labels":{"nodes":[]}}`, bare)
+	issue := `{"number":13,"title":"An issue","url":"https://github.com/acme/widgets/issues/13","repository":{"nameWithOwner":"acme/widgets","url":"https://github.com/acme/widgets"},"labels":{"nodes":[]},"subIssuesSummary":{"total":0}}`
+	g.write("search/bugs.match", "label:bug")
+	g.write("search/bugs.json", `{"data":{"search":{"nodes":[`+node+`,`+issue+`]}}}`)
+	ship := ships.Ship{Name: "calm-otter", Source: "gha", OrderID: "acme/widgets#21", Status: ships.StatusMoored, PRs: []moor.PR{{URL: bare, State: "OPEN"}}}
+
+	f := newServiceFixture(t, ghConfig(campaignFleet, campaignSource))
+	f.Svc.Ships = func() []ships.Ship { return []ships.Ship{ship} }
+	f.startSources()
+	src := f.waitView("gha", "the issue", func(s SourceView) bool { return len(s.orders("bugs")) > 0 })
+	for _, id := range src.orders("bugs") {
+		if id == "acme/widgets#21" {
+			t.Errorf("bugs view = %v: an order with no pr stays hidden while its ship is moored", src.orders("bugs"))
+		}
+	}
+}

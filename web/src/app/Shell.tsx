@@ -172,7 +172,7 @@ function OrderRow({ order: o, source, onLaunch, onFollowError }: { order: Order;
     <li class="order-row">
       <span class="mono order-id">{o.id}</span>
       <span class="order-title">{o.title}</span>
-      {ship ? null : (
+      {ship || merged ? null : (
         <button type="button" class="btn" aria-label={o.pr ? undefined : `Launch ${o.title}`} onClick={launch}>
           {o.pr ? 'Launch Commodore' : 'Launch'}
         </button>
@@ -207,12 +207,10 @@ function OrderRow({ order: o, source, onLaunch, onFollowError }: { order: Order;
           ) : null}
         </div>
       ) : null}
-      {ship?.stack_ready ? (
-        merged ? (
-          <p class="line">Merged</p>
-        ) : (
-          <MergeControl ship={ship} onMerged={() => setMerged(true)} onError={setError} />
-        )
+      {merged ? (
+        <p class="line">Merged</p>
+      ) : ship?.stack_ready ? (
+        <MergeControl ship={ship} onMerged={() => setMerged(true)} onError={setError} />
       ) : null}
       <Failure message={error} />
     </li>
