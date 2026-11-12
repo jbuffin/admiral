@@ -646,10 +646,14 @@ test("a chat question withdrawn while its Peek is open stays open on a plain not
   const peek = peekOf(page);
   await peek.getByRole('radio', { name: 'Freeform' }).tap();
 
-  // The question is withdrawn behind Peek's back, as New chat does. The Inbox push and a Send both end on this notice.
+  // The question is withdrawn behind Peek's back, as New chat does. Whether the Inbox push or a Send finds it first, Peek ends on this notice.
   rmSync(join(admiral.home, 'chat', 'harbor', 'questions', 'q1.json'));
-  await expect(peek.getByRole('alert')).toHaveText('AdmiralBot withdrew this question.', { timeout: 15_000 });
-  await expect(peek.getByRole('button', { name: 'Send answers' })).toBeDisabled();
+  const send = peek.getByRole('button', { name: 'Send answers' });
+  await expect(async () => {
+    if (await send.isEnabled()) await send.tap();
+    await expect(peek.getByRole('alert')).toHaveText('AdmiralBot withdrew this question.', { timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+  await expect(send).toBeDisabled();
   await expect(peek).not.toContainText('_chat');
   expect(chatAnswerFile(admiral, 'harbor', 'q1')).toBeUndefined();
 
