@@ -38,6 +38,17 @@ type Remote struct {
 	AllowedLogins []string
 }
 
+// Allowing returns r with the mode on when on is set (it never turns off) and each login added once; blanks are skipped.
+func (r Remote) Allowing(on bool, logins ...string) Remote {
+	out := Remote{Tailscale: r.Tailscale || on, AllowedLogins: slices.Clone(r.AllowedLogins)}
+	for _, l := range logins {
+		if l != "" && !slices.Contains(out.AllowedLogins, l) {
+			out.AllowedLogins = append(out.AllowedLogins, l)
+		}
+	}
+	return out
+}
+
 // Chat's Effort is empty for the harness default, which config.json leaves out.
 type Chat struct {
 	Fleet  string
