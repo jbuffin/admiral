@@ -3,10 +3,13 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -653,5 +656,29 @@ func TestTheClientDoesNotFollowARedirectWithTheToken(t *testing.T) {
 	}
 	if tr := result(t, replies, "1"); !tr.IsError {
 		t.Errorf("result = %+v, want a tool error for the 3xx", tr)
+	}
+}
+
+func TestTheTokenFileIsReadAndTrimmedAndAMissingOneRefusesToStart(t *testing.T) {
+	a := newStandIn(t, nil)
+	a.env(t, "")
+	file := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(file, []byte(mcpToken+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ADMIRAL_ACTOR_TOKEN_FILE", file)
+	if _, _, err := serve(t, call(1, "list_ships", `{}`)); err != nil {
+		t.Fatalf("with a token file: %v", err)
+	}
+	reqs := a.requests()
+	if len(reqs) != 1 || reqs[0].Actor != mcpToken {
+		t.Errorf("requests = %+v, want one carrying the file's token without its newline", reqs)
+	}
+
+	t.Setenv("ADMIRAL_ACTOR_TOKEN_FILE", filepath.Join(t.TempDir(), "missing"))
+	_, _, err := serve(t, rpc(1, "initialize", ""))
+	var ue *UsageError
+	if !errors.As(err, &ue) {
+		t.Errorf("a missing token file returned %v, want a usage error (exit 2)", err)
 	}
 }
