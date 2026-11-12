@@ -150,12 +150,13 @@ func pairingBase(port string) string {
 	return "http://127.0.0.1:" + port
 }
 
-// listenAddr: an explicit --listen always wins; otherwise Tailscale mode keeps Admiral off the LAN.
-func listenAddr(explicit string, cfg *config.Config) string {
+// listenAddr: an explicit --listen always wins; otherwise Tailscale mode keeps Admiral off the LAN,
+// and so does a config that couldn't be read, since it may have turned the mode on.
+func listenAddr(explicit string, cfg *config.Config, unreadable bool) string {
 	switch {
 	case explicit != "":
 		return explicit
-	case cfg.Remote.Tailscale:
+	case unreadable || cfg.Remote.Tailscale:
 		return "127.0.0.1:7420"
 	}
 	return "0.0.0.0:7420"
@@ -196,7 +197,11 @@ func serve(args []string) error {
 			return err
 		}
 	}
-	listenOn := listenAddr(*listen, cfg.Current())
+	unreadable := cfg.View().Error != nil
+	if unreadable && *listen == "" {
+		fmt.Fprintln(os.Stderr, "admiral: config.json couldn't be read, so Admiral listens on loopback only (127.0.0.1)")
+	}
+	listenOn := listenAddr(*listen, cfg.Current(), unreadable)
 	ln, err := net.Listen("tcp", listenOn)
 	if err != nil {
 		return err
@@ -384,6 +389,7 @@ func serve(args []string) error {
 		for {
 			select {
 			case <-configChanges:
+				guard.EnforceRemote()
 				sourceService.Notify()
 				resourceSet.Refresh()
 				resourceSet.Wake()

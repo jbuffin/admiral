@@ -60,6 +60,19 @@ func (a *Auth) route(r *http.Request) route {
 	return route{kind: pathNone}
 }
 
+// EnforceRemote ends every open tailnet socket the remote settings no longer allow: all of
+// them with the mode off, else those whose login left the allowlist. Call it when the config changes.
+func (a *Auth) EnforceRemote() {
+	on, logins := a.remote()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for s := range a.socks {
+		if s.login != "" && !(on && slices.Contains(logins, s.login)) {
+			s.cancel()
+		}
+	}
+}
+
 // IsLocal reports whether the request comes from this Mac itself: a loopback peer,
 // no proxy headers, and a Host that is one of this machine's own names.
 func IsLocal(r *http.Request) bool { return classify(r).kind == pathLocal }
@@ -120,7 +133,7 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 				unauthorized(w, r)
 				return
 			}
-			a.serve(w, r, next, isWS, id)
+			a.serve(w, r, next, isWS, id, rt.login)
 			return
 		}
 		if c, err := r.Cookie(a.cookie); err == nil {
@@ -132,7 +145,7 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 				if a.shouldReissue(id) {
 					a.setCookie(w, r, c.Value)
 				}
-				a.serve(w, r, next, isWS, id)
+				a.serve(w, r, next, isWS, id, rt.login)
 				return
 			}
 		}
@@ -148,10 +161,10 @@ func bearerToken(r *http.Request) (string, bool) {
 	return "", false
 }
 
-func (a *Auth) serve(w http.ResponseWriter, r *http.Request, next http.Handler, isWS bool, id string) {
+func (a *Auth) serve(w http.ResponseWriter, r *http.Request, next http.Handler, isWS bool, id, login string) {
 	r = r.WithContext(context.WithValue(r.Context(), ctxKey{}, id))
 	if isWS {
-		a.track(w, r, next, id)
+		a.track(w, r, next, id, login)
 		return
 	}
 	next.ServeHTTP(w, r)
@@ -159,7 +172,7 @@ func (a *Auth) serve(w http.ResponseWriter, r *http.Request, next http.Handler, 
 
 // The bridge's sockets end too: their handlers read with the request's context,
 // which is cancelled when the device is revoked.
-func (a *Auth) track(w http.ResponseWriter, r *http.Request, next http.Handler, id string) {
+func (a *Auth) track(w http.ResponseWriter, r *http.Request, next http.Handler, id, login string) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	a.mu.Lock()
@@ -168,7 +181,7 @@ func (a *Auth) track(w http.ResponseWriter, r *http.Request, next http.Handler, 
 		unauthorized(w, r)
 		return
 	}
-	s := &socket{device: id, cancel: cancel}
+	s := &socket{device: id, login: login, cancel: cancel}
 	a.socks[s] = struct{}{}
 	a.mu.Unlock()
 	defer func() {

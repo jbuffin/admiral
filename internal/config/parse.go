@@ -226,6 +226,10 @@ func parseRemote(raw json.RawMessage) (Remote, error) {
 			if r.AllowedLogins, err = stringList(p, m.raw); err != nil {
 				return Remote{}, err
 			}
+			// Trimmed like the request's login, so a hand-padded entry still matches.
+			for i, l := range r.AllowedLogins {
+				r.AllowedLogins[i] = strings.TrimSpace(l)
+			}
 		default:
 			return Remote{}, fmt.Errorf("%s: unknown key", p)
 		}

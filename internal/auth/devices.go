@@ -36,6 +36,7 @@ type device struct {
 
 type socket struct {
 	device string
+	login  string // the tailnet login it came in under; empty on the LAN
 	cancel context.CancelFunc
 }
 

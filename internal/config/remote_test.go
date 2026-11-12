@@ -28,6 +28,16 @@ func TestParseRemote(t *testing.T) {
 	}
 }
 
+func TestParseRemoteTrimsLogins(t *testing.T) {
+	cfg, err := Parse([]byte(`{` + remoteFleets + `,"remote":{"allowedLogins":["  alice@example.com "]}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(cfg.Remote.AllowedLogins, []string{"alice@example.com"}) {
+		t.Errorf("logins = %q, want the entry trimmed", cfg.Remote.AllowedLogins)
+	}
+}
+
 func TestSetRemoteWritesTheSectionAndLeavesTheRest(t *testing.T) {
 	const orig = `{` + remoteFleets + `,"max_ships":7}`
 	dir := t.TempDir()

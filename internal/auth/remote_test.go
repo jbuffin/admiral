@@ -1,8 +1,15 @@
 package auth_test
 
 import (
+	"context"
+	"errors"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/coder/websocket"
 )
 
 const (
@@ -116,5 +123,68 @@ func TestLoginIsTrimmedOnceForEveryUse(t *testing.T) {
 	}
 	if seen != alice {
 		t.Errorf("the recorded login is %q, want %q", seen, alice)
+	}
+}
+
+// The peer address is forged and the proxy header set per request, as a tailscale serve hop would.
+func TestConfigChangeEndsTailnetSockets(t *testing.T) {
+	g := newRig(t)
+	g.allow("alice@example.com", "bob@example.com")
+	alice, bob := g.pairTail("alice@example.com"), g.pairTail("bob@example.com")
+
+	mux := http.NewServeMux()
+	g.a.Routes(mux)
+	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer c.CloseNow()
+		for {
+			if _, _, err := c.Read(r.Context()); err != nil {
+				return
+			}
+		}
+	})
+	guarded := g.a.Middleware(mux)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.RemoteAddr = loopback
+		r.Host = tsHost
+		guarded.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	dial := func(token, login string) *websocket.Conn {
+		t.Helper()
+		c, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/ws", &websocket.DialOptions{HTTPHeader: http.Header{
+			"Authorization": {"Bearer " + token}, "Tailscale-User-Login": {login}, "X-Forwarded-For": {"100.64.0.9"}}})
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		return c
+	}
+	a, b := dial(alice, "alice@example.com"), dial(bob, "bob@example.com")
+
+	g.allow("bob@example.com")
+	g.a.EnforceRemote()
+	readCtx, stop := context.WithTimeout(ctx, 3*time.Second)
+	defer stop()
+	if _, _, err := a.Read(readCtx); err == nil || readCtx.Err() != nil {
+		t.Fatalf("the removed login's socket should end at once, got %v", err)
+	}
+	keptCtx, stopKept := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer stopKept()
+	if _, _, err := b.Read(keptCtx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a socket whose login is still allowed ended: %v", err)
+	}
+
+	g.setMode(false)
+	g.a.EnforceRemote()
+	offCtx, stopOff := context.WithTimeout(ctx, 3*time.Second)
+	defer stopOff()
+	if _, _, err := b.Read(offCtx); err == nil || offCtx.Err() != nil {
+		t.Fatalf("turning the mode off should end every tailnet socket, got %v", err)
 	}
 }
