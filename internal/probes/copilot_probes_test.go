@@ -11,6 +11,7 @@ import (
 
 	"github.com/jbuffin/admiral/internal/capabilities"
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/probes"
 )
 
@@ -387,6 +388,23 @@ func TestTheCopilotProbesAreRegisteredWithTheDefaultProbes(t *testing.T) {
 		}
 		if !capabilities.Open(c.home).Proven("work", "copilot", id) {
 			t.Errorf("copilot %s is not stored as proven", id)
+		}
+	}
+}
+
+func TestCopilotFenceProbeRunsWithEveryFlagOfTheSharedFenceTable(t *testing.T) {
+	fence := launcher.CopilotFenceArgs("probe")
+	if len(fence) == 0 {
+		t.Fatal("launcher.CopilotFenceArgs(probe) is empty: the fence is one table the chat and the probes share")
+	}
+	c := runCopilotProbe(t, probes.CopilotMCPFence(), "pass", copilotProbeOpts{})
+	if l := c.line(t, capabilities.BotMCPFence); l.Status != capabilities.Passed {
+		t.Fatalf("line = %+v, want passed", l)
+	}
+	argv := c.argv(t)
+	for _, a := range fence {
+		if !slices.Contains(argv, a) {
+			t.Errorf("argv %q lacks %q from the shared fence table", argv, a)
 		}
 	}
 }

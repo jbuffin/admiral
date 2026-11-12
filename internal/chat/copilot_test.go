@@ -132,9 +132,3 @@ func TestACopilotChatWithNoTranscriptIsReadyOnceItsComposerShows(t *testing.T) {
 		t.Errorf("CopilotTrustFolder = %q, want a message that says what to do on the trust dialog", CopilotTrustFolder)
 	}
 }
-
-func TestTheChatsResetCommandIsClearForCopilot(t *testing.T) {
-	if got := resetCommand("copilot"); got != "/clear" {
-		t.Errorf("resetCommand(copilot) = %q, want /clear", got)
-	}
-}

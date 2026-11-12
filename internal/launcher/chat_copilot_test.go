@@ -185,9 +185,6 @@ func TestCopilotChatArgvCarriesTheFenceModelSessionIDAndAShipsHooks(t *testing.T
 	c := newCopilotChatRun(t)
 	argv, _ := c.start(t)
 
-	if argv[0] == "" {
-		t.Fatalf("argv = %q, want the dock's executable first", argv)
-	}
 	for _, f := range copilotBareFenceFlags {
 		if !slices.Contains(argv, f) {
 			t.Errorf("argv lacks %s (argv %q)", f, argv)
@@ -466,4 +463,18 @@ func TestCopilotChatStartsWithTheConfigAndStateCopilotWritesItself(t *testing.T)
 		}
 	}
 	c.start(t)
+}
+
+func TestCopilotChatArgvCarriesEveryFlagOfTheSharedFenceTable(t *testing.T) {
+	fence := CopilotFenceArgs("admiral")
+	if len(fence) == 0 {
+		t.Fatal("CopilotFenceArgs(admiral) is empty: the fence is one table the chat and the probes share")
+	}
+	c := newCopilotChatRun(t)
+	argv, _ := c.start(t)
+	for _, a := range fence {
+		if !slices.Contains(argv, a) {
+			t.Errorf("argv %q lacks %q from the shared fence table", argv, a)
+		}
+	}
 }

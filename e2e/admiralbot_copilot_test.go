@@ -197,8 +197,22 @@ func TestAdmiralBot_CopilotChatStartsOnlyOnceBothProbesPassAndIsFenced(t *testin
 		if got["fleet"] != "chat" || got["harness"] != "copilot" {
 			t.Errorf("the chat's usage record = %v, want fleet chat and harness copilot", got)
 		}
-		c.waitSession(15*time.Second, "an empty conversation after /clear", func(s chatSession) bool {
-			return !slices.Contains(texts(s.Messages), "user: Which ships are at anchor?")
+		// The reply to a message sent after /clear can only come from the new session's transcript.
+		var code int
+		var body string
+		for end := time.Now().Add(15 * time.Second); ; time.Sleep(100 * time.Millisecond) {
+			code, body = send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/messages", map[string]any{"text": "And the harbours?"})
+			if code != http.StatusConflict || time.Now().After(end) {
+				break
+			}
+		}
+		if code != http.StatusOK {
+			t.Fatalf("POST /api/chat/chat/messages after /clear = %d, want 200: %s", code, body)
+		}
+		c.waitSession(15*time.Second, "only the new session's exchange after /clear", func(s chatSession) bool {
+			m := texts(s.Messages)
+			return slices.Contains(m, "user: And the harbours?") && slices.Contains(m, "assistant: Two ships are at anchor.") &&
+				!slices.Contains(m, "user: Which ships are at anchor?")
 		})
 	})
 }
