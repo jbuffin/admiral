@@ -21,14 +21,19 @@ export function reloadDecision(stamp: Build | null, server: Build, guard: string
 
 const GUARD_KEY = 'admiral-reloaded-for';
 
+/** The build the server runs, or null on anything but a 200: /api/version stays behind auth, so a 401 is no check. */
+export async function fetchServerBuild(): Promise<Build | null> {
+  const res = await fetch('/api/version', { cache: 'no-store' });
+  return res.status === 200 ? ((await res.json()) as Build) : null;
+}
+
 /** Asks the server which build it runs and reloads the shell once when it is not the shell's own. */
 export async function checkBuild(): Promise<void> {
   const stamp = parseBuildStamp(document.querySelector('meta[name="admiral-build"]')?.getAttribute('content') ?? null);
   if (!stamp) return;
   try {
-    const res = await fetch('/api/version', { cache: 'no-store' });
-    if (!res.ok) return;
-    const server = (await res.json()) as Build;
+    const server = await fetchServerBuild();
+    if (!server) return;
     const d = reloadDecision(stamp, server, sessionStorage.getItem(GUARD_KEY));
     if (d.guard === null) sessionStorage.removeItem(GUARD_KEY);
     else sessionStorage.setItem(GUARD_KEY, d.guard);

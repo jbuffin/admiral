@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { parseBuildStamp, reloadDecision } from './buildCheck';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fetchServerBuild, parseBuildStamp, reloadDecision } from './buildCheck';
 
 const built = { version: '1.4.0', commit: 'abc1234' };
 
@@ -46,5 +46,18 @@ describe('reloadDecision', () => {
     const matched = reloadDecision(built, built, first.guard);
     expect(matched).toEqual({ reload: false, guard: null });
     expect(reloadDecision(built, { version: '1.5.0', commit: 'def5678' }, matched.guard).reload).toBe(true);
+  });
+});
+
+describe('fetchServerBuild', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('reads the build from a 200 and makes no check from any other status', async () => {
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ ...built, api_versions: [1] }), { status: 200 }));
+    expect(await fetchServerBuild()).toMatchObject(built);
+    for (const status of [401, 403, 404, 500]) {
+      vi.stubGlobal('fetch', async () => new Response('{"error":"unauthorized"}', { status }));
+      expect(await fetchServerBuild(), String(status)).toBeNull();
+    }
   });
 });
