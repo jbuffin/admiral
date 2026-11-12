@@ -463,7 +463,7 @@ The sum of the ship's `usage` records from its first launch on (one for each rou
 
 ## Routines and Hold fire
 
-A fleet's routines, their trigger log and Hold fire. A save is checked before it is stored; every route is also served under `/api/v1/`. Every error is `{"error": "…"}`: 404 for an unknown fleet or routine, 400 for a body that isn't a routine or fails a check, 403 for AdmiralBot turning Hold fire off. AdmiralBot's actor gets 403 on all of these routes until the guard allows a path.
+A fleet's routines, their trigger log and Hold fire. A save is checked before it is stored; every route is also served under `/api/v1/`. Every error is `{"error": "…"}`: 404 for an unknown fleet or routine, 400 for a body that isn't a routine or fails a check, 403 for AdmiralBot turning Hold fire off. AdmiralBot's actor may read routines, read Hold fire, turn a routine off and turn Hold fire on (see "AdmiralBot's requests"); every other route here is 403 for it.
 
 A routine:
 
@@ -473,6 +473,8 @@ A routine:
  "before_acting": "ask_first", "notify": true, "created_at": "2026-11-12T08:00:00Z", "updated_at": "2026-11-12T08:00:00Z"}
 ```
 
+- `name` is at most 80 characters, with no control characters and no `[` or `]` (400 otherwise, on create and update).
+- `off_by` is set by the server when a routine is turned off: `"admiralbot"` when AdmiralBot turned it off. Turning it on clears it, an update keeps it, and a routine the engineer turned off has none.
 - `when` is a standard 5-field cron expression (`*`, lists, ranges, steps, month and weekday names) in the server's local time zone, and it must fire at some time in the next five years (`0 0 30 2 *` is refused). A fixed hour runs once on the day clocks go back, not in the repeated hour, and a fixed time the spring-forward gap skips (`30 2 * * *`) runs once at the first instant after the gap, as Vixie cron does; a wildcard hour (`30 * * * *`) runs in every hour that exists.
 - `do` is either `launch` (the launch form's fields, plus `args`, extra harness args the form has no field for) or `prompt` (an AdmiralBot prompt), never both. A launch is refused unless the fleet has the dock, the harness's autopilot guard and the fleet's advisor are proven, and `args` pass the autopilot args allowlist. `resources` names resources the config has (refused otherwise) that the ship holds while it is underway or needs you, and `skill` is the launch form's `{"kind", "name"}` (empty means just launch); both are checked on save and again when the run fires.
 - `before_acting` is `report_only`, `ask_first` or `act`. While Hold fire is on, `act` runs as `ask_first`; the stored value doesn't change.
@@ -495,7 +497,7 @@ Replaces the routine with the body, keeping `id` and `created_at`. `200` with th
 
 ### `POST /api/fleets/<key>/routines/<id>/on` and `…/off`
 
-Flips `enabled` and nothing else, and isn't checked again. `200` with the routine. Each direction has its own path so the actor guard can allow one.
+Flips `enabled` and nothing else, and isn't checked again. A turn-off by AdmiralBot sets `off_by` to its `via`; the engineer's leaves it empty. `200` with the routine. Each direction has its own path so the actor guard can allow one.
 
 ### `GET /api/fleets/<key>/routines/<id>/runs[?limit=<n>]`
 
@@ -512,6 +514,14 @@ The routine's trigger-log records, newest first (default 20): `{"runs": [{"id", 
 ### `GET /api/hold-fire`, `POST /api/hold-fire/on` and `…/off`
 
 The all-fleets switch: `{"on": true, "by": "engineer", "at": "…"}`.
+
+### Routine proposals and Notify me
+
+An Ask first run (or an `act` run while Hold fire is on) writes an Inbox item in Admiral's own inbox: `kind: "routine_proposal"`, id `routine-<fleet>-<trigger id>`, `fleet` set so a fleet's list shows it, and a `routine_proposal` object `{"fleet", "routine", "routine_name", "trigger", "action", "expires_at"}`. `expires_at` is the routine's next run or 24 h, whichever is first; the list drops an expired item. A newer proposal for the same routine closes the older one, and either's expiry writes a `skipped` trigger record.
+
+`POST /api/inbox/_admiral/<id>/launch` runs the routine once under the same gates and key as a scheduled run (its trigger record has `via: "proposal"`) and answers `201 {"ship": {"session": …}}`; a prompt routine sends its prompt instead. It never waits: with no room or a ship holding the routine's key it answers 409 and leaves the item open. After `expires_at` it answers 410 and runs nothing; a second press answers 409. `POST /api/inbox/_admiral/<id>/dismiss` answers 204.
+
+A routine with Notify me on pushes `launched` (a tap opens the ship), `failed`, `breaker` and `proposed` (a tap opens the proposal's Peek). `skipped`, `missed` and `reported` push nothing. The fleet's Notify switch and the watched-window rule apply as for any push.
 
 ## Harness capabilities
 
@@ -608,6 +618,7 @@ Revoke one device or all of them; 204, or 404 for an unknown id. The device's to
 A fleet's chat calls Admiral with its actor token in the `X-Admiral-Actor` header. The token is `HMAC-SHA256(secret, fleet + "\n" + nonce)`: the secret is a random key in `$ADMIRAL_HOME/actor-secret` (mode 0600) and the nonce is minted per chat session and kept in the tmux session option `@admiral-chat-nonce`, so a token survives an Admiral restart while its chat lives and is new with each chat session. The token is never logged and never put in a command line or a file.
 
 - A request with no header is the engineer's own and is unchanged. A valid token on a loopback request makes it AdmiralBot's for that fleet; an unknown or stale token is 401. A request off loopback is refused: 401 without a device cookie (the auth layer answers first), 403 with one.
+- AdmiralBot may also call `GET /api/fleets/<fleet>/routines`, `GET /api/fleets/<fleet>/hold-fire`, `POST /api/fleets/<fleet>/routines/<id>/off`, `POST /api/fleets/<fleet>/hold-fire/on`, `GET /api/hold-fire` and `POST /api/hold-fire/on`; the `<fleet>` must be its own (403 otherwise). Turning a routine on, turning Hold fire off, and saving, editing or deleting a routine stay 403.
 - AdmiralBot may call only: `GET /api/ships`, `GET /api/ships/<ship>/conversation`, `GET /api/inbox`, `GET /api/sources`, `GET /api/campaigns`, `GET /api/campaigns/<id>`, `POST /api/ships`, `POST /api/sources/<key>/orders`, `POST /api/inbox/<ship>/<id>/answer`, `POST /api/ships/<ship>/stop`, `POST /api/ships/<ship>/dismiss`, `POST /api/ships/<ship>/next`, `POST /api/ships/<ship>/wake`, `GET /api/outcomes`, `POST /api/chat/questions` and `GET /api/chat/questions/<id>/answer`, each also under `/api/v1`. Every other route is 403, and a path that needs cleaning or decoding to match is refused.
 - The list reads (`ships`, `inbox`, `sources`, `campaigns`) hold only the actor's fleet. Touching another fleet's ship, item, source or campaign, or an item or ship of no known fleet, is 403 naming the fleet; a launch must name the actor's fleet and a source of that fleet. A launch body must be one JSON object: data after it is 400 (for the engineer too), and the guard and the handler read the same value. A chat session's own question is the engineer's to answer, so AdmiralBot's answer to an Inbox item of a chat session is 403.
 - `GET /api/outcomes[?ship=<ship>][&limit=<n>]` answers `{"outcomes": [<record>, ...]}`, oldest first, the latest `limit` (default 100, at most 1000; `400` for a bad value) of the month files' records. An actor sees only its fleet's: ship names are reused, so a record's fleet is the `fleet` of the latest `launched` record of its ship before it (read in file order); a record with no such record in the files read takes the fleet of the listed or moored ship that holds the name, unless the files hold a later `launched` record of that name, which hides it; a record of no known fleet is hidden. The fence applies before the limit. A `launched` record of a routine's ship has `trigger: {"fleet", "id"}`, pointing at that routine's trigger-log record.

@@ -63,6 +63,27 @@ function PrLine({ pr }: { pr: ReturnType<typeof prLink> }) {
   );
 }
 
+/** A held routine run: Launch runs it now, Dismiss lets it pass. */
+export function RoutineProposalBody({ entry, acting }: { entry: Entry; acting: Acting }) {
+  const p = entry.item?.routine_proposal;
+  const off = acting.busy || acting.locked;
+  const expires = p?.expires_at ? new Date(p.expires_at) : null;
+  return (
+    <div class="routine-proposal">
+      {p?.action ? <p class="line">{p.action}</p> : null}
+      {expires && !Number.isNaN(expires.getTime()) ? <p class="line">Open until {expires.toLocaleString()}</p> : null}
+      <div class="peek-actions">
+        <button type="button" class="btn primary" disabled={off} onClick={() => void acting.run('launch', {}, () => 'Launched')}>
+          Launch
+        </button>
+        <button type="button" class="btn" disabled={off} onClick={() => void acting.run('dismiss', {}, () => 'Dismissed')}>
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Failure({ message }: { message: string }) {
   return message ? (
     <p class="inbox-error" role="alert">

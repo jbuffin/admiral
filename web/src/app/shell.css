@@ -580,6 +580,7 @@ button.pill { cursor: pointer; min-height: 32px; }
 .peek-fleet { font-size: var(--font-size-meta); color: var(--color-muted); }
 .peek-bridge { flex: none; display: inline-flex; align-items: center; }
 .peek-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.peek-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .peek-form { display: flex; flex-direction: column; gap: 10px; flex: 0 1 auto; min-height: 0; overflow-y: auto; padding-top: 8px; }
 
 /* Question cards, as the old Inbox's, in the shell's tokens. */

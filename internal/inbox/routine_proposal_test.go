@@ -150,8 +150,8 @@ func TestAnExpiredRoutineProposalIsNotListedAndCannotBeLaunched(t *testing.T) {
 		t.Fatalf("items = %v, want only the proposal that has not expired", got)
 	}
 	code, _ := post(t, url+"/api/inbox/_admiral/routine-work-old/launch", `{}`)
-	if code != http.StatusGone && code != http.StatusConflict {
-		t.Errorf("launch after expiry = %d, want 410 or 409", code)
+	if code != http.StatusGone {
+		t.Errorf("launch after expiry = %d, want 410", code)
 	}
 	if l.calls() != 0 {
 		t.Errorf("an expired proposal ran the routine %d times", l.calls())

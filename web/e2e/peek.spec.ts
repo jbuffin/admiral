@@ -709,7 +709,7 @@ test('with Hold fire on, a due routine waits in the Inbox as a proposal, and Lau
   await page.goto(admiral.url + 'app/inbox?fleet=zulu');
   const row = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Held sweep' });
   await expect(row).toBeVisible({ timeout: 120_000 });
-  const shipsNow = async () => ((await (await api('ships')).json()) as unknown[]).length;
+  const shipsNow = async () => ((await (await api('ships')).json()) as { ships: unknown[] }).ships.length;
   expect(await shipsNow()).toBe(0);
 
   await row.getByRole('link').tap();
@@ -739,5 +739,5 @@ test('Dismiss on a routine proposal removes it from the Inbox and starts no ship
   await expect(peekOf(page)).toHaveCount(0);
   await expect(row).toHaveCount(0, { timeout: 15_000 });
   const res = await fetch(`${admiral.url}api/ships`);
-  expect(await res.json()).toEqual([]);
+  expect(((await res.json()) as { ships: unknown[] }).ships).toEqual([]);
 });
