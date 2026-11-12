@@ -171,7 +171,7 @@ func TestTheAnswerPollNeverShowsAnotherFleetsAnswer(t *testing.T) {
 func TestTheAnswerPollRefusesABadIDOrWait(t *testing.T) {
 	r := newAskRig(t)
 	id := r.ask(t, "home")
-	for _, c := range []struct{ id, query string }{{"../etc", "?wait=0"}, {"not-an-id", "?wait=0"}, {id, "?wait=abc"}, {id, "?wait=-1"}} {
+	for _, c := range []struct{ id, query string }{{"..%2Fetc", "?wait=0"}, {"not-an-id", "?wait=0"}, {id, "?wait=abc"}, {id, "?wait=-1"}} {
 		if code, _, body := r.poll(t, c.id, c.query, "home"); code != http.StatusBadRequest {
 			t.Errorf("poll %s%s = %d %s, want 400", c.id, c.query, code, body)
 		}
