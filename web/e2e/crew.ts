@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import type { Admiral } from './fixtures';
+import type { Page } from '@playwright/test';
+import { expect, type Admiral } from './fixtures';
 import { seedFleets, seedInboxItem } from './shell';
 
 const member = (name: string, role: string, pick: string, extra = '') => `---\nname: ${name}\nrole: ${role}\n${extra}pick-me-when: ${pick}\n---\n\nWork as ${name}.\n`;
@@ -21,10 +22,11 @@ export function seedManyBuiltIns(a: Admiral, count: number) {
 
 /**
  * Westwind's crew: built-in scout and lookout under the claude dock's Commodore; fleet members ada (codex), bosun, cook and dory,
- * and a fleet lookout that customizes the built-in one. Call before `start`.
+ * and a fleet lookout that customizes the built-in one. Call before `start`. `claude` replaces zulu's claude dock, as `probeableClaude(a).dock`
+ * does when the page makes judge calls (Add crew); then `proveJudge` once the server is up.
  */
-export function seedCrew(a: Admiral) {
-  seedFleets(a);
+export function seedCrew(a: Admiral, opts: { claude?: { executable: string; env: Record<string, string> } } = {}) {
+  seedFleets(a, { claude: opts.claude });
   const commodore = join(a.home, 'identity', 'zulu-claude', 'skills', 'commodore');
   write(join(commodore, 'SKILL.md'), '---\nname: commodore\ndescription: a fake skill\n---\n');
   write(join(commodore, 'crew', 'scout.md'), member('scout', 'scribe', 'Pick for the log.'));
@@ -62,4 +64,13 @@ export function seedAdHocMember(a: Admiral, member: string, opts: { id: string; 
     crew_member: { fleet: 'zulu', ship: 'Dory', run_date: '2026-11-12', member, role: 'implementer', ad_hoc_run: opts.run, definition, notes: opts.notes },
   });
   return path;
+}
+
+/** Runs zulu's claude checks, as Check again does, so the fleet has a harness proven for judge calls; call after `start`. */
+export async function proveJudge(page: Page, server: string) {
+  const res = await page.request.post(server + 'api/v1/harness-capabilities/check', { data: { fleet: 'zulu', harness: 'claude' } });
+  expect(res.ok()).toBe(true);
+  const caps = await page.request.get(server + 'api/v1/harness-capabilities');
+  const body = (await caps.json()) as { fleets: { key: string; judge: { harness: string | null } }[] };
+  expect(body.fleets.find((f) => f.key === 'zulu')!.judge.harness).toBe('claude');
 }

@@ -1,12 +1,14 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from './fixtures';
-import { seedCrew } from './crew';
-import { watchPage } from './shell';
+import { proveJudge, seedCrew } from './crew';
+import { probeableClaude, watchPage } from './shell';
 
-test('on the iPad, a person reads the crew by layer, customizes a built-in, edits a member and its notes, renames with and without its notes, and deletes an unclaimed note and a member', async ({ page, admiral }) => {
-  seedCrew(admiral);
+test('on the iPad, a person reads the crew by layer, customizes a built-in, edits a member and its notes, renames with and without its notes, deletes an unclaimed note and a member, and adds a member by describing it', async ({ page, admiral }) => {
+  const claude = probeableClaude(admiral);
+  seedCrew(admiral, { claude: claude.dock });
   await admiral.start();
+  await proveJudge(page, admiral.url);
   const watch = watchPage(page, admiral.url);
   const dialogs: string[] = [];
   page.on('dialog', (d) => {
@@ -166,6 +168,50 @@ test('on the iPad, a person reads the crew by layer, customizes a built-in, edit
   await press(page.getByRole('button', { name: 'Confirm delete' }));
   await expect(fleet.getByRole('listitem').filter({ hasText: 'Pick for small jobs.' })).toHaveCount(0);
   expect(dialogs).toEqual([]);
+
+  // Add crew: the description is drafted, nothing is written until Save, and Save opens the new member.
+  await press(main.getByRole('button', { name: 'Add crew' }));
+  const panel = main.getByRole('region', { name: 'Add crew' });
+  const describe = panel.getByRole('textbox', { name: 'Describe the member' });
+  const adding = main.getByRole('form', { name: 'New crew member' });
+  await describe.fill('A quartermaster who keeps the ship stocked.');
+  await press(panel.getByRole('button', { name: 'Draft' }));
+  await expect(adding.getByLabel('Name')).toHaveValue('quartermaster');
+  await expect(panel).toContainText('Drafted from your description. Check every field before you save; nothing is written until you do.');
+  expect(existsSync(crewFile('quartermaster'))).toBe(false);
+  await adding.getByLabel(/pick.me.when/i).fill('Pick for stocking the galley.');
+  await press(adding.getByRole('button', { name: 'Save' }));
+  await expect(page).toHaveURL(/\/app\/crew\/quartermaster\?(.*&)?fleet=zulu/);
+  await expect(row(fleet, 'Pick for stocking the galley.')).toBeVisible();
+  expect(readFileSync(crewFile('quartermaster'), 'utf8')).toContain('pick-me-when: Pick for stocking the galley.');
+
+  // A draft the resolver refuses shows its problem beside the field, and fixing the field there saves it.
+  claude.judge('crew-invalid');
+  await page.goto(admiral.url + 'app/crew?fleet=zulu');
+  await press(main.getByRole('button', { name: 'Add crew' }));
+  await describe.fill('A purser who keeps the accounts.');
+  await press(panel.getByRole('button', { name: 'Draft' }));
+  await expect(adding.getByLabel('Name')).toHaveValue('purser');
+  const basedOn = adding.getByLabel('Based on');
+  await expect(basedOn).toHaveAccessibleDescription(/.+/);
+  await basedOn.selectOption('scribe');
+  await press(adding.getByRole('button', { name: 'Save' }));
+  await expect(page).toHaveURL(/\/app\/crew\/purser\?(.*&)?fleet=zulu/);
+  expect(readFileSync(crewFile('purser'), 'utf8')).toContain('based-on: scribe');
+
+  // Discard drops the draft and returns to the description, still filled; nothing is written.
+  claude.judge('pass');
+  const filesBefore = readdirSync(join(admiral.home, 'fleets', 'zulu', 'crew')).sort();
+  await page.goto(admiral.url + 'app/crew?fleet=zulu');
+  await press(main.getByRole('button', { name: 'Add crew' }));
+  await describe.fill('A second quartermaster.');
+  await press(panel.getByRole('button', { name: 'Draft' }));
+  await expect(adding.getByLabel('Name')).toHaveValue('quartermaster');
+  await press(adding.getByRole('button', { name: 'Discard' }));
+  await expect(describe).toHaveValue('A second quartermaster.');
+  await expect(adding).toHaveCount(0);
+  expect(readdirSync(join(admiral.home, 'fleets', 'zulu', 'crew')).sort()).toEqual(filesBefore);
+  expect(readFileSync(crewFile('quartermaster'), 'utf8')).toContain('pick-me-when: Pick for stocking the galley.');
 
   expect(watch.errors).toEqual([]);
   expect(watch.unversioned()).toEqual([]);
