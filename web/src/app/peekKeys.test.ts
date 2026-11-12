@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { keyAction, KEY_HINT } from './peekKeys';
+import { keyAction, keyHint, KEY_HINT } from './peekKeys';
 
 const press = (key: string, extra: Record<string, unknown> = {}) => keyAction({ key, ...extra });
 
@@ -36,5 +36,19 @@ describe('keyAction', () => {
 describe('KEY_HINT', () => {
   it('is the canvas footer', () => {
     expect(KEY_HINT).toBe('J K move · 1–3 answer · ↵ bridge · E remove');
+  });
+});
+
+describe('a merge entry', () => {
+  it('keeps J, K and Enter and drops the answer and remove keys', () => {
+    expect(keyAction({ key: 'j' }, 'merge')).toEqual({ kind: 'move', by: 1 });
+    expect(keyAction({ key: 'Enter' }, 'merge')).toEqual({ kind: 'bridge' });
+    for (const key of ['m', 'M', 'y', ' ']) expect(keyAction({ key }, 'merge'), `${key} must not merge`).toBeNull();
+    for (const key of ['1', '2', '3', 'e', 'E']) expect(keyAction({ key }, 'merge'), key).toBeNull();
+  });
+
+  it('does not advertise the answer or remove keys', () => {
+    expect(keyHint('merge')).toBe('J K move · ↵ bridge');
+    expect(keyHint('stop')).toBe(KEY_HINT);
   });
 });

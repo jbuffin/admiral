@@ -201,6 +201,8 @@ a { color: inherit; text-decoration: none; }
 .group-needs_you .glyph { color: var(--status-needs); }
 .group-underway .glyph { color: var(--status-run); }
 .group-moored .glyph { color: var(--status-moored); }
+.ready-badge { display: inline-flex; align-items: center; gap: 4px; }
+.ready-badge .glyph { color: var(--color-ok); }
 .group-anchored .glyph { color: var(--status-anchored); }
 .count { color: var(--color-muted); }
 .ship-list { list-style: none; margin: 0; padding: 0; }
@@ -549,3 +551,6 @@ button.pill { cursor: pointer; min-height: 32px; }
 .inbox-pr a { overflow-wrap: anywhere; }
 @media (pointer: coarse) { .inbox-pr a { display: inline-block; min-height: var(--shape-min-touch-target); line-height: var(--shape-min-touch-target); } }
 .inbox-prrow, .inbox-pr { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+
+.peek-merge { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.merge-hint { color: var(--color-muted); }

@@ -55,3 +55,6 @@ export function staleNote(ship: Ship, now: number): string {
   if (!age) return 'Poll failed';
   return `Poll failed · last checked ${age === 'now' ? 'under a minute' : age} ago`;
 }
+
+/** The repo's merge method as the hint beside Merge. */
+export const mergeHint = (method?: string): string => ({ squash: 'squash', rebase: 'rebase', merge: 'merge commit' })[method as 'merge'] ?? '';

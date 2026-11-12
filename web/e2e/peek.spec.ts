@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { HOSTILE, appendLines, launchShip, line, received, restCalls, rowLink, seedFleets, seedInboxItem, seedReviewTarget, setReason, setState, viewTab, withFakeGh } from './shell';
+import { addGitHubSource, appendLines, HOSTILE, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, restCalls, rowLink, seedFleets, seedInboxItem, seedReviewTarget, setReason, setState, staleMergeTokenInPeek, stackedShipOffersNoMerge, viewTab, withFakeGh } from './shell';
 
 const peekOf = (page: Page) => page.getByRole('region', { name: 'Peek' });
 const peekUrl = (session: string) => new RegExp(`/app/inbox/${encodeURIComponent(session)}(\\?|$)`);
@@ -416,4 +416,36 @@ test('on a portrait iPad Peek replaces the list instead of squeezing beside it, 
   expect(link!.y + link!.height <= pending!.y || link!.x + link!.width < pending!.x).toBe(true);
   await peek.getByRole('link', { name: 'Back' }).tap();
   await expect(page.getByRole('heading', { name: 'To review' })).toBeVisible();
+});
+
+test('Merge in Peek merges a ready PR with one gh call, only after the tap, and the ship sails off', { tag: '@critical' }, async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: mooringEnv(admiral) });
+
+  await mergeFromPeek(page, admiral, { phone: false });
+});
+
+test('a merge that gh fails shows its message in Peek and the ship stays moored', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: mooringEnv(admiral) });
+
+  await mergeFailsInPeek(page, admiral);
+});
+
+test('a ready stack shows Ready to merge and Peek offers no Merge', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: mooringEnv(admiral) });
+
+  await stackedShipOffersNoMerge(page, admiral);
+});
+
+test('a Merge the server refuses as 403 says Admiral restarted, offers a reload, and merges nothing', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: mooringEnv(admiral) });
+
+  await staleMergeTokenInPeek(page, admiral);
 });

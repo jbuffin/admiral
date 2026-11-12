@@ -215,3 +215,88 @@ describe('createInboxQueue', () => {
     expect(q.entries().map((e) => [e.key, e.folded])).toEqual([['stop:a', null]]);
   });
 });
+
+describe('createInboxQueue: ready to merge', () => {
+  const layer = (n: number) => ({ url: `https://github.com/acme/api/pull/${n}`, state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE', conflicts: false, ready: true });
+  const ready = (session: string, extra: Partial<Ship> = {}) => ship(session, 'alpha', 'moored', { prs: [layer(7)], stack_ready: true, ...extra });
+  const notReady = (session: string) => ship(session, 'alpha', 'moored', { prs: [{ ...layer(7), review: '', ready: false }] });
+  const rows = (q: ReturnType<typeof createInboxQueue>) => q.entries().map((e) => [e.key, e.type, e.folded]);
+
+  it('lists a moored ship whose stack is ready as a merge entry tagged with its fleet', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [ready('a')] }, T0);
+    expect(q.entries().map((e) => [e.key, e.type, e.session, e.fleet])).toEqual([['merge:a', 'merge', 'a', { key: 'alpha', name: 'ALPHA', color: '#alpha' }]]);
+  });
+
+  it('lists a ship whose stack is ready, however many layers', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [ready('a', { prs: [layer(7), layer(8)] })] }, T0);
+    expect(keys(q)).toEqual(['merge:a']);
+  });
+
+  it('lists only the moored ship that is ready, not a not-ready moored ship or a live one', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [ready('a'), notReady('b'), ship('c', 'alpha', 'underway', { stack_ready: true })] }, T0);
+    expect(keys(q)).toEqual(['merge:a']);
+  });
+
+  it('takes its start from first sight and keeps it across later pushes', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [ready('a')] }, T0);
+    q.sync({ items: [], ships: [ready('a')] }, T0 + 60_000);
+    expect(q.entries().map((e) => e.since)).toEqual([T0]);
+  });
+
+  it('sits in time order beside a needs-you stop', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [ready('a'), ship('b', 'alpha', 'needs_you', { stop_since: at(-5) })] }, T0);
+    expect(keys(q)).toEqual(['stop:b', 'merge:a']);
+  });
+
+  it('orders a merge and a stop that began together the same way whatever the input order', () => {
+    for (const ships of [[ready('a'), ship('b', 'alpha', 'needs_you', { stop_since: at(0) })], [ship('b', 'alpha', 'needs_you', { stop_since: at(0) }), ready('a')]]) {
+      const q = createInboxQueue();
+      q.sync({ items: [], ships }, T0);
+      expect(keys(q)).toEqual(['stop:b', 'merge:a']);
+    }
+  });
+
+  it('goes by itself, with no fold, when the ship stops being ready or leaves the list', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [ready('a'), ready('b')] }, T0);
+    expect(keys(q)).toEqual(['merge:a', 'merge:b']);
+    q.sync({ items: [], ships: [notReady('a')] }, T0 + 1000);
+    expect(rows(q)).toEqual([]);
+  });
+
+  it('folds with the given text, holds it for 5 s, then drops it', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [ready('a')] }, T0);
+    q.fold('merge:a', 'Merged', T0 + 1000);
+    expect(rows(q)).toEqual([['merge:a', 'merge', 'Merged']]);
+    expect(q.tick(T0 + 1000 + HOLD_MS - 1)).toBe(false);
+    expect(q.tick(T0 + 1000 + HOLD_MS)).toBe(true);
+    expect(keys(q)).toEqual([]);
+  });
+
+  it('keeps a merged entry out while a stale push still serves the ship ready, and lets it back once the server stops and serves it ready again', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [ready('a')] }, T0);
+    q.fold('merge:a', 'Merged', T0);
+    q.tick(T0 + HOLD_MS);
+    q.sync({ items: [], ships: [ready('a')] }, T0 + HOLD_MS + 1);
+    expect(keys(q)).toEqual([]);
+
+    q.sync({ items: [], ships: [notReady('a')] }, T0 + HOLD_MS + 2);
+    q.sync({ items: [], ships: [ready('a')] }, T0 + HOLD_MS + 3);
+    expect(keys(q)).toEqual(['merge:a']);
+  });
+
+  it('shows one folded line, not a second row, when a push serves the ship ready during the hold', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [ready('a')] }, T0);
+    q.fold('merge:a', 'Merged', T0);
+    q.sync({ items: [], ships: [ready('a')] }, T0 + 1000);
+    expect(rows(q)).toEqual([['merge:a', 'merge', 'Merged']]);
+  });
+});

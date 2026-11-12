@@ -9,6 +9,7 @@ import { Composer, useComposer, type Target } from './Composer';
 import { boatBoxState, chipState, flotilla } from './flotilla';
 import { Icon } from './Icon';
 import { MooredPRs } from './MooredPRs';
+import { ReadyToMerge } from './StatusGlyph';
 import { NO_RESUME_NOTE } from './moored';
 import { boxState } from './messageBox';
 import { Sheet } from './Sheet';
@@ -329,6 +330,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
       {moored ? (
         <div class="moored-info">
           <p class="line">This ship is moored: its PRs are open and it has no session until it's woken.</p>
+          <ReadyToMerge ship={ship} />
           <MooredPRs ship={ship} now={Date.now()} />
           {ship.no_resume ? <p class="msg-note">{NO_RESUME_NOTE}</p> : null}
           {tab !== 'Conversation' && box.error ? (

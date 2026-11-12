@@ -24,6 +24,7 @@ const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
 // The phrase reads after the ship name: "Dory asked", "Dory wants to run Bash".
 export function rowVerb(e: Entry): string {
+  if (e.type === 'merge') return 'is ready to merge';
   if (e.type === 'stop') return lower(reasonWords(e.crew?.reason ?? e.ship?.reason ?? ''));
   switch (e.item?.kind) {
     case 'question':

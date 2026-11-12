@@ -39,7 +39,7 @@ export interface EntryFleet {
 
 export interface Entry {
   key: string;
-  type: 'item' | 'stop';
+  type: 'item' | 'stop' | 'merge';
   session: string;
   id?: string;
   item?: InboxItem;
@@ -58,6 +58,7 @@ export const HOLD_MS = 5000;
 
 export const itemKey = (session: string, id: string) => `item:${session}/${id}`;
 export const stopKey = (session: string) => `stop:${session}`;
+export const mergeKey = (session: string) => `merge:${session}`;
 export const crewKey = (session: string, crew: string) => `stop:${session}/${crew}`;
 
 // The wire says needs_you/crew while only a crew boat waits, so the ship itself needs you on any other reason.
@@ -67,13 +68,18 @@ const isBack = (c?: CrewBoat) => c?.status === 'underway' || c?.status === 'idle
 // A sailing-off ship's session is about to die with its crew, so none of them waits on you.
 const waiting = (s: Ship) => (s.status === 'sailing_off' ? [] : (s.crew ?? []).filter((c) => c.status === 'needs_you'));
 
+// A moored ship whose whole stack can merge now.
+const readyToMerge = (s: Ship) => s.status === 'moored' && s.stack_ready === true;
+
 const shipFleet = (s: Ship): EntryFleet => ({ key: s.fleet, name: s.fleet_name ?? '', color: s.fleet_color });
 const itemFleet = (it: InboxItem): EntryFleet | undefined =>
   it.fleet === undefined ? undefined : { key: it.fleet, name: it.fleet_name ?? '', color: it.fleet_color ?? '' };
 
+const RANK: Record<Entry['type'], number> = { item: 0, stop: 1, merge: 2 };
+
 const compare = (a: Entry, b: Entry) =>
   a.since - b.since ||
-  (a.type === b.type ? 0 : a.type === 'item' ? -1 : 1) ||
+  RANK[a.type] - RANK[b.type] ||
   (a.session < b.session ? -1 : a.session > b.session ? 1 : 0) ||
   ((a.id ?? '') < (b.id ?? '') ? -1 : (a.id ?? '') > (b.id ?? '') ? 1 : 0);
 
@@ -88,7 +94,10 @@ export function createInboxQueue() {
   const held = new Map<string, { entry: Entry; text: string; until: number }>();
   // Answered items a stale push may still serve: they stay out until the server stops serving them.
   const answered = new Set<string>();
+  // Merged ships a stale push may still serve ready: they stay out until the server stops serving them.
+  const merged = new Set<string>();
   const stopFirstSeen = new Map<string, number>();
+  const mergeFirstSeen = new Map<string, number>();
   // A crew stop's start, kept from first sight: the server keeps none for a crew boat.
   const crewSince = new Map<string, number>();
 
@@ -103,6 +112,10 @@ export function createInboxQueue() {
       const key = stopKey(s.session);
       if (needsYou(s) && !held.has(key)) {
         out.push({ key, type: 'stop', session: s.session, ship: s, folded: null, since: Date.parse(s.stop_since ?? '') || (stopFirstSeen.get(key) ?? 0), fleet: shipFleet(s) });
+      }
+      const mk = mergeKey(s.session);
+      if (readyToMerge(s) && !merged.has(mk) && !held.has(mk)) {
+        out.push({ key: mk, type: 'merge', session: s.session, ship: s, folded: null, since: mergeFirstSeen.get(mk) ?? 0, fleet: shipFleet(s) });
       }
       for (const c of waiting(s)) {
         const ck = crewKey(s.session, c.name);
@@ -135,6 +148,13 @@ export function createInboxQueue() {
       }
       const live = new Set<string>();
       for (const s of next.ships) {
+        const mk = mergeKey(s.session);
+        if (readyToMerge(s)) {
+          if (!mergeFirstSeen.has(mk)) mergeFirstSeen.set(mk, now);
+        } else {
+          mergeFirstSeen.delete(mk);
+          merged.delete(mk);
+        }
         const key = stopKey(s.session);
         if (needsYou(s) && !stopFirstSeen.has(key)) stopFirstSeen.set(key, now);
         if (!needsYou(s)) stopFirstSeen.delete(key);
@@ -144,6 +164,8 @@ export function createInboxQueue() {
           if (!crewSince.has(ck)) crewSince.set(ck, Date.parse(c.last_activity ?? '') || Date.parse(c.launched ?? '') || now);
         }
       }
+      for (const mk of [...mergeFirstSeen.keys()]) if (!ships.has(mk.slice('merge:'.length))) mergeFirstSeen.delete(mk);
+      for (const mk of merged) if (!ships.has(mk.slice('merge:'.length))) merged.delete(mk);
       for (const ck of crewSince.keys()) if (!live.has(ck)) crewSince.delete(ck);
       input = next;
       served = merge();
@@ -154,6 +176,7 @@ export function createInboxQueue() {
       const entry = entries().find((e) => e.key === key) ?? known;
       if (!entry || held.has(key)) return;
       if (entry.type === 'item') answered.add(key);
+      if (entry.type === 'merge') merged.add(key);
       held.set(key, { entry: { ...entry, folded: null }, text, until: now + HOLD_MS });
       served = merge();
     },
