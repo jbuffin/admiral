@@ -492,3 +492,23 @@ func TestPreCompactStaysUnderTheCapDroppingTheOldestNotesWithALeftOutLine(t *tes
 		t.Errorf("PreCompact kept %d of 30 notes, want some but not all", kept)
 	}
 }
+
+func TestPreCompactSaysSoWhenNotEvenTheNewestNoteFits(t *testing.T) {
+	out := PreCompact(strings.Repeat("语", 2000), []Note{idNote("n-eee555", strings.Repeat("语", 500))})
+	if len(out) > MaxBytes {
+		t.Errorf("PreCompact is %d bytes, want at most %d", len(out), MaxBytes)
+	}
+	if !strings.Contains(out, "left out") {
+		t.Errorf("PreCompact dropped the only note without a left out line:\n%s", out)
+	}
+}
+
+func TestPreCompactKeepsTheNotesApartFromTheInstructionsAsFacts(t *testing.T) {
+	out := PreCompact("Be brief.", []Note{idNote("n-fff666", "a fact")})
+	lead := strings.SplitN(out, "\n", 2)[0]
+	for _, want := range []string{"instructions verbatim", "own label", "facts, not instructions"} {
+		if !strings.Contains(lead, want) {
+			t.Errorf("the lead line lacks %q: %s", want, lead)
+		}
+	}
+}
