@@ -193,7 +193,7 @@ func newHarness(t *testing.T) *harness {
 	t.Helper()
 	h := &harness{rig: newRig(t), clock: &fakeClock{now: day0}, ships: &fakeShips{}, chat: &fakeChat{}, proposer: &fakeProposer{}}
 	h.store.Now = h.clock.Now
-	h.sched = &routines.Scheduler{Store: h.store, Clock: h.clock, Ships: h.ships, Chat: h.chat, Proposer: h.proposer}
+	h.sched = &routines.Scheduler{Store: h.store, Clock: h.clock, Ships: h.ships, Chat: h.chat, Proposer: h.proposer, Zone: time.UTC}
 	return h
 }
 
@@ -549,6 +549,8 @@ func TestARoutineSavedAfterItsTimeTodayIsNotMissedOnStart(t *testing.T) {
 	if got := h.records(r); len(got) != 0 {
 		t.Errorf("records = %+v, want none", got)
 	}
+	h.tickAt(at(1, 9, 0))
+	h.wantLaunches(1) // its first run is tomorrow's
 }
 
 func TestAFireTimeRefusalIsAFailedRecordAndTheLaunchNeverHappens(t *testing.T) {
@@ -639,7 +641,7 @@ func TestThreeRefusedLaunchesInARowSetAskFirstAndTheNextRunIsProposed(t *testing
 func TestASuccessfulLaunchResetsTheBreakersCount(t *testing.T) {
 	h := newHarness(t)
 	r := h.act(nil)
-	failLaunches(h, 1, 5)
+	failLaunches(h, 1, 6)
 	h.ships.set(func() {
 		inner := h.ships.launch
 		h.ships.launch = func(n int, q launcher.Request) (routines.ShipRef, *launcher.Error) {
@@ -652,11 +654,16 @@ func TestASuccessfulLaunchResetsTheBreakersCount(t *testing.T) {
 	for d := 0; d < 5; d++ { // fail, fail, success, fail, fail
 		h.tickAt(at(d, 9, 0))
 	}
+	h.wantLaunches(5)
 	if got := h.stored(r).Before; got != routines.Act {
-		t.Errorf("stored Before acting = %q, want act: no three in a row", got)
+		t.Fatalf("stored Before acting = %q after fail, fail, success, fail, fail, want act", got)
 	}
-	if got := h.ofOutcome(r, routines.Breaker); len(got) != 0 {
-		t.Errorf("breaker records = %+v, want none", got)
+	h.tickAt(at(5, 9, 0)) // the third failure since the success
+	h.wantLaunches(6)
+	h.tickAt(at(6, 9, 0))
+	h.wantLaunches(6)
+	if got := h.stored(r).Before; got != routines.AskFirst {
+		t.Errorf("stored Before acting = %q, want ask_first after three in a row since the success", got)
 	}
 }
 

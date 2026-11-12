@@ -43,6 +43,7 @@ type Scheduler struct {
 	Ships    Ships
 	Chat     Chat
 	Proposer Proposer
+	Zone     *time.Location // the zone a When is read in; main passes time.Local
 }
 
 // Run catches up missed runs, then ticks until ctx ends, sleeping until the earliest next run or a Changed.
