@@ -229,7 +229,7 @@ var mcpTools = []mcpTool{
 			"source":       str("an order source's key, for a launch from an order"),
 			"order_id":     str("the order's id"),
 			"crew":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "crew members to pin, on a Commodore launch"},
-			"issues":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "GitHub issue URLs the ship claims"},
+			"issues":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "GitHub issue URLs the ship claims; only on a launch with no source"},
 			"chat_message": str("the id of the chat message this launch answers"),
 			"anyway":       flag01("launch again for a chat message that already has a ship"),
 			"with_me":      flag01("true when the engineer said to work on it with them: the ship runs interactive, not in autopilot"),
@@ -302,8 +302,15 @@ func launchShip(c *mcpClient, raw json.RawMessage) (string, error) {
 	autopilot := kind == "commodore" && !a.WithMe
 	body := map[string]any{
 		"fleet": c.fleet, "harness": a.Harness, "dir": a.Dir, "text": a.Text, "skill": map[string]string{"kind": kind, "name": name},
-		"source": a.Source, "order_id": a.OrderID, "clone": a.Clone, "clone_repo": a.CloneRepo, "crew": a.Crew, "issues": a.Issues,
+		"source": a.Source, "order_id": a.OrderID, "clone": a.Clone, "clone_repo": a.CloneRepo, "crew": a.Crew,
 		"chat_message": a.ChatMessage, "anyway": a.Anyway, "autopilot": autopilot,
+	}
+	// An order has its own issue, so the server refuses issues beside a source.
+	if len(a.Issues) > 0 {
+		if a.Source != "" {
+			return "", errors.New("issues go only on a launch with no source: an order has its own issue")
+		}
+		body["issues"] = a.Issues
 	}
 	out, err := c.do("POST", "/api/ships", body, 120*time.Second)
 	reason := ""
