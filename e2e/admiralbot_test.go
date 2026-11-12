@@ -63,7 +63,7 @@ func newBotWorld(t *testing.T, o botOpts) *chatWorld {
 	return c
 }
 
-func (w *world) questionsDir() string { return filepath.Join(w.home, "chat", "questions") }
+func (w *world) questionsDir() string { return filepath.Join(w.home, "chat", chatFleet, "questions") }
 
 func (w *world) questionFiles() []string {
 	entries, _ := os.ReadDir(w.questionsDir())
@@ -75,17 +75,22 @@ func (w *world) questionFiles() []string {
 }
 
 // botEnv is the world's environment without ADMIRAL_PORT and ADMIRAL_SHIP, so a
-// command finds a server only through what the test passes.
+// command finds a server only through what the test passes. It is the chat
+// of chatFleet that runs the command: ADMIRAL_CHAT_FLEET names that fleet.
 func (w *world) botEnv(extra ...string) []string {
+	return w.botEnvFor(chatFleet, extra...)
+}
+
+func (w *world) botEnvFor(fleet string, extra ...string) []string {
 	var env []string
 	for _, kv := range w.baseEnv() {
 		k, _, _ := strings.Cut(kv, "=")
-		if k == "ADMIRAL_PORT" || k == "ADMIRAL_SHIP" {
+		if k == "ADMIRAL_PORT" || k == "ADMIRAL_SHIP" || k == "ADMIRAL_CHAT_FLEET" {
 			continue
 		}
 		env = append(env, kv)
 	}
-	return append(env, extra...)
+	return append(append(env, "ADMIRAL_CHAT_FLEET="+fleet), extra...)
 }
 
 type botProc struct {
@@ -194,13 +199,13 @@ func qStr(m map[string]json.RawMessage, key string) string {
 
 func fetchBot(t *testing.T, base string) botSession {
 	t.Helper()
-	code, body := send(t, http.MethodGet, base+"/api/chat/session", nil)
+	code, body := send(t, http.MethodGet, base+"/api/chat/chat/session", nil)
 	if code != http.StatusOK {
-		t.Fatalf("GET /api/chat/session = %d, want 200: %s", code, body)
+		t.Fatalf("GET /api/chat/chat/session = %d, want 200: %s", code, body)
 	}
 	var s botSession
 	if err := json.Unmarshal([]byte(body), &s); err != nil {
-		t.Fatalf("GET /api/chat/session is not JSON: %v\n%s", err, body)
+		t.Fatalf("GET /api/chat/chat/session is not JSON: %v\n%s", err, body)
 	}
 	return s
 }
@@ -219,7 +224,7 @@ func waitQuestions(t *testing.T, base string, p *botProc, d time.Duration, what 
 			p.failIfExited(what)
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("within %s GET /api/chat/session never showed %s; last: %+v", d, what, s)
+			t.Fatalf("within %s GET /api/chat/chat/session never showed %s; last: %+v", d, what, s)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -265,7 +270,7 @@ func botAnswer(label string) map[string]any {
 
 func (w *world) answerChatQuestion(id string, body any) (int, string) {
 	w.t.Helper()
-	return send(w.t, http.MethodPost, w.in.LocalURL+"/api/chat/questions/"+id+"/answer", body)
+	return send(w.t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/questions/"+id+"/answer", body)
 }
 
 func (w *world) rawInbox() string {
@@ -506,7 +511,7 @@ func TestAdmiralBot_ChatSessionIsFenced(t *testing.T) {
 	w.start()
 
 	// A link planted at the skill's path is never followed.
-	skillDir := filepath.Join(w.home, "chat", ".claude", "skills", "admiralbot")
+	skillDir := filepath.Join(w.home, "chat", chatFleet, ".claude", "skills", "admiralbot")
 	skillPath := filepath.Join(skillDir, "SKILL.md")
 	outside := filepath.Join(w.root, "outside.md")
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
@@ -644,6 +649,9 @@ func TestAdmiralBot_ChatSessionIsFenced(t *testing.T) {
 				t.Errorf("the ship's argv = %q holds %s", sr.argv, a)
 			}
 		}
+		if v, ok := sr.env["ADMIRAL_CHAT_FLEET"]; ok {
+			t.Errorf("the ship's env has ADMIRAL_CHAT_FLEET=%q: only a chat gets it", v)
+		}
 		if v, ok := sr.env["ADMIRAL_PORT"]; ok {
 			t.Errorf("the ship's env has ADMIRAL_PORT=%q, even with it in tmux's global environment", v)
 		}
@@ -668,8 +676,8 @@ func TestAdmiralBot_ChatAskRoundTrip(t *testing.T) {
 	id := qStr(q, "id")
 
 	t.Run("the question is served, and nothing reaches the inbox", func(t *testing.T) {
-		if qStr(q, "kind") != "question" || qStr(q, "session") != "_chat" || qStr(q, "title") != "Where does it go?" {
-			t.Errorf("question = %v, want kind question, session _chat and the title", q)
+		if qStr(q, "kind") != "question" || qStr(q, "session") != chatSessionName || qStr(q, "title") != "Where does it go?" {
+			t.Errorf("question = %v, want kind question, session %s and the title", q, chatSessionName)
 		}
 		if _, err := time.Parse(time.RFC3339, qStr(q, "created")); err != nil {
 			t.Errorf("created = %s, want an RFC 3339 time", q["created"])
@@ -696,8 +704,8 @@ func TestAdmiralBot_ChatAskRoundTrip(t *testing.T) {
 		}
 		waitBotWS(t, ws, 5*time.Second, "the question", func(m botSession) bool { return len(m.Questions) == 1 && m.State == "waiting" })
 		holdThat(t, "GET /api/inbox changed with a chat question open", func() bool { return w.rawInbox() == inboxBefore })
-		if _, err := os.Lstat(filepath.Join(w.home, "inbox", "_chat")); err == nil {
-			t.Errorf("inbox/_chat exists: chat questions never go in the inbox")
+		if _, err := os.Lstat(filepath.Join(w.home, "inbox", chatSessionName)); err == nil {
+			t.Errorf("inbox/%s exists: chat questions never go in the inbox", chatSessionName)
 		}
 	})
 
@@ -889,8 +897,8 @@ func TestAdmiralBot_NewChatWithdrawsChatQuestions(t *testing.T) {
 	waitQuestions(t, w.in.LocalURL, p, 10*time.Second, "the question", hasQuestions(1))
 	waitBotWS(t, ws, 5*time.Second, "the question", func(m botSession) bool { return len(m.Questions) == 1 })
 
-	if code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/new", nil); code != http.StatusOK {
-		t.Fatalf("POST /api/chat/new = %d, want 200: %s", code, body)
+	if code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/new", nil); code != http.StatusOK {
+		t.Fatalf("POST /api/chat/chat/new = %d, want 200: %s", code, body)
 	}
 	r := p.wait(10 * time.Second)
 	w.expectExit(r, 4, "chat ask when New chat withdrew its question")

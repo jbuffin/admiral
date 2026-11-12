@@ -15,10 +15,17 @@ import (
 	"github.com/coder/websocket"
 )
 
-const chatSessionName = "_chat"
+// chatFleet is the fleet the single-chat worlds give their chat to.
+const chatFleet = "chat"
+
+// chatSessionName is the tmux session of chatFleet's chat.
+var chatSessionName = chatSessionFor(chatFleet)
+
+func chatSessionFor(fleet string) string { return "_chat-" + fleet }
 
 type chatMsg struct {
 	ID   string `json:"id"`
+	Kind string `json:"kind"` // "message" (or empty), "question" or "reset"
 	Role string `json:"role"`
 	Text string `json:"text"`
 	At   string `json:"at"`
@@ -26,6 +33,7 @@ type chatMsg struct {
 
 type chatSession struct {
 	Type     string    `json:"type"`
+	Fleet    string    `json:"fleet"`
 	Running  bool      `json:"running"`
 	State    string    `json:"state"`
 	Messages []chatMsg `json:"messages"`
@@ -161,15 +169,15 @@ func (c *chatWorld) moveRecord(suffix string) {
 
 func (c *chatWorld) start() chatSession {
 	c.t.Helper()
-	code, body := send(c.t, http.MethodPost, c.in.LocalURL+"/api/chat/start", nil)
+	code, body := send(c.t, http.MethodPost, c.in.LocalURL+"/api/chat/chat/start", nil)
 	if code != http.StatusOK {
-		c.t.Fatalf("POST /api/chat/start = %d, want 200: %s", code, body)
+		c.t.Fatalf("POST /api/chat/chat/start = %d, want 200: %s", code, body)
 	}
 	var r struct {
 		Running bool `json:"running"`
 	}
 	if json.Unmarshal([]byte(body), &r) != nil || !r.Running {
-		c.t.Fatalf(`POST /api/chat/start answered %s, want {"running": true}`, body)
+		c.t.Fatalf(`POST /api/chat/chat/start answered %s, want {"running": true}`, body)
 	}
 	return c.session()
 }
@@ -179,15 +187,17 @@ func (c *chatWorld) session() chatSession {
 	return fetchChat(c.t, c.in.LocalURL)
 }
 
-func fetchChat(t *testing.T, base string) chatSession {
+func fetchChat(t *testing.T, base string) chatSession { return fetchFleetChat(t, base, chatFleet) }
+
+func fetchFleetChat(t *testing.T, base, fleet string) chatSession {
 	t.Helper()
-	code, body := send(t, http.MethodGet, base+"/api/chat/session", nil)
+	code, body := send(t, http.MethodGet, base+"/api/chat/"+fleet+"/session", nil)
 	if code != http.StatusOK {
-		t.Fatalf("GET /api/chat/session = %d, want 200: %s", code, body)
+		t.Fatalf("GET /api/chat/%s/session = %d, want 200: %s", fleet, code, body)
 	}
 	var s chatSession
 	if err := json.Unmarshal([]byte(body), &s); err != nil {
-		t.Fatalf("GET /api/chat/session is not JSON: %v\n%s", err, body)
+		t.Fatalf("GET /api/chat/%s/session is not JSON: %v\n%s", fleet, err, body)
 	}
 	return s
 }
@@ -201,7 +211,7 @@ func (c *chatWorld) waitSession(d time.Duration, what string, pred func(chatSess
 			return s
 		}
 		if time.Now().After(deadline) {
-			c.t.Fatalf("within %s GET /api/chat/session never showed %s; last: %+v; %s", d, what, s, c.diag())
+			c.t.Fatalf("within %s GET /api/chat/chat/session never showed %s; last: %+v; %s", d, what, s, c.diag())
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -219,12 +229,50 @@ func (c *chatWorld) stays(d time.Duration, what string, pred func(chatSession) b
 	}
 }
 
+// texts lists the text messages only; a reset marker or a question card is not one.
 func texts(msgs []chatMsg) []string {
 	out := []string{}
 	for _, m := range msgs {
-		out = append(out, m.Role+": "+m.Text)
+		if m.Kind == "" || m.Kind == "message" {
+			out = append(out, m.Role+": "+m.Text)
+		}
 	}
 	return out
+}
+
+func resets(msgs []chatMsg) int {
+	n := 0
+	for _, m := range msgs {
+		if m.Kind == "reset" {
+			n++
+		}
+	}
+	return n
+}
+
+func hasResets(n int) func(chatSession) bool {
+	return func(s chatSession) bool { return resets(s.Messages) == n }
+}
+
+func uniqueIDs(msgs []chatMsg) bool {
+	seen := map[string]bool{}
+	for _, m := range msgs {
+		if m.ID != "" {
+			if seen[m.ID] {
+				return false
+			}
+			seen[m.ID] = true
+		}
+	}
+	return true
+}
+
+// messagesEndWith holds when the text messages end with want and no message is served twice.
+func messagesEndWith(want ...string) func(chatSession) bool {
+	return func(s chatSession) bool {
+		got := texts(s.Messages)
+		return uniqueIDs(s.Messages) && len(got) >= len(want) && sameStrings(got[len(got)-len(want):], want)
+	}
 }
 
 func sameStrings(a, b []string) bool {
@@ -323,7 +371,7 @@ func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
 	if s := c.session(); s.Running || s.State != "" {
 		t.Fatalf("before the chat starts: %+v, want running false and state \"\"", s)
 	}
-	for _, path := range []string{"/api/chat/messages", "/api/chat/new"} {
+	for _, path := range []string{"/api/chat/chat/messages", "/api/chat/chat/new"} {
 		if code, _ := send(t, http.MethodPost, w.in.LocalURL+path, map[string]any{"text": "hello"}); code != http.StatusConflict {
 			t.Errorf("POST %s while the chat is not running = %d, want 409", path, code)
 		}
@@ -410,21 +458,25 @@ func TestChatSession_StartIsNotAShipAndLaunchContract(t *testing.T) {
 			t.Errorf("env PATH = %q, want $ADMIRAL_HOME/bin first", r.env["PATH"])
 		}
 		for k := range r.env {
-			// ADMIRAL_PORT is the chat's own (ADR 0020): the port Admiral listens on.
-			if strings.HasPrefix(k, "ADMIRAL_") && k != "ADMIRAL_HOME" && !(k == "ADMIRAL_PORT" && r.env[k] == w.in.Port) {
+			// ADMIRAL_PORT and ADMIRAL_CHAT_FLEET are the chat's own: the port Admiral listens on and the fleet it answers for.
+			if strings.HasPrefix(k, "ADMIRAL_") && k != "ADMIRAL_HOME" && !(k == "ADMIRAL_PORT" && r.env[k] == w.in.Port) &&
+				!(k == "ADMIRAL_CHAT_FLEET" && r.env[k] == chatFleet) {
 				t.Errorf("env has %s=%q; the tmux server's global environment must not reach the chat", k, r.env[k])
 			}
 		}
-		if want := filepath.Join(w.home, "chat"); r.cwd != want {
+		if r.env["ADMIRAL_CHAT_FLEET"] != chatFleet {
+			t.Errorf("env ADMIRAL_CHAT_FLEET = %q, want %q: `admiral chat ask` finds its fleet there", r.env["ADMIRAL_CHAT_FLEET"], chatFleet)
+		}
+		if want := filepath.Join(w.home, "chat", chatFleet); r.cwd != want {
 			t.Errorf("cwd = %q, want %q", r.cwd, want)
 		}
 	})
 
 	t.Run("a second start leaves the same session", func(t *testing.T) {
 		w := w.at(t)
-		code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/start", nil)
+		code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/start", nil)
 		if code != http.StatusOK || !strings.Contains(body, `"running"`) {
-			t.Fatalf("second POST /api/chat/start = %d %s, want 200 with running", code, body)
+			t.Fatalf("second POST /api/chat/chat/start = %d %s, want 200 with running", code, body)
 		}
 		if got := w.mustTmux("display-message", "-p", "-t", w.target(chatSessionName), "#{pane_pid}"); got != pane {
 			t.Errorf("the chat's pane pid changed from %s to %s: a second start must leave it alone", pane, got)
@@ -502,9 +554,9 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 	c.waitFile(chatSessionName, "recording")
 
 	t.Run("send is refused before the first SessionStart", func(t *testing.T) {
-		code, _ := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/messages", map[string]any{"text": "too early"})
+		code, _ := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/messages", map[string]any{"text": "too early"})
 		if code != http.StatusConflict {
-			t.Errorf("POST /api/chat/messages before SessionStart = %d, want 409", code)
+			t.Errorf("POST /api/chat/chat/messages before SessionStart = %d, want 409", code)
 		}
 		s := c.session()
 		if !s.Running || s.Error != "Open the terminal to finish starting the chat" {
@@ -578,8 +630,8 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 
 	t.Run("send is validated", func(t *testing.T) {
 		for name, text := range map[string]string{"empty": "", "blank": " \n\t ", "too long": strings.Repeat("x", 64*1024)} {
-			if code, _ := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/messages", map[string]any{"text": text}); code != http.StatusBadRequest {
-				t.Errorf("POST /api/chat/messages with %s text = %d, want 400", name, code)
+			if code, _ := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/messages", map[string]any{"text": text}); code != http.StatusBadRequest {
+				t.Errorf("POST /api/chat/chat/messages with %s text = %d, want 400", name, code)
 			}
 		}
 	})
@@ -587,9 +639,9 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 	want := "\x1b[200~line one\nline two\x1b[201~\r"
 	t.Run("send pastes one bracketed message then Enter", func(t *testing.T) {
 		c := &chatWorld{world: w.at(t), cfgDir: c.cfgDir}
-		code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/messages", map[string]any{"text": "line one\nline two"})
+		code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/messages", map[string]any{"text": "line one\nline two"})
 		if code < 200 || code > 299 {
-			t.Fatalf("POST /api/chat/messages = %d, want 2xx: %s", code, body)
+			t.Fatalf("POST /api/chat/chat/messages = %d, want 2xx: %s", code, body)
 		}
 		// tmux 3.8 on this Mac delivers `paste-buffer -p -r` as ESC[200~ text ESC[201~
 		// with the LF kept, and send-keys Enter as CR.
@@ -602,38 +654,39 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 	}
 	appendLines(t, tp2, tpClear...)
 
-	t.Run("New chat empties at once and stays empty", func(t *testing.T) {
+	history := append(append([]string{}, first...), "assistant: Two ships are afloat.", "user: Thanks, that is all")
+	t.Run("New chat keeps the history and adds a marker", func(t *testing.T) {
 		c := &chatWorld{world: w.at(t), cfgDir: c.cfgDir}
-		code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/new", nil)
+		code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/new", nil)
 		if code != http.StatusOK {
-			t.Fatalf("POST /api/chat/new = %d, want 200: %s", code, body)
+			t.Fatalf("POST /api/chat/chat/new = %d, want 200: %s", code, body)
 		}
-		if s := c.session(); len(s.Messages) != 0 {
-			t.Errorf("right after New chat: %d messages %v, want none", len(s.Messages), texts(s.Messages))
+		if s := c.session(); !messagesAre(history...)(s) || resets(s.Messages) != 1 {
+			t.Errorf("right after New chat: %v with %d reset markers, want the history and one marker", texts(s.Messages), resets(s.Messages))
 		}
-		waitChatWS(t, ws1, 3*time.Second, "an empty conversation", messagesAre())
-		waitChatWS(t, ws2, 3*time.Second, "an empty conversation", messagesAre())
+		waitChatWS(t, ws1, 3*time.Second, "the history and a marker", func(s chatSession) bool { return messagesAre(history...)(s) && resets(s.Messages) == 1 })
+		waitChatWS(t, ws2, 3*time.Second, "the history and a marker", func(s chatSession) bool { return messagesAre(history...)(s) && resets(s.Messages) == 1 })
 		// /clear typed as keys, or pasted as one bracketed paste: either reaches the pane.
 		c.waitStdinOneOf(want+"/clear\r", want+"\x1b[200~/clear\x1b[201~\r")
 		// The /clear path writes one usage record for the chat, from the file it had before the clear.
 		appendLines(t, tp1, `{"type":"cost-state","totalCostUSD":0.5,"modelUsage":{"claude-fake":{"inputTokens":7,"outputTokens":3}}}`)
 		c.touch("go-clear")
 		c.waitEvents(5)
-		c.stays(1500*time.Millisecond, "an empty conversation after SessionStart (clear)", messagesAre())
+		c.stays(1500*time.Millisecond, "the same history after SessionStart (clear)", messagesAre(history...))
 		got := lastOf(c.waitEvent(chatSessionName, "usage", 1), "usage")
 		wantUsage(t, got, "chat", "claude", map[string]any{"input": 7.0, "output": 3.0, "reasoning": 0.0, "cache_read": 0.0, "cache_write": 0.0},
 			map[string]any{"amount": 0.5, "basis": "estimate", "incomplete": false})
 		holdThat(t, "the clear wrote a second usage record for the chat", func() bool { return usageCount(c.shipLog(chatSessionName)) == 1 })
 		appendLines(t, tp2, userLine("u-20", "After the clear", nil))
-		c.waitSession(10*time.Second, "the one message written after the clear", messagesAre("user: After the clear"))
+		c.waitSession(10*time.Second, "the message written after the clear", messagesAre(append(history, "user: After the clear")...))
 	})
 
 	t.Run("a restarted Admiral serves the same conversation", func(t *testing.T) {
 		c := &chatWorld{world: w.at(t), cfgDir: c.cfgDir}
 		c.restart()
-		got := c.waitSession(10*time.Second, "the same conversation", messagesAre("user: After the clear"))
-		if !got.Running || got.Error != "" {
-			t.Errorf("after the restart: %+v, want running with no error", got)
+		got := c.waitSession(10*time.Second, "the same conversation", messagesAre(append(history, "user: After the clear")...))
+		if !got.Running || got.Error != "" || resets(got.Messages) != 1 || !uniqueIDs(got.Messages) {
+			t.Errorf("after the restart: %+v, want running with no error, one marker and no message twice", got)
 		}
 	})
 }
@@ -660,9 +713,8 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 	// A SessionStart with source clear on the same path serves only lines written after it.
 	c.touch("go-clear")
 	c.waitEvents(2)
-	c.waitSession(5*time.Second, "an empty conversation", messagesAre())
 	appendLines(t, tpA, userLine("u-2", "After the same-path clear", nil))
-	c.waitSession(10*time.Second, "only the later line", messagesAre("user: After the same-path clear"))
+	c.waitSession(10*time.Second, "the later line, with nothing served twice", messagesEndWith("user: After the same-path clear"))
 
 	// A clear before the transcript exists skips nothing: its lines show once it appears.
 	c.touch("go-late")
@@ -670,7 +722,7 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 	c.touch("go-late-clear")
 	c.waitEvents(4)
 	appendLines(t, tpC, userLine("u-3", "Written after the clear", nil))
-	c.waitSession(10*time.Second, "the line of a transcript that did not exist at the clear", messagesAre("user: Written after the clear"))
+	c.waitSession(10*time.Second, "the line of a transcript that did not exist at the clear", messagesEndWith("user: Written after the clear"))
 
 	// The chat's cost-state is read from the path recorded before the reset.
 	appendLines(t, tpC, `{"type":"cost-state","totalCostUSD":0.5,"modelUsage":{"claude-fake":{"inputTokens":7,"outputTokens":3}}}`)
@@ -686,18 +738,18 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 	appendLines(t, tpB, userLine("u-30", "Fresh start", nil))
 	w.writeCue("record", sessionStartCue(tpB, "startup"))
 	c.moveRecord(".run1")
-	code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/new", nil)
+	code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/new", nil)
 	if code != http.StatusOK {
-		t.Fatalf("POST /api/chat/new = %d, want 200: %s", code, body)
+		t.Fatalf("POST /api/chat/chat/new = %d, want 200: %s", code, body)
 	}
-	if s := c.session(); len(s.Messages) != 0 {
-		t.Errorf("right after New chat: %v, want an empty conversation", texts(s.Messages))
+	if s := c.session(); resets(s.Messages) != 1 {
+		t.Errorf("right after New chat: %v, want one reset marker (the kill-and-start path adds it too)", s.Messages)
 	}
 	r := w.record(chatSessionName)
 	if !hasPair(r.argv, "--model", "sonnet") || has(r.argv, "--effort") {
 		t.Errorf("the restarted chat's argv = %q, want --model sonnet and no --effort", r.argv)
 	}
-	c.waitSession(10*time.Second, "the new run's conversation", messagesAre("user: Fresh start"))
+	c.waitSession(10*time.Second, "the new run's conversation", messagesEndWith("user: Fresh start"))
 
 	// The reset wrote one usage record for the chat, from the transcript it had before the kill.
 	got := lastOf(w.waitEvent(chatSessionName, "usage", 1), "usage")
@@ -769,8 +821,8 @@ func TestChatSession_NeedsTheTokenOverTheLAN(t *testing.T) {
 	base := in.lanURL()
 
 	for _, r := range []struct{ method, path string }{
-		{http.MethodGet, "/api/chat/session"}, {http.MethodPost, "/api/chat/start"},
-		{http.MethodPost, "/api/chat/messages"}, {http.MethodPost, "/api/chat/new"},
+		{http.MethodGet, "/api/chat/chat/session"}, {http.MethodPost, "/api/chat/chat/start"},
+		{http.MethodPost, "/api/chat/chat/messages"}, {http.MethodPost, "/api/chat/chat/new"},
 	} {
 		if resp, body := do(t, r.method, base+r.path, nil); resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("%s %s without the token = %d, want 401: %s", r.method, r.path, resp.StatusCode, body)
@@ -779,8 +831,8 @@ func TestChatSession_NeedsTheTokenOverTheLAN(t *testing.T) {
 	expectBridgeRefused(t, base, chatSessionName, "", nil, "", http.StatusUnauthorized)
 
 	cookie := map[string]string{"Cookie": in.cookieName() + "=" + in.Token}
-	if resp, body := do(t, http.MethodGet, base+"/api/chat/session", cookie); resp.StatusCode != http.StatusOK || !strings.Contains(body, `"running":true`) {
-		t.Errorf("GET /api/chat/session with the token = %d %s, want 200 with the running chat", resp.StatusCode, body)
+	if resp, body := do(t, http.MethodGet, base+"/api/chat/chat/session", cookie); resp.StatusCode != http.StatusOK || !strings.Contains(body, `"running":true`) {
+		t.Errorf("GET /api/chat/chat/session with the token = %d %s, want 200 with the running chat", resp.StatusCode, body)
 	}
 	b, resp, err := bridgeDial(t, base, chatSessionName, "", http.Header{"Cookie": {in.cookieName() + "=" + in.Token}}, "")
 	if err != nil {
