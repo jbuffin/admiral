@@ -658,13 +658,14 @@ func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 				t.Fatalf("within 10s the SessionStart hook never printed the note; event-stdout is %q", out)
 			}
 		}
+		// The PreCompact cue's plain text follows the SessionStart line in the same file.
 		var got struct {
 			Output struct {
 				Event   string `json:"hookEventName"`
 				Context string `json:"additionalContext"`
 			} `json:"hookSpecificOutput"`
 		}
-		if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &got); err != nil || got.Output.Event != "SessionStart" || !strings.Contains(got.Output.Context, fact) {
+		if err := json.Unmarshal([]byte(strings.TrimSpace(strings.SplitN(out, "\n", 2)[0])), &got); err != nil || got.Output.Event != "SessionStart" || !strings.Contains(got.Output.Context, fact) {
 			t.Errorf("SessionStart printed %q, want hookSpecificOutput for SessionStart whose additionalContext holds the brief with the note (%v)", out, err)
 		}
 	})
