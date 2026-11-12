@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { fleets, fleetSearch } from './fleets';
-import { createInboxQueue, type Entry } from './inbox';
+import { syncSharedQueue, queueRev } from './attention';
+import { sharedInboxQueue, type Entry, type InboxQueue } from './inbox';
 import { call } from './api';
 import { isChatSession, Peek, peekKeys } from './Peek';
 import { REMOVED_FOLD } from './itemActions';
@@ -121,37 +122,23 @@ export function Row({ e, now, phone, selected, fold, peekHref }: { e: Entry; now
   );
 }
 
-/** The inbox queue as the list and the Chat surface's rail show it: synced to each push, with its folds timed out. */
+/** The shared inbox queue as the list and the Chat surface's rail show it: its folds time out in watchAttention. */
 export function useInboxQueue() {
-  const queue = useRef(createInboxQueue()).current;
-  const synced = useRef<unknown[]>([]);
-  const [, setRev] = useState(0);
-  const items = inboxItems.value;
-  const fleetShips = ships.value;
-  if (synced.current[0] !== items || synced.current[1] !== fleetShips) {
-    synced.current = [items, fleetShips];
-    queue.sync({ items, ships: fleetShips }, Date.now());
-  }
+  const queue = sharedInboxQueue();
+  syncSharedQueue(inboxItems.value, ships.value);
+  void queueRev.value;
   const entries = queue.entries();
-  const anyFolded = entries.some((e) => e.folded !== null);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(t);
   }, []);
-  useEffect(() => {
-    if (!anyFolded) return;
-    const t = setInterval(() => {
-      if (queue.tick(Date.now())) setRev((n) => n + 1);
-    }, 1000);
-    return () => clearInterval(t);
-  }, [anyFolded]);
-  return { queue, entries, now, rerender: () => setRev((n) => n + 1) };
+  return { queue, entries, now, rerender: () => queueRev.value++ };
 }
 
 /** The entry a Peek path opens, and the fold that closes it. */
-export function usePeekEntry(peek: PeekTarget | null, entries: Entry[], queue: ReturnType<typeof createInboxQueue>, rerender: () => void, leave: () => void) {
+export function usePeekEntry(peek: PeekTarget | null, entries: Entry[], queue: InboxQueue, rerender: () => void, leave: () => void) {
   const key = peek ? peekKey(peek) : '';
   const open = peek ? entries.find((e) => e.key === key) : undefined;
   const ready = peek ? (peek.item !== undefined ? inboxLoaded.value : shipsLoaded.value) : false;

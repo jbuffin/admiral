@@ -196,3 +196,11 @@ export function createInboxQueue() {
 }
 
 export type InboxQueue = ReturnType<typeof createInboxQueue>;
+
+// One queue for the whole shell, so a fold from any surface shows on every other and in the count.
+const shared = createInboxQueue();
+export const sharedInboxQueue = (): InboxQueue => shared;
+
+// What waits on the engineer: every entry still in the queue but a folded one, bar FYI notices.
+export const attentionCount = (queue: InboxQueue): number =>
+  queue.entries().filter((e) => e.folded === null && e.item?.kind !== 'notice').length;
