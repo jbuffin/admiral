@@ -1401,3 +1401,155 @@ export function setRemote(a: Admiral, remote: { tailscale: boolean; allowedLogin
   const cfg = existsSync(join(a.home, 'config.json')) ? JSON.parse(readFileSync(join(a.home, 'config.json'), 'utf8')) : { version: 1 };
   a.writeConfig({ ...cfg, remote });
 }
+
+/** A pull request of acme/api that My PRs lists: its number, title and the state both the search and the poll answer. */
+export interface MyPR {
+  number: number;
+  title: string;
+  review: string;
+  checks: string;
+  mergeable: string;
+}
+
+export const READY_PR: MyPR = { number: 7, title: 'Add the rate limiter', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' };
+export const WAITING_PR: MyPR = { number: 8, title: 'Cache the token lookups', review: 'REVIEW_REQUIRED', checks: 'SUCCESS', mergeable: 'MERGEABLE' };
+export const SHIPLESS_PR: MyPR = { number: 9, title: 'Fix the flaky retry', review: 'REVIEW_REQUIRED', checks: 'FAILURE', mergeable: 'CONFLICTING' };
+
+/**
+ * What the fake gh's search answers for My PRs (the one query with `author:@me`): these open PRs of acme/api, routed to the zulu fleet.
+ * The poll answers the same state, so an order's chips and its moored ship's chips agree. Call before `start`, after addGitHubSource.
+ */
+export function seedMyPRs(a: Admiral, prs: MyPR[]) {
+  const path = join(a.home, 'config.json');
+  const config = JSON.parse(readFileSync(path, 'utf8'));
+  config.fleets.zulu.owners = ['acme'];
+  a.writeConfig(config);
+  const dir = join(a.home, 'fakegh', 'search');
+  mkdirSync(dir, { recursive: true });
+  const node = (p: MyPR) => ({
+    number: p.number, title: p.title, url: `${PR_BASE}/${p.number}`,
+    repository: { nameWithOwner: 'acme/api', url: 'https://github.com/acme/api' }, labels: { nodes: [] },
+    state: 'OPEN', reviewDecision: p.review, mergeable: p.mergeable,
+    mergeStateStatus: p.review === 'APPROVED' && p.checks === 'SUCCESS' && p.mergeable === 'MERGEABLE' ? 'CLEAN' : 'BLOCKED',
+    statusCheckRollup: { state: p.checks },
+  });
+  writeFileSync(join(dir, 'a-mine.match'), 'author:@me');
+  writeFileSync(join(dir, 'a-mine.json'), JSON.stringify({ data: { search: { nodes: prs.map(node) } } }));
+  // The other default views ask for something else and get nothing.
+  writeFileSync(join(dir, 'z-rest.match'), 'is:open');
+  writeFileSync(join(dir, 'z-rest.json'), JSON.stringify({ data: { search: { nodes: [] } } }));
+  for (const p of prs) prAnswer(a, p.number, { state: 'OPEN', review: p.review, checks: p.checks, mergeable: p.mergeable });
+}
+
+/** A My PRs row: the Orders list's item for this PR. */
+const myPRRow = (page: Page, p: MyPR) => page.getByRole('region', { name: 'Orders' }).getByRole('listitem').filter({ hasText: p.title });
+
+/** Opens the Ships screen and waits for the PR's row in My PRs. */
+async function openMyPRs(page: Page, a: Admiral, p: MyPR) {
+  await page.goto(a.url + 'app/ships?fleet=zulu');
+  const row = myPRRow(page, p);
+  await expect(row).toBeVisible();
+  return row;
+}
+
+const SHIPLESS_NOTE = /Ready to merge|Waiting on|Has conflicts/;
+
+/**
+ * A ready PR a ship carries: its row in My PRs has the chips, the ship's link and Ready to merge, and Merge with the method, with no Launch.
+ * Nothing merges before the tap; one tap records one `gh pr merge <url> --squash` and the ship sails off.
+ */
+export async function myPRsMergeACarriedPR(page: Page, a: Admiral, opts: { phone: boolean }) {
+  seedMergeMethod(a, 'squash');
+  ghMergeSlow(a, 2);
+  const ship = await launchMooredShip(a, READY_PR.number);
+  await readyOnTheServer(a, ship, 'squash');
+
+  const row = await openMyPRs(page, a, READY_PR);
+  for (const chip of ['Approved', 'Checks passing', 'Mergeable']) await expect(row).toContainText(chip);
+  await expect(row).toContainText('Ready to merge');
+  await expect(row.getByRole('link', { name: ship.name })).toBeVisible();
+  await expect(row.getByRole('button', { name: /^Launch/ })).toHaveCount(0);
+  const merge = row.getByRole('button', { name: 'Merge', exact: true });
+  await expect(merge).toBeInViewport();
+  expect((await merge.boundingBox())!.height, 'Merge height').toBeGreaterThanOrEqual(44);
+  await expect(row).toContainText('squash');
+  await expect(row.getByRole('button', { name: /Merge up to/ })).toHaveCount(0);
+  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
+  await holds(() => mergeCalls(a).length === 0, 'opening My PRs merges nothing');
+
+  await merge.tap();
+  await expect(merge).toBeDisabled();
+  await expect.poll(() => mergeCalls(a)).toEqual([['pr', 'merge', `${PR_BASE}/${READY_PR.number}`, '--squash']]);
+  await expect
+    .poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status ?? 'gone', { timeout: 30_000 })
+    .not.toBe('moored');
+  expect(mergeCalls(a), 'one merge').toHaveLength(1);
+}
+
+/** A PR a ship carries that is not ready: its row has the chips, the ship and a next step that is not Ready to merge, and offers no Merge and no Launch. */
+export async function myPRsShowANotReadyCarriedPR(page: Page, a: Admiral, opts: { phone: boolean }) {
+  const ship = await launchMooredShip(a, WAITING_PR.number);
+  await expect
+    .poll(async () => {
+      await fetch(`${a.url}api/v1/moored/refresh`, { method: 'POST' });
+      const got = ((await (await fetch(`${a.url}api/v1/ships`)).json()) as { ships: (ShipJSON & { prs?: { review?: string }[] })[] }).ships.find((s) => s.session === ship.session);
+      return got?.prs?.[0]?.review;
+    }, { timeout: 30_000 })
+    .toBe('REVIEW_REQUIRED');
+
+  const row = await openMyPRs(page, a, WAITING_PR);
+  for (const chip of ['Review required', 'Checks passing', 'Mergeable']) await expect(row).toContainText(chip);
+  await expect(row.getByRole('link', { name: ship.name })).toBeVisible();
+  await expect(row).toContainText('Waiting on review');
+  await expect(row).not.toContainText('Ready to merge');
+  await expect(row.getByRole('button', { name: /^Merge/ })).toHaveCount(0);
+  await expect(row.getByRole('button', { name: /^Launch/ })).toHaveCount(0);
+  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
+}
+
+/**
+ * A PR no ship carries: its row has the chips and no ship, no next step and no Merge, and Launch Commodore, which opens the form
+ * with Commodore and the PR's URL as its text. Nothing is launched.
+ */
+export async function myPRsOfferCommodoreOnAShiplessPR(page: Page, a: Admiral, opts: { phone: boolean }) {
+  // The server has no Commodore; the form falls back to another skill unless the claude dock's identity has one.
+  const commodore = join(a.home, 'identity', 'zulu-claude', 'skills', 'commodore');
+  mkdirSync(commodore, { recursive: true });
+  writeFileSync(join(commodore, 'SKILL.md'), '---\nname: commodore\ndescription: a fake skill\n---\n');
+
+  const row = await openMyPRs(page, a, SHIPLESS_PR);
+  for (const chip of ['Review required', 'Checks failing', 'Conflicts']) await expect(row).toContainText(chip);
+  await expect(row).not.toContainText(SHIPLESS_NOTE);
+  await expect(row.getByRole('button', { name: /^Merge/ })).toHaveCount(0);
+  await expect(row.locator('a[href*="/app/ships/"]'), 'no ship carries it').toHaveCount(0);
+  const launch = row.getByRole('button', { name: 'Launch Commodore', exact: true });
+  await expect(launch).toHaveText('Launch Commodore');
+  await expect(launch).toBeInViewport();
+  expect((await launch.boundingBox())!.height, 'Launch Commodore height').toBeGreaterThanOrEqual(44);
+  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
+
+  await launch.tap();
+  const form = page.getByRole('dialog', { name: 'Launch', exact: true });
+  await expect(form).toBeVisible();
+  await expect(form.getByLabel('Skill')).toHaveValue('commodore');
+  await expect(form.getByLabel('Text')).toHaveValue(`${PR_BASE}/${SHIPLESS_PR.number}`);
+  await form.getByRole('button', { name: 'Cancel', exact: true }).tap();
+  await expect(form).toBeHidden();
+  expect(await listShips(a), 'nothing was launched').toEqual([]);
+}
+
+/** A merge gh refuses shows in the row's one alert, merges nothing and leaves the ship moored. */
+export async function myPRsMergeFailsOnTheRow(page: Page, a: Admiral) {
+  seedMergeMethod(a, 'squash');
+  ghMergeFails(a, 'GraphQL: Pull request is not mergeable (mergePullRequest)');
+  const ship = await launchMooredShip(a, READY_PR.number);
+  await readyOnTheServer(a, ship, 'squash');
+
+  const row = await openMyPRs(page, a, READY_PR);
+  await row.getByRole('button', { name: 'Merge', exact: true }).tap();
+  await expect(row.getByRole('alert')).toContainText('Pull request is not mergeable');
+  await expect(page.getByRole('alert'), 'no second alert').toHaveCount(1);
+  expect(mergeCalls(a)).toEqual([['pr', 'merge', `${PR_BASE}/${READY_PR.number}`, '--squash']]);
+  await expect(row.getByRole('button', { name: 'Merge', exact: true })).toBeEnabled();
+  expect((await listShips(a)).find((s) => s.session === ship.session)?.status).toBe('moored');
+}

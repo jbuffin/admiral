@@ -61,3 +61,13 @@ export const mergeHint = (method?: string, stack = false): string => {
   const how = ({ squash: 'squash', rebase: 'rebase', merge: 'merge commit' })[method as 'merge'] ?? '';
   return stack ? [how, 'whole stack'].filter(Boolean).join(' · ') : how;
 };
+
+/** The moored ship whose PRs include the order's URL, comparing case-insensitively and ignoring a trailing slash. */
+export function carryingShip(_ships: Ship[], _orderUrl: string): Ship | undefined {
+  return undefined;
+}
+
+/** What a carrying ship does next: `ready` when its whole stack can merge (rendered by ReadyToMerge), else a few words. */
+export function nextStep(_ship: Ship): { ready: boolean; text: string } {
+  return { ready: false, text: '' };
+}

@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/jbuffin/admiral/internal/moor"
 )
 
 // DefaultHost is the host a client talks to when its settings name none.
@@ -52,6 +54,7 @@ type Item struct {
 	Hot     bool
 	// SubIssues is how many sub-issues an issue has; 0 for a pull request.
 	SubIssues int
+	PR        *moor.PR
 }
 
 // SignInError means gh is missing or signed out, as opposed to a search that failed.
