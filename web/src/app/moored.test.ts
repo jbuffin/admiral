@@ -157,5 +157,7 @@ describe('mergeHint', () => {
     expect(mergeHint('rebase')).toBe('rebase');
     expect(mergeHint('merge')).toBe('merge commit');
     expect(mergeHint(undefined), 'nothing until the method is known').toBe('');
+    expect(mergeHint('squash', true)).toBe('squash · whole stack');
+    expect(mergeHint(undefined, true), 'a stack says so before the method is known').toBe('whole stack');
   });
 });

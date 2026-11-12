@@ -6,7 +6,10 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/jbuffin/admiral/internal/moor"
@@ -47,9 +50,9 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "upTo is not one of ship "+session+"'s pull requests")
 		return
 	}
-	if len(rec.PRs) > 1 {
-		// gh stack merge reads a bare number as a stack number before a PR number, so it can merge another stack.
-		writeError(w, http.StatusUnprocessableEntity, "merging a stack is not available yet; merge its pull requests on GitHub")
+	stack := len(rec.PRs) > 1
+	if stack && body.UpTo != "" && body.UpTo != rec.PRs[len(rec.PRs)-1] {
+		writeError(w, http.StatusBadRequest, "Merge up to is not available; the whole stack merges")
 		return
 	}
 	var gh moor.GitHub
@@ -60,13 +63,32 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "the fleet has no GitHub source to merge with")
 		return
 	}
-	// The PR that was checked is the PR that gets merged: only the client's own host, and the argv URL is rebuilt from the parts.
-	host, repo, number, ok := moor.ParsePR(rec.PRs[0])
-	if !ok || !strings.EqualFold(host, gh.Host()) {
-		writeError(w, http.StatusUnprocessableEntity, "the pull request is not on the fleet's GitHub host, so it is not merged")
-		return
+	// The PRs that were checked are the PRs that get merged: only the client's own host, and the argv URL is rebuilt from the parts.
+	var repo, mergeURL string
+	for _, pr := range rec.PRs {
+		host, prRepo, number, ok := moor.ParsePR(pr)
+		if !ok || !strings.EqualFold(host, gh.Host()) {
+			writeError(w, http.StatusUnprocessableEntity, "the pull request is not on the fleet's GitHub host, so it is not merged")
+			return
+		}
+		if repo == "" {
+			repo, mergeURL = prRepo, "https://"+gh.Host()+"/"+prRepo+"/pull/"+number
+		}
 	}
-	mergeURL := "https://" + gh.Host() + "/" + repo + "/pull/" + number
+	if stack {
+		if rec.Checkout == "" {
+			writeError(w, http.StatusConflict, "the ship has no checkout to merge its stack from")
+			return
+		}
+		if fi, err := os.Stat(rec.Checkout); err != nil || !fi.IsDir() {
+			writeError(w, http.StatusConflict, "the ship's checkout is gone, so its stack is not merged")
+			return
+		}
+		if s.checkoutShared(session, rec.Checkout) {
+			writeError(w, http.StatusConflict, "another ship is working in this checkout, so its stack is not merged")
+			return
+		}
+	}
 
 	// The last poll may be minutes old: look again before any gh merge runs.
 	fresh, err := gh.PullRequests(r.Context(), rec.PRs)
@@ -74,20 +96,36 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "cannot check the pull request before merging: "+err.Error())
 		return
 	}
-	url := rec.PRs[0]
-	st, found := fresh[url]
-	if !found || !st.Ready() {
-		writeError(w, http.StatusConflict, "the pull request is not ready to merge: it must be open, approved, green and mergeable")
-		return
+	for _, url := range rec.PRs {
+		if st, found := fresh[url]; !found || !st.Ready() {
+			writeError(w, http.StatusConflict, "the pull request is not ready to merge: it must be open, approved, green and mergeable")
+			return
+		}
 	}
+	// Before the view, so that only starting gh sits between reading the stack and merging it.
 	method, err := s.mergeMethod(r.Context(), gh, rec.Fleet, repo)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	if stack {
+		layers, err := gh.StackPRs(r.Context(), rec.Checkout, repo)
+		if err != nil {
+			writeError(w, http.StatusConflict, "cannot read the stack in the ship's checkout, so it is not merged: "+err.Error())
+			return
+		}
+		if !stackIsShips(layers, rec.PRs, fresh) {
+			writeError(w, http.StatusConflict, "the stack in the ship's checkout is not the ship's pull requests as GitHub has them, so it is not merged")
+			return
+		}
+	}
 
 	// The merge outlives a client that hangs up: stopping gh midway would leave its result unknown.
-	err = gh.MergePR(context.WithoutCancel(r.Context()), mergeURL, method)
+	if stack {
+		err = gh.MergeStack(context.WithoutCancel(r.Context()), rec.Checkout, repo, method)
+	} else {
+		err = gh.MergePR(context.WithoutCancel(r.Context()), mergeURL, method)
+	}
 	switch {
 	case errors.Is(err, moor.ErrMergeTimeout):
 		s.RefreshMoored() // it may have merged
@@ -97,9 +135,45 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	s.record(outcomes.Record{Ship: session, Event: "merged", Fields: map[string]any{"prs": []string{url}, "method": method}}, nil)
+	s.record(outcomes.Record{Ship: session, Event: "merged", Fields: map[string]any{"prs": rec.PRs, "method": method}}, nil)
 	s.RefreshMoored()
-	writeJSON(w, http.StatusAccepted, map[string]any{"merged": []string{url}, "method": method})
+	writeJSON(w, http.StatusAccepted, map[string]any{"merged": rec.PRs, "method": method})
+}
+
+// stackIsShips is whether the checkout's own record of its stack names exactly the ship's pull requests, in order, with
+// the numbers and branch heads GitHub has for them. The record is the ship's to write, so each layer is bound to GitHub.
+func stackIsShips(layers []moor.StackLayer, prs []string, fresh map[string]moor.Status) bool {
+	if len(layers) != len(prs) {
+		return false
+	}
+	for i, l := range layers {
+		_, _, number, ok := moor.ParsePR(prs[i])
+		if !ok || l.URL != prs[i] || strconv.Itoa(l.Number) != number || l.Head == "" || l.Head != fresh[prs[i]].Head {
+			return false
+		}
+	}
+	return true
+}
+
+// checkoutShared is whether another live ship works in the same directory, where it could switch the branch gh-stack merges.
+func (s *Service) checkoutShared(session, checkout string) bool {
+	want := realDir(checkout)
+	for _, sess := range s.Host.Sessions() {
+		if sess.Name == session || !sess.IsShip() {
+			continue
+		}
+		if dir := s.ship(sess).Dir; dir != "" && realDir(dir) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func realDir(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		p = r
+	}
+	return filepath.Clean(p)
 }
 
 // mergeMethod is the repository's default merge method, from the cache or else asked of GitHub.

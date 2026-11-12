@@ -84,6 +84,14 @@ func (g *pollGitHub) MergePR(context.Context, string, string) error {
 	return g.mergeErr
 }
 
+func (g *pollGitHub) StackPRs(context.Context, string, string) ([]moor.StackLayer, error) {
+	return nil, nil
+}
+
+func (g *pollGitHub) MergeStack(context.Context, string, string, string) error {
+	return g.MergePR(context.Background(), "", "")
+}
+
 func (g *pollGitHub) set(url string, st moor.Status) {
 	g.mu.Lock()
 	defer g.mu.Unlock()

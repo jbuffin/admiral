@@ -249,10 +249,11 @@ func (c *Client) gh(ctx context.Context, args []string, tokenVar, token string) 
 	if timeout == 0 {
 		timeout = ghTimeout
 	}
-	return c.ghWithin(ctx, timeout, args, tokenVar, token)
+	return c.ghWithin(ctx, timeout, "", nil, args, tokenVar, token)
 }
 
-func (c *Client) ghWithin(ctx context.Context, timeout time.Duration, args []string, tokenVar, token string) (stdout, stderr string, err error) {
+// ghWithin runs gh in dir, or in Admiral's own directory when dir is empty, with extra after the usual environment.
+func (c *Client) ghWithin(ctx context.Context, timeout time.Duration, dir string, extra, args []string, tokenVar, token string) (stdout, stderr string, err error) {
 	bin, err := c.binary()
 	if err != nil {
 		return "", "", err
@@ -260,7 +261,8 @@ func (c *Client) ghWithin(ctx context.Context, timeout time.Duration, args []str
 	tctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(tctx, bin, args...)
-	cmd.Env = c.environ(tokenVar, token)
+	cmd.Dir = dir
+	cmd.Env = append(c.environ(tokenVar, token), extra...)
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	cmd.WaitDelay = time.Second

@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from './fixtures';
-import { addGitHubSource, appendLines, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, rowLink, seedFleets, seedInboxItem, setReason, setState, stackedShipOffersNoMerge, withFakeGh } from './shell';
+import { addGitHubSource, appendLines, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, rowLink, seedFleets, seedInboxItem, setReason, setState, readyStackMergesFromPeek, withFakeGh } from './shell';
 
 const peekOf = (page: Page) => page.getByRole('region', { name: 'Peek' });
 const listRow = (page: Page, text: string) => page.getByRole('main').getByRole('listitem').filter({ hasText: text });
@@ -79,10 +79,10 @@ test('on the phone, a merge that gh fails shows its message in Peek and the ship
   await mergeFailsInPeek(page, admiral);
 });
 
-test('on the phone, a ready stack shows Ready to merge and Peek offers no Merge', async ({ page, admiral }) => {
+test('on the phone, a ready stack shows Ready to merge, and Merge in Peek merges the whole stack with one gh stack merge after the tap', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
   addGitHubSource(admiral);
   await admiral.start({ env: mooringEnv(admiral) });
 
-  await stackedShipOffersNoMerge(page, admiral);
+  await readyStackMergesFromPeek(page, admiral);
 });

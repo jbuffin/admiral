@@ -8,6 +8,7 @@ import { Preferences } from './Preferences';
 import { Sheet } from './Sheet';
 import { GROUP_TITLES, groupShips, shipRowAge } from './shipList';
 import { rowButtons } from './moored';
+import { MooredActions } from './MooredActions';
 import { MooredPRs } from './MooredPRs';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
@@ -81,34 +82,6 @@ function useNow() {
     return () => clearInterval(t);
   }, []);
   return now;
-}
-
-function MooredActions({ ship, onError }: { ship: Ship; onError: (e: string) => void }) {
-  const [busy, setBusy] = useState('');
-  const act = async (route: string) => {
-    setBusy(route);
-    onError('');
-    const res = await call('POST', `/ships/${encodeURIComponent(ship.session)}/${route}`);
-    // On success the buttons stay off until the ships push removes the row, so a second tap cannot hit a 404.
-    if (!res.ok) {
-      onError(res.error);
-      setBusy('');
-    }
-  };
-  const off = rowButtons(ship, busy !== '');
-  return (
-    <div class="ship-actions">
-      <button type="button" class="btn" disabled={off.wake} onClick={() => act('wake')}>
-        Wake
-      </button>
-      <button type="button" class="btn" disabled={off.others} onClick={() => act('dismiss')}>
-        Dismiss
-      </button>
-      <button type="button" class="btn" disabled={off.others} onClick={() => act('unfollow')}>
-        Don't follow reviews
-      </button>
-    </div>
-  );
 }
 
 function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
