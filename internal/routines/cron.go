@@ -120,22 +120,82 @@ func (s Schedule) dayMatches(t time.Time) bool {
 	return dom && dow
 }
 
+const allHours = 1<<24 - 1
+
+func (s Schedule) hourRestricted() bool { return s.hour != allHours }
+
+// wallMatches reads t's wall-clock fields, in whatever zone t carries.
+func (s Schedule) wallMatches(t time.Time) bool {
+	return s.month&(1<<uint(t.Month())) != 0 && s.dayMatches(t) &&
+		s.hour&(1<<uint(t.Hour())) != 0 && s.min&(1<<uint(t.Minute())) != 0
+}
+
+// repeated is true in the second pass over a wall-clock time when clocks go back.
+func repeated(t time.Time) bool {
+	p := t.Add(-time.Hour)
+	return p.Hour() == t.Hour() && p.Minute() == t.Minute()
+}
+
+// afterGap is true when t is the first instant after clocks sprang forward and a wall time the gap skipped matches.
+func (s Schedule) afterGap(t time.Time) bool {
+	p := t.Add(-time.Minute)
+	_, off := t.Zone()
+	_, was := p.Zone()
+	if off <= was {
+		return false
+	}
+	clock := func(x time.Time, add int) time.Time {
+		return time.Date(x.Year(), x.Month(), x.Day(), x.Hour(), x.Minute()+add, 0, 0, time.UTC)
+	}
+	for w, end := clock(p, 1), clock(t, 0); w.Before(end); w = w.Add(time.Minute) {
+		if s.wallMatches(w) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s Schedule) fires(t time.Time) bool {
+	if !s.hourRestricted() {
+		return s.wallMatches(t)
+	}
+	// a fixed time runs once: not again in the repeated hour, and at the first instant after a gap that skipped it
+	if s.wallMatches(t) && !repeated(t) {
+		return true
+	}
+	return s.afterGap(t)
+}
+
+// forward is n when it is later than t. time.Date reads a wall time that doesn't exist as an earlier one, so a
+// jump that lands back is replaced by the next top of the hour, which always moves on in absolute time.
+func forward(t, n time.Time) time.Time {
+	if n.After(t) {
+		return n
+	}
+	return nextHour(t)
+}
+
+func nextHour(t time.Time) time.Time {
+	return t.Add(time.Hour - time.Duration(t.Minute())*time.Minute - time.Duration(t.Second())*time.Second - time.Duration(t.Nanosecond()))
+}
+
 // Next is the first matching minute strictly after t, in t's location; zero when none falls within five years.
+// Every step moves forward in absolute time, so a clock change can't make it loop.
 func (s Schedule) Next(after time.Time) time.Time {
 	t := after.Truncate(time.Minute).Add(time.Minute)
 	limit := after.AddDate(5, 0, 0)
 	for t.Before(limit) {
 		switch {
-		case s.month&(1<<uint(t.Month())) == 0:
-			t = time.Date(t.Year(), t.Month()+1, 1, 0, 0, 0, 0, t.Location())
-		case !s.dayMatches(t):
-			t = time.Date(t.Year(), t.Month(), t.Day()+1, 0, 0, 0, 0, t.Location())
-		case s.hour&(1<<uint(t.Hour())) == 0:
-			t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour()+1, 0, 0, 0, t.Location())
-		case s.min&(1<<uint(t.Minute())) == 0:
-			t = t.Add(time.Minute)
-		default:
+		case s.fires(t):
 			return t
+		case s.month&(1<<uint(t.Month())) == 0:
+			t = forward(t, time.Date(t.Year(), t.Month()+1, 1, 0, 0, 0, 0, t.Location()))
+		case !s.dayMatches(t):
+			t = forward(t, time.Date(t.Year(), t.Month(), t.Day()+1, 0, 0, 0, 0, t.Location()))
+		case s.hour&(1<<uint(t.Hour())) == 0:
+			t = nextHour(t)
+		default:
+			t = t.Add(time.Minute)
 		}
 	}
 	return time.Time{}

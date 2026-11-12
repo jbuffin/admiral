@@ -177,8 +177,12 @@ func (s *Store) validate(f config.Fleet, r Routine) error {
 	if strings.TrimSpace(r.Name) == "" {
 		return invalidf("name is required")
 	}
-	if _, err := ParseCron(r.When); err != nil {
+	sched, err := ParseCron(r.When)
+	if err != nil {
 		return invalidf("when: %v", err)
+	}
+	if sched.Next(s.now()).IsZero() {
+		return invalidf("when: the cron expression %q never fires", r.When)
 	}
 	switch r.Before {
 	case ReportOnly, AskFirst, Act:
@@ -266,7 +270,8 @@ func (s *Store) Update(fleet, id string, r Routine) (Routine, error) {
 	if err := s.validate(f, r); err != nil {
 		return Routine{}, err
 	}
-	r.ID, r.CreatedAt, r.UpdatedAt = id, list[i].CreatedAt, s.now()
+	// only the on and off routes change the switch
+	r.ID, r.Enabled, r.CreatedAt, r.UpdatedAt = id, list[i].Enabled, list[i].CreatedAt, s.now()
 	list[i] = r
 	if err := s.save(fleet, list); err != nil {
 		return Routine{}, err
@@ -431,6 +436,11 @@ func (s *Store) Undo(fleet, id string) error {
 	lines, err := s.readLog(fleet)
 	if err != nil {
 		return err
+	}
+	for _, l := range lines {
+		if l.UndoOf == id {
+			return nil
+		}
 	}
 	for _, l := range lines {
 		if l.ID == id {

@@ -473,7 +473,7 @@ A routine:
  "before_acting": "ask_first", "notify": true, "created_at": "2026-11-12T08:00:00Z", "updated_at": "2026-11-12T08:00:00Z"}
 ```
 
-- `when` is a standard 5-field cron expression (`*`, lists, ranges, steps, month and weekday names) in the server's local time zone.
+- `when` is a standard 5-field cron expression (`*`, lists, ranges, steps, month and weekday names) in the server's local time zone, and it must fire at some time in the next five years (`0 0 30 2 *` is refused). A fixed hour runs once on the day clocks go back, not in the repeated hour, and a fixed time the spring-forward gap skips (`30 2 * * *`) runs once at the first instant after the gap, as Vixie cron does; a wildcard hour (`30 * * * *`) runs in every hour that exists.
 - `do` is either `launch` (the launch form's fields, plus `args`, extra harness args the form has no field for) or `prompt` (an AdmiralBot prompt), never both. A launch is refused unless the fleet has the dock, the harness's autopilot guard and the fleet's advisor are proven, and `args` pass the autopilot args allowlist.
 - `before_acting` is `report_only`, `ask_first` or `act`. While Hold fire is on, `act` runs as `ask_first`; the stored value doesn't change.
 

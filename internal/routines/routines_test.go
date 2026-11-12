@@ -243,6 +243,7 @@ func TestSaveRefusals(t *testing.T) {
 		{"a Do that is both", func(_ *rig, in *routines.Routine) string { in.Do.Prompt = "also this"; return "work" }, "do"},
 		{"a Do that is neither", func(_ *rig, in *routines.Routine) string { in.Do = routines.Do{}; return "work" }, "do"},
 		{"a Before acting that is not one of the three", func(_ *rig, in *routines.Routine) string { in.Before = "propose"; return "work" }, "before"},
+		{"a cron that never fires", func(_ *rig, in *routines.Routine) string { in.When = "0 0 30 2 *"; return "work" }, "never"},
 		{"no name", func(_ *rig, in *routines.Routine) string { in.Name = ""; return "work" }, "name"},
 	}
 	for _, c := range cases {
@@ -453,6 +454,78 @@ func TestHoldFireForAnUnknownFleetIsRefused(t *testing.T) {
 	for _, fleet := range []string{"ghost", "../x"} {
 		if _, err := r.store.SetHold(fleet, true, routines.Engineer); !errors.Is(err, routines.ErrUnknownFleet) {
 			t.Errorf("SetHold(%q) = %v, want ErrUnknownFleet", fleet, err)
+		}
+	}
+}
+
+func TestUpdateLeavesTheSwitchToTheOnAndOffRoutes(t *testing.T) {
+	r := newRig(t)
+	saved := r.create("work", launchRoutine())
+	edit := saved
+	edit.Enabled = false
+	got, err := r.store.Update("work", saved.ID, edit)
+	if err != nil || !got.Enabled {
+		t.Fatalf("Update with enabled=false = %+v, %v; want it still enabled", got, err)
+	}
+	if _, err := r.store.SetEnabled("work", saved.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	edit.Enabled = true
+	if got, err := r.store.Update("work", saved.ID, edit); err != nil || got.Enabled {
+		t.Fatalf("Update with enabled=true = %+v, %v; want it still off", got, err)
+	}
+}
+
+func TestASecondUndoOfTheSameLaunchChangesNothing(t *testing.T) {
+	r := newRig(t)
+	a := r.create("work", launchRoutine())
+	rec, err := r.store.AppendTrigger("work", routines.Trigger{Routine: a.ID, Outcome: routines.Launched, Tier: "T0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.now = t0.Add(time.Hour)
+	if err := r.store.Undo("work", rec.ID); err != nil {
+		t.Fatal(err)
+	}
+	r.now = t0.Add(2 * time.Hour)
+	if err := r.store.Undo("work", rec.ID); err != nil {
+		t.Fatalf("a repeat Undo = %v, want nil", err)
+	}
+	got, err := r.store.Recent("work", a.ID, 0)
+	if err != nil || len(got) != 1 || !got[0].Undone || !got[0].UndoneAt.Equal(t0.Add(time.Hour)) {
+		t.Fatalf("Recent = %+v, %v; want the first undo time kept", got, err)
+	}
+	b, err := os.ReadFile(filepath.Join(r.home, "routines", "work", "triggers.jsonl"))
+	if err != nil || strings.Count(string(b), "undo_of") != 1 {
+		t.Fatalf("the log holds %d undo marks, want 1 (%v)", strings.Count(string(b), "undo_of"), err)
+	}
+}
+
+func TestHoldFireThatCannotBeReadHoldsFire(t *testing.T) {
+	for _, fleet := range []string{"work", ""} {
+		r := newRig(t)
+		path := filepath.Join(r.home, "routines", "hold.json")
+		if fleet != "" {
+			path = filepath.Join(r.home, "routines", fleet, "hold.json")
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		on, err := r.store.HoldOn("work")
+		if err != nil || !on {
+			t.Fatalf("HoldOn with a corrupt %q switch = %v, %v; want on", fleet, on, err)
+		}
+		if _, err := os.Stat(path + ".bad"); err != nil {
+			t.Fatalf("the unreadable switch was not kept for inspection: %v", err)
+		}
+		if _, err := r.store.SetHold(fleet, false, routines.Engineer); err != nil {
+			t.Fatal(err)
+		}
+		if h, _ := r.store.GetHold(fleet); h.On {
+			t.Fatalf("the engineer could not turn %q off again: %+v", fleet, h)
 		}
 	}
 }

@@ -1,6 +1,9 @@
 package routines
 
 import (
+	"encoding/json"
+	"errors"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -24,10 +27,25 @@ func (s *Store) holdPath(fleet string) string {
 	return filepath.Join(s.dir(fleet), "hold.json")
 }
 
+// readHold fails closed: a switch file that doesn't parse is kept as .bad and replaced by one that holds fire.
 func (s *Store) readHold(fleet string) (Hold, error) {
+	path := s.holdPath(fleet)
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return Hold{}, nil
+	}
+	if err != nil {
+		return Hold{}, err
+	}
 	var h Hold
-	err := readJSON(s.holdPath(fleet), &h)
-	return h, err
+	if json.Unmarshal(b, &h) == nil {
+		return h, nil
+	}
+	if err := os.Rename(path, path+".bad"); err != nil {
+		return Hold{}, err
+	}
+	h = Hold{On: true, By: "admiral", At: s.now()}
+	return h, writeFile(path, h)
 }
 
 // SetHold turns the fleet's Hold fire on or off; an empty fleet is the global switch.
