@@ -36,7 +36,6 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/launch-orders/skills", s.serveSkills)
 	mux.HandleFunc("GET /api/launch-orders/crew", s.serveCrew)
 	mux.HandleFunc("PUT /api/favorites", s.serveFavorites)
-	mux.HandleFunc("PUT /api/chat", s.serveChat)
 }
 
 // Connected sends nothing: the dialog asks when it opens.
@@ -382,44 +381,6 @@ func (s *Service) serveFavorites(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"favorite_skills": s.Config.Current().FavoriteSkills})
-}
-
-// An empty fleet falls back to the default, as a missing one does on load.
-func (s *Service) serveChat(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Fleet  string `json:"fleet"`
-		Model  string `json:"model"`
-		Effort string `json:"effort"`
-	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
-		return
-	}
-	if !slices.Contains(config.ChatModels, req.Model) {
-		writeError(w, http.StatusBadRequest, "model must be sonnet, opus or haiku, got "+strconv.Quote(req.Model))
-		return
-	}
-	if !slices.Contains(config.ChatEfforts, req.Effort) {
-		writeError(w, http.StatusBadRequest, "effort must be empty, low, medium or high, got "+strconv.Quote(req.Effort))
-		return
-	}
-	cur := s.Config.Current()
-	if req.Fleet != "" && !slices.ContainsFunc(cur.Fleets, func(f config.Fleet) bool { return f.Key == req.Fleet }) {
-		writeError(w, http.StatusBadRequest, "no fleet named "+strconv.Quote(req.Fleet))
-		return
-	}
-	chat := config.Chat{Fleet: req.Fleet, Model: req.Model, Effort: req.Effort}
-	if chat.Fleet == "" {
-		chat.Fleet = cur.Chat.Fleet
-	}
-	if chat.Fleet != "" { // no fleets at all: nothing to write
-		if err := s.Config.SetChat(chat); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-	}
-	v := s.Config.Current().Chat
-	writeJSON(w, http.StatusOK, map[string]any{"fleet": v.Fleet, "model": v.Model, "effort": v.Effort})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

@@ -1,9 +1,7 @@
 import { signal } from '@preact/signals';
 import { useState } from 'preact/hooks';
 import { muted, setMuted } from './chime';
-import { config } from './config';
 import { Modal } from './Modal';
-import { api } from './sources';
 
 const open = signal(false);
 export { open as appSettingsOpen };
@@ -23,41 +21,16 @@ function close() {
   setTimeout(() => (from?.isConnected ? from : document.getElementById(GEAR_ID))?.focus(), 0);
 }
 
-const MODELS = ['sonnet', 'opus', 'haiku'];
-const EFFORTS = ['low', 'medium', 'high'];
-
 export function AppSettings() {
   if (!open.value) return null;
   return <Form onClose={close} />;
 }
 
 function Form({ onClose }: { onClose: () => void }) {
-  const stored = config.value?.chat;
-  const fleets = config.value?.fleets ?? [];
-  const [fleet, setFleet] = useState(stored?.fleet ?? '');
-  const [model, setModel] = useState(stored?.model ?? 'sonnet');
-  const [effort, setEffort] = useState(stored?.effort ?? '');
   const [sound, setSound] = useState(!muted.value);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
 
-  const defaultFleet = fleets.find((f) => f.docks.some((d) => d.harness === 'claude')) ?? fleets[0];
-  const line = `"chat": {"fleet": "${fleet}", "model": "${model}"${effort ? `, "effort": "${effort}"` : ''}}`;
-
-  async function save() {
-    setSaving(true);
-    // With no fleet there is nothing to write for the chat, and an unchanged chat is not written.
-    // Sound applies on its own, whatever the PUT answers.
+  function save() {
     if (sound === muted.value) setMuted(!sound);
-    const changed = !stored || fleet !== stored.fleet || model !== stored.model || effort !== stored.effort;
-    if (fleet && changed) {
-      const r = await api('PUT', '/api/chat', { fleet, model, effort });
-      if (!r.ok) {
-        setError(r.error);
-        setSaving(false);
-        return;
-      }
-    }
     onClose();
   }
 
@@ -93,55 +66,12 @@ function Form({ onClose }: { onClose: () => void }) {
             </button>
           </div>
         </section>
-        <section aria-labelledby="app-set-chat">
-          <h3 id="app-set-chat">Chat</h3>
-          <div class="app-set-field">
-            <label for="app-set-fleet">Fleet</label>
-            <select id="app-set-fleet" value={fleet} onChange={(e) => setFleet(e.currentTarget.value)}>
-              {fleets.map((f) => (
-                <option key={f.key} value={f.key}>
-                  {f.name}
-                  {f.key === defaultFleet?.key ? ' (default)' : ''}
-                </option>
-              ))}
-            </select>
-            {defaultFleet && <small>Default: {defaultFleet.name}, the first fleet with a Claude dock.</small>}
-          </div>
-          <div class="app-set-field">
-            <label for="app-set-model">Model</label>
-            <select id="app-set-model" value={model} onChange={(e) => setModel(e.currentTarget.value)}>
-              {MODELS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                  {m === 'sonnet' ? ' (default)' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div class="app-set-field">
-            <label for="app-set-effort">Effort</label>
-            <select id="app-set-effort" value={effort} onChange={(e) => setEffort(e.currentTarget.value)}>
-              <option value="">Harness default</option>
-              {EFFORTS.map((x) => (
-                <option key={x} value={x}>
-                  {x}
-                </option>
-              ))}
-            </select>
-            <small>Harness default passes no effort flag.</small>
-          </div>
-          <div class="app-set-field">
-            <span class="app-set-caption">Writes to config.json</span>
-            <code class="app-set-line">{fleet ? line : 'Nothing: there is no fleet to chat in.'}</code>
-          </div>
-        </section>
-        {error && <div role="alert">{error}</div>}
       </div>
       <footer class="app-settings-foot">
         <button type="button" class="press app-set-cancel" onClick={onClose}>
           Cancel
         </button>
-        <button type="button" class="press app-set-save" disabled={saving} onClick={() => void save()}>
+        <button type="button" class="press app-set-save" onClick={save}>
           Save
         </button>
       </footer>

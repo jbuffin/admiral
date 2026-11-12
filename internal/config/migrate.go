@@ -43,6 +43,10 @@ type Migration struct {
 	AutopilotObject bool
 	GitHub          bool // an old GitHub plugin source became built in, on every fleet
 	GitHubCustom    bool // and it had custom views, which the default views now sit beside
+	// Chat is set when the top-level chat key went onto a fleet's own chat settings;
+	// ChatFleet is that fleet's key and name, empty when the file had no fleet.
+	Chat                     bool
+	ChatFleet, ChatFleetName string
 }
 
 type migrationPlan struct {
@@ -54,6 +58,7 @@ type migrationPlan struct {
 	changed bool // a kept source lost its autopilot, whether or not it is listed above
 	github  bool
 	custom  bool
+	chat    *Moved // the old chat key's destination; Key empty when there was no fleet
 }
 
 func NeedsMigration(data []byte) bool {
@@ -133,7 +138,8 @@ func planMigration(data []byte) *migrationPlan {
 		top.Delete("autopilot")
 		p.object = true
 	}
-	if len(p.moved) == 0 && len(p.removed) == 0 && len(p.entries) == 0 && !p.object && !p.changed && !p.github {
+	p.chat = migrateChat(top)
+	if len(p.moved) == 0 && len(p.removed) == 0 && len(p.entries) == 0 && !p.object && !p.changed && !p.github && p.chat == nil {
 		return nil
 	}
 	out := top.JSON()
@@ -147,6 +153,65 @@ func planMigration(data []byte) *migrationPlan {
 	}
 	p.out = out
 	return p
+}
+
+// migrateChat moves the top-level chat key's model and effort onto the fleet it names, else
+// the first fleet with a Claude Code dock, else the first fleet, and removes the key. It
+// returns nil when there is no such key.
+func migrateChat(top *Object) *Moved {
+	raw, ok := top.Get("chat")
+	if !ok {
+		return nil
+	}
+	top.Delete("chat")
+	old, err := ParseObject(raw)
+	if err != nil {
+		return &Moved{}
+	}
+	rawFleets, ok := top.Get("fleets")
+	if !ok {
+		return &Moved{}
+	}
+	fleets, err := ParseObject(rawFleets)
+	if err != nil || fleets.Len() == 0 {
+		return &Moved{}
+	}
+	dest := stringOf(old, "fleet")
+	if _, ok := fleets.Get(dest); !ok {
+		dest = fleets.Keys()[0]
+		for _, k := range fleets.Keys() {
+			if f, err := ParseObject(mustRaw(fleets, k)); err == nil {
+				if _, ok := f.Get("claude"); ok {
+					dest = k
+					break
+				}
+			}
+		}
+	}
+	rawFleet, _ := fleets.Get(dest)
+	fleet, err := ParseObject(rawFleet)
+	if err != nil {
+		return &Moved{}
+	}
+	chat := NewObject()
+	if rc, ok := fleet.Get("chat"); ok {
+		if chat, err = ParseObject(rc); err != nil {
+			chat = NewObject()
+		}
+	}
+	for _, k := range []string{"model", "effort"} {
+		if v, ok := old.Get(k); ok && stringOf(old, k) != "" {
+			if _, have := chat.Get(k); !have {
+				chat.Set(k, v)
+			}
+		}
+	}
+	if chat.Len() > 0 {
+		fleet.Set("chat", chat.JSON())
+		fleets.Set(dest, fleet.JSON())
+		top.Set("fleets", fleets.JSON())
+	}
+	return &Moved{Fleet: dest, FleetName: nameOf(rawFleet, dest)}
 }
 
 // enabledEntries lists the enabled entries of a source's autopilot object, in
@@ -314,7 +379,11 @@ func Migrate(dir, version string) (*Migration, error) {
 	if err := replaceFile(path, p.out); err != nil {
 		return nil, err
 	}
-	return &Migration{Backup: backup, Moved: p.moved, Removed: p.removed, Entries: p.entries, AutopilotObject: p.object, GitHub: p.github, GitHubCustom: p.custom}, nil
+	m := &Migration{Backup: backup, Moved: p.moved, Removed: p.removed, Entries: p.entries, AutopilotObject: p.object, GitHub: p.github, GitHubCustom: p.custom}
+	if p.chat != nil {
+		m.Chat, m.ChatFleet, m.ChatFleetName = true, p.chat.Fleet, p.chat.FleetName
+	}
+	return m, nil
 }
 
 func writeNew(path string, data []byte) error {
@@ -383,7 +452,7 @@ func (m *Migration) Notice() (title, body string) {
 	fleets := len(m.Moved)+len(m.Removed) > 0
 	autopilot := len(m.Entries) > 0 || m.AutopilotObject
 	title = "Admiral updated your config"
-	if !fleets && !m.GitHub {
+	if !fleets && !m.GitHub && !m.Chat {
 		title = "Admiral removed autopilot from your config"
 	}
 	var did []string
@@ -392,6 +461,9 @@ func (m *Migration) Notice() (title, body string) {
 	}
 	if m.GitHub && !fleets {
 		did = append(did, "updated your GitHub source")
+	}
+	if m.Chat {
+		did = append(did, "moved the chat settings onto their fleet")
 	}
 	if autopilot {
 		did = append(did, "removed the autopilot engine's settings")
@@ -426,6 +498,13 @@ func (m *Migration) Notice() (title, body string) {
 		b.WriteString("\n- GitHub is now built in and runs on every fleet.")
 		if m.GitHubCustom {
 			b.WriteString(" Your custom views were copied to each one. The three default views (Assigned to me, Review requested, My PRs) now show beside them.")
+		}
+	}
+	if m.Chat {
+		if m.ChatFleet == "" {
+			b.WriteString("\n- The chat settings key is gone: each fleet has its own chat settings now, and there was no fleet to move yours to.")
+		} else {
+			fmt.Fprintf(&b, "\n- Each fleet has its own chat settings now. Yours went to fleet %s (%s); every other fleet has the defaults.", m.ChatFleetName, m.ChatFleet)
 		}
 	}
 	if len(m.Entries) > 0 {

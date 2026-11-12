@@ -1,6 +1,6 @@
 # 10. Fleets are set up by `admiral setup` in a JSON config
 
-Status: accepted, amended below (sources belong to a fleet, fleets gain `owners` and `clone_root`, the config migrates itself at startup, and the HTTP API may edit four fleet fields)
+Status: accepted, amended below (sources belong to a fleet, fleets gain `owners` and `clone_root`, the config migrates itself at startup, and the HTTP API may edit four fleet fields, and a fleet's chat settings)
 
 ## Context
 
@@ -57,3 +57,9 @@ From [Grilling: settings for fleets and their order sources](https://github.com/
 - **A built-in GitHub source stays with its fleet.** Other plugin sources can be moved to another fleet (`PUT /api/sources/{key}` with `fleet`); a GitHub source is refused, and the engineer adds one to the other fleet instead.
 - **The UI writes three parts of the file**, not two: `favorite_skills`, `sources`, and now the four fleet fields above.
 - **`clone_root` must be an absolute path or start with `~/`**, like a search root; nothing read it before, so no stored config breaks.
+
+## Amendment (2026-11-12)
+
+From [per-fleet AdmiralBot chat](https://github.com/jbuffin/admiral/issues/272):
+
+- **A fleet's chat settings are the fifth thing the HTTP API may edit.** `PUT /api/fleets/{key}` also takes `chat`: `{harness, model, effort, context_threshold}`, each optional, written under the fleet's `chat` key. The top-level `chat` key is gone, and the startup migration moves its `model` and `effort` onto the fleet it named.

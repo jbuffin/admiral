@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
 	"maps"
 	"os"
 	"path/filepath"
@@ -27,9 +26,7 @@ type Config struct {
 	// MaxShips counts every ship underway or needing you, hand launches included.
 	MaxShips  int
 	Resources map[string]Resource
-	// Chat is resolved: Fleet is never a missing fleet, and Model is never empty.
-	Chat   Chat
-	Remote Remote
+	Remote    Remote
 }
 
 // Remote is Admiral-wide: the Tailscale mode and who may use it.
@@ -49,21 +46,6 @@ func (r Remote) Allowing(on bool, logins ...string) Remote {
 	return out
 }
 
-// Chat's Effort is empty for the harness default, which config.json leaves out.
-type Chat struct {
-	Fleet  string
-	Model  string
-	Effort string
-}
-
-const DefaultChatModel = "sonnet"
-
-// An empty effort is the harness default.
-var (
-	ChatModels  = []string{"sonnet", "opus", "haiku"}
-	ChatEfforts = []string{"", "low", "medium", "high"}
-)
-
 type Fleet struct {
 	Key           string
 	Name          string
@@ -76,6 +58,7 @@ type Fleet struct {
 	CloneRoot     string            // where the fleet's clones live; empty when unset
 	Env           map[string]string // the fleet's own env, ~ expanded; plugin sources and gh calls start with it
 	Harnesses     []Harness         // dock order: claude, copilot, codex, as present
+	Chat          ChatSettings      // resolved: defaults filled in
 }
 
 func (c *Config) clone() *Config {
@@ -162,7 +145,6 @@ func Parse(data []byte) (*Config, error) {
 	cfg := &Config{FavoriteSkills: []string{}, MaxShips: DefaultMaxShips}
 	var fleetsRaw json.RawMessage
 	haveVersion := false
-	var chat Chat
 	for _, m := range top {
 		switch m.key {
 		case "version":
@@ -181,10 +163,6 @@ func Parse(data []byte) (*Config, error) {
 			}
 		case "max_ships":
 			if cfg.MaxShips, err = positiveInt("max_ships", m.raw); err != nil {
-				return nil, err
-			}
-		case "chat":
-			if chat, err = parseChat(m.raw); err != nil {
 				return nil, err
 			}
 		case "remote":
@@ -214,7 +192,6 @@ func Parse(data []byte) (*Config, error) {
 	if err := checkSourceFleets(cfg); err != nil {
 		return nil, err
 	}
-	cfg.Chat = resolveChat(chat, cfg.Fleets)
 	assignColors(cfg.Fleets)
 	markSharedIdentities(cfg.Fleets)
 	return cfg, nil
@@ -246,61 +223,6 @@ func parseRemote(raw json.RawMessage) (Remote, error) {
 		}
 	}
 	return r, nil
-}
-
-func parseChat(raw json.RawMessage) (Chat, error) {
-	ms, err := members("chat", raw)
-	if err != nil {
-		return Chat{}, err
-	}
-	var c Chat
-	for _, m := range ms {
-		p := "chat." + m.key
-		switch m.key {
-		case "fleet":
-			c.Fleet, err = str(p, m.raw)
-		case "model":
-			c.Model, err = str(p, m.raw)
-		case "effort":
-			c.Effort, err = str(p, m.raw)
-		default:
-			return Chat{}, fmt.Errorf("%s: unknown key", p)
-		}
-		if err != nil {
-			return Chat{}, err
-		}
-	}
-	return c, nil
-}
-
-// resolveChat never fails the load: a bad fleet, model or effort falls back to
-// the default with a warning.
-func resolveChat(c Chat, fleets []Fleet) Chat {
-	if c.Model != "" && !slices.Contains(ChatModels, c.Model) {
-		log.Printf("config: chat.model %q is not one of %v, using %s", c.Model, ChatModels, DefaultChatModel)
-		c.Model = ""
-	}
-	if c.Model == "" {
-		c.Model = DefaultChatModel
-	}
-	if !slices.Contains(ChatEfforts, c.Effort) {
-		log.Printf("config: chat.effort %q is not one of %q, using the harness default", c.Effort, ChatEfforts)
-		c.Effort = ""
-	}
-	if slices.ContainsFunc(fleets, func(f Fleet) bool { return f.Key == c.Fleet }) {
-		return c
-	}
-	c.Fleet = ""
-	for _, f := range fleets {
-		if slices.ContainsFunc(f.Harnesses, func(h Harness) bool { return h.Name == "claude" }) {
-			c.Fleet = f.Key
-			return c
-		}
-	}
-	if len(fleets) > 0 {
-		c.Fleet = fleets[0].Key
-	}
-	return c
 }
 
 func checkVersion(raw json.RawMessage) error {
@@ -342,7 +264,7 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 	if err != nil {
 		return Fleet{}, err
 	}
-	f := Fleet{Key: key, SearchRoots: []string{}}
+	f := Fleet{Key: key, SearchRoots: []string{}, Chat: defaultChat()}
 	harnesses := map[string]Harness{}
 	haveName := false
 	for _, m := range ms {
@@ -395,6 +317,10 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 			f.CloneRoot = filepath.Clean(expandHome(f.CloneRoot))
 		case "env":
 			if f.Env, err = envMap(p, m.raw); err != nil {
+				return Fleet{}, err
+			}
+		case "chat":
+			if f.Chat, err = parseFleetChat(p, m.raw, false); err != nil {
 				return Fleet{}, err
 			}
 		case "claude", "codex", "copilot":

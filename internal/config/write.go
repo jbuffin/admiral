@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -26,40 +27,6 @@ func SetFavoriteSkills(dir string, skills []string) error {
 		return err
 	}
 	return setKey(dir, "favorite_skills", raw)
-}
-
-// SetChat refuses values Parse would replace with a default: a write must not
-// do that silently.
-func SetChat(dir string, c Chat) error {
-	if !slices.Contains(ChatModels, c.Model) {
-		return fmt.Errorf("chat.model %q is not one of %v", c.Model, ChatModels)
-	}
-	if !slices.Contains(ChatEfforts, c.Effort) {
-		return fmt.Errorf("chat.effort %q is not one of %q", c.Effort, ChatEfforts)
-	}
-	obj := map[string]string{"fleet": c.Fleet, "model": c.Model}
-	if c.Effort != "" {
-		obj["effort"] = c.Effort
-	}
-	raw, err := json.Marshal(obj)
-	if err != nil {
-		return err
-	}
-	writeMu.Lock()
-	defer writeMu.Unlock()
-	path := filepath.Join(dir, FileName)
-	_, out, err := renderKey(path, "chat", raw)
-	if err != nil {
-		return err
-	}
-	cfg, err := Parse(out)
-	if err != nil {
-		return err
-	}
-	if _, ok := cfg.Fleet(c.Fleet); !ok {
-		return fmt.Errorf("chat.fleet %q is not a fleet in the config", c.Fleet)
-	}
-	return replaceFile(path, out)
 }
 
 // SetRemote writes the remote section; allowedLogins is always written, so a cleared list stays visible.
@@ -165,6 +132,8 @@ type FleetFields struct {
 	WakeReviewers *[]string
 	CloneRoot     *string
 	Color         *string
+	// Chat holds the chat settings to change, by key; nil leaves them as stored.
+	Chat map[string]json.RawMessage
 }
 
 var (
@@ -222,6 +191,11 @@ func EditFleet(dir, key string, f FleetFields) error {
 			fleet.SetValue(k, *v)
 		}
 	}
+	if f.Chat != nil {
+		if err := mergeChat(fleet, key, f.Chat); err != nil {
+			return err
+		}
+	}
 	setOrDrop("clone_root", f.CloneRoot)
 	setOrDrop("color", f.Color)
 	fleets.Set(key, fleet.JSON())
@@ -238,6 +212,35 @@ func EditFleet(dir, key string, f FleetFields) error {
 		return fmt.Errorf("%w: config.json changed while saving; try again", ErrConflict)
 	}
 	return replaceFile(path, out)
+}
+
+// mergeChat refuses what parseFleetChat would replace with a default, then sets only the given
+// keys. An empty effort removes its key, so the fleet falls back to the harness default.
+func mergeChat(fleet *Object, key string, set map[string]json.RawMessage) error {
+	given := NewObject()
+	for _, k := range slices.Sorted(maps.Keys(set)) {
+		given.Set(k, set[k])
+	}
+	if _, err := parseFleetChat("fleets."+key+".chat", given.JSON(), true); err != nil {
+		return err
+	}
+	chat := NewObject()
+	if raw, ok := fleet.Get("chat"); ok {
+		var err error
+		if chat, err = ParseObject(raw); err != nil {
+			return fmt.Errorf("%w: %w", ErrConflict, err)
+		}
+	}
+	for _, k := range given.Keys() {
+		raw, _ := given.Get(k)
+		if k == "effort" && string(bytes.TrimSpace(raw)) == `""` {
+			chat.Delete(k)
+			continue
+		}
+		chat.Set(k, raw)
+	}
+	fleet.Set("chat", chat.JSON())
+	return nil
 }
 
 func nonNil(s []string) []string {
