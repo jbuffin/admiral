@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -312,5 +313,80 @@ func TestATickDropsTheDigestLinesTheChatHasPrinted(t *testing.T) {
 	end := r.digest(t, "home")
 	if len(end.Lines) != 0 || end.NextSeq <= got.Lines[1].Seq {
 		t.Errorf("emptied digest = %+v, want no lines and next_seq kept above %d", end, got.Lines[1].Seq)
+	}
+}
+
+func TestABriefListsWaitingQuestionsNewestFirst(t *testing.T) {
+	r := newBriefRig(t)
+	q := func(title string) string {
+		return `{"title":"` + title + `","questions":[{"id":"q","text":"` + title + `","multi":false,"options":[{"label":"a"}]}]}`
+	}
+	r.post(t, "/api/chat/questions", q("First-asked?"), "home")
+	time.Sleep(1100 * time.Millisecond) // question ids carry whole seconds
+	r.post(t, "/api/chat/questions", q("Second-asked?"), "home")
+	r.Tick()
+	got := r.brief("home")
+	if a, b := strings.Index(got, "Second-asked?"), strings.Index(got, "First-asked?"); a < 0 || b < 0 || a > b {
+		t.Errorf("brief = %q, want the newer question before the older", got)
+	}
+}
+
+func TestANewChatsBriefHoldsNoQuestionTheStartWithdrew(t *testing.T) {
+	l, home, _ := chatRig(t)
+	svc := serviceFor(t, l, home)
+	svc.Config, svc.Launcher = l.Config, l
+	l.BeforeChat = svc.WithdrawQuestions
+	svc.Routes(http.NewServeMux())
+	fc := svc.chat("work")
+	mux := http.NewServeMux()
+	svc.Routes(mux)
+	req := httptest.NewRequest("POST", "/api/chat/questions", strings.NewReader(`{"title":"Which branch?","questions":[{"id":"q1","text":"Which branch?","multi":false,"options":[{"label":"main"}]}]}`)).WithContext(actor.WithFleet(context.Background(), "work"))
+	if rec := httptest.NewRecorder(); func() int { mux.ServeHTTP(rec, req); return rec.Code }() != http.StatusCreated {
+		t.Fatal("could not ask the question")
+	}
+	svc.Tick()
+	if b, _ := os.ReadFile(filepath.Join(home, "chat", "work", "brief.md")); !strings.Contains(string(b), "Which branch?") {
+		t.Fatalf("brief = %q, want the waiting question before the new chat", b)
+	}
+	if err := fc.start(); err != nil {
+		t.Fatal(err.Msg)
+	}
+	if b, _ := os.ReadFile(filepath.Join(home, "chat", "work", "brief.md")); strings.Contains(string(b), "Which branch?") || strings.Contains(string(b), "waiting questions") {
+		t.Errorf("the new chat's brief = %q, want no questions section: the start withdrew them", b)
+	}
+}
+
+func TestAShipThatLeavesAndReturnsIsAnEventAgain(t *testing.T) {
+	r := newBriefRig(t)
+	ship := func(status string) []ships.Ship {
+		return []ships.Ship{{Session: "s1", Name: "bold-heron", Fleet: "home", Status: status}}
+	}
+	r.set(func() { r.ships = ship(ships.StatusUnderway) })
+	r.Tick()
+	r.set(func() { r.ships = ship(ships.StatusMoored) })
+	r.Tick()
+	r.set(func() { r.ships = nil })
+	r.Tick()
+	r.set(func() { r.ships = ship(ships.StatusMoored) })
+	r.Tick()
+	if f := r.digest(t, "home"); len(f.Lines) != 2 {
+		t.Errorf("digest = %q, want a line for each time the ship moored: a session that left is forgotten", lineTexts(f))
+	}
+}
+
+func TestATickAcksWhatThePaneOptionsSayTheChatPrinted(t *testing.T) {
+	r := newBriefRig(t)
+	r.Service.DigestAcked = nil
+	if err := digest.Add(r.home, "home", "one", "two"); err != nil {
+		t.Fatal(err)
+	}
+	f := r.digest(t, "home")
+	fc := r.chat("home")
+	fc.mu.Lock()
+	fc.st.opts.digest = strconv.FormatUint(f.Lines[0].Seq, 10)
+	fc.mu.Unlock()
+	r.Tick()
+	if got := r.digest(t, "home"); len(got.Lines) != 1 || got.Lines[0].Text != "two" {
+		t.Errorf("digest = %q, want only line two after the pane said line one was printed", lineTexts(got))
 	}
 }

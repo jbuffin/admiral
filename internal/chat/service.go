@@ -91,7 +91,7 @@ type Service struct {
 	Ships     func() []ships.Ship
 	Campaigns func() []follow.Followed
 	Inbox     func() []inbox.Item
-	// DigestAcked is the highest digest sequence the fleet's chat has printed; nil reads as 0.
+	// DigestAcked replaces the digest sequence read from the chat's pane options; a test seam.
 	DigestAcked func(fleet string) uint64
 
 	logOnce sync.Once
@@ -198,6 +198,7 @@ type state struct {
 
 type chatOptions struct {
 	model, effort, fleet string
+	digest               string // the digest sequence the hook last printed, as the pane holds it
 	transcript           string // "<unix ns> <source> <path>", "" before the first SessionStart
 	screen               string // a Codex chat's pane text while it has no transcript
 }
@@ -248,6 +249,14 @@ func (s *Service) Run(ctx context.Context) {
 	}
 	events, cancel := s.Host.Subscribe()
 	defer cancel()
+	// Its own goroutine, one tick at a time: the brief and the digest never hold up a broadcast.
+	var done sync.WaitGroup
+	done.Add(1)
+	go func() {
+		defer done.Done()
+		s.tickLoop(ctx)
+	}()
+	defer done.Wait()
 	tick := time.NewTicker(500 * time.Millisecond)
 	defer tick.Stop()
 	for {
@@ -260,7 +269,6 @@ func (s *Service) Run(ctx context.Context) {
 			}
 		case <-tick.C:
 		}
-		s.Tick()
 		watched := s.Hub.Len() > 0
 		for _, fc := range s.onFleets() {
 			// Nobody to tell and nothing running: a request reads the chat itself.
@@ -543,7 +551,7 @@ func (s *fleetChat) readOptions(pane string) (chatOptions, error) {
 	if err != nil {
 		return chatOptions{}, err
 	}
-	opts := chatOptions{model: o.Model, effort: o.Effort, fleet: o.Fleet, transcript: o.Transcript}
+	opts := chatOptions{model: o.Model, effort: o.Effort, fleet: o.Fleet, digest: o.Digest, transcript: o.Transcript}
 	if o.Transcript == "" && (s.harness() == "codex" || s.harness() == "copilot") {
 		opts.screen = s.readScreen(pane)
 	}
@@ -629,8 +637,6 @@ func (s *fleetChat) start() *launcher.Error {
 	if s.exists() {
 		return nil
 	}
-	// The startup SessionStart reads the brief as soon as Claude starts.
-	s.renderBrief()
 	err := s.Launcher.StartChat(s.key)
 	var le *launcher.Error
 	switch {
@@ -826,7 +832,7 @@ func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, NotStarted)
 			return
 		}
-		s.withdraw()
+		s.withdrawAndRender()
 		s.mu.Lock()
 		s.clearLocked()
 		s.mu.Unlock()

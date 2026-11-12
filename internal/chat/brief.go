@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/brief"
+	"github.com/jbuffin/admiral/internal/campaigns/follow"
 	"github.com/jbuffin/admiral/internal/chatlog"
 	"github.com/jbuffin/admiral/internal/digest"
+	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/ledger"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
@@ -29,30 +31,67 @@ type tickState struct {
 	notes     []ledger.Entry
 	ledgerOK  bool
 
-	baselined bool // ships, Inbox items and answers seen once, so what was already there is no event
+	ackedTo   uint64 // the printed sequence the digest was last acked to
+	baselined bool   // ships, Inbox items and answers seen once, so what was already there is no event
 	shipState map[string]string
 	inboxSeen map[string]bool
 	answered  map[string]bool
 }
 
-// Tick renders each fleet's brief and keeps its digest; Run calls it on its tick.
+// tickInputs is what one tick reads from outside the chat, once for every fleet.
+type tickInputs struct {
+	ships     []ships.Ship
+	campaigns []follow.Followed
+	inbox     []inbox.Item
+}
+
+func (s *Service) tickInputs() tickInputs {
+	var in tickInputs
+	if s.Ships != nil {
+		in.ships = s.Ships()
+	}
+	if s.Campaigns != nil {
+		in.campaigns = s.Campaigns()
+	}
+	if s.Inbox != nil {
+		in.inbox = s.Inbox()
+	}
+	return in
+}
+
+// Tick renders each fleet's brief and keeps its digest.
 func (s *Service) Tick() {
+	in := s.tickInputs()
 	for _, fc := range s.onFleets() {
-		fc.renderBrief()
-		fc.digestTick()
+		fc.renderBrief(in)
+		fc.digestTick(in)
 	}
 }
 
-// DigestSeq is the highest digest sequence the fleet's chat has printed, which its hook records on the pane; 0 when
-// it has none.
-func (s *Service) DigestSeq(fleet string) uint64 {
-	if s.Tmux == "" {
-		return 0
+// tickLoop ticks until ctx ends, each tick after the last has finished.
+func (s *Service) tickLoop(ctx context.Context) {
+	t := time.NewTicker(500 * time.Millisecond)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			s.Tick()
+		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	v, err := sessionhost.NewServer(s.Tmux, s.Socket).WithoutUTF8().StderrErrors().ReadPaneOption(ctx, "="+sessionhost.ChatSession(fleet)+":", sessionhost.ChatDigestOpt)
-	if err != nil || !sessionhost.SafeToken.MatchString(v) {
+}
+
+// printedSeq is the highest digest sequence the fleet's chat has printed. It comes from the pane options the chat
+// read already, so it costs no tmux call and is 0 for a chat that isn't running.
+func (s *fleetChat) printedSeq() uint64 {
+	if s.DigestAcked != nil {
+		return s.DigestAcked(s.key)
+	}
+	s.mu.Lock()
+	v := s.st.opts.digest
+	s.mu.Unlock()
+	if !sessionhost.SafeToken.MatchString(v) {
 		return 0
 	}
 	n, _ := strconv.ParseUint(v, 10, 64)
@@ -78,7 +117,7 @@ func (s *fleetChat) ledgerSig() string {
 	return sig
 }
 
-func (s *fleetChat) renderBrief() {
+func (s *fleetChat) renderBrief(ti tickInputs) {
 	s.tmu.Lock()
 	defer s.tmu.Unlock()
 	st := &s.tk
@@ -94,28 +133,25 @@ func (s *fleetChat) renderBrief() {
 	for _, n := range st.notes {
 		in.Notes = append(in.Notes, brief.Note{Text: n.Text, Via: n.Via, TS: n.TS})
 	}
+	// questions() is oldest first; the brief wants the newest first.
 	qs := s.questions(false)
 	for i := len(qs) - 1; i >= 0; i-- {
 		if q := qs[i]; len(q.Answer) == 0 {
 			in.Questions = append(in.Questions, brief.Question{Text: questionTitle(q), Asked: q.Item.Created})
 		}
 	}
-	if s.Ships != nil {
-		for _, sh := range s.Ships() {
-			if sh.Fleet == s.key {
-				in.Ships = append(in.Ships, brief.Ship{Name: sh.Name, Status: sh.Status, Via: sh.Via, Title: sh.Title})
-			}
+	for _, sh := range ti.ships {
+		if sh.Fleet == s.key {
+			in.Ships = append(in.Ships, brief.Ship{Name: sh.Name, Status: sh.Status, Via: sh.Via, Title: sh.Title})
 		}
 	}
-	if s.Campaigns != nil {
-		for _, c := range s.Campaigns() {
-			if c.Fleet == s.key && !c.Ended() {
-				name := c.ID
-				if c.Tree != nil && c.Tree.Title != "" {
-					name += " " + c.Tree.Title
-				}
-				in.Campaigns = append(in.Campaigns, brief.Campaign{Name: name + " " + c.URL})
+	for _, c := range ti.campaigns {
+		if c.Fleet == s.key && !c.Ended() {
+			name := c.ID
+			if c.Tree != nil && c.Tree.Title != "" {
+				name += " " + c.Tree.Title
 			}
+			in.Campaigns = append(in.Campaigns, brief.Campaign{Name: name + " " + c.URL})
 		}
 	}
 	if recent, err := s.history().Recent(s.key, 50); err == nil {
@@ -177,15 +213,15 @@ func writeBrief(home, fleet, text string) error {
 // digestTick drops the lines the chat has printed and adds a line for each event since the last tick. A ship, Inbox
 // item or answer found on the first tick is the baseline: after a restart, what happened meanwhile is lost, and the
 // brief carries the current state.
-func (s *fleetChat) digestTick() {
+func (s *fleetChat) digestTick(ti tickInputs) {
 	s.tmu.Lock()
 	defer s.tmu.Unlock()
 	st := &s.tk
-	if s.DigestAcked != nil {
-		if d, err := digest.Read(s.Home, s.key); err == nil && len(d.Lines) > 0 {
-			if seq := s.DigestAcked(s.key); seq > 0 {
-				_ = digest.Ack(s.Home, s.key, seq)
-			}
+	// The digest file is read only when the chat's printed sequence has moved.
+	if seq := s.printedSeq(); seq != st.ackedTo {
+		st.ackedTo = seq
+		if seq > 0 {
+			_ = digest.Ack(s.Home, s.key, seq)
 		}
 	}
 	var lines []string
@@ -195,39 +231,42 @@ func (s *fleetChat) digestTick() {
 		}
 	}
 
-	if st.shipState == nil {
-		st.shipState = map[string]string{}
-		st.inboxSeen = map[string]bool{}
+	if st.answered == nil {
 		st.answered = map[string]bool{}
 	}
-	if s.Ships != nil {
-		for _, sh := range s.Ships() {
-			if sh.Fleet != s.key {
-				continue
-			}
-			if prev := st.shipState[sh.Session]; prev != sh.Status {
-				st.shipState[sh.Session] = sh.Status
-				if what := shipEvent(sh.Status); what != "" {
-					add("Ship " + shipName(sh) + " " + what + ".")
-				}
+	shipsNow := map[string]string{}
+	for _, sh := range ti.ships {
+		if sh.Fleet != s.key {
+			continue
+		}
+		shipsNow[sh.Session] = sh.Status
+		if prev := st.shipState[sh.Session]; prev != sh.Status {
+			if what := shipEvent(sh.Status); what != "" {
+				add("Ship " + shipName(sh) + " " + what + ".")
 			}
 		}
 	}
-	if s.Inbox != nil {
-		chatSession := sessionhost.ChatSession(s.key)
-		for _, it := range s.Inbox() {
-			id := it.Session + "\x00" + it.ID
-			if it.Fleet != s.key || it.Session == chatSession || st.inboxSeen[id] {
-				continue
-			}
-			st.inboxSeen[id] = true
-			who := it.Name
-			if who == "" {
-				who = it.Session
-			}
-			add("Inbox: a " + brief.Clean(it.Kind) + " from " + brief.Clean(who) + " is waiting.")
+	// What is gone is forgotten, so a reused session name starts fresh.
+	st.shipState = shipsNow
+
+	chatSession := sessionhost.ChatSession(s.key)
+	inboxNow := map[string]bool{}
+	for _, it := range ti.inbox {
+		id := it.Session + "\x00" + it.ID
+		if it.Fleet != s.key || it.Session == chatSession {
+			continue
 		}
+		inboxNow[id] = true
+		if st.inboxSeen[id] {
+			continue
+		}
+		who := it.Name
+		if who == "" {
+			who = it.Session
+		}
+		add("Inbox: a " + brief.Clean(it.Kind) + " from " + brief.Clean(who) + " is waiting.")
 	}
+	st.inboxSeen = inboxNow
 	here := map[string]bool{}
 	for _, q := range s.questions(false) {
 		if len(q.Answer) == 0 {

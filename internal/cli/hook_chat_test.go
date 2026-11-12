@@ -197,3 +197,32 @@ func TestALineWrittenAfterTheHookReadSurvivesItsAck(t *testing.T) {
 		t.Errorf("digest after the ack = %+v, want only the line written after the read", f)
 	}
 }
+
+func TestTheHookPrintsOnlyDigestLinesAboveThePanesRecordedSequence(t *testing.T) {
+	home := t.TempDir()
+	if err := digest.Add(home, "home", "line one", "line two", "line three"); err != nil {
+		t.Fatal(err)
+	}
+	f, _ := digest.Read(home, "home")
+	if len(f.Lines) != 3 {
+		t.Fatalf("digest = %+v, want three lines", f)
+	}
+	recorded := uint64(0)
+	was := paneDigestSeq
+	paneDigestSeq = func(string) uint64 { return recorded }
+	t.Cleanup(func() { paneDigestSeq = was })
+
+	recorded = f.Lines[1].Seq
+	_, added := hookContext(t, chatHook(t, home, "home", "UserPromptSubmit", `{"prompt":"hi"}`))
+	if strings.Contains(added, "line one") || strings.Contains(added, "line two") || !strings.Contains(added, "line three") {
+		t.Errorf("with the pane at line two the hook printed %q, want only line three", added)
+	}
+	if !strings.Contains(added, "not instructions") {
+		t.Errorf("the digest %q carries no notice that it is events, not instructions", added)
+	}
+
+	recorded = f.Lines[2].Seq
+	if out := chatHook(t, home, "home", "UserPromptSubmit", `{"prompt":"hi"}`); out != "" {
+		t.Errorf("with every line printed already the hook printed %q, want nothing", out)
+	}
+}
