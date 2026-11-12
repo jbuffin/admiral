@@ -1,13 +1,25 @@
 // Package routines stores a fleet's routines, its trigger log and Hold fire, and serves them over HTTP.
+// Every file under $ADMIRAL_HOME/routines is read and written only here.
 package routines
 
 import (
+	"bufio"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
-	"net/http"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/autopilotgate"
+	"github.com/jbuffin/admiral/internal/capabilities"
 	"github.com/jbuffin/admiral/internal/config"
-	"github.com/jbuffin/admiral/internal/server"
+	"github.com/jbuffin/admiral/internal/launcher"
 )
 
 // Mode is a routine's Before acting setting.
@@ -60,15 +72,255 @@ type Store struct {
 	Home   string
 	Fleets func(key string) (config.Fleet, bool)
 	Now    func() time.Time
+
+	mu sync.Mutex
 }
 
-var errTodo = errors.New("not implemented")
+func (s *Store) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
+}
 
-func (s *Store) List(fleet string) ([]Routine, error)                  { return []Routine{}, errTodo }
-func (s *Store) Create(fleet string, r Routine) (Routine, error)       { return Routine{}, errTodo }
-func (s *Store) Update(fleet, id string, r Routine) (Routine, error)   { return Routine{}, errTodo }
-func (s *Store) Delete(fleet, id string) error                         { return errTodo }
-func (s *Store) SetEnabled(fleet, id string, on bool) (Routine, error) { return Routine{}, errTodo }
+func invalidf(format string, a ...any) error {
+	return fmt.Errorf("%w: %s", ErrInvalid, fmt.Sprintf(format, a...))
+}
+
+// fleet resolves a key to a known fleet; a key that could name another directory is refused before it is looked up.
+func (s *Store) fleet(key string) (config.Fleet, error) {
+	if key == "" || key == "." || key == ".." || key != filepath.Base(key) || strings.ContainsAny(key, `/\`) {
+		return config.Fleet{}, ErrUnknownFleet
+	}
+	f, ok := s.Fleets(key)
+	if !ok {
+		return config.Fleet{}, ErrUnknownFleet
+	}
+	return f, nil
+}
+
+func (s *Store) dir(key string) string { return filepath.Join(s.Home, "routines", key) }
+
+// readJSON loads path into v; a file that doesn't parse is kept aside as .bad and reads as empty.
+func readJSON(path string, v any) error {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if json.Unmarshal(b, v) != nil {
+		return os.Rename(path, path+".bad")
+	}
+	return nil
+}
+
+// writeFile writes through a temp file in the same folder, so a crash leaves the old file.
+func writeFile(path string, v any) error {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	_, werr := tmp.Write(b)
+	if werr == nil {
+		werr = tmp.Sync()
+	}
+	if cerr := tmp.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		_ = os.Remove(tmp.Name())
+		return werr
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	return nil
+}
+
+type routinesFile struct {
+	Routines []Routine `json:"routines"`
+}
+
+func (s *Store) load(key string) ([]Routine, error) {
+	var f routinesFile
+	if err := readJSON(filepath.Join(s.dir(key), "routines.json"), &f); err != nil {
+		return nil, err
+	}
+	if f.Routines == nil {
+		f.Routines = []Routine{}
+	}
+	return f.Routines, nil
+}
+
+func (s *Store) save(key string, list []Routine) error {
+	return writeFile(filepath.Join(s.dir(key), "routines.json"), routinesFile{list})
+}
+
+func newID() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// validate checks what the form can get wrong. It never calls autopilotgate.Check, which posts an Inbox notice.
+func (s *Store) validate(f config.Fleet, r Routine) error {
+	if strings.TrimSpace(r.Name) == "" {
+		return invalidf("name is required")
+	}
+	if _, err := ParseCron(r.When); err != nil {
+		return invalidf("when: %v", err)
+	}
+	switch r.Before {
+	case ReportOnly, AskFirst, Act:
+	default:
+		return invalidf("before_acting must be report_only, ask_first or act, not %q", r.Before)
+	}
+	switch l := r.Do.Launch; {
+	case l != nil && r.Do.Prompt != "":
+		return invalidf("do takes a launch or a prompt, not both")
+	case l == nil && r.Do.Prompt == "":
+		return invalidf("do needs a launch or a prompt")
+	case l == nil && strings.TrimSpace(r.Do.Prompt) == "":
+		return invalidf("the prompt is empty")
+	case l == nil:
+		return nil
+	}
+	return s.validateLaunch(f, *r.Do.Launch)
+}
+
+func (s *Store) validateLaunch(f config.Fleet, l Launch) error {
+	if l.Harness == "" || strings.TrimSpace(l.Dir) == "" || strings.TrimSpace(l.Text) == "" {
+		return invalidf("do.launch needs a harness, a dir and a prompt text")
+	}
+	dock, ok := f.Harness(l.Harness)
+	if !ok {
+		return invalidf("fleet %s has no %s dock", f.Key, l.Harness)
+	}
+	if !autopilotgate.Proven(s.Home, f.Key, l.Harness) {
+		return invalidf("autopilot is not proven on %s in fleet %s: its guard has not passed", l.Harness, f.Key)
+	}
+	if ok, reason := autopilotgate.Advisor(f, capabilities.Open(s.Home)); !ok {
+		return invalidf("autopilot is not proven on %s in fleet %s: its advisor is not proven (%s)", l.Harness, f.Key, reason)
+	}
+	if err := launcher.AutopilotArgs(l.Harness, dock.Args, l.Args); err != nil {
+		return invalidf("args: %v", err)
+	}
+	return nil
+}
+
+func (s *Store) List(fleet string) ([]Routine, error) {
+	if _, err := s.fleet(fleet); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.load(fleet)
+}
+
+func (s *Store) Create(fleet string, r Routine) (Routine, error) {
+	f, err := s.fleet(fleet)
+	if err != nil {
+		return Routine{}, err
+	}
+	if err := s.validate(f, r); err != nil {
+		return Routine{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	list, err := s.load(fleet)
+	if err != nil {
+		return Routine{}, err
+	}
+	r.ID, r.CreatedAt, r.UpdatedAt = newID(), s.now(), s.now()
+	if err := s.save(fleet, append(list, r)); err != nil {
+		return Routine{}, err
+	}
+	return r, nil
+}
+
+func (s *Store) Update(fleet, id string, r Routine) (Routine, error) {
+	f, err := s.fleet(fleet)
+	if err != nil {
+		return Routine{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	list, err := s.load(fleet)
+	if err != nil {
+		return Routine{}, err
+	}
+	i := indexOf(list, id)
+	if i < 0 {
+		return Routine{}, ErrNotFound
+	}
+	if err := s.validate(f, r); err != nil {
+		return Routine{}, err
+	}
+	r.ID, r.CreatedAt, r.UpdatedAt = id, list[i].CreatedAt, s.now()
+	list[i] = r
+	if err := s.save(fleet, list); err != nil {
+		return Routine{}, err
+	}
+	return r, nil
+}
+
+func (s *Store) Delete(fleet, id string) error {
+	if _, err := s.fleet(fleet); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	list, err := s.load(fleet)
+	if err != nil {
+		return err
+	}
+	i := indexOf(list, id)
+	if i < 0 {
+		return ErrNotFound
+	}
+	return s.save(fleet, append(list[:i], list[i+1:]...))
+}
+
+// SetEnabled flips the switch without validating the rest: a routine that was saved can always be turned off.
+func (s *Store) SetEnabled(fleet, id string, on bool) (Routine, error) {
+	if _, err := s.fleet(fleet); err != nil {
+		return Routine{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	list, err := s.load(fleet)
+	if err != nil {
+		return Routine{}, err
+	}
+	i := indexOf(list, id)
+	if i < 0 {
+		return Routine{}, ErrNotFound
+	}
+	list[i].Enabled, list[i].UpdatedAt = on, s.now()
+	if err := s.save(fleet, list); err != nil {
+		return Routine{}, err
+	}
+	return list[i], nil
+}
+
+func indexOf(list []Routine, id string) int {
+	for i, r := range list {
+		if r.ID == id {
+			return i
+		}
+	}
+	return -1
+}
 
 // Outcome is what a trigger-log record decided.
 type Outcome string
@@ -96,62 +348,131 @@ type Trigger struct {
 	Action   string    `json:"action,omitempty"`
 	Ship     string    `json:"ship,omitempty"`
 	Undone   bool      `json:"undone,omitempty"`
-	UndoneAt time.Time `json:"undone_at,omitempty"`
+	UndoneAt time.Time `json:"undone_at,omitzero"`
+}
+
+// logLine is one line of triggers.jsonl: a record, or a mark that an earlier launch was undone.
+type logLine struct {
+	Trigger
+	UndoOf string `json:"undo_of,omitempty"`
+}
+
+func (s *Store) appendLine(fleet string, l logLine) error {
+	b, err := json.Marshal(l)
+	if err != nil {
+		return err
+	}
+	dir := s.dir(fleet)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "triggers.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(append(b, '\n'))
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
+}
+
+// readLog skips a line that doesn't parse: a crash can cut one short.
+func (s *Store) readLog(fleet string) ([]logLine, error) {
+	f, err := os.Open(filepath.Join(s.dir(fleet), "triggers.jsonl"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var out []logLine
+	r := bufio.NewReader(f)
+	for {
+		line, err := r.ReadBytes('\n')
+		var l logLine
+		if len(line) > 0 && json.Unmarshal(line, &l) == nil && (l.ID != "" || l.UndoOf != "") {
+			out = append(out, l)
+		}
+		if err == io.EOF {
+			return out, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
 }
 
 // AppendTrigger fills in an empty ID and a zero At.
-func (s *Store) AppendTrigger(fleet string, t Trigger) (Trigger, error) { return Trigger{}, errTodo }
+func (s *Store) AppendTrigger(fleet string, t Trigger) (Trigger, error) {
+	if _, err := s.fleet(fleet); err != nil {
+		return Trigger{}, err
+	}
+	if t.ID == "" {
+		t.ID = newID()
+	}
+	if t.At.IsZero() {
+		t.At = s.now()
+	}
+	t.Undone, t.UndoneAt = false, time.Time{}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return t, s.appendLine(fleet, logLine{Trigger: t})
+}
 
 // Undo appends a mark that the launch record id was undone.
-func (s *Store) Undo(fleet, id string) error { return errTodo }
+func (s *Store) Undo(fleet, id string) error {
+	if _, err := s.fleet(fleet); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	lines, err := s.readLog(fleet)
+	if err != nil {
+		return err
+	}
+	for _, l := range lines {
+		if l.ID == id {
+			if l.Outcome != Launched {
+				return invalidf("only a launch can be undone")
+			}
+			return s.appendLine(fleet, logLine{Trigger: Trigger{At: s.now()}, UndoOf: id})
+		}
+	}
+	return ErrNotFound
+}
 
 // Recent is a routine's records newest first with marks folded in; limit 0 means all.
 func (s *Store) Recent(fleet, routine string, limit int) ([]Trigger, error) {
-	return []Trigger{}, errTodo
-}
-
-// Hold is one Hold fire switch.
-type Hold struct {
-	On bool      `json:"on"`
-	By string    `json:"by,omitempty"` // "engineer" or actor.Via
-	At time.Time `json:"at,omitempty"`
-}
-
-const Engineer = "engineer"
-
-// SetHold turns the fleet's Hold fire on or off; an empty fleet is the global switch.
-func (s *Store) SetHold(fleet string, on bool, by string) (Hold, error) { return Hold{}, errTodo }
-
-// GetHold reads one switch; an empty fleet is the global one.
-func (s *Store) GetHold(fleet string) (Hold, error) { return Hold{}, errTodo }
-
-// HoldOn is true when the fleet's switch or the global one is on.
-func (s *Store) HoldOn(fleet string) (bool, error) { return false, errTodo }
-
-// Effective is the Before acting a routine runs with: min(stored, Ask first) while Hold fire is on.
-func Effective(stored Mode, holdOn bool) Mode { return "" }
-
-// Service serves the routes.
-type Service struct {
-	Store *Store
-}
-
-func (s *Service) Connected(*server.Client) {}
-
-func (s *Service) Routes(mux *http.ServeMux) {
-	notYet := func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotImplemented)
-		_, _ = w.Write([]byte(`{"error":"not implemented"}`))
+	if _, err := s.fleet(fleet); err != nil {
+		return nil, err
 	}
-	for _, p := range []string{
-		"GET /api/fleets/{key}/routines", "POST /api/fleets/{key}/routines",
-		"PUT /api/fleets/{key}/routines/{id}", "DELETE /api/fleets/{key}/routines/{id}",
-		"POST /api/fleets/{key}/routines/{id}/on", "POST /api/fleets/{key}/routines/{id}/off",
-		"GET /api/fleets/{key}/routines/{id}/runs",
-		"GET /api/fleets/{key}/hold-fire", "POST /api/fleets/{key}/hold-fire/on", "POST /api/fleets/{key}/hold-fire/off",
-		"GET /api/hold-fire", "POST /api/hold-fire/on", "POST /api/hold-fire/off",
-	} {
-		mux.HandleFunc(p, notYet)
+	s.mu.Lock()
+	lines, err := s.readLog(fleet)
+	s.mu.Unlock()
+	if err != nil {
+		return nil, err
 	}
+	undone := map[string]time.Time{}
+	for _, l := range lines {
+		if l.UndoOf != "" {
+			undone[l.UndoOf] = l.At
+		}
+	}
+	out := []Trigger{}
+	for i := len(lines) - 1; i >= 0; i-- {
+		l := lines[i]
+		if l.UndoOf != "" || l.Routine != routine {
+			continue
+		}
+		if at, ok := undone[l.ID]; ok {
+			l.Undone, l.UndoneAt = true, at
+		}
+		out = append(out, l.Trigger)
+		if limit > 0 && len(out) == limit {
+			break
+		}
+	}
+	return out, nil
 }

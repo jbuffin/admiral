@@ -461,6 +461,58 @@ With `fleet`, one fleet object; `404` `{"error":...}` when the fleet is not foun
 
 The sum of the ship's `usage` records from its first launch on (one for each round of a moored ship) plus its live figures while it runs. The first launch is the newest fresh `launched` record for the name, so an earlier ship that had the name adds nothing, and month files that end before it are not read; a ship with no `launched` record counts from the start of the log. `source` is `live` when live figures are included (`age_seconds` is theirs), `record` when only records are, and `none` with `tokens` and `money` `null` when there are neither. `at` is the latest record's time, left out when there is none. `404` for a ship not in the ships list.
 
+## Routines and Hold fire
+
+A fleet's routines, their trigger log and Hold fire. A save is checked before it is stored; every route is also served under `/api/v1/`. Every error is `{"error": "…"}`: 404 for an unknown fleet or routine, 400 for a body that isn't a routine or fails a check, 403 for AdmiralBot turning Hold fire off. AdmiralBot's actor gets 403 on all of these routes until the guard allows a path.
+
+A routine:
+
+```json
+{"id": "9f2c…", "name": "Nightly sweep", "enabled": true, "when": "30 8 * * 1-5",
+ "do": {"launch": {"harness": "claude", "dir": "/path/repo", "text": "sweep the board", "model": "sonnet", "effort": "high", "args": ["--effort", "high"]}},
+ "before_acting": "ask_first", "notify": true, "created_at": "2026-11-12T08:00:00Z", "updated_at": "2026-11-12T08:00:00Z"}
+```
+
+- `when` is a standard 5-field cron expression (`*`, lists, ranges, steps, month and weekday names) in the server's local time zone.
+- `do` is either `launch` (the launch form's fields, plus `args`, extra harness args the form has no field for) or `prompt` (an AdmiralBot prompt), never both. A launch is refused unless the fleet has the dock, the harness's autopilot guard and the fleet's advisor are proven, and `args` pass the autopilot args allowlist.
+- `before_acting` is `report_only`, `ask_first` or `act`. While Hold fire is on, `act` runs as `ask_first`; the stored value doesn't change.
+
+### `GET /api/fleets/<key>/routines`
+
+`{"routines": [<routine>, …]}`, `[]` when there are none.
+
+### `POST /api/fleets/<key>/routines`
+
+Saves the body as a new routine (`id`, `created_at` and `updated_at` are set by the server). `201` with the routine.
+
+### `PUT /api/fleets/<key>/routines/<id>`
+
+Replaces the routine with the body, keeping `id` and `created_at`. `200` with the routine.
+
+### `DELETE /api/fleets/<key>/routines/<id>`
+
+`204`.
+
+### `POST /api/fleets/<key>/routines/<id>/on` and `…/off`
+
+Flips `enabled` and nothing else, and isn't checked again. `200` with the routine. Each direction has its own path so the actor guard can allow one.
+
+### `GET /api/fleets/<key>/routines/<id>/runs[?limit=<n>]`
+
+The routine's trigger-log records, newest first (default 20): `{"runs": [{"id", "at", "routine", "outcome", "tier", …}]}`. `outcome` is `launched`, `proposed`, `skipped`, `missed` or `failed`. A launch that was undone has `undone: true` and `undone_at`. `event`, `sender`, `rule`, `verdict`, `reason`, `action` and `ship` appear when set. The log is `$ADMIRAL_HOME/routines/<key>/triggers.jsonl`, append-only.
+
+### `GET /api/fleets/<key>/hold-fire`, `POST …/hold-fire/on` and `…/hold-fire/off`
+
+```json
+{"on": true, "fleet": {"on": false, "by": "engineer", "at": "2026-11-12T08:00:00Z"}, "global": {"on": true, "by": "engineer", "at": "2026-11-12T08:00:00Z"}}
+```
+
+`on` is true when the fleet's switch or the all-fleets one is. `by` is `engineer` or `admiralbot` (a request with AdmiralBot's actor context); AdmiralBot may turn Hold fire on but not off (`403`). Turning a fleet off leaves the all-fleets switch as it was.
+
+### `GET /api/hold-fire`, `POST /api/hold-fire/on` and `…/off`
+
+The all-fleets switch: `{"on": true, "by": "engineer", "at": "…"}`.
+
 ## Harness capabilities
 
 What each fleet's harnesses were probed to do (ADR 0035). These are not the server `capabilities` that `GET /api/version` lists. Both routes are also served under `/api/v1/`.
