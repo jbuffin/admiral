@@ -43,6 +43,11 @@ describe('the thread', () => {
     expect(t.map((i) => i.kind)).toEqual(['message', 'reset', 'message']);
   });
 
+  it('carries a reset entry\'s own text to its marker', () => {
+    const t = threadOf(snap({ messages: [{ id: 'reset-2', kind: 'reset', text: 'Context refreshed', at: '2026-01-02T03:04:06Z' }] }));
+    expect(t[0]).toMatchObject({ kind: 'reset', text: 'Context refreshed' });
+  });
+
   it('shows a question as open while its answer is null, answered once it has one, and withdrawn when the fleet no longer lists it', () => {
     const at = '2026-01-02T03:04:05Z';
     const t = threadOf(
@@ -69,13 +74,14 @@ describe('You answered', () => {
   });
 });
 
-describe('the New chat marker', () => {
-  it('reads "New chat · <time>"', () => {
-    expect(resetLabel('2026-01-02T14:02:00Z')).toMatch(/^New chat · \S+/);
+describe('the reset marker', () => {
+  it('reads "<text> · <time>"', () => {
+    expect(resetLabel('New chat', '2026-01-02T14:02:00Z')).toMatch(/^New chat · \S+/);
+    expect(resetLabel('Context refreshed', '2026-01-02T14:02:00Z')).toMatch(/^Context refreshed · \S+/);
   });
-  it('is just "New chat" when the entry has no usable time', () => {
-    expect(resetLabel(undefined)).toBe('New chat');
-    expect(resetLabel('not a time')).toBe('New chat');
+  it('is just the text when the entry has no usable time', () => {
+    expect(resetLabel('Context refreshed', undefined)).toBe('Context refreshed');
+    expect(resetLabel('New chat', 'not a time')).toBe('New chat');
   });
 });
 

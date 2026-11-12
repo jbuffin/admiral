@@ -850,7 +850,7 @@ func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 		}
 		s.recordReset(harness, path, dir, s.key, raw)
 		// A reset that failed leaves no marker.
-		s.markReset()
+		s.markReset(MarkerNewChat)
 		s.broadcast()
 		writeJSON(w, http.StatusOK, map[string]bool{"running": true})
 		return
@@ -863,7 +863,7 @@ func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordReset(harness, path, dir, s.key, "")
-	s.markReset()
+	s.markReset(MarkerNewChat)
 	s.mu.Lock()
 	s.st = state{}
 	s.mu.Unlock()

@@ -29,7 +29,7 @@ export interface ChatSnapshot {
 
 export type ThreadItem =
   | { kind: 'message'; id: string; role: 'user' | 'assistant'; text: string; at: string }
-  | { kind: 'reset'; id: string; at: string }
+  | { kind: 'reset'; id: string; text: string; at: string }
   | { kind: 'question'; id: string; at: string; card: InboxItem; state: 'open' | 'answered' | 'withdrawn'; answer?: ChatAnswer };
 
 /** The snapshot's entries oldest first; entries with one time, or none that parses, keep the served order. */
@@ -40,7 +40,7 @@ export function threadOf(s: ChatSnapshot): ThreadItem[] {
   const answers = new Map(s.questions.map((q) => [q.id, q.answer]));
   const rows = s.messages.flatMap((m, i): { t: number; i: number; item: ThreadItem }[] => {
     const t = Date.parse(m.at);
-    if (m.kind === 'reset') return [{ t, i, item: { kind: 'reset', id: m.id, at: m.at } }];
+    if (m.kind === 'reset') return [{ t, i, item: { kind: 'reset', id: m.id, text: '', at: m.at } }];
     if (m.kind === 'question' && m.card) {
       const answer = answers.get(m.card.id);
       const state = answer === undefined ? 'withdrawn' : answer === null ? 'open' : 'answered';
@@ -64,8 +64,8 @@ export function clockTime(at: string | undefined): string {
   return Number.isNaN(t) ? '' : new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-/** The New chat marker's line. */
-export function resetLabel(at: string | undefined): string {
+/** A reset marker's line: its text, then the time. */
+export function resetLabel(text: string, at: string | undefined): string {
   const time = clockTime(at);
   return time ? `New chat · ${time}` : 'New chat';
 }

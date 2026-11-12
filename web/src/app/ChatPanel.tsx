@@ -57,7 +57,7 @@ function Thread({ items, working, chat }: { items: ThreadItem[]; working: boolea
       {items.map((i) =>
         i.kind === 'reset' ? (
           <div key={i.id} class="compaction">
-            <span>{resetLabel(i.at)}</span>
+            <span>{resetLabel(i.text, i.at)}</span>
           </div>
         ) : i.kind === 'question' ? (
           <QuestionCard key={i.id} item={i} chat={chat} />
