@@ -107,6 +107,21 @@ func TestCronNextAcrossClocksGoingBack(t *testing.T) {
 	}
 }
 
+func TestCronNextAcrossAHalfHourClockChangeGoingBack(t *testing.T) {
+	lh := zone(t, "Australia/Lord_Howe")
+	first := time.Date(2026, 4, 4, 14, 45, 0, 0, time.UTC).In(lh) // 01:45 LHDT; clocks go back 30 minutes, so 01:45 comes again
+	again := first.Add(30 * time.Minute)
+	if again.Hour() != 1 || again.Minute() != 45 {
+		t.Fatal("the zone data has no repeated half hour on 2026-04-05")
+	}
+	if got, want := nextWithin(t, "45 1 * * *", first), time.Date(2026, 4, 6, 1, 45, 0, 0, lh); !got.Equal(want) {
+		t.Errorf("fixed time after its first pass = %v, want %v", got, want)
+	}
+	if got := nextWithin(t, "45 * * * *", first); !got.Equal(again) {
+		t.Errorf("wildcard hour after its first pass = %v, want %v", got, again)
+	}
+}
+
 func TestCronNextInAZoneThatSkipsMidnight(t *testing.T) {
 	santiago := zone(t, "America/Santiago")
 	// clocks spring forward at midnight on 2022-09-11, so 00:00 that day does not exist

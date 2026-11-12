@@ -11,6 +11,7 @@ import (
 	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/capabilities"
 	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/routines"
 )
 
@@ -41,6 +42,7 @@ func newRig(t *testing.T) *rig {
 		Fleets: func(k string) (config.Fleet, bool) { f, ok := fleets[k]; return f, ok },
 		Now:    func() time.Time { return r.now },
 	}
+	r.store.ResourceKnown = func(name string) bool { return name == "phone" }
 	r.prove("work", true, true)
 	return r
 }
@@ -527,5 +529,24 @@ func TestHoldFireThatCannotBeReadHoldsFire(t *testing.T) {
 		if h, _ := r.store.GetHold(fleet); h.On {
 			t.Fatalf("the engineer could not turn %q off again: %+v", fleet, h)
 		}
+	}
+}
+
+func TestSaveRefusesALaunchNamingAResourceTheConfigLacks(t *testing.T) {
+	r := newRig(t)
+	in := launchRoutine()
+	in.Do.Launch.Resources = []string{"phone", "modem"}
+	_, err := r.store.Create("work", in)
+	if !errors.Is(err, routines.ErrInvalid) || !strings.Contains(err.Error(), "modem") {
+		t.Fatalf("Create = %v, want ErrInvalid naming modem", err)
+	}
+}
+
+func TestSaveRefusesALaunchSkillThatIsNotOneTheLaunchFormTakes(t *testing.T) {
+	r := newRig(t)
+	in := launchRoutine()
+	in.Do.Launch.Skill = launcher.Skill{Kind: "skill", Name: "two words"}
+	if _, err := r.store.Create("work", in); !errors.Is(err, routines.ErrInvalid) {
+		t.Fatalf("Create = %v, want ErrInvalid", err)
 	}
 }

@@ -49,8 +49,10 @@ type Ship struct {
 	OrderID   string   `json:"order_id"`
 	Launched  string   `json:"launched"`
 	// Via is "admiralbot" for a ship AdmiralBot launched; absent for the engineer's.
-	Via        string          `json:"via,omitempty"`
-	Chat       string          `json:"-"`
+	Via  string `json:"via,omitempty"`
+	Chat string `json:"-"`
+	// Routine is the routine:<id> key a routine's ship holds.
+	Routine    string          `json:"-"`
 	Status     string          `json:"status"`
 	ExitCode   *int            `json:"exit_code"`
 	ExitSignal *string         `json:"exit_signal"`
@@ -169,6 +171,7 @@ type unlisted struct {
 	url       string
 	issues    []string
 	chat      string
+	routine   string
 	fleet     string
 }
 
@@ -209,7 +212,7 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	o, session := sess.Options, sess.Name
 	sh := Ship{Session: session, Name: o["name"], Fleet: o["fleet"], FleetName: o["fleet-name"],
 		FleetColor: o["fleet-color"], Harness: o["harness"], Dir: o["dir"], Repo: filepath.Base(o["dir"]),
-		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], OrderID: o["order"], Launched: o["launched"], Via: o["via"], Chat: o["chat"], Status: status(sess, now)}
+		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], OrderID: o["order"], Launched: o["launched"], Via: o["via"], Chat: o["chat"], Routine: o["routine"], Status: status(sess, now)}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
 	sh.Crew, sh.Subagents = crewBoats(sess.Crew), sess.Subagents
 	if sh.Subagents == nil {
@@ -570,8 +573,8 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	if req.Round > 0 {
 		self = cmpName(req.Name, req.Session)
 	}
-	if req.Round == 0 && (req.Source != "" || len(req.Issues) > 0 || chat != "") && !s.Host.Known() {
-		return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: NotKnownMsg}
+	if req.Round == 0 && (req.Source != "" || len(req.Issues) > 0 || chat != "" || req.RoutineKey != "") && !s.Host.Known() {
+		return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: NotKnownMsg, Wait: WaitHost}
 	}
 	if req.Source != "" && req.Round == 0 {
 		if !s.lockOrder(key) {
@@ -615,6 +618,17 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 			}
 		}
 	}
+	if req.RoutineKey != "" && req.Round == 0 {
+		if holder, ok := s.lockChat(req.RoutineKey, "a launch in flight"); !ok {
+			return Ship{}, routineHeld(holder)
+		}
+		defer s.unlockChat(req.RoutineKey)
+		for _, sh := range append(s.List(), s.Pending()...) {
+			if sh.Routine == req.RoutineKey {
+				return Ship{}, routineHeld(holderOf(req, sh))
+			}
+		}
+	}
 	s.mu.Lock()
 	s.launching++
 	s.mu.Unlock()
@@ -638,12 +652,12 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	sess := sessionhost.Session{Name: got.Session, Options: got.Options}
 	if now, ok := s.find(got.Session); ok {
 		sess = now
-	} else if req.Source != "" || len(req.Issues) > 0 || chat != "" {
+	} else if req.Source != "" || len(req.Issues) > 0 || chat != "" || req.RoutineKey != "" {
 		if req.Source == "" { // the pending listing is keyed by the order, so a sourceless launch is keyed by its session
 			key = OrderKey{OrderID: got.Session}
 		}
 		s.holdUnlisted(key, got.Session, req.Panel, req.Resources)
-		s.setUnlistedIssues(key, req.URL, req.Issues, chat, req.Fleet)
+		s.setUnlistedIssues(key, req.URL, req.Issues, chat, req.RoutineKey, req.Fleet)
 	}
 	s.broadcast()
 	return s.ship(sess), nil
@@ -658,6 +672,10 @@ func claimed(req launcher.Request) []string {
 		return []string{req.URL}
 	}
 	return nil
+}
+
+func routineHeld(holder string) *launcher.Error {
+	return &launcher.Error{Status: http.StatusConflict, Msg: "this routine's last ship is still here (" + holder + ")"}
 }
 
 func chatHeld(holder string) *launcher.Error {
@@ -730,7 +748,7 @@ func (s *Service) Pending() []Ship {
 		if key.Source == "" {
 			orderID = ""
 		}
-		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: orderID, Chat: u.chat, Fleet: u.fleet, Panel: u.panel, Resources: u.resources, URL: u.url, Issues: u.issues, Status: StatusUnderway})
+		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: orderID, Chat: u.chat, Routine: u.routine, Fleet: u.fleet, Panel: u.panel, Resources: u.resources, URL: u.url, Issues: u.issues, Status: StatusUnderway})
 	}
 	return out
 }
@@ -901,6 +919,9 @@ func (s *Service) launched(req launcher.Request, got *launcher.Launched, panel s
 	if len(req.Issues) > 0 {
 		fields["order_urls"] = req.Issues
 	}
+	if req.TriggerID != "" {
+		fields["trigger"] = map[string]string{"fleet": o["fleet"], "id": req.TriggerID}
+	}
 	s.record(outcomes.Record{Ship: got.Session, Event: "launched", Fields: withVia(fields, req.Via)}, nil)
 	s.track(got.Session)
 }
@@ -918,4 +939,14 @@ func (s *Service) launchDone() {
 	s.mu.Lock()
 	s.launching--
 	s.mu.Unlock()
+}
+
+// Holder is the listed ship holding the launch key, in any status.
+func (s *Service) Holder(key string) (Ship, bool) {
+	for _, sh := range append(s.List(), s.Pending()...) {
+		if sh.Routine == key {
+			return sh, true
+		}
+	}
+	return Ship{}, false
 }
