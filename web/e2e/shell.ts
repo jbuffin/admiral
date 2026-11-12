@@ -973,3 +973,61 @@ export function seedReviewTarget(a: Admiral) {
   rest(a, 'review-delete', 'DELETE', 'repos/acme/widgets/pulls/12/reviews/123', 200, {});
   return { pr_url: 'https://github.com/acme/widgets/pull/12', review_id: 123 };
 }
+
+export const TS_NAME = 'fake-mac.tailnet-fake.ts.net';
+export const TS_LOGIN = 'alice@example.com';
+const fakeTailscaleDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'e2e', 'testdata', 'faketailscale');
+
+/** The fake `tailscale` (e2e/testdata/faketailscale): pass `env` to `start`; the files steer its answers (docs/agents/testing.md). */
+export function fakeTailscale(a: Admiral) {
+  const dir = join(a.home, 'fakets');
+  mkdirSync(dir, { recursive: true });
+  const put = (name: string, text: string) => writeFileSync(join(dir, name), text);
+  const status = (state = 'Running', certDomains: string[] = [TS_NAME]) =>
+    put(
+      'status.json',
+      JSON.stringify({
+        BackendState: state,
+        Self: { DNSName: `${TS_NAME}.`, UserID: 1001 },
+        CurrentTailnet: { MagicDNSEnabled: true },
+        CertDomains: certDomains,
+        User: { '1001': { LoginName: TS_LOGIN } },
+      }),
+    );
+  /** Serve proxies HTTPS 443 to the Admiral on `port`, or nothing at all. */
+  const serve = (port?: string) =>
+    put(
+      'serve.json',
+      JSON.stringify(
+        port
+          ? { TCP: { '443': { HTTPS: true } }, Web: { [`${TS_NAME}:443`]: { Handlers: { '/': { Proxy: `http://127.0.0.1:${port}` } } } } }
+          : {},
+      ),
+    );
+  status();
+  serve();
+  return {
+    dir,
+    env: { FAKETS_DIR: dir, PATH: `${fakeTailscaleDir}:${process.env.PATH ?? ''}`, ADMIRAL_TAILSCALE_SERVE_TIMEOUT: '2s' },
+    put,
+    status,
+    serve,
+    calls: () => (existsSync(join(dir, 'calls')) ? readFileSync(join(dir, 'calls'), 'utf8').split('\n').filter(Boolean) : []),
+    serveCalls: () => (existsSync(join(dir, 'calls')) ? readFileSync(join(dir, 'calls'), 'utf8').split('\n').filter((l) => l.startsWith('serve --bg')) : []),
+  };
+}
+
+/** Replaces the clipboard so a tap on Copy can be read back; `copied` is what the page last wrote. */
+export async function stubClipboard(page: Page) {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __copied?: string };
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t: string) => void (w.__copied = t) }, configurable: true });
+  });
+  return () => page.evaluate(() => (window as unknown as { __copied?: string }).__copied);
+}
+
+/** `remote` in config.json, merged into what is there. */
+export function setRemote(a: Admiral, remote: { tailscale: boolean; allowedLogins: string[] }) {
+  const cfg = existsSync(join(a.home, 'config.json')) ? JSON.parse(readFileSync(join(a.home, 'config.json'), 'utf8')) : { version: 1 };
+  a.writeConfig({ ...cfg, remote });
+}

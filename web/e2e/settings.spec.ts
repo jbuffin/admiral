@@ -4,7 +4,7 @@ import { homedir, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test, type Admiral } from './fixtures';
-import { HOME, WORK, seedFleets, watchPage } from './shell';
+import { HOME, TS_LOGIN, TS_NAME, WORK, fakeTailscale, seedFleets, setRemote, stubClipboard, watchPage } from './shell';
 
 // The fleets are `zulu` (Westwind) and `alpha` (Homeport); zulu is the active fleet until one is chosen.
 const sourcesPage = (a: Admiral, fleet: string) => `${a.url}app/preferences/${fleet}/sources`;
@@ -457,4 +457,78 @@ test('a failed Sign out all keeps its error through the next device refresh', as
   await page.waitForResponse((r) => r.url().endsWith('/api/v1/devices') && r.request().method() === 'GET' && r.ok());
   await page.waitForResponse((r) => r.url().endsWith('/api/v1/devices') && r.request().method() === 'GET' && r.ok());
   await expect(page.getByRole('alert').filter({ hasText: 'the store is read-only' })).toBeVisible();
+});
+
+const BOB = 'bob@example.com';
+
+test('Settings shows the Tailscale checks, copies the URL, edits the allowed logins live, signs out a device whose login goes, and sets the mode up', async ({ page, browser, admiral }) => {
+  const ts = fakeTailscale(admiral);
+  setRemote(admiral, { tailscale: false, allowedLogins: [] });
+  await admiral.start({ env: ts.env });
+  const port = new URL(admiral.url).port;
+  const remote = async () =>
+    (await (await fetch(`${admiral.url}api/v1/remote`)).json()) as { tailscale: boolean; allowedLogins: string[]; url: string; checks: { id: string; ok: boolean }[] };
+  const watch = watchPage(page, admiral.url);
+  const copied = await stubClipboard(page);
+  const section = page.getByRole('group', { name: 'Tailscale' });
+
+  await page.goto(admiral.url + 'app/preferences/admiral/remote');
+  await expect(section.getByText(/Tailscale mode is off/i)).toBeVisible();
+
+  // A failed check stops Set up at its row and writes nothing, serve included.
+  ts.status('NeedsLogin');
+  await section.getByRole('button', { name: 'Set up', exact: true }).click();
+  const confirm = page.getByRole('group', { name: 'Set up Tailscale mode' });
+  await expect(confirm).toContainText('Certificate Transparency');
+  expect(ts.serveCalls()).toEqual([]);
+  await confirm.getByRole('button', { name: 'Turn on Tailscale mode' }).click();
+  await expect(section.getByRole('listitem').filter({ hasText: /logged out/i })).toBeVisible();
+  expect((await remote()).tailscale).toBe(false);
+  expect(ts.serveCalls()).toEqual([]);
+
+  // With the check fixed, Set up runs serve once on Admiral's own port, turns the mode on and allows the Mac's login.
+  ts.status();
+  await section.getByRole('button', { name: 'Set up', exact: true }).click();
+  await page.getByRole('group', { name: 'Set up Tailscale mode' }).getByRole('button', { name: 'Turn on Tailscale mode' }).click();
+  await expect.poll(async () => (await remote()).tailscale).toBe(true);
+  expect(ts.serveCalls()).toEqual([`serve --bg --https=443 http://127.0.0.1:${port}`]);
+  expect((await remote()).allowedLogins).toEqual([TS_LOGIN]);
+
+  // The checks are one row each, and the URL copies.
+  const url = `https://${TS_NAME}/`;
+  await expect(section.getByRole('listitem')).toHaveCount(4);
+  await expect(section.getByText(url)).toBeVisible();
+  await section.getByRole('button', { name: 'Copy' }).tap();
+  await expect(section.getByRole('status').filter({ hasText: /copied/i })).toBeVisible();
+  expect(await copied()).toBe(url);
+
+  // Adding a login shows in the API; so does removing it.
+  const logins = page.getByRole('list', { name: 'Allowed logins' });
+  await page.getByRole('textbox', { name: 'Allowed login' }).fill(`  ${BOB} `);
+  await page.getByRole('button', { name: 'Add login' }).tap();
+  await expect(logins.getByRole('listitem').filter({ hasText: BOB })).toBeVisible();
+  expect((await remote()).allowedLogins).toEqual([TS_LOGIN, BOB]);
+
+  // A device paired over bob's login, in its own browser context behind the proxy headers, is signed out when bob goes, with no reload.
+  const minted = (await (await fetch(`${admiral.url}api/v1/pairing-codes`, { method: 'POST' })).json()) as { code: string };
+  const tailnet = await browser.newContext({ extraHTTPHeaders: { 'Tailscale-User-Login': BOB, 'X-Forwarded-For': '100.64.0.9' } });
+  try {
+    const other = await tailnet.newPage();
+    await other.goto(`${admiral.url}pair?code=${minted.code}`);
+    await other.goto(admiral.url + 'app/inbox');
+    await expect(other.getByRole('navigation').first()).toBeVisible();
+    await other.evaluate(() => ((window as unknown as { __kept?: boolean }).__kept = true));
+
+    await logins.getByRole('listitem').filter({ hasText: BOB }).getByRole('button', { name: `Remove ${BOB}` }).tap();
+    await expect.poll(async () => (await remote()).allowedLogins).toEqual([TS_LOGIN]);
+    await expect(other.getByText('This device was signed out. Pair it again with a new code.')).toBeVisible();
+    await expect(other.getByRole('link', { name: /pair/i })).toHaveAttribute('href', '/pair');
+    expect(await other.evaluate(() => (window as unknown as { __kept?: boolean }).__kept)).toBe(true);
+  } finally {
+    await tailnet.close();
+  }
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
 });

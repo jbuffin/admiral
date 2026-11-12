@@ -26,6 +26,8 @@ type tsRig struct {
 	dir  string // FAKETS_DIR
 	home string
 	port string
+	// logins, when set, replace the one login writeConfig allows.
+	logins []string
 }
 
 func newTSRig(t *testing.T) *tsRig {
@@ -97,7 +99,12 @@ func (r *tsRig) serve(httpsPort int, funnel bool) map[string]any {
 
 func (r *tsRig) writeConfig(mode bool) {
 	r.t.Helper()
-	body := fmt.Sprintf(`{"version":1,"fleets":{"w":{"name":"W","claude":{}}},"remote":{"tailscale":%t,"allowedLogins":["%s"]}}`, mode, tsLogin)
+	logins := r.logins
+	if logins == nil {
+		logins = []string{tsLogin}
+	}
+	quoted, _ := json.Marshal(logins)
+	body := fmt.Sprintf(`{"version":1,"fleets":{"w":{"name":"W","claude":{}}},"remote":{"tailscale":%t,"allowedLogins":%s}}`, mode, quoted)
 	if err := os.MkdirAll(r.home, 0o755); err != nil {
 		r.t.Fatal(err)
 	}

@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { HOME, HOSTILE, WORK, boatReceived, changeFile, changesOf, chip, diffOf, expectSeededTurn, gitCheckout, holds, interruptButton, launchCrew, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedInboxItem, seedTurn, sendButton, sentBubble, setReason, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh } from './shell';
+import { HOME, HOSTILE, TS_LOGIN, TS_NAME, WORK, fakeTailscale, setRemote, stubClipboard, boatReceived, changeFile, changesOf, chip, diffOf, expectSeededTurn, gitCheckout, holds, interruptButton, launchCrew, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedInboxItem, seedTurn, sendButton, sentBubble, setReason, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh } from './shell';
 
 const tab = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
 
@@ -222,4 +222,18 @@ test('on the phone, the Inbox lists a question item and a needs-you stop from tw
   await entry(visitor.name).getByRole('link').tap();
   await expect(page).toHaveURL(new RegExp(`/app/inbox/${encodeURIComponent(visitor.session)}/item/q-port`));
   await expect(page.getByRole('region', { name: 'Peek' })).toBeVisible();
+});
+
+test('on the phone, Remote access shows the Tailscale checks and copies the tailnet URL', async ({ page, admiral }) => {
+  const ts = fakeTailscale(admiral);
+  setRemote(admiral, { tailscale: true, allowedLogins: [TS_LOGIN] });
+  await admiral.start({ env: ts.env });
+  ts.serve(new URL(admiral.url).port);
+  const copied = await stubClipboard(page);
+  await page.goto(admiral.url + 'app/preferences/admiral/remote');
+  const section = page.getByRole('group', { name: 'Tailscale' });
+  await expect(section.getByRole('listitem')).toHaveCount(4);
+  await section.getByRole('button', { name: 'Copy' }).tap();
+  await expect(section.getByRole('status').filter({ hasText: /copied/i })).toBeVisible();
+  expect(await copied()).toBe(`https://${TS_NAME}/`);
 });
