@@ -221,7 +221,7 @@ func TestAMalformedLineDoesNotKillTheServer(t *testing.T) {
 var wantTools = []string{
 	"add_order", "answer_item", "ask_question", "dismiss_ship", "hold_fire_on", "launch_ship", "list_campaigns", "list_inbox",
 	"list_routines", "list_ships", "list_sources", "next_prompt", "read_conversation", "read_hold_fire", "read_outcomes",
-	"stop_ship", "turn_routine_off", "wake_ship",
+	"save_note", "stop_ship", "turn_routine_off", "wake_ship",
 }
 
 func TestToolsListNamesEveryToolWithAnInputSchemaAndNoMore(t *testing.T) {
@@ -342,6 +342,7 @@ func TestEachToolSendsItsRouteBodyAndTheActorHeader(t *testing.T) {
 		{"list_campaigns", `{}`, "GET", "/api/campaigns", "", nil},
 		{"add_order", `{"source":"notes","panel":"todo","text":"fix the docs"}`, "POST", "/api/sources/notes/orders", "", map[string]any{"panel": "todo", "text": "fix the docs"}},
 		{"answer_item", `{"session":"saltpaw","id":"i-1","answers":{"q1":{"selected":["main"]}}}`, "POST", "/api/inbox/saltpaw/i-1/answer", "", map[string]any{"answers": map[string]any{"q1": map[string]any{"selected": []any{"main"}}}}},
+		{"save_note", `{"text":"deploys go out on Tuesdays"}`, "POST", "/api/chat/notes", "", map[string]any{"text": "deploys go out on Tuesdays"}},
 		{"stop_ship", `{"session":"saltpaw"}`, "POST", "/api/ships/saltpaw/stop", "", nil},
 		{"dismiss_ship", `{"session":"saltpaw"}`, "POST", "/api/ships/saltpaw/dismiss", "", nil},
 		{"next_prompt", `{"session":"saltpaw","text":"now the docs"}`, "POST", "/api/ships/saltpaw/next", "", map[string]any{"text": "now the docs"}},
