@@ -296,3 +296,30 @@ func TestHookPointKindsReachTheSinksThroughEmit(t *testing.T) {
 		})
 	}
 }
+
+func TestEventsCarryWhereATapLands(t *testing.T) {
+	r := newRig(t).started([]ships.Ship{working("Dory")}, nil)
+	moored := ship("Nemo", ships.StatusMoored, "")
+	moored.StackReady = true
+	boat := needsYou("Marlin", ships.ReasonCrew)
+	boat.Crew = []ships.CrewBoat{{Name: "cook", Status: "needs_you", Reason: "question"}}
+	r.w.Ships([]ships.Ship{ship("Dory", ships.StatusAnchored, ""), moored, boat})
+	r.w.Inbox([]inbox.Item{item(t, "s-Dory", "q-1", "question", "Which way?")})
+
+	got := map[push.Kind]push.Payload{}
+	for _, d := range r.rec.Events() {
+		got[d.Event.Kind] = push.PayloadOf(d.Event)
+	}
+	if p := got[push.Anchored]; p.Target != push.TargetShip || p.Session != "s-Dory" || p.Fleet != "work" {
+		t.Errorf("anchored payload = %+v, want the ship's own view", p)
+	}
+	if p := got[push.ReadyToMerge]; p.Target != push.TargetPeek || p.Session != "s-Nemo" || !p.Merge {
+		t.Errorf("ready payload = %+v, want a merge peek", p)
+	}
+	if p := got[push.ShipQuestion]; p.Session != "s-Marlin" || p.Crew != "cook" {
+		t.Errorf("crew payload = %+v, want a peek of boat cook", p)
+	}
+	if p := got[push.InboxQuestion]; p.Session != "s-Dory" || p.Item != "q-1" {
+		t.Errorf("item payload = %+v, want a peek of item q-1", p)
+	}
+}

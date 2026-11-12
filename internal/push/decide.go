@@ -35,9 +35,19 @@ type Event struct {
 	// Name is the fleet, ship or source the event is about.
 	Name string
 	Text string
-	// Target is the surface a tap lands on: "inbox" or "ships".
-	Target string
+	// A tap lands on a Peek (Target "peek") for Session plus Item, Crew or Merge, or on the ship's own view
+	// (Target "ship") for an anchored ship, which is never an Inbox entry.
+	Target  string
+	Session string
+	Item    string
+	Crew    string
+	Merge   bool
 }
+
+const (
+	TargetPeek = "peek"
+	TargetShip = "ship"
+)
 
 type Outcome int
 
@@ -69,15 +79,21 @@ const maxLine = 120
 
 // Payload is what a device is told: no code, diff, prompt or secret ever rides in it.
 type Payload struct {
-	Fleet  string `json:"fleet,omitempty"`
-	Name   string `json:"name"`
-	Line   string `json:"line"`
-	Tag    string `json:"tag"`
-	Target string `json:"target,omitempty"`
+	Fleet     string `json:"fleet,omitempty"`
+	FleetName string `json:"fleet_name,omitempty"`
+	Name      string `json:"name"`
+	Line      string `json:"line"`
+	Tag       string `json:"tag"`
+	Target    string `json:"target,omitempty"`
+	Session   string `json:"session,omitempty"`
+	Item      string `json:"item,omitempty"`
+	Crew      string `json:"crew,omitempty"`
+	Merge     bool   `json:"merge,omitempty"`
 }
 
 func PayloadOf(ev Event) Payload {
-	return Payload{Fleet: ev.FleetName, Name: ev.Name, Line: oneLine(ev.Text), Tag: ev.Key, Target: ev.Target}
+	return Payload{Fleet: ev.Fleet, FleetName: ev.FleetName, Name: ev.Name, Line: oneLine(ev.Text), Tag: ev.Key,
+		Target: ev.Target, Session: ev.Session, Item: ev.Item, Crew: ev.Crew, Merge: ev.Merge}
 }
 
 func oneLine(s string) string {

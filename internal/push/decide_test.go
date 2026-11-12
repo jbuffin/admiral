@@ -67,3 +67,10 @@ func TestPayloadIsOneShortLineWithTheEventsTag(t *testing.T) {
 		t.Errorf("Line has %d characters, want 1 to 120", n)
 	}
 }
+
+func TestPayloadCarriesWhereATapLands(t *testing.T) {
+	p := push.PayloadOf(push.Event{Kind: push.InboxQuestion, Fleet: "work", Key: "s/i", Name: "Dory", Text: "x", Target: push.TargetPeek, Session: "s", Item: "i"})
+	if p.Fleet != "work" || p.Target != push.TargetPeek || p.Session != "s" || p.Item != "i" {
+		t.Errorf("payload = %+v, want fleet work and a peek of item i in session s", p)
+	}
+}

@@ -48,4 +48,29 @@ describe('watchPresence', () => {
     doc.dispatchEvent(new Event('visibilitychange'));
     expect(sent.length).toBe(n);
   });
+
+  it('reports on the first input after a pause, not on every input, and again when the socket reopens', () => {
+    let opened = () => {};
+    const stop = watchPresence(send, () => clock, (fn) => {
+      opened = fn;
+      return () => {};
+    });
+    sent.length = 0;
+
+    clock = 5_000;
+    doc.dispatchEvent(new Event('pointermove'));
+    expect(sent).toEqual([]);
+
+    clock = 60_000;
+    doc.dispatchEvent(new Event('touchstart'));
+    expect(sent).toEqual([{ type: 'presence', visible: true, idle_ms: 0 }]);
+    clock = 60_500;
+    doc.dispatchEvent(new Event('touchstart'));
+    expect(sent.length).toBe(1);
+
+    clock = 61_000;
+    opened();
+    expect(sent.length).toBe(2);
+    stop();
+  });
 });

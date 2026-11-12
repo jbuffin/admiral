@@ -109,7 +109,7 @@ func (w *Watcher) Ships(list []ships.Ship) {
 		}
 	}
 	for _, sh := range list {
-		base := Event{Fleet: sh.Fleet, FleetName: sh.FleetName, Name: sh.Name, Target: "ships"}
+		base := Event{Fleet: sh.Fleet, FleetName: sh.FleetName, Name: sh.Name, Target: TargetPeek, Session: sh.Session}
 		switch {
 		case sh.Status == ships.StatusNeedsYou && asks(sh.Reason):
 			ev := base
@@ -117,11 +117,11 @@ func (w *Watcher) Ships(list []ships.Ship) {
 			note(w.asking, asking, sh.Session, ev)
 		case sh.Status == ships.StatusAnchored:
 			ev := base
-			ev.Kind, ev.Key, ev.Text = Anchored, sh.Session+":anchored", "stopped with an error"
+			ev.Kind, ev.Key, ev.Text, ev.Target = Anchored, sh.Session+":anchored", "stopped with an error", TargetShip
 			note(w.anchored, anchored, sh.Session, ev)
 		case sh.Status == ships.StatusMoored && sh.StackReady:
 			ev := base
-			ev.Kind, ev.Key, ev.Text = ReadyToMerge, sh.Session+":ready", "is ready to merge"
+			ev.Kind, ev.Key, ev.Text, ev.Merge = ReadyToMerge, sh.Session+":ready", "is ready to merge", true
 			note(w.ready, ready, sh.Session, ev)
 		}
 		for _, b := range sh.Crew {
@@ -129,7 +129,7 @@ func (w *Watcher) Ships(list []ships.Ship) {
 				continue
 			}
 			ev := base
-			ev.Kind, ev.Key, ev.Text = ShipQuestion, sh.Session+"/"+b.Name, b.Name+" "+askText(b.Reason)
+			ev.Kind, ev.Key, ev.Text, ev.Crew = ShipQuestion, sh.Session+"/"+b.Name, b.Name+" "+askText(b.Reason), b.Name
 			note(w.asking, asking, sh.Session+"/"+b.Name, ev)
 		}
 	}
@@ -186,7 +186,7 @@ func itemEvent(it inbox.Item, key string) (Event, bool) {
 	if name == "" {
 		name = "Admiral"
 	}
-	return Event{Kind: kind, Fleet: it.Fleet, FleetName: it.FleetName, Key: key, Name: name, Text: title, Target: "inbox"}, true
+	return Event{Kind: kind, Fleet: it.Fleet, FleetName: it.FleetName, Key: key, Name: name, Text: title, Target: TargetPeek, Session: it.Session, Item: it.ID}, true
 }
 
 // Feed runs a Watcher on change signals: the signals never block, and a burst of them is read once.
