@@ -298,13 +298,22 @@ func serveLogo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		// Temporary, not permanent: a cached 301 would outlive a rollback.
+		target := "/app/"
+		if r.URL.RawQuery != "" {
+			target += "?" + r.URL.RawQuery
+		}
+		http.Redirect(w, r, target, http.StatusFound)
+		return
+	}
 	name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
 	if name == "" {
 		name = "index.html"
 	}
 	data, err := fs.ReadFile(s.UI, name)
 	if err != nil && path.Ext(name) == "" {
-		name = "index.html" // client-side route
+		name = "index.html" // the old UI at /classic/, and any other extensionless path
 		if r.URL.Path == "/app" || strings.HasPrefix(r.URL.Path, "/app/") {
 			name = "app/index.html" // the new shell's own routes
 		}

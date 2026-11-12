@@ -12,13 +12,25 @@ export default defineConfig({
   plugins: [
     preact(),
     {
-      // The new shell's deep links under /app/ fall back to its own index.html,
-      // as the Go server does.
+      // As the Go server does: / opens the new shell, its deep links under /app/
+      // fall back to its own index.html, and the old UI lives at /classic/.
       name: 'app-shell-fallback',
       configureServer(server) {
         server.middlewares.use(async (req, res, next) => {
           const url = req.url ?? '';
           const path = url.split('?')[0];
+          if (req.method === 'GET' && path === '/') {
+            res.statusCode = 302;
+            res.setHeader('Location', '/app/' + url.slice(1));
+            res.end();
+            return;
+          }
+          if (req.method === 'GET' && (path === '/classic' || path === '/classic/')) {
+            const html = readFileSync(resolve(__dirname, 'index.html'), 'utf8');
+            res.setHeader('Content-Type', 'text/html');
+            res.end(await server.transformIndexHtml('/', html));
+            return;
+          }
           if (req.method === 'GET' && (path === '/app' || (path.startsWith('/app/') && !/\.[a-z0-9]+$/i.test(path)))) {
             const html = readFileSync(resolve(__dirname, 'app/index.html'), 'utf8');
             res.setHeader('Content-Type', 'text/html');
@@ -39,7 +51,7 @@ export default defineConfig({
   ],
   build: {
     assetsInlineLimit: 0,
-    // Two pages: the old UI at / and the new shell, built to dist/app/index.html.
+    // Two pages: the old UI (served at /classic/) and the new shell, built to dist/app/index.html.
     rollupOptions: {
       // The worker is built to a fixed /sw.js: a browser finds a new worker by its URL, so it takes no hash.
       input: { main: resolve(__dirname, 'index.html'), app: resolve(__dirname, 'app/index.html'), sw: resolve(__dirname, 'src/app/sw.ts') },

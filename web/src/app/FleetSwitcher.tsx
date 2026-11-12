@@ -48,13 +48,13 @@ export function FleetSwitcher({ sheet }: { sheet: boolean }) {
     go(fleetPath(active.key), fleetSearch.value);
   };
 
-  // The new shell has no terminal: setup runs detached and the old dashboard joins it.
+  // The new shell has no terminal: setup runs detached and the old UI at /classic/ joins it.
   const newFleet = async () => {
     setSetup(null);
     const r = await startSetup();
     if (!r.ok) return setSetup({ error: r.error });
     setSetup({ started: true });
-    setTimeout(() => location.assign('/'), 2500);
+    setTimeout(() => location.assign('/classic/'), 2500);
   };
 
   const items = (
