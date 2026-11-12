@@ -378,3 +378,17 @@ func TestWakeProposalFollowsItsShipsFleetsNotify(t *testing.T) {
 		t.Fatalf("a wake proposal for a Notify-off fleet's ship made %d events, want none", r.count())
 	}
 }
+
+type panicSink struct{}
+
+func (panicSink) Deliver(push.Decided) { panic("boom") }
+
+func TestAPanickingSinkDoesNotStopTheNextOneHearingTheEvent(t *testing.T) {
+	rec := &push.Recorder{}
+	w := push.NewWatcher(func() bool { return false }, func(string) bool { return true }, panicSink{}, rec)
+	w.Emit(push.Event{Kind: push.ShipQuestion, Key: "s-1", Name: "Dory", Text: "asks"})
+	w.Emit(push.Event{Kind: push.ShipQuestion, Key: "s-2", Name: "Dory", Text: "asks"})
+	if got := len(rec.Events()); got != 2 {
+		t.Fatalf("the sink after a panicking one heard %d events, want 2", got)
+	}
+}

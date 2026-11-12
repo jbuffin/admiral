@@ -48,7 +48,7 @@ describe('toast queue', () => {
     advance(1);
     toasts.expire();
     expect(toasts.list().map((x) => x.tag)).toEqual(['b']);
-    advance(1000);
+    advance(TOAST_MS - 1000);
     toasts.expire();
     expect(toasts.list()).toEqual([]);
   });

@@ -105,6 +105,16 @@ func (h *Hub) Watching() bool {
 	return false
 }
 
+// SendWatching delivers v to the windows Watching counts and to no other client.
+func (h *Hub) SendWatching(v any) {
+	now := h.Now()
+	h.each(func(c *Client) {
+		if c.watching(now) {
+			_ = c.Send(v)
+		}
+	})
+}
+
 func NewHub() *Hub { return &Hub{Now: time.Now, clients: map[int]*Client{}} }
 
 func (h *Hub) add(ctx context.Context, conn *websocket.Conn, path string) *Client {

@@ -754,17 +754,18 @@ test('a ship that starts waiting on a watched window brings a toast that opens i
   await page.getByRole('navigation').getByRole('link', { name: 'Inbox' }).tap();
   const toasts = page.getByRole('status');
 
-  const ready = (ship: { session: string }) => expect.poll(() => existsSync(join(admiral.home, 'rec', ship.session, 'recorded'))).toBe(true);
+  const rec = (ship: { session: string }, file: string) => join(admiral.home, 'rec', ship.session, file);
   const permission = 'event PermissionRequest {"hook_event_name":"PermissionRequest","tool_name":"Bash"}';
-  const asking = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cue: `wait go\n${permission}\n` });
-  await ready(asking);
+  // The harness reads its cue file line by line as it runs, so the first ship runs all of its cues before the file changes.
   // A stop with no hook event says only that the ship needs you, which never pushes.
-  const vague = await launchShip(admiral, { fleet: 'alpha', harness: 'claude', cue: 'wait go\nhook needs_you\n' });
-  await ready(vague);
-
-  writeFileSync(join(admiral.home, 'rec', vague.session, 'go'), '');
+  const vague = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cue: 'wait go\nhook needs_you\n' });
+  await expect.poll(() => existsSync(rec(vague, 'recorded'))).toBe(true);
+  writeFileSync(rec(vague, 'go'), '');
+  await expect.poll(() => existsSync(rec(vague, 'cues-done'))).toBe(true);
   await expect(page.getByRole('main').getByRole('listitem').filter({ hasText: vague.name })).toBeVisible({ timeout: 15_000 });
-  writeFileSync(join(admiral.home, 'rec', asking.session, 'go'), '');
+  const asking = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cue: `wait go\n${permission}\n` });
+  await expect.poll(() => existsSync(rec(asking, 'recorded'))).toBe(true);
+  writeFileSync(rec(asking, 'go'), '');
   const toast = toasts.getByRole('button', { name: new RegExp(asking.name) });
   await expect(toast).toBeVisible({ timeout: 15_000 });
   await expect(toasts).not.toContainText(vague.name);
@@ -772,7 +773,7 @@ test('a ship that starts waiting on a watched window brings a toast that opens i
   expect(box(await toasts.getByRole('button', { name: /dismiss/i }).boundingBox()).height).toBeGreaterThanOrEqual(44);
 
   await toast.tap();
-  await expect(page).toHaveURL(new RegExp(`/app/inbox/${encodeURIComponent(asking.session)}$`));
+  await expect(page).toHaveURL(new RegExp(`/app/inbox/${encodeURIComponent(asking.session)}(\\?|$)`));
   await expect(page.getByRole('region', { name: 'Peek' })).toBeVisible();
   await expect(toast).toHaveCount(0);
 

@@ -1,8 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Ship } from './api';
 import type { InboxItem } from './inbox';
 import { alertDestination, createAlertHandler } from './alerts';
 import { createToasts } from './toasts';
+
+// router.ts reads the page's location when it loads.
+vi.hoisted(() => {
+  vi.stubGlobal('location', { pathname: '/app/inbox', search: '' });
+  vi.stubGlobal('addEventListener', () => {});
+});
 
 const ship = (extra: Partial<Ship>) => ({ session: 's1', name: 'Dory', fleet: 'a', status: 'needs_you', reason: 'permission:Bash', crew: [], ...extra }) as unknown as Ship;
 const item = (id: string, session = 's1') => ({ version: 1, id, session, kind: 'question', created: '2026-10-22T10:00:00Z', title: 'Which port?' }) as InboxItem;
@@ -10,34 +16,34 @@ const none = { ships: [] as Ship[], items: [] as InboxItem[] };
 
 describe('where a tapped toast lands', () => {
   it('opens Peek on the waiting ship', () => {
-    expect(alertDestination({ target: 'inbox', session: 's1' }, { ...none, ships: [ship({})] })).toBe('/app/inbox/s1');
+    expect(alertDestination({ target: 'peek', session: 's1' }, { ...none, ships: [ship({})] })).toBe('/app/inbox/s1');
   });
 
   it('opens Peek on an Inbox item that is still there', () => {
-    expect(alertDestination({ target: 'inbox', session: 's1', item: 'q-1' }, { ...none, items: [item('q-1')] })).toBe('/app/inbox/s1/item/q-1');
+    expect(alertDestination({ target: 'peek', session: 's1', item: 'q-1' }, { ...none, items: [item('q-1')] })).toBe('/app/inbox/s1/item/q-1');
   });
 
   it('opens Peek on a crew boat that is still waiting', () => {
     const crew = [{ name: 'scout', status: 'needs_you', reason: 'question' }] as Ship['crew'];
-    expect(alertDestination({ target: 'inbox', session: 's1', crew: 'scout' }, { ...none, ships: [ship({ crew })] })).toBe('/app/inbox/s1/crew/scout');
+    expect(alertDestination({ target: 'peek', session: 's1', crew: 'scout' }, { ...none, ships: [ship({ crew })] })).toBe('/app/inbox/s1/crew/scout');
   });
 
   it('opens a ship that is ready to merge on its merge entry', () => {
     const moored = ship({ status: 'moored', stack_ready: true });
-    expect(alertDestination({ target: 'merge', session: 's1' }, { ...none, ships: [moored] })).toBe('/app/inbox/s1/merge');
+    expect(alertDestination({ target: 'peek', session: 's1', merge: true }, { ...none, ships: [moored] })).toBe('/app/inbox/s1/merge');
   });
 
   it('opens the Inbox alone when the item, the stop or the ship is gone', () => {
-    expect(alertDestination({ target: 'inbox', session: 's1', item: 'q-1' }, none)).toBe('/app/inbox');
-    expect(alertDestination({ target: 'inbox', session: 's1', item: 'q-1' }, { ...none, items: [item('q-2')] })).toBe('/app/inbox');
-    expect(alertDestination({ target: 'inbox', session: 's1' }, { ...none, ships: [ship({ status: 'underway' })] })).toBe('/app/inbox');
-    expect(alertDestination({ target: 'inbox', session: 's1' }, none)).toBe('/app/inbox');
-    expect(alertDestination({ target: 'merge', session: 's1' }, { ...none, ships: [ship({ status: 'moored', stack_ready: false })] })).toBe('/app/inbox');
+    expect(alertDestination({ target: 'peek', session: 's1', item: 'q-1' }, none)).toBe('/app/inbox');
+    expect(alertDestination({ target: 'peek', session: 's1', item: 'q-1' }, { ...none, items: [item('q-2')] })).toBe('/app/inbox');
+    expect(alertDestination({ target: 'peek', session: 's1' }, { ...none, ships: [ship({ status: 'underway' })] })).toBe('/app/inbox');
+    expect(alertDestination({ target: 'peek', session: 's1' }, none)).toBe('/app/inbox');
+    expect(alertDestination({ target: 'peek', session: 's1', merge: true }, { ...none, ships: [ship({ status: 'moored', stack_ready: false })] })).toBe('/app/inbox');
   });
 
   it('opens an anchored ship’s own view, which the Inbox never lists', () => {
-    expect(alertDestination({ target: 'ships', session: 's1' }, { ...none, ships: [ship({ status: 'anchored' })] })).toBe('/app/ships/s1');
-    expect(alertDestination({ target: 'ships', session: 's1' }, none)).toBe('/app/inbox');
+    expect(alertDestination({ target: 'ship', session: 's1' }, { ...none, ships: [ship({ status: 'anchored' })] })).toBe('/app/ships/s1');
+    expect(alertDestination({ target: 'ship', session: 's1' }, none)).toBe('/app/inbox');
   });
 });
 
@@ -48,7 +54,7 @@ describe('the alert message', () => {
     const handler = createAlertHandler({ toasts, chime: () => chimes.push(1), muted: () => muted });
     return { chimes, toasts, handler };
   }
-  const msg = { type: 'alert', name: 'Dory', line: 'needs your approval', tag: 's1', target: 'inbox', session: 's1' };
+  const msg = { type: 'alert', name: 'Dory', line: 'needs your approval', tag: 's1', target: 'peek', session: 's1' };
 
   it('chimes once and shows a toast', () => {
     const { chimes, toasts, handler } = wired();

@@ -29,7 +29,7 @@ func (l *sentLog) SendWatching(v any) {
 func TestAlertSinkSendsAnAlertToTheWatchedWindowsAndNothingForAPush(t *testing.T) {
 	log := &sentLog{}
 	sink := push.NewAlertSink(log)
-	ev := push.Event{Kind: push.ShipQuestion, Fleet: "work", FleetName: "Work", Key: "s-1", Name: "Dory", Text: "needs your approval\nsecond line", Target: "inbox", Session: "s-1"}
+	ev := push.Event{Kind: push.ShipQuestion, Fleet: "work", FleetName: "Work", Key: "s-1", Name: "Dory", Text: "needs your approval\nsecond line", Target: push.TargetPeek, Session: "s-1"}
 
 	sink.Deliver(push.Decided{Event: ev, Outcome: push.Push})
 	if len(log.sent) != 0 {
@@ -41,7 +41,7 @@ func TestAlertSinkSendsAnAlertToTheWatchedWindowsAndNothingForAPush(t *testing.T
 		t.Fatalf("an alert outcome sent %d window messages, want 1", len(log.sent))
 	}
 	got := log.sent[0]
-	want := map[string]any{"type": "alert", "fleet": "Work", "name": "Dory", "line": "needs your approval", "tag": "s-1", "target": "inbox", "session": "s-1"}
+	want := map[string]any{"type": "alert", "fleet": "work", "fleet_name": "Work", "name": "Dory", "line": "needs your approval", "tag": "s-1", "target": "peek", "session": "s-1"}
 	for k, v := range want {
 		if got[k] != v {
 			t.Errorf("alert[%q] = %v, want %v", k, got[k], v)
@@ -73,17 +73,20 @@ func TestAlertEventsNameTheEntryATapOpens(t *testing.T) {
 	it.Fleet = "work"
 	w.Inbox([]inbox.Item{it})
 
-	type tap struct{ target, session, crew, item string }
+	type tap struct {
+		target, session, crew, item string
+		merge                       bool
+	}
 	var got []tap
 	for _, d := range rec.Events() {
-		got = append(got, tap{d.Event.Target, d.Event.Session, d.Event.Crew, d.Event.Item})
+		got = append(got, tap{d.Event.Target, d.Event.Session, d.Event.Crew, d.Event.Item, d.Event.Merge})
 	}
 	want := []tap{
-		{"inbox", "s-dory", "", ""},      // the ship's stop opens in Peek
-		{"inbox", "s-dory", "scout", ""}, // a crew boat's stop
-		{"ships", "s-dory", "", ""},      // an anchored ship is no Inbox entry: its own view
-		{"merge", "s-dory", "", ""},      // ready to merge
-		{"inbox", "s-dory", "", "q-1"},   // an Inbox item
+		{"peek", "s-dory", "", "", false},      // the ship's stop opens in Peek
+		{"peek", "s-dory", "scout", "", false}, // a crew boat's stop
+		{"ship", "s-dory", "", "", false},      // an anchored ship is no Inbox entry: its own view
+		{"peek", "s-dory", "", "", true},       // ready to merge
+		{"peek", "s-dory", "", "q-1", false},   // an Inbox item
 	}
 	if len(got) != len(want) {
 		t.Fatalf("taps = %+v, want %+v", got, want)

@@ -49,6 +49,12 @@ func (r *alertRig) dial() *websocket.Conn {
 		r.t.Fatal(err)
 	}
 	r.t.Cleanup(func() { _ = conn.CloseNow() })
+	// The server registers the client a moment after the handshake; a send before that would miss it.
+	want := r.hub.Len() + 1
+	deadline := time.Now().Add(5 * time.Second)
+	for r.hub.Len() < want && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
 	return conn
 }
 
@@ -78,13 +84,18 @@ func next(t *testing.T, conn *websocket.Conn) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, data, err := conn.Read(ctx)
-	if err != nil {
-		t.Fatal(err)
+	for {
+		_, data, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m struct{ Type string }
+		_ = json.Unmarshal(data, &m)
+		// The server greets every client first.
+		if m.Type != "hello" {
+			return m.Type
+		}
 	}
-	var m struct{ Type string }
-	_ = json.Unmarshal(data, &m)
-	return m.Type
 }
 
 func TestSendWatching_ReachesAWatchedWindowAndNoOtherClient(t *testing.T) {
