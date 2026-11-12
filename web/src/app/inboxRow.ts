@@ -1,4 +1,5 @@
 import type { Fleet } from './api';
+import { readCrewMember } from './crewItems';
 import { fleetPaint } from './fleetPaint';
 import type { Entry } from './inbox';
 import { shipAge } from './shipList';
@@ -34,6 +35,12 @@ export function rowVerb(e: Entry): string {
     case 'findings': {
       const cards = e.item.findings?.cards;
       return Array.isArray(cards) ? `sent ${cards.length} finding ${cards.length === 1 ? 'card' : 'cards'}` : 'sent finding cards';
+    }
+    case 'crew_notes':
+      return 'proposes crew notes';
+    case 'crew_member': {
+      const from = readCrewMember(e.item.crew_member).ship;
+      return from ? `asks to keep a crew member from ${from}` : 'asks to keep a crew member';
     }
     default:
       return 'posted a notice';

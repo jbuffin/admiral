@@ -7,6 +7,8 @@ import { fleetSearch } from './fleets';
 import type { Entry } from './inbox';
 import { rowShip, rowVerb } from './inboxRow';
 import { discardFold, lockedBy, submitFold } from './itemActions';
+import { CrewMemberBody, CrewNotesBody, isCrewKind, type MemberStep, readCrew, useCrewNotes } from './PeekCrew';
+import { crewRemoveFold } from './crewItems';
 import { blankReview, FindingsBody, useFindings, Failure, RemoveRow, ReviewBody, type ReviewUi, useActing } from './PeekItem';
 import { MergeBody } from './PeekMerge';
 import { PeekQuestions } from './PeekQuestions';
@@ -71,6 +73,10 @@ export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => vo
   const [removing, setRemoving] = useState(false);
   const acting = useActing(entry, fold, lockedBy);
   const findings = useFindings(entry);
+  const crewNotes = useCrewNotes(entry);
+  const [member, setMember] = useState<MemberStep>('idle');
+  const crew = readCrew(entry);
+  const admiral = entry.session === '_admiral';
   const send = async (body: AnswerBody) => {
     setDraft((d) => ({ ...d, sending: true, error: '' }));
     const r = await call('POST', `/inbox/${encodeURIComponent(entry.session)}/${encodeURIComponent(entry.id!)}/answer`, body);
@@ -79,6 +85,7 @@ export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => vo
     setDraft((d) => ({ ...d, sending: false, error: r.error }));
   };
   const kind = entry.item?.kind;
+  const crewNoteIds = (kind === 'crew_notes' ? crewNotes.item.notes : crew.notes).map((n) => n.id);
   const removable = item && kind !== 'notice';
   const mine = (a: KeyAct) => {
     if (a.kind === 'remove' && removable && !acting.busy) {
@@ -90,6 +97,11 @@ export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => vo
       const q = qs.find((x) => !answeredQuestion(pickOf(draft, x)));
       const o = q?.options[a.n - 1];
       if (q && o) setDraft((d) => choose(d, q, o.label));
+    } else if (a.kind === 'pick' && kind === 'crew_member') {
+      if (acting.busy || acting.locked || a.n > 2) return;
+      acting.clear();
+      setRemoving(false);
+      setMember(a.n === 1 ? 'keep' : 'drop');
     } else if (a.kind === 'pick' && kind === 'review' && review.step !== 'discard' && !acting.busy && !acting.locked && EVENTS[a.n - 1]) {
       acting.clear();
       setRemoving(false);
@@ -102,6 +114,8 @@ export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => vo
   const slot = useRef((a: KeyAct) => latest.current(a)).current;
   peekKeys.current = slot;
   useEffect(() => () => void (peekKeys.current === slot && (peekKeys.current = null)), []);
+  // A refusal that names a note shows on that note's card.
+  const noteShown = !removing && crewNoteIds.includes(acting.note);
   const form = !item ? null : (
     <div class="peek-form">
       {question ? (
@@ -117,9 +131,21 @@ export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => vo
         />
       ) : kind === 'findings' ? (
         <FindingsBody entry={entry} acting={acting} state={findings} />
+      ) : kind === 'crew_notes' ? (
+        <CrewNotesBody acting={acting} state={crewNotes} decided={() => setRemoving(false)} />
+      ) : kind === 'crew_member' ? (
+        <CrewMemberBody item={crew} step={member} setStep={setMember} acting={acting} decided={() => setRemoving(false)} />
       ) : null}
-      {removable ? <RemoveRow entry={entry} confirm={removing} setConfirm={setRemoving} acting={{ ...acting, locked: false }} /> : null}
-      {kind === 'review' || kind === 'findings' || removing ? <Failure message={acting.error} /> : null}
+      {removable ? (
+        <RemoveRow
+          entry={entry}
+          confirm={removing}
+          setConfirm={setRemoving}
+          acting={{ ...acting, locked: false }}
+          fold={kind === 'crew_member' ? (data: { file_removed?: boolean }) => crewRemoveFold(data, crew.member) : undefined}
+        />
+      ) : null}
+      {kind === 'review' || kind === 'findings' || removing || (isCrewKind(kind) && !noteShown) ? <Failure message={acting.error} /> : null}
     </div>
   );
   return (
@@ -142,8 +168,14 @@ export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => vo
           </h2>
           {title ? <p class="peek-title">{title}</p> : null}
           {entry.fleet?.name ? <p class="peek-fleet">{entry.fleet.name}</p> : null}
+          {isCrewKind(kind) ? (
+            <>
+              {!entry.fleet && crew.fleet ? <p class="peek-fleet">{crew.fleet} (no longer configured)</p> : null}
+              <p class="peek-fleet">{[crew.ship && `from ${crew.ship}`, crew.run_date].filter(Boolean).join(', ')}</p>
+            </>
+          ) : null}
         </div>
-        {ship ? (
+        {ship && !admiral ? (
           <a
             class="btn peek-bridge"
             href={shipPath(ship.session) + bridgeSearch(fleetKey)}
@@ -171,7 +203,7 @@ export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => vo
         ) : (
           <>
             {form}
-            {shipsLoaded.value ? <p class="line">This ship is gone.</p> : null}
+            {shipsLoaded.value && !admiral ? <p class="line">This ship is gone.</p> : null}
           </>
         )}
       </div>

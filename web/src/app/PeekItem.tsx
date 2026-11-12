@@ -26,25 +26,27 @@ export const EVENTS: [string, string][] = [
 export interface Acting {
   busy: boolean;
   error: string;
+  /** The note a refusal names, else ''. */
+  note: string;
   locked: boolean;
   run: (verb: string, body: unknown, fold: (data: never) => string) => Promise<void>;
   clear: () => void;
 }
 
 export function useActing(entry: Entry, fold: (text: string) => void, lockedBy: (status: number | undefined, message: string) => boolean): Acting {
-  const [state, setState] = useState({ busy: false, error: '', locked: false });
+  const [state, setState] = useState({ busy: false, error: '', note: '', locked: false });
   const busy = useRef(false);
   return {
     ...state,
-    clear: () => setState((s) => ({ ...s, error: '' })),
+    clear: () => setState((s) => ({ ...s, error: '', note: '' })),
     async run(verb, body, text) {
       if (busy.current) return;
       busy.current = true;
-      setState((s) => ({ ...s, busy: true, error: '' }));
+      setState((s) => ({ ...s, busy: true, error: '', note: '' }));
       const r = await call<Record<string, unknown>>('POST', `/inbox/${encodeURIComponent(entry.session)}/${encodeURIComponent(entry.id!)}/${verb}`, body);
       busy.current = false;
       if (r.ok) return fold(text((r.data ?? {}) as never));
-      setState({ busy: false, error: r.error, locked: lockedBy(r.status, r.error) });
+      setState({ busy: false, error: r.error, note: r.note ?? '', locked: lockedBy(r.status, r.error) });
     },
   };
 }
@@ -298,9 +300,19 @@ export function FindingsBody({ entry, acting, state }: { entry: Entry; acting: A
   );
 }
 
+const removeCopy = (kind: string | undefined, review: boolean) =>
+  kind === 'crew_notes'
+    ? 'Remove this item? It counts as Drop: its notes are discarded.'
+    : kind === 'crew_member'
+      ? 'Remove this item? It counts as Drop: its notes are discarded and the ad hoc file is deleted if unchanged.'
+      : review
+        ? 'Remove this review from the inbox? Nothing changes on GitHub: the pending review stays there.'
+        : 'Remove this item from the inbox? The ship never gets an answer from here.';
+
 /** Any item can leave the inbox unanswered; a review's draft stays on GitHub. */
-export function RemoveRow({ entry, confirm, setConfirm, acting }: { entry: Entry; confirm: boolean; setConfirm: (on: boolean) => void; acting: Acting }) {
+export function RemoveRow({ entry, confirm, setConfirm, acting, fold = () => REMOVED_FOLD }: { entry: Entry; confirm: boolean; setConfirm: (on: boolean) => void; acting: Acting; fold?: (data: never) => string }) {
   const review = entry.item?.kind === 'review';
+  const kind = entry.item?.kind;
   const off = acting.busy;
   if (!confirm) {
     return (
@@ -320,9 +332,9 @@ export function RemoveRow({ entry, confirm, setConfirm, acting }: { entry: Entry
   }
   return (
     <div class="inbox-ask discard">
-      <p>{review ? 'Remove this review from the inbox? Nothing changes on GitHub: the pending review stays there.' : 'Remove this item from the inbox? The ship never gets an answer from here.'}</p>
+      <p>{removeCopy(kind, review)}</p>
       <div class="inbox-send-row">
-        <button type="button" class="btn danger" disabled={off} onClick={() => void acting.run('remove', undefined, () => REMOVED_FOLD)}>
+        <button type="button" class="btn danger" disabled={off} onClick={() => void acting.run('remove', undefined, fold)}>
           Remove
         </button>
         <button
@@ -334,7 +346,7 @@ export function RemoveRow({ entry, confirm, setConfirm, acting }: { entry: Entry
             setConfirm(false);
           }}
         >
-          Keep it
+          {kind === 'crew_notes' || kind === 'crew_member' ? 'Cancel' : 'Keep it'}
         </button>
       </div>
     </div>
