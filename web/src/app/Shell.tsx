@@ -18,7 +18,8 @@ import { signedOut } from './session';
 import { SIGNED_OUT_LINE } from './remoteAccess';
 import { ReadyToMerge, StatusGlyph } from './StatusGlyph';
 import { call, type Order, type Ship } from './api';
-import { campaignOf, go, loc, shipPath, shipSession, surfaceOf, surfacePath } from './router';
+import { CrewPage } from './CrewPage';
+import { campaignOf, crewOf, go, loc, shipPath, shipSession, surfaceOf, surfacePath } from './router';
 import { CampaignPage, CampaignSidebar, CampaignsList } from './CampaignPage';
 import { followReference } from './campaignsLink';
 import { InboxPanel } from './InboxPanel';
@@ -322,6 +323,10 @@ function Panel({ surface, title, phone }: { surface: Surface; title: boolean; ph
   if (surface.id === 'campaigns') {
     const id = campaignOf(loc.value.path);
     return id ? <CampaignPage key={id} id={id} title={title} /> : <CampaignsList phone={!!phone} title={title} />;
+  }
+  if (surface.id === 'crew') {
+    const fleet = activeFleet.value;
+    if (fleet) return <CrewPage key={fleet.key} fleet={fleet} name={crewOf(loc.value.path)} title={title} phone={!!phone} />;
   }
   return <EmptyState surface={surface} title={title} />;
 }

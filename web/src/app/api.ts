@@ -156,7 +156,7 @@ export async function fetchFleets(): Promise<Fleet[]> {
 
 export const logoUrl = (harness: string) => `${API}/logos/${encodeURIComponent(harness)}`;
 
-export type Result<T> = { ok: true; data: T } | { ok: false; error: string; status?: number };
+export type Result<T> = { ok: true; data: T } | { ok: false; error: string; status?: number; field?: string };
 
 export async function call<T>(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<Result<T>> {
   try {
@@ -173,7 +173,10 @@ export async function call<T>(method: string, path: string, body?: unknown, head
       /* not JSON: the status speaks */
     }
     if (res.status === 401) signedOut.value = true;
-    if (!res.ok) return { ok: false, status: res.status, error: (data as { error?: string } | null)?.error ?? `${method} ${path}: ${res.status}` };
+    if (!res.ok) {
+      const body = data as { error?: string; field?: string } | null;
+      return { ok: false, status: res.status, error: body?.error ?? `${method} ${path}: ${res.status}`, ...(body?.field && { field: body.field }) };
+    }
     return { ok: true, data: data as T };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'The request failed.' };
