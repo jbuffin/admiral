@@ -97,6 +97,8 @@ test('on the phone, a crew member item shows its whole definition and Keep and D
   const peek = peekOf(page);
   await expect(peek).toContainText('Work as deckhand; swab first.');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  const definition = peek.locator('pre').filter({ hasText: 'Work as deckhand; swab first.' });
+  expect(await definition.evaluate((el) => el.scrollHeight <= el.clientHeight || ['auto', 'scroll'].includes(getComputedStyle(el).overflowY))).toBe(true);
   const last = peek.getByText('Rule 60 of the deck.');
   await last.scrollIntoViewIfNeeded();
   await expect(last).toBeInViewport();

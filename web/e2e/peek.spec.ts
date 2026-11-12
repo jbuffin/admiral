@@ -462,7 +462,7 @@ test('Peek answers a crew notes item: keep one note, edit another to repo scope,
       fleet: 'zulu',
       ship: 'Dory',
       run_date: '2026-11-12',
-      notes: [crewNote('n1', 'scout', { role: 'scribe', note: 'Scout dates every entry' }), crewNote('n2', 'ada', { note: 'Ada runs make check first', replaces: 'ada reads the grammar first' })],
+      notes: [crewNote('n1', 'scout', { role: 'scribe', note: 'Scout dates every entry', replaces: '2026-11-10 (run-a): scout keeps the log short' }), crewNote('n2', 'ada', { note: 'Ada runs make check first', replaces: null })],
     },
   });
   await page.goto(admiral.url + 'app/inbox?fleet=zulu');
@@ -471,7 +471,7 @@ test('Peek answers a crew notes item: keep one note, edit another to repo scope,
   await expect(peek).toContainText('from Dory, 2026-11-12');
   await expect(peek).toContainText('Scout dates every entry');
   await expect(peek).toContainText('Replaces:');
-  await expect(peek).toContainText('ada reads the grammar first');
+  await expect(peek).toContainText('scout keeps the log short');
   await expect(peek).not.toContainText('This ship is gone.');
   await expect(peek.getByRole('link', { name: 'Open bridge' })).toHaveCount(0);
   const card1 = peek.getByRole('region', { name: 'Note card 1' });
@@ -483,6 +483,8 @@ test('Peek answers a crew notes item: keep one note, edit another to repo scope,
   await expect(peek).toContainText('0 of 2 decided');
 
   await card1.getByRole('button', { name: 'Keep', exact: true }).tap();
+  await card2.getByRole('button', { name: 'Keep', exact: true }).tap();
+  await expect(send).toBeEnabled();
   await card2.getByRole('button', { name: 'Edit', exact: true }).tap();
   await expect(send).toBeDisabled();
   const text = card2.getByRole('textbox', { name: /^Edit note/ });
@@ -507,6 +509,7 @@ test('Peek answers a crew notes item: keep one note, edit another to repo scope,
   await expect(itemRow(page, 'Crew notes from Dory')).toHaveCount(0, { timeout: 15_000 });
   const memory = join(admiral.home, 'fleets', 'zulu', 'crew', 'memory');
   await expect.poll(() => readFileSync(join(memory, 'scout', 'fleet.md'), 'utf8')).toContain('- 2026-11-12 (Dory): Scout dates every entry');
+  expect(readFileSync(join(memory, 'scout', 'fleet.md'), 'utf8')).not.toContain('scout keeps the log short');
   expect(readFileSync(join(memory, 'ada', 'repos', 'acme', 'api.md'), 'utf8')).toContain('- 2026-11-12 (Dory): Ada runs make check before anything');
   expect(readFileSync(join(memory, 'ada', 'fleet.md'), 'utf8')).not.toContain('make check');
 });
@@ -558,4 +561,26 @@ test('a member Keep the server refuses shows its error and leaves the item', asy
   expect(existsSync(join(admiral.home, 'fleets', 'zulu', 'crew', 'deckhand.md'))).toBe(false);
   expect(existsSync(adHoc)).toBe(true);
   expect(existsSync(join(admiral.home, 'inbox', '_admiral', 'crew-m2.answer.json'))).toBe(false);
+});
+
+test('a crew note the server cannot place shows its error on that note card and keeps the decisions', async ({ page, admiral }) => {
+  seedCrew(admiral);
+  await admiral.start();
+  seedInboxItem(admiral, '_admiral', {
+    id: 'crew-n2',
+    kind: 'crew_notes',
+    title: 'Crew notes from Dory',
+    crew_notes: { fleet: 'zulu', ship: 'Dory', run_date: '2026-11-12', notes: [crewNote('n1', 'scout', { role: 'scribe', note: 'Scout dates every entry', replaces: '2026-01-01 (run-z): no such line' }), crewNote('n2', 'ada')] },
+  });
+  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
+  await itemRow(page, 'Crew notes from Dory').getByRole('link').tap();
+  const peek = peekOf(page);
+  const card1 = peek.getByRole('region', { name: 'Note card 1' });
+  await card1.getByRole('button', { name: 'Keep', exact: true }).tap();
+  await peek.getByRole('region', { name: 'Note card 2' }).getByRole('button', { name: 'Keep', exact: true }).tap();
+  await peek.getByRole('button', { name: 'Send', exact: true }).tap();
+  await expect(card1.getByRole('alert')).toContainText('nothing was changed');
+  await expect(card1.getByRole('button', { name: 'Keep', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(peek).toContainText('2 of 2 decided');
+  expect(existsSync(join(admiral.home, 'inbox', '_admiral', 'crew-n2.answer.json'))).toBe(false);
 });

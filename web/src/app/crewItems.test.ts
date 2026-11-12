@@ -99,6 +99,11 @@ describe('what an edited note must satisfy before Save', () => {
     expect(noteEditProblems({ note: 'x'.repeat(300), scope: 'fleet' })).toEqual({});
   });
 
+  it('counts characters, not UTF-16 units, against the 300 limit', () => {
+    expect(noteEditProblems({ note: '🧭'.repeat(300), scope: 'fleet' })).toEqual({});
+    expect(noteEditProblems({ note: '🧭'.repeat(301), scope: 'fleet' }).note).toBeTruthy();
+  });
+
   it('refuses an empty note, one over 300 characters, and one with a line break', () => {
     expect(noteEditProblems({ note: '', scope: 'fleet' }).note).toBeTruthy();
     expect(noteEditProblems({ note: '   ', scope: 'fleet' }).note).toBeTruthy();
