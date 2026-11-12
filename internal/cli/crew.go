@@ -321,7 +321,7 @@ func crewClose(args []string, std IO) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := c.l.CloseCrew(ctx, boat.WindowID); err != nil {
+	if err := c.l.CloseCrew(ctx, boat); err != nil {
 		return fmt.Errorf("tmux could not close %s: %s", boat.Name, err)
 	}
 	return nil

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -614,9 +615,15 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 		waitChatWS(t, ws2, 3*time.Second, "an empty conversation", messagesAre())
 		// /clear typed as keys, or pasted as one bracketed paste: either reaches the pane.
 		c.waitStdinOneOf(want+"/clear\r", want+"\x1b[200~/clear\x1b[201~\r")
+		// The /clear path writes one usage record for the chat, from the file it had before the clear.
+		appendLines(t, tp1, `{"type":"cost-state","totalCostUSD":0.5,"modelUsage":{"claude-fake":{"inputTokens":7,"outputTokens":3}}}`)
 		c.touch("go-clear")
 		c.waitEvents(5)
 		c.stays(1500*time.Millisecond, "an empty conversation after SessionStart (clear)", messagesAre())
+		got := lastOf(c.waitEvent(chatSessionName, "usage", 1), "usage")
+		wantUsage(t, got, "chat", "claude", map[string]any{"input": 7.0, "output": 3.0, "reasoning": 0.0, "cache_read": 0.0, "cache_write": 0.0},
+			map[string]any{"amount": 0.5, "basis": "estimate", "incomplete": false})
+		holdThat(t, "the clear wrote a second usage record for the chat", func() bool { return usageCount(c.shipLog(chatSessionName)) == 1 })
 		appendLines(t, tp2, userLine("u-20", "After the clear", nil))
 		c.waitSession(10*time.Second, "the one message written after the clear", messagesAre("user: After the clear"))
 	})
@@ -665,6 +672,9 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 	appendLines(t, tpC, userLine("u-3", "Written after the clear", nil))
 	c.waitSession(10*time.Second, "the line of a transcript that did not exist at the clear", messagesAre("user: Written after the clear"))
 
+	// The chat's cost-state is read from the path recorded before the reset.
+	appendLines(t, tpC, `{"type":"cost-state","totalCostUSD":0.5,"modelUsage":{"claude-fake":{"inputTokens":7,"outputTokens":3}}}`)
+
 	// Change the model and the effort, then New chat. The new run records into a
 	// fresh _chat directory and fires its own SessionStart.
 	if code, body := send(t, http.MethodPut, w.in.LocalURL+"/api/chat", map[string]any{"fleet": "chat", "model": "sonnet", "effort": ""}); code != http.StatusOK {
@@ -688,6 +698,14 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 		t.Errorf("the restarted chat's argv = %q, want --model sonnet and no --effort", r.argv)
 	}
 	c.waitSession(10*time.Second, "the new run's conversation", messagesAre("user: Fresh start"))
+
+	// The reset wrote one usage record for the chat, from the transcript it had before the kill.
+	got := lastOf(w.waitEvent(chatSessionName, "usage", 1), "usage")
+	if got["fleet"] != "chat" || got["harness"] != "claude" || !reflect.DeepEqual(got["tokens"], map[string]any{"input": 7.0, "output": 3.0, "reasoning": 0.0, "cache_read": 0.0, "cache_write": 0.0}) ||
+		!reflect.DeepEqual(got["money"], map[string]any{"amount": 0.5, "basis": "estimate", "incomplete": false}) {
+		t.Errorf("the chat's usage record = %v, want fleet chat, claude, 7 in 3 out, 0.5 estimate", got)
+	}
+	holdThat(t, "the reset wrote a second usage record for the chat", func() bool { return usageCount(w.shipLog(chatSessionName)) == 1 })
 }
 
 // The transcript path comes from a pane option anything in the chat can write,

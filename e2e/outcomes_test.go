@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -47,10 +48,23 @@ func (w *world) shipLog(session string) []outRec {
 	return out
 }
 
+// eventsOf lists the lifecycle events; a `usage` record lands after `ended` at no fixed point among later ones, so the tests that look at it read it by name.
+func usageCount(log []outRec) int {
+	n := 0
+	for _, m := range log {
+		if m["event"] == "usage" {
+			n++
+		}
+	}
+	return n
+}
+
 func eventsOf(log []outRec) []string {
 	out := []string{}
 	for _, m := range log {
-		out = append(out, m["event"].(string))
+		if m["event"] != "usage" {
+			out = append(out, m["event"].(string))
+		}
 	}
 	return out
 }
@@ -103,7 +117,9 @@ func (w *world) outFleets(cues map[string][]string, defs ...srcDef) {
 		env := w.harnessEnv()
 		env["FAKE_CUE"] = path
 		fleets[key] = map[string]any{"name": key, "color": "#336699", "search_roots": []string{w.work},
-			"claude": map[string]any{"executable": w.fakeExe("claude"), "env": env}}
+			"claude":  map[string]any{"executable": w.fakeExe("claude"), "env": env},
+			"codex":   map[string]any{"executable": w.fakeExe("codex"), "env": env},
+			"copilot": map[string]any{"executable": w.fakeExe("copilot"), "env": env}}
 	}
 	cfg := map[string]any{"version": 1, "fleets": fleets}
 	if len(defs) > 0 {
@@ -215,7 +231,9 @@ func TestOutcomeLogOfAnOrderShip(t *testing.T) {
 	p := w.newTP("a")
 	p.mainOrders(map[string]any{"id": "o1", "title": "Order one", "text": "do it", "url": "https://example.com/issues/1"})
 	w.installPlugin("testplug", "testplug")
-	w.outFleets(map[string][]string{"f": {"hook working", "sleep 1", `event PermissionRequest {"tool_name":"Bash"}`, "wait go", "sleep 1", "exit 0"}},
+	w.outFleets(map[string][]string{
+		"f": {"hook working", "sleep 1", `event PermissionRequest {"tool_name":"Bash"}`, "wait go", "sleep 1", "usage", "exit 0"},
+		"u": {"hook working", "usage", "wait go", "exit 0"}},
 		tpSource("a", p, nil))
 	w.start()
 	w.waitSource("a", 10*time.Second, "order o1", func(s sourceJSON) bool { return isOK(s) && s.hasOrder("o1") })
@@ -231,14 +249,33 @@ func TestOutcomeLogOfAnOrderShip(t *testing.T) {
 	const report = `{"status":"done","pr":"https://example.com/pull/7"}`
 	reportPath, inboxPath := w.seedShipFiles(rec, report)
 	w.touch(ship.Session, "go")
-	log := w.waitEvent(ship.Session, "ended", 1)
+	w.waitEvent(ship.Session, "ended", 1)
+	if exists(filepath.Join(w.rec, ship.Session, "usage-error")) {
+		t.Fatalf("the fake could not write its usage line: %s", w.readFile(filepath.Join(w.rec, ship.Session, "usage-error")))
+	}
+	if lines, _ := filepath.Glob(filepath.Join(w.userHom, ".claude", "projects", "*", "*.jsonl")); len(lines) != 1 || !strings.Contains(w.readFile(lines[0]), `"cost-state"`) {
+		t.Fatalf("the fake wrote no cost-state line, only %v", lines)
+	}
+	log := w.waitEvent(ship.Session, "usage", 1)
 
-	if got, want := eventsOf(log), []string{"launched", "needs_you", "underway", "ended"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("records = %v, want %v", got, want)
+	// The usage record sits beside `ended`, in either order.
+	var rest []outRec
+	var usageRec outRec
+	for _, m := range log {
+		if m["event"] == "usage" {
+			usageRec = m
+		} else {
+			rest = append(rest, m)
+		}
 	}
-	if n := len(w.outcomeLog()); n != 4 {
-		t.Errorf("the log has %d lines, want 4", n)
+	if got, want := eventsOf(rest), []string{"launched", "needs_you", "underway", "ended"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("records = %v, want %v and one usage", eventsOf(log), want)
 	}
+	if n := len(w.outcomeLog()); n != 5 {
+		t.Errorf("the log has %d lines, want 5", n)
+	}
+	wantUsage(t, usageRec, "f", "claude", usageClaudeTokens, usageClaudeMoney)
+	log = rest
 	var prev time.Time
 	for _, m := range log {
 		ts, err := time.Parse(time.RFC3339, m["ts"].(string))
@@ -283,6 +320,148 @@ func TestOutcomeLogOfAnOrderShip(t *testing.T) {
 	waitGone(t, 10*time.Second, reportPath, inboxPath)
 	if w.hasSession(ship.Session) {
 		t.Errorf("the session of the sailed-off ship still exists")
+	}
+	w.stayOneUsage(ship.Session)
+
+	// A Codex and a Copilot ship each write one usage record at their exit, with their own figures.
+	for _, c := range []struct {
+		harness string
+		tokens  map[string]any
+		money   map[string]any
+	}{
+		{"codex", usageCodexTokens, nil},
+		{"copilot", usageCopilotTokens, usageCopilotMoney},
+	} {
+		s := w.launch(map[string]any{"fleet": "u", "harness": c.harness, "dir": w.checkout("proj"), "skill": noSkill})
+		w.record(s.Session)
+		w.touch(s.Session, "go") // the fake's wait cue passes at once; its usage cue runs first
+		w.waitEvent(s.Session, "ended", 1)
+		if exists(filepath.Join(w.rec, s.Session, "usage-error")) {
+			t.Fatalf("the %s fake could not write its usage line: %s", c.harness, w.readFile(filepath.Join(w.rec, s.Session, "usage-error")))
+		}
+		got := lastOf(w.waitEvent(s.Session, "usage", 1), "usage")
+		wantUsage(t, got, "u", c.harness, c.tokens, c.money)
+		w.stayOneUsage(s.Session)
+	}
+}
+
+var (
+	usageClaudeTokens  = map[string]any{"input": 100.0, "output": 40.0, "reasoning": 10.0, "cache_read": 300.0, "cache_write": 40.0}
+	usageClaudeMoney   = map[string]any{"amount": 0.25, "basis": "estimate", "incomplete": false}
+	usageCodexTokens   = map[string]any{"input": 300.0, "output": 40.0, "reasoning": 20.0, "cache_read": 200.0, "cache_write": 0.0}
+	usageCopilotTokens = map[string]any{"input": 10.0, "output": 30.0, "reasoning": 0.0, "cache_read": 100.0, "cache_write": 40.0}
+	usageCopilotMoney  = map[string]any{"amount": 2.5, "basis": "credits", "incomplete": false, "premium_requests": 3.0}
+)
+
+// wantUsage checks a usage record's fleet, harness, tokens and money (nil: null), and that it has no crew boats and no round.
+func wantUsage(t *testing.T, m outRec, fleet, harness string, tokens map[string]any, money map[string]any) {
+	t.Helper()
+	if m["fleet"] != fleet || m["harness"] != harness {
+		t.Errorf("usage = %v, want fleet %s and harness %s", m, fleet, harness)
+	}
+	if !reflect.DeepEqual(m["tokens"], tokens) {
+		t.Errorf("usage tokens = %v, want %v", m["tokens"], tokens)
+	}
+	if money == nil {
+		if !isNull(m, "money") {
+			t.Errorf("usage money = %v, want null", m["money"])
+		}
+	} else if !reflect.DeepEqual(m["money"], money) {
+		t.Errorf("usage money = %v, want %v", m["money"], money)
+	}
+	if _, has := m["round"]; has {
+		t.Errorf("usage = %v, a ship that was never woken has no round", m)
+	}
+}
+
+// stayOneUsage holds long enough for a second usage record to land after the first.
+func (w *world) stayOneUsage(session string) {
+	w.t.Helper()
+	time.Sleep(1500 * time.Millisecond)
+	n := 0
+	for _, m := range w.shipLog(session) {
+		if m["event"] == "usage" {
+			n++
+		}
+	}
+	if n != 1 {
+		w.t.Errorf("%s has %d usage records, want exactly 1 per exit", session, n)
+	}
+}
+
+// A Stop kills the ship's session within milliseconds, so its figures are read before the kill.
+func TestOutcomeStopKeepsTheShipsOwnUsage(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	w.outFleets(map[string][]string{"u": {"hook working", "usage", "wait go", "exit 0"}})
+	w.start()
+	for _, c := range []struct {
+		harness string
+		tokens  map[string]any
+		money   map[string]any
+	}{
+		{"codex", usageCodexTokens, nil},
+		{"copilot", usageCopilotTokens, usageCopilotMoney},
+	} {
+		s := w.launch(map[string]any{"fleet": "u", "harness": c.harness, "dir": w.checkout("proj"), "skill": noSkill})
+		w.record(s.Session)
+		// Copilot's launch already set the option, so wait for the line itself; Codex's cue sets the option after writing it.
+		holdFor(t, "the "+c.harness+" fake to write its usage line", func() bool {
+			f := strings.Fields(w.mustTmux("display-message", "-p", "-t", "="+s.Session+":0", "#{@admiral-transcript}"))
+			if len(f) != 3 {
+				return false
+			}
+			b, err := os.ReadFile(f[2])
+			return err == nil && (bytes.Contains(b, []byte(`"token_count"`)) || bytes.Contains(b, []byte(`"session.shutdown"`)))
+		})
+		if code, body := send(t, http.MethodPost, w.shipURL(s.Session, "/stop"), nil); code != http.StatusOK {
+			t.Fatalf("stop = %d, want 200: %s", code, body)
+		}
+		log := w.waitEvent(s.Session, "usage", 1)
+		wantUsage(t, lastOf(log, "usage"), "u", c.harness, c.tokens, c.money)
+	}
+}
+
+// A boat closed before its ship ends keeps its figures: every rollout the boat recorded is counted at the ship's exit.
+func TestOutcomeUsageCountsACrewBoatClosedBeforeTheShipEnds(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	w.outFleets(map[string][]string{"f": {"hook working", "wait go", "exit 0"}})
+	w.start()
+	ship := w.launchIn("f", "claude", "closed-boat")
+	w.waitFile(ship.Session, "recorded")
+	boat := w.crewBoat(ship.Session, "gone", "codex")
+
+	line := func(input int) string {
+		return `{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":` + strconv.Itoa(input) +
+			`,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0}}}}` + "\n"
+	}
+	dir := filepath.Join(w.userHom, ".codex", "sessions", "2026", "11", "11")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	first, second := filepath.Join(dir, "rollout-first.jsonl"), filepath.Join(dir, "rollout-second.jsonl")
+	if err := os.WriteFile(first, []byte(line(100)+line(300)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(second, []byte(line(7)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// What the boat's SessionStart hooks left: the first rollout in the history, the second as its current one.
+	w.mustTmux("set", "-p", "-t", boat.pane, "@admiral-rollouts", first+" "+second)
+	w.mustTmux("set", "-p", "-t", boat.pane, "@admiral-crew-transcript", second)
+	w.expectExit(crewCall(w, ship.Session, "", "close", "gone"), 0, "crew close gone")
+
+	w.touch(ship.Session, "go")
+	got := lastOf(w.waitEvent(ship.Session, "usage", 1), "usage")
+	crew, _ := got["crew"].([]any)
+	if len(crew) != 1 {
+		t.Fatalf("usage = %v, want the closed boat listed under crew", got)
+	}
+	b, _ := crew[0].(map[string]any)
+	tokens, _ := b["tokens"].(map[string]any)
+	if b["name"] != "gone" || b["harness"] != "codex" || tokens["input"] != 307.0 || tokens["output"] != 2.0 {
+		t.Errorf("crew boat = %v, want gone, codex, 307 in 2 out (both rollouts summed)", b)
 	}
 }
 
@@ -360,7 +539,8 @@ func TestOutcomeRestartAddsNoLaunchedAndEndsADeadShip(t *testing.T) {
 	w.restart()
 	w.in.waitStatusList(t, 10*time.Second, ship.Session, "underway")
 	holdThat(t, "after a restart the ship has a second launched", func() bool {
-		return reflect.DeepEqual(eventsOf(w.shipLog(ship.Session)), []string{"launched"})
+		log := w.shipLog(ship.Session)
+		return reflect.DeepEqual(eventsOf(log), []string{"launched"}) && usageCount(log) == 0
 	})
 
 	w.in.Stop()
@@ -389,7 +569,8 @@ func TestOutcomeRestartAddsNoLaunchedAndEndsADeadShip(t *testing.T) {
 	w.restart()
 	w.in.waitStatusList(t, 10*time.Second, ship.Session, "anchored")
 	holdThat(t, "after another restart the ship has a second ended", func() bool {
-		return reflect.DeepEqual(eventsOf(w.shipLog(ship.Session)), []string{"launched", "ended"})
+		log := w.shipLog(ship.Session)
+		return reflect.DeepEqual(eventsOf(log), []string{"launched", "ended"}) && usageCount(log) == 1
 	})
 }
 
@@ -413,11 +594,14 @@ func TestOutcomeRestartEndsAShipThatSailedOff(t *testing.T) {
 	if w.hasSession(ship.Session) {
 		t.Errorf("the session of an exit-0 ship still exists after the restart")
 	}
-	log := w.shipLog(ship.Session)
+	log := w.waitEvent(ship.Session, "usage", 1)
 	if got := eventsOf(log); !reflect.DeepEqual(got, []string{"launched", "ended"}) {
 		t.Fatalf("records = %v, want launched, ended", got)
 	}
-	e := log[1]
+	if n := usageCount(log); n != 1 {
+		t.Errorf("the log has %d usage records, want 1", n)
+	}
+	e := lastOf(log, "ended")
 	if num(t, e, "exit_code") != 0 || !reflect.DeepEqual(e["report"], map[string]any{"status": "done"}) {
 		t.Errorf("ended = %v, want exit_code 0 and the ship's report", e)
 	}
@@ -479,15 +663,19 @@ func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 	}
 	c := w.launchIn("f", "claude", "unw3")
 	w.waitEvent(c.Session, "launched", 1)
-	if got := eventsOf(w.shipLog(y.Session)); len(got) != 0 {
-		t.Fatalf("the records of the anchored ship are %v while the log was unwritable, want none", got)
+	if log := w.shipLog(y.Session); len(eventsOf(log)) != 0 || usageCount(log) != 0 {
+		t.Fatalf("the records of the anchored ship are %v while the log was unwritable, want none", log)
 	}
 	if code := w.dismiss(y.Session); code/100 != 2 {
 		t.Fatalf("Dismiss = %d, want 2xx", code)
 	}
-	log := w.waitEvent(y.Session, "dismissed", 1)
+	w.waitEvent(y.Session, "dismissed", 1)
+	log := w.waitEvent(y.Session, "usage", 1)
 	if got, want := eventsOf(log), []string{"ended", "dismissed"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("records after Dismiss = %v, want %v (its launched was lost with the log)", got, want)
+	}
+	if n := usageCount(log); n != 1 {
+		t.Errorf("the log has %d usage records after Dismiss, want 1: the one lost with the log is written again", n)
 	}
 	waitGone(t, 5*time.Second, yInbox)
 	if got := w.stderrLines("outcome log:"); got != 1 {

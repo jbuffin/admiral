@@ -122,7 +122,7 @@ type track struct {
 	seen  bool              // the host has listed the session; a launch is tracked before it does
 }
 
-type endState struct{ written, failed, clean bool }
+type endState struct{ written, failed, clean, usaged, usageFailed bool }
 
 type ending struct {
 	sess  sessionhost.Session
@@ -239,6 +239,7 @@ func (s *Service) queueEnded(e ending) {
 	}
 	report := s.readReport(name)
 	s.writeCrewItems(sess, report)
+	s.queueUsage(sess, end)
 	s.record(outcomes.Record{Ship: name, Event: "ended", Fields: map[string]any{
 		"exit_code": code, "signal": sig, "duration_s": duration,
 		"needs_you_count": t.Count, "needs_you_s": seconds(t.Seconds), "report": report,
@@ -272,13 +273,19 @@ func (s *Service) queueEnded(e ending) {
 func (s *Service) retryEnded(sess sessionhost.Session) {
 	s.mu.Lock()
 	tr := s.tracks[sess.Name]
-	if tr == nil || tr.end == nil || !tr.end.failed {
+	if tr == nil || tr.end == nil || !(tr.end.failed || tr.end.usageFailed) {
 		s.mu.Unlock()
 		return
 	}
+	// Only the write that failed is queued again: a lone `usage` must not add a second `ended`.
+	usageOnly := !tr.end.failed
 	tr.end.failed = false
 	e := ending{sess, tr.tally, tr.end, tr}
 	s.mu.Unlock()
+	if usageOnly {
+		s.queueUsage(sess, e.end)
+		return
+	}
 	s.queueEnded(e)
 }
 

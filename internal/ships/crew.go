@@ -168,17 +168,17 @@ func (s *Service) serveCrewClose(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "ship "+session+" not found")
 		return
 	}
-	windowID := ""
+	var boat sessionhost.Crew
 	for _, c := range sess.Crew {
 		if c.Name == name {
-			windowID = c.WindowID
+			boat = c
 		}
 	}
-	if windowID == "" {
+	if boat.WindowID == "" {
 		writeError(w, http.StatusNotFound, "crew boat "+name+" not found")
 		return
 	}
-	switch err := s.Launcher.CloseCrew(ctx, windowID); {
+	switch err := s.Launcher.CloseCrew(ctx, boat); {
 	case errors.Is(err, sessionhost.ErrWindowGone):
 		writeError(w, http.StatusNotFound, "crew boat "+name+" not found")
 		return

@@ -16,9 +16,11 @@ import (
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/conversation"
 	"github.com/jbuffin/admiral/internal/launcher"
+	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/transcriptfs"
+	"github.com/jbuffin/admiral/internal/usage"
 )
 
 // NotStarted holds until the first SessionStart: Claude may be on its folder-trust dialog,
@@ -51,6 +53,10 @@ type Service struct {
 	Tmux     string // the tmux binary
 	Socket   string
 	Home     string // $ADMIRAL_HOME, where chat/questions/ is
+	// Outcomes takes a usage record at each reset; nil writes none.
+	Outcomes *outcomes.Writer
+	// LastLive gives the chat's last live figures when its transcript has none; nil when nothing keeps them.
+	LastLive func(session string) (usage.Figures, bool)
 
 	op  sync.Mutex // start, New chat and send, one at a time
 	qmu sync.Mutex // answering and withdrawing chat questions, one at a time
@@ -65,6 +71,8 @@ type Service struct {
 	qAt      time.Time
 	qItems   map[string]cachedQuestion
 	qAnswers map[string]cachedAnswer
+
+	resets resetUsage
 }
 
 // state is cleared when the pane changes.
@@ -458,6 +466,7 @@ func (s *Service) serveNew(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	opts, pane, noPath := s.st.opts, s.st.pane, s.st.optRaw == ""
+	path, dir, raw := s.st.path, s.configDir(), s.st.optRaw
 	s.mu.Unlock()
 	chat := s.Config().Chat
 	if opts.model == chat.Model && opts.effort == chat.Effort && opts.fleet == chat.Fleet {
@@ -481,6 +490,7 @@ func (s *Service) serveNew(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadGateway, "could not clear the chat: "+err.Error())
 			return
 		}
+		s.recordReset(path, dir, opts.fleet, raw)
 		writeJSON(w, http.StatusOK, map[string]bool{"running": true})
 		return
 	}
@@ -491,6 +501,7 @@ func (s *Service) serveNew(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "could not end the chat: "+err.Error())
 		return
 	}
+	s.recordReset(path, dir, opts.fleet, "")
 	s.mu.Lock()
 	s.st = state{}
 	s.mu.Unlock()

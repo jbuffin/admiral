@@ -125,14 +125,32 @@ func (f Figures) Sub(prev Figures) (d Figures, ok bool) {
 	return d, ok
 }
 
-// eachLine calls fn with every non-empty line, however long. fn gets a slice it must not keep.
+// maxLine bounds one line: a longer one is skipped, so a hostile or runaway transcript cannot fill memory.
+const maxLine = 4 << 20
+
+// eachLine calls fn with every non-empty line of at most maxLine bytes. fn gets a slice it must not keep.
 func eachLine(r io.Reader, fn func([]byte)) error {
 	br := bufio.NewReaderSize(r, 64*1024)
+	var line []byte
+	skip := false
 	for {
-		line, err := br.ReadBytes('\n')
-		if line = bytes.TrimSpace(line); len(line) > 0 {
-			fn(line)
+		chunk, err := br.ReadSlice('\n')
+		if !skip {
+			line = append(line, chunk...)
+			skip = len(line) > maxLine
+			if skip {
+				line = line[:0]
+			}
 		}
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		if !skip {
+			if l := bytes.TrimSpace(line); len(l) > 0 {
+				fn(l)
+			}
+		}
+		line, skip = line[:0], false
 		if err == io.EOF {
 			return nil
 		}

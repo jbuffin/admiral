@@ -130,6 +130,15 @@
 #                  --plugin-dir in argv) for <event>, <json> on stdin, as Copilot's hook stdin reads
 #                  (snake_case: notification_type, toolName). A matcher is tested against
 #                  notification_type or toolName; the event name goes to `events-done`.
+#   usage          append the usage line this harness writes at its end, with fixed figures (the
+#                  tests read them): claude a cost-state line (input 100, output 50 with 10
+#                  thinking, cache read 300, cache write 40, $0.25) to the transcript in the pane's
+#                  @admiral-transcript; copilot a session.shutdown line (input 150 with 100 cache
+#                  read and 40 cache write, output 30, 2.5 credits, 3 premium requests) to the same;
+#                  codex a token_count event (input 500 with 200 cached, output 60 with 20 reasoning)
+#                  to a rollout under ${CODEX_HOME:-$HOME/.codex}/sessions, then sets the pane's
+#                  @admiral-transcript to it, as the SessionStart hook would. With no option to
+#                  write to it puts why in `usage-error` and exits 1.
 #   replydelay <n> sleep n seconds before each message's lines are appended, so a test sees the
 #                  message sent and not yet recorded. Put it before `reply`.
 #
@@ -503,6 +512,30 @@ EOF3
 					system("sh \"$FAKE_APPEND\" " n)
 				}'
 			exit
+			;;
+		usage)
+			raw=$(tmux show-options -pqv -t "$TMUX_PANE" @admiral-transcript)
+			case "$me" in
+			codex)
+				path="${CODEX_HOME:-$HOME/.codex}/sessions/2026/11/11/rollout-2026-11-11T15-22-11-$sess.jsonl"
+				mkdir -p "$(dirname "$path")"
+				printf '%s\n' '{"timestamp":"2026-11-11T20:20:00.000Z","ordinal":1,"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":500,"cached_input_tokens":200,"cache_write_input_tokens":0,"output_tokens":60,"reasoning_output_tokens":20,"total_tokens":560}}}}' >>"$path"
+				tmux set -p -t "$TMUX_PANE" @admiral-transcript "1700000000000000000 startup $path"
+				;;
+			*)
+				path=${raw#* * }
+				if [ -z "$raw" ] || [ "$path" = "$raw" ]; then
+					echo "usage cue: no @admiral-transcript on the pane" | tee "$d/usage-error" >&2
+					exit 1
+				fi
+				mkdir -p "$(dirname "$path")"
+				if [ "$me" = claude ]; then
+					printf '%s\n' '{"type":"cost-state","totalCostUSD":0.25,"modelUsage":{"claude-fake":{"inputTokens":100,"outputTokens":50,"thinkingTokens":10,"cacheReadInputTokens":300,"cacheCreationInputTokens":40}}}' >>"$path"
+				else
+					printf '%s\n' '{"type":"session.shutdown","data":{"totalNanoAiu":2500000000,"accountingSnapshot":{"totalPremiumRequestCost":3,"aiCreditsStatus":"complete"},"modelMetrics":{"fake":{"usage":{"inputTokens":150,"outputTokens":30,"cacheReadTokens":100,"cacheWriteTokens":40,"reasoningTokens":0}}}}}' >>"$path"
+				fi
+				;;
+			esac
 			;;
 		exit)
 			: >"$d/cues-done"

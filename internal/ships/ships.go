@@ -22,6 +22,7 @@ import (
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/state"
+	"github.com/jbuffin/admiral/internal/usage"
 )
 
 // Ship's ExitCode and ExitSignal are set only on an anchored ship.
@@ -98,6 +99,10 @@ type Service struct {
 	// Approving is whether a Codex ship's app-server is waiting on an approval: a bell then may be for it, not for a question.
 	Approving func(session, crew string) bool
 	Outcomes  *outcomes.Writer
+	// UsageRead replaces the transcript reading at a ship's exit, for tests.
+	UsageRead func(ctx context.Context, sess sessionhost.Session) ExitUsage
+	// LastLive gives a ship's last live figures when its transcript has none; nil when nothing keeps them.
+	LastLive func(session string) (usage.Figures, bool)
 	// Reserve takes a unit of each named resource, or none: it returns the
 	// release, or why the first is not ready (busy, missing or pending). Nil
 	// when there are no resources to hold.
