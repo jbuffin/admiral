@@ -1,0 +1,35 @@
+import { effect, signal } from '@preact/signals';
+import { call } from './api';
+import { activeFleet } from './fleets';
+import type { HoldFireState } from './routines';
+
+export const holdFire = signal<{ fleet: string; state: HoldFireState } | null>(null);
+
+let seq = 0;
+export async function refreshHoldFire(fleet: string | undefined): Promise<void> {
+  if (!fleet) return void (holdFire.value = null);
+  const mine = ++seq;
+  const r = await call<HoldFireState>('GET', `/fleets/${encodeURIComponent(fleet)}/hold-fire`);
+  if (mine === seq && r.ok) holdFire.value = { fleet, state: r.data };
+}
+
+/** Turns this fleet's switch, or the all-fleets one, on or off, then reads the state back; the error text when refused. */
+export async function setHoldFire(fleet: string, scope: 'fleet' | 'all', on: boolean): Promise<string> {
+  const base = scope === 'all' ? '/hold-fire' : `/fleets/${encodeURIComponent(fleet)}/hold-fire`;
+  const r = await call('POST', `${base}/${on ? 'on' : 'off'}`);
+  await refreshHoldFire(fleet);
+  return r.ok ? '' : r.error;
+}
+
+/** Keeps the active fleet's Hold fire state fresh: on a fleet change, every 15 s and when the window regains focus. AdmiralBot can turn it on, and no socket message says so. */
+export function watchHoldFire() {
+  const stop = effect(() => void refreshHoldFire(activeFleet.value?.key));
+  const again = () => void refreshHoldFire(activeFleet.peek()?.key);
+  const timer = setInterval(again, 15_000);
+  addEventListener('focus', again);
+  return () => {
+    stop();
+    clearInterval(timer);
+    removeEventListener('focus', again);
+  };
+}

@@ -4,6 +4,7 @@ import './shell-tokens.css';
 import './shell.css';
 import { watchFleets } from './fleets';
 import { watchCampaigns } from './campaignsLink';
+import { watchHoldFire } from './holdFireLink';
 import { listenForInstall } from './install';
 import { startRouter } from './router';
 import { Shell } from './Shell';
@@ -15,6 +16,7 @@ startRouter();
 watchFleets();
 watchShips();
 watchCampaigns();
+watchHoldFire();
 render(<Shell />, document.getElementById('app')!);
 
 // Each socket open asks which build the server runs, so a reconnect to an updated server reloads the shell too.

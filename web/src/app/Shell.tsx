@@ -24,7 +24,10 @@ import { gateOf } from './pairing';
 import { ReadyToMerge, StatusGlyph } from './StatusGlyph';
 import { call, type Order, type Ship } from './api';
 import { CrewPage } from './CrewPage';
-import { campaignOf, crewOf, go, loc, shipPath, shipSession, surfaceOf, surfacePath } from './router';
+import { RoutinesPage } from './RoutinesPage';
+import { holdFire } from './holdFireLink';
+import { holdFireBanner } from './routines';
+import { automateSearch, campaignOf, crewOf, go, loc, routineNewPath, routineCreating, routineOf, shipPath, shipSession, surfaceOf, surfacePath } from './router';
 import { CampaignPage, CampaignSidebar, CampaignsList } from './CampaignPage';
 import { followReference } from './campaignsLink';
 import { ChatPanel } from './ChatPanel';
@@ -247,16 +250,25 @@ function OrdersList({ fleetKey, onLaunch }: { fleetKey: string; onLaunch: (o: Or
           {followError}
         </p>
       ) : null}
-      {groups.map(({ src, orders }) => (
-        <div key={src.key} class="order-view">
-          <h3 class="order-view-head">{src.name}</h3>
-          <ul class="ship-list">
-            {orders.map((o) => (
-              <OrderRow key={o.id} order={o} source={src.key} onLaunch={onLaunch} onFollowError={setFollowError} />
-            ))}
-          </ul>
-        </div>
-      ))}
+      {groups.map(({ src }) =>
+        src.views
+          .filter((v) => v.orders.length > 0)
+          .map((v) => (
+            <div key={`${src.key}/${v.id}`} class="order-view">
+              <div class="order-view-bar">
+                <h3 class="order-view-head">{src.views.length > 1 ? `${src.name}: ${v.title}` : src.name}</h3>
+                <button type="button" class="btn" onClick={() => go(routineNewPath, automateSearch(src.key, v.id, fleetKey))}>
+                  Automate…
+                </button>
+              </div>
+              <ul class="ship-list">
+                {v.orders.map((o) => (
+                  <OrderRow key={o.id} order={o} source={src.key} onLaunch={onLaunch} onFollowError={setFollowError} />
+                ))}
+              </ul>
+            </div>
+          )),
+      )}
     </section>
   );
 }
@@ -333,11 +345,48 @@ function Panel({ surface, title, phone }: { surface: Surface; title: boolean; ph
     const id = campaignOf(loc.value.path);
     return id ? <CampaignPage key={id} id={id} title={title} /> : <CampaignsList phone={!!phone} title={title} />;
   }
+  if (surface.id === 'routines') {
+    const fleet = activeFleet.value;
+    if (fleet) {
+      return <RoutinesPage key={fleet.key} fleet={fleet} id={routineOf(loc.value.path)} creating={routineCreating(loc.value.path)} title={title} phone={!!phone} />;
+    }
+  }
   if (surface.id === 'crew') {
     const fleet = activeFleet.value;
     if (fleet) return <CrewPage key={fleet.key} fleet={fleet} name={crewOf(loc.value.path)} title={title} phone={!!phone} />;
   }
   return <EmptyState surface={surface} title={title} />;
+}
+
+function HoldFireBanner() {
+  const fleet = activeFleet.value;
+  const b = fleet && holdFire.value?.fleet === fleet.key ? holdFireBanner(holdFire.value.state, fleet.name, new Date()) : null;
+  if (!b) return null;
+  return (
+    <div class="holdfire-banner" role="status">
+      <span>{b.text}</span>
+      <a
+        class="btn"
+        href={'/app/routines' + fleetSearch.value}
+        onClick={(e) => {
+          if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+          e.preventDefault();
+          go('/app/routines', fleetSearch.value);
+        }}
+      >
+        Routines
+      </a>
+    </div>
+  );
+}
+
+function Stage({ surface, title, phone }: { surface: Surface; title: boolean; phone?: boolean }) {
+  return (
+    <div class="stage">
+      <HoldFireBanner />
+      {surface.id === 'preferences' ? <Preferences phone={!!phone} /> : <Panel surface={surface} title={title} phone={phone} />}
+    </div>
+  );
 }
 
 function MoreSheet({ onClose }: { onClose: () => void }) {
@@ -366,7 +415,7 @@ function PhoneShell({ surface }: { surface: Surface }) {
         <FleetSwitcher sheet />
         <h1>{surface.title}</h1>
       </header>
-      {surface.id === 'preferences' ? <Preferences phone /> : <Panel surface={surface} title={false} phone />}
+      <Stage surface={surface} title={false} phone />
       <nav class="tabbar" aria-label="Main">
         {PHONE_TABS.map((id) => (
           <Link key={id} surface={surfaceById(id)} class="tab">
@@ -418,7 +467,7 @@ function DesktopShell({ surface }: { surface: Surface }) {
           </Fragment>
         ))}
       </nav>
-      {surface.id === 'preferences' ? <Preferences phone={false} /> : <Panel surface={surface} title />}
+      <Stage surface={surface} title />
     </div>
   );
 }

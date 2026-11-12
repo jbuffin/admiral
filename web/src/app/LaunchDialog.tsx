@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, type DirsAnswer, type Fleet } from './api';
-import { Flag } from './Flag';
 import { modeLabel, skillLabel, type Mode, type SkillView } from './campaign';
 import {
   bareSkillName,
   campaignLaunch,
   campaignOrder,
   sliceOrder,
-  CLAUDE_MODELS,
   type CrewAnswer,
   crewOptions,
   defaultSkill,
@@ -18,7 +16,7 @@ import {
   type SkillsAnswer,
   togglePin,
 } from './launchForm';
-import { resources } from './shipsLink';
+import { CheckoutSelect, CLONE, DockPicker, ModelEffortPair, NO_DIR, ResourcesPicker, SkillSelect, skillValue } from './LaunchPickers';
 
 export interface OrderRef {
   source: string;
@@ -39,12 +37,8 @@ export interface CampaignChildRef {
   startAnyway: boolean;
 }
 
-const CLONE = 'clone';
-const NONE = '';
-const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-
-// Skill select values: 'commodore', 'none', 'custom' or `skill:<favorite>`.
-const toValue = (c: SkillChoice) => (c.kind === 'skill' ? `skill:${c.name}` : c.kind);
+const NONE = NO_DIR;
+const toValue = skillValue;
 
 export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched }: { fleet: Fleet; order?: OrderRef; campaign?: CampaignChildRef; onClose: () => void; onLaunched?: () => void }) {
   const order: OrderRef | undefined = campaign ? { ...(campaign.issues ? sliceOrder(campaign.campaignId, campaign.issues) : campaignOrder(campaign.campaignId, campaign.url)), title: campaign.title, text: '' } : given;
@@ -231,16 +225,7 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
         <h2 class="sheet-title">Launch</h2>
         {order ? <p class="launch-order">{order.title}</p> : null}
         <div class="launch-body">
-          <fieldset class="docks">
-            <legend>Dock</legend>
-            {fleet.docks.map((d) => (
-              <label key={d.harness} class={harness === d.harness ? 'dock on' : 'dock'}>
-                <input type="radio" name="dock" checked={harness === d.harness} onChange={() => setHarness(d.harness)} />
-                <Flag harness={d.harness} size="row" />
-                {cap(d.harness)}
-              </label>
-            ))}
-          </fieldset>
+          <DockPicker docks={fleet.docks} harness={harness} onChange={setHarness} />
 
           {campaign ? null : (
           <label class="field">
@@ -255,25 +240,15 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
           </label>
           )}
 
-          <label class="field">
-            <span>Checkout</span>
-            <select
-              value={dir}
-              onChange={(e) => {
-                picked.current = true;
-                setDir((e.target as HTMLSelectElement).value);
-              }}
-            >
-              {dir === NONE ? <option value={NONE}>Choose a checkout</option> : null}
-              {clone ? <option value={CLONE}>{`Clone ${clone.repo}${clone.exists ? ' (folder exists)' : ''}`}</option> : null}
-              {(dirs?.entries ?? []).map((d) => (
-                <option key={d.path} value={d.path}>
-                  {d.name} ({d.kind === 'search_root' ? 'search root' : 'checkout'}
-                  {d.ships_here > 0 ? ', ship underway' : ''})
-                </option>
-              ))}
-            </select>
-          </label>
+          <CheckoutSelect
+            dir={dir}
+            dirs={dirs}
+            allowClone
+            onChange={(v) => {
+              picked.current = true;
+              setDir(v);
+            }}
+          />
           {cloning ? <p class="note">{`Clone ${clone!.repo} into ${clone!.path} before launch.`}</p> : null}
           {clone?.exists ? <p class="note warn">{`A folder already exists at ${clone.path}, so cloning there will be refused.`}</p> : null}
           {(dirs?.entries.find((d) => d.path === dir)?.ships_here ?? 0) > 0 ? <p class="note warn">Another ship already runs here.</p> : null}
@@ -283,27 +258,14 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
               {modeLabel(campaign.mode)} · {skillLabel(campaign.skill)}
             </p>
           ) : (
-          <label class="field">
-            <span>Skill</span>
-            <select
-              value={skill}
-              onChange={(e) => {
-                skillPicked.current = true;
-                setSkill((e.target as HTMLSelectElement).value);
-              }}
-            >
-              <option value="commodore" disabled={!skills?.commodore.found}>
-                {skills && !skills.commodore.found ? 'Commodore (not found)' : 'Commodore'}
-              </option>
-              {favorites.map((s) => (
-                <option key={s.name} value={`skill:${s.name}`}>
-                  {s.name}
-                </option>
-              ))}
-              <option value="custom">Custom</option>
-              <option value="none">Just launch</option>
-            </select>
-          </label>
+          <SkillSelect
+            value={skill}
+            skills={skills}
+            onChange={(v) => {
+              skillPicked.current = true;
+              setSkill(v);
+            }}
+          />
           )}
           {!campaign && skill === 'custom' ? (
             <label class="field">
@@ -348,62 +310,10 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
           {as && as.harness !== harness ? (
             <p class="note">{`Model and effort are the ${as.harness} default; the member sets its own model.`}</p>
           ) : (
-          <div class="pair">
-            <label class="field">
-              <span>Model</span>
-              {harness === 'claude' ? (
-                <select value={model} onChange={(e) => setModels({ ...models, [harness]: (e.target as HTMLSelectElement).value })}>
-                  <option value="">Default</option>
-                  {CLAUDE_MODELS.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  type="text"
-                  autocomplete="off"
-                  autocapitalize="off"
-                  spellcheck={false}
-                  placeholder="Harness default"
-                  value={model}
-                  onInput={(e) => setModels({ ...models, [harness]: (e.target as HTMLInputElement).value.trim() })}
-                />
-              )}
-            </label>
-            {efforts.length > 0 ? (
-              <label class="field">
-                <span>Effort</span>
-                <select value={efforts.includes(effort) ? effort : ''} onChange={(e) => setEffort((e.target as HTMLSelectElement).value)}>
-                  <option value="">Default</option>
-                  {efforts.map((x) => (
-                    <option key={x} value={x}>
-                      {cap(x)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-          </div>
+          <ModelEffortPair harness={harness} model={model} effort={effort} onModel={(m) => setModels({ ...models, [harness]: m })} onEffort={setEffort} />
           )}
 
-          {!campaign && resources.value.length > 0 ? (
-            <fieldset class="checks">
-              <legend>Resources</legend>
-              {resources.value.map((r) => (
-                <label key={r.name} class="check">
-                  <input
-                    type="checkbox"
-                    checked={held.includes(r.name)}
-                    onChange={(e) => setHeld((e.target as HTMLInputElement).checked ? [...held, r.name] : held.filter((n) => n !== r.name))}
-                  />
-                  {r.name}
-                  <span class="meta">{`${Math.min(r.in_use, r.capacity)}/${r.capacity} in use`}</span>
-                </label>
-              ))}
-            </fieldset>
-          ) : null}
+          {campaign ? null : <ResourcesPicker held={held} onChange={setHeld} />}
 
           {campaign ? null : (
           <label class="check">

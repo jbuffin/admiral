@@ -83,3 +83,27 @@ func TestMigrationListsEnabledEntriesOfADroppedSource(t *testing.T) {
 		t.Errorf("notice body lacks the dropped source's enabled entry:\n%s", body)
 	}
 }
+
+// The note no longer says routines are still to come; they have landed.
+func TestMigrationNoticeNoLongerSaysRoutinesAreComing(t *testing.T) {
+	const entry = `{"enabled":true,"fleet":"work","harness":"claude","skill":{"kind":"none"}}`
+	_, p := planOut(t, `{"version":1,"fleets":{"work":{"name":"Work","claude":{}}},"sources":{"notes":{"plugin":"freeform","name":"Notes","autopilot":{"orders":`+entry+`}}}}`)
+	m := &Migration{Removed: p.removed, Entries: p.entries}
+	_, body := m.Notice()
+	if strings.Contains(body, "once scheduled routines land") || !strings.Contains(body, "Notes") || !strings.Contains(body, "Automate") {
+		t.Errorf("notice body should name the entry and point at Automate…, not say routines are coming:\n%s", body)
+	}
+}
+
+// Automate… opens in the fleet the source fed: its own, else the first fleet.
+func TestMigrationEntriesCarryTheirSourcesFleet(t *testing.T) {
+	const ap = `"autopilot":{"orders":{"enabled":true,"fleet":"work","harness":"claude","skill":{"kind":"none"}}}`
+	_, p := planOut(t, `{"version":1,"fleets":{"work":{"name":"Work","claude":{}},"home":{"name":"Home","claude":{}}},"sources":{"a":{"plugin":"freeform","fleet":"home",`+ap+`},"b":{"plugin":"freeform",`+ap+`}}}`)
+	got := map[string]string{}
+	for _, e := range p.entries {
+		got[e.Key] = e.Fleet
+	}
+	if got["a"] != "home" || got["b"] != "work" {
+		t.Errorf("entry fleets = %v, want a=home (its own), b=work (the first fleet)", got)
+	}
+}

@@ -11,9 +11,22 @@ import (
 // AdmiralSession is a pseudo-session for Admiral's own notices, the way `_chat` is the chat's.
 const AdmiralSession = "_admiral"
 
-// WriteNotice posts a read-only item the engineer can only dismiss.
-func WriteNotice(home, title, body string) (string, error) {
+// NoticeEntry is a view autopilot entry a migration removed: the source's key and name and the panel id.
+type NoticeEntry struct {
+	Key   string `json:"key"`
+	Name  string `json:"name"`
+	Panel string `json:"panel"`
+	// Fleet is the fleet the source fed, so Automate… opens in it.
+	Fleet string `json:"fleet,omitempty"`
+}
+
+// WriteNotice posts a read-only item the engineer can only dismiss; entries ride in the notice object for the shell to link.
+func WriteNotice(home, title, body string, entries ...NoticeEntry) (string, error) {
 	now := time.Now().UTC()
+	notice := map[string]any{"body": body}
+	if len(entries) > 0 {
+		notice["entries"] = entries
+	}
 	id := fmt.Sprintf("notice-%s-%d", now.Format("20060102T150405"), now.UnixNano()%1_000_000)
 	b, err := json.Marshal(map[string]any{
 		"version":  1,
@@ -21,7 +34,7 @@ func WriteNotice(home, title, body string) (string, error) {
 		"kind":     KindNotice,
 		"title":    title,
 		"created":  now.Format(time.RFC3339),
-		KindNotice: map[string]string{"body": body},
+		KindNotice: notice,
 	})
 	if err != nil {
 		return "", err
@@ -63,4 +76,13 @@ func (it Item) NoticeBody() string {
 	}
 	_ = json.Unmarshal(it.fields[KindNotice], &n)
 	return n.Body
+}
+
+// NoticeEntries are the migrated entries a notice carries; none for a plain note.
+func (it Item) NoticeEntries() []NoticeEntry {
+	var n struct {
+		Entries []NoticeEntry `json:"entries"`
+	}
+	_ = json.Unmarshal(it.fields[KindNotice], &n)
+	return n.Entries
 }

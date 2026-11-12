@@ -25,6 +25,11 @@ describe('the notification a push shows', () => {
     expect(n.options.data).toMatchObject({ session: HOSTILE, item: HOSTILE, crew: HOSTILE });
   });
 
+  it('carries the routine a tap opens', () => {
+    const n = notice(JSON.stringify({ name: 'Nightly sweep', line: 'failed to run', tag: 'routine:r1:t1', fleet: 'f', target: 'routine', routine: 'r1' }));
+    expect(n.options.data).toMatchObject({ target: 'routine', routine: 'r1' });
+  });
+
   it('still shows a notification for a payload that does not parse, or none', () => {
     for (const raw of ['not json', '', null, '[1,2]', '"text"', 'null']) {
       const n = notice(raw);

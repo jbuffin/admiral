@@ -20,6 +20,11 @@ describe('the page reads back the target a tapped push opened it with', () => {
     expect(through({ session: 's1' })).toEqual({ session: 's1' });
   });
 
+  it('gets a routine target, which names no ship', () => {
+    expect(through({ target: 'routine', fleet: 'zulu', routine: 'r1' })).toEqual({ target: 'routine', fleet: 'zulu', routine: 'r1' });
+    expect(through({ target: 'routine', fleet: 'zulu', routine: '../x y&z=1' })).toMatchObject({ routine: '../x y&z=1' });
+  });
+
   it('finds no target in an ordinary page address', () => {
     expect(pushTargetOf('')).toBeNull();
     expect(pushTargetOf('?fleet=zulu')).toBeNull();

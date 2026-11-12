@@ -1,6 +1,7 @@
 package push_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -72,5 +73,16 @@ func TestPayloadCarriesWhereATapLands(t *testing.T) {
 	p := push.PayloadOf(push.Event{Kind: push.InboxQuestion, Fleet: "work", Key: "s/i", Name: "Dory", Text: "x", Target: push.TargetPeek, Session: "s", Item: "i"})
 	if p.Fleet != "work" || p.Target != push.TargetPeek || p.Session != "s" || p.Item != "i" {
 		t.Errorf("payload = %+v, want fleet work and a peek of item i in session s", p)
+	}
+}
+
+func TestPayloadCarriesTheRoutineATapOpens(t *testing.T) {
+	p := push.PayloadOf(push.Event{Kind: push.RoutineNotify, Fleet: "work", Key: "routine:r1:t3", Name: "Nightly sweep", Text: "failed to run", Target: push.TargetRoutine, Routine: "r1"})
+	if p.Fleet != "work" || p.Target != push.TargetRoutine || p.Routine != "r1" || p.Session != "" {
+		t.Errorf("payload = %+v, want fleet work and routine r1 with no session", p)
+	}
+	b, err := json.Marshal(p)
+	if err != nil || !strings.Contains(string(b), `"routine":"r1"`) {
+		t.Errorf("payload JSON = %s (%v), want a routine field", b, err)
 	}
 }

@@ -15,7 +15,7 @@ const page = vi.hoisted(() => {
   return l;
 });
 
-import { installPath, usageAllPath, usagePath, campaignOf, campaignPath, crewOf, crewPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath, chatSettingsPath, chatTerminalPath, chatTerminalOf, chatPeekOf } from './router';
+import { installPath, usageAllPath, usagePath, campaignOf, campaignPath, crewOf, crewPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath, chatSettingsPath, chatTerminalPath, chatTerminalOf, chatPeekOf, automateOf, automateSearch, routineNewPath, routineOf, routinePath } from './router';
 
 describe('campaign paths', () => {
   it('round-trips an id through its page path', () => {
@@ -48,6 +48,30 @@ describe('crew paths', () => {
   it('is the Crew surface, and no surface below it deeper than the name', () => {
     expect(surfaceOf('/app/crew/ada')?.id).toBe('crew');
     expect(surfaceOf('/app/crew/ada/extra')).toBeUndefined();
+  });
+});
+
+describe('routine paths', () => {
+  it('round-trips an id through its page path, escaping what needs it', () => {
+    expect(routinePath('9f2c')).toBe('/app/routines/9f2c');
+    expect(routineOf('/app/routines/9f2c')).toBe('9f2c');
+    expect(routineOf('/app/routines/9f2c/')).toBe('9f2c');
+    expect(routineOf(routinePath('a b/c'))).toBe('a b/c');
+    // and names none on the list, the new-routine path or another surface
+    expect(routineOf('/app/routines')).toBeNull();
+    expect(routineOf(routineNewPath)).toBeNull();
+    expect(routineOf('/app/crew/ada')).toBeNull();
+  });
+  it('is the Routines surface, the new-routine path too, and nothing deeper than the id', () => {
+    expect(surfaceOf('/app/routines/9f2c')?.id).toBe('routines');
+    expect(surfaceOf(routineNewPath)?.id).toBe('routines');
+    expect(surfaceOf('/app/routines/9f2c/extra')).toBeUndefined();
+  });
+  it('round-trips the view an Automate… query names, with its fleet', () => {
+    expect(automateOf(automateSearch('gh', 'mine', 'work'))).toEqual({ source: 'gh', view: 'mine' });
+    expect(automateOf(automateSearch('a&b', 'x y=z'))).toEqual({ source: 'a&b', view: 'x y=z' });
+    expect(automateSearch('gh', 'mine', 'work')).toContain('fleet=work');
+    expect(automateOf('?fleet=work')).toBeNull();
   });
 });
 

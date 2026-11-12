@@ -21,6 +21,8 @@ func (n *RoutineNotifier) Notify(fleet string, r routines.Routine, t routines.Tr
 		text = "launched"
 		if t.Ship != "" {
 			ev.Target, ev.Session = TargetShip, t.Ship
+		} else {
+			ev.Target, ev.Routine = TargetRoutine, r.ID
 		}
 	case routines.Proposed:
 		text = "wants your go-ahead"
@@ -30,8 +32,10 @@ func (n *RoutineNotifier) Notify(fleet string, r routines.Routine, t routines.Tr
 		if t.Reason != "" {
 			text += ": " + t.Reason
 		}
+		ev.Target, ev.Routine = TargetRoutine, r.ID
 	case routines.Breaker:
 		text = "now asks first after repeated failures"
+		ev.Target, ev.Routine = TargetRoutine, r.ID
 	default:
 		return
 	}
