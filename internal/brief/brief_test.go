@@ -494,7 +494,7 @@ func TestPreCompactStaysUnderTheCapDroppingTheOldestNotesWithALeftOutLine(t *tes
 }
 
 func TestPreCompactSaysSoWhenNotEvenTheNewestNoteFits(t *testing.T) {
-	out := PreCompact(strings.Repeat("语", 2000), []Note{idNote("n-eee555", strings.Repeat("语", 500))})
+	out := PreCompact(strings.Repeat("𠀀", 2000), []Note{idNote("n-eee555", strings.Repeat("语", 500))})
 	if len(out) > MaxBytes {
 		t.Errorf("PreCompact is %d bytes, want at most %d", len(out), MaxBytes)
 	}
