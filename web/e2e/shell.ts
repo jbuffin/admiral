@@ -629,6 +629,8 @@ async function readyStack(a: Admiral): Promise<LaunchedShip> {
   prAnswer(a, 8, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
   seedStackView(a, [7, 8]);
   const ship = await launchMooredShip(a, 7, { more: [8] });
+  const rec = JSON.parse(readFileSync(join(a.home, 'moored', `${ship.name}.json`), 'utf8')) as { checkout: string };
+  expect(realpathSync(rec.checkout), 'seeding: the moored record\'s checkout').toBe(shipCheckout(a));
   await readyOnTheServer(a, ship, 'squash');
   return ship;
 }
@@ -666,6 +668,7 @@ export async function readyStackMergesFromPeek(page: Page, a: Admiral) {
   await holds(() => mergeCalls(a).length === 0, 'a stack is merged only by the tap');
 
   await merge.tap();
+  await expect(merge).toBeDisabled();
   await expectOneStackMerge(a);
   await expect(inboxRow(page, ship)).toContainText('Merged');
   await expect
@@ -741,6 +744,7 @@ export async function readyStackMergesFromThePRTab(page: Page, a: Admiral, opts:
   await holds(() => mergeCalls(a).length === 0, 'a stack is merged only by the tap');
 
   await merge.tap();
+  await expect(merge).toBeDisabled();
   await expectOneStackMerge(a);
   await expect(panel).toContainText('Merged');
   await expect

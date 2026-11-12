@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { addGitHubSource, mergeFromThePRTab, mooredFromTheShell, mooringEnv, noWakeWithoutResume, readyStackMergesFromThePRTab, seedFleets, unfollowFromThePRTab, wakeFromTheShell, wakeFromTheShipView, watchPage } from './shell';
+import { addGitHubSource, mergeFailsInThePRTab, mergeFromThePRTab, mooredFromTheShell, mooringEnv, noWakeWithoutResume, readyStackMergesFromThePRTab, seedFleets, unfollowFromThePRTab, wakeFromTheShell, wakeFromTheShipView, watchPage } from './shell';
 
 test('on the phone, a moored ship shows in its own group with chips from the poll, and Don\'t follow reviews and Dismiss take it out by touch', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
@@ -89,6 +89,19 @@ test('on the phone, Don\'t follow reviews in the PR tab ends the mooring and the
   const watch = watchPage(page, admiral.url);
 
   await unfollowFromThePRTab(page, admiral);
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('on the phone, a merge that gh fails shows its message in the PR tab and the ship stays moored', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: mooringEnv(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  await mergeFailsInThePRTab(page, admiral);
 
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);

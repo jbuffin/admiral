@@ -232,10 +232,10 @@ func (g *fakeGH) stackView(prs ...string) {
 	for i, u := range prs {
 		n, _ := strconv.Atoi(u[strings.LastIndex(u, "/")+1:])
 		branches = append(branches, map[string]any{"name": "layer-" + strconv.Itoa(i+1), "head": "abc" + strconv.Itoa(i), "base": "main",
-			"isCurrent": i == len(prs)-1, "isMerged": false, "isQueued": false, "needsRebase": false,
-			"pr": map[string]any{"number": n, "url": u, "state": "OPEN"}})
+			"isCurrent": i == len(prs)-1, "isMerged": false, "isQueued": false, "needsRebase": false, "futureBranchKey": []int{1},
+			"pr": map[string]any{"number": n, "url": u, "state": "OPEN", "futurePRKey": "x"}})
 	}
-	b, _ := json.Marshal(map[string]any{"trunk": "main", "currentBranch": "layer-" + strconv.Itoa(len(prs)), "branches": branches})
+	b, _ := json.Marshal(map[string]any{"trunk": "main", "currentBranch": "layer-" + strconv.Itoa(len(prs)), "branches": branches, "futureTopKey": map[string]any{"a": 1}})
 	g.write("stack_view.json", string(b)+"\n")
 }
 
@@ -269,6 +269,14 @@ func readyStack(t *testing.T, method string, prs ...string) (*world, *fakeGH, sh
 	g.stackView(prs...)
 	w.start()
 	ship := moorPRs(t, w, prs...)
+	var rec struct {
+		Checkout string `json:"checkout"`
+	}
+	if b, err := os.ReadFile(w.mooredFile(ship.Name)); err != nil {
+		t.Fatalf("moored record of %s: %v", ship.Name, err)
+	} else if err := json.Unmarshal(b, &rec); err != nil || realPath(t, rec.Checkout) != realPath(t, w.checkout("widgets")) {
+		t.Fatalf("seeding: the moored record's checkout = %q (%v), want the widgets checkout", rec.Checkout, err)
+	}
 	w.kickMoored()
 	w.in.waitShipsList(t, 20*time.Second, "the stack read ready", func(l []shipJSON) bool {
 		sh := byName(l)[ship.Name]
@@ -364,35 +372,60 @@ func TestMergeOfAStackWhoseCheckoutHoldsAnotherStackIsRefusedAndRunsNoMerge(t *t
 	}
 }
 
+// A layer without a pr is a layer that is not the ship's, so it is an extra layer.
+func TestMergeOfAStackWhoseCheckoutHasALayerWithNoPRIsRefusedAndRunsNoMerge(t *testing.T) {
+	t.Parallel()
+	w, g, ship := readyStack(t, "MERGE", layer1, layer2)
+	g.write("stack_view.json", `{"trunk":"main","branches":[{"name":"a","pr":{"number":1,"url":"`+layer1+`"}},{"name":"b","pr":{"number":2,"url":"`+layer2+`"}},{"name":"c"}]}`+"\n")
+	code, body := w.postMerge(t, ship, map[string]any{})
+	wantCode(t, "POST merge on a stack with a layer that has no PR", http.StatusConflict, code, body)
+	holdThat(t, "gh stack merge ran, or the ship left its mooring", stillMooredWithNoMerge(w, g, ship))
+}
+
 func TestMergeOfAStackWhoseViewFailsIsRefusedAndRunsNoMerge(t *testing.T) {
 	t.Parallel()
 	w, g, ship := readyStack(t, "MERGE", layer1, layer2)
 	g.write("stack_view.fail", "gh stack: not a stack\n")
 	code, body := w.postMerge(t, ship, map[string]any{})
-	wantCode(t, "POST merge when gh stack view fails", http.StatusConflict, code, body)
+	if code < 400 {
+		t.Fatalf("POST merge when gh stack view fails = %d, want a refusal: %s", code, body)
+	}
+	if len(g.stackCalls("view")) == 0 {
+		t.Errorf("the checkout's stack was never read, so the refusal came from elsewhere: %s", body)
+	}
 	holdThat(t, "gh merged, or the ship left its mooring", stillMooredWithNoMerge(w, g, ship))
 
 }
 
-func TestMergeOfAStackWhoseCheckoutIsGoneIsRefusedAndRunsNoMerge(t *testing.T) {
+func TestMergeOfAStackWhoseCheckoutIsEmptyOrGoneIsRefusedAndRunsNothing(t *testing.T) {
 	t.Parallel()
-	w, g := mooring(t, "exit 0")
-	g.prReady(layer1)
-	g.prReady(layer2)
-	g.stackView(layer1, layer2)
-	b, _ := json.Marshal(map[string]any{"name": "Adrift", "session": "adrift", "fleet": "f", "harness": "claude",
-		"checkout": filepath.Join(w.work, "gone"), "prs": []string{layer1, layer2}, "moored_at": time.Now().UTC()})
-	if err := os.MkdirAll(filepath.Dir(w.mooredFile("adrift")), 0o755); err != nil {
-		t.Fatal(err)
+	for what, checkout := range map[string]func(w *world) string{
+		"no checkout":      func(*world) string { return "" },
+		"a missing folder": func(w *world) string { return filepath.Join(w.work, "gone") },
+	} {
+		t.Run(what, func(t *testing.T) {
+			t.Parallel()
+			w, g := mooring(t, "exit 0")
+			g.prReady(layer1)
+			g.prReady(layer2)
+			g.stackView(layer1, layer2)
+			b, _ := json.Marshal(map[string]any{"name": "Adrift", "session": "adrift", "fleet": "f", "harness": "claude",
+				"checkout": checkout(w), "prs": []string{layer1, layer2}, "moored_at": time.Now().UTC()})
+			if err := os.MkdirAll(filepath.Dir(w.mooredFile("adrift")), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(w.mooredFile("adrift"), b, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			w.start()
+			w.in.waitShipsList(t, 20*time.Second, "the record moored", func(l []shipJSON) bool { return byName(l)["Adrift"].Status == "moored" })
+			code, body := w.postMerge(t, shipJSON{Session: "adrift"}, map[string]any{})
+			wantCode(t, "POST merge on a record whose checkout is unusable", http.StatusConflict, code, body)
+			holdThat(t, "gh stack ran for a record with no usable checkout", func() bool {
+				return len(g.mergeCalls()) == 0 && len(g.stackCalls("view")) == 0 && len(g.stackCalls("merge")) == 0
+			})
+		})
 	}
-	if err := os.WriteFile(w.mooredFile("adrift"), b, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	w.start()
-	w.in.waitShipsList(t, 20*time.Second, "the record moored", func(l []shipJSON) bool { return byName(l)["Adrift"].Status == "moored" })
-	code, body := w.postMerge(t, shipJSON{Session: "adrift"}, map[string]any{})
-	wantCode(t, "POST merge on a record whose checkout is gone", http.StatusConflict, code, body)
-	holdThat(t, "gh merged for a record with no checkout", func() bool { return len(g.mergeCalls()) == 0 })
 }
 
 func TestMergeOfAStackWithALayerNotReadyIsRefusedAndRunsNoMergeOfAnyKind(t *testing.T) {
@@ -428,7 +461,7 @@ func TestMergeOfAStackWithAPROnAnotherHostIsRefusedAndRunsNoGh(t *testing.T) {
 	if !strings.Contains(body, "GitHub host") {
 		t.Errorf("body = %s, want the host refusal and not the old stack refusal", body)
 	}
-	holdThat(t, "gh merged a PR on another host", func() bool { return len(g.mergeCalls()) == 0 })
+	holdThat(t, "gh merged a PR on another host", func() bool { return len(g.mergeCalls()) == 0 && len(g.stackCalls("merge")) == 0 })
 }
 
 func TestMergeOfAStackUpToALowerLayerIsRefusedAndTheTopLayerMergesTheWhole(t *testing.T) {
