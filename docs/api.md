@@ -495,11 +495,11 @@ Body `{"code","name"?,"cookie"?}`. A code is case-insensitive, with or without t
 
 Answers `{"devices":[{"id","name","login"?,"pairedAt","lastSeen","current","notifications","thisMac"?}]}`. `login` is set for a device paired over the tailnet. `current` is true for the device making the request; on the Local route it is true for This Mac. `notifications` is true when the device holds at least one push subscription. `thisMac` is true on the This Mac row only, so a page can tell the Mac from a paired device. The subscription's keys are never listed.
 
-### Web Push: `GET /api/v1/push/key`, `PUT` and `DELETE /api/v1/push/subscription`
+### Web Push: `GET /api/v1/push/key`, `GET`, `PUT` and `DELETE /api/v1/push/subscription`
 
 `GET /api/v1/push/key` answers `{"key":"<base64url>"}`, Admiral's VAPID public key (the `applicationServerKey` for `PushManager.subscribe`), or 503 when the key file could not be read.
 
-`PUT /api/v1/push/subscription` takes the browser's `PushSubscription` JSON (`{"endpoint","keys":{"p256dh","auth"}}`, extra fields ignored) and answers 204. The endpoint must be `https`, `p256dh` a P-256 point and `auth` 16 bytes, both base64url; anything else is 400. It upserts by endpoint for the requesting device, taking the endpoint from another device if that held it. A device may hold several subscriptions, one per browser. `DELETE /api/v1/push/subscription` takes `{"endpoint"}`, removes it from the requesting device only and answers 204 even when the device did not hold it.
+`PUT /api/v1/push/subscription` takes the browser's `PushSubscription` JSON (`{"endpoint","keys":{"p256dh","auth"}}`, extra fields ignored) and answers 204. The endpoint must be `https`, `p256dh` a P-256 point and `auth` 16 bytes, both base64url; anything else is 400. It upserts by endpoint for the requesting device, taking the endpoint from another device if that held it. A device may hold several subscriptions, one per browser. `GET /api/v1/push/subscription?endpoint=<url>` answers 204 when the requesting device holds that endpoint and 404 when it does not, including when another device holds it. `DELETE /api/v1/push/subscription` takes `{"endpoint"}`, removes it from the requesting device only and answers 204 even when the device did not hold it.
 
 A paired device subscribes as itself. A request on the Local route (no token) subscribes as the device named `This Mac`, made on the first such request and reused after; it lists and revokes like any device, and revoking it drops its subscriptions. Revoking any device, all devices, or the 90-day expiry drops that device's subscriptions, and so does a 404 or 410 from the push service. Admiral never pushes to a loopback, private, link-local, unspecified or tailnet (100.64.0.0/10) address.
 

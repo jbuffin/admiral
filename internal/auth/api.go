@@ -14,6 +14,7 @@ func (a *Auth) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/devices", a.serveRevokeAll)
 	mux.HandleFunc("POST /api/pairing-codes", a.serveMint)
 	mux.HandleFunc("GET /api/push/key", a.servePushKey)
+	mux.HandleFunc("GET /api/push/subscription", a.serveHasSubscription)
 	mux.HandleFunc("PUT /api/push/subscription", a.serveSubscribe)
 	mux.HandleFunc("DELETE /api/push/subscription", a.serveUnsubscribe)
 }

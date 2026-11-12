@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -486,4 +487,35 @@ func TestDeviceIDNamesThePairedDeviceAndIsLocalNamesTheLocalRoute(t *testing.T) 
 	if gotLocal != "local" {
 		t.Fatalf("loopback request: IsLocal %q, want local", gotLocal)
 	}
+}
+
+func TestGetSubscriptionAnswers204ForTheRequestersOwnEndpointAnd404ForAnyOther(t *testing.T) {
+	t.Parallel()
+	g := pushRig(t)
+	token := g.pairLAN()
+	mine, macs, none := "https://push.example/mine", "https://push.example/mac", "https://push.example/none"
+	g.lanPush(token, "PUT", pushtest.NewSubscriber(t).JSON(mine))
+	g.localPush("PUT", pushtest.NewSubscriber(t).JSON(macs))
+	check := func(who, endpoint string, want int) {
+		t.Helper()
+		target := "/api/push/subscription?endpoint=" + url.QueryEscape(endpoint)
+		var rec *httptest.ResponseRecorder
+		if who == "lan" {
+			r := lanReq(bearer(token))
+			r.method, r.target = "GET", target
+			rec = g.do(r)
+		} else {
+			rec = g.local("GET", target, "")
+		}
+		if rec.Code != want {
+			t.Errorf("%s GET %s = %d, want %d", who, endpoint, rec.Code, want)
+		}
+	}
+	check("lan", mine, 204)
+	check("lan", none, 404)
+	check("lan", macs, 404) // another device's, with no sign whose
+	check("local", macs, 204)
+	check("local", mine, 404)
+	g.localPush("DELETE", endpointBody(macs))
+	check("local", macs, 404)
 }

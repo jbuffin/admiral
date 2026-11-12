@@ -164,6 +164,27 @@ func (a *Auth) serveSubscribe(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// serveHasSubscription answers 204 when the requesting device holds the endpoint and 404 otherwise, whoever else holds it.
+func (a *Auth) serveHasSubscription(w http.ResponseWriter, r *http.Request) {
+	endpoint := r.URL.Query().Get("endpoint")
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	d, ok := a.requester(r, false)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	if d != nil && endpoint != "" {
+		for _, s := range d.Subscriptions {
+			if s.Endpoint == endpoint {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+	}
+	writeJSON(w, http.StatusNotFound, map[string]string{"error": "not subscribed"})
+}
+
 func (a *Auth) serveUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	var body struct{ Endpoint string }
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body) != nil || body.Endpoint == "" {
