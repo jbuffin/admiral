@@ -280,6 +280,7 @@ func TestOutcomeLogOfAnOrderShip(t *testing.T) {
 		t.Errorf("the log has %d lines, want 5", n)
 	}
 	wantUsage(t, usageRec, "f", "claude", usageClaudeTokens, usageClaudeMoney)
+	w.waitFleetUsage("f", "claude", usageClaudeTokens, usageClaudeMoney)
 	log = rest
 	var prev time.Time
 	for _, m := range log {
@@ -346,6 +347,7 @@ func TestOutcomeLogOfAnOrderShip(t *testing.T) {
 		}
 		got := lastOf(w.waitEvent(s.Session, "usage", 1), "usage")
 		wantUsage(t, got, "u", c.harness, c.tokens, c.money)
+		w.waitFleetUsage("u", c.harness, c.tokens, c.money)
 		w.stayOneUsage(s.Session)
 	}
 }
@@ -357,6 +359,38 @@ var (
 	usageCopilotTokens = map[string]any{"input": 10.0, "output": 30.0, "reasoning": 0.0, "cache_read": 100.0, "cache_write": 40.0}
 	usageCopilotMoney  = map[string]any{"amount": 2.5, "basis": "credits", "incomplete": false, "premium_requests": 3.0}
 )
+
+// waitFleetUsage polls GET /api/usage?fleet= until today's total for the harness holds the fake's tokens and money
+// (nil money: null), each harness keeping its own money kind.
+func (w *world) waitFleetUsage(fleet, harness string, tokens, money map[string]any) {
+	w.t.Helper()
+	var last string
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		code, body := send(w.t, http.MethodGet, w.in.LocalURL+"/api/usage?fleet="+fleet, nil)
+		var resp struct {
+			Periods map[string]struct {
+				Harnesses []struct {
+					Harness string         `json:"harness"`
+					Tokens  map[string]any `json:"tokens"`
+					Money   map[string]any `json:"money"`
+				} `json:"harnesses"`
+			} `json:"periods"`
+		}
+		if code == http.StatusOK && json.Unmarshal([]byte(body), &resp) == nil {
+			for _, h := range resp.Periods["today"].Harnesses {
+				if h.Harness == harness && reflect.DeepEqual(h.Tokens, tokens) && reflect.DeepEqual(h.Money, money) {
+					return
+				}
+			}
+		}
+		last = body
+		if time.Now().After(deadline) {
+			w.t.Fatalf("within 15s GET /api/usage?fleet=%s never showed %s today with tokens %v and money %v; last answer (%d): %s", fleet, harness, tokens, money, code, last)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
 
 // wantUsage checks a usage record's fleet, harness, tokens and money (nil: null), and that it has no crew boats and no round.
 func wantUsage(t *testing.T, m outRec, fleet, harness string, tokens map[string]any, money map[string]any) {
