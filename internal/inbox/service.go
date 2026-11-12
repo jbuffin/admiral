@@ -82,9 +82,20 @@ func (s *Service) List() []Item {
 	s.mu.Lock()
 	items := append([]Item{}, s.items...)
 	s.mu.Unlock()
+	now := time.Now()
+	items = slices.DeleteFunc(items, func(it Item) bool {
+		p, ok := it.RoutineProposal()
+		return ok && p.expired(now)
+	})
 	for i := range items {
 		if items[i].Session == AdmiralSession {
 			items[i].Name = "Admiral"
+			if p, ok := items[i].RoutineProposal(); ok {
+				items[i].Fleet = p.Fleet
+				if f, ok := s.fleetOf(p.Fleet); ok {
+					items[i].FleetName, items[i].FleetColor = f.Name, f.Color
+				}
+			}
 			if o, ok := items[i].CrewObject(); ok && s.Fleet != nil {
 				if f, ok := s.Fleet(o.Fleet); ok {
 					items[i].Fleet, items[i].FleetName, items[i].FleetColor = f.Key, f.Name, f.Color

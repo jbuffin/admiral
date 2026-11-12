@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/capabilities"
@@ -184,6 +186,9 @@ func (s *Store) validate(f config.Fleet, r Routine) error {
 	if strings.TrimSpace(r.Name) == "" {
 		return invalidf("name is required")
 	}
+	if err := checkName(r.Name); err != nil {
+		return err
+	}
 	sched, err := ParseCron(r.When)
 	if err != nil {
 		return invalidf("when: %v", err)
@@ -207,6 +212,22 @@ func (s *Store) validate(f config.Fleet, r Routine) error {
 		return nil
 	}
 	return s.validateLaunch(f, *r.Do.Launch)
+}
+
+// maxNameRunes caps a name, which AdmiralBot reads through its tools and in the [Routine: <name>] chat prefix.
+const maxNameRunes = 80
+
+// checkName refuses what could pass for the end of the chat prefix or a line of its own.
+func checkName(name string) error {
+	if utf8.RuneCountInString(name) > maxNameRunes {
+		return invalidf("name is longer than %d characters", maxNameRunes)
+	}
+	for _, c := range name {
+		if unicode.IsControl(c) || c == '[' || c == ']' {
+			return invalidf("name can't hold control characters or square brackets")
+		}
+	}
+	return nil
 }
 
 func (s *Store) validateLaunch(f config.Fleet, l Launch) error {
@@ -264,7 +285,7 @@ func (s *Store) Create(fleet string, r Routine) (Routine, error) {
 	if err != nil {
 		return Routine{}, err
 	}
-	r.ID, r.CreatedAt, r.UpdatedAt = newID(), s.now(), s.now()
+	r.ID, r.OffBy, r.CreatedAt, r.UpdatedAt = newID(), "", s.now(), s.now()
 	if err := s.save(fleet, append(list, r)); err != nil {
 		return Routine{}, err
 	}
@@ -290,7 +311,7 @@ func (s *Store) Update(fleet, id string, r Routine) (Routine, error) {
 		return Routine{}, err
 	}
 	// only the on and off routes change the switch
-	r.ID, r.Enabled, r.CreatedAt, r.UpdatedAt = id, list[i].Enabled, list[i].CreatedAt, s.now()
+	r.ID, r.Enabled, r.OffBy, r.CreatedAt, r.UpdatedAt = id, list[i].Enabled, list[i].OffBy, list[i].CreatedAt, s.now()
 	list[i] = r
 	if err := s.save(fleet, list); err != nil {
 		return Routine{}, err
@@ -317,6 +338,11 @@ func (s *Store) Delete(fleet, id string) error {
 
 // SetEnabled flips the switch without validating the rest: a routine that was saved can always be turned off.
 func (s *Store) SetEnabled(fleet, id string, on bool) (Routine, error) {
+	return s.SetEnabledBy(fleet, id, on, "")
+}
+
+// SetEnabledBy is SetEnabled that stamps who turned the routine off when it was not the engineer.
+func (s *Store) SetEnabledBy(fleet, id string, on bool, by string) (Routine, error) {
 	if _, err := s.fleet(fleet); err != nil {
 		return Routine{}, err
 	}
@@ -331,6 +357,10 @@ func (s *Store) SetEnabled(fleet, id string, on bool) (Routine, error) {
 		return Routine{}, ErrNotFound
 	}
 	list[i].Enabled, list[i].UpdatedAt = on, s.now()
+	list[i].OffBy = ""
+	if !on && by != Engineer {
+		list[i].OffBy = by
+	}
 	if err := s.save(fleet, list); err != nil {
 		return Routine{}, err
 	}
@@ -340,13 +370,14 @@ func (s *Store) SetEnabled(fleet, id string, on bool) (Routine, error) {
 // ViaProposal is the Via of a launch that came from an accepted proposal.
 const ViaProposal = "proposal"
 
-// SetEnabledBy is SetEnabled that stamps who turned the routine off.
-func (s *Store) SetEnabledBy(fleet, id string, on bool, by string) (Routine, error) {
-	return s.SetEnabled(fleet, id, on)
-}
-
 // ProposalExpiry is when a proposal made at now closes: at the next run or after 24 hours, whichever comes first.
-func ProposalExpiry(next, now time.Time) time.Time { return time.Time{} }
+func ProposalExpiry(next, now time.Time) time.Time {
+	day := now.Add(24 * time.Hour)
+	if next.IsZero() || next.After(day) {
+		return day
+	}
+	return next
+}
 
 func indexOf(list []Routine, id string) int {
 	for i, r := range list {

@@ -131,7 +131,11 @@ func (s *Service) serveDelete(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) serveEnable(on bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		got, err := s.Store.SetEnabled(r.PathValue("key"), r.PathValue("id"), on)
+		by := Engineer
+		if _, bot := actor.FleetOf(r.Context()); bot {
+			by = actor.Via
+		}
+		got, err := s.Store.SetEnabledBy(r.PathValue("key"), r.PathValue("id"), on, by)
 		if err != nil {
 			fail(w, err)
 			return
