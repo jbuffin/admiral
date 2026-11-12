@@ -24,10 +24,10 @@ func TestPayloadStripsControlAndBidiCharactersFromNameLineAndFleetName(t *testin
 func TestPayloadStillCutsTheLineAtANewlineAfterStripping(t *testing.T) {
 	t.Parallel()
 	for in, want := range map[string]string{
-		"first\r\nsecond":       "first",
-		"first\nsecond":         "first",
-		"first second":     "firstsecond",
-		"‮evil‬ ask?": "evil ask?",
+		"first\r\nsecond": "first",
+		"first\nsecond":   "first",
+		"first second":    "firstsecond",
+		"‮evil‬ ask?":     "evil ask?",
 	} {
 		if got := push.PayloadOf(push.Event{Kind: push.ShipQuestion, Text: in}).Line; got != want {
 			t.Errorf("line of %q = %q, want %q", in, got, want)

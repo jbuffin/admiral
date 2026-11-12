@@ -28,7 +28,7 @@ const (
 
 // Encrypt seals plaintext for the subscriber as one aes128gcm record (RFC 8291 over the RFC 8188 framing), with a fresh salt and ephemeral key.
 func Encrypt(sub Subscription, plaintext []byte) ([]byte, error) {
-	if len(plaintext)+1+tagSize > recordSize {
+	if headerSize+len(plaintext)+1+tagSize > recordSize {
 		return nil, errors.New("payload does not fit one push record")
 	}
 	uaRaw, err := b64.DecodeString(strings.TrimRight(sub.P256dh, "="))

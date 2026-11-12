@@ -39,6 +39,7 @@ type pushDevice struct {
 	Name          string `json:"name"`
 	Current       bool   `json:"current"`
 	Notifications bool   `json:"notifications"`
+	ThisMac       bool   `json:"thisMac"`
 }
 
 func (g *rig) devices(r req) []pushDevice {
@@ -77,7 +78,10 @@ func (g *rig) localPush(method, body string) *httptest.ResponseRecorder {
 	return g.local(method, "/api/push/subscription", body)
 }
 
-func endpointBody(e string) string { b, _ := json.Marshal(map[string]string{"endpoint": e}); return string(b) }
+func endpointBody(e string) string {
+	b, _ := json.Marshal(map[string]string{"endpoint": e})
+	return string(b)
+}
 
 func ok(rec *httptest.ResponseRecorder) bool { return rec.Code >= 200 && rec.Code < 300 }
 
@@ -385,6 +389,27 @@ func TestThisMacIsCurrentOnTheLocalRouteAndNotOnTheLAN(t *testing.T) {
 	for _, d := range g.devices(lanReq(bearer(token))) {
 		if d.Current == (d.Name == "This Mac") {
 			t.Errorf("on the LAN %q current=%v, want only the caller current", d.Name, d.Current)
+		}
+	}
+}
+
+func TestTheDeviceListSaysWhichRowIsThisMac(t *testing.T) {
+	t.Parallel()
+	g := pushRig(t)
+	token := g.pairLAN()
+	g.localPush("PUT", pushtest.NewSubscriber(t).JSON("https://push.example/safari"))
+	for _, r := range []req{{remote: loopback, host: "127.0.0.1:7420"}, lanReq(bearer(token))} {
+		macs := 0
+		for _, d := range g.devices(r) {
+			if d.ThisMac != (d.Name == "This Mac") {
+				t.Errorf("%q thisMac=%v", d.Name, d.ThisMac)
+			}
+			if d.ThisMac {
+				macs++
+			}
+		}
+		if macs != 1 {
+			t.Errorf("%d rows say they are This Mac, want 1", macs)
 		}
 	}
 }

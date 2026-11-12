@@ -22,10 +22,18 @@ func CheckEndpoint(endpoint string) error {
 	return nil
 }
 
-var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+var (
+	cgnat       = netip.MustParsePrefix("100.64.0.0/10")
+	thisNetwork = netip.MustParsePrefix("0.0.0.0/8")
+	reserved    = netip.MustParsePrefix("240.0.0.0/4")
+	nat64       = netip.MustParsePrefix("64:ff9b::/96")
+	nat64Local  = netip.MustParsePrefix("64:ff9b:1::/48")
+	sixToFour   = netip.MustParsePrefix("2002::/16")
+)
 
-// DialControl refuses loopback, private, link-local, unspecified, multicast and carrier-grade NAT (tailnet) addresses,
-// so a subscription cannot aim Admiral's POST at a service on this Mac or the network. It runs on the resolved address.
+// DialControl refuses loopback, private, link-local, unspecified, multicast, reserved and carrier-grade NAT (tailnet) addresses,
+// including an IPv4 one wrapped in a NAT64 or 6to4 IPv6 address, so a subscription cannot aim Admiral's POST at a service on this Mac or the network.
+// It runs on the resolved address.
 func DialControl(network, address string, _ syscall.RawConn) error {
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {
@@ -35,11 +43,26 @@ func DialControl(network, address string, _ syscall.RawConn) error {
 	if err != nil {
 		return err
 	}
-	ip = ip.Unmap()
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() || cgnat.Contains(ip) {
+	if blocked(ip.Unmap()) {
 		return fmt.Errorf("refusing to push to a local address (%s)", ip)
 	}
 	return nil
+}
+
+func blocked(ip netip.Addr) bool {
+	if ip.Is6() {
+		b := ip.As16()
+		switch {
+		case nat64.Contains(ip):
+			return blocked(netip.AddrFrom4([4]byte(b[12:16])))
+		case nat64Local.Contains(ip):
+			return blocked(netip.AddrFrom4([4]byte{b[6], b[7], b[9], b[10]}))
+		case sixToFour.Contains(ip):
+			return blocked(netip.AddrFrom4([4]byte(b[2:6])))
+		}
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() ||
+		cgnat.Contains(ip) || thisNetwork.Contains(ip) || reserved.Contains(ip)
 }
 
 // SafeClient is the sender's HTTP client: no proxy, no redirects, and DialControl on every connection unless allowLocal

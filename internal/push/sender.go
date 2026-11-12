@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -34,6 +35,8 @@ type SenderConfig struct {
 	// Timeout bounds each request to a push service.
 	Timeout time.Duration
 	Now     func() time.Time
+	// CloseGrace bounds how long Close waits for sends before it cancels them.
+	CloseGrace time.Duration
 }
 
 // pushTTL is how long a push service holds a message for an offline device: a stale question is noise.
@@ -47,7 +50,12 @@ type Sender struct {
 	closed bool
 	queue  chan Decided
 	wg     sync.WaitGroup
+	ctx    context.Context
+	cancel context.CancelFunc
 }
+
+// closeGrace is how long Close lets queued and in-flight sends finish before it cancels them.
+const closeGrace = 5 * time.Second
 
 func NewSender(cfg SenderConfig) *Sender {
 	if cfg.Queue < 1 {
@@ -60,6 +68,7 @@ func NewSender(cfg SenderConfig) *Sender {
 		cfg.Now = time.Now
 	}
 	s := &Sender{cfg: cfg, queue: make(chan Decided, cfg.Queue)}
+	s.ctx, s.cancel = context.WithCancel(context.Background())
 	s.wg.Add(1)
 	go s.run()
 	return s
@@ -82,7 +91,7 @@ func (s *Sender) Deliver(d Decided) {
 	}
 }
 
-// Close sends what is queued, waits for requests in flight, and stops the sender.
+// Close sends what is queued and waits for requests in flight, then cancels whatever is still running after the grace period.
 func (s *Sender) Close() {
 	s.mu.Lock()
 	if !s.closed {
@@ -90,7 +99,22 @@ func (s *Sender) Close() {
 		close(s.queue)
 	}
 	s.mu.Unlock()
-	s.wg.Wait()
+	done := make(chan struct{})
+	go func() { s.wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(s.closeGrace()):
+		s.cancel()
+		<-done
+	}
+	s.cancel()
+}
+
+func (s *Sender) closeGrace() time.Duration {
+	if s.cfg.CloseGrace > 0 {
+		return s.cfg.CloseGrace
+	}
+	return closeGrace
 }
 
 func (s *Sender) run() {
@@ -119,6 +143,15 @@ func (s *Sender) fanOut(d Decided) {
 	wg.Wait()
 }
 
+// bare drops the URL a net/url error carries, which for a push endpoint is a capability.
+func bare(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return ue.Err
+	}
+	return err
+}
+
 func recoverAndLog(what string) {
 	if r := recover(); r != nil {
 		log.Printf("push: panic in %s: %v", what, r)
@@ -133,19 +166,19 @@ func (s *Sender) send(t Target, payload []byte) {
 	}
 	sealed, err := Encrypt(t.Subscription, payload)
 	if err != nil {
-		log.Printf("push: not sent to %s: %v", host, err)
+		log.Printf("push: not sent to %s: %v", host, bare(err))
 		return
 	}
 	auth, err := AuthHeader(s.cfg.Key, t.Endpoint, s.cfg.Now())
 	if err != nil {
-		log.Printf("push: not sent to %s: %v", host, err)
+		log.Printf("push: not sent to %s: %v", host, bare(err))
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+	ctx, cancel := context.WithTimeout(s.ctx, s.cfg.Timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.Endpoint, bytes.NewReader(sealed))
 	if err != nil {
-		log.Printf("push: not sent to %s: %v", host, err)
+		log.Printf("push: not sent to %s: %v", host, bare(err))
 		return
 	}
 	req.Header.Set("Content-Encoding", "aes128gcm")
@@ -155,7 +188,7 @@ func (s *Sender) send(t Target, payload []byte) {
 	req.Header.Set("Urgency", "high")
 	resp, err := s.cfg.Client.Do(req)
 	if err != nil {
-		log.Printf("push: not sent to %s: %v", host, err)
+		log.Printf("push: not sent to %s: %v", host, bare(err))
 		return
 	}
 	defer resp.Body.Close()

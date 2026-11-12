@@ -41,6 +41,10 @@ func LoadKey(home string) (*Key, error) {
 		if !errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("vapid key: %w", err)
 		}
+		// A dangling symlink reads as missing but cannot be linked over: that is an unreadable key, never a new one.
+		if fi, lerr := os.Lstat(path); lerr == nil && fi.Mode()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("vapid key: %s is unreadable", keyFile)
+		}
 		priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		if err != nil {
 			return nil, err
@@ -107,7 +111,7 @@ func (k *Key) Public() string { return k.pub }
 func AuthHeader(k *Key, endpoint string, now time.Time) (string, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil || u.Scheme == "" || u.Host == "" {
-		return "", fmt.Errorf("endpoint %q has no origin", endpoint)
+		return "", errors.New("endpoint has no origin")
 	}
 	head, _ := json.Marshal(map[string]string{"typ": "JWT", "alg": "ES256"})
 	claims, _ := json.Marshal(map[string]any{"aud": u.Scheme + "://" + u.Host, "exp": now.Add(jwtLifetime).Unix(), "sub": vapidSubject})
