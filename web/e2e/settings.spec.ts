@@ -577,6 +577,8 @@ test('Turn off Tailscale mode asks first, keeps the logins and serve, names the 
 
   expect(watch.errors).toEqual([]);
 
+});
+
 test("a fleet's AdmiralBot page shows its harness, model, effort and refresh threshold, saves a change that survives a reload, shows a refusal and, for a fleet with no Claude Code dock, why its chat is off", async ({ page, admiral }) => {
   seedFleets(admiral, { chat: true });
   await admiral.start();

@@ -248,6 +248,8 @@ test('on the phone, Turn off Tailscale mode asks first', async ({ page, admiral 
   await section.getByRole('button', { name: 'Turn off', exact: true }).tap();
   await expect(page.getByRole('group', { name: 'Turn off Tailscale mode' }).getByRole('button', { name: 'Turn off Tailscale mode' })).toBeVisible();
 
+});
+
 test("on the phone, the Chat tab shows the fleet's AdmiralBot conversation and its composer without the Inbox rail, and a fleet with no Claude Code dock shows why its chat is off", async ({ page, admiral }) => {
   seedFleets(admiral, { chat: true });
   chatSays(admiral, 'harbor', [line.user('Where are the ships'), line.assistant('Two are **afloat**.')]);
@@ -301,6 +303,7 @@ test("on the phone, a fleet's AdmiralBot page shows its harness, model, effort a
   await pick('Effort', 'High').tap();
   await pick('Refresh context at', 'Never').tap();
   await page.getByRole('button', { name: 'Save', exact: true }).tap();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   await page.reload();
   await expect(pick('Model', 'Haiku')).toBeChecked();
   await expect(pick('Effort', 'High')).toBeChecked();

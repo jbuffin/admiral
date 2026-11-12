@@ -1,13 +1,14 @@
 import { useEffect } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch, fleets, loaded } from './fleets';
-import { capabilitiesPath, fleetPath, go, loc, preferencesFleet, preferencesPage, remotePath, sourcesPath, usageAllPath, usagePath, type PreferencesPage } from './router';
+import { capabilitiesPath, chatSettingsPath, fleetPath, go, loc, preferencesFleet, preferencesPage, remotePath, sourcesPath, usageAllPath, usagePath, type PreferencesPage } from './router';
 import { AllUsagePage, FleetUsagePage } from './UsagePage';
 import { RemoteAccess } from './RemoteAccessPage';
+import { ChatSettingsPage } from './ChatSettingsPage';
 import { FleetPage } from './FleetPage';
 import { HarnessCapabilities } from './HarnessCapabilities';
 import { OrderSources } from './OrderSources';
 
-const TITLES: Record<PreferencesPage, string> = { fleet: 'Fleet', sources: 'Order sources', capabilities: 'Harness capabilities', usage: 'Usage', 'all-usage': 'Usage', remote: 'Remote access' };
+const TITLES: Record<PreferencesPage, string> = { fleet: 'Fleet', admiralbot: 'AdmiralBot', sources: 'Order sources', capabilities: 'Harness capabilities', usage: 'Usage', 'all-usage': 'Usage', remote: 'Remote access' };
 
 function NavLink({ path, current, children }: { path: string; current: boolean; children: string }) {
   const search = fleetSearch.value;
@@ -49,6 +50,9 @@ function PreferencesNav({ current, page }: { current: string; page: PreferencesP
           </div>
           <NavLink path={fleetPath(f.key)} current={f.key === current && page === 'fleet'}>
             Fleet
+          </NavLink>
+          <NavLink path={chatSettingsPath(f.key)} current={f.key === current && page === 'admiralbot'}>
+            AdmiralBot
           </NavLink>
           <NavLink path={sourcesPath(f.key)} current={f.key === current && page === 'sources'}>
             Order sources
@@ -101,7 +105,7 @@ export function Preferences({ phone }: { phone: boolean }) {
               <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
               {fleet.name} fleet
             </p>
-            {page === 'fleet' ? <FleetPage key={fleet.key} fleet={fleet} /> : page === 'usage' ? <FleetUsagePage key={fleet.key} fleetKey={fleet.key} phone={phone} /> : page === 'capabilities' ? <HarnessCapabilities key={fleet.key} fleet={fleet} /> : <OrderSources key={fleet.key} fleet={fleet} />}
+            {page === 'fleet' ? <FleetPage key={fleet.key} fleet={fleet} /> : page === 'admiralbot' ? <ChatSettingsPage key={fleet.key} fleet={fleet} /> : page === 'usage' ? <FleetUsagePage key={fleet.key} fleetKey={fleet.key} phone={phone} /> : page === 'capabilities' ? <HarnessCapabilities key={fleet.key} fleet={fleet} /> : <OrderSources key={fleet.key} fleet={fleet} />}
           </>
         ) : null}
       </div>

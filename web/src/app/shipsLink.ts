@@ -1,6 +1,7 @@
 import { signal } from '@preact/signals';
 import { probeShips, shipsSocketUrl, type Resource, type Ship, type Source } from './api';
 import { signedOut } from './session';
+import type { ChatSnapshot } from './chat';
 import type { InboxItem } from './inbox';
 import { markPaired } from './pairing';
 import { moveTarget } from './remoteTailscale';
@@ -14,6 +15,8 @@ export const inboxItems = signal<InboxItem[]>([]);
 export const inboxLoaded = signal(false);
 export const sources = signal<Source[]>([]);
 export const resources = signal<Resource[]>([]);
+// Each fleet's latest chat message, keyed by fleet; a message replaces only its own fleet's.
+export const chats = signal<Record<string, ChatSnapshot>>({});
 export const shipsLink = signal<'connecting' | 'open' | 'reconnecting' | 'signed-out' | 'unreachable'>('connecting');
 
 type Listener = (msg: { type: string; ship?: string; crew?: string; items?: unknown[]; reset?: boolean }) => void;
@@ -99,6 +102,9 @@ export function watchShips(): () => void {
       else if (msg.type === 'move') {
         const to = moveTarget(msg, location.href);
         if (to) location.assign(to);
+      } else if (msg.type === 'chat' && typeof msg.fleet === 'string') {
+        const { type: _type, ...snap } = msg;
+        chats.value = { ...chats.value, [msg.fleet]: snap };
       } else if (msg.type === 'sources') sources.value = msg.sources ?? [];
       else if (msg.type === 'resources') resources.value = msg.resources ?? [];
     };

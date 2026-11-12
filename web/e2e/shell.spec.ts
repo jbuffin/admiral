@@ -862,6 +862,8 @@ test.describe('a shell that does not match the server', () => {
     await holds(() => loads.length === 1, 'the shell reloaded');
   });
 
+});
+
 // The fleets: harbor (Harborlight) and lagoon (Lagoonside) have their own AdmiralBot; alpha (Homeport) has no Claude Code dock.
 test("the Chat surface shows the fleet's AdmiralBot history beside the Inbox rail, starts a new chat that keeps the history, answers a question in place, and shows only the shown fleet's chat", async ({ page, admiral }) => {
   seedFleets(admiral, { live: true, chat: true });

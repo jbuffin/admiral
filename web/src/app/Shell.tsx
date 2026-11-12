@@ -25,6 +25,7 @@ import { CrewPage } from './CrewPage';
 import { campaignOf, crewOf, go, loc, shipPath, shipSession, surfaceOf, surfacePath } from './router';
 import { CampaignPage, CampaignSidebar, CampaignsList } from './CampaignPage';
 import { followReference } from './campaignsLink';
+import { ChatPanel } from './ChatPanel';
 import { InboxPanel } from './InboxPanel';
 import { MergeControl } from './PeekMerge';
 import { Failure } from './PeekItem';
@@ -322,6 +323,7 @@ function Panel({ surface, title, phone }: { surface: Surface; title: boolean; ph
   const session = shipSession(loc.value.path);
   if (session !== null) return <ShipView session={session} title={title} />;
   if (surface.id === 'inbox') return <InboxPanel surface={surface} title={title} phone={!!phone} />;
+  if (surface.id === 'chat') return <ChatPanel surface={surface} title={title} phone={!!phone} />;
   if (surface.id === 'ships') return <ShipsPanel surface={surface} title={title} />;
   if (surface.id === 'campaigns') {
     const id = campaignOf(loc.value.path);
