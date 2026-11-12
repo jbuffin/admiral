@@ -44,9 +44,9 @@ export function prLabel(url: string): string {
 /** Why a moored ship cannot be woken: its record has no valid resume text. */
 export const NO_RESUME_NOTE = 'Cannot wake: no valid resume text';
 
-/** The moored row's buttons: all are off while a call is out, and Wake also when the ship has no valid resume text. A stale poll changes nothing, since waking needs no GitHub. */
-export function rowButtons(ship: Pick<Ship, 'no_resume'>, busy: boolean): { wake: boolean; others: boolean; note: string } {
-  return { wake: busy || !!ship.no_resume, others: busy, note: ship.no_resume ? NO_RESUME_NOTE : '' };
+/** The moored row's buttons: all are off while a call is out, and Wake also when the ship has no valid resume text. The note is that reason, or else why a due feedback round waits; Wake by hand stays on while one waits. A stale poll changes nothing, since waking needs no GitHub. */
+export function rowButtons(ship: Pick<Ship, 'no_resume' | 'waiting'>, busy: boolean): { wake: boolean; others: boolean; note: string } {
+  return { wake: busy || !!ship.no_resume, others: busy, note: ship.no_resume ? NO_RESUME_NOTE : (ship.waiting ?? '') };
 }
 
 export function staleNote(ship: Ship, now: number): string {

@@ -142,6 +142,10 @@ describe('rowButtons', () => {
   it('turns Wake off with the reason for a ship with no valid resume text, and leaves the others on', () => {
     expect(rowButtons({ no_resume: true }, false)).toEqual({ wake: true, others: false, note: NO_RESUME_NOTE });
   });
+  it('shows the waiting line as the note and leaves Wake and the others on', () => {
+    expect(rowButtons({ waiting: 'Waiting for room under the cap' }, false)).toEqual({ wake: false, others: false, note: 'Waiting for room under the cap' });
+    expect(rowButtons({ waiting: "Can't wake: no dock" }, true)).toEqual({ wake: true, others: true, note: "Can't wake: no dock" });
+  });
   it('does not look at a stale poll, since waking needs no GitHub', () => {
     expect(rowButtons({ stale: true } as Parameters<typeof rowButtons>[0], false).wake).toBe(false);
   });

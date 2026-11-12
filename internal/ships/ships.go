@@ -56,6 +56,8 @@ type Ship struct {
 	Stale    bool   `json:"stale,omitempty"`
 	// NoResume is true on a moored ship whose record has no valid resume text, which cannot be woken.
 	NoResume bool `json:"no_resume,omitempty"`
+	// Waiting is why a moored ship's feedback round has not started, while one is due.
+	Waiting string `json:"waiting,omitempty"`
 	// Reason and StopSince are set only while the ship needs you; Reason is `idle`
 	// for a ship no hook has spoken for.
 	Reason    string `json:"reason,omitempty"`
@@ -127,6 +129,7 @@ type Service struct {
 	committed    map[string]bool   // by session: a wake is making the session, so no ending takes the record; under mooredMu
 	moorKick     chan struct{}
 	pollMu       sync.Mutex // one poll at a time
+	wakeMu       sync.Mutex // every read-modify-write of a ship's wake state; taken after mooredMu is released, never inside it
 	// issueLocks holds the GitHub issues (by ClaimKey) with a launch under way, each with who holds it.
 	issueLocks map[string]string
 }
@@ -461,13 +464,14 @@ func (s *Service) admit(req launcher.Request) (release func(), lerr *launcher.Er
 		s.mu.Unlock()
 		if n >= cfg.MaxShips {
 			return release, &launcher.Error{Status: http.StatusConflict, Msg: "autopilot is at its cap of " +
-				strconv.Itoa(cfg.MaxShips) + plural(cfg.MaxShips, " ship", " ships")}
+				strconv.Itoa(cfg.MaxShips) + plural(cfg.MaxShips, " ship", " ships"), Wait: WaitCap}
 		}
 	}
 	if len(req.Resources) > 0 && s.Reserve != nil {
 		rel, name, why := s.Reserve(req.Resources)
 		if rel == nil {
-			return release, &launcher.Error{Status: http.StatusConflict, Msg: "resource " + strconv.Quote(name) + " is " + why}
+			return release, &launcher.Error{Status: http.StatusConflict, Msg: "resource " + strconv.Quote(name) + " is " + why,
+				Wait: "Waiting for " + name + " (" + why + ")"}
 		}
 		release = rel
 	}
@@ -718,6 +722,9 @@ func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 	if err := s.killShip(ctx, session, false); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if name := sess.Options["name"]; name != "" { // an anchored woken ship's mooring will not come back
+		s.removeWake(name)
 	}
 	_ = s.Host.Sync(ctx)
 	s.keep()

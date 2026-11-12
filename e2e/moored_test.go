@@ -188,6 +188,23 @@ func (g *fakeGH) prChips(url, review, checks, mergeable string) {
 	}
 }
 
+// prEvents steers the events the poll reads for a PR: one COMMENTED review by author, submitted at the given time, with body.
+func (g *fakeGH) prEvents(url, author, body string, at time.Time) {
+	g.t.Helper()
+	key := strings.NewReplacer("/", "_", ":", "_").Replace(url)
+	if err := os.MkdirAll(filepath.Join(g.dir, "pr_events"), 0o755); err != nil {
+		g.t.Fatal(err)
+	}
+	ev, err := json.Marshal(map[string]any{"reviews": map[string]any{"nodes": []map[string]any{{
+		"id": "R1", "author": map[string]any{"__typename": "User", "login": author}, "state": "COMMENTED",
+		"submittedAt": at.UTC().Format(time.RFC3339), "body": body, "url": url + "#pullrequestreview-1",
+		"comments": map[string]any{"totalCount": 0}}}}})
+	if err != nil {
+		g.t.Fatal(err)
+	}
+	g.write("pr_events/"+key, string(ev)+"\n")
+}
+
 func (w *world) kickMoored() {
 	w.t.Helper()
 	if code, body := send(w.t, http.MethodPost, w.in.LocalURL+"/api/moored/refresh", nil); code != http.StatusAccepted {

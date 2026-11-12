@@ -17,6 +17,16 @@ import (
 	"github.com/jbuffin/admiral/internal/moor"
 )
 
+// Wait texts are what a moored ship shows while a refusal that a later poll can clear holds its round back.
+const (
+	WaitCap      = "Waiting for room under the cap"
+	WaitHost     = "Waiting for Admiral's terminal host"
+	WaitInFlight = "Waiting for the current wake to finish"
+)
+
+// undoFunc puts back what a launch hook wrote, when the launch fails after the hook ran.
+type undoFunc func()
+
 // Wake relaunches a moored ship by hand, with the engineer's optional text after its resume text.
 // Like a hand launch it counts toward the cap and is never blocked by it.
 func (s *Service) Wake(ctx context.Context, session, text string) (Ship, *launcher.Error) {
@@ -26,27 +36,113 @@ func (s *Service) Wake(ctx context.Context, session, text string) (Ship, *launch
 		}
 		return rec.Resume
 	}
-	return s.wake(session, prompt, "hand", "", nil)
+	return s.wake(session, prompt, "hand", "", s.handRoundStart)
 }
 
 // FeedbackRound relaunches a moored ship, unattended, for the feedback on one of its PRs. The text reaches
-// the ship only as a file in its checkout; at the cap or on a harness with no guard it is refused.
-func (s *Service) FeedbackRound(ctx context.Context, session, pr, feedback string) (Ship, *launcher.Error) {
+// the ship only as a file in its checkout; at the cap or on a harness with no guard it is refused. next is the
+// wake state the round starts from: it is saved once the launch is certain to be tried, and put back if the launch fails.
+func (s *Service) FeedbackRound(ctx context.Context, session, pr, feedback string, next moor.WakeState) (Ship, *launcher.Error) {
+	return s.feedbackRound(session, pr, feedback, nil, next)
+}
+
+// feedbackRound is FeedbackRound for a decision made from the wake state was: if the stored state has changed
+// by the time the launch is certain, the round is refused and the next poll decides again from the new one.
+func (s *Service) feedbackRound(session, pr, feedback string, was *moor.WakeState, next moor.WakeState) (Ship, *launcher.Error) {
 	prompt := func(rec moor.Record) string {
 		return rec.Resume + " feedback round " + strconv.Itoa(rec.Round+1) + " on " + pr
 	}
-	write := func(rec moor.Record, dir string) error {
-		_, err := moor.WriteFeedback(dir, rec.Round+1, feedback)
-		return err
+	write := func(rec moor.Record, dir string) (undoFunc, error) {
+		undo, err := s.saveWake(rec.Name, func(cur moor.WakeState) (moor.WakeState, *launcher.Error) {
+			if was != nil && !sameWake(cur, *was) {
+				return moor.WakeState{}, &launcher.Error{Status: http.StatusConflict, Msg: "the ship's wake state changed since the round was decided", Wait: WaitInFlight}
+			}
+			return next, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		if _, err := moor.WriteFeedback(dir, rec.Round+1, feedback); err != nil {
+			undo()
+			return nil, err
+		}
+		return undo, nil
 	}
 	return s.wake(session, prompt, "feedback", pr, write)
 }
 
+// handRoundStart is the hand wake's hook: it opens the round's window, and gives a PR with no cursor the old
+// mooring as its boundary, so feedback that queues during the round survives the next mooring. A wake state
+// that cannot be read or saved costs the round its window and never blocks the wake.
+func (s *Service) handRoundStart(rec moor.Record, _ string) (undoFunc, error) {
+	now := time.Now().UTC()
+	undo, err := s.saveWake(rec.Name, func(cur moor.WakeState) (moor.WakeState, *launcher.Error) {
+		out := moor.WakeState{PRs: map[string]moor.PRWake{}}
+		for k, v := range cur.PRs {
+			out.PRs[k] = v
+		}
+		for _, pr := range rec.PRs {
+			ps := out.PRs[pr]
+			if ps.Cursor.At.IsZero() {
+				ps.Cursor = moor.Cursor{At: rec.MooredAt}
+			}
+			ps.RoundStart = now
+			out.PRs[pr] = ps
+		}
+		return out, nil
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: waking by hand without a round window: %v\n", rec.Name, err)
+		return nil, nil
+	}
+	return undo, nil
+}
+
+// saveWake replaces a ship's wake state with change of the stored one, under wakeMu, and returns what puts the old one back.
+// change refuses by returning an error, and then nothing is written.
+func (s *Service) saveWake(name string, change func(moor.WakeState) (moor.WakeState, *launcher.Error)) (undoFunc, error) {
+	s.wakeMu.Lock()
+	defer s.wakeMu.Unlock()
+	prev, err := moor.ReadWake(s.Launcher.Home, name)
+	if err != nil {
+		return nil, &launcher.Error{Status: http.StatusInternalServerError, Msg: "the ship's wake state cannot be read"}
+	}
+	next, lerr := change(prev)
+	if lerr != nil {
+		return nil, lerr
+	}
+	if err := moor.WriteWake(s.Launcher.Home, name, next); err != nil {
+		return nil, &launcher.Error{Status: http.StatusInternalServerError, Msg: "the ship's wake state cannot be saved"}
+	}
+	return func() {
+		s.wakeMu.Lock()
+		defer s.wakeMu.Unlock()
+		var err error
+		if len(prev.PRs) == 0 {
+			err = moor.RemoveWake(s.Launcher.Home, name)
+		} else {
+			err = moor.WriteWake(s.Launcher.Home, name, prev)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake state cannot be put back after the failed wake: %v\n", name, err)
+		}
+	}, nil
+}
+
+// removeWake deletes a ship's wake state under wakeMu, so it cannot interleave with a save.
+func (s *Service) removeWake(name string) {
+	s.wakeMu.Lock()
+	defer s.wakeMu.Unlock()
+	if err := moor.RemoveWake(s.Launcher.Home, name); err != nil {
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake state cannot be removed: %v\n", name, err)
+	}
+}
+
 // wake is the one relaunch: a moored ship's session is recreated under its name with its record's fleet,
 // harness, model, skill, checkout and resources, and the record then hands over to tmux.
-func (s *Service) wake(session string, prompt func(moor.Record) string, by, pr string, beforeLaunch func(rec moor.Record, dir string) error) (Ship, *launcher.Error) {
+func (s *Service) wake(session string, prompt func(moor.Record) string, by, pr string, beforeLaunch func(rec moor.Record, dir string) (undoFunc, error)) (Ship, *launcher.Error) {
 	if !s.startWaking(session) {
-		return Ship{}, &launcher.Error{Status: http.StatusConflict, Msg: "a wake of ship " + session + " is already in progress"}
+		return Ship{}, &launcher.Error{Status: http.StatusConflict, Msg: "a wake of ship " + session + " is already in progress", Wait: WaitInFlight}
 	}
 	defer s.endWaking(session)
 	rec, lerr := s.wakeable(session)
@@ -57,13 +153,14 @@ func (s *Service) wake(session string, prompt func(moor.Record) string, by, pr s
 		return Ship{}, &launcher.Error{Status: http.StatusBadRequest, Msg: "ship " + session + " carries no PR " + pr}
 	}
 	if !s.Host.Known() {
-		return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: NotKnownMsg}
+		return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: NotKnownMsg, Wait: WaitHost}
 	}
 	round := rec.Round + 1
 	req := launcher.Request{Fleet: rec.Fleet, Harness: rec.Harness, Dir: rec.Checkout, Model: rec.Model,
 		Skill: launcher.Skill{Kind: rec.Skill.Kind, Name: rec.Skill.Name}, Source: rec.Source, OrderID: rec.OrderID,
 		Title: rec.Title, URL: rec.URL, Issues: rec.Issues, Panel: rec.Panel, Resources: rec.Resources,
 		Name: rec.Name, Session: rec.Session, Round: round, Prompt: prompt(rec), Autopilot: by == "feedback", By: by, PR: pr}
+	var undo undoFunc
 	// The launcher runs this under its lock, just before it makes the session: a Dismiss or a merged PR that
 	// ended the mooring while this wake waited wins, and from here on an ending loses to the wake.
 	req.Before = func(dir string) error {
@@ -71,10 +168,16 @@ func (s *Service) wake(session string, prompt func(moor.Record) string, by, pr s
 			return &launcher.Error{Status: http.StatusConflict, Msg: "ship " + session + " was ended while it waited to be woken"}
 		}
 		if beforeLaunch != nil {
-			if err := beforeLaunch(rec, dir); err != nil {
+			u, err := beforeLaunch(rec, dir)
+			if err != nil {
 				s.uncommitWake(session)
+				var le *launcher.Error
+				if errors.As(err, &le) {
+					return le
+				}
 				return &launcher.Error{Status: http.StatusInternalServerError, Msg: "the feedback cannot be written into the ship's checkout"}
 			}
+			undo = u
 		}
 		return nil
 	}
@@ -90,6 +193,9 @@ func (s *Service) wake(session string, prompt func(moor.Record) string, by, pr s
 	got, lerr := s.LaunchOrder(req)
 	if lerr != nil {
 		release()
+		if undo != nil {
+			undo()
+		}
 		return Ship{}, lerr
 	}
 	s.releaseWhenListed(got.Session, release)

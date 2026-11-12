@@ -113,9 +113,7 @@ func (s *Service) endMooring(sess sessionhost.Session) {
 	if name == "" {
 		return
 	}
-	if err := moor.RemoveWake(s.Launcher.Home, name); err != nil {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake state cannot be removed: %v\n", name, err)
-	}
+	s.removeWake(name)
 }
 
 // endRound logs how a woken ship's round ended, once per round; a ship that was never woken has no round.
@@ -201,7 +199,7 @@ func (s *Service) mooredShips(live map[string]bool) []Ship {
 		}
 		sh := Ship{Session: r.Session, Name: r.Name, Fleet: r.Fleet, Harness: r.Harness, Dir: r.Checkout,
 			Repo: filepath.Base(r.Checkout), Status: StatusMoored,
-			Source: r.Source, Panel: r.Panel, OrderID: r.OrderID, URL: r.URL, Issues: r.Issues, Title: r.Title, PRs: prs[i], MooredAt: r.MooredAt.UTC().Format(time.RFC3339), Stale: polls[i].stale, NoResume: !moor.ValidResume(r.Resume),
+			Source: r.Source, Panel: r.Panel, OrderID: r.OrderID, URL: r.URL, Issues: r.Issues, Title: r.Title, PRs: prs[i], MooredAt: r.MooredAt.UTC().Format(time.RFC3339), Stale: polls[i].stale, Waiting: polls[i].waiting, NoResume: !moor.ValidResume(r.Resume),
 			Crew: []CrewBoat{}, Subagents: []sessionhost.Subagent{}}
 		if !polls[i].at.IsZero() {
 			sh.PolledAt = polls[i].at.Format(time.RFC3339)

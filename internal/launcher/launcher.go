@@ -74,12 +74,14 @@ type Skill struct {
 type Error struct {
 	Status int
 	Msg    string
+	// Wait is set on a refusal that a later try can clear, and holds what the engineer reads while the ship waits.
+	Wait string
 }
 
 func (e *Error) Error() string { return e.Msg }
 
 func refuse(status int, format string, a ...any) *Error {
-	return &Error{status, fmt.Sprintf(format, a...)}
+	return &Error{Status: status, Msg: fmt.Sprintf(format, a...)}
 }
 
 type Launched struct {
