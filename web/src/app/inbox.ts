@@ -75,9 +75,11 @@ const shipFleet = (s: Ship): EntryFleet => ({ key: s.fleet, name: s.fleet_name ?
 const itemFleet = (it: InboxItem): EntryFleet | undefined =>
   it.fleet === undefined ? undefined : { key: it.fleet, name: it.fleet_name ?? '', color: it.fleet_color ?? '' };
 
+const RANK: Record<Entry['type'], number> = { item: 0, stop: 1, merge: 2 };
+
 const compare = (a: Entry, b: Entry) =>
   a.since - b.since ||
-  (a.type === b.type ? 0 : a.type === 'item' ? -1 : 1) ||
+  RANK[a.type] - RANK[b.type] ||
   (a.session < b.session ? -1 : a.session > b.session ? 1 : 0) ||
   ((a.id ?? '') < (b.id ?? '') ? -1 : (a.id ?? '') > (b.id ?? '') ? 1 : 0);
 

@@ -253,6 +253,14 @@ describe('createInboxQueue: ready to merge', () => {
     expect(keys(q)).toEqual(['stop:b', 'merge:a']);
   });
 
+  it('orders a merge and a stop that began together the same way whatever the input order', () => {
+    for (const ships of [[ready('a'), ship('b', 'alpha', 'needs_you', { stop_since: at(0) })], [ship('b', 'alpha', 'needs_you', { stop_since: at(0) }), ready('a')]]) {
+      const q = createInboxQueue();
+      q.sync({ items: [], ships }, T0);
+      expect(keys(q)).toEqual(['stop:b', 'merge:a']);
+    }
+  });
+
   it('goes by itself, with no fold, when the ship stops being ready or leaves the list', () => {
     const q = createInboxQueue();
     q.sync({ items: [], ships: [ready('a'), ready('b')] }, T0);
