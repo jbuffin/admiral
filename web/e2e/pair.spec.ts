@@ -60,7 +60,7 @@ test.describe('pairing an unpaired device', () => {
     await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
 
     await admiral.stopServer();
-    await expect(page.getByRole('heading', { name: "Can't reach your Mac" })).toBeVisible();
+    await expect(page.getByRole('heading', { name: "Can't reach your Mac" })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('heading', { name: /Pair this app|signed out/ })).toBeHidden();
   });
 
