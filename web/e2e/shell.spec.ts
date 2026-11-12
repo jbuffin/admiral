@@ -710,6 +710,11 @@ test('the Inbox lists a question item and a needs-you stop from two fleets, each
   await expect(entry(login.name)).toContainText(/^.*\b(now|\d+m)\b/);
   await expect(main).not.toContainText('Whatever needs you, from every fleet, will land here.');
   await expect(entry('Heads up')).toBeVisible();
+
+  // The tab counts what waits on the engineer across fleets (the stop and the question; the notice is FYI) and marks its icon.
+  const icon = page.locator('link[rel="icon"]');
+  await expect(page).toHaveTitle('(2) Admiral');
+  await expect(icon).not.toHaveAttribute('href', '/favicon.svg');
   await expect(entry('Heads up')).not.toContainText(HOME);
   await expect(entry('Heads up')).not.toContainText(WORK);
   expect((await entry(login.name).boundingBox())!.height).toBeGreaterThanOrEqual(44);
@@ -724,11 +729,19 @@ test('the Inbox lists a question item and a needs-you stop from two fleets, each
   await expect(entry(login.name)).toContainText('Back underway', { timeout: 15_000 });
   await expect(entry(login.name)).toHaveCount(0, { timeout: 15_000 });
   await expect(entry(visitor.name)).toHaveCount(1);
+  await expect(page).toHaveTitle('(1) Admiral');
 
   // A ship-backed row opens Peek on its item.
   await entry(visitor.name).getByRole('link').tap();
   await expect(page).toHaveURL(new RegExp(`/app/inbox/${encodeURIComponent(visitor.session)}/item/q-port`));
   await expect(page.getByRole('region', { name: 'Peek' })).toBeVisible();
+
+  // Opening Peek leaves the count alone; removing the item brings it to zero and the icon back to plain.
+  await expect(page).toHaveTitle('(1) Admiral');
+  await page.getByRole('region', { name: 'Peek' }).getByRole('button', { name: 'Remove from inbox' }).tap();
+  await page.getByRole('region', { name: 'Peek' }).getByRole('button', { name: 'Remove', exact: true }).tap();
+  await expect(page).toHaveTitle('Admiral', { timeout: 15_000 });
+  await expect(icon).toHaveAttribute('href', '/favicon.svg');
 });
 
 const cachedPaths = (page: Page) =>
