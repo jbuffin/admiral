@@ -210,9 +210,16 @@ func (l *Log) load(fleet string) (*fleetLog, error) {
 	return fl, nil
 }
 
-// fleetDir opens chat/<fleet>; neither directory may be a link. create makes what is missing.
 func (l *Log) fleetDir(fleet string, create bool) (*os.Root, error) {
-	root, err := os.OpenRoot(l.home)
+	return OpenFleetDir(l.home, fleet, create)
+}
+
+// OpenFleetDir opens chat/<fleet> under home; neither directory may be a link. create makes what is missing.
+func OpenFleetDir(home, fleet string, create bool) (*os.Root, error) {
+	if !fleetKey.MatchString(fleet) {
+		return nil, fmt.Errorf("chat log: %q is not a fleet key", fleet)
+	}
+	root, err := os.OpenRoot(home)
 	if err != nil {
 		return nil, err
 	}

@@ -330,6 +330,19 @@ var mcpTools = []mcpTool{
 			"wait_id":      str("the id of a question already asked, to wait on it instead of asking again"),
 			"wait_seconds": num("how long to wait for the answer"),
 		}), askQuestion},
+	{"save_note", "Save a fact the engineer asked you to remember. It survives context resets and is kept for every later chat; the engineer manages the saved notes on Preferences. One short fact per note.",
+		obj([]string{"text"}, map[string]any{"text": str("the fact to remember, in a sentence or two")}), saveNote},
+}
+
+func saveNote(c *mcpClient, raw json.RawMessage) (string, error) {
+	var a struct{ Text string }
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(a.Text) == "" {
+		return "", errors.New("text is required")
+	}
+	return c.post("/api/chat/notes", map[string]string{"text": a.Text})
 }
 
 func addOrder(c *mcpClient, raw json.RawMessage) (string, error) {

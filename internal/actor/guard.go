@@ -62,6 +62,7 @@ var allowed = []struct {
 	// every fleet's Hold fire can only be turned on from here: it makes Admiral quieter, never louder
 	{"GET", []string{"hold-fire"}, plain},
 	{"POST", []string{"hold-fire", "on"}, plain},
+	{"POST", []string{"chat", "notes"}, plain},
 }
 
 func (g *Guard) Middleware(next http.Handler) http.Handler {
