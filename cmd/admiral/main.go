@@ -44,6 +44,7 @@ import (
 	"github.com/jbuffin/admiral/internal/state"
 	"github.com/jbuffin/admiral/internal/tailscale"
 	"github.com/jbuffin/admiral/internal/usage"
+	"github.com/jbuffin/admiral/internal/usageapi"
 	"github.com/jbuffin/admiral/internal/uselive"
 	"github.com/jbuffin/admiral/web"
 )
@@ -442,8 +443,9 @@ func serve(args []string) error {
 	s := &server.Server{Path: auth.PathName, Version: version, Commit: commit, UI: web.UI(), Messages: convService.Messages(), Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService,
 			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: campaignService}, &crewapi.Service{Home: absDir, Config: cfg}, campaignService, bridgeService, resourceService, lockRoute, chatService, convService, &shipdiff.Service{Ships: shipService},
+			&usageapi.Service{Home: absDir, Config: cfg.Current, Live: liveUsage, Ships: shipService.List, Now: time.Now, Zone: time.Local},
 			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}, guardRoutes{guard}, remoteRoutes{&tailscale.Route{Config: cfg.Current, Set: cfg.SetRemote, Port: port, Local: auth.IsLocal, ListenErr: lis.Err, Explicit: lis.explicit}}},
-		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat", "conversation", "campaigns", "ship-input", "changes"}}
+		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat", "conversation", "campaigns", "ship-input", "changes", "usage"}}
 	shipService.MergeGuard = s.MergeGuard
 	bg, stopBackground := context.WithCancel(context.Background())
 	// In the background: a harness that hangs on --version must not delay the server.

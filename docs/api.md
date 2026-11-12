@@ -357,6 +357,50 @@ Read-only: the ship's checkout (its `dir`; a moored ship's recorded checkout) ag
 
 The checkout's `.git/config`, `.git/info/attributes` and `.gitattributes` are written by the ship, so git runs with `--no-ext-diff --no-textconv`, `core.fsmonitor` and hooks off, every `filter.*` and `diff.*` program named in the repo config (included files and `config.worktree` too) blanked, no optional locks and a fixed environment (no global or system config), and no user-controlled value reaches it as an option.
 
+## Usage
+
+`GET /api/version` lists the `usage` capability when the server has these routes. Both are also served under `/api/v1/`. Figures come from the outcome log's `usage` and `advised` records (ADR 0015), read on each request, plus the live figures of ships still running. Nothing is written. Money is never added across harnesses, and there is no total across harnesses or fleets.
+
+### `GET /api/usage[?fleet=<key>]` (alias `GET /api/v1/usage`)
+
+With `fleet`, one fleet object; `404` `{"error":...}` when the fleet is not found. Without it, `{"fleets":[<fleet object>, ...]}` in the config's order.
+
+```json
+{"key":"work","name":"Work",
+ "periods":{
+  "today":{"from":"2026-11-12T00:00:00-05:00","harnesses":[
+   {"harness":"claude",
+    "tokens":{"input":1200,"output":300,"reasoning":0,"cache_read":9000,"cache_write":400},
+    "money":{"amount":1.32,"basis":"estimate","incomplete":false},
+    "spenders":{"ships":{"tokens":{...},"money":{...}},
+                "chat":{"tokens":{...},"money":{...}},
+                "workers":{"tokens":null,"money":{"amount":0.12,"basis":"estimate","incomplete":false}}}}]},
+  "7d":{...},"30d":{...},"month":{...}},
+ "quota":[{"harness":"claude","label":"claude","has_data":true,"age_seconds":90,
+   "windows":[{"id":"primary","used_percent":40,"window_minutes":300,"resets_at":"2026-11-12T17:00:00Z"},
+              {"id":"secondary","used_percent":10,"window_minutes":10080,"resets_at":"2026-11-13T15:00:00Z"},
+              {"id":"spend","used_percent":30,"used_usd":6,"limit_usd":20,"period":"monthly","resets_at":"2026-12-01T00:00:00Z"}]},
+  {"harness":"codex","label":"codex","has_data":false,"windows":[]}]}
+```
+
+- `periods`: `today` starts at local midnight, `7d` is today and the 6 days before it, `30d` is today and the 29 before it, and `month` starts on the local 1st. `from` is that start in the server's local zone. A record counts in a period when its `ts` is not before `from`.
+- `harnesses` is sorted by name, `[]` when the fleet used nothing, and holds a harness only when something was recorded for it. Each entry's `tokens` and `money` are the sum of its `spenders`. A spender is `ships` (ship records, plus the live figures of the fleet's running ships), `chat` (AdmiralBot, ship `_chat`) or `workers` (the `cost` of the fleet's `advised` records, USD `estimate`, no tokens); one with nothing is left out.
+- Only a record's top-level `tokens` and `money` are summed: its crew boats are already inside. `tokens` has the five disjoint classes, or is `null` when nothing reported any.
+- `money` is `{"amount","basis","incomplete"}` plus `premium_requests` when the harness gave one, or `null`. `basis` is `estimate` (US dollars, Claude) or `credits` (Copilot); Codex has no money. A harness's money is `incomplete` when the harness itself said so, or when some record or live reading it sums had none.
+- `advised` records written before they carried a `fleet` belong to no fleet and are left out.
+- `quota` has one entry per login of the fleet's docks that has a plan quota (Claude and Codex, in dock order), whether or not a ship is running. `label` is the harness; the login's directory is never sent. `has_data` is `false` after a restart until a figure arrives, and the entry then has no `age_seconds` and no windows. `windows` are `primary` and `secondary` (rate-limit windows, with `window_minutes`) and, on Claude, `spend` (the monthly spend limit). `age_seconds` is how old the last reading is. A window past its `resets_at` reads `used_percent: 0`. Live figures and quota are in memory only.
+
+### `GET /api/ships/<session>/usage` (alias `GET /api/v1/ships/<session>/usage`)
+
+```json
+{"session":"saltpaw-ii","harness":"claude","source":"live",
+ "tokens":{"input":43,"output":2,"reasoning":0,"cache_read":0,"cache_write":0},
+ "money":{"amount":0.3,"basis":"estimate","incomplete":false},
+ "age_seconds":7,"at":"2026-11-12T08:00:00Z"}
+```
+
+The sum of the ship's `usage` records (one for each round of a moored ship) plus its live figures while it runs. `source` is `live` when live figures are included (`age_seconds` is theirs), `record` when only records are, and `none` with `tokens` and `money` `null` when there are neither. `at` is the latest record's time, left out when there is none. The log names a ship only by its name, so a later ship that reuses a name adds to the earlier one's figures. `404` for a ship not in the ships list.
+
 ## Harness capabilities
 
 What each fleet's harnesses were probed to do (ADR 0035). These are not the server `capabilities` that `GET /api/version` lists. Both routes are also served under `/api/v1/`.

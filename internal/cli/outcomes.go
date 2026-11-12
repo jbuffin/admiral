@@ -8,15 +8,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
-	"sort"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/outcomes"
 )
-
-var outcomeFile = regexp.MustCompile(`^(\d{4}-\d{2})\.jsonl$`)
 
 func parseSince(s string) (time.Time, error) {
 	if t, err := time.Parse(time.DateOnly, s); err == nil {
@@ -60,20 +56,15 @@ func Outcomes(args []string, std IO) error {
 	if err != nil {
 		return err
 	}
-	files, err := filepath.Glob(filepath.Join(dir, "outcomes", "*.jsonl"))
+	files, err := outcomes.MonthFiles(filepath.Join(dir, "outcomes"))
 	if err != nil {
 		return err
 	}
-	sort.Strings(files)
-	for _, path := range files {
-		m := outcomeFile.FindStringSubmatch(filepath.Base(path))
-		if fi, err := os.Lstat(path); m == nil || err != nil || !fi.Mode().IsRegular() {
-			continue // a FIFO or a device would hang the read
-		}
-		if month, err := time.Parse("2006-01", m[1]); err == nil && !since.IsZero() && !month.AddDate(0, 1, 0).After(since) {
+	for _, f := range files {
+		if end := f.End(); !since.IsZero() && !end.IsZero() && !end.After(since) {
 			continue // every record in it is older than since
 		}
-		if err := printOutcomes(path, since, ships, std); err != nil {
+		if err := printOutcomes(f.Path, since, ships, std); err != nil {
 			return err
 		}
 	}

@@ -529,6 +529,7 @@ func TestShipUsage(t *testing.T) {
 		at(earlier, usageLine(earlier, "done", "f", "claude", in(5))),
 		at(later, usageLine(later, "done", "f", "claude", &usage.Figures{Tokens: usage.Tokens{Input: 9}, Money: est(0.5)})),
 		at(later, usageLine(later, "other", "f", "claude", in(77))),
+		at(earlier, usageLine(earlier, "live", "f", "claude", &usage.Figures{Tokens: usage.Tokens{Input: 3}, Money: est(0.05)})),
 	)
 	r.ships = []ships.Ship{
 		{Session: "done", Fleet: "f", Harness: "claude", Status: "ended"},
@@ -539,24 +540,24 @@ func TestShipUsage(t *testing.T) {
 
 	code, rec := r.get("/api/ships/done/usage")
 	if code != 200 || rec["source"] != "record" || rec["harness"] != "claude" || rec["at"] != later.UTC().Format(time.RFC3339) {
-		t.Errorf("ended ship = %d %v, want its latest record, written at %s", code, rec, later.UTC().Format(time.RFC3339))
+		t.Errorf("ended ship = %d %v, want its records, the latest written at %s", code, rec, later.UTC().Format(time.RFC3339))
 	}
-	if got := obj(t, rec["tokens"], "tokens")["input"]; got != 9.0 {
-		t.Errorf("ended ship input = %v, want 9", got)
+	if got := obj(t, rec["tokens"], "tokens")["input"]; got != 14.0 {
+		t.Errorf("ended ship input = %v, want 14: both rounds' records added", got)
 	}
-	if m := obj(t, rec["money"], "money"); m["amount"] != 0.5 {
-		t.Errorf("ended ship money = %v, want 0.5", m)
+	if m := obj(t, rec["money"], "money"); m["amount"] != 0.5 || m["incomplete"] != true {
+		t.Errorf("ended ship money = %v, want 0.5 and incomplete: the first round's record has none", m)
 	}
 
 	code, live := r.get("/api/ships/live/usage")
 	if code != 200 || live["source"] != "live" || live["age_seconds"] != 7.0 {
 		t.Errorf("running ship = %d %v, want live figures 7 s old", code, live)
 	}
-	if got := obj(t, live["tokens"], "tokens"); got["input"] != 40.0 || got["output"] != 2.0 {
-		t.Errorf("running ship tokens = %v, want 40 in and 2 out", got)
+	if got := obj(t, live["tokens"], "tokens"); got["input"] != 43.0 || got["output"] != 2.0 {
+		t.Errorf("running ship tokens = %v, want 43 in (an earlier round's 3 plus live 40) and 2 out", got)
 	}
-	if m := obj(t, live["money"], "money"); m["amount"] != 0.25 || m["basis"] != "estimate" {
-		t.Errorf("running ship money = %v, want 0.25 estimate", m)
+	if m := obj(t, live["money"], "money"); m["amount"] != 0.3 || m["basis"] != "estimate" || m["incomplete"] != false {
+		t.Errorf("running ship money = %v, want 0.3 estimate, complete", m)
 	}
 
 	code, none := r.get("/api/ships/quiet/usage")
