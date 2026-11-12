@@ -381,3 +381,70 @@ func TestStoreConcurrentUpdatesAreSafe(t *testing.T) {
 		t.Error("no quota after the updates")
 	}
 }
+
+// A record that took a ship's figures forgets them: LastLive answers for one exit only.
+func TestStoreForgetDropsTheShipsSessions(t *testing.T) {
+	c := newClock()
+	s := NewStore(c.now)
+	s.SetFigures("a-1", "sess-1", dollars(500, 3), c.now())
+	s.SetFigures("a-2", "sess-9", dollars(5, 0.5), c.now())
+	s.Forget("a-1")
+	if _, ok := s.LastLive("a-1"); ok {
+		t.Error("LastLive answered after Forget")
+	}
+	if _, _, ok := s.Figures("a-1"); ok {
+		t.Error("Figures answered after Forget")
+	}
+	if f, ok := s.LastLive("a-2"); !ok || f.Money.Amount != 0.5 {
+		t.Errorf("another ship's figures = %+v ok=%v, want untouched", f, ok)
+	}
+}
+
+// Claude's pane keeps its last status line, and the poll reads it again after the record took it.
+func TestStoreForgetIgnoresTheSameReadingReadAgain(t *testing.T) {
+	c := newClock()
+	s := NewStore(c.now)
+	read := c.now()
+	s.SetFigures("_chat", "sess-1", dollars(500, 3), read)
+	s.Forget("_chat")
+	s.SetFigures("_chat", "sess-1", dollars(500, 3), read)
+	if _, ok := s.LastLive("_chat"); ok {
+		t.Error("the forgotten session came back from the same reading")
+	}
+	s.SetFigures("_chat", "sess-1", dollars(600, 3.5), read.Add(time.Second))
+	if f, ok := s.LastLive("_chat"); !ok || f.Money.Amount != 3.5 {
+		t.Errorf("last live = %+v ok=%v, want a newer reading of the session to count", f, ok)
+	}
+}
+
+func TestStoreKeepsOnlyTheNewestFourSessionsOfAShip(t *testing.T) {
+	c := newClock()
+	s := NewStore(c.now)
+	for i := 1; i <= 5; i++ {
+		s.SetFigures("a-1", fmt.Sprintf("sess-%d", i), dollars(int64(10*i), float64(i)), c.now())
+	}
+	s.SetFigures("a-1", "sess-6", dollars(0, 0), c.now())
+	s.SetFigures("a-1", "sess-7", dollars(0, 0), c.now())
+	s.SetFigures("a-1", "sess-8", dollars(0, 0), c.now())
+	s.SetFigures("a-1", "sess-9", dollars(0, 0), c.now())
+	if _, ok := s.LastLive("a-1"); ok {
+		t.Error("an older session outlived the four-session bound")
+	}
+}
+
+func TestStoreEvictsTheLeastRecentlyUpdatedShipAtItsBound(t *testing.T) {
+	c := newClock()
+	s := NewStore(c.now)
+	for i := 0; i < maxStoreShips; i++ {
+		c.advance(time.Second)
+		s.SetFigures(fmt.Sprintf("s-%d", i), "x", dollars(1, 1), c.now())
+	}
+	c.advance(time.Second)
+	s.SetFigures("one-more", "x", dollars(1, 1), c.now())
+	if _, _, ok := s.Figures("s-0"); ok {
+		t.Error("the oldest ship survived the 513th")
+	}
+	if _, _, ok := s.Figures("s-1"); !ok {
+		t.Error("a newer ship was evicted")
+	}
+}

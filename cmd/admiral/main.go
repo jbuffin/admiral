@@ -420,8 +420,10 @@ func serve(args []string) error {
 		return shipService.Login(ship)
 	}
 	codexFeed := &uselive.Codex{Store: liveUsage, Login: liveLogin}
+	forgetLive := func(ship string) { liveUsage.Forget(ship); codexFeed.Forget(ship) }
+	shipService.ForgetLive, chatService.ForgetLive = forgetLive, forgetLive
 	convService.LiveFrame = codexFeed.Frame
-	liveTmux := &uselive.Tmux{Server: sessionhost.NewServer(tmuxPath, sock), Dir: liveLogin}
+	liveTmux := &uselive.Tmux{Server: sessionhost.NewServer(tmuxPath, sock), Dir: liveLogin, Harness: shipService.Harness}
 	claudeFeed := &uselive.Claude{Store: liveUsage, Login: liveLogin, Panes: liveTmux.ClaudePanes}
 	copilotFeed := &uselive.Copilot{Store: liveUsage, Files: liveTmux.CopilotFiles}
 	probeRunner := probes.NewDefault(dir)

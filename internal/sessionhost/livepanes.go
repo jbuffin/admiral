@@ -3,8 +3,12 @@ package sessionhost
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 )
+
+// MaxStatuslineRead bounds a status line the read takes: the wrapper keeps at most 4 KB, and a pane can write more.
+const MaxStatuslineRead = 4096
 
 // LivePane is what one pane says about its live usage: a Claude pane's kept status line, a Copilot ship's transcript.
 type LivePane struct {
@@ -22,7 +26,7 @@ const livePaneFilter = "#{&&:#{||:#{" + StatuslineOption + "},#{" + TranscriptOp
 // running in a pane can write them. The status line goes last, so a separator in it cannot shift the others.
 func (s Server) ReadLivePanes(ctx context.Context) ([]LivePane, error) {
 	format := strings.Join([]string{unprintable("#{session_name}"), unprintable("#{" + Prefix + "harness}"),
-		unprintable("#{" + TranscriptOption + "}"), "#{s/" + ctrl + "/ /:pane_start_command}", unprintable("#{" + StatuslineOption + "}")}, sep)
+		unprintable("#{" + TranscriptOption + "}"), "#{s/" + ctrl + "/ /:pane_start_command}", "#{=" + strconv.Itoa(MaxStatuslineRead+1) + ":" + unprintable("#{"+StatuslineOption+"}") + "}"}, sep)
 	out, err := s.run(call{ctx: ctx, utf8After: true, args: []string{"list-panes", "-a", "-f", livePaneFilter, "-F", format}})
 	if err != nil {
 		if strings.Contains(out, "no server running") || strings.Contains(out, "error connecting") {

@@ -20,6 +20,8 @@ type Tmux struct {
 	Server sessionhost.Server
 	// Dir is the identity dir of a ship's harness login, "" when unknown.
 	Dir func(ship string) string
+	// Harness is the harness of a ship's record; a pane's own @admiral-harness is writable by whatever runs in it.
+	Harness func(ship string) string
 
 	mu    sync.Mutex
 	panes []sessionhost.LivePane
@@ -44,7 +46,10 @@ func (t *Tmux) ClaudePanes(context.Context) ([]Pane, error) {
 	}
 	var out []Pane
 	for _, p := range t.panes {
-		if p.Statusline != "" {
+		if p.Statusline == "" || len(p.Statusline) > sessionhost.MaxStatuslineRead {
+			continue
+		}
+		if p.Session == sessionhost.ChatName || t.Harness(p.Session) == "claude" {
 			out = append(out, Pane{Ship: p.Session, Option: p.Statusline})
 		}
 	}

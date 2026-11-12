@@ -20,6 +20,9 @@ type sessionFigures struct {
 type shipFigures struct {
 	sessions []sessionFigures // oldest first
 	touched  time.Time
+	// consumed holds the sessions Forget dropped, with the reading's time: a pane keeps its last line, and
+	// reading it again must not bring the session back.
+	consumed map[string]time.Time
 }
 
 type quotaEntry struct {
@@ -103,6 +106,9 @@ func (s *Store) SetFigures(ship, sessionID string, f Figures, seen time.Time) {
 		s.ships[ship] = sf
 	}
 	sf.touched = s.now()
+	if at, gone := sf.consumed[sessionID]; gone && !seen.After(at) {
+		return
+	}
 	f = cloneFigures(f)
 	for i := range sf.sessions {
 		if sf.sessions[i].id == sessionID {
@@ -154,6 +160,24 @@ func (s *Store) LastLive(ship string) (Figures, bool) {
 		}
 	}
 	return Figures{}, false
+}
+
+// Forget drops a ship's sessions once a record has taken their figures, so the next round or a new ship of the
+// same name starts from nothing. LastLive never answers twice with the same session.
+func (s *Store) Forget(ship string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sf := s.ships[ship]
+	if sf == nil {
+		return
+	}
+	if sf.consumed == nil || len(sf.consumed) >= 2*maxSessionsPerKey {
+		sf.consumed = map[string]time.Time{}
+	}
+	for _, se := range sf.sessions {
+		sf.consumed[se.id] = se.seen
+	}
+	sf.sessions = nil
 }
 
 // SetQuota replaces a login's quota as the source reported it.

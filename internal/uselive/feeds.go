@@ -2,8 +2,10 @@
 package uselive
 
 import (
+	"bytes"
 	"context"
-	"errors"
+	"io"
+	"os"
 	"sync"
 	"time"
 
@@ -47,9 +49,10 @@ func (c *Claude) Poll(ctx context.Context) {
 		if !ok {
 			continue
 		}
+		// A line's own time orders readings, but a future time would pin the login's quota; a line with no time is read now.
 		seen := r.Seen
-		if seen.IsZero() {
-			seen = now()
+		if n := now(); seen.IsZero() || seen.After(n) {
+			seen = n
 		}
 		if r.Figures != nil {
 			c.Store.SetFigures(p.Ship, r.SessionID, *r.Figures, seen)
@@ -120,31 +123,46 @@ func (c *Codex) Frame(ship string, frame []byte) {
 	}
 }
 
+// Forget drops a ship's thread totals once its record has taken them: the next round's threads start a new sum.
+func (c *Codex) Forget(ship string) {
+	c.mu.Lock()
+	delete(c.threads, ship)
+	c.mu.Unlock()
+}
+
 // File is a Copilot ship's events file under its identity dir.
 type File struct {
 	Ship, Dir, Path string
 }
 
-// Copilot re-sums a session's events file when it changes: usage_record lines are per call.
+// Copilot sums each events file as it grows: usage_record lines are per call, and the file is append-only.
 type Copilot struct {
 	Store *usage.Store
 	Files func() []File
 	Now   func() time.Time
 
-	seen map[string]fileStamp
+	seen map[string]*copilotRead
 }
 
-type fileStamp struct {
-	size int64
-	mod  time.Time
+// copilotRead is what the feed keeps of one events file: where it has read to and what that adds up to.
+type copilotRead struct {
+	info     os.FileInfo
+	size     int64
+	mod      time.Time
+	offset   int64 // end of the last whole line read
+	skipping bool  // inside a line too long to keep
+	acc      usage.CopilotAcc
 }
 
-// A file this large is skipped: each change re-reads it whole.
+// A file this large is skipped on its first read; later ticks read only what was appended.
 const maxCopilotFile = 128 << 20
+
+// maxCopilotLine bounds a partial line held between ticks.
+const maxCopilotLine = 4 << 20
 
 func (c *Copilot) Poll(ctx context.Context) {
 	files := c.Files()
-	next := make(map[string]fileStamp, len(files))
+	next := make(map[string]*copilotRead, len(files))
 	for _, f := range files {
 		if ctx.Err() != nil {
 			return
@@ -153,21 +171,67 @@ func (c *Copilot) Poll(ctx context.Context) {
 		if err != nil {
 			continue
 		}
-		stamp := fileStamp{info.Size(), info.ModTime()}
-		next[f.Path] = stamp
-		if stamp == c.seen[f.Path] || stamp.size > maxCopilotFile {
+		st := c.seen[f.Path]
+		// A shorter file, or another file under the same path, was rewritten: its sums start over.
+		if st == nil || info.Size() < st.offset || !os.SameFile(st.info, info) {
+			st = &copilotRead{info: info}
+		}
+		next[f.Path] = st
+		if info.Size() == st.size && info.ModTime().Equal(st.mod) || info.Size() > maxCopilotFile {
 			fh.Close()
 			continue
 		}
-		fig, err := usage.ParseCopilot(fh)
+		err = st.readFrom(fh, info.Size())
 		fh.Close()
 		if err != nil {
-			if !errors.Is(err, usage.ErrNoFigures) {
-				delete(next, f.Path) // read again next tick
-			}
+			delete(next, f.Path) // read again next tick
 			continue
 		}
-		c.Store.SetFigures(f.Ship, f.Path, fig, stamp.mod)
+		st.size, st.mod = info.Size(), info.ModTime()
+		fig, err := st.acc.Figures()
+		if err != nil {
+			continue
+		}
+		c.Store.SetFigures(f.Ship, f.Path, fig, st.mod)
 	}
 	c.seen = next
+}
+
+// readFrom feeds the lines after offset, up to size, to the sums. A last line without its newline waits for it.
+func (st *copilotRead) readFrom(fh *os.File, size int64) error {
+	if _, err := fh.Seek(st.offset, io.SeekStart); err != nil {
+		return err
+	}
+	r := io.LimitReader(fh, size-st.offset)
+	buf := make([]byte, 64<<10)
+	var carry []byte
+	for {
+		n, err := r.Read(buf)
+		data := append(carry, buf[:n]...)
+		for {
+			i := bytes.IndexByte(data, '\n')
+			if i < 0 {
+				break
+			}
+			if !st.skipping {
+				if l := bytes.TrimSpace(data[:i]); len(l) > 0 {
+					st.acc.Line(l)
+				}
+			}
+			st.skipping = false
+			st.offset += int64(i) + 1
+			data = data[i+1:]
+		}
+		carry = append(carry[:0], data...)
+		if len(carry) > maxCopilotLine {
+			st.offset += int64(len(carry))
+			st.skipping, carry = true, carry[:0]
+		}
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
 }
