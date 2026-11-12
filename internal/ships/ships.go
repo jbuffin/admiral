@@ -137,8 +137,8 @@ type Service struct {
 	moorKick     chan struct{}
 	mergeMethods map[string]string // by fleet and repository: its default merge method; under mooredMu
 	merging      map[string]bool   // by session: a merge is under way; under mooredMu
-	pollMu       sync.Mutex // one poll at a time
-	wakeMu       sync.Mutex // every read-modify-write of a ship's wake state; taken after mooredMu is released, never inside it
+	pollMu       sync.Mutex        // one poll at a time
+	wakeMu       sync.Mutex        // every read-modify-write of a ship's wake state; taken after mooredMu is released, never inside it
 	// issueLocks holds the GitHub issues (by ClaimKey) with a launch under way, each with who holds it.
 	issueLocks map[string]string
 }

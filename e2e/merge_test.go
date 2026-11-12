@@ -1,9 +1,13 @@
 package e2e
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -104,6 +108,48 @@ func (w *world) mergeURL(ship shipJSON) string {
 	return w.in.LocalURL + "/api/ships/" + ship.Session + "/merge"
 }
 
+// pageMergeToken reads the token from the app page's <meta>, the way the shell does.
+func (w *world) pageMergeToken(t *testing.T) string {
+	t.Helper()
+	resp, err := client().Get(w.in.LocalURL + "/app/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	page, _ := io.ReadAll(resp.Body)
+	m := regexp.MustCompile(`<meta name="admiral-merge-token" content="([0-9a-f]+)"`).FindSubmatch(page)
+	if m == nil {
+		t.Fatalf("the /app/ page has no merge token meta: %.300s", page)
+	}
+	return string(m[1])
+}
+
+// postMergeWith posts to the merge route with the token header as given; an empty token sends no header.
+func (w *world) postMergeWith(t *testing.T, ship shipJSON, body any, token string) (int, string) {
+	t.Helper()
+	b, _ := json.Marshal(body)
+	req, err := http.NewRequest(http.MethodPost, w.mergeURL(ship), bytes.NewReader(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("X-Admiral-Merge-Token", token)
+	}
+	resp, err := client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(data)
+}
+
+func (w *world) postMerge(t *testing.T, ship shipJSON, body any) (int, string) {
+	t.Helper()
+	return w.postMergeWith(t, ship, body, w.pageMergeToken(t))
+}
+
 func (w *world) shipNamed(ship shipJSON) (shipJSON, bool) {
 	sh, ok := byName(w.in.ships(w.t))[ship.Name]
 	return sh, ok
@@ -150,7 +196,7 @@ func TestMergeASinglePRRunsOneGhMergeWithTheDefaultMethod(t *testing.T) {
 		return len(g.mergeCalls()) == 0 && g.defaultMethodQueries() == 1 && ok && sh.Status == "moored" && mergedEvents(w, ship) == 0
 	})
 
-	code, body := send(t, http.MethodPost, w.mergeURL(ship), map[string]any{})
+	code, body := w.postMerge(t, ship, map[string]any{})
 	if code != http.StatusAccepted {
 		t.Fatalf("POST merge = %d, want 202: %s", code, body)
 	}
@@ -192,7 +238,7 @@ func TestMergeAStackIsRefusedAndRunsNoGh(t *testing.T) {
 	})
 
 	for what, body := range map[string]map[string]any{"the whole stack": {}, "up to layer 2": {"upTo": layer2}} {
-		code, b := send(t, http.MethodPost, w.mergeURL(ship), body)
+		code, b := w.postMerge(t, ship, body)
 		if code != http.StatusUnprocessableEntity {
 			t.Errorf("POST merge %s = %d, want 422: %s", what, code, b)
 		}
@@ -221,7 +267,7 @@ func TestAStackReadsReadyUpToTheHighestLayerWhoseLowerLayersAreReady(t *testing.
 		t.Errorf("ship = layer 3 ready %v, stack ready %v, up to %q; want layer 3 not ready, the stack not ready, up to %s",
 			got.PRs[2].Ready, got.StackReady, got.ReadyUpTo, layer2)
 	}
-	code, b := send(t, http.MethodPost, w.mergeURL(ship), map[string]any{"upTo": "https://github.com/acme/widgets/pull/99"})
+	code, b := w.postMerge(t, ship, map[string]any{"upTo": "https://github.com/acme/widgets/pull/99"})
 	wantRefused(t, "POST merge up to a PR that is not its own", code, b)
 	if calls := g.mergeCalls(); len(calls) != 0 {
 		t.Fatalf("a refused merge ran gh: %v", calls)
@@ -242,7 +288,7 @@ func TestMergeIsRefusedWhenGitHubNowSaysTheStackIsNotReady(t *testing.T) {
 
 	// A reviewer asks for changes after the last poll: the served readiness is stale, so Admiral looks again before it runs gh.
 	g.prChips(layer1, "CHANGES_REQUESTED", "SUCCESS", "MERGEABLE")
-	code, body := send(t, http.MethodPost, w.mergeURL(ship), map[string]any{})
+	code, body := w.postMerge(t, ship, map[string]any{})
 	if code != http.StatusConflict {
 		t.Errorf("POST merge on a PR that stopped being ready = %d, want 409: %s", code, body)
 	}
@@ -278,7 +324,7 @@ func TestAFailedGhMergeReturnsItsMessageAndKeepsTheShipMoored(t *testing.T) {
 		return len(sh.PRs) == 1 && sh.PRs[0].Ready
 	})
 
-	code, body := send(t, http.MethodPost, w.mergeURL(ship), map[string]any{})
+	code, body := w.postMerge(t, ship, map[string]any{})
 	if code < 400 || !strings.Contains(body, "the base branch policy prohibits the merge") {
 		t.Errorf("POST merge = %d %s, want an error carrying gh's message", code, body)
 	}
@@ -296,7 +342,7 @@ func TestAFailedGhMergeReturnsItsMessageAndKeepsTheShipMoored(t *testing.T) {
 	if err := os.Remove(filepath.Join(g.dir, "pr_merge.fail")); err != nil {
 		t.Fatal(err)
 	}
-	if code, body := send(t, http.MethodPost, w.mergeURL(ship), map[string]any{}); code != http.StatusAccepted {
+	if code, body := w.postMerge(t, ship, map[string]any{}); code != http.StatusAccepted {
 		t.Errorf("POST merge after the failure = %d, want 202: %s", code, body)
 	}
 	if n := len(g.mergeCalls()); n != 2 {
@@ -317,9 +363,12 @@ func TestASecondMergeWhileOneIsRunningIsRefused(t *testing.T) {
 		return len(sh.PRs) == 1 && sh.PRs[0].Ready
 	})
 
+	token := w.pageMergeToken(t)
 	first := make(chan int, 1)
-	go func() { // not send: it fails the test, which only the test's own goroutine may do
-		resp, err := http.Post(w.mergeURL(ship), "application/json", strings.NewReader("{}"))
+	go func() { // not postMerge: it fails the test, which only the test's own goroutine may do
+		req, _ := http.NewRequest(http.MethodPost, w.mergeURL(ship), strings.NewReader("{}"))
+		req.Header.Set("X-Admiral-Merge-Token", token)
+		resp, err := client().Do(req)
 		if err != nil {
 			first <- 0
 			return
@@ -332,7 +381,7 @@ func TestASecondMergeWhileOneIsRunningIsRefused(t *testing.T) {
 			t.Fatal("the first merge never reached gh")
 		}
 	}
-	code, body := send(t, http.MethodPost, w.mergeURL(ship), map[string]any{})
+	code, body := w.postMerge(t, ship, map[string]any{})
 	if code != http.StatusConflict {
 		t.Errorf("POST merge while one runs = %d, want 409: %s", code, body)
 	}
@@ -341,5 +390,47 @@ func TestASecondMergeWhileOneIsRunningIsRefused(t *testing.T) {
 	}
 	if n := len(g.mergeCalls()); n != 1 {
 		t.Errorf("merge calls = %d, want one", n)
+	}
+}
+
+func TestMergeWithoutTheShellsTokenIsRefusedAndRunsNoGh(t *testing.T) {
+	t.Parallel()
+	w, g := mooring(t, "exit 0")
+	g.prReady(layer1)
+	w.start()
+	ship := moorPRs(t, w, layer1)
+	w.kickMoored()
+	w.in.waitShipsList(t, 20*time.Second, "the PR read ready", func(l []shipJSON) bool {
+		sh := byName(l)[ship.Name]
+		return len(sh.PRs) == 1 && sh.PRs[0].Ready
+	})
+
+	real := w.pageMergeToken(t)
+	for what, token := range map[string]string{
+		"no header":                      "",
+		"a wrong token":                  "0000000000000000000000000000000000000000000000000000000000000000",
+		"the token with a character off": real[:len(real)-1] + "x",
+	} {
+		if code, b := w.postMergeWith(t, ship, map[string]any{}, token); code != http.StatusForbidden {
+			t.Errorf("POST merge with %s = %d, want 403: %s", what, code, b)
+		}
+	}
+	req, _ := http.NewRequest(http.MethodPost, w.mergeURL(ship), strings.NewReader("{}"))
+	req.Header.Set("X-Admiral-Merge-Token", real)
+	req.Header.Set("Origin", "http://evil.example")
+	if resp, err := client().Do(req); err != nil {
+		t.Fatal(err)
+	} else {
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("POST merge from another origin with the right token = %d, want 403", resp.StatusCode)
+		}
+	}
+	holdThat(t, "gh merged without the token, or the ship left its mooring", func() bool {
+		sh, ok := w.shipNamed(ship)
+		return len(g.mergeCalls()) == 0 && ok && sh.Status == "moored"
+	})
+	if code, b := w.postMergeWith(t, ship, map[string]any{}, real); code != http.StatusAccepted {
+		t.Errorf("POST merge with the page's token = %d, want 202: %s", code, b)
 	}
 }

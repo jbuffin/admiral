@@ -3,7 +3,11 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -14,6 +18,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -47,6 +52,49 @@ type Server struct {
 	// Capabilities entries are only ever added within v1; they are not harness
 	// capabilities.
 	Capabilities []string
+
+	mergeTokenOnce sync.Once
+	mergeToken     string
+}
+
+// MergeTokenHeader carries the merge token the shell's page reads from its <meta name="admiral-merge-token">.
+const MergeTokenHeader = "X-Admiral-Merge-Token"
+
+// token is made once per process, so one from an earlier server never matches.
+func (s *Server) token() string {
+	s.mergeTokenOnce.Do(func() {
+		b := make([]byte, 32)
+		if _, err := rand.Read(b); err != nil {
+			panic(err)
+		}
+		s.mergeToken = hex.EncodeToString(b)
+	})
+	return s.mergeToken
+}
+
+func isMergeRoute(r *http.Request) bool {
+	rest, ok := strings.CutPrefix(r.URL.Path, "/api/ships/")
+	if !ok || r.Method != http.MethodPost {
+		return false
+	}
+	sess, last, ok := strings.Cut(rest, "/")
+	return ok && sess != "" && last == "merge"
+}
+
+// requireMergeToken sits inside the auth middleware: the token is on top of it, on every path, so a local curl is refused too.
+func (s *Server) requireMergeToken(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The auth middleware skips its origin check for a bearer token; the merge route does not.
+		origin := r.Header.Get("Origin")
+		badOrigin := origin != "" && !strings.EqualFold(origin, "http://"+r.Host) && !strings.EqualFold(origin, "https://"+r.Host)
+		if isMergeRoute(r) && (badOrigin || subtle.ConstantTimeCompare([]byte(r.Header.Get(MergeTokenHeader)), []byte(s.token())) != 1) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"error":"merging needs the shell's merge token"}` + "\n"))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 var APIVersions = []int{1}
@@ -69,7 +117,7 @@ func (s *Server) Handler() http.Handler {
 		_, _ = w.Write([]byte(`{"error":"not found"}` + "\n"))
 	})
 	mux.HandleFunc("/", s.serveUI)
-	return stripV1(mux)
+	return stripV1(s.requireMergeToken(mux))
 }
 
 func stripV1(next http.Handler) http.Handler {
@@ -280,6 +328,10 @@ func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
 		w.Header().Set("Cache-Control", "no-cache")
+	}
+	if name == "app/index.html" {
+		meta := `<meta name="admiral-merge-token" content="` + s.token() + `">`
+		data = bytes.Replace(data, []byte("</head>"), []byte(meta+"</head>"), 1)
 	}
 	http.ServeContent(w, r, name, time.Time{}, bytesReader(data))
 }
