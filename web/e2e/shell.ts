@@ -564,6 +564,8 @@ export async function mergeFailsInPeek(page: Page, a: Admiral) {
   await expect(peek.getByRole('alert')).toContainText('Pull request is not mergeable');
   expect(mergeCalls(a)).toEqual([['pr', 'merge', `${PR_BASE}/7`, '--squash']]);
   await expect(mergeButton(page)).toBeEnabled();
+  // On a narrow screen Peek covers the list, so go back to it.
+  await peek.getByRole('link', { name: 'Back' }).tap();
   await expect(inboxRow(page, ship)).toContainText('ready to merge');
   const got = ((await (await fetch(`${a.url}api/v1/ships`)).json()) as { ships: ShipJSON[] }).ships.find((s) => s.session === ship.session);
   expect(got?.status).toBe('moored');
