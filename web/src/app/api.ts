@@ -6,6 +6,16 @@ export interface Dock {
   executable_found: boolean;
   warnings: string[];
 }
+export interface FleetChat {
+  harness: string;
+  model: string;
+  effort: string;
+  context_threshold: number | 'never';
+  on: boolean;
+  off_reason: string;
+  /** The harnesses this fleet's chat can run in; empty without a Claude Code dock. */
+  harnesses: string[];
+}
 export interface Fleet {
   key: string;
   name: string;
@@ -18,6 +28,7 @@ export interface Fleet {
   clone_root: string;
   can_launch: boolean;
   docks: Dock[];
+  chat: FleetChat;
 }
 
 export type ShipStatus = 'needs_you' | 'underway' | 'moored' | 'anchored' | 'sailing_off';
@@ -146,6 +157,7 @@ const fleetsOf = (body: { fleets?: Fleet[] | null }): Fleet[] =>
     owners: f.owners ?? [],
     wake_reviewers: f.wake_reviewers ?? [],
     docks: (f.docks ?? []).map((d) => ({ ...d, warnings: d.warnings ?? [] })),
+    chat: { ...f.chat, harnesses: f.chat?.harnesses ?? [] },
   }));
 
 export async function fetchFleets(): Promise<Fleet[]> {
@@ -236,7 +248,7 @@ export const removeSource = (key: string) => call<unknown>('DELETE', src(key));
 export const addSource = (plugin: string, fleet: string) => call<Source>('POST', '/sources', { plugin, fleet });
 
 /** Saves the fleet fields in the body; the server answers the new config view. */
-export async function saveFleet(key: string, body: Partial<Pick<Fleet, 'search_roots' | 'owners' | 'wake_reviewers' | 'clone_root' | 'color'>>): Promise<Result<Fleet[]>> {
+export async function saveFleet(key: string, body: Partial<Pick<Fleet, 'search_roots' | 'owners' | 'wake_reviewers' | 'clone_root' | 'color'>> | { chat: Partial<Omit<FleetChat, 'on' | 'off_reason' | 'harnesses'>> }): Promise<Result<Fleet[]>> {
   const r = await call<{ fleets?: Fleet[] | null }>('PUT', `/fleets/${encodeURIComponent(key)}`, body);
   return r.ok ? { ok: true, data: fleetsOf(r.data) } : r;
 }

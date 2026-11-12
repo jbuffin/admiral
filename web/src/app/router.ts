@@ -68,7 +68,7 @@ export function peekOf(path: string): PeekTarget | null {
   }
 }
 
-const PREFERENCES_PAGES = ['fleet', 'sources', 'capabilities', 'usage', 'all-usage', 'remote'] as const;
+const PREFERENCES_PAGES = ['fleet', 'admiralbot', 'sources', 'capabilities', 'usage', 'all-usage', 'remote'] as const;
 
 const GLOBAL_PAGES: string[] = ['remote', 'all-usage'];
 
@@ -88,7 +88,9 @@ export const fleetPath = (fleetKey: string) => `/app/preferences/${encodeURIComp
 
 export const usagePath = (fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/usage`;
 
-export const capabilitiesPath =(fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/capabilities`;
+export const chatSettingsPath = (fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/admiralbot`;
+
+export const capabilitiesPath = (fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/capabilities`;
 
 /** The fleet key a Preferences path names, if any. */
 export function preferencesFleet(path: string): string | null {

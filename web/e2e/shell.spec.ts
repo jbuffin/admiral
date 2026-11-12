@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { HOME, WORK, holds, boatOf, boatReceived, boatSays, changeFile, changesOf, chip, diffOf, expectSeededTurn, flotilla, gitCheckout, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason } from './shell';
+import { HOME, WORK, holds, boatOf, boatReceived, boatSays, changeFile, changesOf, chip, diffOf, expectSeededTurn, flotilla, gitCheckout, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays } from './shell';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -861,4 +861,102 @@ test.describe('a shell that does not match the server', () => {
     await expect.poll(() => probed).toBeGreaterThan(0);
     await holds(() => loads.length === 1, 'the shell reloaded');
   });
+
+});
+
+// The fleets: harbor (Harborlight) and lagoon (Lagoonside) have their own AdmiralBot; alpha (Homeport) has no Claude Code dock.
+test("the Chat surface shows the fleet's AdmiralBot history beside the Inbox rail, starts a new chat that keeps the history, answers a question in place, and shows only the shown fleet's chat", async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true, chat: true });
+  chatSays(admiral, 'harbor', [line.user('Where are the ships'), line.assistant('Two are **afloat**.'), line.assistant(HOSTILE)]);
+  chatSays(admiral, 'lagoon', [line.user('Is the lagoon calm'), line.assistant('Glass flat.')]);
+  await admiral.start({ env: withFakeGh(admiral) });
+  const watch = watchPage(page, admiral.url);
+  const login = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-login' });
+  seedInboxItem(admiral, login.session, {
+    id: 'q-port',
+    kind: 'question',
+    title: 'Which port should the login use?',
+    question: { questions: [{ id: 'p', text: 'Which port should the login use?', options: [{ label: '80' }, { label: '8080' }] }] },
+  });
+
+  await page.goto(admiral.url + 'app/chat?fleet=harbor');
+  const main = page.getByRole('main');
+  await expect(page.getByRole('heading', { name: 'AdmiralBot · Harborlight fleet' })).toBeVisible();
+  // Opening the chat starts it; the history arrives from its transcript, oldest first, AdmiralBot's text as markdown and never as HTML.
+  await expect(main).toContainText('Where are the ships');
+  await expect(main.locator('strong', { hasText: 'afloat' })).toBeVisible();
+  await expect(main).toContainText(HOSTILE);
+  expect(await page.evaluate(() => (window as unknown as { __xss?: number }).__xss)).toBeUndefined();
+  await expect(main).not.toContainText('Is the lagoon calm');
+  await expect(main.getByRole('button', { name: /open terminal/i })).toHaveCount(0);
+
+  // The Inbox rail sits beside the conversation with the ships' items from every fleet.
+  await expect(main.getByText('Inbox · All fleets · oldest first')).toBeVisible();
+  await expect(main.getByRole('listitem').filter({ hasText: login.name })).toContainText('Which port should the login use?');
+
+  // The composer sends to this fleet's chat only.
+  const box = main.getByRole('textbox', { name: 'Message AdmiralBot' });
+  await expect(box).toHaveAttribute('placeholder', 'Ask AdmiralBot');
+  await box.fill('How many are underway?');
+  await main.getByRole('button', { name: 'Send', exact: true }).tap();
+  await expect.poll(() => chatReceived(admiral, 'harbor')).toContain('How many are underway?');
+  expect(chatReceived(admiral, 'lagoon')).not.toContain('How many are underway?');
+  // Claude Code records the sent line in its transcript, and it joins the thread live.
+  chatSays(admiral, 'harbor', [line.user('How many are underway?')]);
+  await expect(main).toContainText('How many are underway?');
+
+  // A question AdmiralBot asked is a card in the conversation, answered in place.
+  chatAsks(admiral, 'harbor', 'q1', 'Which panel?', ['Freeform', 'Work queue']);
+  await expect(main).toContainText('Which panel?');
+  await main.getByText('Freeform', { exact: true }).tap();
+  await main.getByRole('button', { name: 'Send answers' }).tap();
+  await expect(main).toContainText('You answered: Freeform');
+  await expect.poll(() => chatAnswerFile(admiral, 'harbor', 'q1')?.answers['1']?.choice).toBe('Freeform');
+
+  // A question still open when the chat starts anew is withdrawn: shown, quiet, with no controls.
+  chatAsks(admiral, 'harbor', 'q2', 'Which branch?', ['main', 'next']);
+  await expect(main).toContainText('Which branch?');
+
+  // New chat adds a marker; the earlier messages stay above it, and what comes after lands below.
+  await main.getByRole('button', { name: 'New chat', exact: true }).tap();
+  await expect(main.getByText(/^New chat · /)).toHaveCount(1);
+  await expect(main).toContainText('Where are the ships');
+  await expect(main).toContainText('Withdrawn');
+  await expect(main.getByRole('button', { name: 'Send answers' })).toHaveCount(0);
+  chatCleared(admiral, 'harbor');
+  chatSays(admiral, 'harbor', [line.user('After the reset')], true);
+  await expect(main).toContainText('After the reset');
+  const order = await main.innerText();
+  expect(order.indexOf('Where are the ships')).toBeLessThan(order.search(/New chat · /));
+  expect(order.search(/New chat · /)).toBeLessThan(order.indexOf('After the reset'));
+  await page.reload();
+  await expect(main.getByText(/^New chat · /)).toHaveCount(1);
+  await expect(main).toContainText('Where are the ships');
+
+  // Another fleet's chat shows its own messages and none of Harborlight's.
+  await switcher(page, 'Harborlight').click();
+  await page.getByRole('menu').getByRole('menuitemradio', { name: 'Lagoonside' }).click();
+  await expect(page.getByRole('heading', { name: 'AdmiralBot · Lagoonside fleet' })).toBeVisible();
+  await expect(main).toContainText('Is the lagoon calm');
+  await expect(main).toContainText('Glass flat.');
+  await expect(main).not.toContainText('Where are the ships');
+  await expect(main).not.toContainText('After the reset');
+  await expect(main.getByText(/^New chat · /)).toHaveCount(0);
+
+  // A fleet with no Claude Code dock has its chat off: the reason and a link to its settings, no composer.
+  await switcher(page, 'Lagoonside').click();
+  await page.getByRole('menu').getByRole('menuitemradio', { name: HOME }).click();
+  await expect(main).toContainText(/no Claude Code dock/i);
+  await expect(main.getByRole('textbox', { name: 'Message AdmiralBot' })).toHaveCount(0);
+  await main.getByRole('link', { name: /AdmiralBot/ }).tap();
+  await expect(page).toHaveURL(/\/app\/preferences\/alpha\/admiralbot/);
+
+  // A rail row opens the item in Peek on the Inbox surface.
+  await page.goto(admiral.url + 'app/chat?fleet=harbor');
+  await main.getByRole('listitem').filter({ hasText: login.name }).getByRole('link').tap();
+  await expect(page).toHaveURL(new RegExp(`/app/inbox/${encodeURIComponent(login.session)}/item/q-port`));
+
+  expect(watch.errors).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.unversioned()).toEqual([]);
 });

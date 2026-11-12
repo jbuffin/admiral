@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { HOME, HOSTILE, TS_LOGIN, TS_NAME, WORK, fakeTailscale, setRemote, stubClipboard, boatReceived, changeFile, changesOf, chip, diffOf, expectSeededTurn, gitCheckout, holds, interruptButton, launchCrew, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedInboxItem, seedTurn, sendButton, sentBubble, setReason, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh } from './shell';
+import { HOME, HOSTILE, TS_LOGIN, TS_NAME, WORK, fakeTailscale, setRemote, stubClipboard, boatReceived, changeFile, changesOf, chip, diffOf, expectSeededTurn, gitCheckout, holds, interruptButton, launchCrew, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedInboxItem, seedTurn, sendButton, sentBubble, setReason, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, chatReceived, chatSays } from './shell';
 
 const tab = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
 
@@ -247,4 +247,68 @@ test('on the phone, Turn off Tailscale mode asks first', async ({ page, admiral 
   const section = page.getByRole('group', { name: 'Tailscale' });
   await section.getByRole('button', { name: 'Turn off', exact: true }).tap();
   await expect(page.getByRole('group', { name: 'Turn off Tailscale mode' }).getByRole('button', { name: 'Turn off Tailscale mode' })).toBeVisible();
+
+});
+
+test("on the phone, the Chat tab shows the fleet's AdmiralBot conversation and its composer without the Inbox rail, and a fleet with no Claude Code dock shows why its chat is off", async ({ page, admiral }) => {
+  seedFleets(admiral, { chat: true });
+  chatSays(admiral, 'harbor', [line.user('Where are the ships'), line.assistant('Two are **afloat**.')]);
+  await admiral.start();
+  const watch = watchPage(page, admiral.url);
+  await page.goto(admiral.url + 'app/inbox?fleet=harbor');
+  await tab(page, 'Chat').tap();
+  const main = page.getByRole('main');
+  await expect(page.getByRole('heading', { name: 'AdmiralBot · Harborlight fleet' })).toBeVisible();
+  await expect(main).toContainText('Where are the ships');
+  await expect(main.locator('strong', { hasText: 'afloat' })).toBeVisible();
+  await expect(main.getByText('Inbox · All fleets · oldest first')).toHaveCount(0);
+
+  const box = main.getByRole('textbox', { name: 'Message AdmiralBot' });
+  await box.fill('How many are underway?');
+  const send = main.getByRole('button', { name: 'Send', exact: true });
+  expect((await send.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await send.tap();
+  await expect.poll(() => chatReceived(admiral, 'harbor')).toContain('How many are underway?');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+  // The Inbox keeps its own tab.
+  await tab(page, 'Inbox').tap();
+  await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
+
+  await page.goto(admiral.url + 'app/chat?fleet=alpha');
+  await expect(main).toContainText(/no Claude Code dock/i);
+  await expect(main.getByRole('textbox', { name: 'Message AdmiralBot' })).toHaveCount(0);
+  expect(watch.errors).toEqual([]);
+});
+
+test("on the phone, a fleet's AdmiralBot page shows its harness, model, effort and refresh threshold, saves a change that survives a reload, and shows why a fleet with no Claude Code dock is off", async ({ page, admiral }) => {
+  seedFleets(admiral, { chat: true });
+  await admiral.start();
+  await page.goto(admiral.url + 'app/inbox');
+  await page.getByRole('button', { name: 'More', exact: true }).tap();
+  await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Preferences', exact: true }).tap();
+  const group = page.getByRole('navigation', { name: 'Preferences' }).getByRole('group', { name: 'Harborlight fleet' });
+  await group.getByRole('link', { name: 'AdmiralBot', exact: true }).tap();
+  await expect(page).toHaveURL(/\/app\/preferences\/harbor\/admiralbot/);
+  await expect(page.getByRole('heading', { name: 'AdmiralBot', exact: true })).toBeVisible();
+
+  const pick = (g: string, name: string) => page.getByRole('radiogroup', { name: g }).getByRole('radio', { name, exact: true });
+  await expect(pick('Harness', 'Claude')).toBeChecked();
+  await expect(pick('Model', 'Sonnet')).toBeChecked();
+  await expect(pick('Effort', 'Default')).toBeChecked();
+  await expect(pick('Refresh context at', '150K')).toBeChecked();
+  expect((await pick('Model', 'Opus').boundingBox())!.height).toBeGreaterThanOrEqual(44);
+
+  await pick('Model', 'Haiku').tap();
+  await pick('Effort', 'High').tap();
+  await pick('Refresh context at', 'Never').tap();
+  await Promise.all([page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().includes('/fleets/harbor')), page.getByRole('button', { name: 'Save', exact: true }).tap()]);
+  await page.reload();
+  await expect(pick('Model', 'Haiku')).toBeChecked();
+  await expect(pick('Effort', 'High')).toBeChecked();
+  await expect(pick('Refresh context at', 'Never')).toBeChecked();
+
+  await page.goto(admiral.url + 'app/preferences/alpha/admiralbot');
+  await expect(page.getByRole('main')).toContainText(/no Claude Code dock/i);
+  await expect(page.getByRole('radiogroup', { name: 'Harness' })).toHaveCount(0);
 });

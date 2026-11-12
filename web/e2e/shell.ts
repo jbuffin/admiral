@@ -54,7 +54,7 @@ export function probeableClaude(a: Admiral) {
 }
 
 /** Zulu (Westwind) comes first, alpha (Homeport) second; `live` makes the docks launchable and gives zulu the orders; `claude` replaces zulu's claude dock. */
-export function seedFleets(a: Admiral, opts: { live?: boolean; claude?: { executable: string; env: Record<string, string> } } = {}) {
+export function seedFleets(a: Admiral, opts: { live?: boolean; chat?: boolean; claude?: { executable: string; env: Record<string, string> } } = {}) {
   const live = !!opts.live;
   const config: Record<string, unknown> = {
     version: 1,
@@ -63,6 +63,10 @@ export function seedFleets(a: Admiral, opts: { live?: boolean; claude?: { execut
       alpha: { name: HOME, search_roots: [a.home], codex: dock(a, 'alpha', 'codex', live), copilot: dock(a, 'alpha', 'copilot', live) },
     },
   };
+  if (opts.chat) {
+    const fleets = config.fleets as Record<string, unknown>;
+    for (const f of CHAT_FLEETS) fleets[f.key] = { name: f.name, search_roots: [a.home], claude: chatDock(a, f.key) };
+  }
   if (live) {
     config.sources = { orders: a.ordersSource('orders', 'Orders', { fleet: 'zulu' }) };
     a.flags('orders').orders({ orders: ORDERS });
@@ -80,6 +84,71 @@ export function seedFleets(a: Admiral, opts: { live?: boolean; claude?: { execut
     writeFileSync(join(a.home, 'logos', `${h}.svg`), '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>');
   }
 }
+
+/** The fleets `seedFleets(a, { chat: true })` adds after zulu and alpha: each has a fake Claude Code dock of its own for its AdmiralBot, so two chats never share a transcript or a cue. */
+export const CHAT_FLEETS = [
+  { key: 'harbor', name: 'Harborlight' },
+  { key: 'lagoon', name: 'Lagoonside' },
+] as const;
+export type ChatFleet = (typeof CHAT_FLEETS)[number]['key'];
+
+const chatConfigDir = (a: Admiral, fleet: string) => join(a.home, 'identity', `${fleet}-claude`);
+
+/** A chat's transcript: Claude Code records it under the dock's config dir, which the SessionStart cue names to Admiral. */
+const chatTranscriptPath = (a: Admiral, fleet: string, name: string) => join(chatConfigDir(a, fleet), 'projects', 'p', `${name}.jsonl`);
+
+function chatDock(a: Admiral, fleet: string) {
+  const cue = join(a.home, `chat-cue-${fleet}`);
+  const startup = JSON.stringify({ transcript_path: chatTranscriptPath(a, fleet, 't1'), source: 'startup' });
+  const cleared = JSON.stringify({ transcript_path: chatTranscriptPath(a, fleet, 't2'), source: 'clear' });
+  // A New chat clears the context: the second transcript starts once the test touches go-clear.
+  writeFileSync(cue, ['record', 'bracketedpaste', `event SessionStart ${startup}`, 'wait go-clear', `event SessionStart ${cleared}`].join('\n') + '\n');
+  mkdirSync(join(chatConfigDir(a, fleet), 'projects', 'p'), { recursive: true });
+  return { executable: fakeClaude, env: { FAKE_RECORD_DIR: join(a.home, 'rec'), FAKE_CUE: cue, CLAUDE_CONFIG_DIR: chatConfigDir(a, fleet) } };
+}
+
+/** Writes lines to a fleet's chat transcript before or after the chat starts; `second` is the transcript a New chat moves to. */
+export function chatSays(a: Admiral, fleet: ChatFleet, lines: TranscriptLine[], second = false) {
+  const path = chatTranscriptPath(a, fleet, second ? 't2' : 't1');
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, lines.map((l) => JSON.stringify(l) + '\n').join(''));
+}
+
+/** The chat's session and the directory its pane records in. */
+export const chatSession = (fleet: ChatFleet) => `_chat-${fleet}`;
+const chatRecord = (a: Admiral, fleet: ChatFleet) => join(a.home, 'rec', chatSession(fleet));
+
+/** Lets the chat's fake Claude Code carry on after a New chat's /clear, as the real one starts its next transcript. */
+export function chatCleared(a: Admiral, fleet: ChatFleet) {
+  mkdirSync(chatRecord(a, fleet), { recursive: true });
+  writeFileSync(join(chatRecord(a, fleet), 'go-clear'), '');
+}
+
+/** What was typed into the fleet's chat pane, as the harness received it. */
+export const chatReceived = (a: Admiral, fleet: ChatFleet) => {
+  try {
+    return readFileSync(join(chatRecord(a, fleet), 'stdin'), 'utf8').replaceAll('\x1b[200~', '').replaceAll('\x1b[201~', '');
+  } catch {
+    return '';
+  }
+};
+
+/** A question AdmiralBot asked, as `admiral chat ask` leaves it. */
+export function chatAsks(a: Admiral, fleet: ChatFleet, id: string, title: string, options: string[]) {
+  const dir = join(a.home, 'chat', fleet, 'questions');
+  mkdirSync(dir, { recursive: true });
+  const question = { questions: [{ id: '1', text: title, multi: false, options: options.map((label) => ({ label })) }] };
+  writeFileSync(join(dir, `${id}.json`), JSON.stringify({ version: 1, id, kind: 'question', created: new Date().toISOString(), title, question }));
+}
+
+/** The answer file the chat's question was answered with, if any. */
+export const chatAnswerFile = (a: Admiral, fleet: ChatFleet, id: string) => {
+  try {
+    return JSON.parse(readFileSync(join(a.home, 'chat', fleet, 'questions', `${id}.answer.json`), 'utf8')) as { answers: Record<string, { choice?: string }> };
+  } catch {
+    return undefined;
+  }
+};
 
 /** What the page asks for and what it logs: Admiral serves everything itself, over /api/v1, without errors. */
 export function watchPage(page: Page, server: string) {

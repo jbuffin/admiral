@@ -15,9 +15,9 @@ import { emptyLine, type Surface } from './surfaces';
 const ANSWER = new Set(['question', 'stop']);
 
 // Below this width (a portrait iPad) the shell's sidebar, the list and a usable Peek no longer fit side by side.
-const STACKED_QUERY = '(max-width: 1099px)';
+export const STACKED_QUERY = '(max-width: 1099px)';
 
-function useStacked(phone: boolean) {
+export function useStacked(phone: boolean) {
   const mq = matchMedia(STACKED_QUERY);
   const [narrow, setNarrow] = useState(mq.matches);
   useEffect(() => {
@@ -33,7 +33,7 @@ const targetOf = (e: Entry) => ({ session: e.session, ...(e.type === 'merge' ? {
 // What an entry asks of you: an answer to a stop, a question or a merge; the rest is a review.
 const needsAnswer = (e: Entry) => e.type !== 'item' || ANSWER.has(e.item!.kind);
 
-function Row({ e, now, phone, selected, fold }: { e: Entry; now: number; phone: boolean; selected: boolean; fold: (text: string) => void }) {
+export function Row({ e, now, phone, selected, fold }: { e: Entry; now: number; phone: boolean; selected: boolean; fold: (text: string) => void }) {
   const [open, setOpen] = useState(false);
   const [dismissing, setDismissing] = useState(false);
   const [error, setError] = useState('');
@@ -120,8 +120,8 @@ function Row({ e, now, phone, selected, fold }: { e: Entry; now: number; phone: 
   );
 }
 
-export function InboxPanel({ surface, title, phone }: { surface: Surface; title: boolean; phone: boolean }) {
-  const stacked = useStacked(phone);
+/** The inbox queue as the list and the Chat surface's rail show it: synced to each push, with its folds timed out. */
+export function useInboxQueue() {
   const queue = useRef(createInboxQueue()).current;
   const synced = useRef<unknown[]>([]);
   const [, setRev] = useState(0);
@@ -146,6 +146,12 @@ export function InboxPanel({ surface, title, phone }: { surface: Surface; title:
     }, 1000);
     return () => clearInterval(t);
   }, [anyFolded]);
+  return { queue, entries, now, rerender: () => setRev((n) => n + 1) };
+}
+
+export function InboxPanel({ surface, title, phone }: { surface: Surface; title: boolean; phone: boolean }) {
+  const stacked = useStacked(phone);
+  const { queue, entries, now, rerender } = useInboxQueue();
 
   const groups = [
     { id: 'answer', title: 'Needs an answer', rows: entries.filter(needsAnswer) },
@@ -169,7 +175,7 @@ export function InboxPanel({ surface, title, phone }: { surface: Surface; title:
 
   const foldKey = (k: string, text: string) => {
     queue.fold(k, text, Date.now(), known?.key === k ? known : undefined);
-    setRev((n) => n + 1);
+    rerender();
   };
   const detail = open && !closing ? <Peek key={open.key} entry={open} fold={(text) => foldKey(open.key, text)} /> : null;
 
