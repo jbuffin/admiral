@@ -51,6 +51,11 @@ describe('rowVerb', () => {
     expect(rowVerb(itemEntry({ kind: 'findings', findings: { cards: [{}] } }))).toBe('sent 1 finding card');
   });
 
+  it('words the two crew kinds', () => {
+    expect(rowVerb(itemEntry({ kind: 'crew_notes', session: '_admiral', name: 'Admiral' }))).toBe('proposes crew notes');
+    expect(rowVerb(itemEntry({ kind: 'crew_member', session: '_admiral', name: 'Admiral' }))).toBe('asks to keep a crew member');
+  });
+
   it('words a stop by its reason', () => {
     expect(rowVerb(stopEntry('permission:Bash'))).toBe('wants to run Bash');
     expect(rowVerb(stopEntry('stop'))).toBe('finished and is waiting');

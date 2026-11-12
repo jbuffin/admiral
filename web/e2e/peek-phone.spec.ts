@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { crewNote, seedAdHocMember, seedCrew } from './crew';
 import { expect, test } from './fixtures';
 import { addGitHubSource, appendLines, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, rowLink, seedFleets, seedInboxItem, setReason, setState, readyStackMergesFromPeek, withFakeGh } from './shell';
 
@@ -85,4 +86,26 @@ test('on the phone, a ready stack shows Ready to merge, and Merge in Peek merges
   await admiral.start({ env: mooringEnv(admiral) });
 
   await readyStackMergesFromPeek(page, admiral);
+});
+
+test('on the phone, a crew member item shows its whole definition and Keep and Drop stay reachable', async ({ page, admiral }) => {
+  seedCrew(admiral);
+  seedAdHocMember(admiral, 'deckhand', { id: 'crew-m1', run: 'run-c', notes: [crewNote('n1', 'deckhand', { note: 'Deckhand swabs before it paints' })], lines: 60 });
+  await admiral.start();
+  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
+  await listRow(page, 'Keep ad hoc member deckhand?').getByRole('link').tap();
+  const peek = peekOf(page);
+  await expect(peek).toContainText('Work as deckhand; swab first.');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  const last = peek.getByText('Rule 60 of the deck.');
+  await last.scrollIntoViewIfNeeded();
+  await expect(last).toBeInViewport();
+  for (const name of ['Keep', 'Drop']) {
+    const button = peek.getByRole('button', { name, exact: true });
+    await button.scrollIntoViewIfNeeded();
+    await expect(button).toBeInViewport();
+    expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  }
+  await peek.getByRole('button', { name: 'Drop', exact: true }).tap();
+  await expect(peek.getByRole('button', { name: 'Drop deckhand' })).toBeInViewport();
 });

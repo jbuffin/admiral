@@ -1,7 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
+import { crewNote, seedAdHocMember, seedCrew } from './crew';
 import { addGitHubSource, appendLines, HOSTILE, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, restCalls, rowLink, seedFleets, seedInboxItem, seedReviewTarget, setReason, setState, staleMergeTokenInPeek, readyStackMergesFromPeek, viewTab, withFakeGh } from './shell';
 
 const peekOf = (page: Page) => page.getByRole('region', { name: 'Peek' });
@@ -448,4 +449,113 @@ test('a Merge the server refuses as 403 says Admiral restarted, offers a reload,
   await admiral.start({ env: mooringEnv(admiral) });
 
   await staleMergeTokenInPeek(page, admiral);
+});
+
+test('Peek answers a crew notes item: keep one note, edit another to repo scope, Send writes only those, and the item folds', async ({ page, admiral }) => {
+  seedCrew(admiral);
+  await admiral.start();
+  seedInboxItem(admiral, '_admiral', {
+    id: 'crew-n1',
+    kind: 'crew_notes',
+    title: 'Crew notes from Dory',
+    crew_notes: {
+      fleet: 'zulu',
+      ship: 'Dory',
+      run_date: '2026-11-12',
+      notes: [crewNote('n1', 'scout', { role: 'scribe', note: 'Scout dates every entry' }), crewNote('n2', 'ada', { note: 'Ada runs make check first', replaces: 'ada reads the grammar first' })],
+    },
+  });
+  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
+  await itemRow(page, 'Crew notes from Dory').getByRole('link').tap();
+  const peek = peekOf(page);
+  await expect(peek).toContainText('from Dory, 2026-11-12');
+  await expect(peek).toContainText('Scout dates every entry');
+  await expect(peek).toContainText('Replaces:');
+  await expect(peek).toContainText('ada reads the grammar first');
+  await expect(peek).not.toContainText('This ship is gone.');
+  await expect(peek.getByRole('link', { name: 'Open bridge' })).toHaveCount(0);
+  const card1 = peek.getByRole('region', { name: 'Note card 1' });
+  const card2 = peek.getByRole('region', { name: 'Note card 2' });
+  const send = peek.getByRole('button', { name: 'Send', exact: true });
+  await expect(peek).toContainText('0 of 2 decided');
+  await expect(send).toBeDisabled();
+  await page.keyboard.press('1');
+  await expect(peek).toContainText('0 of 2 decided');
+
+  await card1.getByRole('button', { name: 'Keep', exact: true }).tap();
+  await card2.getByRole('button', { name: 'Edit', exact: true }).tap();
+  await expect(send).toBeDisabled();
+  const text = card2.getByRole('textbox', { name: /^Edit note/ });
+  await text.fill('');
+  await expect(card2.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await text.fill('Ada runs make check before anything');
+  await card2.getByRole('radio', { name: 'Repo', exact: true }).or(card2.getByRole('button', { name: 'Repo', exact: true })).tap();
+  const repo = card2.getByRole('textbox', { name: /repo/i });
+  await repo.fill('acme');
+  await expect(card2.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await repo.fill('acme/api');
+  await card2.getByRole('button', { name: 'Save', exact: true }).tap();
+  await expect(peek).toContainText('2 of 2 decided');
+  await expect(send).toBeEnabled();
+
+  const posted = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/inbox/_admiral/crew-n1/crew-notes');
+  await send.tap();
+  expect((await posted).postDataJSON()).toEqual({
+    notes: { n1: { decision: 'keep' }, n2: { decision: 'edit', note: 'Ada runs make check before anything', scope: 'repo', repo: 'acme/api' } },
+  });
+  await expect(peekOf(page)).toHaveCount(0);
+  await expect(itemRow(page, 'Crew notes from Dory')).toHaveCount(0, { timeout: 15_000 });
+  const memory = join(admiral.home, 'fleets', 'zulu', 'crew', 'memory');
+  await expect.poll(() => readFileSync(join(memory, 'scout', 'fleet.md'), 'utf8')).toContain('- 2026-11-12 (Dory): Scout dates every entry');
+  expect(readFileSync(join(memory, 'ada', 'repos', 'acme', 'api.md'), 'utf8')).toContain('- 2026-11-12 (Dory): Ada runs make check before anything');
+  expect(readFileSync(join(memory, 'ada', 'fleet.md'), 'utf8')).not.toContain('make check');
+});
+
+test('Peek shows an ad hoc member whole, 1 asks to keep it, the confirm adds it to the fleet crew, and the Crew page lists it', async ({ page, admiral }) => {
+  seedCrew(admiral);
+  const adHoc = seedAdHocMember(admiral, 'deckhand', { id: 'crew-m1', run: 'run-c', notes: [crewNote('n1', 'deckhand', { note: 'Deckhand swabs before it paints' })] });
+  await admiral.start();
+  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
+  await itemRow(page, 'Keep ad hoc member deckhand?').getByRole('link').tap();
+  const peek = peekOf(page);
+  await expect(peek).toContainText('from Dory, 2026-11-12');
+  await expect(peek).toContainText('run-c');
+  await expect(peek).toContainText('Work as deckhand; swab first.');
+  await expect(peek).toContainText('Deckhand swabs before it paints');
+  await expect(peek).not.toContainText('This ship is gone.');
+  await expect(peek.getByRole('link', { name: 'Open bridge' })).toHaveCount(0);
+
+  let posts = 0;
+  page.on('request', (r) => r.method() === 'POST' && posts++);
+  await page.keyboard.press('1');
+  await expect(peek).toContainText('every later run');
+  expect(posts).toBe(0);
+  const posted = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/inbox/_admiral/crew-m1/crew-member');
+  await peek.getByRole('button', { name: 'Keep deckhand' }).tap();
+  expect((await posted).postDataJSON()).toEqual({ decision: 'keep' });
+  await expect(peekOf(page)).toHaveCount(0);
+  await expect(itemRow(page, 'Kept deckhand')).toBeVisible();
+  await expect(itemRow(page, 'Keep ad hoc member deckhand?')).toHaveCount(0, { timeout: 15_000 });
+  expect(existsSync(adHoc)).toBe(false);
+  expect(readFileSync(join(admiral.home, 'fleets', 'zulu', 'crew', 'memory', 'deckhand', 'fleet.md'), 'utf8')).toContain('Deckhand swabs before it paints');
+
+  await page.goto(admiral.url + 'app/crew?fleet=zulu');
+  await expect(page.getByRole('main').getByRole('region', { name: /^Fleet\b/ }).getByRole('listitem').filter({ hasText: 'Pick for the deck.' })).toBeVisible();
+});
+
+test('a member Keep the server refuses shows its error and leaves the item', async ({ page, admiral }) => {
+  seedCrew(admiral);
+  const adHoc = seedAdHocMember(admiral, 'deckhand', { id: 'crew-m2', run: 'run-d', notes: [] });
+  await admiral.start();
+  appendFileSync(adHoc, 'Edited after the run.\n');
+  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
+  await itemRow(page, 'Keep ad hoc member deckhand?').getByRole('link').tap();
+  const peek = peekOf(page);
+  await peek.getByRole('button', { name: 'Keep', exact: true }).tap();
+  await peek.getByRole('button', { name: 'Keep deckhand' }).tap();
+  await expect(peek.getByRole('alert')).toContainText('nothing was changed');
+  await expect(peek.getByRole('button', { name: 'Keep', exact: true }).or(peek.getByRole('button', { name: 'Keep deckhand' }))).toBeVisible();
+  expect(existsSync(join(admiral.home, 'fleets', 'zulu', 'crew', 'deckhand.md'))).toBe(false);
+  expect(existsSync(adHoc)).toBe(true);
+  expect(existsSync(join(admiral.home, 'inbox', '_admiral', 'crew-m2.answer.json'))).toBe(false);
 });

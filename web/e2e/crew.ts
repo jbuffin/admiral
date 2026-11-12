@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Admiral } from './fixtures';
-import { seedFleets } from './shell';
+import { seedFleets, seedInboxItem } from './shell';
 
 const member = (name: string, role: string, pick: string, extra = '') => `---\nname: ${name}\nrole: ${role}\n${extra}pick-me-when: ${pick}\n---\n\nWork as ${name}.\n`;
 
@@ -43,4 +43,23 @@ export function seedCrew(a: Admiral) {
   write(join(mem, 'ada', 'repos', 'acme', 'api.md'), '- 2026-11-10 (run-b): ada runs make check\n- 2026-11-10 (run-b): ada keeps handlers thin\n');
   write(join(mem, 'bosun', 'fleet.md'), '- 2026-11-10 (run-a): bosun ties a bowline\n');
   write(join(mem, 'cook', 'fleet.md'), '- 2026-11-10 (run-a): cook salts early\n');
+}
+
+export const crewNote = (id: string, member: string, extra: Record<string, unknown> = {}) => ({ id, member, role: 'implementer', scope: 'fleet', note: `Fact ${id}`, replaces: null, ...extra });
+
+/**
+ * An ad hoc member a run scaffolded under zulu's crew, and the crew_member item that asks to keep it; returns the file's path.
+ * Call after `seedCrew`, before `start`.
+ */
+export function seedAdHocMember(a: Admiral, member: string, opts: { id: string; run: string; notes: unknown[]; lines?: number }): string {
+  const path = join(a.home, 'fleets', 'zulu', 'crew', 'ad-hoc', `${member}.md`);
+  const definition = `---\nname: ${member}\nrole: implementer\nad-hoc: true\nad-hoc-run: ${opts.run}\npick-me-when: Pick for the deck.\n---\n\nWork as ${member}; swab first.\n${Array.from({ length: opts.lines ?? 0 }, (_, i) => `\nRule ${i + 1} of the deck.\n`).join('')}`;
+  write(path, definition);
+  seedInboxItem(a, '_admiral', {
+    id: opts.id,
+    kind: 'crew_member',
+    title: `Keep ad hoc member ${member}?`,
+    crew_member: { fleet: 'zulu', ship: 'Dory', run_date: '2026-11-12', member, role: 'implementer', ad_hoc_run: opts.run, definition, notes: opts.notes },
+  });
+  return path;
 }
