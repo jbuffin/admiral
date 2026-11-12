@@ -341,14 +341,31 @@ func TestChatFleets_TwoChatsStayApart(t *testing.T) {
 		if ra.env["ADMIRAL_CHAT_FLEET"] != "alpha" || rb.env["ADMIRAL_CHAT_FLEET"] != "beta" {
 			t.Errorf("ADMIRAL_CHAT_FLEET = %q and %q, want each chat's own fleet", ra.env["ADMIRAL_CHAT_FLEET"], rb.env["ADMIRAL_CHAT_FLEET"])
 		}
-		for _, f := range []*chatDock{a, b} {
-			skill := filepath.Join(f.dir(), ".claude", "skills", "admiralbot", "SKILL.md")
-			if fi, err := os.Lstat(skill); err != nil || !fi.Mode().IsRegular() {
-				t.Errorf("%s: %v, want the fleet's own skill", skill, err)
+		for _, c := range []struct {
+			dock *chatDock
+			rec  record
+			key  string
+		}{{a, ra, "alpha"}, {b, rb, "beta"}} {
+			cfg := filepath.Join(c.dock.dir(), "mcp.json")
+			if !hasPair(c.rec.argv, "--mcp-config", cfg) {
+				t.Errorf("%s's argv = %q, want --mcp-config %s, its own", c.key, c.rec.argv, cfg)
+			}
+			raw, err := os.ReadFile(cfg)
+			if err != nil {
+				t.Errorf("%s: %v, want the fleet's own MCP config", cfg, err)
+				continue
+			}
+			var m struct {
+				Servers map[string]struct {
+					Env map[string]string `json:"env"`
+				} `json:"mcpServers"`
+			}
+			if err := json.Unmarshal(raw, &m); err != nil || m.Servers["admiral"].Env["ADMIRAL_CHAT_FLEET"] != c.key {
+				t.Errorf("%s = %s, want the admiral server with ADMIRAL_CHAT_FLEET %s", cfg, raw, c.key)
 			}
 		}
 		if _, err := os.Lstat(filepath.Join(w.home, "chat", ".claude")); err == nil {
-			t.Errorf("chat/.claude exists: the skill lives under chat/<fleet>/")
+			t.Errorf("chat/.claude exists: a chat's files live under chat/<fleet>/")
 		}
 	})
 
