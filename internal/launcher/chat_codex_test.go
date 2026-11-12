@@ -56,9 +56,9 @@ func newCodexChatRun(t *testing.T) *codexChat {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("CODEX_HOME", engineer)
 	for rel, body := range map[string]string{
-		"auth.json":                  codexAuthText,
-		"config.toml":                "[mcp_servers.engineer_only]\ncommand = \"/bin/false\"\n",
-		"plugins/cache/p/plugin.txt": "engineer plugin",
+		"auth.json":                   codexAuthText,
+		"config.toml":                 "[mcp_servers.engineer_only]\ncommand = \"/bin/false\"\n",
+		"plugins/cache/p/plugin.txt":  "engineer plugin",
 		"sessions/2026/rollout.jsonl": "{}\n",
 	} {
 		p := filepath.Join(engineer, rel)

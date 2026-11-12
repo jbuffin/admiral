@@ -24,10 +24,14 @@ var (
 		toolCall     func(server, tool string) string
 		serverLoaded func(name string) string
 	}{
-		reply:        func(text string) string { return `{"type":"item.completed","item":{"type":"agent_message","text":"` + text + `"}}` },
-		shell:        `{"type":"item.completed","item":{"type":"command_execution","command":"touch x","status":"completed"}}`,
-		webSearch:    `{"type":"item.completed","item":{"type":"web_search","query":"x"}}`,
-		toolCall:     func(server, tool string) string { return `{"type":"item.completed","item":{"type":"mcp_tool_call","server":"` + server + `","tool":"` + tool + `","status":"completed"}}` },
+		reply: func(text string) string {
+			return `{"type":"item.completed","item":{"type":"agent_message","text":"` + text + `"}}`
+		},
+		shell:     `{"type":"item.completed","item":{"type":"command_execution","command":"touch x","status":"completed"}}`,
+		webSearch: `{"type":"item.completed","item":{"type":"web_search","query":"x"}}`,
+		toolCall: func(server, tool string) string {
+			return `{"type":"item.completed","item":{"type":"mcp_tool_call","server":"` + server + `","tool":"` + tool + `","status":"completed"}}`
+		},
 		serverLoaded: func(name string) string { return `{"type":"mcp.server.loaded","server":"` + name + `"}` },
 	}
 	// codexProbeHomeFiles are the files besides the auth.json link a probe may put in its throwaway home.
