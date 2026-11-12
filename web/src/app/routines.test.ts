@@ -15,7 +15,12 @@ import {
   formOfRoutine,
   holdFireBanner,
   holdFireNote,
+  blankForm,
+  errorText,
+  lastRunText,
+  launchOnDock,
   noticeEntryLinks,
+  runTime,
   routineBody,
   runLine,
   type HoldFireState,
@@ -92,6 +97,15 @@ describe('a server 400 shows by the field it is about', () => {
     expect(errorField('the prompt is empty')).toBe('do');
     expect(errorField('autopilot is not proven on claude in fleet work: its guard has not passed')).toBe('do');
     expect(errorField('args: --dangerous is not allowed')).toBe('do');
+    expect(errorField('something else broke')).toBe('form');
+  });
+
+  it('reads the field through the prefix the server puts on every validation error', () => {
+    const real = 'invalid routine: when: the cron expression "0 0 30 2 *" never fires';
+    expect(errorField(real)).toBe('when');
+    expect(errorText(real)).toBe('when: the cron expression "0 0 30 2 *" never fires');
+    expect(errorField('invalid routine: name is required')).toBe('name');
+    expect(errorField('invalid routine: the prompt is empty')).toBe('do');
     expect(errorField('something else broke')).toBe('form');
   });
 });
@@ -233,5 +247,30 @@ describe('the migration notice links to Automate…', () => {
   it('has none on a plain note', () => {
     expect(noticeEntryLinks({ body: 'plain' })).toEqual([]);
     expect(noticeEntryLinks(undefined)).toEqual([]);
+  });
+});
+
+describe('the list row and the run time', () => {
+  const now = new Date(2026, 10, 12, 10, 0);
+  it('says how long ago a routine ran, or Never', () => {
+    expect(lastRunText(undefined, now)).toBe('Never');
+    expect(lastRunText({ at: new Date(2026, 10, 12, 8, 0).toISOString(), outcome: 'launched' }, now)).toBe('2 h ago');
+  });
+  it('writes a run time as the canvas does', () => {
+    expect(runTime(new Date(2026, 10, 12, 9, 38).toISOString(), now)).toBe('Today 09:38');
+    expect(runTime(new Date(2026, 10, 11, 17, 2).toISOString(), now)).toBe('Yesterday 17:02');
+    expect(runTime(new Date(2026, 10, 9, 8, 30).toISOString(), now)).toBe('Mon 08:30');
+    expect(runTime(new Date(2026, 9, 3, 8, 30).toISOString(), now)).toBe('Oct 3');
+  });
+  it('drops a model and an effort the new dock does not offer', () => {
+    const l = { ...blankForm().launch, harness: 'claude', dir: '/p', model: 'opus', effort: 'max' };
+    const moved = launchOnDock(l, 'codex');
+    expect(moved).toMatchObject({ harness: 'codex', dir: '', model: '' });
+    expect(moved.effort).toBe('');
+    expect(launchOnDock({ ...l, effort: 'high' }, 'claude').effort).toBe('high');
+  });
+  it('carries the entry\'s fleet in a notice link', () => {
+    const [l] = noticeEntryLinks({ entries: [{ key: 'gh', name: 'GitHub', panel: 'mine', fleet: 'work' }] });
+    expect(l.path).toContain('fleet=work');
   });
 });

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/server"
@@ -84,7 +85,25 @@ func (s *Service) serveList(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"routines": list})
+	out := make([]listed, len(list))
+	for i, rt := range list {
+		out[i].Routine = rt
+		if runs, err := s.Store.Recent(r.PathValue("key"), rt.ID, 1); err == nil && len(runs) > 0 {
+			out[i].LastRun = &lastRun{At: runs[0].At, Outcome: runs[0].Outcome}
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"routines": out})
+}
+
+// lastRun is the newest trigger record of a routine, for its row in the list.
+type lastRun struct {
+	At      time.Time `json:"at"`
+	Outcome Outcome   `json:"outcome"`
+}
+
+type listed struct {
+	Routine
+	LastRun *lastRun `json:"last_run,omitempty"`
 }
 
 func (s *Service) serveCreate(w http.ResponseWriter, r *http.Request) {

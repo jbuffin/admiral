@@ -263,7 +263,7 @@ Oldest `created` first. An item is its file's fields plus `session`, and `name`,
 
 A `crew_notes` item holds `crew_notes: {"fleet", "ship", "run_date", "notes": [{"id", "member", "role", "scope", "repo", "note", "replaces"}]}`. A `crew_member` item holds `crew_member: {"fleet", "ship", "run_date", "member", "role", "ad_hoc_run", "definition", "notes": [...]}`, where `definition` is the ad hoc file's text and the notes are that member's. `fleet` is the fleet key the ship was launched in. The answer files are `{"version": 1, "id", "kind", "answered", "notes": {"<note id>": {"decision", "note", "scope", "repo"}}}` for `crew_notes` and `{..., "decision", "file_removed"}` for `crew_member`.
 
-A migration notice also carries `notice.entries`: `[{"key", "name", "panel"}]`, one for each order source panel the old config held (`key` is the source key, `panel` its view id). The shell shows an Automate… link for each; a note already on disk has no `entries` and stays plain text.
+A migration notice also carries `notice.entries`: `[{"key", "name", "panel", "fleet"}]`, one for each order source panel the old config held (`key` is the source key, `panel` its view id, `fleet` the fleet the source fed: its own, else the first fleet). The shell shows an Automate… link for each; a note already on disk has no `entries` and stays plain text.
 
 ### Acting on an item
 
@@ -483,7 +483,7 @@ A routine:
 
 ### `GET /api/fleets/<key>/routines`
 
-`{"routines": [<routine>, …]}`, `[]` when there are none.
+`{"routines": [<routine>, …]}`, `[]` when there are none. Each routine also carries `last_run: {"at", "outcome"}`, the newest record of its trigger log (see `…/runs`), and none while it has never run. The other routes return the routine without it.
 
 ### `POST /api/fleets/<key>/routines`
 
@@ -605,7 +605,7 @@ A window tells the server whether anyone is watching it with `{"type":"presence"
 
 ### The alert message
 
-The server answers an alert with `{"type":"alert","fleet":"zulu","fleet_name":"Work","name":"Dory","line":"needs your approval","tag":"s-1","target":"peek","session":"s-1"}`, sent only to the windows it counts as watching, never to a hidden, idle or silent one. `name` and `line` are text (the line is the first line, at most 120 characters), `tag` identifies the entry so a repeat replaces the earlier toast, and `target` says where a tap lands: `"peek"` plus one of `item`, `crew` or `merge: true` (or none, for the ship's own stop) for a Peek on `session`, or `"ship"` for the ship's view, which an anchored ship uses because it is never an Inbox entry. The shell chimes and shows a toast for it; a fleet with Notify off sends none.
+The server answers an alert with `{"type":"alert","fleet":"zulu","fleet_name":"Work","name":"Dory","line":"needs your approval","tag":"s-1","target":"peek","session":"s-1"}`, sent only to the windows it counts as watching, never to a hidden, idle or silent one. `name` and `line` are text (the line is the first line, at most 120 characters), `tag` identifies the entry so a repeat replaces the earlier toast, and `target` says where a tap lands: `"peek"` plus one of `item`, `crew` or `merge: true` (or none, for the ship's own stop) for a Peek on `session`, or `"ship"` for the ship's view, which an anchored ship uses because it is never an Inbox entry, or `"routine"` (with `"routine": "<id>"` and no `session`) for a routine run that has no ship: a prompt sent to AdmiralBot, a failed run or a breaker trip. The tap opens `/app/routines/<id>?fleet=<key>`; a run that launched a ship keeps the ship target. The shell chimes and shows a toast for it; a fleet with Notify off sends none.
 
 ### The move message
 
@@ -624,7 +624,3 @@ A fleet's chat calls Admiral with its actor token in the `X-Admiral-Actor` heade
 - The list reads (`ships`, `inbox`, `sources`, `campaigns`) hold only the actor's fleet. Touching another fleet's ship, item, source or campaign, or an item or ship of no known fleet, is 403 naming the fleet; a launch must name the actor's fleet and a source of that fleet. A launch body must be one JSON object: data after it is 400 (for the engineer too), and the guard and the handler read the same value. A chat session's own question is the engineer's to answer, so AdmiralBot's answer to an Inbox item of a chat session is 403.
 - `GET /api/outcomes[?ship=<ship>][&limit=<n>]` answers `{"outcomes": [<record>, ...]}`, oldest first, the latest `limit` (default 100, at most 1000; `400` for a bad value) of the month files' records. An actor sees only its fleet's: ship names are reused, so a record's fleet is the `fleet` of the latest `launched` record of its ship before it (read in file order); a record with no such record in the files read takes the fleet of the listed or moored ship that holds the name, unless the files hold a later `launched` record of that name, which hides it; a record of no known fleet is hidden. The fence applies before the limit. A `launched` record of a routine's ship has `trigger: {"fleet", "id"}`, pointing at that routine's trigger-log record.
 - Writes are stamped `"via":"admiralbot"`: the `launched`, `stopped`, `dismissed`, `answered`, `resumed`, `woken` and `unmoored` outcome records and the launched ship's `via`.
-
-### Push target `routine`
-
-A push about a routine run that has no ship (a prompt sent to AdmiralBot, a failed run, a breaker trip) carries `"target": "routine"` and `"routine": "<id>"`, with no `session`. The tap opens `/app/routines/<id>?fleet=<key>`. A run that launched a ship keeps the ship target.

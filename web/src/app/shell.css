@@ -769,3 +769,7 @@ button.pill { cursor: pointer; min-height: 32px; }
 .run-row a { display: inline-flex; align-items: center; min-height: var(--shape-min-touch-target); text-decoration: underline; }
 .run-time { color: var(--color-muted); font-size: var(--font-size-meta); }
 .run-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-muted); }
+.routine-item { display: flex; align-items: center; }
+.routine-item .crew-row { flex: 1; min-width: 0; }
+.run-dot.ok { background: var(--color-accent); }
+.run-dot.bad { background: var(--color-needs); }

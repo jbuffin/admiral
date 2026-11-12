@@ -1,5 +1,5 @@
-import type { Dock, FleetCapabilities } from './api';
-import type { SkillChoice } from './launchForm';
+import type { Dock, FleetCapabilities, Source } from './api';
+import { effortsFor, sourcesForFleet, type SkillChoice } from './launchForm';
 import { automateSearch, routineNewPath } from './router';
 
 export type Before = 'report_only' | 'ask_first' | 'act';
@@ -24,6 +24,8 @@ export interface Routine {
   before_acting: Before;
   notify: boolean;
   off_by?: string;
+  /** The newest trigger record; absent for a routine that never ran. */
+  last_run?: { at: string; outcome: Outcome };
 }
 export interface RoutineRun {
   id: string;
@@ -93,11 +95,17 @@ export function breakerTripped(runs: RoutineRun[], lastSeen: string | null): boo
   return runs.slice(0, seen < 0 ? runs.length : seen).some((r) => r.outcome === 'breaker');
 }
 
+const INVALID = /^invalid routine: /;
+
+/** A server 400 message without the "invalid routine: " the store puts before every validation error. */
+export const errorText = (message: string) => message.replace(INVALID, '');
+
 /** The part of the form a server 400 message belongs to. */
 export function errorField(message: string): 'name' | 'when' | 'do' | 'form' {
-  if (/^name\b/.test(message)) return 'name';
-  if (/^when\b/.test(message)) return 'when';
-  if (/^(do\b|the prompt|autopilot|args|skill|no resource|fleet \S+ has no)/.test(message)) return 'do';
+  const m = errorText(message);
+  if (/^name\b/.test(m)) return 'name';
+  if (/^when\b/.test(m)) return 'when';
+  if (/^(do\b|the prompt|autopilot|args|skill|no resource|fleet \S+ has no)/.test(m)) return 'do';
   return 'form';
 }
 
@@ -125,6 +133,40 @@ const ago = (at: string, now: Date) => {
   const h = Math.floor(min / 60);
   return h < 24 ? `${h} h ago` : `${Math.floor(h / 24)} d ago`;
 };
+
+/** A routine row's last run: how long ago, or Never. */
+export function lastRunText(last: Routine['last_run'], now: Date): string {
+  return last ? ago(last.at, now) || 'just now' : 'Never';
+}
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const pad = (n: number) => String(n).padStart(2, '0');
+
+/** A run's time as the canvas writes it: Today 09:38, Yesterday 17:02, Mon 08:30 within the week, else Nov 3. */
+export function runTime(at: string, now: Date): string {
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return '';
+  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const back = Math.round((day(now) - day(d)) / 86_400_000);
+  const clock = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  if (back === 0) return `Today ${clock}`;
+  if (back === 1) return `Yesterday ${clock}`;
+  if (back > 1 && back < 7) return `${WEEKDAYS[d.getDay()]} ${clock}`;
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+}
+
+/** The launch with another dock: its checkout resets, and a model or effort that dock doesn't offer goes, as the launch dialog's body does. */
+export function launchOnDock(l: RoutineForm['launch'], harness: string): RoutineForm['launch'] {
+  return { ...l, harness, dir: '', model: '', effort: effortsFor(harness).includes(l.effort) ? l.effort : '' };
+}
+
+/** The source and view an Automate… query names, when the fleet has both. */
+export function automateTarget(sources: Source[], fleetKey: string, q: { source: string; view: string }): { source: Source; view: Source['views'][number] } | null {
+  const source = sourcesForFleet(sources, fleetKey).find((s) => s.key === q.source);
+  const view = source?.views.find((v) => v.id === q.view);
+  return source && view ? { source, view } : null;
+}
 
 /** The shell-wide banner for Hold fire; null while neither switch is on. */
 export function holdFireBanner(state: HoldFireState | null, fleetName: string, now: Date): HoldFireBanner | null {
@@ -191,6 +233,6 @@ export function formOfRoutine(r: Routine): RoutineForm {
 }
 
 /** One Automate… link for each entry of a migration notice; none for a plain note. */
-export function noticeEntryLinks(notice: { body?: string; entries?: { key: string; name: string; panel: string }[] } | undefined): { label: string; path: string }[] {
-  return (notice?.entries ?? []).map((e) => ({ label: `Automate… ${e.name}, view ${e.panel}`, path: routineNewPath + automateSearch(e.key, e.panel) }));
+export function noticeEntryLinks(notice: { body?: string; entries?: { key: string; name: string; panel: string; fleet?: string }[] } | undefined): { label: string; path: string }[] {
+  return (notice?.entries ?? []).map((e) => ({ label: `Automate… ${e.name}, view ${e.panel}`, path: routineNewPath + automateSearch(e.key, e.panel, e.fleet) }));
 }

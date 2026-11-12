@@ -16,6 +16,8 @@ type NoticeEntry struct {
 	Key   string `json:"key"`
 	Name  string `json:"name"`
 	Panel string `json:"panel"`
+	// Fleet is the fleet the source fed, so Automate… opens in it.
+	Fleet string `json:"fleet,omitempty"`
 }
 
 // WriteNotice posts a read-only item the engineer can only dismiss; entries ride in the notice object for the shell to link.

@@ -733,6 +733,14 @@ test('with Hold fire on, a due routine waits in the Inbox as a proposal, and Lau
   await page.getByRole('main').getByRole('switch', { name: 'Hold fire', exact: true }).tap();
   await expect(banner).toHaveCount(0);
   await expect.poll(async () => ((await (await api('fleets/zulu/hold-fire')).json()) as { on: boolean }).on).toBe(false);
+
+  const all = page.getByRole('main').getByRole('switch', { name: 'Hold fire, all fleets', exact: true });
+  await all.tap();
+  await expect(all).toBeChecked();
+  await expect(banner).toBeVisible();
+  await all.tap();
+  await expect(all).not.toBeChecked();
+  await expect(banner).toHaveCount(0);
 });
 
 test('Dismiss on a routine proposal removes it from the Inbox and starts no ship', async ({ page, admiral }) => {

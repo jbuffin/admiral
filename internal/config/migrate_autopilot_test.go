@@ -94,3 +94,16 @@ func TestMigrationNoticeNoLongerSaysRoutinesAreComing(t *testing.T) {
 		t.Errorf("notice body should name the entry and point at Automate…, not say routines are coming:\n%s", body)
 	}
 }
+
+// Automate… opens in the fleet the source fed: its own, else the first fleet.
+func TestMigrationEntriesCarryTheirSourcesFleet(t *testing.T) {
+	const ap = `"autopilot":{"orders":{"enabled":true,"fleet":"work","harness":"claude","skill":{"kind":"none"}}}`
+	_, p := planOut(t, `{"version":1,"fleets":{"work":{"name":"Work","claude":{}},"home":{"name":"Home","claude":{}}},"sources":{"a":{"plugin":"freeform","fleet":"home",`+ap+`},"b":{"plugin":"freeform",`+ap+`}}}`)
+	got := map[string]string{}
+	for _, e := range p.entries {
+		got[e.Key] = e.Fleet
+	}
+	if got["a"] != "home" || got["b"] != "work" {
+		t.Errorf("entry fleets = %v, want a=home (its own), b=work (the first fleet)", got)
+	}
+}

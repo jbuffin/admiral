@@ -254,7 +254,7 @@ func serve(args []string) error {
 		title, body := migration.Notice()
 		entries := make([]inbox.NoticeEntry, 0, len(migration.Entries))
 		for _, e := range migration.Entries {
-			entries = append(entries, inbox.NoticeEntry{Key: e.Key, Name: e.Name, Panel: e.Panel})
+			entries = append(entries, inbox.NoticeEntry{Key: e.Key, Name: e.Name, Panel: e.Panel, Fleet: e.Fleet})
 		}
 		if _, err := inbox.WriteNotice(dir, title, body, entries...); err != nil {
 			fmt.Fprintln(os.Stderr, "admiral: could not post the migration notice:", err)

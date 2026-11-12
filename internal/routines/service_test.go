@@ -276,3 +276,31 @@ func TestAHoldFireTurnedOnByAdmiralBotSaysSoAndItCannotTurnItOff(t *testing.T) {
 		t.Fatalf("the refused release turned Hold fire off: %v", now)
 	}
 }
+
+func TestListCarriesEachRoutinesLastRunAndNothingForOneThatNeverRan(t *testing.T) {
+	a := newAPI(t)
+	ran := a.post()
+	never := a.post()
+	at := time.Date(2026, 11, 12, 9, 38, 0, 0, time.UTC)
+	for _, o := range []routines.Outcome{routines.Skipped, routines.Failed} {
+		if _, err := a.rig.store.AppendTrigger("work", routines.Trigger{Routine: ran["id"].(string), At: at, Outcome: o, Tier: "T0"}); err != nil {
+			t.Fatal(err)
+		}
+		at = at.Add(time.Minute)
+	}
+	_, body := a.do("GET", "/api/fleets/work/routines", "")
+	for _, e := range body["routines"].([]any) {
+		r := e.(map[string]any)
+		last, has := r["last_run"].(map[string]any)
+		switch r["id"] {
+		case ran["id"]:
+			if !has || last["outcome"] != "failed" || last["at"] != "2026-11-12T09:39:00Z" {
+				t.Errorf("ran routine's last_run = %v, want the newest record", r["last_run"])
+			}
+		case never["id"]:
+			if has {
+				t.Errorf("a routine that never ran has last_run = %v", r["last_run"])
+			}
+		}
+	}
+}

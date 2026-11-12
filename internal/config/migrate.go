@@ -30,6 +30,7 @@ type Dropped struct {
 // Entry is an enabled panel autopilot entry the migration removed.
 type Entry struct {
 	Key, Name, Panel string // the source's key and name, and the panel id
+	Fleet            string // the fleet the source feeds: its own, else the first fleet
 }
 
 type Migration struct {
@@ -105,7 +106,7 @@ func planMigration(data []byte) *migrationPlan {
 			changed := false
 			// The panel autopilot entries went with the engine, whether the source stays or not.
 			if ap, ok := src.Get("autopilot"); ok {
-				p.entries = append(p.entries, enabledEntries(key, nameOf(raw, key), ap)...)
+				p.entries = append(p.entries, enabledEntries(key, nameOf(raw, key), fleetOf(src, defKey), ap)...)
 				src.Delete("autopilot")
 				changed = true
 				p.changed = true
@@ -226,7 +227,7 @@ func migrateChat(top *Object) *chatMove {
 
 // enabledEntries lists the enabled entries of a source's autopilot object, in
 // panel order. A disabled entry, or an object that isn't one, lists nothing.
-func enabledEntries(key, name string, raw json.RawMessage) []Entry {
+func enabledEntries(key, name, fleet string, raw json.RawMessage) []Entry {
 	panels, err := ParseObject(raw)
 	if err != nil {
 		return nil
@@ -240,7 +241,7 @@ func enabledEntries(key, name string, raw json.RawMessage) []Entry {
 		}
 		var on bool
 		if raw, ok := e.Get("enabled"); ok && json.Unmarshal(raw, &on) == nil && on {
-			out = append(out, Entry{Key: key, Name: name, Panel: panel})
+			out = append(out, Entry{Key: key, Name: name, Panel: panel, Fleet: fleet})
 		}
 	}
 	return out
@@ -349,6 +350,13 @@ func stringOf(o *Object, key string) string {
 	var s string
 	_ = json.Unmarshal(raw, &s)
 	return s
+}
+
+func fleetOf(src *Object, def string) string {
+	if f := stringOf(src, "fleet"); f != "" {
+		return f
+	}
+	return def
 }
 
 func nameOf(raw json.RawMessage, key string) string {

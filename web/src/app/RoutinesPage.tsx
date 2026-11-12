@@ -9,19 +9,24 @@ import { automateOf, go, loc, routineNewPath, routinePath, shipPath } from './ro
 import {
   autopilotDocks,
   automateDraft,
+  automateTarget,
   blankForm,
   breakerTripped,
   errorField,
+  errorText,
   formOfRoutine,
   holdFireNote,
+  lastRunText,
+  launchOnDock,
   routineBody,
   runLine,
+  runTime,
   type Before,
   type Routine,
   type RoutineForm,
   type RoutineRun,
 } from './routines';
-import { ships, sources } from './shipsLink';
+import { ships, shipsLoaded, sources } from './shipsLink';
 
 const api = (fleet: string, rest = '') => `/fleets/${encodeURIComponent(fleet)}/routines${rest}`;
 const BEFORE: { value: Before; label: string }[] = [
@@ -87,7 +92,7 @@ function RecentRuns({ runs }: { runs: RoutineRun[] | null }) {
             <li key={r.id} class="run-row">
               <span class={`run-dot ${l.dot}`} aria-hidden="true" />
               <time class="run-time" dateTime={r.at}>
-                {new Date(r.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                {runTime(r.at, new Date())}
               </time>
               {l.ship ? <a href={shipPath(l.ship) + fleetSearch.value}>{shipTitle(l.ship, l.text)}</a> : <span>{l.text}</span>}
               {r.via === 'proposal' && !l.text.includes('proposal') ? <span class="muted"> via proposal</span> : null}
@@ -103,6 +108,7 @@ function RoutineEditor({ fleet, routine, initial, caps, onSaved, onDeleted, onTo
   const [form, setForm] = useState(initial);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [dirs, setDirs] = useState<DirsAnswer | null>(null);
   const [skills, setSkills] = useState<SkillsAnswer | null>(null);
   const [custom, setCustom] = useState(initial.launch.skill.kind === 'skill' ? initial.launch.skill.name : '');
@@ -146,18 +152,19 @@ function RoutineEditor({ fleet, routine, initial, caps, onSaved, onDeleted, onTo
   const favorites = new Set((skills?.skills ?? []).filter((s) => s.favorite).map((s) => s.name));
   const skillSel = l.skill.kind === 'skill' && !favorites.has(l.skill.name) ? 'custom' : skillValue(l.skill);
 
-  const err = error ? { field: errorField(error), text: error } : null;
+  const err = error ? { field: errorField(error), text: errorText(error) } : null;
   const save = async (e: Event) => {
     e.preventDefault();
     setBusy(true);
     setError('');
-    const r = routine ? await call<Routine>('PUT', api(fleet.key, `/${encodeURIComponent(routine.id)}`), routineBody(form)) : await call<Routine>('POST', api(fleet.key), routineBody(form));
+    const r = routine ? await call<Routine>('PUT', api(fleet.key, `/${encodeURIComponent(routine.id)}`), routineBody({ ...form, enabled: routine.enabled })) : await call<Routine>('POST', api(fleet.key), routineBody(form));
     setBusy(false);
     if (!r.ok) return setError(r.error);
     onSaved(r.data);
   };
   const remove = async () => {
     if (!routine) return;
+    setConfirming(false);
     setBusy(true);
     const r = await call('DELETE', api(fleet.key, `/${encodeURIComponent(routine.id)}`));
     setBusy(false);
@@ -206,7 +213,7 @@ function RoutineEditor({ fleet, routine, initial, caps, onSaved, onDeleted, onTo
         </label>
       ) : (
         <div class="routine-launch">
-          {offered.length === 0 ? <p class="note warn">{docks.why || 'Loading docks…'}</p> : <DockPicker docks={offered.map((harness) => ({ harness }))} harness={l.harness} onChange={(harness) => setLaunch({ harness, dir: '' })} />}
+          {offered.length === 0 ? <p class="note warn">{docks.why || 'Loading docks…'}</p> : <DockPicker docks={offered.map((harness) => ({ harness }))} harness={l.harness} onChange={(harness) => setForm((f) => ({ ...f, launch: launchOnDock(f.launch, harness) }))} />}
           <CheckoutSelect dir={l.dir} dirs={dirsShown} allowClone={false} onChange={(dir) => setLaunch({ dir })} />
           <label class="field">
             <span>Text</span>
@@ -269,8 +276,17 @@ function RoutineEditor({ fleet, routine, initial, caps, onSaved, onDeleted, onTo
           Save
         </button>
         {routine ? (
-          <button type="button" class="btn danger" disabled={busy} onClick={() => void remove()}>
-            Delete
+          <button
+            type="button"
+            class="btn danger"
+            disabled={busy}
+            onClick={() => {
+              if (confirming) void remove();
+              else setConfirming(true);
+            }}
+            onBlur={() => setConfirming(false)}
+          >
+            {confirming ? 'Delete routine?' : 'Delete'}
           </button>
         ) : null}
       </div>
@@ -282,6 +298,7 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
   const [list, setList] = useState<Routine[] | null>(null);
   const [failed, setFailed] = useState('');
   const [caps, setCaps] = useState<FleetCapabilities | undefined>();
+  const [capsError, setCapsError] = useState('');
   const [runs, setRuns] = useState<RoutineRun[] | null>(null);
   const [version, setVersion] = useState(0);
   const [tripped, setTripped] = useState(false);
@@ -295,9 +312,28 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
       setFailed('');
     } else setFailed(r.error);
   };
+  // Both updates land in one render, so a remounted editor starts from the new list.
+  const reopen = () => setVersion((v) => v + 1);
+  // A saved or toggled routine comes back whole; its row keeps the last run the list carried.
+  const stored = (r: Routine) => {
+    setList((l) => (l ?? []).map((x) => (x.id === r.id ? { ...r, last_run: x.last_run } : x)));
+    reopen();
+  };
+  const flip = async (r: Routine) => {
+    const res = await call<Routine>('POST', api(fleet.key, `/${encodeURIComponent(r.id)}/${r.enabled ? 'off' : 'on'}`));
+    if (res.ok) stored(res.data);
+    else setFailed(res.error);
+  };
+  const loadCaps = () => {
+    setCapsError('');
+    void fetchCapabilities().then(
+      (all) => setCaps(all.find((c) => c.key === fleet.key)),
+      () => setCapsError("Could not load the fleet's capabilities."),
+    );
+  };
   useEffect(() => {
     void load();
-    void fetchCapabilities().then((all) => setCaps(all.find((c) => c.key === fleet.key)), () => {});
+    loadCaps();
   }, [fleet.key]);
 
   // Recent runs follow the open routine; a breaker record reloads it so an open form can't undo the trip.
@@ -314,9 +350,9 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
       setRuns(got);
       if (breakerTripped(got, lastSeen.current)) {
         setTripped(true);
-        setVersion((v) => v + 1);
-        void load();
-      }
+        await load();
+        if (live) reopen();
+      } else if (lastSeen.current !== null && got[0] && got[0].id !== lastSeen.current) void load();
       lastSeen.current = got[0]?.id ?? lastSeen.current ?? '';
     };
     void poll();
@@ -359,15 +395,16 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
   const showDetail = id !== null || creating;
   const showList = !phone || !showDetail;
   const automate = creating ? automateOf(loc.value.search) : null;
+  // Only a source and view that exist in this fleet draft a routine; any other query opens blank, so a crafted link pre-fills nothing.
+  const found = automate ? automateTarget(sources.value, fleet.key, automate) : null;
+  const gone = !!automate && shipsLoaded.value && !found;
   const draft = (() => {
-    if (!automate) return blankForm();
-    const view = sources.value.find((s) => s.key === automate.source)?.views.find((v) => v.id === automate.view);
-    const src = sources.value.find((s) => s.key === automate.source);
+    if (!found) return blankForm();
     const dock = autopilotDocks(caps, fleet.docks).harnesses[0] ?? null;
-    return automateDraft({ sourceKey: automate.source, sourceName: src?.name ?? automate.source, viewTitle: view?.title ?? automate.view }, { harness: dock, dir: '', commodore: true });
+    return automateDraft({ sourceKey: found.source.key, sourceName: found.source.name, viewTitle: found.view.title }, { harness: dock, dir: '', commodore: true });
   })();
-  // A draft waits for the capabilities, so its dock is known when the form opens.
-  const ready = !creating || !automate || caps !== undefined;
+  // A draft waits for the sources and the capabilities, so its dock is known when the form opens.
+  const ready = !creating || !automate || (shipsLoaded.value && (caps !== undefined || capsError !== ''));
 
   return (
     <main class={`panel crew routines${showList && showDetail ? ' split' : ''}`}>
@@ -396,7 +433,7 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
             {list.length === 0 ? <p class="line">No routines yet. A routine launches a ship or sends AdmiralBot a prompt on a schedule.</p> : null}
             <ul class="routine-list">
               {list.map((r) => (
-                <li key={r.id} class={`crew-item${r.enabled ? '' : ' off'}`}>
+                <li key={r.id} class={`crew-item routine-item${r.enabled ? '' : ' off'}`}>
                   <a
                     class="crew-row"
                     href={routinePath(r.id) + search}
@@ -412,9 +449,10 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
                       <span class="crew-sub">{cronSentence(r.when)}</span>
                     </span>
                     <span class="crew-side">
-                      <span class="crew-count">{r.enabled ? 'On' : 'Off'}</span>
+                      <span class="crew-count">{lastRunText(r.last_run, new Date())}</span>
                     </span>
                   </a>
+                  <Switch label={`${r.name} on`} on={r.enabled} onToggle={() => void flip(r)} />
                 </li>
               ))}
             </ul>
@@ -440,10 +478,19 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
                 The breaker moved this routine to Ask first after repeated failures. The form shows what is saved now.
               </p>
             ) : null}
+            {capsError ? (
+              <p class="alert" role="alert">
+                {capsError}{' '}
+                <button type="button" class="btn" onClick={loadCaps}>
+                  Try again
+                </button>
+              </p>
+            ) : null}
+            {gone ? <p class="note">That view is no longer in this fleet, so this is a blank routine.</p> : null}
             {creating ? (
               ready ? (
                 <RoutineEditor
-                  key={`new:${loc.value.search}`}
+                  key={`new:${loc.value.search}:${found ? 'draft' : 'blank'}`}
                   fleet={fleet}
                   routine={null}
                   initial={draft}
@@ -466,15 +513,12 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
                   routine={selected}
                   initial={formOfRoutine(selected)}
                   caps={caps}
-                  onSaved={() => {
-                    void load();
-                    setVersion((v) => v + 1);
-                  }}
+                  onSaved={stored}
                   onDeleted={() => {
                     void load();
                     toList();
                   }}
-                  onToggled={() => void load()}
+                  onToggled={stored}
                 />
                 <RecentRuns runs={runs} />
               </>

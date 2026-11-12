@@ -29,6 +29,24 @@ test('a routine made through the form fires on its minute and its ship shows in 
   const ships = (await (await fetch(`${admiral.url}api/v1/ships`)).json()) as { ships: { name: string }[] };
   expect(ships.ships).toHaveLength(1);
   await expect(runs).toContainText(ships.ships[0]!.name);
+
+  // Save shows what the server stored, and a second Save does not revert it.
+  const editor = page.getByRole('main').getByRole('form', { name: 'Routine' });
+  const row = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Form sweep' });
+  await expect(row).not.toContainText('Never');
+  await editor.getByLabel('When').fill('15 9 * * 1-5');
+  await editor.getByRole('button', { name: 'Save', exact: true }).tap();
+  await expect(row).toContainText('09:15');
+  await expect(editor.getByLabel('When')).toHaveValue('15 9 * * 1-5');
+  await editor.getByRole('button', { name: 'Save', exact: true }).tap();
+  await expect(editor.getByLabel('When')).toHaveValue('15 9 * * 1-5');
+  await expect(row).toContainText('09:15');
+  await expect(editor.getByRole('radio', { name: 'Act', exact: true })).toBeChecked();
+
+  // The row's own switch turns the routine off and the editor follows.
+  await row.getByRole('switch').tap();
+  await expect(row.getByRole('switch')).not.toBeChecked();
+  await expect(editor.getByRole('switch', { name: 'On', exact: true })).not.toBeChecked();
 });
 
 test('Automate… on an order view opens an unsaved scheduled routine draft', async ({ page, admiral }) => {
