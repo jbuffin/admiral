@@ -40,16 +40,18 @@ export function NotificationsPage() {
 
   const refresh = async () => {
     const seq = ++latest.current;
-    const [d, list] = await Promise.all([readPushDevice(), fetchDevices()]);
-    if (seq !== latest.current) return;
-    setDevice(d);
-    if (list.ok) setDevices(list.data);
+    // The list does not wait on the browser's answer.
+    void fetchDevices().then((list) => {
+      if (seq === latest.current && list.ok) setDevices(list.data);
+    });
+    const d = await readPushDevice();
+    if (seq === latest.current) setDevice(d);
   };
   useEffect(() => void refresh(), []);
 
   const kind = device ? pushSwitchState(device.inputs).kind : null;
   const on = kind === 'on';
-  const usable = kind === 'on' || kind === 'off';
+  const usable = (kind === 'on' || kind === 'off') && !device?.problem;
 
   // The permission prompt must open from this tap, so the handler starts it before anything else.
   const toggle = () => {
@@ -66,12 +68,13 @@ export function NotificationsPage() {
 
   return (
     <>
+      <p class="line">Where Admiral gets your attention. Each fleet's Notify switch decides which fleets push.</p>
       <div class="set box" role="group" aria-label="This device">
         <div class="t">
           <span id="push-label" class="label">
             Notifications on this device
           </span>
-          <span id="push-hint">{kind === null ? 'Checking this device…' : (HINTS[kind] ?? '')}</span>
+          <span id="push-hint">{kind === null ? 'Checking this device…' : (device?.problem ?? HINTS[kind] ?? '')}</span>
           {kind === 'needs-https' ? (
             <span class="note">
               Pushes need Tailscale mode, which gives Admiral a secure address.{' '}

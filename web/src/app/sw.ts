@@ -91,7 +91,8 @@ sw.addEventListener('notificationclick', (e) => {
       const windows = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true });
       const open = windows.find((c) => /^\/app(\/|$)/.test(new URL(c.url).pathname));
       if (open) {
-        await open.focus();
+        // A browser may refuse focus without a real activation; the page still has to hear the tap.
+        await open.focus().catch(() => {});
         open.postMessage({ type: 'push-click', data });
       } else await sw.clients.openWindow(clickUrl(data));
     })(),

@@ -112,7 +112,6 @@ export function Preferences({ phone }: { phone: boolean }) {
           {page === 'notifications' ? (
             <>
               <Title>{TITLES.notifications}</Title>
-              <p class="fleet-label">All fleets</p>
               <NotificationsPage />
             </>
           ) : page === 'remote' ? (
