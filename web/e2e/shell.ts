@@ -90,7 +90,7 @@ export async function openPreferences(page: Page, opts: { fleet?: string; sectio
   await page.getByRole('button', { name: 'More', exact: true }).tap();
   await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Preferences', exact: true }).tap();
   const nav = page.getByRole('navigation', { name: 'Preferences' });
-  await expect(page).toHaveURL(/\/app\/preferences\//);
+  await expect(page).toHaveURL(/\/app\/preferences/);
   if (!(await nav.isVisible())) {
     await preferencesBack(page).tap();
     await expect(nav).toBeVisible();

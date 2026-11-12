@@ -1,6 +1,6 @@
 import { useEffect } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch, fleets, loaded } from './fleets';
-import { capabilitiesPath, chatSettingsPath, fleetPath, go, loc, preferencesFleet, preferencesPage, remotePath, sourcesPath, usageAllPath, usagePath, type PreferencesPage } from './router';
+import { capabilitiesPath, chatSettingsPath, fleetPath, go, loc, preferencesBare, preferencesFleet, preferencesPath, preferencesPage, remotePath, sourcesPath, usageAllPath, usagePath, type PreferencesPage } from './router';
 import { AllUsagePage, FleetUsagePage } from './UsagePage';
 import { RemoteAccess } from './RemoteAccessPage';
 import { ChatSettingsPage } from './ChatSettingsPage';
@@ -77,15 +77,30 @@ export function Preferences({ phone }: { phone: boolean }) {
   // Bare and unknown paths open the active fleet's sources, else Remote access; signals are read at run time because a render can see the config half-loaded.
   useEffect(() => {
     const open = activeFleet.value;
-    if (!loaded.value || page === 'remote' || page === 'all-usage' || fleets.value.some((f) => f.key === key)) return;
+    if (!loaded.value || (phone && preferencesBare(loc.value.path)) || page === 'remote' || page === 'all-usage' || fleets.value.some((f) => f.key === key)) return;
     go(open ? sourcesPath(open.key) : remotePath, fleetSearch.value, true);
   }, [loaded.value, fleets.value, key, page]);
 
+  const list = phone && preferencesBare(loc.value.path);
   const Title = phone ? 'h2' : 'h1';
   return (
-    <main class="panel prefs">
-      <PreferencesNav current={fleet?.key ?? ''} page={page} />
+    <main class={`panel prefs${phone ? (list ? ' prefs-list' : ' prefs-open') : ''}`}>
+      {!(phone && !list) && <PreferencesNav current={fleet?.key ?? ''} page={page} />}
+      {!list && (
       <div class="prefs-page">
+        {phone && (
+          <a
+            class="back-link"
+            href={preferencesPath + fleetSearch.value}
+            onClick={(e) => {
+              if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+              e.preventDefault();
+              go(preferencesPath, fleetSearch.value);
+            }}
+          >
+            Back to Preferences
+          </a>
+        )}
         {page === 'remote' ? (
           <>
             <Title>{TITLES.remote}</Title>
@@ -109,6 +124,7 @@ export function Preferences({ phone }: { phone: boolean }) {
           </>
         ) : null}
       </div>
+      )}
     </main>
   );
 }

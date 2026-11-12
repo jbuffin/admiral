@@ -186,6 +186,8 @@ test('a GitHub source keeps its host, account and custom views, names its fleet 
   const custom1 = form.getByRole('group', { name: 'Custom view 1' });
   await expect(custom1.getByLabel('Title')).toHaveValue('Newbie');
   await expect(custom1.getByLabel('Query')).toHaveValue('is:open label:newbie');
+  // iOS Safari zooms the page when a focused field is under 16px.
+  expect(await custom1.getByLabel('Title').evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
 
   // Add a custom view whose title replaces a default, and say so.
   await form.getByRole('button', { name: 'Add view' }).click();

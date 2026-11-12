@@ -92,6 +92,9 @@ a { color: inherit; text-decoration: none; }
 .phone .panel.prefs { flex-direction: column; padding: 0; }
 .phone .prefs-nav { width: auto; border-right: 0; border-bottom: 1px solid var(--color-line); padding: 8px; }
 .phone .prefs-page { max-width: none; width: 100%; margin: 0; padding: 16px 14px 32px; }
+/* The phone shows the nav or one page, never both squeezed together. */
+.phone .prefs-list .prefs-nav { flex: 1; border-bottom: 0; }
+.phone .prefs-page > .back-link { margin-bottom: 8px; }
 
 .btn {
   display: inline-flex; align-items: center; gap: 6px; min-height: var(--shape-button-height); padding: 0 12px;
@@ -113,6 +116,8 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid var(--color-line2); border-radius: var(--shape-radius-sm); background: var(--color-panel);
 }
 @media (pointer: coarse) {
+  /* iOS Safari zooms the page when a focused field is under 16px. */
+  .prefs-page input:not([type='checkbox'], [type='radio'], [type='color']), .prefs-page select, .prefs-page textarea { font-size: 16px; }
   .set input[type='text'], .set input[type='password'], .set input[type='number'], .set select, .set textarea, .row-field input, .move select, .set .btn { min-height: var(--shape-min-touch-target); }
 }
 .set select, .move select {
@@ -660,6 +665,8 @@ button.pill { cursor: pointer; min-height: 32px; }
 .usage-bar-head { display: flex; flex-wrap: wrap; gap: 0 12px; margin-bottom: 4px; font-size: var(--font-size-meta); }
 .usage-periods { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
 .usage-periods .btn[aria-pressed='true'] { border-color: var(--color-accent); }
+/* iOS Safari zooms the page when a focused field is under 16px. */
+.xterm-helper-textarea { font-size: 16px !important; }
 /* Chat surface */
 .chat-panel { display: flex; flex-direction: row; gap: 16px; min-height: 0; }
 .chat-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
@@ -668,6 +675,7 @@ button.pill { cursor: pointer; min-height: 32px; }
 .chat-title .dot { flex: none; }
 .chat-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-head .btn { flex: none; }
+.phone .chat-title-text { overflow: visible; text-overflow: clip; white-space: normal; }
 .chat-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .msg-note .btn { margin-left: 8px; min-height: var(--shape-min-touch-target); }
 .chat-head .btn, .chat-off .btn { min-height: var(--shape-min-touch-target); }

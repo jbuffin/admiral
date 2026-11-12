@@ -108,6 +108,7 @@ const globalPage = (path: string): 'remote' | 'all-usage' | null => {
   return id === 'preferences' && key === 'admiral' && (page === 'remote' || page === 'all-usage') ? page : null;
 };
 
+export const preferencesPath = '/app/preferences';
 export const remotePath = '/app/preferences/admiral/remote';
 export const usageAllPath = '/app/preferences/admiral/all-usage';
 export type PreferencesPage = (typeof PREFERENCES_PAGES)[number];
@@ -123,6 +124,9 @@ export const chatSettingsPath = (fleetKey: string) => `/app/preferences/${encode
 export const capabilitiesPath = (fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/capabilities`;
 
 /** The fleet key a Preferences path names, if any. */
+/** True for the bare Preferences path, which a phone answers with the list of pages. */
+export const preferencesBare = (path: string) => segments(path).join('/') === 'preferences';
+
 export function preferencesFleet(path: string): string | null {
   const [id, key] = segments(path);
   if (id !== 'preferences' || !key || globalPage(path)) return null;
