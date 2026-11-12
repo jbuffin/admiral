@@ -89,7 +89,7 @@ function Knows({ fleet }: { fleet: string }) {
       ) : null}
       <div class="box">
         <div class="set">
-          <div class="t control">
+          <div class="t">
             <label for="chat-instructions">Instructions</label>
             <span>Plain words AdmiralBot follows every time. Only you can change them.</span>
             <textarea id="chat-instructions" rows={6} value={text} disabled={busy} onInput={(e) => setText(e.currentTarget.value)} />
@@ -118,17 +118,19 @@ function Knows({ fleet }: { fleet: string }) {
         ) : (
           <ul class="set-list" aria-label="Notes">
             {notes.map((n) => (
-              <li key={n.id} class="set">
+              <li key={n.id} class="set note-row">
                 <div class="t">
                   <span class="label set-text">{n.text}</span>
                   <span>{noteAge(n.ts, now)}</span>
                 </div>
-                <button type="button" class="btn" disabled={busy || dirty} onClick={() => void act(() => promoteNote(fleet, n.id))}>
-                  Move to instructions
-                </button>
-                <button type="button" class="btn" disabled={busy} onClick={() => void act(() => deleteNote(fleet, n.id))}>
-                  Delete
-                </button>
+                <div class="note-actions">
+                  <button type="button" class="btn" disabled={busy || dirty} onClick={() => void act(() => promoteNote(fleet, n.id))}>
+                    Move to instructions
+                  </button>
+                  <button type="button" class="btn" disabled={busy} onClick={() => void act(() => deleteNote(fleet, n.id))}>
+                    Delete
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

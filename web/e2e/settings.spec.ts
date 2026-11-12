@@ -600,7 +600,7 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
   mkdirSync(join(admiral.home, 'chat', 'harbor'), { recursive: true });
   writeFileSync(
     join(admiral.home, 'chat', 'harbor', 'ledger.jsonl'),
-    [ledgerAt(1).replace('%s', 'Deploys go out on Tuesdays.'), ledgerAt(2).replace('%s', 'The staging box is flaky.'), ledgerAt(3).replace('%s', 'Stale note to delete.')].join(''),
+    [ledgerAt(1).replace('%s', 'Deploys go out on Tuesdays.'), ledgerAt(2).replace('%s', 'The staging box is flaky.'), ledgerAt(3).replace('%s', `Stale note to delete. ${'x'.repeat(300)}`)].join(''),
   );
   await admiral.start();
   await expect.poll(async () => ((await (await fetch(`${admiral.url}api/v1/chat/harbor/notes`)).json()) as { notes: unknown[] }).notes.length).toBe(3);
@@ -668,6 +668,16 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
   await expect(main).toContainText('0 / 2000');
   await expect(saveInstructions).toBeDisabled();
   await expect(main.getByRole('listitem').filter({ hasText: /Deploys go out|staging box|Stale note/ })).toHaveText([/Deploys go out on Tuesdays\./, /The staging box is flaky\./, /Stale note to delete\./]);
+  // A long unbroken note keeps its text column readable beside its actions, narrow or not.
+  const original = page.viewportSize()!;
+  for (const [width, height] of [[834, 1194], [402, 800]]) {
+    await page.setViewportSize({ width, height });
+    const text = note('Stale note').locator('.set-text');
+    await expect.poll(() => text.evaluate((e) => e.getBoundingClientRect().width)).toBeGreaterThan(150);
+    for (const b of await note('Stale note').getByRole('button').all()) expect(await b.evaluate((e) => e.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+  }
+  await page.setViewportSize(original);
+  await expect(main.getByRole('listitem').filter({ hasText: /Deploys go out|staging box|Stale note/ })).toHaveCount(3);
   // Move to instructions: the text lands in the textarea, the note leaves the list and the file holds it.
   await note('Deploys go out').getByRole('button', { name: 'Move to instructions' }).click();
   await expect(instructions).toHaveValue('Deploys go out on Tuesdays.');
