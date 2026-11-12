@@ -144,8 +144,8 @@
 #   copilotreply <text>
 #                  Copilot only, needs jq, and the last cue (it never ends): like `reply`, for a Copilot chat. Per message it
 #                  appends the user's text and an assistant line holding <text> to $COPILOT_HOME/session-state/<id>/events.jsonl,
-#                  <id> being the --session-id in its argv, and sets the pane's @admiral-transcript to that file on the first
-#                  message of a session, as the sessionStart hook does (source new). A message of /clear writes a
+#                  <id> being the --session-id in its argv, and binds the transcript on the first
+#                  message of a session, by running the plugin's sessionStart hook (source new). A message of /clear writes a
 #                  session.shutdown line (as `usage` writes) to the session it ends and starts a new id, bound only by the next
 #                  message, as the real CLI does. It appends every byte it reads to `stdin`.
 #   codexready     a trusted Codex TUI waiting for its first message: shows the composer and writes the hook's trust entry
@@ -663,6 +663,12 @@ if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 			mkdir -p "$COPILOT_HOME" "$d/.copilot-state"
 			[ -e "$COPILOT_HOME/config.json" ] || printf '%s\n' '{"trustedFolders":["/fake"]}' >"$COPILOT_HOME/config.json"
 			printf '%s' "$sid" >"$d/.copilot-state/sid"
+			plugin=""
+			prev=""
+			for a in "$@"; do
+				[ "$prev" = "--plugin-dir" ] && plugin=$a
+				prev=$a
+			done
 			# Like the real CLI: the first prompt of a session binds its transcript (sessionStart, source new), and /clear
 			# ends the session at once and starts a new one that binds again only at the next prompt.
 			cat >"$d/.append" <<'EOF5'
@@ -680,7 +686,10 @@ if [ "$(cat "$FAKE_MSG")" = /clear ]; then
   exit 0
 fi
 if [ ! -e "$st/bound" ]; then
-  tmux set -p -t "$TMUX_PANE" @admiral-transcript "1700000000000000000 new $path"
+  # The plugin's own sessionStart hook binds the transcript, as Copilot runs it: camelCase payload on stdin.
+  jq -r '.hooks.sessionStart[]? | .bash' "$FAKE_PLUGIN/hooks.json" | while IFS= read -r command; do
+    jq -cn --arg s "$sid" --arg c "$(pwd -P)" '{sessionId: $s, timestamp: (now * 1000 | floor), cwd: $c, source: "new", initialPrompt: "x"}' | sh -c "$command" >>"$st/hook-out" 2>&1
+  done
   : >"$st/bound"
 fi
 jq -cn --rawfile t "$FAKE_MSG" --arg r "$FAKE_REPLY" --arg n "$1" '
@@ -691,7 +700,7 @@ EOF5
 			printf '%s\n' '❯' ' ← open sidebar · Interactive · Manual Approval · / commands · ? help · tab next tab    GPT-5.6 Luna'
 			stty raw -echo <&3 2>/dev/null
 			: >"$d/cues-done"
-			export FAKE_REPLY_DELAY FAKE_REPLY=$arg FAKE_STATE="$d/.copilot-state" FAKE_MSG="$d/.msg" FAKE_APPEND="$d/.append"
+			export FAKE_REPLY_DELAY FAKE_REPLY=$arg FAKE_PLUGIN="$plugin" FAKE_STATE="$d/.copilot-state" FAKE_MSG="$d/.msg" FAKE_APPEND="$d/.append"
 			cat -u <&3 | tee -a "$d/stdin" | awk 'BEGIN { RS = "\r" }
 				{
 					gsub("\033\\[[0-9;?]*[ -/]*[@-~]", ""); gsub(/\033/, "")

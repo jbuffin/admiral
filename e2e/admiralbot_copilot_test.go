@@ -25,7 +25,7 @@ import (
 //     already trusted in $COPILOT_HOME/config.json); `copilotreply <text>` does that too after the cues before it,
 //     answers every pasted message by appending the engineer's message and an assistant line holding <text> to
 //     $COPILOT_HOME/session-state/<--session-id>/events.jsonl, sets the pane's @admiral-transcript to it as the
-//     sessionStart hook would, and on /clear writes a session.shutdown line and starts a new session id, bound at the
+//     sessionStart hook (the plugin's own) does, and on /clear writes a session.shutdown line and starts a new session id, bound at the
 //     next message with source "new", as the real CLI does. It appends every byte it reads to `stdin`.
 
 // copilotResetCommand is what New chat types into a running Copilot chat.

@@ -15,7 +15,7 @@ import (
 	"github.com/jbuffin/admiral/internal/probes"
 )
 
-// Placeholders the implementer confirms on the real `copilot -p … --output-format json` (each a one-line change).
+// Event shapes as the real `copilot -p … --output-format json` prints them (an MCP tool is toolName "<server>-<tool>" with mcpServerName and mcpToolName).
 var (
 	// copilotEvents are the JSONL lines the fake prints; the shapes stand for what Copilot emits.
 	copilotEvents = struct {
@@ -32,7 +32,7 @@ var (
 		web:      `{"type":"tool.execution_start","data":{"toolName":"web_fetch"}}`,
 		subAgent: `{"type":"tool.execution_start","data":{"toolName":"task"}}`,
 		toolCall: func(server, tool string) string {
-			return `{"type":"tool.execution_start","data":{"toolName":"` + tool + `","mcpServerName":"` + server + `"}}`
+			return `{"type":"tool.execution_start","data":{"toolName":"` + server + `-` + tool + `","mcpServerName":"` + server + `","mcpToolName":"` + tool + `"}}`
 		},
 	}
 	// copilotProbeHomeFiles are the files a probe may put in its throwaway home before it runs (the login is in the Keychain).
