@@ -2,8 +2,8 @@ import { appendFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { crewNote, seedAdHocMember, seedCrew } from './crew';
-import { addGitHubSource, appendLines, HOSTILE, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, restCalls, rowLink, seedFleets, seedInboxItem, seedReviewTarget, setReason, setState, staleMergeTokenInPeek, readyStackMergesFromPeek, viewTab, withFakeGh, chatAnswerFile, chatAsks } from './shell';
+import { crewNote, proveJudge, seedAdHocMember, seedCrew } from './crew';
+import { probeableClaude, addGitHubSource, appendLines, HOSTILE, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, restCalls, rowLink, seedFleets, seedInboxItem, seedReviewTarget, setReason, setState, staleMergeTokenInPeek, readyStackMergesFromPeek, viewTab, withFakeGh, chatAnswerFile, chatAsks } from './shell';
 
 const peekOf = (page: Page) => page.getByRole('region', { name: 'Peek' });
 const peekUrl = (session: string) => new RegExp(`/app/inbox/${encodeURIComponent(session)}(\\?|$)`);
@@ -679,4 +679,65 @@ test("a chat question answered elsewhere while its Peek is open stays open on a 
   await expect(peek.getByRole('alert')).toHaveText('This question was already answered.', { timeout: 15_000 });
   await expect(peek.getByRole('button', { name: 'Send answers' })).toBeDisabled();
   expect(chatAnswerFile(admiral, 'harbor', 'q1')?.answers['1']?.choice).toBe('Work queue');
+});
+
+const proposalSeed = (id: string, name: string) => ({
+  id,
+  kind: 'routine_proposal' as const,
+  title: `Run ${name}?`,
+  routine_proposal: { fleet: 'zulu', routine: 'r-dismiss', routine_name: name, trigger: id, action: 'launch claude in the proj checkout: go', expires_at: new Date(Date.now() + 3_600_000).toISOString() },
+});
+
+test('with Hold fire on, a due routine waits in the Inbox as a proposal, and Launch in its Peek starts one ship', async ({ page, admiral }) => {
+  test.setTimeout(150_000);
+  const claude = probeableClaude(admiral);
+  seedFleets(admiral, { live: true, claude: claude.dock });
+  await admiral.start({ env: withFakeGh(admiral) });
+  await proveJudge(page, admiral.url);
+  const api = (path: string, init?: RequestInit) => fetch(`${admiral.url}api/${path}`, { headers: { 'Content-Type': 'application/json' }, ...init });
+  expect((await api('fleets/zulu/hold-fire/on', { method: 'POST' })).status).toBe(200);
+  const due = new Date(Math.ceil((Date.now() + 5_000) / 60_000) * 60_000);
+  const created = await api('fleets/zulu/routines', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: 'Held sweep', enabled: true, when: `${due.getMinutes()} ${due.getHours()} * * *`, before_acting: 'act',
+      do: { launch: { harness: 'claude', dir: join(admiral.home, 'proj'), text: 'go' } },
+    }),
+  });
+  expect([200, 201]).toContain(created.status);
+
+  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
+  const row = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Held sweep' });
+  await expect(row).toBeVisible({ timeout: 120_000 });
+  const shipsNow = async () => ((await (await api('ships')).json()) as unknown[]).length;
+  expect(await shipsNow()).toBe(0);
+
+  await row.getByRole('link').tap();
+  const peek = peekOf(page);
+  await expect(peek).toContainText('Held sweep');
+  await expect(peek.getByRole('button', { name: 'Dismiss', exact: true })).toBeVisible();
+  await peek.getByRole('button', { name: 'Launch', exact: true }).tap();
+  await expect.poll(shipsNow, { timeout: 30_000 }).toBe(1);
+  await expect(peekOf(page)).toHaveCount(0);
+  await expect(row).toHaveCount(0, { timeout: 15_000 });
+});
+
+test('Dismiss on a routine proposal removes it from the Inbox and starts no ship', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  seedInboxItem(admiral, '_admiral', proposalSeed('routine-zulu-t1', 'Nightly sweep'));
+  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
+  const row = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Nightly sweep' });
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  await row.getByRole('link').tap();
+  const peek = peekOf(page);
+  const dismiss = peek.getByRole('button', { name: 'Dismiss', exact: true });
+  await expect(dismiss).toBeVisible();
+  const box = await dismiss.boundingBox();
+  expect(box!.height).toBeGreaterThanOrEqual(44);
+  await dismiss.tap();
+  await expect(peekOf(page)).toHaveCount(0);
+  await expect(row).toHaveCount(0, { timeout: 15_000 });
+  const res = await fetch(`${admiral.url}api/ships`);
+  expect(await res.json()).toEqual([]);
 });
