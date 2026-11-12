@@ -510,3 +510,10 @@ func crewTranscriptCall(pane, event string, p hookPayload) []string {
 	}
 	return sessionhost.CrewTranscriptCall(pane, path)
 }
+
+// chatContext is the stdout a fleet's chat hook prints for event, in the form Claude Code adds to context, and the
+// highest digest sequence it printed (0 when none); "" and 0 when there is nothing to say.
+func chatContext(event, home, fleet string) (out string, seq uint64) { return "", 0 }
+
+// digestSeqCall records the highest digest sequence printed on the pane; nil for 0.
+func digestSeqCall(pane string, seq uint64) []string { return nil }

@@ -15,14 +15,17 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/actor"
+	"github.com/jbuffin/admiral/internal/campaigns/follow"
 	"github.com/jbuffin/admiral/internal/chatlog"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/conversation"
+	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/ledger"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
+	"github.com/jbuffin/admiral/internal/ships"
 	"github.com/jbuffin/admiral/internal/transcriptfs"
 	"github.com/jbuffin/admiral/internal/usage"
 )
@@ -84,6 +87,12 @@ type Service struct {
 	Actor *actor.Minter
 	// OnQuestions runs when a chat's questions may have changed, for the Inbox that lists them.
 	OnQuestions func()
+	// Ships, Campaigns and Inbox feed the brief and the digest; nil reads as empty.
+	Ships     func() []ships.Ship
+	Campaigns func() []follow.Followed
+	Inbox     func() []inbox.Item
+	// DigestAcked is the highest digest sequence the fleet's chat has printed; nil reads as 0.
+	DigestAcked func(fleet string) uint64
 
 	logOnce sync.Once
 	log     *chatlog.Log
@@ -877,3 +886,6 @@ func (s *fleetChat) clearLocked() {
 	st.rd.Clear(info.Size())
 	st.cleared = false
 }
+
+// Tick renders each fleet's brief and digest once; Run calls it on its tick.
+func (s *Service) Tick() {}

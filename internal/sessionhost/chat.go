@@ -17,6 +17,8 @@ const (
 	// ChatPromptOpt is a pane option the chat's UserPromptSubmit hook sets to the unix nanoseconds of each
 	// prompt, so a message typed in the terminal moves it too.
 	ChatPromptOpt = "chat-prompt"
+	// ChatDigestOpt is the highest digest sequence the chat's UserPromptSubmit hook has printed.
+	ChatDigestOpt = "chat-digest"
 )
 
 // The host's shared format doesn't carry these: the chat service reads them from tmux itself.
