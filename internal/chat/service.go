@@ -273,7 +273,7 @@ func (s *Service) configDir() string {
 	// chat, so one that names no fleet falls back to the chat's own.
 	f, ok := cfg.Fleet(s.st.opts.fleet)
 	if !ok {
-		f, _ = cfg.Fleet(cfg.Chat.Fleet)
+		f, _ = cfg.ChatFleet()
 	}
 	var env map[string]string
 	if d, ok := f.Harness("claude"); ok {
@@ -477,8 +477,9 @@ func (s *Service) serveNew(w http.ResponseWriter, r *http.Request) {
 	opts, pane, noPath := s.st.opts, s.st.pane, s.st.optRaw == ""
 	path, dir, raw := s.st.path, s.configDir(), s.st.optRaw
 	s.mu.Unlock()
-	chat := s.Config().Chat
-	if opts.model == chat.Model && opts.effort == chat.Effort && opts.fleet == chat.Fleet {
+	fleet, _ := s.Config().ChatFleet()
+	chat := fleet.Chat
+	if opts.model == chat.Model && opts.effort == chat.Effort && opts.fleet == fleet.Key {
 		if noPath {
 			writeError(w, http.StatusConflict, NotStarted)
 			return

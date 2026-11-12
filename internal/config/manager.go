@@ -73,15 +73,6 @@ func (m *Manager) SetFavoriteSkills(skills []string) error {
 	return nil
 }
 
-// SetChat reloads before it returns.
-func (m *Manager) SetChat(c Chat) error {
-	if err := SetChat(filepath.Dir(m.path), c); err != nil {
-		return err
-	}
-	m.reload()
-	return nil
-}
-
 // SetRemote reloads before it returns.
 func (m *Manager) SetRemote(r Remote) error {
 	if err := SetRemote(filepath.Dir(m.path), r); err != nil {

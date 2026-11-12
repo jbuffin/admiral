@@ -63,15 +63,17 @@ func WriteChatSkill(home string) error {
 
 func ChatDir(home string) string { return filepath.Join(home, "chat") }
 
+// ChatDock is the fleet the one chat session runs for: the first, in config order, whose chat is on.
 func ChatDock(cfg *config.Config) (config.Fleet, config.Harness, *Error) {
-	fleet, ok := cfg.Fleet(cfg.Chat.Fleet)
+	fleet, ok := cfg.ChatFleet()
 	if !ok {
-		return config.Fleet{}, config.Harness{}, refuse(http.StatusConflict, "the chat has no fleet to run in: set one in Settings")
+		if len(cfg.Fleets) == 0 {
+			return config.Fleet{}, config.Harness{}, refuse(http.StatusConflict, "the chat has no fleet to run in: add a fleet in Settings")
+		}
+		first := cfg.Fleets[0]
+		return config.Fleet{}, config.Harness{}, refuse(http.StatusConflict, "the chat is off: fleet %s: %s", first.Name, first.ChatOffReason())
 	}
-	dock, ok := fleet.Harness("claude")
-	if !ok {
-		return config.Fleet{}, config.Harness{}, refuse(http.StatusConflict, "fleet %s has no Claude Code dock, so the chat cannot run there: pick another fleet in Settings", fleet.Name)
-	}
+	dock, _ := fleet.Harness(fleet.Chat.Harness)
 	return fleet, dock, nil
 }
 
@@ -109,7 +111,7 @@ func (l *Launcher) StartChat() error {
 	}
 
 	// Each value is its own argument: nothing here goes through a shell.
-	chat := cfg.Chat
+	chat := fleet.Chat
 	// The dock's args commonly widen permissions (--allowedTools, --add-dir, --mcp-config), so
 	// the chat keeps only the dock's executable and env.
 	argv := []string{exe}

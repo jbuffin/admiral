@@ -47,11 +47,11 @@ func newBotWorld(t *testing.T, o botOpts) *chatWorld {
 	cfg := map[string]any{"version": 1,
 		"fleets": map[string]any{
 			"chat": map[string]any{"name": "Chat", "search_roots": []string{w.work},
-				"claude": map[string]any{"executable": w.fakeExe("claude"), "args": o.chatArgs, "env": chatEnv}},
+				"claude": map[string]any{"executable": w.fakeExe("claude"), "args": o.chatArgs, "env": chatEnv},
+				"chat":   map[string]any{"model": "opus", "effort": "high"}},
 			"ship": map[string]any{"name": "Ship", "search_roots": []string{w.work},
 				"claude": map[string]any{"executable": w.fakeExe("claude"), "args": []string{"--fa-ship"}, "env": shipEnv}},
-		},
-		"chat": map[string]any{"fleet": "chat", "model": "opus", "effort": "high"}}
+		}}
 	if o.sources != nil {
 		cfg["sources"] = json.RawMessage(o.sources(w))
 	}

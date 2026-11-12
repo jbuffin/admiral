@@ -62,9 +62,9 @@ func newChatWorld(t *testing.T, link bool, cue ...string) *chatWorld {
 	// No ADMIRAL_* in the dock env: the chat must not get a ship's variables.
 	env := map[string]string{"FAKE_RECORD_DIR": w.rec, "FAKE_CUE": w.cue, "FLEET_VAR": "fleet-value", "CLAUDE_CONFIG_DIR": dockCfg}
 	fleets := map[string]any{"chat": map[string]any{"name": "Chat", "search_roots": []string{w.work},
-		"claude": map[string]any{"executable": w.fakeExe("claude"), "args": []string{"--fa-chat"}, "env": env}}}
-	b, err := json.Marshal(map[string]any{"version": 1, "fleets": fleets,
-		"chat": map[string]any{"fleet": "chat", "model": "opus", "effort": "high"}})
+		"claude": map[string]any{"executable": w.fakeExe("claude"), "args": []string{"--fa-chat"}, "env": env},
+		"chat":   map[string]any{"model": "opus", "effort": "high"}}}
+	b, err := json.Marshal(map[string]any{"version": 1, "fleets": fleets})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -677,8 +677,8 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 
 	// Change the model and the effort, then New chat. The new run records into a
 	// fresh _chat directory and fires its own SessionStart.
-	if code, body := send(t, http.MethodPut, w.in.LocalURL+"/api/chat", map[string]any{"fleet": "chat", "model": "sonnet", "effort": ""}); code != http.StatusOK {
-		t.Fatalf("PUT /api/chat = %d: %s", code, body)
+	if code, body := send(t, http.MethodPut, w.in.LocalURL+"/api/fleets/chat", map[string]any{"chat": map[string]any{"harness": "claude", "model": "sonnet", "effort": ""}}); code != http.StatusOK {
+		t.Fatalf("PUT /api/fleets/chat = %d: %s", code, body)
 	}
 	if got := c.session(); !got.Running {
 		t.Fatalf("a config change must not stop a running chat: %+v", got)
