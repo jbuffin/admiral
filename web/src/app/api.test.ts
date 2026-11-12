@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { call } from './api';
+import { call, probeShips } from './api';
 
 const answer = (status: number, body: unknown) => vi.stubGlobal('fetch', async () => new Response(typeof body === 'string' ? body : JSON.stringify(body), { status }));
 
@@ -49,5 +49,28 @@ describe('call on a draft refusal', () => {
     });
     const r = await call('POST', '/x', {}, undefined, new AbortController().signal);
     expect(r).toMatchObject({ ok: false, aborted: true });
+  });
+});
+
+const answerWith = (impl: () => Promise<Response>) => vi.stubGlobal('fetch', impl);
+
+describe('probeShips', () => {
+  it('tells a server that answers from one that cannot be reached, and from a signed-out device', async () => {
+    answerWith(async () => new Response('{}', { status: 200 }));
+    expect(await probeShips()).toBe('ok');
+
+    answerWith(async () => new Response('', { status: 401 }));
+    expect(await probeShips()).toBe('signed-out');
+
+    answerWith(() => Promise.reject(new TypeError('Load failed')));
+    expect(await probeShips()).toBe('unreachable');
+
+    for (const status of [502, 503, 504]) {
+      answerWith(async () => new Response('', { status }));
+      expect(await probeShips(), String(status)).toBe('unreachable');
+    }
+
+    answerWith(async () => new Response('', { status: 500 }));
+    expect(await probeShips()).toBe('down');
   });
 });

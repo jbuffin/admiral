@@ -13,7 +13,7 @@ export const inboxItems = signal<InboxItem[]>([]);
 export const inboxLoaded = signal(false);
 export const sources = signal<Source[]>([]);
 export const resources = signal<Resource[]>([]);
-export const shipsLink = signal<'connecting' | 'open' | 'reconnecting' | 'signed-out'>('connecting');
+export const shipsLink = signal<'connecting' | 'open' | 'reconnecting' | 'signed-out' | 'unreachable'>('connecting');
 
 type Listener = (msg: { type: string; ship?: string; crew?: string; items?: unknown[]; reset?: boolean }) => void;
 const listeners = new Set<Listener>();
@@ -49,6 +49,13 @@ export function sendShips(msg: object): boolean {
   return true;
 }
 
+let retryNow: (() => void) | undefined;
+
+/** Probes at once instead of waiting out the backoff; the socket opens when the server answers. */
+export function retryShips() {
+  retryNow?.();
+}
+
 const RETRY_FIRST_MS = 1000;
 const RETRY_MAX_MS = 10000;
 
@@ -58,12 +65,21 @@ export function watchShips(): () => void {
   let retry: ReturnType<typeof setTimeout> | undefined;
   let delay = RETRY_FIRST_MS;
   let stopped = false;
+  let probing = false;
+  let connecting = false;
 
   const open = () => {
+    // A second socket would deliver every message twice and leave its own retry chain behind.
+    if (socket) {
+      socket.onclose = null;
+      socket.close();
+    }
     const s = new WebSocket(shipsSocketUrl());
     socket = s;
+    connecting = true;
     current = s;
     s.onopen = () => {
+      connecting = false;
       shipsLink.value = 'open';
       delay = RETRY_FIRST_MS;
       openers.forEach(guard);
@@ -85,6 +101,7 @@ export function watchShips(): () => void {
       else if (msg.type === 'resources') resources.value = msg.resources ?? [];
     };
     s.onclose = () => {
+      connecting = false;
       shipsLink.value = 'reconnecting';
       schedule();
     };
@@ -93,22 +110,36 @@ export function watchShips(): () => void {
   const schedule = () => {
     const wait = delay;
     delay = Math.min(delay * 2, RETRY_MAX_MS);
-    retry = setTimeout(async () => {
-      const p = await probeShips();
-      if (stopped) return;
-      if (p === 'signed-out') {
-        shipsLink.value = 'signed-out';
-        signedOut.value = true;
-      }
-      else if (p === 'down') schedule();
-      else open();
-    }, wait);
+    retry = setTimeout(probe, wait);
+  };
+
+  const probe = async () => {
+    probing = true;
+    const p = await probeShips();
+    probing = false;
+    if (stopped) return;
+    if (p === 'signed-out') {
+      shipsLink.value = 'signed-out';
+      signedOut.value = true;
+    } else if (p === 'unreachable') {
+      shipsLink.value = 'unreachable';
+      schedule();
+    } else if (p === 'down') schedule();
+    else open();
+  };
+
+  retryNow = () => {
+    if (probing || connecting) return;
+    clearTimeout(retry);
+    delay = RETRY_FIRST_MS;
+    void probe();
   };
 
   shipsLink.value = 'connecting';
   open();
   return () => {
     stopped = true;
+    retryNow = undefined;
     clearTimeout(retry);
     if (socket) {
       if (current === socket) current = undefined;

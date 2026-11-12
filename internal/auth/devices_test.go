@@ -842,3 +842,28 @@ func TestRevokeAnswers500AndKeepsTheDeviceWhenTheStoreCannotBeWritten(t *testing
 		t.Error("a device still listed must still authenticate")
 	}
 }
+
+// Browsers fetch the manifest link and icons without credentials, so a paired remote browser needs them without a token.
+func TestOnlyTheInstallFilesAreReachableWithoutAToken(t *testing.T) {
+	g := newRig(t)
+	for _, p := range []string{"/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon-maskable-512.png", "/icons/apple-touch-icon.png"} {
+		r := lanReq(nil)
+		r.target = p
+		if rec := g.do(r); rec.Code != 200 {
+			t.Errorf("GET %s with no token: %d, want 200", p, rec.Code)
+		}
+	}
+	// Nothing else is exempt, and only a GET is.
+	for _, p := range []string{"/app/", "/assets/x.js", "/sw.js", "/api/version", "/icons/other.png", "/icons/", "/manifest.webmanifest/x", "/"} {
+		r := lanReq(nil)
+		r.target = p
+		if rec := g.do(r); rec.Code != 401 {
+			t.Errorf("GET %s with no token: %d, want 401", p, rec.Code)
+		}
+	}
+	r := lanReq(nil)
+	r.method, r.target = "POST", "/manifest.webmanifest"
+	if rec := g.do(r); rec.Code != 401 {
+		t.Errorf("POST /manifest.webmanifest with no token: %d, want 401", rec.Code)
+	}
+}

@@ -129,6 +129,15 @@ func peerIsLoopback(r *http.Request) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
+// Browsers fetch the manifest link and the icons without credentials, so these static files open to any GET.
+var installFiles = map[string]bool{
+	"/manifest.webmanifest":        true,
+	"/icons/icon-192.png":          true,
+	"/icons/icon-512.png":          true,
+	"/icons/icon-maskable-512.png": true,
+	"/icons/apple-touch-icon.png":  true,
+}
+
 func (a *Auth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		isWS := strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
@@ -146,6 +155,10 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 				return
 			}
 			a.servePair(w, r, rt)
+			return
+		}
+		if r.Method == http.MethodGet && installFiles[r.URL.Path] {
+			next.ServeHTTP(w, r)
 			return
 		}
 		if rt.kind == pathLocal {

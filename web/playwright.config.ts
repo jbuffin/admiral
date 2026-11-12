@@ -30,6 +30,8 @@ export default defineConfig({
   reporter: [['list']],
   use: {
     baseURL,
+    // The journeys fake the API with page.route, which a worker would bypass; the install journeys allow it.
+    serviceWorkers: 'block',
     trace: process.env.CI ? 'retain-on-failure' : { mode: 'retain-on-failure', screenshots: false },
   },
   webServer: {

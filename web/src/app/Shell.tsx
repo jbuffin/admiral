@@ -13,9 +13,10 @@ import { MooredActions } from './MooredActions';
 import { MooredPRs } from './MooredPRs';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
-import { ships, shipsLoaded, sources } from './shipsLink';
+import { ships, shipsLink, shipsLoaded, sources } from './shipsLink';
 import { signedOut } from './session';
 import { SIGNED_OUT_LINE } from './remoteAccess';
+import { Unreachable } from './Unreachable';
 import { ReadyToMerge, StatusGlyph } from './StatusGlyph';
 import { call, type Order, type Ship } from './api';
 import { CrewPage } from './CrewPage';
@@ -389,7 +390,16 @@ export function Shell() {
       </main>
     );
   const surface = surfaceOf(loc.value.path) ?? SURFACES[0];
-  if (phone) return <PhoneShell surface={surface} />;
+  // An overlay, not a replacement: a blip must not unmount a Launch sheet with typed work in it.
+  return (
+    <>
+      {phone ? <PhoneShell surface={surface} /> : <DesktopShell surface={surface} />}
+      {shipsLink.value === 'unreachable' ? <Unreachable /> : null}
+    </>
+  );
+}
+
+function DesktopShell({ surface }: { surface: Surface }) {
   return (
     <div class="shell">
       <nav class="side" aria-label="Main">
