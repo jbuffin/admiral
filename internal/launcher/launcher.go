@@ -51,6 +51,8 @@ type Request struct {
 	ChatMessage string `json:"chat_message"`
 	// Anyway gives a chat launch a fresh key so the same message can launch twice.
 	Anyway bool `json:"anyway"`
+	// ChatKey is a woken ship's stored chat key, which a wake carries over as it is.
+	ChatKey string `json:"-"`
 	// Autopilot runs the ship under the guard with ADMIRAL_LOW_STAKES=advisor, counted against the global cap.
 	Autopilot bool     `json:"autopilot"`
 	ExtraArgs []string `json:"-"`
@@ -70,6 +72,17 @@ type Request struct {
 	PR string `json:"-"`
 	// Via is "admiralbot" when AdmiralBot made the launch, and the ship carries it.
 	Via string `json:"-"`
+}
+
+// ChatOption is the chat:<id> key the ship stores; an anyway launch stores none, so it never holds its message.
+func (r Request) ChatOption() string {
+	if r.ChatKey != "" {
+		return r.ChatKey
+	}
+	if id := strings.TrimSpace(r.ChatMessage); id != "" && !r.Anyway {
+		return "chat:" + id
+	}
+	return ""
 }
 
 // Skill is the order's skill: Commodore, a named one, or none (Just launch).
@@ -157,7 +170,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
 		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")},
-		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}}
+		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}, {"chat", req.ChatOption()}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
 			return nil, refuse(http.StatusBadRequest, "%s contains a control character", o[0])

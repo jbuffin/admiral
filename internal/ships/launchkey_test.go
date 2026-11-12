@@ -282,6 +282,9 @@ func TestAMooredShipWakesWithoutItsOwnKeyOrClaimsRefusingIt(t *testing.T) {
 	if err := moor.Write(r.home, recs[0]); err != nil {
 		t.Fatal(err)
 	}
+	r.s.mooredMu.Lock()
+	r.s.mooredLoaded = false
+	r.s.mooredMu.Unlock()
 	if err := os.Remove(filepath.Join(r.rec, "exit")); err != nil {
 		t.Fatal(err)
 	}

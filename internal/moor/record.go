@@ -36,6 +36,8 @@ type Record struct {
 	Round   int      `json:"round"`
 	// Via is who launched the ship when it was not the engineer.
 	Via string `json:"via,omitempty"`
+	// Chat is the ship's chat:<message id> launch key, so a moored ship still holds its message.
+	Chat string `json:"chat,omitempty"`
 	// Resources the ship held, so a round holds the same.
 	Resources []string  `json:"resources"`
 	MooredAt  time.Time `json:"moored_at"`
