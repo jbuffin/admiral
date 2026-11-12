@@ -479,7 +479,7 @@ Body `{"fleet":"work","harness":"claude"}`. Runs the probes for that harness and
 
 ## Devices and pairing
 
-The built shell's files (`/app/…` pages, one-segment `/assets/<name>.<ext>` files and `/sw.js`) are served to an unpaired device, so an installed app can load and ask for a code; they hold no data. Everything else, the old UI at `/classic/` included, needs a token.
+An unpaired device reaches the built shell's files (`/app/…` pages, one-segment `/assets/<name>.<ext>` files and `/sw.js`), the install files, and `GET` or `HEAD /`, which answers 302 to `/app/` with no body, so an installed app can load and ask for a code; none of it holds data. Everything else, the old UI at `/classic/` included, needs a token.
 
 A device is a browser or client that holds its own revocable token. A request from this Mac needs no token. Any other request needs the device's token, as `Authorization: Bearer <token>` or the cookie `admiral_token_<port>`; `?token=` is not accepted. The cookie is HttpOnly and SameSite=Strict, so a request that carries it must also pass the Origin check.
 

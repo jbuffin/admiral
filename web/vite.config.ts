@@ -25,10 +25,16 @@ export default defineConfig({
             res.end();
             return;
           }
-          if (req.method === 'GET' && (path === '/classic' || path === '/classic/')) {
+          if (req.method === 'GET' && (path === '/classic' || path.startsWith('/classic/')) && !/\.[a-z0-9]+$/i.test(path)) {
             const html = readFileSync(resolve(__dirname, 'index.html'), 'utf8');
             res.setHeader('Content-Type', 'text/html');
             res.end(await server.transformIndexHtml('/', html));
+            return;
+          }
+          // Other page navigations are no UI route; vite's own modules and the proxied API are not navigations.
+          if (req.method === 'GET' && (req.headers.accept ?? '').includes('text/html') && !/\.[a-z0-9]+$/i.test(path) && !/^\/(app|classic|api|ws|node_modules|src)(\/|$)|^\/@/.test(path)) {
+            res.statusCode = 404;
+            res.end('Not found');
             return;
           }
           if (req.method === 'GET' && (path === '/app' || (path.startsWith('/app/') && !/\.[a-z0-9]+$/i.test(path)))) {

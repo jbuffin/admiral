@@ -44,8 +44,9 @@ func TestShellServedUnderApp_OldUIUnchanged(t *testing.T) {
 	}{
 		{"/classic", oldIndex},
 		{"/classic/", oldIndex},
-		{"/ships/x", oldIndex}, // the old UI's own client-side route
-		{"/application", oldIndex},
+		{"/classic/x", oldIndex},
+		{"/ships/x", ""}, // an extensionless path outside /app and /classic is no UI route
+		{"/application", ""},
 		{"/app", appIndex},
 		{"/app/", appIndex},
 		{"/app/ships/x", appIndex},
@@ -80,6 +81,9 @@ func TestRootRedirectsToTheNewShell(t *testing.T) {
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, httptest.NewRequest(c.method, c.target, nil))
 			// A permanent redirect would outlive a rollback in every browser that saw it.
+			if rec.Body.Len() != 0 {
+				t.Fatalf("%s %s body = %q, want none", c.method, c.target, rec.Body.String())
+			}
 			if rec.Code != http.StatusFound || rec.Header().Get("Location") != c.want {
 				t.Fatalf("%s %s = %d to %q, want 302 to %q", c.method, c.target, rec.Code, rec.Header().Get("Location"), c.want)
 			}

@@ -846,10 +846,10 @@ func TestRevokeAnswers500AndKeepsTheDeviceWhenTheStoreCannotBeWritten(t *testing
 // Browsers fetch the manifest link and icons without credentials, so a paired remote browser needs them without a token.
 func TestOnlyTheInstallFilesAndTheStaticShellAreReachableWithoutAToken(t *testing.T) {
 	g := newRig(t)
-	for _, p := range []string{"/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon-maskable-512.png", "/icons/apple-touch-icon.png", "/app/", "/app/ships", "/assets/x.js", "/assets/x.css", "/sw.js"} {
+	for _, p := range []string{"/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon-maskable-512.png", "/icons/apple-touch-icon.png", "/app/", "/app/ships", "/assets/x.js", "/assets/x.css", "/sw.js", "/"} {
 		for _, m := range []string{"GET", "HEAD"} {
 			// The manifest and icons are GET-only.
-			if m == "HEAD" && !strings.HasPrefix(p, "/app") && !strings.HasPrefix(p, "/assets/") && p != "/sw.js" {
+			if m == "HEAD" && !strings.HasPrefix(p, "/app") && !strings.HasPrefix(p, "/assets/") && p != "/sw.js" && p != "/" {
 				continue
 			}
 			r := lanReq(nil)
@@ -860,14 +860,14 @@ func TestOnlyTheInstallFilesAndTheStaticShellAreReachableWithoutAToken(t *testin
 		}
 	}
 	// Nothing else is exempt, and only a GET or HEAD is.
-	for _, p := range []string{"/api/version", "/api/v1/version", "/api/v1/ships", "/ws/v1", "/icons/other.png", "/icons/", "/manifest.webmanifest/x", "/", "/classic/", "/classic", "/assets/x", "/assets/", "/app/../api/v1/ships", "/app/%2e%2e/api/v1/ships", "/assets/../api/v1/ships", "/assets/..%2fapi/v1/ships"} {
+	for _, p := range []string{"/api/version", "/api/v1/version", "/api/v1/ships", "/ws/v1", "/icons/other.png", "/icons/", "/manifest.webmanifest/x", "/classic/", "/classic", "/assets/x", "/assets/", "/app/../api/v1/ships", "/app/%2e%2e/api/v1/ships", "/assets/../api/v1/ships", "/assets/..%2fapi/v1/ships"} {
 		r := lanReq(nil)
 		r.target = p
 		if rec := g.do(r); rec.Code != 401 {
 			t.Errorf("GET %s with no token: %d, want 401", p, rec.Code)
 		}
 	}
-	for _, p := range []string{"/manifest.webmanifest", "/app/", "/assets/x.js", "/sw.js"} {
+	for _, p := range []string{"/manifest.webmanifest", "/app/", "/assets/x.js", "/sw.js", "/"} {
 		r := lanReq(nil)
 		r.method, r.target = "POST", p
 		if rec := g.do(r); rec.Code != 401 {
