@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 
@@ -47,9 +48,9 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "upTo is not one of ship "+session+"'s pull requests")
 		return
 	}
-	if len(rec.PRs) > 1 {
-		// gh stack merge reads a bare number as a stack number before a PR number, so it can merge another stack.
-		writeError(w, http.StatusUnprocessableEntity, "merging a stack is not available yet; merge its pull requests on GitHub")
+	stack := len(rec.PRs) > 1
+	if stack && body.UpTo != "" && body.UpTo != rec.PRs[len(rec.PRs)-1] {
+		writeError(w, http.StatusBadRequest, "Merge up to is not available; the whole stack merges")
 		return
 	}
 	var gh moor.GitHub
@@ -60,13 +61,28 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "the fleet has no GitHub source to merge with")
 		return
 	}
-	// The PR that was checked is the PR that gets merged: only the client's own host, and the argv URL is rebuilt from the parts.
-	host, repo, number, ok := moor.ParsePR(rec.PRs[0])
-	if !ok || !strings.EqualFold(host, gh.Host()) {
-		writeError(w, http.StatusUnprocessableEntity, "the pull request is not on the fleet's GitHub host, so it is not merged")
-		return
+	// The PRs that were checked are the PRs that get merged: only the client's own host, and the argv URL is rebuilt from the parts.
+	var repo, mergeURL string
+	for _, pr := range rec.PRs {
+		host, prRepo, number, ok := moor.ParsePR(pr)
+		if !ok || !strings.EqualFold(host, gh.Host()) {
+			writeError(w, http.StatusUnprocessableEntity, "the pull request is not on the fleet's GitHub host, so it is not merged")
+			return
+		}
+		if repo == "" {
+			repo, mergeURL = prRepo, "https://"+gh.Host()+"/"+prRepo+"/pull/"+number
+		}
 	}
-	mergeURL := "https://" + gh.Host() + "/" + repo + "/pull/" + number
+	if stack {
+		if rec.Checkout == "" {
+			writeError(w, http.StatusConflict, "the ship has no checkout to merge its stack from")
+			return
+		}
+		if fi, err := os.Stat(rec.Checkout); err != nil || !fi.IsDir() {
+			writeError(w, http.StatusConflict, "the ship's checkout "+rec.Checkout+" is gone, so its stack is not merged")
+			return
+		}
+	}
 
 	// The last poll may be minutes old: look again before any gh merge runs.
 	fresh, err := gh.PullRequests(r.Context(), rec.PRs)
@@ -74,11 +90,22 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "cannot check the pull request before merging: "+err.Error())
 		return
 	}
-	url := rec.PRs[0]
-	st, found := fresh[url]
-	if !found || !st.Ready() {
-		writeError(w, http.StatusConflict, "the pull request is not ready to merge: it must be open, approved, green and mergeable")
-		return
+	for _, url := range rec.PRs {
+		if st, found := fresh[url]; !found || !st.Ready() {
+			writeError(w, http.StatusConflict, "the pull request is not ready to merge: it must be open, approved, green and mergeable")
+			return
+		}
+	}
+	if stack {
+		layers, err := gh.StackPRs(r.Context(), rec.Checkout)
+		if err != nil {
+			writeError(w, http.StatusConflict, "cannot read the stack in the ship's checkout, so it is not merged: "+err.Error())
+			return
+		}
+		if !slices.Equal(layers, rec.PRs) {
+			writeError(w, http.StatusConflict, "the stack in the ship's checkout is not the ship's pull requests, so it is not merged")
+			return
+		}
 	}
 	method, err := s.mergeMethod(r.Context(), gh, rec.Fleet, repo)
 	if err != nil {
@@ -87,7 +114,11 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The merge outlives a client that hangs up: stopping gh midway would leave its result unknown.
-	err = gh.MergePR(context.WithoutCancel(r.Context()), mergeURL, method)
+	if stack {
+		err = gh.MergeStack(context.WithoutCancel(r.Context()), rec.Checkout, method)
+	} else {
+		err = gh.MergePR(context.WithoutCancel(r.Context()), mergeURL, method)
+	}
 	switch {
 	case errors.Is(err, moor.ErrMergeTimeout):
 		s.RefreshMoored() // it may have merged
@@ -97,9 +128,9 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	s.record(outcomes.Record{Ship: session, Event: "merged", Fields: map[string]any{"prs": []string{url}, "method": method}}, nil)
+	s.record(outcomes.Record{Ship: session, Event: "merged", Fields: map[string]any{"prs": rec.PRs, "method": method}}, nil)
 	s.RefreshMoored()
-	writeJSON(w, http.StatusAccepted, map[string]any{"merged": []string{url}, "method": method})
+	writeJSON(w, http.StatusAccepted, map[string]any{"merged": rec.PRs, "method": method})
 }
 
 // mergeMethod is the repository's default merge method, from the cache or else asked of GitHub.

@@ -9,6 +9,9 @@ import { Composer, useComposer, type Target } from './Composer';
 import { boatBoxState, chipState, flotilla } from './flotilla';
 import { Icon } from './Icon';
 import { MooredPRs } from './MooredPRs';
+import { MooredActions } from './MooredActions';
+import { MergeControl } from './PeekMerge';
+import { Failure } from './PeekItem';
 import { ReadyToMerge } from './StatusGlyph';
 import { NO_RESUME_NOTE } from './moored';
 import { boxState } from './messageBox';
@@ -377,7 +380,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
         ) : tab === 'Changes' ? (
           <ChangesTab ship={ship} />
         ) : (
-          moored ? <MooredPRs ship={ship} now={Date.now()} /> : <p class="line">No pull request yet</p>
+          moored ? <PRTab ship={ship} /> : <p class="line">No pull request yet</p>
         )}
       </div>
     </section>
@@ -406,5 +409,26 @@ export function ShipView({ session, title }: { session: string; title: boolean }
     <main class="panel ship-main-view">
       <ShipTabs key={session} ship={ship} title={title} />
     </main>
+  );
+}
+
+/** The PRs with their chips, and below them Merge for a ready ship and Don't follow reviews. The view's head holds Wake. */
+function PRTab({ ship }: { ship: Ship }) {
+  const [error, setError] = useState('');
+  const [merged, setMerged] = useState(false);
+  const [acting, setActing] = useState(false);
+  return (
+    <div class="peek-form">
+      <MooredPRs ship={ship} now={Date.now()} />
+      {merged ? (
+        <p class="line">Merged</p>
+      ) : (
+        <>
+          {ship.stack_ready ? <MergeControl ship={ship} onMerged={() => setMerged(true)} onError={setError} locked={acting} onBusy={setActing} /> : null}
+          <MooredActions ship={ship} tab onError={setError} locked={acting} onBusy={setActing} />
+        </>
+      )}
+      <Failure message={error} />
+    </div>
   );
 }

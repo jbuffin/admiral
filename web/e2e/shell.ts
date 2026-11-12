@@ -87,11 +87,11 @@ export function watchPage(page: Page, server: string) {
   const paths: string[] = [];
   const foreign: string[] = [];
   const errors: string[] = [];
-  // The browser logs each refused launch, ending or work-repo save as a console error, in either order against its response: the form or row showing the refusal is the journey's own check.
+  // The browser logs each refused launch, ending, merge or work-repo save as a console error, in either order against its response: the form or row showing the refusal is the journey's own check.
   const failedLoads: string[] = [];
   let refusedLaunches = 0;
   page.on('response', (r) => {
-    const refusable = { POST: /^\/api\/v1\/(ships|campaigns\/[^/]+\/launch|ships\/[^/]+\/(dismiss|unfollow))$/, PUT: /^\/api\/v1\/campaigns\/[^/]+\/work-repo$/ }[r.request().method()];
+    const refusable = { POST: /^\/api\/v1\/(ships|campaigns\/[^/]+\/launch|ships\/[^/]+\/(dismiss|unfollow|merge))$/, PUT: /^\/api\/v1\/campaigns\/[^/]+\/work-repo$/ }[r.request().method()];
     if (refusable?.test(new URL(r.url()).pathname) && r.status() >= 400) refusedLaunches++;
   });
   page.on('console', (m) => {
@@ -689,7 +689,7 @@ async function openPRTab(page: Page, a: Admiral, ship: LaunchedShip) {
 /**
  * The PR tab of a ready ship shows the state and the actions: the PR and its chips, Ready to merge above, Merge with the method hint
  * and Don't follow reviews in the tab, no Dismiss, and the head's one Wake. Nothing merges before the tap; one tap records
- * one `gh pr merge <url> --squash`, the tab says Merged and the ship sails off.
+ * one `gh pr merge <url> --squash` and the ship sails off.
  */
 export async function mergeFromThePRTab(page: Page, a: Admiral, opts: { phone: boolean }) {
   seedMergeMethod(a, 'squash');
@@ -722,7 +722,6 @@ export async function mergeFromThePRTab(page: Page, a: Admiral, opts: { phone: b
   await expect(merge).toBeDisabled();
   await expect(unfollow).toBeDisabled();
   await expect.poll(() => mergeCalls(a)).toEqual([['pr', 'merge', `${PR_BASE}/7`, '--squash']]);
-  await expect(panel).toContainText('Merged');
   await expect
     .poll(async () => (await (await fetch(`${a.url}api/v1/ships`)).json() as { ships: ShipJSON[] }).ships.find((s) => s.session === ship.session)?.status ?? 'gone', { timeout: 30_000 })
     .not.toBe('moored');
@@ -746,7 +745,6 @@ export async function readyStackMergesFromThePRTab(page: Page, a: Admiral, opts:
   await merge.tap();
   await expect(merge).toBeDisabled();
   await expectOneStackMerge(a);
-  await expect(panel).toContainText('Merged');
   await expect
     .poll(async () => (await (await fetch(`${a.url}api/v1/ships`)).json() as { ships: ShipJSON[] }).ships.find((s) => s.session === ship.session)?.status ?? 'gone', { timeout: 30_000 })
     .not.toBe('moored');

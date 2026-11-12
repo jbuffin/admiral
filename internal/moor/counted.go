@@ -27,6 +27,10 @@ type GitHub interface {
 	// MergePR merges one pull request with the method. Only the engineer's Merge act calls it. An error is gh's
 	// message; ErrMergeTimeout says gh ran past its limit, so the merge may have happened.
 	MergePR(ctx context.Context, url, method string) error
+	// StackPRs is the pull request URL of each layer of the stack checked out in dir, bottom first; "" is a layer with none.
+	StackPRs(ctx context.Context, dir string) ([]string, error)
+	// MergeStack merges the whole stack checked out in dir with the method, naming no target. Its errors are MergePR's.
+	MergeStack(ctx context.Context, dir, method string) error
 }
 
 // ErrMergeTimeout is a merge whose result is unknown.
