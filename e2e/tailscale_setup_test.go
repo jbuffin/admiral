@@ -301,13 +301,16 @@ func TestSetupWritesNothingWhenServeFails(t *testing.T) {
 	cases := []struct {
 		name  string
 		setup func(s *setupRig)
-		want  string
+		want  []string
 	}{
 		{"non-zero exit", func(s *setupRig) {
 			s.ts.put("servebg.exit", "1")
-			s.ts.put("servebg.err", "Serve is not enabled on your tailnet.")
-		}, "Serve is not enabled on your tailnet."},
-		{"hang", func(s *setupRig) { s.ts.put("servebg.sleep", "30") }, "timed out"},
+			s.ts.put("servebg.err", "Serve is not enabled on your tailnet.\nTo enable, visit:\n  https://login.tailscale.com/f/serve?node=fake")
+		}, []string{"Serve is not enabled on your tailnet.", "https://login.tailscale.com/f/serve?node=fake"}},
+		{"hang", func(s *setupRig) {
+			s.ts.put("servebg.sleep", "30")
+			s.ts.put("servebg.out", "Serve is not enabled on your tailnet.\nTo enable, visit: https://login.tailscale.com/f/serve?node=fake")
+		}, []string{"timed out", "Serve is not enabled on your tailnet.", "https://login.tailscale.com/f/serve?node=fake", "run setup again"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -322,8 +325,10 @@ func TestSetupWritesNothingWhenServeFails(t *testing.T) {
 			if got := s.serveCalls(); len(got) != 1 || got[0] != serveArgv {
 				t.Errorf("serve calls = %q, want one with the fixed argv", got)
 			}
-			if !strings.Contains(r.both(), c.want) {
-				t.Errorf("want %q in the output:\n%s", c.want, r.both())
+			for _, w := range c.want {
+				if !strings.Contains(r.both(), w) {
+					t.Errorf("want %q in the output:\n%s", w, r.both())
+				}
 			}
 			if len(setupLines(r.stdout, "failed")) == 0 {
 				t.Errorf("want a `failed` line:\n%s", r.stdout)

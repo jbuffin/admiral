@@ -103,6 +103,11 @@ type serveConfig struct {
 }
 
 func run(ctx context.Context, limit time.Duration, args ...string) ([]byte, error) {
+	return runCLI(ctx, limit, false, args...)
+}
+
+// runCLI runs tailscale. With verbose, a failure or timeout carries everything the CLI wrote, every line.
+func runCLI(ctx context.Context, limit time.Duration, verbose bool, args ...string) ([]byte, error) {
 	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
@@ -115,9 +120,16 @@ func run(ctx context.Context, limit time.Duration, args ...string) ([]byte, erro
 		case parent.Err() != nil:
 			return nil, fmt.Errorf("tailscale %s was cancelled", strings.Join(args, " "))
 		case ctx.Err() != nil:
-			return nil, fmt.Errorf("tailscale %s timed out after %s", strings.Join(args, " "), limit)
+			msg := fmt.Sprintf("tailscale %s timed out after %s", strings.Join(args, " "), limit)
+			if verbose {
+				msg += withOutput(&out, &errOut) + "\nTailscale may still turn serve on later; run setup again to check."
+			}
+			return nil, errors.New(msg)
 		case errors.Is(err, exec.ErrNotFound):
 			return nil, fmt.Errorf("tailscale is not installed or not on PATH")
+		}
+		if verbose {
+			return nil, fmt.Errorf("tailscale %s failed: %v%s", strings.Join(args, " "), err, withOutput(&out, &errOut))
 		}
 		msg := firstLine(errOut.String())
 		if msg == "" {
@@ -126,6 +138,17 @@ func run(ctx context.Context, limit time.Duration, args ...string) ([]byte, erro
 		return nil, fmt.Errorf("tailscale %s failed: %s", strings.Join(args, " "), msg)
 	}
 	return out.Bytes(), nil
+}
+
+// withOutput is what the CLI wrote to stdout and stderr, trimmed, on lines of their own.
+func withOutput(out, errOut *bytes.Buffer) string {
+	var b strings.Builder
+	for _, w := range []*bytes.Buffer{out, errOut} {
+		if t := strings.TrimSpace(w.String()); t != "" {
+			b.WriteString("\n" + t)
+		}
+	}
+	return b.String()
 }
 
 func firstLine(s string) string {
@@ -399,7 +422,7 @@ func holder443(cfg *serveConfig) string {
 
 // EnableServe runs the fixed serve command on port 443 under ServeTimeout, which ServeTimeoutEnv can shorten.
 func EnableServe(ctx context.Context, port string) error {
-	_, err := run(ctx, delay.From(ServeTimeoutEnv, ServeTimeout), ServeArgs(port)...)
+	_, err := runCLI(ctx, delay.From(ServeTimeoutEnv, ServeTimeout), true, ServeArgs(port)...)
 	return err
 }
 
