@@ -21,7 +21,7 @@ import {
   type RoutineForm,
   type RoutineRun,
 } from './routines';
-import { sources } from './shipsLink';
+import { ships, sources } from './shipsLink';
 
 const api = (fleet: string, rest = '') => `/fleets/${encodeURIComponent(fleet)}/routines${rest}`;
 const BEFORE: { value: Before; label: string }[] = [
@@ -68,6 +68,10 @@ function HoldFireToggles({ fleet }: { fleet: Fleet }) {
   );
 }
 
+// The run records the session slug; the ship's name is what the engineer knows it by, and a ship gone from the list keeps its slug's words.
+const slugName = (slug: string) => slug.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+const shipTitle = (session: string, text: string) => text.replace(session, ships.value.find((s) => s.session === session)?.name ?? slugName(session));
+
 function RecentRuns({ runs }: { runs: RoutineRun[] | null }) {
   return (
     <section class="routine-runs" aria-labelledby="runs-head">
@@ -85,7 +89,7 @@ function RecentRuns({ runs }: { runs: RoutineRun[] | null }) {
               <time class="run-time" dateTime={r.at}>
                 {new Date(r.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
               </time>
-              {l.ship ? <a href={shipPath(l.ship) + fleetSearch.value}>{l.text}</a> : <span>{l.text}</span>}
+              {l.ship ? <a href={shipPath(l.ship) + fleetSearch.value}>{shipTitle(l.ship, l.text)}</a> : <span>{l.text}</span>}
               {r.via === 'proposal' && !l.text.includes('proposal') ? <span class="muted"> via proposal</span> : null}
             </li>
           );

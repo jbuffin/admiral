@@ -34,7 +34,7 @@ test('a routine made through the form fires on its minute and its ship shows in 
 test('Automate… on an order view opens an unsaved scheduled routine draft', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
   await admiral.start({ env: withFakeGh(admiral) });
-  await page.goto(admiral.url + 'app/orders?fleet=zulu');
+  await page.goto(admiral.url + 'app/ships?fleet=zulu');
   await page.getByRole('main').getByRole('button', { name: /^Automate/ }).first().tap();
   await expect(page).toHaveURL(/\/app\/routines\/new/);
   const form = page.getByRole('main').getByRole('form', { name: 'Routine' });
