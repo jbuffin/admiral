@@ -65,12 +65,21 @@ export function watchShips(): () => void {
   let retry: ReturnType<typeof setTimeout> | undefined;
   let delay = RETRY_FIRST_MS;
   let stopped = false;
+  let probing = false;
+  let connecting = false;
 
   const open = () => {
+    // A second socket would deliver every message twice and leave its own retry chain behind.
+    if (socket) {
+      socket.onclose = null;
+      socket.close();
+    }
     const s = new WebSocket(shipsSocketUrl());
     socket = s;
+    connecting = true;
     current = s;
     s.onopen = () => {
+      connecting = false;
       shipsLink.value = 'open';
       delay = RETRY_FIRST_MS;
       openers.forEach(guard);
@@ -92,6 +101,7 @@ export function watchShips(): () => void {
       else if (msg.type === 'resources') resources.value = msg.resources ?? [];
     };
     s.onclose = () => {
+      connecting = false;
       shipsLink.value = 'reconnecting';
       schedule();
     };
@@ -104,7 +114,9 @@ export function watchShips(): () => void {
   };
 
   const probe = async () => {
+    probing = true;
     const p = await probeShips();
+    probing = false;
     if (stopped) return;
     if (p === 'signed-out') {
       shipsLink.value = 'signed-out';
@@ -117,6 +129,7 @@ export function watchShips(): () => void {
   };
 
   retryNow = () => {
+    if (probing || connecting) return;
     clearTimeout(retry);
     delay = RETRY_FIRST_MS;
     void probe();

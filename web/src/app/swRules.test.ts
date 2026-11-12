@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cacheable, classifyRequest } from './swRules';
+import { cacheable, classifyRequest, serverGone } from './swRules';
 
 const origin = 'http://admiral.test';
 const req = (path: string, init: { method?: string; mode?: string; origin?: string } = {}) =>
@@ -33,5 +33,12 @@ describe('cacheable', () => {
   it('stores only a 200', () => {
     expect(cacheable(200)).toBe(true);
     for (const status of [206, 301, 304, 401, 404, 500, 503]) expect(cacheable(status), String(status)).toBe(false);
+  });
+});
+
+describe('serverGone', () => {
+  it('takes a proxy no-backend answer for a dead server, and nothing else', () => {
+    for (const status of [502, 503, 504]) expect(serverGone(status), String(status)).toBe(true);
+    for (const status of [200, 304, 401, 404, 500]) expect(serverGone(status), String(status)).toBe(false);
   });
 });

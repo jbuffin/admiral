@@ -301,6 +301,8 @@ export async function checkHarness(fleet: string, harness: string): Promise<Chec
 
 export const shipsSocketUrl = () => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/v1`;
 
+const PROXY_DOWN = new Set([502, 503, 504]);
+
 export type ShipsProbe = 'ok' | 'signed-out' | 'down' | 'unreachable';
 
 // A failed WebSocket handshake doesn't say why, so a reconnect asks over HTTP first: 401 is a changed token.
@@ -308,6 +310,8 @@ export async function probeShips(): Promise<ShipsProbe> {
   try {
     const res = await fetch(`${API}/ships`, { cache: 'no-store' });
     if (res.status === 401) return 'signed-out';
+    // Behind tailscale serve a stopped Admiral answers 502 from the proxy, which is as unreachable as a refused connection.
+    if (PROXY_DOWN.has(res.status)) return 'unreachable';
     return res.ok ? 'ok' : 'down';
   } catch {
     // A rejected fetch is a network failure: no answer at all, unlike a 401 or a 5xx.

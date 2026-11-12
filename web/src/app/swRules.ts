@@ -11,3 +11,6 @@ export function classifyRequest(req: { method: string; url: string; mode: string
 }
 
 export const cacheable = (status: number) => status === 200;
+
+/** Behind tailscale serve a stopped Admiral answers 502 from the proxy: the worker treats it as no answer and serves the cache. */
+export const serverGone = (status: number) => status === 502 || status === 503 || status === 504;

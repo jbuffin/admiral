@@ -65,7 +65,12 @@ describe('probeShips', () => {
     answerWith(() => Promise.reject(new TypeError('Load failed')));
     expect(await probeShips()).toBe('unreachable');
 
-    answerWith(async () => new Response('', { status: 502 }));
+    for (const status of [502, 503, 504]) {
+      answerWith(async () => new Response('', { status }));
+      expect(await probeShips(), String(status)).toBe('unreachable');
+    }
+
+    answerWith(async () => new Response('', { status: 500 }));
     expect(await probeShips()).toBe('down');
   });
 });

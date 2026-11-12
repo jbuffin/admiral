@@ -390,8 +390,16 @@ export function Shell() {
       </main>
     );
   const surface = surfaceOf(loc.value.path) ?? SURFACES[0];
-  if (shipsLink.value === 'unreachable') return <Unreachable />;
-  if (phone) return <PhoneShell surface={surface} />;
+  // An overlay, not a replacement: a blip must not unmount a Launch sheet with typed work in it.
+  return (
+    <>
+      {phone ? <PhoneShell surface={surface} /> : <DesktopShell surface={surface} />}
+      {shipsLink.value === 'unreachable' ? <Unreachable /> : null}
+    </>
+  );
+}
+
+function DesktopShell({ surface }: { surface: Surface }) {
   return (
     <div class="shell">
       <nav class="side" aria-label="Main">

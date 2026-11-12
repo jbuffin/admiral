@@ -21,9 +21,9 @@ export function reloadDecision(stamp: Build | null, server: Build, guard: string
 
 const GUARD_KEY = 'admiral-reloaded-for';
 
-/** The build the server runs, or null on anything but a 200: /api/version stays behind auth, so a 401 is no check. */
+/** The build the server runs, or null on anything but a 200: /api/v1/version stays behind auth, so a 401 is no check. */
 export async function fetchServerBuild(): Promise<Build | null> {
-  const res = await fetch('/api/version', { cache: 'no-store' });
+  const res = await fetch('/api/v1/version', { cache: 'no-store' });
   return res.status === 200 ? ((await res.json()) as Build) : null;
 }
 

@@ -702,6 +702,8 @@ test.describe('installed app', () => {
     await expect(page.getByRole('heading', { name: "Can't reach your Mac" })).toBeVisible();
     for (const check of ['Tailscale on here?', 'Mac awake?', 'Admiral running?']) await expect(page.getByText(check)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible();
+    // The shell stays mounted under the screen, so a blip keeps what the person typed.
+    await expect(surface(page, 'Inbox')).toBeAttached();
 
     await page.getByRole('button', { name: 'Retry' }).click();
     await expect(page.getByRole('heading', { name: "Can't reach your Mac" })).toBeVisible();
@@ -734,7 +736,7 @@ test.describe('installed app', () => {
 });
 
 test.describe('a shell that does not match the server', () => {
-  const serverBuild = async (page: Page, url: string) => (await (await page.request.get(url + 'api/version')).json()) as { version: string; commit: string };
+  const serverBuild = async (page: Page, url: string) => (await (await page.request.get(url + 'api/v1/version')).json()) as { version: string; commit: string };
   const shellLoads = (page: Page) => {
     const loads: string[] = [];
     page.on('request', (r) => {
@@ -743,9 +745,9 @@ test.describe('a shell that does not match the server', () => {
     return loads;
   };
 
-  test('reloads once when /api/version names another build, and not again while it still differs', async ({ page, admiral }) => {
+  test('reloads once when /api/v1/version names another build, and not again while it still differs', async ({ page, admiral }) => {
     await admiral.start();
-    await page.route('**/api/version', (route) => route.fulfill({ json: { version: 'other-build', commit: 'zzz9999', api_versions: [1], capabilities: [] } }));
+    await page.route('**/api/v1/version', (route) => route.fulfill({ json: { version: 'other-build', commit: 'zzz9999', api_versions: [1], capabilities: [] } }));
     const loads = shellLoads(page);
     await page.goto(admiral.url + 'app/');
     await expect.poll(() => loads.length).toBe(2);
@@ -753,11 +755,11 @@ test.describe('a shell that does not match the server', () => {
     await holds(() => loads.length === 2, 'the shell reloaded again');
   });
 
-  test('does not reload when /api/version names the shell\'s own build', async ({ page, admiral }) => {
+  test('does not reload when /api/v1/version names the shell\'s own build', async ({ page, admiral }) => {
     await admiral.start();
     const build = await serverBuild(page, admiral.url);
     let probed = 0;
-    await page.route('**/api/version', (route) => {
+    await page.route('**/api/v1/version', (route) => {
       probed++;
       return route.fulfill({ json: { ...build, api_versions: [1], capabilities: [] } });
     });

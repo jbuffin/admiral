@@ -117,8 +117,7 @@ export function watchPage(page: Page, server: string) {
     get errors() {
       return [...errors, ...failedLoads.slice(refusedLaunches)];
     },
-    // /api/version is unversioned by design: the shell asks it which build the server runs.
-    unversioned: () => paths.filter((p) => /^\/(api|ws)(\/|$)/.test(p) && !/^\/(api|ws)\/v1(\/|$)/.test(p) && p !== '/api/version'),
+    unversioned: () => paths.filter((p) => /^\/(api|ws)(\/|$)/.test(p) && !/^\/(api|ws)\/v1(\/|$)/.test(p)),
   };
 }
 

@@ -192,7 +192,7 @@ describe('watchShips', () => {
   });
 
   it('does not say unreachable when the server answers with an error', async () => {
-    probeAnswer = async () => new Response('', { status: 502 });
+    probeAnswer = async () => new Response('', { status: 500 });
     stop = watchShips();
     last().drop();
     await tick(1000);
@@ -211,6 +211,22 @@ describe('watchShips', () => {
     retryShips();
     await tick(0);
     expect(fetches).toHaveLength(before + 1);
+    expect(sockets()).toHaveLength(2);
+    last().open();
+    expect(shipsLink.value).toBe('open');
+  });
+
+  it('opens one socket however often Retry is tapped while it connects', async () => {
+    probeAnswer = () => Promise.reject(new TypeError('Load failed'));
+    stop = watchShips();
+    last().drop();
+    await tick(1000);
+    probeAnswer = async () => new Response(JSON.stringify({ ships: [] }), { status: 200 });
+    retryShips();
+    retryShips();
+    await tick(0);
+    retryShips();
+    await tick(0);
     expect(sockets()).toHaveLength(2);
     last().open();
     expect(shipsLink.value).toBe('open');
