@@ -287,7 +287,7 @@ var mcpTools = []mcpTool{
 		obj([]string{"session"}, map[string]any{"session": str("the moored ship's session name"), "text": str("optional text for the new round")}), shipPost("/wake", true)},
 	{"stop_ship", "Stop a ship.", obj([]string{"session"}, map[string]any{"session": str("the ship's session name")}), shipPost("/stop", false)},
 	{"dismiss_ship", "Dismiss an anchored ship.", obj([]string{"session"}, map[string]any{"session": str("the ship's session name")}), shipPost("/dismiss", false)},
-	{"list_routines", "List this fleet's routines: when each runs, its mode, whether it is on and its last runs.", obj(nil, nil), fleetGet("/routines")},
+	{"list_routines", "List this fleet's routines: when each runs, its mode, and whether it is on.", obj(nil, nil), fleetGet("/routines")},
 	{"turn_routine_off", "Turn one of this fleet's routines off. Turning one on, saving, editing or deleting a routine is the engineer's.",
 		obj([]string{"routine"}, map[string]any{"routine": str("the routine's id")}),
 		func(c *mcpClient, raw json.RawMessage) (string, error) {

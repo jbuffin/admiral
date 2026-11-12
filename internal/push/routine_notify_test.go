@@ -1,6 +1,7 @@
 package push_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/jbuffin/admiral/internal/inbox"
@@ -20,7 +21,7 @@ func TestARoutineRecordPushesWithTheTapTargetItsOutcomeHas(t *testing.T) {
 		target, session, itm string
 	}{
 		{"launched with its ship", routines.Trigger{ID: "t1", Routine: "r1", Outcome: routines.Launched, Ship: "dory"}, push.TargetShip, "dory", ""},
-		{"proposed opens the proposal", routines.Trigger{ID: "t2", Routine: "r1", Outcome: routines.Proposed}, push.TargetPeek, inbox.AdmiralSession, "routine-work-t2"},
+		{"proposed opens the proposal", routines.Trigger{ID: "t2", Routine: "r1", Outcome: routines.Proposed}, push.TargetPeek, inbox.AdmiralSession, "routine-t2"},
 		{"failed with no ship has no tap target", routines.Trigger{ID: "t3", Routine: "r1", Outcome: routines.Failed, Reason: "no room"}, "", "", ""},
 		{"breaker has no tap target", routines.Trigger{ID: "t4", Routine: "r1", Outcome: routines.Breaker}, "", "", ""},
 	} {
@@ -82,13 +83,22 @@ func TestARoutineRecordRespectsTheFleetNotifySwitchAndTheWatchedWindow(t *testin
 
 func TestAProposalItemInTheInboxAddsNoEventSoHoldFireDoesNotBuzzOnEveryHeldRun(t *testing.T) {
 	r := newRig(t).started(nil, nil)
-	r.w.Inbox([]inbox.Item{item(t, inbox.AdmiralSession, "routine-work-t1", "routine_proposal", "Run Nightly sweep?")})
+	r.w.Inbox([]inbox.Item{item(t, inbox.AdmiralSession, "routine-t1", "routine_proposal", "Run Nightly sweep?")})
 	r.w.Inbox([]inbox.Item{
-		item(t, inbox.AdmiralSession, "routine-work-t1", "routine_proposal", "Run Nightly sweep?"),
+		item(t, inbox.AdmiralSession, "routine-t1", "routine_proposal", "Run Nightly sweep?"),
 		item(t, "s-Dory", "q-1", "question", "Which way?"),
 	})
 	got := r.rec.Events()
 	if len(got) != 1 || got[0].Event.Item != "q-1" {
 		t.Errorf("events = %+v, want only the question's", got)
+	}
+}
+
+func TestTheBreakerPushSaysTheRoutineNowAsksFirstNotThatItIsOff(t *testing.T) {
+	r := newRig(t)
+	routineNotifier(r).Notify("work", routines.Routine{ID: "r1", Name: "Nightly sweep", Notify: true}, routines.Trigger{ID: "t4", Routine: "r1", Outcome: routines.Breaker})
+	got := r.rec.Events()
+	if len(got) != 1 || !strings.Contains(got[0].Event.Text, "now asks first") || strings.Contains(got[0].Event.Text, "turned off") {
+		t.Errorf("events = %+v, want text saying it now asks first", got)
 	}
 }

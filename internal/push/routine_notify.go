@@ -24,14 +24,14 @@ func (n *RoutineNotifier) Notify(fleet string, r routines.Routine, t routines.Tr
 		}
 	case routines.Proposed:
 		text = "wants your go-ahead"
-		ev.Target, ev.Session, ev.Item = TargetPeek, inbox.AdmiralSession, "routine-"+fleet+"-"+t.ID
+		ev.Target, ev.Session, ev.Item = TargetPeek, inbox.AdmiralSession, "routine-"+t.ID
 	case routines.Failed:
 		text = "failed to run"
 		if t.Reason != "" {
 			text += ": " + t.Reason
 		}
 	case routines.Breaker:
-		text = "was turned off after repeated failures"
+		text = "now asks first after repeated failures"
 	default:
 		return
 	}

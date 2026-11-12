@@ -47,6 +47,9 @@ type Notifier interface {
 	Notify(fleet string, r Routine, t Trigger)
 }
 
+// ErrOff is an Accept for a routine that is switched off; the proposal stays open until it expires.
+var ErrOff = errors.New("the routine is switched off")
+
 // ErrBusy is an Accept that found no room, or a ship still holding the routine's key; the proposal stays open.
 var ErrBusy = errors.New("the run has no room or its last ship is still here")
 
@@ -88,7 +91,18 @@ type Scheduler struct {
 	watched map[string]watch
 	// proposals is each routine's open proposal, so one nobody answered is recorded expired once.
 	proposals map[string]openProposal
+	// toPropose holds the proposals a tick made; they go to the Proposer after mu is released, because the Inbox
+	// takes its own lock and a launch from the Inbox takes mu.
+	toPropose []proposeJob
 	seeded    bool
+}
+
+type proposeJob struct {
+	fleet string
+	r     Routine
+	t     Trigger
+	until time.Time
+	now   time.Time
 }
 
 type openProposal struct {
@@ -243,6 +257,12 @@ func runsBetween(sched Schedule, base, now time.Time) []time.Time {
 // CatchUp handles the runs missed while the server was down: one late run under 12 hours old, `missed` records for the rest.
 func (s *Scheduler) CatchUp(ctx context.Context) error {
 	s.init()
+	err := s.catchUp(ctx)
+	s.handOff()
+	return err
+}
+
+func (s *Scheduler) catchUp(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.Clock.Now()
@@ -281,6 +301,12 @@ func (s *Scheduler) CatchUp(ctx context.Context) error {
 // Tick does everything due at Clock.Now(): routines whose time came, waiting runs, and the breaker's count.
 func (s *Scheduler) Tick(ctx context.Context) error {
 	s.init()
+	err := s.tick(ctx)
+	s.handOff()
+	return err
+}
+
+func (s *Scheduler) tick(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.Clock.Now()
@@ -332,7 +358,7 @@ func (s *Scheduler) Tick(ctx context.Context) error {
 // expireProposals records each open proposal whose time has passed, once.
 func (s *Scheduler) expireProposals(now time.Time) {
 	for id, p := range s.proposals {
-		if now.Before(p.expires) {
+		if now.Before(p.expires) || s.proposing(id) {
 			continue
 		}
 		delete(s.proposals, id)
@@ -513,31 +539,64 @@ func (s *Scheduler) fire(ctx context.Context, fleet string, r Routine, due, now 
 	}
 }
 
-// propose records an Ask first run and hands it to the Proposer, closing the routine's previous open proposal.
+// propose records an Ask first run and queues it for the Proposer, which handOff calls once mu is free.
 func (s *Scheduler) propose(fleet string, r Routine, rec Trigger, now time.Time) {
 	rec.Outcome = Proposed
 	var next time.Time
 	if sched, err := ParseCron(r.When); err == nil {
 		next = sched.Next(now.In(s.zone()))
 	}
-	expires := ProposalExpiry(next, now)
-	prev, hadPrev := s.proposals[r.ID]
-	saved, ok := s.recordFor(fleet, r, rec)
+	saved, ok := s.record(fleet, rec)
 	if !ok || s.Proposer == nil {
 		return
 	}
-	if s.Proposer.Propose(fleet, r, saved, expires) != nil {
-		return
-	}
-	if hadPrev {
-		at := prev.expires
-		if at.After(now) {
-			at = now
+	s.toPropose = append(s.toPropose, proposeJob{fleet, r, saved, ProposalExpiry(next, now), now})
+}
+
+func (s *Scheduler) proposing(id string) bool {
+	for _, j := range s.toPropose {
+		if j.r.ID == id {
+			return true
 		}
-		s.record(prev.fleet, Trigger{Routine: r.ID, Outcome: Skipped, Tier: "T0", At: at,
-			Reason: "proposal expired: a newer run replaced it"})
 	}
-	s.proposals[r.ID] = openProposal{fleet, saved.ID, expires}
+	return false
+}
+
+// handOff gives the queued proposals to the Proposer without holding mu, then closes each routine's previous open one.
+func (s *Scheduler) handOff() {
+	s.mu.Lock()
+	jobs := s.toPropose
+	s.toPropose = nil
+	s.mu.Unlock()
+	for _, j := range jobs {
+		if s.Proposer.Propose(j.fleet, j.r, j.t, j.until) != nil {
+			continue
+		}
+		s.mu.Lock()
+		if prev, ok := s.proposals[j.r.ID]; ok {
+			at := prev.expires
+			if at.After(j.now) {
+				at = j.now
+			}
+			s.record(prev.fleet, Trigger{Routine: j.r.ID, Outcome: Skipped, Tier: "T0", At: at,
+				Reason: "proposal expired: a newer run replaced it"})
+		}
+		s.proposals[j.r.ID] = openProposal{j.fleet, j.t.ID, j.until}
+		s.mu.Unlock()
+		s.notify(j.fleet, j.r, j.t)
+	}
+}
+
+// Dismiss records that the engineer dismissed a routine's open proposal, so its expiry writes nothing.
+func (s *Scheduler) Dismiss(fleet, routineID, triggerID string) {
+	s.init()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if p, ok := s.proposals[routineID]; ok && p.trigger == triggerID {
+		delete(s.proposals, routineID)
+		s.record(fleet, Trigger{Routine: routineID, Outcome: Skipped, Tier: "T0", At: s.Clock.Now(),
+			Reason: "proposal dismissed by the engineer"})
+	}
 }
 
 func routineKey(id string) string { return "routine:" + id }
@@ -635,6 +694,9 @@ func (s *Scheduler) Accept(ctx context.Context, fleet, routineID, triggerID stri
 		return Trigger{}, ErrNotFound
 	}
 	r := list[i]
+	if !r.Enabled {
+		return Trigger{}, ErrOff
+	}
 	now := s.Clock.Now()
 	rec := Trigger{Routine: r.ID, Tier: "T0", At: now, Via: ViaProposal, Action: describe(r)}
 	if l := r.Do.Launch; l != nil {

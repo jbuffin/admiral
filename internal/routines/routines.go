@@ -15,13 +15,13 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/capabilities"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/launcher"
+	"github.com/jbuffin/admiral/internal/textsafe"
 )
 
 // Mode is a routine's Before acting setting.
@@ -223,8 +223,8 @@ func checkName(name string) error {
 		return invalidf("name is longer than %d characters", maxNameRunes)
 	}
 	for _, c := range name {
-		if unicode.IsControl(c) || c == '[' || c == ']' {
-			return invalidf("name can't hold control characters or square brackets")
+		if textsafe.Hidden(c) || c == '[' || c == ']' {
+			return invalidf("name can't hold control or invisible characters or square brackets")
 		}
 	}
 	return nil

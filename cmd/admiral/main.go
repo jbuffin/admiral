@@ -504,7 +504,7 @@ func serve(args []string) error {
 	inboxService.LaunchRoutine = func(ctx context.Context, p inbox.RoutineProposal) (any, int, string) {
 		t, err := routineScheduler.Accept(ctx, p.Fleet, p.Routine, p.Trigger)
 		switch {
-		case errors.Is(err, routines.ErrBusy):
+		case errors.Is(err, routines.ErrBusy), errors.Is(err, routines.ErrOff):
 			return nil, http.StatusConflict, err.Error()
 		case errors.Is(err, routines.ErrNotFound):
 			return nil, http.StatusGone, "the routine is gone"
@@ -513,6 +513,7 @@ func serve(args []string) error {
 		}
 		return map[string]any{"session": t.Ship}, 0, ""
 	}
+	inboxService.DismissRoutine = func(p inbox.RoutineProposal) { routineScheduler.Dismiss(p.Fleet, p.Routine, p.Trigger) }
 	shipService.OnChange = func() {
 		campaignService.ShipsChanged()
 		sourceService.Notify()

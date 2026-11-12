@@ -725,7 +725,7 @@ test('with Hold fire on, a due routine waits in the Inbox as a proposal, and Lau
 test('Dismiss on a routine proposal removes it from the Inbox and starts no ship', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
   await admiral.start({ env: withFakeGh(admiral) });
-  seedInboxItem(admiral, '_admiral', proposalSeed('routine-zulu-t1', 'Nightly sweep'));
+  seedInboxItem(admiral, '_admiral', proposalSeed('routine-t1', 'Nightly sweep'));
   await page.goto(admiral.url + 'app/inbox?fleet=zulu');
   const row = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Nightly sweep' });
   await expect(row).toBeVisible({ timeout: 15_000 });

@@ -63,15 +63,15 @@ func publish(t *testing.T, s *inbox.Service, p inbox.RoutineProposal) string {
 func TestARoutineProposalIsListedWithItsFleetNameAndWhatItWouldDoAndOnlyFromAdmiralsOwnInbox(t *testing.T) {
 	s, home, _, _ := routineInbox(t)
 	id := publish(t, s, routineProposal("t1", time.Now().Add(24*time.Hour)))
-	if id != "routine-work-t1" {
-		t.Fatalf("item id = %q, want routine-<fleet>-<trigger>", id)
+	if id != "routine-t1" {
+		t.Fatalf("item id = %q, want routine-<trigger>", id)
 	}
 	publish(t, s, routineProposal("t1", time.Now().Add(24*time.Hour))) // written once
-	writeItem(t, shipDir(t, home, "s1"), "routine-work-t9.json", map[string]any{"version": 1, "id": "routine-work-t9", "kind": "routine_proposal",
+	writeItem(t, shipDir(t, home, "s1"), "routine-t9.json", map[string]any{"version": 1, "id": "routine-t9", "kind": "routine_proposal",
 		"created": "2026-10-22T10:00:00Z", "title": "Run Nightly sweep?", "routine_proposal": routineProposal("t9", time.Now().Add(time.Hour))})
 
 	items := listed(t, s)
-	if got := idsOf(items); !reflect.DeepEqual(got, []string{"routine-work-t1"}) {
+	if got := idsOf(items); !reflect.DeepEqual(got, []string{"routine-t1"}) {
 		t.Fatalf("items = %v, want the one proposal, from _admiral only", got)
 	}
 	it := items[0]
@@ -143,13 +143,13 @@ func TestARefusedRoutineLaunchLeavesTheProposalOpenToLaunchLater(t *testing.T) {
 func TestAnExpiredRoutineProposalIsNotListedAndCannotBeLaunched(t *testing.T) {
 	s, home, url, l := routineInbox(t)
 	live := publish(t, s, routineProposal("live", time.Now().Add(time.Hour)))
-	old := map[string]any{"version": 1, "id": "routine-work-old", "kind": "routine_proposal", "created": "2000-01-01T00:00:00Z",
+	old := map[string]any{"version": 1, "id": "routine-old", "kind": "routine_proposal", "created": "2000-01-01T00:00:00Z",
 		"title": "Run Nightly sweep?", "routine_proposal": routineProposal("old", time.Date(2000, 1, 2, 0, 0, 0, 0, time.UTC))}
-	writeItem(t, shipDir(t, home, inbox.AdmiralSession), "routine-work-old.json", old)
+	writeItem(t, shipDir(t, home, inbox.AdmiralSession), "routine-old.json", old)
 	if got := idsOf(listed(t, s)); !reflect.DeepEqual(got, []string{live}) {
 		t.Fatalf("items = %v, want only the proposal that has not expired", got)
 	}
-	code, _ := post(t, url+"/api/inbox/_admiral/routine-work-old/launch", `{}`)
+	code, _ := post(t, url+"/api/inbox/_admiral/routine-old/launch", `{}`)
 	if code != http.StatusGone {
 		t.Errorf("launch after expiry = %d, want 410", code)
 	}
@@ -190,5 +190,44 @@ func TestANewProposalForARoutineClosesItsPreviousOpenOne(t *testing.T) {
 	third := publish(t, s, other)
 	if got := idsOf(listed(t, s)); !reflect.DeepEqual(got, []string{second, third}) {
 		t.Errorf("items = %v, want a different routine's proposal to leave the first routine's open", got)
+	}
+}
+
+func TestAProposalForAFleetWithAVeryLongKeyStillGetsAnItemThatFitsAnID(t *testing.T) {
+	s, _, _, _ := routineInbox(t)
+	long := strings.Repeat("k", 60)
+	s.Fleet = func(key string) (inbox.FleetInfo, bool) { return inbox.FleetInfo{Key: key, Name: "Long"}, true }
+	p := routineProposal("0123456789abcdef", time.Now().Add(time.Hour))
+	p.Fleet = long
+	id := publish(t, s, p)
+	if id != "routine-0123456789abcdef" {
+		t.Errorf("item id = %q, want routine-<trigger>", id)
+	}
+	items := listed(t, s)
+	if got := idsOf(items); !reflect.DeepEqual(got, []string{id}) || items[0]["fleet"] != long {
+		t.Errorf("items = %v, want the proposal listed under the 60-character fleet", got)
+	}
+}
+
+func TestDismissingARoutineProposalTellsTheSchedulerOnceAfterTheItemIsAnswered(t *testing.T) {
+	s, _, url, _ := routineInbox(t)
+	var got []inbox.RoutineProposal
+	s.DismissRoutine = func(p inbox.RoutineProposal) { got = append(got, p) }
+	id := publish(t, s, routineProposal("t1", time.Now().Add(time.Hour)))
+	if code, _ := post(t, url+"/api/inbox/_admiral/"+id+"/dismiss", `{}`); code != http.StatusNoContent {
+		t.Fatalf("dismiss = %d, want 204", code)
+	}
+	post(t, url+"/api/inbox/_admiral/"+id+"/dismiss", `{}`)
+	if len(got) != 1 || got[0].Routine != "r1" || got[0].Trigger != "t1" || got[0].Fleet != "work" {
+		t.Errorf("dismiss hook calls = %+v, want one for routine r1's trigger t1", got)
+	}
+}
+
+func TestAnswerOnARoutineProposalNamesLaunchOrDismiss(t *testing.T) {
+	s, _, url, _ := routineInbox(t)
+	id := publish(t, s, routineProposal("t1", time.Now().Add(time.Hour)))
+	code, body := post(t, url+"/api/inbox/_admiral/"+id+"/answer", `{}`)
+	if code != http.StatusBadRequest || !strings.Contains(body, "launch or dismiss") {
+		t.Errorf("answer = %d %s, want 400 naming launch or dismiss", code, body)
 	}
 }

@@ -3,6 +3,7 @@ package routines_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"strings"
@@ -10,8 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/routines"
+	"github.com/jbuffin/admiral/internal/server"
 )
 
 type notice struct {
@@ -402,7 +405,7 @@ func TestARoutineNameWithAControlCharacterOrBracketOrOverEightyRunesIsRefused(t 
 	r := newRig(t)
 	long := strings.Repeat("é", 80)
 	ok := []string{"Nightly sweep", "Café (weekly) sweep", long}
-	bad := []string{"Nightly\nsweep", "a\x00b", "a\tb", "x\u007fy", "[Routine: x] sweep", "a[b", "a]b", long + "é", " \n "}
+	bad := []string{"a\u2028b", "a\u2029b", "a\u202eb", "a\u2066b", "a\u200bb", "a\ufeffb", "Nightly\nsweep", "a\x00b", "a\tb", "x\u007fy", "[Routine: x] sweep", "a[b", "a]b", long + "é", " \n "}
 	for _, name := range ok {
 		in := launchRoutine()
 		in.Name = name
@@ -456,5 +459,103 @@ func TestAnAdmiralBotSwitchOffShowsInTheRoutinesList(t *testing.T) {
 	}
 	if first, _ := list[0].(map[string]any); first["off_by"] != "admiralbot" {
 		t.Errorf("listed routine = %v, want off_by admiralbot", list[0])
+	}
+}
+
+func TestADismissedProposalIsRecordedDismissedAndItsExpiryWritesNothing(t *testing.T) {
+	h := newHarness(t)
+	r, trig := h.proposed(func(r *routines.Routine) { r.When = "0 9 12 * *" })
+	h.clock.set(at(0, 10, 0))
+	h.sched.Dismiss("work", r.ID, trig.ID)
+	h.tickAt(at(1, 9, 5))
+	got := h.ofOutcome(r, routines.Skipped)
+	if len(got) != 1 || !strings.Contains(got[0].Reason, "dismissed") {
+		t.Fatalf("skipped records = %+v, want exactly one saying the proposal was dismissed", got)
+	}
+}
+
+func TestADismissOfAnOlderProposalLeavesTheNewerOneToExpireOnItsOwn(t *testing.T) {
+	h := newHarness(t)
+	r, first := h.proposed(nil)
+	h.tickAt(at(1, 9, 0))
+	h.sched.Dismiss("work", r.ID, first.ID)
+	if got := h.ofOutcome(r, routines.Skipped); len(got) != 1 || strings.Contains(got[0].Reason, "dismissed") {
+		t.Fatalf("skipped records = %+v, want only the replacement's, nothing for the stale dismiss", got)
+	}
+}
+
+func TestAcceptRefusesWithErrOffWhenTheRoutineIsSwitchedOffAndLaunchesNothing(t *testing.T) {
+	h := newHarness(t)
+	r, trig := h.proposed(nil)
+	if _, err := h.store.SetEnabledBy("work", r.ID, false, routines.Engineer); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.sched.Accept(context.Background(), "work", r.ID, trig.ID); !errors.Is(err, routines.ErrOff) {
+		t.Fatalf("Accept on a routine that is off = %v, want ErrOff", err)
+	}
+	h.wantLaunches(0)
+}
+
+// failingProposer refuses every proposal.
+type failingProposer struct{}
+
+func (failingProposer) Propose(string, routines.Routine, routines.Trigger, time.Time) error {
+	return errors.New("disk full")
+}
+
+func TestProposedPushesOnlyAfterTheProposerTookTheProposal(t *testing.T) {
+	h := newHarness(t)
+	n := &fakeNotifier{}
+	h.sched.Notifier = n
+	h.sched.Proposer = failingProposer{}
+	h.act(func(r *routines.Routine) { r.Before, r.Notify = routines.AskFirst, true })
+	h.tickAt(at(0, 9, 0))
+	if got := n.outcomes(); len(got) != 0 {
+		t.Errorf("pushed %v after the Proposer refused, want nothing", got)
+	}
+}
+
+// inboxProposer is the Proposer main wires: the real inbox.
+type inboxProposer struct {
+	in      *inbox.Service
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (p *inboxProposer) Propose(fleet string, r routines.Routine, t routines.Trigger, expires time.Time) error {
+	p.once.Do(func() { close(p.entered) })
+	_, err := p.in.PublishRoutineProposal(inbox.RoutineProposal{Fleet: fleet, Routine: r.ID, RoutineName: r.Name, Trigger: t.ID, Action: t.Action, ExpiresAt: expires})
+	return err
+}
+
+func TestATicksProposalAndALaunchOfTheOpenProposalDoNotDeadlock(t *testing.T) {
+	h := newHarness(t)
+	in := &inbox.Service{Home: h.home, Hub: server.NewHub()}
+	failLaunches(h, 1, 1<<30) // a refused launch leaves the item open, so the next proposal has one to close
+	base := time.Now().UTC().Truncate(24 * time.Hour).Add(9 * time.Hour)
+	h.clock.set(base.Add(-time.Hour))
+	r := h.act(func(r *routines.Routine) { r.Before = routines.AskFirst })
+	h.sched.Proposer = &inboxProposer{in: in, entered: make(chan struct{})}
+	h.tickAt(base)
+	open := "routine-" + h.latest(r).ID
+	prop := &inboxProposer{in: in, entered: make(chan struct{})} // signals when the next tick reaches its proposal
+	h.sched.Proposer = prop
+
+	in.LaunchRoutine = func(ctx context.Context, p inbox.RoutineProposal) (any, int, string) {
+		// holds the answer lock; the scheduler's lock is taken only once the tick is inside its proposal
+		<-prop.entered
+		_, err := h.sched.Accept(ctx, p.Fleet, p.Routine, p.Trigger)
+		return nil, http.StatusBadGateway, fmt.Sprint(err)
+	}
+	h.clock.set(base.Add(24 * time.Hour))
+	done := make(chan struct{}, 2)
+	go func() { _ = h.sched.Tick(context.Background()); done <- struct{}{} }()
+	go func() { _, _ = in.LaunchRoutineItem(context.Background(), open); done <- struct{}{} }()
+	for i := 0; i < 2; i++ {
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("deadlock: a tick's proposal and a launch of the open proposal wait on each other")
+		}
 	}
 }

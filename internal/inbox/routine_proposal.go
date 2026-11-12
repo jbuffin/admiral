@@ -26,12 +26,13 @@ type RoutineProposal struct {
 // LaunchRoutineFunc runs the proposal's routine once. status is 0 on success, else the refusal's HTTP status with msg.
 type LaunchRoutineFunc func(ctx context.Context, p RoutineProposal) (ship any, status int, msg string)
 
-// PublishRoutineProposal writes the item routine-<fleet>-<trigger> once and closes the routine's earlier open one.
+// PublishRoutineProposal writes the item routine-<trigger> once and closes the routine's earlier open one.
 func (s *Service) PublishRoutineProposal(p RoutineProposal) (string, error) {
 	if p.Fleet == "" || p.Routine == "" || p.Trigger == "" || p.ExpiresAt.IsZero() {
 		return "", fmt.Errorf("inbox: a routine proposal needs a fleet, a routine, a trigger and an expiry")
 	}
-	id := "routine-" + p.Fleet + "-" + p.Trigger
+	// the trigger id is bounded and unique; a fleet key is neither, and an id is at most 64 characters
+	id := "routine-" + p.Trigger
 	for _, it := range scan(s.Home) {
 		if old, ok := it.RoutineProposal(); ok && it.Session == AdmiralSession && it.ID != id && old.Fleet == p.Fleet && old.Routine == p.Routine {
 			s.closeRoutineProposal(it.ID)
@@ -93,12 +94,17 @@ func (s *Service) LaunchRoutineItem(ctx context.Context, id string) (any, error)
 
 // DismissRoutineProposal answers a routine proposal with a dismissal.
 func (s *Service) DismissRoutineProposal(id string) error {
+	var dismissed RoutineProposal
 	err := s.writeAnswered(AdmiralSession, id, KindRoutineProposal, func(it Item) (any, []outcomes.Record, error) {
 		p, _ := it.RoutineProposal()
+		dismissed = p
 		file := map[string]any{"version": 1, "id": id, "kind": KindRoutineProposal, "answered": time.Now().UTC().Format(time.RFC3339), "dismissed": true}
 		return file, []outcomes.Record{{Event: "proposal_dismissed", Fields: map[string]any{"item": id, "routine": p.Routine, "fleet": p.Fleet}}}, nil
 	})
 	if err == nil {
+		if s.DismissRoutine != nil {
+			s.DismissRoutine(dismissed)
+		}
 		s.Refresh()
 	}
 	return err
