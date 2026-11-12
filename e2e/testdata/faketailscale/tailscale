@@ -1,19 +1,36 @@
 #!/bin/sh
-# Fake tailscale CLI. Answers only `status --json` and `serve status --json`, from files in $FAKETS_DIR:
+# Fake tailscale CLI. Answers `status --json`, `serve status --json` and `serve --bg ...`, from files in $FAKETS_DIR:
 #   status.json, serve.json   the stdout of each call
-#   <call>.exit, <call>.err   a non-zero exit code and its stderr (<call> is status or serve)
+#   <call>.exit, <call>.err   a non-zero exit code and its stderr (<call> is status, serve or servebg)
 #   sleep                     seconds to hang before answering any call (one process, like a real hang)
-# Every call appends its argv to $FAKETS_DIR/calls. Any other argv exits 2, so a stray `serve --bg` fails loudly.
+#   servebg.sleep             seconds to hang before answering `serve --bg ...` only
+#   servebg.delay             seconds to wait before `serve --bg ...` answers as it would otherwise
+#   servebg.out               printed to stdout first by `serve --bg ...`, before it hangs or exits non-zero
+# Every call appends its argv to $FAKETS_DIR/calls. Any other argv exits 2, so a stray call fails loudly.
+# A successful `serve --bg --https=N http://127.0.0.1:P` makes serve.json proxy that host:N to P, as the real CLI would.
 d=${FAKETS_DIR:?FAKETS_DIR is not set}
 echo "$*" >> "$d/calls"
 if [ -f "$d/sleep" ]; then exec sleep "$(cat "$d/sleep")"; fi
 case "$*" in
 "status --json") f=status ;;
 "serve status --json") f=serve ;;
+"serve --bg "*)
+	[ -f "$d/servebg.out" ] && cat "$d/servebg.out"
+	if [ -f "$d/servebg.sleep" ]; then exec sleep "$(cat "$d/servebg.sleep")"; fi
+	[ -f "$d/servebg.delay" ] && sleep "$(cat "$d/servebg.delay")"
+	f=servebg ;;
 *) echo "faketailscale: unsupported call: $*" >&2; exit 2 ;;
 esac
 if [ -f "$d/$f.exit" ]; then
 	[ -f "$d/$f.err" ] && cat "$d/$f.err" >&2
 	exit "$(cat "$d/$f.exit")"
+fi
+if [ "$f" = servebg ]; then
+	https=${3#--https=}
+	port=${4##*:}
+	host=fake-mac.tailnet-fake.ts.net
+	printf '{"TCP":{"%s":{"HTTPS":true}},"Web":{"%s:%s":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:%s"}}}}}\n' "$https" "$host" "$https" "$port" > "$d/serve.json"
+	echo "Available within your tailnet:"
+	exit 0
 fi
 cat "$d/$f.json"

@@ -66,7 +66,14 @@ func setup(args []string, std IO) error {
 	} else if err := s.ask(); err != nil {
 		return err
 	}
-	if len(s.touched) == 0 {
+	if s.remote != nil && s.remote.tailscale {
+		fmt.Fprintln(std.Out)
+		go_, err := s.tailscaleStep(*yes, *dry)
+		if err != nil || !go_ {
+			return err
+		}
+	}
+	if len(s.touched) == 0 && s.remote == nil {
 		fmt.Fprintln(std.Out, "No changes.")
 		if *dry {
 			return nil
@@ -75,7 +82,7 @@ func setup(args []string, std IO) error {
 	}
 
 	for {
-		p, err := newPlan(dir, s.fleets, s.touched)
+		p, err := newPlan(dir, s.fleets, s.touched, s.remote)
 		if err != nil {
 			return err
 		}
@@ -95,9 +102,16 @@ func setup(args []string, std IO) error {
 				return err
 			}
 			if !ok {
-				fmt.Fprintln(std.Out, "Nothing changed.")
+				if s.served {
+					fmt.Fprintln(std.Out, "tailscale serve was set up, but config.json was not written, so Tailscale mode stays off.")
+				} else {
+					fmt.Fprintln(std.Out, "Nothing changed.")
+				}
 				return nil
 			}
+		}
+		if err = s.runServe(); err != nil {
+			return err
 		}
 		err = p.write(dir)
 		if errors.Is(err, errChanged) {
@@ -155,6 +169,9 @@ type session struct {
 	dir     string
 	fleets  *config.Object
 	touched []string
+	remote  *remoteAsk // nil when the person asked for nothing under remote
+	serve   bool       // serve still has to be set up
+	served  bool       // setup ran tailscale serve
 	log     []answered // what was answered, to plan again on a changed file
 	in      *bufio.Reader
 }
@@ -203,7 +220,15 @@ func (s *session) fromFile(path string) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", path, err)
 	}
+	if raw, ok := top.Get("remote"); ok {
+		if err := s.parseRemote(raw, path); err != nil {
+			return err
+		}
+	}
 	raw, ok := top.Get("fleets")
+	if !ok && s.remote != nil {
+		return nil
+	}
 	if !ok {
 		return fmt.Errorf(`%s: expected {"fleets": {...}}`, path)
 	}
@@ -401,6 +426,13 @@ func confirm(in *bufio.Reader, w io.Writer, label string) (bool, error) {
 }
 
 func (s *session) ask() error {
+	if err := s.askFleets(); err != nil {
+		return err
+	}
+	return s.askRemote()
+}
+
+func (s *session) askFleets() error {
 	in, w := s.reader(), s.io.Out
 	fmt.Fprintln(w, "\nAdmiral setup. Press Enter to take the answer in [brackets].")
 	taken := s.identityDirsInUse()

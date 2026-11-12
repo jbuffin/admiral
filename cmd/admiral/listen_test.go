@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/jbuffin/admiral/internal/config"
@@ -38,5 +40,26 @@ func TestListenDefaultFollowsTailscaleMode(t *testing.T) {
 		if got := listenAddr(c.explicit, c.cfg, c.unreadable); got != c.want {
 			t.Errorf("%s: listen = %q, want %q", c.name, got, c.want)
 		}
+	}
+}
+
+// Setup writes config.json while the manager is open; the start that follows binds loopback, not the LAN.
+func TestFirstStartAfterSetupBindsLoopback(t *testing.T) {
+	dir := t.TempDir()
+	cfg, err := config.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cfg.Close()
+	offer := func() (bool, error) {
+		body := `{"version":1,"fleets":{"w":{"name":"W","claude":{}}},"remote":{"tailscale":true}}`
+		return true, os.WriteFile(filepath.Join(dir, config.FileName), []byte(body), 0o600)
+	}
+	got, err := resolveListen(cfg, "", offer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "127.0.0.1:7420" {
+		t.Errorf("listen after setup turned the mode on = %q, want 127.0.0.1:7420", got)
 	}
 }

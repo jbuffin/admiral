@@ -155,6 +155,9 @@ func (m *Manager) relevant(name string) bool {
 	return base == FileName || (m.target != "" && base == m.target)
 }
 
+// Reload reads the file now, for a caller that just wrote it behind the watcher's delay.
+func (m *Manager) Reload() { m.reload() }
+
 // reload keeps the last good config on any failure.
 func (m *Manager) reload() {
 	data, err := os.ReadFile(m.path)

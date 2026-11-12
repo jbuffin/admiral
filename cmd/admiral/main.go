@@ -174,6 +174,26 @@ func listenAddr(explicit string, cfg *config.Config, unreadable bool) string {
 	return "0.0.0.0:7420"
 }
 
+// resolveListen offers setup when there are no fleets, then picks the address from the config as setup left it.
+func resolveListen(cfg *config.Manager, explicit string, offer func() (bool, error)) (string, error) {
+	// No configuration means no fleets (a valid file without any, or none yet).
+	if cfg.View().Error == nil && len(cfg.Current().Fleets) == 0 {
+		ran, err := offer()
+		if err != nil {
+			return "", err
+		}
+		if ran {
+			// Setup may have turned Tailscale mode on; the watcher reloads later than listenAddr reads.
+			cfg.Reload()
+		}
+	}
+	unreadable := cfg.View().Error != nil
+	if unreadable && explicit == "" {
+		fmt.Fprintln(os.Stderr, "admiral: config.json couldn't be read, so Admiral listens on loopback only (127.0.0.1)")
+	}
+	return listenAddr(explicit, cfg.Current(), unreadable), nil
+}
+
 func serve(args []string) error {
 	fs := flag.NewFlagSet("admiral", flag.ContinueOnError)
 	listen := fs.String("listen", "", "address to listen on, host:port (default 0.0.0.0:7420, or 127.0.0.1:7420 with Tailscale mode on)")
@@ -203,17 +223,10 @@ func serve(args []string) error {
 		return fmt.Errorf("config: %w", err)
 	}
 	defer cfg.Close()
-	// No configuration means no fleets (a valid file without any, or none yet).
-	if cfg.View().Error == nil && len(cfg.Current().Fleets) == 0 {
-		if _, err := cli.OfferSetup(cli.Std()); err != nil {
-			return err
-		}
+	listenOn, err := resolveListen(cfg, *listen, func() (bool, error) { return cli.OfferSetup(cli.Std()) })
+	if err != nil {
+		return err
 	}
-	unreadable := cfg.View().Error != nil
-	if unreadable && *listen == "" {
-		fmt.Fprintln(os.Stderr, "admiral: config.json couldn't be read, so Admiral listens on loopback only (127.0.0.1)")
-	}
-	listenOn := listenAddr(*listen, cfg.Current(), unreadable)
 	ln, err := net.Listen("tcp", listenOn)
 	if err != nil {
 		return err
@@ -452,6 +465,9 @@ func serve(args []string) error {
 	switch {
 	case tsMode && ts.URL != "":
 		fmt.Printf("On other devices: %s\n", ts.URL)
+		if c, bad := ts.Failed(); bad {
+			fmt.Printf("Warning: Tailscale mode has a failed check: %s\n", c.Detail)
+		}
 		fmt.Println("To pair a device, run: admiral pair")
 	case tsMode:
 		c, _ := ts.Failed()

@@ -16,10 +16,18 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jbuffin/admiral/internal/delay"
 )
 
 // timeout bounds each CLI call: `tailscale serve` has hung for minutes on a tailnet with Serve disabled.
 var timeout = 4 * time.Second
+
+// ServeTimeout bounds the call that sets serve up, which can wait on the tailnet.
+const ServeTimeout = 60 * time.Second
+
+// ServeTimeoutEnv shortens ServeTimeout for tests.
+const ServeTimeoutEnv = "ADMIRAL_TAILSCALE_SERVE_TIMEOUT"
 
 // Check ids, in the order Inspect reports them.
 const (
@@ -44,6 +52,12 @@ type Report struct {
 	Funnel bool
 	// Login is this Mac's tailnet login, empty when unknown.
 	Login string
+	// Holder is what serves HTTPS port 443 when that isn't Admiral, empty when 443 is free or Admiral's.
+	Holder string
+	// RawTCP is true when a TCP forward reaches Admiral's port, on any port.
+	RawTCP bool
+	// ServeErr is why serve status couldn't be read, empty when it could.
+	ServeErr string
 }
 
 // Failed returns the first failed check, if any.
@@ -84,15 +98,20 @@ type serveConfig struct {
 		TerminateTLS string
 	}
 	Web map[string]struct {
-		Handlers map[string]struct{ Proxy string }
+		Handlers map[string]struct{ Proxy, Path, Text string }
 	}
 	AllowFunnel map[string]bool
 	Foreground  map[string]*serveConfig
 }
 
-func run(ctx context.Context, args ...string) ([]byte, error) {
+func run(ctx context.Context, limit time.Duration, args ...string) ([]byte, error) {
+	return runCLI(ctx, limit, false, args...)
+}
+
+// runCLI runs tailscale. With verbose, a failure or timeout carries everything the CLI wrote, every line.
+func runCLI(ctx context.Context, limit time.Duration, verbose bool, args ...string) ([]byte, error) {
 	parent := ctx
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "tailscale", args...)
 	var out, errOut bytes.Buffer
@@ -103,9 +122,16 @@ func run(ctx context.Context, args ...string) ([]byte, error) {
 		case parent.Err() != nil:
 			return nil, fmt.Errorf("tailscale %s was cancelled", strings.Join(args, " "))
 		case ctx.Err() != nil:
-			return nil, fmt.Errorf("tailscale %s timed out after %s", strings.Join(args, " "), timeout)
+			msg := fmt.Sprintf("tailscale %s timed out after %s", strings.Join(args, " "), limit)
+			if verbose {
+				msg += withOutput(&out, &errOut) + "\nTailscale may still turn serve on later; run setup again to check."
+			}
+			return nil, errors.New(msg)
 		case errors.Is(err, exec.ErrNotFound):
 			return nil, fmt.Errorf("tailscale is not installed or not on PATH")
+		}
+		if verbose {
+			return nil, fmt.Errorf("tailscale %s failed: %v%s", strings.Join(args, " "), err, withOutput(&out, &errOut))
 		}
 		msg := firstLine(errOut.String())
 		if msg == "" {
@@ -114,6 +140,17 @@ func run(ctx context.Context, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("tailscale %s failed: %s", strings.Join(args, " "), msg)
 	}
 	return out.Bytes(), nil
+}
+
+// withOutput is what the CLI wrote to stdout and stderr, trimmed, on lines of their own.
+func withOutput(out, errOut *bytes.Buffer) string {
+	var b strings.Builder
+	for _, w := range []*bytes.Buffer{out, errOut} {
+		if t := strings.TrimSpace(w.String()); t != "" {
+			b.WriteString("\n" + t)
+		}
+	}
+	return b.String()
 }
 
 func firstLine(s string) string {
@@ -133,8 +170,8 @@ func Inspect(ctx context.Context, port string) Report {
 		serveErr         error
 	)
 	wg.Add(2)
-	go func() { defer wg.Done(); statusOut, statusErr = run(ctx, "status", "--json") }()
-	go func() { defer wg.Done(); serve, serveErr = run(ctx, "serve", "status", "--json") }()
+	go func() { defer wg.Done(); statusOut, statusErr = run(ctx, timeout, "status", "--json") }()
+	go func() { defer wg.Done(); serve, serveErr = run(ctx, timeout, "serve", "status", "--json") }()
 	wg.Wait()
 	return Evaluate(statusOut, statusErr, serve, serveErr, port)
 }
@@ -195,12 +232,14 @@ func Evaluate(statusOut []byte, statusErr error, serveOut []byte, serveErr error
 		serveWhy = "tailscale serve status --json gave output that is not JSON"
 	}
 	if serveWhy != "" {
+		rep.ServeErr = serveWhy
 		rep.add(CheckServe, false, serveWhy)
 		rep.add(CheckFunnel, false, "unknown while tailscale serve status is unavailable")
 		return rep
 	}
 
 	f := findAdmiral(&cfg, port)
+	rep.RawTCP = f.rawTCP
 	switch {
 	case f.rawTCP:
 		rep.add(CheckServe, false, fmt.Sprintf("a raw TCP forward to Admiral's port bypasses Admiral's tailnet checks; replace it with: %s", ServeHint(port)))
@@ -215,6 +254,9 @@ func Evaluate(statusOut []byte, statusErr error, serveOut []byte, serveErr error
 			u += ":" + strconv.Itoa(f.https[0])
 		}
 		rep.URL = u + "/"
+	}
+	if len(f.https) == 0 || f.https[0] != 443 {
+		rep.Holder = holder443(&cfg)
 	}
 	if len(f.funnel) > 0 {
 		rep.Funnel = true
@@ -350,4 +392,74 @@ func forwardsTo(forward, port string) bool {
 
 func loopback(host string) bool {
 	return host == "127.0.0.1" || host == "localhost" || host == "::1"
+}
+
+// holder443 describes what holds HTTPS port 443, or returns "" when nothing does.
+func holder443(cfg *serveConfig) string {
+	for key, web := range cfg.Web {
+		if _, p, err := net.SplitHostPort(key); err != nil || p != "443" {
+			continue
+		}
+		var what []string
+		for path, h := range web.Handlers {
+			switch {
+			case h.Proxy != "":
+				what = append(what, path+" -> "+h.Proxy)
+			case h.Path != "":
+				what = append(what, path+" serves "+h.Path)
+			default:
+				what = append(what, path+" serves text")
+			}
+		}
+		sort.Strings(what)
+		return strings.Join(what, ", ")
+	}
+	if t, ok := cfg.TCP["443"]; ok {
+		if t.TCPForward != "" {
+			return "TCP forward to " + t.TCPForward
+		}
+		return "a TCP handler"
+	}
+	return ""
+}
+
+// EnableServe runs the fixed serve command on port 443 under ServeTimeout, which ServeTimeoutEnv can shorten.
+func EnableServe(ctx context.Context, port string) error {
+	_, err := runCLI(ctx, delay.From(ServeTimeoutEnv, ServeTimeout), true, ServeArgs(port)...)
+	return err
+}
+
+// Preflight is what setup needs to know before it changes anything.
+type Preflight struct {
+	// Checks are running, HTTPS and MagicDNS, and Funnel, in that order.
+	Checks []Check
+	Login  string
+	// Serving is true when serve already proxies to Admiral's port, so there is nothing to set up.
+	Serving bool
+	// Holder is what holds 443 when it isn't Admiral; setup never replaces it.
+	Holder string
+}
+
+// Failed returns the first failed check, if any.
+func (p Preflight) Failed() (Check, bool) { return Report{Checks: p.Checks}.Failed() }
+
+// Prepare reads Tailscale without changing it.
+func Prepare(ctx context.Context, port string) Preflight {
+	rep := Inspect(ctx, port)
+	p := Preflight{Login: rep.Login, Holder: rep.Holder}
+	for _, c := range rep.Checks {
+		switch c.ID {
+		case CheckServe:
+			p.Serving = c.OK
+			if !rep.RawTCP { // a raw TCP forward is a failure setup keeps; a missing proxy is what setup fixes
+				continue
+			}
+		case CheckFunnel:
+			if rep.ServeErr != "" {
+				c.Detail = rep.ServeErr
+			}
+		}
+		p.Checks = append(p.Checks, c)
+	}
+	return p
 }
