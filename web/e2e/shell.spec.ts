@@ -2,7 +2,8 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { HOME, WORK, holds, boatOf, boatReceived, boatSays, changeFile, changesOf, chip, diffOf, expectSeededTurn, flotilla, gitCheckout, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason } from './shell';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const surface = (page: Page, title: string) => page.getByRole('heading', { name: title, exact: true });
 const nav = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
@@ -588,7 +589,7 @@ test('a Copilot ship shows its conversation in the Conversation tab, shows a lin
   await expect(viewPanel(page).getByText('Please rebase onto main')).toHaveCount(1);
 });
 
-test('a ship\'s Bridge shows its tokens and its own money, Claude in est. dollars, Copilot in credits, Codex tokens only', async ({ page, admiral }) => {
+test('a ship\'s Bridge shows its tokens and its own money, and the Usage pages keep each harness\'s money apart, show quota freshness and a quiet mark past 90%', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
   await admiral.start({ env: withFakeGh(admiral) });
   const cues = ['usage', 'exit 3'];
@@ -619,6 +620,56 @@ test('a ship\'s Bridge shows its tokens and its own money, Claude in est. dollar
   await rowLink(page, codex).tap();
   await expect(usage).toContainText('360 tokens', { timeout: 15_000 });
   await expect(usage).not.toContainText(/\$|credit/);
+
+  // A fleet's Usage: each harness on its own line in its own money, split by spender, no total, no worker cap yet.
+  const main = page.getByRole('main');
+  const period = (name: string) => main.getByRole('region', { name });
+  await page.goto(admiral.url + 'app/preferences/zulu/usage');
+  await expect(page.getByRole('heading', { name: 'Usage', exact: true })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Preferences' }).getByRole('link', { name: 'Usage' }).first()).toBeVisible();
+  await expect(period('Today')).toContainText('150 tokens', { timeout: 15_000 });
+  await expect(period('Today')).toContainText('est. $0.25');
+  await expect(period('Today')).toContainText('Ships');
+  await expect(period('7 days')).toContainText('est. $0.25');
+  await expect(period('30 days')).toContainText('est. $0.25');
+  await expect(main).not.toContainText(/credit|total|cap\b/i);
+  // Neither dock has a reading yet, and Claude's has no bar.
+  await expect(main.getByRole('region', { name: /claude/i })).toContainText('no live data yet');
+  await expect(main.getByRole('region', { name: /codex/i })).toContainText('no live data yet');
+  await expect(main.getByRole('img', { name: /window/ })).toHaveCount(0);
+
+  await page.goto(admiral.url + 'app/preferences/alpha/usage');
+  await expect(period('Today')).toContainText('2.5 credits', { timeout: 15_000 });
+  await expect(period('Today')).toContainText('3 premium requests');
+  await expect(period('Today')).toContainText('360 tokens');
+  await expect(main).not.toContainText(/\$|total/i);
+  await expect(main.getByRole('region', { name: /copilot/i })).toHaveCount(0);
+
+  // The cross-fleet page has one row for each fleet and nothing that adds them.
+  await page.goto(admiral.url + 'app/preferences/admiral/usage');
+  await expect(page.getByRole('heading', { name: 'Usage', exact: true })).toBeVisible();
+  const fleetRow = (name: string) => main.getByRole('region', { name });
+  await expect(fleetRow(WORK)).toContainText('est. $0.25', { timeout: 15_000 });
+  await expect(fleetRow(WORK)).toContainText('150 tokens');
+  await expect(fleetRow(HOME)).toContainText('2.5 credits');
+  await expect(fleetRow(HOME)).toContainText('360 tokens');
+  await expect(fleetRow(HOME)).not.toContainText('$');
+  await expect(main.getByRole('region', { name: new RegExp(`${WORK}|${HOME}`) })).toHaveCount(2);
+  await expect(main).not.toContainText(/total|all fleets combined/i);
+
+  // A live reading from a running Claude ship gives a bar; past 90% it only gets a quiet note beside it.
+  const reading = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'internal', 'cli', 'testdata', 'claude-statusline.json'), 'utf8'));
+  reading.rate_limits.five_hour = { used_percentage: 93, resets_at: Math.floor(Date.now() / 1000) + 2 * 3600 };
+  reading.rate_limits.seven_day = { used_percentage: 41.2, resets_at: Math.floor(Date.now() / 1000) + 3 * 86400 };
+  await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['statusline ' + JSON.stringify(reading), 'sleep 3600'] });
+  await page.goto(admiral.url + 'app/preferences/zulu/usage');
+  const claudeQuota = main.getByRole('region', { name: /claude/i });
+  await expect(claudeQuota.getByRole('img', { name: /^5-hour window, 93% used, resets in/ })).toBeVisible({ timeout: 30_000 });
+  await expect(claudeQuota.getByRole('img', { name: /^7-day window, 41% used, resets in/ })).toBeVisible();
+  await expect(claudeQuota).toContainText('live');
+  await expect(claudeQuota).toContainText('near the limit');
+  await expect(claudeQuota.getByText('near the limit')).toHaveCount(1);
+  await expect(main.getByRole('region', { name: /codex/i })).toContainText('no live data yet');
 });
 
 test('the Inbox lists a question item and a needs-you stop from two fleets, each with its fleet, and the stop leaves live once its ship is back underway', async ({ page, admiral }) => {
