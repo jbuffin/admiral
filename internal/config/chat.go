@@ -156,10 +156,13 @@ func (c *Config) chatHarnessOption(f Fleet, harness string) ChatHarnessOption {
 	return o
 }
 
+// chatHarnessOrder is the picker's order, which is not the docks': Claude, then the two newer harnesses by name.
+var chatHarnessOrder = []string{"claude", "codex", "copilot"}
+
 // ChatHarnessOptions has one entry for each candidate harness the fleet has a dock for.
 func (c *Config) ChatHarnessOptions(f Fleet) []ChatHarnessOption {
 	out := []ChatHarnessOption{}
-	for _, name := range Harnesses() {
+	for _, name := range chatHarnessOrder {
 		if _, ok := f.Harness(name); ok {
 			out = append(out, c.chatHarnessOption(f, name))
 		}
