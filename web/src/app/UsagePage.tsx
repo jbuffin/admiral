@@ -60,18 +60,18 @@ export function FleetUsagePage({ fleetKey, phone }: { fleetKey: string; phone: b
   const cards = quotaCards(data.quota ?? [], new Date());
   return (
     <div class="usage">
-      {usagePeriods(data).map((p) => (
-        <section key={p.label} class="usage-period" aria-labelledby={`usage-${p.label}`}>
-          <Sub id={`usage-${p.label}`}>{p.label}</Sub>
+      {usagePeriods(data).map((p, i) => (
+        <section key={p.label} class="usage-period" aria-labelledby={`usage-period-${i}`}>
+          <Sub id={`usage-period-${i}`}>{p.label}</Sub>
           {p.harnesses.length ? p.harnesses.map((h) => <Line key={h.harness} h={h} />) : <Nothing />}
         </section>
       ))}
       {cards.length ? (
         <div class="usage-quota">
           <Sub>Plan quota</Sub>
-          {cards.map((c) => (
-            <section key={c.label} class="usage-card" aria-labelledby={`quota-${c.label}`}>
-              <h4 id={`quota-${c.label}`}>{c.label}</h4>
+          {cards.map((c, i) => (
+            <section key={c.label} class="usage-card" aria-labelledby={`usage-quota-${i}`}>
+              <h4 id={`usage-quota-${i}`}>{c.label}</h4>
               <span class="usage-fresh">{c.fresh}</span>
               {c.bars.map((b) => (
                 <div key={b.label} class="usage-bar">
@@ -115,11 +115,11 @@ export function AllUsagePage({ phone }: { phone: boolean }) {
           </button>
         ))}
       </div>
-      {rows.map((r) => {
+      {rows.map((r, i) => {
         const f = fleets.value.find((x) => x.key === r.key);
         return (
-          <section key={r.key} class="usage-period" aria-labelledby={`usage-fleet-${r.key}`}>
-            <Sub id={`usage-fleet-${r.key}`}>
+          <section key={r.key} class="usage-period" aria-labelledby={`usage-fleet-${i}`}>
+            <Sub id={`usage-fleet-${i}`}>
               {f ? <span class="dot" style={{ background: fleetPaint(f).fill }} aria-hidden="true" /> : null}
               {r.name}
             </Sub>
