@@ -93,7 +93,7 @@
 #                  fault of the fake itself to `statusline-error`, and `statusline-done`
 #                  is created after each run.
 #   bell           ring the terminal bell
-#   sleep <n>     sleep n seconds
+#   sleep <n>      sleep n seconds
 #   exit <n>       create `cues-done`, then exit with status n
 #   lines <n>      print n numbered lines, "line 0001" to "line <n>", each in an SGR
 #                  colour (\033[31m..\033[36m, cycling) and reset at the end

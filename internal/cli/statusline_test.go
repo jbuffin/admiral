@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -367,5 +370,171 @@ func TestStatuslineChatKeepsTheJSONAndPrintsNothing(t *testing.T) {
 	}
 	if got, _ := r.keptValue()["session_id"].(string); got != "5b1f0c2e-7a44-4a1e-9d0a-1c2d3e4f5a6b" {
 		t.Errorf("chat kept session_id %q", got)
+	}
+}
+
+// The helper process runs the wrapper for real, so a signal reaches the process Claude would signal.
+func TestStatuslineHelperProcess(t *testing.T) {
+	if os.Getenv("ADMIRAL_TEST_STATUSLINE_HELPER") == "" {
+		t.Skip("runs only as the subprocess of TestStatuslineCancelKillsTheEngineersLine")
+	}
+	env := statuslineEnv{ConfigDir: os.Getenv("CLAUDE_CONFIG_DIR"), Home: os.Getenv("HOME"), Timeout: time.Minute, Now: time.Now}
+	_ = runStatusline(nil, IO{In: strings.NewReader(`{}`), Out: os.Stdout, Err: os.Stderr}, env)
+}
+
+func TestStatuslineCancelKillsTheEngineersLine(t *testing.T) {
+	r := newSLRig(t)
+	pidfile := filepath.Join(t.TempDir(), "pid")
+	r.userStatusLine("sleep 60 & echo $! > " + pidfile + "; wait")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestStatuslineHelperProcess$")
+	cmd.Env = append(os.Environ(), "ADMIRAL_TEST_STATUSLINE_HELPER=1", "CLAUDE_CONFIG_DIR="+r.cfg, "HOME="+r.home)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	var pid int
+	deadline := time.Now().Add(10 * time.Second)
+	for pid == 0 && time.Now().Before(deadline) {
+		if b, err := os.ReadFile(pidfile); err == nil {
+			pid, _ = strconv.Atoi(strings.TrimSpace(string(b)))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if pid == 0 {
+		_ = cmd.Process.Kill()
+		t.Fatal("the engineer's line never started")
+	}
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	_ = cmd.Process.Signal(syscall.SIGTERM)
+	_ = cmd.Wait()
+	for time.Now().Before(deadline) {
+		if syscall.Kill(pid, 0) != nil {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Errorf("the engineer's child %d outlived the wrapper that Claude cancelled", pid)
+}
+
+func TestStatuslineEndsARecursionByAnySpelling(t *testing.T) {
+	r := newSLRig(t)
+	r.userStatusLine(`test -n "$ADMIRAL_STATUSLINE" && printf marked`)
+	if got := r.run(sample(t)); got != "marked" {
+		t.Errorf("stdout = %q, want the engineer's line to see ADMIRAL_STATUSLINE", got)
+	}
+
+	r = newSLRig(t)
+	t.Setenv("ADMIRAL_STATUSLINE", "1")
+	r.userStatusLine("echo should-not-run")
+	if got := r.run(sample(t)); got != "" || len(r.writes) != 0 {
+		t.Errorf("inside a status line, stdout = %q with %d writes, want nothing kept and nothing run", got, len(r.writes))
+	}
+	t.Setenv("ADMIRAL_STATUSLINE", "")
+
+	// Not even the spelling check runs the line, so a fake admiral on PATH is never reached.
+	bin := t.TempDir()
+	marker := filepath.Join(bin, "ran")
+	r.writeFile(filepath.Join(bin, "admiral"), "#!/bin/sh\ntouch "+marker+"\n")
+	if err := os.Chmod(filepath.Join(bin, "admiral"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	for _, line := range []string{"exec admiral statusline", "ADMIRAL_HOME=/x admiral statusline --chat"} {
+		r.userStatusLine(line)
+		r.run(sample(t))
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Error("the wrapper ran `admiral statusline` through exec or an env prefix")
+	}
+}
+
+func TestStatuslinePassesOutputWhenABackgroundChildHoldsStdout(t *testing.T) {
+	r := newSLRig(t)
+	r.userStatusLine("sleep 30 & printf cached")
+	start := time.Now()
+	if got := r.run(sample(t)); got != "cached" {
+		t.Errorf("stdout = %q, want cached: the shell exited 0", got)
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Error("the wrapper waited on the background child")
+	}
+}
+
+func TestStatuslinePassesTheEngineersStderrThrough(t *testing.T) {
+	r := newSLRig(t)
+	r.userStatusLine("echo out; echo oops >&2")
+	var o, e bytes.Buffer
+	_ = runStatusline(nil, IO{In: strings.NewReader(sample(t)), Out: &o, Err: &e}, r.env)
+	if o.String() != "out\n" || e.String() != "oops\n" {
+		t.Errorf("stdout = %q, stderr = %q, want out and oops", o.String(), e.String())
+	}
+}
+
+func TestStatuslineKeepsTheSpendLimit(t *testing.T) {
+	r := newSLRig(t)
+	r.run(`{"session_id":"s","rate_limits":{"spend_limit":{"used_usd":1.5,"limit_usd":20,"period":"month"}}}`)
+	rl, _ := r.keptValue()["rate_limits"].(map[string]any)
+	sp, _ := rl["spend_limit"].(map[string]any)
+	if sp["used_usd"] != 1.5 || sp["limit_usd"] != 20.0 || sp["period"] != "month" {
+		t.Errorf("rate_limits = %v, want the spend_limit", rl)
+	}
+	if _, ok := rl["five_hour"]; ok {
+		t.Errorf("rate_limits = %v, want five_hour missing", rl)
+	}
+}
+
+func TestStatuslineOneWrongTypedFieldDropsOnlyItself(t *testing.T) {
+	r := newSLRig(t)
+	r.run(`{"session_id":7,"transcript_path":"/t/s.jsonl","cost":{"total_cost_usd":"lots"},"context_window":{"total_input_tokens":10,"total_output_tokens":4},"rate_limits":{"five_hour":{"used_percentage":5,"resets_at":"soon"},"seven_day":{"used_percentage":9,"resets_at":1900000000}}}`)
+	m := r.keptValue()
+	if _, ok := m["session_id"]; ok {
+		t.Errorf("kept session_id %v, want it dropped", m["session_id"])
+	}
+	if _, ok := m["cost"]; ok {
+		t.Errorf("kept cost %v, want it dropped", m["cost"])
+	}
+	cw, _ := m["context_window"].(map[string]any)
+	rl, _ := m["rate_limits"].(map[string]any)
+	seven, _ := rl["seven_day"].(map[string]any)
+	if m["transcript_path"] != "/t/s.jsonl" || cw["total_input_tokens"] != 10.0 || seven["resets_at"] != 1900000000.0 {
+		t.Errorf("kept %v, want the good fields", m)
+	}
+	if _, ok := rl["five_hour"]; ok {
+		t.Errorf("kept five_hour %v, want it dropped", rl["five_hour"])
+	}
+}
+
+func TestStatuslineNeverReadsARelativeUserDirectory(t *testing.T) {
+	r := newSLRig(t)
+	checkout := t.TempDir()
+	r.writeFile(filepath.Join(checkout, ".claude", "settings.json"), settingsWith("echo from-checkout"))
+	status := sample(t)
+	t.Chdir(checkout)
+	r.env.ConfigDir, r.env.Home = "", ""
+	if got := r.run(status); got != "" {
+		t.Errorf("with no $HOME, stdout = %q, want nothing", got)
+	}
+	r.env.ConfigDir = ".claude"
+	if got := r.run(status); got != "" {
+		t.Errorf("with a relative $CLAUDE_CONFIG_DIR, stdout = %q, want nothing", got)
+	}
+}
+
+func TestStatuslineAHungTmuxDoesNotStopTheEngineersLine(t *testing.T) {
+	r := newSLRig(t)
+	r.userStatusLine("echo mine")
+	bin := t.TempDir()
+	r.writeFile(filepath.Join(bin, "tmux"), "#!/bin/sh\nexec sleep 30\n")
+	if err := os.Chmod(filepath.Join(bin, "tmux"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TMUX_PANE", "%7")
+	t.Setenv("CLAUDE_CONFIG_DIR", r.cfg)
+	t.Setenv("HOME", r.home)
+	var o bytes.Buffer
+	start := time.Now()
+	_ = Statusline(nil, IO{In: strings.NewReader(sample(t)), Out: &o, Err: &bytes.Buffer{}})
+	if o.String() != "mine\n" || time.Since(start) > 8*time.Second {
+		t.Errorf("stdout = %q after %s, want mine within the write's deadline", o.String(), time.Since(start))
 	}
 }

@@ -41,9 +41,14 @@ func (w *world) shipLog(session string) []outRec {
 	w.t.Helper()
 	out := []outRec{}
 	for _, m := range w.outcomeLog() {
-		if m["ship"] == session {
-			out = append(out, m)
+		if m["ship"] != session {
+			continue
 		}
+		// A later ship can draw a sailed-off ship's name: only its own records count.
+		if m["event"] == "launched" {
+			out = out[:0]
+		}
+		out = append(out, m)
 	}
 	return out
 }
