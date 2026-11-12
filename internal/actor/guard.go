@@ -30,6 +30,7 @@ const (
 	source
 	campaign
 	launch
+	fleetKey // the first "*" is a fleet key, which must be the actor's own
 )
 
 // allowed is every route AdmiralBot may call, as the method and the path's segments after /api; "*" matches one segment.
@@ -54,6 +55,13 @@ var allowed = []struct {
 	{"GET", []string{"outcomes"}, plain},
 	{"POST", []string{"chat", "questions"}, plain},
 	{"GET", []string{"chat", "questions", "*", "answer"}, plain},
+	{"GET", []string{"fleets", "*", "routines"}, fleetKey},
+	{"GET", []string{"fleets", "*", "hold-fire"}, fleetKey},
+	{"POST", []string{"fleets", "*", "routines", "*", "off"}, fleetKey},
+	{"POST", []string{"fleets", "*", "hold-fire", "on"}, fleetKey},
+	// every fleet's Hold fire can only be turned on from here: it makes Admiral quieter, never louder
+	{"GET", []string{"hold-fire"}, plain},
+	{"POST", []string{"hold-fire", "on"}, plain},
 }
 
 func (g *Guard) Middleware(next http.Handler) http.Handler {
@@ -143,6 +151,10 @@ func (g *Guard) fence(r *http.Request, fleet string, m matched) (int, string) {
 		return forbid(check("inbox item "+m.ids[1]+" of", m.ids[0], fleet)(g.ItemFleet(m.ids[0], m.ids[1])))
 	case source:
 		return forbid(check("source", m.ids[0], fleet)(g.SourceFleet(m.ids[0])))
+	case fleetKey:
+		if m.ids[0] != fleet {
+			return forbid("fleet " + m.ids[0] + " is not fleet " + fleet + ", so AdmiralBot can't touch its routines")
+		}
 	case campaign:
 		return forbid(check("campaign", m.ids[0], fleet)(g.CampaignFleet(m.ids[0])))
 	case launch:
