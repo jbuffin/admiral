@@ -620,6 +620,8 @@ test('a ship\'s Bridge shows its tokens and its own money, and the Usage pages k
   await expect(usage).toContainText('3 premium requests');
   await expect(usage).not.toContainText('$');
 
+  // A ship page reads its usage on open and again 30 s later, so open this one once its record is there.
+  await expect.poll(async () => ((await (await fetch(`${admiral.url}api/v1/ships/${codex.session}/usage`)).json()) as { source: string }).source).toBe('record');
   await page.goto(admiral.url + 'app/ships?fleet=alpha');
   await rowLink(page, codex).tap();
   await expect(usage).toContainText('360 tokens', { timeout: 15_000 });
