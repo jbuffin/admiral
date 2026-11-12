@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/jbuffin/admiral/internal/conversation"
 	"github.com/jbuffin/admiral/internal/keymap"
@@ -181,6 +183,31 @@ type answerRequest struct {
 	Choice string `json:"choice"`
 	Item   string `json:"item"`
 	Option int    `json:"option"`
+	// Answers answers every question of a call at once, in order: the listed options chosen (1-based) or an Other text.
+	Answers []callAnswer `json:"answers"`
+}
+
+type callAnswer struct {
+	Options []int  `json:"options"`
+	Other   string `json:"other"`
+}
+
+// maxOtherRunes caps an Other text; Claude's input line is one line, so it stays short.
+const maxOtherRunes = 500
+
+// cleanOther is the Other text as one line of printable characters: control bytes (an Esc or a newline would drive the menu) become spaces.
+func cleanOther(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if !unicode.IsPrint(r) {
+			return ' '
+		}
+		return r
+	}, s)
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > maxOtherRunes {
+		s = strings.TrimSpace(string(r[:maxOtherRunes]))
+	}
+	return s
 }
 
 // valid says whether the body is a whole answer; the pane's state is checked after it.
@@ -192,7 +219,7 @@ func (a answerRequest) valid() bool {
 	case "permission":
 		return a.Choice == "allow" || a.Choice == "deny"
 	case "question":
-		return a.Item != "" && a.Option >= 1
+		return a.Item != "" && (a.Option >= 1 || len(a.Answers) > 0)
 	}
 	return false
 }
@@ -297,6 +324,9 @@ func (s *Service) answerKeys(ctx context.Context, t target, session string, req 
 	if len(qs) == 0 {
 		return "", "that question is not the one the pane is asking"
 	}
+	if len(req.Answers) > 0 {
+		return callKeys(m, t, qs, req)
+	}
 	q := qs[len(qs)-1]
 	switch {
 	case q.ID != req.Item:
@@ -315,6 +345,57 @@ func (s *Service) answerKeys(ctx context.Context, t target, session string, req 
 		return "", "the question has no key for option " + strconv.Itoa(req.Option)
 	}
 	return keys, ""
+}
+
+// callKeys answers the newest call of qs whole, or says why the pane cannot take it.
+func callKeys(m keymap.Map, t target, qs []conversation.Item, req answerRequest) (keys, why string) {
+	last := callOf(qs[len(qs)-1].ID)
+	if callOf(req.Item) != last {
+		return "", "that question is not the one the pane is asking"
+	}
+	var call []conversation.Item
+	for i := len(qs) - 1; i >= 0 && callOf(qs[i].ID) == last; i-- {
+		call = append([]conversation.Item{qs[i]}, call...)
+	}
+	for _, it := range call {
+		if !it.Question.Pending {
+			return "", "that question is not the one the pane is asking"
+		}
+	}
+	if len(req.Answers) != len(call) {
+		return "", "the call holds " + strconv.Itoa(len(call)) + " questions: answer each one"
+	}
+	cq := make([]keymap.CallQuestion, len(call))
+	for i, it := range call {
+		a := req.Answers[i]
+		opts := append([]int(nil), a.Options...)
+		sort.Ints(opts)
+		for j, o := range opts {
+			if o < 1 || o > len(it.Question.Options) || (j > 0 && o == opts[j-1]) {
+				return "", "question " + strconv.Itoa(i+1) + " has no option " + strconv.Itoa(o)
+			}
+		}
+		other := cleanOther(a.Other)
+		if len(opts) == 0 && other == "" {
+			return "", "question " + strconv.Itoa(i+1) + " has no answer"
+		}
+		if !it.Question.MultiSelect && len(opts)+btoi(other != "") != 1 {
+			return "", "question " + strconv.Itoa(i+1) + " takes one answer"
+		}
+		cq[i] = keymap.CallQuestion{Options: len(it.Question.Options), Multi: it.Question.MultiSelect, Choose: opts, Other: other}
+	}
+	keys, ok := m.Call(cq)
+	if !ok {
+		return "", t.what + " takes that answer in its terminal"
+	}
+	return keys, ""
+}
+
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // callOf is the id of the transcript line an item came from: items of one line share it before the `#`.

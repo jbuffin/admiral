@@ -117,6 +117,7 @@ type liveParams struct {
 	ApprovalID *string `json:"approvalId"`
 	GrantRoot  *string `json:"grantRoot"`
 	Questions  []struct {
+		Header   string `json:"header"`
 		Question string `json:"question"`
 		IsSecret bool   `json:"isSecret"`
 		Options  []struct {
@@ -259,7 +260,7 @@ func (d *liveDecoder) ask(id json.RawMessage, p liveParams) []emission {
 		if i == maxQuestions {
 			break
 		}
-		qi := Question{Text: cutTo(q.Question, maxQuestionLen, "…"), Pending: true}
+		qi := Question{Header: cutTo(q.Header, maxLabel, "…"), Text: cutTo(q.Question, maxQuestionLen, "…"), Pending: true}
 		for _, o := range q.Options {
 			if q.IsSecret || len(qi.Options) == maxOptions {
 				break
