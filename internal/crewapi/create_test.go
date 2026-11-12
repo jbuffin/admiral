@@ -101,6 +101,9 @@ func TestCreateOfATakenNameIs409OnTheNameFieldAndKeepsTheFile(t *testing.T) {
 	builtInMember(t, filepath.Join(codexHome, "skills", "commodore", "crew"), "lookout", "reviewer", "Codex built-in lookout.")
 	f := newFixtureWith(t, `{"version":1,"fleets":{"work":{"name":"Work","claude":{},"codex":{}}}}`)
 	f.fleetMember("bosun", "triager", "Fleet bosun.", "")
+	if status, out := f.do("GET", "/api/fleets/work/crew?harness=codex", nil); status != 200 || !strings.Contains(out, `"name":"lookout"`) || !strings.Contains(out, `"layer":"built-in"`) {
+		t.Fatalf("test setup: the codex dock's Commodore is not visible: %d %s", status, out)
+	}
 	bosun := readFile(t, filepath.Join(f.crewDir(), "bosun.md"))
 
 	for _, name := range []string{"bosun", "scout", "lookout"} {

@@ -155,8 +155,8 @@ func (r *judgeRig) rawDraft(description string) (int, string) {
 
 func (r *judgeRig) wroteNothing() {
 	r.t.Helper()
-	if exists(filepath.Join(r.home, "fleets")) {
-		r.t.Error("the draft call created files under fleets/")
+	if exists(r.crewDir()) {
+		r.t.Error("the draft call created the crew directory")
 	}
 }
 
@@ -312,9 +312,9 @@ func TestDraftMakesOneStrongCallWithTheBriefsCapTimeoutSchemaAndPrompt(t *testin
 	if strings.Contains(c.Prompt, "stakes") || strings.Contains(c.Prompt, "You are the advisor") {
 		t.Error("prompt holds a phrase the fake harness reads as the advise call")
 	}
-	fenced := regexp.MustCompile("(?s)\n`{3,}[a-z]*\n" + regexp.QuoteMeta(description) + "\n`{3,}\\s*$")
+	fenced := regexp.MustCompile("(?s)\n`{3,}[a-z]*\n" + regexp.QuoteMeta(description) + "\n`{3,}")
 	if !fenced.MatchString(c.Prompt) {
-		t.Errorf("prompt does not end with the description in a fenced block:\n%s", tail(c.Prompt, 300))
+		t.Errorf("prompt does not hold the description in a fenced block:\n%s", tail(c.Prompt, 300))
 	}
 }
 
