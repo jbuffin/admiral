@@ -57,9 +57,27 @@ func claudeSettings() any {
 	}}
 }
 
-// ChatAllow is all the chat may run: it runs under --permission-mode dontAsk.
-var ChatAllow = []any{"Bash(admiral ships *)", "Bash(admiral outcomes *)", "Bash(admiral inbox *)",
-	"Bash(admiral orders *)", "Bash(admiral chat ask *)", "Skill(admiralbot)"}
+// ChatServer is the name of the one MCP server the chat gets; the allow rule below follows it.
+const ChatServer = "admiral"
+
+// FencePermissions is all the chat may do: it runs under --permission-mode dontAsk with no
+// built-in tool, so only the named server's tools are allowed, and the edit tools stay denied
+// as a backstop.
+func FencePermissions(server string) map[string]any {
+	return map[string]any{
+		"allow":                               []any{"mcp__" + server + "__*"},
+		"deny":                                []any{"Edit", "Write", "NotebookEdit"},
+		"blockReadsOutsideWorkingDirectories": true,
+	}
+}
+
+// FenceArgs are the flags that fence a Claude Code run to the one MCP server its config names:
+// no built-in tool, no MCP server but that one, nothing the settings don't allow, and none of
+// the engineer's own settings. The chat and the fence probe both run with exactly these.
+func FenceArgs(settings, mcpConfig string) []string {
+	return []string{"--permission-mode", "dontAsk", "--setting-sources", "project", "--tools", "",
+		"--strict-mcp-config", "--mcp-config", mcpConfig, "--settings", settings}
+}
 
 // No idle_prompt: it fires after a minute of quiet and would turn every idle chat into
 // waiting. SessionStart has no matcher, since Claude Code would match it against the source.
@@ -71,14 +89,9 @@ func claudeChatSettings() any {
 		}
 		return g
 	}
-	return map[string]any{"statusLine": statusLine(" --chat"), "permissions": map[string]any{
-		"allow":                               ChatAllow,
-		"deny":                                []any{"Edit", "Write", "NotebookEdit"},
-		"blockReadsOutsideWorkingDirectories": true,
-	}, "hooks": map[string]any{
+	return map[string]any{"statusLine": statusLine(" --chat"), "permissions": FencePermissions(ChatServer), "hooks": map[string]any{
 		"SessionStart":     []any{group("", "SessionStart")},
 		"UserPromptSubmit": []any{group("", "UserPromptSubmit")},
-		"PreToolUse":       []any{group("AskUserQuestion", "PreToolUse")},
 		"PostToolUse":      []any{group("", "PostToolUse")},
 		"Notification":     []any{group("permission_prompt", "Notification"), group("elicitation_dialog", "Notification")},
 		"Stop":             []any{group("", "Stop")},

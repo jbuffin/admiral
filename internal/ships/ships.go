@@ -105,6 +105,8 @@ type Service struct {
 	// Approving is whether a Codex ship's app-server is waiting on an approval: a bell then may be for it, not for a question.
 	Approving func(session, crew string) bool
 	Outcomes  *outcomes.Writer
+	// ChatPrompt names the prompt a fleet's chat is answering; an actor's freeform launch is keyed on it.
+	ChatPrompt func(fleet string) string
 	// UsageRead replaces the transcript reading at a ship's exit, for tests.
 	UsageRead func(ctx context.Context, sess sessionhost.Session) ExitUsage
 	// LastLive gives a ship's last live figures when its transcript has none; nil when nothing keeps them.

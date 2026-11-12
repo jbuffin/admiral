@@ -15,8 +15,11 @@
 #                  denied), run-anyway (runs the command despite a deny), different-command
 #                  (asks the hooks about, and runs, the command with "&& true" added) or
 #                  no-tool (never calls the tool).
+#   -p with --mcp-config
+#                  a fenced probe run (claude): prints an init line listing the tools of the
+#                  config's one server, calls its first tool, and leaves headless-runs alone.
 #
-#   judge call     claude with `--tools ""`, `codex exec`, or copilot with piped stdin and no -p:
+#   judge call     claude with `--tools ""` and no --mcp-config, `codex exec`, or copilot with piped stdin and no -p:
 #                  a judge probe or call. It reads the prompt from stdin, answers {"reply":
 #                  "ok"} in the harness's real shape (claude's structured_output, codex's -o
 #                  file, copilot's stdout) and leaves headless-runs alone. A claude call under
@@ -109,6 +112,12 @@
 #                  Every byte read is appended to `stdin` while the later cues run, so a
 #                  `wait <name>` then `event SessionStart ...` can follow input. Without
 #                  it the recorder starts only after the cues end, as below.
+#   mcp <name>     Claude only, needs python3: waits for the file <name> in the recording directory
+#                  holding {"name": <tool>, "arguments": {...}}, makes that one tools/call through
+#                  the first server of the --mcp-config in its argv (with the server's env), and
+#                  writes the tool result to <name>.reply (an RPC error becomes an isError result)
+#                  It lists the tools first and, as Claude Code does, fails the cue (no reply, a line
+#                  in mcp-error) when a tool's inputSchema is not an object with an object properties
 #   wait <name>    block until the file <FAKE_RECORD_DIR>/<tmux session>/<name> exists,
 #                  so a test decides when the next cue (an exit, say) runs
 #   reply <text>   Claude only, needs jq, and the last cue (it never ends): creates `cues-done`,
@@ -201,6 +210,7 @@ fi
 settings=""
 prompt=""
 headless=""
+mcpcfg=""
 prev=""
 for a in "$@"; do
   [ "$prev" = "--settings" ] && settings=$a
@@ -210,16 +220,65 @@ for a in "$@"; do
   fi
   prev=$a
 done
+# Speaks MCP to the first server a --mcp-config file names, with that server's env on top of ours.
+#   probe <config>                   initialize, list tools, print Claude's init line, call the first tool
+#   call <config> <request> <reply>  one tools/call from the JSON request file, its tool result to <reply>
+MCPPY=$(
+	cat <<'PYEOF'
+import json, os, subprocess, sys
+mode, cfg = sys.argv[1], sys.argv[2]
+name, spec = next(iter(json.load(open(cfg))["mcpServers"].items()))
+env = dict(os.environ); env.update(spec.get("env", {}))
+p = subprocess.Popen([spec["command"]] + spec.get("args", []), stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=env, text=True)
+n = [0]
+def rpc(method, params=None):
+    n[0] += 1
+    p.stdin.write(json.dumps({"jsonrpc": "2.0", "id": n[0], "method": method, "params": params or {}}) + "\n"); p.stdin.flush()
+    while True:
+        line = p.stdout.readline()
+        if not line: raise SystemExit("the MCP server closed its output")
+        r = json.loads(line)
+        if r.get("id") == n[0]: return r
+def call(tool, args):
+    r = rpc("tools/call", {"name": tool, "arguments": args})
+    if "error" in r:
+        return {"isError": True, "content": [{"type": "text", "text": r["error"].get("message", "error")}]}
+    return r["result"]
+rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "fake", "version": "1"}})
+p.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n"); p.stdin.flush()
+if mode == "probe":
+    tools = rpc("tools/list")["result"]["tools"]
+    print(json.dumps({"type": "system", "subtype": "init", "tools": ["mcp__%s__%s" % (name, t["name"]) for t in tools],
+                      "mcp_servers": [{"name": name, "status": "connected"}]}), flush=True)
+    if tools: call(tools[0]["name"], {})
+else:
+    # Claude Code drops every tool of a server when one inputSchema is not an object with an object properties.
+    for t in rpc("tools/list")["result"]["tools"]:
+        sch = t.get("inputSchema")
+        if not (isinstance(sch, dict) and sch.get("type") == "object" and isinstance(sch.get("properties"), dict)):
+            sys.exit("tool %s: inputSchema must be an object with type object and an object properties, got %s" % (t.get("name"), json.dumps(sch)))
+    req = json.load(open(sys.argv[3]))
+    out = json.dumps(call(req["name"], req.get("arguments", {})))
+    open(sys.argv[4] + ".tmp", "w").write(out)
+    os.rename(sys.argv[4] + ".tmp", sys.argv[4])
+p.stdin.close()
+p.wait(5)
+PYEOF
+)
+mcpdrive() { python3 -c "$MCPPY" "$@"; }
 # A judge call, which also carries -p on claude and so comes before the guard run below.
 judge=""
 case "$(basename "$0")" in
 claude)
-  # Only the empty tool list: the chat session passes --tools with a list.
+  # An empty tool list with no MCP config; the chat and the fence probe pass both.
   tp=""
+  notools=""
   for a in "$@"; do
-    [ "$tp" = "--tools" ] && [ -z "$a" ] && judge=1
+    [ "$tp" = "--tools" ] && [ -z "$a" ] && notools=1
+    [ "$a" = "--mcp-config" ] && mcpcfg=1
     tp=$a
   done
+  [ -n "$notools" ] && [ -z "$mcpcfg" ] && judge=1
   ;;
 codex) [ "$1" = exec ] && judge=1 ;;
 copilot) [ -z "$headless" ] && [ ! -t 0 ] && judge=1 ;;
@@ -287,6 +346,17 @@ if [ -n "$judge" ]; then
   [ -n "$out" ] && printf '%s' "$body" >"$out"
   printf '%s' "$body"
   exit 0
+fi
+# A fenced run (the fence probe): no tools of its own, one MCP server. It leaves headless-runs alone.
+if [ "$(basename "$0")" = claude ] && [ -n "$headless" ] && [ -n "$mcpcfg" ]; then
+  cfg=""
+  prev=""
+  for a in "$@"; do
+    [ "$prev" = "--mcp-config" ] && cfg=$a
+    prev=$a
+  done
+  mcpdrive probe "$cfg"
+  exit $?
 fi
 if [ -n "$headless" ]; then
   mkdir -p "$FAKE_RECORD_DIR"
@@ -417,6 +487,16 @@ if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 			;;
 		wait)
 			while [ ! -e "$d/$arg" ]; do sleep 0.1; done
+			;;
+		mcp)
+			cfg=""
+			prev=""
+			for a in "$@"; do
+				[ "$prev" = "--mcp-config" ] && cfg=$a
+				prev=$a
+			done
+			while [ ! -e "$d/$arg" ]; do sleep 0.1; done
+			mcpdrive call "$cfg" "$d/$arg" "$d/$arg.reply" </dev/null 2>>"$d/mcp-error" || echo "mcp cue $arg: the MCP call failed" >>"$d/mcp-error"
 			;;
 		replydelay) FAKE_REPLY_DELAY=$arg ;;
 		events)

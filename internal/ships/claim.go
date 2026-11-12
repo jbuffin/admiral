@@ -121,6 +121,11 @@ func (s *Service) unlockIssue(url string) {
 func (s *Service) Launch(ctx context.Context, req launcher.Request) (Ship, *launcher.Error) {
 	if f, ok := actor.FleetOf(ctx); ok {
 		req.ByFleet = f
+		// The server keys an actor's freeform launch on the chat prompt in force; a client-sent id is dropped.
+		req.ChatMessage = ""
+		if req.Source == "" && req.OrderID == "" && len(req.Issues) == 0 && s.ChatPrompt != nil {
+			req.ChatMessage = s.ChatPrompt(f)
+		}
 	}
 	// These need no disk, so a bad request leaves no clone.
 	if lerr := launcher.CheckMember(req.Skill.Kind, req.Member); lerr != nil {

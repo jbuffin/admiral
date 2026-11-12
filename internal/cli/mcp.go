@@ -230,19 +230,18 @@ var mcpTools = []mcpTool{
 	{"list_campaigns", "List the campaigns.", obj(nil, nil), plainGet("/api/campaigns")},
 	{"launch_ship", "Launch a ship, from an order (source and order_id) or freeform text. A Commodore launch runs in autopilot mode unless with_me is true; the result says which mode the ship runs in.",
 		obj([]string{"harness"}, map[string]any{
-			"harness":      str("the harness: claude, codex or copilot"),
-			"dir":          str("a checkout or search root of the fleet"),
-			"clone":        flag01("clone the order's repo instead of naming dir"),
-			"clone_repo":   str("the host/owner/repo the clone is for"),
-			"skill":        str("commodore, none, or a skill's name"),
-			"text":         str("the prompt, for a freeform launch"),
-			"source":       str("an order source's key, for a launch from an order"),
-			"order_id":     str("the order's id"),
-			"crew":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "crew members to pin, on a Commodore launch"},
-			"issues":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "GitHub issue URLs the ship claims; only on a launch with no source"},
-			"chat_message": str("the id of the chat message this launch answers"),
-			"anyway":       flag01("launch again for a chat message that already has a ship"),
-			"with_me":      flag01("true when the engineer said to work on it with them: the ship runs interactive, not in autopilot"),
+			"harness":    str("the harness: claude, codex or copilot"),
+			"dir":        str("a checkout or search root of the fleet"),
+			"clone":      flag01("clone the order's repo instead of naming dir"),
+			"clone_repo": str("the host/owner/repo the clone is for"),
+			"skill":      str("commodore, none, or a skill's name"),
+			"text":       str("the prompt, for a freeform launch"),
+			"source":     str("an order source's key, for a launch from an order"),
+			"order_id":   str("the order's id"),
+			"crew":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "crew members to pin, on a Commodore launch"},
+			"issues":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "GitHub issue URLs the ship claims; only on a launch with no source"},
+			"anyway":     flag01("launch again for a message that already has a freeform ship"),
+			"with_me":    flag01("true when the engineer said to work on it with them: the ship runs interactive, not in autopilot"),
 		}), launchShip},
 	{"add_order", "Add an order to a source's panel, for a source that supports adding.",
 		obj([]string{"source", "panel", "text"}, map[string]any{"source": str("the order source's key"), "panel": str("the panel's id"), "text": str("the order's text")}),
@@ -295,7 +294,6 @@ func launchShip(c *mcpClient, raw json.RawMessage) (string, error) {
 		Harness, Dir, Skill, Text, Source string
 		OrderID                           string `json:"order_id"`
 		CloneRepo                         string `json:"clone_repo"`
-		ChatMessage                       string `json:"chat_message"`
 		Clone, Anyway                     bool
 		WithMe                            bool `json:"with_me"`
 		Crew, Issues                      []string
@@ -315,7 +313,7 @@ func launchShip(c *mcpClient, raw json.RawMessage) (string, error) {
 	body := map[string]any{
 		"fleet": c.fleet, "harness": a.Harness, "skill": map[string]string{"kind": kind, "name": name}, "autopilot": autopilot,
 	}
-	for k, v := range map[string]string{"dir": a.Dir, "text": a.Text, "source": a.Source, "order_id": a.OrderID, "clone_repo": a.CloneRepo, "chat_message": a.ChatMessage} {
+	for k, v := range map[string]string{"dir": a.Dir, "text": a.Text, "source": a.Source, "order_id": a.OrderID, "clone_repo": a.CloneRepo} {
 		if v != "" {
 			body[k] = v
 		}

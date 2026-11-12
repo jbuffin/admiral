@@ -145,6 +145,8 @@ func run(args []string) error {
 		return cli.Chat(args[1:], std)
 	case "mcp":
 		return cli.MCP(args[1:], std)
+	case "mcp-probe":
+		return cli.MCPProbe(args[1:], std)
 	case "codex-pane":
 		return cli.CodexPane(args[1:], std)
 	}
@@ -473,6 +475,7 @@ func serve(args []string) error {
 	}
 	chatService := &chat.Service{Actor: minter, Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Home: absDir, Outcomes: outcomeLog}
 	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
+	shipService.ChatPrompt = chatService.PromptKey
 	chatService.OnQuestions = inboxService.Changed
 	inboxService.ChatQuestions = chatService.WaitingQuestions
 	inboxService.AnswerChat = chatService.AnswerQuestion

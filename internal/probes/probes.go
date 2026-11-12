@@ -113,7 +113,9 @@ func (r *Runner) Close() { r.stop() }
 // NewDefault returns a runner with every built-in probe.
 func NewDefault(home string) *Runner { return New(home, defaultProbes()...) }
 
-func defaultProbes() []Probe { return append([]Probe{ClaudeGuard()}, judgeProbes()...) }
+func defaultProbes() []Probe {
+	return append([]Probe{ClaudeGuard(), ClaudeMCPFence()}, judgeProbes()...)
+}
 
 // GuardHarnesses lists the harnesses with a registered guard probe: a stored pass for
 // any other harness proves nothing.

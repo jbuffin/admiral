@@ -25,7 +25,7 @@ mkdir -p "$log"
 printf '%s\0' "$@" >"$log/argv-$$"
 kind=$(basename "$0")
 tools=""
-for a in "$@"; do [ "$a" = --tools ] && tools=1; done
+for a in "$@"; do [ "$a" = --tools ] && tools=1; [ "$a" = --mcp-config ] && tools=""; done
 if [ "$kind" = claude ] && [ -z "$tools" ]; then echo "I will not run that."; exit 0; fi
 prompt=$(cat)
 mode=${PROBE_FAKE_MODE:-pass}

@@ -313,6 +313,7 @@ type shipJSON struct {
 	Repo       string   `json:"repo"`
 	Skill      *string  `json:"skill"`
 	Source     string   `json:"source"`
+	Via        string   `json:"via"`
 	OrderID    string   `json:"order_id"`
 	Launched   string   `json:"launched"`
 	Status     string   `json:"status"`

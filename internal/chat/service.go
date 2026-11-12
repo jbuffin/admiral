@@ -523,6 +523,28 @@ func (s *Service) ActorToken(fleet string) string {
 	return s.Actor.Token(fleet, nonce)
 }
 
+// PromptKey names the prompt the fleet's chat is answering, "<session nonce>-<prompt stamp>", or "" when the chat
+// isn't running. The nonce starts a new series with each session; the stamp is the hook's, so a message typed
+// in the terminal moves it too.
+func (s *Service) PromptKey(fleet string) string {
+	if s.Tmux == "" {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	srv := sessionhost.NewServer(s.Tmux, s.Socket).WithoutUTF8().StderrErrors()
+	session := sessionhost.ChatSession(fleet)
+	nonce, err := srv.ReadSessionOption(ctx, session, sessionhost.ChatNonceOpt)
+	if err != nil || nonce == "" {
+		return ""
+	}
+	stamp, err := srv.ReadPaneOption(ctx, "="+session+":", sessionhost.ChatPromptOpt)
+	if err != nil || !sessionhost.SafeToken.MatchString(stamp) {
+		stamp = "0"
+	}
+	return nonce + "-" + stamp
+}
+
 func (s *fleetChat) start() *launcher.Error {
 	if s.Launcher == nil || s.Tmux == "" {
 		return &launcher.Error{Status: http.StatusServiceUnavailable, Msg: "the chat needs tmux"}

@@ -14,6 +14,9 @@ const (
 	// ChatNonceOpt is minted when a chat session starts and ends with it; it is not a secret, it only
 	// makes the session's actor token differ from every earlier session's.
 	ChatNonceOpt = "chat-nonce"
+	// ChatPromptOpt is a pane option the chat's UserPromptSubmit hook sets to the unix nanoseconds of each
+	// prompt, so a message typed in the terminal moves it too.
+	ChatPromptOpt = "chat-prompt"
 )
 
 // The host's shared format doesn't carry these: the chat service reads them from tmux itself.

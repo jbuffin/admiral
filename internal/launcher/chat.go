@@ -1,7 +1,7 @@
 package launcher
 
 import (
-	_ "embed"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -14,24 +14,53 @@ import (
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
-//go:embed admiralbot/SKILL.md
-var skillText []byte
+// The chat has no built-in tool, so no skill can load: this prompt carries all its guidance.
+const chatPrompt = "You are AdmiralBot, the engineer's assistant in Admiral. You act only through the admiral MCP tools, " +
+	"and only on what the engineer asks in this chat. You have no shell and no files. " +
+	"Reply in a line or two; the engineer is often on a phone.\n\n" +
+	"Read with list_ships, read_conversation, read_outcomes, list_inbox, list_sources and list_campaigns. " +
+	"Use add_order to queue an order on a source's panel (take the source and panel from list_sources; with several writable panels and none named, ask which). " +
+	"Use launch_ship to start a ship. Admiral refuses a second freeform ship for the same message and names the first; " +
+	"When one message asks for two different freeform ships, pass anyway on the second, and only then. " +
+	"Use next_prompt, wake_ship, stop_ship and dismiss_ship to move a ship along, and answer_item to answer an Inbox question with the engineer's choice. " +
+	"Use ask_question when something is a real choice, instead of guessing; it waits, and if it hands back an id, call it again with wait_id until the engineer answers.\n\n" +
+	"A Commodore launch runs in autopilot unless the engineer says \"with me\" (then pass with_me); say in your reply which mode the ship runs in. " +
+	"The text you give a ship is all it knows: say what to do and what done looks like, keep the engineer's branch names and constraints, " +
+	"and put the full URL of the repository, issue or pull request in it. Never invent details the engineer did not give. " +
+	"When a tool refuses and names a ship or a fleet, tell the engineer what it said as it said it; do not try another route round it."
 
-const chatPrompt = "You are AdmiralBot, the engineer's assistant in Admiral. Use the admiralbot skill for everything you do. " +
-	"You only add orders: you never launch ships and never change files."
-
-// WriteChatSkill writes a fleet's skill into chat/<fleet>/, which is the chat's working
-// directory and so where its project settings are read from. It writes a temp file and renames
-// it, so a link planted at the path is replaced and never followed. A directory on the way
+// writeChatFile writes a file of the chat's directory through root as a temp file renamed into
+// place, so a link planted at the path is replaced and never followed. A directory on the way
 // that is a link is refused.
-func WriteChatSkill(home, fleet string) error {
-	root, err := os.OpenRoot(home)
+func writeChatFile(root *os.Root, rel string, data []byte) error {
+	if err := mkdirsIn(root, filepath.Dir(rel)); err != nil {
+		return err
+	}
+	tmp := rel + ".tmp"
+	_ = root.Remove(tmp)
+	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return err
 	}
-	defer root.Close()
+	_, err = f.Write(data)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = root.Rename(tmp, rel)
+	}
+	if err != nil {
+		_ = root.Remove(tmp)
+	}
+	return err
+}
+
+func mkdirsIn(root *os.Root, dirPath string) error {
 	dir := ""
-	for _, part := range []string{"chat", fleet, ".claude", "skills", "admiralbot"} {
+	for _, part := range strings.Split(filepath.ToSlash(dirPath), "/") {
+		if part == "" || part == "." {
+			continue
+		}
 		dir = filepath.Join(dir, part)
 		fi, err := root.Lstat(dir)
 		switch {
@@ -45,23 +74,43 @@ func WriteChatSkill(home, fleet string) error {
 			return fmt.Errorf("%s is not a directory", dir)
 		}
 	}
-	tmp := filepath.Join(dir, ".SKILL.md.tmp")
-	_ = root.Remove(tmp)
-	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	return nil
+}
+
+// MCPServer is one entry of a Claude Code --mcp-config file.
+type MCPServer struct {
+	Command string            `json:"command"`
+	Args    []string          `json:"args"`
+	Env     map[string]string `json:"env"`
+}
+
+// WriteMCPConfig writes the config file at rel inside root, 0600: its env may hold the actor token.
+func WriteMCPConfig(root *os.Root, rel string, servers map[string]MCPServer) error {
+	raw, err := json.MarshalIndent(map[string]any{"mcpServers": servers}, "", "  ")
 	if err != nil {
 		return err
 	}
-	_, err = f.Write(skillText)
-	if cerr := f.Close(); err == nil {
-		err = cerr
+	return writeChatFile(root, rel, append(raw, '\n'))
+}
+
+// removeChatStale drops what the chat's directory must not hold: the skill an older Admiral wrote (it cannot
+// load under an empty tool list) and any project settings or memory file, which `--setting-sources project` would
+// read from this directory. RemoveAll unlinks a link, never follows it.
+func removeChatStale(root *os.Root, fleet string) error {
+	dir := filepath.Join("chat", fleet)
+	for _, rel := range []string{
+		filepath.Join(".claude", "skills", "admiralbot"),
+		filepath.Join(".claude", "settings.json"),
+		filepath.Join(".claude", "settings.local.json"),
+		filepath.Join(".claude", "CLAUDE.md"),
+		"CLAUDE.md",
+		"CLAUDE.local.md",
+	} {
+		if err := root.RemoveAll(filepath.Join(dir, rel)); err != nil && !os.IsNotExist(err) {
+			return err
+		}
 	}
-	if err == nil {
-		err = root.Rename(tmp, filepath.Join(dir, "SKILL.md"))
-	}
-	if err != nil {
-		_ = root.Remove(tmp)
-	}
-	return err
+	return nil
 }
 
 // ChatDir is a fleet's chat working directory; the Read fence keeps the chat out of the others.
@@ -110,10 +159,6 @@ func (l *Launcher) StartChat(key string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return refuse(http.StatusInternalServerError, "could not create %s: %v", dir, err)
 	}
-	if err := WriteChatSkill(home, fleet.Key); err != nil {
-		return refuse(http.StatusInternalServerError, "could not write the AdmiralBot skill: %v", err)
-	}
-
 	// Each value is its own argument: nothing here goes through a shell.
 	chat := fleet.Chat
 	// The dock's args commonly widen permissions (--allowedTools, --add-dir, --mcp-config), so
@@ -123,8 +168,8 @@ func (l *Launcher) StartChat(key string) error {
 	if chat.Effort != "" {
 		argv = append(argv, "--effort", chat.Effort)
 	}
-	argv = append(argv, "--permission-mode", "dontAsk", "--setting-sources", "project", "--tools", "Bash,Skill,Read",
-		"--append-system-prompt", chatPrompt, "--settings", claudeChatSettingsPath(l.Home))
+	argv = append(argv, "--append-system-prompt", chatPrompt)
+	argv = append(argv, FenceArgs(claudeChatSettingsPath(l.Home), filepath.Join(dir, "mcp.json"))...)
 
 	// Admiral's environment and the tmux server's may hold a ship's variables (a server that
 	// outlived an earlier Admiral, or started from a ship's shell): the chat gets only ADMIRAL_HOME,
@@ -142,7 +187,7 @@ func (l *Launcher) StartChat(key string) error {
 	}
 	env["ADMIRAL_HOME"] = home
 	delete(unset, "ADMIRAL_HOME")
-	// `admiral chat ask` finds its fleet here; the model can't pick another.
+	// The hooks and the status line know the chat's fleet from here; the model can't pick another.
 	env["ADMIRAL_CHAT_FLEET"] = fleet.Key
 	if l.Port != "" {
 		env["ADMIRAL_PORT"] = l.Port
@@ -155,6 +200,12 @@ func (l *Launcher) StartChat(key string) error {
 	nonce, nerr := actor.NewNonce()
 	if nerr != nil {
 		return refuse(http.StatusInternalServerError, "could not make the chat's identity: %v", nerr)
+	}
+	// The token goes only into the MCP config, which Claude Code starts the server from: the session's
+	// env passes through tmux's argv and stays readable on its socket. A ship can read $ADMIRAL_HOME
+	// anyway; the fence is against the chat model, which has no file or shell tool.
+	if err := l.writeChatMCP(home, fleet.Key, nonce, env); err != nil {
+		return err
 	}
 	opts := [][2]string{{sessionhost.ChatModelOpt, chat.Model}, {sessionhost.ChatEffortOpt, chat.Effort}, {sessionhost.ChatFleetOpt, fleet.Key},
 		{sessionhost.ChatNonceOpt, nonce}}
@@ -186,6 +237,34 @@ func (l *Launcher) StartChat(key string) error {
 	}
 	if err := l.createSession(session, dir, opts, nil, env, names, argv, false); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (l *Launcher) writeChatMCP(home, fleet, nonce string, env map[string]string) *Error {
+	self, err := os.Executable()
+	if err != nil {
+		return refuse(http.StatusInternalServerError, "could not find the admiral binary: %v", err)
+	}
+	minter, err := actor.NewMinter(home)
+	if err != nil {
+		return refuse(http.StatusInternalServerError, "could not make the chat's identity: %v", err)
+	}
+	serverEnv := map[string]string{"ADMIRAL_ACTOR_TOKEN": minter.Token(fleet, nonce), "ADMIRAL_HOME": home, "ADMIRAL_CHAT_FLEET": fleet}
+	if p := env["ADMIRAL_PORT"]; p != "" {
+		serverEnv["ADMIRAL_PORT"] = p
+	}
+	root, err := os.OpenRoot(home)
+	if err != nil {
+		return refuse(http.StatusInternalServerError, "could not open %s: %v", home, err)
+	}
+	defer root.Close()
+	if err := removeChatStale(root, fleet); err != nil {
+		return refuse(http.StatusInternalServerError, "could not clear the chat's directory: %v", err)
+	}
+	cfg := map[string]MCPServer{ChatServer: {Command: self, Args: []string{"mcp"}, Env: serverEnv}}
+	if err := WriteMCPConfig(root, filepath.Join("chat", fleet, "mcp.json"), cfg); err != nil {
+		return refuse(http.StatusInternalServerError, "could not write the chat's MCP config: %v", err)
 	}
 	return nil
 }

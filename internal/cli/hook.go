@@ -49,6 +49,7 @@ func Hook(args []string, std IO) error {
 		call = sessionhost.Join(call, mon,
 			subagentCall(pane, args[0], p, now),
 			transcriptCall(pane, args[0], p, now),
+			chatPromptCall(pane, args[0], os.Getenv("ADMIRAL_CHAT_FLEET"), now),
 			rolloutsCall(pane, args[0], p),
 			// Last, so a failure here can't undo the writes before it.
 			crewTranscriptCall(pane, args[0], p))
@@ -344,6 +345,14 @@ func transcriptCall(pane, event string, p hookPayload, now time.Time) []string {
 		source = "unknown"
 	}
 	return sessionhost.SetPaneCall(pane, sessionhost.TranscriptOption, strconv.FormatInt(now.UnixNano(), 10)+" "+source+" "+path)
+}
+
+// chatPromptCall stamps each prompt of a fleet's chat; a freeform launch's idempotency key is built from the stamp.
+func chatPromptCall(pane, event, chatFleet string, now time.Time) []string {
+	if event != "UserPromptSubmit" || chatFleet == "" {
+		return nil
+	}
+	return sessionhost.SetPaneCall(pane, sessionhost.Prefix+sessionhost.ChatPromptOpt, strconv.FormatInt(now.UnixNano(), 10))
 }
 
 // rolloutsCall keeps every rollout a Codex pane starts, since /new and a resume each begin one whose
