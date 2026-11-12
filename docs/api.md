@@ -112,6 +112,20 @@ A Copilot ship launches with `--session-id <uuid>` and records `<copilot home>/s
 - `more`: there are items older than the first one returned, within the window the server reads. It is `false` at the file's first item.
 - An unknown ship is `404`. A dismissed ship is unknown. A ship anchored after its harness exited stays readable until it is dismissed.
 
+### A ship's rounds
+
+A moored ship is relaunched under the same name for each feedback round, and each round is a fresh session. Admiral records each round when the ship moors: its session id, fleet, transcript path, launch time and the time it moored, in `$ADMIRAL_HOME/moored/rounds/<ship name>.json` (paths only, never content; the history keeps the latest 50 rounds, and an older round's divider and items drop off). A round's path is recorded only when it passes the same check as above (the option's session id equals the `--session-id` of the start command); any other round, a non-Claude one included, is recorded with no path. The history ends with the mooring (Dismiss, Don't follow reviews, merged or closed), and a wake keeps it.
+
+When a ship has rounds, the endpoint stitches them oldest first:
+
+- **A moored ship** is served from its history, with state `ok`, where it has no live session and would otherwise be `404`. A moored ship whose page would have no items (no history, a history that cannot be read, or only an undivided round 0) answers `none`.
+- **A live ship in round N of 1 or more** serves the recorded rounds, then its live round.
+- **A `round` item opens each round of 1 or more**: `{"id": "r<N>", "kind": "round", "round": N, "at": "<the round's launch time>"}`. It carries `state` when the round cannot be shown: `none` (no transcript recorded, for example a non-Claude round), `gone` (the file is no longer there) or `unreadable` (the file cannot be read or parsed). Such a round shows only its divider, and never fails the page. A live round's divider has no `state` while its transcript is not bound yet (right after a wake) or its file is not there yet. Round 0 has no divider, so a missing round-0 file shows nothing.
+- **Ids:** an item of round N of 1 or more has the id `r<N>:<id>`, on the page and on pushes alike. Round 0 keeps its own ids.
+- **`before`:** an id of the form `r<N>:<id>` for a round N of 1 or more in the history is read in that round, and `r<N>` (the divider) pages from the round before. Any other id is round 0's.
+- **Paging** reads the newest round first and opens an older file only while the page has room, at most 8 files a page; `more` is true while anything older exists, so a page may hold fewer than 200 items.
+- `tail` comes from the live round.
+
 Paging reaches back as far as a first read does: the last 8 MB of the file, at most 16 MB read per request. An older item is not reachable and `more` is `false` at the start of that window.
 
 ### WebSocket
@@ -131,7 +145,8 @@ The server answers an open with `{"type": "conversation_opened", "ship": "<ship>
 
 - A changed item is sent again under the same `id` (a tool call whose output came later); the client replaces its copy.
 - A message holds at most 200 items.
-- An open for an unknown ship, or one with no conversation, is ignored, with no reply.
+- An open for an unknown ship, or one with no conversation, is ignored, with no reply. An open for a moored ship is answered with `conversation_opened` and watches nothing: its rounds are recorded, and its file no longer grows.
+- A live round's pushes carry the same `r<N>:` ids as its page.
 - A client holds at most 16 ships open. A 17th open closes the oldest.
 - A subscription ends on `conversation_close`, when the connection closes, or when the ship is dismissed.
 - The server follows the file by offset, about four times a second while any client has the ship open.

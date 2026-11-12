@@ -15,6 +15,7 @@ import (
 
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/conversation"
+	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
@@ -48,6 +49,12 @@ type Service struct {
 	option func(sh ships.Ship) (raw, startCmd, configDir string, ok bool)
 	owns   func(sh ships.Ship, port int) bool                                // whether the ship's own Copilot listens on port
 	crew   func(sh ships.Ship, name string) (sessionhost.Crew, string, bool) // the boat and its fleet's config dir for the boat's harness
+
+	// Tests replace these lookups of a ship's rounds.
+	moored    func(session string) (ships.Ship, bool)   // a ship with no live session but a moored record
+	rounds    func(sh ships.Ship) ([]moor.Round, error) // the ship's recorded rounds
+	fleetDir  func(fleet string) (string, bool)         // a fleet's Claude config dir
+	liveRound func(sh ships.Ship) int                   // the round a live ship is in
 
 	mu      sync.Mutex
 	seen    map[string]string // session -> option value a file was seen for: tells gone from none
@@ -199,6 +206,10 @@ func (s *Service) locateBoat(session, crew string) (w where, ok, none bool) {
 	if !ok {
 		return where{}, false, false
 	}
+	return s.locateShip(sh, crew)
+}
+
+func (s *Service) locateShip(sh ships.Ship, crew string) (w where, ok, none bool) {
 	w.ship, w.harness = sh, sh.Harness
 	if crew != "" {
 		return s.locateCrew(w, crew)
@@ -273,7 +284,28 @@ type Page struct {
 func (s *Service) serveConversation(w http.ResponseWriter, r *http.Request) {
 	session, crew := r.PathValue("session"), r.PathValue("name")
 	k := key(session, crew)
-	loc, ok, none := s.locateBoat(session, crew)
+	sh, live := s.shipOf(session, false)
+	moored := false
+	if !live && crew == "" { // a moored ship has no session to sync for
+		sh, moored = s.mooredOf(session)
+	}
+	if !live && !moored {
+		sh, live = s.shipOf(session, true)
+	}
+	var segs []segment
+	var loc where
+	var ok, none bool
+	switch {
+	case live:
+		loc, ok, none = s.locateShip(sh, crew)
+		if crew == "" {
+			segs = s.segmentsOf(sh, true)
+		}
+	case moored:
+		ok = true
+		segs = s.segmentsOf(sh, false)
+		none = segs == nil
+	}
 	if !ok {
 		s.forget(k)
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
@@ -288,6 +320,18 @@ func (s *Service) serveConversation(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	page := Page{State: StateNone, Items: []conversation.Item{}}
+	if segs != nil {
+		stitched, err := stitch(segs, before)
+		if errors.Is(err, conversation.ErrUnknownID) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "before is not the id of an item"})
+			return
+		}
+		if moored && len(stitched.Items) == 0 { // nothing to show: the no-conversation state
+			stitched.State = StateNone
+		}
+		writeJSON(w, http.StatusOK, stitched)
+		return
+	}
 	if none {
 		writeJSON(w, http.StatusOK, page)
 		return
@@ -352,6 +396,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 type watch struct {
 	session  string
 	crew     string
+	round    int    // the live round, whose ids carry its prefix from round 1
 	launched string // tells a reused ship name from the ship that was watched
 	loc      where
 	svc      *Service
@@ -383,11 +428,20 @@ func (s *Service) handleOpen(ctx context.Context, c *server.Client, raw json.Raw
 	s.mu.Unlock()
 
 	loc, ok, none := s.locateBoat(m.Ship, m.Crew)
+	if !ok && m.Crew == "" {
+		if _, moored := s.mooredOf(m.Ship); moored {
+			s.ackMoored(ctx, c, m.Ship) // its rounds are all recorded: nothing to watch
+			return
+		}
+	}
 	if !ok || none {
 		return // an unknown ship or boat, or one with no conversation, is ignored
 	}
 	w := &watch{session: m.Ship, crew: m.Crew, launched: loc.ship.Launched + "|" + loc.boatLaunched, loc: loc, svc: s, reader: conversation.NewReader(conversation.Options{Harness: loc.harness}),
 		subs: map[*server.Client]struct{}{}}
+	if m.Crew == "" {
+		w.round = s.liveRoundOf(loc.ship)
+	}
 	// Prime the reader: what is already there is not sent (the client reads the
 	// page), and a tool result that arrives later still finds its call.
 	if f, info, p, err := loc.open(true); err == nil {
@@ -427,26 +481,43 @@ func (s *Service) handleOpen(ctx context.Context, c *server.Client, raw json.Raw
 	for len(s.clients[c]) > MaxOpen {
 		s.unsubscribeLocked(c, s.clients[c][0])
 	}
-	if _, has := s.outbox[c]; !has {
-		q := make(chan map[string]any, 64)
-		s.outbox[c] = q
-		go func() {
-			for {
-				select {
-				case msg := <-q:
-					_ = c.Send(msg)
-				case <-ctx.Done():
-					s.dropClient(c)
-					return
-				}
-			}
-		}()
-	}
+	s.ensureOutboxLocked(ctx, c)
 	s.ackLocked(c, m.Ship, m.Crew)
 	if !s.running {
 		s.running = true
 		go s.run()
 	}
+}
+
+// ensureOutboxLocked starts the client's one sender; it ends, and drops the client, with ctx.
+func (s *Service) ensureOutboxLocked(ctx context.Context, c *server.Client) {
+	if s.clients == nil {
+		s.clients, s.watches, s.outbox = map[*server.Client][]string{}, map[string]*watch{}, map[*server.Client]chan map[string]any{}
+	}
+	if _, has := s.outbox[c]; has {
+		return
+	}
+	q := make(chan map[string]any, 64)
+	s.outbox[c] = q
+	go func() {
+		for {
+			select {
+			case msg := <-q:
+				_ = c.Send(msg)
+			case <-ctx.Done():
+				s.dropClient(c)
+				return
+			}
+		}
+	}()
+}
+
+// ackMoored answers a moored ship's open: there is nothing to watch, but the client waits for the ack before it reads the page.
+func (s *Service) ackMoored(ctx context.Context, c *server.Client, ship string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureOutboxLocked(ctx, c)
+	s.ackLocked(c, ship, "")
 }
 
 // ackLocked tells the client its open is in effect: items appended from now on are pushed, so it may read the page.
@@ -547,7 +618,7 @@ func (s *Service) poll(w *watch) {
 	if len(items) == 0 {
 		return
 	}
-	msg := tagged(map[string]any{"type": "conversation", "ship": w.session, "items": items}, w.crew)
+	msg := tagged(map[string]any{"type": "conversation", "ship": w.session, "items": prefixed(w.round, items)}, w.crew)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for c := range w.subs {

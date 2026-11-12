@@ -28,7 +28,7 @@ Research for [#231](https://github.com/jbuffin/admiral/issues/231) found that ev
 - **State and approvals come from hooks only**, as [ADR 0007](0007-needs-you-comes-from-harness-hooks.md) says: `PermissionRequest` for Claude Code and Codex, Copilot's `notification` hook. "Working" between items comes from hooks too.
 - **Freshness.** Copilot's and Codex's servers give live text. The file routes update per finished item. Watching anything else live means the Terminal tab.
 - **Who uses the adapters.** Ships, crew boats and AdmiralBot. The chat moves onto the Claude Code adapter but keeps its text-only filter.
-- **Lifetimes.** An anchored ship's conversation stays readable until it is dismissed. A moored ship's feedback rounds each record their path in `$ADMIRAL_HOME/moored/<ship>.json`, and the bridge shows the rounds in order with a divider. Admiral stores paths and never copies the files. A file the harness has since removed shows "conversation no longer available".
+- **Lifetimes.** An anchored ship's conversation stays readable until it is dismissed. A moored ship's feedback rounds each record their path in `$ADMIRAL_HOME/moored/rounds/<ship>.json` (a history of its own, since the moored record is deleted on every wake), and the bridge shows the rounds in order with a divider. Admiral stores paths and never copies the files. A file the harness has since removed shows "conversation no longer available".
 - **Format drift.** Each adapter skips what it doesn't know and never fails the view. A recorded path with nothing parseable shows "Admiral can't read this conversation" and points to the terminal. Each adapter has one test against a recorded sample.
 
 ## Considered options

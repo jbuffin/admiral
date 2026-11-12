@@ -137,6 +137,9 @@ func (s *Service) removeWake(name string) {
 	if err := moor.RemoveWake(s.Launcher.Home, name); err != nil {
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake state cannot be removed: %v\n", name, err)
 	}
+	if err := moor.RemoveRounds(s.Launcher.Home, name); err != nil {
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: its round history cannot be removed: %v\n", name, err)
+	}
 	if err := inbox.RemoveWakeProposals(s.Launcher.Home, name); err != nil {
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake proposals cannot be removed: %v\n", name, err)
 	}
