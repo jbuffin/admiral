@@ -123,10 +123,10 @@ export const chatSettingsPath = (fleetKey: string) => `/app/preferences/${encode
 
 export const capabilitiesPath = (fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/capabilities`;
 
-/** The fleet key a Preferences path names, if any. */
 /** True for the bare Preferences path, which a phone answers with the list of pages. */
 export const preferencesBare = (path: string) => segments(path).join('/') === 'preferences';
 
+/** The fleet key a Preferences path names, if any. */
 export function preferencesFleet(path: string): string | null {
   const [id, key] = segments(path);
   if (id !== 'preferences' || !key || globalPage(path)) return null;

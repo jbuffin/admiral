@@ -119,7 +119,7 @@ export async function touchTap(page: Page, control: Locator) {
   await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
 }
 
-/** The fleets `seedFleets(a, { chat: true })` adds after zulu and alpha:each has a fake Claude Code dock of its own for its AdmiralBot, so two chats never share a transcript or a cue. */
+/** The fleets `seedFleets(a, { chat: true })` adds after zulu and alpha: each has a fake Claude Code dock of its own for its AdmiralBot, so two chats never share a transcript or a cue. */
 export const CHAT_FLEETS = [
   { key: 'harbor', name: 'Harborlight' },
   { key: 'lagoon', name: 'Lagoonside' },
