@@ -360,4 +360,45 @@ func Render(in Input) string {
 
 // PreCompact is the instruction a PreCompact hook prints so a compaction keeps the instructions and the open notes
 // (ids and texts) verbatim: plain text of at most MaxBytes, "" when there is nothing to keep.
-func PreCompact(instructions string, notes []Note) string { return "" }
+func PreCompact(instructions string, notes []Note) string {
+	instr := strings.TrimSpace(strip(instructions, true))
+	var items []string // newest first, so the oldest are the ones dropped
+	for i := len(notes) - 1; i >= 0; i-- {
+		if t := Clean(notes[i].Text); t != "" {
+			items = append(items, "- "+Clean(notes[i].ID)+": "+t)
+		}
+	}
+	if instr == "" && len(items) == 0 {
+		return ""
+	}
+	const lead = "When you compact this conversation, keep the engineer's instructions and every note id with its note text verbatim.\n"
+	head := lead
+	if instr != "" {
+		head += "\n" + instructionsBlock(instr)
+	}
+	if len(items) == 0 {
+		return cutBytes(head, MaxBytes)
+	}
+	notesHead := "\n## Notes\n"
+	budget := MaxBytes - len(head) - len(notesHead) - len(fenceBlock(fenceNotice+"\n", nil)) - len(leftOutLine(len(items)))
+	kept, used := 0, 0
+	for _, it := range items {
+		if used+len(it)+1 > budget {
+			break
+		}
+		used += len(it) + 1
+		kept++
+	}
+	if kept == 0 {
+		return cutBytes(head, MaxBytes)
+	}
+	shown := make([]string, kept)
+	for j := 0; j < kept; j++ {
+		shown[kept-1-j] = items[j]
+	}
+	out := head + notesHead + Fence(shown)
+	if left := len(items) - kept; left > 0 {
+		out += leftOutLine(left)
+	}
+	return out
+}

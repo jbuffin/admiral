@@ -11,8 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/brief"
 	"github.com/jbuffin/admiral/internal/chatlog"
 	"github.com/jbuffin/admiral/internal/digest"
+	"github.com/jbuffin/admiral/internal/ledger"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
@@ -557,6 +559,9 @@ func chatContextAfter(event, home, fleet string, after uint64) (out string, seq 
 	}
 	var text string
 	switch event {
+	case "PreCompact":
+		// Plain stdout on exit 0 is appended to the compaction's instructions; Claude Code has no JSON form for it.
+		return preCompactText(home, fleet), 0
 	case "SessionStart":
 		text = readBrief(home, fleet)
 	case "UserPromptSubmit":
@@ -570,6 +575,28 @@ func chatContextAfter(event, home, fleet string, after uint64) (out string, seq 
 		return "", 0
 	}
 	return string(raw) + "\n", seq
+}
+
+// preCompactText asks a compaction to keep the instructions and open notes; "" when the files are missing or unreadable.
+func preCompactText(home, fleet string) string {
+	l := ledger.New(home, time.Now)
+	instr, err := l.Instructions(fleet)
+	if err != nil {
+		return ""
+	}
+	entries, err := l.Notes(fleet)
+	if err != nil {
+		return ""
+	}
+	notes := make([]brief.Note, 0, len(entries))
+	for _, e := range entries {
+		notes = append(notes, brief.Note{ID: e.ID, Text: e.Text, Via: e.Via, TS: e.TS})
+	}
+	text := brief.PreCompact(instr, notes)
+	if text == "" {
+		return ""
+	}
+	return text + "\n"
 }
 
 // readBrief is the fleet's brief.md; "" when it is missing, not a plain file or unreadable.
