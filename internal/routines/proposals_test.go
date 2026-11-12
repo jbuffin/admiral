@@ -541,16 +541,23 @@ func TestATicksProposalAndALaunchOfTheOpenProposalDoNotDeadlock(t *testing.T) {
 	prop := &inboxProposer{in: in, entered: make(chan struct{})} // signals when the next tick reaches its proposal
 	h.sched.Proposer = prop
 
+	inLaunch := make(chan struct{})
 	in.LaunchRoutine = func(ctx context.Context, p inbox.RoutineProposal) (any, int, string) {
 		// holds the answer lock; the scheduler's lock is taken only once the tick is inside its proposal
+		close(inLaunch)
 		<-prop.entered
 		_, err := h.sched.Accept(ctx, p.Fleet, p.Routine, p.Trigger)
 		return nil, http.StatusBadGateway, fmt.Sprint(err)
 	}
 	h.clock.set(base.Add(24 * time.Hour))
 	done := make(chan struct{}, 2)
-	go func() { _ = h.sched.Tick(context.Background()); done <- struct{}{} }()
 	go func() { _, _ = in.LaunchRoutineItem(context.Background(), open); done <- struct{}{} }()
+	select {
+	case <-inLaunch: // the launch holds the answer lock before the tick starts
+	case <-time.After(10 * time.Second):
+		t.Fatal("the launch never reached its hook")
+	}
+	go func() { _ = h.sched.Tick(context.Background()); done <- struct{}{} }()
 	for i := 0; i < 2; i++ {
 		select {
 		case <-done:

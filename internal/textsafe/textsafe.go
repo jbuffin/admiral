@@ -5,6 +5,6 @@ import "unicode"
 
 // Hidden is true for a control, line or paragraph separator, bidi or zero-width rune: it can reorder text or fake a line break.
 func Hidden(r rune) bool {
-	return unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) || (r >= '​' && r <= '‍') || r == '\uFEFF' ||
-		r == '\u2028' || r == '\u2029' || (r >= '‪' && r <= '‮') || (r >= '⁦' && r <= '⁩')
+	return unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) || (r >= '\u200B' && r <= '\u200D') || r == '\uFEFF' ||
+		r == '\u2028' || r == '\u2029' || (r >= '\u202A' && r <= '\u202E') || (r >= '\u2066' && r <= '\u2069')
 }
