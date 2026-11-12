@@ -663,9 +663,11 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
   await expect(pick('Harness', 'Codex')).toBeDisabled();
   await expect(main).toContainText(/Codex.*has not been checked/i);
   await expect(main.getByRole('button', { name: /Check again.*Codex/ })).toBeVisible();
-  proveAdmiralBot(admiral, 'zulu', 'codex');
-  await page.reload();
+  await proveAdmiralBot(admiral, 'zulu', 'codex');
+  // Check again reads the fleets again, so the harness turns on without a reload.
+  await main.getByRole('button', { name: /Check again.*Codex/ }).click();
   await expect(pick('Harness', 'Codex')).toBeEnabled();
+  await expect(main).not.toContainText(/Codex.*has not been checked/i);
   await pick('Harness', 'Codex').click();
   await expect(page.getByRole('radiogroup', { name: 'Model' }).getByRole('radio')).not.toContainText(['Sonnet']);
   await expect(page.getByRole('radiogroup', { name: 'Model' }).getByRole('radio', { checked: true })).toHaveCount(1);
@@ -680,7 +682,7 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
 
   // Copilot takes no effort: once proven it offers only Default.
   await page.goto(admiral.url + 'app/preferences/alpha/admiralbot');
-  proveAdmiralBot(admiral, 'alpha', 'copilot');
+  await proveAdmiralBot(admiral, 'alpha', 'copilot');
   await page.reload();
   await pick('Harness', 'Copilot').click();
   await expect(page.getByRole('radiogroup', { name: 'Effort' }).getByRole('radio')).toHaveText(['Default']);

@@ -1,5 +1,6 @@
 import { signal } from '@preact/signals';
 import { checkHarness, fetchCapabilities, type CheckAnswer, type FleetCapabilities } from './api';
+import { loadFleets } from './fleets';
 
 export const capabilities = signal<FleetCapabilities[]>([]);
 export const capabilitiesLoaded = signal(false);
@@ -51,6 +52,8 @@ export async function recheck(fleet: string, harness: string) {
     epoch++;
     await loadCapabilities();
   } finally {
+    // What a fleet may choose (AdmiralBot's harness) follows its probes, so every check reads the fleets again.
+    await loadFleets();
     set(checking, key, null);
   }
 }

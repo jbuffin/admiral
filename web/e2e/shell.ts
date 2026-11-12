@@ -1691,8 +1691,19 @@ export async function myPRsMergeFailsOnTheRow(page: Page, a: Admiral) {
   expect((await listShips(a)).find((s) => s.session === ship.session)?.status).toBe('moored');
 }
 
-/** Writes passing AdmiralBot probe results for a fleet's harness, as the store keeps them, so the picker offers it. */
-export function proveAdmiralBot(a: Admiral, fleet: string, harness: string): void {
+/**
+ * Writes passing AdmiralBot probe results for a fleet's harness, as the store keeps them, so the picker offers it.
+ * They are keyed by the version the server detected (Check again detects it again), so this waits for the startup
+ * detection to land first: a later write of it could not overwrite the seed.
+ */
+export async function proveAdmiralBot(a: Admiral, fleet: string, harness: string): Promise<void> {
+  const detected = async () => {
+    const res = await fetch(a.url + 'api/harness-capabilities');
+    const body = (await res.json()) as { fleets: { key: string; harnesses: { harness: string; version: string }[] }[] };
+    return body.fleets.find((f) => f.key === fleet)?.harnesses.find((h) => h.harness === harness)?.version ?? '';
+  };
+  await expect.poll(detected).not.toBe('');
+  const version = await detected();
   const file = join(a.home, 'capabilities.json');
   const store = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : { fleets: {} };
   const at = '2026-01-02T03:04:05Z';
@@ -1700,10 +1711,10 @@ export function proveAdmiralBot(a: Admiral, fleet: string, harness: string): voi
   store.fleets[fleet] ??= {};
   store.fleets[fleet][harness] = {
     ...store.fleets[fleet][harness],
-    version: '9.9.9',
+    version,
     detected_at: at,
-    versions: { '9.9.9': { 'bot.mcp_fence': pass, 'bot.config_home': pass } },
-    probed_version: '9.9.9',
+    versions: { [version]: { 'bot.mcp_fence': pass, 'bot.config_home': pass } },
+    probed_version: version,
     probed_at: at,
   };
   writeFileSync(file, JSON.stringify(store));

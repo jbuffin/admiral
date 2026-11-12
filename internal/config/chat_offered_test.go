@@ -322,7 +322,7 @@ func TestChatSaveChecksTheMergedSettings(t *testing.T) {
 	refused("effort low on copilot", save(map[string]string{"effort": `"low"`}), "effort")
 }
 
-func TestChatProbeSurvivesAReloadAndAnEditOfTheFile(t *testing.T) {
+func TestChatProbeSurvivesAReloadAndFollowsTheStoreItIsGiven(t *testing.T) {
 	p := probes{}
 	p.pass("w", "codex")
 	m, _ := openWithProbes(t, withFleets(chatFleet("w", `{"harness":"codex","model":"gpt-6.1-sol"}`)), p)
@@ -333,7 +333,7 @@ func TestChatProbeSurvivesAReloadAndAnEditOfTheFile(t *testing.T) {
 	if got := chatWireOf(t, m, "w"); !got.On {
 		t.Errorf("after a reload: %+v, want the probe still applied", got)
 	}
-	// Seeding a pass later turns it on without restarting anything.
+	// A store that has lost its results turns it off without restarting anything.
 	q := probes{}
 	m.SetChatProbe(q.probe)
 	if got := chatWireOf(t, m, "w"); got.On {

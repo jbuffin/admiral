@@ -1,5 +1,7 @@
+import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
-import { fetchFleets, saveFleet, type Fleet } from './api';
+import { saveFleet, type Fleet } from './api';
+import { checkErrors, checkKey } from './capabilities';
 import { MissingCapability } from './MissingCapability';
 import { Flag } from './Flag';
 import { fleets } from './fleets';
@@ -7,7 +9,7 @@ import { CHAT_THRESHOLDS, chatErrorMessage, chatSaveBody, effortLabel, harnessLa
 
 const settingsOf = (f: Fleet): ChatSettings => ({ harness: f.chat.harness, model: f.chat.model, effort: f.chat.effort, context_threshold: f.chat.context_threshold });
 
-function Choice<T extends string | number>({ legend, help, values, value, label, disabled, unavailable, onPick, flag }: {
+function Choice<T extends string | number>({ legend, help, values, value, label, disabled, unavailable, notes, onPick, flag }: {
   legend: string;
   help?: string;
   values: T[];
@@ -16,6 +18,8 @@ function Choice<T extends string | number>({ legend, help, values, value, label,
   disabled: boolean;
   /** Values shown greyed out and not selectable. */
   unavailable?: T[];
+  /** Why a value is unavailable, by value; shown inside the row under the chips and read with the chip. */
+  notes?: (v: T) => ComponentChildren;
   onPick: (v: T) => void;
   flag?: boolean;
 }) {
@@ -28,12 +32,13 @@ function Choice<T extends string | number>({ legend, help, values, value, label,
       </div>
       <div class="choice-group" role="radiogroup" aria-labelledby={id}>
         {values.map((v) => (
-          <button key={String(v)} type="button" role="radio" class="chip" aria-checked={v === value} disabled={disabled || !!unavailable?.includes(v)} onClick={() => onPick(v)}>
+          <button key={String(v)} type="button" role="radio" class="chip" aria-checked={v === value} aria-describedby={unavailable?.includes(v) && notes ? `${id}-note-${v}` : undefined} disabled={disabled || !!unavailable?.includes(v)} onClick={() => onPick(v)}>
             {flag ? <Flag harness={String(v)} size="row" /> : null}
             {label(v)}
           </button>
         ))}
       </div>
+      {notes ? unavailable?.map((v) => notes(v)) : null}
     </div>
   );
 }
@@ -70,8 +75,6 @@ export function ChatSettingsPage({ fleet }: { fleet: Fleet }) {
   const models = chosen?.models ?? fleet.chat.models;
   const efforts = chosen?.efforts ?? fleet.chat.efforts;
   const closed = options.filter((o) => !o.offered);
-  // A check can turn a harness on, so the picker reads the fleets again.
-  const refresh = () => void fetchFleets().then((list) => (fleets.value = list), () => undefined);
   return (
     <>
       <p class="line">Your chief of staff for the {fleet.name} fleet. It only sees this fleet's ships, orders, campaigns and logins.</p>
@@ -91,15 +94,27 @@ export function ChatSettingsPage({ fleet }: { fleet: Fleet }) {
               value={edited.harness}
               label={harnessLabel}
               disabled={busy}
+              notes={(v) => {
+                const o = closed.find((x) => x.harness === v);
+                if (!o) return null;
+                const error = checkErrors.value[checkKey(fleet.key, o.harness)];
+                return (
+                  <div key={v}>
+                    <MissingCapability id={`chat-harness-note-${v}`} fleet={fleet.key} harness={o.harness} reason={o.reason} />
+                    {error ? (
+                      <p class="note error" role="alert">
+                        {error}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              }}
               onPick={(v) => {
                 const o = options.find((x) => x.harness === v);
                 if (o) setEdited(switchHarness(edited, o));
               }}
               flag
             />
-            {closed.map((o) => (
-              <MissingCapability key={o.harness} fleet={fleet.key} harness={o.harness} reason={o.reason} onChecked={refresh} />
-            ))}
           </>
         ) : null}
         <Choice legend="Model" values={models} value={edited.model} label={modelLabel} disabled={busy} onPick={(v) => set({ model: v })} />

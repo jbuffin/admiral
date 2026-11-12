@@ -143,9 +143,15 @@ var (
 	ErrConflict = errors.New("config.json cannot be edited now")
 )
 
-// EditFleet rewrites only the named fleet's editable fields; any other error is a value Parse refused.
+// editFleet rewrites only the named fleet's editable fields; any other error is a value Parse refused.
 // An empty color or clone_root removes the key, so the fleet falls back to its default.
-func EditFleet(dir, key string, f FleetFields) error {
+// A chat harness the capability store has not cleared (read through cfg) is refused, so no caller skips the gate.
+func editFleet(dir, key string, f FleetFields, cfg *Config) error {
+	if raw, ok := f.Chat["harness"]; ok {
+		if err := refuseUnofferedHarness(cfg, key, raw); err != nil {
+			return err
+		}
+	}
 	writeMu.Lock()
 	defer writeMu.Unlock()
 	path := filepath.Join(dir, FileName)
@@ -216,6 +222,24 @@ func EditFleet(dir, key string, f FleetFields) error {
 		return fmt.Errorf("%w: config.json changed while saving; try again", ErrConflict)
 	}
 	return replaceFile(path, out)
+}
+
+// refuseUnofferedHarness is the server holding the line the Preferences picker draws: a harness
+// the capability store has not cleared for the fleet's AdmiralBot cannot be chosen. A save that
+// leaves the harness alone is not checked, so a fleet whose stored harness lapsed can still be edited.
+func refuseUnofferedHarness(cfg *Config, key string, raw json.RawMessage) error {
+	var harness string
+	if json.Unmarshal(raw, &harness) != nil {
+		return nil // the strict parse names the wrong type
+	}
+	f, ok := cfg.Fleet(key)
+	if !ok || !slices.Contains(Harnesses(), harness) {
+		return nil
+	}
+	if o := cfg.chatHarnessOption(f, harness); !o.Offered {
+		return fmt.Errorf("fleets.%s.chat.harness: %s", key, o.Reason)
+	}
+	return nil
 }
 
 // mergeChat refuses what parseFleetChat would replace with a default, then sets only the given

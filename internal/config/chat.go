@@ -148,7 +148,7 @@ func (c *Config) chatHarnessOption(f Fleet, harness string) ChatHarnessOption {
 			}
 			o.Reason += "."
 		} else {
-			o.Reason = fmt.Sprintf("%s's %s has not been checked: check again on Preferences.", HarnessName(harness), capLabels[id])
+			o.Reason = fmt.Sprintf("%s's %s has not been checked yet.", HarnessName(harness), capLabels[id])
 		}
 		return o
 	}
@@ -171,9 +171,11 @@ func (c *Config) ChatHarnessOptions(f Fleet) []ChatHarnessOption {
 }
 
 // ChatHarnessesOffered are the harnesses the fleet's AdmiralBot may run on.
-func (c *Config) ChatHarnessesOffered(f Fleet) []string {
+func (c *Config) ChatHarnessesOffered(f Fleet) []string { return offered(c.ChatHarnessOptions(f)) }
+
+func offered(opts []ChatHarnessOption) []string {
 	out := []string{}
-	for _, o := range c.ChatHarnessOptions(f) {
+	for _, o := range opts {
 		if o.Offered {
 			out = append(out, o.Harness)
 		}
@@ -183,13 +185,21 @@ func (c *Config) ChatHarnessesOffered(f Fleet) []string {
 
 // ChatOffReason is why the fleet's chat is off, with the case clash only a config can see: the
 // chat lives in chat/<key>/, and the Mac's disk usually ignores case. The earlier key keeps its chat.
-func (c *Config) ChatOffReason(f Fleet) string {
+func (c *Config) ChatOffReason(f Fleet) string { return c.chatOffReason(f, nil) }
+
+// chatOffReason takes the fleet's options when the caller already has them, so the store is not read again.
+func (c *Config) chatOffReason(f Fleet, opts []ChatHarnessOption) string {
 	for _, o := range c.Fleets {
 		if o.Key == f.Key {
 			break
 		}
 		if strings.EqualFold(o.Key, f.Key) {
 			return fmt.Sprintf("This fleet's key differs only in case from fleet %s's (%s), and their chats would share one directory on a disk that ignores case: rename one key.", o.Name, o.Key)
+		}
+	}
+	for _, o := range opts {
+		if o.Harness == f.Chat.Harness {
+			return o.Reason
 		}
 	}
 	return c.chatHarnessOption(f, f.Chat.Harness).Reason
