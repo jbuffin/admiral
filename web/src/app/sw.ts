@@ -1,3 +1,4 @@
+import { clickUrl, dataOf, notice } from './swPush';
 import { assetUrls, cacheable, classifyRequest, serverGone } from './swRules';
 
 // Built to a fixed /sw.js and registered with scope /app/, so the old UI is never controlled.
@@ -10,9 +11,16 @@ interface WorkerFetchEvent extends Event {
 }
 interface WorkerScope {
   addEventListener(type: 'fetch', fn: (e: WorkerFetchEvent) => void): void;
+  addEventListener(type: 'push', fn: (e: Event & { data: { text(): string } | null; waitUntil(p: Promise<unknown>): void }) => void): void;
+  addEventListener(type: 'notificationclick', fn: (e: Event & { notification: { data: unknown; close(): void }; waitUntil(p: Promise<unknown>): void }) => void): void;
   addEventListener(type: 'install' | 'activate', fn: (e: Event & { waitUntil(p: Promise<unknown>): void }) => void): void;
   skipWaiting(): Promise<void>;
-  clients: { claim(): Promise<void> };
+  clients: {
+    claim(): Promise<void>;
+    matchAll(opts: { type: 'window'; includeUncontrolled: boolean }): Promise<{ url: string; focus(): Promise<unknown>; postMessage(m: unknown): void }[]>;
+    openWindow(url: string): Promise<unknown>;
+  };
+  registration: { showNotification(title: string, options: object): Promise<void> };
   location: Location;
 }
 const sw = self as unknown as WorkerScope;
@@ -62,4 +70,30 @@ sw.addEventListener('fetch', (e) => {
   const handling = classifyRequest(e.request, sw.location.origin);
   if (handling === 'pass') return;
   e.respondWith(networkFirst(e.request, handling === 'shell'));
+});
+
+sw.addEventListener('push', (e) => {
+  let raw: string | null = null;
+  try {
+    raw = e.data?.text() ?? null;
+  } catch {
+    /* an unreadable body still shows the generic line */
+  }
+  const n = notice(raw);
+  e.waitUntil(sw.registration.showNotification(n.title, n.options));
+});
+
+sw.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const data = dataOf(e.notification.data);
+  e.waitUntil(
+    (async () => {
+      const windows = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      const open = windows.find((c) => /^\/app(\/|$)/.test(new URL(c.url).pathname));
+      if (open) {
+        await open.focus();
+        open.postMessage({ type: 'push-click', data });
+      } else await sw.clients.openWindow(clickUrl(data));
+    })(),
+  );
 });

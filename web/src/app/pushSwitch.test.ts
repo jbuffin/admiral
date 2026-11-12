@@ -37,4 +37,11 @@ describe('the notifications switch on this device', () => {
   it('says push is off on the Mac when the key route answers 503', () => {
     expect(state({ key: 'off' })).toBe('mac-off');
   });
+
+  it('names the thing to fix first when states overlap: HTTPS, then the Home Screen, then the browser block, then the Mac', () => {
+    expect(state({ secure: false, hasPushManager: false, hasServiceWorker: false, ios: true, standalone: false })).toBe('needs-https');
+    expect(state({ permission: 'denied', key: 'off' })).toBe('blocked');
+    expect(state({ subscribed: true, held: true, permission: 'denied' })).toBe('blocked');
+    expect(state({ ios: true, standalone: false, hasPushManager: false, permission: 'denied' })).toBe('home-screen');
+  });
 });

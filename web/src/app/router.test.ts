@@ -237,3 +237,12 @@ describe('chat terminal paths', () => {
     expect(surfaceOf('/app/chat/harbor/terminal/x')).toBeUndefined();
   });
 });
+
+describe('Notifications route', () => {
+  it('is a global page under the reserved admiral segment, and a fleet named admiral has no such page', () => {
+    expect(surfaceOf('/app/preferences/admiral/notifications')?.id).toBe('preferences');
+    expect(preferencesFleet('/app/preferences/admiral/notifications')).toBeNull();
+    expect(preferencesPage('/app/preferences/admiral/notifications')).toBe('notifications');
+    expect(surfaceOf('/app/preferences/zulu/notifications')).toBeUndefined();
+  });
+});
