@@ -1,6 +1,6 @@
 # 18. The chat is one long-lived session
 
-Status: accepted, amended by [ADR 0023](0023-admiralbot-is-a-coordinator-fenced-to-an-admiral-mcp-server.md) (one AdmiralBot per fleet, set on Preferences, with more writes than adding an order) and [ADR 0024](0024-admiralbot-memory-is-a-server-owned-ledger.md) (Admiral decides resets, and visible history outlives New chat)
+Status: accepted, amended by [ADR 0023](0023-admiralbot-is-a-coordinator-fenced-to-an-admiral-mcp-server.md) (one AdmiralBot per fleet, set on Preferences, with more writes than adding an order) and [ADR 0024](0024-admiralbot-memory-is-a-server-owned-ledger.md) (Admiral decides resets, and visible history outlives New chat) and [#272](https://github.com/jbuffin/admiral/issues/272) (a waiting chat question also shows in the Inbox and is answered from Peek)
 
 ## Context
 
@@ -13,7 +13,7 @@ The chat pane (rung 8 of autopilot, [#119](https://github.com/jbuffin/admiral/is
 - **New chat resets it.** New chat asks first, then clears the conversation. The session's context is reset only this way. There are no saved conversations to go back to.
 - **Open terminal shows the session's terminal** through the bridge, as the setup terminal does. Back to chat returns.
 - **It is not a ship.** It never shows in open water, the Ships list or the outcome log, and it takes no part in caps, guards or resources. Its Admiral skill can read ships, outcomes and the inbox, and its only write is adding an order (`POST /api/sources/{key}/orders`). Everything it starts goes through an order, so the caps, guards and resources still apply.
-- **Its questions stay in the chat.** A question uses the inbox's question card, but it never becomes an inbox item, since an inbox item belongs to a ship.
+- **Its questions live in the chat and show in the Inbox while they wait.** A question is a file under `chat/<fleet>/questions/`, not under `inbox/`, and uses the inbox's question card. `GET /api/inbox` lists each waiting one as a question item named "AdmiralBot" with the fleet from its directory, and Peek answers it through `POST /api/inbox/_chat-<fleet>/<id>/answer`, the same code that answers it in the chat. Answered and withdrawn questions leave the list.
 - **Where it runs and at what model** come from the top-level `chat` key in `config.json`: `fleet` (default: the first fleet with a Claude dock), `model` (default `sonnet`) and `effort` (no value means the harness default). Settings writes it.
 
 ## Considered options

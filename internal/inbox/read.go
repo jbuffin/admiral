@@ -257,17 +257,19 @@ func scan(home string) []Item {
 		items = append(items, scanShip(dir, session)...)
 		dir.Close()
 	}
-	sort.Slice(items, func(i, j int) bool {
-		a, b := items[i], items[j]
-		switch {
-		case !a.Created.Equal(b.Created):
-			return a.Created.Before(b.Created)
-		case a.Session != b.Session:
-			return a.Session < b.Session
-		}
-		return a.ID < b.ID
-	})
+	sort.Slice(items, func(i, j int) bool { return before(items[i], items[j]) })
 	return items
+}
+
+// before orders items oldest first.
+func before(a, b Item) bool {
+	switch {
+	case !a.Created.Equal(b.Created):
+		return a.Created.Before(b.Created)
+	case a.Session != b.Session:
+		return a.Session < b.Session
+	}
+	return a.ID < b.ID
 }
 
 func scanShip(dir *os.Root, session string) []Item {

@@ -410,6 +410,9 @@ func serve(args []string) error {
 
 	chatService := &chat.Service{Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Home: absDir, Outcomes: outcomeLog}
 	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
+	chatService.OnQuestions = inboxService.Changed
+	inboxService.ChatQuestions = chatService.WaitingQuestions
+	inboxService.AnswerChat = chatService.AnswerQuestion
 	if err := chatService.RemoveOldLayout(); err != nil {
 		fmt.Fprintf(os.Stderr, "admiral: chat: %v\n", err)
 	}

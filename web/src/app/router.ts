@@ -11,6 +11,7 @@ export function surfaceOf(path: string): Surface | undefined {
   const [id, ...sub] = segments(path);
   const s = SURFACES.find((x) => x.id === id);
   if (s?.id === 'inbox' && sub.length > 0) return peekOf(path) ? s : undefined;
+  if (s?.id === 'chat' && sub.length > 0) return chatPeekOf(path) ? s : undefined;
   if (s?.id === 'ships' && sub.length === 1 && sub[0] !== '') return s;
   // Preferences alone has pages below it: /app/preferences/<fleet key>/<page>.
   // Campaigns has the Campaign page below it: /app/campaigns/<id>; Crew has a member: /app/crew/<name>.
@@ -63,6 +64,22 @@ export function peekOf(path: string): PeekTarget | null {
     const n = decodeURIComponent(name);
     if (kind === 'crew' && n.includes('/')) return null;
     return { session: decoded, [kind]: n };
+  } catch {
+    return null;
+  }
+}
+
+/** Peek in place inside the Chat surface: an item of any session, opened beside the fleet's chat. */
+export const chatPeekPath = (fleetKey: string, session: string, id: string) =>
+  `/app/chat/${encodeURIComponent(fleetKey)}/item/${encodeURIComponent(session)}/${encodeURIComponent(id)}`;
+
+export function chatPeekOf(path: string): (PeekTarget & { item: string; fleet: string }) | null {
+  const [id, fleet, kind, session, item, ...rest] = segments(path);
+  if (id !== 'chat' || kind !== 'item' || !fleet || !session || !item || rest.length > 0) return null;
+  try {
+    const s = decodeURIComponent(session);
+    if (s.includes('/')) return null;
+    return { fleet: decodeURIComponent(fleet), session: s, item: decodeURIComponent(item) };
   } catch {
     return null;
   }

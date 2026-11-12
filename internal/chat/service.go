@@ -66,6 +66,8 @@ type Service struct {
 	LastLive func(session string) (usage.Figures, bool)
 	// ForgetLive drops a chat's live figures once a reset record has read them.
 	ForgetLive func(session string)
+	// OnQuestions runs when a chat's questions may have changed, for the Inbox that lists them.
+	OnQuestions func()
 
 	logOnce sync.Once
 	log     *chatlog.Log
@@ -93,6 +95,7 @@ type fleetChat struct {
 	qAt      time.Time
 	qItems   map[string]cachedQuestion
 	qAnswers map[string]cachedAnswer
+	qSig     string // the waiting set the Inbox was last told of
 
 	resets resetUsage
 }
@@ -228,6 +231,38 @@ func (s *fleetChat) broadcastIf(send bool) {
 	m := s.message()
 	if send {
 		s.Hub.BroadcastOnce("chat:"+s.key, func() any { return m })
+		if s.questionsMoved() {
+			s.questionsChanged()
+		}
+	}
+}
+
+// questionsMoved reports whether the questions differ from those the Inbox was last given: the ids
+// and whether each is answered.
+func (s *fleetChat) questionsMoved() bool {
+	sig := questionsSig(s.questions(false))
+	s.cmu.Lock()
+	defer s.cmu.Unlock()
+	moved := s.qSig != sig
+	s.qSig = sig
+	return moved
+}
+
+func questionsSig(qs []Question) string {
+	var sig strings.Builder
+	for _, q := range qs {
+		sig.WriteString(q.Item.ID)
+		if len(q.Answer) > 0 {
+			sig.WriteString(":answered")
+		}
+		sig.WriteByte(' ')
+	}
+	return sig.String()
+}
+
+func (s *Service) questionsChanged() {
+	if s.OnQuestions != nil {
+		s.OnQuestions()
 	}
 }
 

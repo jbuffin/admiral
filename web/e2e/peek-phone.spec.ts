@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { crewNote, seedAdHocMember, seedCrew } from './crew';
 import { expect, test } from './fixtures';
-import { addGitHubSource, appendLines, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, rowLink, seedFleets, seedInboxItem, setReason, setState, readyStackMergesFromPeek, withFakeGh } from './shell';
+import { addGitHubSource, appendLines, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, rowLink, seedFleets, seedInboxItem, setReason, setState, readyStackMergesFromPeek, withFakeGh, chatAnswerFile, chatAsks } from './shell';
 
 const peekOf = (page: Page) => page.getByRole('region', { name: 'Peek' });
 const listRow = (page: Page, text: string) => page.getByRole('main').getByRole('listitem').filter({ hasText: text });
@@ -110,4 +110,25 @@ test('on the phone, a crew member item shows its whole definition and Keep and D
   }
   await peek.getByRole('button', { name: 'Drop', exact: true }).tap();
   await expect(peek.getByRole('button', { name: 'Drop deckhand' })).toBeInViewport();
+});
+
+test("on the phone, AdmiralBot's waiting question opens in Peek from the Inbox and its answer reaches the fleet's chat", async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true, chat: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  chatAsks(admiral, 'harbor', 'q1', 'Which panel?', ['Freeform', 'Work queue']);
+  await page.goto(admiral.url + 'app/inbox?fleet=harbor');
+  const row = listRow(page, 'Which panel?');
+  await expect(row).toContainText('AdmiralBot', { timeout: 15_000 });
+  await row.getByRole('link').tap();
+  const peek = peekOf(page);
+  await expect(peek).toContainText('Which panel?');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  const choice = peek.getByRole('radio', { name: 'Work queue' });
+  expect((await choice.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await choice.tap();
+  await peek.getByRole('button', { name: 'Send answers' }).tap();
+  await expect.poll(() => chatAnswerFile(admiral, 'harbor', 'q1')?.answers['1']?.choice).toBe('Work queue');
+  await expect(peekOf(page)).toHaveCount(0);
+  await expect(page).toHaveURL(/\/app\/inbox(\?|$)/);
+  await expect(listRow(page, 'Which panel?')).toHaveCount(0, { timeout: 15_000 });
 });

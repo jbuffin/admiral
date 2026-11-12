@@ -951,12 +951,38 @@ test("the Chat surface shows the fleet's AdmiralBot history beside the Inbox rai
   await main.getByRole('link', { name: /AdmiralBot/ }).tap();
   await expect(page).toHaveURL(/\/app\/preferences\/alpha\/admiralbot/);
 
-  // A rail row opens the item in Peek on the Inbox surface.
+  // A rail row opens the item in Peek beside the chat, without leaving it.
   await page.goto(admiral.url + 'app/chat?fleet=harbor');
   await main.getByRole('listitem').filter({ hasText: login.name }).getByRole('link').tap();
-  await expect(page).toHaveURL(new RegExp(`/app/inbox/${encodeURIComponent(login.session)}/item/q-port`));
+  await expect(page).toHaveURL(new RegExp(`/app/chat/harbor/item/${encodeURIComponent(login.session)}/q-port`));
+  await expect(page.getByRole('region', { name: 'Peek' })).toContainText('Which port should the login use?');
+  await expect(page.getByRole('heading', { name: 'AdmiralBot · Harborlight fleet' })).toBeVisible();
 
   expect(watch.errors).toEqual([]);
   expect(watch.foreign).toEqual([]);
   expect(watch.unversioned()).toEqual([]);
+});
+
+test("AdmiralBot's own waiting question is in the chat's rail, opens in Peek beside the chat, and answering there marks the card answered", async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true, chat: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  await page.goto(admiral.url + 'app/chat?fleet=harbor');
+  const main = page.getByRole('main');
+  // Opening the chat starts it, and a start withdraws the questions waiting: ask once the start is over.
+  await expect
+    .poll(async () => ((await (await page.request.get(admiral.url + 'api/v1/chat/harbor/session')).json()) as { running?: boolean }).running)
+    .toBe(true);
+  chatAsks(admiral, 'harbor', 'q1', 'Which panel?', ['Freeform', 'Work queue']);
+  const rail = main.getByRole('listitem').filter({ hasText: 'AdmiralBot' }).filter({ hasText: 'Which panel?' });
+  await expect(rail).toHaveCount(1, { timeout: 15_000 });
+  await rail.getByRole('link').tap();
+  await expect(page).toHaveURL(new RegExp(`/app/chat/harbor/item/${encodeURIComponent('_chat-harbor')}/q1`));
+  const peek = page.getByRole('region', { name: 'Peek' });
+  await peek.getByRole('radio', { name: 'Work queue' }).tap();
+  await peek.getByRole('button', { name: 'Send answers' }).tap();
+  await expect.poll(() => chatAnswerFile(admiral, 'harbor', 'q1')?.answers['1']?.choice).toBe('Work queue');
+  await expect(peek).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'AdmiralBot · Harborlight fleet' })).toBeVisible();
+  await expect(main).toContainText('You answered: Work queue');
+  await expect(rail).toHaveCount(0);
 });

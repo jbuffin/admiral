@@ -19,6 +19,11 @@ var (
 	ErrAnswered = errors.New("inbox item is already answered")
 )
 
+// RefusedError is a request the item's owner refuses for a standing reason, answered 409 with Msg.
+type RefusedError struct{ Msg string }
+
+func (e *RefusedError) Error() string { return e.Msg }
+
 type InvalidError struct{ Msg string }
 
 func (e *InvalidError) Error() string { return e.Msg }
