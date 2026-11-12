@@ -1470,6 +1470,8 @@ export async function myPRsMergeACarriedPR(page: Page, a: Admiral, opts: { phone
   await expect(row.getByRole('link', { name: ship.name })).toBeVisible();
   await expect(row.getByRole('button', { name: /^Launch/ })).toHaveCount(0);
   const merge = row.getByRole('button', { name: 'Merge', exact: true });
+  // The row sits under the moored ships, so it takes a scroll to reach, as on a real screen.
+  await merge.scrollIntoViewIfNeeded();
   await expect(merge).toBeInViewport();
   expect((await merge.boundingBox())!.height, 'Merge height').toBeGreaterThanOrEqual(44);
   await expect(row).toContainText('squash');
