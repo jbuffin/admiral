@@ -412,7 +412,7 @@ func (s *Service) Login(session string) string {
 	if _, ok := s.Config().Fleet(key); !ok {
 		return ""
 	}
-	return s.chat(key).configDir()
+	return s.chat(key).loginDir()
 }
 
 // harness is the fleet's chat harness, from its config and never the session option.
@@ -421,18 +421,32 @@ func (s *fleetChat) harness() string {
 	return f.Chat.Harness
 }
 
-func (s *fleetChat) configDir() string {
+// loginDir is the engineer's identity dir for the chat's harness: where the login lives, which is not always where
+// the chat keeps its transcripts. Copilot's chat has none until it launches.
+func (s *fleetChat) loginDir() string {
 	// The fleet this chat belongs to, never the session option: anything in the chat can write that.
 	f, _ := s.Config().Fleet(s.key)
-	// Codex and Copilot chats get their own config homes later; until then there is no dir to fence a transcript to.
-	if f.Chat.Harness != "claude" {
+	h := f.Chat.Harness
+	if h != "claude" && h != "codex" {
 		return ""
 	}
 	var env map[string]string
-	if d, ok := f.Harness("claude"); ok {
+	if d, ok := f.Harness(h); ok {
 		env = d.Env
 	}
-	return config.IdentityDir("claude", env)
+	return config.IdentityDir(h, env)
+}
+
+// configDir is the dir the chat's transcripts are read under and fenced to: Claude's identity dir, or the Codex
+// chat's own CODEX_HOME so a rollout in the engineer's sessions/ is never read.
+func (s *fleetChat) configDir() string {
+	switch s.harness() {
+	case "claude":
+		return s.loginDir()
+	case "codex":
+		return launcher.ChatCodexHome(s.Home, s.key)
+	}
+	return ""
 }
 
 func (s *fleetChat) openLocked() (*os.File, os.FileInfo, error) {
@@ -444,7 +458,7 @@ func (s *fleetChat) openLocked() (*os.File, os.FileInfo, error) {
 	if dir == "" {
 		return nil, nil, transcriptfs.ErrRefused
 	}
-	f, info, err := transcriptfs.Open(dir, st.path)
+	f, info, err := transcriptfs.OpenFor(s.harness(), dir, st.path)
 	if errors.Is(err, transcriptfs.ErrRefused) && st.refused != st.path {
 		st.refused = st.path
 		log.Printf("admiral: chat: not reading %q: %v", st.path, err)
@@ -670,7 +684,15 @@ func (s *fleetChat) pasteMessage(pane, text string) error {
 	return s.server().PasteMessage(ctx, pane, text)
 }
 
-// serveNew sends /clear when the running session matches the config, else starts a new session.
+// resetCommand is the slash command that starts a fresh conversation in the harness's TUI.
+func resetCommand(harness string) string {
+	if harness == "codex" {
+		return "/new"
+	}
+	return "/clear"
+}
+
+// serveNew sends the reset command when the running session matches the config, else starts a new session.
 func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 	s.op.Lock()
 	defer s.op.Unlock()
@@ -707,7 +729,7 @@ func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		// Typed, then Enter: the way an engineer runs a command.
-		if err := s.server().SendLiteral(ctx, pane, "/clear"); err != nil {
+		if err := s.server().SendLiteral(ctx, pane, resetCommand(s.harness())); err != nil {
 			writeError(w, http.StatusBadGateway, "could not clear the chat: "+err.Error())
 			return
 		}

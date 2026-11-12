@@ -131,8 +131,9 @@ func TestACodexResetRecordsTheChatHomeRolloutsUsageUnderCodex(t *testing.T) {
 	if rec["harness"] != "codex" {
 		t.Errorf("usage harness = %v, want codex", rec["harness"])
 	}
-	raw, _ := json.Marshal(rec["tokens"])
-	if !strings.Contains(string(raw), "20281") && !strings.Contains(string(raw), "20286") {
-		t.Errorf("usage tokens = %s, want the rollout's token_count totals (20281 in)", raw)
+	// usage.ParseCodex keeps cached input apart: the rollout's 20281 input tokens are 7609 fresh and 12672 cached.
+	tokens, _ := rec["tokens"].(map[string]any)
+	if tokens["input"] != 7609.0 || tokens["cache_read"] != 12672.0 {
+		t.Errorf("usage tokens = %v, want the rollout's token_count totals (7609 input, 12672 cached)", tokens)
 	}
 }

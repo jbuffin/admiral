@@ -53,6 +53,10 @@ func (s *fleetChat) recordReset(path, configDir, fleet, clearedFrom string) {
 	if s.Outcomes == nil {
 		return
 	}
+	harness := "claude"
+	if s.Config != nil {
+		harness = s.harness()
+	}
 	go func() {
 		if clearedFrom != "" {
 			for end := time.Now().Add(clearWait); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
@@ -67,8 +71,12 @@ func (s *fleetChat) recordReset(path, configDir, fleet, clearedFrom string) {
 		var cur *usage.Figures
 		// An empty dir would resolve projects/ against the working directory.
 		if path != "" && configDir != "" {
-			if f, _, err := transcriptfs.Open(configDir, path); err == nil {
-				if fig, err := usage.ParseClaude(f); err == nil {
+			if f, _, err := transcriptfs.OpenFor(harness, configDir, path); err == nil {
+				parse := usage.ParseClaude
+				if harness == "codex" {
+					parse = usage.ParseCodex
+				}
+				if fig, err := parse(f); err == nil {
 					cur = &fig
 				}
 				f.Close()
@@ -83,6 +91,6 @@ func (s *fleetChat) recordReset(path, configDir, fleet, clearedFrom string) {
 			s.ForgetLive(s.name())
 		}
 		s.Outcomes.Enqueue(outcomes.Record{Ship: s.name(), Event: "usage",
-			Fields: usage.ExitFields(fleet, "claude", 0, got, nil)}, nil)
+			Fields: usage.ExitFields(fleet, harness, 0, got, nil)}, nil)
 	}()
 }
