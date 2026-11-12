@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { HOME, WORK, holds, boatOf, boatReceived, boatSays, changeFile, changesOf, chip, diffOf, expectSeededTurn, flotilla, gitCheckout, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatSession } from './shell';
+import { decryptPush, newSubscriber, pushStub, startFakePush, stubSeen } from './push';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -884,6 +885,69 @@ test.describe('installed app', () => {
     await expect(page).toHaveTitle('Admiral');
     await expect(page.locator('#app')).not.toBeEmpty();
     expect(await controlled(page)).toBe(false);
+  });
+
+  test('turning notifications on makes this Mac a push device: a watched stop only toasts, an unwatched one pushes a message that decrypts to the ship, and turning it off drops it', async ({ page, context, admiral }) => {
+    seedFleets(admiral, { live: true });
+    const fake = await startFakePush(admiral.home);
+    try {
+      const sub = newSubscriber();
+      await admiral.start({ env: { ...withFakeGh(admiral), ADMIRAL_PUSH_TEST_ROOTS: fake.rootsFile } });
+      await context.addInitScript(pushStub, { endpoint: `${fake.url}/sub/mac`, p256dh: sub.p256dh, auth: sub.authB64 });
+      const devices = async () => ((await (await fetch(`${admiral.url}api/v1/devices`)).json()) as { devices: { name: string; thisMac?: boolean; notifications: boolean }[] }).devices;
+      const macRow = () => page.getByRole('list', { name: 'Devices' }).getByRole('listitem').filter({ hasText: 'This Mac' });
+
+      const socketClosed = new Promise<void>((done) => page.on('websocket', (ws) => ws.on('close', () => done())));
+
+      // On: the tap asks permission, subscribes with the Mac's key, and the Mac's own browser becomes the This Mac device.
+      await page.goto(admiral.url + 'app/preferences/admiral/notifications');
+      const toggle = page.getByRole('switch', { name: 'Notifications on this device' });
+      await expect(toggle).not.toBeChecked();
+      await toggle.tap();
+      await expect(toggle).toBeChecked();
+      await expect(macRow()).toContainText('push on');
+      const seen = await page.evaluate(stubSeen);
+      expect(seen.asked).toBe(true);
+      expect(seen.key).toBe(((await (await fetch(`${admiral.url}api/v1/push/key`)).json()) as { key: string }).key);
+      expect((await devices()).find((d) => d.thisMac)?.notifications).toBe(true);
+
+      // Watched: the window shows the toast and the Mac sends no push.
+      await nav(page, 'Inbox').tap();
+      await expect(page.getByRole('main')).toContainText('Whatever needs you, from every fleet, will land here.');
+      await nav(page, 'Ships').tap();
+      await nav(page, 'Inbox').tap();
+      const rec = (ship: { session: string }, file: string) => join(admiral.home, 'rec', ship.session, file);
+      const permission = 'event PermissionRequest {"hook_event_name":"PermissionRequest","tool_name":"Bash"}';
+      const first = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cue: `wait go\n${permission}\n` });
+      await expect.poll(() => existsSync(rec(first, 'recorded'))).toBe(true);
+      writeFileSync(rec(first, 'go'), '');
+      await expect(page.getByRole('status').getByRole('button', { name: new RegExp(first.name) })).toBeVisible({ timeout: 15_000 });
+      await holds(() => fake.requests.length === 0, 'a push went out while the window was watching');
+
+      // Unwatched: the page goes away, and the next stop pushes once, encrypted to the subscription, naming the ship.
+      await page.goto('about:blank');
+      await socketClosed;
+      const second = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cue: `wait go\n${permission}\n` });
+      await expect.poll(() => existsSync(rec(second, 'recorded'))).toBe(true);
+      writeFileSync(rec(second, 'go'), '');
+      await expect.poll(() => fake.requests.length, { timeout: 15_000 }).toBe(1);
+      const push = fake.requests[0];
+      expect(push.method).toBe('POST');
+      expect(push.path).toBe('/sub/mac');
+      expect(push.headers['content-encoding']).toBe('aes128gcm');
+      expect(JSON.parse(decryptPush(sub, push.body))).toMatchObject({ name: second.name, session: second.session });
+
+      // Off: the subscription is dropped on the Mac and the row says so.
+      await page.goto(admiral.url + 'app/preferences/admiral/notifications');
+      await expect(toggle).toBeChecked();
+      await toggle.tap();
+      await expect(toggle).not.toBeChecked();
+      await expect(macRow()).toContainText('push off');
+      expect((await page.evaluate(stubSeen)).subscribed).toBe(false);
+      expect((await devices()).find((d) => d.thisMac)?.notifications).toBe(false);
+    } finally {
+      await fake.close();
+    }
   });
 });
 
