@@ -47,6 +47,9 @@ type Launch struct {
 	Model   string   `json:"model,omitempty"`
 	Effort  string   `json:"effort,omitempty"`
 	Args    []string `json:"args,omitempty"`
+	// Skill and Resources are the launch form's fields of the same names.
+	Skill     launcher.Skill `json:"skill,omitzero"`
+	Resources []string       `json:"resources,omitempty"`
 }
 
 // Do is a launch or an AdmiralBot prompt, never both.
@@ -72,6 +75,8 @@ type Store struct {
 	Home   string
 	Fleets func(key string) (config.Fleet, bool)
 	Now    func() time.Time
+	// ResourceKnown says whether the config names a resource; a Launch naming an unknown one is refused on save.
+	ResourceKnown func(name string) bool
 
 	mu sync.Mutex
 }
@@ -336,6 +341,10 @@ const (
 	Skipped  Outcome = "skipped"
 	Missed   Outcome = "missed"
 	Failed   Outcome = "failed"
+	// Reported is a Report only run: Action says what it would have done.
+	Reported Outcome = "reported"
+	// Breaker is the record the circuit breaker writes when it sets Before acting to Ask first.
+	Breaker Outcome = "breaker"
 )
 
 // Trigger is one trigger-log record.

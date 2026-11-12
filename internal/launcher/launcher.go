@@ -76,6 +76,10 @@ type Request struct {
 	WokenVia string `json:"-"`
 	// Via is "admiralbot" when AdmiralBot made the launch, and the ship carries it.
 	Via string `json:"-"`
+	// RoutineKey is routine:<id>: a routine's ship holds it, so a second launch of the routine is refused while the ship is listed.
+	RoutineKey string `json:"-"`
+	// TriggerID is the id of the trigger-log record the launch answers; the `launched` outcome points at it.
+	TriggerID string `json:"-"`
 }
 
 // ChatOption is the chat:<fleet>:<id> key the ship stores, so a fleet's message ids never meet another's;

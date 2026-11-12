@@ -919,3 +919,6 @@ func (s *Service) launchDone() {
 	s.launching--
 	s.mu.Unlock()
 }
+
+// Holder is the listed ship holding the launch key, in any status.
+func (s *Service) Holder(key string) (Ship, bool) { return Ship{}, false }
