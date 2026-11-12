@@ -2,6 +2,7 @@ package tailscale
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -117,14 +118,27 @@ func TestLoginsEditKeepsTheOthersAndRefusesBadInput(t *testing.T) {
 	}
 }
 
-func TestSetupRefusesARequestNotFromThisMac(t *testing.T) {
+func TestSetupNeedsConfirmation(t *testing.T) {
 	dir := fakeOnPath(t)
-	mux, cur := settingsRoute(t, false)
+	mux, cur := settingsRoute(t, true)
 	cur.Tailscale = false
-	if rec := post(mux, "/api/remote/setup", `{"confirm":true}`); rec.Code != http.StatusForbidden {
-		t.Errorf("Set up from elsewhere: %d, want 403", rec.Code)
+	for _, body := range []string{`{}`, `{"confirm":false}`} {
+		if rec := post(mux, "/api/remote/setup", body); rec.Code != http.StatusBadRequest {
+			t.Errorf("Set up with %s: %d, want 400", body, rec.Code)
+		}
 	}
-	if _, err := os.Stat(filepath.Join(dir, "calls")); err == nil || cur.Tailscale {
-		t.Error("Set up ran or wrote for a request from elsewhere")
+	if _, err := os.Stat(filepath.Join(dir, "calls")); err == nil {
+		t.Error("Set up ran without confirmation")
+	}
+}
+
+func TestLoginsWriteFailureDoesNotLeakThePath(t *testing.T) {
+	fakeOnPath(t)
+	mux := http.NewServeMux()
+	(&Route{Port: "7420", Config: func() *config.Config { return &config.Config{} },
+		Set: func(config.Remote) error { return errors.New("write /Users/x/.admiral/config.json: permission denied") }}).Routes(mux)
+	rec := post(mux, "/api/remote/logins", `{"add":"a@example.com"}`)
+	if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "/Users") {
+		t.Errorf("%d %s, want 500 without the OS error", rec.Code, rec.Body)
 	}
 }

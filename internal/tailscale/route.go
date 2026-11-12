@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"slices"
 	"strings"
@@ -103,7 +104,8 @@ func (rt *Route) logins(w http.ResponseWriter, r *http.Request) {
 	if changed {
 		if err := rt.Set(next); err != nil {
 			rt.mu.Unlock()
-			fail(w, http.StatusInternalServerError, err.Error())
+			log.Printf("remote: saving the allowed logins: %v", err)
+			fail(w, http.StatusInternalServerError, "couldn't save the allowed logins")
 			return
 		}
 	}
@@ -164,7 +166,8 @@ func (rt *Route) setup(w http.ResponseWriter, r *http.Request) {
 	err := rt.Set(rt.Config().Remote.Allowing(true, pre.Login))
 	rt.mu.Unlock()
 	if err != nil {
-		fail(w, http.StatusInternalServerError, err.Error())
+		log.Printf("remote: saving the mode and the Mac's login: %v", err)
+		fail(w, http.StatusInternalServerError, "couldn't save the Tailscale mode")
 		return
 	}
 	writeJSON(w, http.StatusOK, answer{true, rows})

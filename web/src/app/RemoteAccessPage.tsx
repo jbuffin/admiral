@@ -138,11 +138,11 @@ function DeviceRow({ device, reload, onResult }: { device: Device; reload: () =>
 
 function CheckRows({ rows }: { rows: RemoteCheck[] }) {
   return (
-    <ul class="box" aria-label="Checks">
+    <ul class="box list" aria-label="Checks">
       {rows.map((c) => (
         <li key={c.id} class="set">
           <div class="t">
-            <strong>{c.ok ? 'Passed' : 'Failed'}</strong>
+            <strong class={c.ok ? 'status-passed' : 'status-failed'}>{c.ok ? 'Passed' : 'Failed'}</strong>
             <span>{c.detail}</span>
           </div>
         </li>
@@ -159,7 +159,7 @@ function selectText(el: HTMLElement) {
   sel?.addRange(range);
 }
 
-function Tailscale({ view, local, reload, onResult }: { view: RemoteView | null; local: boolean; reload: () => Promise<void>; onResult: (r: Result<unknown>) => void }) {
+function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView | null; local: boolean; remote: boolean; reload: () => Promise<void>; onResult: (r: Result<unknown>) => void }) {
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [rows, setRows] = useState<RemoteCheck[] | null>(null);
@@ -177,7 +177,7 @@ function Tailscale({ view, local, reload, onResult }: { view: RemoteView | null;
     setBusy(false);
     onResult(r);
     if (!r.ok) return setError(r.error);
-    setRows(r.data.ok ? null : r.data.checks);
+    setRows(r.data.checks);
     setTurnedOn(r.data.ok);
     await reload();
   };
@@ -198,6 +198,7 @@ function Tailscale({ view, local, reload, onResult }: { view: RemoteView | null;
           <p class="line">Reading Tailscale…</p>
         ) : on ? (
           <>
+            {rows ? <CheckRows rows={rows} /> : null}
             <CheckRows rows={view.checks} />
             {view.url ? (
               <div class="box tailscale-url">
@@ -222,7 +223,7 @@ function Tailscale({ view, local, reload, onResult }: { view: RemoteView | null;
                 Set up
               </button>
             )}
-            {local ? null : <p class="note">Run Set up on the Mac that runs Admiral, or run admiral setup there.</p>}
+            {remote ? <p class="note">Run Set up on the Mac that runs Admiral, or run admiral setup there.</p> : null}
           </>
         )}
         {turnedOn ? <p class="note">Tailscale mode is on. If Admiral listens on every address, the change takes effect the next time it starts.</p> : null}
@@ -254,22 +255,25 @@ function AllowedLogins({ view, devices, onView, onResult }: { view: RemoteView |
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   if (!view) return null;
 
   const act = async (change: { add: string } | { remove: string }) => {
     setError(null);
+    setBusy(true);
     const r = await editLogins(change);
+    setBusy(false);
     onResult(r);
-    if (!r.ok) return setError(r.error);
+    if (!r.ok) return setError(r.error), false;
     setRemoving(null);
     onView(r.data);
+    return true;
   };
   const add = async (e: Event) => {
     e.preventDefault();
     const c = checkLogin(text, view.allowedLogins);
     if (!c.ok) return setError(c.error);
-    await act({ add: c.login });
-    setText('');
+    if (await act({ add: c.login })) setText('');
   };
 
   return (
@@ -278,7 +282,7 @@ function AllowedLogins({ view, devices, onView, onResult }: { view: RemoteView |
         Allowed logins
       </h2>
       {view.allowedLogins.length === 0 ? <p class="line">No login is allowed yet, so no tailnet device can reach Admiral.</p> : null}
-      <ul class="box" aria-label="Allowed logins">
+      <ul class="box list" aria-label="Allowed logins">
         {view.allowedLogins.map((l) => (
           <li key={l} class="set" aria-label={l}>
             <div class="t">
@@ -286,7 +290,7 @@ function AllowedLogins({ view, devices, onView, onResult }: { view: RemoteView |
               {removing === l ? (
                 <div class="confirm" role="group" aria-label={`Remove ${l}?`}>
                   <span>This device came in on {l}, so removing it signs this device out.</span>
-                  <button type="button" class="btn danger" onClick={() => void act({ remove: l })}>
+                  <button type="button" class="btn danger" disabled={busy} onClick={() => void act({ remove: l })}>
                     Remove and sign out
                   </button>
                   <button type="button" class="btn" onClick={() => setRemoving(null)}>
@@ -296,7 +300,7 @@ function AllowedLogins({ view, devices, onView, onResult }: { view: RemoteView |
               ) : null}
             </div>
             {removing === l ? null : (
-              <button type="button" class="btn" aria-label={`Remove ${l}`} onClick={() => (removingOwnLogin(l, devices) ? setRemoving(l) : void act({ remove: l }))}>
+              <button type="button" class="btn" disabled={busy} aria-label={`Remove ${l}`} onClick={() => (removingOwnLogin(l, devices) ? setRemoving(l) : void act({ remove: l }))}>
                 Remove
               </button>
             )}
@@ -305,7 +309,7 @@ function AllowedLogins({ view, devices, onView, onResult }: { view: RemoteView |
       </ul>
       <form class="set-add" onSubmit={(e) => void add(e)}>
         <input type="text" aria-label="Allowed login" placeholder="name@example.com" value={text} onInput={(e) => setText(e.currentTarget.value)} />
-        <button type="submit" class="btn">
+        <button type="submit" class="btn" disabled={busy}>
           Add login
         </button>
       </form>
@@ -376,7 +380,7 @@ export function RemoteAccess() {
 
   return (
     <>
-      <Tailscale view={remote} local={devices !== null && !devices.some((d) => d.current)} reload={loadRemote} onResult={onResult} />
+      <Tailscale view={remote} local={devices === null ? listError !== null : !devices.some((d) => d.current)} remote={devices !== null && devices.some((d) => d.current)} reload={loadRemote} onResult={onResult} />
       <AllowedLogins view={remote} devices={devices ?? []} onView={setRemote} onResult={onResult} />
       <Pairing onResult={onResult} />
       <h2 class="h2" id="devices-title">
