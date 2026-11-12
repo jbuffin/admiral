@@ -357,7 +357,28 @@ func TestChatPromptLeavesTheLaunchKeyToAdmiral(t *testing.T) {
 	if strings.Contains(prompt, "chat_message") {
 		t.Error("the prompt still tells the model to pass a chat message id it never sees")
 	}
-	if !strings.Contains(prompt, "anyway") {
+	if !strings.Contains(prompt, "pass anyway on the second, and only then") {
 		t.Error("the prompt does not say that two different freeform ships from one message need anyway")
+	}
+}
+
+func TestChatStartIsRefusedWhenItsClaudeDirectoryIsALinkOutOfTheHome(t *testing.T) {
+	c := newChatRun(t)
+	dir := ChatDir(c.home, "work")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "settings.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, ".claude")); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.l.StartChat("work"); err == nil {
+		t.Fatal("the chat started with a .claude link that Claude Code would read settings through")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "settings.json")); err != nil {
+		t.Errorf("the linked directory's file is gone: %v", err)
 	}
 }
