@@ -81,38 +81,46 @@ func (s *fleetChat) resetTick(now time.Time) {
 		return
 	}
 	short, long := ResetIdleWindows()
+	// Every rule waits out the short window, so the pane is read only after it.
+	if now.Sub(idleSince) < short {
+		return
+	}
+	key := s.PromptKey(s.key)
 	in := ResetInput{
 		Now: now, Running: true, State: snap.State, QuestionWaiting: unanswered(snap.Questions), IdleSince: idleSince,
-		Threshold: fleet.Chat.ContextThreshold, LastReset: lastReset, ShortIdle: short, LongIdle: long, TurnSinceReset: true,
+		Threshold: fleet.Chat.ContextThreshold, LastReset: lastReset, ShortIdle: short, LongIdle: long,
+		TurnSinceReset: key != s.turnKeyAtReset(),
 	}
-	// The status line is read only once a context rule could fire on it.
-	if now.Sub(idleSince) >= short {
-		if kept, err := s.readPaneOption(sessionhost.StatuslineOption[len(sessionhost.Prefix):]); err == nil {
-			in.Context, in.ContextSeen, in.HaveContext = ContextTokens([]byte(kept))
-		}
+	if kept, err := s.readPaneOption(sessionhost.StatuslineOption[len(sessionhost.Prefix):]); err == nil {
+		in.Context, in.ContextSeen, in.HaveContext = ContextTokens([]byte(kept))
 	}
 	rule := DueReset(in)
-	if rule == ResetDaily && s.PromptKey(s.key) == s.turnKeyAtReset() {
+	if rule == ResetNone || !s.claimReset() {
 		return
 	}
-	if rule == ResetNone {
-		return
-	}
-	rs.mu.Lock()
-	if rs.running {
-		rs.mu.Unlock()
-		return
-	}
-	rs.running = true
-	rs.mu.Unlock()
 	go func() {
-		defer func() {
-			rs.mu.Lock()
-			rs.running = false
-			rs.mu.Unlock()
-		}()
-		s.scheduledReset(rule)
+		defer s.releaseReset()
+		s.scheduledReset(rule, key, lastReset)
 	}()
+}
+
+// claimReset marks a reset as under way before it takes op, so a send is refused from the decision on and no
+// second reset starts for the fleet.
+func (s *fleetChat) claimReset() bool {
+	s.rst.mu.Lock()
+	defer s.rst.mu.Unlock()
+	if s.rst.running || !s.resetting.CompareAndSwap(false, true) {
+		return false
+	}
+	s.rst.running = true
+	return true
+}
+
+func (s *fleetChat) releaseReset() {
+	s.rst.mu.Lock()
+	defer s.rst.mu.Unlock()
+	s.rst.running = false
+	s.resetting.Store(false)
 }
 
 func (s *fleetChat) turnKeyAtReset() string {
@@ -127,20 +135,28 @@ func (s *fleetChat) readPaneOption(name string) (string, error) {
 	return s.server().ReadPaneOption(ctx, "="+s.name()+":", name)
 }
 
-// scheduledReset flushes, clears and marks one chat that a rule found due, unless the chat is no longer idle.
-func (s *fleetChat) scheduledReset(rule ResetRule) {
+// scheduledReset flushes, clears and marks one chat that a rule found due, unless the chat is no longer idle or
+// something happened since the tick decided: key is the prompt stamp it saw, seen the last reset it saw.
+func (s *fleetChat) scheduledReset(rule ResetRule, key string, seen time.Time) {
 	s.op.Lock()
 	defer s.op.Unlock()
 	snap, err := s.refresh(true)
-	if err != nil || !snap.Running || snap.State != "idle" {
+	if err != nil || !snap.Running || snap.State != "idle" || !s.paneIdle() {
+		return
+	}
+	s.rst.mu.Lock()
+	moved := s.rst.lastReset != seen
+	s.rst.mu.Unlock()
+	if moved || s.PromptKey(s.key) != key {
+		s.restartIdleClock()
 		return
 	}
 	pane, path, dir, raw, started := s.clearTarget()
 	if !started {
 		return
 	}
+	// New chat clears the flag when it finishes, which may have been while this waited for op.
 	s.resetting.Store(true)
-	defer s.resetting.Store(false)
 	if !s.flush(pane) {
 		log.Printf("admiral: chat %s: %s reset abandoned: the flush turn did not end", s.key, rule)
 		s.holdReset()
@@ -150,6 +166,12 @@ func (s *fleetChat) scheduledReset(rule ResetRule) {
 		log.Printf("admiral: chat %s: %s reset: %v", s.key, rule, err)
 		s.holdReset()
 	}
+}
+
+func (s *fleetChat) restartIdleClock() {
+	s.rst.mu.Lock()
+	s.rst.idleSince = time.Now()
+	s.rst.mu.Unlock()
 }
 
 // holdReset makes the next try a full idle window away, for any rule.
@@ -172,18 +194,23 @@ func (s *fleetChat) clearTarget() (pane, path, dir, raw string, started bool) {
 // a question opened, or the prompt could not be pasted.
 func (s *fleetChat) flush(pane string) bool {
 	before := s.PromptKey(s.key)
+	s.startFlush()
 	if err := s.pasteMessage(pane, FlushPrompt); err != nil {
 		log.Printf("admiral: chat %s: flush: %v", s.key, err)
+		s.dropFlush()
 		return false
 	}
 	for end := time.Now().Add(FlushWait()); time.Now().Before(end); time.Sleep(100 * time.Millisecond) {
 		if s.PromptKey(s.key) != before && s.paneIdle() {
+			s.endFlush()
 			return true
 		}
 		if unanswered(s.questions(true)) {
+			s.endFlush()
 			return false
 		}
 	}
+	// A turn still running may write its reply after the clear; the anchor stays open and hides it.
 	return false
 }
 
@@ -231,18 +258,101 @@ func (s *fleetChat) noteReset() {
 	s.rst.mu.Unlock()
 }
 
-// hideFlush drops the flush turn from what the chat shows: its prompt and what Claude says until the next
-// message that isn't it.
-func hideFlush(ms []Message) []Message {
-	out := make([]Message, 0, len(ms))
-	hidden := false
-	for _, m := range ms {
-		if m.Kind == "message" && m.Role == "user" {
-			hidden = strings.TrimSpace(m.Text) == FlushPrompt
-		}
-		if !hidden {
-			out = append(out, m)
+// flushAnchor is the flush turn's place in the chat: the message that was last when the prompt was pasted, then
+// the prompt's own ID once it shows up, and the last message of the turn once the flush loop saw it end. Only
+// that stretch is hidden, so a reply after an engineer answers a question card shows, and the turn stays hidden
+// across a clear and once the window slides past its prompt.
+type flushAnchor struct {
+	active bool
+	pre    string // the last message before the paste, "" when there was none
+	from   string // the prompt's message ID, "" until it is seen
+	until  string // the turn's last message, once closed
+	closed bool   // false: the turn may still be writing, so it ends at the next user message
+}
+
+func isUser(m Message) bool { return m.Kind == "message" && m.Role == "user" }
+
+func indexOfMessage(ms []Message, id string) int {
+	for i, m := range ms {
+		if m.ID == id {
+			return i
 		}
 	}
-	return out
+	return -1
+}
+
+// hide returns ms without the flush turn and moves the anchor along: it learns the prompt's ID and closes once a
+// user message follows an open turn. The caller holds the chat's lock.
+func (a *flushAnchor) hide(ms []Message) []Message {
+	if !a.active {
+		return ms
+	}
+	if a.from == "" {
+		i := 0
+		if p := indexOfMessage(ms, a.pre); p >= 0 {
+			i = p + 1
+		}
+		for ; i < len(ms) && !(isUser(ms[i]) && strings.HasSuffix(strings.TrimSpace(ms[i].Text), FlushPrompt)); i++ {
+		}
+		if i == len(ms) {
+			return ms
+		}
+		a.from = ms[i].ID
+	}
+	lo := indexOfMessage(ms, a.from) // -1 once a clear or the window's slide dropped the prompt
+	hi := 0
+	switch {
+	case a.closed:
+		hi = indexOfMessage(ms, a.until) + 1
+	default:
+		hi = len(ms)
+		for i := max(lo+1, 0); i < len(ms); i++ {
+			if isUser(ms[i]) {
+				hi = i
+				a.closed = true
+				if i > 0 {
+					a.until = ms[i-1].ID
+				}
+				break
+			}
+		}
+	}
+	lo = max(lo, 0)
+	if hi <= lo {
+		if a.closed && lo == 0 {
+			a.active = false
+		}
+		return ms
+	}
+	out := make([]Message, 0, len(ms)-(hi-lo))
+	return append(append(out, ms[:lo]...), ms[hi:]...)
+}
+
+func (s *fleetChat) startFlush() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pre := ""
+	if ms := s.st.served(); len(ms) > 0 {
+		pre = ms[len(ms)-1].ID
+	}
+	s.st.flush = flushAnchor{active: true, pre: pre}
+}
+
+func (s *fleetChat) dropFlush() {
+	s.mu.Lock()
+	s.st.flush = flushAnchor{}
+	s.mu.Unlock()
+}
+
+// endFlush closes the anchor at the turn's last message as of now.
+func (s *fleetChat) endFlush() {
+	_, _ = s.refresh(true)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a := &s.st.flush
+	ms := s.st.served()
+	if !a.active || a.from == "" || len(ms) == 0 {
+		return
+	}
+	a.until, a.closed = ms[len(ms)-1].ID, true
 }

@@ -197,6 +197,7 @@ type state struct {
 	refused string // a path already logged as refused
 	unread  bool   // the recorded path is one Admiral refuses to read
 	optSeq  uint64 // the ticket of the option read applied last
+	flush   flushAnchor
 }
 
 type chatOptions struct {
@@ -401,7 +402,7 @@ func (s *fleetChat) read(force, fresh bool) (Snapshot, error) {
 	}
 	s.followLocked()
 
-	snap := Snapshot{Running: true, State: mapState(sess.State, sess.Reason), Messages: hideFlush(st.served()), Questions: qs}
+	snap := Snapshot{Running: true, State: mapState(sess.State, sess.Reason), Messages: st.flush.hide(st.served()), Questions: qs}
 	if unanswered(qs) {
 		snap.State = "waiting"
 	}

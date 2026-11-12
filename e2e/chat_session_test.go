@@ -943,6 +943,12 @@ func overThreshold() string {
 	return "statusline " + string(b)
 }
 
+// briefOut is what the SessionStart hook printed so far, and how many times.
+func (c *chatWorld) briefOut() (string, int) {
+	b, _ := os.ReadFile(filepath.Join(c.recDir(), "event-stdout"))
+	return string(b), strings.Count(string(b), `"hookEventName":"SessionStart"`)
+}
+
 func (c *chatWorld) waitBriefs(n int) {
 	c.t.Helper()
 	for end := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
@@ -1007,6 +1013,9 @@ func TestChatSession_AdmiralRefreshesAnIdleChatOverItsThreshold(t *testing.T) {
 		appendLines(t, tp2,
 			userLine("c-1", "<command-name>/clear</command-name>\n<command-message>clear</command-message>", nil),
 			userLine("c-2", "<local-command-stdout></local-command-stdout>", nil))
+		if _, n := c.briefOut(); n != 0 {
+			t.Fatalf("the SessionStart hook printed %d times before the clear, want 0 (the startup one found no history)", n)
+		}
 		c.touch("go-clear")
 		got := c.waitSession(10*time.Second, "one marker after the history", func(s chatSession) bool { return resets(s.Messages) == 1 })
 		if resetText(got.Messages) != "Context refreshed" || !messagesAre(history...)(got) {
@@ -1016,8 +1025,11 @@ func TestChatSession_AdmiralRefreshesAnIdleChatOverItsThreshold(t *testing.T) {
 	})
 
 	t.Run("the SessionStart after the clear prints the brief", func(t *testing.T) {
-		// The startup one found no history yet, so it printed nothing.
+		// The startup one found no history yet and printed nothing, so this print is the clear's.
 		c.waitBriefs(1)
+		if out, _ := c.briefOut(); !strings.Contains(out, "Where are the ships") {
+			t.Errorf("the brief after the clear does not hold the earlier history; event-stdout is %q", out)
+		}
 	})
 
 	t.Run("the status line from before the reset does not trigger a second one", func(t *testing.T) {

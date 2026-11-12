@@ -25,7 +25,7 @@ var (
 func due(now time.Time) ResetInput {
 	return ResetInput{
 		Now: now, Running: true, State: "idle", IdleSince: now, Threshold: 150_000,
-		LastReset: now.Add(-time.Hour), ContextSeen: now, ShortIdle: short, LongIdle: long,
+		LastReset: now.Add(-time.Hour), ContextSeen: now, ShortIdle: short, LongIdle: long, TurnSinceReset: true,
 	}
 }
 
@@ -44,6 +44,7 @@ func TestDueReset_ThresholdRule(t *testing.T) {
 		"no context reading":                  func(in *ResetInput) { in.HaveContext = false },
 		"a reading older than the last reset": func(in *ResetInput) { in.ContextSeen = in.LastReset.Add(-time.Second) },
 		"the chat's threshold is never":       func(in *ResetInput) { in.Threshold = 0 },
+		"no turn since the last reset":        func(in *ResetInput) { in.TurnSinceReset = false },
 	} {
 		in := fire(due(now))
 		edit(&in)
@@ -74,6 +75,7 @@ func TestDueReset_IdleRule(t *testing.T) {
 		"context at 100000":                   func(in *ResetInput) { in.Context = 100_000 },
 		"no context reading":                  func(in *ResetInput) { in.HaveContext = false },
 		"a reading older than the last reset": func(in *ResetInput) { in.ContextSeen = in.LastReset.Add(-time.Second) },
+		"no turn since the last reset":        func(in *ResetInput) { in.TurnSinceReset = false },
 	} {
 		in := fire(due(now))
 		edit(&in)
@@ -94,7 +96,7 @@ func TestDueReset_DailyRule(t *testing.T) {
 	at := func(h, m int) time.Time { return time.Date(2026, 11, 12, h, m, 0, 0, ny) }
 	fire := func(now time.Time) ResetInput {
 		in := due(now)
-		in.LastReset, in.TurnSinceReset, in.IdleSince = at(0, 30), true, now
+		in.LastReset, in.TurnSinceReset, in.IdleSince = at(0, 30), true, now.Add(-short)
 		return in
 	}
 	if got := DueReset(fire(at(4, 0))); got != ResetDaily {
@@ -102,6 +104,20 @@ func TestDueReset_DailyRule(t *testing.T) {
 	}
 	if got := DueReset(fire(at(9, 15))); got != ResetDaily {
 		t.Errorf("at 09:15 local, nothing reset since midnight = %q, want daily", got)
+	}
+	// Quiet means idle: a turn that just ended is the engineer still talking.
+	in := fire(at(9, 15))
+	in.IdleSince = in.Now.Add(-time.Second)
+	if got := DueReset(in); got != ResetNone {
+		t.Errorf("at 09:15, idle for one second = %q, want none", got)
+	}
+	in.IdleSince = in.Now.Add(-short + time.Second)
+	if got := DueReset(in); got != ResetNone {
+		t.Errorf("at 09:15, idle one second short of the window = %q, want none", got)
+	}
+	in.IdleSince = in.Now.Add(-short)
+	if got := DueReset(in); got != ResetDaily {
+		t.Errorf("at 09:15, idle for the short window = %q, want daily", got)
 	}
 	for name, edit := range map[string]func(*ResetInput){
 		"one minute before 04:00":       func(in *ResetInput) { in.Now = at(3, 59) },
@@ -156,7 +172,7 @@ func TestDueReset_OnlyAnIdleChatIsReset(t *testing.T) {
 		},
 		ResetDaily: func(in *ResetInput) {
 			in.Now = time.Date(2026, 11, 12, 5, 0, 0, 0, time.UTC)
-			in.LastReset, in.TurnSinceReset = time.Date(2026, 11, 11, 20, 0, 0, 0, time.UTC), true
+			in.LastReset, in.IdleSince = time.Date(2026, 11, 11, 20, 0, 0, 0, time.UTC), in.Now.Add(-short)
 		},
 	}
 	blocks := map[string]func(*ResetInput){

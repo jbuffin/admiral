@@ -40,10 +40,10 @@ type ResetInput struct {
 	IdleSince       time.Time
 	Context         int64
 	HaveContext     bool
-	ContextSeen     time.Time // when the reading was kept; one before LastReset is stale
-	Threshold       int       // config.ChatNever (0) turns every rule off
-	LastReset       time.Time // or the session's start
-	TurnSinceReset  bool
+	ContextSeen     time.Time     // when the reading was kept; one before LastReset is stale
+	Threshold       int           // config.ChatNever (0) turns every rule off
+	LastReset       time.Time     // or the session's start
+	TurnSinceReset  bool          // a turn ran since LastReset; no rule fires on a chat nobody has spoken to
 	ShortIdle       time.Duration // the threshold rule's idle time (10 min)
 	LongIdle        time.Duration // the idle rule's idle time (60 min)
 }
@@ -56,10 +56,13 @@ func DueReset(in ResetInput) ResetRule {
 	if !in.Running || in.State != "idle" || in.QuestionWaiting || in.Threshold == config.ChatNever || in.IdleSince.IsZero() {
 		return ResetNone
 	}
+	idle := in.Now.Sub(in.IdleSince)
+	if idle < in.ShortIdle || !in.TurnSinceReset {
+		return ResetNone
+	}
 	// A reading kept at or before the last reset still holds the old size: Claude has not redrawn since the clear.
 	if in.HaveContext && in.ContextSeen.After(in.LastReset) {
-		idle := in.Now.Sub(in.IdleSince)
-		if in.Context > int64(in.Threshold) && idle >= in.ShortIdle {
+		if in.Context > int64(in.Threshold) {
 			return ResetThreshold
 		}
 		if in.Context > IdleContextFloor && idle >= in.LongIdle {
@@ -68,7 +71,7 @@ func DueReset(in ResetInput) ResetRule {
 	}
 	y, m, d := in.Now.Date()
 	at := time.Date(y, m, d, DailyHour, 0, 0, 0, in.Now.Location())
-	if !in.Now.Before(at) && in.LastReset.Before(at) && in.TurnSinceReset {
+	if !in.Now.Before(at) && in.LastReset.Before(at) {
 		return ResetDaily
 	}
 	return ResetNone
