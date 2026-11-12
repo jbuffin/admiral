@@ -198,3 +198,18 @@ func TestMigrateLeavesAConfigWithPerFleetChatAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestMigrateNoticeSaysAMalformedOldChatWasDroppedNotMoved(t *testing.T) {
+	dir := migrateDir(t, `{"version":1,"fleets":{"w":{"name":"W","claude":{}}},"chat":"opus"}`)
+	m, err := config.Migrate(dir, "1.2.3")
+	if err != nil || m == nil {
+		t.Fatalf("Migrate = %v, %v; want a migration", m, err)
+	}
+	title, body := m.Notice()
+	if !strings.Contains(body, "could not be read") || strings.Contains(body, "no fleet to move") {
+		t.Errorf("notice body = %q, want it to say the old chat settings could not be read", body)
+	}
+	if strings.Contains(title+body, "moved the chat settings") {
+		t.Errorf("notice %q / %q claims a move when nothing moved", title, body)
+	}
+}

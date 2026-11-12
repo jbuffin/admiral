@@ -63,32 +63,18 @@ func putFleetChat(t *testing.T, in *instance, fleet string, chat map[string]any)
 	}
 }
 
-func TestChatConfig(t *testing.T) {
+func TestChatConfigSaveLeavesTheRestOfTheFileAndThereIsNoChatRoute(t *testing.T) {
 	t.Parallel()
 	home := newHome(t)
 	writeConfig(t, home, `{"version":1,"favorite_skills":["review"],"fleets":{"work":{"name":"Work Fleet","claude":{}},"away":{"name":"Away","codex":{}}},"sources":{}}`)
 	in := startAdmiral(t, home, "127.0.0.1:0")
 
-	// No chat key: the defaults show and nothing is written; a fleet without Claude Code is off with a reason.
-	chats := chatsOf(t, in)
-	if got := chats["work"]; got.Harness != "claude" || got.Model != "sonnet" || got.Effort != "" || got.ContextThreshold != float64(150000) || !got.On {
-		t.Errorf("default chat = %+v, want claude, sonnet, harness-default effort, 150000, on", got)
-	}
-	if got := chats["away"]; got.On || got.OffReason == "" {
-		t.Errorf("a fleet with no Claude Code dock = %+v, want off with a reason", got)
-	}
-	if _, ok := configOnDisk(t, home)["chat"]; ok {
-		t.Errorf("reading the defaults must not write a top-level `chat` to config.json")
-	}
-
-	// The settings are saved under the fleet; the rest of the file is unchanged.
-	putFleetChat(t, in, "work", map[string]any{"harness": "claude", "model": "opus", "effort": "high", "context_threshold": 300000})
+	putFleetChat(t, in, "work", map[string]any{"model": "opus"})
 	want := map[string]any{
 		"version":         float64(1),
 		"favorite_skills": []any{"review"},
 		"fleets": map[string]any{
-			"work": map[string]any{"name": "Work Fleet", "claude": map[string]any{},
-				"chat": map[string]any{"harness": "claude", "model": "opus", "effort": "high", "context_threshold": float64(300000)}},
+			"work": map[string]any{"name": "Work Fleet", "claude": map[string]any{}, "chat": map[string]any{"model": "opus"}},
 			"away": map[string]any{"name": "Away", "codex": map[string]any{}},
 		},
 		"sources": map[string]any{},
@@ -96,36 +82,7 @@ func TestChatConfig(t *testing.T) {
 	if got := configOnDisk(t, home); !reflect.DeepEqual(got, want) {
 		t.Errorf("config.json after save = %v, want %v", got, want)
 	}
-	if got := chatsOf(t, in)["work"]; got.Model != "opus" || got.Effort != "high" || got.ContextThreshold != float64(300000) {
-		t.Errorf("GET /api/config chat after save = %+v, want opus, high, 300000", got)
-	}
-}
-
-func TestChatConfigRefusals(t *testing.T) {
-	t.Parallel()
-	home := newHome(t)
-	writeConfig(t, home, `{"version":1,"fleets":{"work":{"name":"Work","claude":{},"codex":{}}}}`)
-	in := startAdmiral(t, home, "127.0.0.1:0")
-	for _, chat := range []map[string]any{
-		{"model": "gpt"},
-		{"effort": "max"},
-		{"context_threshold": 200000},
-		{"harness": "codex"},
-	} {
-		if code, _ := send(t, http.MethodPut, in.LocalURL+"/api/fleets/work", map[string]any{"chat": chat}); code != http.StatusBadRequest {
-			t.Errorf("PUT /api/fleets/work chat %v = %d, want 400", chat, code)
-		}
-	}
-	if code, _ := send(t, http.MethodPut, in.LocalURL+"/api/chat", map[string]any{"fleet": "work", "model": "opus", "effort": ""}); code != http.StatusNotFound {
+	if code, _ := send(t, http.MethodPut, in.LocalURL+"/api/chat", map[string]any{"model": "opus"}); code != http.StatusNotFound {
 		t.Errorf("PUT /api/chat = %d, want 404: the top-level chat settings are gone", code)
-	}
-	if _, ok := configOnDisk(t, home)["chat"]; ok {
-		t.Error("a refused PUT must not write `chat`")
-	}
-	var fleets map[string]map[string]json.RawMessage
-	raw, _ := json.Marshal(configOnDisk(t, home)["fleets"])
-	_ = json.Unmarshal(raw, &fleets)
-	if _, ok := fleets["work"]["chat"]; ok {
-		t.Error("a refused PUT wrote chat under the fleet")
 	}
 }
