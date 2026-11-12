@@ -43,11 +43,8 @@ describe('a merge entry', () => {
   it('keeps J, K and Enter and drops the answer and remove keys', () => {
     expect(keyAction({ key: 'j' }, 'merge')).toEqual({ kind: 'move', by: 1 });
     expect(keyAction({ key: 'Enter' }, 'merge')).toEqual({ kind: 'bridge' });
+    for (const key of ['m', 'M', 'y', ' ']) expect(keyAction({ key }, 'merge'), `${key} must not merge`).toBeNull();
     for (const key of ['1', '2', '3', 'e', 'E']) expect(keyAction({ key }, 'merge'), key).toBeNull();
-  });
-
-  it('has no key that merges', () => {
-    for (const key of ['m', 'M', 'y', 'Enter', ' ']) expect(keyAction({ key }, 'merge')).not.toMatchObject({ kind: 'merge' });
   });
 
   it('does not advertise the answer or remove keys', () => {

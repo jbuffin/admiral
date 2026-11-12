@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { addGitHubSource, appendLines, HOSTILE, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, restCalls, rowLink, seedFleets, seedInboxItem, seedReviewTarget, setReason, setState, stackedShipOffersNoMerge, viewTab, withFakeGh } from './shell';
+import { addGitHubSource, appendLines, HOSTILE, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, restCalls, rowLink, seedFleets, seedInboxItem, seedReviewTarget, setReason, setState, staleMergeTokenInPeek, stackedShipOffersNoMerge, viewTab, withFakeGh } from './shell';
 
 const peekOf = (page: Page) => page.getByRole('region', { name: 'Peek' });
 const peekUrl = (session: string) => new RegExp(`/app/inbox/${encodeURIComponent(session)}(\\?|$)`);
@@ -440,4 +440,12 @@ test('a ready stack shows Ready to merge and Peek offers no Merge', async ({ pag
   await admiral.start({ env: mooringEnv(admiral) });
 
   await stackedShipOffersNoMerge(page, admiral);
+});
+
+test('a Merge the server refuses as 403 says Admiral restarted, offers a reload, and merges nothing', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: mooringEnv(admiral) });
+
+  await staleMergeTokenInPeek(page, admiral);
 });

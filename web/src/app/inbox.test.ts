@@ -234,10 +234,10 @@ describe('createInboxQueue: ready to merge', () => {
     expect(keys(q)).toEqual(['merge:a']);
   });
 
-  it('lists nothing for a moored ship that is not ready, or a live ship', () => {
+  it('lists only the moored ship that is ready, not a not-ready moored ship or a live one', () => {
     const q = createInboxQueue();
-    q.sync({ items: [], ships: [notReady('a'), ship('b', 'alpha', 'underway', { stack_ready: true })] }, T0);
-    expect(keys(q)).toEqual([]);
+    q.sync({ items: [], ships: [ready('a'), notReady('b'), ship('c', 'alpha', 'underway', { stack_ready: true })] }, T0);
+    expect(keys(q)).toEqual(['merge:a']);
   });
 
   it('takes its start from first sight and keeps it across later pushes', () => {

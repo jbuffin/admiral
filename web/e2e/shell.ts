@@ -569,6 +569,24 @@ export async function mergeFailsInPeek(page: Page, a: Admiral) {
   expect(got?.status).toBe('moored');
 }
 
+/** A Merge the server answers 403, which a page that outlived an Admiral restart gets, says to reload, and the ship is not merged. */
+export async function staleMergeTokenInPeek(page: Page, a: Admiral) {
+  seedMergeMethod(a, 'squash');
+  prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+  const ship = await launchMooredShip(a, 7);
+  await readyOnTheServer(a, ship, 'squash');
+
+  await page.route(/\/api\/(v1\/)?ships\/[^/]+\/merge$/, (route) => route.fulfill({ status: 403, contentType: 'application/json', body: '{"error":"forbidden"}' }));
+  await page.goto(a.url + 'app/inbox?fleet=zulu');
+  await expect(inboxRow(page, ship)).toContainText('ready to merge');
+  await rowLinkIn(page, ship).tap();
+  const peek = peekOf(page);
+  await peek.getByRole('button', { name: 'Merge', exact: true }).tap();
+  await expect(peek.getByRole('alert')).toContainText('Admiral restarted, reload to merge');
+  await expect(peek.getByRole('button', { name: /reload/i })).toBeVisible();
+  expect(mergeCalls(a)).toEqual([]);
+}
+
 /** A ready stack shows Ready to merge, and Peek tells the engineer to merge it with gh stack: no Merge button and no merge call. */
 export async function stackedShipOffersNoMerge(page: Page, a: Admiral) {
   seedMergeMethod(a, 'squash');

@@ -131,11 +131,8 @@ describe('a merge entry', () => {
     ...over,
   });
 
-  it('reads after the ship name as ready to merge', () => {
-    expect(rowVerb(mergeEntry())).toBe('is ready to merge');
-  });
-
-  it('names the ship from its record', () => {
+  it('names the ship from its record and reads after it as ready to merge', () => {
     expect(rowShip(mergeEntry())).toBe('Dory');
+    expect(rowVerb(mergeEntry())).toBe('is ready to merge');
   });
 });

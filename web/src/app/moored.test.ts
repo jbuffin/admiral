@@ -156,9 +156,6 @@ describe('mergeHint', () => {
     expect(mergeHint('squash')).toBe('squash');
     expect(mergeHint('rebase')).toBe('rebase');
     expect(mergeHint('merge')).toBe('merge commit');
-  });
-
-  it('says nothing until the method is known', () => {
-    expect(mergeHint(undefined)).toBe('');
+    expect(mergeHint(undefined), 'nothing until the method is known').toBe('');
   });
 });
