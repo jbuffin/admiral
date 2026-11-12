@@ -5,6 +5,7 @@ import { hasConversationAdapter } from './conversationGate';
 import { Icon } from './Icon';
 import type { Conversation } from './conversation';
 import { renderMarkdown } from './markdown';
+import { QuestionCall } from './QuestionCall';
 import { blocksOf, capOutput, roundLabel, roundNote, toolRowLabel, workingLabel } from './turns';
 
 function Output({ text, error }: { text: string; error?: boolean }) {
@@ -73,10 +74,14 @@ function Message({ item }: { item: Item }) {
       </>
     );
   }
-  if (item.kind === 'question') return <div class="msg note">{item.question?.text ?? item.text}</div>;
   if (item.kind === 'notice') return item.meta ? null : <div class="msg note">{item.text}</div>;
   return null;
 }
+
+const callId = (id: string) => id.split('#')[0];
+
+// True for the first question item of its call among the blocks.
+const callOf = (blocks: ReturnType<typeof blocksOf>, at: number, item: Item) => !blocks.slice(0, at).some((b) => b.kind === 'item' && b.item.kind === 'question' && callId(b.item.id) === callId(item.id));
 
 function useTick(ms: number) {
   const [now, setNow] = useState(Date.now());
@@ -144,21 +149,11 @@ function AnswerCardView({ card, session, crew, openTerminal }: { card: AnswerCar
       </Card>
     );
   }
-  return (
-    <Card title={card.text}>
-      <div class="card-actions">
-        {card.options.map((label, i) => (
-          <button key={i} type="button" class="btn card-option" disabled={busy} onClick={() => void send({ card: 'question', reason: card.reason, item: card.item, option: i + 1 })}>
-            <span>{label}</span>
-            {card.descriptions[i] ? <span class="muted card-option-note">{card.descriptions[i]}</span> : null}
-          </button>
-        ))}
-      </div>
-    </Card>
-  );
+  // A question is answered on its own transcript card.
+  return null;
 }
 
-function ConversationBody({ conv, harness, anchored = false, working, noneTitle, footer, openTerminal, loadOlder }: { conv: Conversation; harness: string; anchored?: boolean; working: boolean; noneTitle?: string; footer?: preact.ComponentChildren; openTerminal: () => void; loadOlder: () => void }) {
+function ConversationBody({ conv, harness, anchored = false, working, noneTitle, footer, card, session, crew, openTerminal, loadOlder }: { conv: Conversation; harness: string; anchored?: boolean; working: boolean; noneTitle?: string; footer?: preact.ComponentChildren; card: AnswerCard; session: string; crew?: string; openTerminal: () => void; loadOlder: () => void }) {
   const now = useTick(15_000);
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -205,7 +200,12 @@ function ConversationBody({ conv, harness, anchored = false, working, noneTitle,
       ) : null}
       {blocks.length === 0 && !working ? <p class="line">No messages yet.</p> : null}
       {blocks.map((b, i) =>
-        b.kind === 'item' ? (
+        b.kind === 'item' && b.item.kind === 'question' ? (
+          // The call's first question draws the whole call; the others are drawn with it.
+          callOf(blocks, i, b.item) ? (
+            <QuestionCall key={b.item.id} items={conv.items.filter((x) => x.kind === 'question' && callId(x.id) === callId(b.item.id))} card={card} session={session} crew={crew} />
+          ) : null
+        ) : b.kind === 'item' ? (
           <Message key={b.item.id} item={b.item} />
         ) : b.durationMs !== undefined ? (
           <FoldedTools key={b.calls[0].id} calls={b.calls} durationMs={b.durationMs} />
@@ -230,7 +230,7 @@ export function ConversationView(props: { conv: Conversation; harness: string; a
   const shown: AnswerCard = card.kind === 'terminal' && props.conv.state !== 'ok' ? { kind: 'none' } : card;
   return (
     <>
-      <ConversationBody conv={props.conv} harness={props.harness} anchored={props.anchored} working={props.working} noneTitle={props.noneTitle} footer={props.footer} openTerminal={openTerminal} loadOlder={props.loadOlder} />
+      <ConversationBody conv={props.conv} harness={props.harness} anchored={props.anchored} working={props.working} noneTitle={props.noneTitle} footer={props.footer} card={shown} session={session} crew={crew} openTerminal={openTerminal} loadOlder={props.loadOlder} />
       <AnswerCardView card={shown} session={session} crew={crew} openTerminal={openTerminal} />
     </>
   );

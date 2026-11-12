@@ -4,7 +4,7 @@ import { renderMarkdown, renderRestrictedMarkdown } from './markdown';
 describe('renderMarkdown', () => {
   it('renders headings, lists, emphasis, inline code, code blocks and links', () => {
     const html = renderMarkdown(
-      ['# Plan', '', '- first', '- second', '', 'Some **bold**, *soft* and `code`.', '', '```go', 'x := 1 < 2', '```', '', '[docs](https://example.com/a)'].join('\n'),
+      ['# Plan', '', '- first', '- second', '', 'Some **bold**, *soft* and `code`.', '', '```', 'x := 1 < 2', '```', '', '[docs](https://example.com/a)'].join('\n'),
     );
     expect(html).toMatch(/<h1[^>]*>Plan<\/h1>/);
     expect(html).toMatch(/<ul[^>]*>\s*<li[^>]*>first<\/li>\s*<li[^>]*>second<\/li>\s*<\/ul>/);

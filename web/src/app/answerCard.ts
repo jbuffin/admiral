@@ -5,7 +5,18 @@ export type AnswerCard =
   | { kind: 'none' }
   | { kind: 'terminal' }
   | { kind: 'permission'; tool: string; reason: string; call?: Item }
-  | { kind: 'question'; reason: string; item: string; text: string; options: string[]; descriptions: string[] };
+  | { kind: 'question'; reason: string; item: string; text: string; options: string[]; descriptions: string[]; questions: CardQuestion[] };
+
+/** One question of the call a card answers: the listed options, and whether Other's free text is offered. */
+export interface CardQuestion {
+  id: string;
+  header: string;
+  text: string;
+  multiSelect: boolean;
+  options: string[];
+  descriptions: string[];
+  other: boolean;
+}
 
 const SUBAGENT_TOOLS = new Set(['task', 'Task', 'Agent']);
 const HAS_KEY_MAP = new Set(['claude', 'copilot', 'codex']);
@@ -25,21 +36,31 @@ function currentTurnStart(items: Item[]): number {
   return at;
 }
 
-function questionCard(reason: string, conv: Conversation): AnswerCard {
+// Claude's menu takes any shape; Copilot's and Codex's recorded keys take one single-choice question, so the rest goes to the terminal.
+function questionCard(reason: string, conv: Conversation, harness: string): AnswerCard {
   // A question an earlier turn left pending is not on the pane any more.
-  const pending = conv.items.slice(currentTurnStart(conv.items)).filter((i) => i.kind === 'question' && i.question?.pending);
-  const newest = pending[pending.length - 1];
-  const q = newest?.question;
-  if (!newest || !q) return { kind: 'terminal' };
-  const options = (q.options ?? []).map((o) => o.label);
-  if (q.multiSelect || options.length < 1 || options.length > 9) return { kind: 'terminal' };
-  if (conv.items.some((i) => i !== newest && i.kind === 'question' && callOf(i.id) === callOf(newest.id))) return { kind: 'terminal' };
-  return { kind: 'question', reason, item: newest.id, text: q.text, options, descriptions: (q.options ?? []).map((o) => o.description ?? '') };
+  const turn = conv.items.slice(currentTurnStart(conv.items));
+  const newest = turn.filter((i) => i.kind === 'question' && i.question?.pending).pop();
+  if (!newest) return { kind: 'terminal' };
+  const call = turn.filter((i) => i.kind === 'question' && callOf(i.id) === callOf(newest.id));
+  if (call.some((i) => !i.question?.pending)) return { kind: 'terminal' };
+  const claude = harness === 'claude';
+  if (!claude && (call.length > 1 || call[0].question?.multiSelect)) return { kind: 'terminal' };
+  const questions: CardQuestion[] = [];
+  for (const i of call) {
+    const q = i.question!;
+    const options = (q.options ?? []).map((o) => o.label);
+    const wide = claude && (q.multiSelect || call.length > 1) ? 8 : 9;
+    if (options.length < 1 || options.length > wide) return { kind: 'terminal' };
+    questions.push({ id: i.id, header: q.header ?? '', text: q.text, multiSelect: q.multiSelect === true, options, descriptions: (q.options ?? []).map((o) => o.description ?? ''), other: claude && options.length <= 8 });
+  }
+  const first = questions[0];
+  return { kind: 'question', reason, item: first.id, text: first.text, options: first.options, descriptions: first.descriptions, questions };
 }
 
 // Copilot's reasons carry no tool name, so the card previews the one call still open in the current turn.
 function copilotCard(r: string, conv: Conversation): AnswerCard {
-  if (r === 'question') return questionCard(r, conv);
+  if (r === 'question') return questionCard(r, conv, 'copilot');
   if (r !== 'notification:permission_prompt') return { kind: 'terminal' };
   const open = conv.items.slice(currentTurnStart(conv.items)).filter((i) => i.kind === 'tool_call' && !i.tool?.done);
   // A subagent's own command asks while the launching call is the one open, so that call is not what Allow runs.
@@ -53,8 +74,8 @@ export function answerCard({ harness, status, reason, conv }: { harness: string;
   const r = reason ?? '';
   if (harness === 'copilot') return copilotCard(r, conv);
   if (harness === 'codex' && r === 'question') return { kind: 'none' };
-  if (harness === 'codex' && r === 'bell') return questionCard(r, conv);
-  if (r === 'question' || r === 'permission:AskUserQuestion') return questionCard(r, conv);
+  if (harness === 'codex' && r === 'bell') return questionCard(r, conv, harness);
+  if (r === 'question' || r === 'permission:AskUserQuestion') return questionCard(r, conv, harness);
   if (r.startsWith('permission:')) {
     const tool = r.slice('permission:'.length);
     if (tool === '' || NO_CARD_TOOLS.has(tool) || (harness === 'codex' && !(tool in CODEX_CARD_CALLS))) return { kind: 'terminal' };

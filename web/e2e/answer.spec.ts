@@ -118,7 +118,7 @@ test('a prompt Admiral cannot answer shows the terminal card, and only Open term
   seedFleets(admiral, { live: true });
   await admiral.start({ env: withFakeGh(admiral) });
   const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
-  await appendLines(admiral, ship, [line.ask('toolu_m1', [{ question: 'Which colours?', options: ['Red', 'Green'], multiSelect: true }])]);
+  await appendLines(admiral, ship, [line.ask('toolu_m1', [{ question: 'Which colours?', options: ['Red', 'Green', 'Blue', 'Cyan', 'Pink', 'Gold', 'Gray', 'Teal', 'Plum'], multiSelect: true }])]);
   setReason(admiral, ship, 'question');
   setState(admiral, ship, 'needs_you');
   await open(page, admiral, ship);
