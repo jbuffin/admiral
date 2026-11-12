@@ -30,9 +30,14 @@ export function InstallButton() {
       type="button"
       class="btn primary install-btn"
       onClick={async () => {
-        await offer.prompt();
-        await offer.userChoice.catch(() => {});
-        setOffer(undefined);
+        try {
+          await offer.prompt();
+          await offer.userChoice;
+        } catch {
+          /* the prompt was refused: the offer is spent either way */
+        } finally {
+          setOffer(undefined);
+        }
       }}
     >
       Install

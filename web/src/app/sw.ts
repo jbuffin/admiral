@@ -21,7 +21,7 @@ const sw = self as unknown as WorkerScope;
 async function precache() {
   try {
     const res = await fetch(SHELL, { cache: 'no-store' });
-    if (!cacheable(res.status)) return;
+    if (!cacheable(res.status) || res.redirected) return;
     const cache = await caches.open(CACHE);
     const html = await res.clone().text();
     await cache.put(SHELL, res);

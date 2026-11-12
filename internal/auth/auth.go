@@ -140,12 +140,16 @@ var installFiles = map[string]bool{
 }
 
 // staticShell reports whether the request fetches a file of the built new shell, which holds no data: the page for
-// any /app/ route, one file under /assets/, and the worker. Everything is judged on the cleaned path, as serveUI does.
+// any /app/ route, one file under /assets/, and the worker.
 func staticShell(r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
 	}
+	// ServeMux routes on the escaped path, where %2F stays in one segment: only a plain, already-clean path means what it says.
 	p := path.Clean(r.URL.Path)
+	if r.URL.RawPath != "" || p != strings.TrimSuffix(r.URL.Path, "/") {
+		return false
+	}
 	switch {
 	case p == "/sw.js", p == "/app":
 		return true
