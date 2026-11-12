@@ -20,7 +20,8 @@ const chatPrompt = "You are AdmiralBot, the engineer's assistant in Admiral. You
 	"Reply in a line or two; the engineer is often on a phone.\n\n" +
 	"Read with list_ships, read_conversation, read_outcomes, list_inbox, list_sources and list_campaigns. " +
 	"Use add_order to queue an order on a source's panel (take the source and panel from list_sources; with several writable panels and none named, ask which). " +
-	"Use launch_ship to start a ship, passing the id of the chat message it answers as chat_message so a repeat is refused. " +
+	"Use launch_ship to start a ship. Admiral refuses a second freeform ship for the same message and names the first; " +
+	"if one message asks for two different freeform ships, pass anyway on the second, and only then. " +
 	"Use next_prompt, wake_ship, stop_ship and dismiss_ship to move a ship along, and answer_item to answer an Inbox question with the engineer's choice. " +
 	"Use ask_question when something is a real choice, instead of guessing; it waits, and if it hands back an id, call it again with wait_id until the engineer answers.\n\n" +
 	"A Commodore launch runs in autopilot unless the engineer says \"with me\" (then pass with_me); say in your reply which mode the ship runs in. " +
@@ -92,12 +93,22 @@ func WriteMCPConfig(root *os.Root, rel string, servers map[string]MCPServer) err
 	return writeChatFile(root, rel, append(raw, '\n'))
 }
 
-// removeChatSkill drops the skill an older Admiral wrote into the chat's directory: it cannot
-// load under an empty tool list, and its text taught the CLI.
-func removeChatSkill(root *os.Root, fleet string) error {
-	err := root.RemoveAll(filepath.Join("chat", fleet, ".claude", "skills", "admiralbot"))
-	if err != nil && !os.IsNotExist(err) {
-		return err
+// removeChatStale drops what the chat's directory must not hold: the skill an older Admiral wrote (it cannot
+// load under an empty tool list) and any project settings or memory file, which `--setting-sources project` would
+// read from this directory. RemoveAll unlinks a link, never follows it.
+func removeChatStale(root *os.Root, fleet string) error {
+	dir := filepath.Join("chat", fleet)
+	for _, rel := range []string{
+		filepath.Join(".claude", "skills", "admiralbot"),
+		filepath.Join(".claude", "settings.json"),
+		filepath.Join(".claude", "settings.local.json"),
+		filepath.Join(".claude", "CLAUDE.md"),
+		"CLAUDE.md",
+		"CLAUDE.local.md",
+	} {
+		if err := root.RemoveAll(filepath.Join(dir, rel)); err != nil && !os.IsNotExist(err) {
+			return err
+		}
 	}
 	return nil
 }
@@ -176,7 +187,7 @@ func (l *Launcher) StartChat(key string) error {
 	}
 	env["ADMIRAL_HOME"] = home
 	delete(unset, "ADMIRAL_HOME")
-	// `admiral chat ask` finds its fleet here; the model can't pick another.
+	// The hooks and the status line know the chat's fleet from here; the model can't pick another.
 	env["ADMIRAL_CHAT_FLEET"] = fleet.Key
 	if l.Port != "" {
 		env["ADMIRAL_PORT"] = l.Port
@@ -248,8 +259,8 @@ func (l *Launcher) writeChatMCP(home, fleet, nonce string, env map[string]string
 		return refuse(http.StatusInternalServerError, "could not open %s: %v", home, err)
 	}
 	defer root.Close()
-	if err := removeChatSkill(root, fleet); err != nil {
-		return refuse(http.StatusInternalServerError, "could not remove the old AdmiralBot skill: %v", err)
+	if err := removeChatStale(root, fleet); err != nil {
+		return refuse(http.StatusInternalServerError, "could not clear the chat's directory: %v", err)
 	}
 	cfg := map[string]MCPServer{ChatServer: {Command: self, Args: []string{"mcp"}, Env: serverEnv}}
 	if err := WriteMCPConfig(root, filepath.Join("chat", fleet, "mcp.json"), cfg); err != nil {

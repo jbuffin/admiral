@@ -92,7 +92,6 @@ func claudeChatSettings() any {
 	return map[string]any{"statusLine": statusLine(" --chat"), "permissions": FencePermissions(ChatServer), "hooks": map[string]any{
 		"SessionStart":     []any{group("", "SessionStart")},
 		"UserPromptSubmit": []any{group("", "UserPromptSubmit")},
-		"PreToolUse":       []any{group("AskUserQuestion", "PreToolUse")},
 		"PostToolUse":      []any{group("", "PostToolUse")},
 		"Notification":     []any{group("permission_prompt", "Notification"), group("elicitation_dialog", "Notification")},
 		"Stop":             []any{group("", "Stop")},

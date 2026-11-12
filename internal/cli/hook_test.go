@@ -235,3 +235,18 @@ func TestTranscriptCall(t *testing.T) {
 		}
 	}
 }
+
+func TestChatPromptCall(t *testing.T) {
+	now := time.Unix(1700000000, 5).UTC()
+	got := chatPromptCall("%1", "UserPromptSubmit", "work", now)
+	want := []string{"set", "-p", "-t", "%1", sessionhost.Prefix + sessionhost.ChatPromptOpt, "1700000000000000005"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("call = %q, want %q", got, want)
+	}
+	if got := chatPromptCall("%1", "UserPromptSubmit", "", now); got != nil {
+		t.Errorf("a ship's prompt wrote %q, want nothing", got)
+	}
+	if got := chatPromptCall("%1", "Stop", "work", now); got != nil {
+		t.Errorf("a Stop wrote %q, want nothing", got)
+	}
+}

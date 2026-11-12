@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -80,7 +81,7 @@ func runClaudeMCPFence(ctx context.Context, t Target) Outcome {
 	args := append(launcher.FenceArgs(settings, mcpConfig), "--model", "haiku", "--output-format", "stream-json", "--verbose", "-p", prompt)
 	cmd := exec.CommandContext(ctx, exe, args...)
 	cmd.Dir = runDir
-	cmd.Env = fenceEnv(h.Environ(), runDir, nonce)
+	cmd.Env = fenceEnv(h.Environ())
 	capabilities.InOwnGroup(cmd)
 	cmd.WaitDelay = time.Second
 	var stdout, stderr bytes.Buffer
@@ -121,6 +122,11 @@ func runClaudeMCPFence(ctx context.Context, t Target) Outcome {
 			return Outcome{Detail: "claude loaded an MCP server other than the probe's: " + s.Name}
 		}
 	}
+	// A record with no tools or servers key would pass both loops above, so the probe's own tool and
+	// server must be in it.
+	if !slices.Contains(rec.Tools, "mcp__"+FenceServer+"__"+FenceTool) || !slices.ContainsFunc(rec.Servers, func(s initServer) bool { return s.Name == FenceServer }) {
+		return Outcome{Detail: "claude's init record did not list the probe server and its tool, so the tool list was not read"}
+	}
 	if !has(CalledPath(runDir, nonce)) {
 		return Outcome{Detail: "the model never called the probe server's tool"}
 	}
@@ -145,8 +151,9 @@ func writeFenceFiles(dir, settings, self, nonce, runDir string) error {
 	return os.WriteFile(settings, b, 0o600)
 }
 
-// fenceEnv is the fleet's env without the ship and pane variables, with the probe's two on top.
-func fenceEnv(base []string, dir, nonce string) []string {
+// fenceEnv is the fleet's env without the ship and pane variables. The probe's own two go only in the
+// config's env, so a pass shows that Claude Code hands a config's env to its server.
+func fenceEnv(base []string) []string {
 	env := map[string]string{}
 	for _, kv := range base {
 		if k, v, ok := strings.Cut(kv, "="); ok {
@@ -156,7 +163,6 @@ func fenceEnv(base []string, dir, nonce string) []string {
 	for _, k := range capabilities.ScrubbedEnv {
 		delete(env, k)
 	}
-	env[NonceEnv], env[DirEnv] = nonce, dir
 	out := make([]string, 0, len(env))
 	for k, v := range env {
 		out = append(out, k+"="+v)
@@ -164,11 +170,13 @@ func fenceEnv(base []string, dir, nonce string) []string {
 	return out
 }
 
+type initServer struct {
+	Name string `json:"name"`
+}
+
 type initRecord struct {
 	Tools   []string
-	Servers []struct {
-		Name string `json:"name"`
-	}
+	Servers []initServer
 }
 
 // readInit finds Claude Code's own init record in its stream-json output: the line with type
@@ -178,12 +186,10 @@ func readInit(out []byte) (initRecord, bool) {
 	sc.Buffer(nil, 4<<20)
 	for sc.Scan() {
 		var line struct {
-			Type    string   `json:"type"`
-			Subtype string   `json:"subtype"`
-			Tools   []string `json:"tools"`
-			Servers []struct {
-				Name string `json:"name"`
-			} `json:"mcp_servers"`
+			Type    string       `json:"type"`
+			Subtype string       `json:"subtype"`
+			Tools   []string     `json:"tools"`
+			Servers []initServer `json:"mcp_servers"`
 		}
 		if json.Unmarshal(sc.Bytes(), &line) != nil || line.Type != "system" || line.Subtype != "init" {
 			continue

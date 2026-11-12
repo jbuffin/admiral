@@ -535,18 +535,21 @@ func (c *chatWorld) mcpCall(name, tool string, args map[string]any) mcpReply {
 	}
 }
 
-// AdmiralBot acts only through the MCP server: it launches in its own fleet, a repeat is
-// refused naming the ship, another fleet's ship is out of reach, and its own can be stopped.
+// AdmiralBot acts only through the MCP server: it launches in its own fleet, a repeat in one
+// message is refused naming the ship (Admiral counts the messages from the chat's hook, so the
+// model passes no id), the next message may launch again, another fleet's ship is out of
+// reach, and its own can be stopped.
 func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 	t.Parallel()
 	c := newBotWorld(t, botOpts{})
 	w := c.world
-	w.writeCue("mcp launch", "mcp again", "mcp stop-other", "mcp stop-own")
+	prompt := `event UserPromptSubmit {"prompt":"look at the harbour log"}`
+	w.writeCue(prompt, "mcp launch", "mcp again", prompt, "mcp next", "mcp stop-other", "mcp stop-own")
 	w.start()
 	other := w.launch(w.order("ship", "claude", "otherrepo", noSkill, "x"))
 	c.start()
 
-	launch := map[string]any{"harness": "claude", "dir": w.checkout("repo1"), "skill": "none", "text": "Look at the harbour log", "chat_message": "m1"}
+	launch := map[string]any{"harness": "claude", "dir": w.checkout("repo1"), "skill": "none", "text": "Look at the harbour log"}
 	first := c.mcpCall("launch", "launch_ship", launch)
 	if first.IsError {
 		t.Fatalf("launch_ship was refused: %s", first.text())
@@ -573,6 +576,7 @@ func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 	}
 
 	t.Run("the same chat message is refused naming its ship", func(t *testing.T) {
+		// one message, so the second freeform launch is refused whatever the model sends
 		again := c.mcpCall("again", "launch_ship", launch)
 		if !again.IsError || !strings.Contains(again.text(), "already has a ship") || !strings.Contains(again.text(), mine.Name) {
 			t.Errorf("the repeat launch gave %+v, want an error saying the message already has a ship (%s)", again, mine.Name)
@@ -585,6 +589,13 @@ func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 		}
 		if n != 1 {
 			t.Errorf("fleet %s has %d ships after the repeat, want 1", chatFleet, n)
+		}
+	})
+
+	t.Run("the next chat message may launch again", func(t *testing.T) {
+		next := c.mcpCall("next", "launch_ship", launch)
+		if next.IsError {
+			t.Errorf("the launch after a new message was refused: %s", next.text())
 		}
 	})
 

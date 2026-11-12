@@ -36,8 +36,12 @@ env >"$log/env"
 pwd -P >"$log/cwd"
 if [ -f "$cfg" ]; then cp "$cfg" "$log/mcp.json"; : >"$log/config-existed"; fi
 name=$(tr -d ' \n\t' <"$cfg" | sed 's/.*"mcpServers":{"\([^"]*\)".*/\1/')
-called=$ADMIRAL_PROBE_DIR/called-$ADMIRAL_PROBE_NONCE
-ran=$ADMIRAL_PROBE_DIR/ran-$ADMIRAL_PROBE_NONCE
+# the server gets these from the config's env, so the stand-in reads them there and not from its own
+flat=$(tr -d ' \n\t' <"$cfg")
+dir=$(echo "$flat" | sed 's/.*"ADMIRAL_PROBE_DIR":"\([^"]*\)".*/\1/')
+nonce=$(echo "$flat" | sed 's/.*"ADMIRAL_PROBE_NONCE":"\([^"]*\)".*/\1/')
+called=$dir/called-$nonce
+ran=$dir/ran-$nonce
 init() { printf '{"type":"system","subtype":"init","tools":[%s],"mcp_servers":[%s]}\n' "$1" "$2"; }
 mine="{\"name\":\"$name\",\"status\":\"connected\"}"
 case "$PROBE_FAKE_MODE" in
@@ -45,6 +49,7 @@ pass) : >"$called"; init "\"mcp__${name}__ping\"" "$mine" ;;
 builtin-listed) : >"$called"; init "\"Bash\",\"mcp__${name}__ping\"" "$mine" ;;
 second-server) : >"$called"; init "\"mcp__${name}__ping\",\"mcp__other__run\"" "$mine,{\"name\":\"other\",\"status\":\"connected\"}" ;;
 shell-ran) : >"$called"; : >"$ran"; init "\"mcp__${name}__ping\"" "$mine" ;;
+no-tools-key) : >"$called"; echo '{"type":"system","subtype":"init"}' ;;
 no-call) init "\"mcp__${name}__ping\"" "$mine" ;;
 no-init) : >"$called"; echo "all done" ;;
 error) echo "boom: not logged in" >&2; exit 3 ;;
@@ -171,6 +176,18 @@ func TestFenceProbeConfigHasOneServerAndSettingsAllowOnlyIt(t *testing.T) {
 	}
 }
 
+func TestFenceProbeGivesItsServerItsSettingsOnlyThroughTheConfig(t *testing.T) {
+	f := runFence(t, "pass", 0)
+	if l := f.line(t); l.Status != capabilities.Passed {
+		t.Fatalf("line = %+v, want passed: the server must get its env from the config", l)
+	}
+	for _, kv := range strings.Split(f.read(t, "env"), "\n") {
+		if strings.HasPrefix(kv, probes.DirEnv+"=") || strings.HasPrefix(kv, probes.NonceEnv+"=") {
+			t.Errorf("claude's own env holds %q: only the config's env may carry it, or a pass cannot show the config's env reaches the server", kv)
+		}
+	}
+}
+
 func TestFenceProbeLeavesNothingBehind(t *testing.T) {
 	f := runFence(t, "pass", 0)
 	if l := f.line(t); l.Status != capabilities.Passed {
@@ -191,6 +208,7 @@ func TestFenceProbeFailuresEachSayWhy(t *testing.T) {
 		"second-server":  "other",
 		"shell-ran":      "ran the shell command",
 		"no-call":        "never called the probe server's tool",
+		"no-tools-key":   "did not list",
 		"no-init":        "init record",
 		"error":          "claude failed: boom: not logged in",
 	}

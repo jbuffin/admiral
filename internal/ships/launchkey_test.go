@@ -386,3 +386,77 @@ func TestASourcelessPendingEntryIsDroppedOnceListed(t *testing.T) {
 		t.Errorf("%d listing entries after Pending, want the expired sourceless one dropped", n)
 	}
 }
+
+// promptRig makes the chat's prompt in force a value the test moves, the way the hook's stamp does.
+func (r *wakeRig) promptRig(key *string) {
+	r.s.ChatPrompt = func(string) string { return *key }
+}
+
+func freeform(q *launcher.Request) { q.Text = "look at the harbour log" }
+
+func TestAnActorsSecondFreeformLaunchInOnePromptIsRefusedNamingTheFirst(t *testing.T) {
+	r := newWakeRig(t, 0)
+	prompt := "n1-100"
+	r.promptRig(&prompt)
+	first, lerr := r.launchActing("work", freeform)
+	if lerr != nil {
+		t.Fatalf("first launch = %v", lerr)
+	}
+	_, lerr = r.launchActing("work", freeform)
+	if lerr == nil || lerr.Status != http.StatusConflict || !strings.Contains(lerr.Msg, first.Name) {
+		t.Fatalf("second launch in the same prompt = %v, want a 409 naming %q", lerr, first.Name)
+	}
+	if _, lerr := r.launchActing("work", func(q *launcher.Request) { freeform(q); q.Anyway = true }); lerr != nil {
+		t.Errorf("anyway on the second = %v, want a ship", lerr)
+	}
+}
+
+func TestAnActorsFreeformLaunchIsAllowedAgainOnTheNextPromptAndInANewSession(t *testing.T) {
+	r := newWakeRig(t, 0)
+	prompt := "n1-100"
+	r.promptRig(&prompt)
+	if _, lerr := r.launchActing("work", freeform); lerr != nil {
+		t.Fatal(lerr)
+	}
+	prompt = "n1-200" // the next message, typed in the chat or in its terminal
+	if _, lerr := r.launchActing("work", freeform); lerr != nil {
+		t.Errorf("launch on the next prompt = %v, want a ship", lerr)
+	}
+	prompt = "n2-100" // a new session starts its own series
+	if _, lerr := r.launchActing("work", freeform); lerr != nil {
+		t.Errorf("launch in a new session = %v, want a ship", lerr)
+	}
+}
+
+func TestAnActorCannotChooseItsFreeformKey(t *testing.T) {
+	r := newWakeRig(t, 0)
+	prompt := "n1-100"
+	r.promptRig(&prompt)
+	if _, lerr := r.launchActing("work", func(q *launcher.Request) { freeform(q); q.ChatMessage = "mine-1" }); lerr != nil {
+		t.Fatal(lerr)
+	}
+	// the same prompt with another client-sent id is still the same message
+	if _, lerr := r.launchActing("work", func(q *launcher.Request) { freeform(q); q.ChatMessage = "mine-2" }); lerr == nil || lerr.Status != http.StatusConflict {
+		t.Errorf("second launch with another id = %v, want a 409: the server's key is the only one", lerr)
+	}
+}
+
+func TestAnActorsLaunchFromAnIssueIsNotKeyedOnThePrompt(t *testing.T) {
+	r := newWakeRig(t, 0)
+	prompt := "n1-100"
+	r.promptRig(&prompt)
+	if _, lerr := r.launchActing("work", func(q *launcher.Request) { q.Issues = []string{keyIssueA} }); lerr != nil {
+		t.Fatal(lerr)
+	}
+	if _, lerr := r.launchActing("work", freeform); lerr != nil {
+		t.Errorf("a freeform launch after an issue launch in one prompt = %v, want a ship", lerr)
+	}
+}
+
+func TestAnEngineersFreeformLaunchIsNotKeyedOnThePrompt(t *testing.T) {
+	r := newWakeRig(t, 0)
+	prompt := "n1-100"
+	r.promptRig(&prompt)
+	r.mustLaunch(t, freeform)
+	r.mustLaunch(t, freeform)
+}

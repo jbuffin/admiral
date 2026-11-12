@@ -89,3 +89,45 @@ func TestTheChatsActorTokenSurvivesARestartAndChangesWithANewChatSession(t *test
 		t.Errorf("a new chat session has token %q, want a new one unlike %q", next, first)
 	}
 }
+
+func TestThePromptKeyMovesWithEachPromptAndStartsOverWithANewSession(t *testing.T) {
+	l, home, sock := chatRig(t)
+	svc := serviceFor(t, l, home)
+	if got := svc.PromptKey("work"); got != "" {
+		t.Fatalf("a fleet with no chat has prompt key %q, want none", got)
+	}
+	if err := l.StartChat("work"); err != nil {
+		t.Fatal(err)
+	}
+	stamp := func(v string) {
+		t.Helper()
+		out, err := exec.Command(l.Tmux, "-S", sock, "set", "-p", "-t", "="+sessionhost.ChatSession("work")+":", sessionhost.Prefix+sessionhost.ChatPromptOpt, v).CombinedOutput()
+		if err != nil {
+			t.Fatalf("stamping the prompt: %v: %s", err, out)
+		}
+	}
+	before := svc.PromptKey("work")
+	if before == "" {
+		t.Fatal("a running chat has no prompt key")
+	}
+	if again := svc.PromptKey("work"); again != before {
+		t.Errorf("with no new prompt the key is %q, want %q", again, before)
+	}
+	stamp("100")
+	first := svc.PromptKey("work")
+	stamp("200")
+	second := svc.PromptKey("work")
+	if first == before || second == first {
+		t.Errorf("keys %q, %q, %q: each prompt wants its own", before, first, second)
+	}
+	if err := sessionhost.NewServer(l.Tmux, sock).KillSession(context.Background(), sessionhost.ChatSession("work")); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.StartChat("work"); err != nil {
+		t.Fatal(err)
+	}
+	stamp("200")
+	if next := svc.PromptKey("work"); next == second {
+		t.Errorf("a new session's key %q repeats the old session's", next)
+	}
+}

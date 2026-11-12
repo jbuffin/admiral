@@ -587,7 +587,7 @@ func TestALaunchSendsEveryInputItWasGivenAndOmitsTheRest(t *testing.T) {
 	a := newStandIn(t, func(mcpReq) (int, string) { return 201, `{"ship":{"session":"saltpaw"}}` })
 	a.env(t, mcpToken)
 	args := `{"dir":"/code/widget","harness":"claude","skill":"commodore","text":"fix the build","source":"notes","order_id":"o-1",` +
-		`"clone":true,"clone_repo":"jbuffin/widget","anyway":true,"chat_message":"c-9","crew":["a","b"]}`
+		`"clone":true,"clone_repo":"jbuffin/widget","anyway":true,"crew":["a","b"]}`
 	if _, _, err := serve(t, call(1, "launch_ship", args)); err != nil {
 		t.Fatal(err)
 	}
@@ -596,7 +596,7 @@ func TestALaunchSendsEveryInputItWasGivenAndOmitsTheRest(t *testing.T) {
 		t.Fatalf("POSTs = %+v, want one", got)
 	}
 	want := map[string]any{"dir": "/code/widget", "harness": "claude", "text": "fix the build", "source": "notes", "order_id": "o-1",
-		"clone": true, "clone_repo": "jbuffin/widget", "anyway": true, "chat_message": "c-9", "crew": []any{"a", "b"}, "fleet": "work"}
+		"clone": true, "clone_repo": "jbuffin/widget", "anyway": true, "crew": []any{"a", "b"}, "fleet": "work"}
 	for k, v := range want {
 		if mustJSON(got[0].Body[k]) != mustJSON(v) {
 			t.Errorf("body %s = %s, want %s", k, mustJSON(got[0].Body[k]), mustJSON(v))

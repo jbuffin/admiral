@@ -318,3 +318,46 @@ func TestChatPromptTeachesTheToolsAndNoCLI(t *testing.T) {
 		}
 	}
 }
+
+func TestEachChatStartRemovesPlantedProjectSettingsWithoutFollowingLinks(t *testing.T) {
+	c := newChatRun(t)
+	dir := ChatDir(c.home, "work")
+	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "keep.json")
+	if err := os.WriteFile(outside, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	planted := []string{filepath.Join(dir, ".claude", "settings.local.json"), filepath.Join(dir, "CLAUDE.md"), filepath.Join(dir, ".claude", "CLAUDE.md")}
+	for _, p := range planted {
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(dir, ".claude", "settings.json")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	c.start(t)
+	for _, p := range append(planted, link) {
+		if _, err := os.Lstat(p); err == nil {
+			t.Errorf("%s survived a chat start", p)
+		}
+	}
+	if b, err := os.ReadFile(outside); err != nil || string(b) != "{}" {
+		t.Errorf("the file a planted link pointed at is %q (%v), want it untouched", b, err)
+	}
+}
+
+func TestChatPromptLeavesTheLaunchKeyToAdmiral(t *testing.T) {
+	c := newChatRun(t)
+	argv, _ := c.start(t)
+	prompt, _ := flagValue(argv, "--append-system-prompt")
+	if strings.Contains(prompt, "chat_message") {
+		t.Error("the prompt still tells the model to pass a chat message id it never sees")
+	}
+	if !strings.Contains(prompt, "anyway") {
+		t.Error("the prompt does not say that two different freeform ships from one message need anyway")
+	}
+}
