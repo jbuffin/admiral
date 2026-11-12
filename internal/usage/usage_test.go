@@ -370,3 +370,13 @@ func TestFiguresSub(t *testing.T) {
 		})
 	}
 }
+
+// A line over the cap is skipped, not buffered, and the lines after it still count.
+func TestParseSkipsALineLongerThanTheCap(t *testing.T) {
+	huge := `{"type":"x","pad":"` + strings.Repeat("a", maxLine+10) + `"}`
+	good := `{"type":"cost-state","totalCostUSD":0.5,"modelUsage":{"m":{"inputTokens":3}}}`
+	f, err := ParseClaude(strings.NewReader(huge + "\n" + good + "\n" + huge))
+	if err != nil || f.Tokens.Input != 3 {
+		t.Errorf("figures = %+v, err = %v, want input 3 from the line after the huge one", f, err)
+	}
+}

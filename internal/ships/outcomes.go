@@ -122,7 +122,7 @@ type track struct {
 	seen  bool              // the host has listed the session; a launch is tracked before it does
 }
 
-type endState struct{ written, failed, clean bool }
+type endState struct{ written, failed, clean, usaged bool }
 
 type ending struct {
 	sess  sessionhost.Session
@@ -239,6 +239,7 @@ func (s *Service) queueEnded(e ending) {
 	}
 	report := s.readReport(name)
 	s.writeCrewItems(sess, report)
+	s.queueUsage(sess, end)
 	s.record(outcomes.Record{Ship: name, Event: "ended", Fields: map[string]any{
 		"exit_code": code, "signal": sig, "duration_s": duration,
 		"needs_you_count": t.Count, "needs_you_s": seconds(t.Seconds), "report": report,
