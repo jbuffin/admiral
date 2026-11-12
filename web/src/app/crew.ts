@@ -1,4 +1,3 @@
-// The Crew page's data shapes and pure logic: grouping, request bodies, error mapping, note scopes.
 import type { Dock } from './api';
 
 export const CUSTOM_ROLE = '__custom__';
@@ -70,7 +69,7 @@ export interface MemberBody {
 
 const notesOf = (n: Partial<Notes> | null | undefined): Notes => ({ fleet: n?.fleet ?? [], repos: n?.repos ?? {} });
 
-/** The GET body with Go's null slices, maps and strings made empty. */
+// Go sends null for empty slices, maps and strings.
 export function normalizeCrew(raw: Record<string, unknown>): CrewData {
   const list = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
   const diag = (d: Partial<Record<keyof Diagnostic, string | null>>): Diagnostic => ({ layer: d.layer ?? '', file: d.file ?? '', code: d.code ?? '', field: d.field ?? '', message: d.message ?? '' });
@@ -125,7 +124,7 @@ export function memberBody(f: MemberForm): MemberBody {
   if (custom) body['based-on'] = f.basedOn;
   if (role !== 'fix-checker') {
     body.skills = f.skills.split('\n').map((s) => s.trim()).filter(Boolean);
-    // The server refuses blank lines around instructions, but a first line's indent is the author's.
+    // The reader drops blank lines around a body anyway; a first line's indent is the author's.
     body.instructions = f.instructions.replace(/^(\s*\n)+/, '').trimEnd();
   }
   if (f.model.trim()) body.model = f.model.trim();
@@ -192,5 +191,4 @@ export function moveTarget(choice: string, typed: string): { scope: 'fleet' | 'r
 
 export const crewApi = (fleet: string, harness: string, tail = '') => `/fleets/${encodeURIComponent(fleet)}/crew${tail}${harness ? `?harness=${encodeURIComponent(harness)}` : ''}`;
 
-/** The dock the picker starts on: the fleet's first. */
 export const firstDock = (docks: Dock[]) => docks[0]?.harness ?? '';

@@ -606,7 +606,10 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
       ) : null}
       {data.errors.length > 0 ? (
         <div class="alert" role="alert">
-          <p>Admiral can't read some crew files. Fix the file on disk, and this page updates.</p>
+          <p>Admiral can't read some crew files. Fix the file on disk, then reload.</p>
+          <button type="button" class="btn" onClick={() => void load()}>
+            Reload
+          </button>
           <ul>
             {data.errors.map((d, i) => (
               <li key={i}>
@@ -638,7 +641,7 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
         ) : null}
         {showDetail ? (
           <div class="crew-pane">
-            {phone ? back : null}
+            {phone || !selected ? back : null}
             {selected ? (
               <Detail
                 key={selected.name}
