@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/jbuffin/admiral/internal/chatlog"
@@ -75,7 +76,10 @@ func (l *Ledger) AddNote(fleet, text, via string) (Entry, error) {
 	if !chatlog.Valid(fleet) {
 		return Entry{}, fmt.Errorf("ledger: %q is not a fleet key", fleet)
 	}
-	text = strings.TrimSpace(text)
+	text = trim(text)
+	if r, bad := HiddenRune(text); bad {
+		return Entry{}, hiddenRefusal(r)
+	}
 	switch n := utf8.RuneCountInString(text); {
 	case n == 0:
 		return Entry{}, &RefusedError{"the note is empty"}
@@ -180,6 +184,9 @@ func (l *Ledger) append(fleet string, ev event) error {
 		l.terminated[fleet] = true
 	}
 	_, err = f.Write(append(line, '\n'))
+	if err != nil {
+		l.terminated[fleet] = false
+	}
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
@@ -245,6 +252,31 @@ func newID() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
+// trim drops surrounding whitespace and a byte order mark, as the page's count does.
+func trim(s string) string {
+	return strings.TrimFunc(s, func(r rune) bool { return r == '\uFEFF' || unicode.IsSpace(r) })
+}
+
+// HiddenRune is the first character of text that shows nothing or can change how the text reads:
+// a control other than newline and tab, a format character (zero-width, bidi override, tag), a
+// private-use or unassigned code point, or bytes that are not UTF-8. Note text is AdmiralBot's,
+// so it must not carry any into what the engineer promotes or the brief renders.
+func HiddenRune(text string) (rune, bool) {
+	for _, r := range text {
+		if r == '\n' || r == '\t' {
+			continue
+		}
+		if r == utf8.RuneError || !unicode.IsGraphic(r) {
+			return r, true
+		}
+	}
+	return 0, false
+}
+
+func hiddenRefusal(r rune) *RefusedError {
+	return &RefusedError{fmt.Sprintf("the note holds a character that shows nothing (U+%04X); write it again in plain visible text", r)}
+}
+
 // MaxInstructionChars caps a fleet's instructions, in code points after trimming.
 const MaxInstructionChars = 2000
 
@@ -268,7 +300,7 @@ func (l *Ledger) SetInstructions(fleet, text string) (string, error) {
 	if !chatlog.Valid(fleet) {
 		return "", fmt.Errorf("ledger: %q is not a fleet key", fleet)
 	}
-	text = strings.TrimSpace(text)
+	text = trim(text)
 	if n := utf8.RuneCountInString(text); n > MaxInstructionChars {
 		return "", &RefusedError{fmt.Sprintf("the instructions are %d characters; at most %d fit, so cut %d characters", n, MaxInstructionChars, n-MaxInstructionChars)}
 	}
@@ -307,6 +339,9 @@ func (l *Ledger) Promote(fleet, id string) (string, error) {
 	old, err := l.readInstructions(fleet)
 	if err != nil {
 		return "", err
+	}
+	if r, bad := HiddenRune(note.Text); bad {
+		return "", hiddenRefusal(r)
 	}
 	next := note.Text
 	if old != "" {
@@ -367,7 +402,7 @@ func (l *Ledger) readInstructions(fleet string) (string, error) {
 	}
 	defer f.Close()
 	b, err := io.ReadAll(f)
-	return strings.TrimSpace(string(b)), err
+	return trim(string(b)), err
 }
 
 // writeInstructions replaces the file through a temp file renamed into place, so a link planted

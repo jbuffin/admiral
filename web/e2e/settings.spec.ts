@@ -684,9 +684,15 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
   expect((await saved).postDataJSON()).toEqual({ text: 'Deploys go out on Tuesdays.\n\nBe terse.' });
   await expect.poll(instructionsFile).toBe('Deploys go out on Tuesdays.\n\nBe terse.');
   await expect(saveInstructions).toBeDisabled();
-  // Delete drops a note, and the instructions stay.
+  // An unsaved draft survives Delete on a note, and Move to instructions waits for a save.
+  await instructions.fill('Deploys go out on Tuesdays.\n\nBe terse.\n\nA draft.');
+  await expect(note('Stale note').getByRole('button', { name: 'Move to instructions' })).toBeDisabled();
   await note('Stale note').getByRole('button', { name: 'Delete' }).click();
   await expect(note('Stale note')).toHaveCount(0);
+  await expect(instructions).toHaveValue('Deploys go out on Tuesdays.\n\nBe terse.\n\nA draft.');
+  await instructions.fill('Deploys go out on Tuesdays.\n\nBe terse.');
+  await expect(note('staging box').getByRole('button', { name: 'Move to instructions' })).toBeEnabled();
+  // Delete dropped a note, and the instructions stay.
   await expect(note('staging box')).toHaveCount(1);
   expect(instructionsFile()).toBe('Deploys go out on Tuesdays.\n\nBe terse.');
   await page.reload();

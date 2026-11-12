@@ -1,6 +1,7 @@
 package ledger
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -231,5 +232,48 @@ func TestPromotingANoteThatWasDeletedIsNotFoundAndChangesNothing(t *testing.T) {
 	}
 	if got, _ := l.Instructions("home"); got != "Be terse." {
 		t.Errorf("Instructions = %q, want unchanged", got)
+	}
+}
+
+func TestANoteWithInvisibleCharactersIsRefusedAtAddAndAtPromote(t *testing.T) {
+	for name, hidden := range map[string]string{"a tag character": "\U000E0041", "a bidi override": "‮", "a zero-width space": "​", "a control": "\x1b"} {
+		t.Run(name, func(t *testing.T) {
+			l, home := newLedger(t)
+			text := "Prefers tabs" + hidden + " over spaces"
+			_, err := l.AddNote("home", text, "admiralbot")
+			var refused *RefusedError
+			if !errors.As(err, &refused) {
+				t.Fatalf("AddNote = %v, want a *RefusedError", err)
+			}
+			if got := lines(t, home, "home"); len(got) != 0 {
+				t.Errorf("ledger = %q, want nothing written", got)
+			}
+			// A note written before the check is still refused at promote and stays open.
+			quoted, _ := json.Marshal(text)
+			line := `{"v":1,"ts":"2026-11-12T09:00:00Z","event":"added","id":"n1","kind":"note","text":` + string(quoted) + `}` + "\n"
+			if err := os.MkdirAll(filepath.Dir(file(home, "home")), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(file(home, "home"), []byte(line), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			mustSet(t, l, "home", "Be terse.")
+			if _, err := l.Promote("home", "n1"); !errors.As(err, &refused) {
+				t.Fatalf("Promote = %v, want a *RefusedError", err)
+			}
+			if got, _ := l.Instructions("home"); got != "Be terse." {
+				t.Errorf("instructions = %q, want unchanged", got)
+			}
+			if notes, _ := l.Notes("home"); len(notes) != 1 {
+				t.Errorf("notes = %+v, want the note still open", notes)
+			}
+		})
+	}
+}
+
+func TestTheInstructionsTrimAByteOrderMarkLikeThePageDoes(t *testing.T) {
+	l, _ := newLedger(t)
+	if got, _ := l.SetInstructions("home", "\uFEFFBe terse.\uFEFF"); got != "Be terse." {
+		t.Errorf("stored = %q, want the mark trimmed", got)
 	}
 }

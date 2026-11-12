@@ -1,5 +1,5 @@
 import type { ComponentChildren } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { deleteNote, getInstructions, getNotes, promoteNote, saveFleet, saveInstructions, type ChatNote, type Fleet } from './api';
 import { checkErrors, checkKey } from './capabilities';
 import { MissingCapability } from './MissingCapability';
@@ -51,11 +51,15 @@ function Knows({ fleet }: { fleet: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  // What the textarea and the saved text were at the last render, so a refresh can tell a clean textarea from a draft.
+  const shown = useRef({ saved, text });
+  shown.current = { saved, text };
+
   const load = async () => {
     const [i, n] = await Promise.all([getInstructions(fleet), getNotes(fleet)]);
     if (i.ok) {
+      if (shown.current.text.trim() === shown.current.saved.trim()) setText(i.data.text);
       setSaved(i.data.text);
-      setText(i.data.text);
     }
     if (n.ok) setNotes(n.data);
     setError(!i.ok ? i.error : !n.ok ? n.error : '');
@@ -73,6 +77,7 @@ function Knows({ fleet }: { fleet: string }) {
     setBusy(false);
   };
   const count = instructionsCount(text);
+  const dirty = text.trim() !== saved.trim();
   const now = Date.now();
   return (
     <>
@@ -101,7 +106,7 @@ function Knows({ fleet }: { fleet: string }) {
         <div class="set">
           <div class="t">
             <span class="label">Notes</span>
-            <span>What AdmiralBot saved when you asked it to remember something.</span>
+            <span>{dirty ? 'Save your instructions first; a note moves into the saved text.' : 'What AdmiralBot saved when you asked it to remember something.'}</span>
           </div>
         </div>
         {notes.length === 0 ? (
@@ -115,10 +120,10 @@ function Knows({ fleet }: { fleet: string }) {
             {notes.map((n) => (
               <li key={n.id} class="set">
                 <div class="t">
-                  <span class="label">{n.text}</span>
+                  <span class="label set-text">{n.text}</span>
                   <span>{noteAge(n.ts, now)}</span>
                 </div>
-                <button type="button" class="btn" disabled={busy} onClick={() => void act(() => promoteNote(fleet, n.id))}>
+                <button type="button" class="btn" disabled={busy || dirty} onClick={() => void act(() => promoteNote(fleet, n.id))}>
                   Move to instructions
                 </button>
                 <button type="button" class="btn" disabled={busy} onClick={() => void act(() => deleteNote(fleet, n.id))}>
