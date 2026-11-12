@@ -99,6 +99,13 @@ func ReadCurrent(args ...string) (string, error) {
 	return strings.TrimRight(string(out), "\n"), err
 }
 
+// WriteCurrentWithin is WriteCurrent with a deadline, for a caller that must not wait on a hung server.
+func WriteCurrentWithin(args []string, d time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	defer cancel()
+	return exec.CommandContext(ctx, "tmux", args...).Run()
+}
+
 func WriteCurrent(args []string) error {
 	return exec.Command("tmux", args...).Run()
 }

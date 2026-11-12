@@ -52,9 +52,7 @@ func Statusline(args []string, std IO) error {
 
 // A hung tmux server must not stop the engineer's line from running.
 func writeWithin(call []string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), sessionhost.CurrentDeadline)
-	defer cancel()
-	return exec.CommandContext(ctx, "tmux", call...).Run()
+	return sessionhost.WriteCurrentWithin(call, sessionhost.CurrentDeadline)
 }
 
 func runStatusline(args []string, std IO, env statuslineEnv) error {
