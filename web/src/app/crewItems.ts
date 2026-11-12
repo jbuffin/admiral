@@ -95,6 +95,8 @@ export function createNoteDecisions(notes: CrewNote[]) {
 export type NoteDecisions = ReturnType<typeof createNoteDecisions>;
 
 export const NOTE_MAX = 300;
+// The server's ValidNote refuses these in a note.
+const HIDDEN_NOTE = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zl}\p{Zp}]/u;
 const REPO = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 
 /** What the server's note and repo checks would refuse, so Save is off until none is left. */
@@ -102,7 +104,8 @@ export function noteEditProblems(e: NoteEdit): { note?: string; repo?: string } 
   const out: { note?: string; repo?: string } = {};
   if (e.note.trim() === '') out.note = 'Write the note.';
   else if (/[\r\n]/.test(e.note)) out.note = 'A note is one line.';
-  else if ([...e.note].length > NOTE_MAX) out.note = `A note is at most ${NOTE_MAX} characters.`;
+  else if (HIDDEN_NOTE.test(e.note)) out.note = 'A note can\u2019t hold hidden characters such as tabs or zero-width spaces.';
+  else if ([...e.note.trim()].length > NOTE_MAX) out.note = `A note is at most ${NOTE_MAX} characters.`;
   if (e.scope === 'repo' && (!REPO.test(e.repo ?? '') || (e.repo ?? '').split('/').some((p) => p === '.' || p === '..'))) out.repo = 'Write the repo as owner/repo.';
   return out;
 }
@@ -114,3 +117,19 @@ export const crewRemoveFold = (data: { file_removed?: boolean }, member: string)
 
 const droppedFold = (member: string, data: { file_removed?: boolean }) =>
   data.file_removed === true ? `Dropped ${member}; the ad hoc file was deleted` : `Dropped ${member}; the ad hoc file was left in place`;
+
+// Characters a reader can't see, so approving text that holds them would approve something else.
+const HIDDEN = /[\p{Cc}\p{Cf}\p{Co}\p{Cn}\p{Zl}\p{Zp}\u{E0000}-\u{E007F}]/u;
+
+/** The text with each hidden code point shown as ⟨U+XXXX⟩; a newline and a tab stay as they are. */
+export function markHidden(text: string): { text: string; count: number } {
+  let count = 0;
+  let out = '';
+  for (const ch of text) {
+    if (ch !== '\n' && ch !== '\t' && HIDDEN.test(ch)) {
+      count++;
+      out += `⟨U+${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}⟩`;
+    } else out += ch;
+  }
+  return { text: out, count };
+}

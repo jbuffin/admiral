@@ -1,6 +1,6 @@
 import { useRef, useState } from 'preact/hooks';
 import type { Entry } from './inbox';
-import { createNoteDecisions, crewMemberFold, type CrewMemberItem, type CrewNote, type NoteEdit, noteEditProblems, NOTE_MAX, readCrewMember, readCrewNotes } from './crewItems';
+import { createNoteDecisions, crewMemberFold, type CrewMemberItem, type CrewNote, type NoteEdit, markHidden, noteEditProblems, NOTE_MAX, readCrewMember, readCrewNotes } from './crewItems';
 import { type Acting } from './PeekItem';
 
 // Every string below was written by a ship and renders as text.
@@ -23,8 +23,10 @@ export type CrewNotesState = ReturnType<typeof useCrewNotes>;
 
 const scopeLine = (n: Pick<CrewNote, 'scope' | 'repo'>) => (n.scope === 'repo' ? `Repo ${n.repo ?? ''}` : 'Fleet');
 
+const shown = (text: string) => markHidden(text).text;
+
 function NoteText({ n, edited }: { n: CrewNote; edited?: NoteEdit }) {
-  const shown = edited ?? n;
+  const cur = edited ?? n;
   return (
     <>
       <span class="inbox-eyebrow">
@@ -32,11 +34,11 @@ function NoteText({ n, edited }: { n: CrewNote; edited?: NoteEdit }) {
         {n.role ? ` · ${n.role}` : ''}
         {edited ? ' · edited' : ''}
       </span>
-      <span class="inbox-eyebrow">{scopeLine(shown)}</span>
-      <p class="inbox-why">{shown.note}</p>
+      <span class="inbox-eyebrow">{scopeLine(cur)}</span>
+      <p class="inbox-why">{shown(cur.note)}</p>
       {n.replaces !== null && (
         <p class="inbox-why">
-          <b>Replaces:</b> {n.replaces}
+          <b>Replaces:</b> {shown(n.replaces)}
         </p>
       )}
     </>
@@ -49,9 +51,20 @@ function EditForm({ n, i, draft, setDraft, save, cancel, locked }: { n: CrewNote
     <div class="inbox-proposal">
       <textarea class="inbox-note" aria-label={`Edit note ${i}`} rows={3} value={draft.note} readOnly={locked} onInput={(e) => setDraft({ ...draft, note: (e.target as HTMLTextAreaElement).value })} />
       {problems.note && <span class="inbox-hint">{problems.note}</span>}
-      <div class="inbox-send-row" role="radiogroup" aria-label={`Scope for note ${i}`}>
+      <div
+        class="inbox-send-row"
+        role="radiogroup"
+        aria-label={`Scope for note ${i}`}
+        onKeyDown={(e) => {
+          if (locked || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+          e.preventDefault();
+          const next = draft.scope === 'fleet' ? 'repo' : 'fleet';
+          setDraft({ ...draft, scope: next });
+          (e.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-scope="${next}"]`)?.focus();
+        }}
+      >
         {(['fleet', 'repo'] as const).map((s) => (
-          <button key={s} type="button" role="radio" aria-checked={draft.scope === s} class={`btn${draft.scope === s ? ' primary' : ''}`} disabled={locked} onClick={() => setDraft({ ...draft, scope: s })}>
+          <button key={s} data-scope={s} type="button" role="radio" aria-checked={draft.scope === s} tabIndex={draft.scope === s ? 0 : -1} class={`btn${draft.scope === s ? ' primary' : ''}`} disabled={locked} onClick={() => setDraft({ ...draft, scope: s })}>
             {s === 'fleet' ? 'Fleet' : 'Repo'}
           </button>
         ))}
@@ -75,7 +88,7 @@ function EditForm({ n, i, draft, setDraft, save, cancel, locked }: { n: CrewNote
   );
 }
 
-export function CrewNotesBody({ acting, state }: { acting: Acting; state: CrewNotesState }) {
+export function CrewNotesBody({ acting, state, decided: closeRemove }: { acting: Acting; state: CrewNotesState; decided: () => void }) {
   const { item, d, drafts, setDrafts, changed } = state;
   const { decided, total } = d.progress();
   const open = Object.keys(drafts).length > 0;
@@ -100,7 +113,10 @@ export function CrewNotesBody({ acting, state }: { acting: Acting; state: CrewNo
         const i = idx + 1;
         const dec = d.decision(n.id);
         const draft = drafts[n.id];
+        const refused = acting.note === n.id;
         const pick = (v: 'keep' | 'drop') => {
+          if (refused) acting.clear();
+          closeRemove();
           setDraft(n.id, undefined);
           if (v === 'keep') d.keep(n.id);
           else d.drop(n.id);
@@ -137,7 +153,11 @@ export function CrewNotesBody({ acting, state }: { acting: Acting; state: CrewNo
                 class={`btn${dec === 'edit' ? ' primary' : ''}`}
                 aria-pressed={dec === 'edit'}
                 disabled={off}
-                onClick={() => setDraft(n.id, d.edit(n.id) ?? { note: n.note, scope: n.scope, repo: n.repo })}
+                onClick={() => {
+                  if (refused) acting.clear();
+                  closeRemove();
+                  setDraft(n.id, d.edit(n.id) ?? { note: n.note, scope: n.scope, repo: n.repo });
+                }}
               >
                 Edit
               </button>
@@ -166,12 +186,14 @@ const CONFIRM: Record<'keep' | 'drop', string> = {
   drop: 'The ad hoc file is deleted and its notes are discarded.',
 };
 
-export function CrewMemberBody({ item, step, setStep, acting }: { item: CrewMemberItem; step: MemberStep; setStep: (s: MemberStep) => void; acting: Acting }) {
+export function CrewMemberBody({ item, step, setStep, acting, decided }: { item: CrewMemberItem; step: MemberStep; setStep: (s: MemberStep) => void; acting: Acting; decided: () => void }) {
   const off = acting.busy || acting.locked;
   const go = (s: MemberStep) => {
     acting.clear();
+    if (s !== 'idle') decided();
     setStep(s);
   };
+  const hidden = markHidden(item.definition);
   const answer = (decision: 'keep' | 'drop') => void acting.run('crew-member', { decision }, (data) => crewMemberFold(decision, item.member, data));
   return (
     <>
@@ -185,7 +207,8 @@ export function CrewMemberBody({ item, step, setStep, acting }: { item: CrewMemb
       </div>
       <div class="inbox-proposal">
         <span class="inbox-eyebrow">Definition</span>
-        <pre class="inbox-pre inbox-definition">{item.definition}</pre>
+        {hidden.count > 0 && <span class="inbox-hint">This definition has {hidden.count} hidden characters, shown as ⟨U+…⟩.</span>}
+        <pre class="inbox-pre inbox-definition">{hidden.text}</pre>
       </div>
       {item.notes.map((n, idx) => (
         <section key={n.id} class="inbox-finding" aria-label={`Note card ${idx + 1}`}>

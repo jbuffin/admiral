@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createNoteDecisions, crewMemberFold, crewRemoveFold, noteEditProblems, readCrewMember, readCrewNotes } from './crewItems';
+import { createNoteDecisions, crewMemberFold, markHidden, crewRemoveFold, noteEditProblems, readCrewMember, readCrewNotes } from './crewItems';
 
 const note = (id: string, extra: Record<string, unknown> = {}) => ({ id, member: 'scout', role: 'scribe', scope: 'fleet', note: `Fact ${id}`, replaces: null, ...extra });
 
@@ -117,6 +117,34 @@ describe('what an edited note must satisfy before Save', () => {
       expect(noteEditProblems({ note: 'x', scope: 'repo', repo }).repo, repo).toBeTruthy();
     }
     expect(noteEditProblems({ note: 'x', scope: 'fleet', repo: 'nonsense' })).toEqual({});
+  });
+});
+
+describe('what an edited note must satisfy before Save, beyond length', () => {
+  it('refuses the hidden characters the server refuses', () => {
+    for (const note of ['a\tb', 'a\u200Bb', '👨\u200D💻', 'a\u202Eb', 'a\u2028b', 'a\uE000b']) {
+      expect(noteEditProblems({ note, scope: 'fleet' }).note, JSON.stringify(note)).toBeTruthy();
+    }
+  });
+
+  it('counts the 300 limit on the trimmed note', () => {
+    expect(noteEditProblems({ note: `  ${'x'.repeat(300)}  `, scope: 'fleet' })).toEqual({});
+  });
+});
+
+describe('marking the characters a reader cannot see', () => {
+  it('shows a bidi override, a zero-width space and a tag character by code point', () => {
+    expect(markHidden('a\u202Eb')).toEqual({ text: 'a⟨U+202E⟩b', count: 1 });
+    expect(markHidden('a\u200Bb')).toEqual({ text: 'a⟨U+200B⟩b', count: 1 });
+    expect(markHidden('a\u{E0041}b')).toEqual({ text: 'a⟨U+E0041⟩b', count: 1 });
+  });
+
+  it('marks the joiner inside an emoji sequence and nothing else in it', () => {
+    expect(markHidden('👨\u200D💻')).toEqual({ text: '👨⟨U+200D⟩💻', count: 1 });
+  });
+
+  it('leaves a tab, a newline and plain text as they are', () => {
+    expect(markHidden('a\tb\nc é')).toEqual({ text: 'a\tb\nc é', count: 0 });
   });
 });
 

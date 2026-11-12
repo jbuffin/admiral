@@ -132,9 +132,9 @@ export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => vo
       ) : kind === 'findings' ? (
         <FindingsBody entry={entry} acting={acting} state={findings} />
       ) : kind === 'crew_notes' ? (
-        <CrewNotesBody acting={acting} state={crewNotes} />
+        <CrewNotesBody acting={acting} state={crewNotes} decided={() => setRemoving(false)} />
       ) : kind === 'crew_member' ? (
-        <CrewMemberBody item={crew} step={member} setStep={setMember} acting={acting} />
+        <CrewMemberBody item={crew} step={member} setStep={setMember} acting={acting} decided={() => setRemoving(false)} />
       ) : null}
       {removable ? (
         <RemoveRow

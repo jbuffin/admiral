@@ -54,6 +54,7 @@ describe('rowVerb', () => {
   it('words the two crew kinds', () => {
     expect(rowVerb(itemEntry({ kind: 'crew_notes', session: '_admiral', name: 'Admiral' }))).toBe('proposes crew notes');
     expect(rowVerb(itemEntry({ kind: 'crew_member', session: '_admiral', name: 'Admiral' }))).toBe('asks to keep a crew member');
+    expect(rowVerb(itemEntry({ kind: 'crew_member', session: '_admiral', name: 'Admiral', crew_member: { ship: 'Dory' } }))).toBe('asks to keep a crew member from Dory');
   });
 
   it('words a stop by its reason', () => {

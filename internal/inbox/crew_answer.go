@@ -112,7 +112,7 @@ func notesRecord(it Item, o CrewObject, n CrewNote, decision string) outcomes.Re
 func writeRefusal(err error, ids []string) error {
 	var refused *crewapi.NoteRefusedError
 	if errors.As(err, &refused) && refused.Index < len(ids) {
-		return &crewRefusedError{Msg: "note " + ids[refused.Index] + ": " + refused.Error() + "; nothing was changed. Drop it or edit its scope or replaces.", Note: ids[refused.Index]}
+		return &crewRefusedError{Msg: "note " + ids[refused.Index] + ": " + refused.Error() + "; nothing was changed. Drop it or edit its scope.", Note: ids[refused.Index]}
 	}
 	return err
 }

@@ -346,7 +346,7 @@ export function RemoveRow({ entry, confirm, setConfirm, acting, fold = () => REM
             setConfirm(false);
           }}
         >
-          Keep it
+          {kind === 'crew_notes' || kind === 'crew_member' ? 'Cancel' : 'Keep it'}
         </button>
       </div>
     </div>

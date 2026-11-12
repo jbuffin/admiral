@@ -517,6 +517,7 @@ test('Peek answers a crew notes item: keep one note, edit another to repo scope,
 test('Peek shows an ad hoc member whole, 1 asks to keep it, the confirm adds it to the fleet crew, and the Crew page lists it', async ({ page, admiral }) => {
   seedCrew(admiral);
   const adHoc = seedAdHocMember(admiral, 'deckhand', { id: 'crew-m1', run: 'run-c', notes: [crewNote('n1', 'deckhand', { note: 'Deckhand swabs before it paints' })] });
+  const rigger = seedAdHocMember(admiral, 'rigger', { id: 'crew-m3', run: 'run-e', notes: [] });
   await admiral.start();
   await page.goto(admiral.url + 'app/inbox?fleet=zulu');
   await itemRow(page, 'Keep ad hoc member deckhand?').getByRole('link').tap();
@@ -544,6 +545,15 @@ test('Peek shows an ad hoc member whole, 1 asks to keep it, the confirm adds it 
 
   await page.goto(admiral.url + 'app/crew?fleet=zulu');
   await expect(page.getByRole('main').getByRole('region', { name: /^Fleet\b/ }).getByRole('listitem').filter({ hasText: 'Pick for the deck.' })).toBeVisible();
+
+  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
+  await expect(itemRow(page, 'Keep ad hoc member rigger?')).toContainText('from Dory');
+  await itemRow(page, 'Keep ad hoc member rigger?').getByRole('link').tap();
+  await page.keyboard.press('2');
+  await expect(peekOf(page)).toContainText('notes are discarded');
+  await peekOf(page).getByRole('button', { name: 'Drop rigger' }).tap();
+  await expect(itemRow(page, 'Dropped rigger; the ad hoc file was deleted')).toBeVisible();
+  expect(existsSync(rigger)).toBe(false);
 });
 
 test('a member Keep the server refuses shows its error and leaves the item', async ({ page, admiral }) => {
@@ -583,4 +593,10 @@ test('a crew note the server cannot place shows its error on that note card and 
   await expect(card1.getByRole('button', { name: 'Keep', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(peek).toContainText('2 of 2 decided');
   expect(existsSync(join(admiral.home, 'inbox', '_admiral', 'crew-n2.answer.json'))).toBe(false);
+
+  await card1.getByRole('button', { name: 'Drop', exact: true }).tap();
+  await expect(card1.getByRole('alert')).toHaveCount(0);
+  await peek.getByRole('button', { name: 'Remove from inbox' }).tap();
+  await expect(peek).toContainText('It counts as Drop');
+  await expect(peek.getByRole('button', { name: 'Cancel' })).toBeVisible();
 });
