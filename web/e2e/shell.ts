@@ -496,10 +496,14 @@ export function mergeCalls(a: Admiral): string[][] {
 /** What `gh stack view --json` prints in the ship's checkout: an open stack of these PRs, bottom first. */
 export function seedStackView(a: Admiral, numbers: number[]) {
   const branches = numbers.map((n, i) => ({
-    name: `layer-${i + 1}`, head: `abc${i}`, base: 'main', isCurrent: i === numbers.length - 1, isMerged: false, isQueued: false, needsRebase: false,
+    name: `layer-${i + 1}`, head: `sha${n}`, base: 'main', isCurrent: i === numbers.length - 1, isMerged: false, isQueued: false, needsRebase: false,
     pr: { number: n, url: `${PR_BASE}/${n}`, state: 'OPEN' },
   }));
   writeFileSync(join(a.home, 'fakegh', 'stack_view.json'), JSON.stringify({ trunk: 'main', currentBranch: `layer-${numbers.length}`, branches }) + '\n');
+  // The merge binds each layer's head to the head GitHub reports for its PR.
+  const events = join(a.home, 'fakegh', 'pr_events');
+  mkdirSync(events, { recursive: true });
+  for (const n of numbers) writeFileSync(join(events, `${PR_BASE}/${n}`.replace(/[/:]/g, '_')), JSON.stringify({ headRefOid: `sha${n}` }) + '\n');
 }
 
 /** Every merge call the fake gh recorded with the directory it ran in (resolved, as the fake's `pwd -P` prints it). */
