@@ -1,7 +1,10 @@
 // Package push decides which events reach the engineer, and detects them from ship and Inbox changes.
 package push
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+)
 
 // Kind names an event. Only the kinds below ever push or alert; any other kind is counted and never heard.
 type Kind string
@@ -92,17 +95,29 @@ type Payload struct {
 }
 
 func PayloadOf(ev Event) Payload {
-	return Payload{Fleet: ev.Fleet, FleetName: ev.FleetName, Name: ev.Name, Line: oneLine(ev.Text), Tag: ev.Key,
+	return Payload{Fleet: ev.Fleet, FleetName: clean(ev.FleetName), Name: clean(ev.Name), Line: oneLine(ev.Text), Tag: ev.Key,
 		Target: ev.Target, Session: ev.Session, Item: ev.Item, Crew: ev.Crew, Merge: ev.Merge}
 }
 
 func oneLine(s string) string {
 	s = strings.TrimSpace(s)
 	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
-		s = strings.TrimSpace(s[:i])
+		s = s[:i]
 	}
+	s = strings.TrimSpace(clean(s))
 	if r := []rune(s); len(r) > maxLine {
 		s = string(r[:maxLine-1]) + "…"
 	}
 	return s
+}
+
+// clean drops control and bidi characters: the payload can show on a lock screen, where a reordering mark could dress one ask as another.
+func clean(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) || (r >= '\u200B' && r <= '\u200D') || r == '\uFEFF' || r == '\u2028' || r == '\u2029' || r == '\u200E' || r == '\u200F' ||
+			(r >= '\u202A' && r <= '\u202E') || (r >= '\u2066' && r <= '\u2069') {
+			return -1
+		}
+		return r
+	}, s)
 }

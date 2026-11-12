@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { expiryState, formatCode, signedOutLine, thisDeviceMark } from './remoteAccess';
+import { expiryState, formatCode, routeOf, signedOutLine, thisDeviceMark } from './remoteAccess';
 
 describe('formatCode', () => {
   it('shows a code as XXXX-XXXX', () => {
@@ -39,5 +39,24 @@ describe('signedOutLine', () => {
     expect(signedOutLine({ ok: false, status: 500 })).toBeNull();
     expect(signedOutLine({ ok: false })).toBeNull();
     expect(signedOutLine({ ok: true })).toBeNull();
+  });
+});
+
+describe('routeOf', () => {
+  it('is local for a browser with no paired row', () => {
+    expect(routeOf([{ current: false }], false)).toEqual({ local: true, remote: false });
+  });
+
+  it('is remote for a paired device', () => {
+    expect(routeOf([{ current: true }, { thisMac: true }], false)).toEqual({ local: false, remote: true });
+  });
+
+  it('stays local on the Mac once This Mac is its current row', () => {
+    expect(routeOf([{ current: true, thisMac: true }, { current: false }], false)).toEqual({ local: true, remote: false });
+  });
+
+  it('waits for the list, and reads a failed one as local', () => {
+    expect(routeOf(null, false)).toEqual({ local: false, remote: false });
+    expect(routeOf(null, true)).toEqual({ local: true, remote: false });
   });
 });

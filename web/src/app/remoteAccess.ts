@@ -12,3 +12,12 @@ export const thisDeviceMark = (d: { current?: boolean }): string | null => (d.cu
 
 export const SIGNED_OUT_LINE = 'This device was signed out. Pair it again with a new code.';
 export const signedOutLine = (r: { ok: boolean; status?: number }): string | null => (!r.ok && r.status === 401 ? SIGNED_OUT_LINE : null);
+
+type Row = { current?: boolean; thisMac?: boolean };
+
+/** Whether the browser is on the Mac itself (it has no paired row, or its row is This Mac) or a paired device, which is remote. Unknown until the list answers; a failed list reads as local. */
+export function routeOf(devices: Row[] | null, listFailed: boolean): { local: boolean; remote: boolean } {
+  if (devices === null) return { local: listFailed, remote: false };
+  const remote = devices.some((d) => d.current && !d.thisMac);
+  return { local: !remote, remote };
+}

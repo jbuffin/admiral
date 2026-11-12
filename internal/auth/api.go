@@ -13,6 +13,10 @@ func (a *Auth) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/devices/{id}", a.serveRevoke)
 	mux.HandleFunc("DELETE /api/devices", a.serveRevokeAll)
 	mux.HandleFunc("POST /api/pairing-codes", a.serveMint)
+	mux.HandleFunc("GET /api/push/key", a.servePushKey)
+	mux.HandleFunc("GET /api/push/subscription", a.serveHasSubscription)
+	mux.HandleFunc("PUT /api/push/subscription", a.serveSubscribe)
+	mux.HandleFunc("DELETE /api/push/subscription", a.serveUnsubscribe)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -29,17 +33,23 @@ type deviceView struct {
 	PairedAt time.Time `json:"pairedAt"`
 	LastSeen time.Time `json:"lastSeen"`
 	Current  bool      `json:"current"`
+	// Notifications is whether the device holds a push subscription.
+	Notifications bool `json:"notifications"`
+	// ThisMac marks the device that stands for the Mac Admiral runs on, so a page can tell it from a paired one.
+	ThisMac bool `json:"thisMac,omitempty"`
 }
 
 func (a *Auth) serveList(w http.ResponseWriter, r *http.Request) {
-	current, _ := r.Context().Value(ctxKey{}).(string)
+	current, _ := DeviceID(r)
+	local := IsLocal(r)
 	a.mu.Lock()
 	if a.prune() {
 		_ = a.save()
 	}
 	out := make([]deviceView, 0, len(a.devices))
 	for _, d := range a.devices {
-		out = append(out, deviceView{d.ID, d.Name, d.Login, d.PairedAt, d.LastSeen, current != "" && d.ID == current})
+		isCurrent := (current != "" && d.ID == current) || (local && d.ThisMac)
+		out = append(out, deviceView{d.ID, d.Name, d.Login, d.PairedAt, d.LastSeen, isCurrent, len(d.Subscriptions) > 0, d.ThisMac})
 	}
 	a.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{"devices": out})

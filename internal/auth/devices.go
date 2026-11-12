@@ -30,6 +30,9 @@ type device struct {
 	TokenHash string    `json:"tokenHash"`
 	PairedAt  time.Time `json:"pairedAt"`
 	LastSeen  time.Time `json:"lastSeen"`
+	// ThisMac marks the device that loopback browsers subscribe as, with no pairing; it has no token.
+	ThisMac       bool           `json:"thisMac,omitempty"`
+	Subscriptions []Subscription `json:"subscriptions,omitempty"`
 
 	reissued time.Time
 }
@@ -47,6 +50,7 @@ type Auth struct {
 	now     func() time.Time
 	baseURL func() string
 	remote  func() (bool, []string)
+	pushKey func() string
 
 	mu      sync.Mutex
 	devices []*device
@@ -66,6 +70,9 @@ func WithBaseURL(base func() string) Option { return func(a *Auth) { a.baseURL =
 func WithRemote(remote func() (enabled bool, allowedLogins []string)) Option {
 	return func(a *Auth) { a.remote = remote }
 }
+
+// WithPushKey gives the VAPID public key the push key route answers.
+func WithPushKey(key func() string) Option { return func(a *Auth) { a.pushKey = key } }
 
 // The port is in the cookie name so a test instance on the same host never
 // overwrites the real one's cookie.
@@ -183,7 +190,7 @@ func (a *Auth) authenticate(token string, rt route) (string, bool) {
 			found = d
 		}
 	}
-	if found == nil || found.Login != rt.login || (rt.kind != pathLAN && rt.kind != pathTailnet) {
+	if found == nil || found.ThisMac || found.Login != rt.login || (rt.kind != pathLAN && rt.kind != pathTailnet) {
 		return "", false
 	}
 	if now := a.now(); now.Sub(found.LastSeen) > touchEvery {

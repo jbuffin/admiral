@@ -3,9 +3,10 @@
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shell git diff --quiet HEAD 2>/dev/null || echo -dirty)
 BIN ?= bin/admiral
 
+# The dev build carries the test seam to a fake push service (cmd/admiral/push_e2e.go); make release builds without it.
 build:
 	npm --prefix web run build
-	go build -trimpath -ldflags "-X main.commit=$(COMMIT)" -o $(BIN) ./cmd/admiral
+	go build -tags e2e -trimpath -ldflags "-X main.commit=$(COMMIT)" -o $(BIN) ./cmd/admiral
 
 test:
 	go test -count=1 $$(go list ./... | grep -v /e2e)
@@ -24,6 +25,7 @@ check: build lint test-short
 lint: lint-docs lint-comments
 	go vet ./...
 	go vet -tags packaging ./e2e/
+	go vet -tags e2e ./cmd/admiral
 	npm --prefix web run typecheck
 
 lint-comments:

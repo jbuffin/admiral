@@ -152,6 +152,19 @@ type remoteRoutes struct{ *tailscale.Route }
 
 func (remoteRoutes) Connected(*server.Client) {}
 
+// pushDevices is the sender's view of the device store.
+type pushDevices struct{ guard *auth.Auth }
+
+func (p pushDevices) Subscriptions() []push.Target {
+	var out []push.Target
+	for _, s := range p.guard.Subscriptions() {
+		out = append(out, push.Target{Device: s.Device, Subscription: push.Subscription{Endpoint: s.Endpoint, P256dh: s.P256dh, Auth: s.Auth}})
+	}
+	return out
+}
+
+func (p pushDevices) Drop(device, endpoint string) { p.guard.DropSubscription(device, endpoint) }
+
 // guardRoutes puts the device API on the server's mux.
 type guardRoutes struct{ *auth.Auth }
 
@@ -400,6 +413,35 @@ func serve(args []string) error {
 		Claims: shipService.Claims, Launch: shipService.Launch}
 	defer campaignService.Close()
 	shipService.Orders = campaignService
+	// An unreadable key file is logged and leaves push off, never replaced: devices subscribe against the key.
+	vapidKey, err := push.LoadKey(dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "admiral: push is off: %v\n", err)
+	}
+	pushPublic := func() string {
+		if vapidKey == nil {
+			return ""
+		}
+		return vapidKey.Public()
+	}
+	guard, err := auth.New(dir, port, auth.WithBaseURL(func() string { return pairingBase(port, cfg.Current) }),
+		auth.WithRemote(func() (bool, []string) {
+			r := cfg.Current().Remote
+			return r.Tailscale, r.AllowedLogins
+		}), auth.WithPushKey(pushPublic))
+	if err != nil {
+		return fmt.Errorf("devices: %w", err)
+	}
+	var pushSinks []push.Sink
+	if vapidKey != nil {
+		client, err := pushClient()
+		if err != nil {
+			return fmt.Errorf("push: %w", err)
+		}
+		sender := push.NewSender(push.SenderConfig{Key: vapidKey, Client: client, Devices: pushDevices{guard}, Queue: 64, Timeout: 15 * time.Second})
+		defer sender.Close()
+		pushSinks = append(pushSinks, sender)
+	}
 	// A sink joins here: NewWatcher takes it after the notify func.
 	pushFeed := &push.Feed{Ships: shipService.List, Items: inboxService.List, InboxReady: inboxService.Scanned}
 	pushFeed.Watcher = push.NewWatcher(hub.Watching, func(fleet string) bool {
@@ -409,7 +451,7 @@ func serve(args []string) error {
 			}
 		}
 		return true
-	}, push.NewAlertSink(push.Async(hub)))
+	}, append([]push.Sink{push.NewAlertSink(push.Async(hub))}, pushSinks...)...)
 	inboxService.OnChange = pushFeed.InboxChanged
 	shipService.OnChange = func() {
 		campaignService.ShipsChanged()
@@ -447,14 +489,6 @@ func serve(args []string) error {
 	claudeFeed := &uselive.Claude{Store: liveUsage, Login: liveLogin, Panes: liveTmux.ClaudePanes}
 	copilotFeed := &uselive.Copilot{Store: liveUsage, Files: liveTmux.CopilotFiles}
 	probeRunner := probes.NewDefault(dir)
-	guard, err := auth.New(dir, port, auth.WithBaseURL(func() string { return pairingBase(port, cfg.Current) }),
-		auth.WithRemote(func() (bool, []string) {
-			r := cfg.Current().Remote
-			return r.Tailscale, r.AllowedLogins
-		}))
-	if err != nil {
-		return fmt.Errorf("devices: %w", err)
-	}
 	tails := convService.Tails()
 	shipService.Tail = tails.Tail
 	shipService.Questions = convService.PendingQuestions

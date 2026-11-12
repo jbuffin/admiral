@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { editLogins, fetchDevices, fetchRemote, runTailscaleSetup, turnOffTailscale, mintPairingCode, renameDevice, revokeAllDevices, revokeDevice, type Device, type PairingCode, type RemoteCheck, type RemoteView, type Result } from './api';
 import { qrMatrix } from './qr';
 import { checkLogin, copyOutcome, removingOwnLogin } from './remoteTailscale';
-import { expiryState, formatCode, signedOutLine, thisDeviceMark } from './remoteAccess';
+import { expiryState, formatCode, routeOf, signedOutLine, thisDeviceMark } from './remoteAccess';
 
 const stamp = (iso: string | null) => (iso ? new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'never');
 
@@ -432,7 +432,7 @@ export function RemoteAccess() {
 
   return (
     <>
-      <Tailscale view={remote} local={devices === null ? listError !== null : !devices.some((d) => d.current)} remote={devices !== null && devices.some((d) => d.current)} reload={loadRemote} onResult={onResult} />
+      <Tailscale view={remote} {...routeOf(devices, listError !== null)} reload={loadRemote} onResult={onResult} />
       <AllowedLogins view={remote} devices={devices ?? []} onView={setRemote} onResult={onResult} />
       <Pairing onResult={onResult} />
       <h2 class="h2" id="devices-title">

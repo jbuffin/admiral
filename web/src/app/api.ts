@@ -406,6 +406,7 @@ export interface Device {
   pairedAt: string;
   lastSeen: string | null;
   current?: boolean;
+  thisMac?: boolean;
 }
 export interface PairingCode {
   code: string;
