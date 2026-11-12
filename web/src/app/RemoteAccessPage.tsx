@@ -165,6 +165,7 @@ function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView
   const [rows, setRows] = useState<RemoteCheck[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [turnedOn, setTurnedOn] = useState(false);
+  const [served, setServed] = useState('');
   const [copy, setCopy] = useState<'copied' | 'select' | null>(null);
   const urlEl = useRef<HTMLElement>(null);
 
@@ -173,11 +174,13 @@ function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView
     setBusy(true);
     setError(null);
     setTurnedOn(false);
+    setServed('');
     const r = await runTailscaleSetup();
     setBusy(false);
     onResult(r);
     if (!r.ok) return setError(r.error);
-    setRows(r.data.checks);
+    setRows(r.data.ok ? null : r.data.checks);
+    setServed(r.data.ok ? (r.data.checks.find((c) => c.id === 'serve')?.detail ?? '') : '');
     setTurnedOn(r.data.ok);
     await reload();
   };
@@ -198,7 +201,7 @@ function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView
           <p class="line">Reading Tailscale…</p>
         ) : on ? (
           <>
-            {rows ? <CheckRows rows={rows} /> : null}
+            {served ? <p class="note">{served}</p> : null}
             <CheckRows rows={view.checks} />
             {view.url ? (
               <div class="box tailscale-url">
