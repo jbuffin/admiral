@@ -203,7 +203,7 @@ function ConversationBody({ conv, harness, anchored = false, working, noneTitle,
         b.kind === 'item' && b.item.kind === 'question' ? (
           // The call's first question draws the whole call; the others are drawn with it.
           callOf(blocks, i, b.item) ? (
-            <QuestionCall key={b.item.id} items={conv.items.filter((x) => x.kind === 'question' && callId(x.id) === callId(b.item.id))} card={card} session={session} crew={crew} />
+            <QuestionCall key={b.item.id} items={conv.items.filter((x) => x.kind === 'question' && callId(x.id) === callId(b.item.id))} card={card} session={session} crew={crew} openTerminal={openTerminal} />
           ) : null
         ) : b.kind === 'item' ? (
           <Message key={b.item.id} item={b.item} />

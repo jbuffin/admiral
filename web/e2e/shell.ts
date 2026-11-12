@@ -986,10 +986,20 @@ export const line = {
     message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: output }] },
   }),
   /** An AskUserQuestion call with no result yet: a pending question item per entry of `questions`. */
-  ask: (id: string, questions: { question: string; options: string[]; multiSelect?: boolean }[]): TranscriptLine =>
+  ask: (id: string, questions: { question: string; options: string[]; multiSelect?: boolean; header?: string; descriptions?: string[] }[]): TranscriptLine =>
     line.toolUse(id, 'AskUserQuestion', {
-      questions: questions.map((q) => ({ question: q.question, header: 'Q', multiSelect: q.multiSelect ?? false, options: q.options.map((label) => ({ label, description: '' })) })),
+      questions: questions.map((q) => ({
+        question: q.question,
+        header: q.header ?? 'Q',
+        multiSelect: q.multiSelect ?? false,
+        options: q.options.map((label, i) => ({ label, description: q.descriptions?.[i] ?? '' })),
+      })),
     }),
+  /** The result of an AskUserQuestion call: Claude records one answer string per question text. */
+  askResult: (id: string, answers: Record<string, string>): TranscriptLine => ({
+    ...line.toolResult(id, 'User has answered your questions'),
+    toolUseResult: { answers },
+  }),
   turnEnd: (durationMs: number): TranscriptLine => ({ type: 'system', subtype: 'turn_duration', durationMs, ...stamp() }),
   compaction: (): TranscriptLine => ({ type: 'system', subtype: 'compact_boundary', ...stamp() }),
 };

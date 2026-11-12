@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +37,32 @@ func batchBody(t *testing.T, reason, item string, answers ...batchAnswer) string
 	return string(b)
 }
 
+// newMenuPane runs the items' call in a pane that draws Claude's menu and logs the keys it reads.
+func newMenuPane(t *testing.T, items []conversation.Item) *answerPane {
+	t.Helper()
+	type q struct {
+		Text   string   `json:"text"`
+		Labels []string `json:"labels"`
+		Multi  bool     `json:"multi"`
+	}
+	var qs []q
+	for _, it := range items {
+		x := q{Text: it.Question.Text, Multi: it.Question.MultiSelect}
+		for _, o := range it.Question.Options {
+			x.Labels = append(x.Labels, o.Label)
+		}
+		qs = append(qs, x)
+	}
+	spec, _ := json.Marshal(qs)
+	script, err := filepath.Abs(filepath.Join("..", "..", "e2e", "fakeharness", "fakemenu.py"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return newPaneRunning(t, "claude", items, func(stdin string) string {
+		return "exec python3 " + script + " '" + string(spec) + "' " + stdin
+	})
+}
+
 func refused(code int) bool { return code >= 400 && code < 500 }
 
 // sentAny waits for the pane to have read something and returns it.
@@ -55,7 +83,7 @@ func fourAnswers() []batchAnswer {
 }
 
 func TestClaudeBatchAnswerIsSentOnlyWhilePaneAsksThatWholeCall(t *testing.T) {
-	p := newAnswerPane(t, "claude", callItems("call", true))
+	p := newMenuPane(t, callItems("call", true))
 	p.needsYou("question")
 	post := func(body string) int {
 		code, msg := p.post(body)
@@ -86,7 +114,7 @@ func TestClaudeBatchAnswerIsSentOnlyWhilePaneAsksThatWholeCall(t *testing.T) {
 	if code := post(batchBody(t, "question", "call#0", dirty...)); code != http.StatusOK {
 		t.Fatalf("the whole call answered at once = %d, want 200", code)
 	}
-	got := p.sentAny()
+	got := p.sent("\x00")
 	for _, want := range []string{"alpha", "gamma", "delta"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the pane read %q, want the Other text with %q in it", got, want)
@@ -144,5 +172,27 @@ func TestCopilotAndCodexSendNothingForABatchOrAMultiSelect(t *testing.T) {
 		if got := p.sent(""); got != "" {
 			t.Errorf("%s: sent %q, want nothing", harness, got)
 		}
+	}
+}
+
+func TestClaudeBatchAnswerIsRefusedWhenTheMenuIsNotFreshAndTheShipStillAsks(t *testing.T) {
+	p := newMenuPane(t, callItems("call", true))
+	p.needsYou("question")
+	// Someone already answered the first question in the terminal.
+	if out, err := exec.Command(p.tmux, "-S", p.sock, "send-keys", "-t", p.pane, "-l", "2").CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if got := p.sent("2"); got != "2" {
+		t.Fatalf("the pane read %q, want the one key typed by hand", got)
+	}
+	code, msg := p.post(batchBody(t, "question", "call#0", fourAnswers()...))
+	if code != http.StatusConflict || !strings.Contains(msg, "terminal") {
+		t.Fatalf("an answer to a menu already on its second question = %d %s, want 409 pointing to the terminal", code, msg)
+	}
+	if got := p.sent(""); got != "2" {
+		t.Errorf("the pane read %q after the refusal, want only the hand-typed key", got)
+	}
+	if r := p.reason(); r != "question" {
+		t.Errorf("the ship's reason is %q after a refused answer, want it still asking", r)
 	}
 }

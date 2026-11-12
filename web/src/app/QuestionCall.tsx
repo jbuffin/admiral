@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call as post, shipUrl, type Item } from './api';
 import type { AnswerCard, CardQuestion } from './answerCard';
-import { renderRestrictedMarkdown } from './markdown';
+import { renderRestrictedInline, renderRestrictedMarkdown } from './markdown';
 import { questionCallView, type QuestionView } from './questionView';
 
+const Inline = ({ src, class: cls }: { src: string; class?: string }) => <span class={`md ${cls ?? ''}`} dangerouslySetInnerHTML={{ __html: renderRestrictedInline(src) }} />;
 const Md = ({ src, class: cls }: { src: string; class?: string }) => <div class={`md ${cls ?? ''}`} dangerouslySetInnerHTML={{ __html: renderRestrictedMarkdown(src) }} />;
 
 function Header({ view }: { view: QuestionView }) {
@@ -48,24 +49,24 @@ const blank = (): Pick => ({ picked: [], other: '', otherOn: false });
 const answered = (q: CardQuestion, p: Pick) => (q.multiSelect ? p.picked.length > 0 || (p.otherOn && p.other.trim() !== '') : p.picked.length === 1 || (p.otherOn && p.other.trim() !== ''));
 
 /** A pending call: one question at a time, then one request with every answer. */
-function Answering({ items, card, session, crew }: { items: Item[]; card: Extract<AnswerCard, { kind: 'question' }>; session: string; crew?: string }) {
+function Answering({ items, card, session, crew, openTerminal }: { items: Item[]; card: Extract<AnswerCard, { kind: 'question' }>; session: string; crew?: string; openTerminal: () => void }) {
   const views = questionCallView(items);
   const qs = card.questions;
   const [step, setStep] = useState(0);
   const [picks, setPicks] = useState<Pick[]>(() => qs.map(blank));
   const [busy, setBusy] = useState(false);
-  const [gone, setGone] = useState(false);
+  const [refused, setRefused] = useState('');
   // Set before the first re-render, so a double tap sends once.
   const sending = useRef(false);
   const key = `${card.reason}:${card.item}`;
   useEffect(() => {
     sending.current = false;
     setBusy(false);
-    setGone(false);
+    setRefused('');
     setStep(0);
     setPicks(qs.map(blank));
   }, [key]);
-  if (gone) return null;
+  if (refused) return <Record views={views} note={refused} openTerminal={openTerminal} />;
   const q = qs[step];
   const view = views[step];
   const pick = picks[step];
@@ -77,12 +78,12 @@ function Answering({ items, card, session, crew }: { items: Item[]; card: Extrac
     sending.current = true;
     setBusy(true);
     const res = await post('POST', `${shipUrl(session, crew)}/answer`, { card: 'question', reason: card.reason, item: card.item, ...body });
-    if (!res.ok) setGone(true);
+    if (!res.ok) setRefused(res.error);
   };
   const update = (p: Pick) => setPicks(picks.map((x, i) => (i === step ? p : x)));
   const toggle = (n: number) => {
     if (q.multiSelect) update({ ...pick, picked: pick.picked.includes(n) ? pick.picked.filter((x) => x !== n) : [...pick.picked, n].sort((a, b) => a - b) });
-    else update({ ...pick, picked: [n], otherOn: false });
+    else update({ ...pick, picked: [n], other: '', otherOn: false });
   };
   const body = () => ({ answers: qs.map((x, i) => ({ options: picks[i].picked, ...(picks[i].otherOn && picks[i].other.trim() ? { other: picks[i].other.trim() } : {}) })) });
   const last = step === qs.length - 1;
@@ -106,7 +107,7 @@ function Answering({ items, card, session, crew }: { items: Item[]; card: Extrac
                 onClick={() => (direct ? void send({ option: i + 1 }) : toggle(i + 1))}
               >
                 <span>{label}</span>
-                {q.descriptions[i] ? <span class="muted card-option-note">{q.descriptions[i]}</span> : null}
+                {q.descriptions[i] ? <Inline src={q.descriptions[i]} class="muted card-option-note" /> : null}
               </button>
             );
           })}
@@ -153,15 +154,28 @@ function Answering({ items, card, session, crew }: { items: Item[]; card: Extrac
   );
 }
 
-/** A question call in the transcript: the card that answers it while the pane asks, else the read-only record. */
-export function QuestionCall({ items, card, session, crew }: { items: Item[]; card: AnswerCard; session: string; crew?: string }) {
-  if (card.kind === 'question' && card.item === items[0].id) return <Answering items={items} card={card} session={session} crew={crew} />;
-  const views = questionCallView(items);
+function Record({ views, note, openTerminal }: { views: QuestionView[]; note?: string; openTerminal: () => void }) {
   return (
     <div class="convo-card q-card q-record">
       {views.map((v) => (
         <ReadOnlyQuestion key={v.id} view={v} />
       ))}
+      {note ? (
+        <div class="card-actions">
+          <p class="muted q-note" role="alert">
+            {note}
+          </p>
+          <button type="button" class="btn" onClick={openTerminal}>
+            Open terminal
+          </button>
+        </div>
+      ) : null}
     </div>
   );
+}
+
+/** A question call in the transcript: the card that answers it while the pane asks, else the read-only record. */
+export function QuestionCall({ items, card, session, crew, openTerminal }: { items: Item[]; card: AnswerCard; session: string; crew?: string; openTerminal: () => void }) {
+  if (card.kind === 'question' && card.item === items[0].id) return <Answering items={items} card={card} session={session} crew={crew} openTerminal={openTerminal} />;
+  return <Record views={questionCallView(items)} openTerminal={openTerminal} />;
 }

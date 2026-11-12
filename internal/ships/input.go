@@ -240,18 +240,32 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	// One answer at a time per pane, from the gate to the state change: a second tap must see what the first did.
 	mu, _ := s.answering.LoadOrStore(t.pane, new(sync.Mutex))
 	mu.(*sync.Mutex).Lock()
 	defer mu.(*sync.Mutex).Unlock()
-	keys, why := s.answerKeys(ctx, t, session, req)
+	keys, plan, why := s.answerKeys(ctx, t, session, req)
 	if why != "" {
 		writeError(w, http.StatusConflict, why)
 		return
 	}
-	if err := s.tmux().SendLiteral(ctx, t.pane, keys); err != nil {
+	if plan != nil {
+		tm := s.tmux()
+		why, err := runPlan(ctx, *plan, paneIO{
+			capture: func(ctx context.Context) (string, error) { return tm.CapturePane(ctx, t.pane) },
+			send:    func(ctx context.Context, keys string) error { return tm.SendLiteral(ctx, t.pane, keys) },
+		})
+		switch {
+		case err != nil:
+			writeError(w, http.StatusBadGateway, "could not send the answer: "+err.Error())
+			return
+		case why != "":
+			writeError(w, http.StatusConflict, why)
+			return
+		}
+	} else if err := s.tmux().SendLiteral(ctx, t.pane, keys); err != nil {
 		writeError(w, http.StatusBadGateway, "could not send the answer: "+err.Error())
 		return
 	}
@@ -270,40 +284,40 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"answered": true})
 }
 
-// answerKeys gives the keys that answer, or why the pane cannot take the answer now.
-func (s *Service) answerKeys(ctx context.Context, t target, session string, req answerRequest) (keys, why string) {
+// answerKeys gives the keys or the plan that answers, or why the pane cannot take the answer now.
+func (s *Service) answerKeys(ctx context.Context, t target, session string, req answerRequest) (keys string, plan *keymap.Plan, why string) {
 	m, ok := keymap.For(t.harness)
 	switch {
 	case t.exited:
-		return "", t.what + " has exited"
+		return "", nil, t.what + " has exited"
 	case !ok:
-		return "", t.what + " has no answer keys for its harness: answer in its terminal"
+		return "", nil, t.what + " has no answer keys for its harness: answer in its terminal"
 	}
 	// The poll cache can trail a hook by half a second, so the pane's own options decide.
 	state, err := s.tmux().ReadPaneOption(ctx, t.pane, "state")
 	if err != nil {
-		return "", t.what + " could not be read: " + err.Error()
+		return "", nil, t.what + " could not be read: " + err.Error()
 	}
 	reason, err := s.tmux().ReadPaneOption(ctx, t.pane, "reason")
 	if err != nil {
-		return "", t.what + " could not be read: " + err.Error()
+		return "", nil, t.what + " could not be read: " + err.Error()
 	}
 	if state != "needs_you" || reason != req.Reason {
-		return "", t.what + " is no longer asking that"
+		return "", nil, t.what + " is no longer asking that"
 	}
 	if req.Card == "permission" {
 		switch reason {
 		case "permission:AskUserQuestion", "permission:ExitPlanMode":
-			return "", "that menu is not a yes or no: answer in the terminal"
+			return "", nil, "that menu is not a yes or no: answer in the terminal"
 		}
 		if !strings.HasPrefix(reason, "permission:") && !(t.harness == "copilot" && reason == "notification:permission_prompt") {
-			return "", t.what + " is no longer asking that"
+			return "", nil, t.what + " is no longer asking that"
 		}
 		if !m.CardTool(strings.TrimPrefix(reason, "permission:")) {
-			return "", "that menu has no recorded keys: answer in the terminal"
+			return "", nil, "that menu has no recorded keys: answer in the terminal"
 		}
 		keys, _ = m.Permission(req.Choice)
-		return keys, ""
+		return keys, nil, ""
 	}
 	// PermissionRequest fires for AskUserQuestion too and overwrites the question's reason. Codex rings a bell for a
 	// question, which proves nothing alone: the observer's pending question below is what it asks.
@@ -312,17 +326,17 @@ func (s *Service) answerKeys(ctx context.Context, t target, session string, req 
 		asking = reason == "bell"
 	}
 	if !asking {
-		return "", t.what + " is no longer asking that"
+		return "", nil, t.what + " is no longer asking that"
 	}
 	if t.harness == "codex" && s.Approving != nil && s.Approving(session, t.crew) {
-		return "", "an approval is waiting too: answer in the terminal"
+		return "", nil, "an approval is waiting too: answer in the terminal"
 	}
 	var qs []conversation.Item
 	if s.Questions != nil {
 		qs = s.Questions(session, t.crew)
 	}
 	if len(qs) == 0 {
-		return "", "that question is not the one the pane is asking"
+		return "", nil, "that question is not the one the pane is asking"
 	}
 	if len(req.Answers) > 0 {
 		return callKeys(m, t, qs, req)
@@ -330,40 +344,40 @@ func (s *Service) answerKeys(ctx context.Context, t target, session string, req 
 	q := qs[len(qs)-1]
 	switch {
 	case q.ID != req.Item:
-		return "", "that question is not the one the pane is asking"
+		return "", nil, "that question is not the one the pane is asking"
 	case len(qs) > 1 && callOf(qs[len(qs)-2].ID) == callOf(q.ID):
-		return "", "the call holds several questions: answer in the terminal"
+		return "", nil, "the call holds several questions: answer in the terminal"
 	case !q.Question.Pending:
-		return "", "that question is not the one the pane is asking"
+		return "", nil, "that question is not the one the pane is asking"
 	case q.Question.MultiSelect:
-		return "", "a multi-select question is answered in the terminal"
+		return "", nil, "a multi-select question is answered in the terminal"
 	case req.Option > len(q.Question.Options):
-		return "", "the question has no option " + strconv.Itoa(req.Option)
+		return "", nil, "the question has no option " + strconv.Itoa(req.Option)
 	}
 	keys, ok = m.Question(req.Option)
 	if !ok {
-		return "", "the question has no key for option " + strconv.Itoa(req.Option)
+		return "", nil, "the question has no key for option " + strconv.Itoa(req.Option)
 	}
-	return keys, ""
+	return keys, nil, ""
 }
 
 // callKeys answers the newest call of qs whole, or says why the pane cannot take it.
-func callKeys(m keymap.Map, t target, qs []conversation.Item, req answerRequest) (keys, why string) {
+func callKeys(m keymap.Map, t target, qs []conversation.Item, req answerRequest) (keys string, plan *keymap.Plan, why string) {
 	last := callOf(qs[len(qs)-1].ID)
-	if callOf(req.Item) != last {
-		return "", "that question is not the one the pane is asking"
-	}
 	var call []conversation.Item
 	for i := len(qs) - 1; i >= 0 && callOf(qs[i].ID) == last; i-- {
 		call = append([]conversation.Item{qs[i]}, call...)
 	}
+	if req.Item != call[0].ID {
+		return "", nil, "that question is not the one the pane is asking"
+	}
 	for _, it := range call {
 		if !it.Question.Pending {
-			return "", "that question is not the one the pane is asking"
+			return "", nil, "that question is not the one the pane is asking"
 		}
 	}
 	if len(req.Answers) != len(call) {
-		return "", "the call holds " + strconv.Itoa(len(call)) + " questions: answer each one"
+		return "", nil, "the call holds " + strconv.Itoa(len(call)) + " questions: answer each one"
 	}
 	cq := make([]keymap.CallQuestion, len(call))
 	for i, it := range call {
@@ -372,23 +386,27 @@ func callKeys(m keymap.Map, t target, qs []conversation.Item, req answerRequest)
 		sort.Ints(opts)
 		for j, o := range opts {
 			if o < 1 || o > len(it.Question.Options) || (j > 0 && o == opts[j-1]) {
-				return "", "question " + strconv.Itoa(i+1) + " has no option " + strconv.Itoa(o)
+				return "", nil, "question " + strconv.Itoa(i+1) + " has no option " + strconv.Itoa(o)
 			}
 		}
 		other := cleanOther(a.Other)
 		if len(opts) == 0 && other == "" {
-			return "", "question " + strconv.Itoa(i+1) + " has no answer"
+			return "", nil, "question " + strconv.Itoa(i+1) + " has no answer"
 		}
 		if !it.Question.MultiSelect && len(opts)+btoi(other != "") != 1 {
-			return "", "question " + strconv.Itoa(i+1) + " takes one answer"
+			return "", nil, "question " + strconv.Itoa(i+1) + " takes one answer"
 		}
-		cq[i] = keymap.CallQuestion{Options: len(it.Question.Options), Multi: it.Question.MultiSelect, Choose: opts, Other: other}
+		labels := make([]string, len(it.Question.Options))
+		for j, o := range it.Question.Options {
+			labels[j] = o.Label
+		}
+		cq[i] = keymap.CallQuestion{Text: it.Question.Text, Labels: labels, Multi: it.Question.MultiSelect, Choose: opts, Other: other}
 	}
-	keys, ok := m.Call(cq)
+	p, ok := m.Plan(cq)
 	if !ok {
-		return "", t.what + " takes that answer in its terminal"
+		return "", nil, t.what + " takes that answer in its terminal"
 	}
-	return keys, ""
+	return "", &p, ""
 }
 
 func btoi(b bool) int {

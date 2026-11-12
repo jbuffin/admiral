@@ -32,6 +32,11 @@ describe('renderMarkdown', () => {
     expect(html).not.toMatch(/<(b|i|script)>/);
   });
 
+  it('gives a protocol-relative link no href and does not linkify a bare //host', () => {
+    expect(renderMarkdown('[go](//evil.example/x)')).not.toContain('href');
+    expect(renderMarkdown('see //evil.example/x now')).not.toContain('<a ');
+  });
+
   it('gives a javascript: link no href', () => {
     const html = renderMarkdown('[click](javascript:alert(1))');
     expect(html).not.toMatch(/href="?javascript/i);

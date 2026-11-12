@@ -45,6 +45,8 @@ function questionCard(reason: string, conv: Conversation, harness: string): Answ
   const call = turn.filter((i) => i.kind === 'question' && callOf(i.id) === callOf(newest.id));
   if (call.some((i) => !i.question?.pending)) return { kind: 'terminal' };
   const claude = harness === 'claude';
+  // Claude's menu has four tabs at most.
+  if (call.length > 4) return { kind: 'terminal' };
   if (!claude && (call.length > 1 || call[0].question?.multiSelect)) return { kind: 'terminal' };
   const questions: CardQuestion[] = [];
   for (const i of call) {

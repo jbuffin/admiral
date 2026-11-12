@@ -21,7 +21,8 @@ for (const [name, lang] of Object.entries({ bash, css, diff, go, javascript, jso
 hljs.registerAliases(['sh', 'shell'], { languageName: 'bash' });
 
 // Only these schemes become links; a target with no scheme is relative.
-const safeUrl = (url: string) => !/^[a-z][a-z0-9+.-]*:/i.test(url.trim()) || /^(https?|mailto):/i.test(url.trim());
+// A protocol-relative //host target is another site, not a relative link.
+const safeUrl = (url: string) => !/^\/\//.test(url.trim()) && (!/^[a-z][a-z0-9+.-]*:/i.test(url.trim()) || /^(https?|mailto):/i.test(url.trim()));
 
 function highlight(code: string, lang: string): string {
   if (!hljs.getLanguage(lang)) return '';
@@ -48,6 +49,7 @@ function newRenderer() {
   const md = new MarkdownIt({ html: false, linkify: true, typographer: false, breaks: true, highlight });
   // A bare file name like main.go is not a link.
   md.linkify.set({ fuzzyLink: false, fuzzyEmail: false });
+  md.linkify.add('//', null);
   md.validateLink = safeUrl;
   md.core.ruler.after('inline', 'task_lists', taskLists);
   const open = md.renderer.rules.link_open ?? ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options));
@@ -78,4 +80,9 @@ export function renderMarkdown(src: string): string {
 /** The same without headings and images, for the short text of a question and its options. */
 export function renderRestrictedMarkdown(src: string): string {
   return restricted.render(src);
+}
+
+/** The restricted renderer without the wrapping paragraph, for a description inside a button. */
+export function renderRestrictedInline(src: string): string {
+  return restricted.renderInline(src);
 }

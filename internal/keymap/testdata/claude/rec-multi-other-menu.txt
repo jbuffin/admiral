@@ -1,0 +1,18 @@
+⏺ Your size answer: 2 big slices. You typed this in yourself, since the options 
+  were only Small and Large.               
+✻ Cooked for 2s · done 2:44 PM                  
+❯ Call AskUserQuestion once with ONE multiSelect question, header "Extras",     
+  which extras, options Cheese, Olives with short descriptions. Then restate my 
+  answer in one line.                                                           
+────────────────────────────────────────────────────────────────────────────────
+←  ☐ Extras  ✔ Submit  →
+Which extras would you like?                                                    
+❯ 1. [ ] Cheese
+         Extra melted cheese.                   
+  2. [ ] Olives                                                                 
+         Extra briny olives.                                                    
+  3. [ ] Type something
+     Submit                                                                     
+────────────────────────────────────────────────────────────────────────────────
+  4. Chat about this                                                            
+Enter to select · ↑/↓ to navigate · Esc to cancel

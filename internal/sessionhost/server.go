@@ -471,6 +471,11 @@ func (s Server) DeleteBuffer(ctx context.Context, buf string) error {
 	return err
 }
 
+// CapturePane is the text the pane shows now, with wrapped lines joined.
+func (s Server) CapturePane(ctx context.Context, pane string) (string, error) {
+	return s.run(call{ctx: ctx, utf8After: true, args: []string{"capture-pane", "-p", "-J", "-t", pane}})
+}
+
 // SendLiteral types text into the pane as it is, so a slash command runs.
 func (s Server) SendLiteral(ctx context.Context, pane, text string) error {
 	_, err := s.run(call{ctx: ctx, args: []string{"send-keys", "-t", pane, "-l", text}})
