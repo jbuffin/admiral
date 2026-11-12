@@ -264,7 +264,7 @@ test('a fleet page edits search roots, owners, clone root and colour, keeping wh
   await expect(page).toHaveURL(/\/app\/preferences\/zulu\/fleet/);
   await expect(page.getByRole('heading', { name: 'Fleet', exact: true })).toBeVisible();
   const group = prefsNav(page).getByRole('group', { name: `${WORK} fleet` });
-  await expect(group.getByRole('link')).toHaveText(['Fleet', 'Order sources', 'Harness capabilities', 'Usage']);
+  await expect(group.getByRole('link')).toHaveText(['Fleet', 'AdmiralBot', 'Order sources', 'Harness capabilities', 'Usage']);
   await expect(group.getByRole('link', { name: 'Fleet', exact: true })).toHaveAttribute('aria-current', 'page');
   await group.getByRole('link', { name: 'Order sources' }).click();
   await expect(page).toHaveURL(/\/app\/preferences\/zulu\/sources/);
@@ -576,4 +576,68 @@ test('Turn off Tailscale mode asks first, keeps the logins and serve, names the 
   await expect(page).toHaveURL(/\/app\/inbox/);
 
   expect(watch.errors).toEqual([]);
+
+test("a fleet's AdmiralBot page shows its harness, model, effort and refresh threshold, saves a change that survives a reload, shows a refusal and, for a fleet with no Claude Code dock, why its chat is off", async ({ page, admiral }) => {
+  seedFleets(admiral, { chat: true });
+  await admiral.start();
+  const watch = watchPage(page, admiral.url);
+  const harbor = () => JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8')).fleets.harbor as { chat?: Record<string, unknown> };
+  const pick = (g: string, name: string) => page.getByRole('radiogroup', { name: g }).getByRole('radio', { name, exact: true });
+
+  await page.goto(admiral.url + 'app/preferences/zulu/sources');
+  const group = prefsNav(page).getByRole('group', { name: 'Harborlight fleet' });
+  await expect(group.getByRole('link')).toHaveText(['Fleet', 'AdmiralBot', 'Order sources', 'Harness capabilities', 'Usage']);
+  await group.getByRole('link', { name: 'AdmiralBot', exact: true }).click();
+  await expect(page).toHaveURL(/\/app\/preferences\/harbor\/admiralbot/);
+  await expect(page.getByRole('heading', { name: 'AdmiralBot', exact: true })).toBeVisible();
+  const main = page.getByRole('main');
+  await expect(main).toContainText("Your chief of staff for the Harborlight fleet. It only sees this fleet's ships, orders, campaigns and logins.");
+  await expect(pick('Harness', 'Claude')).toBeChecked();
+  await expect(page.getByRole('radiogroup', { name: 'Harness' }).getByRole('radio')).toHaveCount(1);
+  await expect(page.getByRole('radiogroup', { name: 'Model' }).getByRole('radio')).toHaveText(['Sonnet', 'Opus', 'Haiku']);
+  await expect(pick('Model', 'Sonnet')).toBeChecked();
+  await expect(page.getByRole('radiogroup', { name: 'Effort' }).getByRole('radio')).toHaveText(['Default', 'Low', 'Medium', 'High']);
+  await expect(pick('Effort', 'Default')).toBeChecked();
+  await expect(page.getByRole('radiogroup', { name: 'Refresh context at' }).getByRole('radio')).toHaveText(['100K', '150K', '300K', 'Never']);
+  await expect(pick('Refresh context at', '150K')).toBeChecked();
+  // What this ticket does not build is not drawn.
+  for (const absent of ['Worker model', 'Also refresh after an idle hour', 'Acting for you', 'What AdmiralBot knows', 'Guardrails']) await expect(main).not.toContainText(absent);
+  await expect(main).not.toContainText('ledger');
+
+  // A change saves through the fleet, and a reload shows it. Only the chat object is sent.
+  await pick('Model', 'Opus').click();
+  await pick('Effort', 'High').click();
+  await pick('Refresh context at', '300K').click();
+  const put = page.waitForRequest((r) => r.method() === 'PUT' && new URL(r.url()).pathname === '/api/v1/fleets/harbor');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  expect((await put).postDataJSON()).toEqual({ chat: { model: 'opus', effort: 'high', context_threshold: 300000 } });
+  await expect.poll(() => harbor().chat).toMatchObject({ model: 'opus', effort: 'high', context_threshold: 300000 });
+  await page.reload();
+  await expect(pick('Model', 'Opus')).toBeChecked();
+  await expect(pick('Effort', 'High')).toBeChecked();
+  await expect(pick('Refresh context at', '300K')).toBeChecked();
+  // Back to the harness default effort removes the key.
+  await pick('Effort', 'Default').click();
+  await pick('Refresh context at', 'Never').click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => harbor().chat).toMatchObject({ model: 'opus', context_threshold: 'never' });
+  expect(harbor().chat).not.toHaveProperty('effort');
+
+  // A refusal shows the server's error and keeps what the person picked.
+  await page.route('**/api/v1/fleets/harbor', (route) =>
+    route.request().method() === 'PUT' ? route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'fleets.harbor.chat.model: "haiku" is refused for this test' }) }) : route.fallback(),
+  );
+  await pick('Model', 'Haiku').click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('"haiku" is refused for this test');
+  await expect(pick('Model', 'Haiku')).toBeChecked();
+  await page.unroute('**/api/v1/fleets/harbor');
+
+  // A fleet with no Claude Code dock: no harness to pick, the reason on top, the settings still editable.
+  await prefsNav(page).getByRole('group', { name: `${HOME} fleet` }).getByRole('link', { name: 'AdmiralBot', exact: true }).click();
+  await expect(page).toHaveURL(/\/app\/preferences\/alpha\/admiralbot/);
+  await expect(main).toContainText(/no Claude Code dock/i);
+  await expect(page.getByRole('radiogroup', { name: 'Harness' })).toHaveCount(0);
+  await expect(page.getByRole('radiogroup', { name: 'Model' })).toBeVisible();
+  expect(watch.unversioned()).toEqual([]);
 });

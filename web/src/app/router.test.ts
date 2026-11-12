@@ -15,7 +15,7 @@ const page = vi.hoisted(() => {
   return l;
 });
 
-import { usageAllPath, usagePath, campaignOf, campaignPath, crewOf, crewPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath } from './router';
+import { usageAllPath, usagePath, campaignOf, campaignPath, crewOf, crewPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath, chatSettingsPath } from './router';
 
 describe('campaign paths', () => {
   it('round-trips an id through its page path', () => {
@@ -192,5 +192,16 @@ describe('the Peek route', () => {
     vi.resetModules();
     expect(await open('/app/inbox/s-abc/nowhere/x')).toHaveBeenCalledWith(null, '', '/app/inbox?fleet=alpha');
     vi.stubGlobal('location', page);
+  });
+});
+
+describe("a fleet's AdmiralBot page", () => {
+  it('has its own path below the fleet and names that page', () => {
+    expect(chatSettingsPath('harbor')).toBe('/app/preferences/harbor/admiralbot');
+    expect(preferencesFleet('/app/preferences/harbor/admiralbot')).toBe('harbor');
+    expect(preferencesPage('/app/preferences/harbor/admiralbot')).toBe('admiralbot');
+  });
+  it('is part of Preferences', () => {
+    expect(surfaceOf('/app/preferences/harbor/admiralbot')?.id).toBe('preferences');
   });
 });

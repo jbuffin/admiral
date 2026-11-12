@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Ship } from './api';
-import { inboxItems, retryShips, ships, shipsLink, watchShips } from './shipsLink';
+import { inboxItems, retryShips, ships, shipsLink, watchShips, chats } from './shipsLink';
 
 class FakeSocket extends EventTarget {
   static all: FakeSocket[] = [];
@@ -114,6 +114,21 @@ describe('watchShips', () => {
     expect(inboxItems.value.map((i) => i.id)).toEqual(['q-1', 'r-1']);
     last().send({ type: 'inbox', items: [{ id: 'r-1', session: 's-a' }] });
     expect(inboxItems.value.map((i) => i.id)).toEqual(['r-1']);
+    expect(ships.value.map((s) => s.name)).toEqual(['a']);
+  });
+
+  it("keeps each fleet's chat apart: a chat message replaces only its own fleet's, and leaves the ships alone", () => {
+    chats.value = {};
+    stop = watchShips();
+    last().open();
+    last().send({ type: 'ships', ships: [ship('a', 'underway')] });
+    last().send({ type: 'chat', fleet: 'alpha', running: true, state: 'idle', messages: [{ id: 'u-1', kind: 'message', role: 'user', text: 'alpha one', at: '' }], questions: [] });
+    last().send({ type: 'chat', fleet: 'beta', running: true, state: 'idle', messages: [{ id: 'u-9', kind: 'message', role: 'user', text: 'beta one', at: '' }], questions: [] });
+    expect(Object.keys(chats.value).sort()).toEqual(['alpha', 'beta']);
+    expect(chats.value.alpha.messages.map((m) => m.text)).toEqual(['alpha one']);
+    last().send({ type: 'chat', fleet: 'alpha', running: true, state: 'working', messages: [], questions: [] });
+    expect(chats.value.alpha.state).toBe('working');
+    expect(chats.value.beta.messages.map((m) => m.text)).toEqual(['beta one']);
     expect(ships.value.map((s) => s.name)).toEqual(['a']);
   });
 
