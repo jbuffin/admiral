@@ -164,6 +164,26 @@ func TestAShipAnActorLaunchesIsStampedViaAdmiralbotInItsLaunchedRecordAndTheShip
 	}
 }
 
+func TestALaunchBodyWithDataAfterItsFirstValueLaunchesNothing(t *testing.T) {
+	r := newWakeRig(t, 0)
+	mux := http.NewServeMux()
+	r.s.Routes(mux)
+	for _, tail := range []string{" x", " {}"} {
+		body := `{"fleet":"work","harness":"claude","dir":` + strconv.Quote(r.checkout) + `,"model":"opus","skill":{"kind":"none"},"text":"go"}` + tail
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest("POST", "/api/ships", strings.NewReader(body)))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("tail %q: launch = %d %s, want 400", tail, rec.Code, rec.Body)
+		}
+	}
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/ships", nil))
+	var got struct{ Ships []struct{ Session string } }
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || len(got.Ships) != 0 {
+		t.Errorf("ships after the refused launches = %s (%v), want none", rec.Body, err)
+	}
+}
+
 func TestAShipTheEngineerLaunchesCarriesNoVia(t *testing.T) {
 	r := newWakeRig(t, 0)
 	session := r.launchAs(t, "")

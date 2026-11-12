@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jbuffin/admiral/internal/auth"
+	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
 // Guard is the middleware that recognises an actor token and fences the request it carries.
@@ -71,8 +72,8 @@ func (g *Guard) Middleware(next http.Handler) http.Handler {
 			refuse(w, http.StatusForbidden, "AdmiralBot can't do that: "+r.Method+" "+r.URL.Path+" is not one of its routes")
 			return
 		}
-		if msg := g.fence(r, fleet, args); msg != "" {
-			refuse(w, http.StatusForbidden, msg)
+		if status, msg := g.fence(r, fleet, args); msg != "" {
+			refuse(w, status, msg)
 			return
 		}
 		r.Header.Del(Header)
@@ -125,39 +126,46 @@ func match(r *http.Request) (matched, bool) {
 	return matched{}, false
 }
 
-// fence is why the request touches another fleet's thing, or "".
-func (g *Guard) fence(r *http.Request, fleet string, m matched) string {
+// fence is why the request touches another fleet's thing, with the status to refuse it by, or "".
+func (g *Guard) fence(r *http.Request, fleet string, m matched) (int, string) {
 	switch m.kind {
 	case ship:
-		return check("ship", m.ids[0], fleet)(g.ShipFleet(m.ids[0]))
+		return forbid(check("ship", m.ids[0], fleet)(g.ShipFleet(m.ids[0])))
 	case item:
-		return check("inbox item "+m.ids[1]+" of", m.ids[0], fleet)(g.ItemFleet(m.ids[0], m.ids[1]))
+		if sessionhost.IsChatSession(m.ids[0]) {
+			return forbid("a question from the chat is the engineer's to answer, not AdmiralBot's")
+		}
+		return forbid(check("inbox item "+m.ids[1]+" of", m.ids[0], fleet)(g.ItemFleet(m.ids[0], m.ids[1])))
 	case source:
-		return check("source", m.ids[0], fleet)(g.SourceFleet(m.ids[0]))
+		return forbid(check("source", m.ids[0], fleet)(g.SourceFleet(m.ids[0])))
 	case campaign:
-		return check("campaign", m.ids[0], fleet)(g.CampaignFleet(m.ids[0]))
+		return forbid(check("campaign", m.ids[0], fleet)(g.CampaignFleet(m.ids[0])))
 	case launch:
 		body, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, 4<<20))
 		if err != nil {
-			return "the launch request could not be read"
+			return http.StatusBadRequest, "the launch request could not be read"
 		}
 		r.Body = io.NopCloser(bytes.NewReader(body))
 		var req struct {
 			Fleet  string `json:"fleet"`
 			Source string `json:"source"`
 		}
-		if json.Unmarshal(body, &req) != nil {
-			return "" // the handler refuses a body that is not JSON
+		// read the first value as the handler does, and refuse what follows it, so both see one request
+		dec := json.NewDecoder(bytes.NewReader(body))
+		if dec.Decode(&req) != nil || dec.Decode(&struct{}{}) != io.EOF {
+			return http.StatusBadRequest, "the launch body must be one JSON object"
 		}
 		if req.Fleet != fleet {
-			return "a launch from this chat must name fleet " + fleet + ", not " + quote(req.Fleet)
+			return forbid("a launch from this chat must name fleet " + fleet + ", not " + quote(req.Fleet))
 		}
 		if req.Source != "" {
-			return check("source", req.Source, fleet)(g.SourceFleet(req.Source))
+			return forbid(check("source", req.Source, fleet)(g.SourceFleet(req.Source)))
 		}
 	}
-	return ""
+	return 0, ""
 }
+
+func forbid(msg string) (int, string) { return http.StatusForbidden, msg }
 
 func quote(s string) string {
 	if s == "" {

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/actor"
+	"github.com/jbuffin/admiral/internal/actorwire"
 	"github.com/jbuffin/admiral/internal/auth"
 	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/bridge"
@@ -560,32 +561,20 @@ func serve(args []string) error {
 		supervisor.Wait()
 		_ = st.Flush()
 	}()
-	actorGuard := &actor.Guard{
-		Tokens: func(token string) (string, bool) {
+	actorGuard := actorwire.Guard(actorwire.Deps{
+		FleetKeys: func() []string {
 			var keys []string
 			for _, f := range cfg.Current().Fleets {
 				keys = append(keys, f.Key)
 			}
-			return actor.Lookup(token, keys, chatService.ActorToken)
+			return keys
 		},
-		ShipFleet: shipService.FleetOf,
-		ItemFleet: func(session, id string) (string, bool) {
-			for _, it := range inboxService.List() {
-				if it.Session == session && it.ID == id {
-					return it.Fleet, it.Fleet != ""
-				}
-			}
-			return "", false
-		},
-		SourceFleet: func(key string) (string, bool) {
-			fleet, ok := sourceService.FleetOf(key)
-			return fleet, ok && fleet != ""
-		},
-		CampaignFleet: func(id string) (string, bool) {
-			f, ok := followStore.Get(id)
-			return f.Fleet, ok && f.Fleet != ""
-		},
-	}
+		ActorToken: chatService.ActorToken,
+		ShipFleet:  shipService.FleetOf,
+		Inbox:      inboxService.List,
+		Source:     sourceService.FleetOf,
+		Campaign:   followStore.Get,
+	})
 	srv := &http.Server{Handler: guard.Middleware(actorGuard.Middleware(s.Handler()))}
 	srv.RegisterOnShutdown(func() { close(stopping) }) // a held lock would hold up the shutdown
 	lis.serveWith(srv)

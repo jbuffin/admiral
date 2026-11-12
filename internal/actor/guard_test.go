@@ -208,6 +208,32 @@ func TestAnInboxItemOfNoKnownFleetIsRefusedWhenAnswered(t *testing.T) {
 	}
 }
 
+func TestALaunchBodyWithDataAfterItsFirstValueIsRefusedNotPassedThrough(t *testing.T) {
+	for _, body := range []string{
+		`{"fleet":"work","harness":"claude"} x`,
+		`{"fleet":"work","harness":"claude"} {}`,
+		`{"fleet":"personal","source":"w-1"} {}`,
+		`{"fleet":"personal"} {"fleet":"work"}`,
+		`{"fleet":"personal"`,
+		`not json`,
+	} {
+		r := newRig(t)
+		rec := r.do("POST", "/api/ships", body, "tok-personal", local)
+		if rec.Code != 400 || r.reached != 0 {
+			t.Errorf("body %q: code %d, reached %d; want 400 and nothing launched", body, rec.Code, r.reached)
+		}
+	}
+}
+
+func TestAnActorCannotAnswerItsOwnChatsQuestionForTheEngineer(t *testing.T) {
+	r := newRig(t)
+	r.g.ItemFleet = func(string, string) (string, bool) { return "personal", true }
+	rec := r.do("POST", "/api/inbox/_chat-personal/q-1/answer", `{}`, "tok-personal", local)
+	if rec.Code != 403 || r.reached != 0 || !strings.Contains(rec.Body.String(), "engineer") {
+		t.Errorf("code %d, reached %d, body %q; want 403 saying the engineer answers chat questions", rec.Code, r.reached, rec.Body)
+	}
+}
+
 func TestAnEngineersRequestIsNotFencedToAFleet(t *testing.T) {
 	r := newRig(t)
 	if c := r.do("POST", "/api/ships/w-1/stop", "", "", local).Code; c != 200 || r.reached != 1 {
