@@ -86,7 +86,9 @@ type Service struct {
 	Launcher  *launcher.Launcher
 	State     *state.Store
 	Hub       *server.Hub
-	Orders    Orders
+	// MergeGuard wraps the Merge route with its token check; with none the route refuses everything.
+	MergeGuard func(http.Handler) http.Handler
+	Orders     Orders
 	// OnChange must not block.
 	OnChange func()
 	// Tail gives a ship's conversation tail from a cache; it must not block.
@@ -247,7 +249,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/ships/{session}/dismiss", s.serveDismiss)
 	mux.HandleFunc("POST /api/ships/{session}/unfollow", s.serveUnfollow)
 	mux.HandleFunc("POST /api/ships/{session}/wake", s.serveWake)
-	mux.HandleFunc("POST /api/ships/{session}/merge", s.serveMerge)
+	mux.Handle("POST /api/ships/{session}/merge", s.mergeGuarded(http.HandlerFunc(s.serveMerge)))
 	mux.HandleFunc("POST /api/moored/refresh", s.serveMooredRefresh)
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/close", s.serveCrewClose)
 	mux.HandleFunc("POST /api/ships/{session}/messages", s.serveSendInput)

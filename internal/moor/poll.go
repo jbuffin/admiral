@@ -117,6 +117,15 @@ func StackReady(prs []PR) (ready bool, upTo string) {
 }
 
 // RepoOf is the owner/name of a pull request URL's repository.
+// ParsePR splits a PR URL into its host, nameWithOwner and number.
+func ParsePR(url string) (host, nameWithOwner, number string, ok bool) {
+	m := prURL.FindStringSubmatch(url)
+	if m == nil {
+		return "", "", "", false
+	}
+	return m[1], m[2] + "/" + m[3], m[4], true
+}
+
 func RepoOf(url string) (nameWithOwner string, ok bool) {
 	m := prURL.FindStringSubmatch(url)
 	if m == nil {

@@ -155,10 +155,10 @@ func (w *world) shipNamed(ship shipJSON) (shipJSON, bool) {
 	return sh, ok
 }
 
-func wantRefused(t *testing.T, what string, code int, body string) {
+func wantCode(t *testing.T, what string, want, code int, body string) {
 	t.Helper()
-	if code < 400 || code >= 500 || code == http.StatusMethodNotAllowed {
-		t.Errorf("%s = %d, want a 4xx refusal: %s", what, code, body)
+	if code != want {
+		t.Errorf("%s = %d, want %d: %s", what, code, want, body)
 	}
 }
 
@@ -210,7 +210,7 @@ func TestMergeASinglePRRunsOneGhMergeWithTheDefaultMethod(t *testing.T) {
 	}
 
 	w.waitEvent(ship.Session, "merged", 1)
-	w.kickMoored()
+	// No kick here: the 2-minute poll can't end the ship in time, so the server's own refresh after the merge does.
 	w.in.waitShipsList(t, 20*time.Second, "the ship sailed off after the merge", func(l []shipJSON) bool { _, ok := byName(l)[ship.Name]; return !ok })
 	if ev := lastOf(w.waitEvent(ship.Session, "unmoored", 1), "unmoored"); ev["reason"] != "merged" {
 		t.Errorf("unmoored = %v, want reason merged", ev)
@@ -268,7 +268,7 @@ func TestAStackReadsReadyUpToTheHighestLayerWhoseLowerLayersAreReady(t *testing.
 			got.PRs[2].Ready, got.StackReady, got.ReadyUpTo, layer2)
 	}
 	code, b := w.postMerge(t, ship, map[string]any{"upTo": "https://github.com/acme/widgets/pull/99"})
-	wantRefused(t, "POST merge up to a PR that is not its own", code, b)
+	wantCode(t, "POST merge up to a PR that is not its own", http.StatusBadRequest, code, b)
 	if calls := g.mergeCalls(); len(calls) != 0 {
 		t.Fatalf("a refused merge ran gh: %v", calls)
 	}
@@ -304,11 +304,49 @@ func TestMergeOfAShipThatIsNotMooredIsRefused(t *testing.T) {
 	t.Parallel()
 	w, g := mooring(t, "exit 0")
 	w.start()
-	code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/ships/no-such-ship/merge", map[string]any{})
-	wantRefused(t, "POST merge on a ship that is not there", code, body)
+	live := w.launch(w.order("f", "claude", "widgets", commodore, "do it"))
+	code, body := w.postMerge(t, live, map[string]any{})
+	wantCode(t, "POST merge on a live ship that is not moored", http.StatusConflict, code, body)
+	code, body = w.postMerge(t, shipJSON{Session: "no-such-ship"}, map[string]any{})
+	wantCode(t, "POST merge on a ship that is not there", http.StatusNotFound, code, body)
 	if calls := g.mergeCalls(); len(calls) != 0 {
 		t.Errorf("a refused merge ran gh: %v", calls)
 	}
+}
+
+func TestMergeOfAPRNamingAnotherHostIsRefusedAndRunsNoGh(t *testing.T) {
+	t.Parallel()
+	w, g := mooring(t, "exit 0")
+	g.prReady(layer1)
+	const foreign = "https://attacker.example/acme/widgets/pull/21"
+	b, _ := json.Marshal(map[string]any{"name": "Foreign", "session": "foreign", "fleet": "f", "harness": "claude",
+		"checkout": w.checkout("widgets"), "prs": []string{foreign}, "moored_at": time.Now().UTC()})
+	if err := os.MkdirAll(filepath.Dir(w.mooredFile("foreign")), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(w.mooredFile("foreign"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w.start()
+	w.in.waitShipsList(t, 20*time.Second, "the foreign record moored", func(l []shipJSON) bool {
+		return byName(l)["Foreign"].Status == "moored"
+	})
+	code, body := w.postMerge(t, shipJSON{Session: "foreign"}, map[string]any{})
+	wantCode(t, "POST merge on a PR on another host", http.StatusUnprocessableEntity, code, body)
+	holdThat(t, "gh merged a PR on another host", func() bool { return len(g.mergeCalls()) == 0 })
+}
+
+func TestMergeRouteTokenAlsoGuardsAnEscapedSessionPath(t *testing.T) {
+	t.Parallel()
+	w, _ := mooring(t, "exit 0")
+	w.start()
+	req, _ := http.NewRequest(http.MethodPost, w.in.LocalURL+"/api/ships/a%2Fb/merge", strings.NewReader("{}"))
+	resp, err := client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	wantCode(t, "POST merge on an escaped path with no token", http.StatusForbidden, resp.StatusCode, "")
 }
 
 func TestAFailedGhMergeReturnsItsMessageAndKeepsTheShipMoored(t *testing.T) {
@@ -325,8 +363,8 @@ func TestAFailedGhMergeReturnsItsMessageAndKeepsTheShipMoored(t *testing.T) {
 	})
 
 	code, body := w.postMerge(t, ship, map[string]any{})
-	if code < 400 || !strings.Contains(body, "the base branch policy prohibits the merge") {
-		t.Errorf("POST merge = %d %s, want an error carrying gh's message", code, body)
+	if code != http.StatusBadGateway || !strings.Contains(body, "the base branch policy prohibits the merge") {
+		t.Errorf("POST merge = %d %s, want 502 carrying gh's message", code, body)
 	}
 	calls := g.mergeCalls()
 	if len(calls) != 1 {

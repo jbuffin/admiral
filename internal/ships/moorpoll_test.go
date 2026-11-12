@@ -31,14 +31,15 @@ const (
 
 // pollGitHub answers the batched pull request query for one fleet's client.
 type pollGitHub struct {
-	mu     sync.Mutex
-	status map[string]moor.Status // a URL left out is NOT_FOUND
-	err    error                  // a transport failure
-	un     []string               // PRs the answer leaves unanswered, with an *moor.Unanswered
-	block  chan struct{}          // when set, a call waits for it to close
-	calls  [][]string
-	active int
-	most   int
+	mu       sync.Mutex
+	status   map[string]moor.Status // a URL left out is NOT_FOUND
+	err      error                  // a transport failure
+	mergeErr error                  // what MergePR answers
+	un       []string               // PRs the answer leaves unanswered, with an *moor.Unanswered
+	block    chan struct{}          // when set, a call waits for it to close
+	calls    [][]string
+	active   int
+	most     int
 }
 
 func (g *pollGitHub) Host() string { return "github.com" }
@@ -77,7 +78,11 @@ func (g *pollGitHub) PullRequests(_ context.Context, urls []string) (map[string]
 
 func (g *pollGitHub) DefaultMergeMethod(context.Context, string) (string, error) { return "merge", nil }
 
-func (g *pollGitHub) MergePR(context.Context, string, string) error { return nil }
+func (g *pollGitHub) MergePR(context.Context, string, string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.mergeErr
+}
 
 func (g *pollGitHub) set(url string, st moor.Status) {
 	g.mu.Lock()
@@ -117,6 +122,7 @@ func mooredService(t *testing.T, gh map[string]*pollGitHub) *mooredFixture {
 		Host:     sessionhost.New("no-such-tmux", filepath.Join(home, "tmux.sock")),
 		Launcher: &launcher.Launcher{Home: home, Config: func() *config.Config { return cfg }},
 		State:    st, Hub: server.NewHub(), Outcomes: w,
+		MergeGuard: func(h http.Handler) http.Handler { return h },
 		GitHub: func(fleet string) moor.GitHub {
 			if g := gh[fleet]; g != nil {
 				return g
@@ -675,5 +681,23 @@ func TestAMooredStackServesWhetherItIsReadyAndUpToWhichLayer(t *testing.T) {
 				t.Errorf("ship = ready %v, up to %q; want ready %v, up to %q", sh.StackReady, sh.ReadyUpTo, c.ready, c.upTo)
 			}
 		})
+	}
+}
+
+func TestAMergeThatRunsPastItsLimitAnswers504AndAsksForAPoll(t *testing.T) {
+	g := &pollGitHub{mergeErr: moor.ErrMergeTimeout}
+	g.set(prSeven, moor.Status{State: "OPEN", Review: "APPROVED", Checks: "SUCCESS", Mergeable: "MERGEABLE", MergeState: "CLEAN"})
+	f := mooredService(t, map[string]*pollGitHub{"work": g})
+	session := f.moor(t, "Nelson", "work", prSeven)
+
+	rec := httptest.NewRecorder()
+	f.mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/ships/"+session+"/merge", strings.NewReader("{}")))
+	if rec.Code != http.StatusGatewayTimeout {
+		t.Fatalf("POST merge = %d %s, want 504", rec.Code, rec.Body)
+	}
+	select {
+	case <-f.s.kickChan():
+	default:
+		t.Errorf("no poll was asked for after a merge whose result is unknown")
 	}
 }

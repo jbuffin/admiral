@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/outcomes"
@@ -22,6 +23,17 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
 		return
 	}
+	if !s.startMerge(session) {
+		writeError(w, http.StatusConflict, "a merge of ship "+session+" is already under way")
+		return
+	}
+	defer s.endMerge(session)
+	if !s.startWaking(session) {
+		writeError(w, http.StatusConflict, "ship "+session+" is waking")
+		return
+	}
+	defer s.endWaking(session) // a wake waits out the merge
+	// Read after both slots are held, so a wake that just finished can't leave a stale record.
 	rec, ok := s.mooredRecord(session)
 	if !ok {
 		if _, live := s.find(session); live {
@@ -48,16 +60,13 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "the fleet has no GitHub source to merge with")
 		return
 	}
-	if !s.startMerge(session) {
-		writeError(w, http.StatusConflict, "a merge of ship "+session+" is already under way")
+	// The PR that was checked is the PR that gets merged: only the client's own host, and the argv URL is rebuilt from the parts.
+	host, repo, number, ok := moor.ParsePR(rec.PRs[0])
+	if !ok || !strings.EqualFold(host, gh.Host()) {
+		writeError(w, http.StatusUnprocessableEntity, "the pull request is not on the fleet's GitHub host, so it is not merged")
 		return
 	}
-	defer s.endMerge(session)
-	if !s.startWaking(session) {
-		writeError(w, http.StatusConflict, "ship "+session+" is waking")
-		return
-	}
-	defer s.endWaking(session) // a wake waits out the merge
+	mergeURL := "https://" + gh.Host() + "/" + repo + "/pull/" + number
 
 	// The last poll may be minutes old: look again before any gh merge runs.
 	fresh, err := gh.PullRequests(r.Context(), rec.PRs)
@@ -71,7 +80,6 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "the pull request is not ready to merge: it must be open, approved, green and mergeable")
 		return
 	}
-	repo, _ := moor.RepoOf(url)
 	method, err := s.mergeMethod(r.Context(), gh, rec.Fleet, repo)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
@@ -79,7 +87,7 @@ func (s *Service) serveMerge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The merge outlives a client that hangs up: stopping gh midway would leave its result unknown.
-	err = gh.MergePR(context.WithoutCancel(r.Context()), url, method)
+	err = gh.MergePR(context.WithoutCancel(r.Context()), mergeURL, method)
 	switch {
 	case errors.Is(err, moor.ErrMergeTimeout):
 		s.RefreshMoored() // it may have merged
@@ -127,4 +135,13 @@ func (s *Service) endMerge(session string) {
 	s.mooredMu.Lock()
 	delete(s.merging, session)
 	s.mooredMu.Unlock()
+}
+
+func (s *Service) mergeGuarded(h http.Handler) http.Handler {
+	if s.MergeGuard == nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			writeError(w, http.StatusForbidden, "merging is not available")
+		})
+	}
+	return s.MergeGuard(h)
 }

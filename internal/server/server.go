@@ -72,22 +72,14 @@ func (s *Server) token() string {
 	return s.mergeToken
 }
 
-func isMergeRoute(r *http.Request) bool {
-	rest, ok := strings.CutPrefix(r.URL.Path, "/api/ships/")
-	if !ok || r.Method != http.MethodPost {
-		return false
-	}
-	sess, last, ok := strings.Cut(rest, "/")
-	return ok && sess != "" && last == "merge"
-}
-
-// requireMergeToken sits inside the auth middleware: the token is on top of it, on every path, so a local curl is refused too.
-func (s *Server) requireMergeToken(next http.Handler) http.Handler {
+// MergeGuard wraps the merge handler where it is registered, so the route is matched once. It sits inside the auth
+// middleware: the token is on top of it, on every path, so a local curl is refused too.
+func (s *Server) MergeGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// The auth middleware skips its origin check for a bearer token; the merge route does not.
 		origin := r.Header.Get("Origin")
 		badOrigin := origin != "" && !strings.EqualFold(origin, "http://"+r.Host) && !strings.EqualFold(origin, "https://"+r.Host)
-		if isMergeRoute(r) && (badOrigin || subtle.ConstantTimeCompare([]byte(r.Header.Get(MergeTokenHeader)), []byte(s.token())) != 1) {
+		if badOrigin || subtle.ConstantTimeCompare([]byte(r.Header.Get(MergeTokenHeader)), []byte(s.token())) != 1 {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
 			_, _ = w.Write([]byte(`{"error":"merging needs the shell's merge token"}` + "\n"))
@@ -117,7 +109,7 @@ func (s *Server) Handler() http.Handler {
 		_, _ = w.Write([]byte(`{"error":"not found"}` + "\n"))
 	})
 	mux.HandleFunc("/", s.serveUI)
-	return stripV1(s.requireMergeToken(mux))
+	return stripV1(mux)
 }
 
 func stripV1(next http.Handler) http.Handler {
