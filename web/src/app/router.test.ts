@@ -15,7 +15,7 @@ const page = vi.hoisted(() => {
   return l;
 });
 
-import { campaignOf, campaignPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath } from './router';
+import { campaignOf, campaignPath, crewOf, crewPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath } from './router';
 
 describe('campaign paths', () => {
   it('round-trips an id through its page path', () => {
@@ -30,6 +30,24 @@ describe('campaign paths', () => {
   it('is the Campaigns surface, and no surface below it deeper than the id', () => {
     expect(surfaceOf('/app/campaigns/3f9c0a41b7d2e8a5')?.id).toBe('campaigns');
     expect(surfaceOf('/app/campaigns/3f9c0a41b7d2e8a5/extra')).toBeUndefined();
+  });
+});
+
+describe('crew paths', () => {
+  it('round-trips a member name through its page path, escaping what needs it', () => {
+    expect(crewPath('ada')).toBe('/app/crew/ada');
+    expect(crewOf('/app/crew/ada')).toBe('ada');
+    expect(crewOf('/app/crew/ada/')).toBe('ada');
+    expect(crewOf(crewPath('a b/c'))).toBe('a b/c');
+  });
+  it('names no member on the list page or another surface', () => {
+    expect(crewOf('/app/crew')).toBeNull();
+    expect(crewOf('/app/ships')).toBeNull();
+    expect(crewOf('/app/crew/a/b')).toBeNull();
+  });
+  it('is the Crew surface, and no surface below it deeper than the name', () => {
+    expect(surfaceOf('/app/crew/ada')?.id).toBe('crew');
+    expect(surfaceOf('/app/crew/ada/extra')).toBeUndefined();
   });
 });
 
