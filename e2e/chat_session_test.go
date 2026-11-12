@@ -149,7 +149,7 @@ func (c *chatWorld) waitEvents(n int) {
 // diag is what the fake recorded about its hook handlers.
 func (c *chatWorld) diag() string {
 	var sb strings.Builder
-	for _, f := range []string{"handlers", "event-error", "handler-1.stderr", "handler-2.stderr", "handler-3.stderr"} {
+	for _, f := range []string{"handlers", "event-error", "handler-1.stderr", "handler-2.stderr", "handler-3.stderr", "mcp-error", "reply-error", "stdin"} {
 		data, _ := os.ReadFile(filepath.Join(c.recDir(), f))
 		if len(data) > 0 {
 			fmt.Fprintf(&sb, "%s: %q; ", f, data)

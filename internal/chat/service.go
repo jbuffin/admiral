@@ -509,7 +509,11 @@ func (s *fleetChat) readOptions(pane string) (chatOptions, error) {
 	if err != nil {
 		return chatOptions{}, err
 	}
-	return chatOptions{model: o.Model, effort: o.Effort, fleet: o.Fleet, transcript: o.Transcript}, nil
+	opts := chatOptions{model: o.Model, effort: o.Effort, fleet: o.Fleet, transcript: o.Transcript}
+	if o.Transcript == "" && s.harness() == "codex" {
+		opts.screen = s.readScreen(pane)
+	}
+	return opts, nil
 }
 
 func (s *fleetChat) server() sessionhost.Server {

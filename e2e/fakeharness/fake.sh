@@ -130,6 +130,8 @@
 #                  writes the tool result to <name>.reply (an RPC error becomes an isError result)
 #                  It lists the tools first and, as Claude Code does, fails the cue (no reply, a line
 #                  in mcp-error) when a tool's inputSchema is not an object with an object properties
+#   codexready     a trusted Codex TUI waiting for its first message: shows the composer and writes the hook's trust entry
+#                  to $CODEX_HOME/config.toml. `codexreply` does both too, but only after the cues before it.
 #   codexreply <text>
 #                  Codex only, needs jq, and the last cue (it never ends): like `reply`, for a Codex chat. It
 #                  writes a rollout under $CODEX_HOME/sessions (a token_count line as `usage` writes, then per
@@ -576,6 +578,13 @@ if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 			fi
 			while [ ! -e "$d/$arg" ]; do sleep 0.1; done
 			mcpdrive call "$cfg" "$d/$arg" "$d/$arg.reply" </dev/null 2>>"$d/mcp-error" || echo "mcp cue $arg: the MCP call failed" >>"$d/mcp-error"
+			;;
+		codexready)
+			# A trusted Codex TUI waiting for its first message: the composer shows and the hook's trust entry is in the chat home.
+			mkdir -p "$CODEX_HOME"
+			grep -qs ':session_start:' "$CODEX_HOME/config.toml" || printf '%s\n' "[hooks.state.\"$CODEX_HOME/config.toml:session_start:0:0\"]" 'trusted_hash = "sha256:fake"' >>"$CODEX_HOME/config.toml"
+			printf '%s\n' '› Ask Codex to do anything' '  ← for agents · ? for shortcuts'
+			stty raw -echo <&3 2>/dev/null
 			;;
 		replydelay) FAKE_REPLY_DELAY=$arg ;;
 		events)

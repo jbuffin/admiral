@@ -72,7 +72,7 @@ func TestAdmiralBot_CodexChatStartsOnlyOnceBothProbesPassAndIsFenced(t *testing.
 	t.Parallel()
 	c, eng := newCodexBotWorld(t, "pass")
 	w := c.world
-	w.writeCue("mcp ships", "codexreply Two ships are at anchor.")
+	w.writeCue("codexready", "mcp ships", "codexreply Two ships are at anchor.")
 	w.start()
 
 	// Greyed until the engineer checks: nothing is stored.
@@ -207,7 +207,8 @@ func TestAdmiralBot_CodexChatStartsOnlyOnceBothProbesPassAndIsFenced(t *testing.
 		if code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/new", nil); code != http.StatusOK {
 			t.Fatalf("POST /api/chat/chat/new = %d, want 200: %s", code, body)
 		}
-		c.waitStdinOneOf(codexStdinReset, "\x1b[200~"+codexResetCommand+"\x1b[201~\r")
+		first := "Which ships are at anchor?\r"
+		c.waitStdinOneOf(first+codexStdinReset, first+"\x1b[200~"+codexResetCommand+"\x1b[201~\r")
 		got := lastOf(w.waitEvent(chatSessionName, "usage", 1), "usage")
 		tokens, _ := got["tokens"].(map[string]any)
 		if got["fleet"] != "chat" || got["harness"] != "codex" || tokens == nil || tokens["input"] == 0.0 {
