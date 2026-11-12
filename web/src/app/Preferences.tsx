@@ -7,7 +7,7 @@ import { FleetPage } from './FleetPage';
 import { HarnessCapabilities } from './HarnessCapabilities';
 import { OrderSources } from './OrderSources';
 
-const TITLES: Record<PreferencesPage, string> = { fleet: 'Fleet', sources: 'Order sources', capabilities: 'Harness capabilities', usage: 'Usage', remote: 'Remote access' };
+const TITLES: Record<PreferencesPage, string> = { fleet: 'Fleet', sources: 'Order sources', capabilities: 'Harness capabilities', usage: 'Usage', 'all-usage': 'Usage', remote: 'Remote access' };
 
 function NavLink({ path, current, children }: { path: string; current: boolean; children: string }) {
   const search = fleetSearch.value;
@@ -37,7 +37,7 @@ function PreferencesNav({ current, page }: { current: string; page: PreferencesP
         <NavLink path={remotePath} current={page === 'remote'}>
           Remote access
         </NavLink>
-        <NavLink path={usageAllPath} current={page === 'usage' && current === ''}>
+        <NavLink path={usageAllPath} current={page === 'all-usage'}>
           Usage
         </NavLink>
       </div>
@@ -73,7 +73,7 @@ export function Preferences({ phone }: { phone: boolean }) {
   // Bare and unknown paths open the active fleet's sources, else Remote access; signals are read at run time because a render can see the config half-loaded.
   useEffect(() => {
     const open = activeFleet.value;
-    if (!loaded.value || page === 'remote' || (page === 'usage' && key === null) || fleets.value.some((f) => f.key === key)) return;
+    if (!loaded.value || page === 'remote' || page === 'all-usage' || fleets.value.some((f) => f.key === key)) return;
     go(open ? sourcesPath(open.key) : remotePath, fleetSearch.value, true);
   }, [loaded.value, fleets.value, key, page]);
 
@@ -88,7 +88,7 @@ export function Preferences({ phone }: { phone: boolean }) {
             <p class="fleet-label">All fleets</p>
             <RemoteAccess />
           </>
-        ) : page === 'usage' && key === null ? (
+        ) : page === 'all-usage' ? (
           <>
             <Title>{TITLES.usage}</Title>
             <p class="fleet-label">All fleets</p>

@@ -15,7 +15,7 @@ export function surfaceOf(path: string): Surface | undefined {
   // Preferences alone has pages below it: /app/preferences/<fleet key>/<page>.
   // Campaigns has the Campaign page below it: /app/campaigns/<id>; Crew has a member: /app/crew/<name>.
   const below =
-    (s?.id === 'preferences' && sub.length === 2 && (PREFERENCES_PAGES as readonly string[]).includes(sub[1]) && (sub[1] !== 'remote' || sub[0] === 'admiral')) ||
+    (s?.id === 'preferences' && sub.length === 2 && (PREFERENCES_PAGES as readonly string[]).includes(sub[1]) && (!GLOBAL_PAGES.includes(sub[1]) || sub[0] === 'admiral')) ||
     (s?.id === 'campaigns' && sub.length === 1) ||
     (s?.id === 'crew' && sub.length === 1);
   if (s && sub.length > 0 && !below) return undefined;
@@ -68,16 +68,18 @@ export function peekOf(path: string): PeekTarget | null {
   }
 }
 
-const PREFERENCES_PAGES = ['fleet', 'sources', 'capabilities', 'usage', 'remote'] as const;
+const PREFERENCES_PAGES = ['fleet', 'sources', 'capabilities', 'usage', 'all-usage', 'remote'] as const;
 
-// A fleet key can't be `admiral` on the remote or usage page: that segment is reserved for the global pages.
-const globalPage = (path: string): 'remote' | 'usage' | null => {
+const GLOBAL_PAGES: string[] = ['remote', 'all-usage'];
+
+// The remote and all-usage pages live only under the reserved `admiral` segment; any other page there belongs to a fleet keyed `admiral`.
+const globalPage = (path: string): 'remote' | 'all-usage' | null => {
   const [id, key, page] = segments(path);
-  return id === 'preferences' && key === 'admiral' && (page === 'remote' || page === 'usage') ? page : null;
+  return id === 'preferences' && key === 'admiral' && (page === 'remote' || page === 'all-usage') ? page : null;
 };
 
 export const remotePath = '/app/preferences/admiral/remote';
-export const usageAllPath = '/app/preferences/admiral/usage';
+export const usageAllPath = '/app/preferences/admiral/all-usage';
 export type PreferencesPage = (typeof PREFERENCES_PAGES)[number];
 
 export const sourcesPath = (fleetKey: string) => `/app/preferences/${encodeURIComponent(fleetKey)}/sources`;
@@ -104,7 +106,7 @@ export function preferencesPage(path: string): PreferencesPage {
   const global = globalPage(path);
   if (global) return global;
   const page = segments(path)[2];
-  return (PREFERENCES_PAGES as readonly string[]).includes(page) && page !== 'remote' ? (page as PreferencesPage) : 'sources';
+  return (PREFERENCES_PAGES as readonly string[]).includes(page) && !GLOBAL_PAGES.includes(page) ? (page as PreferencesPage) : 'sources';
 }
 
 export const campaignPath = (id: string) => `/app/campaigns/${encodeURIComponent(id)}`;

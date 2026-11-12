@@ -646,7 +646,7 @@ test('a ship\'s Bridge shows its tokens and its own money, and the Usage pages k
   await expect(main.getByRole('region', { name: /copilot/i })).toHaveCount(0);
 
   // The cross-fleet page has one row for each fleet and nothing that adds them.
-  await page.goto(admiral.url + 'app/preferences/admiral/usage');
+  await page.goto(admiral.url + 'app/preferences/admiral/all-usage');
   await expect(page.getByRole('heading', { name: 'Usage', exact: true })).toBeVisible();
   const fleetRow = (name: string) => main.getByRole('region', { name });
   await expect(fleetRow(WORK)).toContainText('est. $0.25', { timeout: 15_000 });

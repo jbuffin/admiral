@@ -1,3 +1,4 @@
+import { harnessName } from './MissingCapability';
 import { moneyText, ageText, shortCount, type ShipUsage } from './shipUsage';
 
 type Tokens = NonNullable<ShipUsage['tokens']>;
@@ -78,7 +79,7 @@ function harnessLine(h: HarnessUsage): HarnessLine {
     if (!s) continue;
     spenders.push({ label, tokens: tokensText(s.tokens), money: moneyLine(s.money), ...(s.money?.incomplete ? { incomplete: true } : {}) });
   }
-  return { harness: h.harness, tokens: tokensText(h.tokens), money: moneyLine(h.money), incomplete: h.money?.incomplete ?? false, spenders };
+  return { harness: harnessName(h.harness), tokens: tokensText(h.tokens), money: moneyLine(h.money), incomplete: h.money?.incomplete ?? false, spenders };
 }
 
 export interface PeriodLines {
@@ -96,7 +97,8 @@ export function usagePeriods(f: FleetUsage): PeriodLines[] {
     ] as const
   ).map(([label, id]) => ({ label, harnesses: f.periods[id].harnesses.map(harnessLine) }));
   const month = f.periods.month.harnesses;
-  if (month.some((h) => h.money?.basis === 'credits')) out.push({ label: 'Month to date', harnesses: month.map(harnessLine) });
+  const credits = month.filter((h) => h.money?.basis === 'credits');
+  if (credits.length) out.push({ label: 'Month to date', harnesses: credits.map(harnessLine) });
   return out;
 }
 
@@ -125,10 +127,13 @@ export interface QuotaCard {
 }
 
 function windowLabel(w: Window): string {
-  if (w.id === 'spend') return 'Monthly spend';
-  const m = w.window_minutes ?? 0;
-  if (m >= 1440 && m % 1440 === 0) return `${m / 1440}-day`;
-  return `${Math.round(m / 60)}-hour`;
+  if (w.id === 'spend') return w.period === 'monthly' ? 'Monthly spend' : 'Spend';
+  const m = w.window_minutes;
+  if (!m || m <= 0) return w.id === 'primary' ? 'Primary' : w.id === 'secondary' ? 'Secondary' : 'Window';
+  if (m < 60) return `${m}-minute`;
+  if (m % 1440 === 0) return `${m / 1440}-day`;
+  if (m % 60 === 0) return `${m / 60}-hour`;
+  return `${m}-minute`;
 }
 
 function resetsText(at: string | undefined, now: Date): string {
@@ -147,8 +152,8 @@ function bar(w: Window, now: Date): QuotaBar {
   const label = windowLabel(w);
   const percent = Math.round(w.used_percent);
   const resets = resetsText(w.resets_at, now);
-  const detail = w.id === 'spend' && w.used_usd !== undefined && w.limit_usd !== undefined ? `est. $${w.used_usd.toFixed(2)} of $${w.limit_usd.toFixed(2)} this month` : '';
-  const head = w.id === 'spend' ? label : `${label} window`;
+  const detail = w.id === 'spend' && w.used_usd !== undefined && w.limit_usd !== undefined ? `est. $${w.used_usd.toFixed(2)} of $${w.limit_usd.toFixed(2)}${w.period === 'monthly' ? ' this month' : ''}` : '';
+  const head = w.id === 'spend' || !/\d/.test(label) ? label : `${label} window`;
   return {
     label,
     percent,
@@ -164,7 +169,7 @@ export function quotaCards(quota: Quota[], now: Date): QuotaCard[] {
   return quota.map((q) => {
     const age = q.age_seconds ?? 0;
     return {
-      label: q.label,
+      label: harnessName(q.label),
       fresh: !q.has_data ? 'no live data yet' : age < QUOTA_LIVE_SECONDS ? 'live' : `last seen ${ageText(age)} ago`,
       bars: q.has_data ? q.windows.map((w) => bar(w, now)) : [],
     };

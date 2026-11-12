@@ -11,7 +11,8 @@ function useUsage<T>(path: string): { data: T | null; error: string } {
     setState({ data: null, error: '' });
     return watchPath<T>(path, (r) => {
       if (r.ok) setState({ data: r.data, error: '' });
-      else setState((s) => ({ ...s, error: r.status === 404 ? 'No usage for this fleet.' : "Couldn't read usage." }));
+      else if (r.status === 404) setState({ data: null, error: 'No usage for this fleet.' });
+      else setState((s) => ({ ...s, error: "Couldn't read usage." }));
       return r.ok;
     });
   }, [path]);
@@ -56,6 +57,7 @@ const Nothing = () => <p class="usage-empty">Nothing yet.</p>;
 export function FleetUsagePage({ fleetKey, phone }: { fleetKey: string; phone: boolean }) {
   const { data, error } = useUsage<FleetUsage>(`/usage?fleet=${encodeURIComponent(fleetKey)}`);
   const Sub = phone ? 'h3' : 'h2';
+  const Card = phone ? 'h4' : 'h3';
   if (!data) return error ? <p class="usage-empty">{error}</p> : null;
   const cards = quotaCards(data.quota ?? [], new Date());
   return (
@@ -71,7 +73,7 @@ export function FleetUsagePage({ fleetKey, phone }: { fleetKey: string; phone: b
           <Sub>Plan quota</Sub>
           {cards.map((c, i) => (
             <section key={c.label} class="usage-card" aria-labelledby={`usage-quota-${i}`}>
-              <h4 id={`usage-quota-${i}`}>{c.label}</h4>
+              <Card id={`usage-quota-${i}`}>{c.label}</Card>
               <span class="usage-fresh">{c.fresh}</span>
               {c.bars.map((b) => (
                 <div key={b.label} class="usage-bar">

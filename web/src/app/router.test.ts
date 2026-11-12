@@ -123,13 +123,21 @@ describe('Remote access route', () => {
 describe('Usage routes', () => {
   it('has a page under each fleet and a cross-fleet page under the reserved admiral segment', () => {
     expect(usagePath('zulu')).toBe('/app/preferences/zulu/usage');
-    expect(usageAllPath).toBe('/app/preferences/admiral/usage');
+    expect(usageAllPath).toBe('/app/preferences/admiral/all-usage');
     expect(surfaceOf('/app/preferences/zulu/usage')?.id).toBe('preferences');
     expect(preferencesFleet('/app/preferences/zulu/usage')).toBe('zulu');
     expect(preferencesPage('/app/preferences/zulu/usage')).toBe('usage');
     expect(surfaceOf(usageAllPath)?.id).toBe('preferences');
     expect(preferencesFleet(usageAllPath)).toBeNull();
-    expect(preferencesPage(usageAllPath)).toBe('usage');
+    expect(preferencesPage(usageAllPath)).toBe('all-usage');
+  });
+
+  it('leaves admiral/usage to a fleet keyed admiral', () => {
+    expect(usagePath('admiral')).not.toBe(usageAllPath);
+    expect(surfaceOf(usagePath('admiral'))?.id).toBe('preferences');
+    expect(preferencesFleet(usagePath('admiral'))).toBe('admiral');
+    expect(preferencesPage(usagePath('admiral'))).toBe('usage');
+    expect(surfaceOf('/app/preferences/zulu/all-usage')).toBeUndefined();
   });
 });
 

@@ -33,7 +33,7 @@ describe('usagePeriods', () => {
   it('lists today, 7 days and 30 days, each with one line per harness', () => {
     const p = usagePeriods(fleet('zulu', [claude, copilot]));
     expect(p.map((x) => x.label)).toEqual(['Today', '7 days', '30 days']);
-    expect(p[0].harnesses.map((h) => h.harness)).toEqual(['claude', 'copilot']);
+    expect(p[0].harnesses.map((h) => h.harness)).toEqual(['Claude', 'Copilot']);
   });
 
   it('headlines input + output + reasoning and keeps each harness money in its own basis, never summed', () => {
@@ -66,6 +66,12 @@ describe('usagePeriods', () => {
     expect(h.incomplete).toBe(true);
     expect(h.spenders[0].incomplete).toBe(true);
     expect(usagePeriods(fleet('zulu', [claude]))[0].harnesses[0].incomplete).toBe(false);
+  });
+
+  it('lists the month to date for credits harnesses only', () => {
+    const both = usagePeriods(fleet('alpha', [claude, copilot], { periods: { today: empty, '7d': empty, '30d': empty, month: { harnesses: [claude, copilot] } } }));
+    expect(both[3].label).toBe('Month to date');
+    expect(both[3].harnesses.map((h) => h.harness)).toEqual(['Copilot']);
   });
 
   it('shows a period with nothing as no harness lines', () => {
@@ -102,7 +108,7 @@ const q = (over: Partial<Quota> = {}): Quota => ({
 describe('quotaCards', () => {
   it('makes one bar per window, labelled from its minutes, with its share and reset time', () => {
     const [card] = quotaCards([q()], now);
-    expect(card.label).toBe('claude');
+    expect(card.label).toBe('Claude');
     expect(card.bars.map((b) => [b.label, b.percent, b.resets])).toEqual([
       ['5-hour', 40, 'resets in 2h 15m'],
       ['7-day', 10, 'resets in 2d 4h'],
@@ -114,6 +120,21 @@ describe('quotaCards', () => {
     const w = (m: number) => ({ id: 'primary', used_percent: 1, window_minutes: m, resets_at: at(30) });
     const labels = quotaCards([q({ windows: [w(60), w(120), w(2880)] })], now)[0].bars.map((b) => b.label);
     expect(labels).toEqual(['1-hour', '2-hour', '2-day']);
+  });
+
+  it('labels a window with no minutes from its id, and odd lengths in minutes', () => {
+    const w = (id: string, m?: number) => ({ id, used_percent: 12, ...(m === undefined ? {} : { window_minutes: m }), resets_at: at(30) });
+    const bars = quotaCards([q({ windows: [w('primary'), w('secondary'), w('other'), w('primary', 30), w('primary', 90), w('primary', 1440)] })], now)[0].bars;
+    expect(bars.map((b) => b.label)).toEqual(['Primary', 'Secondary', 'Window', '30-minute', '90-minute', '1-day']);
+    expect(bars[0].aria).toBe('Primary, 12% used, resets in 30m');
+  });
+
+  it('words a spend window from its period: this month only for monthly', () => {
+    const spend = (period?: string) => ({ id: 'spend', used_percent: 30, used_usd: 6, limit_usd: 20, ...(period ? { period } : {}), resets_at: at(60) });
+    const [m, w] = quotaCards([q({ windows: [spend('monthly'), spend('weekly')] })], now)[0].bars;
+    expect(m.detail).toBe('est. $6.00 of $20.00 this month');
+    expect(w.detail).toBe('est. $6.00 of $20.00');
+    expect(w.label).toBe('Spend');
   });
 
   it('shows the Claude spend window as a bar with est. dollars used of the limit this month', () => {
@@ -156,7 +177,7 @@ describe('quotaCards', () => {
   });
 
   it('gives one card per login entry in the order given, and none when there are none', () => {
-    expect(quotaCards([q(), q({ harness: 'codex', label: 'codex' })], now).map((c) => c.label)).toEqual(['claude', 'codex']);
+    expect(quotaCards([q(), q({ harness: 'codex', label: 'codex' })], now).map((c) => c.label)).toEqual(['Claude', 'Codex']);
     expect(quotaCards([], now)).toEqual([]);
   });
 
@@ -172,8 +193,8 @@ describe('fleetRows', () => {
   it('gives one row per fleet in the order given, each with its own harness figures', () => {
     const rows = fleetRows(fleets, 'today');
     expect(rows.map((r) => r.key)).toEqual(['zulu', 'alpha', 'idle']);
-    expect(rows[0].harnesses.map((h) => [h.harness, h.tokens, h.money])).toEqual([['claude', '1.5k tokens', 'est. $1.32']]);
-    expect(rows[1].harnesses.map((h) => [h.harness, h.money])).toEqual([['copilot', '2.5 credits, 3 premium requests']]);
+    expect(rows[0].harnesses.map((h) => [h.harness, h.tokens, h.money])).toEqual([['Claude', '1.5k tokens', 'est. $1.32']]);
+    expect(rows[1].harnesses.map((h) => [h.harness, h.money])).toEqual([['Copilot', '2.5 credits, 3 premium requests']]);
     expect(rows[2].harnesses).toEqual([]);
   });
 
