@@ -530,7 +530,8 @@ func (c *chatWorld) mcpCall(name, tool string, args map[string]any) mcpReply {
 			return r
 		}
 		if time.Now().After(end) {
-			c.t.Fatalf("within 20s the fake chat never answered `mcp %s` (%s): the cue is not run or the MCP server is not reached; chat session %+v", name, tool, c.session())
+			mcpErr, _ := os.ReadFile(filepath.Join(c.recDir(), "mcp-error"))
+			c.t.Fatalf("within 20s the fake chat never answered `mcp %s` (%s): the cue is not run or the MCP server is not reached; chat session %+v; the cue's errors: %s", name, tool, c.session(), mcpErr)
 		}
 	}
 }

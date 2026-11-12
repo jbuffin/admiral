@@ -116,6 +116,8 @@
 #                  holding {"name": <tool>, "arguments": {...}}, makes that one tools/call through
 #                  the first server of the --mcp-config in its argv (with the server's env), and
 #                  writes the tool result to <name>.reply (an RPC error becomes an isError result)
+#                  It lists the tools first and, as Claude Code does, fails the cue (no reply, a line
+#                  in mcp-error) when a tool's inputSchema is not an object with an object properties
 #   wait <name>    block until the file <FAKE_RECORD_DIR>/<tmux session>/<name> exists,
 #                  so a test decides when the next cue (an exit, say) runs
 #   reply <text>   Claude only, needs jq, and the last cue (it never ends): creates `cues-done`,
@@ -250,6 +252,11 @@ if mode == "probe":
                       "mcp_servers": [{"name": name, "status": "connected"}]}), flush=True)
     if tools: call(tools[0]["name"], {})
 else:
+    # Claude Code drops every tool of a server when one inputSchema is not an object with an object properties.
+    for t in rpc("tools/list")["result"]["tools"]:
+        sch = t.get("inputSchema")
+        if not (isinstance(sch, dict) and sch.get("type") == "object" and isinstance(sch.get("properties"), dict)):
+            sys.exit("tool %s: inputSchema must be an object with type object and an object properties, got %s" % (t.get("name"), json.dumps(sch)))
     req = json.load(open(sys.argv[3]))
     out = json.dumps(call(req["name"], req.get("arguments", {})))
     open(sys.argv[4] + ".tmp", "w").write(out)
@@ -489,7 +496,7 @@ if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 				prev=$a
 			done
 			while [ ! -e "$d/$arg" ]; do sleep 0.1; done
-			mcpdrive call "$cfg" "$d/$arg" "$d/$arg.reply" </dev/null || echo "mcp cue $arg: the MCP call failed" >>"$d/mcp-error"
+			mcpdrive call "$cfg" "$d/$arg" "$d/$arg.reply" </dev/null 2>>"$d/mcp-error" || echo "mcp cue $arg: the MCP call failed" >>"$d/mcp-error"
 			;;
 		replydelay) FAKE_REPLY_DELAY=$arg ;;
 		events)
