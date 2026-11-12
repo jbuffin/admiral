@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"strings"
 )
 
 type codexTotals struct {
 	InputTokens     int64 `json:"input_tokens"`
 	CachedInput     int64 `json:"cached_input_tokens"`
+	CacheWrite      int64 `json:"cache_write_input_tokens"`
 	OutputTokens    int64 `json:"output_tokens"`
 	ReasoningOutput int64 `json:"reasoning_output_tokens"`
 }
@@ -23,6 +25,12 @@ type codexRateLimits struct {
 	Primary   *codexWindow `json:"primary"`
 	Secondary *codexWindow `json:"secondary"`
 	PlanType  string       `json:"plan_type"`
+	Credits   *struct {
+		HasCredits bool            `json:"has_credits"`
+		Unlimited  bool            `json:"unlimited"`
+		Balance    json.RawMessage `json:"balance"`
+	} `json:"credits"`
+	ReachedType *string `json:"rate_limit_reached_type"`
 }
 
 type codexTokenCount struct {
@@ -52,10 +60,19 @@ func ParseCodex(r io.Reader) (Figures, error) {
 		}
 		if e.Payload.Info != nil {
 			c := e.Payload.Info.Total
-			tokens = &Tokens{Input: c.InputTokens - c.CachedInput, Output: c.OutputTokens - c.ReasoningOutput, Reasoning: c.ReasoningOutput, CacheRead: c.CachedInput}
+			tokens = &Tokens{Input: c.InputTokens - c.CachedInput - c.CacheWrite, Output: c.OutputTokens - c.ReasoningOutput, Reasoning: c.ReasoningOutput, CacheRead: c.CachedInput, CacheWrite: c.CacheWrite}
 		}
 		if rl := e.Payload.RateLimits; rl != nil {
 			quota = &Quota{Primary: rl.Primary.window(), Secondary: rl.Secondary.window(), PlanType: rl.PlanType}
+			if rl.ReachedType != nil {
+				quota.ReachedType = *rl.ReachedType
+			}
+			if cr := rl.Credits; cr != nil {
+				quota.Credits = &Credits{HasCredits: cr.HasCredits, Unlimited: cr.Unlimited}
+				if b := string(cr.Balance); b != "" && b != "null" {
+					quota.Credits.Balance = strings.Trim(b, `"`)
+				}
+			}
 		}
 	})
 	if err != nil {

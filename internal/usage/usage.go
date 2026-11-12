@@ -43,8 +43,16 @@ type Money struct {
 	Basis  Basis
 	// Incomplete marks an estimate that left out a model the harness has no price for.
 	Incomplete bool
-	// PremiumRequestCost is Copilot's premium request count for the run; zero elsewhere.
-	PremiumRequestCost float64
+	// PremiumRequestCost is Copilot's premium request count for the run; nil when the harness gave none.
+	PremiumRequestCost *float64
+}
+
+func combinePremium(a, b *float64, op func(x, y float64) float64) *float64 {
+	if a == nil || b == nil {
+		return nil
+	}
+	v := op(*a, *b)
+	return &v
 }
 
 // Add and Sub return false when the bases differ.
@@ -52,14 +60,14 @@ func (m Money) Add(o Money) (Money, bool) {
 	if m.Basis != o.Basis {
 		return Money{}, false
 	}
-	return Money{m.Amount + o.Amount, m.Basis, m.Incomplete || o.Incomplete, m.PremiumRequestCost + o.PremiumRequestCost}, true
+	return Money{m.Amount + o.Amount, m.Basis, m.Incomplete || o.Incomplete, combinePremium(m.PremiumRequestCost, o.PremiumRequestCost, func(x, y float64) float64 { return x + y })}, true
 }
 
 func (m Money) Sub(o Money) (Money, bool) {
 	if m.Basis != o.Basis {
 		return Money{}, false
 	}
-	return Money{m.Amount - o.Amount, m.Basis, m.Incomplete || o.Incomplete, m.PremiumRequestCost - o.PremiumRequestCost}, true
+	return Money{m.Amount - o.Amount, m.Basis, m.Incomplete || o.Incomplete, combinePremium(m.PremiumRequestCost, o.PremiumRequestCost, func(x, y float64) float64 { return x - y })}, true
 }
 
 // Window is one rate-limit window of a plan.
@@ -69,10 +77,19 @@ type Window struct {
 	ResetsAt      int64 // unix seconds
 }
 
+// Credits is a plan's pay-as-you-go balance. Balance is the raw text the harness wrote; empty when it gave none.
+type Credits struct {
+	HasCredits bool
+	Unlimited  bool
+	Balance    string
+}
+
 // Quota is the plan's rate-limit state when the figures were written (Codex only).
 type Quota struct {
 	Primary, Secondary *Window
 	PlanType           string
+	Credits            *Credits
+	ReachedType        string // which limit stopped the run; empty when none did
 }
 
 // Figures are one harness's totals for a session. Tokens and Money are cumulative across a resume.
@@ -82,20 +99,30 @@ type Figures struct {
 	Quota  *Quota
 }
 
+func (t Tokens) negative() bool {
+	return t.Input < 0 || t.Output < 0 || t.Reasoning < 0 || t.CacheRead < 0 || t.CacheWrite < 0
+}
+
 // Sub gives the use since an earlier reading of the same session. The result carries no Quota:
-// a window's state is not a difference. Money is nil when the bases differ.
-func (f Figures) Sub(prev Figures) Figures {
-	out := Figures{Tokens: f.Tokens.Sub(prev.Tokens)}
+// a window's state is not a difference. ok is false on a reset (a class or the money went down,
+// or the money bases differ), and the caller must not store the result as usage.
+func (f Figures) Sub(prev Figures) (d Figures, ok bool) {
+	d = Figures{Tokens: f.Tokens.Sub(prev.Tokens)}
+	ok = !d.Tokens.negative()
 	switch {
 	case f.Money != nil && prev.Money != nil:
-		if m, ok := f.Money.Sub(*prev.Money); ok {
-			out.Money = &m
+		m, same := f.Money.Sub(*prev.Money)
+		if !same || m.Amount < 0 {
+			ok = false
 		}
-	case f.Money != nil && prev.Money == nil:
+		if same {
+			d.Money = &m
+		}
+	case f.Money != nil:
 		m := *f.Money
-		out.Money = &m
+		d.Money = &m
 	}
-	return out
+	return d, ok
 }
 
 // eachLine calls fn with every non-empty line, however long. fn gets a slice it must not keep.

@@ -57,7 +57,7 @@ func TestClaudeExistingFixtureSumsModels(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Ephemeral 5m/1h split cacheCreationInputTokens and must not be added again.
-	wantTokens(t, f.Tokens, Tokens{Input: 2342 + 5449, Output: 26 + 2446, Reasoning: 480, CacheRead: 817779, CacheWrite: 84288})
+	wantTokens(t, f.Tokens, Tokens{Input: 2342 + 5449, Output: 26 + 2446 - 480, Reasoning: 480, CacheRead: 817779, CacheWrite: 84288})
 	near(t, "money", f.Money.Amount, 0.8582489999999999)
 }
 
@@ -83,7 +83,7 @@ func TestClaudeSumsSeveralModelsAndKeepsUnknownFlag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantTokens(t, f.Tokens, Tokens{Input: 11, Output: 22, Reasoning: 8, CacheRead: 104, CacheWrite: 45})
+	wantTokens(t, f.Tokens, Tokens{Input: 11, Output: 22 - 8, Reasoning: 8, CacheRead: 104, CacheWrite: 45})
 	if !f.Money.Incomplete {
 		t.Error("Incomplete = false, want true for hasUnknownModelCost")
 	}
@@ -213,7 +213,7 @@ func TestCopilotRecordedShutdown(t *testing.T) {
 		t.Fatalf("money = %+v, want credits", f.Money)
 	}
 	near(t, "credits", f.Money.Amount, 17.8756)
-	near(t, "premium request cost", f.Money.PremiumRequestCost, 15)
+	near(t, "premium request cost", *f.Money.PremiumRequestCost, 15)
 }
 
 func TestCopilotExistingFixtureHasNoFigures(t *testing.T) {
@@ -237,9 +237,9 @@ func TestCopilotShutdownSumsModelsNotAgents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantTokens(t, f.Tokens, Tokens{Input: 225, Output: 40, Reasoning: 6, CacheRead: 55, CacheWrite: 20})
+	wantTokens(t, f.Tokens, Tokens{Input: 225, Output: 40 - 6, Reasoning: 6, CacheRead: 55, CacheWrite: 20})
 	near(t, "credits", f.Money.Amount, 4)
-	near(t, "premium request cost", f.Money.PremiumRequestCost, 3)
+	near(t, "premium request cost", *f.Money.PremiumRequestCost, 3)
 }
 
 func usageRecord(in, out, cacheRead, cacheWrite, reasoning, nano string) string {
@@ -254,7 +254,7 @@ func TestCopilotWithoutShutdownSumsUsageRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantTokens(t, f.Tokens, Tokens{Input: 225, Output: 40, Reasoning: 6, CacheRead: 55, CacheWrite: 20})
+	wantTokens(t, f.Tokens, Tokens{Input: 225, Output: 40 - 6, Reasoning: 6, CacheRead: 55, CacheWrite: 20})
 	if f.Money == nil || f.Money.Basis != BasisCredits {
 		t.Fatalf("money = %+v, want credits", f.Money)
 	}
@@ -296,4 +296,77 @@ func TestCopilotSkipsTruncatedTrailingLine(t *testing.T) {
 	}
 	wantTokens(t, f.Tokens, Tokens{Input: 100, Output: 10})
 	near(t, "credits", f.Money.Amount, 1)
+}
+
+func TestCodexReadsCacheWriteQuotaCreditsAndReachedType(t *testing.T) {
+	info := `{"total_token_usage":{"input_tokens":100,"cached_input_tokens":30,"cache_write_input_tokens":20,"output_tokens":5,"reasoning_output_tokens":0}}`
+	rl := `{"primary":null,"secondary":null,"plan_type":"pro","credits":{"has_credits":true,"unlimited":false,"balance":"12.5"},"rate_limit_reached_type":"primary"}`
+	f, err := ParseCodex(strings.NewReader(codexLine(info, rl) + "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantTokens(t, f.Tokens, Tokens{Input: 50, Output: 5, CacheRead: 30, CacheWrite: 20})
+	c := f.Quota.Credits
+	if c == nil || !c.HasCredits || c.Unlimited || c.Balance != "12.5" || f.Quota.ReachedType != "primary" {
+		t.Errorf("quota = %+v credits = %+v", f.Quota, c)
+	}
+}
+
+func TestCopilotCountsUsageRecordsAfterTheLastShutdown(t *testing.T) {
+	in := `{"type":"session.shutdown","data":{"totalNanoAiu":2000000000,"modelMetrics":{"m":` + copilotModel("10", "5", "0", "0", "0", "2000000000") + `},"accountingSnapshot":{"totalPremiumRequestCost":3.0}}}` + "\n" +
+		usageRecord("7", "3", "0", "0", "0", "1000000000") + "\n"
+	f, err := ParseCopilot(strings.NewReader(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantTokens(t, f.Tokens, Tokens{Input: 17, Output: 8})
+	near(t, "credits", f.Money.Amount, 3)
+	if f.Money.PremiumRequestCost != nil {
+		t.Errorf("premium = %v, want unknown once records are added", *f.Money.PremiumRequestCost)
+	}
+}
+
+func TestCopilotUsageRecordsAloneLeavePremiumCostUnknown(t *testing.T) {
+	f, err := ParseCopilot(strings.NewReader(usageRecord("1", "1", "0", "0", "0", "1000000000") + "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Money.PremiumRequestCost != nil {
+		t.Errorf("premium = %v, want nil", *f.Money.PremiumRequestCost)
+	}
+}
+
+func TestFiguresSub(t *testing.T) {
+	est := func(a float64) *Money { return &Money{Amount: a, Basis: BasisEstimate} }
+	cur := Figures{Tokens: Tokens{Input: 10, Output: 20, Reasoning: 30, CacheRead: 40, CacheWrite: 50}, Money: est(5), Quota: &Quota{PlanType: "x"}}
+	for _, tc := range []struct {
+		name    string
+		prev    Figures
+		wantOK  bool
+		wantTok Tokens
+		wantMon *Money
+	}{
+		{"same basis subtracts per class", Figures{Tokens: Tokens{1, 2, 3, 4, 5}, Money: est(2)}, true, Tokens{9, 18, 27, 36, 45}, est(3)},
+		{"different bases", Figures{Tokens: Tokens{1, 2, 3, 4, 5}, Money: &Money{Amount: 2, Basis: BasisCredits}}, false, Tokens{9, 18, 27, 36, 45}, nil},
+		{"previous without money keeps the current", Figures{Tokens: Tokens{1, 2, 3, 4, 5}}, true, Tokens{9, 18, 27, 36, 45}, est(5)},
+		{"a class going down is a reset", Figures{Tokens: Tokens{11, 0, 0, 0, 0}, Money: est(1)}, false, Tokens{-1, 20, 30, 40, 50}, est(4)},
+		{"money going down is a reset", Figures{Money: est(9)}, false, Tokens{10, 20, 30, 40, 50}, est(-4)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, ok := cur.Sub(tc.prev)
+			if ok != tc.wantOK {
+				t.Errorf("ok = %v, want %v", ok, tc.wantOK)
+			}
+			wantTokens(t, d.Tokens, tc.wantTok)
+			if d.Quota != nil {
+				t.Errorf("quota = %+v, want nil", d.Quota)
+			}
+			if (d.Money == nil) != (tc.wantMon == nil) {
+				t.Fatalf("money = %+v, want %+v", d.Money, tc.wantMon)
+			}
+			if d.Money != nil {
+				near(t, "money", d.Money.Amount, tc.wantMon.Amount)
+			}
+		})
+	}
 }

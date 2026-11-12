@@ -15,9 +15,10 @@ type copilotUsage struct {
 	ReasoningTokens  int64 `json:"reasoningTokens"`
 }
 
-// tokens makes the classes disjoint: Copilot's inputTokens includes the cache reads and writes.
+// tokens makes the classes disjoint: inputTokens includes the cache reads and writes, and outputTokens
+// is taken to include reasoning as the other harnesses do (unconfirmed: the sample has none).
 func (u copilotUsage) tokens() Tokens {
-	return Tokens{Input: u.InputTokens - u.CacheReadTokens - u.CacheWriteTokens, Output: u.OutputTokens, Reasoning: u.ReasoningTokens, CacheRead: u.CacheReadTokens, CacheWrite: u.CacheWriteTokens}
+	return Tokens{Input: u.InputTokens - u.CacheReadTokens - u.CacheWriteTokens, Output: u.OutputTokens - u.ReasoningTokens, Reasoning: u.ReasoningTokens, CacheRead: u.CacheReadTokens, CacheWrite: u.CacheWriteTokens}
 }
 
 type copilotEvent struct {
@@ -30,6 +31,7 @@ type copilotEvent struct {
 		} `json:"modelMetrics"`
 		AccountingSnapshot struct {
 			TotalPremiumRequestCost float64 `json:"totalPremiumRequestCost"`
+			AICreditsStatus         string  `json:"aiCreditsStatus"`
 		} `json:"accountingSnapshot"`
 		Usage *struct {
 			copilotUsage
@@ -42,11 +44,15 @@ type copilotEvent struct {
 
 const nanoPerCredit = 1e9
 
-// ParseCopilot reads the session.shutdown event, or without one sums the session.usage_record events.
+// ParseCopilot reads the last session.shutdown and adds the session.usage_record events written after it.
+// Without a shutdown the records are summed alone. Whether a shutdown is cumulative across a resume or
+// covers one process is unconfirmed (the recorded sample has a single run); counting the records after it
+// neither drops nor repeats any. The premium request cost is nil when records were added on top, since a
+// record's own cost is not a request count.
 func ParseCopilot(r io.Reader) (Figures, error) {
-	var shutdown *Figures
-	var records Figures
-	haveRecords := false
+	var base *Figures
+	var since Figures
+	haveSince := false
 	err := eachLine(r, func(line []byte) {
 		if !bytes.Contains(line, []byte(`"session.`)) {
 			return
@@ -69,28 +75,36 @@ func ParseCopilot(r io.Reader) (Figures, error) {
 			for _, n := range names {
 				t = t.Add(e.Data.ModelMetrics[n].Usage.tokens())
 			}
-			shutdown = &Figures{Tokens: t, Money: &Money{Amount: e.Data.TotalNanoAiu / nanoPerCredit, Basis: BasisCredits, PremiumRequestCost: e.Data.AccountingSnapshot.TotalPremiumRequestCost}}
+			snap := e.Data.AccountingSnapshot
+			premium := snap.TotalPremiumRequestCost
+			base = &Figures{Tokens: t, Money: &Money{Amount: e.Data.TotalNanoAiu / nanoPerCredit, Basis: BasisCredits,
+				Incomplete: snap.AICreditsStatus != "" && snap.AICreditsStatus != "complete", PremiumRequestCost: &premium}}
+			since, haveSince = Figures{}, false
 		case "session.usage_record":
 			u := e.Data.Usage
 			if u == nil {
 				return
 			}
-			if records.Money == nil {
-				records.Money = &Money{Basis: BasisCredits}
+			if since.Money == nil {
+				since.Money = &Money{Basis: BasisCredits}
 			}
-			records.Tokens = records.Tokens.Add(u.tokens())
-			records.Money.Amount += u.CopilotUsage.TotalNanoAiu / nanoPerCredit
-			haveRecords = true
+			since.Tokens = since.Tokens.Add(u.tokens())
+			since.Money.Amount += u.CopilotUsage.TotalNanoAiu / nanoPerCredit
+			haveSince = true
 		}
 	})
 	if err != nil {
 		return Figures{}, err
 	}
-	if shutdown != nil {
-		return *shutdown, nil
-	}
-	if !haveRecords {
+	switch {
+	case base == nil && !haveSince:
 		return Figures{}, ErrNoFigures
+	case base == nil:
+		return since, nil
+	case !haveSince:
+		return *base, nil
 	}
-	return records, nil
+	m, _ := base.Money.Add(*since.Money)
+	m.PremiumRequestCost = nil
+	return Figures{Tokens: base.Tokens.Add(since.Tokens), Money: &m}, nil
 }

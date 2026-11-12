@@ -44,7 +44,8 @@ func ParseClaude(r io.Reader) (Figures, error) {
 	}
 	var t Tokens
 	for _, m := range last.ModelUsage {
-		t = t.Add(Tokens{m.InputTokens, m.OutputTokens, m.ThinkingTokens, m.CacheReadInputTokens, m.CacheCreationInputTokens})
+		// outputTokens includes the thinking tokens, so Output is what is left of it.
+		t = t.Add(Tokens{m.InputTokens, m.OutputTokens - m.ThinkingTokens, m.ThinkingTokens, m.CacheReadInputTokens, m.CacheCreationInputTokens})
 	}
 	return Figures{Tokens: t, Money: &Money{Amount: last.TotalCostUSD, Basis: BasisEstimate, Incomplete: last.HasUnknownModelCost}}, nil
 }
