@@ -243,14 +243,29 @@ func TestStatuslineBoundsAnEngineerLineThatHangs(t *testing.T) {
 	if got != "" {
 		t.Errorf("stdout = %q, want nothing from a line that timed out", got)
 	}
-	if b, err := os.ReadFile(pidfile); err == nil {
-		pid, _ := strconv.Atoi(strings.TrimSpace(string(b)))
-		t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
-		if pid > 0 && syscall.Kill(pid, 0) == nil {
-			t.Errorf("the line's child %d outlived the timeout", pid)
+	b, err := os.ReadFile(pidfile)
+	pid, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil || pid <= 0 {
+		t.Fatalf("the line never wrote its child's pid: %v", err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	// A killed child is a zombie until something reaps it, and kill -0 still answers for a zombie.
+	deadline := time.Now().Add(3 * time.Second)
+	for !processGone(pid) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the line's child %d outlived the timeout", pid)
 		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	r.keptValue()
+}
+
+func processGone(pid int) bool {
+	if syscall.Kill(pid, 0) != nil {
+		return true
+	}
+	out, err := exec.Command("ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
+	return err != nil || strings.HasPrefix(strings.TrimSpace(string(out)), "Z")
 }
 
 func TestStatuslineGarbageInKeepsNothing(t *testing.T) {
