@@ -12,6 +12,12 @@ import (
 // The binary is found through the ship's PATH ($ADMIRAL_HOME/bin).
 func hookCommand(event string) string { return "admiral hook " + event }
 
+// statusLine replaces the engineer's own (and its padding and refreshInterval); the wrapper
+// keeps Claude's JSON and runs the engineer's line itself.
+func statusLine(flags string) map[string]any {
+	return map[string]any{"type": "command", "command": "admiral statusline" + flags}
+}
+
 // MergeToolMatcher spells the case out: a matcher is a JavaScript regular expression,
 // which has no (?i).
 const MergeToolMatcher = "^mcp__.*([Mm][Ee][Rr][Gg][Ee]|[Ee][Nn][Qq][Uu][Ee][Uu][Ee])"
@@ -33,7 +39,7 @@ func claudeSettings() any {
 		}
 		return g
 	}
-	return map[string]any{"hooks": map[string]any{
+	return map[string]any{"statusLine": statusLine(""), "hooks": map[string]any{
 		"PermissionRequest": []any{group("", "PermissionRequest")},
 		"PreToolUse": []any{
 			group("AskUserQuestion", "PreToolUse"),
@@ -65,7 +71,7 @@ func claudeChatSettings() any {
 		}
 		return g
 	}
-	return map[string]any{"permissions": map[string]any{
+	return map[string]any{"statusLine": statusLine(" --chat"), "permissions": map[string]any{
 		"allow":                               ChatAllow,
 		"deny":                                []any{"Edit", "Write", "NotebookEdit"},
 		"blockReadsOutsideWorkingDirectories": true,

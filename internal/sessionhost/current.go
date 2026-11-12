@@ -24,6 +24,8 @@ const (
 	// MonitorsOption holds the space-separated task ids of the Monitors a Claude session
 	// armed that may still run.
 	MonitorsOption = Prefix + "monitors"
+	// StatuslineOption holds the compact JSON `admiral statusline` keeps from Claude's status line.
+	StatuslineOption = Prefix + "statusline"
 )
 
 // Join skips an empty call.
