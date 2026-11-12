@@ -662,11 +662,27 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
   await expect(page.getByRole('radiogroup', { name: 'Harness' }).getByRole('radio')).toHaveText(['Claude', 'Codex']);
   await expect(pick('Harness', 'Codex')).toBeDisabled();
   await expect(main).toContainText(/Codex.*has not been checked/i);
-  await expect(main.getByRole('button', { name: 'Check again Codex', exact: true })).toBeVisible();
+  await expect(main.getByRole('button', { name: /Check again.*Codex/ })).toBeVisible();
   proveAdmiralBot(admiral, 'zulu', 'codex');
   await page.reload();
   await expect(pick('Harness', 'Codex')).toBeEnabled();
   await pick('Harness', 'Codex').click();
   await expect(page.getByRole('radiogroup', { name: 'Model' }).getByRole('radio')).not.toContainText(['Sonnet']);
+  await expect(page.getByRole('radiogroup', { name: 'Model' }).getByRole('radio', { checked: true })).toHaveCount(1);
+  // Switching the harness sends it with a model of that harness, never the old model alone.
+  const putCodex = page.waitForRequest((r) => r.method() === 'PUT' && new URL(r.url()).pathname === '/api/v1/fleets/zulu');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  const sent = (await putCodex).postDataJSON() as { chat: { harness?: string; model?: string } };
+  expect(sent.chat.harness).toBe('codex');
+  expect(sent.chat.model).toMatch(/^gpt-/);
+  const zulu = () => JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8')).fleets.zulu as { chat?: Record<string, unknown> };
+  await expect.poll(() => zulu().chat).toMatchObject({ harness: 'codex' });
+
+  // Copilot takes no effort: once proven it offers only Default.
+  await page.goto(admiral.url + 'app/preferences/alpha/admiralbot');
+  proveAdmiralBot(admiral, 'alpha', 'copilot');
+  await page.reload();
+  await pick('Harness', 'Copilot').click();
+  await expect(page.getByRole('radiogroup', { name: 'Effort' }).getByRole('radio')).toHaveText(['Default']);
   expect(watch.unversioned()).toEqual([]);
 });
