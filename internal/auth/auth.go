@@ -200,6 +200,7 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 				http.Error(w, "forbidden origin", http.StatusForbidden)
 				return
 			}
+			a.touchThisMac()
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -232,6 +233,12 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 		}
 		unauthorized(w, r)
 	})
+}
+
+// DeviceID is the paired device that made the request; it is false on the Local route and for an unpaired caller.
+func DeviceID(r *http.Request) (string, bool) {
+	id, ok := r.Context().Value(ctxKey{}).(string)
+	return id, ok && id != ""
 }
 
 func bearerToken(r *http.Request) (string, bool) {
