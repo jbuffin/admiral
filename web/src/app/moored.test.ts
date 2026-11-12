@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MooredPR, Ship } from './api';
-import { NO_RESUME_NOTE, prChips, prLabel, rowButtons, staleNote } from './moored';
+import { mergeHint, NO_RESUME_NOTE, prChips, prLabel, rowButtons, staleNote } from './moored';
 import { GROUP_TITLES, groupShips, shipAge, shipRowAge } from './shipList';
 
 const pr = (over: Partial<MooredPR> = {}): MooredPR => ({
@@ -148,5 +148,17 @@ describe('rowButtons', () => {
   });
   it('does not look at a stale poll, since waking needs no GitHub', () => {
     expect(rowButtons({ stale: true } as Parameters<typeof rowButtons>[0], false).wake).toBe(false);
+  });
+});
+
+describe('mergeHint', () => {
+  it('names the repo\'s method beside Merge', () => {
+    expect(mergeHint('squash')).toBe('squash');
+    expect(mergeHint('rebase')).toBe('rebase');
+    expect(mergeHint('merge')).toBe('merge commit');
+  });
+
+  it('says nothing until the method is known', () => {
+    expect(mergeHint(undefined)).toBe('');
   });
 });

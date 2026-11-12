@@ -39,7 +39,7 @@ export interface EntryFleet {
 
 export interface Entry {
   key: string;
-  type: 'item' | 'stop';
+  type: 'item' | 'stop' | 'merge';
   session: string;
   id?: string;
   item?: InboxItem;
@@ -58,6 +58,7 @@ export const HOLD_MS = 5000;
 
 export const itemKey = (session: string, id: string) => `item:${session}/${id}`;
 export const stopKey = (session: string) => `stop:${session}`;
+export const mergeKey = (session: string) => `merge:${session}`;
 export const crewKey = (session: string, crew: string) => `stop:${session}/${crew}`;
 
 // The wire says needs_you/crew while only a crew boat waits, so the ship itself needs you on any other reason.

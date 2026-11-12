@@ -224,15 +224,15 @@ export const mooringEnv = (a: Admiral) => ({ ...withFakeGh(a), ADMIRAL_SAIL_OFF_
 /** The resume text a moored ship's report carries unless a test says otherwise: a skill's own resume invocation. */
 export const RESUME = '/commodore resume run-7';
 
-/** Launches a ship whose harness waits, then exits 0 with a report naming the PR: Admiral moors it. `resume` is the report's resume text; `lines` are transcript lines round 0 holds when it moors. */
-export async function launchMooredShip(a: Admiral, prNumber: number, opts: { resume?: string; lines?: TranscriptLine[] } = {}): Promise<LaunchedShip> {
+/** Launches a ship whose harness waits, then exits 0 with a report naming the PR (and the `more` PRs, a stack): Admiral moors it. `resume` is the report's resume text; `lines` are transcript lines round 0 holds when it moors. */
+export async function launchMooredShip(a: Admiral, prNumber: number, opts: { resume?: string; lines?: TranscriptLine[]; more?: number[] } = {}): Promise<LaunchedShip> {
   const ship = await launchShip(a, { fleet: 'zulu', harness: 'claude', cue: 'wait go\nexit 0\n' });
   const rec = join(a.home, 'rec', ship.session);
   await expect.poll(() => existsSync(join(rec, 'env'))).toBe(true);
   if (opts.lines) await appendLines(a, ship, opts.lines);
   const report = /^ADMIRAL_REPORT=(.*)$/m.exec(readFileSync(join(rec, 'env'), 'utf8'))?.[1];
   expect(report, 'the harness env names a report path').toBeTruthy();
-  writeFileSync(report!, JSON.stringify({ version: 2, result: 'done', why: 'PR opened', prs: [{ url: `${PR_BASE}/${prNumber}`, closes: [] }], resume: opts.resume ?? RESUME }));
+  writeFileSync(report!, JSON.stringify({ version: 2, result: 'done', why: 'PR opened', prs: [prNumber, ...(opts.more ?? [])].map((n) => ({ url: `${PR_BASE}/${n}`, closes: [] })), resume: opts.resume ?? RESUME }));
   writeFileSync(join(rec, 'go'), '');
   await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status, { timeout: 30_000 }).toBe('moored');
   return ship;
@@ -390,6 +390,7 @@ export async function mooredFromTheShell(page: Page, a: Admiral, press: (l: Loca
   prAnswer(a, 8, { state: 'OPEN', review: 'CHANGES_REQUESTED', checks: 'FAILURE', mergeable: 'CONFLICTING' });
   const first = await launchMooredShip(a, 7);
   const second = await launchMooredShip(a, 8);
+  await readyOnTheServer(a, first);
 
   // Opening Ships kicks one poll, fire and forget.
   const kicks: string[] = [];
@@ -407,6 +408,9 @@ export async function mooredFromTheShell(page: Page, a: Admiral, press: (l: Loca
   for (const chip of ['Approved', 'Checks passing', 'Mergeable']) await expect(rowOf(first)).toContainText(chip);
   for (const chip of ['Changes requested', 'Checks failing', 'Conflicts']) await expect(rowOf(second)).toContainText(chip);
   await expect(rowOf(first)).not.toContainText('Conflicts');
+  // Ready to merge is a status on the moored row, which stays in its group; a PR that is not ready shows none.
+  await expect(rowOf(first)).toContainText('Ready to merge');
+  await expect(rowOf(second)).not.toContainText('Ready to merge');
   expect(kicks, 'one refresh for opening Ships, not one per render').toHaveLength(1); // the page has settled by now
   await expect(rowOf(first).locator('.ship-age')).toHaveText(/^(now|\d+m)$/);
   await expect(rowOf(first)).not.toContainText(/undefined|null/);
@@ -421,6 +425,7 @@ export async function mooredFromTheShell(page: Page, a: Admiral, press: (l: Loca
   expect(refresh.status).toBe(202);
   await expect(rowOf(first)).toContainText('Checks pending');
   await expect(rowOf(first)).not.toContainText('Checks passing');
+  await expect(rowOf(first)).not.toContainText('Ready to merge');
 
   // A record that cannot be removed leaves the ship in place with the reason on its row, and no path in it.
   const moored = join(a.home, 'moored');
@@ -449,6 +454,143 @@ export async function mooredFromTheShell(page: Page, a: Admiral, press: (l: Loca
   await expect(rowOf(second)).toHaveCount(0);
   await expect(group).toHaveCount(0);
   expect((await listShips(a)).filter((s) => s.status === 'moored')).toEqual([]);
+}
+
+/** The repository's default merge method as the fake gh answers it; call before the ship moors, since Admiral asks once per repository. */
+export function seedMergeMethod(a: Admiral, method: 'merge' | 'squash' | 'rebase') {
+  writeFileSync(join(a.home, 'fakegh', 'default_merge_method'), method.toUpperCase() + '\n');
+}
+
+/** The fake gh fails every `gh pr merge` with this message on stderr, merging nothing. */
+export function ghMergeFails(a: Admiral, message: string) {
+  writeFileSync(join(a.home, 'fakegh', 'pr_merge.fail'), message + '\n');
+}
+
+/** The fake gh sleeps this many seconds inside `gh pr merge`, so the button stays busy while a test looks. */
+export function ghMergeSlow(a: Admiral, seconds: number) {
+  writeFileSync(join(a.home, 'fakegh', 'pr_merge.sleep'), `${seconds}\n`);
+}
+
+/** The argv (after `gh`) of every merge call the fake gh recorded: `pr merge` and `stack merge`. */
+export function mergeCalls(a: Admiral): string[][] {
+  const dir = join(a.home, 'fakegh', 'calls');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .map((d) => join(dir, d, 'argv'))
+    .filter((f) => existsSync(f))
+    .map((f) => readFileSync(f, 'utf8').split('\0').filter((x) => x !== ''))
+    .filter((argv) => (argv[0] === 'pr' || argv[0] === 'stack') && argv[1] === 'merge');
+}
+
+/** Waits until the server serves the moored ship as ready to merge, with the repository's method when given, so a red journey is the UI's and not the seeding's. */
+export async function readyOnTheServer(a: Admiral, ship: LaunchedShip, method?: string) {
+  await expect
+    .poll(async () => {
+      // The poller waits minutes between rounds; the shell asks for one when Ships opens.
+      await fetch(`${a.url}api/v1/moored/refresh`, { method: 'POST' });
+      const res = await fetch(`${a.url}api/v1/ships`);
+      const got = ((await res.json()) as { ships: (ShipJSON & { stack_ready?: boolean; merge_method?: string })[] }).ships.find((s) => s.session === ship.session);
+      return { ready: got?.stack_ready === true, method: method === undefined ? undefined : got?.merge_method };
+    }, { timeout: 30_000 })
+    .toEqual({ ready: true, method });
+}
+
+const peekOf = (page: Page) => page.getByRole('region', { name: 'Peek' });
+const inboxRow = (page: Page, ship: LaunchedShip) => page.getByRole('main').getByRole('listitem').filter({ hasText: ship.name });
+const mergeButton = (page: Page) => peekOf(page).getByRole('button', { name: /^Merge/ });
+const noHorizontalScroll = (page: Page) => page.evaluate(() => [document.documentElement, document.querySelector('main')!].every((e) => e.scrollWidth <= e.clientWidth));
+
+/**
+ * Acceptance criteria 1 and 4 for a single PR that is approved, green and mergeable: the Inbox raises an entry, Peek shows the PR and Merge
+ * with the repo's method, nothing merges before the tap, one tap records one `gh pr merge <url> --squash`, and the ship sails off.
+ */
+export async function mergeFromPeek(page: Page, a: Admiral, opts: { phone: boolean }) {
+  seedMergeMethod(a, 'squash');
+  ghMergeSlow(a, 2);
+  prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+  const ship = await launchMooredShip(a, 7);
+  await readyOnTheServer(a, ship, 'squash');
+
+  await page.goto(a.url + 'app/inbox?fleet=zulu');
+  const main = page.getByRole('main');
+  await expect(main.getByRole('region', { name: /^Needs an answer/ }).getByRole('listitem').filter({ hasText: ship.name })).toContainText('ready to merge');
+  await rowLinkIn(page, ship).tap();
+  const peek = peekOf(page);
+  await expect(peek).toBeVisible();
+  await expect(peek.getByRole('link', { name: 'api#7' })).toHaveAttribute('href', `${PR_BASE}/7`);
+  for (const chip of ['Approved', 'Checks passing', 'Mergeable']) await expect(peek).toContainText(chip);
+  const merge = peek.getByRole('button', { name: 'Merge', exact: true });
+  await expect(merge).toBeInViewport();
+  expect((await merge.boundingBox())!.height, 'Merge height').toBeGreaterThanOrEqual(44);
+  await expect(peek).toContainText('squash');
+  await expect(peek.getByRole('button', { name: /Merge up to/ })).toHaveCount(0);
+  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
+
+  // Opening the entry and looking at it merges nothing.
+  await holds(() => mergeCalls(a).length === 0, 'no merge before the tap');
+
+  const refreshes: string[] = [];
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/moored/refresh') refreshes.push(r.url());
+  });
+  await merge.tap();
+  await expect(mergeButton(page)).toBeDisabled();
+  await expect.poll(() => mergeCalls(a)).toEqual([['pr', 'merge', `${PR_BASE}/7`, '--squash']]);
+  await expect(inboxRow(page, ship)).toContainText('Merged');
+  await expect.poll(() => refreshes.length, 'a poll is asked for after the 202').toBeGreaterThan(0);
+  await expect
+    .poll(async () => (await (await fetch(`${a.url}api/v1/ships`)).json() as { ships: ShipJSON[] }).ships.find((s) => s.session === ship.session)?.status ?? 'gone', { timeout: 30_000 })
+    .not.toBe('moored');
+  await expect(inboxRow(page, ship)).toHaveCount(0, { timeout: 15_000 });
+  expect(mergeCalls(a), 'one merge, not one per render or poll').toHaveLength(1);
+}
+
+/** The Peek link of a ship's row in the Inbox. */
+const rowLinkIn = (page: Page, ship: LaunchedShip) => inboxRow(page, ship).getByRole('link', { name: new RegExp(ship.name) });
+
+/** A merge gh refuses shows its message in Peek, and the ship stays moored with its entry. */
+export async function mergeFailsInPeek(page: Page, a: Admiral) {
+  seedMergeMethod(a, 'squash');
+  ghMergeFails(a, 'GraphQL: Pull request is not mergeable (mergePullRequest)');
+  prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+  const ship = await launchMooredShip(a, 7);
+  await readyOnTheServer(a, ship, 'squash');
+
+  await page.goto(a.url + 'app/inbox?fleet=zulu');
+  await expect(inboxRow(page, ship)).toContainText('ready to merge');
+  await rowLinkIn(page, ship).tap();
+  const peek = peekOf(page);
+  await peek.getByRole('button', { name: 'Merge', exact: true }).tap();
+  await expect(peek.getByRole('alert')).toContainText('Pull request is not mergeable');
+  expect(mergeCalls(a)).toEqual([['pr', 'merge', `${PR_BASE}/7`, '--squash']]);
+  await expect(mergeButton(page)).toBeEnabled();
+  await expect(inboxRow(page, ship)).toContainText('ready to merge');
+  const got = ((await (await fetch(`${a.url}api/v1/ships`)).json()) as { ships: ShipJSON[] }).ships.find((s) => s.session === ship.session);
+  expect(got?.status).toBe('moored');
+}
+
+/** A ready stack shows Ready to merge, and Peek tells the engineer to merge it with gh stack: no Merge button and no merge call. */
+export async function stackedShipOffersNoMerge(page: Page, a: Admiral) {
+  seedMergeMethod(a, 'squash');
+  prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+  prAnswer(a, 8, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+  const ship = await launchMooredShip(a, 7, { more: [8] });
+  await readyOnTheServer(a, ship, 'squash');
+
+  await page.goto(a.url + 'app/ships?fleet=zulu');
+  await expect(page.getByRole('main').getByRole('region', { name: /^Moored/ }).getByRole('listitem').filter({ hasText: ship.name })).toContainText('Ready to merge');
+  await rowLink(page, ship).tap();
+  await expect(page).toHaveURL(shipViewUrl(a, ship));
+  await expect(page.getByRole('main')).toContainText('Ready to merge');
+
+  await page.goto(a.url + 'app/inbox?fleet=zulu');
+  await rowLinkIn(page, ship).tap();
+  const peek = peekOf(page);
+  await expect(peek).toBeVisible();
+  for (const chip of ['api#7', 'api#8']) await expect(peek.getByRole('link', { name: chip })).toBeVisible();
+  await expect(peek).toContainText('gh stack');
+  await expect(peek.getByRole('button', { name: /^Merge/ })).toHaveCount(0);
+  await holds(() => mergeCalls(a).length === 0, 'a stack is never merged from Peek');
 }
 
 /**

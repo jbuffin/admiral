@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from './fixtures';
-import { launchShip, line, appendLines, received, rowLink, seedFleets, seedInboxItem, setReason, setState, withFakeGh } from './shell';
+import { addGitHubSource, appendLines, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, rowLink, seedFleets, seedInboxItem, setReason, setState, stackedShipOffersNoMerge, withFakeGh } from './shell';
 
 const peekOf = (page: Page) => page.getByRole('region', { name: 'Peek' });
 const listRow = (page: Page, text: string) => page.getByRole('main').getByRole('listitem').filter({ hasText: text });
@@ -61,4 +61,28 @@ test('on the phone, a question item opens in Peek and its answers are sent', asy
   await expect(peekOf(page)).toHaveCount(0);
   await expect(page).toHaveURL(/\/app\/inbox(\?|$)/);
   await expect(listRow(page, visitor.name)).toHaveCount(0, { timeout: 15_000 });
+});
+
+test('on the phone, Merge in Peek merges a ready PR with one gh call, only after the tap, and the ship sails off', { tag: '@critical' }, async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: mooringEnv(admiral) });
+
+  await mergeFromPeek(page, admiral, { phone: true });
+});
+
+test('on the phone, a merge that gh fails shows its message in Peek and the ship stays moored', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: mooringEnv(admiral) });
+
+  await mergeFailsInPeek(page, admiral);
+});
+
+test('on the phone, a ready stack shows Ready to merge and Peek offers no Merge', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: mooringEnv(admiral) });
+
+  await stackedShipOffersNoMerge(page, admiral);
 });

@@ -119,3 +119,23 @@ describe('reasonWords', () => {
     expect(reasonWords('bell')).toBe('Rang the bell');
   });
 });
+
+describe('a merge entry', () => {
+  const mergeEntry = (over: Partial<Entry> = {}): Entry => ({
+    key: 'merge:s1',
+    type: 'merge',
+    session: 's1',
+    ship: { ...ship, status: 'moored' } as Ship,
+    folded: null,
+    since: T0,
+    ...over,
+  });
+
+  it('reads after the ship name as ready to merge', () => {
+    expect(rowVerb(mergeEntry())).toBe('is ready to merge');
+  });
+
+  it('names the ship from its record', () => {
+    expect(rowShip(mergeEntry())).toBe('Dory');
+  });
+});

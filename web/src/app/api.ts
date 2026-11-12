@@ -28,6 +28,7 @@ export interface MooredPR {
   checks: string;
   mergeable: string;
   conflicts: boolean;
+  ready?: boolean;
 }
 export interface Ship {
   session: string;
@@ -51,6 +52,9 @@ export interface Ship {
   no_resume?: boolean;
   waiting?: string;
   prs?: MooredPR[];
+  stack_ready?: boolean;
+  ready_up_to?: string;
+  merge_method?: 'merge' | 'squash' | 'rebase';
   url?: string;
   // Every issue a slice ship holds, `url` first; a single-issue ship omits it.
   issues?: string[];
