@@ -35,6 +35,10 @@ export function rowVerb(e: Entry): string {
       const cards = e.item.findings?.cards;
       return Array.isArray(cards) ? `sent ${cards.length} finding ${cards.length === 1 ? 'card' : 'cards'}` : 'sent finding cards';
     }
+    case 'crew_notes':
+      return 'proposes crew notes';
+    case 'crew_member':
+      return 'asks to keep a crew member';
     default:
       return 'posted a notice';
   }
