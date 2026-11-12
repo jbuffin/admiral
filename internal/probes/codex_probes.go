@@ -136,8 +136,11 @@ func codexFailure(evs []codexEvent, stderr, stdout string, runErr error) string 
 		}
 	}
 	for _, s := range []string{stderr, stdout} {
-		if m := firstLine(s); m != "" {
-			return m
+		for _, l := range strings.Split(s, "\n") {
+			// Codex prints this notice first when stdin is not a terminal; it is not why the run failed.
+			if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "Reading additional input from stdin") {
+				return firstLine(l)
+			}
 		}
 	}
 	return runErr.Error()

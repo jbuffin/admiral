@@ -137,10 +137,19 @@ func TestAdmiralBot_CodexChatStartsOnlyOnceBothProbesPassAndIsFenced(t *testing.
 		if !slices.Contains(r.argv, "-m") && cfg["model"] == "" {
 			t.Errorf("argv = %q carries no model", r.argv)
 		}
-		for k := range cfg {
-			// The variable naming the token's file is fine on argv; the token's own variable is not.
-			if strings.Contains(cfg[k], `"ADMIRAL_ACTOR_TOKEN"`) {
-				t.Errorf("argv carries the actor token in %s: it belongs in a 0600 file", k)
+		// Only the variable naming the token's file may be on argv: the token's own value is in the 0600 file.
+		tokenFile := launcher.CodexTokenFile(w.home, "chat")
+		fi, err := os.Stat(tokenFile)
+		if err != nil || fi.Mode().Perm() != 0o600 {
+			t.Errorf("the token file %s: %v (%v), want a 0600 file", tokenFile, err, fi)
+		}
+		tok, _ := os.ReadFile(tokenFile)
+		if strings.TrimSpace(string(tok)) == "" {
+			t.Errorf("the token file is empty")
+		}
+		for _, a := range r.argv {
+			if strings.TrimSpace(string(tok)) != "" && strings.Contains(a, strings.TrimSpace(string(tok))) {
+				t.Errorf("argv carries the actor token: %q", a)
 			}
 		}
 	})

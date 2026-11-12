@@ -73,7 +73,7 @@ func CodexMCPServerArgs(name, command string, args []string, env map[string]stri
 }
 
 // LinkCodexLogin makes the engineer's login the only thing a Codex home takes from them: a link at rel under root to
-// target, replaced at every start. A token refresh may write through it to the engineer's file; the whole policy is here,
+// target, replaced at every start. A token refresh resolves the link and renames over the engineer's file; the whole policy is here,
 // so a copy or no link is a change to this function alone.
 func LinkCodexLogin(root *os.Root, rel, target string) error {
 	if err := mkdirsIn(root, filepath.Dir(rel)); err != nil {
