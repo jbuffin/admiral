@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/home"
+	"github.com/jbuffin/admiral/internal/launcher"
 )
 
 const mcpToken = "fake-token-work-2"
@@ -680,5 +681,19 @@ func TestTheTokenFileIsReadAndTrimmedAndAMissingOneRefusesToStart(t *testing.T) 
 	var ue *UsageError
 	if !errors.As(err, &ue) {
 		t.Errorf("a missing token file returned %v, want a usage error (exit 2)", err)
+	}
+}
+
+// Copilot takes an MCP server's tools only by name, so the chat's allowlist is a list kept beside the server's.
+func TestTheCopilotChatsToolAllowlistNamesExactlyTheServersTools(t *testing.T) {
+	var served []string
+	for _, tool := range mcpTools {
+		served = append(served, tool.Name)
+	}
+	got := append([]string(nil), launcher.ChatTools...)
+	sort.Strings(served)
+	sort.Strings(got)
+	if strings.Join(got, ",") != strings.Join(served, ",") {
+		t.Errorf("launcher.ChatTools = %v, want the admiral server's tools %v", got, served)
 	}
 }

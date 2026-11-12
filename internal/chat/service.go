@@ -39,7 +39,7 @@ const (
 )
 
 // CopilotTrustFolder is what the panel says while a Copilot chat is on its folder-trust dialog.
-const CopilotTrustFolder = ""
+const CopilotTrustFolder = "Copilot is asking whether to trust this folder: open the terminal and choose \"Yes, and remember this folder\""
 
 const Unreadable = "Admiral can't read this chat's transcript"
 
@@ -440,7 +440,7 @@ func (s *fleetChat) loginDir() string {
 	// The fleet this chat belongs to, never the session option: anything in the chat can write that.
 	f, _ := s.Config().Fleet(s.key)
 	h := f.Chat.Harness
-	if h != "claude" && h != "codex" {
+	if h != "claude" && h != "codex" && h != "copilot" {
 		return ""
 	}
 	var env map[string]string
@@ -458,6 +458,8 @@ func (s *fleetChat) configDir() string {
 		return s.loginDir()
 	case "codex":
 		return launcher.ChatCodexHome(s.Home, s.key)
+	case "copilot":
+		return launcher.ChatCopilotHome(s.Home, s.key)
 	}
 	return ""
 }
@@ -514,7 +516,7 @@ func (s *fleetChat) readOptions(pane string) (chatOptions, error) {
 		return chatOptions{}, err
 	}
 	opts := chatOptions{model: o.Model, effort: o.Effort, fleet: o.Fleet, transcript: o.Transcript}
-	if o.Transcript == "" && s.harness() == "codex" {
+	if o.Transcript == "" && (s.harness() == "codex" || s.harness() == "copilot") {
 		opts.screen = s.readScreen(pane)
 	}
 	return opts, nil
@@ -701,10 +703,14 @@ func (s *fleetChat) ready() (pane string, status int, msg string) {
 // Claude chat waits for its SessionStart; a Codex chat is ready once its composer shows with its hooks trusted, because
 // its SessionStart is the first turn's.
 func (s *fleetChat) notStartedLocked() (ready bool, msg string) {
-	if s.harness() != "codex" {
+	screen := s.st.opts.screen
+	switch s.harness() {
+	case "codex":
+	case "copilot":
+		return copilotReady(screen)
+	default:
 		return false, NotStarted
 	}
-	screen := s.st.opts.screen
 	switch {
 	case strings.Contains(screen, "Hooks need review"):
 		return false, CodexTrustHooks
@@ -718,6 +724,18 @@ func (s *fleetChat) notStartedLocked() (ready bool, msg string) {
 		return false, CodexUntrusted
 	}
 	return true, ""
+}
+
+// copilotReady: a Copilot chat's sessionStart fires on its first prompt, so a chat with no transcript is ready once its
+// composer shows. The trust dialog's list also uses the prompt mark, so the footer tells the two apart.
+func copilotReady(screen string) (bool, string) {
+	switch {
+	case strings.Contains(screen, "Confirm folder trust") || strings.Contains(screen, "Do you trust the files in this folder"):
+		return false, CopilotTrustFolder
+	case strings.Contains(screen, "/ commands"):
+		return true, ""
+	}
+	return false, NotStarted
 }
 
 // codexHooksTrusted reads the chat home's config.toml for the trust entry Codex writes when the engineer trusts the

@@ -13,10 +13,10 @@ import (
 
 // A Copilot chat runs in its own COPILOT_HOME: its transcripts are read from that home's session-state/, and the login is the engineer's.
 
-// Placeholders the implementer confirms on the real Copilot 1.0.109 TUI (each a one-line change).
+// Screens as the real Copilot 1.0.109 TUI draws them.
 var (
-	copilotTrustScreen    = "Confirm folder trust\nDo you trust the files in this folder?\n 1. Yes\n 2. Yes, and remember this folder\n 3. No (Esc)"
-	copilotComposerScreen = "│ > Enter @ to mention files or / for commands\n  shift+tab switch mode · ctrl+q enqueue"
+	copilotTrustScreen    = "Confirm folder trust\nDo you trust the files in this folder?\n❯ 1. Yes\n  2. Yes, and remember this folder for future sessions\n  3. No (Esc)"
+	copilotComposerScreen = "❯\n ← open sidebar · Interactive · Manual Approval · / commands · ? help · tab next tab    GPT-5.6 Luna"
 )
 
 const copilotChatFleets = `{"version":1,"fleets":{

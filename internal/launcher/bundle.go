@@ -110,6 +110,7 @@ func copilotHooks() any {
 		return e
 	}
 	return map[string]any{"version": 1, "hooks": map[string]any{
+		"sessionStart":        []any{entry("", "sessionStart")},
 		"notification":        []any{entry("permission_prompt|elicitation_dialog", "notification")},
 		"preToolUse":          []any{entry("ask_user", "preToolUse")},
 		"agentStop":           []any{entry("", "agentStop")},

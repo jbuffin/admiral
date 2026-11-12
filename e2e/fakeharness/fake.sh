@@ -28,6 +28,15 @@
 #                  watches for and prints a command_execution item), login-failed (401 on stderr, exit 1) or
 #                  plugin-loaded (makes plugins/cache/github in $CODEX_HOME).
 #
+#   copilot -p … --output-format json
+#                  a fenced run (the Copilot fence and config-home probes): the MCP server comes from
+#                  --additional-mcp-config (inline JSON or @file). With the probe's server it calls the server's first tool and
+#                  prints Copilot's events (tool.execution_start with toolName, mcpServerName and mcpToolName, then an
+#                  assistant.message); without one it prints only the message. $FAKE_COPILOT_PROBE (a dock env value) is pass
+#                  (default), shell-ran (creates the sentinel file the fence probe watches for and prints a bash call),
+#                  login-failed ("not logged in" on stderr, exit 1) or plugin-loaded (makes installed-plugins/github in
+#                  $COPILOT_HOME). Any other copilot -p is a headless run.
+#
 #   judge call     claude with `--tools ""` and no --mcp-config, `codex exec` without --json, or copilot with piped stdin and no -p:
 #                  a judge probe or call. It reads the prompt from stdin, answers {"reply":
 #                  "ok"} in the harness's real shape (claude's structured_output, codex's -o
@@ -130,6 +139,15 @@
 #                  writes the tool result to <name>.reply (an RPC error becomes an isError result)
 #                  It lists the tools first and, as Claude Code does, fails the cue (no reply, a line
 #                  in mcp-error) when a tool's inputSchema is not an object with an object properties
+#   copilotready   a trusted Copilot TUI waiting for its first message: shows its composer footer and remembers the folder
+#                  in $COPILOT_HOME/config.json. `copilotreply` does both too, but only after the cues before it.
+#   copilotreply <text>
+#                  Copilot only, needs jq, and the last cue (it never ends): like `reply`, for a Copilot chat. Per message it
+#                  appends the user's text and an assistant line holding <text> to $COPILOT_HOME/session-state/<id>/events.jsonl,
+#                  <id> being the --session-id in its argv, and sets the pane's @admiral-transcript to that file on the first
+#                  message of a session, as the sessionStart hook does (source new). A message of /clear writes a
+#                  session.shutdown line (as `usage` writes) to the session it ends and starts a new id, bound only by the next
+#                  message, as the real CLI does. It appends every byte it reads to `stdin`.
 #   codexready     a trusted Codex TUI waiting for its first message: shows the composer and writes the hook's trust entry
 #                  to $CODEX_HOME/config.toml. `codexreply` does both too, but only after the cues before it.
 #   codexreply <text>
@@ -233,8 +251,12 @@ prompt=""
 headless=""
 mcpcfg=""
 prev=""
+copilotfmt=""
+copilotmcp=""
 for a in "$@"; do
   [ "$prev" = "--settings" ] && settings=$a
+  [ "$prev" = "--additional-mcp-config" ] && copilotmcp=$a
+  [ "$a" = "--output-format" ] && copilotfmt=1
   if [ "$prev" = "-p" ]; then
     headless=1
     prompt=$a
@@ -420,6 +442,38 @@ if [ -n "$codexprobe" ]; then
   echo '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
   exit 0
 fi
+# A fenced copilot -p --output-format json (the fence and config-home probes): see the header. It leaves headless-runs alone.
+if [ "$(basename "$0")" = copilot ] && [ -n "$headless" ] && [ -n "$copilotfmt" ]; then
+  if [ "${FAKE_COPILOT_PROBE:-pass}" = login-failed ]; then
+    echo "Error: not logged in, run copilot login" >&2
+    exit 1
+  fi
+  cfgfile="${TMPDIR:-/tmp}/fake-copilot-mcp.$$"
+  case "$copilotmcp" in
+  @*) cp "${copilotmcp#@}" "$cfgfile" ;;
+  *) printf '%s' "$copilotmcp" >"$cfgfile" ;;
+  esac
+  if grep -q ADMIRAL_PROBE_DIR "$cfgfile"; then
+    server=$(python3 -c 'import json,sys; print(next(iter(json.load(open(sys.argv[1]))["mcpServers"])))' "$cfgfile")
+    mcpdrive probe "$cfgfile" >/dev/null
+    case "$FAKE_COPILOT_PROBE" in
+    shell-ran)
+      dir=$(python3 -c 'import json,sys; print(next(iter(json.load(open(sys.argv[1]))["mcpServers"].values()))["env"]["ADMIRAL_PROBE_DIR"])' "$cfgfile")
+      nonce=$(python3 -c 'import json,sys; print(next(iter(json.load(open(sys.argv[1]))["mcpServers"].values()))["env"]["ADMIRAL_PROBE_NONCE"])' "$cfgfile")
+      : >"$dir/ran-$nonce"
+      echo '{"type":"tool.execution_start","data":{"toolName":"bash"}}'
+      ;;
+    esac
+    printf '{"type":"tool.execution_start","data":{"toolName":"%s-ping","mcpServerName":"%s","mcpToolName":"ping"}}\n' "$server" "$server"
+  else
+    case "$FAKE_COPILOT_PROBE" in
+    plugin-loaded) mkdir -p "$COPILOT_HOME/installed-plugins/github" ;;
+    esac
+  fi
+  rm -f "$cfgfile"
+  echo '{"type":"assistant.message","data":{"content":"pong"}}'
+  exit 0
+fi
 # A fenced run (the fence probe): no tools of its own, one MCP server. It leaves headless-runs alone.
 if [ "$(basename "$0")" = claude ] && [ -n "$headless" ] && [ -n "$mcpcfg" ]; then
   cfg=""
@@ -576,8 +630,78 @@ if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 				cfg="$d/.mcp-config"
 				codexmcpcfg "$@" >"$cfg"
 			fi
+			if [ "$me" = copilot ]; then
+				cfg="$d/.mcp-config"
+				case "$copilotmcp" in
+				@*) cp "${copilotmcp#@}" "$cfg" ;;
+				*) printf '%s' "$copilotmcp" >"$cfg" ;;
+				esac
+			fi
 			while [ ! -e "$d/$arg" ]; do sleep 0.1; done
 			mcpdrive call "$cfg" "$d/$arg" "$d/$arg.reply" </dev/null 2>>"$d/mcp-error" || echo "mcp cue $arg: the MCP call failed" >>"$d/mcp-error"
+			;;
+		copilotready)
+			# A trusted Copilot TUI waiting for its first message: the composer shows and the folder is remembered in the chat home.
+			[ -n "$COPILOT_HOME" ] && mkdir -p "$COPILOT_HOME" && { [ -e "$COPILOT_HOME/config.json" ] || printf '%s\n' '{"trustedFolders":["/fake"]}' >"$COPILOT_HOME/config.json"; }
+			printf '%s\n' '❯' ' ← open sidebar · Interactive · Manual Approval · / commands · ? help · tab next tab    GPT-5.6 Luna'
+			stty raw -echo <&3 2>/dev/null
+			;;
+		copilotreply)
+			sid=""
+			prev=""
+			for a in "$@"; do
+				[ "$prev" = "--session-id" ] && sid=$a
+				prev=$a
+			done
+			case "$sid" in
+			"" | */*) echo "copilotreply cue: no usable --session-id in argv" | tee "$d/reply-error" >&2; exit 1 ;;
+			esac
+			if [ -z "$COPILOT_HOME" ]; then
+				echo "copilotreply cue: COPILOT_HOME is unset" | tee "$d/reply-error" >&2
+				exit 1
+			fi
+			mkdir -p "$COPILOT_HOME" "$d/.copilot-state"
+			[ -e "$COPILOT_HOME/config.json" ] || printf '%s\n' '{"trustedFolders":["/fake"]}' >"$COPILOT_HOME/config.json"
+			printf '%s' "$sid" >"$d/.copilot-state/sid"
+			# Like the real CLI: the first prompt of a session binds its transcript (sessionStart, source new), and /clear
+			# ends the session at once and starts a new one that binds again only at the next prompt.
+			cat >"$d/.append" <<'EOF5'
+sleep "${FAKE_REPLY_DELAY:-0}"
+st="$FAKE_STATE"
+sid=$(cat "$st/sid")
+path="$COPILOT_HOME/session-state/$sid/events.jsonl"
+mkdir -p "$(dirname "$path")"
+if [ "$(cat "$FAKE_MSG")" = /clear ]; then
+  printf '%s\n' '{"type":"session.shutdown","data":{"totalNanoAiu":2500000000,"accountingSnapshot":{"totalPremiumRequestCost":3,"aiCreditsStatus":"complete"},"modelMetrics":{"fake":{"usage":{"inputTokens":150,"outputTokens":30,"cacheReadTokens":100,"cacheWriteTokens":40,"reasoningTokens":0}}}}}' >>"$path"
+  k=$(($(cat "$st/clears" 2>/dev/null || echo 0) + 1))
+  echo "$k" >"$st/clears"
+  printf '00000000-0000-4000-8000-%012d' "$k" >"$st/sid"
+  rm -f "$st/bound"
+  exit 0
+fi
+if [ ! -e "$st/bound" ]; then
+  tmux set -p -t "$TMUX_PANE" @admiral-transcript "1700000000000000000 new $path"
+  : >"$st/bound"
+fi
+jq -cn --rawfile t "$FAKE_MSG" --arg r "$FAKE_REPLY" --arg n "$1" '
+  {type: "user.message", id: ("fake-user-" + $n), parentId: null, timestamp: (now | todate), data: {content: $t}},
+  {type: "assistant.message", id: ("fake-reply-" + $n), parentId: null, timestamp: (now | todate), data: {messageId: ("fake-m-" + $n), content: $r, toolRequests: []}},
+  {type: "assistant.turn_end", id: ("fake-end-" + $n), parentId: null, timestamp: (now | todate), data: {turnId: "0"}}' >>"$path"
+EOF5
+			printf '%s\n' '❯' ' ← open sidebar · Interactive · Manual Approval · / commands · ? help · tab next tab    GPT-5.6 Luna'
+			stty raw -echo <&3 2>/dev/null
+			: >"$d/cues-done"
+			export FAKE_REPLY_DELAY FAKE_REPLY=$arg FAKE_STATE="$d/.copilot-state" FAKE_MSG="$d/.msg" FAKE_APPEND="$d/.append"
+			cat -u <&3 | tee -a "$d/stdin" | awk 'BEGIN { RS = "\r" }
+				{
+					gsub("\033\\[[0-9;?]*[ -/]*[@-~]", ""); gsub(/\033/, "")
+					if ($0 == "") next
+					n++
+					printf "%s", $0 > ENVIRON["FAKE_MSG"]
+					close(ENVIRON["FAKE_MSG"])
+					system("sh \"$FAKE_APPEND\" " n)
+				}'
+			exit
 			;;
 		codexready)
 			# A trusted Codex TUI waiting for its first message: the composer shows and the hook's trust entry is in the chat home.

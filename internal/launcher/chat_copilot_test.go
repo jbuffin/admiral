@@ -22,18 +22,18 @@ import (
 // Placeholders the implementer confirms on the real Copilot 1.0.109 (each a one-line change).
 var (
 	// copilotBareFenceFlags are the fence flags that take no value.
-	copilotBareFenceFlags = []string{"--disable-builtin-mcps"}
+	copilotBareFenceFlags = []string{"--disable-builtin-mcps", "--no-ask-user"}
 	// copilotAllowedToolValues are the values --allow-tool must carry.
 	copilotAllowedToolValues = []string{"admiral"}
 	// copilotIsAdmiralTool says whether an --available-tools entry names a tool of the admiral MCP server and nothing else.
-	copilotIsAdmiralTool = func(v string) bool { return strings.HasPrefix(v, "admiral") }
+	copilotIsAdmiralTool = func(v string) bool { return strings.HasPrefix(v, "admiral-") }
 	// copilotBuiltinTools are built-in tools --available-tools must not list.
 	copilotBuiltinTools = []string{"bash", "shell", "view", "edit", "write", "create", "glob", "grep", "web_fetch", "web_search",
 		"task", "sql", "ask_user", "skill", "read_bash", "write_bash", "stop_bash"}
 	// copilotLinkedFiles are the files of the engineer's Copilot home the chat's home may link: none while the login is in the Keychain.
 	copilotLinkedFiles []string
 	// copilotHomeAdmiralFiles are the files Admiral itself may write in the chat's copilot-home (a prompt route may add one).
-	copilotHomeAdmiralFiles []string
+	copilotHomeAdmiralFiles = []string{"copilot-instructions.md"}
 	// copilotDroppedEnv are the variables the chat must not carry from the dock or from Admiral's own environment.
 	copilotDroppedEnv = []string{"COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN", "COPILOT_PROVIDER_BASE_URL", "COPILOT_PROVIDER_API_KEY",
 		"COPILOT_PROVIDER_TYPE", "COPILOT_PROVIDERS_CONFIG", "COPILOT_SKILLS_DIRS", "COPILOT_ALLOW_ALL"}

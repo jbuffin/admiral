@@ -25,10 +25,8 @@ import (
 //     already trusted in $COPILOT_HOME/config.json); `copilotreply <text>` does that too after the cues before it,
 //     answers every pasted message by appending the engineer's message and an assistant line holding <text> to
 //     $COPILOT_HOME/session-state/<--session-id>/events.jsonl, sets the pane's @admiral-transcript to it as the
-//     sessionStart hook would, writes a session.shutdown line for the `usage` cue, and on /clear starts a new
-//     session id and sets the option again with source "clear". It appends every byte it reads to `stdin`.
-//
-// The literals below are placeholders: the real Copilot flags change here and in the launcher's and probes' tables together.
+//     sessionStart hook would, and on /clear writes a session.shutdown line and starts a new session id, bound at the
+//     next message with source "new", as the real CLI does. It appends every byte it reads to `stdin`.
 
 // copilotResetCommand is what New chat types into a running Copilot chat.
 const copilotResetCommand = "/clear"
@@ -209,8 +207,13 @@ func TestAdmiralBot_CopilotChatStartsOnlyOnceBothProbesPassAndIsFenced(t *testin
 		if code != http.StatusOK {
 			t.Fatalf("POST /api/chat/chat/messages after /clear = %d, want 200: %s", code, body)
 		}
-		c.waitSession(15*time.Second, "only the new session's exchange after /clear", func(s chatSession) bool {
-			m := texts(s.Messages)
+		// The history keeps what came before the New chat marker; after it only the new session's exchange may show.
+		c.waitSession(15*time.Second, "only the new session's exchange after the New chat marker", func(s chatSession) bool {
+			i := slices.IndexFunc(s.Messages, func(m chatMsg) bool { return m.Kind == "reset" })
+			if i < 0 {
+				return false
+			}
+			m := texts(s.Messages[i+1:])
 			return slices.Contains(m, "user: And the harbours?") && slices.Contains(m, "assistant: Two ships are at anchor.") &&
 				!slices.Contains(m, "user: Which ships are at anchor?")
 		})

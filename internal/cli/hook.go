@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -70,7 +71,8 @@ type hookPayload struct {
 	SubagentType      string          `json:"agent_type"`        // Claude Code, Codex
 	TranscriptPath    string          `json:"transcript_path"`   // Claude Code, Codex: any event (null reads "")
 	TranscriptCopilot string          `json:"transcriptPath"`    // Copilot: a lead agentStop's, for a crew boat
-	Source            string          `json:"source"`            // Claude Code: SessionStart (startup, resume, clear, compact)
+	Source            string          `json:"source"`            // SessionStart (Claude Code: startup, resume, clear, compact; Copilot: new, resume)
+	SessionIDCopilot  string          `json:"sessionId"`         // Copilot: any event
 	ToolResponse      json.RawMessage `json:"tool_response"`
 	// A nil slice is "absent" and an empty one is `[]`: Codex's Stop sends none,
 	// which tells it from Claude's.
@@ -333,10 +335,15 @@ func monitorCall(pane, event string, p hookPayload) (call []string, held bool) {
 // transcriptCall writes time, source and path in one option so a reader never sees
 // a torn pair; the .jsonl ending keeps it from ending in tmux's ";" separator.
 func transcriptCall(pane, event string, p hookPayload, now time.Time) []string {
-	if event != "SessionStart" {
+	path := p.TranscriptPath
+	switch event {
+	case "SessionStart":
+	case "sessionStart":
+		// Copilot's sessionStart names no transcript: the chat's home holds one directory per session id.
+		path = copilotChatTranscript(os.Getenv("ADMIRAL_CHAT_FLEET"), os.Getenv("COPILOT_HOME"), p.SessionIDCopilot)
+	default:
 		return nil
 	}
-	path := p.TranscriptPath
 	if !sessionhost.ValidTranscriptPath(path) {
 		return nil
 	}
@@ -347,9 +354,19 @@ func transcriptCall(pane, event string, p hookPayload, now time.Time) []string {
 	return sessionhost.SetPaneCall(pane, sessionhost.TranscriptOption, strconv.FormatInt(now.UnixNano(), 10)+" "+source+" "+path)
 }
 
+var copilotSessionID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// copilotChatTranscript is a Copilot chat session's events file, "" for anything but a chat with a home of its own.
+func copilotChatTranscript(chatFleet, copilotHome, id string) string {
+	if chatFleet == "" || !filepath.IsAbs(copilotHome) || !copilotSessionID.MatchString(id) {
+		return ""
+	}
+	return filepath.Join(copilotHome, "session-state", id, "events.jsonl")
+}
+
 // chatPromptCall stamps each prompt of a fleet's chat; a freeform launch's idempotency key is built from the stamp.
 func chatPromptCall(pane, event, chatFleet string, now time.Time) []string {
-	if event != "UserPromptSubmit" || chatFleet == "" {
+	if event != "UserPromptSubmit" && event != "userPromptSubmitted" || chatFleet == "" {
 		return nil
 	}
 	return sessionhost.SetPaneCall(pane, sessionhost.Prefix+sessionhost.ChatPromptOpt, strconv.FormatInt(now.UnixNano(), 10))
