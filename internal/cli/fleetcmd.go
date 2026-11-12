@@ -262,7 +262,7 @@ func fleetChange(args []string, std IO, create bool) error {
 	}
 
 	fleets.Set(key, fleet.JSON())
-	p, err := newPlan(dir, fleets, []string{key})
+	p, err := newPlan(dir, fleets, []string{key}, nil)
 	if err != nil {
 		return err
 	}

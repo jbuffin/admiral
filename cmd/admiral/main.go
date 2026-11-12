@@ -205,8 +205,13 @@ func serve(args []string) error {
 	defer cfg.Close()
 	// No configuration means no fleets (a valid file without any, or none yet).
 	if cfg.View().Error == nil && len(cfg.Current().Fleets) == 0 {
-		if _, err := cli.OfferSetup(cli.Std()); err != nil {
+		ran, err := cli.OfferSetup(cli.Std())
+		if err != nil {
 			return err
+		}
+		if ran {
+			// Setup may have turned Tailscale mode on; the watcher reloads later than listenAddr reads.
+			cfg.Reload()
 		}
 	}
 	unreadable := cfg.View().Error != nil

@@ -13,13 +13,24 @@ import (
 type plan struct {
 	before, after []byte
 	fleets        *config.Object
+	remote        *config.Remote // nil leaves the remote section out of the write
 	cfg           *config.Config
 }
 
 // newPlan leaves fleets not in touched as they are, even when they share an
 // identity directory.
-func newPlan(dir string, fleets *config.Object, touched []string) (*plan, error) {
-	before, after, err := config.PreviewFleets(dir, fleets.JSON())
+func newPlan(dir string, fleets *config.Object, touched []string, ask *remoteAsk) (*plan, error) {
+	var remote *config.Remote
+	if ask != nil {
+		cur, err := currentRemote(dir)
+		if err != nil {
+			return nil, err
+		}
+		m := ask.merged(cur)
+		remote = &m
+	}
+	p := &plan{fleets: fleets, remote: remote}
+	before, after, err := p.preview(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -30,18 +41,29 @@ func newPlan(dir string, fleets *config.Object, touched []string) (*plan, error)
 	if err := refuseShared(cfg, touched); err != nil {
 		return nil, err
 	}
-	return &plan{before: before, after: after, fleets: fleets, cfg: cfg}, nil
+	p.before, p.after, p.cfg = before, after, cfg
+	return p, nil
+}
+
+func (p *plan) preview(dir string) (before, after []byte, err error) {
+	if p.remote != nil {
+		return config.PreviewFleetsAndRemote(dir, p.fleets.JSON(), *p.remote)
+	}
+	return config.PreviewFleets(dir, p.fleets.JSON())
 }
 
 var errChanged = errors.New("config.json changed since the change was planned; run it again")
 
 func (p *plan) write(dir string) error {
-	before, _, err := config.PreviewFleets(dir, p.fleets.JSON())
+	before, _, err := p.preview(dir)
 	if err != nil {
 		return err
 	}
 	if !bytes.Equal(before, p.before) {
 		return errChanged
+	}
+	if p.remote != nil {
+		return config.SetFleetsAndRemote(dir, p.fleets.JSON(), *p.remote)
 	}
 	return config.SetFleets(dir, p.fleets.JSON())
 }

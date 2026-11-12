@@ -4,6 +4,7 @@ package auth
 
 import (
 	"context"
+	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -36,14 +37,22 @@ func classify(r *http.Request) route {
 	case loopback && !proxied && hostAllowed(r.Host):
 		return route{kind: pathLocal}
 	case loopback:
-		// Trimmed here only, so the allowlist, the recorded login and the device binding agree.
-		if login := strings.TrimSpace(r.Header.Get("Tailscale-User-Login")); login != "" {
+		// Decoded and trimmed here only, so the allowlist, the recorded login and the device binding agree.
+		if login := strings.TrimSpace(decodeLogin(r.Header.Get("Tailscale-User-Login"))); login != "" {
 			return route{kind: pathTailnet, login: login}
 		}
 	case !proxied:
 		return route{kind: pathLAN}
 	}
 	return route{kind: pathNone}
+}
+
+// decodeLogin undoes the RFC 2047 encoding tailscale serve gives a login that isn't plain ASCII.
+func decodeLogin(v string) string {
+	if d, err := new(mime.WordDecoder).DecodeHeader(v); err == nil {
+		return d
+	}
+	return v
 }
 
 // route is classify plus the remote settings, read on every request so an edit applies at once:

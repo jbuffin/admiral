@@ -64,15 +64,52 @@ func SetChat(dir string, c Chat) error {
 
 // SetRemote writes the remote section; allowedLogins is always written, so a cleared list stays visible.
 func SetRemote(dir string, r Remote) error {
-	obj := struct {
-		Tailscale     bool     `json:"tailscale"`
-		AllowedLogins []string `json:"allowedLogins"`
-	}{r.Tailscale, nonNil(r.AllowedLogins)}
-	raw, err := json.Marshal(obj)
+	raw, err := remoteJSON(r)
 	if err != nil {
 		return err
 	}
 	return setKey(dir, "remote", raw)
+}
+
+func remoteJSON(r Remote) (json.RawMessage, error) {
+	return json.Marshal(struct {
+		Tailscale     bool     `json:"tailscale"`
+		AllowedLogins []string `json:"allowedLogins"`
+	}{r.Tailscale, nonNil(r.AllowedLogins)})
+}
+
+// SetFleetsAndRemote writes both in one replace, so setup's diff and its write are the same change.
+func SetFleetsAndRemote(dir string, fleets json.RawMessage, r Remote) error {
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	path := filepath.Join(dir, FileName)
+	_, out, err := renderKeys(path, keyValue{"fleets", fleets}, remoteKV(r))
+	if err != nil {
+		return err
+	}
+	if _, err := Parse(out); err != nil {
+		return err
+	}
+	return replaceFile(path, out)
+}
+
+// PreviewFleetsAndRemote is PreviewFleets for setup's combined write.
+func PreviewFleetsAndRemote(dir string, fleets json.RawMessage, r Remote) (before, after []byte, err error) {
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	before, after, err = renderKeys(filepath.Join(dir, FileName), keyValue{"fleets", fleets}, remoteKV(r))
+	if err != nil {
+		return nil, nil, err
+	}
+	if _, err := Parse(after); err != nil {
+		return nil, nil, err
+	}
+	return before, after, nil
+}
+
+func remoteKV(r Remote) keyValue {
+	raw, _ := remoteJSON(r) // a struct of a bool and strings always marshals
+	return keyValue{"remote", raw}
 }
 
 func SetSources(dir string, sources json.RawMessage) error {
@@ -274,7 +311,17 @@ func readConfig(path string) ([]byte, error) {
 	return data, err
 }
 
+type keyValue struct {
+	key   string
+	value json.RawMessage
+}
+
 func renderKey(path, key string, value json.RawMessage) (before, after []byte, err error) {
+	return renderKeys(path, keyValue{key, value})
+}
+
+// renderKeys sets each key in place, and appends the ones the file lacks in the order given.
+func renderKeys(path string, set ...keyValue) (before, after []byte, err error) {
 	data, err := readConfig(path)
 	if err != nil {
 		return nil, nil, err
@@ -289,7 +336,7 @@ func renderKey(path, key string, value json.RawMessage) (before, after []byte, e
 
 	var out bytes.Buffer
 	out.WriteByte('{')
-	replaced := false
+	done := map[string]bool{}
 	write := func(k string, raw json.RawMessage) {
 		if out.Len() > 1 {
 			out.WriteByte(',')
@@ -300,15 +347,22 @@ func renderKey(path, key string, value json.RawMessage) (before, after []byte, e
 		out.Write(raw)
 	}
 	for _, m := range top {
-		if m.key == key {
-			write(key, value)
-			replaced = true
-		} else {
+		replaced := false
+		for _, kv := range set {
+			if m.key == kv.key {
+				write(kv.key, kv.value)
+				done[kv.key] = true
+				replaced = true
+			}
+		}
+		if !replaced {
 			write(m.key, m.raw)
 		}
 	}
-	if !replaced {
-		write(key, value)
+	for _, kv := range set {
+		if !done[kv.key] {
+			write(kv.key, kv.value)
+		}
 	}
 	out.WriteByte('}')
 	if after, err = indent(out.Bytes()); err != nil {
