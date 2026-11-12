@@ -13,10 +13,11 @@ export function surfaceOf(path: string): Surface | undefined {
   if (s?.id === 'inbox' && sub.length > 0) return peekOf(path) ? s : undefined;
   if (s?.id === 'ships' && sub.length === 1 && sub[0] !== '') return s;
   // Preferences alone has pages below it: /app/preferences/<fleet key>/<page>.
-  // Campaigns has the Campaign page below it: /app/campaigns/<id>.
+  // Campaigns has the Campaign page below it: /app/campaigns/<id>; Crew has a member: /app/crew/<name>.
   const below =
     (s?.id === 'preferences' && sub.length === 2 && (PREFERENCES_PAGES as readonly string[]).includes(sub[1]) && (sub[1] !== 'remote' || sub[0] === 'admiral')) ||
-    (s?.id === 'campaigns' && sub.length === 1);
+    (s?.id === 'campaigns' && sub.length === 1) ||
+    (s?.id === 'crew' && sub.length === 1);
   if (s && sub.length > 0 && !below) return undefined;
   return s;
 }
@@ -108,6 +109,19 @@ export const campaignPath = (id: string) => `/app/campaigns/${encodeURIComponent
 export function campaignOf(path: string): string | null {
   const [id, key, ...rest] = segments(path);
   if (id !== 'campaigns' || !key || rest.length > 0) return null;
+  try {
+    return decodeURIComponent(key);
+  } catch {
+    return null;
+  }
+}
+
+export const crewPath = (name: string) => `/app/crew/${encodeURIComponent(name)}`;
+
+/** The crew member a detail path names, if any. */
+export function crewOf(path: string): string | null {
+  const [id, key, ...rest] = segments(path);
+  if (id !== 'crew' || !key || rest.length > 0) return null;
   try {
     return decodeURIComponent(key);
   } catch {

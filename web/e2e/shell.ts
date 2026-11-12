@@ -91,7 +91,7 @@ export function watchPage(page: Page, server: string) {
   const failedLoads: string[] = [];
   let refusedLaunches = 0;
   page.on('response', (r) => {
-    const refusable = { POST: /^\/api\/v1\/(ships|campaigns\/[^/]+\/launch|ships\/[^/]+\/(dismiss|unfollow|merge))$/, PUT: /^\/api\/v1\/campaigns\/[^/]+\/work-repo$/ }[r.request().method()];
+    const refusable = { POST: /^\/api\/v1\/(ships|campaigns\/[^/]+\/launch|ships\/[^/]+\/(dismiss|unfollow|merge)|fleets\/[^/]+\/crew\/members\/[^/]+\/rename)$/, PUT: /^\/api\/v1\/(campaigns\/[^/]+\/work-repo|fleets\/[^/]+\/crew\/members\/[^/]+)$/ }[r.request().method()];
     if (refusable?.test(new URL(r.url()).pathname) && r.status() >= 400) refusedLaunches++;
   });
   page.on('console', (m) => {

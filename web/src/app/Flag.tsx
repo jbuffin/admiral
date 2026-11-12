@@ -6,13 +6,15 @@ import { HARNESS_PLACEHOLDERS } from './shell-tokens';
 const missing = new Set<string>();
 
 /** A dock's harness flag: the rounded tile with the logo loaded as an image (never inlined), or its placeholder letters. */
-export function Flag({ harness, size }: { harness: string; size: 'row' | 'header' }) {
+export function Flag({ harness, size, label }: { harness: string; size: 'row' | 'header'; label?: string }) {
   const [failed, setFailed] = useState(missing.has(harness));
   const known = harness !== 'unknown' && Object.hasOwn(HARNESS_PLACEHOLDERS, harness);
   const key = known ? harness : 'unknown';
   return (
     <span
       class={`flag flag-${size}`}
+      role={label ? 'img' : undefined}
+      aria-label={label}
       style={{
         background: `var(--harness-${key}-field)`,
         color: `var(--harness-${key}-placeholder-ink)`,
