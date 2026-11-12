@@ -20,7 +20,7 @@ Each boat in a ship's `crew` also carries `role` and `conversation` (see "A crew
 - a tool call: its summary line, or its name when it has none;
 - assistant text: its first non-empty line.
 
-A pending question wins only while it is the latest of these, so a question an interrupted turn left pending does not pin the tail. Answered questions and every other item (user, turn end, compaction, notice) are skipped. Only Claude Code and Copilot ships have a conversation adapter: a Codex ship, a ship with no transcript yet and one whose transcript cannot be read have `tail: ""`.
+A pending question wins only while it is the latest of these, so a question an interrupted turn left pending does not pin the tail. Answered questions and every other item (user, turn end, compaction, notice) are skipped. Only Claude Code, Codex and Copilot ships have a conversation adapter: a ship with no transcript yet and one whose transcript cannot be read have `tail: ""`.
 
 ### `POST /api/moored/refresh` (alias `POST /api/v1/moored/refresh`)
 
@@ -84,7 +84,7 @@ Query: `fleet`, `harness` and optionally `dir` (a checkout or search root of the
 
 ## A ship's conversation
 
-The conversation of a Claude Code or Copilot ship, read from the harness's own record (Claude Code's transcript, Copilot's `events.jsonl`). `GET /api/version` lists the `conversation` capability when the server has it.
+The conversation of a Claude Code, Codex or Copilot ship, read from the harness's own record (Claude Code's transcript, Codex's rollout, Copilot's `events.jsonl`). `GET /api/version` lists the `conversation` capability when the server has it.
 
 ### How the file is found
 
@@ -96,6 +96,8 @@ The option's text is untrusted: anything running in the ship can write it. The s
 
 A Copilot ship launches with `--session-id <uuid>` and records `<copilot home>/session-state/<uuid>/events.jsonl`; the server checks the id against the start command the same way, and the file's layout is fixed by the id, so a missing file is not searched for. When Copilot accepts `--ui-server` the launch also passes `--ui-server --port <n>` on a free loopback port. The server reads `<n>` back from the start command (never from a pane option) and follows that Copilot's live events while a client has the ship open; see "Live text" below. A ship whose command has no `--ui-server` is served from the file alone. When the order or the dock already carries `--server`, `--headless`, `--stdio`, `--connect`, `--host` or `--port`, the launcher adds nothing; but if a dock passes `--ui-server --port N` itself, Admiral still observes N, subject to the ownership check (the listener must be the pane's process or one of its descendants).
 
+A Codex ship has no `--session-id` to launch with. Its `SessionStart` hook writes `@admiral-transcript` as `<unix ns> <source> <path>` from the payload's `transcript_path`: the rollout, `<Codex home>/sessions/YYYY/MM/DD/rollout-<timestamp>-<uuid>.jsonl`, where the Codex home is the fleet's `CODEX_HOME`, else Admiral's, else `~/.codex`. A null `transcript_path` records nothing, so the state is `none`. The server takes any source word, since a pane can write the option and nothing binds a Codex ship's path to its launch, and reads the file only if it is a regular file under `<Codex home>/sessions/` with no symlink below it (a symlinked home or `sessions/` is fine). A pane can therefore point the option at another rollout under the same `sessions/`. `SessionStart` fires again on resume, `/new`, fork and compact and records the new path: the server reads the option again about once a second and switches to the new file. A rollout has no pending question. The adapter reads a `compacted` record as a compaction marker, a shape no real rollout has confirmed.
+
 ### `GET /api/v1/ships/<ship>/conversation[?before=<id>]`
 
 ```json
@@ -104,7 +106,7 @@ A Copilot ship launches with `--session-id <uuid>` and records `<copilot home>/s
 
 - `state`:
   - `ok`: the file was read. `items` may be empty (a new session has only metadata lines).
-  - `none`: the ship has no conversation Admiral can read: not a Claude Code ship, no `@admiral-transcript` of ours, or the file has not been written yet.
+  - `none`: the ship has no conversation Admiral can read: not a Claude Code, Codex or Copilot ship, no `@admiral-transcript` of ours, or the file has not been written yet.
   - `unreadable`: the path is refused (a symlink, not a regular file) or nothing in the file parses.
   - `gone`: the file was read before and is not there now. This is kept in memory, so after an Admiral restart a missing file is `none` until it is seen again.
 - `items`: at most 200, oldest first, the newest 200 without `before`. An item is the model in `internal/conversation` (`id`, `kind`, `text`, and the tool call or question it holds; a tool call carries `name`, `summary`, `output`, `error`, `done` and `input`, what allowing it approves: a Bash call's full `command`, or the path of a Write, Edit, MultiEdit, NotebookEdit or Read call (on Copilot, the `command` of `bash` or the path of `edit`, `create` or `view`), cut at 4 KiB with a marker and omitted for any other tool, while `summary` stays the one-line label, which may be the model's own description; a question carries `text`, `options`, `answer`, `pending` and `multiSelect`, present and true for a question that takes several answers). Ids contain characters that need URL escaping in `before`.
@@ -142,6 +144,8 @@ The server answers an open with `{"type": "conversation_opened", "ship": "<ship>
 ```json
 {"type": "conversation", "ship": "<ship>", "items": [ ... ]}
 ```
+
+- `reset: true` is added when the transcript was truncated or replaced, or when a Codex ship's recorded rollout changed to another file: `items` are what the file now holds, and the client drops what it holds.
 
 - A changed item is sent again under the same `id` (a tool call whose output came later); the client replaces its copy.
 - A message holds at most 200 items.
@@ -219,13 +223,13 @@ A campaign ends when the parent and every issue under it, nested parents include
 
 ## A crew boat's conversation
 
-Each boat in a ship's `crew` list carries `role` (the `--role` it was launched with, left out when none) and `conversation` (always present: `true` only for a Claude Code or Copilot boat with a recorded transcript). The recorded transcript path itself is not on the API.
+Each boat in a ship's `crew` list carries `role` (the `--role` it was launched with, left out when none) and `conversation` (always present: `true` only for a Claude Code, Codex or Copilot boat with a recorded transcript). The recorded transcript path itself is not on the API.
 
 ### `GET /api/v1/ships/<ship>/crew/<name>/conversation[?before=<id>]`
 
-The same body, states and paging as a ship's conversation. The file is the transcript path the boat's hooks recorded (ADR 0021), read fresh from its pane on each request. A Codex boat, and a Claude Code or Copilot boat with no path recorded yet (a Copilot boat's is recorded at its first `agentStop`), read `none`. An anchored (exited) boat stays readable until it is closed. An unknown ship or boat is `404`, and so is a boat that was closed.
+The same body, states and paging as a ship's conversation. The file is the transcript path the boat's hooks recorded (ADR 0021), read fresh from its pane on each request. A Claude Code, Codex or Copilot boat with no path recorded yet (a Copilot boat's is recorded at its first `agentStop`) reads `none`. An anchored (exited) boat stays readable until it is closed. An unknown ship or boat is `404`, and so is a boat that was closed.
 
-A boat has no `--session-id` of ours to check the path against, and a boat writes the path itself, so the only limit is the one every transcript read has (ADR 0019): the file must be a regular file under the boat's fleet's `<config dir>/projects/` (Copilot: `<copilot home>/session-state/<id>/events.jsonl`) with no symlink on the way, else `unreadable`. A boat may therefore show any transcript in its fleet's `projects/` or `session-state/`, including another session's. Binding a boat to its own session is follow-up issue #357.
+A boat has no `--session-id` of ours to check the path against, and a boat writes the path itself, so the only limit is the one every transcript read has (ADR 0019): the file must be a regular file under the boat's fleet's `<config dir>/projects/` (Copilot: `<copilot home>/session-state/<id>/events.jsonl`; Codex: `<Codex home>/sessions/`) with no symlink on the way, else `unreadable`. A boat may therefore show any transcript in its fleet's `projects/` or `session-state/`, including another session's. Binding a boat to its own session is follow-up issue #357.
 
 ### WebSocket
 

@@ -31,10 +31,16 @@ func crewConvSetup(t *testing.T) *crewConvWorld {
 	}
 	env := w.harnessEnv()
 	env["CLAUDE_CONFIG_DIR"] = cfgDir
+	codexHome := filepath.Join(w.root, "codexhome")
+	if err := os.MkdirAll(filepath.Join(codexHome, "sessions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	codexEnv := w.harnessEnv()
+	codexEnv["CODEX_HOME"] = codexHome
 	cfg, err := json.Marshal(map[string]any{"version": 1, "fleets": map[string]any{
 		"work": map[string]any{"name": "Work", "search_roots": []string{w.work},
 			"claude": map[string]any{"executable": w.fakeExe("claude"), "env": env},
-			"codex":  map[string]any{"executable": w.fakeExe("codex"), "env": env}},
+			"codex":  map[string]any{"executable": w.fakeExe("codex"), "env": codexEnv}},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -140,7 +146,7 @@ func TestCrewConversation_RoleAndFlagOnShipsAPI(t *testing.T) {
 			got[r.Name] = r
 		}
 		return got["rev"].Role != nil && *got["rev"].Role == "reviewer" &&
-			got["rev"].Conversation && got["plain"].Conversation && !got["cx"].Conversation && !got["fresh"].Conversation
+			got["rev"].Conversation && got["plain"].Conversation && got["cx"].Conversation && !got["fresh"].Conversation
 	})
 	rows := c.crewRows()
 	if r := rows["rev"]; r.Role == nil || *r.Role != "reviewer" {
@@ -149,9 +155,9 @@ func TestCrewConversation_RoleAndFlagOnShipsAPI(t *testing.T) {
 	if r := rows["plain"]; r.Role != nil && *r.Role != "" {
 		t.Errorf("plain role = %q, want none (null or absent)", *r.Role)
 	}
-	for name, want := range map[string]bool{"rev": true, "plain": true, "cx": false, "fresh": false} {
+	for name, want := range map[string]bool{"rev": true, "plain": true, "cx": true, "fresh": false} {
 		if got := rows[name].Conversation; got != want {
-			t.Errorf("%s conversation flag = %v, want %v (true only for a Claude boat with a recorded transcript)", name, got, want)
+			t.Errorf("%s conversation flag = %v, want %v (true only for a Claude or Codex boat with a recorded transcript)", name, got, want)
 		}
 	}
 	for name, r := range rows {
@@ -271,17 +277,18 @@ func TestCrewConversation_ReadStreamExitAndClose(t *testing.T) {
 	_ = boat
 }
 
-// A Codex boat has no adapter: its conversation reads none.
-func TestCrewConversation_NonClaudeBoatReadsNone(t *testing.T) {
+// A Codex boat's transcript is confined to the Codex home's sessions/, so a path
+// under the Claude projects dir is never read.
+func TestCrewConversation_CodexBoatOutsideSessionsIsNeverRead(t *testing.T) {
 	t.Parallel()
 	c := crewConvSetup(t)
 	c.boat("cx", "codex")
 	path := filepath.Join(c.cfgDir, "projects", "zz", "33333333-3333-4333-8333-333333333333.jsonl")
 	appendLines(t, path, userLine("u-1", "codex text", nil))
 	c.setTranscript("cx", path)
-	holdThat(t, "a Codex boat's conversation read something other than none", func() bool {
+	holdThat(t, "a Codex boat read a file outside the Codex home's sessions/", func() bool {
 		code, p := c.page("cx")
-		return code == http.StatusOK && p.State == "none" && len(p.Items) == 0
+		return code == http.StatusOK && p.State == "unreadable" && len(p.Items) == 0
 	})
 }
 

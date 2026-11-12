@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { call as post, shipUrl, type Item } from './api';
 import type { AnswerCard } from './answerCard';
+import { hasConversationAdapter } from './conversationGate';
 import { Icon } from './Icon';
 import type { Conversation } from './conversation';
 import { renderMarkdown } from './markdown';
@@ -177,7 +178,7 @@ function ConversationBody({ conv, harness, anchored = false, working, noneTitle,
   if (conv.state === 'none')
     return noneTitle ? (
       <Card title={noneTitle}>{terminal}</Card>
-    ) : harness !== 'claude' && harness !== 'copilot' ? (
+    ) : !hasConversationAdapter(harness) ? (
       <Card title="No conversation for this harness">{terminal}</Card>
     ) : anchored ? (
       <Card title="No conversation recorded">{terminal}</Card>

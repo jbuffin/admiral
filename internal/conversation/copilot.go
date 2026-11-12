@@ -14,8 +14,11 @@ type decoder interface {
 }
 
 func newDecoder(o Options) decoder {
-	if o.Harness == "copilot" {
+	switch o.Harness {
+	case "copilot":
 		return newCopilotDecoder(o.MaxOutput)
+	case "codex":
+		return newCodexDecoder(o.MaxOutput)
 	}
 	return newClaudeDecoder(o.MaxOutput)
 }

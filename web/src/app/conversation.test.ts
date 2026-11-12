@@ -103,6 +103,18 @@ describe('followConversation', () => {
     expect(last().items.map((i) => [i.id, i.text])).toEqual([['a1', 'one, edited'], ['a2', 'two']]);
   });
 
+  it('drops what it held when the server says the transcript was replaced', async () => {
+    pages[PAGE] = { state: 'ok', items: [item('a1', 'one'), item('a2', 'two')], more: false };
+    const { last } = follow();
+    sock().receive({ type: 'conversation_opened', ship: 's-a' });
+    await flush();
+
+    pages[PAGE] = { state: 'ok', items: [item('b1', 'fresh')], more: false };
+    sock().receive({ type: 'conversation', ship: 's-a', reset: true, items: [item('b1', 'fresh')] });
+    await flush();
+    expect(last().items.map((i) => i.id)).toEqual(['b1']);
+  });
+
   it('ignores a push for another ship', async () => {
     pages[PAGE] = { state: 'ok', items: [item('a1', 'one')], more: false };
     const { last } = follow();

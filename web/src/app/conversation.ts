@@ -86,6 +86,13 @@ export function followConversation(
       clearTimeout(wait);
       void read();
     } else if (m.type === 'conversation' && c.state !== 'gone') {
+      if (m.reset) {
+        // The ship's harness started a new transcript: what was held belongs to the old one.
+        olderLoaded = false;
+        set({ state: 'ok', items: (m.items ?? []) as Item[], more: false });
+        void read();
+        return;
+      }
       set({ ...c, state: 'ok', items: merge(c.items, (m.items ?? []) as Item[]) });
     }
   });

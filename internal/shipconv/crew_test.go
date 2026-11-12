@@ -18,15 +18,19 @@ func TestCrewConversationEndpoint(t *testing.T) {
 	f.harness["alpha"] = "claude"
 	boats := map[string]sessionhost.Crew{
 		"rev": {Name: "rev", Harness: "claude", Launched: "B1", Transcript: f.path("zz")},
-		"cx":  {Name: "cx", Harness: "codex", Launched: "B2", Transcript: f.path("zz")},
+		"cx":  {Name: "cx", Harness: "codex", Launched: "B2", Transcript: f.codexRollout("r1")},
+		"cxo": {Name: "cxo", Harness: "codex", Launched: "B5", Transcript: filepath.Join(f.codex, "elsewhere.jsonl")},
+		"cp":  {Name: "cp", Harness: "copilot", Launched: "B6", Transcript: f.path("zz")},
 		"new": {Name: "new", Harness: "claude", Launched: "B3"},
 		"out": {Name: "out", Harness: "claude", Launched: "B4", Transcript: filepath.Join(filepath.Dir(f.cfg), "outside.jsonl")},
 	}
 	f.svc.crew = func(sh ships.Ship, name string) (sessionhost.Crew, string, bool) {
 		b, ok := boats[name]
-		return b, f.cfg, ok
+		return b, f.homeOf(b.Harness), ok
 	}
 	appendTo(t, f.path("zz"), lines(1, 2))
+	appendTo(t, f.codexRollout("r1"), codexLines(1, 3))
+	appendTo(t, filepath.Join(f.codex, "elsewhere.jsonl"), codexLines(1, 3))
 	if err := os.WriteFile(boats["out"].Transcript, []byte(line(9)), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +48,13 @@ func TestCrewConversationEndpoint(t *testing.T) {
 	if code, p := get(base + "rev/conversation"); code != 200 || p.State != "ok" || len(p.Items) != 2 {
 		t.Errorf("claude boat = %d %+v, want 200 ok with 2 items", code, p)
 	}
-	for _, name := range []string{"cx", "new"} {
+	if code, p := get(base + "cx/conversation"); code != 200 || p.State != "ok" || len(p.Items) != 3 {
+		t.Errorf("codex boat = %d %+v, want 200 ok with 3 items", code, p)
+	}
+	if code, p := get(base + "cxo/conversation"); code != 200 || p.State == "ok" || len(p.Items) != 0 {
+		t.Errorf("codex boat's rollout outside sessions/ = %d %+v, want it refused", code, p)
+	}
+	for _, name := range []string{"cp", "new"} {
 		if code, p := get(base + name + "/conversation"); code != 200 || p.State != "none" {
 			t.Errorf("%s = %d %+v, want 200 none", name, code, p)
 		}

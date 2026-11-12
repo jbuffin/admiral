@@ -1,4 +1,4 @@
-// Package transcriptfs opens a harness's transcript file. The path comes from a pane option anything in the pane can write, so only a regular file with no symlink on the way is read: under <config dir>/projects/ for Claude Code, and <config dir>/session-state/<id>/events.jsonl for Copilot.
+// Package transcriptfs opens a harness's transcript file. The path comes from a pane option anything in the pane can write, so only a regular file with no symlink on the way is read: under <config dir>/projects/ for Claude Code, <config dir>/session-state/<id>/events.jsonl for Copilot, and <Codex home>/sessions/ for Codex.
 package transcriptfs
 
 import (
@@ -15,10 +15,13 @@ import (
 // ErrRefused is a path Admiral will not read; one that is merely missing is a not-exist error.
 var ErrRefused = errors.New("not a regular transcript file under the harness's config directory")
 
-// rootDir is the directory below the config dir that holds a harness's transcripts; the layout follows the harness, not the path's shape.
+// rootDir is the directory below the config dir that holds a harness's transcripts (the config dir is Codex's home for Codex); the layout follows the harness, not the path's shape.
 func rootDir(harness string) string {
-	if harness == "copilot" {
+	switch harness {
+	case "copilot":
 		return "session-state"
+	case "codex":
+		return "sessions"
 	}
 	return "projects"
 }

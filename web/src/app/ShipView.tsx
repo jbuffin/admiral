@@ -4,6 +4,7 @@ import { splitDiff } from './changes';
 import { followConversation, type Conversation } from './conversation';
 import { cardFor } from './answerCard';
 import { ConversationView } from './ConversationView';
+import { hasConversationAdapter } from './conversationGate';
 import { Composer, useComposer, type Target } from './Composer';
 import { boatBoxState, chipState, flotilla } from './flotilla';
 import { Icon } from './Icon';
@@ -19,8 +20,6 @@ import { useBridgeTerminal } from '../useBridgeTerminal';
 import { atSea } from '../crew';
 import { KEYS, touchKeyboard } from '../keys';
 
-// Harnesses whose own record Admiral reads, so a ship's conversation is still to come while it runs.
-const hasTranscript = (harness: string) => harness === 'claude' || harness === 'copilot';
 
 const TABS = ['Conversation', 'Terminal', 'Changes', 'PR'] as const;
 type Tab = (typeof TABS)[number];
@@ -270,15 +269,15 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
       follow.current = undefined;
       return;
     }
-    // Only a running Claude or Copilot ship has a transcript still to come; a boat is followed once its transcript is recorded.
-    const f = followConversation(ship.session, setConv, { crew: boatName, retryNone: () => boatName === undefined && hasTranscript(latest.current.harness) && latest.current.status !== 'anchored' && latest.current.status !== 'moored' });
+    // Only a running Claude, Codex or Copilot ship has a transcript still to come; a boat is followed once its transcript is recorded.
+    const f = followConversation(ship.session, setConv, { crew: boatName, retryNone: () => boatName === undefined && hasConversationAdapter(latest.current.harness) && latest.current.status !== 'anchored' && latest.current.status !== 'moored' });
     follow.current = f;
     return f.stop;
   }, [ship.session, boatName, boatHasConversation, moored]);
 
   const target: Target = boat
     ? { session: ship.session, crew: boat.name, state: boatBoxState(boat), interruptible: boat.status === 'underway', hasConversation: boatHasConversation && conv.state === 'ok', subject: 'This boat' }
-    : { session: ship.session, state: boxState(ship), interruptible: ship.status === 'underway', hasConversation: conv.state === 'ok' || (conv.state === 'none' && hasTranscript(ship.harness)), subject: 'This ship', wake: moored, mooredAt: ship.moored_at };
+    : { session: ship.session, state: boxState(ship), interruptible: ship.status === 'underway', hasConversation: conv.state === 'ok' || (conv.state === 'none' && hasConversationAdapter(ship.harness)), subject: 'This ship', wake: moored, mooredAt: ship.moored_at };
   const box = useComposer(target, conv);
   const Heading = title ? 'h1' : 'h2';
   const mooredCard = (

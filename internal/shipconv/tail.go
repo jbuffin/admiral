@@ -32,7 +32,7 @@ type follow struct {
 	tail     string
 }
 
-// Tails follows the Claude Code and Copilot ships' transcripts and holds each ship's tail. Other harnesses have no
+// Tails follows the Claude Code, Codex and Copilot ships' transcripts and holds each ship's tail. Other harnesses have no
 // conversation adapter, so their tail stays blank and nothing is read for them.
 type Tails struct {
 	list   func() []ships.Ship
@@ -132,7 +132,14 @@ func (t *Tails) step(f *follow, session string) (tail string, ok bool) {
 			return "", false
 		}
 		f.loc, f.located = w, true
-		f.reader = conversation.NewReader(conversation.Options{Harness: w.harness, Keep: conversation.TailItem, MaxItems: 50, MaxOutput: 1, MaxBytes: 64 << 10})
+		f.reader = tailReader(w)
+	} else if f.loc.harness == "codex" && time.Since(f.lastTry) >= retryEvery {
+		// A Codex ship's SessionStart fires again on /new, resume and fork, and records a new rollout.
+		f.lastTry = time.Now()
+		if w, found, none := t.locate(session); found && !none && w.path != f.loc.path {
+			f.loc, f.path, f.size, f.mtime = w, "", 0, time.Time{}
+			f.reader = tailReader(w)
+		}
 	}
 	if f.path != "" && !f.mtime.IsZero() {
 		if fi, err := os.Lstat(f.path); err == nil && fi.Size() == f.size && fi.ModTime().Equal(f.mtime) {
@@ -164,6 +171,10 @@ func (t *Tails) step(f *follow, session string) (tail string, ok bool) {
 	changed := tail != f.tail
 	f.tail = tail
 	return tail, changed
+}
+
+func tailReader(w where) *conversation.Reader {
+	return conversation.NewReader(conversation.Options{Harness: w.harness, Keep: conversation.TailItem, MaxItems: 50, MaxOutput: 1, MaxBytes: 64 << 10})
 }
 
 // openAt tries the recorded path, and only when find is set the other project dirs.

@@ -41,28 +41,3 @@ test('Shift+Enter adds a line to the message and Enter sends it whole', async ({
   await expect(messageBox(page)).toHaveValue('');
   await expect.poll(() => received(admiral, ship)).toContain('first line\nsecond line');
 });
-
-test('a message to a ship with no conversation is sent and its bubble goes when the server accepts it', async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
-  await admiral.start({ env: withFakeGh(admiral) });
-  const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'codex' });
-  await expect.poll(() => existsSync(join(admiral.home, 'rec', ship.session, 'cues-done'))).toBe(true);
-  setState(admiral, ship, 'needs_you');
-  await page.goto(admiral.url + 'app/ships?fleet=zulu');
-  await rowLink(page, ship).tap();
-
-  await expect(messageBox(page)).toBeEnabled();
-  let release!: () => void;
-  const gate = new Promise<void>((r) => (release = r));
-  await page.route('**/api/v1/ships/*/messages', async (route) => {
-    await gate;
-    await route.continue();
-  });
-  await messageBox(page).fill('hello codex');
-  await sendButton(page).tap();
-  await expect(sentBubble(page, 'hello codex')).toBeVisible();
-  release();
-  await expect(sentBubble(page, 'hello codex')).toHaveCount(0);
-  await expect(messageBox(page)).toHaveValue('');
-  await expect.poll(() => received(admiral, ship)).toContain('hello codex');
-});

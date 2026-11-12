@@ -11,7 +11,8 @@ const SUBAGENT_TOOLS = new Set(['task', 'Task', 'Agent']);
 const HAS_KEY_MAP = new Set(['claude', 'copilot', 'codex']);
 
 // Codex's other approval menus are unrecorded, so they go to the terminal.
-const CODEX_CARD_TOOLS = new Set(['Bash', 'apply_patch']);
+// The decoder names Codex's calls after the tool inside the exec script, so a Bash card looks for exec_command.
+const CODEX_CARD_CALLS: Record<string, string> = { Bash: 'exec_command', apply_patch: 'apply_patch' };
 
 const NO_CARD_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode']);
 
@@ -55,10 +56,11 @@ export function answerCard({ harness, status, reason, conv }: { harness: string;
   if (r === 'question' || r === 'permission:AskUserQuestion') return questionCard(r, conv);
   if (r.startsWith('permission:')) {
     const tool = r.slice('permission:'.length);
-    if (tool === '' || NO_CARD_TOOLS.has(tool) || (harness === 'codex' && !CODEX_CARD_TOOLS.has(tool))) return { kind: 'terminal' };
+    if (tool === '' || NO_CARD_TOOLS.has(tool) || (harness === 'codex' && !(tool in CODEX_CARD_CALLS))) return { kind: 'terminal' };
     // An orphan call from an earlier turn is not what the pane asks about.
     const turnStart = currentTurnStart(conv.items);
-    const call = conv.items.slice(turnStart).find((i) => i.kind === 'tool_call' && i.tool?.name === tool && !i.tool.done);
+    const callName = harness === 'codex' ? CODEX_CARD_CALLS[tool] : tool;
+    const call = conv.items.slice(turnStart).find((i) => i.kind === 'tool_call' && i.tool?.name === callName && !i.tool.done);
     return { kind: 'permission', tool, reason: r, call };
   }
   return { kind: 'terminal' };
