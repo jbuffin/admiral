@@ -486,7 +486,9 @@ test('Preferences shows what each harness was probed to do, and Check again re-r
   expect((await westwindClaude(page, admiral.url)).guard.status).toBe('passed');
   // The advisor follows the judge harness the earlier check proved.
   await expect(rowOf(workClaude, 'Advisor')).toContainText(/passed/i);
-  for (const cap of before.caps.filter((c) => c.id !== failed.id && c.id !== 'autopilot.advisor' && !judgeProbed(c))) {
+  // The same check ran the MCP-only fence probe, which the fake claude passes by its own init line.
+  await expect(rowOf(workClaude, 'MCP-only fence')).toContainText(/passed/i);
+  for (const cap of before.caps.filter((c) => c.id !== failed.id && c.id !== 'autopilot.advisor' && c.id !== 'bot.mcp_fence' && !judgeProbed(c))) {
     await expect(rowOf(workClaude, cap.label)).toContainText(/not checked/i);
   }
   await expect(rowOf(workCodex, failed.label)).toContainText(/not checked/i);
