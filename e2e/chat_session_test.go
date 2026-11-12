@@ -615,8 +615,7 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 		waitChatWS(t, ws2, 3*time.Second, "an empty conversation", messagesAre())
 		// /clear typed as keys, or pasted as one bracketed paste: either reaches the pane.
 		c.waitStdinOneOf(want+"/clear\r", want+"\x1b[200~/clear\x1b[201~\r")
-		// Claude may write its cost-state while it handles /clear: the usage record reads the old file
-		// only after the clear's SessionStart lands.
+		// The /clear path writes one usage record for the chat, from the file it had before the clear.
 		appendLines(t, tp1, `{"type":"cost-state","totalCostUSD":0.5,"modelUsage":{"claude-fake":{"inputTokens":7,"outputTokens":3}}}`)
 		c.touch("go-clear")
 		c.waitEvents(5)
