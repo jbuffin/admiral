@@ -67,9 +67,11 @@ type ToolCall struct {
 }
 
 type Question struct {
+	// Header is the short chip the harness puts over the question, where it records one.
+	Header  string   `json:"header,omitempty"`
 	Text    string   `json:"text"`
 	Options []Option `json:"options,omitempty"`
-	// MultiSelect questions take several answers; only the terminal answers those.
+	// MultiSelect questions take several answers.
 	MultiSelect bool   `json:"multiSelect,omitempty"`
 	Answer      string `json:"answer,omitempty"`
 	Pending     bool   `json:"pending"`

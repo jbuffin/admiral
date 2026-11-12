@@ -34,6 +34,12 @@ type answerPane struct {
 // newAnswerPane runs ship "alpha" of the given harness in a raw-mode pane that records every byte it is sent.
 func newAnswerPane(t *testing.T, harness string, questions []conversation.Item) *answerPane {
 	t.Helper()
+	return newPaneRunning(t, harness, questions, func(stdin string) string { return "stty raw -echo; exec cat > " + stdin })
+}
+
+// newPaneRunning is newAnswerPane with the pane's own command, given the file it should log its keys to.
+func newPaneRunning(t *testing.T, harness string, questions []conversation.Item, command func(stdin string) string) *answerPane {
+	t.Helper()
 	if testing.Short() {
 		t.Skip("needs tmux: skipped under -short")
 	}
@@ -62,7 +68,7 @@ func newAnswerPane(t *testing.T, harness string, questions []conversation.Item) 
 	}
 	stdin := filepath.Join(dir, "stdin")
 	for _, args := range [][]string{
-		{"new-session", "-d", "-s", "alpha", "stty raw -echo; exec cat > " + stdin},
+		{"new-session", "-d", "-s", "alpha", command(stdin)},
 		{"set-option", "-t", "alpha", "@admiral-name", "alpha"},
 		{"set-option", "-t", "alpha", "@admiral-harness", harness},
 	} {
@@ -86,7 +92,7 @@ func newAnswerPane(t *testing.T, harness string, questions []conversation.Item) 
 		Questions: func(string, string) []conversation.Item { return questions }}
 	mux := http.NewServeMux()
 	s.Routes(mux)
-	time.Sleep(300 * time.Millisecond) // the shell's stty must finish before keys arrive
+	time.Sleep(500 * time.Millisecond) // the pane must be reading before keys arrive
 	return &answerPane{t: t, s: s, mux: mux, tmux: tmux, sock: sock, stdin: stdin, pane: strings.TrimSpace(string(pane))}
 }
 

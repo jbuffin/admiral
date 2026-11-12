@@ -1,0 +1,19 @@
+  deliver, options Pickup, Courier with descriptions. Use code or bold in one   
+  description. When I answer, restate all four answers in one short reply.      
+⏺ User answered Claude's questions:                                             
+  ⎿  · Which colour would you like? → Green                                     
+     · Which toppings would you like? → Cheese, Mushrooms                       
+     · Which size would you like? → Medium, thanks                              
+     · How should we deliver it? → Courier                                      
+⏺ Here are your four answers:
+  - Colour: Green                                                               
+  - Toppings: Cheese, Mushrooms                                                 
+  - Size: Medium. You typed this in yourself, since the options were only Small 
+    and Large.                                    
+  - Delivery: Courier                     
+✻ Cooked for 4s · done 2:44 PM                                 
+────────────────────────────────────────────────────────────────────────────────
+❯                            
+────────────────────────────────────────────────────────────────────────────────
+  /private/var/folders/cw/q6z_pnv16cd76cd0dp89k_vm0000gn/T/ts-SQgyG2/proj  ma…
+  ⏵⏵ auto mode on (shift+tab to cycle)

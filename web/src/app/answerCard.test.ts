@@ -57,12 +57,64 @@ describe('answerCard: question', () => {
   });
 });
 
+describe('answerCard: every Claude AskUserQuestion shape', () => {
+  const batch = (over: { pending?: boolean[] } = {}) =>
+    ok(
+      ...[false, true, false, false].map((multiSelect, i) => ({
+        ...ask(`call#${i}`, ['A', 'B', 'C'], { multiSelect, pending: over.pending?.[i] ?? true }),
+      })),
+    );
+
+  it('answers a multi-select question from the card, with Other', () => {
+    const card = needs('question', ok(ask('q#0', ['A', 'B'], { multiSelect: true })));
+    expect(card).toMatchObject({ kind: 'question', reason: 'question', item: 'q#0', questions: [{ id: 'q#0', multiSelect: true, other: true }] });
+  });
+
+  it('steps a four-question batch through one card named by the call\'s first item', () => {
+    const card = needs('permission:AskUserQuestion', batch());
+    expect(card).toMatchObject({ kind: 'question', reason: 'permission:AskUserQuestion', item: 'call#0' });
+    const questions = (card as unknown as { questions: { id: string; multiSelect: boolean; options: string[] }[] }).questions;
+    expect(questions.map((q) => q.id)).toEqual(['call#0', 'call#1', 'call#2', 'call#3']);
+    expect(questions.map((q) => q.multiSelect)).toEqual([false, true, false, false]);
+    expect(questions[0].options).toEqual(['A', 'B', 'C']);
+  });
+
+  it('sends a batch with a question already answered to the terminal', () => {
+    expect(needs('question', batch({ pending: [true, false, true, true] })).kind).toBe('terminal');
+  });
+
+  it('takes the newest call when an older one is still pending in the same turn', () => {
+    const conv = ok(ask('old#0', ['A', 'B']), ask('new#0', ['C', 'D']), ask('new#1', ['E', 'F']));
+    expect(needs('question', conv)).toMatchObject({ item: 'new#0', questions: [{ id: 'new#0' }, { id: 'new#1' }] });
+  });
+});
+
+describe('answerCard: Copilot and Codex keep batches and multi-select in the terminal', () => {
+  const multi = ok(ask('q#0', ['A', 'B'], { multiSelect: true }));
+  const batch = ok(ask('call#0', ['A', 'B']), ask('call#1', ['C', 'D']));
+
+  it.each([
+    ['a Copilot multi-select question', 'copilot', 'question', multi],
+    ['a Copilot batch', 'copilot', 'question', batch],
+    ['a Codex multi-select question', 'codex', 'bell', multi],
+    ['a Codex batch', 'codex', 'bell', batch],
+  ])('sends %s to the terminal', (_, harness, reason, conv) => {
+    expect(needs(reason, conv, { harness }).kind).toBe('terminal');
+  });
+
+  it('still gives Copilot and Codex the card for one single-choice question, without Other', () => {
+    for (const [harness, reason] of [['copilot', 'question'], ['codex', 'bell']]) {
+      const card = needs(reason, ok(ask('q#0', ['A', 'B'])), { harness });
+      expect(card).toMatchObject({ kind: 'question', item: 'q#0' });
+      expect((card as { questions?: { other?: boolean }[] }).questions?.[0]?.other ?? false).toBe(false);
+    }
+  });
+});
+
 describe('answerCard: terminal', () => {
   it.each([
-    ['a multi-select question', ok(ask('q#0', ['A', 'B'], { multiSelect: true }))],
     ['a question with no options', ok(ask('q#0', []))],
     ['a question with more than nine options', ok(ask('q#0', Array.from({ length: 10 }, (_, i) => `o${i}`)))],
-    ['a multi-question AskUserQuestion', ok(ask('u#0', ['A', 'B'], { pending: false }), ask('u#1', ['C', 'D']))],
     ['a question reason with no pending question', ok(ask('q#0', ['A', 'B'], { pending: false }))],
     ['a question reason and an empty conversation', ok()],
   ])('sends %s to the terminal', (_, conv) => {

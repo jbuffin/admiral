@@ -228,6 +228,7 @@ func askedQuestions(input json.RawMessage) []Question {
 	var in struct {
 		Questions []struct {
 			Question    string `json:"question"`
+			Header      string `json:"header"`
 			MultiSelect bool   `json:"multiSelect"`
 			Options     []struct {
 				Label       string `json:"label"`
@@ -243,7 +244,7 @@ func askedQuestions(input json.RawMessage) []Question {
 		if len(qs) == maxQuestions {
 			break
 		}
-		out := Question{Text: cutTo(q.Question, maxQuestionLen, "…"), MultiSelect: q.MultiSelect}
+		out := Question{Header: cutTo(q.Header, maxLabel, "…"), Text: cutTo(q.Question, maxQuestionLen, "…"), MultiSelect: q.MultiSelect}
 		for _, o := range q.Options {
 			if len(out.Options) == maxOptions {
 				break

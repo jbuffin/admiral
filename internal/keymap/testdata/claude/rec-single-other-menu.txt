@@ -1,0 +1,19 @@
+  - Toppings: Cheese, Mushrooms
+  - Size: Medium. You typed this in yourself, since the options were only Small
+    and Large.                             
+  - Delivery: Courier                                                           
+✻ Cooked for 4s · done 2:44 PM                                                  
+❯ Call AskUserQuestion once with ONE single-choice question, header "Size",     
+  which size, options Small and Large with short descriptions. Then restate my  
+  answer in one line.                                                           
+────────────────────────────────────────────────────────────────────────────────
+ ☐ Size                                                                         
+Which size would you like?                                                      
+❯ 1. Small
+     Good for one person.                       
+  2. Large                                                                      
+     Good for sharing.
+  3. Type something.                                                            
+────────────────────────────────────────────────────────────────────────────────
+  4. Chat about this                                                            
+Enter to select · ↑/↓ to navigate · Esc to cancel

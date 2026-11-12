@@ -1,0 +1,13 @@
+←  ☐ Size  ☐ Extras  ✔ Submit  →
+
+Which **size** fits `main.go`?
+
+❯ 1. **Small**
+     a `tiny` one
+  2. Large [docs](https://example.com)
+     big
+  3. Type something.
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  4. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate · Esc to cancel

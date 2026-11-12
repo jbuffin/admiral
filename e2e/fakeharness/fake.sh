@@ -98,6 +98,8 @@
 #   bell           ring the terminal bell
 #   sleep <n>      sleep n seconds
 #   exit <n>       create `cues-done`, then exit with status n
+#   menu <json>    Claude only, needs python3, and the last cue: creates `cues-done`, then draws Claude's AskUserQuestion menu for the
+#                  call <json> holds (a list of {text, labels, multi}) through `fakemenu.py` and logs every key it reads to `stdin`
 #   lines <n>      print n numbered lines, "line 0001" to "line <n>", each in an SGR
 #                  colour (\033[31m..\033[36m, cycling) and reset at the end
 #   altscreen      switch to the alternate screen (\033[?1049h), set application cursor
@@ -487,6 +489,10 @@ if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 			;;
 		wait)
 			while [ ! -e "$d/$arg" ]; do sleep 0.1; done
+			;;
+		menu)
+			: >"$d/cues-done"
+			exec python3 "$(dirname "$0")/fakemenu.py" "$arg" "$d/stdin" <&3
 			;;
 		mcp)
 			cfg=""

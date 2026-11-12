@@ -58,6 +58,80 @@ test('a question card sends the number of the tapped option', async ({ page, adm
   await expect(button(page, 'Green')).toHaveCount(0);
 });
 
+test('a four-question Claude call is stepped through the card and answered with one request at iPad width', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  const asked = [
+    { question: 'Which colour?', header: 'Colour', options: ['Red', 'Green', 'Blue'], descriptions: ['A **bold** colour', 'A fresh colour', 'A calm colour'] },
+    { question: 'Which toppings?', header: 'Toppings', options: ['Cheese', 'Olives', 'Mushrooms'], multiSelect: true, descriptions: ['Use `melted`', 'Briny', 'Earthy'] },
+    { question: 'Which size?', header: 'Size', options: ['Small', 'Large'], descriptions: ['One person', 'To share'] },
+    { question: 'How to deliver?', header: 'Delivery', options: ['Pickup', 'Courier'], descriptions: ['Collect it', 'To the door'] },
+  ];
+  const menu = asked.map((q) => ({ text: q.question, labels: q.options, multi: q.multiSelect ?? false }));
+  const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste', `menu ${JSON.stringify(menu)}`] });
+  await appendLines(admiral, ship, [line.ask('toolu_c4', asked)]);
+  setReason(admiral, ship, 'permission:AskUserQuestion');
+  setState(admiral, ship, 'needs_you');
+  await open(page, admiral, ship);
+
+  const card = viewPanel(page).locator('.q-card');
+  await expect(card.getByText('Question 1 of 4')).toBeVisible();
+  // A description is Markdown inside its button, as it is in the answered card.
+  await expect(card.getByRole('radio', { name: /^Red/ }).locator('strong')).toHaveText('bold');
+  await card.getByRole('radio', { name: /^Green/ }).tap();
+  await card.getByRole('button', { name: 'Next', exact: true }).tap();
+  await card.getByRole('checkbox', { name: /^Cheese/ }).tap();
+  await card.getByRole('checkbox', { name: /^Mushrooms/ }).tap();
+  await card.getByRole('button', { name: 'Next', exact: true }).tap();
+  await card.getByLabel('Other answer').fill('Medium, thanks');
+  await card.getByRole('button', { name: 'Next', exact: true }).tap();
+  await card.getByRole('radio', { name: /^Courier/ }).tap();
+  const sent = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/answer'));
+  await card.getByRole('button', { name: 'Submit', exact: true }).tap();
+  expect((await sent).postDataJSON().answers).toEqual([{ options: [2] }, { options: [1, 3] }, { options: [], other: 'Medium, thanks' }, { options: [2] }]);
+
+  // The menu took the keys one step at a time and ended on the review screen's 1.
+  const down = '\x1b[B';
+  await expect.poll(() => received(admiral, ship)).toBe(['2', '\r', down + down, '\r', down + down, '\r', '3', 'Medium, thanks', '\r', '2', '1'].join(''));
+  await expect(card.getByRole('button', { name: 'Submit', exact: true })).toHaveCount(0);
+
+  // Once Claude records the answers, the same call is the read-only record: chips, rendered descriptions and chosen marks.
+  await appendLines(admiral, ship, [
+    line.askResult('toolu_c4', { 'Which colour?': 'Green', 'Which toppings?': 'Cheese, Mushrooms', 'Which size?': 'Medium, thanks', 'How to deliver?': 'Courier' }),
+  ]);
+  setState(admiral, ship, 'working');
+  const record = viewPanel(page).locator('.q-record');
+  await expect(record.locator('.q-chip')).toHaveText(['Colour', 'Toppings', 'Size', 'Delivery']);
+  await expect(record.locator('.q-desc strong')).toHaveText('bold');
+  await expect(record.locator('.q-desc code')).toHaveText('melted');
+  await expect(record.locator('.q-option.chosen')).toHaveText([/Green/, /Cheese/, /Mushrooms/, /Courier/]);
+  await expect(record.locator('.q-free')).toHaveText('Other: Medium, thanks');
+});
+
+test('a refused answer leaves the question in the transcript with the reason and an Open terminal button', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  // The fake pane draws no menu, so the sender finds nothing to step through and refuses.
+  const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
+  await appendLines(admiral, ship, [line.ask('toolu_r1', [{ question: 'Which colour?', header: 'Colour', options: ['Red', 'Green'] }, { question: 'Which size?', header: 'Size', options: ['Small', 'Large'] }])]);
+  setReason(admiral, ship, 'permission:AskUserQuestion');
+  setState(admiral, ship, 'needs_you');
+  await open(page, admiral, ship);
+
+  const card = viewPanel(page).locator('.q-card');
+  await card.getByRole('radio', { name: /^Red/ }).tap();
+  await card.getByRole('button', { name: 'Next', exact: true }).tap();
+  await card.getByRole('radio', { name: /^Large/ }).tap();
+  await card.getByRole('button', { name: 'Submit', exact: true }).tap();
+
+  await expect(card.getByRole('alert')).toContainText('terminal');
+  await expect(card.getByText('Which colour?')).toBeVisible();
+  await expect(card.getByText('Which size?')).toBeVisible();
+  expect(received(admiral, ship)).toBe('');
+  await button(page, 'Open terminal').tap();
+  await expect(viewTab(page, 'Terminal')).toHaveAttribute('aria-selected', 'true');
+});
+
 test('a card goes when the pane moves on, and a refused answer removes it and sends nothing more', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
   await admiral.start({ env: withFakeGh(admiral) });
@@ -118,7 +192,7 @@ test('a prompt Admiral cannot answer shows the terminal card, and only Open term
   seedFleets(admiral, { live: true });
   await admiral.start({ env: withFakeGh(admiral) });
   const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
-  await appendLines(admiral, ship, [line.ask('toolu_m1', [{ question: 'Which colours?', options: ['Red', 'Green'], multiSelect: true }])]);
+  await appendLines(admiral, ship, [line.ask('toolu_m1', [{ question: 'Which colours?', options: ['Red', 'Green', 'Blue', 'Cyan', 'Pink', 'Gold', 'Gray', 'Teal', 'Plum'], multiSelect: true }])]);
   setReason(admiral, ship, 'question');
   setState(admiral, ship, 'needs_you');
   await open(page, admiral, ship);

@@ -1,0 +1,40 @@
+
+ ▐▛███▛█   Claude Code v2.1.322
+▝▜██████▀  Opus 5.5 · Claude Ultra
+ ▝▝   ▝▝   /tmp/repo · /rc
+
+
+❯ Use the AskUserQuestion tool now with exactly 2 questions. Q1: header "Colour", "Which colour?", single select,
+  options Red, Green, Blue (each with a short description). Q2: header "Toppings", "Which toppings?", multiSelect true,
+  options Cheese, Ham, Olives. Do nothing else.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+←  ☒ Colour  ☒ Toppings  ✔ Submit  →
+
+Which colour?
+
+  1. Red
+     A warm, bold colour
+  2. Green ✔
+     A natural, calm colour
+  3. Blue
+     A cool, steady colour
+❯ 4. Purple
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate · ctrl+g to edit in VS Code · Esc to cancel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

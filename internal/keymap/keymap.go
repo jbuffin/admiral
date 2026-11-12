@@ -10,6 +10,8 @@ import (
 type Map struct {
 	permission map[string]string
 	question   func(option int) string
+	// call plans the answer to a whole question call; nil where only a single question is answered.
+	call func(qs []CallQuestion) (Plan, bool)
 	// tools limits the permission card to the tools whose menus are recorded; nil allows any.
 	tools map[string]bool
 }
@@ -27,6 +29,23 @@ func (m Map) Question(option int) (keys string, ok bool) {
 		return "", false
 	}
 	return m.question(option), true
+}
+
+// CallQuestion is one question of a call and its answer: the listed options chosen (1-based, ascending) and an Other text.
+type CallQuestion struct {
+	Text   string
+	Labels []string
+	Multi  bool
+	Choose []int
+	Other  string
+}
+
+// Plan gives the steps that answer every question of one call, or false where the menu has no key for the answer.
+func (m Map) Plan(qs []CallQuestion) (Plan, bool) {
+	if m.call == nil {
+		return Plan{}, false
+	}
+	return m.call(qs)
 }
 
 // For is false for a harness whose menus have no recorded keys.
@@ -47,6 +66,7 @@ func For(harness string) (Map, bool) {
 var claude = Map{
 	permission: map[string]string{"allow": "1", "deny": "\x1b"},
 	question:   strconv.Itoa,
+	call:       claudePlan,
 }
 
 // Copilot's menus: digit 1 allows once (2 saves an approval, so it is never sent) and Esc rejects. Its question form

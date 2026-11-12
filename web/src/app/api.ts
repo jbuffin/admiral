@@ -105,6 +105,7 @@ export interface ToolCall {
   approving?: boolean;
 }
 export interface Question {
+  header?: string;
   text: string;
   options?: { label: string; description?: string }[];
   answer?: string;

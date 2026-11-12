@@ -1,72 +1,88 @@
-// A small Markdown renderer for transcript text, which is untrusted: every character is escaped before any tag is added.
+// Markdown for transcript text, which is untrusted: raw HTML is never parsed, and only web, mail, relative and fragment links are kept.
 
-const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+import hljs from 'highlight.js/lib/core';
+import bash from 'highlight.js/lib/languages/bash';
+import css from 'highlight.js/lib/languages/css';
+import diff from 'highlight.js/lib/languages/diff';
+import go from 'highlight.js/lib/languages/go';
+import javascript from 'highlight.js/lib/languages/javascript';
+import json from 'highlight.js/lib/languages/json';
+import markdown from 'highlight.js/lib/languages/markdown';
+import python from 'highlight.js/lib/languages/python';
+import sql from 'highlight.js/lib/languages/sql';
+import swift from 'highlight.js/lib/languages/swift';
+import typescript from 'highlight.js/lib/languages/typescript';
+import xml from 'highlight.js/lib/languages/xml';
+import yaml from 'highlight.js/lib/languages/yaml';
+import MarkdownIt from 'markdown-it';
+import type { Token } from 'markdown-it';
 
-const safeUrl = (url: string) => /^(https?:|mailto:|\/|#)/i.test(url.trim());
+for (const [name, lang] of Object.entries({ bash, css, diff, go, javascript, json, markdown, python, sql, swift, typescript, xml, yaml })) hljs.registerLanguage(name, lang);
+hljs.registerAliases(['sh', 'shell'], { languageName: 'bash' });
 
-function inline(src: string): string {
-  const codes: string[] = [];
-  const links: string[] = [];
-  // The stash markers are control characters, so the text must not carry any.
-  let s = src.replace(/[\u0000-\u0002]/g, '').replace(/`([^`\n]+)`/g, (_, c: string) => {
-    codes.push(`<code>${escape(c)}</code>`);
-    return `\u0000${codes.length - 1}\u0000`;
-  });
-  s = escape(s);
-  s = s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_, text: string, url: string) => {
-    const raw = url.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-    if (!safeUrl(raw)) return text;
-    links.push(`<a href="${escape(raw)}" target="_blank" rel="noopener noreferrer">`);
-    return `\u0001${links.length - 1}\u0001${text}\u0002`;
-  });
-  s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>').replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
-  return s
-    .replace(/\u0001(\d+)\u0001/g, (_, i: string) => links[Number(i)])
-    .replace(/\u0002/g, '</a>')
-    .replace(/\u0000(\d+)\u0000/g, (_, i: string) => codes[Number(i)]);
+// Only these schemes become links; a target with no scheme is relative.
+// A protocol-relative //host target is another site, not a relative link.
+const safeUrl = (url: string) => !/^\/\//.test(url.trim()) && (!/^[a-z][a-z0-9+.-]*:/i.test(url.trim()) || /^(https?|mailto):/i.test(url.trim()));
+
+function highlight(code: string, lang: string): string {
+  if (!hljs.getLanguage(lang)) return '';
+  return `<pre><code class="hljs">${hljs.highlight(code, { language: lang, ignoreIllegals: true }).value}</code></pre>`;
 }
 
-const BULLET = /^\s*[-*+]\s+(.*)$/;
-const ORDERED = /^\s*\d+[.)]\s+(.*)$/;
-
-/** Renders headings, lists, emphasis, inline code, code blocks and links; anything else is text. */
-export function renderMarkdown(src: string): string {
-  const lines = src.replace(/\r\n?/g, '\n').split('\n');
-  const out: string[] = [];
-  let para: string[] = [];
-  const flush = () => {
-    if (para.length > 0) out.push(`<p>${para.map(inline).join('<br>')}</p>`);
-    para = [];
-  };
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const fence = /^\s*```/.exec(line);
-    if (fence) {
-      flush();
-      const code: string[] = [];
-      for (i++; i < lines.length && !/^\s*```/.test(lines[i]); i++) code.push(lines[i]);
-      out.push(`<pre><code>${escape(code.join('\n'))}\n</code></pre>`);
-      continue;
-    }
-    const heading = /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
-    if (heading) {
-      flush();
-      out.push(`<h${heading[1].length}>${inline(heading[2])}</h${heading[1].length}>`);
-      continue;
-    }
-    const list = BULLET.test(line) ? BULLET : ORDERED.test(line) ? ORDERED : null;
-    if (list) {
-      flush();
-      const tag = list === BULLET ? 'ul' : 'ol';
-      const items: string[] = [];
-      for (; i < lines.length && list.test(lines[i]); i++) items.push(`<li>${inline(list.exec(lines[i])![1])}</li>`);
-      i--;
-      out.push(`<${tag}>${items.join('')}</${tag}>`);
-      continue;
-    }
-    if (line.trim() === '') flush();
-    else para.push(line);
+// A list item whose text starts with [ ] or [x] gets a read-only checkbox; code never reaches it, being a different token.
+function taskLists(state: { tokens: Token[]; Token: new (type: string, tag: string, nesting: 0 | 1 | -1) => Token }) {
+  const { tokens } = state;
+  for (let i = 2; i < tokens.length; i++) {
+    const inline = tokens[i];
+    if (inline.type !== 'inline' || tokens[i - 2].type !== 'list_item_open' || tokens[i - 1].type !== 'paragraph_open') continue;
+    const first = inline.children?.[0];
+    const m = first?.type === 'text' ? /^\[([ xX])\]\s+/.exec(first.content) : null;
+    if (!first || !m) continue;
+    first.content = first.content.slice(m[0].length);
+    const box = new state.Token('html_inline', '', 0);
+    box.content = `<input type="checkbox" disabled${m[1] === ' ' ? '' : ' checked'}> `;
+    inline.children!.unshift(box);
   }
-  flush();
-  return out.join('');
+}
+
+function newRenderer() {
+  const md = new MarkdownIt({ html: false, linkify: true, typographer: false, breaks: true, highlight });
+  // A bare file name like main.go is not a link.
+  md.linkify.set({ fuzzyLink: false, fuzzyEmail: false });
+  md.linkify.add('//', null);
+  md.validateLink = safeUrl;
+  md.core.ruler.after('inline', 'task_lists', taskLists);
+  const open = md.renderer.rules.link_open ?? ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options));
+  md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
+    tokens[idx].attrSet('target', '_blank');
+    tokens[idx].attrSet('rel', 'noopener noreferrer');
+    return open(tokens, idx, options, env, self);
+  };
+  // An image is never fetched: it shows as a link labelled with its alt text.
+  md.renderer.rules.image = (tokens, idx) => {
+    const t = tokens[idx];
+    const label = md.utils.escapeHtml(t.content || String(t.attrGet('src') ?? ''));
+    return `<a href="${md.utils.escapeHtml(String(t.attrGet('src') ?? ''))}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+  };
+  md.renderer.rules.table_open = () => '<div class="md-table"><table>\n';
+  md.renderer.rules.table_close = () => '</table></div>\n';
+  return md;
+}
+
+const full = newRenderer();
+const restricted = newRenderer().disable(['heading', 'lheading', 'image']);
+
+/** Renders transcript Markdown: headings, emphasis, lists, task lists, tables, quotes, links and highlighted code. */
+export function renderMarkdown(src: string): string {
+  return full.render(src);
+}
+
+/** The same without headings and images, for the short text of a question and its options. */
+export function renderRestrictedMarkdown(src: string): string {
+  return restricted.render(src);
+}
+
+/** The restricted renderer without the wrapping paragraph, for a description inside a button. */
+export function renderRestrictedInline(src: string): string {
+  return restricted.renderInline(src);
 }
