@@ -14,6 +14,8 @@ import {
   addCrewStep,
   addShownFields,
   canDraft,
+  clearProblems,
+  DESCRIPTION_MAX,
   createBody,
   createMember,
   crewApi,
@@ -125,9 +127,9 @@ function Field({ label, error, children }: { label: string; error?: string; chil
   );
 }
 
-const PROBLEM_FIELD: Partial<Record<keyof NewMemberForm, string>> = { customRole: 'role', basedOn: 'based-on', pickMeWhen: 'pick-me-when' };
-
 /** The form an edit and an Add crew draft share. A draft's problems sit beside their fields until the field changes. */
+const COUNT_FROM = 3500;
+
 function MemberEditor({
   label,
   initial,
@@ -157,9 +159,8 @@ function MemberEditor({
   const [open, setOpen] = useState<DraftProblem[]>(problems);
   const shown = named ? addShownFields(f.role) : shownFields(f.role);
   const set = (k: keyof NewMemberForm) => (e: Event) => {
-    const field = PROBLEM_FIELD[k] ?? k;
     setF({ ...f, [k]: (e.currentTarget as HTMLInputElement).value });
-    setOpen(open.filter((p) => p.field !== field));
+    setOpen(clearProblems(open, k));
   };
   const custom = f.role === CUSTOM_ROLE;
   const fixChecker = f.role === 'fix-checker';
@@ -296,6 +297,8 @@ function AddCrewPanel({ fleetKey, onClose, onCreated }: { fleetKey: string; onCl
   const [s, send] = useReducer(addCrewStep, ADD_CREW_START);
   const abort = useRef<AbortController | null>(null);
   const textId = useId();
+  const countId = `${textId}-count`;
+  const length = [...s.description].length;
   const drafting = s.phase === 'drafting';
   useEffect(() => {
     if (!drafting) return;
@@ -339,7 +342,13 @@ function AddCrewPanel({ fleetKey, onClose, onCreated }: { fleetKey: string; onCl
         <>
           <div class="field crew-field">
             <label for={textId}>Describe the member</label>
-            <textarea id={textId} rows={6} value={s.description} readOnly={drafting} onInput={(e) => send({ type: 'edit', description: (e.currentTarget as HTMLTextAreaElement).value })} />
+            <textarea id={textId} rows={6} value={s.description} readOnly={drafting} aria-describedby={length > COUNT_FROM ? countId : undefined} onInput={(e) => send({ type: 'edit', description: (e.currentTarget as HTMLTextAreaElement).value })} />
+            {length > COUNT_FROM ? (
+              <p id={countId} class={`note${length > DESCRIPTION_MAX ? ' error' : ''}`}>
+                {length} / {DESCRIPTION_MAX}
+                {length > DESCRIPTION_MAX ? ' The description is too long; shorten it to draft.' : ''}
+              </p>
+            ) : null}
           </div>
           {s.phase === 'nojudge' ? (
             <p class="alert" role="alert">

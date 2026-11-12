@@ -37,6 +37,11 @@ const draftSchema = `{"type":"object","properties":{` +
 	`"instructions":{"type":"string","maxLength":12000}` +
 	`},"required":["name","role","based-on","skills","model","pick-me-when","instructions"],"additionalProperties":false}`
 
+// offeredRoles are the roles the writer may pick: the fix checker takes no skills or instructions, so it is not one.
+func offeredRoles() []string {
+	return slices.DeleteFunc(crew.Roles(), func(r string) bool { return r == crew.FixChecker })
+}
+
 // draftPrompt is the crew-writer prompt followed by the description in a fence longer than any backtick run in it.
 func draftPrompt(description string) string {
 	fence, run := "```", 0
@@ -50,7 +55,7 @@ func draftPrompt(description string) string {
 			run = 0
 		}
 	}
-	prompt := strings.Replace(crewWriter, "{{roles}}", strings.Join(crew.Roles(), ", "), 1)
+	prompt := strings.Replace(crewWriter, "{{roles}}", strings.Join(offeredRoles(), ", "), 1)
 	return prompt + "\nThe engineer's description:\n\n" + fence + "\n" + description + "\n" + fence + "\n"
 }
 
@@ -87,18 +92,41 @@ func (m newMember) body() memberBody {
 		Harness: optional(m.Harness), PickMeWhen: m.PickMeWhen, Instructions: trimBlankLines(m.Instructions)}
 }
 
+// emojiBase reports whether a variation selector may follow r: the emoji and text-presentation characters, and the keycap bases.
+func emojiBase(r rune) bool {
+	switch {
+	case r == '#' || r == '*' || (r >= '0' && r <= '9'):
+		return true
+	case r == 0xA9 || r == 0xAE || r == 0x203C || r == 0x2049 || r == 0x2122 || r == 0x2139 || r == 0x24C2 || r == 0x3030 || r == 0x303D || r == 0x3297 || r == 0x3299:
+		return true
+	}
+	return (r >= 0x2194 && r <= 0x21AA) || (r >= 0x231A && r <= 0x23FF) || (r >= 0x25AA && r <= 0x25FE) || (r >= 0x2600 && r <= 0x27BF) ||
+		(r >= 0x2934 && r <= 0x2935) || (r >= 0x2B05 && r <= 0x2B55) || (r >= 0x1F000 && r <= 0x1FAFF)
+}
+
+// invisible is a graphic code point that draws nothing: blank fillers and variation selectors.
+func invisible(r rune, prev rune) bool {
+	switch r {
+	case 0x3164, 0x115F, 0x1160, 0xFFA0, 0x2800:
+		return true
+	case 0xFE0E, 0xFE0F:
+		return !emojiBase(prev)
+	}
+	return (r >= 0xFE00 && r <= 0xFE0D) || (r >= 0xE0100 && r <= 0xE01EF)
+}
+
 // hidden finds the code points a reader can't see, other than the newline and tab an instruction may hold.
 func hidden(s string, allowLayout bool) (count int, first rune) {
+	var prev rune
 	for _, r := range s {
-		if allowLayout && (r == '\n' || r == '\t') {
-			continue
-		}
-		if !unicode.IsGraphic(r) {
+		skip := allowLayout && (r == '\n' || r == '\t')
+		if !skip && (!unicode.IsGraphic(r) || invisible(r, prev)) {
 			if count == 0 {
 				first = r
 			}
 			count++
 		}
+		prev = r
 	}
 	return count, first
 }
@@ -217,6 +245,10 @@ func (s *Service) serveDraft(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("description: at most %d characters", maxDescription))
 		return
 	}
+	if _, _, err := c.memberDir(false); err != nil {
+		refuse(w, err)
+		return
+	}
 	fleet, _ := s.Config.Current().Fleet(c.key)
 	choice, err := judge.Choose(fleet, capabilities.Open(c.home))
 	if err != nil {
@@ -250,7 +282,10 @@ func (s *Service) serveDraft(w http.ResponseWriter, r *http.Request) {
 	}
 	problems := []problem{}
 	np, err := s.nameProblem(c, m.Name)
-	if err != nil {
+	switch {
+	case errors.Is(err, errLink) || errors.Is(err, errUnreadable):
+		np = &problem{"name", "crew/" + m.Name + ".md is a link or not a regular file; pick another name"}
+	case err != nil:
 		refuse(w, err)
 		return
 	}

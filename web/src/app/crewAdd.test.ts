@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addCrewStep, ADD_CREW_START, addShownFields, canDraft, createBody, createMember, CUSTOM_ROLE, DESCRIPTION_MAX, draftCrew, fieldError, readDraft, type AddCrewState, type NewMemberForm } from './crew';
+import { addCrewStep, ADD_CREW_START, addShownFields, canDraft, clearProblems, createBody, createMember, CUSTOM_ROLE, DESCRIPTION_MAX, draftCrew, fieldError, readDraft, type AddCrewState, type NewMemberForm } from './crew';
 
 const fetched: { url: string; init: RequestInit }[] = [];
 const answer = (status: number, body: unknown) =>
@@ -123,6 +123,22 @@ describe('the Add crew panel', () => {
   it('says drafting needs a proven harness, with the reason, on a 409', () => {
     const s = at(typed(), { type: 'draft' }, { type: 'result', result: { ok: false, status: 409, error: 'no harness', reason: 'claude is not proven' } });
     expect(s).toMatchObject({ phase: 'nojudge', reason: 'claude is not proven', description: 'A quartermaster.' });
+  });
+
+  it('shows the server error, not the no-judge advice, on a 409 that carries no reason', () => {
+    const s = at(typed(), { type: 'draft' }, { type: 'result', result: { ok: false, status: 409, error: 'a link is in the path, refused; nothing changed' } });
+    expect(s).toMatchObject({ phase: 'failed', error: 'a link is in the path, refused; nothing changed', description: 'A quartermaster.' });
+  });
+
+  it('clears a based-on problem when the role changes, and only the changed field otherwise', () => {
+    const ps = [
+      { field: 'based-on', message: 'a custom role needs based-on' },
+      { field: 'pick-me-when', message: 'one line' },
+    ];
+    expect(clearProblems(ps, 'role')).toEqual([ps[1]]);
+    expect(clearProblems(ps, 'basedOn')).toEqual([ps[1]]);
+    expect(clearProblems(ps, 'pickMeWhen')).toEqual([ps[0]]);
+    expect(clearProblems(ps, 'model')).toEqual(ps);
   });
 
   it('goes back to the description when Stop aborts the call, and ignores the aborted answer', () => {

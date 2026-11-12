@@ -253,6 +253,13 @@ export function readDraft(raw: unknown): Draft {
   };
 }
 
+/** The problems left after a field changes; a role change also clears based-on, which a built-in role no longer shows. */
+export function clearProblems(problems: DraftProblem[], key: keyof NewMemberForm): DraftProblem[] {
+  const own = key === 'customRole' ? 'role' : key === 'basedOn' ? 'based-on' : key === 'pickMeWhen' ? 'pick-me-when' : key;
+  const gone = key === 'role' ? ['role', 'based-on'] : [own];
+  return problems.filter((p) => !gone.includes(p.field));
+}
+
 export type NewMemberBody = MemberBody & { name: string };
 
 export const createBody = (f: NewMemberForm): NewMemberBody => ({ name: f.name.trim(), ...memberBody(f) });
@@ -305,7 +312,7 @@ export function addCrewStep(s: AddCrewState, e: AddCrewEvent): AddCrewState {
         return { phase: 'draft', description: s.description, seconds: 0, form, problems };
       }
       if (r.aborted) return back;
-      if (r.status === 409) return { phase: 'nojudge', description: s.description, seconds: 0, reason: r.reason ?? '' };
+      if (r.status === 409 && r.reason) return { phase: 'nojudge', description: s.description, seconds: 0, reason: r.reason ?? '' };
       return { phase: 'failed', description: s.description, seconds: 0, kind: r.kind ?? 'error', error: r.error };
     }
   }

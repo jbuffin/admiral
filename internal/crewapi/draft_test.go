@@ -213,6 +213,9 @@ func TestDraftReportsOneProblemPerFailedCheckAndStillAnswers200(t *testing.T) {
 		{"more than 20 skills", draftFields{"skills": twentyOne}, "skills", ""},
 		{"a zero-width space in pick-me-when", draftFields{"pick-me-when": "Pick for​ stores."}, "pick-me-when", "U+200B"},
 		{"a tag character in instructions", draftFields{"instructions": "Check the stores.\U000E0041"}, "instructions", "U+E0041"},
+		{"a run of variation selectors in instructions", draftFields{"instructions": "Check the stores.\uFE00\uFE01\U000E0100\uFE0F"}, "instructions", "U+FE00"},
+		{"a Hangul filler in pick-me-when", draftFields{"pick-me-when": "Pick for\u3164stores."}, "pick-me-when", "U+3164"},
+		{"a braille blank in instructions", draftFields{"instructions": "Check\u2800stores."}, "instructions", "U+2800"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -334,7 +337,7 @@ func contains(l []string, s string) bool {
 	return false
 }
 
-func TestCrewWriterPromptNamesExactlyTheResolversRolesOnOneLine(t *testing.T) {
+func TestCrewWriterPromptOffersEveryRoleButTheFixCheckerOnOneLineWithAMeaningEach(t *testing.T) {
 	commodoreAt(t)
 	r := newJudgeRig(t, true, "")
 	r.draft("Anything.")
@@ -344,8 +347,23 @@ func TestCrewWriterPromptNamesExactlyTheResolversRolesOnOneLine(t *testing.T) {
 			roles = rest
 		}
 	}
-	if want := strings.Join(crew.Roles(), ", "); roles != want {
+	var offered []string
+	for _, role := range crew.Roles() {
+		if role != crew.FixChecker {
+			offered = append(offered, role)
+		}
+	}
+	if want := strings.Join(offered, ", "); roles != want {
 		t.Errorf("the prompt's \"Roles: \" line = %q, want %q", roles, want)
+	}
+	prompt := r.called()[0].Prompt
+	for _, role := range offered {
+		if !strings.Contains(prompt, "\n- "+role+": ") {
+			t.Errorf("the prompt gives %s no meaning line", role)
+		}
+	}
+	if strings.Contains(prompt, crew.FixChecker) {
+		t.Error("the prompt offers or names the fix checker")
 	}
 }
 
@@ -454,5 +472,54 @@ func TestDraftOfAnUnknownFleetIs404(t *testing.T) {
 	}
 	if n := len(r.called()); n != 0 {
 		t.Errorf("%d judge calls, want none", n)
+	}
+}
+
+func TestDraftAcceptsAnEmojiWithItsPresentationSelector(t *testing.T) {
+	commodoreAt(t)
+	r := newJudgeRig(t, true, "")
+	r.answers(with(validDraft(), draftFields{"pick-me-when": "Pick for the \u2764\uFE0F of the ship.", "instructions": "Keep the lamps lit \u2764\uFE0F and the keycap 1\uFE0F\u20E3."}))
+	status, got := r.draft("Anything.")
+	if status != 200 || len(got.Problems) != 0 {
+		t.Errorf("%d problems = %v, want a draft with none", status, got.Problems)
+	}
+}
+
+func TestDraftOfALinkedCrewDirectoryIs409WithNoReasonAndMakesNoCall(t *testing.T) {
+	commodoreAt(t)
+	r := newJudgeRig(t, true, "")
+	if err := os.MkdirAll(filepath.Dir(r.crewDir()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(t.TempDir(), r.crewDir()); err != nil {
+		t.Fatal(err)
+	}
+	status, body := r.rawDraft("A quartermaster.")
+	if status != 409 || strings.Contains(body, `"reason"`) || !strings.Contains(body, `"error"`) {
+		t.Errorf("%d %s, want 409 with an error and no reason", status, body)
+	}
+	if n := len(r.called()); n != 0 {
+		t.Errorf("the judge was called %d times, want none", n)
+	}
+}
+
+func TestDraftWhoseNameIsALinkReportsANameProblemAndStillAnswers200(t *testing.T) {
+	commodoreAt(t)
+	r := newJudgeRig(t, true, "")
+	if err := os.MkdirAll(r.crewDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "target.md")
+	writeFile(t, target, "keep")
+	if err := os.Symlink(target, filepath.Join(r.crewDir(), "quartermaster.md")); err != nil {
+		t.Fatal(err)
+	}
+	status, got := r.draft("A quartermaster.")
+	var onName bool
+	for _, p := range got.Problems {
+		onName = onName || p.Field == "name"
+	}
+	if status != 200 || !onName {
+		t.Errorf("%d problems = %v, want 200 with a name problem", status, got.Problems)
 	}
 }
