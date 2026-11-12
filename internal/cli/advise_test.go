@@ -443,6 +443,9 @@ func TestAdviseLogsOneAdvisedLineWithNoQuestionText(t *testing.T) {
 			if f, has := rec["failure"]; c.failure == "" && has || c.failure != "" && f != c.failure {
 				t.Errorf("failure = %v (present %v), want %q", f, has, c.failure)
 			}
+			if rec["fleet"] != "work" {
+				t.Errorf("fleet = %v, want work: the record must say which fleet the judge call served", rec["fleet"])
+			}
 			wantCost := 0.0123
 			if rec["cost"] != wantCost {
 				t.Errorf("cost = %v, want %v", rec["cost"], wantCost)

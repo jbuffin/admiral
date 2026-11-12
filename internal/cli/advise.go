@@ -136,14 +136,14 @@ func Advise(args []string, std IO) error {
 		if errors.As(err, &none) {
 			reason = none.Reason
 		}
-		return advised{stakes: "high", failure: "no judge harness", reason: reason}.print(std, dir, ship)
+		return advised{fleet: fleet.Key, stakes: "high", failure: "no judge harness", reason: reason}.print(std, dir, ship)
 	}
 
 	reply, err := judge.Run(context.Background(), choice, judge.Call{
 		Kind: judge.Strong, Prompt: advisePrompt + quotedDecision(in), Schema: []byte(adviseSchema),
 		BudgetUSD: adviseBudgetUSD, Timeout: adviseTimeout,
 	})
-	a := advised{harness: choice.Name}
+	a := advised{fleet: fleet.Key, harness: choice.Name}
 	var f *judge.Failure
 	if errors.As(err, &f) {
 		a.stakes, a.failure, a.reason, a.cost = "high", string(f.Kind), failureReason(f.Kind), costOf(f.Cost)
@@ -212,8 +212,8 @@ func quotedDecision(in adviceInput) string {
 // advised is one answer. failure is a judge.FailureKind or Admiral's own label, and
 // never any text from the call.
 type advised struct {
-	harness, failure, stakes, reason string
-	cost                             *float64
+	fleet, harness, failure, stakes, reason string
+	cost                                    *float64
 }
 
 // print writes the one JSON line, then logs the call under dir unless there is no ship.
@@ -228,6 +228,9 @@ func (a advised) print(std IO, dir, ship string) error {
 		return err
 	}
 	fields := map[string]any{"stakes": a.stakes}
+	if a.fleet != "" {
+		fields["fleet"] = a.fleet
+	}
 	if a.harness != "" {
 		fields["harness"] = a.harness
 	}
