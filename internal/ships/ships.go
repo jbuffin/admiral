@@ -574,7 +574,7 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 		self = cmpName(req.Name, req.Session)
 	}
 	if req.Round == 0 && (req.Source != "" || len(req.Issues) > 0 || chat != "" || req.RoutineKey != "") && !s.Host.Known() {
-		return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: NotKnownMsg}
+		return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: NotKnownMsg, Wait: WaitHost}
 	}
 	if req.Source != "" && req.Round == 0 {
 		if !s.lockOrder(key) {

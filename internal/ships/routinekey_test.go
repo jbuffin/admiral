@@ -1,9 +1,12 @@
 package ships
 
 import (
+	"net/http"
 	"testing"
 
+	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/launcher"
+	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
 func routineKey(id string) func(*launcher.Request) {
@@ -37,5 +40,17 @@ func TestTheLaunchedOutcomePointsAtItsTriggerRecord(t *testing.T) {
 	trig, _ := rec[0]["trigger"].(map[string]any)
 	if trig["fleet"] != "work" || trig["id"] != "trig-7" {
 		t.Errorf("launched record trigger = %v, want {fleet: work, id: trig-7}", rec[0]["trigger"])
+	}
+}
+
+func TestARoutineLaunchBeforeShipsAreKnownIsAWaitNotARefusal(t *testing.T) {
+	s := &Service{
+		Host:     sessionhost.New("tmux", t.TempDir()+"/tmux.sock"), // never run: not ready
+		Launcher: &launcher.Launcher{Config: func() *config.Config { return &config.Config{} }},
+	}
+	_, lerr := s.LaunchOrder(launcher.Request{Fleet: "work", Harness: "claude", Dir: t.TempDir(),
+		Skill: launcher.Skill{Kind: "none"}, RoutineKey: "routine:r1"})
+	if lerr == nil || lerr.Status != http.StatusServiceUnavailable || lerr.Wait == "" {
+		t.Fatalf("LaunchOrder before the host is ready = %+v, want a 503 that waits", lerr)
 	}
 }

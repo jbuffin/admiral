@@ -685,9 +685,13 @@ func TestThreeLaunchesWhoseShipsEndedFailedInARowSetAskFirst(t *testing.T) {
 	for d := 0; d < 3; d++ {
 		h.tickAt(at(d, 9, 0))
 		rec := h.latest(r)
-		h.ships.set(func() { h.ships.failed = map[string]bool{rec.Ship: true} })
+		h.ships.set(func() {
+			h.ships.failed = map[string]bool{rec.Ship: true}
+			h.ships.holders = map[string]routines.ShipRef{"routine:" + r.ID: {Session: rec.Ship, Status: "anchored"}}
+		})
 		h.sched.Changed()
 		h.tickAt(at(d, 9, 1))
+		h.ships.set(func() { h.ships.holders = nil })
 		if got := h.latest(r); got.ID != rec.ID || got.Outcome != routines.Failed {
 			t.Fatalf("after ship %s ended failed, its record = %+v, want it turned failed", rec.Ship, got)
 		}
@@ -807,4 +811,131 @@ func TestRunCatchesUpMissedRunsBeforeItWaits(t *testing.T) {
 	go func() { defer close(done); h.sched.Run(ctx) }()
 	t.Cleanup(func() { cancel(); <-done })
 	eventually(t, "the late run", func() bool { return h.ships.callsFor("routine:"+r.ID) == 1 })
+}
+
+func fullShips(h *harness) {
+	h.ships.set(func() {
+		h.ships.launch = func(int, launcher.Request) (routines.ShipRef, *launcher.Error) {
+			return routines.ShipRef{}, &launcher.Error{Status: http.StatusConflict, Msg: launcher.AutopilotCapText, Wait: "Waiting for a free ship slot"}
+		}
+	})
+}
+
+func TestAReusedShipNameThatDoesNotHoldTheRoutinesKeyIsNotItsFailure(t *testing.T) {
+	h := newHarness(t)
+	r := h.act(nil)
+	h.tickAt(at(0, 9, 0))
+	rec := h.latest(r)
+	// the ship sailed off; its name came back on a hand launch that failed and holds no routine key
+	h.ships.set(func() { h.ships.failed = map[string]bool{rec.Ship: true} })
+	h.sched.Changed()
+	h.tickAt(at(0, 9, 10))
+	if got := h.latest(r); got.ID != rec.ID || got.Outcome != routines.Launched {
+		t.Fatalf("record = %+v, want the launch left as it was", got)
+	}
+	// and the watch is gone: the key coming back on that name later is not this launch's failure
+	h.ships.set(func() {
+		h.ships.holders = map[string]routines.ShipRef{"routine:" + r.ID: {Session: rec.Ship, Status: "anchored"}}
+	})
+	h.sched.Changed()
+	h.tickAt(at(0, 9, 20))
+	if got := h.latest(r); got.ID != rec.ID || got.Outcome != routines.Launched {
+		t.Fatalf("record = %+v, want the launch left as it was after the watch was dropped", got)
+	}
+}
+
+func TestAWaitingRunReplacedByTheNextRunLeavesASkippedRecord(t *testing.T) {
+	h := newHarness(t)
+	r := h.act(nil)
+	fullShips(h)
+	h.tickAt(at(0, 9, 0))
+	h.tickAt(at(1, 9, 0))
+	got := h.ofOutcome(r, routines.Skipped)
+	if len(got) != 1 || !strings.Contains(got[0].Reason, "free ship slot") {
+		t.Fatalf("skipped records = %+v, want one saying the run was still waiting for a free ship slot", got)
+	}
+}
+
+func TestAWaitingRunDroppedBecauseItsRoutineWasSwitchedOffOrDeletedLeavesASkippedRecord(t *testing.T) {
+	for name, drop := range map[string]func(h *harness, r routines.Routine){
+		"off":     func(h *harness, r routines.Routine) { _, _ = h.store.SetEnabled("work", r.ID, false) },
+		"deleted": func(h *harness, r routines.Routine) { _ = h.store.Delete("work", r.ID) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			r := h.act(nil)
+			fullShips(h)
+			h.tickAt(at(0, 9, 0))
+			drop(h, r)
+			h.sched.Changed()
+			h.tickAt(at(0, 9, 5))
+			got := h.ofOutcome(r, routines.Skipped)
+			if len(got) != 1 {
+				t.Fatalf("skipped records = %+v, want one", got)
+			}
+		})
+	}
+}
+
+func TestACorruptBeforeActingNeverLaunchesWithOrWithoutHoldFire(t *testing.T) {
+	for _, hold := range []bool{false, true} {
+		h := newHarness(t)
+		r := h.act(nil)
+		path := filepath.Join(h.home, "routines", "work", "routines.json")
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(b), `"before_acting": "act"`) {
+			t.Fatalf("routines.json = %s, want before_acting act to corrupt", b)
+		}
+		if err := os.WriteFile(path, []byte(strings.Replace(string(b), `"before_acting": "act"`, `"before_acting": "x"`, 1)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if hold {
+			if _, err := h.store.SetHold("work", true, routines.Engineer); err != nil {
+				t.Fatal(err)
+			}
+		}
+		h.tickAt(at(0, 9, 0))
+		h.wantLaunches(0)
+		if len(h.chat.sent) != 0 {
+			t.Errorf("hold=%v: a prompt was sent", hold)
+		}
+		if rec := h.latest(r); rec.Outcome != routines.Failed || !strings.Contains(rec.Reason, "before_acting") {
+			t.Errorf("hold=%v: record = %+v, want failed naming before_acting", hold, rec)
+		}
+	}
+}
+
+func TestRunWaitsForTheShipsHostBeforeCatchingUp(t *testing.T) {
+	h := newHarness(t)
+	r := h.act(nil)
+	seedLaunched(t, h, r, at(-2, 9, 0))
+	h.clock.set(at(-1, 11, 0))
+	ready := make(chan struct{})
+	h.sched.Ready = ready
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); h.sched.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+	time.Sleep(100 * time.Millisecond)
+	h.wantLaunches(0)
+	close(ready)
+	eventually(t, "the late run once the host is ready", func() bool { return h.ships.callsFor("routine:"+r.ID) == 1 })
+}
+
+func TestACatchUpRunOfARoutineWithThreeFailuresInARowIsProposedNotLaunched(t *testing.T) {
+	h := newHarness(t)
+	r := h.act(nil)
+	for d := -5; d < -2; d++ {
+		if _, err := h.store.AppendTrigger("work", routines.Trigger{Routine: r.ID, Outcome: routines.Failed, Tier: "T0", At: at(d, 9, 0), Reason: "x"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.downFor(r, at(-1, 11, 0))
+	h.wantLaunches(0)
+	if got := h.ofOutcome(r, routines.Proposed); len(got) != 1 {
+		t.Fatalf("records = %+v, want the late run proposed", h.records(r))
+	}
 }

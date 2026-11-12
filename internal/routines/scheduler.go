@@ -50,7 +50,9 @@ const (
 	watchFor = 7 * 24 * time.Hour
 	// maxMissedRecords bounds the `missed` records one catch-up writes for a routine that fires every minute.
 	maxMissedRecords = 20
-	idleWake         = time.Hour
+	// listGrace is how long a fresh launch may go unlisted before its watch is dropped.
+	listGrace = 5 * time.Minute
+	idleWake  = time.Hour
 )
 
 // Scheduler fires every fleet's enabled routines when their When comes up.
@@ -61,6 +63,8 @@ type Scheduler struct {
 	Chat     Chat
 	Proposer Proposer
 	Zone     *time.Location // the zone a When is read in; main passes time.Local
+	// Ready, when set, closes once the ships host knows the fleet; Run catches up only after it.
+	Ready <-chan struct{}
 
 	once  sync.Once
 	wake  chan struct{}
@@ -68,20 +72,28 @@ type Scheduler struct {
 
 	mu      sync.Mutex // serializes Tick and CatchUp, and guards the maps below
 	last    map[string]time.Time
-	waiting map[string]time.Time
+	waiting map[string]waitRun
 	watched map[string]watch
 	seeded  bool
+}
+
+// waitRun is a run that found no room and is retried when something changes.
+type waitRun struct {
+	fleet string
+	due   time.Time
+	why   string
 }
 
 type watch struct {
 	fleet, routine, session string
 	at                      time.Time
+	seen                    bool // the ship has been listed holding the routine's key
 }
 
 func (s *Scheduler) init() {
 	s.once.Do(func() {
 		s.wake = make(chan struct{}, 1)
-		s.last, s.waiting, s.watched = map[string]time.Time{}, map[string]time.Time{}, map[string]watch{}
+		s.last, s.waiting, s.watched = map[string]time.Time{}, map[string]waitRun{}, map[string]watch{}
 	})
 }
 
@@ -105,6 +117,13 @@ func (s *Scheduler) Changed() {
 // Run catches up missed runs, then ticks until ctx ends, sleeping until the earliest next run or a Changed.
 func (s *Scheduler) Run(ctx context.Context) {
 	s.init()
+	if s.Ready != nil {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.Ready:
+		}
+	}
 	_ = s.CatchUp(ctx)
 	for ctx.Err() == nil {
 		d := idleWake
@@ -208,6 +227,7 @@ func (s *Scheduler) CatchUp(ctx context.Context) error {
 	defer s.mu.Unlock()
 	now := s.Clock.Now()
 	for _, fr := range s.routinesOf() {
+		fr.r = s.trip(fr.fleet, fr.r, now)
 		sched, err := ParseCron(fr.r.When)
 		if err != nil {
 			continue
@@ -263,23 +283,34 @@ func (s *Scheduler) Tick(ctx context.Context) error {
 			for n := sched.Next(due); !n.IsZero() && !n.After(now); n = sched.Next(due) {
 				due = n
 			}
-			delete(s.waiting, r.ID)
+			s.dropWait(r.ID, "the next run came")
 			s.last[r.ID] = due
 			s.fire(ctx, fr.fleet, r, due, now)
 			continue
 		}
-		if run, ok := s.waiting[r.ID]; ok && retry {
-			s.fire(ctx, fr.fleet, r, run, now)
+		if w, ok := s.waiting[r.ID]; ok && retry {
+			s.fire(ctx, fr.fleet, r, w.due, now)
 		}
 	}
 	for id := range s.waiting {
 		if !live[id] {
-			delete(s.waiting, id)
+			s.dropWait(id, "the routine was turned off or deleted")
 		}
 	}
 	// after the breaker's count above, so a failure counts from the next tick on
 	s.markEnded(now)
 	return nil
+}
+
+// dropWait ends a run that was still waiting for room and says so in the log.
+func (s *Scheduler) dropWait(id, because string) {
+	w, ok := s.waiting[id]
+	if !ok {
+		return
+	}
+	delete(s.waiting, id)
+	s.record(w.fleet, Trigger{Routine: id, Outcome: Skipped, Tier: "T0", At: s.Clock.Now(),
+		Reason: fmt.Sprintf("the run was still waiting (%s) when %s", strings.ToLower(w.why), because)})
 }
 
 // seedWatch starts watching the ships of recent launches the log already holds, once, so a restart doesn't lose them.
@@ -295,7 +326,7 @@ func (s *Scheduler) seedWatch(now time.Time) {
 		}
 		for _, rec := range recs {
 			if rec.Outcome == Launched && rec.Ship != "" && !rec.Undone && now.Sub(rec.At) < watchFor {
-				s.watched[rec.ID] = watch{fr.fleet, fr.r.ID, rec.Ship, rec.At}
+				s.watched[rec.ID] = watch{fleet: fr.fleet, routine: fr.r.ID, session: rec.Ship, at: rec.At}
 			}
 		}
 	}
@@ -304,6 +335,18 @@ func (s *Scheduler) seedWatch(now time.Time) {
 // markEnded turns the record of every watched launch whose ship ended failed into a failed one.
 func (s *Scheduler) markEnded(now time.Time) {
 	for id, w := range s.watched {
+		// session names are reused: only the ship that still holds this routine's key is this launch's
+		held, ok := s.Ships.Holder(routineKey(w.routine))
+		switch {
+		case ok && held.Session == w.session:
+			w.seen = true
+			s.watched[id] = w
+		case ok || w.seen || now.Sub(w.at) > listGrace:
+			delete(s.watched, id)
+			continue
+		default:
+			continue // a fresh launch the host has not listed yet
+		}
 		switch {
 		case s.Ships.EndedFailed(w.session):
 			if err := s.Store.MarkFailed(w.fleet, id, "the ship ended failed"); err == nil || err == ErrNotFound {
@@ -350,6 +393,15 @@ count:
 // fire runs one scheduled run of r at its due instant.
 func (s *Scheduler) fire(ctx context.Context, fleet string, r Routine, due, now time.Time) {
 	rec := Trigger{Routine: r.ID, Tier: "T0", At: now}
+	switch r.Before {
+	case ReportOnly, AskFirst, Act:
+	default:
+		// a hand-edited or damaged file must not launch: only an explicit Act does
+		delete(s.waiting, r.ID)
+		rec.Outcome, rec.Reason = Failed, "before_acting is not valid"
+		s.record(fleet, rec)
+		return
+	}
 	l := r.Do.Launch
 	key := routineKey(r.ID)
 	if l != nil {
@@ -374,7 +426,7 @@ func (s *Scheduler) fire(ctx context.Context, fleet string, r Routine, due, now 
 		if saved, ok := s.record(fleet, rec); ok && s.Proposer != nil {
 			_ = s.Proposer.Propose(fleet, r, saved)
 		}
-	default:
+	default: // Act
 		if l == nil {
 			s.prompt(fleet, r, rec)
 		} else {
@@ -437,7 +489,7 @@ func (s *Scheduler) launch(ctx context.Context, fleet string, r Routine, l Launc
 	})
 	switch {
 	case lerr != nil && lerr.Wait != "":
-		s.waiting[r.ID] = due
+		s.waiting[r.ID] = waitRun{fleet, due, lerr.Wait}
 		return
 	case lerr != nil:
 		fail(lerr.Msg)
@@ -446,7 +498,7 @@ func (s *Scheduler) launch(ctx context.Context, fleet string, r Routine, l Launc
 	delete(s.waiting, r.ID)
 	rec.ID, rec.Outcome, rec.Ship = id, Launched, ref.Session
 	if saved, ok := s.record(fleet, rec); ok && ref.Session != "" {
-		s.watched[saved.ID] = watch{fleet, r.ID, ref.Session, rec.At}
+		s.watched[saved.ID] = watch{fleet: fleet, routine: r.ID, session: ref.Session, at: rec.At}
 	}
 }
 
