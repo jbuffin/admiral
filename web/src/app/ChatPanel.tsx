@@ -1,11 +1,11 @@
 import type { ComponentChildren } from 'preact';
-import { useLayoutEffect, useRef } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch } from './fleets';
 import { probeChatSession, type Fleet } from './api';
 import { shipsLink } from './shipsLink';
 import { useBridgeTerminal } from '../useBridgeTerminal';
 import { KEYS, touchKeyboard } from '../keys';
-import { resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
+import { needsTerminal, resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
 import { Row, useInboxQueue, usePeekEntry, useStacked } from './InboxPanel';
 import { Peek } from './Peek';
 import { go, loc, chatPeekOf, chatPeekPath, chatSettingsPath, chatTerminalOf, chatTerminalPath } from './router';
@@ -141,9 +141,9 @@ function ChatTerminal({ fleet, head }: { fleet: string; head: (action: Component
           Back to chat
         </button>,
       )}
-      <div class={linkState === 'reconnecting' ? 'term-body dim' : 'term-body'}>
+      <section class={linkState === 'reconnecting' ? 'term-body dim' : 'term-body'}>
         <div class="term-host" ref={host} />
-      </div>
+      </section>
       <div class="term-keys">
         {linkState === 'reconnecting' ? <span class="term-note">Reconnecting…</span> : null}
         {touchKeyboard()
@@ -174,7 +174,7 @@ function Conversation({ fleet, head }: { fleet: string; head: (action: Component
       )}
       {snap?.error ? (
         <p class="msg-note">
-          {snap.error} {snap.running ? <OpenTerminal fleet={fleet} /> : null}
+          {snap.error} {snap.running && needsTerminal(snap) ? <OpenTerminal fleet={fleet} /> : null}
         </p>
       ) : null}
       {snap ? <Thread items={items} working={snap.state === 'working'} chat={chat} /> : <p class="line">Loading…</p>}
@@ -246,6 +246,11 @@ function Off({ fleet }: { fleet: Fleet }) {
 export function ChatPanel({ surface, title, phone }: { surface: Surface; title: boolean; phone: boolean }) {
   const fleet = activeFleet.value;
   const stacked = useStacked(phone);
+  const stray = fleet !== null && chatTerminalOf(loc.value.path) !== null && chatTerminalOf(loc.value.path) !== fleet.key;
+  // A terminal path for another fleet shows this fleet's conversation, so the address says so.
+  useEffect(() => {
+    if (stray) go('/app/chat', fleetSearch.value, true);
+  }, [stray]);
   if (!fleet) return null;
   const Heading = title ? 'h1' : 'h2';
   const head = (action: ComponentChildren) => (

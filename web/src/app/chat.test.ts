@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resetLabel, threadOf, youAnswered, type ChatSnapshot } from './chat';
+import { needsTerminal, resetLabel, threadOf, youAnswered, type ChatSnapshot } from './chat';
 
 const card = (id: string) => ({ version: 1, id, session: '_chat-harbor', kind: 'question' as const, created: '2026-01-02T03:04:05Z', title: 'Which panel?', question: { questions: [] } });
 const snap = (over: Partial<ChatSnapshot>): ChatSnapshot => ({ fleet: 'harbor', running: true, state: 'idle', messages: [], questions: [], ...over });
@@ -76,5 +76,13 @@ describe('the New chat marker', () => {
   it('is just "New chat" when the entry has no usable time', () => {
     expect(resetLabel(undefined)).toBe('New chat');
     expect(resetLabel('not a time')).toBe('New chat');
+  });
+});
+
+describe('needsTerminal', () => {
+  it('is true only for the not-started error, not for an unreadable transcript', () => {
+    expect(needsTerminal(snap({ error: 'Open the terminal to finish starting the chat' }))).toBe(true);
+    expect(needsTerminal(snap({ error: "Admiral can't read this chat's transcript" }))).toBe(false);
+    expect(needsTerminal(snap({}))).toBe(false);
   });
 });

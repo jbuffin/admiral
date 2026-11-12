@@ -387,6 +387,8 @@ export async function probeChatSession(fleet: string): Promise<{ kind: 'ok'; shi
   try {
     const res = await fetch(`${API}/chat/${encodeURIComponent(fleet)}/session`, { cache: 'no-store' });
     if (res.status === 401) return { kind: 'signed-out' };
+    // A fleet that is gone or whose chat is off has no session to rejoin.
+    if (res.status === 404 || res.status === 409) return { kind: 'ok', ships: [] };
     if (!res.ok) return { kind: 'down' };
     const body = (await res.json()) as { running?: boolean };
     return { kind: 'ok', ships: body.running ? [{ session: `_chat-${fleet}` }] : [] };

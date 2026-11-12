@@ -33,6 +33,9 @@ export type ThreadItem =
   | { kind: 'question'; id: string; at: string; card: InboxItem; state: 'open' | 'answered' | 'withdrawn'; answer?: ChatAnswer };
 
 /** The snapshot's entries oldest first; entries with one time, or none that parses, keep the served order. */
+/** Claude's first-start dialog holds the chat; the server's text for that is the only error the terminal fixes. */
+export const needsTerminal = (s: ChatSnapshot) => s.error === 'Open the terminal to finish starting the chat';
+
 export function threadOf(s: ChatSnapshot): ThreadItem[] {
   const answers = new Map(s.questions.map((q) => [q.id, q.answer]));
   const rows = s.messages.flatMap((m, i): { t: number; i: number; item: ThreadItem }[] => {

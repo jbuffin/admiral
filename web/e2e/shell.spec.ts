@@ -998,12 +998,15 @@ test("a chat held before its first SessionStart shows the not-started note with 
   const main = page.getByRole('main');
   const open = main.getByRole('button', { name: 'Open terminal', exact: true }).first();
   const rail = main.getByText('Inbox · All fleets · oldest first');
-  await page.goto(admiral.url + 'app/chat?fleet=lagoon');
+  // A terminal path for another fleet shows the shown fleet's conversation and says so in the address.
+  await page.goto(admiral.url + 'app/chat/harbor/terminal?fleet=lagoon');
+  await expect(page).toHaveURL(/\/app\/chat\?fleet=lagoon$/);
   await expect(main).toContainText(NOT_STARTED);
   await expect(main.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
 
+  // The button beside the note opens it as the header's does.
   const joined = page.waitForEvent('websocket', (ws) => /\/bridge\//.test(ws.url()));
-  await open.tap();
+  await main.locator('.msg-note').getByRole('button', { name: 'Open terminal', exact: true }).tap();
   const bridge = await joined;
   expect(new URL(bridge.url()).pathname).toBe(`/ws/v1/bridge/${encodeURIComponent(chatSession('lagoon'))}`);
   await expect(page).toHaveURL(/\/app\/chat\/lagoon\/terminal/);
