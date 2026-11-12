@@ -24,7 +24,7 @@ A test earns its place when it would catch a bug a person could hit:
 - A red test describes the behavior it expects. Once the code exists, the test file carries no header spelling out the interface it assumed.
 - Text, class names, colors, layout and focus order are the designs' job. A Playwright test finds elements by role and accessible name, and asserts what the person sees happen.
 
-Playwright drives the new shell at `/app/` only; the old UI is frozen and has no browser tests. The journeys are a short list of what a person does with Admiral (set up, launch, board, answer, reconnect). The `@critical` tag marks the ones Admiral cannot ship broken.
+Playwright drives the new shell at `/app/` only; the old UI is frozen and has no browser tests. The journeys are a short list of what a person does with Admiral (set up, launch, board, answer, chat, reconnect). The `@critical` tag marks the ones Admiral cannot ship broken.
 
 ## How the tests are set up
 

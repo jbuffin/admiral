@@ -209,6 +209,8 @@ export function watchPage(page: Page, server: string) {
   });
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
+    // WebKit logs a same-origin fetch cancelled by navigation as an access-control error.
+    if (/due to access control checks\.?$/.test(m.text()) && m.text().includes(host)) return;
     (/^Failed to load resource: .* status of [45]\d\d/.test(m.text()) ? failedLoads : errors).push(m.text());
   });
   page.on('pageerror', (e) => errors.push(e.message));
@@ -1160,7 +1162,11 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
 
   // Autopilot: the server refuses it on a dock whose guard probe has not passed, and the form shows why. The cap's 409 is pinned in the Go e2e.
   await form.getByRole('radio', { name: /codex/i }).check();
-  await form.getByRole('checkbox', { name: /autopilot/i }).check();
+  await expect(form.getByRole('radio', { name: /codex/i })).toBeChecked();
+  // The form re-renders after the harness switch and can drop the first click.
+  await expect(async () => {
+    await form.getByRole('checkbox', { name: /autopilot/i }).check();
+  }).toPass();
   const notClaude = await send();
   expect(notClaude.body).toMatchObject({ harness: 'codex', autopilot: true });
   expect(notClaude.res.status()).toBe(400);
