@@ -234,7 +234,8 @@ func runsAdmiralStatusline(command string) bool {
 }
 
 // The line runs in its own process group so a timeout, or Claude cancelling the wrapper,
-// kills the children that would otherwise keep stdout open or outlive it.
+// kills the children that would otherwise keep stdout open or outlive it. After a normal exit
+// the group is left alone: a line may deliberately leave a background refresher running.
 func runEngineerStatusline(command string, stdin []byte, limit time.Duration, stderr io.Writer) ([]byte, bool) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
 	defer stop()
@@ -250,9 +251,6 @@ func runEngineerStatusline(command string, stdin []byte, limit time.Duration, st
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.WaitDelay = 200 * time.Millisecond
 	err := cmd.Run()
-	if cmd.Process != nil {
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-	}
 	// A background child still holding stdout is not a failure of a line that exited 0.
 	if err != nil && !(errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil && cmd.ProcessState.Success()) {
 		return nil, false

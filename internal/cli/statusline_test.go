@@ -233,7 +233,8 @@ func TestStatuslineBoundsAnEngineerLineThatHangs(t *testing.T) {
 	r := newSLRig(t)
 	r.env.Timeout = 300 * time.Millisecond
 	// The shell stays alive behind its child, so killing only the shell leaves the child holding stdout.
-	r.userStatusLine("sleep 30; echo late")
+	pidfile := filepath.Join(t.TempDir(), "pid")
+	r.userStatusLine("sleep 30 & echo $! > " + pidfile + "; wait; echo late")
 	start := time.Now()
 	got := r.run(sample(t))
 	if el := time.Since(start); el > 3*time.Second {
@@ -241,6 +242,13 @@ func TestStatuslineBoundsAnEngineerLineThatHangs(t *testing.T) {
 	}
 	if got != "" {
 		t.Errorf("stdout = %q, want nothing from a line that timed out", got)
+	}
+	if b, err := os.ReadFile(pidfile); err == nil {
+		pid, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+		t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+		if pid > 0 && syscall.Kill(pid, 0) == nil {
+			t.Errorf("the line's child %d outlived the timeout", pid)
+		}
 	}
 	r.keptValue()
 }
@@ -447,15 +455,28 @@ func TestStatuslineEndsARecursionByAnySpelling(t *testing.T) {
 	}
 }
 
-func TestStatuslinePassesOutputWhenABackgroundChildHoldsStdout(t *testing.T) {
+func TestStatuslineLeavesABackgroundChildOfALineThatExitedZero(t *testing.T) {
 	r := newSLRig(t)
-	r.userStatusLine("sleep 30 & printf cached")
+	pidfile := filepath.Join(t.TempDir(), "pid")
+	r.userStatusLine("sleep 30 & echo $! > " + pidfile + "; printf cached")
 	start := time.Now()
 	if got := r.run(sample(t)); got != "cached" {
 		t.Errorf("stdout = %q, want cached: the shell exited 0", got)
 	}
 	if time.Since(start) > 5*time.Second {
 		t.Error("the wrapper waited on the background child")
+	}
+	b, err := os.ReadFile(pidfile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+	if pid == 0 {
+		t.Fatalf("no pid in %q", b)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	if err := syscall.Kill(pid, 0); err != nil {
+		t.Errorf("the background child %d of a line that exited 0 was killed: %v", pid, err)
 	}
 }
 
