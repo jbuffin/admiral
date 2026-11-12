@@ -53,6 +53,8 @@ type Service struct {
 	TypeResume func(session, text string) (afloat, typed bool, err error)
 	// LaunchProposal starts a feedback round for a wake proposal.
 	LaunchProposal LaunchProposalFunc
+	// LaunchRoutine runs a routine proposal.
+	LaunchRoutine LaunchRoutineFunc
 	// ChatQuestions lists the waiting AdmiralBot chat questions, named and tagged with their fleet.
 	ChatQuestions func() []Item
 	// AnswerChat answers a chat question where the chat keeps it; the inbox has no copy.
