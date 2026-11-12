@@ -34,7 +34,7 @@ var (
 		}
 		for _, f := range []string{"unified_exec", "apps", "plugins", "remote_plugin", "plugin_discovery_prefetch",
 			"skill_mcp_dependency_install", "tool_suggest", "browser_use", "browser_use_external", "in_app_browser",
-			"computer_use", "image_generation", "view_image", "multi_agent", "code_mode_host", "sleep_tool", "goals"} {
+			"computer_use", "image_generation", "view_image", "multi_agent", "sleep_tool", "goals"} {
 			out = append(out, struct{ key, want string }{"features." + f, "false"})
 		}
 		return out

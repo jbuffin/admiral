@@ -22,22 +22,32 @@ func CodexTokenFile(home, fleet string) string {
 }
 
 // Every default-on feature of Codex that adds a tool or loads a plugin. `codex features list` shows them on by default,
-// and `--disable <name>` is `-c features.<name>=false`.
+// and `--disable <name>` is `-c features.<name>=false`. code_mode_host stays on: with it off the model has no route to an
+// MCP tool at all, because Codex calls them through its exec tool.
 var codexFenceFeatures = []string{"unified_exec", "apps", "plugins", "remote_plugin", "plugin_discovery_prefetch",
 	"skill_mcp_dependency_install", "tool_suggest", "browser_use", "browser_use_external", "in_app_browser",
-	"computer_use", "image_generation", "view_image", "multi_agent", "code_mode_host", "sleep_tool", "goals"}
+	"computer_use", "image_generation", "view_image", "multi_agent", "sleep_tool", "goals"}
 
 // CodexFenceArgs are the flags that fence a Codex run to the one MCP server named: no shell, no web search, no
 // plugin or connector, a read-only sandbox that never asks, and that server's tools approved without a prompt.
 // The chat and the fence probe both run with exactly these.
 func CodexFenceArgs(server string) []string {
+	return append(CodexBaseFenceArgs(), "-c", "mcp_servers."+server+`.default_tools_approval_mode="approve"`)
+}
+
+// CodexBaseFenceArgs is the fence without a server: what a run in a home of its own takes so that nothing loads.
+func CodexBaseFenceArgs() []string {
 	out := []string{"-c", "features.shell_tool=false", "-c", `web_search="disabled"`,
-		"-c", `sandbox_mode="read-only"`, "-c", `approval_policy="never"`,
-		"-c", "mcp_servers." + server + `.default_tools_approval_mode="approve"`}
+		"-c", `sandbox_mode="read-only"`, "-c", `approval_policy="never"`}
 	for _, f := range codexFenceFeatures {
 		out = append(out, "--disable", f)
 	}
 	return out
+}
+
+// CodexLoginPath is the engineer's auth.json for a dock: the one file a Codex home takes from them.
+func CodexLoginPath(dock config.Harness) string {
+	return filepath.Join(config.IdentityDir("codex", dock.Env), "auth.json")
 }
 
 // CodexMCPServerArgs defines one MCP server by flags, so the chat's config.toml stays Codex's alone.
@@ -81,7 +91,7 @@ func LinkCodexLogin(root *os.Root, rel, target string) error {
 
 // codexLogin is the engineer's auth.json for a fleet's Codex dock, or the refusal that names it.
 func codexLogin(dock config.Harness) (string, *Error) {
-	auth := filepath.Join(config.IdentityDir("codex", dock.Env), "auth.json")
+	auth := CodexLoginPath(dock)
 	if _, err := os.Stat(auth); err != nil {
 		return "", refuse(http.StatusConflict, "the chat needs the Codex login at %s: log in to Codex there, then start the chat", auth)
 	}
