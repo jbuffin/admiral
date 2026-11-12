@@ -372,8 +372,13 @@ export interface RemoteView {
   tailscale: boolean;
   allowedLogins: string[];
   url: string;
+  /** The command that stops serve, empty when none is known. */
+  serveOff: string;
+  /** True when --listen fixed Admiral's address, so the mode doesn't move it. */
+  listenExplicit: boolean;
   checks: RemoteCheck[];
 }
 export const fetchRemote = () => call<RemoteView>('GET', '/remote');
 export const editLogins = (change: { add: string } | { remove: string }) => call<RemoteView>('POST', '/remote/logins', change);
 export const runTailscaleSetup = () => call<{ ok: boolean; checks: RemoteCheck[] }>('POST', '/remote/setup', { confirm: true });
+export const turnOffTailscale = () => call<RemoteView>('POST', '/remote/off', { confirm: true });

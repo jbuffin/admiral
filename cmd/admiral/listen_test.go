@@ -63,3 +63,16 @@ func TestFirstStartAfterSetupBindsLoopback(t *testing.T) {
 		t.Errorf("listen after setup turned the mode on = %q, want 127.0.0.1:7420", got)
 	}
 }
+
+func TestListenPortFromEnvIgnoresABadValue(t *testing.T) {
+	cfg, err := config.Parse([]byte(`{"version":1,"fleets":{"w":{"name":"W","claude":{}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for env, want := range map[string]string{"7499": "0.0.0.0:7499", "abc": "0.0.0.0:7420", "0": "0.0.0.0:7420", "70000": "0.0.0.0:7420"} {
+		t.Setenv("ADMIRAL_PORT", env)
+		if got := listenAddr("", cfg, false); got != want {
+			t.Errorf("ADMIRAL_PORT=%q: listen = %q, want %q", env, got, want)
+		}
+	}
+}

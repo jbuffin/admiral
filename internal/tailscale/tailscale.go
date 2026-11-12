@@ -35,6 +35,8 @@ const (
 	CheckDNSHTTPS = "https-magicdns"
 	CheckServe    = "serve"
 	CheckFunnel   = "funnel-off"
+	// CheckListen is added by the route, not Inspect: the last move of the listener failed.
+	CheckListen = "listen"
 )
 
 type Check struct {
@@ -50,6 +52,8 @@ type Report struct {
 	URL string
 	// Funnel is true when Funnel is on for a handler or TCP forward that reaches Admiral's port.
 	Funnel bool
+	// HTTPSPort is the HTTPS port serve proxies to Admiral on, 0 when none does.
+	HTTPSPort int
 	// Login is this Mac's tailnet login, empty when unknown.
 	Login string
 	// Holder is what serves HTTPS port 443 when that isn't Admiral, empty when 443 is free or Admiral's.
@@ -248,6 +252,9 @@ func Evaluate(statusOut []byte, statusErr error, serveOut []byte, serveErr error
 	default:
 		rep.add(CheckServe, true, fmt.Sprintf("tailscale serve proxies HTTPS port %d to Admiral", f.https[0]))
 	}
+	if len(f.https) > 0 {
+		rep.HTTPSPort = f.https[0]
+	}
 	if len(f.https) > 0 && name != "" {
 		u := "https://" + name
 		if f.https[0] != 443 {
@@ -266,6 +273,9 @@ func Evaluate(statusOut []byte, statusErr error, serveOut []byte, serveErr error
 	}
 	return rep
 }
+
+// ServeOffHint is the command that stops serving the HTTPS port.
+func ServeOffHint(port int) string { return fmt.Sprintf("tailscale serve --https=%d off", port) }
 
 // ServeArgs is the `tailscale` command line that serves Admiral's port over HTTPS.
 func ServeArgs(port string) []string {

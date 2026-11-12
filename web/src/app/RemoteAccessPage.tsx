@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { editLogins, fetchDevices, fetchRemote, runTailscaleSetup, mintPairingCode, renameDevice, revokeAllDevices, revokeDevice, type Device, type PairingCode, type RemoteCheck, type RemoteView, type Result } from './api';
+import { editLogins, fetchDevices, fetchRemote, runTailscaleSetup, turnOffTailscale, mintPairingCode, renameDevice, revokeAllDevices, revokeDevice, type Device, type PairingCode, type RemoteCheck, type RemoteView, type Result } from './api';
 import { qrMatrix } from './qr';
 import { checkLogin, copyOutcome, removingOwnLogin } from './remoteTailscale';
 import { expiryState, formatCode, signedOutLine, thisDeviceMark } from './remoteAccess';
@@ -159,8 +159,15 @@ function selectText(el: HTMLElement) {
   sel?.addRange(range);
 }
 
+function ListenNote() {
+  return <p class="note">Admiral's address was set by --listen, so Tailscale mode changes who is allowed but not where Admiral listens.</p>;
+}
+
 function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView | null; local: boolean; remote: boolean; reload: () => Promise<void>; onResult: (r: Result<unknown>) => void }) {
   const [asking, setAsking] = useState(false);
+  const [askingOff, setAskingOff] = useState(false);
+  // Kept from the Turn off answer until the page reloads, since the off view no longer runs the CLI.
+  const [stopServe, setStopServe] = useState('');
   const [busy, setBusy] = useState(false);
   const [rows, setRows] = useState<RemoteCheck[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -184,6 +191,17 @@ function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView
     setTurnedOn(r.data.ok);
     await reload();
   };
+  const turnOff = async () => {
+    setAskingOff(false);
+    setBusy(true);
+    setError(null);
+    const r = await turnOffTailscale();
+    setBusy(false);
+    onResult(r);
+    if (!r.ok) return setError(r.error);
+    setStopServe(r.data.serveOff);
+    await reload();
+  };
   const copyUrl = async (url: string) => {
     const outcome = await copyOutcome(url, navigator.clipboard);
     if (outcome === 'select' && urlEl.current) selectText(urlEl.current);
@@ -203,6 +221,12 @@ function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView
           <>
             {served ? <p class="note">{served}</p> : null}
             <CheckRows rows={view.checks} />
+            {view.serveOff ? (
+              <p class="note">
+                To stop serving Admiral over Tailscale, run <code>{view.serveOff}</code>
+              </p>
+            ) : null}
+            {view.listenExplicit ? <ListenNote /> : !view.url ? <p class="note">Until tailscale serve is set up (the serve check above has the command), Admiral answers only on this Mac.</p> : null}
             {view.url ? (
               <div class="box tailscale-url">
                 <code ref={urlEl} class="pair-url">
@@ -216,10 +240,22 @@ function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView
                 </span>
               </div>
             ) : null}
+            {askingOff ? null : (
+              <button type="button" class="btn" disabled={busy || !local} onClick={() => (setAskingOff(true), setError(null))}>
+                Turn off
+              </button>
+            )}
+            {remote ? <p class="note">Turn off runs on the Mac that runs Admiral.</p> : null}
           </>
         ) : (
           <>
             <p class="line">Tailscale mode is off. Admiral stays on this network only.</p>
+            {stopServe ? (
+              <p class="note">
+                Admiral still serves over Tailscale until you run <code>{stopServe}</code>
+              </p>
+            ) : null}
+            {view.listenExplicit ? <ListenNote /> : null}
             {rows ? <CheckRows rows={rows} /> : null}
             {asking ? null : (
               <button type="button" class="btn" disabled={busy || !local} onClick={() => (setAsking(true), setRows(null), setError(null))}>
@@ -229,13 +265,26 @@ function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView
             {remote ? <p class="note">Run Set up on the Mac that runs Admiral, or run admiral setup there.</p> : null}
           </>
         )}
-        {turnedOn ? <p class="note">Tailscale mode is on. If Admiral listens on every address, the change takes effect the next time it starts.</p> : null}
+        {turnedOn ? <p class="note">Tailscale mode is on.</p> : null}
         {error ? (
           <p class="note error-text" role="alert">
             {error}
           </p>
         ) : null}
       </section>
+      {askingOff ? (
+        <div class="confirm" role="group" aria-label="Turn off Tailscale mode">
+          <span>
+            Turn off stops Admiral from answering tailnet devices{view?.listenExplicit ? '' : ' and moves it back onto this network'}. Allowed logins and tailscale serve stay as they are.
+          </span>
+          <button type="button" class="btn danger" disabled={busy} onClick={() => void turnOff()}>
+            Turn off Tailscale mode
+          </button>
+          <button type="button" class="btn" onClick={() => setAskingOff(false)}>
+            Cancel
+          </button>
+        </div>
+      ) : null}
       {asking ? (
         <div class="confirm" role="group" aria-label="Set up Tailscale mode">
           <span>
@@ -289,7 +338,7 @@ function AllowedLogins({ view, devices, onView, onResult }: { view: RemoteView |
         {view.allowedLogins.map((l) => (
           <li key={l} class="set" aria-label={l}>
             <div class="t">
-              <span>{l}</span>
+              <span class="login">{l}</span>
               {removing === l ? (
                 <div class="confirm" role="group" aria-label={`Remove ${l}?`}>
                   <span>This device came in on {l}, so removing it signs this device out.</span>

@@ -22,3 +22,15 @@ export async function copyOutcome(text: string, clipboard: { writeText(t: string
     return 'select';
   }
 }
+
+/** Where a move message sends this page: the address it carries, unless it is empty, not http(s) or the page's own. */
+export function moveTarget(msg: { type: string; url?: string }, here: string): string | null {
+  if (!msg.url) return null;
+  try {
+    const to = new URL(msg.url);
+    if (to.protocol !== 'http:' && to.protocol !== 'https:') return null;
+    return to.href === new URL(here).href ? null : to.href;
+  } catch {
+    return null;
+  }
+}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"slices"
 	"sync"
 	"time"
 
@@ -15,6 +16,7 @@ const writeTimeout = 5 * time.Second
 // Modules push to a Client through Send and never see the WebSocket library.
 type Client struct {
 	id   int
+	path string // how the browser reached Admiral: "local", "lan", "tailnet" or ""
 	conn *websocket.Conn
 	ctx  context.Context
 
@@ -23,6 +25,9 @@ type Client struct {
 }
 
 func (c *Client) ID() int { return c.id }
+
+// Path is how the browser reached Admiral: "local", "lan", "tailnet" or "" when unknown.
+func (c *Client) Path() string { return c.path }
 
 func (c *Client) Send(v any) error {
 	data, err := json.Marshal(v)
@@ -67,11 +72,11 @@ type Hub struct {
 
 func NewHub() *Hub { return &Hub{clients: map[int]*Client{}} }
 
-func (h *Hub) add(ctx context.Context, conn *websocket.Conn) *Client {
+func (h *Hub) add(ctx context.Context, conn *websocket.Conn, path string) *Client {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.next++
-	c := &Client{id: h.next, conn: conn, ctx: ctx, sent: map[string][]byte{}}
+	c := &Client{id: h.next, path: path, conn: conn, ctx: ctx, sent: map[string][]byte{}}
 	h.clients[c.id] = c
 	return c
 }
@@ -128,4 +133,26 @@ func (h *Hub) each(f func(*Client)) {
 		}()
 	}
 	wg.Wait()
+}
+
+// SendPaths delivers v to every client that came in over one of the paths and returns when each write has
+// finished or the bound has passed, whichever is first.
+func (h *Hub) SendPaths(paths []string, v any, bound time.Duration) {
+	var wg sync.WaitGroup
+	for _, c := range h.snapshot() {
+		if !slices.Contains(paths, c.path) {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = c.Send(v)
+		}()
+	}
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(bound):
+	}
 }

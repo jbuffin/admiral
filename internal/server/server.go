@@ -41,7 +41,9 @@ type Server struct {
 	Messages map[string]MessageHandler
 	Config   *config.Manager
 	Hub      *Hub
-	Modules  []Module
+	// Path names how a request reached Admiral, for the move message; nil leaves every client's path unknown.
+	Path    func(*http.Request) string
+	Modules []Module
 	// Capabilities entries are only ever added within v1; they are not harness
 	// capabilities.
 	Capabilities []string
@@ -125,7 +127,11 @@ func (s *Server) serveWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c := s.Hub.add(ctx, conn)
+	path := ""
+	if s.Path != nil {
+		path = s.Path(r)
+	}
+	c := s.Hub.add(ctx, conn, path)
 	defer s.Hub.remove(c)
 	s.sendConfig(c)
 	for _, m := range s.Modules {
