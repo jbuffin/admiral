@@ -568,10 +568,7 @@ func serve(args []string) error {
 			}
 			return actor.Lookup(token, keys, chatService.ActorToken)
 		},
-		ShipFleet: func(session string) (string, bool) {
-			sh, ok := shipService.Get(session)
-			return sh.Fleet, ok && sh.Fleet != ""
-		},
+		ShipFleet: shipService.FleetOf,
 		ItemFleet: func(session, id string) (string, bool) {
 			for _, it := range inboxService.List() {
 				if it.Session == session && it.ID == id {

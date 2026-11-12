@@ -189,3 +189,14 @@ func TestAnActorDismissingAMooredShipStampsItsUnmooredRecordViaAdmiralbot(t *tes
 		t.Errorf("unmoored records = %v, want one stamped via admiralbot", got)
 	}
 }
+
+func TestAMooredShipsFleetIsKnownToTheGuardAsALiveShipsIs(t *testing.T) {
+	f := mooredService(t, nil)
+	f.moor(t, "Saltpaw", "work", prSeven)
+	if got, ok := f.s.FleetOf("saltpaw"); !ok || got != "work" {
+		t.Errorf("FleetOf(moored saltpaw) = %q, %v; want work", got, ok)
+	}
+	if _, ok := f.s.FleetOf("nobody"); ok {
+		t.Error("FleetOf(nobody) is known, want unknown")
+	}
+}

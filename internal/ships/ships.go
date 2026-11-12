@@ -705,6 +705,17 @@ func (s *Service) Get(session string) (Ship, bool) {
 	return s.ship(sess), true
 }
 
+// FleetOf is the fleet of a live or moored ship, and false when it is neither or has none.
+func (s *Service) FleetOf(session string) (string, bool) {
+	if sess, ok := s.find(session); ok {
+		return sess.Options["fleet"], sess.Options["fleet"] != ""
+	}
+	if r, ok := s.mooredRecord(session); ok {
+		return r.Fleet, r.Fleet != ""
+	}
+	return "", false
+}
+
 var ErrExited = errors.New("ship has exited")
 
 // InputSeen clears needs you in Admiral's view only, until the next waiting hook.
