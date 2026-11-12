@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Ship } from './api';
-import { inboxItems, ships, shipsLink, watchShips } from './shipsLink';
+import { inboxItems, retryShips, ships, shipsLink, watchShips } from './shipsLink';
 
 class FakeSocket extends EventTarget {
   static all: FakeSocket[] = [];
@@ -177,6 +177,53 @@ describe('watchShips', () => {
     expect(shipsLink.value).toBe('signed-out');
     await tick(60_000);
     expect(fetches).toHaveLength(1);
+    expect(sockets()).toHaveLength(1);
+  });
+
+  it('says the Mac cannot be reached when the probe fails to connect, and keeps probing', async () => {
+    probeAnswer = () => Promise.reject(new TypeError('Load failed'));
+    stop = watchShips();
+    last().drop();
+    await tick(1000);
+    expect(shipsLink.value).toBe('unreachable');
+    await tick(2000);
+    expect(fetches).toHaveLength(2);
+    expect(shipsLink.value).toBe('unreachable');
+  });
+
+  it('does not say unreachable when the server answers with an error', async () => {
+    probeAnswer = async () => new Response('', { status: 502 });
+    stop = watchShips();
+    last().drop();
+    await tick(1000);
+    expect(shipsLink.value).toBe('reconnecting');
+  });
+
+  it('probes at once on retry and connects when the server answers', async () => {
+    probeAnswer = () => Promise.reject(new TypeError('Load failed'));
+    stop = watchShips();
+    last().drop();
+    await tick(1000);
+    expect(shipsLink.value).toBe('unreachable');
+
+    probeAnswer = async () => new Response(JSON.stringify({ ships: [] }), { status: 200 });
+    const before = fetches.length;
+    retryShips();
+    await tick(0);
+    expect(fetches).toHaveLength(before + 1);
+    expect(sockets()).toHaveLength(2);
+    last().open();
+    expect(shipsLink.value).toBe('open');
+  });
+
+  it('stays unreachable when a retry still cannot connect', async () => {
+    probeAnswer = () => Promise.reject(new TypeError('Load failed'));
+    stop = watchShips();
+    last().drop();
+    await tick(1000);
+    retryShips();
+    await tick(0);
+    expect(shipsLink.value).toBe('unreachable');
     expect(sockets()).toHaveLength(1);
   });
 

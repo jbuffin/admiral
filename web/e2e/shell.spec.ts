@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { HOME, WORK, boatOf, boatReceived, boatSays, changeFile, changesOf, chip, diffOf, expectSeededTurn, flotilla, gitCheckout, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason } from './shell';
+import { HOME, WORK, holds, boatOf, boatReceived, boatSays, changeFile, changesOf, chip, diffOf, expectSeededTurn, flotilla, gitCheckout, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason } from './shell';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -638,4 +638,133 @@ test('the Inbox lists a question item and a needs-you stop from two fleets, each
   await entry(visitor.name).getByRole('link').tap();
   await expect(page).toHaveURL(new RegExp(`/app/inbox/${encodeURIComponent(visitor.session)}/item/q-port`));
   await expect(page.getByRole('region', { name: 'Peek' })).toBeVisible();
+});
+
+const cachedPaths = (page: Page) =>
+  page.evaluate(async () => {
+    const paths: string[] = [];
+    for (const name of await caches.keys()) {
+      for (const r of await (await caches.open(name)).keys()) paths.push(new URL(r.url).pathname);
+    }
+    return paths;
+  });
+const controlled = (page: Page) => page.evaluate(() => navigator.serviceWorker.controller !== null);
+
+test.describe('installed app', () => {
+  test.use({ serviceWorkers: 'allow' });
+
+  // The first load installs the worker; the second is the one it controls and caches.
+  async function visitTwice(page: Page, url: string) {
+    await page.goto(url + 'app/');
+    await expect(surface(page, 'Inbox')).toBeVisible();
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.reload();
+    await expect(surface(page, 'Inbox')).toBeVisible();
+    await expect.poll(() => controlled(page)).toBe(true);
+  }
+
+  test('the shell links a manifest that makes it installable, and a worker controls /app/', { tag: '@critical' }, async ({ page, admiral }) => {
+    await admiral.start();
+    await page.goto(admiral.url + 'app/');
+    await expect(surface(page, 'Inbox')).toBeVisible();
+
+    const res = await page.request.get(admiral.url + (await page.locator('link[rel="manifest"]').getAttribute('href'))!.replace(/^\//, ''));
+    expect(res.status()).toBe(200);
+    expect(res.headers()['content-type']).toContain('json');
+    const manifest = await res.json();
+    expect(manifest).toMatchObject({ name: 'Admiral', display: 'standalone', scope: '/', start_url: '/app/' });
+    const sized = (size: string, purpose?: string) =>
+      manifest.icons.find((i: { sizes: string; purpose?: string }) => i.sizes === size && (i.purpose ?? 'any').split(' ').includes(purpose ?? 'any'));
+    for (const icon of [sized('192x192'), sized('512x512'), sized('512x512', 'maskable')]) {
+      expect(icon).toBeTruthy();
+      const png = await page.request.get(admiral.url + icon.src.replace(/^\//, ''));
+      expect(png.status()).toBe(200);
+      expect(png.headers()['content-type']).toBe('image/png');
+    }
+
+    const touch = await page.request.get(admiral.url + (await page.locator('link[rel="apple-touch-icon"]').getAttribute('href'))!.replace(/^\//, ''));
+    expect(touch.headers()['content-type']).toBe('image/png');
+    await expect(page.locator('meta[name="theme-color"][media="(prefers-color-scheme: light)"]')).toHaveAttribute('content', /^#F4F5F7$/i);
+    await expect(page.locator('meta[name="theme-color"][media="(prefers-color-scheme: dark)"]')).toHaveAttribute('content', /^#0B1118$/i);
+
+    const scope = await page.evaluate(async () => (await navigator.serviceWorker.ready).scope);
+    expect(new URL(scope).pathname).toBe('/app/');
+    await page.reload();
+    await expect.poll(() => controlled(page)).toBe(true);
+  });
+
+  test('with the server down, the cached shell says it cannot reach the Mac, and Retry returns to the shell once it answers', { tag: '@critical' }, async ({ page, admiral }) => {
+    await admiral.start();
+    await visitTwice(page, admiral.url);
+
+    await admiral.stopServer();
+    await page.reload();
+    await expect(page.getByRole('heading', { name: "Can't reach your Mac" })).toBeVisible();
+    for (const check of ['Tailscale on here?', 'Mac awake?', 'Admiral running?']) await expect(page.getByText(check)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Retry' }).click();
+    await expect(page.getByRole('heading', { name: "Can't reach your Mac" })).toBeVisible();
+
+    await admiral.resumeServer();
+    await page.getByRole('button', { name: 'Retry' }).click();
+    await expect(surface(page, 'Inbox')).toBeVisible();
+    await expect(page.getByRole('heading', { name: "Can't reach your Mac" })).toBeHidden();
+  });
+
+  test('the worker caches the shell but never an API or socket response, and leaves the old UI uncontrolled', async ({ page, admiral }) => {
+    seedFleets(admiral, { live: true });
+    await admiral.start({ env: withFakeGh(admiral) });
+    await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-login' });
+    await visitTwice(page, admiral.url);
+    await nav(page, 'Ships').click();
+    await expect(page.getByRole('main')).toContainText(WORK);
+
+    const paths = await cachedPaths(page);
+    expect(paths.some((p) => p.startsWith('/app/'))).toBe(true);
+    expect(paths.some((p) => p.startsWith('/assets/'))).toBe(true);
+    expect(paths.filter((p) => p.startsWith('/api/') || p.startsWith('/ws/'))).toEqual([]);
+    expect(paths).not.toContain('/');
+
+    await page.goto(admiral.url);
+    await expect(page).toHaveTitle('Admiral');
+    await expect(page.locator('#app')).not.toBeEmpty();
+    expect(await controlled(page)).toBe(false);
+  });
+});
+
+test.describe('a shell that does not match the server', () => {
+  const serverBuild = async (page: Page, url: string) => (await (await page.request.get(url + 'api/version')).json()) as { version: string; commit: string };
+  const shellLoads = (page: Page) => {
+    const loads: string[] = [];
+    page.on('request', (r) => {
+      if (r.isNavigationRequest() && new URL(r.url()).pathname.startsWith('/app/')) loads.push(r.url());
+    });
+    return loads;
+  };
+
+  test('reloads once when /api/version names another build, and not again while it still differs', async ({ page, admiral }) => {
+    await admiral.start();
+    await page.route('**/api/version', (route) => route.fulfill({ json: { version: 'other-build', commit: 'zzz9999', api_versions: [1], capabilities: [] } }));
+    const loads = shellLoads(page);
+    await page.goto(admiral.url + 'app/');
+    await expect.poll(() => loads.length).toBe(2);
+    await expect(surface(page, 'Inbox')).toBeVisible();
+    await holds(() => loads.length === 2, 'the shell reloaded again');
+  });
+
+  test('does not reload when /api/version names the shell\'s own build', async ({ page, admiral }) => {
+    await admiral.start();
+    const build = await serverBuild(page, admiral.url);
+    let probed = 0;
+    await page.route('**/api/version', (route) => {
+      probed++;
+      return route.fulfill({ json: { ...build, api_versions: [1], capabilities: [] } });
+    });
+    const loads = shellLoads(page);
+    await page.goto(admiral.url + 'app/');
+    await expect(surface(page, 'Inbox')).toBeVisible();
+    await expect.poll(() => probed).toBeGreaterThan(0);
+    await holds(() => loads.length === 1, 'the shell reloaded');
+  });
 });

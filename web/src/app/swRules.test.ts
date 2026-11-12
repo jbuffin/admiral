@@ -1,0 +1,37 @@
+import { describe, expect, it } from 'vitest';
+import { cacheable, classifyRequest } from './swRules';
+
+const origin = 'http://admiral.test';
+const req = (path: string, init: { method?: string; mode?: string; origin?: string } = {}) =>
+  classifyRequest({ method: init.method ?? 'GET', url: `${init.origin ?? origin}${path}`, mode: init.mode ?? 'no-cors' }, origin);
+
+describe('classifyRequest', () => {
+  it('keeps the shell page and the files it loads', () => {
+    expect(req('/app/', { mode: 'navigate' })).toBe('shell');
+    expect(req('/app/ships/x?tab=terminal', { mode: 'navigate' })).toBe('shell');
+    expect(req('/assets/app-3fa9.js')).toBe('asset');
+    expect(req('/assets/inter-latin.woff2')).toBe('asset');
+  });
+
+  it('never touches the API or the sockets', () => {
+    for (const p of ['/api/v1/ships', '/api/version', '/ws/v1', '/api/v1/logos/claude']) {
+      expect(req(p), p).toBe('pass');
+      expect(req(p, { mode: 'navigate' }), `${p} as a page`).toBe('pass');
+    }
+  });
+
+  it('leaves the old UI and everything else alone', () => {
+    expect(req('/', { mode: 'navigate' })).toBe('pass');
+    expect(req('/index.html', { mode: 'navigate' })).toBe('pass');
+    expect(req('/pair', { mode: 'navigate' })).toBe('pass');
+    expect(req('/app/', { method: 'POST', mode: 'navigate' })).toBe('pass');
+    expect(req('/assets/app.js', { origin: 'http://elsewhere.test' })).toBe('pass');
+  });
+});
+
+describe('cacheable', () => {
+  it('stores only a 200', () => {
+    expect(cacheable(200)).toBe(true);
+    for (const status of [206, 301, 304, 401, 404, 500, 503]) expect(cacheable(status), String(status)).toBe(false);
+  });
+});

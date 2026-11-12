@@ -150,3 +150,66 @@ func TestLogos_OnlyHarnessNamesAndNothingOutsideTheFolder(t *testing.T) {
 		t.Fatalf("literal traversal = %d %q, must not serve a file outside logos/", code, body)
 	}
 }
+
+func installServer() *server.Server {
+	return &server.Server{Version: "1.2.3", Commit: "abc1234", UI: fstest.MapFS{
+		"index.html":           {Data: []byte("<!doctype html><head></head><title>OLD-UI-INDEX</title>")},
+		"app/index.html":       {Data: []byte("<!doctype html><head></head><title>NEW-SHELL-INDEX</title>")},
+		"manifest.webmanifest": {Data: []byte(`{"name":"Admiral"}`)},
+		"sw.js":                {Data: []byte("self.addEventListener('fetch',()=>{})")},
+		"icons/icon-192.png":   {Data: []byte("png")},
+		"assets/x.js":          {Data: []byte("console.log('x')")},
+	}}
+}
+
+func TestManifestAndWorkerAreServedAsRevalidatedFiles(t *testing.T) {
+	h := installServer().Handler()
+	cases := []struct {
+		path, contentType string
+	}{
+		{"/manifest.webmanifest", "application/manifest+json"},
+		{"/sw.js", "javascript"},
+		{"/icons/icon-192.png", "image/png"},
+	}
+	for _, c := range cases {
+		t.Run(c.path, func(t *testing.T) {
+			code, hdr, _ := get(t, h, c.path)
+			if code != http.StatusOK {
+				t.Fatalf("GET %s = %d, want 200", c.path, code)
+			}
+			if ct := hdr.Get("Content-Type"); !strings.Contains(ct, c.contentType) {
+				t.Errorf("Content-Type = %q, want it to hold %q", ct, c.contentType)
+			}
+			// A browser must see a new worker or manifest on its next check, so neither takes the immutable header.
+			if cc := hdr.Get("Cache-Control"); cc != "no-cache" {
+				t.Errorf("Cache-Control = %q, want no-cache", cc)
+			}
+		})
+	}
+}
+
+func TestWorkerNeedsNoScopeWidening(t *testing.T) {
+	_, hdr, _ := get(t, installServer().Handler(), "/sw.js")
+	if v := hdr.Get("Service-Worker-Allowed"); v != "" {
+		t.Errorf("Service-Worker-Allowed = %q, want none: the worker registers with scope /app/", v)
+	}
+}
+
+func TestShellIsStampedWithTheServersBuild(t *testing.T) {
+	h := installServer().Handler()
+
+	_, hdr, body := get(t, h, "/app/")
+	if !strings.Contains(body, `<meta name="admiral-build" content="1.2.3 abc1234">`) {
+		t.Errorf("GET /app/ = %q, want the build stamp", body)
+	}
+	if hdr.Get("Cache-Control") != "no-cache" {
+		t.Errorf("stamped shell Cache-Control = %q, want no-cache", hdr.Get("Cache-Control"))
+	}
+	_, _, deep := get(t, h, "/app/ships/x")
+	if !strings.Contains(deep, `name="admiral-build"`) {
+		t.Errorf("a deep link into the shell = %q, want the build stamp too", deep)
+	}
+	if _, _, old := get(t, h, "/"); strings.Contains(old, "admiral-build") {
+		t.Errorf("the old UI = %q, want no stamp", old)
+	}
+}
