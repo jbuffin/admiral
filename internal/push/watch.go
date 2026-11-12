@@ -53,6 +53,7 @@ type Watcher struct {
 	anchored   map[string]bool
 	ready      map[string]bool
 	polled     map[string]bool // moored ship -> its PRs have been polled since Admiral started
+	mooredAt0  map[string]bool // ships already moored in the first snapshot
 	fleetOf    map[string]ships.Ship
 	inboxSeen  bool
 	inboxItems map[string]bool
@@ -105,6 +106,14 @@ func (w *Watcher) Ships(list []ships.Ship) {
 	var events []Event
 	w.mu.Lock()
 	first := !w.shipsSeen
+	if first {
+		w.mooredAt0 = map[string]bool{}
+		for _, sh := range list {
+			if sh.Status == ships.StatusMoored {
+				w.mooredAt0[sh.Session] = true
+			}
+		}
+	}
 	note := func(seen map[string]bool, now map[string]bool, key string, ev Event) {
 		now[key] = true
 		if !first && !seen[key] {
@@ -124,13 +133,14 @@ func (w *Watcher) Ships(list []ships.Ship) {
 			ev.Kind, ev.Key, ev.Text, ev.Target = Anchored, sh.Session+":anchored", "stopped with an error", TargetShip
 			note(w.anchored, anchored, sh.Session, ev)
 		case sh.Status == ships.StatusMoored && sh.PolledAt != "":
-			// Until a poll has answered, StackReady is false whatever the PRs say, so the first answer only seeds.
+			// Until a poll has answered, StackReady is false whatever the PRs say, so for a ship already moored at
+			// startup the first answer only seeds; a ship that moors later is new.
 			polled[sh.Session] = true
 			if sh.StackReady {
 				ev := base
 				ev.Kind, ev.Key, ev.Text, ev.Merge = ReadyToMerge, sh.Session+":ready", "is ready to merge", true
 				ready[sh.Session] = true
-				if !first && w.polled[sh.Session] && !w.ready[sh.Session] {
+				if !first && !w.ready[sh.Session] && (w.polled[sh.Session] || !w.mooredAt0[sh.Session]) {
 					events = append(events, ev)
 				}
 			}

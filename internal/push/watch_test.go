@@ -175,6 +175,25 @@ func TestWhatAlreadyWaitsAtStartupIsSeenNotNew(t *testing.T) {
 	}
 }
 
+func TestShipThatMoorsAfterStartupAlreadyReadyToMergeIsNew(t *testing.T) {
+	r := newRig(t).started([]ships.Ship{working("Dory")}, nil)
+	ready := ship("Nemo", ships.StatusMoored, "")
+	ready.StackReady, ready.PolledAt = true, "2026-10-22T10:00:00Z"
+
+	r.w.Ships([]ships.Ship{working("Dory"), ready})
+	r.w.Ships([]ships.Ship{working("Dory"), ready})
+	if got := r.rec.Events(); len(got) != 1 || got[0].Event.Kind != push.ReadyToMerge {
+		t.Errorf("a ship that first showed up already ready made %+v, want one ReadyToMerge", got)
+	}
+
+	moored := ready
+	moored.Name, moored.Session = "Dory", "s-Dory"
+	r.w.Ships([]ships.Ship{moored, ready})
+	if r.count() != 2 {
+		t.Errorf("a ship working at startup that moored already ready made %d events in all, want 2", r.count())
+	}
+}
+
 func TestShipLaunchedAfterStartupThatAsksIsNew(t *testing.T) {
 	r := newRig(t).started(nil, nil)
 	r.w.Ships([]ships.Ship{needsYou("Dory", "question")})
