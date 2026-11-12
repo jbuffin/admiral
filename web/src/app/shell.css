@@ -468,6 +468,12 @@ button.pill { cursor: pointer; min-height: 32px; }
 .pairing-box { display: flex; align-items: center; flex-wrap: wrap; gap: 20px; padding: 16px; }
 .qr { flex: none; width: 200px; height: 200px; border-radius: var(--shape-radius-sm); }
 .pairing-text { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 8px; }
+.tailscale { margin-bottom: 14px; }
+.tailscale-url { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px 16px; margin-bottom: 14px; }
+.tailscale-url code { flex: 1; min-width: 200px; }
+.set-add { display: flex; gap: 8px; margin: 0 0 14px; }
+.set-add input { flex: 1; min-width: 0; min-height: var(--shape-button-height); padding: 0 10px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-sm); background: var(--color-panel); color: inherit; font: inherit; }
+.tailscale .btn, .set-add .btn, .tailscale-url .btn { min-height: var(--shape-min-touch-target); }
 .pair-url { font-family: var(--font-mono); font-size: var(--font-size-mono); color: var(--color-muted); overflow-wrap: anywhere; }
 .pair-code { font-family: var(--font-mono); font-size: 28px; letter-spacing: 0.08em; font-weight: 600; }
 .devices { list-style: none; margin: 0 0 14px; padding: 0; }
