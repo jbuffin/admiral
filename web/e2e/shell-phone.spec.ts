@@ -302,8 +302,7 @@ test("on the phone, a fleet's AdmiralBot page shows its harness, model, effort a
   await pick('Model', 'Haiku').tap();
   await pick('Effort', 'High').tap();
   await pick('Refresh context at', 'Never').tap();
-  await page.getByRole('button', { name: 'Save', exact: true }).tap();
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await Promise.all([page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().includes('/fleets/harbor')), page.getByRole('button', { name: 'Save', exact: true }).tap()]);
   await page.reload();
   await expect(pick('Model', 'Haiku')).toBeChecked();
   await expect(pick('Effort', 'High')).toBeChecked();
