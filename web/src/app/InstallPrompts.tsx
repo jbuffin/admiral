@@ -1,47 +1,40 @@
 import { useEffect, useState } from 'preact/hooks';
 import { inStandalone } from './ios';
+import { acceptInstallOffer, installedHere, installOffer, installState } from './install';
 import { installSheetDue, markInstallSheetShown } from './installSheet';
 import { Sheet } from './Sheet';
 
-interface InstallPromptEvent extends Event {
-  prompt(): Promise<unknown>;
-  userChoice: Promise<unknown>;
+function HomeScreenSteps() {
+  return (
+    <>
+      <ol class="install-steps">
+        <li>Tap Share, then Add to Home Screen.</li>
+        <li>Open Admiral from the Home Screen. The installed app keeps its own sign-in, so it asks for a new code: run <code>admiral pair</code> on your Mac.</li>
+      </ol>
+      <p class="install-why">The installed app is what push notifications need.</p>
+    </>
+  );
 }
 
-/** Where the browser offers an install it fires beforeinstallprompt; the button keeps that event until the choice. */
-export function InstallButton() {
-  const [offer, setOffer] = useState<InstallPromptEvent>();
-  useEffect(() => {
-    const onOffer = (e: Event) => {
-      e.preventDefault();
-      setOffer(e as InstallPromptEvent);
-    };
-    const gone = () => setOffer(undefined);
-    addEventListener('beforeinstallprompt', onOffer);
-    addEventListener('appinstalled', gone);
-    return () => {
-      removeEventListener('beforeinstallprompt', onOffer);
-      removeEventListener('appinstalled', gone);
-    };
-  }, []);
-  if (!offer) return null;
+/** The Install app page in Preferences. */
+export function InstallPage() {
+  const state = installState({
+    offered: installOffer.value !== undefined,
+    installed: installedHere.value,
+    standalone: inStandalone(),
+    userAgent: navigator.userAgent,
+    maxTouchPoints: navigator.maxTouchPoints,
+  });
+  if (state === 'installed') return <p>Admiral is installed on this device.</p>;
+  if (state === 'ios') return <HomeScreenSteps />;
+  if (state === 'unavailable') return <p>This browser isn't offering to install Admiral. It may already be installed here, or this browser may not install web apps (Chrome and Edge can).</p>;
   return (
-    <button
-      type="button"
-      class="btn primary install-btn"
-      onClick={async () => {
-        try {
-          await offer.prompt();
-          await offer.userChoice;
-        } catch {
-          /* the prompt was refused: the offer is spent either way */
-        } finally {
-          setOffer(undefined);
-        }
-      }}
-    >
-      Install
-    </button>
+    <>
+      <p>Install Admiral as an app on this device, with its own window and push notifications.</p>
+      <button type="button" class="btn primary" onClick={() => void acceptInstallOffer()}>
+        Install
+      </button>
+    </>
   );
 }
 
@@ -54,11 +47,8 @@ export function InstallSheet() {
   if (!open) return null;
   return (
     <Sheet label="Add Admiral to your Home Screen" onClose={() => setOpen(false)}>
-      <ol class="install-steps">
-        <li>Tap Share, then Add to Home Screen.</li>
-        <li>Open Admiral from the Home Screen. The installed app keeps its own sign-in, so it asks for a new code: run <code>admiral pair</code> on your Mac.</li>
-      </ol>
-      <p class="install-why">The installed app is what push notifications need.</p>
+      <HomeScreenSteps />
+      <p class="install-why">You can find these steps again in Preferences → Install app.</p>
       <button type="button" class="btn primary" onClick={() => setOpen(false)}>
         Got it
       </button>

@@ -4,11 +4,13 @@ import './shell-tokens.css';
 import './shell.css';
 import { watchFleets } from './fleets';
 import { watchCampaigns } from './campaignsLink';
+import { listenForInstall } from './install';
 import { startRouter } from './router';
 import { Shell } from './Shell';
 import { checkBuild } from './buildCheck';
 import { onShipsOpen, watchShips } from './shipsLink';
 
+listenForInstall();
 startRouter();
 watchFleets();
 watchShips();
