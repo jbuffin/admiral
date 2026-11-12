@@ -101,7 +101,7 @@ type Payload struct {
 
 func PayloadOf(ev Event) Payload {
 	return Payload{Fleet: ev.Fleet, FleetName: clean(ev.FleetName), Name: clean(ev.Name), Line: oneLine(ev.Text), Tag: ev.Key,
-		Target: ev.Target, Session: ev.Session, Item: ev.Item, Crew: ev.Crew, Merge: ev.Merge}
+		Target: ev.Target, Session: ev.Session, Item: ev.Item, Crew: ev.Crew, Merge: ev.Merge, Routine: ev.Routine}
 }
 
 func oneLine(s string) string {

@@ -18,7 +18,8 @@ export function surfaceOf(path: string): Surface | undefined {
   const below =
     (s?.id === 'preferences' && sub.length === 2 && (PREFERENCES_PAGES as readonly string[]).includes(sub[1]) && (!GLOBAL_PAGES.includes(sub[1]) || sub[0] === 'admiral')) ||
     (s?.id === 'campaigns' && sub.length === 1) ||
-    (s?.id === 'crew' && sub.length === 1);
+    (s?.id === 'crew' && sub.length === 1) ||
+    (s?.id === 'routines' && sub.length === 1);
   if (s && sub.length > 0 && !below) return undefined;
   return s;
 }
@@ -173,31 +174,36 @@ export function crewOf(path: string): string | null {
   }
 }
 
-export function routinePath(id: string): string {
-  void id;
-  return '';
-}
+export const routinePath = (id: string) => `/app/routines/${encodeURIComponent(id)}`;
 
 export const routineNewPath = '/app/routines/new';
 
 /** The routine a detail path names, if any; null for the list and for the new-routine path. */
 export function routineOf(path: string): string | null {
-  void path;
-  return null;
+  const [id, key, ...rest] = segments(path);
+  if (id !== 'routines' || !key || key === 'new' || rest.length > 0) return null;
+  try {
+    return decodeURIComponent(key);
+  } catch {
+    return null;
+  }
 }
 
 /** The query that opens the new-routine editor pre-filled for a view, with its fleet when known. */
 export function automateSearch(sourceKey: string, viewId: string, fleetKey?: string): string {
-  void sourceKey;
-  void viewId;
-  void fleetKey;
-  return '';
+  const q = new URLSearchParams();
+  if (fleetKey) q.set('fleet', fleetKey);
+  q.set('automate', sourceKey);
+  q.set('view', viewId);
+  return `?${q}`;
 }
 
 /** The view an Automate… query names, if any. */
 export function automateOf(search: string): { source: string; view: string } | null {
-  void search;
-  return null;
+  const q = new URLSearchParams(search);
+  const source = q.get('automate');
+  const view = q.get('view');
+  return source && view ? { source, view } : null;
 }
 
 function sync() {

@@ -1,6 +1,6 @@
 // Imported only by sw.ts: the worker is one classic file, so nothing here may import a module the app also uses.
 
-const TEXT_FIELDS = ['name', 'line', 'tag', 'fleet', 'fleet_name', 'target', 'session', 'item', 'crew'] as const;
+const TEXT_FIELDS = ['name', 'line', 'tag', 'fleet', 'fleet_name', 'target', 'session', 'item', 'crew', 'routine'] as const;
 
 type PushData = Partial<Record<(typeof TEXT_FIELDS)[number], string>> & { merge?: true };
 

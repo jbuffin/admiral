@@ -524,7 +524,7 @@ func (m *Migration) Notice() (title, body string) {
 		}
 	}
 	if len(m.Entries) > 0 {
-		b.WriteString("\nThese view autopilot entries were removed with the autopilot engine. They can come back as routines once scheduled routines land:")
+		b.WriteString("\nThese view autopilot entries were removed with the autopilot engine. Automate… on the matching view in the Orders list drafts a scheduled routine for each:")
 		for _, e := range m.Entries {
 			fmt.Fprintf(&b, "\n- Source %s (%s), view %s.", e.Name, e.Key, e.Panel)
 		}

@@ -21,6 +21,10 @@ type NoticeEntry struct {
 // WriteNotice posts a read-only item the engineer can only dismiss; entries ride in the notice object for the shell to link.
 func WriteNotice(home, title, body string, entries ...NoticeEntry) (string, error) {
 	now := time.Now().UTC()
+	notice := map[string]any{"body": body}
+	if len(entries) > 0 {
+		notice["entries"] = entries
+	}
 	id := fmt.Sprintf("notice-%s-%d", now.Format("20060102T150405"), now.UnixNano()%1_000_000)
 	b, err := json.Marshal(map[string]any{
 		"version":  1,
@@ -28,7 +32,7 @@ func WriteNotice(home, title, body string, entries ...NoticeEntry) (string, erro
 		"kind":     KindNotice,
 		"title":    title,
 		"created":  now.Format(time.RFC3339),
-		KindNotice: map[string]string{"body": body},
+		KindNotice: notice,
 	})
 	if err != nil {
 		return "", err
@@ -74,5 +78,9 @@ func (it Item) NoticeBody() string {
 
 // NoticeEntries are the migrated entries a notice carries; none for a plain note.
 func (it Item) NoticeEntries() []NoticeEntry {
-	return nil
+	var n struct {
+		Entries []NoticeEntry `json:"entries"`
+	}
+	_ = json.Unmarshal(it.fields[KindNotice], &n)
+	return n.Entries
 }
