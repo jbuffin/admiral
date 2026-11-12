@@ -126,6 +126,9 @@ func TestAdmiralBot_CodexChatStartsOnlyOnceBothProbesPassAndIsFenced(t *testing.
 		if !hasKey {
 			t.Errorf("argv = %q names no mcp_servers.admiral", r.argv)
 		}
+		if !slices.Contains(r.argv, "--strict-config") {
+			t.Errorf("argv = %q lacks --strict-config", r.argv)
+		}
 		if cfg["features.shell_tool"] != "false" {
 			t.Errorf("argv = %q leaves the shell tool on", r.argv)
 		}
@@ -175,13 +178,28 @@ func TestAdmiralBot_CodexChatStartsOnlyOnceBothProbesPassAndIsFenced(t *testing.
 		}
 	})
 
-	t.Run("a reply over MCP shows in the conversation", func(t *testing.T) {
+	t.Run("the first message and its reply show with nothing typed in the terminal", func(t *testing.T) {
+		// A fresh trusted Codex chat has no transcript until its first turn: it takes a message once its composer shows.
+		var code int
+		var body string
+		deadline := time.Now().Add(15 * time.Second)
+		for {
+			code, body = send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/messages", map[string]any{"text": "Which ships are at anchor?"})
+			if code != http.StatusConflict || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		if code != http.StatusOK {
+			t.Fatalf("POST /api/chat/chat/messages on a fresh trusted Codex chat = %d, want 200: %s", code, body)
+		}
 		got := c.mcpCall("ships", "list_ships", map[string]any{})
 		if got.IsError {
 			t.Fatalf("list_ships over the Codex chat's MCP server was refused: %s", got.text())
 		}
-		c.waitSession(15*time.Second, "the assistant's reply from the chat home's rollout", func(s chatSession) bool {
-			return slices.Contains(texts(s.Messages), "assistant: Two ships are at anchor.")
+		c.waitSession(15*time.Second, "the first message and the reply from the chat home's rollout", func(s chatSession) bool {
+			m := texts(s.Messages)
+			return slices.Contains(m, "user: Which ships are at anchor?") && slices.Contains(m, "assistant: Two ships are at anchor.")
 		})
 	})
 

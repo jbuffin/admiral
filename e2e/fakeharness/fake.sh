@@ -26,7 +26,7 @@
 #                  agent_message item); without one it prints a thread and an agent_message. $FAKE_CODEX_PROBE
 #                  (a dock env value) is pass (default), shell-ran (creates the sentinel file the fence probe
 #                  watches for and prints a command_execution item), login-failed (401 on stderr, exit 1) or
-#                  plugin-loaded (makes plugins/cache/github in $CODEX_HOME and prints an mcp.server.loaded event).
+#                  plugin-loaded (makes plugins/cache/github in $CODEX_HOME).
 #
 #   judge call     claude with `--tools ""` and no --mcp-config, `codex exec` without --json, or copilot with piped stdin and no -p:
 #                  a judge probe or call. It reads the prompt from stdin, answers {"reply":
@@ -133,8 +133,9 @@
 #   codexreply <text>
 #                  Codex only, needs jq, and the last cue (it never ends): like `reply`, for a Codex chat. It
 #                  writes a rollout under $CODEX_HOME/sessions (a token_count line as `usage` writes, then per
-#                  message the user's text and an assistant line holding <text>), sets the pane's
-#                  @admiral-transcript to it as the SessionStart hook would, with a first exchange already on it,
+#                  message the user's text and an assistant line holding <text>). It shows Codex's composer, records the
+#                  hooks trust Codex would have written to $CODEX_HOME/config.toml, and sets the pane's
+#                  @admiral-transcript only when the first message arrives, as a first turn's SessionStart would,
 #                  creates `cues-done`, goes raw and appends every byte it reads to `stdin`.
 #   wait <name>    block until the file <FAKE_RECORD_DIR>/<tmux session>/<name> exists,
 #                  so a test decides when the next cue (an exit, say) runs
@@ -409,7 +410,6 @@ if [ -n "$codexprobe" ]; then
     case "$FAKE_CODEX_PROBE" in
     plugin-loaded)
       mkdir -p "$CODEX_HOME/plugins/cache/github"
-      echo '{"type":"mcp.server.loaded","server":"github"}'
       ;;
     esac
   fi
@@ -490,7 +490,7 @@ echo "$me" >"$d/harness"
 printf '%s\0' "$@" >"$d/argv"
 env >"$d/env"
 pwd -P >"$d/cwd"
-tmux show-options -v @admiral-name >"$d/name"
+tmux show-options -qv @admiral-name >"$d/name" 2>/dev/null
 printf '%s\n' "$first" >"$d/options"
 printf '%s\n' "$firstw" >"$d/window-options"
 printf '%s\n' "$dirs" >"$d/dirs"
@@ -703,24 +703,25 @@ EOF3
 				exit 1
 			fi
 			path="$CODEX_HOME/sessions/2026/11/12/rollout-2026-11-12T10-00-00-$sess.jsonl"
-			mkdir -p "$(dirname "$path")"
-			printf '%s\n' '{"timestamp":"2026-11-12T10:00:00.000Z","ordinal":0,"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":500,"cached_input_tokens":200,"cache_write_input_tokens":0,"output_tokens":60,"reasoning_output_tokens":20,"total_tokens":560}}}}' >>"$path"
-			tmux set -p -t "$TMUX_PANE" @admiral-transcript "1700000000000000000 startup $path"
+			# A trusted hook leaves this entry in the chat home's config.toml; a first turn then binds the transcript, as
+			# Codex's SessionStart does, so the option and the rollout appear only when the first message arrives.
+			mkdir -p "$CODEX_HOME"
+			grep -qs ':session_start:' "$CODEX_HOME/config.toml" || printf '%s\n' "[hooks.state.\"$CODEX_HOME/config.toml:session_start:0:0\"]" 'trusted_hash = "sha256:fake"' >>"$CODEX_HOME/config.toml"
 			cat >"$d/.append" <<'EOF4'
 sleep "${FAKE_REPLY_DELAY:-0}"
+if [ "$1" = 1 ]; then
+  mkdir -p "$(dirname "$FAKE_TRANSCRIPT")"
+  printf '%s\n' '{"timestamp":"2026-11-12T10:00:00.000Z","ordinal":0,"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":500,"cached_input_tokens":200,"cache_write_input_tokens":0,"output_tokens":60,"reasoning_output_tokens":20,"total_tokens":560}}}}' >>"$FAKE_TRANSCRIPT"
+  tmux set -p -t "$TMUX_PANE" @admiral-transcript "1700000000000000000 startup $FAKE_TRANSCRIPT"
+fi
 jq -cn --rawfile t "$FAKE_MSG" --arg r "$FAKE_REPLY" --argjson n "$1" '
   {timestamp: (now | todate), ordinal: ($n * 2 + 1), type: "event_msg", payload: {type: "item_completed", item: {type: "UserMessage", id: ("fake-user-" + ($n | tostring)), content: [{text: $t}]}}},
   {timestamp: (now | todate), ordinal: ($n * 2 + 2), type: "event_msg", payload: {type: "item_completed", item: {type: "AgentMessage", id: ("fake-reply-" + ($n | tostring)), content: [{text: $r}]}}}' >>"$FAKE_TRANSCRIPT"
 EOF4
+			printf '%s\n' '› Ask Codex to do anything' '  ← for agents · ? for shortcuts'
 			stty raw -echo <&3 2>/dev/null
 			: >"$d/cues-done"
 			export FAKE_REPLY_DELAY FAKE_REPLY=$arg FAKE_TRANSCRIPT="$path" FAKE_MSG="$d/.msg" FAKE_APPEND="$d/.append"
-			# The first exchange is on the rollout at once, as a chat that took its first message has one.
-			printf '%s' "What is at anchor?" >"$d/.msg"
-			sh "$d/.append" 0
-			# The first exchange is on the rollout at once, as a chat that already took its first message has one.
-			printf '%s' "What is at anchor?" >"$d/.msg"
-			sh "$d/.append" 0
 			cat -u <&3 | tee -a "$d/stdin" | awk 'BEGIN { RS = "\r" }
 				{
 					gsub("\033\\[[0-9;?]*[ -/]*[@-~]", ""); gsub(/\033/, "")
