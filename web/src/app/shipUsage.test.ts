@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { shortCount, usageRow, watchUsage, type ShipUsage } from './shipUsage';
+import { ageText, moneyText, shortCount, usageRow, watchUsage, type ShipUsage } from './shipUsage';
 import { when } from './when';
 
 const usage = (over: Partial<ShipUsage> = {}): ShipUsage => ({
@@ -15,6 +15,14 @@ const usage = (over: Partial<ShipUsage> = {}): ShipUsage => ({
 describe('shortCount', () => {
   it('writes small counts whole and larger ones as k and M', () => {
     expect([0, 999, 1000, 1234, 15_400, 999_999, 1_500_000].map(shortCount)).toEqual(['0', '999', '1k', '1.2k', '15k', '1M', '1.5M']);
+  });
+});
+
+describe('the wording usageRow shares with the usage pages', () => {
+  it('says money in its own basis and an age in its largest unit', () => {
+    expect(moneyText({ amount: 0.25, basis: 'estimate' })).toBe('est. $0.25');
+    expect(moneyText({ amount: 2.5, basis: 'credits' })).toBe('2.5 credits');
+    expect([7, 125, 7300].map(ageText)).toEqual(['7s', '2m', '2h']);
   });
 });
 

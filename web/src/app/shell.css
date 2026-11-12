@@ -642,3 +642,21 @@ button.pill { cursor: pointer; min-height: 32px; }
 .install-why { margin: 0 10px 12px; color: var(--color-text2); }
 .install-btn { position: fixed; right: 16px; bottom: 16px; z-index: 20; min-height: var(--shape-min-touch-target); }
 @media (max-width: 640px) { .install-btn { bottom: 76px; } }
+.usage-period, .usage-card { margin: 0 0 22px; }
+.usage-period h2, .usage-period h3, .usage-quota > h2, .usage-quota > h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-size: var(--font-size-body); }
+.usage-quota { margin-top: 22px; }
+.usage-quota > h2, .usage-quota > h3 { margin-bottom: 12px; }
+.usage-card h3, .usage-card h4 { display: inline; margin: 0 10px 0 0; font-size: var(--font-size-body); }
+.usage-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 14px; font-size: var(--font-size-meta); color: var(--color-muted); }
+.usage-split summary.usage-line { list-style: none; align-items: center; min-height: var(--shape-min-touch-target); cursor: pointer; }
+.usage-split summary::-webkit-details-marker { display: none; }
+.usage-split ul { margin: 0 0 6px 22px; padding: 0; list-style: none; }
+.usage-split li { min-height: 28px; }
+.usage-harness { color: var(--color-text); }
+.usage-tokens { color: var(--color-text2); }
+.usage-note, .usage-fresh, .usage-empty, .usage-bar-foot { font-size: var(--font-size-meta); color: var(--color-muted); }
+.usage-empty { margin: 0 0 12px; }
+.usage-bar { margin: 10px 0 0; }
+.usage-bar-head { display: flex; flex-wrap: wrap; gap: 0 12px; margin-bottom: 4px; font-size: var(--font-size-meta); }
+.usage-periods { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
+.usage-periods .btn[aria-pressed='true'] { border-color: var(--color-accent); }

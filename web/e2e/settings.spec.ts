@@ -264,7 +264,7 @@ test('a fleet page edits search roots, owners, clone root and colour, keeping wh
   await expect(page).toHaveURL(/\/app\/preferences\/zulu\/fleet/);
   await expect(page.getByRole('heading', { name: 'Fleet', exact: true })).toBeVisible();
   const group = prefsNav(page).getByRole('group', { name: `${WORK} fleet` });
-  await expect(group.getByRole('link')).toHaveText(['Fleet', 'Order sources', 'Harness capabilities']);
+  await expect(group.getByRole('link')).toHaveText(['Fleet', 'Order sources', 'Harness capabilities', 'Usage']);
   await expect(group.getByRole('link', { name: 'Fleet', exact: true })).toHaveAttribute('aria-current', 'page');
   await group.getByRole('link', { name: 'Order sources' }).click();
   await expect(page).toHaveURL(/\/app\/preferences\/zulu\/sources/);

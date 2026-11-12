@@ -1,12 +1,13 @@
 import { useEffect } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch, fleets, loaded } from './fleets';
-import { capabilitiesPath, fleetPath, go, loc, preferencesFleet, preferencesPage, remotePath, sourcesPath, type PreferencesPage } from './router';
+import { capabilitiesPath, fleetPath, go, loc, preferencesFleet, preferencesPage, remotePath, sourcesPath, usageAllPath, usagePath, type PreferencesPage } from './router';
+import { AllUsagePage, FleetUsagePage } from './UsagePage';
 import { RemoteAccess } from './RemoteAccessPage';
 import { FleetPage } from './FleetPage';
 import { HarnessCapabilities } from './HarnessCapabilities';
 import { OrderSources } from './OrderSources';
 
-const TITLES: Record<PreferencesPage, string> = { fleet: 'Fleet', sources: 'Order sources', capabilities: 'Harness capabilities', remote: 'Remote access' };
+const TITLES: Record<PreferencesPage, string> = { fleet: 'Fleet', sources: 'Order sources', capabilities: 'Harness capabilities', usage: 'Usage', 'all-usage': 'Usage', remote: 'Remote access' };
 
 function NavLink({ path, current, children }: { path: string; current: boolean; children: string }) {
   const search = fleetSearch.value;
@@ -36,6 +37,9 @@ function PreferencesNav({ current, page }: { current: string; page: PreferencesP
         <NavLink path={remotePath} current={page === 'remote'}>
           Remote access
         </NavLink>
+        <NavLink path={usageAllPath} current={page === 'all-usage'}>
+          Usage
+        </NavLink>
       </div>
       {fleets.value.map((f) => (
         <div key={f.key} role="group" aria-labelledby={`prefs-${f.key}`}>
@@ -52,6 +56,9 @@ function PreferencesNav({ current, page }: { current: string; page: PreferencesP
           <NavLink path={capabilitiesPath(f.key)} current={f.key === current && page === 'capabilities'}>
             Harness capabilities
           </NavLink>
+          <NavLink path={usagePath(f.key)} current={f.key === current && page === 'usage'}>
+            Usage
+          </NavLink>
         </div>
       ))}
     </nav>
@@ -66,7 +73,7 @@ export function Preferences({ phone }: { phone: boolean }) {
   // Bare and unknown paths open the active fleet's sources, else Remote access; signals are read at run time because a render can see the config half-loaded.
   useEffect(() => {
     const open = activeFleet.value;
-    if (!loaded.value || page === 'remote' || fleets.value.some((f) => f.key === key)) return;
+    if (!loaded.value || page === 'remote' || page === 'all-usage' || fleets.value.some((f) => f.key === key)) return;
     go(open ? sourcesPath(open.key) : remotePath, fleetSearch.value, true);
   }, [loaded.value, fleets.value, key, page]);
 
@@ -81,6 +88,12 @@ export function Preferences({ phone }: { phone: boolean }) {
             <p class="fleet-label">All fleets</p>
             <RemoteAccess />
           </>
+        ) : page === 'all-usage' ? (
+          <>
+            <Title>{TITLES.usage}</Title>
+            <p class="fleet-label">All fleets</p>
+            <AllUsagePage phone={phone} />
+          </>
         ) : fleet ? (
           <>
             <Title>{TITLES[page]}</Title>
@@ -88,7 +101,7 @@ export function Preferences({ phone }: { phone: boolean }) {
               <span class="dot" style={{ background: fleetPaint(fleet).fill }} aria-hidden="true" />
               {fleet.name} fleet
             </p>
-            {page === 'fleet' ? <FleetPage key={fleet.key} fleet={fleet} /> : page === 'capabilities' ? <HarnessCapabilities key={fleet.key} fleet={fleet} /> : <OrderSources key={fleet.key} fleet={fleet} />}
+            {page === 'fleet' ? <FleetPage key={fleet.key} fleet={fleet} /> : page === 'usage' ? <FleetUsagePage key={fleet.key} fleetKey={fleet.key} phone={phone} /> : page === 'capabilities' ? <HarnessCapabilities key={fleet.key} fleet={fleet} /> : <OrderSources key={fleet.key} fleet={fleet} />}
           </>
         ) : null}
       </div>
