@@ -43,6 +43,8 @@ import (
 	"github.com/jbuffin/admiral/internal/sources"
 	"github.com/jbuffin/admiral/internal/state"
 	"github.com/jbuffin/admiral/internal/tailscale"
+	"github.com/jbuffin/admiral/internal/usage"
+	"github.com/jbuffin/admiral/internal/uselive"
 	"github.com/jbuffin/admiral/web"
 )
 
@@ -408,6 +410,20 @@ func serve(args []string) error {
 	chatService := &chat.Service{Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Home: absDir, Outcomes: outcomeLog}
 	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
 	convService := &shipconv.Service{Ships: shipService, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Asking: shipService.Asking}
+	// Live figures live in memory only; a restart starts empty.
+	liveUsage := usage.NewStore(time.Now)
+	shipService.LastLive, chatService.LastLive = liveUsage.LastLive, liveUsage.LastLive
+	liveLogin := func(ship string) string {
+		if ship == sessionhost.ChatName {
+			return chatService.Login()
+		}
+		return shipService.Login(ship)
+	}
+	codexFeed := &uselive.Codex{Store: liveUsage, Login: liveLogin}
+	convService.LiveFrame = codexFeed.Frame
+	liveTmux := &uselive.Tmux{Server: sessionhost.NewServer(tmuxPath, sock), Dir: liveLogin}
+	claudeFeed := &uselive.Claude{Store: liveUsage, Login: liveLogin, Panes: liveTmux.ClaudePanes}
+	copilotFeed := &uselive.Copilot{Store: liveUsage, Files: liveTmux.CopilotFiles}
 	probeRunner := probes.NewDefault(dir)
 	guard, err := auth.New(dir, port, auth.WithBaseURL(func() string { return pairingBase(port, cfg.Current) }),
 		auth.WithRemote(func() (bool, []string) {
@@ -464,7 +480,7 @@ func serve(args []string) error {
 	}()
 	runs := []func(context.Context){s.WatchConfig, sourceService.Run, campaignService.Run, bridgeService.Run, resourceSet.Run, inboxService.Run, chatService.Run, tails.Run}
 	if tmuxPath != "" {
-		runs = append(runs, host.Run)
+		runs = append(runs, host.Run, func(ctx context.Context) { liveTmux.Run(ctx, claudeFeed.Poll, copilotFeed.Poll) })
 	}
 	for _, run := range runs {
 		background.Add(1)

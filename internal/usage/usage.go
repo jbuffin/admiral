@@ -84,9 +84,19 @@ type Credits struct {
 	Balance    string
 }
 
-// Quota is the plan's rate-limit state when the figures were written (Codex only).
+// SpendLimit is a plan's monthly spend cap, which Claude's status line reports.
+type SpendLimit struct {
+	UsedPercent float64
+	ResetsAt    int64 // unix seconds
+	UsedUSD     float64
+	LimitUSD    float64
+	Period      string
+}
+
+// Quota is the plan's rate-limit state when the figures were written (Codex's rollout and live frames, Claude's status line).
 type Quota struct {
 	Primary, Secondary *Window
+	Spend              *SpendLimit
 	PlanType           string
 	Credits            *Credits
 	ReachedType        string // which limit stopped the run; empty when none did

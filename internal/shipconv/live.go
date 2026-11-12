@@ -275,6 +275,9 @@ func (s *Service) serveObserved(ctx context.Context, o *observer, conn *codexliv
 		if err != nil {
 			return false
 		}
+		if s.LiveFrame != nil {
+			s.LiveFrame(o.session, frame)
+		}
 		if id := moved(frame, conn.Thread); id != "" {
 			o.prefer = id
 			s.signal(o, live) // the thread it leaves asks nothing now

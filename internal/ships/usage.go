@@ -157,6 +157,15 @@ func sumPaths(harness, dir string, paths []string) *usage.Figures {
 	return usage.SumFigures(parts)
 }
 
+// Login is the identity dir of the harness login a ship runs under; "" when the ship or its dock is unknown.
+func (s *Service) Login(name string) string {
+	sh, ok := s.Get(name)
+	if !ok {
+		return ""
+	}
+	return s.dockConfig(sh.Fleet, sh.Harness)
+}
+
 func (s *Service) dockConfig(fleet, harness string) string {
 	if s.Launcher == nil || s.Launcher.Config == nil {
 		return ""

@@ -258,6 +258,13 @@ func parseTranscriptOption(raw string) (stamp, source, path string, ok bool) {
 	return parts[0], parts[1], parts[2], true
 }
 
+// Login is the identity dir of the harness login the chat runs under.
+func (s *Service) Login() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.configDir()
+}
+
 func (s *Service) configDir() string {
 	cfg := s.Config()
 	// The fleet the session started with. The option can be written from inside the

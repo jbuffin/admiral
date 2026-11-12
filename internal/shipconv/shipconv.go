@@ -54,6 +54,9 @@ type Service struct {
 	// Asking is told when a Codex ship's server starts or stops waiting on a question the observer holds.
 	Asking func(session string, asking bool)
 
+	// LiveFrame gets every frame an observer reads, for the live usage store; it must not block.
+	LiveFrame func(session string, frame []byte)
+
 	// Tests replace these lookups of a ship's rounds.
 	moored    func(session string) (ships.Ship, bool)   // a ship with no live session but a moored record
 	rounds    func(sh ships.Ship) ([]moor.Round, error) // the ship's recorded rounds
