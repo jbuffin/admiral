@@ -496,7 +496,23 @@ func serve(args []string) error {
 	// one store, so a scheduler built on it shares the write lock
 	routineStore := &routines.Store{Home: absDir, Fleets: func(k string) (config.Fleet, bool) { return cfg.Current().Fleet(k) },
 		ResourceKnown: func(name string) bool { _, ok := cfg.Current().Resources[name]; return ok }}
-	routineScheduler := &routines.Scheduler{Store: routineStore, Clock: realClock{}, Ships: routineShips{shipService}, Chat: chatService, Proposer: noProposer{}, Zone: time.Local, Ready: host.Ready()}
+	routineScheduler := &routines.Scheduler{Store: routineStore, Clock: realClock{}, Ships: routineShips{shipService}, Chat: chatService, Proposer: routineProposer{inboxService}, Zone: time.Local, Ready: host.Ready(), HostKnown: host.Known,
+		Notifier: &push.RoutineNotifier{W: pushFeed.Watcher, FleetName: func(key string) string {
+			f, _ := cfg.Current().Fleet(key)
+			return f.Name
+		}}}
+	inboxService.LaunchRoutine = func(ctx context.Context, p inbox.RoutineProposal) (any, int, string) {
+		t, err := routineScheduler.Accept(ctx, p.Fleet, p.Routine, p.Trigger)
+		switch {
+		case errors.Is(err, routines.ErrBusy):
+			return nil, http.StatusConflict, err.Error()
+		case errors.Is(err, routines.ErrNotFound):
+			return nil, http.StatusGone, "the routine is gone"
+		case err != nil:
+			return nil, http.StatusBadGateway, err.Error()
+		}
+		return map[string]any{"session": t.Ship}, 0, ""
+	}
 	shipService.OnChange = func() {
 		campaignService.ShipsChanged()
 		sourceService.Notify()
