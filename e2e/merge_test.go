@@ -318,9 +318,14 @@ func TestASecondMergeWhileOneIsRunningIsRefused(t *testing.T) {
 	})
 
 	first := make(chan int, 1)
-	go func() {
-		code, _ := send(t, http.MethodPost, w.mergeURL(ship), map[string]any{})
-		first <- code
+	go func() { // not send: it fails the test, which only the test's own goroutine may do
+		resp, err := http.Post(w.mergeURL(ship), "application/json", strings.NewReader("{}"))
+		if err != nil {
+			first <- 0
+			return
+		}
+		resp.Body.Close()
+		first <- resp.StatusCode
 	}()
 	for end := time.Now().Add(20 * time.Second); len(g.mergeCalls()) == 0; time.Sleep(50 * time.Millisecond) {
 		if time.Now().After(end) {
