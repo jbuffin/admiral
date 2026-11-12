@@ -486,7 +486,46 @@ button.pill { cursor: pointer; min-height: 32px; }
 .inbox-fleet { display: inline-flex; align-items: center; gap: 6px; font-size: var(--font-size-meta); color: var(--color-muted); }
 .inbox-age { flex: none; align-self: flex-start; padding-top: 4px; font-size: var(--font-size-meta); color: var(--color-muted); }
 .inbox-body { margin: 0 0 8px 15px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-text2); }
-.inbox-folded { display: flex; align-items: center; gap: 8px; min-height: var(--shape-min-touch-target); color: var(--color-muted); animation: inbox-fold 0.25s ease-out; }
+.inbox-folded { display: flex; align-items: center; gap: 8px; min-height: var(--shape-min-touch-target); color: var(--color-muted); animation: inbox-fold 0.25s ease-out, inbox-slide 0.45s ease-in 4.55s forwards; overflow: hidden; }
 .inbox-confirm { flex: 1; }
 @keyframes inbox-fold { from { opacity: 1; } to { opacity: 0.7; } }
+/* The hold is 5 s (HOLD_MS in inbox.ts): the slide-out ends as the entry is removed. */
+@keyframes inbox-slide { from { max-height: 80px; opacity: 0.7; transform: none; } to { max-height: 0; opacity: 0; transform: translateX(40px); } }
 .inbox-row .ship-bar { align-self: stretch; height: auto; }
+
+/* Inbox: the list column beside Peek. */
+.inbox-split { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; min-height: 0; min-width: 0; }
+.inbox-split > .panel { min-height: 0; min-width: 0; }
+.inbox-list { margin-right: 8px; padding: 20px 18px; }
+.inbox-row.selected, .inbox-row.selected .inbox-link { background: var(--color-sel); }
+.peek-panel { display: flex; flex-direction: column; padding: 16px 20px; }
+.peek { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.peek-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+.peek-who { flex: 1; min-width: 0; }
+.peek-who h2 { margin: 0; font-size: var(--font-size-heading); overflow-wrap: anywhere; }
+.peek-title, .peek-fleet { margin: 2px 0 0; overflow-wrap: anywhere; color: var(--color-text2); }
+.peek-fleet { font-size: var(--font-size-meta); color: var(--color-muted); }
+.peek-bridge { flex: none; display: inline-flex; align-items: center; }
+.peek-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.peek-form { display: flex; flex-direction: column; gap: 10px; flex: 0 1 auto; min-height: 0; overflow-y: auto; padding-top: 8px; }
+
+/* Question cards, as the old Inbox's, in the shell's tokens. */
+.inbox-question { display: flex; flex-direction: column; gap: 8px; }
+.inbox-eyebrow { font-size: var(--font-size-meta); color: var(--color-muted); }
+.inbox-question-text { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.inbox-option { display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: var(--shape-min-touch-target); padding: 10px 12px; text-align: left; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); background: var(--color-panel); color: var(--color-text); }
+.inbox-option.on { background: var(--color-sel); border-color: var(--color-accent); }
+.inbox-dot { flex: none; width: 18px; height: 18px; margin-top: 2px; border: 2px solid var(--color-line2); background: var(--color-panel); box-shadow: inset 0 0 0 3px var(--color-panel); }
+.inbox-dot.radio { border-radius: 50%; }
+.inbox-dot.checkbox { border-radius: 4px; }
+.inbox-option.on .inbox-dot { border-color: var(--color-accent); background: var(--color-accent); }
+.inbox-option-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.inbox-option-label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 600; overflow-wrap: anywhere; }
+.inbox-option-desc { font-size: var(--font-size-meta); color: var(--color-muted); overflow-wrap: anywhere; }
+.inbox-recommended { padding: 1px 6px; border-radius: var(--shape-radius-sm); background: var(--color-sel); color: var(--color-text2); font-size: var(--font-size-meta); font-weight: 500; }
+.inbox-input, .inbox-note { display: block; min-height: var(--shape-min-touch-target, 44px); width: 100%; box-sizing: border-box; padding: 8px 12px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); background: var(--color-panel); color: var(--color-text); font: inherit; font-size: 16px; }
+.inbox-note { resize: vertical; }
+.inbox-error { margin: 0; color: var(--color-err); overflow-wrap: anywhere; }
+.inbox-send-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.inbox-progress { font-size: var(--font-size-meta); color: var(--color-muted); }
+@media (prefers-reduced-motion: reduce) { .inbox-folded { animation: none; } }

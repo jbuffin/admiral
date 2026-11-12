@@ -10,6 +10,7 @@ const segments = (path: string) => path.replace(/^\/app\/?/, '').replace(/\/$/, 
 export function surfaceOf(path: string): Surface | undefined {
   const [id, ...sub] = segments(path);
   const s = SURFACES.find((x) => x.id === id);
+  if (s?.id === 'inbox' && sub.length > 0) return peekOf(path) ? s : undefined;
   if (s?.id === 'ships' && sub.length === 1 && sub[0] !== '') return s;
   // Preferences alone has pages below it: /app/preferences/<fleet key>/<page>.
   // Campaigns has the Campaign page below it: /app/campaigns/<id>.
@@ -28,6 +29,35 @@ export function shipSession(path: string): string | null {
   if (id !== 'ships' || !key || rest.length > 0) return null;
   try {
     return decodeURIComponent(key);
+  } catch {
+    return null;
+  }
+}
+
+export interface PeekTarget {
+  session: string;
+  crew?: string;
+  item?: string;
+}
+
+export const peekPath = (t: PeekTarget) => {
+  const base = `/app/inbox/${encodeURIComponent(t.session)}`;
+  return t.crew !== undefined ? `${base}/crew/${encodeURIComponent(t.crew)}` : t.item !== undefined ? `${base}/item/${encodeURIComponent(t.item)}` : base;
+};
+
+/** What a Peek path opens: a ship's stop, a crew boat's stop or a file item. Null for the list and for any other path. */
+export function peekOf(path: string): PeekTarget | null {
+  const [id, session, kind, name, ...rest] = segments(path);
+  if (id !== 'inbox' || !session || rest.length > 0) return null;
+  try {
+    const decoded = decodeURIComponent(session);
+    // A slash would let two paths map to one queue key.
+    if (decoded.includes('/')) return null;
+    if (kind === undefined) return { session: decoded };
+    if (!name || (kind !== 'crew' && kind !== 'item')) return null;
+    const n = decodeURIComponent(name);
+    if (kind === 'crew' && n.includes('/')) return null;
+    return { session: decoded, [kind]: n };
   } catch {
     return null;
   }

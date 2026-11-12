@@ -56,9 +56,9 @@ export interface Entry {
 // How long a folded entry stays before it slides out (tokens.json inboxConfirmHold).
 export const HOLD_MS = 5000;
 
-const itemKey = (session: string, id: string) => `item:${session}/${id}`;
-const stopKey = (session: string) => `stop:${session}`;
-const crewKey = (session: string, crew: string) => `stop:${session}/${crew}`;
+export const itemKey = (session: string, id: string) => `item:${session}/${id}`;
+export const stopKey = (session: string) => `stop:${session}`;
+export const crewKey = (session: string, crew: string) => `stop:${session}/${crew}`;
 
 // The wire says needs_you/crew while only a crew boat waits, so the ship itself needs you on any other reason.
 const needsYou = (s: Ship) => s.status === 'needs_you' && s.reason !== 'crew';
@@ -149,8 +149,9 @@ export function createInboxQueue() {
       served = merge();
     },
 
-    fold(key: string, text: string, now: number) {
-      const entry = entries().find((e) => e.key === key);
+    // `known` covers an answer whose push left the queue before its response came back.
+    fold(key: string, text: string, now: number, known?: Entry) {
+      const entry = entries().find((e) => e.key === key) ?? known;
       if (!entry || held.has(key)) return;
       if (entry.type === 'item') answered.add(key);
       held.set(key, { entry: { ...entry, folded: null }, text, until: now + HOLD_MS });

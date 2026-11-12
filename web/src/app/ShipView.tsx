@@ -13,7 +13,7 @@ import { NO_RESUME_NOTE } from './moored';
 import { boxState } from './messageBox';
 import { Sheet } from './Sheet';
 import { fleetSearch } from './fleets';
-import { go, surfacePath } from './router';
+import { go, loc, surfacePath } from './router';
 import { ships, shipsLink, shipsLoaded } from './shipsLink';
 import { SURFACES } from './surfaces';
 import { useBridgeTerminal } from '../useBridgeTerminal';
@@ -246,20 +246,13 @@ function Flotilla({ ship, picked, pick }: { ship: Ship; picked: string | null; p
   );
 }
 
-function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
-  const [tab, setTab] = useState<Tab>('Conversation');
-  const [crew, setCrew] = useState<string | null>(null);
+/** A ship's conversation, or the picked boat's, followed while the caller stays mounted. */
+export function useShipConversation(ship: Ship, boat: CrewBoat | undefined) {
   const [conv, setConv] = useState<Conversation>({ state: 'loading', items: [], more: false });
   const follow = useRef<ReturnType<typeof followConversation> | undefined>(undefined);
   const latest = useRef(ship);
   latest.current = ship;
-  // A boat that left the ship's list hands the view back to the ship.
-  const boat = crew === null ? undefined : ship.crew.find((b) => b.name === crew);
   const boatName = boat?.name;
-  // Forget a boat that left the crew, so a later boat of the same name does not take the view back.
-  useEffect(() => {
-    if (crew !== null && !boat) setCrew(null);
-  }, [crew, boat]);
   const boatHasConversation = boat?.conversation ?? false;
   const moored = ship.status === 'moored';
   useEffect(() => {
@@ -274,11 +267,40 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
     follow.current = f;
     return f.stop;
   }, [ship.session, boatName, boatHasConversation, moored]);
+  return { conv, loadOlder: () => void follow.current?.loadOlder() };
+}
 
-  const target: Target = boat
-    ? { session: ship.session, crew: boat.name, state: boatBoxState(boat), interruptible: boat.status === 'underway', hasConversation: boatHasConversation && conv.state === 'ok', subject: 'This boat' }
-    : { session: ship.session, state: boxState(ship), interruptible: ship.status === 'underway', hasConversation: conv.state === 'ok' || (conv.state === 'none' && hasConversationAdapter(ship.harness)), subject: 'This ship', wake: moored, mooredAt: ship.moored_at };
+/** What the message box talks to: the picked boat, else the ship. */
+export function targetFor(ship: Ship, boat: CrewBoat | undefined, conv: Conversation): Target {
+  return boat
+    ? { session: ship.session, crew: boat.name, state: boatBoxState(boat), interruptible: boat.status === 'underway', hasConversation: (boat.conversation ?? false) && conv.state === 'ok', subject: 'This boat' }
+    : { session: ship.session, state: boxState(ship), interruptible: ship.status === 'underway', hasConversation: conv.state === 'ok' || (conv.state === 'none' && hasConversationAdapter(ship.harness)), subject: 'This ship', wake: ship.status === 'moored', mooredAt: ship.moored_at };
+}
+
+const openTab = (): Tab => (new URLSearchParams(loc.value.search).get('tab') === 'terminal' ? 'Terminal' : 'Conversation');
+
+function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
+  const [tab, setTab] = useState<Tab>(openTab);
+  const [crew, setCrew] = useState<string | null>(null);
+  // Read once at mount; dropping it keeps a remount from reopening Terminal.
+  useEffect(() => {
+    const q = new URLSearchParams(loc.value.search);
+    if (!q.has('tab')) return;
+    q.delete('tab');
+    const rest = q.toString();
+    go(loc.value.path, rest ? `?${rest}` : '', true);
+  }, []);
+  // A boat that left the ship's list hands the view back to the ship.
+  const boat = crew === null ? undefined : ship.crew.find((b) => b.name === crew);
+  const boatName = boat?.name;
+  // Forget a boat that left the crew, so a later boat of the same name does not take the view back.
+  useEffect(() => {
+    if (crew !== null && !boat) setCrew(null);
+  }, [crew, boat]);
+  const { conv, loadOlder } = useShipConversation(ship, boat);
+  const target = targetFor(ship, boat, conv);
   const box = useComposer(target, conv);
+  const moored = ship.status === 'moored';
   const Heading = title ? 'h1' : 'h2';
   const mooredCard = (
     <div class="convo-card">
@@ -338,7 +360,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
                 noneTitle={boat ? 'No conversation for this boat' : undefined}
                 footer={moored ? mooredCard : undefined}
                 openTerminal={() => setTab('Terminal')}
-                loadOlder={() => void follow.current?.loadOlder()}
+                loadOlder={loadOlder}
               />
               )}
             </div>
@@ -356,7 +378,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
   );
 }
 
-/** One ship: Conversation, Terminal, Changes and PR. The view opens on Conversation every time. */
+/** One ship: Conversation, Terminal, Changes and PR. The view opens on Conversation, or on Terminal when the URL says `?tab=terminal`. */
 export function ShipView({ session, title }: { session: string; title: boolean }) {
   const ship = ships.value.find((s) => s.session === session);
   if (!ship) {

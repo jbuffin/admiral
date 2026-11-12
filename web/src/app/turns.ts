@@ -86,3 +86,9 @@ const ROUND_NOTES: Record<NonNullable<Item['state']>, string> = {
 export function roundNote(state?: Item['state']): string | undefined {
   return state ? ROUND_NOTES[state] : undefined;
 }
+
+/** The items from the engineer's last message on; a meta user item is a notice the chat does not show, so it starts nothing. */
+export function lastTurn(items: Item[]): Item[] {
+  for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === 'user' && !items[i].meta) return items.slice(i);
+  return items;
+}
