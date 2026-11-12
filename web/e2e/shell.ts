@@ -60,6 +60,14 @@ function versionedHarness(a: Admiral, name: string) {
   return path;
 }
 
+/** A copilot dock whose probes really pass: it answers `--version` and hands every other run to the e2e fake; its login is the Keychain's. */
+function probeableCopilot(a: Admiral) {
+  const path = a.fakeHarness('copilot');
+  const fake = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'e2e', 'fakeharness', 'copilot');
+  writeFileSync(path, `#!/bin/sh\n[ "$1" = "--version" ] && { echo "1.2.3 (fake)"; exit 0; }\nexec ${JSON.stringify(fake)} "$@"\n`);
+  return path;
+}
+
 /** A codex dock whose probes really pass: it answers `--version`, hands every other run to the e2e fake, and the engineer's login exists. */
 function probeableCodex(a: Admiral, fleet: string) {
   const path = a.fakeHarness('codex');
@@ -78,7 +86,7 @@ export function seedFleets(a: Admiral, opts: { live?: boolean; chat?: boolean; v
   const codexDock = (fleet: string, harness: Harness) => {
     const d = dock(a, fleet, harness, live);
     if (!opts.versioned || live) return d;
-    return { ...d, executable: harness === 'codex' ? probeableCodex(a, fleet) : versionedHarness(a, harness) };
+    return { ...d, executable: harness === 'codex' ? probeableCodex(a, fleet) : harness === 'copilot' ? probeableCopilot(a) : versionedHarness(a, harness) };
   };
   const config: Record<string, unknown> = {
     version: 1,

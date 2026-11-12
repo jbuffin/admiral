@@ -4,7 +4,7 @@ import { homedir, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test, type Admiral } from './fixtures';
-import { HOME, TS_LOGIN, TS_NAME, WORK, fakeTailscale, proveAdmiralBot, seedFleets, setRemote, stubClipboard, watchPage } from './shell';
+import { HOME, TS_LOGIN, TS_NAME, WORK, fakeTailscale, seedFleets, setRemote, stubClipboard, watchPage } from './shell';
 
 // The fleets are `zulu` (Westwind) and `alpha` (Homeport); zulu is the active fleet until one is chosen.
 const sourcesPage = (a: Admiral, fleet: string) => `${a.url}app/preferences/${fleet}/sources`;
@@ -681,7 +681,6 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
 
   // Copilot takes no effort: once proven it offers only Default.
   await page.goto(admiral.url + 'app/preferences/alpha/admiralbot');
-  await proveAdmiralBot(admiral, 'alpha', 'copilot');
   await main.getByRole('button', { name: /Check again.*Copilot/ }).click();
   await expect(pick('Harness', 'Copilot')).toBeEnabled();
   await pick('Harness', 'Copilot').click();
