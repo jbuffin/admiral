@@ -145,3 +145,36 @@ func TestMigrateAtStartupPostsOneNotice(t *testing.T) {
 		t.Errorf("after a restart the notices are %+v, want only the first one", n)
 	}
 }
+
+// An old top-level chat key is the only old shape here, so the start must migrate it on its own.
+func TestMigrateChatKeyAtStartupMovesItOntoTheFleet(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	writeConfig(t, w.home, `{
+  "version": 1,
+  "fleets": {
+    `+w.seedFleetsOf("zulu", "alpha")+`
+  },
+  "chat": {"fleet": "alpha", "model": "opus", "effort": "high"}
+}
+`)
+	w.start()
+
+	notice := w.in.waitNotice(t)
+	if !strings.Contains(strings.ToLower(notice.Notice.Body), "chat") {
+		t.Errorf("notice body = %q, want it to name the chat settings it moved", notice.Notice.Body)
+	}
+	if backups := w.backups(); len(backups) != 1 {
+		t.Fatalf("config.json.pre-<version> files = %v, want exactly one", backups)
+	}
+	if _, ok := configOnDisk(t, w.home)["chat"]; ok {
+		t.Error("the top-level chat key is still in config.json after the start")
+	}
+	chats := chatsOf(t, w.in.instance)
+	if g := chats["alpha"]; g.Model != "opus" || g.Effort != "high" || !g.On {
+		t.Errorf("alpha chat = %+v, want the old opus and high, on", g)
+	}
+	if g := chats["zulu"]; g.Model != "sonnet" || g.Effort != "" {
+		t.Errorf("zulu chat = %+v, want the defaults", g)
+	}
+}
