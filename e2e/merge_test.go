@@ -225,13 +225,25 @@ func TestMergeASinglePRRunsOneGhMergeWithTheDefaultMethod(t *testing.T) {
 	}
 }
 
+// headOf is the commit the fake gives a PR as its head, and the head the checkout's stack records for its layer.
+func headOf(url string) string { return "sha" + url[strings.LastIndex(url, "/")+1:] }
+
+// prHead makes GitHub read the PR's head as headOf(url).
+func (g *fakeGH) prHead(url string) {
+	g.t.Helper()
+	if err := os.MkdirAll(filepath.Join(g.dir, "pr_events"), 0o755); err != nil {
+		g.t.Fatal(err)
+	}
+	g.write("pr_events/"+strings.NewReplacer("/", "_", ":", "_").Replace(url), `{"headRefOid":"`+headOf(url)+`"}`+"\n")
+}
+
 // stackView seeds what `gh stack view --json` prints: an open stack of these PRs, bottom first.
 func (g *fakeGH) stackView(prs ...string) {
 	g.t.Helper()
 	branches := []map[string]any{}
 	for i, u := range prs {
 		n, _ := strconv.Atoi(u[strings.LastIndex(u, "/")+1:])
-		branches = append(branches, map[string]any{"name": "layer-" + strconv.Itoa(i+1), "head": "abc" + strconv.Itoa(i), "base": "main",
+		branches = append(branches, map[string]any{"name": "layer-" + strconv.Itoa(i+1), "head": headOf(u), "base": "main",
 			"isCurrent": i == len(prs)-1, "isMerged": false, "isQueued": false, "needsRebase": false, "futureBranchKey": []int{1},
 			"pr": map[string]any{"number": n, "url": u, "state": "OPEN", "futurePRKey": "x"}})
 	}
@@ -265,6 +277,7 @@ func readyStack(t *testing.T, method string, prs ...string) (*world, *fakeGH, sh
 	g.defaultMergeMethod(method)
 	for _, u := range prs {
 		g.prReady(u)
+		g.prHead(u)
 	}
 	g.stackView(prs...)
 	w.start()
@@ -328,6 +341,15 @@ func TestMergeAReadyStackRunsOneArglessGhStackMergeInTheCheckout(t *testing.T) {
 	if len(views) == 0 || !views[0].has("--json") || views[0].Cwd != c.Cwd {
 		t.Errorf("stack views = %v, want gh stack view --json in the same checkout before the merge", views)
 	}
+	// The checkout's remotes are the ship's to write: gh-stack is told the fleet's host and the ship's repo.
+	for _, env := range []map[string]string{c.Env, views[0].Env} {
+		if env["GH_HOST"] != "github.com" || env["GH_REPO"] != "github.com/acme/widgets" {
+			t.Errorf("stack call env GH_HOST=%q GH_REPO=%q, want github.com and github.com/acme/widgets", env["GH_HOST"], env["GH_REPO"])
+		}
+		if env["GIT_CONFIG_COUNT"] != "3" || env["GIT_CONFIG_KEY_0"] != "core.fsmonitor" || env["GIT_CONFIG_KEY_1"] != "core.hooksPath" || env["GIT_CONFIG_KEY_2"] != "core.sshCommand" {
+			t.Errorf("stack call env = %v, want the checkout's fsmonitor, hooksPath and sshCommand blanked", env)
+		}
+	}
 	var order []string
 	for _, x := range g.calls() {
 		if len(x.Argv) >= 2 && x.Argv[0] == "stack" {
@@ -370,6 +392,52 @@ func TestMergeOfAStackWhoseCheckoutHoldsAnotherStackIsRefusedAndRunsNoMerge(t *t
 			holdThat(t, "gh stack merge ran, or the ship left its mooring", stillMooredWithNoMerge(w, g, ship))
 		})
 	}
+}
+
+// The checkout's stack record is the ship's to write: its URLs match, but GitHub's numbers and heads must too.
+func TestMergeOfAStackWhoseRecordDisagreesWithGitHubOnANumberOrAHeadIsRefusedAndRunsNoMerge(t *testing.T) {
+	t.Parallel()
+	layer := func(url string, number int, head string) string {
+		return `{"name":"b","head":"` + head + `","pr":{"number":` + strconv.Itoa(number) + `,"url":"` + url + `"}}`
+	}
+	for what, branches := range map[string][]string{
+		"another number": {layer(layer1, 21, headOf(layer1)), layer(layer2, 99, headOf(layer2))},
+		"another head":   {layer(layer1, 21, headOf(layer1)), layer(layer2, 22, "deadbeef")},
+		"no head":        {layer(layer1, 21, headOf(layer1)), layer(layer2, 22, "")},
+		"no number":      {layer(layer1, 0, headOf(layer1)), layer(layer2, 22, headOf(layer2))},
+		"a head of a PR": {layer(layer1, 21, headOf(layer2)), layer(layer2, 22, headOf(layer1))},
+	} {
+		t.Run(what, func(t *testing.T) {
+			t.Parallel()
+			w, g, ship := readyStack(t, "MERGE", layer1, layer2)
+			g.write("stack_view.json", `{"trunk":"main","branches":[`+strings.Join(branches, ",")+`]}`+"\n")
+			code, body := w.postMerge(t, ship, map[string]any{})
+			wantCode(t, "POST merge on a stack whose record disagrees with GitHub", http.StatusConflict, code, body)
+			if len(g.stackCalls("view")) == 0 {
+				t.Errorf("the checkout's stack was never read, so the 409 came from elsewhere: %s", body)
+			}
+			holdThat(t, "gh stack merge ran, or the ship left its mooring", stillMooredWithNoMerge(w, g, ship))
+		})
+	}
+}
+
+// Another ship in the checkout could switch its branch between the view and the merge.
+func TestMergeOfAStackIsRefusedWhileAnotherShipWorksInTheSameCheckout(t *testing.T) {
+	t.Parallel()
+	w, g, ship := readyStack(t, "MERGE", layer1, layer2)
+	other := w.launch(w.order("f", "claude", "widgets", commodore, "do it"))
+	if got := realPath(t, w.checkout("widgets")); other.Dir != "" && realPath(t, other.Dir) != got {
+		t.Fatalf("seeding: the other ship runs in %q, want the moored ship's checkout %q", other.Dir, got)
+	}
+	code, body := w.postMerge(t, ship, map[string]any{})
+	wantCode(t, "POST merge on a stack while another ship works in its checkout", http.StatusConflict, code, body)
+	if !strings.Contains(body, "another ship") {
+		t.Errorf("body = %s, want it to say another ship is working in the checkout", body)
+	}
+	holdThat(t, "a gh stack call ran, or the ship left its mooring", func() bool {
+		sh, ok := w.shipNamed(ship)
+		return ok && sh.Status == "moored" && len(g.mergeCalls()) == 0 && len(g.stackCalls("view")) == 0 && len(g.stackCalls("merge")) == 0
+	})
 }
 
 // A layer without a pr is a layer that is not the ship's, so it is an extra layer.

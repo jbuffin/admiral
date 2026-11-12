@@ -56,7 +56,6 @@ export function staleNote(ship: Ship, now: number): string {
   return `Poll failed · last checked ${age === 'now' ? 'under a minute' : age} ago`;
 }
 
-/** The repo's merge method as the hint beside Merge. */
 /** What Merge will do: the repository's method, and for a stack that the whole stack merges. */
 export const mergeHint = (method?: string, stack = false): string => {
   const how = ({ squash: 'squash', rebase: 'rebase', merge: 'merge commit' })[method as 'merge'] ?? '';

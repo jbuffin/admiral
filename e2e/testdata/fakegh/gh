@@ -6,7 +6,7 @@
 #   argv         the arguments, each followed by a NUL byte
 #   env          GH_TOKEN, GITHUB_TOKEN, GH_ENTERPRISE_TOKEN,
 #                GITHUB_ENTERPRISE_TOKEN, GH_NO_UPDATE_NOTIFIER,
-#                GH_PROMPT_DISABLED, GH_REPO and the marker variables FLEET_MARK,
+#                GH_PROMPT_DISABLED, GH_REPO, GH_HOST, every GIT_CONFIG_* and the marker variables FLEET_MARK,
 #                ADMIRAL_BASE and ADMIRAL_OVER (a test puts them in a
 #                fleet's env or in Admiral's own) as
 #                NAME=value lines; a variable that was not set has no line
@@ -152,6 +152,8 @@ pwd -P > "$call_dir/cwd"
 	[ -n "${GH_NO_UPDATE_NOTIFIER+x}" ] && printf 'GH_NO_UPDATE_NOTIFIER=%s\n' "$GH_NO_UPDATE_NOTIFIER"
 	[ -n "${GH_PROMPT_DISABLED+x}" ] && printf 'GH_PROMPT_DISABLED=%s\n' "$GH_PROMPT_DISABLED"
 	[ -n "${GH_REPO+x}" ] && printf 'GH_REPO=%s\n' "$GH_REPO"
+	[ -n "${GH_HOST+x}" ] && printf 'GH_HOST=%s\n' "$GH_HOST"
+	env | grep '^GIT_CONFIG_'
 	[ -n "${FLEET_MARK+x}" ] && printf 'FLEET_MARK=%s\n' "$FLEET_MARK"
 	[ -n "${ADMIRAL_BASE+x}" ] && printf 'ADMIRAL_BASE=%s\n' "$ADMIRAL_BASE"
 	[ -n "${ADMIRAL_OVER+x}" ] && printf 'ADMIRAL_OVER=%s\n' "$ADMIRAL_OVER"
