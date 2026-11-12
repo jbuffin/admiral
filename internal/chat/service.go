@@ -237,22 +237,27 @@ func (s *fleetChat) broadcastIf(send bool) {
 	}
 }
 
-// questionsMoved reports whether the waiting set differs from the last one it saw: the ids and
-// whether each is answered.
+// questionsMoved reports whether the questions differ from those the Inbox was last given: the ids
+// and whether each is answered.
 func (s *fleetChat) questionsMoved() bool {
+	sig := questionsSig(s.questions(false))
+	s.cmu.Lock()
+	defer s.cmu.Unlock()
+	moved := s.qSig != sig
+	s.qSig = sig
+	return moved
+}
+
+func questionsSig(qs []Question) string {
 	var sig strings.Builder
-	for _, q := range s.questions(false) {
+	for _, q := range qs {
 		sig.WriteString(q.Item.ID)
 		if len(q.Answer) > 0 {
 			sig.WriteString(":answered")
 		}
 		sig.WriteByte(' ')
 	}
-	s.cmu.Lock()
-	defer s.cmu.Unlock()
-	moved := s.qSig != sig.String()
-	s.qSig = sig.String()
-	return moved
+	return sig.String()
 }
 
 func (s *Service) questionsChanged() {

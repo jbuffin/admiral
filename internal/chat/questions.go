@@ -289,7 +289,12 @@ func (s *Service) WaitingQuestions() []inbox.Item {
 	var out []inbox.Item
 	for _, fc := range s.onFleets() {
 		f, _ := cfg.Fleet(fc.key)
-		for _, q := range fc.questions(false) {
+		qs := fc.questions(false)
+		// What the Inbox is given here is what it is not told of again until it changes.
+		fc.cmu.Lock()
+		fc.qSig = questionsSig(qs)
+		fc.cmu.Unlock()
+		for _, q := range qs {
 			if len(q.Answer) > 0 {
 				continue
 			}

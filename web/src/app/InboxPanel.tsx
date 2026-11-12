@@ -221,7 +221,7 @@ export function InboxPanel({ surface, title, phone }: { surface: Surface; title:
     return () => window.removeEventListener('keydown', h);
   }, []);
 
-  if (entries.length === 0) {
+  if (entries.length === 0 && !(gone && detail)) {
     return (
       <main class="panel">
         {title ? <h1>{surface.title}</h1> : null}

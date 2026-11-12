@@ -84,7 +84,7 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
   const chat = isChatSession(entry.session);
   // A chat question's refusal is told plainly: the server's text names its ids and its internal session.
   const [chatEnd, setChatEnd] = useState<'withdrawn' | 'answered' | null>(null);
-  const answeredHere = entry.fleet?.key ? chats.value[entry.fleet.key]?.questions.some((q) => q.id === entry.id && q.answer) : false;
+  const answeredHere = entry.fleet?.key ? chats.value[entry.fleet.key]?.questions?.some((q) => q.id === entry.id && q.answer) : false;
   const notice = !chat || !question ? '' : chatEnd === 'answered' || (gone && answeredHere) ? ANSWERED : chatEnd === 'withdrawn' || gone ? WITHDRAWN : '';
   const send = async (body: AnswerBody) => {
     setDraft((d) => ({ ...d, sending: true, error: '' }));
