@@ -54,7 +54,7 @@ export function probeableClaude(a: Admiral) {
 }
 
 /** Zulu (Westwind) comes first, alpha (Homeport) second; `live` makes the docks launchable and gives zulu the orders; `claude` replaces zulu's claude dock. */
-export function seedFleets(a: Admiral, opts: { live?: boolean; chat?: boolean; claude?: { executable: string; env: Record<string, string> } } = {}) {
+export function seedFleets(a: Admiral, opts: { live?: boolean; chat?: boolean; holdChat?: ChatFleet; claude?: { executable: string; env: Record<string, string> } } = {}) {
   const live = !!opts.live;
   const config: Record<string, unknown> = {
     version: 1,
@@ -65,7 +65,7 @@ export function seedFleets(a: Admiral, opts: { live?: boolean; chat?: boolean; c
   };
   if (opts.chat) {
     const fleets = config.fleets as Record<string, unknown>;
-    for (const f of CHAT_FLEETS) fleets[f.key] = { name: f.name, search_roots: [a.home], claude: chatDock(a, f.key) };
+    for (const f of CHAT_FLEETS) fleets[f.key] = { name: f.name, search_roots: [a.home], claude: chatDock(a, f.key, opts.holdChat === f.key) };
   }
   if (live) {
     config.sources = { orders: a.ordersSource('orders', 'Orders', { fleet: 'zulu' }) };
@@ -97,12 +97,13 @@ const chatConfigDir = (a: Admiral, fleet: string) => join(a.home, 'identity', `$
 /** A chat's transcript: Claude Code records it under the dock's config dir, which the SessionStart cue names to Admiral. */
 const chatTranscriptPath = (a: Admiral, fleet: string, name: string) => join(chatConfigDir(a, fleet), 'projects', 'p', `${name}.jsonl`);
 
-function chatDock(a: Admiral, fleet: string) {
+function chatDock(a: Admiral, fleet: string, hold: boolean) {
   const cue = join(a.home, `chat-cue-${fleet}`);
   const startup = JSON.stringify({ transcript_path: chatTranscriptPath(a, fleet, 't1'), source: 'startup' });
   const cleared = JSON.stringify({ transcript_path: chatTranscriptPath(a, fleet, 't2'), source: 'clear' });
   // A New chat clears the context: the second transcript starts once the test touches go-clear.
-  writeFileSync(cue, ['record', 'bracketedpaste', `event SessionStart ${startup}`, 'wait go-clear', `event SessionStart ${cleared}`].join('\n') + '\n');
+  // A held chat stays before its first SessionStart, as one stopped on Claude's folder-trust dialog does, until chatStarts.
+  writeFileSync(cue, ['record', 'bracketedpaste', ...(hold ? ['wait go-start'] : []), `event SessionStart ${startup}`, 'wait go-clear', `event SessionStart ${cleared}`].join('\n') + '\n');
   mkdirSync(join(chatConfigDir(a, fleet), 'projects', 'p'), { recursive: true });
   return { executable: fakeClaude, env: { FAKE_RECORD_DIR: join(a.home, 'rec'), FAKE_CUE: cue, CLAUDE_CONFIG_DIR: chatConfigDir(a, fleet) } };
 }
@@ -122,6 +123,12 @@ const chatRecord = (a: Admiral, fleet: ChatFleet) => join(a.home, 'rec', chatSes
 export function chatCleared(a: Admiral, fleet: ChatFleet) {
   mkdirSync(chatRecord(a, fleet), { recursive: true });
   writeFileSync(join(chatRecord(a, fleet), 'go-clear'), '');
+}
+
+/** Lets a held chat's fake Claude Code fire its first SessionStart, as the engineer's answer to the trust dialog does. */
+export function chatStarts(a: Admiral, fleet: ChatFleet) {
+  mkdirSync(chatRecord(a, fleet), { recursive: true });
+  writeFileSync(join(chatRecord(a, fleet), 'go-start'), '');
 }
 
 /** What was typed into the fleet's chat pane, as the harness received it. */

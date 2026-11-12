@@ -1,6 +1,8 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { HOME, HOSTILE, TS_LOGIN, TS_NAME, WORK, fakeTailscale, setRemote, stubClipboard, boatReceived, changeFile, changesOf, chip, diffOf, expectSeededTurn, gitCheckout, holds, interruptButton, launchCrew, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedInboxItem, seedTurn, sendButton, sentBubble, setReason, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, chatReceived, chatSays } from './shell';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { HOME, HOSTILE, TS_LOGIN, TS_NAME, WORK, fakeTailscale, setRemote, stubClipboard, boatReceived, changeFile, changesOf, chip, diffOf, expectSeededTurn, gitCheckout, holds, interruptButton, launchCrew, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedInboxItem, seedTurn, sendButton, sentBubble, setReason, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, chatReceived, chatSays, chatSession, chatStarts } from './shell';
 
 const tab = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
 
@@ -311,4 +313,35 @@ test("on the phone, a fleet's AdmiralBot page shows its harness, model, effort a
   await page.goto(admiral.url + 'app/preferences/alpha/admiralbot');
   await expect(page.getByRole('main')).toContainText(/no Claude Code dock/i);
   await expect(page.getByRole('radiogroup', { name: 'Harness' })).toHaveCount(0);
+});
+
+test("on the phone, a chat held before its first SessionStart opens its terminal over the Chat tab, takes touch keys, survives a reload, and sends after Back to chat once it starts", async ({ page, admiral }) => {
+  seedFleets(admiral, { chat: true, holdChat: 'lagoon' });
+  await admiral.start();
+  const main = page.getByRole('main');
+  await page.goto(admiral.url + 'app/chat?fleet=lagoon');
+  await expect(main).toContainText('Open the terminal to finish starting the chat');
+  await main.getByRole('button', { name: 'Open terminal', exact: true }).first().tap();
+  await expect(page).toHaveURL(/\/app\/chat\/lagoon\/terminal/);
+  await expect(main.locator('.xterm')).toBeVisible();
+  await expect(main.getByText('Inbox · All fleets · oldest first')).toHaveCount(0);
+  const back = main.getByRole('button', { name: 'Back to chat', exact: true });
+  expect((await back.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+  await expect.poll(() => existsSync(join(admiral.home, 'rec', chatSession('lagoon'), 'recording'))).toBe(true);
+  await main.getByRole('button', { name: 'Send Enter' }).tap();
+  await expect.poll(() => chatReceived(admiral, 'lagoon')).toContain('\r');
+
+  await page.reload();
+  await expect(main.locator('.xterm')).toBeVisible();
+  await back.tap();
+  await expect(page).not.toHaveURL(/\/terminal/);
+  await expect(main.locator('.xterm')).toHaveCount(0);
+
+  chatStarts(admiral, 'lagoon');
+  await expect(main).not.toContainText('Open the terminal to finish starting the chat');
+  await main.getByRole('textbox', { name: 'Message AdmiralBot' }).fill('Now that it started');
+  await main.getByRole('button', { name: 'Send', exact: true }).tap();
+  await expect.poll(() => chatReceived(admiral, 'lagoon')).toContain('Now that it started');
 });
