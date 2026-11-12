@@ -279,6 +279,13 @@ func serve(args []string) error {
 		return ok && (sh.Status == ships.StatusUnderway || sh.Status == ships.StatusNeedsYou)
 	}
 	inboxService.TypeResume = shipService.TypeResume
+	inboxService.LaunchProposal = func(ctx context.Context, p inbox.WakeProposal) (any, int, string) {
+		got, lerr := shipService.LaunchProposal(ctx, p)
+		if lerr != nil {
+			return nil, lerr.Status, lerr.Msg
+		}
+		return got, 0, ""
+	}
 	shipService.CaptureResume = inboxService.CaptureResume
 	shipService.GitHub = func(fleet string) moor.GitHub {
 		if c := sources.FleetGitHub(cfg.Current(), fleet); c != nil {

@@ -44,8 +44,7 @@ func (s *Service) open(session, id string) (Item, error) {
 	return it, nil
 }
 
-// Answer's build runs under the lock, so it does no network I/O: anything slow
-// runs before Answer.
+// Answer's build runs under the lock, so it does no network I/O: anything slow runs before Answer, except a proposal's launch.
 func (s *Service) Answer(session, id, kind string, build func(Item) (file any, recs []outcomes.Record, err error)) error {
 	if err := s.writeAnswered(session, id, kind, build); err != nil {
 		return err
@@ -82,7 +81,9 @@ func (s *Service) writeAnswered(session, id, kind string, build func(Item) (file
 	}
 	if s.Outcomes != nil {
 		for _, r := range recs {
-			r.Ship = session
+			if r.Ship == "" {
+				r.Ship = session
+			}
 			s.Outcomes.Enqueue(r, nil)
 		}
 	}

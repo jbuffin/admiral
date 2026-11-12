@@ -37,6 +37,8 @@ type Service struct {
 	Afloat func(session string) bool
 	// TypeResume types only while the ship waits at its prompt because its turn ended.
 	TypeResume func(session, text string) (afloat, typed bool, err error)
+	// LaunchProposal starts a feedback round for a wake proposal.
+	LaunchProposal LaunchProposalFunc
 
 	answerMu sync.Mutex        // one answer at a time
 	actMu    sync.Mutex        // guards acting
@@ -105,6 +107,8 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/inbox/{session}/{id}/discard", s.serveDiscard)
 	mux.HandleFunc("POST /api/inbox/{session}/{id}/findings", s.serveFindings)
 	mux.HandleFunc("POST /api/inbox/{session}/{id}/remove", s.serveRemove)
+	mux.HandleFunc("POST /api/inbox/"+AdmiralSession+"/{id}/launch", s.serveLaunchProposal)
+	mux.HandleFunc("POST /api/inbox/"+AdmiralSession+"/{id}/dismiss", s.serveDismissProposal)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

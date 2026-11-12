@@ -205,6 +205,25 @@ func (g *fakeGH) prEvents(url, author, body string, at time.Time) {
 	g.write("pr_events/"+key, string(ev)+"\n")
 }
 
+// prEventList is prEvents with a plain PR comment from stranger added, id C1.
+func (g *fakeGH) prEventList(url, reviewer, reviewBody string, reviewAt time.Time, stranger, strangerBody string, strangerAt time.Time) {
+	g.t.Helper()
+	key := strings.NewReplacer("/", "_", ":", "_").Replace(url)
+	nodes := []map[string]any{{"id": "C1", "author": map[string]any{"__typename": "User", "login": stranger},
+		"createdAt": strangerAt.UTC().Format(time.RFC3339), "body": strangerBody, "url": url + "#issuecomment-1"}}
+	ev, err := json.Marshal(map[string]any{
+		"reviews": map[string]any{"nodes": []map[string]any{{
+			"id": "R1", "author": map[string]any{"__typename": "User", "login": reviewer}, "state": "COMMENTED",
+			"submittedAt": reviewAt.UTC().Format(time.RFC3339), "body": reviewBody, "url": url + "#pullrequestreview-1",
+			"comments": map[string]any{"totalCount": 0}}}},
+		"comments": map[string]any{"nodes": nodes},
+	})
+	if err != nil {
+		g.t.Fatal(err)
+	}
+	g.write("pr_events/"+key, string(ev)+"\n")
+}
+
 func (w *world) kickMoored() {
 	w.t.Helper()
 	if code, body := send(w.t, http.MethodPost, w.in.LocalURL+"/api/moored/refresh", nil); code != http.StatusAccepted {

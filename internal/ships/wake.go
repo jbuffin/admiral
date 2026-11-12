@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/moor"
 )
@@ -136,6 +137,9 @@ func (s *Service) removeWake(name string) {
 	if err := moor.RemoveWake(s.Launcher.Home, name); err != nil {
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake state cannot be removed: %v\n", name, err)
 	}
+	if err := inbox.RemoveWakeProposals(s.Launcher.Home, name); err != nil {
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: its wake proposals cannot be removed: %v\n", name, err)
+	}
 }
 
 // wake is the one relaunch: a moored ship's session is recreated under its name with its record's fleet,
@@ -149,7 +153,7 @@ func (s *Service) wake(session string, prompt func(moor.Record) string, by, pr s
 	if lerr != nil {
 		return Ship{}, lerr
 	}
-	if by == "feedback" && !slices.Contains(rec.PRs, pr) {
+	if (by == "feedback" || by == "proposal") && !slices.Contains(rec.PRs, pr) {
 		return Ship{}, &launcher.Error{Status: http.StatusBadRequest, Msg: "ship " + session + " carries no PR " + pr}
 	}
 	if !s.Host.Known() {
@@ -159,7 +163,7 @@ func (s *Service) wake(session string, prompt func(moor.Record) string, by, pr s
 	req := launcher.Request{Fleet: rec.Fleet, Harness: rec.Harness, Dir: rec.Checkout, Model: rec.Model,
 		Skill: launcher.Skill{Kind: rec.Skill.Kind, Name: rec.Skill.Name}, Source: rec.Source, OrderID: rec.OrderID,
 		Title: rec.Title, URL: rec.URL, Issues: rec.Issues, Panel: rec.Panel, Resources: rec.Resources,
-		Name: rec.Name, Session: rec.Session, Round: round, Prompt: prompt(rec), Autopilot: by == "feedback", By: by, PR: pr}
+		Name: rec.Name, Session: rec.Session, Round: round, Prompt: prompt(rec), Autopilot: by == "feedback" || by == "proposal", By: by, PR: pr}
 	var undo undoFunc
 	// The launcher runs this under its lock, just before it makes the session: a Dismiss or a merged PR that
 	// ended the mooring while this wake waited wins, and from here on an ending loses to the wake.
