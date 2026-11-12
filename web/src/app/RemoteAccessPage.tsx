@@ -226,7 +226,7 @@ function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView
                 To stop serving Admiral over Tailscale, run <code>{view.serveOff}</code>
               </p>
             ) : null}
-            {view.listenExplicit ? <ListenNote /> : !view.url ? <p class="note">Admiral now answers only on this Mac and through Tailscale.</p> : null}
+            {view.listenExplicit ? <ListenNote /> : !view.url ? <p class="note">Until tailscale serve is set up (the serve check above has the command), Admiral answers only on this Mac.</p> : null}
             {view.url ? (
               <div class="box tailscale-url">
                 <code ref={urlEl} class="pair-url">
@@ -274,7 +274,9 @@ function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView
       </section>
       {askingOff ? (
         <div class="confirm" role="group" aria-label="Turn off Tailscale mode">
-          <span>Turn off stops Admiral from answering tailnet devices and moves it back onto this network. Allowed logins and tailscale serve stay as they are.</span>
+          <span>
+            Turn off stops Admiral from answering tailnet devices{view?.listenExplicit ? '' : ' and moves it back onto this network'}. Allowed logins and tailscale serve stay as they are.
+          </span>
           <button type="button" class="btn danger" disabled={busy} onClick={() => void turnOff()}>
             Turn off Tailscale mode
           </button>
@@ -336,7 +338,7 @@ function AllowedLogins({ view, devices, onView, onResult }: { view: RemoteView |
         {view.allowedLogins.map((l) => (
           <li key={l} class="set" aria-label={l}>
             <div class="t">
-              <span>{l}</span>
+              <span class="login">{l}</span>
               {removing === l ? (
                 <div class="confirm" role="group" aria-label={`Remove ${l}?`}>
                   <span>This device came in on {l}, so removing it signs this device out.</span>

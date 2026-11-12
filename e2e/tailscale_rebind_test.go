@@ -106,6 +106,21 @@ func awaitMove(t *testing.T, conn *websocket.Conn) string {
 	}
 }
 
+// awaitClosed reads until the socket errors: a LAN socket must not outlive the move.
+func awaitClosed(t *testing.T, conn *websocket.Conn) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for {
+		if _, _, err := conn.Read(ctx); err != nil {
+			if ctx.Err() != nil {
+				t.Fatal("the LAN socket stayed open after the move")
+			}
+			return
+		}
+	}
+}
+
 func (r *tsRig) lanBearer(t *testing.T, p *tsProc) http.Header {
 	t.Helper()
 	return http.Header{"Authorization": {"Bearer " + p.pair(t)}}
@@ -146,6 +161,7 @@ func TestModeOnMovesAdmiralOffTheLAN(t *testing.T) {
 	if got, want := awaitMove(t, lan), "https://"+tsName+"/"; got != want {
 		t.Errorf("the LAN browser was sent to %q, want %q", got, want)
 	}
+	awaitClosed(t, lan)
 	waitUntil(t, "the LAN address stops answering", func() bool { return !p.answers(p.lanURL()) })
 	if !p.answers(p.LocalURL) || !p.shipsAnswer(t) {
 		t.Error("loopback stopped answering or lost its ships")
@@ -207,6 +223,7 @@ func TestModeOnWithoutServeStillMoves(t *testing.T) {
 	if got := awaitMove(t, lan); got != "" {
 		t.Errorf("move url %q, want none", got)
 	}
+	awaitClosed(t, lan)
 	waitUntil(t, "the LAN address stops answering", func() bool { return !p.answers(p.lanURL()) })
 	if !p.answers(p.LocalURL) {
 		t.Error("loopback stopped answering")
