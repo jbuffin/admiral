@@ -493,7 +493,7 @@ Body `{"code","name"?,"cookie"?}`. A code is case-insensitive, with or without t
 
 ### `GET /api/v1/devices`
 
-Answers `{"devices":[{"id","name","login"?,"pairedAt","lastSeen","current","notifications"}]}`. `login` is set for a device paired over the tailnet. `current` is true for the device making the request; on the Local route it is true for This Mac. `notifications` is true when the device holds at least one push subscription. The subscription's keys are never listed.
+Answers `{"devices":[{"id","name","login"?,"pairedAt","lastSeen","current","notifications","thisMac"?}]}`. `login` is set for a device paired over the tailnet. `current` is true for the device making the request; on the Local route it is true for This Mac. `notifications` is true when the device holds at least one push subscription. `thisMac` is true on the This Mac row only, so a page can tell the Mac from a paired device. The subscription's keys are never listed.
 
 ### Web Push: `GET /api/v1/push/key`, `PUT` and `DELETE /api/v1/push/subscription`
 
