@@ -28,7 +28,7 @@ import (
 // codexFenceKeys, the probes' and the launcher's fence tables, and the literals below are one placeholder: the real
 // Codex keys change in all three places together.
 
-// codexResetCommand is what New chat types into a running Codex chat (placeholder; Claude's is /clear).
+// codexResetCommand is what New chat types into a running Codex chat: /new, which Codex's TUI lists as starting a new chat.
 const codexResetCommand = "/new"
 
 const codexStdinReset = codexResetCommand + "\r"
@@ -138,7 +138,8 @@ func TestAdmiralBot_CodexChatStartsOnlyOnceBothProbesPassAndIsFenced(t *testing.
 			t.Errorf("argv = %q carries no model", r.argv)
 		}
 		for k := range cfg {
-			if strings.Contains(k, "ADMIRAL_ACTOR") || strings.Contains(cfg[k], "ADMIRAL_ACTOR") {
+			// The variable naming the token's file is fine on argv; the token's own variable is not.
+			if strings.Contains(cfg[k], `"ADMIRAL_ACTOR_TOKEN"`) {
 				t.Errorf("argv carries the actor token in %s: it belongs in a 0600 file", k)
 			}
 		}
@@ -211,8 +212,9 @@ func TestAdmiralBot_CodexChatStaysGreyedWhenAProbeFails(t *testing.T) {
 			if code, body := codexChatStart(c); code == http.StatusOK {
 				t.Errorf("the chat started with %s failed: %s", failed, body)
 			}
-			if s := c.session(); s.Running {
-				t.Errorf("the session is running with %s failed: %+v", failed, s)
+			// A chat that is off answers its session with a 409; a 200 must not show it running.
+			if code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/chat/chat/session", nil); code == http.StatusOK && strings.Contains(body, `"running":true`) {
+				t.Errorf("the session is running with %s failed: %s", failed, body)
 			}
 			home := launcher.ChatCodexHome(w.home, "chat")
 			if home == "" {
