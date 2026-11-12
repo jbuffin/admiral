@@ -1,9 +1,9 @@
-import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { crewNote, seedAdHocMember, seedCrew } from './crew';
-import { addGitHubSource, appendLines, HOSTILE, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, restCalls, rowLink, seedFleets, seedInboxItem, seedReviewTarget, setReason, setState, staleMergeTokenInPeek, readyStackMergesFromPeek, viewTab, withFakeGh } from './shell';
+import { addGitHubSource, appendLines, HOSTILE, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, restCalls, rowLink, seedFleets, seedInboxItem, seedReviewTarget, setReason, setState, staleMergeTokenInPeek, readyStackMergesFromPeek, viewTab, withFakeGh, chatAnswerFile, chatAsks } from './shell';
 
 const peekOf = (page: Page) => page.getByRole('region', { name: 'Peek' });
 const peekUrl = (session: string) => new RegExp(`/app/inbox/${encodeURIComponent(session)}(\\?|$)`);
@@ -599,4 +599,54 @@ test('a crew note the server cannot place shows its error on that note card and 
   await peek.getByRole('button', { name: 'Remove from inbox' }).tap();
   await expect(peek).toContainText('It counts as Drop');
   await expect(peek.getByRole('button', { name: 'Cancel' })).toBeVisible();
+});
+
+test("AdmiralBot's waiting question shows in the Inbox as AdmiralBot's, is answered from Peek, leaves the Inbox, and the fleet's chat shows the answer", async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true, chat: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  chatAsks(admiral, 'harbor', 'q1', 'Which panel?', ['Freeform', 'Work queue']);
+  chatAsks(admiral, 'lagoon', 'q2', 'Which branch?', ['main', 'next']);
+  await page.goto(admiral.url + 'app/inbox?fleet=harbor');
+
+  const row = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Which panel?' });
+  await expect(row).toContainText('AdmiralBot', { timeout: 15_000 });
+  await expect(row).toContainText('Harborlight');
+  // Chat items are never ships: the Ships surface does not count or list them.
+  await page.getByRole('navigation').getByRole('link', { name: 'Ships', exact: true }).tap();
+  await expect(page.getByRole('main').getByText('AdmiralBot')).toHaveCount(0);
+  await page.goBack();
+
+  await row.getByRole('link').tap();
+  const peek = peekOf(page);
+  await expect(peek).toContainText('Which panel?');
+  await peek.getByRole('radio', { name: 'Freeform' }).tap();
+  await peek.getByRole('button', { name: 'Send answers' }).tap();
+
+  // The answer reaches the harbor chat's question file, and not lagoon's.
+  await expect.poll(() => chatAnswerFile(admiral, 'harbor', 'q1')?.answers['1']?.choice).toBe('Freeform');
+  expect(chatAnswerFile(admiral, 'lagoon', 'q2')).toBeUndefined();
+  await expect(peekOf(page)).toHaveCount(0);
+  await expect(page).toHaveURL(/\/app\/inbox(\?|$)/);
+  await expect(page.getByRole('main').getByRole('listitem').filter({ hasText: 'Which panel?' })).toHaveCount(0, { timeout: 15_000 });
+
+  await page.goto(admiral.url + 'app/chat?fleet=harbor');
+  await expect(page.getByRole('main')).toContainText('You answered: Freeform');
+});
+
+test("a chat question whose chat started anew is refused in Peek with the reason, and leaves the Inbox", async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true, chat: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  chatAsks(admiral, 'harbor', 'q1', 'Which panel?', ['Freeform', 'Work queue']);
+  await page.goto(admiral.url + 'app/inbox?fleet=harbor');
+  const row = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Which panel?' });
+  await expect(row).toContainText('AdmiralBot', { timeout: 15_000 });
+  await row.getByRole('link').tap();
+  const peek = peekOf(page);
+  await peek.getByRole('radio', { name: 'Freeform' }).tap();
+
+  // The question is withdrawn behind Peek's back, as New chat does.
+  rmSync(join(admiral.home, 'chat', 'harbor', 'questions', 'q1.json'));
+  await peek.getByRole('button', { name: 'Send answers' }).tap();
+  await expect(peek.getByRole('alert')).toContainText(/\S/);
+  expect(chatAnswerFile(admiral, 'harbor', 'q1')).toBeUndefined();
 });
