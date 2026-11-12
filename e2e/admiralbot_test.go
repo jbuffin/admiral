@@ -417,7 +417,7 @@ func TestAdmiralBot_ReadCommandsFindTheServerByADMIRAL_PORT(t *testing.T) {
 
 // `orders add` posts to the server and prints the new order's id; the cases
 // that must not reach the server don't.
-func TestAdmiralBot_OrdersAddIsTheOnlyWrite(t *testing.T) {
+func TestOrdersAddCommand(t *testing.T) {
 	t.Parallel()
 	var hang *tplug
 	c := newBotWorld(t, botOpts{sources: func(w *world) string {
@@ -493,6 +493,132 @@ func TestAdmiralBot_OrdersAddIsTheOnlyWrite(t *testing.T) {
 	})
 }
 
+func mcpConfigPath(w *world) string { return filepath.Join(w.home, "chat", chatFleet, "mcp.json") }
+
+type mcpReply struct {
+	IsError bool `json:"isError"`
+	Content []struct {
+		Text string `json:"text"`
+	} `json:"content"`
+}
+
+func (r mcpReply) text() string {
+	var parts []string
+	for _, c := range r.Content {
+		parts = append(parts, c.Text)
+	}
+	return strings.Join(parts, "\n")
+}
+
+// mcpCall has the fake chat send one tools/call through the server its --mcp-config names, by
+// the cue `mcp <name>`: the request is the file <rec>/_chat-chat/<name>, the reply <name>.reply.
+func (c *chatWorld) mcpCall(name, tool string, args map[string]any) mcpReply {
+	c.t.Helper()
+	req, err := json.Marshal(map[string]any{"name": tool, "arguments": args})
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	atomicWrite(c.t, filepath.Join(c.recDir(), name), string(req))
+	reply := filepath.Join(c.recDir(), name+".reply")
+	for end := time.Now().Add(20 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		raw, err := os.ReadFile(reply)
+		if err == nil && len(raw) > 0 {
+			var r mcpReply
+			if err := json.Unmarshal(raw, &r); err != nil {
+				c.t.Fatalf("the fake's reply to %s %s is not a tool result: %v\n%s", name, tool, err, raw)
+			}
+			return r
+		}
+		if time.Now().After(end) {
+			c.t.Fatalf("within 20s the fake chat never answered `mcp %s` (%s): the cue is not run or the MCP server is not reached; chat session %+v", name, tool, c.session())
+		}
+	}
+}
+
+// AdmiralBot acts only through the MCP server: it launches in its own fleet, a repeat is
+// refused naming the ship, another fleet's ship is out of reach, and its own can be stopped.
+func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
+	t.Parallel()
+	c := newBotWorld(t, botOpts{})
+	w := c.world
+	w.writeCue("mcp launch", "mcp again", "mcp stop-other", "mcp stop-own")
+	w.start()
+	other := w.launch(w.order("ship", "claude", "otherrepo", noSkill, "x"))
+	c.start()
+
+	launch := map[string]any{"harness": "claude", "dir": w.checkout("repo1"), "skill": "none", "text": "Look at the harbour log", "chat_message": "m1"}
+	first := c.mcpCall("launch", "launch_ship", launch)
+	if first.IsError {
+		t.Fatalf("launch_ship was refused: %s", first.text())
+	}
+	var mine shipJSON
+	for end := time.Now().Add(10 * time.Second); mine.Session == ""; time.Sleep(50 * time.Millisecond) {
+		for _, s := range w.in.ships(t) {
+			if s.Fleet == chatFleet && s.Via == "admiralbot" {
+				mine = s
+			}
+		}
+		if time.Now().After(end) {
+			t.Fatalf("GET /api/ships never listed a ship of fleet %s stamped via admiralbot: %s", chatFleet, dump(w.in.ships(t)))
+		}
+	}
+	if !strings.HasSuffix(mine.Dir, "repo1") {
+		t.Errorf("the launched ship's dir = %q, want repo1", mine.Dir)
+	}
+	if other.Via != "" {
+		t.Errorf("the engineer's own launch is stamped via %q, want none", other.Via)
+	}
+	if log := w.waitShipLog(mine.Session, 10*time.Second, "a launched record", func(l []outRec) bool { return len(l) > 0 }); log[0]["via"] != "admiralbot" {
+		t.Errorf("the launched record = %v, want via admiralbot", log[0])
+	}
+
+	t.Run("the same chat message is refused naming its ship", func(t *testing.T) {
+		again := c.mcpCall("again", "launch_ship", launch)
+		if !again.IsError || !strings.Contains(again.text(), "already has a ship") || !strings.Contains(again.text(), mine.Name) {
+			t.Errorf("the repeat launch gave %+v, want an error saying the message already has a ship (%s)", again, mine.Name)
+		}
+		n := 0
+		for _, s := range w.in.ships(t) {
+			if s.Fleet == chatFleet {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("fleet %s has %d ships after the repeat, want 1", chatFleet, n)
+		}
+	})
+
+	t.Run("another fleet's ship is refused naming its fleet and keeps running", func(t *testing.T) {
+		r := c.mcpCall("stop-other", "stop_ship", map[string]any{"session": other.Session})
+		if !r.IsError || !strings.Contains(r.text(), "is in fleet ship") || !strings.Contains(r.text(), other.Session) {
+			t.Errorf("stop of %s gave %+v, want an error saying it is in fleet ship", other.Session, r)
+		}
+		for _, m := range w.shipLog(other.Session) {
+			if m["event"] == "stopped" {
+				t.Errorf("the other fleet's ship has a stopped record: %v", m)
+			}
+		}
+		listed := false
+		for _, s := range w.in.ships(t) {
+			listed = listed || s.Session == other.Session
+		}
+		if !listed {
+			t.Errorf("GET /api/ships no longer lists %s", other.Session)
+		}
+	})
+
+	t.Run("its own ship is stopped and the record says via admiralbot", func(t *testing.T) {
+		r := c.mcpCall("stop-own", "stop_ship", map[string]any{"session": mine.Session})
+		if r.IsError || !strings.Contains(r.text(), mine.Session) {
+			t.Fatalf("stop of %s gave %+v, want the stopped session", mine.Session, r)
+		}
+		log := w.waitShipLog(mine.Session, 15*time.Second, "a stopped record", func(l []outRec) bool { return lastOf(l, "stopped") != nil })
+		if got := lastOf(log, "stopped"); got["via"] != "admiralbot" {
+			t.Errorf("the stopped record = %v, want via admiralbot", got)
+		}
+	})
+}
+
 func (w *world) panelOrders(key string) []string {
 	w.t.Helper()
 	s, ok := find(w.sources(), key)
@@ -540,7 +666,7 @@ func TestAdmiralBot_ChatSessionIsFenced(t *testing.T) {
 		}
 		settings := idx("--settings")
 		model := idx("--model")
-		for _, pair := range [][2]string{{"--permission-mode", "dontAsk"}, {"--setting-sources", "project"}, {"--tools", "Bash,Skill,Read"}} {
+		for _, pair := range [][2]string{{"--permission-mode", "dontAsk"}, {"--setting-sources", "project"}, {"--tools", ""}} {
 			if !hasPair(r.argv, pair[0], pair[1]) {
 				t.Errorf("argv = %q, want %s %s as separate elements", r.argv, pair[0], pair[1])
 			}
@@ -556,6 +682,12 @@ func TestAdmiralBot_ChatSessionIsFenced(t *testing.T) {
 			if has(r.argv, a) {
 				t.Errorf("argv = %q holds the dock's %q: the chat takes no dock args", r.argv, a)
 			}
+		}
+		if !has(r.argv, "--strict-mcp-config") || !hasPair(r.argv, "--mcp-config", mcpConfigPath(w)) {
+			t.Errorf("argv = %q, want --strict-mcp-config and --mcp-config %s", r.argv, mcpConfigPath(w))
+		}
+		if has(r.argv, "Bash,Skill,Read") {
+			t.Errorf("argv = %q still lists built-in tools", r.argv)
 		}
 		if p := r.argv[i+1]; !strings.Contains(p, "AdmiralBot") || strings.HasPrefix(p, "--") {
 			t.Errorf("the system prompt element = %q, want one paragraph that says it is AdmiralBot", p)
@@ -575,20 +707,67 @@ func TestAdmiralBot_ChatSessionIsFenced(t *testing.T) {
 	})
 
 	t.Run("the skill is written fresh, never through a link", func(t *testing.T) {
-		fi, err := os.Lstat(skillPath)
-		if err != nil {
-			t.Fatalf("the skill file: %v", err)
-		}
-		if !fi.Mode().IsRegular() {
-			t.Fatalf("%s is %v, want a regular file that replaced the planted link", skillPath, fi.Mode())
-		}
 		if got, _ := os.ReadFile(outside); string(got) != "OUTSIDE" {
 			t.Errorf("the file the planted link pointed to now holds %q: the link was followed", got)
 		}
+		// A skill the chat can't load is optional; one that is written replaced the link and teaches no CLI.
+		fi, err := os.Lstat(skillPath)
+		if err != nil {
+			return
+		}
+		if !fi.Mode().IsRegular() {
+			t.Fatalf("%s is %v, want a regular file that replaced the planted link, or nothing", skillPath, fi.Mode())
+		}
 		b, _ := os.ReadFile(skillPath)
-		for _, want := range []string{"admiral orders add", "admiral chat ask", "--wait", "EOF"} {
-			if !strings.Contains(string(b), want) {
-				t.Errorf("SKILL.md does not mention %q", want)
+		for _, banned := range []string{"admiral orders add", "admiral chat ask", "admiral ships"} {
+			if strings.Contains(string(b), banned) {
+				t.Errorf("SKILL.md still teaches %q: the chat has no shell", banned)
+			}
+		}
+	})
+
+	t.Run("the MCP config names only admiral and holds the token", func(t *testing.T) {
+		path := mcpConfigPath(w)
+		fi, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("the MCP config: %v", err)
+		}
+		if fi.Mode().Perm() != 0o600 {
+			t.Errorf("%s mode = %v, want 0600", path, fi.Mode().Perm())
+		}
+		raw, _ := os.ReadFile(path)
+		var cfg struct {
+			Servers map[string]struct {
+				Command string            `json:"command"`
+				Args    []string          `json:"args"`
+				Env     map[string]string `json:"env"`
+			} `json:"mcpServers"`
+		}
+		if err := json.Unmarshal(raw, &cfg); err != nil || len(cfg.Servers) != 1 {
+			t.Fatalf("mcp.json = %s (%v), want one server", raw, err)
+		}
+		srv, ok := cfg.Servers["admiral"]
+		if !ok {
+			t.Fatalf("mcp.json = %s, want the one server named admiral", raw)
+		}
+		if want, _ := filepath.EvalSymlinks(binaryPath(t)); srv.Command != want && srv.Command != binaryPath(t) {
+			t.Errorf("command = %q, want the running Admiral %q", srv.Command, binaryPath(t))
+		}
+		if len(srv.Args) != 1 || srv.Args[0] != "mcp" {
+			t.Errorf("args = %q, want [mcp]", srv.Args)
+		}
+		token := srv.Env["ADMIRAL_ACTOR_TOKEN"]
+		if token == "" || srv.Env["ADMIRAL_PORT"] != w.in.Port || srv.Env["ADMIRAL_HOME"] != w.home || srv.Env["ADMIRAL_CHAT_FLEET"] != chatFleet || len(srv.Env) != 4 {
+			t.Errorf("env = %v, want the token, ADMIRAL_PORT %s, ADMIRAL_HOME %s and ADMIRAL_CHAT_FLEET %s only", srv.Env, w.in.Port, w.home, chatFleet)
+		}
+		if token != "" {
+			if strings.Contains(strings.Join(r.argv, "\x00"), token) {
+				t.Error("the actor token is in the chat's argv")
+			}
+			for k, v := range r.env {
+				if strings.Contains(v, token) {
+					t.Errorf("the actor token is in the chat's env %s", k)
+				}
 			}
 		}
 	})
@@ -628,7 +807,7 @@ func TestAdmiralBot_ChatSessionIsFenced(t *testing.T) {
 			}
 			return true
 		}
-		allow := []string{"Bash(admiral ships *)", "Bash(admiral outcomes *)", "Bash(admiral inbox *)", "Bash(admiral orders *)", "Bash(admiral chat ask *)", "Skill(admiralbot)"}
+		allow := []string{"mcp__admiral__*"}
 		if !sameSet(b.Permissions.Allow, allow) {
 			t.Errorf("permissions.allow = %q, want exactly %q", b.Permissions.Allow, allow)
 		}
@@ -644,7 +823,7 @@ func TestAdmiralBot_ChatSessionIsFenced(t *testing.T) {
 		w := w.at(t)
 		ship := w.launch(w.order("ship", "claude", "shiprepo", noSkill, "x"))
 		sr := w.record(ship.Session)
-		for _, a := range []string{"--permission-mode", "--setting-sources", "--tools", "--append-system-prompt"} {
+		for _, a := range []string{"--permission-mode", "--setting-sources", "--tools", "--append-system-prompt", "--mcp-config", "--strict-mcp-config"} {
 			if has(sr.argv, a) {
 				t.Errorf("the ship's argv = %q holds %s", sr.argv, a)
 			}
