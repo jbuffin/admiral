@@ -85,7 +85,7 @@ export interface Question {
   pending: boolean;
   multiSelect?: boolean;
 }
-export type ItemKind = 'user' | 'assistant' | 'tool_call' | 'question' | 'turn_end' | 'compaction' | 'notice';
+export type ItemKind = 'user' | 'assistant' | 'tool_call' | 'question' | 'turn_end' | 'compaction' | 'notice' | 'round';
 export interface Item {
   id: string;
   kind: ItemKind;
@@ -95,6 +95,8 @@ export interface Item {
   tool?: ToolCall;
   question?: Question;
   durationMs?: number;
+  round?: number;
+  state?: 'none' | 'gone' | 'unreadable';
 }
 export type ConversationState = 'ok' | 'none' | 'unreadable' | 'gone';
 export interface ConversationPage {

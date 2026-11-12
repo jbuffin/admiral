@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Item } from './api';
-import { blocksOf, capOutput, toolRowLabel, workingLabel } from './turns';
+import { blocksOf, capOutput, roundLabel, roundNote, toolRowLabel, workingLabel } from './turns';
 
 const times = (name: string, n: number) => Array<string>(n).fill(name);
 
@@ -62,6 +62,10 @@ describe('blocksOf', () => {
   it('starts a new group after a compaction', () => {
     expect(shape([call('t1'), mk('c', 'compaction'), call('t2'), mk('e', 'turn_end', { durationMs: 1 })])).toEqual(['t1', 'c', 't2@1']);
   });
+
+  it('starts a new group after a round divider, so its calls never fold into the round before', () => {
+    expect(shape([call('t1'), mk('r1', 'round', { round: 1 }), call('r1:t2'), mk('r1:e', 'turn_end', { durationMs: 2 })])).toEqual(['t1', 'r1', 'r1:t2@2']);
+  });
 });
 
 describe('capOutput', () => {
@@ -79,5 +83,24 @@ describe('capOutput', () => {
 
   it('shows everything once asked', () => {
     expect(capOutput(lines(500), true)).toEqual({ text: lines(500) });
+  });
+});
+
+describe('roundLabel', () => {
+  it('names the round, and adds its time when the server recorded one', () => {
+    expect(roundLabel({ id: 'r2', kind: 'round', round: 2 })).toBe('Feedback round 2');
+    const at = new Date(2026, 10, 11, 9, 30).toISOString();
+    expect(roundLabel({ id: 'r1', kind: 'round', round: 1, at })).toMatch(/^Feedback round 1 · .*Nov.*11.*09:30/);
+  });
+});
+
+describe('roundNote', () => {
+  it('says why a round shows no messages, and nothing for a round that does', () => {
+    expect([roundNote('none'), roundNote('gone'), roundNote('unreadable'), roundNote(undefined)]).toEqual([
+      'No conversation for this round',
+      'Conversation no longer available',
+      "Admiral can't read this conversation",
+      undefined,
+    ]);
   });
 });

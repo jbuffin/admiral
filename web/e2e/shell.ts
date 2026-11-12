@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -223,17 +224,36 @@ export const mooringEnv = (a: Admiral) => ({ ...withFakeGh(a), ADMIRAL_SAIL_OFF_
 /** The resume text a moored ship's report carries unless a test says otherwise: a skill's own resume invocation. */
 export const RESUME = '/commodore resume run-7';
 
-/** Launches a ship whose harness waits, then exits 0 with a report naming the PR: Admiral moors it. `resume` is the report's resume text. */
-export async function launchMooredShip(a: Admiral, prNumber: number, opts: { resume?: string } = {}): Promise<LaunchedShip> {
+/** Launches a ship whose harness waits, then exits 0 with a report naming the PR: Admiral moors it. `resume` is the report's resume text; `lines` are transcript lines round 0 holds when it moors. */
+export async function launchMooredShip(a: Admiral, prNumber: number, opts: { resume?: string; lines?: TranscriptLine[] } = {}): Promise<LaunchedShip> {
   const ship = await launchShip(a, { fleet: 'zulu', harness: 'claude', cue: 'wait go\nexit 0\n' });
   const rec = join(a.home, 'rec', ship.session);
   await expect.poll(() => existsSync(join(rec, 'env'))).toBe(true);
+  if (opts.lines) await appendLines(a, ship, opts.lines);
   const report = /^ADMIRAL_REPORT=(.*)$/m.exec(readFileSync(join(rec, 'env'), 'utf8'))?.[1];
   expect(report, 'the harness env names a report path').toBeTruthy();
   writeFileSync(report!, JSON.stringify({ version: 2, result: 'done', why: 'PR opened', prs: [{ url: `${PR_BASE}/${prNumber}`, closes: [] }], resume: opts.resume ?? RESUME }));
   writeFileSync(join(rec, 'go'), '');
   await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status, { timeout: 30_000 }).toBe('moored');
   return ship;
+}
+
+/**
+ * Records a later round in a moored ship's history, the file `$ADMIRAL_HOME/moored/rounds/<name>.json` the server reads on every request,
+ * with a transcript holding `lines`. The mooring itself recorded round 0.
+ */
+export function recordRound(a: Admiral, ship: LaunchedShip, round: number, lines: TranscriptLine[]) {
+  const id = randomUUID();
+  // The server refuses a transcript with a symlink on its path, and the temp dir on a Mac is one.
+  const dir = join(realpathSync(a.home), 'identity', 'zulu-claude', 'projects', 'zz');
+  mkdirSync(dir, { recursive: true });
+  const transcript = join(dir, `${id}.jsonl`);
+  writeFileSync(transcript, lines.map((l) => JSON.stringify(l) + '\n').join(''));
+  const file = join(a.home, 'moored', 'rounds', `${ship.name}.json`);
+  const rounds = existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as unknown[]) : [];
+  const now = new Date();
+  rounds.push({ round, session_id: id, fleet: 'zulu', transcript, started: new Date(now.getTime() - 60_000).toISOString(), ended: now.toISOString() });
+  writeFileSync(file, JSON.stringify(rounds, null, 2) + '\n');
 }
 
 /** Readies a moored ship's harness for its wake: the cue that made it exit is gone, and so are the old recordings the fake harness would reuse. */
@@ -286,7 +306,8 @@ export async function wakeFromTheShell(page: Page, a: Admiral, press: (l: Locato
  */
 export async function wakeFromTheShipView(page: Page, a: Admiral, press: (l: Locator) => Promise<void>) {
   prAnswer(a, 7, { state: 'OPEN' });
-  const ship = await launchMooredShip(a, 7);
+  const ship = await launchMooredShip(a, 7, { lines: [line.user('Fix the parser'), line.assistant('Round zero reply')] });
+  recordRound(a, ship, 1, [line.user('Also handle tabs'), line.assistant('Round one reply')]);
   await page.goto(a.url + 'app/ships?fleet=zulu');
   await press(rowLink(page, ship));
   await expect(page).toHaveURL(shipViewUrl(a, ship));
@@ -307,6 +328,14 @@ export async function wakeFromTheShipView(page: Page, a: Admiral, press: (l: Loc
   await expect(viewPanel(page)).toContainText('api#7');
   await viewTab(page, 'Conversation').click();
 
+  // Both rounds, in order, split by a divider with its time, and the moored card last.
+  const rounds = viewPanel(page).getByRole('separator');
+  await expect(rounds).toHaveCount(1);
+  await expect(rounds).toContainText(/^Feedback round 1 · /);
+  await expect(viewPanel(page)).not.toContainText('No conversation for this round');
+  await expect.poll(async () => viewPanel(page).innerText()).toMatch(/Round zero reply[\s\S]*Feedback round 1[\s\S]*Round one reply[\s\S]*Moored, waiting on review/);
+  await expect(viewPanel(page).getByText('Moored, waiting on review')).toBeInViewport();
+
   await expect(messageBox(page)).toBeEnabled();
   await expect(messageBox(page)).toHaveAttribute('placeholder', WAKE_PLACEHOLDER);
   await messageBox(page).fill('   ');
@@ -324,6 +353,11 @@ export async function wakeFromTheShipView(page: Page, a: Admiral, press: (l: Loc
   await expect(sentBubble(page, 'Also check the docs')).toHaveCount(0);
   await expect(page).toHaveURL(shipViewUrl(a, ship));
   expect(await wokenPrompt(a, ship)).toBe(`${RESUME} Also check the docs`);
+
+  // The woken round reuses the seeded round's number, so the live round replaces it; the view keeps round 0 and the divider shows no state line.
+  await expect(viewPanel(page)).toContainText('Round zero reply');
+  await expect(viewPanel(page).getByRole('separator').filter({ hasText: 'Feedback round 1' })).toHaveCount(1);
+  await expect.poll(async () => viewPanel(page).innerText()).not.toMatch(/Feedback round 1[^\n]*\s*No conversation for this round/);
 }
 
 /** A moored ship whose report has no valid resume text cannot be woken: Wake and the box are off, with the reason, on the row and in the view. */

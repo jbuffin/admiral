@@ -33,11 +33,7 @@ import { LaunchForm } from './LaunchDialog';
 import { campaignPath, go } from './router';
 import { Sheet } from './Sheet';
 import { ships } from './shipsLink';
-
-const when = (iso: string | undefined) => {
-  const t = iso ? Date.parse(iso) : NaN;
-  return Number.isNaN(t) ? '' : new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-};
+import { when } from './when';
 
 function Ring({ done, total }: { done: number; total: number }) {
   const r = 5.5;

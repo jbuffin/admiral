@@ -12,7 +12,8 @@ const ACK_WAIT_MS = 1500;
 // A ship whose transcript has not appeared is asked about again until it does; a harness with no adapter is not.
 const RETRY_MS = 3000;
 
-function merge(have: Item[], incoming: Item[]): Item[] {
+// With `keepRounds`, a divider already in `have` is kept: a held one can carry a state the page has since cleared.
+function merge(have: Item[], incoming: Item[], keepRounds = false): Item[] {
   const at = new Map(have.map((it, i) => [it.id, i]));
   const next = [...have];
   for (const it of incoming) {
@@ -20,7 +21,7 @@ function merge(have: Item[], incoming: Item[]): Item[] {
     if (i === undefined) {
       at.set(it.id, next.length);
       next.push(it);
-    } else next[i] = it;
+    } else if (!(keepRounds && it.kind === 'round')) next[i] = it;
   }
   return next;
 }
@@ -60,7 +61,7 @@ export function followConversation(
     const items = page.items ?? [];
     if (page.state !== 'ok') set({ state: page.state, items: [], more: false });
     // The page is the base; what a push already delivered replaces it by id, and the rest follows in order.
-    else set({ state: 'ok', items: olderLoaded ? merge(c.items, items) : merge(items, c.items), more: olderLoaded ? c.more : page.more });
+    else set({ state: 'ok', items: olderLoaded ? merge(c.items, items) : merge(items, c.items, true), more: olderLoaded ? c.more : page.more });
     if ((page.state === 'none' && wantsNone()) || (page.state === 'ok' && !acked)) retry();
   };
 

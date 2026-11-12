@@ -4,7 +4,7 @@ import type { AnswerCard } from './answerCard';
 import { Icon } from './Icon';
 import type { Conversation } from './conversation';
 import { renderMarkdown } from './markdown';
-import { blocksOf, capOutput, toolRowLabel, workingLabel } from './turns';
+import { blocksOf, capOutput, roundLabel, roundNote, toolRowLabel, workingLabel } from './turns';
 
 function Output({ text, error }: { text: string; error?: boolean }) {
   const [all, setAll] = useState(false);
@@ -61,6 +61,17 @@ function Message({ item }: { item: Item }) {
         <span>Conversation compacted</span>
       </div>
     );
+  if (item.kind === 'round') {
+    const note = roundNote(item.state);
+    return (
+      <>
+        <div class="compaction" role="separator">
+          <span>{roundLabel(item)}</span>
+        </div>
+        {note ? <p class="muted round-note">{note}</p> : null}
+      </>
+    );
+  }
   if (item.kind === 'question') return <div class="msg note">{item.question?.text ?? item.text}</div>;
   if (item.kind === 'notice') return item.meta ? null : <div class="msg note">{item.text}</div>;
   return null;
@@ -146,7 +157,7 @@ function AnswerCardView({ card, session, crew, openTerminal }: { card: AnswerCar
   );
 }
 
-function ConversationBody({ conv, harness, anchored = false, working, noneTitle, openTerminal, loadOlder }: { conv: Conversation; harness: string; anchored?: boolean; working: boolean; noneTitle?: string; openTerminal: () => void; loadOlder: () => void }) {
+function ConversationBody({ conv, harness, anchored = false, working, noneTitle, footer, openTerminal, loadOlder }: { conv: Conversation; harness: string; anchored?: boolean; working: boolean; noneTitle?: string; footer?: preact.ComponentChildren; openTerminal: () => void; loadOlder: () => void }) {
   const now = useTick(15_000);
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -206,18 +217,19 @@ function ConversationBody({ conv, harness, anchored = false, working, noneTitle,
         ),
       )}
       {working ? <p class="working">{workingLabel(conv.items, now)}</p> : null}
+      {footer}
     </div>
   );
 }
 
 /** The conversation with the card that answers its prompt in place, always in the same position below it. */
-export function ConversationView(props: { conv: Conversation; harness: string; anchored?: boolean; working: boolean; noneTitle?: string; card: AnswerCard; session: string; crew?: string; openTerminal: () => void; loadOlder: () => void }) {
+export function ConversationView(props: { conv: Conversation; harness: string; anchored?: boolean; working: boolean; noneTitle?: string; footer?: preact.ComponentChildren; card: AnswerCard; session: string; crew?: string; openTerminal: () => void; loadOlder: () => void }) {
   const { card, session, crew, openTerminal } = props;
   // A state that has its own Open terminal card needs no second one; a permission card needs no transcript.
   const shown: AnswerCard = card.kind === 'terminal' && props.conv.state !== 'ok' ? { kind: 'none' } : card;
   return (
     <>
-      <ConversationBody conv={props.conv} harness={props.harness} anchored={props.anchored} working={props.working} noneTitle={props.noneTitle} openTerminal={openTerminal} loadOlder={props.loadOlder} />
+      <ConversationBody conv={props.conv} harness={props.harness} anchored={props.anchored} working={props.working} noneTitle={props.noneTitle} footer={props.footer} openTerminal={openTerminal} loadOlder={props.loadOlder} />
       <AnswerCardView card={shown} session={session} crew={crew} openTerminal={openTerminal} />
     </>
   );
