@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -35,11 +36,26 @@ func classify(r *http.Request) route {
 	case loopback && !proxied && hostAllowed(r.Host):
 		return route{kind: pathLocal}
 	case loopback:
-		if login := r.Header.Get("Tailscale-User-Login"); login != "" {
+		// Trimmed here only, so the allowlist, the recorded login and the device binding agree.
+		if login := strings.TrimSpace(r.Header.Get("Tailscale-User-Login")); login != "" {
 			return route{kind: pathTailnet, login: login}
 		}
 	case !proxied:
 		return route{kind: pathLAN}
+	}
+	return route{kind: pathNone}
+}
+
+// route is classify plus the remote settings, read on every request so an edit applies at once:
+// a tailnet request needs the mode on and its login on the allowlist.
+func (a *Auth) route(r *http.Request) route {
+	rt := classify(r)
+	if rt.kind != pathTailnet {
+		return rt
+	}
+	on, logins := a.remote()
+	if on && slices.Contains(logins, rt.login) {
+		return rt
 	}
 	return route{kind: pathNone}
 }
@@ -69,7 +85,7 @@ func peerIsLoopback(r *http.Request) bool {
 func (a *Auth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		isWS := strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
-		rt := classify(r)
+		rt := a.route(r)
 		// https too: behind a TLS proxy the page's origin is https.
 		badOrigin := func() bool {
 			origin := r.Header.Get("Origin")

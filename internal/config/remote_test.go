@@ -60,8 +60,10 @@ func TestSetRemoteWritesTheSectionAndLeavesTheRest(t *testing.T) {
 	if err := json.Unmarshal(b, &onDisk); err != nil {
 		t.Fatal(err)
 	}
-	if string(onDisk.Remote["tailscale"]) != "true" || string(onDisk.Remote["allowedLogins"]) != `["alice@example.com"]` {
-		t.Errorf("remote in config.json = %v, want tailscale and camelCase allowedLogins", onDisk.Remote)
+	var logins []string
+	_ = json.Unmarshal(onDisk.Remote["allowedLogins"], &logins)
+	if string(onDisk.Remote["tailscale"]) != "true" || !slices.Equal(logins, []string{"alice@example.com"}) {
+		t.Errorf("remote in config.json = %s, want tailscale and camelCase allowedLogins", b)
 	}
 }
 

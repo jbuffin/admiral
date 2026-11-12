@@ -82,6 +82,15 @@ func (m *Manager) SetChat(c Chat) error {
 	return nil
 }
 
+// SetRemote reloads before it returns.
+func (m *Manager) SetRemote(r Remote) error {
+	if err := SetRemote(filepath.Dir(m.path), r); err != nil {
+		return err
+	}
+	m.reload()
+	return nil
+}
+
 // SetSources reloads before it returns, and refuses a value the parser would
 // refuse, so a bad write never leaves the file invalid.
 func (m *Manager) SetSources(sources json.RawMessage) error {

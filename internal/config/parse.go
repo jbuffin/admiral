@@ -28,7 +28,14 @@ type Config struct {
 	MaxShips  int
 	Resources map[string]Resource
 	// Chat is resolved: Fleet is never a missing fleet, and Model is never empty.
-	Chat Chat
+	Chat   Chat
+	Remote Remote
+}
+
+// Remote is Admiral-wide: the Tailscale mode and who may use it.
+type Remote struct {
+	Tailscale     bool
+	AllowedLogins []string
 }
 
 // Chat's Effort is empty for the harness default, which config.json leaves out.
@@ -65,6 +72,7 @@ func (c *Config) clone() *Config {
 	out.FavoriteSkills = slices.Clone(c.FavoriteSkills)
 	out.Sources = slices.Clone(c.Sources)
 	out.Resources = c.cloneResources()
+	out.Remote.AllowedLogins = slices.Clone(c.Remote.AllowedLogins)
 	out.SourceList = make([]Source, len(c.SourceList))
 	for i, s := range c.SourceList {
 		out.SourceList[i] = s.clone()
@@ -168,6 +176,10 @@ func Parse(data []byte) (*Config, error) {
 			if chat, err = parseChat(m.raw); err != nil {
 				return nil, err
 			}
+		case "remote":
+			if cfg.Remote, err = parseRemote(m.raw); err != nil {
+				return nil, err
+			}
 		case "resources":
 			if cfg.Resources, err = parseResources(m.raw); err != nil {
 				return nil, err
@@ -195,6 +207,30 @@ func Parse(data []byte) (*Config, error) {
 	assignColors(cfg.Fleets)
 	markSharedIdentities(cfg.Fleets)
 	return cfg, nil
+}
+
+func parseRemote(raw json.RawMessage) (Remote, error) {
+	ms, err := members("remote", raw)
+	if err != nil {
+		return Remote{}, err
+	}
+	var r Remote
+	for _, m := range ms {
+		p := "remote." + m.key
+		switch m.key {
+		case "tailscale":
+			if err = json.Unmarshal(m.raw, &r.Tailscale); err != nil {
+				return Remote{}, fmt.Errorf("%s: must be true or false", p)
+			}
+		case "allowedLogins":
+			if r.AllowedLogins, err = stringList(p, m.raw); err != nil {
+				return Remote{}, err
+			}
+		default:
+			return Remote{}, fmt.Errorf("%s: unknown key", p)
+		}
+	}
+	return r, nil
 }
 
 func parseChat(raw json.RawMessage) (Chat, error) {

@@ -150,9 +150,20 @@ func pairingBase(port string) string {
 	return "http://127.0.0.1:" + port
 }
 
+// listenAddr: an explicit --listen always wins; otherwise Tailscale mode keeps Admiral off the LAN.
+func listenAddr(explicit string, cfg *config.Config) string {
+	switch {
+	case explicit != "":
+		return explicit
+	case cfg.Remote.Tailscale:
+		return "127.0.0.1:7420"
+	}
+	return "0.0.0.0:7420"
+}
+
 func serve(args []string) error {
 	fs := flag.NewFlagSet("admiral", flag.ContinueOnError)
-	listen := fs.String("listen", "0.0.0.0:7420", "address to listen on, host:port")
+	listen := fs.String("listen", "", "address to listen on, host:port (default 0.0.0.0:7420, or 127.0.0.1:7420 with Tailscale mode on)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -185,7 +196,8 @@ func serve(args []string) error {
 			return err
 		}
 	}
-	ln, err := net.Listen("tcp", *listen)
+	listenOn := listenAddr(*listen, cfg.Current())
+	ln, err := net.Listen("tcp", listenOn)
 	if err != nil {
 		return err
 	}
@@ -331,7 +343,11 @@ func serve(args []string) error {
 	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
 	convService := &shipconv.Service{Ships: shipService, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Asking: shipService.Asking}
 	probeRunner := probes.NewDefault(dir)
-	guard, err := auth.New(dir, port, auth.WithBaseURL(func() string { return pairingBase(port) }))
+	guard, err := auth.New(dir, port, auth.WithBaseURL(func() string { return pairingBase(port) }),
+		auth.WithRemote(func() (bool, []string) {
+			r := cfg.Current().Remote
+			return r.Tailscale, r.AllowedLogins
+		}))
 	if err != nil {
 		return fmt.Errorf("devices: %w", err)
 	}
@@ -401,7 +417,7 @@ func serve(args []string) error {
 	srv.RegisterOnShutdown(func() { close(stopping) }) // a held lock would hold up the shutdown
 
 	fmt.Printf("Admiral is running at http://127.0.0.1:%s/\n", port)
-	bindHost, _, _ := net.SplitHostPort(*listen)
+	bindHost, _, _ := net.SplitHostPort(listenOn)
 	ip, hasIP := server.LANIPv4()
 	switch {
 	case bindHost != "" && bindHost != "0.0.0.0" && bindHost != "::":
