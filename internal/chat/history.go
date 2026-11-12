@@ -34,9 +34,9 @@ func (s *fleetChat) record(snap Snapshot) {
 }
 
 // markReset appends a reset marker. Everything the chat said before it is logged first,
-// since New chat reads the chat before it acts.
+// since a reset reads the chat before it acts.
 func (s *fleetChat) markReset(text string) {
-	_, err := s.history().Append(s.key, chatlog.Entry{ID: fmt.Sprintf("reset-%d", time.Now().UnixNano()), Kind: chatlog.KindReset, Text: "New chat"})
+	_, err := s.history().Append(s.key, chatlog.Entry{ID: fmt.Sprintf("reset-%d", time.Now().UnixNano()), Kind: chatlog.KindReset, Text: text})
 	s.noteLogErr(err)
 }
 

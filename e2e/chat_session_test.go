@@ -719,7 +719,7 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 	tpA := filepath.Join(c.cfgDir, "projects", "p", "a.jsonl")
 	tpB := filepath.Join(c.cfgDir, "projects", "p", "b.jsonl")
 	tpC := filepath.Join(c.cfgDir, "projects", "p", "c.jsonl")
-	w.writeCue("record", sessionStartCue(tpA, "startup"), "wait go-clear", sessionStartCue(tpA, "clear"),
+	w.writeCue("record", "bracketedpaste", sessionStartCue(tpA, "startup"), "wait go-clear", sessionStartCue(tpA, "clear"),
 		"wait go-late", sessionStartCue(tpC, "startup"), "wait go-late-clear", sessionStartCue(tpC, "clear"),
 		"wait go-fprompt", `event UserPromptSubmit {"prompt":"flush"}`, "wait go-fstop", `event Stop {"background_tasks":[]}`)
 	appendLines(t, tpA,
@@ -1016,7 +1016,8 @@ func TestChatSession_AdmiralRefreshesAnIdleChatOverItsThreshold(t *testing.T) {
 	})
 
 	t.Run("the SessionStart after the clear prints the brief", func(t *testing.T) {
-		c.waitBriefs(2)
+		// The startup one found no history yet, so it printed nothing.
+		c.waitBriefs(1)
 	})
 
 	t.Run("the status line from before the reset does not trigger a second one", func(t *testing.T) {

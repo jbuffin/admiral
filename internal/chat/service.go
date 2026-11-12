@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/actor"
@@ -125,7 +126,9 @@ type fleetChat struct {
 	qAnswers map[string]cachedAnswer
 	qSig     string // the waiting set the Inbox was last told of
 
-	resets resetUsage
+	resets    resetUsage
+	rst       resetState
+	resetting atomic.Bool // a flush and clear are running: a send is refused
 
 	tmu sync.Mutex // the brief and digest state below
 	tk  tickState
@@ -398,7 +401,7 @@ func (s *fleetChat) read(force, fresh bool) (Snapshot, error) {
 	}
 	s.followLocked()
 
-	snap := Snapshot{Running: true, State: mapState(sess.State, sess.Reason), Messages: st.served(), Questions: qs}
+	snap := Snapshot{Running: true, State: mapState(sess.State, sess.Reason), Messages: hideFlush(st.served()), Questions: qs}
 	if unanswered(qs) {
 		snap.State = "waiting"
 	}
@@ -693,6 +696,9 @@ func (s *fleetChat) send(raw string) *launcher.Error {
 	case len(text) > sessionhost.MaxPaste:
 		return &launcher.Error{Status: http.StatusBadRequest, Msg: fmt.Sprintf("the message is %d bytes; at most %d", len(text), sessionhost.MaxPaste)}
 	}
+	if s.resetting.Load() {
+		return &launcher.Error{Status: http.StatusConflict, Msg: Refreshing}
+	}
 	s.op.Lock()
 	defer s.op.Unlock()
 	pane, status, msg := s.ready()
@@ -802,10 +808,26 @@ func resetCommand(harness string) string {
 	return "/clear"
 }
 
+// flushIfIdle gives an idle chat its flush turn before New chat acts, and refuses sends until serveNew returns.
+// A turn that runs or a question that waits is cleared without one, since the engineer asked for the reset.
+func (s *fleetChat) flushIfIdle(snap Snapshot) {
+	if snap.State != "idle" {
+		return
+	}
+	s.mu.Lock()
+	pane := s.st.pane
+	s.mu.Unlock()
+	s.resetting.Store(true)
+	if !s.flush(pane) {
+		log.Printf("admiral: chat %s: New chat cleared without a finished flush", s.key)
+	}
+}
+
 // serveNew sends the reset command when the running session matches the config, else starts a new session.
 func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 	s.op.Lock()
 	defer s.op.Unlock()
+	defer s.resetting.Store(false)
 	snap, err := s.refresh(true)
 	if !snap.Running {
 		writeError(w, http.StatusConflict, "the chat is not running")
@@ -832,30 +854,18 @@ func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, NotStarted)
 			return
 		}
-		s.withdrawAndRender()
-		s.mu.Lock()
-		s.clearLocked()
-		s.mu.Unlock()
-		s.broadcast()
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		// Typed, then Enter: the way an engineer runs a command.
-		if err := s.server().SendLiteral(ctx, pane, resetCommand(s.harness())); err != nil {
+		s.flushIfIdle(snap)
+		if err := s.clearChat(pane, path, dir, raw, MarkerNewChat); err != nil {
 			writeError(w, http.StatusBadGateway, "could not clear the chat: "+err.Error())
 			return
 		}
-		if err := s.server().SendEnter(ctx, pane); err != nil {
-			writeError(w, http.StatusBadGateway, "could not clear the chat: "+err.Error())
-			return
-		}
-		s.recordReset(harness, path, dir, s.key, raw)
-		// A reset that failed leaves no marker.
-		s.markReset(MarkerNewChat)
-		s.broadcast()
 		writeJSON(w, http.StatusOK, map[string]bool{"running": true})
 		return
 	}
 	// The settings changed since this session started: a new one takes them.
+	if !noPath {
+		s.flushIfIdle(snap)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.server().KillSession(ctx, s.name()); err != nil {

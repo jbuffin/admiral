@@ -40,7 +40,7 @@ export function threadOf(s: ChatSnapshot): ThreadItem[] {
   const answers = new Map(s.questions.map((q) => [q.id, q.answer]));
   const rows = s.messages.flatMap((m, i): { t: number; i: number; item: ThreadItem }[] => {
     const t = Date.parse(m.at);
-    if (m.kind === 'reset') return [{ t, i, item: { kind: 'reset', id: m.id, text: '', at: m.at } }];
+    if (m.kind === 'reset') return [{ t, i, item: { kind: 'reset', id: m.id, text: m.text, at: m.at } }];
     if (m.kind === 'question' && m.card) {
       const answer = answers.get(m.card.id);
       const state = answer === undefined ? 'withdrawn' : answer === null ? 'open' : 'answered';
@@ -67,5 +67,5 @@ export function clockTime(at: string | undefined): string {
 /** A reset marker's line: its text, then the time. */
 export function resetLabel(text: string, at: string | undefined): string {
   const time = clockTime(at);
-  return time ? `New chat · ${time}` : 'New chat';
+  return time ? `${text} · ${time}` : text;
 }

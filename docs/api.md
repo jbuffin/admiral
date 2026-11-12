@@ -225,7 +225,7 @@ In `GET /api/config`, each fleet's `chat` object carries the AdmiralBot settings
 ```
 
 - `state` is `idle`, `working` or `waiting`, and `""` while the chat isn't running. `error` is present when something needs saying: why the last start was refused, or that the transcript can't be read.
-- `messages` is the newest 200 entries of the fleet's history (`HistoryWindow` in `internal/chat`), oldest first, served from Admiral's log whether or not the chat is running. `kind` is always set: `message` (with `role` `user` or `assistant`), `question` (a chat question as a card: `text` is its title and `card` is the question item as asked, without its answer) or `reset` (the "New chat" marker). Each `id` appears once.
+- `messages` is the newest 200 entries of the fleet's history (`HistoryWindow` in `internal/chat`), oldest first, served from Admiral's log whether or not the chat is running. `kind` is always set: `message` (with `role` `user` or `assistant`), `question` (a chat question as a card: `text` is its title and `card` is the question item as asked, without its answer) or `reset` (a marker: `text` is `New chat` or `Context refreshed`). Each `id` appears once.
 - `questions` are the fleet's chat questions, each the inbox's question item with `session` `_chat-<fleet>` and `answer`: the engineer's answer or `null`. While one waits it is also an Inbox item (see Inbox below).
 
 ### The log
@@ -238,11 +238,11 @@ Starts the fleet's chat session or leaves a running one alone, and answers `{"ru
 
 ### `POST /api/chat/<fleet>/messages`
 
-`{"text"}` pastes the text into the chat and presses Enter. 400 for empty text or over 16 KiB. 409 when the chat isn't running or no transcript has been recorded yet.
+`{"text"}` pastes the text into the chat and presses Enter. 400 for empty text or over 16 KiB. 409 when the chat isn't running, no transcript has been recorded yet, or Admiral is refreshing the context (`Refreshing`).
 
 ### `POST /api/chat/<fleet>/new`
 
-Clears the model's context and appends a `reset` entry to the log; the earlier history is still served. It sends `/clear` when the running session's model, effort and fleet match the fleet's chat settings, else it ends the session and starts a new one. It withdraws the fleet's chat questions. 409 when the chat isn't running.
+Clears the model's context and appends a `reset` entry to the log; the earlier history is still served. An idle chat first gets the hidden flush turn (the held answer takes up to `ADMIRAL_CHAT_FLUSH_WAIT`, 3 minutes); the flush and its reply are not served or logged. It sends `/clear` when the running session's model, effort and fleet match the fleet's chat settings, else it ends the session and starts a new one. It withdraws the fleet's chat questions. 409 when the chat isn't running.
 
 ### `POST /api/chat/<fleet>/questions/<id>/answer`
 
