@@ -4,6 +4,7 @@
 package crewapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/crew"
+	"github.com/jbuffin/admiral/internal/judge"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/skillindex"
 )
@@ -22,6 +24,8 @@ import (
 type Service struct {
 	Home   string // $ADMIRAL_HOME, where the fleets' crew directories live
 	Config *config.Manager
+	// Judge makes the draft call; nil means judge.Run.
+	Judge func(context.Context, judge.Choice, judge.Call) (judge.Reply, error)
 }
 
 func (s *Service) Routes(mux *http.ServeMux) {
