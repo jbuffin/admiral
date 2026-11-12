@@ -11,6 +11,9 @@ const (
 	ChatModelOpt  = "chat-model"
 	ChatEffortOpt = "chat-effort"
 	ChatFleetOpt  = "chat-fleet"
+	// ChatNonceOpt is minted when a chat session starts and ends with it; it is not a secret, it only
+	// makes the session's actor token differ from every earlier session's.
+	ChatNonceOpt = "chat-nonce"
 )
 
 // The host's shared format doesn't carry these: the chat service reads them from tmux itself.

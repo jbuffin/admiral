@@ -41,7 +41,7 @@ func newRig(t *testing.T) *rig {
 			return "", false
 		},
 		ShipFleet:     of,
-		ItemFleet:     func(_, id string) (string, bool) { return of(id) },
+		ItemFleet:     func(session, _ string) (string, bool) { return of(session) },
 		SourceFleet:   of,
 		CampaignFleet: of,
 	}

@@ -7,6 +7,7 @@ import (
 	"io"
 	"maps"
 	"math"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/crewapi"
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
@@ -432,4 +434,24 @@ func (s *Service) writeCrewItems(sess sessionhost.Session, report []byte) {
 	if err := inbox.WriteCrewItems(run, report); err != nil {
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: crew items were not written: %v\n", sess.Name, err)
 	}
+}
+
+// viaOf is the stamp for what a request writes: "admiralbot" when AdmiralBot made it, else none.
+func viaOf(r *http.Request) string {
+	if _, ok := actor.FleetOf(r.Context()); ok {
+		return actor.Via
+	}
+	return ""
+}
+
+// withVia adds the stamp to a record's fields; the engineer's records stay as they were.
+func withVia(fields map[string]any, via string) map[string]any {
+	if via == "" {
+		return fields
+	}
+	if fields == nil {
+		fields = map[string]any{}
+	}
+	fields["via"] = via
+	return fields
 }

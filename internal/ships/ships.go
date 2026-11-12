@@ -8,11 +8,13 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/conversation"
 	"github.com/jbuffin/admiral/internal/home"
@@ -39,12 +41,14 @@ type Ship struct {
 	Source     string  `json:"source"`
 	Panel      string  `json:"panel"`
 	// A ship holds its Resources while it is underway or needs you.
-	Resources  []string        `json:"-"`
-	Title      string          `json:"title"`
-	URL        string          `json:"url"`
-	Issues     []string        `json:"issues,omitempty"`
-	OrderID    string          `json:"order_id"`
-	Launched   string          `json:"launched"`
+	Resources []string `json:"-"`
+	Title     string   `json:"title"`
+	URL       string   `json:"url"`
+	Issues    []string `json:"issues,omitempty"`
+	OrderID   string   `json:"order_id"`
+	Launched  string   `json:"launched"`
+	// Via is "admiralbot" for a ship AdmiralBot launched; absent for the engineer's.
+	Via        string          `json:"via,omitempty"`
 	Status     string          `json:"status"`
 	ExitCode   *int            `json:"exit_code"`
 	ExitSignal *string         `json:"exit_signal"`
@@ -198,7 +202,7 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	o, session := sess.Options, sess.Name
 	sh := Ship{Session: session, Name: o["name"], Fleet: o["fleet"], FleetName: o["fleet-name"],
 		FleetColor: o["fleet-color"], Harness: o["harness"], Dir: o["dir"], Repo: filepath.Base(o["dir"]),
-		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], OrderID: o["order"], Launched: o["launched"], Status: status(sess, now)}
+		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], OrderID: o["order"], Launched: o["launched"], Via: o["via"], Status: status(sess, now)}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
 	sh.Crew, sh.Subagents = crewBoats(sess.Crew), sess.Subagents
 	if sh.Subagents == nil {
@@ -439,7 +443,11 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 
 func (s *Service) serveList(w http.ResponseWriter, r *http.Request) {
 	// home says whose ships these are, for the commands that find a server by port.
-	writeJSON(w, http.StatusOK, map[string]any{"ships": s.List(), "home": home.ID(s.Launcher.Home)})
+	list := s.List()
+	if fleet, ok := actor.FleetOf(r.Context()); ok {
+		list = slices.DeleteFunc(list, func(sh Ship) bool { return sh.Fleet != fleet })
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ships": list, "home": home.ID(s.Launcher.Home)})
 }
 
 func plural(n int, one, many string) string {
@@ -743,7 +751,7 @@ func (s *Service) serveInputSeen(w http.ResponseWriter, r *http.Request) {
 func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
 	if _, ok := s.mooredRecord(session); ok {
-		s.endByRequest(w, session, "dismissed", "dismissed")
+		s.endByRequest(w, r, session, "dismissed", "dismissed")
 		return
 	}
 	// Not the request's context: a client that hangs up must not abandon the write.
@@ -760,7 +768,7 @@ func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 	}
 	s.observe(ctx) // the ship's `ended` goes into the log before `dismissed`
 	s.retryEnded(sess)
-	s.record(outcomes.Record{Ship: session, Event: "dismissed"}, nil)
+	s.record(outcomes.Record{Ship: session, Event: "dismissed", Fields: withVia(nil, viaOf(r))}, nil)
 	if err := s.killShip(ctx, session, false); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -794,7 +802,7 @@ func (s *Service) launched(req launcher.Request, got *launcher.Launched, panel s
 	if len(req.Issues) > 0 {
 		fields["order_urls"] = req.Issues
 	}
-	s.record(outcomes.Record{Ship: got.Session, Event: "launched", Fields: fields}, nil)
+	s.record(outcomes.Record{Ship: got.Session, Event: "launched", Fields: withVia(fields, req.Via)}, nil)
 	s.track(got.Session)
 }
 

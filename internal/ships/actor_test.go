@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -105,5 +106,86 @@ func TestStoppingAShipAsTheEngineerLeavesItsStoppedRecordUnstamped(t *testing.T)
 	waitUntil(t, "the stopped record", func() bool { got = outcomeLines(t, r.home, "saltpaw", "stopped"); return len(got) == 1 })
 	if _, has := got[0]["via"]; has {
 		t.Errorf("stopped record = %v, want no via field", got[0])
+	}
+}
+
+func (r *wakeRig) launchAs(t *testing.T, fleet string) string {
+	t.Helper()
+	mux := http.NewServeMux()
+	r.s.Routes(mux)
+	body := `{"fleet":"work","harness":"claude","dir":` + strconv.Quote(r.checkout) + `,"model":"opus","skill":{"kind":"none"},"text":"go"}`
+	req := httptest.NewRequest("POST", "/api/ships", strings.NewReader(body))
+	if fleet != "" {
+		req = req.WithContext(actor.WithFleet(context.Background(), fleet))
+	}
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("launch = %d %s", rec.Code, rec.Body)
+	}
+	var got struct{ Ship struct{ Session string } }
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || got.Ship.Session == "" {
+		t.Fatalf("launch answer %s: %v", rec.Body, err)
+	}
+	return got.Ship.Session
+}
+
+func (r *wakeRig) shipsVia(t *testing.T, session string) (via string, listed bool) {
+	t.Helper()
+	mux := http.NewServeMux()
+	r.s.Routes(mux)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/ships", nil))
+	var got struct {
+		Ships []struct{ Session, Via string }
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range got.Ships {
+		if s.Session == session {
+			return s.Via, true
+		}
+	}
+	return "", false
+}
+
+func TestAShipAnActorLaunchesIsStampedViaAdmiralbotInItsLaunchedRecordAndTheShipList(t *testing.T) {
+	r := newWakeRig(t, 0)
+	session := r.launchAs(t, "work")
+	var got []map[string]any
+	waitUntil(t, "the launched record", func() bool { got = outcomeLines(t, r.home, session, "launched"); return len(got) == 1 })
+	if got[0]["via"] != "admiralbot" {
+		t.Errorf("launched record = %v, want via admiralbot", got[0])
+	}
+	waitUntil(t, "the ship in the list", func() bool { _, ok := r.shipsVia(t, session); return ok })
+	if via, _ := r.shipsVia(t, session); via != "admiralbot" {
+		t.Errorf("the ship's via = %q, want admiralbot", via)
+	}
+}
+
+func TestAShipTheEngineerLaunchesCarriesNoVia(t *testing.T) {
+	r := newWakeRig(t, 0)
+	session := r.launchAs(t, "")
+	var got []map[string]any
+	waitUntil(t, "the launched record", func() bool { got = outcomeLines(t, r.home, session, "launched"); return len(got) == 1 })
+	if _, has := got[0]["via"]; has {
+		t.Errorf("launched record = %v, want no via field", got[0])
+	}
+	waitUntil(t, "the ship in the list", func() bool { _, ok := r.shipsVia(t, session); return ok })
+	if via, _ := r.shipsVia(t, session); via != "" {
+		t.Errorf("the ship's via = %q, want none", via)
+	}
+}
+
+func TestAnActorDismissingAMooredShipStampsItsUnmooredRecordViaAdmiralbot(t *testing.T) {
+	f := mooredService(t, nil)
+	f.moor(t, "Saltpaw", "work", prSeven)
+	if rec := f.asActor(t, "work", "POST", "/api/ships/saltpaw/dismiss"); rec.Code != 200 {
+		t.Fatalf("dismiss = %d %s", rec.Code, rec.Body)
+	}
+	got := f.events(t, "saltpaw", "unmoored")
+	if len(got) != 1 || got[0]["via"] != "admiralbot" {
+		t.Errorf("unmoored records = %v, want one stamped via admiralbot", got)
 	}
 }

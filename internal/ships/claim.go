@@ -137,6 +137,7 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "launch a campaign's child through its campaign")
 		return
 	}
+	req.Via = viaOf(r)
 	got, lerr := s.Launch(r.Context(), req)
 	if lerr != nil {
 		writeError(w, lerr.Status, lerr.Msg)

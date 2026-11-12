@@ -142,7 +142,7 @@ func (s *Service) serveStop(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.recordKilled(sess)
 	}
-	s.record(outcomes.Record{Ship: session, Event: "stopped"}, nil)
+	s.record(outcomes.Record{Ship: session, Event: "stopped", Fields: withVia(nil, viaOf(r))}, nil)
 	if err := s.killShip(ctx, session, false); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

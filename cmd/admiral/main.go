@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/auth"
 	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/bridge"
@@ -463,7 +464,11 @@ func serve(args []string) error {
 		pushFeed.ShipsChanged()
 	}
 
-	chatService := &chat.Service{Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Home: absDir, Outcomes: outcomeLog}
+	minter, err := actor.NewMinter(absDir)
+	if err != nil {
+		return err
+	}
+	chatService := &chat.Service{Actor: minter, Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Home: absDir, Outcomes: outcomeLog}
 	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
 	chatService.OnQuestions = inboxService.Changed
 	inboxService.ChatQuestions = chatService.WaitingQuestions
@@ -555,7 +560,36 @@ func serve(args []string) error {
 		supervisor.Wait()
 		_ = st.Flush()
 	}()
-	srv := &http.Server{Handler: guard.Middleware(s.Handler())}
+	actorGuard := &actor.Guard{
+		Tokens: func(token string) (string, bool) {
+			var keys []string
+			for _, f := range cfg.Current().Fleets {
+				keys = append(keys, f.Key)
+			}
+			return actor.Lookup(token, keys, chatService.ActorToken)
+		},
+		ShipFleet: func(session string) (string, bool) {
+			sh, ok := shipService.Get(session)
+			return sh.Fleet, ok && sh.Fleet != ""
+		},
+		ItemFleet: func(session, id string) (string, bool) {
+			for _, it := range inboxService.List() {
+				if it.Session == session && it.ID == id {
+					return it.Fleet, it.Fleet != ""
+				}
+			}
+			return "", false
+		},
+		SourceFleet: func(key string) (string, bool) {
+			fleet, ok := sourceService.FleetOf(key)
+			return fleet, ok && fleet != ""
+		},
+		CampaignFleet: func(id string) (string, bool) {
+			f, ok := followStore.Get(id)
+			return f.Fleet, ok && f.Fleet != ""
+		},
+	}
+	srv := &http.Server{Handler: guard.Middleware(actorGuard.Middleware(s.Handler()))}
 	srv.RegisterOnShutdown(func() { close(stopping) }) // a held lock would hold up the shutdown
 	lis.serveWith(srv)
 

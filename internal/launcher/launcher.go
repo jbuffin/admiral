@@ -64,6 +64,8 @@ type Request struct {
 	// By and PR say what started a round, for the `woken` event.
 	By string `json:"-"`
 	PR string `json:"-"`
+	// Via is "admiralbot" when AdmiralBot made the launch, and the ship carries it.
+	Via string `json:"-"`
 }
 
 // Skill is the order's skill: Commodore, a named one, or none (Just launch).
@@ -151,7 +153,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
 		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")},
-		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}}
+		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
 			return nil, refuse(http.StatusBadRequest, "%s contains a control character", o[0])

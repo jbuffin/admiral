@@ -298,6 +298,11 @@ func (s *Service) mooredRecord(session string) (moor.Record, bool) {
 // endMoored sails a moored ship off. Whoever takes the ship out of the cache writes the event and removes the
 // record; an ending that lost the race reports false, and one whose record cannot be removed an error.
 func (s *Service) endMoored(session, reason string) (bool, error) {
+	return s.endMooredVia(session, reason, "")
+}
+
+// endMooredVia is endMoored for a request, whose `unmoored` record carries via when AdmiralBot made it.
+func (s *Service) endMooredVia(session, reason, via string) (bool, error) {
 	s.mooredMu.Lock()
 	s.loadMoored()
 	idx := -1
@@ -329,14 +334,14 @@ func (s *Service) endMoored(session, reason string) (bool, error) {
 	for _, p := range prs {
 		final = append(final, map[string]string{"url": p.URL, "state": p.State})
 	}
-	s.record(outcomes.Record{Ship: session, Event: "unmoored", Fields: map[string]any{"reason": reason, "prs": final}}, nil)
+	s.record(outcomes.Record{Ship: session, Event: "unmoored", Fields: withVia(map[string]any{"reason": reason, "prs": final}, via)}, nil)
 	s.broadcast()
 	return true, nil
 }
 
 // endByRequest ends a moored ship for a request and answers it: 404 for an ending that lost the race, 500 for a record that stays (the cause is in the log, not the answer, since it names a path).
-func (s *Service) endByRequest(w http.ResponseWriter, session, reason, key string) {
-	ended, err := s.endMoored(session, reason)
+func (s *Service) endByRequest(w http.ResponseWriter, r *http.Request, session, reason, key string) {
+	ended, err := s.endMooredVia(session, reason, viaOf(r))
 	switch {
 	case err != nil:
 		writeError(w, http.StatusInternalServerError, "ship "+session+" cannot be ended: its moored record cannot be removed")
@@ -355,7 +360,7 @@ func (s *Service) serveMooredRefresh(w http.ResponseWriter, r *http.Request) {
 func (s *Service) serveUnfollow(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
 	if _, ok := s.mooredRecord(session); ok {
-		s.endByRequest(w, session, "unfollowed", "unfollowed")
+		s.endByRequest(w, r, session, "unfollowed", "unfollowed")
 		return
 	}
 	sess, ok := s.find(session)

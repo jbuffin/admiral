@@ -191,12 +191,21 @@ func questionsOf(it Item) ([]question, error) {
 }
 
 func (s *Service) AnswerQuestion(session, id string, req QuestionRequest) error {
+	return s.AnswerQuestionVia(session, id, req, "")
+}
+
+// AnswerQuestionVia stamps the `answered` record with via when AdmiralBot gave the answer.
+func (s *Service) AnswerQuestionVia(session, id string, req QuestionRequest, via string) error {
 	return s.Answer(session, id, KindQuestion, func(it Item) (any, []outcomes.Record, error) {
 		file, err := BuildQuestionAnswer(it, req)
 		if err != nil {
 			return nil, nil, err
 		}
-		return file, []outcomes.Record{{Event: "answered", Fields: map[string]any{"item": id, "kind": KindQuestion}}}, nil
+		fields := map[string]any{"item": id, "kind": KindQuestion}
+		if via != "" {
+			fields["via"] = via
+		}
+		return file, []outcomes.Record{{Event: "answered", Fields: fields}}, nil
 	})
 }
 

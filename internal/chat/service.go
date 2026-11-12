@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/chatlog"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/conversation"
@@ -66,6 +67,8 @@ type Service struct {
 	LastLive func(session string) (usage.Figures, bool)
 	// ForgetLive drops a chat's live figures once a reset record has read them.
 	ForgetLive func(session string)
+	// Actor mints each chat's token for AdmiralBot; nil leaves the chats without one.
+	Actor *actor.Minter
 	// OnQuestions runs when a chat's questions may have changed, for the Inbox that lists them.
 	OnQuestions func()
 
@@ -501,6 +504,21 @@ func (s *fleetChat) exists() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	return s.server().HasSession(ctx, s.name())
+}
+
+// ActorToken is the token of the fleet's running chat session, or "" when it has none. The nonce stays on the
+// session in tmux, so the token outlives an Admiral restart while the chat lives and changes with a new session.
+func (s *Service) ActorToken(fleet string) string {
+	if s.Actor == nil || s.Tmux == "" {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	nonce, err := sessionhost.NewServer(s.Tmux, s.Socket).WithoutUTF8().StderrErrors().ReadSessionOption(ctx, sessionhost.ChatSession(fleet), sessionhost.ChatNonceOpt)
+	if err != nil || nonce == "" {
+		return ""
+	}
+	return s.Actor.Token(fleet, nonce)
 }
 
 func (s *fleetChat) start() *launcher.Error {
