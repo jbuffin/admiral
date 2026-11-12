@@ -404,7 +404,6 @@ func serve(args []string) error {
 	}
 
 	chatService := &chat.Service{Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Home: absDir, Outcomes: outcomeLog}
-	shipService.UsageRead = shipService.TranscriptUsage
 	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
 	convService := &shipconv.Service{Ships: shipService, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Asking: shipService.Asking}
 	probeRunner := probes.NewDefault(dir)

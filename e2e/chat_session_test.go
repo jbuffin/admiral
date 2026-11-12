@@ -615,9 +615,16 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 		waitChatWS(t, ws2, 3*time.Second, "an empty conversation", messagesAre())
 		// /clear typed as keys, or pasted as one bracketed paste: either reaches the pane.
 		c.waitStdinOneOf(want+"/clear\r", want+"\x1b[200~/clear\x1b[201~\r")
+		// Claude may write its cost-state while it handles /clear: the usage record reads the old file
+		// only after the clear's SessionStart lands.
+		appendLines(t, tp1, `{"type":"cost-state","totalCostUSD":0.5,"modelUsage":{"claude-fake":{"inputTokens":7,"outputTokens":3}}}`)
 		c.touch("go-clear")
 		c.waitEvents(5)
 		c.stays(1500*time.Millisecond, "an empty conversation after SessionStart (clear)", messagesAre())
+		got := lastOf(c.waitEvent(chatSessionName, "usage", 1), "usage")
+		wantUsage(t, got, "chat", "claude", map[string]any{"input": 7.0, "output": 3.0, "reasoning": 0.0, "cache_read": 0.0, "cache_write": 0.0},
+			map[string]any{"amount": 0.5, "basis": "estimate", "incomplete": false})
+		holdThat(t, "the clear wrote a second usage record for the chat", func() bool { return usageCount(c.shipLog(chatSessionName)) == 1 })
 		appendLines(t, tp2, userLine("u-20", "After the clear", nil))
 		c.waitSession(10*time.Second, "the one message written after the clear", messagesAre("user: After the clear"))
 	})

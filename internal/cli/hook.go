@@ -49,6 +49,7 @@ func Hook(args []string, std IO) error {
 		call = sessionhost.Join(call, mon,
 			subagentCall(pane, args[0], p, now),
 			transcriptCall(pane, args[0], p, now),
+			rolloutsCall(pane, args[0], p),
 			// Last, so a failure here can't undo the writes before it.
 			crewTranscriptCall(pane, args[0], p))
 	}
@@ -343,6 +344,28 @@ func transcriptCall(pane, event string, p hookPayload, now time.Time) []string {
 		source = "unknown"
 	}
 	return sessionhost.SetPaneCall(pane, sessionhost.TranscriptOption, strconv.FormatInt(now.UnixNano(), 10)+" "+source+" "+path)
+}
+
+// rolloutsCall keeps every rollout a Codex pane starts, since /new and a resume each begin one whose
+// tokens the next does not hold. It reads nothing for other events, paths and harnesses.
+func rolloutsCall(pane, event string, p hookPayload) []string {
+	path := p.TranscriptPath
+	if event != "SessionStart" || !sessionhost.RolloutPathOK(path) {
+		return nil
+	}
+	if h, err := tmuxOut(sessionhost.CurrentHarnessCall(pane)...); err != nil || strings.TrimSpace(h) != "codex" {
+		return nil
+	}
+	cur, err := tmuxOut(sessionhost.PaneOptionCall(pane, sessionhost.RolloutsOption)...)
+	if err != nil {
+		return nil
+	}
+	cur = strings.TrimSpace(cur)
+	next := sessionhost.AppendRollout(cur, path)
+	if next == cur {
+		return nil
+	}
+	return sessionhost.SetPaneCall(pane, sessionhost.RolloutsOption, next)
 }
 
 // A lead held by a Monitor isn't marked crew-held: the Monitor wakes it.

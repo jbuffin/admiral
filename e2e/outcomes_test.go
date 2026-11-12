@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -388,6 +389,82 @@ func (w *world) stayOneUsage(session string) {
 	}
 }
 
+// A Stop kills the ship's session within milliseconds, so its figures are read before the kill.
+func TestOutcomeStopKeepsTheShipsOwnUsage(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	w.outFleets(map[string][]string{"u": {"hook working", "usage", "wait go", "exit 0"}})
+	w.start()
+	for _, c := range []struct {
+		harness string
+		tokens  map[string]any
+		money   map[string]any
+	}{
+		{"codex", usageCodexTokens, nil},
+		{"copilot", usageCopilotTokens, usageCopilotMoney},
+	} {
+		s := w.launch(map[string]any{"fleet": "u", "harness": c.harness, "dir": w.checkout("proj"), "skill": noSkill})
+		w.record(s.Session)
+		// Copilot's launch already set the option, so wait for the line itself; Codex's cue sets the option after writing it.
+		holdFor(t, "the "+c.harness+" fake to write its usage line", func() bool {
+			f := strings.Fields(w.mustTmux("display-message", "-p", "-t", "="+s.Session+":0", "#{@admiral-transcript}"))
+			if len(f) != 3 {
+				return false
+			}
+			b, err := os.ReadFile(f[2])
+			return err == nil && (bytes.Contains(b, []byte(`"token_count"`)) || bytes.Contains(b, []byte(`"session.shutdown"`)))
+		})
+		if code, body := send(t, http.MethodPost, w.shipURL(s.Session, "/stop"), nil); code != http.StatusOK {
+			t.Fatalf("stop = %d, want 200: %s", code, body)
+		}
+		log := w.waitEvent(s.Session, "usage", 1)
+		wantUsage(t, lastOf(log, "usage"), "u", c.harness, c.tokens, c.money)
+	}
+}
+
+// A boat closed before its ship ends keeps its figures: every rollout the boat recorded is counted at the ship's exit.
+func TestOutcomeUsageCountsACrewBoatClosedBeforeTheShipEnds(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	w.outFleets(map[string][]string{"f": {"hook working", "wait go", "exit 0"}})
+	w.start()
+	ship := w.launchIn("f", "claude", "closed-boat")
+	w.waitFile(ship.Session, "recorded")
+	boat := w.crewBoat(ship.Session, "gone", "codex")
+
+	line := func(input int) string {
+		return `{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":` + strconv.Itoa(input) +
+			`,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0}}}}` + "\n"
+	}
+	dir := filepath.Join(w.userHom, ".codex", "sessions", "2026", "11", "11")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	first, second := filepath.Join(dir, "rollout-first.jsonl"), filepath.Join(dir, "rollout-second.jsonl")
+	if err := os.WriteFile(first, []byte(line(100)+line(300)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(second, []byte(line(7)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// What the boat's SessionStart hooks left: the first rollout in the history, the second as its current one.
+	w.mustTmux("set", "-p", "-t", boat.pane, "@admiral-rollouts", first+" "+second)
+	w.mustTmux("set", "-p", "-t", boat.pane, "@admiral-crew-transcript", second)
+	w.expectExit(crewCall(w, ship.Session, "", "close", "gone"), 0, "crew close gone")
+
+	w.touch(ship.Session, "go")
+	got := lastOf(w.waitEvent(ship.Session, "usage", 1), "usage")
+	crew, _ := got["crew"].([]any)
+	if len(crew) != 1 {
+		t.Fatalf("usage = %v, want the closed boat listed under crew", got)
+	}
+	b, _ := crew[0].(map[string]any)
+	tokens, _ := b["tokens"].(map[string]any)
+	if b["name"] != "gone" || b["harness"] != "codex" || tokens["input"] != 307.0 || tokens["output"] != 2.0 {
+		t.Errorf("crew boat = %v, want gone, codex, 307 in 2 out (both rollouts summed)", b)
+	}
+}
+
 func TestOutcomeReportInvalidMissingAndDismiss(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -462,7 +539,8 @@ func TestOutcomeRestartAddsNoLaunchedAndEndsADeadShip(t *testing.T) {
 	w.restart()
 	w.in.waitStatusList(t, 10*time.Second, ship.Session, "underway")
 	holdThat(t, "after a restart the ship has a second launched", func() bool {
-		return reflect.DeepEqual(eventsOf(w.shipLog(ship.Session)), []string{"launched"})
+		log := w.shipLog(ship.Session)
+		return reflect.DeepEqual(eventsOf(log), []string{"launched"}) && usageCount(log) == 0
 	})
 
 	w.in.Stop()
@@ -516,14 +594,14 @@ func TestOutcomeRestartEndsAShipThatSailedOff(t *testing.T) {
 	if w.hasSession(ship.Session) {
 		t.Errorf("the session of an exit-0 ship still exists after the restart")
 	}
-	log := w.shipLog(ship.Session)
+	log := w.waitEvent(ship.Session, "usage", 1)
 	if got := eventsOf(log); !reflect.DeepEqual(got, []string{"launched", "ended"}) {
 		t.Fatalf("records = %v, want launched, ended", got)
 	}
 	if n := usageCount(log); n != 1 {
 		t.Errorf("the log has %d usage records, want 1", n)
 	}
-	e := log[1]
+	e := lastOf(log, "ended")
 	if num(t, e, "exit_code") != 0 || !reflect.DeepEqual(e["report"], map[string]any{"status": "done"}) {
 		t.Errorf("ended = %v, want exit_code 0 and the ship's report", e)
 	}
@@ -585,15 +663,19 @@ func TestOutcomeUnwritableDirectoryDoesNotStopLaunching(t *testing.T) {
 	}
 	c := w.launchIn("f", "claude", "unw3")
 	w.waitEvent(c.Session, "launched", 1)
-	if got := eventsOf(w.shipLog(y.Session)); len(got) != 0 {
-		t.Fatalf("the records of the anchored ship are %v while the log was unwritable, want none", got)
+	if log := w.shipLog(y.Session); len(eventsOf(log)) != 0 || usageCount(log) != 0 {
+		t.Fatalf("the records of the anchored ship are %v while the log was unwritable, want none", log)
 	}
 	if code := w.dismiss(y.Session); code/100 != 2 {
 		t.Fatalf("Dismiss = %d, want 2xx", code)
 	}
-	log := w.waitEvent(y.Session, "dismissed", 1)
+	w.waitEvent(y.Session, "dismissed", 1)
+	log := w.waitEvent(y.Session, "usage", 1)
 	if got, want := eventsOf(log), []string{"ended", "dismissed"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("records after Dismiss = %v, want %v (its launched was lost with the log)", got, want)
+	}
+	if n := usageCount(log); n != 1 {
+		t.Errorf("the log has %d usage records after Dismiss, want 1: the one lost with the log is written again", n)
 	}
 	waitGone(t, 5*time.Second, yInbox)
 	if got := w.stderrLines("outcome log:"); got != 1 {

@@ -466,7 +466,7 @@ func (s *Service) serveNew(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	opts, pane, noPath := s.st.opts, s.st.pane, s.st.optRaw == ""
-	path, dir := s.st.path, s.configDir()
+	path, dir, raw := s.st.path, s.configDir(), s.st.optRaw
 	s.mu.Unlock()
 	chat := s.Config().Chat
 	if opts.model == chat.Model && opts.effort == chat.Effort && opts.fleet == chat.Fleet {
@@ -490,7 +490,7 @@ func (s *Service) serveNew(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadGateway, "could not clear the chat: "+err.Error())
 			return
 		}
-		s.recordReset(path, dir, opts.fleet)
+		s.recordReset(path, dir, opts.fleet, raw)
 		writeJSON(w, http.StatusOK, map[string]bool{"running": true})
 		return
 	}
@@ -501,7 +501,7 @@ func (s *Service) serveNew(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "could not end the chat: "+err.Error())
 		return
 	}
-	s.recordReset(path, dir, opts.fleet)
+	s.recordReset(path, dir, opts.fleet, "")
 	s.mu.Lock()
 	s.st = state{}
 	s.mu.Unlock()

@@ -187,8 +187,31 @@ func (l *Launcher) LaunchCrew(req CrewRequest) error {
 		Role: req.Role, Env: env, Command: command, ClientPath: clientPath})
 }
 
-func (l *Launcher) CloseCrew(ctx context.Context, windowID string) error {
-	return l.server().KillWindow(ctx, windowID)
+// CloseCrew keeps the boat's transcript paths on its ship's session before the window goes, so the ship's
+// exit still counts what the boat used. Keeping them is best effort: a failure never keeps the boat open.
+func (l *Launcher) CloseCrew(ctx context.Context, boat sessionhost.Crew) error {
+	srv := l.server()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var paths []string
+	if boat.Harness == "codex" && boat.PaneID != "" {
+		if raw, err := srv.ReadPaneOption(ctx, boat.PaneID, "rollouts"); err == nil {
+			paths = sessionhost.ParseRollouts(raw)
+		}
+	}
+	if sessionhost.RolloutPathOK(boat.Transcript) && !slices.Contains(paths, boat.Transcript) {
+		paths = append(paths, boat.Transcript)
+	}
+	var add []sessionhost.ClosedBoat
+	for _, p := range paths {
+		add = append(add, sessionhost.ClosedBoat{Name: boat.Name, Harness: boat.Harness, Path: p})
+	}
+	if len(add) > 0 && boat.Session != "" {
+		if cur, err := srv.ReadSessionOption(ctx, boat.Session, sessionhost.OptClosedCrew); err == nil {
+			_ = srv.SetSessionOption(ctx, boat.Session, sessionhost.OptClosedCrew, sessionhost.AppendClosed(cur, add))
+		}
+	}
+	return srv.KillWindow(ctx, boat.WindowID)
 }
 
 // autopilotGate refuses when no gate is set: autopilot is never allowed unchecked.

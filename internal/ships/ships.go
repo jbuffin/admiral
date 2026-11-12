@@ -99,7 +99,7 @@ type Service struct {
 	// Approving is whether a Codex ship's app-server is waiting on an approval: a bell then may be for it, not for a question.
 	Approving func(session, crew string) bool
 	Outcomes  *outcomes.Writer
-	// UsageRead reads a ship's and its crew's transcripts at its exit; nil leaves the usage record's figures null.
+	// UsageRead replaces the transcript reading at a ship's exit, for tests.
 	UsageRead func(ctx context.Context, sess sessionhost.Session) ExitUsage
 	// LastLive gives a ship's last live figures when its transcript has none; nil when nothing keeps them.
 	LastLive func(session string) (usage.Figures, bool)

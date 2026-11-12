@@ -1,7 +1,6 @@
 package ships
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -55,7 +54,7 @@ func TestTranscriptUsageReadsEachCrewBoatsTranscript(t *testing.T) {
 		{Name: "new", Harness: "claude"},
 		{Name: "rogue", Harness: "claude", Transcript: outside},
 	}}
-	got := s.TranscriptUsage(context.Background(), sess)
+	got := s.transcriptUsage(sess, nil)
 
 	if got.Own != nil {
 		t.Errorf("own = %+v, want none: the pane has no transcript option here", got.Own)
@@ -82,5 +81,50 @@ func TestTranscriptUsageReadsEachCrewBoatsTranscript(t *testing.T) {
 		if got.Crew[i].Figures != nil {
 			t.Errorf("boat %s = %+v, want no figures (no transcript, or one outside the config dir)", got.Crew[i].Name, got.Crew[i].Figures)
 		}
+	}
+}
+
+func codexService(t *testing.T) (*Service, string) {
+	t.Helper()
+	root := t.TempDir()
+	codexDir := filepath.Join(root, "codex")
+	cfg := &config.Config{Fleets: []config.Fleet{{Key: "work", Harnesses: []config.Harness{
+		{Name: "codex", Env: map[string]string{"CODEX_HOME": codexDir}}}}}}
+	return &Service{Launcher: &launcher.Launcher{Config: func() *config.Config { return cfg }}}, filepath.Join(codexDir, "sessions", "2026", "11", "11")
+}
+
+// A Codex ship or boat that ran /new keeps the tokens of the thread it left: every recorded rollout is summed.
+func TestTranscriptUsageSumsEveryRolloutAPaneRecorded(t *testing.T) {
+	s, dir := codexService(t)
+	r1 := writeTranscript(t, filepath.Join(dir, "rollout-1.jsonl"), codexLine(100), codexLine(300))
+	r2 := writeTranscript(t, filepath.Join(dir, "rollout-2.jsonl"), codexLine(7))
+	b1 := writeTranscript(t, filepath.Join(dir, "rollout-b1.jsonl"), codexLine(50))
+	b2 := writeTranscript(t, filepath.Join(dir, "rollout-b2.jsonl"), codexLine(5))
+
+	sess := sessionhost.Session{Name: "a-1", PaneID: "%1", Options: map[string]string{"fleet": "work", "harness": "codex"},
+		Crew: []sessionhost.Crew{{Name: "codey", Harness: "codex", PaneID: "%2", Transcript: b2}}}
+	got := s.transcriptUsage(sess, &paneFacts{
+		transcript:   "1 startup " + r2,
+		rollouts:     r1 + " " + r2,
+		crewRollouts: map[string]string{"%2": b1 + " " + b2},
+	})
+	if got.Own == nil || got.Own.Tokens.Input != 307 {
+		t.Errorf("own = %+v, want both rollouts summed (300 + 7), the current one once", got.Own)
+	}
+	if len(got.Crew) != 1 || got.Crew[0].Figures == nil || got.Crew[0].Figures.Tokens.Input != 55 {
+		t.Errorf("crew = %+v, want the boat's two rollouts summed (50 + 5)", got.Crew)
+	}
+}
+
+// A boat closed before its ship exits is still counted, from the paths the close kept on the session.
+func TestTranscriptUsageCountsClosedBoats(t *testing.T) {
+	s, dir := codexService(t)
+	a := writeTranscript(t, filepath.Join(dir, "rollout-a.jsonl"), codexLine(40))
+	b := writeTranscript(t, filepath.Join(dir, "rollout-b.jsonl"), codexLine(2))
+	closed := sessionhost.AppendClosed("", []sessionhost.ClosedBoat{{Name: "gone", Harness: "codex", Path: a}, {Name: "gone", Harness: "codex", Path: b}})
+	sess := sessionhost.Session{Name: "a-1", Options: map[string]string{"fleet": "work", "harness": "codex", sessionhost.OptClosedCrew: closed + " junk:codex:/etc/passwd"}}
+	got := s.transcriptUsage(sess, nil)
+	if len(got.Crew) != 1 || got.Crew[0].Name != "gone" || got.Crew[0].Figures == nil || got.Crew[0].Figures.Tokens.Input != 42 {
+		t.Errorf("crew = %+v, want one closed boat with 42 input; a token with an invalid path is ignored", got.Crew)
 	}
 }

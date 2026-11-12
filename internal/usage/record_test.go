@@ -118,7 +118,7 @@ func TestExitFieldsCrewWithNoFiguresIsListedWithNulls(t *testing.T) {
 	got := ExitFields("work", "claude", 0, ptr(claudeFigs()), crew)
 	eq(t, got, `{"fleet":"work","harness":"claude",
 		"tokens":{"input":2,"output":4,"reasoning":0,"cache_read":11382,"cache_write":18024},
-		"money":{"amount":0.00372082,"basis":"estimate","incomplete":false},
+		"money":{"amount":0.00372082,"basis":"estimate","incomplete":true},
 		"crew":[{"name":"scout","harness":"claude","tokens":null,"money":null}]}`)
 }
 
@@ -128,7 +128,7 @@ func TestExitFieldsCrewOfAnotherBasisAddsTokensNotMoney(t *testing.T) {
 	got := ExitFields("work", "claude", 0, ptr(claudeFigs()), crew)
 	eq(t, got, `{"fleet":"work","harness":"claude",
 		"tokens":{"input":6,"output":8,"reasoning":0,"cache_read":11382,"cache_write":53756},
-		"money":{"amount":0.00372082,"basis":"estimate","incomplete":false},
+		"money":{"amount":0.00372082,"basis":"estimate","incomplete":true},
 		"crew":[{"name":"helper","harness":"copilot",
 		  "tokens":{"input":4,"output":4,"reasoning":0,"cache_read":0,"cache_write":35732},
 		  "money":{"amount":17.8756,"basis":"credits","incomplete":false,"premium_requests":15}}]}`)
