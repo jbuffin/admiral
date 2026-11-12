@@ -592,12 +592,12 @@ test('a ship\'s Bridge shows its tokens and its own money, Claude in est. dollar
   seedFleets(admiral, { live: true });
   await admiral.start({ env: withFakeGh(admiral) });
   const cues = ['usage', 'exit 3'];
-  const claude = await launchShip(admiral, { fleet: 'alpha', harness: 'claude', cues });
+  const claude = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues });
   const copilot = await launchShip(admiral, { fleet: 'alpha', harness: 'copilot', cues });
   const codex = await launchShip(admiral, { fleet: 'alpha', harness: 'codex', cues });
   const usage = page.getByLabel('Usage');
 
-  await page.goto(admiral.url + 'app/ships?fleet=alpha');
+  await page.goto(admiral.url + 'app/ships?fleet=zulu');
   await rowLink(page, claude).tap();
   await expect(usage).toContainText('150 tokens', { timeout: 15_000 });
   await expect(usage).toContainText('est. $0.25');
