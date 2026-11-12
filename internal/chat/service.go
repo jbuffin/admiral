@@ -590,7 +590,6 @@ func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.withdraw()
-		s.markReset()
 		s.mu.Lock()
 		s.clearLocked()
 		s.mu.Unlock()
@@ -607,11 +606,13 @@ func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.recordReset(path, dir, s.key, raw)
+		// A reset that failed leaves no marker.
+		s.markReset()
+		s.broadcast()
 		writeJSON(w, http.StatusOK, map[string]bool{"running": true})
 		return
 	}
 	// The settings changed since this session started: a new one takes them.
-	s.markReset()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.server().KillSession(ctx, s.name()); err != nil {
@@ -619,6 +620,7 @@ func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordReset(path, dir, s.key, "")
+	s.markReset()
 	s.mu.Lock()
 	s.st = state{}
 	s.mu.Unlock()

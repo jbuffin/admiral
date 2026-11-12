@@ -61,6 +61,8 @@ type fleetLog struct {
 	seen  map[string]bool
 	tail  []Entry
 	month string // the month of the current file's first entry, "" while it holds none
+	// terminated is set once this process has made sure the current file ends in a newline.
+	terminated bool
 }
 
 func New(home string, now func() time.Time) *Log {
@@ -101,12 +103,21 @@ func (l *Log) Append(fleet string, e Entry) (bool, error) {
 			return false, err
 		}
 		fl.month = ""
+		fl.terminated = false
 	}
-	f, err := dir.OpenFile(current, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
+	f, err := dir.OpenFile(current, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0o600)
 	if err != nil {
 		return false, err
 	}
-	// A line is one Write, so a crash leaves at most a torn last line, which a read skips.
+	// A line is one Write, so a crash leaves at most a torn last line, which a read skips. The
+	// first append after it starts a new line, or the torn one would swallow the entry.
+	if !fl.terminated {
+		if err = endLine(f); err != nil {
+			f.Close()
+			return false, err
+		}
+		fl.terminated = true
+	}
 	_, err = f.Write(append(line, '\n'))
 	if cerr := f.Close(); err == nil {
 		err = cerr
@@ -123,6 +134,22 @@ func (l *Log) Append(fleet string, e Entry) (bool, error) {
 		fl.tail = append([]Entry(nil), fl.tail[len(fl.tail)-tailCap:]...)
 	}
 	return true, nil
+}
+
+func endLine(f *os.File) error {
+	fi, err := f.Stat()
+	if err != nil || fi.Size() == 0 {
+		return err
+	}
+	last := make([]byte, 1)
+	if _, err := f.ReadAt(last, fi.Size()-1); err != nil {
+		return err
+	}
+	if last[0] == '\n' {
+		return nil
+	}
+	_, err = f.Write([]byte{'\n'})
+	return err
 }
 
 // Recent is the last n entries, oldest first, across months. A fleet with no log has none.

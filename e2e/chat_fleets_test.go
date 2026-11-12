@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -471,6 +472,10 @@ func TestChatFleets_RoutesNameTheFleetAndRefuseTheRest(t *testing.T) {
 	atomicWrite(t, filepath.Join(old, "old-1.json"), jsonLine(map[string]any{"version": 1, "id": "old-1", "kind": "question",
 		"created": "2026-10-22T10:00:00Z", "title": "Left by the old chat", "session": "_chat"}))
 	atomicWrite(t, filepath.Join(w.home, "chat", ".claude", "skills", "admiralbot", "SKILL.md"), "old skill")
+	// And the single chat's session, still running when this Admiral starts.
+	if out, err := w.tmux("new-session", "-d", "-s", "_chat", "sleep 600"); err != nil {
+		t.Fatalf("starting the old _chat session: %v: %s", err, out)
+	}
 	w.start()
 
 	t.Run("the global chat routes are gone", func(t *testing.T) {
@@ -525,6 +530,9 @@ func TestChatFleets_RoutesNameTheFleetAndRefuseTheRest(t *testing.T) {
 				t.Errorf("%s survived startup", p)
 			}
 		}
+		if _, err := w.tmux("has-session", "-t", "=_chat"); err == nil {
+			t.Errorf("the single chat's _chat session survived startup")
+		}
 		q.start()
 		if got := fetchBotFleet(t, q).Questions; len(got) != 0 {
 			t.Errorf("the fleet keyed questions serves %d questions, want none: the old chat's are withdrawn", len(got))
@@ -533,4 +541,31 @@ func TestChatFleets_RoutesNameTheFleetAndRefuseTheRest(t *testing.T) {
 			t.Errorf("chat/questions is not the fleet's directory: %v", err)
 		}
 	})
+}
+
+// The session serves the newest 200 entries of a long log, oldest first.
+func TestChatHistory_ServesTheNewest200(t *testing.T) {
+	t.Parallel()
+	w, chats := newFleetsWorld(t, chatCue, fleetSpec{key: "alpha", model: "opus"})
+	c := chats["alpha"]
+	var lines []string
+	for i := 1; i <= 250; i++ {
+		lines = append(lines, jsonLine(map[string]any{"id": fmt.Sprintf("m-%03d", i), "kind": "message", "role": "user",
+			"text": fmt.Sprintf("line %d", i), "at": "2026-11-11T10:00:00Z", "logged": "2026-11-11T10:00:00Z"}))
+	}
+	atomicWrite(t, c.logPath(), strings.Join(lines, "\n")+"\n")
+	w.start()
+	code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/chat/alpha/session", nil)
+	if code != http.StatusOK {
+		t.Fatalf("GET /api/chat/alpha/session = %d: %s", code, body)
+	}
+	var s struct {
+		Messages []struct{ ID string } `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(body), &s); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(s.Messages); n != 200 || s.Messages[0].ID != "m-051" || s.Messages[n-1].ID != "m-250" {
+		t.Errorf("the session serves %d messages from %v, want the newest 200, m-051 to m-250", n, s.Messages)
+	}
 }
