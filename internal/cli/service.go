@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jbuffin/admiral/internal/auth"
 	"github.com/jbuffin/admiral/internal/server"
 )
 
@@ -100,7 +99,7 @@ func serviceInstall(std IO) error {
 		return fmt.Errorf("launchctl bootstrap: %v: %s", err, msg)
 	}
 	fmt.Fprintf(std.Out, "Admiral will start at login and restart if it stops. Logs: %s\n", filepath.Join(logDir, "admiral.log"))
-	return printTokenURL(std, dir)
+	return printURL(std)
 }
 
 func serviceUninstall(std IO) error {
@@ -131,24 +130,13 @@ func serviceStatus(std IO) error {
 	} else {
 		fmt.Fprintln(std.Out, "Service: installed, loaded")
 	}
-	dir, err := admiralHome()
-	if err != nil {
-		return err
-	}
-	if _, err := os.Stat(filepath.Join(dir, "token")); err != nil {
-		fmt.Fprintln(std.Out, "No token yet; Admiral creates it the first time it starts.")
-		return nil
-	}
-	return printTokenURL(std, dir)
+	return printURL(std)
 }
 
-func printTokenURL(std IO, dir string) error {
-	token, err := auth.LoadOrCreateToken(dir)
-	if err != nil {
-		return err
-	}
+func printURL(std IO) error {
 	if ip, ok := server.LANIPv4(); ok {
-		fmt.Fprintf(std.Out, "On other devices: http://%s/?token=%s\n", net.JoinHostPort(ip, DefaultPort), token)
+		fmt.Fprintf(std.Out, "On other devices: http://%s/\n", net.JoinHostPort(ip, DefaultPort))
+		fmt.Fprintln(std.Out, "To pair a device, run: admiral pair")
 	} else {
 		fmt.Fprintf(std.Out, "On other devices: no network address found; this Mac is reachable only at http://127.0.0.1:%s/\n", DefaultPort)
 	}

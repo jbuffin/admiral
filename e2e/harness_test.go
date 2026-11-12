@@ -26,7 +26,7 @@ import (
 
 var (
 	localLine = regexp.MustCompile(`^Admiral is running at http://127\.0\.0\.1:(\d+)/$`)
-	lanLine   = regexp.MustCompile(`^On other devices: http://([0-9.]+):(\d+)/\?token=([A-Za-z0-9_-]+)$`)
+	lanLine   = regexp.MustCompile(`^On other devices: http://([0-9.]+):(\d+)/$`)
 )
 
 type instance struct {
@@ -36,7 +36,8 @@ type instance struct {
 	LocalURL  string // first printed line's URL
 	LANLine   string // second printed line, verbatim
 	LANIP     string // empty when the second line says there is no LAN address
-	Token     string // from the second printed line, empty without a LAN address
+	PairLine  string // third printed line, which only a LAN address brings
+	Token     string // a paired device's token, set by requireLAN
 	cmd       *exec.Cmd
 	done      chan struct{}
 	stderrBuf *syncBuffer
@@ -210,6 +211,16 @@ func startAdmiral(t *testing.T, home, listen string) *instance {
 			t.Fatalf("admiral printed %d of 2 URL lines within 10s (got %q); stderr: %s", len(got), got, stderr.String())
 		}
 	}
+	// A LAN address brings a third line, read before the drain starts.
+	if lanLine.MatchString(got[1]) {
+		select {
+		case l, ok := <-lines:
+			if ok {
+				in.PairLine = l
+			}
+		case <-time.After(5 * time.Second):
+		}
+	}
 	go func() { // keep draining so the pipe never blocks the server
 		for range lines {
 		}
@@ -226,7 +237,7 @@ func startAdmiral(t *testing.T, home, listen string) *instance {
 		if m[2] != in.Port {
 			t.Fatalf("second line port %s differs from first line port %s", m[2], in.Port)
 		}
-		in.LANIP, in.Token = m[1], m[3]
+		in.LANIP = m[1]
 	} else if !strings.HasPrefix(got[1], "On other devices:") {
 		t.Fatalf("second line must start with `On other devices:`, got %q", got[1])
 	}
@@ -250,12 +261,14 @@ func (in *instance) Stop() {
 }
 
 // Restart stops the instance and starts a new one on the same home, host and
-// port, so the token and the cookie name carry over.
+// port, so the paired devices and the cookie name carry over.
 func (in *instance) Restart(t *testing.T) *instance {
 	t.Helper()
 	in.Stop()
 	host, _, _ := net.SplitHostPort(in.listen)
-	return startAdmiral(t, in.Home, net.JoinHostPort(host, in.Port))
+	again := startAdmiral(t, in.Home, net.JoinHostPort(host, in.Port))
+	again.Token = in.Token // devices persist across a restart
+	return again
 }
 
 // startLAN starts an instance on 0.0.0.0:<free port> and returns it with a
@@ -283,6 +296,40 @@ func requireLAN(t *testing.T, in *instance) {
 		return
 	}
 	resp.Body.Close()
+	if in.Token == "" {
+		in.Token = in.pair(t)
+	}
+}
+
+// pair mints a code over loopback and redeems it from the LAN address, the way a second device does.
+func (in *instance) pair(t *testing.T) string {
+	t.Helper()
+	post := func(url, body string) []byte {
+		req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("POST %s = %d %s", url, resp.StatusCode, b)
+		}
+		return b
+	}
+	var minted struct{ Code string }
+	if err := json.Unmarshal(post(in.LocalURL+"/api/v1/pairing-codes", ""), &minted); err != nil || minted.Code == "" {
+		t.Fatalf("mint a pairing code: %v", err)
+	}
+	var paired struct{ Token string }
+	if err := json.Unmarshal(post(in.lanURL()+"/api/v1/pair", `{"code":"`+minted.Code+`","name":"e2e"}`), &paired); err != nil || paired.Token == "" {
+		t.Fatalf("redeem the code: %v", err)
+	}
+	return paired.Token
 }
 
 func lanUnavailable(t *testing.T, format string, args ...any) {

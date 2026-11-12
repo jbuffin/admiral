@@ -1,152 +1,158 @@
-// Package auth decides who may reach Admiral (ADR 0001): loopback peers need
-// nothing, everyone else presents the token.
+// Package auth decides who may reach Admiral (ADRs 0031 and 0032): a local request
+// needs nothing, everyone else presents the token of a paired device.
 package auth
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/subtle"
-	"encoding/base64"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
-	"sync"
-	"time"
 )
 
 const cookieMaxAge = 400 * 24 * 60 * 60
 
-func LoadOrCreateToken(home string) (string, error) {
-	path := filepath.Join(home, "token")
-	if b, err := os.ReadFile(path); err == nil {
-		if t := strings.TrimSpace(string(b)); t != "" {
-			return t, os.Chmod(path, 0o600)
+type pathKind int
+
+const (
+	pathNone    pathKind = iota // a peer and headers that fit neither route in
+	pathLocal                   // this Mac, no proxy in between
+	pathLAN                     // a LAN peer connecting directly
+	pathTailnet                 // tailscale serve: a loopback peer carrying the user's login
+)
+
+type route struct {
+	kind  pathKind
+	login string
+}
+
+type ctxKey struct{}
+
+func classify(r *http.Request) route {
+	loopback := peerIsLoopback(r)
+	proxied := hasProxyHeaders(r)
+	switch {
+	case loopback && !proxied && hostAllowed(r.Host):
+		return route{kind: pathLocal}
+	case loopback:
+		if login := r.Header.Get("Tailscale-User-Login"); login != "" {
+			return route{kind: pathTailnet, login: login}
 		}
-	} else if !os.IsNotExist(err) {
-		return "", err
+	case !proxied:
+		return route{kind: pathLAN}
 	}
-	token, err := newToken()
+	return route{kind: pathNone}
+}
+
+// IsLocal reports whether the request comes from this Mac itself: a loopback peer,
+// no proxy headers, and a Host that is one of this machine's own names.
+func IsLocal(r *http.Request) bool { return classify(r).kind == pathLocal }
+
+func hasProxyHeaders(r *http.Request) bool {
+	for k := range r.Header {
+		if k == "X-Forwarded-For" || k == "Forwarded" || strings.HasPrefix(k, "Tailscale-User-") {
+			return true
+		}
+	}
+	return false
+}
+
+func peerIsLoopback(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return "", err
+		return false
 	}
-	if err := os.WriteFile(path, []byte(token+"\n"), 0o600); err != nil {
-		return "", err
-	}
-	return token, os.Chmod(path, 0o600) // WriteFile keeps the mode of a file that already existed
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
-func newToken() (string, error) {
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(raw), nil
+func (a *Auth) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		isWS := strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
+		rt := classify(r)
+		// https too: behind a TLS proxy the page's origin is https.
+		badOrigin := func() bool {
+			origin := r.Header.Get("Origin")
+			return origin != "" && (isWS || r.Method != http.MethodGet) &&
+				!strings.EqualFold(origin, "http://"+r.Host) && !strings.EqualFold(origin, "https://"+r.Host)
+		}
+
+		if r.URL.Path == "/pair" || (r.URL.Path == "/api/v1/pair" && r.Method == http.MethodPost) {
+			if badOrigin() {
+				http.Error(w, "forbidden origin", http.StatusForbidden)
+				return
+			}
+			a.servePair(w, r, rt)
+			return
+		}
+		if rt.kind == pathLocal {
+			if badOrigin() {
+				http.Error(w, "forbidden origin", http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
+		if rt.kind == pathNone {
+			unauthorized(w, r)
+			return
+		}
+
+		if token, ok := bearerToken(r); ok {
+			id, ok := a.authenticate(token, rt)
+			if !ok {
+				unauthorized(w, r)
+				return
+			}
+			a.serve(w, r, next, isWS, id)
+			return
+		}
+		if c, err := r.Cookie(a.cookie); err == nil {
+			if id, ok := a.authenticate(c.Value, rt); ok {
+				if badOrigin() {
+					http.Error(w, "forbidden origin", http.StatusForbidden)
+					return
+				}
+				if a.shouldReissue(id) {
+					a.setCookie(w, r, c.Value)
+				}
+				a.serve(w, r, next, isWS, id)
+				return
+			}
+		}
+		unauthorized(w, r)
+	})
 }
 
-// The file is replaced by a rename, so a reader sees the old token or the new one.
-func RotateToken(home string) (string, error) {
-	token, err := newToken()
-	if err != nil {
-		return "", err
+func bearerToken(r *http.Request) (string, bool) {
+	h := r.Header.Get("Authorization")
+	if len(h) > 7 && strings.EqualFold(h[:7], "bearer ") {
+		return strings.TrimSpace(h[7:]), true
 	}
-	tmp, err := os.CreateTemp(home, ".token.*")
-	if err != nil {
-		return "", err
-	}
-	defer os.Remove(tmp.Name()) // no-op after a successful rename
-	if _, err := tmp.WriteString(token + "\n"); err != nil {
-		tmp.Close()
-		return "", err
-	}
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return "", err
-	}
-	if err := tmp.Close(); err != nil {
-		return "", err
-	}
-	return token, os.Rename(tmp.Name(), filepath.Join(home, "token"))
+	return "", false
 }
 
-type Auth struct {
-	cookie string
-
-	mu    sync.Mutex
-	token string
-	socks map[*socket]struct{}
-}
-
-type socket struct {
-	token  string
-	cancel context.CancelFunc
-}
-
-// The port is in the cookie name so a test instance on the same host never
-// overwrites the real one's cookie.
-func New(token, port string) *Auth {
-	return &Auth{token: token, cookie: "admiral_token_" + port, socks: map[*socket]struct{}{}}
-}
-
-func (a *Auth) current() string {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.token
-}
-
-func (a *Auth) valid(candidate string) bool {
-	return subtle.ConstantTimeCompare([]byte(candidate), []byte(a.current())) == 1
+func (a *Auth) serve(w http.ResponseWriter, r *http.Request, next http.Handler, isWS bool, id string) {
+	r = r.WithContext(context.WithValue(r.Context(), ctxKey{}, id))
+	if isWS {
+		a.track(w, r, next, id)
+		return
+	}
+	next.ServeHTTP(w, r)
 }
 
 // The bridge's sockets end too: their handlers read with the request's context,
-// which is cancelled here.
-func (a *Auth) SetToken(token string) {
-	a.mu.Lock()
-	a.token = token
-	var stale []*socket
-	for s := range a.socks {
-		if s.token != token {
-			stale = append(stale, s)
-		}
-	}
-	a.mu.Unlock()
-	for _, s := range stale {
-		s.cancel()
-	}
-}
-
-// Watch polls: the file is a few bytes, and a rename over it is seen the same as
-// a write.
-func (a *Auth) Watch(ctx context.Context, home string) {
-	path := filepath.Join(home, "token")
-	tick := time.NewTicker(200 * time.Millisecond)
-	defer tick.Stop()
-	for {
-		select {
-		case <-tick.C:
-			if b, err := os.ReadFile(path); err == nil {
-				if t := strings.TrimSpace(string(b)); t != "" && t != a.current() {
-					a.SetToken(t)
-				}
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-func (a *Auth) track(w http.ResponseWriter, r *http.Request, next http.Handler, presented string) {
+// which is cancelled when the device is revoked.
+func (a *Auth) track(w http.ResponseWriter, r *http.Request, next http.Handler, id string) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	a.mu.Lock()
-	if presented != a.token { // rotated since it was checked
+	if a.find(id) == nil { // revoked since it was checked
 		a.mu.Unlock()
 		unauthorized(w, r)
 		return
 	}
-	s := &socket{token: presented, cancel: cancel}
+	s := &socket{device: id, cancel: cancel}
 	a.socks[s] = struct{}{}
 	a.mu.Unlock()
 	defer func() {
@@ -157,71 +163,19 @@ func (a *Auth) track(w http.ResponseWriter, r *http.Request, next http.Handler, 
 	next.ServeHTTP(w, r.WithContext(ctx))
 }
 
-func (a *Auth) Middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		isWS := strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
-		local := IsLoopbackPeer(r)
-
-		if local && !hostAllowed(r.Host) {
-			http.Error(w, "forbidden host", http.StatusForbidden)
-			return
-		}
-		// https too: behind a TLS proxy such as Cloudflare Tunnel the page's origin is https.
-		if origin := r.Header.Get("Origin"); origin != "" && (isWS || r.Method != http.MethodGet) &&
-			!strings.EqualFold(origin, "http://"+r.Host) && !strings.EqualFold(origin, "https://"+r.Host) {
-			http.Error(w, "forbidden origin", http.StatusForbidden)
-			return
-		}
-		if local {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		query := r.URL.Query()
-		tokenOK := a.valid(query.Get("token"))
-		// A GET carrying the token always trades it for the cookie, so the
-		// token never stays in the address bar or history.
-		if tokenOK && !isWS && r.Method == http.MethodGet {
-			a.redirectWithCookie(w, r, query, query.Get("token"))
-			return
-		}
-		if c, err := r.Cookie(a.cookie); err == nil && a.valid(c.Value) {
-			a.serve(w, r, next, isWS, c.Value)
-			return
-		}
-		if tokenOK && isWS {
-			a.serve(w, r, next, isWS, query.Get("token"))
-			return
-		}
-		unauthorized(w, r)
-	})
-}
-
-func (a *Auth) serve(w http.ResponseWriter, r *http.Request, next http.Handler, isWS bool, presented string) {
-	if isWS {
-		a.track(w, r, next, presented)
-		return
-	}
-	next.ServeHTTP(w, r)
-}
-
-// redirectWithCookie sets the cookie to the token that was presented and checked, not to whatever
-// is current by now: a rotation between the two must not hand the new token to the old one's holder.
-func (a *Auth) redirectWithCookie(w http.ResponseWriter, r *http.Request, query url.Values, presented string) {
+func (a *Auth) setCookie(w http.ResponseWriter, r *http.Request, token string) {
 	http.SetCookie(w, &http.Cookie{
-		Name: a.cookie, Value: presented, Path: "/", MaxAge: cookieMaxAge,
+		Name: a.cookie, Value: token, Path: "/", MaxAge: cookieMaxAge,
 		HttpOnly: true, SameSite: http.SameSiteStrictMode,
+		Secure: r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
 	})
-	query.Del("token")
-	// One leading slash only: "//host/..." would redirect off-site.
-	target := url.URL{Path: "/" + strings.TrimLeft(r.URL.Path, "/"), RawQuery: query.Encode()}
-	http.Redirect(w, r, target.String(), http.StatusFound)
 }
 
 const unauthorizedPage = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Admiral</title></head>
-<body style="font-family: system-ui, sans-serif; margin: 3rem 1.5rem"><p>Open the URL Admiral printed</p></body></html>
+<body style="font-family: system-ui, sans-serif; margin: 3rem 1.5rem"><p>This device isn't paired with Admiral.</p>
+<p>On the Mac, run <code>admiral pair</code> and open the address it prints, or <a href="/pair">enter the code</a>.</p></body></html>
 `
 
 func unauthorized(w http.ResponseWriter, r *http.Request) {
@@ -234,15 +188,6 @@ func unauthorized(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusUnauthorized)
 	_, _ = w.Write([]byte(unauthorizedPage))
-}
-
-func IsLoopbackPeer(r *http.Request) bool {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return false
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }
 
 // hostAllowed guards loopback peers against DNS rebinding.

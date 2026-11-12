@@ -391,8 +391,8 @@ func (w *world) release(session, name string) {
 	}
 }
 
-// startLAN starts Admiral on 0.0.0.0 with the world's environment and reads
-// the token from the printed second line. It skips (fails on CI) when the
+// startLAN starts Admiral on 0.0.0.0 with the world's environment and pairs a
+// device. It skips (fails on CI) when the
 // Mac's address does not answer.
 func (w *world) startLAN(t *testing.T) *fleetInst {
 	t.Helper()
@@ -401,7 +401,7 @@ func (w *world) startLAN(t *testing.T) *fleetInst {
 	}
 	w.in = launchAdmiral(t, w.home, "0.0.0.0:"+freePort(t), w.baseEnv())
 	if m := lanLine.FindStringSubmatch(w.in.LANLine); m != nil {
-		w.in.LANIP, w.in.Token = m[1], m[3]
+		w.in.LANIP = m[1]
 	}
 	requireLAN(t, w.in.instance)
 	return w.in

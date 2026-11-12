@@ -45,7 +45,7 @@ func fail(w http.ResponseWriter, code int, msg string) {
 }
 
 func (rt *Route) serve(w http.ResponseWriter, r *http.Request) {
-	if !auth.IsLoopbackPeer(r) {
+	if !auth.IsLocal(r) {
 		fail(w, http.StatusForbidden, "locks are taken from this Mac only")
 		return
 	}

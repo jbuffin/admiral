@@ -249,7 +249,7 @@ func TestBridgeS3_OnlyCurrentShipsAreWatchable(t *testing.T) {
 	}
 }
 
-func TestBridgeS3_AccessFollowsTheToken(t *testing.T) {
+func TestBridgeS3_AccessFollowsTheDeviceToken(t *testing.T) {
 	t.Parallel()
 	w := liveFleet(t)
 	in := w.startLAN(t)
@@ -272,8 +272,11 @@ func TestBridgeS3_AccessFollowsTheToken(t *testing.T) {
 	t.Run("the cookie works", func(t *testing.T) {
 		connects(t, "", http.Header{"Cookie": {in.cookieName() + "=" + in.Token}})
 	})
-	t.Run("?token= works", func(t *testing.T) {
-		connects(t, "token="+url.QueryEscape(in.Token), nil)
+	t.Run("Bearer works", func(t *testing.T) {
+		connects(t, "", http.Header{"Authorization": {"Bearer " + in.Token}})
+	})
+	t.Run("?token= is refused", func(t *testing.T) {
+		expectBridgeRefused(t, in.lanURL(), s.Session, "token="+url.QueryEscape(in.Token), nil, "", http.StatusUnauthorized)
 	})
 	t.Run("a local peer needs no token", func(t *testing.T) {
 		b, resp, err := bridgeDial(t, in.LocalURL, s.Session, "", nil, "")

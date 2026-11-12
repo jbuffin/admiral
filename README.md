@@ -42,7 +42,7 @@ admiral setup            # find your harnesses and add your first fleet
 admiral service install  # start Admiral at login, and restart it if it stops
 ```
 
-`admiral service install` prints the "On other devices" URL with your token. Open that URL on your iPad or another device. Admiral logs to `~/.admiral/logs/admiral.log` (under `$ADMIRAL_HOME` if you set it). `admiral service status` says whether the service is installed and loaded, and prints the URL again.
+`admiral service install` prints the "On other devices" URL. Pair your iPad or another device with a code from `admiral pair`, then open that URL. Admiral logs to `~/.admiral/logs/admiral.log` (under `$ADMIRAL_HOME` if you set it). `admiral service status` says whether the service is installed and loaded, and prints the URL again.
 
 ## Upgrade
 

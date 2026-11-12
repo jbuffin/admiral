@@ -179,12 +179,11 @@ func TestServiceS4_InstallWritesThePlistAndBootstraps(t *testing.T) {
 
 	s.wantBootoutThenBootstrap(s.calls())
 
-	token, err := os.ReadFile(filepath.Join(s.ah, "token"))
-	if err != nil {
-		t.Fatalf("install should leave a token to print: %v", err)
+	if _, err := os.Stat(filepath.Join(s.ah, "token")); err == nil {
+		t.Error("install must not create a shared token file")
 	}
-	if !strings.Contains(out, "On other devices: http://") || !strings.Contains(out, "?token="+strings.TrimSpace(string(token))) {
-		t.Errorf("install should print the token URL, got %q", out)
+	if !strings.Contains(out, "On other devices: http://") || strings.Contains(out, "token=") {
+		t.Errorf("install should print the plain URL, got %q", out)
 	}
 }
 
@@ -307,8 +306,8 @@ func TestServiceS4_StatusUsesTheExitCodeNotTheOutput(t *testing.T) {
 	if got := strings.SplitN(out, "\n", 2)[0]; got != "Service: installed, loaded" {
 		t.Errorf("print exit 0: first line %q, want \"Service: installed, loaded\"", got)
 	}
-	if !strings.Contains(out, "On other devices: http://") || !strings.Contains(out, "?token=") {
-		t.Errorf("status should print the token URL, got %q", out)
+	if !strings.Contains(out, "On other devices: http://") || strings.Contains(out, "token") {
+		t.Errorf("status should print the plain URL and no token, got %q", out)
 	}
 	var printed bool
 	for _, c := range s.calls() {
