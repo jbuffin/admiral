@@ -50,9 +50,6 @@ func runPlan(ctx context.Context, plan keymap.Plan, p paneIO) (why string, err e
 		if err := p.send(ctx, st.Keys); err != nil {
 			return "", err
 		}
-		if st.Done == nil {
-			continue
-		}
 		if ok, err := p.waitFor(ctx, st.Done, stepWait); err != nil || !ok {
 			return "the menu did not show " + st.Want + ": finish the answer in the terminal", err
 		}

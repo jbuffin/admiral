@@ -240,12 +240,12 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
 	// One answer at a time per pane, from the gate to the state change: a second tap must see what the first did.
 	mu, _ := s.answering.LoadOrStore(t.pane, new(sync.Mutex))
 	mu.(*sync.Mutex).Lock()
 	defer mu.(*sync.Mutex).Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
 	keys, plan, why := s.answerKeys(ctx, t, session, req)
 	if why != "" {
 		writeError(w, http.StatusConflict, why)

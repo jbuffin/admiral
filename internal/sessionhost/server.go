@@ -477,8 +477,9 @@ func (s Server) CapturePane(ctx context.Context, pane string) (string, error) {
 }
 
 // SendLiteral types text into the pane as it is, so a slash command runs.
+// SendLiteral types text as is; the -- keeps text that starts with a dash from reading as a flag.
 func (s Server) SendLiteral(ctx context.Context, pane, text string) error {
-	_, err := s.run(call{ctx: ctx, args: []string{"send-keys", "-t", pane, "-l", text}})
+	_, err := s.run(call{ctx: ctx, args: []string{"send-keys", "-t", pane, "-l", "--", text}})
 	return err
 }
 

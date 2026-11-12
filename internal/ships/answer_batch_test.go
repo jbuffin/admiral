@@ -110,12 +110,12 @@ func TestClaudeBatchAnswerIsSentOnlyWhilePaneAsksThatWholeCall(t *testing.T) {
 	}
 
 	dirty := fourAnswers()
-	dirty[2] = batchAnswer{"other": "alpha\x1bbeta\ngamma\r\ndelta"}
+	dirty[2] = batchAnswer{"other": "-1 alpha\x1bbeta\ngamma\r\ndelta"}
 	if code := post(batchBody(t, "question", "call#0", dirty...)); code != http.StatusOK {
 		t.Fatalf("the whole call answered at once = %d, want 200", code)
 	}
 	got := p.sent("\x00")
-	for _, want := range []string{"alpha", "gamma", "delta"} {
+	for _, want := range []string{"-1 alpha", "gamma", "delta"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the pane read %q, want the Other text with %q in it", got, want)
 		}

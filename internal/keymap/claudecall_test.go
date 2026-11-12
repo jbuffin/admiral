@@ -110,6 +110,10 @@ func (m *menuModel) press(keys string) {
 func (m *menuModel) screen() string {
 	var b strings.Builder
 	b.WriteString("❯ earlier prompt\n────────\n")
+	if m.submitted {
+		b.WriteString("⏺ User answered Claude's questions:\n")
+		return b.String()
+	}
 	if m.review {
 		var tabs []string
 		for range m.qs {
@@ -199,7 +203,7 @@ func play(t *testing.T, qs []keymap.CallQuestion) *menuModel {
 	}
 	for _, st := range plan.Steps {
 		m.press(st.Keys)
-		if st.Done != nil && !st.Done(m.screen()) {
+		if !st.Done(m.screen()) {
 			t.Fatalf("after %q the pane does not show %s:\n%s", st.Keys, st.Want, m.screen())
 		}
 	}
@@ -284,6 +288,11 @@ func TestClaudeCallPlanStopsWhenTheMenuIsNotFreshOrDoesNotFollow(t *testing.T) {
 	if plan.Fresh(moved.screen()) {
 		t.Error("a menu with its cursor on row 2 counts as fresh")
 	}
+	lone := []keymap.CallQuestion{{Text: "Which colour?", Labels: labels("Red", "Green", "Blue"), Choose: []int{2}}}
+	lonePlan, _ := claudeMap(t).Plan(lone)
+	if last := lonePlan.Steps[len(lonePlan.Steps)-1]; last.Done(newMenu(t, lone).screen()) {
+		t.Error("a lone single-choice menu still asking counts as answered: a lost key would report success")
+	}
 	wrong := newMenu(t, []keymap.CallQuestion{{Text: "Which colour?", Labels: labels("Red", "Green", "Blue"), Choose: []int{2}}, qs[1]})
 	wrong.press("2\r")
 	wrong.press("1")
@@ -351,5 +360,41 @@ func TestClaudeCallPlanOnRecordedOtherAnswersWithADigitAndASpace(t *testing.T) {
 	}
 	if !strings.Contains(read("rec-multi-other-after.txt"), "→ Cheese, 2 big slices") {
 		t.Error("the recorded run does not show Claude receiving Cheese and the whole Other text")
+	}
+}
+
+// Recorded on Claude Code 2.1.322: the menu draws question and label Markdown as typed, wraps a long Other text rather than
+// cutting it, and keeps every tab's box on a 20-column pane, so the plan's checks hold on all three.
+func TestClaudeCallPlanOnRecordedMarkdownLongOtherAndNarrowMenus(t *testing.T) {
+	read := func(name string) string {
+		b, err := os.ReadFile(filepath.Join("testdata", "claude", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	other := "-1 is fine,"
+	for i := 1; i < 60; i++ {
+		other += fmt.Sprintf(" word%d", i)
+	}
+	other += " end"
+	size := keymap.CallQuestion{Text: "Which **size** fits `main.go`?", Labels: labels("**Small**", "Large [docs](https://example.com)"), Other: other}
+	extras := keymap.CallQuestion{Text: "Pick _extras_ please", Labels: labels("Cheese", "`Ham`"), Multi: true, Choose: []int{2}}
+	plan, _ := claudeMap(t).Plan([]keymap.CallQuestion{size, extras})
+	if !plan.Fresh(read("rec-md-menu.txt")) {
+		t.Error("the recorded menu with Markdown in its question and labels is not seen as fresh")
+	}
+	if typed := plan.Steps[1]; !typed.Done(read("rec-md-long-other-typed.txt")) {
+		t.Errorf("the recorded long Other text does not satisfy the step that types it (%s)", typed.Want)
+	}
+	if !plan.Review(read("rec-md-review.txt")) {
+		t.Error("the recorded review of the Markdown call with a long Other text is not accepted")
+	}
+	four := make([]keymap.CallQuestion, 4)
+	for i, q := range []string{"Q one?", "Q two?", "Q three?", "Q four?"} {
+		four[i] = keymap.CallQuestion{Text: q, Labels: labels("Alpha", "Beta"), Choose: []int{1}}
+	}
+	if plan, _ := claudeMap(t).Plan(four); !plan.Fresh(read("rec-four-tabs-20-cols.txt")) {
+		t.Error("the recorded four-question menu on a 20-column pane is not seen as fresh")
 	}
 }

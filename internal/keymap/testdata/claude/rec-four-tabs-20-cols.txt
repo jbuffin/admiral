@@ -1,0 +1,17 @@
+← ☐  ☐  ☐  ☐   ✔ Su
+ …  T… S… D…  bmit →
+
+Q one?
+
+❯ 1. Alpha
+     Alpha
+  2. Beta
+     Beta
+  3. Type something.
+────────────────────
+  4. Chat about this
+
+Enter to select ·
+Tab/Arrow keys to
+navigate · Esc to
+cancel

@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Step is keys for the menu and what the pane must show once it has taken them; a nil Done waits for nothing.
+// Step is keys for the menu and what the pane must show once it has taken them.
 type Step struct {
 	Keys string
 	Done func(screen string) bool
@@ -38,8 +38,8 @@ func claudePlan(qs []CallQuestion) (Plan, bool) {
 		if n < 1 || n > 8 || strings.TrimSpace(q.Text) == "" {
 			return Plan{}, false
 		}
-		// What the pane shows after this question is answered.
-		after := func(string) bool { return true }
+		// What the pane shows after this question is answered: a lone single-choice question has no next screen, so its menu closes.
+		after := closed(q)
 		if i < len(qs)-1 {
 			after = onQuestion(qs[i+1], i+1)
 		} else if review {
@@ -48,12 +48,12 @@ func claudePlan(qs []CallQuestion) (Plan, bool) {
 		if !q.Multi {
 			switch {
 			case len(q.Choose) == 1 && q.Other == "" && q.Choose[0] >= 1 && q.Choose[0] <= n:
-				p.Steps = append(p.Steps, Step{Keys: strconv.Itoa(q.Choose[0]), Done: doneUnless(after, !review && i == len(qs)-1), Want: "the next screen"})
+				p.Steps = append(p.Steps, Step{Keys: strconv.Itoa(q.Choose[0]), Done: after, Want: "the next screen"})
 			case len(q.Choose) == 0 && q.Other != "":
 				p.Steps = append(p.Steps,
 					Step{Keys: strconv.Itoa(n + 1), Done: cursorOn(n + 1), Want: "the cursor on the Other row"},
 					Step{Keys: q.Other, Done: shows(q.Other), Want: "the Other text"},
-					Step{Keys: "\r", Done: doneUnless(after, !review && i == len(qs)-1), Want: "the next screen"})
+					Step{Keys: "\r", Done: after, Want: "the next screen"})
 			default:
 				return Plan{}, false
 			}
@@ -91,16 +91,18 @@ func claudePlan(qs []CallQuestion) (Plan, bool) {
 	return p, true
 }
 
-// doneUnless leaves a question's step unchecked when nothing follows it: a lone single-choice answer has no next screen.
-func doneUnless(after func(string) bool, last bool) func(string) bool {
-	if last {
-		return nil
+// closed is true once the pane no longer draws q's menu: its text over a numbered Other row.
+func closed(q CallQuestion) func(string) bool {
+	other := cursorOrNot(len(q.Labels) + 1)
+	return func(screen string) bool {
+		_, rest, ok := menu(screen)
+		return !ok || !strings.Contains(compact(rest), compact(q.Text)) || !other.MatchString(rest)
 	}
-	return after
 }
 
 var (
-	cursorRow = func(n int) *regexp.Regexp { return regexp.MustCompile(`(?m)^❯ +` + strconv.Itoa(n) + `\. `) }
+	cursorRow   = func(n int) *regexp.Regexp { return regexp.MustCompile(`(?m)^❯ +` + strconv.Itoa(n) + `\. `) }
+	cursorOrNot = func(n int) *regexp.Regexp { return regexp.MustCompile(`(?m)^[❯ ] +` + strconv.Itoa(n) + `\. `) }
 	// Claude labels the row under a multi-select Next on every tab but the last, where it says Submit.
 	submitRow = regexp.MustCompile(`(?m)^❯ +(Next|Submit)\s*$`)
 )
