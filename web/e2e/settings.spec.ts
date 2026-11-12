@@ -522,8 +522,8 @@ test('Settings shows the Tailscale checks, copies the URL, edits the allowed log
 
     await logins.getByRole('listitem').filter({ hasText: BOB }).getByRole('button', { name: `Remove ${BOB}` }).tap();
     await expect.poll(async () => (await remote()).allowedLogins).toEqual([TS_LOGIN]);
-    await expect(other.getByText('This device was signed out. Pair it again with a new code.')).toBeVisible();
-    await expect(other.getByRole('link', { name: /pair/i })).toHaveAttribute('href', '/pair');
+    await expect(other.getByRole('heading', { name: 'This device was signed out' })).toBeVisible();
+    await expect(other.getByLabel('Pairing code')).toBeVisible();
     expect(await other.evaluate(() => (window as unknown as { __kept?: boolean }).__kept)).toBe(true);
   } finally {
     await tailnet.close();

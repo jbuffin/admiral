@@ -72,14 +72,18 @@ func (a *Auth) servePair(w http.ResponseWriter, r *http.Request, rt route) {
 		return
 	}
 	var code, name string
+	var cookie bool
 	switch {
 	case api:
-		var body struct{ Code, Name string }
+		var body struct {
+			Code, Name string
+			Cookie     bool
+		}
 		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body) != nil {
 			pairFail(w, true, http.StatusBadRequest, "expected JSON {\"code\": \"…\"}")
 			return
 		}
-		code, name = body.Code, body.Name
+		code, name, cookie = body.Code, body.Name, body.Cookie
 	case r.Method == http.MethodGet:
 		code = r.URL.Query().Get("code")
 		if code == "" {
@@ -121,7 +125,14 @@ func (a *Auth) servePair(w http.ResponseWriter, r *http.Request, rt route) {
 	if api {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
-		_ = json.NewEncoder(w).Encode(map[string]any{"token": token, "device": map[string]string{"id": d.ID, "name": d.Name}})
+		out := map[string]any{"device": map[string]string{"id": d.ID, "name": d.Name}}
+		// A browser asks for the cookie so the token never reaches its script.
+		if cookie {
+			a.setCookie(w, r, token)
+		} else {
+			out["token"] = token
+		}
+		_ = json.NewEncoder(w).Encode(out)
 		return
 	}
 	a.setCookie(w, r, token)

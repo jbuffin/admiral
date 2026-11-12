@@ -2,6 +2,7 @@ import { signal } from '@preact/signals';
 import { probeShips, shipsSocketUrl, type Resource, type Ship, type Source } from './api';
 import { signedOut } from './session';
 import type { InboxItem } from './inbox';
+import { markPaired } from './pairing';
 import { moveTarget } from './remoteTailscale';
 
 export const ships = signal<Ship[]>([]);
@@ -81,6 +82,7 @@ export function watchShips(): () => void {
     s.onopen = () => {
       connecting = false;
       shipsLink.value = 'open';
+      markPaired();
       delay = RETRY_FIRST_MS;
       openers.forEach(guard);
     };
