@@ -39,6 +39,8 @@ var usages = map[string]string{
 	"inbox":      "usage: admiral inbox [--port <n>] [--json]",
 	"orders":     "usage: admiral orders [--port <n>] [--json]\n       admiral orders add --source <key> --panel <id> [--port <n>] [-- <text>]   (text from stdin without an argument)",
 	"advise":     "usage: admiral advise   (a decision as JSON on stdin: {question, options, recommendation}; prints {stakes, reason, cost})",
+	"pair":       "usage: admiral pair [--port <n>] [--json]   (mints a single-use pairing code for a new device)",
+	"devices":    "usage: admiral devices [--port <n>] [--json]\n       admiral devices rename <name-or-id> <new-name> [--port <n>]\n       admiral devices revoke <name-or-id> | --all [--port <n>]",
 	"chat":       "usage: admiral chat ask [--timeout <dur>] [--wait <id>]   (a question as JSON on stdin: {title, questions})",
 }
 
@@ -48,7 +50,7 @@ func Usage(command string) string {
 	if u, ok := usages[first]; ok {
 		return u
 	}
-	return "usage: admiral [--listen host:port] | setup | fleet | config | ships | attach | crew | outcomes | inbox | orders | chat | advise | lock | completion | service | --version"
+	return "usage: admiral [--listen host:port] | setup | fleet | config | ships | attach | crew | outcomes | inbox | orders | pair | devices | chat | advise | lock | completion | service | --version"
 }
 
 func usagef(format string, a ...any) error { return &UsageError{fmt.Sprintf(format, a...)} }

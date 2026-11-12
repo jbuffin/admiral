@@ -126,6 +126,10 @@ func run(args []string) error {
 		return cli.Inbox(args[1:], std)
 	case "orders":
 		return cli.Orders(args[1:], std)
+	case "pair":
+		return cli.Pair(args[1:], std)
+	case "devices":
+		return cli.Devices(args[1:], std)
 	case "chat":
 		return cli.Chat(args[1:], std)
 	}
