@@ -14,6 +14,7 @@ import { MergeControl } from './PeekMerge';
 import { Failure } from './PeekItem';
 import { ReadyToMerge } from './StatusGlyph';
 import { NO_RESUME_NOTE } from './moored';
+import { USAGE_POLL_MS, usageRow, type ShipUsage } from './shipUsage';
 import { boxState } from './messageBox';
 import { Sheet } from './Sheet';
 import { fleetSearch } from './fleets';
@@ -154,7 +155,58 @@ function TerminalTab({ ship, boat }: { ship: Ship; boat?: CrewBoat }) {
   return <SessionTerminal ship={ship} boat={boat} />;
 }
 
-type Load = { state: 'loading' } | { state: 'error'; error: string } | { state: 'done'; changes: Changes };
+/** The ship's tokens and money, read on open, every USAGE_POLL_MS and when the page becomes visible again. */
+function UsageRow({ session }: { session: string }) {
+  const [usage, setUsage] = useState<ShipUsage | null>(null);
+  useEffect(() => {
+    let live = true;
+    setUsage(null);
+    const read = () =>
+      void call<ShipUsage>('GET', `/ships/${encodeURIComponent(session)}/usage`).then((r) => {
+        if (live) setUsage(r.ok ? r.data : null);
+      });
+    const visible = () => {
+      if (document.visibilityState === 'visible') read();
+    };
+    read();
+    const timer = setInterval(read, USAGE_POLL_MS);
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      live = false;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [session]);
+  const row = usageRow(usage);
+  if (!row) return null;
+  return (
+    <div class="ship-usage" role="group" aria-label="Usage">
+      {row.tokens ? (
+        <details class="ship-usage-tokens">
+          <summary>{row.tokens.headline}</summary>
+          <dl>
+            {row.tokens.classes.map((c) => (
+              <div key={c.label}>
+                <dt>{c.label}</dt>
+                <dd>{c.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+      ) : null}
+      {row.money ? (
+        <span class="ship-usage-money">
+          {row.money.text}
+          {row.money.premium ? `, ${row.money.premium}` : ''}
+          {row.money.incomplete ? ' (incomplete)' : ''}
+        </span>
+      ) : null}
+      <span class="ship-usage-fresh">{row.fresh}</span>
+    </div>
+  );
+}
+
+type Load ={ state: 'loading' } | { state: 'error'; error: string } | { state: 'done'; changes: Changes };
 
 /** The ship's diff against its base, read each time the tab opens. It never joins the bridge. */
 function ChangesTab({ ship }: { ship: Ship }) {
@@ -330,6 +382,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
           <StopShip ship={ship} />
         )}
       </div>
+      <UsageRow session={ship.session} />
       {moored ? (
         <div class="moored-info">
           <p class="line">This ship is moored: its PRs are open and it has no session until it's woken.</p>
