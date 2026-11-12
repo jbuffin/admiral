@@ -62,6 +62,19 @@ func SetChat(dir string, c Chat) error {
 	return replaceFile(path, out)
 }
 
+// SetRemote writes the remote section; allowedLogins is always written, so a cleared list stays visible.
+func SetRemote(dir string, r Remote) error {
+	obj := struct {
+		Tailscale     bool     `json:"tailscale"`
+		AllowedLogins []string `json:"allowedLogins"`
+	}{r.Tailscale, nonNil(r.AllowedLogins)}
+	raw, err := json.Marshal(obj)
+	if err != nil {
+		return err
+	}
+	return setKey(dir, "remote", raw)
+}
+
 func SetSources(dir string, sources json.RawMessage) error {
 	if !json.Valid(sources) {
 		return fmt.Errorf("sources: not valid JSON")

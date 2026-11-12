@@ -36,6 +36,7 @@ type device struct {
 
 type socket struct {
 	device string
+	login  string // the tailnet login it came in under; empty on the LAN
 	cancel context.CancelFunc
 }
 
@@ -44,6 +45,7 @@ type Auth struct {
 	home    string
 	now     func() time.Time
 	baseURL func() string
+	remote  func() (bool, []string)
 
 	mu      sync.Mutex
 	devices []*device
@@ -59,10 +61,15 @@ func WithClock(now func() time.Time) Option { return func(a *Auth) { a.now = now
 // WithBaseURL gives the address pairing URLs start with, such as http://192.168.1.10:7420.
 func WithBaseURL(base func() string) Option { return func(a *Auth) { a.baseURL = base } }
 
+// WithRemote gives the live Tailscale mode and login allowlist; without it the mode is off.
+func WithRemote(remote func() (enabled bool, allowedLogins []string)) Option {
+	return func(a *Auth) { a.remote = remote }
+}
+
 // The port is in the cookie name so a test instance on the same host never
 // overwrites the real one's cookie.
 func New(home, port string, opts ...Option) (*Auth, error) {
-	a := &Auth{cookie: "admiral_token_" + port, home: home, now: time.Now, socks: map[*socket]struct{}{}}
+	a := &Auth{cookie: "admiral_token_" + port, home: home, now: time.Now, remote: func() (bool, []string) { return false, nil }, socks: map[*socket]struct{}{}}
 	for _, o := range opts {
 		o(a)
 	}

@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -35,13 +36,41 @@ func classify(r *http.Request) route {
 	case loopback && !proxied && hostAllowed(r.Host):
 		return route{kind: pathLocal}
 	case loopback:
-		if login := r.Header.Get("Tailscale-User-Login"); login != "" {
+		// Trimmed here only, so the allowlist, the recorded login and the device binding agree.
+		if login := strings.TrimSpace(r.Header.Get("Tailscale-User-Login")); login != "" {
 			return route{kind: pathTailnet, login: login}
 		}
 	case !proxied:
 		return route{kind: pathLAN}
 	}
 	return route{kind: pathNone}
+}
+
+// route is classify plus the remote settings, read on every request so an edit applies at once:
+// a tailnet request needs the mode on and its login on the allowlist.
+func (a *Auth) route(r *http.Request) route {
+	rt := classify(r)
+	if rt.kind != pathTailnet {
+		return rt
+	}
+	on, logins := a.remote()
+	if on && slices.Contains(logins, rt.login) {
+		return rt
+	}
+	return route{kind: pathNone}
+}
+
+// EnforceRemote ends every open tailnet socket the remote settings no longer allow: all of
+// them with the mode off, else those whose login left the allowlist. Call it when the config changes.
+func (a *Auth) EnforceRemote() {
+	on, logins := a.remote()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for s := range a.socks {
+		if s.login != "" && !(on && slices.Contains(logins, s.login)) {
+			s.cancel()
+		}
+	}
 }
 
 // IsLocal reports whether the request comes from this Mac itself: a loopback peer,
@@ -69,7 +98,7 @@ func peerIsLoopback(r *http.Request) bool {
 func (a *Auth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		isWS := strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
-		rt := classify(r)
+		rt := a.route(r)
 		// https too: behind a TLS proxy the page's origin is https.
 		badOrigin := func() bool {
 			origin := r.Header.Get("Origin")
@@ -104,7 +133,7 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 				unauthorized(w, r)
 				return
 			}
-			a.serve(w, r, next, isWS, id)
+			a.serve(w, r, next, isWS, id, rt.login)
 			return
 		}
 		if c, err := r.Cookie(a.cookie); err == nil {
@@ -116,7 +145,7 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 				if a.shouldReissue(id) {
 					a.setCookie(w, r, c.Value)
 				}
-				a.serve(w, r, next, isWS, id)
+				a.serve(w, r, next, isWS, id, rt.login)
 				return
 			}
 		}
@@ -132,10 +161,10 @@ func bearerToken(r *http.Request) (string, bool) {
 	return "", false
 }
 
-func (a *Auth) serve(w http.ResponseWriter, r *http.Request, next http.Handler, isWS bool, id string) {
+func (a *Auth) serve(w http.ResponseWriter, r *http.Request, next http.Handler, isWS bool, id, login string) {
 	r = r.WithContext(context.WithValue(r.Context(), ctxKey{}, id))
 	if isWS {
-		a.track(w, r, next, id)
+		a.track(w, r, next, id, login)
 		return
 	}
 	next.ServeHTTP(w, r)
@@ -143,7 +172,7 @@ func (a *Auth) serve(w http.ResponseWriter, r *http.Request, next http.Handler, 
 
 // The bridge's sockets end too: their handlers read with the request's context,
 // which is cancelled when the device is revoked.
-func (a *Auth) track(w http.ResponseWriter, r *http.Request, next http.Handler, id string) {
+func (a *Auth) track(w http.ResponseWriter, r *http.Request, next http.Handler, id, login string) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	a.mu.Lock()
@@ -152,7 +181,7 @@ func (a *Auth) track(w http.ResponseWriter, r *http.Request, next http.Handler, 
 		unauthorized(w, r)
 		return
 	}
-	s := &socket{device: id, cancel: cancel}
+	s := &socket{device: id, login: login, cancel: cancel}
 	a.socks[s] = struct{}{}
 	a.mu.Unlock()
 	defer func() {
