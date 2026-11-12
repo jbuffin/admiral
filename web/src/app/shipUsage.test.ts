@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { USAGE_POLL_MS, shortCount, usageRow, type ShipUsage } from './shipUsage';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { shortCount, usageRow, watchUsage, type ShipUsage } from './shipUsage';
 import { when } from './when';
 
 const usage = (over: Partial<ShipUsage> = {}): ShipUsage => ({
@@ -114,8 +114,75 @@ describe('usageRow hides', () => {
   });
 });
 
-describe('refresh', () => {
-  it('polls every 30 seconds', () => {
-    expect(USAGE_POLL_MS).toBe(30_000);
+describe('watchUsage', () => {
+  const body = (n: number) => JSON.stringify({ session: 's', harness: 'claude', source: 'record', tokens: { input: n, output: 0, reasoning: 0, cache_read: 0, cache_write: 0 }, money: null });
+  let replies: ((r: Response) => void)[];
+  let gets: number;
+  let seen: (number | null)[];
+  let doc: EventTarget & { visibilityState: string };
+  const got = (u: ShipUsage | null) => seen.push(u && u.tokens ? u.tokens.input : null);
+  const answer = (i: number, status: number, n = 0) => replies[i](new Response(status === 200 ? body(n) : '{}', { status }));
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    replies = [];
+    gets = 0;
+    seen = [];
+    doc = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+    vi.stubGlobal('document', doc);
+    vi.stubGlobal('fetch', () => {
+      gets++;
+      return new Promise<Response>((res) => replies.push(res));
+    });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('reads on open, every 30 seconds, and when the page turns visible, then stops', async () => {
+    const stop = watchUsage('s', got);
+    expect(gets).toBe(1);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(gets).toBe(2);
+    doc.visibilityState = 'hidden';
+    doc.dispatchEvent(new Event('visibilitychange'));
+    expect(gets).toBe(2);
+    doc.visibilityState = 'visible';
+    doc.dispatchEvent(new Event('visibilitychange'));
+    expect(gets).toBe(3);
+    stop();
+    await vi.advanceTimersByTimeAsync(60_000);
+    doc.dispatchEvent(new Event('visibilitychange'));
+    expect(gets).toBe(3);
+  });
+
+  it('drops a reply that lands after the stop', async () => {
+    const stop = watchUsage('s', got);
+    stop();
+    answer(0, 200, 5);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(seen).toEqual([]);
+  });
+
+  it('keeps the figures on a transient error and clears them on a 404', async () => {
+    watchUsage('s', got);
+    answer(0, 200, 5);
+    await vi.advanceTimersByTimeAsync(30_000);
+    answer(1, 500);
+    await vi.advanceTimersByTimeAsync(30_000);
+    answer(2, 404);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(seen).toEqual([5, null]);
+  });
+
+  it('ignores a reply older than the latest applied one', async () => {
+    watchUsage('s', got);
+    await vi.advanceTimersByTimeAsync(30_000);
+    answer(1, 200, 9);
+    await vi.advanceTimersByTimeAsync(0);
+    answer(0, 200, 1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(seen).toEqual([9]);
   });
 });

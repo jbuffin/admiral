@@ -420,12 +420,17 @@ button.pill { cursor: pointer; min-height: 32px; }
 .fold-chevron { display: inline-flex; transform: rotate(-90deg); }
 .fold-chevron.open { transform: none; }
 
-/* Message box: under the conversation, above the on-screen keyboard's scroll. */
-.ship-usage { display: flex; flex-wrap: wrap; align-items: center; gap: 0 14px; margin: -4px 0 10px; font-size: var(--font-size-meta); color: var(--color-muted); }
-.ship-usage summary { display: inline-flex; align-items: center; min-height: var(--shape-min-touch-target); color: var(--color-text2); cursor: pointer; }
+.ship-usage { margin: -4px 0 10px; font-size: var(--font-size-meta); color: var(--color-muted); }
+.ship-usage summary { list-style: none; cursor: pointer; }
+.ship-usage summary::-webkit-details-marker { display: none; }
+.ship-usage-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 14px; }
+.ship-usage summary.ship-usage-line { align-items: center; min-height: var(--shape-min-touch-target); }
+.ship-usage-tokens { color: var(--color-text2); }
 .ship-usage dl { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 8px; }
 .ship-usage dl div { display: flex; gap: 6px; }
 .ship-usage dt, .ship-usage dd { margin: 0; }
+
+/* Message box: under the conversation, above the on-screen keyboard's scroll. */
 .ship-view-head .stop-ship { margin-left: auto; flex: none; }
 .stop-backdrop .line { margin: 4px 0 8px; }
 .convo-area { display: flex; flex-direction: column; flex: 1; min-height: 0; }

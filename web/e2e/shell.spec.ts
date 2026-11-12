@@ -617,7 +617,7 @@ test('a ship\'s Bridge shows its tokens and its own money, Claude in est. dollar
 
   await page.goto(admiral.url + 'app/ships?fleet=alpha');
   await rowLink(page, codex).tap();
-  await expect(usage).toContainText('tokens', { timeout: 15_000 });
+  await expect(usage).toContainText('360 tokens', { timeout: 15_000 });
   await expect(usage).not.toContainText(/\$|credit/);
 });
 

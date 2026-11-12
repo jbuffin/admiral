@@ -1,3 +1,4 @@
+import { call } from './api';
 import { when } from './when';
 
 export interface ShipUsage {
@@ -11,6 +12,34 @@ export interface ShipUsage {
 }
 
 export const USAGE_POLL_MS = 30_000;
+
+/** Reads a ship's usage now, every USAGE_POLL_MS and when the page turns visible; returns the stop. A 404 clears the figures, any other error keeps them, and a reply older than the one applied is dropped. */
+export function watchUsage(session: string, onUsage: (u: ShipUsage | null) => void): () => void {
+  let live = true;
+  let sent = 0;
+  let applied = 0;
+  const read = () => {
+    const mine = ++sent;
+    void call<ShipUsage>('GET', `/ships/${encodeURIComponent(session)}/usage`).then((r) => {
+      if (!live || mine < applied) return;
+      if (r.ok) onUsage(r.data);
+      else if (r.status === 404) onUsage(null);
+      else return;
+      applied = mine;
+    });
+  };
+  const visible = () => {
+    if (document.visibilityState === 'visible') read();
+  };
+  read();
+  const timer = setInterval(read, USAGE_POLL_MS);
+  document.addEventListener('visibilitychange', visible);
+  return () => {
+    live = false;
+    clearInterval(timer);
+    document.removeEventListener('visibilitychange', visible);
+  };
+}
 
 /** A count as `999`, `1.2k`, `15k` or `1.5M`. */
 export function shortCount(n: number): string {

@@ -14,7 +14,7 @@ import { MergeControl } from './PeekMerge';
 import { Failure } from './PeekItem';
 import { ReadyToMerge } from './StatusGlyph';
 import { NO_RESUME_NOTE } from './moored';
-import { USAGE_POLL_MS, usageRow, type ShipUsage } from './shipUsage';
+import { usageRow, watchUsage, type ShipUsage } from './shipUsage';
 import { boxState } from './messageBox';
 import { Sheet } from './Sheet';
 import { fleetSearch } from './fleets';
@@ -158,42 +158,16 @@ function TerminalTab({ ship, boat }: { ship: Ship; boat?: CrewBoat }) {
 /** The ship's tokens and money, read on open, every USAGE_POLL_MS and when the page becomes visible again. */
 function UsageRow({ session }: { session: string }) {
   const [usage, setUsage] = useState<ShipUsage | null>(null);
+  const [open, setOpen] = useState(false);
   useEffect(() => {
-    let live = true;
     setUsage(null);
-    const read = () =>
-      void call<ShipUsage>('GET', `/ships/${encodeURIComponent(session)}/usage`).then((r) => {
-        if (live) setUsage(r.ok ? r.data : null);
-      });
-    const visible = () => {
-      if (document.visibilityState === 'visible') read();
-    };
-    read();
-    const timer = setInterval(read, USAGE_POLL_MS);
-    document.addEventListener('visibilitychange', visible);
-    return () => {
-      live = false;
-      clearInterval(timer);
-      document.removeEventListener('visibilitychange', visible);
-    };
+    return watchUsage(session, setUsage);
   }, [session]);
   const row = usageRow(usage);
   if (!row) return null;
-  return (
-    <div class="ship-usage" role="group" aria-label="Usage">
-      {row.tokens ? (
-        <details class="ship-usage-tokens">
-          <summary>{row.tokens.headline}</summary>
-          <dl>
-            {row.tokens.classes.map((c) => (
-              <div key={c.label}>
-                <dt>{c.label}</dt>
-                <dd>{c.value}</dd>
-              </div>
-            ))}
-          </dl>
-        </details>
-      ) : null}
+  const figures = (
+    <>
+      {row.tokens ? <span class="ship-usage-tokens">{row.tokens.headline}</span> : null}
       {row.money ? (
         <span class="ship-usage-money">
           {row.money.text}
@@ -202,11 +176,37 @@ function UsageRow({ session }: { session: string }) {
         </span>
       ) : null}
       <span class="ship-usage-fresh">{row.fresh}</span>
+    </>
+  );
+  if (!row.tokens)
+    return (
+      <div class="ship-usage" role="group" aria-label="Usage">
+        <div class="ship-usage-line">{figures}</div>
+      </div>
+    );
+  return (
+    <div class="ship-usage" role="group" aria-label="Usage">
+      <details onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
+        <summary class="ship-usage-line">
+          <span class={`fold-chevron${open ? ' open' : ''}`}>
+            <Icon name="chevron" size={14} />
+          </span>
+          {figures}
+        </summary>
+        <dl>
+          {row.tokens.classes.map((c) => (
+            <div key={c.label}>
+              <dt>{c.label}</dt>
+              <dd>{c.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </details>
     </div>
   );
 }
 
-type Load ={ state: 'loading' } | { state: 'error'; error: string } | { state: 'done'; changes: Changes };
+type Load = { state: 'loading' } | { state: 'error'; error: string } | { state: 'done'; changes: Changes };
 
 /** The ship's diff against its base, read each time the tab opens. It never joins the bridge. */
 function ChangesTab({ ship }: { ship: Ship }) {
