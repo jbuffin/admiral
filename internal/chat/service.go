@@ -38,6 +38,9 @@ const (
 	CodexUntrusted  = "Codex's hooks aren't trusted, so Admiral can't follow this chat: in the terminal type /hooks, press t to trust them, then /new (or end the chat and start a new one)"
 )
 
+// CopilotTrustFolder is what the panel says while a Copilot chat is on its folder-trust dialog.
+const CopilotTrustFolder = ""
+
 const Unreadable = "Admiral can't read this chat's transcript"
 
 const optionEvery = 200 * time.Millisecond
