@@ -139,7 +139,7 @@ func run(args []string) error {
 	return &cli.UsageError{Msg: fmt.Sprintf("unknown command %q", args[0])}
 }
 
-// remoteRoutes puts GET /api/remote on the server's mux.
+// remoteRoutes puts /api/remote on the server's mux.
 type remoteRoutes struct{ *tailscale.Route }
 
 func (remoteRoutes) Connected(*server.Client) {}
@@ -400,7 +400,7 @@ func serve(args []string) error {
 	s := &server.Server{Version: version, Commit: commit, UI: web.UI(), Messages: convService.Messages(), Config: cfg,
 		Hub: hub, Modules: []server.Module{shipService, sourceService, inboxService,
 			&launchorders.Service{Home: absDir, Config: cfg, State: st, Ships: shipService.List, Orders: campaignService}, campaignService, bridgeService, resourceService, lockRoute, chatService, convService, &shipdiff.Service{Ships: shipService},
-			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}, guardRoutes{guard}, remoteRoutes{&tailscale.Route{Config: cfg.Current, Port: port}}},
+			&harnesscaps.Service{Home: dir, Config: cfg.Current, Runner: probeRunner}, guardRoutes{guard}, remoteRoutes{&tailscale.Route{Config: cfg.Current, Set: cfg.SetRemote, Port: port, Local: auth.IsLocal}}},
 		Capabilities: []string{"ships", "sources", "inbox", "launch-orders", "bridge", "setup", "resources", "chat", "conversation", "campaigns", "ship-input", "changes"}}
 	bg, stopBackground := context.WithCancel(context.Background())
 	// In the background: a harness that hangs on --version must not delay the server.

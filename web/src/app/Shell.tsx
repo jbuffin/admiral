@@ -12,6 +12,8 @@ import { MooredPRs } from './MooredPRs';
 import { LaunchForm, type OrderRef } from './LaunchDialog';
 import { sourcesForFleet } from './launchForm';
 import { ships, shipsLoaded, sources } from './shipsLink';
+import { signedOut } from './session';
+import { SIGNED_OUT_LINE } from './remoteAccess';
 import { StatusGlyph } from './StatusGlyph';
 import { call, type Ship } from './api';
 import { campaignOf, go, loc, shipPath, shipSession, surfaceOf, surfacePath } from './router';
@@ -345,6 +347,17 @@ function PhoneShell({ surface }: { surface: Surface }) {
 
 export function Shell() {
   const phone = usePhone();
+  if (signedOut.value)
+    return (
+      <main class="panel">
+        <p class="line" role="status">
+          {SIGNED_OUT_LINE}
+        </p>
+        <a class="btn" href="/pair">
+          Pair this device
+        </a>
+      </main>
+    );
   const surface = surfaceOf(loc.value.path) ?? SURFACES[0];
   if (phone) return <PhoneShell surface={surface} />;
   return (

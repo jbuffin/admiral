@@ -2,11 +2,13 @@ package tailscale
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/jbuffin/admiral/internal/config"
@@ -76,5 +78,67 @@ func TestRemoteRouteWhenTailscaledIsDown(t *testing.T) {
 		if c.OK {
 			t.Errorf("check %+v ok with tailscaled down", c)
 		}
+	}
+}
+
+// settingsRoute keeps the remote section in memory; Set is what the config manager's SetRemote is in the server.
+func settingsRoute(t *testing.T, local bool) (*http.ServeMux, *config.Remote) {
+	t.Helper()
+	cur := &config.Remote{Tailscale: true, AllowedLogins: []string{"alice@example.com", "bob@example.com"}}
+	mux := http.NewServeMux()
+	rt := &Route{Port: "7420", Local: func(*http.Request) bool { return local },
+		Config: func() *config.Config { return &config.Config{Remote: *cur} },
+		Set:    func(r config.Remote) error { *cur = r; return nil }}
+	rt.Routes(mux)
+	return mux, cur
+}
+
+func post(mux *http.ServeMux, path, body string) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, strings.NewReader(body)))
+	return rec
+}
+
+func TestLoginsEditKeepsTheOthersAndRefusesBadInput(t *testing.T) {
+	fakeOnPath(t)
+	mux, cur := settingsRoute(t, true)
+	if rec := post(mux, "/api/remote/logins", `{"remove":"bob@example.com"}`); rec.Code != 200 {
+		t.Fatalf("remove: %d %s", rec.Code, rec.Body)
+	}
+	if !reflect.DeepEqual(cur.AllowedLogins, []string{"alice@example.com"}) || !cur.Tailscale {
+		t.Errorf("after removing bob: %+v, want alice only and the mode still on", *cur)
+	}
+	for _, body := range []string{`{"add":" "}`, `{"add":"alice@example.com"}`, `{}`, `{"add":"a","remove":"b"}`, `nope`} {
+		if rec := post(mux, "/api/remote/logins", body); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: %d, want 400", body, rec.Code)
+		}
+	}
+	if len(cur.AllowedLogins) != 1 {
+		t.Errorf("a refused edit changed the logins: %v", cur.AllowedLogins)
+	}
+}
+
+func TestSetupNeedsConfirmation(t *testing.T) {
+	dir := fakeOnPath(t)
+	mux, cur := settingsRoute(t, true)
+	cur.Tailscale = false
+	for _, body := range []string{`{}`, `{"confirm":false}`} {
+		if rec := post(mux, "/api/remote/setup", body); rec.Code != http.StatusBadRequest {
+			t.Errorf("Set up with %s: %d, want 400", body, rec.Code)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "calls")); err == nil {
+		t.Error("Set up ran without confirmation")
+	}
+}
+
+func TestLoginsWriteFailureDoesNotLeakThePath(t *testing.T) {
+	fakeOnPath(t)
+	mux := http.NewServeMux()
+	(&Route{Port: "7420", Config: func() *config.Config { return &config.Config{} },
+		Set: func(config.Remote) error { return errors.New("write /Users/x/.admiral/config.json: permission denied") }}).Routes(mux)
+	rec := post(mux, "/api/remote/logins", `{"add":"a@example.com"}`)
+	if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "/Users") {
+		t.Errorf("%d %s, want 500 without the OS error", rec.Code, rec.Body)
 	}
 }

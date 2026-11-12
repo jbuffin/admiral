@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { fetchDevices, mintPairingCode, renameDevice, revokeAllDevices, revokeDevice, type Device, type PairingCode, type Result } from './api';
+import { editLogins, fetchDevices, fetchRemote, runTailscaleSetup, mintPairingCode, renameDevice, revokeAllDevices, revokeDevice, type Device, type PairingCode, type RemoteCheck, type RemoteView, type Result } from './api';
 import { qrMatrix } from './qr';
+import { checkLogin, copyOutcome, removingOwnLogin } from './remoteTailscale';
 import { expiryState, formatCode, signedOutLine, thisDeviceMark } from './remoteAccess';
 
 const stamp = (iso: string | null) => (iso ? new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'never');
@@ -135,6 +136,195 @@ function DeviceRow({ device, reload, onResult }: { device: Device; reload: () =>
   );
 }
 
+function CheckRows({ rows }: { rows: RemoteCheck[] }) {
+  return (
+    <ul class="box list" aria-label="Checks">
+      {rows.map((c) => (
+        <li key={c.id} class="set">
+          <div class="t">
+            <strong class={c.ok ? 'status-passed' : 'status-failed'}>{c.ok ? 'Passed' : 'Failed'}</strong>
+            <span>{c.detail}</span>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function selectText(el: HTMLElement) {
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const sel = getSelection();
+  sel?.removeAllRanges();
+  sel?.addRange(range);
+}
+
+function Tailscale({ view, local, remote, reload, onResult }: { view: RemoteView | null; local: boolean; remote: boolean; reload: () => Promise<void>; onResult: (r: Result<unknown>) => void }) {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [rows, setRows] = useState<RemoteCheck[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [turnedOn, setTurnedOn] = useState(false);
+  const [served, setServed] = useState('');
+  const [copy, setCopy] = useState<'copied' | 'select' | null>(null);
+  const urlEl = useRef<HTMLElement>(null);
+
+  const setUp = async () => {
+    setAsking(false);
+    setBusy(true);
+    setError(null);
+    setTurnedOn(false);
+    setServed('');
+    const r = await runTailscaleSetup();
+    setBusy(false);
+    onResult(r);
+    if (!r.ok) return setError(r.error);
+    setRows(r.data.ok ? null : r.data.checks);
+    setServed(r.data.ok ? (r.data.checks.find((c) => c.id === 'serve')?.detail ?? '') : '');
+    setTurnedOn(r.data.ok);
+    await reload();
+  };
+  const copyUrl = async (url: string) => {
+    const outcome = await copyOutcome(url, navigator.clipboard);
+    if (outcome === 'select' && urlEl.current) selectText(urlEl.current);
+    setCopy(outcome);
+  };
+
+  const on = view?.tailscale ?? false;
+  return (
+    <>
+      <section role="group" aria-labelledby="tailscale-title" class="tailscale">
+        <h2 id="tailscale-title" class="h2">
+          Tailscale
+        </h2>
+        {!view ? (
+          <p class="line">Reading Tailscale…</p>
+        ) : on ? (
+          <>
+            {served ? <p class="note">{served}</p> : null}
+            <CheckRows rows={view.checks} />
+            {view.url ? (
+              <div class="box tailscale-url">
+                <code ref={urlEl} class="pair-url">
+                  {view.url}
+                </code>
+                <button type="button" class="btn" onClick={() => void copyUrl(view.url)}>
+                  Copy
+                </button>
+                <span class="note" role="status">
+                  {copy === 'copied' ? 'Copied.' : copy === 'select' ? 'Select the address and copy it.' : ''}
+                </span>
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <p class="line">Tailscale mode is off. Admiral stays on this network only.</p>
+            {rows ? <CheckRows rows={rows} /> : null}
+            {asking ? null : (
+              <button type="button" class="btn" disabled={busy || !local} onClick={() => (setAsking(true), setRows(null), setError(null))}>
+                Set up
+              </button>
+            )}
+            {remote ? <p class="note">Run Set up on the Mac that runs Admiral, or run admiral setup there.</p> : null}
+          </>
+        )}
+        {turnedOn ? <p class="note">Tailscale mode is on. If Admiral listens on every address, the change takes effect the next time it starts.</p> : null}
+        {error ? (
+          <p class="note error-text" role="alert">
+            {error}
+          </p>
+        ) : null}
+      </section>
+      {asking ? (
+        <div class="confirm" role="group" aria-label="Set up Tailscale mode">
+          <span>
+            Set up checks Tailscale, runs one tailscale serve command and turns Tailscale mode on. The HTTPS certificate publishes this Mac's ts.net name in
+            public Certificate Transparency logs.
+          </span>
+          <button type="button" class="btn" disabled={busy} onClick={() => void setUp()}>
+            Turn on Tailscale mode
+          </button>
+          <button type="button" class="btn" onClick={() => setAsking(false)}>
+            Cancel
+          </button>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function AllowedLogins({ view, devices, onView, onResult }: { view: RemoteView | null; devices: Device[]; onView: (v: RemoteView) => void; onResult: (r: Result<unknown>) => void }) {
+  const [text, setText] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!view) return null;
+
+  const act = async (change: { add: string } | { remove: string }) => {
+    setError(null);
+    setBusy(true);
+    const r = await editLogins(change);
+    setBusy(false);
+    onResult(r);
+    if (!r.ok) return setError(r.error), false;
+    setRemoving(null);
+    onView(r.data);
+    return true;
+  };
+  const add = async (e: Event) => {
+    e.preventDefault();
+    const c = checkLogin(text, view.allowedLogins);
+    if (!c.ok) return setError(c.error);
+    if (await act({ add: c.login })) setText('');
+  };
+
+  return (
+    <>
+      <h2 class="h2" id="logins-title">
+        Allowed logins
+      </h2>
+      {view.allowedLogins.length === 0 ? <p class="line">No login is allowed yet, so no tailnet device can reach Admiral.</p> : null}
+      <ul class="box list" aria-label="Allowed logins">
+        {view.allowedLogins.map((l) => (
+          <li key={l} class="set" aria-label={l}>
+            <div class="t">
+              <span>{l}</span>
+              {removing === l ? (
+                <div class="confirm" role="group" aria-label={`Remove ${l}?`}>
+                  <span>This device came in on {l}, so removing it signs this device out.</span>
+                  <button type="button" class="btn danger" disabled={busy} onClick={() => void act({ remove: l })}>
+                    Remove and sign out
+                  </button>
+                  <button type="button" class="btn" onClick={() => setRemoving(null)}>
+                    Cancel
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            {removing === l ? null : (
+              <button type="button" class="btn" disabled={busy} aria-label={`Remove ${l}`} onClick={() => (removingOwnLogin(l, devices) ? setRemoving(l) : void act({ remove: l }))}>
+                Remove
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <form class="set-add" onSubmit={(e) => void add(e)}>
+        <input type="text" aria-label="Allowed login" placeholder="name@example.com" value={text} onInput={(e) => setText(e.currentTarget.value)} />
+        <button type="submit" class="btn" disabled={busy}>
+          Add login
+        </button>
+      </form>
+      {error ? (
+        <p class="note error-text" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 export function RemoteAccess() {
   const [devices, setDevices] = useState<Device[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -143,6 +333,7 @@ export function RemoteAccess() {
   const [signedOut, setSignedOut] = useState<string | null>(null);
   const [confirmAll, setConfirmAll] = useState(false);
   const [note, setNote] = useState('');
+  const [remote, setRemote] = useState<RemoteView | null>(null);
 
   const onResult = (r: Result<unknown>) => {
     const line = signedOutLine(r);
@@ -159,6 +350,12 @@ export function RemoteAccess() {
       setListError(null);
     } else setListError(r.error);
   };
+  const loadRemote = async () => {
+    const r = await fetchRemote();
+    onResult(r);
+    if (r.ok) setRemote(r.data);
+  };
+  useEffect(() => void loadRemote(), []);
   // A device that redeems the code on screen shows up without a reload.
   useEffect(() => {
     void reload();
@@ -186,6 +383,8 @@ export function RemoteAccess() {
 
   return (
     <>
+      <Tailscale view={remote} local={devices === null ? listError !== null : !devices.some((d) => d.current)} remote={devices !== null && devices.some((d) => d.current)} reload={loadRemote} onResult={onResult} />
+      <AllowedLogins view={remote} devices={devices ?? []} onView={setRemote} onResult={onResult} />
       <Pairing onResult={onResult} />
       <h2 class="h2" id="devices-title">
         Devices

@@ -1,4 +1,5 @@
 // The only place the shell builds /api/v1 URLs.
+import { signedOut } from './session';
 export interface Dock {
   harness: string;
   executable: string;
@@ -167,6 +168,7 @@ export async function call<T>(method: string, path: string, body?: unknown): Pro
     } catch {
       /* not JSON: the status speaks */
     }
+    if (res.status === 401) signedOut.value = true;
     if (!res.ok) return { ok: false, status: res.status, error: (data as { error?: string } | null)?.error ?? `${method} ${path}: ${res.status}` };
     return { ok: true, data: data as T };
   } catch (e) {
@@ -360,3 +362,18 @@ export const mintPairingCode = () => call<PairingCode>('POST', '/pairing-codes')
 export const renameDevice = (id: string, name: string) => call<unknown>('PATCH', `/devices/${encodeURIComponent(id)}`, { name });
 export const revokeDevice = (id: string) => call<unknown>('DELETE', `/devices/${encodeURIComponent(id)}`);
 export const revokeAllDevices = () => call<unknown>('DELETE', '/devices');
+
+export interface RemoteCheck {
+  id: string;
+  ok: boolean;
+  detail: string;
+}
+export interface RemoteView {
+  tailscale: boolean;
+  allowedLogins: string[];
+  url: string;
+  checks: RemoteCheck[];
+}
+export const fetchRemote = () => call<RemoteView>('GET', '/remote');
+export const editLogins = (change: { add: string } | { remove: string }) => call<RemoteView>('POST', '/remote/logins', change);
+export const runTailscaleSetup = () => call<{ ok: boolean; checks: RemoteCheck[] }>('POST', '/remote/setup', { confirm: true });

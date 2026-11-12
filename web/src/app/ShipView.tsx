@@ -15,6 +15,7 @@ import { Sheet } from './Sheet';
 import { fleetSearch } from './fleets';
 import { go, loc, surfacePath } from './router';
 import { ships, shipsLink, shipsLoaded } from './shipsLink';
+import { signedOut as signedOutSignal } from './session';
 import { SURFACES } from './surfaces';
 import { useBridgeTerminal } from '../useBridgeTerminal';
 import { atSea } from '../crew';
@@ -103,7 +104,10 @@ function SessionTerminal({ ship, boat }: { ship: Ship; boat?: CrewBoat }) {
     gone: () => {},
     wsBase: '/ws/v1',
     probe: () => probeShipList(boat?.name),
-    signedOut: () => (shipsLink.value = 'signed-out'),
+    signedOut: () => {
+      shipsLink.value = 'signed-out';
+      signedOutSignal.value = true;
+    },
   });
   const canType = open && linkState === 'open';
   const input = (data: string) => {

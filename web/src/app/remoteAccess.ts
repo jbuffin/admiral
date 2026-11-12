@@ -10,5 +10,5 @@ export function expiryState(expires: string, nowMs: number): { expired: boolean;
 
 export const thisDeviceMark = (d: { current?: boolean }): string | null => (d.current ? 'This device' : null);
 
-export const signedOutLine = (r: { ok: boolean; status?: number }): string | null =>
-  !r.ok && r.status === 401 ? 'This device was signed out. Pair it again with a new code.' : null;
+export const SIGNED_OUT_LINE = 'This device was signed out. Pair it again with a new code.';
+export const signedOutLine = (r: { ok: boolean; status?: number }): string | null => (!r.ok && r.status === 401 ? SIGNED_OUT_LINE : null);

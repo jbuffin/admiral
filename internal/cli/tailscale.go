@@ -24,13 +24,7 @@ type remoteAsk struct {
 
 // merged adds the asked logins and the Mac's own to the ones already allowed; the mode only turns on.
 func (a *remoteAsk) merged(cur config.Remote) config.Remote {
-	out := config.Remote{Tailscale: cur.Tailscale || a.tailscale, AllowedLogins: slices.Clone(cur.AllowedLogins)}
-	for _, l := range append(slices.Clone(a.logins), a.macLogin) {
-		if l != "" && !slices.Contains(out.AllowedLogins, l) {
-			out.AllowedLogins = append(out.AllowedLogins, l)
-		}
-	}
-	return out
+	return cur.Allowing(a.tailscale, append(slices.Clone(a.logins), a.macLogin)...)
 }
 
 func (s *session) parseRemote(raw json.RawMessage, path string) error {

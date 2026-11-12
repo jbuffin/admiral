@@ -1,5 +1,6 @@
 import { signal } from '@preact/signals';
 import { probeShips, shipsSocketUrl, type Resource, type Ship, type Source } from './api';
+import { signedOut } from './session';
 import type { InboxItem } from './inbox';
 
 export const ships = signal<Ship[]>([]);
@@ -91,7 +92,10 @@ export function watchShips(): () => void {
     retry = setTimeout(async () => {
       const p = await probeShips();
       if (stopped) return;
-      if (p === 'signed-out') shipsLink.value = 'signed-out';
+      if (p === 'signed-out') {
+        shipsLink.value = 'signed-out';
+        signedOut.value = true;
+      }
       else if (p === 'down') schedule();
       else open();
     }, wait);
