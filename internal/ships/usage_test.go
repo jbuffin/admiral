@@ -270,3 +270,22 @@ func TestCrewBoatsAreAddedAndListed(t *testing.T) {
 		t.Errorf("late = %v, want listed with null figures", late)
 	}
 }
+
+// A ship killed before its transcript has figures still records what the status line last showed.
+func TestKilledShipWithNoTranscriptRecordsTheLiveStoresFigures(t *testing.T) {
+	r := newUsageRig(t)
+	r.s.UsageRead = func(context.Context, sessionhost.Session) ExitUsage { return ExitUsage{} }
+	now := time.Unix(1800000000, 0)
+	store := usage.NewStore(func() time.Time { return now })
+	store.SetFigures("a-1", "claude-session", usage.Figures{Tokens: usage.Tokens{Input: 7}, Money: &usage.Money{Amount: 0.5, Basis: usage.BasisEstimate}}, now)
+	store.SetFigures("a-2", "other-session", usage.Figures{Tokens: usage.Tokens{Input: 99}, Money: &usage.Money{Amount: 9, Basis: usage.BasisEstimate}}, now)
+	r.s.LastLive = store.LastLive
+	r.s.queueEnded(ending1(exitedShip("a-1", nil)))
+	u := r.usageRecord(t, r.waitCount(t, "usage", 1))
+	if tk, _ := u["tokens"].(map[string]any); tk["input"] != 7.0 {
+		t.Errorf("tokens = %v, want this ship's live figures", u["tokens"])
+	}
+	if m, _ := u["money"].(map[string]any); m["amount"] != 0.5 {
+		t.Errorf("money = %v, want this ship's live figures", u["money"])
+	}
+}

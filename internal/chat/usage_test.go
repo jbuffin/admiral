@@ -1,8 +1,15 @@
 package chat
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/jbuffin/admiral/internal/outcomes"
+	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/usage"
 )
 
@@ -90,5 +97,39 @@ func TestResetUsageAReadThatFoundNothingKeepsThePreviousReading(t *testing.T) {
 	got := u.figures("/c/projects/p/a.jsonl", fig(130, 0.7), noLive)
 	if got == nil || got.Tokens.Input != 30 {
 		t.Errorf("got %+v, want 30 since the last reading", got)
+	}
+}
+
+// A /clear with no transcript figures records the cost the status line last showed for the session that ended,
+// not the $0 line the new session started with.
+func TestResetRecordsTheStatusLinesLastCostOfTheSessionThatEnded(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "outcomes")
+	w := outcomes.New(dir, t.Logf)
+	t.Cleanup(w.Close)
+	now := time.Unix(1800000000, 0)
+	store := usage.NewStore(func() time.Time { return now })
+	store.SetFigures(sessionhost.ChatName, "old-session", usage.Figures{Tokens: usage.Tokens{Input: 500}, Money: est(3)}, now)
+	store.SetFigures(sessionhost.ChatName, "new-session", usage.Figures{Money: est(0)}, now)
+	s := &Service{Outcomes: w, LastLive: store.LastLive}
+
+	s.recordReset("", t.TempDir(), "work", "")
+
+	var money map[string]any
+	deadline := time.Now().Add(5 * time.Second)
+	for money == nil && time.Now().Before(deadline) {
+		files, _ := filepath.Glob(filepath.Join(dir, "*.jsonl"))
+		for _, f := range files {
+			b, _ := os.ReadFile(f)
+			for _, l := range strings.Split(string(b), "\n") {
+				var rec map[string]any
+				if json.Unmarshal([]byte(l), &rec) == nil && rec["event"] == "usage" {
+					money, _ = rec["money"].(map[string]any)
+				}
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if money == nil || money["amount"] != 3.0 {
+		t.Errorf("money = %v, want the old session's last cost 3", money)
 	}
 }

@@ -1,0 +1,1 @@
+{"method":"thread/tokenUsage/updated","params":{"threadId":"00000000-0000-4000-8000-0000000000a1","turnId":"00000000-0000-4000-8000-0000000000b1","tokenUsage":{"total":{"totalTokens":25149,"inputTokens":25020,"cachedInputTokens":12544,"outputTokens":129,"reasoningOutputTokens":67},"modelContextWindow":258400}}}
