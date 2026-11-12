@@ -24,10 +24,15 @@ const settle = 100 * time.Millisecond
 // rescanEvery applies only when the inbox cannot be watched.
 const rescanEvery = 30 * time.Second
 
+// ShipInfo is what the inbox shows beside an item of a known ship.
+type ShipInfo struct {
+	Name, Harness, Fleet, FleetName, FleetColor string
+}
+
 type Service struct {
 	Home     string // absolute
 	Hub      *server.Hub
-	Ship     func(session string) (name, harness string, ok bool)
+	Ship     func(session string) (ShipInfo, bool)
 	Outcomes *outcomes.Writer
 	// Dock's why says which of the ship and its dock is unknown.
 	Dock func(session string) (env []string, why string)
@@ -68,8 +73,9 @@ func (s *Service) List() []Item {
 			if items[i].Session == AdmiralSession {
 				continue
 			}
-			if name, harness, ok := s.Ship(items[i].Session); ok {
-				items[i].Name, items[i].Harness = name, harness
+			if info, ok := s.Ship(items[i].Session); ok {
+				items[i].Name, items[i].Harness = info.Name, info.Harness
+				items[i].Fleet, items[i].FleetName, items[i].FleetColor = info.Fleet, info.FleetName, info.FleetColor
 			}
 		}
 	}

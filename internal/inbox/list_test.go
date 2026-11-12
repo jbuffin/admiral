@@ -17,12 +17,12 @@ import (
 )
 
 // newInbox serves the inbox of a fresh home in which ship "s1" is a known
-// claude ship named Dory.
+// claude ship named Dory in the fleet "work" (Work, #38bdf8).
 func newInbox(t *testing.T) (*inbox.Service, string, *httptest.Server) {
 	t.Helper()
 	home := t.TempDir()
-	s := &inbox.Service{Home: home, Hub: server.NewHub(), Ship: func(session string) (string, string, bool) {
-		return "Dory", "claude", session == "s1"
+	s := &inbox.Service{Home: home, Hub: server.NewHub(), Ship: func(session string) (inbox.ShipInfo, bool) {
+		return inbox.ShipInfo{Name: "Dory", Harness: "claude", Fleet: "work", FleetName: "Work", FleetColor: "#38bdf8"}, session == "s1"
 	}}
 	mux := http.NewServeMux()
 	s.Routes(mux)
@@ -103,6 +103,34 @@ func TestInboxListsItemsOldestFirstWithTheirShip(t *testing.T) {
 	}
 	if g := items[0]; g["session"] != "ghost" || g["name"] != nil || g["harness"] != nil {
 		t.Errorf("an item of no known ship = %v, want its session and no name or harness", g)
+	}
+}
+
+func TestInboxTagsItemsWithTheirShipsFleet(t *testing.T) {
+	s, home, _ := newInbox(t)
+	writeItem(t, shipDir(t, home, "s1"), "q-1.json", question("q-1", "2026-10-22T10:00:00Z"))
+
+	q := listed(t, s)[0]
+	if q["fleet"] != "work" || q["fleet_name"] != "Work" || q["fleet_color"] != "#38bdf8" {
+		t.Errorf("the item = %v, want fleet work, fleet_name Work and fleet_color #38bdf8", q)
+	}
+}
+
+func TestInboxItemFileCannotSetItsFleet(t *testing.T) {
+	s, home, _ := newInbox(t)
+	known := question("q-1", "2026-10-22T10:00:00Z")
+	known["fleet"], known["fleet_name"], known["fleet_color"] = "evil", "Evil", "#ff0000"
+	writeItem(t, shipDir(t, home, "s1"), "q-1.json", known)
+	unknown := review("g-1", "2026-10-22T09:00:00Z")
+	unknown["fleet"], unknown["fleet_name"], unknown["fleet_color"] = "evil", "Evil", "#ff0000"
+	writeItem(t, shipDir(t, home, "ghost"), "g-1.json", unknown)
+
+	items := listed(t, s)
+	if g := items[0]; g["fleet"] != nil || g["fleet_name"] != nil || g["fleet_color"] != nil {
+		t.Errorf("an item of no known ship = %v, want no fleet, fleet_name or fleet_color", g)
+	}
+	if q := items[1]; q["fleet"] != "work" || q["fleet_name"] != "Work" || q["fleet_color"] != "#38bdf8" {
+		t.Errorf("an item whose file names a fleet = %v, want its ship's fleet", q)
 	}
 }
 

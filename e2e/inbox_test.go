@@ -11,14 +11,17 @@ import (
 )
 
 type inboxItem struct {
-	ID       string `json:"id"`
-	Kind     string `json:"kind"`
-	Created  string `json:"created"`
-	Title    string `json:"title"`
-	Session  string `json:"session"`
-	Name     string `json:"name"`
-	Harness  string `json:"harness"`
-	OrderURL string `json:"order_url"`
+	ID         string `json:"id"`
+	Kind       string `json:"kind"`
+	Created    string `json:"created"`
+	Title      string `json:"title"`
+	Session    string `json:"session"`
+	Name       string `json:"name"`
+	Harness    string `json:"harness"`
+	Fleet      string `json:"fleet"`
+	FleetName  string `json:"fleet_name"`
+	FleetColor string `json:"fleet_color"`
+	OrderURL   string `json:"order_url"`
 }
 
 func questionItem(id, created string) map[string]any {

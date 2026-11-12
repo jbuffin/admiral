@@ -178,6 +178,30 @@ The server answers an open with `{"type": "conversation_opened", "ship": "<ship>
 - The server follows the file by offset, about four times a second while any client has the ship open.
 - Live text (Copilot ships with a `--ui-server`): while a client has the ship open, the server also attaches to the ship's server as a read-only second client and pushes the assistant text of a turn as it is written, before the file has it. A live reply has the id of Copilot's message (`messageId`), which is also the id the file's item gets, so the finished item replaces the live one and the text never shows twice. Every other live item has the id of its event, which is the id of its line in the file. The HTTP page and the ship's `tail` read the file only. An interrupted reply (Esc, an error) keeps the partial text it already showed in every open tab until the conversation is reopened, because there is no message that removes an item; the file page never has it. Subagent text is not shown live, as in the file. When the server cannot be reached, is not the ship's own, or goes away, the conversation comes from the file alone, with no error; the server retries slowly.
 
+## Inbox
+
+The items ships leave for you: a question, a review, findings, and Admiral's own notices. Every route is also served under `/api/v1/`.
+
+### `GET /api/inbox` (alias `GET /api/v1/inbox`)
+
+```json
+{"items": [{"version": 1, "id": "q-1", "kind": "question", "title": "Which port?", "created": "2026-10-22T10:00:00Z",
+  "session": "s1", "name": "Dory", "harness": "claude", "fleet": "work", "fleet_name": "Work", "fleet_color": "#38bdf8",
+  "question": {"questions": []}}]}
+```
+
+Oldest `created` first. An item is its file's fields plus `session`, and `name`, `harness`, `fleet`, `fleet_name` and `fleet_color` when the ship is known, live or from the record Admiral kept after it sailed off. Admiral sets those last, so a file cannot name another ship or fleet; they are omitted for an unknown ship and on a notice (session `_admiral`, name `Admiral`). `kind` is `question`, `review`, `findings` or `notice`, and the item holds only that kind's own object (`question`, `review`, `findings` or `notice`). The WebSocket `inbox` message, `{"type": "inbox", "items": [...]}`, carries the same list and is sent to each new connection and on every change.
+
+### Acting on an item
+
+Each route is `POST /api/v1/inbox/<session>/<id>/<action>` and answers `404` for an unknown item. An item already answered is `409`.
+
+- `answer`: a question's answers, `{"answers": {"<question id>": {"choice", "other"}}, "note"}`; `400` for an invalid answer.
+- `submit`: a review, `{"event": "COMMENT"|"APPROVE"|"REQUEST_CHANGES", "edited": bool}`, posted to GitHub through `gh`.
+- `discard`: a review, `{}`; deletes the pending review on GitHub. `{"forget": true}` runs no `gh`.
+- `findings`: `{"cards": [{"id", "decision": "approved"|"edited"|"rejected", "proposal": {"kind": "diff"|"reply", "content"}}]}`; every card needs one decision and only an edited card takes a proposal. Nothing is posted to GitHub.
+- `remove`: Remove from inbox, any item; changes nothing on GitHub and never resumes the ship. Answers `200` with `"forgotten": true`. A notice's file is deleted.
+
 ## Campaigns
 
 A campaign is a GitHub issue with sub-issues, followed. Admiral reads the tree through the fleet's GitHub source and never writes to GitHub (ADR 0027). All routes are also served under `/api/v1/`. Errors are `{"error": "..."}`.

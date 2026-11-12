@@ -37,17 +37,20 @@ const (
 type Item struct {
 	fields  map[string]json.RawMessage
 	Session string
-	// Name and Harness are set only when the ship is known.
+	// Name, Harness and the fleet fields are set only when the ship is known.
 	Name, Harness string
+	Fleet         string
+	FleetName     string
+	FleetColor    string
 	ID, Kind      string
 	Created       time.Time
 }
 
 func (it Item) Field(name string) json.RawMessage { return it.fields[name] }
 
-// MarshalJSON sets session, name and harness last, so a file cannot name another ship.
+// MarshalJSON sets session, name, harness and fleet last, so a file cannot name another ship or fleet.
 func (it Item) MarshalJSON() ([]byte, error) {
-	out := make(map[string]json.RawMessage, len(it.fields)+3)
+	out := make(map[string]json.RawMessage, len(it.fields)+6)
 	for k, v := range it.fields {
 		out[k] = v
 	}
@@ -59,6 +62,12 @@ func (it Item) MarshalJSON() ([]byte, error) {
 	}
 	if it.Harness != "" {
 		out["harness"], _ = json.Marshal(it.Harness)
+	}
+	for k, v := range map[string]string{"fleet": it.Fleet, "fleet_name": it.FleetName, "fleet_color": it.FleetColor} {
+		delete(out, k)
+		if v != "" {
+			out[k], _ = json.Marshal(v)
+		}
 	}
 	return json.Marshal(out)
 }

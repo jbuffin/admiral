@@ -1,0 +1,217 @@
+import { describe, expect, it } from 'vitest';
+import type { CrewBoat, Ship } from './api';
+import { createInboxQueue, HOLD_MS, type InboxItem } from './inbox';
+
+const T0 = Date.parse('2026-10-22T10:00:00Z');
+const at = (min: number) => new Date(T0 + min * 60_000).toISOString();
+
+const crew = (name: string, status: string, extra: Partial<CrewBoat> = {}): CrewBoat => ({
+  name,
+  conversation: true,
+  harness: 'claude',
+  status,
+  exit_code: null,
+  exit_signal: null,
+  launched: at(0),
+  ...extra,
+});
+
+const ship = (session: string, fleet: string, status: Ship['status'], extra: Partial<Ship> = {}): Ship => ({
+  session,
+  name: session.toUpperCase(),
+  fleet,
+  fleet_name: fleet.toUpperCase(),
+  fleet_color: `#${fleet}`,
+  harness: 'claude',
+  status,
+  order_id: '',
+  title: '',
+  tail: '',
+  launched: at(0),
+  crew_live: 0,
+  dir: '',
+  repo: '',
+  exit_code: null,
+  exit_signal: null,
+  crew: [],
+  ...extra,
+});
+
+const item = (session: string, id: string, created: string, extra: Partial<InboxItem> = {}): InboxItem => ({
+  version: 1,
+  id,
+  session,
+  kind: 'review',
+  created,
+  title: id,
+  ...extra,
+});
+
+const keys = (q: ReturnType<typeof createInboxQueue>) => q.entries().map((e) => e.key);
+
+describe('createInboxQueue', () => {
+  it('lists items and stops from two fleets, each tagged with its fleet', () => {
+    const q = createInboxQueue();
+    q.sync(
+      {
+        items: [
+          item('a', 'q-1', at(1), { kind: 'question', fleet: 'alpha', fleet_name: 'Alpha', fleet_color: '#alpha' }),
+          item('b', 'r-1', at(2), { fleet: 'bravo', fleet_name: 'Bravo', fleet_color: '#bravo' }),
+        ],
+        ships: [
+          ship('a', 'alpha', 'needs_you', { stop_since: at(3) }),
+          ship('b', 'bravo', 'needs_you', { reason: 'crew', crew: [crew('Mate', 'needs_you', { last_activity: at(4) })] }),
+        ],
+      },
+      T0,
+    );
+    expect(q.entries().map((e) => [e.key, e.fleet])).toEqual([
+      ['item:a/q-1', { key: 'alpha', name: 'Alpha', color: '#alpha' }],
+      ['item:b/r-1', { key: 'bravo', name: 'Bravo', color: '#bravo' }],
+      ['stop:a', { key: 'alpha', name: 'ALPHA', color: '#alpha' }],
+      ['stop:b/Mate', { key: 'bravo', name: 'BRAVO', color: '#bravo' }],
+    ]);
+  });
+
+  it('leaves an item fleet name empty when the item has none', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [item('a', 'r-1', at(1), { fleet: 'alpha', fleet_color: '#alpha' })], ships: [] }, T0);
+    expect(q.entries()[0].fleet).toEqual({ key: 'alpha', name: '', color: '#alpha' });
+  });
+
+  it('lists a notice with no fleet', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [item('admiral', 'n-1', at(1), { kind: 'notice', notice: { body: 'Hi' } })], ships: [] }, T0);
+    expect(q.entries().map((e) => [e.key, e.fleet])).toEqual([['item:admiral/n-1', undefined]]);
+  });
+
+  it('lists only the boat of a ship whose wire reason is crew', () => {
+    const q = createInboxQueue();
+    q.sync(
+      { items: [], ships: [ship('a', 'alpha', 'needs_you', { reason: 'crew', crew: [crew('Mate', 'needs_you'), crew('Cook', 'underway')] })] },
+      T0,
+    );
+    expect(keys(q)).toEqual(['stop:a/Mate']);
+  });
+
+  it('lists the ship and its boat when the ship needs you for another reason', () => {
+    const q = createInboxQueue();
+    q.sync(
+      { items: [], ships: [ship('a', 'alpha', 'needs_you', { reason: 'question', stop_since: at(1), crew: [crew('Mate', 'needs_you', { last_activity: at(2) })] })] },
+      T0,
+    );
+    expect(keys(q)).toEqual(['stop:a', 'stop:a/Mate']);
+  });
+
+  it('orders by since, items before stops on a tie, then session and id', () => {
+    const q = createInboxQueue();
+    q.sync(
+      {
+        items: [item('b', 'r-2', at(5)), item('a', 'r-9', at(5)), item('c', 'r-0', at(9))],
+        ships: [ship('a', 'alpha', 'needs_you', { stop_since: at(5) }), ship('z', 'alpha', 'needs_you', { stop_since: at(1) })],
+      },
+      T0,
+    );
+    expect(keys(q)).toEqual(['stop:z', 'item:a/r-9', 'item:b/r-2', 'stop:a', 'item:c/r-0']);
+  });
+
+  it('takes a ship stop since from stop_since, else from first sight', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'needs_you', { stop_since: at(7) }), ship('b', 'alpha', 'needs_you')] }, T0);
+    expect(q.entries().map((e) => [e.key, e.since])).toEqual([
+      ['stop:b', T0],
+      ['stop:a', Date.parse(at(7))],
+    ]);
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'needs_you', { stop_since: at(7) }), ship('b', 'alpha', 'needs_you')] }, T0 + 60_000);
+    expect(q.entries().find((e) => e.key === 'stop:b')!.since).toBe(T0);
+  });
+
+  it('takes a crew stop since from last_activity, else launched, else first sight', () => {
+    const q = createInboxQueue();
+    const s = ship('a', 'alpha', 'needs_you', {
+      reason: 'crew',
+      crew: [
+        crew('Active', 'needs_you', { launched: at(1), last_activity: at(2) }),
+        crew('Launched', 'needs_you', { launched: at(3) }),
+        crew('Unknown', 'needs_you', { launched: '' }),
+      ],
+    });
+    q.sync({ items: [], ships: [s] }, T0 + 60 * 60_000);
+    expect(Object.fromEntries(q.entries().map((e) => [e.id, e.since]))).toEqual({
+      Unknown: T0 + 60 * 60_000,
+      Active: Date.parse(at(2)),
+      Launched: Date.parse(at(3)),
+    });
+  });
+
+  it('never lists the crew of a ship that is sailing off', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'sailing_off', { crew: [crew('Mate', 'needs_you')] })] }, T0);
+    expect(keys(q)).toEqual([]);
+  });
+
+  it('keeps an answered item out while a stale push still serves it, and lets it back once the server stops', () => {
+    const q = createInboxQueue();
+    const it = item('a', 'q-1', at(1), { kind: 'question' });
+    q.sync({ items: [it], ships: [] }, T0);
+    q.fold('item:a/q-1', 'Answered', T0);
+    expect(q.entries().map((e) => [e.key, e.folded])).toEqual([['item:a/q-1', 'Answered']]);
+
+    q.sync({ items: [it], ships: [] }, T0 + 1000);
+    q.tick(T0 + HOLD_MS);
+    q.sync({ items: [it], ships: [] }, T0 + HOLD_MS + 1);
+    expect(keys(q)).toEqual([]);
+
+    q.sync({ items: [], ships: [] }, T0 + HOLD_MS + 2);
+    q.sync({ items: [it], ships: [] }, T0 + HOLD_MS + 3);
+    expect(keys(q)).toEqual(['item:a/q-1']);
+  });
+
+  it('folds a stop that goes back underway, holds it for 5 s, then drops it', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'needs_you', { stop_since: at(1) })] }, T0);
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'underway')] }, T0 + 1000);
+    expect(q.entries().map((e) => [e.key, e.folded])).toEqual([['stop:a', 'Back underway']]);
+
+    expect(q.tick(T0 + 1000 + HOLD_MS - 1)).toBe(false);
+    expect(keys(q)).toEqual(['stop:a']);
+    expect(q.tick(T0 + 1000 + HOLD_MS)).toBe(true);
+    expect(keys(q)).toEqual([]);
+  });
+
+  it('folds a ship stop when the ship turns to needs_you for its crew', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'needs_you', { stop_since: at(1) })] }, T0);
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'needs_you', { reason: 'crew', crew: [crew('Mate', 'needs_you', { launched: at(2) })] })] }, T0 + 1000);
+    expect(q.entries().map((e) => [e.key, e.folded])).toEqual([
+      ['stop:a', 'Back underway'],
+      ['stop:a/Mate', null],
+    ]);
+  });
+
+  it('folds a crew stop when the boat goes underway or idle', () => {
+    for (const back of ['underway', 'idle']) {
+      const q = createInboxQueue();
+      q.sync({ items: [], ships: [ship('a', 'alpha', 'needs_you', { reason: 'crew', crew: [crew('Mate', 'needs_you')] })] }, T0);
+      q.sync({ items: [], ships: [ship('a', 'alpha', 'underway', { crew: [crew('Mate', back)] })] }, T0 + 1000);
+      expect(q.entries().map((e) => [e.key, e.folded]), back).toEqual([['stop:a/Mate', 'Back underway']]);
+    }
+  });
+
+  it('drops a stop silently when its ship leaves any other way', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'needs_you', { stop_since: at(1) }), ship('b', 'alpha', 'needs_you', { stop_since: at(2) })] }, T0);
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'sailing_off')] }, T0 + 1000);
+    expect(keys(q)).toEqual([]);
+  });
+
+  it('holds a folded stop from a stale push until its hold is up, and lists it again if it asks again', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'needs_you', { stop_since: at(1) })] }, T0);
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'underway')] }, T0 + 1000);
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'needs_you', { stop_since: at(2) })] }, T0 + 2000);
+    expect(q.entries().map((e) => [e.key, e.folded])).toEqual([['stop:a', 'Back underway']]);
+    q.tick(T0 + 1000 + HOLD_MS);
+    expect(q.entries().map((e) => [e.key, e.folded])).toEqual([['stop:a', null]]);
+  });
+});
