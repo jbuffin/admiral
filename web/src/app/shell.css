@@ -575,6 +575,11 @@ button.pill { cursor: pointer; min-height: 32px; }
 .crew-group { margin-bottom: 18px; }
 .crew-dock { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: var(--font-size-meta); color: var(--color-text2); }
 .crew-dock select { min-height: var(--shape-min-touch-target); padding: 0 10px; font: inherit; color: var(--color-text); background: var(--color-panel); border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); }
+.crew-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 12px; }
+.crew-toolbar .crew-dock { margin: 0; }
+.crew-add-head { margin: 0 0 8px; font-size: var(--font-size-heading); }
+.crew-add textarea { min-height: var(--shape-min-touch-target); box-sizing: border-box; width: 100%; padding: 8px 10px; font: inherit; font-size: 16px; color: var(--color-text); background: var(--color-panel); border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); }
+.crew-form input[type='text'], .crew-form select, .crew-form textarea { font-size: 16px; }
 .crew-head { display: flex; align-items: center; gap: 10px; }
 .crew-head h2 { margin: 0; font-size: var(--font-size-heading); min-width: 0; }
 .crew-detail > .crew-sub { margin: 4px 0 12px; }

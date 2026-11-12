@@ -1,16 +1,23 @@
 import type { ComponentChildren } from 'preact';
-import { useEffect, useId, useRef, useState } from 'preact/hooks';
-import { call, type Fleet } from './api';
+import { useEffect, useId, useReducer, useRef, useState } from 'preact/hooks';
+import { call, type Fleet, type Result } from './api';
 import { Flag } from './Flag';
 import { fleetSearch } from './fleets';
-import { go, crewPath } from './router';
+import { crewPath, go, loc } from './router';
 import { Sheet } from './Sheet';
 import {
+  ADD_CREW_START,
   BASED_ON_ROLES,
   CUSTOM_ROLE,
   HARNESSES,
   ROLES,
+  addCrewStep,
+  addShownFields,
+  canDraft,
+  createBody,
+  createMember,
   crewApi,
+  draftCrew,
   fieldError,
   formOf,
   groupMembers,
@@ -24,7 +31,8 @@ import {
   splitNote,
   type CrewData,
   type CrewMember,
-  type MemberForm,
+  type DraftProblem,
+  type NewMemberForm,
   type Notes,
   type Scope,
 } from './crew';
@@ -117,42 +125,83 @@ function Field({ label, error, children }: { label: string; error?: string; chil
   );
 }
 
-function EditForm({ member, fleetKey, harness, onDone, onSaved }: { member: CrewMember; fleetKey: string; harness: string; onDone: () => void; onSaved: () => Promise<void> }) {
-  const [f, setF] = useState<MemberForm>(() => formOf(member));
+const PROBLEM_FIELD: Partial<Record<keyof NewMemberForm, string>> = { customRole: 'role', basedOn: 'based-on', pickMeWhen: 'pick-me-when' };
+
+/** The form an edit and an Add crew draft share. A draft's problems sit beside their fields until the field changes. */
+function MemberEditor({
+  label,
+  initial,
+  named,
+  lockedTo,
+  problems = [],
+  saveLabel = 'Save',
+  secondaryLabel,
+  onSecondary,
+  onSubmit,
+  onSaved,
+}: {
+  label: string;
+  initial: NewMemberForm;
+  named: boolean;
+  lockedTo?: string;
+  problems?: DraftProblem[];
+  saveLabel?: string;
+  secondaryLabel: string;
+  onSecondary: () => void;
+  onSubmit: (f: NewMemberForm) => Promise<Result<unknown>>;
+  onSaved: (f: NewMemberForm) => Promise<void> | void;
+}) {
+  const [f, setF] = useState<NewMemberForm>(initial);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<{ field: string | null; message: string } | null>(null);
-  const set = (k: keyof MemberForm) => (e: Event) => setF({ ...f, [k]: (e.currentTarget as HTMLInputElement).value });
+  const [open, setOpen] = useState<DraftProblem[]>(problems);
+  const shown = named ? addShownFields(f.role) : shownFields(f.role);
+  const set = (k: keyof NewMemberForm) => (e: Event) => {
+    const field = PROBLEM_FIELD[k] ?? k;
+    setF({ ...f, [k]: (e.currentTarget as HTMLInputElement).value });
+    setOpen(open.filter((p) => p.field !== field));
+  };
   const custom = f.role === CUSTOM_ROLE;
   const fixChecker = f.role === 'fix-checker';
-  const at = (field: string) => (err?.field === field ? err.message : undefined);
+  const at = (field: string) => (err?.field === field ? err.message : open.find((p) => p.field === field)?.message);
+  const unplaced = open.filter((p) => !shown.includes(p.field));
   const save = async (e: Event) => {
     e.preventDefault();
     setBusy(true);
     setErr(null);
-    const r = await call('PUT', crewApi(fleetKey, harness, `/members/${encodeURIComponent(member.name)}`), memberBody(f));
+    const r = await onSubmit(f);
     if (!r.ok) {
-      setErr(fieldError(r, shownFields(f.role)));
+      setErr(fieldError(r, shown));
       setBusy(false);
       return;
     }
-    await onSaved();
-    onDone();
+    await onSaved(f);
   };
   return (
-    <form class="crew-form" aria-label={`Edit ${member.name}`} onSubmit={save}>
+    <form class="crew-form" aria-label={label} onSubmit={save}>
       {err && err.field === null ? (
         <p class="alert" role="alert">
           {err.message}
         </p>
       ) : null}
-      {member.customized ? (
-        <p class="note">
-          {custom ? 'Role and based on come' : 'Role comes'} from the built-in {member.name}, so they stay as they are.
+      {unplaced.map((p) => (
+        <p key={p.field} class="note error">
+          {p.message}
         </p>
+      ))}
+      {lockedTo ? (
+        <p class="note">
+          {custom ? 'Role and based on come' : 'Role comes'} from the built-in {lockedTo}, so they stay as they are.
+        </p>
+      ) : null}
+      {named ? (
+        <Field label="Name" error={at('name')}>
+          {(a) => <input {...a} type="text" value={f.name} autocapitalize="off" autocomplete="off" spellcheck={false} onInput={set('name')} />}
+        </Field>
       ) : null}
       <Field label="Role" error={at('role')}>
         {(a) => (
-          <select {...a} value={f.role} disabled={member.customized} onChange={set('role')}>
+          <select {...a} value={f.role} disabled={!!lockedTo} onChange={set('role')}>
             {ROLES.map((r) => (
               <option key={r} value={r}>
                 {r}
@@ -164,13 +213,13 @@ function EditForm({ member, fleetKey, harness, onDone, onSaved }: { member: Crew
       </Field>
       {custom ? (
         <Field label="Custom role" error={at('role')}>
-          {(a) => <input {...a} type="text" value={f.customRole} readOnly={member.customized} onInput={set('customRole')} />}
+          {(a) => <input {...a} type="text" value={f.customRole} readOnly={!!lockedTo} onInput={set('customRole')} />}
         </Field>
       ) : null}
       {custom ? (
         <Field label="Based on" error={at('based-on')}>
           {(a) => (
-            <select {...a} value={f.basedOn} disabled={member.customized} onChange={set('basedOn')}>
+            <select {...a} value={f.basedOn} disabled={!!lockedTo} onChange={set('basedOn')}>
               {f.basedOn === '' ? <option value="">Choose a built-in role</option> : null}
               {BASED_ON_ROLES.map((r) => (
                 <option key={r} value={r}>
@@ -214,13 +263,118 @@ function EditForm({ member, fleetKey, harness, onDone, onSaved }: { member: Crew
       )}
       <div class="crew-actions">
         <button type="submit" class="btn primary" disabled={busy}>
-          Save
+          {saveLabel}
         </button>
-        <button type="button" class="btn" disabled={busy} onClick={onDone}>
-          Cancel
+        <button type="button" class="btn" disabled={busy} onClick={onSecondary}>
+          {secondaryLabel}
         </button>
       </div>
     </form>
+  );
+}
+
+function EditForm({ member, fleetKey, harness, onDone, onSaved }: { member: CrewMember; fleetKey: string; harness: string; onDone: () => void; onSaved: () => Promise<void> }) {
+  return (
+    <MemberEditor
+      label={`Edit ${member.name}`}
+      initial={{ ...formOf(member), name: '' }}
+      named={false}
+      lockedTo={member.customized ? member.name : undefined}
+      secondaryLabel="Cancel"
+      onSecondary={onDone}
+      onSubmit={(f) => call('PUT', crewApi(fleetKey, harness, `/members/${encodeURIComponent(member.name)}`), memberBody(f))}
+      onSaved={async () => {
+        await onSaved();
+        onDone();
+      }}
+    />
+  );
+}
+
+/** Describe, draft, review: nothing reaches disk until the editor's Save. */
+function AddCrewPanel({ fleetKey, onClose, onCreated }: { fleetKey: string; onClose: () => void; onCreated: (name: string) => Promise<void> }) {
+  const [s, send] = useReducer(addCrewStep, ADD_CREW_START);
+  const abort = useRef<AbortController | null>(null);
+  const textId = useId();
+  const drafting = s.phase === 'drafting';
+  useEffect(() => {
+    if (!drafting) return;
+    const t = setInterval(() => send({ type: 'tick' }), 1000);
+    return () => clearInterval(t);
+  }, [drafting]);
+  useEffect(() => () => abort.current?.abort(), []);
+  const draft = async () => {
+    if (!canDraft(s.description)) return;
+    send({ type: 'draft' });
+    abort.current?.abort();
+    const ctl = new AbortController();
+    abort.current = ctl;
+    const result = await draftCrew(fleetKey, s.description, ctl.signal);
+    if (abort.current === ctl) send({ type: 'result', result });
+  };
+  const stop = () => {
+    abort.current?.abort();
+    abort.current = null;
+    send({ type: 'stop' });
+  };
+  const describing = s.phase === 'describe' || s.phase === 'failed' || s.phase === 'nojudge';
+  return (
+    <section class="crew-add" aria-label="Add crew">
+      <h2 class="crew-add-head">Add crew</h2>
+      {s.phase === 'draft' && s.form ? (
+        <>
+          <p class="note">Drafted from your description. Check every field before you save; nothing is written until you do.</p>
+          <MemberEditor
+            label="New crew member"
+            initial={s.form}
+            named
+            problems={s.problems}
+            secondaryLabel="Discard"
+            onSecondary={() => send({ type: 'discard' })}
+            onSubmit={(f) => createMember(fleetKey, createBody(f))}
+            onSaved={(f) => onCreated(f.name.trim())}
+          />
+        </>
+      ) : (
+        <>
+          <div class="field crew-field">
+            <label for={textId}>Describe the member</label>
+            <textarea id={textId} rows={6} value={s.description} readOnly={drafting} onInput={(e) => send({ type: 'edit', description: (e.currentTarget as HTMLTextAreaElement).value })} />
+          </div>
+          {s.phase === 'nojudge' ? (
+            <p class="alert" role="alert">
+              Drafting needs a harness proven to run with no tools and no network. Run the harness checks in Settings.{s.reason ? ` ${s.reason}` : ''}
+            </p>
+          ) : null}
+          {s.phase === 'failed' ? (
+            <p class="alert" role="alert">
+              {s.error}
+            </p>
+          ) : null}
+          {drafting ? (
+            <p class="line" role="status">
+              Drafting… {s.seconds}s
+            </p>
+          ) : null}
+          <div class="crew-actions">
+            {drafting ? (
+              <button type="button" class="btn" onClick={stop}>
+                Stop
+              </button>
+            ) : (
+              <button type="button" class="btn primary" disabled={!canDraft(s.description)} onClick={() => void draft()}>
+                {s.phase === 'failed' ? 'Try again' : 'Draft'}
+              </button>
+            )}
+            {describing ? (
+              <button type="button" class="btn" onClick={onClose}>
+                Cancel
+              </button>
+            ) : null}
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -554,7 +708,9 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
     void load();
   }, [fleet.key, harness]);
 
+  const adding = name === null && new URLSearchParams(loc.value.search).get('add') === '1';
   const toList = (replace = false) => go('/app/crew', search, replace);
+  const openAdd = () => go('/app/crew', `${search}${search ? '&' : '?'}add=1`);
   const heading = title ? <h1>Crew</h1> : null;
 
   if (!data) {
@@ -579,8 +735,8 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
 
   const groups = groupMembers(data.members);
   const selected = name === null ? null : (data.members.find((m) => m.name === name) ?? null);
-  const showList = !phone || name === null;
-  const showDetail = name !== null;
+  const showList = !phone || (name === null && !adding);
+  const showDetail = name !== null || adding;
   const dock = fleet.docks.length > 1 ? (
     <label class="crew-dock">
       <span>Dock</span>
@@ -639,7 +795,12 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
       <div class={`crew-grid${showList && showDetail ? ' split' : ''}`}>
         {showList ? (
           <div class="crew-list">
-            {dock}
+            <div class="crew-toolbar">
+              {dock}
+              <button type="button" class="btn" onClick={openAdd}>
+                Add crew
+              </button>
+            </div>
             {data.members.length === 0 && data.errors.length === 0 ? <p class="line">No crew members yet.</p> : null}
             <Group id="crew-fleet" title={groups[0].title} empty={data.errors.length > 0 ? '' : 'No fleet members yet.'} members={groups[0].members} selected={name} />
             <Group id="crew-built-in" title={groups[1].title} empty={data.errors.length > 0 ? '' : 'No built-in members here.'} members={groups[1].members} selected={name} />
@@ -648,8 +809,19 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
         ) : null}
         {showDetail ? (
           <div class="crew-pane">
-            {phone || !selected ? back : null}
-            {selected ? (
+            {adding ? (
+              <AddCrewPanel
+                key={fleet.key}
+                fleetKey={fleet.key}
+                onClose={() => toList()}
+                onCreated={async (to) => {
+                  await load();
+                  go(crewPath(to), search);
+                }}
+              />
+            ) : null}
+            {!adding && (phone || !selected) ? back : null}
+            {adding ? null : selected ? (
               <Detail
                 key={`${harness}:${selected.name}`}
                 member={selected}

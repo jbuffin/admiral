@@ -30,6 +30,8 @@ type Service struct {
 
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/fleets/{key}/crew", s.serveCrew)
+	mux.HandleFunc("POST /api/fleets/{key}/crew/draft", s.serveDraft)
+	mux.HandleFunc("POST /api/fleets/{key}/crew/members", s.serveCreate)
 	mux.HandleFunc("PUT /api/fleets/{key}/crew/members/{name}", s.servePut)
 	mux.HandleFunc("DELETE /api/fleets/{key}/crew/members/{name}", s.serveDelete)
 	mux.HandleFunc("POST /api/fleets/{key}/crew/members/{name}/customize", s.serveCustomize)

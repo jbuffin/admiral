@@ -39,7 +39,7 @@ describe('call on a draft refusal', () => {
       return new Response('{}', { status: 200 });
     });
     const ctl = new AbortController();
-    await call('POST', '/x', {}, ctl.signal);
+    await call('POST', '/x', {}, undefined, ctl.signal);
     expect(seen).toBe(ctl.signal);
   });
 
@@ -47,7 +47,7 @@ describe('call on a draft refusal', () => {
     vi.stubGlobal('fetch', async () => {
       throw new DOMException('The operation was aborted.', 'AbortError');
     });
-    const r = await call('POST', '/x', {}, new AbortController().signal);
+    const r = await call('POST', '/x', {}, undefined, new AbortController().signal);
     expect(r).toMatchObject({ ok: false, aborted: true });
   });
 });
