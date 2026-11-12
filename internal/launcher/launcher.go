@@ -53,6 +53,8 @@ type Request struct {
 	Anyway bool `json:"anyway"`
 	// ChatKey is a woken ship's stored chat key, which a wake carries over as it is.
 	ChatKey string `json:"-"`
+	// ByFleet is the fleet AdmiralBot launches for; empty for the engineer. It shapes a refusal's wording only.
+	ByFleet string `json:"-"`
 	// Autopilot runs the ship under the guard with ADMIRAL_LOW_STAKES=advisor, counted against the global cap.
 	Autopilot bool     `json:"autopilot"`
 	ExtraArgs []string `json:"-"`
@@ -74,13 +76,14 @@ type Request struct {
 	Via string `json:"-"`
 }
 
-// ChatOption is the chat:<id> key the ship stores; an anyway launch stores none, so it never holds its message.
+// ChatOption is the chat:<fleet>:<id> key the ship stores, so a fleet's message ids never meet another's;
+// an anyway launch stores none, so it never holds its message.
 func (r Request) ChatOption() string {
 	if r.ChatKey != "" {
 		return r.ChatKey
 	}
 	if id := strings.TrimSpace(r.ChatMessage); id != "" && !r.Anyway {
-		return "chat:" + id
+		return "chat:" + r.Fleet + ":" + id
 	}
 	return ""
 }

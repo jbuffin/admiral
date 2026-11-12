@@ -17,6 +17,7 @@ import (
 	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/conversation"
+	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/moor"
@@ -166,6 +167,7 @@ type unlisted struct {
 	url       string
 	issues    []string
 	chat      string
+	fleet     string
 }
 
 // listedWithin: a ship killed before the host saw it must not hold its order for good.
@@ -540,9 +542,20 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 		req.Title, req.URL = "", ""
 	}
 	if len(req.Issues) > 0 {
-		for _, u := range req.Issues {
-			if _, ok := ClaimKey(u); !ok {
-				return Ship{}, &launcher.Error{Status: http.StatusBadRequest, Msg: "issues must be GitHub issue URLs, not " + strconv.Quote(u)}
+		if req.Source == "" && req.Round == 0 {
+			hosts := []string{github.DefaultHost}
+			if fleet, ok := s.Launcher.Config().Fleet(req.Fleet); ok {
+				hosts = launcher.GitHubHosts(s.Launcher.Config(), fleet)
+			}
+			var lerr *launcher.Error
+			if req.Issues, lerr = checkIssueURLs(req.Issues, hosts); lerr != nil {
+				return Ship{}, lerr
+			}
+		} else {
+			for _, u := range req.Issues {
+				if _, ok := ClaimKey(u); !ok {
+					return Ship{}, &launcher.Error{Status: http.StatusBadRequest, Msg: "issues must be GitHub issue URLs, not " + strconv.Quote(u)}
+				}
 			}
 		}
 		req.Issues = distinctIssues(req.Issues)
@@ -558,11 +571,11 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	}
 	if req.Source != "" && req.Round == 0 {
 		if !s.lockOrder(key) {
-			return Ship{}, s.orderRefused(key, req.Issues)
+			return Ship{}, s.orderRefused(req, key)
 		}
 		defer s.unlockOrder(key)
 		if HiddenOrders(s.List())[key] {
-			return Ship{}, s.orderRefused(key, req.Issues)
+			return Ship{}, s.orderRefused(req, key)
 		}
 		var lerr *launcher.Error
 		if req.Text, req.Title, _, req.URL, panel, lerr = s.Orders.Order(req.Source, req.OrderID); lerr != nil {
@@ -580,10 +593,10 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 			return Ship{}, issueHeld(holder)
 		}
 		defer s.unlockIssues(issues)
-		claims := ClaimsOf(append(s.List(), s.Pending()...))
+		claims := claimingShips(append(s.List(), s.Pending()...))
 		for _, u := range issues {
-			if holder := claims[claimKeyOf(u)]; holder != "" && holder != self {
-				return Ship{}, issueHeld(holder)
+			if sh, held := claims[claimKeyOf(u)]; held && cmpName(sh.Name, sh.Session) != self {
+				return Ship{}, issueHeld(holderOf(req, sh))
 			}
 		}
 	}
@@ -594,7 +607,7 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 		defer s.unlockChat(chat)
 		for _, sh := range append(s.List(), s.Pending()...) {
 			if sh.Chat == chat {
-				return Ship{}, chatHeld(cmpName(sh.Name, sh.Session))
+				return Ship{}, chatHeld(holderOf(req, sh))
 			}
 		}
 	}
@@ -626,7 +639,7 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 			key = OrderKey{OrderID: got.Session}
 		}
 		s.holdUnlisted(key, got.Session, req.Panel, req.Resources)
-		s.setUnlistedIssues(key, req.URL, req.Issues, chat)
+		s.setUnlistedIssues(key, req.URL, req.Issues, chat, req.Fleet)
 	}
 	s.broadcast()
 	return s.ship(sess), nil
@@ -648,20 +661,20 @@ func chatHeld(holder string) *launcher.Error {
 }
 
 // orderRefused is the 409 for an order that already has a ship; a slice's refusal names the ship holding its issues.
-func (s *Service) orderRefused(key OrderKey, issues []string) *launcher.Error {
+func (s *Service) orderRefused(req launcher.Request, key OrderKey) *launcher.Error {
 	all := append(s.List(), s.Pending()...)
-	if len(issues) > 0 {
-		claims := ClaimsOf(all)
-		for _, u := range issues {
-			if holder := claims[claimKeyOf(u)]; holder != "" {
-				return issueHeld(holder)
+	if len(req.Issues) > 0 {
+		claims := claimingShips(all)
+		for _, u := range req.Issues {
+			if sh, held := claims[claimKeyOf(u)]; held {
+				return issueHeld(holderOf(req, sh))
 			}
 		}
 		return issueHeld("a launch in flight")
 	}
 	for _, sh := range all {
 		if sh.Source == key.Source && sh.OrderID == key.OrderID {
-			return &launcher.Error{Status: http.StatusConflict, Msg: "this order already has a ship (" + cmpName(sh.Name, sh.Session) + ")"}
+			return &launcher.Error{Status: http.StatusConflict, Msg: "this order already has a ship (" + holderOf(req, sh) + ")"}
 		}
 	}
 	return &launcher.Error{Status: http.StatusConflict, Msg: "this order already has a ship (a launch in flight)"}
@@ -704,13 +717,16 @@ func (s *Service) Pending() []Ship {
 	var out []Ship
 	for key, u := range s.listing {
 		if _, listed := s.find(u.session); listed || time.Since(u.at) >= listedWithin {
+			if key.Source == "" { // only lockOrder ever drops an order's entry; a session key would stay for good
+				delete(s.listing, key)
+			}
 			continue
 		}
 		orderID := key.OrderID
 		if key.Source == "" {
 			orderID = ""
 		}
-		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: orderID, Chat: u.chat, Panel: u.panel, Resources: u.resources, URL: u.url, Issues: u.issues, Status: StatusUnderway})
+		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: orderID, Chat: u.chat, Fleet: u.fleet, Panel: u.panel, Resources: u.resources, URL: u.url, Issues: u.issues, Status: StatusUnderway})
 	}
 	return out
 }

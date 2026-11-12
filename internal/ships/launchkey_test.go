@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/server"
@@ -273,7 +274,7 @@ func TestAKeyAndItsClaimsSurviveMooring(t *testing.T) {
 
 func TestAMooredShipWakesWithoutItsOwnKeyOrClaimsRefusingIt(t *testing.T) {
 	r := newWakeRig(t, 0)
-	r.moorKeyed(t)
+	first := r.moorKeyed(t)
 	recs, err := moor.List(r.home)
 	if err != nil || len(recs) != 1 {
 		t.Fatalf("moored records = %+v, %v", recs, err)
@@ -294,6 +295,7 @@ func TestAMooredShipWakesWithoutItsOwnKeyOrClaimsRefusingIt(t *testing.T) {
 	if got := r.s.Claims()[claimKeyOf(keyIssueA)]; got == "" {
 		t.Errorf("the woken ship lost its claim on %s", keyIssueA)
 	}
+	r.wantHeld(t, chatKey("m1"), first)
 }
 
 func TestAKeyIsFreeOnceItsMooredShipIsDismissed(t *testing.T) {
@@ -312,4 +314,75 @@ func TestAKeyIsFreeOnceItsMooredShipIsDismissed(t *testing.T) {
 	}
 	r.mustLaunch(t, chatKey("m1"))
 	r.mustLaunch(t, func(q *launcher.Request) { q.Issues = []string{keyIssueA, keyIssueB} })
+}
+
+func TestASourcedLaunchRefusesClientIssues(t *testing.T) {
+	r := newWakeRig(t, 0)
+	mux := http.NewServeMux()
+	r.s.Routes(mux)
+	body := `{"fleet":"work","harness":"claude","dir":"` + r.checkout + `","model":"opus","skill":{"kind":"none"},"source":"s","order_id":"o1","issues":["` + keyIssueB + `"]}`
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("POST", "/api/ships", strings.NewReader(body)))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "no source") {
+		t.Fatalf("sourced launch with issues = %d %s, want 400 saying issues go on a launch with no source", rec.Code, rec.Body)
+	}
+	if len(r.s.List()) != 0 {
+		t.Errorf("the refused launch left ships %v", r.s.List())
+	}
+}
+
+func (r *wakeRig) launchActing(fleet string, mod func(*launcher.Request)) (Ship, *launcher.Error) {
+	req := r.keyReq(func(q *launcher.Request) { q.Fleet = fleet; mod(q) })
+	return r.s.Launch(actor.WithFleet(context.Background(), fleet), req)
+}
+
+func TestAnActorRefusedByAnotherFleetsShipLearnsTheFleetNotTheShip(t *testing.T) {
+	r := newWakeRig(t, 0)
+	first := r.mustLaunch(t, func(q *launcher.Request) { q.Issues = []string{keyIssueA} })
+	_, lerr := r.launchActing("home", func(q *launcher.Request) { q.Issues = []string{keyIssueA} })
+	if lerr == nil || lerr.Status != http.StatusConflict || strings.Contains(lerr.Msg, first.Name) || !strings.Contains(lerr.Msg, "fleet Work") {
+		t.Fatalf("actor launch of another fleet's issue = %v, want a 409 naming fleet Work and not %q", lerr, first.Name)
+	}
+	r.wantHeld(t, func(q *launcher.Request) { q.Issues = []string{keyIssueA} }, first) // the engineer still gets the ship
+	_, lerr = r.launchActing("work", func(q *launcher.Request) { q.Issues = []string{keyIssueA} })
+	if lerr == nil || !strings.Contains(lerr.Msg, first.Name) {
+		t.Errorf("actor launch in the holder's own fleet = %v, want the ship named", lerr)
+	}
+}
+
+func TestAChatMessageIdIsScopedToItsFleet(t *testing.T) {
+	r := newWakeRig(t, 0)
+	r.mustLaunch(t, chatKey("m1"))
+	if _, lerr := r.launchActing("home", chatKey("m1")); lerr != nil {
+		t.Fatalf("the same chat id from fleet home = %v, want a ship", lerr)
+	}
+}
+
+func TestASourcelessIssueURLMustBeHttpsOnAHostTheFleetUses(t *testing.T) {
+	r := newWakeRig(t, 0)
+	for _, u := range []string{"http://github.com/acme/widgets/issues/41", "https://evil.example/acme/widgets/issues/41"} {
+		_, lerr := r.s.Launch(context.Background(), r.keyReq(func(q *launcher.Request) { q.Issues = []string{u} }))
+		if lerr == nil || lerr.Status != http.StatusBadRequest || !strings.Contains(lerr.Msg, u) {
+			t.Errorf("Launch with %s = %v, want a 400 naming it", u, lerr)
+		}
+	}
+	got := r.mustLaunch(t, func(q *launcher.Request) { q.Issues = []string{"https://GitHub.com/Acme/Widgets/issues/41/"} })
+	if got.URL != keyIssueA {
+		t.Errorf("ship url = %q, want the normalised %q", got.URL, keyIssueA)
+	}
+}
+
+func TestASourcelessPendingEntryIsDroppedOnceListed(t *testing.T) {
+	r := newWakeRig(t, 0)
+	r.s.holdUnlisted(OrderKey{OrderID: "gone"}, "no-such-session", "", nil)
+	r.s.mu.Lock()
+	r.s.listing[OrderKey{OrderID: "gone"}] = unlisted{session: "no-such-session", at: time.Now().Add(-2 * listedWithin)}
+	r.s.mu.Unlock()
+	r.s.Pending()
+	r.s.mu.Lock()
+	n := len(r.s.listing)
+	r.s.mu.Unlock()
+	if n != 0 {
+		t.Errorf("%d listing entries after Pending, want the expired sourceless one dropped", n)
+	}
 }
