@@ -661,7 +661,7 @@ test('a ship\'s Bridge shows its tokens and its own money, and the Usage pages k
   const reading = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'internal', 'cli', 'testdata', 'claude-statusline.json'), 'utf8'));
   reading.rate_limits.five_hour = { used_percentage: 93, resets_at: Math.floor(Date.now() / 1000) + 2 * 3600 };
   reading.rate_limits.seven_day = { used_percentage: 41.2, resets_at: Math.floor(Date.now() / 1000) + 3 * 86400 };
-  await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['statusline ' + JSON.stringify(reading), 'sleep 3600'] });
+  await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['statusline ' + JSON.stringify(reading)] });
   await page.goto(admiral.url + 'app/preferences/zulu/usage');
   const claudeQuota = main.getByRole('region', { name: /claude/i });
   await expect(claudeQuota.getByRole('img', { name: /^5-hour window, 93% used, resets in/ })).toBeVisible({ timeout: 30_000 });
