@@ -5,7 +5,7 @@ import { call } from './api';
 import { Peek, peekKeys } from './Peek';
 import { REMOVED_FOLD } from './itemActions';
 import { bridgeSearch } from './peekLink';
-import { KEY_HINT, keyAction } from './peekKeys';
+import { keyAction, keyHint } from './peekKeys';
 import { peekKey } from './peekLink';
 import { entryAge, fleetLabel, rowShip, rowVerb } from './inboxRow';
 import { go, loc, peekOf, peekPath, shipPath, surfacePath } from './router';
@@ -28,6 +28,11 @@ function useStacked(phone: boolean) {
   return phone || narrow;
 }
 
+const targetOf = (e: Entry) => ({ session: e.session, ...(e.type === 'merge' ? { merge: true as const } : e.type === 'item' ? { item: e.id } : e.crew ? { crew: e.crew.name } : {}) });
+
+// What an entry asks of you: an answer to a stop, a question or a merge; the rest is a review.
+const needsAnswer = (e: Entry) => e.type !== 'item' || ANSWER.has(e.item!.kind);
+
 function Row({ e, now, phone, selected, fold }: { e: Entry; now: number; phone: boolean; selected: boolean; fold: (text: string) => void }) {
   const [open, setOpen] = useState(false);
   const [dismissing, setDismissing] = useState(false);
@@ -46,7 +51,7 @@ function Row({ e, now, phone, selected, fold }: { e: Entry; now: number; phone: 
   const title = e.item?.title ?? (e.crew ? '' : ship?.title ?? '');
   const age = entryAge(e, now);
   const search = fleetSearch.value;
-  const href = peekPath({ session: e.session, ...(e.type === 'item' ? { item: e.id } : e.crew ? { crew: e.crew.name } : {}) });
+  const href = peekPath(targetOf(e));
   const body = (
     <>
       {fleet && phone ? <span class="ship-bar" style={{ background: fleet.fill }} aria-hidden="true" /> : null}
@@ -143,8 +148,8 @@ export function InboxPanel({ surface, title, phone }: { surface: Surface; title:
   }, [anyFolded]);
 
   const groups = [
-    { id: 'answer', title: 'Needs an answer', rows: entries.filter((e) => ANSWER.has(e.type === 'stop' ? 'stop' : e.item!.kind)) },
-    { id: 'review', title: 'To review', rows: entries.filter((e) => !ANSWER.has(e.type === 'stop' ? 'stop' : e.item!.kind)) },
+    { id: 'answer', title: 'Needs an answer', rows: entries.filter(needsAnswer) },
+    { id: 'review', title: 'To review', rows: entries.filter((e) => !needsAnswer(e)) },
   ].filter((g) => g.rows.length > 0);
 
   const peek = peekOf(loc.value.path);
@@ -174,7 +179,7 @@ export function InboxPanel({ surface, title, phone }: { surface: Surface; title:
   onKey.current = (ev) => {
     // A modal sheet or dialog over the Inbox owns its keys.
     if (ev.defaultPrevented || (ev.target instanceof Element && ev.target.closest('[aria-modal="true"]'))) return;
-    const a = keyAction(ev);
+    const a = keyAction(ev, open?.type);
     if (!a) return;
     if (a.kind === 'bridge') {
       // On a button or link Enter is that control's own action.
@@ -190,7 +195,7 @@ export function InboxPanel({ surface, title, phone }: { surface: Surface; title:
       const at = peekable.findIndex((e) => e.key === open?.key);
       const next = at < 0 ? peekable[a.by === 1 ? 0 : peekable.length - 1] : peekable[at + a.by];
       if (!next) return;
-      go(peekPath({ session: next.session, ...(next.type === 'item' ? { item: next.id } : next.crew ? { crew: next.crew.name } : {}) }), search);
+      go(peekPath(targetOf(next)), search);
     } else if (open && !closing) {
       peekKeys.current?.(a);
     }
@@ -226,7 +231,7 @@ export function InboxPanel({ surface, title, phone }: { surface: Surface; title:
           </ul>
         </section>
       ))}
-      {phone ? <p class="line">Every fleet, oldest first.</p> : <p class="key-hint">{KEY_HINT}</p>}
+      {phone ? <p class="line">Every fleet, oldest first.</p> : <p class="key-hint">{keyHint(open?.type)}</p>}
     </main>
   );
   if (stacked) return list;

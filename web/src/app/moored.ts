@@ -57,4 +57,4 @@ export function staleNote(ship: Ship, now: number): string {
 }
 
 /** The repo's merge method as the hint beside Merge. */
-export const mergeHint = (_method?: string): string => '';
+export const mergeHint = (method?: string): string => ({ squash: 'squash', rebase: 'rebase', merge: 'merge commit' })[method as 'merge'] ?? '';

@@ -14,7 +14,7 @@ import { sourcesForFleet } from './launchForm';
 import { ships, shipsLoaded, sources } from './shipsLink';
 import { signedOut } from './session';
 import { SIGNED_OUT_LINE } from './remoteAccess';
-import { StatusGlyph } from './StatusGlyph';
+import { ReadyToMerge, StatusGlyph } from './StatusGlyph';
 import { call, type Ship } from './api';
 import { campaignOf, go, loc, shipPath, shipSession, surfaceOf, surfacePath } from './router';
 import { CampaignPage, CampaignSidebar, CampaignsList } from './CampaignPage';
@@ -140,6 +140,7 @@ function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
           ) : null}
           {ship.tail ? <span class="ship-tail">{ship.tail}</span> : null}
           {rowButtons(ship, false).note ? <span class="ship-tail">{rowButtons(ship, false).note}</span> : null}
+          <ReadyToMerge ship={ship} />
           <MooredPRs ship={ship} now={now} />
           <MooredActions ship={ship} onError={setError} />
         </div>

@@ -8,6 +8,7 @@ import type { Entry } from './inbox';
 import { rowShip, rowVerb } from './inboxRow';
 import { discardFold, lockedBy, submitFold } from './itemActions';
 import { blankReview, FindingsBody, useFindings, Failure, RemoveRow, ReviewBody, type ReviewUi, useActing } from './PeekItem';
+import { MergeBody } from './PeekMerge';
 import { PeekQuestions } from './PeekQuestions';
 import { EVENTS } from './PeekItem';
 import type { KeyAct } from './peekKeys';
@@ -157,7 +158,13 @@ export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => vo
         ) : null}
       </div>
       <div class="peek-body">
-        {ship ? (
+        {entry.type === 'merge' ? (
+          ship ? (
+            <MergeBody ship={ship} fold={fold} />
+          ) : shipsLoaded.value ? (
+            <p class="line">This ship is gone.</p>
+          ) : null
+        ) : ship ? (
           <ShipTurn key={entry.key} ship={ship} boat={boat} fleetKey={fleetKey} item={item}>
             {form}
           </ShipTurn>

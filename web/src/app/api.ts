@@ -158,11 +158,11 @@ export const logoUrl = (harness: string) => `${API}/logos/${encodeURIComponent(h
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string; status?: number };
 
-export async function call<T>(method: string, path: string, body?: unknown): Promise<Result<T>> {
+export async function call<T>(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<Result<T>> {
   try {
     const res = await fetch(path.startsWith(`${API}/`) ? path : API + path, {
       method,
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      headers: body === undefined && headers === undefined ? undefined : { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await res.text();
@@ -178,6 +178,12 @@ export async function call<T>(method: string, path: string, body?: unknown): Pro
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'The request failed.' };
   }
+}
+
+/** Merges a moored ship's single PR. The token is the one the server put in this page; it changes when Admiral restarts. */
+export function mergeShip(session: string): Promise<Result<unknown>> {
+  const token = document.querySelector<HTMLMetaElement>('meta[name="admiral-merge-token"]')?.content ?? '';
+  return call('POST', `/ships/${encodeURIComponent(session)}/merge`, undefined, { 'X-Admiral-Merge-Token': token });
 }
 
 export interface Source {
