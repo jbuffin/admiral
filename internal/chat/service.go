@@ -126,6 +126,9 @@ type fleetChat struct {
 	qSig     string // the waiting set the Inbox was last told of
 
 	resets resetUsage
+
+	tmu sync.Mutex // the brief and digest state below
+	tk  tickState
 }
 
 func (s *Service) notes() *ledger.Ledger {
@@ -257,6 +260,7 @@ func (s *Service) Run(ctx context.Context) {
 			}
 		case <-tick.C:
 		}
+		s.Tick()
 		watched := s.Hub.Len() > 0
 		for _, fc := range s.onFleets() {
 			// Nobody to tell and nothing running: a request reads the chat itself.
@@ -625,6 +629,8 @@ func (s *fleetChat) start() *launcher.Error {
 	if s.exists() {
 		return nil
 	}
+	// The startup SessionStart reads the brief as soon as Claude starts.
+	s.renderBrief()
 	err := s.Launcher.StartChat(s.key)
 	var le *launcher.Error
 	switch {
@@ -886,6 +892,3 @@ func (s *fleetChat) clearLocked() {
 	st.rd.Clear(info.Size())
 	st.cleared = false
 }
-
-// Tick renders each fleet's brief and digest once; Run calls it on its tick.
-func (s *Service) Tick() {}

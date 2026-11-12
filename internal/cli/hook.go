@@ -11,13 +11,22 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/chatlog"
+	"github.com/jbuffin/admiral/internal/digest"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
 // Hook never fails: a harness treats a hook's exit code and output as its own signal.
 func Hook(args []string, std IO) error {
+	if len(args) == 0 {
+		return nil
+	}
+	context, printed := chatContext(args[0], os.Getenv("ADMIRAL_HOME"), os.Getenv("ADMIRAL_CHAT_FLEET"))
+	if context != "" {
+		_, _ = io.WriteString(std.Out, context)
+	}
 	pane := os.Getenv("TMUX_PANE")
-	if len(args) == 0 || pane == "" {
+	if pane == "" {
 		return nil
 	}
 	raw, _ := io.ReadAll(io.LimitReader(std.In, 1<<20))
@@ -55,6 +64,8 @@ func Hook(args []string, std IO) error {
 			// Last, so a failure here can't undo the writes before it.
 			crewTranscriptCall(pane, args[0], p))
 	}
+	// Outside the payload check: the context printed whether or not the payload parsed.
+	call = sessionhost.Join(call, digestSeqCall(pane, printed))
 	_ = sessionhost.WriteCurrent(call)
 	return nil
 }
@@ -512,8 +523,70 @@ func crewTranscriptCall(pane, event string, p hookPayload) []string {
 }
 
 // chatContext is the stdout a fleet's chat hook prints for event, in the form Claude Code adds to context, and the
-// highest digest sequence it printed (0 when none); "" and 0 when there is nothing to say.
-func chatContext(event, home, fleet string) (out string, seq uint64) { return "", 0 }
+// highest digest sequence it printed (0 when none); "" and 0 when there is nothing to say. It only reads files.
+func chatContext(event, home, fleet string) (out string, seq uint64) {
+	if home == "" || !chatlog.Valid(fleet) {
+		return "", 0
+	}
+	var text string
+	switch event {
+	case "SessionStart":
+		text = readBrief(home, fleet)
+	case "UserPromptSubmit":
+		text, seq = digestText(home, fleet)
+	}
+	if text == "" {
+		return "", 0
+	}
+	raw, err := json.Marshal(map[string]any{"hookSpecificOutput": map[string]string{"hookEventName": event, "additionalContext": text}})
+	if err != nil {
+		return "", 0
+	}
+	return string(raw) + "\n", seq
+}
+
+// readBrief is the fleet's brief.md; "" when it is missing, not a plain file or unreadable.
+func readBrief(home, fleet string) string {
+	dir, err := chatlog.OpenFleetDir(home, fleet, false)
+	if err != nil {
+		return ""
+	}
+	defer dir.Close()
+	f, err := dir.Open("brief.md")
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return ""
+	}
+	raw, err := io.ReadAll(io.LimitReader(f, 1<<16))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
+}
+
+func digestText(home, fleet string) (string, uint64) {
+	d, err := digest.Read(home, fleet)
+	if err != nil || len(d.Lines) == 0 {
+		return "", 0
+	}
+	var b strings.Builder
+	b.WriteString("Since your last turn:\n")
+	if d.Dropped > 0 {
+		b.WriteString("- " + strconv.Itoa(d.Dropped) + " earlier events are not listed\n")
+	}
+	for _, l := range d.Lines {
+		b.WriteString("- " + l.Text + "\n")
+	}
+	return strings.TrimSpace(b.String()), d.Lines[len(d.Lines)-1].Seq
+}
 
 // digestSeqCall records the highest digest sequence printed on the pane; nil for 0.
-func digestSeqCall(pane string, seq uint64) []string { return nil }
+func digestSeqCall(pane string, seq uint64) []string {
+	if seq == 0 {
+		return nil
+	}
+	return sessionhost.SetPaneCall(pane, sessionhost.Prefix+sessionhost.ChatDigestOpt, strconv.FormatUint(seq, 10))
+}
