@@ -1492,10 +1492,11 @@ export async function myPRsShowANotReadyCarriedPR(page: Page, a: Admiral, opts: 
   await expect
     .poll(async () => {
       await fetch(`${a.url}api/v1/moored/refresh`, { method: 'POST' });
-      const got = ((await (await fetch(`${a.url}api/v1/ships`)).json()) as { ships: (ShipJSON & { prs?: { review?: string }[] })[] }).ships.find((s) => s.session === ship.session);
-      return got?.prs?.[0]?.review;
+      const got = ((await (await fetch(`${a.url}api/v1/ships`)).json()) as { ships: (ShipJSON & { prs?: { review?: string }[]; waiting?: string; no_resume?: boolean })[] }).ships.find((s) => s.session === ship.session);
+      // A waiting text or a missing resume would put its own words ahead of the chips' next step.
+      return { review: got?.prs?.[0]?.review, waiting: got?.waiting ?? '', noResume: got?.no_resume ?? false };
     }, { timeout: 30_000 })
-    .toBe('REVIEW_REQUIRED');
+    .toEqual({ review: 'REVIEW_REQUIRED', waiting: '', noResume: false });
 
   const row = await openMyPRs(page, a, WAITING_PR);
   for (const chip of ['Review required', 'Checks passing', 'Mergeable']) await expect(row).toContainText(chip);
@@ -1524,6 +1525,8 @@ export async function myPRsOfferCommodoreOnAShiplessPR(page: Page, a: Admiral, o
   await expect(row.locator('a[href*="/app/ships/"]'), 'no ship carries it').toHaveCount(0);
   const launch = row.getByRole('button', { name: 'Launch Commodore', exact: true });
   await expect(launch).toHaveText('Launch Commodore');
+  // Only a PR order says Commodore: the other orders keep Launch.
+  await expect(page.getByRole('region', { name: 'Orders' }).getByRole('button', { name: /^Launch Tighten the api limits/ })).toHaveText('Launch');
   await expect(launch).toBeInViewport();
   expect((await launch.boundingBox())!.height, 'Launch Commodore height').toBeGreaterThanOrEqual(44);
   if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
