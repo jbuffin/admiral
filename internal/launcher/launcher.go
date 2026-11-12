@@ -44,9 +44,17 @@ type Request struct {
 	// Title and URL are set by the server from the source's order, never by the client.
 	Title string `json:"-"`
 	URL   string `json:"-"`
-	// Issues is every issue of a slice launch, set by the server; URL is the first.
-	Issues []string `json:"-"`
+	// Issues is every issue of a slice launch; URL is the first. A client may name them, never the URL.
+	Issues []string `json:"issues"`
 	Panel  string   `json:"-"`
+	// ChatMessage is the id of the chat message the launch answers; it keys the launch as chat:<id>.
+	ChatMessage string `json:"chat_message"`
+	// Anyway gives a chat launch a fresh key so the same message can launch twice.
+	Anyway bool `json:"anyway"`
+	// ChatKey is a woken ship's stored chat key, which a wake carries over as it is.
+	ChatKey string `json:"-"`
+	// ByFleet is the fleet AdmiralBot launches for; empty for the engineer. It shapes a refusal's wording only.
+	ByFleet string `json:"-"`
 	// Autopilot runs the ship under the guard with ADMIRAL_LOW_STAKES=advisor, counted against the global cap.
 	Autopilot bool     `json:"autopilot"`
 	ExtraArgs []string `json:"-"`
@@ -66,6 +74,18 @@ type Request struct {
 	PR string `json:"-"`
 	// Via is "admiralbot" when AdmiralBot made the launch, and the ship carries it.
 	Via string `json:"-"`
+}
+
+// ChatOption is the chat:<fleet>:<id> key the ship stores, so a fleet's message ids never meet another's;
+// an anyway launch stores none, so it never holds its message.
+func (r Request) ChatOption() string {
+	if r.ChatKey != "" {
+		return r.ChatKey
+	}
+	if id := strings.TrimSpace(r.ChatMessage); id != "" && !r.Anyway {
+		return "chat:" + r.Fleet + ":" + id
+	}
+	return ""
 }
 
 // Skill is the order's skill: Commodore, a named one, or none (Just launch).
@@ -153,7 +173,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
 		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")},
-		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}}
+		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}, {"chat", req.ChatOption()}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
 			return nil, refuse(http.StatusBadRequest, "%s contains a control character", o[0])

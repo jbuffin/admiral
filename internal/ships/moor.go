@@ -89,7 +89,7 @@ func (s *Service) moor(ctx context.Context, sess sessionhost.Session, prs []stri
 	rec := moor.Record{Name: o["name"], Session: name, Fleet: o["fleet"], Harness: o["harness"], Model: o["model"],
 		Skill: moor.Skill{Kind: o["skill-kind"], Name: o["skill"]}, Checkout: o["dir"], PRs: prs,
 		Source: o["source"], Panel: o["panel"], OrderID: o["order"], URL: o["url"], Issues: splitIssues(o["issues"]), Title: o["title"],
-		Resume: s.report(name).Resume, Round: round, Via: o["via"], Resources: splitResources(o["resources"]), MooredAt: time.Now().UTC().Truncate(time.Second)}
+		Resume: s.report(name).Resume, Round: round, Via: o["via"], Chat: o["chat"], Resources: splitResources(o["resources"]), MooredAt: time.Now().UTC().Truncate(time.Second)}
 	if err := s.recordRound(ctx, sess, rec, time.Now().UTC()); err != nil {
 		fmt.Fprintf(os.Stderr, "admiral: ship %s: its round history cannot be written, so it keeps no dividers: %v\n", name, err)
 	}
@@ -230,7 +230,7 @@ func (s *Service) mooredShips(live map[string]bool) []Ship {
 		}
 		sh := Ship{Session: r.Session, Name: r.Name, Fleet: r.Fleet, Harness: r.Harness, Dir: r.Checkout,
 			Repo: filepath.Base(r.Checkout), Status: StatusMoored,
-			Source: r.Source, Panel: r.Panel, OrderID: r.OrderID, URL: r.URL, Issues: r.Issues, Title: r.Title, Via: r.Via, PRs: prs[i], MooredAt: r.MooredAt.UTC().Format(time.RFC3339), Stale: polls[i].stale, Waiting: polls[i].waiting, NoResume: !moor.ValidResume(r.Resume),
+			Source: r.Source, Panel: r.Panel, OrderID: r.OrderID, URL: r.URL, Issues: r.Issues, Title: r.Title, Via: r.Via, Chat: r.Chat, PRs: prs[i], MooredAt: r.MooredAt.UTC().Format(time.RFC3339), Stale: polls[i].stale, Waiting: polls[i].waiting, NoResume: !moor.ValidResume(r.Resume),
 			Crew: []CrewBoat{}, Subagents: []sessionhost.Subagent{}}
 		sh.StackReady, sh.ReadyUpTo = moor.StackReady(prs[i])
 		sh.MergeMethod = methods[i]

@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
+	"strconv"
 	"strings"
 
+	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/campaigns"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/launcher"
@@ -30,14 +33,48 @@ func ClaimKey(url string) (key string, ok bool) {
 // ClaimsOf maps each claimed issue (by ClaimKey) to the name of a listed ship holding it, of any status.
 func ClaimsOf(list []Ship) map[string]string {
 	out := map[string]string{}
+	for k, sh := range claimingShips(list) {
+		out[k] = cmpName(sh.Name, sh.Session) // a pending launch has a session but no name yet
+	}
+	return out
+}
+
+func claimingShips(list []Ship) map[string]Ship {
+	out := map[string]Ship{}
 	for _, sh := range list {
 		for _, u := range sh.IssueURLs() {
 			if k, ok := ClaimKey(u); ok {
-				out[k] = cmpName(sh.Name, sh.Session) // a pending launch has a session but no name yet
+				out[k] = sh
 			}
 		}
 	}
 	return out
+}
+
+// holderOf names a holding ship for a refusal; to AdmiralBot, a ship of another fleet is only that fleet.
+func holderOf(req launcher.Request, sh Ship) string {
+	if req.ByFleet != "" && sh.Fleet != req.ByFleet {
+		return "a ship in fleet " + cmpName(sh.FleetName, sh.Fleet)
+	}
+	return cmpName(sh.Name, sh.Session)
+}
+
+// checkIssueURLs refuses a URL that is not an https GitHub issue on one of hosts, and returns the claim-normalised forms.
+func checkIssueURLs(urls, hosts []string) ([]string, *launcher.Error) {
+	out := make([]string, 0, len(urls))
+	for _, u := range urls {
+		k, ok := ClaimKey(u)
+		if ok {
+			host := strings.TrimPrefix(k, "https://")
+			host = host[:strings.IndexByte(host, '/')]
+			ok = strings.HasPrefix(strings.ToLower(strings.TrimSpace(u)), "https://") && slices.Contains(hosts, host)
+		}
+		if !ok {
+			return nil, &launcher.Error{Status: http.StatusBadRequest, Msg: "issues must be https GitHub issue URLs on a host the fleet uses, not " + strconv.Quote(u)}
+		}
+		out = append(out, k)
+	}
+	return out, nil
 }
 
 // Claims is ClaimsOf over the listed ships, the pending launches and the launches in flight.
@@ -82,6 +119,9 @@ func (s *Service) unlockIssue(url string) {
 
 // Launch is what POST /api/ships does after decoding: clone, admit, LaunchOrder, hold the reservation.
 func (s *Service) Launch(ctx context.Context, req launcher.Request) (Ship, *launcher.Error) {
+	if f, ok := actor.FleetOf(ctx); ok {
+		req.ByFleet = f
+	}
 	// These need no disk, so a bad request leaves no clone.
 	if lerr := launcher.CheckMember(req.Skill.Kind, req.Member); lerr != nil {
 		return Ship{}, lerr
@@ -144,6 +184,11 @@ func (s *Service) serveLaunch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "launch a campaign's child through its campaign")
 		return
 	}
+	// a source's order has its own issue; only a launch with no source names issues, and the campaign route sets a slice's itself
+	if req.Source != "" && len(req.Issues) > 0 {
+		writeError(w, http.StatusBadRequest, "issues go only on a launch with no source")
+		return
+	}
 	req.Via = viaOf(r)
 	got, lerr := s.Launch(r.Context(), req)
 	if lerr != nil {
@@ -159,11 +204,11 @@ func issueHeld(holder string) *launcher.Error {
 	return &launcher.Error{Status: http.StatusConflict, Msg: "this issue already has a ship (" + holder + ")"}
 }
 
-func (s *Service) setUnlistedIssues(key OrderKey, url string, issues []string) {
+func (s *Service) setUnlistedIssues(key OrderKey, url string, issues []string, chat, fleet string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if u, ok := s.listing[key]; ok {
-		u.url, u.issues = url, issues
+		u.url, u.issues, u.chat, u.fleet = url, issues, chat, fleet
 		s.listing[key] = u
 	}
 }

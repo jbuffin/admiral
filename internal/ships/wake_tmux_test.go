@@ -83,7 +83,8 @@ exit "$(cat "` + rec + `/exit")"
 	home := guardedHome(t)
 	cfg := &config.Config{MaxShips: maxShips, Resources: map[string]config.Resource{"phone": {Capacity: 1}},
 		Fleets: []config.Fleet{{Key: "work", Name: "Work", SearchRoots: []string{root}, WakeReviewers: []string{"alice"},
-			Harnesses: []config.Harness{{Name: "claude", Executable: exe, Found: true}}}}}
+			Harnesses: []config.Harness{{Name: "claude", Executable: exe, Found: true}}},
+			{Key: "home", Name: "Home", SearchRoots: []string{root}, Harnesses: []config.Harness{{Name: "claude", Executable: exe, Found: true}}}}}
 	h := sessionhost.New(tmux, sock)
 	ctx, stop := context.WithCancel(context.Background())
 	t.Cleanup(stop)

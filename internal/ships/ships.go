@@ -17,6 +17,7 @@ import (
 	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/conversation"
+	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/home"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/moor"
@@ -49,6 +50,7 @@ type Ship struct {
 	Launched  string   `json:"launched"`
 	// Via is "admiralbot" for a ship AdmiralBot launched; absent for the engineer's.
 	Via        string          `json:"via,omitempty"`
+	Chat       string          `json:"-"`
 	Status     string          `json:"status"`
 	ExitCode   *int            `json:"exit_code"`
 	ExitSignal *string         `json:"exit_signal"`
@@ -154,6 +156,7 @@ type Service struct {
 	wakeMu       sync.Mutex        // every read-modify-write of a ship's wake state; taken after mooredMu is released, never inside it
 	// issueLocks holds the GitHub issues (by ClaimKey) with a launch under way, each with who holds it.
 	issueLocks map[string]string
+	chatLocks  map[string]string
 }
 
 type unlisted struct {
@@ -163,6 +166,8 @@ type unlisted struct {
 	resources []string
 	url       string
 	issues    []string
+	chat      string
+	fleet     string
 }
 
 // listedWithin: a ship killed before the host saw it must not hold its order for good.
@@ -202,7 +207,7 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	o, session := sess.Options, sess.Name
 	sh := Ship{Session: session, Name: o["name"], Fleet: o["fleet"], FleetName: o["fleet-name"],
 		FleetColor: o["fleet-color"], Harness: o["harness"], Dir: o["dir"], Repo: filepath.Base(o["dir"]),
-		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], OrderID: o["order"], Launched: o["launched"], Via: o["via"], Status: status(sess, now)}
+		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], OrderID: o["order"], Launched: o["launched"], Via: o["via"], Chat: o["chat"], Status: status(sess, now)}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
 	sh.Crew, sh.Subagents = crewBoats(sess.Crew), sess.Subagents
 	if sh.Subagents == nil {
@@ -533,23 +538,44 @@ func (s *Service) admit(req launcher.Request) (release func(), lerr *launcher.Er
 func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	var panel string
 	key := OrderKey{req.Source, req.OrderID}
+	if req.Source == "" && req.Round == 0 { // only a source's order sets a title and URL, so a client's never stand
+		req.Title, req.URL = "", ""
+	}
 	if len(req.Issues) > 0 {
-		if req.Source == "" { // the pending listing is keyed by the order, so a launch with no order would hold nothing
-			return Ship{}, &launcher.Error{Status: http.StatusBadRequest, Msg: "a launch of several issues needs its source"}
+		if req.Source == "" && req.Round == 0 {
+			hosts := []string{github.DefaultHost}
+			if fleet, ok := s.Launcher.Config().Fleet(req.Fleet); ok {
+				hosts = launcher.GitHubHosts(s.Launcher.Config(), fleet)
+			}
+			var lerr *launcher.Error
+			if req.Issues, lerr = checkIssueURLs(req.Issues, hosts); lerr != nil {
+				return Ship{}, lerr
+			}
+		} else {
+			for _, u := range req.Issues {
+				if _, ok := ClaimKey(u); !ok {
+					return Ship{}, &launcher.Error{Status: http.StatusBadRequest, Msg: "issues must be GitHub issue URLs, not " + strconv.Quote(u)}
+				}
+			}
 		}
 		req.Issues = distinctIssues(req.Issues)
+		req.URL = req.Issues[0]
 	}
-	// A wake keeps its moored ship's order and claim; it never re-reads the order or refuses itself.
+	chat := req.ChatOption()
+	self := "" // a wake's own moored record holds its key and claims
+	if req.Round > 0 {
+		self = cmpName(req.Name, req.Session)
+	}
+	if req.Round == 0 && (req.Source != "" || len(req.Issues) > 0 || chat != "") && !s.Host.Known() {
+		return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: NotKnownMsg}
+	}
 	if req.Source != "" && req.Round == 0 {
-		if !s.Host.Known() {
-			return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: NotKnownMsg}
-		}
 		if !s.lockOrder(key) {
-			return Ship{}, s.orderRefused(req.Issues)
+			return Ship{}, s.orderRefused(req, key)
 		}
 		defer s.unlockOrder(key)
 		if HiddenOrders(s.List())[key] {
-			return Ship{}, s.orderRefused(req.Issues)
+			return Ship{}, s.orderRefused(req, key)
 		}
 		var lerr *launcher.Error
 		if req.Text, req.Title, _, req.URL, panel, lerr = s.Orders.Order(req.Source, req.OrderID); lerr != nil {
@@ -558,23 +584,30 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 		if req.Panel == "" {
 			req.Panel = panel
 		}
-	}
-	if len(req.Issues) > 0 {
-		req.URL = req.Issues[0]
-	}
-	if req.Source != "" {
-		issues := req.Issues
-		if len(issues) == 0 {
-			issues = []string{req.URL}
+		if len(req.Issues) > 0 {
+			req.URL = req.Issues[0]
 		}
+	}
+	if issues := claimed(req); len(issues) > 0 {
 		if holder, ok := s.lockIssues(issues, "a launch in flight"); !ok {
 			return Ship{}, issueHeld(holder)
 		}
 		defer s.unlockIssues(issues)
-		claims := ClaimsOf(append(s.List(), s.Pending()...))
+		claims := claimingShips(append(s.List(), s.Pending()...))
 		for _, u := range issues {
-			if holder := claims[claimKeyOf(u)]; holder != "" && !(req.Round > 0 && holder == cmpName(req.Name, req.Session)) { // a wake's own moored record holds the claim
-				return Ship{}, issueHeld(holder)
+			if sh, held := claims[claimKeyOf(u)]; held && cmpName(sh.Name, sh.Session) != self {
+				return Ship{}, issueHeld(holderOf(req, sh))
+			}
+		}
+	}
+	if chat != "" && req.Round == 0 {
+		if holder, ok := s.lockChat(chat, "a launch in flight"); !ok {
+			return Ship{}, chatHeld(holder)
+		}
+		defer s.unlockChat(chat)
+		for _, sh := range append(s.List(), s.Pending()...) {
+			if sh.Chat == chat {
+				return Ship{}, chatHeld(holderOf(req, sh))
 			}
 		}
 	}
@@ -601,26 +634,70 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	sess := sessionhost.Session{Name: got.Session, Options: got.Options}
 	if now, ok := s.find(got.Session); ok {
 		sess = now
-	} else if req.Source != "" {
+	} else if req.Source != "" || len(req.Issues) > 0 || chat != "" {
+		if req.Source == "" { // the pending listing is keyed by the order, so a sourceless launch is keyed by its session
+			key = OrderKey{OrderID: got.Session}
+		}
 		s.holdUnlisted(key, got.Session, req.Panel, req.Resources)
-		s.setUnlistedIssues(key, req.URL, req.Issues)
+		s.setUnlistedIssues(key, req.URL, req.Issues, chat, req.Fleet)
 	}
 	s.broadcast()
 	return s.ship(sess), nil
 }
 
-// orderRefused is the 409 for an order that already has a ship; a slice's refusal names the ship holding its issues.
-func (s *Service) orderRefused(issues []string) *launcher.Error {
-	if len(issues) == 0 {
-		return &launcher.Error{Status: http.StatusConflict, Msg: "this order already has a ship"}
+// claimed is the issues a launch holds: its slice, else its one issue URL when it came from a source's order.
+func claimed(req launcher.Request) []string {
+	if len(req.Issues) > 0 {
+		return req.Issues
 	}
-	claims := ClaimsOf(append(s.List(), s.Pending()...))
-	for _, u := range issues {
-		if holder := claims[claimKeyOf(u)]; holder != "" {
-			return issueHeld(holder)
+	if req.Source != "" && req.URL != "" {
+		return []string{req.URL}
+	}
+	return nil
+}
+
+func chatHeld(holder string) *launcher.Error {
+	return &launcher.Error{Status: http.StatusConflict, Msg: "this chat message already has a ship (" + holder + ")"}
+}
+
+// orderRefused is the 409 for an order that already has a ship; a slice's refusal names the ship holding its issues.
+func (s *Service) orderRefused(req launcher.Request, key OrderKey) *launcher.Error {
+	all := append(s.List(), s.Pending()...)
+	if len(req.Issues) > 0 {
+		claims := claimingShips(all)
+		for _, u := range req.Issues {
+			if sh, held := claims[claimKeyOf(u)]; held {
+				return issueHeld(holderOf(req, sh))
+			}
+		}
+		return issueHeld("a launch in flight")
+	}
+	for _, sh := range all {
+		if sh.Source == key.Source && sh.OrderID == key.OrderID {
+			return &launcher.Error{Status: http.StatusConflict, Msg: "this order already has a ship (" + holderOf(req, sh) + ")"}
 		}
 	}
-	return issueHeld("a launch in flight")
+	return &launcher.Error{Status: http.StatusConflict, Msg: "this order already has a ship (a launch in flight)"}
+}
+
+// lockChat takes the in-flight hold on a chat key; when another launch has it, ok is false and holder names it.
+func (s *Service) lockChat(key, holder string) (heldBy string, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if h, taken := s.chatLocks[key]; taken {
+		return h, false
+	}
+	if s.chatLocks == nil {
+		s.chatLocks = map[string]string{}
+	}
+	s.chatLocks[key] = holder
+	return "", true
+}
+
+func (s *Service) unlockChat(key string) {
+	s.mu.Lock()
+	delete(s.chatLocks, key)
+	s.mu.Unlock()
 }
 
 func (s *Service) holdUnlisted(key OrderKey, session, panel string, resources []string) {
@@ -640,9 +717,16 @@ func (s *Service) Pending() []Ship {
 	var out []Ship
 	for key, u := range s.listing {
 		if _, listed := s.find(u.session); listed || time.Since(u.at) >= listedWithin {
+			if key.Source == "" { // only lockOrder ever drops an order's entry; a session key would stay for good
+				delete(s.listing, key)
+			}
 			continue
 		}
-		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: key.OrderID, Panel: u.panel, Resources: u.resources, URL: u.url, Issues: u.issues, Status: StatusUnderway})
+		orderID := key.OrderID
+		if key.Source == "" {
+			orderID = ""
+		}
+		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: orderID, Chat: u.chat, Fleet: u.fleet, Panel: u.panel, Resources: u.resources, URL: u.url, Issues: u.issues, Status: StatusUnderway})
 	}
 	return out
 }
