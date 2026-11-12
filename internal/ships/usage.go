@@ -67,6 +67,9 @@ func (s *Service) queueUsage(sess sessionhost.Session, end *endState) {
 				ex.Own = &f
 			}
 		}
+		if s.ForgetLive != nil {
+			s.ForgetLive(sess.Name)
+		}
 		round, _ := strconv.Atoi(sess.Options["round"])
 		s.record(outcomes.Record{Ship: sess.Name, Event: "usage",
 			Fields: usage.ExitFields(sess.Options["fleet"], sess.Options["harness"], round, ex.Own, ex.Crew)}, func(err error) {
@@ -157,6 +160,15 @@ func sumPaths(harness, dir string, paths []string) *usage.Figures {
 	return usage.SumFigures(parts)
 }
 
+// Login is the identity dir of the harness login a ship runs under; "" when the ship or its dock is unknown.
+func (s *Service) Login(name string) string {
+	sh, ok := s.Get(name)
+	if !ok {
+		return ""
+	}
+	return s.dockConfig(sh.Fleet, sh.Harness)
+}
+
 func (s *Service) dockConfig(fleet, harness string) string {
 	if s.Launcher == nil || s.Launcher.Config == nil {
 		return ""
@@ -224,4 +236,13 @@ func figuresOf(harness, dir, path, id string) *usage.Figures {
 		return nil
 	}
 	return &fig
+}
+
+// Harness is the harness a ship's record names, "" for a ship not in the list.
+func (s *Service) Harness(name string) string {
+	sh, ok := s.Get(name)
+	if !ok {
+		return ""
+	}
+	return sh.Harness
 }

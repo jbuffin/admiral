@@ -103,6 +103,8 @@ type Service struct {
 	UsageRead func(ctx context.Context, sess sessionhost.Session) ExitUsage
 	// LastLive gives a ship's last live figures when its transcript has none; nil when nothing keeps them.
 	LastLive func(session string) (usage.Figures, bool)
+	// ForgetLive drops a ship's live figures once its usage record has read them, so a later round or a ship of the same name starts from nothing.
+	ForgetLive func(session string)
 	// Reserve takes a unit of each named resource, or none: it returns the
 	// release, or why the first is not ready (busy, missing or pending). Nil
 	// when there are no resources to hold.

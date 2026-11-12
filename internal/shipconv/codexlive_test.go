@@ -480,3 +480,36 @@ func TestLiveQuestionPendingOnTheServerTellsTheShipItAsksAndSettles(t *testing.T
 	fake.push(`{"method":"serverRequest/resolved","params":{"threadId":"` + liveThread + `","requestId":0}}`)
 	eventually(t, "the ship to be told it does not", func() bool { g := got(); return len(g) == 2 && !g[1] })
 }
+
+// Every frame an observer gets also reaches the live usage sink, whoever is watching.
+func TestLiveFramesReachTheUsageSink(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	fake := newLiveFake(t)
+	f.liveShip(fake, false)
+	var mu sync.Mutex
+	got := map[string][]string{}
+	f.svc.LiveFrame = func(session string, frame []byte) {
+		mu.Lock()
+		defer mu.Unlock()
+		got[session] = append(got[session], string(frame))
+	}
+	f.startLive()
+	f.serving(fake)
+
+	usageFrame := `{"method":"thread/tokenUsage/updated","params":{"threadId":"` + liveThread + `","turnId":"t1","tokenUsage":{"total":{"totalTokens":10,"inputTokens":8,"cachedInputTokens":0,"outputTokens":2,"reasoningOutputTokens":0},"modelContextWindow":1000}}}`
+	limitsFrame := `{"method":"account/rateLimits/updated","params":{"rateLimits":{"primary":{"usedPercent":1,"windowDurationMins":300,"resetsAt":1900000000},"secondary":null}}}`
+	fake.push(usageFrame)
+	fake.push(limitsFrame)
+	eventually(t, "both frames at the sink, under the ship's name", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		n := 0
+		for _, fr := range got["s"] {
+			if fr == usageFrame || fr == limitsFrame {
+				n++
+			}
+		}
+		return n == 2
+	})
+}

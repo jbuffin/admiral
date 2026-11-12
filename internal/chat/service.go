@@ -57,6 +57,8 @@ type Service struct {
 	Outcomes *outcomes.Writer
 	// LastLive gives the chat's last live figures when its transcript has none; nil when nothing keeps them.
 	LastLive func(session string) (usage.Figures, bool)
+	// ForgetLive drops the chat's live figures once a reset record has read them.
+	ForgetLive func(session string)
 
 	op  sync.Mutex // start, New chat and send, one at a time
 	qmu sync.Mutex // answering and withdrawing chat questions, one at a time
@@ -256,6 +258,13 @@ func parseTranscriptOption(raw string) (stamp, source, path string, ok bool) {
 		return "", "", "", false
 	}
 	return parts[0], parts[1], parts[2], true
+}
+
+// Login is the identity dir of the harness login the chat runs under.
+func (s *Service) Login() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.configDir()
 }
 
 func (s *Service) configDir() string {

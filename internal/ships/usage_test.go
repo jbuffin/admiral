@@ -270,3 +270,64 @@ func TestCrewBoatsAreAddedAndListed(t *testing.T) {
 		t.Errorf("late = %v, want listed with null figures", late)
 	}
 }
+
+// A ship killed before its transcript has figures still records what the status line last showed.
+func TestKilledShipWithNoTranscriptRecordsTheLiveStoresFigures(t *testing.T) {
+	r := newUsageRig(t)
+	r.s.UsageRead = func(context.Context, sessionhost.Session) ExitUsage { return ExitUsage{} }
+	now := time.Unix(1800000000, 0)
+	store := usage.NewStore(func() time.Time { return now })
+	store.SetFigures("a-1", "claude-session", usage.Figures{Tokens: usage.Tokens{Input: 7}, Money: &usage.Money{Amount: 0.5, Basis: usage.BasisEstimate}}, now)
+	store.SetFigures("a-2", "other-session", usage.Figures{Tokens: usage.Tokens{Input: 99}, Money: &usage.Money{Amount: 9, Basis: usage.BasisEstimate}}, now)
+	r.s.LastLive = store.LastLive
+	r.s.queueEnded(ending1(exitedShip("a-1", nil)))
+	u := r.usageRecord(t, r.waitCount(t, "usage", 1))
+	if tk, _ := u["tokens"].(map[string]any); tk["input"] != 7.0 {
+		t.Errorf("tokens = %v, want this ship's live figures", u["tokens"])
+	}
+	if m, _ := u["money"].(map[string]any); m["amount"] != 0.5 {
+		t.Errorf("money = %v, want this ship's live figures", u["money"])
+	}
+}
+
+// Moored rounds and a new ship of an ended ship's name share the name: a record takes the live figures once.
+func TestSecondRoundKilledWithNoFiguresRecordsNothingFromRoundOne(t *testing.T) {
+	r := newUsageRig(t)
+	r.s.UsageRead = func(context.Context, sessionhost.Session) ExitUsage { return ExitUsage{} }
+	now := time.Unix(1800000000, 0)
+	store := usage.NewStore(func() time.Time { return now })
+	r.s.LastLive, r.s.ForgetLive = store.LastLive, store.Forget
+	store.SetFigures("a-1", "round-1", usage.Figures{Tokens: usage.Tokens{Input: 7}, Money: &usage.Money{Amount: 0.5, Basis: usage.BasisEstimate}}, now)
+
+	r.s.queueEnded(ending1(exitedShip("a-1", map[string]string{"round": "1"})))
+	r.waitCount(t, "usage", 1)
+	r.s.queueEnded(ending1(exitedShip("a-1", map[string]string{"round": "2"})))
+	recs := r.waitCount(t, "usage", 2)
+
+	var got []map[string]any
+	for _, m := range recs {
+		if m["event"] == "usage" {
+			got = append(got, m)
+		}
+	}
+	if m, _ := got[0]["money"].(map[string]any); m["amount"] != 0.5 {
+		t.Errorf("round 1 money = %v, want its live figures", got[0]["money"])
+	}
+	if got[1]["money"] != nil || got[1]["tokens"] != nil {
+		t.Errorf("round 2 = %v, want null figures, not round 1's", got[1])
+	}
+}
+
+func TestEndedShipsLiveFiguresAreForgottenEvenWhenTheTranscriptHadFigures(t *testing.T) {
+	r := newUsageRig(t)
+	r.s.UsageRead = func(context.Context, sessionhost.Session) ExitUsage { return ExitUsage{Own: figs()} }
+	now := time.Unix(1800000000, 0)
+	store := usage.NewStore(func() time.Time { return now })
+	r.s.LastLive, r.s.ForgetLive = store.LastLive, store.Forget
+	store.SetFigures("a-1", "s1", usage.Figures{Money: &usage.Money{Amount: 4, Basis: usage.BasisEstimate}}, now)
+	r.s.queueEnded(ending1(exitedShip("a-1", nil)))
+	r.waitCount(t, "usage", 1)
+	if _, ok := store.LastLive("a-1"); ok {
+		t.Error("the ended ship's live figures stayed for the next ship of the name")
+	}
+}

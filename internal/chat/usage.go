@@ -79,6 +79,9 @@ func (s *Service) recordReset(path, configDir, fleet, clearedFrom string) {
 			last = func() (usage.Figures, bool) { return s.LastLive(sessionhost.ChatName) }
 		}
 		got := s.resets.figures(path, cur, last)
+		if s.ForgetLive != nil {
+			s.ForgetLive(sessionhost.ChatName)
+		}
 		s.Outcomes.Enqueue(outcomes.Record{Ship: sessionhost.ChatName, Event: "usage",
 			Fields: usage.ExitFields(fleet, "claude", 0, got, nil)}, nil)
 	}()
