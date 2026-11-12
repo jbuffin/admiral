@@ -1,4 +1,4 @@
-import type { Dock } from './api';
+import { call, type Dock, type Result } from './api';
 
 export const CUSTOM_ROLE = '__custom__';
 export const ROLES = ['implementer', 'test-writer', 'reviewer', 'security-reviewer', 'brief-checker', 'triager', 'target-steward', 'scribe', 'fix-checker'];
@@ -203,3 +203,117 @@ export function moveTarget(choice: string, typed: string): { scope: 'fleet' | 'r
 export const crewApi = (fleet: string, harness: string, tail = '') => `/fleets/${encodeURIComponent(fleet)}/crew${tail}${harness ? `?harness=${encodeURIComponent(harness)}` : ''}`;
 
 export const firstDock = (docks: Dock[]) => docks[0]?.harness ?? '';
+
+export const DESCRIPTION_MAX = 4000;
+
+/** A description with something in it, of at most 4000 code points, which is how the server counts. */
+export const canDraft = (description: string) => description.trim() !== '' && [...description].length <= DESCRIPTION_MAX;
+
+export interface NewMemberForm extends MemberForm {
+  name: string;
+}
+
+export interface DraftProblem {
+  field: string;
+  message: string;
+}
+
+export interface Draft {
+  form: NewMemberForm;
+  problems: DraftProblem[];
+}
+
+export const draftCrew = (fleet: string, description: string, signal?: AbortSignal) => call<unknown>('POST', crewApi(fleet, '', '/draft'), { description }, undefined, signal);
+
+/** The editor's form from the draft route's answer; the draft is model output, so every field is read defensively. */
+export function readDraft(raw: unknown): Draft {
+  const top = (raw && typeof raw === 'object' ? raw : {}) as { draft?: Record<string, unknown> | null; problems?: unknown };
+  const d = top.draft ?? {};
+  const text = (v: unknown) => (typeof v === 'string' ? v : '');
+  const role = text(d.role);
+  const custom = role !== '' && !ROLES.includes(role);
+  const skills = Array.isArray(d.skills) ? d.skills.filter((s): s is string => typeof s === 'string') : [];
+  const problems = (Array.isArray(top.problems) ? top.problems : []).flatMap((p): DraftProblem[] => {
+    const q = p as { field?: unknown; message?: unknown } | null;
+    return q && typeof q.field === 'string' && typeof q.message === 'string' ? [{ field: q.field, message: q.message }] : [];
+  });
+  return {
+    form: {
+      name: text(d.name),
+      role: custom ? CUSTOM_ROLE : role,
+      customRole: custom ? role : '',
+      basedOn: custom ? text(d['based-on']) : '',
+      skills: skills.join('\n'),
+      model: text(d.model),
+      harness: text(d.harness),
+      pickMeWhen: text(d['pick-me-when']),
+      instructions: text(d.instructions),
+    },
+    problems,
+  };
+}
+
+/** The problems left after a field changes; a role change also clears based-on, which a built-in role no longer shows. */
+export function clearProblems(problems: DraftProblem[], key: keyof NewMemberForm): DraftProblem[] {
+  const own = key === 'customRole' ? 'role' : key === 'basedOn' ? 'based-on' : key === 'pickMeWhen' ? 'pick-me-when' : key;
+  const gone = key === 'role' ? ['role', 'based-on'] : [own];
+  return problems.filter((p) => !gone.includes(p.field));
+}
+
+export type NewMemberBody = MemberBody & { name: string };
+
+export const createBody = (f: NewMemberForm): NewMemberBody => ({ name: f.name.trim(), ...memberBody(f) });
+
+export const createMember = (fleet: string, body: NewMemberBody) => call<{ name: string }>('POST', crewApi(fleet, '', '/members'), body);
+
+/** The editor inputs for a new member: the Name first, then what an edit shows. */
+export const addShownFields = (role: string): string[] => ['name', ...shownFields(role)];
+
+export interface AddCrewState {
+  phase: 'describe' | 'drafting' | 'draft' | 'failed' | 'nojudge';
+  description: string;
+  seconds: number;
+  form?: NewMemberForm;
+  problems?: DraftProblem[];
+  error?: string;
+  kind?: string;
+  reason?: string;
+}
+
+export const ADD_CREW_START: AddCrewState = { phase: 'describe', description: '', seconds: 0 };
+
+export type AddCrewEvent =
+  | { type: 'edit'; description: string }
+  | { type: 'draft' }
+  | { type: 'tick' }
+  | { type: 'stop' }
+  | { type: 'result'; result: Result<unknown> }
+  | { type: 'discard' };
+
+/** The Add crew panel's steps. The description survives every one of them, and a result that lands outside drafting is stale. */
+export function addCrewStep(s: AddCrewState, e: AddCrewEvent): AddCrewState {
+  const back = { phase: 'describe' as const, description: s.description, seconds: 0 };
+  switch (e.type) {
+    case 'edit':
+      return { ...s, description: e.description };
+    case 'draft':
+      return s.phase !== 'drafting' && s.phase !== 'draft' && canDraft(s.description) ? { phase: 'drafting', description: s.description, seconds: 0 } : s;
+    case 'tick':
+      return s.phase === 'drafting' ? { ...s, seconds: s.seconds + 1 } : s;
+    case 'stop':
+      return s.phase === 'drafting' ? back : s;
+    case 'discard':
+      return s.phase === 'draft' ? back : s;
+    case 'result': {
+      if (s.phase !== 'drafting') return s;
+      const r = e.result;
+      if (r.ok) {
+        const { form, problems } = readDraft(r.data);
+        return { phase: 'draft', description: s.description, seconds: 0, form, problems };
+      }
+      if (r.aborted) return back;
+      if (r.status === 409 && r.reason) return { phase: 'nojudge', description: s.description, seconds: 0, reason: r.reason ?? '' };
+      return { phase: 'failed', description: s.description, seconds: 0, kind: r.kind ?? 'error', error: r.error };
+    }
+  }
+}

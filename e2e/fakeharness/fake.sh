@@ -29,6 +29,13 @@
 #                  "low","reason":"stays on the ship's branch"}. $FAKE_JUDGE=advise-high answers
 #                  high, advise-invalid answers a stakes value that is neither, and fail exits
 #                  1 with "boom" on stderr for any judge call.
+#                  The crew-writer call (Add crew on the Crew page) is the judge call whose prompt's
+#                  first line is "You write one Admiral crew member." (every harness gets the prompt on
+#                  stdin, so the first line is the one test that works for all three). It answers a valid
+#                  draft: a member named quartermaster with a built-in role, no based-on, no skills, no
+#                  model, a one-line pick-me-when and short instructions. $FAKE_JUDGE=crew-invalid answers
+#                  a purser draft with a custom role and no based-on, which the resolver refuses.
+#                  fail and leak act on it as on every judge call.
 #
 # Otherwise it runs inside a ship's tmux pane (so TMUX and TMUX_PANE are set by tmux, and
 # plain `tmux` talks to the ship's own server). It needs two variables from the
@@ -218,6 +225,8 @@ if [ -n "$judge" ]; then
     prev=$a
   done
   case "$jprompt" in *"You are the advisor"*) advise=1 ;; esac
+  crewwriter=""
+  [ "$(printf '%s\n' "$jprompt" | head -n 1)" = "You write one Admiral crew member." ] && crewwriter=1
   if [ "$FAKE_JUDGE" = fail ]; then
     echo boom >&2
     exit 1
@@ -241,6 +250,12 @@ if [ -n "$judge" ]; then
     advise-high) body='{"stakes":"high","reason":"it posts outside the ship"}' ;;
     advise-invalid) body='{"stakes":"maybe","reason":"unsure"}' ;;
     *) body='{"stakes":"low","reason":"stays on the ship'"'"'s branch"}' ;;
+    esac
+  fi
+  if [ -z "$body" ] && [ -n "$crewwriter" ]; then
+    case "$FAKE_JUDGE" in
+    crew-invalid) body='{"name":"purser","role":"purser","based-on":"","skills":[],"model":"","pick-me-when":"Pick for the ship'"'"'s accounts.","instructions":"Keep the ledger."}' ;;
+    *) body='{"name":"quartermaster","role":"implementer","based-on":"","skills":[],"model":"","pick-me-when":"Pick for provisioning chores.","instructions":"Check the stores before each voyage."}' ;;
     esac
   fi
   [ -z "$body" ] && body="{\"reply\":\"$text\"}"

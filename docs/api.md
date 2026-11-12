@@ -218,7 +218,7 @@ Each route is `POST /api/v1/inbox/<session>/<id>/<action>` and answers `404` for
 
 ## Crew
 
-A fleet's Crew page: its built-in and fleet members, their notes, and the edits the page makes. Every route is also served under `/api/v1/`, and `{key}` is a fleet key (an unknown fleet is 404). Only the **built-in** and **fleet** layers are listed; repo-layer and ad hoc members are not. Error bodies are `{"error": "<message>"}`. A 400 that names a member field also carries `"field": "<key>"` (`role`, `based-on`, `skills`, `model`, `harness`, `pick-me-when` or `instructions`). A refusal changes nothing on disk, and no write follows a link: a link anywhere from the crew directory down to the file is refused with 409.
+A fleet's Crew page: its built-in and fleet members, their notes, and the edits the page makes. Every route is also served under `/api/v1/`, and `{key}` is a fleet key (an unknown fleet is 404). Only the **built-in** and **fleet** layers are listed; repo-layer and ad hoc members are not. Error bodies are `{"error": "<message>"}`. A 400 that names a member field also carries `"field": "<key>"` (`name`, `role`, `based-on`, `skills`, `model`, `harness`, `pick-me-when` or `instructions`). A refusal changes nothing on disk, and no write follows a link: a link anywhere from the crew directory down to the file is refused with 409.
 
 ### `GET /api/fleets/{key}/crew[?harness=<dock>]`
 
@@ -236,6 +236,17 @@ Edits touch only `$ADMIRAL_HOME/fleets/<key>/crew/`. A member route keys on whet
 - `POST .../members/{name}/customize` copies the built-in member's file into the fleet layer: 404 with no built-in of that name, 409 when the fleet already has it. Its notes stay with the name.
 - `POST .../members/{name}/rename` with `{to, carry_notes}` renames a fleet member: `to` is a member name that differs from `name` (400) and names no listed member (409). With `carry_notes: true` its `memory/<name>/` moves to `memory/<to>/`, and the whole rename is 409 if `<to>` already has a note. A `memory/<to>/` that holds no note (what a deleted last note leaves) is replaced; the source having no notes still makes a `<to>` with notes 409. Otherwise the notes stay under the old name, and show in `unclaimed` unless a built-in member of that name claims them.
 - `DELETE .../members/{name}` removes the fleet file. Its notes stay; a customized built-in falls back to the built-in member.
+
+### Adding a member
+
+- `POST /api/fleets/{key}/crew/draft` with `{description}` runs one headless judge call (a strong model, 0.30 USD, 2 minutes) with Admiral's bundled crew-writer prompt, and writes nothing, not even the crew directory. The description is the engineer's own text, at most 4000 characters, and goes to the writer as fenced data. It is 400 when empty, blank or longer. It is 409 in two cases, and no call is made in either: `{error, reason}` when no harness is proven to run the judge call, and `{error}` with no `reason` when the fleet's crew path holds a link or a non-directory. A failed call is 502 `{error, kind}` with `kind` `timeout`, `budget spent`, `bad reply` or `error`. A cancelled request cancels the call. A 200 is `{draft, problems}`: `draft` is `{name, role, based-on, skills, model, harness, pick-me-when, instructions}` as the model wrote it (an empty field stays `""`; `harness` is always `""`), and `problems` is `[{field, message}]`, `[]` when the draft would be accepted. A problem's `field` is one of:
+  - `name`: not a member name, taken by a fleet member or a built-in of any of the fleet's docks, or `crew/<name>.md` is a link or not a regular file;
+  - `role`, `based-on`, `skills`, `model`, `pick-me-when` or `instructions`: the resolver would refuse the file (a custom role with no `based-on`, a skill it would drop, a file over 65536 bytes), a single-line field holds a line break, or the file would be read back differently from what was sent;
+  - `skills`: more than 20 skills;
+  - any of the above except `name`, for a hidden character; the message names its `U+XXXX`. Hidden means a control, format, private-use or unassigned code point, a line or paragraph separator, a blank filler (U+3164, U+115F, U+1160, U+FFA0, U+2800) or a variation selector, except U+FE0E or U+FE0F directly after an emoji or text-presentation character. `instructions` may hold line breaks and tabs.
+
+  The reply is untrusted model output: show it, and don't act on it.
+- `POST /api/fleets/{key}/crew/members` with the PUT body plus `name` creates the fleet file. 201 `{name}`. It is 400 with `field` for a failed check, as the draft's problems; 409 with `field: "name"` when a fleet member or a built-in of any dock has the name, and 409 for a link in the crew directory or at the member file. A create never overwrites.
 
 ### `POST /api/fleets/{key}/crew/notes`
 
