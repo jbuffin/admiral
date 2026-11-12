@@ -75,6 +75,10 @@ func (g *pollGitHub) PullRequests(_ context.Context, urls []string) (map[string]
 	return out, nil
 }
 
+func (g *pollGitHub) DefaultMergeMethod(context.Context, string) (string, error) { return "merge", nil }
+
+func (g *pollGitHub) MergePR(context.Context, string, string) error { return nil }
+
 func (g *pollGitHub) set(url string, st moor.Status) {
 	g.mu.Lock()
 	defer g.mu.Unlock()

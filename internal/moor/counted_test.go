@@ -23,6 +23,10 @@ func (f *fakeGitHub) PullRequests(context.Context, []string) (map[string]Status,
 	return nil, nil
 }
 
+func (f *fakeGitHub) DefaultMergeMethod(context.Context, string) (string, error) { return "merge", nil }
+
+func (f *fakeGitHub) MergePR(context.Context, string, string) error { return nil }
+
 func (f *fakeGitHub) OpenPRs(_ context.Context, urls []string) (map[string]bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

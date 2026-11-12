@@ -19,7 +19,6 @@ const (
 type mergeCall struct {
 	Argv []string
 	Env  map[string]string
-	Cwd  string
 }
 
 func (c mergeCall) has(arg string) bool {
@@ -51,8 +50,6 @@ func (g *fakeGH) mergeCalls() []mergeCall {
 				c.Env[k] = v
 			}
 		}
-		cwd, _ := os.ReadFile(filepath.Join(d, "cwd"))
-		c.Cwd = strings.TrimSpace(string(cwd))
 		out = append(out, c)
 	}
 	return out
@@ -66,15 +63,6 @@ func (g *fakeGH) prReady(url string) {
 	g.t.Helper()
 	g.prState(url, "OPEN")
 	g.prChips(url, "APPROVED", "SUCCESS", "MERGEABLE")
-}
-
-// stackMerges names the PRs a `gh stack merge` aimed at the pull request number lands.
-func (g *fakeGH) stackMerges(number string, urls ...string) {
-	g.t.Helper()
-	if err := os.MkdirAll(filepath.Join(g.dir, "stack_merge"), 0o755); err != nil {
-		g.t.Fatal(err)
-	}
-	g.write("stack_merge/"+number, strings.Join(urls, "\n")+"\n")
 }
 
 func (g *fakeGH) defaultMethodQueries() int {
@@ -100,60 +88,6 @@ func checkPRMergeArgv(t *testing.T, c mergeCall, url, method string) {
 	}
 	if c.has("--admin") || c.has("--auto") {
 		t.Errorf("argv = %q: Admiral merges only what is ready, with no bypass and no queueing", c.Argv)
-	}
-}
-
-// checkStackMergeArgv is the one place the stack argv is pinned. The target is one token that ends in the PR's number; the
-// form (a bare number, #N or a URL) is for the implementation to settle against gh-stack, and is tightened here once it does.
-func checkStackMergeArgv(t *testing.T, c mergeCall, top, method string) {
-	t.Helper()
-	number := top[strings.LastIndex(top, "/")+1:]
-	if len(c.Argv) < 3 || c.Argv[0] != "stack" || c.Argv[1] != "merge" {
-		t.Errorf("argv = %q, want gh stack merge TARGET --yes --merge-method %s", c.Argv, method)
-		return
-	}
-	var targets []string
-	for i := 2; i < len(c.Argv); i++ {
-		switch a := c.Argv[i]; {
-		case a == "--merge-method":
-			i++
-		case strings.HasPrefix(a, "-"):
-		default:
-			targets = append(targets, a)
-		}
-	}
-	if len(targets) != 1 || !strings.HasSuffix(targets[0], number) {
-		t.Errorf("argv = %q, want exactly one target ending in %s", c.Argv, number)
-	}
-	if !c.has("--yes") {
-		t.Errorf("argv = %q, want --yes so gh never stops to ask", c.Argv)
-	}
-	explicit := false
-	for i, a := range c.Argv {
-		if (a == "--merge-method" && i+1 < len(c.Argv) && c.Argv[i+1] == method) || a == "--merge-method="+method {
-			explicit = true
-		}
-	}
-	if !explicit {
-		t.Errorf("argv = %q, want --merge-method %s passed explicitly", c.Argv, method)
-	}
-}
-
-// checkStackMergeContext: gh stack reads the repository from GH_REPO and the checkout it runs in, both the ship's.
-func checkStackMergeContext(t *testing.T, c mergeCall, checkout string) {
-	t.Helper()
-	if r := c.Env["GH_REPO"]; r != "acme/widgets" && r != "github.com/acme/widgets" {
-		t.Errorf("GH_REPO = %q, want the PR's repository acme/widgets", r)
-	}
-	want, err := filepath.EvalSymlinks(checkout)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.Cwd != want {
-		t.Errorf("gh stack merge ran in %q, want the ship's checkout %q", c.Cwd, want)
-	}
-	if c.Env["GH_TOKEN"] != "fake-token-f" {
-		t.Errorf("GH_TOKEN = %q, want the fleet's token", c.Env["GH_TOKEN"])
 	}
 }
 
@@ -240,14 +174,15 @@ func TestMergeASinglePRRunsOneGhMergeWithTheDefaultMethod(t *testing.T) {
 	}
 }
 
-func TestMergeAWholeStackRunsOneGhStackMerge(t *testing.T) {
+// gh stack merge reads a bare number as a stack number before a PR number, so it could merge another stack; until a
+// form that cannot be misread exists, a stack is refused and its PRs are merged on GitHub.
+func TestMergeAStackIsRefusedAndRunsNoGh(t *testing.T) {
 	t.Parallel()
 	w, g := mooring(t, "exit 0")
 	g.defaultMergeMethod("REBASE")
 	for _, u := range []string{layer1, layer2, layer3} {
 		g.prReady(u)
 	}
-	g.stackMerges("23", layer1, layer2, layer3)
 	w.start()
 	ship := moorPRs(t, w, layer1, layer2, layer3)
 	w.kickMoored()
@@ -256,34 +191,25 @@ func TestMergeAWholeStackRunsOneGhStackMerge(t *testing.T) {
 		return sh.StackReady && sh.ReadyUpTo == layer3 && sh.MergeMethod == "rebase"
 	})
 
-	code, body := send(t, http.MethodPost, w.mergeURL(ship), map[string]any{})
-	if code != http.StatusAccepted {
-		t.Fatalf("POST merge = %d, want 202: %s", code, body)
+	for what, body := range map[string]map[string]any{"the whole stack": {}, "up to layer 2": {"upTo": layer2}} {
+		code, b := send(t, http.MethodPost, w.mergeURL(ship), body)
+		if code != http.StatusUnprocessableEntity {
+			t.Errorf("POST merge %s = %d, want 422: %s", what, code, b)
+		}
 	}
-	calls := g.mergeCalls()
-	if len(calls) != 1 {
-		t.Fatalf("merge calls = %v, want exactly one", calls)
-	}
-	checkStackMergeArgv(t, calls[0], layer3, "rebase")
-	checkStackMergeContext(t, calls[0], ship.Dir)
-
-	w.kickMoored()
-	w.in.waitShipsList(t, 20*time.Second, "the ship sailed off after the merge", func(l []shipJSON) bool { _, ok := byName(l)[ship.Name]; return !ok })
-	w.waitEvent(ship.Session, "merged", 1)
-	if ev := lastOf(w.waitEvent(ship.Session, "unmoored", 1), "unmoored"); ev["reason"] != "merged" {
-		t.Errorf("unmoored = %v, want reason merged", ev)
-	}
+	holdThat(t, "gh merged a stack, or the ship left its mooring", func() bool {
+		sh, ok := w.shipNamed(ship)
+		return len(g.mergeCalls()) == 0 && ok && sh.Status == "moored" && mergedEvents(w, ship) == 0
+	})
 }
 
-func TestMergeUpToALayerLeavesTheShipMooredOnTheRest(t *testing.T) {
+func TestAStackReadsReadyUpToTheHighestLayerWhoseLowerLayersAreReady(t *testing.T) {
 	t.Parallel()
 	w, g := mooring(t, "exit 0")
-	g.defaultMergeMethod("MERGE")
 	g.prReady(layer1)
 	g.prReady(layer2)
 	g.prState(layer3, "OPEN")
 	g.prChips(layer3, "APPROVED", "PENDING", "MERGEABLE")
-	g.stackMerges("22", layer1, layer2)
 	w.start()
 	ship := moorPRs(t, w, layer1, layer2, layer3)
 	w.kickMoored()
@@ -295,44 +221,10 @@ func TestMergeUpToALayerLeavesTheShipMooredOnTheRest(t *testing.T) {
 		t.Errorf("ship = layer 3 ready %v, stack ready %v, up to %q; want layer 3 not ready, the stack not ready, up to %s",
 			got.PRs[2].Ready, got.StackReady, got.ReadyUpTo, layer2)
 	}
-
-	// Whatever is not ready, or not the ship's, is refused with no gh run.
-	for what, body := range map[string]map[string]any{
-		"the whole stack":         {},
-		"up to the unready layer": {"upTo": layer3},
-		"up to a PR not its own":  {"upTo": "https://github.com/acme/widgets/pull/99"},
-	} {
-		code, b := send(t, http.MethodPost, w.mergeURL(ship), body)
-		wantRefused(t, "POST merge "+what, code, b)
-	}
+	code, b := send(t, http.MethodPost, w.mergeURL(ship), map[string]any{"upTo": "https://github.com/acme/widgets/pull/99"})
+	wantRefused(t, "POST merge up to a PR that is not its own", code, b)
 	if calls := g.mergeCalls(); len(calls) != 0 {
 		t.Fatalf("a refused merge ran gh: %v", calls)
-	}
-
-	code, b := send(t, http.MethodPost, w.mergeURL(ship), map[string]any{"upTo": layer2})
-	if code != http.StatusAccepted {
-		t.Fatalf("POST merge up to layer 2 = %d, want 202: %s", code, b)
-	}
-	calls := g.mergeCalls()
-	if len(calls) != 1 {
-		t.Fatalf("merge calls = %v, want exactly one", calls)
-	}
-	checkStackMergeArgv(t, calls[0], layer2, "merge")
-	checkStackMergeContext(t, calls[0], ship.Dir)
-
-	w.kickMoored()
-	left := byName(w.in.waitShipsList(t, 20*time.Second, "layers 1 and 2 merged", func(l []shipJSON) bool {
-		sh := byName(l)[ship.Name]
-		return len(sh.PRs) == 3 && sh.PRs[0].State == "MERGED" && sh.PRs[1].State == "MERGED"
-	}))[ship.Name]
-	if left.Status != "moored" || left.PRs[2].State != "OPEN" || !exists(w.mooredFile(ship.Name)) {
-		t.Errorf("ship = %+v, want still moored on the open layer 3", left)
-	}
-	w.waitEvent(ship.Session, "merged", 1)
-	for _, m := range w.outcomeLog() {
-		if m["ship"] == ship.Session && m["event"] == "unmoored" {
-			t.Errorf("a merge up to a layer ended the ship: %v", m)
-		}
 	}
 }
 
@@ -409,5 +301,40 @@ func TestAFailedGhMergeReturnsItsMessageAndKeepsTheShipMoored(t *testing.T) {
 	}
 	if n := len(g.mergeCalls()); n != 2 {
 		t.Errorf("merge calls = %d, want the failed one and the retry", n)
+	}
+}
+
+func TestASecondMergeWhileOneIsRunningIsRefused(t *testing.T) {
+	t.Parallel()
+	w, g := mooring(t, "exit 0")
+	g.prReady(layer1)
+	g.write("pr_merge.sleep", "3\n")
+	w.start()
+	ship := moorPRs(t, w, layer1)
+	w.kickMoored()
+	w.in.waitShipsList(t, 20*time.Second, "the PR read ready", func(l []shipJSON) bool {
+		sh := byName(l)[ship.Name]
+		return len(sh.PRs) == 1 && sh.PRs[0].Ready
+	})
+
+	first := make(chan int, 1)
+	go func() {
+		code, _ := send(t, http.MethodPost, w.mergeURL(ship), map[string]any{})
+		first <- code
+	}()
+	for end := time.Now().Add(20 * time.Second); len(g.mergeCalls()) == 0; time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Fatal("the first merge never reached gh")
+		}
+	}
+	code, body := send(t, http.MethodPost, w.mergeURL(ship), map[string]any{})
+	if code != http.StatusConflict {
+		t.Errorf("POST merge while one runs = %d, want 409: %s", code, body)
+	}
+	if code := <-first; code != http.StatusAccepted {
+		t.Errorf("the first POST merge = %d, want 202", code)
+	}
+	if n := len(g.mergeCalls()); n != 1 {
+		t.Errorf("merge calls = %d, want one", n)
 	}
 }

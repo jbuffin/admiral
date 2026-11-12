@@ -44,7 +44,20 @@ func View(url string, st Status, found bool) PR {
 		return PR{URL: url, State: "CLOSED"}
 	}
 	return PR{URL: url, State: st.State, Review: st.Review, Checks: st.Checks, Mergeable: st.Mergeable,
-		Conflicts: st.State == "OPEN" && st.Mergeable == "CONFLICTING"}
+		Conflicts: st.State == "OPEN" && st.Mergeable == "CONFLICTING", Ready: st.Ready()}
+}
+
+// Ready says the PR is open, approved, green, mergeable and not held back by its base. A repository that
+// requires no review or runs no checks never reads ready. A draft shows as mergeStateStatus DRAFT or BLOCKED.
+func (st Status) Ready() bool {
+	if st.State != "OPEN" || st.Review != "APPROVED" || st.Checks != "SUCCESS" || st.Mergeable != "MERGEABLE" {
+		return false
+	}
+	switch st.MergeState {
+	case "BLOCKED", "BEHIND", "DIRTY", "DRAFT":
+		return false
+	}
+	return true
 }
 
 // EndReason says why a ship whose every PR is merged or closed sails off; ended
@@ -92,5 +105,22 @@ func (e *Unanswered) Error() string { return "GitHub could not look up " + strin
 // StackReady says whether every PR of the stack (lowest layer first) is ready, and the URL of the highest layer
 // up to which every layer is ready; upTo is empty when the lowest layer is not ready.
 func StackReady(prs []PR) (ready bool, upTo string) {
-	return false, "" // not implemented
+	ready = len(prs) > 0
+	for _, p := range prs {
+		if !p.Ready {
+			ready = false
+			break
+		}
+		upTo = p.URL
+	}
+	return ready, upTo
+}
+
+// RepoOf is the owner/name of a pull request URL's repository.
+func RepoOf(url string) (nameWithOwner string, ok bool) {
+	m := prURL.FindStringSubmatch(url)
+	if m == nil {
+		return "", false
+	}
+	return m[2] + "/" + m[3], true
 }

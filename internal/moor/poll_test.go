@@ -71,7 +71,7 @@ func TestPRServesItsChipsUnderTheNamesTheAPIDocuments(t *testing.T) {
 	}
 	var m map[string]any
 	_ = json.Unmarshal(b, &m)
-	want := map[string]any{"url": "u", "state": "OPEN", "review": "APPROVED", "checks": "SUCCESS", "mergeable": "MERGEABLE", "conflicts": false}
+	want := map[string]any{"url": "u", "state": "OPEN", "review": "APPROVED", "checks": "SUCCESS", "mergeable": "MERGEABLE", "conflicts": false, "ready": false}
 	if !reflect.DeepEqual(m, want) {
 		t.Errorf("a PR as JSON = %v, want %v", m, want)
 	}

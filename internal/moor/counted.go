@@ -2,6 +2,7 @@ package moor
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -21,7 +22,15 @@ type GitHub interface {
 	// for is left out; an error is a failed call, not an answer, except an *Unanswered
 	// beside a good answer for the PRs not named in it.
 	PullRequests(ctx context.Context, urls []string) (map[string]Status, error)
+	// DefaultMergeMethod is the repository's default merge method: merge, squash or rebase.
+	DefaultMergeMethod(ctx context.Context, nameWithOwner string) (string, error)
+	// MergePR merges one pull request with the method. Only the engineer's Merge act calls it. An error is gh's
+	// message; ErrMergeTimeout says gh ran past its limit, so the merge may have happened.
+	MergePR(ctx context.Context, url, method string) error
 }
+
+// ErrMergeTimeout is a merge whose result is unknown.
+var ErrMergeTimeout = errors.New("the merge did not finish in time, so its result is unknown")
 
 // Check is what counting a ship's PRs needs.
 type Check struct {

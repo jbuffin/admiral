@@ -52,7 +52,8 @@
 #     --admin and --auto above all: Admiral never bypasses a rule. On success it
 #     writes MERGED into pr_state/KEY of the URL (the poll then sees the merge)
 #     and exits 0. With $FAKEGH_DIR/pr_merge.fail it exits 1 and prints that file
-#     on stderr, merging nothing.
+#     on stderr, merging nothing. With $FAKEGH_DIR/pr_merge.sleep it sleeps that
+#     many seconds first, so a second merge can arrive while this one runs.
 #
 #   gh stack merge TARGET --yes --merge-method (merge|squash|rebase)
 #     the Merge act's stack merge (the gh-stack extension). TARGET is the one
@@ -190,6 +191,7 @@ pr)
 		[ -n "$prurl" ] || { echo "fakegh: gh pr merge needs the pull request's URL" >&2; exit 2; }
 		[ "$nmethod" = 1 ] || { echo "fakegh: gh pr merge needs exactly one of --merge, --squash, --rebase" >&2; exit 2; }
 		echo "$method" > "$call_dir/method"
+		[ -s "$FAKEGH_DIR/pr_merge.sleep" ] && sleep "$(cat "$FAKEGH_DIR/pr_merge.sleep")"
 		if [ -e "$FAKEGH_DIR/pr_merge.fail" ]; then
 			cat "$FAKEGH_DIR/pr_merge.fail" >&2
 			exit 1
