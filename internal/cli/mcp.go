@@ -401,10 +401,17 @@ func MCP(args []string, std IO) error {
 		std.Out.Write(append(b, '\n'))
 	}
 	in := bufio.NewReaderSize(std.In, 64<<10)
+	// One call at a time would hold a ping behind a question the engineer has not answered yet.
+	var wg sync.WaitGroup
+	defer wg.Wait()
 	for {
 		line, err := in.ReadBytes('\n')
 		if line = bytes.TrimSpace(line); len(line) > 0 {
-			serveRPC(c, line, send)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				serveRPC(c, line, send)
+			}()
 		}
 		if err != nil {
 			return nil
