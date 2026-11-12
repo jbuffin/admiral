@@ -212,6 +212,8 @@ func item(t *testing.T, session, id, kind, title string) inbox.Item {
 		body[kind] = map[string]any{"pr_url": "https://example.com/pull/1", "review_id": 1}
 	case "notice":
 		body[kind] = map[string]any{"body": "FYI"}
+	case "routine_proposal":
+		body[kind] = map[string]any{"fleet": "work", "routine": "r1", "routine_name": "Nightly sweep", "trigger": "t1", "action": "launch", "expires_at": "2099-01-01T00:00:00Z"}
 	case "wake_proposal":
 		body[kind] = map[string]any{"ship": "Dory", "session": "dory", "pr": "https://github.com/acme/widgets/pull/7", "login": "reviewer-1",
 			"events": []any{map[string]any{"id": "e1", "kind": "review", "at": "2026-10-22T09:05:00Z", "body": "x"}}}
