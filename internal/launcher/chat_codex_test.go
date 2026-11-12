@@ -30,7 +30,7 @@ var (
 		out := []struct{ key, want string }{
 			{"features.shell_tool", "false"},
 			{"web_search", "disabled"},
-			{"mcp_servers.admiral.default_tools_approval_mode", "auto"},
+			{"mcp_servers.admiral.default_tools_approval_mode", "approve"},
 		}
 		for _, f := range []string{"unified_exec", "apps", "plugins", "remote_plugin", "plugin_discovery_prefetch",
 			"skill_mcp_dependency_install", "tool_suggest", "browser_use", "browser_use_external", "in_app_browser",

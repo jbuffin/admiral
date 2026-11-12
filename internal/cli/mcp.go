@@ -467,8 +467,16 @@ func MCP(args []string, std IO) error {
 		return usagef("%s", Usage("mcp"))
 	}
 	token := os.Getenv("ADMIRAL_ACTOR_TOKEN")
+	if f := os.Getenv("ADMIRAL_ACTOR_TOKEN_FILE"); token == "" && f != "" {
+		// Codex's argv is public on the host, so its chat hands the token over as a 0600 file.
+		b, err := os.ReadFile(f)
+		if err != nil {
+			return usagef("admiral mcp could not read ADMIRAL_ACTOR_TOKEN_FILE: %v", err)
+		}
+		token = strings.TrimSpace(string(b))
+	}
 	if token == "" {
-		return usagef("admiral mcp is AdmiralBot's tool server: ADMIRAL_ACTOR_TOKEN is not set")
+		return usagef("admiral mcp is AdmiralBot's tool server: ADMIRAL_ACTOR_TOKEN (or ADMIRAL_ACTOR_TOKEN_FILE) is not set")
 	}
 	c := &mcpClient{token: token, port: defaultPort(), fleet: os.Getenv("ADMIRAL_CHAT_FLEET")}
 	var out sync.Mutex

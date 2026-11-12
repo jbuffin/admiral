@@ -147,12 +147,19 @@ func (l *Launcher) StartChat(key string) error {
 	if rerr != nil {
 		return rerr
 	}
-	if dock.Name != "claude" {
+	if dock.Name != "claude" && dock.Name != "codex" {
 		return refuse(http.StatusNotImplemented, "the chat cannot launch on %s yet", config.HarnessName(dock.Name))
 	}
 	exe, found := dock.Resolve()
 	if !found {
-		return refuse(http.StatusBadRequest, "claude executable %s not found for fleet %s", dock.Executable, fleet.Name)
+		return refuse(http.StatusBadRequest, "%s executable %s not found for fleet %s", dock.Name, dock.Executable, fleet.Name)
+	}
+	codexAuth := ""
+	if dock.Name == "codex" {
+		var aerr *Error
+		if codexAuth, aerr = codexLogin(dock); aerr != nil {
+			return aerr
+		}
 	}
 	home, err := filepath.Abs(l.Home)
 	if err != nil {
@@ -166,13 +173,15 @@ func (l *Launcher) StartChat(key string) error {
 	chat := fleet.Chat
 	// The dock's args commonly widen permissions (--allowedTools, --add-dir, --mcp-config), so
 	// the chat keeps only the dock's executable and env.
-	argv := []string{exe}
-	argv = append(argv, "--model", chat.Model)
-	if chat.Effort != "" {
-		argv = append(argv, "--effort", chat.Effort)
+	var argv []string
+	if dock.Name == "claude" {
+		argv = []string{exe, "--model", chat.Model}
+		if chat.Effort != "" {
+			argv = append(argv, "--effort", chat.Effort)
+		}
+		argv = append(argv, "--append-system-prompt", chatPrompt)
+		argv = append(argv, FenceArgs(claudeChatSettingsPath(l.Home), filepath.Join(dir, "mcp.json"))...)
 	}
-	argv = append(argv, "--append-system-prompt", chatPrompt)
-	argv = append(argv, FenceArgs(claudeChatSettingsPath(l.Home), filepath.Join(dir, "mcp.json"))...)
 
 	// Admiral's environment and the tmux server's may hold a ship's variables (a server that
 	// outlived an earlier Admiral, or started from a ship's shell): the chat gets only ADMIRAL_HOME,
@@ -207,7 +216,17 @@ func (l *Launcher) StartChat(key string) error {
 	// The token goes only into the MCP config, which Claude Code starts the server from: the session's
 	// env passes through tmux's argv and stays readable on its socket. A ship can read $ADMIRAL_HOME
 	// anyway; the fence is against the chat model, which has no file or shell tool.
-	if err := l.writeChatMCP(home, fleet.Key, nonce, env); err != nil {
+	if dock.Name == "codex" {
+		self, serr := os.Executable()
+		if serr != nil {
+			return refuse(http.StatusInternalServerError, "could not find the admiral binary: %v", serr)
+		}
+		if err := prepareCodexChat(home, fleet.Key, nonce, codexAuth); err != nil {
+			return err
+		}
+		env["CODEX_HOME"] = ChatCodexHome(home, fleet.Key)
+		argv = codexChatArgv(exe, chat, self, home, fleet.Key, env["ADMIRAL_PORT"])
+	} else if err := l.writeChatMCP(home, fleet.Key, nonce, env); err != nil {
 		return err
 	}
 	opts := [][2]string{{sessionhost.ChatModelOpt, chat.Model}, {sessionhost.ChatEffortOpt, chat.Effort}, {sessionhost.ChatFleetOpt, fleet.Key},
