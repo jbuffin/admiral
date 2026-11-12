@@ -163,10 +163,13 @@ func Attach(args []string, std IO) error {
 		return usagef("usage: admiral attach <ship> [<crew>]")
 	}
 	refuse := func(name string) error {
-		for _, hidden := range []string{sessionhost.Internal, sessionhost.SetupName, sessionhost.ChatName} {
+		for _, hidden := range []string{sessionhost.Internal, sessionhost.SetupName} {
 			if name == hidden {
 				return fmt.Errorf("%s is Admiral's own session, not a ship", hidden)
 			}
+		}
+		if sessionhost.IsChatSession(name) {
+			return fmt.Errorf("%s is Admiral's own session, not a ship", name)
 		}
 		return nil
 	}

@@ -2,6 +2,8 @@
 
 Status: accepted, amended by [ADR 0024](0024-admiralbot-memory-is-a-server-owned-ledger.md) (the UI serves Admiral's conversation log, and `SessionStart` rehydrates from the brief) and [ADR 0030](0030-ship-conversations-come-from-a-first-party-adapter-per-harness.md) (supersedes the chat-only scope: Admiral reads every ship's, crew boat's and AdmiralBot's conversation through an adapter per harness)
 
+Scope note: the chat is one session per fleet (ADR 0023): `_chat-<fleet>`, started by `POST /api/chat/<fleet>/start`, with `$ADMIRAL_HOME/chat/<fleet>/` as its working directory, and `IsShip` refuses the `_chat-` prefix as well as `_setup` and `_chat`. The UI serves the newest 200 entries of Admiral's log for the fleet, not the transcript's last 200 messages; the transcript is still how Admiral learns what was said. The rest of this ADR holds for each fleet's chat. See `docs/api.md` and `docs/agents/codebase.md`.
+
 ## Context
 
 [ADR 0018](0018-the-chat-is-one-long-lived-session.md) makes the chat one Claude Code session on Admiral's tmux socket. The web UI needs three things from it: the conversation to show, whether AdmiralBot is working, idle or waiting, and a way to send a message. The engineer decided how for this build ([#119](https://github.com/jbuffin/admiral/issues/119)): read Claude Code's transcript, and drive the pane with tmux.

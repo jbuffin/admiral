@@ -13,13 +13,9 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/inbox"
-	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
 // Chat questions are read the way a ship's inbox directory is, and never reach the inbox.
-
-// Session keeps a chat question's key from colliding with a ship's.
-const Session = sessionhost.ChatName
 
 const maxQuestions = 20
 
@@ -46,8 +42,8 @@ func (q Question) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m)
 }
 
-// Neither directory may be a link.
-func (s *Service) openQuestions() (*os.Root, error) {
+// None of the directories may be a link.
+func (s *fleetChat) openQuestions() (*os.Root, error) {
 	root, err := os.OpenRoot(s.Home)
 	if err != nil {
 		return nil, err
@@ -58,7 +54,12 @@ func (s *Service) openQuestions() (*os.Root, error) {
 		return nil, err
 	}
 	defer chat.Close()
-	return subDir(chat, "questions")
+	dir, err := subDir(chat, s.key)
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
+	return subDir(dir, "questions")
 }
 
 func subDir(root *os.Root, name string) (*os.Root, error) {
@@ -91,7 +92,7 @@ type cachedAnswer struct {
 
 // Ids start with a time, so names are read newest first until maxQuestions valid ones are
 // found. A file that fails is skipped and never hides another. The caller holds cmu.
-func (s *Service) scanQuestions() []Question {
+func (s *fleetChat) scanQuestions() []Question {
 	out := []Question{}
 	dir, err := s.openQuestions()
 	if err != nil {
@@ -147,7 +148,7 @@ func (s *Service) scanQuestions() []Question {
 	return out
 }
 
-func (s *Service) questionItem(dir *os.Root, id string) *inbox.Item {
+func (s *fleetChat) questionItem(dir *os.Root, id string) *inbox.Item {
 	fi, err := dir.Lstat(id + ".json")
 	if err != nil {
 		return nil
@@ -157,14 +158,14 @@ func (s *Service) questionItem(dir *os.Root, id string) *inbox.Item {
 		return c.item
 	}
 	c := cachedQuestion{key: key}
-	if it, err := inbox.ReadItem(dir, Session, id); err == nil && it.Kind == inbox.KindQuestion {
+	if it, err := inbox.ReadItem(dir, s.name(), id); err == nil && it.Kind == inbox.KindQuestion {
 		c.item = &it
 	}
 	s.qItems[id] = c
 	return c.item
 }
 
-func (s *Service) answerOf(dir *os.Root, id string) json.RawMessage {
+func (s *fleetChat) answerOf(dir *os.Root, id string) json.RawMessage {
 	fi, err := dir.Lstat(inbox.AnswerName(id))
 	if err != nil {
 		delete(s.qAnswers, id)
@@ -229,7 +230,7 @@ func readAnswer(dir *os.Root, id string) json.RawMessage {
 }
 
 // The directory is read under cmu, not under mu.
-func (s *Service) questions(fresh bool) []Question {
+func (s *fleetChat) questions(fresh bool) []Question {
 	s.cmu.Lock()
 	defer s.cmu.Unlock()
 	if fresh || s.qs == nil || time.Since(s.qAt) >= questionEvery {
@@ -247,8 +248,11 @@ func unanswered(qs []Question) bool {
 	return false
 }
 
+// WithdrawQuestions removes one fleet's chat questions, as a new chat session for it starts.
+func (s *Service) WithdrawQuestions(key string) { s.chat(key).withdraw() }
+
 // A waiting `admiral chat ask` sees its question gone and exits 4.
-func (s *Service) WithdrawQuestions() {
+func (s *fleetChat) withdraw() {
 	s.qmu.Lock()
 	defer s.qmu.Unlock()
 	// A second pass after the first: a question renamed in while the listing was
@@ -260,7 +264,7 @@ func (s *Service) WithdrawQuestions() {
 	s.cmu.Unlock()
 }
 
-func (s *Service) removeAll() {
+func (s *fleetChat) removeAll() {
 	dir, err := s.openQuestions()
 	if err != nil {
 		return
@@ -278,7 +282,7 @@ func (s *Service) removeAll() {
 }
 
 // serveAnswer writes no outcome record and queues no resume text: the chat is not a ship.
-func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
+func (s *fleetChat) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req inbox.QuestionRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
@@ -292,7 +296,7 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 			return inbox.ErrNotFound
 		}
 		defer dir.Close()
-		return inbox.WriteAnswerFile(dir, Session, id, inbox.KindQuestion, func(it inbox.Item) (any, error) {
+		return inbox.WriteAnswerFile(dir, s.name(), id, inbox.KindQuestion, func(it inbox.Item) (any, error) {
 			return inbox.BuildQuestionAnswer(it, req)
 		})
 	}()

@@ -28,8 +28,22 @@ const Internal = "_admiral"
 // SetupName is the session that runs `admiral setup` for the browser; not a ship.
 const SetupName = "_setup"
 
-// ChatName is the session that runs the AdmiralBot chat; not a ship.
+// ChatName is the one session older Admirals ran the AdmiralBot chat in; not a ship.
 const ChatName = "_chat"
+
+// ChatPrefix starts the name of each fleet's chat session; none is a ship.
+const ChatPrefix = "_chat-"
+
+// ChatSession is the tmux session of a fleet's chat.
+func ChatSession(fleet string) string { return ChatPrefix + fleet }
+
+// ChatFleetOfSession is the fleet key a chat session's name carries.
+func ChatFleetOfSession(name string) (string, bool) { return strings.CutPrefix(name, ChatPrefix) }
+
+// IsChatSession is true for every session the chat runs in, now or in an older Admiral.
+func IsChatSession(name string) bool {
+	return name == ChatName || strings.HasPrefix(name, ChatPrefix)
+}
 
 // SetupTerminalEnv is set in the setup session, so `admiral setup` holds an error on screen.
 const SetupTerminalEnv = "ADMIRAL_SETUP_TERMINAL"
@@ -122,7 +136,7 @@ type Session struct {
 // The chat's Claude can set options on its own session and must not make itself a
 // ship by setting @admiral-name.
 func (s Session) IsShip() bool {
-	return s.Name != Internal && s.Name != SetupName && s.Name != ChatName && s.Options["name"] != ""
+	return s.Name != Internal && s.Name != SetupName && !IsChatSession(s.Name) && s.Options["name"] != ""
 }
 
 type EventKind int

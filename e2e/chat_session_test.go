@@ -684,7 +684,10 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 	t.Run("a restarted Admiral serves the same conversation", func(t *testing.T) {
 		c := &chatWorld{world: w.at(t), cfgDir: c.cfgDir}
 		c.restart()
-		got := c.waitSession(10*time.Second, "the same conversation", messagesAre(append(history, "user: After the clear")...))
+		// The log serves the history before the chat is found running again, so wait for both.
+		got := c.waitSession(10*time.Second, "the same conversation, running", func(s chatSession) bool {
+			return s.Running && messagesAre(append(history, "user: After the clear")...)(s)
+		})
 		if !got.Running || got.Error != "" || resets(got.Messages) != 1 || !uniqueIDs(got.Messages) {
 			t.Errorf("after the restart: %+v, want running with no error, one marker and no message twice", got)
 		}
@@ -810,7 +813,8 @@ func TestChatSession_OnlyARealTranscriptUnderProjectsIsRead(t *testing.T) {
 	// CLAUDE_CONFIG_DIR is that link).
 	c.touch("go-5")
 	c.waitEvents(5)
-	c.waitSession(10*time.Second, "the transcript named through the config dir's link", messagesAre("user: Read through the link"))
+	// The history keeps the earlier transcript's lines and adds this one's.
+	c.waitSession(10*time.Second, "the transcript named through the config dir's link", messagesAre(append(real2, "user: Read through the link")...))
 }
 
 func TestChatSession_NeedsTheTokenOverTheLAN(t *testing.T) {

@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/outcomes"
-	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/transcriptfs"
 	"github.com/jbuffin/admiral/internal/usage"
 )
@@ -50,7 +49,7 @@ const clearWait = 3 * time.Second
 // caller's goroutine. path is the transcript recorded before the clear or kill, since a clear rewrites it.
 // A /clear passes the transcript option as it stood before, and Claude may write its cost-state while it
 // handles the command: the file is read once the clear's SessionStart changes the option, or after clearWait.
-func (s *Service) recordReset(path, configDir, fleet, clearedFrom string) {
+func (s *fleetChat) recordReset(path, configDir, fleet, clearedFrom string) {
 	if s.Outcomes == nil {
 		return
 	}
@@ -76,13 +75,13 @@ func (s *Service) recordReset(path, configDir, fleet, clearedFrom string) {
 		}
 		var last func() (usage.Figures, bool)
 		if s.LastLive != nil {
-			last = func() (usage.Figures, bool) { return s.LastLive(sessionhost.ChatName) }
+			last = func() (usage.Figures, bool) { return s.LastLive(s.name()) }
 		}
 		got := s.resets.figures(path, cur, last)
 		if s.ForgetLive != nil {
-			s.ForgetLive(sessionhost.ChatName)
+			s.ForgetLive(s.name())
 		}
-		s.Outcomes.Enqueue(outcomes.Record{Ship: sessionhost.ChatName, Event: "usage",
+		s.Outcomes.Enqueue(outcomes.Record{Ship: s.name(), Event: "usage",
 			Fields: usage.ExitFields(fleet, "claude", 0, got, nil)}, nil)
 	}()
 }

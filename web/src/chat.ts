@@ -1,15 +1,15 @@
 import { computed, effect, signal } from '@preact/signals';
 import type { Probe } from './connection';
-import { onMessage } from './connection';
 import type { InboxQuestion } from './inbox';
 import { inboxOpen } from './inboxState';
 import { selected } from './launch';
 import { phoneTab } from './phoneTab';
 import { type AnswerBody, type Draft, blankDraft } from './questions';
 import { phone, wide } from './sizeClass';
-import { api } from './sources';
 
-// The `chat` message and GET /api/chat/session share one shape; everything on screen is read from it.
+// The chat runs per fleet and lives in the new shell. This pane is frozen with the rest of the old UI: it shows the
+// chat as off and calls no chat route.
+const MOVED = 'The chat is per fleet now. Open it in the new shell at /app/.';
 
 export const CHAT_SESSION = '_chat';
 export const CHAT_FAB_ID = 'chat-fab';
@@ -46,39 +46,10 @@ export interface ChatSession {
 
 export const session = signal<ChatSession | null>(null);
 
-// Message and question ids this page has shown or been told about. The first snapshot of the page's life
-// is seen; later ones set the dot for an assistant message or a question that is new while the chat is hidden.
-const seen = new Set<string>();
-let seeded = false;
 export const chatUnread = signal(false);
 export const chatOpen = signal(false);
 export const chatView = signal<'chat' | 'terminal'>('chat');
 const showing = () => (phone.peek() ? phoneTab.peek() === 'chat' : chatOpen.peek());
-
-function applySnapshot(msg: Partial<ChatSession>): void {
-  const next: ChatSession = {
-    running: !!msg.running,
-    state: msg.state ?? 'idle',
-    messages: msg.messages ?? [],
-    questions: msg.questions ?? [],
-    error: msg.error,
-  };
-  let fresh = false;
-  const ids = [...next.messages.filter((m) => m.role === 'assistant').map((m) => `m:${m.id}`), ...next.questions.map((q) => `q:${q.id}`)];
-  for (const id of ids) if (!seen.has(id)) fresh = true;
-  for (const id of ids) seen.add(id);
-  for (const m of next.messages) seen.add(`m:${m.id}`);
-  if (seeded && fresh && !showing()) chatUnread.value = true;
-  seeded = true;
-  session.value = next;
-  // A question that left (New chat) takes what was entered on it.
-  const live = new Set(next.questions.map((q) => q.id));
-  const kept = Object.entries(qdrafts.peek()).filter(([id]) => live.has(id));
-  if (kept.length !== Object.keys(qdrafts.peek()).length) qdrafts.value = Object.fromEntries(kept);
-  // The terminal gives way when the session ends, without waiting for the socket to drop.
-  if (!next.running) chatView.value = 'chat';
-}
-onMessage('chat', applySnapshot);
 
 effect(() => {
   if (phone.value ? phoneTab.value === 'chat' : chatOpen.value) chatUnread.value = false;
@@ -157,37 +128,17 @@ export async function startChat(): Promise<void> {
   asked.value = true;
   starting.value = true;
   startError.value = '';
-  const r = await api('POST', '/api/chat/start');
   starting.value = false;
-  if (!r.ok) startError.value = r.error;
+  startError.value = MOVED;
 }
 
 export async function sendMessage(): Promise<void> {
-  const typed = draft.peek();
-  const text = typed.trim();
-  if (!text || sendingMessage.peek()) return;
-  sendingMessage.value = true;
-  chatError.value = '';
-  const r = await api('POST', '/api/chat/messages', { text });
-  sendingMessage.value = false;
-  if (!r.ok) chatError.value = r.error;
-  else {
-    // Keep only what was typed while the POST was out, so a second Enter doesn't send the text again.
-    const now = draft.peek();
-    draft.value = now.startsWith(typed) ? now.slice(typed.length) : now;
-  }
+  chatError.value = MOVED;
 }
 
 export async function newChat(): Promise<void> {
-  chatError.value = '';
-  const r = await api('POST', '/api/chat/new');
+  chatError.value = MOVED;
   confirmNew.value = false;
-  if (!r.ok) {
-    chatError.value = r.error;
-    return;
-  }
-  draft.value = '';
-  qdrafts.value = {};
 }
 
 // Kept here, not in the inbox's store: that one drops every key that is not a live inbox item.
@@ -197,36 +148,12 @@ export function editQDraft(id: string, fn: (d: Draft) => Draft): void {
   qdrafts.value = { ...qdrafts.value, [id]: fn(qdraftOf(id)) };
 }
 
-async function reread(): Promise<void> {
-  try {
-    const res = await fetch('/api/chat/session', { cache: 'no-store' });
-    if (res.ok) applySnapshot(await res.json());
-  } catch {
-    // The socket's next push brings it.
-  }
-}
-
-/** The card folds when the served snapshot carries the answer, never before. */
-export async function answerQuestion(id: string, body: AnswerBody): Promise<void> {
-  if (qdraftOf(id).sending) return;
-  editQDraft(id, (d) => ({ ...d, sending: true, error: '' }));
-  const r = await api('POST', `/api/chat/questions/${encodeURIComponent(id)}/answer`, body);
-  // A 409 means it was answered elsewhere; that answer is in the snapshot, which the server doesn't push for it.
-  if (r.ok || r.status === 409) await reread();
-  const folded = session.peek()?.questions.find((q) => q.id === id)?.answer != null;
-  editQDraft(id, (d) => ({ ...d, sending: false, error: r.ok || folded ? '' : r.error }));
+export async function answerQuestion(id: string, _body: AnswerBody): Promise<void> {
+  editQDraft(id, (d) => ({ ...d, sending: false, error: MOVED }));
 }
 
 export async function probeChat(): Promise<Probe> {
-  try {
-    const res = await fetch('/api/chat/session', { cache: 'no-store' });
-    if (res.status === 401) return { kind: 'signed-out' };
-    if (!res.ok) return { kind: 'down' };
-    const { running } = await res.json();
-    return { kind: 'ok', ships: running ? [{ session: CHAT_SESSION }] : [] };
-  } catch {
-    return { kind: 'down' };
-  }
+  return { kind: 'down' };
 }
 
 export type ThreadItem =

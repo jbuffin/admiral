@@ -2,6 +2,8 @@
 
 Status: superseded by [ADR 0023](0023-admiralbot-is-a-coordinator-fenced-to-an-admiral-mcp-server.md)
 
+Scope note: with one chat per fleet (ADR 0023), chat questions live in `$ADMIRAL_HOME/chat/<fleet>/questions/` and the skill in `chat/<fleet>/.claude/skills/admiralbot/SKILL.md`. `admiral chat ask` reads its fleet from `ADMIRAL_CHAT_FLEET`, which only a fleet's chat session has. The old `chat/questions/` and `chat/.claude/` are removed at startup. The fence itself is unchanged.
+
 ## Context
 
 [ADR 0018](0018-the-chat-is-one-long-lived-session.md) says AdmiralBot reads ships, outcomes and the inbox, that its only write is adding an order, and that it asks with a question card that never becomes an inbox item. [ADR 0019](0019-the-chat-is-carried-by-its-transcript-and-tmux.md) gives it a Claude Code session, a transcript and a paste. This ADR says how that session talks to Admiral, and what stops it from doing more ([#119](https://github.com/jbuffin/admiral/issues/119)).

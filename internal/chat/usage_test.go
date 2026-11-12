@@ -108,9 +108,9 @@ func TestResetRecordsTheStatusLinesLastCostOfTheSessionThatEnded(t *testing.T) {
 	t.Cleanup(w.Close)
 	now := time.Unix(1800000000, 0)
 	store := usage.NewStore(func() time.Time { return now })
-	store.SetFigures(sessionhost.ChatName, "old-session", usage.Figures{Tokens: usage.Tokens{Input: 500}, Money: est(3)}, now)
-	store.SetFigures(sessionhost.ChatName, "new-session", usage.Figures{Money: est(0)}, now)
-	s := &Service{Outcomes: w, LastLive: store.LastLive}
+	store.SetFigures(sessionhost.ChatSession("work"), "old-session", usage.Figures{Tokens: usage.Tokens{Input: 500}, Money: est(3)}, now)
+	store.SetFigures(sessionhost.ChatSession("work"), "new-session", usage.Figures{Money: est(0)}, now)
+	s := (&Service{Outcomes: w, LastLive: store.LastLive}).chat("work")
 
 	s.recordReset("", t.TempDir(), "work", "")
 
@@ -157,13 +157,13 @@ func TestTwoClearsInARowCountThePreClearSessionOnce(t *testing.T) {
 	t.Cleanup(w.Close)
 	now := time.Unix(1800000000, 0)
 	store := usage.NewStore(func() time.Time { return now })
-	store.SetFigures(sessionhost.ChatName, "A", usage.Figures{Tokens: usage.Tokens{Input: 500}, Money: est(3)}, now)
-	s := &Service{Outcomes: w, LastLive: store.LastLive, ForgetLive: store.Forget}
+	store.SetFigures(sessionhost.ChatSession("work"), "A", usage.Figures{Tokens: usage.Tokens{Input: 500}, Money: est(3)}, now)
+	s := (&Service{Outcomes: w, LastLive: store.LastLive, ForgetLive: store.Forget}).chat("work")
 
 	s.recordReset("", t.TempDir(), "work", "")
 	waitUsage(t, dir, 1)
-	store.SetFigures(sessionhost.ChatName, "A", usage.Figures{Tokens: usage.Tokens{Input: 500}, Money: est(3)}, now) // the pane's last line, read again
-	store.SetFigures(sessionhost.ChatName, "B", usage.Figures{Money: est(0)}, now.Add(time.Second))
+	store.SetFigures(sessionhost.ChatSession("work"), "A", usage.Figures{Tokens: usage.Tokens{Input: 500}, Money: est(3)}, now) // the pane's last line, read again
+	store.SetFigures(sessionhost.ChatSession("work"), "B", usage.Figures{Money: est(0)}, now.Add(time.Second))
 	s.recordReset("", t.TempDir(), "work", "")
 	waitUsage(t, dir, 2)
 

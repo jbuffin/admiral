@@ -96,8 +96,8 @@ type Launcher struct {
 	Home   string // $ADMIRAL_HOME
 	Port   string // the port Admiral listens on; the chat's ADMIRAL_PORT
 	// BeforeChat runs just before the chat's session is created, when the launcher's
-	// checks have passed: the chat service withdraws the old chat questions there.
-	BeforeChat func()
+	// checks have passed: the chat service withdraws that fleet's old chat questions there.
+	BeforeChat func(fleet string)
 	Config     func() *config.Config
 	// A kept session's name is never picked, so a launch cannot clear its inbox.
 	Kept func(session string) bool
@@ -290,7 +290,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		}
 	}
 
-	// Admiral owns these names (ADMIRAL_PORT is the chat's alone): a hand launch has none of them, an autopilot
+	// Admiral owns these names (ADMIRAL_PORT and ADMIRAL_CHAT_FLEET are the chat's alone): a hand launch has none of them, an autopilot
 	// launch has ADMIRAL_AUTOPILOT and ADMIRAL_LOW_STAKES=advisor, and a launch with pins has ADMIRAL_RUN_CREW, even if
 	// the fleet's env or Admiral's own environment (which the tmux server
 	// inherits) sets them.
@@ -303,7 +303,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	if runCrew != "" {
 		ours["ADMIRAL_RUN_CREW"] = runCrew
 	}
-	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR", "ADMIRAL_RUN_CREW"} {
+	for _, k := range []string{"ADMIRAL_AUTOPILOT", "ADMIRAL_LOW_STAKES", "ADMIRAL_AUTO_MERGE", "ADMIRAL_PORT", "ADMIRAL_CHAT_FLEET", "ADMIRAL_PROBE_NONCE", "ADMIRAL_PROBE_DIR", "ADMIRAL_RUN_CREW"} {
 		if v, ok := ours[k]; ok {
 			env[k] = v
 			continue
