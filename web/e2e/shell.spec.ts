@@ -102,6 +102,10 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   const bridge = await joined;
   expect(new URL(bridge.url()).pathname).toBe(`/ws/v1/bridge/${encodeURIComponent(login.session)}`);
   await expect(viewPanel(page).locator('.xterm')).toBeVisible();
+  // Safari zooms the page when a focused input's font is under 16px.
+  expect(await viewPanel(page).locator('.xterm-helper-textarea').evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
+  // The fix is the font size, not a page that cannot be zoomed.
+  expect(await page.locator('meta[name=viewport]').getAttribute('content')).not.toMatch(/maximum-scale|user-scalable\s*=\s*(no|0)/);
   const recorded = join(admiral.home, 'rec', login.session);
   await expect.poll(() => existsSync(join(recorded, 'cues-done'))).toBe(true);
   await viewPanel(page).locator('.xterm').tap();
