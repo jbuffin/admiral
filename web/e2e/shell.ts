@@ -326,6 +326,12 @@ export async function wakeFromTheShipView(page: Page, a: Admiral, press: (l: Loc
   await expect(page.getByRole('alert')).toHaveCount(0);
   await viewTab(page, 'PR').click();
   await expect(viewPanel(page)).toContainText('api#7');
+  // A moored ship that is not ready: the tab has Don't follow reviews and no Merge or Dismiss, and the head's Wake is the only one.
+  await expect(viewPanel(page).getByRole('button', { name: "Don't follow reviews" })).toBeEnabled();
+  await expect(viewPanel(page).getByRole('button', { name: /^Merge/ })).toHaveCount(0);
+  await expect(viewPanel(page).getByRole('button', { name: 'Dismiss' })).toHaveCount(0);
+  await expect(wakeButton(page)).toHaveCount(1);
+  await expect(page.getByRole('alert')).toHaveCount(0);
   await viewTab(page, 'Conversation').click();
 
   // Both rounds, in order, split by a divider with its time, and the moored card last.
@@ -471,6 +477,11 @@ export function ghMergeSlow(a: Admiral, seconds: number) {
   writeFileSync(join(a.home, 'fakegh', 'pr_merge.sleep'), `${seconds}\n`);
 }
 
+/** The fake gh sleeps this many seconds inside `gh stack merge`, so the button stays busy while a test looks. */
+export function ghStackMergeSlow(a: Admiral, seconds: number) {
+  writeFileSync(join(a.home, 'fakegh', 'stack_merge.sleep'), `${seconds}\n`);
+}
+
 /** The argv (after `gh`) of every merge call the fake gh recorded: `pr merge` and `stack merge`. */
 export function mergeCalls(a: Admiral): string[][] {
   const dir = join(a.home, 'fakegh', 'calls');
@@ -481,6 +492,28 @@ export function mergeCalls(a: Admiral): string[][] {
     .map((f) => readFileSync(f, 'utf8').split('\0').filter((x) => x !== ''))
     .filter((argv) => (argv[0] === 'pr' || argv[0] === 'stack') && argv[1] === 'merge');
 }
+
+/** What `gh stack view --json` prints in the ship's checkout: an open stack of these PRs, bottom first. */
+export function seedStackView(a: Admiral, numbers: number[]) {
+  const branches = numbers.map((n, i) => ({
+    name: `layer-${i + 1}`, head: `abc${i}`, base: 'main', isCurrent: i === numbers.length - 1, isMerged: false, isQueued: false, needsRebase: false,
+    pr: { number: n, url: `${PR_BASE}/${n}`, state: 'OPEN' },
+  }));
+  writeFileSync(join(a.home, 'fakegh', 'stack_view.json'), JSON.stringify({ trunk: 'main', currentBranch: `layer-${numbers.length}`, branches }) + '\n');
+}
+
+/** Every merge call the fake gh recorded with the directory it ran in (resolved, as the fake's `pwd -P` prints it). */
+export function mergeCallsIn(a: Admiral): { argv: string[]; cwd: string }[] {
+  const dir = join(a.home, 'fakegh', 'calls');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((d) => existsSync(join(dir, d, 'argv')) && existsSync(join(dir, d, 'cwd')))
+    .map((d) => ({ argv: readFileSync(join(dir, d, 'argv'), 'utf8').split('\0').filter((x) => x !== ''), cwd: readFileSync(join(dir, d, 'cwd'), 'utf8').trim() }))
+    .filter(({ argv }) => (argv[0] === 'pr' || argv[0] === 'stack') && argv[1] === 'merge');
+}
+
+/** The checkout a journey's ships launch in, where the argless `gh stack merge` must run. */
+export const shipCheckout = (a: Admiral) => realpathSync(join(a.home, 'proj'));
 
 /** Waits until the server serves the moored ship as ready to merge, with the repository's method when given, so a red journey is the UI's and not the seeding's. */
 export async function readyOnTheServer(a: Admiral, ship: LaunchedShip, method?: string) {
@@ -589,28 +622,197 @@ export async function staleMergeTokenInPeek(page: Page, a: Admiral) {
   expect(mergeCalls(a)).toEqual([]);
 }
 
-/** A ready stack shows Ready to merge, and Peek tells the engineer to merge it with gh stack: no Merge button and no merge call. */
-export async function stackedShipOffersNoMerge(page: Page, a: Admiral) {
+/** A ready 2-PR stack whose checkout holds exactly that stack, moored and served ready, with the repository's method squash. */
+async function readyStack(a: Admiral): Promise<LaunchedShip> {
   seedMergeMethod(a, 'squash');
   prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
   prAnswer(a, 8, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+  seedStackView(a, [7, 8]);
   const ship = await launchMooredShip(a, 7, { more: [8] });
   await readyOnTheServer(a, ship, 'squash');
+  return ship;
+}
+
+/** What the whole stack's one argless merge looks like: no target, in the ship's checkout, with the repository's method. */
+async function expectOneStackMerge(a: Admiral) {
+  await expect.poll(() => mergeCallsIn(a)).toEqual([{ argv: ['stack', 'merge', '--yes', '--merge-method', 'squash'], cwd: shipCheckout(a) }]);
+}
+
+/** Merge as the stack's one act: the button, with the method and that it merges the whole stack, and none of the old gh stack note. */
+async function expectWholeStackMerge(scope: Locator) {
+  const merge = scope.getByRole('button', { name: 'Merge', exact: true });
+  await expect(merge).toBeInViewport();
+  expect((await merge.boundingBox())!.height, 'Merge height').toBeGreaterThanOrEqual(44);
+  await expect(scope).toContainText(/squash/);
+  await expect(scope).toContainText(/whole stack/i);
+  await expect(scope).not.toContainText('gh stack');
+  await expect(scope.getByRole('button', { name: /Merge up to/ })).toHaveCount(0);
+  return merge;
+}
+
+/** A ready stack shows Ready to merge, and Peek offers Merge for the whole stack: nothing merges before the tap, and one tap runs one argless gh stack merge. */
+export async function readyStackMergesFromPeek(page: Page, a: Admiral) {
+  const ship = await readyStack(a);
+  ghStackMergeSlow(a, 2);
 
   await page.goto(a.url + 'app/ships?fleet=zulu');
   await expect(page.getByRole('main').getByRole('region', { name: /^Moored/ }).getByRole('listitem').filter({ hasText: ship.name })).toContainText('Ready to merge');
-  await rowLink(page, ship).tap();
-  await expect(page).toHaveURL(shipViewUrl(a, ship));
-  await expect(page.getByRole('main')).toContainText('Ready to merge');
-
   await page.goto(a.url + 'app/inbox?fleet=zulu');
   await rowLinkIn(page, ship).tap();
   const peek = peekOf(page);
   await expect(peek).toBeVisible();
   for (const chip of ['api#7', 'api#8']) await expect(peek.getByRole('link', { name: chip })).toBeVisible();
-  await expect(peek).toContainText('gh stack');
-  await expect(peek.getByRole('button', { name: /^Merge/ })).toHaveCount(0);
-  await holds(() => mergeCalls(a).length === 0, 'a stack is never merged from Peek');
+  const merge = await expectWholeStackMerge(peek);
+  await holds(() => mergeCalls(a).length === 0, 'a stack is merged only by the tap');
+
+  await merge.tap();
+  await expectOneStackMerge(a);
+  await expect(inboxRow(page, ship)).toContainText('Merged');
+  await expect
+    .poll(async () => (await (await fetch(`${a.url}api/v1/ships`)).json() as { ships: ShipJSON[] }).ships.find((s) => s.session === ship.session)?.status ?? 'gone', { timeout: 30_000 })
+    .not.toBe('moored');
+  expect(mergeCalls(a), 'one merge, not one per layer').toHaveLength(1);
+}
+
+/** The PR tab of a ship's view, opened from the Ships screen by touch. */
+async function openPRTab(page: Page, a: Admiral, ship: LaunchedShip) {
+  await page.goto(a.url + 'app/ships?fleet=zulu');
+  await rowLink(page, ship).tap();
+  await expect(page).toHaveURL(shipViewUrl(a, ship));
+  await viewTab(page, 'PR').tap();
+  return viewPanel(page);
+}
+
+/**
+ * The PR tab of a ready ship shows the state and the actions: the PR and its chips, Ready to merge above, Merge with the method hint
+ * and Don't follow reviews in the tab, no Dismiss, and the head's one Wake. Nothing merges before the tap; one tap records
+ * one `gh pr merge <url> --squash`, the tab says Merged and the ship sails off.
+ */
+export async function mergeFromThePRTab(page: Page, a: Admiral, opts: { phone: boolean }) {
+  seedMergeMethod(a, 'squash');
+  ghMergeSlow(a, 2);
+  prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+  const ship = await launchMooredShip(a, 7);
+  await readyOnTheServer(a, ship, 'squash');
+
+  const panel = await openPRTab(page, a, ship);
+  await expect(page.getByRole('main')).toContainText('Ready to merge');
+  await expect(panel.getByRole('link', { name: 'api#7' })).toHaveAttribute('href', `${PR_BASE}/7`);
+  for (const chip of ['Approved', 'Checks passing', 'Mergeable']) await expect(panel).toContainText(chip);
+  const merge = panel.getByRole('button', { name: 'Merge', exact: true });
+  const unfollow = panel.getByRole('button', { name: "Don't follow reviews" });
+  for (const [name, b] of [['Merge', merge], ["Don't follow reviews", unfollow]] as const) {
+    await expect(b).toBeInViewport();
+    expect((await b.boundingBox())!.height, `${name} height`).toBeGreaterThanOrEqual(44);
+  }
+  await expect(panel).toContainText('squash');
+  await expect(panel.getByRole('button', { name: /Merge up to/ })).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Dismiss' })).toHaveCount(0);
+  await expect(wakeButton(page)).toHaveCount(1);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
+
+  // Opening the tab, and the pushes and polls that follow, merge nothing.
+  await holds(() => mergeCalls(a).length === 0, 'no merge before the tap');
+
+  await merge.tap();
+  await expect(merge).toBeDisabled();
+  await expect(unfollow).toBeDisabled();
+  await expect.poll(() => mergeCalls(a)).toEqual([['pr', 'merge', `${PR_BASE}/7`, '--squash']]);
+  await expect(panel).toContainText('Merged');
+  await expect
+    .poll(async () => (await (await fetch(`${a.url}api/v1/ships`)).json() as { ships: ShipJSON[] }).ships.find((s) => s.session === ship.session)?.status ?? 'gone', { timeout: 30_000 })
+    .not.toBe('moored');
+  expect(mergeCalls(a), 'one merge, not one per render or poll').toHaveLength(1);
+}
+
+/** A ready stack in the PR tab: Merge with the whole-stack hint, nothing merged before the tap, and one argless gh stack merge after it. */
+export async function readyStackMergesFromThePRTab(page: Page, a: Admiral, opts: { phone: boolean }) {
+  const ship = await readyStack(a);
+  ghStackMergeSlow(a, 2);
+
+  const panel = await openPRTab(page, a, ship);
+  await expect(page.getByRole('main')).toContainText('Ready to merge');
+  for (const chip of ['api#7', 'api#8']) await expect(panel.getByRole('link', { name: chip })).toBeVisible();
+  const merge = await expectWholeStackMerge(panel);
+  await expect(panel.getByRole('button', { name: "Don't follow reviews" })).toBeEnabled();
+  await expect(wakeButton(page)).toHaveCount(1);
+  if (opts.phone) expect(await noHorizontalScroll(page)).toBe(true);
+  await holds(() => mergeCalls(a).length === 0, 'a stack is merged only by the tap');
+
+  await merge.tap();
+  await expectOneStackMerge(a);
+  await expect(panel).toContainText('Merged');
+  await expect
+    .poll(async () => (await (await fetch(`${a.url}api/v1/ships`)).json() as { ships: ShipJSON[] }).ships.find((s) => s.session === ship.session)?.status ?? 'gone', { timeout: 30_000 })
+    .not.toBe('moored');
+  expect(mergeCalls(a), 'one merge, not one per layer').toHaveLength(1);
+}
+
+/** Don't follow reviews in the PR tab ends the mooring the way the Ships row's button does: the same route, and the ship leaves. */
+export async function unfollowFromThePRTab(page: Page, a: Admiral) {
+  prAnswer(a, 7, { state: 'OPEN' });
+  const ship = await launchMooredShip(a, 7);
+  const panel = await openPRTab(page, a, ship);
+  const unfollow = panel.getByRole('button', { name: "Don't follow reviews" });
+  expect((await unfollow.boundingBox())!.height, "Don't follow reviews height").toBeGreaterThanOrEqual(44);
+
+  const unfollowed = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === `/api/v1/ships/${ship.session}/unfollow`);
+  await unfollow.tap();
+  expect((await unfollowed).status()).toBe(200);
+  await expect.poll(async () => (await listShips(a)).find((s) => s.session === ship.session)?.status ?? 'gone').not.toBe('moored');
+  expect(mergeCalls(a)).toEqual([]);
+}
+
+/** A merge gh refuses shows its message in the tab's one alert, and the ship stays moored with both actions enabled. */
+export async function mergeFailsInThePRTab(page: Page, a: Admiral) {
+  seedMergeMethod(a, 'squash');
+  ghMergeFails(a, 'GraphQL: Pull request is not mergeable (mergePullRequest)');
+  prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+  const ship = await launchMooredShip(a, 7);
+  await readyOnTheServer(a, ship, 'squash');
+
+  const panel = await openPRTab(page, a, ship);
+  await panel.getByRole('button', { name: 'Merge', exact: true }).tap();
+  await expect(panel.getByRole('alert')).toContainText('Pull request is not mergeable');
+  await expect(page.getByRole('alert'), 'the head shows no second alert').toHaveCount(1);
+  expect(mergeCalls(a)).toEqual([['pr', 'merge', `${PR_BASE}/7`, '--squash']]);
+  await expect(panel.getByRole('button', { name: 'Merge', exact: true })).toBeEnabled();
+  await expect(panel.getByRole('button', { name: "Don't follow reviews" })).toBeEnabled();
+  expect((await listShips(a)).find((s) => s.session === ship.session)?.status).toBe('moored');
+}
+
+/** A Merge the server answers 403 says to reload in the tab, and the ship is not merged. */
+export async function staleMergeTokenInThePRTab(page: Page, a: Admiral) {
+  seedMergeMethod(a, 'squash');
+  prAnswer(a, 7, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
+  const ship = await launchMooredShip(a, 7);
+  await readyOnTheServer(a, ship, 'squash');
+
+  await page.route(/\/api\/(v1\/)?ships\/[^/]+\/merge$/, (route) => route.fulfill({ status: 403, contentType: 'application/json', body: '{"error":"forbidden"}' }));
+  const panel = await openPRTab(page, a, ship);
+  await panel.getByRole('button', { name: 'Merge', exact: true }).tap();
+  await expect(panel.getByRole('alert')).toContainText('Admiral restarted, reload to merge');
+  await expect(panel.getByRole('button', { name: /reload/i })).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(1);
+  expect(mergeCalls(a)).toEqual([]);
+}
+
+/** A stack whose checkout holds other PRs is refused by the server (409), and the tab shows that message and merges nothing. */
+export async function stackMismatchInThePRTab(page: Page, a: Admiral) {
+  const ship = await readyStack(a);
+  seedStackView(a, [7, 99]);
+
+  const panel = await openPRTab(page, a, ship);
+  const refused = page.waitForResponse((r) => r.request().method() === 'POST' && /\/ships\/[^/]+\/merge$/.test(new URL(r.url()).pathname));
+  await panel.getByRole('button', { name: 'Merge', exact: true }).tap();
+  const res = await refused;
+  expect(res.status()).toBe(409);
+  const message = ((await res.json()) as { error: string }).error;
+  await expect(panel.getByRole('alert')).toContainText(message);
+  await expect(page.getByRole('alert')).toHaveCount(1);
+  expect(mergeCalls(a)).toEqual([]);
+  expect((await listShips(a)).find((s) => s.session === ship.session)?.status).toBe('moored');
 }
 
 /**

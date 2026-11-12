@@ -682,6 +682,7 @@ func ghNode(host, repo string, n int, pull bool, title string, labels ...string)
 type ghCall struct {
 	Argv []string
 	Env  map[string]string
+	Cwd  string
 	at   time.Time
 }
 
@@ -723,6 +724,8 @@ func (g *fakeGH) calls() []ghCall {
 				c.Env[k] = v
 			}
 		}
+		cwd, _ := os.ReadFile(filepath.Join(d, "cwd"))
+		c.Cwd = strings.TrimSpace(string(cwd))
 		if fi, err := os.Stat(d); err == nil {
 			c.at = fi.ModTime()
 		}
