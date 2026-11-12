@@ -11,8 +11,15 @@ import (
 // AdmiralSession is a pseudo-session for Admiral's own notices, the way `_chat` is the chat's.
 const AdmiralSession = "_admiral"
 
-// WriteNotice posts a read-only item the engineer can only dismiss.
-func WriteNotice(home, title, body string) (string, error) {
+// NoticeEntry is a view autopilot entry a migration removed: the source's key and name and the panel id.
+type NoticeEntry struct {
+	Key   string `json:"key"`
+	Name  string `json:"name"`
+	Panel string `json:"panel"`
+}
+
+// WriteNotice posts a read-only item the engineer can only dismiss; entries ride in the notice object for the shell to link.
+func WriteNotice(home, title, body string, entries ...NoticeEntry) (string, error) {
 	now := time.Now().UTC()
 	id := fmt.Sprintf("notice-%s-%d", now.Format("20060102T150405"), now.UnixNano()%1_000_000)
 	b, err := json.Marshal(map[string]any{
@@ -63,4 +70,9 @@ func (it Item) NoticeBody() string {
 	}
 	_ = json.Unmarshal(it.fields[KindNotice], &n)
 	return n.Body
+}
+
+// NoticeEntries are the migrated entries a notice carries; none for a plain note.
+func (it Item) NoticeEntries() []NoticeEntry {
+	return nil
 }

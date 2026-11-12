@@ -33,6 +33,10 @@ describe('where a tapped toast lands', () => {
     expect(alertDestination({ target: 'peek', session: 's1', merge: true }, { ...none, ships: [moored] })).toBe('/app/inbox/s1/merge');
   });
 
+  it('opens a routine from a push that names no ship', () => {
+    expect(alertDestination({ target: 'routine', session: '', routine: 'r1' }, none)).toBe('/app/routines/r1');
+  });
+
   it('opens the Inbox alone when the item, the stop or the ship is gone', () => {
     expect(alertDestination({ target: 'peek', session: 's1', item: 'q-1' }, none)).toBe('/app/inbox');
     expect(alertDestination({ target: 'peek', session: 's1', item: 'q-1' }, { ...none, items: [item('q-2')] })).toBe('/app/inbox');

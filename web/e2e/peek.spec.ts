@@ -695,7 +695,14 @@ test('with Hold fire on, a due routine waits in the Inbox as a proposal, and Lau
   await admiral.start({ env: withFakeGh(admiral) });
   await proveJudge(page, admiral.url);
   const api = (path: string, init?: RequestInit) => fetch(`${admiral.url}api/${path}`, { headers: { 'Content-Type': 'application/json' }, ...init });
-  expect((await api('fleets/zulu/hold-fire/on', { method: 'POST' })).status).toBe(200);
+  await page.goto(admiral.url + 'app/routines?fleet=zulu');
+  const banner = page.getByRole('status').filter({ hasText: 'Hold fire' });
+  await expect(banner).toHaveCount(0);
+  const holdFire = page.getByRole('main').getByRole('switch', { name: 'Hold fire', exact: true });
+  await holdFire.tap();
+  await expect(holdFire).toBeChecked();
+  await expect(banner).toContainText('you');
+  await expect.poll(async () => ((await (await api('fleets/zulu/hold-fire')).json()) as { on: boolean }).on).toBe(true);
   const due = new Date(Math.ceil((Date.now() + 5_000) / 60_000) * 60_000);
   const created = await api('fleets/zulu/routines', {
     method: 'POST',
@@ -720,6 +727,12 @@ test('with Hold fire on, a due routine waits in the Inbox as a proposal, and Lau
   await expect.poll(shipsNow, { timeout: 30_000 }).toBe(1);
   await expect(peekOf(page)).toHaveCount(0);
   await expect(row).toHaveCount(0, { timeout: 15_000 });
+
+  await page.goto(admiral.url + 'app/routines?fleet=zulu');
+  await expect(banner).toBeVisible();
+  await page.getByRole('main').getByRole('switch', { name: 'Hold fire', exact: true }).tap();
+  await expect(banner).toHaveCount(0);
+  await expect.poll(async () => ((await (await api('fleets/zulu/hold-fire')).json()) as { on: boolean }).on).toBe(false);
 });
 
 test('Dismiss on a routine proposal removes it from the Inbox and starts no ship', async ({ page, admiral }) => {

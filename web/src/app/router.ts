@@ -173,6 +173,33 @@ export function crewOf(path: string): string | null {
   }
 }
 
+export function routinePath(id: string): string {
+  void id;
+  return '';
+}
+
+export const routineNewPath = '/app/routines/new';
+
+/** The routine a detail path names, if any; null for the list and for the new-routine path. */
+export function routineOf(path: string): string | null {
+  void path;
+  return null;
+}
+
+/** The query that opens the new-routine editor pre-filled for a view, with its fleet when known. */
+export function automateSearch(sourceKey: string, viewId: string, fleetKey?: string): string {
+  void sourceKey;
+  void viewId;
+  void fleetKey;
+  return '';
+}
+
+/** The view an Automate… query names, if any. */
+export function automateOf(search: string): { source: string; view: string } | null {
+  void search;
+  return null;
+}
+
 function sync() {
   loc.value = { path: location.pathname, search: location.search };
 }

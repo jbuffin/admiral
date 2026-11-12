@@ -46,11 +46,14 @@ type Event struct {
 	Item    string
 	Crew    string
 	Merge   bool
+	// A tap lands on this fleet's Routines screen at Routine (Target "routine"), for a routine run with no ship to open.
+	Routine string
 }
 
 const (
-	TargetPeek = "peek"
-	TargetShip = "ship"
+	TargetPeek    = "peek"
+	TargetShip    = "ship"
+	TargetRoutine = "routine"
 )
 
 type Outcome int
@@ -93,6 +96,7 @@ type Payload struct {
 	Item      string `json:"item,omitempty"`
 	Crew      string `json:"crew,omitempty"`
 	Merge     bool   `json:"merge,omitempty"`
+	Routine   string `json:"routine,omitempty"`
 }
 
 func PayloadOf(ev Event) Payload {

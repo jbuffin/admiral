@@ -19,11 +19,13 @@ func TestARoutineRecordPushesWithTheTapTargetItsOutcomeHas(t *testing.T) {
 		name                 string
 		tr                   routines.Trigger
 		target, session, itm string
+		routine              string
 	}{
-		{"launched with its ship", routines.Trigger{ID: "t1", Routine: "r1", Outcome: routines.Launched, Ship: "dory"}, push.TargetShip, "dory", ""},
-		{"proposed opens the proposal", routines.Trigger{ID: "t2", Routine: "r1", Outcome: routines.Proposed}, push.TargetPeek, inbox.AdmiralSession, "routine-t2"},
-		{"failed with no ship has no tap target", routines.Trigger{ID: "t3", Routine: "r1", Outcome: routines.Failed, Reason: "no room"}, "", "", ""},
-		{"breaker has no tap target", routines.Trigger{ID: "t4", Routine: "r1", Outcome: routines.Breaker}, "", "", ""},
+		{"launched with its ship", routines.Trigger{ID: "t1", Routine: "r1", Outcome: routines.Launched, Ship: "dory"}, push.TargetShip, "dory", "", ""},
+		{"proposed opens the proposal", routines.Trigger{ID: "t2", Routine: "r1", Outcome: routines.Proposed}, push.TargetPeek, inbox.AdmiralSession, "routine-t2", ""},
+		{"launched with no ship (a prompt run) opens the routine", routines.Trigger{ID: "t5", Routine: "r1", Outcome: routines.Launched}, push.TargetRoutine, "", "", "r1"},
+		{"failed opens the routine", routines.Trigger{ID: "t3", Routine: "r1", Outcome: routines.Failed, Reason: "no room"}, push.TargetRoutine, "", "", "r1"},
+		{"breaker opens the routine", routines.Trigger{ID: "t4", Routine: "r1", Outcome: routines.Breaker}, push.TargetRoutine, "", "", "r1"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			r := newRig(t)
@@ -36,8 +38,8 @@ func TestARoutineRecordPushesWithTheTapTargetItsOutcomeHas(t *testing.T) {
 			if ev.Kind != push.RoutineNotify || ev.Fleet != "work" || ev.Name == "" || ev.Text == "" || ev.Key == "" {
 				t.Errorf("event = %+v, want a RoutineNotify for fleet work with a name, text and key", ev)
 			}
-			if ev.Target != c.target || ev.Session != c.session || ev.Item != c.itm {
-				t.Errorf("tap = target %q session %q item %q, want %q %q %q", ev.Target, ev.Session, ev.Item, c.target, c.session, c.itm)
+			if ev.Target != c.target || ev.Session != c.session || ev.Item != c.itm || ev.Routine != c.routine {
+				t.Errorf("tap = target %q session %q item %q routine %q, want %q %q %q %q", ev.Target, ev.Session, ev.Item, ev.Routine, c.target, c.session, c.itm, c.routine)
 			}
 			if got[0].Outcome != push.Push {
 				t.Errorf("outcome = %v, want push", got[0].Outcome)
