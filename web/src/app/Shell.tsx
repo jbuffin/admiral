@@ -17,6 +17,7 @@ import { call, type Ship } from './api';
 import { campaignOf, go, loc, shipPath, shipSession, surfaceOf, surfacePath } from './router';
 import { CampaignPage, CampaignSidebar, CampaignsList } from './CampaignPage';
 import { followReference } from './campaignsLink';
+import { InboxPanel } from './InboxPanel';
 import { ShipView } from './ShipView';
 import { emptyLine, MORE, PHONE_TABS, SURFACES, surfaceById, type Surface } from './surfaces';
 
@@ -289,6 +290,7 @@ function ShipsPanel({ surface, title }: { surface: Surface; title: boolean }) {
 function Panel({ surface, title, phone }: { surface: Surface; title: boolean; phone?: boolean }) {
   const session = shipSession(loc.value.path);
   if (session !== null) return <ShipView session={session} title={title} />;
+  if (surface.id === 'inbox') return <InboxPanel surface={surface} title={title} phone={!!phone} />;
   if (surface.id === 'ships') return <ShipsPanel surface={surface} title={title} />;
   if (surface.id === 'campaigns') {
     const id = campaignOf(loc.value.path);

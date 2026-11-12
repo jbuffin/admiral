@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { HOME, WORK, boatReceived, changeFile, changesOf, chip, diffOf, expectSeededTurn, gitCheckout, holds, interruptButton, launchCrew, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh } from './shell';
+import { HOME, HOSTILE, WORK, boatReceived, changeFile, changesOf, chip, diffOf, expectSeededTurn, gitCheckout, holds, interruptButton, launchCrew, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedInboxItem, seedTurn, sendButton, sentBubble, setReason, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh } from './shell';
 
 const tab = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
 
@@ -169,4 +169,56 @@ test('on the phone, Remote access opens from More through Preferences', async ({
   await page.getByRole('navigation', { name: 'Preferences' }).getByRole('link', { name: 'Remote access' }).tap();
   await expect(page).toHaveURL(/\/app\/preferences\/admiral\/remote/);
   await expect(page.getByRole('heading', { name: 'Remote access', exact: true })).toBeVisible();
+});
+
+test('on the phone, the Inbox lists a question item and a needs-you stop from two fleets, each with its fleet, and the stop leaves live once its ship is back underway', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  await page.goto(admiral.url + 'app/');
+  await expect(page).toHaveURL(/\/app\/inbox(\?|$)/);
+  await expect(page.getByRole('main')).toContainText('Whatever needs you, from every fleet, will land here.');
+
+  const login = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', order: 'ord-login' });
+  const visitor = await launchShip(admiral, { fleet: 'alpha', harness: 'codex' });
+  setState(admiral, visitor, 'working');
+  setReason(admiral, login, 'permission:Bash');
+  setState(admiral, login, 'needs_you');
+  seedInboxItem(admiral, visitor.session, {
+    id: 'q-port',
+    kind: 'question',
+    title: 'Which port should the visitor use?',
+    question: { questions: [{ id: 'p', text: 'Which port should the visitor use?', options: [{ label: '80' }, { label: '8080' }] }] },
+  });
+  seedInboxItem(admiral, '_admiral', { id: 'n-hostile', kind: 'notice', title: 'Heads up', notice: { body: HOSTILE } });
+
+  // Both rows arrive without a reload; the empty line is gone.
+  const main = page.getByRole('main');
+  const entry = (text: string) => main.getByRole('listitem').filter({ hasText: text });
+  await expect(entry(visitor.name)).toContainText(HOME, { timeout: 15_000 });
+  await expect(entry(visitor.name)).toContainText('asked');
+  await expect(entry(visitor.name)).toContainText('Which port should the visitor use?');
+  await expect(entry(login.name)).toContainText(WORK);
+  await expect(entry(login.name)).toContainText(/wants to run bash/i);
+  await expect(entry(login.name)).toContainText(/^.*\b(now|\d+m)\b/);
+  await expect(main).not.toContainText('Whatever needs you, from every fleet, will land here.');
+  await expect(entry('Heads up')).toBeVisible();
+  await expect(entry('Heads up')).not.toContainText(HOME);
+  await expect(entry('Heads up')).not.toContainText(WORK);
+  for (const n of [login.name, visitor.name, 'Heads up']) expect((await entry(n).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect(await page.evaluate(() => [document.documentElement, document.querySelector('main')!].every((e) => e.scrollWidth <= e.clientWidth))).toBe(true);
+
+  // A notice shows its body as text, and nothing in it runs.
+  await entry('Heads up').getByRole('button').tap();
+  await expect(main).toContainText(HOSTILE);
+  expect(await page.evaluate(() => (window as unknown as { __xss?: number }).__xss)).toBeUndefined();
+
+  // The stop folds to its confirmation when its ship goes back underway, then leaves; the item stays.
+  setState(admiral, login, 'working');
+  await expect(entry(login.name)).toContainText('Back underway', { timeout: 15_000 });
+  await expect(entry(login.name)).toHaveCount(0, { timeout: 15_000 });
+  await expect(entry(visitor.name)).toHaveCount(1);
+
+  // A ship-backed row opens the ship.
+  await entry(visitor.name).getByRole('link').tap();
+  await expect(page).toHaveURL(new RegExp(`/app/ships/${encodeURIComponent(visitor.session)}`));
 });

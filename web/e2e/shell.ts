@@ -936,3 +936,10 @@ export function setBoatState(a: Admiral, ship: LaunchedShip, name: string, state
   const r = tmux(a, 'set', '-p', '-t', boatPane(a, ship, name), '@admiral-state', state);
   expect(r.status, r.stderr).toBe(0);
 }
+
+/** An item file a ship leaves in its inbox; the server tags it with the ship's name and fleet. `session` `_admiral` is a notice. */
+export function seedInboxItem(a: Admiral, session: string, item: { id: string; kind: 'question' | 'review' | 'findings' | 'notice'; title: string } & Record<string, unknown>) {
+  const dir = join(a.home, 'inbox', session);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${item.id}.json`), JSON.stringify({ version: 1, created: new Date().toISOString(), ...item }));
+}
