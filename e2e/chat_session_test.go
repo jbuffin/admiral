@@ -974,6 +974,7 @@ func TestChatSession_AdmiralRefreshesAnIdleChatOverItsThreshold(t *testing.T) {
 			"wait go-fprompt", `event UserPromptSubmit {"prompt":"flush"}`,
 			"wait go-fstop", `event Stop {"background_tasks":[]}`,
 			"wait go-clear", sessionStartCue(tp2, "clear"),
+			"wait go-redraw", overThreshold(),
 		}
 	})
 	w := c.world
@@ -1032,9 +1033,10 @@ func TestChatSession_AdmiralRefreshesAnIdleChatOverItsThreshold(t *testing.T) {
 		}
 	})
 
-	t.Run("the status line from before the reset does not trigger a second one", func(t *testing.T) {
-		appendLines(t, tp2, userLine("u-20", "After the clear", nil))
-		holdThat(t, "Admiral reset the chat again on a reading from before the last reset", func() bool {
+	t.Run("a status line redrawn after the clear, with no turn since, does not trigger a second reset", func(t *testing.T) {
+		// Claude redraws its status line after the clear, still over the threshold and newer than the reset.
+		c.touch("go-redraw")
+		holdThat(t, "Admiral reset the chat again on a reading with no turn since the last reset", func() bool {
 			return strings.Count(c.stdin(), chat.FlushPrompt) == 1 && resets(c.session().Messages) == 1
 		})
 	})

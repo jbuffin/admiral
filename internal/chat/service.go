@@ -197,7 +197,7 @@ type state struct {
 	refused string // a path already logged as refused
 	unread  bool   // the recorded path is one Admiral refuses to read
 	optSeq  uint64 // the ticket of the option read applied last
-	flush   flushAnchor
+	flush   flushAnchors
 }
 
 type chatOptions struct {

@@ -17,7 +17,7 @@ type resetState struct {
 	pane      string // the session these figures are for
 	idleSince time.Time
 	lastReset time.Time // or when Admiral first saw the session
-	turnKey   string    // PromptKey at the last reset
+	turnKey   string    // PromptKey at the last reset, "" before the first
 	holdUntil time.Time // after an abandoned flush
 	running   bool      // a scheduled reset is in flight
 }
@@ -70,12 +70,6 @@ func (s *fleetChat) resetTick(now time.Time) {
 	busy := rs.running || now.Before(rs.holdUntil) || s.resetting.Load()
 	idleSince, lastReset := rs.idleSince, rs.lastReset
 	rs.mu.Unlock()
-	if fresh {
-		key := s.PromptKey(s.key)
-		rs.mu.Lock()
-		rs.turnKey = key
-		rs.mu.Unlock()
-	}
 	fleet, off, ok := s.Config().ChatFleet(s.key)
 	if !ok || off != "" || busy || idleSince.IsZero() {
 		return
@@ -89,7 +83,7 @@ func (s *fleetChat) resetTick(now time.Time) {
 	in := ResetInput{
 		Now: now, Running: true, State: snap.State, QuestionWaiting: unanswered(snap.Questions), IdleSince: idleSince,
 		Threshold: fleet.Chat.ContextThreshold, LastReset: lastReset, ShortIdle: short, LongIdle: long,
-		TurnSinceReset: key != s.turnKeyAtReset(),
+		TurnSinceReset: s.turnSinceReset(key),
 	}
 	if kept, err := s.readPaneOption(sessionhost.StatuslineOption[len(sessionhost.Prefix):]); err == nil {
 		in.Context, in.ContextSeen, in.HaveContext = ContextTokens([]byte(kept))
@@ -123,10 +117,12 @@ func (s *fleetChat) releaseReset() {
 	s.resetting.Store(false)
 }
 
-func (s *fleetChat) turnKeyAtReset() string {
+// turnSinceReset is true when the prompt stamp moved since the last reset; a session Admiral has not reset yet has
+// turns it never saw, so it counts as having had one.
+func (s *fleetChat) turnSinceReset(key string) bool {
 	s.rst.mu.Lock()
 	defer s.rst.mu.Unlock()
-	return s.rst.turnKey
+	return s.rst.turnKey == "" || key != s.rst.turnKey
 }
 
 func (s *fleetChat) readPaneOption(name string) (string, error) {
@@ -263,7 +259,6 @@ func (s *fleetChat) noteReset() {
 // that stretch is hidden, so a reply after an engineer answers a question card shows, and the turn stays hidden
 // across a clear and once the window slides past its prompt.
 type flushAnchor struct {
-	active bool
 	pre    string // the last message before the paste, "" when there was none
 	from   string // the prompt's message ID, "" until it is seen
 	until  string // the turn's last message, once closed
@@ -281,51 +276,72 @@ func indexOfMessage(ms []Message, id string) int {
 	return -1
 }
 
-// hide returns ms without the flush turn and moves the anchor along: it learns the prompt's ID and closes once a
-// user message follows an open turn. The caller holds the chat's lock.
-func (a *flushAnchor) hide(ms []Message) []Message {
-	if !a.active {
-		return ms
-	}
+// span is the stretch of ms the anchor hides, [lo, hi). It learns the prompt's ID (skipping the ones in taken,
+// which an earlier flush holds) and closes once a user message follows an open turn.
+func (a *flushAnchor) span(ms []Message, taken map[string]bool) (lo, hi int) {
 	if a.from == "" {
 		i := 0
 		if p := indexOfMessage(ms, a.pre); p >= 0 {
 			i = p + 1
 		}
-		for ; i < len(ms) && !(isUser(ms[i]) && strings.HasSuffix(strings.TrimSpace(ms[i].Text), FlushPrompt)); i++ {
-		}
-		if i == len(ms) {
-			return ms
-		}
-		a.from = ms[i].ID
-	}
-	lo := indexOfMessage(ms, a.from) // -1 once a clear or the window's slide dropped the prompt
-	hi := 0
-	switch {
-	case a.closed:
-		hi = indexOfMessage(ms, a.until) + 1
-	default:
-		hi = len(ms)
-		for i := max(lo+1, 0); i < len(ms); i++ {
-			if isUser(ms[i]) {
-				hi = i
-				a.closed = true
-				if i > 0 {
-					a.until = ms[i-1].ID
-				}
+		for ; i < len(ms); i++ {
+			if isUser(ms[i]) && !taken[ms[i].ID] && strings.HasSuffix(strings.TrimSpace(ms[i].Text), FlushPrompt) {
 				break
 			}
 		}
-	}
-	lo = max(lo, 0)
-	if hi <= lo {
-		if a.closed && lo == 0 {
-			a.active = false
+		if i == len(ms) {
+			return 0, 0
 		}
+		a.from = ms[i].ID
+	}
+	taken[a.from] = true
+	lo = indexOfMessage(ms, a.from) // -1 once a clear or the window's slide dropped the prompt
+	if a.closed {
+		return max(lo, 0), indexOfMessage(ms, a.until) + 1
+	}
+	hi = len(ms)
+	for i := max(lo+1, 0); i < len(ms); i++ {
+		if isUser(ms[i]) {
+			hi, a.closed = i, true
+			if i > 0 {
+				a.until = ms[i-1].ID
+			}
+			break
+		}
+	}
+	return max(lo, 0), hi
+}
+
+// flushAnchors are the flush turns still to hide: a retried flush must not unhide the one abandoned before it.
+type flushAnchors []flushAnchor
+
+// hide returns ms without the flush turns and moves the anchors along; the caller holds the chat's lock.
+func (as *flushAnchors) hide(ms []Message) []Message {
+	if len(*as) == 0 {
 		return ms
 	}
-	out := make([]Message, 0, len(ms)-(hi-lo))
-	return append(append(out, ms[:lo]...), ms[hi:]...)
+	drop := make([]bool, len(ms))
+	taken := map[string]bool{}
+	kept := (*as)[:0]
+	for i := range *as {
+		an := (*as)[i]
+		lo, hi := an.span(ms, taken)
+		for j := lo; j < hi; j++ {
+			drop[j] = true
+		}
+		// Nothing left to hide: its turn was cleared away or has slid out of the window.
+		if !(an.closed && hi <= lo && an.from != "") {
+			kept = append(kept, an)
+		}
+	}
+	*as = kept
+	out := make([]Message, 0, len(ms))
+	for i, m := range ms {
+		if !drop[i] {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 func (s *fleetChat) startFlush() {
@@ -335,24 +351,29 @@ func (s *fleetChat) startFlush() {
 	if ms := s.st.served(); len(ms) > 0 {
 		pre = ms[len(ms)-1].ID
 	}
-	s.st.flush = flushAnchor{active: true, pre: pre}
+	s.st.flush = append(s.st.flush, flushAnchor{pre: pre})
 }
 
+// dropFlush forgets the newest anchor: its prompt was never pasted.
 func (s *fleetChat) dropFlush() {
 	s.mu.Lock()
-	s.st.flush = flushAnchor{}
+	if n := len(s.st.flush); n > 0 {
+		s.st.flush = s.st.flush[:n-1]
+	}
 	s.mu.Unlock()
 }
 
-// endFlush closes the anchor at the turn's last message as of now.
+// endFlush closes the newest anchor at the turn's last message as of now.
 func (s *fleetChat) endFlush() {
 	_, _ = s.refresh(true)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	a := &s.st.flush
 	ms := s.st.served()
-	if !a.active || a.from == "" || len(ms) == 0 {
+	n := len(s.st.flush)
+	if n == 0 || len(ms) == 0 {
 		return
 	}
-	a.until, a.closed = ms[len(ms)-1].ID, true
+	if a := &s.st.flush[n-1]; a.from != "" {
+		a.until, a.closed = ms[len(ms)-1].ID, true
+	}
 }
