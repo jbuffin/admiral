@@ -16,11 +16,24 @@ type SetupCommand struct {
 	Home string
 }
 
-var ownSessions = map[string]string{sessionhost.SetupName: "Setup", sessionhost.ChatName: "Chat session"}
+// ownSession names the sessions that are not ships but open in a terminal: the setup
+// terminal and each fleet's chat.
+func ownSession(session string) (string, bool) {
+	if session == sessionhost.SetupName {
+		return "Setup", true
+	}
+	if fleet, ok := sessionhost.ChatFleetOfSession(session); ok && fleet != "" {
+		return "Chat session", true
+	}
+	if session == sessionhost.ChatName {
+		return "Chat session", true
+	}
+	return "", false
+}
 
 // standIn is underway while the session exists and gone when it ends; it never reaches the ships list.
 func (s *Service) standIn(session string) (ships.Ship, bool) {
-	name, own := ownSessions[session]
+	name, own := ownSession(session)
 	if s.Host == nil || !own {
 		return ships.Ship{}, false
 	}
@@ -35,7 +48,7 @@ func (s *Service) standIn(session string) (ships.Ship, bool) {
 func (s *Service) setupSession() (ships.Ship, bool) { return s.standIn(sessionhost.SetupName) }
 
 func (s *Service) get(session string) (ships.Ship, bool) {
-	if _, own := ownSessions[session]; own {
+	if _, own := ownSession(session); own {
 		return s.standIn(session)
 	}
 	return s.Ships.Get(session)
@@ -43,7 +56,7 @@ func (s *Service) get(session string) (ships.Ship, bool) {
 
 // The setup terminal and the chat have no needs-you state a keystroke could clear.
 func (s *Service) inputSeen(session string) (ships.Ship, error) {
-	if _, own := ownSessions[session]; own {
+	if _, own := ownSession(session); own {
 		if sh, ok := s.standIn(session); ok {
 			return sh, nil
 		}

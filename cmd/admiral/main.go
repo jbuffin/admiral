@@ -410,13 +410,16 @@ func serve(args []string) error {
 
 	chatService := &chat.Service{Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Home: absDir, Outcomes: outcomeLog}
 	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
+	if err := chatService.RemoveOldLayout(); err != nil {
+		fmt.Fprintf(os.Stderr, "admiral: chat: %v\n", err)
+	}
 	convService := &shipconv.Service{Ships: shipService, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Asking: shipService.Asking}
 	// Live figures live in memory only; a restart starts empty.
 	liveUsage := usage.NewStore(time.Now)
 	shipService.LastLive, chatService.LastLive = liveUsage.LastLive, liveUsage.LastLive
 	liveLogin := func(ship string) string {
-		if ship == sessionhost.ChatName {
-			return chatService.Login()
+		if sessionhost.IsChatSession(ship) {
+			return chatService.Login(ship)
 		}
 		return shipService.Login(ship)
 	}

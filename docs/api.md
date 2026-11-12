@@ -188,6 +188,55 @@ The server answers an open with `{"type": "conversation_opened", "ship": "<ship>
 - The server follows the file by offset, about four times a second while any client has the ship open.
 - Live text (Copilot ships with a `--ui-server`): while a client has the ship open, the server also attaches to the ship's server as a read-only second client and pushes the assistant text of a turn as it is written, before the file has it. A live reply has the id of Copilot's message (`messageId`), which is also the id the file's item gets, so the finished item replaces the live one and the text never shows twice. Every other live item has the id of its event, which is the id of its line in the file. The HTTP page and the ship's `tail` read the file only. An interrupted reply (Esc, an error) keeps the partial text it already showed in every open tab until the conversation is reopened, because there is no message that removes an item; the file page never has it. Subagent text is not shown live, as in the file. When the server cannot be reached, is not the ship's own, or goes away, the conversation comes from the file alone, with no error; the server retries slowly.
 
+## A fleet's chat
+
+Each fleet whose chat is on (`chat.on` in `GET /api/config`) has its own AdmiralBot: a Claude Code session named `_chat-<fleet>` that runs in `$ADMIRAL_HOME/chat/<fleet>/`. Every route is also served under `/api/v1/...`. A fleet that doesn't exist is a 404, and one whose chat is off is a 409 whose `error` is the reason (no dock, a key that differs from an earlier fleet's only in case, and so on). The old global `/api/chat/*` routes are gone and answer 404.
+
+### `GET /api/chat/<fleet>/session`
+
+```json
+{
+  "fleet": "harbor",
+  "running": true,
+  "state": "idle",
+  "messages": [
+    {"id": "u-1", "kind": "message", "role": "user", "text": "...", "at": "2026-11-11T10:00:00Z"},
+    {"id": "q-7c1", "kind": "question", "text": "Which repo?", "at": "...", "card": {}},
+    {"id": "reset-1794455969929283000", "kind": "reset", "text": "New chat", "at": "..."}
+  ],
+  "questions": [],
+  "error": "..."
+}
+```
+
+- `state` is `idle`, `working` or `waiting`, and `""` while the chat isn't running. `error` is present when something needs saying: why the last start was refused, or that the transcript can't be read.
+- `messages` is the newest 200 entries of the fleet's history (`HistoryWindow` in `internal/chat`), oldest first, served from Admiral's log whether or not the chat is running. `kind` is always set: `message` (with `role` `user` or `assistant`), `question` (a chat question as a card: `text` is its title and `card` is the question item as asked, without its answer) or `reset` (the "New chat" marker). Each `id` appears once.
+- `questions` are the fleet's chat questions, each the inbox's question item with `session` `_chat-<fleet>` and `answer`: the engineer's answer or `null`. They are never in the Inbox.
+
+### The log
+
+Admiral appends the history to `$ADMIRAL_HOME/chat/<fleet>/conversation.jsonl`, one JSON entry a line: `id`, `kind`, `role`, `text`, `at`, `card`, and `logged`, when Admiral wrote it. An entry whose `id` is already in the log is skipped, so reading the transcript again, after a restart too, adds nothing. On the first append of a new month (UTC) the file is renamed `conversation-YYYY-MM.jsonl`; old months are kept. The log is Admiral's: nothing in it is fed back to the model, though the chat can read its own file in its working directory.
+
+### `POST /api/chat/<fleet>/start`
+
+Starts the fleet's chat session or leaves a running one alone, and answers `{"running":true}`. Admiral doesn't start one at server start.
+
+### `POST /api/chat/<fleet>/messages`
+
+`{"text"}` pastes the text into the chat and presses Enter. 400 for empty text or over 16 KiB. 409 when the chat isn't running or no transcript has been recorded yet.
+
+### `POST /api/chat/<fleet>/new`
+
+Clears the model's context and appends a `reset` entry to the log; the earlier history is still served. It sends `/clear` when the running session's model, effort and fleet match the fleet's chat settings, else it ends the session and starts a new one. It withdraws the fleet's chat questions. 409 when the chat isn't running.
+
+### `POST /api/chat/<fleet>/questions/<id>/answer`
+
+Takes the inbox's question answer body and writes the answer file. 404 for an unknown id, 409 when it is already answered, 400 for an invalid answer. A question in one fleet's chat can't be answered through another fleet's route.
+
+### WebSocket
+
+`{"type":"chat","fleet":"<fleet>", ...}` carries the fields of the session beside `type`. It is sent on connect, one per fleet whose chat is on, and again within about a second of a change. Messages are coalesced per fleet, so one fleet's update never replaces another's.
+
 ## Inbox
 
 The items ships leave for you: a question, a review, findings, and Admiral's own notices, wake proposals and crew items. Every route is also served under `/api/v1/`.

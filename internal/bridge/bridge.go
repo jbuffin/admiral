@@ -486,7 +486,7 @@ func crewState(c sessionhost.Crew) shipMsg {
 }
 
 func (s *Service) crewBoat(session, name string) (sessionhost.Crew, bool) {
-	if _, own := ownSessions[session]; own {
+	if _, own := ownSession(session); own {
 		return sessionhost.Crew{}, false
 	}
 	l, _ := s.Ships.Crew(session)

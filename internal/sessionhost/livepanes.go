@@ -12,7 +12,7 @@ const MaxStatuslineRead = 4096
 
 // LivePane is what one pane says about its live usage: a Claude pane's kept status line, a Copilot ship's transcript.
 type LivePane struct {
-	Session    string // the ship's session name, or ChatName
+	Session    string // the ship's session name, or a chat's
 	Harness    string
 	Transcript string // the @admiral-transcript value
 	StartCmd   string

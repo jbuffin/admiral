@@ -1,14 +1,23 @@
-// Package chat starts the AdmiralBot `_chat` session, follows the transcript Claude Code writes
-// for it, and serves the conversation.
+// Package chat runs one AdmiralBot chat session per fleet, follows the transcript Claude Code
+// writes for it, keeps the fleet's history in its log and serves it.
 package chat
 
-import "github.com/jbuffin/admiral/internal/conversation"
+import (
+	"encoding/json"
 
+	"github.com/jbuffin/admiral/internal/chatlog"
+	"github.com/jbuffin/admiral/internal/conversation"
+)
+
+// Message is one entry of the fleet's history: text, a question card or a New chat marker.
 type Message struct {
 	ID   string `json:"id"`
-	Role string `json:"role"` // "user" or "assistant"
-	Text string `json:"text"`
+	Kind string `json:"kind"`           // "message", "question" or "reset"
+	Role string `json:"role,omitempty"` // "user" or "assistant", for a message
+	Text string `json:"text"`           // a card's title; a marker's "New chat"
 	At   string `json:"at"`
+	// Card is a question's item as it was asked, without its answer.
+	Card json.RawMessage `json:"card,omitempty"`
 }
 
 // A notice (a subagent's report, or another Claude session's message) shows as the user's message.
@@ -19,7 +28,7 @@ func messages(items []conversation.Item) []Message {
 		if it.Kind == conversation.KindAssistant {
 			role = "assistant"
 		}
-		out = append(out, Message{ID: it.ID, Role: role, Text: it.Text, At: it.At})
+		out = append(out, Message{ID: it.ID, Kind: chatlog.KindMessage, Role: role, Text: it.Text, At: it.At})
 	}
 	return out
 }

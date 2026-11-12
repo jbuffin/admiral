@@ -19,16 +19,18 @@ var skillText []byte
 const chatPrompt = "You are AdmiralBot, the engineer's assistant in Admiral. Use the admiralbot skill for everything you do. " +
 	"You only add orders: you never launch ships and never change files."
 
-// WriteChatSkill writes a temp file and renames it, so a link planted at the path is replaced
-// and never followed. A directory on the way that is a link is refused.
-func WriteChatSkill(home string) error {
+// WriteChatSkill writes a fleet's skill into chat/<fleet>/, which is the chat's working
+// directory and so where its project settings are read from. It writes a temp file and renames
+// it, so a link planted at the path is replaced and never followed. A directory on the way
+// that is a link is refused.
+func WriteChatSkill(home, fleet string) error {
 	root, err := os.OpenRoot(home)
 	if err != nil {
 		return err
 	}
 	defer root.Close()
 	dir := ""
-	for _, part := range []string{"chat", ".claude", "skills", "admiralbot"} {
+	for _, part := range []string{"chat", fleet, ".claude", "skills", "admiralbot"} {
 		dir = filepath.Join(dir, part)
 		fi, err := root.Lstat(dir)
 		switch {
@@ -61,17 +63,18 @@ func WriteChatSkill(home string) error {
 	return err
 }
 
-func ChatDir(home string) string { return filepath.Join(home, "chat") }
+// ChatDir is a fleet's chat working directory; the Read fence keeps the chat out of the others.
+func ChatDir(home, fleet string) string { return filepath.Join(home, "chat", fleet) }
 
-// ChatDock is the fleet the one chat session runs for: the first, in config order, whose chat is on.
-func ChatDock(cfg *config.Config) (config.Fleet, config.Harness, *Error) {
-	fleet, ok := cfg.ChatFleet()
-	if !ok {
-		if len(cfg.Fleets) == 0 {
-			return config.Fleet{}, config.Harness{}, refuse(http.StatusConflict, "the chat has no fleet to run in: add a fleet in Settings")
-		}
-		first := cfg.Fleets[0]
-		return config.Fleet{}, config.Harness{}, refuse(http.StatusConflict, "the chat is off: fleet %s: %s", first.Name, first.ChatOffReason())
+// ChatDock is the fleet's chat settings and the dock it runs on. A fleet that is not there is a 404,
+// one whose chat is off a 409 with the reason.
+func ChatDock(cfg *config.Config, key string) (config.Fleet, config.Harness, *Error) {
+	fleet, off, ok := cfg.ChatFleet(key)
+	switch {
+	case !ok:
+		return config.Fleet{}, config.Harness{}, refuse(http.StatusNotFound, "no fleet %s", key)
+	case off != "":
+		return config.Fleet{}, config.Harness{}, refuse(http.StatusConflict, "the chat is off for fleet %s: %s", fleet.Name, off)
 	}
 	dock, _ := fleet.Harness(fleet.Chat.Harness)
 	return fleet, dock, nil
@@ -83,14 +86,14 @@ var chatOwned = []string{"ADMIRAL_SHIP", "ADMIRAL_REPORT", "ADMIRAL_INBOX", "ADM
 
 var chatVar = regexp.MustCompile(`^ADMIRAL_[A-Za-z0-9_]+$`)
 
-// The caller has checked that no `_chat` session exists. Unlike a ship's, the session has no
+// The caller has checked that the fleet has no chat session. Unlike a ship's, the session has no
 // remain-on-exit, so it ends with Claude, and none of a ship's variables.
-func (l *Launcher) StartChat() error {
+func (l *Launcher) StartChat(key string) error {
 	if l.Tmux == "" {
 		return refuse(http.StatusServiceUnavailable, "tmux not found on PATH, so the chat cannot run")
 	}
 	cfg := l.Config()
-	fleet, dock, rerr := ChatDock(cfg)
+	fleet, dock, rerr := ChatDock(cfg, key)
 	if rerr != nil {
 		return rerr
 	}
@@ -102,11 +105,11 @@ func (l *Launcher) StartChat() error {
 	if err != nil {
 		return refuse(http.StatusInternalServerError, "could not resolve %s: %v", l.Home, err)
 	}
-	dir := ChatDir(home)
+	dir := ChatDir(home, fleet.Key)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return refuse(http.StatusInternalServerError, "could not create %s: %v", dir, err)
 	}
-	if err := WriteChatSkill(home); err != nil {
+	if err := WriteChatSkill(home, fleet.Key); err != nil {
 		return refuse(http.StatusInternalServerError, "could not write the AdmiralBot skill: %v", err)
 	}
 
@@ -123,7 +126,8 @@ func (l *Launcher) StartChat() error {
 		"--append-system-prompt", chatPrompt, "--settings", claudeChatSettingsPath(l.Home))
 
 	// Admiral's environment and the tmux server's may hold a ship's variables (a server that
-	// outlived an earlier Admiral, or started from a ship's shell): the chat gets only ADMIRAL_HOME.
+	// outlived an earlier Admiral, or started from a ship's shell): the chat gets only ADMIRAL_HOME,
+	// its port and its fleet.
 	env := l.shipEnv(dock)
 	unset := map[string]bool{}
 	for _, k := range chatOwned {
@@ -137,6 +141,8 @@ func (l *Launcher) StartChat() error {
 	}
 	env["ADMIRAL_HOME"] = home
 	delete(unset, "ADMIRAL_HOME")
+	// `admiral chat ask` finds its fleet here; the model can't pick another.
+	env["ADMIRAL_CHAT_FLEET"] = fleet.Key
 	if l.Port != "" {
 		env["ADMIRAL_PORT"] = l.Port
 	}
@@ -144,7 +150,7 @@ func (l *Launcher) StartChat() error {
 		delete(unset, k)
 	}
 
-	const session = sessionhost.ChatName
+	session := sessionhost.ChatSession(fleet.Key)
 	opts := [][2]string{{sessionhost.ChatModelOpt, chat.Model}, {sessionhost.ChatEffortOpt, chat.Effort}, {sessionhost.ChatFleetOpt, fleet.Key}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
@@ -158,7 +164,7 @@ func (l *Launcher) StartChat() error {
 	// (-u would fall back to the server's). A server that isn't up yet has none.
 	if globals, err := l.server().GlobalEnvNames(); err == nil {
 		for _, name := range globals {
-			if chatVar.MatchString(name) && name != "ADMIRAL_HOME" {
+			if chatVar.MatchString(name) && name != "ADMIRAL_HOME" && name != "ADMIRAL_CHAT_FLEET" {
 				unset[name] = true
 			}
 		}
@@ -170,7 +176,7 @@ func (l *Launcher) StartChat() error {
 	// A fresh session starts with none of the old one's chat questions, once nothing
 	// can refuse the start any more.
 	if l.BeforeChat != nil {
-		l.BeforeChat()
+		l.BeforeChat(fleet.Key)
 	}
 	if err := l.createSession(session, dir, opts, nil, env, names, argv, false); err != nil {
 		return err

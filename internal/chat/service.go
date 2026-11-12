@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/chatlog"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/conversation"
 	"github.com/jbuffin/admiral/internal/launcher"
@@ -31,8 +32,13 @@ const Unreadable = "Admiral can't read this chat's transcript"
 
 const optionEvery = 200 * time.Millisecond
 
+// HistoryWindow is how many of a fleet's newest log entries the session serves: as many as the
+// old chat's transcript tail, so a page holds the same amount whatever the log's age.
+const HistoryWindow = 200
+
 // Questions are served whether or not the chat is running.
 type Snapshot struct {
+	Fleet     string     `json:"fleet"`
 	Running   bool       `json:"running"`
 	State     string     `json:"state"` // idle, working or waiting; "" while not running
 	Messages  []Message  `json:"messages"`
@@ -45,6 +51,7 @@ type wire struct {
 	Snapshot
 }
 
+// Service runs one chat per fleet whose chat is on.
 type Service struct {
 	Host     *sessionhost.Host
 	Hub      *server.Hub
@@ -52,13 +59,25 @@ type Service struct {
 	Config   func() *config.Config
 	Tmux     string // the tmux binary
 	Socket   string
-	Home     string // $ADMIRAL_HOME, where chat/questions/ is
+	Home     string // $ADMIRAL_HOME, where chat/<fleet>/ is
 	// Outcomes takes a usage record at each reset; nil writes none.
 	Outcomes *outcomes.Writer
-	// LastLive gives the chat's last live figures when its transcript has none; nil when nothing keeps them.
+	// LastLive gives a chat's last live figures when its transcript has none; nil when nothing keeps them.
 	LastLive func(session string) (usage.Figures, bool)
-	// ForgetLive drops the chat's live figures once a reset record has read them.
+	// ForgetLive drops a chat's live figures once a reset record has read them.
 	ForgetLive func(session string)
+
+	logOnce sync.Once
+	log     *chatlog.Log
+
+	chatsMu sync.Mutex
+	chats   map[string]*fleetChat
+}
+
+// fleetChat is one fleet's chat: its session, transcript follower and questions.
+type fleetChat struct {
+	*Service
+	key string
 
 	op  sync.Mutex // start, New chat and send, one at a time
 	qmu sync.Mutex // answering and withdrawing chat questions, one at a time
@@ -67,6 +86,7 @@ type Service struct {
 	st       state
 	ticket   uint64 // numbers the option reads, so a late one can't undo a newer
 	startErr string // why the last start was refused, until a start works
+	logErr   string // the last log failure reported, so a broken disk is logged once
 
 	cmu      sync.Mutex // the question cache; the directory is read under it, never under mu
 	qs       []Question // the questions as last read
@@ -77,9 +97,55 @@ type Service struct {
 	resets resetUsage
 }
 
+func (s *Service) history() *chatlog.Log {
+	s.logOnce.Do(func() { s.log = chatlog.New(s.Home, time.Now) })
+	return s.log
+}
+
+// chatFor is the fleet's chat, or the reason it has none: 404 for an unknown fleet, 409 when
+// its chat is off.
+func (s *Service) chatFor(key string) (*fleetChat, *launcher.Error) {
+	_, off, ok := s.Config().ChatFleet(key)
+	switch {
+	case !ok:
+		return nil, &launcher.Error{Status: http.StatusNotFound, Msg: "no fleet " + key}
+	case off != "":
+		return nil, &launcher.Error{Status: http.StatusConflict, Msg: "the chat is off for this fleet: " + off}
+	}
+	return s.chat(key), nil
+}
+
+func (s *Service) chat(key string) *fleetChat {
+	s.chatsMu.Lock()
+	defer s.chatsMu.Unlock()
+	if s.chats == nil {
+		s.chats = map[string]*fleetChat{}
+	}
+	fc, ok := s.chats[key]
+	if !ok {
+		fc = &fleetChat{Service: s, key: key}
+		s.chats[key] = fc
+	}
+	return fc
+}
+
+// onFleets are the fleets whose chat is on, in config order.
+func (s *Service) onFleets() []*fleetChat {
+	cfg := s.Config()
+	var out []*fleetChat
+	for _, f := range cfg.Fleets {
+		if cfg.ChatOffReason(f) == "" {
+			out = append(out, s.chat(f.Key))
+		}
+	}
+	return out
+}
+
+func (s *fleetChat) name() string { return sessionhost.ChatSession(s.key) }
+
 // state is cleared when the pane changes.
 type state struct {
-	pane    string // the pane id of the `_chat` session read last
+	pane    string // the pane id of the fleet's chat session read last
 	opts    chatOptions
 	readAt  time.Time
 	optRaw  string // the transcript option's value acted on last
@@ -96,20 +162,38 @@ type chatOptions struct {
 	transcript           string // "<unix ns> <source> <path>", "" before the first SessionStart
 }
 
+// route resolves the path's fleet first, so an unknown fleet or one whose chat is off is refused
+// with the reason before a handler runs.
+func (s *Service) route(h func(*fleetChat, http.ResponseWriter, *http.Request)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		fc, err := s.chatFor(r.PathValue("fleet"))
+		if err != nil {
+			writeError(w, err.Status, err.Msg)
+			return
+		}
+		h(fc, w, r)
+	}
+}
+
 func (s *Service) Routes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/chat/session", s.serveSession)
-	mux.HandleFunc("POST /api/chat/start", s.serveStart)
-	mux.HandleFunc("POST /api/chat/messages", s.serveSend)
-	mux.HandleFunc("POST /api/chat/new", s.serveNew)
-	mux.HandleFunc("POST /api/chat/questions/{id}/answer", s.serveAnswer)
+	mux.HandleFunc("GET /api/chat/{fleet}/session", s.route((*fleetChat).serveSession))
+	mux.HandleFunc("POST /api/chat/{fleet}/start", s.route((*fleetChat).serveStart))
+	mux.HandleFunc("POST /api/chat/{fleet}/messages", s.route((*fleetChat).serveSend))
+	mux.HandleFunc("POST /api/chat/{fleet}/new", s.route((*fleetChat).serveNew))
+	mux.HandleFunc("POST /api/chat/{fleet}/questions/{id}/answer", s.route((*fleetChat).serveAnswer))
 }
 
+// Connected sends one message per fleet whose chat is on.
 func (s *Service) Connected(c *server.Client) {
-	m := wire{Type: "chat", Snapshot: s.currentFresh()}
-	_ = c.SendOnce("chat", func() any { return m })
+	for _, fc := range s.onFleets() {
+		m := wire{Type: "chat", Snapshot: fc.currentFresh()}
+		_ = c.SendOnce("chat:"+fc.key, func() any { return m })
+	}
 }
 
-// Run also ticks, for what the host doesn't see: the chat's options and its transcript.
+// Run also ticks, for what the host doesn't see: each chat's options and its transcript. It
+// follows every running chat whether or not a browser is connected, since the log is Admiral's
+// and must not miss what is said while nobody watches.
 func (s *Service) Run(ctx context.Context) {
 	if s.Host == nil {
 		return
@@ -123,42 +207,49 @@ func (s *Service) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case ev := <-events:
-			if ev.Session != sessionhost.ChatName && ev.Kind != sessionhost.Reset && ev.Kind != sessionhost.Resumed {
+			if !sessionhost.IsChatSession(ev.Session) && ev.Kind != sessionhost.Reset && ev.Kind != sessionhost.Resumed {
 				continue
 			}
 		case <-tick.C:
 		}
-		if s.Hub.Len() == 0 {
-			continue // nobody to tell; a request reads the chat itself
+		watched := s.Hub.Len() > 0
+		for _, fc := range s.onFleets() {
+			// Nobody to tell and nothing running: a request reads the chat itself.
+			if _, running := fc.session(); running || watched {
+				fc.broadcastIf(watched)
+			}
 		}
-		s.broadcast()
 	}
 }
 
-func (s *Service) broadcast() {
+func (s *fleetChat) broadcast() { s.broadcastIf(true) }
+
+func (s *fleetChat) broadcastIf(send bool) {
 	m := s.message()
-	s.Hub.BroadcastOnce("chat", func() any { return m })
+	if send {
+		s.Hub.BroadcastOnce("chat:"+s.key, func() any { return m })
+	}
 }
 
-func (s *Service) message() wire { return wire{Type: "chat", Snapshot: s.current()} }
+func (s *fleetChat) message() wire { return wire{Type: "chat", Snapshot: s.current()} }
 
 // A request, and a new connection, must not see a stale question list.
-func (s *Service) currentFresh() Snapshot {
+func (s *fleetChat) currentFresh() Snapshot {
 	snap, _ := s.refreshQ(false, true)
 	return snap
 }
 
-func (s *Service) current() Snapshot {
+func (s *fleetChat) current() Snapshot {
 	snap, _ := s.refresh(false)
 	return snap
 }
 
-func (s *Service) session() (sessionhost.Session, bool) {
+func (s *fleetChat) session() (sessionhost.Session, bool) {
 	if s.Host == nil {
 		return sessionhost.Session{}, false
 	}
 	for _, sess := range s.Host.Sessions() {
-		if sess.Name == sessionhost.ChatName && !sess.PaneDead {
+		if sess.Name == s.name() && !sess.PaneDead {
 			return sess, true
 		}
 	}
@@ -166,9 +257,19 @@ func (s *Service) session() (sessionhost.Session, bool) {
 }
 
 // The tmux call runs outside the lock, so a stuck tmux holds up only the caller that made it.
-func (s *Service) refresh(force bool) (Snapshot, error) { return s.refreshQ(force, force) }
+func (s *fleetChat) refresh(force bool) (Snapshot, error) { return s.refreshQ(force, force) }
 
-func (s *Service) refreshQ(force, fresh bool) (Snapshot, error) {
+// refreshQ reads the chat, writes what is new to the fleet's log and serves the log's recent
+// window, which outlives New chat, a stopped chat and a restart.
+func (s *fleetChat) refreshQ(force, fresh bool) (Snapshot, error) {
+	snap, err := s.read(force, fresh)
+	s.record(snap)
+	snap.Fleet = s.key
+	snap.Messages = s.recent()
+	return snap, err
+}
+
+func (s *fleetChat) read(force, fresh bool) (Snapshot, error) {
 	qs := s.questions(fresh)
 	sess, running := s.session()
 	var (
@@ -235,7 +336,7 @@ func mapState(state, reason string) string {
 }
 
 // The same path with source "clear" empties the conversation and serves only what is written after.
-func (s *Service) transcriptChangedLocked(raw string) {
+func (s *fleetChat) transcriptChangedLocked(raw string) {
 	st := &s.st
 	first := st.optRaw == ""
 	st.optRaw = raw
@@ -260,21 +361,21 @@ func parseTranscriptOption(raw string) (stamp, source, path string, ok bool) {
 	return parts[0], parts[1], parts[2], true
 }
 
-// Login is the identity dir of the harness login the chat runs under.
-func (s *Service) Login() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.configDir()
+// Login is the identity dir of the harness login a fleet's chat session runs under; "" for any other session.
+func (s *Service) Login(session string) string {
+	key, ok := sessionhost.ChatFleetOfSession(session)
+	if !ok {
+		return ""
+	}
+	if _, ok := s.Config().Fleet(key); !ok {
+		return ""
+	}
+	return s.chat(key).configDir()
 }
 
-func (s *Service) configDir() string {
-	cfg := s.Config()
-	// The fleet the session started with. The option can be written from inside the
-	// chat, so one that names no fleet falls back to the chat's own.
-	f, ok := cfg.Fleet(s.st.opts.fleet)
-	if !ok {
-		f, _ = cfg.ChatFleet()
-	}
+func (s *fleetChat) configDir() string {
+	// The fleet this chat belongs to, never the session option: anything in the chat can write that.
+	f, _ := s.Config().Fleet(s.key)
 	var env map[string]string
 	if d, ok := f.Harness("claude"); ok {
 		env = d.Env
@@ -282,7 +383,7 @@ func (s *Service) configDir() string {
 	return config.IdentityDir("claude", env)
 }
 
-func (s *Service) openLocked() (*os.File, os.FileInfo, error) {
+func (s *fleetChat) openLocked() (*os.File, os.FileInfo, error) {
 	st := &s.st
 	if st.path == "" {
 		return nil, nil, fs.ErrNotExist
@@ -295,7 +396,7 @@ func (s *Service) openLocked() (*os.File, os.FileInfo, error) {
 	return f, info, err
 }
 
-func (s *Service) followLocked() {
+func (s *fleetChat) followLocked() {
 	st := &s.st
 	if st.rd == nil {
 		return
@@ -322,7 +423,7 @@ func (st *state) served() []Message {
 	return messages(st.rd.Items())
 }
 
-func (s *Service) readOptions(pane string) (chatOptions, error) {
+func (s *fleetChat) readOptions(pane string) (chatOptions, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	o, err := s.server().ReadChatOptions(ctx, pane)
@@ -332,7 +433,7 @@ func (s *Service) readOptions(pane string) (chatOptions, error) {
 	return chatOptions{model: o.Model, effort: o.Effort, fleet: o.Fleet, transcript: o.Transcript}, nil
 }
 
-func (s *Service) server() sessionhost.Server {
+func (s *fleetChat) server() sessionhost.Server {
 	return sessionhost.NewServer(s.Tmux, s.Socket).WithoutUTF8().StderrErrors()
 }
 
@@ -347,12 +448,12 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
-func (s *Service) serveSession(w http.ResponseWriter, r *http.Request) {
+func (s *fleetChat) serveSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.currentFresh())
 }
 
 // sync makes what a start or restart did known before the answer.
-func (s *Service) sync() {
+func (s *fleetChat) sync() {
 	if s.Host == nil {
 		return
 	}
@@ -361,20 +462,20 @@ func (s *Service) sync() {
 	_ = s.Host.Sync(ctx)
 }
 
-func (s *Service) exists() bool {
+func (s *fleetChat) exists() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	return s.server().HasSession(ctx, sessionhost.ChatName)
+	return s.server().HasSession(ctx, s.name())
 }
 
-func (s *Service) start() *launcher.Error {
+func (s *fleetChat) start() *launcher.Error {
 	if s.Launcher == nil || s.Tmux == "" {
 		return &launcher.Error{Status: http.StatusServiceUnavailable, Msg: "the chat needs tmux"}
 	}
 	if s.exists() {
 		return nil
 	}
-	err := s.Launcher.StartChat()
+	err := s.Launcher.StartChat(s.key)
 	var le *launcher.Error
 	switch {
 	case err == nil:
@@ -394,7 +495,7 @@ func (s *Service) start() *launcher.Error {
 	return nil
 }
 
-func (s *Service) serveStart(w http.ResponseWriter, r *http.Request) {
+func (s *fleetChat) serveStart(w http.ResponseWriter, r *http.Request) {
 	s.op.Lock()
 	defer s.op.Unlock()
 	if err := s.start(); err != nil {
@@ -406,7 +507,7 @@ func (s *Service) serveStart(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"running": true})
 }
 
-func (s *Service) serveSend(w http.ResponseWriter, r *http.Request) {
+func (s *fleetChat) serveSend(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Text string `json:"text"`
 	}
@@ -437,7 +538,7 @@ func (s *Service) serveSend(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"sent": true})
 }
 
-func (s *Service) ready() (pane string, status int, msg string) {
+func (s *fleetChat) ready() (pane string, status int, msg string) {
 	snap, err := s.refresh(true)
 	switch {
 	case !snap.Running:
@@ -453,14 +554,14 @@ func (s *Service) ready() (pane string, status int, msg string) {
 	return s.st.pane, 0, ""
 }
 
-func (s *Service) pasteMessage(pane, text string) error {
+func (s *fleetChat) pasteMessage(pane, text string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return s.server().PasteMessage(ctx, pane, text)
 }
 
 // serveNew sends /clear when the running session matches the config, else starts a new session.
-func (s *Service) serveNew(w http.ResponseWriter, r *http.Request) {
+func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 	s.op.Lock()
 	defer s.op.Unlock()
 	snap, err := s.refresh(true)
@@ -477,14 +578,18 @@ func (s *Service) serveNew(w http.ResponseWriter, r *http.Request) {
 	opts, pane, noPath := s.st.opts, s.st.pane, s.st.optRaw == ""
 	path, dir, raw := s.st.path, s.configDir(), s.st.optRaw
 	s.mu.Unlock()
-	fleet, _ := s.Config().ChatFleet()
+	fleet, off, _ := s.Config().ChatFleet(s.key)
+	if off != "" {
+		writeError(w, http.StatusConflict, "the chat is off for this fleet: "+off)
+		return
+	}
 	chat := fleet.Chat
 	if opts.model == chat.Model && opts.effort == chat.Effort && opts.fleet == fleet.Key {
 		if noPath {
 			writeError(w, http.StatusConflict, NotStarted)
 			return
 		}
-		s.WithdrawQuestions()
+		s.withdraw()
 		s.mu.Lock()
 		s.clearLocked()
 		s.mu.Unlock()
@@ -500,18 +605,22 @@ func (s *Service) serveNew(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadGateway, "could not clear the chat: "+err.Error())
 			return
 		}
-		s.recordReset(path, dir, opts.fleet, raw)
+		s.recordReset(path, dir, s.key, raw)
+		// A reset that failed leaves no marker.
+		s.markReset()
+		s.broadcast()
 		writeJSON(w, http.StatusOK, map[string]bool{"running": true})
 		return
 	}
 	// The settings changed since this session started: a new one takes them.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := s.server().KillSession(ctx, sessionhost.ChatName); err != nil {
+	if err := s.server().KillSession(ctx, s.name()); err != nil {
 		writeError(w, http.StatusBadGateway, "could not end the chat: "+err.Error())
 		return
 	}
-	s.recordReset(path, dir, opts.fleet, "")
+	s.recordReset(path, dir, s.key, "")
+	s.markReset()
 	s.mu.Lock()
 	s.st = state{}
 	s.mu.Unlock()
@@ -526,7 +635,7 @@ func (s *Service) serveNew(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"running": true})
 }
 
-func (s *Service) clearLocked() {
+func (s *fleetChat) clearLocked() {
 	st := &s.st
 	if st.rd == nil {
 		return

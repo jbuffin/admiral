@@ -7,6 +7,7 @@ import (
 	"log"
 	"slices"
 	"strconv"
+	"strings"
 )
 
 // ChatSettings are one fleet's AdmiralBot chat settings, resolved: every field holds
@@ -65,14 +66,27 @@ func (f Fleet) ChatHarnessesOffered() []string {
 	return out
 }
 
-// ChatFleet is the first fleet, in config order, whose chat is on.
-func (c *Config) ChatFleet() (Fleet, bool) {
-	for _, f := range c.Fleets {
-		if f.ChatOn() {
-			return f, true
+// ChatOffReason is why the fleet's chat is off, with the case clash only a config can see: the
+// chat lives in chat/<key>/, and the Mac's disk usually ignores case. The earlier key keeps its chat.
+func (c *Config) ChatOffReason(f Fleet) string {
+	for _, o := range c.Fleets {
+		if o.Key == f.Key {
+			break
+		}
+		if strings.EqualFold(o.Key, f.Key) {
+			return fmt.Sprintf("This fleet's key differs only in case from fleet %s's (%s), and their chats would share one directory on a disk that ignores case: rename one key", o.Name, o.Key)
 		}
 	}
-	return Fleet{}, false
+	return f.ChatOffReason()
+}
+
+// ChatFleet is the fleet with the key, and why its chat is off: "" when it is on.
+func (c *Config) ChatFleet(key string) (f Fleet, off string, ok bool) {
+	f, ok = c.Fleet(key)
+	if !ok {
+		return Fleet{}, "", false
+	}
+	return f, c.ChatOffReason(f), true
 }
 
 // parseFleetChat reads a fleet's chat object. Leniently (the file) a bad model, effort,

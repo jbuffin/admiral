@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/chatlog"
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/ships"
@@ -268,6 +269,11 @@ func Chat(args []string, std IO) error {
 	if os.Getenv("ADMIRAL_SHIP") != "" {
 		return usagef("a ship cannot ask in the chat: chat questions are for AdmiralBot")
 	}
+	// The fleet comes from the chat's environment, never from an argument the model controls.
+	fleet := os.Getenv("ADMIRAL_CHAT_FLEET")
+	if !chatlog.Valid(fleet) {
+		return usagef("chat ask runs only in a fleet's AdmiralBot chat: ADMIRAL_CHAT_FLEET is not set to a fleet key")
+	}
 	dir, err := admiralHome()
 	if err != nil {
 		return err
@@ -283,7 +289,7 @@ func Chat(args []string, std IO) error {
 		if !inbox.ValidID(id) {
 			return usagef("%q is not a question id", id)
 		}
-		if !questionExists(root, id) {
+		if !questionExists(root, fleet, id) {
 			return &ExitError{askExitWithdrawn, "the question was withdrawn"}
 		}
 	} else {
@@ -294,11 +300,11 @@ func Chat(args []string, std IO) error {
 		if b, err = askForm(b); err != nil {
 			return err
 		}
-		if id, err = writeQuestion(root, b); err != nil {
+		if id, err = writeQuestion(root, fleet, b); err != nil {
 			return err
 		}
 	}
-	return waitAnswer(root, id, *timeout, std)
+	return waitAnswer(root, fleet, id, *timeout, std)
 }
 
 // newQuestionID follows ADR 0016's id rule.
@@ -311,9 +317,9 @@ func newQuestionID() (string, error) {
 }
 
 // questionsRoot refuses a link anywhere on the path.
-func questionsRoot(root *os.Root) (*os.Root, error) {
+func questionsRoot(root *os.Root, fleet string) (*os.Root, error) {
 	dir := ""
-	for _, part := range []string{"chat", "questions"} {
+	for _, part := range []string{"chat", fleet, "questions"} {
 		dir = filepath.Join(dir, part)
 		fi, err := root.Lstat(dir)
 		switch {
@@ -331,7 +337,7 @@ func questionsRoot(root *os.Root) (*os.Root, error) {
 }
 
 // writeQuestion writes nothing for a bad question.
-func writeQuestion(root *os.Root, stdin []byte) (string, error) {
+func writeQuestion(root *os.Root, fleet string, stdin []byte) (string, error) {
 	if len(stdin) > inbox.MaxItem {
 		return "", usagef("the question is over %d bytes", inbox.MaxItem)
 	}
@@ -355,10 +361,10 @@ func writeQuestion(root *os.Root, stdin []byte) (string, error) {
 	if in.Questions == nil {
 		return "", usagef("the question has no questions")
 	}
-	if _, err := inbox.ParseItem(item, sessionhost.ChatName, id); err != nil {
+	if _, err := inbox.ParseItem(item, sessionhost.ChatSession(fleet), id); err != nil {
 		return "", usagef("the question is not valid: it needs a title and questions of {id, text, multi, options: [{label}]}, each id once")
 	}
-	dir, err := questionsRoot(root)
+	dir, err := questionsRoot(root, fleet)
 	if err != nil {
 		return "", err
 	}
@@ -382,15 +388,15 @@ func writeQuestion(root *os.Root, stdin []byte) (string, error) {
 	return id, nil
 }
 
-func questionExists(root *os.Root, id string) bool {
-	_, err := root.Lstat(filepath.Join("chat", "questions", id+".json"))
+func questionExists(root *os.Root, fleet, id string) bool {
+	_, err := root.Lstat(filepath.Join("chat", fleet, "questions", id+".json"))
 	return err == nil
 }
 
 // readAnswerFile trusts only a regular file, not a link, at most 1 MiB, holding a
 // JSON object.
-func readAnswerFile(root *os.Root, id string) ([]byte, bool) {
-	name := filepath.Join("chat", "questions", inbox.AnswerName(id))
+func readAnswerFile(root *os.Root, fleet, id string) ([]byte, bool) {
+	name := filepath.Join("chat", fleet, "questions", inbox.AnswerName(id))
 	fi, err := root.Lstat(name)
 	if err != nil || !fi.Mode().IsRegular() {
 		return nil, false
@@ -412,17 +418,17 @@ func readAnswerFile(root *os.Root, id string) ([]byte, bool) {
 }
 
 // The question's file going away is New chat withdrawing it.
-func waitAnswer(root *os.Root, id string, timeout time.Duration, std IO) error {
+func waitAnswer(root *os.Root, fleet, id string, timeout time.Duration, std IO) error {
 	deadline := time.Now().Add(timeout)
 	for {
-		if b, ok := readAnswerFile(root, id); ok {
+		if b, ok := readAnswerFile(root, fleet, id); ok {
 			std.Out.Write(b)
 			if !bytes.HasSuffix(b, []byte("\n")) {
 				fmt.Fprintln(std.Out)
 			}
 			return nil
 		}
-		if !questionExists(root, id) {
+		if !questionExists(root, fleet, id) {
 			return &ExitError{askExitWithdrawn, "the question was withdrawn"}
 		}
 		if !time.Now().Before(deadline) {

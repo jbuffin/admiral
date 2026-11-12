@@ -49,7 +49,7 @@ func (t *Tmux) ClaudePanes(context.Context) ([]Pane, error) {
 		if p.Statusline == "" || len(p.Statusline) > sessionhost.MaxStatuslineRead {
 			continue
 		}
-		if p.Session == sessionhost.ChatName || t.Harness(p.Session) == "claude" {
+		if sessionhost.IsChatSession(p.Session) || t.Harness(p.Session) == "claude" {
 			out = append(out, Pane{Ship: p.Session, Option: p.Statusline})
 		}
 	}
