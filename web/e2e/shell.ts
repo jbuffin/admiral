@@ -85,7 +85,41 @@ export function seedFleets(a: Admiral, opts: { live?: boolean; chat?: boolean; h
   }
 }
 
-/** The fleets `seedFleets(a, { chat: true })` adds after zulu and alpha: each has a fake Claude Code dock of its own for its AdmiralBot, so two chats never share a transcript or a cue. */
+/** More, then Preferences, then the section named in its group: a fleet's by the fleet's name, else the all-fleets group. On a phone the nav is a list that a page replaces, so a page already open is left through its Back. */
+export async function openPreferences(page: Page, opts: { fleet?: string; section: string }) {
+  await page.getByRole('button', { name: 'More', exact: true }).tap();
+  await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Preferences', exact: true }).tap();
+  const nav = page.getByRole('navigation', { name: 'Preferences' });
+  await expect(page).toHaveURL(/\/app\/preferences\//);
+  if (!(await nav.isVisible())) {
+    await preferencesBack(page).tap();
+    await expect(nav).toBeVisible();
+  }
+  const group = nav.getByRole('group', { name: opts.fleet ? `${opts.fleet} fleet` : 'Admiral · all fleets' });
+  await group.getByRole('link', { name: opts.section, exact: true }).tap();
+}
+
+/** The phone Preferences page's way back to the list. */
+export const preferencesBack = (page: Page) => page.getByRole('main').getByRole('button', { name: /^Back/ }).or(page.getByRole('main').getByRole('link', { name: /^Back/ })).first();
+
+/** Fully on screen, and the topmost thing at its centre is the control itself, so nothing (the tab bar) covers it. */
+export async function expectReachable(page: Page, control: Locator) {
+  await expect(control).toBeInViewport({ ratio: 1 });
+  const box = (await control.boundingBox())!;
+  const covered = await control.evaluate((el, [x, y]) => {
+    const top = document.elementFromPoint(x, y);
+    return !top || !(el === top || el.contains(top));
+  }, [box.x + box.width / 2, box.y + box.height / 2]);
+  expect(covered, 'nothing covers the control').toBe(false);
+}
+
+/** A finger's tap at the control's centre: unlike `locator.tap()` it does not scroll anything into view first. */
+export async function touchTap(page: Page, control: Locator) {
+  const box = (await control.boundingBox())!;
+  await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+}
+
+/** The fleets `seedFleets(a, { chat: true })` adds after zulu and alpha:each has a fake Claude Code dock of its own for its AdmiralBot, so two chats never share a transcript or a cue. */
 export const CHAT_FLEETS = [
   { key: 'harbor', name: 'Harborlight' },
   { key: 'lagoon', name: 'Lagoonside' },

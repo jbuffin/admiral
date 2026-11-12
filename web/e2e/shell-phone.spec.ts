@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { HOME, HOSTILE, TS_LOGIN, TS_NAME, WORK, fakeTailscale, setRemote, stubClipboard, boatReceived, changeFile, changesOf, chip, diffOf, expectSeededTurn, gitCheckout, holds, interruptButton, launchCrew, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedInboxItem, seedTurn, sendButton, sentBubble, setReason, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, chatReceived, chatSays, chatSession, chatStarts } from './shell';
+import { HOME, HOSTILE, TS_LOGIN, TS_NAME, WORK, fakeTailscale, setRemote, stubClipboard, boatReceived, changeFile, changesOf, chip, diffOf, expectSeededTurn, gitCheckout, holds, interruptButton, launchCrew, launchFromTheShell, launchShip, line, messageBox, outcomeEvents, paneSize, received, rowLink, say, seedBoatTranscript, seedFleets, seedInboxItem, seedTurn, sendButton, sentBubble, setReason, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, chatReceived, chatSays, chatSession, chatStarts, expectReachable, openPreferences, preferencesBack, touchTap } from './shell';
 
 const tab = (page: Page, name: string) => page.getByRole('navigation').getByRole('link', { name, exact: true });
 
@@ -162,15 +162,50 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   expect(watch.errors).toEqual([]);
 });
 
-test('on the phone, Remote access opens from More through Preferences', async ({ page, admiral }) => {
-  seedFleets(admiral);
+test('on the phone, Preferences lists its pages, each page opens fully on screen with a Back to the list, and its controls can be tapped', async ({ page, admiral }) => {
+  // Four fleets put the Harborlight group well down the list, where a page used to be squeezed out.
+  seedFleets(admiral, { chat: true });
   await admiral.start();
   await page.goto(admiral.url + 'app/inbox');
-  await page.getByRole('button', { name: 'More', exact: true }).tap();
-  await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Preferences', exact: true }).tap();
-  await page.getByRole('navigation', { name: 'Preferences' }).getByRole('link', { name: 'Remote access' }).tap();
+  const heading = (name: string) => page.getByRole('heading', { name, exact: true });
+
+  await openPreferences(page, { section: 'Remote access' });
   await expect(page).toHaveURL(/\/app\/preferences\/admiral\/remote/);
-  await expect(page.getByRole('heading', { name: 'Remote access', exact: true })).toBeVisible();
+  await expect(heading('Remote access')).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole('group', { name: 'Tailscale' }).getByRole('button').first()).toBeInViewport({ ratio: 1 });
+
+  // New code sits below Tailscale and the allowed logins: scrolled in, it must be uncovered and take a finger.
+  const newCode = page.getByRole('button', { name: 'New code', exact: true });
+  await newCode.scrollIntoViewIfNeeded();
+  await expectReachable(page, newCode);
+  const code = page.locator('.pair-code');
+  const first = await code.textContent();
+  expect(first).toBeTruthy();
+  await touchTap(page, newCode);
+  await expect.poll(() => code.textContent()).not.toBe(first);
+
+  // Back returns to the list from a page.
+  const back = preferencesBack(page);
+  const size = (await back.boundingBox())!;
+  expect(size.height).toBeGreaterThanOrEqual(44);
+  expect(size.width).toBeGreaterThanOrEqual(44);
+  await back.tap();
+  await expect(page.getByRole('navigation', { name: 'Preferences' })).toBeInViewport();
+  await expect(heading('Remote access')).toBeHidden();
+
+  await openPreferences(page, { fleet: 'Harborlight', section: 'Fleet' });
+  await expect(page).toHaveURL(/\/app\/preferences\/harbor\/fleet/);
+  await expect(heading('Fleet')).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole('textbox', { name: 'Search root 1' })).toBeInViewport({ ratio: 1 });
+
+  // Harborlight has no order source, so its page offers Add source.
+  await openPreferences(page, { fleet: 'Harborlight', section: 'Order sources' });
+  await expect(page).toHaveURL(/\/app\/preferences\/harbor\/sources/);
+  await expect(heading('Order sources')).toBeInViewport({ ratio: 1 });
+  const add = page.getByRole('button', { name: 'Add source', exact: true });
+  await expectReachable(page, add);
+  await touchTap(page, add);
+  await expect(page.getByRole('group', { name: 'Add source' })).toBeVisible();
 });
 
 test('on the phone, the Inbox lists a question item and a needs-you stop from two fleets, each with its fleet, and the stop leaves live once its ship is back underway', async ({ page, admiral }) => {
@@ -261,6 +296,10 @@ test("on the phone, the Chat tab shows the fleet's AdmiralBot conversation and i
   await tab(page, 'Chat').tap();
   const main = page.getByRole('main');
   await expect(page.getByRole('heading', { name: 'AdmiralBot · Harborlight fleet' })).toBeVisible();
+  // The title keeps the fleet's name, with the header's two buttons beside it.
+  expect(await page.locator('.chat-title-text').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await expect(main.getByRole('button', { name: 'Open terminal', exact: true }).first()).toBeVisible();
+  await expect(main.getByRole('button', { name: 'New chat', exact: true })).toBeVisible();
   await expect(main).toContainText('Where are the ships');
   await expect(main.locator('strong', { hasText: 'afloat' })).toBeVisible();
   await expect(main.getByText('Inbox · All fleets · oldest first')).toHaveCount(0);
@@ -287,14 +326,11 @@ test("on the phone, a fleet's AdmiralBot page shows its harness, model, effort a
   seedFleets(admiral, { chat: true });
   await admiral.start();
   await page.goto(admiral.url + 'app/inbox');
-  await page.getByRole('button', { name: 'More', exact: true }).tap();
-  await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Preferences', exact: true }).tap();
-  const group = page.getByRole('navigation', { name: 'Preferences' }).getByRole('group', { name: 'Harborlight fleet' });
-  await group.getByRole('link', { name: 'AdmiralBot', exact: true }).tap();
+  await openPreferences(page, { fleet: 'Harborlight', section: 'AdmiralBot' });
   await expect(page).toHaveURL(/\/app\/preferences\/harbor\/admiralbot/);
-  await expect(page.getByRole('heading', { name: 'AdmiralBot', exact: true })).toBeVisible();
-
   const pick = (g: string, name: string) => page.getByRole('radiogroup', { name: g }).getByRole('radio', { name, exact: true });
+  await expect(page.getByRole('heading', { name: 'AdmiralBot', exact: true })).toBeInViewport({ ratio: 1 });
+  await expectReachable(page, pick('Harness', 'Claude'));
   await expect(pick('Harness', 'Claude')).toBeChecked();
   await expect(pick('Model', 'Sonnet')).toBeChecked();
   await expect(pick('Effort', 'Default')).toBeChecked();
