@@ -98,9 +98,7 @@ func claudeChatSettings() any {
 	}}
 }
 
-// https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-hooks-reference and
-// https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference
-// don't say what --plugin-dir expects, so loading a plugin from a directory is unconfirmed.
+// Copilot 1.0.109 loads this plugin from --plugin-dir and runs these hooks, as its session-state events show.
 func copilotHooks() any {
 	entry := func(matcher, event string) map[string]any {
 		e := map[string]any{"type": "command", "bash": hookCommand(event)}

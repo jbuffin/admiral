@@ -15,7 +15,9 @@ import (
 	"github.com/jbuffin/admiral/internal/probes"
 )
 
-// Event shapes as the real `copilot -p … --output-format json` prints them (an MCP tool is toolName "<server>-<tool>" with mcpServerName and mcpToolName).
+// Event and log shapes as the real Copilot 1.0.109 prints them (an MCP tool is toolName "<server>-<tool>" with mcpServerName and mcpToolName).
+// An unfenced run, asked for a shell, a web fetch and a sub-agent, printed the tool.execution_start lines below with no mcpServerName, and no
+// permission.* event or disabled-tools list in the -p stream.
 var (
 	// copilotEvents are the JSONL lines the fake prints; the shapes stand for what Copilot emits.
 	copilotEvents = struct {
@@ -23,35 +25,42 @@ var (
 		shell    string
 		web      string
 		subAgent string
+		patch    string
 		toolCall func(server, tool string) string
 	}{
 		reply: func(text string) string {
 			return `{"type":"assistant.message","data":{"content":"` + text + `"}}`
 		},
-		shell:    `{"type":"tool.execution_start","data":{"toolName":"bash"}}`,
-		web:      `{"type":"tool.execution_start","data":{"toolName":"web_fetch"}}`,
-		subAgent: `{"type":"tool.execution_start","data":{"toolName":"task"}}`,
+		shell:    `{"type":"tool.execution_start","data":{"toolCallId":"call_F69c","toolName":"bash","arguments":{"command":"touch x"},"turnId":"1","model":"gpt-5.6-luna","toolTitle":"Running command"}}`,
+		web:      `{"type":"tool.execution_start","data":{"toolCallId":"call_h6Rs","toolName":"web_fetch","arguments":{"url":"https://example.com","max_length":2000},"turnId":"2","model":"gpt-5.6-luna","toolTitle":"Fetching web content"}}`,
+		subAgent: `{"type":"tool.execution_start","data":{"toolCallId":"call_z40a","toolName":"task","arguments":{"description":"Create sentinel file","agent_type":"task"},"turnId":"2","model":"gpt-5.6-luna"}}`,
+		patch:    `{"type":"tool.execution_start","data":{"toolCallId":"custom_call_XjCD","toolName":"apply_patch","arguments":"*** Begin Patch\n*** End Patch\n","turnId":"1","model":"gpt-5.6-luna","toolTitle":"Applying patch"}}`,
 		toolCall: func(server, tool string) string {
 			return `{"type":"tool.execution_start","data":{"toolName":"` + server + `-` + tool + `","mcpServerName":"` + server + `","mcpToolName":"` + tool + `"}}`
 		},
 	}
 	// copilotProbeHomeFiles are the files a probe may put in its throwaway home before it runs (the login is in the Keychain).
-	copilotProbeHomeFiles []string
+	copilotProbeHomeFiles = []string{"copilot-instructions.md"}
 	// copilotProbeBareFlags and copilotProbeFlagValues are the fence flags the probe's argv must carry.
-	copilotProbeBareFlags  = []string{"--disable-builtin-mcps", "--no-ask-user"}
-	copilotProbeFlagValues = map[string]string{"--allow-tool": "probe", "--output-format": "json"}
+	copilotProbeBareFlags  = []string{"--disable-builtin-mcps", "--no-ask-user", "--disallow-temp-dir", "--sync-session=off"}
+	copilotProbeFlagValues = map[string]string{"--allow-tool": "probe", "--output-format": "json", "--log-level": "all"}
 	// copilotProbeEnvDropped are the variables a probe must not pass on, from Admiral's env or the dock's.
 	copilotProbeEnvDropped = []string{"COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN", "COPILOT_PROVIDER_BASE_URL",
 		"COPILOT_PROVIDER_API_KEY", "COPILOT_PROVIDERS_CONFIG", "COPILOT_SKILLS_DIRS", "COPILOT_CUSTOM_INSTRUCTIONS_DIRS", "COPILOT_ALLOW_ALL"}
 	// Each mode's per-probe detail text: the probe says why it failed in these words (lower case match).
 	copilotFenceFailDetail = map[string]string{
-		"shell-ran":   "shell",
-		"shell-event": "bash",
-		"web":         "web_fetch",
-		"sub-agent":   "task",
-		"other-tool":  "other",
-		"no-call":     "never called",
-		"error":       "copilot failed: boom: not logged in",
+		"shell-ran":    "shell",
+		"shell-event":  "bash",
+		"patch":        "apply_patch",
+		"tools-sent":   "sent tools other",
+		"no-log":       "log does not say",
+		"permission":   "permission",
+		"foreign-hook": "hook other",
+		"web":          "web_fetch",
+		"sub-agent":    "task",
+		"other-tool":   "other",
+		"no-call":      "never called",
+		"error":        "copilot failed: boom: not logged in",
 	}
 	copilotHomeFailDetail = map[string]string{
 		"login-failed": "login",
@@ -70,6 +79,7 @@ if [ "$1" = "--version" ]; then echo "${FAKE_VERSION:-GitHub Copilot CLI 9.9.9}"
 log=$PROBE_FAKE_LOG
 mkdir -p "$log"
 printf '%s\0' "$@" >"$log/argv"
+logdir=""
 env >"$log/env"
 printf '%s' "$COPILOT_HOME" >"$log/copilot-home"
 ls -A "$COPILOT_HOME" >"$log/home-listing"
@@ -77,6 +87,18 @@ text=$(printf '%s\n' "$@")
 for a in "$@"; do case "$a" in @*) text="$text $(cat "${a#@}" 2>/dev/null)";; esac; done
 dir=$(echo "$text" | sed -n 's/.*ADMIRAL_PROBE_DIR"\{0,1\} *[:=] *"\([^"]*\)".*/\1/p' | head -n1)
 nonce=$(echo "$text" | sed -n 's/.*ADMIRAL_PROBE_NONCE"\{0,1\} *[:=] *"\([^"]*\)".*/\1/p' | head -n1)
+while [ $# -gt 0 ]; do case "$1" in --log-dir) logdir=$2;; esac; shift; done
+if [ -n "$dir" ] && [ -n "$logdir" ] && [ "$PROBE_FAKE_MODE" != no-log ]; then
+  mkdir -p "$logdir"
+  extra=""
+  [ "$PROBE_FAKE_MODE" = tools-sent ] && extra='"bash:aaaa1111", '
+  printf '2026-11-12T23:31:45.619Z [DEBUG] [rust:model_wire] Wire request: {\n  "initiator": "user",\n  "copilotToolsFingerprint": {\n    "count": 1,\n    "deferred": 0,\n    "digest": "14fcc048",\n    "canonicalDigest": "b87850dc",\n    "tools": [\n      %s"probe-ping:42282fc8"\n    ]\n  }\n}\n' "$extra" >"$logdir/process-1.log"
+fi
+if [ -n "$dir" ]; then
+  mkdir -p "$COPILOT_HOME/session-state/s1"
+  echo '{"type":"hook.start","data":{"hookInvocationId":"0e80","hookType":"sessionStart"}}' >"$COPILOT_HOME/session-state/s1/events.jsonl"
+  [ "$PROBE_FAKE_MODE" = foreign-hook ] && echo '{"type":"hook.start","data":{"hookInvocationId":"0e81","hookType":"sessionEnd"}}' >>"$COPILOT_HOME/session-state/s1/events.jsonl"
+fi
 case "$PROBE_FAKE_MODE" in
 error) echo "boom: not logged in" >&2; exit 3 ;;
 login-failed) echo "Error: not logged in, run copilot login" >&2; exit 1 ;;
@@ -114,6 +136,10 @@ func stageCopilotProbe(t *testing.T, log, mode string) {
 	switch mode {
 	case "shell-ran", "shell-event":
 		fence = append([]string{e.shell}, fence...)
+	case "patch":
+		fence = append([]string{e.patch}, fence...)
+	case "permission":
+		fence = append([]string{`{"type":"permission.requested","data":{"toolName":"bash"}}`}, fence...)
 	case "web":
 		fence = append([]string{e.web}, fence...)
 	case "sub-agent":
@@ -250,6 +276,11 @@ func TestCopilotFenceProbeRunsNonInteractiveJSONWithTheChatsFenceAndNotTheDocksA
 		}
 	}
 	joined := strings.Join(argv, "\n")
+	for _, f := range []string{"--plugin-dir", "--log-dir", "--excluded-tools="} {
+		if !strings.Contains(joined, f) {
+			t.Errorf("argv = %q lacks %s: the probe runs in the chat's configuration", argv, f)
+		}
+	}
 	if !strings.Contains(joined, "ADMIRAL_PROBE_DIR") {
 		t.Errorf("argv = %q carries no probe MCP server (--additional-mcp-config)", argv)
 	}

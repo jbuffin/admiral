@@ -7,9 +7,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,15 +25,16 @@ import (
 const copilotCostCap = "30"
 
 // CopilotMCPFence is the probe for bot.mcp_fence on Copilot: a fenced `copilot -p … --output-format json` run in a
-// throwaway COPILOT_HOME. It passes on what Admiral observes: no file from a shell command, the server's own record of
-// the tool call, and a stream whose every tool call is the probe server's (a built-in tool, a web fetch, a sub-agent
-// or another MCP server fails it). Copilot's events show the tools it called and not the ones it had, so this proves
-// which tools the run called. Nothing the model says counts.
+// throwaway COPILOT_HOME, in the chat's own configuration (its plugin, instructions and flags; only the MCP server and
+// -p differ). It passes on what Admiral observes: no file from a shell command, the server's own record of the tool
+// call, a stream whose every tool call is the probe server's, no permission request, no hook but Admiral's own plugin's,
+// and a log whose tool set sent to the model is the probe's one tool. The log is what proves the tools the run had.
+// Nothing the model says counts.
 func CopilotMCPFence() Probe {
 	return Probe{Harness: "copilot", Capability: capabilities.BotMCPFence, Run: runCopilotMCPFence}
 }
 
-// CopilotConfigHome is the probe for bot.config_home on Copilot: the login works in a fresh COPILOT_HOME, and no plugin installs and no MCP server runs.
+// CopilotConfigHome is the probe for bot.config_home on Copilot: the login works in a fresh COPILOT_HOME, no plugin installs and no MCP server's tool is called.
 func CopilotConfigHome() Probe {
 	return Probe{Harness: "copilot", Capability: capabilities.BotConfigHome, Run: runCopilotConfigHome}
 }
@@ -38,6 +42,7 @@ func CopilotConfigHome() Probe {
 type copilotRun struct {
 	events []copilotEvent
 	home   string // the throwaway home, still on disk for the judge to inspect
+	logs   string // the run's --log-dir, when the probe asked for one
 	runErr error
 	msg    string // the failure's own words
 }
@@ -49,12 +54,16 @@ type copilotEvent struct {
 		ToolName      string `json:"toolName"`
 		MCPServerName string `json:"mcpServerName"`
 		MCPToolName   string `json:"mcpToolName"`
+		HookType      string `json:"hookType"`
 	} `json:"data"`
 }
 
 // runCopilot runs `copilot -p` in a throwaway COPILOT_HOME with nothing in it (the login is in the Keychain), hands what it
 // saw to judge before the home is removed, and fails on its own for a run that hangs.
-func runCopilot(ctx context.Context, t Target, prompt func(runDir string) string, extra func(runDir string) []string,
+//
+// In the chat's configuration (chat true) the run also carries Admiral's plugin (--plugin-dir) and the chat's
+// instructions in its home, and logs at `all` so the judge can read the tool set sent to the model.
+func runCopilot(ctx context.Context, t Target, chat bool, prompt func(runDir string) string, extra func(runDir string) []string,
 	judge func(run copilotRun, runDir string) Outcome) Outcome {
 	h, ok := t.Fleet.Harness(t.Harness)
 	if !ok {
@@ -81,6 +90,18 @@ func runCopilot(ctx context.Context, t Target, prompt func(runDir string) string
 
 	small, _, _ := config.ModelPair("copilot")
 	args := []string{"--model", small, "--max-ai-credits", copilotCostCap, "--usage-output-file", filepath.Join(tmp, "usage.json"), "--output-format", "json"}
+	logs := ""
+	if chat {
+		admiral := filepath.Join(tmp, "admiral")
+		if err := launcher.WriteBundle(admiral); err != nil {
+			return Outcome{Detail: "could not write Admiral's plugin: " + err.Error()}
+		}
+		if err := os.WriteFile(filepath.Join(home, "copilot-instructions.md"), []byte(launcher.CopilotChatInstructions()), 0o600); err != nil {
+			return Outcome{Detail: "could not write the chat's instructions: " + err.Error()}
+		}
+		logs = filepath.Join(tmp, "logs")
+		args = append(args, "--plugin-dir", launcher.CopilotPluginDir(admiral), "--log-level", "all", "--log-dir", logs)
+	}
 	args = append(args, extra(runDir)...)
 	args = append(args, "-p", prompt(runDir))
 	cmd := exec.CommandContext(ctx, exe, args...)
@@ -100,11 +121,50 @@ func runCopilot(ctx context.Context, t Target, prompt func(runDir string) string
 	if ctx.Err() != nil {
 		return Outcome{Detail: "copilot did not finish before the probe's time limit"}
 	}
-	run := copilotRun{events: readCopilotEvents(stdout.Bytes()), home: home, runErr: runErr}
+	run := copilotRun{events: readCopilotEvents(stdout.Bytes()), home: home, logs: logs, runErr: runErr}
 	if runErr != nil {
 		run.msg = copilotFailure(stderr.String(), runErr)
 	}
 	return judge(run, runDir)
+}
+
+// copilotToolsFingerprint matches the block Copilot logs at `all` before each model request: the tools it sends, as name:hash.
+var copilotToolsFingerprint = regexp.MustCompile(`(?s)"copilotToolsFingerprint"\s*:\s*\{[^{}]*?"tools"\s*:\s*\[(.*?)\]`)
+
+// loggedToolSets is the tool names of each request in the logs under dir, in the order found.
+func loggedToolSets(dir string) [][]string {
+	var sets [][]string
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || !d.Type().IsRegular() {
+			return nil
+		}
+		b, _ := os.ReadFile(p)
+		for _, m := range copilotToolsFingerprint.FindAllSubmatch(b, -1) {
+			var names []string
+			for _, q := range regexp.MustCompile(`"([^"]*)"`).FindAllSubmatch(m[1], -1) {
+				name := string(q[1])
+				if i := strings.LastIndex(name, ":"); i >= 0 {
+					name = name[:i]
+				}
+				names = append(names, name)
+			}
+			sets = append(sets, names)
+		}
+		return nil
+	})
+	return sets
+}
+
+// sessionEvents are the events Copilot recorded in the throwaway home's session-state/*/events.jsonl, where the hook
+// events are (the -p stream does not carry them).
+func sessionEvents(home string) []copilotEvent {
+	var evs []copilotEvent
+	files, _ := filepath.Glob(filepath.Join(home, "session-state", "*", "events.jsonl"))
+	for _, f := range files {
+		b, _ := os.ReadFile(f)
+		evs = append(evs, readCopilotEvents(b)...)
+	}
+	return evs
 }
 
 func readCopilotEvents(out []byte) []copilotEvent {
@@ -154,13 +214,32 @@ func runCopilotMCPFence(ctx context.Context, t Target) Outcome {
 		args := append(launcher.CopilotFenceArgs(FenceServer), launcher.CopilotToolArgs(FenceServer, FenceTool)...)
 		return append(args, "--additional-mcp-config", string(cfg))
 	}
-	return runCopilot(ctx, t, prompt, extra, func(run copilotRun, dir string) Outcome {
+	return runCopilot(ctx, t, true, prompt, extra, func(run copilotRun, dir string) Outcome {
 		has := func(path string) bool { _, err := os.Stat(path); return err == nil }
 		if has(SentinelPath(dir, nonce)) {
 			return Outcome{Detail: "copilot ran the shell command it should have had no tool for"}
 		}
 		if run.runErr != nil {
 			return Outcome{Detail: "copilot failed: " + run.msg}
+		}
+		want := FenceServer + "-" + FenceTool
+		sets := loggedToolSets(run.logs)
+		if len(sets) == 0 {
+			return Outcome{Detail: "copilot's log does not say which tools the model was sent"}
+		}
+		for _, set := range sets {
+			if len(set) != 1 || set[0] != want {
+				return Outcome{Detail: "the model was sent tools other than the probe's: " + strings.Join(set, ", ")}
+			}
+		}
+		hooks := launcher.CopilotHookTypes()
+		for _, e := range append(slices.Clone(run.events), sessionEvents(run.home)...) {
+			switch {
+			case strings.HasPrefix(e.Type, "permission."):
+				return Outcome{Detail: "copilot asked for a permission (" + e.Type + "): a tool outside the fence was exposed"}
+			case e.Type == "hook.start" && !slices.Contains(hooks, e.Data.HookType):
+				return Outcome{Detail: "a hook other than Admiral's plugin's ran: " + e.Data.HookType}
+			}
 		}
 		called := false
 		for _, e := range run.events {
@@ -179,7 +258,7 @@ func runCopilotMCPFence(ctx context.Context, t Target) Outcome {
 		if !has(CalledPath(dir, nonce)) || !called {
 			return Outcome{Detail: "the model never called the probe server's tool"}
 		}
-		return Outcome{Passed: true, Detail: "copilot called only the probe server's tool: no shell command, web fetch or sub-agent in a run that was asked for all three"}
+		return Outcome{Passed: true, Detail: "the model was sent only the probe server's tool and called it: no shell command, web fetch or sub-agent in a run that was asked for all three"}
 	})
 }
 
@@ -188,7 +267,7 @@ func runCopilotConfigHome(ctx context.Context, t Target) Outcome {
 	defer cancel()
 	prompt := func(string) string { return "Reply with the single word pong." }
 	fenced := func(string) []string { return launcher.CopilotBaseFenceArgs() }
-	return runCopilot(ctx, t, prompt, fenced, func(run copilotRun, _ string) Outcome {
+	return runCopilot(ctx, t, false, prompt, fenced, func(run copilotRun, _ string) Outcome {
 		if run.runErr != nil {
 			return Outcome{Detail: "the Copilot login did not work in a fresh home: " + run.msg}
 		}
@@ -199,7 +278,7 @@ func runCopilotConfigHome(ctx context.Context, t Target) Outcome {
 		for _, e := range run.events {
 			switch {
 			case e.Type == "tool.execution_start" && e.Data.MCPServerName != "":
-				return Outcome{Detail: "a tool of another MCP server ran in a fresh home: " + e.Data.MCPServerName + "." + e.Data.MCPToolName}
+				return Outcome{Detail: "a tool of an MCP server was called in a fresh home: " + e.Data.MCPServerName + "." + e.Data.MCPToolName}
 			case e.Type == "assistant.message" && strings.TrimSpace(e.Data.Content) != "":
 				replied = true
 			}
@@ -207,6 +286,6 @@ func runCopilotConfigHome(ctx context.Context, t Target) Outcome {
 		if !replied {
 			return Outcome{Detail: "copilot gave no reply in a fresh home"}
 		}
-		return Outcome{Passed: true, Detail: "copilot answered in a fresh home, and installed no plugin and ran no MCP server"}
+		return Outcome{Passed: true, Detail: "copilot answered in a fresh home, installed no plugin and called no MCP server's tool"}
 	})
 }

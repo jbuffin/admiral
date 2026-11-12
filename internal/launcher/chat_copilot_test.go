@@ -36,7 +36,7 @@ var (
 	copilotHomeAdmiralFiles = []string{"copilot-instructions.md"}
 	// copilotDroppedEnv are the variables the chat must not carry from the dock or from Admiral's own environment.
 	copilotDroppedEnv = []string{"COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN", "COPILOT_PROVIDER_BASE_URL", "COPILOT_PROVIDER_API_KEY",
-		"COPILOT_PROVIDER_TYPE", "COPILOT_PROVIDERS_CONFIG", "COPILOT_SKILLS_DIRS", "COPILOT_ALLOW_ALL"}
+		"COPILOT_PROVIDER_TYPE", "COPILOT_PROVIDERS_CONFIG", "COPILOT_SKILLS_DIRS", "COPILOT_ALLOW_ALL", "OTEL_EXPORTER_OTLP_ENDPOINT"}
 	// copilotBannedArgs are what the dock's args carry and the chat must not.
 	copilotBannedArgs = []string{"--allow-all", "--yolo", "--allow-all-tools", "--allow-all-paths", "--add-dir", "/elsewhere"}
 )
@@ -417,6 +417,10 @@ func TestCopilotChatRefusesAHomeConfigThatAddsAServerPluginHookProviderAgentOrSk
 		{"agent", "agents/evil.md", "evil"},
 		{"skill", "skills/evil/SKILL.md", "evil"},
 		{"hook file", "hooks/evil.json", `{}`},
+		{"a file Copilot does not create", "extra.json", `{}`},
+		{"unknown key in config", "config.json", `{"loggedInUsers":[],"mcpServers":{"evil":{"command":"sh"}}}`},
+		{"unknown key in settings", "settings.json", `{"model":"x","allowedUrls":["*"]}`},
+		{"config that is not an object", "config.json", `[1]`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := newCopilotChatRun(t)
@@ -444,15 +448,133 @@ func TestCopilotChatRefusesAHomeConfigThatAddsAServerPluginHookProviderAgentOrSk
 	}
 }
 
+func TestCopilotChatRefusesAHomeEntryItCannotReadOrThatIsASymlink(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		make func(t *testing.T, home string)
+	}{
+		{"symlink", func(t *testing.T, home string) {
+			target := filepath.Join(t.TempDir(), "elsewhere.json")
+			if err := os.WriteFile(target, []byte(`{}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, filepath.Join(home, "config.json")); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"unreadable", func(t *testing.T, home string) {
+			if err := os.Mkdir(filepath.Join(home, "config.json"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newCopilotChatRun(t)
+			c.start(t)
+			c.stop(t)
+			tc.make(t, c.copilotHome())
+			var rerr *Error
+			if err := c.l.StartChat("work"); !errors.As(err, &rerr) || rerr.Status != 409 || !strings.Contains(rerr.Msg, "config.json") {
+				t.Fatalf("StartChat = %v, want a 409 naming config.json", err)
+			}
+		})
+	}
+}
+
+func TestCopilotChatRefusesToStartInsideAGitWorkTree(t *testing.T) {
+	c := newCopilotChatRun(t)
+	repo := t.TempDir()
+	if err := os.Mkdir(filepath.Join(repo, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	inside := filepath.Join(repo, "admiral-home")
+	if err := os.Mkdir(inside, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteBundle(inside); err != nil {
+		t.Fatal(err)
+	}
+	installPassThroughWrapper(t, inside)
+	c.l.Home = inside
+	var rerr *Error
+	err := c.l.StartChat("work")
+	if !errors.As(err, &rerr) || rerr.Status != 409 || !strings.Contains(rerr.Msg, "git work tree at "+repo) {
+		t.Fatalf("StartChat = %v, want a 409 naming the work tree at %s", err, repo)
+	}
+	if out := c.tmuxOut(t, "list-sessions"); strings.Contains(out, sessionhost.ChatSession("work")) {
+		t.Errorf("a refused start left a session: %s", out)
+	}
+}
+
+func TestCopilotChatUnsetsWhatAnOutlivingTmuxServerHoldsGloballyThatTheFenceDrops(t *testing.T) {
+	c := newCopilotChatRun(t)
+	// A tmux server started before Admiral's, with a login and a collector in its global env, as an old run leaves it.
+	c.tmuxOut(t, "new-session", "-d", "-s", "other", "sleep 60")
+	// Names the dock and Admiral's own env do not set, so only the global rule can drop them.
+	globals := map[string]string{"GH_ENTERPRISE_TOKEN": "fake-token-global", "COPILOT_GITHUB_TOKEN_OLD": "fake-token-global-2",
+		"COPILOT_API_URL": "http://example.invalid/global", "OTEL_EXPORTER_OTLP_HEADERS": "authorization=fake-token-global-3", "KEEP_ME": "yes"}
+	for k, v := range globals {
+		if out := c.tmuxOut(t, "set-environment", "-g", k, v); out != "" {
+			t.Fatalf("set-environment %s: %s", k, out)
+		}
+	}
+	_, env := c.start(t)
+	vars := envMap(env)
+	for k := range globals {
+		if k == "KEEP_ME" {
+			if vars[k] != "yes" {
+				t.Errorf("the chat lost %s, which the fence does not drop", k)
+			}
+			continue
+		}
+		if v, ok := vars[k]; ok {
+			t.Errorf("the chat's pane has %s=%q from the tmux server's global env", k, v)
+		}
+	}
+	if vars["COPILOT_HOME"] != c.copilotHome() {
+		t.Errorf("COPILOT_HOME = %q, want the chat's own", vars["COPILOT_HOME"])
+	}
+}
+
+func TestCopilotChatExcludesEveryBuiltinToolAsASecondLayer(t *testing.T) {
+	c := newCopilotChatRun(t)
+	argv, _ := c.start(t)
+	excl, ok := flagValues(argv, "--excluded-tools")
+	if !ok {
+		t.Fatalf("argv lacks --excluded-tools: %q", argv)
+	}
+	for _, b := range []string{"bash", "apply_patch", "web_fetch", "task", "view", "edit", "create", "sql", "ask_user"} {
+		if !slices.Contains(excl, b) {
+			t.Errorf("--excluded-tools %q lacks %s", excl, b)
+		}
+	}
+	for _, e := range excl {
+		if strings.HasPrefix(e, "admiral-") {
+			t.Errorf("--excluded-tools lists the admiral tool %s", e)
+		}
+	}
+	for _, f := range []string{"--disallow-temp-dir", "--sync-session=off"} {
+		if !slices.Contains(argv, f) {
+			t.Errorf("argv lacks %s", f)
+		}
+	}
+	for _, a := range argv {
+		if strings.HasPrefix(a, "@") {
+			t.Errorf("argv carries %q: the admiral server's config goes inline, with only the token's file path", a)
+		}
+	}
+}
+
 func TestCopilotChatStartsWithTheConfigAndStateCopilotWritesItself(t *testing.T) {
 	c := newCopilotChatRun(t)
 	c.start(t)
 	c.stop(t)
 	for rel, body := range map[string]string{
-		"config.json":   `{"trustedFolders":["/x"],"loggedInUsers":[{"login":"engineer"}]}`,
+		"config.json":   "// User settings belong in settings.json.\n// This file is managed automatically.\n{\"firstLaunchAt\":\"x\",\"trustedFolders\":[\"/x\"],\"loggedInUsers\":[{\"login\":\"engineer\"}]}",
 		"settings.json": `{"model":"gpt-5.6-sol"}`,
 		"session-state/" + testSessionA + "/events.jsonl": "{}\n",
-		"logs/process.log": "x",
+		"logs/process.log":     "x",
+		"session-store.db-wal": "x", "ide/lock": "x", "servers/s": "x", "plugin-data/p": "x", "open-sessions-state.json": "{}",
 	} {
 		p := filepath.Join(c.copilotHome(), rel)
 		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {

@@ -253,7 +253,9 @@ mcpcfg=""
 prev=""
 copilotfmt=""
 copilotmcp=""
+copilotlogdir=""
 for a in "$@"; do
+  [ "$prev" = "--log-dir" ] && copilotlogdir=$a
   [ "$prev" = "--settings" ] && settings=$a
   [ "$prev" = "--additional-mcp-config" ] && copilotmcp=$a
   [ "$a" = "--output-format" ] && copilotfmt=1
@@ -456,6 +458,11 @@ if [ "$(basename "$0")" = copilot ] && [ -n "$headless" ] && [ -n "$copilotfmt" 
   if grep -q ADMIRAL_PROBE_DIR "$cfgfile"; then
     server=$(python3 -c 'import json,sys; print(next(iter(json.load(open(sys.argv[1]))["mcpServers"])))' "$cfgfile")
     mcpdrive probe "$cfgfile" >/dev/null
+    # The model request's tool set, as Copilot logs it at --log-level all: the probe's one tool.
+    if [ -n "$copilotlogdir" ]; then
+      mkdir -p "$copilotlogdir"
+      printf '[DEBUG] Wire request: {\n  "copilotToolsFingerprint": {\n    "count": 1,\n    "tools": [\n      "%s-ping:42282fc8"\n    ]\n  }\n}\n' "$server" >"$copilotlogdir/process-1.log"
+    fi
     case "$FAKE_COPILOT_PROBE" in
     shell-ran)
       dir=$(python3 -c 'import json,sys; print(next(iter(json.load(open(sys.argv[1]))["mcpServers"].values()))["env"]["ADMIRAL_PROBE_DIR"])' "$cfgfile")

@@ -24,10 +24,20 @@ func ChatCopilotHome(home, fleet string) string {
 var ChatTools = []string{"list_ships", "read_conversation", "read_outcomes", "list_inbox", "list_sources", "list_campaigns",
 	"launch_ship", "add_order", "answer_item", "next_prompt", "wake_ship", "stop_ship", "dismiss_ship", "ask_question"}
 
-// CopilotBaseFenceArgs is the fence without a server: none of the built-in MCP servers, no question to the engineer
-// and no self-update. A run in a home of its own takes it so that nothing else loads.
+// copilotExcludedTools are every built-in tool of Copilot 1.0.109 that the run's tool list could carry. --available-tools
+// already leaves them out; --excluded-tools is a second layer for a name that list somehow matches. A name the CLI does
+// not know costs a notice and nothing else.
+var copilotExcludedTools = []string{"bash", "read_bash", "stop_bash", "list_bash", "write_bash", "apply_patch", "view", "web_fetch",
+	"fetch_copilot_cli_documentation", "semantic_code_search", "skill", "run_dynamic_workflow", "dynamic_workflows_manage", "sql",
+	"session_store_sql", "read_agent", "list_agents", "write_agent", "rg", "grep", "glob", "task", "edit", "create", "write", "web_search",
+	"ask_user", "report_intent", "store_memory"}
+
+// CopilotBaseFenceArgs is the fence without a server: none of the built-in MCP servers, no question to the engineer,
+// no self-update, no implicit access to the temp dir, no sync of the session to the engineer's GitHub account (chat
+// history holds ship output) and every built-in tool excluded. A run in a home of its own takes it so that nothing else loads.
 func CopilotBaseFenceArgs() []string {
-	return []string{"--disable-builtin-mcps", "--no-ask-user", "--no-auto-update"}
+	return []string{"--disable-builtin-mcps", "--no-ask-user", "--no-auto-update", "--disallow-temp-dir", "--sync-session=off",
+		"--excluded-tools=" + strings.Join(copilotExcludedTools, ",")}
 }
 
 // CopilotFenceArgs are the flags that fence a Copilot run to the one MCP server named: the base fence and that
@@ -53,7 +63,8 @@ func CopilotEnvKept(name string) bool {
 	case "GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_HOST":
 		return false
 	}
-	return !strings.HasPrefix(name, "COPILOT_")
+	// OTEL_* would point the run's telemetry, which carries prompts, at another collector.
+	return !strings.HasPrefix(name, "COPILOT_") && !strings.HasPrefix(name, "OTEL_")
 }
 
 // copilotStaleFiles are what Copilot loads from a trusted working directory: MCP configs, hooks, agents, skills and
@@ -61,78 +72,109 @@ func CopilotEnvKept(name string) bool {
 var copilotStaleFiles = []string{".mcp.json", ".github", ".vscode", ".copilot", ".agents", ".claude", "CLAUDE.md", "CLAUDE.local.md",
 	"AGENTS.md", "GEMINI.md"}
 
-// copilotHomeRefused are the places in the chat's own home that add a server, plugin, hook, provider, agent or skill,
-// which the fence's flags do not name. What Copilot writes itself (config.json, logs, session-state and the like) is left alone.
-var copilotHomeRefused = []string{"mcp-config.json", "settings.json", "providers.json", "installed-plugins", "agents", "skills", "hooks"}
+// copilotHomeAllowed are the entries Admiral writes into the chat's own Copilot home and the ones Copilot 1.0.109
+// creates there itself. Anything else (an MCP config, a hook, a plugin, a provider, an agent, a skill) would add what
+// the fence's flags do not name, so it refuses the start.
+var copilotHomeAllowed = map[string]bool{"copilot-instructions.md": true, "config.json": true, "installed-plugins": true, "logs": true,
+	"plugin-data": true, "session-state": true, "settings.json": true, "settings.json.lock": true, "ide": true, "open-sessions-state.json": true, "servers": true}
 
-// copilotSettingsRefused are the keys of the home's settings.json that load code; the model and the like are left alone.
-var copilotSettingsRefused = []string{"hooks", "enabledPlugins", "extraKnownMarketplaces", "mcpServers", "providers"}
+// copilotHomeAllowedPrefix are the entries Copilot creates under a name that varies (SQLite's -wal and -shm files, the sidebar state).
+var copilotHomeAllowedPrefix = []string{"session-store.db", "sidebar-sessions-state"}
 
-// copilotHomeRefusal is the first entry of the chat's Copilot home that adds what the fence does not cover, or "".
+// copilotConfigKeys are the keys Copilot writes itself into config.json, and copilotSettingsKeys the ones of settings.json
+// that load nothing; any other key could add a server, hook, provider or plugin, so it refuses the start.
+var (
+	copilotConfigKeys = map[string]bool{"appInstallNudgeResponded": true, "appTipShown": true, "askedSetupTerminals": true, "firstLaunchAt": true,
+		"lastLoggedInUser": true, "loggedInUsers": true, "reasoningSummariesCleanupDone": true, "recentModelIds": true, "trustedFolders": true}
+	copilotSettingsKeys = map[string]bool{"model": true, "renderMarkdown": true}
+)
+
+// copilotHomeRefusal is the first entry of the chat's Copilot home that adds what the fence does not cover, with the
+// reason, or "".
 func copilotHomeRefusal(root *os.Root, home string) string {
-	for _, name := range copilotHomeRefused {
+	d, err := root.Open(home)
+	if err != nil {
+		return home + " (" + err.Error() + ")"
+	}
+	defer d.Close()
+	entries, err := d.ReadDir(-1)
+	if err != nil {
+		return home + " (" + err.Error() + ")"
+	}
+	for _, e := range entries {
+		name := e.Name()
 		rel := filepath.Join(home, name)
 		fi, err := root.Lstat(rel)
-		if err != nil {
-			continue
-		}
 		switch {
-		case name == "settings.json":
-			if copilotJSONHas(root, rel, copilotSettingsRefused) {
-				return name
-			}
-		case name == "mcp-config.json":
-			if copilotJSONHas(root, rel, []string{"mcpServers"}) {
-				return name
-			}
-		case fi.IsDir():
-			if es := readDirIn(root, rel); len(es) > 0 {
-				return name
-			}
-		default:
+		case err != nil:
+			return name + " (" + err.Error() + ")"
+		case fi.Mode()&os.ModeSymlink != 0:
+			return name + " (a symlink)"
+		case !copilotHomeAllowed[name] && !slices.ContainsFunc(copilotHomeAllowedPrefix, func(p string) bool { return strings.HasPrefix(name, p) }):
 			return name
+		case name == "installed-plugins" && fi.IsDir():
+			if es, err := readDirIn(root, rel); err != nil || len(es) > 0 {
+				return name + " (a plugin is installed)"
+			}
+		case name == "config.json" || name == "settings.json":
+			keys := copilotConfigKeys
+			if name == "settings.json" {
+				keys = copilotSettingsKeys
+			}
+			if key := copilotConfigRefusal(root, rel, keys); key != "" {
+				return name + " (" + key + ")"
+			}
 		}
 	}
 	return ""
 }
 
-func readDirIn(root *os.Root, rel string) []os.DirEntry {
+// readDirIn lists a directory through root; a directory that cannot be read is an error, never an empty one.
+func readDirIn(root *os.Root, rel string) ([]os.DirEntry, error) {
 	d, err := root.Open(rel)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer d.Close()
-	es, _ := d.ReadDir(-1)
-	return es
+	return d.ReadDir(-1)
 }
 
-// copilotJSONHas reports whether the JSON object at rel has a non-empty value under any of keys. A file that is not
-// an object counts, since the fence cannot tell what Copilot would take from it.
-func copilotJSONHas(root *os.Root, rel string, keys []string) bool {
+// copilotConfigRefusal says what in the JSON object at rel is not Copilot's own: a key outside keys, a file that is not
+// an object or one that cannot be read. Copilot heads config.json with // comment lines, which are skipped.
+func copilotConfigRefusal(root *os.Root, rel string, keys map[string]bool) string {
 	b, err := root.ReadFile(rel)
 	if err != nil {
-		return false
+		return err.Error()
 	}
-	var m map[string]json.RawMessage
-	if json.Unmarshal(b, &m) != nil {
-		return true
-	}
-	for _, k := range keys {
-		if v, ok := m[k]; ok && !slices.Contains([]string{"null", "{}", "[]", `""`, "false"}, strings.TrimSpace(string(v))) {
-			return true
+	var body []string
+	for _, l := range strings.Split(string(b), "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(l), "//") {
+			body = append(body, l)
 		}
 	}
-	return false
+	var m map[string]json.RawMessage
+	if json.Unmarshal([]byte(strings.Join(body, "\n")), &m) != nil {
+		return "not a JSON object"
+	}
+	for k := range m {
+		if !keys[k] {
+			return "key " + k
+		}
+	}
+	return ""
 }
 
-// prepareCopilotChat sets up the chat's own COPILOT_HOME, its instructions, its MCP config and the token file, through
+// prepareCopilotChat sets up the chat's own COPILOT_HOME, its instructions and the token file, through
 // root. Nothing of the engineer's Copilot config, plugins, hooks or sessions goes in; the login stays in the Keychain.
-func prepareCopilotChat(home, fleet, nonce, self string, serverEnv map[string]string) *Error {
+func prepareCopilotChat(home, fleet, nonce string) *Error {
 	root, err := os.OpenRoot(home)
 	if err != nil {
 		return refuse(http.StatusInternalServerError, "could not open %s: %v", home, err)
 	}
 	defer root.Close()
+	if dir := gitWorkTreeAbove(ChatDir(home, fleet)); dir != "" {
+		return refuse(http.StatusConflict, "the chat's directory %s sits inside a git work tree at %s, and Copilot would load that repo's instructions, MCP servers and hooks: set ADMIRAL_HOME outside any repository", ChatDir(home, fleet), dir)
+	}
 	rel := filepath.Join("chat", fleet)
 	for _, stale := range copilotStaleFiles {
 		if err := root.RemoveAll(filepath.Join(rel, stale)); err != nil && !os.IsNotExist(err) {
@@ -154,14 +196,30 @@ func prepareCopilotChat(home, fleet, nonce, self string, serverEnv map[string]st
 		return refuse(http.StatusInternalServerError, "could not write the chat's token: %v", err)
 	}
 	// Copilot reads this from its home whether or not the folder is trusted.
-	if err := writeChatFile(root, filepath.Join(homeRel, "copilot-instructions.md"), []byte(chatPrompt+"\n")); err != nil {
+	if err := writeChatFile(root, filepath.Join(homeRel, "copilot-instructions.md"), []byte(CopilotChatInstructions())); err != nil {
 		return refuse(http.StatusInternalServerError, "could not write the chat's instructions: %v", err)
 	}
-	cfg := map[string]MCPServer{ChatServer: {Command: self, Args: []string{"mcp"}, Env: serverEnv}}
-	if err := WriteMCPConfig(root, filepath.Join(rel, "copilot-mcp.json"), cfg); err != nil {
-		return refuse(http.StatusInternalServerError, "could not write the chat's MCP config: %v", err)
-	}
 	return nil
+}
+
+// copilotMCPConfig is the admiral server as --additional-mcp-config takes it inline. Its env names the token's file and
+// never the token, so argv shows nothing secret.
+func copilotMCPConfig(self string, serverEnv map[string]string) string {
+	raw, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{ChatServer: map[string]any{
+		"type": "local", "command": self, "args": []string{"mcp"}, "tools": []string{"*"}, "env": serverEnv}}})
+	return string(raw)
+}
+
+// gitWorkTreeAbove is the nearest directory at or above dir that holds a .git (a directory or a worktree's file), or "".
+func gitWorkTreeAbove(dir string) string {
+	for d := dir; ; d = filepath.Dir(d) {
+		if _, err := os.Lstat(filepath.Join(d, ".git")); err == nil {
+			return d
+		}
+		if filepath.Dir(d) == d {
+			return ""
+		}
+	}
 }
 
 // copilotSessionID is a new version 4 UUID: --session-id makes the transcript's directory known at start.
@@ -177,7 +235,23 @@ func copilotSessionID() (string, error) {
 
 // copilotChatArgv is the Copilot TUI's argv for the chat: the dock's executable only, never its args. The token reaches
 // the MCP server through a file named in the server's env, so neither argv nor the tmux session carries it.
-func copilotChatArgv(exe, model, effort, sessionID, home, fleet string) []string {
+// CopilotPluginDir is Admiral's Copilot plugin (the ship hooks) under an Admiral home that WriteBundle filled.
+func CopilotPluginDir(home string) string { return copilotPluginDir(home) }
+
+// CopilotChatInstructions are the chat's instructions as the home's copilot-instructions.md carries them.
+func CopilotChatInstructions() string { return chatPrompt + "\n" }
+
+// CopilotHookTypes are the hook events Admiral's own Copilot plugin registers.
+func CopilotHookTypes() []string {
+	var out []string
+	for k := range copilotHooks().(map[string]any)["hooks"].(map[string]any) {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
+}
+
+func copilotChatArgv(exe, model, effort, sessionID, home, mcpConfig string) []string {
 	argv := []string{exe, "--model", model}
 	if effort != "" {
 		argv = append(argv, "--reasoning-effort", effort)
@@ -185,5 +259,5 @@ func copilotChatArgv(exe, model, effort, sessionID, home, fleet string) []string
 	argv = append(argv, "--session-id", sessionID, "--plugin-dir", copilotPluginDir(home))
 	argv = append(argv, CopilotFenceArgs(ChatServer)...)
 	argv = append(argv, CopilotToolArgs(ChatServer, ChatTools...)...)
-	return append(argv, "--additional-mcp-config", "@"+filepath.Join(ChatDir(home, fleet), "copilot-mcp.json"))
+	return append(argv, "--additional-mcp-config", mcpConfig)
 }
