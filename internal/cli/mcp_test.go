@@ -545,3 +545,70 @@ func TestAskQuestionReportsAWithdrawnQuestion(t *testing.T) {
 		t.Errorf("result = %+v, want it to say the question was withdrawn", tr)
 	}
 }
+
+func TestALaunchSendsEveryInputItWasGivenAndOmitsTheRest(t *testing.T) {
+	a := newStandIn(t, func(mcpReq) (int, string) { return 201, `{"ship":{"session":"saltpaw"}}` })
+	a.env(t, mcpToken)
+	args := `{"dir":"/code/widget","harness":"claude","skill":"commodore","text":"fix the build","source":"notes","order_id":"o-1",` +
+		`"clone":true,"clone_repo":"jbuffin/widget","anyway":true,"chat_message":"c-9","crew":["a","b"]}`
+	if _, _, err := serve(t, call(1, "launch_ship", args)); err != nil {
+		t.Fatal(err)
+	}
+	got := a.requests()
+	if len(got) != 1 {
+		t.Fatalf("POSTs = %+v, want one", got)
+	}
+	want := map[string]any{"dir": "/code/widget", "harness": "claude", "text": "fix the build", "source": "notes", "order_id": "o-1",
+		"clone": true, "clone_repo": "jbuffin/widget", "anyway": true, "chat_message": "c-9", "crew": []any{"a", "b"}, "fleet": "work"}
+	for k, v := range want {
+		if mustJSON(got[0].Body[k]) != mustJSON(v) {
+			t.Errorf("body %s = %s, want %s", k, mustJSON(got[0].Body[k]), mustJSON(v))
+		}
+	}
+
+	b := newStandIn(t, func(mcpReq) (int, string) { return 201, `{"ship":{"session":"saltpaw"}}` })
+	b.env(t, mcpToken)
+	if _, _, err := serve(t, call(1, "launch_ship", launchArgs("commodore", ""))); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"source", "order_id", "clone", "clone_repo", "anyway", "chat_message", "crew", "issues"} {
+		if v, ok := b.requests()[0].Body[k]; ok {
+			t.Errorf("body holds %s = %v though the input was not given", k, v)
+		}
+	}
+}
+
+func TestTheClientDoesNotFollowARedirectWithTheToken(t *testing.T) {
+	var mu sync.Mutex
+	var hits []string
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hits = append(hits, r.Header.Get("X-Admiral-Actor"))
+		mu.Unlock()
+	}))
+	t.Cleanup(target.Close)
+	a := newStandIn(t, func(mcpReq) (int, string) { return 307, "" })
+	// The stand-in's mux can't set Location, so wrap its handler.
+	inner := a.srv.Config.Handler
+	a.srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Admiral-Actor") != "" {
+			w.Header().Set("Location", target.URL+"/steal")
+			w.WriteHeader(http.StatusTemporaryRedirect)
+			return
+		}
+		inner.ServeHTTP(w, r)
+	})
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, call(1, "list_ships", `{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(hits) != 0 {
+		t.Errorf("the redirect target was reached with actor %q", hits)
+	}
+	if tr := result(t, replies, "1"); !tr.IsError {
+		t.Errorf("result = %+v, want a tool error for the 3xx", tr)
+	}
+}

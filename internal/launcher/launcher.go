@@ -96,6 +96,9 @@ type Skill struct {
 	Name string `json:"name"`
 }
 
+// AutopilotCapText opens the 409 a launch gets when autopilot is at its cap; the MCP server keys its interactive relaunch on it.
+const AutopilotCapText = "autopilot is at its cap"
+
 type Error struct {
 	Status int
 	Msg    string

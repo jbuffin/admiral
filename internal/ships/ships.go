@@ -520,7 +520,7 @@ func (s *Service) admit(req launcher.Request) (release func(), lerr *launcher.Er
 		n += s.launching
 		s.mu.Unlock()
 		if n >= cfg.MaxShips {
-			return release, &launcher.Error{Status: http.StatusConflict, Msg: "autopilot is at its cap of " +
+			return release, &launcher.Error{Status: http.StatusConflict, Msg: launcher.AutopilotCapText + " of " +
 				strconv.Itoa(cfg.MaxShips) + plural(cfg.MaxShips, " ship", " ships"), Wait: WaitCap}
 		}
 	}

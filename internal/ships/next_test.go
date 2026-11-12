@@ -196,3 +196,52 @@ func TestAWakeByAnActorStampsTheWokenRecordViaAdmiralbot(t *testing.T) {
 		})
 	}
 }
+
+func TestNextRefusesAnActorsHarnessCommandButTypesItsOrdinaryText(t *testing.T) {
+	for _, text := range []string{"/compact", "  /clear", "!rm -rf x", "\n!ls"} {
+		t.Run(text, func(t *testing.T) {
+			r := newNextRig(t)
+			r.turn(t, "needs_you", "stop")
+			body, _ := json.Marshal(map[string]string{"text": text})
+			msg := wantError(t, r.next("saltpaw", string(body), "work"), http.StatusBadRequest, text)
+			if !strings.Contains(msg, "harness command") {
+				t.Errorf("error %q, want it to name the harness command", msg)
+			}
+			if got := outcomeLines(t, r.home, "saltpaw", "resumed"); len(got) != 0 {
+				t.Errorf("resumed records = %v, want none", got)
+			}
+		})
+	}
+	t.Run("the engineer's own slash command", func(t *testing.T) {
+		r := newNextRig(t)
+		r.turn(t, "needs_you", "stop")
+		if rec := r.next("saltpaw", `{"text":"/compact"}`, ""); rec.Code != http.StatusOK {
+			t.Fatalf("next = %d %s, want 200", rec.Code, rec.Body)
+		}
+	})
+	t.Run("ordinary text with a slash inside", func(t *testing.T) {
+		r := newNextRig(t)
+		r.turn(t, "needs_you", "stop")
+		if rec := r.next("saltpaw", `{"text":"edit a/b.go"}`, "work"); rec.Code != http.StatusOK {
+			t.Fatalf("next = %d %s, want 200", rec.Code, rec.Body)
+		}
+	})
+}
+
+func TestAnActorsWakeTextNeverLeadsThePrompt(t *testing.T) {
+	r := newWakeRig(t, 0)
+	r.moored(t, 0)
+	mux := http.NewServeMux()
+	r.s.Routes(mux)
+	req := httptest.NewRequest("POST", "/api/ships/saltpaw/wake", strings.NewReader(`{"text":"/clear"}`)).
+		WithContext(actor.WithFleet(context.Background(), "work"))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("wake = %d %s, want 201", rec.Code, rec.Body)
+	}
+	argv, _ := r.started(t, 1)
+	if got := prompt(argv); !strings.HasPrefix(got, "/commodore resume run-7 ") || !strings.HasSuffix(got, " /clear") {
+		t.Errorf("prompt = %q, want the ship's resume text first, so the actor's text is its argument", got)
+	}
+}

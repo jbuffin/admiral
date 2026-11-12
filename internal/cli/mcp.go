@@ -13,12 +13,17 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jbuffin/admiral/internal/launcher"
 )
 
 // mcpLatest is the protocol revision the server speaks when the client asks for one it doesn't know.
 const mcpLatest = "2025-06-18"
 
 var mcpRevisions = map[string]bool{"2024-11-05": true, "2025-03-26": true, mcpLatest: true}
+
+// mcpMaxInFlight bounds the requests served at once; a client that floods the pipe waits instead of growing the process.
+const mcpMaxInFlight = 8
 
 // mcpAskWait is how long ask_question waits for an answer before it says so and gives the id back.
 const mcpAskWait = 100
@@ -98,7 +103,9 @@ func (c *mcpClient) do(method, path string, body any, timeout time.Duration) ([]
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := (&http.Client{Timeout: timeout}).Do(req)
+	// A redirect would carry the actor token to wherever it points; a 3xx is an error answer here.
+	noRedirect := func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := (&http.Client{Timeout: timeout, CheckRedirect: noRedirect}).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -282,11 +289,13 @@ func addOrder(c *mcpClient, raw json.RawMessage) (string, error) {
 
 func launchShip(c *mcpClient, raw json.RawMessage) (string, error) {
 	var a struct {
-		Harness, Dir, Skill, Text, Source, CloneRepo, ChatMessage string
-		OrderID                                                   string `json:"order_id"`
-		Clone, Anyway                                             bool
-		WithMe                                                    bool `json:"with_me"`
-		Crew, Issues                                              []string
+		Harness, Dir, Skill, Text, Source string
+		OrderID                           string `json:"order_id"`
+		CloneRepo                         string `json:"clone_repo"`
+		ChatMessage                       string `json:"chat_message"`
+		Clone, Anyway                     bool
+		WithMe                            bool `json:"with_me"`
+		Crew, Issues                      []string
 	}
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return "", err
@@ -301,9 +310,20 @@ func launchShip(c *mcpClient, raw json.RawMessage) (string, error) {
 	}
 	autopilot := kind == "commodore" && !a.WithMe
 	body := map[string]any{
-		"fleet": c.fleet, "harness": a.Harness, "dir": a.Dir, "text": a.Text, "skill": map[string]string{"kind": kind, "name": name},
-		"source": a.Source, "order_id": a.OrderID, "clone": a.Clone, "clone_repo": a.CloneRepo, "crew": a.Crew,
-		"chat_message": a.ChatMessage, "anyway": a.Anyway, "autopilot": autopilot,
+		"fleet": c.fleet, "harness": a.Harness, "skill": map[string]string{"kind": kind, "name": name}, "autopilot": autopilot,
+	}
+	for k, v := range map[string]string{"dir": a.Dir, "text": a.Text, "source": a.Source, "order_id": a.OrderID, "clone_repo": a.CloneRepo, "chat_message": a.ChatMessage} {
+		if v != "" {
+			body[k] = v
+		}
+	}
+	for k, v := range map[string]bool{"clone": a.Clone, "anyway": a.Anyway} {
+		if v {
+			body[k] = true
+		}
+	}
+	if len(a.Crew) > 0 {
+		body["crew"] = a.Crew
 	}
 	// An order has its own issue, so the server refuses issues beside a source.
 	if len(a.Issues) > 0 {
@@ -316,7 +336,7 @@ func launchShip(c *mcpClient, raw json.RawMessage) (string, error) {
 	reason := ""
 	var he *httpError
 	// Autopilot at its cap is the one refusal worked around: a launch on the engineer's current instruction is not blocked by it.
-	if errors.As(err, &he) && autopilot && he.Status == http.StatusConflict && strings.Contains(he.Msg, "autopilot is at its cap") {
+	if errors.As(err, &he) && autopilot && he.Status == http.StatusConflict && strings.Contains(he.Msg, launcher.AutopilotCapText) {
 		reason = he.Msg + ", so the ship runs with the engineer instead"
 		body["autopilot"] = false
 		autopilot = false
@@ -411,12 +431,15 @@ func MCP(args []string, std IO) error {
 	// One call at a time would hold a ping behind a question the engineer has not answered yet.
 	var wg sync.WaitGroup
 	defer wg.Wait()
+	inFlight := make(chan struct{}, mcpMaxInFlight)
 	for {
 		line, err := in.ReadBytes('\n')
 		if line = bytes.TrimSpace(line); len(line) > 0 {
+			inFlight <- struct{}{} // past the cap, the next line waits unread
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				defer func() { <-inFlight }()
 				serveRPC(c, line, send)
 			}()
 		}

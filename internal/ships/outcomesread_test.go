@@ -85,3 +85,25 @@ func TestOutcomesCanBeNarrowedToAShipAndCappedToTheLatestFirst(t *testing.T) {
 	wantOutcomes(t, "limit=2 for work", f.readOutcomes(t, "work", "?limit=2"), "a-1 stopped", "saltpaw unmoored")
 	wantOutcomes(t, "another fleet's ship", f.readOutcomes(t, "work", "?ship=b-1"))
 }
+
+func TestAReusedShipNameKeepsEachFleetsRecordsApart(t *testing.T) {
+	f := mooredService(t, nil)
+	lines := []string{
+		`{"v":1,"ts":"2026-11-01T10:00:00Z","ship":"reuse","event":"launched","fleet":"a"}`,
+		`{"v":1,"ts":"2026-11-01T10:01:00Z","ship":"reuse","event":"stopped"}`,
+		`{"v":1,"ts":"2026-11-01T10:02:00Z","ship":"reuse","event":"launched","fleet":"b"}`,
+		`{"v":1,"ts":"2026-11-01T10:03:00Z","ship":"reuse","event":"resumed"}`,
+	}
+	dir := filepath.Join(f.home, "outcomes")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "2026-11.jsonl"), []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for fleet, want := range map[string]string{"a": "reuse launched,reuse stopped", "b": "reuse launched,reuse resumed"} {
+		if got := strings.Join(f.readOutcomes(t, fleet, ""), ","); got != want {
+			t.Errorf("fleet %s sees %q, want %q", fleet, got, want)
+		}
+	}
+}
