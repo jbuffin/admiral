@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/server"
@@ -195,4 +196,25 @@ func TestInboxRefusesAnInvalidAnswer(t *testing.T) {
 	if code := answer("q-1", both(map[string]any{"other": "something else"})); code != http.StatusOK && code != http.StatusNoContent {
 		t.Errorf("an answer by the engineer's own text alone = %d, want it taken", code)
 	}
+}
+
+func TestOnChangeFiresWhenTheListChangesAndOnChanged(t *testing.T) {
+	s, home, _ := newInbox(t)
+	calls := make(chan struct{}, 8)
+	s.OnChange = func() { calls <- struct{}{} }
+	waitCall := func(what string) {
+		t.Helper()
+		select {
+		case <-calls:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("OnChange was not called after %s", what)
+		}
+	}
+
+	writeItem(t, shipDir(t, home, "s1"), "q-1.json", question("q-1", "2026-10-22T10:00:00Z"))
+	s.Refresh()
+	waitCall("a new item and a refresh")
+
+	s.Changed()
+	waitCall("Changed")
 }

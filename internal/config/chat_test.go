@@ -213,3 +213,39 @@ func TestMigrateNoticeSaysAMalformedOldChatWasDroppedNotMoved(t *testing.T) {
 		t.Errorf("notice %q / %q claims a move when nothing moved", title, body)
 	}
 }
+
+func notifyViews(t *testing.T, m *config.Manager) map[string]bool {
+	t.Helper()
+	raw, err := json.Marshal(m.View())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		Fleets []struct {
+			Key    string `json:"key"`
+			Notify *bool  `json:"notify"`
+		} `json:"fleets"`
+	}
+	if err := json.Unmarshal(raw, &v); err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]bool{}
+	for _, f := range v.Fleets {
+		if f.Notify == nil {
+			t.Fatalf("fleet %s has no notify in the view", f.Key)
+		}
+		out[f.Key] = *f.Notify
+	}
+	return out
+}
+
+func TestFleetNotifyIsOnByDefaultAndOffWhenTheConfigSaysSo(t *testing.T) {
+	m, _ := openView(t, withFleets(`
+		"w":{"name":"W","claude":{}},
+		"v":{"name":"V","claude":{},"notify":false},
+		"u":{"name":"U","claude":{},"notify":true}`))
+	got := notifyViews(t, m)
+	if !got["w"] || got["v"] || !got["u"] {
+		t.Errorf("notify by fleet = %v, want w on (missing key), v off, u on", got)
+	}
+}
