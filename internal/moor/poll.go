@@ -34,6 +34,7 @@ type PR struct {
 	Checks    string `json:"checks"`
 	Mergeable string `json:"mergeable"`
 	Conflicts bool   `json:"conflicts"`
+	Ready     bool   `json:"ready"`
 }
 
 // View is the PR to serve. NOT_FOUND counts as closed, and a PR that is not open
@@ -87,3 +88,9 @@ func Remove(home, name string) error {
 type Unanswered struct{ URLs []string }
 
 func (e *Unanswered) Error() string { return "GitHub could not look up " + strings.Join(e.URLs, ", ") }
+
+// StackReady says whether every PR of the stack (lowest layer first) is ready, and the URL of the highest layer
+// up to which every layer is ready; upTo is empty when the lowest layer is not ready.
+func StackReady(prs []PR) (ready bool, upTo string) {
+	return false, "" // not implemented
+}

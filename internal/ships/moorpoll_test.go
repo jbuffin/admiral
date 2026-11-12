@@ -208,7 +208,7 @@ func TestAMooredShipShowsItsPRsAsOpenUntilTheFirstPollAnswers(t *testing.T) {
 func TestPollMooredServesTheChipsOnTheShip(t *testing.T) {
 	g := &pollGitHub{}
 	g.set(prSeven, moor.Status{State: "OPEN", Review: "CHANGES_REQUESTED", Checks: "FAILURE", Mergeable: "CONFLICTING"})
-	g.set(prNine, moor.Status{State: "OPEN", Review: "APPROVED", Checks: "SUCCESS", Mergeable: "MERGEABLE"})
+	g.set(prNine, moor.Status{State: "OPEN", Review: "APPROVED", Checks: "SUCCESS", Mergeable: "MERGEABLE", MergeState: "CLEAN"})
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
 	f.moor(t, "Nelson", "work", prSeven, prNine)
 
@@ -220,7 +220,7 @@ func TestPollMooredServesTheChipsOnTheShip(t *testing.T) {
 	}
 	want := []moor.PR{
 		{URL: prSeven, State: "OPEN", Review: "CHANGES_REQUESTED", Checks: "FAILURE", Mergeable: "CONFLICTING", Conflicts: true},
-		{URL: prNine, State: "OPEN", Review: "APPROVED", Checks: "SUCCESS", Mergeable: "MERGEABLE"},
+		{URL: prNine, State: "OPEN", Review: "APPROVED", Checks: "SUCCESS", Mergeable: "MERGEABLE", Ready: true},
 	}
 	for i, w := range want {
 		if sh.PRs[i] != w {
@@ -635,5 +635,41 @@ func TestSailingOffAMooredSliceShipReleasesEveryIssue(t *testing.T) {
 	}
 	if c := f.s.Claims(); c[ka] != "" || c[kb] != "" {
 		t.Errorf("Claims = %v, want neither issue held once the slice ship sailed off", c)
+	}
+}
+
+const prEleven = "https://github.com/acme/widgets/pull/11"
+
+func readyStatus() moor.Status {
+	return moor.Status{State: "OPEN", Review: "APPROVED", Checks: "SUCCESS", Mergeable: "MERGEABLE", MergeState: "CLEAN"}
+}
+
+func TestAMooredStackServesWhetherItIsReadyAndUpToWhichLayer(t *testing.T) {
+	notReady := readyStatus()
+	notReady.Checks = "PENDING"
+	for name, c := range map[string]struct {
+		layers [3]moor.Status
+		ready  bool
+		upTo   string
+	}{
+		"every layer ready":     {[3]moor.Status{readyStatus(), readyStatus(), readyStatus()}, true, prEleven},
+		"the top layer pending": {[3]moor.Status{readyStatus(), readyStatus(), notReady}, false, prNine},
+		"the lowest not ready":  {[3]moor.Status{notReady, readyStatus(), readyStatus()}, false, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := &pollGitHub{}
+			for i, u := range []string{prSeven, prNine, prEleven} {
+				g.set(u, c.layers[i])
+			}
+			f := mooredService(t, map[string]*pollGitHub{"work": g})
+			f.moor(t, "Nelson", "work", prSeven, prNine, prEleven)
+
+			f.s.PollMoored(context.Background())
+
+			sh, ok := f.ship(t, "Nelson")
+			if !ok || sh.StackReady != c.ready || sh.ReadyUpTo != c.upTo {
+				t.Errorf("ship = ready %v, up to %q; want ready %v, up to %q", sh.StackReady, sh.ReadyUpTo, c.ready, c.upTo)
+			}
+		})
 	}
 }

@@ -54,6 +54,11 @@ type Ship struct {
 	// PolledAt is the last poll that answered; Stale says the latest one failed.
 	PolledAt string `json:"polled_at,omitempty"`
 	Stale    bool   `json:"stale,omitempty"`
+	// StackReady, ReadyUpTo and MergeMethod are set on a moored ship: whether every PR is ready to merge, the
+	// URL of the highest layer up to which every layer is, and the repository's default merge method.
+	StackReady  bool   `json:"stack_ready,omitempty"`
+	ReadyUpTo   string `json:"ready_up_to,omitempty"`
+	MergeMethod string `json:"merge_method,omitempty"`
 	// NoResume is true on a moored ship whose record has no valid resume text, which cannot be woken.
 	NoResume bool `json:"no_resume,omitempty"`
 	// Waiting is why a moored ship's feedback round has not started, while one is due.
@@ -240,6 +245,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/ships/{session}/dismiss", s.serveDismiss)
 	mux.HandleFunc("POST /api/ships/{session}/unfollow", s.serveUnfollow)
 	mux.HandleFunc("POST /api/ships/{session}/wake", s.serveWake)
+	mux.HandleFunc("POST /api/ships/{session}/merge", s.serveMerge)
 	mux.HandleFunc("POST /api/moored/refresh", s.serveMooredRefresh)
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/close", s.serveCrewClose)
 	mux.HandleFunc("POST /api/ships/{session}/messages", s.serveSendInput)
