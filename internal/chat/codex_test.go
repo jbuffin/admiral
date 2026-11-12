@@ -86,9 +86,9 @@ func TestTheCodexChatReaderReadsRolloutsFromTheChatHomeOnly(t *testing.T) {
 	}
 
 	// A path under the engineer's own sessions/ is not the chat's: it is refused, as a path outside the config dir is.
-	t.Setenv("CODEX_HOME", t.TempDir())
-	theirs := writeAt(t, filepath.Join(os.Getenv("CODEX_HOME"), "sessions", "2026", "rollout-theirs.jsonl"), codexRollout(t))
-	s2 := harnessService(t, codexChatFleets, fakeProbes{})
+	eng := t.TempDir()
+	theirs := writeAt(t, filepath.Join(eng, "sessions", "2026", "rollout-theirs.jsonl"), codexRollout(t))
+	s2 := harnessService(t, strings.Replace(codexChatFleets, "/srv/fake-codex-identity", eng, 1), fakeProbes{})
 	codexChatHome(t, s2)
 	if got := servedFromFile(t, s2, "b", theirs); len(got) != 0 {
 		t.Errorf("a rollout in the engineer's sessions/ serves %v, want nothing", got)

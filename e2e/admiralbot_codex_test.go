@@ -22,6 +22,16 @@ import (
 //   - the cue `mcp <name>` also works for Codex: it takes the server from the -c flags or $CODEX_HOME/config.toml.
 //   - the cue `codexreply <text>`: appends the engineer's message and an assistant line holding <text> to a rollout
 //     under $CODEX_HOME/sessions, then sets the pane's @admiral-transcript to it, as the SessionStart hook would.
+//     It also writes the `usage` cue's token_count line, answers every pasted message like Claude's `reply`, and
+//     appends every byte it reads to `stdin`.
+//
+// codexFenceKeys, the probes' and the launcher's fence tables, and the literals below are one placeholder: the real
+// Codex keys change in all three places together.
+
+// codexResetCommand is what New chat types into a running Codex chat (placeholder; Claude's is /clear).
+const codexResetCommand = "/new"
+
+const codexStdinReset = codexResetCommand + "\r"
 
 func newCodexBotWorld(t *testing.T, probe string) (*chatWorld, string) {
 	t.Helper()
@@ -40,7 +50,8 @@ func newCodexBotWorld(t *testing.T, probe string) (*chatWorld, string) {
 	if err := os.MkdirAll(w.home, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	env := map[string]string{"FAKE_RECORD_DIR": w.rec, "FAKE_CUE": w.cue, "CODEX_HOME": eng, "FAKE_CODEX_PROBE": probe}
+	env := map[string]string{"FAKE_RECORD_DIR": w.rec, "FAKE_CUE": w.cue, "CODEX_HOME": eng, "FAKE_CODEX_PROBE": probe,
+		"ADMIRAL_SHIP": "stray-ship", "ADMIRAL_REPORT": "/stray/report"}
 	cfg := map[string]any{"version": 1, "fleets": map[string]any{
 		"chat": map[string]any{"name": "Chat", "search_roots": []string{w.work},
 			"codex": map[string]any{"executable": w.fakeExe("codex"), "args": []string{"--fa-chat", "--dangerously-bypass-approvals-and-sandbox"}, "env": env},
@@ -162,6 +173,18 @@ func TestAdmiralBot_CodexChatStartsOnlyOnceBothProbesPassAndIsFenced(t *testing.
 		c.waitSession(15*time.Second, "the assistant's reply from the chat home's rollout", func(s chatSession) bool {
 			return slices.Contains(texts(s.Messages), "assistant: Two ships are at anchor.")
 		})
+	})
+
+	t.Run("New chat resets with Codex's own command and records the chat's usage", func(t *testing.T) {
+		if code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/new", nil); code != http.StatusOK {
+			t.Fatalf("POST /api/chat/chat/new = %d, want 200: %s", code, body)
+		}
+		c.waitStdinOneOf(codexStdinReset, "\x1b[200~"+codexResetCommand+"\x1b[201~\r")
+		got := lastOf(w.waitEvent(chatSessionName, "usage", 1), "usage")
+		tokens, _ := got["tokens"].(map[string]any)
+		if got["fleet"] != "chat" || got["harness"] != "codex" || tokens == nil || tokens["input"] == 0.0 {
+			t.Errorf("the chat's usage record = %v, want fleet chat, harness codex and the rollout's token figures", got)
+		}
 	})
 }
 
