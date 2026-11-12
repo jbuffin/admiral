@@ -601,3 +601,7 @@ button.pill { cursor: pointer; min-height: 32px; }
 .crew-warnings { margin: 0 0 12px; padding-left: 18px; }
 .crew .back-link { display: inline-flex; margin-bottom: 8px; }
 .crew-form input[type='checkbox'] { width: 22px; height: 22px; }
+.panel.crew.split { display: flex; flex-direction: column; overflow: hidden; }
+.panel.crew.split .crew-grid { flex: 1; min-height: 0; grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+.panel.crew.split .crew-list, .panel.crew.split .crew-pane { overflow: auto; min-height: 0; }
+.crew-note-stamp { font-size: var(--font-size-meta); color: var(--color-muted); }

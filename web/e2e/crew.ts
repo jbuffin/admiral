@@ -10,6 +10,15 @@ function write(path: string, text: string) {
   writeFileSync(path, text);
 }
 
+/** Adds `count` more built-in members, mate01 and on, so the list outgrows the screen. Call after `seedCrew`, before `start`. */
+export function seedManyBuiltIns(a: Admiral, count: number) {
+  const crew = join(a.home, 'identity', 'zulu-claude', 'skills', 'commodore', 'crew');
+  for (let i = 1; i <= count; i++) {
+    const name = `mate${String(i).padStart(2, '0')}`;
+    write(join(crew, `${name}.md`), member(name, 'implementer', `Pick for chore ${name}.`));
+  }
+}
+
 /**
  * Westwind's crew: built-in scout and lookout under the claude dock's Commodore; fleet members ada (codex), bosun, cook and dory,
  * and a fleet lookout that customizes the built-in one. Call before `start`.

@@ -132,9 +132,20 @@ export function memberBody(f: MemberForm): MemberBody {
   return body;
 }
 
-/** Which input a 400 belongs beside; an error naming no input of the form goes to the top. */
-export function fieldError(e: { error: string; field?: string }): { field: string | null; message: string } {
-  return { field: e.field && FORM_FIELDS.includes(e.field) ? e.field : null, message: e.error };
+/** The form inputs on screen for a role: Based on only for a custom role, no skills or instructions for the fix checker. */
+export function shownFields(role: string): string[] {
+  return FORM_FIELDS.filter((f) => (f !== 'based-on' || role === CUSTOM_ROLE) && (role !== 'fix-checker' || (f !== 'skills' && f !== 'instructions')));
+}
+
+/** Which input a 400 belongs beside; an error naming no input on screen goes to the top. */
+export function fieldError(e: { error: string; field?: string }, shown: string[] = FORM_FIELDS): { field: string | null; message: string } {
+  return { field: e.field && shown.includes(e.field) ? e.field : null, message: e.error };
+}
+
+/** A note is "<date> (<run>): <fact>" and the notes route edits only the fact, keeping the stamp; a line with no stamp is all fact. */
+export function splitNote(note: string): { stamp: string; fact: string } {
+  const at = note.indexOf('): ');
+  return at < 0 ? { stamp: '', fact: note } : { stamp: note.slice(0, at + 2), fact: note.slice(at + 3) };
 }
 
 export interface Scope {

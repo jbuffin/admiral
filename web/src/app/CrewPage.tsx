@@ -20,6 +20,8 @@ import {
   noteCount,
   normalizeCrew,
   scopesOf,
+  shownFields,
+  splitNote,
   type CrewData,
   type CrewMember,
   type MemberForm,
@@ -87,7 +89,7 @@ function Group({ id, title, empty, members, selected }: { id: string; title: str
         {title} <span class="count">{members.length}</span>
       </h2>
       {members.length === 0 ? (
-        <p class="muted">{empty}</p>
+        empty ? <p class="muted">{empty}</p> : null
       ) : (
         <ul class="ship-list">
           {members.map((m) => (
@@ -129,7 +131,7 @@ function EditForm({ member, fleetKey, harness, onDone, onSaved }: { member: Crew
     setErr(null);
     const r = await call('PUT', crewApi(fleetKey, harness, `/members/${encodeURIComponent(member.name)}`), memberBody(f));
     if (!r.ok) {
-      setErr(fieldError(r));
+      setErr(fieldError(r, shownFields(f.role)));
       setBusy(false);
       return;
     }
@@ -145,7 +147,7 @@ function EditForm({ member, fleetKey, harness, onDone, onSaved }: { member: Crew
       ) : null}
       {member.customized ? (
         <p class="note">
-          Role{custom ? ' and based on' : ''} come from the built-in {member.name}, so they stay as they are.
+          {custom ? 'Role and based on come' : 'Role comes'} from the built-in {member.name}, so they stay as they are.
         </p>
       ) : null}
       <Field label="Role" error={at('role')}>
@@ -195,6 +197,7 @@ function EditForm({ member, fleetKey, harness, onDone, onSaved }: { member: Crew
           {(a) => (
             <select {...a} value={f.harness} onChange={set('harness')}>
               <option value="">none</option>
+              {f.harness && !HARNESSES.includes(f.harness) ? <option value={f.harness}>{f.harness}</option> : null}
               {HARNESSES.map((h) => (
                 <option key={h} value={h}>
                   {h}
@@ -274,6 +277,7 @@ function NoteItem({ text, scope, notes, mode, setMode, busy, error, run }: { tex
   if (mode?.kind === 'edit') {
     return (
       <li class="crew-note editing">
+        {splitNote(text).stamp ? <span class="crew-note-stamp">{splitNote(text).stamp}</span> : null}
         <textarea aria-label="Note text" rows={2} value={mode.text} onInput={(e) => setMode({ kind: 'edit', text: (e.currentTarget as HTMLTextAreaElement).value })} />
         {error ? <p class="note error">{error}</p> : null}
         <div class="crew-actions">
@@ -317,7 +321,7 @@ function NoteItem({ text, scope, notes, mode, setMode, busy, error, run }: { tex
     <li class="crew-note">
       <span class="crew-note-text">{text}</span>
       <span class="crew-actions">
-        <button type="button" class="btn quiet" aria-label="Edit note" disabled={busy} onClick={() => setMode({ kind: 'edit', text })}>
+        <button type="button" class="btn quiet" aria-label="Edit note" disabled={busy} onClick={() => setMode({ kind: 'edit', text: splitNote(text).fact })}>
           Edit
         </button>
         <button type="button" class="btn quiet" aria-label="Move note" disabled={busy} onClick={() => setMode({ kind: 'move', to: moveChoices(notes, scope)[0].value, typed: '' })}>
@@ -335,14 +339,17 @@ function NoteItem({ text, scope, notes, mode, setMode, busy, error, run }: { tex
 function NoteScopes({ member, notes, regions, fleetKey, harness, reload }: { member: string; notes: Notes; regions: boolean; fleetKey: string; harness: string; reload: () => Promise<void> }) {
   const [open, setOpen] = useState<{ key: string; text: string; mode: NoteMode } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [raised, setRaised] = useState<{ message: string; seen: string } | null>(null);
   const uid = useId();
+  const seen = JSON.stringify(notes);
+  // An error holds only while the notes are the ones it was raised on; a reload that changes them supersedes it.
+  const error = raised && raised.seen === seen ? raised.message : '';
   const run = async (body: object) => {
     setBusy(true);
-    setError('');
+    setRaised(null);
     const r = await call('POST', crewApi(fleetKey, harness, '/notes'), { member, ...body });
     if (!r.ok) {
-      setError(r.status === 409 ? 'That note changed or the scope is full, so the notes are reloaded. Try again.' : r.error);
+      setRaised({ message: r.status === 409 ? 'That note changed or the scope is full, so the notes are reloaded. Try again.' : r.error, seen });
       if (r.status === 409) {
         setOpen(null);
         await reload();
@@ -368,7 +375,7 @@ function NoteScopes({ member, notes, regions, fleetKey, harness, reload }: { mem
           <ul class="crew-notes">
             {s.notes.map((text, i) => {
               const mine = open?.key === s.key && open.text === text;
-              return <NoteItem key={`${i}:${text}`}text={text} scope={s} notes={notes} mode={mine ? open!.mode : null} setMode={(m) => setOpen(m ? { key: s.key, text, mode: m } : null)} busy={busy} error={mine ? error : ''} run={run} />;
+              return <NoteItem key={`${i}:${text}`} text={text} scope={s} notes={notes} mode={mine ? open!.mode : null} setMode={(m) => setOpen(m ? { key: s.key, text, mode: m } : null)} busy={busy} error={mine ? error : ''} run={run} />;
             })}
           </ul>
         );
@@ -516,7 +523,7 @@ function Unclaimed({ data, fleetKey, harness, reload }: { data: CrewData; fleetK
       <h2 id="crew-unclaimed" class="group-head">
         Unclaimed notes
       </h2>
-      <p class="muted">Notes whose member is no longer in this fleet.</p>
+      <p class="muted">Notes no built-in or fleet member uses.</p>
       {data.unclaimed.map((u) => (
         <div key={u.member} class="crew-unclaimed">
           <h3>{u.member}</h3>
@@ -597,7 +604,7 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
   );
 
   return (
-    <main class="panel crew">
+    <main class={`panel crew${showList && showDetail ? ' split' : ''}`}>
       {heading}
       {failed ? (
         <p class="alert" role="alert">
@@ -634,8 +641,8 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
           <div class="crew-list">
             {dock}
             {data.members.length === 0 && data.errors.length === 0 ? <p class="line">No crew members yet.</p> : null}
-            <Group id="crew-fleet" title={groups[0].title} empty="No fleet members yet." members={groups[0].members} selected={name} />
-            <Group id="crew-built-in" title={groups[1].title} empty="No built-in members here." members={groups[1].members} selected={name} />
+            <Group id="crew-fleet" title={groups[0].title} empty={data.errors.length > 0 ? '' : 'No fleet members yet.'} members={groups[0].members} selected={name} />
+            <Group id="crew-built-in" title={groups[1].title} empty={data.errors.length > 0 ? '' : 'No built-in members here.'} members={groups[1].members} selected={name} />
             <Unclaimed data={data} fleetKey={fleet.key} harness={harness} reload={load} />
           </div>
         ) : null}
@@ -644,7 +651,7 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
             {phone || !selected ? back : null}
             {selected ? (
               <Detail
-                key={selected.name}
+                key={`${harness}:${selected.name}`}
                 member={selected}
                 fleetKey={fleet.key}
                 harness={harness}

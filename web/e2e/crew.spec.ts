@@ -89,10 +89,18 @@ test('on the iPad, a person reads the crew by layer, customizes a built-in, edit
   await expect(scope(/^This fleet\b/)).toContainText('ada reads the grammar first');
   await expect(scope(/^acme\/api\b/)).toContainText('ada runs make check');
   await press(noteRow('ada keeps handlers thin').getByRole('button', { name: 'Edit note' }));
-  await main.getByRole('textbox', { name: 'Note text' }).fill('ada keeps handlers thin and typed');
+  const noteText = main.getByRole('textbox', { name: 'Note text' });
+  await expect(noteText).toHaveValue('ada keeps handlers thin');
+  await noteText.press('End');
+  await noteText.pressSequentially(' and typed');
   await press(main.getByRole('button', { name: 'Save', exact: true }));
   await expect(scope(/^acme\/api\b/)).toContainText('ada keeps handlers thin and typed');
   await expect(scope(/^acme\/api\b/)).not.toContainText(/handlers thin(?! and typed)/);
+  // The date and run are kept once, on the page and in the file.
+  await expect(scope(/^acme\/api\b/)).not.toContainText(/\): 2026-11-10/);
+  const repoNotes = readFileSync(join(admiral.home, 'fleets', 'zulu', 'crew', 'memory', 'ada', 'repos', 'acme', 'api.md'), 'utf8');
+  expect(repoNotes).toContain('- 2026-11-10 (run-b): ada keeps handlers thin and typed\n');
+  expect(repoNotes.match(/2026-11-10 \(run-b\): ada keeps handlers thin/g)).toHaveLength(1);
 
   // Move the fleet note to the repo, then delete one of the repo's notes.
   await press(noteRow('ada reads the grammar first').getByRole('button', { name: 'Move note' }));

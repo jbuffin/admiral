@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CUSTOM_ROLE, fieldError, groupMembers, memberBody, type CrewMember, type MemberForm } from './crew';
+import { CUSTOM_ROLE, fieldError, groupMembers, memberBody, shownFields, splitNote, type CrewMember, type MemberForm } from './crew';
 
 const member = (name: string, layer: 'built-in' | 'fleet', customized = false): CrewMember => ({
   name,
@@ -74,5 +74,29 @@ describe('fieldError', () => {
   it('puts an error with no field, or one the form has no input for, at the top of the form', () => {
     expect(fieldError({ error: 'no good' })).toEqual({ field: null, message: 'no good' });
     expect(fieldError({ error: 'no good', field: 'name' })).toEqual({ field: null, message: 'no good' });
+  });
+});
+
+describe('fieldError for an input that is not on screen', () => {
+  it('goes to the top of the form for Based on on a built-in role and for the fix checker', () => {
+    expect(fieldError({ error: 'no good', field: 'based-on' }, shownFields('implementer'))).toEqual({ field: null, message: 'no good' });
+    expect(fieldError({ error: 'too big', field: 'instructions' }, shownFields('fix-checker'))).toEqual({ field: null, message: 'too big' });
+    expect(fieldError({ error: 'no good', field: 'skills' }, shownFields('fix-checker'))).toEqual({ field: null, message: 'no good' });
+  });
+  it('still lands beside Based on for a custom role and beside Instructions for other roles', () => {
+    expect(fieldError({ error: 'no good', field: 'based-on' }, shownFields(CUSTOM_ROLE))).toEqual({ field: 'based-on', message: 'no good' });
+    expect(fieldError({ error: 'too big', field: 'instructions' }, shownFields('implementer'))).toEqual({ field: 'instructions', message: 'too big' });
+  });
+});
+
+describe('splitNote', () => {
+  it('splits the date and run from the fact, which is all an edit sends', () => {
+    expect(splitNote('2026-11-10 (run-b): ada keeps handlers thin')).toEqual({ stamp: '2026-11-10 (run-b):', fact: 'ada keeps handlers thin' });
+  });
+  it('splits at the first stamp end, leaving a later one in the fact', () => {
+    expect(splitNote('2026-11-10 (run-b): see foo (bar): baz')).toEqual({ stamp: '2026-11-10 (run-b):', fact: 'see foo (bar): baz' });
+  });
+  it('edits a hand-written line with no stamp whole', () => {
+    expect(splitNote('ada keeps handlers thin')).toEqual({ stamp: '', fact: 'ada keeps handlers thin' });
   });
 });
