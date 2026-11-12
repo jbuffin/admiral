@@ -52,7 +52,7 @@ func TestClaudeRecordedSample(t *testing.T) {
 }
 
 func TestClaudeExistingFixtureSumsModels(t *testing.T) {
-	f, err := ParseClaude(strings.NewReader(sample(t, "../conversation/testdata/claude-sample.jsonl")))
+	f, err := ParseClaude(strings.NewReader(sample(t, "../../conversation/testdata/claude-sample.jsonl")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestCodexRecordedSample(t *testing.T) {
 }
 
 func TestCodexExistingFixtureLastTokenCountWinsUsingTotals(t *testing.T) {
-	f, err := ParseCodex(strings.NewReader(sample(t, "../conversation/testdata/codex-sample.jsonl")))
+	f, err := ParseCodex(strings.NewReader(sample(t, "../../conversation/testdata/codex-sample.jsonl")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestCopilotRecordedShutdown(t *testing.T) {
 
 func TestCopilotExistingFixtureHasNoFigures(t *testing.T) {
 	// Its usage lines are scrubbed to {"scrubbed":true}: nothing to read.
-	if _, err := ParseCopilot(strings.NewReader(sample(t, "../conversation/testdata/copilot-sample.jsonl"))); !errors.Is(err, ErrNoFigures) {
+	if _, err := ParseCopilot(strings.NewReader(sample(t, "../../conversation/testdata/copilot-sample.jsonl"))); !errors.Is(err, ErrNoFigures) {
 		t.Errorf("err = %v, want ErrNoFigures", err)
 	}
 }
