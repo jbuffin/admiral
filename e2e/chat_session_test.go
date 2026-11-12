@@ -699,7 +699,7 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 		!reflect.DeepEqual(got["money"], map[string]any{"amount": 0.5, "basis": "estimate", "incomplete": false}) {
 		t.Errorf("the chat's usage record = %v, want fleet chat, claude, 7 in 3 out, 0.5 estimate", got)
 	}
-	time.Sleep(time.Second)
+	time.Sleep(1500 * time.Millisecond) // a second record would land by now
 	usages := 0
 	for _, m := range w.shipLog(chatSessionName) {
 		if m["event"] == "usage" {
