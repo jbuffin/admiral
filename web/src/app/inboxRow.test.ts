@@ -12,6 +12,7 @@ const fleet = (key: string, name: string, extra: Partial<Fleet> = {}): Fleet => 
   ink: '#000',
   search_roots: [],
   owners: [],
+  wake_reviewers: [],
   clone_root: '',
   can_launch: true,
   docks: [],
