@@ -8,7 +8,7 @@ import { bridgeSearch } from './peekLink';
 import { keyAction, keyHint } from './peekKeys';
 import { peekKey } from './peekLink';
 import { entryAge, fleetLabel, rowShip, rowVerb } from './inboxRow';
-import { go, loc, peekOf, peekPath, shipPath, surfacePath } from './router';
+import { go, loc, peekOf, peekPath, type PeekTarget, shipPath, surfacePath } from './router';
 import { inboxItems, inboxLoaded, ships, shipsLoaded } from './shipsLink';
 import { emptyLine, type Surface } from './surfaces';
 
@@ -33,7 +33,7 @@ const targetOf = (e: Entry) => ({ session: e.session, ...(e.type === 'merge' ? {
 // What an entry asks of you: an answer to a stop, a question or a merge; the rest is a review.
 const needsAnswer = (e: Entry) => e.type !== 'item' || ANSWER.has(e.item!.kind);
 
-export function Row({ e, now, phone, selected, fold }: { e: Entry; now: number; phone: boolean; selected: boolean; fold: (text: string) => void }) {
+export function Row({ e, now, phone, selected, fold, peekHref }: { e: Entry; now: number; phone: boolean; selected: boolean; fold: (text: string) => void; peekHref?: (t: PeekTarget) => string | null }) {
   const [open, setOpen] = useState(false);
   const [dismissing, setDismissing] = useState(false);
   const [error, setError] = useState('');
@@ -51,7 +51,8 @@ export function Row({ e, now, phone, selected, fold }: { e: Entry; now: number; 
   const title = e.item?.title ?? (e.crew ? '' : ship?.title ?? '');
   const age = entryAge(e, now);
   const search = fleetSearch.value;
-  const href = peekPath(targetOf(e));
+  const target: PeekTarget = targetOf(e);
+  const href = peekHref?.(target) ?? peekPath(target);
   const body = (
     <>
       {fleet && phone ? <span class="ship-bar" style={{ background: fleet.fill }} aria-hidden="true" /> : null}
@@ -149,6 +150,27 @@ export function useInboxQueue() {
   return { queue, entries, now, rerender: () => setRev((n) => n + 1) };
 }
 
+/** The entry a Peek path opens, and the fold that closes it. */
+export function usePeekEntry(peek: PeekTarget | null, entries: Entry[], queue: ReturnType<typeof createInboxQueue>, rerender: () => void, leave: () => void) {
+  const key = peek ? peekKey(peek) : '';
+  const open = peek ? entries.find((e) => e.key === key) : undefined;
+  const ready = peek ? (peek.item !== undefined ? inboxLoaded.value : shipsLoaded.value) : false;
+  // The entry as last seen: an answer's push can reach the page before its response, and the fold still needs the entry.
+  const seen = useRef<Entry | undefined>(undefined);
+  if (open) seen.current = open;
+  const known = seen.current?.key === key ? seen.current : undefined;
+  // Peek closes as soon as its entry folds or leaves the queue, and the list shows the fold. A path whose entry never arrived stays open.
+  const closing = peek !== null && ready && (open ? open.folded !== null : known !== undefined);
+  useEffect(() => {
+    if (closing) leave();
+  }, [closing]);
+  const foldKey = (k: string, text: string) => {
+    queue.fold(k, text, Date.now(), known?.key === k ? known : undefined);
+    rerender();
+  };
+  return { open, closing, foldKey };
+}
+
 export function InboxPanel({ surface, title, phone }: { surface: Surface; title: boolean; phone: boolean }) {
   const stacked = useStacked(phone);
   const { queue, entries, now, rerender } = useInboxQueue();
@@ -159,24 +181,8 @@ export function InboxPanel({ surface, title, phone }: { surface: Surface; title:
   ].filter((g) => g.rows.length > 0);
 
   const peek = peekOf(loc.value.path);
-  const key = peek ? peekKey(peek) : '';
-  const open = peek ? entries.find((e) => e.key === key) : undefined;
-  const ready = peek ? (peek.item !== undefined ? inboxLoaded.value : shipsLoaded.value) : false;
   const search = fleetSearch.value;
-  // The entry as last seen: an answer's push can reach the page before its response, and the fold still needs the entry.
-  const seen = useRef<Entry | undefined>(undefined);
-  if (open) seen.current = open;
-  const known = seen.current?.key === key ? seen.current : undefined;
-  // Peek closes as soon as its entry folds or leaves the queue, and the list shows the fold. A path whose entry never arrived stays open.
-  const closing = peek !== null && ready && (open ? open.folded !== null : known !== undefined);
-  useEffect(() => {
-    if (closing) go(surfacePath(surface), search, true);
-  }, [closing]);
-
-  const foldKey = (k: string, text: string) => {
-    queue.fold(k, text, Date.now(), known?.key === k ? known : undefined);
-    rerender();
-  };
+  const { open, closing, foldKey } = usePeekEntry(peek, entries, queue, rerender, () => go(surfacePath(surface), search, true));
   const detail = open && !closing ? <Peek key={open.key} entry={open} fold={(text) => foldKey(open.key, text)} /> : null;
 
   // Rows that open a Peek, in the order the list shows them.

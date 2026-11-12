@@ -13,9 +13,10 @@ import (
 	"time"
 
 	"github.com/jbuffin/admiral/internal/inbox"
+	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
-// Chat questions are read the way a ship's inbox directory is, and never reach the inbox.
+// Chat questions are read the way a ship's inbox directory is, and the inbox lists the waiting ones.
 
 const maxQuestions = 20
 
@@ -262,6 +263,7 @@ func (s *fleetChat) withdraw() {
 	s.cmu.Lock()
 	s.qs, s.qAt = nil, time.Time{}
 	s.cmu.Unlock()
+	s.questionsChanged()
 }
 
 func (s *fleetChat) removeAll() {
@@ -281,14 +283,36 @@ func (s *fleetChat) removeAll() {
 	}
 }
 
-// serveAnswer writes no outcome record and queues no resume text: the chat is not a ship.
-func (s *fleetChat) serveAnswer(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	var req inbox.QuestionRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
-		return
+// WaitingQuestions are the unanswered questions of every fleet whose chat is on, as inbox items.
+func (s *Service) WaitingQuestions() []inbox.Item {
+	cfg := s.Config()
+	var out []inbox.Item
+	for _, fc := range s.onFleets() {
+		f, _ := cfg.Fleet(fc.key)
+		for _, q := range fc.questions(false) {
+			if len(q.Answer) > 0 {
+				continue
+			}
+			it := q.Item
+			it.Name, it.Fleet, it.FleetName, it.FleetColor = "AdmiralBot", fc.key, f.Name, f.Color
+			out = append(out, it)
+		}
 	}
+	return out
+}
+
+// AnswerQuestion is the one way a chat question is answered, from the chat or from the Inbox. A
+// session that is not a configured fleet's chat has no such question.
+func (s *Service) AnswerQuestion(session, id string, req inbox.QuestionRequest) error {
+	key, ok := sessionhost.ChatFleetOfSession(session)
+	if _, known := s.Config().Fleet(key); !ok || !known {
+		return inbox.ErrNotFound
+	}
+	return s.chat(key).answer(id, req)
+}
+
+// answer writes no outcome record and queues no resume text: the chat is not a ship.
+func (s *fleetChat) answer(id string, req inbox.QuestionRequest) error {
 	s.qmu.Lock()
 	err := func() error {
 		dir, err := s.openQuestions()
@@ -301,11 +325,23 @@ func (s *fleetChat) serveAnswer(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 	s.qmu.Unlock()
+	if err == nil {
+		s.questions(true)
+		s.broadcast()
+	}
+	return err
+}
+
+func (s *fleetChat) serveAnswer(w http.ResponseWriter, r *http.Request) {
+	var req inbox.QuestionRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
+		return
+	}
+	err := s.answer(r.PathValue("id"), req)
 	var bad *inbox.InvalidError
 	switch {
 	case err == nil:
-		s.questions(true)
-		s.broadcast()
 		writeJSON(w, http.StatusOK, map[string]bool{"answered": true})
 	case errors.Is(err, inbox.ErrNotFound):
 		writeError(w, http.StatusNotFound, "no such chat question")

@@ -22,6 +22,7 @@ import { ships, shipsLoaded } from './shipsLink';
 import { SURFACES } from './surfaces';
 import { type AnswerBody, answeredQuestion, blankDraft, choose, foldText, pickOf, type Draft } from '../questions';
 
+const isChatSession = (session: string) => session.startsWith('_chat');
 const inboxSurface = SURFACES.find((s) => s.id === 'inbox')!;
 /** The open Peek's answer to a key the Inbox heard; the Inbox owns the listener. */
 export const peekKeys: { current: ((a: KeyAct) => void) | null } = { current: null };
@@ -59,7 +60,8 @@ function ShipTurn({ ship, boat, fleetKey, item, children }: { ship: Ship; boat?:
   );
 }
 
-export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => void }) {
+/** back leaves Peek for the surface that opened it; the Inbox when none is given. */
+export function Peek({ entry, fold, back }: { entry: Entry; fold: (text: string) => void; back?: { href: string; go: () => void } }) {
   const ship = ships.value.find((s) => s.session === entry.session);
   const boat = entry.crew ? ship?.crew.find((b) => b.name === entry.crew!.name) : undefined;
   const fleetKey = entry.fleet?.key ?? ship?.fleet;
@@ -153,11 +155,11 @@ export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => vo
       <div class="peek-head">
         <a
           class="back-link"
-          href={surfacePath(inboxSurface) + fleetSearch.value}
+          href={back?.href ?? surfacePath(inboxSurface) + fleetSearch.value}
           onClick={(e) => {
             if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
             e.preventDefault();
-            toList();
+            (back?.go ?? toList)();
           }}
         >
           Back
@@ -203,7 +205,7 @@ export function Peek({ entry, fold }: { entry: Entry; fold: (text: string) => vo
         ) : (
           <>
             {form}
-            {shipsLoaded.value && !admiral ? <p class="line">This ship is gone.</p> : null}
+            {shipsLoaded.value && !admiral && !isChatSession(entry.session) ? <p class="line">This ship is gone.</p> : null}
           </>
         )}
       </div>

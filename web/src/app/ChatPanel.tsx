@@ -3,8 +3,9 @@ import { useLayoutEffect, useRef } from 'preact/hooks';
 import { activeFleet, fleetPaint, fleetSearch } from './fleets';
 import type { Fleet } from './api';
 import { resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
-import { Row, useInboxQueue, useStacked } from './InboxPanel';
-import { go, chatSettingsPath } from './router';
+import { Row, useInboxQueue, usePeekEntry, useStacked } from './InboxPanel';
+import { Peek } from './Peek';
+import { go, loc, chatPeekOf, chatPeekPath, chatSettingsPath } from './router';
 import { renderMarkdown } from './markdown';
 import { PeekQuestions } from './PeekQuestions';
 import { useChat } from './useChat';
@@ -124,8 +125,21 @@ function Conversation({ fleet, head }: { fleet: string; head: (action: Component
   );
 }
 
-function ChatRail() {
+/** The Inbox beside the chat; an item opened from it shows in Peek in its place, so the chat stays. */
+function ChatRail({ fleet }: { fleet: Fleet }) {
   const { queue, entries, now, rerender } = useInboxQueue();
+  const peek = chatPeekOf(loc.value.path);
+  const search = fleetSearch.value;
+  const chatHref = `/app/chat`;
+  const leave = () => go(chatHref, search, true);
+  const { open, closing, foldKey } = usePeekEntry(peek, entries, queue, rerender, leave);
+  if (open && !closing) {
+    return (
+      <aside class="chat-rail chat-peek" aria-label="Inbox">
+        <Peek key={open.key} entry={open} fold={(text) => foldKey(open.key, text)} back={{ href: chatHref + search, go: () => go(chatHref, search) }} />
+      </aside>
+    );
+  }
   return (
     <aside class="chat-rail" aria-label="Inbox">
       <h2 class="rail-title">Inbox · All fleets · oldest first</h2>
@@ -140,10 +154,8 @@ function ChatRail() {
               now={now}
               phone={false}
               selected={false}
-              fold={(text) => {
-                queue.fold(e.key, text, Date.now(), undefined);
-                rerender();
-              }}
+              peekHref={(t) => (t.item !== undefined ? chatPeekPath(fleet.key, t.session, t.item) : null)}
+              fold={(text) => foldKey(e.key, text)}
             />
           ))}
         </ul>
@@ -199,7 +211,7 @@ export function ChatPanel({ surface, title, phone }: { surface: Surface; title: 
           </>
         )}
       </div>
-      {stacked ? null : <ChatRail />}
+      {stacked ? null : <ChatRail fleet={fleet} />}
     </main>
   );
 }

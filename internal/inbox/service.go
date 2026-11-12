@@ -9,12 +9,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/server"
+	"github.com/jbuffin/admiral/internal/sessionhost"
 	"github.com/jbuffin/admiral/internal/state"
 )
 
@@ -48,6 +50,10 @@ type Service struct {
 	TypeResume func(session, text string) (afloat, typed bool, err error)
 	// LaunchProposal starts a feedback round for a wake proposal.
 	LaunchProposal LaunchProposalFunc
+	// ChatQuestions lists the waiting AdmiralBot chat questions, named and tagged with their fleet.
+	ChatQuestions func() []Item
+	// AnswerChat answers a chat question where the chat keeps it; the inbox has no copy.
+	AnswerChat func(session, id string, req QuestionRequest) error
 
 	answerMu sync.Mutex        // one answer at a time
 	actMu    sync.Mutex        // guards acting
@@ -88,8 +94,17 @@ func (s *Service) List() []Item {
 			}
 		}
 	}
+	if s.ChatQuestions != nil {
+		if qs := s.ChatQuestions(); len(qs) > 0 {
+			items = append(items, qs...)
+			sort.SliceStable(items, func(i, j int) bool { return before(items[i], items[j]) })
+		}
+	}
 	return items
 }
+
+// Changed sends the list to every client, for a change the inbox does not watch for itself.
+func (s *Service) Changed() { s.broadcast() }
 
 func (s *Service) message() any { return map[string]any{"type": "inbox", "items": s.List()} }
 
@@ -155,6 +170,14 @@ func decode(w http.ResponseWriter, r *http.Request, max int64, v any) bool {
 // discard, and findings by findings.
 func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	session, id := r.PathValue("session"), r.PathValue("id")
+	if s.AnswerChat != nil && sessionhost.IsChatSession(session) {
+		var req QuestionRequest
+		if !decode(w, r, 256<<10, &req) {
+			return
+		}
+		respond(w, session, id, ReviewResult{}, s.AnswerChat(session, id, req))
+		return
+	}
 	it, err := s.open(session, id)
 	if err == nil && it.Kind != KindQuestion {
 		err = invalid("item %s is a %s: answer it with %s", id, it.Kind, map[string]string{KindReview: "submit or discard", KindFindings: "findings", KindCrewNotes: "crew-notes", KindCrewMember: "crew-member"}[it.Kind])

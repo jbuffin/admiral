@@ -966,9 +966,13 @@ test("the Chat surface shows the fleet's AdmiralBot history beside the Inbox rai
 test("AdmiralBot's own waiting question is in the chat's rail, opens in Peek beside the chat, and answering there marks the card answered", async ({ page, admiral }) => {
   seedFleets(admiral, { live: true, chat: true });
   await admiral.start({ env: withFakeGh(admiral) });
-  chatAsks(admiral, 'harbor', 'q1', 'Which panel?', ['Freeform', 'Work queue']);
   await page.goto(admiral.url + 'app/chat?fleet=harbor');
   const main = page.getByRole('main');
+  // Opening the chat starts it, and a start withdraws the questions waiting: ask once the start is over.
+  await expect
+    .poll(async () => ((await (await page.request.get(admiral.url + 'api/v1/chat/harbor/session')).json()) as { running?: boolean }).running)
+    .toBe(true);
+  chatAsks(admiral, 'harbor', 'q1', 'Which panel?', ['Freeform', 'Work queue']);
   const rail = main.getByRole('listitem').filter({ hasText: 'AdmiralBot' }).filter({ hasText: 'Which panel?' });
   await expect(rail).toHaveCount(1, { timeout: 15_000 });
   await rail.getByRole('link').tap();

@@ -66,6 +66,8 @@ type Service struct {
 	LastLive func(session string) (usage.Figures, bool)
 	// ForgetLive drops a chat's live figures once a reset record has read them.
 	ForgetLive func(session string)
+	// OnQuestions runs when a chat's questions may have changed, for the Inbox that lists them.
+	OnQuestions func()
 
 	logOnce sync.Once
 	log     *chatlog.Log
@@ -228,6 +230,13 @@ func (s *fleetChat) broadcastIf(send bool) {
 	m := s.message()
 	if send {
 		s.Hub.BroadcastOnce("chat:"+s.key, func() any { return m })
+		s.questionsChanged()
+	}
+}
+
+func (s *Service) questionsChanged() {
+	if s.OnQuestions != nil {
+		s.OnQuestions()
 	}
 }
 
