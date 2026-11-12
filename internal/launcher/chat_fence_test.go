@@ -81,7 +81,7 @@ func (c *chatRun) start(t *testing.T) (argv []string, env string) {
 
 func (c *chatRun) stop(t *testing.T) {
 	t.Helper()
-	if out, err := exec.Command(c.tmux, "-S", c.sock, "kill-session", "-t", "="+sessionhost.ChatSession("work")).CombinedOutput(); err != nil {
+	if out, err := exec.Command(c.tmux, "-S", c.sock, "kill-session", "-t", "="+sessionhost.ChatSession("work")+":").CombinedOutput(); err != nil {
 		t.Fatalf("kill-session: %v: %s", err, out)
 	}
 	if err := os.RemoveAll(c.rec); err != nil {
@@ -214,7 +214,7 @@ func TestChatMCPConfigNamesOnlyAdmiralMCPWithThisExecutableAndTheChatsEnv(t *tes
 		t.Errorf("args = %q, want [mcp]", srv.Args)
 	}
 
-	nonce := strings.TrimSpace(c.tmuxOut(t, "show-options", "-t", "="+sessionhost.ChatSession("work"), "-qv", "@"+sessionhost.ChatNonceOpt))
+	nonce := strings.TrimSpace(c.tmuxOut(t, "show-options", "-t", "="+sessionhost.ChatSession("work")+":", "-qv", sessionhost.Prefix+sessionhost.ChatNonceOpt))
 	m, err := actor.NewMinter(c.home)
 	if err != nil {
 		t.Fatal(err)
@@ -251,16 +251,16 @@ func TestChatTokenReachesOnlyTheMCPConfig(t *testing.T) {
 		"argv":                  strings.Join(argv, "\x00"),
 		"the chat's env":        env,
 		"the settings file":     string(settingsRaw),
-		"tmux session env":      c.tmuxOut(t, "show-environment", "-t", "="+sessionhost.ChatSession("work")),
+		"tmux session env":      c.tmuxOut(t, "show-environment", "-t", "="+sessionhost.ChatSession("work")+":"),
 		"tmux global env":       c.tmuxOut(t, "show-environment", "-g"),
-		"tmux session options":  c.tmuxOut(t, "show-options", "-t", "="+sessionhost.ChatSession("work")),
+		"tmux session options":  c.tmuxOut(t, "show-options", "-t", "="+sessionhost.ChatSession("work")+":"),
 		"tmux global options":   c.tmuxOut(t, "show-options", "-g"),
-		"tmux window options":   c.tmuxOut(t, "show-options", "-w", "-t", "="+sessionhost.ChatSession("work")),
+		"tmux window options":   c.tmuxOut(t, "show-options", "-w", "-t", "="+sessionhost.ChatSession("work")+":"),
 		"tmux server options":   c.tmuxOut(t, "show-options", "-s"),
 		"the chat's own env":    c.tmuxOut(t, "show-environment"),
-		"the pane's start cmd":  c.tmuxOut(t, "display-message", "-p", "-t", "="+sessionhost.ChatSession("work"), "#{pane_start_command}"),
-		"the pane's current":    c.tmuxOut(t, "display-message", "-p", "-t", "="+sessionhost.ChatSession("work"), "#{pane_current_command}"),
-		"the session's options": c.tmuxOut(t, "show-options", "-A", "-t", "="+sessionhost.ChatSession("work")),
+		"the pane's start cmd":  c.tmuxOut(t, "display-message", "-p", "-t", "="+sessionhost.ChatSession("work")+":", "#{pane_start_command}"),
+		"the pane's current":    c.tmuxOut(t, "display-message", "-p", "-t", "="+sessionhost.ChatSession("work")+":", "#{pane_current_command}"),
+		"the session's options": c.tmuxOut(t, "show-options", "-A", "-t", "="+sessionhost.ChatSession("work")+":"),
 	}
 	for where, text := range places {
 		if strings.Contains(text, token) {

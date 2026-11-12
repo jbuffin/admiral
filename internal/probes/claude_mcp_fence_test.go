@@ -41,11 +41,11 @@ ran=$ADMIRAL_PROBE_DIR/ran-$ADMIRAL_PROBE_NONCE
 init() { printf '{"type":"system","subtype":"init","tools":[%s],"mcp_servers":[%s]}\n' "$1" "$2"; }
 mine="{\"name\":\"$name\",\"status\":\"connected\"}"
 case "$PROBE_FAKE_MODE" in
-pass) : >"$called"; init "\"mcp__$name__ping\"" "$mine" ;;
-builtin-listed) : >"$called"; init "\"Bash\",\"mcp__$name__ping\"" "$mine" ;;
-second-server) : >"$called"; init "\"mcp__$name__ping\",\"mcp__other__run\"" "$mine,{\"name\":\"other\",\"status\":\"connected\"}" ;;
-shell-ran) : >"$called"; : >"$ran"; init "\"mcp__$name__ping\"" "$mine" ;;
-no-call) init "\"mcp__$name__ping\"" "$mine" ;;
+pass) : >"$called"; init "\"mcp__${name}__ping\"" "$mine" ;;
+builtin-listed) : >"$called"; init "\"Bash\",\"mcp__${name}__ping\"" "$mine" ;;
+second-server) : >"$called"; init "\"mcp__${name}__ping\",\"mcp__other__run\"" "$mine,{\"name\":\"other\",\"status\":\"connected\"}" ;;
+shell-ran) : >"$called"; : >"$ran"; init "\"mcp__${name}__ping\"" "$mine" ;;
+no-call) init "\"mcp__${name}__ping\"" "$mine" ;;
 no-init) : >"$called"; echo "all done" ;;
 error) echo "boom: not logged in" >&2; exit 3 ;;
 hang) sleep 30 ;;
