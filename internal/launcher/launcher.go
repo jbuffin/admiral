@@ -451,6 +451,9 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 			delete(env, k)
 			unset = append(unset, k)
 		}
+		for k, v := range RestrictedGitEnv {
+			env[k] = v
+		}
 	}
 
 	// A Commodore on Claude compacts at 200k tokens; only the fleet's own env
