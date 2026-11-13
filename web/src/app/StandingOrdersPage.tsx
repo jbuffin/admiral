@@ -2,11 +2,12 @@ import { useEffect, useState } from 'preact/hooks';
 import { call, type Fleet } from './api';
 import { capabilities, loadCapabilities } from './capabilities';
 import { fleets, loadFleets } from './fleets';
+import { harnessName } from './harnessName';
 import { JudgeLine } from './HarnessCapabilities';
 import { MissingCapability } from './MissingCapability';
 import { RoutineTabs } from './RoutineTabs';
 import { go, limitsPath } from './router';
-import { canAddCheck, checkTooLong, guidanceTooLong, loosenedSentences, MAX_CHECKS, MAX_CHECK_RUNES, MAX_GUIDANCE_RUNES, ordersBody, ordersErrorTarget, ordersMessage, runes, type Sentence } from './standingOrders';
+import { canAddCheck, checkTooLong, guidanceTooLong, judgeGap, judgeOff, loosenedSentences, MAX_CHECKS, MAX_CHECK_RUNES, MAX_GUIDANCE_RUNES, NEEDS_JUDGE, ordersErrorTarget, ordersMessage, ordersPatch, runes, type Sentence } from './standingOrders';
 
 interface Orders {
   checks: string[];
@@ -18,10 +19,8 @@ interface Orders {
 
 const base = (key: string) => `/fleets/${encodeURIComponent(key)}/standing-orders`;
 const PRESET: Record<string, string> = { work: 'Work', home: 'Home' };
-const NEEDS_JUDGE = ['The Lookout that reads outside events', 'The reviewer that judges Checks before a launch', 'The drafter that files a standing order and describes a routine', "Autopilot's advisor"];
-
 function NeedsJudge({ fleet }: { fleet: Fleet }) {
-  const reason = capabilities.value.find((f) => f.key === fleet.key)?.judge?.reason ?? 'No harness is proven safe for judge calls.';
+  const current = capabilities.value.find((f) => f.key === fleet.key);
   return (
     <section class="orders-group needs-judge" aria-label="Needs the judge">
       <p class="line">These stay off until a harness is proven safe for judge calls.</p>
@@ -32,9 +31,13 @@ function NeedsJudge({ fleet }: { fleet: Fleet }) {
           </li>
         ))}
       </ul>
-      {fleet.docks.map((d) => (
-        <MissingCapability key={d.harness} fleet={fleet.key} harness={d.harness} reason={reason} />
-      ))}
+      {fleet.docks.map((d) => {
+        const gap = judgeGap(current?.harnesses.find((h) => h.harness === d.harness));
+        const name = harnessName(d.harness);
+        if (gap?.status === 'failed') return <MissingCapability key={d.harness} fleet={fleet.key} harness={d.harness} capability={gap.capability} />;
+        const reason = gap ? `${gap.capability} has not been checked on ${name}.` : `Judge calls are not proven on ${name}.`;
+        return <MissingCapability key={d.harness} fleet={fleet.key} harness={d.harness} reason={reason} />;
+      })}
     </section>
   );
 }
@@ -103,7 +106,13 @@ function CopyTo({ fleet, onCopied }: { fleet: Fleet; onCopied: () => void }) {
       ) : null}
       {error ? (
         <p class="note error" role="alert">
-          {error.message}
+          {error.status === 409 ? 'The config file changed or is invalid, so nothing was copied. ' : ''}
+          {error.message}{' '}
+          {error.status === 409 ? (
+            <button type="button" class="btn" onClick={() => { setError(null); void loadFleets(); onCopied(); }}>
+              Reload
+            </button>
+          ) : null}
         </p>
       ) : null}
       {done ? (
@@ -153,9 +162,9 @@ export function StandingOrdersPage({ fleet, title }: { fleet: Fleet; title: bool
   }, [fleet.key]);
 
   const judge = capabilities.value.find((f) => f.key === fleet.key)?.judge;
-  const save = async (nextChecks: string[], nextGuidance: string) => {
+  const save = async (only: 'checks' | 'guidance', nextChecks: string[], nextGuidance: string) => {
     if (!shown) return;
-    const body = ordersBody({ checks: shown.checks, guidance: shown.guidance }, { checks: nextChecks, guidance: nextGuidance });
+    const body = ordersPatch({ checks: shown.checks, guidance: shown.guidance }, { checks: nextChecks, guidance: nextGuidance }, only);
     if (Object.keys(body).length === 0) return;
     setBusy(true);
     setError('');
@@ -168,9 +177,9 @@ export function StandingOrdersPage({ fleet, title }: { fleet: Fleet; title: bool
     } else setError(r.error);
   };
 
-  const target = error ? ordersErrorTarget(error) : null;
+  const target = error ? ordersErrorTarget(error, checks.length) : null;
   const message = error ? ordersMessage(error) : '';
-  const checksDirty = shown ? ordersBody({ checks: shown.checks, guidance: shown.guidance }, { checks, guidance: shown.guidance }).checks !== undefined : false;
+  const checksDirty = shown ? ordersPatch({ checks: shown.checks, guidance: shown.guidance }, { checks, guidance: shown.guidance }, 'checks').checks !== undefined : false;
   const guidanceDirty = shown ? guidance !== shown.guidance : false;
   const adding = newCheck.trim();
   const sentences = shown?.sentences ?? [];
@@ -185,7 +194,7 @@ export function StandingOrdersPage({ fleet, title }: { fleet: Fleet; title: bool
       <RoutineTabs current="standing-orders" />
       <p class="line">Standing orders apply only to work started by outside events: a Limit Admiral enforces, a Check a reviewer judges, or Guidance added to a ship’s prompt.</p>
       {judge ? <JudgeLine judge={judge} /> : null}
-      {judge && !judge.harness ? <NeedsJudge fleet={fleet} /> : null}
+      {judgeOff(capabilities.value.find((f) => f.key === fleet.key)) ? <NeedsJudge fleet={fleet} /> : null}
       {failed ? (
         <p class="alert" role="alert">
           {failed}
@@ -246,7 +255,7 @@ export function StandingOrdersPage({ fleet, title }: { fleet: Fleet; title: bool
                   <span class={checkTooLong(c) ? 'note error' : 'note'}>
                     {runes(c)}/{MAX_CHECK_RUNES}
                   </span>
-                  <button type="button" class="btn" disabled={busy} aria-label={`Remove Check ${i + 1}`} onClick={() => void save(checks.filter((_, j) => j !== i), guidance)}>
+                  <button type="button" class="btn" disabled={busy} aria-label={`Remove Check ${i + 1}`} onClick={() => void save('checks', checks.filter((_, j) => j !== i), guidance)}>
                     Remove
                   </button>
                   {target?.kind === 'check' && target.index === i ? (
@@ -258,7 +267,7 @@ export function StandingOrdersPage({ fleet, title }: { fleet: Fleet; title: bool
               ))}
             </ul>
             {checksDirty ? (
-              <button type="button" class="btn primary" disabled={busy || checks.some(checkTooLong)} onClick={() => void save(checks, guidance)}>
+              <button type="button" class="btn primary" disabled={busy || checks.some(checkTooLong)} onClick={() => void save('checks', checks, guidance)}>
                 Save Checks
               </button>
             ) : null}
@@ -267,7 +276,12 @@ export function StandingOrdersPage({ fleet, title }: { fleet: Fleet; title: bool
               <span class={checkTooLong(newCheck) ? 'note error' : 'note'}>
                 {runes(newCheck)}/{MAX_CHECK_RUNES}
               </span>
-              <button type="button" class="btn" disabled={busy || !adding || checkTooLong(newCheck) || !canAddCheck(checks.length)} onClick={() => void save([...checks, adding], guidance)}>
+              {target?.kind === 'new' ? (
+                <p class="note error" role="alert">
+                  {message}
+                </p>
+              ) : null}
+              <button type="button" class="btn" disabled={busy || !adding || checkTooLong(newCheck) || !canAddCheck(checks.length)} onClick={() => void save('checks', [...checks, adding], guidance)}>
                 Add
               </button>
             </div>
@@ -288,7 +302,7 @@ export function StandingOrdersPage({ fleet, title }: { fleet: Fleet; title: bool
               </p>
             ) : null}
             <div class="routine-actions">
-              <button type="button" class="btn primary" disabled={busy || !guidanceDirty || guidanceTooLong(guidance)} onClick={() => void save(checks, guidance)}>
+              <button type="button" class="btn primary" disabled={busy || !guidanceDirty || guidanceTooLong(guidance)} onClick={() => void save('guidance', checks, guidance)}>
                 Save
               </button>
             </div>
