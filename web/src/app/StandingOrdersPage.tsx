@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'preact/hooks';
 import { call, type Fleet } from './api';
 import { capabilities, loadCapabilities } from './capabilities';
+import { NewStandingOrder } from './FilingForms';
+import { joinGuidance, type Kept } from './filing';
 import { fleets, loadFleets } from './fleets';
 import { harnessName } from './harnessName';
 import { JudgeLine } from './HarnessCapabilities';
@@ -149,12 +151,20 @@ export function StandingOrdersPage({ fleet, title }: { fleet: Fleet; title: bool
     if (!keep?.checks) setChecks(o.checks);
     if (!keep?.guidance) setGuidance(o.guidance);
   };
-  const load = async () => {
+  const load = async (keep?: Partial<{ checks: boolean; guidance: boolean }>) => {
     const r = await call<Orders>('GET', base(fleet.key));
     if (r.ok) {
-      adopt({ ...r.data, checks: r.data.checks ?? [], sentences: r.data.sentences ?? [], overridden: r.data.overridden ?? [] });
+      adopt({ ...r.data, checks: r.data.checks ?? [], sentences: r.data.sentences ?? [], overridden: r.data.overridden ?? [] }, keep);
       setFailed('');
     } else setFailed(r.error);
+  };
+  // Edits the person has not saved stay as typed, with what was just filed added so a later Save does not drop it.
+  const filed = async (kept: Kept) => {
+    const keepChecks = checksDirty;
+    const keepGuidance = guidanceDirty;
+    await load({ checks: keepChecks, guidance: keepGuidance });
+    if (keepChecks && kept.checks.length > 0) setChecks((c) => [...c, ...kept.checks]);
+    if (keepGuidance && kept.guidance) setGuidance((g) => joinGuidance(g, kept.guidance));
   };
   useEffect(() => {
     void load();
@@ -208,6 +218,7 @@ export function StandingOrdersPage({ fleet, title }: { fleet: Fleet; title: bool
       {!shown && !failed ? <p class="line">Loading…</p> : null}
       {shown ? (
         <>
+          <NewStandingOrder key={fleet.key} fleet={fleet} shown={shown} unsaved={checksDirty || guidanceDirty} onFiled={(k) => void filed(k)} />
           <section class="orders-group" aria-labelledby="orders-limits">
             <h2 id="orders-limits" class="section-title">
               Limits

@@ -68,7 +68,8 @@ const orders = async (a: { url: string }, fleet: string) => (await (await fetch(
 const sentenceFor = (o: Sentences, field: string) => o.sentences.find((s) => s.field === field)!.sentence;
 
 test('the Standing orders tab shows the Work Limits as sentences, keeps a Check and Guidance, and each sentence leads to its field on Preferences', async ({ page, admiral }) => {
-  seedFleets(admiral, { claude: probeableClaude(admiral).dock });
+  const claude = probeableClaude(admiral);
+  seedFleets(admiral, { claude: claude.dock });
   await admiral.start();
   await proveJudge(page, admiral.url);
   await page.goto(admiral.url + 'app/routines?fleet=zulu');
@@ -130,6 +131,65 @@ test('the Standing orders tab shows the Work Limits as sentences, keeps a Check 
   await expect.poll(async () => sentenceFor(await orders(admiral, 'zulu'), 'spend.lookout_call_usd')).not.toBe(spendBefore);
   expect(sentenceFor(await orders(admiral, 'zulu'), 'spend.lookout_call_usd')).toContain('0.3');
 
+  // Filing prose drafts a loosened Limit, a Check and Guidance; the second tap confirms the loosening, and the edited Check is what is kept.
+  claude.judge('orders-mixed');
+  await page.goto(admiral.url + 'app/routines/standing-orders?fleet=zulu');
+  const filing = page.getByRole('main');
+  await filing.getByRole('textbox', { name: 'New standing order' }).fill('Stop ships after a day. Ask before changing CI. Keep commits small and focused.');
+  await filing.getByRole('button', { name: 'Draft', exact: true }).click();
+  await expect(filing.getByText(/1,?440 minutes/).first()).toBeVisible();
+  await expect(filing.getByText(/loosen/i).first()).toBeVisible();
+  // On a touch project the link to the Limits page is a target at least 44px tall.
+  if (test.info().project.name.startsWith('ipad')) expect((await filing.getByRole('link', { name: 'open the Limits page' }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await expect(filing.getByRole('textbox', { name: 'Drafted Check 1' })).toHaveValue('Ask before changing CI.');
+  await expect(filing.getByRole('textbox', { name: 'Drafted Guidance' })).toHaveValue('Keep commits small and focused.');
+  await filing.getByRole('textbox', { name: 'Drafted Check 1' }).fill('Ask before changing CI or releases.');
+  await filing.getByRole('button', { name: 'Confirm', exact: true }).click();
+  await filing.getByRole('button', { name: /^Confirm, loosening 1 Limit/ }).waitFor();
+  expect((await orders(admiral, 'zulu')).checks).toEqual(['Run make check before any PR.']);
+  // The orders save fails once after the Limits are stored: the message says so, and the retry sends only the orders.
+  let ordersPuts = 0;
+  let fleetPuts = 0;
+  await page.route('**/api/v1/fleets/zulu*', async (route) => {
+    if (route.request().method() === 'PUT' && new URL(route.request().url()).pathname === '/api/v1/fleets/zulu') fleetPuts++;
+    await route.fallback();
+  });
+  await page.route('**/api/v1/fleets/zulu/standing-orders', async (route) => {
+    if (route.request().method() !== 'PUT') return route.fallback();
+    ordersPuts++;
+    if (ordersPuts === 1) return route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"disk full"}' });
+    return route.fallback();
+  });
+  // A tap within 400ms of arming is a double tap and only arms, so tap again until the save answers.
+  await expect(async () => {
+    await filing.getByRole('button', { name: /^Confirm, loosening 1 Limit/ }).click({ timeout: 1000 });
+    await expect(filing.getByText(/The Limits were saved, but the Checks and Guidance weren't/)).toBeVisible({ timeout: 1000 });
+  }).toPass();
+  await expect(filing.getByText(/The Limits were saved, but the Checks and Guidance weren't/)).toBeVisible();
+  expect(sentenceFor(await orders(admiral, 'zulu'), 'wall_clock_minutes')).toMatch(/1,?440 minutes/);
+  expect((await orders(admiral, 'zulu')).checks).toEqual(['Run make check before any PR.']);
+  await filing.getByRole('button', { name: 'Confirm', exact: true }).click();
+  await expect.poll(async () => (await orders(admiral, 'zulu')).checks).toEqual(['Run make check before any PR.', 'Ask before changing CI or releases.']);
+  expect(fleetPuts).toBe(1);
+  expect((await orders(admiral, 'zulu')).guidance).toBe('Prefer small PRs.\n\nKeep commits small and focused.');
+  expect(sentenceFor(await orders(admiral, 'zulu'), 'wall_clock_minutes')).toMatch(/1,?440 minutes/);
+  await expect(filing.getByRole('region', { name: 'Limits' }).getByText(sentenceFor(await orders(admiral, 'zulu'), 'wall_clock_minutes'), { exact: true })).toBeVisible();
+  await expect(filing.getByRole('textbox', { name: 'Check 2', exact: true })).toHaveValue('Ask before changing CI or releases.');
+  await expect(filing.getByRole('textbox', { name: 'Guidance', exact: true })).toHaveValue('Prefer small PRs.\n\nKeep commits small and focused.');
+  await expect(filing.getByRole('textbox', { name: 'Drafted Check 1' })).toHaveCount(0);
+
+  // Describing a routine opens the editor filled from the draft; nothing is stored until it is saved.
+  await page.goto(admiral.url + 'app/routines?fleet=zulu');
+  await filing.getByRole('textbox', { name: 'Describe a routine' }).fill('every night at 3, check for outdated dependencies');
+  await filing.getByRole('button', { name: 'Draft', exact: true }).click();
+  const editor = filing.getByRole('form', { name: 'Routine' });
+  await expect(editor.getByLabel('Name')).toHaveValue('Nightly dependency check');
+  await expect(editor.getByLabel('When')).toHaveValue('0 3 * * *');
+  expect(((await (await fetch(`${admiral.url}api/fleets/zulu/routines`)).json()) as { routines: unknown[] }).routines).toEqual([]);
+  await editor.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(filing.getByRole('listitem').filter({ hasText: 'Nightly dependency check' })).toBeVisible();
+  await page.goto(admiral.url + 'app/preferences/zulu/limits');
+
   // Home is one switch away, after an in-place confirm; the Limits become Home's.
   const preset = page.getByRole('radiogroup', { name: 'Preset' });
   await preset.getByRole('radio', { name: 'Home' }).click();
@@ -179,5 +239,31 @@ test('with no proven judge the tab says so, greys the features that need one, an
   const probe = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/harness-capabilities/check');
   await main.getByRole('button', { name: /Check again/ }).first().click();
   expect((await probe).postDataJSON()).toMatchObject({ fleet: 'alpha' });
+  await expect(main.getByText(/Judge calls: off/)).toBeVisible();
+
+  // The input is a plain form: no Draft, the reason shows, and a Check saves as typed.
+  await expect(main.getByRole('button', { name: 'Draft', exact: true })).toHaveCount(0);
+  const plain = main.getByRole('form', { name: 'New standing order' });
+  await plain.getByRole('textbox', { name: 'New standing order' }).fill('Never touch the payments-api migrations folder.');
+  await plain.getByRole('radio', { name: 'Check', exact: true }).check();
+  await plain.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(async () => (await orders(admiral, 'alpha')).checks).toEqual(['Never touch the payments-api migrations folder.']);
+  await expect(main.getByRole('textbox', { name: 'Check 1', exact: true })).toHaveValue('Never touch the payments-api migrations folder.');
+
+  // An unsaved edit survives a filing through the form, and the later Save keeps both Checks.
+  await main.getByRole('textbox', { name: 'Check 1', exact: true }).fill('Never touch the payments-api folder.');
+  await plain.getByRole('textbox', { name: 'New standing order' }).fill('Ask before changing CI.');
+  await plain.getByRole('radio', { name: 'Check', exact: true }).check();
+  await plain.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(async () => (await orders(admiral, 'alpha')).checks).toEqual(['Never touch the payments-api migrations folder.', 'Ask before changing CI.']);
+  await expect(main.getByRole('textbox', { name: 'Check 1', exact: true })).toHaveValue('Never touch the payments-api folder.');
+  await expect(main.getByRole('textbox', { name: 'Check 2', exact: true })).toHaveValue('Ask before changing CI.');
+  await main.getByRole('button', { name: 'Save Checks' }).click();
+  await expect.poll(async () => (await orders(admiral, 'alpha')).checks).toEqual(['Never touch the payments-api folder.', 'Ask before changing CI.']);
+
+  // The Routines tab hides Describe a routine, keeps New routine and says why.
+  await page.goto(admiral.url + 'app/routines?fleet=alpha');
+  await expect(main.getByRole('textbox', { name: 'Describe a routine' })).toHaveCount(0);
+  await expect(main.getByRole('link', { name: 'New routine' })).toBeVisible();
   await expect(main.getByText(/Judge calls: off/)).toBeVisible();
 });

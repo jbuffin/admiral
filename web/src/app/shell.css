@@ -813,3 +813,17 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .set.confirm { flex-direction: column; align-items: flex-start; }
 @media (max-width: 640px) { .set.limit-row { flex-direction: column; align-items: stretch; } .limit-row .control { max-width: none; justify-content: flex-start; } }
 @media (pointer: coarse) { .weekday { min-height: var(--shape-min-touch-target); padding: 0 6px; } }
+
+/* Filing prose on the Standing orders and Routines tabs */
+.orders-new { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.orders-new textarea, .orders-new input[type='text'] { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-sm); background: var(--color-panel); color: var(--color-text); font: inherit; }
+.orders-new .btn { align-self: flex-start; }
+.orders-row { display: flex; align-items: flex-start; gap: 8px; }
+.orders-row textarea, .orders-row input[type='text'] { flex: 1; min-width: 0; }
+.orders-row .btn { flex: none; }
+.orders-new fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.orders-new legend { padding: 0; margin-bottom: 6px; color: var(--color-text2); font-size: var(--font-size-meta); }
+.phone .orders-row { flex-direction: column; align-items: stretch; }
+.phone .orders-row .btn { align-self: flex-start; }
+.draft-review { flex-direction: column; align-items: stretch; gap: 8px; }
+@media (pointer: coarse) { .draft-review a.touch-link { display: inline-block; min-height: var(--shape-min-touch-target); line-height: var(--shape-min-touch-target); } .orders-new input[type='text'], .orders-new .btn, .draft-review .btn, .draft-review input[type='text'] { min-height: var(--shape-min-touch-target); } .orders-new .seg-opt { min-height: var(--shape-min-touch-target); } }

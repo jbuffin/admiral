@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { call, fetchCapabilities, type DirsAnswer, type Fleet, type FleetCapabilities } from './api';
+import { call, type DirsAnswer, type Fleet, type FleetCapabilities } from './api';
+import { capabilities, capabilitiesFailed, capabilitiesLoaded, loadCapabilities } from './capabilities';
 import { cronSentence } from './cron';
+import { DescribeRoutine } from './FilingForms';
 import { fleetSearch } from './fleets';
 import { holdFire, setHoldFire } from './holdFireLink';
+import { JudgeLine } from './HarnessCapabilities';
+import { MissingCapability } from './MissingCapability';
 import { CheckoutSelect, DockPicker, ModelEffortPair, ResourcesPicker, SkillSelect, skillOfValue, skillValue } from './LaunchPickers';
 import type { SkillsAnswer } from './launchForm';
 import { RoutineTabs } from './RoutineTabs';
@@ -105,7 +109,7 @@ function RecentRuns({ runs }: { runs: RoutineRun[] | null }) {
   );
 }
 
-function RoutineEditor({ fleet, routine, initial, caps, onSaved, onDeleted, onToggled }: { fleet: Fleet; routine: Routine | null; initial: RoutineForm; caps: FleetCapabilities | undefined; onSaved: (r: Routine) => void; onDeleted: () => void; onToggled: (r: Routine) => void }) {
+function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSaved, onDeleted, onToggled }: { fleet: Fleet; routine: Routine | null; initial: RoutineForm; caps: FleetCapabilities | undefined; problem?: { field: 'name' | 'when' | 'before_acting' | 'do'; message: string }; onSaved: (r: Routine) => void; onDeleted: () => void; onToggled: (r: Routine) => void }) {
   const [form, setForm] = useState(initial);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -116,8 +120,17 @@ function RoutineEditor({ fleet, routine, initial, caps, onSaved, onDeleted, onTo
   const hold = holdFire.value?.fleet === fleet.key ? holdFire.value.state.on : false;
   const docks = autopilotDocks(caps, fleet.docks);
   const l = form.launch;
-  const set = (patch: Partial<RoutineForm>) => setForm((f) => ({ ...f, ...patch }));
-  const setLaunch = (patch: Partial<RoutineForm['launch']>) => setForm((f) => ({ ...f, launch: { ...f.launch, ...patch } }));
+  const [problem, setProblem] = useState(drafted);
+  // A drafted problem goes with the first edit of the field it names.
+  const fixes = (field: 'name' | 'when' | 'before_acting' | 'do') => setProblem((p) => (p?.field === field ? undefined : p));
+  const set = (patch: Partial<RoutineForm>) => {
+    for (const [k, f] of [['name', 'name'], ['when', 'when'], ['before', 'before_acting'], ['mode', 'do'], ['prompt', 'do']] as const) if (k in patch) fixes(f);
+    setForm((f) => ({ ...f, ...patch }));
+  };
+  const setLaunch = (patch: Partial<RoutineForm['launch']>) => {
+    fixes('do');
+    setForm((f) => ({ ...f, launch: { ...f.launch, ...patch } }));
+  };
   const offered = docks.harnesses.includes(l.harness) || !l.harness ? docks.harnesses : [...docks.harnesses, l.harness];
 
   // The first qualifying dock is the default for a new launch, so Save needs no dock pick.
@@ -153,7 +166,7 @@ function RoutineEditor({ fleet, routine, initial, caps, onSaved, onDeleted, onTo
   const favorites = new Set((skills?.skills ?? []).filter((s) => s.favorite).map((s) => s.name));
   const skillSel = l.skill.kind === 'skill' && !favorites.has(l.skill.name) ? 'custom' : skillValue(l.skill);
 
-  const err = error ? { field: errorField(error), text: errorText(error) } : null;
+  const err = error ? { field: errorField(error), text: errorText(error) } : problem ? { field: problem.field, text: problem.message } : null;
   const save = async (e: Event) => {
     e.preventDefault();
     setBusy(true);
@@ -261,6 +274,7 @@ function RoutineEditor({ fleet, routine, initial, caps, onSaved, onDeleted, onTo
         ))}
       </fieldset>
       {note ? <p class="note">{note}</p> : null}
+      {err?.field === 'before_acting' ? <p class="note error" role="alert">{err.text}</p> : null}
 
       <div class="routine-switches">
         <span class="routine-switch">
@@ -298,8 +312,9 @@ function RoutineEditor({ fleet, routine, initial, caps, onSaved, onDeleted, onTo
 export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fleet; id: string | null; creating: boolean; title: boolean; phone: boolean }) {
   const [list, setList] = useState<Routine[] | null>(null);
   const [failed, setFailed] = useState('');
-  const [caps, setCaps] = useState<FleetCapabilities | undefined>();
-  const [capsError, setCapsError] = useState('');
+  const [drafted, setDrafted] = useState<{ form: RoutineForm; problem?: { field: 'name' | 'when' | 'before_acting' | 'do'; message: string }; n: number } | null>(null);
+  const caps: FleetCapabilities | undefined = capabilities.value.find((c) => c.key === fleet.key);
+  const capsError = capabilitiesFailed.value && !caps ? "Could not load the fleet's capabilities." : '';
   const [runs, setRuns] = useState<RoutineRun[] | null>(null);
   const [version, setVersion] = useState(0);
   const [tripped, setTripped] = useState(false);
@@ -325,17 +340,14 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
     if (res.ok) stored(res.data);
     else setFailed(res.error);
   };
-  const loadCaps = () => {
-    setCapsError('');
-    void fetchCapabilities().then(
-      (all) => setCaps(all.find((c) => c.key === fleet.key)),
-      () => setCapsError("Could not load the fleet's capabilities."),
-    );
-  };
+  const loadCaps = () => void loadCapabilities();
   useEffect(() => {
     void load();
     loadCaps();
   }, [fleet.key]);
+  useEffect(() => {
+    if (!creating) setDrafted(null);
+  }, [creating]);
 
   // Recent runs follow the open routine; a breaker record reloads it so an open form can't undo the trip.
   useEffect(() => {
@@ -402,13 +414,15 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
   // Only a source and view that exist in this fleet draft a routine; any other query opens blank, so a crafted link pre-fills nothing.
   const found = automate ? automateTarget(sources.value, fleet.key, automate) : null;
   const gone = !!automate && shipsLoaded.value && !found;
+  const judgeOff = !!caps?.judge && !caps.judge.harness;
   const draft = (() => {
+    if (drafted) return drafted.form;
     if (!found) return blankForm();
     const dock = autopilotDocks(caps, fleet.docks).harnesses[0] ?? null;
     return automateDraft({ sourceKey: found.source.key, sourceName: found.source.name, viewTitle: found.view.title }, { harness: dock, dir: '', commodore: true });
   })();
   // A draft waits for the sources and the capabilities, so its dock is known when the form opens.
-  const ready = !creating || !automate || (shipsLoaded.value && (caps !== undefined || capsError !== ''));
+  const ready = !creating || !automate || (shipsLoaded.value && (caps !== undefined || capabilitiesLoaded.value));
 
   return (
     <main class={`panel crew routines${showList && showDetail ? ' split' : ''}`}>
@@ -421,6 +435,23 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
       <div class={`crew-grid${showList && showDetail ? ' split' : ''}`}>
         {showList ? (
           <div class="crew-list">
+            {judgeOff ? (
+              <>
+                {caps?.judge ? <JudgeLine judge={caps.judge} /> : null}
+                {fleet.docks.map((d) => (
+                  <MissingCapability key={d.harness} fleet={fleet.key} harness={d.harness} reason="Describing a routine needs a harness proven safe for judge calls." />
+                ))}
+              </>
+            ) : (
+              <DescribeRoutine
+                key={fleet.key}
+                fleet={fleet}
+                onDrafted={(form, problem) => {
+                  setDrafted({ form, problem, n: (drafted?.n ?? 0) + 1 });
+                  go(routineNewPath, search);
+                }}
+              />
+            )}
             <div class="crew-toolbar">
               <a
                 class="btn"
@@ -428,6 +459,7 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
                 onClick={(e) => {
                   if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
                   e.preventDefault();
+                  setDrafted(null);
                   go(routineNewPath, search);
                 }}
               >
@@ -494,11 +526,12 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
             {creating ? (
               ready ? (
                 <RoutineEditor
-                  key={`new:${loc.value.search}:${found ? 'draft' : 'blank'}`}
+                  key={`new:${loc.value.search}:${drafted ? `described:${drafted.n}` : found ? 'draft' : 'blank'}`}
                   fleet={fleet}
                   routine={null}
                   initial={draft}
                   caps={caps}
+                  problem={drafted?.problem}
                   onSaved={(r) => {
                     void load();
                     go(routinePath(r.id), search);

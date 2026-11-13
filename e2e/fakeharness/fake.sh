@@ -61,7 +61,8 @@
 #                  engineer's plain-English standing orders into a Limits patch, a list of Checks and
 #                  Guidance for one fleet." It answers a 30-minute wall clock, the Check "Always run make
 #                  check before a PR." and the Guidance "Prefer small PRs."; $FAKE_JUDGE=orders-loosen
-#                  answers a 1440-minute wall clock instead. The routine drafter's first line is "You turn
+#                  answers a 1440-minute wall clock instead; $FAKE_JUDGE=orders-mixed answers a 1440-minute wall clock, the Check
+#                  "Ask before changing CI." and the Guidance "Keep commits small and focused.". The routine drafter's first line is "You turn
 #                  an engineer's plain-English description into one AdmiralBot routine for a fleet."; it
 #                  answers a nightly report-only routine whose do.prompt checks dependencies.
 #
@@ -413,6 +414,7 @@ if [ -n "$judge" ]; then
   if [ -z "$body" ] && [ -n "$ordersdraft" ]; then
     case "$FAKE_JUDGE" in
     orders-loosen) body='{"limits":{"wall_clock_minutes":1440},"checks":[],"guidance":""}' ;;
+    orders-mixed) body='{"limits":{"wall_clock_minutes":1440},"checks":["Ask before changing CI."],"guidance":"Keep commits small and focused."}' ;;
     *) body='{"limits":{"wall_clock_minutes":30},"checks":["Always run make check before a PR."],"guidance":"Prefer small PRs."}' ;;
     esac
   fi

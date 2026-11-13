@@ -98,6 +98,7 @@ describe('a server 400 shows by the field it is about', () => {
     expect(errorField('autopilot is not proven on claude in fleet work: its guard has not passed')).toBe('do');
     expect(errorField('args: --dangerous is not allowed')).toBe('do');
     expect(errorField('something else broke')).toBe('form');
+    expect(errorField('before_acting must be report_only, ask_first or act')).toBe('before_acting');
   });
 
   it('reads the field through the prefix the server puts on every validation error', () => {
