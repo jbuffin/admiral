@@ -162,6 +162,32 @@ test('Back leaves Peek for the list, and Open bridge opens the ship on its Conve
   await expect(viewTab(page, 'Conversation')).toHaveAttribute('aria-selected', 'true');
 });
 
+test('a stop left unanswered through Back leaves the Inbox, and its next stop comes back', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  await admiral.start({ env: withFakeGh(admiral) });
+  const ship = await launchShip(admiral, { fleet: 'zulu', harness: 'claude' });
+  await appendLines(admiral, ship, [line.user('Tidy the README'), line.assistant('Done, the README is tidy'), line.turnEnd(2_000)]);
+  setReason(admiral, ship, 'stop');
+  setState(admiral, ship, 'needs_you');
+  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
+
+  await rowLink(page, ship).tap();
+  await expect(peekOf(page)).toContainText('Done, the README is tidy');
+  await peekOf(page).getByRole('link', { name: 'Back' }).tap();
+  await expect(peekOf(page)).toHaveCount(0);
+  await expect(rowLink(page, ship)).toHaveCount(0, { timeout: 15_000 });
+  const status = async () => {
+    const res = await page.request.get(admiral.url + 'api/ships');
+    return ((await res.json()) as { ships: { session: string; status: string }[] }).ships.find((s) => s.session === ship.session)?.status;
+  };
+  expect(await status()).toBe('needs_you');
+
+  setState(admiral, ship, 'working');
+  await expect.poll(status).toBe('underway');
+  setState(admiral, ship, 'needs_you');
+  await expect(rowLink(page, ship)).toBeVisible({ timeout: 15_000 });
+});
+
 const itemRow = (page: Page, title: string) => page.getByRole('main').getByRole('listitem').filter({ hasText: title });
 
 async function visitorWithReview(admiral: Parameters<typeof seedReviewTarget>[0]) {

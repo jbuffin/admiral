@@ -18,6 +18,7 @@ import { bridgeSearch } from './peekLink';
 import { go, shipPath, surfacePath } from './router';
 import { targetFor, useShipConversation } from './ShipView';
 import { lastTurn } from './turns';
+import { useSeenOnLeave } from './seen';
 import { chats, ships, shipsLoaded } from './shipsLink';
 import { SURFACES } from './surfaces';
 import { type AnswerBody, answeredQuestion, blankDraft, choose, foldText, pickOf, type Draft } from '../questions';
@@ -76,6 +77,7 @@ export function Peek({ entry, fold, back, gone = false }: { entry: Entry; fold: 
   const [review, setReview] = useState<ReviewUi>(blankReview);
   const [removing, setRemoving] = useState(false);
   const acting = useActing(entry, fold, lockedBy);
+  useSeenOnLeave(entry.type === 'stop' && !entry.crew ? ship : undefined);
   const findings = useFindings(entry);
   const crewNotes = useCrewNotes(entry);
   const [member, setMember] = useState<MemberStep>('idle');

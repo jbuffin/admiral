@@ -78,6 +78,8 @@ export interface Ship {
   launched: string;
   // When a needs-you ship started waiting; omitted otherwise.
   stop_since?: string;
+  // The engineer has looked at this stop; the ship still needs you, so its question can be answered.
+  seen?: boolean;
   crew_live: number;
   // Set on a moored ship; `stale` is omitted while false.
   moored_at?: string;

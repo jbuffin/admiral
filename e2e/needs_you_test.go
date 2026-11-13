@@ -83,6 +83,15 @@ func statusOf(list []shipJSON, session string) string {
 	return ""
 }
 
+func shipIn(list []shipJSON, session string) (shipJSON, bool) {
+	for _, s := range list {
+		if s.Session == session {
+			return s, true
+		}
+	}
+	return shipJSON{}, false
+}
+
 func waitStatus(t *testing.T, c *websocket.Conn, d time.Duration, session, status string) {
 	t.Helper()
 	waitShipsMsg(t, c, d, "ship "+session+" with status "+status, func(l []shipJSON) bool {
@@ -353,6 +362,60 @@ func TestInputSeenClearsNeedsYou(t *testing.T) {
 	ws := dialWS(t, w.in.instance)
 	w.setPaneState(s.Session, "needs_you")
 	waitStatus(t, ws, 2*time.Second, s.Session, "needs_you")
+}
+
+func TestSeenMarksTheStopWithoutClearingIt(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	w.cueFleets(map[string][]string{"f": {"hook needs_you"}})
+	w.start()
+	s := w.launchIn("f", "claude", "s4seen")
+	w.waitFile(s.Session, "cues-done")
+	w.in.waitStatusList(t, 3*time.Second, s.Session, "needs_you")
+	w.mustTmux("set-option", "-p", "-t", s.Session, "@admiral-reason", "stop")
+	ws := dialWS(t, w.in.instance)
+	first := waitShipsMsg(t, ws, 3*time.Second, "the stop's start", func(l []shipJSON) bool {
+		sh, ok := shipIn(l, s.Session)
+		return ok && sh.StopSince != ""
+	})
+	stop, _ := shipIn(first, s.Session)
+	seen := func(since string) int {
+		code, _ := send(t, http.MethodPost, w.in.LocalURL+"/api/ships/"+s.Session+"/seen", map[string]string{"stop_since": since})
+		return code
+	}
+
+	if code := seen("2020-01-01T00:00:00Z"); code != http.StatusOK {
+		t.Fatalf("seen for another stop = %d, want 200", code)
+	}
+	if sh, _ := shipIn(w.in.ships(t), s.Session); sh.Seen {
+		t.Errorf("seen for a stop that is not this one marked it")
+	}
+	if code := seen(stop.StopSince); code != http.StatusOK {
+		t.Fatalf("seen = %d, want 200", code)
+	}
+	waitShipsMsg(t, ws, 2*time.Second, "the stop seen", func(l []shipJSON) bool {
+		sh, ok := shipIn(l, s.Session)
+		return ok && sh.Seen && sh.Status == "needs_you"
+	})
+	if got := w.paneState(s.Session); got != "needs_you" {
+		t.Errorf("after seen @admiral-state = %q, want needs_you", got)
+	}
+	if got := w.paneReason(s.Session); got != "stop" {
+		t.Errorf("after seen @admiral-reason = %q, want stop", got)
+	}
+
+	w.setPaneState(s.Session, "working")
+	waitStatus(t, ws, 2*time.Second, s.Session, "underway")
+	w.setPaneState(s.Session, "needs_you")
+	next := waitShipsMsg(t, ws, 2*time.Second, "the next stop", func(l []shipJSON) bool {
+		return statusOf(l, s.Session) == "needs_you"
+	})
+	if sh, _ := shipIn(next, s.Session); sh.Seen {
+		t.Errorf("a new stop came back seen")
+	}
+	if code, _ := send(t, http.MethodPost, w.in.LocalURL+"/api/ships/nosuchship/seen", map[string]string{"stop_since": stop.StopSince}); code != http.StatusNotFound {
+		t.Errorf("seen on an unknown ship = %d, want 404", code)
+	}
 }
 
 func TestExitSailsOffOrAnchors(t *testing.T) {

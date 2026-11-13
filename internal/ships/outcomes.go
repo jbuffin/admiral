@@ -122,6 +122,8 @@ type track struct {
 	saved map[string]string // the options last written to tmux
 	end   *endState         // set once `ended` is queued
 	seen  bool              // the host has listed the session; a launch is tracked before it does
+	// looked is the Since of the stop the engineer has looked at; a new stop has a new Since.
+	looked time.Time
 }
 
 type endState struct{ written, failed, clean, usaged, usageFailed bool }
