@@ -410,7 +410,9 @@ func (g *githubConn) pollEvents(client *github.Client, token string, router *git
 		if kp == nil {
 			baseline := map[string]time.Time{}
 			for _, it := range routed {
-				baseline[it.URL] = it.EventAt
+				if !it.EventAt.After(started) { // one stamped after the poll began is still new to the next
+					baseline[it.URL] = it.EventAt
+				}
 			}
 			g.kinds[es.kind] = &kindPoll{at: started, emitted: baseline}
 			g.mu.Unlock()

@@ -333,7 +333,7 @@ func reviewRequestedAt(repo string, n int, title, author, requester, reviewer, o
 }
 
 // GitHub's clock can run behind this machine's: an event GitHub stamps before the previous poll started, by this
-// machine's clock, is still new when that poll did not see it.
+// machine's clock, is still new when that poll did not see it. One the baseline saw stamped after it began is new too.
 func TestAReviewRequestStampedBeforeThePollByASlowGitHubClockIsStillDeliveredOnce(t *testing.T) {
 	g := newFakeGH(t)
 	g.token("", "fake-token-default-1")
@@ -344,14 +344,15 @@ func TestAReviewRequestStampedBeforeThePollByASlowGitHubClockIsStillDeliveredOnc
 	g.searchBy("mine", "Q1", "acme/api", 1, "one", "amy")
 	stamp := func(ago time.Duration) string { return time.Now().Add(-ago).UTC().Format(time.RFC3339) }
 	already := reviewRequestedAt("acme/api", 5, "five", "amy", "bob", "eng", "carol", stamp(2*time.Minute))
+	ahead := reviewRequestedAt("acme/api", 7, "seven", "amy", "bob", "eng", "carol", soon)
 	g.write("search/rr.match", "review-requested:@me")
-	g.write("search/rr.json", `{"data":{"search":{"nodes":[`+already+`]}}}`)
+	g.write("search/rr.json", `{"data":{"search":{"nodes":[`+already+","+ahead+`]}}}`)
 	g.write("viewer", "eng\n")
 	f.startSources()
 	f.waitView("gh", "item 1", func(v SourceView) bool { return len(v.orders("mine")) == 1 })
 	time.Sleep(200 * time.Millisecond)
 	late := reviewRequestedAt("acme/api", 6, "six", "amy", "bob", "eng", "carol", stamp(time.Minute))
-	g.write("search/rr.json", `{"data":{"search":{"nodes":[`+already+","+late+`]}}}`)
+	g.write("search/rr.json", `{"data":{"search":{"nodes":[`+already+","+ahead+","+late+`]}}}`)
 	reviews := func() (out []Event) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -364,14 +365,17 @@ func TestAReviewRequestStampedBeforeThePollByASlowGitHubClockIsStillDeliveredOnc
 	}
 	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
 	deadline := time.Now().Add(5 * time.Second)
-	for len(reviews()) == 0 && time.Now().Before(deadline) {
+	for len(reviews()) < 2 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
 	time.Sleep(300 * time.Millisecond)
-	got := reviews()
-	if len(got) != 1 || !strings.HasSuffix(got[0].Ref, "/issues/6") {
-		t.Fatalf("review_requested events = %+v, want exactly one, for pull 6", got)
+	refs := map[string]int{}
+	for _, ev := range reviews() {
+		refs[ev.Ref[strings.LastIndex(ev.Ref, "/")+1:]]++
+	}
+	if len(refs) != 2 || refs["6"] != 1 || refs["7"] != 1 {
+		t.Fatalf("review_requested events per item = %v, want one each for pulls 6 and 7", refs)
 	}
 }
 
