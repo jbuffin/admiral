@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -162,6 +164,141 @@ func TestCampaignFollowJourney(t *testing.T) {
 	_, ended := send(t, http.MethodGet, w.in.LocalURL+"/api/v1/campaigns?ended=true", nil)
 	if strings.Contains(active, c.ID) || !strings.Contains(ended, c.ID) {
 		t.Errorf("ended=false lists %s; ended=true lists %s; want the campaign only under ended", active, ended)
+	}
+
+	for _, call := range g.calls() {
+		if slices.ContainsFunc(call.Argv, func(a string) bool { return strings.Contains(a, "mutation") }) {
+			t.Errorf("gh was asked for a mutation: %v", call.Argv)
+		}
+	}
+	for _, r := range g.restCalls() {
+		if r.Method != http.MethodGet {
+			t.Errorf("gh made a REST write: %s %s", r.Method, r.Endpoint)
+		}
+	}
+}
+
+// campLabeled puts labels on a campNode; campClosed closes one.
+func campLabeled(n map[string]any, labels ...string) map[string]any {
+	nodes := []any{}
+	for _, l := range labels {
+		nodes = append(nodes, map[string]any{"name": l})
+	}
+	n["labels"] = map[string]any{"nodes": nodes, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil}}
+	return n
+}
+
+func campClosed(n map[string]any) map[string]any { n["state"] = "CLOSED"; return n }
+
+// AdmiralBot works a followed campaign: the ready Without-you child launches in autopilot with no chat turn, the
+// With-you child is left alone, and closing every issue ends the commitment with a card. Admiral writes nothing to GitHub.
+func TestAdmiralBot_WorkOnACampaignLaunchesItsWithoutYouChildrenAndEndsWithIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("needs tmux")
+	}
+	t.Parallel()
+	var g *fakeGH
+	c := newBotWorld(t, botOpts{sources: func(w *world) string {
+		g = w.newFakeGH()
+		g.token("", "fake-token-chat")
+		return rawSourcesIn(chatFleet, srcDef{Key: "gh", Plugin: "github", Name: "GitHub", Settings: map[string]any{"views": []any{}}})
+	}})
+	w := c.world
+	// only the chat's fleet holds the checkout, so the campaign routes to it
+	cfgRaw, err := os.ReadFile(configPath(w.home))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(cfgRaw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	shipRoots := filepath.Join(w.root, "ship-roots")
+	if err := os.MkdirAll(shipRoots, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg["fleets"].(map[string]any)["ship"].(map[string]any)["search_roots"] = []string{shipRoots}
+	out, _ := json.Marshal(cfg)
+	writeConfig(t, w.home, string(out))
+	w.checkoutOf(w.work, "widgets", "acme/widgets")
+	w.proveGuard(chatFleet)
+
+	build := func(closed bool) {
+		a, b, root := campLabeled(campNode(21), "ready-for-agent"), campNode(22), campNode(20)
+		if closed {
+			a, b, root = campClosed(a), campClosed(b), campClosed(root)
+		}
+		root["subIssues"] = map[string]any{"totalCount": 2, "nodes": []any{a, b}, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil}}
+		g.cannTree(20, root)
+		g.cannTree(21, a)
+		g.cannTree(22, b)
+	}
+	build(false)
+	g.search("partof", "Part of")
+	g.write("search/partof.json", `{"data":{"search":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}`)
+	w.writeCue("mcp work", "wait go", "exit 0")
+	w.start()
+	c.start()
+
+	typed := c.stdin()
+	r := c.mcpCall("work", "work_on_campaign", map[string]any{"reference": "acme/widgets#20", "harness": "claude"})
+	if r.IsError || !strings.Contains(r.text(), "acme/widgets#20") {
+		t.Fatalf("work_on_campaign = %+v, want the commitment quoted back", r)
+	}
+
+	code, body := send(t, http.MethodGet, w.in.LocalURL+"/api/chat/"+chatFleet+"/commitments", nil)
+	var listed struct {
+		Commitments []struct {
+			Text    string
+			Action  string
+			Trigger struct{ Kind string }
+		}
+	}
+	if code != http.StatusOK || json.Unmarshal([]byte(body), &listed) != nil || len(listed.Commitments) != 1 ||
+		listed.Commitments[0].Trigger.Kind != "campaign" || listed.Commitments[0].Action != "work" {
+		t.Fatalf("commitments = %d %s, want the one campaign commitment with action work", code, body)
+	}
+
+	var child shipJSON
+	waitCond(t, 45*time.Second, "a ship launched for the Without-you child", func() bool {
+		for _, s := range w.in.ships(t) {
+			if s.Fleet == chatFleet && s.Via == "admiralbot" {
+				child = s
+				return true
+			}
+		}
+		return false
+	})
+	if env := w.record(child.Session).env; env["ADMIRAL_AUTOPILOT"] != "1" {
+		t.Errorf("the child's ship ADMIRAL_AUTOPILOT = %q, want 1: a commitment's launch is unattended", env["ADMIRAL_AUTOPILOT"])
+	}
+	holdThat(t, "a second ship launched: the With-you child is left to the engineer", func() bool {
+		n := 0
+		for _, s := range w.in.ships(t) {
+			if s.Fleet == chatFleet {
+				n++
+			}
+		}
+		return n == 1
+	})
+	if got := c.stdin(); got != typed {
+		t.Errorf("the chat was sent %q after the launch, want %q: a commitment's launch starts no model turn", got, typed)
+	}
+
+	build(true)
+	cardOf := func() *chatMsg {
+		for _, m := range c.session().Messages {
+			var card struct{ Outcome string }
+			if m.Kind == "commitment" && json.Unmarshal(m.Card, &card) == nil && card.Outcome == "ended" {
+				return &m
+			}
+		}
+		return nil
+	}
+	waitCond(t, 60*time.Second, "the card for the ended campaign", func() bool { return cardOf() != nil })
+	_, body = send(t, http.MethodGet, w.in.LocalURL+"/api/chat/"+chatFleet+"/commitments", nil)
+	if strings.Contains(body, `"campaign"`) {
+		t.Errorf("commitments after the campaign ended = %s, want none open", body)
 	}
 
 	for _, call := range g.calls() {

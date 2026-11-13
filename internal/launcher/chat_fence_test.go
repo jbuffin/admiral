@@ -441,3 +441,37 @@ func TestAClaudeChatsPromptNamesMakeCommitmentOnlyForWhatTheEngineerAsked(t *tes
 		t.Errorf("claude prompt does not tie make_commitment to what the engineer asks for: %q", prompt)
 	}
 }
+
+func TestEveryChatPromptTeachesWorkOnAsAnInstructionOnlyAndItsLimits(t *testing.T) {
+	for _, harness := range []string{"claude", "codex", "copilot"} {
+		prompt := chatPromptFor(harness)
+		i := strings.Index(prompt, "work_on_campaign")
+		if i < 0 {
+			t.Errorf("%s prompt never names work_on_campaign", harness)
+			continue
+		}
+		near := strings.ToLower(prompt[max(0, i-500):min(len(prompt), i+700)])
+		for _, want := range []string{"work on", "asks", "autopilot", "without-you", "never write"} {
+			if !strings.Contains(near, want) {
+				t.Errorf("%s prompt near work_on_campaign lacks %q: %q", harness, want, near)
+			}
+		}
+	}
+}
+
+func TestEveryChatPromptSendsALayOutRequestToTheWayfinderSkillWithTheEngineersWordsAsTheOrder(t *testing.T) {
+	for _, harness := range []string{"claude", "codex", "copilot"} {
+		prompt := chatPromptFor(harness)
+		i := strings.Index(prompt, "wayfinder")
+		if i < 0 {
+			t.Errorf("%s prompt never names the wayfinder skill", harness)
+			continue
+		}
+		near := strings.ToLower(prompt[max(0, i-400):min(len(prompt), i+400)])
+		for _, want := range []string{"lay out", "launch_ship", "skill", "words"} {
+			if !strings.Contains(near, want) {
+				t.Errorf("%s prompt near wayfinder lacks %q: %q", harness, want, near)
+			}
+		}
+	}
+}

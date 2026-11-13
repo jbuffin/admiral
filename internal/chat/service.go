@@ -92,6 +92,8 @@ type Service struct {
 	Ships     func() []ships.Ship
 	Campaigns func() []follow.Followed
 	Inbox     func() []inbox.Item
+	// FollowCampaign follows the campaign a reference names, or returns the one already followed; created says which.
+	FollowCampaign func(ctx context.Context, reference string) (follow.Followed, bool, *launcher.Error)
 	// SourceFleet names the fleet an order source belongs to; OrderExists says whether a source lists an order.
 	SourceFleet func(key string) (fleet string, known bool)
 	OrderExists func(source, id string) bool
@@ -241,6 +243,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/chat/{fleet}/notes/{id}", s.serveNoteDelete)
 	mux.HandleFunc("POST /api/chat/{fleet}/notes/{id}/promote", s.serveNotePromote)
 	mux.HandleFunc("POST /api/chat/commitments", s.serveCommitmentAdd)
+	mux.HandleFunc("POST /api/chat/campaign-commitments", s.serveCampaignCommitment)
 	mux.HandleFunc("GET /api/chat/{fleet}/commitments", s.serveCommitments)
 	mux.HandleFunc("DELETE /api/chat/{fleet}/commitments/{id}", s.serveCommitmentDelete)
 	mux.HandleFunc("GET /api/chat/{fleet}/instructions", s.serveInstructions)

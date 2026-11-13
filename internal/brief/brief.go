@@ -67,6 +67,10 @@ type Commitment struct {
 	Action  string
 	TS      time.Time
 	Waiting bool
+	// Campaign names a campaign commitment's issue (its title, or owner/repo#n); Launched and WaitingChildren count its children.
+	Campaign        string
+	Launched        int
+	WaitingChildren int
 }
 
 type Entry struct {

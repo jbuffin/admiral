@@ -46,6 +46,8 @@ type Service struct {
 	// Next answers every order that is not a campaign's.
 	Next ships.Orders
 	Now  func() time.Time
+	// OnRead runs after a read stored a tree or ended the campaign, and after an unfollow.
+	OnRead func()
 
 	once   sync.Once
 	ctx    context.Context
