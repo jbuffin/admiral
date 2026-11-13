@@ -5,6 +5,7 @@ import { fleetSearch } from './fleets';
 import { holdFire, setHoldFire } from './holdFireLink';
 import { CheckoutSelect, DockPicker, ModelEffortPair, ResourcesPicker, SkillSelect, skillOfValue, skillValue } from './LaunchPickers';
 import type { SkillsAnswer } from './launchForm';
+import { RoutineTabs } from './RoutineTabs';
 import { automateOf, go, loc, routineNewPath, routinePath, shipPath } from './router';
 import {
   autopilotDocks,
@@ -366,10 +367,13 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
   const toList = (replace = false) => go('/app/routines', search, replace);
   const heading = title ? <h1>Routines</h1> : null;
   const header = (
-    <div class="routines-head">
-      {heading}
-      <HoldFireToggles fleet={fleet} />
-    </div>
+    <>
+      <div class="routines-head">
+        {heading}
+        <HoldFireToggles fleet={fleet} />
+      </div>
+      <RoutineTabs current="routines" />
+    </>
   );
   if (!list) {
     return (
