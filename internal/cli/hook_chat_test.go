@@ -344,3 +344,23 @@ func TestPreCompactPrintsNothingOnACodexOrUnmarkedChat(t *testing.T) {
 		}
 	}
 }
+
+func TestPreCompactInAChatKeepsEveryOpenCommitmentIDAndText(t *testing.T) {
+	home := t.TempDir()
+	seedMemory(t, home, "home", "Ask before launching.", "deploys go out on Tuesdays")
+	line := `{"v":1,"ts":"2026-11-12T09:00:00Z","event":"added","id":"c-abc123","kind":"commitment","text":"remind me about the audit","trigger":{"kind":"none"},"action":"remind"}` + "\n"
+	f, err := os.OpenFile(filepath.Join(home, "chat", "home", "ledger.jsonl"), os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(line); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	out := chatHook(t, home, "home", "PreCompact", `{"trigger":"auto","session_id":"s"}`)
+	for _, want := range []string{"c-abc123", "remind me about the audit", "Ask before launching.", "deploys go out on Tuesdays"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("PreCompact stdout lacks %q: %q", want, out)
+		}
+	}
+}

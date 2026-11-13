@@ -296,7 +296,9 @@ func TestDoneAndDroppedCloseACommitmentOpenOrWaiting(t *testing.T) {
 
 func TestDoneAndDroppedWriteTheirReasonIntoTheEvent(t *testing.T) {
 	for event, do := range map[string]func(l *Ledger, id string) error{
-		"done":    func(l *Ledger, id string) error { return l.Done("home", id, "the dock was removed, so it became a reminder") },
+		"done": func(l *Ledger, id string) error {
+			return l.Done("home", id, "the dock was removed, so it became a reminder")
+		},
 		"dropped": func(l *Ledger, id string) error { return l.Drop("home", id, "the PR closed without merging") },
 	} {
 		l, home := newLedger(t)

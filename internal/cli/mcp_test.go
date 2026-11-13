@@ -220,7 +220,7 @@ func TestAMalformedLineDoesNotKillTheServer(t *testing.T) {
 // nobody specified: approvals, typing mid-turn, config, sources, settings and Preferences have none.
 var wantTools = []string{
 	"add_order", "answer_item", "ask_question", "dismiss_ship", "hold_fire_on", "launch_ship", "list_campaigns", "list_inbox",
-	"list_routines", "list_ships", "list_sources", "next_prompt", "read_conversation", "read_hold_fire", "read_outcomes",
+	"list_routines", "list_ships", "list_sources", "make_commitment", "next_prompt", "read_conversation", "read_hold_fire", "read_outcomes",
 	"save_note", "stop_ship", "turn_routine_off", "wake_ship",
 }
 
@@ -697,4 +697,121 @@ func TestTheCopilotChatsToolAllowlistNamesExactlyTheServersTools(t *testing.T) {
 	if strings.Join(got, ",") != strings.Join(served, ",") {
 		t.Errorf("launcher.ChatTools = %v, want the admiral server's tools %v", got, served)
 	}
+}
+
+func commitArgs(extra string) string {
+	return `{"text":"when saltpaw sails, fix the build","trigger":"ship_sailed","subject":"saltpaw","action":"launch","launch":{"dir":"/code/widget","harness":"claude","skill":"commodore","text":"fix the build","resources":["gpu"]` + extra + `}}`
+}
+
+const commitmentReply = `{"id":"c-abc123","text":"when saltpaw sails, fix the build","trigger":{"kind":"ship_sailed","subject":"saltpaw"},"action":"launch","via":"admiralbot"}`
+
+func TestMakeCommitmentPostsTheTriggerActionTextAndALaunchSpecInTheShipsBodyShape(t *testing.T) {
+	a := newStandIn(t, func(mcpReq) (int, string) { return 201, commitmentReply })
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, call(1, "make_commitment", commitArgs("")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := a.requests()
+	if len(got) != 1 || got[0].Method != "POST" || got[0].Path != "/api/chat/commitments" || got[0].Actor != mcpToken {
+		t.Fatalf("requests = %+v, want one POST /api/chat/commitments with the actor token", got)
+	}
+	b := got[0].Body
+	trig, _ := b["trigger"].(map[string]any)
+	if b["text"] != "when saltpaw sails, fix the build" || b["action"] != "launch" || trig["kind"] != "ship_sailed" || trig["subject"] != "saltpaw" {
+		t.Errorf("body = %v, want text, action launch and trigger {ship_sailed, saltpaw}", b)
+	}
+	l, _ := b["launch"].(map[string]any)
+	if l["fleet"] != "work" || l["dir"] != "/code/widget" || l["harness"] != "claude" || l["text"] != "fix the build" {
+		t.Errorf("launch = %v, want the /api/ships body: fleet work (the chat's), dir, harness and text", l)
+	}
+	if sk, _ := l["skill"].(map[string]any); sk["kind"] != "commodore" {
+		t.Errorf("launch skill = %v, want kind commodore, as launch_ship sends it", l["skill"])
+	}
+	if mustJSON(l["resources"]) != `["gpu"]` {
+		t.Errorf("launch resources = %v, want [gpu]", l["resources"])
+	}
+	if ap, _ := l["autopilot"].(bool); !ap {
+		t.Errorf("launch autopilot = %v, want true: a fired commitment is always unattended", l["autopilot"])
+	}
+	tr := result(t, replies, "1")
+	for _, want := range []string{"c-abc123", "when saltpaw sails, fix the build", "saltpaw", "sail", "launch"} {
+		if tr.IsError || !strings.Contains(strings.ToLower(tr.text()), strings.ToLower(want)) {
+			t.Errorf("result = %+v, want it to quote back %q in words so AdmiralBot can repeat it", tr, want)
+		}
+	}
+}
+
+func TestACommitmentLaunchIsAutopilotWhateverTheSkillAndNeverCarriesWithMeOrAnyway(t *testing.T) {
+	a := newStandIn(t, func(mcpReq) (int, string) { return 201, commitmentReply })
+	a.env(t, mcpToken)
+	args := strings.Replace(commitArgs(`,"with_me":true,"anyway":true`), `"skill":"commodore"`, `"skill":"none"`, 1)
+	if _, _, err := serve(t, call(1, "make_commitment", args)); err != nil {
+		t.Fatal(err)
+	}
+	got := a.requests()
+	if len(got) != 1 {
+		t.Fatalf("requests = %+v, want one", got)
+	}
+	l, _ := got[0].Body["launch"].(map[string]any)
+	if ap, _ := l["autopilot"].(bool); !ap {
+		t.Errorf("a skill-less commitment launch has autopilot %v, want true", l["autopilot"])
+	}
+	if _, ok := l["anyway"]; ok {
+		t.Errorf("launch carries anyway: %v", l)
+	}
+}
+
+func TestARefusedCommitmentIsAToolErrorAndIsNotRetried(t *testing.T) {
+	a := newStandIn(t, func(mcpReq) (int, string) {
+		return 422, `{"error":"autopilot is not proven on claude in fleet work"}`
+	})
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, call(1, "make_commitment", commitArgs("")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(a.requests()); n != 1 {
+		t.Errorf("POSTs = %d, want 1: there is no cap-fallback retry for a commitment", n)
+	}
+	if tr := result(t, replies, "1"); !tr.IsError || !strings.Contains(tr.text(), "not proven") {
+		t.Errorf("result = %+v, want isError with the server's reason", tr)
+	}
+}
+
+func TestMakeCommitmentIsDescribedAsOnlyForWhatTheEngineerToldItAndItsSchemaHasNoWithMeOrAnyway(t *testing.T) {
+	a := newStandIn(t, nil)
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, rpc(1, "tools/list", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list struct {
+		Tools []struct {
+			Name        string
+			Description string
+			InputSchema json.RawMessage
+		}
+	}
+	if err := json.Unmarshal(replies["1"].Result, &list); err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range list.Tools {
+		if tl.Name != "make_commitment" {
+			continue
+		}
+		if d := strings.ToLower(tl.Description); !strings.Contains(d, "engineer") || !(strings.Contains(d, "told") || strings.Contains(d, "asked")) {
+			t.Errorf("description = %q, want it limited to something the engineer told or asked AdmiralBot", tl.Description)
+		}
+		for _, bad := range []string{"with_me", "anyway"} {
+			if strings.Contains(string(tl.InputSchema), bad) {
+				t.Errorf("make_commitment's schema names %s: %s", bad, tl.InputSchema)
+			}
+		}
+		if !strings.Contains(string(tl.InputSchema), "resources") {
+			t.Errorf("make_commitment's schema has no resources: %s", tl.InputSchema)
+		}
+		return
+	}
+	t.Error("tools/list has no make_commitment")
 }

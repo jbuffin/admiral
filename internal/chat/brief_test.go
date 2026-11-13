@@ -390,3 +390,36 @@ func TestATickAcksWhatThePaneOptionsSayTheChatPrinted(t *testing.T) {
 		t.Errorf("digest = %q, want only line two after the pane said line one was printed", lineTexts(got))
 	}
 }
+
+func TestABriefShowsAnOpenCommitmentAndDropsItWhenItIsCancelled(t *testing.T) {
+	r := newBriefRig(t)
+	path := filepath.Join(r.home, "chat", "home", "ledger.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	append1 := func(line string) {
+		t.Helper()
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		if _, err := f.WriteString(line + "\n"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	append1(`{"v":1,"ts":"2026-11-12T09:00:00Z","event":"added","id":"c-abc123","kind":"commitment","text":"tell me when saltpaw is done","trigger":{"kind":"none"},"action":"remind"}`)
+	r.Tick()
+	got := r.brief("home")
+	if !strings.Contains(got, "## Open commitments") || !strings.Contains(got, "c-abc123") || !strings.Contains(got, "tell me when saltpaw is done") {
+		t.Fatalf("chat/home/brief.md = %q, want an Open commitments section with the commitment's id and text", got)
+	}
+	if strings.Contains(r.brief("work"), "c-abc123") {
+		t.Errorf("chat/work/brief.md holds home's commitment")
+	}
+	append1(`{"v":1,"ts":"2026-11-12T10:00:00Z","event":"cancelled","id":"c-abc123"}`)
+	r.Tick()
+	if got := r.brief("home"); strings.Contains(got, "c-abc123") || strings.Contains(got, "saltpaw is done") {
+		t.Errorf("brief after the cancel = %q, want the commitment gone", got)
+	}
+}
