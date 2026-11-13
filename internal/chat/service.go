@@ -449,7 +449,7 @@ func (s *fleetChat) transcriptChangedLocked(raw string) {
 	switch {
 	case path != st.path || st.rd == nil:
 		o := conversation.TextView()
-		o.Harness = s.harness()
+		o.Harness = s.readHarnessLocked()
 		st.path, st.rd, st.unread, st.cleared = path, conversation.NewReader(o), false, false
 	case source == "clear" && !first:
 		s.clearLocked()
@@ -490,12 +490,23 @@ func (s *fleetChat) paneHarness() string {
 	return s.st.opts.harness
 }
 
+// readHarnessLocked is the harness whose files and rules the running session follows: the one it was launched under,
+// or the config's for a session that records none. A config switched since the start does not move a running pane's
+// transcript, and the caller holds mu.
+func (s *fleetChat) readHarnessLocked() string {
+	if h := s.st.opts.harness; h != "" {
+		return h
+	}
+	return s.harness()
+}
+
 // loginDir is the engineer's identity dir for the chat's harness: where the login lives, which is not always where
 // the chat keeps its transcripts. Copilot's chat has none until it launches.
-func (s *fleetChat) loginDir() string {
+func (s *fleetChat) loginDir() string { return s.loginDirFor(s.harness()) }
+
+func (s *fleetChat) loginDirFor(h string) string {
 	// The fleet this chat belongs to, never the session option: anything in the chat can write that.
 	f, _ := s.Config().Fleet(s.key)
-	h := f.Chat.Harness
 	if h != "claude" && h != "codex" && h != "copilot" {
 		return ""
 	}
@@ -509,9 +520,10 @@ func (s *fleetChat) loginDir() string {
 // configDir is the dir the chat's transcripts are read under and fenced to: Claude's identity dir, or the Codex
 // chat's own CODEX_HOME so a rollout in the engineer's sessions/ is never read.
 func (s *fleetChat) configDir() string {
-	switch s.harness() {
+	h := s.readHarnessLocked()
+	switch h {
 	case "claude":
-		return s.loginDir()
+		return s.loginDirFor(h)
 	case "codex":
 		return launcher.ChatCodexHome(s.Home, s.key)
 	case "copilot":
@@ -529,7 +541,7 @@ func (s *fleetChat) openLocked() (*os.File, os.FileInfo, error) {
 	if dir == "" {
 		return nil, nil, transcriptfs.ErrRefused
 	}
-	f, info, err := transcriptfs.OpenFor(s.harness(), dir, st.path)
+	f, info, err := transcriptfs.OpenFor(s.readHarnessLocked(), dir, st.path)
 	if errors.Is(err, transcriptfs.ErrRefused) && st.refused != st.path {
 		st.refused = st.path
 		log.Printf("admiral: chat: not reading %q: %v", st.path, err)
@@ -763,7 +775,7 @@ func (s *fleetChat) ready() (pane string, status int, msg string) {
 // its SessionStart is the first turn's.
 func (s *fleetChat) notStartedLocked() (ready bool, msg string) {
 	screen := s.st.opts.screen
-	switch s.harness() {
+	switch s.readHarnessLocked() {
 	case "codex":
 	case "copilot":
 		return copilotReady(screen)

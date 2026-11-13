@@ -234,7 +234,7 @@ export function ChatSettingsPage({ fleet }: { fleet: Fleet }) {
           </button>
         </div>
       </div>
-      <Knows fleet={fleet.key} harness={shown.harness} />
+      <Knows fleet={fleet.key} harness={edited.harness} />
     </>
   );
 }

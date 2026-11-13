@@ -3,8 +3,12 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -156,5 +160,141 @@ func TestNewChatFlushesTheRunningPanesHarnessNotTheConfigs(t *testing.T) {
 				t.Errorf("flush prompt on the pane = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func configFor(t *testing.T, harness string) *config.Config {
+	t.Helper()
+	model := map[string]string{"claude": "opus", "codex": "gpt-6.1-sol"}[harness]
+	raw, _ := json.Marshal(map[string]any{"version": 1, "fleets": map[string]any{"work": map[string]any{
+		"name": "Work", "claude": map[string]any{}, "codex": map[string]any{},
+		"chat": map[string]any{"harness": harness, "model": model, "effort": "high"}}}})
+	cfg, err := config.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
+
+// switchable makes the service's config changeable while the chat runs.
+func switchable(t *testing.T, svc *Service, harness string) func(string) {
+	t.Helper()
+	var cur atomic.Pointer[config.Config]
+	cur.Store(configFor(t, harness))
+	svc.Config = func() *config.Config { return cur.Load() }
+	return func(h string) { cur.Store(configFor(t, h)) }
+}
+
+func setPane(t *testing.T, svc *Service, name, value string) {
+	t.Helper()
+	out, err := exec.Command(svc.Tmux, "-S", svc.Socket, "set", "-p", "-t", "="+sessionhost.ChatSession("work")+":", sessionhost.Prefix+name, value).CombinedOutput()
+	if err != nil {
+		t.Fatalf("setting %s: %v: %s", name, err, out)
+	}
+}
+
+const claudeSession = "e959a44e-ab9a-4187-94ce-70d9a302497e"
+
+func claudeLine(t *testing.T, kind, id, text string) string {
+	t.Helper()
+	msg := map[string]any{"role": kind, "content": text}
+	if kind == "assistant" {
+		msg["content"] = []map[string]any{{"type": "text", "text": text}}
+		msg["stop_reason"] = "end_turn"
+	}
+	b, _ := json.Marshal(map[string]any{"type": kind, "uuid": id, "sessionId": claudeSession, "message": msg,
+		"timestamp": "2026-11-12T10:00:00.000Z", "origin": map[string]any{"kind": "human"}, "promptSource": "typed"})
+	return string(b) + "\n"
+}
+
+// claudeTranscript gives the chat a Claude transcript under CLAUDE_CONFIG_DIR with one exchange and returns its path.
+func claudeTranscript(t *testing.T, svc *Service, fc *fleetChat) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	path := filepath.Join(dir, "projects", "p", claudeSession+".jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(claudeLine(t, "user", "11111111-1111-4111-8111-111111111111", "hello")+claudeLine(t, "assistant", "22222222-2222-4222-8222-222222222222", "hi")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	setPane(t, svc, "transcript", "1 startup "+path)
+	snap, err := fc.refresh(true)
+	if err != nil || len(snap.Messages) != 2 {
+		t.Fatalf("the Claude pane's transcript is not read first: %d messages, %v", len(snap.Messages), err)
+	}
+	return path
+}
+
+// endFlushTurn plays the hooks once the flush prompt is on the pane: its turn is written and the prompt stamp moves.
+func endFlushTurn(t *testing.T, svc *Service, fc *fleetChat, path string, between func()) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !pasted(t, svc, fc) {
+		if time.Now().After(deadline) {
+			t.Error("the flush prompt never reached the pane")
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if between != nil {
+		between()
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	defer f.Close()
+	_, _ = f.WriteString(claudeLine(t, "user", "33333333-3333-4333-8333-333333333333", FlushPrompt) + claudeLine(t, "assistant", "44444444-4444-4444-8444-444444444444", "saved"))
+	setPane(t, svc, sessionhost.ChatPromptOpt, strconv.FormatInt(time.Now().UnixNano(), 10))
+}
+
+func TestAClaudePaneUnderACodexConfigHasItsFlushTurnAwaitedAndHidden(t *testing.T) {
+	t.Setenv("ADMIRAL_CHAT_FLUSH_WAIT", "20s")
+	svc, fc := hostedChat(t, "codex")
+	record(t, svc, fc, "claude")
+	path := claudeTranscript(t, svc, fc)
+	go endFlushTurn(t, svc, fc, path, nil)
+	start := time.Now()
+	if !fc.flush(func() string { sess, _ := fc.session(); return sess.PaneID }()) {
+		t.Fatal("the flush turn was not seen to end")
+	}
+	if time.Since(start) > 15*time.Second {
+		t.Error("the flush ran out its wait instead of seeing the turn end")
+	}
+	snap, err := fc.refresh(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range snap.Messages {
+		if strings.Contains(m.Text, "saved") || strings.Contains(m.Text, FlushPrompt[:20]) {
+			t.Errorf("the thread shows the flush turn: %q", m.Text)
+		}
+	}
+	if len(snap.Messages) != 2 {
+		t.Errorf("the thread has %d messages, want the 2 before the flush", len(snap.Messages))
+	}
+}
+
+func TestASwitchSavedDuringTheFlushWaitSendsThePaneNoResetCommand(t *testing.T) {
+	t.Setenv("ADMIRAL_CHAT_FLUSH_WAIT", "20s")
+	svc, fc := hostedChat(t, "claude")
+	switchTo := switchable(t, svc, "claude")
+	record(t, svc, fc, "claude")
+	path := claudeTranscript(t, svc, fc)
+	go endFlushTurn(t, svc, fc, path, func() { switchTo("codex") })
+	fc.scheduledReset(ResetDaily, svc.PromptKey("work"), time.Time{})
+	sess, _ := fc.session()
+	out, err := exec.Command(svc.Tmux, "-S", svc.Socket, "capture-pane", "-p", "-J", "-t", sess.PaneID).CombinedOutput()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pasted(t, svc, fc) {
+		t.Fatal("the flush never ran, so the test proves nothing")
+	}
+	if strings.Contains(string(out), "/clear") || strings.Contains(string(out), "/new") {
+		t.Errorf("the pane was sent a reset command after the config switched:\n%s", out)
 	}
 }

@@ -106,7 +106,7 @@ describe('what a chat reads', () => {
   });
   it('says so under the instructions and notes of a chat that does not, and nothing on Claude Code', () => {
     expect(memoryNotRead('claude')).toBe('');
-    expect(memoryNotRead('codex')).toBe("AdmiralBot on Codex doesn't read the instructions or the notes yet. They are kept here for when it does.");
+    expect(memoryNotRead('codex')).toBe("AdmiralBot on Codex doesn't read the instructions or the notes.");
     expect(memoryNotRead('copilot')).toContain('Copilot');
   });
 });

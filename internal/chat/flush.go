@@ -157,7 +157,7 @@ func (s *fleetChat) scheduledReset(rule ResetRule, key string, seen time.Time) {
 		return
 	}
 	pane, path, dir, raw, started := s.clearTarget()
-	if !started {
+	if !started || !s.stillClaude() {
 		return
 	}
 	// New chat clears the flag when it finishes, which may have been while this waited for op.
@@ -165,6 +165,10 @@ func (s *fleetChat) scheduledReset(rule ResetRule, key string, seen time.Time) {
 	if !s.flush(pane) {
 		log.Printf("admiral: chat %s: %s reset abandoned: the flush turn did not end", s.key, rule)
 		s.holdReset()
+		return
+	}
+	// A switch saved while the flush waited: the pane is still the Claude one, but the fleet no longer resets it.
+	if !s.stillClaude() {
 		return
 	}
 	if err := s.clearChat(pane, path, dir, raw, MarkerRefreshed); err != nil {
@@ -186,6 +190,11 @@ func (s *fleetChat) holdReset() {
 	s.rst.mu.Lock()
 	s.rst.idleSince, s.rst.holdUntil = now, now.Add(short)
 	s.rst.mu.Unlock()
+}
+
+// stillClaude is whether the config and the running pane both say Claude Code, the gate resetTick opened on.
+func (s *fleetChat) stillClaude() bool {
+	return flushesBeforeReset(s.harness()) && flushesBeforeReset(s.paneHarness())
 }
 
 // clearTarget is where a clear goes and what the usage record reads; started is false until the first SessionStart.
@@ -235,7 +244,9 @@ func (s *fleetChat) paneIdle() bool {
 func (s *fleetChat) clearChat(pane, path, dir, raw, marker string) error {
 	// What was said since the last read is logged before the reader skips to the end.
 	_, _ = s.refresh(true)
-	s.withdrawAndRender()
+	// The pane's own harness types its reset and reads its brief, whatever the config says now.
+	harness := s.paneHarness()
+	s.withdrawAndRender(harness)
 	s.mu.Lock()
 	s.clearLocked()
 	s.mu.Unlock()
@@ -243,13 +254,13 @@ func (s *fleetChat) clearChat(pane, path, dir, raw, marker string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	// Typed, then Enter: the way an engineer runs a command.
-	if err := s.server().SendLiteral(ctx, pane, resetCommand(s.harness())); err != nil {
+	if err := s.server().SendLiteral(ctx, pane, resetCommand(harness)); err != nil {
 		return err
 	}
 	if err := s.server().SendEnter(ctx, pane); err != nil {
 		return err
 	}
-	s.recordReset(s.harness(), path, dir, s.key, raw)
+	s.recordReset(harness, path, dir, s.key, raw)
 	s.markReset(marker)
 	s.noteReset()
 	s.broadcast()
