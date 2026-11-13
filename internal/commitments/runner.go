@@ -168,6 +168,8 @@ func (r *Runner) tick(ctx context.Context) time.Time {
 			}
 			var fire bool
 			switch {
+			case c.Trigger.Kind == ledger.TriggerCampaign:
+				r.workCampaign(ctx, fleet, c, now, earlier)
 			case c.Waiting:
 				fire = true
 				earlier(now.Add(pollEvery))

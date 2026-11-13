@@ -59,6 +59,7 @@ type Commitment struct {
 	Children        []Child `json:"children,omitempty"`
 	Launched        int     `json:"launched,omitempty"`
 	WaitingChildren int     `json:"waiting_children,omitempty"`
+	ChildEvents     int     `json:"-"`
 }
 
 var errNoCommitment = fmt.Errorf("%w: no such open commitment", ErrNotFound)

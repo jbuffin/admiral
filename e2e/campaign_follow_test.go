@@ -222,6 +222,14 @@ func TestAdmiralBot_WorkOnACampaignLaunchesItsWithoutYouChildrenAndEndsWithIt(t 
 	writeConfig(t, w.home, string(out))
 	w.checkoutOf(w.work, "widgets", "acme/widgets")
 	w.proveGuard(chatFleet)
+	// the chat fleet's claude dock keeps its skills under CLAUDE_CONFIG_DIR, not under HOME
+	skillDir := filepath.Join(c.cfgDir, "skills", "commodore")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: commodore\ndescription: a fake skill\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	build := func(closed bool) {
 		a, b, root := campLabeled(campNode(21), "ready-for-agent"), campNode(22), campNode(20)

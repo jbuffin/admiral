@@ -221,7 +221,14 @@ func (s *Service) read(ctx context.Context, id string) error {
 	if allClosed(tree) {
 		_ = s.Store.End(id, s.now())
 	}
+	s.changed()
 	return nil
+}
+
+func (s *Service) changed() {
+	if s.OnRead != nil {
+		s.OnRead()
+	}
 }
 
 // readTree reads the tree under the issue at url with the fleet's GitHub client for the issue's host.

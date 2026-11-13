@@ -12,9 +12,10 @@ export type ChatQuestion = InboxItem & { answer: ChatAnswer | null };
 /** The card Admiral posts when a commitment fires, as the chat log carries it. */
 export interface CommitmentCard {
   commitment: string;
-  outcome: 'launched' | 'reminded' | 'cant_run' | 'dropped' | 'aged';
+  outcome: 'launched' | 'reminded' | 'cant_run' | 'dropped' | 'aged' | 'ended' | 'too_large';
   ship?: string;
   reason?: string;
+  child?: string;
 }
 
 /** The A0 card for an outside event: the Lookout's summary or the metadata line, never the event's own text. */
@@ -96,9 +97,15 @@ export function resetLabel(text: string, at: string | undefined): string {
   return time ? `${text} · ${time}` : text;
 }
 
+/** owner/repo#n for a GitHub issue URL, else the URL as given. */
+const childRef = (url: string): string => {
+  const m = /^https?:\/\/[^/]+\/([^/]+\/[^/]+)\/(?:pull|issues)\/(\d+)/.exec(url);
+  return m ? `${m[1]}#${m[2]}` : url;
+};
+
 /** What a commitment card shows: a one-line outcome, the commitment's text, and the ship page it links to. */
-export function commitmentCardView(item: Extract<ThreadItem, { kind: 'commitment' }>, fleet?: string): { eyebrow: string; text: string; reason: string; shipHref: string; settingsHref: string } {
-  const { outcome, ship, reason } = item.card;
-  const eyebrow = { launched: 'AdmiralBot launched a ship', reminded: 'AdmiralBot reminds you', cant_run: "AdmiralBot can't run this", dropped: 'AdmiralBot dropped this', aged: 'Still want this?' }[outcome];
-  return { eyebrow, text: item.text, reason: reason ?? '', shipHref: outcome === 'launched' && ship ? shipPath(ship) : '', settingsHref: outcome === 'aged' && fleet ? chatSettingsPath(fleet) : '' };
+export function commitmentCardView(item: Extract<ThreadItem, { kind: 'commitment' }>, fleet?: string): { eyebrow: string; text: string; reason: string; shipHref: string; settingsHref: string; childLabel: string } {
+  const { outcome, ship, reason, child } = item.card;
+  const eyebrow = { launched: 'AdmiralBot launched a ship', reminded: 'AdmiralBot reminds you', cant_run: "AdmiralBot can't run this", dropped: 'AdmiralBot dropped this', aged: 'Still want this?', ended: 'Campaign ended', too_large: 'Campaign too large to work on' }[outcome];
+  return { eyebrow, text: item.text, reason: reason ?? '', shipHref: outcome === 'launched' && ship ? shipPath(ship) : '', settingsHref: outcome === 'aged' && fleet ? chatSettingsPath(fleet) : '', childLabel: child ? childRef(child) : '' };
 }

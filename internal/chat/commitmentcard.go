@@ -15,7 +15,7 @@ func (s *Service) Notes() *ledger.Ledger { return s.notes() }
 
 // PostCard appends a commitment's card to the fleet's chat log; a card whose ID the log holds adds nothing.
 func (s *Service) PostCard(fleet string, c commitments.Card) error {
-	card, err := json.Marshal(map[string]string{"commitment": c.Commitment, "outcome": c.Outcome, "ship": c.Ship, "reason": c.Why})
+	card, err := json.Marshal(map[string]string{"commitment": c.Commitment, "outcome": c.Outcome, "ship": c.Ship, "reason": c.Why, "child": c.Child})
 	if err != nil {
 		return err
 	}
@@ -32,11 +32,18 @@ func digestLine(c commitments.Card) string {
 	text := strings.ReplaceAll(strings.Join(strings.Fields(c.Text), " "), `"`, "'")
 	switch c.Outcome {
 	case commitments.OutcomeLaunched:
+		if c.Child != "" {
+			return "Your commitment \"" + text + "\" launched ship " + c.Ship + " for " + campaignRef(c.Child) + "."
+		}
 		return "Your commitment \"" + text + "\" launched ship " + c.Ship + "."
 	case commitments.OutcomeReminded:
 		return "Your commitment \"" + text + "\" reminded the engineer."
 	case commitments.OutcomeAged:
 		return "Your commitment \"" + text + "\" is 14 days old: asked the engineer whether they still want it."
+	case commitments.OutcomeEnded:
+		return "Your commitment \"" + text + "\" ended: " + c.Why + "."
+	case commitments.OutcomeTooLarge:
+		return "Your commitment \"" + text + "\" holds too large a record to work on unattended: " + c.Why + "."
 	case commitments.OutcomeDropped:
 		return "Your commitment \"" + text + "\" was dropped: " + c.Why + "."
 	}

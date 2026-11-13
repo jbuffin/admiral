@@ -302,9 +302,12 @@ export interface ChatNote {
 export interface ChatCommitment {
   id: string;
   text: string;
-  trigger: { kind: 'ship_sailed' | 'ship_anchored' | 'pr_merged' | 'pr_closed' | 'issue_closed' | 'time' | 'none'; subject?: string; launched?: string };
-  action: 'launch' | 'remind';
+  trigger: { kind: 'ship_sailed' | 'ship_anchored' | 'pr_merged' | 'pr_closed' | 'issue_closed' | 'time' | 'none' | 'campaign'; subject?: string; launched?: string };
+  action: 'launch' | 'remind' | 'work';
   launch?: unknown;
+  harness?: string;
+  launched?: number;
+  waiting_children?: number;
   ts: string;
   via?: string;
   waiting?: boolean;

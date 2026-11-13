@@ -3,7 +3,6 @@ package follow
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/jbuffin/admiral/internal/ships"
 	"net/http"
 	"sort"
@@ -197,45 +196,14 @@ func (s *Service) serveFollow(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
-	ref, err := campaigns.ParseIssueRef(body.Reference)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	host := hostOf(ref)
-	url := fmt.Sprintf("https://%s/%s/%s/issues/%d", host, ref.Owner, ref.Repo, ref.Number)
-	if have, ok := s.Store.Lookup(url); ok {
-		writeJSON(w, http.StatusOK, s.json(have))
-		return
-	}
-	fleet := ""
-	if s.Route != nil {
-		fleet = s.Route(host, ref.Owner+"/"+ref.Repo)
-	}
-	if fleet == "" {
-		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("No fleet owns %s/%s, so Admiral can't read it", ref.Owner, ref.Repo))
-		return
-	}
-	tree, err := s.readTree(r.Context(), fleet, url)
-	if err != nil {
-		writeError(w, http.StatusUnprocessableEntity, err.Error())
-		return
-	}
-	if tree.URL != "" {
-		url = tree.URL
-	}
-	got, created, err := s.Store.Follow(Followed{URL: url, Fleet: fleet, FollowedAt: s.now(), Tree: tree, ReadAt: s.now()})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	got, created, lerr := s.Follow(r.Context(), body.Reference)
+	if lerr != nil {
+		writeError(w, lerr.Status, lerr.Msg)
 		return
 	}
 	status := http.StatusOK
 	if created {
 		status = http.StatusCreated
-		if allClosed(tree) {
-			_ = s.Store.End(got.ID, s.now())
-			got, _ = s.Store.Get(got.ID)
-		}
 	}
 	writeJSON(w, status, s.json(got))
 }
@@ -269,6 +237,7 @@ func (s *Service) serveUnfollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f, _ = s.Store.Get(f.ID)
+	s.changed()
 	writeJSON(w, http.StatusOK, s.json(f))
 }
 

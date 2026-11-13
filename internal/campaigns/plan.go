@@ -63,7 +63,7 @@ func Decide(in PlanInput) Plan {
 		launched := slices.Contains(in.Launched, n.URL)
 		switch n.Mode {
 		case WithoutYou:
-			if !launched {
+			if !launched && !slices.ContainsFunc(p.Launch, func(c Child) bool { return c.URL == n.URL }) {
 				p.Launch = append(p.Launch, in.child(n))
 			}
 		case WithYou:

@@ -394,6 +394,15 @@ func commitmentLine(c Commitment, now time.Time) string {
 		return ""
 	}
 	meta := Clean(c.ID) + ", " + age(now.Sub(c.TS)) + ", " + triggerWords(c) + ", then " + Clean(c.Action)
+	if c.Trigger == "campaign" {
+		meta = Clean(c.ID) + ", " + age(now.Sub(c.TS)) + ", work on " + Clean(c.Campaign)
+		if c.Launched > 0 {
+			meta += fmt.Sprintf(", %d launched", c.Launched)
+		}
+		if c.WaitingChildren > 0 {
+			meta += fmt.Sprintf(", %d waiting", c.WaitingChildren)
+		}
+	}
 	if c.Waiting {
 		meta += ", waiting for cap room or a resource"
 	}

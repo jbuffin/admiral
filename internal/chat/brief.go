@@ -138,7 +138,18 @@ func (s *fleetChat) renderBrief(ti tickInputs) {
 	}
 	in := brief.Input{Instructions: st.instr, Now: time.Now()}
 	for _, c := range st.commits {
-		in.Commitments = append(in.Commitments, brief.Commitment{ID: c.ID, Text: c.Text, Trigger: c.Trigger.Kind, Subject: c.Trigger.Subject, Action: c.Action, TS: c.TS, Waiting: c.Waiting})
+		bc := brief.Commitment{ID: c.ID, Text: c.Text, Trigger: c.Trigger.Kind, Subject: c.Trigger.Subject, Action: c.Action, TS: c.TS, Waiting: c.Waiting, Launched: c.Launched, WaitingChildren: c.WaitingChildren}
+		if c.Trigger.Kind == ledger.TriggerCampaign {
+			for _, fc := range ti.campaigns {
+				if fc.ID != c.Trigger.Subject {
+					continue
+				}
+				if bc.Campaign = campaignRef(fc.URL); fc.Tree != nil && fc.Tree.Title != "" {
+					bc.Campaign = fc.Tree.Title
+				}
+			}
+		}
+		in.Commitments = append(in.Commitments, bc)
 	}
 	for _, n := range st.notes {
 		in.Notes = append(in.Notes, brief.Note{Text: n.Text, Via: n.Via, TS: n.TS})
