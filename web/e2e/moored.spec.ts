@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { addGitHubSource, mergeFailsInThePRTab, mergeFromThePRTab, mooredFromTheShell, mooringEnv, myPRsMergeACarriedPR, myPRsMergeFailsOnTheRow, myPRsOfferCommodoreOnAShiplessPR, myPRsShowANotReadyCarriedPR, noWakeWithoutResume, READY_PR, readyStackMergesFromThePRTab, seedFleets, seedMyPRs, SHIPLESS_PR, stackMismatchInThePRTab, staleMergeTokenInThePRTab, unfollowFromThePRTab, WAITING_PR, wakeFromTheShell, wakeFromTheShipView, watchPage } from './shell';
+import { addGitHubSource, mergeFailsInThePRTab, mergeFromThePRTab, mooredFromTheShell, mooringEnv, myPRsMergeACarriedPR, myPRsMergeFailsOnTheRow, myPRsOfferCommodoreOnAShiplessPR, myPRsShowANotReadyCarriedPR, noWakeWithoutResume, READY_PR, readyStackMergesFromThePRTab, seedFleets, seedMyPRs, SHIPLESS_PR, stackMismatchInThePRTab, staleMergeTokenInThePRTab, unfollowFromThePRTab, WAITING_PR, wakeFromTheShell, wakeFromTheShipView, watchPage, moorRefusedWhenThePRClosed, returnToPortCleansUp, returnToPortMoors, stopForGoodEnds, stopShipMoors, withFakeGh } from './shell';
 
 test('a moored ship shows in its own group with chips from the poll, and Don\'t follow reviews and Dismiss take it out', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
@@ -181,6 +181,84 @@ test('a merge gh refuses shows in the alert on the row in My PRs and the ship st
   const watch = watchPage(page, admiral.url);
 
   await myPRsMergeFailsOnTheRow(page, admiral);
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('Stop ship on a ship with open PRs offers Moor, which moors it and shows it in the Moored group with its PRs', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: withFakeGh(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  await stopShipMoors(page, admiral, (l) => l.click(), { phone: false });
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('Stop for good on a ship with open PRs ends it and moors nothing', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: withFakeGh(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  await stopForGoodEnds(page, admiral, (l) => l.click());
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('Moor on the Return to port sheet moors the ship and types no clean-up prompt', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: withFakeGh(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  await returnToPortMoors(page, admiral, (l) => l.click());
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('Return to port on a ship with open PRs still cleans up and then stops it', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: withFakeGh(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  await returnToPortCleansUp(page, admiral, (l) => l.click());
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('a Moor the server refuses because the PR closed shows its message in the Stop ship sheet and the ship stays live', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: withFakeGh(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  await moorRefusedWhenThePRClosed(page, admiral, (l) => l.click(), 'Stop ship');
+
+  expect(watch.unversioned()).toEqual([]);
+  expect(watch.foreign).toEqual([]);
+  expect(watch.errors).toEqual([]);
+});
+
+test('a Moor the server refuses because the PR closed shows its message in the Return to port sheet and the ship stays live', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  addGitHubSource(admiral);
+  await admiral.start({ env: withFakeGh(admiral) });
+  const watch = watchPage(page, admiral.url);
+
+  await moorRefusedWhenThePRClosed(page, admiral, (l) => l.click(), 'Return to port');
 
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
