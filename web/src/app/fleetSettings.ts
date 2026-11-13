@@ -20,8 +20,10 @@ export function saveBody(shown: FleetFields, edited: FleetFields): Partial<Fleet
 }
 
 export interface ErrorTarget {
-  field: keyof FleetFields;
+  field: keyof FleetFields | 'limits';
   index?: number;
+  /** The sentence field a Limits error sits under, such as `ceilings.t4`. */
+  limit?: string;
 }
 
 /** The field a 400's `fleets.<key>.<field>[i]: …` message names; null sends it to the page top. */

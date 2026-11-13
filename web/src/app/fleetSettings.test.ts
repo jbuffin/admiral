@@ -68,6 +68,17 @@ describe('errorTarget', () => {
     expect(errorTarget('fleets.home.color: must be #RRGGBB, got "red"', 'home')).toEqual({ field: 'color' });
   });
 
+  it('maps a Limits path to the sentence field it sits under, by longest prefix', () => {
+    const at = (path: string) => errorTarget(`fleets.home.limits.${path}: not valid`, 'home');
+    expect(at('quiet_hours[0].start')).toEqual({ field: 'limits', limit: 'quiet_hours' });
+    expect(at('ceilings.t4.threshold.level')).toEqual({ field: 'limits', limit: 'ceilings.t4' });
+    expect(at('ceilings.t1')).toEqual({ field: 'limits', limit: 'ceilings.t1' });
+    expect(at('skip.labels[0].value')).toEqual({ field: 'limits', limit: 'skip.labels' });
+    expect(at('repo_allowlist[3]')).toEqual({ field: 'limits', limit: 'repo_allowlist' });
+    expect(at('rates.concurrent')).toEqual({ field: 'limits', limit: 'rates.concurrent' });
+    expect(at('wall_clock_minutes')).toEqual({ field: 'limits', limit: 'wall_clock_minutes' });
+  });
+
   it('sends an error that names another fleet or no field to the page top', () => {
     expect(errorTarget('fleets.work.clone_root: must be an absolute path', 'home')).toBeNull();
     expect(errorTarget('malformed JSON body', 'home')).toBeNull();

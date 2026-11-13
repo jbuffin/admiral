@@ -191,6 +191,17 @@ export function routineOf(path: string): string | null {
   }
 }
 
+export const standingOrdersPath = '/app/routines/standing-orders';
+
+/** True for the Routines screen's Standing orders tab. */
+export const standingOrdersTab = (_path: string): boolean => false;
+
+/** A fleet's Limits page, landing on one field when named. */
+export const limitsPath = (_fleetKey: string, _field?: string): string => '';
+
+/** The field a Limits page query names, if any. */
+export const limitsFieldOf = (_search: string): string | null => null;
+
 /** The query that opens the new-routine editor pre-filled for a view, with its fleet when known. */
 export function automateSearch(sourceKey: string, viewId: string, fleetKey?: string): string {
   const q = new URLSearchParams();

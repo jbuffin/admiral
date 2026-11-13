@@ -15,7 +15,7 @@ const page = vi.hoisted(() => {
   return l;
 });
 
-import { installPath, usageAllPath, usagePath, campaignOf, campaignPath, crewOf, crewPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath, chatSettingsPath, chatTerminalPath, chatTerminalOf, chatPeekOf, automateOf, automateSearch, routineNewPath, routineOf, routinePath } from './router';
+import { limitsFieldOf, limitsPath, standingOrdersPath, standingOrdersTab, routineCreating, installPath, usageAllPath, usagePath, campaignOf, campaignPath, crewOf, crewPath, loc, preferencesFleet, preferencesPage, startRouter, surfaceOf, peekOf, peekPath, chatSettingsPath, chatTerminalPath, chatTerminalOf, chatPeekOf, automateOf, automateSearch, routineNewPath, routineOf, routinePath } from './router';
 
 describe('campaign paths', () => {
   it('round-trips an id through its page path', () => {
@@ -48,6 +48,32 @@ describe('crew paths', () => {
   it('is the Crew surface, and no surface below it deeper than the name', () => {
     expect(surfaceOf('/app/crew/ada')?.id).toBe('crew');
     expect(surfaceOf('/app/crew/ada/extra')).toBeUndefined();
+  });
+});
+
+describe('standing orders paths', () => {
+  it('is a tab of the Routines surface that no routine id can name', () => {
+    expect(standingOrdersPath).toBe('/app/routines/standing-orders');
+    expect(surfaceOf(standingOrdersPath)?.id).toBe('routines');
+    expect(standingOrdersTab(standingOrdersPath)).toBe(true);
+    expect(standingOrdersTab('/app/routines/standing-orders/')).toBe(true);
+    expect(standingOrdersTab('/app/routines')).toBe(false);
+    expect(standingOrdersTab('/app/routines/3f9c0a41b7d2e8a5')).toBe(false);
+    expect(routineOf(standingOrdersPath)).toBeNull();
+    expect(routineCreating(standingOrdersPath)).toBe(false);
+  });
+  it('puts the Limits page below a fleet in Preferences and lands on a named field by query', () => {
+    expect(surfaceOf('/app/preferences/work/limits')?.id).toBe('preferences');
+    expect(preferencesPage('/app/preferences/work/limits')).toBe('limits');
+    expect(preferencesFleet('/app/preferences/work/limits')).toBe('work');
+    expect(limitsPath('work')).toBe('/app/preferences/work/limits');
+    expect(limitsPath('work', 'ceilings.t1')).toBe('/app/preferences/work/limits?field=ceilings.t1');
+    expect(limitsFieldOf('?fleet=work&field=ceilings.t1')).toBe('ceilings.t1');
+    expect(limitsFieldOf('?fleet=work')).toBeNull();
+  });
+  it('keeps limits a page of a fleet keyed admiral too, not a global page', () => {
+    expect(surfaceOf('/app/preferences/admiral/limits')?.id).toBe('preferences');
+    expect(preferencesFleet('/app/preferences/admiral/limits')).toBe('admiral');
   });
 });
 
