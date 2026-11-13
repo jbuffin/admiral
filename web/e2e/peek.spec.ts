@@ -847,6 +847,10 @@ test('Peek opens an event proposal with the untrusted summary, Mute rule by send
   const claude = probeableClaude(admiral);
   seedFleets(admiral, { live: true, claude: claude.dock });
   addGitHubSource(admiral);
+  // The work preset stops a stranger's event at a card (A0); this fleet lets it reach a proposal.
+  const cfg = JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8'));
+  cfg.fleets.zulu.limits = { ceilings: { t3: { level: 'A1' } } };
+  admiral.writeConfig(cfg);
   const card = { routine: 'r-seeded', routine_name: 'Review watch', tier: 'T3', sender: 'mallory-the-stranger', link: 'https://github.com/acme/api/pull/7', metadata: false, mute_by: ['sender'] };
   const chatDir = join(admiral.home, 'chat', 'zulu');
   mkdirSync(chatDir, { recursive: true });
@@ -867,7 +871,7 @@ test('Peek opens an event proposal with the untrusted summary, Mute rule by send
   await form.getByLabel('Text').fill('sweep the board');
   await form.getByRole('radio', { name: 'Ask first' }).tap();
   await form.getByRole('button', { name: 'Save', exact: true }).tap();
-  await expect(page).toHaveURL(/\/app\/routines\/[^/?]+/);
+  await expect(page).toHaveURL(/\/app\/routines\/(?!new)[^/?]+/);
   const routine = new URL(page.url()).pathname.split('/').pop()!;
   const saved = async () => ((await (await page.request.get(admiral.url + `api/fleets/zulu/routines`)).json()) as { routines: { id: string; on?: { source: string; kind: string }; when?: string }[] }).routines.find((r) => r.id === routine);
   await expect.poll(saved).toMatchObject({ on: { source: 'gh', kind: 'review_requested' } });
