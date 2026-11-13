@@ -663,8 +663,7 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
   await expect(pick('Harness', 'Codex')).toBeDisabled();
   await expect(main).toContainText(/Codex.*has not been checked/i);
   await expect(main.getByRole('button', { name: /Check again.*Codex/ })).toBeVisible();
-  await proveAdmiralBot(admiral, 'zulu', 'codex');
-  // Check again reads the fleets again, so the harness turns on without a reload.
+  // Codex's probes run for real against the fake codex, so Check again proves it; it reads the fleets again, so the harness turns on without a reload.
   await main.getByRole('button', { name: /Check again.*Codex/ }).click();
   await expect(pick('Harness', 'Codex')).toBeEnabled();
   await expect(main).not.toContainText(/Codex.*has not been checked/i);

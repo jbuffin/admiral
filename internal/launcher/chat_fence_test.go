@@ -44,7 +44,7 @@ func newChatRun(t *testing.T) *chatRun {
 	})
 	rec := filepath.Join(tmp, "rec")
 	exe := filepath.Join(tmp, "harness")
-	script := "#!/bin/sh\nrm -rf " + rec + "\nmkdir -p " + rec + ".part\nenv >" + rec + ".part/env\n" +
+	script := "#!/bin/sh\nif [ \"$1\" = --help ] && [ $# -eq 1 ]; then echo '      --no-daemon'; exit 0; fi\nrm -rf " + rec + "\nmkdir -p " + rec + ".part\nenv >" + rec + ".part/env\n" +
 		"printf '%s\\0' \"$@\" >" + rec + ".part/argv\nmv " + rec + ".part " + rec + "\nsleep 30\n"
 	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
 		t.Fatal(err)

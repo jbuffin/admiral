@@ -267,17 +267,11 @@ func TestTheFenceProbeIsRegisteredWithTheDefaultProbes(t *testing.T) {
 	if l := line(t, rep, capabilities.BotMCPFence); l.Status != capabilities.Passed {
 		t.Errorf("bot.mcp_fence = %+v, want passed: the default run does not include the fence probe", l)
 	}
-	codex := filepath.Join(t.TempDir(), "codex")
-	if err := os.WriteFile(codex, []byte(fenceHarness), 0o755); err != nil {
-		t.Fatal(err)
+	c := runCodex(t, probes.Probe{}, "pass", codexOpts{useDefault: true})
+	if l := c.line(t, capabilities.BotMCPFence); l.Status != capabilities.Passed {
+		t.Errorf("codex bot.mcp_fence = %+v, want passed under the detected version: the default run does not include Codex's fence probe", l)
 	}
-	cfleet := config.Fleet{Key: "work", Harnesses: []config.Harness{{Name: "codex", Executable: codex, Found: true,
-		Env: map[string]string{"PROBE_FAKE_LOG": log, "PROBE_FAKE_MODE": "pass"}}}}
-	crep, err := probes.NewDefault(home(t)).Run(context.Background(), cfleet, "codex")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if l := line(t, crep, capabilities.BotMCPFence); l.Status != capabilities.NotChecked {
-		t.Errorf("codex bot.mcp_fence = %v, want not_checked: only Claude's fence is probed", l.Status)
+	if snap, err := capabilities.Open(c.home).Snapshot("work", "codex"); err != nil || snap.Version != "codex-cli 9.9.9" || snap.States[capabilities.BotMCPFence].Status != capabilities.Passed {
+		t.Errorf("codex store = %+v, %v; want bot.mcp_fence passed under codex-cli 9.9.9", snap, err)
 	}
 }

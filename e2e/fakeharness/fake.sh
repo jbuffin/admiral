@@ -19,7 +19,16 @@
 #                  a fenced probe run (claude): prints an init line listing the tools of the
 #                  config's one server, calls its first tool, and leaves headless-runs alone.
 #
-#   judge call     claude with `--tools ""` and no --mcp-config, `codex exec`, or copilot with piped stdin and no -p:
+#   codex exec --json
+#                  a fenced run (the Codex fence and config-home probes), not a judge call: the MCP server comes
+#                  from the `-c mcp_servers.<name>.{command,args,env}` flags. With a server it calls the server's
+#                  first tool and prints Codex's exec --json events (thread.started, an mcp_tool_call item, an
+#                  agent_message item); without one it prints a thread and an agent_message. $FAKE_CODEX_PROBE
+#                  (a dock env value) is pass (default), shell-ran (creates the sentinel file the fence probe
+#                  watches for and prints a command_execution item), login-failed (401 on stderr, exit 1) or
+#                  plugin-loaded (makes plugins/cache/github in $CODEX_HOME).
+#
+#   judge call     claude with `--tools ""` and no --mcp-config, `codex exec` without --json, or copilot with piped stdin and no -p:
 #                  a judge probe or call. It reads the prompt from stdin, answers {"reply":
 #                  "ok"} in the harness's real shape (claude's structured_output, codex's -o
 #                  file, copilot's stdout) and leaves headless-runs alone. A claude call under
@@ -114,12 +123,22 @@
 #                  Every byte read is appended to `stdin` while the later cues run, so a
 #                  `wait <name>` then `event SessionStart ...` can follow input. Without
 #                  it the recorder starts only after the cues end, as below.
-#   mcp <name>     Claude only, needs python3: waits for the file <name> in the recording directory
+#   mcp <name>     needs python3: waits for the file <name> in the recording directory
 #                  holding {"name": <tool>, "arguments": {...}}, makes that one tools/call through
-#                  the first server of the --mcp-config in its argv (with the server's env), and
+#                  the first server of the --mcp-config in its argv (Codex: the `-c mcp_servers.<name>.*`
+#                  flags; with the server's env), and
 #                  writes the tool result to <name>.reply (an RPC error becomes an isError result)
 #                  It lists the tools first and, as Claude Code does, fails the cue (no reply, a line
 #                  in mcp-error) when a tool's inputSchema is not an object with an object properties
+#   codexready     a trusted Codex TUI waiting for its first message: shows the composer and writes the hook's trust entry
+#                  to $CODEX_HOME/config.toml. `codexreply` does both too, but only after the cues before it.
+#   codexreply <text>
+#                  Codex only, needs jq, and the last cue (it never ends): like `reply`, for a Codex chat. It
+#                  writes a rollout under $CODEX_HOME/sessions (a token_count line as `usage` writes, then per
+#                  message the user's text and an assistant line holding <text>). It shows Codex's composer, records the
+#                  hooks trust Codex would have written to $CODEX_HOME/config.toml, and sets the pane's
+#                  @admiral-transcript only when the first message arrives, as a first turn's SessionStart would,
+#                  creates `cues-done`, goes raw and appends every byte it reads to `stdin`.
 #   wait <name>    block until the file <FAKE_RECORD_DIR>/<tmux session>/<name> exists,
 #                  so a test decides when the next cue (an exit, say) runs
 #   reply <text>   Claude only, needs jq, and the last cue (it never ends): creates `cues-done`,
@@ -268,8 +287,25 @@ p.wait(5)
 PYEOF
 )
 mcpdrive() { python3 -c "$MCPPY" "$@"; }
+# Codex takes its MCP servers as `-c mcp_servers.<n>.<key>=<toml>` flags; this prints them as a --mcp-config JSON file.
+CODEXPY=$(
+	cat <<'PYEOF2'
+import json, sys, tomllib
+cfg = {}
+a = sys.argv[1:]
+for i, x in enumerate(a):
+    if x in ("-c", "--config") and i + 1 < len(a) and "=" in a[i + 1]:
+        k, v = a[i + 1].split("=", 1)
+        if k.startswith("mcp_servers."):
+            name, key = k[len("mcp_servers."):].split(".", 1)
+            cfg.setdefault(name, {}).update(tomllib.loads(key + " = " + v))
+print(json.dumps({"mcpServers": cfg}))
+PYEOF2
+)
+codexmcpcfg() { python3 -c "$CODEXPY" "$@"; }
 # A judge call, which also carries -p on claude and so comes before the guard run below.
 judge=""
+codexprobe=""
 case "$(basename "$0")" in
 claude)
   # An empty tool list with no MCP config; the chat and the fence probe pass both.
@@ -282,7 +318,10 @@ claude)
   done
   [ -n "$notools" ] && [ -z "$mcpcfg" ] && judge=1
   ;;
-codex) [ "$1" = exec ] && judge=1 ;;
+codex)
+  [ "$1" = exec ] && judge=1
+  for a in "$@"; do [ "$a" = "--json" ] && judge="" && codexprobe=1; done
+  ;;
 copilot) [ -z "$headless" ] && [ ! -t 0 ] && judge=1 ;;
 esac
 if [ -n "$judge" ]; then
@@ -347,6 +386,38 @@ if [ -n "$judge" ]; then
   fi
   [ -n "$out" ] && printf '%s' "$body" >"$out"
   printf '%s' "$body"
+  exit 0
+fi
+# A fenced codex exec (the fence and config-home probes): see the header. It leaves headless-runs alone.
+if [ -n "$codexprobe" ]; then
+  if [ "${FAKE_CODEX_PROBE:-pass}" = login-failed ]; then
+    echo "401 Unauthorized" >&2
+    exit 1
+  fi
+  echo '{"type":"thread.started","thread_id":"fake-thread"}'
+  cfgfile="${TMPDIR:-/tmp}/fake-codex-mcp.$$"
+  codexmcpcfg "$@" >"$cfgfile"
+  if grep -q '"command"' "$cfgfile"; then
+    mcpdrive probe "$cfgfile" >/dev/null
+    printf '%s\n' '{"type":"item.completed","item":{"type":"mcp_tool_call","server":"probe","tool":"ping","status":"completed"}}'
+    case "$FAKE_CODEX_PROBE" in
+    shell-ran)
+      dir=$(python3 -c 'import json,sys; print(next(iter(json.load(open(sys.argv[1]))["mcpServers"].values()))["env"]["ADMIRAL_PROBE_DIR"])' "$cfgfile")
+      nonce=$(python3 -c 'import json,sys; print(next(iter(json.load(open(sys.argv[1]))["mcpServers"].values()))["env"]["ADMIRAL_PROBE_NONCE"])' "$cfgfile")
+      : >"$dir/ran-$nonce"
+      echo '{"type":"item.completed","item":{"type":"command_execution","command":"touch x","status":"completed"}}'
+      ;;
+    esac
+  else
+    case "$FAKE_CODEX_PROBE" in
+    plugin-loaded)
+      mkdir -p "$CODEX_HOME/plugins/cache/github"
+      ;;
+    esac
+  fi
+  rm -f "$cfgfile"
+  echo '{"type":"item.completed","item":{"type":"agent_message","text":"pong"}}'
+  echo '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
   exit 0
 fi
 # A fenced run (the fence probe): no tools of its own, one MCP server. It leaves headless-runs alone.
@@ -421,7 +492,7 @@ echo "$me" >"$d/harness"
 printf '%s\0' "$@" >"$d/argv"
 env >"$d/env"
 pwd -P >"$d/cwd"
-tmux show-options -v @admiral-name >"$d/name"
+tmux show-options -qv @admiral-name >"$d/name" 2>/dev/null
 printf '%s\n' "$first" >"$d/options"
 printf '%s\n' "$firstw" >"$d/window-options"
 printf '%s\n' "$dirs" >"$d/dirs"
@@ -501,8 +572,19 @@ if [ -n "$FAKE_CUE" ] && [ -f "$FAKE_CUE" ]; then
 				[ "$prev" = "--mcp-config" ] && cfg=$a
 				prev=$a
 			done
+			if [ "$me" = codex ]; then
+				cfg="$d/.mcp-config"
+				codexmcpcfg "$@" >"$cfg"
+			fi
 			while [ ! -e "$d/$arg" ]; do sleep 0.1; done
 			mcpdrive call "$cfg" "$d/$arg" "$d/$arg.reply" </dev/null 2>>"$d/mcp-error" || echo "mcp cue $arg: the MCP call failed" >>"$d/mcp-error"
+			;;
+		codexready)
+			# A trusted Codex TUI waiting for its first message: the composer shows and the hook's trust entry is in the chat home.
+			mkdir -p "$CODEX_HOME"
+			grep -qs ':session_start:' "$CODEX_HOME/config.toml" || printf '%s\n' "[hooks.state.\"$CODEX_HOME/config.toml:session_start:0:0\"]" 'trusted_hash = "sha256:fake"' >>"$CODEX_HOME/config.toml"
+			printf '%s\n' '› Ask Codex to do anything' '  ← for agents · ? for shortcuts'
+			stty raw -echo <&3 2>/dev/null
 			;;
 		replydelay) FAKE_REPLY_DELAY=$arg ;;
 		events)
@@ -613,6 +695,42 @@ EOF3
 			: >"$d/cues-done"
 			export FAKE_REPLY_DELAY FAKE_REPLY=$arg FAKE_TRANSCRIPT="$CLAUDE_CONFIG_DIR/projects/zz/$sid.jsonl" FAKE_MSG="$d/.msg" FAKE_APPEND="$d/.append"
 			# awk splits at CR, the byte Enter sends in raw mode; the message goes to a file so jq reads it verbatim.
+			cat -u <&3 | tee -a "$d/stdin" | awk 'BEGIN { RS = "\r" }
+				{
+					gsub("\033\\[[0-9;?]*[ -/]*[@-~]", ""); gsub(/\033/, "")
+					if ($0 == "") next
+					n++
+					printf "%s", $0 > ENVIRON["FAKE_MSG"]
+					close(ENVIRON["FAKE_MSG"])
+					system("sh \"$FAKE_APPEND\" " n)
+				}'
+			exit
+			;;
+		codexreply)
+			if [ -z "$CODEX_HOME" ]; then
+				echo "codexreply cue: CODEX_HOME is unset" | tee "$d/reply-error" >&2
+				exit 1
+			fi
+			path="$CODEX_HOME/sessions/2026/11/12/rollout-2026-11-12T10-00-00-$sess.jsonl"
+			# A trusted hook leaves this entry in the chat home's config.toml; a first turn then binds the transcript, as
+			# Codex's SessionStart does, so the option and the rollout appear only when the first message arrives.
+			mkdir -p "$CODEX_HOME"
+			grep -qs ':session_start:' "$CODEX_HOME/config.toml" || printf '%s\n' "[hooks.state.\"$CODEX_HOME/config.toml:session_start:0:0\"]" 'trusted_hash = "sha256:fake"' >>"$CODEX_HOME/config.toml"
+			cat >"$d/.append" <<'EOF4'
+sleep "${FAKE_REPLY_DELAY:-0}"
+if [ "$1" = 1 ]; then
+  mkdir -p "$(dirname "$FAKE_TRANSCRIPT")"
+  printf '%s\n' '{"timestamp":"2026-11-12T10:00:00.000Z","ordinal":0,"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":500,"cached_input_tokens":200,"cache_write_input_tokens":0,"output_tokens":60,"reasoning_output_tokens":20,"total_tokens":560}}}}' >>"$FAKE_TRANSCRIPT"
+  tmux set -p -t "$TMUX_PANE" @admiral-transcript "1700000000000000000 startup $FAKE_TRANSCRIPT"
+fi
+jq -cn --rawfile t "$FAKE_MSG" --arg r "$FAKE_REPLY" --argjson n "$1" '
+  {timestamp: (now | todate), ordinal: ($n * 2 + 1), type: "event_msg", payload: {type: "item_completed", item: {type: "UserMessage", id: ("fake-user-" + ($n | tostring)), content: [{text: $t}]}}},
+  {timestamp: (now | todate), ordinal: ($n * 2 + 2), type: "event_msg", payload: {type: "item_completed", item: {type: "AgentMessage", id: ("fake-reply-" + ($n | tostring)), content: [{text: $r}]}}}' >>"$FAKE_TRANSCRIPT"
+EOF4
+			printf '%s\n' '› Ask Codex to do anything' '  ← for agents · ? for shortcuts'
+			stty raw -echo <&3 2>/dev/null
+			: >"$d/cues-done"
+			export FAKE_REPLY_DELAY FAKE_REPLY=$arg FAKE_TRANSCRIPT="$path" FAKE_MSG="$d/.msg" FAKE_APPEND="$d/.append"
 			cat -u <&3 | tee -a "$d/stdin" | awk 'BEGIN { RS = "\r" }
 				{
 					gsub("\033\\[[0-9;?]*[ -/]*[@-~]", ""); gsub(/\033/, "")

@@ -131,7 +131,7 @@ func Run(o Options) int {
 		fmt.Fprintf(os.Stderr, "admiral: running Codex without its own app-server: %s\n", why)
 		args := o.Args
 		// A Codex with no app-server predates --no-daemon and would reject it.
-		if hasNoDaemon(o.Exe) {
+		if HasNoDaemon(o.Exe) {
 			args = append([]string{"--no-daemon"}, args...)
 		}
 		return runTUI(o, args, sigs)
@@ -177,8 +177,8 @@ func closed(c <-chan struct{}) bool {
 	}
 }
 
-// hasNoDaemon asks the exe's --help, briefly; any doubt reads as no.
-func hasNoDaemon(exe string) bool {
+// HasNoDaemon asks the exe's --help, briefly; any doubt reads as no.
+func HasNoDaemon(exe string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	var out bytes.Buffer

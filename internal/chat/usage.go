@@ -49,7 +49,7 @@ const clearWait = 3 * time.Second
 // caller's goroutine. path is the transcript recorded before the clear or kill, since a clear rewrites it.
 // A /clear passes the transcript option as it stood before, and Claude may write its cost-state while it
 // handles the command: the file is read once the clear's SessionStart changes the option, or after clearWait.
-func (s *fleetChat) recordReset(path, configDir, fleet, clearedFrom string) {
+func (s *fleetChat) recordReset(harness, path, configDir, fleet, clearedFrom string) {
 	if s.Outcomes == nil {
 		return
 	}
@@ -67,8 +67,12 @@ func (s *fleetChat) recordReset(path, configDir, fleet, clearedFrom string) {
 		var cur *usage.Figures
 		// An empty dir would resolve projects/ against the working directory.
 		if path != "" && configDir != "" {
-			if f, _, err := transcriptfs.Open(configDir, path); err == nil {
-				if fig, err := usage.ParseClaude(f); err == nil {
+			if f, _, err := transcriptfs.OpenFor(harness, configDir, path); err == nil {
+				parse := usage.ParseClaude
+				if harness == "codex" {
+					parse = usage.ParseCodex
+				}
+				if fig, err := parse(f); err == nil {
 					cur = &fig
 				}
 				f.Close()
@@ -83,6 +87,6 @@ func (s *fleetChat) recordReset(path, configDir, fleet, clearedFrom string) {
 			s.ForgetLive(s.name())
 		}
 		s.Outcomes.Enqueue(outcomes.Record{Ship: s.name(), Event: "usage",
-			Fields: usage.ExitFields(fleet, "claude", 0, got, nil)}, nil)
+			Fields: usage.ExitFields(fleet, harness, 0, got, nil)}, nil)
 	}()
 }

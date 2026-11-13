@@ -60,13 +60,25 @@ function versionedHarness(a: Admiral, name: string) {
   return path;
 }
 
+/** A codex dock whose probes really pass: it answers `--version`, hands every other run to the e2e fake, and the engineer's login exists. */
+function probeableCodex(a: Admiral, fleet: string) {
+  const path = a.fakeHarness('codex');
+  const fake = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'e2e', 'fakeharness', 'codex');
+  writeFileSync(path, `#!/bin/sh\n[ "$1" = "--version" ] && { echo "1.2.3 (fake)"; exit 0; }\nexec ${JSON.stringify(fake)} "$@"\n`);
+  const identity = join(a.home, 'identity', `${fleet}-codex`);
+  mkdirSync(identity, { recursive: true });
+  writeFileSync(join(identity, 'auth.json'), 'fake-codex-login', { mode: 0o600 });
+  return path;
+}
+
 /** Zulu (Westwind) comes first, alpha (Homeport) second; `live` makes the docks launchable and gives zulu the orders; `claude` replaces zulu's claude dock. */
 export function seedFleets(a: Admiral, opts: { live?: boolean; chat?: boolean; versioned?: boolean; holdChat?: ChatFleet; claude?: { executable: string; env: Record<string, string> } } = {}) {
   const live = !!opts.live;
   // A version the server can detect, which Check again needs to keep a seeded probe result.
   const codexDock = (fleet: string, harness: Harness) => {
     const d = dock(a, fleet, harness, live);
-    return opts.versioned && !live ? { ...d, executable: versionedHarness(a, harness) } : d;
+    if (!opts.versioned || live) return d;
+    return { ...d, executable: harness === 'codex' ? probeableCodex(a, fleet) : versionedHarness(a, harness) };
   };
   const config: Record<string, unknown> = {
     version: 1,
