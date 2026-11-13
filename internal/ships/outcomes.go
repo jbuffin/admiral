@@ -385,8 +385,7 @@ func (s *Service) readReport(session string) json.RawMessage {
 	return raw
 }
 
-// loadReport reads the report through the guards and says what was wrong with it, "" for a missing one.
-// A caller that reads on every change of the file reports the problem once, not on each read.
+// loadReport reads the report through the guards and returns what was wrong with it instead of logging, so a caller can log once.
 func (s *Service) loadReport(session string) (raw json.RawMessage, problem string) {
 	_, path, _, ok := s.shipFiles(session)
 	if !ok {

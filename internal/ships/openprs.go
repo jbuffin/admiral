@@ -22,10 +22,6 @@ type openState struct {
 	result string
 	prs    []string // the report's PRs that GitHub confirms open, in report order
 	tried  bool     // a moor was attempted for this report
-	// listed holds the report's PRs until GitHub is asked, one tick after the file appeared: a ship that writes its report as it
-	// exits is gone by then, and an ended ship's PRs are not looked up.
-	listed []string
-	seen   time.Time
 }
 
 // reportStamp says a report file changed without reading it.
@@ -74,14 +70,7 @@ func (s *Service) refreshOpenPRs(ctx context.Context) {
 			s.openMu.Unlock()
 			continue
 		case st != nil && st.stamp == stamp:
-			var listed []string
-			if len(st.listed) > 0 && time.Since(st.seen) >= tick {
-				listed, st.listed = st.listed, nil
-			}
 			s.openMu.Unlock()
-			if len(listed) > 0 && s.GitHub != nil {
-				s.checkOpenPRs(ctx, sess, st, listed)
-			}
 			continue
 		}
 		raw, _ := s.loadReport(sess.Name)
@@ -89,8 +78,12 @@ func (s *Service) refreshOpenPRs(ctx context.Context) {
 		if s.open == nil {
 			s.open = map[string]*openState{}
 		}
-		s.open[sess.Name] = &openState{stamp: stamp, result: rep.Result, listed: rep.PRs, seen: time.Now()}
+		st = &openState{stamp: stamp, result: rep.Result}
+		s.open[sess.Name] = st
 		s.openMu.Unlock()
+		if len(rep.PRs) > 0 && s.GitHub != nil {
+			s.checkOpenPRs(ctx, sess, st, rep.PRs)
+		}
 	}
 	s.openMu.Lock()
 	for name := range s.open {
