@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { call } from './api';
 import type { Conversation } from './conversation';
 import { boatRoutes } from './flotilla';
+import { Icon } from './Icon';
 import { bubblesShowing, snapshotOf, wakeRefused, type BoxState, type Send } from './messageBox';
 
 /** What the box talks to: the ship, or one of its boats when `crew` is set. */
@@ -103,11 +104,55 @@ export function useComposer(target: Target, conv: Conversation) {
   return { waking: box.waking, wake, text: box.text, setText: (text: string) => patch(key, () => ({ text })), bubbles, error: box.error, interrupting: box.interrupting, send, interrupt };
 }
 
-/** The box under the Conversation tab: a message to the ship or the picked boat, a dimmed bubble per message until the conversation shows it, and Interrupt. */
-export function Composer({ target, box }: { target: Target; box: ReturnType<typeof useComposer> }) {
+/** One line that grows with its text, up to a third of the screen, with Send inside it; Enter sends and Shift+Enter breaks the line. */
+export function MessageField({ label, placeholder, text, setText, send, disabled, canSend }: { label: string; placeholder: string; text: string; setText: (t: string) => void; send: () => void; disabled: boolean; canSend: boolean }) {
   const field = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = field.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [text]);
+  return (
+    <div class="msg-field">
+      <textarea
+        ref={field}
+        class="msg-input"
+        aria-label={label}
+        rows={1}
+        value={text}
+        disabled={disabled}
+        placeholder={placeholder}
+        onInput={(e) => setText(e.currentTarget.value)}
+        onFocus={() => field.current?.scrollIntoView({ block: 'nearest' })}
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter' || e.shiftKey || e.isComposing || e.keyCode === 229) return;
+          e.preventDefault();
+          send();
+        }}
+      />
+      <button type="button" class="msg-send" aria-label="Send" disabled={disabled || !canSend} onClick={send}>
+        <span class="msg-send-dot">
+          <Icon name="send" size={18} />
+        </span>
+      </button>
+    </div>
+  );
+}
+
+/** Interrupt, quiet beside the tabs or over the box: it presses Esc in the pane. */
+export function InterruptButton({ box }: { box: ReturnType<typeof useComposer> }) {
+  return (
+    <button type="button" class="interrupt-btn" disabled={box.interrupting} onClick={() => void box.interrupt()}>
+      Interrupt
+    </button>
+  );
+}
+
+/** The box under the Conversation tab: a message to the ship or the picked boat, and a dimmed bubble per message until the conversation shows it. Interrupt goes over the box unless the view puts it beside its tabs. */
+export function Composer({ target, box, interrupt = true }: { target: Target; box: ReturnType<typeof useComposer>; interrupt?: boolean }) {
   const { state } = target;
-  const { text, setText, bubbles, error, interrupting, send, interrupt, waking } = box;
+  const { text, setText, bubbles, error, send, waking } = box;
   return (
     <div class="msg-box">
       {bubbles.map((b) => (
@@ -121,34 +166,20 @@ export function Composer({ target, box }: { target: Target; box: ReturnType<type
         </p>
       ) : null}
       {state.note ? <p class="msg-note">{state.note}</p> : null}
-      <div class="msg-row">
-        <textarea
-          ref={field}
-          class="msg-input"
-          aria-label="Message"
-          rows={2}
-          value={text}
-          disabled={!state.enabled || waking}
-          placeholder={state.enabled ? (state.placeholder ?? `Message the ${target.crew === undefined ? 'ship' : 'boat'}`) : ''}
-          onInput={(e) => setText(e.currentTarget.value)}
-          onFocus={() => field.current?.scrollIntoView({ block: 'nearest' })}
-          onKeyDown={(e) => {
-            if (e.key !== 'Enter' || e.shiftKey || e.isComposing || e.keyCode === 229) return;
-            e.preventDefault();
-            send();
-          }}
-        />
-        <div class="msg-actions">
-          <button type="button" class="btn primary" disabled={!state.enabled || waking || !text.trim()} onClick={send}>
-            Send
-          </button>
-          {target.interruptible ? (
-            <button type="button" class="btn" disabled={interrupting} onClick={() => void interrupt()}>
-              Interrupt
-            </button>
-          ) : null}
+      {interrupt && target.interruptible ? (
+        <div class="msg-tools">
+          <InterruptButton box={box} />
         </div>
-      </div>
+      ) : null}
+      <MessageField
+        label="Message"
+        placeholder={state.enabled ? (state.placeholder ?? `Message the ${target.crew === undefined ? 'ship' : 'boat'}`) : ''}
+        text={text}
+        setText={setText}
+        send={send}
+        disabled={!state.enabled || waking}
+        canSend={text.trim() !== ''}
+      />
     </div>
   );
 }

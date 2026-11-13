@@ -6,7 +6,7 @@ import { followConversation, type Conversation } from './conversation';
 import { cardFor } from './answerCard';
 import { ConversationView } from './ConversationView';
 import { hasConversationAdapter } from './conversationGate';
-import { Composer, useComposer, type Target } from './Composer';
+import { Composer, InterruptButton, useComposer, type Target } from './Composer';
 import { boatBoxState, chipState, flotilla } from './flotilla';
 import { Icon } from './Icon';
 import { MooredPRs } from './MooredPRs';
@@ -399,12 +399,15 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
         </div>
       ) : null}
       {ship.crew.length > 0 ? <Flotilla ship={ship} picked={boatName ?? null} pick={setCrew} /> : null}
-      <div role="tablist" class="view-tabs" aria-label={`${ship.name} views`}>
-        {TABS.map((t) => (
-          <button key={t} type="button" role="tab" id={`tab-${t}`} aria-selected={tab === t} aria-controls="view-panel" class="view-tab" onClick={() => setTab(t)}>
-            {t}
-          </button>
-        ))}
+      <div class="view-tabs-row">
+        <div role="tablist" class="view-tabs" aria-label={`${ship.name} views`}>
+          {TABS.map((t) => (
+            <button key={t} type="button" role="tab" id={`tab-${t}`} aria-selected={tab === t} aria-controls="view-panel" class="view-tab" onClick={() => setTab(t)}>
+              {t}
+            </button>
+          ))}
+        </div>
+        {target.interruptible ? <InterruptButton box={box} /> : null}
       </div>
       <div role="tabpanel" id="view-panel" aria-labelledby={`tab-${tab}`} class={`view-panel${tab === 'Terminal' ? ' terminal' : ''}`}>
         {tab === 'Conversation' ? (
@@ -428,7 +431,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
               />
               )}
             </div>
-            <Composer target={target} box={box} />
+            <Composer target={target} box={box} interrupt={false} />
           </>
         ) : tab === 'Terminal' ? (
           <TerminalTab ship={ship} boat={boat} />

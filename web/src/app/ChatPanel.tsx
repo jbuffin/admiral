@@ -12,6 +12,7 @@ import { go, loc, chatPeekOf, chatPeekPath, chatSettingsPath, chatTerminalOf, ch
 import { renderMarkdown } from './markdown';
 import { PeekQuestions } from './PeekQuestions';
 import { useChat } from './useChat';
+import { MessageField } from './Composer';
 import { workingLabel } from './turns';
 import type { Surface } from './surfaces';
 import { blankDraft } from '../questions';
@@ -115,7 +116,6 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
 
 function ChatComposer({ chat }: { chat: Chat }) {
   const { text, setText, send, sending, error } = chat;
-  const field = useRef<HTMLTextAreaElement>(null);
   return (
     <div class="msg-box">
       {error ? (
@@ -123,28 +123,7 @@ function ChatComposer({ chat }: { chat: Chat }) {
           {error}
         </p>
       ) : null}
-      <div class="msg-row">
-        <textarea
-          class="msg-input"
-          aria-label="Message AdmiralBot"
-          placeholder="Ask AdmiralBot"
-          rows={2}
-          ref={field}
-          onFocus={() => field.current?.scrollIntoView({ block: 'nearest' })}
-          value={text}
-          onInput={(e) => setText(e.currentTarget.value)}
-          onKeyDown={(e) => {
-            if (e.key !== 'Enter' || e.shiftKey || e.isComposing || e.keyCode === 229) return;
-            e.preventDefault();
-            void send();
-          }}
-        />
-        <div class="msg-actions">
-          <button type="button" class="btn primary" disabled={sending || !text.trim()} onClick={() => void send()}>
-            Send
-          </button>
-        </div>
-      </div>
+      <MessageField label="Message AdmiralBot" placeholder="Ask AdmiralBot" text={text} setText={setText} send={() => void send()} disabled={false} canSend={!sending && text.trim() !== ''} />
     </div>
   );
 }
