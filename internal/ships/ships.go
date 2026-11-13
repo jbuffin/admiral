@@ -91,6 +91,8 @@ type Ship struct {
 	Returning bool `json:"returning,omitempty"`
 	// CarriesPRs is set on a live ship that carries a PR still open, which returns to port only once its PRs are merged.
 	CarriesPRs bool `json:"carries_prs,omitempty"`
+	// OpenPRs is a live ship's report PRs that GitHub confirms open, in report order.
+	OpenPRs []string `json:"open_prs,omitempty"`
 	// Crew and Subagents are always present, empty lists as [].
 	Crew      []CrewBoat             `json:"crew"`
 	Subagents []sessionhost.Subagent `json:"subagents"`
@@ -169,6 +171,9 @@ type Service struct {
 	// settling holds the exit-0 ships whose PRs are being checked, by session.
 	settling map[string]bool
 	settleWG sync.WaitGroup
+	// open is what each live ship's report says of its open PRs, by session; under openMu.
+	openMu sync.Mutex
+	open   map[string]*openState
 	// waking holds the moored ships with a wake under way, by session.
 	waking map[string]bool
 	// roundLogged is each session's last round whose end is written, by launch and round, so a retried end writes none.
@@ -237,6 +242,7 @@ func (s *Service) ship(sess sessionhost.Session) Ship {
 			sh.PolledAt = p.at.Format(time.RFC3339)
 		}
 	}
+	sh.OpenPRs = s.openPRsOf(sess.Name)
 	if s.Tail != nil {
 		sh.Tail = s.Tail(sess.Name)
 	}
@@ -386,6 +392,8 @@ func (s *Service) Run(ctx context.Context) {
 		}
 		s.observe(ctx)
 		s.advanceReturns()
+		s.refreshOpenPRs(ctx)
+		s.autoMoor(ctx)
 		s.sailOff(ctx, sailing)
 		if gone {
 			s.keep()

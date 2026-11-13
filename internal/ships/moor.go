@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/sessionhost"
@@ -88,6 +87,11 @@ func (s *Service) countedPRs(ctx context.Context, sess sessionhost.Session) []st
 // moor writes the record before the session goes, so a crash between leaves the ship in one place or both.
 // It reports whether the ship has a record.
 func (s *Service) moor(ctx context.Context, sess sessionhost.Session, prs []string) bool {
+	return s.moorVia(ctx, sess, prs, "")
+}
+
+// moorVia stamps the moored outcome with who asked, as Stop's records are.
+func (s *Service) moorVia(ctx context.Context, sess sessionhost.Session, prs []string, via string) bool {
 	name, o := sess.Name, sess.Options
 	s.mooredMu.Lock()
 	s.loadMoored()
@@ -114,7 +118,7 @@ func (s *Service) moor(ctx context.Context, sess sessionhost.Session, prs []stri
 		return false
 	}
 	s.setMoored(rec)
-	s.record(outcomes.Record{Ship: name, Event: "moored", Fields: map[string]any{"prs": prs}}, nil)
+	s.record(outcomes.Record{Ship: name, Event: "moored", Fields: withVia(map[string]any{"prs": prs}, via)}, nil)
 	s.endRound(sess, "moored")
 	return true
 }

@@ -30,8 +30,18 @@ func (s *Service) serveReturn(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "ship "+session+" not found")
 		return
 	}
-	switch st := status(sess, time.Now()); {
-	case st == StatusAnchored || st == StatusSailingOff:
+	st := status(sess, time.Now())
+	exited := st == StatusAnchored || st == StatusSailingOff
+	moored, ok := moorWanted(w, r)
+	if !ok {
+		return
+	}
+	if moored && !exited {
+		s.serveMoor(w, r, sess)
+		return
+	}
+	switch {
+	case exited:
 		writeError(w, http.StatusConflict, "ship "+session+" has exited: stop it instead")
 		return
 	case sess.Options[sessionhost.OptReturning] != "":

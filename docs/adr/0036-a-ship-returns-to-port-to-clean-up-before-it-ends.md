@@ -12,9 +12,11 @@ Stop ship kills a session mid-thought, and a moored ship whose PRs merge sails o
 
 - **Return to port** is the bridge's button for a live ship that is done. Once the ship's own turn ends (needs you, reason `stop`), Admiral types one fixed clean-up prompt. When the turn that prompt starts ends the same way, Admiral stops the ship as Stop ship does. A turn that stops on a question or an approval waits for the engineer.
 - **A ship that carries a PR** doesn't offer the button: its work isn't done until review is. When the moored-ship poll sees every PR it carries done, at least one of them merged (a stack once every layer is), Admiral wakes it with its resume text and the clean-up prompt, and stops it when that turn ends. A ship that can't be woken (no valid resume text, or a launch that fails) sails off as before. A ship whose PRs were all closed unmerged sails off as before.
+- **A ship with an open PR may moor instead.** Return to port on it offers **Moor** beside the clean-up: Admiral ends the session at once, types no prompt, keeps the PRs and waits for reviews as ADR 0028 describes. Stop ship offers the same choice, with **Stop for good** as today's stop. A ship with no open PR is asked nothing.
 - The progress lives in the session option `@admiral-returning` (`queued`, then `sent`), so it survives an Admiral restart.
 
 ## Consequences
 
 - A merged ship takes one more turn and counts toward the cap as a hand wake does, without being blocked by it.
+- Moor skips the clean-up turn, so the ship's leftovers stay until its PRs end; the engineer chose that by picking it.
 - Amends [ADR 0028](0028-a-ship-with-an-open-pr-moors-and-relaunches-for-each-feedback-round.md): a merge now wakes the ship for a clean-up turn before it ends.

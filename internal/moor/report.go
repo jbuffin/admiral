@@ -15,6 +15,8 @@ const maxReport = 1 << 20
 type Report struct {
 	PRs    []string
 	Resume string
+	// Result is the report's own verdict: done, partial or failed. Version 1 has none, and so does anything else.
+	Result string
 }
 
 // A PR URL on any host, since the client's host decides which counts.
@@ -38,6 +40,7 @@ func ParseReport(raw []byte) Report {
 		Version int             `json:"version"`
 		PRs     json.RawMessage `json:"prs"`
 		Resume  string          `json:"resume"`
+		Result  any             `json:"result"`
 	}
 	if json.Unmarshal(raw, &head) != nil {
 		return Report{}
@@ -69,5 +72,11 @@ func ParseReport(raw []byte) Report {
 	if !ValidResume(head.Resume) {
 		head.Resume = ""
 	}
-	return Report{PRs: urls, Resume: head.Resume}
+	var result string
+	if head.Version == 2 {
+		if r, ok := head.Result.(string); ok && (r == "done" || r == "partial" || r == "failed") {
+			result = r
+		}
+	}
+	return Report{PRs: urls, Resume: head.Resume, Result: result}
 }

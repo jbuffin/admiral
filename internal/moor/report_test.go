@@ -99,18 +99,9 @@ func TestParseReportReadsTheResultOfAVersionTwoReport(t *testing.T) {
 		"a report that fails the PR check gives nothing": {`{"version":2,"result":"done","why":"x","prs":[{"url":"https://example.com/nope"}]}`, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if got := resultOf(ParseReport([]byte(c.raw))); got != c.want {
+			if got := ParseReport([]byte(c.raw)).Result; got != c.want {
 				t.Errorf("Result = %q, want %q", got, c.want)
 			}
 		})
 	}
-}
-
-// resultOf reads Report.Result by name, so the test file builds before the field exists.
-func resultOf(r Report) string {
-	f := reflect.ValueOf(r).FieldByName("Result")
-	if !f.IsValid() {
-		return "<Report has no Result field>"
-	}
-	return f.String()
 }
