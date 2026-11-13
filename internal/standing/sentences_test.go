@@ -107,7 +107,7 @@ func TestTheQuotaHoldSentenceSaysWhatTheLimitDoes(t *testing.T) {
 		if s.Field != "quota_hold_percent" {
 			continue
 		}
-		for _, want := range []string{"unattended", "plan window", "90%"} {
+		for _, want := range []string{"wait", "ask first", "plan window", "90%"} {
 			if !strings.Contains(s.Sentence, want) {
 				t.Errorf("sentence %q lacks %q", s.Sentence, want)
 			}
