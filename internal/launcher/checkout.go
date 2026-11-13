@@ -52,5 +52,10 @@ func (GitCheckouts) Make(home, session, dir string) (path string, err error) {
 	if err != nil {
 		return fail("exclude", nil, err)
 	}
-	return path, nil
+	// Claude's cwd is the real path, which the sandbox and permission rules must match.
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return fail("resolving the checkout", nil, err)
+	}
+	return real, nil
 }

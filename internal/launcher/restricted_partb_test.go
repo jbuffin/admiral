@@ -82,8 +82,9 @@ func TestTheRealCheckoutIsASharedCloneOnItsOwnBranchThatNeverTouchesTheDirsGit(t
 	}() {
 		t.Errorf("Make changed %s/.git: refs, worktrees or exclude lines were written there", dir)
 	}
-	if !strings.HasPrefix(path, home+string(os.PathSeparator)) {
-		t.Errorf("checkout = %s, want a path under the home %s", path, home)
+	realHome, _ := filepath.EvalSymlinks(home)
+	if !strings.HasPrefix(path, realHome+string(os.PathSeparator)) {
+		t.Errorf("checkout = %s, want a path under the resolved home %s", path, realHome)
 	}
 	if st, err := os.Stat(filepath.Join(path, ".git")); err != nil || !st.IsDir() {
 		t.Errorf("%s/.git: %v, want a directory inside the checkout, not a link to Dir's", path, err)
@@ -198,7 +199,9 @@ func TestADraftFixShipsSandboxDoesNotDenyItsCheckout(t *testing.T) {
 	_, got := settingsOf(t, argv)
 	if fs, ok := sub(t, got, "sandbox")["filesystem"].(map[string]any); ok {
 		for _, d := range strs(t, fs["denyWrite"]) {
-			if strings.HasPrefix(fc.madeFor, d) || strings.HasPrefix(d, fc.madeFor) {
+			// Only git's commondir and config.worktree are denied inside it.
+			gitFile := d == filepath.Join(fc.madeFor, ".git", "commondir") || d == filepath.Join(fc.madeFor, ".git", "config.worktree")
+			if !gitFile && strings.HasPrefix(fc.madeFor, d) {
 				t.Errorf("sandbox.filesystem.denyWrite holds %q, which covers the Draft fix checkout %s", d, fc.madeFor)
 			}
 		}
@@ -211,7 +214,8 @@ func TestADraftFixShipsSandboxDoesNotDenyItsCheckout(t *testing.T) {
 }
 
 var unsafeFlags = []string{"--dangerously-skip-permissions", "--permission-mode", "--settings", "--setting-sources", "--add-dir",
-	"--mcp-config", "--strict-mcp-config", "--allowedTools", "--allowed-tools", "--disallowedTools", "--disallowed-tools", "--permission-prompt-tool"}
+	"--mcp-config", "--strict-mcp-config", "--allowedTools", "--allowed-tools", "--disallowedTools", "--disallowed-tools", "--permission-prompt-tool",
+	"--plugin-dir", "--agents", "--allow-dangerously-skip-permissions"}
 
 func (p *pinRig) setDockArgs(args []string) {
 	p.l.Config().Fleets[0].Harnesses[0].Args = args

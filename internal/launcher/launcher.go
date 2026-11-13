@@ -766,7 +766,14 @@ func (l *Launcher) pickName() (string, error) {
 	for _, r := range moored {
 		shipNames[r.Name], sessions[r.Session] = true, true
 	}
-	return pickName(taken(shipNames, sessions, l.Kept)), nil
+	// A restricted ship's clone outlives the ship, and Make refuses a path that exists.
+	kept := func(session string) bool {
+		if _, err := os.Lstat(filepath.Join(l.Home, "checkouts", session)); err == nil {
+			return true
+		}
+		return l.Kept != nil && l.Kept(session)
+	}
+	return pickName(taken(shipNames, sessions, kept)), nil
 }
 
 // A kept inbox takes a name too, and so does a moored ship's record.
