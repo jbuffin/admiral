@@ -606,7 +606,7 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
       ledgerAt(3).replace('%s', `Stale note to delete. ${'x'.repeat(300)}`),
       // Commitments that stay open through the runner's first tick: a time far ahead, and an old no-trigger one already asked about.
       '{"v":1,"ts":"2026-10-01T09:00:00Z","event":"added","id":"c1","kind":"commitment","text":"Ask me about the dock review.","via":"admiralbot","trigger":{"kind":"none"},"action":"remind"}\n',
-      '{"v":1,"ts":"2026-11-05T09:00:00Z","event":"added","id":"c2","kind":"commitment","text":"Ring the bell at the new year.","via":"admiralbot","trigger":{"kind":"time","subject":"2099-06-15T12:00:00Z"},"action":"remind"}\n',
+      '{"v":1,"ts":"2026-11-05T09:00:00Z","event":"added","id":"c2","kind":"commitment","text":"Ring the bell at midsummer.","via":"admiralbot","trigger":{"kind":"time","subject":"2099-06-15T12:00:00Z"},"action":"remind"}\n',
       '{"v":1,"ts":"2026-11-06T09:00:00Z","event":"shown","id":"c1"}\n',
     ].join(''),
   );
@@ -749,23 +749,23 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
     await route.fulfill({ response: res, json: body });
   });
   await page.reload();
-  await expect(list.getByRole('listitem')).toHaveText([/Ask me about the dock review\./, /Ring the bell at the new year\./, /Launch the quartz ferry\./]);
+  await expect(list.getByRole('listitem')).toHaveText([/Ask me about the dock review\./, /Ring the bell at midsummer\./, /Launch the quartz ferry\./]);
   await expect(commitment('dock review')).toContainText(/no trigger/i);
-  await expect(commitment('dock review')).toContainText(/remind/i);
+  await expect(commitment('dock review')).toContainText('Remind you');
   await expect(commitment('dock review')).toContainText('Still want this?');
-  await expect(commitment('new year')).toContainText('2099');
-  await expect(commitment('new year')).toContainText(/remind/i);
-  await expect(commitment('new year')).not.toContainText('Still want this?');
+  await expect(commitment('midsummer')).toContainText('2099');
+  await expect(commitment('midsummer')).toContainText('Remind you');
+  await expect(commitment('midsummer')).not.toContainText('Still want this?');
   await expect(commitment('quartz ferry')).toContainText('gone-session');
   await expect(commitment('quartz ferry')).toContainText(/waiting/i);
-  await expect(commitment('quartz ferry')).toContainText(/launch/i);
+  await expect(commitment('quartz ferry')).toContainText('Launch a ship');
   await expect(main).not.toContainText('SECRET LAUNCH PROMPT');
   await expect(main).not.toContainText(/ledger|promise/i);
   await page.unroute('**/api/v1/chat/harbor/commitments');
 
   // Cancel removes the commitment, and it stays gone after a reload.
-  await commitment('new year').getByRole('button', { name: 'Cancel' }).click();
-  await expect(commitment('new year')).toHaveCount(0);
+  await commitment('midsummer').getByRole('button', { name: 'Cancel' }).click();
+  await expect(commitment('midsummer')).toHaveCount(0);
   await expect.poll(openIds).toEqual(['c1']);
   const cancelled = ledgerEvents().find((e) => e.event === 'cancelled' && e.id === 'c2');
   expect(cancelled, 'the ledger holds a cancelled event for it').toBeDefined();
@@ -776,7 +776,8 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
   // A commitment that closed since the page loaded answers 404: the error shows and the row leaves.
   expect((await fetch(`${admiral.url}api/v1/chat/harbor/commitments/c1`, { method: 'DELETE' })).status).toBe(204);
   await commitment('dock review').getByRole('button', { name: 'Cancel' }).click();
-  await expect(page.getByRole('alert')).toContainText(/no open commitment/i);
+  await expect(main.locator('.box').getByRole('alert')).toContainText('That commitment already closed.');
+  await expect(page.getByRole('alert')).toHaveCount(1);
   await expect(commitment('dock review')).toHaveCount(0);
   await expect(main).toContainText(/no open commitments/i);
 

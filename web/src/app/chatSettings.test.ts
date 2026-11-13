@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHAT_THRESHOLDS, INSTRUCTIONS_MAX, canSaveInstructions, commitmentMarks, triggerWords, instructionsCount, memoryNotRead, noteAge, readsMemory, switchHarness, chatErrorMessage, chatSaveBody, effortLabel, modelLabel, thresholdLabel, type ChatSettings } from './chatSettings';
+import { CHAT_THRESHOLDS, actionWords, cancelErrorMessage, INSTRUCTIONS_MAX, canSaveInstructions, commitmentMarks, triggerWords, instructionsCount, memoryNotRead, noteAge, readsMemory, switchHarness, chatErrorMessage, chatSaveBody, effortLabel, modelLabel, thresholdLabel, type ChatSettings } from './chatSettings';
 
 const shown: ChatSettings = { harness: 'claude', model: 'sonnet', effort: '', context_threshold: 150000 };
 
@@ -112,13 +112,18 @@ describe('what a chat reads', () => {
 });
 
 describe('a commitment trigger in words', () => {
-  const ships = [{ session: 'sess-7', name: 'saltpaw-2' }];
+  const ships = [{ session: 'sess-7', name: 'saltpaw-2', launched: '2026-11-01T00:00:00Z' }];
   it('names a ship found by its session, and falls back to the session for a ship that is gone', () => {
     expect(triggerWords({ kind: 'ship_sailed', subject: 'sess-7', launched: '2026-11-01T00:00:00Z' }, ships).text).toContain('saltpaw-2');
     expect(triggerWords({ kind: 'ship_anchored', subject: 'sess-7' }, ships).text).toContain('saltpaw-2');
     const gone = triggerWords({ kind: 'ship_sailed', subject: 'sess-9' }, ships).text;
     expect(gone).toContain('sess-9');
     expect(gone).not.toContain('saltpaw-2');
+  });
+  it("does not name a ship that reused the session after the trigger's launch", () => {
+    const reused = triggerWords({ kind: 'ship_sailed', subject: 'sess-7', launched: '2026-10-01T00:00:00Z' }, ships).text;
+    expect(reused).toContain('sess-7');
+    expect(reused).not.toContain('saltpaw-2');
   });
   it('says what the ship has to do', () => {
     expect(triggerWords({ kind: 'ship_sailed', subject: 'sess-7' }, ships).text.toLowerCase()).toContain('sail');
@@ -142,6 +147,9 @@ describe('a commitment trigger in words', () => {
     expect(w.text).not.toContain('T12:00:00Z');
     expect(w.href).toBeUndefined();
   });
+  it('links only a subject that is a PR or issue URL', () => {
+    expect(triggerWords({ kind: 'pr_merged', subject: 'https://example.com/elsewhere' }, ships).href).toBeUndefined();
+  });
   it('says none is no trigger', () => {
     expect(triggerWords({ kind: 'none' }, ships)).toEqual({ text: 'No trigger' });
   });
@@ -157,5 +165,16 @@ describe("a commitment row's marks", () => {
   it('marks neither on a plain open commitment, and both on one that is both', () => {
     expect(commitmentMarks({})).toEqual([]);
     expect(commitmentMarks({ waiting: true, shown: true })).toHaveLength(2);
+  });
+});
+
+describe("a commitment row's action and a failed Cancel", () => {
+  it('words the action', () => {
+    expect(actionWords('launch')).toBe('Launch a ship');
+    expect(actionWords('remind')).toBe('Remind you');
+  });
+  it('says a 404 means the commitment already closed and keeps other errors', () => {
+    expect(cancelErrorMessage(404, 'no open commitment with that id')).toBe('That commitment already closed.');
+    expect(cancelErrorMessage(500, 'boom')).toBe('boom');
   });
 });

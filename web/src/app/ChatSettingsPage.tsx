@@ -7,7 +7,7 @@ import { Flag } from './Flag';
 import { fleets } from './fleets';
 import { ships } from './shipsLink';
 import { safeHref } from './campaign';
-import { CHAT_THRESHOLDS, INSTRUCTIONS_MAX, canSaveInstructions, chatErrorMessage, commitmentMarks, chatSaveBody, effortLabel, harnessLabel, instructionsCount, memoryNotRead, modelLabel, noteAge, readsMemory, switchHarness, thresholdLabel, triggerWords, type ChatSettings } from './chatSettings';
+import { CHAT_THRESHOLDS, INSTRUCTIONS_MAX, canSaveInstructions, chatErrorMessage, actionWords, cancelErrorMessage, commitmentMarks, chatSaveBody, effortLabel, harnessLabel, instructionsCount, memoryNotRead, modelLabel, noteAge, readsMemory, switchHarness, thresholdLabel, triggerWords, type ChatSettings } from './chatSettings';
 
 const settingsOf = (f: Fleet): ChatSettings => ({ harness: f.chat.harness, model: f.chat.model, effort: f.chat.effort, context_threshold: f.chat.context_threshold });
 
@@ -53,6 +53,8 @@ function Knows({ fleet, harness }: { fleet: string; harness: string }) {
   const [commitments, setCommitments] = useState<ChatCommitment[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // Shown beside the list: the page's error line is out of view when the list is scrolled.
+  const [cancelError, setCancelError] = useState('');
 
   // What the textarea and the saved text were at the last render, so a refresh can tell a clean textarea from a draft.
   const shown = useRef({ saved, text });
@@ -75,6 +77,7 @@ function Knows({ fleet, harness }: { fleet: string; harness: string }) {
   const act = async (run: () => Promise<{ ok: true } | { ok: false; error: string }>) => {
     setBusy(true);
     setError('');
+    setCancelError('');
     const r = await run();
     if (r.ok) await load();
     else {
@@ -82,6 +85,16 @@ function Knows({ fleet, harness }: { fleet: string; harness: string }) {
       await load();
       setError(r.error);
     }
+    setBusy(false);
+  };
+  const cancel = async (id: string) => {
+    setBusy(true);
+    setError('');
+    setCancelError('');
+    const r = await cancelCommitment(fleet, id);
+    // A commitment can close before Cancel lands, so reload either way to drop it.
+    await load();
+    if (!r.ok) setCancelError(cancelErrorMessage(r.status, r.error));
     setBusy(false);
   };
   const count = instructionsCount(text);
@@ -149,6 +162,11 @@ function Knows({ fleet, harness }: { fleet: string; harness: string }) {
             <span>What you asked AdmiralBot to do later. Cancel one and it never runs.</span>
           </div>
         </div>
+        {cancelError ? (
+          <p class="note error" role="alert">
+            {cancelError}
+          </p>
+        ) : null}
         {commitments.length === 0 ? (
           <div class="set">
             <div class="t">
@@ -174,14 +192,14 @@ function Knows({ fleet, harness }: { fleet: string; harness: string }) {
                         t.text
                       )}
                       {' · '}
-                      {c.action === 'launch' ? 'Launch a ship' : 'Remind you'}
+                      {actionWords(c.action)}
                       {' · '}
                       {noteAge(c.ts, now)}
                       {marks.map((m) => ` · ${m}`).join('')}
                     </span>
                   </div>
                   <div class="note-actions">
-                    <button type="button" class="btn" disabled={busy} onClick={() => void act(() => cancelCommitment(fleet, c.id))}>
+                    <button type="button" class="btn" disabled={busy} onClick={() => void cancel(c.id)}>
                       Cancel
                     </button>
                   </div>

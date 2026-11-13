@@ -57,10 +57,11 @@ export const instructionsCount = (text: string): number => [...text.trim()].leng
 export const canSaveInstructions = (saved: string, edited: string): boolean => saved.trim() !== edited.trim() && instructionsCount(edited) <= INSTRUCTIONS_MAX;
 
 /** A commitment's trigger in plain words; `href` is set for a PR or issue. */
-export function triggerWords(trigger: ChatCommitment['trigger'], ships: Pick<Ship, 'session' | 'name'>[]): { text: string; href?: string } {
+export function triggerWords(trigger: ChatCommitment['trigger'], ships: Pick<Ship, 'session' | 'name' | 'launched'>[]): { text: string; href?: string } {
   const { kind, subject = '' } = trigger;
   if (kind === 'ship_sailed' || kind === 'ship_anchored') {
-    const name = ships.find((s) => s.session === subject)?.name || subject;
+    // A session is reused, so a stored launch stamp must match too, or this is another ship.
+    const name = ships.find((s) => s.session === subject && (!trigger.launched || s.launched === trigger.launched))?.name || subject;
     return { text: `When ${name} ${kind === 'ship_sailed' ? 'sails off' : 'anchors'}` };
   }
   if (kind === 'time') {
@@ -72,8 +73,14 @@ export function triggerWords(trigger: ChatCommitment['trigger'], ships: Pick<Shi
   const m = /^https?:\/\/[^/]+\/([^/]+\/[^/]+)\/(?:pull|issues)\/(\d+)/.exec(subject);
   const what = kind === 'pr_merged' ? 'is merged' : 'is closed';
   const ref = m ? `${m[1]}#${m[2]}` : subject;
-  return { text: `When ${kind === 'issue_closed' ? 'issue' : 'PR'} ${ref} ${what}`, href: subject };
+  return { text: `When ${kind === 'issue_closed' ? 'issue' : 'PR'} ${ref} ${what}`, ...(m && { href: subject }) };
 }
+
+/** What a commitment does when it fires. */
+export const actionWords = (action: ChatCommitment['action']): string => (action === 'launch' ? 'Launch a ship' : 'Remind you');
+
+/** A Cancel failure in words; a 404 means the commitment closed since the page loaded. */
+export const cancelErrorMessage = (status: number | undefined, error: string): string => (status === 404 ? 'That commitment already closed.' : error);
 
 /** The marks a commitment row carries: waiting for room, and already asked about. */
 export function commitmentMarks(c: Pick<ChatCommitment, 'waiting' | 'shown'>): string[] {
