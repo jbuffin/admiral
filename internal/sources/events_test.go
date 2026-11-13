@@ -322,10 +322,57 @@ func reviewRequested(repo string, n int, title, author, requester, reviewer, oth
 	if n < 6 {
 		at = "2020-01-01T00:00:00Z" // long before any poll: not new
 	}
+	return reviewRequestedAt(repo, n, title, author, requester, reviewer, other, at)
+}
+
+func reviewRequestedAt(repo string, n int, title, author, requester, reviewer, other, at string) string {
 	item := authored(repo, n, title, author)
 	return strings.TrimSuffix(item, "}") + fmt.Sprintf(`,"timelineItems":{"nodes":[`+
 		`{"__typename":"ReviewRequestedEvent","createdAt":%q,"actor":{"login":%q},"requestedReviewer":{"login":%q}},`+
 		`{"__typename":"ReviewRequestedEvent","createdAt":%q,"actor":{"login":"eng"},"requestedReviewer":{"login":%q}}]}}`, at, requester, reviewer, at, other)
+}
+
+// GitHub's clock can run behind this machine's: an event GitHub stamps before the previous poll started, by this
+// machine's clock, is still new when that poll did not see it.
+func TestAReviewRequestStampedBeforeThePollByASlowGitHubClockIsStillDeliveredOnce(t *testing.T) {
+	g := newFakeGH(t)
+	g.token("", "fake-token-default-1")
+	sources := `"gh":{"plugin":"github","fleet":"alpha","settings":{"views":[{"id":"mine","title":"Mine","query":"is:open Q1"}]}}`
+	f := newServiceFixture(t, ghConfig(`"alpha":{"name":"Alpha","claude":{}}`, sources))
+	s := &sink{}
+	f.Svc.Sup.OnEvent = func(_ string, ev Event) { s.add(ev) }
+	g.searchBy("mine", "Q1", "acme/api", 1, "one", "amy")
+	stamp := func(ago time.Duration) string { return time.Now().Add(-ago).UTC().Format(time.RFC3339) }
+	already := reviewRequestedAt("acme/api", 5, "five", "amy", "bob", "eng", "carol", stamp(2*time.Minute))
+	g.write("search/rr.match", "review-requested:@me")
+	g.write("search/rr.json", `{"data":{"search":{"nodes":[`+already+`]}}}`)
+	g.write("viewer", "eng\n")
+	f.startSources()
+	f.waitView("gh", "item 1", func(v SourceView) bool { return len(v.orders("mine")) == 1 })
+	time.Sleep(200 * time.Millisecond)
+	late := reviewRequestedAt("acme/api", 6, "six", "amy", "bob", "eng", "carol", stamp(time.Minute))
+	g.write("search/rr.json", `{"data":{"search":{"nodes":[`+already+","+late+`]}}}`)
+	reviews := func() (out []Event) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for _, ev := range s.got {
+			if ev.Kind == "review_requested" {
+				out = append(out, ev)
+			}
+		}
+		return out
+	}
+	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
+	deadline := time.Now().Add(5 * time.Second)
+	for len(reviews()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
+	time.Sleep(300 * time.Millisecond)
+	got := reviews()
+	if len(got) != 1 || !strings.HasSuffix(got[0].Ref, "/issues/6") {
+		t.Fatalf("review_requested events = %+v, want exactly one, for pull 6", got)
+	}
 }
 
 func TestAMentionOfTheEngineerOnTheirOwnItemNamesNoActorSoItIsNotTheirs(t *testing.T) {

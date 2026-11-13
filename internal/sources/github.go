@@ -100,9 +100,13 @@ type githubConn struct {
 	seen map[string]map[string]bool
 	// capped marks a view whose last answer was cut at the search's cap, so what is new to it can't be told.
 	capped map[string]bool
-	// kinds is, per event search, when it last answered and the latest event time already delivered for each item.
+	// kinds is, per event search, when it last answered and the latest event time already delivered or baselined per item.
 	kinds map[string]*kindPoll
 }
+
+// clockSkew is how far GitHub's clock may run behind this machine's. An event stamped up to this long before the last
+// poll started is still offered; emitted keeps it from being offered twice.
+const clockSkew = 15 * time.Minute
 
 type kindPoll struct {
 	at      time.Time
@@ -404,15 +408,25 @@ func (g *githubConn) pollEvents(client *github.Client, token string, router *git
 		g.mu.Lock()
 		kp := g.kinds[es.kind]
 		if kp == nil {
-			g.kinds[es.kind] = &kindPoll{at: started, emitted: map[string]time.Time{}}
+			baseline := map[string]time.Time{}
+			for _, it := range routed {
+				baseline[it.URL] = it.EventAt
+			}
+			g.kinds[es.kind] = &kindPoll{at: started, emitted: baseline}
 			g.mu.Unlock()
 			continue
 		}
+		floor := kp.at.Add(-clockSkew)
 		var due []github.Item
 		keep := map[string]time.Time{}
+		for url, at := range kp.emitted {
+			if at.After(floor) { // an item that leaves the answer and comes back must not repeat a recent event
+				keep[url] = at
+			}
+		}
 		for _, it := range routed {
 			keep[it.URL] = kp.emitted[it.URL]
-			if it.EventAt.After(kp.at) && it.EventAt.After(kp.emitted[it.URL]) {
+			if it.EventAt.After(floor) && it.EventAt.After(kp.emitted[it.URL]) {
 				due = append(due, it)
 			}
 		}
