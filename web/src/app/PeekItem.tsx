@@ -119,6 +119,7 @@ export function EventProposalBody({ entry, acting }: { entry: Entry; acting: Act
         <>
           <p class="line">{detail.summary}</p>
           {detail.sender ? <p class="line">From {detail.sender}</p> : null}
+          {p?.tier ? <p class="line">Tier {p.tier}</p> : null}
           {detail.link.startsWith('https://') ? (
             <a href={detail.link} target="_blank" rel="noopener noreferrer">
               {detail.link} ↗

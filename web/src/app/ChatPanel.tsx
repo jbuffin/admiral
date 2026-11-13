@@ -85,6 +85,7 @@ function EventCardView({ item, fleet }: { item: Extract<ThreadItem, { kind: 'eve
       </p>
       <p class="line">{item.text}</p>
       {c.sender ? <p class="line">From {c.sender}</p> : null}
+      {c.tier ? <p class="line">Tier {c.tier}</p> : null}
       {c.link?.startsWith('https://') ? (
         <a href={c.link} target="_blank" rel="noopener noreferrer">
           {c.link} ↗

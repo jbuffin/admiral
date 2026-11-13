@@ -869,6 +869,7 @@ test('Peek opens an event proposal with the untrusted summary, Mute rule by send
   await expect(peek).toBeVisible();
   await expect(peek).toContainText('Untrusted');
   await expect(peek).toContainText('Mallory asks for a review of a lantern fix.');
+  await expect(peek).toContainText('Tier T3');
   await peek.getByRole('button', { name: 'Mute rule' }).tap();
   await peek.getByRole('button', { name: /Mute this sender/ }).tap();
   await expect(peek).toContainText('Muted this sender');
@@ -876,10 +877,18 @@ test('Peek opens an event proposal with the untrusted summary, Mute rule by send
   await page.goto(admiral.url + 'app/preferences/zulu/limits');
   const skip = page.getByRole('main').locator('.row-field').filter({ hasText: routine });
   await expect(skip.locator('input')).toHaveValue('mallory-the-stranger');
+  const skipped = async () => {
+    const body = (await (await page.request.get(admiral.url + 'api/config')).json()) as { fleets: { key: string; limits?: { skip?: { senders?: { value: string; routine?: string }[] } } }[] };
+    return body.fleets.find((f) => f.key === 'zulu')?.limits?.skip?.senders ?? [];
+  };
+  await expect.poll(skipped).toEqual([{ value: 'mallory-the-stranger', routine }]);
   await skip.getByRole('button', { name: /Remove/ }).tap();
   await expect(skip).toHaveCount(0);
+  await page.getByRole('button', { name: 'Save', exact: true }).tap();
+  await expect.poll(skipped).toEqual([]);
 
   await page.goto(admiral.url + 'app/chat?fleet=zulu');
   await expect(page.getByRole('main').getByText('Untrusted').first()).toBeVisible();
+  await expect(page.getByRole('main')).toContainText('Tier T3');
   await expect(page.getByRole('main')).toContainText('Mallory asks for a review of a lantern fix.');
 });
