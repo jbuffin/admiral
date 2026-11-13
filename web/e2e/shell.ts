@@ -1100,6 +1100,9 @@ export async function prTabOfARunningStack(page: Page, a: Admiral) {
   await expect(tabs).toHaveText([/#7\s*Add the limiter/, /#8\s*Cache tokens/]);
   await expect(tabs.nth(0)).toHaveClass(/\bmerged\b/);
   await expect(tabs.nth(1)).not.toHaveClass(/\bmerged\b/);
+  await expect(subtabs.locator('.stack-arrow')).toHaveCount(1);
+  await expect(tabs.nth(1), 'the tab opens on the first open PR, not the merged bottom one').toHaveAttribute('aria-selected', 'true');
+  await expect(panel.getByRole('heading', { name: 'Cache tokens' })).toBeVisible();
   expect(await subtabs.evaluate((e) => ['auto', 'scroll'].includes(getComputedStyle(e).overflowX)), 'the row scrolls sideways').toBe(true);
   await expect.poll(() => [...new Set(reads)].sort(), 'the tab reads every PR the ship carries').toEqual([`${PR_BASE}/7`, `${PR_BASE}/8`]);
   await expect(page.getByRole('alert')).toHaveCount(0);
@@ -1129,9 +1132,17 @@ export async function prTabOfARunningStack(page: Page, a: Admiral) {
   await expect(panel.getByText('Approved', { exact: true })).toHaveCount(0);
 
   // Every 30s the open tab reads GitHub again; a tab left behind does not.
-  detail8('Cache tokens, renamed');
+  const unbroken = 'Cache-tokens-' + 'x'.repeat(150);
+  detail8(unbroken);
   await page.clock.fastForward(30_000);
-  await expect(panel.getByRole('heading', { name: 'Cache tokens, renamed' })).toBeVisible();
+  await expect(panel.getByRole('heading', { name: unbroken })).toBeVisible();
+  expect(await noHorizontalScroll(page), 'an unbroken long title wraps inside the header').toBe(true);
+  // A refresh GitHub fails keeps the last good detail, so the stack and its order hold.
+  rmSync(join(a.home, 'fakegh', 'pr_detail', `${PR_BASE}/7`.replace(/[/:]/g, '_')));
+  const failed = reads.length;
+  await page.clock.fastForward(30_000);
+  await expect.poll(() => reads.length, 'the refresh reads again').toBeGreaterThan(failed);
+  await expect(tabs).toHaveText([/#7\s*Add the limiter/, /#8/]);
   await viewTab(page, 'Conversation').tap();
   const before = reads.length;
   detail8('Cache tokens, renamed again');

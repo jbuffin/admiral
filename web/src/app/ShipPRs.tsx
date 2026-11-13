@@ -1,9 +1,10 @@
+import { Fragment } from 'preact';
 import { useLayoutEffect, useState } from 'preact/hooks';
 import { fetchPRDetail, type PRDetail, type Ship } from './api';
 import { MergeControl } from './PeekMerge';
 import { MooredActions } from './MooredActions';
 import { Failure } from './PeekItem';
-import { headerChips, orderPRs, prDot, prNumber, stackBarText } from './prTab';
+import { chooseStack, defaultPR, headerChips, orderPRs, prDot, prNumber, stackBarText, stackedPRs } from './prTab';
 import { staleNote } from './moored';
 
 const REFRESH_MS = 30_000;
@@ -12,7 +13,7 @@ const REFRESH_MS = 30_000;
 const lastRead = new Map<string, PRDetail>();
 const seen = (urls: string[]) => Object.fromEntries(urls.flatMap((u) => (lastRead.has(u) ? [[u, lastRead.get(u)!]] : [])));
 
-/** Each carried PR's detail, read when the tab opens and every 30s while it stays open; a PR that failed to load has none. */
+/** Each carried PR's detail, read when the tab opens and every 30s while it stays open; a failed read keeps the last good detail, and a PR never read has none. */
 function useDetails(session: string, urls: string[]): Record<string, PRDetail> {
   const [details, setDetails] = useState<Record<string, PRDetail>>(() => seen(urls));
   const key = urls.join('\n');
@@ -22,13 +23,9 @@ function useDetails(session: string, urls: string[]): Record<string, PRDetail> {
       urls.forEach((url) =>
         void fetchPRDetail(session, url).then((r) => {
           if (!live) return;
-          if (r.ok) lastRead.set(url, r.data);
-          else lastRead.delete(url);
-          setDetails((d) => {
-            if (r.ok) return { ...d, [url]: r.data };
-            const { [url]: _gone, ...rest } = d;
-            return rest;
-          });
+          if (!r.ok) return;
+          lastRead.set(url, r.data);
+          setDetails((d) => ({ ...d, [url]: r.data }));
         }),
       );
     read();
@@ -87,23 +84,30 @@ export function PRTab({ ship }: { ship: Ship }) {
   const [picked, setPicked] = useState('');
   const carried = ship.prs ?? [];
   const details = useDetails(ship.session, carried.map((p) => p.url));
-  const stack = carried.map((p) => details[p.url]?.stack).find((s) => s) ?? null;
+  const stack = chooseStack(carried, details);
   const prs = orderPRs(carried, stack);
   const moored = ship.status === 'moored';
   if (prs.length === 0) return <p class="line">No pull request yet. A PR shows here as soon as the ship or its crew opens one.</p>;
-  const current = prs.find((p) => p.url === picked) ?? prs[0];
-  const bar = stackBarText(prs.length, stack !== null);
+  const current = prs.find((p) => p.url === picked) ?? defaultPR(prs)!;
+  const bar = stackBarText(stackedPRs(prs, stack).length, stack !== null);
   return (
     <div class="pr-tab">
       {bar ? <div class="stack-bar">{bar}</div> : null}
       {prs.length > 1 ? (
         <div class="pr-subtabs" role="tablist" aria-label="Pull requests, bottom of the stack first">
-          {prs.map((p) => (
-            <button key={p.url} type="button" role="tab" aria-selected={p.url === current.url} class={`pr-subtab${p.state === 'MERGED' ? ' merged' : ''}`} onClick={() => setPicked(p.url)}>
-              <span class={`dot ${prDot(p)}`} />
-              <span class="num">#{prNumber(p.url)}</span>
-              {details[p.url] ? <span class="ttl">{details[p.url].title}</span> : null}
-            </button>
+          {prs.map((p, i) => (
+            <Fragment key={p.url}>
+              {i > 0 ? (
+                <span class="stack-arrow" aria-hidden="true">
+                  ›
+                </span>
+              ) : null}
+              <button type="button" role="tab" aria-selected={p.url === current.url} class={`pr-subtab${p.state === 'MERGED' ? ' merged' : ''}`} onClick={() => setPicked(p.url)}>
+                <span class={`dot ${prDot(p)}`} />
+                <span class="num">#{prNumber(p.url)}</span>
+                {details[p.url] ? <span class="ttl">{details[p.url].title}</span> : null}
+              </button>
+            </Fragment>
           ))}
         </div>
       ) : null}

@@ -902,8 +902,9 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .pr-subtab .num { font-family: var(--font-mono); font-size: var(--font-size-mono); flex: none; }
 .pr-subtab .ttl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-meta); }
 .pr-subtab.merged { color: var(--color-muted); }
+.stack-arrow { flex: none; align-self: center; color: var(--color-muted); font-size: var(--font-size-meta); }
 .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--color-muted); }
-/* A closed PR is a ring in the muted colour, apart from the open ones' waiting ring. */
+/* A closed PR is a filled dot in the line colour, apart from the open ones' waiting ring. */
 .dot.closed { background: var(--color-line2); }
 .dot.ok { background: var(--color-ok); } .dot.err { background: var(--color-err); } .dot.rev { background: var(--color-rev); } .dot.wait { background: transparent; border: 1.5px solid var(--color-muted); }
 
@@ -911,7 +912,7 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .pr-detail { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .pr-head { display: flex; flex-direction: column; gap: 6px; }
 .pr-title-row { display: flex; align-items: flex-start; gap: 12px; }
-.pr-title { flex: 1; min-width: 0; margin: 0; font-size: var(--font-size-title); font-weight: 600; line-height: 1.35; text-wrap: balance; }
+.pr-title { flex: 1; min-width: 0; overflow-wrap: anywhere; margin: 0; font-size: var(--font-size-title); font-weight: 600; line-height: 1.35; text-wrap: balance; }
 .pr-title-row .btn { flex: none; }
 .pr-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: var(--font-size-meta); color: var(--color-muted); }
 .pr-meta .mono { font-family: var(--font-mono); font-size: var(--font-size-mono); overflow-wrap: anywhere; }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MooredPR } from './api';
-import { headerChips, openCount, orderPRs, prDot, prSummary, stackBarText } from './prTab';
+import { chooseStack, defaultPR, headerChips, openCount, orderPRs, prDot, prSummary, stackBarText, stackedPRs } from './prTab';
 
 const URL = (n: number) => `https://github.com/acme/api/pull/${n}`;
 const pr = (n: number, over: Partial<MooredPR> = {}): MooredPR => ({
@@ -159,10 +159,47 @@ describe('orderPRs', () => {
     expect(numbers(orderPRs([pr(9), pr(7), pr(8)], undefined))).toEqual([9, 7, 8]);
   });
 
+  it('matches an entry to a carried PR by URL, so another repo\'s PR with the same number follows the stack', () => {
+    const other = pr(7, { url: 'https://github.com/acme/web/pull/7' });
+    const list = orderPRs([other, pr(8), pr(7)], entries(7, 8));
+    expect(list.map((p) => p.url)).toEqual([URL(7), URL(8), other.url]);
+  });
+
   it('does not change the list it is given', () => {
     const given = [pr(8), pr(7)];
     orderPRs(given, entries(7, 8));
     expect(numbers(given)).toEqual([8, 7]);
+  });
+});
+
+describe('stackedPRs', () => {
+  it('is the carried PRs in the stack, bottom first, and none without a stack', () => {
+    expect(stackedPRs([pr(20), pr(8), pr(7)], entries(7, 8)).map((p) => p.url)).toEqual([URL(7), URL(8)]);
+    expect(stackedPRs([pr(8)], null)).toEqual([]);
+  });
+});
+
+describe('chooseStack', () => {
+  it('takes the first stack a carried PR\'s detail has, in the ship\'s order', () => {
+    const a = { ...entries(7, 8), number: 1 } as never;
+    const b = { ...entries(8, 9), number: 2 } as never;
+    expect(chooseStack([pr(9), pr(8), pr(7)], { [URL(7)]: { stack: b }, [URL(8)]: { stack: a } })).toBe(a);
+  });
+
+  it('is null when no detail has a stack, or none has loaded', () => {
+    expect(chooseStack([pr(7), pr(8)], { [URL(7)]: { stack: null } })).toBeNull();
+    expect(chooseStack([pr(7)], {})).toBeNull();
+  });
+});
+
+describe('defaultPR', () => {
+  it('is the first open PR in stack order', () => {
+    expect(defaultPR([pr(7, { state: 'MERGED' }), pr(8), pr(9)])).toEqual(pr(8));
+  });
+
+  it('is the bottom PR when none is open, and nothing for no PRs', () => {
+    expect(defaultPR([pr(7, { state: 'MERGED' }), pr(8, { state: 'CLOSED' })])).toEqual(pr(7, { state: 'MERGED' }));
+    expect(defaultPR([])).toBeUndefined();
   });
 });
 
@@ -175,5 +212,6 @@ describe('stackBarText', () => {
   it('is empty with no stack, and with fewer than two PRs to show', () => {
     expect(stackBarText(2, false)).toBe('');
     expect(stackBarText(1, true)).toBe('');
+    expect(stackBarText(0, true)).toBe('');
   });
 });
