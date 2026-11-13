@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/standing"
 )
 
@@ -101,6 +102,7 @@ const (
 	ReasonQuiet      = "quiet_hours"
 	ReasonHold       = "hold_fire"
 	ReasonDedupe     = "dedupe_key_held"
+	ReasonNoRestrict = "no_restricted_harness"
 )
 
 // DecideInput is everything the decision reads for one (event, routine) pair.
@@ -116,6 +118,7 @@ type DecideInput struct {
 	Counts            standing.Counts
 	LiveDedupeKeys    []string
 	RestrictedHarness bool
+	Reviewer          standing.Verdict
 	Sender            string
 	Repo              string
 	Labels            []string
@@ -152,12 +155,15 @@ func Decide(in DecideInput) Decision {
 	if !in.Limits.RepoAllowed(in.Repo) {
 		return Decision{Outcome: Skipped, Reasons: []string{ReasonRepo}}
 	}
-	effective := func(m Mode) standing.Level {
-		return in.Limits.Effective(standing.Event{Tier: in.Tier, Routine: routineLevel(m), RestrictedHarness: in.RestrictedHarness}).Level
+	effective := func(m Mode, restricted bool) standing.Level {
+		return in.Limits.Effective(standing.Event{Tier: in.Tier, Routine: routineLevel(m), RestrictedHarness: restricted, Reviewer: in.Reviewer}).Level
 	}
-	computed := effective(Effective(in.Routine.Before, in.HoldOn))
+	computed := effective(Effective(in.Routine.Before, in.HoldOn), in.RestrictedHarness)
 	d := Decision{Computed: computed, Level: min(computed, in.Top)}
-	if in.HoldOn && Effective(in.Routine.Before, true) != in.Routine.Before && effective(in.Routine.Before) > standing.A1 {
+	if !in.RestrictedHarness && effective(Effective(in.Routine.Before, in.HoldOn), true) > computed {
+		d.Reasons = append(d.Reasons, ReasonNoRestrict)
+	}
+	if in.HoldOn && Effective(in.Routine.Before, true) != in.Routine.Before && effective(in.Routine.Before, in.RestrictedHarness) > standing.A1 {
 		d.Reasons = append(d.Reasons, ReasonHold)
 	}
 	if computed > standing.A1 {
@@ -338,11 +344,18 @@ func (s *Scheduler) HandleEvent(ev Event) {
 		holdOn = true
 	}
 	tier := TierOf(ev, f.Limits)
+	restricted := autopilotgate.RestrictedCapable(s.Store.Home, f)
+	// The step reviewer runs only in a fleet with Checks; one that can't be read counts as having them.
+	reviewer := standing.Allow
+	if o, err := s.Store.StandingOrders(ev.Fleet); err != nil || len(o.Checks) > 0 {
+		reviewer = standing.Ask
+	}
 	costs := en.Costs // one record carries them, or the spend would count once per routine
 	for _, r := range matches {
 		d := Decide(DecideInput{
 			Routine: r, Tier: tier, Limits: f.Limits, Top: EventTop, HoldOn: holdOn, Now: now.In(zone),
 			SpentTodayUSD: spent, SpendUnknown: readErr != nil, Counts: counts, LiveDedupeKeys: live,
+			RestrictedHarness: restricted, Reviewer: reviewer,
 			Sender: sender, Repo: en.Repo, Labels: en.Labels, DedupeKey: en.DedupeKey,
 		})
 		if spendReason != "" && d.Outcome != Skipped && !slices.Contains(d.Reasons, spendReason) {

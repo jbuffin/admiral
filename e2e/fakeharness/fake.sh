@@ -18,6 +18,14 @@
 #   -p with --mcp-config
 #                  a fenced probe run (claude): prints an init line listing the tools of the
 #                  config's one server, calls its first tool, and leaves headless-runs alone.
+#   -p with --permission-mode dontAsk, --setting-sources project and no --mcp-config
+#                  a restricted probe run (claude): prints an init line, then for each `RUN: ` line of the
+#                  prompt a Bash tool_use and its tool_result (is_error when blocked), and leaves headless-runs
+#                  alone. It leaves the files the real sandbox would: a touch or cat of a path outside the
+#                  working directory, a git push and a curl to a host other than registry.npmjs.org are blocked.
+#                  $FAKE_RESTRICTED_PROBE (process env) is pass (default), no-sandbox (nothing is blocked, so
+#                  the outside writes, the escape hatch and the blocked curl land), no-network (every curl
+#                  fails) or no-tool (init only).
 #
 #   codex exec --json
 #                  a fenced run (the Codex fence and config-home probes), not a judge call: the MCP server comes
@@ -522,6 +530,71 @@ if [ "$(basename "$0")" = claude ] && [ -n "$headless" ] && [ -n "$mcpcfg" ]; th
   done
   mcpdrive probe "$cfg"
   exit $?
+fi
+# A restricted probe run (the restricted-ship probes): see the header. It leaves headless-runs alone, and comes
+# after the fence run because the fence and the chat pass the same permission flags.
+restrictedrun=""
+if [ "$(basename "$0")" = claude ] && [ -n "$headless" ] && [ -z "$mcpcfg" ]; then
+  rprev=""
+  rmode=""
+  rsources=""
+  for a in "$@"; do
+    [ "$rprev" = "--permission-mode" ] && [ "$a" = dontAsk ] && rmode=1
+    [ "$rprev" = "--setting-sources" ] && [ "$a" = project ] && rsources=1
+    rprev=$a
+  done
+  [ -n "$rmode" ] && [ -n "$rsources" ] && restrictedrun=1
+fi
+if [ -n "$restrictedrun" ]; then
+  mode=${FAKE_RESTRICTED_PROBE:-pass}
+  cwd=$(pwd -P)
+  echo '{"type":"system","subtype":"init","tools":["Bash","Edit","Write","Read"],"mcp_servers":[]}'
+  [ "$mode" = no-tool ] && exit 0
+  n=0
+  printf '%s\n' "$prompt" | sed -n 's/^RUN: //p' | while IFS= read -r cmd; do
+    n=$((n + 1))
+    unsandboxed=false
+    blocked=""
+    msg=""
+    path=${cmd#* }
+    case $cmd in
+    touch\ * | cat\ *)
+      case $path in */escape-*) unsandboxed=true ;; esac
+      case $path in "$cwd"/*) ;; *) blocked=1 msg="Operation not permitted" ;; esac
+      ;;
+    git\ push\ *) blocked=1 msg="Permission to use Bash with command $cmd has been denied." ;;
+    curl\ *)
+      case $cmd in *"https://registry.npmjs.org/"*) ;; *) blocked=1 msg="curl: (56) CONNECT tunnel failed, response 403" ;; esac
+      [ "$mode" = no-network ] && blocked=1 msg="curl: (6) Could not resolve host"
+      ;;
+    esac
+    [ "$mode" = no-sandbox ] && blocked=""
+    jq -cn --arg id "toolu_$n" --arg c "$cmd" --argjson u "$unsandboxed" \
+      '{type: "assistant", message: {content: [{type: "tool_use", id: $id, name: "Bash", input: ({command: $c} + (if $u then {dangerouslyDisableSandbox: true} else {} end))}]}}'
+    result=""
+    iserr=false
+    if [ -n "$blocked" ]; then
+      result=$msg
+      iserr=true
+    else
+      case $cmd in
+      curl\ *)
+        # no network on the fake: a reachable host answers with a body
+        out=""
+        prevw=""
+        for w in $cmd; do
+          [ "$prevw" = "-o" ] && out=$w
+          prevw=$w
+        done
+        [ -n "$out" ] && echo '{}' >"$out"
+        ;;
+      *) result=$(sh -c "$cmd" 2>&1) ;;
+      esac
+    fi
+    jq -cn --arg id "toolu_$n" --arg r "$result" --argjson e "$iserr" \
+      '{type: "user", message: {content: [{type: "tool_result", tool_use_id: $id, content: $r, is_error: $e}]}}'
+  done
+  exit 0
 fi
 if [ -n "$headless" ]; then
   mkdir -p "$FAKE_RECORD_DIR"

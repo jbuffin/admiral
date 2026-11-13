@@ -88,6 +88,20 @@ func restrictedSettings(level standing.Restricted, checkout, home string, altern
 	return out
 }
 
+// RestrictedProfile is the settings of a restricted ship working in checkout under Admiral's home.
+func RestrictedProfile(level standing.Restricted, checkout, home string) map[string]any {
+	realHome, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		realHome = home
+	}
+	return restrictedSettings(level, checkout, realHome, alternatesOf(checkout))
+}
+
+// RestrictedFlags are the flags that make Claude Code run under the settings file at path.
+func RestrictedFlags(settings string) []string {
+	return []string{"--permission-mode", "dontAsk", "--setting-sources", "project", "--settings", settings}
+}
+
 func restrictedSettingsPath(home, session string) string {
 	return filepath.Join(home, "restricted", session+"-settings.json")
 }
@@ -138,11 +152,7 @@ func (l *Launcher) restrictedSetup(req Request, session string, argv []string) (
 			return fail(err)
 		}
 	}
-	realHome, err := filepath.EvalSymlinks(home)
-	if err != nil {
-		realHome = home
-	}
-	raw, err := json.MarshalIndent(restrictedSettings(req.Restricted, made.checkout, realHome, alternatesOf(made.checkout)), "", "  ")
+	raw, err := json.MarshalIndent(RestrictedProfile(req.Restricted, made.checkout, home), "", "  ")
 	if err != nil {
 		return fail(err)
 	}
@@ -156,7 +166,7 @@ func (l *Launcher) restrictedSetup(req Request, session string, argv []string) (
 	}
 	req.WorkerLaunched = true
 	prompt = l.withGuidance(req, prompt)
-	argv = append(argv, "--permission-mode", "dontAsk", "--setting-sources", "project", "--settings", made.settings)
+	argv = append(argv, RestrictedFlags(made.settings)...)
 	return appendPrompt(argv, prompt, false), made, nil
 }
 
