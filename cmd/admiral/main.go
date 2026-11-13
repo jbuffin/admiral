@@ -324,7 +324,7 @@ func serve(args []string) error {
 		fmt.Fprintf(os.Stderr, "admiral: "+format+"\n", args...)
 	})
 	shipService := &ships.Service{Host: host, State: st, Hub: hub, Outcomes: outcomeLog, Launcher: &launcher.Launcher{
-		Tmux: tmuxPath, Socket: sock, Home: dir, Port: port, Config: cfg.Current,
+		Tmux: tmuxPath, Socket: sock, Home: dir, Port: port, Config: cfg.Current, Checkouts: launcher.GitCheckouts{},
 		Kept: func(session string) bool { _, ok := st.KeptInbox(session); return ok },
 		AutopilotGate: func(fleet config.Fleet, harness string) error {
 			return autopilotgate.Check(dir, fleet, harness)
