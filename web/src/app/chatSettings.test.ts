@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHAT_THRESHOLDS, switchHarness, chatErrorMessage, chatSaveBody, effortLabel, modelLabel, thresholdLabel, type ChatSettings } from './chatSettings';
+import { CHAT_THRESHOLDS, INSTRUCTIONS_MAX, canSaveInstructions, instructionsCount, noteAge, switchHarness, chatErrorMessage, chatSaveBody, effortLabel, modelLabel, thresholdLabel, type ChatSettings } from './chatSettings';
 
 const shown: ChatSettings = { harness: 'claude', model: 'sonnet', effort: '', context_threshold: 150000 };
 
@@ -53,5 +53,47 @@ describe('switching harness', () => {
   });
   it('drops an effort the harness lacks', () => {
     expect(switchHarness({ ...shown, effort: 'high' }, copilot)).toMatchObject({ harness: 'copilot', model: 'gpt-5.6-sol', effort: '' });
+  });
+});
+
+describe('the instructions count', () => {
+  it('is 2000, the server cap', () => {
+    expect(INSTRUCTIONS_MAX).toBe(2000);
+  });
+  it('counts what the server counts: code points of the trimmed text', () => {
+    expect(instructionsCount('')).toBe(0);
+    expect(instructionsCount('  be terse \n')).toBe(8);
+    expect(instructionsCount('a😀b')).toBe(3);
+    expect(instructionsCount('😀'.repeat(2000))).toBe(2000);
+  });
+});
+
+describe('Save instructions', () => {
+  it('is enabled for a change that fits', () => {
+    expect(canSaveInstructions('', 'be terse')).toBe(true);
+    expect(canSaveInstructions('be terse', '')).toBe(true);
+    expect(canSaveInstructions('be terse', 'be terse and kind')).toBe(true);
+  });
+  it('is disabled when the text is unchanged, even by surrounding whitespace', () => {
+    expect(canSaveInstructions('be terse', 'be terse!')).toBe(true);
+    expect(canSaveInstructions('be terse', 'be terse')).toBe(false);
+    expect(canSaveInstructions('be terse', '  be terse\n')).toBe(false);
+    expect(canSaveInstructions('', '   ')).toBe(false);
+  });
+  it('is disabled over the cap and enabled at it, counting a surrogate pair once', () => {
+    expect(canSaveInstructions('', '😀'.repeat(2000))).toBe(true);
+    expect(canSaveInstructions('', '😀'.repeat(2001))).toBe(false);
+    expect(canSaveInstructions('x', 'x'.repeat(2001))).toBe(false);
+  });
+});
+
+describe('a note\'s age', () => {
+  const now = Date.parse('2026-11-12T12:00:00Z');
+  it('grows from minutes to days and shows none for a time that does not parse', () => {
+    expect(noteAge('2026-11-12T11:59:40Z', now)).toBe('just now');
+    expect(noteAge('2026-11-12T11:15:00Z', now)).toBe('45m ago');
+    expect(noteAge('2026-11-12T07:00:00Z', now)).toBe('5h ago');
+    expect(noteAge('2026-11-09T12:00:00Z', now)).toBe('3d ago');
+    expect(noteAge('soon', now)).toBe('');
   });
 });

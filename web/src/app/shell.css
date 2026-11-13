@@ -132,6 +132,11 @@ a { color: inherit; text-decoration: none; }
 .control { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 0; width: 55%; }
 .control input, .control textarea { width: 100%; }
 .set.actions { justify-content: flex-end; }
+.set .t textarea { width: 100%; }
+/* A note's actions drop under its text when the row is narrow, so a long unbroken note never crushes the text column. */
+.note-row { flex-wrap: wrap; }
+.note-row .t { flex: 1 1 14rem; }
+.note-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .rows, .view { margin: 0; padding: 14px 16px; border: 0; border-top: 1px solid var(--color-line); display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .rows legend, .view legend, .views h4 { padding: 0; font-weight: 500; }
 .views { padding: 14px 16px; border-top: 1px solid var(--color-line); display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
@@ -199,7 +204,7 @@ a { color: inherit; text-decoration: none; }
 .box.list { list-style: none; margin: 0 0 14px; padding: 0; }
 .set-list { list-style: none; margin: 0; padding: 0; }
 .caps .set { align-items: flex-start; justify-content: space-between; gap: 12px; padding: 8px 0; }
-.set-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.set-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; white-space: pre-line; }
 .status { flex: none; font-size: var(--font-size-meta); font-weight: 600; color: var(--color-muted); }
 .status-passed { color: var(--color-ok); }
 .status-failed { color: var(--color-err); }

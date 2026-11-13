@@ -196,7 +196,7 @@ The server answers an open with `{"type": "conversation_opened", "ship": "<ship>
 
 ## A fleet's chat
 
-Each fleet whose chat is on (`chat.on` in `GET /api/config`) has its own AdmiralBot: a session of the fleet's chat harness (Claude Code or Codex; Copilot is not launchable yet) named `_chat-<fleet>` that runs in `$ADMIRAL_HOME/chat/<fleet>/`. Every route is also served under `/api/v1/...`. A fleet that doesn't exist is a 404, and one whose chat is off is a 409 whose `error` is the reason (no dock, a key that differs from an earlier fleet's only in case, and so on). The old global `/api/chat/*` routes are gone and answer 404.
+Each fleet whose chat is on (`chat.on` in `GET /api/config`) has its own AdmiralBot: a session of the fleet's chat harness (Claude Code or Codex; Copilot is not launchable yet) named `_chat-<fleet>` that runs in `$ADMIRAL_HOME/chat/<fleet>/`. Every route is also served under `/api/v1/...`. A fleet that doesn't exist is a 404, and one whose chat is off is a 409 whose `error` is the reason (no dock, a key that differs from an earlier fleet's only in case, and so on). The notes and instructions routes below are the exception: they only read and write files, so they stay served while the chat is off, and refuse only the case clash, since both keys would share one directory. The old global `/api/chat/*` routes are gone and answer 404.
 
 In `GET /api/config`, each fleet's `chat` object carries the AdmiralBot settings and what the fleet may choose:
 
@@ -258,11 +258,23 @@ These two serve AdmiralBot's `ask_question` tool and need an actor token: any ot
 
 ### `POST /api/chat/notes` (AdmiralBot only)
 
-Serves the `save_note` tool and needs an actor token: any other caller is `403`, and nothing is written. The fleet is the token's. The body is `{"text"}`; the text is trimmed, and must hold 1 to 500 characters. `201` answers the note `{"id", "text", "ts", "via": "admiralbot"}`. A refused note is `400` for a body that isn't that shape and `422` with an `{"error"}` AdmiralBot can act on for an empty or over-long text, or a full ledger (30 open notes; the message says the engineer can remove notes on Preferences).
+Serves the `save_note` tool and needs an actor token: any other caller is `403`, and nothing is written. The fleet is the token's. The body is `{"text"}`; the text is trimmed, and must hold 1 to 500 characters. `201` answers the note `{"id", "text", "ts", "via": "admiralbot"}`. A refused note is `400` for a body that isn't that shape and `422` with an `{"error"}` AdmiralBot can act on for an empty or over-long text, a text holding a character that shows nothing (a control other than newline and tab, a zero-width, bidi-override or tag character, a private-use or unassigned code point), or a full ledger (30 open notes; the message says the engineer can remove notes on Preferences).
 
 ### `GET /api/chat/<fleet>/notes`
 
-The fleet's open notes, oldest first: `{"notes": [{"id", "text", "ts", "via"}]}`, empty for a fleet with no ledger. `via` is absent on a note the engineer wrote. Served while the fleet's chat is off; `404` for a fleet that isn't configured. An actor token can't call it.
+The fleet's open notes, oldest first: `{"notes": [{"id", "kind", "text", "ts", "via"}]}`, empty for a fleet with no ledger. `kind` is `note` (the ledger also holds `commitment`, reserved). `ts` is RFC 3339 to the second. `via` is absent on a note the engineer wrote. Served while the fleet's chat is off; `404` for a fleet that isn't configured, `409` for a key that clashes in case with an earlier fleet's (`POST /api/chat/notes` too). An actor token can't call it.
+
+### `GET` and `PUT /api/chat/<fleet>/instructions`
+
+The fleet's instructions, which only the engineer writes: `{"text", "max": 2000}`, `text` empty when there are none. `PUT` takes `{"text"}`, stores it trimmed (whitespace and a byte order mark) and answers the same shape; empty text clears them. The cap is 2,000 Unicode code points after trimming: more is `422` with an `{"error"}` saying by how many characters. `400` for a body that isn't `{"text": string}`. They live in `chat/<fleet>/instructions.md`. Same fleet rules as the notes route; an actor token can't call either method.
+
+### `DELETE /api/chat/<fleet>/notes/<id>`
+
+Cancels the note as the engineer (the event has no `via`) and answers `204`. `404` for an id that is unknown or already cancelled. An actor token can't call it.
+
+### `POST /api/chat/<fleet>/notes/<id>/promote`
+
+Moves the note into the instructions: its text is appended after the existing instructions and a blank line (the note alone when there are none), and the note is cancelled, under one lock. Answers `200` with the new `{"text", "max"}`. `404` as for delete; `409` with an `{"error"}` when the note holds a character that shows nothing (as `POST /api/chat/notes` refuses; a note saved before that check can't be promoted), or saying by how many characters the result would pass the 2,000 cap (the blank line counts), with the instructions and the note unchanged. An actor token can't call it.
 
 Notes live in `$ADMIRAL_HOME/chat/<fleet>/ledger.jsonl`, an append-only log with one event a line: `{"v": 1, "ts", "event", "id", "kind", "text", "via"}`. `event` is `added` or `cancelled` (`fired` and `done` are reserved), `kind` is `note` (`commitment` is reserved), `text` comes on `added`, and `via` is `admiralbot` when AdmiralBot wrote the event and absent for the engineer. Reading folds the events; a line that doesn't parse is skipped.
 
