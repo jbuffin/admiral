@@ -64,7 +64,7 @@ func (s *Scheduler) LaunchProposed(ctx context.Context, fleet, routineID, trigge
 		return Trigger{}, ErrBusy
 	}
 	spec := *l
-	if link := eventLink(prop.Event); link != "" {
+	if link := EventLink(prop.Event); link != "" {
 		spec.Text = strings.TrimRight(spec.Text, "\n") + "\n\n" + link
 	}
 	rec := Trigger{Routine: r.ID, Tier: prop.Tier, At: now, Via: ViaProposal, ProposalOf: prop.ID, Event: prop.Event,
@@ -79,8 +79,8 @@ func (s *Scheduler) LaunchProposed(ctx context.Context, fleet, routineID, trigge
 	return recent[0], nil
 }
 
-// eventLink is ref when it is one plain http(s) URL, else empty: a plugin's ref is untrusted text.
-func eventLink(ref string) string {
+// EventLink is ref when it is one plain http(s) URL, else empty: a plugin's ref is untrusted text.
+func EventLink(ref string) string {
 	u, err := url.Parse(ref)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || len(ref) > 2048 {
 		return ""
