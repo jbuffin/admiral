@@ -1142,10 +1142,10 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   const orderLaunch = (title: string) => main.getByRole('button', { name: new RegExp(`^Launch.*${title}`) });
   const submit = form.getByRole('button', { name: 'Launch', exact: true });
   /** Submits the form and answers what the server received and said. */
-  const send = async () => {
+  const send = async (button = submit) => {
     const req = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ships');
     const res = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ships');
-    await press(submit);
+    await press(button);
     return { body: (await req).postDataJSON() as Post, res: await res };
   };
   const launched = async (sent: { res: { status(): number; json(): Promise<unknown> } }) => {
@@ -1255,9 +1255,24 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   const crewGroup = form.getByRole('group', { name: /crew/i });
   await crewGroup.getByRole('checkbox', { name: /scout/ }).check();
   // Just launch takes no pins, so the control goes away and nothing is sent for them.
+  const justLaunch = form.getByRole('button', { name: 'Just launch', exact: true });
   await form.getByLabel('Skill').selectOption({ label: 'Just launch' });
   await expect(crewGroup).toBeHidden();
+  await expect(justLaunch).toBeHidden();
   await form.getByLabel('Skill').selectOption({ label: 'Commodore' });
+  await crewGroup.getByRole('checkbox', { name: /scout/ }).check();
+  // The Just launch button skips the Skill pick: whatever the select holds, it sends no skill and no pins.
+  await form.getByLabel('Text').fill('just launched');
+  const plain = await send(justLaunch);
+  expect(plain.body).toMatchObject({ skill: { kind: 'none' }, text: 'just launched' });
+  expect(plain.body).not.toHaveProperty('crew');
+  const plainShip = await launched(plain);
+  await expect(form).toBeHidden();
+  await expect(main.getByRole('listitem').filter({ hasText: plainShip.name })).toBeVisible();
+  setState(a, plainShip, 'working');
+  await press(main.getByRole('button', { name: 'Launch', exact: true }));
+  await expect(form).toBeVisible();
+  await expect(form.getByLabel('Skill')).toHaveValue('commodore');
   await crewGroup.getByRole('checkbox', { name: /scout/ }).check();
   await form.getByLabel('Text').fill('with a pinned scout');
   const pinned = await send();
