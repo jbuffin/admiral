@@ -34,10 +34,10 @@ const prStateFields = " state reviewDecision mergeable mergeStateStatus statusCh
 // qualifiers such as is:blocked, and it reads AND, OR and parentheses.
 var searchQuery = searchQueryWith("", "")
 
-// Who acted on an item for the viewer: the latest event of the kind that names them.
+// What happened to the viewer on an item: the timeline events that name them, with when. A mention names no one.
 const (
-	issueActors = " timelineItems(last: 20, itemTypes: [ASSIGNED_EVENT]) { nodes { __typename ... on AssignedEvent { actor { login } assignee { ... on User { login } } } } }"
-	prActors    = " timelineItems(last: 20, itemTypes: [REVIEW_REQUESTED_EVENT, ASSIGNED_EVENT]) { nodes { __typename ... on ReviewRequestedEvent { actor { login } requestedReviewer { ... on User { login } } } ... on AssignedEvent { actor { login } assignee { ... on User { login } } } } }"
+	issueTimeline = " timelineItems(last: 20, itemTypes: [ASSIGNED_EVENT, MENTIONED_EVENT]) { nodes { __typename ... on AssignedEvent { createdAt actor { login } assignee { ... on User { login } } } ... on MentionedEvent { createdAt } } }"
+	prTimeline    = " timelineItems(last: 20, itemTypes: [REVIEW_REQUESTED_EVENT, ASSIGNED_EVENT, MENTIONED_EVENT]) { nodes { __typename ... on ReviewRequestedEvent { createdAt actor { login } requestedReviewer { ... on User { login } } } ... on AssignedEvent { createdAt actor { login } assignee { ... on User { login } } } ... on MentionedEvent { createdAt } } }"
 )
 
 func searchQueryWith(issueExtra, prExtra string) string {
@@ -69,10 +69,12 @@ type Item struct {
 	SubIssues int
 	// PR is a pull request's state as the poll would serve it; nil for an issue.
 	PR *moor.PR
-	// Author is who opened the item. Actor is who last review-requested or assigned the viewer on it, when the search
-	// asked (SearchActing) and the timeline says; "" otherwise.
-	Author string
-	Actor  string
+	// Author is who opened the item. Actor is who last review-requested or assigned the viewer on it, and EventAt when
+	// the latest such event (or mention) happened, when the search asked (SearchActing) and the timeline says; empty
+	// and zero otherwise.
+	Author  string
+	Actor   string
+	EventAt time.Time
 }
 
 // SignInError means gh is missing or signed out, as opposed to a search that failed.
@@ -138,11 +140,11 @@ func (c *Client) Search(ctx context.Context, token, query string) ([]Item, error
 	return items, err
 }
 
-// SearchActing is Search that also reads who acted on each item for the viewer, the actor of its latest review request
-// or assignment aimed at the viewer (kind review_requested or assigned; any other kind reads none), and returns the
-// viewer's login.
+// SearchActing is Search that also reads the latest timeline event of the kind aimed at the viewer on each item (a
+// review request, an assignment or a mention; any other kind reads none): its actor, when it names one, and its time.
+// It returns the viewer's login.
 func (c *Client) SearchActing(ctx context.Context, token, query, kind string) ([]Item, string, error) {
-	return c.search(ctx, token, query, searchQueryWith(issueActors, prActors), kind)
+	return c.search(ctx, token, query, searchQueryWith(issueTimeline, prTimeline), kind)
 }
 
 // SearchViewer is Search that also returns the viewer's login: the signed-in account the search ran as.
@@ -247,10 +249,11 @@ func (c *Client) item(raw any, actorKind, viewer string) (Item, bool) {
 		Author        *struct{ Login string } `json:"author"`
 		TimelineItems *struct {
 			Nodes []struct {
-				Typename string `json:"__typename"`
-				Actor    *struct{ Login string }
-				Assignee *struct{ Login string }
-				Reviewer *struct{ Login string } `json:"requestedReviewer"`
+				Typename  string    `json:"__typename"`
+				CreatedAt time.Time `json:"createdAt"`
+				Actor     *struct{ Login string }
+				Assignee  *struct{ Login string }
+				Reviewer  *struct{ Login string } `json:"requestedReviewer"`
 			} `json:"nodes"`
 		} `json:"timelineItems"`
 	}
@@ -267,17 +270,24 @@ func (c *Client) item(raw any, actorKind, viewer string) (Item, bool) {
 		it.Author = n.Author.Login
 	}
 	if n.TimelineItems != nil {
-		want := map[string]string{"review_requested": "ReviewRequestedEvent", "assigned": "AssignedEvent"}[actorKind]
+		want := map[string]string{"review_requested": "ReviewRequestedEvent", "assigned": "AssignedEvent", "mentioned": "MentionedEvent"}[actorKind]
 		for _, ev := range n.TimelineItems.Nodes { // the latest event of the kind aimed at the viewer wins
-			if ev.Typename != want || ev.Actor == nil {
+			if ev.Typename != want || ev.CreatedAt.Before(it.EventAt) {
 				continue
 			}
 			target := ev.Assignee
-			if ev.Typename == "ReviewRequestedEvent" {
+			switch ev.Typename {
+			case "ReviewRequestedEvent":
 				target = ev.Reviewer
+			case "MentionedEvent": // names no mentioner, and the timeline does not say whom it mentioned
+				it.EventAt, it.Actor = ev.CreatedAt, ""
+				continue
 			}
 			if target != nil && strings.EqualFold(target.Login, viewer) {
-				it.Actor = ev.Actor.Login
+				it.EventAt, it.Actor = ev.CreatedAt, ""
+				if ev.Actor != nil {
+					it.Actor = ev.Actor.Login
+				}
 			}
 		}
 	}

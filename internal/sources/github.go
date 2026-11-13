@@ -69,7 +69,7 @@ type openArgs struct {
 	logf        func(format string, a ...any)
 	setWarnings func([]string)
 	// emit delivers an event this source saw itself; nil when nothing listens.
-	emit func(Event)
+	emit func(Event) bool
 }
 
 // A failed view keeps its last good orders next to the error.
@@ -96,14 +96,23 @@ type githubConn struct {
 	views    map[string]ghView
 	authMsg  string // the auth.required message in force
 	stopped  bool
-	// seen holds, per view or event search, the items its last answer had; a search with no entry yet has had no baseline.
+	// seen holds, per view, the items its last answer had; a view with no entry yet has had no baseline.
 	seen map[string]map[string]bool
+	// capped marks a view whose last answer was cut at the search's cap, so what is new to it can't be told.
+	capped map[string]bool
+	// kinds is, per event search, when it last answered and the latest event time already delivered for each item.
+	kinds map[string]*kindPoll
+}
+
+type kindPoll struct {
+	at      time.Time
+	emitted map[string]time.Time
 }
 
 func openGitHub(a openArgs) *githubConn {
 	ctx, cancel := context.WithCancel(context.Background())
 	g := &githubConn{openArgs: a, fleet: a.def.Fleet, gone: make(chan struct{}), ctx: ctx, cancel: cancel,
-		wake: make(chan struct{}, 1), views: map[string]ghView{}, seen: map[string]map[string]bool{}}
+		wake: make(chan struct{}, 1), views: map[string]ghView{}, seen: map[string]map[string]bool{}, capped: map[string]bool{}, kinds: map[string]*kindPoll{}}
 	if f, ok := a.cfg().Fleet(a.def.Fleet); ok {
 		g.env = f.Environ()
 	} else {
@@ -346,8 +355,10 @@ func (g *githubConn) refresh() {
 			orders = append(orders, order)
 		}
 		changed = g.store(v.ID, orders, "") || changed
-		for _, it := range g.fresh("view:"+v.ID, routed, len(items) >= github.MaxItems) {
-			g.emit(Event{Kind: "new_in_view", Panel: v.ID, Ref: it.URL, Author: it.Author, Viewer: login, Verified: true})
+		for _, it := range g.newInView(v.ID, routed, len(items) >= github.MaxItems) {
+			if !g.emit(Event{Kind: "new_in_view", Panel: v.ID, Ref: it.URL, Author: it.Author, Viewer: login, Verified: true}) {
+				g.unsee("view:"+v.ID, it.URL) // over the flood bound: offer it again at the next poll
+			}
 		}
 	}
 	g.pollEvents(client, token, router, viewer)
@@ -360,16 +371,19 @@ var eventSearches = []struct{ kind, query string }{
 	{"mentioned", "is:open mentions:@me"},
 }
 
-// unknownActor stands for a login the source could not attribute: GitHub logins have no parentheses, so it is no one's
-// and no allowlist's, and the event reads as a stranger's whatever the item's author is.
+// unknownActor stands for a login the source could not attribute; it matches routines.UnknownLogin.
 const unknownActor = "(unknown)"
 
-// pollEvents emits an event for each item that is new to one of eventSearches; a failed search keeps its last answer.
+// pollEvents emits an event for each item whose latest timeline event aimed at the viewer is newer than the search's
+// previous answer; a failed search keeps its last poll. The first answer is a baseline and emits nothing. An answer
+// is capped at the search's top items, so the diff of two answers can't tell a new item from one that rose into it;
+// the timeline's own times can.
 func (g *githubConn) pollEvents(client *github.Client, token string, router *github.Router, viewer string) {
 	if g.emit == nil {
 		return
 	}
 	for _, es := range eventSearches {
+		started := time.Now()
 		items, login, err := client.SearchActing(g.ctx, token, es.query, es.kind)
 		if g.ctx.Err() != nil {
 			return
@@ -387,41 +401,82 @@ func (g *githubConn) pollEvents(client *github.Client, token string, router *git
 				routed = append(routed, it)
 			}
 		}
-		for _, it := range g.fresh("kind:"+es.kind, routed, len(items) >= github.MaxItems) {
+		g.mu.Lock()
+		kp := g.kinds[es.kind]
+		if kp == nil {
+			g.kinds[es.kind] = &kindPoll{at: started, emitted: map[string]time.Time{}}
+			g.mu.Unlock()
+			continue
+		}
+		var due []github.Item
+		keep := map[string]time.Time{}
+		for _, it := range routed {
+			keep[it.URL] = kp.emitted[it.URL]
+			if it.EventAt.After(kp.at) && it.EventAt.After(kp.emitted[it.URL]) {
+				due = append(due, it)
+			}
+		}
+		kp.emitted = keep
+		g.mu.Unlock()
+		allDelivered := true
+		for _, it := range due {
 			actor := it.Actor
-			if actor == "" { // a mention names no mentioner, and a timeline may not reach back to the request
+			if actor == "" { // a mention names no mentioner, and a ghost account has no login
 				actor = unknownActor
 			}
-			g.emit(Event{Kind: es.kind, Ref: it.URL, Actor: actor, Author: it.Author, Viewer: login, Verified: true})
+			if !g.emit(Event{Kind: es.kind, Ref: it.URL, Actor: actor, Author: it.Author, Viewer: login, Verified: true}) {
+				allDelivered = false
+				continue
+			}
+			g.mu.Lock()
+			kp.emitted[it.URL] = it.EventAt
+			g.mu.Unlock()
+		}
+		if allDelivered { // an undelivered event stays newer than the last poll, so the next poll offers it again
+			g.mu.Lock()
+			kp.at = started
+			g.mu.Unlock()
 		}
 	}
 }
 
-// fresh returns the items of a search that its previous answer lacked, and keeps this answer for the next. The first
-// answer is the baseline: nothing in it is new. A full answer was cut at the search's cap, so an item missing from it
-// may only have slid past the cap and stays remembered.
-func (g *githubConn) fresh(key string, items []github.Item, capped bool) []github.Item {
+// newInView returns the items of a view that its previous answer lacked, and keeps this answer for the next. The
+// first answer is the baseline: nothing in it is new. A capped answer, and the first one after it, emit nothing: an
+// item missing from a capped answer may only have slid past the cap, and one in it may only have risen into it.
+func (g *githubConn) newInView(id string, items []github.Item, capped bool) []github.Item {
 	if g.emit == nil {
 		return nil
 	}
+	key := "view:" + id
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	old, baselined := g.seen[key]
+	wasCapped := g.capped[key]
 	cur := map[string]bool{}
 	var out []github.Item
 	for _, it := range items {
 		cur[it.URL] = true
-		if baselined && !old[it.URL] {
+		if baselined && !wasCapped && !capped && !old[it.URL] {
 			out = append(out, it)
 		}
 	}
 	if capped {
+		if !wasCapped {
+			g.logf("view %q has more than %d items: its new items can't be told from old ones until it has fewer", id, github.MaxItems)
+		}
 		for u := range old {
 			cur[u] = true
 		}
 	}
-	g.seen[key] = cur
+	g.seen[key], g.capped[key] = cur, capped
 	return out
+}
+
+// unsee forgets an item of a view, so the next poll finds it new again.
+func (g *githubConn) unsee(key, url string) {
+	g.mu.Lock()
+	delete(g.seen[key], url)
+	g.mu.Unlock()
 }
 
 func (g *githubConn) store(id string, orders []map[string]any, errMsg string) bool {

@@ -188,7 +188,7 @@ Admiral treats everything a plugin sends as untrusted.
 - A control character (below 0x20, or 0x7f) in an order id or a panel id is refused. `text` may hold `\n`, `\t` and `\r` but no other control character. Titles are cut to one line.
 - A `settingsSchema` that is not a JSON object, or is over 256 KiB, is replaced with `{}`.
 - Error messages you answer with, and the text of a crash, are cut to one line of at most 300 characters.
-- An `event` with a `kind` the catalog lacks, a `ref` that is not an `http:` or `https:` URL, a field over **512 bytes** or a control character is dropped. At most **60 events a minute** are delivered; the minute starts at the first event and the rest of it is dropped.
+- An `event` with a `kind` the catalog lacks, a `ref` that is not an `http:` or `https:` URL, a `ref`, `kind` or `panel` over **512 bytes**, an `actor` or `author` over **100 bytes**, or a control, format or bidirectional-control character in any field is dropped. At most **60 events a minute** are delivered; the minute starts at the first event, the rest of it is dropped and Admiral logs how many once the minute ends. An event from a plugin names no repository, so a fleet whose repo allowlist is not empty skips it.
 - A `url` (in an order or in `auth.required`) must be `http:` or `https:`; Admiral drops any other. A `repo` that is not a git remote is dropped.
 
 A **protocol error** is a line that is not JSON, a reply to a request that is not waiting, a list that breaks a limit, or a notification Admiral does not know. Admiral logs it, drops that message and keeps the process running. A list that breaks a limit is dropped whole, and the panel keeps the orders it had. Only a failed or hung `initialize` or `panels.list` counts as a crash.

@@ -68,6 +68,7 @@ type runner struct {
 	hasCatalog bool
 	evWindow   time.Time // the first delivered event of the current minute
 	evCount    int
+	evDropped  int // events over the bound since the last log line about them
 }
 
 type pulls struct {

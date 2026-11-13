@@ -306,13 +306,26 @@ func TestAReviewRequestedEventNamesTheRequesterAsActorAndTheOpenerAsAuthor(t *te
 	}
 }
 
+// soon is a timeline event time later than any poll the test makes.
+var soon = time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+
+// mentioned is an item whose timeline has one mention.
+func mentioned(repo string, n int, title, author string) string {
+	item := authored(repo, n, title, author)
+	return strings.TrimSuffix(item, "}") + fmt.Sprintf(`,"timelineItems":{"nodes":[{"__typename":"MentionedEvent","createdAt":%q}]}}`, soon)
+}
+
 // reviewRequested is an item whose timeline has one review request by requester, aimed at reviewer; other is a
 // request for someone else, made by eng, that the actor must not be read from.
 func reviewRequested(repo string, n int, title, author, requester, reviewer, other string) string {
+	at := soon
+	if n < 6 {
+		at = "2020-01-01T00:00:00Z" // long before any poll: not new
+	}
 	item := authored(repo, n, title, author)
 	return strings.TrimSuffix(item, "}") + fmt.Sprintf(`,"timelineItems":{"nodes":[`+
-		`{"__typename":"ReviewRequestedEvent","actor":{"login":%q},"requestedReviewer":{"login":%q}},`+
-		`{"__typename":"ReviewRequestedEvent","actor":{"login":"eng"},"requestedReviewer":{"login":%q}}]}}`, requester, reviewer, other)
+		`{"__typename":"ReviewRequestedEvent","createdAt":%q,"actor":{"login":%q},"requestedReviewer":{"login":%q}},`+
+		`{"__typename":"ReviewRequestedEvent","createdAt":%q,"actor":{"login":"eng"},"requestedReviewer":{"login":%q}}]}}`, at, requester, reviewer, at, other)
 }
 
 func TestAMentionOfTheEngineerOnTheirOwnItemNamesNoActorSoItIsNotTheirs(t *testing.T) {
@@ -327,7 +340,7 @@ func TestAMentionOfTheEngineerOnTheirOwnItemNamesNoActorSoItIsNotTheirs(t *testi
 	mentions := func(withNew bool) {
 		nodes := authored("acme/api", 3, "three", "eng")
 		if withNew {
-			nodes += "," + authored("acme/api", 4, "four", "eng")
+			nodes += "," + mentioned("acme/api", 4, "four", "eng")
 		}
 		g.write("search/mn.match", "mentions:@me")
 		g.write("search/mn.json", `{"data":{"search":{"nodes":[`+nodes+`]}}}`)
@@ -352,5 +365,69 @@ func TestAMentionOfTheEngineerOnTheirOwnItemNamesNoActorSoItIsNotTheirs(t *testi
 	}
 	if len(got) != 1 || got[0].Author != "eng" || got[0].Actor == "" || strings.EqualFold(got[0].Actor, "eng") {
 		t.Fatalf("mentioned events = %+v, want one on the engineer's own item whose actor is no one the lists could trust", got)
+	}
+}
+
+func TestALoginWithAFormatRuneOrOverTheBoundIsDropped(t *testing.T) {
+	r, s := withCatalog(t)
+	send(r, "review_requested", "https://example.com/1", `,"actor":"bo‮b"`)
+	send(r, "review_requested", "https://example.com/2", `,"author":"`+strings.Repeat("a", maxLogin+1)+`"`)
+	send(r, "review_requested", "https://example.com/3", `,"actor":"`+strings.Repeat("a", maxLogin)+`"`)
+	if s.n() != 1 || !strings.HasSuffix(s.got[0].Ref, "/3") {
+		t.Errorf("delivered %+v, want only the event whose logins are plain and within %d bytes", s.got, maxLogin)
+	}
+}
+
+// manyItems is n items numbered from first, each opened by amy; wrap adds a timeline to the one numbered at.
+func manyItems(first, n, at int, wrap func(string) string) string {
+	var out []string
+	for i := first; i < first+n; i++ {
+		it := authored("acme/api", i, "t", "amy")
+		if i == at {
+			it = wrap(it)
+		}
+		out = append(out, it)
+	}
+	return strings.Join(out, ",")
+}
+
+func TestACappedAnswerEmitsNothingNewToAViewOrForAKindUnlessTheTimelineSaysSo(t *testing.T) {
+	g := newFakeGH(t)
+	g.token("", "fake-token-default-1")
+	sources := `"gh":{"plugin":"github","fleet":"alpha","settings":{"views":[{"id":"mine","title":"Mine","query":"is:open Q1"}]}}`
+	f := newServiceFixture(t, ghConfig(`"alpha":{"name":"Alpha","claude":{}}`, sources))
+	s := &sink{}
+	f.Svc.Sup.OnEvent = func(_ string, ev Event) { s.add(ev) }
+	g.write("viewer", "eng\n")
+	answer := func(key, match, items string) {
+		g.write("search/"+key+".match", match)
+		g.write("search/"+key+".json", `{"data":{"search":{"nodes":[`+items+`]}}}`)
+	}
+	old := func(item string) string { return item }
+	answer("mine", "Q1", manyItems(1, 50, 0, old))
+	answer("rr", "review-requested:@me", manyItems(1, 50, 0, old))
+	f.startSources()
+	f.waitView("gh", "50 items", func(v SourceView) bool { return len(v.orders("mine")) == 50 })
+	time.Sleep(300 * time.Millisecond)
+	// item 99 rises into both capped answers, with no new timeline event on the kind search
+	answer("mine", "Q1", manyItems(2, 49, 0, old)+","+authored("acme/api", 99, "t", "amy"))
+	answer("rr", "review-requested:@me", manyItems(2, 49, 0, old)+","+authored("acme/api", 99, "t", "amy"))
+	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
+	time.Sleep(500 * time.Millisecond)
+	if s.n() != 0 {
+		t.Fatalf("%d events from items that only rose into a capped answer, want 0: %+v", s.n(), s.got)
+	}
+	// a review request that happened after the last poll is new even in a capped answer
+	answer("rr", "review-requested:@me", manyItems(2, 49, 77, func(string) string { return "" })+","+
+		reviewRequested("acme/api", 99, "t", "amy", "bob", "eng", "carol"))
+	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
+	deadline := time.Now().Add(5 * time.Second)
+	for s.n() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
+	time.Sleep(500 * time.Millisecond)
+	if s.n() != 1 || s.got[0].Kind != "review_requested" || s.got[0].Actor != "bob" {
+		t.Errorf("events = %+v, want exactly one review_requested by bob", s.got)
 	}
 }
