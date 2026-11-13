@@ -813,3 +813,10 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .set.confirm { flex-direction: column; align-items: flex-start; }
 @media (max-width: 640px) { .set.limit-row { flex-direction: column; align-items: stretch; } .limit-row .control { max-width: none; justify-content: flex-start; } }
 @media (pointer: coarse) { .weekday { min-height: var(--shape-min-touch-target); padding: 0 6px; } }
+
+/* Filing prose on the Standing orders and Routines tabs */
+.orders-new { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.orders-new textarea, .orders-new input[type='text'] { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-sm); background: var(--color-panel); color: var(--color-text); font: inherit; }
+.orders-new .btn { align-self: flex-start; }
+.draft-review { flex-direction: column; align-items: stretch; gap: 8px; }
+@media (pointer: coarse) { .orders-new input[type='text'], .orders-new .btn, .draft-review .btn, .draft-review input[type='text'] { min-height: var(--shape-min-touch-target); } .orders-new .seg-opt { min-height: var(--shape-min-touch-target); } }
