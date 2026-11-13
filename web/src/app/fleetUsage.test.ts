@@ -217,6 +217,10 @@ describe('heldLine', () => {
   it('says unattended launches are held, which window is over the fleet line, and until when', () => {
     expect(heldLine(fleet('f', [], { quota_hold: held }), now)).toBe("Unattended launches are held: Claude's 5-hour window is at 93% (line 90%), until it resets in 2h 15m.");
   });
+  it('calls the 7-day window the weekly window, as the server does', () => {
+    const line = heldLine(fleet('f', [], { quota_hold: { ...held, window: 'secondary', window_minutes: 10080 } }), now);
+    expect(line).toBe("Unattended launches are held: Claude's weekly window is at 93% (line 90%), until it resets in 2h 15m.");
+  });
   it('names a window with no minutes from its id and drops the reset when none is known', () => {
     const line = heldLine(fleet('f', [], { quota_hold: { ...held, window: 'secondary', window_minutes: undefined, resets_at: undefined } }), now);
     expect(line).toBe("Unattended launches are held: Claude's secondary window is at 93% (line 90%).");

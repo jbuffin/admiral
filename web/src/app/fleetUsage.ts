@@ -182,7 +182,7 @@ export function quotaCards(quota: Quota[], now: Date): QuotaCard[] {
 export function heldLine(f: FleetUsage, now: Date): string | null {
   const h = f.quota_hold;
   if (!h?.held) return null;
-  const label = windowLabel({ id: h.window, used_percent: h.used_percent, window_minutes: h.window_minutes });
+  const label = h.window_minutes === 10080 ? 'weekly' : windowLabel({ id: h.window, used_percent: h.used_percent, window_minutes: h.window_minutes });
   const resets = resetsText(h.resets_at, now);
   return `Unattended launches are held: ${harnessName(h.harness)}'s ${/\d/.test(label) ? `${label} window` : `${label.toLowerCase()} window`} is at ${Math.round(h.used_percent)}% (line ${h.line_percent}%)${resets ? `, until it ${resets}` : ''}.`;
 }
