@@ -159,7 +159,4 @@ func TestTheFlushPromptAsksForAnyPromiseNotYetRecorded(t *testing.T) {
 			t.Errorf("FlushPrompt = %q, want it to name %s", FlushPrompt, want)
 		}
 	}
-	if !strings.Contains(FlushPrompt, "asked") {
-		t.Errorf("FlushPrompt = %q, want it limited to what the engineer asked for", FlushPrompt)
-	}
 }

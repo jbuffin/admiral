@@ -134,7 +134,7 @@ func TestACommitmentAdmiralBotRecordsIsStoredStampedAndListed(t *testing.T) {
 		c.Trigger.Kind != "ship_sailed" || c.Trigger.Subject != "saltpaw" {
 		t.Errorf("commitment = %+v, want the trimmed text, via admiralbot, action launch and trigger ship_sailed on saltpaw", c)
 	}
-	if l := r.ledger("home"); !strings.Contains(l, `"event":"added"`) || !strings.Contains(l, `"kind":"commitment"`) || !strings.Contains(l, "fix the build") {
+	if l := r.ledger("home"); !strings.Contains(l, `"event":"added"`) || !strings.Contains(l, `"kind":"commitment"`) || !strings.Contains(l, `"harness":"claude"`) || !strings.Contains(l, r.repo) {
 		t.Errorf("home's ledger = %q, want one added commitment event carrying the launch spec", l)
 	}
 	if got := r.list(t, "home"); len(got) != 1 || got[0].ID != c.ID || got[0].Waiting {
@@ -201,38 +201,66 @@ func TestACommitmentIdCannotBeCancelledThroughAnotherFleetOrAsANote(t *testing.T
 }
 
 func TestARecordTimeRefusalIs4xxStoresNothingAndPostsNoInboxNotice(t *testing.T) {
-	r := newPromiseRig(t)
 	past := promiseT0.Add(-time.Hour).Format(time.RFC3339)
-	big := fmt.Sprintf(`{"harness":"claude","dir":%q,"text":%q,"autopilot":true}`, r.repo, strings.Repeat("x", 17<<10))
-	cases := []struct{ name, fleet, body string }{
-		{"an unknown trigger", "home", r.body(`{"kind":"full_moon"}`, "remind", "")},
-		{"an unknown action", "home", r.body(sailed, "explode", "")},
-		{"a ship of another fleet", "home", r.body(`{"kind":"ship_sailed","subject":"rival"}`, "remind", "")},
-		{"a ship that does not exist", "home", r.body(`{"kind":"ship_sailed","subject":"ghost"}`, "remind", "")},
-		{"a flag as the PR subject", "home", r.body(`{"kind":"pr_merged","subject":"-R x/y"}`, "remind", "")},
-		{"a bare owner/repo#N as the PR subject", "home", r.body(`{"kind":"pr_merged","subject":"acme/widget#12"}`, "remind", "")},
-		{"a PR URL on an unknown host", "home", r.body(`{"kind":"pr_merged","subject":"https://evil.example/acme/widget/pull/7"}`, "remind", "")},
-		{"an issue URL for pr_merged", "home", r.body(`{"kind":"pr_merged","subject":"https://github.com/acme/widget/issues/7"}`, "remind", "")},
-		{"a PR URL for issue_closed", "home", r.body(`{"kind":"issue_closed","subject":"https://github.com/acme/widget/pull/7"}`, "remind", "")},
-		{"a time in the past", "home", r.body(`{"kind":"time","subject":"`+past+`"}`, "remind", "")},
-		{"a time that is not a time", "home", r.body(`{"kind":"time","subject":"tomorrow"}`, "remind", "")},
-		{"a launch with no spec", "home", r.body(sailed, "launch", "")},
-		{"a spec naming another fleet", "home", r.body(sailed, "launch", r.launch(`"fleet":"work"`))},
-		{"another fleet's source", "home", r.body(sailed, "launch", r.launch(`"source":"theirs","order_id":"T-1"`))},
-		{"an order that does not exist", "home", r.body(sailed, "launch", r.launch(`"source":"tracker","order_id":"T-404"`))},
-		{"issues beside a source", "home", r.body(sailed, "launch", r.launch(`"source":"tracker","order_id":"T-1","issues":["https://github.com/acme/widget/issues/1"]`))},
-		{"an unknown harness", "home", r.body(sailed, "launch", strings.Replace(r.launch(""), `"claude"`, `"emacs"`, 1))},
-		{"a dir outside the fleet's roots", "home", r.body(sailed, "launch", strings.Replace(r.launch(""), r.repo, r.other, 1))},
-		{"an unknown resource", "home", r.body(sailed, "launch", r.launch(`"resources":["nope"]`))},
-		{"control characters in the prompt", "home", r.body(sailed, "launch", strings.Replace(r.launch(""), "fix the build", `fix\u001b[31m`, 1))},
-		{"an unproven autopilot gate", "work", r.body(`{"kind":"ship_sailed","subject":"rival"}`, "launch", r.launch(""))},
-		{"a body over 16 KiB", "home", r.body(sailed, "launch", big)},
-		{"two JSON values in one body", "home", `{"text":"a","trigger":{"kind":"none"},"action":"remind"}{"text":"b"}`},
-		{"empty text", "home", `{"text":" ","trigger":{"kind":"none"},"action":"remind"}`},
+	cases := []struct {
+		name, fleet string
+		body        func(*promiseRig) string
+	}{
+		{"an unknown trigger", "home", func(r *promiseRig) string { return r.body(`{"kind":"full_moon"}`, "remind", "") }},
+		{"an unknown action", "home", func(r *promiseRig) string { return r.body(sailed, "explode", "") }},
+		{"a ship of another fleet", "home", func(r *promiseRig) string { return r.body(`{"kind":"ship_sailed","subject":"rival"}`, "remind", "") }},
+		{"a ship that does not exist", "home", func(r *promiseRig) string { return r.body(`{"kind":"ship_sailed","subject":"ghost"}`, "remind", "") }},
+		{"a flag as the PR subject", "home", func(r *promiseRig) string { return r.body(`{"kind":"pr_merged","subject":"-R x/y"}`, "remind", "") }},
+		{"a bare owner/repo#N as the PR subject", "home", func(r *promiseRig) string {
+			return r.body(`{"kind":"pr_merged","subject":"acme/widget#12"}`, "remind", "")
+		}},
+		{"a PR URL on an unknown host", "home", func(r *promiseRig) string {
+			return r.body(`{"kind":"pr_merged","subject":"https://evil.example/acme/widget/pull/7"}`, "remind", "")
+		}},
+		{"an issue URL for pr_merged", "home", func(r *promiseRig) string {
+			return r.body(`{"kind":"pr_merged","subject":"https://github.com/acme/widget/issues/7"}`, "remind", "")
+		}},
+		{"a PR URL for issue_closed", "home", func(r *promiseRig) string {
+			return r.body(`{"kind":"issue_closed","subject":"https://github.com/acme/widget/pull/7"}`, "remind", "")
+		}},
+		{"a time in the past", "home", func(r *promiseRig) string { return r.body(`{"kind":"time","subject":"`+past+`"}`, "remind", "") }},
+		{"a time that is not a time", "home", func(r *promiseRig) string { return r.body(`{"kind":"time","subject":"tomorrow"}`, "remind", "") }},
+		{"a launch with no spec", "home", func(r *promiseRig) string { return r.body(sailed, "launch", "") }},
+		{"a spec naming another fleet", "home", func(r *promiseRig) string { return r.body(sailed, "launch", r.launch(`"fleet":"work"`)) }},
+		{"another fleet's source", "home", func(r *promiseRig) string {
+			return r.body(sailed, "launch", r.launch(`"source":"theirs","order_id":"T-1"`))
+		}},
+		{"an order that does not exist", "home", func(r *promiseRig) string {
+			return r.body(sailed, "launch", r.launch(`"source":"tracker","order_id":"T-404"`))
+		}},
+		{"issues beside a source", "home", func(r *promiseRig) string {
+			return r.body(sailed, "launch", r.launch(`"source":"tracker","order_id":"T-1","issues":["https://github.com/acme/widget/issues/1"]`))
+		}},
+		{"an unknown harness", "home", func(r *promiseRig) string {
+			return r.body(sailed, "launch", strings.Replace(r.launch(""), `"claude"`, `"emacs"`, 1))
+		}},
+		{"a dir outside the fleet's roots", "home", func(r *promiseRig) string {
+			return r.body(sailed, "launch", strings.Replace(r.launch(""), r.repo, r.other, 1))
+		}},
+		{"an unknown resource", "home", func(r *promiseRig) string { return r.body(sailed, "launch", r.launch(`"resources":["nope"]`)) }},
+		{"control characters in the prompt", "home", func(r *promiseRig) string {
+			return r.body(sailed, "launch", strings.Replace(r.launch(""), "fix the build", `fix\u001b[31m`, 1))
+		}},
+		{"an unproven autopilot gate", "work", func(r *promiseRig) string {
+			return r.body(`{"kind":"ship_sailed","subject":"rival"}`, "launch", r.launch(""))
+		}},
+		{"a body over 16 KiB", "home", func(r *promiseRig) string {
+			return r.body(sailed, "launch", fmt.Sprintf(`{"harness":"claude","dir":%q,"text":%q,"autopilot":true}`, r.repo, strings.Repeat("x", 17<<10)))
+		}},
+		{"two JSON values in one body", "home", func(r *promiseRig) string {
+			return `{"text":"a","trigger":{"kind":"none"},"action":"remind"}{"text":"b"}`
+		}},
+		{"empty text", "home", func(r *promiseRig) string { return `{"text":" ","trigger":{"kind":"none"},"action":"remind"}` }},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			rec := r.do("POST", "/api/chat/commitments", c.body, c.fleet)
+			r := newPromiseRig(t)
+			rec := r.do("POST", "/api/chat/commitments", c.body(r), c.fleet)
 			if rec.Code < 400 || rec.Code > 499 || rec.Body.Len() == 0 {
 				t.Errorf("POST = %d %s, want a 4xx with a reason", rec.Code, rec.Body)
 			}
@@ -266,5 +294,34 @@ func TestAValidLaunchSpecWithAnOrderAndAResourceIsAccepted(t *testing.T) {
 	spec := fmt.Sprintf(`{"harness":"claude","dir":%q,"text":"do T-1","source":"tracker","order_id":"T-1","resources":["gpu"],"autopilot":true}`, r.repo)
 	if rec := r.do("POST", "/api/chat/commitments", r.body(sailed, "launch", spec), "home"); rec.Code != http.StatusCreated {
 		t.Errorf("POST = %d %s, want 201", rec.Code, rec.Body)
+	}
+}
+
+func TestTheListHoldsOpenAndWaitingCommitmentsAndMarksWhichAndOmitsClosedOnes(t *testing.T) {
+	r := newPromiseRig(t)
+	dir := filepath.Join(r.home, "chat", "home")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	added := func(id string) string {
+		return fmt.Sprintf(`{"v":1,"ts":"2026-11-12T09:00:00Z","event":"added","id":%q,"kind":"commitment","text":"text of %s","trigger":{"kind":"none"},"action":"launch","launch":{"harness":"claude"}}`, id, id)
+	}
+	lines := []string{
+		added("c-open01"), added("c-wait01"), added("c-done01"), added("c-drop01"), added("c-canc01"),
+		`{"v":1,"ts":"2026-11-12T09:01:00Z","event":"fired","id":"c-wait01"}`,
+		`{"v":1,"ts":"2026-11-12T09:01:00Z","event":"fired","id":"c-done01"}`,
+		`{"v":1,"ts":"2026-11-12T09:02:00Z","event":"done","id":"c-done01","reason":"launched"}`,
+		`{"v":1,"ts":"2026-11-12T09:02:00Z","event":"dropped","id":"c-drop01","reason":"gone"}`,
+		`{"v":1,"ts":"2026-11-12T09:02:00Z","event":"cancelled","id":"c-canc01"}`,
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ledger.jsonl"), []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, c := range r.list(t, "home") {
+		got[c.ID] = c.Waiting
+	}
+	if len(got) != 2 || got["c-open01"] || !got["c-wait01"] {
+		t.Errorf("listed = %v, want only c-open01 (not waiting) and c-wait01 (waiting)", got)
 	}
 }

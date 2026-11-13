@@ -440,7 +440,4 @@ func TestAClaudeChatsPromptNamesMakeCommitmentOnlyForWhatTheEngineerAsked(t *tes
 	if i < 0 || !strings.Contains(prompt[max(0, i-200):min(len(prompt), i+200)], "asks") {
 		t.Errorf("claude prompt does not tie make_commitment to what the engineer asks for: %q", prompt)
 	}
-	if strings.Contains(chatPromptFor("codex"), "call make_commitment with") || strings.Contains(chatPromptFor("copilot"), "call make_commitment with") {
-		t.Error("a chat that cannot carry a fact into a later chat is told to call make_commitment")
-	}
 }

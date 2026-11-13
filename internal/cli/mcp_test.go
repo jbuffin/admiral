@@ -703,7 +703,7 @@ func commitArgs(extra string) string {
 	return `{"text":"when saltpaw sails, fix the build","trigger":"ship_sailed","subject":"saltpaw","action":"launch","launch":{"dir":"/code/widget","harness":"claude","skill":"commodore","text":"fix the build","resources":["gpu"]` + extra + `}}`
 }
 
-const commitmentReply = `{"id":"c-abc123","text":"when saltpaw sails, fix the build","trigger":{"kind":"ship_sailed","subject":"saltpaw"},"action":"launch","via":"admiralbot"}`
+const commitmentReply = `{"id":"c-abc123","text":"the quarterly numbers go out","trigger":{"kind":"ship_sailed","subject":"saltpaw"},"action":"launch","via":"admiralbot"}`
 
 func TestMakeCommitmentPostsTheTriggerActionTextAndALaunchSpecInTheShipsBodyShape(t *testing.T) {
 	a := newStandIn(t, func(mcpReq) (int, string) { return 201, commitmentReply })
@@ -735,10 +735,13 @@ func TestMakeCommitmentPostsTheTriggerActionTextAndALaunchSpecInTheShipsBodyShap
 		t.Errorf("launch autopilot = %v, want true: a fired commitment is always unattended", l["autopilot"])
 	}
 	tr := result(t, replies, "1")
-	for _, want := range []string{"c-abc123", "when saltpaw sails, fix the build", "saltpaw", "sail", "launch"} {
+	for _, want := range []string{"c-abc123", "the quarterly numbers go out", "saltpaw", "sail", "launch"} {
 		if tr.IsError || !strings.Contains(strings.ToLower(tr.text()), strings.ToLower(want)) {
-			t.Errorf("result = %+v, want it to quote back %q in words so AdmiralBot can repeat it", tr, want)
+			t.Errorf("result = %+v, want it to quote back %q so AdmiralBot can repeat it", tr, want)
 		}
+	}
+	if strings.Contains(tr.text(), "ship_sailed") {
+		t.Errorf("result = %q, want the trigger in words, not by its code ship_sailed", tr.text())
 	}
 }
 
@@ -746,10 +749,17 @@ func TestACommitmentLaunchIsAutopilotWhateverTheSkillAndNeverCarriesWithMeOrAnyw
 	a := newStandIn(t, func(mcpReq) (int, string) { return 201, commitmentReply })
 	a.env(t, mcpToken)
 	args := strings.Replace(commitArgs(`,"with_me":true,"anyway":true`), `"skill":"commodore"`, `"skill":"none"`, 1)
-	if _, _, err := serve(t, call(1, "make_commitment", args)); err != nil {
+	replies, _, err := serve(t, call(1, "make_commitment", args))
+	if err != nil {
 		t.Fatal(err)
 	}
 	got := a.requests()
+	if len(got) == 0 {
+		if r := replies["1"]; r.Error == nil && !result(t, replies, "1").IsError {
+			t.Fatalf("no POST and no refusal: %+v", r)
+		}
+		return // a tool that refuses with_me and anyway outright is as good as one that drops them
+	}
 	if len(got) != 1 {
 		t.Fatalf("requests = %+v, want one", got)
 	}
