@@ -1,6 +1,6 @@
 # 32. Devices pair for their own tokens; the API is versioned
 
-Status: accepted
+Status: accepted, amended by [ADR 0036](0036-the-classic-view-stays-as-a-dashboard.md) (the old UI stays at `/classic/` as a dashboard, with the unversioned `/api` and `/ws`)
 
 ## Context
 
