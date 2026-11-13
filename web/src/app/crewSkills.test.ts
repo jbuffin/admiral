@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CrewMember } from './crew';
-import { filterSkills, pickSkill, rankSkills, skillWarning, typeSkill, type SkillEntry } from './crewSkills';
+import { filterSkills, isChosen, pickSkill, rankSkills, skillWarning, typeSkill, type SkillEntry } from './crewSkills';
 
 const entry = (name: string, description = '', harnesses = ['claude']): SkillEntry => ({ name, description, harnesses });
 const names = (l: SkillEntry[]) => l.map((s) => s.name);
@@ -83,6 +83,21 @@ describe('typeSkill', () => {
     const r = typeSkill(['tdd', 'unslop'], 'tdd');
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).not.toBe('');
+  });
+});
+
+describe('a skill saved under a plugin-qualified name', () => {
+  const tdd: SkillEntry = { name: 'tdd', description: '', harnesses: ['claude'], aliases: ['mattpocock-skills:tdd', 'tdd'] };
+  it('is the listed skill: no warning, marked chosen, and typing it again is refused', () => {
+    expect(skillWarning('mattpocock-skills:tdd', [tdd], 'claude')).toBeNull();
+    expect(isChosen(['mattpocock-skills:tdd'], tdd)).toBe(true);
+    expect(isChosen(['other'], tdd)).toBe(false);
+    expect(typeSkill(['mattpocock-skills:tdd'], 'tdd', [tdd]).ok).toBe(false);
+  });
+  it('ranks first as a current skill and as a same-role peer skill', () => {
+    const others = [entry('aaa'), tdd];
+    expect(names(rankSkills(others, { role: 'reviewer', pickMeWhen: '', chosen: ['mattpocock-skills:tdd'], members: [] }))).toEqual(['tdd', 'aaa']);
+    expect(names(rankSkills(others, { role: 'reviewer', pickMeWhen: '', chosen: [], members: [crewMember('mate', 'reviewer', ['mattpocock-skills:tdd'])] }))).toEqual(['tdd', 'aaa']);
   });
 });
 

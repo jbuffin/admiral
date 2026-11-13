@@ -1,7 +1,7 @@
-import { useEffect, useId, useRef, useState } from 'preact/hooks';
+import { useEffect, useId, useState } from 'preact/hooks';
 import { call } from './api';
 import { crewApi, type CrewMember } from './crew';
-import { filterSkills, pickSkill, rankSkills, skillWarning, typeSkill, type SkillEntry } from './crewSkills';
+import { filterSkills, isChosen, pickSkill, rankSkills, skillWarning, typeSkill, type SkillEntry } from './crewSkills';
 import { Flag } from './Flag';
 
 type Listing = { state: 'loading' } | { state: 'ready'; skills: SkillEntry[]; noDock: boolean } | { state: 'failed'; message: string };
@@ -42,24 +42,33 @@ export function SkillPicker({ fleetKey, harness, skills, onChange, role, pickMeW
   const listing = useInstalled(fleetKey, harness);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const search = useRef<HTMLInputElement>(null);
+  const [refusal, setRefusal] = useState('');
   const installed = listing.state === 'ready' ? listing.skills : [];
   const ranked = rankSkills(installed, { role, pickMeWhen, chosen: skills, members, self });
   const shown = filterSkills(ranked, query);
-  const typed = typeSkill(skills, query);
-  const refusal = query.trim() && !typed.ok ? typed.reason : '';
+  const typed = typeSkill(skills, query, installed);
   const add = (next: string[]) => {
     onChange(next);
     setQuery('');
+    setRefusal('');
   };
+  // Only an add attempt can be refused: a person filtering by words is not entering a name.
+  const attempt = () => {
+    const name = query.trim();
+    const row = installed.find((s) => s.name === name) ?? shown[0];
+    if (row && name) {
+      if (isChosen(skills, row)) setRefusal(`${row.name} is already added.`);
+      else add(pickSkill(skills, row.name));
+    } else if (typed.ok) add(typed.skills);
+    else setRefusal(typed.reason);
+  };
+  const errId = `${id}-err`;
   const listId = `${id}-list`;
   const hintId = `${id}-hint`;
   return (
     <div class="field crew-field skill-picker">
-      <span class="skill-label" id={`${id}-label`}>
-        Skills
-      </span>
-      <ul class="skill-pills" aria-label="Skills">
+      <span class="skill-label">Skills</span>
+      <ul class="skill-pills" aria-label="Skills" aria-describedby={error ? errId : undefined}>
         {skills.map((name) => {
           const warning = listing.state === 'loading' || listing.state === 'failed' ? null : skillWarning(name, installed, harness);
           return (
@@ -73,7 +82,11 @@ export function SkillPicker({ fleetKey, harness, skills, onChange, role, pickMeW
           );
         })}
       </ul>
-      {error ? <p class="note error">{error}</p> : null}
+      {error ? (
+        <p id={errId} class="note error">
+          {error}
+        </p>
+      ) : null}
       <div>
         <button
           type="button"
@@ -82,6 +95,7 @@ export function SkillPicker({ fleetKey, harness, skills, onChange, role, pickMeW
           onClick={() => {
             setOpen(!open);
             setQuery('');
+            setRefusal('');
           }}
         >
           Add skill
@@ -90,12 +104,11 @@ export function SkillPicker({ fleetKey, harness, skills, onChange, role, pickMeW
       {open ? (
         <div class="skill-add">
           <input
-            ref={search}
             type="text"
             role="combobox"
             aria-label="Search skills"
             aria-expanded="true"
-            aria-controls={listId}
+            aria-controls={shown.length > 0 ? listId : undefined}
             aria-autocomplete="list"
             aria-describedby={refusal ? hintId : undefined}
             aria-invalid={refusal ? true : undefined}
@@ -104,12 +117,14 @@ export function SkillPicker({ fleetKey, harness, skills, onChange, role, pickMeW
             autocomplete="off"
             spellcheck={false}
             placeholder="Search or type a skill name"
-            onInput={(e) => setQuery((e.currentTarget as HTMLInputElement).value)}
+            onInput={(e) => {
+              setQuery((e.currentTarget as HTMLInputElement).value);
+              setRefusal('');
+            }}
             onKeyDown={(e) => {
               if (e.key !== 'Enter') return;
               e.preventDefault();
-              if (shown.length > 0 && query.trim()) add(pickSkill(skills, shown[0].name));
-              else if (typed.ok) add(typed.skills);
+              attempt();
             }}
           />
           {refusal ? (
@@ -117,27 +132,29 @@ export function SkillPicker({ fleetKey, harness, skills, onChange, role, pickMeW
               {refusal}
             </p>
           ) : null}
-          {typed.ok ? (
-            <button type="button" class="btn" onClick={() => add(typed.skills)}>
+          {query.trim() ? (
+            <button type="button" class="btn" onClick={() => (typed.ok ? add(typed.skills) : setRefusal(typed.reason))}>
               {`Add "${query.trim()}"`}
             </button>
           ) : null}
           {listing.state === 'loading' ? <p class="note">Loading skills…</p> : null}
           {listing.state === 'failed' ? <p class="note error">{listing.message}</p> : null}
           {listing.state === 'ready' && listing.noDock ? <p class="note">This fleet has no {harness} dock, so no skills are listed.</p> : null}
-          <ul class="skill-options" role="listbox" id={listId} aria-label="Installed skills">
-            {shown.map((s) => (
-              <li key={s.name} class="skill-choice" role="option" aria-selected={skills.includes(s.name)} onClick={() => add(pickSkill(skills, s.name))}>
-                <span class="skill-name">{s.name}</span>
-                {s.description ? <span class="skill-desc">{s.description}</span> : null}
-                <span class="skill-flags">
-                  {s.harnesses.map((h) => (
-                    <Flag key={h} harness={h} size="row" />
-                  ))}
-                </span>
-              </li>
-            ))}
-          </ul>
+          {shown.length > 0 ? (
+            <ul class="skill-options" role="listbox" id={listId} aria-label="Installed skills">
+              {shown.map((s) => (
+                <li key={s.name} class="skill-choice" role="option" aria-selected={isChosen(skills, s)} onClick={() => (isChosen(skills, s) ? undefined : add(pickSkill(skills, s.name)))}>
+                  <span class="skill-name">{s.name}</span>
+                  {s.description ? <span class="skill-desc">{s.description}</span> : null}
+                  <span class="skill-flags">
+                    {s.harnesses.map((h) => (
+                      <Flag key={h} harness={h} size="row" />
+                    ))}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       ) : null}
     </div>

@@ -16,7 +16,12 @@ func sk(names ...string) []skillindex.Skill {
 }
 
 func entry(name, desc string, harnesses ...string) skillindex.Entry {
-	return skillindex.Entry{Name: name, Description: desc, Harnesses: harnesses}
+	return skillindex.Entry{Name: name, Description: desc, Harnesses: harnesses, Aliases: []string{name}}
+}
+
+func aka(e skillindex.Entry, names ...string) skillindex.Entry {
+	e.Aliases = names
+	return e
 }
 
 func TestMergeNamesOneSkillOnce(t *testing.T) {
@@ -27,7 +32,7 @@ func TestMergeNamesOneSkillOnce(t *testing.T) {
 	}{
 		{"a plugin skill nobody else has takes its bare name",
 			[]skillindex.HarnessSkills{{Harness: "claude", Skills: sk("p:foo")}},
-			[]skillindex.Entry{entry("foo", "", "claude")}},
+			[]skillindex.Entry{aka(entry("foo", "", "claude"), "foo", "p:foo")}},
 		{"two plugins' skills of one bare name keep their full names",
 			[]skillindex.HarnessSkills{{Harness: "claude", Skills: sk("a:tdd", "b:tdd")}},
 			[]skillindex.Entry{entry("a:tdd", "", "claude"), entry("b:tdd", "", "claude")}},
@@ -36,7 +41,7 @@ func TestMergeNamesOneSkillOnce(t *testing.T) {
 			[]skillindex.Entry{entry("a:tdd", "", "claude"), entry("tdd", "", "claude")}},
 		{"a plugin skill on one harness and a bare one on another are one skill",
 			[]skillindex.HarnessSkills{{Harness: "claude", Skills: sk("mattpocock-skills:tdd")}, {Harness: "codex", Skills: sk("tdd")}},
-			[]skillindex.Entry{entry("tdd", "", "claude", "codex")}},
+			[]skillindex.Entry{aka(entry("tdd", "", "claude", "codex"), "mattpocock-skills:tdd", "tdd")}},
 		{"a collision on one harness does not rename the other harness's bare skill",
 			[]skillindex.HarnessSkills{{Harness: "claude", Skills: sk("tdd", "a:tdd")}, {Harness: "codex", Skills: sk("tdd")}},
 			[]skillindex.Entry{entry("a:tdd", "", "claude"), entry("tdd", "", "claude", "codex")}},
@@ -58,7 +63,7 @@ func TestMergeKeepsTheFirstNonEmptyDescription(t *testing.T) {
 		{Harness: "claude", Skills: []skillindex.Skill{{Name: "p:tdd", Description: ""}, {Name: "review", Description: "from claude"}}},
 		{Harness: "codex", Skills: []skillindex.Skill{{Name: "tdd", Description: "from codex"}, {Name: "review", Description: "from codex too"}}},
 	})
-	want := []skillindex.Entry{entry("review", "from claude", "claude", "codex"), entry("tdd", "from codex", "claude", "codex")}
+	want := []skillindex.Entry{entry("review", "from claude", "claude", "codex"), aka(entry("tdd", "from codex", "claude", "codex"), "p:tdd", "tdd")}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v, want %+v", got, want)
 	}

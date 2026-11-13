@@ -386,16 +386,15 @@ type HarnessSkills struct {
 }
 
 // Entry is one skill across docks, under the name a crew member saves.
+// Aliases is every name the skill is installed under, Name included, sorted.
 type Entry struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
 	Harnesses   []string `json:"harnesses"`
+	Aliases     []string `json:"aliases"`
 }
 
-// Merge names each skill as a crew member saves it and folds the docks into
-// one list. Within a dock, a plugin skill takes its bare name unless another
-// skill of that dock has it; across docks the same resulting name is one skill.
-// lists are in dock order, which decides whose description is kept.
+// Merge folds the docks' lists into entries; lists are in dock order, which decides whose description is kept.
 func Merge(lists []HarnessSkills) []Entry {
 	byName := map[string]*Entry{}
 	for _, l := range lists {
@@ -410,8 +409,11 @@ func Merge(lists []HarnessSkills) []Entry {
 			}
 			e := byName[name]
 			if e == nil {
-				e = &Entry{Name: name}
+				e = &Entry{Name: name, Aliases: []string{name}}
 				byName[name] = e
+			}
+			if !slices.Contains(e.Aliases, sk.Name) {
+				e.Aliases = append(e.Aliases, sk.Name)
 			}
 			if e.Description == "" {
 				e.Description = sk.Description
@@ -424,6 +426,7 @@ func Merge(lists []HarnessSkills) []Entry {
 	out := make([]Entry, 0, len(byName))
 	for _, e := range byName {
 		sort.Strings(e.Harnesses)
+		sort.Strings(e.Aliases)
 		out = append(out, *e)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })

@@ -46,6 +46,9 @@ describe('canDraft', () => {
 });
 
 describe('readDraft', () => {
+  it('keeps a skill the draft lists twice once, in its first place', () => {
+    expect(readDraft({ draft: { ...draftReply.draft, skills: ['tdd', 'unslop', 'tdd'] } }).form.skills).toEqual(['tdd', 'unslop']);
+  });
   it('fills the editor form from a draft, a custom role into Custom… with its based-on', () => {
     const { form, problems } = readDraft({ draft: { ...draftReply.draft, role: 'purser', 'based-on': 'scribe' }, problems: [{ field: 'based-on', message: 'bad' }] });
     expect(form).toMatchObject({ name: 'quartermaster', role: CUSTOM_ROLE, customRole: 'purser', basedOn: 'scribe', skills: ['a', 'b'], pickMeWhen: 'Pick for stores.', instructions: 'Check the stores.' });

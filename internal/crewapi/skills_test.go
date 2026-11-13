@@ -13,6 +13,7 @@ type skillRow struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
 	Harnesses   []string `json:"harnesses"`
+	Aliases     []string `json:"aliases"`
 }
 
 // skillHome is a fleet whose docks read only the skills a test puts under root.
@@ -92,9 +93,9 @@ func TestSkillsListsEveryDockMergedWithDescriptionsAndHarnesses(t *testing.T) {
 		t.Fatalf("status %d: %s", status, body)
 	}
 	want := []skillRow{
-		{"claude-only", "Only here.", []string{"claude"}},
-		{"codex-only", "Codex has this.", []string{"codex"}},
-		{"tdd", "Test first.", []string{"claude", "codex"}},
+		{"claude-only", "Only here.", []string{"claude"}, []string{"claude-only"}},
+		{"codex-only", "Codex has this.", []string{"codex"}, []string{"codex-only"}},
+		{"tdd", "Test first.", []string{"claude", "codex"}, []string{"mattpocock-skills:tdd", "tdd"}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v\nwant %+v", got, want)
@@ -111,7 +112,7 @@ func TestSkillsWithAHarnessListsThatDocksSkillsOnly(t *testing.T) {
 	if status != 200 {
 		t.Fatalf("status %d: %s", status, body)
 	}
-	if want := []skillRow{{"codex-only", "Codex has this.", []string{"codex"}}}; !reflect.DeepEqual(got, want) {
+	if want := []skillRow{{"codex-only", "Codex has this.", []string{"codex"}, []string{"codex-only"}}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v, want %+v", got, want)
 	}
 }

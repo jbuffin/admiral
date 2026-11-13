@@ -218,7 +218,12 @@ test('on the iPad, a person reads the crew by layer, customizes a built-in, edit
   await expect(options.filter({ hasText: 'unslop' }).locator('img[src$="/api/v1/logos/claude"]')).toHaveCount(0);
   // A name that is not installed can be typed when a saved member would take it; the field says why when not.
   const typed = adding.getByRole('combobox', { name: 'Search skills' });
+  await typed.fill('code review');
+  await expect(typed).not.toHaveAttribute('aria-invalid', 'true');
+  await expect(typed).toHaveAccessibleDescription('');
   await typed.fill('not a skill');
+  await expect(typed).toHaveAccessibleDescription('');
+  await press(adding.getByRole('button', { name: 'Add "not a skill"' }));
   await expect(typed).toHaveAccessibleDescription(/.+/);
   await expect(newPills).toHaveCount(2);
   await typed.fill('my-repo-skill');

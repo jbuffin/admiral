@@ -232,7 +232,7 @@ export function readDraft(raw: unknown): Draft {
   const text = (v: unknown) => (typeof v === 'string' ? v : '');
   const role = text(d.role);
   const custom = role !== '' && !ROLES.includes(role);
-  const skills = Array.isArray(d.skills) ? d.skills.filter((s): s is string => typeof s === 'string') : [];
+  const skills = Array.isArray(d.skills) ? [...new Set(d.skills.filter((s): s is string => typeof s === 'string'))] : [];
   const problems = (Array.isArray(top.problems) ? top.problems : []).flatMap((p): DraftProblem[] => {
     const q = p as { field?: unknown; message?: unknown } | null;
     return q && typeof q.field === 'string' && typeof q.message === 'string' ? [{ field: q.field, message: q.message }] : [];
