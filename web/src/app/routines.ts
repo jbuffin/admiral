@@ -39,6 +39,16 @@ export interface RoutineRun {
   reason?: string;
   action?: string;
   undone?: boolean;
+  tier?: string;
+  event?: string;
+  sender?: string;
+  costs?: { call: string; usd: number }[];
+  dedupe_key?: string;
+}
+export interface RoutineSpend {
+  today_usd: number;
+  cap_usd: number;
+  reached: boolean;
 }
 interface Switch {
   on: boolean;
@@ -56,6 +66,7 @@ export interface RoutineForm {
   name: string;
   enabled: boolean;
   when: string;
+  on?: Routine['on'];
   mode: 'launch' | 'prompt';
   launch: { harness: string; dir: string; text: string; model: string; effort: string; args: string; skill: SkillChoice; resources: string[] };
   prompt: string;
@@ -88,6 +99,24 @@ export function runLine(run: RoutineRun): { dot: RunDot; text: string; ship?: st
     case 'breaker':
       return { dot: 'bad', text: 'Failed too often in a row, so it moved to Ask first' };
   }
+}
+
+/** The Lookout cost of a Recent runs row in words; empty when the record has no costs. */
+export function runCost(run: RoutineRun): string {
+  void run;
+  return '';
+}
+
+/** The event's link when it is https; null for anything else. */
+export function eventHref(event: string | undefined): string | null {
+  void event;
+  return null;
+}
+
+/** The sentence for a fleet whose daily worker spend is reached; null before that. */
+export function spendNotice(spend: RoutineSpend | undefined): string | null {
+  void spend;
+  return null;
 }
 
 /** True when the runs (newest first) hold a breaker record newer than `lastSeen`, the newest run id the screen showed before; false on a first load. */

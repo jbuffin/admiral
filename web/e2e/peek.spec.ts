@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { crewNote, proveJudge, seedAdHocMember, seedCrew } from './crew';
-import { WORK, openPreferences, probeableClaude, addGitHubSource, appendLines, HOSTILE, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, restCalls, rowLink, seedFleets, seedInboxItem, seedReviewTarget, shipCheckout, setReason, setState, staleMergeTokenInPeek, readyStackMergesFromPeek, viewTab, withFakeGh, chatAnswerFile, chatAsks } from './shell';
+import { WORK, openPreferences, probeableClaude, addGitHubSource, appendLines, HOSTILE, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, restCalls, rowLink, seedFleets, seedInboxItem, seedReviewTarget, shipCheckout, setReason, setState, staleMergeTokenInPeek, readyStackMergesFromPeek, viewTab, withFakeGh, seedReviewRequest, chatAnswerFile, chatAsks } from './shell';
 
 const peekOf = (page: Page) => page.getByRole('region', { name: 'Peek' });
 const peekUrl = (session: string) => new RegExp(`/app/inbox/${encodeURIComponent(session)}(\\?|$)`);
@@ -854,14 +854,41 @@ test('Peek opens an event proposal with the untrusted summary, Mute rule by send
   writeFileSync(join(chatDir, 'conversation.jsonl'), JSON.stringify({ id: 'trig-card', kind: 'event_card', text: 'Mallory asks for a review of a lantern fix.', at, card, logged: at }) + '\n');
   await admiral.start({ env: withFakeGh(admiral) });
   await proveJudge(page, admiral.url);
-  const made = await page.request.post(admiral.url + 'api/fleets/zulu/routines', {
-    data: { name: 'Review watch', enabled: true, before_acting: 'ask_first', on: { source: 'gh', kind: 'review_requested' }, do: { launch: { harness: 'claude', dir: join(admiral.home, 'proj'), text: 'sweep the board' } } },
-  });
-  expect(made.ok(), await made.text()).toBe(true);
-  const routine = (await made.json()).id as string;
-  mkdirSync(join(admiral.home, 'inbox-events'), { recursive: true });
-  writeFileSync(join(admiral.home, 'inbox-events', 'event-trig-1.json'), JSON.stringify({ summary: 'Mallory asks for a review of a lantern fix.', title: 'Fix the lantern', sender: 'mallory-the-stranger', link: 'https://github.com/acme/api/pull/7', metadata: false, mute_by: ['sender'] }));
-  seedInboxItem(admiral, '_admiral', { id: 'event-trig-1', kind: 'event_proposal', title: 'Run Review watch?', event_proposal: { fleet: 'zulu', routine, routine_name: 'Review watch', trigger: 'trig-1', tier: 'T3', expires_at: new Date(Date.now() + 3_600_000).toISOString() } });
+  // The routine is made through the When picker, which lists the source's event kinds once it has reported them.
+  await page.goto(admiral.url + 'app/routines/new?fleet=zulu');
+  const form = page.getByRole('main').getByRole('form', { name: 'Routine' });
+  await form.getByLabel('Name').fill('Review watch');
+  const when = form.getByLabel('When');
+  await expect(when.locator('option', { hasText: 'Review requested of you' })).toHaveCount(1, { timeout: 30_000 });
+  await when.selectOption({ label: 'Review requested of you' });
+  await form.getByRole('radio', { name: 'Claude' }).tap();
+  await form.getByLabel('Checkout').selectOption(join(admiral.home, 'proj'));
+  await form.getByLabel('Text').fill('sweep the board');
+  await form.getByRole('radio', { name: 'Ask first' }).tap();
+  await form.getByRole('button', { name: 'Save', exact: true }).tap();
+  await expect(page).toHaveURL(/\/app\/routines\/[^/?]+/);
+  const routine = new URL(page.url()).pathname.split('/').pop()!;
+  const saved = async () => ((await (await page.request.get(admiral.url + `api/fleets/zulu/routines`)).json()) as { routines: { id: string; on?: { source: string; kind: string }; when?: string }[] }).routines.find((r) => r.id === routine);
+  await expect.poll(saved).toMatchObject({ on: { source: 'gh', kind: 'review_requested' } });
+  expect((await saved())!.when ?? '').toBe('');
+  await page.reload();
+  await expect(page.getByRole('main').getByRole('form', { name: 'Routine' }).getByLabel('When')).toHaveValue(/review_requested|Review requested of you/);
+  await expect.poll(saved).toMatchObject({ on: { source: 'gh', kind: 'review_requested' } });
+
+  // A real review request from a stranger (not in sender_allowlist, so T3): the first poll baselines, so ask for another.
+  seedReviewRequest(admiral, { sender: 'mallory-the-stranger' });
+  claude.judge('lookout');
+  await expect.poll(async () => {
+    await page.request.post(admiral.url + 'api/sources/gh/refresh', { data: {} });
+    const runs = (await (await page.request.get(admiral.url + `api/fleets/zulu/routines/${routine}/runs`)).json()) as { runs: { outcome: string }[] | null };
+    return (runs.runs ?? []).map((r) => r.outcome);
+  }, { timeout: 60_000, intervals: [500, 1000, 2000] }).toContain('proposed');
+  await page.goto(admiral.url + `app/routines/${routine}?fleet=zulu`);
+  const recent = page.getByRole('region', { name: 'Recent runs' });
+  await expect(recent).toContainText('T3');
+  await expect(recent).toContainText('mallory-the-stranger');
+  await expect(recent).toContainText(/\$0\.0001/);
+  await expect(recent).not.toContainText('lantern');
   await page.goto(admiral.url + 'app/inbox?fleet=zulu');
 
   await page.getByRole('main').getByRole('listitem').filter({ hasText: 'Review watch' }).getByRole('link').first().tap();
@@ -875,8 +902,9 @@ test('Peek opens an event proposal with the untrusted summary, Mute rule by send
   await expect(peek).toContainText('Muted this sender');
 
   await page.goto(admiral.url + 'app/preferences/zulu/limits');
-  const skip = page.getByRole('main').locator('.row-field').filter({ hasText: routine });
+  const skip = page.getByRole('main').locator('.row-field').filter({ hasText: 'Review watch' });
   await expect(skip.locator('input')).toHaveValue('mallory-the-stranger');
+  await expect(skip).not.toContainText(routine);
   const skipped = async () => {
     const body = (await (await page.request.get(admiral.url + 'api/config')).json()) as { fleets: { key: string; limits?: { skip?: { senders?: { value: string; routine?: string }[] } } }[] };
     return body.fleets.find((f) => f.key === 'zulu')?.limits?.skip?.senders ?? [];

@@ -22,6 +22,9 @@ const FileName = "config.json"
 const reloadDelay = 100 * time.Millisecond
 
 type Manager struct {
+	// RoutineName names a fleet's routine for a Limit sentence; wired by the server.
+	RoutineName func(fleet, id string) (string, bool)
+
 	path    string
 	watcher *fsnotify.Watcher
 	done    chan struct{}

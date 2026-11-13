@@ -79,6 +79,8 @@ type SourceView struct {
 	// Warnings are the router's notes for the source's fleet; [] when none.
 	Warnings []string `json:"warnings"`
 	Views    []Panel  `json:"views"`
+	// Events is the source's event catalog, omitted until it has one.
+	Events []EventKind `json:"events,omitempty"`
 }
 
 // View is every source in config order, without the orders that have a ship.

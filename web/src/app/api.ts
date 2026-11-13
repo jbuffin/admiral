@@ -259,6 +259,8 @@ export interface Source {
   state: string;
   error: string | null;
   warnings: string[];
+  /** The kinds of event the source raises; absent until it has listed them. */
+  events?: { kind: string; title: string; panel?: string }[];
 }
 export interface PluginInfo {
   name: string;
