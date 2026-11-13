@@ -637,6 +637,7 @@ func renderKeys(path string, set ...keyValue) (before, after []byte, err error) 
 	if err != nil {
 		return nil, nil, err
 	}
+	// A fleet the file lacks lands with its GitHub source, which checkSourceFleets needs in the same file.
 	if set, err = withNewFleetSources(data, set); err != nil {
 		return nil, nil, err
 	}

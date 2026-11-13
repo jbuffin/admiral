@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jbuffin/admiral/internal/config"
@@ -52,7 +53,9 @@ func writtenSources(t *testing.T, dir string) map[string]map[string]any {
 }
 
 func TestNewFleetGetsGitHubSourceCopiedFromTheFirstGitHubSource(t *testing.T) {
-	dir := migrateDir(t, fmt.Sprintf(newFleetBase, ghSource+`,"ghb":{"plugin":"github","name":"Second","fleet":"a","settings":{"views":[],"account":"other"}}`))
+	// The template key sorts after the other GitHub source's, so only config order picks it.
+	first := strings.Replace(ghSource, `"gha"`, `"ghz"`, 1)
+	dir := migrateDir(t, fmt.Sprintf(newFleetBase, first+`,"gha":{"plugin":"github","name":"Second","fleet":"a","settings":{"views":[],"account":"other"}}`))
 	if err := config.SetFleets(dir, fleetsWith(t, dir, "b")); err != nil {
 		t.Fatal(err)
 	}
