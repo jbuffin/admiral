@@ -1267,7 +1267,7 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   expect(plain.body).toMatchObject({ skill: { kind: 'none' }, text: 'just launched' });
   expect(plain.body).not.toHaveProperty('crew');
   const plainShip = await launched(plain);
-  await expect(form).toBeHidden();
+  await boarded(plainShip, { waitsOnMessage: true });
   await expect(main.getByRole('listitem').filter({ hasText: plainShip.name })).toBeVisible();
   setState(a, plainShip, 'working');
   await press(main.getByRole('button', { name: 'Launch', exact: true }));
