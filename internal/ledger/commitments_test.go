@@ -255,7 +255,7 @@ func TestCommitmentsAreListedPerFleetAndNotesStayNotes(t *testing.T) {
 func TestFiredMakesALaunchCommitmentWaitingAndItStaysOpen(t *testing.T) {
 	l, _ := newLedger(t)
 	c := mustCommit(t, l, "home", Commitment{Text: "launch the fix", Trigger: Trigger{Kind: TriggerNone}, Action: ActionLaunch, Launch: json.RawMessage(launchSpec)}, "admiralbot")
-	if err := l.MarkFired("home", c.ID); err != nil {
+	if err := l.MarkFired("home", c.ID, ""); err != nil {
 		t.Fatal(err)
 	}
 	got, ok := find(t, l, "home", c.ID)
@@ -279,7 +279,7 @@ func TestDoneAndDroppedCloseACommitmentOpenOrWaiting(t *testing.T) {
 				c := mustCommit(t, l, "home", Commitment{Text: "x", Trigger: Trigger{Kind: TriggerNone}, Action: ActionLaunch, Launch: json.RawMessage(launchSpec)}, "")
 				keep := mustCommit(t, l, "home", remind("stays", Trigger{Kind: TriggerNone}), "")
 				if waiting {
-					if err := l.MarkFired("home", c.ID); err != nil {
+					if err := l.MarkFired("home", c.ID, ""); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -335,7 +335,7 @@ func TestACancelledCommitmentWritesACancelledEventWithNoReason(t *testing.T) {
 func TestAClosedCommitmentNeverChangesAgain(t *testing.T) {
 	for _, closing := range []string{rawEvent("done", "x1", "it fired"), rawEvent("dropped", "x1", "the PR closed"), rawEvent("cancelled", "x1", "")} {
 		for name, change := range map[string]func(l *Ledger) error{
-			"fired":     func(l *Ledger) error { return l.MarkFired("home", "x1") },
+			"fired":     func(l *Ledger) error { return l.MarkFired("home", "x1", "") },
 			"done":      func(l *Ledger) error { return l.Done("home", "x1", "again") },
 			"dropped":   func(l *Ledger) error { return l.Drop("home", "x1", "again") },
 			"shown":     func(l *Ledger) error { return l.MarkShown("home", "x1") },
@@ -358,7 +358,7 @@ func TestAnUnknownCommitmentIdIsNotFoundForEveryEvent(t *testing.T) {
 	l, home := newLedger(t)
 	seed(t, home, "home", rawAdded("known", "x"))
 	for name, err := range map[string]error{
-		"fired":     l.MarkFired("home", "nope"),
+		"fired":     l.MarkFired("home", "nope", ""),
 		"done":      l.Done("home", "nope", "r"),
 		"dropped":   l.Drop("home", "nope", "r"),
 		"shown":     l.MarkShown("home", "nope"),
@@ -437,7 +437,7 @@ func TestACommitmentEventForANoteIdLeavesTheNoteOpen(t *testing.T) {
 func TestAFiredEventForARemindCommitmentIsRefused(t *testing.T) {
 	l, _ := newLedger(t)
 	c := mustCommit(t, l, "home", Commitment{Text: "tell me", Trigger: Trigger{Kind: TriggerNone}, Action: ActionRemind}, "admiralbot")
-	if err := l.MarkFired("home", c.ID); err == nil {
+	if err := l.MarkFired("home", c.ID, ""); err == nil {
 		t.Fatal("MarkFired on a remind commitment = nil, want a refusal")
 	}
 	if got, ok := find(t, l, "home", c.ID); !ok || got.Waiting {

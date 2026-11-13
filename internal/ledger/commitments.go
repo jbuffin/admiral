@@ -123,9 +123,9 @@ func (l *Ledger) Commitments(fleet string) ([]Commitment, error) {
 	return open, nil
 }
 
-// MarkFired moves an open launch commitment to waiting.
-func (l *Ledger) MarkFired(fleet, id string) error {
-	return l.commitmentEvent(fleet, id, EventFired, "")
+// MarkFired moves an open launch commitment to waiting, with why it has not started.
+func (l *Ledger) MarkFired(fleet, id, why string) error {
+	return l.commitmentEvent(fleet, id, EventFired, why)
 }
 
 func isRemind(c Commitment) bool { return c.Action == ActionRemind }

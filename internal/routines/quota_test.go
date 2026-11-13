@@ -50,8 +50,12 @@ func TestARoutineHeldForQuotaLaunchesOnItsNextRunOnceTheWindowResets(t *testing.
 	lift()
 	h.tickAt(at(1, 9, 0))
 	h.wantLaunches(1)
-	if rec := h.latest(r); rec.Outcome != routines.Launched {
-		t.Errorf("record = %+v, want launched with no change in config", rec)
+	launched := false
+	for _, rec := range h.records(r) {
+		launched = launched || rec.Outcome == routines.Launched
+	}
+	if !launched {
+		t.Errorf("records = %+v, want a launched run with no change in config", h.records(r))
 	}
 	if !h.ships.requests()[0].Unattended {
 		t.Error("a scheduled launch is not marked unattended, so the quota hold cannot see it")

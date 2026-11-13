@@ -255,7 +255,7 @@ func (r *Runner) fire(ctx context.Context, fleet string, c ledger.Commitment) {
 			return
 		}
 	}
-	req.Via, req.CommitmentKey, req.Autopilot, req.QuietGate = c.Via, key, true, true
+	req.Via, req.CommitmentKey, req.Autopilot, req.QuietGate, req.Unattended = c.Via, key, true, true, true
 	// To AdmiralBot a ship of another fleet is only that fleet, so a refusal's text names no foreign ship.
 	req.ByFleet = fleet
 	// The launcher runs this under its lock, so a cancel that lands before it launches nothing.
@@ -271,8 +271,8 @@ func (r *Runner) fire(ctx context.Context, fleet string, c ledger.Commitment) {
 	switch {
 	case lerr != nil && cancelled:
 	case lerr != nil && lerr.Wait != "":
-		if !c.Waiting {
-			_ = r.Ledger.MarkFired(fleet, c.ID)
+		if !c.Waiting || c.WaitReason != lerr.Wait {
+			_ = r.Ledger.MarkFired(fleet, c.ID, lerr.Wait)
 		}
 	case lerr != nil:
 		r.cantRun(fleet, c, lerr.Msg)

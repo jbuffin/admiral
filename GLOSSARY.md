@@ -125,7 +125,7 @@ A money figure that a harness reports itself: Claude's list-price estimate or Co
 _Avoid_: cost, budget
 
 **Quota hold**:
-A fleet's Limit that drops unattended launches to proposals while any plan window is above its line (90% by default), until the window resets. Hand launches and AdmiralBot acting on an instruction are never held.
+A fleet's Limit that holds unattended launches (routine runs, commitments, review-wake rounds) while any plan window of the login is at its line (90% by default) or more, until the window resets. A held routine run becomes a proposal; a commitment or wake round waits and launches by itself. Hand launches, AdmiralBot acting on an instruction and accepted proposals are never held.
 _Avoid_: cost, budget
 
 **Marina**:

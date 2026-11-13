@@ -98,7 +98,7 @@ func Sentences(l Limits) []Sentence {
 		{"spend.lookout_call_usd", fmt.Sprintf("One Lookout call may cost at most $%.2f.", l.Spend.LookoutCallUSD)},
 		{"spend.daily_worker_usd", fmt.Sprintf("Ships started by outside events may spend at most $%.2f a day.", l.Spend.DailyWorkerUSD)},
 		{"spend.reviewer_call_usd", fmt.Sprintf("One reviewer call may cost at most $%.2f.", l.Spend.ReviewerCallUSD)},
-		{"quota_hold_percent", fmt.Sprintf("Launches from outside events are held when %d%% of the quota is used.", l.QuotaHoldPercent)},
+		{"quota_hold_percent", fmt.Sprintf("Routines, commitments and review wakes are unattended launches: they wait while any plan window is at %d%% or more.", l.QuotaHoldPercent)},
 		{"write_deny", list("Ships may not write to", "Ships may write anywhere in their repo.", l.WriteDeny)},
 		{"skip.labels", list("Events with these labels are skipped:", "No label is skipped.", scopedNames(l.Skip.Labels))},
 		{"skip.senders", list("Events from these senders are skipped:", "No sender is skipped.", scopedNames(l.Skip.Senders))},

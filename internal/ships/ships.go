@@ -25,6 +25,7 @@ import (
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/server"
 	"github.com/jbuffin/admiral/internal/sessionhost"
+	"github.com/jbuffin/admiral/internal/standing"
 	"github.com/jbuffin/admiral/internal/state"
 	"github.com/jbuffin/admiral/internal/usage"
 )
@@ -507,6 +508,12 @@ func (s *Service) gate(fleet config.Fleet, req launcher.Request) error {
 func (s *Service) admit(req launcher.Request) (release func(), lerr *launcher.Error) {
 	release = func() {}
 	cfg := s.Launcher.Config()
+	if req.Unattended {
+		if hold, held := s.QuotaHold(req.Fleet, req.Harness); held {
+			why := hold.Why(config.HarnessName(req.Harness), time.Now(), time.Local)
+			return release, &launcher.Error{Status: http.StatusConflict, Msg: why, Wait: why}
+		}
+	}
 	if req.Autopilot {
 		fleet, ok := cfg.Fleet(req.Fleet)
 		if !ok {
@@ -978,4 +985,18 @@ func (s *Service) Holder(key string) (Ship, bool) {
 		}
 	}
 	return Ship{}, false
+}
+
+// QuotaHold says whether unattended launches of the fleet on the harness are held for quota, read from its login's plan windows.
+func (s *Service) QuotaHold(fleet, harness string) (standing.QuotaHold, bool) {
+	if s.Quota == nil || s.Launcher == nil || s.Launcher.Config == nil {
+		return standing.QuotaHold{}, false
+	}
+	f, ok := s.Launcher.Config().Fleet(fleet)
+	if !ok {
+		return standing.QuotaHold{}, false
+	}
+	q, _, have := s.Quota.Quota(s.dockConfig(fleet, harness))
+	hold := standing.CheckQuotaHold(f.Limits, q, have)
+	return hold, hold.Held
 }

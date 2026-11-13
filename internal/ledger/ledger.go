@@ -167,7 +167,7 @@ func (l *Ledger) fold(fleet string) ([]Entry, []Commitment, error) {
 		}
 		switch ev.Event {
 		case EventFired:
-			commits[i].Waiting = true
+			commits[i].Waiting, commits[i].WaitReason = true, ev.Reason
 		case EventShown:
 			commits[i].Shown = true
 		case EventDone, EventDropped, EventCancelled:

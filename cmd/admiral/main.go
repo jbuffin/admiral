@@ -503,6 +503,7 @@ func serve(args []string) error {
 	// Live figures live in memory only; a restart starts empty.
 	liveUsage := usage.NewStore(time.Now)
 	shipService.LastLive, chatService.LastLive = liveUsage.LastLive, liveUsage.LastLive
+	shipService.Quota = liveUsage
 	liveLogin := func(ship string) string {
 		if sessionhost.IsChatSession(ship) {
 			return chatService.Login(ship)
@@ -520,6 +521,17 @@ func serve(args []string) error {
 	routineStore := &routines.Store{Home: absDir, Fleets: func(k string) (config.Fleet, bool) { return cfg.Current().Fleet(k) },
 		ResourceKnown: func(name string) bool { _, ok := cfg.Current().Resources[name]; return ok }}
 	routineScheduler := &routines.Scheduler{Store: routineStore, Clock: realClock{}, Ships: routineShips{shipService}, Chat: chatService, Proposer: routineProposer{inboxService}, Zone: time.Local, Ready: host.Ready(), HostKnown: host.Known,
+		QuotaHold: func(fleet, harness string) (string, bool) {
+			if harness == "" { // a prompt run goes to the fleet's AdmiralBot
+				f, ok := cfg.Current().Fleet(fleet)
+				if !ok {
+					return "", false
+				}
+				harness = f.Chat.Harness
+			}
+			hold, held := shipService.QuotaHold(fleet, harness)
+			return hold.Why(config.HarnessName(harness), time.Now(), time.Local), held
+		},
 		Notifier: &push.RoutineNotifier{W: pushFeed.Watcher, FleetName: func(key string) string {
 			f, _ := cfg.Current().Fleet(key)
 			return f.Name

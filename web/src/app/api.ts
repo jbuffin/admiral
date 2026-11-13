@@ -296,6 +296,7 @@ export interface ChatCommitment {
   ts: string;
   via?: string;
   waiting?: boolean;
+  wait_reason?: string;
   shown?: boolean;
 }
 export interface Instructions {

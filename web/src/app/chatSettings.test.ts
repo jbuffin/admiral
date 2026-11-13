@@ -159,6 +159,9 @@ describe("a commitment row's marks", () => {
   it('marks a fired launch that waits for room', () => {
     expect(commitmentMarks({ waiting: true }).join(' ').toLowerCase()).toContain('waiting');
   });
+  it('shows why a waiting commitment waits when the server says', () => {
+    expect(commitmentMarks({ waiting: true, wait_reason: 'Held for quota: Claude 5-hour window is at 93%' })).toEqual(['Held for quota: Claude 5-hour window is at 93%']);
+  });
   it("marks one the engineer was already asked about with the chat card's wording", () => {
     expect(commitmentMarks({ shown: true })).toContain('Still want this?');
   });
