@@ -1,3 +1,4 @@
+import type { Limits } from './limitsForm';
 import type { Dock, FleetCapabilities, Source } from './api';
 import { effortsFor, sourcesForFleet, type SkillChoice } from './launchForm';
 import { automateSearch, routineNewPath } from './router';
@@ -323,4 +324,9 @@ export function noEventsNote(sources: Source[], fleetKey: string): string {
 export function eventWords(sources: Source[], fleetKey: string, on: NonNullable<Routine['on']>): string {
   const hit = eventChoices(sources, fleetKey).find((c) => c.value === eventValue(on));
   return hit?.title ?? on.kind.replace(/_/g, ' ');
+}
+
+/** The fleet-level note on the Routines screen when A3 routines run as propose only. */
+export function proposeOnlyNote(_caps: FleetCapabilities | undefined, _limits: Limits | undefined): string {
+  return '';
 }
