@@ -1,3 +1,5 @@
+import { LIMIT_FIELDS } from './limitsForm';
+
 export interface FleetFields {
   search_roots: string[];
   owners: string[];
@@ -30,6 +32,12 @@ export interface ErrorTarget {
 export function errorTarget(message: string, fleetKey: string): ErrorTarget | null {
   const prefix = `fleets.${fleetKey}.`;
   if (!message.startsWith(prefix)) return null;
+  const rest = message.slice(prefix.length);
+  if (rest.startsWith('limits.')) {
+    const path = rest.slice('limits.'.length).split(':')[0];
+    const limit = LIMIT_FIELDS.filter((f) => path === f || path.startsWith(`${f}.`) || path.startsWith(`${f}[`)).sort((a, b) => b.length - a.length)[0];
+    return limit ? { field: 'limits', limit } : null;
+  }
   const m = /^(search_roots|owners|wake_reviewers)\[(\d+)\]|^(clone_root|color)\b/.exec(message.slice(prefix.length));
   if (!m) return null;
   return m[1] ? { field: m[1] as 'search_roots' | 'owners' | 'wake_reviewers', index: Number(m[2]) } : { field: m[3] as 'clone_root' | 'color' };
