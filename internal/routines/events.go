@@ -215,8 +215,8 @@ type EventLoad interface {
 	DedupeKeys(fleet string) []string
 }
 
-// repoOfRef is owner/name for a github.com ref, else empty.
-func repoOfRef(ref string) string {
+// RepoOfRef is owner/name for a github.com ref, else empty.
+func RepoOfRef(ref string) string {
 	u, err := url.Parse(ref)
 	if err != nil || !strings.EqualFold(u.Hostname(), "github.com") {
 		return ""
@@ -283,8 +283,8 @@ func (s *Scheduler) HandleEvent(ev Event) {
 			}
 		}
 	}
-	if en.Repo == "" && ev.Verified { // only the built-in source's ref is Admiral's own reading; a plugin names no repo
-		en.Repo = repoOfRef(ev.Ref)
+	if repo := RepoOfRef(ev.Ref); ev.Verified && repo != "" { // only the built-in source's ref is Admiral's own reading, and it wins over the Lookout's
+		en.Repo = repo
 	}
 	for _, c := range en.Costs {
 		spent += c.USD
@@ -307,6 +307,9 @@ func (s *Scheduler) HandleEvent(ev Event) {
 		})
 		if spendReason != "" && d.Outcome != Skipped && !slices.Contains(d.Reasons, spendReason) {
 			d.Reasons = append(d.Reasons, spendReason) // the Lookout was not asked
+		}
+		if en.Failure != "" && d.Outcome != Skipped {
+			d.Reasons = append(d.Reasons, "lookout_"+en.Failure)
 		}
 		rec, ok := s.record(ev.Fleet, Trigger{
 			Routine: r.ID, Outcome: d.Outcome, Tier: fmt.Sprintf("T%d", tier), At: now, Event: ev.Ref, Sender: sender, Rule: r.ID,
