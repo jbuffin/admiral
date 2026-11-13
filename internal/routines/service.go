@@ -1,14 +1,18 @@
 package routines
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/actor"
+	"github.com/jbuffin/admiral/internal/config"
+	"github.com/jbuffin/admiral/internal/judge"
 	"github.com/jbuffin/admiral/internal/server"
 )
 
@@ -17,6 +21,12 @@ type Service struct {
 	Store *Store
 	// OnChange runs after a routine is saved, deleted or switched.
 	OnChange func()
+	// Config reads and saves the fleet's Limits; Judge runs the drafters' judge calls (judge.Run when nil).
+	Config *config.Manager
+	Judge  func(context.Context, judge.Choice, judge.Call) (judge.Reply, error)
+
+	// ordersMu holds a Copy's snapshot, store write, config write and restore apart from any other standing-orders save.
+	ordersMu sync.Mutex
 }
 
 func (s *Service) changed() {
@@ -40,6 +50,11 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/fleets/{key}/hold-fire", s.serveFleetHold)
 	mux.HandleFunc("POST /api/fleets/{key}/hold-fire/on", s.serveSetHold(true, false))
 	mux.HandleFunc("POST /api/fleets/{key}/hold-fire/off", s.serveSetHold(false, false))
+	mux.HandleFunc("GET /api/fleets/{key}/standing-orders", s.serveOrdersGet)
+	mux.HandleFunc("PUT /api/fleets/{key}/standing-orders", s.serveOrdersPut)
+	mux.HandleFunc("POST /api/fleets/{key}/standing-orders/copy", s.serveOrdersCopy)
+	mux.HandleFunc("POST /api/fleets/{key}/standing-orders/draft", s.serveOrdersDraft)
+	mux.HandleFunc("POST /api/fleets/{key}/routines/draft", s.serveRoutineDraft)
 	mux.HandleFunc("GET /api/hold-fire", s.serveGlobalHold)
 	mux.HandleFunc("POST /api/hold-fire/on", s.serveSetHold(true, true))
 	mux.HandleFunc("POST /api/hold-fire/off", s.serveSetHold(false, true))

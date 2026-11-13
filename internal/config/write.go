@@ -159,80 +159,89 @@ func editFleet(dir, key string, f FleetFields, cfg *Config, repos RepoLookup) er
 			return err
 		}
 	}
-	if raw, ok := f.Limits["repo_allowlist"]; ok && repos != nil {
-		cur, known := cfg.Fleet(key)
-		if !known {
-			return fmt.Errorf("%w %q", ErrNoFleet, key)
-		}
-		var stored []string
-		if f.Preset == nil || standing.Preset(*f.Preset) == cur.Preset {
-			stored = cur.Limits.RepoAllowlist
-		}
-		if err := checkRepoMembership(key, raw, stored, repos(key)); err != nil {
-			return err
-		}
+	if err := checkLimitsMembership(cfg, key, f, repos); err != nil {
+		return err
 	}
-	writeMu.Lock()
-	defer writeMu.Unlock()
+	return rewriteFleet(dir, key, func(fleets, fleet *Object) error {
+		if f.SearchRoots != nil {
+			fleet.SetValue("search_roots", nonNil(*f.SearchRoots))
+		}
+		if f.Owners != nil {
+			fleet.SetValue("owners", nonNil(*f.Owners))
+		}
+		if f.WakeReviewers != nil {
+			fleet.SetValue("wake_reviewers", nonNil(*f.WakeReviewers))
+		}
+		setOrDrop := func(k string, v *string) {
+			switch {
+			case v == nil:
+			case *v == "":
+				fleet.Delete(k)
+			default:
+				fleet.SetValue(k, *v)
+			}
+		}
+		if f.Chat != nil {
+			if err := mergeChat(fleet, key, f.Chat); err != nil {
+				return err
+			}
+		}
+		if f.Notify != nil {
+			fleet.SetValue("notify", *f.Notify)
+		}
+		if f.Preset != nil || f.Limits != nil {
+			if err := mergeLimits(fleet, f); err != nil {
+				return err
+			}
+		}
+		setOrDrop("clone_root", f.CloneRoot)
+		setOrDrop("color", f.Color)
+		return nil
+	})
+}
+
+// loadFleet reads config.json and the named fleet's object; any failure but an unknown fleet is a conflict.
+func loadFleet(dir, key string) (data []byte, fleets, fleet *Object, err error) {
 	path := filepath.Join(dir, FileName)
-	data, err := ReadConfig(dir)
-	if err != nil {
-		return fmt.Errorf("%w: %w", ErrConflict, err)
+	if data, err = ReadConfig(dir); err != nil {
+		return nil, nil, nil, fmt.Errorf("%w: %w", ErrConflict, err)
 	}
 	if _, err := Parse(data); err != nil {
-		return fmt.Errorf("%w: %s is invalid, fix it first: %w", ErrConflict, path, err)
+		return nil, nil, nil, fmt.Errorf("%w: %s is invalid, fix it first: %w", ErrConflict, path, err)
 	}
 	top, err := ParseObject(data)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrConflict, err)
+		return nil, nil, nil, fmt.Errorf("%w: %w", ErrConflict, err)
 	}
-	fleets := NewObject()
+	fleets = NewObject()
 	if raw, ok := top.Get("fleets"); ok {
 		if fleets, err = ParseObject(raw); err != nil {
-			return fmt.Errorf("%w: %w", ErrConflict, err)
+			return nil, nil, nil, fmt.Errorf("%w: %w", ErrConflict, err)
 		}
 	}
 	raw, ok := fleets.Get(key)
 	if !ok {
-		return fmt.Errorf("%w %q", ErrNoFleet, key)
+		return nil, nil, nil, fmt.Errorf("%w %q", ErrNoFleet, key)
 	}
-	fleet, err := ParseObject(raw)
+	if fleet, err = ParseObject(raw); err != nil {
+		return nil, nil, nil, fmt.Errorf("%w: %w", ErrConflict, err)
+	}
+	return data, fleets, fleet, nil
+}
+
+// rewriteFleet reads config.json under the write lock, lets apply change the named fleet's object (and read the others),
+// and writes the file only when the result parses and the file did not change under the edit.
+func rewriteFleet(dir, key string, apply func(fleets, fleet *Object) error) error {
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	path := filepath.Join(dir, FileName)
+	data, fleets, fleet, err := loadFleet(dir, key)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrConflict, err)
+		return err
 	}
-	if f.SearchRoots != nil {
-		fleet.SetValue("search_roots", nonNil(*f.SearchRoots))
+	if err := apply(fleets, fleet); err != nil {
+		return err
 	}
-	if f.Owners != nil {
-		fleet.SetValue("owners", nonNil(*f.Owners))
-	}
-	if f.WakeReviewers != nil {
-		fleet.SetValue("wake_reviewers", nonNil(*f.WakeReviewers))
-	}
-	setOrDrop := func(k string, v *string) {
-		switch {
-		case v == nil:
-		case *v == "":
-			fleet.Delete(k)
-		default:
-			fleet.SetValue(k, *v)
-		}
-	}
-	if f.Chat != nil {
-		if err := mergeChat(fleet, key, f.Chat); err != nil {
-			return err
-		}
-	}
-	if f.Notify != nil {
-		fleet.SetValue("notify", *f.Notify)
-	}
-	if f.Preset != nil || f.Limits != nil {
-		if err := mergeLimits(fleet, f); err != nil {
-			return err
-		}
-	}
-	setOrDrop("clone_root", f.CloneRoot)
-	setOrDrop("color", f.Color)
 	fleets.Set(key, fleet.JSON())
 	_, out, err := renderKey(path, "fleets", fleets.JSON())
 	if err != nil {
@@ -247,6 +256,24 @@ func editFleet(dir, key string, f FleetFields, cfg *Config, repos RepoLookup) er
 		return fmt.Errorf("%w: config.json changed while saving; try again", ErrConflict)
 	}
 	return replaceFile(path, out)
+}
+
+// checkLimitsMembership refuses a repo_allowlist patch naming a repo the fleet's search roots don't hold and its stored allowlist doesn't already list.
+// A save and a preview both run it, so they cannot disagree.
+func checkLimitsMembership(cfg *Config, key string, f FleetFields, repos RepoLookup) error {
+	raw, ok := f.Limits["repo_allowlist"]
+	if !ok || repos == nil {
+		return nil
+	}
+	cur, known := cfg.Fleet(key)
+	if !known {
+		return fmt.Errorf("%w %q", ErrNoFleet, key)
+	}
+	var stored []string
+	if f.Preset == nil || standing.Preset(*f.Preset) == cur.Preset {
+		stored = cur.Limits.RepoAllowlist
+	}
+	return checkRepoMembership(key, raw, stored, repos(key))
 }
 
 // refuseUnofferedHarness is the server holding the line the Preferences picker draws: a harness

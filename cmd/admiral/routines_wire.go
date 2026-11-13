@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/routines"
@@ -35,6 +36,15 @@ func (r routineShips) Holder(key string) (routines.ShipRef, bool) {
 func (r routineShips) EndedFailed(session string) bool {
 	sh, ok := r.svc.Get(session)
 	return ok && (sh.ExitCode != nil && *sh.ExitCode != 0 || sh.ExitSignal != nil)
+}
+
+// wireStandingOrders gives the launcher the fleet's Guidance and the routines service its Limits and judge reads; the launcher is built before the store.
+func wireStandingOrders(l *launcher.Launcher, store *routines.Store, svc *routines.Service, cfg *config.Manager) {
+	l.Guidance = func(fleet string) (string, error) {
+		o, err := store.StandingOrders(fleet)
+		return o.Guidance, err
+	}
+	svc.Config = cfg
 }
 
 // routineProposer files an Ask first run in the Inbox.

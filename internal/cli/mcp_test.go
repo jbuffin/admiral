@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -219,7 +220,7 @@ func TestAMalformedLineDoesNotKillTheServer(t *testing.T) {
 // The tools by name, with the route each calls. Anything not in this list is a tool the Never list forbids or one
 // nobody specified: approvals, typing mid-turn, config, sources, settings and Preferences have none.
 var wantTools = []string{
-	"add_order", "answer_item", "ask_question", "dismiss_ship", "hold_fire_on", "launch_ship", "list_campaigns", "list_inbox",
+	"add_order", "answer_item", "ask_question", "dismiss_ship", "get_standing_orders", "hold_fire_on", "launch_ship", "list_campaigns", "list_inbox",
 	"list_routines", "list_ships", "list_sources", "make_commitment", "next_prompt", "read_conversation", "read_hold_fire", "read_outcomes",
 	"save_note", "stop_ship", "turn_routine_off", "wake_ship",
 }
@@ -827,4 +828,36 @@ func TestMakeCommitmentIsDescribedAsOnlyForWhatTheEngineerToldItAndItsSchemaHasN
 		return
 	}
 	t.Error("tools/list has no make_commitment")
+}
+
+// AdmiralBot reads standing orders and drafts prose; the engineer files them on the Routines screen.
+func TestGetStandingOrdersToolSaysAdmiralBotDraftsProseAndLinksToTheScreen(t *testing.T) {
+	a := newStandIn(t, nil)
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, rpc(1, "tools/list", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list struct {
+		Tools []struct{ Name, Description string } `json:"tools"`
+	}
+	if err := json.Unmarshal(replies["1"].Result, &list); err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range list.Tools {
+		if tl.Name != "get_standing_orders" {
+			continue
+		}
+		if !strings.Contains(tl.Description, "/app/routines") || !strings.Contains(tl.Description, "draft") {
+			t.Errorf("description = %q, want it to say AdmiralBot drafts prose and link to /app/routines", tl.Description)
+		}
+		return
+	}
+	t.Error("no get_standing_orders tool is listed")
+}
+
+func TestTheCopilotChatsAllowlistIncludesTheStandingOrdersReader(t *testing.T) {
+	if !slices.Contains(launcher.ChatTools, "get_standing_orders") {
+		t.Errorf("launcher.ChatTools = %v, want it to name get_standing_orders", launcher.ChatTools)
+	}
 }
