@@ -432,9 +432,11 @@ type Trigger struct {
 	DedupeKey string `json:"dedupe_key,omitempty"`
 	Costs     []Cost `json:"costs,omitempty"`
 	// Via marks a launch that came from an accepted proposal.
-	Via      string    `json:"via,omitempty"`
-	Undone   bool      `json:"undone,omitempty"`
-	UndoneAt time.Time `json:"undone_at,omitzero"`
+	Via string `json:"via,omitempty"`
+	// ProposalOf is the event proposal's record that this launch answered.
+	ProposalOf string    `json:"proposal_of,omitempty"`
+	Undone     bool      `json:"undone,omitempty"`
+	UndoneAt   time.Time `json:"undone_at,omitzero"`
 }
 
 // logLine is one line of triggers.jsonl: a record, or a mark that an earlier launch was undone or its ship ended failed.
