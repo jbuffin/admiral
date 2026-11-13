@@ -84,6 +84,8 @@ type Request struct {
 	QuietGate bool `json:"-"`
 	// TriggerID is the id of the trigger-log record the launch answers; the `launched` outcome points at it.
 	TriggerID string `json:"-"`
+	// WorkerLaunched marks a ship started by an outside event, which gets the fleet's Guidance in its prompt.
+	WorkerLaunched bool `json:"-"`
 }
 
 // ChatOption is the chat:<fleet>:<id> key the ship stores, so a fleet's message ids never meet another's;
@@ -142,6 +144,8 @@ type Launcher struct {
 	// Warn gets what a launch as a crew member left out (a dropped model, ignored skills, a bad note file);
 	// the server log when nil.
 	Warn func(msg string)
+	// Guidance is a fleet's Guidance text; a worker-launched ship's prompt carries it.
+	Guidance func(fleet string) (string, error)
 
 	mu sync.Mutex // one launch at a time, so two don't pick one name
 }

@@ -1,6 +1,9 @@
 package actor_test
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestAnActorMayReadRoutinesTurnOneOffAndTurnHoldFireOnButNothingElseAboutThem(t *testing.T) {
 	r := newRig(t)
@@ -31,5 +34,33 @@ func TestAnActorMayReadRoutinesTurnOneOffAndTurnHoldFireOnButNothingElseAboutThe
 		if code := r.do(c.method, c.path, `{"name":"x"}`, "tok-work", local).Code; code != 403 || r.reached != 0 {
 			t.Errorf("%s %s (%s): code %d, reached %d; want 403 and the handler not reached", c.method, c.path, c.why, code, r.reached)
 		}
+	}
+}
+
+func TestAnActorMayReadItsOwnFleetsStandingOrdersAndNothingElseAboutThem(t *testing.T) {
+	r := newRig(t)
+	if code := r.do("GET", "/api/fleets/work/standing-orders", "", "tok-work", local).Code; code != 200 || r.reached != 1 || r.fleet != "work" || !r.acting {
+		t.Errorf("GET its own standing orders: code %d, reached %d for %q; want 200 acting for work", code, r.reached, r.fleet)
+	}
+	for _, c := range []struct{ method, path, why string }{
+		{"GET", "/api/fleets/personal/standing-orders", "another fleet's standing orders"},
+		{"PUT", "/api/fleets/work/standing-orders", "filing standing orders"},
+		{"POST", "/api/fleets/work/standing-orders/copy", "copying standing orders"},
+		{"POST", "/api/fleets/work/standing-orders/draft", "the standing orders drafter"},
+		{"POST", "/api/fleets/work/routines/draft", "the routine drafter"},
+		{"PUT", "/api/fleets/work", "saving the fleet and its Limits"},
+		{"DELETE", "/api/fleets/work/standing-orders", "deleting standing orders"},
+	} {
+		if code := r.do(c.method, c.path, `{"guidance":"x"}`, "tok-work", local).Code; code != 403 || r.reached != 0 {
+			t.Errorf("%s %s (%s): code %d, reached %d; want 403 and the handler not reached", c.method, c.path, c.why, code, r.reached)
+		}
+	}
+}
+
+func TestTheRefusalOfAnotherFleetsStandingOrdersDoesNotCallThemRoutines(t *testing.T) {
+	r := newRig(t)
+	rec := r.do("GET", "/api/fleets/personal/standing-orders", "", "tok-work", local)
+	if body := rec.Body.String(); rec.Code != 403 || !strings.Contains(body, "fleet personal is not fleet work") || strings.Contains(body, "its routines") {
+		t.Errorf("code %d body %q, want 403 with wording that fits standing orders as well as routines", rec.Code, body)
 	}
 }
