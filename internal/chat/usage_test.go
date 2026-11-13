@@ -186,3 +186,39 @@ func waitUsage(t *testing.T, dir string, n int) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+// A chat with no config dir (Codex and Copilot until they get their own) never reads a transcript, even
+// when a projects/ link in the working directory would resolve one.
+func TestResetWithNoConfigDirReadsNoTranscript(t *testing.T) {
+	real := t.TempDir()
+	transcript := filepath.Join(real, "p", "a.jsonl")
+	if err := os.MkdirAll(filepath.Dir(transcript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cost := `{"type":"cost-state","totalCostUSD":7,"modelUsage":{}}` + "\n"
+	if err := os.WriteFile(transcript, []byte(cost), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cwd := t.TempDir()
+	if err := os.Symlink(real, filepath.Join(cwd, "projects")); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(cwd)
+
+	dir := filepath.Join(t.TempDir(), "outcomes")
+	w := outcomes.New(dir, t.Logf)
+	t.Cleanup(w.Close)
+	s := (&Service{Outcomes: w}).chat("work")
+
+	s.recordReset(transcript, "", "work", "")
+
+	deadline := time.Now().Add(5 * time.Second)
+	for len(usageMoney(t, dir)) == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	for _, m := range usageMoney(t, dir) {
+		if m != nil {
+			t.Errorf("recorded money %v from a transcript read with no config dir", m)
+		}
+	}
+}

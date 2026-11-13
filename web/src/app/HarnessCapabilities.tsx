@@ -1,6 +1,7 @@
 import { useEffect } from 'preact/hooks';
 import { Flag } from './Flag';
-import { MissingCapability, harnessName } from './MissingCapability';
+import { harnessName } from './harnessName';
+import { MissingCapability } from './MissingCapability';
 import type { Capability, Fleet, HarnessCapabilities as Harness, JudgeHarness } from './api';
 import { capabilitiesFailed, capabilitiesLoaded, capabilities, checkErrors, checkKey, checking, loadCapabilities, recheck } from './capabilities';
 

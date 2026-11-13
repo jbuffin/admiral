@@ -65,7 +65,8 @@ func (s *fleetChat) recordReset(path, configDir, fleet, clearedFrom string) {
 			}
 		}
 		var cur *usage.Figures
-		if path != "" {
+		// An empty dir would resolve projects/ against the working directory.
+		if path != "" && configDir != "" {
 			if f, _, err := transcriptfs.Open(configDir, path); err == nil {
 				if fig, err := usage.ParseClaude(f); err == nil {
 					cur = &fig

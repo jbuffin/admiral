@@ -53,14 +53,26 @@ export function probeableClaude(a: Admiral) {
   };
 }
 
+/** Like `fakeHarness`, but answers `--version`, so the server detects a version for it. */
+function versionedHarness(a: Admiral, name: string) {
+  const path = a.fakeHarness(name);
+  writeFileSync(path, '#!/bin/sh\n[ "$1" = "--version" ] && echo "1.2.3 (fake)"\nexit 0\n');
+  return path;
+}
+
 /** Zulu (Westwind) comes first, alpha (Homeport) second; `live` makes the docks launchable and gives zulu the orders; `claude` replaces zulu's claude dock. */
-export function seedFleets(a: Admiral, opts: { live?: boolean; chat?: boolean; holdChat?: ChatFleet; claude?: { executable: string; env: Record<string, string> } } = {}) {
+export function seedFleets(a: Admiral, opts: { live?: boolean; chat?: boolean; versioned?: boolean; holdChat?: ChatFleet; claude?: { executable: string; env: Record<string, string> } } = {}) {
   const live = !!opts.live;
+  // A version the server can detect, which Check again needs to keep a seeded probe result.
+  const codexDock = (fleet: string, harness: Harness) => {
+    const d = dock(a, fleet, harness, live);
+    return opts.versioned && !live ? { ...d, executable: versionedHarness(a, harness) } : d;
+  };
   const config: Record<string, unknown> = {
     version: 1,
     fleets: {
-      zulu: { name: WORK, search_roots: [a.home], claude: opts.claude ?? dock(a, 'zulu', 'claude', live), codex: dock(a, 'zulu', 'codex', live) },
-      alpha: { name: HOME, search_roots: [a.home], codex: dock(a, 'alpha', 'codex', live), copilot: dock(a, 'alpha', 'copilot', live) },
+      zulu: { name: WORK, search_roots: [a.home], claude: opts.claude ?? dock(a, 'zulu', 'claude', live), codex: codexDock('zulu', 'codex') },
+      alpha: { name: HOME, search_roots: [a.home], codex: codexDock('alpha', 'codex'), copilot: codexDock('alpha', 'copilot') },
     },
   };
   if (opts.chat) {
@@ -1689,4 +1701,33 @@ export async function myPRsMergeFailsOnTheRow(page: Page, a: Admiral) {
   expect(mergeCalls(a)).toEqual([['pr', 'merge', `${PR_BASE}/${READY_PR.number}`, '--squash']]);
   await expect(row.getByRole('button', { name: 'Merge', exact: true })).toBeEnabled();
   expect((await listShips(a)).find((s) => s.session === ship.session)?.status).toBe('moored');
+}
+
+/**
+ * Writes passing AdmiralBot probe results for a fleet's harness, as the store keeps them, so the picker offers it.
+ * They are keyed by the version the server detected (Check again detects it again), so this waits for the startup
+ * detection to land first: a later write of it could not overwrite the seed.
+ */
+export async function proveAdmiralBot(a: Admiral, fleet: string, harness: string): Promise<void> {
+  const detected = async () => {
+    const res = await fetch(a.url + 'api/v1/harness-capabilities');
+    const body = (await res.json()) as { fleets: { key: string; harnesses: { harness: string; version: string }[] }[] };
+    return body.fleets.find((f) => f.key === fleet)?.harnesses.find((h) => h.harness === harness)?.version ?? '';
+  };
+  await expect.poll(detected).not.toBe('');
+  const version = await detected();
+  const file = join(a.home, 'capabilities.json');
+  const store = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : { fleets: {} };
+  const at = '2026-01-02T03:04:05Z';
+  const pass = { passed: true, at };
+  store.fleets[fleet] ??= {};
+  store.fleets[fleet][harness] = {
+    ...store.fleets[fleet][harness],
+    version,
+    detected_at: at,
+    versions: { [version]: { 'bot.mcp_fence': pass, 'bot.config_home': pass } },
+    probed_version: version,
+    probed_at: at,
+  };
+  writeFileSync(file, JSON.stringify(store));
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/jbuffin/admiral/internal/autopilotgate"
 	"github.com/jbuffin/admiral/internal/bridge"
 	"github.com/jbuffin/admiral/internal/campaigns/follow"
+	"github.com/jbuffin/admiral/internal/capabilities"
 	"github.com/jbuffin/admiral/internal/chat"
 	"github.com/jbuffin/admiral/internal/cli"
 	"github.com/jbuffin/admiral/internal/config"
@@ -265,6 +266,7 @@ func serve(args []string) error {
 		return fmt.Errorf("config: %w", err)
 	}
 	defer cfg.Close()
+	cfg.SetChatProbe(capabilities.ChatProbe(capabilities.Open(dir)))
 	listenOn, err := resolveListen(cfg, *listen, func() (bool, error) { return cli.OfferSetup(cli.Std()) })
 	if err != nil {
 		return err

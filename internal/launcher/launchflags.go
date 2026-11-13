@@ -22,8 +22,8 @@ func modelFlags(harness, model, effort string) ([]string, *Error) {
 	var out []string
 	if model != "" {
 		switch {
-		case harness == "claude" && !slices.Contains(config.ChatModels, model):
-			return nil, refuse(http.StatusBadRequest, "model %q is not one of %v for claude", model, config.ChatModels)
+		case harness == "claude" && !slices.Contains(config.ChatModelsFor("claude"), model):
+			return nil, refuse(http.StatusBadRequest, "model %q is not one of %v for claude", model, config.ChatModelsFor("claude"))
 		case !modelName.MatchString(model):
 			return nil, refuse(http.StatusBadRequest, "model %q is not a plain model name", model)
 		}

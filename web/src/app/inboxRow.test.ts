@@ -17,7 +17,7 @@ const fleet = (key: string, name: string, extra: Partial<Fleet> = {}): Fleet => 
   clone_root: '',
   can_launch: true,
   docks: [],
-  chat: { harness: 'claude', model: 'sonnet', effort: '', context_threshold: 150000, on: false, off_reason: '', harnesses: [] },
+  chat: { harness: 'claude', model: 'sonnet', effort: '', context_threshold: 150000, on: false, off_reason: '', harnesses: [], harness_options: [], models: [], efforts: [] },
   ...extra,
 });
 

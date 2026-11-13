@@ -4,7 +4,7 @@ import { homedir, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test, type Admiral } from './fixtures';
-import { HOME, TS_LOGIN, TS_NAME, WORK, fakeTailscale, seedFleets, setRemote, stubClipboard, watchPage } from './shell';
+import { HOME, TS_LOGIN, TS_NAME, WORK, fakeTailscale, proveAdmiralBot, seedFleets, setRemote, stubClipboard, watchPage } from './shell';
 
 // The fleets are `zulu` (Westwind) and `alpha` (Homeport); zulu is the active fleet until one is chosen.
 const sourcesPage = (a: Admiral, fleet: string) => `${a.url}app/preferences/${fleet}/sources`;
@@ -594,7 +594,7 @@ test('Turn off Tailscale mode asks first, keeps the logins and serve, names the 
 });
 
 test("a fleet's AdmiralBot page shows its harness, model, effort and refresh threshold, saves a change that survives a reload, shows a refusal and, for a fleet with no Claude Code dock, why its chat is off", async ({ page, admiral }) => {
-  seedFleets(admiral, { chat: true });
+  seedFleets(admiral, { chat: true, versioned: true });
   await admiral.start();
   const watch = watchPage(page, admiral.url);
   const harbor = () => JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8')).fleets.harbor as { chat?: Record<string, unknown> };
@@ -609,7 +609,7 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
   const main = page.getByRole('main');
   await expect(main).toContainText("Your chief of staff for the Harborlight fleet. It only sees this fleet's ships, orders, campaigns and logins.");
   await expect(pick('Harness', 'Claude')).toBeChecked();
-  await expect(page.getByRole('radiogroup', { name: 'Harness' }).getByRole('radio')).toHaveCount(1);
+  await expect(page.getByRole('radiogroup', { name: 'Harness' }).getByRole('radio')).toHaveText(['Claude']);
   await expect(page.getByRole('radiogroup', { name: 'Model' }).getByRole('radio')).toHaveText(['Sonnet', 'Opus', 'Haiku']);
   await expect(pick('Model', 'Sonnet')).toBeChecked();
   await expect(page.getByRole('radiogroup', { name: 'Effort' }).getByRole('radio')).toHaveText(['Default', 'Low', 'Medium', 'High']);
@@ -653,7 +653,39 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
   await prefsNav(page).getByRole('group', { name: `${HOME} fleet` }).getByRole('link', { name: 'AdmiralBot', exact: true }).click();
   await expect(page).toHaveURL(/\/app\/preferences\/alpha\/admiralbot/);
   await expect(main).toContainText(/no Claude Code dock/i);
-  await expect(page.getByRole('radiogroup', { name: 'Harness' })).toHaveCount(0);
+  await expect(page.getByRole('radiogroup', { name: 'Harness' }).getByRole('radio')).toHaveText(['Codex', 'Copilot']);
+  await expect(pick('Harness', 'Copilot')).toBeDisabled();
   await expect(page.getByRole('radiogroup', { name: 'Model' })).toBeVisible();
+
+  // A fleet with a Codex dock lists it greyed out with why, until its probes pass; then it is selectable and brings its own models.
+  await page.goto(admiral.url + 'app/preferences/zulu/admiralbot');
+  await expect(page.getByRole('radiogroup', { name: 'Harness' }).getByRole('radio')).toHaveText(['Claude', 'Codex']);
+  await expect(pick('Harness', 'Codex')).toBeDisabled();
+  await expect(main).toContainText(/Codex.*has not been checked/i);
+  await expect(main.getByRole('button', { name: /Check again.*Codex/ })).toBeVisible();
+  await proveAdmiralBot(admiral, 'zulu', 'codex');
+  // Check again reads the fleets again, so the harness turns on without a reload.
+  await main.getByRole('button', { name: /Check again.*Codex/ }).click();
+  await expect(pick('Harness', 'Codex')).toBeEnabled();
+  await expect(main).not.toContainText(/Codex.*has not been checked/i);
+  await pick('Harness', 'Codex').click();
+  await expect(page.getByRole('radiogroup', { name: 'Model' }).getByRole('radio')).not.toContainText(['Sonnet']);
+  await expect(page.getByRole('radiogroup', { name: 'Model' }).getByRole('radio', { checked: true })).toHaveCount(1);
+  // Switching the harness sends it with a model of that harness, never the old model alone.
+  const putCodex = page.waitForRequest((r) => r.method() === 'PUT' && new URL(r.url()).pathname === '/api/v1/fleets/zulu');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  const sent = (await putCodex).postDataJSON() as { chat: { harness?: string; model?: string } };
+  expect(sent.chat.harness).toBe('codex');
+  expect(sent.chat.model).toMatch(/^gpt-/);
+  const zulu = () => JSON.parse(readFileSync(join(admiral.home, 'config.json'), 'utf8')).fleets.zulu as { chat?: Record<string, unknown> };
+  await expect.poll(() => zulu().chat).toMatchObject({ harness: 'codex' });
+
+  // Copilot takes no effort: once proven it offers only Default.
+  await page.goto(admiral.url + 'app/preferences/alpha/admiralbot');
+  await proveAdmiralBot(admiral, 'alpha', 'copilot');
+  await main.getByRole('button', { name: /Check again.*Copilot/ }).click();
+  await expect(pick('Harness', 'Copilot')).toBeEnabled();
+  await pick('Harness', 'Copilot').click();
+  await expect(page.getByRole('radiogroup', { name: 'Effort' }).getByRole('radio')).toHaveText(['Default']);
   expect(watch.unversioned()).toEqual([]);
 });

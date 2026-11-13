@@ -27,6 +27,8 @@ type Config struct {
 	MaxShips  int
 	Resources map[string]Resource
 	Remote    Remote
+	// ChatProbe reads the capability store for the AdmiralBot gate; nil reads as not checked everywhere.
+	ChatProbe ChatProbe
 }
 
 // Remote is Admiral-wide: the Tailscale mode and who may use it.
@@ -321,7 +323,7 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 				return Fleet{}, err
 			}
 		case "chat":
-			if f.Chat, err = parseFleetChat(p, m.raw, false); err != nil {
+			if f.Chat, err = parseFleetChat(p, m.raw, false, DefaultChatHarness); err != nil {
 				return Fleet{}, err
 			}
 		case "notify":

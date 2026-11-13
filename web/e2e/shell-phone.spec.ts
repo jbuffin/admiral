@@ -346,7 +346,13 @@ test("on the phone, a fleet's AdmiralBot page shows its harness, model, effort a
 
   await page.goto(admiral.url + 'app/preferences/alpha/admiralbot');
   await expect(page.getByRole('main')).toContainText(/no Claude Code dock/i);
-  await expect(page.getByRole('radiogroup', { name: 'Harness' })).toHaveCount(0);
+
+  await page.goto(admiral.url + 'app/preferences/zulu/admiralbot');
+  await expect(pick('Harness', 'Codex')).toBeDisabled();
+  await expect(page.getByRole('main')).toContainText(/Codex.*has not been checked/i);
+  const again = page.getByRole('main').getByRole('button', { name: /Check again.*Codex/ });
+  await expectReachable(page, again);
+  expect((await again.boundingBox())!.height).toBeGreaterThanOrEqual(44);
 });
 
 test("on the phone, a chat held before its first SessionStart opens its terminal over the Chat tab, takes touch keys, survives a reload, and sends after Back to chat once it starts", async ({ page, admiral }) => {

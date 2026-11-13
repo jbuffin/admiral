@@ -1,4 +1,4 @@
-import { harnessName } from './MissingCapability';
+import { harnessName } from './harnessName';
 import { moneyText, ageText, shortCount, type ShipUsage } from './shipUsage';
 
 type Tokens = NonNullable<ShipUsage['tokens']>;

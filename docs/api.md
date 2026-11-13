@@ -196,7 +196,16 @@ The server answers an open with `{"type": "conversation_opened", "ship": "<ship>
 
 ## A fleet's chat
 
-Each fleet whose chat is on (`chat.on` in `GET /api/config`) has its own AdmiralBot: a Claude Code session named `_chat-<fleet>` that runs in `$ADMIRAL_HOME/chat/<fleet>/`. Every route is also served under `/api/v1/...`. A fleet that doesn't exist is a 404, and one whose chat is off is a 409 whose `error` is the reason (no dock, a key that differs from an earlier fleet's only in case, and so on). The old global `/api/chat/*` routes are gone and answer 404.
+Each fleet whose chat is on (`chat.on` in `GET /api/config`) has its own AdmiralBot: a session of the fleet's chat harness (Claude Code, until Codex and Copilot can run it) named `_chat-<fleet>` that runs in `$ADMIRAL_HOME/chat/<fleet>/`. Every route is also served under `/api/v1/...`. A fleet that doesn't exist is a 404, and one whose chat is off is a 409 whose `error` is the reason (no dock, a key that differs from an earlier fleet's only in case, and so on). The old global `/api/chat/*` routes are gone and answer 404.
+
+In `GET /api/config`, each fleet's `chat` object carries the AdmiralBot settings and what the fleet may choose:
+
+- `harness`, `model`, `effort` and `context_threshold` are the fleet's settings; `on` and `off_reason` say whether the chat runs.
+- `harness_options` has one entry for each of `claude`, `codex` and `copilot` the fleet has a dock for, in that order: `harness`, `offered`, and when it isn't offered `reason` (one line naming the harness and the missing capability, with the probe's detail when it failed) and `capability` (`bot.mcp_fence` or `bot.config_home`); both are `""` when offered. `models` and `efforts` are the lists that harness's chat accepts, the default first (`""` is the harness default effort). A harness is offered when its probes say so for this fleet (ADR 0035): Claude unless `bot.mcp_fence` failed, Codex and Copilot only with `bot.mcp_fence` and `bot.config_home` both passed.
+- `harnesses` is the offered subset of `harness_options`, by name.
+- `models` and `efforts` are those of the fleet's own `harness`. Claude takes `sonnet`, `opus`, `haiku` and efforts `low`, `medium`, `high`; Codex `gpt-6.1-sol` and `gpt-6-luna` with the same efforts; Copilot `gpt-5.6-sol` and `gpt-5.6-luna` with no effort.
+
+`PUT /api/fleets/<fleet>` with a `chat` object checks what it sends. Naming a `harness` that isn't offered is a `400` with its reason, and so is a model or effort outside the harness's lists, checked against the harness the save leaves the fleet on. A save that names no harness is not checked against the offered list, so a fleet whose harness lapsed can still change its threshold. Switching harness checks the model and effort the fleet keeps against the new harness, and refuses the save when either isn't one it takes (Codex `high` to Copilot with no `effort` sent is a `400`).
 
 ### `GET /api/chat/<fleet>/session`
 
@@ -225,7 +234,7 @@ Admiral appends the history to `$ADMIRAL_HOME/chat/<fleet>/conversation.jsonl`, 
 
 ### `POST /api/chat/<fleet>/start`
 
-Starts the fleet's chat session or leaves a running one alone, and answers `{"running":true}`. Admiral doesn't start one at server start.
+Starts the fleet's chat session or leaves a running one alone, and answers `{"running":true}`. Admiral doesn't start one at server start. `501` naming the harness when the fleet's chat harness isn't Claude: Codex and Copilot launch no chat yet.
 
 ### `POST /api/chat/<fleet>/messages`
 

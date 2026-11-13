@@ -387,7 +387,9 @@ func (s *fleetChat) transcriptChangedLocked(raw string) {
 	}
 	switch {
 	case path != st.path || st.rd == nil:
-		st.path, st.rd, st.unread, st.cleared = path, conversation.NewReader(conversation.TextView()), false, false
+		o := conversation.TextView()
+		o.Harness = s.harness()
+		st.path, st.rd, st.unread, st.cleared = path, conversation.NewReader(o), false, false
 	case source == "clear" && !first:
 		s.clearLocked()
 	}
@@ -413,9 +415,19 @@ func (s *Service) Login(session string) string {
 	return s.chat(key).configDir()
 }
 
+// harness is the fleet's chat harness, from its config and never the session option.
+func (s *fleetChat) harness() string {
+	f, _ := s.Config().Fleet(s.key)
+	return f.Chat.Harness
+}
+
 func (s *fleetChat) configDir() string {
 	// The fleet this chat belongs to, never the session option: anything in the chat can write that.
 	f, _ := s.Config().Fleet(s.key)
+	// Codex and Copilot chats get their own config homes later; until then there is no dir to fence a transcript to.
+	if f.Chat.Harness != "claude" {
+		return ""
+	}
 	var env map[string]string
 	if d, ok := f.Harness("claude"); ok {
 		env = d.Env
@@ -428,7 +440,11 @@ func (s *fleetChat) openLocked() (*os.File, os.FileInfo, error) {
 	if st.path == "" {
 		return nil, nil, fs.ErrNotExist
 	}
-	f, info, err := transcriptfs.Open(s.configDir(), st.path)
+	dir := s.configDir()
+	if dir == "" {
+		return nil, nil, transcriptfs.ErrRefused
+	}
+	f, info, err := transcriptfs.Open(dir, st.path)
 	if errors.Is(err, transcriptfs.ErrRefused) && st.refused != st.path {
 		st.refused = st.path
 		log.Printf("admiral: chat: not reading %q: %v", st.path, err)

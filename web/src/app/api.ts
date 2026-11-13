@@ -13,8 +13,22 @@ export interface FleetChat {
   context_threshold: number | 'never';
   on: boolean;
   off_reason: string;
-  /** The harnesses this fleet's chat can run in; empty without a Claude Code dock. */
+  /** The harnesses this fleet's chat may run on right now. */
   harnesses: string[];
+  /** Every harness the fleet has a dock for, offered or not (with why not), and the models and efforts its chat takes. */
+  harness_options: ChatHarnessOption[];
+  /** The models and efforts of the fleet's own chat harness. */
+  models: string[];
+  efforts: string[];
+}
+export interface ChatHarnessOption {
+  harness: string;
+  offered: boolean;
+  /** One line naming the harness and the missing capability; empty when offered. */
+  reason: string;
+  capability: string;
+  models: string[];
+  efforts: string[];
 }
 export interface Fleet {
   key: string;
@@ -160,7 +174,7 @@ const fleetsOf = (body: { fleets?: Fleet[] | null }): Fleet[] =>
     owners: f.owners ?? [],
     wake_reviewers: f.wake_reviewers ?? [],
     docks: (f.docks ?? []).map((d) => ({ ...d, warnings: d.warnings ?? [] })),
-    chat: { ...f.chat, harnesses: f.chat?.harnesses ?? [] },
+    chat: { ...f.chat, harnesses: f.chat?.harnesses ?? [], harness_options: f.chat?.harness_options ?? [], models: f.chat?.models ?? [], efforts: f.chat?.efforts ?? [] },
     notify: f.notify ?? true,
   }));
 
@@ -252,7 +266,7 @@ export const removeSource = (key: string) => call<unknown>('DELETE', src(key));
 export const addSource = (plugin: string, fleet: string) => call<Source>('POST', '/sources', { plugin, fleet });
 
 /** Saves the fleet fields in the body; the server answers the new config view. */
-export async function saveFleet(key: string, body: Partial<Pick<Fleet, 'search_roots' | 'owners' | 'wake_reviewers' | 'clone_root' | 'color' | 'notify'>> | { chat: Partial<Omit<FleetChat, 'on' | 'off_reason' | 'harnesses'>> }): Promise<Result<Fleet[]>> {
+export async function saveFleet(key: string, body: Partial<Pick<Fleet, 'search_roots' | 'owners' | 'wake_reviewers' | 'clone_root' | 'color' | 'notify'>> | { chat: Partial<Omit<FleetChat, 'on' | 'off_reason' | 'harnesses' | 'harness_options' | 'models' | 'efforts'>> }): Promise<Result<Fleet[]>> {
   const r = await call<{ fleets?: Fleet[] | null }>('PUT', `/fleets/${encodeURIComponent(key)}`, body);
   return r.ok ? { ok: true, data: fleetsOf(r.data) } : r;
 }
