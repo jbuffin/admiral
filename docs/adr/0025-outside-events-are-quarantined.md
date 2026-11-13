@@ -111,7 +111,7 @@ Every fleet starts on **Work**. **Home** is a "personal" preset the engineer can
 
 | Setting | Home | Work |
 | --- | --- | --- |
-| T1 ceiling | A5 Commodore | A4 normal ship; Commodore asks first |
+| T1 ceiling | A5 Commodore | A5 Commodore, asks first |
 | T2 ceiling | A3 restricted, Draft fix | A1 propose (decided by the engineer while recording, 2026-11-10) |
 | T3 ceiling | A1 propose (hard cap) | A0 report only |
 | T4 ceiling | A3 Draft fix, at 10 or more events in 14 days | A3 Investigate |
@@ -121,7 +121,7 @@ Every fleet starts on **Work**. **Home** is a "personal" preset the engineer can
 | Concurrent worker-launched ships | 3 | 2 |
 | Ship wall clock | 60 min | 60 min |
 | Lookout call / daily worker spend | $0.25 / $5 | $0.25 / $10 |
-| Quiet hours | launches held as proposals 23:00–07:00 | held outside 08:00–19:00 on weekdays |
+| Quiet hours | none until the engineer sets windows per fleet; held launches become proposals | none until the engineer sets windows per fleet; held launches become proposals |
 
 ### Hold fire
 
