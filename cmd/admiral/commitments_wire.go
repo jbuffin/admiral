@@ -31,12 +31,12 @@ func (c commitmentShips) Launch(ctx context.Context, req launcher.Request) (comm
 	if lerr != nil {
 		return commitments.ShipRef{}, lerr
 	}
-	return commitments.ShipRef{Session: sh.Session, Name: sh.Name}, nil
+	return commitments.ShipRef{Session: sh.Session, Name: sh.Name, Status: sh.Status}, nil
 }
 
 func (c commitmentShips) Holder(key string) (commitments.ShipRef, bool) {
 	sh, ok := c.svc.Holder(key)
-	return commitments.ShipRef{Session: sh.Session, Name: sh.Name}, ok
+	return commitments.ShipRef{Session: sh.Session, Name: sh.Name, Status: sh.Status}, ok
 }
 
 // cloneHint is the repo a clone launch is for: a campaign child names its own, which is never read from its text.

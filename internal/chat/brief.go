@@ -157,7 +157,12 @@ func (s *fleetChat) renderBrief(ti tickInputs) {
 	// questions() is oldest first; the brief wants the newest first.
 	qs := s.questions(false)
 	for i := len(qs) - 1; i >= 0; i-- {
-		if q := qs[i]; len(q.Answer) == 0 {
+		q := qs[i]
+		switch {
+		case len(q.Answer) > 0:
+		case isProposal(q.Item.ID):
+			in.Proposals = append(in.Proposals, brief.Question{Text: questionTitle(q), Asked: q.Item.Created})
+		default:
 			in.Questions = append(in.Questions, brief.Question{Text: questionTitle(q), Asked: q.Item.Created})
 		}
 	}
@@ -290,7 +295,7 @@ func (s *fleetChat) digestTick(ti tickInputs) {
 	st.inboxSeen = inboxNow
 	here := map[string]bool{}
 	for _, q := range s.questions(false) {
-		if len(q.Answer) == 0 {
+		if len(q.Answer) == 0 || isProposal(q.Item.ID) {
 			continue
 		}
 		here[q.Item.ID] = true

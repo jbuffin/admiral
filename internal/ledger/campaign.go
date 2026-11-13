@@ -59,13 +59,27 @@ type Proposal struct {
 
 func (c *Commitment) foldChild(ev event) {
 	c.ChildEvents++
-	state := map[string]string{EventChildLaunched: ChildLaunched, EventChildWaiting: ChildWaiting, EventChildDeclined: ChildDeclined, EventChildFailed: ChildFailed}[ev.Event]
+	state := map[string]string{EventChildLaunched: ChildLaunched, EventChildWaiting: ChildWaiting, EventChildDeclined: ChildDeclined, EventChildFailed: ChildFailed, EventChildProposed: ChildProposed, EventChildWithdrawn: ChildWithdrawn}[ev.Event]
 	i := slices.IndexFunc(c.Children, func(ch Child) bool { return ch.URL == ev.URL })
 	if i < 0 {
 		c.Children = append(c.Children, Child{URL: ev.URL})
 		i = len(c.Children) - 1
 	}
-	c.Children[i].State, c.Children[i].Ship, c.Children[i].Reason = state, ev.Ship, ev.Reason
+	ch := &c.Children[i]
+	ch.State, ch.Ship, ch.Reason = state, ev.Ship, ev.Reason
+	switch ev.Event {
+	case EventChildLaunched:
+		ch.Mode = ModeWithoutYou
+		if ev.Mode == ModeWithYou {
+			ch.Mode = ModeWithYou
+		}
+	case EventChildProposed:
+		ch.Proposals++
+		c.Proposal = &Proposal{URL: ev.URL, QuestionID: ev.QuestionID}
+	}
+	if ev.Event != EventChildProposed && c.Proposal != nil && c.Proposal.URL == ev.URL {
+		c.Proposal = nil
+	}
 	c.Launched, c.WaitingChildren = 0, 0
 	for _, ch := range c.Children {
 		switch ch.State {
@@ -116,7 +130,22 @@ func (l *Ledger) AddCampaignCommitment(fleet string, c Commitment, via string) (
 }
 
 func (l *Ledger) ChildLaunched(fleet, id, url, ship string) error {
-	return l.childEvent(fleet, id, event{Event: EventChildLaunched, URL: url, Ship: ship})
+	return l.ChildLaunchedAs(fleet, id, url, ship, ModeWithoutYou)
+}
+
+// ChildLaunchedAs records a launch and whether the child's ship works with the engineer or without.
+func (l *Ledger) ChildLaunchedAs(fleet, id, url, ship, mode string) error {
+	return l.childEvent(fleet, id, event{Event: EventChildLaunched, URL: url, Ship: ship, Mode: mode})
+}
+
+// ChildProposed records the question asked about a With-you child; a commitment has one open at a time.
+func (l *Ledger) ChildProposed(fleet, id, url, questionID string) error {
+	return l.childEvent(fleet, id, event{Event: EventChildProposed, URL: url, QuestionID: questionID})
+}
+
+// ChildWithdrawn records that the open question about a child is gone, and why.
+func (l *Ledger) ChildWithdrawn(fleet, id, url, reason string) error {
+	return l.childEvent(fleet, id, event{Event: EventChildWithdrawn, URL: url, Reason: reason})
 }
 func (l *Ledger) ChildWaiting(fleet, id, url string) error {
 	return l.childEvent(fleet, id, event{Event: EventChildWaiting, URL: url})
@@ -148,12 +177,9 @@ func (l *Ledger) childEvent(fleet, id string, ev event) error {
 	if open[i].ChildEvents >= MaxChildEvents {
 		return ErrChildLimit
 	}
+	if ev.Event == EventChildProposed && open[i].Proposal != nil {
+		return &RefusedError{"a proposal is already open"}
+	}
 	ev.V, ev.TS, ev.ID = version, l.now().UTC().Truncate(time.Second), id
 	return l.append(fleet, ev)
 }
-
-var errTodo = errors.New("not implemented")
-
-func (l *Ledger) ChildProposed(fleet, id, url, questionID string) error   { return errTodo }
-func (l *Ledger) ChildWithdrawn(fleet, id, url, reason string) error      { return errTodo }
-func (l *Ledger) ChildLaunchedAs(fleet, id, url, ship, mode string) error { return errTodo }

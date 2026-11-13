@@ -309,7 +309,9 @@ func (s *fleetChat) broadcast() { s.broadcastIf(true) }
 func (s *fleetChat) broadcastIf(send bool) {
 	m := s.message()
 	if send {
-		s.Hub.BroadcastOnce("chat:"+s.key, func() any { return m })
+		if s.Hub != nil {
+			s.Hub.BroadcastOnce("chat:"+s.key, func() any { return m })
+		}
 		if s.questionsMoved() {
 			s.questionsChanged()
 		}

@@ -308,6 +308,7 @@ export interface ChatCommitment {
   harness?: string;
   launched?: number;
   waiting_children?: number;
+  proposal?: { url: string; question: string };
   ts: string;
   via?: string;
   waiting?: boolean;

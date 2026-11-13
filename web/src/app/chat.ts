@@ -111,4 +111,4 @@ export function commitmentCardView(item: Extract<ThreadItem, { kind: 'commitment
 }
 
 /** The eyebrow of an open question card: Admiral's own proposals read differently from AdmiralBot's questions. */
-export const questionEyebrow = (_id: string): string => 'AdmiralBot asks';
+export const questionEyebrow = (id: string): string => (id.startsWith('campaign-') ? 'Admiral asks' : 'AdmiralBot asks');

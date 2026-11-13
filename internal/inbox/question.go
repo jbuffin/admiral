@@ -52,6 +52,11 @@ func questionsRoot(root *os.Root, fleet string) (*os.Root, error) {
 
 // WriteQuestion writes the question in body ({title, questions}) for a fleet's chat and returns its id; it writes nothing for a bad question, which comes back as a *QuestionError.
 func WriteQuestion(root *os.Root, fleet string, body []byte) (string, error) {
+	return WriteQuestionAs(root, fleet, "", body)
+}
+
+// WriteQuestionAs is WriteQuestion under a chosen id; an empty id is a new time id.
+func WriteQuestionAs(root *os.Root, fleet, id string, body []byte) (string, error) {
 	if len(body) > MaxItem {
 		return "", badQuestion("the question is over %d bytes", MaxItem)
 	}
@@ -62,9 +67,11 @@ func WriteQuestion(root *os.Root, fleet string, body []byte) (string, error) {
 	if err := json.Unmarshal(body, &in); err != nil {
 		return "", badQuestion("the question is not valid JSON: %v", err)
 	}
-	id, err := newQuestionID()
-	if err != nil {
-		return "", err
+	if id == "" {
+		var err error
+		if id, err = newQuestionID(); err != nil {
+			return "", err
+		}
 	}
 	item, err := json.Marshal(map[string]any{"version": 1, "id": id, "kind": KindQuestion,
 		"created": time.Now().UTC().Format(time.RFC3339), "title": in.Title,

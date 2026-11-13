@@ -240,9 +240,15 @@ func (s *fleetChat) questions(fresh bool) []Question {
 	return append([]Question{}, s.qs...)
 }
 
+// proposalPrefix marks a question Admiral itself asks about a campaign child: the runner owns it, so it
+// stays out of the Inbox, out of what a reset waits on, and survives a new chat.
+const proposalPrefix = "campaign-"
+
+func isProposal(id string) bool { return strings.HasPrefix(id, proposalPrefix) }
+
 func unanswered(qs []Question) bool {
 	for _, q := range qs {
-		if len(q.Answer) == 0 {
+		if len(q.Answer) == 0 && !isProposal(q.Item.ID) {
 			return true
 		}
 	}
@@ -291,7 +297,9 @@ func (s *fleetChat) removeAll() {
 	names, _ := f.Readdirnames(-1)
 	f.Close()
 	for _, n := range names {
-		_ = dir.Remove(n)
+		if !isProposal(n) {
+			_ = dir.Remove(n)
+		}
 	}
 }
 
@@ -302,7 +310,7 @@ func (s *Service) WaitingQuestions() []inbox.Item {
 	for _, fc := range s.onFleets() {
 		f, _ := cfg.Fleet(fc.key)
 		for _, q := range fc.questions(false) {
-			if len(q.Answer) > 0 {
+			if len(q.Answer) > 0 || isProposal(q.Item.ID) {
 				continue
 			}
 			it := q.Item

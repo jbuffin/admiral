@@ -482,7 +482,6 @@ func serve(args []string) error {
 	chatService := &chat.Service{Actor: minter, Host: host, Hub: hub, Launcher: shipService.Launcher, Config: cfg.Current, Tmux: tmuxPath, Socket: sock, Home: absDir, Outcomes: outcomeLog}
 	shipService.Launcher.BeforeChat = chatService.WithdrawQuestions
 	shipService.ChatPrompt = chatService.PromptKey
-	chatService.OnQuestions = inboxService.Changed
 	chatService.Ships, chatService.Campaigns, chatService.Inbox = shipService.List, followStore.List, inboxService.List
 	chatService.SourceFleet = func(key string) (string, bool) {
 		src, ok := cfg.Current().Source(key)
@@ -540,7 +539,7 @@ func serve(args []string) error {
 			return f.Name
 		}}}
 	commitmentRunner := &commitments.Runner{Home: absDir, Ledger: chatService.Notes(), Clock: commitments.Clock{Now: time.Now, After: time.After},
-		Ships: commitmentShips{svc: shipService, config: cfg.Current}, Cards: chatService, SourceFleet: chatService.SourceFleet, Ready: host.Ready(),
+		Ships: commitmentShips{svc: shipService, config: cfg.Current}, Cards: chatService, Proposals: chatService, SourceFleet: chatService.SourceFleet, Ready: host.Ready(),
 		GitHubFor: func(fleet, host string) commitments.GitHub {
 			if c, ok := supervisor.GitHubClient(fleet, host); ok {
 				return c
@@ -560,6 +559,7 @@ func serve(args []string) error {
 	wireEvents(supervisor, routineStore, routineScheduler, allShips, newLookout(absDir, cfg, fleetRepos(cfg), supervisor), lookoutActs)
 	inboxService.LaunchEvent = launchEvent(routineScheduler)
 	wireStandingOrders(shipService.Launcher, routineStore, routineService, cfg)
+	chatService.OnQuestions = func() { inboxService.Changed(); commitmentRunner.Changed() }
 	chatService.FollowCampaign, chatService.CampaignFleet, commitmentRunner.Campaign, campaignService.OnRead = campaignService.Follow, campaignService.Owner, campaignService.Snapshot, commitmentRunner.Changed
 	inboxService.LaunchRoutine = func(ctx context.Context, p inbox.RoutineProposal) (any, int, string) {
 		t, err := routineScheduler.Accept(ctx, p.Fleet, p.Routine, p.Trigger)

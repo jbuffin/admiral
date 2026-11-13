@@ -5,7 +5,7 @@ import { probeChatSession, type Fleet } from './api';
 import { shipsLink } from './shipsLink';
 import { useBridgeTerminal } from '../useBridgeTerminal';
 import { KEYS, touchKeyboard } from '../keys';
-import { commitmentCardView, needsTerminal, resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
+import { commitmentCardView, needsTerminal, questionEyebrow, resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
 import { Row, useInboxQueue, usePeekEntry, useStacked } from './InboxPanel';
 import { MuteRule } from './MuteRule';
 import { Peek } from './Peek';
@@ -26,7 +26,7 @@ function QuestionCard({ item, chat }: { item: Extract<ThreadItem, { kind: 'quest
     const draft = chat.drafts[card.id] ?? blankDraft();
     return (
       <div class="convo-card chat-card">
-        <p class="chat-card-eyebrow">AdmiralBot asks</p>
+        <p class="chat-card-eyebrow">{questionEyebrow(card.id)}</p>
         <PeekQuestions questions={card.question?.questions ?? []} draft={draft} edit={(fn) => chat.editDraft(card.id, fn)} onSend={(b) => void chat.answer(card.id, b)} />
       </div>
     );
