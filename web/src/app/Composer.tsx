@@ -137,7 +137,8 @@ let menuIds = 0;
 export function MessageField({ label, placeholder, text, setText, send, disabled, canSend, focus = false, skills }: { label: string; placeholder: string; text: string; setText: (t: string) => void; send: () => void; disabled: boolean; canSend: boolean; focus?: boolean; skills?: string }) {
   const field = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
-    if (focus && !disabled) field.current?.focus();
+    // The field enabling late must not take focus from an open sheet.
+    if (focus && !disabled && !document.querySelector('[aria-modal="true"]')) field.current?.focus();
   }, [focus, disabled]);
   const menu = useRef<HTMLUListElement>(null);
   // Where a completion put the caret, set on the commit that shows its text: any later and fast typing lands on both sides of it.
