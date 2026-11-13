@@ -25,7 +25,13 @@ const (
 	maxSpendUSD       = 10000
 	maxThresholdCount = 100000
 	maxThresholdDays  = 365
+	maxQuotaHold      = 100
 )
+
+// Bounds are the upper bounds above for the standing-orders drafter's prompt, which prints them.
+var Bounds = struct{ LaunchRate, Concurrent, WallClockMinutes, SpendUSD, ThresholdEvents, ThresholdDays, QuotaHoldPercent int }{
+	maxLaunchRate, maxConcurrent, maxWallClockMins, maxSpendUSD, maxThresholdCount, maxThresholdDays, maxQuotaHold,
+}
 
 var (
 	clockRe = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
@@ -70,7 +76,7 @@ func parseLimits(path string, raw json.RawMessage, preset standing.Preset) (stan
 		case "spend":
 			err = parseSpend(p, m.raw, &l.Spend)
 		case "quota_hold_percent":
-			l.QuotaHoldPercent, err = boundedInt(p, m.raw, 1, 100)
+			l.QuotaHoldPercent, err = boundedInt(p, m.raw, 1, maxQuotaHold)
 		case "write_deny":
 			l.WriteDeny, err = parseGlobs(p, m.raw)
 		case "skip":

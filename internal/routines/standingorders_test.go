@@ -554,13 +554,13 @@ func TestStandingOrderDraftAnswersTheJudgesDraftWithTheSentencesAndChanges(t *te
 	r.nothingSaved()
 }
 
-func TestStandingOrderDraftKeepsAnEmptyLimitsObjectAndMapsEmptyGuidanceToNull(t *testing.T) {
+func TestStandingOrderDraftMapsAnEmptyLimitsPatchAndEmptyGuidanceToNull(t *testing.T) {
 	r := newSO(t)
 	r.answers(map[string]any{"limits": map[string]any{}, "checks": []any{}, "guidance": ""})
 	_, raw := r.do("POST", "/api/fleets/work/standing-orders/draft", map[string]any{"prose": draftProse})
 	d, _ := raw["draft"].(map[string]any)
-	if l, ok := d["limits"].(map[string]any); !ok || len(l) != 0 {
-		t.Errorf("draft.limits = %v, want {}", d["limits"])
+	if l, present := d["limits"]; !present || l != nil {
+		t.Errorf("draft.limits = %v (present %v), want null", d["limits"], present)
 	}
 	if g, present := d["guidance"]; !present || g != nil {
 		t.Errorf("draft.guidance = %v (present %v), want null for an empty reply", g, present)

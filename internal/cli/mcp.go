@@ -290,7 +290,7 @@ var mcpTools = []mcpTool{
 	{"list_routines", "List this fleet's routines: when each runs, its mode, and whether it is on.", obj(nil, nil), fleetGet("/routines")},
 	{"get_standing_orders", "Read this fleet's standing orders: its Checks, Guidance and Limits. You can't file or change them. When the engineer wants one, draft it as prose and link them to /app/routines (or /app/routines/new for a routine), where they file it.",
 		obj(nil, nil), fleetGet("/standing-orders")},
-	{"turn_routine_off","Turn one of this fleet's routines off. Turning one on, saving, editing or deleting a routine is the engineer's.",
+	{"turn_routine_off", "Turn one of this fleet's routines off. Turning one on, saving, editing or deleting a routine is the engineer's.",
 		obj([]string{"routine"}, map[string]any{"routine": str("the routine's id")}),
 		func(c *mcpClient, raw json.RawMessage) (string, error) {
 			var a struct{ Routine string }

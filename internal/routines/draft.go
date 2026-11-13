@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/jbuffin/admiral/internal/capabilities"
@@ -140,7 +142,12 @@ func ordersPrompt(prose string) string {
 			fields = append(fields, "- "+sn.Field)
 		}
 	}
-	template := strings.Replace(ordersWriter, "{{fields}}", strings.Join(fields, "\n"), 1)
+	b := config.Bounds
+	template := strings.NewReplacer("{{fields}}", strings.Join(fields, "\n"),
+		"{{launch_rate}}", strconv.Itoa(b.LaunchRate), "{{concurrent}}", strconv.Itoa(b.Concurrent),
+		"{{wall_clock}}", strconv.Itoa(b.WallClockMinutes), "{{spend}}", strconv.Itoa(b.SpendUSD),
+		"{{threshold_events}}", strconv.Itoa(b.ThresholdEvents), "{{threshold_days}}", strconv.Itoa(b.ThresholdDays),
+		"{{quota_hold}}", strconv.Itoa(b.QuotaHoldPercent)).Replace(ordersWriter)
 	return fencedPrompt(template, "The engineer's text:", prose)
 }
 
@@ -196,10 +203,13 @@ func (s *Service) serveOrdersDraft(w http.ResponseWriter, r *http.Request) {
 
 	var limits map[string]json.RawMessage
 	effective := f.Limits
-	if p, err := config.PreviewLimits(s.Store.Home, key, config.FleetFields{Limits: d.limits}); err != nil {
+	if p, err := s.Config.PreviewLimits(key, config.FleetFields{Limits: d.limits}); err != nil {
 		problems = append(problems, problem{"limits", err.Error()})
 	} else {
-		limits, effective = d.limits, p.Limits
+		effective = p.Limits
+		if len(d.limits) > 0 {
+			limits = d.limits
+		}
 	}
 	changes, loosens := []map[string]string{}, standing.Loosens(f.Limits, effective)
 	if loosens == nil {
@@ -216,6 +226,11 @@ func (s *Service) serveOrdersDraft(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	stored, err := s.Store.StandingOrders(key)
+	if err != nil {
+		fail(w, err)
+		return
+	}
 	text := collapse(prose)
 	checks := []string{}
 	for _, c := range d.checks {
@@ -223,16 +238,18 @@ func (s *Service) serveOrdersDraft(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case checkOne(c) != "":
 			problems = append(problems, problem{"checks", fmt.Sprintf("dropped %q: %s", c, checkOne(c))})
-		case !strings.Contains(text, collapse(c)):
+		case !containsWords(text, collapse(c)):
 			problems = append(problems, problem{"checks", fmt.Sprintf("dropped %q: it is not in the text", c)})
+		case containsString(stored.Checks, c):
+			problems = append(problems, problem{"checks", fmt.Sprintf("dropped %q: the fleet already has it", c)})
 		case containsString(checks, c):
 		default:
 			checks = append(checks, c)
 		}
 	}
-	if len(checks) > maxChecks {
-		problems = append(problems, problem{"checks", fmt.Sprintf("kept the first %d of %d Checks", maxChecks, len(checks))})
-		checks = checks[:maxChecks]
+	if room := max(maxChecks-len(stored.Checks), 0); len(checks) > room {
+		problems = append(problems, problem{"checks", fmt.Sprintf("kept %d of %d Checks: the fleet holds %d and the limit is %d", room, len(checks), len(stored.Checks), maxChecks)})
+		checks = checks[:room]
 	}
 
 	var guidance *string
@@ -240,8 +257,10 @@ func (s *Service) serveOrdersDraft(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case checkGuidance(g) != "":
 			problems = append(problems, problem{"guidance", "dropped the Guidance: " + checkGuidance(g)})
-		case !strings.Contains(text, collapse(g)):
+		case !containsWords(text, collapse(g)):
 			problems = append(problems, problem{"guidance", "dropped the Guidance: it is not in the text"})
+		case stored.Guidance != "" && checkGuidance(joinGuidance(stored.Guidance, g)) != "":
+			problems = append(problems, problem{"guidance", "dropped the Guidance: added to the fleet's Guidance it would be longer than 2000 characters"})
 		default:
 			guidance = &g
 		}
@@ -251,6 +270,35 @@ func (s *Service) serveOrdersDraft(w http.ResponseWriter, r *http.Request) {
 		"draft":     map[string]any{"limits": limits, "checks": checks, "guidance": guidance},
 		"sentences": sentences, "changes": changes, "loosens": loosens, "problems": problems,
 	})
+}
+
+// joinGuidance is how a draft's Guidance is added to the stored: the stored, a blank line, the drafted.
+func joinGuidance(stored, drafted string) string {
+	if stored == "" {
+		return drafted
+	}
+	return stored + "\n\n" + drafted
+}
+
+// containsWords is whether frag is in text and starts and ends on a word boundary there.
+func containsWords(text, frag string) bool {
+	isWord := func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' }
+	first, _ := utf8.DecodeRuneInString(frag)
+	last, _ := utf8.DecodeLastRuneInString(frag)
+	for from := 0; frag != ""; {
+		i := strings.Index(text[from:], frag)
+		if i < 0 {
+			return false
+		}
+		i += from
+		before, _ := utf8.DecodeLastRuneInString(text[:i])
+		after, _ := utf8.DecodeRuneInString(text[i+len(frag):])
+		if !(i > 0 && isWord(first) && isWord(before)) && !(i+len(frag) < len(text) && isWord(last) && isWord(after)) {
+			return true
+		}
+		from = i + 1
+	}
+	return false
 }
 
 func containsString(list []string, s string) bool {

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/actor"
@@ -23,6 +24,9 @@ type Service struct {
 	// Config reads and saves the fleet's Limits; Judge runs the drafters' judge calls (judge.Run when nil).
 	Config *config.Manager
 	Judge  func(context.Context, judge.Choice, judge.Call) (judge.Reply, error)
+
+	// ordersMu holds a Copy's snapshot, store write, config write and restore apart from any other standing-orders save.
+	ordersMu sync.Mutex
 }
 
 func (s *Service) changed() {

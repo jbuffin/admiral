@@ -576,7 +576,7 @@ A routine with Notify me on pushes `launched` (a tap opens the ship), `failed`, 
 
 ## Standing orders
 
-A fleet's Checks (at most 20, each at most 300 characters, none empty or repeated), its Guidance (at most 2000 characters) and its Limits, which a fleet save also edits. The Checks and Guidance live in `$ADMIRAL_HOME/routines/<key>/standing-orders.json`; a worker-launched ship's prompt ends with the Guidance under `## Standing orders`. Every route is also served under `/api/v1/`. Errors are `{"error": "…"}`: 404 for an unknown fleet, 400 for a body that fails a check (the message names `checks[i]` or `guidance`), 409 when the config can't be edited. For AdmiralBot's actor only the `GET` is allowed (see "AdmiralBot's requests").
+A fleet's Checks (at most 20, each at most 300 characters, none empty or repeated), its Guidance (at most 2000 characters) and its Limits, which a fleet save also edits. The Checks and Guidance live in `$ADMIRAL_HOME/routines/<key>/standing-orders.json`; a worker-launched ship's prompt ends with the Guidance under `## Standing orders`. Every route is also served under `/api/v1/`. Errors are `{"error": "…"}`: 404 for an unknown fleet, 400 for a body that fails a check (the message reads `invalid standing orders: …` and names `checks[i]` or `guidance`), 409 when the config can't be edited. For AdmiralBot's actor only the `GET` is allowed (see "AdmiralBot's requests").
 
 ### `GET /api/fleets/<key>/standing-orders`
 
@@ -589,7 +589,7 @@ A fleet's Checks (at most 20, each at most 300 characters, none empty or repeate
 
 ### `PUT /api/fleets/<key>/standing-orders`
 
-`{"checks": […], "guidance": "…"}`; a field left out keeps its stored value. Replaces what is stored once the whole result passes the checks. `200` with the `GET` shape.
+`{"checks": […], "guidance": "…"}`; a field left out keeps its stored value. Replaces what is stored once the whole result passes the checks. Checks are stored trimmed, so two that differ only by surrounding whitespace count as repeated. `200` with the `GET` shape.
 
 ### `POST /api/fleets/<key>/standing-orders/copy`
 
@@ -600,12 +600,12 @@ A fleet's Checks (at most 20, each at most 300 characters, none empty or repeate
 `{"prose": "…"}` (1 to 4000 characters). One judge call turns the text into a draft; nothing is saved.
 
 ```json
-{"draft": {"limits": {"wall_clock_minutes": 30}, "checks": ["…"], "guidance": "…" or null},
+{"draft": {"limits": {"wall_clock_minutes": 30} or null, "checks": ["…"], "guidance": "…" or null},
  "sentences": […], "changes": [{"field": "…", "sentence": "…"}], "loosens": ["wall_clock_minutes"],
  "problems": [{"field": "limits|checks|guidance", "message": "…"}]}
 ```
 
-A Check or the Guidance that the prose does not hold (compared after whitespace is collapsed) is dropped and named in `problems`, as is a Limits patch the config refuses (`draft.limits` is then `null`). `changes` are the sentences the patch changes, and `loosens` the Limits it would loosen, which the engineer confirms. `409` with `{"error", "reason"}` when no harness is proven safe for judge calls; `502` with `{"error", "kind"}` when the call fails (`timeout`, `bad reply`, `budget spent` or `error`).
+A Check or the Guidance that the prose does not hold (compared after whitespace is collapsed, and starting and ending on a word boundary) is dropped and named in `problems`, as is a Limits patch the fleet save would refuse, including a `repo_allowlist` entry outside the fleet's search roots (`draft.limits` is then `null`, as it is when the draft changes no Limit). The draft counts what the fleet already stores: a Check equal to a stored one is dropped, only as many Checks as fit under 20 beside the stored ones are kept, and Guidance that would pass 2000 characters is dropped when added to the stored Guidance as the stored text, a blank line, then the drafted text. That is how the Guidance is added when the engineer confirms. `changes` are the sentences the patch changes, and `loosens` the Limits it would loosen, which the engineer confirms. `409` with `{"error", "reason"}` when no harness is proven safe for judge calls; `502` with `{"error", "kind"}` when the call fails (`timeout`, `bad reply`, `budget spent` or `error`).
 
 ### `POST /api/fleets/<key>/routines/draft`
 

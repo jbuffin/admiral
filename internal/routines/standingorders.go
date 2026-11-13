@@ -2,6 +2,7 @@ package routines
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,16 @@ const (
 type StandingOrders struct {
 	Checks   []string `json:"checks"`
 	Guidance string   `json:"guidance"`
+}
+
+// ordersError is an ErrInvalid whose message says standing orders, not routine.
+type ordersError struct{ msg string }
+
+func (e ordersError) Error() string        { return "invalid standing orders: " + e.msg }
+func (e ordersError) Is(target error) bool { return target == ErrInvalid }
+
+func invalidOrdersf(format string, a ...any) error {
+	return ordersError{fmt.Sprintf(format, a...)}
 }
 
 // StandingOrdersPatch leaves a nil field as stored.
@@ -61,20 +72,20 @@ func checkGuidance(g string) string {
 
 func validateOrders(o StandingOrders) error {
 	if len(o.Checks) > maxChecks {
-		return invalidf("checks: at most %d Checks, got %d", maxChecks, len(o.Checks))
+		return invalidOrdersf("checks: at most %d Checks, got %d", maxChecks, len(o.Checks))
 	}
 	for i, c := range o.Checks {
 		if msg := checkOne(c); msg != "" {
-			return invalidf("checks[%d]: %s", i, msg)
+			return invalidOrdersf("checks[%d]: %s", i, msg)
 		}
 		for _, earlier := range o.Checks[:i] {
 			if earlier == c {
-				return invalidf("checks[%d]: listed twice", i)
+				return invalidOrdersf("checks[%d]: listed twice", i)
 			}
 		}
 	}
 	if msg := checkGuidance(o.Guidance); msg != "" {
-		return invalidf("guidance: %s", msg)
+		return invalidOrdersf("guidance: %s", msg)
 	}
 	return nil
 }
@@ -101,9 +112,9 @@ func (s *Store) SetStandingOrders(fleet string, p StandingOrdersPatch) (Standing
 		return o, err
 	}
 	if p.Checks != nil {
-		o.Checks = *p.Checks
-		if o.Checks == nil {
-			o.Checks = []string{}
+		o.Checks = make([]string, 0, len(*p.Checks))
+		for _, c := range *p.Checks {
+			o.Checks = append(o.Checks, strings.TrimSpace(c))
 		}
 	}
 	if p.Guidance != nil {
@@ -123,9 +134,13 @@ func (s *Store) snapshotOrders(fleet string) (restore func() error, err error) {
 	path := s.ordersPath(fleet)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	prev, err := os.ReadFile(path)
-	existed := err == nil
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	_, statErr := os.Stat(path)
+	existed := statErr == nil
+	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+		return nil, statErr
+	}
+	prev, err := s.loadOrders(fleet)
+	if err != nil {
 		return nil, err
 	}
 	return func() error {
@@ -137,6 +152,6 @@ func (s *Store) snapshotOrders(fleet string) (restore func() error, err error) {
 			}
 			return nil
 		}
-		return os.WriteFile(path, prev, 0o600)
+		return writeFile(path, prev)
 	}, nil
 }

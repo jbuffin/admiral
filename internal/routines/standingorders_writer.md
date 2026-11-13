@@ -8,14 +8,14 @@ The `limits` field:
 
 A patch over the fleet's current Limits: include only the Limits the text asks to change, and leave out the rest. Use `{}` when the text changes none. The Limits you may name, each with the shape and bounds it takes:
 
-- `ceilings`: an object with any of `t1`, `t2`, `t3`, `t4`, `fleet`. Each is an object with `level` (A0, A1, A3, A4 or A5; there is no A2; `t3` is capped at A1) and, only at A3, `restricted` (`investigate` or `draft_fix`). `t1` may also hold `asks_first` (true or false). `t4` may also hold `threshold`: `{"events": 1-100000, "days": 1-365, "level": ...}`, or null to remove it.
+- `ceilings`: an object with any of `t1`, `t2`, `t3`, `t4`, `fleet`. Each is an object with `level` (A0, A1, A3, A4 or A5; there is no A2; `t3` is capped at A1) and, only at A3, `restricted` (`investigate` or `draft_fix`). `t1` may also hold `asks_first` (true or false). `t4` may also hold `threshold`: `{"events": 1-{{threshold_events}}, "days": 1-{{threshold_days}}, "level": ...}`, or null to remove it.
 - `sender_allowlist`: a list of senders counted as allowed (T2).
-- `rates`: an object with any of `launches_per_hour` (1-1000), `launches_per_sender_per_day` (1-1000), `concurrent` (1-100).
+- `rates`: an object with any of `launches_per_hour` (1-{{launch_rate}}), `launches_per_sender_per_day` (1-{{launch_rate}}), `concurrent` (1-{{concurrent}}).
 - `quiet_hours`: a list of `{"start": "HH:MM", "end": "HH:MM", "weekdays": ["mon", ...]}` windows during which launches are held.
 - `repo_allowlist`: a list of `owner/name` repos ships may start in.
-- `wall_clock_minutes`: a whole number from 1 to 1440.
-- `spend`: an object with any of `lookout_call_usd`, `daily_worker_usd`, `reviewer_call_usd`, each a dollar amount in whole cents from 0 to 10000.
-- `quota_hold_percent`: a whole number from 1 to 100.
+- `wall_clock_minutes`: a whole number from 1 to {{wall_clock}}.
+- `spend`: an object with any of `lookout_call_usd`, `daily_worker_usd`, `reviewer_call_usd`, each a dollar amount in whole cents from 0 to {{spend}}.
+- `quota_hold_percent`: a whole number from 1 to {{quota_hold}}.
 - `write_deny`: a list of repo-relative globs ships may not write to.
 - `skip`: an object with any of `labels`, `senders`, `dedupe_keys`, each a list of `{"value": "...", "routine": "..."}` (`routine` is optional).
 
@@ -23,7 +23,7 @@ These are the field paths the engineer sees in the sentences, one per Limit:
 
 {{fields}}
 
-A Limit the text does not mention stays as it is. If the text asks for something no Limit above can say, leave it out; do not invent a key.
+A Limit the text does not mention stays as it is. If the text asks for something no Limit above can say, do not invent a key: say it as a Check or as Guidance instead, so it is never dropped.
 
 The `checks` field:
 

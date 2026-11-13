@@ -65,6 +65,8 @@ func (s *Service) serveOrdersPut(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &req) {
 		return
 	}
+	s.ordersMu.Lock()
+	defer s.ordersMu.Unlock()
 	o, err := s.Store.SetStandingOrders(key, StandingOrdersPatch{Checks: req.Checks, Guidance: req.Guidance})
 	if err != nil {
 		fail(w, err)
@@ -97,6 +99,17 @@ func (s *Service) serveOrdersCopy(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err := s.Store.fleet(req.To); err != nil {
 		fail(w, err)
+		return
+	}
+	s.ordersMu.Lock()
+	defer s.ordersMu.Unlock()
+	src, err = s.Store.StandingOrders(from)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	if _, _, err := s.Config.PreviewCopyLimits(from, req.To); err != nil {
+		configFail(w, err)
 		return
 	}
 	restore, err := s.Store.snapshotOrders(req.To)
