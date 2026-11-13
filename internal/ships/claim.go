@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -145,25 +147,31 @@ func (s *Service) Launch(ctx context.Context, req launcher.Request) (Ship, *laun
 				return Ship{}, lerr
 			}
 		}
-		// A commitment retries after a wait and the clone path is fixed, so it must not clone before it knows there is room.
-		if req.CommitmentKey != "" {
-			s.admitMu.Lock()
-			release, lerr := s.admit(req)
-			s.admitMu.Unlock()
-			if lerr != nil {
-				return Ship{}, lerr
+		// A commitment retries after a wait, so it neither clones before it knows there is room nor clones twice.
+		if dir := s.rememberedClone(req, repo, text); dir != "" {
+			req.Dir = dir
+		} else {
+			if req.CommitmentKey != "" {
+				s.admitMu.Lock()
+				release, lerr := s.admit(req)
+				s.admitMu.Unlock()
+				if lerr != nil {
+					return Ship{}, lerr
+				}
+				release()
 			}
-			release()
-		}
-		dir, err := s.Launcher.Clone(ctx, req, repo, text)
-		if err != nil {
-			le, ok := err.(*launcher.Error)
-			if !ok {
-				le = &launcher.Error{Status: http.StatusInternalServerError, Msg: err.Error()}
+			dir, err := s.Launcher.Clone(ctx, req, repo, text)
+			if err != nil {
+				le, ok := err.(*launcher.Error)
+				if !ok {
+					le = &launcher.Error{Status: http.StatusInternalServerError, Msg: err.Error()}
+				}
+				return Ship{}, le
 			}
-			return Ship{}, le
+			s.rememberClone(req, dir)
+			req.Dir = dir
 		}
-		req.Dir = dir
+		req.Clone = false
 	}
 	if req.Autopilot {
 		s.admitMu.Lock()
@@ -284,5 +292,44 @@ func (s *Service) lockIssues(urls []string, holder string) (heldBy string, ok bo
 func (s *Service) unlockIssues(urls []string) {
 	for _, u := range urls {
 		s.unlockIssue(u)
+	}
+}
+
+// cloneMarker is the file that keeps a commitment's clone across a wait and a restart.
+func cloneMarker(home, key string) string {
+	return filepath.Join(home, "commitments", "clones", strings.NewReplacer(":", "-", "/", "-").Replace(key))
+}
+
+// rememberedClone is the clone an earlier try of this commitment made, when it is still the expected checkout.
+func (s *Service) rememberedClone(req launcher.Request, repo, text string) string {
+	if req.CommitmentKey == "" {
+		return ""
+	}
+	b, err := os.ReadFile(cloneMarker(s.Launcher.Home, req.CommitmentKey))
+	if err != nil {
+		return ""
+	}
+	fleet, ok := s.Launcher.Config().Fleet(req.Fleet)
+	if !ok {
+		return ""
+	}
+	_, want, ok := launcher.CloneTarget(s.Launcher.Config(), fleet, repo, text)
+	dir := strings.TrimSpace(string(b))
+	if !ok || dir != want {
+		return ""
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+		return ""
+	}
+	return dir
+}
+
+func (s *Service) rememberClone(req launcher.Request, dir string) {
+	if req.CommitmentKey == "" {
+		return
+	}
+	m := cloneMarker(s.Launcher.Home, req.CommitmentKey)
+	if os.MkdirAll(filepath.Dir(m), 0o755) == nil {
+		_ = os.WriteFile(m, []byte(dir), 0o644)
 	}
 }

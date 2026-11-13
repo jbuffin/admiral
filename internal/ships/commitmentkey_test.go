@@ -123,6 +123,50 @@ func TestACommitmentCloneLaunchAtTheCapWaitsWithoutCloning(t *testing.T) {
 	}
 }
 
+// A cap that fills while gh clones leaves the clone behind, and the retry must launch into it, not clone again.
+func TestACommitmentCloneThatMeetsTheCapAfterCloningLaunchesIntoItOnTheRetry(t *testing.T) {
+	r := newWakeRig(t, 5)
+	runs, gate := filepath.Join(r.rec, "gh-runs"), filepath.Join(r.rec, "gh-go")
+	gh := "#!/bin/sh\necho x >> " + runs + "\nwhile [ ! -f " + gate + " ]; do sleep 0.05; done\nmkdir -p \"$4/.git\"\n"
+	if err := os.WriteFile(filepath.Join(r.rec, "gh"), []byte(gh), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", r.rec+string(os.PathListSeparator)+os.Getenv("PATH"))
+	req := r.keyReq(func(q *launcher.Request) {
+		q.Dir, q.Clone, q.Autopilot, q.QuietGate, q.CommitmentKey = "", true, true, true, "commitment:c1"
+		q.Text = "port https://github.com/acme/widgetry to go"
+	})
+	done := make(chan *launcher.Error, 1)
+	go func() {
+		_, lerr := r.s.Launch(context.Background(), req)
+		done <- lerr
+	}()
+	for {
+		if _, err := os.Stat(runs); err == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	r.s.Launcher.Config().MaxShips = 0 // the cap fills while gh runs
+	if err := os.WriteFile(gate, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if lerr := <-done; lerr == nil || lerr.Wait == "" {
+		t.Fatalf("Launch = %v, want a waitable refusal for the cap", lerr)
+	}
+	r.s.Launcher.Config().MaxShips = 5
+	ship, lerr := r.s.Launch(context.Background(), req)
+	if lerr != nil {
+		t.Fatalf("retry = %v, want the ship launched into the clone", lerr)
+	}
+	if b, _ := os.ReadFile(runs); strings.Count(string(b), "x") != 1 {
+		t.Errorf("gh ran %d times, want once", strings.Count(string(b), "x"))
+	}
+	if filepath.Base(ship.Dir) != "widgetry" {
+		t.Errorf("ship dir = %q, want the clone of widgetry", ship.Dir)
+	}
+}
+
 // A ship trigger on a woken ship pairs by the wake's stamp, so the `woken` record must carry it.
 func TestAWokenOutcomeRecordCarriesTheWokenShipsLaunchStamp(t *testing.T) {
 	r := newWakeRig(t, 0)

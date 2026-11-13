@@ -249,3 +249,16 @@ func TestALaunchNamesNoOtherFleetsShip(t *testing.T) {
 		t.Errorf("requests = %+v, want ByFleet %q so a holder of another fleet is named only by its fleet", reqs, fleet)
 	}
 }
+
+func TestALaunchClosesEvenWhenItsCardCannotBePosted(t *testing.T) {
+	g := newRig(t)
+	g.cards.onPost = func(commitments.Card) error { return errCrash }
+	c := dueLaunch(g)
+	g.tick()
+	if _, ok := g.find(c.ID); ok {
+		t.Errorf("the commitment stayed open after its ship launched, want it closed so it cannot launch twice")
+	}
+	if n := len(g.ships.requests()); n != 1 {
+		t.Errorf("%d launches, want 1", n)
+	}
+}
