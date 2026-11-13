@@ -62,3 +62,33 @@ func TestQuotaHoldFollowsTheFleetsLine(t *testing.T) {
 		t.Errorf("at a line of 100 and 75%% used: %+v, want not held", got)
 	}
 }
+
+func TestQuotaHoldWhyWordsTheWindowAndTheReset(t *testing.T) {
+	loc := time.FixedZone("test", -5*3600)
+	now := time.Date(2026, 11, 13, 9, 0, 0, 0, loc)
+	cases := []struct {
+		name string
+		hold standing.QuotaHold
+		want string
+	}{
+		{"5-hour window resetting today", standing.QuotaHold{Window: "primary", WindowMinutes: 300, UsedPercent: 93.4, LinePercent: 90, ResetsAt: time.Date(2026, 11, 13, 15, 4, 0, 0, loc)},
+			"Held for quota: Claude's 5-hour window is at 93% (line 90%), resets 15:04"},
+		{"weekly window resetting in days", standing.QuotaHold{Window: "secondary", WindowMinutes: 10080, UsedPercent: 95, LinePercent: 90, ResetsAt: time.Date(2026, 11, 16, 15, 4, 0, 0, loc)},
+			"Held for quota: Claude's weekly window is at 95% (line 90%), resets Mon 15:04"},
+		{"an unknown length on the secondary window", standing.QuotaHold{Window: "secondary", UsedPercent: 91, LinePercent: 90, ResetsAt: time.Date(2026, 11, 13, 15, 4, 0, 0, loc)},
+			"Held for quota: Claude's longer plan window is at 91% (line 90%), resets 15:04"},
+		{"an unknown length on the primary window", standing.QuotaHold{Window: "primary", UsedPercent: 91, LinePercent: 90, ResetsAt: time.Date(2026, 11, 13, 15, 4, 0, 0, loc)},
+			"Held for quota: Claude's plan window is at 91% (line 90%), resets 15:04"},
+		{"a reset just under 24 hours away", standing.QuotaHold{Window: "primary", WindowMinutes: 300, UsedPercent: 90, LinePercent: 90, ResetsAt: now.Add(24*time.Hour - time.Minute)},
+			"Held for quota: Claude's 5-hour window is at 90% (line 90%), resets 08:59"},
+		{"a reset 24 hours away", standing.QuotaHold{Window: "primary", WindowMinutes: 300, UsedPercent: 90, LinePercent: 90, ResetsAt: now.Add(24 * time.Hour)},
+			"Held for quota: Claude's 5-hour window is at 90% (line 90%), resets Sat 09:00"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.hold.Why("Claude", now, loc); got != c.want {
+				t.Errorf("Why = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
