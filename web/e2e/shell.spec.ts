@@ -729,6 +729,9 @@ test('the Inbox lists a question item and a needs-you stop from two fleets, each
   await expect(entry(login.name)).toContainText(/^.*\b(now|\d+m)\b/);
   await expect(main).not.toContainText('Whatever needs you, from every fleet, will land here.');
   await expect(entry('Heads up')).toBeVisible();
+  // The list column runs the page's full height however few rows it holds, as it does while empty.
+  const listBox = (await main.boundingBox())!;
+  expect(listBox.y + listBox.height).toBeGreaterThan(page.viewportSize()!.height - 24);
 
   // The tab counts what waits on the engineer across fleets (the stop and the question; the notice is FYI) and marks its icon.
   const icon = page.locator('link[rel="icon"]');

@@ -23,6 +23,7 @@ import { InstallSheet } from './InstallPrompts';
 import { gateOf } from './pairing';
 import { ReadyToMerge, StatusGlyph } from './StatusGlyph';
 import { call, type Order, type Ship } from './api';
+import { ShipOrder, webUrl } from './ShipOrder';
 import { CrewPage } from './CrewPage';
 import { RoutinesPage } from './RoutinesPage';
 import { holdFire } from './holdFireLink';
@@ -121,11 +122,7 @@ function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
           >
             {ship.name}
           </a>
-          {ship.order_id ? (
-            <span class="ship-order">
-              <span class="mono">{ship.order_id}</span> {ship.title}
-            </span>
-          ) : null}
+          <ShipOrder ship={ship} />
           {ship.tail ? <span class="ship-tail">{ship.tail}</span> : null}
           {rowButtons(ship, false).note ? <span class="ship-tail">{rowButtons(ship, false).note}</span> : null}
           <ReadyToMerge ship={ship} />
@@ -146,31 +143,30 @@ function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {
   }
   return (
     <li class="ship-row">
-      <a
-        class="ship-link"
-        href={shipPath(ship.session) + search}
-        onClick={(e) => {
-          if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-          e.preventDefault();
-          go(shipPath(ship.session), search);
-        }}
-      >
+      {/* The name's link covers the row, so the issue link can sit inside it without nesting one link in another. */}
+      <div class="ship-link ship-link-cover">
         <span class="ship-bar" style={{ background: bar }} aria-hidden="true" />
         <Flag harness={ship.harness} size="row" />
         <div class="ship-main">
-          <span class="ship-name">{ship.name}</span>
-          {ship.order_id ? (
-            <span class="ship-order">
-              <span class="mono">{ship.order_id}</span> {ship.title}
-            </span>
-          ) : null}
+          <a
+            class="ship-name ship-cover"
+            href={shipPath(ship.session) + search}
+            onClick={(e) => {
+              if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+              e.preventDefault();
+              go(shipPath(ship.session), search);
+            }}
+          >
+            {ship.name}
+          </a>
+          <ShipOrder ship={ship} />
           {ship.tail ? <span class="ship-tail">{ship.tail}</span> : null}
         </div>
         <div class="ship-side">
           {meta ? <span class="ship-meta">{meta}</span> : null}
           <span class="ship-age">{shipRowAge(ship, now)}</span>
         </div>
-      </a>
+      </div>
     </li>
   );
 }
@@ -188,7 +184,13 @@ function OrderRow({ order: o, source, onLaunch, onFollowError }: { order: Order;
   return (
     <li class="order-row">
       <span class="mono order-id">{o.id}</span>
-      <span class="order-title">{o.title}</span>
+      {webUrl(o.url) ? (
+        <a class="order-title issue-link" href={o.url} target="_blank" rel="noopener noreferrer">
+          {o.title}
+        </a>
+      ) : (
+        <span class="order-title">{o.title}</span>
+      )}
       {ship || merged ? null : (
         <button type="button" class="btn" aria-label={o.pr ? undefined : `Launch ${o.title}`} onClick={launch}>
           {o.pr ? 'Launch Commodore' : 'Launch'}

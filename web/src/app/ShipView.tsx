@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, probeShipList, type Changes, type CrewBoat, type Ship } from './api';
+import { ShipOrder } from './ShipOrder';
 import { splitDiff } from './changes';
 import { followConversation, type Conversation } from './conversation';
 import { cardFor } from './answerCard';
@@ -374,6 +375,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
       <div class="ship-view-head">
         <BackLink label="Back" />
         <Heading>{ship.name}</Heading>
+        <ShipOrder ship={ship} />
         {moored ? (
           <button type="button" class="btn primary stop-ship" disabled={ship.no_resume || box.waking} onClick={() => void box.wake()}>
             Wake

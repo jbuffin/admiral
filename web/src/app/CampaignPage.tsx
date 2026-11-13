@@ -502,7 +502,7 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
                 const ship = shipName(r.node);
                 const blockers = (r.node.blockers ?? []).map((b) => b.title || b.url);
                 return (
-                  <li key={r.node.url} class={joinable.size > 0 ? 'ti-pickable' : undefined}>
+                  <li key={r.node.url} class="ti-row">
                     {joinable.has(r.node.url) ? (
                       <label class="ti-pick">
                         <input type="checkbox" aria-label={r.node.title} checked={checked.includes(r.node.url)} onChange={() => toggle(r.node.url)} />
@@ -511,8 +511,14 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
                       // An empty cell keeps the group's columns lined up with the rows that have a checkbox.
                       <span class="ti-pick" aria-hidden="true" />
                     ) : null}
+                    {safeHref(r.node.url) ? (
+                      <a class="mono ti-num ti-num-link" href={safeHref(r.node.url)!} target="_blank" rel="noopener noreferrer" aria-label={`Open issue #${r.node.number} on GitHub`}>
+                        #{r.node.number}
+                      </a>
+                    ) : (
+                      <span class="mono ti-num ti-num-link">#{r.node.number}</span>
+                    )}
                     <button type="button" class="ti" onClick={() => setPickedUrl(r.node.url)}>
-                      <span class="mono ti-num">#{r.node.number}</span>
                       <span class="ti-type">{typeLabel(r.node.labels)}</span>
                       <span class="ti-main">
                         <span class="ti-title">

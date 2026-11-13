@@ -1,0 +1,27 @@
+
+  I haven't made any other changes.
+
+✻ Brewed for 5s · done 10:32 PM
+
+❯ Ask me the exact same three questions again with AskUserQuestion,
+  same wording, options and descriptions. Do nothing else.
+
+────────────────────────────────────────────────────────────────────────
+←  ☒ Scope  ☒ Tests  ☒ Docs  ✔ Submit  →
+
+Review your answers
+
+ │ ● The issue lists four candidate approaches for rendering harness
+ │   notices in the ship chat; which one should the first slice of this
+ │   work take on before the others?
+   → Both
+ │ ● Where should the test for this behaviour live, given the layer
+ │   table in the testing guide?
+   → Go unit
+ ● Which docs need an update alongside the change?
+   → codebase.md, README
+
+Ready to submit your answers?
+
+❯ 1. Submit answers
+  2. Cancel

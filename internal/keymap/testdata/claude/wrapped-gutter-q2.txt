@@ -1,0 +1,22 @@
+
+  I haven't made any other changes.
+
+✻ Brewed for 5s · done 10:32 PM
+
+❯ Ask me the exact same three questions again with AskUserQuestion,
+  same wording, options and descriptions. Do nothing else.
+────────────────────────────────────────────────────────────────────────
+←  ☒ Scope  ☐ Tests  ☐ Docs  ✔ Submit  →
+
+│ Where should the test for this behaviour live, given the layer table
+│ in the testing guide?
+
+❯ 1. Go unit
+     At the decoder, the lowest layer that sees it
+  2. Playwright
+     As a journey through the shell
+  3. Type something.
+────────────────────────────────────────────────────────────────────────
+  4. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate · Esc to cancel

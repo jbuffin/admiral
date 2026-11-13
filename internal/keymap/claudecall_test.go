@@ -337,6 +337,34 @@ func TestClaudeCallPlanChecksReadTheRecordedScreens(t *testing.T) {
 	}
 }
 
+// Recorded on Claude Code 2.1.323 in a 72-column pane: a question that wraps, and its line on the review, carry a │ gutter.
+func TestClaudeCallPlanReadsQuestionsThatWrap(t *testing.T) {
+	read := func(name string) string {
+		b, err := os.ReadFile(filepath.Join("testdata", "claude", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	plan, ok := claudeMap(t).Plan([]keymap.CallQuestion{
+		{Text: "The issue lists four candidate approaches for rendering harness notices in the ship chat; which one should the first slice of this work take on before the others?", Labels: labels("Server-side parse", "Client-side parse", "Both"), Choose: []int{3}},
+		{Text: "Where should the test for this behaviour live, given the layer table in the testing guide?", Labels: labels("Go unit", "Playwright"), Choose: []int{1}},
+		{Text: "Which docs need an update alongside the change?", Labels: labels("codebase.md", "api.md", "README"), Multi: true, Choose: []int{1, 3}},
+	})
+	if !ok {
+		t.Fatal("no plan")
+	}
+	if !plan.Fresh(read("wrapped-gutter-q1.txt")) {
+		t.Error("the recorded first menu, its question wrapped, is not seen as fresh")
+	}
+	if !plan.Steps[0].Done(read("wrapped-gutter-q2.txt")) {
+		t.Error("the recorded second tab, its question wrapped, does not satisfy the step after answering the first")
+	}
+	if !plan.Review(read("wrapped-gutter-review.txt")) {
+		t.Error("the recorded review of wrapped questions is not accepted")
+	}
+}
+
 // Two runs recorded on Claude Code 2.1.322, answered by the server's plan: a lone single-choice question answered with Other
 // ends with no review screen, and Other text that starts with a digit and holds a space reaches Claude whole on both kinds.
 func TestClaudeCallPlanOnRecordedOtherAnswersWithADigitAndASpace(t *testing.T) {
