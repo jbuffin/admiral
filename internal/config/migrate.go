@@ -301,37 +301,53 @@ func migrateGitHub(top, sources *Object) (changed, custom bool) {
 	if err != nil {
 		return changed, custom
 	}
-	settings, _ := ParseObject(mustRaw(template, "settings"))
 	for _, fleet := range fleets.Keys() {
 		if covered[fleet] {
 			continue
 		}
-		key := "github-" + fleet
-		for n := 2; ; n++ {
-			if _, taken := sources.Get(key); !taken {
-				break
-			}
-			key = fmt.Sprintf("github-%s-%d", fleet, n)
+		sources.Set(freeGitHubKey(sources, fleet), githubSourceFor(template, fleet))
+	}
+	return changed, custom
+}
+
+// freeGitHubKey is github-<fleet>, or the first github-<fleet>-N that sources lacks.
+func freeGitHubKey(sources *Object, fleet string) string {
+	key := "github-" + fleet
+	for n := 2; ; n++ {
+		if _, taken := sources.Get(key); !taken {
+			return key
 		}
-		carried := NewObject()
+		key = fmt.Sprintf("github-%s-%d", fleet, n)
+	}
+}
+
+// githubSourceFor is a built-in GitHub source for fleet carrying the template's name, panel order
+// and githubCarried settings; a nil template gives an unnamed source with no views.
+func githubSourceFor(template *Object, fleet string) json.RawMessage {
+	carried := NewObject()
+	src := NewObject()
+	src.SetValue("plugin", "github")
+	if template == nil {
+		carried.Set("views", json.RawMessage("[]"))
+	} else {
+		settings, _ := ParseObject(mustRaw(template, "settings"))
 		for _, k := range githubCarried {
 			if v, ok := settings.Get(k); ok {
 				carried.Set(k, v)
 			}
 		}
-		src := NewObject()
-		src.SetValue("plugin", "github")
 		if raw, ok := template.Get("name"); ok {
 			src.Set("name", raw)
 		}
-		src.SetValue("fleet", fleet)
-		src.Set("settings", carried.JSON())
+	}
+	src.SetValue("fleet", fleet)
+	src.Set("settings", carried.JSON())
+	if template != nil {
 		if raw, ok := template.Get("panel_order"); ok {
 			src.Set("panel_order", raw)
 		}
-		sources.Set(key, src.JSON())
 	}
-	return changed, custom
+	return src.JSON()
 }
 
 // mustRaw is the raw value of key in o, or an empty object.
