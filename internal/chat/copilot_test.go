@@ -15,7 +15,9 @@ import (
 
 // Screens as the real Copilot 1.0.109 TUI draws them.
 var (
+	// 1.0.109 offers only "1. Yes" here; older and later builds add a "remember" option.
 	copilotTrustScreen    = "Confirm folder trust\nDo you trust the files in this folder?\n❯ 1. Yes\n  2. Yes, and remember this folder for future sessions\n  3. No (Esc)"
+	copilotTrustOneOption = "Confirm folder trust\n❯ 1. Yes"
 	copilotComposerScreen = "❯\n ← open sidebar · Interactive · Manual Approval · / commands · ? help · tab next tab    GPT-5.6 Luna"
 )
 
@@ -116,6 +118,7 @@ func TestACopilotChatWithNoTranscriptIsReadyOnceItsComposerShows(t *testing.T) {
 		msg          string
 	}{
 		{"folder trust dialog", copilotTrustScreen, false, CopilotTrustFolder},
+		{"folder trust dialog with only Yes", copilotTrustOneOption, false, CopilotTrustFolder},
 		{"still starting", "", false, NotStarted},
 		{"composer", copilotComposerScreen, true, ""},
 	}

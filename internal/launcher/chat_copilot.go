@@ -26,11 +26,12 @@ var ChatTools = []string{"list_ships", "read_conversation", "read_outcomes", "li
 
 // copilotExcludedTools are every built-in tool of Copilot 1.0.109 that the run's tool list could carry. --available-tools
 // already leaves them out; --excluded-tools is a second layer for a name that list somehow matches. A name the CLI does
-// not know costs a notice and nothing else.
-var copilotExcludedTools = []string{"bash", "read_bash", "stop_bash", "list_bash", "write_bash", "apply_patch", "view", "web_fetch",
+// not know costs a notice and nothing else, so the list keeps only names 1.0.109 accepts (it warns at start about
+// write_bash, write, web_search and report_intent).
+var copilotExcludedTools = []string{"bash", "read_bash", "stop_bash", "list_bash", "apply_patch", "view", "web_fetch",
 	"fetch_copilot_cli_documentation", "semantic_code_search", "skill", "run_dynamic_workflow", "dynamic_workflows_manage", "sql",
-	"session_store_sql", "read_agent", "list_agents", "write_agent", "rg", "grep", "glob", "task", "edit", "create", "write", "web_search",
-	"ask_user", "report_intent", "store_memory"}
+	"session_store_sql", "read_agent", "list_agents", "write_agent", "rg", "grep", "glob", "task", "edit", "create",
+	"ask_user", "store_memory"}
 
 // CopilotBaseFenceArgs is the fence without a server: none of the built-in MCP servers, no question to the engineer,
 // no self-update, no implicit access to the temp dir, no sync of the session to the engineer's GitHub account (chat

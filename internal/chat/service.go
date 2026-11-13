@@ -39,7 +39,7 @@ const (
 )
 
 // CopilotTrustFolder is what the panel says while a Copilot chat is on its folder-trust dialog.
-const CopilotTrustFolder = "Copilot is asking whether to trust this folder: open the terminal and choose \"Yes, and remember this folder\""
+const CopilotTrustFolder = "Copilot is asking whether to trust this folder: open the terminal and choose Yes"
 
 const Unreadable = "Admiral can't read this chat's transcript"
 
