@@ -207,9 +207,6 @@ func (s *Service) serveOrdersDraft(w http.ResponseWriter, r *http.Request) {
 		problems = append(problems, problem{"limits", err.Error()})
 	} else {
 		effective = p.Limits
-		if len(d.limits) > 0 {
-			limits = d.limits
-		}
 	}
 	changes, loosens := []map[string]string{}, standing.Loosens(f.Limits, effective)
 	if loosens == nil {
@@ -224,6 +221,10 @@ func (s *Service) serveOrdersDraft(w http.ResponseWriter, r *http.Request) {
 		if sn.Field != "" && before[sn.Field] != sn.Sentence {
 			changes = append(changes, map[string]string{"field": sn.Field, "sentence": sn.Sentence})
 		}
+	}
+
+	if len(changes) > 0 {
+		limits = d.limits
 	}
 
 	stored, err := s.Store.StandingOrders(key)

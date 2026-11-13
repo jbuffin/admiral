@@ -180,3 +180,13 @@ func TestOrdersPromptBoundsComeFromTheLimitsConstants(t *testing.T) {
 		t.Error("the prompt doesn't say that prose no Limit can express becomes a Check or Guidance")
 	}
 }
+
+func TestStandingOrderDraftWhosePatchChangesNothingStoredAnswersNullLimits(t *testing.T) {
+	r := newSO(t)
+	r.setLimits("work", config.FleetFields{Limits: map[string]json.RawMessage{"wall_clock_minutes": json.RawMessage(`30`)}})
+	r.answers(goodDraft())
+	code, got, raw := r.draft(draftProse)
+	if d, _ := raw["draft"].(map[string]any); code != 200 || d["limits"] != nil || len(got.Changes) != 0 {
+		t.Errorf("draft = %d, limits %v, changes %+v; want null limits and no changes for a patch equal to what is stored", code, d["limits"], got.Changes)
+	}
+}
