@@ -7,6 +7,7 @@ import { Flag } from './Flag';
 import { fleets } from './fleets';
 import { ships } from './shipsLink';
 import { safeHref } from './campaign';
+import { campaignList } from './campaignsLink';
 import { CHAT_THRESHOLDS, INSTRUCTIONS_MAX, canSaveInstructions, chatErrorMessage, actionWords, cancelErrorMessage, commitmentMarks, chatSaveBody, effortLabel, harnessLabel, instructionsCount, memoryNotRead, modelLabel, noteAge, readsMemory, switchHarness, thresholdLabel, triggerWords, type ChatSettings } from './chatSettings';
 
 const settingsOf = (f: Fleet): ChatSettings => ({ harness: f.chat.harness, model: f.chat.model, effort: f.chat.effort, context_threshold: f.chat.context_threshold });
@@ -176,7 +177,7 @@ function Knows({ fleet, harness }: { fleet: string; harness: string }) {
         ) : (
           <ul class="set-list" aria-label="Commitments">
             {commitments.map((c) => {
-              const t = triggerWords(c.trigger, ships.value);
+              const t = triggerWords(c.trigger, ships.value, campaignList.value.find((x) => x.id === c.trigger.subject));
               const href = t.href ? safeHref(t.href) : null;
               const marks = commitmentMarks(c);
               return (

@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/campaigns"
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/ledger"
 )
@@ -53,6 +54,9 @@ const (
 	OutcomeCantRun  = "cant_run"
 	OutcomeDropped  = "dropped"
 	OutcomeAged     = "aged"
+	// OutcomeEnded closes a campaign commitment; OutcomeTooLarge says it holds too many child events to work on.
+	OutcomeEnded    = "ended"
+	OutcomeTooLarge = "too_large"
 )
 
 // Card is what the chat shows for a commitment's outcome. ID is commitment-<commitment id>-<outcome>.
@@ -63,6 +67,7 @@ type Card struct {
 	Outcome    string
 	Ship       string // the launched ship's session, for OutcomeLaunched
 	Why        string // for OutcomeCantRun and OutcomeDropped
+	Child      string // the campaign child's URL, on a campaign commitment's card
 }
 
 // Cards posts a card to a fleet's chat. A second post of one ID adds nothing.
@@ -79,6 +84,8 @@ type Runner struct {
 	Clock       Clock
 	Ships       Ships
 	Cards       Cards
+	// Campaign reads a followed campaign for a campaign commitment's pass.
+	Campaign func(id string) campaigns.Read
 	// Ready closes once the host has listed the ships, so a restart finds the ship a launch already made.
 	Ready <-chan struct{}
 	// GitHubFor is the client of a fleet's GitHub host, nil when the fleet has none.
@@ -161,6 +168,8 @@ func (r *Runner) tick(ctx context.Context) time.Time {
 			}
 			var fire bool
 			switch {
+			case c.Trigger.Kind == ledger.TriggerCampaign:
+				r.workCampaign(ctx, fleet, c, now, earlier)
 			case c.Waiting:
 				fire = true
 				earlier(now.Add(pollEvery))

@@ -27,7 +27,10 @@ type promiseRig struct {
 var promiseT0 = time.Date(2026, 11, 12, 8, 0, 0, 0, time.UTC)
 
 // newPromiseRig has fleet home proven for autopilot on claude and fleet work configured but unproven.
-func newPromiseRig(t *testing.T) *promiseRig {
+func newPromiseRig(t *testing.T) *promiseRig { return newPromiseRigWith(t, nil) }
+
+// newPromiseRigWith is newPromiseRig with tweak applied to the Service before its routes are registered.
+func newPromiseRigWith(t *testing.T, tweak func(*Service)) *promiseRig {
 	t.Helper()
 	home := t.TempDir()
 	roots := filepath.Join(home, "code")
@@ -62,7 +65,7 @@ func newPromiseRig(t *testing.T) *promiseRig {
 		}
 	}
 	mux := http.NewServeMux()
-	(&Service{
+	svc := &Service{
 		Home:   home,
 		Config: func() *config.Config { return cfg },
 		Ships: func() []ships.Ship {
@@ -75,7 +78,11 @@ func newPromiseRig(t *testing.T) *promiseRig {
 		OrderRepo: func(source, id string) (string, string, bool) {
 			return "do T-1", "https://github.com/acme/widget", source == "tracker" && id == "T-1"
 		},
-	}).Routes(mux)
+	}
+	if tweak != nil {
+		tweak(svc)
+	}
+	svc.Routes(mux)
 	return &promiseRig{home: home, repo: repo, other: other, mux: mux}
 }
 

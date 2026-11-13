@@ -222,7 +222,7 @@ func TestAMalformedLineDoesNotKillTheServer(t *testing.T) {
 var wantTools = []string{
 	"add_order", "answer_item", "ask_question", "dismiss_ship", "get_standing_orders", "hold_fire_on", "launch_ship", "list_campaigns", "list_inbox",
 	"list_routines", "list_ships", "list_sources", "make_commitment", "next_prompt", "read_conversation", "read_hold_fire", "read_outcomes",
-	"save_note", "stop_ship", "turn_routine_off", "wake_ship",
+	"save_note", "stop_ship", "turn_routine_off", "wake_ship", "work_on_campaign",
 }
 
 func TestToolsListNamesEveryToolWithAnInputSchemaAndNoMore(t *testing.T) {
@@ -859,5 +859,67 @@ func TestGetStandingOrdersToolSaysAdmiralBotDraftsProseAndLinksToTheScreen(t *te
 func TestTheCopilotChatsAllowlistIncludesTheStandingOrdersReader(t *testing.T) {
 	if !slices.Contains(launcher.ChatTools, "get_standing_orders") {
 		t.Errorf("launcher.ChatTools = %v, want it to name get_standing_orders", launcher.ChatTools)
+	}
+}
+
+const workOnReply = `{"id":"c-camp1","text":"work on acme/widgets#20","trigger":{"kind":"campaign","subject":"camp-1"},"action":"work","via":"admiralbot","harness":"claude"}`
+
+func TestWorkOnCampaignPostsTheReferenceAndHarnessAndQuotesTheCommitmentBack(t *testing.T) {
+	a := newStandIn(t, func(mcpReq) (int, string) { return 201, workOnReply })
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, call(1, "work_on_campaign", `{"reference":"acme/widgets#20","harness":"claude"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := a.requests()
+	if len(got) != 1 || got[0].Method != "POST" || got[0].Path != "/api/chat/campaign-commitments" || got[0].Actor != mcpToken {
+		t.Fatalf("requests = %+v, want one POST /api/chat/campaign-commitments with the actor token", got)
+	}
+	if b := got[0].Body; b["reference"] != "acme/widgets#20" || b["harness"] != "claude" {
+		t.Errorf("body = %v, want reference and harness", b)
+	}
+	if _, ok := got[0].Body["fleet"]; ok {
+		t.Errorf("body names a fleet: %v; the actor token decides it", got[0].Body)
+	}
+	tr := result(t, replies, "1")
+	for _, want := range []string{"c-camp1", "acme/widgets#20"} {
+		if tr.IsError || !strings.Contains(tr.text(), want) {
+			t.Errorf("result = %+v, want it to quote back %q", tr, want)
+		}
+	}
+	if strings.Contains(tr.text(), `"trigger"`) {
+		t.Errorf("result = %q, want words, not the raw JSON", tr.text())
+	}
+}
+
+func TestWorkOnCampaignRefusedByTheServerIsAToolErrorAndIsNotRetried(t *testing.T) {
+	a := newStandIn(t, func(mcpReq) (int, string) {
+		return 422, `{"error":"autopilot is not proven on claude in fleet work"}`
+	})
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, call(1, "work_on_campaign", `{"reference":"acme/widgets#20","harness":"claude"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(a.requests()); n != 1 {
+		t.Errorf("POSTs = %d, want 1", n)
+	}
+	if tr := result(t, replies, "1"); !tr.IsError || !strings.Contains(tr.text(), "not proven") {
+		t.Errorf("result = %+v, want isError with the server's reason", tr)
+	}
+}
+
+func TestWorkOnCampaignNeedsAReference(t *testing.T) {
+	a := newStandIn(t, func(mcpReq) (int, string) { return 201, workOnReply })
+	a.env(t, mcpToken)
+	replies, _, err := serve(t, call(1, "work_on_campaign", `{"reference":"acme/widgets#20"}`), call(2, "work_on_campaign", `{"harness":"claude"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(a.requests()); n != 1 {
+		t.Errorf("POSTs = %d, want 1: the call with a reference posts, the one without does not", n)
+	}
+	if r := replies["2"]; r.Error == nil && !result(t, replies, "2").IsError {
+		t.Errorf("reply 2 = %+v, want an error", r)
 	}
 }

@@ -53,6 +53,13 @@ type Commitment struct {
 	// WaitReason is why a waiting launch has not started, as the refusal worded it.
 	WaitReason string `json:"wait_reason,omitempty"`
 	Shown      bool   `json:"shown,omitempty"`
+
+	// Harness, Children and the counts belong to a campaign commitment.
+	Harness         string  `json:"harness,omitempty"`
+	Children        []Child `json:"children,omitempty"`
+	Launched        int     `json:"launched,omitempty"`
+	WaitingChildren int     `json:"waiting_children,omitempty"`
+	ChildEvents     int     `json:"-"`
 }
 
 var errNoCommitment = fmt.Errorf("%w: no such open commitment", ErrNotFound)

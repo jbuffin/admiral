@@ -354,6 +354,11 @@ var mcpTools = []mcpTool{
 				"resources":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "the configured resources the ship needs while it runs"},
 			}},
 		}), makeCommitment},
+	{"work_on_campaign", "Work on a campaign (a GitHub issue tree) for the engineer: Admiral follows it and launches each Without-you child ship unattended in autopilot, until the campaign ends. Use it only when the engineer tells you to work on an issue in this chat; then quote it back with its id. Admiral never writes to the issue tree. You cannot cancel it: only the engineer cancels, on Preferences.",
+		obj([]string{"reference"}, map[string]any{
+			"reference": str("the campaign's parent issue: a URL or owner/repo#n"),
+			"harness":   str("the harness the children run on: claude, codex or copilot"),
+		}), workOnCampaign},
 }
 
 func saveNote(c *mcpClient, raw json.RawMessage) (string, error) {
@@ -508,6 +513,26 @@ func makeCommitment(c *mcpClient, raw json.RawMessage) (string, error) {
 		when = "on " + got.Trigger.Kind
 	}
 	return fmt.Sprintf("Recorded commitment %s: %q, %s, then %s. Quote this back to the engineer. Admiral fires it itself; only the engineer can cancel it, on Preferences.", got.ID, got.Text, when, got.Action), nil
+}
+
+// workOnCampaign records the commitment that launches a campaign's Without-you children; their ships always run in autopilot.
+func workOnCampaign(c *mcpClient, raw json.RawMessage) (string, error) {
+	var a struct{ Reference, Harness string }
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(a.Reference) == "" {
+		return "", errors.New("work_on_campaign needs a reference: the campaign's parent issue URL or owner/repo#n")
+	}
+	out, err := c.post("/api/chat/campaign-commitments", map[string]any{"reference": a.Reference, "harness": a.Harness})
+	if err != nil {
+		return "", err
+	}
+	var got struct{ ID, Text string }
+	if err := json.Unmarshal([]byte(out), &got); err != nil || got.ID == "" {
+		return out, nil
+	}
+	return fmt.Sprintf("Recorded commitment %s: %q (%s). Admiral launches each Without-you child in autopilot until the campaign ends and never writes to the issue tree. Quote this back to the engineer; only the engineer can cancel it, on Preferences.", got.ID, got.Text, a.Reference), nil
 }
 
 func askQuestion(c *mcpClient, raw json.RawMessage) (string, error) {

@@ -17,6 +17,7 @@ import (
 	"github.com/jbuffin/admiral/internal/campaigns/follow"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/digest"
+	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/ships"
 )
@@ -421,5 +422,31 @@ func TestABriefShowsAnOpenCommitmentAndDropsItWhenItIsCancelled(t *testing.T) {
 	r.Tick()
 	if got := r.brief("home"); strings.Contains(got, "c-abc123") || strings.Contains(got, "saltpaw is done") {
 		t.Errorf("brief after the cancel = %q, want the commitment gone", got)
+	}
+}
+
+func TestABriefNamesACampaignCommitmentsCampaignAndCountsItsChildren(t *testing.T) {
+	r := newBriefRig(t)
+	r.set(func() {
+		r.campaigns = []follow.Followed{{ID: "camp-1", URL: "https://github.com/acme/widgets/issues/20", Fleet: "home", Tree: &github.TreeNode{Number: 20, Title: "Ship the harbour", URL: "https://github.com/acme/widgets/issues/20", Repo: "acme/widgets"}}}
+	})
+	path := filepath.Join(r.home, "chat", "home", "ledger.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Join([]string{
+		`{"v":1,"ts":"2026-11-12T09:00:00Z","event":"added","id":"c-camp01","kind":"commitment","text":"work on acme/widgets#20","trigger":{"kind":"campaign","subject":"camp-1"},"action":"work","harness":"claude"}`,
+		`{"v":1,"ts":"2026-11-12T09:01:00Z","event":"child_launched","id":"c-camp01","url":"https://github.com/acme/widgets/issues/21","ship":"saltpaw-2"}`,
+		`{"v":1,"ts":"2026-11-12T09:02:00Z","event":"child_waiting","id":"c-camp01","url":"https://github.com/acme/widgets/issues/22"}`,
+	}, "\n") + "\n"
+	if err := os.WriteFile(path, []byte(lines), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r.Tick()
+	got := r.brief("home")
+	for _, want := range []string{"c-camp01", "work on Ship the harbour", "1 launched", "1 waiting"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("brief = %q, want it to hold %q", got, want)
+		}
 	}
 }

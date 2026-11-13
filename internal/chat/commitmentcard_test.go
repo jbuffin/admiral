@@ -106,3 +106,72 @@ func TestAnAgedCardsDigestLineAsksWhetherYouStillWantItAndDoesNotSayItCouldNotRu
 		t.Errorf("digest = %q, want the commitment's text", got)
 	}
 }
+
+func TestACampaignChildCardCarriesTheChildInTheChatEntry(t *testing.T) {
+	r := newBriefRig(t)
+	c := commitmentCard()
+	c.ID, c.Child = "commitment-c1-launched-21", "https://github.com/acme/widgets/issues/21"
+	if err := r.PostCard("work", c); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := r.history().Recent("work", 50)
+	var card struct {
+		Child string `json:"child"`
+		Ship  string `json:"ship"`
+	}
+	if len(got) != 1 || json.Unmarshal(got[0].Card, &card) != nil || card.Child != c.Child || card.Ship != "saltpaw-2" {
+		t.Errorf("card = %s, want child %q and ship saltpaw-2", got[0].Card, c.Child)
+	}
+}
+
+func TestAnEndedCampaignCardsDigestLineSaysTheCampaignEndedNotThatItCouldNotRun(t *testing.T) {
+	r := newBriefRig(t)
+	c := commitmentCard()
+	c.ID, c.Outcome, c.Ship, c.Why = "commitment-c1-ended", commitments.OutcomeEnded, "", "the campaign ended"
+	if err := r.PostCard("work", c); err != nil {
+		t.Fatal(err)
+	}
+	got := lineTexts(r.digest(t, "work"))
+	if strings.Contains(got, "could not run") || !strings.Contains(got, "the campaign ended") {
+		t.Errorf("digest = %q, want the reason and no 'could not run'", got)
+	}
+}
+
+func TestATooLargeCampaignCardsDigestLineSaysSoNotThatItCouldNotRun(t *testing.T) {
+	r := newBriefRig(t)
+	c := commitmentCard()
+	c.ID, c.Outcome, c.Ship, c.Why = "commitment-c1-too_large", commitments.OutcomeTooLarge, "", "too large to work unattended"
+	if err := r.PostCard("work", c); err != nil {
+		t.Fatal(err)
+	}
+	got := lineTexts(r.digest(t, "work"))
+	if strings.Contains(got, "could not run") || !strings.Contains(got, "too large") {
+		t.Errorf("digest = %q, want it to say too large and not 'could not run'", got)
+	}
+}
+
+func TestALaunchedChildsDigestLineNamesTheChild(t *testing.T) {
+	r := newBriefRig(t)
+	c := commitmentCard()
+	c.ID, c.Child = "commitment-c1-launched-21", "https://github.com/acme/widgets/issues/21"
+	if err := r.PostCard("work", c); err != nil {
+		t.Fatal(err)
+	}
+	if got := lineTexts(r.digest(t, "work")); !strings.Contains(got, "acme/widgets#21") {
+		t.Errorf("digest = %q, want the child as acme/widgets#21", got)
+	}
+}
+
+func TestAChildsCantRunDigestLineNamesTheChildAndSaysTheCommitmentGoesOn(t *testing.T) {
+	r := newBriefRig(t)
+	c := commitmentCard()
+	c.ID, c.Outcome, c.Ship, c.Why = "commitment-c1-cant_run-21", commitments.OutcomeCantRun, "", "autopilot is not proven"
+	c.Child = "https://github.com/acme/widgets/issues/21"
+	if err := r.PostCard("work", c); err != nil {
+		t.Fatal(err)
+	}
+	got := lineTexts(r.digest(t, "work"))
+	if !strings.Contains(got, "could not launch acme/widgets#21") || !strings.Contains(got, "the commitment goes on") || strings.Contains(got, "could not run") {
+		t.Errorf("digest = %q, want the child named and the commitment going on", got)
+	}
+}

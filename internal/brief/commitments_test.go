@@ -202,3 +202,37 @@ func TestPreCompactFencesCommitmentsUnderTheirOwnNotice(t *testing.T) {
 		t.Errorf("PreCompact calls the commitments facts the engineer asked to keep:\n%s", out)
 	}
 }
+
+func campaignPromise(campaign string, launched, waiting int) Commitment {
+	return Commitment{ID: "c-camp01", Text: "TEXT-work-the-campaign", Trigger: "campaign", Subject: "camp-1", Action: "work", TS: t0, Campaign: campaign, Launched: launched, WaitingChildren: waiting}
+}
+
+func TestACampaignCommitmentLineSaysWhatItWorksOnAndHowFarItIs(t *testing.T) {
+	out := Render(Input{Now: t0.Add(48 * time.Hour), Commitments: []Commitment{campaignPromise("Ship the harbour", 2, 1)}})
+	line := lineWith(t, commitmentSection(t, out), "TEXT-work-the-campaign")
+	for _, want := range []string{"c-camp01", "work on Ship the harbour", "2 launched", "1 waiting"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("line %q lacks %q", line, want)
+		}
+	}
+	if strings.Contains(line, "campaign,") || strings.Contains(line, "camp-1") || strings.Contains(line, "no trigger") {
+		t.Errorf("line %q names the trigger by its code or id, or says no trigger", line)
+	}
+}
+
+func TestACampaignCommitmentLineLeavesOutAZeroCount(t *testing.T) {
+	out := Render(Input{Now: t0, Commitments: []Commitment{campaignPromise("acme/widgets#20", 0, 0)}})
+	line := lineWith(t, commitmentSection(t, out), "TEXT-work-the-campaign")
+	if !strings.Contains(line, "work on acme/widgets#20") || strings.Contains(line, "0 launched") || strings.Contains(line, "0 waiting") {
+		t.Errorf("line %q, want 'work on acme/widgets#20' and no zero counts", line)
+	}
+}
+
+func TestACampaignCommitmentLineFallsBackToItsTextWhenTheCampaignIsNotKnown(t *testing.T) {
+	c := campaignPromise("", 0, 0)
+	c.Text = "work on acme/widgets#20"
+	out := Render(Input{Now: t0, Commitments: []Commitment{c}})
+	if line := lineWith(t, commitmentSection(t, out), "acme/widgets#20"); !strings.Contains(line, "work on acme/widgets#20") || strings.Contains(line, "work on ,") {
+		t.Errorf("line %q, want 'work on acme/widgets#20'", line)
+	}
+}

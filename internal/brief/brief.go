@@ -67,6 +67,10 @@ type Commitment struct {
 	Action  string
 	TS      time.Time
 	Waiting bool
+	// Campaign names a campaign commitment's issue (its title, or owner/repo#n); Launched and WaitingChildren count its children.
+	Campaign        string
+	Launched        int
+	WaitingChildren int
 }
 
 type Entry struct {
@@ -390,6 +394,19 @@ func commitmentLine(c Commitment, now time.Time) string {
 		return ""
 	}
 	meta := Clean(c.ID) + ", " + age(now.Sub(c.TS)) + ", " + triggerWords(c) + ", then " + Clean(c.Action)
+	if c.Trigger == "campaign" {
+		campaign := c.Campaign
+		if campaign == "" {
+			campaign = strings.TrimPrefix(c.Text, "work on ")
+		}
+		meta = Clean(c.ID) + ", " + age(now.Sub(c.TS)) + ", work on " + Clean(campaign)
+		if c.Launched > 0 {
+			meta += fmt.Sprintf(", %d launched", c.Launched)
+		}
+		if c.WaitingChildren > 0 {
+			meta += fmt.Sprintf(", %d waiting", c.WaitingChildren)
+		}
+	}
 	if c.Waiting {
 		meta += ", waiting for cap room or a resource"
 	}

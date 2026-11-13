@@ -57,8 +57,13 @@ export const instructionsCount = (text: string): number => [...text.trim()].leng
 export const canSaveInstructions = (saved: string, edited: string): boolean => saved.trim() !== edited.trim() && instructionsCount(edited) <= INSTRUCTIONS_MAX;
 
 /** A commitment's trigger in plain words; `href` is set for a PR or issue. */
-export function triggerWords(trigger: ChatCommitment['trigger'], ships: Pick<Ship, 'session' | 'name' | 'launched'>[]): { text: string; href?: string } {
+export function triggerWords(trigger: ChatCommitment['trigger'], ships: Pick<Ship, 'session' | 'name' | 'launched'>[], campaign?: { title?: string; url: string }): { text: string; href?: string } {
   const { kind, subject = '' } = trigger;
+  if (kind === 'campaign') {
+    const m = campaign && /^https?:\/\/[^/]+\/([^/]+\/[^/]+)\/issues\/(\d+)/.exec(campaign.url);
+    const name = campaign?.title || (m ? `${m[1]}#${m[2]}` : subject);
+    return { text: `Campaign ${name}`, ...(campaign?.url && { href: campaign.url }) };
+  }
   if (kind === 'ship_sailed' || kind === 'ship_anchored') {
     // A session is reused, so a stored launch stamp must match too, or this is another ship.
     const name = ships.find((s) => s.session === subject && (!trigger.launched || s.launched === trigger.launched))?.name || subject;
@@ -77,14 +82,19 @@ export function triggerWords(trigger: ChatCommitment['trigger'], ships: Pick<Shi
 }
 
 /** What a commitment does when it fires. */
-export const actionWords = (action: ChatCommitment['action']): string => (action === 'launch' ? 'Launch a ship' : 'Remind you');
+export const actionWords = (action: ChatCommitment['action']): string => (action === 'launch' ? 'Launch a ship' : action === 'work' ? 'Launch Without-you children' : 'Remind you');
 
 /** A Cancel failure in words; a 404 means the commitment closed since the page loaded. */
 export const cancelErrorMessage = (status: number | undefined, error: string): string => (status === 404 ? 'That commitment already closed.' : error);
 
-/** The marks a commitment row carries: waiting, with the reason when the server gave one, and already asked about. */
-export function commitmentMarks(c: Pick<ChatCommitment, 'waiting' | 'wait_reason' | 'shown'>): string[] {
-  return [...(c.waiting ? [c.wait_reason || 'Waiting for room'] : []), ...(c.shown ? ['Still want this?'] : [])];
+/** The marks a commitment row carries: a campaign's counts, waiting, with the reason when the server gave one, and already asked about. */
+export function commitmentMarks(c: Pick<ChatCommitment, 'waiting' | 'wait_reason' | 'shown' | 'launched' | 'waiting_children'>): string[] {
+  return [
+    ...(c.launched ? [`${c.launched} launched`] : []),
+    ...(c.waiting_children ? [`${c.waiting_children} waiting`] : []),
+    ...(c.waiting ? [c.wait_reason || 'Waiting for room'] : []),
+    ...(c.shown ? ['Still want this?'] : []),
+  ];
 }
 
 /** How long ago a note was saved; a note lasts days, so the unit grows past minutes. */

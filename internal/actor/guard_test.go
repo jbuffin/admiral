@@ -124,6 +124,7 @@ func TestAnActorReachesOnlyTheRoutesAdmiralBotMayCall(t *testing.T) {
 			{"POST", "/inbox/p-1/i-1/answer", `{}`},
 			{"POST", "/ships/p-1/stop", ""},
 			{"POST", "/ships/p-1/dismiss", ""},
+			{"POST", "/chat/campaign-commitments", `{"reference":"acme/widgets#20"}`},
 		} {
 			r := newRig(t)
 			if code := r.do(c.method, prefix+c.path, c.body, "tok-personal", local).Code; code != 200 || r.reached != 1 || !r.acting {
@@ -148,6 +149,9 @@ func TestAnActorIsRefusedEverythingOffTheList(t *testing.T) {
 			{"GET", "/sources/p-1/settings"},
 			{"PUT", "/sources/p-1/orders/o-1"},
 			{"POST", "/campaigns"},
+			{"POST", "/campaigns/c-1/launch"},
+			{"PUT", "/campaigns/c-1/override"},
+			{"POST", "/campaigns/c-1/unfollow"},
 			{"GET", "/devices"},
 			{"POST", "/inbox/p-1/i-1/submit"},
 		} {

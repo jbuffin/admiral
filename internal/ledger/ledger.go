@@ -57,6 +57,11 @@ type event struct {
 	Action  string          `json:"action,omitempty"`
 	Launch  json.RawMessage `json:"launch,omitempty"`
 	Reason  string          `json:"reason,omitempty"`
+
+	// URL, Ship and Harness belong to a campaign commitment's events.
+	URL     string `json:"url,omitempty"`
+	Ship    string `json:"ship,omitempty"`
+	Harness string `json:"harness,omitempty"`
 }
 
 // RefusedError is a write the ledger won't take; its message is for AdmiralBot to act on.
@@ -145,7 +150,7 @@ func (l *Ledger) fold(fleet string) ([]Entry, []Commitment, error) {
 	for _, ev := range evs {
 		if ev.Event == EventAdded {
 			if ev.Kind == KindCommitment {
-				c := Commitment{ID: ev.ID, Text: ev.Text, Action: ev.Action, Launch: ev.Launch, TS: ev.TS, Via: ev.Via}
+				c := Commitment{ID: ev.ID, Text: ev.Text, Action: ev.Action, Launch: ev.Launch, TS: ev.TS, Via: ev.Via, Harness: ev.Harness}
 				if ev.Trigger != nil {
 					c.Trigger = *ev.Trigger
 				}
@@ -170,6 +175,8 @@ func (l *Ledger) fold(fleet string) ([]Entry, []Commitment, error) {
 			commits[i].Waiting, commits[i].WaitReason = true, ev.Reason
 		case EventShown:
 			commits[i].Shown = true
+		case EventChildLaunched, EventChildWaiting, EventChildDeclined, EventChildFailed:
+			commits[i].foldChild(ev)
 		case EventDone, EventDropped, EventCancelled:
 			commits = append(commits[:i], commits[i+1:]...)
 		}
