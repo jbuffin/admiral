@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
@@ -843,29 +843,43 @@ test('Dismiss on a routine proposal removes it from the Inbox and starts no ship
 });
 
 test('Peek opens an event proposal with the untrusted summary, Mute rule by sender adds a skip that shows on the Limits page and can be removed, and an A0 card shows in chat marked untrusted', async ({ page, admiral }) => {
-  seedFleets(admiral, { live: true });
+  test.setTimeout(150_000);
+  const claude = probeableClaude(admiral);
+  seedFleets(admiral, { live: true, claude: claude.dock });
+  addGitHubSource(admiral);
+  const card = { routine: 'r-seeded', routine_name: 'Review watch', tier: 'T3', sender: 'mallory-the-stranger', link: 'https://github.com/acme/api/pull/7', metadata: false, mute_by: ['sender'] };
+  const chatDir = join(admiral.home, 'chat', 'zulu');
+  mkdirSync(chatDir, { recursive: true });
+  const at = new Date().toISOString();
+  writeFileSync(join(chatDir, 'conversation.jsonl'), JSON.stringify({ id: 'trig-card', kind: 'event_card', text: 'Mallory asks for a review of a lantern fix.', at, card, logged: at }) + '\n');
   await admiral.start({ env: withFakeGh(admiral) });
+  await proveJudge(page, admiral.url);
   const made = await page.request.post(admiral.url + 'api/fleets/zulu/routines', {
-    data: { name: 'Review watch', enabled: true, before_acting: 'ask_first', on: { source: 'gh', kind: 'review_requested' }, do: { launch: { harness: 'claude', dir: shipCheckout(admiral), text: 'sweep the board' } } },
+    data: { name: 'Review watch', enabled: true, before_acting: 'ask_first', on: { source: 'gh', kind: 'review_requested' }, do: { launch: { harness: 'claude', dir: join(admiral.home, 'proj'), text: 'sweep the board' } } },
   });
-  expect(made.ok()).toBe(true);
+  expect(made.ok(), await made.text()).toBe(true);
   const routine = (await made.json()).id as string;
-  seedInboxItem(admiral, '_admiral', { id: 'ev-1', kind: 'event_proposal', title: 'Review watch', fleet: 'zulu', routine, trigger: 'trig-1', tier: 'T3', expires: new Date(Date.now() + 3_600_000).toISOString() });
+  mkdirSync(join(admiral.home, 'inbox-events'), { recursive: true });
+  writeFileSync(join(admiral.home, 'inbox-events', 'event-trig-1.json'), JSON.stringify({ summary: 'Mallory asks for a review of a lantern fix.', title: 'Fix the lantern', sender: 'mallory-the-stranger', link: 'https://github.com/acme/api/pull/7', metadata: false, mute_by: ['sender'] }));
+  seedInboxItem(admiral, '_admiral', { id: 'event-trig-1', kind: 'event_proposal', title: 'Run Review watch?', event_proposal: { fleet: 'zulu', routine, routine_name: 'Review watch', trigger: 'trig-1', tier: 'T3', expires_at: new Date(Date.now() + 3_600_000).toISOString() } });
   await page.goto(admiral.url + 'app/inbox?fleet=zulu');
 
   await page.getByRole('main').getByRole('listitem').filter({ hasText: 'Review watch' }).getByRole('link').first().tap();
   const peek = peekOf(page);
   await expect(peek).toBeVisible();
   await expect(peek).toContainText('Untrusted');
+  await expect(peek).toContainText('Mallory asks for a review of a lantern fix.');
   await peek.getByRole('button', { name: 'Mute rule' }).tap();
   await peek.getByRole('button', { name: /Mute this sender/ }).tap();
+  await expect(peek).toContainText('Muted this sender');
 
-  await openPreferences(page, { fleet: WORK, section: 'Limits and quiet hours' });
-  const skip = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Review watch' });
-  await expect(skip).toBeVisible();
+  await page.goto(admiral.url + 'app/preferences/zulu/limits');
+  const skip = page.getByRole('main').locator('.row-field').filter({ hasText: routine });
+  await expect(skip.locator('input')).toHaveValue('mallory-the-stranger');
   await skip.getByRole('button', { name: /Remove/ }).tap();
   await expect(skip).toHaveCount(0);
 
   await page.goto(admiral.url + 'app/chat?fleet=zulu');
   await expect(page.getByRole('main').getByText('Untrusted').first()).toBeVisible();
+  await expect(page.getByRole('main')).toContainText('Mallory asks for a review of a lantern fix.');
 });
