@@ -94,6 +94,8 @@ type Service struct {
 	Inbox     func() []inbox.Item
 	// FollowCampaign follows the campaign a reference names, or returns the one already followed; created says which.
 	FollowCampaign func(ctx context.Context, reference string) (follow.Followed, bool, *launcher.Error)
+	// CampaignFleet is the fleet a reference's campaign belongs to, resolved without reading it.
+	CampaignFleet func(reference string) (string, *launcher.Error)
 	// SourceFleet names the fleet an order source belongs to; OrderExists says whether a source lists an order.
 	SourceFleet func(key string) (fleet string, known bool)
 	OrderExists func(source, id string) bool

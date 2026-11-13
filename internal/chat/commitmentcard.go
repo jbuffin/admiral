@@ -47,5 +47,8 @@ func digestLine(c commitments.Card) string {
 	case commitments.OutcomeDropped:
 		return "Your commitment \"" + text + "\" was dropped: " + c.Why + "."
 	}
+	if c.Child != "" {
+		return "Your commitment \"" + text + "\" could not launch " + campaignRef(c.Child) + ": " + c.Why + "; the commitment goes on."
+	}
 	return "Your commitment \"" + text + "\" could not run: " + c.Why + "."
 }

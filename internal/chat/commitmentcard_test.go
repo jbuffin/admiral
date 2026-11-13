@@ -161,3 +161,17 @@ func TestALaunchedChildsDigestLineNamesTheChild(t *testing.T) {
 		t.Errorf("digest = %q, want the child as acme/widgets#21", got)
 	}
 }
+
+func TestAChildsCantRunDigestLineNamesTheChildAndSaysTheCommitmentGoesOn(t *testing.T) {
+	r := newBriefRig(t)
+	c := commitmentCard()
+	c.ID, c.Outcome, c.Ship, c.Why = "commitment-c1-cant_run-21", commitments.OutcomeCantRun, "", "autopilot is not proven"
+	c.Child = "https://github.com/acme/widgets/issues/21"
+	if err := r.PostCard("work", c); err != nil {
+		t.Fatal(err)
+	}
+	got := lineTexts(r.digest(t, "work"))
+	if !strings.Contains(got, "could not launch acme/widgets#21") || !strings.Contains(got, "the commitment goes on") || strings.Contains(got, "could not run") {
+		t.Errorf("digest = %q, want the child named and the commitment going on", got)
+	}
+}

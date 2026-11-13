@@ -227,3 +227,12 @@ func TestACampaignCommitmentLineLeavesOutAZeroCount(t *testing.T) {
 		t.Errorf("line %q, want 'work on acme/widgets#20' and no zero counts", line)
 	}
 }
+
+func TestACampaignCommitmentLineFallsBackToItsTextWhenTheCampaignIsNotKnown(t *testing.T) {
+	c := campaignPromise("", 0, 0)
+	c.Text = "work on acme/widgets#20"
+	out := Render(Input{Now: t0, Commitments: []Commitment{c}})
+	if line := lineWith(t, commitmentSection(t, out), "acme/widgets#20"); !strings.Contains(line, "work on acme/widgets#20") || strings.Contains(line, "work on ,") {
+		t.Errorf("line %q, want 'work on acme/widgets#20'", line)
+	}
+}

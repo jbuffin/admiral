@@ -22,13 +22,8 @@ func (c commitmentShips) Launch(ctx context.Context, req launcher.Request) (comm
 	// A clone launch is refused where the fleet already holds the repo, and a campaign child names its repo to clone.
 	if req.Clone && req.Dir == "" && c.config != nil {
 		if fleet, ok := c.config().Fleet(req.Fleet); ok {
-			if hint, ok := repofinder.Hint(req.CloneRepo, req.Text); ok {
-				for _, e := range repofinder.List(repofinder.FleetRoots(fleet.SearchRoots, fleet.CloneRoot)) {
-					if slices.Contains(e.Remotes, hint) {
-						req.Clone, req.CloneRepo, req.Dir = false, "", e.Path
-						break
-					}
-				}
+			if dir, ok := checkoutFor(req, repofinder.FleetRoots(fleet.SearchRoots, fleet.CloneRoot)); ok {
+				req.Clone, req.CloneRepo, req.Dir = false, "", dir
 			}
 		}
 	}
@@ -42,4 +37,29 @@ func (c commitmentShips) Launch(ctx context.Context, req launcher.Request) (comm
 func (c commitmentShips) Holder(key string) (commitments.ShipRef, bool) {
 	sh, ok := c.svc.Holder(key)
 	return commitments.ShipRef{Session: sh.Session, Name: sh.Name}, ok
+}
+
+// cloneHint is the repo a clone launch is for: a campaign child names its own, which is never read from its text.
+func cloneHint(req launcher.Request) (string, bool) {
+	if req.CloneRepo != "" {
+		if id, ok := repofinder.Identity(req.CloneRepo); ok {
+			return id, true
+		}
+		return repofinder.Identity("https://" + req.CloneRepo)
+	}
+	return repofinder.Hint("", req.Text)
+}
+
+// checkoutFor is the checkout under roots that holds the repo a clone launch is for.
+func checkoutFor(req launcher.Request, roots []string) (string, bool) {
+	hint, ok := cloneHint(req)
+	if !ok {
+		return "", false
+	}
+	for _, e := range repofinder.List(roots) {
+		if slices.Contains(e.Remotes, hint) {
+			return e.Path, true
+		}
+	}
+	return "", false
 }

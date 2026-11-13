@@ -395,7 +395,11 @@ func commitmentLine(c Commitment, now time.Time) string {
 	}
 	meta := Clean(c.ID) + ", " + age(now.Sub(c.TS)) + ", " + triggerWords(c) + ", then " + Clean(c.Action)
 	if c.Trigger == "campaign" {
-		meta = Clean(c.ID) + ", " + age(now.Sub(c.TS)) + ", work on " + Clean(c.Campaign)
+		campaign := c.Campaign
+		if campaign == "" {
+			campaign = strings.TrimPrefix(c.Text, "work on ")
+		}
+		meta = Clean(c.ID) + ", " + age(now.Sub(c.TS)) + ", work on " + Clean(campaign)
 		if c.Launched > 0 {
 			meta += fmt.Sprintf(", %d launched", c.Launched)
 		}

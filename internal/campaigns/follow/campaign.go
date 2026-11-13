@@ -10,6 +10,24 @@ import (
 	"github.com/jbuffin/admiral/internal/repofinder"
 )
 
+// Owner is the fleet a reference's campaign belongs to: the one that follows it, else the one that routes its repo. It reads nothing.
+func (s *Service) Owner(reference string) (string, *launcher.Error) {
+	ref, err := campaigns.ParseIssueRef(reference)
+	if err != nil {
+		return "", orderError(http.StatusBadRequest, err.Error())
+	}
+	host := hostOf(ref)
+	if have, ok := s.Store.Lookup(fmt.Sprintf("https://%s/%s/%s/issues/%d", host, ref.Owner, ref.Repo, ref.Number)); ok {
+		return have.Fleet, nil
+	}
+	if s.Route != nil {
+		if fleet := s.Route(host, ref.Owner+"/"+ref.Repo); fleet != "" {
+			return fleet, nil
+		}
+	}
+	return "", orderError(http.StatusUnprocessableEntity, fmt.Sprintf("No fleet owns %s/%s, so Admiral can't read it", ref.Owner, ref.Repo))
+}
+
 // Follow follows the campaign a reference names, or returns the one already followed; created says which.
 func (s *Service) Follow(ctx context.Context, reference string) (Followed, bool, *launcher.Error) {
 	ref, err := campaigns.ParseIssueRef(reference)

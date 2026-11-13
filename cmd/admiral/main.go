@@ -560,7 +560,7 @@ func serve(args []string) error {
 	wireEvents(supervisor, routineStore, routineScheduler, allShips, newLookout(absDir, cfg, fleetRepos(cfg), supervisor), lookoutActs)
 	inboxService.LaunchEvent = launchEvent(routineScheduler)
 	wireStandingOrders(shipService.Launcher, routineStore, routineService, cfg)
-	chatService.FollowCampaign, commitmentRunner.Campaign, campaignService.OnRead = campaignService.Follow, campaignService.Snapshot, commitmentRunner.Changed
+	chatService.FollowCampaign, chatService.CampaignFleet, commitmentRunner.Campaign, campaignService.OnRead = campaignService.Follow, campaignService.Owner, campaignService.Snapshot, commitmentRunner.Changed
 	inboxService.LaunchRoutine = func(ctx context.Context, p inbox.RoutineProposal) (any, int, string) {
 		t, err := routineScheduler.Accept(ctx, p.Fleet, p.Routine, p.Trigger)
 		switch {

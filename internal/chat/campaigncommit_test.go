@@ -40,10 +40,24 @@ func (f *fakeFollow) follow(_ context.Context, ref string) (follow.Followed, boo
 	return got, true, nil
 }
 
+// owner answers like the follow service's route: nope is no reference, and no issue number matters.
+func (f *fakeFollow) owner(ref string) (string, *launcher.Error) {
+	if ref == "nope" {
+		return "", &launcher.Error{Status: http.StatusBadRequest, Msg: "not a reference"}
+	}
+	return f.fleet, nil
+}
+
+func (f *fakeFollow) reads() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.refs...)
+}
+
 func newCampaignRig(t *testing.T, campaignFleet string) (*promiseRig, *fakeFollow) {
 	t.Helper()
 	ff := &fakeFollow{fleet: campaignFleet}
-	return newPromiseRigWith(t, func(s *Service) { s.FollowCampaign = ff.follow }), ff
+	return newPromiseRigWith(t, func(s *Service) { s.FollowCampaign, s.CampaignFleet = ff.follow, ff.owner }), ff
 }
 
 type workBody struct {
@@ -100,6 +114,18 @@ func TestWorkingOnAnotherFleetsCampaignIsRefusedAndRecordsNothing(t *testing.T) 
 	}
 }
 
+func TestWorkingOnAnotherFleetsCampaignReadsAndFollowsNothingAndNeverSaysWhetherItExists(t *testing.T) {
+	r, ff := newCampaignRig(t, "work")
+	code1, _, body1 := r.workOn(t, "acme/widgets#20", "claude", "home")
+	code2, _, body2 := r.workOn(t, "acme/widgets#99", "claude", "home")
+	if code1 != http.StatusForbidden || code1 != code2 || body1 != body2 {
+		t.Errorf("answers differ: %d %s vs %d %s, want one fixed 403", code1, body1, code2, body2)
+	}
+	if got := ff.reads(); len(got) != 0 {
+		t.Errorf("a refused work-on followed %v, want no read and no follow", got)
+	}
+}
+
 func TestWorkingOnACampaignNeedsAnActor(t *testing.T) {
 	r, _ := newCampaignRig(t, "home")
 	if code, _, body := r.workOn(t, "acme/widgets#20", "claude", ""); code != http.StatusForbidden {
@@ -108,13 +134,16 @@ func TestWorkingOnACampaignNeedsAnActor(t *testing.T) {
 }
 
 func TestWorkingOnACampaignWithAnUnprovenHarnessIsRefused(t *testing.T) {
-	r, _ := newCampaignRig(t, "work")
+	r, ff := newCampaignRig(t, "work")
 	code, _, body := r.workOn(t, "acme/widgets#20", "claude", "work")
 	if code != http.StatusUnprocessableEntity || !strings.Contains(strings.ToLower(body), "autopilot") {
 		t.Errorf("work-on with claude unproven on fleet work = %d %s, want 422 naming autopilot", code, body)
 	}
 	if strings.Contains(r.ledger("work"), "camp-1") {
 		t.Error("an unproven work-on was recorded")
+	}
+	if got := ff.reads(); len(got) != 0 {
+		t.Errorf("an unproven work-on followed %v, want no read and no follow", got)
 	}
 }
 

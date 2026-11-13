@@ -27,7 +27,7 @@ func (s *Service) serveCampaignCommitment(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, `send one JSON object: {"reference", "harness"}`)
 		return
 	}
-	if s.FollowCampaign == nil {
+	if s.FollowCampaign == nil || s.CampaignFleet == nil {
 		writeError(w, http.StatusServiceUnavailable, "this server cannot follow campaigns")
 		return
 	}
@@ -43,12 +43,12 @@ func (s *Service) serveCampaignCommitment(w http.ResponseWriter, r *http.Request
 	if harness == "" {
 		harness = "claude"
 	}
-	followed, _, lerr := s.FollowCampaign(r.Context(), body.Reference)
+	owner, lerr := s.CampaignFleet(body.Reference)
 	if lerr != nil {
 		writeError(w, lerr.Status, lerr.Msg)
 		return
 	}
-	if followed.Fleet != fleet {
+	if owner != fleet {
 		writeError(w, http.StatusForbidden, "that campaign belongs to another fleet")
 		return
 	}
@@ -59,6 +59,15 @@ func (s *Service) serveCampaignCommitment(w http.ResponseWriter, r *http.Request
 	}
 	if ok, reason := autopilotgate.Advisor(f, capabilities.Open(s.Home)); !ok {
 		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("autopilot is not proven on %s in fleet %s: its advisor is not proven (%s)", harness, f.Name, reason))
+		return
+	}
+	followed, _, lerr := s.FollowCampaign(r.Context(), body.Reference)
+	if lerr != nil {
+		writeError(w, lerr.Status, lerr.Msg)
+		return
+	}
+	if followed.Fleet != fleet {
+		writeError(w, http.StatusForbidden, "that campaign belongs to another fleet")
 		return
 	}
 	name := strings.TrimSpace(body.Reference)
