@@ -242,6 +242,16 @@ export function MessageField({ label, placeholder, text, setText, send, disabled
           setText(e.currentTarget.value);
           setCaret(e.currentTarget.selectionStart);
         }}
+        // Chromium (Brave) sometimes fires a paste and its beforeinput but never inserts the text, so the box inserts it itself.
+        onPaste={(e) => {
+          const pasted = e.clipboardData?.getData('text/plain');
+          if (!pasted) return;
+          e.preventDefault();
+          const el = e.currentTarget;
+          el.setRangeText(pasted, el.selectionStart, el.selectionEnd, 'end');
+          setText(el.value);
+          setCaret(el.selectionStart);
+        }}
         onKeyUp={readCaret}
         onClick={readCaret}
         onBlur={(e) => {
