@@ -360,7 +360,7 @@ func (g *githubConn) refresh() {
 		}
 		changed = g.store(v.ID, orders, "") || changed
 		for _, it := range g.newInView(v.ID, routed, len(items) >= github.MaxItems) {
-			if !g.emit(Event{Kind: "new_in_view", Panel: v.ID, Ref: it.URL, Author: it.Author, Viewer: login, Verified: true}) {
+			if !g.emit(Event{Kind: "new_in_view", Panel: v.ID, Ref: it.URL, Title: it.Title, Author: it.Author, Viewer: login, Verified: true}) {
 				g.unsee("view:"+v.ID, it.URL) // over the flood bound: offer it again at the next poll
 			}
 		}
@@ -440,7 +440,7 @@ func (g *githubConn) pollEvents(client *github.Client, token string, router *git
 			if actor == "" { // a mention names no mentioner, and a ghost account has no login
 				actor = unknownActor
 			}
-			if !g.emit(Event{Kind: es.kind, Ref: it.URL, Actor: actor, Author: it.Author, Viewer: login, Verified: true}) {
+			if !g.emit(Event{Kind: es.kind, Ref: it.URL, Title: it.Title, Actor: actor, Author: it.Author, Viewer: login, Verified: true}) {
 				allDelivered = false
 				continue
 			}
