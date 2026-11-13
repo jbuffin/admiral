@@ -393,6 +393,31 @@ func TestHarnessTagsReadAsWords(t *testing.T) {
 	}
 }
 
+func TestTheEngineersWordsReadWithoutTheHarnessWrapper(t *testing.T) {
+	items := read(t, strings.Join([]string{
+		`{"type":"user","uuid":"p1","message":{"content":"\n\n<pasted_content id=\"0060\">\nfirst line\n- second line\n</pasted_content id=\"0060\">\n"}}`,
+		`{"type":"user","uuid":"p2","message":{"content":"see <b>bold</b> and <note id=\"1\">kept</note>"}}`,
+		`{"type":"user","uuid":"p3","message":{"content":"before <snippet id=\"a\">one</snippet id=\"a\"> and <other id=\"b\">two</other id=\"b\">"}}`,
+		`{"type":"queue-operation","operation":"enqueue","content":"while you work"}`,
+		`{"type":"attachment","uuid":"q1","attachment":{"type":"queued_command","prompt":"while you work\nsecond line","commandMode":"prompt","origin":{"kind":"human"}}}`,
+		`{"type":"attachment","uuid":"q2","attachment":{"type":"queued_command","prompt":"<task-notification>x</task-notification>","commandMode":"prompt","origin":{"kind":"task-notification"}}}`,
+	}, "\n")+"\n")
+
+	var got []string
+	for _, it := range items {
+		got = append(got, string(it.Kind)+": "+it.Text)
+	}
+	want := []string{
+		"user: first line\n- second line",
+		`user: see <b>bold</b> and <note id="1">kept</note>`,
+		"user: before one and two",
+		"user: while you work\nsecond line",
+	}
+	if fmt.Sprintf("%q", got) != fmt.Sprintf("%q", want) {
+		t.Errorf("items =\n%q\nwant\n%q", got, want)
+	}
+}
+
 func TestSecondItemOfALineGetsASuffixedID(t *testing.T) {
 	items := read(t, strings.Join([]string{
 		`{"type":"assistant","uuid":"0a1b","message":{"content":[{"type":"text","text":"a"},{"type":"tool_use","id":"t","name":"Bash","input":{}}]}}`,
