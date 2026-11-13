@@ -377,3 +377,19 @@ func enabledPlugins(identity, dir string, projectSettings bool) map[string]bool 
 	}
 	return out
 }
+
+// HarnessSkills is one dock's installed skills.
+type HarnessSkills struct {
+	Harness string
+	Skills  []Skill
+}
+
+// Entry is one skill across docks, under the name a crew member saves.
+type Entry struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Harnesses   []string `json:"harnesses"`
+}
+
+// Merge is not written yet.
+func Merge(lists []HarnessSkills) []Entry { return nil }

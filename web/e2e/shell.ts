@@ -80,7 +80,7 @@ function probeableCodex(a: Admiral, fleet: string) {
 }
 
 /** Zulu (Westwind) comes first, alpha (Homeport) second; `live` makes the docks launchable and gives zulu the orders; `claude` replaces zulu's claude dock. */
-export function seedFleets(a: Admiral, opts: { live?: boolean; chat?: boolean; versioned?: boolean; holdChat?: ChatFleet; claude?: { executable: string; env: Record<string, string> } } = {}) {
+export function seedFleets(a: Admiral, opts: { userHome?: string; live?: boolean; chat?: boolean; versioned?: boolean; holdChat?: ChatFleet; claude?: { executable: string; env: Record<string, string> } } = {}) {
   const live = !!opts.live;
   // A version the server can detect, which Check again needs to keep a seeded probe result.
   const codexDock = (fleet: string, harness: Harness) => {
@@ -109,6 +109,12 @@ export function seedFleets(a: Admiral, opts: { live?: boolean; chat?: boolean; v
     config.resources = { db: {} };
     // A folder where a clone would land, so cloning there clashes.
     mkdirSync(join(a.home, 'gadget'), { recursive: true });
+  }
+  // A dock's HOME is where codex and copilot look for user skills; a test that lists skills points it away from the engineer's.
+  if (opts.userHome) {
+    for (const fleet of Object.values(config.fleets as Record<string, Record<string, { env?: Record<string, string> }>>)) {
+      for (const h of Object.keys(identityVar)) if (fleet[h]) fleet[h] = { ...fleet[h], env: { ...fleet[h].env, HOME: opts.userHome } };
+    }
   }
   a.writeConfig(config);
   mkdirSync(join(a.home, 'logos'), { recursive: true });

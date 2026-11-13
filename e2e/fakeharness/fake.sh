@@ -56,6 +56,7 @@
 #                  draft: a member named quartermaster with a built-in role, no based-on, no skills, no
 #                  model, a one-line pick-me-when and short instructions. $FAKE_JUDGE=crew-invalid answers
 #                  a purser draft with a custom role and no based-on, which the resolver refuses.
+#                  $FAKE_JUDGE=crew-skills answers the quartermaster draft with the skills tdd and mystery.
 #                  fail and leak act on it as on every judge call.
 #                  The standing-orders drafter is the judge call whose prompt's first line is "You turn an
 #                  engineer's plain-English standing orders into a Limits patch, a list of Checks and
@@ -409,6 +410,7 @@ if [ -n "$judge" ]; then
   if [ -z "$body" ] && [ -n "$crewwriter" ]; then
     case "$FAKE_JUDGE" in
     crew-invalid) body='{"name":"purser","role":"purser","based-on":"","skills":[],"model":"","pick-me-when":"Pick for the ship'"'"'s accounts.","instructions":"Keep the ledger."}' ;;
+    crew-skills) body='{"name":"quartermaster","role":"implementer","based-on":"","skills":["tdd","mystery"],"model":"","pick-me-when":"Pick for provisioning chores.","instructions":"Check the stores before each voyage."}' ;;
     *) body='{"name":"quartermaster","role":"implementer","based-on":"","skills":[],"model":"","pick-me-when":"Pick for provisioning chores.","instructions":"Check the stores before each voyage."}' ;;
     esac
   fi

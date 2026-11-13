@@ -30,6 +30,7 @@ type Service struct {
 
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/fleets/{key}/crew", s.serveCrew)
+	mux.HandleFunc("GET /api/fleets/{key}/crew/skills", s.serveSkills)
 	mux.HandleFunc("POST /api/fleets/{key}/crew/draft", s.serveDraft)
 	mux.HandleFunc("POST /api/fleets/{key}/crew/members", s.serveCreate)
 	mux.HandleFunc("PUT /api/fleets/{key}/crew/members/{name}", s.servePut)
@@ -249,4 +250,8 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 		return false
 	}
 	return true
+}
+
+func (s *Service) serveSkills(w http.ResponseWriter, r *http.Request) {
+	writeError(w, http.StatusNotImplemented, "not implemented")
 }

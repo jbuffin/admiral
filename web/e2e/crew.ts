@@ -22,19 +22,30 @@ export function seedManyBuiltIns(a: Admiral, count: number) {
 
 /**
  * Westwind's crew: built-in scout and lookout under the claude dock's Commodore; fleet members ada (codex), bosun, cook and dory,
- * and a fleet lookout that customizes the built-in one. Call before `start`. `claude` replaces zulu's claude dock, as `probeableClaude(a).dock`
+ * and a fleet lookout that customizes the built-in one; ada's skills are tdd and code-review, and the docks' skills are the ones listed in the body. Call before `start`. `claude` replaces zulu's claude dock, as `probeableClaude(a).dock`
  * does when the page makes judge calls (Add crew); then `proveJudge` once the server is up.
  */
 export function seedCrew(a: Admiral, opts: { claude?: { executable: string; env: Record<string, string> } } = {}) {
-  seedFleets(a, { claude: opts.claude });
+  const userHome = join(a.home, 'userhome');
+  seedFleets(a, { claude: opts.claude, userHome });
   const commodore = join(a.home, 'identity', 'zulu-claude', 'skills', 'commodore');
   write(join(commodore, 'SKILL.md'), '---\nname: commodore\ndescription: a fake skill\n---\n');
   write(join(commodore, 'crew', 'scout.md'), member('scout', 'scribe', 'Pick for the log.'));
   write(join(commodore, 'crew', 'lookout.md'), member('lookout', 'reviewer', 'Pick for a review.'));
 
+  // Installed skills: tdd on both docks, code-review and claude-only on Claude Code, unslop and codex-only on Codex.
+  const skill = (dir: string, name: string, description: string) => write(join(dir, name, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\n`);
+  const claudeSkills = join(a.home, 'identity', 'zulu-claude', 'skills');
+  skill(claudeSkills, 'tdd', 'Test first, then the code.');
+  skill(claudeSkills, 'code-review', 'Review a diff before it merges.');
+  skill(claudeSkills, 'claude-only', 'Only Claude Code has this.');
+  skill(join(userHome, '.agents', 'skills'), 'tdd', 'Test first, then the code.');
+  skill(join(userHome, '.agents', 'skills'), 'unslop', 'Strip AI patterns from prose.');
+  skill(join(a.home, 'identity', 'zulu-codex', 'skills'), 'codex-only', 'Only Codex has this.');
+
   const crew = join(a.home, 'fleets', 'zulu', 'crew');
   write(join(crew, 'lookout.md'), member('lookout', 'reviewer', 'Pick for a sharper review.', 'harness: codex\n'));
-  write(join(crew, 'ada.md'), member('ada', 'implementer', 'Pick for parser work.', 'harness: codex\n'));
+  write(join(crew, 'ada.md'), member('ada', 'implementer', 'Pick for parser work.', 'harness: codex\nskills:\n  - tdd\n  - code-review\n'));
   write(join(crew, 'bosun.md'), member('bosun', 'implementer', 'Pick for rigging.'));
   write(join(crew, 'cook.md'), member('cook', 'scribe', 'Pick for the galley.'));
   write(join(crew, 'dory.md'), member('dory', 'implementer', 'Pick for small jobs.'));

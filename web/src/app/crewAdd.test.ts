@@ -48,13 +48,13 @@ describe('canDraft', () => {
 describe('readDraft', () => {
   it('fills the editor form from a draft, a custom role into Custom… with its based-on', () => {
     const { form, problems } = readDraft({ draft: { ...draftReply.draft, role: 'purser', 'based-on': 'scribe' }, problems: [{ field: 'based-on', message: 'bad' }] });
-    expect(form).toMatchObject({ name: 'quartermaster', role: CUSTOM_ROLE, customRole: 'purser', basedOn: 'scribe', skills: 'a\nb', pickMeWhen: 'Pick for stores.', instructions: 'Check the stores.' });
+    expect(form).toMatchObject({ name: 'quartermaster', role: CUSTOM_ROLE, customRole: 'purser', basedOn: 'scribe', skills: ['a', 'b'], pickMeWhen: 'Pick for stores.', instructions: 'Check the stores.' });
     expect(problems).toEqual([{ field: 'based-on', message: 'bad' }]);
   });
 
   it('reads a draft with nulls, a missing problems list and malformed problems without throwing', () => {
     const { form, problems } = readDraft({ draft: { name: null, role: 'implementer', skills: null, model: null, 'pick-me-when': null }, problems: [{ field: 4 }, null, { field: 'name', message: 'taken' }] });
-    expect(form).toMatchObject({ name: '', skills: '', model: '', pickMeWhen: '', instructions: '' });
+    expect(form).toMatchObject({ name: '', skills: [], model: '', pickMeWhen: '', instructions: '' });
     expect(problems).toEqual([{ field: 'name', message: 'taken' }]);
     expect(readDraft({ draft: draftReply.draft }).problems).toEqual([]);
     expect(readDraft(null).form.name).toBe('');
@@ -62,7 +62,7 @@ describe('readDraft', () => {
 });
 
 describe('createBody', () => {
-  const form: NewMemberForm = { name: ' quartermaster ', role: 'implementer', customRole: '', basedOn: '', skills: 'a\n\n b ', model: '', harness: '', pickMeWhen: ' Pick. ', instructions: 'Work.\n', };
+  const form: NewMemberForm = { name: ' quartermaster ', role: 'implementer', customRole: '', basedOn: '', skills: ['a', 'b'], model: '', harness: '', pickMeWhen: ' Pick. ', instructions: 'Work.\n', };
 
   it('adds the trimmed name to the member body and leaves out what is empty', () => {
     expect(createBody(form)).toEqual({ name: 'quartermaster', role: 'implementer', skills: ['a', 'b'], 'pick-me-when': 'Pick.', instructions: 'Work.' });
