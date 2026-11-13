@@ -97,3 +97,11 @@ export function routineProblem(p: { field: string; message: string }): { field: 
   const field = p.field in LABEL ? (p.field as keyof typeof LABEL) : 'do';
   return { field, message: `${LABEL[field]} ${p.message}` };
 }
+
+/** A setting's field in plain words, as the draft review names it. */
+export const fieldWords = (field: string): string => field.replace(/[._]/g, ' ');
+
+/** One line per loosened field: the target's sentence, or the field in plain words when it has none. */
+export function loosenedLines(loosens: string[], sentences: { field: string; sentence: string }[]): string[] {
+  return loosens.map((f) => sentences.find((s) => s.field === f)?.sentence ?? fieldWords(f));
+}

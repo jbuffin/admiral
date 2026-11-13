@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { confirmFailure, confirmLabel, confirmOrdersBody, draftFailure, draftingOff, draftedCheckIndex, joinGuidance, keptLimits, proseError, remainingLoosens, routineProblem } from './filing';
+import { confirmFailure, confirmLabel, confirmOrdersBody, draftFailure, draftingOff, loosenedLines, draftedCheckIndex, joinGuidance, keptLimits, proseError, remainingLoosens, routineProblem } from './filing';
 
 describe('keptLimits', () => {
   const patch = { wall_clock_minutes: 1440, rates: { concurrent: 4, launches_per_hour: 3 }, ceilings: { t1: { level: 'A3' } } };
@@ -202,5 +202,13 @@ describe('draftingOff', () => {
   it('trusts the drafter refusal while the capabilities are unknown', () => {
     expect(draftingOff(undefined, true)).toBe(true);
     expect(draftingOff(undefined, false)).toBe(false);
+  });
+});
+
+describe('loosenedLines', () => {
+  it('names a loosened field in plain words when it has no sentence', () => {
+    const sentences = [{ field: 'wall_clock_minutes', sentence: 'A worker ship stops after 1,440 minutes.' }];
+    expect(loosenedLines(['wall_clock_minutes', 'rates.concurrent'], sentences)).toEqual(['A worker ship stops after 1,440 minutes.', 'rates concurrent']);
+    expect(loosenedLines(['rates.concurrent'], [])).toEqual(['rates concurrent']);
   });
 });
