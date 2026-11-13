@@ -606,7 +606,7 @@ test("a fleet's AdmiralBot page shows its harness, model, effort and refresh thr
       ledgerAt(3).replace('%s', `Stale note to delete. ${'x'.repeat(300)}`),
       // Commitments that stay open through the runner's first tick: a time far ahead, and an old no-trigger one already asked about.
       '{"v":1,"ts":"2026-10-01T09:00:00Z","event":"added","id":"c1","kind":"commitment","text":"Ask me about the dock review.","via":"admiralbot","trigger":{"kind":"none"},"action":"remind"}\n',
-      '{"v":1,"ts":"2026-11-05T09:00:00Z","event":"added","id":"c2","kind":"commitment","text":"Ring the bell at the new year.","via":"admiralbot","trigger":{"kind":"time","subject":"2099-01-01T00:00:00Z"},"action":"remind"}\n',
+      '{"v":1,"ts":"2026-11-05T09:00:00Z","event":"added","id":"c2","kind":"commitment","text":"Ring the bell at the new year.","via":"admiralbot","trigger":{"kind":"time","subject":"2099-06-15T12:00:00Z"},"action":"remind"}\n',
       '{"v":1,"ts":"2026-11-06T09:00:00Z","event":"shown","id":"c1"}\n',
     ].join(''),
   );
