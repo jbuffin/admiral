@@ -242,8 +242,11 @@ export function watchPage(page: Page, server: string) {
   const failedLoads: string[] = [];
   let refusedLaunches = 0;
   page.on('response', (r) => {
-    const refusable = { POST: /^\/api\/v1\/(ships|campaigns\/[^/]+\/launch|ships\/[^/]+\/(dismiss|unfollow|merge|stop|return)|fleets\/[^/]+\/crew\/(members(\/[^/]+\/rename)?|draft))$/, PUT: /^\/api\/v1\/(campaigns\/[^/]+\/work-repo|fleets\/[^/]+\/crew\/members\/[^/]+)$/ }[r.request().method()];
-    if (refusable?.test(new URL(r.url()).pathname) && r.status() >= 400) refusedLaunches++;
+    const refusable = { POST: /^\/api\/v1\/(ships|campaigns\/[^/]+\/launch|ships\/[^/]+\/(dismiss|unfollow|merge)|fleets\/[^/]+\/crew\/(members(\/[^/]+\/rename)?|draft))$/, PUT: /^\/api\/v1\/(campaigns\/[^/]+\/work-repo|fleets\/[^/]+\/crew\/members\/[^/]+)$/ }[r.request().method()];
+    const path = new URL(r.url()).pathname;
+    if (refusable?.test(path) && r.status() >= 400) refusedLaunches++;
+    // Moor's refusal is a 409; any other status on an ending stays an error.
+    if (r.request().method() === 'POST' && /^\/api\/v1\/ships\/[^/]+\/(stop|return)$/.test(path) && r.status() === 409) refusedLaunches++;
   });
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
@@ -1830,20 +1833,29 @@ export async function launchShipWithOpenPRs(a: Admiral, numbers: number[], opts:
   const ship = await launchShip(a, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
   const rec = join(a.home, 'rec', ship.session);
   await expect.poll(() => existsSync(join(rec, 'recorded'))).toBe(true);
-  const report = /^ADMIRAL_REPORT=(.*)$/m.exec(readFileSync(join(rec, 'env'), 'utf8'))?.[1];
-  expect(report, 'the harness env names a report path').toBeTruthy();
-  writeFileSync(report!, JSON.stringify({ version: 2, result: 'partial', why: 'Waiting on review', prs: numbers.map((n) => ({ url: `${PR_BASE}/${n}`, closes: [] })), resume: RESUME }));
+  await reportOpenPRs(a, ship, numbers);
   if (opts.state === 'needs_you') {
     setReason(a, ship, 'stop');
     setState(a, ship, 'needs_you');
   } else setState(a, ship, 'working');
+  await expectOpenPRs(a, ship, numbers);
+  return ship;
+}
+
+/** Writes the ship's report (result `partial`, so it does not moor on its own) naming the PRs. */
+async function reportOpenPRs(a: Admiral, ship: LaunchedShip, numbers: number[]) {
+  const report = /^ADMIRAL_REPORT=(.*)$/m.exec(readFileSync(join(a.home, 'rec', ship.session, 'env'), 'utf8'))?.[1];
+  expect(report, 'the harness env names a report path').toBeTruthy();
+  writeFileSync(report!, JSON.stringify({ version: 2, result: 'partial', why: 'Waiting on review', prs: numbers.map((n) => ({ url: `${PR_BASE}/${n}`, closes: [] })), resume: RESUME }));
+}
+
+async function expectOpenPRs(a: Admiral, ship: LaunchedShip, numbers: number[]) {
   await expect
     .poll(async () => {
       const res = await fetch(`${a.url}api/v1/ships`);
       return ((await res.json()) as { ships: { session: string; open_prs?: string[] }[] }).ships.find((s) => s.session === ship.session)?.open_prs;
     })
     .toEqual(numbers.map((n) => `${PR_BASE}/${n}`));
-  return ship;
 }
 
 /** The ship's status in the API, or undefined when it is not listed. */
@@ -1866,6 +1878,9 @@ async function openPRSheet(page: Page, a: Admiral, ship: LaunchedShip, sheet: Sh
   await expect(dialog).toContainText(`${ship.name} carries ${count}`);
   for (const n of numbers) await expect(dialog.getByRole('link', { name: `api#${n}` })).toHaveAttribute('href', `${PR_BASE}/${n}`);
   await expect(dialog.getByRole('link')).toHaveCount(numbers.length);
+  await expect(dialog.getByRole('listitem')).toHaveCount(numbers.length);
+  for (const n of numbers) await expect(dialog.getByRole('listitem').filter({ has: page.getByRole('link', { name: `api#${n}` }) })).toHaveCount(1);
+  expect(await dialog.getByRole('list').innerText(), 'the PRs read as separate items').not.toMatch(/api#\d+api#\d+/);
   if (sheet === 'Stop ship') {
     await expect(dialog).toContainText('Moor ends the session now and keeps the PRs; the ship wakes when reviews come in. Stop for good ends it and forgets them.');
   } else {
@@ -1934,7 +1949,7 @@ export async function stopForGoodEnds(page: Page, a: Admiral, press: (l: Locator
   await expect(page.getByRole('heading', { name: 'Ships', exact: true })).toBeVisible();
   await expect(page.getByRole('main').getByRole('listitem').filter({ hasText: ship.name })).toHaveCount(0);
   await expect.poll(() => outcomeEvents(a, ship, ENDINGS)).toEqual(['launched', 'ended', 'stopped']);
-  expect(await statusOf(a, ship)).toBeUndefined();
+  await expect.poll(() => statusOf(a, ship)).toBeUndefined();
 }
 
 /** Moor on the Return to port sheet moors a working ship at once, and the clean-up prompt is never typed. */
@@ -1971,7 +1986,7 @@ export async function returnToPortCleansUp(page: Page, a: Admiral, press: (l: Lo
   await expect.poll(() => outcomeEvents(a, ship, ENDINGS)).toContain('stopped');
   expect(outcomeEvents(a, ship, ENDINGS)).toContain('returning');
   expect(outcomeEvents(a, ship, ENDINGS)).not.toContain('moored');
-  expect(await statusOf(a, ship)).toBeUndefined();
+  await expect.poll(() => statusOf(a, ship)).toBeUndefined();
 }
 
 /** A PR that closed after the server counted it: Moor re-checks, the server refuses with 409, the sheet shows why and stays, and the ship stays live. */
@@ -1983,13 +1998,35 @@ export async function moorRefusedWhenThePRClosed(page: Page, a: Admiral, press: 
   await press(dialog.getByRole('button', { name: 'Moor', exact: true }));
   const res = await sent;
   expect(res.status()).toBe(409);
-  const { error } = (await res.json()) as { error: string };
-  expect(error).toBeTruthy();
-  await expect(dialog.getByRole('alert')).toContainText(error);
+  await expect(dialog.getByRole('alert')).toContainText('has no open PR to moor');
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Moor', exact: true })).toBeEnabled();
-  expect(await statusOf(a, ship)).not.toBe('moored');
+  await expect.poll(() => statusOf(a, ship)).not.toBe('moored');
   expect(outcomeEvents(a, ship, ENDINGS)).toEqual(['launched']);
   await press(dialog.getByRole('button', { name: 'Cancel', exact: true }));
   await expect(dialog).toBeHidden();
+}
+
+/** The plain Return to port sheet stays plain when the ship gains an open PR while it is open, so a tap on its button still cleans up. */
+export async function plainReturnSheetStaysPlain(page: Page, a: Admiral, press: (l: Locator) => Promise<void>) {
+  const ship = await launchShip(a, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
+  setState(a, ship, 'working');
+  await page.goto(a.url + 'app/ships?fleet=zulu');
+  await press(rowLink(page, ship));
+  await press(page.getByRole('main').getByRole('button', { name: 'Return to port', exact: true }));
+  const dialog = page.getByRole('dialog', { name: 'Return to port' });
+  await expect(dialog.getByRole('button')).toHaveText(['Cancel', 'Return to port']);
+
+  prAnswer(a, 7, { state: 'OPEN' });
+  await reportOpenPRs(a, ship, [7]);
+  await expectOpenPRs(a, ship, [7]);
+  await expect(dialog.getByRole('button')).toHaveText(['Cancel', 'Return to port']);
+  await expect(dialog).not.toContainText('open PR');
+
+  const sent = endRequest(page, ship, 'return');
+  await press(dialog.getByRole('button', { name: 'Return to port', exact: true }));
+  const res = await sent;
+  expect(res.request().postData() ?? '').toBe('');
+  expect(res.status()).toBe(200);
+  expect(outcomeEvents(a, ship, ENDINGS)).not.toContain('moored');
 }

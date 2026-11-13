@@ -59,8 +59,8 @@ interface ShipActionProps {
   action: string;
   question: string;
   done: (moored: boolean) => void;
-  // Set when the ship has open PRs: the sheet then offers Moor beside the ending.
-  moor?: { end: string; endCls: string; explain: ComponentChildren };
+  // The sheet offers Moor beside the ending when the ship has open PRs as it opens.
+  moor: { end: string; endCls: string; explain: ComponentChildren };
 }
 
 function ShipAction({ ship, label, cls, action, question, done, moor }: ShipActionProps) {
@@ -68,7 +68,9 @@ function ShipAction({ ship, label, cls, action, question, done, moor }: ShipActi
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const cancel = useRef<HTMLButtonElement>(null);
-  const prs = ship.open_prs ?? [];
+  // Frozen when the sheet opens, so a tap aimed at one button never lands on another that appeared meanwhile.
+  const [prs, setPrs] = useState<string[]>([]);
+  const withMoor = prs.length > 0;
   useEffect(() => {
     if (asking) cancel.current?.focus();
   }, [asking]);
@@ -88,6 +90,7 @@ function ShipAction({ ship, label, cls, action, question, done, moor }: ShipActi
         class={`btn ${cls}`}
         onClick={() => {
           setError('');
+          setPrs(ship.open_prs ?? []);
           setAsking(true);
         }}
       >
@@ -95,18 +98,20 @@ function ShipAction({ ship, label, cls, action, question, done, moor }: ShipActi
       </button>
       {asking ? (
         <Sheet label={label} kind="launch-backdrop stop-backdrop" onClose={() => !busy && setAsking(false)}>
-          {moor ? (
+          {withMoor ? (
             <>
               <p class="line">
                 {ship.name} carries {prs.length === 1 ? '1 open PR' : `${prs.length} open PRs`}.
               </p>
-              <p class="line">
+              <ul class="pr-list">
                 {prs.map((url) => (
-                  <a key={url} class="pr-link" href={url} target="_blank" rel="noreferrer">
-                    {prLabel(url)}
-                  </a>
+                  <li key={url}>
+                    <a class="pr-link" href={url} target="_blank" rel="noreferrer">
+                      {prLabel(url)}
+                    </a>
+                  </li>
                 ))}
-              </p>
+              </ul>
               <p class="line">{moor.explain}</p>
             </>
           ) : (
@@ -121,10 +126,10 @@ function ShipAction({ ship, label, cls, action, question, done, moor }: ShipActi
             <button type="button" ref={cancel} class="btn" disabled={busy} onClick={() => setAsking(false)}>
               Cancel
             </button>
-            <button type="button" class={`btn ${moor ? moor.endCls : cls.split(' ')[0]}`} disabled={busy} onClick={() => void run()}>
-              {moor ? moor.end : label}
+            <button type="button" class={`btn ${withMoor ? moor.endCls : cls.split(' ')[0]}`} disabled={busy} onClick={() => void run()}>
+              {withMoor ? moor.end : label}
             </button>
-            {moor ? (
+            {withMoor ? (
               <button type="button" class="btn primary" disabled={busy} onClick={() => void run(true)}>
                 Moor
               </button>
@@ -152,19 +157,15 @@ function ReturnToPort({ ship }: { ship: Ship }) {
       action="return"
       question={`Return ${ship.name} to port? Once its turn ends it's told to clean up after itself, and then it's stopped with its crew.`}
       done={(moored) => moored && back()}
-      moor={
-        ship.open_prs?.length
-          ? {
-              end: 'Return to port',
-              endCls: '',
-              explain: (
-                <>
-                  <strong>Moor</strong> ends the session now with no clean-up prompt and keeps the PRs. <strong>Return to port</strong> tells it to clean up, then stops it and forgets the PRs.
-                </>
-              ),
-            }
-          : undefined
-      }
+      moor={{
+        end: 'Return to port',
+        endCls: '',
+        explain: (
+          <>
+            <strong>Moor</strong> ends the session now with no clean-up prompt and keeps the PRs. <strong>Return to port</strong> tells it to clean up, then stops it and forgets the PRs.
+          </>
+        ),
+      }}
     />
   );
 }
@@ -178,19 +179,15 @@ function StopShip({ ship }: { ship: Ship }) {
       action="stop"
       question={`Stop ${ship.name}? Its harness and crew end now.`}
       done={back}
-      moor={
-        ship.open_prs?.length
-          ? {
-              end: 'Stop for good',
-              endCls: 'danger',
-              explain: (
-                <>
-                  <strong>Moor</strong> ends the session now and keeps the PRs; the ship wakes when reviews come in. <strong>Stop for good</strong> ends it and forgets them.
-                </>
-              ),
-            }
-          : undefined
-      }
+      moor={{
+        end: 'Stop for good',
+        endCls: 'danger',
+        explain: (
+          <>
+            <strong>Moor</strong> ends the session now and keeps the PRs; the ship wakes when reviews come in. <strong>Stop for good</strong> ends it and forgets them.
+          </>
+        ),
+      }}
     />
   );
 }
