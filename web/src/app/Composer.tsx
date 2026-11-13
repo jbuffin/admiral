@@ -105,8 +105,11 @@ export function useComposer(target: Target, conv: Conversation) {
 }
 
 /** One line that grows with its text, up to a third of the screen, with Send inside it; Enter sends and Shift+Enter breaks the line. */
-export function MessageField({ label, placeholder, text, setText, send, disabled, canSend }: { label: string; placeholder: string; text: string; setText: (t: string) => void; send: () => void; disabled: boolean; canSend: boolean }) {
+export function MessageField({ label, placeholder, text, setText, send, disabled, canSend, focus = false }: { label: string; placeholder: string; text: string; setText: (t: string) => void; send: () => void; disabled: boolean; canSend: boolean; focus?: boolean }) {
   const field = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (focus && !disabled) field.current?.focus();
+  }, [focus, disabled]);
   useLayoutEffect(() => {
     const el = field.current;
     if (!el) return;
@@ -150,7 +153,7 @@ export function InterruptButton({ box }: { box: ReturnType<typeof useComposer> }
 }
 
 /** The box under the Conversation tab: a message to the ship or the picked boat, and a dimmed bubble per message until the conversation shows it. Interrupt goes over the box unless the view puts it beside its tabs. */
-export function Composer({ target, box, interrupt = true }: { target: Target; box: ReturnType<typeof useComposer>; interrupt?: boolean }) {
+export function Composer({ target, box, interrupt = true, focus = false }: { target: Target; box: ReturnType<typeof useComposer>; interrupt?: boolean; focus?: boolean }) {
   const { state } = target;
   const { text, setText, bubbles, error, send, waking } = box;
   return (
@@ -179,6 +182,7 @@ export function Composer({ target, box, interrupt = true }: { target: Target; bo
         send={send}
         disabled={!state.enabled || waking}
         canSend={text.trim() !== ''}
+        focus={focus}
       />
     </div>
   );

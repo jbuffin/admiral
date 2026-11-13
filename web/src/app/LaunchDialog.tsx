@@ -40,7 +40,7 @@ export interface CampaignChildRef {
 const NONE = NO_DIR;
 const toValue = skillValue;
 
-export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched }: { fleet: Fleet; order?: OrderRef; campaign?: CampaignChildRef; onClose: () => void; onLaunched?: () => void }) {
+export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched }: { fleet: Fleet; order?: OrderRef; campaign?: CampaignChildRef; onClose: () => void; onLaunched?: (session: string) => void }) {
   const order: OrderRef | undefined = campaign ? { ...(campaign.issues ? sliceOrder(campaign.campaignId, campaign.issues) : campaignOrder(campaign.campaignId, campaign.url)), title: campaign.title, text: '' } : given;
   const [harness, setHarness] = useState(fleet.docks[0]?.harness ?? '');
   const [dirs, setDirs] = useState<DirsAnswer | null>(null);
@@ -211,10 +211,10 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
       member: as ? member : undefined,
       memberHarness: as?.harness,
     }) };
-    const r = await call('POST', sent.path, sent.body);
+    const r = await call<{ ship: { session: string } }>('POST', sent.path, sent.body);
     setBusy(false);
     if (!r.ok) return setError(r.error);
-    onLaunched?.();
+    onLaunched?.(r.data.ship.session);
     onClose();
   };
 

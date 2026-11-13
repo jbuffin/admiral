@@ -1152,6 +1152,18 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
     expect(sent.res.status()).toBe(201);
     return ((await sent.res.json()) as { ship: LaunchedShip }).ship;
   };
+  /** A launch boards its ship; Back returns to the list. */
+  const boarded = async (ship: LaunchedShip, opts: { waitsOnMessage?: boolean } = {}) => {
+    await expect(form).toBeHidden();
+    await expect(page).toHaveURL(shipViewUrl(a, ship));
+    if (opts.waitsOnMessage) {
+      // A new ship with no conversation yet waits on the engineer's first message, so the box has focus and no card stands over it.
+      await expect(messageBox(page)).toBeFocused();
+      await expect(viewPanel(page).locator('.convo-card')).toHaveCount(0);
+    }
+    await press(page.getByRole('link', { name: 'Back', exact: true }));
+    await expect(page).toHaveURL(/\/app\/ships\?(.*&)?fleet=zulu/);
+  };
   const cancel = async () => {
     await press(form.getByRole('button', { name: 'Cancel', exact: true }));
     await expect(form).toBeHidden();
@@ -1169,7 +1181,7 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   const fromOrder = await send();
   expect(fromOrder.body).toMatchObject({ fleet: 'zulu', harness: 'claude', source: 'orders', order_id: 'ord-api', dir: proj, skill: { kind: 'none' } });
   const apiShip = await launched(fromOrder);
-  await expect(form).toBeHidden();
+  await boarded(apiShip, { waitsOnMessage: true });
   await expect(main.getByRole('listitem').filter({ hasText: apiShip.name })).toBeVisible();
   setState(a, apiShip, 'working');
 
@@ -1195,7 +1207,7 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   expect(freeform.body).not.toHaveProperty('order_id');
   expect(String(freeform.body.text).trim()).toBe('look at the parser');
   const reviewer = await launched(freeform);
-  await expect(form).toBeHidden();
+  await boarded(reviewer);
   await expect(main.getByRole('listitem').filter({ hasText: reviewer.name })).toBeVisible();
   setState(a, reviewer, 'working');
 
@@ -1251,7 +1263,7 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   const pinned = await send();
   expect(pinned.body).toMatchObject({ skill: { kind: 'commodore' }, crew: ['scout'] });
   const pinnedShip = await launched(pinned);
-  await expect(form).toBeHidden();
+  await boarded(pinnedShip);
   await expect(main.getByRole('listitem').filter({ hasText: pinnedShip.name })).toBeVisible();
   const recorded = join(a.home, 'rec', pinnedShip.session);
   await expect.poll(() => existsSync(join(recorded, 'recorded'))).toBe(true);
@@ -1283,7 +1295,7 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   expect(asMember.body).toMatchObject({ skill: { kind: 'none' }, member: 'ada', harness: 'codex' });
   expect(asMember.body).not.toHaveProperty('crew');
   const memberShip = await launched(asMember);
-  await expect(form).toBeHidden();
+  await boarded(memberShip);
   const memberRec = join(a.home, 'rec', memberShip.session);
   await expect.poll(() => existsSync(join(memberRec, 'recorded'))).toBe(true);
   const memberArgv = readFileSync(join(memberRec, 'argv'), 'utf8');
@@ -1306,6 +1318,7 @@ export async function launchFromTheShell(page: Page, a: Admiral, press: (l: Loca
   expect(shown).toBe('github.com/acme/widget');
   expect(cloned.body).not.toHaveProperty('dir');
   const widgetShip = await launched(cloned);
+  await boarded(widgetShip);
   await expect(main.getByRole('listitem').filter({ hasText: widgetShip.name })).toBeVisible();
   expect(existsSync(widget)).toBe(true);
 
