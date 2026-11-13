@@ -11,8 +11,10 @@ import (
 // Propose, Reply, Withdraw and ChatOn make *Service the runner's question seam for With-you children.
 var _ commitments.Proposals = (*Service)(nil)
 
-// proposalQuestions is a proposal's one single-choice question.
-const proposalQuestions = `[{"id":"start","text":"Start it with you?","multi":false,"options":[{"label":"` + commitments.ProposalYes + `"},{"label":"` + commitments.ProposalNo + `"}]}]`
+// proposalQuestions is a proposal's one single-choice question; its text is the title, which the open card shows.
+func proposalQuestions(title string) []map[string]any {
+	return []map[string]any{{"id": "start", "text": title, "multi": false, "options": []map[string]string{{"label": commitments.ProposalYes}, {"label": commitments.ProposalNo}}}}
+}
 
 func (s *Service) ChatOn(fleet string) bool {
 	_, err := s.chatFor(fleet)
@@ -25,7 +27,7 @@ func (s *Service) Propose(fleet string, p commitments.Proposal) error {
 	if lerr != nil {
 		return os.ErrNotExist
 	}
-	body, err := json.Marshal(map[string]any{"title": p.Title, "questions": json.RawMessage(proposalQuestions)})
+	body, err := json.Marshal(map[string]any{"title": p.Title, "questions": proposalQuestions(p.Title)})
 	if err != nil {
 		return err
 	}

@@ -42,7 +42,7 @@ function QuestionCard({ item, chat }: { item: Extract<ThreadItem, { kind: 'quest
 function CommitmentCard({ item, fleet }: { item: Extract<ThreadItem, { kind: 'commitment' }>; fleet: string }) {
   const v = commitmentCardView(item, fleet);
   return (
-    <div class="convo-card chat-card">
+    <div class="convo-card chat-card" role="listitem">
       <p class="chat-card-eyebrow">{v.eyebrow}</p>
       <p class="line">{v.text}</p>
       {v.childLabel ? <p class="line">{v.childLabel}</p> : null}
@@ -50,6 +50,7 @@ function CommitmentCard({ item, fleet }: { item: Extract<ThreadItem, { kind: 'co
       {v.shipHref ? (
         <a
           class="btn"
+          aria-label={`Open ship ${item.card.ship}`}
           href={v.shipHref + fleetSearch.value}
           onClick={(e) => {
             if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
