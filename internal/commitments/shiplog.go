@@ -2,6 +2,7 @@ package commitments
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -58,18 +59,24 @@ func (r *Runner) readLog(list []ledger.Commitment) *shipLog {
 		if end := f.End(); !end.IsZero() && !end.After(since) {
 			continue
 		}
-		log.readFile(f.Path)
+		log.readFile(r.readBytes, f.Path)
 	}
 	return log
 }
 
-func (l *shipLog) readFile(path string) {
-	fh, err := os.Open(path)
+func (r *Runner) readBytes(path string) ([]byte, error) {
+	if r.ReadFile != nil {
+		return r.ReadFile(path)
+	}
+	return os.ReadFile(path)
+}
+
+func (l *shipLog) readFile(read func(string) ([]byte, error), path string) {
+	data, err := read(path)
 	if err != nil {
 		return
 	}
-	defer fh.Close()
-	br := bufio.NewReaderSize(fh, 64<<10)
+	br := bufio.NewReaderSize(bytes.NewReader(data), 64<<10)
 	for {
 		line, err := outcomes.ReadLine(br)
 		if len(line) > 0 && line[0] == '{' {

@@ -48,6 +48,7 @@ const (
 	OutcomeReminded = "reminded"
 	OutcomeCantRun  = "cant_run"
 	OutcomeDropped  = "dropped"
+	OutcomeAged     = "aged"
 )
 
 // Card is what the chat shows for a commitment's outcome. ID is commitment-<commitment id>-<outcome>.
@@ -76,6 +77,12 @@ type Runner struct {
 	Cards       Cards
 	// Ready closes once the host has listed the ships, so a restart finds the ship a launch already made.
 	Ready <-chan struct{}
+	// GitHubFor is the client of a fleet's GitHub host, nil when the fleet has none.
+	GitHubFor func(fleet, host string) GitHub
+	// Logf reports a GitHub failure; nil means stderr.
+	Logf func(format string, args ...any)
+	// ReadFile reads an outcome-log month file; nil means os.ReadFile.
+	ReadFile func(path string) ([]byte, error)
 
 	mu    sync.Mutex // one tick at a time
 	wake  chan struct{}

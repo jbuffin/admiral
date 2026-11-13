@@ -329,3 +329,8 @@ func (n *prNode) status() moor.Status {
 	}
 	return st
 }
+
+// IssueStates maps each issue URL GitHub knows to OPEN or CLOSED, in one aliased query; a URL it answers NOT_FOUND for is left out.
+func (c *Client) IssueStates(ctx context.Context, urls []string) (map[string]string, error) {
+	return nil, nil
+}

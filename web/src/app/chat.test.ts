@@ -104,14 +104,14 @@ describe('needsTerminal', () => {
 });
 
 describe('a commitment card', () => {
-  const entry = (outcome: 'launched' | 'reminded' | 'cant_run' | 'dropped', extra: { ship?: string; reason?: string } = {}) => ({
+  const entry = (outcome: 'launched' | 'reminded' | 'cant_run' | 'dropped' | 'aged', extra: { ship?: string; reason?: string } = {}) => ({
     id: `commitment-c1-${outcome}`,
     kind: 'commitment' as const,
     text: 'ferry the harbour quartz',
     at: '2026-01-02T03:04:06Z',
     card: { commitment: 'c1', outcome, ...extra },
   });
-  const itemOf = (outcome: 'launched' | 'reminded' | 'cant_run' | 'dropped', extra = {}) => {
+  const itemOf = (outcome: 'launched' | 'reminded' | 'cant_run' | 'dropped' | 'aged', extra = {}) => {
     const item = threadOf(snap({ messages: [entry(outcome, extra)] })).find((i) => i.kind === 'commitment');
     expect(item, 'threadOf kept no commitment item').toBeDefined();
     return item as Extract<ThreadItem, { kind: 'commitment' }>;
@@ -144,5 +144,17 @@ describe('a commitment card', () => {
     expect(cant.eyebrow.toLowerCase()).toContain("can't");
     expect(cant.reason).toBe('no such checkout');
     expect(commitmentCardView(itemOf('dropped', { reason: 'the ship was dismissed' })).reason).toBe('the ship was dismissed');
+  });
+
+  it('keeps an aged card in the thread and gives it an eyebrow of its own that asks whether you still want it', () => {
+    const t = threadOf(snap({ messages: [entry('aged')] }));
+    expect(t.map((i) => i.id)).toEqual(['commitment-c1-aged']);
+    const v = commitmentCardView(itemOf('aged'));
+    expect(v.eyebrow, 'an aged card has no eyebrow').toBeTruthy();
+    expect(v.eyebrow.toLowerCase()).toContain('still want');
+    expect(v.text).toBe('ferry the harbour quartz');
+    expect(v.shipHref).toBe('');
+    const others = (['launched', 'reminded', 'cant_run', 'dropped'] as const).map((o) => commitmentCardView(itemOf(o)).eyebrow);
+    expect(others).not.toContain(v.eyebrow);
   });
 });
