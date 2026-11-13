@@ -9,6 +9,7 @@ import { JudgeLine } from './HarnessCapabilities';
 import { MissingCapability } from './MissingCapability';
 import { CheckoutSelect, DockPicker, ModelEffortPair, ResourcesPicker, SkillSelect, skillOfValue, skillValue } from './LaunchPickers';
 import type { SkillsAnswer } from './launchForm';
+import { normalizeLimits } from './limitsForm';
 import { RoutineTabs } from './RoutineTabs';
 import { automateOf, go, loc, peekPath, routineNewPath, routinePath, shipPath } from './router';
 import {
@@ -32,6 +33,7 @@ import {
   runCost,
   runLine,
   spendNotice,
+  proposeOnlyNote,
   runTime,
   type Before,
   type Routine,
@@ -392,6 +394,7 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
   const [spend, setSpend] = useState<RoutineSpend | undefined>();
   const [drafted, setDrafted] = useState<{ form: RoutineForm; problem?: { field: 'name' | 'when' | 'before_acting' | 'do'; message: string }; n: number } | null>(null);
   const caps: FleetCapabilities | undefined = capabilities.value.find((c) => c.key === fleet.key);
+  const proposeNote = proposeOnlyNote(caps, normalizeLimits(fleet.limits));
   const capsError = capabilitiesFailed.value && !caps ? "Could not load the fleet's capabilities." : '';
   const [runs, setRuns] = useState<RoutineRun[] | null>(null);
   const [version, setVersion] = useState(0);
@@ -467,6 +470,11 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
       {spendNotice(spend) ? (
         <p class="note warning" role="status">
           {spendNotice(spend)}
+        </p>
+      ) : null}
+      {proposeNote ? (
+        <p class="note" role="status">
+          {proposeNote}
         </p>
       ) : null}
     </>

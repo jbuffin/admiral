@@ -328,6 +328,9 @@ export function eventWords(sources: Source[], fleetKey: string, on: NonNullable<
 }
 
 /** The fleet-level note on the Routines screen when A3 routines run as propose only. */
-export function proposeOnlyNote(_caps: FleetCapabilities | undefined, _limits: Limits | undefined): string {
-  return '';
+export function proposeOnlyNote(caps: FleetCapabilities | undefined, limits: Limits | undefined): string {
+  if (!caps || !limits || caps.restricted !== false) return '';
+  const { t1, t2, t3, t4 } = limits.ceilings;
+  if (![t1, t2, t3, t4].some((c) => c.level === 'A3')) return '';
+  return 'Draft fix routines run as propose only: no harness in this fleet has passed the restricted-ship probe.';
 }
