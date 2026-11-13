@@ -87,6 +87,7 @@ const REASON_WORDS: Record<string, string> = {
   quiet_hours: 'quiet hours',
   hold_fire: 'Hold fire is on',
   dedupe_key_held: 'the same event was already held',
+  no_restricted_harness: 'no harness in this fleet has passed the restricted-ship probe',
 };
 
 /** A reason code, or a comma-joined list of them, in words; a code it doesn't know stays as it is. */

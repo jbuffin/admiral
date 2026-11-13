@@ -106,6 +106,21 @@ func restrictedSettings(level standing.Restricted, checkout, home string, altern
 	return out
 }
 
+// RestrictedProfile is the settings of a restricted ship working in checkout, a shared clone of the repository at dir,
+// under Admiral's home. The object dirs come from dir, never from the checkout the ship can write.
+func RestrictedProfile(level standing.Restricted, checkout, dir, home string) map[string]any {
+	realHome, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		realHome = home
+	}
+	return restrictedSettings(level, checkout, realHome, objectDirsOf(dir))
+}
+
+// RestrictedFlags are the flags that make Claude Code run under the settings file at path.
+func RestrictedFlags(settings string) []string {
+	return []string{"--permission-mode", "dontAsk", "--setting-sources", "project", "--settings", settings}
+}
+
 func restrictedSettingsPath(home, session string) string {
 	return filepath.Join(home, "restricted", session+"-settings.json")
 }
@@ -181,7 +196,7 @@ func (l *Launcher) restrictedSetup(req Request, session string, argv []string) (
 	}
 	req.WorkerLaunched = true
 	prompt = l.withGuidance(req, prompt)
-	argv = append(argv, "--permission-mode", "dontAsk", "--setting-sources", "project", "--settings", made.settings)
+	argv = append(argv, RestrictedFlags(made.settings)...)
 	return appendPrompt(argv, prompt, false), made, nil
 }
 

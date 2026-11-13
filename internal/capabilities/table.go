@@ -18,7 +18,7 @@ var table = []Feature{
 		{BotConfigHome, "Separate config home"},
 	}},
 	{ID: "restricted", Label: "Restricted ship", Capabilities: []Capability{
-		{RestrictedSandbox, "Sandbox that fails closed"},
+		{RestrictedSandbox, "Commands are confined"},
 		{RestrictedAllow, "Network allowlist"},
 	}},
 	{ID: "autopilot", Label: "Autopilot", Capabilities: []Capability{
