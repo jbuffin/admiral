@@ -9,7 +9,7 @@ set -eu
 
 # licence_text <dir> prints the first licence file in dir, or fails.
 licence_text() {
-	for f in "$1"/LICENSE "$1"/LICENSE.md "$1"/LICENSE.txt "$1"/LICENSE-MIT "$1"/LICENCE "$1"/COPYING; do
+	for f in "$1"/LICENSE "$1"/LICENSE.md "$1"/LICENSE.txt "$1"/LICENSE-MIT "$1"/LICENSE-MIT.txt "$1"/LICENCE "$1"/COPYING; do
 		if [ -s "$f" ]; then cat "$f"; return 0; fi
 	done
 	echo "notices.sh: no licence text in '$1'" >&2
