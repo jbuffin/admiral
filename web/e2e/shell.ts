@@ -1080,6 +1080,12 @@ export function seedTurn(a: Admiral, ship: LaunchedShip) {
 /** The pane's size as tmux has it, `<cols>x<rows>`. */
 export const paneSize = (a: Admiral, ship: LaunchedShip) => tmux(a, 'display', '-p', '-t', ship.session, '#{window_width}x#{window_height}').stdout.trim();
 
+/** Sizes the ship's window as a terminal on a small screen leaves it. */
+export const resizeWindow = (a: Admiral, ship: LaunchedShip, cols: number, rows: number) => {
+  const r = tmux(a, 'resize-window', '-t', ship.session, '-x', String(cols), '-y', String(rows));
+  if (r.status !== 0) throw new Error(`resize-window: ${r.stderr}`);
+};
+
 /** Asserts that `ok` stays true for `ms`: the way to show that something does not happen. */
 export async function holds(ok: () => boolean, what: string, ms = 1500) {
   const end = Date.now() + ms;

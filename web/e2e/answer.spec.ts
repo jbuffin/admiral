@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures';
 import type { Page } from '@playwright/test';
-import { boatReceived, chip, launchCrew, launchShip, line, appendLines, received, rowLink, seedFleets, setBoatState, setReason, setState, viewPanel, viewTab, withFakeGh } from './shell';
+import { boatReceived, chip, launchCrew, launchShip, line, appendLines, paneSize, received, resizeWindow, rowLink, seedFleets, setBoatState, setReason, setState, viewPanel, viewTab, withFakeGh } from './shell';
 
 const button = (page: Page, name: string) => viewPanel(page).getByRole('button', { name, exact: true });
 const terminalCard = (page: Page) => viewPanel(page).getByText('Answer this in the terminal');
@@ -94,6 +94,8 @@ test('a four-question Claude call is stepped through the card and answered with 
   await card.getByRole('button', { name: 'Back', exact: true }).tap();
   await expect(card.getByText('Question 4 of 4')).toBeVisible();
   await card.getByRole('button', { name: 'Next', exact: true }).tap();
+  // A phone's terminal left the pane too short for the menu's tabs and question; the answer still lands.
+  resizeWindow(admiral, ship, 40, 12);
   const sent = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/answer'));
   await card.getByRole('button', { name: 'Submit answers', exact: true }).tap();
   expect((await sent).postDataJSON().answers).toEqual([{ options: [2] }, { options: [1, 3] }, { options: [], other: 'Medium, thanks' }, { options: [2] }]);
@@ -102,6 +104,7 @@ test('a four-question Claude call is stepped through the card and answered with 
   const down = '\x1b[B';
   await expect.poll(() => received(admiral, ship)).toBe(['2', '\r', down + down, '\r', down + down, '\r', '3', 'Medium, thanks', '\r', '2', '1'].join(''));
   await expect(card.getByRole('button', { name: 'Submit answers', exact: true })).toHaveCount(0);
+  expect(paneSize(admiral, ship)).toBe('40x12');
 
   // Once Claude records the answers, the same call is the read-only record: chips, rendered descriptions and chosen marks.
   await appendLines(admiral, ship, [
