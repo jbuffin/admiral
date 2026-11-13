@@ -47,14 +47,16 @@ func (p routineProposer) Propose(fleet string, r routines.Routine, t routines.Tr
 }
 
 // wakeOn calls fn each time the channel a resource set's channel closes, until ctx ends.
-func wakeOn(ctx context.Context, changed func() <-chan struct{}, fn func()) {
+func wakeOn(ctx context.Context, changed func() <-chan struct{}, fns ...func()) {
 	for {
 		ch := changed()
 		select {
 		case <-ctx.Done():
 			return
 		case <-ch:
-			fn()
+			for _, fn := range fns {
+				fn()
+			}
 		}
 	}
 }

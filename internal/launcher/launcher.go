@@ -78,6 +78,10 @@ type Request struct {
 	Via string `json:"-"`
 	// RoutineKey is routine:<id>: a routine's ship holds it, so a second launch of the routine is refused while the ship is listed.
 	RoutineKey string `json:"-"`
+	// CommitmentKey is commitment:<id>: a commitment's ship holds it, so a second launch of the commitment is refused while the ship is listed.
+	CommitmentKey string `json:"-"`
+	// QuietGate makes an autopilot launch check the guard and the advisor without posting an Inbox notice when it refuses.
+	QuietGate bool `json:"-"`
 	// TriggerID is the id of the trigger-log record the launch answers; the `launched` outcome points at it.
 	TriggerID string `json:"-"`
 }
@@ -194,7 +198,7 @@ func CheckSpec(cfg *config.Config, home string, req Request) (Checked, *Error) {
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
 		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")},
-		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}, {"chat", req.ChatOption()}, {"routine", req.RoutineKey}}
+		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}, {"chat", req.ChatOption()}, {"routine", req.RoutineKey}, {"commitment", req.CommitmentKey}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
 			return Checked{}, refuse(http.StatusBadRequest, "%s contains a control character", o[0])

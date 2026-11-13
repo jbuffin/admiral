@@ -1,5 +1,15 @@
-import { describe, expect, it } from 'vitest';
-import { needsTerminal, resetLabel, threadOf, youAnswered, type ChatSnapshot } from './chat';
+import { describe, expect, it, vi } from 'vitest';
+
+// router.ts reads the page's location when it loads; the card's ship link comes from it.
+vi.hoisted(() => {
+  vi.stubGlobal('location', { pathname: '/app/inbox', search: '' });
+  vi.stubGlobal('addEventListener', () => {});
+  vi.stubGlobal('history', { replaceState: () => {} });
+});
+
+
+import { commitmentCardView, needsTerminal, resetLabel, threadOf, youAnswered, type ChatSnapshot, type ThreadItem } from './chat';
+import { shipPath } from './router';
 
 const card = (id: string) => ({ version: 1, id, session: '_chat-harbor', kind: 'question' as const, created: '2026-01-02T03:04:05Z', title: 'Which panel?', question: { questions: [] } });
 const snap = (over: Partial<ChatSnapshot>): ChatSnapshot => ({ fleet: 'harbor', running: true, state: 'idle', messages: [], questions: [], ...over });
@@ -90,5 +100,49 @@ describe('needsTerminal', () => {
     expect(needsTerminal(snap({ error: 'Open the terminal to finish starting the chat' }))).toBe(true);
     expect(needsTerminal(snap({ error: "Admiral can't read this chat's transcript" }))).toBe(false);
     expect(needsTerminal(snap({}))).toBe(false);
+  });
+});
+
+describe('a commitment card', () => {
+  const entry = (outcome: 'launched' | 'reminded' | 'cant_run' | 'dropped', extra: { ship?: string; reason?: string } = {}) => ({
+    id: `commitment-c1-${outcome}`,
+    kind: 'commitment' as const,
+    text: 'ferry the harbour quartz',
+    at: '2026-01-02T03:04:06Z',
+    card: { commitment: 'c1', outcome, ...extra },
+  });
+  const itemOf = (outcome: 'launched' | 'reminded' | 'cant_run' | 'dropped', extra = {}) => {
+    const item = threadOf(snap({ messages: [entry(outcome, extra)] })).find((i) => i.kind === 'commitment');
+    expect(item, 'threadOf kept no commitment item').toBeDefined();
+    return item as Extract<ThreadItem, { kind: 'commitment' }>;
+  };
+
+  it('stays in the thread among the messages around it', () => {
+    const t = threadOf(
+      snap({
+        messages: [
+          { id: 'u-1', kind: 'message', role: 'user', text: 'before', at: '2026-01-02T03:04:05Z' },
+          entry('reminded'),
+          { id: 'u-2', kind: 'message', role: 'user', text: 'after', at: '2026-01-02T03:04:07Z' },
+        ],
+      }),
+    );
+    expect(t.map((i) => i.id)).toEqual(['u-1', 'commitment-c1-reminded', 'u-2']);
+  });
+
+  it('says what happened, with the commitment text, and links a launched ship by its page', () => {
+    const v = commitmentCardView(itemOf('launched', { ship: 'saltpaw-2' }));
+    expect(v.text).toBe('ferry the harbour quartz');
+    expect(v.eyebrow.toLowerCase()).toContain('launched');
+    expect(v.shipHref).toBe(shipPath('saltpaw-2'));
+  });
+
+  it('shows a reminder and a drop without a ship link, and gives the reason of a refusal', () => {
+    expect(commitmentCardView(itemOf('reminded')).eyebrow.toLowerCase()).toContain('remind');
+    expect(commitmentCardView(itemOf('reminded')).shipHref).toBe('');
+    const cant = commitmentCardView(itemOf('cant_run', { reason: 'no such checkout' }));
+    expect(cant.eyebrow.toLowerCase()).toContain("can't");
+    expect(cant.reason).toBe('no such checkout');
+    expect(commitmentCardView(itemOf('dropped', { reason: 'the ship was dismissed' })).reason).toBe('the ship was dismissed');
   });
 });

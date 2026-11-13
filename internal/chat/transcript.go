@@ -12,11 +12,11 @@ import (
 // Message is one entry of the fleet's history: text, a question card or a New chat marker.
 type Message struct {
 	ID   string `json:"id"`
-	Kind string `json:"kind"`           // "message", "question" or "reset"
+	Kind string `json:"kind"`           // "message", "question", "reset" or "commitment"
 	Role string `json:"role,omitempty"` // "user" or "assistant", for a message
 	Text string `json:"text"`           // a card's title; a marker's "New chat"
 	At   string `json:"at"`
-	// Card is a question's item as it was asked, without its answer.
+	// Card is a question's item as it was asked, without its answer, or a commitment card's {commitment, outcome, ship, reason}.
 	Card json.RawMessage `json:"card,omitempty"`
 }
 

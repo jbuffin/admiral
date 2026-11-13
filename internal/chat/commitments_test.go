@@ -66,7 +66,7 @@ func newPromiseRig(t *testing.T) *promiseRig {
 		Home:   home,
 		Config: func() *config.Config { return cfg },
 		Ships: func() []ships.Ship {
-			return []ships.Ship{{Session: "saltpaw", Fleet: "home"}, {Session: "rival", Fleet: "work"}, {Session: "hulk", Fleet: "broken"}, {Session: "cxship", Fleet: "cx"}, {Session: "stamped", Fleet: "home", Launched: "2026-11-12T07:00:00Z"}}
+			return []ships.Ship{{Session: "saltpaw", Fleet: "home", Launched: "2026-11-12T06:00:00Z"}, {Session: "bare", Fleet: "home"}, {Session: "rival", Fleet: "work"}, {Session: "hulk", Fleet: "broken"}, {Session: "cxship", Fleet: "cx"}, {Session: "stamped", Fleet: "home", Launched: "2026-11-12T07:00:00Z"}}
 		},
 		SourceFleet: func(key string) (string, bool) {
 			return map[string]string{"tracker": "home", "theirs": "work"}[key], key == "tracker" || key == "theirs"
@@ -222,6 +222,7 @@ func TestARecordTimeRefusalIs4xxStoresNothingAndPostsNoInboxNotice(t *testing.T)
 		{"an unknown trigger", "home", func(r *promiseRig) string { return r.body(`{"kind":"full_moon"}`, "remind", "") }},
 		{"an unknown action", "home", func(r *promiseRig) string { return r.body(sailed, "explode", "") }},
 		{"a ship of another fleet", "home", func(r *promiseRig) string { return r.body(`{"kind":"ship_sailed","subject":"rival"}`, "remind", "") }},
+		{"a ship with no launch stamp", "home", func(r *promiseRig) string { return r.body(`{"kind":"ship_sailed","subject":"bare"}`, "remind", "") }},
 		{"a ship that does not exist", "home", func(r *promiseRig) string { return r.body(`{"kind":"ship_sailed","subject":"ghost"}`, "remind", "") }},
 		{"a flag as the PR subject", "home", func(r *promiseRig) string { return r.body(`{"kind":"pr_merged","subject":"-R x/y"}`, "remind", "") }},
 		{"a bare owner/repo#N as the PR subject", "home", func(r *promiseRig) string {

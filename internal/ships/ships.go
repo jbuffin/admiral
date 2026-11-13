@@ -16,6 +16,7 @@ import (
 
 	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/autopilotgate"
+	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/conversation"
 	"github.com/jbuffin/admiral/internal/github"
 	"github.com/jbuffin/admiral/internal/home"
@@ -52,7 +53,9 @@ type Ship struct {
 	Via  string `json:"via,omitempty"`
 	Chat string `json:"-"`
 	// Routine is the routine:<id> key a routine's ship holds.
-	Routine    string          `json:"-"`
+	Routine string `json:"-"`
+	// Commitment is the commitment:<id> key a commitment's ship holds.
+	Commitment string          `json:"-"`
 	Status     string          `json:"status"`
 	ExitCode   *int            `json:"exit_code"`
 	ExitSignal *string         `json:"exit_signal"`
@@ -164,15 +167,16 @@ type Service struct {
 }
 
 type unlisted struct {
-	session   string
-	panel     string
-	at        time.Time
-	resources []string
-	url       string
-	issues    []string
-	chat      string
-	routine   string
-	fleet     string
+	session    string
+	panel      string
+	at         time.Time
+	resources  []string
+	url        string
+	issues     []string
+	chat       string
+	routine    string
+	commitment string
+	fleet      string
 }
 
 // listedWithin: a ship killed before the host saw it must not hold its order for good.
@@ -212,7 +216,7 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	o, session := sess.Options, sess.Name
 	sh := Ship{Session: session, Name: o["name"], Fleet: o["fleet"], FleetName: o["fleet-name"],
 		FleetColor: o["fleet-color"], Harness: o["harness"], Dir: o["dir"], Repo: filepath.Base(o["dir"]),
-		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], OrderID: o["order"], Launched: o["launched"], Via: o["via"], Chat: o["chat"], Routine: o["routine"], Status: status(sess, now)}
+		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], OrderID: o["order"], Launched: o["launched"], Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Status: status(sess, now)}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
 	sh.Crew, sh.Subagents = crewBoats(sess.Crew), sess.Subagents
 	if sh.Subagents == nil {
@@ -487,6 +491,14 @@ func (s *Service) releaseWhenListed(session string, release func()) {
 	}()
 }
 
+// gate is the autopilot check; a QuietGate launch leaves its refusal to the caller, with no Inbox notice.
+func (s *Service) gate(fleet config.Fleet, req launcher.Request) error {
+	if req.QuietGate {
+		return autopilotgate.CheckQuiet(s.Launcher.Home, fleet, req.Harness)
+	}
+	return autopilotgate.Check(s.Launcher.Home, fleet, req.Harness)
+}
+
 // admit checks what a launch over HTTP may claim and takes its resources: autopilot
 // mode needs a guarded harness and room under max_ships. The caller holds admitMu
 // for an autopilot launch until LaunchOrder returns.
@@ -501,7 +513,7 @@ func (s *Service) admit(req launcher.Request) (release func(), lerr *launcher.Er
 		if _, ok := fleet.Harness(req.Harness); !ok {
 			return release, &launcher.Error{Status: http.StatusNotFound, Msg: "fleet " + fleet.Name + " has no " + req.Harness + " dock"}
 		}
-		if err := autopilotgate.Check(s.Launcher.Home, fleet, req.Harness); err != nil {
+		if err := s.gate(fleet, req); err != nil {
 			return release, &launcher.Error{Status: http.StatusBadRequest, Msg: err.Error()}
 		}
 	}
@@ -573,7 +585,7 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	if req.Round > 0 {
 		self = cmpName(req.Name, req.Session)
 	}
-	if req.Round == 0 && (req.Source != "" || len(req.Issues) > 0 || chat != "" || req.RoutineKey != "") && !s.Host.Known() {
+	if req.Round == 0 && (req.Source != "" || len(req.Issues) > 0 || chat != "" || req.RoutineKey != "" || req.CommitmentKey != "") && !s.Host.Known() {
 		return Ship{}, &launcher.Error{Status: http.StatusServiceUnavailable, Msg: NotKnownMsg, Wait: WaitHost}
 	}
 	if req.Source != "" && req.Round == 0 {
@@ -629,6 +641,17 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 			}
 		}
 	}
+	if req.CommitmentKey != "" && req.Round == 0 {
+		if holder, ok := s.lockChat(req.CommitmentKey, "a launch in flight"); !ok {
+			return Ship{}, commitmentHeld(holder)
+		}
+		defer s.unlockChat(req.CommitmentKey)
+		for _, sh := range append(s.List(), s.Pending()...) {
+			if sh.Commitment == req.CommitmentKey {
+				return Ship{}, commitmentHeld(holderOf(req, sh))
+			}
+		}
+	}
 	s.mu.Lock()
 	s.launching++
 	s.mu.Unlock()
@@ -652,12 +675,12 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 	sess := sessionhost.Session{Name: got.Session, Options: got.Options}
 	if now, ok := s.find(got.Session); ok {
 		sess = now
-	} else if req.Source != "" || len(req.Issues) > 0 || chat != "" || req.RoutineKey != "" {
+	} else if req.Source != "" || len(req.Issues) > 0 || chat != "" || req.RoutineKey != "" || req.CommitmentKey != "" {
 		if req.Source == "" { // the pending listing is keyed by the order, so a sourceless launch is keyed by its session
 			key = OrderKey{OrderID: got.Session}
 		}
 		s.holdUnlisted(key, got.Session, req.Panel, req.Resources)
-		s.setUnlistedIssues(key, req.URL, req.Issues, chat, req.RoutineKey, req.Fleet)
+		s.setUnlistedIssues(key, req.URL, req.Issues, chat, req.RoutineKey, req.CommitmentKey, req.Fleet)
 	}
 	s.broadcast()
 	return s.ship(sess), nil
@@ -676,6 +699,10 @@ func claimed(req launcher.Request) []string {
 
 func routineHeld(holder string) *launcher.Error {
 	return &launcher.Error{Status: http.StatusConflict, Msg: "this routine's last ship is still here (" + holder + ")"}
+}
+
+func commitmentHeld(holder string) *launcher.Error {
+	return &launcher.Error{Status: http.StatusConflict, Msg: "this commitment's ship is still here (" + holder + ")"}
 }
 
 func chatHeld(holder string) *launcher.Error {
@@ -748,7 +775,7 @@ func (s *Service) Pending() []Ship {
 		if key.Source == "" {
 			orderID = ""
 		}
-		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: orderID, Chat: u.chat, Routine: u.routine, Fleet: u.fleet, Panel: u.panel, Resources: u.resources, URL: u.url, Issues: u.issues, Status: StatusUnderway})
+		out = append(out, Ship{Session: u.session, Source: key.Source, OrderID: orderID, Chat: u.chat, Routine: u.routine, Commitment: u.commitment, Fleet: u.fleet, Panel: u.panel, Resources: u.resources, URL: u.url, Issues: u.issues, Status: StatusUnderway})
 	}
 	return out
 }
@@ -903,7 +930,7 @@ func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 func (s *Service) launched(req launcher.Request, got *launcher.Launched, panel string) {
 	o := got.Options
 	if req.Round > 0 {
-		fields := map[string]any{"round": req.Round, "by": req.By}
+		fields := map[string]any{"round": req.Round, "by": req.By, "launched": o["launched"]}
 		if req.PR != "" {
 			fields["pr"] = req.PR
 		}
@@ -914,7 +941,7 @@ func (s *Service) launched(req launcher.Request, got *launcher.Launched, panel s
 	fields := map[string]any{
 		"fleet": o["fleet"], "harness": req.Harness, "skill": map[string]string{"kind": req.Skill.Kind, "name": o["skill"]},
 		"source": req.Source, "panel": panel, "order_id": req.OrderID, "order_url": o["url"], "title": o["title"],
-		"dir": o["dir"], "autopilot": req.Autopilot,
+		"dir": o["dir"], "autopilot": req.Autopilot, "launched": o["launched"],
 	}
 	if len(req.Issues) > 0 {
 		fields["order_urls"] = req.Issues
@@ -944,7 +971,7 @@ func (s *Service) launchDone() {
 // Holder is the listed ship holding the launch key, in any status.
 func (s *Service) Holder(key string) (Ship, bool) {
 	for _, sh := range append(s.List(), s.Pending()...) {
-		if sh.Routine == key {
+		if sh.Routine == key || sh.Commitment == key {
 			return sh, true
 		}
 	}

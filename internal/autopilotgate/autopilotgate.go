@@ -104,6 +104,17 @@ func Check(home string, fleet config.Fleet, harness string) error {
 	return &AdvisorRefusal{Fleet: fleet.Key, Harness: harness, Reason: reason}
 }
 
+// CheckQuiet is Check without the Inbox notice, for a launch whose refusal is shown another way.
+func CheckQuiet(home string, fleet config.Fleet, harness string) error {
+	if !Proven(home, fleet.Key, harness) {
+		return &Refusal{Fleet: fleet.Key, Harness: harness}
+	}
+	if ok, reason := Advisor(fleet, capabilities.Open(home)); !ok {
+		return &AdvisorRefusal{Fleet: fleet.Key, Harness: harness, Reason: reason}
+	}
+	return nil
+}
+
 func postOnce(home, title, body string) {
 	if !noticeOpen(home, title, body) {
 		// The refusal stands whether or not the notice lands.
