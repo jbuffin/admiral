@@ -3,6 +3,7 @@ package e2e
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,7 +11,7 @@ import (
 )
 
 // lookoutWorld is a fleet "work" with a proven guard and judge, the built-in GitHub source and a review request waiting for the viewer.
-func lookoutWorld(t *testing.T) *world {
+func lookoutWorld(t *testing.T) (*world, *fakeGH) {
 	t.Helper()
 	w := newWorld(t)
 	w.proveGuard()
@@ -20,15 +21,25 @@ func lookoutWorld(t *testing.T) *world {
 	w.checkoutOf(root, "api", "acme/api")
 	node := ghNode("github.com", "acme/api", 7, true, "Fix the quarry lantern")
 	node["author"] = map[string]any{"login": "mallory-the-stranger"}
+	// dated ahead, so it is newer than the baseline poll whenever that ran
+	node["timelineItems"] = map[string]any{"nodes": []map[string]any{{"__typename": "ReviewRequestedEvent",
+		"createdAt": time.Now().Add(time.Hour).UTC().Format(time.RFC3339), "actor": map[string]any{"login": "mallory-the-stranger"},
+		"requestedReviewer": map[string]any{"login": "fake-viewer"}}}}
 	g.search("review", "review-requested:@me", node)
+	if err := os.MkdirAll(filepath.Join(g.dir, "rest"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	g.write("viewer", "fake-viewer")
+	g.write("rest/item.endpoint", "repos/acme/api/issues/7")
+	g.write("rest/item.json", `{"title":"Fix the quarry lantern","body":"Please review my lantern fix."}`)
 	env := w.harnessEnv()
 	env["FAKE_JUDGE"] = "lookout"
-	f := map[string]any{"name": "Work", "color": "#336699", "search_roots": []string{root},
+	f := map[string]any{"name": "Work", "color": "#336699", "search_roots": []string{root}, "limits": map[string]any{"sender_allowlist": []string{"mallory-the-stranger"}},
 		"claude": map[string]any{"executable": w.fakeExe("claude"), "env": env}}
 	fb, _ := json.Marshal(f)
 	writeConfig(t, w.home, ghConfig([]string{"work", string(fb)}, rawSources(
 		srcDef{Key: "gh", Plugin: "github", Name: "GitHub", Fleet: "work", Settings: map[string]any{"views": []any{}}})))
-	return w
+	return w, g
 }
 
 func (w *world) eventRoutine(name, before string) string {
@@ -36,7 +47,7 @@ func (w *world) eventRoutine(name, before string) string {
 	code, body := send(w.t, http.MethodPost, w.in.LocalURL+"/api/fleets/work/routines", map[string]any{
 		"name": name, "enabled": true, "before_acting": before,
 		"on": map[string]any{"source": "gh", "kind": "review_requested"},
-		"do": map[string]any{"launch": map[string]any{"harness": "claude", "dir": w.checkout("lookout-" + before), "text": "sweep the board"}},
+		"do": map[string]any{"launch": map[string]any{"harness": "claude", "dir": filepath.Join(w.root, "ra", "api"), "text": "sweep the board"}},
 	})
 	if code != http.StatusCreated && code != http.StatusOK {
 		w.t.Fatalf("POST routine = %d: %s", code, body)
@@ -53,7 +64,7 @@ func (w *world) eventRoutine(name, before string) string {
 func (w *world) waitRun(routine, outcome string) runJSON {
 	w.t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
-	for {
+	for i := 0; ; i++ {
 		for _, r := range w.routineRuns(routine) {
 			if r.Outcome == outcome {
 				return r
@@ -62,13 +73,16 @@ func (w *world) waitRun(routine, outcome string) runJSON {
 		if time.Now().After(deadline) {
 			w.t.Fatalf("no %q record in 30 s: %+v", outcome, w.routineRuns(routine))
 		}
+		if i%10 == 0 { // the first poll only baselines, so ask for another
+			w.srcReq(http.MethodPost, "/gh/refresh", map[string]any{})
+		}
 		time.Sleep(200 * time.Millisecond)
 	}
 }
 
 func TestAReviewRequestReachesAnAskFirstRoutineAsATieredRecordAndAnEventProposalWithNoEventText(t *testing.T) {
 	t.Parallel()
-	w := lookoutWorld(t)
+	w, _ := lookoutWorld(t)
 	w.start()
 	id := w.eventRoutine("Review watch", "ask_first")
 	rec := w.waitRun(id, "proposed")
@@ -105,7 +119,7 @@ func TestAReviewRequestReachesAnAskFirstRoutineAsATieredRecordAndAnEventProposal
 
 func TestAReviewRequestReachesAReportOnlyRoutineAsAnEventCardInChatAndNothingLaunches(t *testing.T) {
 	t.Parallel()
-	w := lookoutWorld(t)
+	w, _ := lookoutWorld(t)
 	w.start()
 	id := w.eventRoutine("Report watch", "report_only")
 	w.waitRun(id, "reported")

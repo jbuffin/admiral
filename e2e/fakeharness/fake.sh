@@ -365,6 +365,7 @@ if [ -n "$judge" ]; then
   budget=""
   schema=""
   advise=""
+  lookoutcall=""
   prev=""
   for a in "$@"; do
     [ "$prev" = "-o" ] && out=$a
@@ -372,6 +373,7 @@ if [ -n "$judge" ]; then
     --max-budget-usd=*) budget=${a#*=} ;;
     --json-schema=*) schema=1 ;;
     esac
+    case "$a" in --json-schema=*suggested_action*) lookoutcall=1 ;; esac
     case "$a" in --json-schema=*stakes*) advise=1 ;; esac
     prev=$a
   done
@@ -423,6 +425,9 @@ if [ -n "$judge" ]; then
   fi
   if [ -z "$body" ] && [ -n "$routinedraft" ]; then
     body='{"name":"Nightly dependency check","enabled":true,"when":"0 3 * * *","before_acting":"report_only","notify":true,"do":{"prompt":"Check for outdated dependencies and report what you find."}}'
+  fi
+  if [ -z "$body" ] && [ -n "$lookoutcall" ] && [ "$FAKE_JUDGE" = lookout ]; then
+    body='{"kind":"review request","repo":"acme/api","severity":"low","dedupe_key":"gh:acme/api#7","suggested_action":"ignore","summary":"Mallory asks for a review of a lantern fix."}'
   fi
   [ -z "$body" ] && body="{\"reply\":\"$text\"}"
   if [ "$(basename "$0")" = claude ]; then
