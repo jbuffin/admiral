@@ -364,7 +364,7 @@ export interface FleetCapabilities {
   name: string;
   harnesses: HarnessCapabilities[];
   judge?: JudgeHarness;
-  /** True when a harness in the fleet has proven both restricted-ship capabilities. */
+  /** True when a harness in the fleet has proven both restricted-ship capabilities, the guard and the fleet has an advisor. */
   restricted?: boolean;
 }
 export type CheckAnswer = HarnessCapabilities & { judge?: JudgeHarness };

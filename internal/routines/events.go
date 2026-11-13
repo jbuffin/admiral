@@ -345,9 +345,9 @@ func (s *Scheduler) HandleEvent(ev Event) {
 	}
 	tier := TierOf(ev, f.Limits)
 	restricted := autopilotgate.RestrictedCapable(s.Store.Home, f)
-	// The step reviewer runs only in a fleet with Checks; one that can't be read counts as having them.
+	// The step reviewer runs only in a fleet with Checks; orders that can't be read or parsed count as having them.
 	reviewer := standing.Allow
-	if o, err := s.Store.StandingOrders(ev.Fleet); err != nil || len(o.Checks) > 0 {
+	if s.Store.HasChecks(ev.Fleet) {
 		reviewer = standing.Ask
 	}
 	costs := en.Costs // one record carries them, or the spend would count once per routine

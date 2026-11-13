@@ -563,6 +563,7 @@ if [ -n "$restrictedrun" ]; then
       case $path in "$cwd"/*) ;; *) blocked=1 msg="Operation not permitted" ;; esac
       ;;
     git\ push\ *) blocked=1 msg="Permission to use Bash with command $cmd has been denied." ;;
+    sh\ -c\ * | git\ -C\ *) blocked=1 msg="Operation not permitted" ;;
     curl\ *)
       case $cmd in *"https://registry.npmjs.org/"*) ;; *) blocked=1 msg="curl: (56) CONNECT tunnel failed, response 403" ;; esac
       [ "$mode" = no-network ] && blocked=1 msg="curl: (6) Could not resolve host"

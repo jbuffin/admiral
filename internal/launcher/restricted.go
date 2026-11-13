@@ -23,6 +23,31 @@ var RestrictedGitEnv = map[string]string{"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_
 
 var githubTokenVars = []string{"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN"}
 
+// ScrubRestrictedEnv drops from env what could carry a credential into a restricted ship (the GitHub tokens, git's
+// env-supplied config, askpass and the ssh agent socket), and sets RestrictedGitEnv. It returns the names it removed.
+func ScrubRestrictedEnv(env map[string]string) []string {
+	var removed []string
+	drop := func(k string) {
+		delete(env, k)
+		removed = append(removed, k)
+	}
+	for _, k := range githubTokenVars {
+		drop(k)
+	}
+	for _, k := range []string{"GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_ASKPASS", "SSH_ASKPASS", "SSH_AUTH_SOCK"} {
+		drop(k)
+	}
+	for k := range env {
+		if strings.HasPrefix(k, "GIT_CONFIG_KEY_") || strings.HasPrefix(k, "GIT_CONFIG_VALUE_") {
+			drop(k)
+		}
+	}
+	for k, v := range RestrictedGitEnv {
+		env[k] = v
+	}
+	return removed
+}
+
 // A restricted ship's args may not undo the profile's permissions, tools or settings.
 var unsafeRestrictedFlags = []string{"--dangerously-skip-permissions", "--permission-mode", "--settings", "--setting-sources", "--add-dir",
 	"--mcp-config", "--strict-mcp-config", "--allowedTools", "--allowed-tools", "--disallowedTools", "--disallowed-tools", "--permission-prompt-tool",
@@ -31,7 +56,9 @@ var unsafeRestrictedFlags = []string{"--dangerously-skip-permissions", "--permis
 // Tools that reach outside the machine or into the engineer's other sessions; a restricted ship has none of them.
 var restrictedDeniedTools = []any{"WebFetch", "WebSearch", "mcp__*", "Bash(git push *)", "Bash(gh *)", "NotebookEdit",
 	"SendMessage", "ListAgents", "RemoteTrigger", "PushNotification", "Artifact", "SendUserFile", "SendFeedback",
-	"CronCreate", "SendToProject", "SendToProjectContext"}
+	"CronCreate", "SendToProject", "SendToProjectContext",
+	// The registries are on the allowlist, so an upload there is the one way out left; these raise the cost, they are not a boundary.
+	"Bash(npm publish *)", "Bash(cargo publish *)", "Bash(gem push *)"}
 
 // Toolchain caches under the home the sandbox may read though the rest of it is denied.
 var toolchainCaches = []string{"~/go/pkg/mod", "~/Library/Caches/go-build", "~/.cache/go-build", "~/.npm", "~/.cache/pip",
@@ -54,6 +81,16 @@ func checkRestricted(req Request, dock config.Harness) *Error {
 		}
 	}
 	return nil
+}
+
+// sharedTempGlobs are the project folders in Claude Code's per-user temp dir, where the engineer's other sessions
+// keep their scratchpads; the sandbox leaves that dir writable, and the dir itself has to stay so for the shell to work.
+func sharedTempGlobs() []any {
+	var out []any
+	for _, root := range []string{"/tmp", "/private/tmp"} {
+		out = append(out, filepath.Join(root, fmt.Sprintf("claude-%d", os.Getuid()), "-*"))
+	}
+	return out
 }
 
 // restrictedSettings is the shared hook bundle plus the restricted profile for a ship working in checkout.
@@ -86,6 +123,7 @@ func restrictedSettings(level standing.Restricted, checkout, home string, altern
 		allow = []any{"Write(" + report + ")", "Edit(" + report + ")"}
 		filesystem["denyWrite"] = []any{checkout}
 	}
+	filesystem["denyWrite"] = append(filesystem["denyWrite"].([]any), sharedTempGlobs()...)
 	out["sandbox"] = map[string]any{"enabled": true, "failIfUnavailable": true, "allowUnsandboxedCommands": false,
 		// Under dontAsk a Bash call with no allow rule is denied, so sandboxed commands are allowed by this setting.
 		"autoAllowBashIfSandboxed": true, "network": network, "filesystem": filesystem}

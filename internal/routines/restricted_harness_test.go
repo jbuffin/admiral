@@ -161,3 +161,24 @@ func TestAFleetWithoutChecksKeepsA3OnlyOnceItHasACapableHarness(t *testing.T) {
 		t.Errorf("Computed = A%d, want A3 for a fleet with no Checks and a capable harness", d.Computed)
 	}
 }
+
+func TestAFleetWhoseStandingOrdersFileIsCorruptCountsAsHavingChecks(t *testing.T) {
+	h := newHarness(t)
+	h.withEvents(a3Limits())
+	r := h.actRoutine()
+	h.proveRestricted("2.1.300", true, true)
+	empty := []string{}
+	if _, err := h.store.SetStandingOrders("work", routines.StandingOrdersPatch{Checks: &empty}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(h.home, "routines", "work", "standing-orders.json")
+	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 2 { // the second event follows a read that has already set the file aside
+		if d, _ := h.decide(r); d.Computed != standing.A1 {
+			t.Errorf("event %d: Computed = A%d, want A1: orders that cannot be read count as Checks", i+1, d.Computed)
+		}
+		_, _ = h.store.StandingOrders("work")
+	}
+}
