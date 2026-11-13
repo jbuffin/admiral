@@ -150,6 +150,10 @@ func parseItem(b []byte, session, id string) (Item, error) {
 		if _, ok := it.RoutineProposal(); session != AdmiralSession || !ok {
 			return Item{}, errSkip
 		}
+	case KindEventProposal: // only Admiral's own inbox holds event proposals
+		if _, ok := it.EventProposal(); session != AdmiralSession || !ok {
+			return Item{}, errSkip
+		}
 	case KindCrewNotes, KindCrewMember: // only Admiral's own inbox holds crew items
 		if _, ok := it.CrewObject(); session != AdmiralSession || !ok {
 			return Item{}, errSkip
@@ -157,7 +161,7 @@ func parseItem(b []byte, session, id string) (Item, error) {
 	default:
 		return Item{}, errSkip
 	}
-	for _, k := range []string{KindQuestion, KindReview, KindFindings, KindNotice, KindWakeProposal, KindRoutineProposal, KindCrewNotes, KindCrewMember} { // only the kind's own object
+	for _, k := range []string{KindQuestion, KindReview, KindFindings, KindNotice, KindWakeProposal, KindRoutineProposal, KindEventProposal, KindCrewNotes, KindCrewMember} { // only the kind's own object
 		if k != it.Kind {
 			delete(fields, k)
 		}

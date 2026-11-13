@@ -17,13 +17,25 @@ export interface CommitmentCard {
   reason?: string;
 }
 
+/** The A0 card for an outside event: the Lookout's summary or the metadata line, never the event's own text. */
+export interface EventCard {
+  routine: string;
+  routine_name?: string;
+  tier?: string;
+  sender?: string;
+  link?: string;
+  dedupe_key?: string;
+  metadata?: boolean;
+  mute_by?: string[];
+}
+
 export interface ChatEntry {
   id: string;
-  kind: 'message' | 'question' | 'reset' | 'commitment';
+  kind: 'message' | 'question' | 'reset' | 'commitment' | 'event_card';
   role?: 'user' | 'assistant';
   text: string;
   at: string;
-  card?: InboxItem | CommitmentCard;
+  card?: InboxItem | CommitmentCard | EventCard;
 }
 
 /** A fleet's chat as the server serves it: GET /api/chat/<fleet>/session and the `chat` socket message. */
@@ -40,6 +52,7 @@ export type ThreadItem =
   | { kind: 'message'; id: string; role: 'user' | 'assistant'; text: string; at: string }
   | { kind: 'reset'; id: string; text: string; at: string }
   | { kind: 'commitment'; id: string; text: string; at: string; card: CommitmentCard }
+  | { kind: 'event'; id: string; text: string; at: string; card: EventCard }
   | { kind: 'question'; id: string; at: string; card: InboxItem; state: 'open' | 'answered' | 'withdrawn'; answer?: ChatAnswer };
 
 /** The snapshot's entries oldest first; entries with one time, or none that parses, keep the served order. */
@@ -52,6 +65,7 @@ export function threadOf(s: ChatSnapshot): ThreadItem[] {
     const t = Date.parse(m.at);
     if (m.kind === 'reset') return [{ t, i, item: { kind: 'reset', id: m.id, text: m.text, at: m.at } }];
     if (m.kind === 'commitment' && m.card) return [{ t, i, item: { kind: 'commitment', id: m.id, text: m.text, at: m.at, card: m.card as CommitmentCard } }];
+    if (m.kind === 'event_card' && m.card) return [{ t, i, item: { kind: 'event', id: m.id, text: m.text, at: m.at, card: m.card as EventCard } }];
     if (m.kind === 'question' && m.card) {
       const card = m.card as InboxItem;
       const answer = answers.get(card.id);

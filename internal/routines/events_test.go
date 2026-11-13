@@ -621,8 +621,28 @@ func TestALookoutsFieldsEnterTheDecisionAndTheRecord(t *testing.T) {
 	}
 	h.sched.HandleEvent(evFrom("Eng"))
 	recs := h.records(r)
-	if len(recs) != 1 || recs[0].DedupeKey != "k1" || len(recs[0].Costs) != 1 || recs[0].Costs[0] != (routines.Cost{Call: "lookout", USD: 0.05}) {
-		t.Fatalf("records = %+v, want one carrying the dedupe key and the cost", recs)
+	if len(recs) != 1 || recs[0].DedupeKey != "gh:acme/api#7" || len(recs[0].Costs) != 1 || recs[0].Costs[0] != (routines.Cost{Call: "lookout", USD: 0.05}) {
+		t.Fatalf("records = %+v, want one carrying the key read from the ref and the cost", recs)
+	}
+}
+
+func TestAPluginEventKeepsTheLookoutsDedupeKeyWhileAGitHubEventGetsItsKeyFromTheRef(t *testing.T) {
+	h := newHarness(t)
+	h.withEvents(standing.PresetLimits(standing.Home))
+	h.sched.Enrich = func(routines.Event) routines.Enrichment {
+		return routines.Enrichment{DedupeKey: "NOTE-to-AdmiralBot:launch"}
+	}
+	r := h.onRoutine(routines.AskFirst, nil)
+	h.sched.HandleEvent(evFrom("Eng"))
+	plugin := evFrom("Eng")
+	plugin.Verified, plugin.Ref = false, "https://tracker.example/t/42"
+	h.sched.HandleEvent(plugin)
+	got := map[string]string{}
+	for _, rec := range h.records(r) {
+		got[rec.Event] = rec.DedupeKey
+	}
+	if got["https://github.com/acme/api/pull/7"] != "gh:acme/api#7" || got["https://tracker.example/t/42"] != "NOTE-to-AdmiralBot:launch" {
+		t.Errorf("dedupe keys by event = %v, want the ref's key for the GitHub event and the Lookout's for the plugin event", got)
 	}
 }
 
@@ -631,14 +651,8 @@ func TestALookoutsDedupeKeyCanMatchASkipFilterForTheRoutinesID(t *testing.T) {
 	limits := standing.PresetLimits(standing.Home)
 	h.withEvents(limits)
 	r := h.onRoutine(routines.AskFirst, nil)
-	limits.Skip.DedupeKeys = []standing.Scoped{{Routine: r.ID, Value: "k1"}}
+	limits.Skip.DedupeKeys = []standing.Scoped{{Routine: r.ID, Value: "gh:acme/api#7"}}
 	h.withEvents(limits)
-	h.sched.Enrich = func(ev routines.Event) routines.Enrichment {
-		if strings.HasSuffix(ev.Ref, "/7") {
-			return routines.Enrichment{DedupeKey: "k1"}
-		}
-		return routines.Enrichment{DedupeKey: "k2"}
-	}
 	h.sched.HandleEvent(evFrom("Eng"))
 	second := evFrom("Eng")
 	second.Ref = "https://github.com/acme/api/pull/8"
@@ -648,8 +662,8 @@ func TestALookoutsDedupeKeyCanMatchASkipFilterForTheRoutinesID(t *testing.T) {
 		switch rec.Outcome {
 		case routines.Skipped:
 			skipped++
-			if !strings.Contains(rec.Reason, routines.ReasonSkipFilter) || rec.DedupeKey != "k1" {
-				t.Errorf("skipped record = %+v, want the skip-filter reason and key k1", rec)
+			if !strings.Contains(rec.Reason, routines.ReasonSkipFilter) || rec.DedupeKey != "gh:acme/api#7" {
+				t.Errorf("skipped record = %+v, want the skip-filter reason and the ref's key", rec)
 			}
 		case routines.Proposed:
 			proposed++
@@ -738,7 +752,7 @@ func TestAReportedOrProposedDecisionIsHandedToTheActsSeamAfterItsRecordIsWritten
 	}
 	h.sched.HandleEvent(evFrom("Eng"))
 	skipped := evFrom("Eng")
-	skipped.Ref = "https://github.com/acme/api/pull/8"
+	skipped.Ref = "https://github.com/acme/web/pull/8"
 	h.sched.HandleEvent(skipped)
 	recs := h.records(r)
 	if len(recs) != 2 {

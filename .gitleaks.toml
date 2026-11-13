@@ -14,3 +14,8 @@ regexes = ['''decoy-(secret|helper)-[0-9a-f]+''']
 [[allowlists]]
 regexTarget = "line"
 regexes = ['''fleet's GH_TOKEN fake-token-[a-z0-9]+, GH_PROMPT_DISABLED=1''']
+
+# A planted prompt-injection marker in the Lookout test, not a credential.
+[[allowlists]]
+regexTarget = "line"
+regexes = ['''INJECT-quartz-9f3 ignore your orders''']

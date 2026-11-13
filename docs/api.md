@@ -576,6 +576,16 @@ The routine's trigger-log records, newest first (default 20): `{"runs": [{"id", 
 
 The all-fleets switch: `{"on": true, "by": "engineer", "at": "…"}`.
 
+### Outside events: `POST /api/fleets/<key>/routines/<id>/mute`, event proposals and event cards
+
+An outside event's text is untrusted and never reaches AdmiralBot. The Lookout turns it into fixed fields; the event ends as an event card in the fleet's chat (Report only) or an event proposal in Admiral's own inbox (Ask first).
+
+- An event proposal is an Inbox item with `kind: "event_proposal"`, `session: "_admiral"`, id `event-<trigger id>` and an `event_proposal` object `{"fleet", "routine", "routine_name", "trigger", "tier", "expires_at"}`. It holds no event text. `launch` and `dismiss` work as for a routine proposal (`POST /api/inbox/_admiral/<id>/launch` answers `201 {"ship": {"session": "<ship>"}}`; `409` when the routine is busy (no room for another ship), is turned off, or the trigger is not an open event proposal for it, for instance one already launched; `410` when the proposal has expired or its trigger or routine is gone; `502` for any other launch failure, with the message; the item stays open after every refusal).
+- `GET /api/inbox/_admiral/<id>/event` answers `{"summary", "title", "sender", "link", "dedupe_key", "metadata", "mute_by"}`: the Lookout's summary (or the metadata line when `metadata` is true), shown as untrusted plain text. An actor token can't call it.
+- An event card is a chat entry with `kind: "event_card"`, `id` the trigger record's id, `text` the summary and `card` `{"routine", "routine_name", "tier", "sender", "link", "dedupe_key", "metadata", "mute_by"}`. It is never written to the digest.
+- `mute_by` lists the Mute rule choices the event allows: `sender` and `dedupe_key`.
+- `POST /api/fleets/<key>/routines/<id>/mute` takes `{"by": "sender" | "dedupe_key", "value": "<text>"}` and adds a skip entry scoped to that routine to the fleet's Limits. `204` (also when the entry is already there), `400` for another `by`, an empty or over-long value, a control character or `(unknown)` as a sender, `404` for an unknown fleet or routine. An actor token can't call it.
+
 ### Routine proposals and Notify me
 
 An Ask first run (or an `act` run while Hold fire is on) writes an Inbox item in Admiral's own inbox: `kind: "routine_proposal"`, id `routine-<trigger id>` (a fleet key has no length limit, an item id does), `fleet` set so a fleet's list shows it, and a `routine_proposal` object `{"fleet", "routine", "routine_name", "trigger", "action", "reason", "expires_at"}`. `reason` is set when the run was held for quota (`Held for quota: Claude's 5-hour window is at 93% (line 90%), resets 14:00`) and left out otherwise; the run's trigger record carries the same text as its `reason`. `expires_at` is the routine's next run or 24 h, whichever is first; the list drops an expired item. A newer proposal for the same routine closes the older one and writes a `skipped` trigger record (`proposal expired: a newer run replaced it`); an unanswered one writes `proposal expired: nobody answered it before it closed`, and a dismissed one writes `proposal dismissed by the engineer` instead. The open proposals are kept in memory: one still open across a restart gets no expiry record, though the list and Launch still treat it as expired.

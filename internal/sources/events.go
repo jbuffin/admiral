@@ -27,6 +27,7 @@ type Event struct {
 	Author   string
 	Viewer   string // the engineer's login, filled by the built-in GitHub source only
 	Verified bool   // true only for events the built-in GitHub source saw itself
+	Title    string // the item's title as GitHub gave it; untrusted
 }
 
 // maxEventsPerMinute bounds one source's delivered events in a fixed one-minute window.

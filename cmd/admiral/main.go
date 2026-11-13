@@ -36,6 +36,7 @@ import (
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/launchorders"
 	"github.com/jbuffin/admiral/internal/lockroute"
+	"github.com/jbuffin/admiral/internal/lookout"
 	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/probes"
@@ -553,7 +554,9 @@ func serve(args []string) error {
 		}}
 	chatService.Notes().OnChange = commitmentRunner.Changed
 	routineService := &routines.Service{Store: routineStore, OnChange: routineScheduler.Changed}
-	wireEvents(supervisor, routineStore, routineScheduler, allShips)
+	lookoutActs := &lookout.Acts{Cards: chatService, Proposals: inboxService}
+	wireEvents(supervisor, routineStore, routineScheduler, allShips, newLookout(absDir, cfg, fleetRepos(cfg), supervisor), lookoutActs)
+	inboxService.LaunchEvent = launchEvent(routineScheduler)
 	wireStandingOrders(shipService.Launcher, routineStore, routineService, cfg)
 	inboxService.LaunchRoutine = func(ctx context.Context, p inbox.RoutineProposal) (any, int, string) {
 		t, err := routineScheduler.Accept(ctx, p.Fleet, p.Routine, p.Trigger)

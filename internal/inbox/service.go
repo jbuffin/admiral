@@ -55,6 +55,8 @@ type Service struct {
 	LaunchProposal LaunchProposalFunc
 	// LaunchRoutine runs a routine proposal.
 	LaunchRoutine LaunchRoutineFunc
+	// LaunchEvent runs an event proposal.
+	LaunchEvent LaunchEventFunc
 	// DismissRoutine hears that a routine proposal was dismissed, after the item is answered.
 	DismissRoutine func(p RoutineProposal)
 	// ChatQuestions lists the waiting AdmiralBot chat questions, named and tagged with their fleet.
@@ -86,6 +88,13 @@ func (s *Service) List() []Item {
 	s.mu.Unlock()
 	now := time.Now()
 	items = slices.DeleteFunc(items, func(it Item) bool {
+		if p, ok := it.EventProposal(); ok {
+			if !p.expired(now) {
+				return false
+			}
+			removeEventDetail(s.Home, it.ID) // the event's text outlives no longer than its proposal
+			return true
+		}
 		p, ok := it.RoutineProposal()
 		return ok && p.expired(now)
 	})
@@ -93,6 +102,12 @@ func (s *Service) List() []Item {
 		if items[i].Session == AdmiralSession {
 			items[i].Name = "Admiral"
 			if p, ok := items[i].RoutineProposal(); ok {
+				items[i].Fleet = p.Fleet
+				if f, ok := s.fleetOf(p.Fleet); ok {
+					items[i].FleetName, items[i].FleetColor = f.Name, f.Color
+				}
+			}
+			if p, ok := items[i].EventProposal(); ok {
 				items[i].Fleet = p.Fleet
 				if f, ok := s.fleetOf(p.Fleet); ok {
 					items[i].FleetName, items[i].FleetColor = f.Name, f.Color
@@ -169,6 +184,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/inbox/{session}/{id}/remove", s.serveRemove)
 	mux.HandleFunc("POST /api/inbox/"+AdmiralSession+"/{id}/crew-notes", s.serveCrewNotes)
 	mux.HandleFunc("POST /api/inbox/"+AdmiralSession+"/{id}/crew-member", s.serveCrewMember)
+	mux.HandleFunc("GET /api/inbox/"+AdmiralSession+"/{id}/event", s.serveEventDetail)
 	mux.HandleFunc("POST /api/inbox/"+AdmiralSession+"/{id}/launch", s.serveLaunchProposal)
 	mux.HandleFunc("POST /api/inbox/"+AdmiralSession+"/{id}/dismiss", s.serveDismissProposal)
 }
@@ -214,7 +230,7 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 	it, err := s.open(session, id)
 	if err == nil && it.Kind != KindQuestion {
-		err = invalid("item %s is a %s: answer it with %s", id, it.Kind, map[string]string{KindReview: "submit or discard", KindFindings: "findings", KindCrewNotes: "crew-notes", KindCrewMember: "crew-member", KindRoutineProposal: "launch or dismiss", KindWakeProposal: "launch or dismiss"}[it.Kind])
+		err = invalid("item %s is a %s: answer it with %s", id, it.Kind, map[string]string{KindReview: "submit or discard", KindFindings: "findings", KindCrewNotes: "crew-notes", KindCrewMember: "crew-member", KindRoutineProposal: "launch or dismiss", KindEventProposal: "launch or dismiss", KindWakeProposal: "launch or dismiss"}[it.Kind])
 	}
 	if err == nil {
 		var req QuestionRequest

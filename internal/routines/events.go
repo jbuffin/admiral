@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,6 +37,7 @@ type Event struct {
 	Actor    string
 	Author   string
 	Viewer   string // the engineer's login on the source; empty when the source can't say
+	Title    string // the item's title as the source read it; untrusted
 	Verified bool
 }
 
@@ -199,6 +202,8 @@ type Enrichment struct {
 	Labels    []string
 	Summary   string
 	Costs     []Cost
+	// Failure is the kind of a Lookout call that failed, such as timeout or bad_reply; HandleEvent records it as lookout_<kind>.
+	Failure string
 }
 
 // EventActs receives each decision that ends in a card (Reported) or a proposal (Proposed), with its saved record.
@@ -212,8 +217,8 @@ type EventLoad interface {
 	DedupeKeys(fleet string) []string
 }
 
-// repoOfRef is owner/name for a github.com ref, else empty.
-func repoOfRef(ref string) string {
+// RepoOfRef is owner/name for a github.com ref, else empty.
+func RepoOfRef(ref string) string {
 	u, err := url.Parse(ref)
 	if err != nil || !strings.EqualFold(u.Hostname(), "github.com") {
 		return ""
@@ -223,6 +228,37 @@ func repoOfRef(ref string) string {
 		return ""
 	}
 	return parts[0] + "/" + parts[1]
+}
+
+// MaxDedupeKeyBytes bounds a dedupe_key.
+const MaxDedupeKeyBytes = 128
+
+var dedupeKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:/#-]+$`)
+
+// ValidDedupeKey is true for a key made of plain key characters, so no prose reaches a skip list or AdmiralBot through it.
+func ValidDedupeKey(key string) bool {
+	return len(key) <= MaxDedupeKeyBytes && dedupeKeyPattern.MatchString(key)
+}
+
+// GitHubKey is gh:owner/name#n for a github.com issue or pull request ref, else empty.
+func GitHubKey(ref string) string {
+	repo := RepoOfRef(ref)
+	u, err := url.Parse(ref)
+	if repo == "" || err != nil {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) < 4 || (parts[2] != "issues" && parts[2] != "pull") {
+		return ""
+	}
+	if n, err := strconv.Atoi(parts[3]); err != nil || n <= 0 {
+		return ""
+	}
+	key := "gh:" + repo + "#" + parts[3]
+	if !ValidDedupeKey(key) {
+		return ""
+	}
+	return key
 }
 
 // eventRoutines are the fleet's enabled routines whose When is this event and whose Do launches a ship: a hand-edited
@@ -280,15 +316,22 @@ func (s *Scheduler) HandleEvent(ev Event) {
 			}
 		}
 	}
-	if en.Repo == "" && ev.Verified { // only the built-in source's ref is Admiral's own reading; a plugin names no repo
-		en.Repo = repoOfRef(ev.Ref)
+	if repo := RepoOfRef(ev.Ref); ev.Verified && repo != "" { // only the built-in source's ref is Admiral's own reading, and it wins over the Lookout's
+		en.Repo = repo
+		en.DedupeKey = GitHubKey(ev.Ref) // a plugin's key is the Lookout's; for the built-in source Admiral reads the ref itself
 	}
 	for _, c := range en.Costs {
 		spent += c.USD
 	}
 	var live []string
-	if s.Live != nil {
-		counts.WorkerShips, live = s.Live.WorkerShips(ev.Fleet), s.Live.DedupeKeys(ev.Fleet)
+	switch l := s.Live.(type) {
+	case nil:
+	case interface {
+		Load(fleet string, recs []Trigger) (int, []string)
+	}:
+		counts.WorkerShips, live = l.Load(ev.Fleet, recs)
+	default:
+		counts.WorkerShips, live = l.WorkerShips(ev.Fleet), l.DedupeKeys(ev.Fleet)
 	}
 	holdOn, err := s.Store.HoldOn(ev.Fleet)
 	if err != nil {
@@ -304,6 +347,9 @@ func (s *Scheduler) HandleEvent(ev Event) {
 		})
 		if spendReason != "" && d.Outcome != Skipped && !slices.Contains(d.Reasons, spendReason) {
 			d.Reasons = append(d.Reasons, spendReason) // the Lookout was not asked
+		}
+		if en.Failure != "" && d.Outcome != Skipped {
+			d.Reasons = append(d.Reasons, "lookout_"+en.Failure)
 		}
 		rec, ok := s.record(ev.Fleet, Trigger{
 			Routine: r.ID, Outcome: d.Outcome, Tier: fmt.Sprintf("T%d", tier), At: now, Event: ev.Ref, Sender: sender, Rule: r.ID,

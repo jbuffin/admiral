@@ -47,6 +47,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/fleets/{key}/routines/{id}/on", s.serveEnable(true))
 	mux.HandleFunc("POST /api/fleets/{key}/routines/{id}/off", s.serveEnable(false))
 	mux.HandleFunc("GET /api/fleets/{key}/routines/{id}/runs", s.serveRuns)
+	mux.HandleFunc("POST /api/fleets/{key}/routines/{id}/mute", s.serveMute)
 	mux.HandleFunc("GET /api/fleets/{key}/hold-fire", s.serveFleetHold)
 	mux.HandleFunc("POST /api/fleets/{key}/hold-fire/on", s.serveSetHold(true, false))
 	mux.HandleFunc("POST /api/fleets/{key}/hold-fire/off", s.serveSetHold(false, false))

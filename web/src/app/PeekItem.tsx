@@ -1,9 +1,10 @@
-import { useRef, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { call } from './api';
 import type { Entry } from './inbox';
 import { prLink } from '../inbox';
 import { createDecisions, type Decisions, type FindingCard, readCards, type Verdict } from '../findings';
 import { REMOVED_FOLD } from './itemActions';
+import { MuteRule } from './MuteRule';
 
 // Item files are written by ships and are untrusted: every field below is rendered as text, and the only links are
 // the PR's own https address (prLink).
@@ -81,6 +82,63 @@ export function RoutineProposalBody({ entry, acting }: { entry: Entry; acting: A
           Dismiss
         </button>
       </div>
+    </div>
+  );
+}
+
+interface EventDetail {
+  summary: string;
+  title: string;
+  sender: string;
+  link: string;
+  dedupe_key?: string;
+  metadata: boolean;
+  mute_by: string[];
+}
+
+/** An Ask first outside event: the Lookout's summary, marked untrusted, with Launch, Dismiss and Mute rule. */
+export function EventProposalBody({ entry, acting }: { entry: Entry; acting: Acting }) {
+  const p = entry.item?.event_proposal;
+  const [detail, setDetail] = useState<EventDetail | null>(null);
+  const [missing, setMissing] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void call<EventDetail>('GET', `/inbox/${encodeURIComponent(entry.session)}/${encodeURIComponent(entry.id!)}/event`).then((r) => {
+      if (!live) return;
+      if (r.ok && r.data) setDetail(r.data);
+      else setMissing(true);
+    });
+    return () => void (live = false);
+  }, [entry.session, entry.id]);
+  const off = acting.busy || acting.locked;
+  const expires = p?.expires_at ? new Date(p.expires_at) : null;
+  return (
+    <div class="routine-proposal event-proposal">
+      <p class="inbox-eyebrow">Untrusted</p>
+      {detail ? (
+        <>
+          <p class="line">{detail.summary}</p>
+          {detail.sender ? <p class="line">From {detail.sender}</p> : null}
+          {p?.tier ? <p class="line">Tier {p.tier}</p> : null}
+          {detail.link.startsWith('https://') ? (
+            <a href={detail.link} target="_blank" rel="noopener noreferrer">
+              {detail.link} ↗
+            </a>
+          ) : null}
+        </>
+      ) : missing ? (
+        <p class="line">The event's text is no longer available.</p>
+      ) : null}
+      {expires && !Number.isNaN(expires.getTime()) ? <p class="line">Open until {expires.toLocaleString()}</p> : null}
+      <div class="peek-actions">
+        <button type="button" class="btn primary" disabled={off} onClick={() => void acting.run('launch', {}, () => 'Launched')}>
+          Launch
+        </button>
+        <button type="button" class="btn" disabled={off} onClick={() => void acting.run('dismiss', {}, () => 'Dismissed')}>
+          Dismiss
+        </button>
+      </div>
+      {detail && p?.fleet && p.routine ? <MuteRule disabled={off} target={{ fleet: p.fleet, routine: p.routine, sender: detail.sender, dedupe_key: detail.dedupe_key, mute_by: detail.mute_by }} /> : null}
     </div>
   );
 }

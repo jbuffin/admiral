@@ -7,6 +7,7 @@ import { useBridgeTerminal } from '../useBridgeTerminal';
 import { KEYS, touchKeyboard } from '../keys';
 import { commitmentCardView, needsTerminal, resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
 import { Row, useInboxQueue, usePeekEntry, useStacked } from './InboxPanel';
+import { MuteRule } from './MuteRule';
 import { Peek } from './Peek';
 import { go, loc, chatPeekOf, chatPeekPath, chatSettingsPath, chatTerminalOf, chatTerminalPath } from './router';
 import { renderMarkdown } from './markdown';
@@ -75,6 +76,26 @@ function CommitmentCard({ item, fleet }: { item: Extract<ThreadItem, { kind: 'co
   );
 }
 
+function EventCardView({ item, fleet }: { item: Extract<ThreadItem, { kind: 'event' }>; fleet: string }) {
+  const c = item.card;
+  return (
+    <div class="convo-card chat-card">
+      <p class="chat-card-eyebrow">
+        {c.routine_name ?? 'Routine'} · Untrusted
+      </p>
+      <p class="line">{item.text}</p>
+      {c.sender ? <p class="line">From {c.sender}</p> : null}
+      {c.tier ? <p class="line">Tier {c.tier}</p> : null}
+      {c.link?.startsWith('https://') ? (
+        <a href={c.link} target="_blank" rel="noopener noreferrer">
+          {c.link} ↗
+        </a>
+      ) : null}
+      <MuteRule target={{ fleet, routine: c.routine, sender: c.sender, dedupe_key: c.dedupe_key, mute_by: c.mute_by }} />
+    </div>
+  );
+}
+
 function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working: boolean; chat: Chat; fleet: string }) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -99,6 +120,8 @@ function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working:
           </div>
         ) : i.kind === 'question' ? (
           <QuestionCard key={i.id} item={i} chat={chat} />
+        ) : i.kind === 'event' ? (
+          <EventCardView key={i.id} item={i} fleet={fleet} />
         ) : i.kind === 'commitment' ? (
           <CommitmentCard key={i.id} item={i} fleet={fleet} />
         ) : i.role === 'user' ? (
