@@ -5,6 +5,7 @@ package launcher
 import (
 	"errors"
 	"fmt"
+	"github.com/jbuffin/admiral/internal/standing"
 	"io/fs"
 	"net/http"
 	"os"
@@ -90,6 +91,12 @@ type Request struct {
 	TriggerID string `json:"-"`
 	// WorkerLaunched marks a ship started by an outside event, which gets the fleet's Guidance in its prompt.
 	WorkerLaunched bool `json:"-"`
+	// Restricted launches the ship on the restricted profile at this level; empty is a normal launch.
+	Restricted standing.Restricted `json:"-"`
+	// EventText is the raw event; a restricted ship reads it from a file, never from its prompt.
+	EventText string `json:"-"`
+	// Template is the routine's launch text, the start of a restricted ship's prompt.
+	Template string `json:"-"`
 }
 
 // ChatOption is the chat:<fleet>:<id> key the ship stores, so a fleet's message ids never meet another's;
@@ -150,8 +157,16 @@ type Launcher struct {
 	Warn func(msg string)
 	// Guidance is a fleet's Guidance text; a worker-launched ship's prompt carries it.
 	Guidance func(fleet string) (string, error)
+	// Checkouts makes a restricted ship's own checkout; nil refuses a restricted launch.
+	Checkouts Checkouts
 
 	mu sync.Mutex // one launch at a time, so two don't pick one name
+}
+
+// Checkouts makes the checkout a restricted ship works in.
+type Checkouts interface {
+	// Make returns the path of a new checkout of dir for the session, on branch admiral/<session>.
+	Make(home, session, dir string) (path string, err error)
 }
 
 // Checked is a request that passed CheckSpec: the checkout is cleaned and Commodore resolved.
