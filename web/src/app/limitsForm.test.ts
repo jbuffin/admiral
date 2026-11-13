@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { limitsBody, type Limits } from './limitsForm';
+import { defaultThreshold, limitsBody, reconcileLimits, type Limits } from './limitsForm';
 
 const base = {
   sender_allowlist: [],
@@ -79,7 +79,7 @@ describe('limitsBody', () => {
   });
 
   describe('the T4 threshold rule', () => {
-    it('sends a null threshold with a Home T4 ceiling raised to A4, which the preset threshold would refuse', () => {
+    it('sends a null threshold with a Home T4 ceiling raised to A4, the threshold in effect', () => {
       const edited = withT4(home, { level: 'A4', threshold: home.ceilings.t4.threshold });
       expect(limitsBody(home, edited)).toEqual({ ceilings: { t4: { level: 'A4', threshold: null } } });
     });
@@ -106,5 +106,27 @@ describe('limitsBody', () => {
     it('sends null for the threshold when the person picks No threshold', () => {
       expect(limitsBody(home, withT4(home, { level: 'A3', restricted: 'investigate', threshold: null }))).toEqual({ ceilings: { t4: { threshold: null } } });
     });
+  });
+});
+
+describe('a newly turned-on T4 threshold', () => {
+  it('defaults to A3 draft_fix under a lower ceiling', () => {
+    expect(defaultThreshold({ level: 'A3', restricted: 'investigate' })).toMatchObject({ events: 10, days: 14, level: 'A3', restricted: 'draft_fix' });
+  });
+  it('defaults to the level above a ceiling of A3 draft_fix or higher', () => {
+    expect(defaultThreshold({ level: 'A3', restricted: 'draft_fix' }).level).toBe('A4');
+    expect(defaultThreshold({ level: 'A4' }).level).toBe('A5');
+  });
+});
+
+describe('reconcileLimits', () => {
+  it('does nothing when the fleet still holds what the form loaded', () => {
+    expect(reconcileLimits(work, work, structuredClone(work))).toBe('same');
+  });
+  it('adopts the new Limits when the form is untouched', () => {
+    expect(reconcileLimits(work, structuredClone(work), home)).toBe('adopt');
+  });
+  it('asks for a reload when the person has edits', () => {
+    expect(reconcileLimits(work, { ...work, wall_clock_minutes: 5 }, home)).toBe('stale');
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canAddCheck, checkTooLong, guidanceTooLong, loosenedSentences, ordersBody, ordersErrorTarget, ordersMessage, runes, sentenceLink } from './standingOrders';
+import { canAddCheck, checkTooLong, guidanceTooLong, loosenedSentences, ordersBody, ordersErrorTarget, ordersMessage, ordersPatch, judgeGap, judgeOff, NEEDS_JUDGE, runes } from './standingOrders';
 
 describe('counters', () => {
   it('count characters the way the server does, not UTF-16 code units', () => {
@@ -64,16 +64,6 @@ describe('ordersErrorTarget', () => {
   });
 });
 
-describe('sentenceLink', () => {
-  it('links a sentence to its field on the fleet\'s Limits page', () => {
-    expect(sentenceLink('work', 'ceilings.t1')).toBe('/app/preferences/work/limits?field=ceilings.t1');
-  });
-
-  it('gives a fixed sentence no link', () => {
-    expect(sentenceLink('work', '')).toBeNull();
-  });
-});
-
 describe('loosenedSentences', () => {
   const sentences = [
     { field: 'ceilings.t1', sentence: 'A routine event asks first.' },
@@ -88,5 +78,44 @@ describe('loosenedSentences', () => {
   it('names nothing when nothing was loosened, and skips a field the target has no sentence for', () => {
     expect(loosenedSentences([], sentences)).toEqual([]);
     expect(loosenedSentences(['rates.concurrent', 'ceilings.t1'], sentences)).toEqual(['A routine event asks first.']);
+  });
+});
+
+describe('an error past the shown rows', () => {
+  it('lands on the New Check field when Add made a duplicate at the next index', () => {
+    expect(ordersErrorTarget('invalid standing orders: checks[2]: listed twice', 2)).toEqual({ kind: 'new' });
+    expect(ordersErrorTarget('invalid standing orders: checks[1]: listed twice', 2)).toEqual({ kind: 'check', index: 1 });
+  });
+});
+
+describe('ordersPatch', () => {
+  const shown = { checks: ['a'], guidance: 'old' };
+  it('sends only the Checks when a Check action runs, whatever the Guidance draft holds', () => {
+    expect(ordersPatch(shown, { checks: ['a', 'b'], guidance: 'half written' }, 'checks')).toEqual({ checks: ['a', 'b'] });
+  });
+  it('sends only the Guidance when its Save runs, whatever the Checks draft holds', () => {
+    expect(ordersPatch(shown, { checks: ['edited'], guidance: 'new' }, 'guidance')).toEqual({ guidance: 'new' });
+  });
+});
+
+describe('the judge', () => {
+  const on = { key: 'w', name: 'W', harnesses: [], judge: { harness: 'claude' } };
+  const off = { key: 'w', name: 'W', harnesses: [], judge: { harness: null, reason: 'none' } };
+  it('is off only when the fleet reports no judge harness', () => {
+    expect(judgeOff(on)).toBe(false);
+    expect(judgeOff(off)).toBe(true);
+    expect(judgeOff(undefined)).toBe(false);
+  });
+  it('lists the features that need it once', () => {
+    expect(NEEDS_JUDGE.join(' ')).toMatch(/Lookout/);
+    expect(NEEDS_JUDGE.join(' ')).toMatch(/reviewer/);
+    expect(NEEDS_JUDGE.join(' ')).toMatch(/drafter/);
+    expect(NEEDS_JUDGE.join(' ')).toMatch(/advisor/);
+  });
+  it('names the judge capability a harness failed or has not been checked on', () => {
+    const h = (status: 'failed' | 'not_checked') => ({ harness: 'codex', version: '', detected_at: null, features: [{ id: 'judge', label: 'Judge calls', capabilities: [{ id: 'a', label: 'No tools', status: 'passed' as const, checked_at: null, detail: '' }, { id: 'b', label: 'No network', status, checked_at: null, detail: '' }] }] });
+    expect(judgeGap(h('failed'))).toEqual({ capability: 'No network', status: 'failed' });
+    expect(judgeGap(h('not_checked'))).toEqual({ capability: 'No network', status: 'not_checked' });
+    expect(judgeGap(undefined)).toBeNull();
   });
 });

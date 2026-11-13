@@ -1,3 +1,5 @@
+import type { FleetCapabilities, HarnessCapabilities } from './api';
+
 export interface Sentence {
   field: string;
   sentence: string;
@@ -8,7 +10,7 @@ export interface StandingOrdersFields {
   guidance: string;
 }
 
-export type OrdersErrorTarget = { kind: 'check'; index: number } | { kind: 'checks' } | { kind: 'guidance' };
+export type OrdersErrorTarget = { kind: 'check'; index: number } | { kind: 'checks' } | { kind: 'guidance' } | { kind: 'new' };
 
 export const MAX_CHECKS = 20;
 export const MAX_CHECK_RUNES = 300;
@@ -33,11 +35,16 @@ export function ordersBody(shown: StandingOrdersFields, edited: StandingOrdersFi
 
 const PREFIX = /^invalid standing orders:\s*/;
 
-/** What an `invalid standing orders: …` 400 points at; null sends it to the top of the tab. */
-export function ordersErrorTarget(message: string): OrdersErrorTarget | null {
+/** A save's body when one action runs: only its own key, whatever the other draft holds. */
+export function ordersPatch(shown: StandingOrdersFields, edited: StandingOrdersFields, only: 'checks' | 'guidance'): Partial<StandingOrdersFields> {
+  return ordersBody(shown, only === 'checks' ? { checks: edited.checks, guidance: shown.guidance } : { checks: shown.checks, guidance: edited.guidance });
+}
+
+/** What an `invalid standing orders: …` 400 points at; null sends it to the top of the tab. A Check index past the `rows` shown is the one Add just appended. */
+export function ordersErrorTarget(message: string, rows?: number): OrdersErrorTarget | null {
   const m = /^(?:checks\[(\d+)\]|(checks)\b|(guidance)\b)/.exec(message.replace(PREFIX, ''));
   if (!m) return null;
-  if (m[1] !== undefined) return { kind: 'check', index: Number(m[1]) };
+  if (m[1] !== undefined) return rows !== undefined && Number(m[1]) >= rows ? { kind: 'new' } : { kind: 'check', index: Number(m[1]) };
   return m[2] ? { kind: 'checks' } : { kind: 'guidance' };
 }
 
@@ -46,12 +53,19 @@ export function ordersMessage(message: string): string {
   return message.replace(PREFIX, '').replace(/^[^:]*:\s*/, '');
 }
 
-/** Where a sentence's link goes; null for a fixed sentence, which has no field. */
-export function sentenceLink(fleetKey: string, field: string): string | null {
-  return field ? `/app/preferences/${encodeURIComponent(fleetKey)}/limits?field=${encodeURIComponent(field)}` : null;
-}
-
 /** The target's own sentence for each loosened field, in the order loosens names them. */
 export function loosenedSentences(loosens: string[], sentences: Sentence[]): string[] {
   return loosens.flatMap((f) => sentences.find((s) => s.field === f)?.sentence ?? []);
+}
+
+/** The features that stay off until a harness is proven safe for judge calls. */
+export const NEEDS_JUDGE = ['The Lookout that reads outside events', 'The reviewer that judges Checks before a launch', 'The drafter that files a standing order and describes a routine', "Autopilot's advisor"];
+
+/** True when the fleet reports no judge harness; false while it is unknown. */
+export const judgeOff = (fleet: FleetCapabilities | undefined): boolean => !!fleet?.judge && !fleet.judge.harness;
+
+/** The judge capability a harness has not passed, for the line that explains why it can't judge. */
+export function judgeGap(h: HarnessCapabilities | undefined): { capability: string; status: 'failed' | 'not_checked' } | null {
+  const gap = h?.features.find((f) => f.id === 'judge')?.capabilities.find((c) => c.status !== 'passed');
+  return gap && gap.status !== 'passed' ? { capability: gap.label, status: gap.status } : null;
 }

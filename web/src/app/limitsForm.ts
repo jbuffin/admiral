@@ -128,3 +128,17 @@ export function normalizeLimits(l: Limits): Limits {
     skip: { labels: list(l.skip?.labels), senders: list(l.skip?.senders), dedupe_keys: list(l.skip?.dedupe_keys) },
   };
 }
+
+/** The threshold a person gets on turning it on: the preset's, or the level above a ceiling that already reaches it. */
+export function defaultThreshold(ceiling: Ceiling): Threshold {
+  const preset: Threshold = { events: 10, days: 14, level: 'A3', restricted: 'draft_fix' };
+  if (rank(ceiling.level, ceiling.restricted) < rank(preset.level, preset.restricted)) return preset;
+  const next = LEVELS[Math.min(LEVELS.indexOf(ceiling.level) + 1, LEVELS.length - 1)]!;
+  return { events: 10, days: 14, level: next };
+}
+
+/** What to do when the fleet's Limits change under an open form. */
+export function reconcileLimits(shown: Limits, edited: Limits, incoming: Limits): 'same' | 'adopt' | 'stale' {
+  if (same(shown, incoming)) return 'same';
+  return same(shown, edited) ? 'adopt' : 'stale';
+}
