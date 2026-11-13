@@ -290,6 +290,11 @@ export function mergeShip(session: string): Promise<Result<unknown>> {
   return call('POST', `/ships/${encodeURIComponent(session)}/merge`, undefined, { 'X-Admiral-Merge-Token': token });
 }
 
+/** One PR a ship carries, read from GitHub: 404 when the ship doesn't carry it, 502 when GitHub fails. */
+export function fetchPRDetail(session: string, url: string): Promise<Result<PRDetail>> {
+  return call<PRDetail>('GET', `/ships/${encodeURIComponent(session)}/pr?url=${encodeURIComponent(url)}`);
+}
+
 export interface Source {
   key: string;
   name: string;

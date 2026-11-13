@@ -12,10 +12,8 @@ import { hasConversationAdapter } from './conversationGate';
 import { Composer, InterruptButton, useComposer, type Target } from './Composer';
 import { boatBoxState, chipState, flotilla } from './flotilla';
 import { Icon } from './Icon';
-import { MooredPRs } from './MooredPRs';
-import { MooredActions } from './MooredActions';
-import { MergeControl } from './PeekMerge';
-import { Failure } from './PeekItem';
+import { PRTab } from './ShipPRs';
+import { openCount, prSummary } from './prTab';
 import { ReadyToMerge } from './StatusGlyph';
 import { useSeenOnLeave } from './seen';
 import { NO_RESUME_NOTE, prLabel } from './moored';
@@ -456,6 +454,8 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
   const box = useComposer(target, conv);
   useSeenOnLeave(ship);
   const moored = ship.status === 'moored';
+  const summary = prSummary(ship.prs);
+  const count = openCount(ship.prs);
   const Heading = title ? 'h1' : 'h2';
   const mooredCard = (
     <div class="convo-card">
@@ -487,7 +487,6 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
         <div class="moored-info">
           <p class="line">This ship is moored: its PRs are open and it has no session until it's woken.</p>
           <ReadyToMerge ship={ship} />
-          <MooredPRs ship={ship} now={Date.now()} />
           {ship.no_resume ? <p class="msg-note">{NO_RESUME_NOTE}</p> : null}
           {tab !== 'Conversation' && box.error ? (
             <p class="alert" role="alert">
@@ -496,12 +495,19 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
           ) : null}
         </div>
       ) : null}
+      {summary ? (
+        <button type="button" class="pr-summary" onClick={() => setTab('PR')}>
+          <span class="sum-text">{summary}</span>
+          <span class="sum-go">View PRs</span>
+        </button>
+      ) : null}
       {ship.crew.length > 0 ? <Flotilla ship={ship} picked={boatName ?? null} pick={setCrew} /> : null}
       <div class="view-tabs-row">
         <div role="tablist" class="view-tabs" aria-label={`${ship.name} views`}>
           {TABS.map((t) => (
             <button key={t} type="button" role="tab" id={`tab-${t}`} aria-selected={tab === t} aria-controls="view-panel" class="view-tab" onClick={() => setTab(t)}>
               {t}
+              {t === 'PR' && count > 0 ? <span class="tab-count">{count}</span> : null}
             </button>
           ))}
         </div>
@@ -537,7 +543,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
         ) : tab === 'Changes' ? (
           <ChangesTab ship={ship} />
         ) : (
-          moored ? <PRTab ship={ship} /> : <p class="line">No pull request yet</p>
+          <PRTab ship={ship} />
         )}
       </div>
     </section>
@@ -566,27 +572,6 @@ export function ShipView({ session, title }: { session: string; title: boolean }
     <main class="panel ship-main-view">
       <ShipTabs key={session} ship={ship} title={title} />
     </main>
-  );
-}
-
-/** The PRs with their chips, and below them Merge for a ready ship and Don't follow reviews. The view's head holds Wake. */
-function PRTab({ ship }: { ship: Ship }) {
-  const [error, setError] = useState('');
-  const [merged, setMerged] = useState(false);
-  const [acting, setActing] = useState(false);
-  return (
-    <div class="peek-form">
-      <MooredPRs ship={ship} now={Date.now()} />
-      {merged ? (
-        <p class="line">Merged</p>
-      ) : (
-        <>
-          {ship.stack_ready ? <MergeControl ship={ship} onMerged={() => setMerged(true)} onError={setError} locked={acting} onBusy={setActing} /> : null}
-          <MooredActions ship={ship} tab onError={setError} locked={acting} onBusy={setActing} />
-        </>
-      )}
-      <Failure message={error} />
-    </div>
   );
 }
 

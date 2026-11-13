@@ -876,3 +876,43 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 @media (pointer: coarse) { .draft-review a.touch-link { display: inline-block; min-height: var(--shape-min-touch-target); line-height: var(--shape-min-touch-target); } .orders-new input[type='text'], .orders-new .btn, .draft-review .btn, .draft-review input[type='text'] { min-height: var(--shape-min-touch-target); } .orders-new .seg-opt { min-height: var(--shape-min-touch-target); } }
 .run-tier { font-size: var(--font-size-meta); padding: 0 6px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); }
 .run-sender { color: var(--color-text2); }
+
+.chip.chip-ok { color: var(--color-ok); border-color: var(--color-ok); }
+.chip.chip-err { color: var(--color-err); border-color: var(--color-err); }
+.pr-chip { display: inline-flex; align-items: center; min-height: 24px; padding: 0 8px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-sm); font-size: var(--font-size-meta); color: var(--color-muted); white-space: nowrap; }
+.pr-chip.ok { color: var(--color-ok); border-color: var(--color-ok); }
+.pr-chip.err { color: var(--color-err); border-color: var(--color-err); }
+.pr-chip.rev { color: var(--color-rev); border-color: var(--color-rev); }
+
+/* ---- count on the PR view tab ---- */
+.view-tab .tab-count { margin-left: 6px; padding: 0 6px; border-radius: 9px; background: var(--color-sel); color: var(--color-text2); font-size: var(--font-size-meta); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ---- one-line PR summary above the tabs ---- */
+.pr-summary { display: inline-flex; align-items: center; gap: 8px; min-height: var(--shape-min-touch-target); max-width: 100%; color: var(--color-text2); font-size: var(--font-size-meta); }
+.pr-summary:hover { color: var(--color-text); }
+.pr-summary .sum-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-summary .sum-go { color: var(--color-accent); font-weight: 600; flex: none; }
+
+/* ---- stack bar and per-PR sub-tabs ---- */
+.pr-tab { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.stack-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 8px 12px; border: 1px solid var(--color-line); border-radius: var(--shape-radius-md); font-size: var(--font-size-meta); color: var(--color-text2); }
+.pr-subtabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
+.pr-subtab { flex: none; display: inline-flex; align-items: center; gap: 8px; max-width: 260px; min-height: var(--shape-min-touch-target); padding: 0 12px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-md); color: var(--color-text2); }
+.pr-subtab[aria-selected='true'] { border-color: var(--color-accent); background: var(--color-sel); color: var(--color-text); font-weight: 600; }
+.pr-subtab .num { font-family: var(--font-mono); font-size: var(--font-size-mono); flex: none; }
+.pr-subtab .ttl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-meta); }
+.pr-subtab.merged { color: var(--color-muted); }
+.dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--color-muted); }
+/* A closed PR is a ring in the muted colour, apart from the open ones' waiting ring. */
+.dot.closed { background: var(--color-line2); }
+.dot.ok { background: var(--color-ok); } .dot.err { background: var(--color-err); } .dot.rev { background: var(--color-rev); } .dot.wait { background: transparent; border: 1.5px solid var(--color-muted); }
+
+/* ---- one PR ---- */
+.pr-detail { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.pr-head { display: flex; flex-direction: column; gap: 6px; }
+.pr-title-row { display: flex; align-items: flex-start; gap: 12px; }
+.pr-title { flex: 1; min-width: 0; margin: 0; font-size: var(--font-size-title); font-weight: 600; line-height: 1.35; text-wrap: balance; }
+.pr-title-row .btn { flex: none; }
+.pr-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: var(--font-size-meta); color: var(--color-muted); }
+.pr-meta .mono { font-family: var(--font-mono); font-size: var(--font-size-mono); overflow-wrap: anywhere; }
+.pr-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
