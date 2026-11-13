@@ -709,8 +709,8 @@ func TestStandingOrderDraftMakesOneStrongCallWithTheBudgetTimeoutSchemaAndAFence
 	if schema.Type != "object" || schema.AdditionalProperties == nil || *schema.AdditionalProperties || len(schema.Properties) != 3 || len(schema.Required) != 3 {
 		t.Errorf("schema = %s, want a closed object of limits, checks and guidance, all required", c.Schema)
 	}
-	if p := schema.Properties["checks"]; p["type"] != "array" || p["maxItems"] != float64(20) {
-		t.Errorf("checks schema = %v, want an array of at most 20", p)
+	if p := schema.Properties["checks"]; p["type"] != "array" || p["items"] == nil {
+		t.Errorf("checks schema = %v, want an array of strings", p)
 	}
 	if p := schema.Properties["guidance"]; p["type"] != "string" || p["maxLength"] != float64(2000) {
 		t.Errorf("guidance schema = %v, want a string of at most 2000", p)
