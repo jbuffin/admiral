@@ -22,7 +22,8 @@ func ChatCopilotHome(home, fleet string) string {
 // allowlist entry it does not know is dropped with a notice, never matched by a glob. internal/cli checks this list
 // against the server's own.
 var ChatTools = []string{"list_ships", "read_conversation", "read_outcomes", "list_inbox", "list_sources", "list_campaigns",
-	"launch_ship", "add_order", "answer_item", "next_prompt", "wake_ship", "stop_ship", "dismiss_ship", "ask_question"}
+	"launch_ship", "add_order", "answer_item", "next_prompt", "wake_ship", "stop_ship", "dismiss_ship",
+	"list_routines", "turn_routine_off", "hold_fire_on", "read_hold_fire", "ask_question"}
 
 // copilotExcludedTools are every built-in tool of Copilot 1.0.109 that the run's tool list could carry. --available-tools
 // already leaves them out; --excluded-tools is a second layer for a name that list somehow matches. A name the CLI does
