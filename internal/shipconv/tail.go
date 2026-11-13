@@ -42,6 +42,7 @@ type Tails struct {
 	mu      sync.Mutex
 	follows map[string]*follow
 	tails   map[string]string
+	seeds   map[string]Seed
 	reads   int // refreshes of a reader, for tests
 }
 
@@ -55,6 +56,20 @@ func (t *Tails) Tail(session string) string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.tails[session]
+}
+
+// Seed is what a ship's transcript says to title it by.
+type Seed struct {
+	FirstPrompt string // "" until read, and when the reading began past the start
+	Title       string // the harness's own name for the session; only Claude Code writes one
+}
+
+// Seed is the ship's seed so far; ok is false until its transcript has been read.
+func (t *Tails) Seed(session string) (Seed, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	s, ok := t.seeds[session]
+	return s, ok
 }
 
 // Run follows until ctx ends. The ships service sees a changed tail on its own tick.
@@ -81,12 +96,13 @@ func (t *Tails) Poll() bool {
 	}
 	t.mu.Lock()
 	if t.follows == nil {
-		t.follows, t.tails = map[string]*follow{}, map[string]string{}
+		t.follows, t.tails, t.seeds = map[string]*follow{}, map[string]string{}, map[string]Seed{}
 	}
 	for name, f := range t.follows {
 		if sh, ok := live[name]; !ok || sh.Launched != f.launched {
 			delete(t.follows, name)
 			delete(t.tails, name)
+			delete(t.seeds, name)
 		}
 	}
 	t.mu.Unlock()
@@ -166,6 +182,11 @@ func (t *Tails) step(f *follow, session string) (tail string, ok bool) {
 	if _, err := f.reader.Refresh(file, info); err != nil {
 		return "", false
 	}
+	t.mu.Lock()
+	if t.follows[session] == f {
+		t.seeds[session] = Seed{FirstPrompt: f.reader.FirstPrompt(), Title: f.reader.Title()}
+	}
+	t.mu.Unlock()
 	f.size, f.mtime = f.reader.Offset(), info.ModTime()
 	tail = conversation.Tail(f.reader.Items())
 	changed := tail != f.tail

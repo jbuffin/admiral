@@ -44,6 +44,8 @@ type Request struct {
 	// Title and URL are set by the server from the source's order, never by the client.
 	Title string `json:"-"`
 	URL   string `json:"-"`
+	// Link is the link the titler picked from a ship's first prompt, carried into its later rounds. It claims nothing.
+	Link string `json:"-"`
 	// Issues is every issue of a slice launch; URL is the first. A client may name them, never the URL.
 	Issues []string `json:"issues"`
 	Panel  string   `json:"-"`
@@ -203,7 +205,7 @@ func CheckSpec(cfg *config.Config, home string, req Request) (Checked, *Error) {
 	// The name and the time are ours.
 	opts := [][2]string{{"name", ""}, {"fleet", fleet.Key}, {"fleet-name", fleet.Name}, {"fleet-color", fleet.Color},
 		{"harness", req.Harness}, {"dir", req.Dir}, {"skill", skill}, {"source", req.Source},
-		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")},
+		{"order", req.OrderID}, {"launched", time.Now().UTC().Format(time.RFC3339)}, {"title", orderTitle(req)}, {"url", req.URL}, {"link", req.Link}, {"titled", titledOption(req)}, {"issues", strings.Join(req.Issues, ",")}, {"panel", req.Panel}, {"resources", strings.Join(req.Resources, ",")},
 		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}, {"chat", req.ChatOption()}, {"routine", req.RoutineKey}, {"commitment", req.CommitmentKey}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
@@ -411,6 +413,14 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		out.Options[o[0]] = o[1]
 	}
 	return out, nil
+}
+
+// A source's order is titled at launch, and a later round keeps its first round's title.
+func titledOption(req Request) string {
+	if req.Source != "" || req.Round > 0 {
+		return "1"
+	}
+	return ""
 }
 
 func roundOption(round int) string {

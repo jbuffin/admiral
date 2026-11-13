@@ -476,3 +476,45 @@ func TestToolCallInputIsWhatAllowingApproves(t *testing.T) {
 		t.Errorf("long command input has %d bytes, want it cut with a marker", len(got))
 	}
 }
+
+func TestReaderKeepsFirstPromptAndHarnessTitle(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	appendTo(t, path, `{"type":"user","uuid":"u1","message":{"content":"Review https://github.com/o/r/pull/7 please"}}`+"\n"+
+		`{"type":"ai-title","aiTitle":"Review PR 7","sessionId":"s"}`+"\n")
+	r := conversation.NewReader(conversation.Options{Keep: conversation.TailItem})
+	f, info := open(t, path)
+	if _, err := r.Refresh(f, info); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.FirstPrompt(); got != "Review https://github.com/o/r/pull/7 please" {
+		t.Errorf("first prompt = %q, though the reader keeps no user items", got)
+	}
+	if got := r.Title(); got != "Review PR 7" {
+		t.Errorf("title = %q", got)
+	}
+	appendTo(t, path, `{"type":"user","uuid":"u2","message":{"content":"and then this"}}`+"\n"+
+		`{"type":"ai-title","aiTitle":"Review PR 7 and more","sessionId":"s"}`+"\n")
+	f, info = open(t, path)
+	if _, err := r.Refresh(f, info); err != nil {
+		t.Fatal(err)
+	}
+	if r.FirstPrompt() != "Review https://github.com/o/r/pull/7 please" || r.Title() != "Review PR 7 and more" {
+		t.Errorf("after more lines: first prompt %q, title %q; want the first prompt kept and the latest title", r.FirstPrompt(), r.Title())
+	}
+}
+
+func TestReaderHasNoFirstPromptWhenItBeganPastTheStart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	appendTo(t, path, `{"type":"user","uuid":"u1","message":{"content":"the real first prompt"}}`+"\n")
+	f, info := open(t, path)
+	r := conversation.NewReader(conversation.Options{})
+	r.ToEnd(info.Size())
+	appendTo(t, path, `{"type":"user","uuid":"u2","message":{"content":"a later prompt"}}`+"\n")
+	f, info = open(t, path)
+	if _, err := r.Refresh(f, info); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.FirstPrompt(); got != "" {
+		t.Errorf("first prompt = %q, want none from a reading that skipped the start", got)
+	}
+}

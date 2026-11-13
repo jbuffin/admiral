@@ -15,7 +15,7 @@ Something a harness has been proven to do on this machine, which a feature needs
 _Avoid_: support, feature flag
 
 **Judge call**:
-A one-shot, tool-less model call Admiral makes for a decision: the Lookout, the reviewer, the filing drafter and the advisor.
+A one-shot, tool-less model call Admiral makes for a decision: the Lookout, the reviewer, the filing drafter, the advisor and the titler.
 _Avoid_: worker turn
 
 **Skill**:
@@ -49,6 +49,10 @@ A routine's setting for how far it may go on its own: Report only, Ask first or 
 
 **Trigger tier**:
 How far Admiral trusts an outside event, set by who caused it, from T0 (the engineer in Admiral) through T1 (the engineer's own verified chat account), T2 (allowlisted people and trackers, and the engineer's email) and T3 (strangers) to T4 (monitor alerts). An event's text is data, never instructions, unless its tier is T0 or T1.
+
+**Titler**:
+The judge call, on the small model, that names a ship launched without an order from its first prompt, and picks the one link the prompt is about when it holds several. Admiral asks it only when the ship's main link is not a GitHub pull request or issue (whose own title wins) and, on Claude Code, when the session's own title has not come.
+_Avoid_: summarizer, namer
 
 **Lookout**:
 The judge call that reads an outside event. It has no tools and no network, and returns only fixed fields and a short summary marked tainted, from which Admiral's code picks the action.

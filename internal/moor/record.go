@@ -31,6 +31,7 @@ type Record struct {
 	URL     string   `json:"url"`
 	Issues  []string `json:"issues,omitempty"`
 	Title   string   `json:"title"`
+	Link    string   `json:"link,omitempty"`
 	PRs     []string `json:"prs"`
 	Resume  string   `json:"resume"`
 	Round   int      `json:"round"`

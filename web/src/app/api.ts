@@ -96,6 +96,10 @@ export interface Ship {
   ready_up_to?: string;
   merge_method?: 'merge' | 'squash' | 'rebase';
   url?: string;
+  // The main link of a ship launched without an order, from its first prompt; it claims no issue.
+  link?: string;
+  // Set while Admiral works out the ship's title.
+  titling?: boolean;
   // Every issue a slice ship holds, `url` first; a single-issue ship omits it.
   issues?: string[];
   source?: string;

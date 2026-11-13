@@ -236,3 +236,16 @@ func TestTmuxGuardCatchesPlantedCall(t *testing.T) {
 			files, wantLines, strings.Join(got, "\n"))
 	}
 }
+
+// A ship option missing from the format shifts every field after it, and no ship parses.
+func TestFormatListsEveryOption(t *testing.T) {
+	f := strings.Split(rawFormat, sep)
+	for i, n := range optionNames {
+		if got := f[fixedFields+i]; got != "#{@admiral-"+n+"}" {
+			t.Fatalf("format field %d = %s, want option %s", fixedFields+i, got, n)
+		}
+	}
+	if len(f) != fixedFields+len(optionNames)+tailFields {
+		t.Errorf("format has %d fields, want %d", len(f), fixedFields+len(optionNames)+tailFields)
+	}
+}

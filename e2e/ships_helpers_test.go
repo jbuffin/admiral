@@ -328,6 +328,11 @@ type shipJSON struct {
 	StackReady  bool   `json:"stack_ready"`
 	ReadyUpTo   string `json:"ready_up_to"`
 	MergeMethod string `json:"merge_method"`
+
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Link    string `json:"link"`
+	Titling bool   `json:"titling"`
 }
 
 type prJSON struct {

@@ -245,6 +245,9 @@ a { color: inherit; text-decoration: none; }
 .ship-order, .ship-tail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-meta); color: var(--color-muted); }
 .ship-tail, .ship-order .mono { font-family: var(--font-mono); font-size: var(--font-size-mono); }
 .ship-order .mono { color: var(--color-muted); }
+.titling { display: inline-block; width: 0.8em; height: 0.8em; margin-left: 6px; vertical-align: -0.1em; border: 2px solid var(--color-line2); border-top-color: var(--color-accent); border-radius: 50%; animation: titling 0.8s linear infinite; }
+@keyframes titling { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .titling { animation-duration: 2.4s; } }
 
 .ship-pr { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: var(--font-size-meta); }
 .pr-link { display: inline-flex; align-items: center; min-height: var(--shape-min-touch-target); font-family: var(--font-mono); font-size: var(--font-size-mono); color: var(--color-text2); overflow-wrap: anywhere; }

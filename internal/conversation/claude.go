@@ -22,6 +22,7 @@ const (
 	maxLineItems   = 50        // items one line can make, and tool results it can fold
 	maxPending     = 1000      // calls held while they wait for a result
 	maxPendingSize = 128 << 10 // bytes of what is held for them
+	maxTitle       = 200
 
 	// DefaultMaxOutput is how much of a tool's output an item carries.
 	DefaultMaxOutput = 16 << 10
@@ -40,6 +41,7 @@ type claudeLine struct {
 	IsCompactSummary          bool   `json:"isCompactSummary"`
 	IsVisibleInTranscriptOnly bool   `json:"isVisibleInTranscriptOnly"`
 	DurationMs                int64  `json:"durationMs"`
+	AITitle                   string `json:"aiTitle"`
 	Message                   struct {
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
@@ -56,9 +58,11 @@ type claudeLine struct {
 }
 
 // emission is an item the decoder hands on; an update carries only the id and what a result fills in.
+// One with a Title is the harness naming its session, and carries no item.
 type emission struct {
 	Item   Item
 	Update bool
+	Title  string
 }
 
 type pendingCall struct {
@@ -141,6 +145,12 @@ func (d *claudeDecoder) line(raw []byte) (out []emission, ok bool) {
 	var l claudeLine
 	if json.Unmarshal(raw, &l) != nil {
 		return nil, true // JSON, but a field is not the shape we know
+	}
+	if l.Type == "ai-title" { // Claude Code's own name for the session; the line has no uuid
+		if t := strings.TrimSpace(l.AITitle); t != "" {
+			return []emission{{Title: cutTo(t, maxTitle, "…")}}, true
+		}
+		return nil, true
 	}
 	if l.UUID == "" || l.IsSidechain || l.IsCompactSummary || l.IsVisibleInTranscriptOnly {
 		return nil, true

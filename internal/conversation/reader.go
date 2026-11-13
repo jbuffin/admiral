@@ -97,6 +97,11 @@ type held struct {
 	bytes   int
 	touched map[string]struct{} // ids new or updated since the caller last took them
 
+	// partial is set when the reading began past the file's start, so the first prompt seen is not the first.
+	partial     bool
+	firstPrompt string
+	title       string // the harness's latest name for the session
+
 	sawContent bool
 	sawObject  bool
 }
@@ -112,6 +117,7 @@ func (h *held) reset() {
 	h.items, h.base, h.bytes = nil, 0, 0
 	h.byID, h.touched = map[string]int{}, map[string]struct{}{}
 	h.sawContent, h.sawObject = false, false
+	h.partial, h.firstPrompt, h.title = false, "", ""
 }
 
 func (h *held) line(raw []byte) {
@@ -129,6 +135,13 @@ func (h *held) line(raw []byte) {
 
 func (h *held) emit(out []emission) {
 	for _, e := range out {
+		if e.Title != "" {
+			h.title = e.Title
+			continue
+		}
+		if !e.Update && !h.partial && h.firstPrompt == "" && e.Item.Kind == KindUser {
+			h.firstPrompt = e.Item.Text
+		}
 		if !e.Update && h.opts.Keep != nil && !h.opts.Keep(e.Item) {
 			continue
 		}
@@ -278,6 +291,7 @@ func NewReader(o Options) *Reader { return &Reader{h: newHeld(o, true)} }
 
 func (r *Reader) ToEnd(size int64) {
 	r.offset, r.split = size, splitter{}
+	r.h.partial = r.h.partial || size > 0
 }
 
 // Clear is the chat's /clear: it drops what is held and serves only what is written after size.
@@ -290,6 +304,13 @@ func (r *Reader) Clear(size int64) {
 func (r *Reader) Offset() int64 { return r.offset }
 
 func (r *Reader) Items() []Item { return append([]Item(nil), r.h.items...) }
+
+// FirstPrompt is the engineer's first message, whatever Keep drops; "" until one is read, and
+// always "" when the reading began past the start of the file.
+func (r *Reader) FirstPrompt() string { return r.h.firstPrompt }
+
+// Title is the latest name the harness wrote for the session, "" when it writes none.
+func (r *Reader) Title() string { return r.h.title }
 
 // Refresh reads what was added to f since the last call. A file larger than tailStart
 // is read from tailStart before its end the first time, and at most readBudget bytes
@@ -307,6 +328,7 @@ func (r *Reader) Refresh(f *os.File, info os.FileInfo) (Update, error) {
 	size := info.Size()
 	if first && r.offset == 0 && size > tailStart {
 		r.offset, r.split.skip = size-tailStart, true
+		r.h.partial = true
 	}
 	buf := make([]byte, readChunk)
 	for budget := readBudget; r.offset < size && budget > 0; {
