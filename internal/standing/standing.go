@@ -1,7 +1,11 @@
 // Package standing holds the Limit model of a fleet's standing orders and the pure functions that enforce it.
 package standing
 
-import "time"
+import (
+	"encoding/json"
+	"fmt"
+	"slices"
+)
 
 // Preset names a set of Limit values; every fleet starts on Work.
 type Preset string
@@ -21,6 +25,31 @@ const (
 	A4 Level = 4 // normal ship
 	A5 Level = 5 // Commodore team
 )
+
+// ParseLevel reads "A0" to "A5" except A2, which is not a rung.
+func ParseLevel(s string) (Level, bool) {
+	for _, l := range []Level{A0, A1, A3, A4, A5} {
+		if l.String() == s {
+			return l, true
+		}
+	}
+	return 0, false
+}
+
+func (l Level) MarshalJSON() ([]byte, error) { return json.Marshal(l.String()) }
+
+func (l *Level) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	v, ok := ParseLevel(s)
+	if !ok {
+		return fmt.Errorf("%q is not an action ladder level", s)
+	}
+	*l = v
+	return nil
+}
 
 func (l Level) String() string {
 	switch l {
@@ -122,93 +151,23 @@ type Limits struct {
 	Skip             Skip     `json:"skip"`
 }
 
-// PresetLimits is the Limit values of a preset; quiet hours are empty in both.
-func PresetLimits(p Preset) Limits { return Limits{} }
-
-type Sentence struct {
-	Field    string `json:"field"` // empty for the fixed sentences
-	Sentence string `json:"sentence"`
+// Clone copies every slice, so a caller can change the result freely.
+func (l Limits) Clone() Limits {
+	l.SenderAllowlist = slices.Clone(l.SenderAllowlist)
+	l.RepoAllowlist = slices.Clone(l.RepoAllowlist)
+	l.WriteDeny = slices.Clone(l.WriteDeny)
+	l.QuietHours = slices.Clone(l.QuietHours)
+	for i, w := range l.QuietHours {
+		l.QuietHours[i].Weekdays = slices.Clone(w.Weekdays)
+	}
+	l.Skip.Labels = slices.Clone(l.Skip.Labels)
+	l.Skip.Senders = slices.Clone(l.Skip.Senders)
+	l.Skip.DedupeKeys = slices.Clone(l.Skip.DedupeKeys)
+	for _, c := range []*Ceiling{&l.Ceilings.T1, &l.Ceilings.T2, &l.Ceilings.T3, &l.Ceilings.T4, &l.Ceilings.Fleet} {
+		if c.Threshold != nil {
+			t := *c.Threshold
+			c.Threshold = &t
+		}
+	}
+	return l
 }
-
-// Sentences is one plain-English sentence per Limit, in catalog order, then the two fixed ones.
-func Sentences(l Limits) []Sentence { return nil }
-
-// Loosens lists the field paths (as in Sentences) the change from old to next loosens, in catalog order.
-func Loosens(old, next Limits) []string { return nil }
-
-// Verdict is the reviewer's call; the zero value lowers nothing.
-type Verdict int
-
-const (
-	Allow Verdict = iota
-	Ask
-	Block
-)
-
-type Event struct {
-	Tier              Tier
-	Routine           Level // the routine's Before acting, mapped by the caller
-	Reviewer          Verdict
-	SameKeyEvents     int  // events with this dedupe_key in the last 14 days, this one included
-	RestrictedHarness bool // some harness in the fleet can run a restricted ship
-}
-
-type Action struct {
-	Level      Level
-	Restricted Restricted // set only on A3
-}
-
-// Effective is min(routine, tier ceiling, fleet ceiling, reviewer verdict) with the T3, T1 and T4 rules and the A3 fallback.
-func (l Limits) Effective(e Event) Action { return Action{Level: A4, Restricted: "not implemented"} }
-
-// Held is whether now, in the fleet's local time, falls inside a quiet-hours window.
-func (l Limits) Held(now time.Time) bool { return false }
-
-type Counts struct {
-	LaunchesLastHour    int // includes scheduled launches
-	SenderLaunchesToday int
-	WorkerShips         int
-}
-
-const (
-	ReasonPerHour    = "launches_per_hour"
-	ReasonPerSender  = "launches_per_sender_per_day"
-	ReasonConcurrent = "concurrent"
-)
-
-type RateVerdict struct {
-	OK     bool
-	Reason string // the first Reason* exceeded; empty when OK
-}
-
-func (l Limits) CheckRates(c Counts) RateVerdict { return RateVerdict{OK: true} }
-
-// DedupeHeld is whether a live ship already holds the dedupe_key.
-func DedupeHeld(liveKeys []string, key string) bool { return false }
-
-// RepoAllowed: an empty allowlist allows every repo.
-func (l Limits) RepoAllowed(repo string) bool { return true }
-
-// SenderAllowed: an empty allowlist allows no one.
-func (l Limits) SenderAllowed(sender string) bool { return true }
-
-type SkipInput struct {
-	Routine   string
-	Labels    []string
-	Sender    string
-	DedupeKey string
-}
-
-func (l Limits) Skipped(in SkipInput) bool { return false }
-
-type Denial struct {
-	Rules     []string // Claude Code deny rules: Edit(glob) and Write(glob) per glob
-	DenyWrite []string // the sandbox denyWrite list
-}
-
-func (l Limits) WriteDenial() Denial { return Denial{} }
-
-func (l Limits) WallClockExceeded(elapsed time.Duration) bool { return false }
-
-// DailySpendReached is whether the day's worker spend has hit the cap.
-func (l Limits) DailySpendReached(spentUSD float64) bool { return false }
