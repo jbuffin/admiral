@@ -38,7 +38,7 @@ const RUNS_EVERY = 10_000;
 
 const target = (e: Event) => e.target as HTMLInputElement & HTMLTextAreaElement & HTMLSelectElement;
 
-function Switch({ label, on, busy, onToggle, hidden }: { label: string; on: boolean; busy?: boolean; onToggle: () => void; hidden?: boolean }) {
+export function Switch({ label, on, busy, onToggle, hidden }: { label: string; on: boolean; busy?: boolean; onToggle: () => void; hidden?: boolean }) {
   return (
     <button type="button" class="switch" role="switch" aria-checked={on} aria-label={label} disabled={busy} onClick={onToggle}>
       <span class="track" aria-hidden={hidden ?? true} />

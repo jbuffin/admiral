@@ -1,4 +1,5 @@
 // The only place the shell builds /api/v1 URLs.
+import type { Limits } from './limitsForm';
 import { signedOut } from './session';
 export interface Dock {
   harness: string;
@@ -45,6 +46,12 @@ export interface Fleet {
   chat: FleetChat;
   /** Whether this fleet pushes and alerts; on unless config.json says false. */
   notify: boolean;
+  preset: 'work' | 'home';
+  limits: Limits;
+  /** One sentence per Limit in catalog order, then two fixed ones with an empty field. */
+  sentences: { field: string; sentence: string }[];
+  /** The Limits this fleet stores over its preset, as sentence fields. */
+  overridden: string[];
 }
 
 export type ShipStatus = 'needs_you' | 'underway' | 'moored' | 'anchored' | 'sailing_off';
@@ -176,6 +183,9 @@ const fleetsOf = (body: { fleets?: Fleet[] | null }): Fleet[] =>
     docks: (f.docks ?? []).map((d) => ({ ...d, warnings: d.warnings ?? [] })),
     chat: { ...f.chat, harnesses: f.chat?.harnesses ?? [], harness_options: f.chat?.harness_options ?? [], models: f.chat?.models ?? [], efforts: f.chat?.efforts ?? [] },
     notify: f.notify ?? true,
+    preset: f.preset ?? 'work',
+    sentences: f.sentences ?? [],
+    overridden: f.overridden ?? [],
   }));
 
 export async function fetchFleets(): Promise<Fleet[]> {
@@ -266,7 +276,7 @@ export const removeSource = (key: string) => call<unknown>('DELETE', src(key));
 export const addSource = (plugin: string, fleet: string) => call<Source>('POST', '/sources', { plugin, fleet });
 
 /** Saves the fleet fields in the body; the server answers the new config view. */
-export async function saveFleet(key: string, body: Partial<Pick<Fleet, 'search_roots' | 'owners' | 'wake_reviewers' | 'clone_root' | 'color' | 'notify'>> | { chat: Partial<Omit<FleetChat, 'on' | 'off_reason' | 'harnesses' | 'harness_options' | 'models' | 'efforts'>> }): Promise<Result<Fleet[]>> {
+export async function saveFleet(key: string, body: Partial<Pick<Fleet, 'search_roots' | 'owners' | 'wake_reviewers' | 'clone_root' | 'color' | 'notify' | 'preset'>> | { limits: Record<string, unknown> } | { chat: Partial<Omit<FleetChat, 'on' | 'off_reason' | 'harnesses' | 'harness_options' | 'models' | 'efforts'>> }): Promise<Result<Fleet[]>> {
   const r = await call<{ fleets?: Fleet[] | null }>('PUT', `/fleets/${encodeURIComponent(key)}`, body);
   return r.ok ? { ok: true, data: fleetsOf(r.data) } : r;
 }

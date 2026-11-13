@@ -88,7 +88,8 @@ function ceilingPatch(path: string, shown: Ceiling, edited: Ceiling): Record<str
   if (shown.level !== edited.level) patch.level = edited.level;
   if (edited.restricted !== undefined && shown.restricted !== edited.restricted) patch.restricted = edited.restricted;
   if (edited.level === 'A3' && shown.level !== 'A3' && edited.restricted !== undefined) patch.restricted = edited.restricted;
-  if (shown.asks_first !== undefined && shown.asks_first !== edited.asks_first && edited.asks_first !== undefined) patch.asks_first = edited.asks_first;
+  // The server leaves asks_first out when it is off.
+  if (path === 'ceilings.t1' && !!shown.asks_first !== !!edited.asks_first) patch.asks_first = !!edited.asks_first;
   const threshold = edited.threshold;
   if (path === 'ceilings.t4' && !same(shown.threshold ?? null, threshold ?? null)) patch.threshold = threshold ?? null;
   // The server refuses a ceiling at or above its threshold, so a raise that reaches the threshold clears it unless the person set a new one.
@@ -112,4 +113,18 @@ export function limitsBody(shown: Limits, edited: Limits, resets: string[] = [])
   }
   for (const r of resets) setPath(patch, r, null);
   return patch;
+}
+
+const list = <T,>(v: T[] | null | undefined): T[] => v ?? [];
+
+/** The Limits a fleet carries with the lists the server leaves null made empty, so a form can map over them. */
+export function normalizeLimits(l: Limits): Limits {
+  return {
+    ...l,
+    sender_allowlist: list(l.sender_allowlist),
+    quiet_hours: list(l.quiet_hours).map((w) => ({ ...w, weekdays: list(w.weekdays) })),
+    repo_allowlist: list(l.repo_allowlist),
+    write_deny: list(l.write_deny),
+    skip: { labels: list(l.skip?.labels), senders: list(l.skip?.senders), dedupe_keys: list(l.skip?.dedupe_keys) },
+  };
 }
