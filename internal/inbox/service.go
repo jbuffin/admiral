@@ -89,7 +89,11 @@ func (s *Service) List() []Item {
 	now := time.Now()
 	items = slices.DeleteFunc(items, func(it Item) bool {
 		if p, ok := it.EventProposal(); ok {
-			return p.expired(now)
+			if !p.expired(now) {
+				return false
+			}
+			removeEventDetail(s.Home, it.ID) // the event's text outlives no longer than its proposal
+			return true
 		}
 		p, ok := it.RoutineProposal()
 		return ok && p.expired(now)

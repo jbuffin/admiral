@@ -2,8 +2,12 @@ package inbox_test
 
 import (
 	"context"
+	"errors"
 	"io"
+	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -155,6 +159,19 @@ func TestAnExpiredEventProposalIsNotListedAndAnswers410ToLaunch(t *testing.T) {
 	}
 	if code, _ := post(t, url+"/api/inbox/_admiral/"+old+"/launch", `{}`); code != http.StatusGone || l.calls() != 0 {
 		t.Errorf("launch after expiry = %d with %d hook calls, want 410 and none", code, l.calls())
+	}
+}
+
+func TestAnExpiredEventProposalsDetailFileIsRemovedWhileALiveOnesStays(t *testing.T) {
+	s, home, _, _ := eventInbox(t)
+	live := publishEvent(t, s, eventProposal("live", time.Now().Add(time.Hour)))
+	old := publishEvent(t, s, eventProposal("old", time.Now().Add(-time.Minute)))
+	listed(t, s)
+	if _, err := os.Stat(filepath.Join(home, "inbox-events", old+".json")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the expired proposal's detail file: err = %v, want it removed", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "inbox-events", live+".json")); err != nil {
+		t.Errorf("the live proposal's detail file: %v, want it kept", err)
 	}
 }
 
