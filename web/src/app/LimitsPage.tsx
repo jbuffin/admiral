@@ -2,7 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { saveFleet, type Fleet } from './api';
 import { fleets, loadFleets } from './fleets';
 import { errorTarget, fieldMessage } from './fleetSettings';
-import { LEVELS, limitsBody, normalizeLimits, type Ceiling, type Level, type Limits, type Restricted, type Threshold, type Window } from './limitsForm';
+import { defaultThreshold, LEVELS, limitsBody, normalizeLimits, reconcileLimits, type Ceiling, type Level, type Limits, type Restricted, type Threshold, type Window } from './limitsForm';
 import { loc, limitsFieldOf } from './router';
 import { Switch } from './RoutinesPage';
 
@@ -28,6 +28,31 @@ const NUMS: Num[] = [
   { id: 'spend.reviewer_call_usd', label: 'Reviewer call, dollars', hint: 'Whole cents, 0 to 10000.', min: 0, max: 10000, step: 0.01, get: (l) => l.spend.reviewer_call_usd, set: (l, v) => ({ ...l, spend: { ...l.spend, reviewer_call_usd: v } }) },
   { id: 'quota_hold_percent', label: 'Quota hold, percent', hint: 'Launches from outside events are held at this share of the quota. 1 to 100.', min: 1, max: 100, get: (l) => l.quota_hold_percent, set: (l, v) => ({ ...l, quota_hold_percent: v }) },
 ];
+
+/** A number field keeps what was typed ("12." on the way to "12.5") and tells the form only a number that parses. */
+function NumberInput({ id, label, value, min, max, step, disabled, onChange }: { id?: string; label: string; value: number; min: number; max: number; step?: number; disabled: boolean; onChange: (n: number) => void }) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => {
+    if (Number(text) !== value) setText(String(value));
+  }, [value]);
+  return (
+    <input
+      id={id}
+      type="text"
+      inputMode={step ? 'decimal' : 'numeric'}
+      aria-label={label}
+      title={`${min} to ${max}`}
+      value={text}
+      disabled={disabled}
+      onInput={(e) => {
+        const v = (e.target as HTMLInputElement).value;
+        setText(v);
+        const n = Number(v);
+        if (v.trim() !== '' && Number.isFinite(n)) onChange(step ? Math.round(n * 100) / 100 : n);
+      }}
+    />
+  );
+}
 
 const target = (e: Event) => e.target as HTMLInputElement & HTMLSelectElement;
 
@@ -112,17 +137,17 @@ function CeilingControl({ id, tier, label, value, disabled, onChange }: { id: st
         <div class="threshold" role="group" aria-label="T4 threshold">
           <span class="inline-switch">
             Raise the ceiling when an alert repeats{' '}
-            <Switch label="Raise the ceiling when an alert repeats" on={!!th} busy={disabled} onToggle={() => onChange({ ...value, threshold: th ? null : { events: 10, days: 14, level: 'A3', restricted: 'draft_fix' } })} />
+            <Switch label="Raise the ceiling when an alert repeats" on={!!th} busy={disabled} onToggle={() => onChange({ ...value, threshold: th ? null : defaultThreshold(value) })} />
           </span>
           {th ? (
             <>
               <label class="field">
                 <span>Events</span>
-                <input type="number" min={1} max={100000} value={th.events} disabled={disabled} onInput={(e) => setTh({ events: Number(target(e).value) })} />
+                <NumberInput label="Threshold events" min={1} max={100000} value={th.events} disabled={disabled} onChange={(n) => setTh({ events: n })} />
               </label>
               <label class="field">
                 <span>Days</span>
-                <input type="number" min={1} max={365} value={th.days} disabled={disabled} onInput={(e) => setTh({ days: Number(target(e).value) })} />
+                <NumberInput label="Threshold days" min={1} max={365} value={th.days} disabled={disabled} onChange={(n) => setTh({ days: n })} />
               </label>
               <LevelSelect label="Threshold ceiling" value={th.level} levels={LEVELS} disabled={disabled} onChange={(l) => (l === 'A3' ? setTh({ level: l, restricted: th.restricted ?? 'investigate' }) : onChange({ ...value, threshold: { events: th.events, days: th.days, level: l } }))} />
               {th.level === 'A3' ? <RestrictedSelect label="Threshold restricted ship" value={th.restricted ?? 'investigate'} disabled={disabled} onChange={(r) => setTh({ restricted: r })} /> : null}
@@ -202,6 +227,18 @@ export function LimitsPage({ fleet }: { fleet: Fleet }) {
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<'work' | 'home' | null>(null);
   const [error, setError] = useState<{ message: string; status?: number } | null>(null);
+  const [stale, setStale] = useState(false);
+
+  // Limits that change under an open form (a Copy into this fleet, another tab) are adopted unless the person has edits.
+  useEffect(() => {
+    const verdict = reconcileLimits(shown, edited, read(fleet));
+    if (verdict === 'adopt' && resets.length === 0) {
+      const next = read(fleet);
+      setShown(next);
+      setEdited(next);
+    }
+    setStale(verdict === 'stale' || (verdict === 'adopt' && resets.length > 0));
+  }, [fleet.limits]);
 
   const field = limitsFieldOf(loc.value.search);
   useEffect(() => {
@@ -213,7 +250,7 @@ export function LimitsPage({ fleet }: { fleet: Fleet }) {
   const body = limitsBody(shown, edited, resets);
   const dirty = Object.keys(body).length > 0;
   const errTarget = error ? errorTarget(error.message, fleet.key) : null;
-  const topError = error && (!errTarget || errTarget.field !== 'limits') ? error : null;
+  const topError = error && !pending && (!errTarget || errTarget.field !== 'limits') ? error : null;
   const rowError = (id: string) => (errTarget?.field === 'limits' && errTarget.limit === id && error ? fieldMessage(error.message, fleet.key).replace(/^limits\.[^:]*:\s*/, '') : undefined);
   const sentence = (id: string) => fleet.sentences.find((s) => s.field === id)?.sentence;
   const isOver = (id: string) => fleet.overridden.includes(id);
@@ -252,6 +289,7 @@ export function LimitsPage({ fleet }: { fleet: Fleet }) {
     await loadFleets();
     adopt(fleets.value);
     setError(null);
+    setStale(false);
   };
 
   const ceiling = (tier: (typeof TIERS)[number]) => {
@@ -260,17 +298,7 @@ export function LimitsPage({ fleet }: { fleet: Fleet }) {
   };
   const num = (n: Num) =>
     row(n.id, n.label, n.hint, (
-      <input
-        id={n.id}
-        type="number"
-        min={n.min}
-        max={n.max}
-        step={n.step ?? 1}
-        aria-label={n.label}
-        value={n.get(edited)}
-        disabled={busy || isReset(n.id)}
-        onInput={(e) => change(n.set(edited, n.step ? Math.round(Number(target(e).value) * 100) / 100 : Number(target(e).value)))}
-      />
+      <NumberInput id={n.id} label={n.label} min={n.min} max={n.max} step={n.step} value={n.get(edited)} disabled={busy || isReset(n.id)} onChange={(v) => change(n.set(edited, v))} />
     ));
   const strings = (id: 'sender_allowlist' | 'repo_allowlist' | 'write_deny', label: string, hint: string, item: string, add: string) =>
     row(id, label, hint, (
@@ -284,7 +312,6 @@ export function LimitsPage({ fleet }: { fleet: Fleet }) {
     ));
   };
 
-  const other: 'work' | 'home' = fleet.preset === 'work' ? 'home' : 'work';
   const name = (p: string) => (p === 'home' ? 'Home' : 'Work');
   const topAlert = topError ? (
     <p class="note error" role="alert">
@@ -302,6 +329,14 @@ export function LimitsPage({ fleet }: { fleet: Fleet }) {
     <>
       <p class="line">Limits are what Admiral enforces on work started by outside events. Each Limit reads as the sentence beside its control.</p>
       {topAlert}
+      {stale ? (
+        <p class="note warning" role="status">
+          This fleet’s Limits changed elsewhere. Reload to see them; your unsaved edits will be dropped.{' '}
+          <button type="button" class="btn" onClick={() => void reload()}>
+            Reload
+          </button>
+        </p>
+      ) : null}
       <div class="box">
         <div class="set">
           <div class="t">
@@ -321,15 +356,20 @@ export function LimitsPage({ fleet }: { fleet: Fleet }) {
         </div>
         {pending ? (
           <div class="set confirm" role="group" aria-label={`Switch to ${name(pending)}`}>
-            <p class="note">Switching to {name(pending)} replaces this fleet’s Limits with {name(pending)}’s, keeping quiet hours.</p>
+            <p class="note">Switching to {name(pending)} replaces this fleet’s Limits with {name(pending)}’s, keeping quiet hours.{dirty ? ' Your unsaved Limit edits will be dropped.' : ''}</p>
+            {error ? (
+              <p class="note error" role="alert">
+                {error.message}
+              </p>
+            ) : null}
             <div class="routine-actions">
               <button
                 type="button"
                 class="btn danger"
                 disabled={busy}
                 onClick={() =>
-                  void send({ preset: pending }).then(() => {
-                    setPending(null);
+                  void send({ preset: pending }).then((ok) => {
+                    if (ok) setPending(null);
                   })
                 }
               >
@@ -341,7 +381,6 @@ export function LimitsPage({ fleet }: { fleet: Fleet }) {
             </div>
           </div>
         ) : null}
-        {fleet.preset === other ? null : null}
       </div>
 
       <h2 class="section-title">What an event can start</h2>
