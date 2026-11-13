@@ -69,12 +69,17 @@ func (r *Runner) workCampaign(ctx context.Context, fleet string, c ledger.Commit
 	} else if c.Proposal != nil && proposing {
 		events += r.answerProposal(ctx, fleet, c, rd, now, earlier)
 	}
+	// An open proposal needs room for its resolution.
+	reserved := 0
+	if c.Proposal != nil {
+		reserved = 1
+	}
 	for _, ch := range plan.Launch {
 		if ctx.Err() != nil {
 			return
 		}
 		// A launch can record a wait and then the launch itself.
-		if events+2 > ledger.MaxChildEvents {
+		if events+2+reserved > ledger.MaxChildEvents {
 			r.tooLarge(fleet, c)
 			return
 		}
@@ -166,6 +171,7 @@ func (r *Runner) answerProposal(ctx context.Context, fleet string, c ledger.Comm
 		if r.Ledger.ChildDeclined(fleet, c.ID, url) != nil {
 			return 0
 		}
+		r.Proposals.Withdraw(fleet, c.Proposal.QuestionID)
 		return 1
 	case ProposalGone:
 		if r.Ledger.ChildWithdrawn(fleet, c.ID, url, "question removed") != nil {
@@ -178,7 +184,12 @@ func (r *Runner) answerProposal(ctx context.Context, fleet string, c ledger.Comm
 			return 0
 		}
 		n := rd.Campaign.Ready[i]
-		return r.launchChild(ctx, fleet, c, rd, campaigns.Child{Campaign: rd.ID, URL: n.URL, Title: n.Title, Skill: n.Skill}, false, true, now, earlier)
+		events := r.launchChild(ctx, fleet, c, rd, campaigns.Child{Campaign: rd.ID, URL: n.URL, Title: n.Title, Skill: n.Skill}, false, true, now, earlier)
+		// A wait or a cancel records nothing and keeps the answer; anything recorded settles the proposal.
+		if events > 0 {
+			r.Proposals.Withdraw(fleet, c.Proposal.QuestionID)
+		}
+		return events
 	}
 	return 0
 }

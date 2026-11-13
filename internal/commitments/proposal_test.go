@@ -100,7 +100,8 @@ func TestYesLaunchesTheChildWithYouAndPostsALaunchedCardWithItsShip(t *testing.T
 	g.camp.set(readOf(withYou(21)))
 	g.launchesAs("underway")
 	g.tick()
-	g.props.reply(g.asked(t, 1)[0].ID, commitments.ProposalYes)
+	q := g.asked(t, 1)[0]
+	g.props.reply(q.ID, commitments.ProposalYes)
 	g.tick()
 	calls := g.ships.requests()
 	if len(calls) != 1 {
@@ -127,8 +128,8 @@ func TestYesLaunchesTheChildWithYouAndPostsALaunchedCardWithItsShip(t *testing.T
 	if _, ok := g.find(c.ID); !ok {
 		t.Error("the commitment closed on a launch, want it open")
 	}
-	if w := g.props.withdrawals(); len(w) != 0 {
-		t.Errorf("withdrawn %v; the answered question is kept, not removed", w)
+	if w := g.props.withdrawals(); len(w) != 1 || w[0] != q.ID {
+		t.Errorf("withdrawn %v; want the answered question %s removed once the child launched", w, q.ID)
 	}
 	g.tick()
 	if n := len(g.ships.requests()); n != 1 {
@@ -445,5 +446,88 @@ func TestACommitmentAtTheChildEventBoundProposesNothingAndPostsOneTooLargeCard(t
 	g.asked(t, 0)
 	if cards := g.cardsOf(c.ID, commitments.OutcomeTooLarge); len(cards) != 1 || cards[0].Why == "" {
 		t.Errorf("too-large cards %+v; want exactly one that says why", cards)
+	}
+}
+
+func TestAnAnsweredQuestionIsRemovedOnceTheRunnerHasActedOnItButNotWhileAYesWaits(t *testing.T) {
+	t.Run("no", func(t *testing.T) {
+		g := newRig(t)
+		g.work("claude")
+		g.camp.set(readOf(withYou(21)))
+		g.tick()
+		q := g.asked(t, 1)[0]
+		g.props.reply(q.ID, commitments.ProposalNo)
+		g.tick()
+		if w := g.props.withdrawals(); len(w) != 1 || w[0] != q.ID {
+			t.Errorf("withdrawn %v; want %s removed after the No", w, q.ID)
+		}
+	})
+	t.Run("refused yes", func(t *testing.T) {
+		g := newRig(t)
+		g.work("claude")
+		g.camp.set(readOf(withYou(21)))
+		g.ships.launch = func(int, launcher.Request) (commitments.ShipRef, *launcher.Error) {
+			return commitments.ShipRef{}, refusal(409, "issue 21 is claimed by another ship", "")
+		}
+		g.tick()
+		q := g.asked(t, 1)[0]
+		g.props.reply(q.ID, commitments.ProposalYes)
+		g.tick()
+		if w := g.props.withdrawals(); len(w) != 1 || w[0] != q.ID {
+			t.Errorf("withdrawn %v; want %s removed after the refused Yes", w, q.ID)
+		}
+	})
+	t.Run("waiting yes", func(t *testing.T) {
+		g := newRig(t)
+		g.work("claude")
+		g.camp.set(readOf(withYou(21)))
+		g.ships.launch = func(int, launcher.Request) (commitments.ShipRef, *launcher.Error) {
+			return commitments.ShipRef{}, refusal(409, "the fleet is at its cap", "cap")
+		}
+		g.tick()
+		q := g.asked(t, 1)[0]
+		g.props.reply(q.ID, commitments.ProposalYes)
+		g.tick()
+		if w := g.props.withdrawals(); len(w) != 0 {
+			t.Errorf("withdrawn %v; a Yes that waits for room keeps its answer", w)
+		}
+	})
+}
+
+func TestAnOpenProposalReservesAnEventSoLaunchesCannotCrowdOutItsAnswer(t *testing.T) {
+	g := newRig(t)
+	c := g.work("claude")
+	var b strings.Builder
+	for i := 0; i < ledger.MaxChildEvents-3; i++ {
+		fmt.Fprintf(&b, `{"v":1,"ts":%q,"event":"child_launched","id":%q,"url":%q,"ship":"ship"}`+"\n", stamp(t0), c.ID, issue(1000+i))
+	}
+	g.appendRaw(b.String())
+	g.camp.set(readOf(withYou(21)))
+	g.tick()
+	q := g.asked(t, 1)[0]
+	g.camp.set(readOf(withYou(21), ready(30)))
+	g.tick()
+	if n := len(g.ships.requests()); n != 0 {
+		t.Errorf("%d launches with the proposal's answer needing the last event, want none", n)
+	}
+	g.props.reply(q.ID, commitments.ProposalYes)
+	g.tick()
+	if ch := g.children(c.ID)[issue(21)]; ch.State != ledger.ChildLaunched {
+		t.Errorf("child 21 = %+v; want the Yes recorded as launched", ch)
+	}
+	if got, _ := g.find(c.ID); got.Proposal != nil {
+		t.Errorf("Proposal = %+v; want it cleared", got.Proposal)
+	}
+}
+
+func TestAShipStartedByHandOnAWithYouChildDoesNotHoldTheFleet(t *testing.T) {
+	g := newRig(t)
+	g.work("claude")
+	g.camp.set(readOf(withYou(22)))
+	// Underway, but not held under the commitment's key: someone launched it by hand.
+	g.ships.hold("hand:"+issue(21), commitments.ShipRef{Session: "hand-1", Name: "By hand", Status: "underway"})
+	g.tick()
+	if qs := g.props.questions(); len(qs) != 1 || qs[0].Child != issue(22) {
+		t.Errorf("questions %+v; want %s proposed while a hand-launched ship is underway", qs, issue(22))
 	}
 }

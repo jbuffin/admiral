@@ -161,7 +161,7 @@ func (s *fleetChat) renderBrief(ti tickInputs) {
 		switch {
 		case len(q.Answer) > 0:
 		case isProposal(q.Item.ID):
-			in.Proposals = append(in.Proposals, brief.Question{Text: questionTitle(q), Asked: q.Item.Created})
+			in.Proposals = append(in.Proposals, brief.Question{Text: proposalLine(st.commits, q.Item.ID), Asked: q.Item.Created})
 		default:
 			in.Questions = append(in.Questions, brief.Question{Text: questionTitle(q), Asked: q.Item.Created})
 		}
@@ -193,6 +193,18 @@ func (s *fleetChat) renderBrief(ti tickInputs) {
 		return
 	}
 	st.text, st.wrote = text, true
+}
+
+// proposalLine names the child by its reference alone: the card keeps the GitHub title, which anyone who can title a linked issue controls.
+func proposalLine(commits []ledger.Commitment, id string) string {
+	for _, c := range commits {
+		if c.Proposal != nil && c.Proposal.QuestionID == id {
+			if r := campaignRef(c.Proposal.URL); r != "" {
+				return "Start " + r + " with you?"
+			}
+		}
+	}
+	return "Start a campaign child with you?"
 }
 
 func questionTitle(q Question) string {

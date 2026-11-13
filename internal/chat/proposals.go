@@ -3,7 +3,9 @@ package chat
 import (
 	"encoding/json"
 	"os"
+	"strings"
 
+	"github.com/jbuffin/admiral/internal/chatlog"
 	"github.com/jbuffin/admiral/internal/commitments"
 	"github.com/jbuffin/admiral/internal/inbox"
 )
@@ -78,11 +80,17 @@ func (s *Service) Reply(fleet, id string) string {
 	return commitments.ProposalOpen
 }
 
-// Withdraw removes the question and its answer, so a chat card for it reads Withdrawn.
+// Withdraw removes the question and its answer. A chat card for it reads Withdrawn, unless the log keeps what the
+// engineer answered, which the card then shows.
 func (s *Service) Withdraw(fleet, id string) {
 	fc := s.chat(fleet)
 	fc.qmu.Lock()
 	if dir, err := fc.openQuestions(); err == nil {
+		if labels := answerLabels(readAnswer(dir, id)); labels != "" {
+			fc.record(Snapshot{Questions: fc.questions(true)})
+			_, e := fc.history().Append(fleet, chatlog.Entry{ID: answeredPrefix + id, Kind: chatlog.KindAnswer, Text: labels})
+			fc.noteLogErr(e)
+		}
 		_ = dir.Remove(id + ".json")
 		_ = dir.Remove(inbox.AnswerName(id))
 		dir.Close()
@@ -90,4 +98,29 @@ func (s *Service) Withdraw(fleet, id string) {
 	fc.qmu.Unlock()
 	fc.questions(true)
 	fc.broadcast()
+}
+
+// answeredPrefix names the log entry that keeps a removed question's answer.
+const answeredPrefix = "a-"
+
+func answerLabels(raw json.RawMessage) string {
+	var a answerFile
+	if json.Unmarshal(raw, &a) != nil {
+		return ""
+	}
+	var out []string
+	for _, q := range a.Answers {
+		var one string
+		var many []string
+		if json.Unmarshal(q.Choice, &one) == nil && one != "" {
+			many = []string{one}
+		} else {
+			_ = json.Unmarshal(q.Choice, &many)
+		}
+		out = append(out, many...)
+		if q.Other != "" {
+			out = append(out, q.Other)
+		}
+	}
+	return strings.Join(out, ", ")
 }

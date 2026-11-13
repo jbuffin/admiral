@@ -75,6 +75,21 @@ describe('the thread', () => {
     );
     expect(t.map((i) => (i.kind === 'question' ? i.state : i.kind))).toEqual(['open', 'answered', 'withdrawn']);
   });
+
+  it('shows a question the server removed after its answer as answered, with the answer the log kept', () => {
+    const at = '2026-01-02T03:04:05Z';
+    const t = threadOf(
+      snap({
+        messages: [
+          { id: 'q-campaign-c1-ab12-1', kind: 'question', text: 'Start it?', at, card: card('campaign-c1-ab12-1') },
+          { id: 'a-campaign-c1-ab12-1', kind: 'answer', text: 'Yes, start it with you', at: '2026-01-02T03:04:06Z' },
+        ],
+        questions: [],
+      }),
+    );
+    expect(t).toHaveLength(1);
+    expect(t[0]).toMatchObject({ kind: 'question', state: 'answered', kept: 'Yes, start it with you' });
+  });
 });
 
 describe('You answered', () => {

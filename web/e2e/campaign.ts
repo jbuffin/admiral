@@ -213,6 +213,10 @@ export async function proposalJourney(page: Page, a: Admiral, tap: (l: Locator) 
   const followed = await fetch(`${a.url}api/v1/campaigns`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reference: 'acme/widgets#20' }) });
   expect(followed.status, await followed.clone().text()).toBe(201);
   workOnCampaign(a, 'harbor', ((await followed.json()) as { id: string }).id);
+  // A hand-written ledger line wakes nothing, and the follow's reread may land before it. Cancelling a throwaway commitment through the API writes the ledger and wakes the runner.
+  appendFileSync(join(a.home, 'chat', 'harbor', 'ledger.jsonl'), JSON.stringify({ v: 1, ts: new Date().toISOString(), event: 'added', id: 'cw0', kind: 'commitment', text: 'a throwaway', via: 'admiralbot', trigger: { kind: 'none' }, action: 'remind' }) + '\n');
+  const woke = await fetch(`${a.url}api/v1/chat/harbor/commitments/cw0`, { method: 'DELETE' });
+  expect(woke.status, await woke.clone().text()).toBeLessThan(300);
 
   await page.goto(a.url + 'app/chat?fleet=harbor');
   const main = page.getByRole('main');
@@ -223,7 +227,7 @@ export async function proposalJourney(page: Page, a: Admiral, tap: (l: Locator) 
 
   await tap(main.getByText('Yes, start it with you', { exact: true }));
   await tap(main.getByRole('button', { name: 'Send answers' }));
-  const card = main.getByRole('listitem').filter({ hasText: 'AdmiralBot launched a ship' });
+  const card = main.locator('.chat-card').filter({ hasText: 'AdmiralBot launched a ship' });
   await expect(card).toContainText('acme/widgets#21');
   const link = card.getByRole('link', { name: /ship/i });
   await expect(link).toHaveAttribute('href', /\/app\/ships\/[^/]+$/);

@@ -2,6 +2,7 @@ package chat
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jbuffin/admiral/internal/chatlog"
 	"github.com/jbuffin/admiral/internal/commitments"
 	"github.com/jbuffin/admiral/internal/inbox"
 	"github.com/jbuffin/admiral/internal/ledger"
@@ -203,8 +205,111 @@ func TestTheBriefListsAProposalApartFromAdmiralBotsWaitingQuestions(t *testing.T
 	if waiting := section(got, "AdmiralBot's waiting questions"); !strings.Contains(waiting, "Which branch?") || strings.Contains(waiting, "Annex doors") {
 		t.Errorf("waiting questions section %q; want AdmiralBot's own question and not the proposal", waiting)
 	}
-	if !strings.Contains(got, "Admiral is asking") || !strings.Contains(got, propTitle) {
-		t.Errorf("brief %q; want a line that says Admiral is asking, with %q", got, propTitle)
+	if !strings.Contains(got, "Admiral is asking") || strings.Contains(got, "Annex doors") {
+		t.Errorf("brief %q; want a line that says Admiral is asking and carries no issue title", got)
+	}
+}
+
+func TestTheBriefNamesAProposedChildByItsReferenceNotItsTitle(t *testing.T) {
+	r := newBriefRig(t)
+	c, _, err := r.notes().AddCampaignCommitment("home", ledger.Commitment{Text: "work on acme/widgets#20", Trigger: ledger.Trigger{Kind: ledger.TriggerCampaign, Subject: "camp-1"}, Action: ledger.ActionWork, Harness: "claude"}, "admiralbot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := "campaign-" + c.ID + "-ab12-1"
+	line := `{"v":1,"ts":"2026-11-12T09:00:00Z","event":"child_proposed","id":"` + c.ID + `","url":"` + propChild + `","question":"` + id + `"}` + "\n"
+	f, err := os.OpenFile(filepath.Join(r.home, "chat", "home", "ledger.jsonl"), os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(line); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	if err := r.Propose("home", commitments.Proposal{ID: id, Title: propTitle, Child: propChild}); err != nil {
+		t.Fatal(err)
+	}
+	r.Tick()
+	got := section(r.brief("home"), "Admiral's open proposals")
+	if !strings.Contains(got, "acme/widgets#21") || strings.Contains(got, "Annex doors") {
+		t.Errorf("proposals section %q; want the child as acme/widgets#21 and no title", got)
+	}
+}
+
+// answered proposes n questions and answers each with a No, leaving their files as a runner that never cleared them would.
+func answered(t *testing.T, r *briefRig, n int) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("campaign-w1-ab12-%d", 100+i)
+		if err := r.Propose("home", commitments.Proposal{ID: id, Title: propTitle, Child: propChild}); err != nil {
+			t.Fatal(err)
+		}
+		r.reply(t, "home", id, choice(commitments.ProposalNo))
+	}
+}
+
+func TestTwentyAnsweredProposalsDoNotCrowdOutAdmiralBotsQuestion(t *testing.T) {
+	r := newBriefRig(t)
+	answered(t, r, 25)
+	r.post(t, "/api/chat/questions", askBody, "home")
+	var own int
+	for _, q := range r.questions("home") {
+		if !isProposal(q.Item.ID) {
+			own++
+		}
+	}
+	if own != 1 {
+		t.Errorf("%d of AdmiralBot's own questions listed; want its one", own)
+	}
+	if !unanswered(r.questions("home")) {
+		t.Error("AdmiralBot's question no longer counts as waiting, so a reset would not hold off for it")
+	}
+	if got := r.WaitingQuestions(); len(got) != 1 {
+		t.Errorf("%d waiting questions in the Inbox, want AdmiralBot's one", len(got))
+	}
+}
+
+func TestAProposalThatSortsBelowManyAnsweredOnesStillShowsOnceTheRunnerHasClearedThem(t *testing.T) {
+	r := newBriefRig(t)
+	answered(t, r, 25)
+	for i := 0; i < 25; i++ {
+		r.Withdraw("home", fmt.Sprintf("campaign-w1-ab12-%d", 100+i))
+	}
+	low := "campaign-a0-0000-1"
+	if err := r.Propose("home", commitments.Proposal{ID: low, Title: propTitle, Child: propChild}); err != nil {
+		t.Fatal(err)
+	}
+	qs := r.questions("home")
+	if len(qs) != 1 || qs[0].Item.ID != low {
+		t.Errorf("questions %+v; want the new proposal alone", qs)
+	}
+}
+
+func TestANewChatClearsAnAnsweredProposalLeftOverAndKeepsAnOpenOne(t *testing.T) {
+	r := newBriefRig(t)
+	answered(t, r, 2)
+	propose(t, r, "home")
+	r.WithdrawQuestions("home")
+	files, _ := filepath.Glob(filepath.Join(r.home, "chat", "home", "questions", "*"))
+	if len(files) != 1 || filepath.Base(files[0]) != propID+".json" {
+		t.Errorf("files %v; want only the open proposal %s", files, propID)
+	}
+}
+
+func TestARemovedAnsweredProposalKeepsItsAnswerInTheThreadSoItsCardReadsAnswered(t *testing.T) {
+	r := newBriefRig(t)
+	propose(t, r, "home")
+	r.reply(t, "home", propID, choice(commitments.ProposalYes))
+	r.Withdraw("home", propID)
+	got := map[string]chatlog.Entry{}
+	for _, m := range r.chat("home").recent() {
+		got[m.ID] = chatlog.Entry{Kind: m.Kind, Text: m.Text}
+	}
+	if q := got["q-"+propID]; q.Kind != chatlog.KindQuestion {
+		t.Errorf("log %+v; want the question's card kept", got)
+	}
+	if a := got["a-"+propID]; a.Kind != chatlog.KindAnswer || a.Text != commitments.ProposalYes {
+		t.Errorf("log %+v; want an answer entry reading %q", got, commitments.ProposalYes)
 	}
 }
 

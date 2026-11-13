@@ -34,7 +34,7 @@ function QuestionCard({ item, chat }: { item: Extract<ThreadItem, { kind: 'quest
   return (
     <div class="convo-card chat-card quiet">
       <p class="convo-card-title">{card.title}</p>
-      <p class="line">{item.answer ? youAnswered(item.answer) : 'Withdrawn'}</p>
+      <p class="line">{item.answer ? youAnswered(item.answer) : item.kept !== undefined ? `You answered: ${item.kept}` : 'Withdrawn'}</p>
     </div>
   );
 }
@@ -42,7 +42,7 @@ function QuestionCard({ item, chat }: { item: Extract<ThreadItem, { kind: 'quest
 function CommitmentCard({ item, fleet }: { item: Extract<ThreadItem, { kind: 'commitment' }>; fleet: string }) {
   const v = commitmentCardView(item, fleet);
   return (
-    <div class="convo-card chat-card" role="listitem">
+    <div class="convo-card chat-card">
       <p class="chat-card-eyebrow">{v.eyebrow}</p>
       <p class="line">{v.text}</p>
       {v.childLabel ? <p class="line">{v.childLabel}</p> : null}
