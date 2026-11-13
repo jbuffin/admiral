@@ -63,6 +63,11 @@ type runner struct {
 	warnings []string // the router's, for a built-in GitHub source
 	queue    []string // orders.launched not yet delivered
 	pulls    pulls
+
+	catalog    []EventKind
+	hasCatalog bool
+	evWindow   time.Time // the first delivered event of the current minute
+	evCount    int
 }
 
 type pulls struct {
@@ -71,8 +76,8 @@ type pulls struct {
 	one    map[string]bool
 }
 
-func newRunner(ctx context.Context, home string, cfg func() *config.Config, def config.Source, notify func(), prev *runner) *runner {
-	r := &runner{home: home, key: def.Key, cfg: cfg, ctx: ctx, def: def, notify: notify, done: make(chan struct{}),
+func newRunner(ctx context.Context, home string, cfg func() *config.Config, def config.Source, notify func(), onEvent func(Event), prev *runner) *runner {
+	r := &runner{home: home, key: def.Key, cfg: cfg, ctx: ctx, def: def, notify: notify, onEvent: onEvent, done: make(chan struct{}),
 		restartCh: make(chan struct{}, 1), wake: make(chan struct{}, 1), state: StateStarting, caps: []string{}}
 	go func() {
 		if prev != nil {
@@ -221,6 +226,7 @@ func (r *runner) session() (ranFor time.Duration, restarted bool, err error) {
 	if err != nil {
 		return fatal(err)
 	}
+	r.pullCatalog(ctx, p)
 	r.mu.Lock()
 	r.caps, r.schema = caps, schema
 	r.mergePanels(panels)
@@ -491,6 +497,8 @@ func (r *runner) note(sid int, method string, params json.RawMessage) {
 		}
 		r.mu.Unlock()
 		r.notify()
+	case "event":
+		r.handleEvent(params)
 	default:
 		r.logf("protocol error: the notification %q is not one Admiral knows", method)
 	}

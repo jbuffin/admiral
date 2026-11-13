@@ -153,7 +153,12 @@ func (s *Supervisor) reconcile(force string, gen uint64) {
 // s.mu must be held.
 func (s *Supervisor) start(def config.Source) {
 	ctx, cancel := context.WithCancel(s.ctx)
-	r := newRunner(ctx, s.Home, s.Config.Current, def, s.changed, s.stopping[def.Key])
+	onEvent := func(ev Event) {
+		if s.OnEvent != nil {
+			s.OnEvent(def.Key, ev)
+		}
+	}
+	r := newRunner(ctx, s.Home, s.Config.Current, def, s.changed, onEvent, s.stopping[def.Key])
 	s.runners[def.Key], s.cancels[def.Key] = r, cancel
 	s.wg.Add(1)
 	go func() {
