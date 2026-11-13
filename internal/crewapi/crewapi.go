@@ -30,6 +30,7 @@ type Service struct {
 
 func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/fleets/{key}/crew", s.serveCrew)
+	mux.HandleFunc("GET /api/fleets/{key}/crew/skills", s.serveSkills)
 	mux.HandleFunc("POST /api/fleets/{key}/crew/draft", s.serveDraft)
 	mux.HandleFunc("POST /api/fleets/{key}/crew/members", s.serveCreate)
 	mux.HandleFunc("PUT /api/fleets/{key}/crew/members/{name}", s.servePut)
@@ -249,4 +250,28 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 		return false
 	}
 	return true
+}
+
+// serveSkills lists the user and plugin skills of the fleet's docks, never a checkout's.
+func (s *Service) serveSkills(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.fleetCrew(w, r); !ok {
+		return
+	}
+	fleet, _ := s.Config.Current().Fleet(r.PathValue("key"))
+	docks := fleet.Harnesses
+	if want := r.URL.Query().Get("harness"); want != "" {
+		dock, _ := fleet.Harness(want)
+		docks = []config.Harness{dock}
+	}
+	lists := make([]skillindex.HarnessSkills, 0, len(docks))
+	for _, d := range docks {
+		lists = append(lists, skillindex.HarnessSkills{Harness: d.Name, Skills: skillindex.List(d.Name, d.Environ(), "")})
+	}
+	skills := []skillindex.Entry{}
+	for _, e := range skillindex.Merge(lists) {
+		if crew.ValidSkillName(e.Name) {
+			skills = append(skills, e)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string][]skillindex.Entry{"skills": skills})
 }

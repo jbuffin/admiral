@@ -5,6 +5,7 @@ import { Flag } from './Flag';
 import { fleetSearch } from './fleets';
 import { crewPath, go, loc } from './router';
 import { Sheet } from './Sheet';
+import { SkillPicker } from './SkillPicker';
 import {
   ADD_CREW_START,
   BASED_ON_ROLES,
@@ -132,6 +133,9 @@ const COUNT_FROM = 3500;
 
 function MemberEditor({
   label,
+  fleetKey,
+  members,
+  self,
   initial,
   named,
   lockedTo,
@@ -143,6 +147,9 @@ function MemberEditor({
   onSaved,
 }: {
   label: string;
+  fleetKey: string;
+  members: CrewMember[];
+  self?: string;
   initial: NewMemberForm;
   named: boolean;
   lockedTo?: string;
@@ -235,9 +242,20 @@ function MemberEditor({
         {(a) => <input {...a} type="text" value={f.pickMeWhen} onInput={set('pickMeWhen')} />}
       </Field>
       {fixChecker ? null : (
-        <Field label="Skills" error={at('skills')}>
-          {(a) => <textarea {...a} rows={3} value={f.skills} onInput={set('skills')} />}
-        </Field>
+        <SkillPicker
+          fleetKey={fleetKey}
+          harness={f.harness}
+          skills={f.skills}
+          onChange={(skills) => {
+            setF({ ...f, skills });
+            setOpen(clearProblems(open, 'skills'));
+          }}
+          role={custom ? f.customRole.trim() : f.role}
+          pickMeWhen={f.pickMeWhen}
+          members={members}
+          self={self}
+          error={at('skills')}
+        />
       )}
       <div class="pair">
         <Field label="Model" error={at('model')}>
@@ -274,10 +292,13 @@ function MemberEditor({
   );
 }
 
-function EditForm({ member, fleetKey, harness, onDone, onSaved }: { member: CrewMember; fleetKey: string; harness: string; onDone: () => void; onSaved: () => Promise<void> }) {
+function EditForm({ member, members, fleetKey, harness, onDone, onSaved }: { member: CrewMember; members: CrewMember[]; fleetKey: string; harness: string; onDone: () => void; onSaved: () => Promise<void> }) {
   return (
     <MemberEditor
       label={`Edit ${member.name}`}
+      fleetKey={fleetKey}
+      members={members}
+      self={member.name}
       initial={{ ...formOf(member), name: '' }}
       named={false}
       lockedTo={member.customized ? member.name : undefined}
@@ -293,7 +314,7 @@ function EditForm({ member, fleetKey, harness, onDone, onSaved }: { member: Crew
 }
 
 /** Describe, draft, review: nothing reaches disk until the editor's Save. */
-function AddCrewPanel({ fleetKey, onClose, onCreated }: { fleetKey: string; onClose: () => void; onCreated: (name: string) => Promise<void> }) {
+function AddCrewPanel({ fleetKey, members, onClose, onCreated }: { fleetKey: string; members: CrewMember[]; onClose: () => void; onCreated: (name: string) => Promise<void> }) {
   const [s, send] = useReducer(addCrewStep, ADD_CREW_START);
   const abort = useRef<AbortController | null>(null);
   const textId = useId();
@@ -329,6 +350,8 @@ function AddCrewPanel({ fleetKey, onClose, onCreated }: { fleetKey: string; onCl
           <p class="note">Drafted from your description. Check every field before you save; nothing is written until you do.</p>
           <MemberEditor
             label="New crew member"
+            fleetKey={fleetKey}
+            members={members}
             initial={s.form}
             named
             problems={s.problems}
@@ -558,7 +581,7 @@ function NoteScopes({ member, notes, regions, fleetKey, harness, reload }: { mem
   );
 }
 
-function Detail({ member, fleetKey, harness, reload, afterRename, afterDelete }: { member: CrewMember; fleetKey: string; harness: string; reload: () => Promise<void>; afterRename: (to: string) => Promise<void>; afterDelete: () => Promise<void> }) {
+function Detail({ member, members, fleetKey, harness, reload, afterRename, afterDelete }: { member: CrewMember; members: CrewMember[]; fleetKey: string; harness: string; reload: () => Promise<void>; afterRename: (to: string) => Promise<void>; afterDelete: () => Promise<void> }) {
   const [editing, setEditing] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -621,7 +644,7 @@ function Detail({ member, fleetKey, harness, reload, afterRename, afterDelete }:
         </div>
       ) : null}
       {editing ? (
-        <EditForm member={member} fleetKey={fleetKey} harness={harness} onDone={() => setEditing(false)} onSaved={reload} />
+        <EditForm member={member} members={members} fleetKey={fleetKey} harness={harness} onDone={() => setEditing(false)} onSaved={reload} />
       ) : (
         <dl class="crew-facts">
           {member['pick-me-when'] ? (
@@ -822,6 +845,7 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
               <AddCrewPanel
                 key={fleet.key}
                 fleetKey={fleet.key}
+                members={data.members}
                 onClose={() => toList()}
                 onCreated={async (to) => {
                   await load();
@@ -834,6 +858,7 @@ export function CrewPage({ fleet, name, title, phone }: { fleet: Fleet; name: st
               <Detail
                 key={`${harness}:${selected.name}`}
                 member={selected}
+                members={data.members}
                 fleetKey={fleet.key}
                 harness={harness}
                 reload={load}

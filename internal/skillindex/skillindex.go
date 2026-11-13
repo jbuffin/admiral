@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -376,4 +377,66 @@ func enabledPlugins(identity, dir string, projectSettings bool) map[string]bool 
 		}
 	}
 	return out
+}
+
+// HarnessSkills is one dock's installed skills.
+type HarnessSkills struct {
+	Harness string
+	Skills  []Skill
+}
+
+// Entry is one skill across docks, under the name a crew member saves.
+// Aliases is every name the skill is installed under, Name included, sorted.
+type Entry struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Harnesses   []string `json:"harnesses"`
+	Aliases     []string `json:"aliases"`
+}
+
+// Merge folds the docks' lists into entries; lists are in dock order, which decides whose description is kept.
+func Merge(lists []HarnessSkills) []Entry {
+	byName := map[string]*Entry{}
+	for _, l := range lists {
+		bare := map[string]int{}
+		for _, sk := range l.Skills {
+			bare[bareName(sk.Name)]++
+		}
+		for _, sk := range l.Skills {
+			name := sk.Name
+			if b := bareName(name); bare[b] == 1 {
+				name = b
+			}
+			e := byName[name]
+			if e == nil {
+				e = &Entry{Name: name, Aliases: []string{name}}
+				byName[name] = e
+			}
+			if !slices.Contains(e.Aliases, sk.Name) {
+				e.Aliases = append(e.Aliases, sk.Name)
+			}
+			if e.Description == "" {
+				e.Description = sk.Description
+			}
+			if !slices.Contains(e.Harnesses, l.Harness) {
+				e.Harnesses = append(e.Harnesses, l.Harness)
+			}
+		}
+	}
+	out := make([]Entry, 0, len(byName))
+	for _, e := range byName {
+		sort.Strings(e.Harnesses)
+		sort.Strings(e.Aliases)
+		out = append(out, *e)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+func bareName(n string) string {
+	_, b, ok := strings.Cut(n, ":")
+	if !ok {
+		return n
+	}
+	return b
 }

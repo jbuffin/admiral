@@ -68,24 +68,50 @@ test('on the iPad, a person reads the crew by layer, customizes a built-in, edit
   await expect(main.getByText('Pick for grammar work.').first()).toBeVisible();
   await expect(main.getByText('Pick for parser work.')).toHaveCount(0);
 
-  // A refused save shows the server's message beside the input it names, keeps what was typed and changes nothing; a good one is saved with one skill a line.
+  // The Skills field is pills in saved order; ada is locked to codex, so a skill only Claude Code has keeps its pill with a warning.
   await press(main.getByRole('button', { name: 'Edit', exact: true }));
-  const skills = form.getByLabel('Skills');
-  await skills.fill('not a skill');
+  const pills = form.getByRole('list', { name: 'Skills' }).getByRole('listitem');
+  const search = form.getByRole('combobox', { name: 'Search skills' });
+  const options = page.getByRole('listbox', { name: 'Installed skills' }).getByRole('option');
+  const addSkill = form.getByRole('button', { name: 'Add skill' });
+  await expect(pills).toContainText(['tdd', 'code-review']);
+  await expect(pills.filter({ hasText: 'code-review' })).toContainText('not installed on codex');
+  await expect(pills.filter({ hasText: 'tdd' })).not.toContainText('not installed');
+
+  // A refused save shows the server's message beside the input it names, keeps what was typed and changes nothing.
+  const pick = form.getByLabel(/pick.me.when/i);
+  await pick.fill('');
   const refused = page.waitForResponse((r) => r.request().method() === 'PUT' && new URL(r.url()).pathname === '/api/v1/fleets/zulu/crew/members/ada');
   await press(form.getByRole('button', { name: 'Save' }));
   const answer = await refused;
   expect(answer.status()).toBe(400);
-  const message = ((await answer.json()) as { error: string; field: string });
-  expect(message.field).toBe('skills');
-  await expect(skills).toHaveAccessibleDescription(new RegExp(message.error.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  await expect(skills).toHaveValue('not a skill');
+  const message = (await answer.json()) as { error: string; field: string };
+  expect(message.field).toBe('pick-me-when');
+  await expect(pick).toHaveAccessibleDescription(new RegExp(message.error.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  await expect(pick).toHaveValue('');
   await expect(form).toBeVisible();
-  await skills.fill('review\nwrite-docs');
+  await pick.fill('Pick for grammar work.');
+
+  // The list is the locked harness's: Codex's skills with their descriptions and the Codex logo alone, none of Claude Code's.
+  await press(addSkill);
+  await expect(options.filter({ hasText: 'codex-only' })).toContainText('Only Codex has this.');
+  await expect(options.filter({ hasText: 'codex-only' }).locator('img[src$="/api/v1/logos/codex"]')).toHaveCount(1);
+  await expect(options.filter({ hasText: 'codex-only' }).locator('img[src$="/api/v1/logos/claude"]')).toHaveCount(0);
+  await expect(options.filter({ hasText: 'claude-only' })).toHaveCount(0);
+  // Remove with ×, add from the list by typing to filter, and Save writes the remaining list in order.
+  await press(form.getByRole('button', { name: 'Remove tdd' }));
+  await expect(pills).toContainText(['code-review']);
+  await search.fill('uns');
+  await expect(options).toHaveCount(1);
+  await press(options.filter({ hasText: 'unslop' }));
+  await expect(pills).toContainText(['code-review', 'unslop']);
   await press(form.getByRole('button', { name: 'Save' }));
   await expect(form).toBeHidden();
-  await expect(main.getByText('review', { exact: true })).toBeVisible();
-  await expect(main.getByText('write-docs', { exact: true })).toBeVisible();
+  await expect(main.getByText('unslop', { exact: true })).toBeVisible();
+  await expect(main.getByText('tdd', { exact: true })).toHaveCount(0);
+  const saved = async (name: string) => ((await (await page.request.get(admiral.url + 'api/v1/fleets/zulu/crew')).json()) as { members: { name: string; skills: string[] }[] }).members.find((m) => m.name === name)!.skills;
+  expect(await saved('ada')).toEqual(['code-review', 'unslop']);
+  expect(readFileSync(crewFile('ada'), 'utf8')).toMatch(/skills:\n {2}- "?code-review"?\n {2}- "?unslop"?\n/);
 
   // Notes under ada: This fleet and one heading per repo. Edit a note inline.
   await expect(scope(/^This fleet\b/)).toContainText('ada reads the grammar first');
@@ -170,6 +196,7 @@ test('on the iPad, a person reads the crew by layer, customizes a built-in, edit
   expect(dialogs).toEqual([]);
 
   // Add crew: the description is drafted, nothing is written until Save, and Save opens the new member.
+  claude.judge('crew-skills');
   await press(main.getByRole('button', { name: 'Add crew' }));
   const panel = main.getByRole('region', { name: 'Add crew' });
   const describe = panel.getByRole('textbox', { name: 'Describe the member' });
@@ -179,11 +206,36 @@ test('on the iPad, a person reads the crew by layer, customizes a built-in, edit
   await expect(adding.getByLabel('Name')).toHaveValue('quartermaster');
   await expect(panel).toContainText('Drafted from your description. Check every field before you save; nothing is written until you do.');
   expect(existsSync(crewFile('quartermaster'))).toBe(false);
+  // The draft's skills are pills. With no harness locked the list is every dock's: tdd has both logos, and mystery is installed nowhere.
+  const newPills = adding.getByRole('list', { name: 'Skills' }).getByRole('listitem');
+  await expect(newPills).toContainText(['tdd', 'mystery']);
+  await expect(newPills.filter({ hasText: 'mystery' })).toContainText('not found');
+  await expect(newPills.filter({ hasText: 'tdd' })).not.toContainText('not found');
+  await press(adding.getByRole('button', { name: 'Add skill' }));
+  const tdd = options.filter({ hasText: 'tdd' });
+  await expect(tdd.locator('img[src$="/api/v1/logos/claude"]')).toHaveCount(1);
+  await expect(tdd.locator('img[src$="/api/v1/logos/codex"]')).toHaveCount(1);
+  await expect(options.filter({ hasText: 'unslop' }).locator('img[src$="/api/v1/logos/claude"]')).toHaveCount(0);
+  // A name that is not installed can be typed when a saved member would take it; the field says why when not.
+  const typed = adding.getByRole('combobox', { name: 'Search skills' });
+  await typed.fill('code review');
+  await expect(typed).not.toHaveAttribute('aria-invalid', 'true');
+  await expect(typed).toHaveAccessibleDescription('');
+  await typed.fill('not a skill');
+  await expect(typed).toHaveAccessibleDescription('');
+  await press(adding.getByRole('button', { name: 'Add "not a skill"' }));
+  await expect(typed).toHaveAccessibleDescription(/.+/);
+  await expect(newPills).toHaveCount(2);
+  await typed.fill('my-repo-skill');
+  await press(adding.getByRole('button', { name: 'Add "my-repo-skill"' }));
+  await expect(newPills).toContainText(['tdd', 'mystery', 'my-repo-skill']);
+  await expect(newPills.filter({ hasText: 'my-repo-skill' })).toContainText('not found');
   await adding.getByLabel(/pick.me.when/i).fill('Pick for stocking the galley.');
   await press(adding.getByRole('button', { name: 'Save' }));
   await expect(page).toHaveURL(/\/app\/crew\/quartermaster\?(.*&)?fleet=zulu/);
   await expect(row(fleet, 'Pick for stocking the galley.')).toBeVisible();
   expect(readFileSync(crewFile('quartermaster'), 'utf8')).toContain('pick-me-when: "Pick for stocking the galley."');
+  expect(await saved('quartermaster')).toEqual(['tdd', 'mystery', 'my-repo-skill']);
 
   // A draft the resolver refuses shows its problem beside the field, and fixing the field there saves it.
   claude.judge('crew-invalid');

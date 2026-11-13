@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CUSTOM_ROLE, fieldError, groupMembers, memberBody, shownFields, splitNote, type CrewMember, type MemberForm } from './crew';
+import { CUSTOM_ROLE, fieldError, formOf, groupMembers, memberBody, shownFields, splitNote, type CrewMember, type MemberForm } from './crew';
 
 const member = (name: string, layer: 'built-in' | 'fleet', customized = false): CrewMember => ({
   name,
@@ -19,7 +19,7 @@ const form = (over: Partial<MemberForm> = {}): MemberForm => ({
   role: 'implementer',
   customRole: '',
   basedOn: '',
-  skills: '',
+  skills: [],
   model: '',
   harness: '',
   pickMeWhen: 'Pick me.',
@@ -42,9 +42,9 @@ describe('groupMembers', () => {
 });
 
 describe('memberBody', () => {
-  it('sends a built-in role with no based-on, and skills one per line without blanks', () => {
-    const body = memberBody(form({ skills: 'review\n  write-docs  \n\n', model: 'opus', harness: 'codex' }));
-    expect(body).toEqual({ role: 'implementer', skills: ['review', 'write-docs'], model: 'opus', harness: 'codex', 'pick-me-when': 'Pick me.', instructions: 'Work.' });
+  it('sends a built-in role with no based-on, and skills in the order chosen', () => {
+    const body = memberBody(form({ skills: ['write-docs', 'review'], model: 'opus', harness: 'codex' }));
+    expect(body).toEqual({ role: 'implementer', skills: ['write-docs', 'review'], model: 'opus', harness: 'codex', 'pick-me-when': 'Pick me.', instructions: 'Work.' });
     expect(body).not.toHaveProperty('based-on');
   });
   it('leaves based-on out for a built-in role even after Custom was picked and dropped', () => {
@@ -58,10 +58,16 @@ describe('memberBody', () => {
     expect(memberBody(form({ harness: '' }))).not.toHaveProperty('harness');
   });
   it('drops skills and instructions for the fix checker', () => {
-    const body = memberBody(form({ role: 'fix-checker', skills: 'review', instructions: 'Check.' }));
+    const body = memberBody(form({ role: 'fix-checker', skills: ['review'], instructions: 'Check.' }));
     expect(body.role).toBe('fix-checker');
     expect(body.skills ?? []).toEqual([]);
     expect(body.instructions ?? '').toBe('');
+  });
+});
+
+describe('formOf', () => {
+  it('opens a member with its skills in saved order', () => {
+    expect(formOf({ ...member('ada', 'fleet'), skills: ['tdd', 'code-review'] }).skills).toEqual(['tdd', 'code-review']);
   });
 });
 
