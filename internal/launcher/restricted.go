@@ -2,6 +2,7 @@ package launcher
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -25,7 +26,7 @@ var unsafeRestrictedFlags = []string{"--dangerously-skip-permissions", "--permis
 
 // Tools that reach outside the machine or into the engineer's other sessions; a restricted ship has none of them.
 var restrictedDeniedTools = []any{"WebFetch", "WebSearch", "mcp__*", "Bash(git push *)", "Bash(gh *)", "NotebookEdit",
-	"SendMessage", "ListAgents", "RemoteTrigger", "PushNotification", "Artifact", "SendUserFile"}
+	"SendMessage", "ListAgents", "RemoteTrigger", "PushNotification", "Artifact", "SendUserFile", "SendFeedback"}
 
 // Toolchain caches under the home the sandbox may read though the rest of it is denied.
 var toolchainCaches = []string{"~/go/pkg/mod", "~/Library/Caches/go-build", "~/.cache/go-build", "~/.npm", "~/.cache/pip",
@@ -68,7 +69,7 @@ func restrictedSettings(level standing.Restricted, checkout, home string, altern
 	for _, c := range toolchainCaches {
 		allowRead = append(allowRead, c)
 	}
-	filesystem := map[string]any{"denyRead": []any{"~/", home}, "allowRead": allowRead}
+	filesystem := map[string]any{"denyRead": []any{"~/", home, "~/.gem/credentials"}, "allowRead": allowRead}
 	var allow []any
 	switch level {
 	case standing.DraftFix:
@@ -194,7 +195,20 @@ func writeEventFile(checkout, text string) error {
 	if err := root.MkdirAll(filepath.Join(".admiral", "untrusted"), 0o700); err != nil {
 		return err
 	}
-	return root.WriteFile(filepath.Join(".admiral", "untrusted", "event.md"), []byte(text), 0o600)
+	// Root follows a link that stays inside the clone, so the file itself is replaced, never written through.
+	event := filepath.Join(".admiral", "untrusted", "event.md")
+	if err := root.Remove(event); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	f, err := root.OpenFile(event, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	_, err = f.WriteString(text)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }
 
 // alternatesOf lists the object directories a shared clone reads through, which git in the clone needs the sandbox to read.

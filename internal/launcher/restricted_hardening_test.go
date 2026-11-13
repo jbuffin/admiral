@@ -84,7 +84,7 @@ func TestTheRestrictedSettingsDenyReadingTheHomeAndAdmiralsHomeExceptTheCheckout
 			fs := sub(t, got, "sandbox", "filesystem")
 			deny, allow := strs(t, fs["denyRead"]), strs(t, fs["allowRead"])
 			realHome, _ := filepath.EvalSymlinks(p.home)
-			for _, want := range []string{"~/", realHome} {
+			for _, want := range []string{"~/", realHome, "~/.gem/credentials"} {
 				if !slices.Contains(deny, want) {
 					t.Errorf("denyRead = %q, want %q", deny, want)
 				}
@@ -124,7 +124,7 @@ func TestTheRestrictedSettingsDenyEveryToolThatReachesOtherSessionsOrOffTheMachi
 	_, _, argv, _ := p.mustRestricted(t, standing.DraftFix)
 	_, got := settingsOf(t, argv)
 	deny := strs(t, sub(t, got, "permissions")["deny"])
-	for _, tool := range []string{"SendMessage", "ListAgents", "RemoteTrigger", "PushNotification", "Artifact", "SendUserFile"} {
+	for _, tool := range []string{"SendMessage", "ListAgents", "RemoteTrigger", "PushNotification", "Artifact", "SendUserFile", "SendFeedback"} {
 		if !slices.Contains(deny, tool) {
 			t.Errorf("permissions.deny = %q, want %s", deny, tool)
 		}
@@ -218,5 +218,49 @@ func TestACheckoutIsReturnedByItsResolvedPath(t *testing.T) {
 	}
 	if want, _ := filepath.EvalSymlinks(path); path != want {
 		t.Errorf("Make = %s, want the resolved %s", path, want)
+	}
+}
+
+func TestAnEventFileThatIsALinkInsideTheCloneIsReplacedNotWrittenThrough(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".admiral", "untrusted"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(root, "config")
+	if err := os.WriteFile(cfg, []byte("[core]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../config", filepath.Join(root, ".admiral", "untrusted", "event.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeEventFile(root, rawEvent); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(cfg); string(b) != "[core]\n" {
+		t.Errorf("the linked file now holds %q, want it untouched", b)
+	}
+	if b, err := os.ReadFile(filepath.Join(root, ".admiral", "untrusted", "event.md")); err != nil || string(b) != rawEvent {
+		t.Errorf("event.md = %q (%v), want the event", b, err)
+	}
+}
+
+func TestARelaunchOfARestrictedShipSucceedsInItsKeptCloneWithoutMakingANewOne(t *testing.T) {
+	p := newPinRig(t, nil)
+	req, fc := p.restricted(standing.DraftFix)
+	fc.t = t
+	req.Session, req.Name = "kelpie", "Kelpie"
+	kept := filepath.Join(p.home, "checkouts", "kelpie")
+	if err := os.MkdirAll(kept, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := p.l.Launch(req)
+	if err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	if len(fc.calls) != 0 {
+		t.Errorf("the seam was asked to make a clone over a kept one: %v", fc.calls)
+	}
+	if !samePath(t, out.Options["dir"], kept) {
+		t.Errorf("dir = %s, want the kept clone %s", out.Options["dir"], kept)
 	}
 }
