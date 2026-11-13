@@ -370,6 +370,29 @@ func TestTextViewKeepsNonMetaNotices(t *testing.T) {
 	}
 }
 
+func TestHarnessTagsReadAsWords(t *testing.T) {
+	items := read(t, strings.Join([]string{
+		`{"type":"user","uuid":"c1","message":{"content":"<command-message>jasonbuffin:commodore</command-message>\n<command-name>/jasonbuffin:commodore</command-name>\n<command-args>https://github.com/o/r/issues/1</command-args>"}}`,
+		`{"type":"user","uuid":"c2","message":{"content":"<command-name>/clear</command-name>\n<command-message>clear</command-message>\n<command-args></command-args>"}}`,
+		`{"type":"user","uuid":"c3","message":{"content":"<local-command-stdout>ok</local-command-stdout>"}}`,
+		`{"type":"user","uuid":"n1","message":{"content":"<task-notification>\n<task-id>b1</task-id>\n<output-file>/tmp/b1.output</output-file>\n<status>completed</status>\n<summary>Background command \"Wait for CI\" completed (exit code 0)</summary>\n</task-notification>\nRead the output file to retrieve the result: /tmp/b1.output"}}`,
+		`{"type":"user","uuid":"n2","message":{"content":"<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n<summary>Agent \"Review\" completed</summary>\n<result>Two findings.</result>\n</task-notification>"}}`,
+	}, "\n")+"\n")
+
+	var got []string
+	for _, it := range items {
+		got = append(got, string(it.Kind)+": "+it.Text)
+	}
+	want := []string{
+		"user: /jasonbuffin:commodore https://github.com/o/r/issues/1",
+		`notice: Background command "Wait for CI" completed (exit code 0)`,
+		"notice: Agent \"Review\" completed\n\nTwo findings.",
+	}
+	if fmt.Sprintf("%q", got) != fmt.Sprintf("%q", want) {
+		t.Errorf("items =\n%q\nwant\n%q", got, want)
+	}
+}
+
 func TestSecondItemOfALineGetsASuffixedID(t *testing.T) {
 	items := read(t, strings.Join([]string{
 		`{"type":"assistant","uuid":"0a1b","message":{"content":[{"type":"text","text":"a"},{"type":"tool_use","id":"t","name":"Bash","input":{}}]}}`,

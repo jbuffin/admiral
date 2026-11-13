@@ -308,10 +308,15 @@ func (d *claudeDecoder) user(l claudeLine, b *lineItems) {
 	}
 	text := textOf(bs)
 	head := strings.TrimLeft(text, " \t\r\n")
-	for _, p := range []string{"<command-name>", "<local-command-"} {
-		if strings.HasPrefix(head, p) {
-			return
+	if strings.HasPrefix(head, "<local-command-") || strings.HasPrefix(head, "<command-name>") {
+		return
+	}
+	// Claude Code writes a built-in command such as /clear name first, and a skill or custom command message first.
+	if strings.HasPrefix(head, "<command-message>") {
+		if cmd := slashCommand(head); cmd != "" && !b.full() && !l.IsMeta {
+			b.add(Item{Kind: KindUser, Text: cutTo(cmd, maxText, "…")})
 		}
+		return
 	}
 	text = strings.TrimSpace(text)
 	if text == "" || b.full() {
@@ -319,6 +324,9 @@ func (d *claudeDecoder) user(l claudeLine, b *lineItems) {
 	}
 	for _, p := range noticePrefixes {
 		if strings.HasPrefix(head, p) {
+			if p == "<task-notification>" {
+				text = taskNotice(text)
+			}
 			// The chat has always shown a subagent's report and never another session's message.
 			b.add(Item{Kind: KindNotice, Text: cutTo(text, maxText, "…"), Meta: l.IsMeta})
 			return
@@ -327,6 +335,50 @@ func (d *claudeDecoder) user(l claudeLine, b *lineItems) {
 	if !l.IsMeta {
 		b.add(Item{Kind: KindUser, Text: cutTo(text, maxText, "…")})
 	}
+}
+
+// slashCommand is what the engineer typed to run a slash command: the harness records it as tags.
+func slashCommand(text string) string {
+	name := tagged(text, "command-name")
+	if name == "" {
+		return ""
+	}
+	if !strings.HasPrefix(name, "/") {
+		name = "/" + name
+	}
+	args := tagged(text, "command-args")
+	return strings.TrimSpace(name + " " + args)
+}
+
+// taskNotice is a background task's notice as its summary and a subagent's result, without the ids and paths around them.
+func taskNotice(text string) string {
+	summary := tagged(text, "summary")
+	if summary == "" {
+		summary = tagged(text, "status")
+	}
+	result := tagged(text, "result")
+	switch {
+	case summary == "" && result == "":
+		return text
+	case result == "":
+		return summary
+	case summary == "":
+		return result
+	}
+	return summary + "\n\n" + result
+}
+
+// tagged is the trimmed text inside the first <tag>…</tag> in text.
+func tagged(text, tag string) string {
+	_, rest, ok := strings.Cut(text, "<"+tag+">")
+	if !ok {
+		return ""
+	}
+	inner, _, ok := strings.Cut(rest, "</"+tag+">")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(inner)
 }
 
 // fold drops a result whose call was not seen, as when a read began mid-file.
