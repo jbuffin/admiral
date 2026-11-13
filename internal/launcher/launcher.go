@@ -82,6 +82,8 @@ type Request struct {
 	CommitmentKey string `json:"-"`
 	// QuietGate makes an autopilot launch check the guard and the advisor without posting an Inbox notice when it refuses.
 	QuietGate bool `json:"-"`
+	// Unattended marks a launch no one asked for in the moment (a routine run, a commitment, a feedback round); only the quota hold reads it.
+	Unattended bool `json:"-"`
 	// TriggerID is the id of the trigger-log record the launch answers; the `launched` outcome points at it.
 	TriggerID string `json:"-"`
 	// WorkerLaunched marks a ship started by an outside event, which gets the fleet's Guidance in its prompt.

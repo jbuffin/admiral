@@ -114,6 +114,8 @@ type Service struct {
 	ChatPrompt func(fleet string) string
 	// UsageRead replaces the transcript reading at a ship's exit, for tests.
 	UsageRead func(ctx context.Context, sess sessionhost.Session) ExitUsage
+	// Quota holds each login's plan windows; the quota hold reads it. Nil holds nothing.
+	Quota *usage.Store
 	// LastLive gives a ship's last live figures when its transcript has none; nil when nothing keeps them.
 	LastLive func(session string) (usage.Figures, bool)
 	// ForgetLive drops a ship's live figures once its usage record has read them, so a later round or a ship of the same name starts from nothing.

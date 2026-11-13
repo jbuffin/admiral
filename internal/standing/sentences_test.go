@@ -101,3 +101,21 @@ func TestSentencesAvoidTheWordsTheGlossaryRetires(t *testing.T) {
 		}
 	}
 }
+
+func TestTheQuotaHoldSentenceSaysWhatTheLimitDoes(t *testing.T) {
+	for _, s := range standing.Sentences(standing.PresetLimits(standing.Work)) {
+		if s.Field != "quota_hold_percent" {
+			continue
+		}
+		for _, want := range []string{"unattended", "plan window", "90%"} {
+			if !strings.Contains(s.Sentence, want) {
+				t.Errorf("sentence %q lacks %q", s.Sentence, want)
+			}
+		}
+		if strings.Contains(s.Sentence, "outside events") {
+			t.Errorf("sentence %q still says outside events", s.Sentence)
+		}
+		return
+	}
+	t.Fatal("no quota_hold_percent sentence")
+}

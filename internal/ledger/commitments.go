@@ -50,7 +50,9 @@ type Commitment struct {
 	TS      time.Time       `json:"ts"`
 	Via     string          `json:"via,omitempty"`
 	Waiting bool            `json:"waiting,omitempty"`
-	Shown   bool            `json:"shown,omitempty"`
+	// WaitReason is why a waiting launch has not started, as the refusal worded it.
+	WaitReason string `json:"wait_reason,omitempty"`
+	Shown      bool   `json:"shown,omitempty"`
 }
 
 var errNoCommitment = fmt.Errorf("%w: no such open commitment", ErrNotFound)

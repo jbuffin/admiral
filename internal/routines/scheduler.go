@@ -75,6 +75,8 @@ type Scheduler struct {
 	Chat     Chat
 	Proposer Proposer
 	Notifier Notifier
+	// QuotaHold says why unattended launches of a fleet on a harness are held for quota; harness is "" for a prompt run. Nil holds nothing.
+	QuotaHold func(fleet, harness string) (reason string, held bool)
 	// HostKnown is false while the ships host cannot list ships; a nil one is always known.
 	HostKnown func() bool
 	Zone      *time.Location // the zone a When is read in; main passes time.Local
