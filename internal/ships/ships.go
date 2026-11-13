@@ -91,7 +91,7 @@ type Ship struct {
 	Returning bool `json:"returning,omitempty"`
 	// CarriesPRs is set on a live ship that carries a PR still open, which returns to port only once its PRs are merged.
 	CarriesPRs bool `json:"carries_prs,omitempty"`
-	// OpenPRs is a live ship's report PRs that GitHub confirms open, in report order.
+	// OpenPRs is the PRs a live ship carries that are open, then its report's that GitHub confirms open, each once.
 	OpenPRs []string `json:"open_prs,omitempty"`
 	// Crew and Subagents are always present, empty lists as [].
 	Crew      []CrewBoat             `json:"crew"`
