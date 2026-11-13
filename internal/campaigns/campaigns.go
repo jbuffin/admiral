@@ -7,7 +7,9 @@ package campaigns
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -246,4 +248,19 @@ func ref(host, owner, repo, num string) (IssueRef, error) {
 		return IssueRef{}, errors.New("That is not an issue number. Paste an issue URL such as https://github.com/owner/repo/issues/12")
 	}
 	return IssueRef{Host: host, Owner: owner, Repo: repo, Number: n}, nil
+}
+
+var anyURL = regexp.MustCompile(`^https://([A-Za-z0-9.-]+(?::\d+)?)/(` + name + `)/(` + name + `)/(pull|issues)/(\d{1,9})$`)
+
+// ParseGitHubURL reads an https pull request URL (pull) or issue URL on one of hosts; its error is a message to show.
+func ParseGitHubURL(s string, hosts []string, pull bool) (IssueRef, error) {
+	m := anyURL.FindStringSubmatch(strings.TrimSpace(s))
+	want, noun := "issues", "issue"
+	if pull {
+		want, noun = "pull", "pull request"
+	}
+	if m == nil || m[4] != want || !slices.Contains(hosts, strings.ToLower(m[1])) {
+		return IssueRef{}, fmt.Errorf("the subject must be an https %s URL on a GitHub host the fleet uses, such as https://github.com/owner/repo/%s/12", noun, want)
+	}
+	return ref(m[1], m[2], m[3], m[5])
 }

@@ -332,6 +332,26 @@ var mcpTools = []mcpTool{
 		}), askQuestion},
 	{"save_note", "Save a fact the engineer asked you to remember. Admiral keeps it and the engineer manages the saved notes on Preferences; a Claude Code chat reads its notes again after every reset, a chat on another harness does not yet. One short fact per note.",
 		obj([]string{"text"}, map[string]any{"text": str("the fact to remember, in a sentence or two")}), saveNote},
+	{"make_commitment", "Record a promise the engineer told you to keep: something to do, or to tell them, when a ship sails off or anchors, a PR merges or closes, an issue closes, or at a time, or with no trigger. Use it only for what the engineer asked for in this chat, never for something you thought of; then quote it back with its id. Admiral fires it with no chat turn and a launch runs in autopilot. You cannot cancel or change one: only the engineer cancels, on Preferences.",
+		obj([]string{"text", "trigger", "action"}, map[string]any{
+			"text":    str("the promise as the engineer agreed it, in a sentence or two; you will quote it back"),
+			"trigger": map[string]any{"type": "string", "enum": []string{"ship_sailed", "ship_anchored", "pr_merged", "pr_closed", "issue_closed", "time", "none"}, "description": "what to wait for"},
+			"subject": str("the trigger's target: a ship's session name, a PR or issue URL on a GitHub host of the fleet, or an RFC 3339 time in the future; none for no trigger"),
+			"action":  map[string]any{"type": "string", "enum": []string{"launch", "remind"}, "description": "launch a ship, or remind the engineer with a chat card"},
+			"launch": map[string]any{"type": "object", "description": "for action launch: the ship to launch, as launch_ship takes it, plus the resources it needs", "properties": map[string]any{
+				"harness":    str("the harness: claude, codex or copilot"),
+				"dir":        str("a checkout or search root of the fleet"),
+				"clone":      flag01("clone the order's repo instead of naming dir"),
+				"clone_repo": str("the host/owner/repo the clone is for"),
+				"skill":      str("commodore, none, or a skill's name"),
+				"text":       str("the prompt, for a freeform launch"),
+				"source":     str("an order source's key, for a launch from an order"),
+				"order_id":   str("the order's id"),
+				"crew":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "crew members to pin, on a Commodore launch"},
+				"issues":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "GitHub issue URLs the ship claims; only on a launch with no source"},
+				"resources":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "the configured resources the ship needs while it runs"},
+			}},
+		}), makeCommitment},
 }
 
 func saveNote(c *mcpClient, raw json.RawMessage) (string, error) {
@@ -356,27 +376,18 @@ func addOrder(c *mcpClient, raw json.RawMessage) (string, error) {
 	return c.post("/api/sources/"+url.PathEscape(a.Source)+"/orders", map[string]string{"panel": a.Panel, "text": a.Text})
 }
 
-func launchShip(c *mcpClient, raw json.RawMessage) (string, error) {
-	var a struct {
-		Harness, Dir, Skill, Text, Source string
-		OrderID                           string `json:"order_id"`
-		CloneRepo                         string `json:"clone_repo"`
-		Clone, Anyway                     bool
-		WithMe                            bool `json:"with_me"`
-		Crew, Issues                      []string
-	}
-	if err := json.Unmarshal(raw, &a); err != nil {
-		return "", err
-	}
-	kind, name := "none", ""
-	switch a.Skill {
-	case "", "none":
-	case "commodore":
-		kind = "commodore"
-	default:
-		kind, name = "skill", a.Skill
-	}
-	autopilot := kind == "commodore" && !a.WithMe
+// shipSpec is what launch_ship and make_commitment take to describe a launch.
+type shipSpec struct {
+	Harness, Dir, Skill, Text, Source string
+	OrderID                           string `json:"order_id"`
+	CloneRepo                         string `json:"clone_repo"`
+	Clone, Anyway                     bool
+	Crew, Issues, Resources           []string
+}
+
+// shipsBody is the POST /api/ships body for a, in the chat's fleet.
+func (c *mcpClient) shipsBody(a shipSpec, autopilot bool) (map[string]any, error) {
+	kind, name := skillKind(a.Skill)
 	body := map[string]any{
 		"fleet": c.fleet, "harness": a.Harness, "skill": map[string]string{"kind": kind, "name": name}, "autopilot": autopilot,
 	}
@@ -393,12 +404,43 @@ func launchShip(c *mcpClient, raw json.RawMessage) (string, error) {
 	if len(a.Crew) > 0 {
 		body["crew"] = a.Crew
 	}
+	if len(a.Resources) > 0 {
+		body["resources"] = a.Resources
+	}
 	// An order has its own issue, so the server refuses issues beside a source.
 	if len(a.Issues) > 0 {
 		if a.Source != "" {
-			return "", errors.New("issues go only on a launch with no source: an order has its own issue")
+			return nil, errors.New("issues go only on a launch with no source: an order has its own issue")
 		}
 		body["issues"] = a.Issues
+	}
+	return body, nil
+}
+
+func skillKind(skill string) (kind, name string) {
+	switch skill {
+	case "", "none":
+		return "none", ""
+	case "commodore":
+		return "commodore", ""
+	}
+	return "skill", skill
+}
+
+func launchShip(c *mcpClient, raw json.RawMessage) (string, error) {
+	var a struct {
+		shipSpec
+		WithMe bool `json:"with_me"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return "", err
+	}
+	a.Resources = nil
+	kind, _ := skillKind(a.Skill)
+	autopilot := kind == "commodore" && !a.WithMe
+	body, err := c.shipsBody(a.shipSpec, autopilot)
+	if err != nil {
+		return "", err
 	}
 	out, err := c.do("POST", "/api/ships", body, 120*time.Second)
 	reason := ""
@@ -423,6 +465,47 @@ func launchShip(c *mcpClient, raw json.RawMessage) (string, error) {
 	}
 	b, err := json.Marshal(res)
 	return string(b), err
+}
+
+// makeCommitment records a promise the engineer asked for; the launch it may hold always runs in autopilot,
+// since nobody is there when it fires, and it never carries with_me or anyway.
+func makeCommitment(c *mcpClient, raw json.RawMessage) (string, error) {
+	var a struct {
+		Text, Trigger, Subject, Action string
+		Launch                         *shipSpec
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return "", err
+	}
+	body := map[string]any{"text": a.Text, "action": a.Action, "trigger": map[string]string{"kind": a.Trigger, "subject": a.Subject}}
+	if a.Launch != nil {
+		a.Launch.Anyway = false
+		launch, err := c.shipsBody(*a.Launch, true)
+		if err != nil {
+			return "", err
+		}
+		body["launch"] = launch
+	}
+	out, err := c.post("/api/chat/commitments", body)
+	if err != nil {
+		return "", err
+	}
+	var got struct {
+		ID, Text, Action string
+		Trigger          struct{ Kind, Subject string }
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil || got.ID == "" {
+		return out, nil
+	}
+	when := map[string]string{
+		"ship_sailed": "when " + got.Trigger.Subject + " sails off", "ship_anchored": "when " + got.Trigger.Subject + " anchors",
+		"pr_merged": "when " + got.Trigger.Subject + " is merged", "pr_closed": "when " + got.Trigger.Subject + " is closed",
+		"issue_closed": "when " + got.Trigger.Subject + " is closed", "time": "at " + got.Trigger.Subject, "none": "with no trigger",
+	}[got.Trigger.Kind]
+	if when == "" {
+		when = "on " + got.Trigger.Kind
+	}
+	return fmt.Sprintf("Recorded commitment %s: %q, %s, then %s. Quote this back to the engineer. Admiral fires it itself; only the engineer can cancel it, on Preferences.", got.ID, got.Text, when, got.Action), nil
 }
 
 func askQuestion(c *mcpClient, raw json.RawMessage) (string, error) {

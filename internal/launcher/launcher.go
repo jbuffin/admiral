@@ -142,36 +142,40 @@ type Launcher struct {
 	mu sync.Mutex // one launch at a time, so two don't pick one name
 }
 
-// Nothing is created when Launch refuses.
-func (l *Launcher) Launch(req Request) (*Launched, error) {
-	if l.Tmux == "" {
-		return nil, refuse(http.StatusServiceUnavailable, "tmux not found on PATH, so ships cannot be launched")
-	}
-	cfg := l.Config()
+// Checked is a request that passed CheckSpec: the checkout is cleaned and Commodore resolved.
+type Checked struct {
+	Req   Request
+	Fleet config.Fleet
+	Dock  config.Harness
+	Skill string
+	Opts  [][2]string
+}
+
+// CheckSpec runs every refusal of Launch that needs no live capacity, so a launch recorded for later is judged by the same rules.
+func CheckSpec(cfg *config.Config, req Request) (Checked, *Error) {
 	fleet, ok := cfg.Fleet(req.Fleet)
 	if !ok {
-		return nil, refuse(http.StatusNotFound, "fleet %q not found", req.Fleet)
+		return Checked{}, refuse(http.StatusNotFound, "fleet %q not found", req.Fleet)
 	}
 	dock, ok := fleet.Harness(req.Harness)
 	if !ok {
-		return nil, refuse(http.StatusBadRequest, "fleet %s has no %s dock", fleet.Name, req.Harness)
+		return Checked{}, refuse(http.StatusBadRequest, "fleet %s has no %s dock", fleet.Name, req.Harness)
 	}
 	if !fleet.CanLaunch() {
-		return nil, refuse(http.StatusBadRequest, "fleet %s has no search roots, so nothing can be launched from it", fleet.Name)
+		return Checked{}, refuse(http.StatusBadRequest, "fleet %s has no search roots, so nothing can be launched from it", fleet.Name)
 	}
 	skill, err := skillName(req.Skill)
 	if err != nil {
-		return nil, err
+		return Checked{}, asError(err)
 	}
 	if lerr := CheckMember(req.Skill.Kind, req.Member); lerr != nil {
-		return nil, lerr
+		return Checked{}, lerr
 	}
 	if lerr := CheckPins(req.Skill.Kind, req.Crew); lerr != nil {
-		return nil, lerr
+		return Checked{}, lerr
 	}
-	mflags, merr := modelFlags(req.Harness, req.Model, req.Effort)
-	if merr != nil {
-		return nil, merr
+	if _, merr := modelFlags(req.Harness, req.Model, req.Effort); merr != nil {
+		return Checked{}, asError(merr)
 	}
 	if req.dockLaunch() {
 		req.Text, req.Note = strings.TrimSpace(req.Text), ""
@@ -185,36 +189,58 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		{"model", req.Model}, {"skill-kind", req.Skill.Kind}, {"round", roundOption(req.Round)}, {"via", req.Via}, {"chat", req.ChatOption()}, {"routine", req.RoutineKey}}
 	for _, o := range opts {
 		if hasControl(o[1]) {
-			return nil, refuse(http.StatusBadRequest, "%s contains a control character", o[0])
+			return Checked{}, refuse(http.StatusBadRequest, "%s contains a control character", o[0])
 		}
 	}
 	for _, u := range req.Issues {
 		if strings.Contains(u, ",") {
-			return nil, refuse(http.StatusBadRequest, "issues contains a comma")
+			return Checked{}, refuse(http.StatusBadRequest, "issues contains a comma")
 		}
 	}
 	st, serr := os.Stat(req.Dir)
 	switch {
 	case req.Dir == "" || serr != nil:
-		return nil, refuse(http.StatusBadRequest, "directory %s not found", req.Dir)
+		return Checked{}, refuse(http.StatusBadRequest, "directory %s not found", req.Dir)
 	case !st.IsDir():
-		return nil, refuse(http.StatusBadRequest, "%s is not a directory", req.Dir)
+		return Checked{}, refuse(http.StatusBadRequest, "%s is not a directory", req.Dir)
 	}
 	// The list is read again: a checkout can vanish, or be named in a request that never
 	// came from the list.
 	dir, listed := repofinder.Contains(repofinder.List(repofinder.FleetRoots(fleet.SearchRoots, fleet.CloneRoot)), req.Dir)
 	if !listed {
-		return nil, refuse(http.StatusBadRequest, "directory %s is not a checkout or search root of fleet %s", req.Dir, fleet.Name)
+		return Checked{}, refuse(http.StatusBadRequest, "directory %s is not a checkout or search root of fleet %s", req.Dir, fleet.Name)
 	}
 	req.Dir = dir
 	if req.Skill.Kind == "commodore" {
 		name, ok := skillindex.FindCommodore(req.Harness, dock.Environ(), req.Dir)
 		ok = ok && skillindex.SafeInvocation(name)
 		if !ok {
-			return nil, refuse(http.StatusBadRequest, "Commodore not found for %s in fleet %s", req.Harness, fleet.Name)
+			return Checked{}, refuse(http.StatusBadRequest, "Commodore not found for %s in fleet %s", req.Harness, fleet.Name)
 		}
 		skill = name
 	}
+	return Checked{Req: req, Fleet: fleet, Dock: dock, Skill: skill, Opts: opts}, nil
+}
+
+func asError(err error) *Error {
+	var e *Error
+	if errors.As(err, &e) {
+		return e
+	}
+	return refuse(http.StatusBadRequest, "%v", err)
+}
+
+// Nothing is created when Launch refuses.
+func (l *Launcher) Launch(req Request) (*Launched, error) {
+	if l.Tmux == "" {
+		return nil, refuse(http.StatusServiceUnavailable, "tmux not found on PATH, so ships cannot be launched")
+	}
+	chk, lerr := CheckSpec(l.Config(), req)
+	if lerr != nil {
+		return nil, lerr
+	}
+	req, fleet, dock, skill, opts := chk.Req, chk.Fleet, chk.Dock, chk.Skill, chk.Opts
+	mflags, _ := modelFlags(req.Harness, req.Model, req.Effort)
 	var pins []pinnedFile
 	if len(req.Crew) > 0 {
 		home, err := filepath.Abs(l.Home)

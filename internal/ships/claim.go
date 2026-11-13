@@ -59,8 +59,8 @@ func holderOf(req launcher.Request, sh Ship) string {
 	return cmpName(sh.Name, sh.Session)
 }
 
-// checkIssueURLs refuses a URL that is not an https GitHub issue on one of hosts, and returns the claim-normalised forms.
-func checkIssueURLs(urls, hosts []string) ([]string, *launcher.Error) {
+// CheckIssueURLs refuses a URL that is not an https GitHub issue on one of hosts, and returns the claim-normalised forms.
+func CheckIssueURLs(urls, hosts []string) ([]string, *launcher.Error) {
 	out := make([]string, 0, len(urls))
 	for _, u := range urls {
 		k, ok := ClaimKey(u)

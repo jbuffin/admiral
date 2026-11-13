@@ -29,6 +29,7 @@ type tickState struct {
 	ledgerSig string
 	instr     string
 	notes     []ledger.Entry
+	commits   []ledger.Commitment
 	ledgerOK  bool
 
 	ackedTo   uint64 // the printed sequence the digest was last acked to
@@ -129,12 +130,16 @@ func (s *fleetChat) renderBrief(ti tickInputs) {
 	if sig := s.ledgerSig(); !st.ledgerOK || sig != st.ledgerSig {
 		instr, ierr := s.notes().Instructions(s.key)
 		notes, nerr := s.notes().Notes(s.key)
-		if ierr != nil || nerr != nil {
+		commits, cerr := s.notes().Commitments(s.key)
+		if ierr != nil || nerr != nil || cerr != nil {
 			return
 		}
-		st.instr, st.notes, st.ledgerSig, st.ledgerOK = instr, notes, sig, true
+		st.instr, st.notes, st.commits, st.ledgerSig, st.ledgerOK = instr, notes, commits, sig, true
 	}
-	in := brief.Input{Instructions: st.instr}
+	in := brief.Input{Instructions: st.instr, Now: time.Now()}
+	for _, c := range st.commits {
+		in.Commitments = append(in.Commitments, brief.Commitment{ID: c.ID, Text: c.Text, Trigger: c.Trigger.Kind, Subject: c.Trigger.Subject, Action: c.Action, TS: c.TS, Waiting: c.Waiting})
+	}
 	for _, n := range st.notes {
 		in.Notes = append(in.Notes, brief.Note{Text: n.Text, Via: n.Via, TS: n.TS})
 	}

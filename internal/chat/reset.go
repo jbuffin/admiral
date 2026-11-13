@@ -9,7 +9,7 @@ import (
 )
 
 // FlushPrompt is pasted into the chat before Admiral clears it; the flush turn stays out of the history.
-const FlushPrompt = "Admiral is about to clear your context. If the engineer asked you to remember anything you haven't saved with save_note, save it now. Then reply with just: done."
+const FlushPrompt = "Admiral is about to clear your context. If the engineer asked you to remember anything you haven't saved with save_note, save it now, and record any promise the engineer asked you to keep that isn't in the ledger yet with make_commitment. Then reply with just: done."
 
 const (
 	MarkerNewChat   = "New chat"

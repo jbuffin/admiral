@@ -577,7 +577,7 @@ func chatContextAfter(event, home, fleet string, after uint64) (out string, seq 
 	return string(raw) + "\n", seq
 }
 
-// preCompactText asks a compaction to keep the instructions and open notes; "" when the files are missing or unreadable.
+// preCompactText asks a compaction to keep the instructions, open commitments and open notes; "" when the files are missing or unreadable.
 func preCompactText(home, fleet string) string {
 	if memoryTooBig(home, fleet) {
 		return ""
@@ -591,11 +591,19 @@ func preCompactText(home, fleet string) string {
 	if err != nil {
 		return ""
 	}
+	cs, err := l.Commitments(fleet)
+	if err != nil {
+		return ""
+	}
+	commitments := make([]brief.Commitment, 0, len(cs))
+	for _, c := range cs {
+		commitments = append(commitments, brief.Commitment{ID: c.ID, Text: c.Text, Trigger: c.Trigger.Kind, Subject: c.Trigger.Subject, Action: c.Action, TS: c.TS, Waiting: c.Waiting})
+	}
 	notes := make([]brief.Note, 0, len(entries))
 	for _, e := range entries {
 		notes = append(notes, brief.Note{ID: e.ID, Text: e.Text, Via: e.Via, TS: e.TS})
 	}
-	text := brief.PreCompact(instr, notes, nil)
+	text := brief.PreCompact(instr, notes, commitments)
 	if text == "" {
 		return ""
 	}

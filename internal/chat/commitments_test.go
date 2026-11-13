@@ -106,7 +106,7 @@ func (r *promiseRig) list(t *testing.T, fleet string) []promiseBody {
 }
 
 func (r *promiseRig) launch(extra string) string {
-	spec := fmt.Sprintf(`"harness":"claude","dir":%q,"text":"fix the build","autopilot":true`, r.repo)
+	spec := fmt.Sprintf(`"harness":"claude","dir":%q,"text":"fix the build","skill":{"kind":"none"},"autopilot":true`, r.repo)
 	if extra != "" {
 		spec += "," + extra
 	}
@@ -291,7 +291,7 @@ func TestAPRAndAnIssueOnAFleetGitHubHostAreAcceptedAsSubjects(t *testing.T) {
 
 func TestAValidLaunchSpecWithAnOrderAndAResourceIsAccepted(t *testing.T) {
 	r := newPromiseRig(t)
-	spec := fmt.Sprintf(`{"harness":"claude","dir":%q,"text":"do T-1","source":"tracker","order_id":"T-1","resources":["gpu"],"autopilot":true}`, r.repo)
+	spec := fmt.Sprintf(`{"harness":"claude","dir":%q,"text":"do T-1","skill":{"kind":"none"},"source":"tracker","order_id":"T-1","resources":["gpu"],"autopilot":true}`, r.repo)
 	if rec := r.do("POST", "/api/chat/commitments", r.body(sailed, "launch", spec), "home"); rec.Code != http.StatusCreated {
 		t.Errorf("POST = %d %s, want 201", rec.Code, rec.Body)
 	}
