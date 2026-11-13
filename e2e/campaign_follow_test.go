@@ -251,7 +251,7 @@ func TestAdmiralBot_WorkOnACampaignLaunchesItsWithoutYouChildrenAndEndsWithIt(t 
 		Commitments []struct {
 			Text    string
 			Action  string
-			Trigger struct{ Kind string }
+			Trigger struct{ Kind, Subject string }
 		}
 	}
 	if code != http.StatusOK || json.Unmarshal([]byte(body), &listed) != nil || len(listed.Commitments) != 1 ||
@@ -295,7 +295,9 @@ func TestAdmiralBot_WorkOnACampaignLaunchesItsWithoutYouChildrenAndEndsWithIt(t 
 		}
 		return nil
 	}
-	waitCond(t, 60*time.Second, "the card for the ended campaign", func() bool { return cardOf() != nil })
+	// opening the campaign page rereads the tree, no more often than every 30s: the store's own tick is five minutes
+	campID := listed.Commitments[0].Trigger.Subject
+	waitCond(t, 100*time.Second, "the card for the ended campaign", func() bool { w.campaign(campID); return cardOf() != nil })
 	_, body = send(t, http.MethodGet, w.in.LocalURL+"/api/chat/"+chatFleet+"/commitments", nil)
 	if strings.Contains(body, `"campaign"`) {
 		t.Errorf("commitments after the campaign ended = %s, want none open", body)
