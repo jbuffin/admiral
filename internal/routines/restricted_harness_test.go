@@ -76,7 +76,7 @@ func TestAnA3TierDropsToA1WithOnlyOneRestrictedCapabilityProven(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			h := newHarness(t)
 			h.withEvents(a3Limits())
-	r := h.actRoutine()
+			r := h.actRoutine()
 			h.proveRestricted("2.1.300", c[0], c[1])
 			d, reason := h.decide(r)
 			h.wantComputed(d, reason, standing.A1, true)
