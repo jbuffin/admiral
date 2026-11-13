@@ -79,6 +79,8 @@ type Ship struct {
 	// for a ship no hook has spoken for.
 	Reason    string `json:"reason,omitempty"`
 	StopSince string `json:"stop_since,omitempty"`
+	// Seen is set while the ship needs you for a stop the engineer has looked at but not answered.
+	Seen bool `json:"seen,omitempty"`
 	// Crew and Subagents are always present, empty lists as [].
 	Crew      []CrewBoat             `json:"crew"`
 	Subagents []sessionhost.Subagent `json:"subagents"`
@@ -193,6 +195,7 @@ func (s *Service) ship(sess sessionhost.Session) Ship {
 		s.mu.Lock()
 		if tr := s.tracks[sess.Name]; tr != nil && !tr.Since.IsZero() {
 			since = tr.Since
+			sh.Seen = tr.looked.Equal(tr.Since)
 		}
 		s.mu.Unlock()
 		sh.StopSince = since.UTC().Format(time.RFC3339Nano)
@@ -271,6 +274,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/ships", s.serveLaunch)
 	mux.HandleFunc("PUT /api/ships/{session}/position", s.servePosition)
 	mux.HandleFunc("POST /api/ships/{session}/input-seen", s.serveInputSeen)
+	mux.HandleFunc("POST /api/ships/{session}/seen", s.serveSeen)
 	mux.HandleFunc("POST /api/ships/{session}/dismiss", s.serveDismiss)
 	mux.HandleFunc("POST /api/ships/{session}/unfollow", s.serveUnfollow)
 	mux.HandleFunc("POST /api/ships/{session}/wake", s.serveWake)
@@ -875,6 +879,43 @@ func (s *Service) InputSeen(session string) (Ship, error) {
 }
 
 var ErrNotFound = errors.New("ship not found")
+
+// MarkSeen marks the ship's stop that began at since as looked at. It leaves the pane needing
+// you, so its question can still be answered and its ended turn resumed; a later stop shows again.
+func (s *Service) MarkSeen(session, since string) (Ship, error) {
+	sess, ok := s.find(session)
+	if !ok {
+		return Ship{}, ErrNotFound
+	}
+	marked := false
+	if at, err := time.Parse(time.RFC3339Nano, since); err == nil && status(sess, time.Now()) == StatusNeedsYou {
+		s.mu.Lock()
+		if tr := s.tracks[session]; tr != nil && tr.Since.Equal(at) && !tr.looked.Equal(at) {
+			tr.looked, marked = at, true
+		}
+		s.mu.Unlock()
+	}
+	if marked {
+		s.broadcast()
+	}
+	return s.ship(sess), nil
+}
+
+func (s *Service) serveSeen(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		StopSince string `json:"stop_since"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
+		return
+	}
+	sh, err := s.MarkSeen(r.PathValue("session"), body.StopSince)
+	if errors.Is(err, ErrNotFound) {
+		writeError(w, http.StatusNotFound, "ship "+r.PathValue("session")+" not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ship": sh})
+}
 
 func (s *Service) serveInputSeen(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")

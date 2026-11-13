@@ -65,7 +65,8 @@ export const mergeKey = (session: string) => `merge:${session}`;
 export const crewKey = (session: string, crew: string) => `stop:${session}/${crew}`;
 
 // The wire says needs_you/crew while only a crew boat waits, so the ship itself needs you on any other reason.
-const needsYou = (s: Ship) => s.status === 'needs_you' && s.reason !== 'crew';
+// A stop the engineer has looked at leaves the queue until the next stop.
+const needsYou = (s: Ship) => s.status === 'needs_you' && s.reason !== 'crew' && !s.seen;
 // A crew boat that no longer asks: an answered boat whose next turn ended between two pushes goes straight to idle.
 const isBack = (c?: CrewBoat) => c?.status === 'underway' || c?.status === 'idle';
 // A sailing-off ship's session is about to die with its crew, so none of them waits on you.
@@ -146,7 +147,7 @@ export function createInboxQueue() {
         // A boat is answered whatever its ship's status, bar a ship that is sailing off or gone.
         const back = e.crew
           ? ship !== undefined && ship.status !== 'sailing_off' && isBack(ship.crew?.find((c) => c.name === e.crew!.name))
-          : sailing && !needsYou(ship!);
+          : sailing && !needsYou(ship!) && !ship!.seen;
         if (back) held.set(e.key, { entry: e, text: 'Back underway', until: now + HOLD_MS });
       }
       const live = new Set<string>();

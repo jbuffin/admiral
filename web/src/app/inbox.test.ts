@@ -198,6 +198,15 @@ describe('createInboxQueue', () => {
     }
   });
 
+  it('leaves out a stop the engineer has seen, without a fold, and lists the next stop', () => {
+    const q = createInboxQueue();
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'needs_you', { stop_since: at(1) })] }, T0);
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'needs_you', { stop_since: at(1), seen: true })] }, T0 + 1000);
+    expect(keys(q)).toEqual([]);
+    q.sync({ items: [], ships: [ship('a', 'alpha', 'needs_you', { stop_since: at(3) })] }, T0 + 2000);
+    expect(q.entries().map((e) => [e.key, e.folded])).toEqual([['stop:a', null]]);
+  });
+
   it('drops a stop silently when its ship leaves any other way', () => {
     const q = createInboxQueue();
     q.sync({ items: [], ships: [ship('a', 'alpha', 'needs_you', { stop_since: at(1) }), ship('b', 'alpha', 'needs_you', { stop_since: at(2) })] }, T0);

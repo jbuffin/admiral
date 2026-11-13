@@ -322,6 +322,8 @@ type shipJSON struct {
 	MooredAt   string   `json:"moored_at"`
 	PolledAt   string   `json:"polled_at"`
 	Stale      bool     `json:"stale"`
+	StopSince  string   `json:"stop_since"`
+	Seen       bool     `json:"seen"`
 
 	StackReady  bool   `json:"stack_ready"`
 	ReadyUpTo   string `json:"ready_up_to"`

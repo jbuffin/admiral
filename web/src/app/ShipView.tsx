@@ -14,6 +14,7 @@ import { MooredActions } from './MooredActions';
 import { MergeControl } from './PeekMerge';
 import { Failure } from './PeekItem';
 import { ReadyToMerge } from './StatusGlyph';
+import { useSeenOnLeave } from './seen';
 import { NO_RESUME_NOTE } from './moored';
 import { usageRow, watchUsage, type ShipUsage } from './shipUsage';
 import { boxState } from './messageBox';
@@ -361,6 +362,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
   const { conv, loadOlder } = useShipConversation(ship, boat);
   const target = targetFor(ship, boat, conv);
   const box = useComposer(target, conv);
+  useSeenOnLeave(ship);
   const moored = ship.status === 'moored';
   const Heading = title ? 'h1' : 'h2';
   const mooredCard = (
