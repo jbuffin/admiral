@@ -54,3 +54,30 @@ func TestEffectiveAction(t *testing.T) {
 		})
 	}
 }
+
+func TestEffectiveFailsClosedAndNeverLetsALowerCeilingRaiseTheResult(t *testing.T) {
+	work := standing.PresetLimits(standing.Work)
+	work.Ceilings.Fleet = standing.Ceiling{Level: standing.A4}
+	home := standing.PresetLimits(standing.Home)
+	lvl := func(l standing.Level) standing.Action { return standing.Action{Level: l} }
+	for _, c := range []struct {
+		name string
+		l    standing.Limits
+		e    standing.Event
+		want standing.Action
+	}{
+		{"Work T1 asks first under a fleet ceiling of A4", work, standing.Event{Tier: standing.T1, Routine: standing.A5}, lvl(standing.A1)},
+		{"an unknown verdict counts as Block", home, standing.Event{Tier: standing.T1, Routine: standing.A5, Reviewer: standing.Verdict(7)}, lvl(standing.A0)},
+		{"an off-ladder routine of 2 clamps to A1", home, standing.Event{Tier: standing.T1, Routine: 2}, lvl(standing.A1)},
+		{"a routine below 0 clamps to A0", home, standing.Event{Tier: standing.T1, Routine: -3}, lvl(standing.A0)},
+		{"a routine above 5 clamps to A5", home, standing.Event{Tier: standing.T1, Routine: 9}, lvl(standing.A5)},
+		{"a routine at A3 under a higher ceiling investigates", home, standing.Event{Tier: standing.T1, Routine: standing.A3, RestrictedHarness: true}, standing.Action{Level: standing.A3, Restricted: standing.Investigate}},
+		{"a routine at A3 keeps a tier ceiling's draft fix", home, standing.Event{Tier: standing.T2, Routine: standing.A3, RestrictedHarness: true}, standing.Action{Level: standing.A3, Restricted: standing.DraftFix}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.l.Effective(c.e); got != c.want {
+				t.Errorf("Effective(%+v) = %+v, want %+v", c.e, got, c.want)
+			}
+		})
+	}
+}

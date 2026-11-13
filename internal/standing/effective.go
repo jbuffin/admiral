@@ -46,6 +46,21 @@ func lower(a, b Action) Action {
 	return a
 }
 
+// clampRoutine puts a caller's routine level on the ladder: off-ladder values drop to the rung below.
+func clampRoutine(l Level) Action {
+	switch {
+	case l <= A0:
+		return Action{Level: A0}
+	case l == A1 || l == 2:
+		return Action{Level: A1}
+	case l == A3:
+		return Action{Level: A3}
+	case l == A4:
+		return Action{Level: A4}
+	}
+	return Action{Level: A5}
+}
+
 // Effective is min(routine, tier ceiling, fleet ceiling, reviewer verdict) with the T3, T1 and T4 rules and the A3 fallback.
 func (l Limits) Effective(e Event) Action {
 	var tier Ceiling
@@ -65,19 +80,25 @@ func (l Limits) Effective(e Event) Action {
 			tier = Ceiling{Level: t.Level, Restricted: t.Restricted}
 		}
 	}
-	// An unknown tier has no ceiling: A0, never more than a card.
-	got := lower(lower(Action{Level: e.Routine}, tier.action()), l.Ceilings.Fleet.action())
-	if e.Tier == T1 && l.Ceilings.T1.AsksFirst && got.Level == A5 {
-		got = Action{Level: A1}
+	routine := clampRoutine(e.Routine)
+	// Asks first decides on the request, so lowering the fleet ceiling can never raise the result.
+	if e.Tier == T1 && l.Ceilings.T1.AsksFirst && l.Ceilings.T1.Level == A5 && routine.Level == A5 {
+		routine = Action{Level: A1}
 	}
+	// An unknown tier has no ceiling: A0, never more than a card.
+	got := lower(lower(routine, tier.action()), l.Ceilings.Fleet.action())
 	switch e.Reviewer {
+	case Allow:
 	case Ask:
 		got = lower(got, Action{Level: A1})
-	case Block:
+	default: // Block, and any value this code does not know, fails closed
 		got = Action{Level: A0}
 	}
 	if got.Level == A3 && !e.RestrictedHarness {
 		got = Action{Level: A1}
+	}
+	if got.Level == A3 && got.Restricted == "" { // a routine's A3 names no profile: the narrowest
+		got.Restricted = Investigate
 	}
 	return got
 }
