@@ -119,6 +119,8 @@ func (s *Service) serveLaunchProposal(w http.ResponseWriter, r *http.Request) {
 	launch := func() (any, error) { return s.LaunchProposalItem(r.Context(), id, req.Events) }
 	if s.isRoutineProposal(id) {
 		launch = func() (any, error) { return s.LaunchRoutineItem(r.Context(), id) }
+	} else if s.isEventProposal(id) {
+		launch = func() (any, error) { return s.LaunchEventItem(r.Context(), id) }
 	}
 	ship, err := launch()
 	if err != nil {
@@ -137,6 +139,8 @@ func (s *Service) serveDismissProposal(w http.ResponseWriter, r *http.Request) {
 	dismiss := s.DismissProposal
 	if s.isRoutineProposal(id) {
 		dismiss = s.DismissRoutineProposal
+	} else if s.isEventProposal(id) {
+		dismiss = s.DismissEventProposal
 	}
 	if err := dismiss(id); err != nil {
 		respondProposal(w, id, err)
