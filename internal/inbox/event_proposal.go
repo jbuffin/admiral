@@ -32,7 +32,9 @@ type EventDetail struct {
 	Summary string `json:"summary"`
 	Title   string `json:"title"`
 	Sender  string `json:"sender"`
-	Link    string `json:"link"`
+	// DedupeKey is the Lookout's validated key, the value a Mute rule by dedupe_key names.
+	DedupeKey string `json:"dedupe_key"`
+	Link      string `json:"link"`
 	// Metadata is true when Summary is the metadata line, not a Lookout summary.
 	Metadata bool `json:"metadata"`
 	// MuteBy lists the Mute rule choices: sender and dedupe_key, each only when the event has one.

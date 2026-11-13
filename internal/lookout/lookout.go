@@ -258,7 +258,7 @@ func (a *Acts) Act(fleet string, r routines.Routine, ev routines.Event, rec rout
 			return
 		}
 		if err := a.Cards.PostEventCard(fleet, chat.EventCard{ID: rec.ID, Routine: r.ID, RoutineName: r.Name, Tier: rec.Tier,
-			Sender: rec.Sender, Link: ev.Ref, Text: text, Metadata: metadata, MuteBy: muteBy}); err != nil {
+			Sender: rec.Sender, Link: ev.Ref, DedupeKey: en.DedupeKey, Text: text, Metadata: metadata, MuteBy: muteBy}); err != nil {
 			log.Printf("lookout: card for %s on %s: %v", r.ID, fleet, err)
 		}
 	case routines.Proposed:
@@ -267,7 +267,7 @@ func (a *Acts) Act(fleet string, r routines.Routine, ev routines.Event, rec rout
 		}
 		_, err := a.Proposals.PublishEventProposal(
 			inbox.EventProposal{Fleet: fleet, Routine: r.ID, RoutineName: r.Name, Trigger: rec.ID, Tier: rec.Tier, ExpiresAt: rec.At.Add(routines.EventProposalExpiry)},
-			inbox.EventDetail{Summary: text, Title: oneLine(ev.Title), Sender: rec.Sender, Link: ev.Ref, Metadata: metadata, MuteBy: muteBy})
+			inbox.EventDetail{Summary: text, Title: oneLine(ev.Title), Sender: rec.Sender, Link: ev.Ref, DedupeKey: en.DedupeKey, Metadata: metadata, MuteBy: muteBy})
 		if err != nil {
 			log.Printf("lookout: proposal for %s on %s: %v", r.ID, fleet, err)
 		}

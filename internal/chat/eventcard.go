@@ -14,6 +14,7 @@ type EventCard struct {
 	Tier        string
 	Sender      string
 	Link        string
+	DedupeKey   string   // the Lookout's validated key, the value a Mute rule by dedupe_key names
 	Text        string   // the Lookout's summary, or the metadata line
 	Metadata    bool     // Text is the metadata line, not a summary
 	MuteBy      []string // the Mute rule choices the event allows: sender, dedupe_key
@@ -24,7 +25,7 @@ type EventCard struct {
 func (s *Service) PostEventCard(fleet string, c EventCard) error {
 	card, err := json.Marshal(map[string]any{
 		"routine": c.Routine, "routine_name": c.RoutineName, "tier": c.Tier, "sender": c.Sender,
-		"link": c.Link, "metadata": c.Metadata, "mute_by": c.MuteBy,
+		"link": c.Link, "dedupe_key": c.DedupeKey, "metadata": c.Metadata, "mute_by": c.MuteBy,
 	})
 	if err != nil {
 		return err
