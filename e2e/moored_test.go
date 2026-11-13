@@ -366,8 +366,14 @@ func TestAShipWithAPartialReportStaysLiveWhenItsTurnEnds(t *testing.T) {
 	w, _ := liveMooring(t)
 	ship := w.launchLive()
 	w.writeReportFor(ship, reportWith("partial", mooredPR))
+	w.in.waitShipsList(t, 20*time.Second, "open_prs to list the report's open PR", func(l []shipJSON) bool {
+		return reflect.DeepEqual(byName(l)[ship.Name].OpenPRs, []string{mooredPR})
+	})
 	w.touch(ship.Session, "go")
 	w.waitFile(ship.Session, "cues-done")
+	w.in.waitShipsList(t, 20*time.Second, "the ship to need you at the end of its turn", func(l []shipJSON) bool {
+		return byName(l)[ship.Name].Status == "needs_you"
+	})
 	holdThat(t, "a ship whose report is partial left the live list", func() bool {
 		s := byName(w.in.ships(t))[ship.Name]
 		return s.Status != "moored" && w.hasSession(ship.Session) && !exists(w.mooredFile(ship.Name))

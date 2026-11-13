@@ -304,17 +304,23 @@ func TestAShipThatIsNotDoneWithOpenPRsStaysLive(t *testing.T) {
 		name, result string
 		prs          []string
 		open         map[string]bool
+		wantOpen     bool
 	}{
-		{"partial", "partial", []string{livePR7}, map[string]bool{livePR7: true}},
-		{"failed", "failed", []string{livePR7}, map[string]bool{livePR7: true}},
-		{"no result", "", []string{livePR7}, map[string]bool{livePR7: true}},
-		{"done with only a closed PR", "done", []string{livePR8}, map[string]bool{}},
+		{"partial", "partial", []string{livePR7}, map[string]bool{livePR7: true}, true},
+		{"failed", "failed", []string{livePR7}, map[string]bool{livePR7: true}, true},
+		{"no result", "", []string{livePR7}, map[string]bool{livePR7: true}, true},
+		{"done with only a closed PR", "done", []string{livePR8}, map[string]bool{}, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			r := newLiveRig(t, false)
 			r.gh.set(c.open, nil)
 			go r.s.Run(r.ctx)
 			r.writeReport(t, c.result, c.prs...)
+			if c.wantOpen {
+				waitUntil(t, "GitHub to confirm the PR", func() bool { s, _, _ := r.wire(t); return len(s.OpenPRs) == 1 })
+			} else {
+				waitUntil(t, "GitHub to be asked", func() bool { return r.gh.asked() > 0 })
+			}
 			r.turn(t, "needs_you", "stop")
 			holdsFor(t, 1500*time.Millisecond, "the ship left the live list or got a record", func() bool {
 				s, _, ok := r.wire(t)
@@ -338,10 +344,11 @@ func TestAReturningShipIsStoppedNotMooredWhenItsCleanUpTurnEnds(t *testing.T) {
 	r := newLiveRig(t, false)
 	go r.s.Run(r.ctx)
 	r.turn(t, "working", "")
+	r.writeReport(t, "done", livePR7)
+	waitUntil(t, "GitHub to confirm the PR", func() bool { s, _, _ := r.wire(t); return len(s.OpenPRs) == 1 })
 	if rec := r.post("return", ""); rec.Code != http.StatusOK {
 		t.Fatalf("return = %d %s", rec.Code, rec.Body)
 	}
-	r.writeReport(t, "done", livePR7)
 	r.turn(t, "needs_you", "stop")
 	waitUntil(t, "the clean-up prompt at the ship's prompt", func() bool { return strings.Contains(r.pane(t), "Return to port") })
 	r.turn(t, "working", "")
