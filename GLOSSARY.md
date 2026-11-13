@@ -144,6 +144,9 @@ _Avoid_: launch menu, modal
 A skill the engineer starred, up to five, shown in launch orders after Commodore on every dock where it is installed.
 _Avoid_: configured skill, skill list
 
+**Installed skill**:
+A skill a harness on this Mac can load for a fleet's dock, from the harness's own skills folder or its plugins. A skill inside a repo counts only for that repo. The same skill can be installed on several harnesses, under its plain name on one and a plugin's name on another, and is still one skill.
+
 **AdmiralBot**:
 A fleet's coordinator, which the engineer talks to in that fleet's chat from any device. It does no work itself: it reads Admiral and acts by launching ships, adding orders, answering inbox items and keeping its ledger, only on the engineer's instruction or a commitment they agreed to, and everything it writes is marked **via AdmiralBot**. Each fleet has its own, with a disposable context refilled from its brief. It is not a ship and takes no part in caps or resources. When it needs the engineer to choose, it asks a **chat question**, which shows in the Inbox as an "AdmiralBot asked" item while it waits and is answered there or in the chat.
 _Avoid_: assistant, chat ship, chat agent, background session, handoff (say "a launch via AdmiralBot")
