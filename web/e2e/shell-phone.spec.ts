@@ -52,7 +52,7 @@ test('on the phone, the tab bar and More reach every surface, the Ships tab list
   await expect(viewTab(page, 'Changes')).toHaveAttribute('aria-selected', 'true');
   await expect(viewPanel(page)).toContainText('No git history to compare');
   await viewTab(page, 'PR').tap();
-  await expect(viewPanel(page)).toContainText('No pull request yet');
+  await expect(viewPanel(page)).toContainText('No pull request yet. A PR shows here as soon as the ship or its crew opens one.');
   await viewTab(page, 'Conversation').tap();
   await expect(viewPanel(page)).toContainText('Rebase onto main please');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
