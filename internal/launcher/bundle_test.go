@@ -155,3 +155,21 @@ func TestShipBundleHasNeitherTheWindowNorAPreCompactHook(t *testing.T) {
 		}
 	}
 }
+
+func TestCodexAndCopilotChatBundlesCarryNoClaudeOnlyBackstop(t *testing.T) {
+	var codex strings.Builder
+	for _, f := range codexFlags() {
+		codex.WriteString(f + "\n")
+	}
+	raw, err := json.Marshal(copilotHooks())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, got := range map[string]string{"codex flags": codex.String(), "copilot hooks": string(raw)} {
+		for _, bad := range []string{"PreCompact", "preCompact", "autoCompactWindow"} {
+			if strings.Contains(got, bad) {
+				t.Errorf("the %s carry %q, want no Claude-only compaction setting", name, bad)
+			}
+		}
+	}
+}

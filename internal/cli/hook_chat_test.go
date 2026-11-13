@@ -326,3 +326,21 @@ func TestPreCompactPrintsNothingWithoutMemoryOrOutsideAChat(t *testing.T) {
 		}
 	})
 }
+
+func TestPreCompactPrintsNothingOnACodexOrUnmarkedChat(t *testing.T) {
+	home := t.TempDir()
+	seedMemory(t, home, "home", "Ask before launching.", "deploys go out on Tuesdays")
+	if out := chatHook(t, home, "home", "PreCompact", `{"trigger":"auto"}`); out == "" {
+		t.Fatal("the control PreCompact printed nothing")
+	}
+	for _, harness := range []string{"codex", "copilot", ""} {
+		t.Setenv("ADMIRAL_CHAT_HARNESS", harness)
+		var out, errOut bytes.Buffer
+		if err := Hook([]string{"PreCompact"}, IO{In: strings.NewReader(`{"trigger":"auto"}`), Out: &out, Err: &errOut}); err != nil {
+			t.Fatal(err)
+		}
+		if out.Len() != 0 {
+			t.Errorf("harness %q: PreCompact printed %q, want nothing", harness, out.String())
+		}
+	}
+}
