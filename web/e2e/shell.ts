@@ -375,7 +375,8 @@ export const RESUME = '/commodore resume run-7';
 export async function launchMooredShip(a: Admiral, prNumber: number, opts: { resume?: string; lines?: TranscriptLine[]; more?: number[] } = {}): Promise<LaunchedShip> {
   const ship = await launchShip(a, { fleet: 'zulu', harness: 'claude', cue: 'wait go\nexit 0\n' });
   const rec = join(a.home, 'rec', ship.session);
-  await expect.poll(() => existsSync(join(rec, 'env'))).toBe(true);
+  // The fake writes `recorded` last; `env` can exist while it is still half written.
+  await expect.poll(() => existsSync(join(rec, 'recorded'))).toBe(true);
   if (opts.lines) await appendLines(a, ship, opts.lines);
   const report = /^ADMIRAL_REPORT=(.*)$/m.exec(readFileSync(join(rec, 'env'), 'utf8'))?.[1];
   expect(report, 'the harness env names a report path').toBeTruthy();
@@ -1079,6 +1080,12 @@ export function seedTurn(a: Admiral, ship: LaunchedShip) {
 
 /** The pane's size as tmux has it, `<cols>x<rows>`. */
 export const paneSize = (a: Admiral, ship: LaunchedShip) => tmux(a, 'display', '-p', '-t', ship.session, '#{window_width}x#{window_height}').stdout.trim();
+
+/** Sizes the ship's window as a terminal on a small screen leaves it. */
+export const resizeWindow = (a: Admiral, ship: LaunchedShip, cols: number, rows: number) => {
+  const r = tmux(a, 'resize-window', '-t', ship.session, '-x', String(cols), '-y', String(rows));
+  if (r.status !== 0) throw new Error(`resize-window: ${r.stderr}`);
+};
 
 /** Asserts that `ok` stays true for `ms`: the way to show that something does not happen. */
 export async function holds(ok: () => boolean, what: string, ms = 1500) {

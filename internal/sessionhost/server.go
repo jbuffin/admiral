@@ -451,6 +451,42 @@ func (s Server) WindowSizes(session string) []WindowSize {
 	return sizes
 }
 
+// GrowWindow makes the pane's window at least cols by rows until restore puts back its size and its own window-size.
+// resize-window pins window-size to manual, so restore unsets it again and an attached browser sizes the window as before.
+func (s Server) GrowWindow(ctx context.Context, pane string, cols, rows int) (restore func(context.Context) error, err error) {
+	none := func(context.Context) error { return nil }
+	out, err := s.run(call{ctx: ctx, utf8After: true, args: []string{"display-message", "-p", "-t", pane, "#{window_width}x#{window_height}"}})
+	if err != nil {
+		return none, err
+	}
+	w, h, ok := ParseSize(strings.TrimSpace(out))
+	if !ok {
+		return none, fmt.Errorf("tmux gave the window size %q", strings.TrimSpace(out))
+	}
+	if w >= cols && h >= rows {
+		return none, nil
+	}
+	own, err := s.run(call{ctx: ctx, utf8After: true, args: []string{"show-options", "-wqv", "-t", pane, "window-size"}})
+	if err != nil {
+		return none, err
+	}
+	own = strings.TrimSpace(own)
+	if _, err := s.run(call{ctx: ctx, args: []string{"resize-window", "-t", pane, "-x", strconv.Itoa(max(w, cols)), "-y", strconv.Itoa(max(h, rows))}}); err != nil {
+		return none, err
+	}
+	return func(ctx context.Context) error {
+		if _, err := s.run(call{ctx: ctx, args: []string{"resize-window", "-t", pane, "-x", strconv.Itoa(w), "-y", strconv.Itoa(h)}}); err != nil {
+			return err
+		}
+		args := []string{"set-option", "-wu", "-t", pane, "window-size"}
+		if own != "" {
+			args = []string{"set-option", "-w", "-t", pane, "window-size", own}
+		}
+		_, err := s.run(call{ctx: ctx, args: args})
+		return err
+	}, nil
+}
+
 // LoadBuffer passes text on stdin, so it never goes on a command line.
 func (s Server) LoadBuffer(ctx context.Context, buf, text string) error {
 	_, err := s.run(call{ctx: ctx, stdin: text, args: []string{"load-buffer", "-b", buf, "-"}})

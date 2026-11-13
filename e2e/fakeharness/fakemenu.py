@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # A stand-in for Claude Code's AskUserQuestion menu: draws tabs, option rows, an Other row, a Submit row and a review screen,
 # and logs every key it reads to argv[2]. argv[1] is the JSON list of {text, labels, multi}.
-import json, os, sys, tty, termios, select
+import json, os, signal, sys, tty, termios, select
 
 qs = json.loads(sys.argv[1]); log = open(sys.argv[2], 'ab', buffering=0)
 n = len(qs); tab = 0; cur = [0]*n; tick = [[False]*len(q['labels']) for q in qs]; other = ['']*n; done = [False]*n
@@ -12,7 +12,7 @@ def ans(i):
     if other[i]: p.append(other[i])
     return ', '.join(p)
 def draw():
-    out = ['\x1b[2J\x1b[H❯ earlier prompt', '────────']
+    out = ['❯ earlier prompt', '────────']
     single = n == 1 and not qs[0]['multi']
     if review:
         out += ['←  ' + '  '.join('☒ Q' for _ in qs) + '  ✔ Submit  →', '', 'Review your answers', '']
@@ -33,14 +33,16 @@ def draw():
         else: out += [f"{c(k)} {k+1}. {other[tab] or 'Type something.'}"]
         if q['multi']: out += [f"{c(k+1)}    " + ('Submit' if tab == n-1 else 'Next')]
         out += ['────────', '  Chat about this', '', 'Enter to select']
-    sys.stdout.write('\r\n'.join(out) + '\r\n'); sys.stdout.flush()
+    # Like Claude, keep only the bottom of a frame taller than the pane, so the tabs and question scroll off a short one.
+    out = out[-(os.get_terminal_size(1).lines - 1):]
+    sys.stdout.write('\x1b[2J\x1b[H' + '\r\n'.join(out) + '\r\n'); sys.stdout.flush()
 def nxt():
     global tab, review, finished
     done[tab] = True
     if tab < n-1: tab += 1
     elif n > 1 or qs[0]['multi']: review = True
     else: finished = True
-tty.setraw(0); draw()
+tty.setraw(0); signal.signal(signal.SIGWINCH, lambda *_: draw()); draw()
 buf = b''
 while True:
     if not select.select([0], [], [], 60)[0]: break

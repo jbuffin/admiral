@@ -127,6 +127,7 @@
 #   exit <n>       create `cues-done`, then exit with status n
 #   menu <json>    Claude only, needs python3, and the last cue: creates `cues-done`, then draws Claude's AskUserQuestion menu for the
 #                  call <json> holds (a list of {text, labels, multi}) through `fakemenu.py` and logs every key it reads to `stdin`
+#                  (like Claude, it draws only the bottom of a frame taller than the pane, and redraws on a resize)
 #   lines <n>      print n numbered lines, "line 0001" to "line <n>", each in an SGR
 #                  colour (\033[31m..\033[36m, cycling) and reset at the end
 #   altscreen      switch to the alternate screen (\033[?1049h), set application cursor

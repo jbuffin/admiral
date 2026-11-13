@@ -242,8 +242,23 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await expect(viewPanel(page).getByText('And run the tests', { exact: true })).toHaveCount(1);
   await expect(messageBox(page)).toHaveValue('');
 
+  // The box is one line, with Send inside it, and grows with its text.
+  const oneLine = (await messageBox(page).boundingBox())!;
+  const send = (await sendButton(page).boundingBox())!;
+  expect(send.x).toBeGreaterThan(oneLine.x + oneLine.width - send.width - 1);
+  expect(send.y + send.height).toBeGreaterThan(oneLine.y);
+  await messageBox(page).fill('First line\nSecond line\nThird line');
+  await expect.poll(async () => (await messageBox(page).boundingBox())!.height).toBeGreaterThan(oneLine.height + 20);
+  await messageBox(page).fill('');
+  await expect.poll(async () => (await messageBox(page).boundingBox())!.height).toBe(oneLine.height);
+
   setState(admiral, chat, 'working');
   await expect(interruptButton(page)).toBeVisible();
+  // Interrupt sits on the tabs' line, at its far right.
+  const tabBox = (await viewTab(page, 'Conversation').boundingBox())!;
+  const stop = (await interruptButton(page).boundingBox())!;
+  expect(Math.abs(stop.y + stop.height / 2 - (tabBox.y + tabBox.height / 2))).toBeLessThan(4);
+  expect(stop.x + stop.width).toBeGreaterThan(oneLine.x + oneLine.width - 8);
   expect(received(admiral, chat)).not.toContain('\x1b');
   await interruptButton(page).tap();
   await expect.poll(() => received(admiral, chat)).toContain('\x1b');

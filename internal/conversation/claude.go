@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"encoding/json"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -43,6 +44,15 @@ type claudeLine struct {
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
 	ToolUseResult json.RawMessage `json:"toolUseResult"`
+	// Attachment holds a message the engineer sent mid-turn, which Claude Code hands over with a tool result, not as a user line.
+	Attachment struct {
+		Type        string `json:"type"`
+		Prompt      string `json:"prompt"`
+		CommandMode string `json:"commandMode"`
+		Origin      struct {
+			Kind string `json:"kind"`
+		} `json:"origin"`
+	} `json:"attachment"`
 }
 
 // emission is an item the decoder hands on; an update carries only the id and what a result fills in.
@@ -151,6 +161,11 @@ func (d *claudeDecoder) line(raw []byte) (out []emission, ok bool) {
 		d.assistant(l, b)
 	case "user":
 		d.user(l, b)
+	case "attachment":
+		a := l.Attachment
+		if text := strings.TrimSpace(unwrapHarness(a.Prompt)); a.Type == "queued_command" && a.Origin.Kind == "human" && a.CommandMode == "prompt" && text != "" {
+			b.add(Item{Kind: KindUser, Text: cutTo(text, maxText, "…")})
+		}
 	}
 	return b.out, true
 }
@@ -318,7 +333,7 @@ func (d *claudeDecoder) user(l claudeLine, b *lineItems) {
 		}
 		return
 	}
-	text = strings.TrimSpace(text)
+	text = strings.TrimSpace(unwrapHarness(text))
 	if text == "" || b.full() {
 		return
 	}
@@ -335,6 +350,32 @@ func (d *claudeDecoder) user(l claudeLine, b *lineItems) {
 	if !l.IsMeta {
 		b.add(Item{Kind: KindUser, Text: cutTo(text, maxText, "…")})
 	}
+}
+
+// harnessOpen is a tag the harness puts around what the engineer typed, such as a paste; its close repeats the name and the id.
+var harnessOpen = regexp.MustCompile(`<([A-Za-z][A-Za-z0-9_-]*) id="([^"<>]*)">`)
+
+// unwrapHarness keeps only the body of each tag pair whose open and close carry the same name and id; a tag without that pair stays.
+func unwrapHarness(text string) string {
+	var out strings.Builder
+	for {
+		m := harnessOpen.FindStringSubmatchIndex(text)
+		if m == nil {
+			break
+		}
+		closing := "</" + text[m[2]:m[3]] + ` id="` + text[m[4]:m[5]] + `">`
+		end := strings.Index(text[m[1]:], closing)
+		if end < 0 {
+			out.WriteString(text[:m[1]])
+			text = text[m[1]:]
+			continue
+		}
+		body := strings.TrimSuffix(strings.TrimPrefix(text[m[1]:m[1]+end], "\n"), "\n")
+		out.WriteString(text[:m[0]] + body)
+		text = text[m[1]+end+len(closing):]
+	}
+	out.WriteString(text)
+	return out.String()
 }
 
 // slashCommand is what the engineer typed to run a slash command: the harness records it as tags.

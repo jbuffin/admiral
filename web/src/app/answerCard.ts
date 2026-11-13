@@ -72,7 +72,8 @@ function copilotCard(r: string, conv: Conversation): AnswerCard {
 
 /** What the Conversation tab shows for a ship or boat that may be asking: a card to answer in place, a pointer to the terminal, or nothing. */
 export function answerCard({ harness, status, reason, conv }: { harness: string; status: string; reason?: string; conv: Conversation }): AnswerCard {
-  if (!HAS_KEY_MAP.has(harness) || status !== 'needs_you' || reason === 'crew') return { kind: 'none' };
+  // A finished turn waits for a message, which the message box takes; there is nothing to answer in the terminal.
+  if (!HAS_KEY_MAP.has(harness) || status !== 'needs_you' || reason === 'crew' || reason === 'stop') return { kind: 'none' };
   const r = reason ?? '';
   if (harness === 'copilot') return copilotCard(r, conv);
   if (harness === 'codex' && r === 'question') return { kind: 'none' };

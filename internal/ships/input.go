@@ -177,6 +177,9 @@ func (s *Service) recordKilled(sess sessionhost.Session) {
 	s.queueEnded(e)
 }
 
+// planCols and planRows hold four questions with long text and their review screen.
+const planCols, planRows = 120, 60
+
 type answerRequest struct {
 	Card   string `json:"card"`
 	Reason string `json:"reason"`
@@ -253,10 +256,17 @@ func (s *Service) serveAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 	if plan != nil {
 		tm := s.tmux()
+		// Claude clips its menu to the pane, and a phone's terminal leaves the pane too short for the plan to read the menu.
+		restore, err := tm.GrowWindow(ctx, t.pane, planCols, planRows)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, "could not send the answer: "+err.Error())
+			return
+		}
 		why, err := runPlan(ctx, *plan, paneIO{
 			capture: func(ctx context.Context) (string, error) { return tm.CapturePane(ctx, t.pane) },
 			send:    func(ctx context.Context, keys string) error { return tm.SendLiteral(ctx, t.pane, keys) },
 		})
+		_ = restore(ctx)
 		switch {
 		case err != nil:
 			writeError(w, http.StatusBadGateway, "could not send the answer: "+err.Error())
