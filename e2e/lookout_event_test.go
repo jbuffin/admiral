@@ -44,11 +44,19 @@ func lookoutWorld(t *testing.T) (*world, *fakeGH) {
 
 func (w *world) eventRoutine(name, before string) string {
 	w.t.Helper()
-	code, body := send(w.t, http.MethodPost, w.in.LocalURL+"/api/fleets/work/routines", map[string]any{
-		"name": name, "enabled": true, "before_acting": before,
-		"on": map[string]any{"source": "gh", "kind": "review_requested"},
-		"do": map[string]any{"launch": map[string]any{"harness": "claude", "dir": filepath.Join(w.root, "ra", "api"), "text": "sweep the board"}},
-	})
+	var code int
+	var body string
+	// the source reports its event kinds once its plugin has initialized, which can be after the server starts
+	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(200 * time.Millisecond) {
+		code, body = send(w.t, http.MethodPost, w.in.LocalURL+"/api/fleets/work/routines", map[string]any{
+			"name": name, "enabled": true, "before_acting": before,
+			"on": map[string]any{"source": "gh", "kind": "review_requested"},
+			"do": map[string]any{"launch": map[string]any{"harness": "claude", "dir": filepath.Join(w.root, "ra", "api"), "text": "sweep the board"}},
+		})
+		if code != http.StatusBadRequest || !strings.Contains(body, "raises events") || time.Now().After(deadline) {
+			break
+		}
+	}
 	if code != http.StatusCreated && code != http.StatusOK {
 		w.t.Fatalf("POST routine = %d: %s", code, body)
 	}
