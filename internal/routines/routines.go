@@ -644,11 +644,13 @@ func (s *Store) validateOn(f config.Fleet, r Routine) error {
 		return invalidf("on: the fleet has no source %q that raises events", on.Source)
 	}
 	for _, k := range kinds {
-		if k.Kind == on.Kind {
-			if k.Panel != on.Panel {
-				return invalidf("on: the kind %q belongs to panel %q, not %q", on.Kind, k.Panel, on.Panel)
-			}
+		if k.Kind == on.Kind && k.Panel == on.Panel {
 			return nil
+		}
+	}
+	for _, k := range kinds {
+		if k.Kind == on.Kind {
+			return invalidf("on: the kind %q belongs to panel %q, not %q", on.Kind, k.Panel, on.Panel)
 		}
 	}
 	return invalidf("on: the source %q lists no event kind %q", on.Source, on.Kind)

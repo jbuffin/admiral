@@ -9,6 +9,7 @@ import (
 	"github.com/jbuffin/admiral/internal/launcher"
 	"github.com/jbuffin/admiral/internal/routines"
 	"github.com/jbuffin/admiral/internal/ships"
+	"github.com/jbuffin/admiral/internal/sources"
 )
 
 type realClock struct{}
@@ -68,5 +69,27 @@ func wakeOn(ctx context.Context, changed func() <-chan struct{}, fns ...func()) 
 				fn()
 			}
 		}
+	}
+}
+
+// wireEvents routes each source event to the scheduler, and answers an event routine's catalog check from the sources.
+// Nothing enriches or launches from an event yet: Enrich and Live stay nil.
+func wireEvents(sup *sources.Supervisor, store *routines.Store, sched *routines.Scheduler, list func() []ships.Ship) {
+	store.Events = func(fleet, source string) ([]routines.EventKind, bool) {
+		kinds, ok := sup.Events(fleet, source)
+		out := make([]routines.EventKind, len(kinds))
+		for i, k := range kinds {
+			out[i] = routines.EventKind{Kind: k.Kind, Title: k.Title, Panel: k.Panel}
+		}
+		return out, ok
+	}
+	sched.Own = func(_, ref string) bool { return ships.OwnsRef(list(), ref) }
+	sup.OnEvent = func(source string, ev sources.Event) {
+		fleet, ok := sup.SourceFleet(source)
+		if !ok {
+			return
+		}
+		sched.HandleEvent(routines.Event{Fleet: fleet, Source: source, Kind: ev.Kind, Panel: ev.Panel, Ref: ev.Ref,
+			Actor: ev.Actor, Author: ev.Author, Viewer: ev.Viewer, Verified: ev.Verified})
 	}
 }

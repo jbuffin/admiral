@@ -553,6 +553,7 @@ func serve(args []string) error {
 		}}
 	chatService.Notes().OnChange = commitmentRunner.Changed
 	routineService := &routines.Service{Store: routineStore, OnChange: routineScheduler.Changed}
+	wireEvents(supervisor, routineStore, routineScheduler, allShips)
 	wireStandingOrders(shipService.Launcher, routineStore, routineService, cfg)
 	inboxService.LaunchRoutine = func(ctx context.Context, p inbox.RoutineProposal) (any, int, string) {
 		t, err := routineScheduler.Accept(ctx, p.Fleet, p.Routine, p.Trigger)

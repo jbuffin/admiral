@@ -235,3 +235,28 @@ func routingOf(fleets []config.Fleet) string {
 	b, _ := json.Marshal(list)
 	return string(b)
 }
+
+// Events is the event catalog of source key when it belongs to fleet; ok is false when it has none.
+func (s *Supervisor) Events(fleet, key string) ([]EventKind, bool) {
+	r := s.runner(key)
+	if r == nil {
+		return nil, false
+	}
+	r.mu.Lock()
+	def := r.def
+	r.mu.Unlock()
+	if def.Fleet != fleet {
+		return nil, false
+	}
+	return r.Events()
+}
+
+// SourceFleet is the fleet source key belongs to, as configured now.
+func (s *Supervisor) SourceFleet(key string) (string, bool) {
+	for _, def := range s.Config.Current().SourceList {
+		if def.Key == key {
+			return def.Fleet, true
+		}
+	}
+	return "", false
+}

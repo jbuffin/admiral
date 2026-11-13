@@ -20,6 +20,8 @@ export interface Routine {
   name: string;
   enabled: boolean;
   when: string;
+  /** A source event the routine runs on, instead of a schedule; `when` is empty then. */
+  on?: { source: string; kind: string; panel?: string };
   do: { launch?: RoutineLaunch; prompt?: string };
   before_acting: Before;
   notify: boolean;
