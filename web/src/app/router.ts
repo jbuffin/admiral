@@ -99,7 +99,7 @@ export function chatTerminalOf(path: string): string | null {
   }
 }
 
-const PREFERENCES_PAGES = ['fleet', 'admiralbot', 'sources', 'capabilities', 'usage', 'all-usage', 'remote', 'install', 'notifications'] as const;
+const PREFERENCES_PAGES = ['fleet', 'admiralbot', 'sources', 'capabilities', 'usage', 'limits', 'all-usage', 'remote', 'install', 'notifications'] as const;
 
 const GLOBAL_PAGES: string[] = ['remote', 'all-usage', 'install', 'notifications'];
 
@@ -180,16 +180,29 @@ export const routineNewPath = '/app/routines/new';
 
 export const routineCreating = (path: string) => routinePath('new') === path.replace(/\/$/, '');
 
+const STANDING_ORDERS = 'standing-orders';
+
 /** The routine a detail path names, if any; null for the list and for the new-routine path. */
 export function routineOf(path: string): string | null {
   const [id, key, ...rest] = segments(path);
-  if (id !== 'routines' || !key || key === 'new' || rest.length > 0) return null;
+  if (id !== 'routines' || !key || key === 'new' || key === STANDING_ORDERS || rest.length > 0) return null;
   try {
     return decodeURIComponent(key);
   } catch {
     return null;
   }
 }
+
+export const standingOrdersPath = '/app/routines/standing-orders';
+
+/** True for the Routines screen's Standing orders tab. */
+export const standingOrdersTab = (path: string): boolean => path.replace(/\/$/, '') === standingOrdersPath;
+
+/** A fleet's Limits page, landing on one field when named. */
+export const limitsPath = (fleetKey: string, field?: string): string => `/app/preferences/${encodeURIComponent(fleetKey)}/limits${field ? `?field=${encodeURIComponent(field)}` : ''}`;
+
+/** The field a Limits page query names, if any. */
+export const limitsFieldOf = (search: string): string | null => new URLSearchParams(search).get('field') || null;
 
 /** The query that opens the new-routine editor pre-filled for a view, with its fleet when known. */
 export function automateSearch(sourceKey: string, viewId: string, fleetKey?: string): string {

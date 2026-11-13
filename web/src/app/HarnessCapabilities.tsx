@@ -46,7 +46,7 @@ function HarnessBox({ fleet, h }: { fleet: string; h: Harness }) {
 }
 
 /** Judge calls stay visible when off, greyed out with the reason. */
-function JudgeLine({ judge }: { judge: JudgeHarness }) {
+export function JudgeLine({ judge }: { judge: JudgeHarness }) {
   if (judge.harness) {
     return <p class="line judge-line">Judge calls: {harnessName(judge.harness)} ({judge.lookout_model} / {judge.strong_model})</p>;
   }

@@ -5,6 +5,7 @@ import { fleetSearch } from './fleets';
 import { holdFire, setHoldFire } from './holdFireLink';
 import { CheckoutSelect, DockPicker, ModelEffortPair, ResourcesPicker, SkillSelect, skillOfValue, skillValue } from './LaunchPickers';
 import type { SkillsAnswer } from './launchForm';
+import { RoutineTabs } from './RoutineTabs';
 import { automateOf, go, loc, routineNewPath, routinePath, shipPath } from './router';
 import {
   autopilotDocks,
@@ -38,7 +39,7 @@ const RUNS_EVERY = 10_000;
 
 const target = (e: Event) => e.target as HTMLInputElement & HTMLTextAreaElement & HTMLSelectElement;
 
-function Switch({ label, on, busy, onToggle, hidden }: { label: string; on: boolean; busy?: boolean; onToggle: () => void; hidden?: boolean }) {
+export function Switch({ label, on, busy, onToggle, hidden }: { label: string; on: boolean; busy?: boolean; onToggle: () => void; hidden?: boolean }) {
   return (
     <button type="button" class="switch" role="switch" aria-checked={on} aria-label={label} disabled={busy} onClick={onToggle}>
       <span class="track" aria-hidden={hidden ?? true} />
@@ -366,10 +367,13 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
   const toList = (replace = false) => go('/app/routines', search, replace);
   const heading = title ? <h1>Routines</h1> : null;
   const header = (
-    <div class="routines-head">
-      {heading}
-      <HoldFireToggles fleet={fleet} />
-    </div>
+    <>
+      <div class="routines-head">
+        {heading}
+        <HoldFireToggles fleet={fleet} />
+      </div>
+      <RoutineTabs current="routines" />
+    </>
   );
   if (!list) {
     return (

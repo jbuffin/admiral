@@ -26,9 +26,10 @@ import { call, type Order, type Ship } from './api';
 import { ShipOrder, webUrl } from './ShipOrder';
 import { CrewPage } from './CrewPage';
 import { RoutinesPage } from './RoutinesPage';
+import { StandingOrdersPage } from './StandingOrdersPage';
 import { holdFire } from './holdFireLink';
 import { holdFireBanner } from './routines';
-import { automateSearch, campaignOf, crewOf, go, loc, routineNewPath, routineCreating, routineOf, shipPath, shipSession, surfaceOf, surfacePath } from './router';
+import { automateSearch, campaignOf, crewOf, go, loc, routineNewPath, routineCreating, routineOf, shipPath, shipSession, standingOrdersTab, surfaceOf, surfacePath } from './router';
 import { CampaignPage, CampaignSidebar, CampaignsList } from './CampaignPage';
 import { followReference } from './campaignsLink';
 import { ChatPanel } from './ChatPanel';
@@ -349,6 +350,7 @@ function Panel({ surface, title, phone }: { surface: Surface; title: boolean; ph
   }
   if (surface.id === 'routines') {
     const fleet = activeFleet.value;
+    if (fleet && standingOrdersTab(loc.value.path)) return <StandingOrdersPage key={fleet.key} fleet={fleet} title={title} />;
     if (fleet) {
       return <RoutinesPage key={fleet.key} fleet={fleet} id={routineOf(loc.value.path)} creating={routineCreating(loc.value.path)} title={title} phone={!!phone} />;
     }
