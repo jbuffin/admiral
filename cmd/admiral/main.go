@@ -581,6 +581,8 @@ func serve(args []string) error {
 	probeRunner := probes.NewDefault(dir)
 	tails := convService.Tails()
 	shipService.Tail = tails.Tail
+	titler := newTitler(dir, cfg, host, shipService, tails, supervisor)
+	shipService.Titling = titler.Titling
 	shipService.Questions = convService.PendingQuestions
 	shipService.Approving = convService.ApprovalPending
 	s := &server.Server{Path: auth.PathName, Version: version, Commit: commit, UI: web.UI(), Messages: convService.Messages(), Config: cfg,
@@ -626,7 +628,7 @@ func serve(args []string) error {
 			}
 		}
 	}()
-	runs := []func(context.Context){s.WatchConfig, sourceService.Run, campaignService.Run, bridgeService.Run, resourceSet.Run, inboxService.Run, chatService.Run, tails.Run, routineScheduler.Run, commitmentRunner.Run, func(ctx context.Context) {
+	runs := []func(context.Context){s.WatchConfig, sourceService.Run, campaignService.Run, bridgeService.Run, resourceSet.Run, inboxService.Run, chatService.Run, tails.Run, titler.Run, routineScheduler.Run, commitmentRunner.Run, func(ctx context.Context) {
 		wakeOn(ctx, resourceSet.Changed, routineScheduler.Changed, commitmentRunner.Changed)
 	}}
 	if tmuxPath != "" {

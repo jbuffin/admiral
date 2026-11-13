@@ -47,9 +47,14 @@ type Ship struct {
 	Resources []string `json:"-"`
 	Title     string   `json:"title"`
 	URL       string   `json:"url"`
-	Issues    []string `json:"issues,omitempty"`
-	OrderID   string   `json:"order_id"`
-	Launched  string   `json:"launched"`
+	// Link is the main link of the ship's first prompt; unlike URL it claims no issue.
+	Link string `json:"link,omitempty"`
+	// Titled is set once the ship's title and link are settled; Titling while the titler works them out.
+	Titled   bool     `json:"-"`
+	Titling  bool     `json:"titling,omitempty"`
+	Issues   []string `json:"issues,omitempty"`
+	OrderID  string   `json:"order_id"`
+	Launched string   `json:"launched"`
 	// Via is "admiralbot" for a ship AdmiralBot launched; absent for the engineer's.
 	Via  string `json:"via,omitempty"`
 	Chat string `json:"-"`
@@ -114,6 +119,8 @@ type Service struct {
 	OnChange func()
 	// Tail gives a ship's conversation tail from a cache; it must not block.
 	Tail func(session string) string
+	// Titling reports whether the titler is working out the ship's title.
+	Titling func(session string) bool
 	// Questions gives the pending questions of a ship's conversation, or of a crew boat's when crew is set, oldest first.
 	Questions func(session, crew string) []conversation.Item
 	// Approving is whether a Codex ship's app-server is waiting on an approval: a bell then may be for it, not for a question.
@@ -220,6 +227,9 @@ func (s *Service) ship(sess sessionhost.Session) Ship {
 	if s.Tail != nil {
 		sh.Tail = s.Tail(sess.Name)
 	}
+	if s.Titling != nil && !sh.Titled {
+		sh.Titling = s.Titling(sess.Name)
+	}
 	return sh
 }
 
@@ -228,7 +238,7 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	o, session := sess.Options, sess.Name
 	sh := Ship{Session: session, Name: o["name"], Fleet: o["fleet"], FleetName: o["fleet-name"],
 		FleetColor: o["fleet-color"], Harness: o["harness"], Dir: o["dir"], Repo: filepath.Base(o["dir"]),
-		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], OrderID: o["order"], Launched: o["launched"], Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Status: status(sess, now), Returning: o[sessionhost.OptReturning] != "", CarriesPRs: carriesPRs(sess)}
+		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], Link: o["link"], Titled: o["titled"] != "", OrderID: o["order"], Launched: o["launched"], Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Status: status(sess, now), Returning: o[sessionhost.OptReturning] != "", CarriesPRs: carriesPRs(sess)}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
 	sh.Crew, sh.Subagents = crewBoats(sess.Crew), sess.Subagents
 	if sh.Subagents == nil {
@@ -380,7 +390,7 @@ func prunes(ev sessionhost.Event) bool {
 func (s *Service) signature() string {
 	var b strings.Builder
 	for _, sh := range s.List() {
-		b.WriteString(sh.Session + "=" + sh.Status + ":" + sh.Reason + crewSignature(sh) + "|" + sh.Tail + ";")
+		b.WriteString(sh.Session + "=" + sh.Status + ":" + sh.Reason + crewSignature(sh) + "|" + sh.Tail + "|" + strconv.FormatBool(sh.Titling) + sh.Title + "|" + sh.Link + ";")
 	}
 	return b.String()
 }
