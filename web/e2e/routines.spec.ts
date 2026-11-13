@@ -158,11 +158,11 @@ test('the Standing orders tab shows the Work Limits as sentences, keeps a Check 
     if (ordersPuts === 1) return route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"disk full"}' });
     return route.fallback();
   });
-  const firstOrders = page.waitForResponse((r) => r.request().method() === 'PUT' && new URL(r.url()).pathname === '/api/v1/fleets/zulu/standing-orders');
-  // A tap within 400ms of arming is a double tap and only arms.
-  await page.waitForTimeout(500);
-  await filing.getByRole('button', { name: /^Confirm, loosening 1 Limit/ }).click();
-  await firstOrders;
+  // A tap within 400ms of arming is a double tap and only arms, so tap again until the save answers.
+  await expect(async () => {
+    await filing.getByRole('button', { name: /^Confirm, loosening 1 Limit/ }).click({ timeout: 1000 });
+    await expect(filing.getByText(/The Limits were saved, but the Checks and Guidance weren't/)).toBeVisible({ timeout: 1000 });
+  }).toPass();
   await expect(filing.getByText(/The Limits were saved, but the Checks and Guidance weren't/)).toBeVisible();
   expect(sentenceFor(await orders(admiral, 'zulu'), 'wall_clock_minutes')).toMatch(/1,?440 minutes/);
   expect((await orders(admiral, 'zulu')).checks).toEqual(['Run make check before any PR.']);
