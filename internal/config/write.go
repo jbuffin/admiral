@@ -624,6 +624,7 @@ func renderKey(path, key string, value json.RawMessage) (before, after []byte, e
 }
 
 // renderKeys sets each key in place, and appends the ones the file lacks in the order given.
+// A write of fleets also adds a source for each fleet the file lacks.
 func renderKeys(path string, set ...keyValue) (before, after []byte, err error) {
 	data, err := readConfig(path)
 	if err != nil {
@@ -634,6 +635,10 @@ func renderKeys(path string, set ...keyValue) (before, after []byte, err error) 
 	}
 	top, err := members("", data)
 	if err != nil {
+		return nil, nil, err
+	}
+	// A fleet the file lacks lands with its GitHub source, which checkSourceFleets needs in the same file.
+	if set, err = withNewFleetSources(data, set); err != nil {
 		return nil, nil, err
 	}
 

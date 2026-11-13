@@ -179,6 +179,27 @@ func TestGitHubBuiltin(t *testing.T) {
 	w.waitGH("ghc", 20*time.Second, "the card gone and its items", func(s ghSrcJSON) bool {
 		return s.State == "ok" && s.Auth == nil && reflect.DeepEqual(s.viewOrders("newbie"), []string{"acme/widgets#21"})
 	})
+
+	// A fleet added later checks out a repo no other fleet has, so only its own
+	// source can show that repo's item.
+	rootC := filepath.Join(w.root, "rc")
+	w.checkoutOf(rootC, "gadget", "newco/gadget")
+	g.search("assigned", "assignee:@me",
+		ghNode("github.com", "acme/widgets", 12, false, "Flaky login test"),
+		ghNode("github.com", "globex/app", 5, false, "Globex bug"),
+		ghNode("github.com", "other/thing", 9, false, "Somebody else's"),
+		ghNode("github.com", "newco/gadget", 3, false, "Gadget bug"))
+	r := w.admiral("fleet", "add", "charlie", "--name", "Charlie", "--harness", "claude",
+		"--executable", "claude="+w.fakeExe("claude"),
+		"--env", "claude=CLAUDE_CONFIG_DIR="+filepath.Join(w.root, "claude-charlie"),
+		"--search-root", rootC)
+	w.expectExit(r, 0, "fleet add charlie")
+	w.waitGH("github-charlie", 20*time.Second, "the new fleet's assigned item", func(s ghSrcJSON) bool {
+		return s.State == "ok" && reflect.DeepEqual(s.viewOrders("assigned-to-me"), []string{"newco/gadget#3"})
+	})
+	if got := w.readConfig().sources(t)["github-charlie"]; !sameJSON(t, got, `{"plugin":"github","name":"GitHub","fleet":"charlie","settings":{"views":[]}}`) {
+		t.Errorf("source github-charlie = %s, want gha's name and views on fleet charlie", got)
+	}
 }
 
 func TestFleetEnv(t *testing.T) {

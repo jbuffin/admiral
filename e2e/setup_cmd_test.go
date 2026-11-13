@@ -103,6 +103,16 @@ func TestU12_S1_SetupUnattended(t *testing.T) {
 		if ac := c.dock(t, "alpha", "claude"); len(ac.Args) != 1 || ac.Args[0] != "--fa" {
 			t.Fatalf("alpha claude args = %v", ac.Args)
 		}
+		// Both fleets are new and the file had no GitHub source, so each gets the defaults.
+		srcs := c.sources(t)
+		for _, f := range []string{"zulu", "alpha"} {
+			if !sameJSON(t, srcs["github-"+f], `{"plugin":"github","fleet":"`+f+`","settings":{"views":[]}}`) {
+				t.Errorf("source github-%s = %s, want a GitHub source with the default views", f, srcs["github-"+f])
+			}
+		}
+		if len(srcs) != 2 {
+			t.Errorf("sources = %s, want github-zulu and github-alpha only", c.top["sources"])
+		}
 
 		out := r.stdout
 		if !strings.Contains(strings.Join(linesWith(out, "Harness claude: "), "\n"), w.fakeExe2("claude")) {
@@ -214,6 +224,9 @@ func TestU12_S1_SetupUnattended(t *testing.T) {
 		if !added {
 			t.Errorf("the diff should show the new fleet as a `+` line naming zulu:\n%s", r.stdout)
 		}
+		if !sameJSON(t, c.sources(t)["github-zulu"], `{"plugin":"github","fleet":"zulu","settings":{"views":[]}}`) {
+			t.Errorf("source github-zulu = %s, want the new fleet's GitHub source", c.sources(t)["github-zulu"])
+		}
 
 		r = w.admiral("setup", "--answers", w.answers(t, zulu("Zulu Two")), "--yes")
 		w.expectExit(r, 0, "second run")
@@ -223,6 +236,9 @@ func TestU12_S1_SetupUnattended(t *testing.T) {
 		}
 		if compactJSON(t, c.top["x_future"]) != compactJSON(t, before.top["x_future"]) {
 			t.Fatalf("x_future after the second run = %s", c.top["x_future"])
+		}
+		if len(c.sources(t)) != 1 {
+			t.Errorf("sources after the re-run = %s, want only github-zulu: an edited fleet gets no second one", c.top["sources"])
 		}
 		var minus, plus bool
 		for _, l := range strings.Split(r.stdout, "\n") {
@@ -248,6 +264,9 @@ func TestU12_S1_SetupUnattended(t *testing.T) {
 		}
 		if !added {
 			t.Errorf("--dry-run should print the diff (a `+` line naming zulu):\n%s", r.stdout)
+		}
+		if !strings.Contains(r.stdout, "github-zulu") {
+			t.Errorf("--dry-run should show the new fleet's github-zulu source in the diff:\n%s", r.stdout)
 		}
 
 		existing := `{"version":1,"x_future":true,"fleets":{}}` + "\n"

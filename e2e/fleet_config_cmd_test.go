@@ -1,8 +1,10 @@
 package e2e
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -24,6 +26,31 @@ func cmdWorld(t *testing.T) (*world, string) {
 `
 	w.writeRaw(configPath(w.home), text, 0o600)
 	return w, text
+}
+
+// sources are config.json's sources by key.
+func (c savedConfig) sources(t *testing.T) map[string]json.RawMessage {
+	t.Helper()
+	out := map[string]json.RawMessage{}
+	if raw, ok := c.top["sources"]; ok {
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatalf("sources: %v", err)
+		}
+	}
+	return out
+}
+
+// sameJSON compares parsed values, since every write re-indents the file.
+func sameJSON(t *testing.T, got json.RawMessage, want string) bool {
+	t.Helper()
+	var g, w any
+	if err := json.Unmarshal(got, &g); err != nil {
+		return false
+	}
+	if err := json.Unmarshal([]byte(want), &w); err != nil {
+		t.Fatal(err)
+	}
+	return reflect.DeepEqual(g, w)
 }
 
 func TestU12_S2_FleetList(t *testing.T) {
@@ -89,6 +116,13 @@ func TestU12_S2_FleetAddAndEditKeepWhatTheyDoNotTouch(t *testing.T) {
 		t.Errorf("bravo search_roots = %v", roots)
 	}
 
+	// cmdWorld holds no GitHub source, so the new fleet's gets the defaults and no name.
+	srcs := c.sources(t)
+	if len(srcs) != 1 || !sameJSON(t, srcs["github-bravo"], `{"plugin":"github","fleet":"bravo","settings":{"views":[]}}`) {
+		t.Errorf("sources after fleet add = %s, want only github-bravo with the default views", c.top["sources"])
+	}
+
+	addedSources := c.top["sources"]
 	afterAdd := string(w.configBytes())
 	w.expectExit(w.admiral("fleet", "add", "bravo", "--name", "Again", "--harness", "claude",
 		"--env", "claude=CLAUDE_CONFIG_DIR=~/.claude-again"), 1, "adding a key that exists")
@@ -101,6 +135,9 @@ func TestU12_S2_FleetAddAndEditKeepWhatTheyDoNotTouch(t *testing.T) {
 	w.expectExit(r, 0, "fleet edit")
 	c = w.readConfig()
 	unchanged(c, "after edit")
+	if !sameJSON(t, c.top["sources"], string(addedSources)) {
+		t.Errorf("sources after fleet edit = %s, want what fleet add left: %s", c.top["sources"], addedSources)
+	}
 	if c.str(t, "bravo", "name") != "Bravo Two" {
 		t.Errorf("bravo name = %q", c.str(t, "bravo", "name"))
 	}
