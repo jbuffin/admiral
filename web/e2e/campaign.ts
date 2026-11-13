@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Locator, type Page, expect } from '@playwright/test';
 import type { Admiral } from './fixtures';
@@ -175,4 +175,56 @@ export async function launchSliceBehindThePage(a: Admiral, campaign: string, chi
   });
   expect(res.status).toBe(201);
   return ((await res.json()) as { ship: { name: string } }).ship.name;
+}
+
+/**
+ * Harborlight (chat on) with a GitHub source, a checkout of acme/widgets and a map whose only open child is ready with
+ * you: the one a campaign commitment proposes.
+ */
+export function seedChatCampaignFleet(a: Admiral) {
+  seedFleets(a, { live: true, chat: true });
+  const commodore = join(a.home, 'identity', 'harbor-claude', 'skills', 'commodore');
+  mkdirSync(commodore, { recursive: true });
+  writeFileSync(join(commodore, 'SKILL.md'), '---\nname: commodore\ndescription: a fake skill\n---\n');
+  const file = join(a.home, 'config.json');
+  const config = JSON.parse(readFileSync(file, 'utf8'));
+  config.fleets.harbor.owners = ['acme'];
+  config.sources.github = { plugin: 'github', name: 'GitHub', fleet: 'harbor', settings: { views: [] } };
+  a.writeConfig(config);
+  const widgets = join(a.home, 'widgets');
+  mkdirSync(widgets, { recursive: true });
+  spawnSync('git', ['init', '-q'], { cwd: widgets });
+  spawnSync('git', ['remote', 'add', 'origin', 'https://github.com/acme/widgets.git'], { cwd: widgets });
+  fakeGhTrees(a).campaign(issueNode(MAP, T.map, { kids: [issueNode(21, T.grill, { labels: ['wayfinder:grilling'] })] }));
+}
+
+/** AdmiralBot's commitment to work on the campaign, as it records one: Admiral reads it on its next tick. */
+export function workOnCampaign(a: Admiral, fleet: string, campaign: string) {
+  const line = { v: 1, ts: new Date().toISOString(), event: 'added', id: 'cw1', kind: 'commitment', text: `work on acme/widgets#${MAP}`, via: 'admiralbot', trigger: { kind: 'campaign', subject: campaign }, action: 'work', harness: 'claude' };
+  appendFileSync(join(a.home, 'chat', fleet, 'ledger.jsonl'), JSON.stringify(line) + '\n');
+}
+
+/** The journey on any screen: Admiral asks in the chat whether to start the ready With-you child, Yes launches it, and the card's ship link opens the ship. */
+export async function proposalJourney(page: Page, a: Admiral, tap: (l: Locator) => Promise<void>) {
+  await githubReady(a);
+  const followed = await fetch(`${a.url}api/v1/campaigns`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reference: 'acme/widgets#20' }) });
+  expect(followed.status).toBe(201);
+  workOnCampaign(a, 'harbor', ((await followed.json()) as { id: string }).id);
+
+  await page.goto(a.url + 'app/chat?fleet=harbor');
+  const main = page.getByRole('main');
+  // The question is Admiral's, one child at a time, and nothing launches before the answer.
+  await expect(main.getByText('Admiral asks')).toBeVisible();
+  await expect(main).toContainText(T.grill);
+  expect(((await (await fetch(`${a.url}api/v1/ships`)).json()) as { ships: unknown[] }).ships).toHaveLength(0);
+
+  await tap(main.getByText('Yes, start it with you', { exact: true }));
+  await tap(main.getByRole('button', { name: 'Send answers' }));
+  const card = main.getByRole('listitem').filter({ hasText: 'AdmiralBot launched a ship' });
+  await expect(card).toContainText('acme/widgets#21');
+  const link = card.getByRole('link', { name: /ship/i });
+  await expect(link).toHaveAttribute('href', /\/app\/ships\/[^/]+$/);
+  await tap(link);
+  await expect(page).toHaveURL(/\/app\/ships\/[^/]+$/);
+  await expect(page.getByRole('main')).toContainText(T.grill);
 }

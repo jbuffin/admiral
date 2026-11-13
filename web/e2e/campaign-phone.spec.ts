@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { expect, test } from './fixtures';
-import { T, campaignIdOf, followByPaste, githubReady, issueUrl, seedCampaignFleet } from './campaign';
+import { T, campaignIdOf, followByPaste, githubReady, issueUrl, proposalJourney, seedChatCampaignFleet, seedCampaignFleet } from './campaign';
 import { watchPage, withFakeGh } from './shell';
 
 test('on the phone, a person follows a campaign from the Campaigns surface, reads its page and launches one child', async ({ page, admiral }) => {
@@ -41,4 +41,12 @@ test('on the phone, a person follows a campaign from the Campaigns surface, read
   expect(watch.errors).toEqual([]);
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
+});
+
+test('on the phone, Admiral asks in the chat whether to start the ready With-you child, Yes launches it, and the card links its ship', async ({ page, admiral }) => {
+  seedChatCampaignFleet(admiral);
+  await admiral.start({ env: withFakeGh(admiral) });
+  const watch = watchPage(page, admiral.url);
+  await proposalJourney(page, admiral, (l) => l.tap());
+  expect(watch.errors).toEqual([]);
 });

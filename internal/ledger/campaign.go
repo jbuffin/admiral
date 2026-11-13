@@ -18,10 +18,19 @@ const (
 	EventChildDeclined = "child_declined"
 	EventChildFailed   = "child_failed"
 
+	EventChildProposed  = "child_proposed"
+	EventChildWithdrawn = "child_withdrawn"
+
+	ModeWithYou    = "with_you"
+	ModeWithoutYou = "without_you"
+
 	ChildLaunched = "launched"
 	ChildWaiting  = "waiting"
 	ChildDeclined = "declined"
 	ChildFailed   = "failed"
+
+	ChildProposed  = "proposed"
+	ChildWithdrawn = "withdrawn"
 
 	// MaxChildEvents bounds a campaign commitment's child events, so the ledger stays small.
 	MaxChildEvents = 200
@@ -36,6 +45,16 @@ type Child struct {
 	State  string `json:"state"`
 	Ship   string `json:"ship,omitempty"`
 	Reason string `json:"reason,omitempty"`
+	// Mode is how a launched child was started; a child with no mode on record reads as Without you.
+	Mode string `json:"mode,omitempty"`
+	// Proposals counts the questions asked about the child, so each one gets its own id.
+	Proposals int `json:"proposals,omitempty"`
+}
+
+// Proposal is the open question about one child: at most one per commitment.
+type Proposal struct {
+	URL        string `json:"url"`
+	QuestionID string `json:"question"`
 }
 
 func (c *Commitment) foldChild(ev event) {
@@ -132,3 +151,9 @@ func (l *Ledger) childEvent(fleet, id string, ev event) error {
 	ev.V, ev.TS, ev.ID = version, l.now().UTC().Truncate(time.Second), id
 	return l.append(fleet, ev)
 }
+
+var errTodo = errors.New("not implemented")
+
+func (l *Ledger) ChildProposed(fleet, id, url, questionID string) error   { return errTodo }
+func (l *Ledger) ChildWithdrawn(fleet, id, url, reason string) error      { return errTodo }
+func (l *Ledger) ChildLaunchedAs(fleet, id, url, ship, mode string) error { return errTodo }

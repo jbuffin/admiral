@@ -1,7 +1,7 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from './fixtures';
-import { ANNEX, T, campaignIdOf, closeAnnexChild, followByPaste, githubReady, issueUrl, launchBehindThePage, launchSliceBehindThePage, MAP, seedCampaignFleet } from './campaign';
+import { ANNEX, T, campaignIdOf, closeAnnexChild, followByPaste, githubReady, issueUrl, launchBehindThePage, launchSliceBehindThePage, MAP, proposalJourney, seedChatCampaignFleet, seedCampaignFleet } from './campaign';
 import { watchPage, withFakeGh } from './shell';
 
 test('on the iPad, a person follows a campaign by pasting it, sees each child\'s status and mode, launches a ready child, is refused a second launch, unfollows it and finds it under Ended; Follow on an order opens its campaign', async ({ page, admiral }) => {
@@ -206,4 +206,12 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   expect(watch.errors).toEqual([]);
   expect(watch.unversioned()).toEqual([]);
   expect(watch.foreign).toEqual([]);
+});
+
+test('on the iPad, a chat-on fleet works a campaign: Admiral asks in the chat whether to start the ready With-you child, Yes launches it, and the card links its ship', async ({ page, admiral }) => {
+  seedChatCampaignFleet(admiral);
+  await admiral.start({ env: withFakeGh(admiral) });
+  const watch = watchPage(page, admiral.url);
+  await proposalJourney(page, admiral, (l) => l.tap());
+  expect(watch.errors).toEqual([]);
 });

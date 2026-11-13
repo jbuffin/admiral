@@ -109,3 +109,6 @@ export function commitmentCardView(item: Extract<ThreadItem, { kind: 'commitment
   const eyebrow = { launched: 'AdmiralBot launched a ship', reminded: 'AdmiralBot reminds you', cant_run: "AdmiralBot can't run this", dropped: 'AdmiralBot dropped this', aged: 'Still want this?', ended: 'Campaign ended', too_large: 'Campaign too large to work on' }[outcome];
   return { eyebrow, text: item.text, reason: reason ?? '', shipHref: outcome === 'launched' && ship ? shipPath(ship) : '', settingsHref: outcome === 'aged' && fleet ? chatSettingsPath(fleet) : '', childLabel: child ? childRef(child) : '' };
 }
+
+/** The eyebrow of an open question card: Admiral's own proposals read differently from AdmiralBot's questions. */
+export const questionEyebrow = (_id: string): string => 'AdmiralBot asks';

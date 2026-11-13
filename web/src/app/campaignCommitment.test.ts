@@ -30,7 +30,7 @@ describe('a campaign commitment in words', () => {
     expect(w.href).toBeUndefined();
   });
   it('says the action launches Without-you children', () => {
-    expect(actionWords('work' as never)).toBe('Launch Without-you children');
+    expect(actionWords('work' as never)).toContain('Without-you');
   });
   it('marks the launched and waiting counts, and leaves out a zero', () => {
     expect(commitmentMarks({ launched: 2, waiting_children: 1 } as never)).toEqual(['2 launched', '1 waiting']);

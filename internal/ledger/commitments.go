@@ -60,6 +60,8 @@ type Commitment struct {
 	Launched        int     `json:"launched,omitempty"`
 	WaitingChildren int     `json:"waiting_children,omitempty"`
 	ChildEvents     int     `json:"-"`
+	// Proposal is the question open about a With-you child, if any.
+	Proposal *Proposal `json:"proposal,omitempty"`
 }
 
 var errNoCommitment = fmt.Errorf("%w: no such open commitment", ErrNotFound)
