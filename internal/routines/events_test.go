@@ -37,7 +37,10 @@ func TestTierIsTheLessTrustedOfActorAndAuthor(t *testing.T) {
 		{"an unverified engineer is never T1", "Eng", "Eng", "Eng", false, standing.T3},
 		{"an unverified allowlisted login is still T2", "alice", "alice", "Eng", false, standing.T2},
 		{"no viewer means no T1", "Eng", "Eng", "", true, standing.T3},
-		{"an empty author leaves the actor's tier", "Eng", "", "Eng", true, standing.T1},
+		{"a ghost author is a stranger's", "Eng", "", "Eng", true, standing.T3},
+		{"an empty actor is a stranger's even on the engineer's item", "", "Eng", "Eng", true, standing.T3},
+		{"an unattributable actor is a stranger's", "(unknown)", "Eng", "Eng", true, standing.T3},
+		{"an unattributable author is a stranger's", "Eng", "(unknown)", "Eng", true, standing.T3},
 		{"no actor and no author is a stranger", "", "", "Eng", true, standing.T3},
 	}
 	for _, c := range cases {
@@ -715,7 +718,7 @@ func TestHoldFireShowsInTheEventRecord(t *testing.T) {
 
 type fakeActs struct{ got []routines.Trigger }
 
-func (f *fakeActs) Act(_ string, _ routines.Routine, _ routines.Event, rec routines.Trigger, _ routines.Decision) {
+func (f *fakeActs) Act(_ string, _ routines.Routine, _ routines.Event, rec routines.Trigger, _ routines.Decision, _ routines.Enrichment) {
 	f.got = append(f.got, rec)
 }
 
@@ -765,5 +768,222 @@ func TestAnEventWhoseActorIsNoLoginReadsAsAStrangersEvenOnTheEngineersItem(t *te
 	ev := routines.Event{Actor: "(unknown)", Author: "Eng", Viewer: "Eng", Verified: true}
 	if got := routines.TierOf(ev, standing.PresetLimits(standing.Home)); got != standing.T3 {
 		t.Errorf("tier = %v, want T3", got)
+	}
+}
+
+func TestAnEventSaysWhoSentItAndANewInViewEventIsAtBestAnAllowlistedAuthorsT2(t *testing.T) {
+	limits := standing.Limits{SenderAllowlist: []string{"Alice"}}
+	view := func(author string) routines.Event {
+		return routines.Event{Kind: "new_in_view", Panel: "mine", Author: author, Viewer: "Eng", Verified: true}
+	}
+	for name, c := range map[string]struct {
+		ev   routines.Event
+		want standing.Tier
+	}{
+		"a stranger's item entering the view":       {view("stranger"), standing.T3},
+		"the engineer's own item entering the view": {view("Eng"), standing.T3},
+		"an allowlisted author's item":              {view("alice"), standing.T2},
+		"a ghost author's item":                     {view(""), standing.T3},
+		"an unattributable author's item":           {view("(unknown)"), standing.T3},
+		"a plugin's new_in_view with no actor":      {routines.Event{Kind: "new_in_view", Author: "alice"}, standing.T3},
+	} {
+		if got := routines.TierOf(c.ev, limits); got != c.want {
+			t.Errorf("%s: tier = T%d, want T%d", name, got, c.want)
+		}
+	}
+}
+
+func TestANewInViewRecordNamesTheItemsAuthorAndASenderSkipMatchesIt(t *testing.T) {
+	h := newHarness(t)
+	limits := standing.PresetLimits(standing.Home)
+	h.withEvents(limits)
+	r := h.onRoutine(routines.AskFirst, func(r *routines.Routine) { r.On = &routines.On{Source: "gh", Kind: "new_in_view", Panel: "mine"} })
+	view := routines.Event{Fleet: "work", Source: "gh", Kind: "new_in_view", Panel: "mine", Ref: "https://github.com/acme/api/pull/9",
+		Author: "stranger", Viewer: "Eng", Verified: true}
+	h.sched.HandleEvent(view)
+	if rec := h.latest(r); rec.Sender != "stranger" || rec.Tier != "T3" {
+		t.Fatalf("record = %+v, want sender stranger at T3", rec)
+	}
+	limits.Skip.Senders = []standing.Scoped{{Routine: r.ID, Value: "stranger"}}
+	h.withEvents(limits)
+	h.sched.HandleEvent(view)
+	if rec := h.latest(r); rec.Outcome != routines.Skipped || !strings.Contains(rec.Reason, routines.ReasonSkipFilter) {
+		t.Errorf("record = %+v, want skipped by the sender filter", rec)
+	}
+}
+
+func TestAnUnattributedActorFallsBackToTheAuthorAsSenderElseUnknown(t *testing.T) {
+	h := newHarness(t)
+	h.withEvents(standing.PresetLimits(standing.Home))
+	r := h.onRoutine(routines.AskFirst, nil)
+	ev := evFrom("")
+	ev.Actor, ev.Author = routines.UnknownLogin, "amy"
+	h.sched.HandleEvent(ev)
+	if rec := h.latest(r); rec.Sender != "amy" || rec.Tier != "T3" {
+		t.Errorf("record = %+v, want sender amy at T3", rec)
+	}
+	ev.Actor, ev.Author = "", ""
+	h.sched.HandleEvent(ev)
+	if rec := h.latest(r); rec.Sender != routines.UnknownLogin || rec.Tier != "T3" {
+		t.Errorf("record = %+v, want sender (unknown) at T3", rec)
+	}
+}
+
+func TestWhenTheDailySpendIsReachedTheLookoutIsNotAskedAndTheRecordSaysWhy(t *testing.T) {
+	h := newHarness(t)
+	limits := standing.PresetLimits(standing.Home)
+	h.withEvents(limits)
+	r := h.onRoutine(routines.ReportOnly, nil)
+	if _, err := h.store.AppendTrigger("work", routines.Trigger{Routine: r.ID, Outcome: routines.Reported, Tier: "T1", At: day0,
+		Costs: []routines.Cost{{Call: "lookout", USD: limits.Spend.DailyWorkerUSD}}}); err != nil {
+		t.Fatal(err)
+	}
+	asked := 0
+	h.sched.Enrich = func(routines.Event) routines.Enrichment { asked++; return routines.Enrichment{} }
+	h.sched.HandleEvent(evFrom("Eng"))
+	if asked != 0 {
+		t.Errorf("Enrich called %d times with the spend reached, want 0", asked)
+	}
+	if rec := h.latest(r); rec.Outcome != routines.Reported || !strings.Contains(rec.Reason, routines.ReasonSpend) {
+		t.Errorf("record = %+v, want reported with the spend reason", rec)
+	}
+}
+
+func TestAMutedSenderCostsNoLookoutCallAndADedupeSkipStillNeedsOne(t *testing.T) {
+	h := newHarness(t)
+	limits := standing.PresetLimits(standing.Home)
+	h.withEvents(limits)
+	r := h.onRoutine(routines.AskFirst, nil)
+	limits.Skip.Senders = []standing.Scoped{{Routine: r.ID, Value: "bob"}}
+	h.withEvents(limits)
+	asked := 0
+	h.sched.Enrich = func(routines.Event) routines.Enrichment { asked++; return routines.Enrichment{} }
+	h.sched.HandleEvent(evFrom("bob"))
+	if asked != 0 {
+		t.Errorf("Enrich called %d times for a muted sender, want 0", asked)
+	}
+	if rec := h.latest(r); rec.Outcome != routines.Skipped {
+		t.Errorf("record = %+v, want skipped", rec)
+	}
+	h.sched.HandleEvent(evFrom("Eng"))
+	if asked != 1 {
+		t.Errorf("Enrich called %d times for an unmuted sender, want 1", asked)
+	}
+}
+
+func TestTheEnrichmentReachesTheActsSeam(t *testing.T) {
+	h := newHarness(t)
+	h.withEvents(standing.PresetLimits(standing.Home))
+	h.onRoutine(routines.AskFirst, nil)
+	var got routines.Enrichment
+	h.sched.Acts = actsFunc(func(en routines.Enrichment) { got = en })
+	h.sched.Enrich = func(routines.Event) routines.Enrichment { return routines.Enrichment{Summary: "a summary"} }
+	h.sched.HandleEvent(evFrom("Eng"))
+	if got.Summary != "a summary" {
+		t.Errorf("Act got %+v, want the Lookout's summary", got)
+	}
+}
+
+type actsFunc func(routines.Enrichment)
+
+func (f actsFunc) Act(_ string, _ routines.Routine, _ routines.Event, _ routines.Trigger, _ routines.Decision, en routines.Enrichment) {
+	f(en)
+}
+
+func TestAnEventRoutineWhoseDoIsAPromptNeverReachesTheActs(t *testing.T) {
+	h := newHarness(t)
+	h.withEvents(standing.PresetLimits(standing.Home))
+	r := h.onRoutine(routines.AskFirst, nil)
+	list, _ := h.store.List("work")
+	var path string
+	matches, _ := filepath.Glob(filepath.Join(h.home, "*", "*", "routines.json"))
+	for _, m := range matches {
+		path = m
+	}
+	if path == "" || len(list) != 1 {
+		t.Skip("routines file not found: " + h.home)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := strings.Replace(string(b), `"launch"`, `"prompt":"do it","x"`, 1)
+	if err := os.WriteFile(path, []byte(edited), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	acts := &fakeActs{}
+	h.sched.Acts = acts
+	h.sched.HandleEvent(evFrom("Eng"))
+	if len(acts.got) != 0 || len(h.records(r)) != 0 {
+		t.Errorf("acts %+v and records %+v, want neither for a routine whose Do prompts", acts.got, h.records(r))
+	}
+}
+
+func TestAnUnreadableTriggerLogCountsSpendAsUnknownAndHoldsAtA1(t *testing.T) {
+	h := newHarness(t)
+	h.withEvents(standing.PresetLimits(standing.Home))
+	r := h.onRoutine(routines.Act, nil)
+	h.sched.HandleEvent(evFrom("Eng"))
+	matches, _ := filepath.Glob(filepath.Join(h.home, "*", "*", "triggers.jsonl"))
+	if len(matches) != 1 {
+		t.Fatalf("trigger log not found under %s: %v", h.home, matches)
+	}
+	if err := os.Chmod(matches[0], 0o200); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(matches[0], 0o600) })
+	if f, err := os.Open(matches[0]); err == nil {
+		f.Close()
+		t.Skip("the log is readable despite its mode, so the read error can't be made")
+	}
+	asked := 0
+	h.sched.Enrich = func(routines.Event) routines.Enrichment { asked++; return routines.Enrichment{} }
+	h.sched.HandleEvent(evFrom("Eng"))
+	os.Chmod(matches[0], 0o600)
+	if asked != 0 {
+		t.Errorf("Enrich called %d times with the log unreadable, want 0", asked)
+	}
+	rec := h.latest(r)
+	if !strings.Contains(rec.Reason, routines.ReasonSpendRead) || rec.Outcome != routines.Proposed {
+		t.Errorf("record = %+v, want proposed and the unknown-spend reason", rec)
+	}
+}
+
+func TestAPluginsEventNamesNoRepoSoANonEmptyRepoAllowlistSkipsItAndAnEmptyOneIsSkippedToo(t *testing.T) {
+	limits := standing.PresetLimits(standing.Home)
+	limits.RepoAllowlist = []string{"acme/api"}
+	h := newHarness(t)
+	h.withEvents(limits)
+	r := h.onRoutine(routines.AskFirst, nil)
+	plugin := evFrom("alice")
+	plugin.Verified, plugin.Viewer = false, ""
+	h.sched.HandleEvent(plugin)
+	if rec := h.latest(r); rec.Outcome != routines.Skipped || !strings.Contains(rec.Reason, routines.ReasonRepo) {
+		t.Errorf("a plugin event on a github.com ref: record = %+v, want skipped by the repo allowlist", rec)
+	}
+	h.sched.HandleEvent(evFrom("Eng"))
+	if rec := h.latest(r); rec.Outcome != routines.Proposed {
+		t.Errorf("a verified event on an allowlisted repo: record = %+v, want proposed", rec)
+	}
+	empty := evFrom("Eng")
+	empty.Ref = "https://example.com/x"
+	h.sched.HandleEvent(empty)
+	if rec := h.latest(r); rec.Outcome != routines.Skipped || !strings.Contains(rec.Reason, routines.ReasonRepo) {
+		t.Errorf("a verified event with no repo: record = %+v, want skipped", rec)
+	}
+}
+
+func TestAnEventRoutineUpdatesWhileItsSourceHasNoCatalogIfItsOnIsUnchanged(t *testing.T) {
+	r := newRig(t)
+	r.catalog()
+	saved := r.create("work", validOn())
+	r.store.Events = func(string, string) ([]routines.EventKind, bool) { return nil, false }
+	saved.Name = "renamed"
+	if _, err := r.store.Update("work", saved.ID, saved); err != nil {
+		t.Errorf("Update with the same on and no catalog = %v, want ok", err)
+	}
+	saved.On = &routines.On{Source: "gh", Kind: "new_in_view", Panel: "mine"}
+	if _, err := r.store.Update("work", saved.ID, saved); !errors.Is(err, routines.ErrInvalid) {
+		t.Errorf("Update with a changed on and no catalog = %v, want ErrInvalid", err)
 	}
 }

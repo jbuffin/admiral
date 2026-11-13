@@ -2,7 +2,9 @@ package routines
 
 import (
 	"fmt"
+	"log"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -42,13 +44,20 @@ type Cost struct {
 	USD  float64 `json:"usd"`
 }
 
+// UnknownLogin stands for a login a source could not attribute. GitHub logins have no parentheses, so it is no one's
+// and no allowlist's.
+const UnknownLogin = "(unknown)"
+
+func unattributed(login string) bool { return login == "" || login == UnknownLogin }
+
 // TierOf is the less trusted of the actor's and the author's tiers, so a stranger's item the engineer touched stays T3.
-// A login the event doesn't carry is left out; an event with neither is a stranger's.
+// A login the event doesn't carry, or can't attribute, is a stranger's for its own term, so T1 needs both logins to be
+// the viewer's. GitHub names no actor for an item entering a view, so that event is T2 at best, by its author.
 func TierOf(ev Event, limits standing.Limits) standing.Tier {
 	tier := func(login string) standing.Tier {
 		switch {
-		case login == "":
-			return standing.T1
+		case unattributed(login):
+			return standing.T3
 		case ev.Verified && ev.Viewer != "" && strings.EqualFold(login, ev.Viewer):
 			return standing.T1
 		case limits.SenderAllowed(login):
@@ -56,10 +65,24 @@ func TierOf(ev Event, limits standing.Limits) standing.Tier {
 		}
 		return standing.T3
 	}
-	if ev.Actor == "" && ev.Author == "" {
+	if ev.Verified && ev.Kind == "new_in_view" {
+		if !unattributed(ev.Author) && limits.SenderAllowed(ev.Author) {
+			return standing.T2
+		}
 		return standing.T3
 	}
 	return max(tier(ev.Actor), tier(ev.Author))
+}
+
+// senderOf is who the event names as its sender: the actor when it is a login, else the author, else UnknownLogin.
+func senderOf(ev Event) string {
+	switch {
+	case !unattributed(ev.Actor):
+		return ev.Actor
+	case !unattributed(ev.Author):
+		return ev.Author
+	}
+	return UnknownLogin
 }
 
 // EventTop is the highest action an event routine reaches until restricted and normal ships launch from events.
@@ -71,6 +94,7 @@ const (
 	ReasonRepo       = "repo_not_allowed"
 	ReasonTop        = "top_action"
 	ReasonSpend      = "daily_spend_reached"
+	ReasonSpendRead  = "daily_spend_unknown"
 	ReasonQuiet      = "quiet_hours"
 	ReasonHold       = "hold_fire"
 	ReasonDedupe     = "dedupe_key_held"
@@ -85,6 +109,7 @@ type DecideInput struct {
 	HoldOn            bool
 	Now               time.Time // already in the fleet's zone
 	SpentTodayUSD     float64
+	SpendUnknown      bool // the log could not be read, so spend and rates are unknown and count as reached
 	Counts            standing.Counts
 	LiveDedupeKeys    []string
 	RestrictedHarness bool
@@ -136,7 +161,9 @@ func Decide(in DecideInput) Decision {
 		if in.Top < computed {
 			d.Reasons = append(d.Reasons, ReasonTop)
 		}
-		if in.Limits.DailySpendReached(in.SpentTodayUSD) {
+		if in.SpendUnknown {
+			d.Reasons = append(d.Reasons, ReasonSpendRead)
+		} else if in.Limits.DailySpendReached(in.SpentTodayUSD) {
 			d.Reasons = append(d.Reasons, ReasonSpend)
 		}
 		if in.Limits.Held(in.Now) {
@@ -170,12 +197,13 @@ type Enrichment struct {
 	DedupeKey string
 	Repo      string
 	Labels    []string
+	Summary   string
 	Costs     []Cost
 }
 
 // EventActs receives each decision that ends in a card (Reported) or a proposal (Proposed), with its saved record.
 type EventActs interface {
-	Act(fleet string, r Routine, ev Event, rec Trigger, d Decision)
+	Act(fleet string, r Routine, ev Event, rec Trigger, d Decision, en Enrichment)
 }
 
 // EventLoad is what the decision reads of the ships: how many worker ships run and the dedupe_keys they hold.
@@ -197,7 +225,8 @@ func repoOfRef(ref string) string {
 	return parts[0] + "/" + parts[1]
 }
 
-// eventRoutines are the fleet's enabled routines whose When is this event.
+// eventRoutines are the fleet's enabled routines whose When is this event and whose Do launches a ship: a hand-edited
+// prompt never reaches the acts.
 func (s *Scheduler) eventRoutines(ev Event) []Routine {
 	list, err := s.Store.List(ev.Fleet)
 	if err != nil {
@@ -205,7 +234,7 @@ func (s *Scheduler) eventRoutines(ev Event) []Routine {
 	}
 	var out []Routine
 	for _, r := range list {
-		if r.Enabled && r.On != nil && r.On.Source == ev.Source && r.On.Kind == ev.Kind && r.On.Panel == ev.Panel {
+		if r.Enabled && r.On != nil && r.Do.Launch != nil && r.Do.Prompt == "" && r.On.Source == ev.Source && r.On.Kind == ev.Kind && r.On.Panel == ev.Panel {
 			out = append(out, r)
 		}
 	}
@@ -226,20 +255,37 @@ func (s *Scheduler) HandleEvent(ev Event) {
 	if len(matches) == 0 {
 		return
 	}
-	var en Enrichment
-	if s.Enrich != nil {
-		en = s.Enrich(ev)
-	}
-	if en.Repo == "" {
-		en.Repo = repoOfRef(ev.Ref)
-	}
 	now := s.Clock.Now()
 	zone := s.zone()
-	spent, _ := s.Store.SpendToday(ev.Fleet, now, zone)
+	sender := senderOf(ev)
+	recs, readErr := s.Store.Records(ev.Fleet)
+	if readErr != nil {
+		log.Printf("routines: event on %s: the trigger log is unreadable (%v), so spend and rates count as reached", ev.Fleet, readErr)
+	}
+	spent, counts := spendAndCounts(recs, sender, now, zone)
+	spendReason := ""
+	switch {
+	case readErr != nil:
+		spendReason = ReasonSpendRead
+	case f.Limits.DailySpendReached(spent):
+		spendReason = ReasonSpend
+	}
+	// the Lookout is asked only when the cap is open and some routine's own filters still let the event through
+	var en Enrichment
+	if spendReason == "" && s.Enrich != nil {
+		for _, r := range matches {
+			if !f.Limits.Skipped(standing.SkipInput{Routine: r.ID, Sender: sender}) {
+				en = s.Enrich(ev)
+				break
+			}
+		}
+	}
+	if en.Repo == "" && ev.Verified { // only the built-in source's ref is Admiral's own reading; a plugin names no repo
+		en.Repo = repoOfRef(ev.Ref)
+	}
 	for _, c := range en.Costs {
 		spent += c.USD
 	}
-	counts, _ := s.Store.CountsFor(ev.Fleet, ev.Actor, now, zone)
 	var live []string
 	if s.Live != nil {
 		counts.WorkerShips, live = s.Live.WorkerShips(ev.Fleet), s.Live.DedupeKeys(ev.Fleet)
@@ -253,18 +299,48 @@ func (s *Scheduler) HandleEvent(ev Event) {
 	for _, r := range matches {
 		d := Decide(DecideInput{
 			Routine: r, Tier: tier, Limits: f.Limits, Top: EventTop, HoldOn: holdOn, Now: now.In(zone),
-			SpentTodayUSD: spent, Counts: counts, LiveDedupeKeys: live,
-			Sender: ev.Actor, Repo: en.Repo, Labels: en.Labels, DedupeKey: en.DedupeKey,
+			SpentTodayUSD: spent, SpendUnknown: readErr != nil, Counts: counts, LiveDedupeKeys: live,
+			Sender: sender, Repo: en.Repo, Labels: en.Labels, DedupeKey: en.DedupeKey,
 		})
+		if spendReason != "" && d.Outcome != Skipped && !slices.Contains(d.Reasons, spendReason) {
+			d.Reasons = append(d.Reasons, spendReason) // the Lookout was not asked
+		}
 		rec, ok := s.record(ev.Fleet, Trigger{
-			Routine: r.ID, Outcome: d.Outcome, Tier: fmt.Sprintf("T%d", tier), At: now, Event: ev.Ref, Sender: ev.Actor, Rule: r.ID,
+			Routine: r.ID, Outcome: d.Outcome, Tier: fmt.Sprintf("T%d", tier), At: now, Event: ev.Ref, Sender: sender, Rule: r.ID,
 			Reason: strings.Join(d.Reasons, ", "), Action: describe(r), DedupeKey: en.DedupeKey, Costs: costs,
 		})
-		costs = nil
-		if ok && s.Acts != nil && (d.Outcome == Reported || d.Outcome == Proposed) {
-			s.Acts.Act(ev.Fleet, r, ev, rec, d)
+		if ok {
+			costs = nil
+			if s.Acts != nil && (d.Outcome == Reported || d.Outcome == Proposed) {
+				s.Acts.Act(ev.Fleet, r, ev, rec, d, en)
+			}
 		}
 	}
+}
+
+// spendAndCounts reads today's spend and the rate counts a launch is checked against from a fleet's records.
+// WorkerShips is left for the caller: the log doesn't know which ships are still here.
+func spendAndCounts(recs []Trigger, sender string, now time.Time, zone *time.Location) (float64, standing.Counts) {
+	var spent float64
+	var c standing.Counts
+	for _, r := range recs {
+		today := sameDay(r.At.In(zone), now.In(zone))
+		if today {
+			for _, cost := range r.Costs {
+				spent += cost.USD
+			}
+		}
+		if r.Outcome != Launched {
+			continue
+		}
+		if age := now.Sub(r.At); age >= 0 && age < time.Hour {
+			c.LaunchesLastHour++
+		}
+		if sender != "" && strings.EqualFold(r.Sender, sender) && today {
+			c.SenderLaunchesToday++
+		}
+	}
+	return spent, c
 }
 
 // Records is every trigger-log record of the fleet, newest first, with undo and failure marks applied.
@@ -317,15 +393,8 @@ func (s *Store) SpendToday(fleet string, now time.Time, zone *time.Location) (fl
 	if err != nil {
 		return 0, err
 	}
-	var sum float64
-	for _, r := range recs {
-		if sameDay(r.At.In(zone), now.In(zone)) {
-			for _, c := range r.Costs {
-				sum += c.USD
-			}
-		}
-	}
-	return sum, nil
+	spent, _ := spendAndCounts(recs, "", now, zone)
+	return spent, nil
 }
 
 // CountsFor reads the rate counts a launch would be checked against from the fleet's log.
@@ -335,17 +404,6 @@ func (s *Store) CountsFor(fleet, sender string, now time.Time, zone *time.Locati
 	if err != nil {
 		return standing.Counts{}, err
 	}
-	var c standing.Counts
-	for _, r := range recs {
-		if r.Outcome != Launched {
-			continue
-		}
-		if age := now.Sub(r.At); age >= 0 && age < time.Hour {
-			c.LaunchesLastHour++
-		}
-		if sender != "" && strings.EqualFold(r.Sender, sender) && sameDay(r.At.In(zone), now.In(zone)) {
-			c.SenderLaunchesToday++
-		}
-	}
+	_, c := spendAndCounts(recs, sender, now, zone)
 	return c, nil
 }

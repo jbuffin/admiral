@@ -185,7 +185,7 @@ func newID() string {
 }
 
 // validate checks what the form can get wrong. It never calls autopilotgate.Check, which posts an Inbox notice.
-func (s *Store) validate(f config.Fleet, r Routine) error {
+func (s *Store) validate(f config.Fleet, r Routine, onKept bool) error {
 	if strings.TrimSpace(r.Name) == "" {
 		return invalidf("name is required")
 	}
@@ -193,7 +193,7 @@ func (s *Store) validate(f config.Fleet, r Routine) error {
 		return err
 	}
 	if r.On != nil {
-		if err := s.validateOn(f, r); err != nil {
+		if err := s.validateOn(f, r, onKept); err != nil {
 			return err
 		}
 	} else {
@@ -285,7 +285,7 @@ func (s *Store) Create(fleet string, r Routine) (Routine, error) {
 	if err != nil {
 		return Routine{}, err
 	}
-	if err := s.validate(f, r); err != nil {
+	if err := s.validate(f, r, false); err != nil {
 		return Routine{}, err
 	}
 	s.mu.Lock()
@@ -316,7 +316,9 @@ func (s *Store) Update(fleet, id string, r Routine) (Routine, error) {
 	if i < 0 {
 		return Routine{}, ErrNotFound
 	}
-	if err := s.validate(f, r); err != nil {
+	// an unchanged on is not asked of the live catalog, which a restarting source can't answer
+	onKept := r.On != nil && list[i].On != nil && *r.On == *list[i].On
+	if err := s.validate(f, r, onKept); err != nil {
 		return Routine{}, err
 	}
 	// only the on and off routes change the switch
@@ -624,7 +626,7 @@ func (s *Store) Recent(fleet, routine string, limit int) ([]Trigger, error) {
 }
 
 // validateOn checks an event routine: no schedule, a source and kind the fleet's catalog lists, and a launch to run.
-func (s *Store) validateOn(f config.Fleet, r Routine) error {
+func (s *Store) validateOn(f config.Fleet, r Routine, onKept bool) error {
 	if r.When != "" {
 		return invalidf("an event routine has no when: a routine runs on a schedule or on an event, not both")
 	}
@@ -634,6 +636,9 @@ func (s *Store) validateOn(f config.Fleet, r Routine) error {
 	on := *r.On
 	if on.Source == "" || on.Kind == "" {
 		return invalidf("on needs a source and a kind")
+	}
+	if onKept {
+		return nil
 	}
 	var kinds []EventKind
 	ok := false
