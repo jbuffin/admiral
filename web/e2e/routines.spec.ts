@@ -1,3 +1,4 @@
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from './fixtures';
 import { proveJudge } from './crew';
@@ -266,4 +267,29 @@ test('with no proven judge the tab says so, greys the features that need one, an
   await expect(main.getByRole('textbox', { name: 'Describe a routine' })).toHaveCount(0);
   await expect(main.getByRole('link', { name: 'New routine' })).toBeVisible();
   await expect(main.getByText(/Judge calls: off/)).toBeVisible();
+});
+
+test('the Routines screen says events stop at A1 once the fleet has spent its daily worker cap, and says nothing before', async ({ page, admiral }) => {
+  seedFleets(admiral, { live: true });
+  const path = join(admiral.home, 'config.json');
+  const config = JSON.parse(readFileSync(path, 'utf8'));
+  config.fleets.zulu.limits = { spend: { daily_worker_usd: 2 } };
+  admiral.writeConfig(config);
+  await admiral.start({ env: withFakeGh(admiral) });
+  const log = join(admiral.home, 'routines', 'zulu', 'triggers.jsonl');
+  mkdirSync(join(admiral.home, 'routines', 'zulu'), { recursive: true });
+  const record = (id: string, at: Date, usd: number) => JSON.stringify({ id, at: at.toISOString(), routine: 'r-seeded', outcome: 'proposed', tier: 'T3', costs: [{ call: 'lookout', usd }] }) + '\n';
+  const yesterday = new Date(Date.now() - 36 * 3_600_000);
+  writeFileSync(log, record('t-old', yesterday, 5) + record('t-1', new Date(), 1.5));
+  const spend = async () => ((await (await fetch(`${admiral.url}api/fleets/zulu/routines`)).json()) as { spend?: { today_usd: number; cap_usd: number; reached: boolean } }).spend;
+  await expect.poll(spend).toMatchObject({ today_usd: 1.5, cap_usd: 2, reached: false });
+  await page.goto(admiral.url + 'app/routines?fleet=zulu');
+  await expect(page.getByRole('main').getByRole('heading', { name: 'Routines' }).first()).toBeVisible();
+  await expect(page.getByRole('main')).not.toContainText(/stop at A1|proposal/i);
+
+  writeFileSync(log, record('t-old', yesterday, 5) + record('t-1', new Date(), 1.5) + record('t-2', new Date(), 0.5));
+  await expect.poll(spend).toMatchObject({ today_usd: 2, reached: true });
+  await page.goto(admiral.url + 'app/routines?fleet=zulu');
+  await expect(page.getByRole('main')).toContainText(/\$2\.00/);
+  await expect(page.getByRole('main')).toContainText(/A1|proposal/i);
 });

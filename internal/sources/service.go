@@ -79,6 +79,8 @@ type SourceView struct {
 	// Warnings are the router's notes for the source's fleet; [] when none.
 	Warnings []string `json:"warnings"`
 	Views    []Panel  `json:"views"`
+	// Events is the source's event catalog, omitted until it has one.
+	Events []EventKind `json:"events,omitempty"`
 }
 
 // View is every source in config order, without the orders that have a ship.
@@ -123,6 +125,9 @@ func (s *Service) View() []SourceView {
 			v.Views = append(v.Views, p)
 		}
 		SortPanels(v.Views, st.def.PanelOrder)
+		if kinds, ok := s.Sup.Events(st.def.Fleet, st.def.Key); ok {
+			v.Events = kinds
+		}
 		out = append(out, v)
 	}
 	return out

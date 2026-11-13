@@ -1794,3 +1794,26 @@ export async function proveAdmiralBot(a: Admiral, fleet: string, harness: string
   };
   writeFileSync(file, JSON.stringify(store));
 }
+
+/** The fake gh answers the review-requested search with one PR from `sender` (newer than the baseline poll), plus the viewer and the REST item the Lookout reads. */
+export function seedReviewRequest(a: Admiral, opts: { sender: string; repo?: string; number?: number; title?: string; body?: string }) {
+  const repo = opts.repo ?? 'acme/api';
+  const number = opts.number ?? 7;
+  const title = opts.title ?? 'Fix the quarry lantern';
+  const [owner, name] = repo.split('/') as [string, string];
+  const node = {
+    __typename: 'PullRequest', number, title, url: `https://github.com/${repo}/pull/${number}`, updatedAt: '2026-10-18T09:00:00Z',
+    repository: { nameWithOwner: repo, name, owner: { login: owner }, url: `https://github.com/${repo}` },
+    labels: { nodes: [] },
+    author: { login: opts.sender },
+    timelineItems: { nodes: [{ __typename: 'ReviewRequestedEvent', createdAt: new Date(Date.now() + 3_600_000).toISOString(), actor: { login: opts.sender }, requestedReviewer: { login: 'fake-viewer' } }] },
+  };
+  const dir = a.fakeGh().dir;
+  mkdirSync(join(dir, 'search'), { recursive: true });
+  mkdirSync(join(dir, 'rest'), { recursive: true });
+  writeFileSync(join(dir, 'search', 'review.match'), 'review-requested:@me');
+  writeFileSync(join(dir, 'search', 'review.json'), JSON.stringify({ data: { search: { issueCount: 1, nodes: [node] } } }));
+  writeFileSync(join(dir, 'viewer'), 'fake-viewer');
+  writeFileSync(join(dir, 'rest', 'item.endpoint'), `repos/${repo}/issues/${number}`);
+  writeFileSync(join(dir, 'rest', 'item.json'), JSON.stringify({ title, body: opts.body ?? 'Please review my lantern fix.' }));
+}

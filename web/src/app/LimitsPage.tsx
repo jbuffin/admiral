@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'preact/hooks';
-import { saveFleet, type Fleet } from './api';
+import { call, saveFleet, type Fleet } from './api';
 import { fleets, loadFleets } from './fleets';
 import { errorTarget, fieldMessage } from './fleetSettings';
 import { defaultThreshold, LEVELS, limitsBody, normalizeLimits, reconcileLimits, type Ceiling, type Level, type Limits, type Restricted, type Threshold, type Window } from './limitsForm';
 import { saveFailure } from './standingOrders';
 import { loc, limitsFieldOf } from './router';
 import { Switch } from './RoutinesPage';
+import type { Routine } from './routines';
 
 type Num = { id: string; label: string; hint: string; min: number; max: number; step?: number; get: (l: Limits) => number; set: (l: Limits, v: number) => Limits };
 
@@ -229,6 +230,17 @@ export function LimitsPage({ fleet }: { fleet: Fleet }) {
   const [pending, setPending] = useState<'work' | 'home' | null>(null);
   const [error, setError] = useState<{ message: string; status?: number } | null>(null);
   const [stale, setStale] = useState(false);
+  // A scoped skip names its routine; null until the list arrives.
+  const [routineNames, setRoutineNames] = useState<Map<string, string> | null>(null);
+  useEffect(() => {
+    let live = true;
+    void call<{ routines: Routine[] | null }>('GET', `/fleets/${encodeURIComponent(fleet.key)}/routines`).then((r) => {
+      if (live && r.ok) setRoutineNames(new Map((r.data.routines ?? []).map((x) => [x.id, x.name])));
+    });
+    return () => {
+      live = false;
+    };
+  }, [fleet.key]);
 
   // Limits that change under an open form (a Copy into this fleet, another tab) are adopted unless the person has edits.
   useEffect(() => {
@@ -309,7 +321,7 @@ export function LimitsPage({ fleet }: { fleet: Fleet }) {
     const list = edited.skip[id];
     const set = (next: typeof list) => change({ ...edited, skip: { ...edited.skip, [id]: next } });
     return row(`skip.${id}`, label, hint, (
-      <Rows id={`skip.${id}`} item={item} add={add} values={list.map((s) => s.value)} notes={list.map((s) => (s.routine ? `Only for routine ${s.routine}` : undefined))} disabled={busy || isReset(`skip.${id}`)} onEdit={(i, v) => set(list.map((s, j) => (j === i ? { ...s, value: v } : s)))} onRemove={(i) => set(list.filter((_, j) => j !== i))} onAdd={() => set([...list, { value: '' }])} />
+      <Rows id={`skip.${id}`} item={item} add={add} values={list.map((s) => s.value)} notes={list.map((s) => (s.routine ? `Only for ${routineNames ? (routineNames.get(s.routine) ?? 'a deleted routine') : 'one routine'}` : undefined))} disabled={busy || isReset(`skip.${id}`)} onEdit={(i, v) => set(list.map((s, j) => (j === i ? { ...s, value: v } : s)))} onRemove={(i) => set(list.filter((_, j) => j !== i))} onAdd={() => set([...list, { value: '' }])} />
     ));
   };
 

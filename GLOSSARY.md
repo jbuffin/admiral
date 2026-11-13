@@ -44,6 +44,10 @@ _Avoid_: device, lock (a lock is how a person holds a unit, not the resource), b
 The engineer's standing rule for one fleet: when a schedule or a source event fires, do an action, gated by **Before acting**. A scheduled run is the engineer's own act; a source event goes through the Lookout. It is never an order, a commitment or a standing order.
 _Avoid_: schedule, automation, cron job
 
+**Worker spend**:
+The sum of the costs of the judge calls made for outside events, kept on a fleet's trigger log and counted for each calendar day. Once it reaches the fleet's daily cap, events stop at a proposal until the day turns, and the Routines screen says so.
+_Avoid_: budget (the per-call caps are separate)
+
 **Mute rule**:
 A skip entry the engineer adds from an event card or an event proposal: it skips later events of one routine from one sender, or with one dedupe key. It lands in the fleet's Limits, scoped to that routine, and is removed there.
 _Avoid_: block, filter, ignore list

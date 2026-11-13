@@ -108,7 +108,33 @@ func (s *Service) serveList(w http.ResponseWriter, r *http.Request) {
 			out[i].LastRun = &lastRun{At: runs[0].At, Outcome: runs[0].Outcome}
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"routines": out})
+	body := map[string]any{"routines": out}
+	if sp, ok := s.spend(r.PathValue("key")); ok {
+		body["spend"] = sp
+	}
+	writeJSON(w, http.StatusOK, body)
+}
+
+// Spend is a fleet's daily worker spend against its cap.
+type Spend struct {
+	TodayUSD float64 `json:"today_usd"`
+	CapUSD   float64 `json:"cap_usd"`
+	Reached  bool    `json:"reached"`
+	// Unreadable is set when today's log couldn't be read; events are held then, as if the cap were reached.
+	Unreadable bool `json:"unreadable,omitempty"`
+}
+
+// spend is the same sum and cap check the event path makes, in the server's local zone.
+func (s *Service) spend(fleet string) (Spend, bool) {
+	f, ok := s.Store.Fleets(fleet)
+	if !ok {
+		return Spend{}, false
+	}
+	spent, err := s.Store.SpendToday(fleet, s.Store.now(), time.Local)
+	if err != nil {
+		return Spend{CapUSD: f.Limits.Spend.DailyWorkerUSD, Reached: true, Unreadable: true}, true
+	}
+	return Spend{TodayUSD: spent, CapUSD: f.Limits.Spend.DailyWorkerUSD, Reached: f.Limits.DailySpendReached(spent)}, true
 }
 
 // lastRun is the newest trigger record of a routine, for its row in the list.

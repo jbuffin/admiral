@@ -19,7 +19,7 @@ func (s *Service) ordersView(key string, o StandingOrders) map[string]any {
 		overridden = []string{}
 	}
 	return map[string]any{"checks": o.Checks, "guidance": o.Guidance, "preset": string(f.Preset),
-		"limits": f.Limits.Clone(), "sentences": standing.Sentences(f.Limits), "overridden": overridden}
+		"limits": f.Limits.Clone(), "sentences": standing.SentencesNamed(f.Limits, s.Store.Namer(key)), "overridden": overridden}
 }
 
 // configFail maps a config error the way a fleet save does.
