@@ -90,6 +90,9 @@ func (s *Service) checkTrigger(cfg *config.Config, f config.Fleet, t ledger.Trig
 		if s.Ships != nil {
 			for _, sh := range s.Ships() {
 				if sh.Session == t.Subject && sh.Fleet == f.Key {
+					if sh.Launched == "" {
+						return t, fmt.Sprintf("ship %q has no launch stamp, so a trigger on it could never fire", t.Subject)
+					}
 					t.Launched = sh.Launched
 					return t, ""
 				}

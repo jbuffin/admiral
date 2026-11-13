@@ -195,3 +195,24 @@ func TestALaunchRecordWithNoStampNeverMatchesATrigger(t *testing.T) {
 	g.tick()
 	g.wantWaiting(c.ID)
 }
+
+// wokenAt is a wake: the session's launch stamp becomes the wake time, and the log says so on a `woken` record.
+func wokenAt(d time.Duration) func(*rig) {
+	return func(g *rig) {
+		g.event("saltpaw", "woken", t0.Add(d), map[string]any{"launched": stamp(t0.Add(d))})
+	}
+}
+
+func TestATriggerRecordedAfterAWakeAnchorsOnTheWokenSegment(t *testing.T) {
+	g := newRig(t)
+	g.launched("saltpaw", t0.Add(-time.Hour))
+	wokeAt := t0.Add(time.Minute)
+	wokenAt(time.Minute)(g)
+	tr := shipTrigger(ledger.TriggerShipAnchored)
+	tr.Trigger.Launched = stamp(wokeAt)
+	c := g.add(tr)
+	g.endedError("saltpaw", t0.Add(2*time.Minute))
+	g.clk.set(t0.Add(time.Hour))
+	g.tick()
+	g.wantCard(c.ID, commitments.OutcomeReminded)
+}

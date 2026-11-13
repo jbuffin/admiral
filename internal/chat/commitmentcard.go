@@ -28,7 +28,8 @@ func (s *Service) PostCard(fleet string, c commitments.Card) error {
 }
 
 func digestLine(c commitments.Card) string {
-	text := strings.Join(strings.Fields(c.Text), " ")
+	// The text sits in quotes, so a quote of its own would end them and let the rest pass as the server's words.
+	text := strings.ReplaceAll(strings.Join(strings.Fields(c.Text), " "), `"`, "'")
 	switch c.Outcome {
 	case commitments.OutcomeLaunched:
 		return "Your commitment \"" + text + "\" launched ship " + c.Ship + "."

@@ -209,3 +209,43 @@ func TestACancelDuringTheLaunchCountsAsSuccess(t *testing.T) {
 		t.Errorf("%d launches, want 1", n)
 	}
 }
+
+func TestACancelBeforeTheLaunchLockLaunchesNothingAndPostsNoCard(t *testing.T) {
+	g := newRig(t)
+	var id string
+	launched := 0
+	g.ships.launch = func(n int, req launcher.Request) (commitments.ShipRef, *launcher.Error) {
+		if err := g.led.CancelCommitment(fleet, id); err != nil {
+			t.Errorf("CancelCommitment = %v", err)
+		}
+		if req.Before != nil { // the launcher runs this under its lock, before it makes the session
+			if err := req.Before(""); err != nil {
+				return commitments.ShipRef{}, refusal(http.StatusConflict, err.Error(), "")
+			}
+		}
+		launched++
+		return commitments.ShipRef{Session: "ship-1", Name: "One"}, nil
+	}
+	c := dueLaunch(g)
+	id = c.ID
+	g.tick()
+	if launched != 0 {
+		t.Errorf("%d ships launched for a commitment cancelled before the launch lock", launched)
+	}
+	if cards := g.cards.cards(); len(cards) != 0 {
+		t.Errorf("cards = %+v, want none: the engineer cancelled it", cards)
+	}
+	if open := g.open(); len(open) != 0 {
+		t.Errorf("open = %+v, want none", open)
+	}
+}
+
+func TestALaunchNamesNoOtherFleetsShip(t *testing.T) {
+	g := newRig(t)
+	dueLaunch(g)
+	g.tick()
+	reqs := g.ships.requests()
+	if len(reqs) != 1 || reqs[0].req.ByFleet != fleet {
+		t.Errorf("requests = %+v, want ByFleet %q so a holder of another fleet is named only by its fleet", reqs, fleet)
+	}
+}

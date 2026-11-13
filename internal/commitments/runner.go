@@ -4,6 +4,9 @@ package commitments
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -217,8 +220,20 @@ func (r *Runner) fire(ctx context.Context, fleet string, c ledger.Commitment) {
 		}
 	}
 	req.Via, req.CommitmentKey, req.Autopilot, req.QuietGate = c.Via, key, true, true
+	// To AdmiralBot a ship of another fleet is only that fleet, so a refusal's text names no foreign ship.
+	req.ByFleet = fleet
+	// The launcher runs this under its lock, so a cancel that lands before it launches nothing.
+	cancelled := false
+	req.Before = func(string) error {
+		if r.open(fleet, c.ID) {
+			return nil
+		}
+		cancelled = true
+		return errors.New("the commitment was cancelled")
+	}
 	ship, lerr := r.Ships.Launch(ctx, req)
 	switch {
+	case lerr != nil && cancelled:
 	case lerr != nil && lerr.Wait != "":
 		if !c.Waiting {
 			_ = r.Ledger.MarkFired(fleet, c.ID)
@@ -230,9 +245,23 @@ func (r *Runner) fire(ctx context.Context, fleet string, c ledger.Commitment) {
 	}
 }
 
+func (r *Runner) open(fleet, id string) bool {
+	list, err := r.Ledger.Commitments(fleet)
+	if err != nil {
+		return false
+	}
+	for _, c := range list {
+		if c.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *Runner) launched(fleet string, c ledger.Commitment, ship ShipRef) {
-	if r.post(fleet, c, OutcomeLaunched, ship.Session, "") != nil {
-		return
+	// The ship exists, so the commitment closes even when its card cannot be written: otherwise the next tick launches again.
+	if err := r.post(fleet, c, OutcomeLaunched, ship.Session, ""); err != nil {
+		fmt.Fprintf(os.Stderr, "admiral: commitment %s launched %s but its chat card cannot be written: %v\n", c.ID, ship.Session, err)
 	}
 	name := ship.Name
 	if name == "" {

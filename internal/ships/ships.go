@@ -930,7 +930,7 @@ func (s *Service) serveDismiss(w http.ResponseWriter, r *http.Request) {
 func (s *Service) launched(req launcher.Request, got *launcher.Launched, panel string) {
 	o := got.Options
 	if req.Round > 0 {
-		fields := map[string]any{"round": req.Round, "by": req.By}
+		fields := map[string]any{"round": req.Round, "by": req.By, "launched": o["launched"]}
 		if req.PR != "" {
 			fields["pr"] = req.PR
 		}

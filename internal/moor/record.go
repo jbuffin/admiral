@@ -42,6 +42,8 @@ type Record struct {
 	Routine string `json:"routine,omitempty"`
 	// Commitment is the ship's commitment:<id> launch key, so a moored ship still holds its commitment.
 	Commitment string `json:"commitment,omitempty"`
+	// Launched is the ship's launch stamp, so a ship trigger recorded on a moored ship pairs with its outcome records.
+	Launched string `json:"launched,omitempty"`
 	// Resources the ship held, so a round holds the same.
 	Resources []string  `json:"resources"`
 	MooredAt  time.Time `json:"moored_at"`

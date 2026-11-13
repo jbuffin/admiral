@@ -97,12 +97,12 @@ func (l *shipLog) readFile(path string) {
 	}
 }
 
-// segment is the records of the ship launched at stamp: after its `launched` and before the next launch of the name.
+// segment is the records of the ship at stamp: after the `launched` or `woken` record that carries it, and before the next `launched` of the name.
 func (l *shipLog) segment(ship, stamp string) []rec {
 	recs := l.byShip[ship]
 	start := -1
 	for i, e := range recs {
-		if e.event == "launched" && stamp != "" && e.launched == stamp {
+		if (e.event == "launched" || e.event == "woken") && stamp != "" && e.launched == stamp {
 			start = i
 			break
 		}

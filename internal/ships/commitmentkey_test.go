@@ -11,6 +11,7 @@ import (
 
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/launcher"
+	"github.com/jbuffin/admiral/internal/moor"
 	"github.com/jbuffin/admiral/internal/sessionhost"
 )
 
@@ -85,5 +86,65 @@ func TestTheLaunchedOutcomeRecordCarriesTheShipsLaunchStamp(t *testing.T) {
 			t.Fatalf("no launched record of %s carries %s", sh.Session, want)
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// A clone launch at the cap waits before gh runs, so the retry finds no clone of its own making.
+func TestACommitmentCloneLaunchAtTheCapWaitsWithoutCloning(t *testing.T) {
+	r := newWakeRig(t, 0)
+	ran := filepath.Join(r.rec, "gh-ran")
+	gh := "#!/bin/sh\ntouch " + ran + "\nmkdir -p \"$4/.git\"\n"
+	if err := os.WriteFile(filepath.Join(r.rec, "gh"), []byte(gh), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", r.rec+string(os.PathListSeparator)+os.Getenv("PATH"))
+	req := r.keyReq(func(q *launcher.Request) {
+		q.Dir, q.Clone, q.Autopilot, q.QuietGate, q.CommitmentKey = "", true, true, true, "commitment:c1"
+		q.Text = "port https://github.com/acme/widgetry to go"
+	})
+
+	_, lerr := r.s.Launch(context.Background(), req)
+	if lerr == nil || lerr.Wait == "" {
+		t.Fatalf("Launch = %v, want a waitable refusal for the cap", lerr)
+	}
+	if _, err := os.Stat(ran); err == nil {
+		t.Errorf("gh ran for a launch that could only wait")
+	}
+	r.s.Launcher.Config().MaxShips = 5
+	ship, lerr := r.s.Launch(context.Background(), req)
+	if lerr != nil {
+		t.Fatalf("Launch with room = %v, want the ship", lerr)
+	}
+	if _, err := os.Stat(ran); err != nil {
+		t.Errorf("gh never ran once there was room")
+	}
+	if filepath.Base(ship.Dir) != "widgetry" {
+		t.Errorf("ship dir = %q, want the clone of widgetry", ship.Dir)
+	}
+}
+
+// A ship trigger on a woken ship pairs by the wake's stamp, so the `woken` record must carry it.
+func TestAWokenOutcomeRecordCarriesTheWokenShipsLaunchStamp(t *testing.T) {
+	r := newWakeRig(t, 0)
+	r.moored(t, 0)
+	ship, lerr := r.s.Wake(context.Background(), "saltpaw", "")
+	if lerr != nil {
+		t.Fatalf("Wake = %v", lerr)
+	}
+	got := r.logged(t, "woken")
+	if ship.Launched == "" || len(got) != 1 || got[0]["launched"] != ship.Launched {
+		t.Errorf("woken events = %v, want one carrying the listed ship's launch stamp %q", got, ship.Launched)
+	}
+}
+
+// A ship trigger recorded on a moored ship needs the stamp its launch record carries.
+func TestAMooredShipIsListedWithItsLaunchStamp(t *testing.T) {
+	f := mooredService(t, nil)
+	if err := moor.Write(f.home, moor.Record{Name: "Saltpaw", Session: "saltpaw", Fleet: "work", Launched: "2026-11-12T06:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	got := f.s.mooredShips(nil)
+	if len(got) != 1 || got[0].Launched != "2026-11-12T06:00:00Z" {
+		t.Errorf("moored ships = %+v, want one with the record's launch stamp", got)
 	}
 }

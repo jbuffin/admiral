@@ -145,6 +145,16 @@ func (s *Service) Launch(ctx context.Context, req launcher.Request) (Ship, *laun
 				return Ship{}, lerr
 			}
 		}
+		// A commitment retries after a wait and the clone path is fixed, so it must not clone before it knows there is room.
+		if req.CommitmentKey != "" {
+			s.admitMu.Lock()
+			release, lerr := s.admit(req)
+			s.admitMu.Unlock()
+			if lerr != nil {
+				return Ship{}, lerr
+			}
+			release()
+		}
 		dir, err := s.Launcher.Clone(ctx, req, repo, text)
 		if err != nil {
 			le, ok := err.(*launcher.Error)
