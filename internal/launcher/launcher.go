@@ -149,10 +149,18 @@ type Checked struct {
 	Dock  config.Harness
 	Skill string
 	Opts  [][2]string
+	// Exe is the dock's resolved executable.
+	Exe string
+	// Pins, MemberArgs and MemberPrompt are what a crew launch resolved; Warnings is what it left out.
+	Pins         []pinnedFile
+	MemberArgs   []string
+	MemberPrompt *string
+	Warnings     []string
 }
 
 // CheckSpec runs every refusal of Launch that needs no live capacity, so a launch recorded for later is judged by the same rules.
-func CheckSpec(cfg *config.Config, req Request) (Checked, *Error) {
+// A clone request has no checkout yet: the checks that read one are left to the launch after the clone.
+func CheckSpec(cfg *config.Config, home string, req Request) (Checked, *Error) {
 	fleet, ok := cfg.Fleet(req.Fleet)
 	if !ok {
 		return Checked{}, refuse(http.StatusNotFound, "fleet %q not found", req.Fleet)
@@ -197,29 +205,70 @@ func CheckSpec(cfg *config.Config, req Request) (Checked, *Error) {
 			return Checked{}, refuse(http.StatusBadRequest, "issues contains a comma")
 		}
 	}
-	st, serr := os.Stat(req.Dir)
-	switch {
-	case req.Dir == "" || serr != nil:
-		return Checked{}, refuse(http.StatusBadRequest, "directory %s not found", req.Dir)
-	case !st.IsDir():
-		return Checked{}, refuse(http.StatusBadRequest, "%s is not a directory", req.Dir)
-	}
-	// The list is read again: a checkout can vanish, or be named in a request that never
-	// came from the list.
-	dir, listed := repofinder.Contains(repofinder.List(repofinder.FleetRoots(fleet.SearchRoots, fleet.CloneRoot)), req.Dir)
-	if !listed {
-		return Checked{}, refuse(http.StatusBadRequest, "directory %s is not a checkout or search root of fleet %s", req.Dir, fleet.Name)
-	}
-	req.Dir = dir
-	if req.Skill.Kind == "commodore" {
-		name, ok := skillindex.FindCommodore(req.Harness, dock.Environ(), req.Dir)
-		ok = ok && skillindex.SafeInvocation(name)
-		if !ok {
-			return Checked{}, refuse(http.StatusBadRequest, "Commodore not found for %s in fleet %s", req.Harness, fleet.Name)
+	var pins []pinnedFile
+	var memberArgs []string
+	var memberPrompt *string
+	var warnings []string
+	if !(req.Clone && req.Dir == "") {
+		st, serr := os.Stat(req.Dir)
+		switch {
+		case req.Dir == "" || serr != nil:
+			return Checked{}, refuse(http.StatusBadRequest, "directory %s not found", req.Dir)
+		case !st.IsDir():
+			return Checked{}, refuse(http.StatusBadRequest, "%s is not a directory", req.Dir)
 		}
-		skill = name
+		// The list is read again: a checkout can vanish, or be named in a request that never
+		// came from the list.
+		dir, listed := repofinder.Contains(repofinder.List(repofinder.FleetRoots(fleet.SearchRoots, fleet.CloneRoot)), req.Dir)
+		if !listed {
+			return Checked{}, refuse(http.StatusBadRequest, "directory %s is not a checkout or search root of fleet %s", req.Dir, fleet.Name)
+		}
+		req.Dir = dir
+		if req.Skill.Kind == "commodore" {
+			name, ok := skillindex.FindCommodore(req.Harness, dock.Environ(), req.Dir)
+			ok = ok && skillindex.SafeInvocation(name)
+			if !ok {
+				return Checked{}, refuse(http.StatusBadRequest, "Commodore not found for %s in fleet %s", req.Harness, fleet.Name)
+			}
+			skill = name
+		}
+		if len(req.Crew) > 0 {
+			abs, err := filepath.Abs(home)
+			if err != nil {
+				return Checked{}, refuse(http.StatusInternalServerError, "could not resolve %s: %v", home, err)
+			}
+			if pins, err = resolvePins(req, dock, abs, fleet.Key); err != nil {
+				return Checked{}, asError(err)
+			}
+		}
+		if req.Member != "" {
+			got, lerr := resolveMember(home, memberAsk{Name: req.Member, Fleet: fleet, Explicit: req.Harness, Default: req.Harness,
+				Dir: req.Dir, Prompt: promptFor(req.Harness, skill, req.Skill.Kind, req.Note, req.Text), Model: req.Model, Args: req.ExtraArgs})
+			if lerr != nil {
+				return Checked{}, lerr
+			}
+			memberArgs, memberPrompt, warnings = got.ModelArgs, &got.Prompt, got.Warnings
+		}
 	}
-	return Checked{Req: req, Fleet: fleet, Dock: dock, Skill: skill, Opts: opts}, nil
+	// opts was built before the directory was cleaned and Commodore resolved.
+	for i := range opts {
+		switch opts[i][0] {
+		case "dir":
+			opts[i][1] = req.Dir
+		case "skill":
+			opts[i][1] = skill
+		}
+	}
+	exe, found := dock.Resolve()
+	if !found {
+		return Checked{}, refuse(http.StatusBadRequest, "%s executable %s not found for fleet %s", req.Harness, dock.Executable, fleet.Name)
+	}
+	if req.Harness == "codex" {
+		if bad, why := codexDockArgRefused(dock.Args); bad != "" {
+			return Checked{}, refuse(http.StatusBadRequest, "the %s dock of fleet %s has %q in its args, which Admiral refuses because %s", req.Harness, fleet.Name, bad, why)
+		}
+	}
+	return Checked{Req: req, Fleet: fleet, Dock: dock, Skill: skill, Opts: opts, Exe: exe, Pins: pins, MemberArgs: memberArgs, MemberPrompt: memberPrompt, Warnings: warnings}, nil
 }
 
 func asError(err error) *Error {
@@ -235,52 +284,14 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 	if l.Tmux == "" {
 		return nil, refuse(http.StatusServiceUnavailable, "tmux not found on PATH, so ships cannot be launched")
 	}
-	chk, lerr := CheckSpec(l.Config(), req)
+	chk, lerr := CheckSpec(l.Config(), l.Home, req)
 	if lerr != nil {
 		return nil, lerr
 	}
 	req, fleet, dock, skill, opts := chk.Req, chk.Fleet, chk.Dock, chk.Skill, chk.Opts
 	mflags, _ := modelFlags(req.Harness, req.Model, req.Effort)
-	var pins []pinnedFile
-	if len(req.Crew) > 0 {
-		home, err := filepath.Abs(l.Home)
-		if err != nil {
-			return nil, refuse(http.StatusInternalServerError, "could not resolve %s: %v", l.Home, err)
-		}
-		if pins, err = resolvePins(req, dock, home, fleet.Key); err != nil {
-			return nil, err
-		}
-	}
-	var memberArgs []string
-	var memberPrompt *string
-	if req.Member != "" {
-		got, lerr := l.resolveMember(memberAsk{Name: req.Member, Fleet: fleet, Explicit: req.Harness, Default: req.Harness,
-			Dir: req.Dir, Prompt: promptFor(req.Harness, skill, req.Skill.Kind, req.Note, req.Text), Model: req.Model, Args: req.ExtraArgs})
-		if lerr != nil {
-			return nil, lerr
-		}
-		memberArgs, memberPrompt = got.ModelArgs, &got.Prompt
-		l.warn(got.Warnings)
-	}
-	// opts was built before the directory was cleaned and Commodore resolved.
-	for i := range opts {
-		switch opts[i][0] {
-		case "dir":
-			opts[i][1] = req.Dir
-		case "skill":
-			opts[i][1] = skill
-		}
-	}
-	exe, found := dock.Resolve()
-	if !found {
-		return nil, refuse(http.StatusBadRequest, "%s executable %s not found for fleet %s", req.Harness, dock.Executable, fleet.Name)
-	}
-
-	if req.Harness == "codex" {
-		if bad, why := codexDockArgRefused(dock.Args); bad != "" {
-			return nil, refuse(http.StatusBadRequest, "the %s dock of fleet %s has %q in its args, which Admiral refuses because %s", req.Harness, fleet.Name, bad, why)
-		}
-	}
+	pins, memberArgs, memberPrompt, exe := chk.Pins, chk.MemberArgs, chk.MemberPrompt, chk.Exe
+	l.warn(chk.Warnings)
 	argv := append([]string{exe}, dock.Args...)
 	argv = append(argv, mflags...)
 	// The member rule, not modelFlags' list, has judged a member's model.

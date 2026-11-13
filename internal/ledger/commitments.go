@@ -36,6 +36,8 @@ const (
 type Trigger struct {
 	Kind    string `json:"kind"`
 	Subject string `json:"subject,omitempty"`
+	// Launched is the launch stamp of the ship a ship trigger names: its session name is reused by a later ship.
+	Launched string `json:"launched,omitempty"`
 }
 
 // Commitment is a promise as it stands after folding the log.
@@ -124,6 +126,8 @@ func (l *Ledger) MarkFired(fleet, id string) error {
 	return l.commitmentEvent(fleet, id, EventFired, "")
 }
 
+func isRemind(c Commitment) bool { return c.Action == ActionRemind }
+
 // Done closes an open or waiting commitment with a short reason.
 func (l *Ledger) Done(fleet, id, reason string) error {
 	return l.commitmentEvent(fleet, id, EventDone, reason)
@@ -156,7 +160,13 @@ func (l *Ledger) commitmentEvent(fleet, id, name, reason string) error {
 	}
 	found := false
 	for _, c := range open {
-		found = found || c.ID == id
+		if c.ID != id {
+			continue
+		}
+		if name == EventFired && isRemind(c) {
+			return &RefusedError{"a remind commitment never waits: only a launch commitment can be marked fired"}
+		}
+		found = true
 	}
 	if !found {
 		return errNoCommitment

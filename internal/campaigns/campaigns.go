@@ -262,5 +262,10 @@ func ParseGitHubURL(s string, hosts []string, pull bool) (IssueRef, error) {
 	if m == nil || m[4] != want || !slices.Contains(hosts, strings.ToLower(m[1])) {
 		return IssueRef{}, fmt.Errorf("the subject must be an https %s URL on a GitHub host the fleet uses, such as https://github.com/owner/repo/%s/12", noun, want)
 	}
+	for _, part := range m[2:4] {
+		if part == "." || part == ".." || strings.HasPrefix(part, "-") {
+			return IssueRef{}, fmt.Errorf("%q is not a GitHub owner or repository name", part)
+		}
+	}
 	return ref(m[1], m[2], m[3], m[5])
 }

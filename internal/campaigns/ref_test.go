@@ -48,3 +48,16 @@ func TestParseIssueRefRefusesWithAMessageToShow(t *testing.T) {
 		})
 	}
 }
+
+func TestAGitHubURLWithAFlagOrDotPathOwnerOrRepoIsRefused(t *testing.T) {
+	for _, u := range []string{
+		"https://github.com/-x/widget/pull/1",
+		"https://github.com/acme/-x/pull/1",
+		"https://github.com/./widget/pull/1",
+		"https://github.com/acme/../pull/1",
+	} {
+		if _, err := ParseGitHubURL(u, []string{"github.com"}, true); err == nil {
+			t.Errorf("ParseGitHubURL(%q) accepted it, want a refusal", u)
+		}
+	}
+}

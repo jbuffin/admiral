@@ -438,9 +438,10 @@ func PreCompact(instructions string, notes []Note, commitments []Commitment) str
 	instr := strings.TrimSpace(strip(instructions, true))
 	type group struct {
 		head  string
+		lead  string
 		items []string // newest first, so the oldest are the ones dropped
 	}
-	groups := []*group{{head: "\n## Open commitments\n"}, {head: "\n## Notes\n"}}
+	groups := []*group{{head: "\n## Open commitments\n", lead: commitmentNotice + "\n"}, {head: "\n## Notes\n", lead: fenceNotice + "\n"}}
 	for i := len(commitments) - 1; i >= 0; i-- {
 		if t := Clean(commitments[i].Text); t != "" {
 			groups[0].items = append(groups[0].items, "- "+Clean(commitments[i].ID)+": "+cut(t, maxNote))
@@ -466,7 +467,7 @@ func PreCompact(instructions string, notes []Note, commitments []Commitment) str
 	budget := MaxBytes - len(head) - len(leftOutLine(total))
 	for _, g := range groups {
 		if len(g.items) > 0 {
-			budget -= len(g.head) + len(fenceBlock(fenceNotice+"\n", nil))
+			budget -= len(g.head) + len(fenceBlock(g.lead, nil))
 		}
 	}
 	kept := make([]int, len(groups))
@@ -496,7 +497,7 @@ func PreCompact(instructions string, notes []Note, commitments []Commitment) str
 		for j := range shown {
 			shown[kept[gi]-1-j] = g.items[j]
 		}
-		out += g.head + Fence(shown)
+		out += g.head + fenceBlock(g.lead, shown)
 	}
 	if left > 0 {
 		out += leftOutLine(left)

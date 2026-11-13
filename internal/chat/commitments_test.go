@@ -41,8 +41,10 @@ func newPromiseRig(t *testing.T) *promiseRig {
 	raw, _ := json.Marshal(map[string]any{"version": 1,
 		"resources": map[string]any{"gpu": map[string]any{"capacity": 1}},
 		"fleets": map[string]any{
-			"home": map[string]any{"name": "Home", "search_roots": []string{roots}, "claude": map[string]any{"executable": "/bin/sh"}},
-			"work": map[string]any{"name": "Work", "search_roots": []string{roots}, "claude": map[string]any{"executable": "/bin/sh"}},
+			"home":   map[string]any{"name": "Home", "search_roots": []string{roots}, "clone_root": filepath.Join(home, "clones"), "claude": map[string]any{"executable": "/bin/sh"}},
+			"broken": map[string]any{"name": "Broken", "search_roots": []string{roots}, "claude": map[string]any{"executable": "/nonexistent/claude"}},
+			"cx":     map[string]any{"name": "Cx", "search_roots": []string{roots}, "codex": map[string]any{"executable": "/bin/sh", "args": []string{"--remote", "x"}}},
+			"work":   map[string]any{"name": "Work", "search_roots": []string{roots}, "claude": map[string]any{"executable": "/bin/sh"}},
 		},
 		"sources": map[string]any{"tracker": map[string]any{"plugin": "jira", "fleet": "home"}, "theirs": map[string]any{"plugin": "jira", "fleet": "work"}},
 	})
@@ -64,12 +66,15 @@ func newPromiseRig(t *testing.T) *promiseRig {
 		Home:   home,
 		Config: func() *config.Config { return cfg },
 		Ships: func() []ships.Ship {
-			return []ships.Ship{{Session: "saltpaw", Fleet: "home"}, {Session: "rival", Fleet: "work"}}
+			return []ships.Ship{{Session: "saltpaw", Fleet: "home"}, {Session: "rival", Fleet: "work"}, {Session: "hulk", Fleet: "broken"}, {Session: "cxship", Fleet: "cx"}, {Session: "stamped", Fleet: "home", Launched: "2026-11-12T07:00:00Z"}}
 		},
 		SourceFleet: func(key string) (string, bool) {
 			return map[string]string{"tracker": "home", "theirs": "work"}[key], key == "tracker" || key == "theirs"
 		},
 		OrderExists: func(source, id string) bool { return source == "tracker" && id == "T-1" },
+		OrderRepo: func(source, id string) (string, string, bool) {
+			return "do T-1", "https://github.com/acme/widget", source == "tracker" && id == "T-1"
+		},
 	}).Routes(mux)
 	return &promiseRig{home: home, repo: repo, other: other, mux: mux}
 }
@@ -200,6 +205,14 @@ func TestACommitmentIdCannotBeCancelledThroughAnotherFleetOrAsANote(t *testing.T
 	}
 }
 
+func cloneSpec(extra string) string {
+	spec := `{"harness":"claude","clone":true,"skill":{"kind":"none"},"autopilot":true`
+	if !strings.Contains(extra, `"text"`) {
+		spec += `,"text":"fix the build"`
+	}
+	return spec + "," + extra + "}"
+}
+
 func TestARecordTimeRefusalIs4xxStoresNothingAndPostsNoInboxNotice(t *testing.T) {
 	past := promiseT0.Add(-time.Hour).Format(time.RFC3339)
 	cases := []struct {
@@ -245,6 +258,27 @@ func TestARecordTimeRefusalIs4xxStoresNothingAndPostsNoInboxNotice(t *testing.T)
 		{"an unknown resource", "home", func(r *promiseRig) string { return r.body(sailed, "launch", r.launch(`"resources":["nope"]`)) }},
 		{"control characters in the prompt", "home", func(r *promiseRig) string {
 			return r.body(sailed, "launch", strings.Replace(r.launch(""), "fix the build", `fix\u001b[31m`, 1))
+		}},
+		{"a dock whose executable does not resolve", "broken", func(r *promiseRig) string {
+			return r.body(`{"kind":"ship_sailed","subject":"hulk"}`, "launch", r.launch(""))
+		}},
+		{"a codex dock with a refused arg", "cx", func(r *promiseRig) string {
+			return r.body(`{"kind":"ship_sailed","subject":"cxship"}`, "launch", strings.Replace(r.launch(""), `"claude"`, `"codex"`, 1))
+		}},
+		{"a Commodore that does not exist", "home", func(r *promiseRig) string { return r.body(sailed, "launch", r.launch(`"member":"nobody"`)) }},
+		{"a clone beside a dir", "home", func(r *promiseRig) string { return r.body(sailed, "launch", r.launch(`"clone":true`)) }},
+		{"a clone whose order is missing", "home", func(r *promiseRig) string {
+			return r.body(sailed, "launch", cloneSpec(`"source":"tracker","order_id":"T-404"`))
+		}},
+		{"a clone on a host the fleet does not know", "home", func(r *promiseRig) string {
+			return r.body(sailed, "launch", cloneSpec(`"text":"https://evil.example/acme/widget"`))
+		}},
+		{"a clone naming no repository", "home", func(r *promiseRig) string { return r.body(sailed, "launch", cloneSpec(`"text":"fix it"`)) }},
+		{"a clone of a repo the form did not show", "home", func(r *promiseRig) string {
+			return r.body(sailed, "launch", cloneSpec(`"source":"tracker","order_id":"T-1","clone_repo":"github.com/acme/other"`))
+		}},
+		{"a clone into a fleet with no clone_root", "broken", func(r *promiseRig) string {
+			return r.body(`{"kind":"ship_sailed","subject":"hulk"}`, "launch", cloneSpec(`"text":"github.com/acme/widget"`))
 		}},
 		{"an unproven autopilot gate", "work", func(r *promiseRig) string {
 			return r.body(`{"kind":"ship_sailed","subject":"rival"}`, "launch", r.launch(""))
@@ -323,5 +357,65 @@ func TestTheListHoldsOpenAndWaitingCommitmentsAndMarksWhichAndOmitsClosedOnes(t 
 	}
 	if len(got) != 2 || got["c-open01"] || !got["c-wait01"] {
 		t.Errorf("listed = %v, want only c-open01 (not waiting) and c-wait01 (waiting)", got)
+	}
+}
+
+func TestACloneLaunchIsAcceptedAndStoredWithShapeChecksOnly(t *testing.T) {
+	r := newPromiseRig(t)
+	for name, extra := range map[string]string{
+		"an order's repo":    `"source":"tracker","order_id":"T-1","clone_repo":"GitHub.com/ACME/widget"`,
+		"a repo in the text": `"text":"https://github.com/acme/widget"`,
+	} {
+		rec := r.do("POST", "/api/chat/commitments", r.body(sailed, "launch", cloneSpec(extra)), "home")
+		if rec.Code != http.StatusCreated {
+			t.Errorf("%s: POST = %d %s, want 201", name, rec.Code, rec.Body)
+		}
+	}
+	if got := strings.Count(r.ledger("home"), `"clone":true`); got != 2 {
+		t.Errorf("ledger holds %d clone specs, want 2:\n%s", got, r.ledger("home"))
+	}
+}
+
+func TestAShipTriggerIsStoredWithTheShipsLaunchStamp(t *testing.T) {
+	r := newPromiseRig(t)
+	body := r.body(`{"kind":"ship_anchored","subject":"stamped"}`, "remind", "")
+	if rec := r.do("POST", "/api/chat/commitments", body, "home"); rec.Code != http.StatusCreated {
+		t.Fatalf("POST = %d %s, want 201", rec.Code, rec.Body)
+	}
+	if l := r.ledger("home"); !strings.Contains(l, `"launched":"2026-11-12T07:00:00Z"`) {
+		t.Errorf("ledger = %s, want the trigger to carry the ship's launch stamp", l)
+	}
+}
+
+func TestSubjectsAreStoredCanonically(t *testing.T) {
+	r := newPromiseRig(t)
+	at := time.Now().Add(72 * time.Hour).In(time.FixedZone("x", 5*3600)).Truncate(time.Second)
+	for _, c := range []struct{ kind, sent, want string }{
+		{"pr_merged", "  https://GitHub.com/acme/widget/pull/7 ", "https://github.com/acme/widget/pull/7"},
+		{"time", " " + at.Format(time.RFC3339) + " ", at.UTC().Format(time.RFC3339)},
+	} {
+		body := fmt.Sprintf(`{"text":"w","trigger":{"kind":%q,"subject":%q},"action":"remind"}`, c.kind, c.sent)
+		if rec := r.do("POST", "/api/chat/commitments", body, "home"); rec.Code != http.StatusCreated {
+			t.Fatalf("%s: POST = %d %s, want 201", c.kind, rec.Code, rec.Body)
+		}
+		if l := r.ledger("home"); !strings.Contains(l, `"subject":"`+c.want+`"`) {
+			t.Errorf("%s: ledger = %s, want subject %q", c.kind, l, c.want)
+		}
+	}
+}
+
+func TestANilOrderSeamRefusesInsteadOfPanicking(t *testing.T) {
+	mux := http.NewServeMux()
+	home := t.TempDir()
+	cfg, _ := config.Parse([]byte(`{"version":1,"fleets":{"home":{"name":"Home","search_roots":["` + home + `"],"claude":{"executable":"/bin/sh"}}}}`))
+	(&Service{Home: home, Config: func() *config.Config { return cfg }, Ships: func() []ships.Ship { return nil }}).Routes(mux)
+	spec := fmt.Sprintf(`{"harness":"claude","dir":%q,"text":"x","skill":{"kind":"none"},"source":"tracker","order_id":"T-1","autopilot":true}`, home)
+	body := `{"text":"w","trigger":{"kind":"none"},"action":"launch","launch":` + spec + `}`
+	req := httptest.NewRequest("POST", "/api/chat/commitments", strings.NewReader(body))
+	req = req.WithContext(actor.WithFleet(context.Background(), "home"))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code < 400 || rec.Code > 499 {
+		t.Errorf("POST = %d %s, want a 4xx", rec.Code, rec.Body)
 	}
 }

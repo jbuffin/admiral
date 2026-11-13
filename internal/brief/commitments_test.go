@@ -192,3 +192,13 @@ func TestPreCompactKeepsCommitmentsInsideTheirFenceAndUnderTheCap(t *testing.T) 
 			len(big), strings.Contains(big, "c-030"), strings.Contains(big, "left out"), MaxBytes)
 	}
 }
+
+func TestPreCompactFencesCommitmentsUnderTheirOwnNotice(t *testing.T) {
+	out := PreCompact("", nil, []Commitment{promise("c-aaa111", "tell me when saltpaw is done")})
+	if !strings.Contains(out, commitmentNotice) {
+		t.Errorf("PreCompact lacks the commitments notice:\n%s", out)
+	}
+	if strings.Contains(out, fenceNotice) {
+		t.Errorf("PreCompact calls the commitments facts the engineer asked to keep:\n%s", out)
+	}
+}

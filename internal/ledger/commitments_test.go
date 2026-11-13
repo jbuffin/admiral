@@ -433,3 +433,14 @@ func TestACommitmentEventForANoteIdLeavesTheNoteOpen(t *testing.T) {
 		t.Errorf("Notes = %+v, %v; want the note still open", notes, err)
 	}
 }
+
+func TestAFiredEventForARemindCommitmentIsRefused(t *testing.T) {
+	l, _ := newLedger(t)
+	c := mustCommit(t, l, "home", Commitment{Text: "tell me", Trigger: Trigger{Kind: TriggerNone}, Action: ActionRemind}, "admiralbot")
+	if err := l.MarkFired("home", c.ID); err == nil {
+		t.Fatal("MarkFired on a remind commitment = nil, want a refusal")
+	}
+	if got, ok := find(t, l, "home", c.ID); !ok || got.Waiting {
+		t.Errorf("after the refusal: %+v, %v; want it open and not waiting", got, ok)
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/actor"
@@ -49,11 +50,12 @@ func (s *Service) serveCommitmentAdd(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no fleet "+fleet)
 		return
 	}
-	if msg := s.checkTrigger(cfg, f, body.Trigger); msg != "" {
+	trigger, msg := s.checkTrigger(cfg, f, body.Trigger)
+	if msg != "" {
 		writeError(w, http.StatusUnprocessableEntity, msg)
 		return
 	}
-	c := ledger.Commitment{Text: body.Text, Trigger: body.Trigger, Action: body.Action}
+	c := ledger.Commitment{Text: body.Text, Trigger: trigger, Action: body.Action}
 	switch body.Action {
 	case ledger.ActionLaunch:
 		spec, lerr := s.checkLaunch(cfg, f, body.Launch)
@@ -80,36 +82,46 @@ func (s *Service) serveCommitmentAdd(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// checkTrigger is the refusal for a trigger that could never fire, or "".
-func (s *Service) checkTrigger(cfg *config.Config, f config.Fleet, t ledger.Trigger) string {
+// checkTrigger is the trigger as it is stored (the subject canonical, a ship's launch stamp beside its session) and the refusal for one that could never fire, or "".
+func (s *Service) checkTrigger(cfg *config.Config, f config.Fleet, t ledger.Trigger) (ledger.Trigger, string) {
+	t.Launched = ""
 	switch t.Kind {
 	case ledger.TriggerShipSailed, ledger.TriggerShipAnchored:
 		if s.Ships != nil {
 			for _, sh := range s.Ships() {
 				if sh.Session == t.Subject && sh.Fleet == f.Key {
-					return ""
+					t.Launched = sh.Launched
+					return t, ""
 				}
 			}
 		}
-		return fmt.Sprintf("no ship %q in fleet %s", t.Subject, f.Name)
+		return t, fmt.Sprintf("no ship %q in fleet %s", t.Subject, f.Name)
 	case ledger.TriggerPRMerged, ledger.TriggerPRClosed, ledger.TriggerIssueClosed:
-		if _, err := campaigns.ParseGitHubURL(t.Subject, launcher.GitHubHosts(cfg, f), t.Kind != ledger.TriggerIssueClosed); err != nil {
-			return err.Error()
+		pull := t.Kind != ledger.TriggerIssueClosed
+		ref, err := campaigns.ParseGitHubURL(t.Subject, launcher.GitHubHosts(cfg, f), pull)
+		if err != nil {
+			return t, err.Error()
 		}
+		noun := "issues"
+		if pull {
+			noun = "pull"
+		}
+		t.Subject = fmt.Sprintf("https://%s/%s/%s/%s/%d", strings.ToLower(ref.Host), ref.Owner, ref.Repo, noun, ref.Number)
 	case ledger.TriggerTime:
-		at, err := time.Parse(time.RFC3339, t.Subject)
+		at, err := time.Parse(time.RFC3339, strings.TrimSpace(t.Subject))
 		switch {
 		case err != nil:
-			return "a time trigger's subject must be an RFC 3339 time such as 2026-11-14T09:00:00Z"
+			return t, "a time trigger's subject must be an RFC 3339 time such as 2026-11-14T09:00:00Z"
 		case !at.After(time.Now()):
-			return "that time has already passed"
+			return t, "that time has already passed"
 		}
+		t.Subject = at.UTC().Format(time.RFC3339)
 	case ledger.TriggerNone:
 		if t.Subject != "" {
-			return "a trigger of none has no subject"
+			return t, "a trigger of none has no subject"
 		}
 	}
-	return ""
+	return t, ""
 }
 
 // checkLaunch judges a launch spec by the rules the launch itself will apply, short of live capacity, and returns it normalised for the ledger.
@@ -128,9 +140,10 @@ func (s *Service) checkLaunch(cfg *config.Config, f config.Fleet, raw json.RawMe
 		return nil, bad("a commitment launches in its own fleet, not %s", req.Fleet)
 	}
 	req.Fleet, req.Autopilot, req.Anyway, req.ChatMessage, req.Via = f.Key, true, false, "", actor.Via
-	if req.Clone {
-		return nil, bad("a commitment launches in a checkout that exists now; name its dir")
+	if req.Clone && req.Dir != "" {
+		return nil, bad("send dir or clone, not both")
 	}
+	var orderText, orderRepo string
 	if req.Source != "" {
 		if req.Source == config.ReservedSourceKey {
 			return nil, bad("launch a campaign's child through its campaign")
@@ -138,11 +151,32 @@ func (s *Service) checkLaunch(cfg *config.Config, f config.Fleet, raw json.RawMe
 		if len(req.Issues) > 0 {
 			return nil, bad("issues go only on a launch with no source")
 		}
+		if s.SourceFleet == nil || s.OrderExists == nil {
+			return nil, bad("this server cannot check order sources")
+		}
 		if owner, known := s.SourceFleet(req.Source); !known || owner != f.Key {
 			return nil, bad("no order source %q in fleet %s", req.Source, f.Name)
 		}
 		if !s.OrderExists(req.Source, req.OrderID) {
 			return nil, bad("order %q not found in source %s", req.OrderID, req.Source)
+		}
+		if req.Clone {
+			if s.OrderRepo == nil {
+				return nil, bad("this server cannot read an order's repo")
+			}
+			var ok bool
+			if orderText, orderRepo, ok = s.OrderRepo(req.Source, req.OrderID); !ok {
+				return nil, bad("order %q not found in source %s", req.OrderID, req.Source)
+			}
+		}
+	}
+	if req.Clone {
+		text := req.Text
+		if req.Source != "" {
+			text = orderText
+		}
+		if _, lerr := launcher.CheckClone(cfg, req, orderRepo, text); lerr != nil {
+			return nil, lerr
 		}
 	}
 	if _, lerr := ships.CheckIssueURLs(req.Issues, launcher.GitHubHosts(cfg, f)); lerr != nil {
@@ -158,7 +192,7 @@ func (s *Service) checkLaunch(cfg *config.Config, f config.Fleet, raw json.RawMe
 			return nil, bad("the launch prompt holds a control or invisible character (U+%04X); write it again in plain text", r)
 		}
 	}
-	chk, lerr := launcher.CheckSpec(cfg, req)
+	chk, lerr := launcher.CheckSpec(cfg, s.Home, req)
 	if lerr != nil {
 		if lerr.Status >= 500 || lerr.Status < 400 {
 			lerr.Status = http.StatusUnprocessableEntity

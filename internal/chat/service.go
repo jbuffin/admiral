@@ -95,6 +95,8 @@ type Service struct {
 	// SourceFleet names the fleet an order source belongs to; OrderExists says whether a source lists an order.
 	SourceFleet func(key string) (fleet string, known bool)
 	OrderExists func(source, id string) bool
+	// OrderRepo is an order's text and repo, which a clone launch derives its repository from.
+	OrderRepo func(source, id string) (text, repo string, ok bool)
 	// DigestAcked replaces the digest sequence read from the chat's pane options; a test seam.
 	DigestAcked func(fleet string) uint64
 

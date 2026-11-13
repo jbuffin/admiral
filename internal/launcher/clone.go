@@ -58,38 +58,54 @@ func GitHubHosts(cfg *config.Config, fleet config.Fleet) []string {
 	return hosts
 }
 
-// Clone runs outside the launch lock; the no-replace rename keeps an existing folder untouched and lets one of two racing clones win.
-func (l *Launcher) Clone(ctx context.Context, req Request, repo, text string) (string, error) {
-	cfg := l.Config()
+// CloneCheck is what a clone launch is about to do, once CheckClone has accepted it.
+type CloneCheck struct {
+	Fleet  config.Fleet
+	Hint   string
+	Target string
+}
+
+// CheckClone runs every refusal of Clone that needs no clone: the repo, its host, the form's repo, an existing checkout and a place to clone into.
+func CheckClone(cfg *config.Config, req Request, repo, text string) (CloneCheck, *Error) {
 	fleet, ok := cfg.Fleet(req.Fleet)
 	if !ok {
-		return "", refuse(http.StatusNotFound, "fleet %q not found", req.Fleet)
+		return CloneCheck{}, refuse(http.StatusNotFound, "fleet %q not found", req.Fleet)
 	}
 	if _, ok := fleet.Harness(req.Harness); !ok {
-		return "", refuse(http.StatusBadRequest, "fleet %s has no %s dock", fleet.Name, req.Harness)
+		return CloneCheck{}, refuse(http.StatusBadRequest, "fleet %s has no %s dock", fleet.Name, req.Harness)
 	}
 	if !fleet.CanLaunch() {
-		return "", refuse(http.StatusBadRequest, "fleet %s has no search roots, so nothing can be launched from it", fleet.Name)
+		return CloneCheck{}, refuse(http.StatusBadRequest, "fleet %s has no search roots, so nothing can be launched from it", fleet.Name)
 	}
 	hint, ok := repofinder.Hint(repo, text)
 	if !ok {
-		return "", refuse(http.StatusBadRequest, "no repository to clone: the order names none")
+		return CloneCheck{}, refuse(http.StatusBadRequest, "no repository to clone: the order names none")
 	}
 	if _, err := repofinder.CloneName(hint, GitHubHosts(cfg, fleet)); err != nil {
-		return "", refuse(http.StatusBadRequest, "%s", err)
+		return CloneCheck{}, refuse(http.StatusBadRequest, "%s", err)
 	}
 	if want := strings.ToLower(strings.TrimSpace(req.CloneRepo)); want != "" && want != hint {
-		return "", refuse(http.StatusConflict, "the order's repo changed to %s; reopen the form", hint)
+		return CloneCheck{}, refuse(http.StatusConflict, "the order's repo changed to %s; reopen the form", hint)
 	}
 	for _, e := range repofinder.List(repofinder.FleetRoots(fleet.SearchRoots, fleet.CloneRoot)) {
 		if slices.Contains(e.Remotes, hint) {
-			return "", refuse(http.StatusConflict, "%s already has a checkout, %s: launch there", hint, e.Path)
+			return CloneCheck{}, refuse(http.StatusConflict, "%s already has a checkout, %s: launch there", hint, e.Path)
 		}
 	}
 	_, target, ok := CloneTarget(cfg, fleet, repo, text)
 	if !ok {
-		return "", refuse(http.StatusBadRequest, "fleet %s has no place to clone into", fleet.Name)
+		return CloneCheck{}, refuse(http.StatusBadRequest, "fleet %s has no place to clone into", fleet.Name)
 	}
+	return CloneCheck{Fleet: fleet, Hint: hint, Target: target}, nil
+}
+
+// Clone runs outside the launch lock; the no-replace rename keeps an existing folder untouched and lets one of two racing clones win.
+func (l *Launcher) Clone(ctx context.Context, req Request, repo, text string) (string, error) {
+	chk, lerr := CheckClone(l.Config(), req, repo, text)
+	if lerr != nil {
+		return "", lerr
+	}
+	fleet, hint, target := chk.Fleet, chk.Hint, chk.Target
 	root := filepath.Dir(target)
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return "", refuse(http.StatusInternalServerError, "could not create %s: %v", root, err)
