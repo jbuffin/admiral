@@ -546,7 +546,7 @@ A routine:
 
 ### `GET /api/sources`
 
-Every source, each `{"key", "name", "plugin", "fleet", "icon_url", "capabilities", "has_schema", "state", "read_only", "error", "auth", "warnings", "views"}`. A source that raises events also carries `events: [{"kind", "title", "panel"?}]`, its event catalog: one entry for each kind and panel a routine's `on` may name, with `title` the words to show ("Review requested of you", "New in <view title>"). `events` is left out until the source has listed them, so a client that needs it waits and asks again.
+Every source, each `{"key", "name", "plugin", "fleet", "icon_url", "capabilities", "has_schema", "state", "read_only", "error", "auth", "warnings", "views"}`. A source that raises events also carries `events: [{"kind", "title", "panel"?}]`, its event catalog: one entry for each kind and panel a routine's `on` may name, with `title` the words to show ("Review requested of you", `New in` and the view's title). `events` is left out until the source has listed them, so a client that needs it waits and asks again.
 
 ### `POST /api/fleets/<key>/routines`
 
