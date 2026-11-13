@@ -25,8 +25,8 @@ func (c *catalogConn) call(_ context.Context, method string, _ any, _ time.Durat
 	}
 	return c.res, c.err
 }
-func (c *catalogConn) stop()                  {}
-func (c *catalogConn) kill()                  {}
+func (c *catalogConn) stop()                   {}
+func (c *catalogConn) kill()                   {}
 func (c *catalogConn) exited() <-chan struct{} { return nil }
 func (c *catalogConn) exitReason() string      { return "" }
 
@@ -105,7 +105,7 @@ func TestAnEventTheCatalogCannotVouchForIsDropped(t *testing.T) {
 	send(r, "starred", "https://example.com/1", "")
 	send(r, "review_requested", "not a url", "")
 	send(r, "review_requested", "", "")
-	send(r, "review_requested", "https://example.com/\x07bell", "")
+	r.note(1, "event", json.RawMessage(`{"kind":"review_requested","ref":"https://example.com/\u0007bell"}`))
 	send(r, "review_requested", "https://example.com/"+long, "")
 	send(r, "review_requested", "https://example.com/2", `,"actor":"b\u0000ob"`)
 	send(r, "review_requested", "https://example.com/3", `,"author":"`+long+`"`)
@@ -215,6 +215,20 @@ func TestTheBuiltInGitHubSourceEmitsOnlyItemsNewToAViewAndFillsTheViewer(t *test
 	ev := s.got[0]
 	if ev.Kind != "new_in_view" || ev.Panel != "mine" || !strings.HasSuffix(ev.Ref, "/issues/2") || ev.Author != "bob" || ev.Viewer != "eng" || !ev.Verified {
 		t.Errorf("event = %+v, want new_in_view on mine for issue 2, author bob, viewer eng, verified", ev)
+	}
+	// leaving the view and coming back is new to it again
+	g.searchBy("mine", "Q1", "acme/api", 1, "one", "amy")
+	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
+	f.waitView("gh", "item 2 gone", func(v SourceView) bool { return len(v.orders("mine")) == 1 })
+	g.searchMore("mine", "acme/api", 2, "two", "bob")
+	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
+	f.waitView("gh", "item 2 back", func(v SourceView) bool { return len(v.orders("mine")) == 2 })
+	deadline = time.Now().Add(5 * time.Second)
+	for s.n() < 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if s.n() != 2 {
+		t.Errorf("%d events after item 2 left and came back, want 2 in all", s.n())
 	}
 }
 

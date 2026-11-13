@@ -1,6 +1,7 @@
 package routines_test
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -398,8 +399,24 @@ func TestAnEventRoutineSavesWithItsOnAndAKeyedFileKeepsCronRoutinesPlain(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), `"on":{"source":"gh","kind":"review_requested"}`) {
-		t.Errorf("routines.json lacks the on object: %s", raw)
+	var file struct {
+		Routines []map[string]json.RawMessage `json:"routines"`
+	}
+	if err := json.Unmarshal(raw, &file); err != nil {
+		t.Fatal(err)
+	}
+	keyed := 0
+	for _, x := range file.Routines {
+		if on, ok := x["on"]; ok {
+			keyed++
+			var o routines.On
+			if err := json.Unmarshal(on, &o); err != nil || o != (routines.On{Source: "gh", Kind: "review_requested"}) {
+				t.Errorf("on = %s (%v), want the gh review_requested object", on, err)
+			}
+		}
+	}
+	if keyed != 1 {
+		t.Errorf("%d routines in the file carry an on key, want 1 (a cron routine writes none): %s", keyed, raw)
 	}
 	list, err := r.store.List("work")
 	if err != nil {
@@ -409,9 +426,6 @@ func TestAnEventRoutineSavesWithItsOnAndAKeyedFileKeepsCronRoutinesPlain(t *test
 		if x.ID == cron.ID && (x.On != nil || x.When != "30 8 * * 1-5") {
 			t.Errorf("the cron routine reads back as %+v, want it unchanged", x)
 		}
-	}
-	if n := strings.Count(string(raw), `"on":`); n != 1 {
-		t.Errorf("routines.json has %d on keys, want 1 (a cron routine writes none)", n)
 	}
 }
 
@@ -431,13 +445,13 @@ func TestAnEventRoutineNamesASourceAndKindTheFleetHas(t *testing.T) {
 	r.catalog()
 	r.create("work", validOn())
 	for name, on := range map[string]routines.On{
-		"unknown source":           {Source: "nope", Kind: "review_requested"},
-		"unknown kind":             {Source: "gh", Kind: "starred"},
-		"a panel kind with none":   {Source: "gh", Kind: "new_in_view"},
-		"a panel kind, wrong one":  {Source: "gh", Kind: "new_in_view", Panel: "other"},
-		"a panel on a plain kind":  {Source: "gh", Kind: "review_requested", Panel: "mine"},
-		"empty source":             {Kind: "review_requested"},
-		"empty kind":               {Source: "gh"},
+		"unknown source":          {Source: "nope", Kind: "review_requested"},
+		"unknown kind":            {Source: "gh", Kind: "starred"},
+		"a panel kind with none":  {Source: "gh", Kind: "new_in_view"},
+		"a panel kind, wrong one": {Source: "gh", Kind: "new_in_view", Panel: "other"},
+		"a panel on a plain kind": {Source: "gh", Kind: "review_requested", Panel: "mine"},
+		"empty source":            {Kind: "review_requested"},
+		"empty kind":              {Source: "gh"},
 	} {
 		in := validOn()
 		in.On = &on
