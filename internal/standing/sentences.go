@@ -3,6 +3,8 @@ package standing
 import (
 	"fmt"
 	"strings"
+
+	"github.com/jbuffin/admiral/internal/textsafe"
 )
 
 type Sentence struct {
@@ -56,6 +58,22 @@ func list(label string, none string, items []string) string {
 // RoutineNamer names a routine by its ID; ok is false when the routine no longer exists.
 type RoutineNamer func(id string) (name string, ok bool)
 
+const maxNameRunes = 80
+
+// displayName drops hidden runes and bounds a routine name, which is engineer text that can come from a hand-edited file.
+func displayName(n string) string {
+	r := []rune(strings.Map(func(r rune) rune {
+		if textsafe.Hidden(r) {
+			return -1
+		}
+		return r
+	}, n))
+	if len(r) > maxNameRunes {
+		return string(r[:maxNameRunes-1]) + "…"
+	}
+	return string(r)
+}
+
 func scopedNames(in []Scoped, name RoutineNamer) []string {
 	out := make([]string, len(in))
 	for i, s := range in {
@@ -66,7 +84,7 @@ func scopedNames(in []Scoped, name RoutineNamer) []string {
 		who := s.Routine
 		if name != nil {
 			if n, ok := name(s.Routine); ok {
-				who = n
+				who = displayName(n)
 			} else {
 				who = "a deleted routine"
 			}

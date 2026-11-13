@@ -21,6 +21,7 @@ import (
 	"github.com/jbuffin/admiral/internal/capabilities"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/launcher"
+	"github.com/jbuffin/admiral/internal/standing"
 	"github.com/jbuffin/admiral/internal/textsafe"
 )
 
@@ -280,21 +281,22 @@ func (s *Store) List(fleet string) ([]Routine, error) {
 	return s.load(fleet)
 }
 
-// Namer names fleet's routines by ID for a Limit sentence.
-func (s *Store) Namer(fleet string) func(id string) (string, bool) {
+// Namer reads fleet's routines once and names them by ID for a Limit sentence; when the list can't be
+// read it keeps the ID rather than call the routine deleted.
+func (s *Store) Namer(fleet string) standing.RoutineNamer {
+	s.mu.Lock()
+	list, err := s.load(fleet)
+	s.mu.Unlock()
+	if err != nil {
+		return func(id string) (string, bool) { return id, true }
+	}
+	names := make(map[string]string, len(list))
+	for _, r := range list {
+		names[r.ID] = r.Name
+	}
 	return func(id string) (string, bool) {
-		s.mu.Lock()
-		list, err := s.load(fleet)
-		s.mu.Unlock()
-		if err != nil {
-			return "", false
-		}
-		for _, r := range list {
-			if r.ID == id {
-				return r.Name, true
-			}
-		}
-		return "", false
+		n, ok := names[id]
+		return n, ok
 	}
 }
 

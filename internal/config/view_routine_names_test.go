@@ -3,6 +3,8 @@ package config_test
 import (
 	"strings"
 	"testing"
+
+	"github.com/jbuffin/admiral/internal/standing"
 )
 
 func senderSentence(t *testing.T, sentences []string) string {
@@ -19,8 +21,8 @@ func senderSentence(t *testing.T, sentences []string) string {
 func TestTheFleetViewNamesTheRoutineAScopedSkipBelongsTo(t *testing.T) {
 	limits := `{"skip":{"senders":[{"value":"mallory","routine":"r-live"},{"value":"eve","routine":"r-gone"},{"value":"trent"}]}}`
 	m, _ := openView(t, limitsFleet("", limits))
-	m.RoutineName = func(fleet, id string) (string, bool) {
-		return "Review watch", fleet == "work" && id == "r-live"
+	m.RoutineNamer = func(fleet string) standing.RoutineNamer {
+		return func(id string) (string, bool) { return "Review watch", fleet == "work" && id == "r-live" }
 	}
 	f := fleetOf(m.View(), "work")
 	texts := []string{}
