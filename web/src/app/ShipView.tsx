@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call, probeShipList, type Changes, type CrewBoat, type Ship } from './api';
+import { isRunning, runningFor } from './shipList';
+import { useNow } from './useNow';
 import { ShipOrder } from './ShipOrder';
 import { splitDiff } from './changes';
 import { followConversation, type Conversation } from './conversation';
@@ -420,6 +422,7 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
         <BackLink label="Back" />
         <Heading>{ship.name}</Heading>
         <ShipOrder ship={ship} />
+        <RunningClock ship={ship} />
         {moored ? (
           <button type="button" class="btn primary stop-ship" disabled={ship.no_resume || box.waking} onClick={() => void box.wake()}>
             Wake
@@ -536,5 +539,16 @@ function PRTab({ ship }: { ship: Ship }) {
       )}
       <Failure message={error} />
     </div>
+  );
+}
+
+function RunningClock({ ship }: { ship: Ship }) {
+  const now = useNow();
+  const time = isRunning(ship) ? runningFor(ship.launched, now) : '';
+  if (!time) return null;
+  return (
+    <span class="ship-clock" title={`Running for ${time}`} aria-label={`Running for ${time}`}>
+      {time}
+    </span>
   );
 }

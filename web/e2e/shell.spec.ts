@@ -67,7 +67,7 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await expect(row(page, moored).locator('img[src="/api/v1/logos/codex"]')).toBeVisible();
   await expect(row(page, moored)).not.toContainText(/undefined|null|Reading|Which branch/);
   await expect(row(page, billing)).toContainText('1 crew');
-  await expect(row(page, billing).locator('.ship-age')).toHaveText(/^(now|\d+m)$/);
+  await expect(row(page, billing).locator('.ship-age')).toHaveText(/^(<1m|\d+m)$/);
   await expect(row(page, login)).not.toContainText('crew');
   expect((await row(page, login).boundingBox())!.height).toBeGreaterThanOrEqual(44);
 
@@ -85,6 +85,7 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await rowLink(page, login).tap();
   await expect(page).toHaveURL(shipViewUrl(admiral, login));
   await expect(page.getByRole('heading', { name: login.name, exact: true })).toBeVisible();
+  await expect(page.getByLabel(/^Running for (<1m|\d+m)$/)).toBeVisible();
   await expect(page.getByRole('tab')).toHaveText(['Conversation', 'Terminal', 'Changes', 'PR']);
   await expect(viewTab(page, 'Conversation')).toHaveAttribute('aria-selected', 'true');
   await expectSeededTurn(page);

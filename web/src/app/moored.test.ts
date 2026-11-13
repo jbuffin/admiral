@@ -112,7 +112,7 @@ describe('how long a moored ship has waited', () => {
   });
 
   it('counts a ship that is not moored from its launch', () => {
-    const s = ship({ status: 'underway', launched: '2026-11-11T11:48:00Z' });
+    const s = ship({ status: 'anchored', launched: '2026-11-11T11:48:00Z' });
     expect(shipRowAge(s, now)).toBe(shipAge('2026-11-11T11:48:00Z', now));
     expect(shipRowAge(s, now)).toBe('12m');
   });

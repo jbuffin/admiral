@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Ship, ShipStatus } from './api';
-import { groupShips, shipAge } from './shipList';
+import { groupShips, runningFor, shipAge, shipRowAge } from './shipList';
 
 const ship = (name: string, status: ShipStatus, fleet = 'zulu'): Ship => ({
   session: `s-${name}`,
@@ -66,5 +66,31 @@ describe('shipAge', () => {
     expect(shipAge('', now)).toBe('');
     expect(shipAge('soon', now)).toBe('');
     expect(shipAge(ago(-5 * 60_000), now)).toBe('now');
+  });
+});
+
+describe('how long a running ship has been going', () => {
+  const now = Date.parse('2026-11-11T12:00:00Z');
+  const ago = (ms: number) => new Date(now - ms).toISOString();
+
+  it('counts minutes until the hour, then hours and minutes', () => {
+    expect(runningFor(ago(20_000), now)).toBe('<1m');
+    expect(runningFor(ago(59 * 60_000 + 59_000), now)).toBe('59m');
+    expect(runningFor(ago(3600_000), now)).toBe('1h 0m');
+    expect(runningFor(ago(2 * 3600_000 + 5 * 60_000), now)).toBe('2h 5m');
+    expect(runningFor(ago(26 * 3600_000 + 7 * 60_000), now)).toBe('26h 7m');
+  });
+
+  it('is blank for a missing or unreadable launch time, and never negative', () => {
+    expect(runningFor('', now)).toBe('');
+    expect(runningFor('soon', now)).toBe('');
+    expect(runningFor(ago(-5 * 60_000), now)).toBe('<1m');
+  });
+
+  it('shows on the row of an underway or needs-you ship, not an anchored one', () => {
+    const launched = ago(90 * 60_000);
+    expect(shipRowAge({ ...ship('a', 'underway'), launched }, now)).toBe('1h 30m');
+    expect(shipRowAge({ ...ship('b', 'needs_you'), launched }, now)).toBe('1h 30m');
+    expect(shipRowAge({ ...ship('c', 'anchored'), launched }, now)).toBe('1h');
   });
 });
