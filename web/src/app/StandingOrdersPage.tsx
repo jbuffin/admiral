@@ -123,7 +123,7 @@ function CopyTo({ fleet, onCopied }: { fleet: Fleet; onCopied: () => void }) {
               <p class="note">These Limits are now looser there:</p>
               <ul class="limit-list">
                 {done.loosened.map((s) => (
-                  <li key={s}>{s} Looser than before.</li>
+                  <li key={s}>{s}</li>
                 ))}
               </ul>
             </>

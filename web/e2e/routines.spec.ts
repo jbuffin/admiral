@@ -114,6 +114,17 @@ test('the Standing orders tab shows the Work Limits as sentences, keeps a Check 
   await expect.poll(async () => sentenceFor(await orders(admiral, 'zulu'), 'rates.concurrent')).not.toBe(before);
   await expect(page.getByRole('main').getByText(sentenceFor(await orders(admiral, 'zulu'), 'rates.concurrent'), { exact: true })).toBeVisible();
 
+  // A decimal typed key by key keeps its point.
+  const spendBefore = sentenceFor(await orders(admiral, 'zulu'), 'spend.lookout_call_usd');
+  const spend = page.locator('[id="spend.lookout_call_usd"]');
+  await spend.click();
+  await spend.press('ControlOrMeta+a');
+  await spend.pressSequentially('0.3');
+  await expect(spend).toHaveValue('0.3');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(async () => sentenceFor(await orders(admiral, 'zulu'), 'spend.lookout_call_usd')).not.toBe(spendBefore);
+  expect(sentenceFor(await orders(admiral, 'zulu'), 'spend.lookout_call_usd')).toContain('0.3');
+
   // Home is one switch away, after an in-place confirm; the Limits become Home's.
   const preset = page.getByRole('radiogroup', { name: 'Preset' });
   await preset.getByRole('radio', { name: 'Home' }).click();
@@ -145,9 +156,11 @@ test('Copy to another fleet confirms in place, replaces the target and names eac
   await expect.poll(async () => (await orders(admiral, 'alpha')).checks).toEqual(['Ask before touching CI.']);
   await expect.poll(async () => (await orders(admiral, 'alpha')).preset).toBe('home');
   const alpha = await orders(admiral, 'alpha');
-  await expect(main.getByText(/Copied/)).toContainText(HOME);
-  // Home's T3 ceiling is higher than Work's, so the line names it with alpha's own sentence.
-  await expect(main.getByText(sentenceFor(alpha, 'ceilings.t3'), { exact: true })).toBeVisible();
+  const notice = main.getByRole('status');
+  await expect(notice).toContainText(/Copied/);
+  await expect(notice).toContainText(HOME);
+  // Home's T3 ceiling is higher than Work's, so the notice names it with alpha's own sentence.
+  await expect(notice).toContainText(sentenceFor(alpha, 'ceilings.t3'));
 });
 
 test('with no proven judge the tab says so, greys the features that need one, and Check again re-runs the probe', async ({ page, admiral }) => {
