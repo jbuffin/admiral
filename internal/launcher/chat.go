@@ -203,6 +203,8 @@ func (l *Launcher) StartChat(key string) error {
 	delete(unset, "ADMIRAL_HOME")
 	// The hooks and the status line know the chat's fleet from here; the model can't pick another.
 	env["ADMIRAL_CHAT_FLEET"] = fleet.Key
+	// The hooks print the brief and digest only on Claude Code, whose context format they speak.
+	env["ADMIRAL_CHAT_HARNESS"] = dock.Name
 	if l.Port != "" {
 		env["ADMIRAL_PORT"] = l.Port
 	}

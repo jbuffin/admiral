@@ -10,6 +10,7 @@ import (
 
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/sessionhost"
+	"github.com/jbuffin/admiral/internal/ships"
 )
 
 // The chat runs only on an offered harness and reads its conversation with that harness's decoder.
@@ -136,5 +137,25 @@ func TestTheChatReaderDecodesWithTheFleetsChatHarness(t *testing.T) {
 	}
 	if got := servedFor(t, s, "cl"); len(got) != 0 {
 		t.Errorf("a claude chat reading a copilot file serves %v, want nothing: it decodes Claude's format", got)
+	}
+}
+
+func TestOnlyAClaudeChatGetsABriefAndADigest(t *testing.T) {
+	s := harnessService(t, copilotChat, fakeProbes{"cop/copilot/bot.mcp_fence": {"passed", ""}, "cop/copilot/bot.config_home": {"passed", ""}})
+	s.Ships = func() []ships.Ship { return nil }
+	for _, fleet := range []string{"cl", "cop"} {
+		if err := os.MkdirAll(filepath.Join(s.Home, "chat", fleet), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(s.Home, "chat", fleet, "instructions.md"), []byte("Be terse."), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.Tick()
+	for fleet, want := range map[string]bool{"cl": true, "cop": false} {
+		_, err := os.Stat(filepath.Join(s.Home, "chat", fleet, "brief.md"))
+		if got := err == nil; got != want {
+			t.Errorf("after a tick, %s has a brief = %v, want %v", fleet, got, want)
+		}
 	}
 }

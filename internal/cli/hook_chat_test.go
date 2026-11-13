@@ -20,6 +20,7 @@ func chatHook(t *testing.T, home, fleet, event, payload string) string {
 	t.Helper()
 	t.Setenv("ADMIRAL_HOME", home)
 	t.Setenv("ADMIRAL_CHAT_FLEET", fleet)
+	t.Setenv("ADMIRAL_CHAT_HARNESS", "claude")
 	t.Setenv("TMUX", "")
 	t.Setenv("TMUX_TMPDIR", t.TempDir())
 	t.Setenv("TMUX_PANE", "%99")
@@ -224,5 +225,23 @@ func TestTheHookPrintsOnlyDigestLinesAboveThePanesRecordedSequence(t *testing.T)
 	recorded = f.Lines[2].Seq
 	if out := chatHook(t, home, "home", "UserPromptSubmit", `{"prompt":"hi"}`); out != "" {
 		t.Errorf("with every line printed already the hook printed %q, want nothing", out)
+	}
+}
+
+func TestTheHookPrintsNoBriefOrDigestOnACodexOrUnmarkedChat(t *testing.T) {
+	home := t.TempDir()
+	writeChatFile(t, home, "home", "brief.md", briefText)
+	for _, harness := range []string{"codex", "copilot", ""} {
+		t.Setenv("ADMIRAL_CHAT_HARNESS", harness)
+		var out, errOut bytes.Buffer
+		t.Setenv("ADMIRAL_HOME", home)
+		t.Setenv("ADMIRAL_CHAT_FLEET", "home")
+		t.Setenv("TMUX_PANE", "")
+		if err := Hook([]string{"SessionStart"}, IO{In: strings.NewReader("{}"), Out: &out, Err: &errOut}); err != nil {
+			t.Fatal(err)
+		}
+		if out.Len() != 0 {
+			t.Errorf("harness %q: SessionStart printed %q, want nothing: only Claude Code takes the brief", harness, out.String())
+		}
 	}
 }

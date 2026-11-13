@@ -59,10 +59,14 @@ func (s *Service) tickInputs() tickInputs {
 	return in
 }
 
-// Tick renders each fleet's brief and keeps its digest.
+// Tick renders each Claude Code fleet's brief and keeps its digest: only its hooks print them, so another
+// harness's chat gets neither.
 func (s *Service) Tick() {
 	in := s.tickInputs()
 	for _, fc := range s.onFleets() {
+		if fc.harness() != "claude" {
+			continue
+		}
 		fc.renderBrief(in)
 		fc.digestTick(in)
 	}

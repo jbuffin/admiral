@@ -22,11 +22,17 @@ func Hook(args []string, std IO) error {
 		return nil
 	}
 	pane := os.Getenv("TMUX_PANE")
+	// Codex's chat shares these event names but not Claude Code's context format.
+	claudeChat := os.Getenv("ADMIRAL_CHAT_HARNESS") == "claude"
 	var after uint64
-	if args[0] == "UserPromptSubmit" && pane != "" && os.Getenv("ADMIRAL_CHAT_FLEET") != "" {
+	if claudeChat && args[0] == "UserPromptSubmit" && pane != "" && os.Getenv("ADMIRAL_CHAT_FLEET") != "" {
 		after = paneDigestSeq(pane)
 	}
-	context, printed := chatContextAfter(args[0], os.Getenv("ADMIRAL_HOME"), os.Getenv("ADMIRAL_CHAT_FLEET"), after)
+	var context string
+	var printed uint64
+	if claudeChat {
+		context, printed = chatContextAfter(args[0], os.Getenv("ADMIRAL_HOME"), os.Getenv("ADMIRAL_CHAT_FLEET"), after)
+	}
 	if context != "" {
 		_, _ = io.WriteString(std.Out, context)
 	}
