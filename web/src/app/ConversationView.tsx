@@ -177,9 +177,7 @@ function ConversationBody({ conv, harness, anchored = false, working, noneTitle,
       <Card title="No conversation for this harness">{terminal}</Card>
     ) : anchored ? (
       <Card title="No conversation recorded">{terminal}</Card>
-    ) : (
-      <Card title="Starting…">{terminal}</Card>
-    );
+    ) : null;
   if (conv.state === 'unreadable') return <Card title="Admiral can't read this conversation">{terminal}</Card>;
   if (conv.state === 'gone') return <Card title="Conversation no longer available" />;
 

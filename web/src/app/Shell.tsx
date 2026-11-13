@@ -291,7 +291,7 @@ function ShipsPanel({ surface, title }: { surface: Surface; title: boolean }) {
       Launch
     </button>
   ) : null;
-  const form = launching && fleet ? <LaunchForm fleet={fleet} order={launching.order} onClose={() => setLaunching(null)} /> : null;
+  const form = launching && fleet ? <LaunchForm fleet={fleet} order={launching.order} onClose={() => setLaunching(null)} onLaunched={(session) => go(shipPath(session), fleetSearch.value)} /> : null;
   const orders = fleet ? <OrdersList fleetKey={fleet.key} onLaunch={(order) => setLaunching({ order })} /> : null;
   if (shipsLoaded.value && groups.length === 0) {
     return (
