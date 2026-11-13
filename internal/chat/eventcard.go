@@ -1,6 +1,10 @@
 package chat
 
-import "errors"
+import (
+	"encoding/json"
+
+	"github.com/jbuffin/admiral/internal/chatlog"
+)
 
 // EventCard is an A0 card for an outside event, built from Lookout fields or the metadata line only.
 type EventCard struct {
@@ -15,7 +19,16 @@ type EventCard struct {
 	MuteBy      []string // the Mute rule choices the event allows: sender, dedupe_key
 }
 
-// PostEventCard appends the card to the fleet's chat log. It never writes the card's text to the digest, which AdmiralBot reads.
+// PostEventCard appends the card to the fleet's chat log; a card whose ID the log holds adds nothing. It writes nothing to
+// the digest, which AdmiralBot reads.
 func (s *Service) PostEventCard(fleet string, c EventCard) error {
-	return errors.New("not implemented")
+	card, err := json.Marshal(map[string]any{
+		"routine": c.Routine, "routine_name": c.RoutineName, "tier": c.Tier, "sender": c.Sender,
+		"link": c.Link, "metadata": c.Metadata, "mute_by": c.MuteBy,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = s.history().Append(fleet, chatlog.Entry{ID: c.ID, Kind: chatlog.KindEventCard, Text: c.Text, Card: card})
+	return err
 }
