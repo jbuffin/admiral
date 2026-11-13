@@ -111,7 +111,7 @@ describe('the spend-reached notice', () => {
 });
 
 describe('the empty event picker', () => {
-  const src = { key: 'gh', name: 'GitHub', plugin: 'github', fleet: 'work', icon_url: '', has_schema: false, state: 'running', error: null, warnings: [] };
+  const src = { key: 'gh', name: 'GitHub', plugin: 'github', fleet: 'work', icon_url: '', has_schema: false, state: 'running', error: null, warnings: [], views: [] };
   it('tells a fleet with no source from a source that has not listed its events', () => {
     expect(noEventsNote([], 'work')).toContain('no source');
     expect(noEventsNote([src], 'work')).toContain("hasn't listed");
