@@ -10,13 +10,17 @@ import { MissingCapability } from './MissingCapability';
 import { CheckoutSelect, DockPicker, ModelEffortPair, ResourcesPicker, SkillSelect, skillOfValue, skillValue } from './LaunchPickers';
 import type { SkillsAnswer } from './launchForm';
 import { RoutineTabs } from './RoutineTabs';
-import { automateOf, go, loc, routineNewPath, routinePath, shipPath } from './router';
+import { automateOf, go, loc, peekPath, routineNewPath, routinePath, shipPath } from './router';
 import {
   autopilotDocks,
   automateDraft,
   automateTarget,
   blankForm,
   breakerTripped,
+  eventChoices,
+  eventHref,
+  eventValue,
+  eventWords,
   errorField,
   errorText,
   formOfRoutine,
@@ -24,14 +28,17 @@ import {
   lastRunText,
   launchOnDock,
   routineBody,
+  runCost,
   runLine,
+  spendNotice,
   runTime,
   type Before,
   type Routine,
   type RoutineForm,
   type RoutineRun,
+  type RoutineSpend,
 } from './routines';
-import { ships, shipsLoaded, sources } from './shipsLink';
+import { inboxItems, ships, shipsLoaded, sources } from './shipsLink';
 
 const api = (fleet: string, rest = '') => `/fleets/${encodeURIComponent(fleet)}/routines${rest}`;
 const BEFORE: { value: Before; label: string }[] = [
@@ -82,6 +89,13 @@ function HoldFireToggles({ fleet }: { fleet: Fleet }) {
 const slugName = (slug: string) => slug.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 const shipTitle = (session: string, text: string) => text.replace(session, ships.value.find((s) => s.session === session)?.name ?? slugName(session));
 
+// The proposal's Inbox item is named after the record; it links only while the Inbox still holds it.
+function ProposalLink({ id }: { id: string }) {
+  const item = `event-${id}`;
+  if (!inboxItems.value.some((i) => i.id === item)) return <span class="muted">Proposed, see the Inbox</span>;
+  return <a href={peekPath({ session: '_admiral', item }) + fleetSearch.value}>Open the proposal</a>;
+}
+
 function RecentRuns({ runs }: { runs: RoutineRun[] | null }) {
   return (
     <section class="routine-runs" aria-labelledby="runs-head">
@@ -99,8 +113,17 @@ function RecentRuns({ runs }: { runs: RoutineRun[] | null }) {
               <time class="run-time" dateTime={r.at}>
                 {runTime(r.at, new Date())}
               </time>
+              {r.tier ? <span class="run-tier">{r.tier}</span> : null}
+              {r.sender ? <span class="run-sender">{r.sender}</span> : null}
               {l.ship ? <a href={shipPath(l.ship) + fleetSearch.value}>{shipTitle(l.ship, l.text)}</a> : <span>{l.text}</span>}
+              {r.outcome === 'proposed' && r.tier ? <ProposalLink id={r.id} /> : null}
               {r.via === 'proposal' && !l.text.includes('proposal') ? <span class="muted"> via proposal</span> : null}
+              {eventHref(r.event) ? (
+                <a href={eventHref(r.event)!} target="_blank" rel="noopener noreferrer">
+                  Event
+                </a>
+              ) : null}
+              {runCost(r) ? <span class="muted">{runCost(r)}</span> : null}
             </li>
           );
         })}
@@ -120,6 +143,8 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
   const hold = holdFire.value?.fleet === fleet.key ? holdFire.value.state.on : false;
   const docks = autopilotDocks(caps, fleet.docks);
   const l = form.launch;
+  const choices = eventChoices(sources.value, fleet.key);
+  const groups = [...new Set(choices.map((c) => c.group))].map((g) => [g, choices.filter((c) => c.group === g)] as const);
   const [problem, setProblem] = useState(drafted);
   // A drafted problem goes with the first edit of the field it names.
   const fixes = (field: 'name' | 'when' | 'before_acting' | 'do') => setProblem((p) => (p?.field === field ? undefined : p));
@@ -203,16 +228,57 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
       </label>
       {err?.field === 'name' ? <p class="note error" role="alert">{err.text}</p> : null}
 
-      <label class="field">
-        <span>When</span>
-        <input type="text" value={form.when} autocomplete="off" autocapitalize="off" spellcheck={false} placeholder="30 8 * * 1-5" onInput={(e) => set({ when: target(e).value })} />
-      </label>
-      {form.when.trim() ? <p class="note">{cronSentence(form.when)}</p> : <p class="note">Five fields: minute hour day month weekday, in this machine's time zone.</p>}
+      <fieldset class="seg" role="radiogroup">
+        <legend>Runs on</legend>
+        {(['schedule', 'event'] as const).map((k) => (
+          <label key={k} class={(k === 'event') === !!form.on ? 'seg-opt on' : 'seg-opt'}>
+            <input
+              type="radio"
+              name="when-kind"
+              checked={(k === 'event') === !!form.on}
+              onChange={() => {
+                fixes('when');
+                // An event routine launches a ship; a prompt has no event to answer.
+                setForm((f) => (k === 'event' ? { ...f, on: f.on ?? { source: '', kind: '' }, mode: 'launch' } : { ...f, on: undefined }));
+              }}
+            />
+            {k === 'schedule' ? 'A schedule' : 'An event'}
+          </label>
+        ))}
+      </fieldset>
+      {form.on ? (
+        <>
+          <label class="field">
+            <span>When</span>
+            <select value={eventValue(form.on)} onChange={(e) => set({ on: choices.find((c) => c.value === target(e).value)?.on ?? { source: '', kind: '' } })}>
+              {!choices.some((c) => c.value === eventValue(form.on!)) ? <option value={eventValue(form.on)}>{form.on.kind ? eventWords(sources.value, fleet.key, form.on) : 'Choose an event'}</option> : null}
+              {groups.map(([group, list]) => (
+                <optgroup key={group} label={group}>
+                  {list.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.title}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+          {choices.length === 0 ? <p class="note">This source hasn't listed its events yet. They show here once it has.</p> : <p class="note">Runs when this happens, with the Lookout reading the event first.</p>}
+        </>
+      ) : (
+        <>
+          <label class="field">
+            <span>When</span>
+            <input type="text" value={form.when} autocomplete="off" autocapitalize="off" spellcheck={false} placeholder="30 8 * * 1-5" onInput={(e) => set({ when: target(e).value })} />
+          </label>
+          {form.when.trim() ? <p class="note">{cronSentence(form.when)}</p> : <p class="note">Five fields: minute hour day month weekday, in this machine's time zone.</p>}
+        </>
+      )}
       {err?.field === 'when' ? <p class="note error" role="alert">{err.text}</p> : null}
 
       <fieldset class="seg" role="radiogroup">
         <legend>Do</legend>
-        {(['launch', 'prompt'] as const).map((m) => (
+        {(form.on ? (['launch'] as const) : (['launch', 'prompt'] as const)).map((m) => (
           <label key={m} class={form.mode === m ? 'seg-opt on' : 'seg-opt'}>
             <input type="radio" name="do-mode" checked={form.mode === m} onChange={() => set({ mode: m })} />
             {m === 'launch' ? 'Launch a ship' : 'AdmiralBot prompt'}
@@ -312,6 +378,7 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
 export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fleet; id: string | null; creating: boolean; title: boolean; phone: boolean }) {
   const [list, setList] = useState<Routine[] | null>(null);
   const [failed, setFailed] = useState('');
+  const [spend, setSpend] = useState<RoutineSpend | undefined>();
   const [drafted, setDrafted] = useState<{ form: RoutineForm; problem?: { field: 'name' | 'when' | 'before_acting' | 'do'; message: string }; n: number } | null>(null);
   const caps: FleetCapabilities | undefined = capabilities.value.find((c) => c.key === fleet.key);
   const capsError = capabilitiesFailed.value && !caps ? "Could not load the fleet's capabilities." : '';
@@ -322,9 +389,10 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
   const search = fleetSearch.value;
 
   const load = async () => {
-    const r = await call<{ routines: Routine[] | null }>('GET', api(fleet.key));
+    const r = await call<{ routines: Routine[] | null; spend?: RoutineSpend }>('GET', api(fleet.key));
     if (r.ok) {
       setList(r.data.routines ?? []);
+      setSpend(r.data.spend);
       setFailed('');
     } else setFailed(r.error);
   };
@@ -385,6 +453,11 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
         <HoldFireToggles fleet={fleet} />
       </div>
       <RoutineTabs current="routines" />
+      {spendNotice(spend) ? (
+        <p class="note warning" role="status">
+          {spendNotice(spend)}
+        </p>
+      ) : null}
     </>
   );
   if (!list) {
@@ -482,7 +555,7 @@ export function RoutinesPage({ fleet, id, creating, title, phone }: { fleet: Fle
                   >
                     <span class="crew-main">
                       <span class="crew-name">{r.name}</span>
-                      <span class="crew-sub">{r.on ? `On ${r.on.kind.replace(/_/g, ' ')}` : cronSentence(r.when)}</span>
+                      <span class="crew-sub">{r.on ? `On: ${eventWords(sources.value, fleet.key, r.on)}` : cronSentence(r.when)}</span>
                     </span>
                     <span class="crew-side">
                       <span class="crew-count">{lastRunText(r.last_run, new Date())}</span>

@@ -858,6 +858,7 @@ test('Peek opens an event proposal with the untrusted summary, Mute rule by send
   await page.goto(admiral.url + 'app/routines/new?fleet=zulu');
   const form = page.getByRole('main').getByRole('form', { name: 'Routine' });
   await form.getByLabel('Name').fill('Review watch');
+  await form.getByRole('radio', { name: 'An event' }).tap();
   const when = form.getByLabel('When');
   await expect(when.locator('option', { hasText: 'Review requested of you' })).toHaveCount(1, { timeout: 30_000 });
   await when.selectOption({ label: 'Review requested of you' });

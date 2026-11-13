@@ -76,9 +76,28 @@ export interface RoutineForm {
 
 export type RunDot = 'ok' | 'idle' | 'bad';
 
+const REASON_WORDS: Record<string, string> = {
+  skip_filter: 'a skip filter matched',
+  repo_not_allowed: 'the repo is not on the allowlist',
+  top_action: "the sender's tier allows nothing more",
+  daily_spend_reached: 'the daily worker spend is reached',
+  daily_spend_unknown: "today's worker spend could not be read",
+  quiet_hours: 'quiet hours',
+  hold_fire: 'Hold fire is on',
+  dedupe_key_held: 'the same event was already held',
+};
+
+/** A reason code, or a comma-joined list of them, in words; a code it doesn't know stays as it is. */
+function reasonWords(reason: string): string {
+  return reason
+    .split(', ')
+    .map((c) => REASON_WORDS[c] ?? (c.startsWith('lookout_') ? `the Lookout failed (${c.slice('lookout_'.length).replace(/_/g, ' ')})` : c))
+    .join(', ');
+}
+
 /** A Recent runs row's outcome in words; `ship` is set only when the row links to a ship. */
 export function runLine(run: RoutineRun): { dot: RunDot; text: string; ship?: string } {
-  const why = run.reason ? `: ${run.reason}` : '';
+  const why = run.reason ? `: ${reasonWords(run.reason)}` : '';
   switch (run.outcome) {
     case 'launched': {
       const from = run.via === 'proposal' ? ' (from an accepted proposal)' : '';
@@ -103,20 +122,22 @@ export function runLine(run: RoutineRun): { dot: RunDot; text: string; ship?: st
 
 /** The Lookout cost of a Recent runs row in words; empty when the record has no costs. */
 export function runCost(run: RoutineRun): string {
-  void run;
-  return '';
+  const costs = run.costs ?? [];
+  if (!costs.length) return '';
+  const total = costs.reduce((n, c) => n + c.usd, 0);
+  const estimated = costs.some((c) => c.call === 'lookout_estimated');
+  return `Lookout cost ${estimated ? 'estimated ' : ''}$${total.toFixed(total < 0.01 ? 4 : 2)}`;
 }
 
 /** The event's link when it is https; null for anything else. */
 export function eventHref(event: string | undefined): string | null {
-  void event;
-  return null;
+  return event?.startsWith('https://') ? event : null;
 }
 
 /** The sentence for a fleet whose daily worker spend is reached; null before that. */
 export function spendNotice(spend: RoutineSpend | undefined): string | null {
-  void spend;
-  return null;
+  if (!spend?.reached) return null;
+  return `Worker spend today is $${spend.today_usd.toFixed(2)} of the $${spend.cap_usd.toFixed(2)} cap, so events stop at a proposal until the day turns.`;
 }
 
 /** True when the runs (newest first) hold a breaker record newer than `lastSeen`, the newest run id the screen showed before; false on a first load. */
@@ -135,7 +156,8 @@ export const errorText = (message: string) => message.replace(INVALID, '');
 export function errorField(message: string): 'name' | 'when' | 'before_acting' | 'do' | 'form' {
   const m = errorText(message);
   if (/^name\b/.test(m)) return 'name';
-  if (/^when\b/.test(m)) return 'when';
+  if (/^when\b|^on\b|^an event routine has no when/.test(m)) return 'when';
+  if (/^an event routine launches a ship/.test(m)) return 'do';
   if (/^before_acting\b|^before acting\b/i.test(m)) return 'before_acting';
   if (/^(do\b|the prompt|autopilot|args|skill|no resource|fleet \S+ has no)/.test(m)) return 'do';
   return 'form';
@@ -250,13 +272,13 @@ export function routineBody(form: RoutineForm): Record<string, unknown> {
     ...(l.skill.kind !== 'none' ? { skill: l.skill } : {}),
     ...(l.resources.length ? { resources: l.resources } : {}),
   };
-  return { name: form.name, enabled: form.enabled, when: form.when, do: form.mode === 'prompt' ? { prompt: form.prompt } : { launch }, before_acting: form.before, notify: form.notify };
+  return { name: form.name, enabled: form.enabled, ...(form.on ? { on: form.on } : { when: form.when }), do: form.mode === 'prompt' ? { prompt: form.prompt } : { launch }, before_acting: form.before, notify: form.notify };
 }
 
 /** The form a stored routine opens in. */
 export function formOfRoutine(r: Routine): RoutineForm {
   const l = r.do.launch;
-  const form = { ...blankForm(), name: r.name, enabled: r.enabled, when: r.when, before: r.before_acting, notify: r.notify };
+  const form = { ...blankForm(), name: r.name, enabled: r.enabled, when: r.when, ...(r.on ? { on: r.on } : {}), before: r.before_acting, notify: r.notify };
   if (!l) return { ...form, mode: 'prompt', prompt: r.do.prompt ?? '' };
   return {
     ...form,
@@ -267,4 +289,30 @@ export function formOfRoutine(r: Routine): RoutineForm {
 /** One Automate… link for each entry of a migration notice; none for a plain note. */
 export function noticeEntryLinks(notice: { body?: string; entries?: { key: string; name: string; panel: string; fleet?: string }[] } | undefined): { label: string; path: string }[] {
   return (notice?.entries ?? []).map((e) => ({ label: `Automate… ${e.name}, view ${e.panel}`, path: routineNewPath + automateSearch(e.key, e.panel, e.fleet) }));
+}
+
+export interface EventChoice {
+  value: string;
+  title: string;
+  /** The optgroup label: the source, with view entries apart from the rest. */
+  group: string;
+  on: NonNullable<Routine['on']>;
+}
+
+export const eventValue = (on: NonNullable<Routine['on']>) => `event:${on.source}:${on.kind}${on.panel ? `:${on.panel}` : ''}`;
+
+/** Every (kind, panel) entry the fleet's sources list, in the server's words. */
+export function eventChoices(sources: Source[], fleetKey: string): EventChoice[] {
+  return sourcesForFleet(sources, fleetKey).flatMap((s) =>
+    (s.events ?? []).map((e) => {
+      const on = { source: s.key, kind: e.kind, ...(e.panel ? { panel: e.panel } : {}) };
+      return { value: eventValue(on), title: e.title, group: e.panel ? `${s.name}: new in a view` : s.name, on };
+    }),
+  );
+}
+
+/** A routine's event in the catalog's words; the stored kind when the source no longer lists it. */
+export function eventWords(sources: Source[], fleetKey: string, on: NonNullable<Routine['on']>): string {
+  const hit = eventChoices(sources, fleetKey).find((c) => c.value === eventValue(on));
+  return hit?.title ?? on.kind.replace(/_/g, ' ');
 }
