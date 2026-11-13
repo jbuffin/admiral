@@ -202,9 +202,17 @@ type state struct {
 
 type chatOptions struct {
 	model, effort, fleet string
+	harness              string // the harness the session was launched under; "" for one started before it was recorded
 	digest               string // the digest sequence the hook last printed, as the pane holds it
 	transcript           string // "<unix ns> <source> <path>", "" before the first SessionStart
 	screen               string // a Codex chat's pane text while it has no transcript
+}
+
+// matches is whether the running session was launched with the settings the fleet has now, so New chat can clear it
+// instead of restarting it. A session that predates the harness record never matches: it restarts and gains the
+// environment its hooks read.
+func (o chatOptions) matches(f config.Fleet) bool {
+	return o.model == f.Chat.Model && o.effort == f.Chat.Effort && o.fleet == f.Key && o.harness == f.Chat.Harness
 }
 
 // route resolves the path's fleet first, so an unknown fleet or one whose chat is off is refused
@@ -474,6 +482,14 @@ func (s *fleetChat) harness() string {
 	return f.Chat.Harness
 }
 
+// paneHarness is the harness the running session was launched under, as recorded at its start: "" for a session
+// that predates the record, which no flush or scheduled reset may touch.
+func (s *fleetChat) paneHarness() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.st.opts.harness
+}
+
 // loginDir is the engineer's identity dir for the chat's harness: where the login lives, which is not always where
 // the chat keeps its transcripts. Copilot's chat has none until it launches.
 func (s *fleetChat) loginDir() string {
@@ -555,7 +571,7 @@ func (s *fleetChat) readOptions(pane string) (chatOptions, error) {
 	if err != nil {
 		return chatOptions{}, err
 	}
-	opts := chatOptions{model: o.Model, effort: o.Effort, fleet: o.Fleet, digest: o.Digest, transcript: o.Transcript}
+	opts := chatOptions{model: o.Model, effort: o.Effort, fleet: o.Fleet, harness: o.Harness, digest: o.Digest, transcript: o.Transcript}
 	if o.Transcript == "" && (s.harness() == "codex" || s.harness() == "copilot") {
 		opts.screen = s.readScreen(pane)
 	}
@@ -812,7 +828,7 @@ func resetCommand(harness string) string {
 // flushIfIdle gives an idle chat its flush turn before New chat acts, and refuses sends until serveNew returns.
 // A turn that runs or a question that waits is cleared without one, since the engineer asked for the reset.
 func (s *fleetChat) flushIfIdle(snap Snapshot) {
-	if snap.State != "idle" || !flushesBeforeReset(s.harness()) {
+	if snap.State != "idle" || !flushesBeforeReset(s.paneHarness()) {
 		return
 	}
 	s.mu.Lock()
@@ -849,8 +865,7 @@ func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "the chat is off for this fleet: "+off)
 		return
 	}
-	chat := fleet.Chat
-	if opts.model == chat.Model && opts.effort == chat.Effort && opts.fleet == fleet.Key {
+	if opts.matches(fleet) {
 		if noPath {
 			writeError(w, http.StatusConflict, NotStarted)
 			return
@@ -872,6 +887,9 @@ func (s *fleetChat) serveNew(w http.ResponseWriter, r *http.Request) {
 	if err := s.server().KillSession(ctx, s.name()); err != nil {
 		writeError(w, http.StatusBadGateway, "could not end the chat: "+err.Error())
 		return
+	}
+	if opts.harness != "" {
+		harness = opts.harness
 	}
 	s.recordReset(harness, path, dir, s.key, "")
 	s.markReset(MarkerNewChat)

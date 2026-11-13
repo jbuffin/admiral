@@ -393,3 +393,18 @@ func TestChatStartIsRefusedWhenItsClaudeDirectoryIsALinkOutOfTheHome(t *testing.
 		t.Errorf("the linked directory's file is gone: %v", err)
 	}
 }
+
+func TestOnlyAClaudeChatsPromptTellsItToSaveNotes(t *testing.T) {
+	for harness, want := range map[string]bool{"claude": true, "codex": false, "copilot": false} {
+		prompt := chatPromptFor(harness)
+		if got := strings.Contains(prompt, "call save_note with it"); got != want {
+			t.Errorf("%s prompt tells the chat to call save_note = %v, want %v", harness, got, want)
+		}
+		if !strings.Contains(prompt, "launch_ship") || strings.Contains(prompt, "%!") {
+			t.Errorf("%s prompt lost its guidance or its formatting: %q", harness, prompt)
+		}
+	}
+	if !strings.Contains(chatPromptFor("codex"), "cannot carry a fact into a later chat") {
+		t.Error("a Codex chat is not told it cannot remember")
+	}
+}

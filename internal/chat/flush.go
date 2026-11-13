@@ -53,7 +53,8 @@ func (s *Service) ResetTick() {
 func flushesBeforeReset(harness string) bool { return harness == "claude" }
 
 func (s *fleetChat) resetTick(now time.Time) {
-	if !flushesBeforeReset(s.harness()) {
+	// Both: the config may have switched since the session started, and a session that predates the record has none.
+	if !flushesBeforeReset(s.harness()) || !flushesBeforeReset(s.paneHarness()) {
 		return
 	}
 	sess, running := s.session()

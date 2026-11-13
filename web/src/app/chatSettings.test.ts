@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHAT_THRESHOLDS, INSTRUCTIONS_MAX, canSaveInstructions, instructionsCount, noteAge, switchHarness, chatErrorMessage, chatSaveBody, effortLabel, modelLabel, thresholdLabel, type ChatSettings } from './chatSettings';
+import { CHAT_THRESHOLDS, INSTRUCTIONS_MAX, canSaveInstructions, instructionsCount, memoryNotRead, noteAge, readsMemory, switchHarness, chatErrorMessage, chatSaveBody, effortLabel, modelLabel, thresholdLabel, type ChatSettings } from './chatSettings';
 
 const shown: ChatSettings = { harness: 'claude', model: 'sonnet', effort: '', context_threshold: 150000 };
 
@@ -95,5 +95,18 @@ describe('a note\'s age', () => {
     expect(noteAge('2026-11-12T07:00:00Z', now)).toBe('5h ago');
     expect(noteAge('2026-11-09T12:00:00Z', now)).toBe('3d ago');
     expect(noteAge('soon', now)).toBe('');
+  });
+});
+
+describe('what a chat reads', () => {
+  it('is the instructions, the notes and the scheduled refresh on Claude Code alone', () => {
+    expect(readsMemory('claude')).toBe(true);
+    expect(readsMemory('codex')).toBe(false);
+    expect(readsMemory('copilot')).toBe(false);
+  });
+  it('says so under the instructions and notes of a chat that does not, and nothing on Claude Code', () => {
+    expect(memoryNotRead('claude')).toBe('');
+    expect(memoryNotRead('codex')).toBe("AdmiralBot on Codex doesn't read the instructions or the notes yet. They are kept here for when it does.");
+    expect(memoryNotRead('copilot')).toContain('Copilot');
   });
 });

@@ -330,7 +330,7 @@ var mcpTools = []mcpTool{
 			"wait_id":      str("the id of a question already asked, to wait on it instead of asking again"),
 			"wait_seconds": num("how long to wait for the answer"),
 		}), askQuestion},
-	{"save_note", "Save a fact the engineer asked you to remember. It survives context resets and is kept for every later chat; the engineer manages the saved notes on Preferences. One short fact per note.",
+	{"save_note", "Save a fact the engineer asked you to remember. Admiral keeps it and the engineer manages the saved notes on Preferences; a Claude Code chat reads its notes again after every reset, a chat on another harness does not yet. One short fact per note.",
 		obj([]string{"text"}, map[string]any{"text": str("the fact to remember, in a sentence or two")}), saveNote},
 }
 

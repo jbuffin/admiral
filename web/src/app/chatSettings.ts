@@ -20,6 +20,13 @@ export function switchHarness(settings: ChatSettings, option: Pick<ChatHarnessOp
   };
 }
 
+/** Only a Claude Code chat is given the instructions, the notes and the scheduled refresh; the other harnesses' chats take none of them yet. */
+export const readsMemory = (harness: string): boolean => harness === 'claude';
+
+/** The line under the instructions and notes of a chat that doesn't read them. */
+export const memoryNotRead = (harness: string): string =>
+  readsMemory(harness) ? '' : `AdmiralBot on ${harness.charAt(0).toUpperCase() + harness.slice(1)} doesn't read the instructions or the notes yet. They are kept here for when it does.`;
+
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export const harnessLabel = capital;

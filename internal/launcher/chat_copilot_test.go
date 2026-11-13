@@ -358,7 +358,7 @@ func TestCopilotChatEnvHasItsOwnHomeThePluginOnlyFlagAndNoOtherConfigOrLogin(t *
 	if v, ok := vars["COPILOT_CUSTOM_INSTRUCTIONS_DIRS"]; ok && !strings.HasPrefix(v, ChatDir(c.home, "work")) {
 		t.Errorf("COPILOT_CUSTOM_INSTRUCTIONS_DIRS = %q: only a directory of Admiral's own may be there", v)
 	}
-	want := map[string]string{"ADMIRAL_HOME": c.home, "ADMIRAL_CHAT_FLEET": "work", "ADMIRAL_PORT": "4242"}
+	want := map[string]string{"ADMIRAL_HOME": c.home, "ADMIRAL_CHAT_FLEET": "work", "ADMIRAL_PORT": "4242", "ADMIRAL_CHAT_HARNESS": "copilot"}
 	for k, v := range vars {
 		if strings.HasPrefix(k, "ADMIRAL_") && want[k] != v {
 			t.Errorf("env holds %s=%q: only %v belong to the chat", k, v, want)
