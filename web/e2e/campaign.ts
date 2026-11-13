@@ -189,6 +189,8 @@ export function seedChatCampaignFleet(a: Admiral) {
   const file = join(a.home, 'config.json');
   const config = JSON.parse(readFileSync(file, 'utf8'));
   config.fleets.harbor.owners = ['acme'];
+  // Both fleets search the home, so the campaign's repo would route to the first of them.
+  for (const k of Object.keys(config.fleets)) if (k !== 'harbor') config.fleets[k].search_roots = [];
   config.sources.github = { plugin: 'github', name: 'GitHub', fleet: 'harbor', settings: { views: [] } };
   a.writeConfig(config);
   const widgets = join(a.home, 'widgets');
@@ -201,6 +203,7 @@ export function seedChatCampaignFleet(a: Admiral) {
 /** AdmiralBot's commitment to work on the campaign, as it records one: Admiral reads it on its next tick. */
 export function workOnCampaign(a: Admiral, fleet: string, campaign: string) {
   const line = { v: 1, ts: new Date().toISOString(), event: 'added', id: 'cw1', kind: 'commitment', text: `work on acme/widgets#${MAP}`, via: 'admiralbot', trigger: { kind: 'campaign', subject: campaign }, action: 'work', harness: 'claude' };
+  mkdirSync(join(a.home, 'chat', fleet), { recursive: true });
   appendFileSync(join(a.home, 'chat', fleet, 'ledger.jsonl'), JSON.stringify(line) + '\n');
 }
 
@@ -208,7 +211,7 @@ export function workOnCampaign(a: Admiral, fleet: string, campaign: string) {
 export async function proposalJourney(page: Page, a: Admiral, tap: (l: Locator) => Promise<void>) {
   await githubReady(a);
   const followed = await fetch(`${a.url}api/v1/campaigns`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reference: 'acme/widgets#20' }) });
-  expect(followed.status).toBe(201);
+  expect(followed.status, await followed.clone().text()).toBe(201);
   workOnCampaign(a, 'harbor', ((await followed.json()) as { id: string }).id);
 
   await page.goto(a.url + 'app/chat?fleet=harbor');
