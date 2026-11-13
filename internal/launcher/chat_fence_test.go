@@ -430,3 +430,14 @@ func TestOnlyAClaudeChatsPromptTellsItToSaveNotes(t *testing.T) {
 		t.Error("a Codex chat is not told it cannot remember")
 	}
 }
+
+func TestAClaudeChatsPromptNamesMakeCommitmentOnlyForWhatTheEngineerAsked(t *testing.T) {
+	prompt := chatPromptFor("claude")
+	if !strings.Contains(prompt, "make_commitment") || !strings.Contains(prompt, "save_note") {
+		t.Errorf("claude prompt = %q, want it to name make_commitment beside save_note", prompt)
+	}
+	i := strings.Index(prompt, "make_commitment")
+	if i < 0 || !strings.Contains(prompt[max(0, i-200):min(len(prompt), i+200)], "asks") {
+		t.Errorf("claude prompt does not tie make_commitment to what the engineer asks for: %q", prompt)
+	}
+}

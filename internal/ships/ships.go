@@ -555,7 +555,7 @@ func (s *Service) LaunchOrder(req launcher.Request) (Ship, *launcher.Error) {
 				hosts = launcher.GitHubHosts(s.Launcher.Config(), fleet)
 			}
 			var lerr *launcher.Error
-			if req.Issues, lerr = checkIssueURLs(req.Issues, hosts); lerr != nil {
+			if req.Issues, lerr = CheckIssueURLs(req.Issues, hosts); lerr != nil {
 				return Ship{}, lerr
 			}
 		} else {

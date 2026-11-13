@@ -478,6 +478,18 @@ func serve(args []string) error {
 	shipService.ChatPrompt = chatService.PromptKey
 	chatService.OnQuestions = inboxService.Changed
 	chatService.Ships, chatService.Campaigns, chatService.Inbox = shipService.List, followStore.List, inboxService.List
+	chatService.SourceFleet = func(key string) (string, bool) {
+		src, ok := cfg.Current().Source(key)
+		return src.Fleet, ok
+	}
+	chatService.OrderRepo = func(source, id string) (string, string, bool) {
+		text, _, repo, _, _, err := sourceService.Order(source, id)
+		return text, repo, err == nil
+	}
+	chatService.OrderExists = func(source, id string) bool {
+		_, _, _, _, _, err := sourceService.Order(source, id)
+		return err == nil
+	}
 	inboxService.ChatQuestions = chatService.WaitingQuestions
 	inboxService.AnswerChat = chatService.AnswerQuestion
 	if err := chatService.RemoveOldLayout(); err != nil {

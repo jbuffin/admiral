@@ -13,6 +13,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -51,6 +52,11 @@ type event struct {
 	Kind  string    `json:"kind,omitempty"`
 	Text  string    `json:"text,omitempty"`
 	Via   string    `json:"via,omitempty"`
+
+	Trigger *Trigger        `json:"trigger,omitempty"`
+	Action  string          `json:"action,omitempty"`
+	Launch  json.RawMessage `json:"launch,omitempty"`
+	Reason  string          `json:"reason,omitempty"`
 }
 
 // RefusedError is a write the ledger won't take; its message is for AdmiralBot to act on.
@@ -76,15 +82,9 @@ func (l *Ledger) AddNote(fleet, text, via string) (Entry, error) {
 	if !chatlog.Valid(fleet) {
 		return Entry{}, fmt.Errorf("ledger: %q is not a fleet key", fleet)
 	}
-	text = trim(text)
-	if r, bad := HiddenRune(text); bad {
-		return Entry{}, hiddenRefusal(r)
-	}
-	switch n := utf8.RuneCountInString(text); {
-	case n == 0:
-		return Entry{}, &RefusedError{"the note is empty"}
-	case n > MaxNoteChars:
-		return Entry{}, &RefusedError{fmt.Sprintf("the note is %d characters; a note is at most %d, so shorten it", n, MaxNoteChars)}
+	text, err := checkText(text, "note")
+	if err != nil {
+		return Entry{}, err
 	}
 	id, err := newID()
 	if err != nil {
@@ -92,7 +92,7 @@ func (l *Ledger) AddNote(fleet, text, via string) (Entry, error) {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	open, err := l.fold(fleet)
+	open, _, err := l.fold(fleet)
 	if err != nil {
 		return Entry{}, err
 	}
@@ -113,47 +113,84 @@ func (l *Ledger) Notes(fleet string) ([]Entry, error) {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	open, err := l.fold(fleet)
+	open, _, err := l.fold(fleet)
 	if err != nil {
 		return nil, err
 	}
-	out := []Entry{}
-	for _, e := range open {
-		if e.Kind == KindNote {
-			out = append(out, e)
-		}
+	if open == nil {
+		open = []Entry{}
 	}
-	return out, nil
+	return open, nil
 }
 
-// fold is the open entries of every kind, oldest first. A fleet with no ledger has none.
-func (l *Ledger) fold(fleet string) ([]Entry, error) {
+// fold is the open notes and the open commitments (waiting included), each oldest first. A fleet
+// with no ledger has none. A closed entry never changes again, so an event for one is ignored.
+func (l *Ledger) fold(fleet string) ([]Entry, []Commitment, error) {
 	dir, err := l.fleetDir(fleet, false)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
+		return nil, nil, nil
 	} else if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer dir.Close()
 	evs, err := readEvents(dir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	var open []Entry
+	var notes []Entry
+	var commits []Commitment
 	for _, ev := range evs {
-		switch ev.Event {
-		case EventAdded:
-			open = append(open, Entry{ID: ev.ID, Kind: ev.Kind, Text: ev.Text, TS: ev.TS, Via: ev.Via})
-		case EventCancelled:
-			for i, e := range open {
-				if e.ID == ev.ID {
-					open = append(open[:i], open[i+1:]...)
-					break
+		if ev.Event == EventAdded {
+			if ev.Kind == KindCommitment {
+				c := Commitment{ID: ev.ID, Text: ev.Text, Action: ev.Action, Launch: ev.Launch, TS: ev.TS, Via: ev.Via}
+				if ev.Trigger != nil {
+					c.Trigger = *ev.Trigger
 				}
+				commits = append(commits, c)
+			} else {
+				notes = append(notes, Entry{ID: ev.ID, Kind: ev.Kind, Text: ev.Text, TS: ev.TS, Via: ev.Via})
+			}
+			continue
+		}
+		if ev.Event == EventCancelled {
+			if i := indexOf(notes, ev.ID); i >= 0 {
+				notes = append(notes[:i], notes[i+1:]...)
+				continue
 			}
 		}
+		i := slices.IndexFunc(commits, func(c Commitment) bool { return c.ID == ev.ID })
+		if i < 0 {
+			continue
+		}
+		switch ev.Event {
+		case EventFired:
+			commits[i].Waiting = true
+		case EventShown:
+			commits[i].Shown = true
+		case EventDone, EventDropped, EventCancelled:
+			commits = append(commits[:i], commits[i+1:]...)
+		}
 	}
-	return open, nil
+	return notes, commits, nil
+}
+
+func indexOf(notes []Entry, id string) int {
+	return slices.IndexFunc(notes, func(e Entry) bool { return e.ID == id })
+}
+
+// checkText trims text and refuses it when empty, too long or hiding a character; what names the record in the reason.
+func checkText(text, what string) (string, error) {
+	text = trim(text)
+	if r, bad := HiddenRune(text); bad {
+		return "", hiddenRefusal(r, what)
+	}
+	switch n := utf8.RuneCountInString(text); {
+	case n == 0:
+		return "", &RefusedError{fmt.Sprintf("the %s is empty", what)}
+	case n > MaxNoteChars:
+		return "", &RefusedError{fmt.Sprintf("the %s is %d characters; a %s is at most %d, so shorten it", what, n, what, MaxNoteChars)}
+	}
+	return text, nil
 }
 
 func (l *Ledger) fleetDir(fleet string, create bool) (*os.Root, error) {
@@ -273,8 +310,8 @@ func HiddenRune(text string) (rune, bool) {
 	return 0, false
 }
 
-func hiddenRefusal(r rune) *RefusedError {
-	return &RefusedError{fmt.Sprintf("the note holds a character that shows nothing (U+%04X); write it again in plain visible text", r)}
+func hiddenRefusal(r rune, what string) *RefusedError {
+	return &RefusedError{fmt.Sprintf("the %s holds a character that shows nothing (U+%04X); write it again in plain visible text", what, r)}
 }
 
 // MaxInstructionChars caps a fleet's instructions, in code points after trimming.
@@ -341,7 +378,7 @@ func (l *Ledger) Promote(fleet, id string) (string, error) {
 		return "", err
 	}
 	if r, bad := HiddenRune(note.Text); bad {
-		return "", hiddenRefusal(r)
+		return "", hiddenRefusal(r, "note")
 	}
 	next := note.Text
 	if old != "" {
@@ -363,12 +400,12 @@ func (l *Ledger) Promote(fleet, id string) (string, error) {
 }
 
 func (l *Ledger) openNote(fleet, id string) (Entry, error) {
-	open, err := l.fold(fleet)
+	open, _, err := l.fold(fleet)
 	if err != nil {
 		return Entry{}, err
 	}
 	for _, e := range open {
-		if e.ID == id && e.Kind == KindNote {
+		if e.ID == id {
 			return e, nil
 		}
 	}

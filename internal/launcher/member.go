@@ -62,9 +62,13 @@ type memberAsk struct {
 // resolveMember is the one path a ship and a crew boat take to become a crew member: it resolves the
 // member over the layers, picks its harness, applies the model rule and builds its prompt.
 func (l *Launcher) resolveMember(ask memberAsk) (*memberLaunch, *Error) {
-	home, err := filepath.Abs(l.Home)
+	return resolveMember(l.Home, ask)
+}
+
+func resolveMember(homeDir string, ask memberAsk) (*memberLaunch, *Error) {
+	home, err := filepath.Abs(homeDir)
 	if err != nil {
-		return nil, refuse(http.StatusInternalServerError, "could not resolve %s: %v", l.Home, err)
+		return nil, refuse(http.StatusInternalServerError, "could not resolve %s: %v", homeDir, err)
 	}
 	if !crew.ValidName(ask.Name) {
 		return nil, refuse(http.StatusBadRequest, "crew member name %q is not a lowercase slug of at most 64 characters", ask.Name)

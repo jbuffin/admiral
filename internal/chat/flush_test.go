@@ -2,6 +2,7 @@ package chat
 
 import (
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -148,6 +149,14 @@ func TestOnlyAClaudeChatIsFlushedAndResetOnASchedule(t *testing.T) {
 	for harness, want := range map[string]bool{"claude": true, "codex": false, "copilot": false, "": false} {
 		if got := flushesBeforeReset(harness); got != want {
 			t.Errorf("flushesBeforeReset(%q) = %v, want %v", harness, got, want)
+		}
+	}
+}
+
+func TestTheFlushPromptAsksForAnyPromiseNotYetRecorded(t *testing.T) {
+	for _, want := range []string{"save_note", "make_commitment"} {
+		if !strings.Contains(FlushPrompt, want) {
+			t.Errorf("FlushPrompt = %q, want it to name %s", FlushPrompt, want)
 		}
 	}
 }

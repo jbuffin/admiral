@@ -33,8 +33,8 @@ const chatPromptTemplate = "You are AdmiralBot, the engineer's assistant in Admi
 
 // What the chat is told about remembering: only a Claude Code chat reads its notes again after a reset.
 const (
-	rememberClaude = "When the engineer asks you to remember something, call save_note with it and quote the saved note back in your reply; a refusal says why, so tell the engineer."
-	rememberOther  = "You cannot carry a fact into a later chat yet: when the engineer asks you to remember something, say so, and do not call save_note."
+	rememberClaude = "When the engineer asks you to remember something, call save_note with it and quote the saved note back in your reply; a refusal says why, so tell the engineer. When the engineer asks you to do something later or to watch for something, call make_commitment, never for a promise you thought of yourself, and quote it back: Admiral fires it with no chat turn, so it does not depend on your memory."
+	rememberOther  = "You cannot carry a fact into a later chat yet: when the engineer asks you to remember something, say so, and do not call save_note. When the engineer asks you to do something later or to watch for something, call make_commitment, never for a promise you thought of yourself, and quote it back: it lives in Admiral's ledger and fires with no chat turn."
 )
 
 // chatPromptFor is the prompt of a chat on the harness.

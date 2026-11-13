@@ -63,6 +63,7 @@ var allowed = []struct {
 	{"GET", []string{"hold-fire"}, plain},
 	{"POST", []string{"hold-fire", "on"}, plain},
 	{"POST", []string{"chat", "notes"}, plain},
+	{"POST", []string{"chat", "commitments"}, plain},
 }
 
 func (g *Guard) Middleware(next http.Handler) http.Handler {

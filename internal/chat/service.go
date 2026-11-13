@@ -92,6 +92,11 @@ type Service struct {
 	Ships     func() []ships.Ship
 	Campaigns func() []follow.Followed
 	Inbox     func() []inbox.Item
+	// SourceFleet names the fleet an order source belongs to; OrderExists says whether a source lists an order.
+	SourceFleet func(key string) (fleet string, known bool)
+	OrderExists func(source, id string) bool
+	// OrderRepo is an order's text and repo, which a clone launch derives its repository from.
+	OrderRepo func(source, id string) (text, repo string, ok bool)
 	// DigestAcked replaces the digest sequence read from the chat's pane options; a test seam.
 	DigestAcked func(fleet string) uint64
 
@@ -235,6 +240,9 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/chat/{fleet}/notes", s.serveNotes)
 	mux.HandleFunc("DELETE /api/chat/{fleet}/notes/{id}", s.serveNoteDelete)
 	mux.HandleFunc("POST /api/chat/{fleet}/notes/{id}/promote", s.serveNotePromote)
+	mux.HandleFunc("POST /api/chat/commitments", s.serveCommitmentAdd)
+	mux.HandleFunc("GET /api/chat/{fleet}/commitments", s.serveCommitments)
+	mux.HandleFunc("DELETE /api/chat/{fleet}/commitments/{id}", s.serveCommitmentDelete)
 	mux.HandleFunc("GET /api/chat/{fleet}/instructions", s.serveInstructions)
 	mux.HandleFunc("PUT /api/chat/{fleet}/instructions", s.serveInstructionsSet)
 	mux.HandleFunc("GET /api/chat/{fleet}/session", s.route((*fleetChat).serveSession))
