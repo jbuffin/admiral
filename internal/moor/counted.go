@@ -56,14 +56,14 @@ type Check struct {
 // Counted returns the PRs that count towards mooring: GitHub confirms them open,
 // they are on the client's host and they route to the ship's fleet.
 func Counted(ctx context.Context, c Check, prs []string) []string {
-	out, _ := CountedOK(ctx, c, prs)
+	out, _ := CountedAnswered(ctx, c, prs)
 	return out
 }
 
-// CountedOK is Counted that also says whether GitHub answered: false when there is no client or the retries ran out.
-func CountedOK(ctx context.Context, c Check, prs []string) ([]string, bool) {
+// CountedAnswered is Counted that also says whether GitHub answered: false is a failed check, not "none open".
+func CountedAnswered(ctx context.Context, c Check, prs []string) (counted []string, answered bool) {
 	if c.GitHub == nil || c.Route == nil {
-		return nil, false
+		return nil, true
 	}
 	var candidates []string
 	for _, u := range prs {

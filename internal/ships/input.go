@@ -151,6 +151,7 @@ func (s *Service) stopShip(session string, fields map[string]any) error {
 	// Not a request's context: a client that hangs up must not abandon the write.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	defer s.lockShip(session)()
 	sess, ok := s.find(session)
 	if !ok {
 		return ErrNotFound

@@ -62,26 +62,11 @@ func (s *Service) report(session string) moor.Report {
 // cannot be asked, the carried PRs the last poll saw open stand.
 func (s *Service) countedPRs(ctx context.Context, sess sessionhost.Session) []string {
 	carried := s.carriedOpen(sess)
-	prs := slices.Clone(carried)
-	for _, u := range s.report(sess.Name).PRs {
-		if !slices.Contains(prs, u) {
-			prs = append(prs, u)
-		}
-	}
-	if len(prs) == 0 {
-		return nil
-	}
-	var counted []string
-	ok := false
-	if s.GitHub != nil {
-		fleet := sess.Options["fleet"]
-		router := github.RouterFromFleets(s.Launcher.Config().Fleets)
-		counted, ok = moor.CountedOK(ctx, moor.Check{Fleet: fleet, GitHub: s.GitHub(fleet), Route: router.Route}, prs)
-	}
-	if !ok {
+	prs, answered := s.countedFrom(ctx, sess, withCarried(carried, s.report(sess.Name).PRs))
+	if !answered || s.GitHub == nil {
 		return carried
 	}
-	return counted
+	return prs
 }
 
 // moor writes the record before the session goes, so a crash between leaves the ship in one place or both.

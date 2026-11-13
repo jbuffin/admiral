@@ -170,6 +170,8 @@ type Service struct {
 	listing map[OrderKey]unlisted
 	// settling holds the exit-0 ships whose PRs are being checked, by session.
 	settling map[string]bool
+	// ending holds a lock per ship so a Stop, a Moor and an automatic moor do not run together.
+	ending   map[string]*sync.Mutex
 	settleWG sync.WaitGroup
 	// open is what each live ship's report says of its open PRs, by session; under openMu.
 	openMu sync.Mutex
@@ -242,7 +244,10 @@ func (s *Service) ship(sess sessionhost.Session) Ship {
 			sh.PolledAt = p.at.Format(time.RFC3339)
 		}
 	}
-	sh.OpenPRs = s.openPRsOf(sess.Name)
+	sh.OpenPRs = withCarried(s.carriedOpen(sess), s.openPRsOf(sess.Name))
+	if len(sh.OpenPRs) == 0 {
+		sh.OpenPRs = nil
+	}
 	if s.Tail != nil {
 		sh.Tail = s.Tail(sess.Name)
 	}

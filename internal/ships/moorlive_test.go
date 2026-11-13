@@ -529,3 +529,58 @@ func TestReturnWithMoorOnAMooredShipKeepsTodays409(t *testing.T) {
 	wantError(t, rec, http.StatusConflict, "a moored ship")
 	_ = n
 }
+
+func TestADoneShipWhoseGitHubCheckFailedMoorsOnceGitHubAnswersWithTheReportUnchanged(t *testing.T) {
+	oldWin, oldFirst := moor.RetryWindow, openRetryFirst
+	moor.RetryWindow, openRetryFirst = 200*time.Millisecond, 100*time.Millisecond
+	t.Cleanup(func() { moor.RetryWindow, openRetryFirst = oldWin, oldFirst })
+	r := newLiveRig(t, false)
+	r.gh.set(nil, errors.New("gh is down"))
+	go r.s.Run(r.ctx)
+	r.writeReport(t, "done", livePR7)
+	waitUntil(t, "GitHub to be asked", func() bool { return r.gh.asked() > 0 })
+	r.turn(t, "needs_you", "stop")
+	holdsFor(t, 600*time.Millisecond, "the ship moored or listed a PR while GitHub failed", func() bool {
+		s, _, ok := r.wire(t)
+		return ok && s.Status == "needs_you" && len(s.OpenPRs) == 0 && !contains(r.eventNames(t), "moored")
+	})
+
+	r.gh.set(map[string]bool{livePR7: true}, nil)
+	r.waitMoored(t)
+	r.wantMooredLog(t)
+}
+
+func TestMoorAnswers409WhenGitHubDoesNotAnswer(t *testing.T) {
+	old := moor.RetryWindow
+	moor.RetryWindow = 200 * time.Millisecond
+	t.Cleanup(func() { moor.RetryWindow = old })
+	r := newLiveRig(t, false)
+	r.writeReport(t, "partial", livePR7)
+	r.gh.set(nil, errors.New("gh is down"))
+	if rec := r.post("stop", `{"moor":true}`); rec.Code != http.StatusConflict {
+		t.Fatalf("stop with moor while gh fails = %d %s, want 409", rec.Code, rec.Body)
+	}
+	if !r.live(t) || contains(r.eventNames(t), "moored") {
+		t.Errorf("the ship was ended or moored by a Moor that GitHub did not confirm")
+	}
+}
+
+func TestMoorFindsNothingToMoorWhenAStopEndedTheShipFirst(t *testing.T) {
+	r := newLiveRig(t, false)
+	r.writeReport(t, "partial", livePR7)
+	unlock := r.s.lockShip("saltpaw") // the Stop in progress
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() { done <- r.post("stop", `{"moor":true}`) }()
+	time.Sleep(300 * time.Millisecond) // the request has checked GitHub and waits for the lock
+	if err := r.s.killShip(context.Background(), "saltpaw", false); err != nil {
+		t.Fatal(err)
+	}
+	_ = r.s.Host.Sync(context.Background())
+	unlock()
+	if rec := <-done; rec.Code != http.StatusInternalServerError {
+		t.Errorf("Moor after the ship ended = %d %s, want 500", rec.Code, rec.Body)
+	}
+	if _, err := os.Stat(r.mooredFile()); err == nil || contains(r.eventNames(t), "moored") {
+		t.Errorf("a ship that was already ended got a moored record")
+	}
+}
