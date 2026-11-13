@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/jbuffin/admiral/internal/standing"
 )
@@ -84,6 +85,30 @@ func parseLimits(path string, raw json.RawMessage, preset standing.Preset) (stan
 	return l, nil
 }
 
+// overriddenPaths lists the Limits a fleet stores, as the field paths the sentences carry, in catalog order.
+// The file already parsed, so a member that fails to read cannot occur.
+func overriddenPaths(raw json.RawMessage) []string {
+	stored := map[string]bool{}
+	top, _ := members("limits", raw)
+	for _, m := range top {
+		if !slices.Contains(limitGroups, m.key) {
+			stored[m.key] = true
+			continue
+		}
+		sub, _ := members(m.key, m.raw)
+		for _, n := range sub {
+			stored[m.key+"."+n.key] = true
+		}
+	}
+	out := []string{}
+	for _, sn := range standing.Sentences(standing.Limits{}) {
+		if stored[sn.Field] {
+			out = append(out, sn.Field)
+		}
+	}
+	return out
+}
+
 func parseCeilings(path string, raw json.RawMessage, c *standing.Ceilings) error {
 	ms, err := members(path, raw)
 	if err != nil {
@@ -106,7 +131,7 @@ func parseCeilings(path string, raw json.RawMessage, c *standing.Ceilings) error
 		default:
 			return fmt.Errorf("%s: unknown key", p)
 		}
-		if *dst, err = parseCeiling(p, m.key, m.raw); err != nil {
+		if *dst, err = parseCeiling(p, m.key, m.raw, *dst); err != nil {
 			return err
 		}
 	}
@@ -147,19 +172,21 @@ func checkRestricted(path string, level standing.Level, r standing.Restricted) e
 	return nil
 }
 
-func parseCeiling(path, tier string, raw json.RawMessage) (standing.Ceiling, error) {
+// parseCeiling layers the given keys over base, the preset's ceiling, so a key left out stays.
+// A level that leaves A3 drops the base's restricted level; one that stays at A3 keeps it.
+func parseCeiling(path, tier string, raw json.RawMessage, base standing.Ceiling) (standing.Ceiling, error) {
 	ms, err := members(path, raw)
 	if err != nil {
-		return standing.Ceiling{}, err
+		return base, err
 	}
-	var c standing.Ceiling
-	var thresholdRaw json.RawMessage
-	haveLevel := false
+	c := base
+	var restricted *standing.Restricted
+	levelGiven := false
 	for _, m := range ms {
 		p := path + "." + m.key
 		switch m.key {
 		case "level":
-			haveLevel = true
+			levelGiven = true
 			if c.Level, err = parseLevel(p, m.raw); err != nil {
 				return c, err
 			}
@@ -167,9 +194,11 @@ func parseCeiling(path, tier string, raw json.RawMessage) (standing.Ceiling, err
 				return c, fmt.Errorf("%s: T3 is capped at A1, got %s", p, c.Level)
 			}
 		case "restricted":
-			if c.Restricted, err = parseRestricted(p, m.raw); err != nil {
+			r, err := parseRestricted(p, m.raw)
+			if err != nil {
 				return c, err
 			}
+			restricted = &r
 		case "asks_first":
 			if tier != "t1" {
 				return c, fmt.Errorf("%s: only the T1 ceiling asks first", p)
@@ -181,23 +210,41 @@ func parseCeiling(path, tier string, raw json.RawMessage) (standing.Ceiling, err
 			if tier != "t4" {
 				return c, fmt.Errorf("%s: only the T4 ceiling has a threshold", p)
 			}
-			thresholdRaw = m.raw
+			c.Threshold = nil // a stored null is the engineer removing the preset's threshold
+			if !isNull(m.raw) {
+				if c.Threshold, err = parseT4Threshold(p, m.raw); err != nil {
+					return c, err
+				}
+			}
 		default:
 			return c, fmt.Errorf("%s: unknown key", p)
 		}
 	}
-	if !haveLevel {
-		return c, fmt.Errorf("%s.level: required", path)
+	if levelGiven && c.Level != standing.A3 {
+		c.Restricted = ""
+	}
+	if restricted != nil {
+		c.Restricted = *restricted
 	}
 	if err := checkRestricted(path, c.Level, c.Restricted); err != nil {
 		return c, err
 	}
-	if thresholdRaw != nil {
-		if c.Threshold, err = parseT4Threshold(path+".threshold", thresholdRaw); err != nil {
-			return c, err
-		}
+	if t := c.Threshold; t != nil && thresholdBelow(*t, c) {
+		return c, fmt.Errorf("%s.threshold.level: a threshold only raises the ceiling, so it cannot be below %s", path, ceilingName(c))
 	}
 	return c, nil
+}
+
+// thresholdBelow is whether a threshold would lower its own ceiling; two A3s compare by restricted level.
+func thresholdBelow(t standing.Threshold, c standing.Ceiling) bool {
+	return t.Level < c.Level || t.Level == standing.A3 && c.Level == standing.A3 && t.Restricted == standing.Investigate && c.Restricted == standing.DraftFix
+}
+
+func ceilingName(c standing.Ceiling) string {
+	if c.Level == standing.A3 {
+		return fmt.Sprintf("%s (%s)", c.Level, c.Restricted)
+	}
+	return c.Level.String()
 }
 
 func parseT4Threshold(path string, raw json.RawMessage) (*standing.Threshold, error) {
@@ -354,6 +401,10 @@ func parseRepos(path string, raw json.RawMessage) ([]string, error) {
 func parseGlobs(path string, raw json.RawMessage) ([]string, error) {
 	return textList(path, raw, func(s string) string {
 		switch {
+		case s != strings.TrimSpace(s):
+			return "must not start or end with whitespace"
+		case strings.ContainsFunc(s, func(r rune) bool { return unicode.IsControl(r) || r == '(' || r == ')' || r == ',' }):
+			return "must not hold control characters, parentheses or commas"
 		case filepath.IsAbs(s) || strings.HasPrefix(s, "/") || strings.HasPrefix(s, "~"):
 			return "must be relative to the repo"
 		case slices.Contains(strings.Split(filepath.ToSlash(s), "/"), ".."):

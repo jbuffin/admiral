@@ -46,6 +46,8 @@ type FleetView struct {
 	Preset        string              `json:"preset"`
 	Limits        standing.Limits     `json:"limits"`
 	Sentences     []standing.Sentence `json:"sentences"`
+	// Overridden lists the Limits this fleet stores, as the field paths the sentences carry; the rest read from the preset.
+	Overridden []string `json:"overridden"`
 }
 
 type DockView struct {
@@ -75,7 +77,7 @@ func (m *Manager) viewLocked() View {
 			SearchRoots: f.SearchRoots, Owners: nonNil(f.Owners), WakeReviewers: nonNil(f.WakeReviewers), CloneRoot: f.CloneRoot,
 			CanLaunch: f.CanLaunch(), Notify: f.Notify, Docks: []DockView{},
 			Chat:   ChatView{f.Chat.Harness, f.Chat.Model, f.Chat.Effort, f.Chat.ThresholdJSON(), off == "", off, offered(opts), opts, ChatModelsFor(f.Chat.Harness), ChatEffortsFor(f.Chat.Harness)},
-			Preset: string(f.Preset), Limits: f.Limits.Clone(), Sentences: standing.Sentences(f.Limits)}
+			Preset: string(f.Preset), Limits: f.Limits.Clone(), Sentences: standing.Sentences(f.Limits), Overridden: nonNil(f.Overridden)}
 		for _, h := range f.Harnesses {
 			warnings := h.Warnings
 			if warnings == nil {

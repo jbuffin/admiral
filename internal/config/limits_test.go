@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strconv"
 	"strings"
@@ -392,5 +393,169 @@ func TestSwitchingPresetClearsOverridesAndKeepsQuietHours(t *testing.T) {
 	cfg, err := config.Parse(mustRead(t, dir+"/config.json"))
 	if err != nil || cfg.Fleets[0].Preset != standing.Home || len(cfg.Fleets[0].Limits.QuietHours) != 1 || cfg.Fleets[0].Limits.WallClockMinutes != 60 {
 		t.Fatalf("the written file parses to preset %q, %+v, %v; want home with the window and Home's wall clock", cfg.Fleets[0].Preset, cfg.Fleets[0].Limits, err)
+	}
+}
+
+func TestAPartialCeilingLayersOverThePresetsCeiling(t *testing.T) {
+	cfg, err := config.Parse([]byte(limitsFleet("work", `{"ceilings":{"t1":{"level":"A5"}}}`)))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if !cfg.Fleets[0].Limits.Ceilings.T1.AsksFirst {
+		t.Error("Work T1 with only a level lost asks_first")
+	}
+	cfg, err = config.Parse([]byte(limitsFleet("home", `{"ceilings":{"t4":{"level":"A3","restricted":"investigate"}}}`)))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if th := cfg.Fleets[0].Limits.Ceilings.T4.Threshold; th == nil || th.Events != 10 {
+		t.Errorf("Home T4 with only level and restricted has threshold %+v, want the preset's", th)
+	}
+	cfg, err = config.Parse([]byte(limitsFleet("home", `{"ceilings":{"t2":{"level":"A4"}}}`)))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if c := cfg.Fleets[0].Limits.Ceilings.T2; c.Level != standing.A4 || c.Restricted != "" {
+		t.Errorf("Home T2 moved off A3 reads %+v, want A4 with no restricted level", c)
+	}
+}
+
+func TestAThresholdOnlyRaisesItsCeiling(t *testing.T) {
+	for _, c := range []struct{ name, t4 string }{
+		{"a level below the base", `{"level":"A4","threshold":{"events":10,"days":14,"level":"A1"}}`},
+		{"investigate under a draft-fix base", `{"level":"A3","restricted":"draft_fix","threshold":{"events":10,"days":14,"level":"A3","restricted":"investigate"}}`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := config.Parse([]byte(limitsFleet("work", `{"ceilings":{"t4":`+c.t4+`}}`)))
+			if err == nil || !strings.Contains(err.Error(), "limits.ceilings.t4.threshold.level") {
+				t.Fatalf("Parse error = %v, want one naming limits.ceilings.t4.threshold.level", err)
+			}
+		})
+	}
+	if _, err := config.Parse([]byte(limitsFleet("work", `{"ceilings":{"t4":{"level":"A3","restricted":"investigate","threshold":{"events":10,"days":14,"level":"A4"}}}}`))); err != nil {
+		t.Errorf("a threshold that rises: %v", err)
+	}
+}
+
+func TestWriteDenyRefusesWhatBreaksARule(t *testing.T) {
+	for name, glob := range map[string]string{
+		"leading space": " .env", "trailing space": ".env ", "a newline": "a\nb", "a tab": "a\tb",
+		"an open parenthesis": "a(b", "a close parenthesis": "a)b", "a comma": "a,b",
+	} {
+		t.Run(name, func(t *testing.T) {
+			list, _ := json.Marshal([]string{glob})
+			_, err := config.Parse([]byte(limitsFleet("work", `{"write_deny":`+string(list)+`}`)))
+			if err == nil || !strings.Contains(err.Error(), "limits.write_deny[0]") {
+				t.Fatalf("Parse error = %v, want one naming limits.write_deny[0]", err)
+			}
+		})
+	}
+}
+
+func sendLimits(t *testing.T, m *config.Manager, key string, limits map[string]string) error {
+	t.Helper()
+	l := map[string]json.RawMessage{}
+	for k, v := range limits {
+		l[k] = json.RawMessage(v)
+	}
+	return m.SetFleetFields(key, config.FleetFields{Limits: l})
+}
+
+func TestSavingOneCeilingKeyLeavesTheRestAsStored(t *testing.T) {
+	m, _ := openView(t, withFleets(`"work":{"name":"Work","claude":{}},"home":{"name":"Home","preset":"home","claude":{}}`))
+	if err := sendLimits(t, m, "work", map[string]string{"ceilings": `{"t1":{"level":"A5"}}`}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if !fleetOf(m.View(), "work").Limits.Ceilings.T1.AsksFirst {
+		t.Error("saving only the T1 level dropped asks_first")
+	}
+	if err := sendLimits(t, m, "home", map[string]string{"ceilings": `{"t4":{"level":"A3","restricted":"investigate"}}`}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if th := fleetOf(m.View(), "home").Limits.Ceilings.T4.Threshold; th == nil || th.Events != 10 {
+		t.Errorf("saving only T4 level and restricted left threshold %+v, want the preset's", th)
+	}
+	if err := sendLimits(t, m, "home", map[string]string{"ceilings": `{"t4":{"threshold":null}}`}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if th := fleetOf(m.View(), "home").Limits.Ceilings.T4.Threshold; th != nil {
+		t.Errorf("a null threshold left %+v", th)
+	}
+}
+
+func TestACeilingLevelChangeKeepsRestrictedValid(t *testing.T) {
+	m, dir := openView(t, withFleets(`"home":{"name":"Home","preset":"home","claude":{}}`))
+	// Home T2 is A3 draft_fix; saving it at A4 drops the restricted level.
+	if err := sendLimits(t, m, "home", map[string]string{"ceilings": `{"t2":{"level":"A3","restricted":"investigate"}}`}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if err := sendLimits(t, m, "home", map[string]string{"ceilings": `{"t2":{"level":"A4"}}`}); err != nil {
+		t.Fatalf("leaving A3: %v", err)
+	}
+	if c := fleetOf(m.View(), "home").Limits.Ceilings.T2; c.Level != standing.A4 || c.Restricted != "" {
+		t.Errorf("T2 = %+v, want A4 with no restricted level", c)
+	}
+	if strings.Contains(string(mustRead(t, dir+"/config.json")), "investigate") {
+		t.Error("the stored restricted level survived leaving A3")
+	}
+	// Entering A3 with none takes the preset's level where it has one (Home T2 draft_fix), else investigate (Home T3 is capped; use the fleet ceiling).
+	if err := sendLimits(t, m, "home", map[string]string{"ceilings": `{"t2":{"level":"A3"}}`}); err != nil {
+		t.Fatalf("entering A3: %v", err)
+	}
+	if c := fleetOf(m.View(), "home").Limits.Ceilings.T2; c.Restricted != standing.DraftFix {
+		t.Errorf("T2 entering A3 = %+v, want the preset's draft_fix", c)
+	}
+	if err := sendLimits(t, m, "home", map[string]string{"ceilings": `{"fleet":{"level":"A3"}}`}); err != nil {
+		t.Fatalf("fleet to A3: %v", err)
+	}
+	if c := fleetOf(m.View(), "home").Limits.Ceilings.Fleet; c.Level != standing.A3 || c.Restricted != standing.Investigate {
+		t.Errorf("fleet ceiling entering A3 = %+v, want investigate", c)
+	}
+}
+
+func TestANullResetsALimitToItsPresetAndTheViewListsTheOverrides(t *testing.T) {
+	m, _ := openView(t, withFleets(`"work":{"name":"Work","claude":{}}`))
+	if got := fleetOf(m.View(), "work").Overridden; len(got) != 0 {
+		t.Fatalf("overridden on a fresh fleet = %v, want none", got)
+	}
+	if err := sendLimits(t, m, "work", map[string]string{
+		"wall_clock_minutes": `30`, "rates": `{"concurrent":9,"launches_per_hour":5}`, "ceilings": `{"t2":{"level":"A4"}}`,
+	}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	want := []string{"ceilings.t2", "rates.launches_per_hour", "rates.concurrent", "wall_clock_minutes"}
+	if got := fleetOf(m.View(), "work").Overridden; !reflect.DeepEqual(got, want) {
+		t.Errorf("overridden = %v, want %v", got, want)
+	}
+	if err := sendLimits(t, m, "work", map[string]string{"wall_clock_minutes": `null`, "rates": `{"concurrent":null}`, "ceilings": `{"t2":null}`}); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	v := fleetOf(m.View(), "work")
+	if v.Limits.WallClockMinutes != 60 || v.Limits.Rates.Concurrent != 2 || v.Limits.Rates.LaunchesPerHour != 5 || v.Limits.Ceilings.T2.Level != standing.A1 {
+		t.Errorf("after the reset: %+v; want the preset's values back, and the untouched per hour 5 kept", v.Limits)
+	}
+	if want := []string{"rates.launches_per_hour"}; !reflect.DeepEqual(v.Overridden, want) {
+		t.Errorf("overridden after the reset = %v, want %v", v.Overridden, want)
+	}
+}
+
+func TestSavingToAnUnknownFleetIs404EvenWithARepoAllowlist(t *testing.T) {
+	m, _ := openView(t, withFleets(`"work":{"name":"Work","claude":{}}`))
+	m.SetRepoLookup(func(string) []string { return nil })
+	err := sendLimits(t, m, "nope", map[string]string{"repo_allowlist": `["acme/widget"]`})
+	if !errors.Is(err, config.ErrNoFleet) {
+		t.Fatalf("error = %v, want ErrNoFleet", err)
+	}
+}
+
+func TestSavingTheRepoAllowlistChecksOnlyEntriesNotAlreadyStored(t *testing.T) {
+	m, _ := openView(t, limitsFleet("", `{"repo_allowlist":["acme/moved-away"]}`))
+	m.SetRepoLookup(func(string) []string { return []string{"acme/widget"} })
+	if err := sendLimits(t, m, "work", map[string]string{"repo_allowlist": `["ACME/Moved-Away","acme/widget"]`}); err != nil {
+		t.Fatalf("keeping the moved entry and adding a found one: %v", err)
+	}
+	err := sendLimits(t, m, "work", map[string]string{"repo_allowlist": `["ACME/Moved-Away","acme/new-and-missing"]`})
+	if err == nil || !strings.Contains(err.Error(), "limits.repo_allowlist[1]") {
+		t.Fatalf("adding a missing repo: error = %v, want one naming limits.repo_allowlist[1]", err)
 	}
 }

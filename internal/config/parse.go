@@ -66,6 +66,7 @@ type Fleet struct {
 	Notify        bool              // pushes and alerts for this fleet; on unless config.json says false
 	Preset        standing.Preset   // work unless config.json says home
 	Limits        standing.Limits   // resolved: the preset's values under the fleet's own
+	Overridden    []string          // the Limits the fleet stores itself, as sentence field paths
 }
 
 func (c *Config) clone() *Config {
@@ -85,6 +86,7 @@ func (c *Config) clone() *Config {
 		f.WakeReviewers = slices.Clone(f.WakeReviewers)
 		f.Env = maps.Clone(f.Env)
 		f.Limits = f.Limits.Clone()
+		f.Overridden = slices.Clone(f.Overridden)
 		f.Harnesses = slices.Clone(f.Harnesses)
 		for j, h := range f.Harnesses {
 			h.Args = slices.Clone(h.Args)
@@ -364,6 +366,7 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 	if f.Limits, err = parseLimits(path+".limits", limitsRaw, f.Preset); err != nil {
 		return Fleet{}, err
 	}
+	f.Overridden = overriddenPaths(limitsRaw)
 	return f, nil
 }
 
