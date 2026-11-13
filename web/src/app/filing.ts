@@ -14,17 +14,32 @@ export interface Kept {
 
 export const MAX_PROSE_RUNES = 4000;
 
-/** The Limits patch without the changes the person removed; undefined when nothing is left to send. */
-export function keptLimits(limits: LimitsPatch | null, removed: string[]): LimitsPatch | undefined {
+const GROUPS = ['ceilings', 'rates', 'spend', 'skip'];
+
+/**
+ * The Limits patch without the changes the person removed; undefined when nothing is left to send.
+ * With `changed` (the fields of the change lines shown), a group-level null becomes member nulls for the changed members only, and any key without a change line is dropped.
+ */
+export function keptLimits(limits: LimitsPatch | null, removed: string[], changed?: string[]): LimitsPatch | undefined {
   if (!limits) return undefined;
+  const wanted = (path: string) => !removed.includes(path) && (!changed || changed.includes(path));
   const out: LimitsPatch = {};
   for (const [key, value] of Object.entries(limits)) {
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      const group = Object.fromEntries(Object.entries(value).filter(([member]) => !removed.includes(`${key}.${member}`)));
+    if (value === null && GROUPS.includes(key)) {
+      if (!changed) continue;
+      const members = changed.filter((f) => f.startsWith(`${key}.`) && wanted(f));
+      if (members.length > 0) out[key] = Object.fromEntries(members.map((f) => [f.slice(key.length + 1), null]));
+    } else if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      const group = Object.fromEntries(Object.entries(value).filter(([member]) => wanted(`${key}.${member}`)));
       if (Object.keys(group).length > 0) out[key] = group;
-    } else if (!removed.includes(key)) out[key] = value;
+    } else if (wanted(key)) out[key] = value;
   }
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** True when drafting is off: the fleet's judge says so, or, before its capabilities are known, the drafter's 409 did. */
+export function draftingOff(judge: { harness?: string | null } | undefined, refused: boolean): boolean {
+  return judge ? !judge.harness : refused;
 }
 
 /** The stored Guidance, a blank line, then the drafted text; the drafted text alone when none is stored. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { confirmFailure, confirmLabel, confirmOrdersBody, draftFailure, draftedCheckIndex, joinGuidance, keptLimits, proseError, remainingLoosens, routineProblem } from './filing';
+import { confirmFailure, confirmLabel, confirmOrdersBody, draftFailure, draftingOff, draftedCheckIndex, joinGuidance, keptLimits, proseError, remainingLoosens, routineProblem } from './filing';
 
 describe('keptLimits', () => {
   const patch = { wall_clock_minutes: 1440, rates: { concurrent: 4, launches_per_hour: 3 }, ceilings: { t1: { level: 'A3' } } };
@@ -169,5 +169,38 @@ describe('routineProblem', () => {
     expect(routineProblem({ field: 'when', message: 'the cron expression "0 0 30 2 *" never fires' })).toEqual({ field: 'when', message: 'When the cron expression "0 0 30 2 *" never fires' });
     expect(routineProblem({ field: 'before_acting', message: 'must be report_only, ask_first or act' })).toEqual({ field: 'before_acting', message: 'Before acting must be report_only, ask_first or act' });
     expect(routineProblem({ field: 'do', message: 'the prompt is empty' })).toEqual({ field: 'do', message: 'Do the prompt is empty' });
+  });
+});
+
+describe('keptLimits with the change lines', () => {
+  const rates = ['rates.concurrent', 'rates.launches_per_hour', 'rates.launches_per_sender_per_day'];
+
+  it('sends no group when every member line is removed from a group null', () => {
+    expect(keptLimits({ rates: null, wall_clock_minutes: 20 }, rates, [...rates, 'wall_clock_minutes'])).toEqual({ wall_clock_minutes: 20 });
+    expect(keptLimits({ rates: null }, rates, rates)).toBeUndefined();
+  });
+
+  it('sends member nulls for the lines that stay and never a group null', () => {
+    expect(keptLimits({ rates: null }, ['rates.concurrent'], rates)).toEqual({ rates: { launches_per_hour: null, launches_per_sender_per_day: null } });
+  });
+
+  it('only resets the members the change lines name', () => {
+    expect(keptLimits({ rates: null }, [], ['rates.concurrent'])).toEqual({ rates: { concurrent: null } });
+  });
+
+  it('drops a key with no change line', () => {
+    expect(keptLimits({ wall_clock_minutes: 20, rates: { concurrent: 2 } }, [], ['rates.concurrent'])).toEqual({ rates: { concurrent: 2 } });
+  });
+});
+
+describe('draftingOff', () => {
+  it('follows the capabilities once they are known, so Check again brings Draft back after a 409', () => {
+    expect(draftingOff({ harness: null }, false)).toBe(true);
+    expect(draftingOff({ harness: 'claude' }, true)).toBe(false);
+  });
+
+  it('trusts the drafter refusal while the capabilities are unknown', () => {
+    expect(draftingOff(undefined, true)).toBe(true);
+    expect(draftingOff(undefined, false)).toBe(false);
   });
 });
