@@ -8,7 +8,7 @@ export interface InboxItem {
   version: number;
   id: string;
   session: string;
-  kind: 'question' | 'review' | 'findings' | 'notice' | 'wake_proposal' | 'routine_proposal' | 'crew_notes' | 'crew_member';
+  kind: 'question' | 'review' | 'findings' | 'notice' | 'wake_proposal' | 'routine_proposal' | 'event_proposal' | 'crew_notes' | 'crew_member';
   created: string;
   title: string;
   name?: string;
@@ -22,6 +22,7 @@ export interface InboxItem {
   findings?: { pr_url?: string; cards?: unknown };
   notice?: { body?: string; entries?: { key: string; name: string; panel: string; fleet?: string }[] };
   routine_proposal?: { fleet?: string; routine?: string; routine_name?: string; trigger?: string; action?: string; reason?: string; expires_at?: string };
+  event_proposal?: { fleet?: string; routine?: string; routine_name?: string; trigger?: string; tier?: string; expires_at?: string };
   crew_notes?: unknown;
   crew_member?: unknown;
 }
