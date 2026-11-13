@@ -142,16 +142,18 @@ func TestACodexChatWithNoTranscriptIsReadyOnceItsComposerShowsAndItsHooksAreTrus
 	s := harnessService(t, codexChatFleets, fakeProbes{})
 	home := codexChatHome(t, s)
 	fc := s.chat("b")
+	const trusted = "[hooks.state.\"/x/config.toml:session_start:0:0\"]\ntrusted_hash = \"sha256:1\"\n"
 	cases := []struct {
 		name, screen, config string
 		ready                bool
 		msg                  string
 	}{
 		{"trust dialog", "Hooks need review\n 2. Trust all and continue\nenter confirm · esc skip", "", false, CodexTrustHooks},
-		{"update dialog", "Update available · 0.167.1 → 0.167.2\nenter confirm", "", false, NotStarted},
+		{"update dialog", "Update available · 0.167.1 → 0.167.2\n› 1. Update now (runs `brew upgrade --cask codex`)\n  2. Skip\n  3. Skip until next version\nenter confirm", "", false, CodexUpdate},
+		{"update banner above a working composer", "Update available! 0.167.1 -> 0.167.2\n› Ask Codex to do anything\n← for agents · ? for shortcuts", trusted, true, ""},
 		{"still starting", "", "", false, NotStarted},
 		{"continued without trusting", "› Ask Codex to do anything\n← for agents · ? for shortcuts", "", false, CodexUntrusted},
-		{"trusted", "› Ask Codex to do anything\n← for agents · ? for shortcuts", "[hooks.state.\"/x/config.toml:session_start:0:0\"]\ntrusted_hash = \"sha256:1\"\n", true, ""},
+		{"trusted", "› Ask Codex to do anything\n← for agents · ? for shortcuts", trusted, true, ""},
 	}
 	for _, c := range cases {
 		writeAt(t, filepath.Join(home, "config.toml"), []byte(c.config))

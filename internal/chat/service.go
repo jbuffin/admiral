@@ -31,9 +31,10 @@ import (
 const NotStarted = "Open the terminal to finish starting the chat"
 
 // A Codex chat with no transcript yet: SessionStart fires on its first turn, not at start, so a pane showing its composer
-// is ready, and only these two screens need the engineer.
+// is ready, and only these screens need the engineer.
 const (
 	CodexTrustHooks = "Codex is asking you to trust Admiral's hooks: open the terminal and trust them"
+	CodexUpdate     = "Codex is offering to update itself, and Enter would run a brew upgrade: open the terminal and choose Skip"
 	CodexUntrusted  = "Codex's hooks aren't trusted, so Admiral can't follow this chat: in the terminal type /hooks, press t to trust them, then /new (or end the chat and start a new one)"
 )
 
@@ -704,7 +705,9 @@ func (s *fleetChat) notStartedLocked() (ready bool, msg string) {
 	switch {
 	case strings.Contains(screen, "Hooks need review"):
 		return false, CodexTrustHooks
-	case strings.Contains(screen, "enter confirm") || strings.Contains(screen, "esc skip") || strings.Contains(screen, "Update available"):
+	case strings.Contains(screen, "Update now") && strings.Contains(screen, "Skip until next version"):
+		return false, CodexUpdate
+	case strings.Contains(screen, "enter confirm") || strings.Contains(screen, "esc skip"):
 		return false, NotStarted
 	case !strings.Contains(screen, "Ask Codex") && !strings.Contains(screen, "for shortcuts"):
 		return false, NotStarted
