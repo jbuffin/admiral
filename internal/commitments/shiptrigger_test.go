@@ -185,3 +185,13 @@ func TestAReusedSessionNeitherFiresNorCounts(t *testing.T) {
 func containsFold(s, sub string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(sub))
 }
+
+func TestALaunchRecordWithNoStampNeverMatchesATrigger(t *testing.T) {
+	g := newRig(t)
+	g.event("saltpaw", "launched", t0.Add(-time.Hour), map[string]any{"fleet": fleet}) // written before records carried the stamp
+	c := g.add(shipTrigger(ledger.TriggerShipAnchored))
+	g.endedError("saltpaw", t0.Add(time.Minute))
+	g.clk.set(t0.Add(time.Hour))
+	g.tick()
+	g.wantWaiting(c.ID)
+}

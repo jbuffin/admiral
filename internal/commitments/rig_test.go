@@ -269,7 +269,7 @@ func (g *rig) event(ship, event string, at time.Time, fields map[string]any) {
 }
 
 func (g *rig) launched(ship string, at time.Time) {
-	g.event(ship, "launched", at, map[string]any{"fleet": fleet})
+	g.event(ship, "launched", at, map[string]any{"fleet": fleet, "launched": stamp(at)})
 }
 
 func (g *rig) endedClean(ship string, at time.Time) {

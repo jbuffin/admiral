@@ -209,11 +209,11 @@ func issueHeld(holder string) *launcher.Error {
 	return &launcher.Error{Status: http.StatusConflict, Msg: "this issue already has a ship (" + holder + ")"}
 }
 
-func (s *Service) setUnlistedIssues(key OrderKey, url string, issues []string, chat, routine, fleet string) {
+func (s *Service) setUnlistedIssues(key OrderKey, url string, issues []string, chat, routine, commitment, fleet string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if u, ok := s.listing[key]; ok {
-		u.url, u.issues, u.chat, u.routine, u.fleet = url, issues, chat, routine, fleet
+		u.url, u.issues, u.chat, u.routine, u.commitment, u.fleet = url, issues, chat, routine, commitment, fleet
 		s.listing[key] = u
 	}
 }

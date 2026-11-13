@@ -166,7 +166,7 @@ func (s *Service) wake(session string, prompt func(moor.Record) string, by, pr, 
 	req := launcher.Request{Fleet: rec.Fleet, Harness: rec.Harness, Dir: rec.Checkout, Model: rec.Model,
 		Skill: launcher.Skill{Kind: rec.Skill.Kind, Name: rec.Skill.Name}, Source: rec.Source, OrderID: rec.OrderID,
 		Title: rec.Title, URL: rec.URL, Issues: rec.Issues, Panel: rec.Panel, Resources: rec.Resources,
-		Name: rec.Name, Session: rec.Session, Round: round, Prompt: prompt(rec), Autopilot: by == "feedback" || by == "proposal", By: by, PR: pr, WokenVia: wokenVia, Via: rec.Via, ChatKey: rec.Chat, RoutineKey: rec.Routine}
+		Name: rec.Name, Session: rec.Session, Round: round, Prompt: prompt(rec), Autopilot: by == "feedback" || by == "proposal", By: by, PR: pr, WokenVia: wokenVia, Via: rec.Via, ChatKey: rec.Chat, RoutineKey: rec.Routine, CommitmentKey: rec.Commitment}
 	var undo undoFunc
 	// The launcher runs this under its lock, just before it makes the session: a Dismiss or a merged PR that
 	// ended the mooring while this wake waited wins, and from here on an ending loses to the wake.

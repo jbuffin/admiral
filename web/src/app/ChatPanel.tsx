@@ -5,7 +5,7 @@ import { probeChatSession, type Fleet } from './api';
 import { shipsLink } from './shipsLink';
 import { useBridgeTerminal } from '../useBridgeTerminal';
 import { KEYS, touchKeyboard } from '../keys';
-import { needsTerminal, resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
+import { commitmentCardView, needsTerminal, resetLabel, threadOf, youAnswered, type ThreadItem } from './chat';
 import { Row, useInboxQueue, usePeekEntry, useStacked } from './InboxPanel';
 import { Peek } from './Peek';
 import { go, loc, chatPeekOf, chatPeekPath, chatSettingsPath, chatTerminalOf, chatTerminalPath } from './router';
@@ -37,6 +37,28 @@ function QuestionCard({ item, chat }: { item: Extract<ThreadItem, { kind: 'quest
   );
 }
 
+function CommitmentCard({ item }: { item: Extract<ThreadItem, { kind: 'commitment' }> }) {
+  const v = commitmentCardView(item);
+  return (
+    <div class="convo-card chat-card">
+      <p class="chat-card-eyebrow">{v.eyebrow}</p>
+      <p class="line">{v.text}</p>
+      {v.reason ? <p class="line">{v.reason}</p> : null}
+      {v.shipHref ? (
+        <a
+          href={v.shipHref + fleetSearch.value}
+          onClick={(e) => {
+            e.preventDefault();
+            go(v.shipHref, fleetSearch.value);
+          }}
+        >
+          Open the ship
+        </a>
+      ) : null}
+    </div>
+  );
+}
+
 function Thread({ items, working, chat }: { items: ThreadItem[]; working: boolean; chat: Chat }) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -61,7 +83,7 @@ function Thread({ items, working, chat }: { items: ThreadItem[]; working: boolea
           </div>
         ) : i.kind === 'question' ? (
           <QuestionCard key={i.id} item={i} chat={chat} />
-        ) : i.kind === 'commitment' ? null : i.role === 'user' ? (
+        ) : i.kind === 'commitment' ? <CommitmentCard key={i.id} item={i} /> : i.role === 'user' ? (
           <div key={i.id} class="msg user">
             {i.text}
           </div>

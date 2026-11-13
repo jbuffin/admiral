@@ -1,5 +1,6 @@
 import type { InboxItem } from './inbox';
 import type { AnswerBody } from '../questions';
+import { shipPath } from './router';
 
 export interface ChatAnswer {
   answers?: AnswerBody['answers'];
@@ -56,6 +57,7 @@ export function threadOf(s: ChatSnapshot): ThreadItem[] {
       const state = answer === undefined ? 'withdrawn' : answer === null ? 'open' : 'answered';
       return [{ t, i, item: { kind: 'question', id: m.id, at: m.at, card: q, state, ...(answer ? { answer } : {}) } }];
     }
+    if (m.kind === 'commitment' && m.card) return [{ t, i, item: { kind: 'commitment', id: m.id, text: m.text, at: m.at, card: m.card as CommitmentCard } }];
     if (m.kind === 'message' && m.role) return [{ t, i, item: { kind: 'message', id: m.id, role: m.role, text: m.text, at: m.at } }];
     return [];
   });
@@ -82,5 +84,7 @@ export function resetLabel(text: string, at: string | undefined): string {
 
 /** What a commitment card shows: a one-line outcome, the commitment's text, and the ship page it links to. */
 export function commitmentCardView(item: Extract<ThreadItem, { kind: 'commitment' }>): { eyebrow: string; text: string; reason: string; shipHref: string } {
-  return { eyebrow: '', text: '', reason: '', shipHref: '' };
+  const { outcome, ship, reason } = item.card;
+  const eyebrow = { launched: 'AdmiralBot launched a ship', reminded: 'AdmiralBot reminds you', cant_run: "AdmiralBot can't run this", dropped: 'AdmiralBot dropped this' }[outcome];
+  return { eyebrow, text: item.text, reason: reason ?? '', shipHref: outcome === 'launched' && ship ? shipPath(ship) : '' };
 }

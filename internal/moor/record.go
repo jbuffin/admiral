@@ -40,6 +40,8 @@ type Record struct {
 	Chat string `json:"chat,omitempty"`
 	// Routine is the ship's routine:<id> launch key, so a moored ship still holds its routine.
 	Routine string `json:"routine,omitempty"`
+	// Commitment is the ship's commitment:<id> launch key, so a moored ship still holds its commitment.
+	Commitment string `json:"commitment,omitempty"`
 	// Resources the ship held, so a round holds the same.
 	Resources []string  `json:"resources"`
 	MooredAt  time.Time `json:"moored_at"`

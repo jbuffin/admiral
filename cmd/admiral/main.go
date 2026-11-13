@@ -25,6 +25,7 @@ import (
 	"github.com/jbuffin/admiral/internal/capabilities"
 	"github.com/jbuffin/admiral/internal/chat"
 	"github.com/jbuffin/admiral/internal/cli"
+	"github.com/jbuffin/admiral/internal/commitments"
 	"github.com/jbuffin/admiral/internal/config"
 	"github.com/jbuffin/admiral/internal/crewapi"
 	"github.com/jbuffin/admiral/internal/github"
@@ -520,6 +521,16 @@ func serve(args []string) error {
 			f, _ := cfg.Current().Fleet(key)
 			return f.Name
 		}}}
+	commitmentRunner := &commitments.Runner{Home: absDir, Ledger: chatService.Notes(), Clock: commitments.Clock{Now: time.Now, After: time.After},
+		Ships: commitmentShips{shipService}, Cards: chatService, SourceFleet: chatService.SourceFleet, Ready: host.Ready(),
+		Fleets: func() []string {
+			var keys []string
+			for _, f := range cfg.Current().Fleets {
+				keys = append(keys, f.Key)
+			}
+			return keys
+		}}
+	chatService.Notes().OnChange = commitmentRunner.Changed
 	inboxService.LaunchRoutine = func(ctx context.Context, p inbox.RoutineProposal) (any, int, string) {
 		t, err := routineScheduler.Accept(ctx, p.Fleet, p.Routine, p.Trigger)
 		switch {
@@ -542,6 +553,7 @@ func serve(args []string) error {
 		inboxService.Notify()
 		pushFeed.ShipsChanged()
 		routineScheduler.Changed()
+		commitmentRunner.Changed()
 	}
 	probeRunner := probes.NewDefault(dir)
 	tails := convService.Tails()
@@ -591,7 +603,9 @@ func serve(args []string) error {
 			}
 		}
 	}()
-	runs := []func(context.Context){s.WatchConfig, sourceService.Run, campaignService.Run, bridgeService.Run, resourceSet.Run, inboxService.Run, chatService.Run, tails.Run, routineScheduler.Run, func(ctx context.Context) { wakeOn(ctx, resourceSet.Changed, routineScheduler.Changed) }}
+	runs := []func(context.Context){s.WatchConfig, sourceService.Run, campaignService.Run, bridgeService.Run, resourceSet.Run, inboxService.Run, chatService.Run, tails.Run, routineScheduler.Run, commitmentRunner.Run, func(ctx context.Context) {
+		wakeOn(ctx, resourceSet.Changed, routineScheduler.Changed, commitmentRunner.Changed)
+	}}
 	if tmuxPath != "" {
 		runs = append(runs, host.Run, func(ctx context.Context) { liveTmux.Run(ctx, claudeFeed.Poll, copilotFeed.Poll) })
 	}

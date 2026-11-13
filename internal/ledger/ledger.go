@@ -68,6 +68,9 @@ type Ledger struct {
 	home string
 	now  func() time.Time
 
+	// OnChange runs after every record is appended; it must not block or call the ledger.
+	OnChange func()
+
 	mu sync.Mutex // one lock for every fleet: writes are rare and the files small
 	// terminated holds the fleets whose file this process has made sure ends in a newline.
 	terminated map[string]bool
@@ -226,6 +229,9 @@ func (l *Ledger) append(fleet string, ev event) error {
 	}
 	if cerr := f.Close(); err == nil {
 		err = cerr
+	}
+	if err == nil && l.OnChange != nil {
+		l.OnChange()
 	}
 	return err
 }
