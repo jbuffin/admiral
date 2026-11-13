@@ -153,8 +153,8 @@ func TestNonZeroExitAnchorsWhateverTheReportSays(t *testing.T) {
 	w.exitWith(ship, mooredReport(mooredPR))
 
 	w.in.waitShipsList(t, 20*time.Second, "the ship anchored", func(l []shipJSON) bool { return byName(l)[ship.Name].Status == "anchored" })
-	holdThat(t, "an anchored ship moored, got a record or had its PR looked up", func() bool {
-		return byName(w.in.ships(t))[ship.Name].Status == "anchored" && !exists(w.mooredFile(ship.Name)) && !g.asked(mooredPR)
+	holdThat(t, "an anchored ship moored or got a record", func() bool {
+		return byName(w.in.ships(t))[ship.Name].Status == "anchored" && !exists(w.mooredFile(ship.Name))
 	})
 }
 

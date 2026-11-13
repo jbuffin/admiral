@@ -378,35 +378,42 @@ func (s *Service) removeShipFiles(session string, owner *track) {
 }
 
 func (s *Service) readReport(session string) json.RawMessage {
+	raw, problem := s.loadReport(session)
+	if problem != "" {
+		fmt.Fprintf(os.Stderr, "admiral: ship %s: %s\n", session, problem)
+	}
+	return raw
+}
+
+// loadReport reads the report through the guards and says what was wrong with it, "" for a missing one.
+// A caller that reads on every change of the file reports the problem once, not on each read.
+func (s *Service) loadReport(session string) (raw json.RawMessage, problem string) {
 	_, path, _, ok := s.shipFiles(session)
 	if !ok {
-		return nil
+		return nil, ""
 	}
 	// The ship wrote it: never follow a link, never wait on a pipe.
 	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "admiral: ship %s: its report file cannot be read: %v\n", session, err)
+			return nil, fmt.Sprintf("its report file cannot be read: %v", err)
 		}
-		return nil
+		return nil, ""
 	}
 	defer f.Close()
 	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: its report file is not a regular file\n", session)
-		return nil
+		return nil, "its report file is not a regular file"
 	}
 	b, err := io.ReadAll(io.LimitReader(f, maxReport+1))
 	switch {
 	case err != nil:
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: its report file cannot be read: %v\n", session, err)
+		return nil, fmt.Sprintf("its report file cannot be read: %v", err)
 	case len(b) > maxReport:
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: its report is larger than %d bytes, so it is left out of the log\n", session, maxReport)
+		return nil, fmt.Sprintf("its report is larger than %d bytes, so it is left out of the log", maxReport)
 	case !json.Valid(b):
-		fmt.Fprintf(os.Stderr, "admiral: ship %s: its report is not valid JSON, so it is left out of the log\n", session)
-	default:
-		return json.RawMessage(b)
+		return nil, "its report is not valid JSON, so it is left out of the log"
 	}
-	return nil
+	return json.RawMessage(b), ""
 }
 
 // writeCrewItems turns the crew proposals of a ship's report into Inbox items. A failure is logged and never holds up the ended record.
