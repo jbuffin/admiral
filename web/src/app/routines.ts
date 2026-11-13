@@ -101,10 +101,11 @@ const INVALID = /^invalid routine: /;
 export const errorText = (message: string) => message.replace(INVALID, '');
 
 /** The part of the form a server 400 message belongs to. */
-export function errorField(message: string): 'name' | 'when' | 'do' | 'form' {
+export function errorField(message: string): 'name' | 'when' | 'before_acting' | 'do' | 'form' {
   const m = errorText(message);
   if (/^name\b/.test(m)) return 'name';
   if (/^when\b/.test(m)) return 'when';
+  if (/^before_acting\b|^before acting\b/i.test(m)) return 'before_acting';
   if (/^(do\b|the prompt|autopilot|args|skill|no resource|fleet \S+ has no)/.test(m)) return 'do';
   return 'form';
 }
