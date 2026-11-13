@@ -696,6 +696,17 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 .crew-instructions { white-space: pre-wrap; }
 .crew-skills { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
 .crew-skills li { padding: 2px 8px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-sm); font-family: var(--font-mono); font-size: var(--font-size-mono); }
+.skill-label { display: block; margin-bottom: 4px; font-size: var(--font-size-meta); color: var(--color-text2); }
+.skill-pills { margin: 0 0 6px; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+.skill-pill { display: inline-flex; align-items: center; gap: 6px; padding: 0 0 0 8px; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-sm); font-family: var(--font-mono); font-size: var(--font-size-mono); }
+.skill-pill-warn { font-family: var(--font-body, inherit); font-size: var(--font-size-meta); color: var(--color-err); }
+.skill-pill-remove { min-width: var(--shape-min-touch-target); min-height: var(--shape-min-touch-target); border: 0; background: transparent; color: var(--color-muted); font: inherit; cursor: pointer; }
+.skill-add { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.skill-options { margin: 0; padding: 4px; list-style: none; max-height: min(264px, 40dvh); overflow-y: auto; border: 1px solid var(--color-line2); border-radius: var(--shape-radius-lg); }
+.skill-choice { display: flex; align-items: center; gap: 12px; min-height: var(--shape-min-touch-target); padding: 0 10px; border-radius: var(--shape-radius-md); cursor: pointer; }
+.skill-choice[aria-selected='true'] { background: var(--color-sel); }
+.skill-choice .skill-name { flex: none; }
+.skill-flags { flex: none; display: inline-flex; gap: 4px; }
 .crew-form { display: flex; flex-direction: column; gap: 12px; margin: 12px 0; }
 .crew-field > label { display: block; margin-bottom: 4px; font-size: var(--font-size-meta); color: var(--color-text2); }
 .crew-field .note.error, .crew-note .note.error { color: var(--color-err); margin-top: 4px; }

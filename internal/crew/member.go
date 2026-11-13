@@ -15,6 +15,9 @@ var (
 	fixCheckerKey = FixChecker
 )
 
+// ValidSkillName says a member may list name in its skills.
+func ValidSkillName(name string) bool { return skillPattern.MatchString(name) }
+
 func isSlug(v any) bool {
 	s, ok := v.(string)
 	return ok && slugPattern.MatchString(s)

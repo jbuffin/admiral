@@ -50,7 +50,7 @@ export interface MemberForm {
   role: string;
   customRole: string;
   basedOn: string;
-  skills: string;
+  skills: string[];
   model: string;
   harness: string;
   pickMeWhen: string;
@@ -108,7 +108,7 @@ export function formOf(m: CrewMember): MemberForm {
     role: custom ? CUSTOM_ROLE : m.role,
     customRole: custom ? m.role : '',
     basedOn: custom ? m['based-on'] : '',
-    skills: m.skills.join('\n'),
+    skills: m.skills,
     model: m.model,
     harness: m.harness,
     pickMeWhen: m['pick-me-when'],
@@ -123,7 +123,7 @@ export function memberBody(f: MemberForm): MemberBody {
   const body: MemberBody = { role, 'pick-me-when': f.pickMeWhen.trim() };
   if (custom) body['based-on'] = f.basedOn;
   if (role !== 'fix-checker') {
-    body.skills = f.skills.split('\n').map((s) => s.trim()).filter(Boolean);
+    body.skills = f.skills;
     // The reader drops blank lines around a body anyway; a first line's indent is the author's.
     body.instructions = f.instructions.replace(/^(\s*\n)+/, '').trimEnd();
   }
@@ -243,7 +243,7 @@ export function readDraft(raw: unknown): Draft {
       role: custom ? CUSTOM_ROLE : role,
       customRole: custom ? role : '',
       basedOn: custom ? text(d['based-on']) : '',
-      skills: skills.join('\n'),
+      skills,
       model: text(d.model),
       harness: text(d.harness),
       pickMeWhen: text(d['pick-me-when']),

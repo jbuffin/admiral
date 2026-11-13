@@ -341,6 +341,10 @@ A member is `{name, role, based-on, skills, model, harness, pick-me-when, instru
 
 `unclaimed` is `[{member, notes}]` sorted by name: every `memory/<name>/` holding a note whose name no built-in or fleet member uses. A repo-layer member's notes show here too, and the set can differ by `?harness=` when the docks' Commodore installs differ. A directory name that is not a member name is skipped with a warning. When the resolver reports `errors`, `members` and `unclaimed` are empty.
 
+### `GET /api/fleets/{key}/crew/skills[?harness=<dock>]`
+
+The skills a member can list, for the Crew page's picker: `{"skills": [{"name", "description", "harnesses"}]}`, sorted by `name`, with `harnesses` sorted. With `harness`, only that dock's skills; without it, every dock's. An unknown fleet is 404 and a `harness` the fleet has no dock for is 400; a fleet with no docks answers `{"skills": []}`. It reads each dock's user and plugin skills with the dock's identity variables, never a checkout's skills. One skill is one entry: within a dock a plugin skill `plugin:name` is listed as `name` unless another skill of that dock has the bare name `name`, and then both keep their full names; the same resulting name on several docks is one entry whose `harnesses` lists them and whose `description` is the first non-empty one in dock order (`""` when none has one). A name a saved member would refuse (one that does not start with a letter or digit, or holds a character outside letters, digits and `.` `_` `:` `-`) is left out. The route is not offered to AdmiralBot.
+
 ### Fleet members
 
 Edits touch only `$ADMIRAL_HOME/fleets/<key>/crew/`. A member route keys on whether `<name>.md` exists there, so a PUT can repair a broken file. A name with no fleet file but a built-in member is 409 (customize it first); with neither it is 404; a name that is no member name is 400. Each success is 200 `{"name": "<name>"}`. The built-in layer is the `?harness=` dock's, as in GET.

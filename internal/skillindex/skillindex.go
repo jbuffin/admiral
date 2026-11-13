@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -391,5 +392,48 @@ type Entry struct {
 	Harnesses   []string `json:"harnesses"`
 }
 
-// Merge is not written yet.
-func Merge(lists []HarnessSkills) []Entry { return nil }
+// Merge names each skill as a crew member saves it and folds the docks into
+// one list. Within a dock, a plugin skill takes its bare name unless another
+// skill of that dock has it; across docks the same resulting name is one skill.
+// lists are in dock order, which decides whose description is kept.
+func Merge(lists []HarnessSkills) []Entry {
+	byName := map[string]*Entry{}
+	for _, l := range lists {
+		bare := map[string]int{}
+		for _, sk := range l.Skills {
+			bare[bareName(sk.Name)]++
+		}
+		for _, sk := range l.Skills {
+			name := sk.Name
+			if b := bareName(name); bare[b] == 1 {
+				name = b
+			}
+			e := byName[name]
+			if e == nil {
+				e = &Entry{Name: name}
+				byName[name] = e
+			}
+			if e.Description == "" {
+				e.Description = sk.Description
+			}
+			if !slices.Contains(e.Harnesses, l.Harness) {
+				e.Harnesses = append(e.Harnesses, l.Harness)
+			}
+		}
+	}
+	out := make([]Entry, 0, len(byName))
+	for _, e := range byName {
+		sort.Strings(e.Harnesses)
+		out = append(out, *e)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+func bareName(n string) string {
+	_, b, ok := strings.Cut(n, ":")
+	if !ok {
+		return n
+	}
+	return b
+}
