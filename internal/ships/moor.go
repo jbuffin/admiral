@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -58,15 +59,21 @@ func (s *Service) report(session string) moor.Report {
 	return moor.ParseReport(s.readReport(session))
 }
 
-// countedPRs is the PRs of the ship's report that GitHub confirms open in the ship's fleet.
+// countedPRs is the PRs of the ship's report that GitHub confirms open in the ship's fleet, then the open ones it already carried.
 func (s *Service) countedPRs(ctx context.Context, sess sessionhost.Session) []string {
-	prs := s.report(sess.Name).PRs
-	if len(prs) == 0 || s.GitHub == nil {
-		return nil
+	carried := s.carriedOpen(sess)
+	var counted []string
+	if prs := s.report(sess.Name).PRs; len(prs) > 0 && s.GitHub != nil {
+		fleet := sess.Options["fleet"]
+		router := github.RouterFromFleets(s.Launcher.Config().Fleets)
+		counted = moor.Counted(ctx, moor.Check{Fleet: fleet, GitHub: s.GitHub(fleet), Route: router.Route}, prs)
 	}
-	fleet := sess.Options["fleet"]
-	router := github.RouterFromFleets(s.Launcher.Config().Fleets)
-	return moor.Counted(ctx, moor.Check{Fleet: fleet, GitHub: s.GitHub(fleet), Route: router.Route}, prs)
+	for _, u := range carried {
+		if !slices.Contains(counted, u) {
+			counted = append(counted, u)
+		}
+	}
+	return counted
 }
 
 // moor writes the record before the session goes, so a crash between leaves the ship in one place or both.
@@ -167,6 +174,7 @@ func (s *Service) setMoored(rec moor.Record) {
 	s.mooredMu.Lock()
 	defer s.mooredMu.Unlock()
 	s.loadMoored()
+	delete(s.running, rec.Session)
 	delete(s.mooredPolls, rec.Session) // a poll answered for an earlier ship of this session says nothing of this one
 	for i, r := range s.moored {
 		if r.Session == rec.Session {

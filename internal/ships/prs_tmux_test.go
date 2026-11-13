@@ -263,7 +263,7 @@ func TestACleanExitMoorsTheShipWithItsCarriedPRsMergedWithTheReports(t *testing.
 			}
 			if c.report != "" {
 				_, env := r.started(t, 1)
-				if err := os.WriteFile(reportPath(env), []byte(`{"version":2,"result":"done","why":"w","prs":`+c.report+`}`), 0o600); err != nil {
+				if err := os.WriteFile(reportPath(env), []byte(`{"version":1,"result":"done","why":"w","prs":`+c.report+`}`), 0o600); err != nil {
 					t.Fatal(err)
 				}
 			}

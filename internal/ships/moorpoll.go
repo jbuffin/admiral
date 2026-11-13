@@ -60,7 +60,7 @@ func (s *Service) RunMoored(ctx context.Context) {
 	}
 }
 
-// PollMoored runs one pass: one batched query per fleet's client for every moored ship's PRs.
+// PollMoored runs one pass: one batched query per fleet's client for every moored ship's PRs and the PRs live ships carry.
 func (s *Service) PollMoored(ctx context.Context) {
 	s.pollMu.Lock()
 	defer s.pollMu.Unlock()
@@ -79,6 +79,12 @@ func (s *Service) PollMoored(ctx context.Context) {
 		}
 		byFleet[r.Fleet] = append(byFleet[r.Fleet], r)
 	}
+	runs := s.runningAsks()
+	for f := range runs {
+		if _, ok := byFleet[f]; !ok {
+			fleets = append(fleets, f)
+		}
+	}
 	changed := false
 	for _, fleet := range fleets {
 		gh := s.GitHub(fleet)
@@ -87,13 +93,22 @@ func (s *Service) PollMoored(ctx context.Context) {
 		}
 		var urls []string
 		seen := map[string]bool{}
-		for _, r := range byFleet[fleet] {
-			for _, u := range r.PRs {
+		add := func(us []string) {
+			for _, u := range us {
 				if !seen[u] {
 					seen[u] = true
 					urls = append(urls, u)
 				}
 			}
+		}
+		for _, r := range byFleet[fleet] {
+			add(r.PRs)
+		}
+		for _, run := range runs[fleet] {
+			add(run.urls)
+		}
+		if len(urls) == 0 {
+			continue
 		}
 		answer, err := gh.PullRequests(ctx, urls)
 		if ctx.Err() != nil {
@@ -103,6 +118,13 @@ func (s *Service) PollMoored(ctx context.Context) {
 		var unanswered *moor.Unanswered
 		partial := errors.As(err, &unanswered)
 		changed = true
+		for _, run := range runs[fleet] {
+			if err != nil && (!partial || slices.ContainsFunc(run.urls, func(u string) bool { return slices.Contains(unanswered.URLs, u) })) {
+				s.markRunStale(run.sess)
+				continue
+			}
+			s.storeRun(run, answer)
+		}
 		for _, r := range byFleet[fleet] {
 			if err != nil && (!partial || slices.ContainsFunc(r.PRs, func(u string) bool { return slices.Contains(unanswered.URLs, u) })) {
 				s.markStale(r)

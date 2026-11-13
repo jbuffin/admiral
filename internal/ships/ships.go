@@ -66,7 +66,7 @@ type Ship struct {
 	ExitCode   *int            `json:"exit_code"`
 	ExitSignal *string         `json:"exit_signal"`
 	Position   *state.Position `json:"position"`
-	// PRs and MooredAt are set only on a moored ship.
+	// PRs are a moored ship's, or the ones a running ship carries; MooredAt is set only on a moored ship.
 	PRs      []moor.PR `json:"prs,omitempty"`
 	MooredAt string    `json:"moored_at,omitempty"`
 	// PolledAt is the last poll that answered; Stale says the latest one failed.
@@ -89,7 +89,7 @@ type Ship struct {
 	Seen bool `json:"seen,omitempty"`
 	// Returning is set from Return to port until the ship is stopped.
 	Returning bool `json:"returning,omitempty"`
-	// CarriesPRs is set on a live ship woken from its mooring, which returns to port only once its PRs are merged.
+	// CarriesPRs is set on a live ship that carries a PR still open, which returns to port only once its PRs are merged.
 	CarriesPRs bool `json:"carries_prs,omitempty"`
 	// Crew and Subagents are always present, empty lists as [].
 	Crew      []CrewBoat             `json:"crew"`
@@ -174,8 +174,9 @@ type Service struct {
 	mooredMu     sync.Mutex
 	moored       []moor.Record // read from $ADMIRAL_HOME/moored on first use
 	mooredLoaded bool
-	mooredPolls  map[string]polled // by session
-	committed    map[string]bool   // by session: a wake is making the session, so no ending takes the record; under mooredMu
+	mooredPolls  map[string]polled   // by session
+	running      map[string]*running // live ships' PRs by session; under mooredMu
+	committed    map[string]bool     // by session: a wake is making the session, so no ending takes the record; under mooredMu
 	moorKick     chan struct{}
 	mergeMethods map[string]string // by fleet and repository: its default merge method; under mooredMu
 	merging      map[string]bool   // by session: a merge is under way; under mooredMu
@@ -226,6 +227,13 @@ func (s *Service) ship(sess sessionhost.Session) Ship {
 	if p, ok := s.State.Position(sess.Name); ok {
 		sh.Position = &p
 	}
+	if prs, p := s.runPRs(sess); len(prs) > 0 {
+		sh.PRs, sh.Stale = prs, p.stale
+		sh.CarriesPRs = slices.ContainsFunc(prs, func(p moor.PR) bool { return p.State == "OPEN" })
+		if !p.at.IsZero() {
+			sh.PolledAt = p.at.Format(time.RFC3339)
+		}
+	}
 	if s.Tail != nil {
 		sh.Tail = s.Tail(sess.Name)
 	}
@@ -240,7 +248,7 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	o, session := sess.Options, sess.Name
 	sh := Ship{Session: session, Name: o["name"], Fleet: o["fleet"], FleetName: o["fleet-name"],
 		FleetColor: o["fleet-color"], Harness: o["harness"], Dir: o["dir"], Repo: filepath.Base(o["dir"]),
-		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], Link: o["link"], Titled: o["titled"] != "", OrderID: o["order"], Launched: o["launched"], Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Status: status(sess, now), Returning: o[sessionhost.OptReturning] != "", CarriesPRs: carriesPRs(sess)}
+		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], Link: o["link"], Titled: o["titled"] != "", OrderID: o["order"], Launched: o["launched"], Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Status: status(sess, now), Returning: o[sessionhost.OptReturning] != ""}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
 	sh.Crew, sh.Subagents = crewBoats(sess.Crew), sess.Subagents
 	if sh.Subagents == nil {
