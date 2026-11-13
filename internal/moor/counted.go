@@ -22,6 +22,8 @@ type GitHub interface {
 	// for is left out; an error is a failed call, not an answer, except an *Unanswered
 	// beside a good answer for the PRs not named in it.
 	PullRequests(ctx context.Context, urls []string) (map[string]Status, error)
+	// PullRequestDetail reads one pull request in full, fresh, with one query.
+	PullRequestDetail(ctx context.Context, url string) (Detail, error)
 	// DefaultMergeMethod is the repository's default merge method: merge, squash or rebase.
 	DefaultMergeMethod(ctx context.Context, nameWithOwner string) (string, error)
 	// MergePR merges one pull request with the method. Only the engineer's Merge act calls it. An error is gh's

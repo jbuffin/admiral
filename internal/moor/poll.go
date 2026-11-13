@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Status is what one poll learned about a pull request; a PR GitHub answered
@@ -15,10 +16,12 @@ type Status struct {
 	Checks    string // statusCheckRollup state; empty when none
 	Mergeable string // MERGEABLE, CONFLICTING or UNKNOWN
 
-	Viewer         string // the login the fleet's gh runs as
-	Head           string // the head commit's SHA
-	MergeState     string // mergeStateStatus
-	StrictBase     bool   // the base readably requires branches to be up to date
+	Author         string    // the login that opened the PR
+	CreatedAt      time.Time // when it was opened
+	Viewer         string    // the login the fleet's gh runs as
+	Head           string    // the head commit's SHA
+	MergeState     string    // mergeStateStatus
+	StrictBase     bool      // the base readably requires branches to be up to date
 	Reviews        []Review
 	ThreadComments []Comment
 	Comments       []Comment

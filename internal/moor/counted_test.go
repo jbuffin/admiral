@@ -23,6 +23,8 @@ func (f *fakeGitHub) PullRequests(context.Context, []string) (map[string]Status,
 	return nil, nil
 }
 
+func (f *fakeGitHub) PullRequestDetail(context.Context, string) (Detail, error) { return Detail{}, nil }
+
 func (f *fakeGitHub) DefaultMergeMethod(context.Context, string) (string, error) { return "merge", nil }
 
 func (f *fakeGitHub) MergePR(context.Context, string, string) error { return nil }

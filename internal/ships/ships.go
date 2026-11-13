@@ -119,6 +119,8 @@ type Service struct {
 	OnChange func()
 	// Tail gives a ship's conversation tail from a cache; it must not block.
 	Tail func(session string) string
+	// Candidates gives the PR URLs a ship and its crew boats printed in tool results, in order of first appearance.
+	Candidates func(session string) []string
 	// Titling reports whether the titler is working out the ship's title.
 	Titling func(session string) bool
 	// Questions gives the pending questions of a ship's conversation, or of a crew boat's when crew is set, oldest first.
@@ -308,6 +310,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/answer", s.serveAnswer)
 	mux.HandleFunc("POST /api/ships/{session}/stop", s.serveStop)
 	mux.HandleFunc("POST /api/ships/{session}/return", s.serveReturn)
+	mux.HandleFunc("GET /api/ships/{session}/pr", s.servePRDetail)
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/messages", s.serveSendInput)
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/interrupt", s.serveInterrupt)
 }
