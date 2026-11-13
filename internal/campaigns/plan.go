@@ -1,5 +1,7 @@
 package campaigns
 
+import "slices"
+
 // Child is one campaign child the planner acts on.
 type Child struct {
 	Campaign string // the campaign's id
@@ -38,5 +40,71 @@ type Plan struct {
 
 // Decide works out a campaign commitment's next steps from a tree read.
 func Decide(in PlanInput) Plan {
-	return Plan{}
+	root := in.Campaign.Root
+	if root == nil {
+		return Plan{}
+	}
+	var p Plan
+	// All-closed is checked before the followed flag: the follow store also ends itself when the tree closes.
+	switch {
+	case allClosed(root):
+		p.End = Ended
+	case !in.Followed:
+		p.End = Unfollowed
+	}
+	if p.End != NotEnded {
+		p.Withdraw = in.Proposed
+		return p
+	}
+
+	var proposable *Node
+	proposedStillReady := false
+	for _, n := range in.Campaign.Ready {
+		launched := slices.Contains(in.Launched, n.URL)
+		switch n.Mode {
+		case WithoutYou:
+			if !launched {
+				p.Launch = append(p.Launch, in.child(n))
+			}
+		case WithYou:
+			if launched {
+				continue
+			}
+			if n.URL == in.Proposed {
+				proposedStillReady = true
+			}
+			if proposable == nil && !slices.Contains(in.Declined, n.URL) {
+				proposable = n
+			}
+		}
+	}
+
+	switch {
+	case in.Proposed != "":
+		// A withdrawn child is proposed on a later wake, not in this plan.
+		if !proposedStillReady {
+			p.Withdraw = in.Proposed
+		}
+	case proposable != nil && !in.Held:
+		c := in.child(proposable)
+		p.Propose = &c
+	}
+	return p
+}
+
+func (in PlanInput) child(n *Node) Child {
+	return Child{Campaign: in.CampaignID, URL: n.URL, Title: n.Title, Skill: n.Skill}
+}
+
+// allClosed mirrors follow.allClosed: false for any open node, or one with unreadable sub-issues, at any depth.
+func allClosed(n *Node) bool {
+	if !n.Closed || n.Unreadable > 0 {
+		return false
+	}
+	for _, c := range n.Children {
+		if !allClosed(c) {
+			return false
+		}
+	}
+	return true
 }

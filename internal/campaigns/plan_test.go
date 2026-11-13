@@ -311,6 +311,19 @@ func TestPlan(t *testing.T) {
 			in:   PlanInput{Followed: true, Campaign: Build(Input{})},
 			want: Plan{},
 		},
+		{
+			name: "a nil tree with an open proposal does nothing",
+			in:   PlanInput{Followed: true, Proposed: u(2), Campaign: Build(Input{})},
+			want: Plan{},
+		},
+		{
+			name: "a proposed child that this commitment also launched is withdrawn",
+			in: PlanInput{
+				Followed: true, Proposed: u(2), Launched: urlsOf(2),
+				Campaign: Build(Input{Tree: tree(wy(2))}),
+			},
+			want: Plan{Withdraw: u(2)},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
