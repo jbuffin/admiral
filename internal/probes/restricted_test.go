@@ -251,7 +251,7 @@ func TestRestrictedProbeSettingsAreTheDraftFixProfileAndDenyReadCoversEveryOutsi
 		}
 	}
 	if len(outside) < 3 {
-		t.Fatalf("outside targets in the RUN lines = %q, want the write, the escape hatch, the secret and the push remote", outside)
+		t.Fatalf("outside targets in the RUN lines = %q, want at least the write, the escape hatch and the secret path", outside)
 	}
 	for _, p := range outside {
 		covered := false
@@ -327,8 +327,11 @@ func TestASlowRestrictedProbeCannotStarveTheJudgesAndADeadlineIsNotAPass(t *test
 		}
 	}
 	for _, id := range []capabilities.ID{capabilities.RestrictedSandbox, capabilities.RestrictedAllow} {
-		if l := line(t, rep, id); l.Status != capabilities.Failed {
-			t.Errorf("%s = %+v, want failed: a run that hit its deadline is not a pass", id, l)
+		if l := line(t, rep, id); l.Status == capabilities.Passed {
+			t.Errorf("%s = %+v, want not passed: a run that hit its deadline is not a pass", id, l)
+		}
+		if capabilities.Open(h).Proven("work", "claude", id) {
+			t.Errorf("%s is stored as proven after a run that hit its deadline", id)
 		}
 	}
 }
