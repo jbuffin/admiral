@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { crewNote, proveJudge, seedAdHocMember, seedCrew } from './crew';
-import { probeableClaude, addGitHubSource, appendLines, HOSTILE, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, restCalls, rowLink, seedFleets, seedInboxItem, seedReviewTarget, shipCheckout, setReason, setState, staleMergeTokenInPeek, readyStackMergesFromPeek, viewTab, withFakeGh, chatAnswerFile, chatAsks } from './shell';
+import { openPreferences, probeableClaude, addGitHubSource, appendLines, HOSTILE, launchShip, line, mergeFailsInPeek, mergeFromPeek, mooringEnv, received, restCalls, rowLink, seedFleets, seedInboxItem, seedReviewTarget, shipCheckout, setReason, setState, staleMergeTokenInPeek, readyStackMergesFromPeek, viewTab, withFakeGh, chatAnswerFile, chatAsks } from './shell';
 
 const peekOf = (page: Page) => page.getByRole('region', { name: 'Peek' });
 const peekUrl = (session: string) => new RegExp(`/app/inbox/${encodeURIComponent(session)}(\\?|$)`);
@@ -860,7 +860,7 @@ test('Peek opens an event proposal with the untrusted summary, Mute rule by send
   await peek.getByRole('button', { name: 'Mute rule' }).tap();
   await peek.getByRole('button', { name: /Mute this sender/ }).tap();
 
-  await page.goto(admiral.url + 'app/preferences/limits?fleet=zulu');
+  await openPreferences(page, { fleet: 'Zulu', section: 'Limits and quiet hours' });
   const skip = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Review watch' });
   await expect(skip).toBeVisible();
   await skip.getByRole('button', { name: /Remove/ }).tap();
