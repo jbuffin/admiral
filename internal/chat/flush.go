@@ -199,7 +199,9 @@ func (s *fleetChat) flush(pane string) bool {
 	}
 	for end := time.Now().Add(FlushWait()); time.Now().Before(end); time.Sleep(100 * time.Millisecond) {
 		if s.PromptKey(s.key) != before && s.paneIdle() {
-			s.endFlush()
+			// The hook ends the turn before the transcript's tail is on disk, so the reply can be read after the
+			// clear: the anchor stays open and hides it, and the engineer's next message closes it.
+			_, _ = s.refresh(true)
 			return true
 		}
 		if unanswered(s.questions(true)) {
@@ -364,7 +366,8 @@ func (s *fleetChat) dropFlush() {
 	s.mu.Unlock()
 }
 
-// endFlush closes the newest anchor at the turn's last message as of now.
+// endFlush closes the newest anchor at the turn's last message as of now: a turn that waits on a question is over
+// for hiding, so what Claude says after the engineer answers shows.
 func (s *fleetChat) endFlush() {
 	_, _ = s.refresh(true)
 	s.mu.Lock()

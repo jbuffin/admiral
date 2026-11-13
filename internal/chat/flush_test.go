@@ -68,6 +68,17 @@ func TestFlushAnchor_AReplyAfterTheClearIsNotServed(t *testing.T) {
 	wantIDs(t, "the fresh conversation", as.hide(cleared), "u3", "a3")
 }
 
+// The turn's end reaches Admiral before the transcript's tail does: the reply is read after the marker.
+func TestFlushAnchor_ALateReplyAfterTheTurnEndedAndTheClearIsHidden(t *testing.T) {
+	as := anchors(flushAnchor{pre: "a1", from: "f1"})
+	// The flush loop saw the turn end with only the prompt read, then Admiral cleared.
+	wantIDs(t, "the prompt only", as.hide([]Message{a("a1", "hello"), u("f1", FlushPrompt)}), "a1")
+	late := []Message{a("f2", "done.")}
+	wantIDs(t, "the late reply", as.hide(late))
+	wantIDs(t, "the engineer's next message", as.hide(append(slices.Clone(late), u("u2", "hi"), a("a2", "yes"))), "u2", "a2")
+	wantIDs(t, "what follows", as.hide([]Message{u("u2", "hi"), a("a2", "yes"), a("a3", "more")}), "u2", "a2", "a3")
+}
+
 func TestFlushAnchor_AClosedTurnLeavesTheClearedChatAlone(t *testing.T) {
 	as := anchors(flushAnchor{from: "f1", until: "f2", closed: true})
 	wantIDs(t, "after the clear", as.hide([]Message{a("a9", "fresh")}), "a9")

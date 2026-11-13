@@ -1003,14 +1003,20 @@ func TestChatSession_AdmiralRefreshesAnIdleChatOverItsThreshold(t *testing.T) {
 		}
 	})
 
-	// The flush turn: Claude records the prompt and its reply in the transcript.
-	appendLines(t, tp1, userLine("f-1", chat.FlushPrompt, nil), assistantLine("f-2", "msg_f", map[string]any{"type": "text", "text": "FLUSH-REPLY"}))
+	// The flush turn: Claude records the prompt now, and its reply only after Admiral has cleared, the way the
+	// transcript's tail lags the Stop hook.
+	appendLines(t, tp1, userLine("f-1", chat.FlushPrompt, nil))
 	c.touch("go-fprompt")
 	holdThat(t, "the chat was cleared while the flush turn was still running", func() bool { return c.stdin() == flushPaste })
 	c.touch("go-fstop")
 
 	t.Run("the clear follows the flush and the thread shows a Context refreshed marker", func(t *testing.T) {
 		c.waitStdinOneOf(flushPaste+"/clear\r", flushPaste+"\x1b[200~/clear\x1b[201~\r")
+		c.waitSession(10*time.Second, "the marker", func(s chatSession) bool { return resets(s.Messages) == 1 })
+		appendLines(t, tp1, assistantLine("f-2", "msg_f", map[string]any{"type": "text", "text": "FLUSH-REPLY"}))
+		holdThat(t, "the flush reply, read after the marker, showed in the thread", func() bool {
+			return messagesAre(history...)(c.session())
+		})
 		appendLines(t, tp2,
 			userLine("c-1", "<command-name>/clear</command-name>\n<command-message>clear</command-message>", nil),
 			userLine("c-2", "<local-command-stdout></local-command-stdout>", nil))
