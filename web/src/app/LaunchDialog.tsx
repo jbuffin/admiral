@@ -184,9 +184,12 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
     items[at < 0 ? (e.shiftKey ? items.length - 1 : 0) : (at + step + items.length) % items.length]!.focus();
   };
 
-  const submit = async (e: Event) => {
+  const submit = (e: Event) => {
     e.preventDefault();
-    const s = campaign ? { kind: 'none' as const } : chosen();
+    void launch(campaign ? { kind: 'none' } : chosen());
+  };
+
+  const launch = async (s: SkillChoice | string) => {
     if (typeof s === 'string') return setError(s);
     setBusy(true);
     setError('');
@@ -329,6 +332,11 @@ export function LaunchForm({ fleet, order: given, campaign, onClose, onLaunched 
           <button type="button" class="btn" onClick={onClose}>
             Cancel
           </button>
+          {campaign || launchingAs ? null : (
+            <button type="button" class="btn" disabled={busy || (!cloning && !dir)} onClick={() => void launch({ kind: 'none' })}>
+              Just launch
+            </button>
+          )}
           <button type="submit" class="btn primary" disabled={busy || (!cloning && !dir)}>
             Launch
           </button>
