@@ -305,7 +305,7 @@ export async function getCommitments(fleet: string): Promise<Result<ChatCommitme
   return r.ok ? { ok: true, data: r.data.commitments ?? [] } : r;
 }
 export const cancelCommitment = (fleet: string, id: string) => call<unknown>('DELETE', chatPath(fleet, `commitments/${encodeURIComponent(id)}`));
-export const promoteNote =(fleet: string, id: string) => call<Instructions>('POST', chatPath(fleet, `notes/${encodeURIComponent(id)}/promote`));
+export const promoteNote = (fleet: string, id: string) => call<Instructions>('POST', chatPath(fleet, `notes/${encodeURIComponent(id)}/promote`));
 export const startSetup = () => call<unknown>('POST', '/setup');
 
 export type CapabilityStatus = 'passed' | 'failed' | 'not_checked';

@@ -57,13 +57,27 @@ export const instructionsCount = (text: string): number => [...text.trim()].leng
 export const canSaveInstructions = (saved: string, edited: string): boolean => saved.trim() !== edited.trim() && instructionsCount(edited) <= INSTRUCTIONS_MAX;
 
 /** A commitment's trigger in plain words; `href` is set for a PR or issue. */
-export function triggerWords(_trigger: ChatCommitment['trigger'], _ships: Pick<Ship, 'session' | 'name'>[]): { text: string; href?: string } {
-  return { text: '' };
+export function triggerWords(trigger: ChatCommitment['trigger'], ships: Pick<Ship, 'session' | 'name'>[]): { text: string; href?: string } {
+  const { kind, subject = '' } = trigger;
+  if (kind === 'ship_sailed' || kind === 'ship_anchored') {
+    const name = ships.find((s) => s.session === subject)?.name || subject;
+    return { text: `When ${name} ${kind === 'ship_sailed' ? 'sails off' : 'anchors'}` };
+  }
+  if (kind === 'time') {
+    const d = new Date(subject);
+    return { text: `At ${Number.isNaN(d.getTime()) ? subject : d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}` };
+  }
+  if (kind === 'none') return { text: 'No trigger' };
+  // The stored subject is canonical: https://<host>/<owner>/<repo>/(pull|issues)/<n>.
+  const m = /^https?:\/\/[^/]+\/([^/]+\/[^/]+)\/(?:pull|issues)\/(\d+)/.exec(subject);
+  const what = kind === 'pr_merged' ? 'is merged' : 'is closed';
+  const ref = m ? `${m[1]}#${m[2]}` : subject;
+  return { text: `When ${kind === 'issue_closed' ? 'issue' : 'PR'} ${ref} ${what}`, href: subject };
 }
 
 /** The marks a commitment row carries: waiting for room, and already asked about. */
-export function commitmentMarks(_c: Pick<ChatCommitment, 'waiting' | 'shown'>): string[] {
-  return [];
+export function commitmentMarks(c: Pick<ChatCommitment, 'waiting' | 'shown'>): string[] {
+  return [...(c.waiting ? ['Waiting for room'] : []), ...(c.shown ? ['Still want this?'] : [])];
 }
 
 /** How long ago a note was saved; a note lasts days, so the unit grows past minutes. */
