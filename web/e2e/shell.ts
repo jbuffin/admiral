@@ -995,17 +995,45 @@ export function prAuthored(a: Admiral, number: number, p: { login?: string; at?:
   writeFileSync(join(dir, `${PR_BASE}/${number}`.replace(/[/:]/g, '_')), JSON.stringify(event) + '\n');
 }
 
+/** An author in GitHub's shape: a bot has `__typename: "Bot"`, and no author at all is a deleted user. */
+type GqlAuthor = { login: string; bot?: boolean } | null;
+const gqlActor = (a: GqlAuthor) => (a ? { __typename: a.bot ? 'Bot' : 'User', login: a.login } : null);
+type GqlComment = { author: GqlAuthor; body: string; at: Date };
+const gqlComment = (c: GqlComment, n: number) => ({ author: gqlActor(c.author), body: c.body, url: `${PR_BASE}/8#comment-${n}`, createdAt: c.at.toISOString() });
+
+/** What a PR's detail carries beyond its header: the body, the check contexts, the review history, the requests, the threads and the comments. */
+export interface PRSections {
+  body?: string;
+  /** The rollup state: SUCCESS, FAILURE, PENDING, ''. */
+  checks?: string;
+  /** Check contexts that failed, as a CheckRun or a StatusContext does; `url` is the details or target URL. */
+  failing?: { name: string; url: string; status?: boolean }[];
+  reviews?: { author: GqlAuthor; state: string }[];
+  requested?: { login: string; bot?: boolean }[];
+  threads?: { path: string; line: number; resolved?: boolean; comments: GqlComment[] }[];
+  comments?: GqlComment[];
+}
+
 /** What the fake gh answers the PR tab's single-PR query with, in GitHub's shape: `stack` lists every layer, bottom first. */
-export function prDetail(a: Admiral, number: number, d: { title: string; head: string; base: string; state?: string; draft?: boolean; stack?: { number: number; state: string; head: string }[] }) {
+export function prDetail(a: Admiral, number: number, d: { title: string; head: string; base: string; state?: string; draft?: boolean; stack?: { number: number; state: string; head: string }[] } & PRSections) {
+  const contexts = (d.failing ?? []).map((f) =>
+    f.status ? { __typename: 'StatusContext', context: f.name, state: 'FAILURE', targetUrl: f.url } : { __typename: 'CheckRun', name: f.name, conclusion: 'FAILURE', detailsUrl: f.url },
+  );
   const node = {
     number,
     url: `${PR_BASE}/${number}`,
     title: d.title,
-    body: '',
+    body: d.body ?? '',
     state: d.state ?? 'OPEN',
     isDraft: d.draft ?? false,
     headRefName: d.head,
     baseRefName: d.base,
+    statusCheckRollup: d.checks ? { state: d.checks } : null,
+    commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: contexts } } } }] },
+    reviews: { nodes: (d.reviews ?? []).map((r) => ({ author: gqlActor(r.author), state: r.state })) },
+    reviewRequests: { nodes: (d.requested ?? []).map((r) => ({ requestedReviewer: gqlActor(r) })) },
+    reviewThreads: { nodes: (d.threads ?? []).map((t, i) => ({ isResolved: t.resolved ?? false, path: t.path, line: t.line, comments: { nodes: t.comments.map((c, j) => gqlComment(c, i * 10 + j)) } })) },
+    comments: { nodes: (d.comments ?? []).map((c, i) => gqlComment(c, 100 + i)) },
     stack: d.stack
       ? { number: 4, size: d.stack.length, baseRefName: 'main', entries: { nodes: d.stack.map((l, i) => ({ position: i + 1, pullRequest: { number: l.number, url: `${PR_BASE}/${l.number}`, state: l.state, headRefName: l.head } })) } }
       : null,
@@ -1052,21 +1080,192 @@ export async function expectChipTone(page: Page, chip: Locator, tone: 'ok' | 'er
   await expect(chip).toHaveCSS('color', await tokenColor(page, tone === 'ok' ? '--color-ok' : '--color-err'));
 }
 
+const HOUR = 3_600_000;
+const ago = (ms: number) => new Date(Date.now() - ms);
+const prSection = (panel: Locator, name: string) => panel.locator('section.pr-section').filter({ has: panel.getByRole('heading', { name, exact: true }) });
+
+/** The top PR's detail once its checks failed and people have reviewed and talked: every section has something to show. */
+function prSectionsFixture(): PRSections {
+  const filler = Array.from({ length: 24 }, (_, i) => `Line ${i + 1} of the notes explains one more detail of the token cache.`).join('\n\n');
+  return {
+    body: `## Why\n\nThe cache keeps token buckets warm.\n\n- keeps one bucket per key\n- evicts after five minutes\n\n<!-- reviewer checklist, never shown -->\n\n${filler}`,
+    checks: 'FAILURE',
+    failing: [
+      { name: 'build / unit', url: 'https://github.com/acme/api/actions/runs/9' },
+      { name: 'lint', url: 'javascript:alert(1)', status: true },
+    ],
+    reviews: [
+      { author: { login: 'carol' }, state: 'APPROVED' },
+      { author: { login: 'bob' }, state: 'CHANGES_REQUESTED' },
+      { author: { login: 'carol' }, state: 'COMMENTED' },
+      { author: { login: 'github-copilot', bot: true }, state: 'COMMENTED' },
+    ],
+    requested: [{ login: 'bob' }, { login: 'dave' }],
+    threads: [
+      { path: 'src/limiter.ts', line: 42, comments: [{ author: { login: 'bob' }, body: 'This drops the lock too early.', at: ago(73 * HOUR) }, { author: { login: 'alice' }, body: 'Good catch, fixing it.', at: ago(49 * HOUR) }] },
+      { path: 'old/path.ts', line: 7, resolved: true, comments: [{ author: { login: 'bob' }, body: 'Rename this.', at: ago(80 * HOUR) }] },
+      { path: 'old/other.ts', line: 0, resolved: true, comments: [{ author: { login: 'carol' }, body: 'Remove this file.', at: ago(79 * HOUR) }] },
+    ],
+    comments: [
+      { author: { login: 'carol' }, body: 'Can we add a test for the eviction?', at: ago(5 * HOUR + 60_000) },
+      { author: { login: 'github-actions', bot: true }, body: 'Coverage 91%\nlines: 120\nbranches: 40', at: ago(30 * 60_000) },
+    ],
+  };
+}
+
+/** AC2 and AC3 for the top PR: checks, description, reviewers and conversation, in two columns beside each other or folded to one on a phone. */
+async function expectPRSections(page: Page, panel: Locator, subtab: Locator, opts: { phone: boolean }) {
+  await expect(subtab).toHaveAttribute('aria-selected', 'true');
+  const checks = prSection(panel, 'Checks');
+  const description = prSection(panel, 'Description');
+  const reviewers = panel.locator('section.pr-section').filter({ has: panel.locator('.reviewers') });
+  const conversation = prSection(panel, 'Conversation');
+  const tall = async (l: Locator, what: string) => expect((await l.boundingBox())!.height, what).toBeGreaterThanOrEqual(44);
+
+  // Checks: the failing one with a Log link that opens elsewhere; a link GitHub sent that is not http(s) is not a link.
+  await expect(checks).toContainText('2 failing');
+  await expect(checks.getByText('Failed', { exact: true })).toHaveCount(2);
+  await expect(checks).toContainText('build / unit');
+  await expect(checks).toContainText('lint');
+  const logs = checks.getByRole('link', { name: 'Log' });
+  await expect(logs).toHaveCount(1);
+  await expect(logs).toHaveAttribute('href', 'https://github.com/acme/api/actions/runs/9');
+  await expect(logs).toHaveAttribute('target', '_blank');
+  await expect(logs).toHaveAttribute('rel', /noopener/);
+  await expect(logs).toHaveAttribute('rel', /noreferrer/);
+  await tall(logs, 'Log height');
+
+  // Description: Markdown rendered, the template's comment gone, clamped until Show more.
+  const desc = description.locator('.desc');
+  await expect(desc.getByRole('heading', { name: 'Why' })).toBeVisible();
+  await expect(desc.getByRole('listitem')).toHaveText(['keeps one bucket per key', 'evicts after five minutes']);
+  await expect(description).not.toContainText('reviewer checklist');
+  expect(await desc.getByRole('heading', { name: 'Why' }).evaluate((h) => getComputedStyle(h).fontSize), 'a heading in the description is body size').toBe(await desc.locator('p').first().evaluate((p) => getComputedStyle(p).fontSize));
+  await expect(desc).toHaveClass(/\bclamped\b/);
+  const clampedHeight = (await desc.boundingBox())!.height;
+  const more = description.getByRole('button', { name: 'Show more' });
+  await expect(more).toHaveAttribute('aria-expanded', 'false');
+  await tall(more, 'Show more height');
+
+  // Reviewers: one row per person, the latest verdict, waiting ones last.
+  const rows = reviewers.getByRole('listitem');
+  if (opts.phone) {
+    const summary = panel.locator('.rev-summary');
+    await expect(summary).toHaveText('1 approved · 1 changes requested · 1 commented · 1 waiting');
+    await expect(summary).toHaveAttribute('aria-expanded', 'false');
+    await expect(rows.first()).toBeHidden();
+    await tall(summary, 'Reviewers summary height');
+    expect((await summary.boundingBox())!.y, 'the summary sits above Checks').toBeLessThan((await checks.boundingBox())!.y);
+    await summary.tap();
+    await expect(summary).toHaveAttribute('aria-expanded', 'true');
+  } else {
+    await expect(panel.locator('.rev-summary')).toBeHidden();
+  }
+  await expect(rows).toHaveText([/carol\s*Approved/, /bob\s*Changes requested/, /github-copilot\s*bot\s*Commented/, /dave\s*Waiting/]);
+  await expectChipTone(page, rows.nth(0).getByText('Approved', { exact: true }), 'ok');
+  await expectChipTone(page, rows.nth(1).getByText('Changes requested', { exact: true }), 'err');
+  await expect(rows.nth(0).getByText('bot', { exact: true })).toHaveCount(0);
+  await expect(rows.nth(2).locator('.avatar')).toHaveClass(/\bbot\b/);
+  await expect(rows.nth(0).locator('.avatar')).toHaveText('CA');
+
+  // The layout: two columns beside each other, or one column.
+  const box = async (l: Locator) => (await l.boundingBox())!;
+  const [c, d, r, v] = [await box(checks), await box(description), await box(reviewers), await box(conversation)];
+  expect(d.y, 'Description is under Checks').toBeGreaterThan(c.y + c.height - 1);
+  expect(Math.abs(d.x - c.x), 'Description shares Checks\' column').toBeLessThan(2);
+  expect(v.y, 'Conversation is below the columns').toBeGreaterThan(Math.max(d.y + d.height, r.y + r.height) - 1);
+  if (opts.phone) {
+    expect(r.y + r.height, 'Reviewers is above Checks').toBeLessThanOrEqual(c.y + 1);
+    expect(Math.abs(r.x - c.x)).toBeLessThan(2);
+    expect(await page.evaluate(() => [document.documentElement, document.querySelector('main')!].every((e) => e.scrollWidth <= e.clientWidth)), 'no sideways scroll').toBe(true);
+  } else {
+    expect(r.x, 'Reviewers is right of Checks').toBeGreaterThan(c.x + c.width - 1);
+    expect(Math.abs(r.y - c.y), 'Reviewers and Checks start on one row').toBeLessThan(2);
+    expect(v.width, 'Conversation spans both columns').toBeGreaterThan(c.width + r.width - 2);
+  }
+
+  // Conversation: the open thread and the comments in time order, oldest first, each with its time.
+  const items = conversation.locator('.timeline .item');
+  await expect(items).toHaveCount(3);
+  await expect(items.nth(0)).toContainText('bob');
+  await expect(items.nth(0)).toContainText('src/limiter.ts:42');
+  await expect(items.nth(0)).toContainText('3d ago');
+  await expect(items.nth(0)).toContainText('This drops the lock too early.');
+  await expect(items.nth(0).locator('.reply')).toContainText('alice');
+  await expect(items.nth(0).locator('.reply')).toContainText('Good catch, fixing it.');
+  await expect(items.nth(0).locator('.reply')).toContainText('2d ago');
+  await expect(items.nth(0).getByText('bot', { exact: true })).toHaveCount(0);
+  await expect(items.nth(1)).toContainText('carol');
+  await expect(items.nth(1)).toContainText('5h ago');
+  await expect(items.nth(1)).toContainText('Can we add a test for the eviction?');
+  await expect(items.nth(1)).not.toContainText('Resolved');
+
+  // A bot's comment is marked, folded to its first line, and opens on Show all.
+  const bot = items.nth(2);
+  await expect(bot).toHaveClass(/\bfolded\b/);
+  await expect(bot.getByText('bot', { exact: true })).toBeVisible();
+  await expect(bot).toContainText('github-actions');
+  await expect(bot).toContainText(/\d+m ago/);
+  await expect(bot).toContainText('Coverage 91%');
+  await expect(bot).not.toContainText('lines: 120');
+  const showAll = bot.getByRole('button', { name: 'Show all' });
+  await expect(showAll).toHaveAttribute('aria-expanded', 'false');
+  await tall(showAll, 'Show all height');
+  await showAll.tap();
+  await expect(bot).not.toHaveClass(/\bfolded\b/);
+  await expect(bot).toContainText('lines: 120');
+  await expect(bot).toContainText('branches: 40');
+  await expect(bot.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
+
+  // Resolved threads leave the list for one fold, which opens on a tap.
+  const fold = conversation.getByRole('button', { name: '2 resolved threads' });
+  await expect(fold).toHaveAttribute('aria-expanded', 'false');
+  await tall(fold, 'resolved fold height');
+  await expect(conversation).not.toContainText('Rename this.');
+  await fold.tap();
+  await expect(fold).toHaveAttribute('aria-expanded', 'true');
+  await expect(items).toHaveCount(5);
+  await expect(conversation).toContainText('old/path.ts:7');
+  await expect(conversation).toContainText('Rename this.');
+  await expect(conversation).toContainText('old/other.ts');
+  await expect(conversation).not.toContainText('old/other.ts:0');
+  await expect(conversation.locator('.item.resolved').first().getByText('Resolved', { exact: true })).toBeVisible();
+
+  // Show more opens the description.
+  await more.tap();
+  await expect(description.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
+  await expect(desc).not.toHaveClass(/\bclamped\b/);
+  expect((await desc.boundingBox())!.height, 'the open description is taller').toBeGreaterThan(clampedHeight);
+  await expect(desc).toContainText('Line 24 of the notes');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+}
+
+/** What the engineer opened stays open across a refresh: the description, the bot's text and the resolved threads. */
+async function expectPRSectionsStayOpen(panel: Locator) {
+  await expect(prSection(panel, 'Description').getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
+  await expect(prSection(panel, 'Description').locator('.desc')).not.toHaveClass(/\bclamped\b/);
+  const conversation = prSection(panel, 'Conversation');
+  await expect(conversation.getByRole('button', { name: '2 resolved threads' })).toHaveAttribute('aria-expanded', 'true');
+  await expect(conversation.locator('.timeline .item')).toHaveCount(5);
+  await expect(conversation.locator('.item.bot')).not.toHaveClass(/\bfolded\b/);
+}
+
 /**
  * Acceptance criteria 1, 4 and 5 for a running ship carrying a 2-PR stack whose bottom layer is merged (the ship listed the top one first):
  * the tab counts the open PR, the summary line opens the tab, the sub-tabs follow the stack with the merged one marked, a tap on a sub-tab
  * switches the header and the chips, an approved passing PR's chips are green and a failing one's red, and the tab re-reads GitHub every 30s
  * only while it is open.
  */
-export async function prTabOfARunningStack(page: Page, a: Admiral) {
+export async function prTabOfARunningStack(page: Page, a: Admiral, opts: { phone?: boolean } = {}) {
   const stack = [
     { number: 7, state: 'MERGED', head: 'feat/limiter-core' },
     { number: 8, state: 'OPEN', head: 'feat/limiter-cache' },
   ];
-  const detail8 = (title: string) => prDetail(a, 8, { title, head: 'feat/limiter-cache', base: 'feat/limiter-core', draft: true, stack });
+  const passing: PRSections = { checks: 'SUCCESS', reviews: [{ author: { login: 'carol' }, state: 'APPROVED' }] };
+  const detail8 = (title: string, sections: PRSections = passing) => prDetail(a, 8, { title, head: 'feat/limiter-cache', base: 'feat/limiter-core', draft: true, stack, ...sections });
   prAnswer(a, 7, { state: 'MERGED', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
   prAnswer(a, 8, { state: 'OPEN', review: 'APPROVED', checks: 'SUCCESS', mergeable: 'MERGEABLE' });
-  prDetail(a, 7, { title: 'Add the limiter', head: 'feat/limiter-core', base: 'main', state: 'MERGED', stack });
+  prDetail(a, 7, { title: 'Add the limiter', head: 'feat/limiter-core', base: 'main', state: 'MERGED', stack, checks: 'SUCCESS', reviews: [{ author: { login: 'ann' }, state: 'APPROVED' }] });
   detail8('Cache tokens');
   const ship = await launchShipCarrying(a, [8, 7]);
 
@@ -1123,6 +1322,14 @@ export async function prTabOfARunningStack(page: Page, a: Admiral) {
   await expect(panel).toContainText('Merged');
   await expect(panel.getByText('Approved', { exact: true })).toHaveCount(0);
 
+  // A merged PR keeps its sections, with a muted line where it has nothing to show.
+  await expect(prSection(panel, 'Checks')).toContainText('All checks passed');
+  await expect(prSection(panel, 'Description')).toContainText('No description.');
+  await expect(prSection(panel, 'Description').getByRole('button')).toHaveCount(0);
+  await expect(prSection(panel, 'Conversation')).toContainText('No reviews or comments yet.');
+  if (opts.phone) await panel.locator('.rev-summary').tap();
+  await expect(panel.locator('.reviewers').getByRole('listitem')).toHaveText([/ann\s*Approved/]);
+
   // A failing PR's chips are red, and the summary and dot follow the later poll.
   prAnswer(a, 8, { state: 'OPEN', review: 'CHANGES_REQUESTED', checks: 'FAILURE', mergeable: 'CONFLICTING' });
   expect((await fetch(`${a.url}api/v1/moored/refresh`, { method: 'POST' })).status).toBe(202);
@@ -1132,6 +1339,16 @@ export async function prTabOfARunningStack(page: Page, a: Admiral) {
   await expect(panel.getByText('Approved', { exact: true })).toHaveCount(0);
 
   // Every 30s the open tab reads GitHub again; a tab left behind does not.
+  detail8('Cache tokens, renamed', prSectionsFixture());
+  await page.clock.fastForward(30_000);
+  await expect(panel.getByRole('heading', { name: 'Cache tokens, renamed' })).toBeVisible();
+  await expectPRSections(page, panel, tabs.nth(1), { phone: opts.phone ?? false });
+
+  // The next refresh keeps what the engineer opened.
+  detail8('Cache tokens, refreshed', prSectionsFixture());
+  await page.clock.fastForward(30_000);
+  await expect(panel.getByRole('heading', { name: 'Cache tokens, refreshed' })).toBeVisible();
+  await expectPRSectionsStayOpen(panel);
   const unbroken = 'Cache-tokens-' + 'x'.repeat(150);
   detail8(unbroken);
   await page.clock.fastForward(30_000);

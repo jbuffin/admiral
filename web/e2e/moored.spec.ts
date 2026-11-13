@@ -278,7 +278,7 @@ test('a Return to port sheet opened before the ship had an open PR stays plain, 
   expect(watch.errors).toEqual([]);
 });
 
-test('a running ship carrying a 2-PR stack shows its count, summary and sub-tabs in stack order, and the chips take their colours', async ({ page, admiral }) => {
+test('a running ship carrying a 2-PR stack shows its count, summary and sub-tabs in stack order, the chips take their colours, and each PR shows its checks, description, reviewers and conversation, which fold', async ({ page, admiral }) => {
   seedFleets(admiral, { live: true });
   addGitHubSource(admiral);
   await admiral.start({ env: mooringEnv(admiral) });
