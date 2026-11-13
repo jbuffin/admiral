@@ -241,7 +241,7 @@ func copilotSessionID() (string, error) {
 func CopilotPluginDir(home string) string { return copilotPluginDir(home) }
 
 // CopilotChatInstructions are the chat's instructions as the home's copilot-instructions.md carries them.
-func CopilotChatInstructions() string { return chatPrompt + "\n" }
+func CopilotChatInstructions() string { return chatPromptFor("copilot") + "\n" }
 
 // CopilotHookTypes are the hook events Admiral's own Copilot plugin registers.
 func CopilotHookTypes() []string {

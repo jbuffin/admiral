@@ -5,7 +5,7 @@ import { checkErrors, checkKey } from './capabilities';
 import { MissingCapability } from './MissingCapability';
 import { Flag } from './Flag';
 import { fleets } from './fleets';
-import { CHAT_THRESHOLDS, INSTRUCTIONS_MAX, canSaveInstructions, chatErrorMessage, chatSaveBody, effortLabel, harnessLabel, instructionsCount, modelLabel, noteAge, switchHarness, thresholdLabel, type ChatSettings } from './chatSettings';
+import { CHAT_THRESHOLDS, INSTRUCTIONS_MAX, canSaveInstructions, chatErrorMessage, chatSaveBody, effortLabel, harnessLabel, instructionsCount, memoryNotRead, modelLabel, noteAge, readsMemory, switchHarness, thresholdLabel, type ChatSettings } from './chatSettings';
 
 const settingsOf = (f: Fleet): ChatSettings => ({ harness: f.chat.harness, model: f.chat.model, effort: f.chat.effort, context_threshold: f.chat.context_threshold });
 
@@ -44,7 +44,7 @@ function Choice<T extends string | number>({ legend, help, values, value, label,
 }
 
 // The engineer's instructions and the notes AdmiralBot saved. Each acts at once and never rides on the settings Save.
-function Knows({ fleet }: { fleet: string }) {
+function Knows({ fleet, harness }: { fleet: string; harness: string }) {
   const [saved, setSaved] = useState('');
   const [text, setText] = useState('');
   const [notes, setNotes] = useState<ChatNote[]>([]);
@@ -136,6 +136,7 @@ function Knows({ fleet }: { fleet: string }) {
           </ul>
         )}
       </div>
+      {readsMemory(harness) ? null : <p class="note">{memoryNotRead(harness)}</p>}
     </>
   );
 }
@@ -216,22 +217,24 @@ export function ChatSettingsPage({ fleet }: { fleet: Fleet }) {
         ) : null}
         <Choice legend="Model" values={models} value={edited.model} label={modelLabel} disabled={busy} onPick={(v) => set({ model: v })} />
         <Choice legend="Effort" values={efforts} value={edited.effort} label={effortLabel} disabled={busy} onPick={(v) => set({ effort: v })} />
-        <Choice
-          legend="Refresh context at"
-          help="How large AdmiralBot's context can grow before a refresh. Your chat history stays."
-          values={CHAT_THRESHOLDS}
-          value={edited.context_threshold}
-          label={thresholdLabel}
-          disabled={busy}
-          onPick={(v) => set({ context_threshold: v })}
-        />
+        {readsMemory(edited.harness) ? (
+          <Choice
+            legend="Refresh context at"
+            help="How large AdmiralBot's context can grow before a refresh. Your chat history stays."
+            values={CHAT_THRESHOLDS}
+            value={edited.context_threshold}
+            label={thresholdLabel}
+            disabled={busy}
+            onPick={(v) => set({ context_threshold: v })}
+          />
+        ) : null}
         <div class="set actions">
           <button type="button" class="btn primary" disabled={busy || !body} onClick={() => void save()}>
             Save
           </button>
         </div>
       </div>
-      <Knows fleet={fleet.key} />
+      <Knows fleet={fleet.key} harness={edited.harness} />
     </>
   );
 }

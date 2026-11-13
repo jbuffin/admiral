@@ -175,7 +175,7 @@ func codexChatArgv(exe string, noDaemon bool, chat config.ChatSettings, self, ho
 	if chat.Effort != "" {
 		argv = append(argv, "-c", "model_reasoning_effort="+strconv.Quote(chat.Effort))
 	}
-	argv = append(argv, "-c", "developer_instructions="+strconv.Quote(chatPrompt))
+	argv = append(argv, "-c", "developer_instructions="+strconv.Quote(chatPromptFor("codex")))
 	argv = append(argv, CodexFenceArgs(ChatServer)...)
 	argv = append(argv, CodexMCPServerArgs(ChatServer, self, []string{"mcp"}, serverEnv)...)
 	return append(argv, codexFlags()...)

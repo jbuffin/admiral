@@ -82,6 +82,7 @@ func (s *Service) tickLoop(ctx context.Context) {
 			return
 		case <-t.C:
 			s.Tick()
+			s.ResetTick()
 		}
 	}
 }

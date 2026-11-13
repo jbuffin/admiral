@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/jbuffin/admiral/internal/chat"
 )
 
 // chatFleet is the fleet the single-chat worlds give their chat to.
@@ -548,6 +550,10 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 		`event Notification {"notification_type":"permission_prompt"}`,
 		"wait go-stop",
 		`event Stop {"background_tasks":[]}`,
+		"wait go-fprompt",
+		`event UserPromptSubmit {"prompt":"flush"}`,
+		"wait go-fstop",
+		`event Stop {"background_tasks":[]}`,
 		"wait go-clear",
 		sessionStartCue(tp2, "clear"),
 	)
@@ -659,23 +665,29 @@ func TestChatSession_ConversationSendNewChatAndRestart(t *testing.T) {
 	appendLines(t, tp2, tpClear...)
 
 	history := append(append([]string{}, first...), "assistant: Two ships are afloat.", "user: Thanks, that is all")
-	t.Run("New chat keeps the history and adds a marker", func(t *testing.T) {
+	t.Run("New chat flushes first, keeps the history and adds a marker", func(t *testing.T) {
 		c := &chatWorld{world: w.at(t), cfgDir: c.cfgDir}
-		code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/new", nil)
-		if code != http.StatusOK {
-			t.Fatalf("POST /api/chat/chat/new = %d, want 200: %s", code, body)
+		newChat := c.postNewChat()
+		// The chat is idle with no question open, so Admiral asks for the flush turn before it clears.
+		c.waitStdin(want + flushPaste)
+		appendLines(t, tp1, userLine("f-1", chat.FlushPrompt, nil), assistantLine("f-2", "msg_f", map[string]any{"type": "text", "text": "FLUSH-REPLY"}))
+		c.touch("go-fprompt")
+		c.touch("go-fstop")
+		if r := <-newChat; r.code != http.StatusOK {
+			t.Fatalf("POST /api/chat/chat/new = %d, want 200: %s", r.code, r.body)
 		}
-		if s := c.session(); !messagesAre(history...)(s) || resets(s.Messages) != 1 {
-			t.Errorf("right after New chat: %v with %d reset markers, want the history and one marker", texts(s.Messages), resets(s.Messages))
+		if s := c.session(); !messagesAre(history...)(s) || resets(s.Messages) != 1 || resetText(s.Messages) != "New chat" {
+			t.Errorf("right after New chat: %v with %d reset markers reading %q, want the history (no flush turn) and one New chat marker", texts(s.Messages), resets(s.Messages), resetText(s.Messages))
 		}
 		waitChatWS(t, ws1, 3*time.Second, "the history and a marker", func(s chatSession) bool { return messagesAre(history...)(s) && resets(s.Messages) == 1 })
 		waitChatWS(t, ws2, 3*time.Second, "the history and a marker", func(s chatSession) bool { return messagesAre(history...)(s) && resets(s.Messages) == 1 })
-		// /clear typed as keys, or pasted as one bracketed paste: either reaches the pane.
-		c.waitStdinOneOf(want+"/clear\r", want+"\x1b[200~/clear\x1b[201~\r")
+		// /clear typed as keys, or pasted as one bracketed paste: either reaches the pane, after the flush.
+		c.waitStdinOneOf(want+flushPaste+"/clear\r", want+flushPaste+"\x1b[200~/clear\x1b[201~\r")
+		c.expectNotLogged(chat.FlushPrompt, "FLUSH-REPLY")
 		// The /clear path writes one usage record for the chat, from the file it had before the clear.
 		appendLines(t, tp1, `{"type":"cost-state","totalCostUSD":0.5,"modelUsage":{"claude-fake":{"inputTokens":7,"outputTokens":3}}}`)
 		c.touch("go-clear")
-		c.waitEvents(5)
+		c.waitEvents(7)
 		c.stays(1500*time.Millisecond, "the same history after SessionStart (clear)", messagesAre(history...))
 		got := lastOf(c.waitEvent(chatSessionName, "usage", 1), "usage")
 		wantUsage(t, got, "chat", "claude", map[string]any{"input": 7.0, "output": 3.0, "reasoning": 0.0, "cache_read": 0.0, "cache_write": 0.0},
@@ -707,8 +719,9 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 	tpA := filepath.Join(c.cfgDir, "projects", "p", "a.jsonl")
 	tpB := filepath.Join(c.cfgDir, "projects", "p", "b.jsonl")
 	tpC := filepath.Join(c.cfgDir, "projects", "p", "c.jsonl")
-	w.writeCue("record", sessionStartCue(tpA, "startup"), "wait go-clear", sessionStartCue(tpA, "clear"),
-		"wait go-late", sessionStartCue(tpC, "startup"), "wait go-late-clear", sessionStartCue(tpC, "clear"))
+	w.writeCue("record", "bracketedpaste", sessionStartCue(tpA, "startup"), "wait go-clear", sessionStartCue(tpA, "clear"),
+		"wait go-late", sessionStartCue(tpC, "startup"), "wait go-late-clear", sessionStartCue(tpC, "clear"),
+		"wait go-fprompt", `event UserPromptSubmit {"prompt":"flush"}`, "wait go-fstop", `event Stop {"background_tasks":[]}`)
 	appendLines(t, tpA,
 		userLine("u-1", "Before the clear", nil),
 		assistantLine("a-1", "msg_1", map[string]any{"type": "text", "text": "Answer before the clear."}),
@@ -743,11 +756,17 @@ func TestChatSession_NewChatRestartsWhenTheConfigChanged(t *testing.T) {
 		t.Fatalf("a config change must not stop a running chat: %+v", got)
 	}
 	appendLines(t, tpB, userLine("u-30", "Fresh start", nil))
+	// The flush runs in the old session, before the kill.
+	newChat := c.postNewChat()
+	c.waitStdin(flushPaste)
+	appendLines(t, tpC, userLine("f-1", chat.FlushPrompt, nil), assistantLine("f-2", "msg_f", map[string]any{"type": "text", "text": "FLUSH-REPLY"}))
+	c.touch("go-fprompt")
+	c.touch("go-fstop")
+	c.waitEvents(6)
 	w.writeCue("record", sessionStartCue(tpB, "startup"))
 	c.moveRecord(".run1")
-	code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/new", nil)
-	if code != http.StatusOK {
-		t.Fatalf("POST /api/chat/chat/new = %d, want 200: %s", code, body)
+	if r := <-newChat; r.code != http.StatusOK {
+		t.Fatalf("POST /api/chat/chat/new = %d, want 200: %s", r.code, r.body)
 	}
 	if s := c.session(); resets(s.Messages) != 1 {
 		t.Errorf("right after New chat: %v, want one reset marker (the kill-and-start path adds it too)", s.Messages)
@@ -848,4 +867,230 @@ func TestChatSession_NeedsTheTokenOverTheLAN(t *testing.T) {
 	}
 	b.send(map[string]any{"type": "join", "cols": 80, "rows": 24})
 	b.waitJoin(5*time.Second, 1)
+}
+
+// flushPaste is what the chat's terminal receives for the flush prompt: one bracketed paste, then Enter.
+var flushPaste = "\x1b[200~" + chat.FlushPrompt + "\x1b[201~\r"
+
+type newChatResult struct {
+	code int
+	body string
+}
+
+// postNewChat asks for New chat in the background: with a flush, the request is held until the flush turn ends.
+func (c *chatWorld) postNewChat() <-chan newChatResult {
+	ch := make(chan newChatResult, 1)
+	url := c.in.LocalURL + "/api/chat/chat/new"
+	go func() {
+		code, body := send(c.t, http.MethodPost, url, nil)
+		ch <- newChatResult{code, body}
+	}()
+	return ch
+}
+
+func resetText(msgs []chatMsg) string {
+	for _, m := range msgs {
+		if m.Kind == "reset" {
+			return m.Text
+		}
+	}
+	return ""
+}
+
+// expectNotLogged requires the fleet's conversation.jsonl to hold none of the texts.
+func (c *chatWorld) expectNotLogged(texts ...string) {
+	c.t.Helper()
+	raw, _ := os.ReadFile(filepath.Join(c.home, "chat", chatFleet, "conversation.jsonl"))
+	for _, s := range texts {
+		if strings.Contains(string(raw), s) {
+			c.t.Errorf("conversation.jsonl holds %q; the flush turn is hidden from the history", s)
+		}
+	}
+}
+
+// refreshWorld is a chat over a 100K threshold whose reset windows ADMIRAL_CHAT_RESET_IDLE shortens to idle (the
+// 10 minutes) and six times it (the hour), with the fake's cues after the transcript starts.
+func newRefreshWorld(t *testing.T, idle string, extraEnv []string, cue func(tp1, tp2 string) []string) (c *chatWorld, tp1, tp2 string) {
+	t.Helper()
+	c = newChatWorld(t, false)
+	tp1 = filepath.Join(c.cfgDir, "projects", "p", "first.jsonl")
+	tp2 = filepath.Join(c.cfgDir, "projects", "p", "second.jsonl")
+	raw, err := os.ReadFile(configPath(c.home))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	cfg["fleets"].(map[string]any)[chatFleet].(map[string]any)["chat"].(map[string]any)["context_threshold"] = 100000
+	b, _ := json.Marshal(cfg)
+	writeConfig(t, c.home, string(b))
+	c.writeCue(cue(tp1, tp2)...)
+	c.extra = append(c.extra, "ADMIRAL_CHAT_RESET_IDLE="+idle)
+	c.extra = append(c.extra, extraEnv...)
+	return c, tp1, tp2
+}
+
+// overThreshold is a status line whose context holds 103,000 tokens: input, cache creation and cache read
+// together, over the 100K threshold, while any one of them alone is under it.
+func overThreshold() string {
+	b, _ := json.Marshal(map[string]any{
+		"session_id": "5b1f0c2e-7a44-4a1e-9d0a-1c2d3e4f5a6b",
+		"context_window": map[string]any{"context_window_size": 200000, "current_usage": map[string]any{
+			"input_tokens": 90000, "output_tokens": 1200, "cache_creation_input_tokens": 8000, "cache_read_input_tokens": 5000}},
+	})
+	return "statusline " + string(b)
+}
+
+// briefOut is what the SessionStart hook printed so far, and how many times.
+func (c *chatWorld) briefOut() (string, int) {
+	b, _ := os.ReadFile(filepath.Join(c.recDir(), "event-stdout"))
+	return string(b), strings.Count(string(b), `"hookEventName":"SessionStart"`)
+}
+
+func (c *chatWorld) waitBriefs(n int) {
+	c.t.Helper()
+	for end := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		b, _ := os.ReadFile(filepath.Join(c.recDir(), "event-stdout"))
+		if strings.Count(string(b), `"hookEventName":"SessionStart"`) >= n {
+			return
+		}
+		if time.Now().After(end) {
+			c.t.Fatalf("within 10s the SessionStart hook never printed the brief %d times; event-stdout is %q", n, b)
+		}
+	}
+}
+
+// Admiral resets an idle chat over its threshold by itself: a flush turn, then /clear, then the brief, with a
+// "Context refreshed" marker and no sign of the flush in the history.
+func TestChatSession_AdmiralRefreshesAnIdleChatOverItsThreshold(t *testing.T) {
+	t.Parallel()
+	c, tp1, tp2 := newRefreshWorld(t, "1s", nil, func(tp1, tp2 string) []string {
+		return []string{
+			"record", "bracketedpaste",
+			"wait go-start", sessionStartCue(tp1, "startup"),
+			"wait go-usage", overThreshold(),
+			"wait go-fprompt", `event UserPromptSubmit {"prompt":"flush"}`,
+			"wait go-fstop", `event Stop {"background_tasks":[]}`,
+			"wait go-clear", sessionStartCue(tp2, "clear"),
+			"wait go-redraw", overThreshold(),
+		}
+	})
+	w := c.world
+	appendLines(t, tp1, userLine("u-1", "Where are the ships", nil), assistantLine("a-1", "msg_1", map[string]any{"type": "text", "text": "Two are afloat."}))
+	history := []string{"user: Where are the ships", "assistant: Two are afloat."}
+	w.start()
+	c.start()
+	c.waitFile(chatSessionName, "recording")
+	c.touch("go-start")
+	c.waitSession(10*time.Second, "the first messages", messagesAre(history...))
+	// The reading is kept after the session started, so it is not one from before a reset.
+	c.touch("go-usage")
+
+	c.waitStdin(flushPaste)
+	if got := c.session(); resets(got.Messages) != 0 {
+		t.Errorf("the marker is there before the flush ended: %+v", got.Messages)
+	}
+
+	t.Run("a send during the reset is refused and nothing reaches the pane", func(t *testing.T) {
+		code, body := send(t, http.MethodPost, w.in.LocalURL+"/api/chat/chat/messages", map[string]any{"text": "are you there"})
+		if code != http.StatusConflict || errMessage(body) != chat.Refreshing {
+			t.Errorf("POST /api/chat/chat/messages during the reset = %d %q, want 409 %q", code, errMessage(body), chat.Refreshing)
+		}
+		if got := c.stdin(); got != flushPaste {
+			t.Errorf("the pane received %q, want only the flush", got)
+		}
+	})
+
+	// The flush turn: Claude records the prompt now, and its reply only after Admiral has cleared, the way the
+	// transcript's tail lags the Stop hook.
+	appendLines(t, tp1, userLine("f-1", chat.FlushPrompt, nil))
+	c.touch("go-fprompt")
+	holdThat(t, "the chat was cleared while the flush turn was still running", func() bool { return c.stdin() == flushPaste })
+	c.touch("go-fstop")
+
+	t.Run("the clear follows the flush and the thread shows a Context refreshed marker", func(t *testing.T) {
+		c.waitStdinOneOf(flushPaste+"/clear\r", flushPaste+"\x1b[200~/clear\x1b[201~\r")
+		c.waitSession(10*time.Second, "the marker", func(s chatSession) bool { return resets(s.Messages) == 1 })
+		appendLines(t, tp1, assistantLine("f-2", "msg_f", map[string]any{"type": "text", "text": "FLUSH-REPLY"}))
+		holdThat(t, "the flush reply, read after the marker, showed in the thread", func() bool {
+			return messagesAre(history...)(c.session())
+		})
+		appendLines(t, tp2,
+			userLine("c-1", "<command-name>/clear</command-name>\n<command-message>clear</command-message>", nil),
+			userLine("c-2", "<local-command-stdout></local-command-stdout>", nil))
+		if _, n := c.briefOut(); n != 0 {
+			t.Fatalf("the SessionStart hook printed %d times before the clear, want 0 (the startup one found no history)", n)
+		}
+		c.touch("go-clear")
+		got := c.waitSession(10*time.Second, "one marker after the history", func(s chatSession) bool { return resets(s.Messages) == 1 })
+		if resetText(got.Messages) != "Context refreshed" || !messagesAre(history...)(got) {
+			t.Errorf("thread = %v with a marker reading %q, want the history and Context refreshed", texts(got.Messages), resetText(got.Messages))
+		}
+		c.expectNotLogged(chat.FlushPrompt, "FLUSH-REPLY")
+	})
+
+	t.Run("the SessionStart after the clear prints the brief", func(t *testing.T) {
+		// The startup one found no history yet and printed nothing, so this print is the clear's.
+		c.waitBriefs(1)
+		if out, _ := c.briefOut(); !strings.Contains(out, "Where are the ships") {
+			t.Errorf("the brief after the clear does not hold the earlier history; event-stdout is %q", out)
+		}
+	})
+
+	t.Run("a status line redrawn after the clear, with no turn since, does not trigger a second reset", func(t *testing.T) {
+		// Claude redraws its status line after the clear, still over the threshold and newer than the reset.
+		c.touch("go-redraw")
+		holdThat(t, "Admiral reset the chat again on a reading with no turn since the last reset", func() bool {
+			return strings.Count(c.stdin(), chat.FlushPrompt) == 1 && resets(c.session().Messages) == 1
+		})
+	})
+}
+
+// A flush that never ends is abandoned: no clear, no marker, and what it said stays out of the history.
+func TestChatSession_AnAbandonedFlushClearsNothing(t *testing.T) {
+	t.Parallel()
+	c, tp1, _ := newRefreshWorld(t, "2s", []string{"ADMIRAL_CHAT_FLUSH_WAIT=500ms"}, func(tp1, tp2 string) []string {
+		return []string{"record", "bracketedpaste", "wait go-start", sessionStartCue(tp1, "startup"), "wait go-usage", overThreshold()}
+	})
+	history := []string{"user: Where are the ships", "assistant: Two are afloat."}
+	appendLines(t, tp1, userLine("u-1", "Where are the ships", nil), assistantLine("a-1", "msg_1", map[string]any{"type": "text", "text": "Two are afloat."}))
+	c.world.start()
+	c.start()
+	c.waitFile(chatSessionName, "recording")
+	c.touch("go-start")
+	c.waitSession(10*time.Second, "the first messages", messagesAre(history...))
+	c.touch("go-usage")
+	c.waitStdin(flushPaste)
+	// Claude took the prompt and answered, but no hook says the turn ended.
+	appendLines(t, tp1, userLine("f-1", chat.FlushPrompt, nil), assistantLine("f-2", "msg_f", map[string]any{"type": "text", "text": "FLUSH-REPLY"}))
+	holdThat(t, "the abandoned flush cleared the chat or left a marker or its turn in the thread", func() bool {
+		s := c.session()
+		return c.stdin() == flushPaste && resets(s.Messages) == 0 && messagesAre(history...)(s)
+	})
+	c.expectNotLogged(chat.FlushPrompt, "FLUSH-REPLY")
+}
+
+// New chat while a turn runs clears at once: the engineer asked for it, and a flush would wait behind the turn.
+func TestChatSession_NewChatWhileATurnRunsClearsWithoutAFlush(t *testing.T) {
+	t.Parallel()
+	c := newChatWorld(t, false)
+	tp1 := filepath.Join(c.cfgDir, "projects", "p", "first.jsonl")
+	c.writeCue("record", "bracketedpaste", "wait go-start", sessionStartCue(tp1, "startup"), "wait go-prompt", `event UserPromptSubmit {"prompt":"hello"}`)
+	appendLines(t, tp1, userLine("u-1", "Where are the ships", nil))
+	c.world.start()
+	c.start()
+	c.waitFile(chatSessionName, "recording")
+	c.touch("go-start")
+	c.touch("go-prompt")
+	c.waitSession(10*time.Second, "a running turn", func(s chatSession) bool { return s.State == "working" })
+	code, body := send(t, http.MethodPost, c.in.LocalURL+"/api/chat/chat/new", nil)
+	if code != http.StatusOK {
+		t.Fatalf("POST /api/chat/chat/new = %d, want 200: %s", code, body)
+	}
+	c.waitStdinOneOf("/clear\r", "\x1b[200~/clear\x1b[201~\r")
+	if s := c.session(); resetText(s.Messages) != "New chat" {
+		t.Errorf("thread = %+v, want a New chat marker", s.Messages)
+	}
 }

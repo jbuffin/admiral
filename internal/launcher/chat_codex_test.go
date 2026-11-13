@@ -356,7 +356,7 @@ func TestCodexChatEnvHasItsOwnCodexHomeAndNoStrayAdmiralVariables(t *testing.T) 
 	if vars["CODEX_HOME"] != c.codexHome() {
 		t.Errorf("CODEX_HOME = %q, want the chat's %q, not the dock's engineer home", vars["CODEX_HOME"], c.codexHome())
 	}
-	want := map[string]string{"ADMIRAL_HOME": c.home, "ADMIRAL_CHAT_FLEET": "work", "ADMIRAL_PORT": "4242"}
+	want := map[string]string{"ADMIRAL_HOME": c.home, "ADMIRAL_CHAT_FLEET": "work", "ADMIRAL_PORT": "4242", "ADMIRAL_CHAT_HARNESS": "codex"}
 	for k, v := range vars {
 		if strings.HasPrefix(k, "ADMIRAL_") && want[k] != v {
 			t.Errorf("env holds %s=%q: only %v belong to the chat", k, v, want)

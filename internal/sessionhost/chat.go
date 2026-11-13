@@ -11,6 +11,8 @@ const (
 	ChatModelOpt  = "chat-model"
 	ChatEffortOpt = "chat-effort"
 	ChatFleetOpt  = "chat-fleet"
+	// ChatHarnessOpt is the harness the session was launched under: its pane is what a reset or flush would be typed into.
+	ChatHarnessOpt = "chat-harness"
 	// ChatNonceOpt is minted when a chat session starts and ends with it; it is not a secret, it only
 	// makes the session's actor token differ from every earlier session's.
 	ChatNonceOpt = "chat-nonce"
@@ -27,9 +29,10 @@ const (
 	TranscriptOption = Prefix + "transcript"
 	// Set at start so a restarted Admiral can tell whether New chat can clear the
 	// session or must restart it.
-	ChatModelOption  = Prefix + ChatModelOpt
-	ChatEffortOption = Prefix + ChatEffortOpt
-	ChatFleetOption  = Prefix + ChatFleetOpt
+	ChatModelOption   = Prefix + ChatModelOpt
+	ChatEffortOption  = Prefix + ChatEffortOpt
+	ChatFleetOption   = Prefix + ChatFleetOpt
+	ChatHarnessOption = Prefix + ChatHarnessOpt
 )
 
 // The reader checks again what the hook checked, since anything in the session can write the option.
