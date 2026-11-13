@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -39,6 +40,7 @@ import (
 	"github.com/jbuffin/admiral/internal/outcomes"
 	"github.com/jbuffin/admiral/internal/probes"
 	"github.com/jbuffin/admiral/internal/push"
+	"github.com/jbuffin/admiral/internal/repofinder"
 	"github.com/jbuffin/admiral/internal/resources"
 	"github.com/jbuffin/admiral/internal/routines"
 	"github.com/jbuffin/admiral/internal/server"
@@ -268,6 +270,7 @@ func serve(args []string) error {
 	}
 	defer cfg.Close()
 	cfg.SetChatProbe(capabilities.ChatProbe(capabilities.Open(dir)))
+	cfg.SetRepoLookup(fleetRepos(cfg))
 	listenOn, err := resolveListen(cfg, *listen, func() (bool, error) { return cli.OfferSetup(cli.Std()) })
 	if err != nil {
 		return err
@@ -722,5 +725,24 @@ func moveListener(lis *listener, cfg *config.Manager, hub *server.Hub, guard *au
 	if c.Remote.Tailscale && lis.Err() == nil {
 		lis.DropOffLoopback()
 		guard.CutLAN()
+	}
+}
+
+// fleetRepos lists the owner/name of every remote of the checkouts a fleet's search roots find.
+func fleetRepos(cfg *config.Manager) config.RepoLookup {
+	return func(key string) []string {
+		f, ok := cfg.Current().Fleet(key)
+		if !ok {
+			return nil
+		}
+		var out []string
+		for _, e := range repofinder.List(repofinder.FleetRoots(f.SearchRoots, f.CloneRoot)) {
+			for _, id := range e.Remotes {
+				if _, nameWithOwner, ok := strings.Cut(id, "/"); ok {
+					out = append(out, nameWithOwner)
+				}
+			}
+		}
+		return out
 	}
 }

@@ -71,12 +71,6 @@ func chatDefaultModel(harness string) string { return ChatModelsFor(harness)[0] 
 // with the probe's detail; config cannot import capabilities, so the server injects it.
 type ChatProbe func(fleet, harness, capability string) (status, detail string)
 
-// RepoLookup lists the owner/name identities of the repos a fleet's search roots find.
-type RepoLookup func(fleet string) []string
-
-// SetRepoLookup wires the repo finder into the save-time check of a Limit repo allowlist; nil checks nothing.
-func (m *Manager) SetRepoLookup(l RepoLookup) {}
-
 // SetChatProbe wires the capability store into the AdmiralBot gate; it survives a reload.
 func (m *Manager) SetChatProbe(p ChatProbe) {
 	m.mu.Lock()

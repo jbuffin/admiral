@@ -10,7 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
+
+	"github.com/jbuffin/admiral/internal/standing"
 )
 
 var writeMu sync.Mutex
@@ -150,9 +153,14 @@ var (
 // editFleet rewrites only the named fleet's editable fields; any other error is a value Parse refused.
 // An empty color or clone_root removes the key, so the fleet falls back to its default.
 // A chat harness the capability store has not cleared (read through cfg) is refused, so no caller skips the gate.
-func editFleet(dir, key string, f FleetFields, cfg *Config) error {
+func editFleet(dir, key string, f FleetFields, cfg *Config, repos RepoLookup) error {
 	if raw, ok := f.Chat["harness"]; ok {
 		if err := refuseUnofferedHarness(cfg, key, raw); err != nil {
+			return err
+		}
+	}
+	if raw, ok := f.Limits["repo_allowlist"]; ok && repos != nil {
+		if err := checkRepoMembership(key, raw, repos(key)); err != nil {
 			return err
 		}
 	}
@@ -209,6 +217,12 @@ func editFleet(dir, key string, f FleetFields, cfg *Config) error {
 	}
 	if f.Notify != nil {
 		fleet.SetValue("notify", *f.Notify)
+	}
+	if f.Preset != nil || f.Limits != nil {
+		current, _ := cfg.Fleet(key)
+		if err := mergeLimits(fleet, f, current.Preset); err != nil {
+			return err
+		}
 	}
 	setOrDrop("clone_root", f.CloneRoot)
 	setOrDrop("color", f.Color)
@@ -290,6 +304,81 @@ func mergeChat(fleet *Object, key string, set map[string]json.RawMessage) error 
 		chat.Set(k, raw)
 	}
 	fleet.Set("chat", chat.JSON())
+	return nil
+}
+
+// limitGroups are the Limit keys whose members save one by one, so sending one ceiling leaves the others as stored.
+var limitGroups = []string{"ceilings", "rates", "spend", "skip"}
+
+// mergeLimits sets the preset, then the given Limit keys over what is stored. Switching preset
+// drops every stored Limit except quiet hours, which belong to the fleet and not to a preset.
+func mergeLimits(fleet *Object, f FleetFields, current standing.Preset) error {
+	limits := NewObject()
+	if raw, ok := fleet.Get("limits"); ok {
+		var err error
+		if limits, err = ParseObject(raw); err != nil {
+			return fmt.Errorf("%w: %w", ErrConflict, err)
+		}
+	}
+	if f.Preset != nil {
+		fleet.SetValue("preset", *f.Preset)
+		if standing.Preset(*f.Preset) != current {
+			kept := NewObject()
+			if raw, ok := limits.Get("quiet_hours"); ok {
+				kept.Set("quiet_hours", raw)
+			}
+			limits = kept
+		}
+	}
+	for _, k := range slices.Sorted(maps.Keys(f.Limits)) {
+		raw := f.Limits[k]
+		if slices.Contains(limitGroups, k) {
+			if merged, ok := mergeGroup(limits, k, raw); ok {
+				raw = merged
+			}
+		}
+		limits.Set(k, raw)
+	}
+	if limits.Len() == 0 {
+		fleet.Delete("limits")
+	} else {
+		fleet.Set("limits", limits.JSON())
+	}
+	return nil
+}
+
+// mergeGroup layers the given members of a nested group over the stored ones; a value that is
+// not an object is left for the parser to refuse.
+func mergeGroup(limits *Object, group string, given json.RawMessage) (json.RawMessage, bool) {
+	in, err := ParseObject(given)
+	if err != nil {
+		return nil, false
+	}
+	out := NewObject()
+	if raw, ok := limits.Get(group); ok {
+		if out, err = ParseObject(raw); err != nil {
+			return nil, false
+		}
+	}
+	for _, k := range in.Keys() {
+		raw, _ := in.Get(k)
+		out.Set(k, raw)
+	}
+	return out.JSON(), true
+}
+
+// checkRepoMembership refuses a saved entry the fleet's search roots do not find; an entry of the
+// wrong shape is left for the parser, which names it.
+func checkRepoMembership(key string, raw json.RawMessage, found []string) error {
+	var given []string
+	if json.Unmarshal(raw, &given) != nil {
+		return nil
+	}
+	for i, r := range given {
+		if repoRe.MatchString(r) && !slices.ContainsFunc(found, func(f string) bool { return strings.EqualFold(f, r) }) {
+			return fmt.Errorf("fleets.%s.limits.repo_allowlist[%d]: %q is not a repo under the fleet's search roots", key, i, r)
+		}
+	}
 	return nil
 }
 

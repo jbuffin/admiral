@@ -261,14 +261,17 @@ func (s *Server) serveFleetSave(w http.ResponseWriter, r *http.Request) {
 		Color         *string   `json:"color"`
 		Notify        *bool     `json:"notify"`
 		// Each key is checked on save, so a misspelt one is refused.
-		Chat map[string]json.RawMessage `json:"chat"`
+		Chat   map[string]json.RawMessage `json:"chat"`
+		Preset *string                    `json:"preset"`
+		// Each Limit key is checked on save too.
+		Limits map[string]json.RawMessage `json:"limits"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "request is not valid JSON: "+err.Error())
 		return
 	}
 	err := s.Config.SetFleetFields(r.PathValue("key"), config.FleetFields{
-		SearchRoots: req.SearchRoots, Owners: req.Owners, WakeReviewers: req.WakeReviewers, CloneRoot: req.CloneRoot, Color: req.Color, Notify: req.Notify, Chat: req.Chat})
+		SearchRoots: req.SearchRoots, Owners: req.Owners, WakeReviewers: req.WakeReviewers, CloneRoot: req.CloneRoot, Color: req.Color, Notify: req.Notify, Chat: req.Chat, Preset: req.Preset, Limits: req.Limits})
 	switch {
 	case errors.Is(err, config.ErrNoFleet):
 		writeJSONError(w, http.StatusNotFound, err.Error())

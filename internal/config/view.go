@@ -74,7 +74,8 @@ func (m *Manager) viewLocked() View {
 		fv := FleetView{Key: f.Key, Name: f.Name, Color: f.Color, Ink: f.Ink, ColorIndex: f.ColorIndex,
 			SearchRoots: f.SearchRoots, Owners: nonNil(f.Owners), WakeReviewers: nonNil(f.WakeReviewers), CloneRoot: f.CloneRoot,
 			CanLaunch: f.CanLaunch(), Notify: f.Notify, Docks: []DockView{},
-			Chat: ChatView{f.Chat.Harness, f.Chat.Model, f.Chat.Effort, f.Chat.ThresholdJSON(), off == "", off, offered(opts), opts, ChatModelsFor(f.Chat.Harness), ChatEffortsFor(f.Chat.Harness)}}
+			Chat:   ChatView{f.Chat.Harness, f.Chat.Model, f.Chat.Effort, f.Chat.ThresholdJSON(), off == "", off, offered(opts), opts, ChatModelsFor(f.Chat.Harness), ChatEffortsFor(f.Chat.Harness)},
+			Preset: string(f.Preset), Limits: f.Limits.Clone(), Sentences: standing.Sentences(f.Limits)}
 		for _, h := range f.Harnesses {
 			warnings := h.Warnings
 			if warnings == nil {

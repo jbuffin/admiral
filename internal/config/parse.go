@@ -84,6 +84,7 @@ func (c *Config) clone() *Config {
 		f.Owners = slices.Clone(f.Owners)
 		f.WakeReviewers = slices.Clone(f.WakeReviewers)
 		f.Env = maps.Clone(f.Env)
+		f.Limits = f.Limits.Clone()
 		f.Harnesses = slices.Clone(f.Harnesses)
 		for j, h := range f.Harnesses {
 			h.Args = slices.Clone(h.Args)
@@ -271,7 +272,8 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 	if err != nil {
 		return Fleet{}, err
 	}
-	f := Fleet{Key: key, SearchRoots: []string{}, Chat: defaultChat(), Notify: true}
+	f := Fleet{Key: key, SearchRoots: []string{}, Chat: defaultChat(), Notify: true, Preset: standing.Work}
+	var limitsRaw json.RawMessage
 	harnesses := map[string]Harness{}
 	haveName := false
 	for _, m := range ms {
@@ -334,6 +336,12 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 			if f.Notify, err = boolean(p, m.raw); err != nil {
 				return Fleet{}, err
 			}
+		case "preset":
+			if f.Preset, err = parsePreset(p, m.raw); err != nil {
+				return Fleet{}, err
+			}
+		case "limits":
+			limitsRaw = m.raw
 		case "claude", "codex", "copilot":
 			if harnesses[m.key], err = parseHarness(p, m.key, m.raw); err != nil {
 				return Fleet{}, err
@@ -349,6 +357,12 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 		if h, ok := harnesses[name]; ok {
 			f.Harnesses = append(f.Harnesses, h)
 		}
+	}
+	if limitsRaw == nil {
+		limitsRaw = json.RawMessage("{}")
+	}
+	if f.Limits, err = parseLimits(path+".limits", limitsRaw, f.Preset); err != nil {
+		return Fleet{}, err
 	}
 	return f, nil
 }
