@@ -52,6 +52,9 @@ func TestPostingACommitmentCardTwiceAddsOneEntry(t *testing.T) {
 	if len(got) != 1 {
 		t.Errorf("%d entries after two posts of one ID, want 1", len(got))
 	}
+	if d := r.digest(t, "work"); len(d.Lines) != 1 || !strings.Contains(lineTexts(d), "ferry the harbour quartz") {
+		t.Errorf("digest = %q (%d lines), want one line holding the commitment text, not one per post", lineTexts(d), len(d.Lines))
+	}
 }
 
 func TestACommitmentCardStartsNoTurnAndStaysOutOfTheBrief(t *testing.T) {

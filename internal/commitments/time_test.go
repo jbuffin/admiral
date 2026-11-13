@@ -73,6 +73,7 @@ func TestNothingFiresTwiceAcrossARestart(t *testing.T) {
 	g.restart()
 	g.startRun()
 	g.r.Changed()
+	time.Sleep(200 * time.Millisecond) // a relaunch by Run is asynchronous
 	if n := len(g.ships.requests()); n != 1 {
 		t.Errorf("%d launches after two restarts, want still 1", n)
 	}

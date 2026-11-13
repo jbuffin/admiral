@@ -708,25 +708,20 @@ func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 		if r.IsError {
 			t.Fatalf("make_commitment was refused: %s", r.text())
 		}
-		turns := func(s chatSession) (n int) {
-			for _, m := range s.Messages {
-				if m.Kind == "message" || m.Kind == "" {
-					n++
-				}
-			}
-			return n
-		}
-		before := turns(c.session())
-		s := c.waitSession(15*time.Second, "a commitment card", func(s chatSession) bool {
-			for _, m := range s.Messages {
+		typed := c.stdin() // what the chat was sent so far: a turn would add to it
+		var card *chatMsg
+		for end := time.Now().Add(15 * time.Second); card == nil; time.Sleep(50 * time.Millisecond) {
+			for _, m := range c.session().Messages {
 				if m.Kind == "commitment" && strings.Contains(m.Text, promise) {
-					return true
+					card = &m
 				}
 			}
-			return false
-		})
-		if got := turns(s); got != before {
-			t.Errorf("%d chat messages after the card, want the %d before it: a fired commitment starts no turn", got, before)
+			if card == nil && time.Now().After(end) {
+				t.Fatalf("within 15s GET /api/chat/%s/session never listed a commitment card for %q; %s", chatFleet, promise, c.diag())
+			}
+		}
+		if got := c.stdin(); got != typed {
+			t.Errorf("the chat was sent %q after the card, want %q: a fired commitment starts no turn", got, typed)
 		}
 	})
 }
