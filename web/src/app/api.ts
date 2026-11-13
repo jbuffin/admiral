@@ -277,6 +277,17 @@ export interface ChatNote {
   ts: string;
   via?: string;
 }
+export interface ChatCommitment {
+  id: string;
+  text: string;
+  trigger: { kind: 'ship_sailed' | 'ship_anchored' | 'pr_merged' | 'pr_closed' | 'issue_closed' | 'time' | 'none'; subject?: string; launched?: string };
+  action: 'launch' | 'remind';
+  launch?: unknown;
+  ts: string;
+  via?: string;
+  waiting?: boolean;
+  shown?: boolean;
+}
 export interface Instructions {
   text: string;
   max: number;
@@ -289,6 +300,11 @@ export async function getNotes(fleet: string): Promise<Result<ChatNote[]>> {
 export const getInstructions = (fleet: string) => call<Instructions>('GET', chatPath(fleet, 'instructions'));
 export const saveInstructions = (fleet: string, text: string) => call<Instructions>('PUT', chatPath(fleet, 'instructions'), { text });
 export const deleteNote = (fleet: string, id: string) => call<unknown>('DELETE', chatPath(fleet, `notes/${encodeURIComponent(id)}`));
+export async function getCommitments(fleet: string): Promise<Result<ChatCommitment[]>> {
+  const r = await call<{ commitments?: ChatCommitment[] | null }>('GET', chatPath(fleet, 'commitments'));
+  return r.ok ? { ok: true, data: r.data.commitments ?? [] } : r;
+}
+export const cancelCommitment = (fleet: string, id: string) => call<unknown>('DELETE', chatPath(fleet, `commitments/${encodeURIComponent(id)}`));
 export const promoteNote = (fleet: string, id: string) => call<Instructions>('POST', chatPath(fleet, `notes/${encodeURIComponent(id)}/promote`));
 export const startSetup = () => call<unknown>('POST', '/setup');
 

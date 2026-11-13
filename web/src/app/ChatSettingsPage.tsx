@@ -1,11 +1,13 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { deleteNote, getInstructions, getNotes, promoteNote, saveFleet, saveInstructions, type ChatNote, type Fleet } from './api';
+import { cancelCommitment, deleteNote, getCommitments, getInstructions, getNotes, promoteNote, saveFleet, saveInstructions, type ChatCommitment, type ChatNote, type Fleet } from './api';
 import { checkErrors, checkKey } from './capabilities';
 import { MissingCapability } from './MissingCapability';
 import { Flag } from './Flag';
 import { fleets } from './fleets';
-import { CHAT_THRESHOLDS, INSTRUCTIONS_MAX, canSaveInstructions, chatErrorMessage, chatSaveBody, effortLabel, harnessLabel, instructionsCount, memoryNotRead, modelLabel, noteAge, readsMemory, switchHarness, thresholdLabel, type ChatSettings } from './chatSettings';
+import { ships } from './shipsLink';
+import { safeHref } from './campaign';
+import { CHAT_THRESHOLDS, INSTRUCTIONS_MAX, canSaveInstructions, chatErrorMessage, actionWords, cancelErrorMessage, commitmentMarks, chatSaveBody, effortLabel, harnessLabel, instructionsCount, memoryNotRead, modelLabel, noteAge, readsMemory, switchHarness, thresholdLabel, triggerWords, type ChatSettings } from './chatSettings';
 
 const settingsOf = (f: Fleet): ChatSettings => ({ harness: f.chat.harness, model: f.chat.model, effort: f.chat.effort, context_threshold: f.chat.context_threshold });
 
@@ -48,21 +50,25 @@ function Knows({ fleet, harness }: { fleet: string; harness: string }) {
   const [saved, setSaved] = useState('');
   const [text, setText] = useState('');
   const [notes, setNotes] = useState<ChatNote[]>([]);
+  const [commitments, setCommitments] = useState<ChatCommitment[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // Shown beside the list: the page's error line is out of view when the list is scrolled.
+  const [cancelError, setCancelError] = useState('');
 
   // What the textarea and the saved text were at the last render, so a refresh can tell a clean textarea from a draft.
   const shown = useRef({ saved, text });
   shown.current = { saved, text };
 
   const load = async () => {
-    const [i, n] = await Promise.all([getInstructions(fleet), getNotes(fleet)]);
+    const [i, n, c] = await Promise.all([getInstructions(fleet), getNotes(fleet), getCommitments(fleet)]);
     if (i.ok) {
       if (shown.current.text.trim() === shown.current.saved.trim()) setText(i.data.text);
       setSaved(i.data.text);
     }
     if (n.ok) setNotes(n.data);
-    setError(!i.ok ? i.error : !n.ok ? n.error : '');
+    if (c.ok) setCommitments(c.data);
+    setError(!i.ok ? i.error : !n.ok ? n.error : !c.ok ? c.error : '');
   };
   useEffect(() => {
     void load();
@@ -71,9 +77,24 @@ function Knows({ fleet, harness }: { fleet: string; harness: string }) {
   const act = async (run: () => Promise<{ ok: true } | { ok: false; error: string }>) => {
     setBusy(true);
     setError('');
+    setCancelError('');
     const r = await run();
     if (r.ok) await load();
-    else setError(r.error);
+    else {
+      // A commitment can close before Cancel lands, so reload to drop it, then keep the failure on the line.
+      await load();
+      setError(r.error);
+    }
+    setBusy(false);
+  };
+  const cancel = async (id: string) => {
+    setBusy(true);
+    setError('');
+    setCancelError('');
+    const r = await cancelCommitment(fleet, id);
+    // A commitment can close before Cancel lands, so reload either way to drop it.
+    await load();
+    if (!r.ok) setCancelError(cancelErrorMessage(r.status, r.error));
     setBusy(false);
   };
   const count = instructionsCount(text);
@@ -133,6 +154,58 @@ function Knows({ fleet, harness }: { fleet: string; harness: string }) {
                 </div>
               </li>
             ))}
+          </ul>
+        )}
+        <div class="set">
+          <div class="t">
+            <span class="label">Commitments</span>
+            <span>What you asked AdmiralBot to do later. Cancel one and it never runs.</span>
+          </div>
+        </div>
+        {cancelError ? (
+          <p class="note error" role="alert">
+            {cancelError}
+          </p>
+        ) : null}
+        {commitments.length === 0 ? (
+          <div class="set">
+            <div class="t">
+              <span>AdmiralBot has no open commitments.</span>
+            </div>
+          </div>
+        ) : (
+          <ul class="set-list" aria-label="Commitments">
+            {commitments.map((c) => {
+              const t = triggerWords(c.trigger, ships.value);
+              const href = t.href ? safeHref(t.href) : null;
+              const marks = commitmentMarks(c);
+              return (
+                <li key={c.id} class="set note-row">
+                  <div class="t">
+                    <span class="label set-text">{c.text}</span>
+                    <span>
+                      {href ? (
+                        <a href={href} target="_blank" rel="noopener noreferrer">
+                          {t.text}
+                        </a>
+                      ) : (
+                        t.text
+                      )}
+                      {' · '}
+                      {actionWords(c.action)}
+                      {' · '}
+                      {noteAge(c.ts, now)}
+                      {marks.map((m) => ` · ${m}`).join('')}
+                    </span>
+                  </div>
+                  <div class="note-actions">
+                    <button type="button" class="btn" disabled={busy} onClick={() => void cancel(c.id)}>
+                      Cancel
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

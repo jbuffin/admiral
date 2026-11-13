@@ -37,8 +37,8 @@ function QuestionCard({ item, chat }: { item: Extract<ThreadItem, { kind: 'quest
   );
 }
 
-function CommitmentCard({ item }: { item: Extract<ThreadItem, { kind: 'commitment' }> }) {
-  const v = commitmentCardView(item);
+function CommitmentCard({ item, fleet }: { item: Extract<ThreadItem, { kind: 'commitment' }>; fleet: string }) {
+  const v = commitmentCardView(item, fleet);
   return (
     <div class="convo-card chat-card">
       <p class="chat-card-eyebrow">{v.eyebrow}</p>
@@ -57,11 +57,24 @@ function CommitmentCard({ item }: { item: Extract<ThreadItem, { kind: 'commitmen
           {item.card.ship}
         </a>
       ) : null}
+      {v.settingsHref ? (
+        <a
+          class="btn"
+          href={v.settingsHref + fleetSearch.value}
+          onClick={(e) => {
+            if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            e.preventDefault();
+            go(v.settingsHref, fleetSearch.value);
+          }}
+        >
+          Review in Preferences
+        </a>
+      ) : null}
     </div>
   );
 }
 
-function Thread({ items, working, chat }: { items: ThreadItem[]; working: boolean; chat: Chat }) {
+function Thread({ items, working, chat, fleet }: { items: ThreadItem[]; working: boolean; chat: Chat; fleet: string }) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   useLayoutEffect(() => {
@@ -86,7 +99,7 @@ function Thread({ items, working, chat }: { items: ThreadItem[]; working: boolea
         ) : i.kind === 'question' ? (
           <QuestionCard key={i.id} item={i} chat={chat} />
         ) : i.kind === 'commitment' ? (
-          <CommitmentCard key={i.id} item={i} />
+          <CommitmentCard key={i.id} item={i} fleet={fleet} />
         ) : i.role === 'user' ? (
           <div key={i.id} class="msg user">
             {i.text}
@@ -203,7 +216,7 @@ function Conversation({ fleet, head }: { fleet: string; head: (action: Component
           {snap.error} {snap.running && needsTerminal(snap) ? <OpenTerminal fleet={fleet} /> : null}
         </p>
       ) : null}
-      {snap ? <Thread items={items} working={snap.state === 'working'} chat={chat} /> : <p class="line">Loading…</p>}
+      {snap ? <Thread items={items} working={snap.state === 'working'} chat={chat} fleet={fleet} /> : <p class="line">Loading…</p>}
       <ChatComposer chat={chat} />
     </>
   );
