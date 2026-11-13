@@ -195,7 +195,7 @@ A named, reusable teammate definition in a fleet or repo: its role, skills, inst
 _Avoid_: agent, persona, crew type
 
 **Stop ship**:
-The engineer ends a ship that is still running, from its conversation. Admiral kills the ship's session, crew boats included, and records `ended` with a `KILL` signal, then `stopped`. The ship leaves open water as after a dismissal. A ship with an open PR asks first: Moor ends it and keeps the PRs, the other button ends it and forgets them.
+The engineer ends a ship that is still running, from its conversation. Admiral kills the ship's session, crew boats included, and records `ended` with a `KILL` signal, then `stopped`. The ship leaves open water as after a dismissal. A ship with an open PR (one it carries, or its report lists) asks first: Moor ends it and keeps the PRs, the other button ends it and forgets them.
 _Avoid_: kill, abort
 
 **Return to port**:
