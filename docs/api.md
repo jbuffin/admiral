@@ -642,7 +642,7 @@ What each fleet's harnesses were probed to do (ADR 0035). These are not the serv
 ### `GET /api/harness-capabilities`
 
 ```json
-{"fleets":[{"key":"work","name":"Work",
+{"fleets":[{"key":"work","name":"Work","restricted":true,
  "judge":{"harness":"claude","lookout_model":"haiku","strong_model":"sonnet","json_schema":true,"call_cap":true},
  "harnesses":[
   {"harness":"claude","version":"2.1.300","detected_at":"2026-11-11T09:00:00Z",
@@ -654,6 +654,8 @@ What each fleet's harnesses were probed to do (ADR 0035). These are not the serv
 Fleets and harnesses follow the config's order; features follow the table (judge, bot, restricted, autopilot). `status` is `passed`, `failed` or `not_checked`, against the last detected `version`. `version` is `""` when none was detected, and the guard's `detail` then says why. `checked_at` and `detected_at` are `null` when there is no time.
 
 `judge` is the fleet's judge harness, from `judge.Choose` on the stored probes: the first of claude, codex and copilot that proved no tools and no network, with its Lookout and strong models and whether it proved a JSON schema flag and a per-call cap. A fleet with no such harness has `{"harness":null,"reason":"..."}`, the reason naming each harness and what it lacks, and runs no judge calls.
+
+`restricted` is whether some harness of the fleet can run a restricted ship, computed on each read: both `restricted.*` capabilities passed and the autopilot guard passed against its last detected version, in a harness whose restricted probes are registered, and the fleet has a judge harness. Without one, an A3 ceiling computes as A1 for an event routine, and the Routines screen says so.
 
 `autopilot.advisor` is never stored. Every harness of a fleet reads `not_checked` until some harness of the fleet has a stored judge result, then `passed` (naming the judge harness) when the fleet has a judge harness and `failed`, with the `judge.reason`, when it has none, so it follows the other harnesses' probes. The gate refuses in every state but `passed`. Autopilot on a harness is refused until it passes.
 

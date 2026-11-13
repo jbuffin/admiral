@@ -447,10 +447,7 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		unset = append(unset, k)
 	}
 	if restricted {
-		for _, k := range githubTokenVars {
-			delete(env, k)
-			unset = append(unset, k)
-		}
+		unset = append(unset, ScrubRestrictedEnv(env)...)
 	}
 
 	// A Commodore on Claude compacts at 200k tokens; only the fleet's own env
