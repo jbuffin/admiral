@@ -866,6 +866,10 @@ test('Peek opens an event proposal with the untrusted summary, Mute rule by send
   const when = form.getByLabel('When');
   await expect(when.locator('option', { hasText: 'Review requested of you' })).toHaveCount(1, { timeout: 30_000 });
   await when.selectOption({ label: 'Review requested of you' });
+  // a slip to a schedule and back keeps the event chosen
+  await form.getByRole('radio', { name: 'A schedule' }).tap();
+  await form.getByRole('radio', { name: 'An event' }).tap();
+  await expect(when.locator('option:checked')).toHaveText('Review requested of you');
   await form.getByRole('radio', { name: 'Claude' }).tap();
   await form.getByLabel('Checkout').selectOption(join(admiral.home, 'proj'));
   await form.getByLabel('Text').fill('sweep the board');
@@ -894,9 +898,8 @@ test('Peek opens an event proposal with the untrusted summary, Mute rule by send
   await expect(recent).toContainText('mallory-the-stranger');
   await expect(recent).toContainText(/\$0\.0001/);
   await expect(recent).not.toContainText('lantern');
-  await page.goto(admiral.url + 'app/inbox?fleet=zulu');
-
-  await page.getByRole('main').getByRole('listitem').filter({ hasText: 'Review watch' }).getByRole('link').first().tap();
+  await expect(recent).toContainText('Proposed');
+  await recent.getByRole('link', { name: 'Open the proposal' }).tap();
   const peek = peekOf(page);
   await expect(peek).toBeVisible();
   await expect(peek).toContainText('Untrusted');

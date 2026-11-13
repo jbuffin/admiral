@@ -26,6 +26,7 @@ import {
   formOfRoutine,
   holdFireNote,
   lastRunText,
+  noEventsNote,
   launchOnDock,
   routineBody,
   runCost,
@@ -92,7 +93,7 @@ const shipTitle = (session: string, text: string) => text.replace(session, ships
 // The proposal's Inbox item is named after the record; it links only while the Inbox still holds it.
 function ProposalLink({ id }: { id: string }) {
   const item = `event-${id}`;
-  if (!inboxItems.value.some((i) => i.id === item)) return <span class="muted">Proposed, see the Inbox</span>;
+  if (!inboxItems.value.some((i) => i.id === item)) return null;
   return <a href={peekPath({ session: '_admiral', item }) + fleetSearch.value}>Open the proposal</a>;
 }
 
@@ -134,6 +135,8 @@ function RecentRuns({ runs }: { runs: RoutineRun[] | null }) {
 
 function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSaved, onDeleted, onToggled }: { fleet: Fleet; routine: Routine | null; initial: RoutineForm; caps: FleetCapabilities | undefined; problem?: { field: 'name' | 'when' | 'before_acting' | 'do'; message: string }; onSaved: (r: Routine) => void; onDeleted: () => void; onToggled: (r: Routine) => void }) {
   const [form, setForm] = useState(initial);
+  // the event chosen before a switch to a schedule, which a switch back restores
+  const lastEvent = useRef(initial.on);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -239,7 +242,11 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
               onChange={() => {
                 fixes('when');
                 // An event routine launches a ship; a prompt has no event to answer.
-                setForm((f) => (k === 'event' ? { ...f, on: f.on ?? { source: '', kind: '' }, mode: 'launch' } : { ...f, on: undefined }));
+                setForm((f) => {
+                  if (k === 'event') return { ...f, on: f.on ?? lastEvent.current ?? { source: '', kind: '' }, mode: 'launch' };
+                  lastEvent.current = f.on ?? lastEvent.current;
+                  return { ...f, on: undefined };
+                });
               }}
             />
             {k === 'schedule' ? 'A schedule' : 'An event'}
@@ -250,7 +257,11 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
         <>
           <label class="field">
             <span>When</span>
-            <select value={eventValue(form.on)} onChange={(e) => set({ on: choices.find((c) => c.value === target(e).value)?.on ?? { source: '', kind: '' } })}>
+            <select value={eventValue(form.on)} onChange={(e) => {
+                const on = choices.find((c) => c.value === target(e).value)?.on ?? { source: '', kind: '' };
+                lastEvent.current = on;
+                set({ on });
+              }}>
               {!choices.some((c) => c.value === eventValue(form.on!)) ? <option value={eventValue(form.on)}>{form.on.kind ? eventWords(sources.value, fleet.key, form.on) : 'Choose an event'}</option> : null}
               {groups.map(([group, list]) => (
                 <optgroup key={group} label={group}>
@@ -263,7 +274,7 @@ function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSave
               ))}
             </select>
           </label>
-          {choices.length === 0 ? <p class="note">This source hasn't listed its events yet. They show here once it has.</p> : <p class="note">Runs when this happens, with the Lookout reading the event first.</p>}
+          {choices.length === 0 ? <p class="note">{noEventsNote(sources.value, fleet.key)}</p> : <p class="note">Runs when this happens, with the Lookout reading the event first.</p>}
         </>
       ) : (
         <>

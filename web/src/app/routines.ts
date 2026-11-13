@@ -313,6 +313,12 @@ export function eventChoices(sources: Source[], fleetKey: string): EventChoice[]
   );
 }
 
+/** Why the event picker is empty: the fleet has no source, or its sources haven't listed their events. */
+export function noEventsNote(sources: Source[], fleetKey: string): string {
+  if (sourcesForFleet(sources, fleetKey).length === 0) return 'This fleet has no source that raises events. Add one under Sources and its events show here.';
+  return "This source hasn't listed its events yet. They show here once it has.";
+}
+
 /** A routine's event in the catalog's words; the stored kind when the source no longer lists it. */
 export function eventWords(sources: Source[], fleetKey: string, on: NonNullable<Routine['on']>): string {
   const hit = eventChoices(sources, fleetKey).find((c) => c.value === eventValue(on));

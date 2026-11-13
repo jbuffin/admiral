@@ -5,7 +5,7 @@ vi.hoisted(() => {
   vi.stubGlobal('addEventListener', () => {});
 });
 
-import { blankForm, errorField, eventHref, formOfRoutine, routineBody, runCost, runLine, spendNotice, type Routine, type RoutineRun } from './routines';
+import { noEventsNote, blankForm, errorField, eventHref, formOfRoutine, routineBody, runCost, runLine, spendNotice, type Routine, type RoutineRun } from './routines';
 
 const on = { source: 'gh', kind: 'review_requested' };
 const eventRoutine: Routine = {
@@ -107,5 +107,13 @@ describe('the spend-reached notice', () => {
     const text = spendNotice({ today_usd: 0, cap_usd: 2, reached: true, unreadable: true }) ?? '';
     expect(text).toContain('could not be read');
     expect(text).not.toContain('$');
+  });
+});
+
+describe('the empty event picker', () => {
+  const src = { key: 'gh', name: 'GitHub', plugin: 'github', fleet: 'work', icon_url: '', has_schema: false, state: 'running', error: null, warnings: [] };
+  it('tells a fleet with no source from a source that has not listed its events', () => {
+    expect(noEventsNote([], 'work')).toContain('no source');
+    expect(noEventsNote([src], 'work')).toContain("hasn't listed");
   });
 });
