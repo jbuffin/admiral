@@ -26,11 +26,12 @@ var chatSessionName = chatSessionFor(chatFleet)
 func chatSessionFor(fleet string) string { return "_chat-" + fleet }
 
 type chatMsg struct {
-	ID   string `json:"id"`
-	Kind string `json:"kind"` // "message" (or empty), "question" or "reset"
-	Role string `json:"role"`
-	Text string `json:"text"`
-	At   string `json:"at"`
+	ID   string          `json:"id"`
+	Kind string          `json:"kind"` // "message" (or empty), "question", "reset" or "commitment"
+	Role string          `json:"role"`
+	Text string          `json:"text"`
+	At   string          `json:"at"`
+	Card json.RawMessage `json:"card,omitempty"`
 }
 
 type chatSession struct {

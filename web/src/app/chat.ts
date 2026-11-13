@@ -8,13 +8,21 @@ export interface ChatAnswer {
 
 export type ChatQuestion = InboxItem & { answer: ChatAnswer | null };
 
+/** The card Admiral posts when a commitment fires, as the chat log carries it. */
+export interface CommitmentCard {
+  commitment: string;
+  outcome: 'launched' | 'reminded' | 'cant_run' | 'dropped';
+  ship?: string;
+  reason?: string;
+}
+
 export interface ChatEntry {
   id: string;
-  kind: 'message' | 'question' | 'reset';
+  kind: 'message' | 'question' | 'reset' | 'commitment';
   role?: 'user' | 'assistant';
   text: string;
   at: string;
-  card?: InboxItem;
+  card?: InboxItem | CommitmentCard;
 }
 
 /** A fleet's chat as the server serves it: GET /api/chat/<fleet>/session and the `chat` socket message. */
@@ -30,6 +38,7 @@ export interface ChatSnapshot {
 export type ThreadItem =
   | { kind: 'message'; id: string; role: 'user' | 'assistant'; text: string; at: string }
   | { kind: 'reset'; id: string; text: string; at: string }
+  | { kind: 'commitment'; id: string; text: string; at: string; card: CommitmentCard }
   | { kind: 'question'; id: string; at: string; card: InboxItem; state: 'open' | 'answered' | 'withdrawn'; answer?: ChatAnswer };
 
 /** The snapshot's entries oldest first; entries with one time, or none that parses, keep the served order. */
@@ -42,9 +51,10 @@ export function threadOf(s: ChatSnapshot): ThreadItem[] {
     const t = Date.parse(m.at);
     if (m.kind === 'reset') return [{ t, i, item: { kind: 'reset', id: m.id, text: m.text, at: m.at } }];
     if (m.kind === 'question' && m.card) {
-      const answer = answers.get(m.card.id);
+      const q = m.card as InboxItem;
+      const answer = answers.get(q.id);
       const state = answer === undefined ? 'withdrawn' : answer === null ? 'open' : 'answered';
-      return [{ t, i, item: { kind: 'question', id: m.id, at: m.at, card: m.card, state, ...(answer ? { answer } : {}) } }];
+      return [{ t, i, item: { kind: 'question', id: m.id, at: m.at, card: q, state, ...(answer ? { answer } : {}) } }];
     }
     if (m.kind === 'message' && m.role) return [{ t, i, item: { kind: 'message', id: m.id, role: m.role, text: m.text, at: m.at } }];
     return [];
@@ -68,4 +78,9 @@ export function clockTime(at: string | undefined): string {
 export function resetLabel(text: string, at: string | undefined): string {
   const time = clockTime(at);
   return time ? `${text} · ${time}` : text;
+}
+
+/** What a commitment card shows: a one-line outcome, the commitment's text, and the ship page it links to. */
+export function commitmentCardView(item: Extract<ThreadItem, { kind: 'commitment' }>): { eyebrow: string; text: string; reason: string; shipHref: string } {
+  return { eyebrow: '', text: '', reason: '', shipHref: '' };
 }

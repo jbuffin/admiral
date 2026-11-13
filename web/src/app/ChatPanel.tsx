@@ -61,7 +61,7 @@ function Thread({ items, working, chat }: { items: ThreadItem[]; working: boolea
           </div>
         ) : i.kind === 'question' ? (
           <QuestionCard key={i.id} item={i} chat={chat} />
-        ) : i.role === 'user' ? (
+        ) : i.kind === 'commitment' ? null : i.role === 'user' ? (
           <div key={i.id} class="msg user">
             {i.text}
           </div>

@@ -23,6 +23,8 @@ const (
 	KindMessage  = "message"
 	KindQuestion = "question"
 	KindReset    = "reset"
+	// KindCommitment is a card the commitment runner posted: a promise kept, or why it was not.
+	KindCommitment = "commitment"
 )
 
 const (

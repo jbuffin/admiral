@@ -78,6 +78,10 @@ type Request struct {
 	Via string `json:"-"`
 	// RoutineKey is routine:<id>: a routine's ship holds it, so a second launch of the routine is refused while the ship is listed.
 	RoutineKey string `json:"-"`
+	// CommitmentKey is commitment:<id>: a commitment's ship holds it, so a second launch of the commitment is refused while the ship is listed.
+	CommitmentKey string `json:"-"`
+	// QuietGate makes an autopilot launch check the guard and the advisor without posting an Inbox notice when it refuses.
+	QuietGate bool `json:"-"`
 	// TriggerID is the id of the trigger-log record the launch answers; the `launched` outcome points at it.
 	TriggerID string `json:"-"`
 }

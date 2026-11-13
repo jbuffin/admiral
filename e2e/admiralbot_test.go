@@ -546,7 +546,7 @@ func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 	w := c.world
 	prompt := `event UserPromptSubmit {"prompt":"look at the harbour log"}`
 	w.writeCue(prompt, "mcp launch", "mcp again", prompt, "mcp next", "mcp stop-other", "mcp stop-own",
-		"mcp note", "wait briefed", `event SessionStart {"source":"clear"}`, `event PreCompact {"trigger":"auto","session_id":"s"}`)
+		"mcp note", "wait briefed", `event SessionStart {"source":"clear"}`, `event PreCompact {"trigger":"auto","session_id":"s"}`, "mcp promise")
 	w.start()
 	other := w.launch(w.order("ship", "claude", "otherrepo", noSkill, "x"))
 	c.start()
@@ -698,6 +698,35 @@ func TestAdmiralBot_ChatDrivesAdmiralOverMCP(t *testing.T) {
 			if time.Now().After(end) {
 				t.Fatalf("within 10s the PreCompact hook never printed note id %s; event-stdout is %q", id, out)
 			}
+		}
+	})
+
+	t.Run("a time commitment it records fires as a card in the chat with no new turn", func(t *testing.T) {
+		const promise = "tell me the harbour log is rotated"
+		due := time.Now().UTC().Add(3 * time.Second).Format(time.RFC3339)
+		r := c.mcpCall("promise", "make_commitment", map[string]any{"text": promise, "trigger": "time", "subject": due, "action": "remind"})
+		if r.IsError {
+			t.Fatalf("make_commitment was refused: %s", r.text())
+		}
+		turns := func(s chatSession) (n int) {
+			for _, m := range s.Messages {
+				if m.Kind == "message" || m.Kind == "" {
+					n++
+				}
+			}
+			return n
+		}
+		before := turns(c.session())
+		s := c.waitSession(15*time.Second, "a commitment card", func(s chatSession) bool {
+			for _, m := range s.Messages {
+				if m.Kind == "commitment" && strings.Contains(m.Text, promise) {
+					return true
+				}
+			}
+			return false
+		})
+		if got := turns(s); got != before {
+			t.Errorf("%d chat messages after the card, want the %d before it: a fired commitment starts no turn", got, before)
 		}
 	})
 }
