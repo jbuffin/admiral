@@ -158,3 +158,34 @@ func TestLiveCountsTheListedEventShipsOfAFleetAndHoldsTheirDedupeKeys(t *testing
 		t.Errorf("play shows %d ships and keys %v, want none", live.WorkerShips("play"), live.DedupeKeys("play"))
 	}
 }
+
+func TestEventShipsKeepTheNewestRecordOfAReusedName(t *testing.T) {
+	at := time.Date(2026, 11, 13, 10, 0, 0, 500, time.UTC)
+	recs := []routines.Trigger{ // newest first
+		{Routine: "rt", Ship: "alpha", Event: "https://github.com/acme/api/issues/9", DedupeKey: "gh:acme/api#9", At: at.Add(time.Hour)},
+		{Routine: "rt", Ship: "alpha", Event: "https://github.com/acme/api/issues/7", DedupeKey: "gh:acme/api#7", At: at},
+	}
+	listed := []routines.ListedShip{{Session: "alpha", Fleet: "work", Routine: "routine:rt", Launched: at.Add(time.Hour).UTC().Format(time.RFC3339)}}
+	got := routines.EventShips("work", recs, listed)
+	if len(got) != 1 || got[0].DedupeKey != "gh:acme/api#9" {
+		t.Errorf("EventShips = %v, want alpha holding the newest key gh:acme/api#9", got)
+	}
+}
+
+func TestEventShipsSkipAHandLaunchedShipThatReusesAName(t *testing.T) {
+	at := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)
+	recs := []routines.Trigger{{Routine: "rt", Ship: "alpha", Event: "https://github.com/acme/api/issues/7", DedupeKey: "gh:acme/api#7", At: at}}
+	for name, sh := range map[string]routines.ListedShip{
+		"no routine key":     {Session: "alpha", Fleet: "work", Launched: at.Add(time.Hour).Format(time.RFC3339)},
+		"another routine":    {Session: "alpha", Fleet: "work", Routine: "routine:other", Launched: at.Add(time.Hour).Format(time.RFC3339)},
+		"launched before it": {Session: "alpha", Fleet: "work", Routine: "routine:rt", Launched: at.Add(-time.Hour).Format(time.RFC3339)},
+		"another fleet":      {Session: "alpha", Fleet: "play", Routine: "routine:rt", Launched: at.Format(time.RFC3339)},
+	} {
+		if got := routines.EventShips("work", recs, []routines.ListedShip{sh}); len(got) != 0 {
+			t.Errorf("%s: EventShips = %v, want none", name, got)
+		}
+	}
+	if got := routines.EventShips("work", recs, []routines.ListedShip{{Session: "alpha", Fleet: "work", Routine: "routine:rt"}}); len(got) != 1 {
+		t.Errorf("a ship with no launch time = %v, want counted by its routine key", got)
+	}
+}

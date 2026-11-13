@@ -290,8 +290,14 @@ func (s *Scheduler) HandleEvent(ev Event) {
 		spent += c.USD
 	}
 	var live []string
-	if s.Live != nil {
-		counts.WorkerShips, live = s.Live.WorkerShips(ev.Fleet), s.Live.DedupeKeys(ev.Fleet)
+	switch l := s.Live.(type) {
+	case nil:
+	case interface {
+		Load(fleet string, recs []Trigger) (int, []string)
+	}:
+		counts.WorkerShips, live = l.Load(ev.Fleet, recs)
+	default:
+		counts.WorkerShips, live = l.WorkerShips(ev.Fleet), l.DedupeKeys(ev.Fleet)
 	}
 	holdOn, err := s.Store.HoldOn(ev.Fleet)
 	if err != nil {

@@ -96,16 +96,59 @@ func eventLink(ref string) string {
 // LiveShip is a listed ship a routine launched on an event, with the dedupe_key of its trigger record.
 type LiveShip struct{ Session, DedupeKey string }
 
-// EventLive is the EventLoad over the listed event-launched ships.
+// ListedShip is what the lookup reads of a listed ship: Routine is its routine:<id> key and Launched its RFC 3339 launch time, when it has one.
+type ListedShip struct{ Session, Fleet, Routine, Launched string }
+
+// EventShips picks the listed ships of fleet that an event launch started. recs is newest first, so the first record per session is the
+// current launch; session names are reused, so the ship must still hold that record's routine key and not predate the record.
+func EventShips(fleet string, recs []Trigger, listed []ListedShip) []LiveShip {
+	newest := map[string]Trigger{}
+	for _, r := range recs {
+		if _, ok := newest[r.Ship]; !ok && r.Ship != "" && r.Event != "" {
+			newest[r.Ship] = r
+		}
+	}
+	var out []LiveShip
+	for _, sh := range listed {
+		rec, ok := newest[sh.Session]
+		if !ok || sh.Fleet != fleet || sh.Routine != routineKey(rec.Routine) {
+			continue
+		}
+		if at, err := time.Parse(time.RFC3339, sh.Launched); err == nil && at.Before(rec.At.Truncate(time.Second)) {
+			continue
+		}
+		out = append(out, LiveShip{Session: sh.Session, DedupeKey: rec.DedupeKey})
+	}
+	return out
+}
+
+// EventLive is the EventLoad over the listed event-launched ships. When Listed is set, Load reads them against records the
+// caller already holds, so one event reads the trigger log once; Ships answers the other callers.
 type EventLive struct {
-	Ships func(fleet string) []LiveShip
+	Ships  func(fleet string) []LiveShip
+	Listed func() []ListedShip
+}
+
+// Load is the worker ship count and the held dedupe_keys, read against recs when Listed is set.
+func (l EventLive) Load(fleet string, recs []Trigger) (int, []string) {
+	ships := l.live(fleet, recs)
+	return len(ships), dedupeKeysOf(ships)
+}
+
+func (l EventLive) live(fleet string, recs []Trigger) []LiveShip {
+	if l.Listed != nil {
+		return EventShips(fleet, recs, l.Listed())
+	}
+	return l.Ships(fleet)
 }
 
 func (l EventLive) WorkerShips(fleet string) int { return len(l.Ships(fleet)) }
 
-func (l EventLive) DedupeKeys(fleet string) []string {
+func (l EventLive) DedupeKeys(fleet string) []string { return dedupeKeysOf(l.Ships(fleet)) }
+
+func dedupeKeysOf(ships []LiveShip) []string {
 	var keys []string
-	for _, sh := range l.Ships(fleet) {
+	for _, sh := range ships {
 		if sh.DedupeKey != "" {
 			keys = append(keys, sh.DedupeKey)
 		}

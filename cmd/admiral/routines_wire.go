@@ -85,24 +85,19 @@ func wakeOn(ctx context.Context, changed func() <-chan struct{}, fns ...func()) 
 func wireEvents(sup *sources.Supervisor, store *routines.Store, sched *routines.Scheduler, list func() []ships.Ship, lk *lookout.Lookout, acts *lookout.Acts) {
 	sched.Enrich = lk.Enrich
 	sched.Acts = acts
-	sched.Live = routines.EventLive{Ships: func(fleet string) []routines.LiveShip {
+	listed := func() []routines.ListedShip {
+		var out []routines.ListedShip
+		for _, sh := range list() {
+			out = append(out, routines.ListedShip{Session: sh.Session, Fleet: sh.Fleet, Routine: sh.Routine, Launched: sh.Launched})
+		}
+		return out
+	}
+	sched.Live = routines.EventLive{Listed: listed, Ships: func(fleet string) []routines.LiveShip {
 		recs, err := store.Records(fleet)
 		if err != nil {
 			recs = nil
 		}
-		keys := map[string]string{}
-		for _, r := range recs {
-			if r.Ship != "" && r.Event != "" {
-				keys[r.Ship] = r.DedupeKey
-			}
-		}
-		var out []routines.LiveShip
-		for _, sh := range list() {
-			if _, ok := keys[sh.Session]; ok && sh.Fleet == fleet {
-				out = append(out, routines.LiveShip{Session: sh.Session, DedupeKey: keys[sh.Session]})
-			}
-		}
-		return out
+		return routines.EventShips(fleet, recs, listed())
 	}}
 	store.Events = func(fleet, source string) ([]routines.EventKind, bool) {
 		kinds, ok := sup.Events(fleet, source)
