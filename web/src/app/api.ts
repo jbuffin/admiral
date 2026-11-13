@@ -80,6 +80,10 @@ export interface Ship {
   stop_since?: string;
   // The engineer has looked at this stop; the ship still needs you, so its question can be answered.
   seen?: boolean;
+  // Set from Return to port until the ship is stopped.
+  returning?: boolean;
+  // A live ship woken from its mooring: it returns to port by itself once its PRs are merged.
+  carries_prs?: boolean;
   crew_live: number;
   // Set on a moored ship; `stale` is omitted while false.
   moored_at?: string;

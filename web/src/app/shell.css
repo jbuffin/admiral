@@ -499,6 +499,9 @@ a.ti-num-link:hover, .issue-link:hover { color: var(--color-accent); text-decora
 
 /* Message box: under the conversation, above the on-screen keyboard's scroll. */
 .ship-view-head .stop-ship { margin-left: auto; flex: none; }
+.ship-view-head { flex-wrap: wrap; }
+.ship-view-head .ship-actions { display: flex; gap: 8px; margin-left: auto; flex: none; }
+.ship-view-head .ship-actions .stop-ship { margin-left: 0; }
 .stop-backdrop .line { margin: 4px 0 8px; }
 .convo-area { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
 @media (min-width: 641px) {

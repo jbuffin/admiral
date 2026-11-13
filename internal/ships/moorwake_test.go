@@ -69,14 +69,14 @@ func TestAConditionFirstSeenIsSavedAndTheNextPollKeepsItsTime(t *testing.T) {
 	}
 }
 
-func TestAMergedPRSailsTheShipOffAndNothingIsDecided(t *testing.T) {
+func TestAMergedShipThatCannotBeWokenSailsOffAndNothingIsDecided(t *testing.T) {
 	g := &pollGitHub{}
 	merged := reviewed()
 	merged.State = "MERGED"
 	g.set(prSeven, merged)
 	g.set(prNine, conflicting())
 	f := mooredService(t, map[string]*pollGitHub{"work": g})
-	merging := f.moorAged(t, "Nelson", "work", prSeven)
+	merging := f.moor(t, "Nelson", "work", prSeven)
 	f.moorAged(t, "Hood", "work", prNine)
 
 	f.s.PollMoored(context.Background())

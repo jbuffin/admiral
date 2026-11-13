@@ -1,6 +1,6 @@
 # 28. A ship with an open PR moors on a clean exit and relaunches for each feedback round
 
-Status: accepted
+Status: accepted, amended by [ADR 0036](0036-a-ship-returns-to-port-to-clean-up-before-it-ends.md) (a merge wakes the ship for a clean-up turn before it ends)
 
 ## Context
 

@@ -119,7 +119,9 @@ func (s *Service) PollMoored(ctx context.Context) {
 				continue
 			}
 			if reason, ended := moor.EndReason(prs); ended {
-				_, _ = s.endMoored(r.Session, reason)
+				if reason == "closed" || !s.returnMerged(r, reason, prs) {
+					_, _ = s.endMoored(r.Session, reason)
+				}
 				continue
 			}
 			s.decide(ctx, r, st)

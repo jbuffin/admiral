@@ -1079,6 +1079,8 @@ export function seedTurn(a: Admiral, ship: LaunchedShip) {
 }
 
 /** The pane's size as tmux has it, `<cols>x<rows>`. */
+/** A ship's own `@admiral-<name>` session option, such as where Return to port has got to. */
+export const shipOption = (a: Admiral, ship: LaunchedShip, name: string) => tmux(a, 'show-options', '-v', '-t', ship.session, `@admiral-${name}`).stdout.trim();
 export const paneSize = (a: Admiral, ship: LaunchedShip) => tmux(a, 'display', '-p', '-t', ship.session, '#{window_width}x#{window_height}').stdout.trim();
 
 /** Sizes the ship's window as a terminal on a small screen leaves it. */

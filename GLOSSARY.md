@@ -183,6 +183,10 @@ _Avoid_: agent, persona, crew type
 The engineer ends a ship that is still running, from its conversation. Admiral kills the ship's session, crew boats included, and records `ended` with a `KILL` signal, then `stopped`. The ship leaves open water as after a dismissal.
 _Avoid_: kill, abort
 
+**Return to port**:
+A ship ending once it is done, after it cleans up: Admiral tells it to clean up after itself, never how, and stops it like Stop ship when that turn ends. The engineer starts it from the bridge of a live ship once its turn ends; a moored ship starts it by itself once its PRs are merged. A live ship that carries a PR doesn't offer it.
+_Avoid_: clean up (for the action), dock, finish
+
 **Subagent**:
 A helper the harness runs inside a session, drawn as a small bot on its ship's deck. It has no terminal of its own, so it cannot be boarded; tapping the deck crew shows each subagent's type.
 _Avoid_: crew boat (for a subagent), mark
@@ -212,7 +216,7 @@ A ship whose harness has exited with an error. It stays anchored, still in open 
 _Avoid_: docked, finished, done
 
 **Moored**:
-A ship carrying an open PR whose harness isn't running, waiting for feedback. It sails off when every PR it carries is merged or closed.
+A ship carrying an open PR whose harness isn't running, waiting for feedback. Once every PR it carries is done and at least one merged, it returns to port; if they were all closed, it sails off.
 _Avoid_: parked, sleeping, docked, idle
 
 **Feedback round**:
