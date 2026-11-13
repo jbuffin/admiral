@@ -394,11 +394,6 @@ func (s Server) ReadChatOptions(ctx context.Context, pane string) (ChatOptions, 
 	return ChatOptions{Model: f[0], Effort: f[1], Fleet: f[2], Transcript: f[3]}, nil
 }
 
-// CapturePane is the text on a pane's screen. Untrusted: whatever runs in the pane draws it.
-func (s Server) CapturePane(ctx context.Context, pane string) (string, error) {
-	return s.run(call{ctx: ctx, utf8After: true, args: []string{"capture-pane", "-p", "-t", pane}})
-}
-
 // The value is untrusted: anything running in the pane can write it.
 func (s Server) ReadPaneOption(ctx context.Context, pane, name string) (string, error) {
 	out, err := s.run(call{ctx: ctx, utf8After: true, args: []string{"display-message", "-p", "-t", pane, "#{" + Prefix + name + "}"}})
