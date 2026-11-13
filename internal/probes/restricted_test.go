@@ -135,6 +135,9 @@ func TestBothRestrictedProbesPassOnAConfinedRunAndAreStored(t *testing.T) {
 			t.Errorf("%s is not stored as proven", id)
 		}
 	}
+	if d := r.line(t, capabilities.RestrictedSandbox).Detail; !strings.Contains(d, "the sandbox refused the shell read and git -C push") {
+		t.Errorf("sandbox detail = %q, want it to name which layer refused", d)
+	}
 	if _, err := os.Stat(filepath.Join(r.rec, "headless-runs")); err == nil {
 		t.Error("a restricted probe run appended to headless-runs: the setup tests count only guard runs")
 	}

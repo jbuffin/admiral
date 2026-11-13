@@ -449,23 +449,10 @@ func (l *Launcher) Launch(req Request) (*Launched, error) {
 		unset = append(unset, k)
 	}
 	if restricted {
-		for _, k := range githubTokenVars {
-			delete(env, k)
-			unset = append(unset, k)
-		}
-		for k, v := range RestrictedGitEnv {
-			env[k] = v
-		}
+		unset = append(unset, ScrubRestrictedEnv(env)...)
 		// Defence in depth against a planted nested repo's core.fsmonitor only; it does not stop filter drivers, so the reuse check stays the guard.
-		// GIT_CONFIG_PARAMETERS is dropped because a fleet value there would override these entries.
-		delete(env, "GIT_CONFIG_PARAMETERS")
-		unset = append(unset, "GIT_CONFIG_PARAMETERS")
-		n, err := strconv.Atoi(env["GIT_CONFIG_COUNT"])
-		if err != nil || n < 0 {
-			n = 0
-		}
-		env["GIT_CONFIG_KEY_"+strconv.Itoa(n)], env["GIT_CONFIG_VALUE_"+strconv.Itoa(n)] = "core.fsmonitor", "false"
-		env["GIT_CONFIG_COUNT"] = strconv.Itoa(n + 1)
+		// The scrub dropped any GIT_CONFIG_COUNT and entries, so this is the only one.
+		env["GIT_CONFIG_KEY_0"], env["GIT_CONFIG_VALUE_0"], env["GIT_CONFIG_COUNT"] = "core.fsmonitor", "false", "1"
 	}
 
 	// A Commodore on Claude compacts at 200k tokens; only the fleet's own env

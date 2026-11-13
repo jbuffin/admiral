@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -410,5 +411,104 @@ func TestANormalLaunchIsUnchangedByTheRestrictedProfile(t *testing.T) {
 	}
 	if argv[len(argv)-1] != "ship the fix" {
 		t.Errorf("prompt = %q, want the text as written", argv[len(argv)-1])
+	}
+}
+
+func TestTheRestrictedSettingsAutoAllowSandboxedBashSoDontAskRunsCommands(t *testing.T) {
+	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
+		t.Run(string(level), func(t *testing.T) {
+			p := newPinRig(t, nil)
+			_, _, argv, _ := p.mustRestricted(t, level)
+			_, got := settingsOf(t, argv)
+			if v := sub(t, got, "sandbox")["autoAllowBashIfSandboxed"]; v != true {
+				t.Errorf("sandbox.autoAllowBashIfSandboxed = %v, want true: under dontAsk every Bash call is refused without it", v)
+			}
+		})
+	}
+}
+
+func TestTheRestrictedSettingsDenyCronProjectSendsAndRegistryPublishes(t *testing.T) {
+	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
+		t.Run(string(level), func(t *testing.T) {
+			p := newPinRig(t, nil)
+			_, _, argv, _ := p.mustRestricted(t, level)
+			_, got := settingsOf(t, argv)
+			deny := strs(t, sub(t, got, "permissions")["deny"])
+			for _, r := range []string{"CronCreate", "SendToProject", "SendToProjectContext", "Bash(npm publish *)", "Bash(cargo publish *)", "Bash(gem push *)"} {
+				if !slices.Contains(deny, r) {
+					t.Errorf("permissions.deny = %q lacks %s", deny, r)
+				}
+			}
+		})
+	}
+}
+
+func TestTheRestrictedSettingsDenyWritesToTheOtherSessionsScratchpadsInTheSharedTempDir(t *testing.T) {
+	want := []string{
+		filepath.Join("/tmp", "claude-"+strconv.Itoa(os.Getuid()), "-*"),
+		filepath.Join("/private/tmp", "claude-"+strconv.Itoa(os.Getuid()), "-*"),
+	}
+	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
+		t.Run(string(level), func(t *testing.T) {
+			p := newPinRig(t, nil)
+			_, _, argv, _ := p.mustRestricted(t, level)
+			_, got := settingsOf(t, argv)
+			deny := strs(t, sub(t, sub(t, got, "sandbox"), "filesystem")["denyWrite"])
+			for _, w := range want {
+				if !slices.Contains(deny, w) {
+					t.Errorf("sandbox.filesystem.denyWrite = %q lacks %s", deny, w)
+				}
+			}
+		})
+	}
+}
+
+func TestARestrictedShipGetsAStubGitConfigAndIdentityOnEveryLaunch(t *testing.T) {
+	want := map[string]string{"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
+		"GIT_AUTHOR_NAME": "Admiral", "GIT_AUTHOR_EMAIL": "admiral@localhost", "GIT_COMMITTER_NAME": "Admiral", "GIT_COMMITTER_EMAIL": "admiral@localhost"}
+	for _, level := range []standing.Restricted{standing.DraftFix, standing.Investigate} {
+		t.Run(string(level), func(t *testing.T) {
+			// The fleet's own values lose to the stub.
+			p := newPinRig(t, map[string]string{"GIT_CONFIG_GLOBAL": "/home/engineer/.gitconfig", "GIT_AUTHOR_NAME": "Engineer"})
+			_, _, _, env := p.mustRestricted(t, level)
+			for k, v := range want {
+				if env[k] != v {
+					t.Errorf("%s = %q, want %q", k, env[k], v)
+				}
+			}
+		})
+	}
+}
+
+func TestARestrictedShipDropsTheEnvVarsThatCarryGitConfigAskpassAndTheSshAgent(t *testing.T) {
+	fleetEnv := map[string]string{"GIT_CONFIG_PARAMETERS": "'url.https://fake-token-work-1@github.com/.insteadof=https://github.com/'",
+		"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "credential.helper", "GIT_CONFIG_VALUE_0": "!echo fake-token-work-2",
+		"GIT_ASKPASS": "/usr/bin/fake-askpass", "SSH_ASKPASS": "/usr/bin/fake-askpass", "SSH_AUTH_SOCK": "/tmp/fake-agent.sock"}
+	p := newPinRig(t, fleetEnv)
+	_, _, _, env := p.mustRestricted(t, standing.DraftFix)
+	for k := range fleetEnv {
+		if v, ok := env[k]; ok {
+			t.Errorf("%s = %q in a restricted ship's env, want it unset", k, v)
+		}
+	}
+}
+
+func TestANormalLaunchKeepsTheFleetsGitEnvAndGetsNoStubIdentity(t *testing.T) {
+	fleetEnv := map[string]string{"GIT_CONFIG_COUNT": "1", "GIT_ASKPASS": "/usr/bin/fake-askpass", "SSH_AUTH_SOCK": "/tmp/fake-agent.sock"}
+	p := newPinRig(t, fleetEnv)
+	p.l.Checkouts = &fakeCheckouts{t: t}
+	if _, err := p.l.Launch(p.justRequest()); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	_, env := p.shipRecord(t)
+	for k, v := range fleetEnv {
+		if env[k] != v {
+			t.Errorf("%s = %q in a normal ship's env, want the fleet's %q", k, env[k], v)
+		}
+	}
+	for _, k := range []string{"GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_AUTHOR_NAME", "GIT_COMMITTER_EMAIL"} {
+		if v, ok := env[k]; ok && (v == "/dev/null" || v == "Admiral" || v == "admiral@localhost" || v == "1") {
+			t.Errorf("%s = %q in a normal ship's env, want no restricted stub", k, v)
+		}
 	}
 }

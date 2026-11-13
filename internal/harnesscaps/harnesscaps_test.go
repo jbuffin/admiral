@@ -418,3 +418,29 @@ func TestCheckAnswersWithTheAdvisorTheJudgeHarnessItJustProvedGives(t *testing.T
 		t.Errorf("check answer advisor with no judge result = %+v, want not_checked", a)
 	}
 }
+
+func TestListSaysWhichFleetsHaveAHarnessThatCanRunARestrictedShip(t *testing.T) {
+	home := t.TempDir()
+	store := capabilities.Open(home)
+	judgeIDs := []capabilities.ID{capabilities.JudgeNoTools, capabilities.JudgeNoNetwork}
+	prove(t, store, "capable", "claude", "2.1.300", append(judgeIDs, capabilities.AutopilotGuard, capabilities.RestrictedSandbox, capabilities.RestrictedAllow)...)
+	prove(t, store, "nosandbox", "claude", "2.1.300", append(judgeIDs, capabilities.AutopilotGuard, capabilities.RestrictedAllow)...)
+	s := service(t, home,
+		fleet("capable", "Capable", dock("claude", script(t, "2.1.300"))),
+		fleet("nosandbox", "No sandbox", dock("claude", script(t, "2.1.300"))))
+	rec := do(t, s, "GET", "/api/harness-capabilities", "")
+	var got struct {
+		Fleets []struct {
+			Key        string `json:"key"`
+			Restricted bool   `json:"restricted"`
+		} `json:"fleets"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || len(got.Fleets) != 2 {
+		t.Fatalf("fleets = %+v (%v) from %s", got.Fleets, err, rec.Body)
+	}
+	for i, want := range []bool{true, false} {
+		if got.Fleets[i].Restricted != want {
+			t.Errorf("fleet %s restricted = %v, want %v", got.Fleets[i].Key, got.Fleets[i].Restricted, want)
+		}
+	}
+}

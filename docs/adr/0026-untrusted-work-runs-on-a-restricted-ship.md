@@ -30,4 +30,5 @@ Status: accepted
 
 - Amends [ADR 0013](0013-each-harness-starts-with-the-prompt-on-its-command-line.md): a worker-launched ship's prompt is built by Go from a template, and the outside text it acts on goes in a file in the checkout, not on its command line.
 - A Draft fix ends in local commits. Someone has to Promote it before anything reaches GitHub.
+- The registry allowlist still lets a determined ship upload to a registry with a token it was given, and the deny rules on `npm publish`, `cargo publish` and `gem push` raise the cost but are not a boundary. A restricted ship is given no token, so the exposure is a token an injected instruction finds in the checkout.
 - A fleet whose only harnesses are Codex or Copilot gets proposals, not restricted ships, until those harnesses are proven.
