@@ -90,12 +90,13 @@ type Runner struct {
 	mu  sync.Mutex // one tick at a time
 	gmu sync.Mutex // guards answers and failing, which the GitHub poll writes between ticks
 	// answers is what GitHub last said about each subject; failing marks the subjects whose latest poll got no answer.
-	answers map[string]ghAnswer
-	failing map[string]bool
-	logs    map[string]cachedLog // outcome-log month files by path, under mu
-	wake    chan struct{}
-	once    sync.Once
-	dirty   atomic.Bool
+	answers  map[string]ghAnswer
+	failing  map[string]bool
+	logs     map[string]cachedLog // outcome-log month files by path, under mu
+	keptLogs map[string]bool      // the month files read this tick, under mu
+	wake     chan struct{}
+	once     sync.Once
+	dirty    atomic.Bool
 }
 
 func (r *Runner) init() { r.once.Do(func() { r.wake = make(chan struct{}, 1) }) }
@@ -172,7 +173,7 @@ func (r *Runner) tick(ctx context.Context) time.Time {
 				}
 			case isGitHubKind(c.Trigger.Kind):
 				a, ok := r.answerOf(fleet, c.Trigger.Subject)
-				if !ok {
+				if !ok || !a.judges(c) {
 					continue
 				}
 				switch what, why := ghVerdict(c.Trigger.Kind, a); what {
@@ -207,6 +208,7 @@ func (r *Runner) tick(ctx context.Context) time.Time {
 			}
 		}
 	}
+	r.pruneLogs()
 	return next
 }
 

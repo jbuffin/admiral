@@ -51,11 +51,13 @@ func (r *Runner) readLog(list []ledger.Commitment) *shipLog {
 		}
 	}
 	log := &shipLog{byShip: map[string][]rec{}}
+	if r.keptLogs == nil {
+		r.keptLogs = map[string]bool{}
+	}
 	files, err := outcomes.MonthFiles(filepath.Join(r.Home, "outcomes"))
 	if err != nil || since.IsZero() {
 		return log
 	}
-	kept := map[string]bool{}
 	for _, f := range files {
 		if end := f.End(); !end.IsZero() && !end.After(since) {
 			continue
@@ -63,14 +65,19 @@ func (r *Runner) readLog(list []ledger.Commitment) *shipLog {
 		for ship, recs := range r.parseCached(f.Path) {
 			log.byShip[ship] = append(log.byShip[ship], recs...)
 		}
-		kept[f.Path] = true
+		r.keptLogs[f.Path] = true
 	}
+	return log
+}
+
+// pruneLogs drops the cached month files no fleet read this tick; one fleet's call must not evict another's months.
+func (r *Runner) pruneLogs() {
 	for path := range r.logs {
-		if !kept[path] {
+		if !r.keptLogs[path] {
 			delete(r.logs, path)
 		}
 	}
-	return log
+	r.keptLogs = map[string]bool{}
 }
 
 // cachedLog is one month file's parsed records, good while its size and mtime stay.

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jbuffin/admiral/internal/actor"
 	"github.com/jbuffin/admiral/internal/commitments"
 	"github.com/jbuffin/admiral/internal/ledger"
 	"github.com/jbuffin/admiral/internal/moor"
@@ -37,13 +38,14 @@ type fakeGH struct {
 	prs      map[string]string
 	issues   map[string]string
 	repoGone map[string]bool // URLs whose repository GitHub cannot look in
+	silent   map[string]bool // URLs a call leaves out without saying why
 	err      error
 	block    chan struct{} // while non-nil, a call waits for it to close
 }
 
 func (f *fakeGH) set(fn func()) { f.mu.Lock(); defer f.mu.Unlock(); fn() }
 
-func (f *fakeGH) answer(kind string, urls []string, ctx context.Context) (map[string]string, []string, error) {
+func (f *fakeGH) answer(kind string, urls []string, ctx context.Context) (got map[string]string, unanswered, gone []string, err error) {
 	f.w.record(ghCall{f.host, kind, append([]string(nil), urls...)})
 	f.mu.Lock()
 	block, err := f.block, f.err
@@ -52,11 +54,11 @@ func (f *fakeGH) answer(kind string, urls []string, ctx context.Context) (map[st
 		select {
 		case <-block:
 		case <-ctx.Done():
-			return nil, nil, ctx.Err()
+			return nil, nil, nil, ctx.Err()
 		}
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -64,42 +66,45 @@ func (f *fakeGH) answer(kind string, urls []string, ctx context.Context) (map[st
 	if kind == "issue" {
 		src = f.issues
 	}
-	out := map[string]string{}
-	var unanswered []string
+	got = map[string]string{}
 	for _, u := range urls {
-		if f.repoGone[u] {
+		switch s, ok := src[u]; {
+		case f.repoGone[u]:
 			unanswered = append(unanswered, u)
-		} else if s, ok := src[u]; ok {
-			out[u] = s
+		case f.silent[u]:
+		case ok:
+			got[u] = s
+		default:
+			gone = append(gone, u)
 		}
 	}
-	return out, unanswered, nil
+	return got, unanswered, gone, nil
 }
 
-func (f *fakeGH) PullRequests(ctx context.Context, urls []string) (map[string]moor.Status, error) {
-	got, un, err := f.answer("pr", urls, ctx)
+func (f *fakeGH) PullRequestsOrGone(ctx context.Context, urls []string) (map[string]moor.Status, []string, error) {
+	got, un, gone, err := f.answer("pr", urls, ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	out := map[string]moor.Status{}
 	for u, s := range got {
 		out[u] = moor.Status{State: s}
 	}
 	if len(un) > 0 {
-		return out, &moor.Unanswered{URLs: un}
+		return out, gone, &moor.Unanswered{URLs: un}
 	}
-	return out, nil
+	return out, gone, nil
 }
 
-func (f *fakeGH) IssueStates(ctx context.Context, urls []string) (map[string]string, error) {
-	got, un, err := f.answer("issue", urls, ctx)
+func (f *fakeGH) IssueStatesOrGone(ctx context.Context, urls []string) (map[string]string, []string, error) {
+	got, un, gone, err := f.answer("issue", urls, ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(un) > 0 {
-		return got, &moor.Unanswered{URLs: un}
+		return got, gone, &moor.Unanswered{URLs: un}
 	}
-	return got, nil
+	return got, gone, nil
 }
 
 type ghWorld struct {
@@ -167,7 +172,7 @@ func newGHRig(t *testing.T) *ghRig {
 }
 
 func (g *ghRig) host(name string) *fakeGH {
-	f := &fakeGH{w: g.ghWorld, host: name, prs: map[string]string{}, issues: map[string]string{}, repoGone: map[string]bool{}}
+	f := &fakeGH{w: g.ghWorld, host: name, prs: map[string]string{}, issues: map[string]string{}, repoGone: map[string]bool{}, silent: map[string]bool{}}
 	g.ghWorld.hosts[name] = f
 	return f
 }
@@ -619,4 +624,142 @@ func TestAnUnchangedOutcomeLogIsNotReadAgainAndAnAppendedRecordIsSeen(t *testing
 		t.Errorf("%d reads after a record was appended, want the file read again", got)
 	}
 	g.wantCard(c.ID, commitments.OutcomeReminded)
+}
+
+func (g *ghRig) setState(kind, url, state string) {
+	g.gh.set(func() {
+		m := g.gh.prs
+		if kind == ledger.TriggerIssueClosed {
+			m = g.gh.issues
+		}
+		if state == "" {
+			delete(m, url)
+		} else {
+			m[url] = state
+		}
+	})
+}
+
+// A commitment recorded after a poll must wait for a poll that began after it: the poll's older answer describes a subject
+// that has since been reopened, recreated or merged.
+func TestACommitmentRecordedAfterAPollIsNotJudgedOnThatPollsAnswer(t *testing.T) {
+	cases := []struct {
+		name    string
+		kind    string
+		url     string
+		earlier string // what GitHub said when the first commitment was judged; "" is gone
+		verdict string // fires or drops
+	}{
+		{"pr_merged dropped on CLOSED", ledger.TriggerPRMerged, prURL, "CLOSED", drops},
+		{"pr_merged dropped when gone", ledger.TriggerPRMerged, prURL, "", drops},
+		{"pr_merged fired on MERGED", ledger.TriggerPRMerged, prURL, "MERGED", fires},
+		{"pr_closed fired on CLOSED", ledger.TriggerPRClosed, prURL, "CLOSED", fires},
+		{"pr_closed dropped when gone", ledger.TriggerPRClosed, prURL, "", drops},
+		{"issue_closed fired on CLOSED", ledger.TriggerIssueClosed, issueURL, "CLOSED", fires},
+		{"issue_closed dropped when gone", ledger.TriggerIssueClosed, issueURL, "", drops},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := newGHRig(t)
+			a := g.add(prCommitment(tc.kind, tc.url))
+			g.setState(tc.kind, tc.url, tc.earlier)
+			g.run()
+			// Stop advancing once it closes: the next poll would replace the answer that judged it.
+			g.advanceUntil("the first commitment to close", func() bool { _, open := g.find(a.ID); return !open })
+			if tc.verdict == fires {
+				g.wantCard(a.ID, commitments.OutcomeReminded)
+			} else {
+				g.wantCard(a.ID, commitments.OutcomeDropped)
+			}
+
+			g.setState(tc.kind, tc.url, "OPEN")
+			b := g.add(prCommitment(tc.kind, tc.url))
+			g.r.Changed()
+			time.Sleep(150 * time.Millisecond)
+			if _, open := g.find(b.ID); !open {
+				t.Fatalf("the commitment recorded after the poll was closed on the poll's older answer; cards: %+v", g.cards.cards())
+			}
+			for _, outcome := range []string{commitments.OutcomeReminded, commitments.OutcomeDropped} {
+				if _, ok := g.cardFor(b.ID, outcome); ok {
+					t.Fatalf("the commitment recorded after the poll got a %s card on the older answer", outcome)
+				}
+			}
+			g.pollsMore(2)
+			if _, open := g.find(b.ID); !open {
+				t.Errorf("the reopened subject's commitment closed after a fresh poll said OPEN; cards: %+v", g.cards.cards())
+			}
+		})
+	}
+}
+
+// One URL a call leaves out without saying why is not answered: its commitment waits while its neighbours get their verdicts.
+func TestAURLLeftOutOfABatchWithoutAReasonWaitsBesideAnsweredAndGoneOnes(t *testing.T) {
+	const (
+		answered = "https://github.com/acme/widgets/pull/21"
+		gone     = "https://github.com/acme/widgets/pull/22"
+		silent   = "https://github.com/acme/widgets/pull/23"
+		repo     = "https://github.com/acme/hidden/pull/24"
+	)
+	g := newGHRig(t)
+	a := g.add(prCommitment(ledger.TriggerPRClosed, answered))
+	b := g.add(prCommitment(ledger.TriggerPRClosed, gone))
+	c := g.add(prCommitment(ledger.TriggerPRClosed, silent))
+	d := g.add(prCommitment(ledger.TriggerPRClosed, repo))
+	g.gh.set(func() {
+		g.gh.prs[answered] = "CLOSED"
+		g.gh.silent[silent] = true
+		g.gh.repoGone[repo] = true
+	})
+	g.run()
+	g.settle()
+	g.wantCard(a.ID, commitments.OutcomeReminded)
+	g.wantCard(b.ID, commitments.OutcomeDropped)
+	for _, id := range []string{c.ID, d.ID} {
+		if _, open := g.find(id); !open {
+			t.Errorf("commitment %s closed, want it waiting: a URL GitHub did not answer is not a gone one", id)
+		}
+	}
+}
+
+// Two fleets share the outcome log: the one that needs older months must not have them evicted by the one that does not.
+func TestTwoFleetsWithShipTriggersFromDifferentMonthsDoNotEvictEachOthersCache(t *testing.T) {
+	g := newRig(t)
+	g.r.Fleets = func() []string { return []string{fleet, "home"} }
+	old := t0.AddDate(0, -2, 0)
+	g.add(shipTrigger(ledger.TriggerShipSailed))
+	older := shipTrigger(ledger.TriggerShipSailed)
+	older.Trigger.Subject, older.Trigger.Launched = "oldship", stamp(old)
+	if _, err := g.led.AddCommitment("home", older, actor.Via); err != nil {
+		t.Fatal(err)
+	}
+	g.launched("saltpaw", t0.Add(-time.Hour))
+	g.event("oldship", "launched", old, map[string]any{"fleet": "home", "launched": stamp(old)})
+	var mu sync.Mutex
+	reads := 0
+	g.r.ReadFile = func(path string) ([]byte, error) {
+		mu.Lock()
+		reads++
+		mu.Unlock()
+		return os.ReadFile(path)
+	}
+	count := func() int { mu.Lock(); defer mu.Unlock(); return reads }
+
+	g.tick()
+	first := count()
+	g.tick()
+	g.tick()
+	if got := count(); got != first {
+		t.Errorf("%d reads after two more ticks over an unchanged log, want the first tick's %d", got, first)
+	}
+}
+
+func TestAnIssueDroppedAsGoneSaysTheNumberMayBeAPullRequest(t *testing.T) {
+	g := newGHRig(t)
+	c := g.add(prCommitment(ledger.TriggerIssueClosed, issueURL))
+	g.run()
+	g.settle()
+	card := g.wantCard(c.ID, commitments.OutcomeDropped)
+	if !strings.Contains(strings.ToLower(card.Why), "pull request") {
+		t.Errorf("drop reason = %q, want it to say the number may be a pull request", card.Why)
+	}
 }

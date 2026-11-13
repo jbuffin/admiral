@@ -19,17 +19,28 @@ var GHPoll = delay.From("ADMIRAL_COMMITMENT_GH_POLL", 2*time.Minute)
 
 // GitHub is the part of *github.Client the runner polls with: one batched call per host.
 type GitHub interface {
-	// PullRequests leaves out a PR GitHub answers NOT_FOUND for; a *moor.Unanswered beside the answer is a repository it could not look in.
-	PullRequests(ctx context.Context, urls []string) (map[string]moor.Status, error)
-	// IssueStates maps each issue URL to OPEN or CLOSED, leaving out an issue GitHub answers NOT_FOUND for, with the same *moor.Unanswered rule.
-	IssueStates(ctx context.Context, urls []string) (map[string]string, error)
+	// PullRequestsOrGone lists the PRs GitHub answered NOT_FOUND for beside the answer; a *moor.Unanswered is a repository it could not look in.
+	// A URL in none of the three was not answered.
+	PullRequestsOrGone(ctx context.Context, urls []string) (map[string]moor.Status, []string, error)
+	// IssueStatesOrGone maps each issue URL to OPEN or CLOSED, with the same gone and *moor.Unanswered rules.
+	IssueStatesOrGone(ctx context.Context, urls []string) (map[string]string, []string, error)
 }
 
-// ghAnswer is what GitHub last said about one subject: its state, or that it is gone.
+// ghAnswer is what GitHub said about one subject when a poll started: its state, or that it is gone.
 type ghAnswer struct {
 	state string // OPEN, CLOSED or MERGED
 	gone  bool
+	at    time.Time // when the poll that got it started
 }
+
+// judges reports whether the answer was asked after the commitment was recorded. A commitment's stamp is cut to the
+// second, so a poll that started within that second might have come first and does not count.
+func (a ghAnswer) judges(c ledger.Commitment) bool {
+	return !a.at.Before(c.TS.Add(time.Second))
+}
+
+// same is whether two answers say the same thing, whenever they were asked.
+func (a ghAnswer) same(b ghAnswer) bool { return a.state == b.state && a.gone == b.gone }
 
 // The GitHub rows of the trigger-and-drop table, beside the ship rows in shiplog.go (every row has a test):
 //
@@ -42,7 +53,10 @@ type ghAnswer struct {
 // No answer (a failed call, a repository GitHub could not look in, no client) never reaches this table: the commitment waits.
 func ghVerdict(kind string, a ghAnswer) (verdictKind, string) {
 	if a.gone {
-		return verdictDrop, "the " + noun(kind) + " no longer exists"
+		if kind == ledger.TriggerIssueClosed {
+			return verdictDrop, "GitHub has no such issue; if the number is a pull request, record a pull request commitment instead"
+		}
+		return verdictDrop, "the pull request no longer exists"
 	}
 	switch {
 	case kind == ledger.TriggerPRMerged && a.state == "MERGED",
@@ -53,13 +67,6 @@ func ghVerdict(kind string, a ghAnswer) (verdictKind, string) {
 		return verdictDrop, "the pull request was closed without merging"
 	}
 	return verdictWait, ""
-}
-
-func noun(kind string) string {
-	if kind == ledger.TriggerIssueClosed {
-		return "issue"
-	}
-	return "pull request"
 }
 
 func isGitHubKind(kind string) bool {
@@ -103,7 +110,9 @@ func (r *Runner) pollLoop(ctx context.Context) {
 
 // pollGitHub makes one batched call per kind per host and reports whether any answer changed.
 func (r *Runner) pollGitHub(ctx context.Context) bool {
+	start := r.Clock.Now()
 	type batch struct{ prs, issues []string }
+	recorded := map[string][]ledger.Commitment{}
 	subjects := map[hostKey]*batch{}
 	var order []hostKey
 	seen := map[string]bool{}
@@ -113,11 +122,15 @@ func (r *Runner) pollGitHub(ctx context.Context) bool {
 			continue
 		}
 		for _, c := range list {
-			if !isGitHubKind(c.Trigger.Kind) || c.Waiting || seen[pollKey(fleet, c.Trigger.Subject)] {
+			if !isGitHubKind(c.Trigger.Kind) || c.Waiting {
 				continue
 			}
 			u, err := url.Parse(c.Trigger.Subject)
 			if err != nil || u.Host == "" {
+				continue
+			}
+			recorded[pollKey(fleet, c.Trigger.Subject)] = append(recorded[pollKey(fleet, c.Trigger.Subject)], c)
+			if seen[pollKey(fleet, c.Trigger.Subject)] {
 				continue
 			}
 			seen[pollKey(fleet, c.Trigger.Subject)] = true
@@ -162,16 +175,16 @@ func (r *Runner) pollGitHub(ctx context.Context) bool {
 			continue
 		}
 		if len(b.prs) > 0 {
-			got, err := client.PullRequests(ctx, b.prs)
+			got, gone, err := client.PullRequestsOrGone(ctx, b.prs)
 			states := make(map[string]string, len(got))
 			for u, st := range got {
 				states[u] = st.State
 			}
-			r.collect(k.fleet, b.prs, states, err, answers, fail)
+			r.collect(k.fleet, b.prs, states, gone, err, start, answers, fail)
 		}
 		if len(b.issues) > 0 {
-			got, err := client.IssueStates(ctx, b.issues)
-			r.collect(k.fleet, b.issues, got, err, answers, fail)
+			got, gone, err := client.IssueStatesOrGone(ctx, b.issues)
+			r.collect(k.fleet, b.issues, got, gone, err, start, answers, fail)
 		}
 		if ctx.Err() != nil {
 			return false
@@ -188,16 +201,25 @@ func (r *Runner) pollGitHub(ctx context.Context) bool {
 		}
 	}
 	for key, a := range answers {
-		if old, ok := r.answers[key]; !ok || old != a {
+		old, ok := r.answers[key]
+		if !ok || !old.same(a) {
 			changed = true
+			continue
+		}
+		// The same answer, but newly asked after a commitment that the older one could not judge.
+		for _, c := range recorded[key] {
+			if a.judges(c) && !old.judges(c) {
+				changed = true
+			}
 		}
 	}
 	r.answers, r.failing = answers, failing
 	return changed
 }
 
-// collect sorts one call's answer: a URL it left out of a call that otherwise answered is gone, unless it is in a repository GitHub could not look in.
-func (r *Runner) collect(fleet string, urls []string, states map[string]string, err error, answers map[string]ghAnswer, fail func(fleet, subject string, err error)) {
+// collect sorts one call's answer. Only a URL GitHub said is gone counts as gone; one it left out without a word, or in a
+// repository it could not look in, was not answered and its commitment waits.
+func (r *Runner) collect(fleet string, urls []string, states map[string]string, gone []string, err error, at time.Time, answers map[string]ghAnswer, fail func(fleet, subject string, err error)) {
 	unanswered := map[string]bool{}
 	var un *moor.Unanswered
 	switch {
@@ -211,15 +233,21 @@ func (r *Runner) collect(fleet string, urls []string, states map[string]string, 
 		}
 		return
 	}
+	goneSet := map[string]bool{}
+	for _, u := range gone {
+		goneSet[u] = true
+	}
 	for _, u := range urls {
 		st, ok := states[u]
 		switch {
 		case ok:
-			answers[pollKey(fleet, u)] = ghAnswer{state: st}
+			answers[pollKey(fleet, u)] = ghAnswer{state: st, at: at}
+		case goneSet[u]:
+			answers[pollKey(fleet, u)] = ghAnswer{gone: true, at: at}
 		case unanswered[u]:
 			fail(fleet, u, un)
 		default:
-			answers[pollKey(fleet, u)] = ghAnswer{gone: true}
+			fail(fleet, u, errors.New("GitHub's answer did not include it"))
 		}
 	}
 }

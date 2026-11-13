@@ -93,6 +93,13 @@ var prFields = fmt.Sprintf(`state reviewDecision mergeable statusCheckRollup { s
 // is a failed call, and a repository GitHub cannot find leaves its PRs unanswered: a *moor.Unanswered
 // beside the answer for the rest.
 func (c *Client) PullRequests(ctx context.Context, urls []string) (map[string]moor.Status, error) {
+	out, _, err := c.PullRequestsOrGone(ctx, urls)
+	return out, err
+}
+
+// PullRequestsOrGone is PullRequests that also names the URLs GitHub answered NOT_FOUND for; a URL in neither the
+// answer nor gone (nor a *moor.Unanswered) was not answered.
+func (c *Client) PullRequestsOrGone(ctx context.Context, urls []string) (map[string]moor.Status, []string, error) {
 	var q strings.Builder
 	q.WriteString("query { viewer { login }")
 	aliases := map[string]string{}
@@ -108,11 +115,15 @@ func (c *Client) PullRequests(ctx context.Context, urls []string) (map[string]mo
 	q.WriteString(" }")
 	out := map[string]moor.Status{}
 	if len(aliases) == 0 {
-		return out, nil
+		return out, nil, nil
 	}
-	data, notFound, err := c.batchQuery(ctx, q.String(), aliases)
+	data, notFound, goneAliases, err := c.batchQuery(ctx, "pull request", q.String(), aliases)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	var gone []string
+	for _, alias := range goneAliases {
+		gone = append(gone, aliases[alias])
 	}
 	var unanswered []string
 	for _, alias := range notFound {
@@ -131,9 +142,9 @@ func (c *Client) PullRequests(ctx context.Context, urls []string) (map[string]mo
 		}
 	}
 	if len(unanswered) > 0 {
-		return out, &moor.Unanswered{URLs: unanswered}
+		return out, gone, &moor.Unanswered{URLs: unanswered}
 	}
-	return out, nil
+	return out, gone, nil
 }
 
 type gqlActor struct {
@@ -302,15 +313,16 @@ func (n *prNode) status() moor.Status {
 
 // batchQuery runs one aliased GraphQL query. gh exits 1 when some item is unknown yet still prints the others under
 // data, so data counts whatever the exit code. notFound lists the aliases whose repository itself is NOT_FOUND; an
-// item-level NOT_FOUND is just a null under its alias.
-func (c *Client) batchQuery(ctx context.Context, query string, aliases map[string]string) (data map[string]json.RawMessage, notFound []string, err error) {
+// item-level NOT_FOUND is a null under its alias, and gone lists those aliases: GitHub said the item does not exist.
+// what names the lookup in an error.
+func (c *Client) batchQuery(ctx context.Context, what, query string, aliases map[string]string) (data map[string]json.RawMessage, notFound, gone []string, err error) {
 	token, err := c.Token(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	stdout, stderr, err := c.gh(ctx, []string{"api", "graphql", "--hostname", c.host, "-f", "query=" + query}, c.tokenVar(), token)
 	if err != nil && ctx.Err() != nil {
-		return nil, nil, ctx.Err()
+		return nil, nil, nil, ctx.Err()
 	}
 	var body struct {
 		Data   map[string]json.RawMessage `json:"data"`
@@ -321,27 +333,32 @@ func (c *Client) batchQuery(ctx context.Context, query string, aliases map[strin
 	}
 	if json.Unmarshal([]byte(stdout), &body) != nil || body.Data == nil {
 		if errors.Is(err, errTimeout) || errors.Is(err, exec.ErrNotFound) {
-			return nil, nil, c.unreachableErr()
+			return nil, nil, nil, c.unreachableErr()
 		}
 		msg := strings.TrimPrefix(redact(strings.TrimSpace(stderr), token), "gh: ")
 		if msg == "" {
 			msg = "GitHub's answer was not understood"
 		}
-		return nil, nil, fmt.Errorf("pull request lookup failed: %s", msg)
+		return nil, nil, nil, fmt.Errorf("%s lookup failed: %s", what, msg)
 	}
 	// A NOT_FOUND ending at the item is one GitHub does not have; one on the repository itself says nothing about
 	// its items (a token that cannot see it, say), so they stay unanswered.
 	for _, e := range body.Errors {
 		if e.Type != "NOT_FOUND" {
-			return nil, nil, fmt.Errorf("pull request lookup failed: GitHub answered %s", e.Type)
+			return nil, nil, nil, fmt.Errorf("%s lookup failed: GitHub answered %s", what, e.Type)
 		}
-		if len(e.Path) == 1 {
-			if alias, _ := e.Path[0].(string); aliases[alias] != "" {
+		if len(e.Path) == 0 {
+			continue
+		}
+		if alias, _ := e.Path[0].(string); aliases[alias] != "" {
+			if len(e.Path) == 1 {
 				notFound = append(notFound, alias)
+			} else {
+				gone = append(gone, alias)
 			}
 		}
 	}
-	return body.Data, notFound, nil
+	return body.Data, notFound, gone, nil
 }
 
 var issueURL = regexp.MustCompile(`^https://[^/\s]+/([^/\s"\\]+)/([^/\s"\\]+)/issues/([0-9]+)$`)
@@ -349,6 +366,12 @@ var issueURL = regexp.MustCompile(`^https://[^/\s]+/([^/\s"\\]+)/([^/\s"\\]+)/is
 // IssueStates maps each issue URL GitHub knows to OPEN or CLOSED, in one aliased query; a URL it answers NOT_FOUND for
 // is left out, and a *moor.Unanswered beside the answer names the issues in a repository it could not look in.
 func (c *Client) IssueStates(ctx context.Context, urls []string) (map[string]string, error) {
+	out, _, err := c.IssueStatesOrGone(ctx, urls)
+	return out, err
+}
+
+// IssueStatesOrGone is IssueStates that also names the URLs GitHub answered NOT_FOUND for.
+func (c *Client) IssueStatesOrGone(ctx context.Context, urls []string) (map[string]string, []string, error) {
 	var q strings.Builder
 	q.WriteString("query {")
 	aliases := map[string]string{}
@@ -364,11 +387,15 @@ func (c *Client) IssueStates(ctx context.Context, urls []string) (map[string]str
 	q.WriteString(" }")
 	out := map[string]string{}
 	if len(aliases) == 0 {
-		return out, nil
+		return out, nil, nil
 	}
-	data, notFound, err := c.batchQuery(ctx, q.String(), aliases)
+	data, notFound, goneAliases, err := c.batchQuery(ctx, "issue", q.String(), aliases)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	var gone []string
+	for _, alias := range goneAliases {
+		gone = append(gone, aliases[alias])
 	}
 	for alias, u := range aliases {
 		var r *struct{ Issue *struct{ State string } }
@@ -381,7 +408,7 @@ func (c *Client) IssueStates(ctx context.Context, urls []string) (map[string]str
 		for _, alias := range notFound {
 			un = append(un, aliases[alias])
 		}
-		return out, &moor.Unanswered{URLs: un}
+		return out, gone, &moor.Unanswered{URLs: un}
 	}
-	return out, nil
+	return out, gone, nil
 }
