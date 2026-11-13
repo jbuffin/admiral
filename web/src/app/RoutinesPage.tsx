@@ -109,7 +109,7 @@ function RecentRuns({ runs }: { runs: RoutineRun[] | null }) {
   );
 }
 
-function RoutineEditor({ fleet, routine, initial, caps, problem, onSaved, onDeleted, onToggled }: { fleet: Fleet; routine: Routine | null; initial: RoutineForm; caps: FleetCapabilities | undefined; problem?: { field: 'name' | 'when' | 'before_acting' | 'do'; message: string }; onSaved: (r: Routine) => void; onDeleted: () => void; onToggled: (r: Routine) => void }) {
+function RoutineEditor({ fleet, routine, initial, caps, problem: drafted, onSaved, onDeleted, onToggled }: { fleet: Fleet; routine: Routine | null; initial: RoutineForm; caps: FleetCapabilities | undefined; problem?: { field: 'name' | 'when' | 'before_acting' | 'do'; message: string }; onSaved: (r: Routine) => void; onDeleted: () => void; onToggled: (r: Routine) => void }) {
   const [form, setForm] = useState(initial);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -120,8 +120,17 @@ function RoutineEditor({ fleet, routine, initial, caps, problem, onSaved, onDele
   const hold = holdFire.value?.fleet === fleet.key ? holdFire.value.state.on : false;
   const docks = autopilotDocks(caps, fleet.docks);
   const l = form.launch;
-  const set = (patch: Partial<RoutineForm>) => setForm((f) => ({ ...f, ...patch }));
-  const setLaunch = (patch: Partial<RoutineForm['launch']>) => setForm((f) => ({ ...f, launch: { ...f.launch, ...patch } }));
+  const [problem, setProblem] = useState(drafted);
+  // A drafted problem goes with the first edit of the field it names.
+  const fixes = (field: 'name' | 'when' | 'before_acting' | 'do') => setProblem((p) => (p?.field === field ? undefined : p));
+  const set = (patch: Partial<RoutineForm>) => {
+    for (const [k, f] of [['name', 'name'], ['when', 'when'], ['before', 'before_acting'], ['mode', 'do'], ['prompt', 'do']] as const) if (k in patch) fixes(f);
+    setForm((f) => ({ ...f, ...patch }));
+  };
+  const setLaunch = (patch: Partial<RoutineForm['launch']>) => {
+    fixes('do');
+    setForm((f) => ({ ...f, launch: { ...f.launch, ...patch } }));
+  };
   const offered = docks.harnesses.includes(l.harness) || !l.harness ? docks.harnesses : [...docks.harnesses, l.harness];
 
   // The first qualifying dock is the default for a new launch, so Save needs no dock pick.
