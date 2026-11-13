@@ -215,6 +215,14 @@ func (g *ghRig) advanceUntil(what string, ok func() bool) {
 	}
 }
 
+// settle lets the runner poll a few times when the closed commitments leave nothing to look up, so a poll cannot be counted.
+func (g *ghRig) settle() {
+	for range 3 {
+		g.clk.set(g.clk.Now().Add(commitments.GHPoll))
+		time.Sleep(60 * time.Millisecond)
+	}
+}
+
 // pollsMore advances the clock until the runner has polled n more times.
 func (g *ghRig) pollsMore(n int) {
 	g.t.Helper()
@@ -269,7 +277,12 @@ func TestEachGitHubRowOfTheTriggerTable(t *testing.T) {
 				})
 			}
 			g.run()
-			g.pollsMore(2)
+			// A poll that fires or drops closes the commitment, so no later poll has a subject to look up.
+			if row.want == waits {
+				g.pollsMore(2)
+			} else {
+				g.pollsMore(1)
+			}
 			switch row.want {
 			case fires:
 				g.wantCard(c.ID, commitments.OutcomeReminded)
@@ -321,7 +334,7 @@ func TestAGitHubTriggerFiresItsLaunchOnceAcrossARestart(t *testing.T) {
 	stop()
 	g.restart()
 	g.run()
-	g.pollsMore(2)
+	g.settle()
 	if n := len(g.ships.requests()); n != 1 {
 		t.Errorf("%d launches after a restart, want the one", n)
 	}
@@ -344,7 +357,7 @@ func TestAGitHubReminderCardIsPostedOnceAcrossARestart(t *testing.T) {
 			stop()
 			g.restart()
 			g.run()
-			g.pollsMore(2)
+			g.settle()
 			if n := len(g.cards.cards()); n != 1 {
 				t.Errorf("%d cards, want the one reminder: %+v", n, g.cards.cards())
 			}

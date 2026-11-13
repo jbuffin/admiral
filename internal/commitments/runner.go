@@ -42,6 +42,9 @@ const pollEvery = 30 * time.Second
 // idleEvery is the wake when nothing is due and no ship is watched.
 const idleEvery = 10 * time.Minute
 
+// agedAfter is how old a commitment with no trigger gets before the engineer is asked whether they still want it.
+const agedAfter = 14 * 24 * time.Hour
+
 // Card outcomes.
 const (
 	OutcomeLaunched = "launched"
@@ -84,10 +87,15 @@ type Runner struct {
 	// ReadFile reads an outcome-log month file; nil means os.ReadFile.
 	ReadFile func(path string) ([]byte, error)
 
-	mu    sync.Mutex // one tick at a time
-	wake  chan struct{}
-	once  sync.Once
-	dirty atomic.Bool
+	mu  sync.Mutex // one tick at a time
+	gmu sync.Mutex // guards answers and failing, which the GitHub poll writes between ticks
+	// answers is what GitHub last said about each subject; failing marks the subjects whose latest poll got no answer.
+	answers map[string]ghAnswer
+	failing map[string]bool
+	logs    map[string]cachedLog // outcome-log month files by path, under mu
+	wake    chan struct{}
+	once    sync.Once
+	dirty   atomic.Bool
 }
 
 func (r *Runner) init() { r.once.Do(func() { r.wake = make(chan struct{}, 1) }) }
@@ -112,6 +120,7 @@ func (r *Runner) Run(ctx context.Context) {
 		case <-r.Ready:
 		}
 	}
+	go r.pollLoop(ctx)
 	for ctx.Err() == nil {
 		r.dirty.Store(false)
 		d := r.tick(ctx).Sub(r.Clock.Now())
@@ -160,6 +169,24 @@ func (r *Runner) tick(ctx context.Context) time.Time {
 				}
 				if fire = !now.Before(at); !fire {
 					earlier(at)
+				}
+			case isGitHubKind(c.Trigger.Kind):
+				a, ok := r.answerOf(fleet, c.Trigger.Subject)
+				if !ok {
+					continue
+				}
+				switch what, why := ghVerdict(c.Trigger.Kind, a); what {
+				case verdictFire:
+					fire = true
+				case verdictDrop:
+					r.drop(fleet, c, why)
+				}
+			case c.Trigger.Kind == ledger.TriggerNone && !c.Shown:
+				// Only the engineer cancels it: the card asks once and the commitment stays open.
+				if at := c.TS.Add(agedAfter); now.Before(at) {
+					earlier(at)
+				} else if r.post(fleet, c, OutcomeAged, "", "") == nil {
+					_ = r.Ledger.MarkShown(fleet, c.ID)
 				}
 			case c.Trigger.Kind == ledger.TriggerShipSailed || c.Trigger.Kind == ledger.TriggerShipAnchored:
 				if log == nil {

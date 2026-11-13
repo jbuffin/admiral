@@ -37,7 +37,7 @@ func TestAdmiralBot_PRMergedCommitmentFiresAsACardWhenGitHubSaysMerged(t *testin
 		}
 		return nil
 	}
-	waitCond(t, 15*time.Second, "Admiral asked gh about the PR", func() bool { return g.asked(pr) })
+	waitCond(t, 15*time.Second, "Admiral asked gh about the PR", func() bool { return g.asked(`repository(owner: "acme", name: "widgets") { pullRequest(number: 12)`) }) // the batched query names the PR by owner, repo and number, not by URL
 	holdThat(t, "a card appeared while the PR is open", func() bool { return cardOf() == nil })
 
 	typed := c.stdin()

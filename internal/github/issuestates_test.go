@@ -33,8 +33,9 @@ func recordedCalls(t *testing.T, rec string) [][]string {
 		return nil
 	}
 	var calls [][]string
+	// A call's last word ends in a NUL and the script adds two more, so a call's separator leaves one NUL on the next.
 	for _, c := range strings.Split(string(raw), "\x00\x00") {
-		if c != "" {
+		if c = strings.TrimPrefix(c, "\x00"); c != "" {
 			calls = append(calls, strings.Split(strings.TrimSuffix(c, "\x00"), "\x00"))
 		}
 	}

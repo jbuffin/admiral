@@ -35,6 +35,8 @@ func digestLine(c commitments.Card) string {
 		return "Your commitment \"" + text + "\" launched ship " + c.Ship + "."
 	case commitments.OutcomeReminded:
 		return "Your commitment \"" + text + "\" reminded the engineer."
+	case commitments.OutcomeAged:
+		return "Your commitment \"" + text + "\" is 14 days old: asked the engineer whether they still want it."
 	case commitments.OutcomeDropped:
 		return "Your commitment \"" + text + "\" was dropped: " + c.Why + "."
 	}

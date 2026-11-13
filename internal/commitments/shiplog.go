@@ -55,13 +55,47 @@ func (r *Runner) readLog(list []ledger.Commitment) *shipLog {
 	if err != nil || since.IsZero() {
 		return log
 	}
+	kept := map[string]bool{}
 	for _, f := range files {
 		if end := f.End(); !end.IsZero() && !end.After(since) {
 			continue
 		}
-		log.readFile(r.readBytes, f.Path)
+		for ship, recs := range r.parseCached(f.Path) {
+			log.byShip[ship] = append(log.byShip[ship], recs...)
+		}
+		kept[f.Path] = true
+	}
+	for path := range r.logs {
+		if !kept[path] {
+			delete(r.logs, path)
+		}
 	}
 	return log
+}
+
+// cachedLog is one month file's parsed records, good while its size and mtime stay.
+type cachedLog struct {
+	size   int64
+	mtime  time.Time
+	byShip map[string][]rec
+}
+
+// parseCached re-reads a month file only when its size or mtime changed.
+func (r *Runner) parseCached(path string) map[string][]rec {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil
+	}
+	if c, ok := r.logs[path]; ok && c.size == info.Size() && c.mtime.Equal(info.ModTime()) {
+		return c.byShip
+	}
+	l := &shipLog{byShip: map[string][]rec{}}
+	l.readFile(r.readBytes, path)
+	if r.logs == nil {
+		r.logs = map[string]cachedLog{}
+	}
+	r.logs[path] = cachedLog{size: info.Size(), mtime: info.ModTime(), byShip: l.byShip}
+	return l.byShip
 }
 
 func (r *Runner) readBytes(path string) ([]byte, error) {

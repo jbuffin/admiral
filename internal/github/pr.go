@@ -110,51 +110,21 @@ func (c *Client) PullRequests(ctx context.Context, urls []string) (map[string]mo
 	if len(aliases) == 0 {
 		return out, nil
 	}
-	token, err := c.Token(ctx)
+	data, notFound, err := c.batchQuery(ctx, q.String(), aliases)
 	if err != nil {
 		return nil, err
 	}
-	stdout, stderr, err := c.gh(ctx, []string{"api", "graphql", "--hostname", c.host, "-f", "query=" + q.String()}, c.tokenVar(), token)
-	if err != nil && ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-	var body struct {
-		Data   map[string]json.RawMessage `json:"data"`
-		Errors []struct {
-			Type string `json:"type"`
-			Path []any  `json:"path"`
-		} `json:"errors"`
-	}
-	if json.Unmarshal([]byte(stdout), &body) != nil || body.Data == nil {
-		if errors.Is(err, errTimeout) || errors.Is(err, exec.ErrNotFound) {
-			return nil, c.unreachableErr()
-		}
-		msg := strings.TrimPrefix(redact(strings.TrimSpace(stderr), token), "gh: ")
-		if msg == "" {
-			msg = "GitHub's answer was not understood"
-		}
-		return nil, fmt.Errorf("pull request lookup failed: %s", msg)
-	}
-	// A NOT_FOUND ending at pullRequest is a PR GitHub does not have; one on the repository itself says
-	// nothing about its PRs (a token that cannot see it, say), so they stay unanswered.
 	var unanswered []string
-	for _, e := range body.Errors {
-		if e.Type != "NOT_FOUND" {
-			return nil, fmt.Errorf("pull request lookup failed: GitHub answered %s", e.Type)
-		}
-		if len(e.Path) == 1 {
-			if alias, _ := e.Path[0].(string); aliases[alias] != "" {
-				unanswered = append(unanswered, aliases[alias])
-			}
-		}
+	for _, alias := range notFound {
+		unanswered = append(unanswered, aliases[alias])
 	}
 	var viewer struct {
 		Login string `json:"login"`
 	}
-	_ = json.Unmarshal(body.Data["viewer"], &viewer)
+	_ = json.Unmarshal(data["viewer"], &viewer)
 	for alias, u := range aliases {
 		var r *struct{ PullRequest *prNode }
-		if json.Unmarshal(body.Data[alias], &r) == nil && r != nil && r.PullRequest != nil {
+		if json.Unmarshal(data[alias], &r) == nil && r != nil && r.PullRequest != nil {
 			st := r.PullRequest.status()
 			st.Viewer = viewer.Login
 			out[u] = st
@@ -330,7 +300,88 @@ func (n *prNode) status() moor.Status {
 	return st
 }
 
-// IssueStates maps each issue URL GitHub knows to OPEN or CLOSED, in one aliased query; a URL it answers NOT_FOUND for is left out.
+// batchQuery runs one aliased GraphQL query. gh exits 1 when some item is unknown yet still prints the others under
+// data, so data counts whatever the exit code. notFound lists the aliases whose repository itself is NOT_FOUND; an
+// item-level NOT_FOUND is just a null under its alias.
+func (c *Client) batchQuery(ctx context.Context, query string, aliases map[string]string) (data map[string]json.RawMessage, notFound []string, err error) {
+	token, err := c.Token(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	stdout, stderr, err := c.gh(ctx, []string{"api", "graphql", "--hostname", c.host, "-f", "query=" + query}, c.tokenVar(), token)
+	if err != nil && ctx.Err() != nil {
+		return nil, nil, ctx.Err()
+	}
+	var body struct {
+		Data   map[string]json.RawMessage `json:"data"`
+		Errors []struct {
+			Type string `json:"type"`
+			Path []any  `json:"path"`
+		} `json:"errors"`
+	}
+	if json.Unmarshal([]byte(stdout), &body) != nil || body.Data == nil {
+		if errors.Is(err, errTimeout) || errors.Is(err, exec.ErrNotFound) {
+			return nil, nil, c.unreachableErr()
+		}
+		msg := strings.TrimPrefix(redact(strings.TrimSpace(stderr), token), "gh: ")
+		if msg == "" {
+			msg = "GitHub's answer was not understood"
+		}
+		return nil, nil, fmt.Errorf("pull request lookup failed: %s", msg)
+	}
+	// A NOT_FOUND ending at the item is one GitHub does not have; one on the repository itself says nothing about
+	// its items (a token that cannot see it, say), so they stay unanswered.
+	for _, e := range body.Errors {
+		if e.Type != "NOT_FOUND" {
+			return nil, nil, fmt.Errorf("pull request lookup failed: GitHub answered %s", e.Type)
+		}
+		if len(e.Path) == 1 {
+			if alias, _ := e.Path[0].(string); aliases[alias] != "" {
+				notFound = append(notFound, alias)
+			}
+		}
+	}
+	return body.Data, notFound, nil
+}
+
+var issueURL = regexp.MustCompile(`^https://[^/\s]+/([^/\s"\\]+)/([^/\s"\\]+)/issues/([0-9]+)$`)
+
+// IssueStates maps each issue URL GitHub knows to OPEN or CLOSED, in one aliased query; a URL it answers NOT_FOUND for
+// is left out, and a *moor.Unanswered beside the answer names the issues in a repository it could not look in.
 func (c *Client) IssueStates(ctx context.Context, urls []string) (map[string]string, error) {
-	return nil, nil
+	var q strings.Builder
+	q.WriteString("query {")
+	aliases := map[string]string{}
+	for i, u := range urls {
+		m := issueURL.FindStringSubmatch(u)
+		if m == nil {
+			continue
+		}
+		alias := fmt.Sprintf("i%d", i)
+		aliases[alias] = u
+		fmt.Fprintf(&q, " %s: repository(owner: %q, name: %q) { issue(number: %s) { state } }", alias, m[1], m[2], m[3])
+	}
+	q.WriteString(" }")
+	out := map[string]string{}
+	if len(aliases) == 0 {
+		return out, nil
+	}
+	data, notFound, err := c.batchQuery(ctx, q.String(), aliases)
+	if err != nil {
+		return nil, err
+	}
+	for alias, u := range aliases {
+		var r *struct{ Issue *struct{ State string } }
+		if json.Unmarshal(data[alias], &r) == nil && r != nil && r.Issue != nil && r.Issue.State != "" {
+			out[u] = r.Issue.State
+		}
+	}
+	if len(notFound) > 0 {
+		var un []string
+		for _, alias := range notFound {
+			un = append(un, aliases[alias])
+		}
+		return out, &moor.Unanswered{URLs: un}
+	}
+	return out, nil
 }
