@@ -1,7 +1,7 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from './fixtures';
-import { T, campaignIdOf, closeAnnexChild, followByPaste, githubReady, issueUrl, launchBehindThePage, launchSliceBehindThePage, MAP, seedCampaignFleet } from './campaign';
+import { ANNEX, T, campaignIdOf, closeAnnexChild, followByPaste, githubReady, issueUrl, launchBehindThePage, launchSliceBehindThePage, MAP, seedCampaignFleet } from './campaign';
 import { watchPage, withFakeGh } from './shell';
 
 test('on the iPad, a person follows a campaign by pasting it, sees each child\'s status and mode, launches a ready child, is refused a second launch, unfollows it and finds it under Ended; Follow on an order opens its campaign', async ({ page, admiral }) => {
@@ -64,6 +64,8 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   await expect(form).toBeHidden();
   // The child is underway in its Ready group, with its ship's name.
   await expect(group('Ready, with you').getByRole('listitem').filter({ hasText: T.grill })).toContainText(/Underway · /);
+  // Its number opens the issue on GitHub; the row itself still opens its sheet.
+  await expect(row(T.grill).getByRole('link', { name: 'Open issue #21 on GitHub' })).toHaveAttribute('href', issueUrl(21));
 
   // A second launch of a child someone else started meanwhile is refused with the server's message, which names the ship.
   await press(row(T.rover).getByRole('button').first());
@@ -115,8 +117,20 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   await press(survey().getByRole('button', { name: 'Close' }));
   await expect(main.getByRole('button', { name: 'github.com/acme/widgets' })).toBeVisible();
 
-  // Follow on an order that has sub-issues; one without them offers none. Following launches nothing.
+  // The child's ship names its issue on the Ships page and in its header, each a link to the issue.
   await page.goto(admiral.url + 'app/ships?fleet=zulu');
+  const issueLink = main.getByRole('link', { name: `#21 ${T.grill}` });
+  await expect(issueLink).toHaveAttribute('href', issueUrl(21));
+  await expect(issueLink).toHaveAttribute('target', '_blank');
+  const grillShip = ((await (await fetch(`${admiral.url}api/v1/ships`)).json()) as { ships: { name: string; url?: string }[] }).ships.find((s) => s.url === issueUrl(21))!;
+  await press(main.getByRole('link', { name: grillShip.name, exact: true }));
+  await expect(main.getByRole('heading', { name: grillShip.name })).toBeVisible();
+  await expect(main.getByRole('link', { name: `#21 ${T.grill}` })).toHaveAttribute('href', issueUrl(21));
+  // An order's title opens its issue too.
+  await page.goto(admiral.url + 'app/ships?fleet=zulu');
+  await expect(row(T.annex).getByRole('link', { name: T.annex, exact: true })).toHaveAttribute('href', issueUrl(ANNEX));
+
+  // Follow on an order that has sub-issues; one without them offers none. Following launches nothing.
   const ships = async () => ((await (await fetch(`${admiral.url}api/v1/ships`)).json()) as { ships: unknown[] }).ships.length;
   const before = await ships();
   await expect(row(T.hangar)).toBeVisible();

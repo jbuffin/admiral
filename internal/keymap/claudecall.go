@@ -107,7 +107,8 @@ var (
 	submitRow = regexp.MustCompile(`(?m)^❯ +(Next|Submit)\s*$`)
 )
 
-func compact(s string) string { return strings.Join(strings.Fields(s), "") }
+// compact drops spacing and the │ gutter Claude draws down a question that wraps, so text matches however the pane wrapped it.
+func compact(s string) string { return strings.Join(strings.Fields(strings.ReplaceAll(s, "│", " ")), "") }
 
 // menu is the part of the screen from the tab line down, which is where Claude draws the question; ok is false when no menu is shown.
 func menu(screen string) (tabs, rest string, ok bool) {

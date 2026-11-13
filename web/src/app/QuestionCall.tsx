@@ -48,7 +48,9 @@ interface Pick {
 const blank = (): Pick => ({ picked: [], other: '', otherOn: false });
 const answered = (q: CardQuestion, p: Pick) => (q.multiSelect ? p.picked.length > 0 || (p.otherOn && p.other.trim() !== '') : p.picked.length === 1 || (p.otherOn && p.other.trim() !== ''));
 
-/** A pending call: one question at a time, then one request with every answer. */
+const chosen = (q: CardQuestion, p: Pick) => [...p.picked.map((n) => q.options[n - 1]), ...(p.otherOn && p.other.trim() ? [p.other.trim()] : [])].join(', ');
+
+/** A pending call: one question at a time, a review, then one request with every answer. */
 function Answering({ items, card, session, crew, openTerminal }: { items: Item[]; card: Extract<AnswerCard, { kind: 'question' }>; session: string; crew?: string; openTerminal: () => void }) {
   const views = questionCallView(items);
   const qs = card.questions;
@@ -67,12 +69,7 @@ function Answering({ items, card, session, crew, openTerminal }: { items: Item[]
     setPicks(qs.map(blank));
   }, [key]);
   if (refused) return <Record views={views} note={refused} openTerminal={openTerminal} />;
-  const q = qs[step];
-  const view = views[step];
-  const pick = picks[step];
-  if (!q || !view || !pick) return null;
-  // One single-choice question answers on the tap of its option, as the old card did.
-  const direct = qs.length === 1 && !q.multiSelect;
+  const body = () => ({ answers: qs.map((x, i) => ({ options: picks[i].picked, ...(picks[i].otherOn && picks[i].other.trim() ? { other: picks[i].other.trim() } : {}) })) });
   const send = async (body: object) => {
     if (sending.current) return;
     sending.current = true;
@@ -80,13 +77,41 @@ function Answering({ items, card, session, crew, openTerminal }: { items: Item[]
     const res = await post('POST', `${shipUrl(session, crew)}/answer`, { card: 'question', reason: card.reason, item: card.item, ...body });
     if (!res.ok) setRefused(res.error);
   };
+  // After the last question the card shows what will be sent, as Claude's own review screen does, so Submit is a confirmation.
+  if (step === qs.length) {
+    return (
+      <div class="convo-card q-card">
+        <p class="q-review-title">Review your answers</p>
+        <ul class="q-review">
+          {qs.map((x, i) => (
+            <li key={i}>
+              <Inline src={x.text} class="q-review-q" />
+              <span class="q-review-a">{`→ ${chosen(x, picks[i])}`}</span>
+            </li>
+          ))}
+        </ul>
+        <div class="card-actions">
+          <button type="button" class="btn" disabled={busy} onClick={() => setStep(step - 1)}>
+            Back
+          </button>
+          <button type="button" class="btn" disabled={busy} onClick={() => void send(body())}>
+            Submit answers
+          </button>
+        </div>
+      </div>
+    );
+  }
+  const q = qs[step];
+  const view = views[step];
+  const pick = picks[step];
+  if (!q || !view || !pick) return null;
+  // One single-choice question answers on the tap of its option, as the old card did.
+  const direct = qs.length === 1 && !q.multiSelect;
   const update = (p: Pick) => setPicks(picks.map((x, i) => (i === step ? p : x)));
   const toggle = (n: number) => {
     if (q.multiSelect) update({ ...pick, picked: pick.picked.includes(n) ? pick.picked.filter((x) => x !== n) : [...pick.picked, n].sort((a, b) => a - b) });
     else update({ ...pick, picked: [n], other: '', otherOn: false });
   };
-  const body = () => ({ answers: qs.map((x, i) => ({ options: picks[i].picked, ...(picks[i].otherOn && picks[i].other.trim() ? { other: picks[i].other.trim() } : {}) })) });
-  const last = step === qs.length - 1;
   const ready = answered(q, pick);
   return (
     <div class="convo-card q-card">
@@ -139,15 +164,9 @@ function Answering({ items, card, session, crew, openTerminal }: { items: Item[]
               Back
             </button>
           ) : null}
-          {last ? (
-            <button type="button" class="btn" disabled={busy || !qs.every((x, i) => answered(x, picks[i]))} onClick={() => void send(body())}>
-              Submit
-            </button>
-          ) : (
-            <button type="button" class="btn" disabled={busy || !ready} onClick={() => setStep(step + 1)}>
-              Next
-            </button>
-          )}
+          <button type="button" class="btn" disabled={busy || !ready} onClick={() => setStep(step + 1)}>
+            Next
+          </button>
         </div>
       ) : null}
     </div>

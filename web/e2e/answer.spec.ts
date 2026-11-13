@@ -86,14 +86,22 @@ test('a four-question Claude call is stepped through the card and answered with 
   await card.getByLabel('Other answer').fill('Medium, thanks');
   await card.getByRole('button', { name: 'Next', exact: true }).tap();
   await card.getByRole('radio', { name: /^Courier/ }).tap();
+  await card.getByRole('button', { name: 'Next', exact: true }).tap();
+  // Like Claude's own review screen, the card lists every answer before it sends, and Back still edits them.
+  await expect(card.getByText('Review your answers')).toBeVisible();
+  await expect(card.locator('.q-review-a')).toHaveText(['→ Green', '→ Cheese, Mushrooms', '→ Medium, thanks', '→ Courier']);
+  expect(received(admiral, ship)).toBe('');
+  await card.getByRole('button', { name: 'Back', exact: true }).tap();
+  await expect(card.getByText('Question 4 of 4')).toBeVisible();
+  await card.getByRole('button', { name: 'Next', exact: true }).tap();
   const sent = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/answer'));
-  await card.getByRole('button', { name: 'Submit', exact: true }).tap();
+  await card.getByRole('button', { name: 'Submit answers', exact: true }).tap();
   expect((await sent).postDataJSON().answers).toEqual([{ options: [2] }, { options: [1, 3] }, { options: [], other: 'Medium, thanks' }, { options: [2] }]);
 
   // The menu took the keys one step at a time and ended on the review screen's 1.
   const down = '\x1b[B';
   await expect.poll(() => received(admiral, ship)).toBe(['2', '\r', down + down, '\r', down + down, '\r', '3', 'Medium, thanks', '\r', '2', '1'].join(''));
-  await expect(card.getByRole('button', { name: 'Submit', exact: true })).toHaveCount(0);
+  await expect(card.getByRole('button', { name: 'Submit answers', exact: true })).toHaveCount(0);
 
   // Once Claude records the answers, the same call is the read-only record: chips, rendered descriptions and chosen marks.
   await appendLines(admiral, ship, [
@@ -122,7 +130,8 @@ test('a refused answer leaves the question in the transcript with the reason and
   await card.getByRole('radio', { name: /^Red/ }).tap();
   await card.getByRole('button', { name: 'Next', exact: true }).tap();
   await card.getByRole('radio', { name: /^Large/ }).tap();
-  await card.getByRole('button', { name: 'Submit', exact: true }).tap();
+  await card.getByRole('button', { name: 'Next', exact: true }).tap();
+  await card.getByRole('button', { name: 'Submit answers', exact: true }).tap();
 
   await expect(card.getByRole('alert')).toContainText('terminal');
   await expect(card.getByText('Which colour?')).toBeVisible();
