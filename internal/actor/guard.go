@@ -56,6 +56,7 @@ var allowed = []struct {
 	{"POST", []string{"chat", "questions"}, plain},
 	{"GET", []string{"chat", "questions", "*", "answer"}, plain},
 	{"GET", []string{"fleets", "*", "routines"}, fleetKey},
+	{"GET", []string{"fleets", "*", "standing-orders"}, fleetKey},
 	{"GET", []string{"fleets", "*", "hold-fire"}, fleetKey},
 	{"POST", []string{"fleets", "*", "routines", "*", "off"}, fleetKey},
 	{"POST", []string{"fleets", "*", "hold-fire", "on"}, fleetKey},
@@ -155,7 +156,7 @@ func (g *Guard) fence(r *http.Request, fleet string, m matched) (int, string) {
 		return forbid(check("source", m.ids[0], fleet)(g.SourceFleet(m.ids[0])))
 	case fleetKey:
 		if m.ids[0] != fleet {
-			return forbid("fleet " + m.ids[0] + " is not fleet " + fleet + ", so AdmiralBot can't touch its routines")
+			return forbid("fleet " + m.ids[0] + " is not fleet " + fleet + ", so AdmiralBot can't touch that fleet's routines or standing orders")
 		}
 	case campaign:
 		return forbid(check("campaign", m.ids[0], fleet)(g.CampaignFleet(m.ids[0])))
