@@ -314,3 +314,43 @@ func reviewRequested(repo string, n int, title, author, requester, reviewer, oth
 		`{"__typename":"ReviewRequestedEvent","actor":{"login":%q},"requestedReviewer":{"login":%q}},`+
 		`{"__typename":"ReviewRequestedEvent","actor":{"login":"eng"},"requestedReviewer":{"login":%q}}]}}`, requester, reviewer, other)
 }
+
+func TestAMentionOfTheEngineerOnTheirOwnItemNamesNoActorSoItIsNotTheirs(t *testing.T) {
+	g := newFakeGH(t)
+	g.token("", "fake-token-default-1")
+	sources := `"gh":{"plugin":"github","fleet":"alpha","settings":{"views":[{"id":"mine","title":"Mine","query":"is:open Q1"}]}}`
+	f := newServiceFixture(t, ghConfig(`"alpha":{"name":"Alpha","claude":{}}`, sources))
+	s := &sink{}
+	f.Svc.Sup.OnEvent = func(_ string, ev Event) { s.add(ev) }
+	g.searchBy("mine", "Q1", "acme/api", 1, "one", "eng")
+	g.write("viewer", "eng\n")
+	mentions := func(withNew bool) {
+		nodes := authored("acme/api", 3, "three", "eng")
+		if withNew {
+			nodes += "," + authored("acme/api", 4, "four", "eng")
+		}
+		g.write("search/mn.match", "mentions:@me")
+		g.write("search/mn.json", `{"data":{"search":{"nodes":[`+nodes+`]}}}`)
+	}
+	mentions(false)
+	f.startSources()
+	f.waitView("gh", "item 1", func(v SourceView) bool { return len(v.orders("mine")) == 1 })
+	time.Sleep(200 * time.Millisecond)
+	mentions(true)
+	f.do(http.MethodPost, "/gh/refresh", map[string]any{})
+	deadline := time.Now().Add(5 * time.Second)
+	var got []Event
+	for len(got) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+		s.mu.Lock()
+		for _, ev := range s.got {
+			if ev.Kind == "mentioned" {
+				got = append(got, ev)
+			}
+		}
+		s.mu.Unlock()
+	}
+	if len(got) != 1 || got[0].Author != "eng" || got[0].Actor == "" || strings.EqualFold(got[0].Actor, "eng") {
+		t.Fatalf("mentioned events = %+v, want one on the engineer's own item whose actor is no one the lists could trust", got)
+	}
+}

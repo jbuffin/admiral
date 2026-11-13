@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"github.com/jbuffin/admiral/internal/config"
@@ -84,12 +85,23 @@ func wireEvents(sup *sources.Supervisor, store *routines.Store, sched *routines.
 		return out, ok
 	}
 	sched.Own = func(_, ref string) bool { return ships.OwnsRef(list(), ref) }
+	// one worker keeps events in order and off the source's read loop; a full queue drops the event
+	queue := make(chan routines.Event, 256)
+	go func() {
+		for ev := range queue {
+			sched.HandleEvent(ev)
+		}
+	}()
 	sup.OnEvent = func(source string, ev sources.Event) {
 		fleet, ok := sup.SourceFleet(source)
 		if !ok {
 			return
 		}
-		sched.HandleEvent(routines.Event{Fleet: fleet, Source: source, Kind: ev.Kind, Panel: ev.Panel, Ref: ev.Ref,
-			Actor: ev.Actor, Author: ev.Author, Viewer: ev.Viewer, Verified: ev.Verified})
+		select {
+		case queue <- routines.Event{Fleet: fleet, Source: source, Kind: ev.Kind, Panel: ev.Panel, Ref: ev.Ref,
+			Actor: ev.Actor, Author: ev.Author, Viewer: ev.Viewer, Verified: ev.Verified}:
+		default:
+			log.Printf("source event dropped: queue full (%s %s)", source, ev.Kind)
+		}
 	}
 }

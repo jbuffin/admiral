@@ -36,8 +36,8 @@ var searchQuery = searchQueryWith("", "")
 
 // Who acted on an item for the viewer: the latest event of the kind that names them.
 const (
-	issueActors = " timelineItems(last: 20, itemTypes: [ASSIGNED_EVENT, MENTIONED_EVENT]) { nodes { __typename ... on AssignedEvent { actor { login } assignee { ... on User { login } } } ... on MentionedEvent { actor { login } } } }"
-	prActors    = " timelineItems(last: 20, itemTypes: [REVIEW_REQUESTED_EVENT, ASSIGNED_EVENT, MENTIONED_EVENT]) { nodes { __typename ... on ReviewRequestedEvent { actor { login } requestedReviewer { ... on User { login } } } ... on AssignedEvent { actor { login } assignee { ... on User { login } } } ... on MentionedEvent { actor { login } } } }"
+	issueActors = " timelineItems(last: 20, itemTypes: [ASSIGNED_EVENT]) { nodes { __typename ... on AssignedEvent { actor { login } assignee { ... on User { login } } } } }"
+	prActors    = " timelineItems(last: 20, itemTypes: [REVIEW_REQUESTED_EVENT, ASSIGNED_EVENT]) { nodes { __typename ... on ReviewRequestedEvent { actor { login } requestedReviewer { ... on User { login } } } ... on AssignedEvent { actor { login } assignee { ... on User { login } } } } }"
 )
 
 func searchQueryWith(issueExtra, prExtra string) string {
@@ -69,8 +69,8 @@ type Item struct {
 	SubIssues int
 	// PR is a pull request's state as the poll would serve it; nil for an issue.
 	PR *moor.PR
-	// Author is who opened the item. Actor is who last assigned, review-requested or mentioned the viewer on it, when the
-	// search asked (SearchActing); "" otherwise.
+	// Author is who opened the item. Actor is who last review-requested or assigned the viewer on it, when the search
+	// asked (SearchActing) and the timeline says; "" otherwise.
 	Author string
 	Actor  string
 }
@@ -138,8 +138,9 @@ func (c *Client) Search(ctx context.Context, token, query string) ([]Item, error
 	return items, err
 }
 
-// SearchActing is Search that also reads who acted on each item for the viewer, the actor of its latest event of the
-// kind (review_requested, assigned or mentioned), and returns the viewer's login.
+// SearchActing is Search that also reads who acted on each item for the viewer, the actor of its latest review request
+// or assignment aimed at the viewer (kind review_requested or assigned; any other kind reads none), and returns the
+// viewer's login.
 func (c *Client) SearchActing(ctx context.Context, token, query, kind string) ([]Item, string, error) {
 	return c.search(ctx, token, query, searchQueryWith(issueActors, prActors), kind)
 }
@@ -266,7 +267,7 @@ func (c *Client) item(raw any, actorKind, viewer string) (Item, bool) {
 		it.Author = n.Author.Login
 	}
 	if n.TimelineItems != nil {
-		want := map[string]string{"review_requested": "ReviewRequestedEvent", "assigned": "AssignedEvent", "mentioned": "MentionedEvent"}[actorKind]
+		want := map[string]string{"review_requested": "ReviewRequestedEvent", "assigned": "AssignedEvent"}[actorKind]
 		for _, ev := range n.TimelineItems.Nodes { // the latest event of the kind aimed at the viewer wins
 			if ev.Typename != want || ev.Actor == nil {
 				continue
@@ -275,7 +276,7 @@ func (c *Client) item(raw any, actorKind, viewer string) (Item, bool) {
 			if ev.Typename == "ReviewRequestedEvent" {
 				target = ev.Reviewer
 			}
-			if ev.Typename == "MentionedEvent" || (target != nil && strings.EqualFold(target.Login, viewer)) {
+			if target != nil && strings.EqualFold(target.Login, viewer) {
 				it.Actor = ev.Actor.Login
 			}
 		}

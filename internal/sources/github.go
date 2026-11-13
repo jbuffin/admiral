@@ -360,6 +360,10 @@ var eventSearches = []struct{ kind, query string }{
 	{"mentioned", "is:open mentions:@me"},
 }
 
+// unknownActor stands for a login the source could not attribute: GitHub logins have no parentheses, so it is no one's
+// and no allowlist's, and the event reads as a stranger's whatever the item's author is.
+const unknownActor = "(unknown)"
+
 // pollEvents emits an event for each item that is new to one of eventSearches; a failed search keeps its last answer.
 func (g *githubConn) pollEvents(client *github.Client, token string, router *github.Router, viewer string) {
 	if g.emit == nil {
@@ -384,7 +388,11 @@ func (g *githubConn) pollEvents(client *github.Client, token string, router *git
 			}
 		}
 		for _, it := range g.fresh("kind:"+es.kind, routed, len(items) >= github.MaxItems) {
-			g.emit(Event{Kind: es.kind, Ref: it.URL, Actor: it.Actor, Author: it.Author, Viewer: login, Verified: true})
+			actor := it.Actor
+			if actor == "" { // a mention names no mentioner, and a timeline may not reach back to the request
+				actor = unknownActor
+			}
+			g.emit(Event{Kind: es.kind, Ref: it.URL, Actor: actor, Author: it.Author, Viewer: login, Verified: true})
 		}
 	}
 }

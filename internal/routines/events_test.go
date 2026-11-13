@@ -760,3 +760,10 @@ func TestAnEventRoutineIsNeverFiredByTheClock(t *testing.T) {
 		t.Errorf("%d records from ticks and catch-up, want 0: %+v", n, h.records(r))
 	}
 }
+
+func TestAnEventWhoseActorIsNoLoginReadsAsAStrangersEvenOnTheEngineersItem(t *testing.T) {
+	ev := routines.Event{Actor: "(unknown)", Author: "Eng", Viewer: "Eng", Verified: true}
+	if got := routines.TierOf(ev, standing.PresetLimits(standing.Home)); got != standing.T3 {
+		t.Errorf("tier = %v, want T3", got)
+	}
+}
