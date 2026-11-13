@@ -8,6 +8,7 @@ import { Icon } from './Icon';
 import { Preferences } from './Preferences';
 import { Sheet } from './Sheet';
 import { GROUP_TITLES, groupShips, shipRowAge } from './shipList';
+import { useNow } from './useNow';
 import { carryingShip, nextStep, prChips, rowButtons } from './moored';
 import { MooredActions } from './MooredActions';
 import { MooredPRs } from './MooredPRs';
@@ -90,16 +91,6 @@ function EmptyState({ surface, title, children }: { surface: Surface; title: boo
       {children}
     </main>
   );
-}
-
-// Ages count from the launch time, so they refresh on a timer rather than on a ships message.
-function useNow() {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(t);
-  }, []);
-  return now;
 }
 
 function ShipRow({ ship, bar, now }: { ship: Ship; bar: string; now: number }) {

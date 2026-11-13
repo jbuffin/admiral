@@ -1,6 +1,8 @@
 import { signal } from '@preact/signals';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { call } from './api';
+import { isRunning, runningFor } from './shipList';
+import { useNow } from './useNow';
 import {
   blockerLine,
   campaignMeta,
@@ -298,12 +300,13 @@ function Detail({ campaign, node, canStart, onClose, onLaunch, onSaved }: { camp
   );
 }
 
-function stateOf(r: Row, ship: string | undefined, ended: boolean): string {
+function stateOf(r: Row, ship: string | undefined, ended: boolean, clock: string): string {
   const n = r.node;
+  const running = clock ? ` · ${clock}` : '';
   if (n.status === 'done') return 'closed';
   if (n.status === 'blocked') return '';
-  if (n.status === 'underway') return `Underway · ${ship ?? n.ship ?? ''}`;
-  if (ship) return `Underway · ${ship}`;
+  if (n.status === 'underway') return `Underway · ${ship ?? n.ship ?? ''}${running}`;
+  if (ship) return `Underway · ${ship}${running}`;
   if (ended) return '';
   return n.status === 'claimed-no-ship' ? 'Start anyway' : 'Start';
 }
@@ -418,6 +421,11 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
   const groups = campaign.root ? groupChildren(campaign.root) : [];
   const { closed, total } = campaign.progress;
   const shipName = (n: CampaignNode) => shipOfChild(n, ships.value)?.name;
+  const now = useNow();
+  const clockOf = (n: CampaignNode) => {
+    const s = shipOfChild(n, ships.value);
+    return s && isRunning(s) ? runningFor(s.launched, now) : '';
+  };
   const unreadable = hasUnreadable(campaign.root);
   const kind = kindLabel(campaign.root?.labels);
   const picked = children.find((c) => c.url === pickedUrl) ?? null;
@@ -528,7 +536,7 @@ export function CampaignPage({ id, title }: { id: string; title: boolean }) {
                         {blockers.length > 0 ? <span class="ti-sub">Waits on {blockers.join(', ')}</span> : null}
                       </span>
                       <span class="ti-state">
-                        {stateOf(r, ship, campaign.ended)}
+                        {stateOf(r, ship, campaign.ended, clockOf(r.node))}
                         {!['ready', 'underway'].includes(r.node.status ?? '') && r.node.mode ? <span class="ti-mode">{r.node.mode === 'with-you' ? 'with you' : 'without you'}</span> : null}
                       </span>
                     </button>

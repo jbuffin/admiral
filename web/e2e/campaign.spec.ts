@@ -62,8 +62,8 @@ test('on the iPad, a person follows a campaign by pasting it, sees each child\'s
   expect(body).toMatchObject({ child_url: issueUrl(21), harness: 'claude', dir: join(admiral.home, 'widgets') });
   for (const f of ['skill', 'text', 'autopilot', 'resources']) expect(body).not.toHaveProperty(f);
   await expect(form).toBeHidden();
-  // The child is underway in its Ready group, with its ship's name.
-  await expect(group('Ready, with you').getByRole('listitem').filter({ hasText: T.grill })).toContainText(/Underway · /);
+  // The child is underway in its Ready group, with its ship's name and how long the ship has been going.
+  await expect(group('Ready, with you').getByRole('listitem').filter({ hasText: T.grill })).toContainText(/Underway · .+ · (<1m|\d+m)/);
   // Its number opens the issue on GitHub; the row itself still opens its sheet.
   await expect(row(T.grill).getByRole('link', { name: 'Open issue #21 on GitHub' })).toHaveAttribute('href', issueUrl(21));
 
