@@ -738,7 +738,7 @@ func TestAReportedOrProposedDecisionIsHandedToTheActsSeamAfterItsRecordIsWritten
 	}
 	h.sched.HandleEvent(evFrom("Eng"))
 	skipped := evFrom("Eng")
-	skipped.Ref = "https://github.com/acme/api/pull/8"
+	skipped.Ref = "https://github.com/acme/web/pull/8"
 	h.sched.HandleEvent(skipped)
 	recs := h.records(r)
 	if len(recs) != 2 {
