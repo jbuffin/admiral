@@ -244,3 +244,23 @@ func TestShipStop_AnchoredShipRecordsStoppedAndLeavesTheList(t *testing.T) {
 	}
 	w.waitGone(ship.Session, "the stop")
 }
+
+func TestShipStop_WithMoorMoorsAShipWithOpenPRsAndEndsItsCrew(t *testing.T) {
+	t.Parallel()
+	w, _ := liveMooring(t)
+	ship := w.launchLive()
+	w.waitPaneWorking(strings.TrimSpace(w.mustTmux("display-message", "-p", "-t", "="+ship.Session+":0", "#{pane_id}")))
+	w.crewBoat(ship.Session, "scout", "claude")
+	w.writeReportFor(ship, reportWith("partial", mooredPR))
+
+	code, body := send(t, http.MethodPost, w.shipURL(ship.Session, "/stop"), map[string]any{"moor": true})
+	if code != http.StatusOK || strings.TrimSpace(body) != `{"moored":"`+ship.Session+`"}` {
+		t.Fatalf("stop with moor = %d %s, want 200 {\"moored\":%q}", code, body, ship.Session)
+	}
+	w.wantMoored(ship)
+	for _, s := range w.sessions() {
+		if s == ship.Session {
+			t.Errorf("the session %s and its crew boat are still up", s)
+		}
+	}
+}

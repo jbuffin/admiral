@@ -85,3 +85,32 @@ func jsonString(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
 }
+
+func TestParseReportReadsTheResultOfAVersionTwoReport(t *testing.T) {
+	const pr = `{"url":"https://github.com/acme/widgets/pull/12","closes":[]}`
+	for name, c := range map[string]struct{ raw, want string }{
+		"done":               {`{"version":2,"result":"done","why":"x","prs":[` + pr + `]}`, "done"},
+		"partial":            {`{"version":2,"result":"partial","why":"x","prs":[` + pr + `]}`, "partial"},
+		"failed":             {`{"version":2,"result":"failed","why":"x","prs":[` + pr + `]}`, "failed"},
+		"missing":            {`{"version":2,"why":"x","prs":[` + pr + `]}`, ""},
+		"unknown":            {`{"version":2,"result":"finished","why":"x","prs":[` + pr + `]}`, ""},
+		"not a string":       {`{"version":2,"result":true,"why":"x","prs":[` + pr + `]}`, ""},
+		"version 1 has none": {`{"version":1,"result":"done","why":"x","prs":["https://github.com/acme/widgets/pull/12"]}`, ""},
+		"a report that fails the PR check gives nothing": {`{"version":2,"result":"done","why":"x","prs":[{"url":"https://example.com/nope"}]}`, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := resultOf(ParseReport([]byte(c.raw))); got != c.want {
+				t.Errorf("Result = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// resultOf reads Report.Result by name, so the test file builds before the field exists.
+func resultOf(r Report) string {
+	f := reflect.ValueOf(r).FieldByName("Result")
+	if !f.IsValid() {
+		return "<Report has no Result field>"
+	}
+	return f.String()
+}

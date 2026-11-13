@@ -319,6 +319,7 @@ type shipJSON struct {
 	Status     string   `json:"status"`
 	Position   *shipPos `json:"position"`
 	PRs        []prJSON `json:"prs"`
+	OpenPRs    []string `json:"open_prs"`
 	MooredAt   string   `json:"moored_at"`
 	PolledAt   string   `json:"polled_at"`
 	Stale      bool     `json:"stale"`
