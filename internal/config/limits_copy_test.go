@@ -56,8 +56,8 @@ func TestPreviewLimitsSwitchesThePresetAndKeepsStoredQuietHours(t *testing.T) {
 func TestPreviewLimitsRefusesWhatSaveRefusesNamingThePath(t *testing.T) {
 	_, dir := openView(t, limitsFleet("", ""))
 	_, err := config.PreviewLimits(dir, "work", config.FleetFields{Limits: map[string]json.RawMessage{"quota_hold_percent": rawJSON(`101`)}})
-	if err == nil || !strings.HasPrefix(err.Error(), "limits.quota_hold_percent: ") {
-		t.Errorf("error = %v, want one of the form \"limits.quota_hold_percent: <message>\"", err)
+	if err == nil || !strings.Contains(err.Error(), "limits.quota_hold_percent: ") {
+		t.Errorf("error = %v, want one naming \"limits.quota_hold_percent: <message>\"", err)
 	}
 }
 

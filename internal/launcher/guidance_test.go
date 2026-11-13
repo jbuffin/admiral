@@ -67,7 +67,7 @@ func TestAWorkerLaunchWithNoGuidanceGetsNoStandingOrdersSection(t *testing.T) {
 	for name, text := range map[string]string{"empty": "", "blank": " \n\t"} {
 		t.Run(name, func(t *testing.T) {
 			p := newPinRig(t, nil)
-			p.guided(text, nil)
+			asked := p.guided(text, nil)
 			req := p.justRequest()
 			req.WorkerLaunched = true
 			if _, err := p.l.Launch(req); err != nil {
@@ -75,6 +75,9 @@ func TestAWorkerLaunchWithNoGuidanceGetsNoStandingOrdersSection(t *testing.T) {
 			}
 			if got := p.lastArg(t); got != "ship the fix" {
 				t.Errorf("prompt = %q, want the text as written", got)
+			}
+			if len(*asked) != 1 {
+				t.Errorf("Guidance asked for fleets %v, want it consulted once", *asked)
 			}
 		})
 	}
@@ -143,6 +146,8 @@ func TestGuidanceThatMakesTheCommandTooLongRefusesTheLaunchAndIsNotDropped(t *te
 func TestAGuidanceReadErrorLaunchesWithoutTheSection(t *testing.T) {
 	p := newPinRig(t, nil)
 	p.guided("", errors.New("the file is unreadable"))
+	var warned []string
+	p.l.Warn = func(msg string) { warned = append(warned, msg) }
 	req := p.justRequest()
 	req.WorkerLaunched = true
 	if _, err := p.l.Launch(req); err != nil {
@@ -150,6 +155,9 @@ func TestAGuidanceReadErrorLaunchesWithoutTheSection(t *testing.T) {
 	}
 	if got := p.lastArg(t); got != "ship the fix" {
 		t.Errorf("prompt = %q, want the text as written", got)
+	}
+	if len(warned) != 1 || !strings.Contains(warned[0], "the file is unreadable") {
+		t.Errorf("warnings = %q, want one carrying the read error", warned)
 	}
 }
 
