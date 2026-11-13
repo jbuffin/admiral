@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/jbuffin/admiral/internal/standing"
 )
 
 const Version = 1
@@ -62,6 +64,9 @@ type Fleet struct {
 	Harnesses     []Harness         // dock order: claude, copilot, codex, as present
 	Chat          ChatSettings      // resolved: defaults filled in
 	Notify        bool              // pushes and alerts for this fleet; on unless config.json says false
+	Preset        standing.Preset   // work unless config.json says home
+	Limits        standing.Limits   // resolved: the preset's values under the fleet's own
+	Overridden    []string          // the Limits the fleet stores itself, as sentence field paths
 }
 
 func (c *Config) clone() *Config {
@@ -80,6 +85,8 @@ func (c *Config) clone() *Config {
 		f.Owners = slices.Clone(f.Owners)
 		f.WakeReviewers = slices.Clone(f.WakeReviewers)
 		f.Env = maps.Clone(f.Env)
+		f.Limits = f.Limits.Clone()
+		f.Overridden = slices.Clone(f.Overridden)
 		f.Harnesses = slices.Clone(f.Harnesses)
 		for j, h := range f.Harnesses {
 			h.Args = slices.Clone(h.Args)
@@ -267,7 +274,8 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 	if err != nil {
 		return Fleet{}, err
 	}
-	f := Fleet{Key: key, SearchRoots: []string{}, Chat: defaultChat(), Notify: true}
+	f := Fleet{Key: key, SearchRoots: []string{}, Chat: defaultChat(), Notify: true, Preset: standing.Work}
+	var limitsRaw json.RawMessage
 	harnesses := map[string]Harness{}
 	haveName := false
 	for _, m := range ms {
@@ -330,6 +338,12 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 			if f.Notify, err = boolean(p, m.raw); err != nil {
 				return Fleet{}, err
 			}
+		case "preset":
+			if f.Preset, err = parsePreset(p, m.raw); err != nil {
+				return Fleet{}, err
+			}
+		case "limits":
+			limitsRaw = m.raw
 		case "claude", "codex", "copilot":
 			if harnesses[m.key], err = parseHarness(p, m.key, m.raw); err != nil {
 				return Fleet{}, err
@@ -346,6 +360,13 @@ func parseFleet(path, key string, raw json.RawMessage) (Fleet, error) {
 			f.Harnesses = append(f.Harnesses, h)
 		}
 	}
+	if limitsRaw == nil {
+		limitsRaw = json.RawMessage("{}")
+	}
+	if f.Limits, err = parseLimits(path+".limits", limitsRaw, f.Preset); err != nil {
+		return Fleet{}, err
+	}
+	f.Overridden = overriddenPaths(limitsRaw)
 	return f, nil
 }
 

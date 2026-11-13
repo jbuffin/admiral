@@ -25,9 +25,10 @@ type Manager struct {
 
 	mu      sync.Mutex
 	cur     *Config
-	probe   ChatProbe // wired by the server; every reload carries it onto the new config
-	errMsg  string    // empty when the file is fine
-	existed bool      // the file has been seen; a later absence is an error
+	probe   ChatProbe  // wired by the server; every reload carries it onto the new config
+	repos   RepoLookup // wired by the server; checks a saved repo allowlist
+	errMsg  string     // empty when the file is fine
+	existed bool       // the file has been seen; a later absence is an error
 	watched map[string]bool
 	target  string // base name of the resolved file, when config.json is a symlink
 	subs    map[chan struct{}]struct{}
@@ -96,9 +97,23 @@ func (m *Manager) SetSources(sources json.RawMessage) error {
 	return nil
 }
 
+// RepoLookup lists the owner/name identities of the repos a fleet's search roots find.
+type RepoLookup func(fleet string) []string
+
+// SetRepoLookup wires the repo finder into the save-time check of a Limit repo allowlist; nil checks nothing.
+// Parsing never uses it, so a moved checkout cannot take the config down.
+func (m *Manager) SetRepoLookup(l RepoLookup) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.repos = l
+}
+
 // SetFleetFields reloads before it returns, so the next View already carries the change.
 func (m *Manager) SetFleetFields(key string, f FleetFields) error {
-	if err := editFleet(filepath.Dir(m.path), key, f, m.Current()); err != nil {
+	m.mu.Lock()
+	repos := m.repos
+	m.mu.Unlock()
+	if err := editFleet(filepath.Dir(m.path), key, f, m.Current(), repos); err != nil {
 		return err
 	}
 	m.reload()

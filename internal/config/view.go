@@ -1,5 +1,7 @@
 package config
 
+import "github.com/jbuffin/admiral/internal/standing"
+
 // View never carries env or args, which may hold secrets.
 type View struct {
 	Type           string      `json:"type"`
@@ -32,15 +34,20 @@ type FleetView struct {
 	Ink   string `json:"ink"`
 	// ColorIndex places the fleet in a color sequence; the client wraps it.
 	// Absent for a custom color.
-	ColorIndex    *int       `json:"color_index,omitempty"`
-	SearchRoots   []string   `json:"search_roots"`
-	Owners        []string   `json:"owners"`
-	WakeReviewers []string   `json:"wake_reviewers"`
-	CloneRoot     string     `json:"clone_root"` // expanded like SearchRoots; empty when unset
-	CanLaunch     bool       `json:"can_launch"`
-	Docks         []DockView `json:"docks"`
-	Chat          ChatView   `json:"chat"`
-	Notify        bool       `json:"notify"`
+	ColorIndex    *int                `json:"color_index,omitempty"`
+	SearchRoots   []string            `json:"search_roots"`
+	Owners        []string            `json:"owners"`
+	WakeReviewers []string            `json:"wake_reviewers"`
+	CloneRoot     string              `json:"clone_root"` // expanded like SearchRoots; empty when unset
+	CanLaunch     bool                `json:"can_launch"`
+	Docks         []DockView          `json:"docks"`
+	Chat          ChatView            `json:"chat"`
+	Notify        bool                `json:"notify"`
+	Preset        string              `json:"preset"`
+	Limits        standing.Limits     `json:"limits"`
+	Sentences     []standing.Sentence `json:"sentences"`
+	// Overridden lists the Limits this fleet stores, as the field paths the sentences carry; the rest read from the preset.
+	Overridden []string `json:"overridden"`
 }
 
 type DockView struct {
@@ -69,7 +76,8 @@ func (m *Manager) viewLocked() View {
 		fv := FleetView{Key: f.Key, Name: f.Name, Color: f.Color, Ink: f.Ink, ColorIndex: f.ColorIndex,
 			SearchRoots: f.SearchRoots, Owners: nonNil(f.Owners), WakeReviewers: nonNil(f.WakeReviewers), CloneRoot: f.CloneRoot,
 			CanLaunch: f.CanLaunch(), Notify: f.Notify, Docks: []DockView{},
-			Chat: ChatView{f.Chat.Harness, f.Chat.Model, f.Chat.Effort, f.Chat.ThresholdJSON(), off == "", off, offered(opts), opts, ChatModelsFor(f.Chat.Harness), ChatEffortsFor(f.Chat.Harness)}}
+			Chat:   ChatView{f.Chat.Harness, f.Chat.Model, f.Chat.Effort, f.Chat.ThresholdJSON(), off == "", off, offered(opts), opts, ChatModelsFor(f.Chat.Harness), ChatEffortsFor(f.Chat.Harness)},
+			Preset: string(f.Preset), Limits: f.Limits.Clone(), Sentences: standing.Sentences(f.Limits), Overridden: nonNil(f.Overridden)}
 		for _, h := range f.Harnesses {
 			warnings := h.Warnings
 			if warnings == nil {

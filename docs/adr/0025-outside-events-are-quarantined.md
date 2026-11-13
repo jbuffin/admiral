@@ -121,7 +121,7 @@ Every fleet starts on **Work**. **Home** is a "personal" preset the engineer can
 | Concurrent worker-launched ships | 3 | 2 |
 | Ship wall clock | 60 min | 60 min |
 | Lookout call / daily worker spend | $0.25 / $5 | $0.25 / $10 |
-| Quiet hours | launches held as proposals 23:00–07:00 | held outside 08:00–19:00 on weekdays |
+| Quiet hours | none until the engineer sets windows per fleet; held launches become proposals | none until the engineer sets windows per fleet; held launches become proposals |
 
 ### Hold fire
 

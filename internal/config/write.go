@@ -10,7 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
+
+	"github.com/jbuffin/admiral/internal/standing"
 )
 
 var writeMu sync.Mutex
@@ -135,6 +138,10 @@ type FleetFields struct {
 	Notify        *bool
 	// Chat holds the chat settings to change, by key; nil leaves them as stored.
 	Chat map[string]json.RawMessage
+	// Preset is work or home; switching it clears the Limit values and keeps quiet hours.
+	Preset *string
+	// Limits holds the Limit keys to change; nil leaves them as stored.
+	Limits map[string]json.RawMessage
 }
 
 var (
@@ -146,9 +153,22 @@ var (
 // editFleet rewrites only the named fleet's editable fields; any other error is a value Parse refused.
 // An empty color or clone_root removes the key, so the fleet falls back to its default.
 // A chat harness the capability store has not cleared (read through cfg) is refused, so no caller skips the gate.
-func editFleet(dir, key string, f FleetFields, cfg *Config) error {
+func editFleet(dir, key string, f FleetFields, cfg *Config, repos RepoLookup) error {
 	if raw, ok := f.Chat["harness"]; ok {
 		if err := refuseUnofferedHarness(cfg, key, raw); err != nil {
+			return err
+		}
+	}
+	if raw, ok := f.Limits["repo_allowlist"]; ok && repos != nil {
+		cur, known := cfg.Fleet(key)
+		if !known {
+			return fmt.Errorf("%w %q", ErrNoFleet, key)
+		}
+		var stored []string
+		if f.Preset == nil || standing.Preset(*f.Preset) == cur.Preset {
+			stored = cur.Limits.RepoAllowlist
+		}
+		if err := checkRepoMembership(key, raw, stored, repos(key)); err != nil {
 			return err
 		}
 	}
@@ -205,6 +225,11 @@ func editFleet(dir, key string, f FleetFields, cfg *Config) error {
 	}
 	if f.Notify != nil {
 		fleet.SetValue("notify", *f.Notify)
+	}
+	if f.Preset != nil || f.Limits != nil {
+		if err := mergeLimits(fleet, f); err != nil {
+			return err
+		}
 	}
 	setOrDrop("clone_root", f.CloneRoot)
 	setOrDrop("color", f.Color)
@@ -286,6 +311,208 @@ func mergeChat(fleet *Object, key string, set map[string]json.RawMessage) error 
 		chat.Set(k, raw)
 	}
 	fleet.Set("chat", chat.JSON())
+	return nil
+}
+
+// limitGroups are the Limit keys whose members save one by one, so sending one ceiling leaves the others as stored.
+var limitGroups = []string{"ceilings", "rates", "spend", "skip"}
+
+func isNull(raw json.RawMessage) bool { return string(bytes.TrimSpace(raw)) == "null" }
+
+// storedPreset is the preset the fleet object holds; none means work.
+func storedPreset(fleet *Object) standing.Preset {
+	if raw, ok := fleet.Get("preset"); ok {
+		var s string
+		if json.Unmarshal(raw, &s) == nil && standing.Preset(s) == standing.Home {
+			return standing.Home
+		}
+	}
+	return standing.Work
+}
+
+// mergeLimits sets the preset, then the given Limit keys over what is stored; a null deletes the stored key,
+// so that Limit reads as the preset's again. Switching preset drops every stored Limit except quiet hours,
+// which belong to the fleet and not to a preset. The switch is judged on the preset in the file being edited.
+func mergeLimits(fleet *Object, f FleetFields) error {
+	limits := NewObject()
+	if raw, ok := fleet.Get("limits"); ok {
+		var err error
+		if limits, err = ParseObject(raw); err != nil {
+			return fmt.Errorf("%w: %w", ErrConflict, err)
+		}
+	}
+	preset := storedPreset(fleet)
+	if f.Preset != nil {
+		if standing.Preset(*f.Preset) != preset {
+			kept := NewObject()
+			if raw, ok := limits.Get("quiet_hours"); ok {
+				kept.Set("quiet_hours", raw)
+			}
+			limits = kept
+		}
+		fleet.SetValue("preset", *f.Preset)
+		if p := standing.Preset(*f.Preset); p == standing.Home || p == standing.Work {
+			preset = p
+		}
+	}
+	for _, k := range slices.Sorted(maps.Keys(f.Limits)) {
+		raw := f.Limits[k]
+		switch {
+		case isNull(raw):
+			limits.Delete(k)
+			continue
+		case k == "ceilings":
+			if merged, ok := mergeCeilings(limits, raw, preset); ok {
+				raw = merged
+			}
+		case slices.Contains(limitGroups, k):
+			if merged, ok := mergeGroup(limits, k, raw); ok {
+				raw = merged
+			}
+		}
+		if g, ok := groupObject(raw); ok && slices.Contains(limitGroups, k) && g.Len() == 0 {
+			limits.Delete(k)
+			continue
+		}
+		limits.Set(k, raw)
+	}
+	if limits.Len() == 0 {
+		fleet.Delete("limits")
+	} else {
+		fleet.Set("limits", limits.JSON())
+	}
+	return nil
+}
+
+func groupObject(raw json.RawMessage) (*Object, bool) {
+	o, err := ParseObject(raw)
+	return o, err == nil
+}
+
+// mergeGroup layers the given members of a nested group over the stored ones, a null deleting its member;
+// a value that is not an object is left for the parser to refuse.
+func mergeGroup(limits *Object, group string, given json.RawMessage) (json.RawMessage, bool) {
+	in, err := ParseObject(given)
+	if err != nil {
+		return nil, false
+	}
+	out := NewObject()
+	if raw, ok := limits.Get(group); ok {
+		if out, err = ParseObject(raw); err != nil {
+			return nil, false
+		}
+	}
+	for _, k := range in.Keys() {
+		raw, _ := in.Get(k)
+		if isNull(raw) {
+			out.Delete(k)
+			continue
+		}
+		out.Set(k, raw)
+	}
+	return out.JSON(), true
+}
+
+// mergeCeilings layers each given ceiling's keys over the stored ceiling, so a PUT of one key leaves the rest as stored.
+func mergeCeilings(limits *Object, given json.RawMessage, preset standing.Preset) (json.RawMessage, bool) {
+	in, err := ParseObject(given)
+	if err != nil {
+		return nil, false
+	}
+	out := NewObject()
+	if raw, ok := limits.Get("ceilings"); ok {
+		if out, err = ParseObject(raw); err != nil {
+			return nil, false
+		}
+	}
+	presetCeilings := standing.PresetLimits(preset).Ceilings
+	base := map[string]standing.Ceiling{"t1": presetCeilings.T1, "t2": presetCeilings.T2, "t3": presetCeilings.T3, "t4": presetCeilings.T4, "fleet": presetCeilings.Fleet}
+	for _, tier := range in.Keys() {
+		raw, _ := in.Get(tier)
+		if isNull(raw) {
+			out.Delete(tier)
+			continue
+		}
+		next, err := ParseObject(raw)
+		if err != nil {
+			out.Set(tier, raw)
+			continue
+		}
+		cur := NewObject()
+		if stored, ok := out.Get(tier); ok {
+			if cur, err = ParseObject(stored); err != nil {
+				cur = NewObject()
+			}
+		}
+		for _, k := range next.Keys() {
+			v, _ := next.Get(k)
+			if isNull(v) && k != "threshold" { // a stored null threshold keeps the preset's from layering back
+				cur.Delete(k)
+				continue
+			}
+			cur.Set(k, v)
+		}
+		fixRestricted(cur, next, base[tier])
+		if cur.Len() == 0 {
+			out.Delete(tier)
+			continue
+		}
+		out.Set(tier, cur.JSON())
+	}
+	if out.Len() == 0 {
+		return json.RawMessage("{}"), true
+	}
+	return out.JSON(), true
+}
+
+// fixRestricted keeps a ceiling valid across a level change: leaving A3 drops the stored restricted level,
+// and entering A3 without one takes the preset's, or investigate.
+func fixRestricted(cur, sent *Object, preset standing.Ceiling) {
+	raw, ok := sent.Get("level")
+	if !ok {
+		return
+	}
+	var name string
+	if json.Unmarshal(raw, &name) != nil {
+		return
+	}
+	level, ok := standing.ParseLevel(name)
+	if !ok {
+		return
+	}
+	if _, given := sent.Get("restricted"); given {
+		return
+	}
+	switch {
+	case level != standing.A3:
+		cur.Delete("restricted")
+	default:
+		if _, has := cur.Get("restricted"); has {
+			return
+		}
+		r := standing.Investigate
+		if preset.Restricted != "" {
+			r = preset.Restricted
+		}
+		cur.SetValue("restricted", string(r))
+	}
+}
+
+// checkRepoMembership refuses a sent entry the fleet's search roots do not find, unless it is already stored,
+// so a checkout that moved never blocks a save that keeps it. An entry of the wrong shape is left for the parser, which names it.
+func checkRepoMembership(key string, raw json.RawMessage, stored, found []string) error {
+	var given []string
+	if json.Unmarshal(raw, &given) != nil {
+		return nil
+	}
+	has := func(list []string, r string) bool {
+		return slices.ContainsFunc(list, func(f string) bool { return strings.EqualFold(f, r) })
+	}
+	for i, r := range given {
+		if repoRe.MatchString(r) && !has(stored, r) && !has(found, r) {
+			return fmt.Errorf("fleets.%s.limits.repo_allowlist[%d]: %q is not a repo under the fleet's search roots", key, i, r)
+		}
+	}
 	return nil
 }
 
