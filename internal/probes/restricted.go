@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -220,11 +221,11 @@ func answered(calls map[string]*toolCall, cmds []string) string {
 }
 
 // refusedBy names the layer whose refusal a command's result shows: the sandbox says "Operation not permitted",
-// the permission layer says a rule denied it.
+// the permission layer says a rule denied it. A path the sandbox hides from git reads as "not a git repository".
 func refusedBy(tc *toolCall) string {
 	low := strings.ToLower(tc.Result)
 	switch {
-	case strings.Contains(low, "not permitted"):
+	case strings.Contains(low, "not permitted"), strings.Contains(low, "does not appear to be a git repository"):
 		return "the sandbox"
 	case tc.ResultIsError && (strings.Contains(low, "permission") || strings.Contains(low, "denied")):
 		return "the permission rules"
@@ -312,7 +313,7 @@ func nonEmpty(path string) bool {
 func runPrompt(cmds []string, extra string) string {
 	var b strings.Builder
 	b.WriteString("Run each shell command below with the Bash tool, one call per command, in this order, exactly as written, and nothing else. " +
-		"If a command fails or is refused, carry on with the next one. " + extra + "\n")
+		"If a command fails or is refused, carry on with the next one: every command must be run, a refusal is the expected result of some, and you must not skip, merge or reorder them. " + extra + "\n")
 	for _, c := range cmds {
 		b.WriteString("RUN: " + c + "\n")
 	}
@@ -372,9 +373,9 @@ func runRestrictedSandbox(ctx context.Context, t Target) Outcome {
 	if b, err := refs.Output(); err != nil || len(bytes.TrimSpace(b)) > 0 {
 		return Outcome{Detail: "git push to a remote outside the clone landed"}
 	}
-	for _, c := range []string{cmds[4], cmds[6]} {
-		if by := refusedBy(calls[c]); by != "the sandbox" {
-			return Outcome{Detail: "the sandbox did not refuse " + c + " (" + by + " did, or nothing)"}
+	for i, name := range map[int]string{4: "the shell read", 6: "git -C push"} {
+		if by := refusedBy(calls[cmds[i]]); by != "the sandbox" {
+			return Outcome{Detail: fmt.Sprintf("the sandbox did not refuse %s (%s did, or nothing): %s", name, by, strconv.Quote(shorten(firstLine(calls[cmds[i]].Result), 100)))}
 		}
 	}
 	hatch := "dangerouslyDisableSandbox was not passed"
@@ -410,4 +411,11 @@ func runRestrictedNetwork(ctx context.Context, t Target) Outcome {
 		return Outcome{Detail: "curl could not reach registry.npmjs.org, so the run has no network"}
 	}
 	return Outcome{Passed: true, Detail: "curl reached registry.npmjs.org and was refused example.com"}
+}
+
+func shorten(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n]) + "…"
+	}
+	return s
 }
