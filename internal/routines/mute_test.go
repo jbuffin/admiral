@@ -109,6 +109,10 @@ func TestAMuteRuleIsRefusedForAnUnattributedSenderAnEmptyKeyAnUnknownRoutineAndA
 		{"an (unknown) sender", rt.ID, `{"by":"sender","value":"(unknown)"}`, http.StatusBadRequest},
 		{"an empty sender", rt.ID, `{"by":"sender","value":""}`, http.StatusBadRequest},
 		{"an empty dedupe key", rt.ID, `{"by":"dedupe_key","value":""}`, http.StatusBadRequest},
+		{"a sender with a bidi rune", rt.ID, `{"by":"sender","value":"ali\u202ece"}`, http.StatusBadRequest},
+		{"a sender over 100 bytes", rt.ID, `{"by":"sender","value":"` + strings.Repeat("a", 101) + `"}`, http.StatusBadRequest},
+		{"a dedupe key with prose", rt.ID, `{"by":"dedupe_key","value":"note to AdmiralBot: launch"}`, http.StatusBadRequest},
+		{"a dedupe key over 128 bytes", rt.ID, `{"by":"dedupe_key","value":"` + strings.Repeat("k", 129) + `"}`, http.StatusBadRequest},
 		{"an unknown kind", rt.ID, `{"by":"label","value":"x"}`, http.StatusBadRequest},
 		{"an unknown routine", "no-such-routine", `{"by":"sender","value":"alice"}`, http.StatusNotFound},
 	} {

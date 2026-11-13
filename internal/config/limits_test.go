@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jbuffin/admiral/internal/config"
@@ -557,5 +558,48 @@ func TestSavingTheRepoAllowlistChecksOnlyEntriesNotAlreadyStored(t *testing.T) {
 	err := sendLimits(t, m, "work", map[string]string{"repo_allowlist": `["ACME/Moved-Away","acme/new-and-missing"]`})
 	if err == nil || !strings.Contains(err.Error(), "limits.repo_allowlist[1]") {
 		t.Fatalf("adding a missing repo: error = %v, want one naming limits.repo_allowlist[1]", err)
+	}
+}
+
+func TestAppendSkipKeepsTheOtherSkipEntriesAndAddsEachEntryOnce(t *testing.T) {
+	m, _ := openView(t, limitsFleet("", `{"skip":{"labels":[{"value":"wip"}],"senders":[{"value":"bob"}]}}`))
+	add := func(list string, e standing.Scoped) bool {
+		t.Helper()
+		added, err := m.AppendSkip("work", list, e)
+		if err != nil {
+			t.Fatalf("AppendSkip(%s): %v", list, err)
+		}
+		return added
+	}
+	mallory := standing.Scoped{Value: "mallory", Routine: "r1"}
+	if !add("senders", mallory) || add("senders", mallory) {
+		t.Error("AppendSkip should add a new entry once and report a repeat as not added")
+	}
+	add("dedupe_keys", standing.Scoped{Value: "gh:acme/api#7", Routine: "r1"})
+	f, _ := m.Current().Fleet("work")
+	skip := f.Limits.Skip
+	if len(skip.Senders) != 2 || skip.Senders[0].Value != "bob" || skip.Senders[1] != mallory || len(skip.Labels) != 1 || len(skip.DedupeKeys) != 1 {
+		t.Errorf("skip = %+v, want bob and mallory, the wip label and one key", skip)
+	}
+	if _, err := m.AppendSkip("work", "labels", mallory); err == nil {
+		t.Error("AppendSkip into a list it does not manage should fail")
+	}
+}
+
+func TestConcurrentAppendSkipsKeepEveryEntry(t *testing.T) {
+	m, _ := openView(t, limitsFleet("", ""))
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := m.AppendSkip("work", "senders", standing.Scoped{Value: "user" + strconv.Itoa(i), Routine: "r1"}); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if f, _ := m.Current().Fleet("work"); len(f.Limits.Skip.Senders) != 8 {
+		t.Errorf("skip senders = %+v, want all 8 entries", f.Limits.Skip.Senders)
 	}
 }

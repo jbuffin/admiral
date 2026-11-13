@@ -7,10 +7,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+
+	"github.com/jbuffin/admiral/internal/standing"
 )
 
 const FileName = "config.json"
@@ -23,6 +26,7 @@ type Manager struct {
 	watcher *fsnotify.Watcher
 	done    chan struct{}
 
+	edit    sync.Mutex // serializes a fleet edit's read-modify-write; held across the file write, so never with mu
 	mu      sync.Mutex
 	cur     *Config
 	probe   ChatProbe  // wired by the server; every reload carries it onto the new config
@@ -110,6 +114,8 @@ func (m *Manager) SetRepoLookup(l RepoLookup) {
 
 // SetFleetFields reloads before it returns, so the next View already carries the change.
 func (m *Manager) SetFleetFields(key string, f FleetFields) error {
+	m.edit.Lock()
+	defer m.edit.Unlock()
 	m.mu.Lock()
 	repos := m.repos
 	m.mu.Unlock()
@@ -118,6 +124,41 @@ func (m *Manager) SetFleetFields(key string, f FleetFields) error {
 	}
 	m.reload()
 	return nil
+}
+
+// AppendSkip adds entry to a fleet's skip list ("senders" or "dedupe_keys") unless it is there, reading the list under the edit lock
+// so a racing save cannot drop it. It says whether the entry was added.
+func (m *Manager) AppendSkip(key, list string, entry standing.Scoped) (bool, error) {
+	m.edit.Lock()
+	defer m.edit.Unlock()
+	f, ok := m.Current().Fleet(key)
+	if !ok {
+		return false, fmt.Errorf("no such fleet %q", key)
+	}
+	var have []standing.Scoped
+	switch list {
+	case "senders":
+		have = f.Limits.Skip.Senders
+	case "dedupe_keys":
+		have = f.Limits.Skip.DedupeKeys
+	default:
+		return false, fmt.Errorf("no skip list %q", list)
+	}
+	if slices.Contains(have, entry) {
+		return false, nil
+	}
+	raw, err := json.Marshal(map[string]any{list: append(slices.Clone(have), entry)})
+	if err != nil {
+		return false, err
+	}
+	m.mu.Lock()
+	repos := m.repos
+	m.mu.Unlock()
+	if err := editFleet(filepath.Dir(m.path), key, FleetFields{Limits: map[string]json.RawMessage{"skip": raw}}, m.Current(), repos); err != nil {
+		return false, err
+	}
+	m.reload()
+	return true, nil
 }
 
 // Subscribe fires after every reload, whether or not anything changed.

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -39,7 +38,7 @@ type Lookout struct {
 
 const (
 	maxSummaryRunes = 280
-	maxKeyBytes     = 128
+	maxKeyBytes     = routines.MaxDedupeKeyBytes
 	maxTitleRunes   = 200
 	defaultCallUSD  = 0.25
 )
@@ -47,7 +46,6 @@ const (
 var (
 	severities       = []string{"low", "medium", "high"}
 	suggestedActions = []string{"ignore", "note", "review", "investigate", "fix"}
-	keyPattern       = regexp.MustCompile(`^[A-Za-z0-9._:/#-]+$`)
 )
 
 // schema is the Lookout's reply shape. The repo enum is left out with no search roots, because an empty enum rejects every reply.
@@ -194,7 +192,7 @@ func fields(f map[string]any, repos []string) (routines.Enrichment, bool) {
 		return routines.Enrichment{}, false
 	}
 	en := routines.Enrichment{Summary: summary}
-	if key, _ := str("dedupe_key"); len(key) <= maxKeyBytes && keyPattern.MatchString(key) {
+	if key, _ := str("dedupe_key"); routines.ValidDedupeKey(key) {
 		en.DedupeKey = key
 	}
 	if repo, _ := str("repo"); slices.Contains(repos, repo) {

@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -228,6 +230,37 @@ func RepoOfRef(ref string) string {
 	return parts[0] + "/" + parts[1]
 }
 
+// MaxDedupeKeyBytes bounds a dedupe_key.
+const MaxDedupeKeyBytes = 128
+
+var dedupeKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:/#-]+$`)
+
+// ValidDedupeKey is true for a key made of plain key characters, so no prose reaches a skip list or AdmiralBot through it.
+func ValidDedupeKey(key string) bool {
+	return len(key) <= MaxDedupeKeyBytes && dedupeKeyPattern.MatchString(key)
+}
+
+// GitHubKey is gh:owner/name#n for a github.com issue or pull request ref, else empty.
+func GitHubKey(ref string) string {
+	repo := RepoOfRef(ref)
+	u, err := url.Parse(ref)
+	if repo == "" || err != nil {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) < 4 || (parts[2] != "issues" && parts[2] != "pull") {
+		return ""
+	}
+	if n, err := strconv.Atoi(parts[3]); err != nil || n <= 0 {
+		return ""
+	}
+	key := "gh:" + repo + "#" + parts[3]
+	if !ValidDedupeKey(key) {
+		return ""
+	}
+	return key
+}
+
 // eventRoutines are the fleet's enabled routines whose When is this event and whose Do launches a ship: a hand-edited
 // prompt never reaches the acts.
 func (s *Scheduler) eventRoutines(ev Event) []Routine {
@@ -285,6 +318,7 @@ func (s *Scheduler) HandleEvent(ev Event) {
 	}
 	if repo := RepoOfRef(ev.Ref); ev.Verified && repo != "" { // only the built-in source's ref is Admiral's own reading, and it wins over the Lookout's
 		en.Repo = repo
+		en.DedupeKey = GitHubKey(ev.Ref) // a plugin's key is the Lookout's; for the built-in source Admiral reads the ref itself
 	}
 	for _, c := range en.Costs {
 		spent += c.USD
