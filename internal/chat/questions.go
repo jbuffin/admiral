@@ -255,7 +255,9 @@ func (s *Service) WithdrawQuestions(key string) { s.chat(key).withdrawAndRender(
 
 func (s *fleetChat) withdrawAndRender() {
 	s.withdraw()
-	s.renderBrief(s.tickInputs())
+	if s.harness() == "claude" {
+		s.renderBrief(s.tickInputs())
+	}
 }
 
 // A waiting `admiral chat ask` sees its question gone and exits 4.

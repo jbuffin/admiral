@@ -143,3 +143,11 @@ func TestClaimReset_OnlyOneAtATime(t *testing.T) {
 		t.Error("the fleet cannot be claimed again after the release")
 	}
 }
+
+func TestOnlyAClaudeChatIsFlushedAndResetOnASchedule(t *testing.T) {
+	for harness, want := range map[string]bool{"claude": true, "codex": false, "copilot": false, "": false} {
+		if got := flushesBeforeReset(harness); got != want {
+			t.Errorf("flushesBeforeReset(%q) = %v, want %v", harness, got, want)
+		}
+	}
+}

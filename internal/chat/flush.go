@@ -48,7 +48,14 @@ func (s *Service) ResetTick() {
 	}
 }
 
+// flushesBeforeReset is whether the harness's chat gets a flush turn and scheduled resets: they lean on Claude
+// Code's hooks, status line and transcript, and a pane of another harness would take the flush as an ordinary message.
+func flushesBeforeReset(harness string) bool { return harness == "claude" }
+
 func (s *fleetChat) resetTick(now time.Time) {
+	if !flushesBeforeReset(s.harness()) {
+		return
+	}
 	sess, running := s.session()
 	rs := &s.rst
 	if !running {

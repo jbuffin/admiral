@@ -812,7 +812,7 @@ func resetCommand(harness string) string {
 // flushIfIdle gives an idle chat its flush turn before New chat acts, and refuses sends until serveNew returns.
 // A turn that runs or a question that waits is cleared without one, since the engineer asked for the reset.
 func (s *fleetChat) flushIfIdle(snap Snapshot) {
-	if snap.State != "idle" {
+	if snap.State != "idle" || !flushesBeforeReset(s.harness()) {
 		return
 	}
 	s.mu.Lock()
