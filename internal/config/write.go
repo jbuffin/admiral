@@ -159,18 +159,8 @@ func editFleet(dir, key string, f FleetFields, cfg *Config, repos RepoLookup) er
 			return err
 		}
 	}
-	if raw, ok := f.Limits["repo_allowlist"]; ok && repos != nil {
-		cur, known := cfg.Fleet(key)
-		if !known {
-			return fmt.Errorf("%w %q", ErrNoFleet, key)
-		}
-		var stored []string
-		if f.Preset == nil || standing.Preset(*f.Preset) == cur.Preset {
-			stored = cur.Limits.RepoAllowlist
-		}
-		if err := checkRepoMembership(key, raw, stored, repos(key)); err != nil {
-			return err
-		}
+	if err := checkLimitsMembership(cfg, key, f, repos); err != nil {
+		return err
 	}
 	return rewriteFleet(dir, key, func(fleets, fleet *Object) error {
 		if f.SearchRoots != nil {
@@ -266,6 +256,24 @@ func rewriteFleet(dir, key string, apply func(fleets, fleet *Object) error) erro
 		return fmt.Errorf("%w: config.json changed while saving; try again", ErrConflict)
 	}
 	return replaceFile(path, out)
+}
+
+// checkLimitsMembership refuses a repo_allowlist patch naming a repo the fleet's search roots don't hold and its stored allowlist doesn't already list.
+// A save and a preview both run it, so they cannot disagree.
+func checkLimitsMembership(cfg *Config, key string, f FleetFields, repos RepoLookup) error {
+	raw, ok := f.Limits["repo_allowlist"]
+	if !ok || repos == nil {
+		return nil
+	}
+	cur, known := cfg.Fleet(key)
+	if !known {
+		return fmt.Errorf("%w %q", ErrNoFleet, key)
+	}
+	var stored []string
+	if f.Preset == nil || standing.Preset(*f.Preset) == cur.Preset {
+		stored = cur.Limits.RepoAllowlist
+	}
+	return checkRepoMembership(key, raw, stored, repos(key))
 }
 
 // refuseUnofferedHarness is the server holding the line the Preferences picker draws: a harness

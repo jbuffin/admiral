@@ -49,51 +49,83 @@ func PreviewLimits(dir, key string, f FleetFields) (LimitsPreview, error) {
 	return LimitsPreview{Preset: preset, Limits: l, Sentences: standing.Sentences(l)}, nil
 }
 
+// PreviewLimits is the package PreviewLimits plus the repo-membership check a save runs.
+func (m *Manager) PreviewLimits(key string, f FleetFields) (LimitsPreview, error) {
+	m.mu.Lock()
+	repos := m.repos
+	m.mu.Unlock()
+	if err := checkLimitsMembership(m.Current(), key, f, repos); err != nil {
+		return LimitsPreview{}, err
+	}
+	return PreviewLimits(filepath.Dir(m.path), key, f)
+}
+
+// planCopy gives fleet to the preset and Limits of from, read from the objects it is handed, and returns the target's effective Limits before and after.
+// The target's own stored Limits are replaced, so none survive; its repo allowlist is checked against its own search roots.
+func planCopy(fleets, fleet *Object, from, to string, repos RepoLookup) (before, after standing.Limits, err error) {
+	raw, ok := fleets.Get(from)
+	if !ok {
+		return before, after, fmt.Errorf("%w %q", ErrNoFleet, from)
+	}
+	source, err := ParseObject(raw)
+	if err != nil {
+		return before, after, fmt.Errorf("%w: %w", ErrConflict, err)
+	}
+	srcPreset, srcLimits, err := resolveLimits(from, source)
+	if err != nil {
+		return before, after, err
+	}
+	dstPreset, before, err := resolveLimits(to, fleet)
+	if err != nil {
+		return before, after, err
+	}
+	for _, k := range []string{"preset", "limits"} {
+		if v, ok := source.Get(k); ok {
+			fleet.Set(k, v)
+		} else {
+			fleet.Delete(k)
+		}
+	}
+	if repos != nil && len(srcLimits.RepoAllowlist) > 0 {
+		var stored []string
+		if srcPreset == dstPreset {
+			stored = before.RepoAllowlist
+		}
+		given, _ := json.Marshal(srcLimits.RepoAllowlist)
+		if err := checkRepoMembership(to, given, stored, repos(to)); err != nil {
+			return before, after, err
+		}
+	}
+	_, after, err = resolveLimits(to, fleet)
+	return before, after, err
+}
+
+// PreviewCopyLimits is CopyLimits without the write: it returns what the copy would refuse, or the Limits it would leave.
+func (m *Manager) PreviewCopyLimits(from, to string) (before, after standing.Limits, err error) {
+	m.mu.Lock()
+	repos := m.repos
+	m.mu.Unlock()
+	_, fleets, fleet, err := loadFleet(filepath.Dir(m.path), to)
+	if err != nil {
+		return before, after, err
+	}
+	return planCopy(fleets, fleet, from, to, repos)
+}
+
 // CopyLimits gives fleet to the stored preset and Limits of fleet from, and returns the target's effective Limits before and after.
-// The target's own stored Limits are replaced, so none survive the copy; its repo allowlist is checked against its own search roots.
+// Both fleets are read from the file under the write lock; the repo scan of the target's search roots also runs under it.
 func (m *Manager) CopyLimits(from, to string) (before, after standing.Limits, err error) {
 	m.mu.Lock()
 	repos := m.repos
 	m.mu.Unlock()
-	cfg := m.Current()
-	src, ok := cfg.Fleet(from)
-	if !ok {
-		return before, after, fmt.Errorf("%w %q", ErrNoFleet, from)
-	}
-	dst, ok := cfg.Fleet(to)
-	if !ok {
-		return before, after, fmt.Errorf("%w %q", ErrNoFleet, to)
-	}
 	err = rewriteFleet(filepath.Dir(m.path), to, func(fleets, fleet *Object) error {
-		raw, ok := fleets.Get(from)
-		if !ok {
-			return fmt.Errorf("%w %q", ErrNoFleet, from)
-		}
-		source, err := ParseObject(raw)
-		if err != nil {
-			return fmt.Errorf("%w: %w", ErrConflict, err)
-		}
-		for _, k := range []string{"preset", "limits"} {
-			if v, ok := source.Get(k); ok {
-				fleet.Set(k, v)
-			} else {
-				fleet.Delete(k)
-			}
-		}
-		if repos == nil || len(src.Limits.RepoAllowlist) == 0 {
-			return nil
-		}
-		var stored []string
-		if src.Preset == dst.Preset {
-			stored = dst.Limits.RepoAllowlist
-		}
-		given, _ := json.Marshal(src.Limits.RepoAllowlist)
-		return checkRepoMembership(to, given, stored, repos(to))
+		var err error
+		before, after, err = planCopy(fleets, fleet, from, to, repos)
+		return err
 	})
 	if err != nil {
-		return before, after, err
+		return standing.Limits{}, standing.Limits{}, err
 	}
 	m.reload()
-	now, _ := m.Current().Fleet(to)
-	return dst.Limits, now.Limits, nil
+	return before, after, nil
 }

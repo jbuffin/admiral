@@ -124,3 +124,46 @@ func TestCopyLimitsNamesAMissingFleet(t *testing.T) {
 		}
 	}
 }
+
+func TestManagerPreviewLimitsChecksRepoMembershipLikeASave(t *testing.T) {
+	m, dir := openView(t, withFleets(`"a":{"name":"A","claude":{},"limits":{"repo_allowlist":["acme/old"]}}`))
+	m.SetRepoLookup(func(string) []string { return []string{"acme/widget"} })
+	patch := func(repos string) config.FleetFields {
+		return config.FleetFields{Limits: map[string]json.RawMessage{"repo_allowlist": rawJSON(repos)}}
+	}
+	before := mustRead(t, dir+"/config.json")
+	for _, repos := range []string{`["acme/widget"]`, `["acme/old"]`} {
+		if _, err := m.PreviewLimits("a", patch(repos)); err != nil {
+			t.Errorf("preview of %s = %v, want it accepted (found under the roots, or already stored)", repos, err)
+		}
+	}
+	_, perr := m.PreviewLimits("a", patch(`["acme/other"]`))
+	serr := m.SetFleetFields("a", patch(`["acme/other"]`))
+	if perr == nil || serr == nil || perr.Error() != serr.Error() {
+		t.Errorf("preview error %v and save error %v, want the same refusal", perr, serr)
+	}
+	if string(mustRead(t, dir+"/config.json")) != string(before) {
+		t.Error("a refused preview or save changed config.json")
+	}
+}
+
+func TestPreviewCopyLimitsRefusesWhatCopyRefusesAndWritesNothing(t *testing.T) {
+	m, dir := openView(t, withFleets(`"a":{"name":"A","claude":{},"limits":{"repo_allowlist":["acme/widget"]}},"b":{"name":"B","claude":{}}`))
+	m.SetRepoLookup(func(fleet string) []string {
+		if fleet == "a" {
+			return []string{"acme/widget"}
+		}
+		return nil
+	})
+	before := mustRead(t, dir+"/config.json")
+	if _, _, err := m.PreviewCopyLimits("a", "b"); err == nil || !strings.Contains(err.Error(), "repo_allowlist") {
+		t.Fatalf("error = %v, want one naming repo_allowlist", err)
+	}
+	m.SetRepoLookup(func(string) []string { return []string{"acme/widget"} })
+	if _, after, err := m.PreviewCopyLimits("a", "b"); err != nil || len(after.RepoAllowlist) != 1 {
+		t.Errorf("preview = %+v, %v, want the source's allowlist", after, err)
+	}
+	if string(mustRead(t, dir+"/config.json")) != string(before) {
+		t.Error("a preview changed config.json")
+	}
+}
