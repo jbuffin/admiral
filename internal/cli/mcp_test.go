@@ -758,6 +758,9 @@ func TestACommitmentLaunchIsAutopilotWhateverTheSkillAndNeverCarriesWithMeOrAnyw
 		if r := replies["1"]; r.Error == nil && !result(t, replies, "1").IsError {
 			t.Fatalf("no POST and no refusal: %+v", r)
 		}
+		if tr := result(t, replies, "1"); !tr.IsError || !(strings.Contains(tr.text(), "with_me") || strings.Contains(tr.text(), "anyway")) {
+			t.Fatalf("no POST, and the refusal %+v does not name with_me or anyway", tr)
+		}
 		return // a tool that refuses with_me and anyway outright is as good as one that drops them
 	}
 	if len(got) != 1 {
