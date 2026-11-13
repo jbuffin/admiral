@@ -51,7 +51,16 @@ function BackLink({ label }: { label: string }) {
   );
 }
 
-function StopShip({ ship }: { ship: Ship }) {
+interface ShipActionProps {
+  ship: Ship;
+  label: string;
+  cls: string;
+  action: string;
+  question: string;
+  done: () => void;
+}
+
+function ShipAction({ ship, label, cls, action, question, done }: ShipActionProps) {
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -59,30 +68,30 @@ function StopShip({ ship }: { ship: Ship }) {
   useEffect(() => {
     if (asking) cancel.current?.focus();
   }, [asking]);
-  const stop = async () => {
+  const run = async () => {
     setBusy(true);
     setError('');
-    const r = await call('POST', `/ships/${encodeURIComponent(ship.session)}/stop`);
+    const r = await call('POST', `/ships/${encodeURIComponent(ship.session)}/${action}`);
     setBusy(false);
     if (!r.ok) return setError(r.error);
     setAsking(false);
-    back();
+    done();
   };
   return (
     <>
       <button
         type="button"
-        class="btn danger stop-ship"
+        class={`btn ${cls}`}
         onClick={() => {
           setError('');
           setAsking(true);
         }}
       >
-        Stop ship
+        {label}
       </button>
       {asking ? (
-        <Sheet label="Stop ship" kind="launch-backdrop stop-backdrop" onClose={() => !busy && setAsking(false)}>
-          <p class="line">Stop {ship.name}? Its harness and crew end now.</p>
+        <Sheet label={label} kind="launch-backdrop stop-backdrop" onClose={() => !busy && setAsking(false)}>
+          <p class="line">{question}</p>
           {error ? (
             <p class="launch-error" role="alert">
               {error}
@@ -92,13 +101,46 @@ function StopShip({ ship }: { ship: Ship }) {
             <button type="button" ref={cancel} class="btn" disabled={busy} onClick={() => setAsking(false)}>
               Cancel
             </button>
-            <button type="button" class="btn danger" disabled={busy} onClick={() => void stop()}>
-              Stop ship
+            <button type="button" class={`btn ${cls.split(' ')[0]}`} disabled={busy} onClick={() => void run()}>
+              {label}
             </button>
           </div>
         </Sheet>
       ) : null}
     </>
+  );
+}
+
+function ReturnToPort({ ship }: { ship: Ship }) {
+  if (ship.returning) {
+    return (
+      <button type="button" class="btn return-port" disabled>
+        Returning to port
+      </button>
+    );
+  }
+  return (
+    <ShipAction
+      ship={ship}
+      label="Return to port"
+      cls="primary return-port"
+      action="return"
+      question={`Return ${ship.name} to port? Once its turn ends it's told to clean up after itself, and then it's stopped with its crew.`}
+      done={() => {}}
+    />
+  );
+}
+
+function StopShip({ ship }: { ship: Ship }) {
+  return (
+    <ShipAction
+      ship={ship}
+      label="Stop ship"
+      cls="danger stop-ship"
+      action="stop"
+      question={`Stop ${ship.name}? Its harness and crew end now.`}
+      done={back}
+    />
   );
 }
 
@@ -383,7 +425,10 @@ function ShipTabs({ ship, title }: { ship: Ship; title: boolean }) {
             Wake
           </button>
         ) : (
-          <StopShip ship={ship} />
+          <div class="ship-actions">
+            {ship.status === 'anchored' || ship.status === 'sailing_off' || ship.carries_prs ? null : <ReturnToPort ship={ship} />}
+            <StopShip ship={ship} />
+          </div>
         )}
       </div>
       <UsageRow session={ship.session} />

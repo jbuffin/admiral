@@ -122,17 +122,29 @@ func (s *Service) serveInterrupt(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"interrupted": true})
 }
 
-// serveStop ends a ship, live or anchored. A live ship is killed, so its `ended` is
-// written here with signal KILL, as a dead pane's would be, before `stopped`.
+// serveStop ends a ship, live or anchored.
 func (s *Service) serveStop(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
-	// Not the request's context: a client that hangs up must not abandon the write.
+	if _, ok := s.find(session); !ok {
+		writeError(w, http.StatusNotFound, "ship "+session+" not found")
+		return
+	}
+	if err := s.stopShip(session, withVia(nil, viaOf(r))); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"stopped": session})
+}
+
+// stopShip ends a ship. A live ship is killed, so its `ended` is written here with signal KILL, as a dead pane's
+// would be, before `stopped`.
+func (s *Service) stopShip(session string, fields map[string]any) error {
+	// Not a request's context: a client that hangs up must not abandon the write.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	sess, ok := s.find(session)
 	if !ok {
-		writeError(w, http.StatusNotFound, "ship "+session+" not found")
-		return
+		return ErrNotFound
 	}
 	s.mu.Lock()
 	tr := s.tracks[session]
@@ -144,10 +156,9 @@ func (s *Service) serveStop(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.recordKilled(sess)
 	}
-	s.record(outcomes.Record{Ship: session, Event: "stopped", Fields: withVia(nil, viaOf(r))}, nil)
+	s.record(outcomes.Record{Ship: session, Event: "stopped", Fields: fields}, nil)
 	if err := s.killShip(ctx, session, false); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		return err
 	}
 	_ = s.Host.Sync(ctx)
 	// killShip ran while the host still listed the ship as live, so it left the files for now.
@@ -159,7 +170,7 @@ func (s *Service) serveStop(w http.ResponseWriter, r *http.Request) {
 	}
 	s.keep()
 	s.broadcast()
-	writeJSON(w, http.StatusOK, map[string]any{"stopped": session})
+	return nil
 }
 
 // recordKilled queues the `ended` of a live ship that is about to be killed.

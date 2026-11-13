@@ -82,6 +82,10 @@ type Ship struct {
 	StopSince string `json:"stop_since,omitempty"`
 	// Seen is set while the ship needs you for a stop the engineer has looked at but not answered.
 	Seen bool `json:"seen,omitempty"`
+	// Returning is set from Return to port until the ship is stopped.
+	Returning bool `json:"returning,omitempty"`
+	// CarriesPRs is set on a live ship woken from its mooring, which returns to port only once its PRs are merged.
+	CarriesPRs bool `json:"carries_prs,omitempty"`
 	// Crew and Subagents are always present, empty lists as [].
 	Crew      []CrewBoat             `json:"crew"`
 	Subagents []sessionhost.Subagent `json:"subagents"`
@@ -97,6 +101,8 @@ type Orders interface {
 type Service struct {
 	// answering holds one mutex per pane id, taken for the whole of an answer.
 	answering sync.Map
+	// returning holds the ships a Return to port step is running for.
+	returning sync.Map
 	Host      *sessionhost.Host
 	Launcher  *launcher.Launcher
 	State     *state.Store
@@ -222,7 +228,7 @@ func FromSession(sess sessionhost.Session, now time.Time) Ship {
 	o, session := sess.Options, sess.Name
 	sh := Ship{Session: session, Name: o["name"], Fleet: o["fleet"], FleetName: o["fleet-name"],
 		FleetColor: o["fleet-color"], Harness: o["harness"], Dir: o["dir"], Repo: filepath.Base(o["dir"]),
-		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], OrderID: o["order"], Launched: o["launched"], Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Status: status(sess, now)}
+		Source: o["source"], Panel: o["panel"], Title: o["title"], URL: o["url"], OrderID: o["order"], Launched: o["launched"], Via: o["via"], Chat: o["chat"], Routine: o["routine"], Commitment: o["commitment"], Status: status(sess, now), Returning: o[sessionhost.OptReturning] != "", CarriesPRs: carriesPRs(sess)}
 	sh.ExitCode, sh.ExitSignal = exit(sess)
 	sh.Crew, sh.Subagents = crewBoats(sess.Crew), sess.Subagents
 	if sh.Subagents == nil {
@@ -291,6 +297,7 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/ships/{session}/answer", s.serveAnswer)
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/answer", s.serveAnswer)
 	mux.HandleFunc("POST /api/ships/{session}/stop", s.serveStop)
+	mux.HandleFunc("POST /api/ships/{session}/return", s.serveReturn)
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/messages", s.serveSendInput)
 	mux.HandleFunc("POST /api/ships/{session}/crew/{name}/interrupt", s.serveInterrupt)
 }
@@ -354,6 +361,7 @@ func (s *Service) Run(ctx context.Context) {
 			s.baselineAll()
 		}
 		s.observe(ctx)
+		s.advanceReturns()
 		s.sailOff(ctx, sailing)
 		if gone {
 			s.keep()

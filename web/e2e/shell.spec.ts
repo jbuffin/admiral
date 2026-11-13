@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { HOME, WORK, holds, boatOf, boatReceived, boatSays, changeFile, changesOf, chip, diffOf, expectSeededTurn, flotilla, gitCheckout, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatSession } from './shell';
+import { HOME, WORK, holds, boatOf, boatReceived, boatSays, changeFile, changesOf, chip, diffOf, expectSeededTurn, flotilla, gitCheckout, interruptButton, launchCrew, launchFromTheShell, launchShip, line, appendLines, messageBox, outcomeEvents, probeableClaude, received, releaseBoat, rowLink, say, seedBoatTranscript, seedFleets, seedTurn, sendButton, sentBubble, setBoatState, setState, shipOption, shipViewUrl, stopDialog, stopShipButton, viewPanel, viewTab, watchPage, withFakeGh, HOSTILE, seedInboxItem, setReason, chatAnswerFile, chatAsks, chatCleared, chatReceived, chatSays, chatStarts, chatEnds, chatSession } from './shell';
 import { decryptPush, newSubscriber, pushStub, startFakePush, stubSeen } from './push';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -276,6 +276,23 @@ test('the shell navigates its surfaces, lists the chosen fleet\'s ships live and
   await expect(row(page, chat)).toHaveCount(0);
   expect(nativeDialogs).toEqual([]);
   await expect.poll(() => outcomeEvents(admiral, chat)).toEqual(['launched', 'ended', 'stopped']);
+
+  // Return to port waits for the turn to end, tells the ship to clean up, and stops it once that turn ends.
+  const done = await launchShip(admiral, { fleet: 'zulu', harness: 'claude', cues: ['bracketedpaste'] });
+  setState(admiral, done, 'working');
+  await page.goto(admiral.url + 'app/ships?fleet=zulu');
+  await rowLink(page, done).tap();
+  await page.getByRole('button', { name: 'Return to port', exact: true }).tap();
+  await page.getByRole('dialog', { name: 'Return to port' }).getByRole('button', { name: 'Return to port' }).tap();
+  await expect(page.getByRole('button', { name: 'Returning to port' })).toBeDisabled();
+  setReason(admiral, done, 'stop');
+  setState(admiral, done, 'needs_you');
+  await expect.poll(() => received(admiral, done)).toContain('Return to port: this run is over');
+  await expect.poll(() => shipOption(admiral, done, 'returning')).toBe('sent');
+  await expect(page.getByRole('button', { name: 'Returning to port' })).toBeVisible();
+  setReason(admiral, done, 'stop');
+  setState(admiral, done, 'needs_you');
+  await expect.poll(() => outcomeEvents(admiral, done)).toEqual(['launched', 'ended', 'stopped']);
 
   // Changes: a ship in a checkout lists the branch's commit, the uncommitted edit and the untracked file, each with its diff.
   const bridgesBefore = watch.paths.filter((p) => /^\/ws\/(v1\/)?bridge\//.test(p)).length;

@@ -231,7 +231,7 @@ func (w *world) kickMoored() {
 	}
 }
 
-func TestMooredShipSailsOffWhenItsPRMerges(t *testing.T) {
+func TestMooredShipReturnsToPortWhenItsPRMerges(t *testing.T) {
 	t.Parallel()
 	w, g := mooring(t, "exit 0")
 	g.prState(mooredPR, "OPEN")
@@ -256,7 +256,11 @@ func TestMooredShipSailsOffWhenItsPRMerges(t *testing.T) {
 
 	g.prState(mooredPR, "MERGED")
 	w.kickMoored()
-	w.in.waitShipsList(t, 20*time.Second, "the ship sailed off after the merge", func(l []shipJSON) bool {
+	woken := lastOf(w.waitEvent(ship.Session, "woken", 1), "woken")
+	if woken["by"] != "return" {
+		t.Errorf("woken = %v, want by return", woken)
+	}
+	w.in.waitShipsList(t, 20*time.Second, "the ship gone after its clean-up wake", func(l []shipJSON) bool {
 		_, ok := byName(l)[ship.Name]
 		return !ok
 	})
