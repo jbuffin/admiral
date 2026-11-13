@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -271,7 +272,7 @@ func (r *Runner) fire(ctx context.Context, fleet string, c ledger.Commitment) {
 	switch {
 	case lerr != nil && cancelled:
 	case lerr != nil && lerr.Wait != "":
-		if !c.Waiting || c.WaitReason != lerr.Wait {
+		if !c.Waiting || !sameWait(c.WaitReason, lerr.Wait) {
 			_ = r.Ledger.MarkFired(fleet, c.ID, lerr.Wait)
 		}
 	case lerr != nil:
@@ -279,6 +280,14 @@ func (r *Runner) fire(ctx context.Context, fleet string, c ledger.Commitment) {
 	default:
 		r.launched(fleet, c, ship)
 	}
+}
+
+// usedPercent is the figure in a quota wait that moves every refresh without the reason changing.
+var usedPercent = regexp.MustCompile(` is at \d+%`)
+
+// sameWait says two wait reasons differ only in a quota figure, so the ledger keeps the first rather than logging each refresh.
+func sameWait(stored, now string) bool {
+	return usedPercent.ReplaceAllString(stored, " is at N%") == usedPercent.ReplaceAllString(now, " is at N%")
 }
 
 func (r *Runner) open(fleet, id string) bool {

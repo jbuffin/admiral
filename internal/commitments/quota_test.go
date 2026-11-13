@@ -49,3 +49,23 @@ func TestALaunchHeldForQuotaStaysWaitingWithItsReasonAndLaunchesOnceTheWindowRes
 		return ok
 	})
 }
+
+func TestAHeldLaunchKeepsItsFirstReasonWhileOnlyThePercentMoves(t *testing.T) {
+	g := newRig(t)
+	waits := []string{
+		quotaWait,
+		"Held for quota: Claude's 5-hour window is at 95% (line 90%), resets 14:00",
+		"Held for quota: Claude's weekly window is at 95% (line 90%), resets Mon 14:00",
+	}
+	g.ships.launch = func(n int, _ launcher.Request) (commitments.ShipRef, *launcher.Error) {
+		return commitments.ShipRef{}, refusal(http.StatusConflict, waits[n-1], waits[n-1])
+	}
+	c := dueLaunch(g)
+	for i, want := range []string{waits[0], waits[0], waits[2]} {
+		g.tick()
+		got, _ := g.find(c.ID)
+		if got.WaitReason != want {
+			t.Errorf("after attempt %d WaitReason = %q, want %q", i+1, got.WaitReason, want)
+		}
+	}
+}
